@@ -41,15 +41,94 @@ describe("inferImportProviderFromFile", () => {
 });
 
 describe("importSharedFile", () => {
-  it("imports a shared Strong CSV when its resolved URI differs", async () => {
-    const uploadId = "7b817a28-7c3b-470b-8e0b-d2b6f5fb3afc";
-    const uploadPart = vi.fn(async () => ({ status: 200, headers: { etag: "part-etag" } }));
-    const file: UploadableMobileFile & { text(): Promise<string> } = {
-      uri: "file:///var/mobile/Containers/Data/Application/CEC2FED0-57D4-41EA-B252-288126334734/tmp/com.dofek.app-Inbox/strong_workouts.csv",
+  it("does not upload a Strong CSV when unit selection is cancelled", async () => {
+    const file: UploadableMobileFile & { readHeader(maxBytes: number): Promise<string> } = {
+      uri: "file:///tmp/Strong%20Export.csv",
       name: "Strong Export.csv",
       type: "text/csv",
       size: 80,
-      text: vi.fn(
+      readHeader: async () => "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps",
+      sha256: async () => "a".repeat(64),
+      uploadPart: async () => ({ status: 200, headers: { etag: "part-etag" } }),
+    };
+    const initiate = vi.fn(async () => {
+      throw new Error("upload should not start");
+    });
+    const fileUploadApi: FileUploadApi = {
+      initiate,
+      authorizeParts: vi.fn(),
+      complete: vi.fn(),
+      resume: vi.fn(),
+    };
+
+    await expect(
+      importSharedFile(
+        {
+          fileUri: file.uri,
+          selectStrongWeightUnit: async () => null,
+        },
+        { file, fileUploadApi, createUploadId: () => crypto.randomUUID() },
+      ),
+    ).resolves.toBeNull();
+    expect(initiate).not.toHaveBeenCalled();
+  });
+
+  it("does not ask for a source unit when importing a non-Strong shared file", async () => {
+    const uploadId = "8c844e28-7c3b-470b-8e0b-d2b6f5fb3afc";
+    const selectStrongWeightUnit = vi.fn(async (): Promise<"kg" | "lbs" | null> => "kg");
+    const file: UploadableMobileFile & { readHeader(maxBytes: number): Promise<string> } = {
+      uri: "file:///tmp/garmin-export.zip",
+      name: "garmin-export.zip",
+      type: "application/zip",
+      size: 80,
+      readHeader: async () => "",
+      sha256: async () => "a".repeat(64),
+      uploadPart: async () => ({ status: 200, headers: { etag: "part-etag" } }),
+    };
+    const fileUploadApi: FileUploadApi = {
+      initiate: vi.fn(async () => ({ uploadId, partSizeBytes: 16 * 1024 * 1024 })),
+      authorizeParts: vi.fn(async () => ({
+        parts: [
+          {
+            partNumber: 1,
+            url: "https://r2.example/part-1",
+            expiresAt: "2026-08-27T20:00:00.000Z",
+          },
+        ],
+      })),
+      complete: vi.fn(async () => ({ uploadId, importJobId: `file-import-${uploadId}` })),
+      resume: vi
+        .fn()
+        .mockResolvedValueOnce({ upload: { uploadId, state: "uploading" }, parts: [] })
+        .mockResolvedValueOnce({
+          upload: { uploadId, state: "completed", progressPercent: 100, errorMessage: null },
+          parts: [],
+        }),
+    };
+
+    await expect(
+      importSharedFile(
+        {
+          fileUri: file.uri,
+          providerId: "garmin-dump",
+          selectStrongWeightUnit,
+        },
+        { file, fileUploadApi, createUploadId: () => uploadId, sleep: async () => {} },
+      ),
+    ).resolves.toEqual({ providerId: "garmin-dump", jobId: `file-import-${uploadId}` });
+
+    expect(selectStrongWeightUnit).not.toHaveBeenCalled();
+  });
+
+  it("imports an extensionless Strong CSV from a generic shared name", async () => {
+    const uploadId = "7b817a28-7c3b-470b-8e0b-d2b6f5fb3afc";
+    const uploadPart = vi.fn(async () => ({ status: 200, headers: { etag: "part-etag" } }));
+    const file: UploadableMobileFile & { readHeader(maxBytes: number): Promise<string> } = {
+      uri: "file:///var/mobile/Containers/Data/Application/CEC2FED0-57D4-41EA-B252-288126334734/tmp/com.dofek.app-Inbox/strong_workouts.csv",
+      name: "export",
+      type: "application/octet-stream",
+      size: 80,
+      readHeader: vi.fn(
         async () => "Date,Workout Name,Duration,Exercise Name\\n2026-03-10,Leg Day,00:45:00,Squat",
       ),
       sha256: vi.fn(async () => "a".repeat(64)),
@@ -76,19 +155,26 @@ describe("importSharedFile", () => {
         }),
     };
     const statuses: string[] = [];
+    const selectStrongWeightUnit = vi.fn(async (): Promise<"kg" | "lbs" | null> => "lbs");
 
     const result = await importSharedFile(
       {
         fileUri:
           "file:///private/var/mobile/Containers/Data/Application/CEC2FED0-57D4-41EA-B252-288126334734/tmp/com.dofek.app-Inbox/strong_workouts.csv",
         onProgress: (progress) => statuses.push(progress.status),
+        selectStrongWeightUnit,
       },
       { file, fileUploadApi, createUploadId: () => uploadId, sleep: async () => {} },
     );
 
     expect(fileUploadApi.initiate).toHaveBeenCalledWith(
-      expect.objectContaining({ importType: "strong-csv", filename: "Strong Export.csv" }),
+      expect.objectContaining({
+        importType: "strong-csv",
+        filename: "export",
+        weightUnit: "lbs",
+      }),
     );
+    expect(selectStrongWeightUnit).toHaveBeenCalledOnce();
     expect(uploadPart).toHaveBeenCalledWith(
       expect.objectContaining({ url: "https://r2.example/part-1" }),
     );
@@ -96,13 +182,47 @@ describe("importSharedFile", () => {
     expect(statuses).toContain("done");
   });
 
+  it("does not infer Strong from an extensionless binary shared file", async () => {
+    const readHeader = vi.fn(async () => "\u0000\u0001\u0002\u0003");
+    const file: UploadableMobileFile & { readHeader(bytes: number): Promise<string> } = {
+      uri: "file:///tmp/Strong-Export",
+      name: "Strong-Export",
+      type: "application/octet-stream",
+      size: 4 * 1024 * 1024,
+      readHeader,
+      sha256: async () => "a".repeat(64),
+      uploadPart: async () => ({ status: 200, headers: { etag: "part-etag" } }),
+    };
+    const initiate = vi.fn(async () => {
+      throw new Error("upload should not start");
+    });
+    const selectStrongWeightUnit = vi.fn(async (): Promise<"kg" | "lbs" | null> => "kg");
+    const fileUploadApi: FileUploadApi = {
+      initiate,
+      authorizeParts: vi.fn(),
+      complete: vi.fn(),
+      resume: vi.fn(),
+    };
+
+    await expect(
+      importSharedFile(
+        { fileUri: file.uri, selectStrongWeightUnit },
+        { file, fileUploadApi, createUploadId: () => crypto.randomUUID() },
+      ),
+    ).rejects.toThrow("Unsupported shared file type");
+
+    expect(readHeader).toHaveBeenCalledWith(16 * 1024);
+    expect(selectStrongWeightUnit).not.toHaveBeenCalled();
+    expect(initiate).not.toHaveBeenCalled();
+  });
+
   it("reports the server import error", async () => {
-    const file: UploadableMobileFile & { text(): Promise<string> } = {
+    const file: UploadableMobileFile & { readHeader(maxBytes: number): Promise<string> } = {
       uri: "file:///tmp/export.csv",
       name: "export.csv",
       type: "text/csv",
       size: 10,
-      text: async () => "Date,Workout Name,Duration,Exercise Name",
+      readHeader: async () => "Date,Workout Name,Duration,Exercise Name",
       sha256: async () => "b".repeat(64),
       uploadPart: async () => ({ status: 200, headers: { etag: "part-etag" } }),
     };
@@ -130,7 +250,11 @@ describe("importSharedFile", () => {
 
     await expect(
       importSharedFile(
-        { fileUri: file.uri, providerId: "strong-csv" },
+        {
+          fileUri: file.uri,
+          providerId: "strong-csv",
+          selectStrongWeightUnit: async () => "kg",
+        },
         { file, fileUploadApi: api, createUploadId: () => uploadId, sleep: async () => {} },
       ),
     ).rejects.toThrow("Strong export is invalid");

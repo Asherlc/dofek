@@ -453,6 +453,33 @@ describe("fileUploadRouter", () => {
     );
   });
 
+  it("accepts a Strong CSV without a filename extension when its content type is CSV", async () => {
+    const strong = upload({
+      importType: "strong-csv",
+      originalFilename: "Strong Export",
+      contentType: "text/csv",
+      state: "initiated",
+      r2MultipartUploadId: null,
+    });
+    const { caller, repository, transaction } = setup(strong);
+    repository.find.mockResolvedValueOnce(null);
+
+    await caller.initiate({
+      uploadId: strong.id,
+      importType: "strong-csv",
+      filename: "Strong Export",
+      contentType: "text/csv",
+      sizeBytes: strong.expectedSizeBytes,
+      sha256: strong.expectedSha256,
+      weightUnit: "lbs",
+    });
+
+    expect(repository.create).toHaveBeenCalledWith(
+      transaction,
+      expect.objectContaining({ originalFilename: "Strong Export", weightUnit: "lbs" }),
+    );
+  });
+
   it("does not persist a Strong-only weight unit for other import types", async () => {
     const apple = upload({
       importType: "apple-health",
