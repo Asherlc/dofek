@@ -9,10 +9,15 @@
     }
 ) }}
 
+{% set activity_refresh_scoped = activity_refresh_scope_enabled() %}
+
 WITH ranked AS (
     SELECT *
     FROM {{ ref('activity_source_records') }} FINAL
     WHERE is_deleted = 0
+        {% if activity_refresh_scoped %}
+        AND user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        {% endif %}
 ),
 
 final_groups AS (
@@ -186,6 +191,48 @@ current_deduped_activities AS (
         member_activity_ids
     FROM merged
     WHERE group_id NOT IN (SELECT group_id FROM tombstoned_groups)
+),
+
+{% if activity_refresh_scoped %}
+prior_scope_member_ids AS (
+    {% if is_incremental() %}
+        SELECT arrayJoin(member_activity_ids) AS activity_id
+        FROM {{ this }} FINAL
+        WHERE is_deleted = 0
+            AND user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+            AND (
+                activity_id IN {{ activity_refresh_ids() }}
+                OR hasAny(member_activity_ids, {{ activity_refresh_ids() }})
+            )
+    {% else %}
+        SELECT CAST(null, 'Nullable(UUID)') AS activity_id
+        WHERE 1 = 0
+    {% endif %}
+),
+
+affected_member_ids AS (
+    SELECT arrayJoin({{ activity_refresh_ids() }}) AS activity_id
+
+    UNION DISTINCT
+
+    SELECT activity_id
+    FROM prior_scope_member_ids
+),
+{% endif %}
+
+scoped_current_deduped_activities AS (
+    SELECT *
+    FROM current_deduped_activities
+    {% if activity_refresh_scoped %}
+    WHERE user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        AND (
+            activity_id IN (SELECT activity_id FROM affected_member_ids)
+            OR hasAny(
+                member_activity_ids,
+                CAST((SELECT groupArray(activity_id) FROM affected_member_ids), 'Array(UUID)')
+            )
+        )
+    {% endif %}
 )
 
 {% if is_incremental() %}
@@ -215,15 +262,25 @@ existing_deduped_activities AS (
         deduped.member_activity_ids
     FROM {{ this }} AS deduped FINAL
     WHERE deduped.is_deleted = 0
+        {% if activity_refresh_scoped %}
+        AND deduped.user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        AND (
+            deduped.activity_id IN (SELECT activity_id FROM affected_member_ids)
+            OR hasAny(
+                deduped.member_activity_ids,
+                CAST((SELECT groupArray(activity_id) FROM affected_member_ids), 'Array(UUID)')
+            )
+        )
+        {% endif %}
 ),
 
 stale_deduped_activities AS (
     SELECT existing_deduped_activities.*
     FROM existing_deduped_activities
-    LEFT JOIN current_deduped_activities
-        ON current_deduped_activities.activity_id = existing_deduped_activities.activity_id
-        AND current_deduped_activities.user_id = existing_deduped_activities.user_id
-    WHERE current_deduped_activities.activity_id IS null
+    LEFT JOIN scoped_current_deduped_activities
+        ON scoped_current_deduped_activities.activity_id = existing_deduped_activities.activity_id
+        AND scoped_current_deduped_activities.user_id = existing_deduped_activities.user_id
+    WHERE scoped_current_deduped_activities.activity_id IS null
 )
 {% endif %}
 
@@ -260,7 +317,7 @@ SELECT
     refresh_clock.refresh_version AS refresh_version,
     0 AS is_deleted,
     refresh_clock.refreshed_at AS refreshed_at
-FROM current_deduped_activities
+FROM scoped_current_deduped_activities
 CROSS JOIN refresh_clock
 
 {% if is_incremental() %}

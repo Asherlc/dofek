@@ -1,5 +1,6 @@
 {% set default_microbatch_begin = run_started_at.strftime('%Y-%m-%d') %}
 {% set activity_sensor_sample_begin = var('activity_sensor_sample_begin', default_microbatch_begin) %}
+{% set activity_refresh_scoped = activity_refresh_scope_enabled() %}
 
 {{ config(
     materialized='incremental',
@@ -39,6 +40,13 @@ WITH current_activity AS (
         source_synced_at
     FROM {{ ref('deduped_activities') }} FINAL
     WHERE is_deleted = 0
+        {% if activity_refresh_scoped %}
+        AND user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        AND (
+            activity_id IN {{ activity_refresh_ids() }}
+            OR hasAny(member_activity_ids, {{ activity_refresh_ids() }})
+        )
+        {% endif %}
 ),
 
 activity_days AS (

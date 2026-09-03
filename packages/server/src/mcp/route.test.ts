@@ -1778,9 +1778,9 @@ describe("createMcpRouter", () => {
     ]);
   });
 
-  it("aggregates activity summaries by activity type and ISO week", async () => {
+  it("publishes provenance-checked, modality-stratified power with a three-activity gate", async () => {
     authorizeMcpToken();
-    toolTestMocks.activityListRange.mockResolvedValue([
+    const preGateRows = [
       {
         canonical_type: "cycling",
         avg_hr: 140,
@@ -1788,46 +1788,165 @@ describe("createMcpRouter", () => {
         ended_at: "2026-05-18T11:00:00.000Z",
         max_hr: 170,
         max_power: 300,
+        modality: "indoor",
         started_at: "2026-05-18T10:00:00.000Z",
       },
       {
         canonical_type: "cycling",
         avg_hr: 150,
-        avg_power: 200,
-        ended_at: "2026-05-19T10:30:00.000Z",
+        avg_power: 190,
+        ended_at: "2026-05-19T11:00:00.000Z",
         max_hr: 175,
         max_power: 320,
+        modality: "indoor",
         started_at: "2026-05-19T10:00:00.000Z",
       },
-    ]);
+      {
+        canonical_type: "cycling",
+        avg_hr: 155,
+        avg_power: 200,
+        ended_at: "2026-05-20T11:00:00.000Z",
+        max_hr: 178,
+        max_power: 310,
+        modality: "indoor",
+        started_at: "2026-05-20T10:00:00.000Z",
+      },
+      {
+        canonical_type: "cycling",
+        avg_hr: 145,
+        avg_power: 210,
+        ended_at: "2026-05-21T11:00:00.000Z",
+        max_hr: 176,
+        max_power: 340,
+        modality: "outdoor",
+        started_at: "2026-05-21T10:00:00.000Z",
+      },
+      {
+        canonical_type: "cycling",
+        avg_hr: 148,
+        avg_power: 220,
+        ended_at: "2026-05-22T11:00:00.000Z",
+        max_hr: 177,
+        max_power: 350,
+        modality: "outdoor",
+        started_at: "2026-05-22T10:00:00.000Z",
+      },
+      {
+        canonical_type: "cycling",
+        avg_hr: 149,
+        avg_power: 230,
+        ended_at: "2026-05-23T11:00:00.000Z",
+        max_hr: 179,
+        max_power: 360,
+        modality: null,
+        started_at: "2026-05-23T10:00:00.000Z",
+      },
+      {
+        canonical_type: "cycling",
+        avg_hr: 147,
+        avg_power: 225,
+        ended_at: "2026-05-23T10:30:00.000Z",
+        max_hr: 175,
+        max_power: 355,
+        modality: "road",
+        started_at: "2026-05-23T09:30:00.000Z",
+      },
+      {
+        canonical_type: "running",
+        avg_hr: 160,
+        avg_power: 250,
+        ended_at: "2026-05-23T12:00:00.000Z",
+        max_hr: 180,
+        max_power: 380,
+        modality: "outdoor",
+        started_at: "2026-05-23T11:00:00.000Z",
+      },
+      {
+        canonical_type: "other",
+        avg_hr: null,
+        avg_power: 260,
+        elevation_gain_m: null,
+        ended_at: "2026-05-23T13:00:00.000Z",
+        max_hr: null,
+        max_power: 390,
+        modality: null,
+        provider_type: "kayaking",
+        started_at: "2026-05-23T12:00:00.000Z",
+      },
+    ];
+    toolTestMocks.activityListRange.mockResolvedValue(preGateRows);
 
     const response = await request(createTestApp(), {
       authorization: "Bearer good-token",
       body: createToolCallRequest("get_activity_summary", {
-        end_date: "2026-05-19",
+        end_date: "2026-05-23",
         group_by: "canonical_type_and_week",
         start_date: "2026-05-18",
       }),
     });
 
-    expect(parseToolCallText(response.text)).toEqual({
-      unclassified_pct: 0,
-      summaries: [
-        {
-          canonical_type: "cycling",
-          avg_duration_minutes: 45,
-          avg_hr: 145,
+    const responseBody = z
+      .object({ summaries: z.array(z.record(z.string(), z.unknown())) })
+      .parse(parseToolCallText(response.text));
+    const summary = responseBody.summaries.find(
+      (candidate) => candidate.canonical_type === "cycling",
+    );
+    expect(summary).toMatchObject({
+      canonical_type: "cycling",
+      power_by_modality: {
+        indoor: {
+          activities_total: 3,
+          activities_with_power: 3,
           avg_power: 190,
-          count: 2,
-          max_hr_peak: 175,
           max_power_peak: 320,
-          power_coverage: { activities_total: 2, activities_with_power: 2, pct: 100 },
-          total_elevation_gain_m: null,
-          avg_elevation_gain_m: null,
-          total_duration_minutes: 90,
-          week: "2026-W21",
+          pct: 100,
         },
-      ],
+        outdoor: {
+          activities_total: 2,
+          activities_with_power: 2,
+          avg_power: null,
+          max_power_peak: null,
+          pct: 100,
+        },
+        unknown: {
+          activities_total: 2,
+          activities_with_power: 2,
+          avg_power: null,
+          max_power_peak: null,
+          pct: 100,
+        },
+      },
+    });
+    expect(summary).not.toHaveProperty("avg_power");
+    expect(summary).not.toHaveProperty("max_power_peak");
+    expect(summary).not.toHaveProperty("power_coverage");
+    expect(
+      responseBody.summaries.find((candidate) => candidate.canonical_type === "running"),
+    ).toMatchObject({
+      power_by_modality: {
+        outdoor: {
+          activities_total: 1,
+          activities_with_power: 1,
+          avg_power: null,
+          max_power_peak: null,
+          pct: 100,
+        },
+      },
+    });
+    const kayakingSummary = responseBody.summaries.find(
+      (candidate) => candidate.canonical_type === "other",
+    );
+    expect(kayakingSummary).toMatchObject({
+      total_elevation_gain_m: null,
+      power_by_modality: {
+        unknown: {
+          activities_total: 1,
+          activities_with_power: 1,
+          avg_power: null,
+          max_power_peak: null,
+          pct: 100,
+        },
+      },
     });
   });
 
@@ -1873,14 +1992,30 @@ describe("createMcpRouter", () => {
         expect.objectContaining({
           canonical_type: "cycling",
           modality: "indoor",
-          power_coverage: { activities_total: 1, activities_with_power: 1, pct: 100 },
+          power_by_modality: expect.objectContaining({
+            indoor: {
+              activities_total: 1,
+              activities_with_power: 1,
+              avg_power: null,
+              max_power_peak: null,
+              pct: 100,
+            },
+          }),
           total_elevation_gain_m: 0,
           avg_elevation_gain_m: 0,
         }),
         expect.objectContaining({
           canonical_type: "cycling",
           modality: "outdoor",
-          power_coverage: { activities_total: 1, activities_with_power: 0, pct: 0 },
+          power_by_modality: expect.objectContaining({
+            outdoor: {
+              activities_total: 1,
+              activities_with_power: 0,
+              avg_power: null,
+              max_power_peak: null,
+              pct: 0,
+            },
+          }),
           total_elevation_gain_m: 736,
           avg_elevation_gain_m: 736,
         }),
@@ -2048,11 +2183,31 @@ describe("createMcpRouter", () => {
           canonical_type: "running",
           avg_duration_minutes: null,
           avg_hr: null,
-          avg_power: null,
           count: 1,
           max_hr_peak: null,
-          max_power_peak: null,
-          power_coverage: { activities_total: 1, activities_with_power: 0, pct: 0 },
+          power_by_modality: {
+            indoor: {
+              activities_total: 0,
+              activities_with_power: 0,
+              avg_power: null,
+              max_power_peak: null,
+              pct: 0,
+            },
+            outdoor: {
+              activities_total: 0,
+              activities_with_power: 0,
+              avg_power: null,
+              max_power_peak: null,
+              pct: 0,
+            },
+            unknown: {
+              activities_total: 1,
+              activities_with_power: 0,
+              avg_power: null,
+              max_power_peak: null,
+              pct: 0,
+            },
+          },
           total_elevation_gain_m: null,
           avg_elevation_gain_m: null,
           total_duration_minutes: 0,

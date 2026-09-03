@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compactWhitespace, readModelSql } from "./read-model-sql-test-helpers.ts";
+import { compactWhitespace, readModelSql } from "../../../src/db/read-model-sql-test-helpers.ts";
 
 const modelSql = readModelSql("provider_metric_stream_daily.sql");
 

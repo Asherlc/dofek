@@ -146,6 +146,27 @@ const activitySummaryReadModelRowSchema = z.object({
   centroid_lng: z.number().nullable().default(null),
 });
 
+const activityMemberSchema = z.object({
+  activity_id: z.string(),
+  canonical_type: z.string(),
+  provider_id: z.string(),
+});
+
+export type ActivityMember = z.infer<typeof activityMemberSchema>;
+
+export function selectCompatibleActivitySummary<TSummary extends ActivityMember>(
+  row: Pick<ActivityRow, "canonical_type" | "provider_id">,
+  summaries: readonly TSummary[],
+): TSummary | null {
+  return (
+    summaries.find(
+      (member) =>
+        member.canonical_type === row.canonical_type &&
+        (member.canonical_type !== "other" || member.provider_id === row.provider_id),
+    ) ?? null
+  );
+}
+
 const powerCurveSampleSchema = z.object({
   activity_id: z.string(),
   activity_date: z.string(),
@@ -711,9 +732,14 @@ export class ActivityRepository extends BaseRepository {
     return activity;
   }
 
-  async #withActivitySummaries<TRow extends { id: string; member_activity_ids?: string[] }>(
-    rows: TRow[],
-  ): Promise<TRow[]> {
+  async #withActivitySummaries<
+    TRow extends {
+      id: string;
+      canonical_type: string;
+      provider_id: string;
+      member_activity_ids?: string[];
+    },
+  >(rows: TRow[]): Promise<TRow[]> {
     const sensorStore = this.#sensorStore;
     if (!sensorStore) {
       return rows;
@@ -735,11 +761,33 @@ export class ActivityRepository extends BaseRepository {
         activitySummaryReadModelRowSchema.parse(summary),
       ]),
     );
+    if (summaryByActivityId.size === 0) {
+      return rows;
+    }
+    const memberRows = await this.query(
+      activityMemberSchema,
+      sql`SELECT
+            id::text AS activity_id,
+            canonical_type::text AS canonical_type,
+            provider_id
+          FROM fitness.activity
+          WHERE user_id = ${this.userId}::uuid
+            AND id IN (${sql.join(
+              activityIds.map((activityId) => sql`${activityId}::uuid`),
+              sql`, `,
+            )})`,
+    );
+    const memberByActivityId = new Map(memberRows.map((member) => [member.activity_id, member]));
 
     return rows.map((row) => {
-      const summary = [row.id, ...(row.member_activity_ids ?? [])]
-        .map((activityId) => summaryByActivityId.get(activityId))
-        .find((candidate) => candidate != null);
+      const summary = selectCompatibleActivitySummary(
+        row,
+        [row.id, ...(row.member_activity_ids ?? [])].flatMap((activityId) => {
+          const summary = summaryByActivityId.get(activityId);
+          const member = memberByActivityId.get(activityId);
+          return summary && member ? [{ ...summary, ...member }] : [];
+        }),
+      );
       if (!summary) {
         return row;
       }
