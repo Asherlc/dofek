@@ -36,7 +36,7 @@ export function registerClimbingSessionsTool(server: McpServer, context: DofekMc
       title: "Get Climbing Sessions",
       description:
         "Return exact-range climbing sessions with route/problem details, heart rate, duration, grade distribution, send rate, maximum grade, and volume.",
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: { start_date: dateSchema, end_date: dateSchema },
     },
     async ({ start_date, end_date }) => {

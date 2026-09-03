@@ -16,7 +16,7 @@ export function registerActivityDetailsTool(server: McpServer, context: DofekMcp
       title: "Get Activity Details",
       description:
         "Return one authenticated user's activity with its strength exercises and sets, climbing entries, and finger-loading details.",
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: { activity_id: z.uuid() },
     },
     async ({ activity_id }) => {

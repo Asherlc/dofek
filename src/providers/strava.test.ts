@@ -1410,15 +1410,16 @@ describe("StravaProvider.unregisterWebhook", () => {
     await provider.unregisterWebhook("42");
   });
 
-  it("logs warning on non-OK non-404 response", async () => {
+  it("throws on non-OK non-404 response", async () => {
     process.env.STRAVA_CLIENT_ID = "test-id";
     process.env.STRAVA_CLIENT_SECRET = "test-secret";
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Server Error", { status: 500 });
     };
     const provider = new StravaProvider(mockFetch);
-    // Should not throw, just logs warning
-    await provider.unregisterWebhook("42");
+    await expect(provider.unregisterWebhook("42")).rejects.toThrow(
+      "Strava webhook removal failed (500): Server Error",
+    );
   });
 });
 

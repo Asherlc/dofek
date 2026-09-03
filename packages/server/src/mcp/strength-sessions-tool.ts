@@ -23,7 +23,7 @@ export function registerStrengthSessionsTool(server: McpServer, context: DofekMc
       title: "Get Strength Sessions",
       description:
         "Return exact-range strength sessions with exercises, sets, session volume-load, and volume-load by muscle group.",
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: { start_date: dateSchema, end_date: dateSchema },
     },
     async ({ start_date, end_date }) => {
