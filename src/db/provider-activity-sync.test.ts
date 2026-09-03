@@ -328,7 +328,7 @@ describe("upsertProviderActivity", () => {
     expect(mockLoggerWarn).not.toHaveBeenCalled();
   });
 
-  it("reports an invalid home zone and rejects unvalidated provider context", async () => {
+  it("reports an invalid home zone and rejects provider context that cannot be validated", async () => {
     const onConflictDoUpdate = vi.fn();
     const db = makeMockDb(onConflictDoUpdate);
 
