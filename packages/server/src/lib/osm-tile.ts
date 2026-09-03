@@ -44,7 +44,6 @@ export const osmTilePreviewSchema = z.object({
   routePath: z.array(routePathPointSchema).nullable(),
 });
 
-export type RoutePathPoint = z.infer<typeof routePathPointSchema>;
 export type OsmTilePreviewTile = z.infer<typeof osmTilePreviewTileSchema>;
 export type OsmTilePreview = z.infer<typeof osmTilePreviewSchema>;
 

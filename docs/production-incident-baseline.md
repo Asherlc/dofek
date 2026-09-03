@@ -24950,3 +24950,22 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   is merged and deployed and the submission form refreshes its live tool
   metadata. After deployment, rescan the live tool catalog in the submission
   form and retain the result with the release evidence.
+
+## 2026-09-03 — MCP output-schema PR failed Knip on an internal helper type
+
+- **Status:** Fixed in source; replacement CI validation pending.
+- **Symptoms / user impact:** PR 2661's Knip job failed, blocking the MCP
+  output-schema change from being ready for review.
+- **Evidence / root cause:** The first fatal diagnostic was
+  `Unused exported types (1)`, identifying `RoutePathPoint` at
+  `packages/server/src/lib/osm-tile.ts:47:13` ([failed Knip
+  job](https://github.com/Asherlc/dofek/actions/runs/33789850878/job/100763804678)).
+  The OSM schema refactor left an inferred route-point type exported even
+  though no production consumer uses that standalone alias; consumers use the
+  enclosing exported preview schema and type.
+- **Direct fix:** Removed the unused `RoutePathPoint` alias. No Knip
+  configuration, ignore, or CI behavior was changed.
+- **Validation:** The exact local Knip command, focused 81-test MCP/OSM suite,
+  server typecheck, Biome, repository spellcheck, and diff checks pass.
+- **Remaining risk / follow-up:** Confirm the replacement Knip job and full PR
+  workflow pass on the fix commit.
