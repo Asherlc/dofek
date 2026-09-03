@@ -462,6 +462,20 @@ describe("file upload repository", () => {
     expect(mocks.executeWithSchema).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    ["blank import job ID", { importJobId: "   " }],
+    ["blank timezone", { importJobId: `file-import-retry-${uploadId}`, timezone: "   " }],
+  ])("rejects retry input with a %s", async (_label, overrides) => {
+    await expect(
+      retryFailedFileUpload(database, {
+        uploadId,
+        userId,
+        ...overrides,
+      }),
+    ).rejects.toThrow();
+    expect(mocks.executeWithSchema).not.toHaveBeenCalled();
+  });
+
   it("holds a row lock while a retained upload operation runs", async () => {
     const transaction = { execute: vi.fn() };
     const transactionalDatabase = {

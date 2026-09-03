@@ -511,6 +511,83 @@ describe("repairActivityDataIntegrity", () => {
     });
   });
 
+  it("writes repaired Strong timestamps and their exact prior CAS values in repair order", async () => {
+    const directory = await artifactDirectory();
+    const strongCandidate = {
+      ...postgresCandidate,
+      provider_id: "strong-csv",
+      external_id: "strong:winter-execute",
+      started_at: "2026-01-15T07:55:54.000Z",
+      ended_at: "2026-01-15T08:25:54.000Z",
+      timezone: null,
+      start_utc_offset_minutes: null,
+      end_utc_offset_minutes: null,
+      local_time_source: "unknown",
+    };
+    const strongPriorSource = {
+      ...priorSourceRow,
+      provider_id: "strong-csv",
+      external_id: strongCandidate.external_id,
+      started_at: new Date(strongCandidate.started_at),
+      ended_at: new Date(strongCandidate.ended_at),
+      timezone: null,
+      start_utc_offset_minutes: null,
+      end_utc_offset_minutes: null,
+      local_time_source: "unknown",
+    };
+    const strongRepairedSource = {
+      ...strongPriorSource,
+      started_at: new Date("2026-01-15T15:55:54.000Z"),
+      ended_at: new Date("2026-01-15T16:25:54.000Z"),
+      timezone: "America/Los_Angeles",
+      start_utc_offset_minutes: -480,
+      end_utc_offset_minutes: -480,
+      local_time_source: "home_zone_fallback",
+      refresh_version: "9007199254740995",
+    };
+    let updateTimestampParams: unknown[] = [];
+    const execute = vi.fn(async (query: SQL) => {
+      const rendered = dialect.sqlToQuery(query);
+      if (rendered.sql.includes("SELECT") && rendered.sql.includes("FROM fitness.activity")) {
+        return [strongCandidate];
+      }
+      if (rendered.sql.includes("UPDATE fitness.activity")) {
+        updateTimestampParams = rendered.params.filter(
+          (value) => typeof value === "string" && /^2026-01-15T/.test(value),
+        );
+        return [{ id: activityId }];
+      }
+      throw new Error(`Unexpected repair query: ${rendered.sql}`);
+    });
+
+    await repairActivityDataIntegrity(
+      createDatabase(execute),
+      createClickHouse(
+        [[strongPriorSource], [strongRepairedSource]],
+        [priorGroupRows, repairedGroupRows],
+        [],
+        { mirror: [[strongRepairedSource]] },
+      ),
+      {
+        execute: true,
+        userId,
+        batchSize: 10,
+        maxBatches: 1,
+        acceptanceOwner: "data-on-call@example.com",
+        acceptanceDeadline: deadline,
+        ...window,
+      },
+      repairDependencies(directory),
+    );
+
+    expect(updateTimestampParams).toEqual([
+      "2026-01-15T15:55:54.000Z",
+      "2026-01-15T16:25:54.000Z",
+      "2026-01-15T07:55:54.000Z",
+      "2026-01-15T08:25:54.000Z",
+    ]);
+  });
+
   it("does not reinterpret a Strong timestamp already parsed with timezone context", async () => {
     const directory = await artifactDirectory();
     const strongCandidate = {

@@ -195,6 +195,20 @@ describe("reconcileFileUploads", () => {
     expect(repository.markObjectDeleted).toHaveBeenCalledWith(database, completed.id);
   });
 
+  it("does not delete a terminal upload whose object was deleted before the row lock", async () => {
+    const completed = upload({ state: "completed" });
+    repository.list.mockResolvedValue([completed]);
+    repository.withLocked.mockImplementationOnce(async (transaction, _uploadId, operation) =>
+      operation(transaction, upload({ state: "completed", objectDeletedAt: new Date() })),
+    );
+    const objectStorage = storage();
+
+    await reconcileFileUploads(database, objectStorage);
+
+    expect(objectStorage.deleteObject).not.toHaveBeenCalled();
+    expect(repository.markObjectDeleted).not.toHaveBeenCalled();
+  });
+
   it("skips expired repair metrics when the upload already transitioned", async () => {
     const stale = upload({
       state: "uploading",

@@ -1,5 +1,6 @@
 import { and, asc, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { runWithProviderIngestContext } from "../db/provider-ingest-context.ts";
 import { activity, strengthSet } from "../db/schema/activity.ts";
 import { TEST_USER_ID } from "../db/schema/core.ts";
 import {
@@ -53,12 +54,8 @@ describe("importStrongCsv() (integration)", () => {
   });
 
   it("imports a single workout with multiple exercises and sets", async () => {
-    const result = await importStrongCsv(
-      ctx.db,
-      SIMPLE_CSV,
-      TEST_USER_ID,
-      "kg",
-      "America/Los_Angeles",
+    const result = await runWithProviderIngestContext({ homeTimezone: "America/Los_Angeles" }, () =>
+      importStrongCsv(ctx.db, SIMPLE_CSV, TEST_USER_ID, "kg", "America/Los_Angeles"),
     );
 
     expect(result.provider).toBe(STRONG_PROVIDER_ID);

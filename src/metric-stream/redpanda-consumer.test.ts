@@ -88,6 +88,13 @@ beforeEach(() => {
 
 describe("runMetricStreamEventConsumer", () => {
   it("reports lag, sink latency, and deletion throughput for each consumed batch", async () => {
+    vi.spyOn(performance, "now")
+      .mockReturnValueOnce(1_000)
+      .mockReturnValueOnce(1_100)
+      .mockReturnValueOnce(1_200)
+      .mockReturnValueOnce(2_200)
+      .mockReturnValueOnce(2_400)
+      .mockReturnValueOnce(3_200);
     const deleteEvent = createMetricStreamDeletedEvent(
       { activityId: "20000000-0000-4000-8000-000000000001" },
       operationRevision,
@@ -146,19 +153,18 @@ describe("runMetricStreamEventConsumer", () => {
         consumer_lag_growth_per_second: null,
         event_count: 2,
         deletion_event_count: 1,
-        sink_duration_ms: expect.any(Number),
-        average_batch_event_cost_ms: expect.any(Number),
-        deletion_events_per_second: expect.any(Number),
+        sink_duration_ms: 100,
+        average_batch_event_cost_ms: 50,
+        deletion_events_per_second: 10,
       }),
     );
     expect(loggerInfo).toHaveBeenLastCalledWith(
       "metric_stream.consumer_batch",
       expect.objectContaining({
         consumer_lag: 27,
-        consumer_lag_growth_per_second: expect.any(Number),
+        consumer_lag_growth_per_second: 9.5,
       }),
     );
-    expect(loggerInfo.mock.lastCall?.[1].consumer_lag_growth_per_second).toBeGreaterThan(0);
   });
 
   it("reports lag from the consumed offset when a tombstone follows valid data", async () => {

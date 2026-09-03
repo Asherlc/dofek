@@ -202,6 +202,9 @@ describe("file upload state machine (integration)", () => {
     await testContext.db.execute(sql`UPDATE fitness.file_upload
       SET state = 'failed', error_code = 'IMPORT_REJECTED', error_message = 'Missing unit'
       WHERE id = ${input.id}::uuid`);
+    await testContext.db.execute(sql`UPDATE fitness.file_upload_outbox
+      SET status = 'failed', failure_reason = 'Missing unit', failed_at = now()
+      WHERE upload_id = ${input.id}::uuid`);
 
     const retry = (suffix: string) =>
       retryFailedFileUpload(testContext.db, {
