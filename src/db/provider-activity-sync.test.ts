@@ -167,7 +167,7 @@ describe("upsertProviderActivity", () => {
     );
   });
 
-  it("normalizes an explicitly sourced fixed Etc/GMT zone to its derived offset", async () => {
+  it("rejects a conflicting explicitly sourced fixed Etc/GMT zone", async () => {
     const onConflictDoUpdate = vi.fn();
     const db = makeMockDb(onConflictDoUpdate);
 
