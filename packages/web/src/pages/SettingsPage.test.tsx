@@ -477,6 +477,30 @@ describe("SettingsPage categories", () => {
     expect(screen.queryByRole("button", { name: "Subscribe to Full Access" })).toBeNull();
   });
 
+  it("shows generic full-access copy without Stripe controls for an App Store subscription", async () => {
+    mockSearch = { tab: "billing" };
+    mockBillingStatusQuery.mockReturnValue({
+      data: {
+        access: { kind: "full", reason: "app_store_subscription" },
+        appStoreSubscriptionStatus: "active",
+        canManageAppStoreSubscription: true,
+        canManageBilling: false,
+        hasFullAccess: true,
+        stripeSubscriptionStatus: null,
+      },
+      error: null,
+      isLoading: false,
+    });
+    const { SettingsPage } = await import("./SettingsPage.tsx");
+
+    render(<SettingsPage />);
+
+    expect(screen.getByText("Full access is enabled.")).toBeTruthy();
+    expect(screen.queryByText(/Stripe subscription status:/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Manage Billing" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Subscribe to Full Access" })).toBeNull();
+  });
+
   it("shows the pending checkout label while starting a subscription", async () => {
     mockSearch = { tab: "billing" };
     mockMutation.isPending = true;

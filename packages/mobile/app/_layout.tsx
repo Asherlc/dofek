@@ -12,6 +12,10 @@ import {
   loadAnyMobileAccountErasurePreparation,
   loadMobileAccountErasureStatusCapability,
 } from "../lib/account-erasure-storage";
+import {
+  AppStoreBillingService,
+  useAppStoreBillingTransactionUpdates,
+} from "../lib/app-store-billing";
 import { AuthProvider, useAuth } from "../lib/auth-context";
 import {
   initBackgroundAccelerometerSync,
@@ -283,6 +287,17 @@ function AuthGate() {
       ],
     });
   }, [serverUrl, sessionToken]);
+
+  const appStoreBillingService = useMemo(
+    () => new AppStoreBillingService({ queryClient, trpcClient }),
+    [queryClient, trpcClient],
+  );
+  const appStoreBillingCanObserve =
+    Boolean(user) &&
+    deletionRecoveryReady &&
+    !accountErasureCleanupInProgress &&
+    !(localCleanupPending && localCleanupOwnerNonce === accountSessionOwnerNonce);
+  useAppStoreBillingTransactionUpdates(appStoreBillingService, appStoreBillingCanObserve);
 
   useEffect(() => {
     let active = true;

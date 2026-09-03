@@ -5,7 +5,7 @@ function PrivacyPage() {
     <div className="min-h-screen bg-page text-foreground">
       <div className="max-w-3xl mx-auto px-6 py-16">
         <h1 className="text-3xl font-bold text-foreground mb-2">Privacy Policy</h1>
-        <p className="text-subtle text-sm mb-10">Last updated: July 29, 2026</p>
+        <p className="text-subtle text-sm mb-10">Last updated: September 2, 2026</p>
 
         <div className="space-y-8 text-sm leading-relaxed">
           <section>
@@ -192,8 +192,21 @@ function PrivacyPage() {
               .
             </p>
             <p className="mt-3">
-              Payment providers may retain legally required transaction, fraud-prevention, and
-              compliance records beyond Dofek&apos;s 30-day application-data window. See the{" "}
+              Apple processes App Store subscription purchases and provides Dofek with signed
+              transaction and subscription-status information needed to grant access. Dofek does not
+              receive your full payment-card details from Apple. Stripe processes purchases made on
+              the Dofek website. These payment processors may retain legally required transaction,
+              fraud-prevention, and compliance records beyond Dofek&apos;s 30-day application-data
+              window. See{" "}
+              <a
+                href="https://www.apple.com/legal/privacy/data/en/app-store/"
+                className="text-accent underline"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Apple App Store &amp; Privacy
+              </a>{" "}
+              and the{" "}
               <a
                 href="https://stripe.com/legal/privacy-center"
                 className="text-accent underline"
@@ -202,7 +215,7 @@ function PrivacyPage() {
               >
                 Stripe Privacy Center
               </a>{" "}
-              for Stripe&apos;s retention disclosures.
+              for their privacy and retention disclosures.
             </p>
             <p className="mt-3">
               <a href="/account-deletion" className="text-accent underline">
