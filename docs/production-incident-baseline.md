@@ -24730,7 +24730,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   removal deletes the data held by that specific volume:
   <https://docs.docker.com/engine/storage/volumes/#remove-volumes>.
 - **Validation:** The executable duplicate-group integration suite passes all
-  three cases, including the 18-node chain. Run the full activity-integrity
+  three cases, including the 18-node chain. A later full lifecycle attempt
+  completed all eight scoped dbt models successfully, then lost ClickHouse
+  during the post-build verification snapshot. Run the full activity-integrity
   database test on CI's isolated runner.
 - **Remaining risk / follow-up:** Determine which host component sends the
   restart and whether aggregate multi-workspace pressure is responsible. A

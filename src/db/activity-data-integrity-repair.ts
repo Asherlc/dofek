@@ -40,7 +40,7 @@ import {
 import { executeWithSchema, type SchemaExecutionDatabase } from "./typed-sql.ts";
 
 const MAXIMUM_BATCH_SIZE = 1_000;
-const AUDIT_SCHEMA_VERSION = 2;
+const AUDIT_SCHEMA_VERSION = 3;
 export const ACTIVITY_INTEGRITY_MAX_ACCEPTANCE_WINDOW_MS = 24 * 60 * 60 * 1_000;
 const postgresUuidSchema = z
   .string()
@@ -95,6 +95,7 @@ const capturedDerivedRowsSchema = {
   groupRowsAfter: z.array(clickHouseGroupRowSchema),
   dedupedRowsAfter: z.array(clickHouseDedupedActivityRowSchema),
   memberRowsAfter: z.array(clickHouseDerivedMemberRowSchema),
+  sensorSampleRowsAfter: z.array(clickHouseDerivedActivityRowSchema),
   sensorSummaryRowsAfter: z.array(clickHouseDerivedActivityRowSchema),
   summaryRowsAfter: z.array(clickHouseDerivedActivityRowSchema),
   componentsAfter: z.array(componentSchema),
@@ -135,6 +136,7 @@ const auditArtifactSchema = z.object({
   groupRowsBefore: z.array(clickHouseGroupRowSchema),
   dedupedRowsBefore: z.array(clickHouseDedupedActivityRowSchema),
   memberRowsBefore: z.array(clickHouseDerivedMemberRowSchema),
+  sensorSampleRowsBefore: z.array(clickHouseDerivedActivityRowSchema),
   sensorSummaryRowsBefore: z.array(clickHouseDerivedActivityRowSchema),
   summaryRowsBefore: z.array(clickHouseDerivedActivityRowSchema),
   componentsBefore: z.array(componentSchema),
@@ -303,6 +305,7 @@ function recoveryArtifactData(artifact: AuditArtifactWithoutChecksum | AuditArti
     groupRowsBefore: artifact.groupRowsBefore,
     dedupedRowsBefore: artifact.dedupedRowsBefore,
     memberRowsBefore: artifact.memberRowsBefore,
+    sensorSampleRowsBefore: artifact.sensorSampleRowsBefore,
     sensorSummaryRowsBefore: artifact.sensorSummaryRowsBefore,
     summaryRowsBefore: artifact.summaryRowsBefore,
     componentsBefore: artifact.componentsBefore,
@@ -523,6 +526,7 @@ function capturedDerivedRows(snapshot: DerivedSnapshot) {
     groupRowsAfter: snapshot.groupRows,
     dedupedRowsAfter: snapshot.dedupedRows,
     memberRowsAfter: snapshot.memberRows,
+    sensorSampleRowsAfter: snapshot.sensorSampleRows,
     sensorSummaryRowsAfter: snapshot.sensorSummaryRows,
     summaryRowsAfter: snapshot.summaryRows,
     componentsAfter: snapshot.components,
@@ -586,6 +590,7 @@ async function repairActivityDataIntegrityWithLease(
     groupRowsBefore: before.groupRows,
     dedupedRowsBefore: before.dedupedRows,
     memberRowsBefore: before.memberRows,
+    sensorSampleRowsBefore: before.sensorSampleRows,
     sensorSummaryRowsBefore: before.sensorSummaryRows,
     summaryRowsBefore: before.summaryRows,
     componentsBefore: before.components,
@@ -746,6 +751,7 @@ interface CapturedPostState {
   groupRowsAfter: DerivedSnapshot["groupRows"];
   dedupedRowsAfter: DerivedSnapshot["dedupedRows"];
   memberRowsAfter: DerivedSnapshot["memberRows"];
+  sensorSampleRowsAfter: DerivedSnapshot["sensorSampleRows"];
   sensorSummaryRowsAfter: DerivedSnapshot["sensorSummaryRows"];
   summaryRowsAfter: DerivedSnapshot["summaryRows"];
 }
@@ -769,6 +775,7 @@ function addSnapshotActivityIds(activityIds: Set<string>, snapshot: CapturedPost
     activityIds.add(row.activity_id);
     activityIds.add(row.member_activity_id);
   }
+  for (const row of snapshot.sensorSampleRowsAfter) activityIds.add(row.activity_id);
   for (const row of snapshot.sensorSummaryRowsAfter) activityIds.add(row.activity_id);
   for (const row of snapshot.summaryRowsAfter) activityIds.add(row.activity_id);
 }
@@ -781,6 +788,7 @@ function affectedArtifactActivityIds(artifact: AuditArtifact): string[] {
     groupRowsAfter: artifact.groupRowsBefore,
     dedupedRowsAfter: artifact.dedupedRowsBefore,
     memberRowsAfter: artifact.memberRowsBefore,
+    sensorSampleRowsAfter: artifact.sensorSampleRowsBefore,
     sensorSummaryRowsAfter: artifact.sensorSummaryRowsBefore,
     summaryRowsAfter: artifact.summaryRowsBefore,
   });

@@ -67,6 +67,7 @@ function compatibilitySnapshot(
     groupRows: [],
     dedupedRows: deduped,
     memberRows: [],
+    sensorSampleRows: [],
     sensorSummaryRows: [],
     summaryRows: [],
     components: [],
@@ -85,6 +86,7 @@ describe("snapshotDerivedRows", () => {
       groupRows: [],
       dedupedRows: [],
       memberRows: [],
+      sensorSampleRows: [],
       sensorSummaryRows: [],
       summaryRows: [],
       components: [],
@@ -278,6 +280,63 @@ describe("snapshotDerivedRows", () => {
     expect(snapshot.activityIds).toEqual([activityA, activityC]);
     expect(snapshot.sourceRows).toEqual([sourceRowA, sourceRows[2]]);
   });
+
+  it("does not exclude deleted source endpoints from rollback snapshots", async () => {
+    const queries: string[] = [];
+    const client = {
+      query: vi.fn(async ({ query }: { query: string }) => {
+        queries.push(query);
+        return { json: async () => [] };
+      }),
+    };
+
+    await snapshotDerivedRows(client, userId, [activityA], true);
+
+    const matchQuery = queries.find((query) => query.includes("activity_duplicate_matches"));
+    const groupQuery = queries.find((query) => query.includes("activity_duplicate_groups"));
+    expect(matchQuery).not.toContain("left_source.is_deleted = 0");
+    expect(matchQuery).not.toContain("right_source.is_deleted = 0");
+    expect(groupQuery).not.toContain("selected_source.is_deleted = 0");
+    expect(groupQuery).not.toContain("source_records.is_deleted = 0");
+  });
+
+  it("captures activity sensor samples for the rebuilt canonical activity", async () => {
+    const sample = {
+      activity_id: activityA,
+      user_id: userId,
+      refresh_version: "13",
+      is_deleted: 0,
+    };
+    const client = {
+      query: vi.fn(async ({ query }: { query: string }) => {
+        if (query.includes("deduped_activities")) {
+          return {
+            json: async () => [
+              {
+                activity_id: activityA,
+                user_id: userId,
+                provider_id: "wahoo",
+                canonical_type: "cycling",
+                member_activity_ids: [activityA],
+                refresh_version: "12",
+                is_deleted: 0,
+              },
+            ],
+          };
+        }
+        if (query.includes("activity_sensor_sample")) return { json: async () => [sample] };
+        if (query.includes("FROM analytics.activity_source_records AS source_records FINAL")) {
+          return { json: async () => [sourceRowA] };
+        }
+        return { json: async () => [] };
+      }),
+    };
+
+    const snapshot = await snapshotDerivedRows(client, userId, [activityA]);
+
+    expect(snapshot).toHaveProperty("sensorSampleRows", [sample]);
+    expect(snapshot.highestVersion).toBe("13");
+  });
 });
 
 describe("UInt64 parsing", () => {
@@ -412,6 +471,9 @@ describe("assertActivityIntegrityRebuild", () => {
       refresh_version: refreshedVersion,
       is_deleted: 0,
     })),
+    sensorSampleRows: [
+      { activity_id: activityA, user_id: userId, refresh_version: refreshedVersion, is_deleted: 0 },
+    ],
     sensorSummaryRows: [
       { activity_id: activityA, user_id: userId, refresh_version: refreshedVersion, is_deleted: 0 },
     ],
@@ -425,6 +487,19 @@ describe("assertActivityIntegrityRebuild", () => {
 
   it("accepts fresh, internally consistent rows from every captured model", () => {
     expect(() => assertActivityIntegrityRebuild(before, after)).not.toThrow();
+  });
+
+  it("rejects stale activity sensor samples", () => {
+    const staleSensorSampleSnapshot = {
+      ...after,
+      sensorSampleRows: [
+        { activity_id: activityA, user_id: userId, refresh_version: "12", is_deleted: 0 },
+      ],
+    };
+
+    expect(() => assertActivityIntegrityRebuild(before, staleSensorSampleSnapshot)).toThrow(
+      "activity integrity rebuild left stale activity_sensor_sample rows",
+    );
   });
 
   it.each([

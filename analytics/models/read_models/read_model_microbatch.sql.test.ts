@@ -265,6 +265,11 @@ describe("production analytics read-model build", () => {
     expect(compactMatchesSql).toContain(
       "right_activity.canonical_type = 'other' AND left_activity.canonical_type != 'other'",
     );
+    expect(
+      compactMatchesSql.split(
+        "left_activity.activity_id IN {{ activity_refresh_ids() }} OR right_activity.activity_id IN {{ activity_refresh_ids() }}",
+      ),
+    ).toHaveLength(3);
 
     expect(groupsSql).toContain("materialized='incremental'");
     expect(groupsSql).toContain("ref('activity_source_records')");

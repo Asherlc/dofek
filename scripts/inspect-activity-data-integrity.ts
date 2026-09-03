@@ -288,7 +288,7 @@ export function parseInspectionArgs(args: readonly string[]): ActivityIntegrityI
   });
   return inspectionInputSchema.parse({
     userId: values["user-id"],
-    activityIds: values["activity-id"],
+    activityIds: values["activity-id"] ?? [],
   });
 }
 

@@ -21,6 +21,12 @@ describe("parseInspectionArgs", () => {
       "--activity-id must be a hexadecimal UUID prefix",
     );
   });
+
+  it("reports the required activity option when none is provided", () => {
+    expect(() => parseInspectionArgs([`--user-id=${testUserId}`])).toThrow(
+      "At least one non-empty --activity-id is required",
+    );
+  });
 });
 
 describe("inspectActivityDataIntegrity", () => {

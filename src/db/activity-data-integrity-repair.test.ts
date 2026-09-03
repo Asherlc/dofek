@@ -127,6 +127,11 @@ const priorSensorSummaryRows = [
   },
 ];
 
+const priorSensorSampleRows = priorSensorSummaryRows.map((row) => ({
+  ...row,
+  channel: "power",
+  recorded_at: "2026-09-01 15:00:00.000000",
+}));
 const priorSummaryRows = priorSensorSummaryRows.map((row) => ({ ...row }));
 const refreshedDedupedRows = [
   {
@@ -358,6 +363,7 @@ function createClickHouse(
     matches?: object[][];
     deduped?: object[][];
     members?: object[][];
+    sensorSamples?: object[][];
     sensors?: object[][];
     summaries?: object[][];
   } = {},
@@ -411,6 +417,8 @@ function createClickHouse(
         return queryRows(rows.members ? (rows.members.shift() ?? []) : defaultMemberRows());
       if (query.includes("deduped_activities"))
         return queryRows(rows.deduped ? (rows.deduped.shift() ?? []) : defaultDedupedRows());
+      if (query.includes("activity_sensor_sample"))
+        return queryRows(rows.sensorSamples?.shift() ?? []);
       if (query.includes("activity_sensor_summary_rows"))
         return queryRows(rows.sensors?.shift() ?? []);
       if (query.includes("activity_summary_rows")) {
@@ -476,6 +484,7 @@ describe("repairActivityDataIntegrity", () => {
       matches: [priorMatchRows],
       deduped: [priorDedupedRows],
       members: [priorMemberRows],
+      sensorSamples: [priorSensorSampleRows],
       sensors: [priorSensorSummaryRows],
       summaries: [priorSummaryRows],
     });
@@ -507,7 +516,7 @@ describe("repairActivityDataIntegrity", () => {
 
     const artifact = JSON.parse(await readFile(result.artifactPath, "utf8"));
     expect(artifact).toMatchObject({
-      schemaVersion: 2,
+      schemaVersion: 3,
       runId,
       phase: "dry_run",
       rollbackEligibility: "not_applicable",
@@ -541,6 +550,7 @@ describe("repairActivityDataIntegrity", () => {
         },
       ],
       matchRowsBefore: priorMatchRows,
+      sensorSampleRowsBefore: priorSensorSampleRows,
       sensorSummaryRowsBefore: priorSensorSummaryRows,
     });
     expect(await readFile(result.artifactPath, "utf8")).toMatch(/\n$/);
@@ -1155,7 +1165,7 @@ describe("repairActivityDataIntegrity", () => {
     });
   });
 
-  it("fails verification when a downstream model returns stale rows after dbt succeeds", async () => {
+  it("fails verification when activity sensor samples remain stale after dbt succeeds", async () => {
     const directory = await artifactDirectory();
     const execute = vi.fn(async (query: SQL) => {
       const rendered = dialect.sqlToQuery(query);
@@ -1169,8 +1179,9 @@ describe("repairActivityDataIntegrity", () => {
       [],
       {
         mirror: [[repairedSourceRow]],
-        deduped: [priorDedupedRows, priorDedupedRows],
+        deduped: [priorDedupedRows, refreshedDedupedRows],
         members: [priorMemberRows, refreshedMemberRows],
+        sensorSamples: [priorSensorSampleRows, priorSensorSampleRows],
       },
     );
 
@@ -1189,7 +1200,7 @@ describe("repairActivityDataIntegrity", () => {
         },
         repairDependencies(directory),
       ),
-    ).rejects.toThrow("activity integrity rebuild left stale deduped_activities rows");
+    ).rejects.toThrow("activity integrity rebuild left stale activity_sensor_sample rows");
   });
 
   it("requires bounded inputs and explicit acceptance ownership for writes", async () => {

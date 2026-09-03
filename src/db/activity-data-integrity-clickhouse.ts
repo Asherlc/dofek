@@ -100,6 +100,7 @@ export interface DerivedSnapshot {
   groupRows: ClickHouseGroupRow[];
   dedupedRows: ClickHouseDedupedActivityRow[];
   memberRows: ClickHouseDerivedMemberRow[];
+  sensorSampleRows: ClickHouseDerivedActivityRow[];
   sensorSummaryRows: ClickHouseDerivedActivityRow[];
   summaryRows: ClickHouseDerivedActivityRow[];
   components: Array<z.infer<typeof componentSchema>>;
@@ -164,6 +165,7 @@ export async function snapshotDerivedRows(
       groupRows: [],
       dedupedRows: [],
       memberRows: [],
+      sensorSampleRows: [],
       sensorSummaryRows: [],
       summaryRows: [],
       components: [],
@@ -186,11 +188,11 @@ FROM analytics.activity_duplicate_matches AS duplicate_matches FINAL
 INNER JOIN analytics.activity_source_records AS left_source FINAL
   ON left_source.activity_id = duplicate_matches.activity_id
   AND left_source.user_id = {userId:UUID}
-  AND left_source.is_deleted = 0
+  ${includeDeleted ? "" : "AND left_source.is_deleted = 0"}
 INNER JOIN analytics.activity_source_records AS right_source FINAL
   ON right_source.activity_id = duplicate_matches.duplicate_activity_id
   AND right_source.user_id = {userId:UUID}
-  AND right_source.is_deleted = 0
+  ${includeDeleted ? "" : "AND right_source.is_deleted = 0"}
 WHERE (
     duplicate_matches.activity_id IN {activityIds:Array(UUID)}
     OR duplicate_matches.duplicate_activity_id IN {activityIds:Array(UUID)}
@@ -209,7 +211,7 @@ ORDER BY duplicate_matches.activity_id, duplicate_matches.duplicate_activity_id`
   INNER JOIN analytics.activity_source_records AS selected_source FINAL
     ON selected_source.activity_id = selected_duplicate_groups.activity_id
     AND selected_source.user_id = {userId:UUID}
-    AND selected_source.is_deleted = 0
+    ${includeDeleted ? "" : "AND selected_source.is_deleted = 0"}
   WHERE selected_duplicate_groups.activity_id IN {activityIds:Array(UUID)}
     ${lifecycleFilter}
 )
@@ -222,7 +224,7 @@ FROM analytics.activity_duplicate_groups AS duplicate_groups FINAL
 INNER JOIN analytics.activity_source_records AS source_records FINAL
   ON source_records.activity_id = duplicate_groups.activity_id
   AND source_records.user_id = {userId:UUID}
-  AND source_records.is_deleted = 0
+  ${includeDeleted ? "" : "AND source_records.is_deleted = 0"}
 WHERE (
     duplicate_groups.activity_id IN {activityIds:Array(UUID)}
     OR duplicate_groups.group_id IN (SELECT group_id FROM selected_groups)
@@ -313,6 +315,17 @@ WHERE summary.user_id = {userId:UUID}
 ORDER BY summary.activity_id`,
     { userId, canonicalActivityIds },
   );
+  const sensorSampleRows = await queryClickHouseRows(
+    client,
+    clickHouseDerivedActivityRowSchema,
+    `SELECT sample.* REPLACE(toString(sample.refresh_version) AS refresh_version)
+FROM analytics.activity_sensor_sample AS sample FINAL
+WHERE sample.user_id = {userId:UUID}
+  AND sample.activity_id IN {canonicalActivityIds:Array(UUID)}
+  ${includeDeleted ? "" : "AND sample.is_deleted = 0"}
+ORDER BY sample.activity_id, sample.channel, sample.recorded_at`,
+    { userId, canonicalActivityIds },
+  );
   const summaryRows = await queryClickHouseRows(
     client,
     clickHouseDerivedActivityRowSchema,
@@ -330,6 +343,7 @@ ORDER BY summary.activity_id`,
     groupRows,
     dedupedRows,
     memberRows,
+    sensorSampleRows,
     sensorSummaryRows,
     summaryRows,
     components: buildComponents(groupRows),
@@ -339,6 +353,7 @@ ORDER BY summary.activity_id`,
       ...groupRows,
       ...dedupedRows,
       ...memberRows,
+      ...sensorSampleRows,
       ...sensorSummaryRows,
       ...summaryRows,
     ]),
@@ -392,6 +407,7 @@ export function assertActivityIntegrityRebuild(
     ["activity_duplicate_groups", after.groupRows],
     ["deduped_activities", after.dedupedRows],
     ["deduped_activity_members", after.memberRows],
+    ["activity_sensor_sample", after.sensorSampleRows],
     ["activity_sensor_summary_rows", after.sensorSummaryRows],
     ["activity_summary_rows", after.summaryRows],
   ] as const;
@@ -431,7 +447,7 @@ export function assertActivityIntegrityRebuild(
 
   const canonicalIds = new Set(after.dedupedRows.map((row) => row.activity_id));
   if (
-    [...after.sensorSummaryRows, ...after.summaryRows].some(
+    [...after.sensorSampleRows, ...after.sensorSummaryRows, ...after.summaryRows].some(
       (row) => !canonicalIds.has(row.activity_id),
     )
   ) {
