@@ -7,7 +7,12 @@ import { z } from "zod";
 import { makeMockSensorStore } from "../routers/test-helpers.ts";
 import { createMcpRouter } from "./route.ts";
 import { validateMcpToken } from "./token-repository.ts";
-import { activitySummaryOutputSchema, providersOutputSchema } from "./tool-output.ts";
+import {
+  activitySummaryOutputSchema,
+  healthTrendsOutputSchema,
+  providersOutputSchema,
+  searchActivitiesOutputSchema,
+} from "./tool-output.ts";
 import { createDofekMcpServer } from "./tools.ts";
 
 const toolTestMocks = vi.hoisted(() => {
@@ -365,6 +370,76 @@ function makeActivitySearchItem(overrides: Record<string, unknown> = {}) {
     timezone: "UTC",
     ...overrides,
   };
+}
+
+function makeActivityMapPreview() {
+  return {
+    height: 576,
+    routePath: [
+      { x: 120.5, y: 300.25 },
+      { x: 640.75, y: 180.5 },
+    ],
+    tiles: [
+      {
+        height: 256,
+        url: "https://tile.openstreetmap.org/13/1310/3166.png",
+        width: 256,
+        x: 0,
+        y: 0,
+      },
+    ],
+    width: 1024,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function resolveJsonSchemaReference(
+  root: Record<string, unknown>,
+  schema: Record<string, unknown>,
+): Record<string, unknown> {
+  const reference = schema.$ref;
+  if (typeof reference !== "string" || !reference.startsWith("#/")) return schema;
+  const resolved = reference
+    .slice(2)
+    .split("/")
+    .map((segment) => segment.replaceAll("~1", "/").replaceAll("~0", "~"))
+    .reduce<unknown>((value, segment) => (isRecord(value) ? value[segment] : undefined), root);
+  return isRecord(resolved) ? resolved : schema;
+}
+
+function jsonSchemaVariants(
+  root: Record<string, unknown>,
+  schema: Record<string, unknown>,
+): Record<string, unknown>[] {
+  const resolved = resolveJsonSchemaReference(root, schema);
+  return [
+    resolved,
+    ...["anyOf", "oneOf", "allOf"].flatMap((keyword) => {
+      const alternatives = resolved[keyword];
+      return Array.isArray(alternatives)
+        ? alternatives.flatMap((alternative) =>
+            isRecord(alternative) ? jsonSchemaVariants(root, alternative) : [],
+          )
+        : [];
+    }),
+  ];
+}
+
+function jsonSchemaAtPath(root: Record<string, unknown>, path: readonly string[]): unknown {
+  let current: Record<string, unknown> = root;
+  for (const segment of path) {
+    const next = jsonSchemaVariants(root, current).flatMap((variant) => {
+      if (segment === "[]") return isRecord(variant.items) ? [variant.items] : [];
+      const properties = variant.properties;
+      return isRecord(properties) && isRecord(properties[segment]) ? [properties[segment]] : [];
+    })[0];
+    if (!next) return undefined;
+    current = next;
+  }
+  return current;
 }
 
 function findListedTool(
@@ -757,6 +832,92 @@ describe("createMcpRouter", () => {
       expect(findListedTool(tools, name).annotations).toMatchObject({ readOnlyHint: true });
     }
     expect(findListedTool(tools, "start_provider_sync").annotations?.readOnlyHint).not.toBe(true);
+  });
+
+  it("advertises concrete sentinel properties for every output schema", async () => {
+    authorizeMcpToken();
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: { id: 2, jsonrpc: "2.0", method: "tools/list" },
+    });
+    const tools = toolListResponseSchema.parse(parseJsonRpcEvent(response.text)).result.tools;
+    const sentinels = [
+      { name: "get_daily_health_summary", path: ["result", "source_providers"] },
+      {
+        name: "get_health_trends",
+        path: [
+          "result",
+          "series",
+          "[]",
+          "points",
+          "[]",
+          "baseline_relative",
+          "baseline",
+          "standardDeviation",
+        ],
+      },
+      { name: "get_data_coverage", path: ["result", "[]", "total_days_observed"] },
+      {
+        name: "get_training_load",
+        path: ["result", "rows", "[]", "coverage", "chronic_window_days"],
+      },
+      {
+        name: "get_cycling_performance",
+        path: ["result", "summary", "elevation_gain", "coverage", "activities_with_elevation"],
+      },
+      { name: "render_health_explorer", path: ["coverage", "by_metric"] },
+      {
+        name: "get_sleep_summary",
+        path: ["result", "[]", "local_time_context", "source"],
+      },
+      {
+        name: "search_activities",
+        path: ["result", "items", "[]", "location", "mapPreview", "routePath"],
+      },
+      {
+        name: "get_activity_summary",
+        path: ["result", "summaries", "[]", "power_by_modality", "indoor", "activities_with_power"],
+      },
+      {
+        name: "get_finger_loading",
+        path: ["result", "[]", "effective_load_formula"],
+      },
+      {
+        name: "get_nutrition_summary",
+        path: ["result", "[]", "excluded_providers"],
+      },
+      {
+        name: "get_body_metrics",
+        path: ["result", "[]", "source_provider_by_metric", "weight_kg"],
+      },
+      {
+        name: "get_subjective_timeline",
+        path: ["result", "injuries", "[]", "resolved_date"],
+      },
+      { name: "list_providers", path: ["result", "[]", "sync_health", "last_success"] },
+      { name: "start_provider_sync", path: ["result", "queueName"] },
+      {
+        name: "get_activity_details",
+        path: ["result", "activity", "source_external_ids"],
+      },
+      { name: "get_activity_streams", path: ["result", "points", "[]", "recorded_at"] },
+      {
+        name: "get_climbing_sessions",
+        path: ["result", "aggregates", "grade_distribution"],
+      },
+      {
+        name: "get_strength_sessions",
+        path: ["result", "aggregates", "by_muscle_group"],
+      },
+      { name: "get_supplements", path: ["result", "[]", "meal"] },
+    ] as const;
+
+    expect(tools).toHaveLength(sentinels.length);
+    for (const { name, path } of sentinels) {
+      const outputSchema = findListedTool(tools, name).outputSchema;
+      expect.soft(jsonSchemaAtPath(outputSchema, path), `${name}: ${path.join(".")}`).toBeDefined();
+    }
   });
 
   it("returns object-root structured content for JSON tool calls", async () => {
@@ -1347,7 +1508,11 @@ describe("createMcpRouter", () => {
       items: [
         {
           ...makeActivitySearchItem(),
-          location: { centroidLat: 37.8, centroidLng: -122.4, mapPreview: { tiles: ["tile"] } },
+          location: {
+            centroidLat: 37.8,
+            centroidLng: -122.4,
+            mapPreview: makeActivityMapPreview(),
+          },
         },
       ],
       totalCount: 1,
@@ -1361,6 +1526,64 @@ describe("createMcpRouter", () => {
     expect(parseToolCallText(response.text)).toMatchObject({
       items: [{ location: { centroidLat: 37.8, centroidLng: -122.4 }, name: "Morning Ride" }],
       totalCount: 1,
+    });
+  });
+
+  it("returns a complete map preview when activity search requests it", async () => {
+    authorizeMcpToken();
+    toolTestMocks.activitySearch.mockResolvedValue({
+      items: [
+        {
+          ...makeActivitySearchItem(),
+          location: {
+            centroidLat: 37.8,
+            centroidLng: -122.4,
+            mapPreview: makeActivityMapPreview(),
+          },
+        },
+      ],
+      totalCount: 1,
+    });
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("search_activities", {
+        include: ["mapPreview"],
+        to: "2026-05-18",
+      }),
+    });
+    const structuredContent = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text)).result
+      .structuredContent;
+
+    expect(searchActivitiesOutputSchema.parse(structuredContent)).toMatchObject({
+      result: {
+        items: [
+          {
+            location: {
+              centroidLat: 37.8,
+              centroidLng: -122.4,
+              mapPreview: {
+                height: 576,
+                routePath: [
+                  { x: 120.5, y: 300.25 },
+                  { x: 640.75, y: 180.5 },
+                ],
+                tiles: [
+                  {
+                    height: 256,
+                    url: "https://tile.openstreetmap.org/13/1310/3166.png",
+                    width: 256,
+                    x: 0,
+                    y: 0,
+                  },
+                ],
+                width: 1024,
+              },
+            },
+          },
+        ],
+        totalCount: 1,
+      },
     });
   });
 
@@ -1771,6 +1994,45 @@ describe("createMcpRouter", () => {
         metrics: ["hrv", "resting_hr", "sleep_efficiency"],
         start_date: "2026-05-19",
       }),
+    });
+
+    const structuredContent = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text)).result
+      .structuredContent;
+    expect(healthTrendsOutputSchema.parse(structuredContent)).toMatchObject({
+      result: {
+        series: expect.arrayContaining([
+          expect.objectContaining({
+            metric: "hrv",
+            points: [
+              {
+                baseline_relative: {
+                  baseline: {
+                    coverage: 0.8,
+                    mean: 60,
+                    sampleCount: 24,
+                    standardDeviation: 6,
+                    windowDays: 30,
+                    zScore: 2,
+                  },
+                  comparison: {
+                    baselineDays: 28,
+                    baselineMean: 61,
+                    delta: 5,
+                    direction: "increasing",
+                    recentDays: 7,
+                    recentMean: 66,
+                  },
+                  label: "Heart Rate Variability (HRV)",
+                  metric: "hrv",
+                  value: 72,
+                },
+                key: "2026-05-19",
+                value: 72,
+              },
+            ],
+          }),
+        ]),
+      },
     });
 
     expect(parseToolCallText(response.text)).toMatchObject({

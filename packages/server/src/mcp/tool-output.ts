@@ -1,6 +1,8 @@
 import { healthMetricSchema } from "@dofek/mcp-contracts/health-explorer";
 import { CLIMBING_GRADE_SYSTEMS } from "@dofek/training/climbing-grades";
 import { z } from "zod";
+import { baselineRelativeMetricSchema } from "../contracts/baseline-relative-metrics.ts";
+import { osmTilePreviewSchema } from "../lib/osm-tile.ts";
 import {
   fingerLoadingExerciseSchema,
   fingerLoadingGripPositionSchema,
@@ -44,7 +46,7 @@ export const dailyHealthSummaryOutputSchema = jsonResult(dailyMetricsSchema.null
 const healthTrendPointSchema = z.object({
   key: z.string(),
   value: nullableNumber,
-  baseline_relative: z.unknown().nullable(),
+  baseline_relative: baselineRelativeMetricSchema.nullable(),
 });
 const healthTrendMetricSchema = z.object({
   metric: healthMetricSchema,
@@ -159,7 +161,7 @@ const activityListItemSchema = z.object({
     .object({
       centroidLat: z.number(),
       centroidLng: z.number(),
-      mapPreview: z.json().optional(),
+      mapPreview: osmTilePreviewSchema.optional(),
     })
     .nullable()
     .optional(),

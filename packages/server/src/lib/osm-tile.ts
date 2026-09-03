@@ -6,6 +6,8 @@
  *   y = floor((1 - ln(tan(latRad) + sec(latRad)) / π) / 2 * 2^z)
  */
 
+import { z } from "zod";
+
 const OSM_TILE_HOST = "https://tile.openstreetmap.org";
 const WEB_MERCATOR_MAX_LATITUDE = 85.05112878;
 const DEFAULT_ROUTE_PREVIEW_ZOOM = 19;
@@ -26,25 +28,25 @@ export interface LatLngPoint {
   lng: number;
 }
 
-export interface RoutePathPoint {
-  x: number;
-  y: number;
-}
+const routePathPointSchema = z.object({ x: z.number(), y: z.number() });
+const osmTilePreviewTileSchema = z.object({
+  url: z.string(),
+  x: z.number(),
+  y: z.number(),
+  width: z.number(),
+  height: z.number(),
+});
 
-export interface OsmTilePreviewTile {
-  url: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
+export const osmTilePreviewSchema = z.object({
+  width: z.number(),
+  height: z.number(),
+  tiles: z.array(osmTilePreviewTileSchema),
+  routePath: z.array(routePathPointSchema).nullable(),
+});
 
-export interface OsmTilePreview {
-  width: number;
-  height: number;
-  tiles: OsmTilePreviewTile[];
-  routePath: RoutePathPoint[] | null;
-}
+export type RoutePathPoint = z.infer<typeof routePathPointSchema>;
+export type OsmTilePreviewTile = z.infer<typeof osmTilePreviewTileSchema>;
+export type OsmTilePreview = z.infer<typeof osmTilePreviewSchema>;
 
 interface ProjectedTilePoint {
   tileX: number;
