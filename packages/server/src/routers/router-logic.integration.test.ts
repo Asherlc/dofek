@@ -456,66 +456,6 @@ describe("Router transformation logic", () => {
       ).toBeUndefined();
     });
 
-    it("refreshes menstrual cycle queries after logging a period", async () => {
-      const today = new Date().toISOString().slice(0, 10);
-      await queryCache.invalidateAll();
-      await testCtx.db.execute(
-        sql`DELETE FROM fitness.menstrual_period WHERE user_id = ${TEST_USER_ID}`,
-      );
-
-      const { result: historyBefore } = await query("menstrualCycle.history", { months: 1 });
-      expect(historyBefore.result.data).toHaveLength(0);
-      const { result: phaseBefore } = await query("menstrualCycle.currentPhase");
-      expect(phaseBefore.result.data.phase).toBeNull();
-      expect(phaseBefore.result.data.estimate).toBeNull();
-
-      const { status } = await mutate("menstrualCycle.logPeriod", {
-        startDate: today,
-        notes: "Cache invalidation",
-      });
-      expect(status).toBe(200);
-
-      const { result: historyAfter } = await query("menstrualCycle.history", { months: 1 });
-      expect(historyAfter.result.data).toHaveLength(1);
-      const { result: phaseAfter } = await query("menstrualCycle.currentPhase");
-      expect(phaseAfter.result.data).toMatchObject({
-        phase: null,
-        estimate: null,
-        availability: {
-          status: "sparse-history",
-          label:
-            "Not enough recorded history for a phase estimate. At least 3 completed cycles are needed.",
-        },
-      });
-    });
-
-    it("refreshes breathwork history after logging a session", async () => {
-      const startedAt = new Date().toISOString();
-      await queryCache.invalidateAll();
-      await testCtx.db.execute(
-        sql`DELETE FROM fitness.breathwork_session
-            WHERE user_id = ${TEST_USER_ID} AND notes = 'Cache invalidation'`,
-      );
-
-      const { result: historyBefore } = await query("breathwork.history", { days: 1 });
-      expect(historyBefore.result.data).toHaveLength(0);
-
-      const { status, result: createdResult } = await mutate("breathwork.logSession", {
-        techniqueId: "box-breathing",
-        rounds: 4,
-        durationSeconds: 64,
-        startedAt,
-        notes: "Cache invalidation",
-      });
-      expect(status).toBe(200);
-      const sessionId = createdResult.result.data.id;
-
-      const { result: historyAfter } = await query("breathwork.history", { days: 1 });
-      expect(
-        historyAfter.result.data.find((session: { id: string }) => session.id === sessionId),
-      ).toBeDefined();
-    });
-
     it("refreshes personalization status after reset", async () => {
       await queryCache.invalidateAll();
       await savePersonalizedParams(testCtx.db, TEST_USER_ID, {

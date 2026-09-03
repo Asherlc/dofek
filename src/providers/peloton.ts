@@ -27,6 +27,7 @@ import { AccessTokenExpiredError } from "./auth-errors.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
+export type { PelotonPerformanceGraph, PelotonWorkout };
 export {
   mapFitnessDiscipline,
   PelotonAuthenticationError,
@@ -37,7 +38,6 @@ export {
   pelotonAutomatedLogin,
   pelotonOAuthConfig,
 };
-export type { PelotonPerformanceGraph, PelotonWorkout };
 
 async function requestPeloton<T>(request: () => Promise<T>): Promise<T> {
   try {

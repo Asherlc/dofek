@@ -523,7 +523,7 @@ describe("stravaOAuthConfig", () => {
     process.env.STRAVA_CLIENT_SECRET = "test-secret";
     delete process.env.OAUTH_REDIRECT_URI;
     const config = stravaOAuthConfig();
-    expect(config?.redirectUri).toBe("https://dofek.asherlc.com/callback");
+    expect(config?.redirectUri).toBe("https://dofek.fit/callback");
   });
 });
 
@@ -576,7 +576,7 @@ describe("StravaProvider.authSetup()", () => {
     expect(setup.oauthConfig?.authorizeUrl).toBe("https://www.strava.com/oauth/authorize");
     expect(setup.oauthConfig?.tokenUrl).toBe("https://www.strava.com/oauth/token");
     expect(setup.oauthConfig?.scopes).toEqual(["read", "activity:read_all"]);
-    expect(setup.reconnectStrategy).toBe("revoke-then-replace");
+    expect(setup.reconnectStrategy).toBeUndefined();
   });
 
   it("revokes the Strava grant with the current idempotent endpoint", async () => {

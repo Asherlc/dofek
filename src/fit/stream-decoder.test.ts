@@ -18,7 +18,7 @@ interface SimulatedDecoder {
     stdin: Writable;
     stdout: PassThrough;
     stderr: PassThrough;
-    kill: ReturnType<typeof vi.fn>;
+    kill: CallableVitestMock;
   };
   finish: (code?: number) => void;
   send: (message: unknown) => void;

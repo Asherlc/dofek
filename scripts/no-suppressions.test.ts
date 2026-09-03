@@ -83,10 +83,9 @@ describe("repository suppression policy", () => {
     }
   });
 
-  it("accepts forbidden comments only in generated route trees and the removal utility", () => {
+  it("accepts forbidden comments only in generated route trees", () => {
     const repositoryPath = createRepository({
       "packages/web/src/routeTree.gen.ts": `// ${forbiddenSuppressions[2]}\n`,
-      "scripts/fix-ts-expect-errors.ts": `// ${forbiddenSuppressions[1]}\n`,
       "src/valid.ts": "export const value = true;\n",
     });
 

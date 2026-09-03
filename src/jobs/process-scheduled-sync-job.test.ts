@@ -5,12 +5,12 @@ import type { Database, SyncDatabase } from "../db/index.ts";
 const providerQueues = new Map<
   string,
   {
-    add: ReturnType<typeof vi.fn>;
-    getJobs: ReturnType<typeof vi.fn>;
-    getJob: ReturnType<typeof vi.fn>;
-    getActive: ReturnType<typeof vi.fn>;
-    getWaiting: ReturnType<typeof vi.fn>;
-    getDelayed: ReturnType<typeof vi.fn>;
+    add: CallableVitestMock;
+    getJobs: CallableVitestMock;
+    getJob: CallableVitestMock;
+    getActive: CallableVitestMock;
+    getWaiting: CallableVitestMock;
+    getDelayed: CallableVitestMock;
   }
 >();
 const mockLoggerInfo = vi.fn();
@@ -151,6 +151,7 @@ describe("processScheduledSyncJob", () => {
         userId: "user-1",
         providerId: "strava",
         sinceDays: 1,
+        origin: "scheduled",
       },
       expect.objectContaining({ attempts: 288 }),
     );
@@ -162,6 +163,7 @@ describe("processScheduledSyncJob", () => {
         userId: "user-2",
         providerId: "wahoo",
         sinceDays: 1,
+        origin: "scheduled",
       },
       expect.objectContaining({ attempts: 288 }),
     );
@@ -173,6 +175,7 @@ describe("processScheduledSyncJob", () => {
         userId: "user-3",
         providerId: "whoop",
         sinceDays: 30,
+        origin: "scheduled",
       },
       expect.objectContaining({ attempts: 288 }),
     );

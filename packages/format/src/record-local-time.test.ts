@@ -9,6 +9,22 @@ import {
 } from "./record-local-time.ts";
 
 describe("resolveRecordLocalTimeContext", () => {
+  it("derives offsets from a persisted user home timezone", () => {
+    expect(
+      resolveRecordLocalTimeContext({
+        startedAt: new Date("2026-09-01T14:55:54.000Z"),
+        endedAt: new Date("2026-09-01T15:25:54.000Z"),
+        timezone: "America/Los_Angeles",
+        source: "user_home_timezone",
+      }),
+    ).toEqual({
+      timezone: "America/Los_Angeles",
+      startUtcOffsetMinutes: -420,
+      endUtcOffsetMinutes: -420,
+      source: "user_home_timezone",
+    });
+  });
+
   it("resolves start and end independently when a session crosses daylight saving time", () => {
     expect(
       resolveRecordLocalTimeContext({
@@ -60,6 +76,19 @@ describe("resolveRecordLocalTimeContext", () => {
       }),
     ).toThrow("Unknown local-time context cannot include a timezone or UTC offset");
   });
+
+  it.each([{ startUtcOffsetMinutes: 0 }, { endUtcOffsetMinutes: 0 }])(
+    "rejects UTC offsets attached to the unknown source",
+    (offsets) => {
+      expect(() =>
+        resolveRecordLocalTimeContext({
+          startedAt: new Date("2026-01-01T00:00:00.000Z"),
+          source: "unknown",
+          ...offsets,
+        }),
+      ).toThrow("Unknown local-time context cannot include a timezone or UTC offset");
+    },
+  );
 
   it("rejects an invalid IANA timezone", () => {
     expect(() =>
@@ -265,6 +294,18 @@ describe("formatRecordLocalTime", () => {
         "en-US",
       ),
     ).toBe("--");
+  });
+
+  it("formats an unknown activity-local context in the viewer timezone when supplied", () => {
+    expect(
+      formatRecordLocalTime(
+        "2026-08-27T14:51:43.000Z",
+        localTimeContextUnknown(),
+        "start",
+        "en-US",
+        "America/Los_Angeles",
+      ),
+    ).toBe("7:51 AM");
   });
 
   it("returns a placeholder for invalid timestamps and timezones", () => {

@@ -82,6 +82,7 @@ interface MockProvider {
   authType: string;
   lastSyncedAt: string | null;
   importOnly: boolean;
+  description?: string;
   needsReauth?: boolean;
   pushOnly?: boolean;
   tokenAuth?: { label: string; instructionsUrl: string } | null;
@@ -794,6 +795,115 @@ describe("ProviderDetailPage import-only providers", () => {
     expect(pollSyncJob).not.toHaveBeenCalled();
   });
 
+  it("shows a provider-declared sync failure without starting job polling", async () => {
+    mockUseParams.mockReturnValue({ id: "wahoo" });
+    mockProviders.data = [
+      {
+        id: "wahoo",
+        name: "Wahoo",
+        authorized: true,
+        authType: "oauth",
+        lastSyncedAt: null,
+        importOnly: false,
+      },
+    ];
+    mockSyncMutation.mutateAsync.mockResolvedValue({
+      providerResults: [
+        {
+          providerId: "wahoo",
+          status: "failed",
+          message: "Wahoo authorization expired before sync could start.",
+        },
+      ],
+    });
+    const { pollSyncJob } = await import("../lib/poll-sync-job.ts");
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByText("Sync Last 7 Days"));
+    });
+
+    expect(screen.getByText("Wahoo authorization expired before sync could start.")).toBeTruthy();
+    expect(pollSyncJob).not.toHaveBeenCalled();
+  });
+
+  it("polls an already queued provider job through completion", async () => {
+    mockUseParams.mockReturnValue({ id: "wahoo" });
+    mockProviders.data = [
+      {
+        id: "wahoo",
+        name: "Wahoo",
+        authorized: true,
+        authType: "oauth",
+        lastSyncedAt: null,
+        importOnly: false,
+      },
+    ];
+    mockSyncMutation.mutateAsync.mockResolvedValue({
+      providerResults: [{ providerId: "wahoo", status: "alreadyQueued", jobId: "queued-job" }],
+    });
+    mockPollSyncJob.mockImplementationOnce(
+      async ({
+        updateState,
+        onComplete,
+      }: {
+        updateState: (
+          jobId: string,
+          state: { percentage: number; message?: string; status: string },
+        ) => void;
+        onComplete: () => void;
+      }) => {
+        updateState("queued-job", { percentage: 100, status: "done" });
+        onComplete();
+      },
+    );
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByText("Sync Last 7 Days"));
+    });
+
+    expect(mockPollSyncJob).toHaveBeenCalledOnce();
+    expect(screen.getByText("Sync complete")).toBeTruthy();
+  });
+
+  it("starts a full provider sync without a lookback range", async () => {
+    mockUseParams.mockReturnValue({ id: "wahoo" });
+    mockProviders.data = [
+      {
+        id: "wahoo",
+        name: "Wahoo",
+        authorized: true,
+        authType: "oauth",
+        lastSyncedAt: null,
+        importOnly: false,
+      },
+    ];
+    mockSyncMutation.mutateAsync.mockResolvedValue({
+      providerResults: [
+        {
+          providerId: "wahoo",
+          status: "skippedCooldown",
+          message: "Full sync is already current.",
+        },
+      ],
+    });
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Full Sync" }));
+    });
+
+    expect(mockSyncMutation.mutateAsync).toHaveBeenCalledWith({ providerId: "wahoo" });
+    expect(screen.getByText("Full sync is already current.")).toBeTruthy();
+  });
+
   it("invalidates processing status when a manual sync completes", async () => {
     mockUseParams.mockReturnValue({ id: "wahoo" });
     mockProviders.data = [
@@ -994,6 +1104,191 @@ describe("ProviderDetailPage import-only providers", () => {
     expect(screen.queryByText("Sync Dates")).toBeNull();
     expect(screen.queryByText("Disconnect")).toBeNull();
   });
+
+  it("shows a loading skeleton until the provider inventory is available", async () => {
+    mockProviders.data = undefined;
+    mockProviders.isLoading = true;
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    expect(document.querySelector(".animate-pulse")).toBeTruthy();
+    expect(screen.queryByText("Provider not found")).toBeNull();
+  });
+
+  it("shows mobile-only providers without sync controls or history", async () => {
+    mockUseParams.mockReturnValue({ id: "whoop-mobile" });
+    mockProviders.data = [
+      {
+        id: "whoop-mobile",
+        name: "WHOOP Mobile",
+        description: "Streams live sensor data.",
+        authorized: true,
+        authType: "none",
+        lastSyncedAt: "2026-06-30T12:00:00Z",
+        importOnly: false,
+        pushOnly: true,
+      },
+    ];
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    expect(screen.getByRole("heading", { name: "Mobile sync" })).toBeTruthy();
+    expect(screen.getByText(/Streams live sensor data\. Open the Dofek app/)).toBeTruthy();
+    expect(screen.getByText(/Last received:/)).toBeTruthy();
+    expect(screen.queryByText("Sync Controls")).toBeNull();
+    expect(screen.queryByText("Sync History")).toBeNull();
+  });
+
+  it("uses the generic mobile sync instructions when a push provider has no description", async () => {
+    mockUseParams.mockReturnValue({ id: "whoop-mobile" });
+    mockProviders.data = [
+      {
+        id: "whoop-mobile",
+        name: "WHOOP Mobile",
+        authorized: true,
+        authType: "none",
+        lastSyncedAt: null,
+        importOnly: false,
+        pushOnly: true,
+      },
+    ];
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    expect(
+      screen.getByText(/Open the Dofek app on your phone with your WHOOP nearby/),
+    ).toBeTruthy();
+  });
+
+  it.each(["oauth", "oauth1"])(
+    "opens %s provider reauthorization in a new tab",
+    async (authType) => {
+      const openWindow = vi.spyOn(window, "open").mockImplementation(() => null);
+      mockUseParams.mockReturnValue({ id: "wahoo" });
+      mockProviders.data = [
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          authorized: false,
+          authType,
+          lastSyncedAt: null,
+          importOnly: false,
+          needsReauth: true,
+        },
+      ];
+
+      const { ProviderDetailPage } = await import("./ProviderDetailPage");
+      render(<ProviderDetailPage />);
+      fireEvent.click(screen.getByRole("button", { name: "Reconnect Wahoo" }));
+
+      expect(openWindow).toHaveBeenCalledWith("/auth/provider/wahoo", "_blank");
+      openWindow.mockRestore();
+    },
+  );
+
+  it("opens the Garmin reconnect form for an expired Garmin account", async () => {
+    mockUseParams.mockReturnValue({ id: "garmin" });
+    mockProviders.data = [
+      {
+        id: "garmin",
+        name: "Garmin",
+        authorized: false,
+        authType: "custom:garmin",
+        lastSyncedAt: null,
+        importOnly: false,
+        needsReauth: true,
+      },
+    ];
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Reconnect Garmin" }));
+
+    expect(screen.getByText("Garmin reconnect form")).toBeTruthy();
+  });
+
+  it("opens the credential and token reconnect forms for expired providers", async () => {
+    mockUseParams.mockReturnValue({ id: "fitbit" });
+    mockProviders.data = [
+      {
+        id: "fitbit",
+        name: "Fitbit",
+        authorized: false,
+        authType: "credential",
+        lastSyncedAt: null,
+        importOnly: false,
+        needsReauth: true,
+      },
+    ];
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    const { rerender } = render(<ProviderDetailPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Reconnect Fitbit" }));
+    expect(screen.getByText("Credential reconnect form")).toBeTruthy();
+
+    mockUseParams.mockReturnValue({ id: "ultrahuman" });
+    mockProviders.data = [
+      {
+        id: "ultrahuman",
+        name: "Ultrahuman",
+        authorized: false,
+        authType: "token",
+        lastSyncedAt: null,
+        importOnly: false,
+        needsReauth: true,
+        tokenAuth: { label: "Access token", instructionsUrl: "https://example.com/token" },
+      },
+    ];
+    rerender(<ProviderDetailPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Reconnect Ultrahuman" }));
+    expect(screen.getByText("Token reconnect form")).toBeTruthy();
+  });
+
+  it("displays completed polling progress and a failed provider result", async () => {
+    mockUseParams.mockReturnValue({ id: "wahoo" });
+    mockProviders.data = [
+      {
+        id: "wahoo",
+        name: "Wahoo",
+        authorized: true,
+        authType: "oauth",
+        lastSyncedAt: null,
+        importOnly: false,
+      },
+    ];
+    mockSyncMutation.mutateAsync.mockResolvedValue({
+      providerResults: [{ providerId: "wahoo", status: "started", jobId: "job-1" }],
+    });
+    mockPollSyncJob.mockImplementationOnce(
+      async ({
+        updateState,
+      }: {
+        updateState: (id: string, state: Record<string, unknown>) => void;
+      }) => {
+        updateState("job-1", { status: "done", percentage: 100, message: "Finishing" });
+      },
+    );
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+    await act(async () => {
+      fireEvent.click(screen.getByText("Sync Last 7 Days"));
+    });
+    expect(screen.getByText("Sync complete")).toBeTruthy();
+
+    mockSyncMutation.mutateAsync.mockResolvedValueOnce({
+      providerResults: [
+        { providerId: "wahoo", status: "failed", message: "Polar API unavailable" },
+      ],
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByText("Sync Last 7 Days"));
+    });
+    expect(screen.getByText("Polar API unavailable")).toBeTruthy();
+  });
 });
 
 describe("ProviderDetailPage delete all data", () => {
@@ -1086,8 +1381,7 @@ describe("ProviderDetailPage activity records", () => {
         foodEntries: 0,
         nutritionDaily: 0,
         healthEvents: 0,
-        labPanels: 0,
-        labResults: 0,
+        clinicalRecords: 0,
         journalEntries: 0,
       },
     ];

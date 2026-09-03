@@ -187,12 +187,14 @@ function makeSyncMockFetch(options: {
   journalError?: boolean;
   cyclesError?: boolean;
   cyclesRateLimit?: boolean;
+  strainError?: boolean;
   strainRateLimit?: boolean;
   strainSteps?: number;
   sleepRateLimit?: boolean;
+  weightliftingError?: boolean;
   developerWorkoutsError?: boolean;
   developerWorkoutPages?: Array<{
-    records: Array<{ id: string; start: string; end: string }>;
+    records: Array<{ id: string; start: string; end: string; sport_name?: string }>;
     next_token: string | null;
   }>;
 }) {
@@ -233,6 +235,9 @@ function makeSyncMockFetch(options: {
     if (url.includes("deep-dive/strain")) {
       if (options.strainRateLimit) {
         return Promise.resolve(new Response("rate limited", { status: 429 }));
+      }
+      if (options.strainError) {
+        return Promise.resolve(new Response("Strain error", { status: 500 }));
       }
       if (options.strainSteps != null) {
         return Promise.resolve(
@@ -282,6 +287,9 @@ function makeSyncMockFetch(options: {
 
     // Weightlifting
     if (url.includes("weightlifting-service")) {
+      if (options.weightliftingError) {
+        return Promise.resolve(new Response("Strength error", { status: 500 }));
+      }
       if (options.weightliftingData === null) {
         return Promise.resolve(new Response("", { status: 404 }));
       }
@@ -1469,6 +1477,148 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
     expect(store.clear).toHaveBeenCalledTimes(1);
   });
 
+  it("reports progress for every queued WHOOP API step", async () => {
+    const initialCheckpoint = {
+      runId: "run-progress-labels",
+      recordsSynced: 0,
+      phase: "api",
+      cycleFetchCursorMs: null,
+      cycles: [],
+      apiSteps: [
+        { type: "strain_deep_dive", date: "2026-03-01" },
+        { type: "sleep_stages", sleepId: "sleep-1" },
+        { type: "developer_workouts" },
+        { type: "persist_workouts" },
+        { type: "weightlifting", activityId: "activity-1" },
+        {
+          type: "heart_rate",
+          start: "2026-03-01T00:00:00.000Z",
+          end: "2026-03-01T01:00:00.000Z",
+        },
+        { type: "journal" },
+      ],
+      apiStepIndex: 0,
+      presentExternalIds: [],
+    };
+    const { store } = makeCheckpointStore(initialCheckpoint);
+    const onProgress = vi.fn();
+
+    await runWhoopOrchestratedSync(
+      new SyncRun({
+        db: makeChainableMock(),
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+        checkpoint: store,
+        onProgress,
+      }),
+      makeSyncMockFetch({ journalData: [] }),
+      Date.now(),
+    );
+
+    expect(onProgress.mock.calls.map(([, label]) => label)).toEqual([
+      "Daily steps 2026-03-01",
+      "Sleep stages sleep-1",
+      "Developer workout list",
+      "Persist workouts",
+      "Strength activity-1",
+      "Heart rate stream",
+      "Journal",
+    ]);
+  });
+
+  it.each([
+    [
+      "strain",
+      { type: "strain_deep_dive", date: "2026-03-01" },
+      makeSyncMockFetch({ strainError: true }),
+      "daily_activity: WHOOP API error (500): Strain error",
+    ],
+    [
+      "weightlifting",
+      { type: "weightlifting", activityId: "activity-1" },
+      makeSyncMockFetch({ weightliftingError: true }),
+      "strength: WHOOP weightlifting API error (500): Strength error",
+    ],
+    [
+      "heart-rate",
+      {
+        type: "heart_rate",
+        start: "2026-03-01T00:00:00.000Z",
+        end: "2026-03-01T01:00:00.000Z",
+      },
+      makeSyncMockFetch({ hrError: true }),
+      "hr_stream: WHOOP API error (500): HR error",
+    ],
+    [
+      "sleep",
+      { type: "sleep_stages", sleepId: "sleep-1" },
+      makeSyncMockFetch({ sleepError: true }),
+      "sleep_stages: WHOOP API error (500): Sleep error",
+    ],
+  ])("labels failed %s API checkpoints", async (_name, step, fetchFn, expectedMessage) => {
+    const { store } = makeCheckpointStore({
+      runId: `run-${_name}-error`,
+      recordsSynced: 0,
+      phase: "api",
+      cycleFetchCursorMs: null,
+      cycles: _name === "weightlifting" ? [{ workouts: [{ activity_id: "activity-1" }] }] : [],
+      apiSteps: [step],
+      apiStepIndex: 0,
+      presentExternalIds: [],
+    });
+
+    const result = await runWhoopOrchestratedSync(
+      new SyncRun({
+        db: makeChainableMock(),
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+        checkpoint: store,
+      }),
+      fetchFn,
+      Date.now(),
+    );
+
+    expect(result.errors).toContainEqual(expect.objectContaining({ message: expectedMessage }));
+  });
+
+  it("labels workout persistence failures", async () => {
+    providerActivityAbsenceMocks.finishProviderActivityListSync.mockRejectedValueOnce(
+      new Error("reconciliation unavailable"),
+    );
+    const { store } = makeCheckpointStore({
+      runId: "run-persist-workouts-error",
+      recordsSynced: 0,
+      phase: "api",
+      cycleFetchCursorMs: null,
+      cycles: [],
+      apiSteps: [{ type: "persist_workouts" }],
+      apiStepIndex: 0,
+      presentExternalIds: [],
+      developerWorkoutPaginationComplete: true,
+    });
+
+    const result = await runWhoopOrchestratedSync(
+      new SyncRun({
+        db: makeChainableMock(),
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+        checkpoint: store,
+      }),
+      makeSyncMockFetch({ cycles: [] }),
+      Date.now(),
+    );
+
+    expect(result.errors).toContainEqual(
+      expect.objectContaining({ message: "workouts: reconciliation unavailable" }),
+    );
+  });
+
   it("applies rate-limit checkpoint state when an API step is rate limited", async () => {
     await mockStoredWhoopTokens();
     const initialCheckpoint = {
@@ -1579,6 +1729,7 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
                 id: "current-workout",
                 start: "2026-03-01T12:00:00.000Z",
                 end: "2026-03-01T13:00:00.000Z",
+                sport_name: "Commuting",
               },
             ],
             next_token: "page-2",
@@ -1616,6 +1767,9 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
       { type: "persist_workouts" },
     ]);
     expect(savedCheckpoint.presentExternalIds).toEqual(["current-workout"]);
+    expect(savedCheckpoint.developerActivityTypeNamesById).toEqual({
+      "current-workout": "Commuting",
+    });
     expect(savedCheckpoint.developerWorkoutPaginationComplete).toBe(false);
   });
 

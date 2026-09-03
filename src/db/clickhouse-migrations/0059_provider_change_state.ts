@@ -57,13 +57,8 @@ function getProviderSources(): readonly ProviderSource[] {
     },
     {
       providerIdColumn: "provider_id",
-      sourceTable: "postgres_fitness.lab_panel",
-      viewName: "lab_panel",
-    },
-    {
-      providerIdColumn: "provider_id",
-      sourceTable: "postgres_fitness.lab_result",
-      viewName: "lab_result",
+      sourceTable: "postgres_fitness.clinical_record",
+      viewName: "clinical_record",
     },
     {
       providerIdColumn: "provider_id",

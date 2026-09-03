@@ -5,15 +5,29 @@ function PrivacyPage() {
     <div className="min-h-screen bg-page text-foreground">
       <div className="max-w-3xl mx-auto px-6 py-16">
         <h1 className="text-3xl font-bold text-foreground mb-2">Privacy Policy</h1>
-        <p className="text-subtle text-sm mb-10">Last updated: July 29, 2026</p>
+        <p className="text-subtle text-sm mb-10">Last updated: September 2, 2026</p>
 
         <div className="space-y-8 text-sm leading-relaxed">
           <section>
             <h2 className="text-lg font-semibold text-foreground mb-3">1. Introduction</h2>
             <p>
-              Dofek ("we", "our", "the platform") is a fitness and health data aggregation platform.
-              This policy describes how we collect, use, store, and protect your personal and health
-              data when you use our service.
+              Dofek, operated by Asher Cohen ("we", "our", "the platform"), is a fitness and health
+              data aggregation platform. This policy describes how we collect, use, store, and
+              protect your personal and health data when you use our service.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-lg font-semibold text-foreground mb-3">MCP and AI Clients</h2>
+            <p>
+              When you authorize an AI client through Dofek OAuth, Dofek returns only the results of
+              tools that authorized client requests for your account. The AI client may process
+              those results under its own terms and privacy policy. You can revoke access through
+              the client or by contacting{" "}
+              <a href="/support" className="text-accent underline">
+                Dofek support
+              </a>
+              .
             </p>
           </section>
 
@@ -178,8 +192,21 @@ function PrivacyPage() {
               .
             </p>
             <p className="mt-3">
-              Payment providers may retain legally required transaction, fraud-prevention, and
-              compliance records beyond Dofek&apos;s 30-day application-data window. See the{" "}
+              Apple processes App Store subscription purchases and provides Dofek with signed
+              transaction and subscription-status information needed to grant access. Dofek does not
+              receive your full payment-card details from Apple. Stripe processes purchases made on
+              the Dofek website. These payment processors may retain legally required transaction,
+              fraud-prevention, and compliance records beyond Dofek&apos;s 30-day application-data
+              window. See{" "}
+              <a
+                href="https://www.apple.com/legal/privacy/data/en/app-store/"
+                className="text-accent underline"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Apple App Store &amp; Privacy
+              </a>{" "}
+              and the{" "}
               <a
                 href="https://stripe.com/legal/privacy-center"
                 className="text-accent underline"
@@ -188,7 +215,7 @@ function PrivacyPage() {
               >
                 Stripe Privacy Center
               </a>{" "}
-              for Stripe&apos;s retention disclosures.
+              for their privacy and retention disclosures.
             </p>
             <p className="mt-3">
               <a href="/account-deletion" className="text-accent underline">

@@ -212,6 +212,16 @@ describe("clickHouseMigrations", () => {
       ]),
     });
     expect(
+      migrations.find(
+        (migration) => migration.id === "0073_activity_sensor_summary_source_version",
+      ),
+    ).toMatchObject({
+      statements: expect.arrayContaining([
+        expect.stringContaining("source_refresh_version UInt64 DEFAULT 0"),
+        expect.stringContaining("by_activity_source_refresh_version"),
+      ]),
+    });
+    expect(
       migrations.find((migration) => migration.id === "0069_canonical_activity_types"),
     ).toMatchObject({
       id: "0069_canonical_activity_types",
@@ -247,6 +257,16 @@ describe("clickHouseMigrations", () => {
         expect.stringContaining("ALTER TABLE analytics.activity_summary_rows"),
       ]),
       run: expect.any(Function),
+    });
+    expect(
+      migrations.find((migration) => migration.id === "0072_canonical_clinical_records"),
+    ).toMatchObject({
+      id: "0072_canonical_clinical_records",
+      statements: expect.arrayContaining([
+        "DROP VIEW IF EXISTS analytics.provider_change_from_lab_panel",
+        "DROP VIEW IF EXISTS analytics.provider_change_from_lab_result",
+        expect.stringContaining("FROM postgres_fitness.clinical_record"),
+      ]),
     });
   });
 

@@ -7,7 +7,8 @@
     query_settings={
         'max_threads': 1,
         'join_use_nulls': 1,
-        'enable_materialized_cte': 1
+        'enable_materialized_cte': 1,
+        'preferred_optimize_projection_name': 'by_activity_source_refresh_version'
     }
 ) }}
 
@@ -16,15 +17,19 @@
 WITH
 {% if is_incremental() %}
 target_state AS (
-    SELECT
-        coalesce(
-            max(refreshed_at),
-            toDateTime64('1970-01-01 00:00:00', 9, 'UTC')
-        ) AS last_refreshed_at,
-        count() = 0 AS is_empty
+    SELECT count() = 0 AS is_empty
     FROM {{ this }}
 ),
 {% endif %}
+
+sample_source_versions AS MATERIALIZED (
+    SELECT
+        activity_id,
+        user_id,
+        max(refresh_version) AS source_refresh_version
+    FROM {{ ref('activity_sensor_sample') }}
+    GROUP BY activity_id, user_id
+),
 
 current_activity AS (
     SELECT
@@ -42,7 +47,7 @@ existing_summary_state AS (
         SELECT
             activity_id,
             user_id,
-            argMax(refreshed_at, refresh_version) AS refreshed_at,
+            argMax(source_refresh_version, refresh_version) AS source_refresh_version,
             argMax(is_deleted, refresh_version) AS is_deleted
         FROM {{ this }}
         GROUP BY activity_id, user_id
@@ -50,7 +55,7 @@ existing_summary_state AS (
         SELECT
             CAST(null, 'Nullable(UUID)') AS activity_id,
             CAST(null, 'Nullable(UUID)') AS user_id,
-            CAST(null, 'Nullable(DateTime64(9, ''UTC''))') AS refreshed_at,
+            CAST(null, 'Nullable(UInt64)') AS source_refresh_version,
             CAST(null, 'Nullable(UInt8)') AS is_deleted
         WHERE 1 = 0
     {% endif %}
@@ -59,8 +64,7 @@ existing_summary_state AS (
 existing_summary AS (
     SELECT
         activity_id,
-        user_id,
-        refreshed_at
+        user_id
     FROM existing_summary_state
     WHERE is_deleted = 0
 ),
@@ -82,18 +86,21 @@ initial_dirty_keys AS (
 changed_sample_dirty_keys AS (
     {% if is_incremental() %}
         SELECT DISTINCT
-            sensor_sample.activity_id AS activity_id,
-            sensor_sample.user_id AS user_id
-        FROM {{ ref('activity_sensor_sample') }} AS sensor_sample
-        LEFT JOIN existing_summary
-            ON existing_summary.activity_id = sensor_sample.activity_id
-            AND existing_summary.user_id = sensor_sample.user_id
+            sample_source_versions.activity_id AS activity_id,
+            sample_source_versions.user_id AS user_id
+        FROM sample_source_versions
+        INNER JOIN current_activity
+            ON current_activity.activity_id = sample_source_versions.activity_id
+            AND current_activity.user_id = sample_source_versions.user_id
+        LEFT JOIN existing_summary_state
+            ON existing_summary_state.activity_id = sample_source_versions.activity_id
+            AND existing_summary_state.user_id = sample_source_versions.user_id
         WHERE
             NOT (SELECT is_empty FROM target_state)
-            AND sensor_sample.refreshed_at > (SELECT last_refreshed_at FROM target_state)
             AND (
-                existing_summary.activity_id IS null
-                OR sensor_sample.refreshed_at > existing_summary.refreshed_at
+                existing_summary_state.activity_id IS null
+                OR sample_source_versions.source_refresh_version
+                    > existing_summary_state.source_refresh_version
             )
     {% else %}
         SELECT
@@ -106,15 +113,15 @@ changed_sample_dirty_keys AS (
 missing_summary_dirty_keys AS (
     {% if is_incremental() %}
         SELECT DISTINCT
-            sensor_sample.activity_id AS activity_id,
-            sensor_sample.user_id AS user_id
-        FROM {{ ref('activity_sensor_sample') }} AS sensor_sample
+            sample_source_versions.activity_id AS activity_id,
+            sample_source_versions.user_id AS user_id
+        FROM sample_source_versions
         INNER JOIN current_activity
-            ON current_activity.activity_id = sensor_sample.activity_id
-            AND current_activity.user_id = sensor_sample.user_id
+            ON current_activity.activity_id = sample_source_versions.activity_id
+            AND current_activity.user_id = sample_source_versions.user_id
         LEFT JOIN existing_summary_state
-            ON existing_summary_state.activity_id = sensor_sample.activity_id
-            AND existing_summary_state.user_id = sensor_sample.user_id
+            ON existing_summary_state.activity_id = sample_source_versions.activity_id
+            AND existing_summary_state.user_id = sample_source_versions.user_id
         WHERE existing_summary_state.activity_id IS null
     {% else %}
         SELECT
@@ -164,7 +171,7 @@ restored_dirty_keys AS (
     {% endif %}
 ),
 
-dirty_keys AS materialized (
+dirty_keys AS MATERIALIZED (
     SELECT DISTINCT
         assumeNotNull(activity_id) AS activity_id,
         assumeNotNull(user_id) AS user_id
@@ -205,7 +212,7 @@ active_dirty_keys AS (
     FROM dirty_keys
 ),
 
-latest_sensor_samples AS materialized (
+latest_sensor_samples AS MATERIALIZED (
     SELECT *
     FROM (
         SELECT *
@@ -324,7 +331,7 @@ channel_aggs AS (
     GROUP BY activity_id, user_id
 ),
 
-power_cumulative AS materialized (
+power_cumulative AS MATERIALIZED (
     SELECT
         activity_id,
         recorded_at,
@@ -506,6 +513,11 @@ SELECT
     power_variability_per_activity.smoothed_avg_power AS smoothed_avg_power,
     climbing_per_activity.climbing_elevation_gain_m AS climbing_elevation_gain_m,
     climbing_per_activity.climbing_seconds AS climbing_seconds,
+    coalesce(
+        sample_source_versions.source_refresh_version,
+        existing_summary_state.source_refresh_version,
+        toUInt64(0)
+    ) AS source_refresh_version,
     toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
     if(channel_aggs.activity_id IS null, 1, 0) AS is_deleted,
     now64(9) AS refreshed_at
@@ -521,3 +533,9 @@ LEFT JOIN power_variability_per_activity
     ON power_variability_per_activity.activity_id = dirty_keys.activity_id
 LEFT JOIN climbing_per_activity
     ON climbing_per_activity.activity_id = dirty_keys.activity_id
+LEFT JOIN sample_source_versions
+    ON sample_source_versions.activity_id = dirty_keys.activity_id
+    AND sample_source_versions.user_id = dirty_keys.user_id
+LEFT JOIN existing_summary_state
+    ON existing_summary_state.activity_id = dirty_keys.activity_id
+    AND existing_summary_state.user_id = dirty_keys.user_id

@@ -4,12 +4,14 @@ import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
+import { loadClimbingGradePreference } from "../climbing-grade-preferences.ts";
 import {
   type MobileTrainingTabResult,
   mobileTrainingTabOutputSchema,
 } from "../contracts/mobile-dashboard-contracts.ts";
 import { makeTrainingChartAvailability } from "../contracts/training-chart-availability.ts";
 import { ChartRange } from "../lib/chart-range.ts";
+import { ConcurrencyLimiter } from "../lib/concurrency-limiter.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { ClimbingRepository } from "../repositories/climbing-repository.ts";
@@ -26,6 +28,14 @@ import {
 import { buildWorkloadRatioResult, type WorkloadRatioResult } from "./workload-ratio.ts";
 
 export { type MobileTrainingTabResult, mobileTrainingTabOutputSchema };
+
+/**
+ * Caps how many of the training-tab repository reads run at once. It stays
+ * below the PostgreSQL pool `max` (see `src/db/index.ts`) so a single request
+ * can never demand every connection and time out its own queued reads, and so
+ * it leaves connections free for other requests on the same process pool.
+ */
+const TRAINING_TAB_READ_CONCURRENCY = 4;
 
 interface MobileTrainingTabContext {
   db: Pick<Database, "execute">;
@@ -79,7 +89,6 @@ export async function loadMobileTrainingTab(
     ctx.sensorStore,
     ctx.accessWindow,
   );
-  const climbingRepo = new ClimbingRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
   const hangboardingRepo = new HangboardingRepository(
     ctx.db,
     ctx.userId,
@@ -91,11 +100,15 @@ export async function loadMobileTrainingTab(
   const windowStart = dateWindowStartString(endDate, days);
   const accessParams = clickHouseDateAccessWindowParams(ctx.accessWindow);
 
-  const [storedParams, strainRows, readinessRows] = await Promise.all([
-    loadPersonalizedParams(ctx.db, ctx.userId),
-    ctx.sensorStore.query(
-      strainRowSchema,
-      `SELECT
+  const limiter = new ConcurrencyLimiter(TRAINING_TAB_READ_CONCURRENCY);
+
+  const [storedParams, climbingGradePreference, strainRows, readinessRows] = await Promise.all([
+    limiter.run(() => loadPersonalizedParams(ctx.db, ctx.userId)),
+    limiter.run(() => loadClimbingGradePreference(ctx.db, ctx.userId)),
+    limiter.run(() =>
+      ctx.sensorStore.query(
+        strainRowSchema,
+        `SELECT
         toString(toDate(toTimeZone(toDateTime(strain.date), {timezone:String}))) AS date,
         strain.daily_load AS daily_load,
         strain.acute_load_7d AS acute_load,
@@ -108,18 +121,20 @@ export async function loadMobileTrainingTab(
         AND strain.date <= toDate({endDate:String})
         ${clickHouseDateAccessWindowClause(ctx.accessWindow, "strain")}
       ORDER BY date ASC`,
-      {
-        userId: ctx.userId,
-        timezone: ctx.timezone,
-        endDate,
-        outputWindowStart: windowStart,
-        ...accessParams,
-      },
-      { priority: "dashboard" },
+        {
+          userId: ctx.userId,
+          timezone: ctx.timezone,
+          endDate,
+          outputWindowStart: windowStart,
+          ...accessParams,
+        },
+        { priority: "dashboard" },
+      ),
     ),
-    ctx.sensorStore.query(
-      strainTargetReadinessRowSchema,
-      `SELECT
+    limiter.run(() =>
+      ctx.sensorStore.query(
+        strainTargetReadinessRowSchema,
+        `SELECT
         toString(recovery.date) AS date,
         recovery.hrv_score AS hrv_score,
         recovery.resting_hr_score AS resting_hr_score,
@@ -133,15 +148,24 @@ export async function loadMobileTrainingTab(
         ${clickHouseDateAccessWindowClause(ctx.accessWindow, "recovery")}
       ORDER BY recovery.date DESC
       LIMIT 1`,
-      {
-        userId: ctx.userId,
-        windowStart,
-        endDate,
-        ...accessParams,
-      },
-      { priority: "dashboard" },
+        {
+          userId: ctx.userId,
+          windowStart,
+          endDate,
+          ...accessParams,
+        },
+        { priority: "dashboard" },
+      ),
     ),
   ]);
+
+  const climbingRepo = new ClimbingRepository(
+    ctx.db,
+    ctx.userId,
+    ctx.timezone,
+    ctx.accessWindow,
+    climbingGradePreference,
+  );
 
   const effective = getEffectiveParams(storedParams);
   const workloadRatio = computeWorkloadRatio(strainRows);
@@ -162,18 +186,20 @@ export async function loadMobileTrainingTab(
     hangboardingSummary,
     progressiveOverloadModels,
   ] = await Promise.all([
-    trainingRepo.getActivityStatsAndWeeklyVolume(days),
-    cyclingRepo.getActivities(ChartRange.fromDays(days), {
-      activityLimit: 1,
-      activityOffset: 0,
-      variabilityLimit: 1,
-      variabilityOffset: 0,
-    }),
-    climbingRepo.getGradeProgression(days),
-    climbingRepo.getVolumeByGrade(days),
-    climbingRepo.getSessionSummaries(days),
-    hangboardingRepo.getSummary(days),
-    strengthRepo.getProgressiveOverload(days),
+    limiter.run(() => trainingRepo.getActivityStatsAndWeeklyVolume(days)),
+    limiter.run(() =>
+      cyclingRepo.getActivities(ChartRange.fromDays(days), {
+        activityLimit: 1,
+        activityOffset: 0,
+        variabilityLimit: 1,
+        variabilityOffset: 0,
+      }),
+    ),
+    limiter.run(() => climbingRepo.getGradeProgression(days)),
+    limiter.run(() => climbingRepo.getVolumeByGrade(days)),
+    limiter.run(() => climbingRepo.getSessionSummaries(days)),
+    limiter.run(() => hangboardingRepo.getSummary(days)),
+    limiter.run(() => strengthRepo.getProgressiveOverload(days)),
   ]);
 
   return {

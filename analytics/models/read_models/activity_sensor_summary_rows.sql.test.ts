@@ -45,12 +45,30 @@ describe("activity_sensor_summary_rows model", () => {
     );
   });
 
-  it("materializes only the reused dirty, sample, and power stages", () => {
+  it("materializes only the reused version, dirty, sample, and power stages", () => {
     expect(modelSql).toContain("'enable_materialized_cte': 1");
-    expect(modelSql).toContain("dirty_keys AS materialized (");
-    expect(modelSql).toContain("latest_sensor_samples AS materialized (");
-    expect(modelSql).toContain("power_cumulative AS materialized (");
-    expect(modelSql.match(/ AS materialized \(/g)).toHaveLength(3);
+    expect(modelSql).toContain(
+      "'preferred_optimize_projection_name': 'by_activity_source_refresh_version'",
+    );
+    expect(modelSql).toContain("sample_source_versions AS MATERIALIZED (");
+    expect(modelSql).toContain("dirty_keys AS MATERIALIZED (");
+    expect(modelSql).toContain("latest_sensor_samples AS MATERIALIZED (");
+    expect(modelSql).toContain("power_cumulative AS MATERIALIZED (");
+    expect(modelSql.match(/ AS MATERIALIZED \(/g)).toHaveLength(4);
+  });
+
+  it("limits changed sample keys to activities that are still active", () => {
+    const changedKeysSql = modelSql.match(
+      /changed_sample_dirty_keys AS \([\s\S]*?\n\),\n\nmissing_summary_dirty_keys AS/,
+    )?.[0];
+
+    expect(changedKeysSql).toContain("INNER JOIN current_activity");
+    expect(changedKeysSql).toContain(
+      "current_activity.activity_id = sample_source_versions.activity_id",
+    );
+    expect(changedKeysSql).toContain(
+      "current_activity.user_id = sample_source_versions.user_id",
+    );
   });
 
   describe("best_twenty_minute_power_per_activity window-sample-count clamp", () => {

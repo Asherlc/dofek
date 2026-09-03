@@ -6,9 +6,12 @@ packages/mobile/certs/public-key.pem
 # Track .claude/skills (custom skills), ignore everything else
 .claude/*
 !.claude/skills/
+.codex/
+.antigravitycli/
 .context/
 .worktrees/
 .codegraph/
+paseo.json
 .DS_Store
 *.swp
 *.swo

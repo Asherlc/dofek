@@ -16,9 +16,12 @@ describe("clickhouse-activity-sensor-summary", () => {
     it("keeps refresh metadata after power and climbing columns", () => {
       const columns = extractClickHouseTableColumnNames(buildActivitySensorSummaryRowsTableSql());
 
-      expect(columns.at(-3)).toBe("refresh_version");
-      expect(columns.at(-2)).toBe("is_deleted");
-      expect(columns.at(-1)).toBe("refreshed_at");
+      expect(columns.slice(-4)).toEqual([
+        "source_refresh_version",
+        "refresh_version",
+        "is_deleted",
+        "refreshed_at",
+      ]);
       expect(columns.indexOf("climbing_seconds")).toBeLessThan(columns.indexOf("refresh_version"));
     });
   });

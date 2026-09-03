@@ -20,11 +20,13 @@
   "dependencies": {
     "@ai-sdk/google": "3.0.43",
     "@ai-sdk/mistral": "3.0.24",
+    "@apple/app-store-server-library": "3.1.0",
     "@dofek/auth": "workspace:*",
     "@dofek/filter-columns": "workspace:*",
     "@dofek/format": "workspace:*",
     "@dofek/heart-rate-variability": "workspace:*",
     "@dofek/imu": "workspace:*",
+    "@dofek/mcp-contracts": "workspace:*",
     "@dofek/nutrition": "workspace:*",
     "@dofek/onboarding": "workspace:*",
     "@dofek/providers": "workspace:*",
@@ -34,11 +36,10 @@
     "@dofek/training": "workspace:*",
     "@dofek/whoop": "workspace:*",
     "@dofek/zones": "workspace:*",
-    "@modelcontextprotocol/sdk": "1.29.0",
+    "@modelcontextprotocol/ext-apps": "1.7.5",
+    "@modelcontextprotocol/sdk": "1.30.0",
     "@opentelemetry/api": "1.9.1",
     "@sentry/node": "10.45.0",
-    "@slack/bolt": "5.0.0",
-    "@slack/socket-mode": "3.0.0",
     "@stdlib/stats-pcorrtest": "0.2.3",
     "@stdlib/stats-ranks": "0.2.3",
     "@trpc/server": "11.18.0",
@@ -50,8 +51,9 @@
     "entities": "6.0.1",
     "express": "5.2.1",
     "express-rate-limit": "8.6.1",
+    "ipaddr.js": "2.5.0",
     "qrcode": "1.5.4",
-    "simple-statistics": "7.9.3",
+    "simple-statistics": "7.10.2",
     "zod": "4.4.3"
   },
   "devDependencies": {
@@ -60,7 +62,6 @@
     "@types/express": "5.0.6",
     "@types/qrcode": "1.5.6",
     "tsx": "4.23.1",
-    "typescript": "6.0.3",
-    "undici": "7.29.0"
+    "typescript": "6.0.3"
   }
 }

@@ -55,8 +55,8 @@ daily_metrics AS (
     SELECT
         user_id,
         date,
-        hrv,
-        respiratory_rate_avg AS respiratory_rate
+        nullIf(hrv, 0) AS hrv,
+        nullIf(respiratory_rate_avg, 0) AS respiratory_rate
     FROM analytics.v_daily_metrics
 ),
 
@@ -64,7 +64,10 @@ resting_by_date AS (
     SELECT
         user_id,
         toDate(ended_at - INTERVAL 6 HOUR) AS date,
-        argMax(resting_hr, tuple(duration_seconds, ended_at)) AS selected_resting_hr
+        nullIf(
+            argMax(resting_hr, tuple(duration_seconds, ended_at)),
+            0
+        ) AS selected_resting_hr
     FROM {{ ref('resting_heart_rate_sleep_window') }} FINAL
     WHERE is_deleted = 0
         AND ended_at IS NOT NULL
@@ -76,7 +79,7 @@ sleep_by_date AS (
     SELECT
         user_id,
         date,
-        efficiency_pct
+        nullIf(efficiency_pct, 0) AS efficiency_pct
     FROM {{ ref('daily_sleep') }} FINAL
     WHERE is_deleted = 0
 ),

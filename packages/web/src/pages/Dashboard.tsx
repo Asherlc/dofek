@@ -15,7 +15,6 @@ import { PageLayout } from "../components/PageLayout.tsx";
 import { ProcessingStatusWidget } from "../components/ProcessingStatusWidget.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { TodayPlanCard } from "../components/TodayPlanCard.tsx";
-import { useAutoSync } from "../hooks/useAutoSync.ts";
 import { useProcessingStatus } from "../hooks/useProcessingStatus.ts";
 import { useTodayQueryDate } from "../hooks/useTodayQueryDate.ts";
 import { chartColors } from "../lib/chartTheme.ts";
@@ -169,9 +168,6 @@ export function Dashboard() {
   const restingHeartRateRows = heartRateBaseline.data
     ? z.array(restingHeartRateChartRowSchema).parse(heartRateBaseline.data)
     : [];
-
-  // Auto-sync when data is stale (API providers only — HealthKit requires iOS)
-  useAutoSync(trendData?.latest_date);
 
   const topInsight = useMemo(() => {
     const allInsights: Insight[] = [...(insightsQuery.data ?? [])];

@@ -23,6 +23,7 @@ import { getActivityRoutePreviews } from "./activity-route-preview.ts";
 const activityListRowSchema = z.object({
   id: z.string(),
   canonical_type: z.string(),
+  provider_type: z.string(),
   modality: z.string().nullable().optional().default(null),
   started_at: timestampStringSchema,
   ended_at: timestampStringSchema.nullable(),
@@ -45,6 +46,7 @@ const activityListRowSchema = z.object({
 const activityListColumns = sql`
   a.id,
   a.canonical_type,
+  a.provider_type,
   a.modality::text AS modality,
   a.started_at::text AS started_at,
   a.ended_at::text AS ended_at,
@@ -67,6 +69,7 @@ const activityListColumns = sql`
 const activityDetailRowSchema = z.object({
   id: z.string(),
   canonical_type: z.string(),
+  raw_type: z.string(),
   modality: z.string().nullable().optional().default(null),
   started_at: timestampStringSchema,
   ended_at: timestampStringSchema.nullable(),
@@ -504,6 +507,7 @@ export class ActivityRepository extends BaseRepository {
     TRow extends {
       distance_meters: number | null;
       elevation_gain_m: number | null;
+      provider_type: string;
       total_count?: number;
       member_activity_ids?: string[];
     },
@@ -511,6 +515,7 @@ export class ActivityRepository extends BaseRepository {
     const { total_count: _totalCount, member_activity_ids: _memberActivityIds, ...rest } = row;
     return {
       ...rest,
+      raw_type: row.provider_type,
       distance_state: activityMeasurementState("Distance", row.distance_meters),
       elevation_state: activityMeasurementState("Elevation gain", row.elevation_gain_m),
     };
@@ -586,41 +591,13 @@ export class ActivityRepository extends BaseRepository {
     return this.#findProviderAbsentById(activityId);
   }
 
-  /** Set or clear session RPE on every raw member of a visible activity group. */
-  async setPerceivedExertion(
-    activityId: string,
-    value: number | null,
-  ): Promise<{ found: boolean; perceivedExertion: number | null }> {
-    const rows = await this.query(
-      z.object({ perceived_exertion: z.number().nullable() }),
-      sql`UPDATE fitness.activity
-          SET perceived_exertion = ${value}
-          WHERE user_id = ${this.userId}::uuid
-            AND id IN (
-              SELECT member_activity_id
-              FROM fitness.v_activity_members
-              WHERE activity_id IN (
-                SELECT id
-                FROM fitness.v_activity
-                WHERE ${activityId}::uuid = ANY(member_activity_ids)
-                  AND user_id = ${this.userId}::uuid
-                  ${this.timestampAccessPredicate(sql`started_at`)}
-              )
-            )
-          RETURNING perceived_exertion`,
-    );
-    return {
-      found: rows.length > 0,
-      perceivedExertion: rows[0]?.perceived_exertion ?? null,
-    };
-  }
-
   async #findActiveById(activityId: string): Promise<ActivityRow | null> {
     const rows = await this.query(
       activityDetailRowSchema,
       sql`SELECT
             a.id,
             a.canonical_type,
+            a.provider_type AS raw_type,
             a.modality::text AS modality,
             a.started_at::text AS started_at,
             a.ended_at::text AS ended_at,
@@ -667,6 +644,7 @@ export class ActivityRepository extends BaseRepository {
       sql`SELECT
             a.id,
             a.canonical_type,
+            a.provider_type AS raw_type,
             a.modality::text AS modality,
             a.started_at::text AS started_at,
             a.ended_at::text AS ended_at,
@@ -675,7 +653,7 @@ export class ActivityRepository extends BaseRepository {
             a.perceived_exertion,
             a.provider_id,
             CASE
-              WHEN a.local_time_source IN ('provider_timezone', 'device_timezone')
+              WHEN a.local_time_source IN ('provider_timezone', 'device_timezone', 'user_home_timezone')
               THEN a.timezone
               ELSE NULL
             END AS timezone,

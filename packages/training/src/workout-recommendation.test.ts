@@ -370,6 +370,58 @@ describe("recommendNextWorkout", () => {
       expect(result.cardioIntervalsDetail?.protocol.name).toBeDefined();
     });
 
+    it("uses an interval recommendation when no zone samples have been recorded yet", () => {
+      const result = recommendNextWorkout(
+        makeInput({
+          recentActivities: [
+            {
+              type: "strength",
+              date: "2026-03-18",
+              wasHardDay: false,
+              muscleGroups: ["chest"],
+              activityType: "strength",
+            },
+          ],
+          zoneDistribution: {
+            zone1Samples: 0,
+            zone2Samples: 0,
+            zone3Samples: 0,
+            zone4Samples: 0,
+            zone5Samples: 0,
+          },
+        }),
+      );
+
+      expect(result.type).toBe("cardio_intervals");
+      expect(result.cardioIntervalsDetail?.protocol.name).toBe("30/30 Intervals");
+    });
+
+    it("acknowledges a single earlier hard-cardio session when intervals remain appropriate", () => {
+      const result = recommendNextWorkout(
+        makeInput({
+          recentActivities: [
+            {
+              type: "strength",
+              date: "2026-03-18",
+              wasHardDay: false,
+              muscleGroups: ["chest"],
+              activityType: "strength",
+            },
+            {
+              type: "cardio",
+              date: "2026-03-16",
+              wasHardDay: true,
+              muscleGroups: [],
+              activityType: "cycling",
+            },
+          ],
+        }),
+      );
+
+      expect(result.type).toBe("cardio_intervals");
+      expect(result.reasoning).toContain("1 hard cardio session already this week (max 3)");
+    });
+
     it("recommends easy cardio after yesterday's hard session even with room for HIIT", () => {
       const result = recommendNextWorkout(
         makeInput({
@@ -415,6 +467,33 @@ describe("recommendNextWorkout", () => {
       // Even with great readiness, should be easy due to HIIT spacing
       expect(result.type).toBe("cardio_easy");
       expect(result.reasoning.some((r) => r.includes("48 hours"))).toBe(true);
+    });
+
+    it("keeps cardio easy after a hard strength day even without a recent hard-cardio session", () => {
+      const result = recommendNextWorkout(
+        makeInput({
+          readinessScore: 80,
+          recentActivities: [
+            {
+              type: "strength",
+              date: "2026-03-18",
+              wasHardDay: true,
+              muscleGroups: ["chest"],
+              activityType: "strength",
+            },
+            {
+              type: "cardio",
+              date: "2026-03-16",
+              wasHardDay: false,
+              muscleGroups: [],
+              activityType: "cycling",
+            },
+          ],
+        }),
+      );
+
+      expect(result.type).toBe("cardio_easy");
+      expect(result.reasoning).toContain("Yesterday was a hard session — keeping today easy");
     });
 
     it("includes HR target range when user profile is available", () => {

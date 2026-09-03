@@ -120,6 +120,7 @@ export const climbingEntry = fitness.table(
     grade: text("grade").notNull(),
     sent: boolean("sent"),
     attemptCount: integer("attempt_count").default(1),
+    lead: boolean("lead"),
     wallAngleDegrees: real("wall_angle_degrees"),
     holdType: climbingHoldTypeEnum("hold_type"),
     routeName: text("route_name"),
@@ -241,7 +242,7 @@ export const activity = fitness.table(
         AND ${table.startUtcOffsetMinutes} IS NULL
         AND ${table.endUtcOffsetMinutes} IS NULL
       ) OR (
-        ${table.localTimeSource} IN ('provider_timezone', 'device_timezone')
+        ${table.localTimeSource} IN ('provider_timezone', 'device_timezone', 'user_home_timezone')
         AND NULLIF(btrim(${table.timezone}), '') IS NOT NULL
         AND ${table.startUtcOffsetMinutes} BETWEEN -840 AND 840
         AND (${table.endedAt} IS NULL OR ${table.endUtcOffsetMinutes} BETWEEN -840 AND 840)
@@ -446,7 +447,7 @@ export const sleepSession = fitness.table(
         AND ${table.startUtcOffsetMinutes} IS NULL
         AND ${table.endUtcOffsetMinutes} IS NULL
       ) OR (
-        ${table.localTimeSource} IN ('provider_timezone', 'device_timezone')
+        ${table.localTimeSource} IN ('provider_timezone', 'device_timezone', 'user_home_timezone')
         AND NULLIF(btrim(${table.timezone}), '') IS NOT NULL
         AND ${table.startUtcOffsetMinutes} BETWEEN -840 AND 840
         AND (${table.endedAt} IS NULL OR ${table.endUtcOffsetMinutes} BETWEEN -840 AND 840)

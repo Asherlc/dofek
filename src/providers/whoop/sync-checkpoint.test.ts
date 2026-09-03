@@ -18,6 +18,7 @@ const validCheckpoint: WhoopSyncCheckpoint = {
   ],
   apiStepIndex: 0,
   presentExternalIds: ["workout-1"],
+  developerActivityTypeNamesById: { "workout-1": "Running" },
   developerWorkoutPaginationComplete: false,
 };
 
@@ -35,6 +36,7 @@ describe("WHOOP sync checkpoint", () => {
     expect(checkpoint.cycles).toEqual([]);
     expect(checkpoint.apiSteps).toEqual([]);
     expect(checkpoint.presentExternalIds).toEqual([]);
+    expect(checkpoint.developerActivityTypeNamesById).toEqual({});
     expect(checkpoint.developerWorkoutPaginationComplete).toBe(false);
     expect(checkpoint.apiStepIndex).toBe(0);
     expect(checkpoint.recordsSynced).toBe(0);
@@ -61,6 +63,7 @@ describe("WHOOP sync checkpoint", () => {
       apiSteps: [],
       apiStepIndex: 0,
       presentExternalIds: [],
+      developerActivityTypeNamesById: {},
       developerWorkoutPaginationComplete: false,
     });
     expect(parsed?.developerWorkoutPaginationComplete).toBe(false);
