@@ -93,25 +93,26 @@ pnpm tsx scripts/with-env.ts -- pnpm tsx scripts/repair-activity-data-integrity.
 The command writes a private snapshot, then atomically applies the
 Postgres local-time CAS and creates a `postgres_committed` journal row. It
 waits for the exact changed local-time fields in the ClickHouse Postgres mirror
-before rebuilding the bounded seven-model dbt scope. On success the journal is
+before rebuilding the bounded eight-model dbt scope. On success the journal is
 `executed`; a CDC, dbt, or verification failure records `rebuild_failed` and
 remains a rollback target.
 
-Do not rerun a failed execute. Preserve the artifact and use its journal phase
-to decide whether to complete recovery or roll back.
+Do not rerun a failed execute. Preserve the artifact and use
+`--rollback-artifact=<artifact-path>` to restore the captured local-time state.
 
 ## 3. Verify
 
 Check the result JSON: `updated` must equal `changed`, every changed ID must be
 expected, and the reported incompatible-member count must be zero. Save the
 change record with focused `FINAL` results for the affected activities from all
-seven projections:
+eight projections:
 
 - `activity_source_records`
 - `activity_duplicate_matches`
 - `activity_duplicate_groups`
 - `deduped_activities`
 - `deduped_activity_members`
+- `activity_sensor_sample`
 - `activity_sensor_summary_rows`
 - `activity_summary_rows`
 
@@ -180,7 +181,7 @@ rollback fails loudly rather than overwriting a later local-time update.
 
 After the Postgres rollback transaction commits, the command waits for the
 restored fields in the ClickHouse Postgres mirror and then runs the same bounded
-seven-model dbt rebuild. It verifies the resulting source state through
+eight-model dbt rebuild. It verifies the resulting source state through
 `FINAL`, records `rolled_back`, and ends rollback eligibility. No direct
 ClickHouse snapshot restoration, stale-row comparison, or tombstone operation
 is part of this protocol.

@@ -2,11 +2,8 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import {
-  readModelSql,
-  renderDbtModelSql,
-} from "./read-model-sql-test-helpers.ts";
 import { buildActivitySensorSummaryRowsTableSql } from "./clickhouse-activity-sensor-summary.ts";
+import { readModelSql, renderDbtModelSql } from "./read-model-sql-test-helpers.ts";
 
 const historicalActivityId = "00000000-0000-0000-0000-000000000901";
 const unrelatedActivityId = "00000000-0000-0000-0000-000000000902";
@@ -23,6 +20,12 @@ interface SensorSummaryResultRow {
 }
 
 const scanCountRowsSchema = z.array(z.object({ scan_count: z.number() }));
+const elevationRowsSchema = z.array(
+  z.object({
+    elevation_gain_m: z.number().nullable(),
+    elevation_loss_m: z.number().nullable(),
+  }),
+);
 
 describe("activity_sensor_summary_rows historical dirty keys", () => {
   let client: ClickHouseClient | undefined;
@@ -119,7 +122,9 @@ ${renderActivitySensorSummaryRowsSelectSql(targetSchema)}`,
       format: "JSONEachRow",
     });
 
-    expect(await result.json()).toEqual([{ elevation_gain_m: null, elevation_loss_m: null }]);
+    expect(elevationRowsSchema.parse(await result.json<unknown>())).toEqual([
+      { elevation_gain_m: null, elevation_loss_m: null },
+    ]);
   }, 180_000);
 });
 

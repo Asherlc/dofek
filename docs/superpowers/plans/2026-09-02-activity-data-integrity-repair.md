@@ -1,7 +1,5 @@
 # Activity Data Integrity Repair Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Make activity groups, local-time context, sensor-summary hydration, and MCP power reporting trustworthy for new and historically stored activities.
 
 **Architecture:** Preserve raw provider activities and sensor samples. Compute duplicate edges solely from immutable raw activity facts, form connected components once, and only then consume compatible member summaries. A dry-run-first, CAS-guarded repair command snapshots the prior state and writes newer ClickHouse versions for both repair and rollback.
@@ -15,7 +13,7 @@
 - Raw provider identities, payloads, and sensor samples are immutable; repair only derived local-time fields and read-model rows.
 - No blended power aggregate is served. `power_by_modality` has `indoor`, `outdoor`, and `unknown` strata, each with `n >= 3` gating.
 - All unavailable numeric observations serialize as `null`; zero means a measured zero.
-- Repair commands are TypeScript, default to dry-run, require an explicit UTC window and `--execute`, are user-scoped, bounded, idempotent, and compare-and-swap guarded.
+- Repair commands are TypeScript, default to dry-run, and require an explicit user-scoped UTC window and bounds. Execute mode additionally requires `--execute`, an approved durable `--artifact-directory`, a named `--acceptance-owner`, and an `--acceptance-deadline` within 24 hours; every write is idempotent and compare-and-swap guarded.
 - Read `ReplacingMergeTree` verification state with `FINAL`; rollback writes captured values with a newer version.
 - Before a later historical repair starts, the earlier repair artifact must be accepted and retired by the named production operator within the recorded deadline.
 
