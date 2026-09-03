@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { buildActivitySensorSummaryRowsTableSql } from "./clickhouse-activity-sensor-summary.ts";
 import { buildActivitySummaryRowsTableSql } from "./clickhouse-activity-summary.ts";
 import { readModelSql, renderDbtModelSql } from "./read-model-sql-test-helpers.ts";
@@ -28,6 +29,13 @@ interface ActivityMetricPresenceRow {
   elevation_loss_m: number | null;
   total_distance: number | null;
 }
+
+const clickHouseUuidSchema = z
+  .string()
+  .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+const canonicalLifecycleRowsSchema = z.array(
+  z.object({ activity_id: clickHouseUuidSchema, is_deleted: z.coerce.number().int() }),
+);
 
 describe("activity_summary_rows canonical activity ids", () => {
   let client: ClickHouseClient | undefined;
@@ -158,7 +166,7 @@ ${renderActivitySummaryRowsSelectSql(targetSchema, [memberActivityId])}`,
       format: "JSONEachRow",
     });
 
-    expect(await result.json<{ activity_id: string; is_deleted: number }>()).toEqual([
+    expect(canonicalLifecycleRowsSchema.parse(await result.json<unknown>())).toEqual([
       { activity_id: canonicalActivityId, is_deleted: 0 },
     ]);
   }, 180_000);

@@ -238,9 +238,8 @@ existing_duplicate_groups AS (
 stale_duplicate_groups AS (
     SELECT existing_duplicate_groups.activity_id
     FROM existing_duplicate_groups
-    LEFT JOIN scoped_current_duplicate_groups
+    LEFT ANTI JOIN scoped_current_duplicate_groups
         ON scoped_current_duplicate_groups.activity_id = existing_duplicate_groups.activity_id
-    WHERE scoped_current_duplicate_groups.activity_id IS null
 ),
 
 refresh_clock AS (

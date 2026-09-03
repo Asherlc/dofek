@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { readModelSql, renderDbtModelSql } from "../../../src/db/read-model-sql-test-helpers.ts";
 
 type ClickHouseClient = ReturnType<typeof createClient>;
@@ -13,6 +14,13 @@ const userA = "00000000-0000-4000-8000-000000000001";
 const userB = "00000000-0000-4000-8000-000000000002";
 const tombstonedActivity = "00000000-0000-4000-8000-000000000205";
 const otherUserActivity = "00000000-0000-4000-8000-000000000206";
+const groupRowsSchema = z.array(
+  z.object({ activityId: z.string().uuid(), groupId: z.string().uuid() }),
+);
+const groupCountRowsSchema = z.array(z.object({ groupCount: z.coerce.number().int() }));
+const groupLifecycleRowsSchema = z.array(
+  z.object({ activityId: z.string().uuid(), isDeleted: z.coerce.number().int() }),
+);
 
 describe("activity_duplicate_groups read model", () => {
   let client: ClickHouseClient | undefined;
@@ -50,7 +58,7 @@ ${renderModel(database)}`,
       format: "JSONEachRow",
     });
 
-    await expect(result.json()).resolves.toEqual([
+    expect(groupRowsSchema.parse(await result.json<unknown>())).toEqual([
       { activityId: activityA, groupId: activityA },
       { activityId: activityB, groupId: activityA },
       { activityId: activityC, groupId: activityA },
@@ -86,7 +94,7 @@ ${renderModel(database)}`,
       format: "JSONEachRow",
     });
 
-    await expect(result.json()).resolves.toEqual([
+    expect(groupRowsSchema.parse(await result.json<unknown>())).toEqual([
       { activityId: activityA, groupId: activityA },
       { activityId: activityB, groupId: activityA },
       { activityId: activityC, groupId: activityA },
@@ -114,7 +122,57 @@ ${renderModel(database)}`,
         WHERE is_deleted = 0`,
       format: "JSONEachRow",
     });
-    await expect(result.json()).resolves.toEqual([{ groupCount: 1 }]);
+    expect(groupCountRowsSchema.parse(await result.json<unknown>())).toEqual([{ groupCount: 1 }]);
+  }, 180_000);
+
+  it("tombstones a removed component member during a scoped incremental refresh", async () => {
+    const activeClient = requireClient(client);
+    await seedFixture(activeClient, database);
+    await activeClient.command({
+      query: `INSERT INTO ${database}.activity_duplicate_groups
+${renderModel(database)}`,
+    });
+    await activeClient.command({ query: `TRUNCATE TABLE ${database}.activity_source_records` });
+    await activeClient.command({ query: `TRUNCATE TABLE ${database}.activity_duplicate_matches` });
+    await activeClient.command({
+      query: `INSERT INTO ${database}.activity_source_records VALUES
+        ('${activityA}', '${userA}', 0),
+        ('${activityB}', '${userA}', 0),
+        ('${activityC}', '${userA}', 0)`,
+    });
+    await activeClient.command({
+      query: `INSERT INTO ${database}.activity_duplicate_matches VALUES
+        ('${activityA}', '${activityB}', 0),
+        ('${activityB}', '${activityC}', 0)`,
+    });
+
+    const scopedRefreshSql = renderModel(database, true, [activityD]);
+    await activeClient.command({
+      query: `INSERT INTO ${database}.activity_duplicate_groups
+${scopedRefreshSql}`,
+    });
+
+    const rawResult = await activeClient.query({
+      query: `SELECT toString(activity_id) AS activityId, is_deleted AS isDeleted
+        FROM ${database}.activity_duplicate_groups
+        WHERE activity_id = toUUID('${activityD}')
+        ORDER BY refresh_version`,
+      format: "JSONEachRow",
+    });
+    expect(groupLifecycleRowsSchema.parse(await rawResult.json<unknown>())).toEqual([
+      { activityId: activityD, isDeleted: 0 },
+      { activityId: activityD, isDeleted: 1 },
+    ]);
+
+    const result = await activeClient.query({
+      query: `SELECT toString(activity_id) AS activityId, is_deleted AS isDeleted
+        FROM ${database}.activity_duplicate_groups FINAL
+        WHERE activity_id = toUUID('${activityD}')`,
+      format: "JSONEachRow",
+    });
+    expect(groupLifecycleRowsSchema.parse(await result.json<unknown>())).toEqual([
+      { activityId: activityD, isDeleted: 1 },
+    ]);
   }, 180_000);
 });
 
@@ -123,11 +181,20 @@ function requireClient(client: ClickHouseClient | undefined): ClickHouseClient {
   return client;
 }
 
-function renderModel(database: string, incremental = false): string {
+function renderModel(
+  database: string,
+  incremental = false,
+  scopedActivityIds?: readonly string[],
+): string {
   return renderDbtModelSql(readModelSql("activity_duplicate_groups.sql"), {
     isIncremental: incremental,
-    activityRefreshScoped: false,
+    activityRefreshScoped: scopedActivityIds != null,
   })
+    .replaceAll(
+      "{{ activity_refresh_ids() }}",
+      `CAST([${(scopedActivityIds ?? []).map((id) => `'${id}'`).join(", ")}], 'Array(UUID)')`,
+    )
+    .replaceAll('{{ var("activity_refresh_user_id") }}', userA)
     .replace(/{{ ref\('activity_source_records'\) }}/g, `${database}.activity_source_records`)
     .replace(/{{ ref\('activity_duplicate_matches'\) }}/g, `${database}.activity_duplicate_matches`)
     .replace(/{{ this }}/g, `${database}.activity_duplicate_groups`)
@@ -150,7 +217,7 @@ async function seedFixture(client: ClickHouseClient, database: string): Promise<
     ) ENGINE = ReplacingMergeTree() ORDER BY (activity_id, duplicate_activity_id)`,
     `CREATE TABLE ${database}.activity_duplicate_groups (
       activity_id UUID,
-      group_id String,
+      group_id Nullable(String),
       refresh_version UInt64,
       is_deleted UInt8,
       refreshed_at DateTime64(9, 'UTC')

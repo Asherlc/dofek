@@ -3,7 +3,7 @@ import { withActivityIntegrityLease } from "./activity-data-integrity-lease.ts";
 
 function leaseDatabase(
   query: (query: string, values?: unknown[]) => Promise<{ rows: object[] }>,
-  release: () => void,
+  release: (destroy?: boolean) => void,
 ) {
   return { $client: { connect: vi.fn(async () => ({ query, release })) } };
 }
@@ -22,7 +22,7 @@ describe("withActivityIntegrityLease", () => {
         throw operationError;
       }),
     ).rejects.toBe(operationError);
-    expect(release).toHaveBeenCalledOnce();
+    expect(release).toHaveBeenCalledWith(true);
   });
 
   it("releases the connection and reports the unlock error after a successful operation", async () => {
@@ -36,6 +36,19 @@ describe("withActivityIntegrityLease", () => {
     await expect(
       withActivityIntegrityLease(leaseDatabase(query, release), async () => "done"),
     ).rejects.toBe(unlockError);
-    expect(release).toHaveBeenCalledOnce();
+    expect(release).toHaveBeenCalledWith(true);
+  });
+
+  it("returns a successfully unlocked connection to the pool", async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ rows: [{ acquired: true }] })
+      .mockResolvedValueOnce({ rows: [] });
+    const release = vi.fn();
+
+    await expect(
+      withActivityIntegrityLease(leaseDatabase(query, release), async () => "done"),
+    ).resolves.toBe("done");
+    expect(release).toHaveBeenCalledWith();
   });
 });

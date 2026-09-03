@@ -6,7 +6,7 @@ interface ActivityIntegrityLeaseDatabase {
   $client: {
     connect(): Promise<{
       query(query: string, values?: unknown[]): Promise<{ rows: object[] }>;
-      release(): void;
+      release(destroy?: boolean): void;
     }>;
   };
 }
@@ -43,7 +43,8 @@ export async function withActivityIntegrityLease<T>(
     captureException(error);
   }
   try {
-    connection.release();
+    if (cleanupError === undefined) connection.release();
+    else connection.release(true);
   } catch (error) {
     cleanupError ??= error;
     captureException(error);

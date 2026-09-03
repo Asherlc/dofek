@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { readModelSql, renderDbtModelSql } from "../../../src/db/read-model-sql-test-helpers.ts";
 
 type ClickHouseClient = ReturnType<typeof createClient>;
@@ -16,6 +17,10 @@ const bridgeStrengthId = "00000000-0000-4000-8000-000000000107";
 const tombstonedWhoopId = "00000000-0000-4000-8000-000000000108";
 const pelotonMemberId = "00000000-0000-4000-8000-000000000109";
 const wahooOtherId = "2a7c6fa3-32f1-4ae5-9c99-b981c31e289b";
+const matchRowsSchema = z.array(
+  z.object({ activityId: z.string().uuid(), duplicateActivityId: z.string().uuid() }),
+);
+const lifecycleRowsSchema = z.array(z.object({ isDeleted: z.coerce.number().int() }));
 
 describe("activity_duplicate_matches read model", () => {
   let client: ClickHouseClient | undefined;
@@ -53,7 +58,7 @@ ${renderModel(database)}`,
       format: "JSONEachRow",
     });
 
-    const matches = await result.json();
+    const matches = matchRowsSchema.parse(await result.json<unknown>());
 
     expect(matches).toEqual([
       { activityId: whoopOtherId, duplicateActivityId: containedCyclingId },
@@ -84,7 +89,7 @@ ${renderModel(database, true)}`,
       format: "JSONEachRow",
     });
 
-    await expect(result.json()).resolves.toEqual([{ isDeleted: 1 }]);
+    expect(lifecycleRowsSchema.parse(await result.json<unknown>())).toEqual([{ isDeleted: 1 }]);
   }, 180_000);
 
   it("keeps an active-to-tombstoned match when only its tombstoned endpoint is scoped", async () => {
@@ -107,7 +112,7 @@ ${renderModel(database, true, [tombstonedWhoopId])}`,
       format: "JSONEachRow",
     });
 
-    await expect(result.json()).resolves.toEqual([{ isDeleted: 0 }]);
+    expect(lifecycleRowsSchema.parse(await result.json<unknown>())).toEqual([{ isDeleted: 0 }]);
   }, 180_000);
 });
 
