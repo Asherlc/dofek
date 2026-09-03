@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { readModelSql } from "../../../../src/db/read-model-sql-test-helpers.ts";
 import {
   type ClickHouseClient,
   createClickHouseClientFromEnv,
 } from "../../../../src/db/clickhouse.ts";
+import { readModelSql } from "../../../../src/db/read-model-sql-test-helpers.ts";
 
 const countSchema = z.array(z.object({ count: z.coerce.number().int() }));
 const lifecycleSchema = z.array(

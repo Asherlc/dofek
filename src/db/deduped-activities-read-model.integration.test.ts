@@ -1,10 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import {
-  readModelSql,
-  renderDbtModelSql,
-} from "./read-model-sql-test-helpers.ts";
+import { readModelSql, renderDbtModelSql } from "./read-model-sql-test-helpers.ts";
 
 const activityId = "00000000-0000-0000-0000-000000000101";
 const linkedActivityId = "00000000-0000-0000-0000-000000000102";

@@ -2,14 +2,14 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
+  type ClickHouseClient,
+  createClickHouseClientFromEnv,
+} from "../../../../src/db/clickhouse.ts";
+import {
   extractCteSql,
   readModelSql,
   renderDbtModelSql,
 } from "../../../../src/db/read-model-sql-test-helpers.ts";
-import {
-  type ClickHouseClient,
-  createClickHouseClientFromEnv,
-} from "../../../../src/db/clickhouse.ts";
 import {
   buildIngestMetricStreamCreateTableSql,
   METRIC_STREAM_PROVIDER_CURRENT_STATE_RECORDED_AT_PROJECTION,
