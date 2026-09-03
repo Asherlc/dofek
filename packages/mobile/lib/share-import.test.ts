@@ -42,12 +42,12 @@ describe("inferImportProviderFromFile", () => {
 
 describe("importSharedFile", () => {
   it("does not upload a Strong CSV when unit selection is cancelled", async () => {
-    const file: UploadableMobileFile & { text(): Promise<string> } = {
+    const file: UploadableMobileFile & { readHeader(maxBytes: number): Promise<string> } = {
       uri: "file:///tmp/Strong%20Export.csv",
       name: "Strong Export.csv",
       type: "text/csv",
       size: 80,
-      text: async () => "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps",
+      readHeader: async () => "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps",
       sha256: async () => "a".repeat(64),
       uploadPart: async () => ({ status: 200, headers: { etag: "part-etag" } }),
     };
@@ -76,12 +76,12 @@ describe("importSharedFile", () => {
   it("does not ask for a source unit when importing a non-Strong shared file", async () => {
     const uploadId = "8c844e28-7c3b-470b-8e0b-d2b6f5fb3afc";
     const selectStrongWeightUnit = vi.fn(async (): Promise<"kg" | "lbs" | null> => "kg");
-    const file: UploadableMobileFile & { text(): Promise<string> } = {
+    const file: UploadableMobileFile & { readHeader(maxBytes: number): Promise<string> } = {
       uri: "file:///tmp/garmin-export.zip",
       name: "garmin-export.zip",
       type: "application/zip",
       size: 80,
-      text: async () => "",
+      readHeader: async () => "",
       sha256: async () => "a".repeat(64),
       uploadPart: async () => ({ status: 200, headers: { etag: "part-etag" } }),
     };
@@ -123,12 +123,12 @@ describe("importSharedFile", () => {
   it("imports an extensionless Strong CSV from a generic shared name", async () => {
     const uploadId = "7b817a28-7c3b-470b-8e0b-d2b6f5fb3afc";
     const uploadPart = vi.fn(async () => ({ status: 200, headers: { etag: "part-etag" } }));
-    const file: UploadableMobileFile & { text(): Promise<string> } = {
+    const file: UploadableMobileFile & { readHeader(maxBytes: number): Promise<string> } = {
       uri: "file:///var/mobile/Containers/Data/Application/CEC2FED0-57D4-41EA-B252-288126334734/tmp/com.dofek.app-Inbox/strong_workouts.csv",
       name: "export",
       type: "application/octet-stream",
       size: 80,
-      text: vi.fn(
+      readHeader: vi.fn(
         async () => "Date,Workout Name,Duration,Exercise Name\\n2026-03-10,Leg Day,00:45:00,Squat",
       ),
       sha256: vi.fn(async () => "a".repeat(64)),
@@ -182,13 +182,47 @@ describe("importSharedFile", () => {
     expect(statuses).toContain("done");
   });
 
+  it("does not infer Strong from an extensionless binary shared file", async () => {
+    const readHeader = vi.fn(async () => "\u0000\u0001\u0002\u0003");
+    const file: UploadableMobileFile & { readHeader(bytes: number): Promise<string> } = {
+      uri: "file:///tmp/Strong-Export",
+      name: "Strong-Export",
+      type: "application/octet-stream",
+      size: 4 * 1024 * 1024,
+      readHeader,
+      sha256: async () => "a".repeat(64),
+      uploadPart: async () => ({ status: 200, headers: { etag: "part-etag" } }),
+    };
+    const initiate = vi.fn(async () => {
+      throw new Error("upload should not start");
+    });
+    const selectStrongWeightUnit = vi.fn(async (): Promise<"kg" | "lbs" | null> => "kg");
+    const fileUploadApi: FileUploadApi = {
+      initiate,
+      authorizeParts: vi.fn(),
+      complete: vi.fn(),
+      resume: vi.fn(),
+    };
+
+    await expect(
+      importSharedFile(
+        { fileUri: file.uri, selectStrongWeightUnit },
+        { file, fileUploadApi, createUploadId: () => crypto.randomUUID() },
+      ),
+    ).rejects.toThrow("Unsupported shared file type");
+
+    expect(readHeader).toHaveBeenCalledWith(16 * 1024);
+    expect(selectStrongWeightUnit).not.toHaveBeenCalled();
+    expect(initiate).not.toHaveBeenCalled();
+  });
+
   it("reports the server import error", async () => {
-    const file: UploadableMobileFile & { text(): Promise<string> } = {
+    const file: UploadableMobileFile & { readHeader(maxBytes: number): Promise<string> } = {
       uri: "file:///tmp/export.csv",
       name: "export.csv",
       type: "text/csv",
       size: 10,
-      text: async () => "Date,Workout Name,Duration,Exercise Name",
+      readHeader: async () => "Date,Workout Name,Duration,Exercise Name",
       sha256: async () => "b".repeat(64),
       uploadPart: async () => ({ status: 200, headers: { etag: "part-etag" } }),
     };

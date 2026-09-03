@@ -31,7 +31,7 @@ export interface ImportSharedFileArgs {
 }
 
 export interface SharedImportFile extends UploadableMobileFile {
-  text(): Promise<string>;
+  readHeader(maxBytes: number): Promise<string>;
 }
 
 export interface ImportSharedFileDeps {
@@ -58,12 +58,35 @@ function extensionForFileName(fileName: string): string {
 }
 
 function matchesCsvHeader(csvHeaderLine: string, requiredColumns: string[]): boolean {
-  const normalized = csvHeaderLine
+  const normalized = normalizeCsvHeader(csvHeaderLine);
+  if (!isVerifiedCsvHeader(normalized)) return false;
+  return requiredColumns.every((column) => normalized.includes(column));
+}
+
+function normalizeCsvHeader(csvHeaderLine: string): string {
+  return csvHeaderLine
     .replace(/^\uFEFF/, "")
     .trim()
     .toLowerCase();
-  if (normalized === "") return false;
-  return requiredColumns.every((column) => normalized.includes(column));
+}
+
+function isVerifiedCsvHeader(csvHeaderLine: string): boolean {
+  return csvHeaderLine.includes(",") && Array.from(csvHeaderLine).every(isTextCharacter);
+}
+
+function isTextCharacter(character: string): boolean {
+  const codePoint = character.codePointAt(0);
+  return (
+    codePoint !== undefined &&
+    codePoint !== 0xfffd &&
+    (codePoint === 0x09 || (codePoint >= 0x20 && (codePoint < 0x7f || codePoint > 0x9f)))
+  );
+}
+
+function isExtensionlessGenericBinary(fileExtension: string, mimeType: string | null): boolean {
+  return (
+    fileExtension === "" && (mimeType ?? "").toLowerCase().startsWith("application/octet-stream")
+  );
 }
 
 function isCsvLike(fileExtension: string, mimeType: string | null): boolean {
@@ -72,7 +95,7 @@ function isCsvLike(fileExtension: string, mimeType: string | null): boolean {
   return (
     lowerMimeType.includes("csv") ||
     lowerMimeType.includes("text/plain") ||
-    (fileExtension === "" && lowerMimeType.startsWith("application/octet-stream"))
+    isExtensionlessGenericBinary(fileExtension, mimeType)
   );
 }
 
@@ -108,6 +131,7 @@ export function inferImportProviderFromFile({
     return "strong-csv";
   }
   if (matchesCsvHeader(csvHeaderLine, ["day", "meal", "food name"])) return "cronometer-csv";
+  if (isExtensionlessGenericBinary(normalizedExtension, mimeType)) return null;
   if (normalizedFileName.includes("cronometer")) return "cronometer-csv";
   if (normalizedFileName.includes("strong")) return "strong-csv";
   if (normalizedFileName.includes("kaya")) return "kaya-export";
@@ -122,6 +146,8 @@ function getCsvHeaderLine(csvText: string): string {
       ?.trim() ?? ""
   );
 }
+
+const CSV_HEADER_PROBE_BYTES = 16 * 1024;
 
 function progressForUpload(
   progress: { phase: "preparing" | "uploading" | "queueing"; percentage: number; message: string },
@@ -146,9 +172,10 @@ export async function importSharedFile(
 ): Promise<ShareImportResult | null> {
   try {
     const fileExtension = extensionForFileName(deps.file.name);
-    const csvHeaderLine = isCsvLike(fileExtension, deps.file.type || null)
-      ? getCsvHeaderLine(await deps.file.text())
-      : "";
+    const csvHeaderLine =
+      !args.providerId && isCsvLike(fileExtension, deps.file.type || null)
+        ? getCsvHeaderLine(await deps.file.readHeader(CSV_HEADER_PROBE_BYTES))
+        : "";
     const providerId =
       args.providerId ??
       inferImportProviderFromFile({
