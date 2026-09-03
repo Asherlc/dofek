@@ -1284,7 +1284,7 @@ describe("registerWebhookForProvider", () => {
     );
 
     expect(provider.unregisterWebhook).toHaveBeenCalledWith("remote-sub");
-    const cleanupQuery = new PgDialect().sqlToQuery(vi.mocked(db.execute).mock.calls[1]?.[0]);
+    const cleanupQuery = new PgDialect().sqlToQuery(vi.mocked(db.execute).mock.calls[2]?.[0]);
     expect(cleanupQuery.sql).not.toContain("status = 'pending'");
   });
 });
