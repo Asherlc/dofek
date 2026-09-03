@@ -24796,3 +24796,23 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `@dofek/heart-rate-variability` package typecheck pass locally. Confirm the
   replacement CI jobs pass.
 - **Remaining risk / follow-up:** None after the replacement CI run passes.
+
+## 2026-09-02 — MCP tool registry exceeded the line-count lint limit
+
+- **Status:** Resolved in source; CI rerun pending.
+- **Symptoms / user impact:** The primary lint job failed and blocked the
+  activity-integrity PR after the functional checks had passed.
+- **Evidence / root cause:** Biome reported
+  `packages/server/src/mcp/tools.ts:1:1 lint/style/noExcessiveLinesPerFile` with
+  1,001 logical lines against the enforced 1,000-line maximum. The power summary
+  contract added in this PR left the touched registry one line over the limit.
+- **Fix / mitigation:** Removed an unnecessary blank line from the tool
+  registration boundary. The lint limit was not raised or suppressed.
+- **Validation:** The exact repository lint command clears the original Biome
+  stage across all 3,139 files. Its later SQLFluff stage was interrupted by the
+  separately documented local ClickHouse reset; standalone analytics SQL lint
+  passed, and the dedicated CI SQLFluff job is green. Confirm the replacement
+  primary lint job passes.
+- **Remaining risk / follow-up:** The registry is exactly at the limit; the next
+  functional addition should extract another cohesive MCP tool module rather
+  than compressing behavior or changing the threshold.

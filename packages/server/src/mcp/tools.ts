@@ -995,6 +995,5 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       });
     },
   );
-
   return server;
 }
