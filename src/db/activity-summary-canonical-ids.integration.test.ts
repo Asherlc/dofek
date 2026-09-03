@@ -1,8 +1,10 @@
 import { randomBytes } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  readModelSql,
+  renderDbtModelSql,
+} from "../../analytics/models/read_models/read-model-sql-test-helpers.ts";
 import { buildActivitySensorSummaryRowsTableSql } from "./clickhouse-activity-sensor-summary.ts";
 import { buildActivitySummaryRowsTableSql } from "./clickhouse-activity-summary.ts";
 
@@ -209,23 +211,11 @@ async function waitForClickHouse(client: ClickHouseClient): Promise<void> {
   throw lastError instanceof Error ? lastError : new Error("ClickHouse did not become ready");
 }
 
-function readProjectFile(relativePath: string): string {
-  return readFileSync(join(import.meta.dirname, "../..", relativePath), "utf8");
-}
-
 function renderActivitySummaryRowsSelectSql(targetSchema: string): string {
-  return readProjectFile("analytics/models/read_models/activity_summary_rows.sql")
-    .replace(/{{ config\([\s\S]*?\) }}\s*/, "")
-    .replace(/\{% set initial_lookback_days = var\('initial_lookback_days', 120\) %\}/g, "")
-    .replace(
-      /\{% if is_incremental\(\) %}\(count\(\) = 0\)\{% else %}1\{% endif %}/g,
-      "(count() = 0)",
-    )
-    .replace(
-      /FROM \{% if is_incremental\(\) %}{{ this }}\{% else %}\(SELECT CAST\(null, 'Nullable\(DateTime64\(9, ''UTC''\)\)'\) AS refreshed_at\)\{% endif %}/g,
-      `FROM ${targetSchema}.activity_summary_rows`,
-    )
-    .replace(/\{% if is_incremental\(\) %}\s*([\s\S]*?)\s*\{% else %}[\s\S]*?\{% endif %}/g, "$1")
+  return renderDbtModelSql(readModelSql("activity_summary_rows.sql"), {
+    isIncremental: true,
+    activityRefreshScoped: false,
+  })
     .replace(/{{ initial_lookback_days }}/g, "120")
     .replace(/{{ this }}/g, `${targetSchema}.activity_summary_rows`)
     .replace(/{{ ref\('deduped_activities'\) }}/g, `${targetSchema}.deduped_activities`)

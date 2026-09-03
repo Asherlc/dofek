@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { readModelSql, renderDbtModelSql } from "./read-model-sql-test-helpers.ts";
 
 type ClickHouseClient = ReturnType<typeof createClient>;
 
@@ -116,12 +116,10 @@ function groupsFor(
 }
 
 function renderModel(database: string, incremental = false): string {
-  return readFileSync(new URL("./activity_duplicate_matches.sql", import.meta.url), "utf8")
-    .replace(/{{ config\([\s\S]*?\) }}\s*/, "")
-    .replace(
-      /{% if is_incremental\(\) %}([\s\S]*?){% else %}([\s\S]*?){% endif %}/g,
-      incremental ? "$1" : "$2",
-    )
+  return renderDbtModelSql(readModelSql("activity_duplicate_matches.sql"), {
+    isIncremental: incremental,
+    activityRefreshScoped: false,
+  })
     .replace(/{{ ref\('activity_source_records'\) }}/g, `${database}.activity_source_records`)
     .replace(
       /{{ source\('postgres_fitness', 'activity'\) }}/g,
