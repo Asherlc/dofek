@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
-import { resolveRecordLocalTimeContext } from "@dofek/format/record-local-time";
+import {
+  resolveNaiveWallClockInTimezone,
+  resolveRecordLocalTimeContext,
+} from "@dofek/format/record-local-time";
 import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import { eq } from "drizzle-orm";
 import { resolveUserExerciseWithProvenance } from "../db/exercise-provenance.ts";
@@ -424,32 +427,13 @@ function resolveStrongStartedAt(date: string, timezone?: string): Date {
   }
   if (timezone == null) return wallClockDate;
 
-  const resolveStartedAt = (candidate: Date): Date => {
-    const context = resolveRecordLocalTimeContext({
-      startedAt: candidate,
-      timezone,
-      source: "device_timezone",
-    });
-    if (context.startUtcOffsetMinutes === null) {
-      throw new Error("Strong timezone context did not include a UTC offset");
-    }
-    return new Date(wallClockDate.getTime() - context.startUtcOffsetMinutes * 60_000);
-  };
-  const startedAt = resolveStartedAt(resolveStartedAt(wallClockDate));
-  const resolvedContext = resolveRecordLocalTimeContext({
-    startedAt,
-    timezone,
-    source: "device_timezone",
-  });
-  const resolvedWallClock = new Date(
-    startedAt.getTime() + (resolvedContext.startUtcOffsetMinutes ?? 0) * 60_000,
-  );
-  if (resolvedWallClock.getTime() !== wallClockDate.getTime()) {
+  try {
+    return resolveNaiveWallClockInTimezone(wallClockDate, timezone);
+  } catch {
     throw new StrongCsvValidationError(
       `Strong workout timestamp does not exist in ${timezone}: ${date}`,
     );
   }
-  return startedAt;
 }
 
 export async function importStrongCsv(
@@ -526,6 +510,7 @@ export async function importStrongCsv(
           startUtcOffsetMinutes: localTimeContext?.startUtcOffsetMinutes,
           endUtcOffsetMinutes: localTimeContext?.endUtcOffsetMinutes,
           localTimeSource: localTimeContext?.source,
+          homeTimezone: timezone,
         },
         {
           activityType: resolveProviderActivityType("strength", "strength"),

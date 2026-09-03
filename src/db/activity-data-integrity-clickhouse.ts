@@ -22,10 +22,15 @@ export const clickHouseSourceRowSchema = z
     provider_id: z.string().min(1),
     user_id: postgresUuidSchema,
     canonical_type: z.string().min(1),
+    started_at: z.coerce.date().optional(),
+    ended_at: z.coerce.date().nullable().optional(),
     timezone: z.string().nullable(),
     start_utc_offset_minutes: z.coerce.number().int().nullable(),
     end_utc_offset_minutes: z.coerce.number().int().nullable(),
     local_time_source: z.string().min(1),
+    rejected_provider_timezone: z.string().nullable().optional(),
+    rejected_provider_start_utc_offset_minutes: z.coerce.number().int().nullable().optional(),
+    rejected_provider_end_utc_offset_minutes: z.coerce.number().int().nullable().optional(),
     refresh_version: uint64StringSchema,
     is_deleted: z.coerce.number().int().min(0).max(1),
   })
@@ -376,13 +381,18 @@ export async function snapshotDerivedRowsOrNull(
 
 export function incompatibleMemberCount(snapshot: DerivedSnapshot): number {
   const sourceById = new Map(snapshot.sourceRows.map((row) => [row.activity_id, row]));
+  const genericCanonicalTypes = new Set(["cardio", "other"]);
   let count = 0;
   for (const deduped of snapshot.dedupedRows) {
     for (const memberActivityId of deduped.member_activity_ids) {
       const member = sourceById.get(memberActivityId);
       if (!member) continue;
+      const genericMemberSupportsSpecificRepresentative =
+        genericCanonicalTypes.has(member.canonical_type) &&
+        !genericCanonicalTypes.has(deduped.canonical_type);
       if (
-        member.canonical_type !== deduped.canonical_type ||
+        (member.canonical_type !== deduped.canonical_type &&
+          !genericMemberSupportsSpecificRepresentative) ||
         (deduped.canonical_type === "other" && member.provider_id !== deduped.provider_id)
       ) {
         count += 1;
@@ -457,12 +467,39 @@ export function assertActivityIntegrityRebuild(
 
 interface RepairedActivityLocalTime {
   id: string;
+  startedAt?: string;
+  endedAt?: string | null;
+  repairedStartedAt?: string;
+  repairedEndedAt?: string | null;
   repaired: {
     timezone: string | null;
     startUtcOffsetMinutes: number | null;
     endUtcOffsetMinutes: number | null;
     localTimeSource: string;
+    rejectedProviderTimezone?: string | null;
+    rejectedProviderStartUtcOffsetMinutes?: number | null;
+    rejectedProviderEndUtcOffsetMinutes?: number | null;
   };
+}
+
+function postgresMirrorRowsMatchRepair(
+  sourceRows: ClickHouseSourceRow[],
+  repairedRows: readonly RepairedActivityLocalTime[],
+): boolean {
+  const sourcesById = new Map(sourceRows.map((row) => [row.activity_id, row]));
+  return (
+    sourceRowsMatchPostgres(sourceRows, repairedRows) &&
+    repairedRows.every((row) => {
+      const source = sourcesById.get(row.id);
+      return (
+        source?.rejected_provider_timezone === row.repaired.rejectedProviderTimezone &&
+        source?.rejected_provider_start_utc_offset_minutes ===
+          row.repaired.rejectedProviderStartUtcOffsetMinutes &&
+        source?.rejected_provider_end_utc_offset_minutes ===
+          row.repaired.rejectedProviderEndUtcOffsetMinutes
+      );
+    })
+  );
 }
 
 export function sourceRowsMatchPostgres(
@@ -475,6 +512,13 @@ export function sourceRowsMatchPostgres(
     return (
       source != null &&
       source.is_deleted === 0 &&
+      (row.repairedStartedAt == null ||
+        row.startedAt === row.repairedStartedAt ||
+        source.started_at?.getTime() === new Date(row.repairedStartedAt).getTime()) &&
+      (row.repairedEndedAt === undefined ||
+        row.endedAt === row.repairedEndedAt ||
+        (source.ended_at?.getTime() ?? null) ===
+          (row.repairedEndedAt ? new Date(row.repairedEndedAt).getTime() : null)) &&
       source.timezone === row.repaired.timezone &&
       source.start_utc_offset_minutes === row.repaired.startUtcOffsetMinutes &&
       source.end_utc_offset_minutes === row.repaired.endUtcOffsetMinutes &&
@@ -515,10 +559,15 @@ export async function waitForPostgresMirror(
   activity.provider_id AS provider_id,
   activity.user_id AS user_id,
   activity.canonical_type AS canonical_type,
+  activity.started_at AS started_at,
+  activity.ended_at AS ended_at,
   activity.timezone AS timezone,
   activity.start_utc_offset_minutes AS start_utc_offset_minutes,
   activity.end_utc_offset_minutes AS end_utc_offset_minutes,
   activity.local_time_source AS local_time_source,
+  activity.rejected_provider_timezone AS rejected_provider_timezone,
+  activity.rejected_provider_start_utc_offset_minutes AS rejected_provider_start_utc_offset_minutes,
+  activity.rejected_provider_end_utc_offset_minutes AS rejected_provider_end_utc_offset_minutes,
   toString(toUInt64(toUnixTimestamp64Nano(activity._peerdb_synced_at))) AS refresh_version,
   toUInt8(activity._peerdb_is_deleted) AS is_deleted
 FROM postgres_fitness.activity AS activity FINAL
@@ -527,7 +576,7 @@ WHERE activity.user_id = {userId:UUID}
 ORDER BY activity.id`,
       { userId, activityIds: changedRows.map((row) => row.id) },
     );
-    if (sourceRowsMatchPostgres(mirroredRows, changedRows)) return;
+    if (postgresMirrorRowsMatchRepair(mirroredRows, changedRows)) return;
     if (monotonicNow() >= deadline) {
       throw new Error(
         `PostgreSQL CDC mirror did not publish ${changedRows.length} repaired activities within ${timeoutMs}ms`,

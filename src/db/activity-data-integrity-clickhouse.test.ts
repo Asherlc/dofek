@@ -385,6 +385,20 @@ describe("incompatibleMemberCount", () => {
     ).toBe(1);
   });
 
+  it.each(["cardio", "other"])(
+    "treats a generic %s member as compatible with a specific representative",
+    (genericType) => {
+      expect(
+        incompatibleMemberCount(
+          compatibilitySnapshot(
+            [sourceRowA, { ...sourceRowB, canonical_type: genericType }],
+            [dedupedRow],
+          ),
+        ),
+      ).toBe(0);
+    },
+  );
+
   it("requires provider consistency only for other activities", () => {
     expect(
       incompatibleMemberCount(

@@ -1,7 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { resolveProviderTimezoneLocalTimeContext } from "@dofek/format/record-local-time";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -32,60 +31,30 @@ import {
 } from "./activity-data-integrity-journal.ts";
 import { withActivityIntegrityLease } from "./activity-data-integrity-lease.ts";
 import {
+  type ActivityIntegrityPostgresArtifactRow,
+  type ActivityIntegrityPostgresCandidate,
+  activityIntegrityPostgresArtifactRowSchema,
+  activityIntegrityPostgresCandidateSchema,
+  activityIntegrityStatesEqual,
+  buildActivityIntegrityPostgresArtifactRows,
+} from "./activity-data-integrity-local-time.ts";
+import {
   type ActivityIntegrityRetirementReceipt,
   activityIntegrityRetirementReceiptPath,
   makeActivityIntegrityRetirementReceipt,
   materializeActivityIntegrityRetirementReceipt,
 } from "./activity-data-integrity-retirement-receipt.ts";
+import { loadUserHomeTimezone } from "./home-timezone.ts";
 import { executeWithSchema, type SchemaExecutionDatabase } from "./typed-sql.ts";
 
 const MAXIMUM_BATCH_SIZE = 1_000;
-const AUDIT_SCHEMA_VERSION = 3;
+const AUDIT_SCHEMA_VERSION = 4;
 export const ACTIVITY_INTEGRITY_MAX_ACCEPTANCE_WINDOW_MS = 24 * 60 * 60 * 1_000;
 const postgresUuidSchema = z
   .string()
   .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, "must be a UUID");
 
-const localTimeSourceSchema = z.enum([
-  "unknown",
-  "provider_timezone",
-  "provider_offset",
-  "device_timezone",
-  "device_offset",
-  "user_home_timezone",
-]);
-
-const postgresCandidateSchema = z.object({
-  id: postgresUuidSchema,
-  provider_id: z.string().min(1),
-  external_id: z.string().min(1),
-  user_id: postgresUuidSchema,
-  started_at: z.coerce.date(),
-  ended_at: z.coerce.date().nullable(),
-  timezone: z.string().nullable(),
-  start_utc_offset_minutes: z.coerce.number().int().nullable(),
-  end_utc_offset_minutes: z.coerce.number().int().nullable(),
-  local_time_source: localTimeSourceSchema,
-});
-
 const updatedActivitySchema = z.object({ id: postgresUuidSchema });
-
-const localTimeContextSchema = z.object({
-  timezone: z.string().nullable(),
-  startUtcOffsetMinutes: z.number().int().nullable(),
-  endUtcOffsetMinutes: z.number().int().nullable(),
-  localTimeSource: localTimeSourceSchema,
-});
-
-const postgresArtifactRowSchema = z.object({
-  id: postgresUuidSchema,
-  providerId: z.string().min(1),
-  externalId: z.string().min(1),
-  startedAt: z.string().datetime(),
-  endedAt: z.string().datetime().nullable(),
-  prior: localTimeContextSchema,
-  repaired: localTimeContextSchema,
-});
 
 const acceptanceSchema = z.object({ owner: z.string().min(1), deadline: z.string().datetime() });
 
@@ -130,7 +99,7 @@ const auditArtifactSchema = z.object({
   selected: z.number().int().nonnegative(),
   changedActivityIds: z.array(postgresUuidSchema),
   highestDerivedVersion: uint64StringSchema,
-  postgresActivities: z.array(postgresArtifactRowSchema),
+  postgresActivities: z.array(activityIntegrityPostgresArtifactRowSchema),
   sourceRowsBefore: z.array(clickHouseSourceRowSchema),
   matchRowsBefore: z.array(clickHouseMatchRowSchema),
   groupRowsBefore: z.array(clickHouseGroupRowSchema),
@@ -166,8 +135,8 @@ const auditArtifactSchema = z.object({
     .optional(),
 });
 
-type PostgresCandidate = z.infer<typeof postgresCandidateSchema>;
-type PostgresArtifactRow = z.infer<typeof postgresArtifactRowSchema>;
+type PostgresCandidate = ActivityIntegrityPostgresCandidate;
+type PostgresArtifactRow = ActivityIntegrityPostgresArtifactRow;
 type AuditArtifact = z.infer<typeof auditArtifactSchema>;
 type AuditArtifactWithoutChecksum = Omit<AuditArtifact, "artifactChecksum">;
 
@@ -200,6 +169,7 @@ interface ActivityIntegrityRepairDependencies {
   generateRunId?: () => string;
   now?: () => Date;
   rebuildReadModels?: (input: { userId: string; activityIds: readonly string[] }) => Promise<void>;
+  loadHomeTimezone?: (db: SchemaExecutionDatabase, userId: string) => Promise<string | null>;
   cdcReadinessTimeoutMs?: number;
   cdcReadinessPollIntervalMs?: number;
   monotonicNow?: () => number;
@@ -350,7 +320,7 @@ async function selectPostgresActivities(
   for (let batchIndex = 0; batchIndex < options.maxBatches; batchIndex += 1) {
     const rows: PostgresCandidate[] = await executeWithSchema(
       db,
-      postgresCandidateSchema,
+      activityIntegrityPostgresCandidateSchema,
       sql`SELECT
             activity.id::text AS id,
             activity.provider_id,
@@ -361,7 +331,10 @@ async function selectPostgresActivities(
             activity.timezone,
             activity.start_utc_offset_minutes::integer AS start_utc_offset_minutes,
             activity.end_utc_offset_minutes::integer AS end_utc_offset_minutes,
-            activity.local_time_source
+            activity.local_time_source,
+            activity.rejected_provider_timezone,
+            activity.rejected_provider_start_utc_offset_minutes::integer AS rejected_provider_start_utc_offset_minutes,
+            activity.rejected_provider_end_utc_offset_minutes::integer AS rejected_provider_end_utc_offset_minutes
           FROM fitness.activity AS activity
           WHERE activity.user_id = ${options.userId}::uuid
             AND activity.started_at >= ${options.startAt}
@@ -384,61 +357,6 @@ async function selectPostgresActivities(
   return selected;
 }
 
-function localTimeContext(row: PostgresCandidate): z.infer<typeof localTimeContextSchema> {
-  return {
-    timezone: row.timezone,
-    startUtcOffsetMinutes: row.start_utc_offset_minutes,
-    endUtcOffsetMinutes: row.end_utc_offset_minutes,
-    localTimeSource: row.local_time_source,
-  };
-}
-
-function normalizedLocalTimeContext(
-  row: PostgresCandidate,
-): z.infer<typeof localTimeContextSchema> {
-  if (
-    row.timezone?.trim() &&
-    (row.local_time_source === "provider_timezone" || row.local_time_source === "unknown")
-  ) {
-    const normalized = resolveProviderTimezoneLocalTimeContext({
-      startedAt: row.started_at,
-      endedAt: row.ended_at,
-      timezone: row.timezone,
-    });
-    return {
-      timezone: normalized.timezone,
-      startUtcOffsetMinutes: normalized.startUtcOffsetMinutes,
-      endUtcOffsetMinutes: normalized.endUtcOffsetMinutes,
-      localTimeSource: normalized.source,
-    };
-  }
-  return localTimeContext(row);
-}
-
-function artifactPostgresRows(rows: PostgresCandidate[]): PostgresArtifactRow[] {
-  return rows.map((row) => ({
-    id: row.id,
-    providerId: row.provider_id,
-    externalId: row.external_id,
-    startedAt: row.started_at.toISOString(),
-    endedAt: row.ended_at?.toISOString() ?? null,
-    prior: localTimeContext(row),
-    repaired: normalizedLocalTimeContext(row),
-  }));
-}
-
-function localTimeContextsEqual(
-  left: z.infer<typeof localTimeContextSchema>,
-  right: z.infer<typeof localTimeContextSchema>,
-): boolean {
-  return (
-    left.timezone === right.timezone &&
-    left.startUtcOffsetMinutes === right.startUtcOffsetMinutes &&
-    left.endUtcOffsetMinutes === right.endUtcOffsetMinutes &&
-    left.localTimeSource === right.localTimeSource
-  );
-}
-
 function valuesForPostgresUpdate(
   rows: readonly PostgresArtifactRow[],
   direction: "repair" | "rollback",
@@ -447,16 +365,30 @@ function valuesForPostgresUpdate(
     rows.map((row) => {
       const target = direction === "repair" ? row.repaired : row.prior;
       const expected = direction === "repair" ? row.prior : row.repaired;
+      const targetStartedAt = direction === "repair" ? row.repairedStartedAt : row.startedAt;
+      const targetEndedAt = direction === "repair" ? row.repairedEndedAt : row.endedAt;
+      const expectedStartedAt = direction === "repair" ? row.startedAt : row.repairedStartedAt;
+      const expectedEndedAt = direction === "repair" ? row.endedAt : row.repairedEndedAt;
       return sql`(
         ${row.id}::uuid,
+        ${targetStartedAt}::timestamptz,
+        ${targetEndedAt}::timestamptz,
         ${target.timezone}::text,
         ${target.startUtcOffsetMinutes}::bigint,
         ${target.endUtcOffsetMinutes}::bigint,
         ${target.localTimeSource}::text,
+        ${target.rejectedProviderTimezone}::text,
+        ${target.rejectedProviderStartUtcOffsetMinutes}::bigint,
+        ${target.rejectedProviderEndUtcOffsetMinutes}::bigint,
+        ${expectedStartedAt}::timestamptz,
+        ${expectedEndedAt}::timestamptz,
         ${expected.timezone}::text,
         ${expected.startUtcOffsetMinutes}::bigint,
         ${expected.endUtcOffsetMinutes}::bigint,
-        ${expected.localTimeSource}::text
+        ${expected.localTimeSource}::text,
+        ${expected.rejectedProviderTimezone}::text,
+        ${expected.rejectedProviderStartUtcOffsetMinutes}::bigint,
+        ${expected.rejectedProviderEndUtcOffsetMinutes}::bigint
       )`;
     }),
     sql`, `,
@@ -479,31 +411,51 @@ async function updatePostgresActivities(
       updatedActivitySchema,
       sql`WITH context_values (
             id,
+            target_started_at,
+            target_ended_at,
             target_timezone,
             target_start_utc_offset_minutes,
             target_end_utc_offset_minutes,
             target_local_time_source,
+            target_rejected_provider_timezone,
+            target_rejected_provider_start_utc_offset_minutes,
+            target_rejected_provider_end_utc_offset_minutes,
+            expected_started_at,
+            expected_ended_at,
             expected_timezone,
             expected_start_utc_offset_minutes,
             expected_end_utc_offset_minutes,
-            expected_local_time_source
+            expected_local_time_source,
+            expected_rejected_provider_timezone,
+            expected_rejected_provider_start_utc_offset_minutes,
+            expected_rejected_provider_end_utc_offset_minutes
           ) AS (
             VALUES ${values}
           ),
           updated AS (
             UPDATE fitness.activity AS activity
             SET
+              started_at = context_values.target_started_at,
+              ended_at = context_values.target_ended_at,
               timezone = context_values.target_timezone,
               start_utc_offset_minutes = context_values.target_start_utc_offset_minutes,
               end_utc_offset_minutes = context_values.target_end_utc_offset_minutes,
-              local_time_source = context_values.target_local_time_source
+              local_time_source = context_values.target_local_time_source,
+              rejected_provider_timezone = context_values.target_rejected_provider_timezone,
+              rejected_provider_start_utc_offset_minutes = context_values.target_rejected_provider_start_utc_offset_minutes,
+              rejected_provider_end_utc_offset_minutes = context_values.target_rejected_provider_end_utc_offset_minutes
             FROM context_values
             WHERE activity.id = context_values.id
               AND activity.user_id = ${userId}::uuid
+              AND activity.started_at = context_values.expected_started_at
+              AND activity.ended_at IS NOT DISTINCT FROM context_values.expected_ended_at
               AND activity.timezone IS NOT DISTINCT FROM context_values.expected_timezone
               AND activity.start_utc_offset_minutes IS NOT DISTINCT FROM context_values.expected_start_utc_offset_minutes
               AND activity.end_utc_offset_minutes IS NOT DISTINCT FROM context_values.expected_end_utc_offset_minutes
               AND activity.local_time_source = context_values.expected_local_time_source
+              AND activity.rejected_provider_timezone IS NOT DISTINCT FROM context_values.expected_rejected_provider_timezone
+              AND activity.rejected_provider_start_utc_offset_minutes IS NOT DISTINCT FROM context_values.expected_rejected_provider_start_utc_offset_minutes
+              AND activity.rejected_provider_end_utc_offset_minutes IS NOT DISTINCT FROM context_values.expected_rejected_provider_end_utc_offset_minutes
             RETURNING activity.id::text AS id
           )
           SELECT id FROM updated`,
@@ -555,15 +507,19 @@ async function repairActivityDataIntegrityWithLease(
 
   const runId = generateRunId();
   const selectedRows = await selectPostgresActivities(db, options);
-  const postgresActivities = artifactPostgresRows(selectedRows);
-  const changedRows = postgresActivities.filter(
-    (row) => !localTimeContextsEqual(row.prior, row.repaired),
-  );
   const before = await snapshotDerivedRows(
     clickHouse,
     options.userId,
     selectedRows.map((row) => row.id),
   );
+  const loadHomeTimezone = dependencies.loadHomeTimezone ?? loadUserHomeTimezone;
+  const homeTimezone = await loadHomeTimezone(db, options.userId);
+  const postgresActivities = buildActivityIntegrityPostgresArtifactRows(
+    selectedRows,
+    homeTimezone,
+    before,
+  );
+  const changedRows = postgresActivities.filter((row) => !activityIntegrityStatesEqual(row));
   const artifactPath = artifactPathFor(artifactDirectory, createdAt, runId);
   const acceptance = options.execute
     ? acceptanceSchema.parse({

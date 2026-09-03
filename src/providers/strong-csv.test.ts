@@ -134,6 +134,60 @@ describe("importStrongCsv", () => {
     ).rejects.toThrow(StrongCsvValidationError);
   });
 
+  it("chooses the earlier instant for an ambiguous fall-back workout timestamp", async () => {
+    const activityValues = vi.fn().mockReturnValue({
+      onConflictDoUpdate: vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([]),
+      }),
+    });
+    const db = {
+      insert: vi.fn().mockReturnValue({ values: activityValues }),
+      execute: vi.fn(),
+    };
+
+    await Reflect.apply(importStrongCsv, undefined, [
+      db,
+      "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps\n2026-11-01 01:30:00,Leg Day,30m,Squat,0,100,5",
+      "user-1",
+      "kg",
+      "America/Los_Angeles",
+    ]);
+
+    expect(activityValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        startedAt: new Date("2026-11-01T08:30:00.000Z"),
+        startUtcOffsetMinutes: -420,
+      }),
+    );
+  });
+
+  it("uses standard time for a winter Strong wall-clock timestamp", async () => {
+    const activityValues = vi.fn().mockReturnValue({
+      onConflictDoUpdate: vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([]),
+      }),
+    });
+    const db = {
+      insert: vi.fn().mockReturnValue({ values: activityValues }),
+      execute: vi.fn(),
+    };
+
+    await Reflect.apply(importStrongCsv, undefined, [
+      db,
+      "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps\n2026-01-15 07:55:54,Leg Day,30m,Squat,0,100,5",
+      "user-1",
+      "kg",
+      "America/Los_Angeles",
+    ]);
+
+    expect(activityValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        startedAt: new Date("2026-01-15T15:55:54.000Z"),
+        startUtcOffsetMinutes: -480,
+      }),
+    );
+  });
+
   it("validates every workout timestamp before writing any activity", async () => {
     const db = { insert: vi.fn() };
 

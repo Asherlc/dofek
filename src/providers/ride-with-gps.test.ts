@@ -104,6 +104,21 @@ describe("parseTripToActivity", () => {
     const trip = { ...baseTrip, description: null };
     expect(parseTripToActivity(trip).notes).toBeUndefined();
   });
+
+  it("carries the first route coordinate into activity local-time resolution", () => {
+    const trip = {
+      ...baseTrip,
+      track_points: [
+        { epochSeconds: 1_723_276_200 },
+        { longitude: -123.56, latitude: 38.827, epochSeconds: 1_723_276_201 },
+      ],
+    };
+
+    expect(parseTripToActivity(trip).localTimeCoordinates).toEqual({
+      latitude: 38.827,
+      longitude: -123.56,
+    });
+  });
 });
 
 describe("parseTrackPoints", () => {

@@ -1693,6 +1693,9 @@ describe("upsertWorkoutBatch", () => {
       upsertWorkoutBatch(db, "p1", [makeWorkout({ routeLocations: [location] })]),
     );
 
+    expect(findActivityUpsertValues(() => true)).toMatchObject({
+      localTimeCoordinates: { latitude: 40.7128, longitude: -74.006 },
+    });
     // Activity upsert goes through upsertProviderActivity; capture only has metric_stream rows.
     expect(capture.values).toHaveLength(1);
     expect(capture.values[0]).toContainEqual(

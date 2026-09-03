@@ -219,6 +219,7 @@ export interface ParsedActivity {
   endedAt: Date | undefined;
   notes: string | undefined;
   sourceName: string | undefined;
+  localTimeCoordinates: { latitude: number; longitude: number } | undefined;
   raw: RideWithGpsTripSummary;
 }
 
@@ -234,9 +235,14 @@ export interface ParsedTrackPoint {
   power: number | undefined;
 }
 
-export function parseTripToActivity(trip: RideWithGpsTripSummary): ParsedActivity {
+export function parseTripToActivity(
+  trip: RideWithGpsTripSummary & { track_points?: RideWithGpsTrackPoint[] },
+): ParsedActivity {
   const startedAt = trip.departed_at ? new Date(trip.departed_at) : new Date(trip.created_at);
   const endedAt = trip.duration ? new Date(startedAt.getTime() + trip.duration * 1000) : undefined;
+  const location = trip.track_points?.find(
+    (point) => point.latitude !== undefined && point.longitude !== undefined,
+  );
 
   return {
     externalId: String(trip.id),
@@ -246,6 +252,10 @@ export function parseTripToActivity(trip: RideWithGpsTripSummary): ParsedActivit
     endedAt,
     notes: trip.description ?? undefined,
     sourceName: trip.source ?? undefined,
+    localTimeCoordinates:
+      location?.latitude !== undefined && location.longitude !== undefined
+        ? { latitude: location.latitude, longitude: location.longitude }
+        : undefined,
     raw: trip,
   };
 }
@@ -614,6 +624,7 @@ export class RideWithGpsProvider implements SyncProvider {
             name: parsed.name,
             notes: parsed.notes,
             sourceName: parsed.sourceName,
+            localTimeCoordinates: parsed.localTimeCoordinates,
             raw: parsed.raw,
           },
           {

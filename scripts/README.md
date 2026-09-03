@@ -35,11 +35,13 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   in bounded batches, then verifies that no attributable rows were missed.
   - Usage: `DATABASE_URL=... pnpm backfill:exercise-provenance`
 - `repair-activity-data-integrity.ts`: Dry-run-first, user/window-bounded repair
-  for activity local-time context and its dbt-owned ClickHouse grouping and
-  summary read models. A global PostgreSQL advisory lease serializes runs, a
+  for activity local-time context, Strong naive wall-clock timestamps, and the
+  dbt-owned ClickHouse grouping and summary read models. GPS evidence precedes
+  the configured home timezone, and preflight fails when neither can establish
+  a reference zone. A global PostgreSQL advisory lease serializes runs, a
   bounded CDC barrier precedes the affected-key dbt refresh, and the private
-  audit artifact supports compare-and-swap rollback of the complete eight-model
-  chain with a monotonic `UInt64` version. PostgreSQL documents advisory locks
+  audit artifact supports compare-and-swap rollback of the complete timestamp,
+  rejected-provider audit, and eight-model derived-state change. PostgreSQL documents advisory locks
   in its [explicit locking reference](https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS).
   - Usage: `pnpm tsx scripts/with-env.ts -- pnpm tsx scripts/repair-activity-data-integrity.ts --user-id=<uuid> --start-at=<utc> --end-at=<utc>`
   - Procedure: [activity data integrity repair runbook](../docs/activity-data-integrity-repair-runbook.md)
