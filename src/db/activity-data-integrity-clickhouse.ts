@@ -1,5 +1,6 @@
 import { performance } from "node:perf_hooks";
 import { z } from "zod";
+import { captureException } from "../lib/error-reporting.ts";
 
 const MAXIMUM_UINT64 = (1n << 64n) - 1n;
 const DEFAULT_CDC_READINESS_TIMEOUT_MS = 120_000;
@@ -307,6 +308,20 @@ ORDER BY summary.activity_id`,
     ]),
     activityIds,
   };
+}
+
+export async function snapshotDerivedRowsOrFallback(
+  client: ActivityIntegrityClickHouseClient,
+  userId: string,
+  selectedIds: readonly string[],
+  fallback: DerivedSnapshot,
+): Promise<DerivedSnapshot> {
+  try {
+    return await snapshotDerivedRows(client, userId, selectedIds);
+  } catch (error) {
+    captureException(error);
+    return fallback;
+  }
 }
 
 export function incompatibleMemberCount(snapshot: DerivedSnapshot): number {

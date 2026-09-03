@@ -16,6 +16,7 @@ import {
   type DerivedSnapshot,
   incompatibleMemberCount,
   snapshotDerivedRows,
+  snapshotDerivedRowsOrFallback,
   sourceRowsMatchPostgres,
   uint64StringSchema,
   waitForPostgresMirror,
@@ -28,6 +29,7 @@ import {
   retireActivityIntegrityJournal,
   transitionActivityIntegrityJournal,
 } from "./activity-data-integrity-journal.ts";
+import { withActivityIntegrityLease } from "./activity-data-integrity-lease.ts";
 import {
   type ActivityIntegrityRetirementReceipt,
   activityIntegrityRetirementReceiptPath,
@@ -38,7 +40,6 @@ import { executeWithSchema, type SchemaExecutionDatabase } from "./typed-sql.ts"
 
 const MAXIMUM_BATCH_SIZE = 1_000;
 const AUDIT_SCHEMA_VERSION = 2;
-const ACTIVITY_INTEGRITY_LEASE_NAME = "dofek:activity-data-integrity-repair:v1";
 export const ACTIVITY_INTEGRITY_MAX_ACCEPTANCE_WINDOW_MS = 24 * 60 * 60 * 1_000;
 const postgresUuidSchema = z
   .string()
@@ -333,31 +334,6 @@ async function readArtifact(path: string): Promise<AuditArtifact> {
     throw new Error("activity integrity audit artifact checksum does not match its recovery data");
   }
   return artifact;
-}
-
-async function withActivityIntegrityLease<T>(
-  db: ActivityIntegrityDatabase,
-  operation: () => Promise<T>,
-): Promise<T> {
-  const connection = await db.$client.connect();
-  let acquired = false;
-  try {
-    const result = await connection.query(
-      "SELECT pg_try_advisory_lock(hashtextextended($1::text, 0)) AS acquired",
-      [ACTIVITY_INTEGRITY_LEASE_NAME],
-    );
-    acquired =
-      result.rows[0] != null && "acquired" in result.rows[0] && result.rows[0].acquired === true;
-    if (!acquired) throw new Error("activity integrity repair is already running");
-    return await operation();
-  } finally {
-    if (acquired) {
-      await connection.query("SELECT pg_advisory_unlock(hashtextextended($1::text, 0))", [
-        ACTIVITY_INTEGRITY_LEASE_NAME,
-      ]);
-    }
-    connection.release();
-  }
 }
 
 async function selectPostgresActivities(
@@ -717,7 +693,12 @@ async function repairActivityDataIntegrityWithLease(
       artifactPath,
     };
   } catch (error) {
-    const failedState = await snapshotDerivedRows(clickHouse, options.userId, before.activityIds);
+    const failedState = await snapshotDerivedRowsOrFallback(
+      clickHouse,
+      options.userId,
+      before.activityIds,
+      before,
+    );
     const failed: AuditArtifact = {
       ...postgresCommitted,
       phase: "rebuild_failed",
