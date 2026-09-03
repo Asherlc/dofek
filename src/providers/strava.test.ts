@@ -1418,7 +1418,7 @@ describe("StravaProvider.unregisterWebhook", () => {
     };
     const provider = new StravaProvider(mockFetch);
     await expect(provider.unregisterWebhook("42")).rejects.toThrow(
-      "Strava webhook unregistration failed (500): Server Error",
+      "Strava webhook removal failed (500): Server Error",
     );
   });
 });

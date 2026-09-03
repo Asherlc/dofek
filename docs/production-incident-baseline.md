@@ -24746,3 +24746,18 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `f53df3c83` is in progress.
 - **Remaining risk / follow-up:** Confirm the fresh PR workflow completes with
   both Stryker shards and all gates passing.
+
+## 2026-09-03 — Strava webhook cleanup wording failed CI spell check
+
+- **Status:** Fixed in source; fresh CI validation is pending.
+- **Symptoms / user impact:** PR 2653's Spell Check and dependent Lint & Static
+  Analysis jobs failed.
+- **Evidence / root cause:** CSpell reported `Unknown word (unregistration)` at
+  `src/providers/strava.ts:486` and `src/providers/strava.test.ts:1421` after
+  the webhook cleanup error was made explicit.
+- **Direct fix:** Replaced the non-dictionary term with `webhook removal` in
+  the error and its regression assertion. No spell-check bypass was added.
+- **Validation:** Focused Strava tests pass 124/124; Biome and server
+  typechecking pass locally.
+- **Remaining risk / follow-up:** Confirm the fresh PR workflow completes with
+  Spell Check and the dependent quality gate passing.
