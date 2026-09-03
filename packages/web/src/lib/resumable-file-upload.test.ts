@@ -490,7 +490,7 @@ describe("runResumableFileUpload", () => {
       Object.assign(new Error("Malformed error data"), { data: "NOT_FOUND" }),
     ],
     [
-      "a nonmissing server error",
+      "a conflicting server error",
       Object.assign(new Error("Upload cannot be aborted"), { data: { code: "CONFLICT" } }),
     ],
   ])("surfaces %s after cancellation", async (_label, abortError) => {
