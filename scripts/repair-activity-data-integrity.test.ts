@@ -105,6 +105,8 @@ describe("parseActivityDataIntegrityCommand", () => {
       message: "cannot be combined",
     },
   ])("rejects unsafe command input", ({ args, message }) => {
-    expect(() => parseActivityDataIntegrityCommand(args)).toThrow(message);
+    expect(() => parseActivityDataIntegrityCommand(args, new Date("2026-09-03T00:00:00Z"))).toThrow(
+      message,
+    );
   });
 });

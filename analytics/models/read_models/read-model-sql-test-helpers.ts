@@ -15,20 +15,35 @@ export function compactWhitespace(value: string): string {
 
 export function renderDbtModelSql(
   modelSql: string,
-  options: { isIncremental: boolean },
+  options: { isIncremental: boolean; activityRefreshScoped?: boolean },
 ): string {
-  return modelSql
+  const withoutWrappers = modelSql
     .replace(/\{%\s*set[\s\S]*?%\}\s*/g, "")
     .replace(/\{\{\s*config\([\s\S]*?\)\s*\}\}\s*/g, "")
-    .trimStart()
-    .replace(
-      /\{%\s*if is_incremental\(\)\s*%\}([\s\S]*?)(?:\{%\s*else\s*%\}([\s\S]*?))?\{%\s*endif\s*%\}/g,
-      (
-        _match: string,
-        incrementalSql: string,
-        nonIncrementalSql: string | undefined,
-      ) => (options.isIncremental ? incrementalSql : (nonIncrementalSql ?? "")),
-    );
+    .trimStart();
+  const incrementalSql = renderDbtBooleanBranches(
+    withoutWrappers,
+    "is_incremental\\(\\)",
+    options.isIncremental,
+  );
+  return options.activityRefreshScoped == null
+    ? incrementalSql
+    : renderDbtBooleanBranches(
+        incrementalSql,
+        "activity_refresh_scoped",
+        options.activityRefreshScoped,
+      );
+}
+
+function renderDbtBooleanBranches(modelSql: string, conditionPattern: string, enabled: boolean): string {
+  return modelSql.replace(
+    new RegExp(
+      `\\{%\\s*if ${conditionPattern}\\s*%\\}([\\s\\S]*?)(?:\\{%\\s*else\\s*%\\}([\\s\\S]*?))?\\{%\\s*endif\\s*%\\}`,
+      "g",
+    ),
+    (_match: string, enabledSql: string, disabledSql: string | undefined) =>
+      enabled ? enabledSql : (disabledSql ?? ""),
+  );
 }
 
 function skipSqlLineComment(sql: string, startIndex: number): number {

@@ -130,6 +130,24 @@ SELECT * FROM state
     );
   });
 
+  it("selects the unscoped activity refresh branch", () => {
+    const scopedModelSql = `${modelSql}
+{% if activity_refresh_scoped %}
+SELECT 'scoped'
+{% else %}
+SELECT 'unscoped'
+{% endif %}`;
+
+    const renderedSql = renderDbtModelSql(scopedModelSql, {
+      isIncremental: false,
+      activityRefreshScoped: false,
+    });
+
+    expect(renderedSql).not.toContain("{% ");
+    expect(renderedSql).not.toContain("SELECT 'scoped'");
+    expect(renderedSql).toContain("SELECT 'unscoped'");
+  });
+
   it("removes every incremental-only branch from cycling_activity initial SQL", () => {
     const renderedSql = renderDbtModelSql(readModelSql("cycling_activity.sql"), {
       isIncremental: false,

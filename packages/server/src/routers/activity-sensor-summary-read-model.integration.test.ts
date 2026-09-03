@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { readModelSql } from "../../../../analytics/models/read_models/read-model-sql-test-helpers.ts";
+import {
+  readModelSql,
+  renderDbtModelSql,
+} from "../../../../analytics/models/read_models/read-model-sql-test-helpers.ts";
 import {
   type ClickHouseClient,
   createClickHouseClientFromEnv,
@@ -19,18 +22,10 @@ function renderActivitySensorSummarySql(
   analyticsDatabase: string,
   postgresDatabase: string,
 ): string {
-  return readModelSql("activity_sensor_summary_rows.sql")
-    .replace(/\{\{\s*config\([\s\S]*?\)\s*\}\}\s*/, "")
-    .replace(/\{%\s*set initial_lookback_days[\s\S]*?%\}\s*/, "")
-    .replace(
-      /\{%\s*if is_incremental\(\)\s*%\}\s*target_state AS \([\s\S]*?\{%\s*endif\s*%\}\s*/,
-      "",
-    )
-    .replace(
-      /\{%\s*if is_incremental\(\)\s*%\}([\s\S]*?)\{%\s*else\s*%\}([\s\S]*?)\{%\s*endif\s*%\}/g,
-      (_match, _incrementalSql: string, nonIncrementalSql: string) => nonIncrementalSql,
-    )
-    .replace(/\{%\s*if is_incremental\(\)\s*%\}[\s\S]*?\{%\s*endif\s*%\}/g, "")
+  return renderDbtModelSql(readModelSql("activity_sensor_summary_rows.sql"), {
+    isIncremental: false,
+    activityRefreshScoped: false,
+  })
     .replaceAll("{{ this }}", targetTable)
     .replaceAll("{{ initial_lookback_days }}", "3650")
     .replace(

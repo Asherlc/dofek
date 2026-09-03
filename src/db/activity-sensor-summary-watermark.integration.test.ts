@@ -1,8 +1,11 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
+import {
+  readModelSql,
+  renderDbtModelSql,
+} from "../../analytics/models/read_models/read-model-sql-test-helpers.ts";
 import { buildActivitySensorSummaryRowsTableSql } from "./clickhouse-activity-sensor-summary.ts";
 
 const historicalActivityId = "00000000-0000-0000-0000-000000000901";
@@ -149,75 +152,16 @@ async function waitForClickHouse(client: ClickHouseClient): Promise<void> {
   throw lastError instanceof Error ? lastError : new Error("ClickHouse did not become ready");
 }
 
-function readProjectFile(relativePath: string): string {
-  return readFileSync(new URL(`../../${relativePath}`, import.meta.url), "utf8");
-}
-
 function renderActivitySensorSummaryRowsSelectSql(targetSchema: string): string {
-  const modelSql = readProjectFile("analytics/models/read_models/activity_sensor_summary_rows.sql");
-  return renderIncrementalDbtModelForFixture(modelSql)
+  return renderDbtModelSql(readModelSql("activity_sensor_summary_rows.sql"), {
+    isIncremental: true,
+    activityRefreshScoped: false,
+  })
     .replaceAll("{{ initial_lookback_days }}", "120")
     .replaceAll("{{ this }}", `${targetSchema}.activity_sensor_summary_rows`)
     .replaceAll("{{ ref('activity_sensor_sample') }}", `${targetSchema}.activity_sensor_sample`)
     .replaceAll("{{ source('postgres_fitness', 'activity') }}", `${targetSchema}.source_activity`)
     .concat("\nSETTINGS join_use_nulls = 1, enable_materialized_cte = 1");
-}
-
-function renderIncrementalDbtModelForFixture(modelSql: string): string {
-  const renderedLines: string[] = [];
-  const includeStack: boolean[] = [];
-  let skippingConfig = false;
-
-  for (const line of modelSql.split("\n")) {
-    const trimmedLine = line.trim();
-
-    if (skippingConfig) {
-      if (trimmedLine === ") }}") {
-        skippingConfig = false;
-      }
-      continue;
-    }
-
-    if (trimmedLine.startsWith("{{ config(")) {
-      skippingConfig = true;
-      continue;
-    }
-
-    if (trimmedLine.startsWith("{% set ")) {
-      continue;
-    }
-
-    if (trimmedLine === "{% if is_incremental() %}") {
-      includeStack.push(true);
-      continue;
-    }
-
-    if (trimmedLine === "{% else %}") {
-      const currentBranch = includeStack.pop();
-      if (currentBranch == null) {
-        throw new Error("Unexpected dbt else without an active if block");
-      }
-      includeStack.push(!currentBranch);
-      continue;
-    }
-
-    if (trimmedLine === "{% endif %}") {
-      if (includeStack.pop() == null) {
-        throw new Error("Unexpected dbt endif without an active if block");
-      }
-      continue;
-    }
-
-    if (includeStack.every(Boolean)) {
-      renderedLines.push(line);
-    }
-  }
-
-  if (includeStack.length > 0) {
-    throw new Error("Unclosed dbt if block while rendering activity sensor summary fixture");
-  }
-
-  return renderedLines.join("\n");
 }
 
 async function seedHistoricalBackfillFixture(
