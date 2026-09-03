@@ -1197,7 +1197,7 @@ describe("registerWebhookForProvider", () => {
     expect(db.execute).toHaveBeenCalledTimes(2);
     const cleanupQuery = new PgDialect().sqlToQuery(vi.mocked(db.execute).mock.calls[1]?.[0]);
     expect(cleanupQuery.sql).toContain("DELETE FROM fitness.webhook_subscription");
-    expect(cleanupQuery.sql).toContain("status = 'pending'");
+    expect(cleanupQuery.sql).not.toContain("status = 'pending'");
     expect(mockCaptureException).toHaveBeenCalledWith(
       expect.objectContaining({ message: "provider unavailable" }),
       expect.objectContaining({
