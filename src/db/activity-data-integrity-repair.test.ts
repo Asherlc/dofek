@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, readFile, rmdir, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rmdir, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SQL } from "drizzle-orm";
@@ -6,6 +6,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   type ActivityIntegrityDatabase,
+  type ActivityIntegrityRepairOptions,
   repairActivityDataIntegrity,
   retireActivityDataIntegrityArtifact,
   rollbackActivityDataIntegrity,
@@ -360,6 +361,39 @@ function repairDependencies(directory: string, rebuildReadModels = vi.fn(async (
 }
 
 describe("repairActivityDataIntegrity", () => {
+  it("paginates a bounded window by the last activity tuple", async () => {
+    const directory = await artifactDirectory();
+    const secondActivityId = "00000000-0000-4000-8000-000000000002";
+    const secondCandidate = {
+      ...postgresCandidate,
+      id: secondActivityId,
+      external_id: "workout-2",
+      started_at: "2026-09-01T15:55:54.000Z",
+      ended_at: "2026-09-01T16:25:54.000Z",
+    };
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce([postgresCandidate])
+      .mockResolvedValueOnce([secondCandidate]);
+    const clickhouse = createClickHouse(
+      [[priorSourceRow, { ...priorSourceRow, activity_id: secondActivityId }]],
+      [[]],
+    );
+
+    await expect(
+      repairActivityDataIntegrity(
+        createDatabase(execute),
+        clickhouse,
+        { execute: false, userId, batchSize: 1, maxBatches: 2, ...window },
+        repairDependencies(directory),
+      ),
+    ).resolves.toMatchObject({
+      selected: 2,
+      changedIds: [activityId, secondActivityId],
+    });
+    expect(execute).toHaveBeenCalledTimes(2);
+  });
+
   it("writes a mode-0600 dry-run audit snapshot without mutating either database", async () => {
     const directory = await artifactDirectory();
     const execute = vi.fn().mockResolvedValueOnce([postgresCandidate]);
@@ -1084,6 +1118,90 @@ describe("repairActivityDataIntegrity", () => {
     ).rejects.toThrow("within 24 hours");
     expect(execute).not.toHaveBeenCalled();
   });
+
+  it.each([
+    { name: "user ID", patch: { userId: "not-a-uuid" }, message: "userId" },
+    { name: "start date", patch: { startAt: new Date(Number.NaN) }, message: "startAt" },
+    { name: "end date", patch: { endAt: new Date(Number.NaN) }, message: "endAt" },
+    {
+      name: "ordered window",
+      patch: { startAt: window.endAt, endAt: window.startAt },
+      message: "earlier than endAt",
+    },
+    { name: "fractional batch size", patch: { batchSize: 1.5 }, message: "batchSize" },
+    { name: "zero batch size", patch: { batchSize: 0 }, message: "batchSize" },
+    { name: "maximum batch size", patch: { batchSize: 1_001 }, message: "batchSize" },
+    { name: "fractional batch count", patch: { maxBatches: 1.5 }, message: "maxBatches" },
+    { name: "zero batch count", patch: { maxBatches: 0 }, message: "maxBatches" },
+  ])("rejects an invalid $name", async ({ patch, message }) => {
+    const directory = await artifactDirectory();
+    const execute = vi.fn();
+    const options: ActivityIntegrityRepairOptions = {
+      execute: false,
+      userId,
+      batchSize: 10,
+      maxBatches: 1,
+      ...window,
+      ...patch,
+    };
+
+    await expect(
+      repairActivityDataIntegrity(
+        createDatabase(execute),
+        createClickHouse([], []),
+        options,
+        repairDependencies(directory),
+      ),
+    ).rejects.toThrow(message);
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { name: "blank owner", owner: "   ", deadline, message: "acceptanceOwner" },
+    {
+      name: "missing deadline",
+      owner: "owner",
+      deadline: undefined,
+      message: "acceptanceDeadline",
+    },
+    {
+      name: "invalid deadline",
+      owner: "owner",
+      deadline: new Date(Number.NaN),
+      message: "acceptanceDeadline",
+    },
+    { name: "past deadline", owner: "owner", deadline: now, message: "in the future" },
+    {
+      name: "distant deadline",
+      owner: "owner",
+      deadline: new Date(now.getTime() + 86_400_001),
+      message: "within 24 hours",
+    },
+  ])(
+    "rejects execute mode with a $name",
+    async ({ owner, deadline: candidateDeadline, message }) => {
+      const directory = await artifactDirectory();
+      const execute = vi.fn();
+
+      await expect(
+        repairActivityDataIntegrity(
+          createDatabase(execute),
+          createClickHouse([], []),
+          {
+            execute: true,
+            userId,
+            batchSize: 10,
+            maxBatches: 1,
+            acceptanceOwner: owner,
+            acceptanceDeadline: candidateDeadline,
+            ...window,
+          },
+          repairDependencies(directory),
+        ),
+      ).rejects.toThrow(message);
+      expect(execute).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe("rollbackActivityDataIntegrity", () => {
@@ -1128,6 +1246,92 @@ describe("rollbackActivityDataIntegrity", () => {
     expect(clickhouse.insert).not.toHaveBeenCalled();
   });
 
+  it("rejects a tampered audit artifact before rollback", async () => {
+    const { result, rollbackDb } = await executedArtifact();
+    const artifact = JSON.parse(await readFile(result.artifactPath, "utf8"));
+    artifact.selected += 1;
+    await writeFile(result.artifactPath, JSON.stringify(artifact), "utf8");
+
+    await expect(
+      rollbackActivityDataIntegrity(
+        rollbackDb,
+        createClickHouse([[repairedSourceRow]], [repairedGroupRows]),
+        result.artifactPath,
+        { now: () => now },
+      ),
+    ).rejects.toThrow("checksum does not match");
+  });
+
+  it.each([
+    {
+      field: "artifact path",
+      mutate: (record: RepairJournalRecord) => {
+        record.artifact_path = `${record.artifact_path}.other`;
+      },
+    },
+    {
+      field: "artifact checksum",
+      mutate: (record: RepairJournalRecord) => {
+        record.artifact_checksum = "0".repeat(64);
+      },
+    },
+    {
+      field: "user ID",
+      mutate: (record: RepairJournalRecord) => {
+        record.user_id = "00000000-0000-4000-8000-000000000002";
+      },
+    },
+    {
+      field: "acceptance owner",
+      mutate: (record: RepairJournalRecord) => {
+        record.acceptance_owner = "other-owner@example.com";
+      },
+    },
+    {
+      field: "acceptance deadline",
+      mutate: (record: RepairJournalRecord) => {
+        record.acceptance_deadline = new Date(deadline.getTime() - 1).toISOString();
+      },
+    },
+  ])("rejects a mismatched journal $field for rollback and retirement", async ({ mutate }) => {
+    const { result, rollbackDb } = await executedArtifact();
+    const record = repairJournalState.record;
+    if (!record) throw new Error("Expected repair journal record");
+    mutate(record);
+
+    await expect(
+      rollbackActivityDataIntegrity(
+        rollbackDb,
+        createClickHouse([[repairedSourceRow]], [repairedGroupRows]),
+        result.artifactPath,
+        { now: () => now },
+      ),
+    ).rejects.toThrow("journal does not match");
+    await expect(
+      retireActivityDataIntegrityArtifact(
+        createDatabase(vi.fn()),
+        result.artifactPath,
+        { acceptedBy: "data-on-call@example.com", disposition: "accepted" },
+        { now: () => now },
+      ),
+    ).rejects.toThrow("journal does not match");
+  });
+
+  it("rejects a journal phase that is not rollback-eligible", async () => {
+    const { result, rollbackDb } = await executedArtifact();
+    if (!repairJournalState.record) throw new Error("Expected repair journal record");
+    repairJournalState.record.phase = "rolled_back";
+
+    await expect(
+      rollbackActivityDataIntegrity(
+        rollbackDb,
+        createClickHouse([[repairedSourceRow]], [repairedGroupRows]),
+        result.artifactPath,
+        { now: () => now },
+      ),
+    ).rejects.toThrow("not rollback-eligible");
+  });
+
   it("restores only captured local-time fields before the CDC barrier and scoped rebuild", async () => {
     const { result, rollbackDb } = await executedArtifact();
     const rebuildReadModels = vi.fn(async () => undefined);
@@ -1170,6 +1374,50 @@ describe("rollbackActivityDataIntegrity", () => {
         { now: () => now },
       ),
     ).rejects.toThrow("retired audit artifact");
+  });
+
+  it("trims the acceptance owner and permits acceptance exactly at the deadline", async () => {
+    const { result } = await executedArtifact();
+
+    await expect(
+      retireActivityDataIntegrityArtifact(
+        createDatabase(vi.fn()),
+        result.artifactPath,
+        { acceptedBy: "  data-on-call@example.com  ", disposition: "accepted" },
+        { now: () => deadline },
+      ),
+    ).resolves.toBe(`${result.artifactPath}.retired.json`);
+  });
+
+  it("rejects late acceptance by the wrong owner but permits explicit supersession", async () => {
+    const first = await executedArtifact();
+    await expect(
+      retireActivityDataIntegrityArtifact(
+        createDatabase(vi.fn()),
+        first.result.artifactPath,
+        { acceptedBy: "other-owner@example.com", disposition: "accepted" },
+        { now: () => new Date(deadline.getTime() + 1) },
+      ),
+    ).rejects.toThrow("must be retired by acceptance owner");
+
+    repairJournalState.record = null;
+    const second = await executedArtifact();
+    await expect(
+      retireActivityDataIntegrityArtifact(
+        createDatabase(vi.fn()),
+        second.result.artifactPath,
+        { acceptedBy: "data-on-call@example.com", disposition: "accepted" },
+        { now: () => new Date(deadline.getTime() + 1) },
+      ),
+    ).rejects.toThrow("acceptance deadline has passed");
+    await expect(
+      retireActivityDataIntegrityArtifact(
+        createDatabase(vi.fn()),
+        second.result.artifactPath,
+        { acceptedBy: "data-on-call@example.com", disposition: "superseded" },
+        { now: () => new Date(deadline.getTime() + 1) },
+      ),
+    ).resolves.toBe(`${second.result.artifactPath}.retired.json`);
   });
 
   it("materializes the durable retirement receipt after a filesystem failure without reopening rollback", async () => {
@@ -1241,5 +1489,91 @@ describe("rollbackActivityDataIntegrity", () => {
         { now: () => now },
       ),
     ).rejects.toThrow("conflicts with durable retirement decision");
+  });
+
+  it("rejects every incomplete durable retirement decision", async () => {
+    const { result } = await executedArtifact();
+    const receiptPath = `${result.artifactPath}.retired.json`;
+    await mkdir(receiptPath);
+    const retirementInput = {
+      acceptedBy: "data-on-call@example.com",
+      disposition: "accepted" as const,
+    };
+    await expect(
+      retireActivityDataIntegrityArtifact(
+        createDatabase(vi.fn()),
+        result.artifactPath,
+        retirementInput,
+        { now: () => now },
+      ),
+    ).rejects.toThrow();
+    const durableRecord = repairJournalState.record;
+    if (!durableRecord) throw new Error("Expected durable retirement journal record");
+
+    for (const field of [
+      "accepted_by",
+      "retirement_disposition",
+      "retired_at",
+      "retirement_receipt_path",
+      "retirement_receipt_checksum",
+    ] as const) {
+      const priorValue = durableRecord[field];
+      durableRecord[field] = null;
+      await expect(
+        retireActivityDataIntegrityArtifact(
+          createDatabase(vi.fn()),
+          result.artifactPath,
+          retirementInput,
+          { now: () => now },
+        ),
+      ).rejects.toThrow("retirement journal fields must be complete");
+      durableRecord[field] = priorValue;
+    }
+
+    await rmdir(receiptPath);
+  });
+
+  it("rejects a durable retirement decision with a mismatched receipt identity", async () => {
+    const { result } = await executedArtifact();
+    const receiptPath = `${result.artifactPath}.retired.json`;
+    await mkdir(receiptPath);
+    const retirementInput = {
+      acceptedBy: "data-on-call@example.com",
+      disposition: "accepted" as const,
+    };
+    await expect(
+      retireActivityDataIntegrityArtifact(
+        createDatabase(vi.fn()),
+        result.artifactPath,
+        retirementInput,
+        { now: () => now },
+      ),
+    ).rejects.toThrow();
+    const durableRecord = repairJournalState.record;
+    if (!durableRecord) throw new Error("Expected durable retirement journal record");
+
+    const durableReceiptPath = durableRecord.retirement_receipt_path;
+    durableRecord.retirement_receipt_path = `${receiptPath}.other`;
+    await expect(
+      retireActivityDataIntegrityArtifact(
+        createDatabase(vi.fn()),
+        result.artifactPath,
+        retirementInput,
+        { now: () => now },
+      ),
+    ).rejects.toThrow("does not match its receipt path");
+
+    durableRecord.retirement_receipt_path = durableReceiptPath;
+    durableRecord.retirement_receipt_checksum = "0".repeat(64);
+    await expect(
+      retireActivityDataIntegrityArtifact(
+        createDatabase(vi.fn()),
+        result.artifactPath,
+        retirementInput,
+        { now: () => now },
+      ),
+    ).rejects.toThrow("does not match its receipt checksum");
+
+    await rmdir(receiptPath);
   });
 });

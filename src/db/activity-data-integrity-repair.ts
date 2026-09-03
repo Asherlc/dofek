@@ -971,15 +971,6 @@ export async function retireActivityDataIntegrityArtifact(
       );
     } else if (journal.phase === "retired") {
       if (
-        journal.accepted_by == null ||
-        journal.retirement_disposition == null ||
-        journal.retired_at == null ||
-        journal.retirement_receipt_path == null ||
-        journal.retirement_receipt_checksum == null
-      ) {
-        throw new Error("retired activity integrity journal is missing its decision");
-      }
-      if (
         acceptedBy !== journal.accepted_by ||
         input.disposition !== journal.retirement_disposition
       ) {
