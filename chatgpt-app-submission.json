@@ -190,7 +190,7 @@
       "description": "Open the interactive analytics visualization for two metrics.",
       "user_prompt": "Open the Dofek Analytics Explorer for HRV and steps from August 18 through August 31, 2026.",
       "file_attachment_urls": null,
-      "tools_triggered": "get_health_trends",
+      "tools_triggered": "render_health_explorer",
       "expected_output": "Opens the Dofek Analytics Explorer with HRV and steps for the requested range.",
       "expected_output_url": null
     },
