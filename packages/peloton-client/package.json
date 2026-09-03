@@ -1,6 +1,6 @@
 {
   "name": "@dofek/peloton",
-  "version": "0.1.29",
+  "version": "0.1.30",
   "description": "Unofficial Peloton API client with reverse-engineered Auth0 authentication",
   "type": "module",
   "license": "MIT",
