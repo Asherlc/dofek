@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { resolveRecordLocalTimeContext } from "@dofek/format/record-local-time";
 import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import { eq } from "drizzle-orm";
 import { resolveUserExerciseWithProvenance } from "../db/exercise-provenance.ts";
@@ -14,6 +15,10 @@ import type { ImportProvider, SyncError, SyncResult } from "./types.ts";
 // ============================================================
 
 export const STRONG_PROVIDER_ID = "strong-csv";
+
+export class StrongCsvValidationError extends Error {
+  override name = "StrongCsvValidationError";
+}
 
 // ============================================================
 // Types
@@ -134,6 +139,26 @@ export function parseStrongCsv(csvText: string): StrongWorkoutGroup[] {
 
   if (lines.length <= 1) return [];
 
+  const header = parseCsvLine(lines[0] ?? "").map((field) => field.trim().toLowerCase());
+  const indexFor = (name: string, fallbackIndex: number): number => {
+    const index = header.indexOf(name);
+    return index >= 0 ? index : fallbackIndex;
+  };
+  const columns = {
+    date: indexFor("date", 0),
+    workoutName: indexFor("workout name", 1),
+    duration: indexFor("duration", 2),
+    exerciseName: indexFor("exercise name", 3),
+    setOrder: indexFor("set order", 4),
+    weight: indexFor("weight", 5),
+    reps: indexFor("reps", 6),
+    distance: indexFor("distance", 7),
+    seconds: indexFor("seconds", 8),
+    notes: indexFor("notes", 9),
+    workoutNotes: indexFor("workout notes", 10),
+    rpe: indexFor("rpe", 11),
+  };
+
   // Skip header
   const dataLines = lines.slice(1);
   const rows: StrongCsvRow[] = [];
@@ -143,18 +168,18 @@ export function parseStrongCsv(csvText: string): StrongWorkoutGroup[] {
     if (fields.length < 7) continue;
 
     rows.push({
-      date: fields[0] ?? "",
-      workoutName: fields[1] ?? "",
-      duration: fields[2] ?? "",
-      exerciseName: fields[3] ?? "",
-      setOrder: Number.parseInt(fields[4] ?? "0", 10) || 0,
-      weight: parseOptionalFloat(fields[5] ?? ""),
-      reps: parseOptionalInt(fields[6] ?? ""),
-      distance: parseOptionalFloat(fields[7] ?? ""),
-      seconds: parseOptionalInt(fields[8] ?? ""),
-      notes: fields[9]?.trim() || null,
-      workoutNotes: fields[10]?.trim() || null,
-      rpe: parseOptionalFloat(fields[11] ?? ""),
+      date: fields[columns.date] ?? "",
+      workoutName: fields[columns.workoutName] ?? "",
+      duration: fields[columns.duration] ?? "",
+      exerciseName: fields[columns.exerciseName] ?? "",
+      setOrder: Number.parseInt(fields[columns.setOrder] ?? "0", 10) || 0,
+      weight: parseOptionalFloat(fields[columns.weight] ?? ""),
+      reps: parseOptionalInt(fields[columns.reps] ?? ""),
+      distance: parseOptionalFloat(fields[columns.distance] ?? ""),
+      seconds: parseOptionalInt(fields[columns.seconds] ?? ""),
+      notes: fields[columns.notes]?.trim() || null,
+      workoutNotes: fields[columns.workoutNotes]?.trim() || null,
+      rpe: parseOptionalFloat(fields[columns.rpe] ?? ""),
     });
   }
 
@@ -183,6 +208,28 @@ export function parseStrongCsv(csvText: string): StrongWorkoutGroup[] {
   return Array.from(groupMap.values());
 }
 
+/** Return the explicit weight unit in a Strong CSV export, if present. */
+export function strongCsvWeightUnit(csvText: string): "kg" | "lbs" | null {
+  const [headerLine, ...dataLines] = csvText.replace(/^\uFEFF/, "").split(/\r?\n/);
+  if (!headerLine) return null;
+  const index = parseCsvLine(headerLine)
+    .map((field) => field.trim().toLowerCase())
+    .indexOf("weight unit");
+  if (index < 0) return null;
+  const declarations = dataLines
+    .filter((line) => line.trim() !== "")
+    .map((line) => parseCsvLine(line)[index]?.trim().toLowerCase() ?? "");
+  const values = new Set(declarations.filter((value) => value !== ""));
+  if (values.size === 0) return null;
+  if (declarations.some((value) => value === "") || values.size !== 1) {
+    throw new StrongCsvValidationError("Strong CSV must declare one consistent weight unit");
+  }
+  const [value] = values;
+  if (value === "kg" || value === "kgs" || value === "kilograms") return "kg";
+  if (value === "lb" || value === "lbs" || value === "pounds") return "lbs";
+  throw new StrongCsvValidationError(`Unsupported Strong CSV weight unit: ${value}`);
+}
+
 // ============================================================
 // Single-workout text format parsing
 // ============================================================
@@ -202,14 +249,16 @@ const MONTH_NAMES: Record<string, number> = {
   December: 11,
 };
 
-const STRONG_CSV_HEADER_PREFIX = "Date,Workout Name,Duration,Exercise Name,Set Order";
-
 /**
  * Detect whether the input is Strong's CSV export (vs the single-workout text share format).
  */
 export function isStrongCsvFormat(text: string): boolean {
-  const cleaned = text.replace(/^\uFEFF/, "");
-  return cleaned.startsWith(STRONG_CSV_HEADER_PREFIX);
+  const header = parseCsvLine(text.replace(/^\uFEFF/, "").split(/\r?\n/, 1)[0] ?? "").map((field) =>
+    field.trim().toLowerCase(),
+  );
+  return ["date", "workout name", "exercise name", "set order"].every((column) =>
+    header.includes(column),
+  );
 }
 
 /**
@@ -231,6 +280,32 @@ export function parseStrongTextDate(dateStr: string): Date {
     Number.parseInt(hourStr, 10),
     Number.parseInt(minuteStr, 10),
   );
+}
+
+/**
+ * Parse Strong's naive CSV timestamp without letting Date normalize impossible
+ * calendar values (for example, February 30) into a different workout day.
+ */
+export function parseStrongWallClockTimestamp(value: string): Date {
+  const match = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/.exec(value.trim());
+  if (!match) return new Date(Number.NaN);
+  const [, yearText, monthText, dayText, hourText = "00", minuteText = "00", secondText = "00"] =
+    match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+  const parsed = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  return parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() === month - 1 &&
+    parsed.getUTCDate() === day &&
+    parsed.getUTCHours() === hour &&
+    parsed.getUTCMinutes() === minute &&
+    parsed.getUTCSeconds() === second
+    ? parsed
+    : new Date(Number.NaN);
 }
 
 // Set line with weight: "Set 1: 50 lb × 13" or "Set 1: 50 lb × 13 [Failure]"
@@ -342,11 +417,47 @@ export function parseStrongText(text: string): StrongTextParseResult {
 // Import function
 // ============================================================
 
+function resolveStrongStartedAt(date: string, timezone?: string): Date {
+  const wallClockDate = parseStrongWallClockTimestamp(date);
+  if (Number.isNaN(wallClockDate.getTime())) {
+    throw new StrongCsvValidationError(`Invalid Strong workout timestamp: ${date}`);
+  }
+  if (timezone == null) return wallClockDate;
+
+  const resolveStartedAt = (candidate: Date): Date => {
+    const context = resolveRecordLocalTimeContext({
+      startedAt: candidate,
+      timezone,
+      source: "device_timezone",
+    });
+    if (context.startUtcOffsetMinutes === null) {
+      throw new Error("Strong timezone context did not include a UTC offset");
+    }
+    return new Date(wallClockDate.getTime() - context.startUtcOffsetMinutes * 60_000);
+  };
+  const startedAt = resolveStartedAt(resolveStartedAt(wallClockDate));
+  const resolvedContext = resolveRecordLocalTimeContext({
+    startedAt,
+    timezone,
+    source: "device_timezone",
+  });
+  const resolvedWallClock = new Date(
+    startedAt.getTime() + (resolvedContext.startUtcOffsetMinutes ?? 0) * 60_000,
+  );
+  if (resolvedWallClock.getTime() !== wallClockDate.getTime()) {
+    throw new StrongCsvValidationError(
+      `Strong workout timestamp does not exist in ${timezone}: ${date}`,
+    );
+  }
+  return startedAt;
+}
+
 export async function importStrongCsv(
   db: SyncDatabase,
   csvText: string,
   userId: string,
-  weightUnit: "kg" | "lbs",
+  weightUnit?: "kg" | "lbs",
+  timezone?: string,
 ): Promise<SyncResult> {
   const start = Date.now();
   const errors: SyncError[] = [];
@@ -356,24 +467,49 @@ export async function importStrongCsv(
 
   // Auto-detect format: CSV export vs single-workout text share
   let groups: StrongWorkoutGroup[];
-  let effectiveWeightUnit = weightUnit;
-  if (isStrongCsvFormat(csvText)) {
-    groups = parseStrongCsv(csvText);
+  let effectiveWeightUnit: "kg" | "lbs";
+  const parsed = (
+    [parseStrongText, parseStrongCsv][Number(isStrongCsvFormat(csvText))] ?? parseStrongText
+  )(csvText);
+  groups = Array.isArray(parsed) ? parsed : parsed.groups;
+  if (Array.isArray(parsed)) {
+    effectiveWeightUnit =
+      strongCsvWeightUnit(csvText) ??
+      weightUnit ??
+      (() => {
+        throw new StrongCsvValidationError(
+          "Strong CSV has no Weight Unit declaration; choose kg or lbs before importing",
+        );
+      })();
   } else {
-    const textResult = parseStrongText(csvText);
-    groups = textResult.groups;
-    effectiveWeightUnit = textResult.weightUnit;
+    effectiveWeightUnit = parsed.weightUnit;
+  }
+  let groupStartTimes: Date[];
+  try {
+    groupStartTimes = groups.map((group) => resolveStrongStartedAt(group.date, timezone));
+  } catch (error) {
+    if (error instanceof StrongCsvValidationError) throw error;
+    throw new StrongCsvValidationError(`Invalid Strong timezone: ${timezone ?? "unknown"}`);
   }
   const exerciseCache = new Map<string, string>();
 
-  for (const group of groups) {
+  for (const [groupIndex, group] of groups.entries()) {
     try {
       const externalId = `strong:${createHash("sha256").update(`${group.date}|${group.workoutName}`).digest("hex").slice(0, 16)}`;
 
-      const startedAt = new Date(group.date);
+      const startedAt = groupStartTimes[groupIndex];
+      if (!startedAt) throw new Error(`Missing validated Strong workout timestamp: ${group.date}`);
       const durationSeconds = parseDurationString(group.duration);
       const endedAt =
         durationSeconds > 0 ? new Date(startedAt.getTime() + durationSeconds * 1000) : null;
+      const localTimeContext = timezone
+        ? resolveRecordLocalTimeContext({
+            startedAt,
+            endedAt,
+            timezone,
+            source: "device_timezone",
+          })
+        : null;
 
       const activityRow = await upsertProviderActivity(
         db,
@@ -386,6 +522,10 @@ export async function importStrongCsv(
           endedAt,
           name: group.workoutName,
           notes: group.workoutNotes,
+          timezone: localTimeContext?.timezone,
+          startUtcOffsetMinutes: localTimeContext?.startUtcOffsetMinutes,
+          endUtcOffsetMinutes: localTimeContext?.endUtcOffsetMinutes,
+          localTimeSource: localTimeContext?.source,
         },
         {
           activityType: resolveProviderActivityType("strength", "strength"),
@@ -393,6 +533,10 @@ export async function importStrongCsv(
           endedAt,
           name: group.workoutName,
           notes: group.workoutNotes,
+          timezone: localTimeContext?.timezone,
+          startUtcOffsetMinutes: localTimeContext?.startUtcOffsetMinutes,
+          endUtcOffsetMinutes: localTimeContext?.endUtcOffsetMinutes,
+          localTimeSource: localTimeContext?.source,
         },
       );
 
@@ -404,6 +548,7 @@ export async function importStrongCsv(
 
       // Track exercise index per exercise name within this workout
       const exerciseIndexMap = new Map<string, number>();
+      const setIndexMap = new Map<string, number>();
       let nextExerciseIndex = 0;
 
       const setRows: (typeof strengthSet.$inferInsert)[] = [];
@@ -429,10 +574,12 @@ export async function importStrongCsv(
         }
 
         // Compute exercise index (order of first appearance within workout)
-        if (!exerciseIndexMap.has(csvRow.exerciseName)) {
-          exerciseIndexMap.set(csvRow.exerciseName, nextExerciseIndex++);
+        if (!exerciseIndexMap.has(cacheKey)) {
+          exerciseIndexMap.set(cacheKey, nextExerciseIndex++);
         }
-        const exerciseIndex = exerciseIndexMap.get(csvRow.exerciseName) ?? 0;
+        const exerciseIndex = exerciseIndexMap.get(cacheKey) ?? 0;
+        const setIndex = setIndexMap.get(cacheKey) ?? 0;
+        setIndexMap.set(cacheKey, setIndex + 1);
 
         // Convert weight
         let weightKg = csvRow.weight;
@@ -447,8 +594,11 @@ export async function importStrongCsv(
           activityId,
           exerciseId,
           exerciseIndex,
-          setIndex: csvRow.setOrder - 1, // Strong is 1-indexed
-          setType: "working", // Strong doesn't distinguish set types
+          setIndex,
+          setType:
+            csvRow.weight === 0 && csvRow.reps === 0 && (csvRow.seconds ?? 0) > 0
+              ? "rest"
+              : "working",
           weightKg,
           reps: csvRow.reps,
           distanceMeters,
@@ -464,6 +614,7 @@ export async function importStrongCsv(
 
       recordsSynced++;
     } catch (err) {
+      if (err instanceof StrongCsvValidationError) throw err;
       errors.push({
         message: `Failed to import workout "${group.workoutName}" on ${group.date}: ${err instanceof Error ? err.message : String(err)}`,
         cause: err,

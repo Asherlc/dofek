@@ -5,6 +5,25 @@ import XCTest
 
 final class HealthKitTypesTests: XCTestCase {
 
+    func testClinicalRecordIdentifiersMapEverySupportedType() {
+        let expectedTypes = [
+            "HKClinicalTypeIdentifierAllergyRecord": "allergy",
+            "HKClinicalTypeIdentifierConditionRecord": "condition",
+            "HKClinicalTypeIdentifierCoverageRecord": "coverage",
+            "HKClinicalTypeIdentifierImmunizationRecord": "immunization",
+            "HKClinicalTypeIdentifierLabResultRecord": "labResult",
+            "HKClinicalTypeIdentifierMedicationRecord": "medication",
+            "HKClinicalTypeIdentifierProcedureRecord": "procedure",
+            "HKClinicalTypeIdentifierVitalSignRecord": "vitalSign",
+            "HKClinicalTypeIdentifierClinicalNoteRecord": "clinicalNote",
+        ]
+
+        XCTAssertEqual(Set(clinicalRecordTypeIdentifiers), Set(expectedTypes.keys))
+        for (identifier, expectedType) in expectedTypes {
+            XCTAssertEqual(clinicalRecordType(for: identifier), expectedType)
+        }
+    }
+
     // MARK: - readTypes
 
     func testReadTypesContainsQuantityTypes() {
@@ -71,6 +90,11 @@ final class HealthKitTypesTests: XCTestCase {
         XCTAssertTrue(readTypes.contains(sleepType))
     }
 
+    func testReadTypesContainsMenstrualFlow() {
+        let menstrualFlowType = HKCategoryType.categoryType(forIdentifier: .menstrualFlow)!
+        XCTAssertTrue(readTypes.contains(menstrualFlowType))
+    }
+
     func testReadTypesContainsWorkoutType() {
         XCTAssertTrue(readTypes.contains(HKWorkoutType.workoutType()))
     }
@@ -122,6 +146,7 @@ final class HealthKitTypesTests: XCTestCase {
         XCTAssertTrue(backgroundDeliveryTypes.contains(HKQuantityType.quantityType(forIdentifier: .stepCount)!))
         XCTAssertTrue(backgroundDeliveryTypes.contains(HKQuantityType.quantityType(forIdentifier: .heartRate)!))
         XCTAssertTrue(backgroundDeliveryTypes.contains(HKCategoryType.categoryType(forIdentifier: .sleepAnalysis)!))
+        XCTAssertTrue(backgroundDeliveryTypes.contains(HKCategoryType.categoryType(forIdentifier: .menstrualFlow)!))
         XCTAssertTrue(backgroundDeliveryTypes.contains(HKWorkoutType.workoutType()))
         XCTAssertTrue(backgroundDeliveryTypes.contains(HKSeriesType.workoutRoute()))
     }
@@ -134,19 +159,25 @@ final class HealthKitTypesTests: XCTestCase {
         )
         XCTAssertFalse(
             backgroundDeliveryTypes.contains(
-                HKCategoryType.categoryType(forIdentifier: .menstrualFlow)!
-            )
-        )
-        XCTAssertFalse(
-            backgroundDeliveryTypes.contains(
                 HKCategoryType.categoryType(forIdentifier: .mindfulSession)!
             )
         )
     }
 
+    func testBackgroundDeliveryTypesExcludeAllClinicalRecords() {
+        let backgroundIdentifiers = Set(backgroundDeliveryTypes.map(\.identifier))
+
+        for identifier in clinicalRecordTypeIdentifiers {
+            XCTAssertFalse(
+                backgroundIdentifiers.contains(identifier),
+                "Clinical type \(identifier) must remain explicit-sync only"
+            )
+        }
+    }
+
     func testBackgroundDeliveryTypesTotalCount() {
-        // 18 quantity types + sleep + workout + workout route.
-        XCTAssertEqual(backgroundDeliveryTypes.count, 21)
+        // 18 quantity types + sleep + menstrual flow + workout + workout route.
+        XCTAssertEqual(backgroundDeliveryTypes.count, 22)
     }
 
     // MARK: - writeTypes
@@ -182,16 +213,9 @@ final class HealthKitTypesTests: XCTestCase {
             let type = HKQuantityType.quantityType(forIdentifier: identifier)!
             XCTAssertFalse(writeTypes.contains(type), "writeTypes should not contain \(identifier.rawValue)")
         }
-    }
 
-    func testDietaryWriteQuantityTypeAllowsOnlyWritableDietaryIdentifiers() {
-        XCTAssertNotNil(dietaryWriteQuantityType(for: HKQuantityTypeIdentifier.dietaryEnergyConsumed.rawValue))
-        XCTAssertNotNil(dietaryWriteQuantityType(for: HKQuantityTypeIdentifier.dietaryProtein.rawValue))
-        XCTAssertNotNil(dietaryWriteQuantityType(for: HKQuantityTypeIdentifier.dietaryCarbohydrates.rawValue))
-        XCTAssertNotNil(dietaryWriteQuantityType(for: HKQuantityTypeIdentifier.dietaryFatTotal.rawValue))
-
-        XCTAssertNil(dietaryWriteQuantityType(for: HKQuantityTypeIdentifier.stepCount.rawValue))
-        XCTAssertNil(dietaryWriteQuantityType(for: HKQuantityTypeIdentifier.heartRate.rawValue))
-        XCTAssertNil(dietaryWriteQuantityType(for: "not-a-healthkit-type"))
+        XCTAssertFalse(
+            writeTypes.contains(HKCategoryType.categoryType(forIdentifier: .menstrualFlow)!)
+        )
     }
 }

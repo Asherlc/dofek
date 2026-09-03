@@ -854,7 +854,13 @@ function emptyRecoveryTabResult(): import("../services/mobile-recovery-tab.ts").
     dailyMetrics: [],
     baselineRelative: [],
     weight: [],
-    bodyFat: [],
+    bodyFatTrend: [],
+    bodyFatPrediction: {
+      ratePerWeek: null,
+      rateConfidence: null,
+      periodDeltas: { days7: null, days14: null, days30: null },
+      projectionLine: [],
+    },
     decisionContext: null,
     weightPrediction: {
       ratePerWeek: null,
@@ -924,34 +930,34 @@ describe("mobileDashboard.recovery", () => {
   it.each([
     { rawStatus: "active" as const, normalizedStatus: "syncing" as const },
     { rawStatus: "failed" as const, normalizedStatus: "sync_error" as const },
-  ])("passes the normalized $normalizedStatus status to the recovery tab loader", async ({
-    rawStatus,
-    normalizedStatus,
-  }) => {
-    processingStatusMock.mockResolvedValueOnce({
-      overallStatus: rawStatus,
-      datasets: [{ key: "recovery", status: rawStatus }],
-    });
-    const loadSpy = vi
-      .spyOn(mobileRecoveryTab, "loadMobileRecoveryTab")
-      .mockResolvedValue(emptyRecoveryTabResult());
+  ])(
+    "passes the normalized $normalizedStatus status to the recovery tab loader",
+    async ({ rawStatus, normalizedStatus }) => {
+      processingStatusMock.mockResolvedValueOnce({
+        overallStatus: rawStatus,
+        datasets: [{ key: "recovery", status: rawStatus }],
+      });
+      const loadSpy = vi
+        .spyOn(mobileRecoveryTab, "loadMobileRecoveryTab")
+        .mockResolvedValue(emptyRecoveryTabResult());
 
-    const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue([]), transaction: vi.fn() },
-      userId: "user-1",
-      timezone: "UTC",
-      accessWindow: fullAccessWindow,
-      sensorStore: makeSensorStore(),
-    });
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]), transaction: vi.fn() },
+        userId: "user-1",
+        timezone: "UTC",
+        accessWindow: fullAccessWindow,
+        sensorStore: makeSensorStore(),
+      });
 
-    await caller.recovery({ days: 30, endDate: "2026-03-28" });
+      await caller.recovery({ days: 30, endDate: "2026-03-28" });
 
-    expect(loadSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ processingStatus: normalizedStatus }),
-      30,
-      "2026-03-28",
-    );
-  });
+      expect(loadSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ processingStatus: normalizedStatus }),
+        30,
+        "2026-03-28",
+      );
+    },
+  );
 
   it("returns consolidated recovery tab data", async () => {
     const query = vi.fn(async (_schema: unknown, sqlText: unknown) => {
@@ -1022,7 +1028,7 @@ describe("mobileDashboard.recovery", () => {
 
     expect(result.readinessScore).toHaveLength(1);
     expect(result.stress.daily).toHaveLength(1);
-    expect(result.bodyFat).toEqual([]);
+    expect(result.bodyFatTrend).toEqual([]);
     const timingCall = vi
       .mocked(logger.info)
       .mock.calls.find((call) => String(call[0]).includes("[mobile-dashboard] recovery timings"));
@@ -1040,7 +1046,13 @@ describe("mobileDashboard.recovery", () => {
       dailyMetrics: [],
       baselineRelative: [],
       weight: [],
-      bodyFat: [],
+      bodyFatTrend: [],
+      bodyFatPrediction: {
+        ratePerWeek: null,
+        rateConfidence: null,
+        periodDeltas: { days7: null, days14: null, days30: null },
+        projectionLine: [],
+      },
       decisionContext: null,
       weightPrediction: {
         ratePerWeek: null,
@@ -1116,7 +1128,13 @@ describe("mobileDashboard.recovery", () => {
       dailyMetrics: [],
       baselineRelative: [],
       weight: [],
-      bodyFat: [],
+      bodyFatTrend: [],
+      bodyFatPrediction: {
+        ratePerWeek: null,
+        rateConfidence: null,
+        periodDeltas: { days7: null, days14: null, days30: null },
+        projectionLine: [],
+      },
       decisionContext: null,
       weightPrediction: {
         ratePerWeek: null,

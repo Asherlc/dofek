@@ -4,11 +4,28 @@ import {
   localTimeContextUnknown,
   offsetMinutesFromTimestamp,
   recordLocalHour,
+  resolveProviderTimezoneLocalTimeContext,
   resolveRecordLocalTimeContext,
   resolveTimestampOffsetLocalTimeContext,
 } from "./record-local-time.ts";
 
 describe("resolveRecordLocalTimeContext", () => {
+  it("derives offsets from a persisted user home timezone", () => {
+    expect(
+      resolveRecordLocalTimeContext({
+        startedAt: new Date("2026-09-01T14:55:54.000Z"),
+        endedAt: new Date("2026-09-01T15:25:54.000Z"),
+        timezone: "America/Los_Angeles",
+        source: "user_home_timezone",
+      }),
+    ).toEqual({
+      timezone: "America/Los_Angeles",
+      startUtcOffsetMinutes: -420,
+      endUtcOffsetMinutes: -420,
+      source: "user_home_timezone",
+    });
+  });
+
   it("resolves start and end independently when a session crosses daylight saving time", () => {
     expect(
       resolveRecordLocalTimeContext({
@@ -60,6 +77,19 @@ describe("resolveRecordLocalTimeContext", () => {
       }),
     ).toThrow("Unknown local-time context cannot include a timezone or UTC offset");
   });
+
+  it.each([{ startUtcOffsetMinutes: 0 }, { endUtcOffsetMinutes: 0 }])(
+    "rejects UTC offsets attached to the unknown source",
+    (offsets) => {
+      expect(() =>
+        resolveRecordLocalTimeContext({
+          startedAt: new Date("2026-01-01T00:00:00.000Z"),
+          source: "unknown",
+          ...offsets,
+        }),
+      ).toThrow("Unknown local-time context cannot include a timezone or UTC offset");
+    },
+  );
 
   it("rejects an invalid IANA timezone", () => {
     expect(() =>
@@ -156,6 +186,93 @@ describe("resolveRecordLocalTimeContext", () => {
         source: "provider_offset",
       }),
     ).toThrow("provider_offset local-time context requires a start UTC offset");
+  });
+});
+
+describe("resolveProviderTimezoneLocalTimeContext", () => {
+  it("normalizes a fixed Etc/GMT zone to an offset-only provider context", () => {
+    expect(
+      resolveProviderTimezoneLocalTimeContext({
+        startedAt: new Date("2026-09-01T14:55:54.000Z"),
+        timezone: "Etc/GMT+4",
+      }),
+    ).toEqual({
+      timezone: null,
+      startUtcOffsetMinutes: -240,
+      endUtcOffsetMinutes: null,
+      source: "provider_offset",
+    });
+  });
+
+  it("normalizes the zero-offset Etc/GMT zone", () => {
+    expect(
+      resolveProviderTimezoneLocalTimeContext({
+        startedAt: new Date("2026-09-01T14:55:54.000Z"),
+        timezone: "Etc/GMT",
+      }),
+    ).toEqual({
+      timezone: null,
+      startUtcOffsetMinutes: 0,
+      endUtcOffsetMinutes: null,
+      source: "provider_offset",
+    });
+  });
+
+  it("normalizes a two-digit fixed Etc/GMT offset", () => {
+    expect(
+      resolveProviderTimezoneLocalTimeContext({
+        startedAt: new Date("2026-09-01T14:55:54.000Z"),
+        timezone: "Etc/GMT+12",
+      }),
+    ).toEqual({
+      timezone: null,
+      startUtcOffsetMinutes: -720,
+      endUtcOffsetMinutes: null,
+      source: "provider_offset",
+    });
+  });
+
+  it("normalizes a negative fixed Etc/GMT zone using the reversed IANA sign", () => {
+    expect(
+      resolveProviderTimezoneLocalTimeContext({
+        startedAt: new Date("2026-09-01T14:55:54.000Z"),
+        timezone: "Etc/GMT-10",
+      }),
+    ).toEqual({
+      timezone: null,
+      startUtcOffsetMinutes: 600,
+      endUtcOffsetMinutes: null,
+      source: "provider_offset",
+    });
+  });
+
+  it("trims a fixed Etc/GMT zone before classifying it", () => {
+    expect(
+      resolveProviderTimezoneLocalTimeContext({
+        startedAt: new Date("2026-09-01T14:55:54.000Z"),
+        timezone: "  Etc/GMT+4  ",
+      }),
+    ).toEqual({
+      timezone: null,
+      startUtcOffsetMinutes: -240,
+      endUtcOffsetMinutes: null,
+      source: "provider_offset",
+    });
+  });
+
+  it("derives geographic-zone offsets from the named timezone", () => {
+    expect(
+      resolveProviderTimezoneLocalTimeContext({
+        startedAt: new Date("2026-09-01T14:55:54.000Z"),
+        endedAt: new Date("2026-09-01T15:25:54.000Z"),
+        timezone: "America/Los_Angeles",
+      }),
+    ).toEqual({
+      timezone: "America/Los_Angeles",
+      startUtcOffsetMinutes: -420,
+      endUtcOffsetMinutes: -420,
+      source: "provider_timezone",
+    });
   });
 });
 
@@ -265,6 +382,18 @@ describe("formatRecordLocalTime", () => {
         "en-US",
       ),
     ).toBe("--");
+  });
+
+  it("formats an unknown activity-local context in the viewer timezone when supplied", () => {
+    expect(
+      formatRecordLocalTime(
+        "2026-08-27T14:51:43.000Z",
+        localTimeContextUnknown(),
+        "start",
+        "en-US",
+        "America/Los_Angeles",
+      ),
+    ).toBe("7:51 AM");
   });
 
   it("returns a placeholder for invalid timestamps and timezones", () => {

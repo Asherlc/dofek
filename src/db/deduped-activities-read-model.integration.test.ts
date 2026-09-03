@@ -1,8 +1,7 @@
 import { randomBytes } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { readModelSql, renderDbtModelSql } from "./read-model-sql-test-helpers.ts";
 
 const activityId = "00000000-0000-0000-0000-000000000101";
 const linkedActivityId = "00000000-0000-0000-0000-000000000102";
@@ -152,14 +151,11 @@ async function waitForClickHouse(client: ClickHouseClient): Promise<void> {
   throw lastError instanceof Error ? lastError : new Error("ClickHouse did not become ready");
 }
 
-function readProjectFile(relativePath: string): string {
-  return readFileSync(join(import.meta.dirname, "../..", relativePath), "utf8");
-}
-
 function renderDedupedActivitiesSelectSql(targetSchema: string): string {
-  return readProjectFile("analytics/models/read_models/deduped_activities.sql")
-    .replace(/{{ config\([\s\S]*?\) }}\s*/, "")
-    .replace(/\{% if is_incremental\(\) %}\s*([\s\S]*?)\s*\{% endif %}/g, "$1")
+  return renderDbtModelSql(readModelSql("deduped_activities.sql"), {
+    isIncremental: true,
+    activityRefreshScoped: false,
+  })
     .replace(/{{ ref\('activity_source_records'\) }}/g, `${targetSchema}.activity_source_records`)
     .replace(
       /{{ ref\('activity_duplicate_groups'\) }}/g,

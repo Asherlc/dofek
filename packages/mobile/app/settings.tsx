@@ -4,14 +4,16 @@ import {
   PASSWORD_MIN_LENGTH,
   PASSWORD_REQUIREMENT_TEXT,
 } from "@dofek/auth/auth";
-import { formatDateMedium, formatDateTime } from "@dofek/format/format";
+import { formatDateMedium } from "@dofek/format/format";
+import {
+  type ClimbingGradePreference,
+  resolveClimbingGradePreference,
+} from "@dofek/training/climbing-grades";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import * as Updates from "expo-updates";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Linking,
   RefreshControl,
   ScrollView,
   Text,
@@ -22,6 +24,7 @@ import {
   View,
 } from "react-native";
 import { AccountErasurePanel } from "../components/AccountErasurePanel";
+import { ClimbingGradeSystemSettings } from "../components/ClimbingGradeSystemSettings";
 import { DataExportSection } from "../components/DataExportSection";
 import { MedicationDoseEventsPanel } from "../components/MedicationDoseEventsPanel";
 import { MedicationRemindersPanel } from "../components/MedicationRemindersPanel";
@@ -29,21 +32,19 @@ import { PersonalizationPanel } from "../components/PersonalizationPanel";
 import { PrimaryGoalSelector } from "../components/PrimaryGoalSelector";
 import { ProviderLogo } from "../components/ProviderLogo";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
-import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel";
 import { ZeppPairingCard } from "../components/ZeppPairingCard";
+import { AppStoreBillingService } from "../lib/app-store-billing";
 import { useAuth } from "../lib/auth-context";
-import {
-  clearMobileBillingCheckoutOperation,
-  getOrCreateMobileBillingCheckoutOperationId,
-} from "../lib/billing-checkout-operation";
 import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import { useRefresh } from "../lib/useRefresh";
+import type { AppStoreProduct } from "../modules/app-store-billing";
 import { colors } from "../theme";
 import { styles } from "./settings.styles";
 import { GoalWeightSettingsSection } from "./settings-goal-weight";
 
 type UnitSystem = "metric" | "imperial";
+type AppStoreBillingAction = "manage" | "restore" | "subscribe";
 type SettingsCategory =
   | "account"
   | "data-sources"
@@ -70,13 +71,13 @@ const SETTINGS_CATEGORIES: readonly {
   {
     id: "data-sources",
     label: "Data Sources",
-    searchText: "data sources providers Zepp integrations",
+    searchText: "data sources providers Zepp integrations Bluetooth devices WHOOP heart rate",
   },
   {
     id: "goals-models",
     label: "Goals & Models",
     searchText:
-      "goals models primary goal units cycle tracking journal trends health reports goal weight algorithm personalization",
+      "goals models primary goal units journal trends health reports goal weight algorithm personalization",
   },
   {
     id: "privacy-export",
@@ -96,7 +97,7 @@ const SETTINGS_CATEGORIES: readonly {
   {
     id: "advanced",
     label: "Advanced",
-    searchText: "advanced dashboard layout developer tools diagnostics",
+    searchText: "advanced dashboard layout developer integrations OAuth callback API",
   },
 ];
 const reportedUnitReadErrors = new WeakSet<object>();
@@ -162,10 +163,6 @@ function normalizeSettingsCategory(value: unknown): SettingsCategory | undefined
   return typeof value === "string" ? LEGACY_SETTINGS_CATEGORY_MAP[value] : undefined;
 }
 
-function formatLocalizedDateTime(date: Date | null | undefined): string {
-  if (!date) return "n/a";
-  return formatDateTime(date);
-}
 function formatDateRangeForSignupWeek(startDate: string, endDateExclusive: string): string {
   const endInclusive = new Date(`${endDateExclusive}T12:00:00.000Z`);
   endInclusive.setUTCDate(endInclusive.getUTCDate() - 1);
@@ -209,7 +206,6 @@ export default function SettingsScreen() {
   const { width } = useWindowDimensions();
   const isWide = width >= 600;
   const trpcUtils = trpc.useUtils();
-
   // ── Data Sources ──
   const providers = trpc.sync.providers.useQuery();
 
@@ -235,42 +231,91 @@ export default function SettingsScreen() {
 
   // ── Unit System ──
   const unitSetting = trpc.settings.get.useQuery({ key: "unitSystem" });
+  const climbingGradeSetting = trpc.settings.get.useQuery({ key: "climbingGradeSystems" });
   const setSettingMutation = trpc.settings.set.useMutation();
   const lastUnitReadError = useRef<unknown>(null);
   const billingStatus = trpc.billing.status.useQuery();
   const medicationDoseEvents = trpc.medicationDoseEvents.list.useQuery({ limit: 50 });
-  const [checkoutClientError, setCheckoutClientError] = useState<string | null>(null);
-  const checkoutSessionMutation = trpc.billing.createCheckoutSession.useMutation({
-    onSuccess: async ({ url }, { operationId }) => {
-      try {
-        await clearMobileBillingCheckoutOperation(operationId);
-      } catch (error: unknown) {
-        captureException(error, { context: "billing-checkout-operation-clear" });
-      }
-      void Linking.openURL(url);
-    },
-  });
-  const portalSessionMutation = trpc.billing.createPortalSession.useMutation({
-    onSuccess: ({ url }) => {
-      void Linking.openURL(url);
-    },
-  });
+  const appStoreBillingService = useMemo(
+    () =>
+      new AppStoreBillingService({
+        queryClient: {
+          invalidateQueries: () => trpcUtils.billing.status.invalidate(),
+        },
+        trpcClient: trpcUtils.client,
+      }),
+    [trpcUtils],
+  );
+  const [appStoreBillingAction, setAppStoreBillingAction] = useState<AppStoreBillingAction | null>(
+    null,
+  );
+  const [appStoreBillingError, setAppStoreBillingError] = useState<string | null>(null);
+  const [appStoreBillingMessage, setAppStoreBillingMessage] = useState<string | null>(null);
+  const [appStoreProduct, setAppStoreProduct] = useState<AppStoreProduct | null>(null);
 
   const currentUnitSystem: UnitSystem =
     unitSetting.data?.value === "imperial" ? "imperial" : "metric";
+  const climbingGradePreference = climbingGradeSetting.data
+    ? resolveClimbingGradePreference(climbingGradeSetting.data.value)
+    : null;
 
-  async function startCheckout(): Promise<void> {
-    setCheckoutClientError(null);
-    try {
-      const operationId = await getOrCreateMobileBillingCheckoutOperationId();
-      checkoutSessionMutation.mutate({ operationId });
-    } catch (error: unknown) {
-      captureException(error, { context: "billing-checkout-operation-create" });
-      setCheckoutClientError(
-        error instanceof Error ? error.message : "Checkout could not be started on this device.",
-      );
-    }
+  function beginAppStoreBillingAction(action: AppStoreBillingAction): void {
+    setAppStoreBillingAction(action);
+    setAppStoreBillingError(null);
+    setAppStoreBillingMessage(null);
   }
+
+  function completeAppStoreBillingAction(message?: string): void {
+    setAppStoreBillingAction(null);
+    setAppStoreBillingMessage(message ?? null);
+  }
+
+  function failAppStoreBillingAction(error: unknown): void {
+    setAppStoreBillingAction(null);
+    setAppStoreBillingError(
+      error instanceof Error ? error.message : "App Store billing could not be completed.",
+    );
+  }
+
+  function subscribeWithAppStore(): void {
+    beginAppStoreBillingAction("subscribe");
+    void appStoreBillingService.subscribe().then((result) => {
+      completeAppStoreBillingAction(
+        result.outcome === "pending" ? "Your purchase is pending approval." : undefined,
+      );
+    }, failAppStoreBillingAction);
+  }
+
+  function restoreAppStorePurchases(): void {
+    beginAppStoreBillingAction("restore");
+    void appStoreBillingService.restore().then((restoredCount) => {
+      completeAppStoreBillingAction(
+        restoredCount === 0
+          ? "No active purchases were found."
+          : `${restoredCount} purchase${restoredCount === 1 ? "" : "s"} restored.`,
+      );
+    }, failAppStoreBillingAction);
+  }
+
+  function manageAppStoreSubscription(): void {
+    beginAppStoreBillingAction("manage");
+    void appStoreBillingService
+      .showManageSubscriptions()
+      .then(() => completeAppStoreBillingAction(), failAppStoreBillingAction);
+  }
+
+  useEffect(() => {
+    let active = true;
+    void appStoreBillingService.loadProduct().then(
+      (product) => {
+        if (active) setAppStoreProduct(product);
+      },
+      () => undefined,
+    );
+    return () => {
+      active = false;
+    };
+  }, [appStoreBillingService]);
 
   useEffect(() => {
     if (
@@ -297,6 +342,25 @@ export default function SettingsScreen() {
         },
         onSettled: () => {
           void trpcUtils.settings.get.invalidate({ key: "unitSystem" });
+        },
+      },
+    );
+  }
+
+  function handleClimbingGradeChange(next: ClimbingGradePreference) {
+    const key = "climbingGradeSystems" as const;
+    const previousSetting = trpcUtils.settings.get.getData({ key });
+    trpcUtils.settings.get.setData({ key }, { key, value: next });
+    setSettingMutation.mutate(
+      { key, value: next },
+      {
+        onError: (error) => {
+          trpcUtils.settings.get.setData({ key }, previousSetting);
+          captureException(error, { context: "climbing-grade-systems-write" });
+          Alert.alert("Error", error.message);
+        },
+        onSettled: () => {
+          void trpcUtils.settings.get.invalidate({ key });
         },
       },
     );
@@ -397,50 +461,64 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Data Sources</Text>
           <Text style={styles.sectionDescription}>Connect and manage health data providers</Text>
-          <TouchableOpacity
-            style={styles.card}
-            onPress={() => router.push("/providers")}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="Data Sources"
-            accessibilityState={{ busy: providers.isLoading }}
-          >
-            <View style={styles.dataSourcesRow}>
-              <View style={styles.dataSourcesInfo}>
-                {providers.isLoading ? (
-                  <ActivityIndicator color={colors.accent} size="small" />
-                ) : providers.error && providers.data === undefined ? (
-                  <QueryStatePanel
-                    variant="error"
-                    title="Could not load data sources"
-                    message={getQueryErrorMessage(providers.error)}
-                    minHeight={96}
-                  />
-                ) : (
-                  <>
-                    <View style={styles.providerLogos}>
-                      {(providers.data ?? [])
-                        .filter((provider) => provider.authorized)
-                        .slice(0, 5)
-                        .map((provider) => (
-                          <ProviderLogo
-                            key={provider.id}
-                            provider={provider.id}
-                            serverUrl={auth.serverUrl}
-                            size={20}
-                          />
-                        ))}
-                    </View>
-                    <Text style={styles.dataSourcesCount}>
-                      {(providers.data ?? []).filter((provider) => provider.authorized).length}{" "}
-                      connected
-                    </Text>
-                  </>
-                )}
+          <View style={styles.healthTrackingCards}>
+            <TouchableOpacity
+              style={styles.card}
+              onPress={() => router.push("/providers")}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Data Sources"
+              accessibilityState={{ busy: providers.isLoading }}
+            >
+              <View style={styles.dataSourcesRow}>
+                <View style={styles.dataSourcesInfo}>
+                  {providers.isLoading ? (
+                    <ActivityIndicator color={colors.accent} size="small" />
+                  ) : providers.error && providers.data === undefined ? (
+                    <QueryStatePanel
+                      variant="error"
+                      title="Could not load data sources"
+                      message={getQueryErrorMessage(providers.error)}
+                      minHeight={96}
+                    />
+                  ) : (
+                    <>
+                      <View style={styles.providerLogos}>
+                        {(providers.data ?? [])
+                          .filter((provider) => provider.authorized)
+                          .slice(0, 5)
+                          .map((provider) => (
+                            <ProviderLogo
+                              key={provider.id}
+                              provider={provider.id}
+                              serverUrl={auth.serverUrl}
+                              size={20}
+                            />
+                          ))}
+                      </View>
+                      <Text style={styles.dataSourcesCount}>
+                        {(providers.data ?? []).filter((provider) => provider.authorized).length}{" "}
+                        connected
+                      </Text>
+                    </>
+                  )}
+                </View>
+                <Text style={styles.navigationChevron}>›</Text>
               </View>
-              <Text style={styles.devToolChevron}>›</Text>
-            </View>
-          </TouchableOpacity>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.card}
+              onPress={() => router.push("/bluetooth-devices")}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Bluetooth Devices"
+            >
+              <View style={styles.dataSourcesRow}>
+                <Text style={styles.navigationLabel}>Bluetooth Devices</Text>
+                <Text style={styles.navigationChevron}>›</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
           {providers.error && providers.data !== undefined ? (
             <QueryStatePanel
               variant="error"
@@ -460,30 +538,27 @@ export default function SettingsScreen() {
           <View style={styles.healthTrackingCards}>
             <TouchableOpacity
               style={styles.card}
-              onPress={() => router.push("/cycle")}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel="Cycle Tracking"
-            >
-              <View style={styles.dataSourcesRow}>
-                <Text style={styles.devToolLabel}>Cycle Tracking</Text>
-                <Text style={styles.devToolChevron}>›</Text>
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.card}
               onPress={() => router.push("/tracking")}
               activeOpacity={0.7}
               accessibilityRole="button"
               accessibilityLabel="Journal Trends"
             >
               <View style={styles.dataSourcesRow}>
-                <Text style={styles.devToolLabel}>Journal Trends</Text>
-                <Text style={styles.devToolChevron}>›</Text>
+                <Text style={styles.navigationLabel}>Journal Trends</Text>
+                <Text style={styles.navigationChevron}>›</Text>
               </View>
             </TouchableOpacity>
           </View>
         </View>
+      ) : null}
+
+      {activeCategory === "goals-models" ? (
+        <ClimbingGradeSystemSettings
+          errorMessage={climbingGradeSetting.error?.message ?? null}
+          onChange={handleClimbingGradeChange}
+          preference={climbingGradePreference}
+          saving={setSettingMutation.isPending}
+        />
       ) : null}
 
       {/* ── Health Reports ── */}
@@ -501,8 +576,8 @@ export default function SettingsScreen() {
             accessibilityLabel="Health Reports"
           >
             <View style={styles.dataSourcesRow}>
-              <Text style={styles.devToolLabel}>Open Health Reports</Text>
-              <Text style={styles.devToolChevron}>›</Text>
+              <Text style={styles.navigationLabel}>Open Health Reports</Text>
+              <Text style={styles.navigationChevron}>›</Text>
             </View>
           </TouchableOpacity>
         </View>
@@ -687,61 +762,92 @@ export default function SettingsScreen() {
                     Stripe subscription status: {billingStatus.data.stripeSubscriptionStatus}
                   </Text>
                 ) : null}
-                {checkoutSessionMutation.error ? (
-                  <Text style={styles.billingErrorText}>
-                    {checkoutSessionMutation.error.message}
+                {billingStatus.data.access.kind === "full" &&
+                billingStatus.data.access.reason === "app_store_subscription" &&
+                billingStatus.data.appStoreSubscriptionStatus ? (
+                  <Text style={styles.billingDetailText}>
+                    App Store subscription status: {billingStatus.data.appStoreSubscriptionStatus}
                   </Text>
                 ) : null}
-                {checkoutClientError ? (
-                  <Text style={styles.billingErrorText}>{checkoutClientError}</Text>
+                {appStoreBillingError ? (
+                  <Text style={styles.billingErrorText}>{appStoreBillingError}</Text>
                 ) : null}
-                {portalSessionMutation.error ? (
-                  <Text style={styles.billingErrorText}>{portalSessionMutation.error.message}</Text>
+                {appStoreBillingMessage ? (
+                  <Text style={styles.billingDetailText}>{appStoreBillingMessage}</Text>
                 ) : null}
                 <View style={styles.billingActionRow}>
                   {!billingStatus.data.hasFullAccess && (
                     <TouchableOpacity
                       style={[
                         styles.billingPrimaryButton,
-                        checkoutSessionMutation.isPending && styles.buttonDisabled,
+                        appStoreBillingAction && styles.buttonDisabled,
                       ]}
-                      onPress={() => void startCheckout()}
+                      onPress={subscribeWithAppStore}
                       activeOpacity={0.7}
-                      disabled={checkoutSessionMutation.isPending}
+                      disabled={appStoreBillingAction !== null}
                       accessibilityRole="button"
-                      accessibilityLabel="Upgrade to Full Access"
+                      accessibilityLabel={
+                        appStoreBillingAction === "subscribe"
+                          ? "Subscribing..."
+                          : `Subscribe for ${appStoreProduct?.displayPrice ?? "Premium"}/month`
+                      }
                       accessibilityState={{
-                        busy: checkoutSessionMutation.isPending,
-                        disabled: checkoutSessionMutation.isPending,
+                        busy: appStoreBillingAction === "subscribe",
+                        disabled: appStoreBillingAction !== null,
                       }}
                     >
                       <Text style={styles.billingButtonText}>
-                        {checkoutSessionMutation.isPending
-                          ? "Opening checkout..."
-                          : "Upgrade to Full Access"}
+                        {appStoreBillingAction === "subscribe"
+                          ? "Subscribing..."
+                          : `Subscribe for ${appStoreProduct?.displayPrice ?? "Premium"}/month`}
                       </Text>
                     </TouchableOpacity>
                   )}
-                  {billingStatus.data.canManageBilling && (
+                  <TouchableOpacity
+                    style={[
+                      styles.billingSecondaryButton,
+                      appStoreBillingAction && styles.buttonDisabled,
+                    ]}
+                    onPress={restoreAppStorePurchases}
+                    activeOpacity={0.7}
+                    disabled={appStoreBillingAction !== null}
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      appStoreBillingAction === "restore" ? "Restoring..." : "Restore Purchases"
+                    }
+                    accessibilityState={{
+                      busy: appStoreBillingAction === "restore",
+                      disabled: appStoreBillingAction !== null,
+                    }}
+                  >
+                    <Text style={styles.billingButtonText}>
+                      {appStoreBillingAction === "restore" ? "Restoring..." : "Restore Purchases"}
+                    </Text>
+                  </TouchableOpacity>
+                  {billingStatus.data.canManageAppStoreSubscription && (
                     <TouchableOpacity
                       style={[
                         styles.billingSecondaryButton,
-                        portalSessionMutation.isPending && styles.buttonDisabled,
+                        appStoreBillingAction && styles.buttonDisabled,
                       ]}
-                      onPress={() => portalSessionMutation.mutate()}
+                      onPress={manageAppStoreSubscription}
                       activeOpacity={0.7}
-                      disabled={portalSessionMutation.isPending}
+                      disabled={appStoreBillingAction !== null}
                       accessibilityRole="button"
-                      accessibilityLabel="Manage Billing"
+                      accessibilityLabel={
+                        appStoreBillingAction === "manage"
+                          ? "Opening subscriptions..."
+                          : "Manage Subscription"
+                      }
                       accessibilityState={{
-                        busy: portalSessionMutation.isPending,
-                        disabled: portalSessionMutation.isPending,
+                        busy: appStoreBillingAction === "manage",
+                        disabled: appStoreBillingAction !== null,
                       }}
                     >
                       <Text style={styles.billingButtonText}>
-                        {portalSessionMutation.isPending
-                          ? "Opening billing portal..."
-                          : "Manage Billing"}
+                        {appStoreBillingAction === "manage"
+                          ? "Opening subscriptions..."
+                          : "Manage Subscription"}
                       </Text>
                     </TouchableOpacity>
                   )}
@@ -769,17 +875,6 @@ export default function SettingsScreen() {
         </View>
       ) : null}
 
-      {/* ── Integrations ── */}
-      {activeCategory === "data-sources" ? (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Integrations</Text>
-          <Text style={styles.sectionDescription}>Connect external services</Text>
-          <View style={styles.card}>
-            <SlackIntegrationPanel />
-          </View>
-        </View>
-      ) : null}
-
       {activeCategory === "privacy-export" ? (
         <DataExportSection serverUrl={auth.serverUrl} sessionToken={auth.sessionToken} />
       ) : null}
@@ -797,76 +892,33 @@ export default function SettingsScreen() {
             accessibilityLabel="Contact Support"
           >
             <View style={styles.dataSourcesRow}>
-              <Text style={styles.devToolLabel}>Contact Support</Text>
-              <Text style={styles.devToolChevron}>›</Text>
+              <Text style={styles.navigationLabel}>Contact Support</Text>
+              <Text style={styles.navigationChevron}>›</Text>
             </View>
           </TouchableOpacity>
         </View>
       ) : null}
 
-      {/* ── Developer Tools ── */}
       {activeCategory === "advanced" ? (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Developer Tools</Text>
-          <Text style={styles.sectionDescription}>Debugging and diagnostics</Text>
-          <View style={styles.card}>
-            <TouchableOpacity
-              style={styles.devToolRow}
-              onPress={() => {
-                const { router } = require("expo-router");
-                router.push("/ble-probe");
-              }}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel="Bluetooth Low Energy probe"
-            >
-              <Text style={styles.devToolLabel}>Bluetooth Low Energy probe</Text>
-              <Text style={styles.devToolChevron}>›</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.devToolRow}
-              onPress={() => {
-                const { router } = require("expo-router");
-                router.push("/imu-visualization");
-              }}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel="Inertial measurement unit visualization"
-            >
-              <Text style={styles.devToolLabel}>Inertial measurement unit visualization</Text>
-              <Text style={styles.devToolChevron}>›</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.devToolRow}
-              onPress={() => {
-                const { router } = require("expo-router");
-                router.push("/heart-rate-visualization");
-              }}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel="Heart Rate Visualization"
-            >
-              <Text style={styles.devToolLabel}>Heart Rate Visualization</Text>
-              <Text style={styles.devToolChevron}>›</Text>
-            </TouchableOpacity>
-            <View style={[styles.devToolRow, styles.devToolRowLast]}>
-              <View>
-                <Text style={styles.devToolLabel}>OTA Update</Text>
-                <Text style={styles.devToolDetail}>
-                  {Updates.updateId ?? "embedded bundle"}
-                  {"\n"}
-                  Channel: {Updates.channel ?? "none"}
-                  {"\n"}
-                  Runtime: {Updates.runtimeVersion ?? "unknown"}
-                  {"\n"}
-                  Created: {formatLocalizedDateTime(Updates.createdAt)}
-                </Text>
-              </View>
+          <Text style={styles.sectionTitle}>Developer integrations</Text>
+          <Text style={styles.sectionDescription}>
+            Register and manage clients that write data through the external API
+          </Text>
+          <TouchableOpacity
+            style={styles.card}
+            onPress={() => router.push("/developer-integrations")}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Manage developer integrations"
+          >
+            <View style={styles.dataSourcesRow}>
+              <Text style={styles.navigationLabel}>Manage developer integrations</Text>
+              <Text style={styles.navigationChevron}>›</Text>
             </View>
-          </View>
+          </TouchableOpacity>
         </View>
       ) : null}
-
       {/* ── Danger Zone ── */}
       {activeCategory === "privacy-export" ? (
         <View style={styles.section}>

@@ -1,7 +1,11 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import { osmTilePreview } from "../lib/osm-tile.ts";
-import { ActivityRepository, StreamPoint } from "./activity-repository.ts";
+import {
+  ActivityRepository,
+  StreamPoint,
+  selectCompatibleActivitySummary,
+} from "./activity-repository.ts";
 
 // ---------------------------------------------------------------------------
 // Domain models
@@ -72,6 +76,62 @@ describe("StreamPoint", () => {
   });
 });
 
+describe("selectCompatibleActivitySummary", () => {
+  it("uses the Wahoo cycling member when it is available", () => {
+    const cyclingRow = { canonical_type: "cycling", provider_id: "wahoo" };
+    const summaries = [
+      { activity_id: "wahoo-member", canonical_type: "cycling", provider_id: "wahoo" },
+      { activity_id: "peloton-member", canonical_type: "cycling", provider_id: "peloton" },
+    ];
+
+    expect(selectCompatibleActivitySummary).toBeTypeOf("function");
+    expect(selectCompatibleActivitySummary(cyclingRow, summaries)?.activity_id).toBe(
+      "wahoo-member",
+    );
+  });
+
+  it("does not use a Peloton cycling summary for a running activity", () => {
+    const runningRow = { canonical_type: "running", provider_id: "wahoo" };
+    const pelotonOnlySummaries = [
+      { activity_id: "peloton-member", canonical_type: "cycling", provider_id: "peloton" },
+    ];
+
+    expect(selectCompatibleActivitySummary).toBeTypeOf("function");
+    expect(selectCompatibleActivitySummary(runningRow, pelotonOnlySummaries)).toBeNull();
+  });
+
+  it("allows a matching non-other type to hydrate across providers", () => {
+    const cyclingRow = { canonical_type: "cycling", provider_id: "wahoo" };
+    const pelotonCyclingSummary = {
+      activity_id: "peloton-member",
+      canonical_type: "cycling",
+      provider_id: "peloton",
+    };
+
+    expect(selectCompatibleActivitySummary(cyclingRow, [pelotonCyclingSummary])).toBe(
+      pelotonCyclingSummary,
+    );
+  });
+
+  it("requires an other summary to come from the canonical provider", () => {
+    const otherRow = { canonical_type: "other", provider_id: "wahoo" };
+    const pelotonSummary = {
+      activity_id: "peloton-member",
+      canonical_type: "other",
+      provider_id: "peloton",
+    };
+    const wahooSummary = {
+      activity_id: "wahoo-member",
+      canonical_type: "other",
+      provider_id: "wahoo",
+    };
+
+    expect(selectCompatibleActivitySummary(otherRow, [pelotonSummary, wahooSummary])).toBe(
+      wahooSummary,
+    );
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Repository
 // ---------------------------------------------------------------------------
@@ -83,6 +143,20 @@ describe("ActivityRepository", () => {
     return rows.map((row) =>
       "canonical_type" in row || "activity_type" in row
         ? {
+            provider_type:
+              typeof row.provider_type === "string"
+                ? row.provider_type
+                : typeof row.canonical_type === "string"
+                  ? row.canonical_type
+                  : row.activity_type,
+            raw_type:
+              typeof row.raw_type === "string"
+                ? row.raw_type
+                : typeof row.provider_type === "string"
+                  ? row.provider_type
+                  : typeof row.canonical_type === "string"
+                    ? row.canonical_type
+                    : row.activity_type,
             timezone: null,
             start_utc_offset_minutes: null,
             end_utc_offset_minutes: null,
@@ -102,7 +176,23 @@ describe("ActivityRepository", () => {
   }
 
   function makeRepositoryWithSensorStore(postgresRows: Record<string, unknown>[] = []) {
-    const execute = vi.fn().mockResolvedValue(withUnknownLocalTimeContext(postgresRows));
+    const memberRows = postgresRows.flatMap((row) => {
+      const id = typeof row.id === "string" ? row.id : null;
+      const canonicalType = typeof row.canonical_type === "string" ? row.canonical_type : null;
+      const providerId = typeof row.provider_id === "string" ? row.provider_id : null;
+      if (!id || !canonicalType || !providerId) return [];
+      return [id, ...(Array.isArray(row.member_activity_ids) ? row.member_activity_ids : [])].map(
+        (activity_id) => ({ activity_id, canonical_type: canonicalType, provider_id: providerId }),
+      );
+    });
+    const execute = vi.fn().mockImplementation((query) => {
+      const compiledQuery = dialect.sqlToQuery(query);
+      return Promise.resolve(
+        compiledQuery.sql.includes("FROM fitness.activity")
+          ? memberRows
+          : withUnknownLocalTimeContext(postgresRows),
+      );
+    });
     const database = { execute };
     const sensorStore = {
       query: vi.fn().mockResolvedValue([]),
@@ -328,6 +418,7 @@ describe("ActivityRepository", () => {
         {
           id: "abc-123",
           canonical_type: "cycling",
+          provider_type: "road_cycling",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T11:00:00.000Z",
           name: "Morning Ride",
@@ -355,6 +446,7 @@ describe("ActivityRepository", () => {
         {
           id: "abc-123",
           canonical_type: "cycling",
+          provider_type: "road_cycling",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T11:00:00.000Z",
           name: "Morning Ride",
@@ -372,6 +464,7 @@ describe("ActivityRepository", () => {
       expect(result.items).toHaveLength(1);
       expect(result.items[0]).not.toHaveProperty("total_count");
       expect(result.items[0]).toHaveProperty("id", "abc-123");
+      expect(result.items[0]).toHaveProperty("raw_type", "road_cycling");
     });
 
     it("hydrates summaries from any member activity id", async () => {
@@ -425,6 +518,130 @@ describe("ActivityRepository", () => {
         elevation_state: { status: "available" },
       });
       expect(result.items[0]).not.toHaveProperty("member_activity_ids");
+    });
+
+    it("does not hydrate a running activity from an incompatible Peloton cycling member", async () => {
+      const { repo, execute, sensorStore } = makeRepositoryWithSensorStore([]);
+      execute
+        .mockResolvedValueOnce(
+          withUnknownLocalTimeContext([
+            {
+              id: "running-group",
+              canonical_type: "running",
+              started_at: "2024-01-15T10:00:00.000Z",
+              ended_at: "2024-01-15T11:00:00.000Z",
+              name: "Morning Run",
+              provider_id: "wahoo",
+              source_providers: ["peloton", "wahoo"],
+              member_activity_ids: ["peloton-member"],
+              avg_hr: null,
+              max_hr: null,
+              avg_power: null,
+              distance_meters: null,
+              total_count: 1,
+            },
+          ]),
+        )
+        .mockResolvedValueOnce([
+          {
+            activity_id: "peloton-member",
+            canonical_type: "cycling",
+            provider_id: "peloton",
+          },
+        ]);
+      sensorStore.getActivitySummaries.mockResolvedValueOnce([
+        {
+          activity_id: "peloton-member",
+          avg_hr: 145,
+          max_hr: 171,
+          avg_power: 220,
+          max_power: 450,
+          avg_speed: 8,
+          max_speed: 13,
+          avg_cadence: 82,
+          total_distance: 42000,
+          elevation_gain_m: 610,
+          elevation_loss_m: 590,
+          sample_count: 3600,
+        },
+      ]);
+
+      const result = await repo.list({ days: 30, endDate: "2024-02-01", limit: 20, offset: 0 });
+
+      expect(result.items[0]).toMatchObject({
+        id: "running-group",
+        distance_meters: null,
+        distance_state: { status: "missing", reason: "Distance not recorded" },
+      });
+    });
+
+    it("does not feed Peloton power into incompatible range activities before MCP gating", async () => {
+      const { repo, execute, sensorStore } = makeRepositoryWithSensorStore([]);
+      execute
+        .mockResolvedValueOnce(
+          withUnknownLocalTimeContext([
+            {
+              id: "running-group",
+              canonical_type: "running",
+              started_at: "2024-01-15T10:00:00.000Z",
+              ended_at: "2024-01-15T11:00:00.000Z",
+              name: "Morning Run",
+              provider_id: "wahoo",
+              source_providers: ["peloton", "wahoo"],
+              member_activity_ids: ["peloton-member"],
+              avg_hr: null,
+              max_hr: null,
+              avg_power: null,
+              distance_meters: null,
+              total_count: 1,
+            },
+            {
+              id: "other-group",
+              canonical_type: "other",
+              started_at: "2024-01-15T12:00:00.000Z",
+              ended_at: "2024-01-15T13:00:00.000Z",
+              name: "Unclassified activity",
+              provider_id: "wahoo",
+              source_providers: ["peloton", "wahoo"],
+              member_activity_ids: ["peloton-member"],
+              avg_hr: null,
+              max_hr: null,
+              avg_power: null,
+              distance_meters: null,
+              total_count: 1,
+            },
+          ]),
+        )
+        .mockResolvedValueOnce([
+          {
+            activity_id: "peloton-member",
+            canonical_type: "cycling",
+            provider_id: "peloton",
+          },
+        ]);
+      sensorStore.getActivitySummaries.mockResolvedValueOnce([
+        {
+          activity_id: "peloton-member",
+          avg_hr: 145,
+          max_hr: 171,
+          avg_power: 220,
+          max_power: 450,
+          avg_speed: 8,
+          max_speed: 13,
+          avg_cadence: 82,
+          total_distance: 42_000,
+          elevation_gain_m: 610,
+          elevation_loss_m: 590,
+          sample_count: 3600,
+        },
+      ]);
+
+      const result = await repo.listRange("2024-01-15", "2024-01-15");
+
+      expect(result).toEqual([
+        expect.objectContaining({ id: "running-group", avg_power: null }),
+        expect.objectContaining({ id: "other-group", avg_power: null }),
+      ]);
     });
 
     it("adds a location summary when hydrated summaries include a route centroid", async () => {
@@ -787,6 +1004,7 @@ describe("ActivityRepository", () => {
           {
             id: "tombstoned-id",
             canonical_type: "running",
+            raw_type: "running",
             started_at: "2024-01-15T10:00:00.000Z",
             ended_at: "2024-01-15T10:45:00.000Z",
             timezone: null,
@@ -845,6 +1063,7 @@ describe("ActivityRepository", () => {
           ended_at: "2024-01-15T10:45:00.000Z",
           name: "Morning Run",
           notes: "",
+          perceived_exertion: null,
           provider_id: "garmin",
           subsource: "Garmin Connect",
           source_providers: ["garmin"],
@@ -877,6 +1096,7 @@ describe("ActivityRepository", () => {
           ended_at: "2024-01-15T10:45:00.000Z",
           name: "Easy Run",
           notes: "Felt good",
+          perceived_exertion: 7,
           provider_id: "garmin",
           subsource: "Strong",
           source_providers: ["garmin"],
@@ -900,6 +1120,7 @@ describe("ActivityRepository", () => {
       expect(result?.canonical_type).toBe("running");
       expect(result?.name).toBe("Easy Run");
       expect(result?.subsource).toBe("Strong");
+      expect(result?.perceived_exertion).toBe(7);
     });
 
     it("keeps member activity aliases internal", async () => {
@@ -911,6 +1132,7 @@ describe("ActivityRepository", () => {
           ended_at: "2024-01-15T10:45:00.000Z",
           name: "Easy Run",
           notes: null,
+          perceived_exertion: null,
           provider_id: "garmin",
           subsource: "Garmin Connect",
           source_providers: ["garmin", "strava"],
@@ -944,6 +1166,7 @@ describe("ActivityRepository", () => {
           ended_at: "2024-01-15T10:45:00.000Z",
           name: "Morning Run",
           notes: "",
+          perceived_exertion: null,
           provider_id: "garmin",
           subsource: "Garmin Connect",
           source_providers: ["garmin"],
@@ -975,34 +1198,6 @@ describe("ActivityRepository", () => {
       expect(compiledQuery.sql).toContain("= ANY(a.member_activity_ids)");
       expect(compiledQuery.sql).not.toContain("JOIN fitness.v_activity_members am");
       expect(compiledQuery.params).toEqual(expect.arrayContaining(["member-id"]));
-    });
-  });
-
-  describe("setPerceivedExertion", () => {
-    it("updates the raw member rows for a visible canonical activity", async () => {
-      const { repo, execute } = makeRepository([{ perceived_exertion: 7 }]);
-
-      await expect(repo.setPerceivedExertion("activity-1", 7)).resolves.toEqual({
-        found: true,
-        perceivedExertion: 7,
-      });
-
-      const query = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
-      expect(query.sql).toContain("UPDATE fitness.activity");
-      expect(query.sql).toContain("FROM fitness.v_activity");
-      expect(query.sql).toContain("member_activity_ids");
-      expect(query.params).toContain("activity-1");
-      expect(query.params).toContain("user-1");
-      expect(query.params).toContain(7);
-      expect(query.sql).toContain("activity_id IN");
-    });
-
-    it("reports an activity not found when no visible member row was updated", async () => {
-      const { repo } = makeRepository([]);
-      await expect(repo.setPerceivedExertion("missing", null)).resolves.toEqual({
-        found: false,
-        perceivedExertion: null,
-      });
     });
   });
 

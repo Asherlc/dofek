@@ -178,6 +178,18 @@ describe("BodyRepository", () => {
     expect(result[0]?.id).toBe("bm-range-1");
   });
 
+  it("selects the latest same-provider measurement for each local date", async () => {
+    const { repo, query } = makeRepository([]);
+
+    await repo.listRange("2026-05-01", "2026-05-31");
+
+    const queryText = query.mock.calls[0]?.[1] ?? "";
+    expect(queryText).toContain(
+      "PARTITION BY provider_id, toDate(toTimeZone(recorded_at, {timezone:String}))",
+    );
+    expect(queryText).toContain("ORDER BY recorded_at DESC, created_at DESC");
+  });
+
   it("maps all snake_case DB fields to camelCase", async () => {
     const { repo } = makeRepository([
       {
@@ -346,5 +358,64 @@ describe("BodyRepository", () => {
     const { repo, query } = makeRepository([]);
     await repo.list(30);
     expect(query).toHaveBeenCalledTimes(1);
+  });
+
+  it("reconciles each daily metric by configured body priority and preserves sources", async () => {
+    const { repo, query } = makeRepository([
+      {
+        date: "2026-05-14",
+        recorded_at: "2026-05-14T16:00:00Z",
+        provider_id: "apple_health",
+        body_priority: 20,
+        weight_kg: 89.7,
+        body_fat_pct: null,
+        bmi: 27.2,
+      },
+      {
+        date: "2026-05-14",
+        recorded_at: "2026-05-14T15:00:00Z",
+        provider_id: "withings",
+        body_priority: 10,
+        weight_kg: 90,
+        body_fat_pct: 18,
+        bmi: null,
+      },
+    ]);
+
+    await expect(repo.listReconciledRange("2026-05-01", "2026-05-31")).resolves.toEqual([
+      {
+        date: "2026-05-14",
+        weightKg: 90,
+        bodyFatPct: 18,
+        leanMassKg: 73.8,
+        bmi: 27.2,
+        sourceProviderByMetric: {
+          weightKg: "withings",
+          bodyFatPct: "withings",
+          bmi: "apple_health",
+        },
+        sources: [
+          {
+            sourceProvider: "withings",
+            recordedAt: "2026-05-14T15:00:00.000Z",
+            weightKg: 90,
+            bodyFatPct: 18,
+            bmi: null,
+          },
+          {
+            sourceProvider: "apple_health",
+            recordedAt: "2026-05-14T16:00:00.000Z",
+            weightKg: 89.7,
+            bodyFatPct: null,
+            bmi: 27.2,
+          },
+        ],
+        coverage: { sourceCount: 2 },
+      },
+    ]);
+    const queryText = query.mock.calls[0]?.[1] ?? "";
+    expect(queryText).toContain("FROM analytics.body_measurement_sample FINAL");
+    expect(queryText).toContain("postgres_fitness.provider_priority");
+    expect(queryText).toContain("raw_body_samples.channel = 'body_weight'");
   });
 });

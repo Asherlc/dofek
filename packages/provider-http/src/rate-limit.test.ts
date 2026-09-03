@@ -12,10 +12,10 @@ import {
 import type { AdaptiveRateLimitStore } from "./rate-limit-types.ts";
 
 function createMockAdaptiveStore(): AdaptiveRateLimitStore & {
-  awaitAdmission: ReturnType<typeof vi.fn>;
-  recordSuccess: ReturnType<typeof vi.fn>;
-  recordRateLimit: ReturnType<typeof vi.fn>;
-  getLearnedCooldownSeconds: ReturnType<typeof vi.fn>;
+  awaitAdmission: CallableVitestMock;
+  recordSuccess: CallableVitestMock;
+  recordRateLimit: CallableVitestMock;
+  getLearnedCooldownSeconds: CallableVitestMock;
 } {
   return {
     awaitAdmission: vi.fn().mockResolvedValue(undefined),
@@ -278,7 +278,6 @@ describe("fetchWithRateLimitHandling", () => {
 
     await expect(result).resolves.toBe(callerError);
   });
-
   it("treats 502, 503, and 504 as service-unavailable responses", async () => {
     for (const statusCode of [502, 503, 504]) {
       const fetchFn = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response(statusCode));
@@ -310,6 +309,35 @@ describe("fetchWithRateLimitHandling", () => {
     expect(error).toBeInstanceOf(ProviderRequestTimeoutError);
     expect(error).toHaveProperty("providerId", "withings");
     expect(isProviderConnectFailure(error)).toBe(true);
+  });
+
+  it("returns HTTP 500 by default and classifies opted-in HTTP 500 as unavailable", async () => {
+    const defaultFetchFn = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValue(response(500, "server error"));
+    const defaultFetch = createRateLimitAwareFetch(defaultFetchFn, {
+      providerId: "example",
+    });
+
+    const defaultResponse = await defaultFetch("https://api.example.com/data");
+
+    expect(defaultResponse.status).toBe(500);
+    expect(await defaultResponse.text()).toBe("server error");
+
+    const configuredFetchFn = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValue(response(500, "server error"));
+    const configuredFetch = createRateLimitAwareFetch(configuredFetchFn, {
+      providerId: "example",
+      additionalServiceUnavailableStatusCodes: [500],
+    });
+
+    const error = await configuredFetch("https://api.example.com/data").catch(
+      (caughtError: unknown) => caughtError,
+    );
+
+    expect(error).toBeInstanceOf(ProviderServiceUnavailableError);
+    expect(error).toHaveProperty("statusCode", 500);
   });
 
   it("uses provider scope and null user by default in wrapper errors", async () => {

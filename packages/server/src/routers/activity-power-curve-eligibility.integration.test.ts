@@ -2,13 +2,10 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
-  extractCteSql,
-  readModelSql,
-} from "../../../../analytics/models/read_models/read-model-sql-test-helpers.ts";
-import {
   type ClickHouseClient,
   createClickHouseClientFromEnv,
 } from "../../../../src/db/clickhouse.ts";
+import { extractCteSql, readModelSql } from "../../../../src/db/read-model-sql-test-helpers.ts";
 
 const activityKeySchema = z.array(z.object({ activity_id: z.string() }));
 

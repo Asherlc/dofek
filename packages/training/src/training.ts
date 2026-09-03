@@ -1,9 +1,12 @@
 import {
   type ActivityModality,
+  isActivityDetailType,
   type LegacyActivityType,
   type ProviderActivityType,
   resolveProviderActivityType,
 } from "./activity-types.ts";
+
+export { isActivityDetailType };
 
 export const OTHER_ACTIVITY_TYPE = "__other__";
 

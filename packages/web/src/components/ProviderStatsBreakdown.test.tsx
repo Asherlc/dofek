@@ -19,8 +19,7 @@ describe("ProviderStatsBreakdown", () => {
           healthEvents: 0,
           foodEntries: 0,
           nutritionDaily: 0,
-          labPanels: 0,
-          labResults: 0,
+          clinicalRecords: 0,
           journalEntries: 0,
         }}
       />,
@@ -36,12 +35,11 @@ describe("ProviderStatsBreakdown", () => {
       "Food",
       "Nutrition",
       "Events",
-      "Lab Panels",
-      "Lab Results",
+      "Clinical Records",
       "Journal",
     ]) {
       expect(screen.getByText(label)).not.toBeNull();
     }
-    expect(screen.getAllByText("0")).toHaveLength(12);
+    expect(screen.getAllByText("0")).toHaveLength(11);
   });
 });

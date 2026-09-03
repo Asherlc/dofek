@@ -9,6 +9,8 @@
     }
 ) }}
 
+{% set activity_refresh_scoped = activity_refresh_scope_enabled() %}
+
 WITH target_state AS (
     SELECT
         coalesce(
@@ -19,11 +21,50 @@ WITH target_state AS (
     FROM {% if is_incremental() %}{{ this }}{% else %}(SELECT CAST(null, 'Nullable(DateTime64(9, ''UTC''))') AS refreshed_at){% endif %}
 ),
 
+{% if activity_refresh_scoped %}
+prior_scope_member_ids AS (
+    {% if is_incremental() %}
+        SELECT member_activity_id AS activity_id
+        FROM {{ this }} FINAL
+        WHERE is_deleted = 0
+            AND user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+            AND (
+                activity_id IN {{ activity_refresh_ids() }}
+                OR member_activity_id IN {{ activity_refresh_ids() }}
+            )
+    {% else %}
+        SELECT CAST(null, 'Nullable(UUID)') AS activity_id
+        WHERE 1 = 0
+    {% endif %}
+),
+
+affected_member_ids AS (
+    SELECT arrayJoin({{ activity_refresh_ids() }}) AS activity_id
+
+    UNION DISTINCT
+
+    SELECT activity_id
+    FROM prior_scope_member_ids
+),
+{% endif %}
+
 changed_deduped_activities AS (
     SELECT deduped_activities.*
     FROM {{ ref('deduped_activities') }} AS deduped_activities FINAL
-    WHERE (SELECT is_empty FROM target_state)
+    WHERE (
+        (SELECT is_empty FROM target_state)
         OR deduped_activities.refreshed_at > (SELECT last_refreshed_at FROM target_state)
+    )
+        {% if activity_refresh_scoped %}
+        AND deduped_activities.user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        AND (
+            deduped_activities.activity_id IN (SELECT activity_id FROM affected_member_ids)
+            OR hasAny(
+                deduped_activities.member_activity_ids,
+                CAST((SELECT groupArray(activity_id) FROM affected_member_ids), 'Array(UUID)')
+            )
+        )
+        {% endif %}
 ),
 
 changed_activity_member_keys AS (
@@ -31,6 +72,16 @@ changed_activity_member_keys AS (
         user_id,
         arrayJoin(member_activity_ids) AS member_activity_id
     FROM changed_deduped_activities
+
+    {% if activity_refresh_scoped %}
+    UNION DISTINCT
+
+    SELECT
+        toUUID('{{ var("activity_refresh_user_id") }}') AS user_id,
+        assumeNotNull(activity_id) AS member_activity_id
+    FROM affected_member_ids
+    WHERE activity_id IS NOT null
+    {% endif %}
 ),
 
 current_activity_members AS (

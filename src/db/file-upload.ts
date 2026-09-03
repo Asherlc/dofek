@@ -49,6 +49,7 @@ const fileUploadRowSchema = z.object({
   import_job_id: z.string().min(1).nullable(),
   import_since: z.coerce.date(),
   weight_unit: z.enum(["kg", "lbs"]).nullable(),
+  timezone: z.string().min(1).nullable(),
   progress_percent: z.coerce.number().int().min(0).max(100),
   error_code: z.string().nullable(),
   error_message: z.string().nullable(),
@@ -77,6 +78,8 @@ export interface FileUpload {
   importJobId: string | null;
   since: Date;
   weightUnit: "kg" | "lbs" | null;
+  /** Client timezone captured when the durable import job was created. */
+  timezone?: string | null;
   progressPercent: number;
   errorCode: string | null;
   errorMessage: string | null;
@@ -100,6 +103,7 @@ export interface CreateFileUploadInput {
   expiresAt: Date;
   since: Date;
   weightUnit?: "kg" | "lbs";
+  timezone?: string | null;
 }
 
 export interface FileUploadOutboxRequest {
@@ -126,7 +130,7 @@ const fileUploadOutboxRequestRowSchema = z.object({
 const selectFileUploadColumns = sql`id, user_id, import_type, object_key,
   original_filename, content_type, expected_size_bytes, expected_sha256,
   verified_sha256, r2_multipart_upload_id, state, version, part_size_bytes, completion_parts,
-  import_job_id, import_since, weight_unit, progress_percent, error_code,
+  import_job_id, import_since, weight_unit, timezone, progress_percent, error_code,
   error_message, created_at, updated_at, expires_at, completed_at, object_deleted_at`;
 
 function mapFileUpload(row: z.infer<typeof fileUploadRowSchema>): FileUpload {
@@ -148,6 +152,7 @@ function mapFileUpload(row: z.infer<typeof fileUploadRowSchema>): FileUpload {
     importJobId: row.import_job_id,
     since: row.import_since,
     weightUnit: row.weight_unit,
+    timezone: row.timezone,
     progressPercent: row.progress_percent,
     errorCode: row.error_code,
     errorMessage: row.error_message,
@@ -237,7 +242,8 @@ function assertMatchingInitiation(existing: FileUpload, input: CreateFileUploadI
     existing.expectedSha256 === input.expectedSha256 &&
     existing.partSizeBytes === input.partSizeBytes &&
     existing.since.getTime() === input.since.getTime() &&
-    existing.weightUnit === (input.weightUnit ?? null);
+    existing.weightUnit === (input.weightUnit ?? existing.weightUnit) &&
+    existing.timezone === (input.timezone ?? existing.timezone);
   if (!matches) {
     throw new Error(`Upload ${input.id} was already initiated with different metadata`);
   }
@@ -253,12 +259,12 @@ export async function createFileUpload(
     sql`INSERT INTO fitness.file_upload (
           id, user_id, import_type, object_key, original_filename, content_type,
           expected_size_bytes, expected_sha256, part_size_bytes, expires_at,
-          import_since, weight_unit
+          import_since, weight_unit, timezone
         ) VALUES (
           ${input.id}::uuid, ${input.userId}::uuid, ${input.importType}, ${input.objectKey},
           ${input.originalFilename}, ${input.contentType}, ${input.expectedSizeBytes},
           ${input.expectedSha256}, ${input.partSizeBytes}, ${input.expiresAt},
-          ${input.since}, ${input.weightUnit ?? null}
+          ${input.since}, ${input.weightUnit ?? null}, ${input.timezone ?? null}
         )
         ON CONFLICT (id) DO NOTHING
         RETURNING ${selectFileUploadColumns}`,

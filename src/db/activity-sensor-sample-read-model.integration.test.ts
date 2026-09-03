@@ -1,9 +1,8 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
+import { readModelSql, renderDbtModelSql } from "./read-model-sql-test-helpers.ts";
 
 type ClickHouseClient = ReturnType<typeof createClient>;
 
@@ -110,12 +109,10 @@ async function waitForClickHouse(client: ClickHouseClient): Promise<void> {
 }
 
 function renderActivitySensorSampleSql(targetSchema: string): string {
-  return readFileSync(
-    join(import.meta.dirname, "../../analytics/models/read_models/activity_sensor_sample.sql"),
-    "utf8",
-  )
-    .replace(/\{% set [^\n]+\n/g, "")
-    .replace(/{{ config\([\s\S]*?\) }}\s*/, "")
+  return renderDbtModelSql(readModelSql("activity_sensor_sample.sql"), {
+    isIncremental: false,
+    activityRefreshScoped: false,
+  })
     .replaceAll("{{ ref('deduped_activities') }}", `${targetSchema}.deduped_activities`)
     .replaceAll("{{ ref('deduped_sensor') }}", `${targetSchema}.deduped_sensor`)
     .concat("\nSETTINGS max_threads = 1");

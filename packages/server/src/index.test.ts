@@ -44,12 +44,26 @@ const mockCheckReadiness = vi.fn(async () => ({
     queues: "ok" as const,
   },
 }));
+const mockCreateExternalWriteApiRouter = vi.fn(() => {
+  const router = express.Router();
+  router.get("/__test_external_mount", (_req, res) => res.sendStatus(204));
+  return router;
+});
+const mockCreateDeveloperClientsRouter = vi.fn(() => {
+  const router = express.Router();
+  router.get("/__test_developer_mount", (_req, res) => res.sendStatus(204));
+  return router;
+});
+const mockCreateAppStoreWebhookRouter = vi.fn(() => {
+  const router = express.Router();
+  router.post("/", (_req, res) => res.sendStatus(204));
+  return router;
+});
 
 vi.mock("@bull-board/express", () => ({
-  ExpressAdapter: vi.fn(() => ({
-    setBasePath: vi.fn(),
-    getRouter: vi.fn(() => express.Router()),
-  })),
+  ExpressAdapter: vi.fn(function vitestConstructor() {
+    return { setBasePath: vi.fn(), getRouter: vi.fn(() => express.Router()) };
+  }),
 }));
 
 vi.mock("@bull-board/api", () => ({
@@ -61,7 +75,9 @@ vi.mock("@trpc/server/adapters/express", () => ({
 }));
 
 vi.mock("@bull-board/api/bullMQAdapter", () => ({
-  BullMQAdapter: vi.fn(() => ({})),
+  BullMQAdapter: vi.fn(function vitestConstructor() {
+    return {};
+  }),
 }));
 
 vi.mock("node:fs", async (importOriginal) => {
@@ -156,6 +172,12 @@ vi.mock("../routes/activity-export.ts", () => ({
 }));
 vi.mock("../routes/auth/index.ts", () => ({ createAuthRouter: vi.fn(() => express.Router()) }));
 vi.mock("../routes/export.ts", () => ({ createExportRouter: vi.fn(() => express.Router()) }));
+vi.mock("./routes/external-write-api.ts", () => ({
+  createExternalWriteApiRouter: mockCreateExternalWriteApiRouter,
+}));
+vi.mock("./routes/developer-clients.ts", () => ({
+  createDeveloperClientsRouter: mockCreateDeveloperClientsRouter,
+}));
 vi.mock("./routes/ingest-zos-health.ts", () => ({
   createIngestZosHealthRouter: vi.fn(() => express.Router()),
 }));
@@ -174,12 +196,15 @@ vi.mock("./routes/companion-token.ts", () => ({
 vi.mock("../routes/stripe-webhook.ts", () => ({
   createStripeWebhookRouter: vi.fn(() => express.Router()),
 }));
+vi.mock("./routes/app-store-webhook.ts", () => ({
+  createAppStoreWebhookRouter: mockCreateAppStoreWebhookRouter,
+}));
 vi.mock("../routes/webhooks.ts", () => ({ createWebhookRouter: vi.fn(() => express.Router()) }));
-vi.mock("../slack/bot.ts", () => ({ startSlackBot: vi.fn() }));
 
 import { getSessionIdFromRequest } from "./auth/cookies.ts";
 import { validateSession } from "./auth/session.ts";
 import { getAccessWindowForUser } from "./billing/access-window-repository.ts";
+import { BillingProfileNotFoundError } from "./repositories/billing-repository.ts";
 import { makeMockSensorStore } from "./routers/test-helpers.ts";
 
 const { createApp, main } = await import("./index.ts");
@@ -239,6 +264,42 @@ describe("createApp", () => {
     const app = createApp(fakeDb, makeMockSensorStore());
     const res = await request(app, "GET", "/api/nonexistent");
     expect(res.status).toBe(404);
+  });
+
+  it("rejects a whitespace-only OpenAI Apps challenge token", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    vi.stubEnv("OPENAI_APPS_CHALLENGE_TOKEN", "   ");
+
+    try {
+      expect(() => createApp(createDatabaseFromEnv(), makeMockSensorStore())).toThrow(
+        "OPENAI_APPS_CHALLENGE_TOKEN environment variable is required",
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("rejects a whitespace-only explicit OpenAI Apps challenge token", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+
+    expect(() =>
+      createApp(createDatabaseFromEnv(), makeMockSensorStore(), {
+        openAiAppsChallengeToken: "   ",
+      }),
+    ).toThrow("OPENAI_APPS_CHALLENGE_TOKEN environment variable is required");
+  });
+
+  it("rejects a missing OpenAI Apps challenge token", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    vi.stubEnv("OPENAI_APPS_CHALLENGE_TOKEN", undefined);
+
+    try {
+      expect(() => createApp(createDatabaseFromEnv(), makeMockSensorStore())).toThrow(
+        "OPENAI_APPS_CHALLENGE_TOKEN environment variable is required",
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("redacts sensitive query parameters in request logs", async () => {
@@ -307,31 +368,19 @@ describe("createApp", () => {
     expect(res.body).toContain("<!doctype html>");
   });
 
-  it.each([
-    "/robots.txt",
-    "/llms.txt",
-    "/missing/image.png",
-  ])("returns 404 instead of the SPA shell for missing file-like path %s", async (path) => {
-    const { createDatabaseFromEnv } = await import("dofek/db");
-    const fakeDb = createDatabaseFromEnv();
-    const app = createApp(fakeDb, makeMockSensorStore());
+  it.each(["/robots.txt", "/llms.txt", "/missing/image.png"])(
+    "returns 404 instead of the SPA shell for missing file-like path %s",
+    async (path) => {
+      const { createDatabaseFromEnv } = await import("dofek/db");
+      const fakeDb = createDatabaseFromEnv();
+      const app = createApp(fakeDb, makeMockSensorStore());
 
-    const res = await request(app, "GET", path);
+      const res = await request(app, "GET", path);
 
-    expect(res.status).toBe(404);
-    expect(res.body).not.toContain("<!doctype html>");
-  });
-
-  it("does not serve the SPA shell for missing Slack routes", async () => {
-    const { createDatabaseFromEnv } = await import("dofek/db");
-    const fakeDb = createDatabaseFromEnv();
-    const app = createApp(fakeDb, makeMockSensorStore());
-
-    const res = await request(app, "GET", "/slack/nonexistent");
-
-    expect(res.status).toBe(404);
-    expect(res.body).not.toContain("<!doctype html>");
-  });
+      expect(res.status).toBe(404);
+      expect(res.body).not.toContain("<!doctype html>");
+    },
+  );
 
   it("registers the ingest route using createIngestZosHealthRouter", async () => {
     const { createIngestZosHealthRouter } = await import("./routes/ingest-zos-health.ts");
@@ -361,6 +410,17 @@ describe("createApp", () => {
     expect(createIngestZosHealthRouter).toHaveBeenCalledWith({ db: fakeDb });
   });
 
+  it("mounts the App Store webhook at its public path with its database dependency", async () => {
+    const { createAppStoreWebhookRouter } = await import("./routes/app-store-webhook.ts");
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    const fakeDb = createDatabaseFromEnv();
+
+    const app = createApp(fakeDb, makeMockSensorStore());
+
+    expect(createAppStoreWebhookRouter).toHaveBeenCalledWith({ db: fakeDb });
+    expect((await request(app, "POST", "/api/webhooks/app-store")).status).toBe(204);
+  });
+
   it("passes db to companion route modules", async () => {
     const { createCompanionPairingRouter } = await import("./routes/companion-pairing.ts");
     const { createCompanionTokenHttpRouter } = await import("./routes/companion-token.ts");
@@ -371,6 +431,23 @@ describe("createApp", () => {
 
     expect(createCompanionPairingRouter).toHaveBeenCalledWith({ db: fakeDb });
     expect(createCompanionTokenHttpRouter).toHaveBeenCalledWith({ db: fakeDb });
+  });
+
+  it("mounts the developer-client router with its required repository", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    const { DeveloperClientRepository } = await import(
+      "./repositories/developer-client-repository.ts"
+    );
+    const fakeDb = createDatabaseFromEnv();
+    const app = createApp(fakeDb, makeMockSensorStore());
+
+    expect(mockCreateDeveloperClientsRouter).toHaveBeenCalledWith({
+      db: fakeDb,
+      repository: expect.any(DeveloperClientRepository),
+    });
+    expect(
+      (await request(app, "GET", "/api/developer/clients/__test_developer_mount")).status,
+    ).toBe(204);
   });
 
   it("does not apply the password-login rate limit to companion status checks", async () => {
@@ -459,6 +536,38 @@ describe("main", () => {
     mockReconcileAccountErasureRestoreIntents.mockResolvedValue({
       recoveredRequestIds: [],
     });
+  });
+
+  it("rejects a blank OpenAI Apps challenge token before initializing dependencies", async () => {
+    vi.stubEnv("OPENAI_APPS_CHALLENGE_TOKEN", "   ");
+    const listen = vi.spyOn(express.application, "listen");
+
+    try {
+      await expect(main()).rejects.toThrow(
+        "OPENAI_APPS_CHALLENGE_TOKEN environment variable is required",
+      );
+      expect(mockValidateAccountErasureLedgerKeyring).not.toHaveBeenCalled();
+      expect(listen).not.toHaveBeenCalled();
+    } finally {
+      listen.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("rejects a missing OpenAI Apps challenge token before initializing dependencies", async () => {
+    vi.stubEnv("OPENAI_APPS_CHALLENGE_TOKEN", undefined);
+    const listen = vi.spyOn(express.application, "listen");
+
+    try {
+      await expect(main()).rejects.toThrow(
+        "OPENAI_APPS_CHALLENGE_TOKEN environment variable is required",
+      );
+      expect(mockValidateAccountErasureLedgerKeyring).not.toHaveBeenCalled();
+      expect(listen).not.toHaveBeenCalled();
+    } finally {
+      listen.mockRestore();
+      vi.unstubAllEnvs();
+    }
   });
 
   it("does not initialize traffic dependencies when restore reconciliation fails", async () => {
@@ -550,6 +659,25 @@ describe("main", () => {
     expect(getAccessWindowForUser).toHaveBeenCalledWith(fakeDb, "user-1", "UTC");
   });
 
+  it("maps a missing authenticated profile to NOT_FOUND during context creation", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    const fakeDb = createDatabaseFromEnv();
+    vi.mocked(getSessionIdFromRequest).mockReturnValue("session-id");
+    vi.mocked(validateSession).mockResolvedValue({
+      sessionId: "session-id",
+      userId: "missing-user",
+      expiresAt: new Date("2026-07-28T00:00:00.000Z"),
+    });
+    vi.mocked(getAccessWindowForUser).mockRejectedValue(new BillingProfileNotFoundError());
+    createApp(fakeDb, makeMockSensorStore());
+    const middlewareOptions = mockCreateExpressMiddleware.mock.calls.at(-1)?.[0];
+
+    await expect(middlewareOptions?.createContext({ req: { headers: {} } })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "Authenticated user profile not found",
+    });
+  });
+
   it("rejects an invalid request timezone before access-window resolution", async () => {
     const { createDatabaseFromEnv } = await import("dofek/db");
     const fakeDb = createDatabaseFromEnv();
@@ -571,5 +699,34 @@ describe("main", () => {
       message: "Invalid x-timezone header",
     });
     expect(getAccessWindowForUser).not.toHaveBeenCalled();
+  });
+
+  it("mounts the external write API router with the application database", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    const fakeDb = createDatabaseFromEnv();
+
+    createApp(fakeDb, makeMockSensorStore());
+
+    expect(mockCreateExternalWriteApiRouter).toHaveBeenCalledWith({ db: fakeDb });
+
+    const app = createApp(fakeDb, makeMockSensorStore());
+    const router = Reflect.get(app, "router");
+    const routerStack =
+      router &&
+      (typeof router === "object" || typeof router === "function") &&
+      "stack" in router &&
+      Array.isArray(router.stack)
+        ? router.stack
+        : [];
+    const externalRouter = mockCreateExternalWriteApiRouter.mock.results.at(-1)?.value;
+    expect(
+      routerStack.some(
+        (layer) =>
+          layer &&
+          typeof layer === "object" &&
+          "handle" in layer &&
+          layer.handle === externalRouter,
+      ),
+    ).toBe(true);
   });
 });

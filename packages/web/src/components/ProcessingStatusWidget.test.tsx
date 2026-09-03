@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type ProcessingStatusSnapshot,
@@ -47,6 +48,12 @@ vi.mock("../lib/trpc.ts", () => ({
       },
     }),
   },
+}));
+
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ children, params, to }: { children: ReactNode; params: { id: string }; to: string }) => (
+    <a href={to.replace("$id", params.id)}>{children}</a>
+  ),
 }));
 
 const operationId = "00000000-0000-4000-8000-000000001852";
@@ -123,7 +130,8 @@ function failedWahooSnapshot(overrides: Partial<ProcessingStatusSnapshot> = {}) 
         status: "failed" as const,
         datasets: failedDatasets.map((dataset) => dataset.key),
         dismissed: false,
-        errorMessage: "Wahoo returned a server error. Reconnect Wahoo, then try again.",
+        errorCode: "provider_sync_failed",
+        errorMessage: "Wahoo could not be synced. Try the sync again later.",
         timeline: [],
       },
     ],
@@ -227,49 +235,55 @@ describe("ProcessingStatusWidget", () => {
     expect(screen.queryByRole("progressbar")).toBeNull();
   });
 
-  it.each([
-    "failed",
-    "blocked",
-  ] as const)("surfaces %s datasets, their last ready age, and the actionable error", (status) => {
-    vi.setSystemTime(new Date("2026-07-22T14:00:00.000Z"));
-    render(
-      <ProcessingStatusWidget
-        data={{
-          ...snapshot,
-          overallStatus: status,
-          datasets: [
-            {
-              ...activityDataset,
-              status,
-              progressPercentage: null,
-              lastFailedAt: "2026-07-22T13:00:00.000Z",
-              lastReadyAt: "2026-07-22T12:00:00.000Z",
-            },
-          ],
-          operations: [
-            {
-              ...operation,
-              status,
-              errorMessage: "Reconnect Garmin, then start the sync again.",
-              timeline: [
-                {
-                  ...timelineEvent,
-                  status: "failed",
-                  errorMessage: "Reconnect Garmin, then start the sync again.",
-                },
-              ],
-            },
-          ],
-        }}
-      />,
-    );
+  it.each(["failed", "blocked"] as const)(
+    "surfaces %s datasets, their last ready age, and the actionable error",
+    (status) => {
+      vi.setSystemTime(new Date("2026-07-22T14:00:00.000Z"));
+      render(
+        <ProcessingStatusWidget
+          data={{
+            ...snapshot,
+            overallStatus: status,
+            datasets: [
+              {
+                ...activityDataset,
+                status,
+                progressPercentage: null,
+                lastFailedAt: "2026-07-22T13:00:00.000Z",
+                lastReadyAt: "2026-07-22T12:00:00.000Z",
+              },
+            ],
+            operations: [
+              {
+                ...operation,
+                status,
+                errorMessage: "Reconnect Garmin, then start the sync again.",
+                errorCode: "provider_auth_failed",
+                timeline: [
+                  {
+                    ...timelineEvent,
+                    status: "failed",
+                    errorMessage: "Reconnect Garmin, then start the sync again.",
+                  },
+                ],
+              },
+            ],
+          }}
+        />,
+      );
 
-    expect(screen.getByText("Garmin sync didn’t finish")).toBeTruthy();
-    expect(screen.getByText("Activities")).toBeTruthy();
-    expect(screen.getByText(`${status === "failed" ? "Failed" : "Blocked"}: 1h ago`)).toBeTruthy();
-    expect(screen.getByText("Last successful update: 2h ago")).toBeTruthy();
-    expect(screen.getByText("Reconnect Garmin, then start the sync again.")).toBeTruthy();
-  });
+      expect(screen.getByText("Garmin sync didn’t finish")).toBeTruthy();
+      expect(screen.getByText("Activities")).toBeTruthy();
+      expect(
+        screen.getByText(`${status === "failed" ? "Failed" : "Blocked"}: 1h ago`),
+      ).toBeTruthy();
+      expect(screen.getByText("Last successful update: 2h ago")).toBeTruthy();
+      expect(screen.getByText("Reconnect Garmin, then start the sync again.")).toBeTruthy();
+      expect(screen.getByRole("link", { name: "Reconnect Garmin" }).getAttribute("href")).toBe(
+        "/providers/garmin",
+      );
+    },
+  );
 
   it("groups current failed datasets by operation and offers dismissal", () => {
     vi.setSystemTime(new Date("2026-08-07T16:05:00.000Z"));
@@ -285,9 +299,8 @@ describe("ProcessingStatusWidget", () => {
     expect(screen.getByText("Provider summaries")).toBeTruthy();
     expect(screen.getByText("Failed: 16d ago")).toBeTruthy();
     expect(screen.getByText("Last successful update: 16d ago")).toBeTruthy();
-    expect(
-      screen.getByText("Wahoo returned a server error. Reconnect Wahoo, then try again."),
-    ).toBeTruthy();
+    expect(screen.getByText("Wahoo could not be synced. Try the sync again later.")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Reconnect Wahoo" })).toBeNull();
     expect(
       screen.queryByText("Try the update again. If it still fails, reconnect the data source."),
     ).toBeNull();

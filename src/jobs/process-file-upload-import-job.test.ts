@@ -71,6 +71,7 @@ function upload(overrides: Partial<FileUpload> = {}): FileUpload {
     importJobId: `file-import-${uploadId}`,
     since: new Date(0),
     weightUnit: "kg",
+    timezone: "America/Los_Angeles",
     progressPercent: 0,
     errorCode: null,
     errorMessage: null,
@@ -257,6 +258,7 @@ describe("processFileUploadImportJob", () => {
         userId: upload().userId,
         importType: "strong-csv",
         weightUnit: "kg",
+        timezone: "America/Los_Angeles",
         checkpoint: undefined,
       });
       await localImportJob.updateData({ ...localImportJob.data, checkpoint: { phase: "ready" } });

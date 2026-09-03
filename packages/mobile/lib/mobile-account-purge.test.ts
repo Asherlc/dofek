@@ -7,10 +7,6 @@ vi.mock("./telemetry", () => ({
   captureException: mockCaptureException,
 }));
 
-vi.mock("./billing-checkout-operation", () => ({
-  clearPendingMobileBillingCheckoutOperation: vi.fn(),
-}));
-
 vi.mock("./mobile-export-cache", () => ({
   purgeMobileExportCache: vi.fn(),
 }));
@@ -43,7 +39,6 @@ describe("purgeMobileAccountState", () => {
       cutoff: "2026-07-26T12:00:00.000Z",
       dependencies: {
         advanceErasureCutoff: vi.fn(async (cutoff) => cutoff),
-        clearBillingCheckoutOperation: operation("billing-checkout"),
         clearPreparation: operation("preparation"),
         clearSession: operation("session"),
         purgeCoreMotion: vi.fn(async (cutoff) => calls.push(`core-motion:${cutoff}`)),
@@ -57,6 +52,7 @@ describe("purgeMobileAccountState", () => {
         purgeWhoopBle: vi.fn(async (cutoff) => calls.push(`whoop:${cutoff}`)),
         teardownAccelerometer: stop("stop-accelerometer"),
         teardownHealthKit: stop("stop-health-kit"),
+        teardownHeartRate: stop("stop-heart-rate"),
         teardownWatchMotion: stop("stop-watch"),
         teardownWhoopBle: stop("stop-whoop"),
       },
@@ -65,11 +61,12 @@ describe("purgeMobileAccountState", () => {
     });
 
     expect(result.errors).toEqual([]);
-    expect(calls.slice(0, 4)).toEqual([
+    expect(calls.slice(0, 5)).toEqual([
       "stop-health-kit",
       "stop-accelerometer",
       "stop-watch",
       "stop-whoop",
+      "stop-heart-rate",
     ]);
     expect(calls).toEqual(
       expect.arrayContaining([
@@ -82,12 +79,55 @@ describe("purgeMobileAccountState", () => {
         "medication-reminders",
         "export-cache",
         "query-persistence",
-        "billing-checkout",
         "session",
         "preparation",
         "query",
       ]),
     );
+  });
+
+  it("does not clear the account session until the serialized heart-rate purge resolves", async () => {
+    let finishHeartRatePurge: (() => void) | undefined;
+    const purgeHeartRate = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishHeartRatePurge = resolve;
+        }),
+    );
+    const clearSession = vi.fn();
+    const later = vi.fn();
+
+    const purge = purgeMobileAccountState({
+      cleanupLease,
+      dependencies: {
+        advanceErasureCutoff: vi.fn(async (cutoff) => cutoff),
+        clearPreparation: later,
+        clearSession,
+        purgeCoreMotion: later,
+        purgeFoodWriteBack: later,
+        purgeExportCache: later,
+        purgeHealthKitState: later,
+        purgeHeartRate,
+        purgeMedicationReminders: later,
+        purgeQueryCaches: later,
+        purgeWatchMotion: later,
+        purgeWhoopBle: later,
+        teardownAccelerometer: vi.fn(),
+        teardownHealthKit: vi.fn(),
+        teardownWatchMotion: vi.fn(),
+        teardownWhoopBle: vi.fn(),
+      },
+      isCleanupLeaseCurrent: () => true,
+      queryClient: { clear: vi.fn() },
+    });
+
+    await vi.waitFor(() => expect(purgeHeartRate).toHaveBeenCalledOnce());
+    expect(clearSession).not.toHaveBeenCalled();
+
+    finishHeartRatePurge?.();
+    await purge;
+
+    expect(clearSession).toHaveBeenCalledOnce();
   });
 
   it("continues all cleanup attempts and reports each failure", async () => {
@@ -96,7 +136,6 @@ describe("purgeMobileAccountState", () => {
       cleanupLease,
       dependencies: {
         advanceErasureCutoff: vi.fn(async (cutoff) => cutoff),
-        clearBillingCheckoutOperation: laterCleanup,
         clearPreparation: laterCleanup,
         clearSession: laterCleanup,
         purgeCoreMotion: vi.fn().mockRejectedValue(new Error("motion failed")),
@@ -112,6 +151,7 @@ describe("purgeMobileAccountState", () => {
         purgeWhoopBle: laterCleanup,
         teardownAccelerometer: vi.fn(),
         teardownHealthKit: vi.fn(),
+        teardownHeartRate: vi.fn(),
         teardownWatchMotion: vi.fn(),
         teardownWhoopBle: vi.fn(),
       },
@@ -138,7 +178,6 @@ describe("purgeMobileAccountState", () => {
       cleanupLease,
       dependencies: {
         advanceErasureCutoff: vi.fn(async (cutoff) => cutoff),
-        clearBillingCheckoutOperation: vi.fn(),
         clearPreparation: vi.fn(),
         clearSession: vi.fn(),
         purgeCoreMotion: vi.fn(),
@@ -152,6 +191,7 @@ describe("purgeMobileAccountState", () => {
         purgeWhoopBle: vi.fn(),
         teardownAccelerometer: vi.fn(),
         teardownHealthKit: vi.fn(),
+        teardownHeartRate: vi.fn(),
         teardownWatchMotion: vi.fn(),
         teardownWhoopBle: vi.fn(),
       },
@@ -177,7 +217,6 @@ describe("purgeMobileAccountState", () => {
       cutoff: "2026-07-25T12:00:00.000Z",
       dependencies: {
         advanceErasureCutoff: vi.fn().mockResolvedValue("2026-07-26T12:00:00.000Z"),
-        clearBillingCheckoutOperation: vi.fn(),
         clearPreparation: vi.fn(),
         clearSession: vi.fn(),
         purgeCoreMotion: nativePurge,
@@ -191,6 +230,7 @@ describe("purgeMobileAccountState", () => {
         purgeWhoopBle: nativePurge,
         teardownAccelerometer: vi.fn(),
         teardownHealthKit: vi.fn(),
+        teardownHeartRate: vi.fn(),
         teardownWatchMotion: vi.fn(),
         teardownWhoopBle: vi.fn(),
       },
@@ -209,7 +249,6 @@ describe("purgeMobileAccountState", () => {
       cutoff: "2026-07-26T12:00:00.000Z",
       dependencies: {
         advanceErasureCutoff: vi.fn().mockRejectedValue(new Error("SecureStore unavailable")),
-        clearBillingCheckoutOperation: vi.fn(),
         clearPreparation: vi.fn(),
         clearSession: vi.fn(),
         purgeCoreMotion: nativePurge,
@@ -223,6 +262,7 @@ describe("purgeMobileAccountState", () => {
         purgeWhoopBle: nativePurge,
         teardownAccelerometer: vi.fn(),
         teardownHealthKit: vi.fn(),
+        teardownHeartRate: vi.fn(),
         teardownWatchMotion: vi.fn(),
         teardownWhoopBle: vi.fn(),
       },
@@ -242,7 +282,6 @@ describe("purgeMobileAccountState", () => {
       cleanupLease,
       dependencies: {
         advanceErasureCutoff: operation,
-        clearBillingCheckoutOperation: operation,
         clearPreparation: operation,
         clearSession: operation,
         purgeCoreMotion: operation,
@@ -256,6 +295,7 @@ describe("purgeMobileAccountState", () => {
         purgeWhoopBle: operation,
         teardownAccelerometer: operation,
         teardownHealthKit: operation,
+        teardownHeartRate: operation,
         teardownWatchMotion: operation,
         teardownWhoopBle: operation,
       },
@@ -284,7 +324,6 @@ describe("purgeMobileAccountState", () => {
       cleanupLease,
       dependencies: {
         advanceErasureCutoff: vi.fn(async (cutoff) => cutoff),
-        clearBillingCheckoutOperation: vi.fn(),
         clearPreparation: vi.fn(),
         clearSession,
         purgeCoreMotion,
@@ -298,6 +337,7 @@ describe("purgeMobileAccountState", () => {
         purgeWhoopBle: vi.fn(),
         teardownAccelerometer: vi.fn(),
         teardownHealthKit: vi.fn(),
+        teardownHeartRate: vi.fn(),
         teardownWatchMotion: vi.fn(),
         teardownWhoopBle: vi.fn(),
       },

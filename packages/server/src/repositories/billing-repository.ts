@@ -1,6 +1,15 @@
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import type {
+  AppStoreNotificationUpdate,
+  AppStoreSubscriptionUpdate,
+} from "../billing/app-store-subscription.ts";
+import {
+  type AccessWindow,
+  resolveAccessWindow,
+  toAppStoreSubscriptionState,
+} from "../billing/entitlement.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 
 type BillingDatabase = Pick<Database, "execute">;
@@ -30,8 +39,34 @@ const billingCustomerProfileSchema = z.object({
   stripe_customer_id: z.string().nullable(),
 });
 const updatedBillingUserSchema = z.object({ user_id: z.string() });
+const appStoreAccountTokenSchema = z.object({ app_store_account_token: z.uuid() });
+const recordedAppStoreNotificationSchema = z.object({ notification_uuid: z.uuid() });
+const billingAccessStatusRowSchema = z.object({
+  created_at: timestampStringSchema,
+  paid_grant_reason: z.string().nullable(),
+  stripe_subscription_status: z.string().nullable(),
+  stripe_customer_id: z.string().nullable(),
+  app_store_product_id: z.string().nullable(),
+  app_store_subscription_status: z.string().nullable(),
+  app_store_expires_at: timestampStringSchema.nullable(),
+  app_store_revocation_at: timestampStringSchema.nullable(),
+});
 
 export type BillingCustomerProfile = z.infer<typeof billingCustomerProfileSchema>;
+
+export interface BillingAccessStatus {
+  access: AccessWindow;
+  stripeSubscriptionStatus: string | null;
+  canManageBilling: boolean;
+  appStoreSubscriptionStatus: string | null;
+  canManageAppStoreSubscription: boolean;
+}
+
+export class BillingProfileNotFoundError extends Error {
+  constructor() {
+    super("Authenticated user profile not found");
+  }
+}
 
 export class BillingRepository {
   readonly #db: BillingDatabase;
@@ -92,6 +127,48 @@ export class BillingRepository {
     return rows[0] ?? null;
   }
 
+  async getAccessStatus(userId: string, timezone: string): Promise<BillingAccessStatus> {
+    const rows = await executeWithSchema(
+      this.#db,
+      billingAccessStatusRowSchema,
+      sql`SELECT
+            profile.created_at::text AS created_at,
+            billing.paid_grant_reason,
+            billing.stripe_subscription_status,
+            billing.stripe_customer_id,
+            billing.app_store_product_id,
+            billing.app_store_subscription_status,
+            billing.app_store_expires_at::text AS app_store_expires_at,
+            billing.app_store_revocation_at::text AS app_store_revocation_at
+          FROM fitness.user_profile profile
+          LEFT JOIN fitness.user_billing billing ON billing.user_id = profile.id
+          WHERE profile.id = ${userId}
+          LIMIT 1`,
+    );
+    const row = rows[0];
+    if (!row) throw new BillingProfileNotFoundError();
+
+    const appStoreSubscription = toAppStoreSubscriptionState({
+      productId: row.app_store_product_id,
+      status: row.app_store_subscription_status,
+      expiresAt: row.app_store_expires_at,
+      revokedAt: row.app_store_revocation_at,
+    });
+    return {
+      access: resolveAccessWindow({
+        userCreatedAt: row.created_at,
+        timezone,
+        paidGrantReason: row.paid_grant_reason,
+        stripeSubscriptionStatus: row.stripe_subscription_status,
+        appStoreSubscription,
+      }),
+      stripeSubscriptionStatus: row.stripe_subscription_status,
+      canManageBilling: row.stripe_customer_id !== null,
+      appStoreSubscriptionStatus: row.app_store_subscription_status,
+      canManageAppStoreSubscription: row.app_store_subscription_status !== null,
+    };
+  }
+
   async upsertStripeCustomerId(userId: string, stripeCustomerId: string): Promise<void> {
     await this.#db.execute(
       sql`INSERT INTO fitness.user_billing (user_id, stripe_customer_id)
@@ -100,6 +177,28 @@ export class BillingRepository {
             stripe_customer_id = EXCLUDED.stripe_customer_id,
             updated_at = now()`,
     );
+  }
+
+  async getOrCreateAppStoreAccountToken(userId: string): Promise<string> {
+    const rows = await executeWithSchema(
+      this.#db,
+      appStoreAccountTokenSchema,
+      sql`INSERT INTO fitness.user_billing AS billing (user_id, app_store_account_token)
+          VALUES (${userId}, gen_random_uuid())
+          ON CONFLICT (user_id) DO UPDATE SET
+            app_store_account_token = COALESCE(
+              billing.app_store_account_token,
+              EXCLUDED.app_store_account_token
+            ),
+            updated_at = CASE
+              WHEN billing.app_store_account_token IS NULL THEN now()
+              ELSE billing.updated_at
+            END
+          RETURNING app_store_account_token::text AS app_store_account_token`,
+    );
+    const row = rows[0];
+    if (!row) throw new Error(`Failed to create App Store account token for user ${userId}`);
+    return row.app_store_account_token;
   }
 
   async updateSubscriptionForStripeCustomer(input: {
@@ -136,4 +235,85 @@ export class BillingRepository {
     );
     return rows.map((row) => row.user_id);
   }
+
+  async applyAppStoreSubscription(input: AppStoreSubscriptionUpdate): Promise<string[]> {
+    const rows = await executeWithSchema(
+      this.#db,
+      updatedBillingUserSchema,
+      sql`UPDATE fitness.user_billing
+          SET app_store_original_transaction_id = ${input.originalTransactionId},
+              app_store_transaction_id = ${input.transactionId},
+              app_store_product_id = ${input.productId},
+              app_store_subscription_status = ${input.status},
+              app_store_expires_at = ${input.expiresAt},
+              app_store_revocation_at = ${input.revokedAt},
+              app_store_environment = ${input.environment},
+              updated_at = now()
+          WHERE app_store_account_token = ${input.accountToken}::uuid
+            AND NOT EXISTS (
+              SELECT 1
+              FROM fitness.user_billing existing_subscription
+              WHERE existing_subscription.app_store_original_transaction_id = ${input.originalTransactionId}
+                AND existing_subscription.app_store_account_token <> ${input.accountToken}::uuid
+            )
+            AND (
+              app_store_expires_at IS NULL
+              OR (
+                ${input.status} = 'revoked'
+                AND app_store_subscription_status <> 'revoked'
+              )
+              OR (
+                ${input.expiresAt} > app_store_expires_at
+                AND app_store_subscription_status <> 'revoked'
+              )
+              OR (
+                ${input.expiresAt} = app_store_expires_at
+                AND app_store_subscription_status <> 'revoked'
+                AND ${input.status} <> 'active'
+              )
+            )
+          RETURNING user_id`,
+    );
+    return rows.map((row) => row.user_id);
+  }
+
+  async findUserIdByAppStoreAccountToken(accountToken: string): Promise<string | null> {
+    const rows = await executeWithSchema(
+      this.#db,
+      updatedBillingUserSchema,
+      sql`SELECT user_id
+            FROM fitness.user_billing
+            WHERE app_store_account_token = ${accountToken}::uuid
+            LIMIT 1`,
+    );
+    return rows[0]?.user_id ?? null;
+  }
+}
+
+export async function applyAppStoreNotification(
+  db: Pick<Database, "transaction">,
+  input: AppStoreNotificationUpdate,
+): Promise<string[]> {
+  return db.transaction(async (transaction) => {
+    const repository = new BillingRepository(transaction);
+    const recorded = await executeWithSchema(
+      transaction,
+      recordedAppStoreNotificationSchema,
+      sql`INSERT INTO fitness.app_store_notification (notification_uuid, signed_date)
+          VALUES (${input.notificationUuid}::uuid, ${input.signedDate})
+          ON CONFLICT (notification_uuid) DO NOTHING
+          RETURNING notification_uuid::text AS notification_uuid`,
+    );
+    if (recorded.length > 0) {
+      return input.subscription
+        ? await repository.applyAppStoreSubscription(input.subscription)
+        : [];
+    }
+    if (!input.subscription) return [];
+
+    const userId = await repository.findUserIdByAppStoreAccountToken(
+      input.subscription.accountToken,
+    );
+    return userId ? [userId] : [];
+  });
 }

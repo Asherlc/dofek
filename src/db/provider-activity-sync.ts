@@ -1,8 +1,12 @@
-import { resolveRecordLocalTimeContext } from "@dofek/format/record-local-time";
+import {
+  resolveProviderTimezoneLocalTimeContext,
+  resolveRecordLocalTimeContext,
+} from "@dofek/format/record-local-time";
 import type { ProviderActivityType } from "@dofek/training/activity-types";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import { captureException } from "../lib/error-reporting.ts";
+import { logger } from "../logger.ts";
 import type { SyncDatabase } from "./index.ts";
 import {
   hasProviderActivityListSyncErrors,
@@ -12,6 +16,7 @@ import {
   type ProviderActivityAbsenceReconciliation,
   reconcileProviderActivityAbsence,
 } from "./provider-activity-absence.ts";
+import { getProviderIngestContext } from "./provider-ingest-context.ts";
 import { activity } from "./schema/activity.ts";
 import { executeWithSchema } from "./typed-sql.ts";
 
@@ -22,6 +27,8 @@ export type ProviderActivityInsert = Omit<
   "canonicalType" | "providerType" | "modality"
 > & {
   activityType: ProviderActivityType;
+  /** User-selected geographic zone, used only when a provider emits an untrustworthy fixed zone. */
+  homeTimezone?: string | null;
 };
 
 type StoredActivityConflictUpdateKey = Exclude<
@@ -93,11 +100,19 @@ function requireExternalId(externalId: string | null | undefined): string {
   return normalizedExternalId;
 }
 
+function providerTimezoneContext(values: StoredActivityInsert, timezone: string) {
+  return resolveProviderTimezoneLocalTimeContext({
+    startedAt: values.startedAt,
+    endedAt: values.endedAt,
+    timezone,
+  });
+}
+
 function normalizeProviderActivityInsert(
   values: ProviderActivityInsert,
   normalizedExternalId: string,
 ): { values: StoredActivityInsert; updateLocalTimeContext: boolean } {
-  const { activityType, ...storedValues } = values;
+  const { activityType, homeTimezone: explicitHomeTimezone, ...storedValues } = values;
   const externalIdValues: StoredActivityInsert = {
     ...storedValues,
     canonicalType: activityType.canonicalType,
@@ -105,7 +120,85 @@ function normalizeProviderActivityInsert(
     modality: activityType.modality,
     externalId: normalizedExternalId,
   };
+  const normalizedHomeTimezone = explicitHomeTimezone ?? getProviderIngestContext()?.homeTimezone;
   if ((externalIdValues.localTimeSource ?? "unknown") !== "unknown") {
+    const timezone = externalIdValues.timezone?.trim();
+    if (externalIdValues.localTimeSource === "provider_timezone" && timezone) {
+      try {
+        const providerContext = providerTimezoneContext(externalIdValues, timezone);
+        if (normalizedHomeTimezone) {
+          try {
+            const homeContext = resolveRecordLocalTimeContext({
+              startedAt: externalIdValues.startedAt,
+              endedAt: externalIdValues.endedAt,
+              timezone: normalizedHomeTimezone,
+              source: "user_home_timezone",
+            });
+            if (
+              providerContext.startUtcOffsetMinutes != null &&
+              homeContext.startUtcOffsetMinutes != null &&
+              Math.abs(providerContext.startUtcOffsetMinutes - homeContext.startUtcOffsetMinutes) >
+                60
+            ) {
+              logger.warn(
+                `[provider-activity] timezone disagreement provider=${externalIdValues.providerId} external_id=${normalizedExternalId} provider_timezone=${timezone} home_timezone=${normalizedHomeTimezone}`,
+              );
+            }
+          } catch (error: unknown) {
+            captureException(error, {
+              tags: { operation: "provider-activity-home-timezone-context" },
+            });
+          }
+        }
+        return {
+          values: {
+            ...externalIdValues,
+            timezone: providerContext.timezone,
+            startUtcOffsetMinutes: providerContext.startUtcOffsetMinutes,
+            endUtcOffsetMinutes: providerContext.endUtcOffsetMinutes,
+            localTimeSource: providerContext.source,
+          },
+          updateLocalTimeContext: true,
+        };
+      } catch (error: unknown) {
+        captureException(error, {
+          tags: { operation: "provider-activity-local-time-context" },
+        });
+        return {
+          values: {
+            ...externalIdValues,
+            timezone: null,
+            startUtcOffsetMinutes: null,
+            endUtcOffsetMinutes: null,
+            localTimeSource: "unknown",
+          },
+          updateLocalTimeContext: true,
+        };
+      }
+    }
+    if (normalizedHomeTimezone) {
+      try {
+        const homeContext = resolveRecordLocalTimeContext({
+          startedAt: externalIdValues.startedAt,
+          endedAt: externalIdValues.endedAt,
+          timezone: normalizedHomeTimezone,
+          source: "user_home_timezone",
+        });
+        if (
+          externalIdValues.startUtcOffsetMinutes != null &&
+          homeContext.startUtcOffsetMinutes != null &&
+          Math.abs(externalIdValues.startUtcOffsetMinutes - homeContext.startUtcOffsetMinutes) > 60
+        ) {
+          logger.warn(
+            `[provider-activity] timezone disagreement provider=${externalIdValues.providerId} external_id=${normalizedExternalId} provider_timezone=${timezone ?? "offset-only"} home_timezone=${normalizedHomeTimezone}`,
+          );
+        }
+      } catch (error: unknown) {
+        captureException(error, {
+          tags: { operation: "provider-activity-home-timezone-context" },
+        });
+      }
+    }
     return { values: externalIdValues, updateLocalTimeContext: true };
   }
 
@@ -129,12 +222,35 @@ function normalizeProviderActivityInsert(
       : { values: externalIdValues, updateLocalTimeContext: false };
   }
   try {
-    const context = resolveRecordLocalTimeContext({
-      startedAt: externalIdValues.startedAt,
-      endedAt: externalIdValues.endedAt,
-      timezone,
-      source: "provider_timezone",
-    });
+    if (normalizedHomeTimezone) {
+      const providerContext = providerTimezoneContext(externalIdValues, timezone);
+      const homeContext = resolveRecordLocalTimeContext({
+        startedAt: externalIdValues.startedAt,
+        endedAt: externalIdValues.endedAt,
+        timezone: normalizedHomeTimezone,
+        source: "user_home_timezone",
+      });
+      if (
+        providerContext.startUtcOffsetMinutes != null &&
+        homeContext.startUtcOffsetMinutes != null &&
+        Math.abs(providerContext.startUtcOffsetMinutes - homeContext.startUtcOffsetMinutes) > 60
+      ) {
+        logger.warn(
+          `[provider-activity] timezone disagreement provider=${externalIdValues.providerId} external_id=${normalizedExternalId} provider_timezone=${timezone} home_timezone=${normalizedHomeTimezone}`,
+        );
+      }
+      return {
+        values: {
+          ...externalIdValues,
+          timezone: providerContext.timezone,
+          startUtcOffsetMinutes: providerContext.startUtcOffsetMinutes,
+          endUtcOffsetMinutes: providerContext.endUtcOffsetMinutes,
+          localTimeSource: providerContext.source,
+        },
+        updateLocalTimeContext: true,
+      };
+    }
+    const context = providerTimezoneContext(externalIdValues, timezone);
     return {
       values: {
         ...externalIdValues,
@@ -214,10 +330,11 @@ export class ProviderActivityListSync {
   async upsert(
     values: ProviderActivityInsert,
     update: ProviderActivityConflictUpdate,
+    db: SyncDatabase = this.#scope.db,
   ): Promise<{ id: string } | undefined> {
     const normalizedExternalId = requireExternalId(values.externalId);
     const row = await upsertProviderActivity(
-      this.#scope.db,
+      db,
       { ...values, externalId: normalizedExternalId },
       update,
     );
@@ -279,9 +396,9 @@ export async function finishProviderActivityListSync(
   await reconcileProviderActivityAbsence(db, reconciliation);
 }
 
+export type { ProviderActivityAbsenceMark, ProviderActivityAbsenceReconciliation };
 export {
   hasProviderActivityListSyncErrors,
   markProviderActivityAbsent,
   markProviderActivityPresent,
 };
-export type { ProviderActivityAbsenceMark, ProviderActivityAbsenceReconciliation };

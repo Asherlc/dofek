@@ -311,18 +311,25 @@ export function resolveWhoopWorkoutExternalId(record: WhoopWorkoutRecord): strin
 export function resolveActivityType(
   sportId: number,
   v2ActivityTypeName?: string,
+  developerSportName?: string,
 ): ProviderActivityType {
   const fromSportId = mapSportId(sportId);
-  let normalizedType: NormalizedActivityType = fromSportId;
-  if (fromSportId === "other" && v2ActivityTypeName) {
-    normalizedType = mapV2ActivityType(v2ActivityTypeName) ?? "other";
-  }
-  return resolveProviderActivityType(v2ActivityTypeName ?? sportId, normalizedType);
+  const fromDeveloperSportName = developerSportName ? mapV2ActivityType(developerSportName) : null;
+  const normalizedType: NormalizedActivityType =
+    fromDeveloperSportName ??
+    (fromSportId === "other" && v2ActivityTypeName
+      ? (mapV2ActivityType(v2ActivityTypeName) ?? "other")
+      : fromSportId);
+  return resolveProviderActivityType(
+    developerSportName ?? v2ActivityTypeName ?? sportId,
+    normalizedType,
+  );
 }
 
 export function parseWorkout(
   record: WhoopWorkoutRecord,
   v2ActivityTypeName?: string,
+  developerSportName?: string,
 ): ParsedWorkout | null {
   // BFF v0 uses `during` range; fall back to legacy `start`/`end`
   let startedAt: Date;
@@ -347,7 +354,7 @@ export function parseWorkout(
 
   return {
     externalId,
-    activityType: resolveActivityType(record.sport_id, v2ActivityTypeName),
+    activityType: resolveActivityType(record.sport_id, v2ActivityTypeName, developerSportName),
     startedAt,
     endedAt,
     durationSeconds: Math.round((endedAt.getTime() - startedAt.getTime()) / 1000),

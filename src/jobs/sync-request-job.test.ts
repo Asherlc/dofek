@@ -373,30 +373,29 @@ describe("enqueueSyncJobWithRequestDedup", () => {
       returnedJobId: "requested-job-id",
       jobData,
     },
-  ])("does not report already queued when $name", async ({
-    jobOptions,
-    returnedJobId,
-    jobData,
-  }) => {
-    const returnedJob = { id: returnedJobId };
-    const addJob = vi.fn().mockImplementation(async (_name, _data, options: JobsOptions) => {
-      if (returnedJobId === "requested-job-id") {
-        returnedJob.id = options.jobId;
-      }
-      return returnedJob;
-    });
-    const getJob = vi.fn().mockResolvedValue(undefined);
+  ])(
+    "does not report already queued when $name",
+    async ({ jobOptions, returnedJobId, jobData }) => {
+      const returnedJob = { id: returnedJobId };
+      const addJob = vi.fn().mockImplementation(async (_name, _data, options: JobsOptions) => {
+        if (returnedJobId === "requested-job-id") {
+          returnedJob.id = options.jobId;
+        }
+        return returnedJob;
+      });
+      const getJob = vi.fn().mockResolvedValue(undefined);
 
-    const result = await enqueueSyncJobWithRequestDedup(
-      "whoop",
-      jobData,
-      jobOptions,
-      addJob,
-      getJob,
-    );
+      const result = await enqueueSyncJobWithRequestDedup(
+        "whoop",
+        jobData,
+        jobOptions,
+        addJob,
+        getJob,
+      );
 
-    expect(result?.alreadyQueued).toBe(false);
-  });
+      expect(result?.alreadyQueued).toBe(false);
+    },
+  );
 
   it("returns an existing cooldown-delayed job without enqueueing a duplicate", async () => {
     const existing = { getState: vi.fn(), remove: vi.fn() };

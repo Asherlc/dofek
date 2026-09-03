@@ -1766,6 +1766,35 @@ describe("upsertWorkoutBatch", () => {
     });
   });
 
+  it("preserves the original Apple Health workout classification input in raw JSONB", async () => {
+    const { db } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
+
+    await upsertWorkoutBatch(db, "apple_health", [
+      makeWorkout({
+        activityType: resolveProviderActivityType(
+          "HKWorkoutActivityTypeFunctionalStrengthTraining",
+          "strength",
+        ),
+        sourceName: null,
+        metadata: {
+          HKMetadataKeyWorkoutBrandName: "Hang Ten",
+          "HangTen.PlanName": "7/3 Repeaters",
+        },
+      }),
+    ]);
+
+    expect(findActivityUpsertValues(() => true)?.raw).toMatchObject({
+      appleHealth: {
+        workoutActivityType: "HKWorkoutActivityTypeFunctionalStrengthTraining",
+        sourceName: null,
+        metadata: {
+          HKMetadataKeyWorkoutBrandName: "Hang Ten",
+          "HangTen.PlanName": "7/3 Repeaters",
+        },
+      },
+    });
+  });
+
   it("omits undefined optional fields from raw JSONB", async () => {
     const { db } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
 
@@ -1776,6 +1805,20 @@ describe("upsertWorkoutBatch", () => {
     expect(raw).not.toHaveProperty("distanceMeters");
     expect(raw).not.toHaveProperty("avgHeartRate");
     expect(raw).not.toHaveProperty("maxHeartRate");
+  });
+
+  it("omits an empty Apple Health metadata map from raw JSONB", async () => {
+    const { db } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
+
+    await upsertWorkoutBatch(db, "apple_health", [makeWorkout({ metadata: {} })]);
+
+    expect(findActivityUpsertValues(() => true)?.raw).toMatchObject({
+      appleHealth: {
+        workoutActivityType: "HKWorkoutActivityTypeRunning",
+        sourceName: "Apple Watch",
+      },
+    });
+    expect(findActivityUpsertValues(() => true)?.raw).not.toHaveProperty("appleHealth.metadata");
   });
 
   it("does not update existing heart-rate metric_stream rows after workout insert", async () => {
@@ -1967,30 +2010,29 @@ describe("upsertSleepBatch", () => {
     });
   });
 
-  it.each([
-    "deep",
-    "rem",
-    "core",
-  ] as const)("marks staging available when Apple Health reports a %s stage", async (stage) => {
-    const { db, capture } = createMockDb();
-    const bedStart = new Date("2024-03-01T23:00:00Z");
-    const bedEnd = new Date("2024-03-02T07:00:00Z");
+  it.each(["deep", "rem", "core"] as const)(
+    "marks staging available when Apple Health reports a %s stage",
+    async (stage) => {
+      const { db, capture } = createMockDb();
+      const bedStart = new Date("2024-03-01T23:00:00Z");
+      const bedEnd = new Date("2024-03-02T07:00:00Z");
 
-    await upsertSleepBatch(db, "p1", [
-      makeSleep({ startDate: bedStart, endDate: bedEnd }),
-      makeSleep({
-        stage,
-        startDate: new Date("2024-03-02T00:00:00Z"),
-        endDate: new Date("2024-03-02T01:00:00Z"),
-        durationMinutes: 60,
-      }),
-    ]);
+      await upsertSleepBatch(db, "p1", [
+        makeSleep({ startDate: bedStart, endDate: bedEnd }),
+        makeSleep({
+          stage,
+          startDate: new Date("2024-03-02T00:00:00Z"),
+          endDate: new Date("2024-03-02T01:00:00Z"),
+          durationMinutes: 60,
+        }),
+      ]);
 
-    expect(capture.values[0]?.[0]).toMatchObject({
-      awakeMinutes: 0,
-      stagingAvailable: true,
-    });
-  });
+      expect(capture.values[0]?.[0]).toMatchObject({
+        awakeMinutes: 0,
+        stagingAvailable: true,
+      });
+    },
+  );
 
   it("preserves an awake-only measurement without claiming a stage bundle", async () => {
     const { db, capture } = createMockDb();

@@ -1,4 +1,5 @@
 import type { EventSubscription } from "expo-modules-core";
+import { z } from "zod";
 import WhoopBleModule from "./src/WhoopBleModule";
 
 /** A timestamped accelerometer and gyroscope sample from a WHOOP strap. */
@@ -18,6 +19,17 @@ export interface WhoopDevice {
   name: string | null;
 }
 
+/** A read-only snapshot of the current WHOOP connection and buffer state. */
+export const WhoopDeviceSummarySchema = z.object({
+  id: z.string().nullable(),
+  name: z.string().nullable(),
+  connectionState: z.string().min(1),
+  imuBufferedSamples: z.number().int().nonnegative(),
+  realtimeBufferedSamples: z.number().int().nonnegative(),
+});
+
+export type WhoopDeviceSummary = z.infer<typeof WhoopDeviceSummarySchema>;
+
 /** A single realtime data sample from a 0x28 REALTIME_DATA packet */
 export interface WhoopRealtimeDataSample {
   deviceId?: string;
@@ -32,16 +44,18 @@ export interface WhoopRealtimeDataSample {
   opticalRawHex: string;
 }
 
-interface NativeWhoopSample {
-  deviceId: string;
-  timestamp: string;
-  accelerometerX: number;
-  accelerometerY: number;
-  accelerometerZ: number;
-  gyroscopeX: number;
-  gyroscopeY: number;
-  gyroscopeZ: number;
-}
+const NativeWhoopSampleSchema = z.object({
+  deviceId: z.string().min(1),
+  timestamp: z.string().min(1),
+  accelerometerX: z.number(),
+  accelerometerY: z.number(),
+  accelerometerZ: z.number(),
+  gyroscopeX: z.number(),
+  gyroscopeY: z.number(),
+  gyroscopeZ: z.number(),
+});
+
+type NativeWhoopSample = z.infer<typeof NativeWhoopSampleSchema>;
 
 function mapNativeSample(native: NativeWhoopSample): WhoopImuSample & { deviceId: string } {
   return {
@@ -140,7 +154,9 @@ export async function startOpticalMode(): Promise<boolean> {
 export async function peekBufferedSamples(
   maxCount?: number,
 ): Promise<Array<WhoopImuSample & { deviceId: string }>> {
-  const natives: NativeWhoopSample[] = await WhoopBleModule.peekBufferedSamples(maxCount);
+  const natives = NativeWhoopSampleSchema.array().parse(
+    await WhoopBleModule.peekBufferedSamples(maxCount),
+  );
   return natives.map(mapNativeSample);
 }
 
@@ -184,7 +200,7 @@ export async function getBufferedRealtimeData(): Promise<WhoopRealtimeDataSample
  * @deprecated Use peekBufferedSamples + confirmSamplesDrain instead.
  */
 export async function getBufferedSamples(): Promise<Array<WhoopImuSample & { deviceId: string }>> {
-  const natives: NativeWhoopSample[] = await WhoopBleModule.getBufferedSamples();
+  const natives = NativeWhoopSampleSchema.array().parse(await WhoopBleModule.getBufferedSamples());
   return natives.map(mapNativeSample);
 }
 
@@ -201,6 +217,11 @@ export function getBluetoothState(): string {
 /** Get the number of IMU samples currently buffered. */
 export function getBufferedSampleCount(): number {
   return WhoopBleModule.getBufferedSampleCount();
+}
+
+/** Get the current WHOOP identity, connection state, and buffer counts without scanning or connecting. */
+export function getDeviceSummary(): WhoopDeviceSummary {
+  return WhoopDeviceSummarySchema.parse(WhoopBleModule.getDeviceSummary());
 }
 
 /** Get BLE data path statistics for debugging. */
@@ -271,6 +292,15 @@ export function addConnectionStateListener(
   callback: (event: ConnectionStateEvent) => void,
 ): EventSubscription {
   return WhoopBleModule.addListener("onConnectionStateChanged", callback);
+}
+
+/** Subscribe to WHOOP identity, connection, streaming, and buffer snapshot changes. */
+export function addDeviceStateListener(
+  callback: (summary: WhoopDeviceSummary) => void,
+): EventSubscription {
+  return WhoopBleModule.addListener("onDeviceStateChanged", (event: unknown) =>
+    callback(WhoopDeviceSummarySchema.parse(event)),
+  );
 }
 
 /** Real-time orientation from the Madgwick AHRS filter (quaternion + Euler angles) */

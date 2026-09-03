@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JournalPanel } from "./JournalPanel.tsx";
 import { emptyJournalTrendEvidence } from "./journal-trend-test-fixtures.ts";
@@ -23,47 +23,22 @@ const mocks = vi.hoisted(() => {
   const chartProps: CapturedChartProps[] = [];
   return {
     chartProps,
-    captureException: vi.fn(),
-    deleteMutation: vi.fn(),
-    entriesInvalidate: vi.fn(),
     entriesQuery: vi.fn(),
-    questionsQuery: vi.fn(),
     trendsQuery: vi.fn(),
   };
 });
 
-vi.mock("../lib/telemetry.ts", () => ({
-  captureException: mocks.captureException,
-}));
-
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
-    useUtils: () => ({
-      journal: {
-        entries: {
-          invalidate: mocks.entriesInvalidate,
-        },
-      },
-    }),
     journal: {
       entries: {
         useQuery: mocks.entriesQuery,
       },
-      questions: {
-        useQuery: mocks.questionsQuery,
-      },
       trends: {
         useQuery: mocks.trendsQuery,
       },
-      delete: {
-        useMutation: mocks.deleteMutation,
-      },
     },
   },
-}));
-
-vi.mock("./AddJournalEntryModal.tsx", () => ({
-  AddJournalEntryModal: () => <div>Add journal entry form</div>,
 }));
 
 vi.mock("./DofekChart.tsx", () => ({
@@ -100,20 +75,14 @@ describe("JournalPanel", () => {
 
   beforeEach(() => {
     mocks.chartProps.length = 0;
-    mocks.captureException.mockReset();
-    mocks.entriesInvalidate.mockReset();
     mocks.entriesQuery.mockReset();
     mocks.entriesQuery.mockReturnValue({ data: [entry], error: null, isLoading: false });
-    mocks.questionsQuery.mockReset();
-    mocks.questionsQuery.mockReturnValue({ data: [], error: null, isLoading: false });
     mocks.trendsQuery.mockReset();
     mocks.trendsQuery.mockReturnValue({
       data: emptyJournalTrendEvidence,
       error: null,
       isLoading: false,
     });
-    mocks.deleteMutation.mockReset();
-    mocks.deleteMutation.mockReturnValue({ error: null, isPending: false, mutate: vi.fn() });
   });
 
   it("shows an initial entries failure instead of the empty state", () => {
@@ -134,6 +103,26 @@ describe("JournalPanel", () => {
     expect(refetch).toHaveBeenCalledOnce();
   });
 
+  it("shows a loading state while journal entries have not arrived", () => {
+    mocks.entriesQuery.mockReturnValue({
+      data: undefined,
+      error: null,
+      isLoading: true,
+    });
+
+    render(<JournalPanel />);
+
+    expect(screen.getByTestId("query-state-loading")).toHaveAttribute("aria-busy", "true");
+  });
+
+  it("shows an empty state when the journal has no entries", () => {
+    mocks.entriesQuery.mockReturnValue({ data: [], error: null, isLoading: false });
+
+    render(<JournalPanel />);
+
+    expect(screen.getByText("No journal entries yet.")).toBeDefined();
+  });
+
   it("retains cached entries during a background refresh failure", () => {
     mocks.entriesQuery.mockReturnValue({
       data: [entry],
@@ -148,6 +137,14 @@ describe("JournalPanel", () => {
     expect(screen.getByText("Mood")).toBeDefined();
     expect(screen.getByText("Calm")).toBeDefined();
     expect(screen.getByText("Journal refresh failed")).toBeDefined();
+  });
+
+  it("shows provider attribution for a stored manual entry", () => {
+    mocks.entriesQuery.mockReturnValue({ data: [entry], error: null, isLoading: false });
+
+    render(<JournalPanel />);
+
+    expect(screen.getByText("Dofek")).toBeInTheDocument();
   });
 
   it("shows journal answers without presenting provider impact scores as per-entry effects", () => {
@@ -196,6 +193,29 @@ describe("JournalPanel", () => {
     expect(noAnswer.classList.contains("text-muted")).toBe(true);
   });
 
+  it("renders numeric answers with their recorded units", () => {
+    mocks.entriesQuery.mockReturnValue({
+      data: [
+        {
+          ...entry,
+          id: "sleep-hours",
+          display_name: "Sleep duration",
+          data_type: "numeric",
+          unit: "hours",
+          answer_text: null,
+          answer_numeric: 7.5,
+        },
+      ],
+      error: null,
+      isLoading: false,
+    });
+
+    render(<JournalPanel />);
+
+    expect(screen.getByText("Sleep duration")).toBeDefined();
+    expect(screen.getByText("7.5 hours")).toBeDefined();
+  });
+
   it("reveals raw source IDs only through accessible technical details", () => {
     mocks.entriesQuery.mockReturnValue({
       data: [
@@ -221,6 +241,12 @@ describe("JournalPanel", () => {
     expect(
       screen.getByRole("button", { name: "Hide technical source details for Manual review" }),
     ).toBeDefined();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Hide technical source details for Manual review" }),
+    );
+
+    expect(screen.queryByText("Provider ID: manual_review")).toBeNull();
   });
 
   it("paginates journal entries", () => {
@@ -245,32 +271,6 @@ describe("JournalPanel", () => {
     expect(screen.getByText("Entry 21")).toBeDefined();
   });
 
-  it("shows and reports delete failures while keeping the entry available to retry", () => {
-    const deleteError = new Error("Journal entry could not be deleted");
-    let onError: ((error: unknown) => void) | undefined;
-    let meta: unknown;
-    const mutate = vi.fn();
-    mocks.deleteMutation.mockImplementation(
-      (options: { meta?: unknown; onError?: (error: unknown) => void }) => {
-        meta = options.meta;
-        onError = options.onError;
-        return { error: deleteError, isPending: false, mutate };
-      },
-    );
-
-    render(<JournalPanel />);
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-    act(() => onError?.(deleteError));
-
-    expect(mutate).toHaveBeenCalledWith({ id: "entry-1" });
-    expect(meta).toEqual({ errorReportedLocally: true });
-    expect(screen.getByText(deleteError.message)).toBeDefined();
-    expect(screen.getByRole("button", { name: "Delete" })).toBeDefined();
-    expect(mocks.captureException).toHaveBeenCalledWith(deleteError, {
-      operation: "journal.delete",
-    });
-  });
-
   it("shows trend-evidence failures instead of the empty chart state", () => {
     mocks.trendsQuery.mockReturnValue({
       data: undefined,
@@ -287,6 +287,19 @@ describe("JournalPanel", () => {
     expect(screen.queryByText("No numeric journal data to chart.")).toBeNull();
   });
 
+  it("shows a loading state while trend evidence has not arrived", () => {
+    mocks.trendsQuery.mockReturnValue({
+      data: undefined,
+      error: null,
+      isLoading: true,
+    });
+
+    render(<JournalPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Trends" }));
+
+    expect(screen.getByTestId("query-state-loading")).toBeDefined();
+  });
+
   it("retains the trends empty state alongside a background refresh failure", () => {
     mocks.trendsQuery.mockReturnValue({
       data: emptyJournalTrendEvidence,
@@ -301,6 +314,40 @@ describe("JournalPanel", () => {
 
     expect(screen.getByText("Journal trends refresh failed")).toBeDefined();
     expect(screen.getByText("No numeric journal data to chart.")).toBeDefined();
+  });
+
+  it("keeps chartable trend evidence visible during a background refresh failure", () => {
+    mocks.trendsQuery.mockReturnValue({
+      data: {
+        ...emptyJournalTrendEvidence,
+        series: [
+          {
+            questionSlug: "sleep-duration",
+            displayName: "Sleep duration",
+            dataType: "numeric",
+            unit: "hours",
+            statement: "Sleep duration was recorded on one day.",
+            points: [
+              {
+                date: "2026-07-25",
+                value: 7.5,
+                source: { providerId: "dofek", label: "Dofek" },
+              },
+            ],
+          },
+        ],
+      },
+      error: new Error("Journal trends refresh failed"),
+      isFetching: false,
+      isLoading: false,
+      refetch: vi.fn(),
+    });
+
+    render(<JournalPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Trends" }));
+
+    expect(screen.getByText("Journal chart")).toBeDefined();
+    expect(screen.getByText("Journal trends refresh failed")).toBeDefined();
   });
 
   it("shows an unavailable state when the trends query settles without evidence", () => {

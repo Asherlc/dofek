@@ -75,6 +75,15 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       ),
   },
   {
+    name: "breathwork-sessions.csv",
+    query: (db, userId) =>
+      executeWithSchema(
+        db,
+        exportRowSchema,
+        sql`SELECT * FROM fitness.breathwork_session WHERE user_id = ${userId} ORDER BY started_at`,
+      ),
+  },
+  {
     name: "nutrition-daily.csv",
     query: (db, userId) =>
       executeWithSchema(
@@ -129,21 +138,12 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       ),
   },
   {
-    name: "lab-panels.csv",
+    name: "clinical-records.csv",
     query: (db, userId) =>
       executeWithSchema(
         db,
         exportRowSchema,
-        sql`SELECT * FROM fitness.lab_panel WHERE user_id = ${userId} ORDER BY recorded_at`,
-      ),
-  },
-  {
-    name: "lab-results.csv",
-    query: (db, userId) =>
-      executeWithSchema(
-        db,
-        exportRowSchema,
-        sql`SELECT * FROM fitness.lab_result WHERE user_id = ${userId} ORDER BY recorded_at`,
+        sql`SELECT * FROM fitness.clinical_record WHERE user_id = ${userId} ORDER BY downloaded_at`,
       ),
   },
   {

@@ -237,7 +237,7 @@ activity_metadata AS (
             ELSE least(60, user_profile.max_hr - 1)
         END AS resting_hr
     FROM activity_bounds
-    INNER JOIN postgres_fitness.user_profile_current AS user_profile
+    INNER JOIN {{ source('postgres_fitness', 'user_profile_current') }} AS user_profile
         ON user_profile.id = activity_bounds.user_id
     LEFT JOIN resting_by_activity
         ON resting_by_activity.activity_id = activity_bounds.activity_id

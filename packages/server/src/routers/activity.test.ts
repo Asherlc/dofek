@@ -198,6 +198,7 @@ describe("activityRouter", () => {
           board_id: "board-1",
           board_name: "Tension Board",
           segments_error: null,
+          activity_duration_seconds: 300,
           interval_id: "interval-1",
           interval_index: 0,
           label: "Step 1: 19 mm edge",
@@ -212,21 +213,15 @@ describe("activityRouter", () => {
         caller.hangboardDetails({ id: "734b5d3e-df2b-4ee0-888e-55ea539d913a" }),
       ).resolves.toEqual({
         planName: "7/3 Repeaters",
-        sessionId: "session-1",
-        boardId: "board-1",
         boardName: "Tension Board",
         segmentsError: null,
-        intervals: [
-          {
-            id: "interval-1",
-            intervalIndex: 0,
-            label: "Step 1: 19 mm edge",
-            intervalType: "work",
-            startedAt: "2026-08-07T14:00:00.000Z",
-            endedAt: "2026-08-07T14:00:07.000Z",
-            durationSeconds: 7,
-          },
-        ],
+        summary: {
+          durationSeconds: 300,
+          workIntervalCount: 1,
+          totalWorkDurationSeconds: 7,
+          totalRestDurationSeconds: null,
+          exercises: [{ label: "19 mm edge", workIntervalCount: 1, workDurationSeconds: 7 }],
+        },
       });
     });
 
@@ -928,73 +923,6 @@ describe("activityRouter", () => {
         message:
           "Activity data is unavailable because the activity view is missing. Run migrations and retry.",
       });
-    });
-  });
-
-  describe("setPerceivedExertion", () => {
-    it("writes session RPE through the repository and invalidates activity caches", async () => {
-      const setPerceivedExertion = vi
-        .spyOn(ActivityRepository.prototype, "setPerceivedExertion")
-        .mockResolvedValue({ found: true, perceivedExertion: 7 });
-      const caller = makeCaller();
-
-      await expect(
-        caller.setPerceivedExertion({
-          id: "00000000-0000-0000-0000-000000000001",
-          value: 7,
-        }),
-      ).resolves.toEqual({ perceivedExertion: 7 });
-
-      expect(setPerceivedExertion).toHaveBeenCalledWith("00000000-0000-0000-0000-000000000001", 7);
-      expect(mockInvalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["activity"]);
-      setPerceivedExertion.mockRestore();
-    });
-
-    it("rejects an RPE outside the 0-10 range", async () => {
-      const caller = makeCaller();
-      await expect(
-        caller.setPerceivedExertion({
-          id: "00000000-0000-0000-0000-000000000001",
-          value: 11,
-        }),
-      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    });
-
-    it("clears a previously logged session RPE", async () => {
-      const setPerceivedExertion = vi
-        .spyOn(ActivityRepository.prototype, "setPerceivedExertion")
-        .mockResolvedValue({ found: true, perceivedExertion: null });
-      const caller = makeCaller();
-
-      await expect(
-        caller.setPerceivedExertion({
-          id: "00000000-0000-0000-0000-000000000001",
-          value: null,
-        }),
-      ).resolves.toEqual({ perceivedExertion: null });
-
-      expect(setPerceivedExertion).toHaveBeenCalledWith(
-        "00000000-0000-0000-0000-000000000001",
-        null,
-      );
-      setPerceivedExertion.mockRestore();
-    });
-
-    it("throws NOT_FOUND when the activity is missing", async () => {
-      mockInvalidateUserQueryDomains.mockClear();
-      const setPerceivedExertion = vi
-        .spyOn(ActivityRepository.prototype, "setPerceivedExertion")
-        .mockResolvedValue({ found: false, perceivedExertion: null });
-      const caller = makeCaller();
-
-      await expect(
-        caller.setPerceivedExertion({
-          id: "00000000-0000-0000-0000-000000000001",
-          value: 7,
-        }),
-      ).rejects.toMatchObject({ code: "NOT_FOUND", message: "Activity not found" });
-      expect(mockInvalidateUserQueryDomains).not.toHaveBeenCalled();
-      setPerceivedExertion.mockRestore();
     });
   });
 

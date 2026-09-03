@@ -176,7 +176,9 @@ function authoritativeLocalTimeContext(
     return localTimeContextUnknown();
   }
   const timezone =
-    row.local_time_source === "provider_timezone" || row.local_time_source === "device_timezone"
+    row.local_time_source === "provider_timezone" ||
+    row.local_time_source === "device_timezone" ||
+    row.local_time_source === "user_home_timezone"
       ? row.timezone
       : null;
   return {

@@ -112,6 +112,33 @@ describe("LinearRegression", () => {
     expect(() => model.fit([[1, 2, 3]], [1])).toThrow();
   });
 
+  it("models a constant target with zero standardized importance", () => {
+    const model = new LinearRegression();
+
+    model.fit([[1], [2], [3], [4]], [9, 9, 9, 9]);
+
+    expect(model.predict([100])).toBeCloseTo(9, 10);
+    expect(model.rSquared).toBe(1);
+    expect(model.adjustedRSquared).toBe(1);
+    expect(model.featureImportances).toEqual([0]);
+  });
+
+  it("rejects a collinear feature matrix instead of producing unstable coefficients", () => {
+    const model = new LinearRegression();
+
+    expect(() =>
+      model.fit(
+        [
+          [1, 2],
+          [2, 4],
+          [3, 6],
+          [4, 8],
+        ],
+        [3, 5, 7, 9],
+      ),
+    ).toThrow("Singular matrix");
+  });
+
   it("serializes and deserializes", () => {
     const featureMatrix = [[1], [2], [3], [4], [5]];
     const targets = [3, 5, 7, 9, 11];

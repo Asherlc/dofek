@@ -26,6 +26,7 @@ import {
   WAHOO_API_BASE,
   WahooClient,
   type WahooWorkout,
+  type WahooWorkoutListResponse,
   wahooWebhookPayloadSchema,
 } from "./client.ts";
 import { type ParsedCardioActivity, parseWorkoutList, parseWorkoutSummary } from "./parsers.ts";
@@ -256,13 +257,14 @@ export class WahooProvider implements WebhookProvider {
   /**
    * Resolve a valid access token — refreshing if expired.
    */
-  async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
+  async #resolveTokens(db: SyncDatabase, forceRefresh = false): Promise<TokenSet> {
     return resolveOAuthTokens({
       db,
       providerId: this.id,
       providerName: this.name,
       getOAuthConfig: () => wahooOAuthConfig(),
       fetchFn: this.#fetchFn,
+      forceRefresh,
     });
   }
 
@@ -281,7 +283,8 @@ export class WahooProvider implements WebhookProvider {
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
-    const client = new WahooClient(tokens.accessToken, this.#fetchFn);
+    let client = new WahooClient(tokens.accessToken, this.#fetchFn);
+    let retriedExpiredAccessToken = false;
     const persister = new WahooActivityPersister(
       this.id,
       client,
@@ -302,7 +305,21 @@ export class WahooProvider implements WebhookProvider {
       initialCursor: 1,
       maxPages: WAHOO_MAX_WORKOUT_PAGES,
       fetchPage: async (page) => {
-        const response = await client.getWorkouts(page ?? 1);
+        let response: WahooWorkoutListResponse;
+        try {
+          response = await client.getWorkouts(page ?? 1);
+        } catch (error) {
+          if (!(error instanceof AccessTokenExpiredError) || retriedExpiredAccessToken) {
+            throw error;
+          }
+          retriedExpiredAccessToken = true;
+          logger.info(
+            "[wahoo] API rejected access token, refreshing and retrying workout request...",
+          );
+          tokens = await this.#resolveTokens(db, true);
+          client = new WahooClient(tokens.accessToken, this.#fetchFn);
+          response = await client.getWorkouts(page ?? 1);
+        }
         const parsed = parseWorkoutList(response);
         totalWorkouts = parsed.total;
         const emptyPageWithExpectedRows =

@@ -221,6 +221,475 @@ describe("runResumableFileUpload", () => {
     expect(api.resume).toHaveBeenCalledWith({ uploadId: newUploadId });
   });
 
+  it("starts a new Strong upload when the selected weight unit changes", async () => {
+    const storedUploadId = randomUUID();
+    const newUploadId = randomUUID();
+    const file = new File(["abcdefgh"], "strong.csv", { lastModified: 456 });
+    const storedSession: StoredUploadSession = {
+      providerId: "strong-csv",
+      uploadId: storedUploadId,
+      importType: "strong-csv",
+      filename: file.name,
+      sizeBytes: file.size,
+      lastModified: file.lastModified,
+      sha256: createHash("sha256").update("abcdefgh").digest("hex"),
+      partSizeBytes: 5,
+      completedParts: [],
+      weightUnit: "kg",
+    };
+    const api = uploadApi(newUploadId);
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(newUploadId);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 200, headers: { etag: "etag" } })),
+    );
+
+    await runResumableFileUpload({
+      api,
+      file,
+      importType: "strong-csv",
+      providerId: "strong-csv",
+      sessionStore: memoryStore(storedSession),
+      signal: new AbortController().signal,
+      onProgress: vi.fn(),
+      weightUnit: "lbs",
+    });
+
+    expect(api.initiate).toHaveBeenCalledWith(
+      expect.objectContaining({ uploadId: newUploadId, weightUnit: "lbs" }),
+    );
+    expect(api.resume).toHaveBeenCalledWith({ uploadId: newUploadId });
+  });
+
+  it("reuses a Strong upload when the selected weight unit matches", async () => {
+    const storedUploadId = randomUUID();
+    const file = new File(["abcdefgh"], "strong.csv", { lastModified: 456 });
+    const storedSession: StoredUploadSession = {
+      providerId: "strong-csv",
+      uploadId: storedUploadId,
+      importType: "strong-csv",
+      filename: file.name,
+      sizeBytes: file.size,
+      lastModified: file.lastModified,
+      sha256: createHash("sha256").update("abcdefgh").digest("hex"),
+      partSizeBytes: 5,
+      completedParts: [],
+      weightUnit: "kg",
+    };
+    const api = uploadApi(storedUploadId);
+    const onUploadInitiated = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 200, headers: { etag: "etag" } })),
+    );
+
+    await runResumableFileUpload({
+      api,
+      file,
+      importType: "strong-csv",
+      providerId: "strong-csv",
+      sessionStore: memoryStore(storedSession),
+      signal: new AbortController().signal,
+      onProgress: vi.fn(),
+      onUploadInitiated,
+      weightUnit: "kg",
+    });
+
+    expect(api.initiate).toHaveBeenCalledWith(
+      expect.objectContaining({ uploadId: storedUploadId, weightUnit: "kg" }),
+    );
+    expect(api.resume).toHaveBeenCalledWith({ uploadId: storedUploadId });
+    expect(onUploadInitiated).toHaveBeenCalledWith(storedUploadId);
+  });
+
+  it("reuses a stored Strong source unit when a retry omits it", async () => {
+    const storedUploadId = randomUUID();
+    const file = new File(["abcdefgh"], "strong.csv", { lastModified: 456 });
+    const storedSession: StoredUploadSession = {
+      providerId: "strong-csv",
+      uploadId: storedUploadId,
+      importType: "strong-csv",
+      filename: file.name,
+      sizeBytes: file.size,
+      lastModified: file.lastModified,
+      sha256: createHash("sha256").update("abcdefgh").digest("hex"),
+      partSizeBytes: 5,
+      completedParts: [],
+      weightUnit: "kg",
+    };
+    const api = uploadApi(storedUploadId);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 200, headers: { etag: "etag" } })),
+    );
+
+    await runResumableFileUpload({
+      api,
+      file,
+      importType: "strong-csv",
+      providerId: "strong-csv",
+      sessionStore: memoryStore(storedSession),
+      signal: new AbortController().signal,
+      onProgress: vi.fn(),
+    });
+
+    expect(api.initiate).toHaveBeenCalledWith(
+      expect.objectContaining({ uploadId: storedUploadId, weightUnit: "kg" }),
+    );
+    expect(api.resume).toHaveBeenCalledWith({ uploadId: storedUploadId });
+  });
+
+  it("aborts an upload initiated after cancellation and clears its session", async () => {
+    const uploadId = randomUUID();
+    const api = uploadApi(uploadId);
+    const store = memoryStore();
+    const controller = new AbortController();
+    let resolveInitiate: (value: ReturnType<typeof summary>) => void = () => undefined;
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(uploadId);
+    api.initiate.mockImplementation(
+      () =>
+        new Promise<ReturnType<typeof summary>>((resolve) => {
+          resolveInitiate = resolve;
+        }),
+    );
+
+    const result = runResumableFileUpload({
+      api,
+      file: new File(["abcdefgh"], "strong.csv", { type: "text/csv" }),
+      importType: "strong-csv",
+      providerId: "strong-csv",
+      sessionStore: store,
+      signal: controller.signal,
+      onProgress: vi.fn(),
+      weightUnit: "kg",
+    });
+    await vi.waitFor(() => expect(api.initiate).toHaveBeenCalledOnce());
+
+    controller.abort();
+    resolveInitiate(summary(uploadId));
+
+    await expect(result).rejects.toMatchObject({ name: "AbortError", message: "Upload cancelled" });
+    expect(api.abort).toHaveBeenCalledWith({ uploadId });
+    expect(api.resume).not.toHaveBeenCalled();
+    expect(store.value).toBeNull();
+  });
+
+  it("aborts an upload when its initiation response is lost after cancellation", async () => {
+    const uploadId = randomUUID();
+    const api = uploadApi(uploadId);
+    const store = memoryStore();
+    const controller = new AbortController();
+    let rejectInitiate: (reason?: unknown) => void = () => undefined;
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(uploadId);
+    api.initiate.mockImplementation(
+      () =>
+        new Promise<ReturnType<typeof summary>>((_resolve, reject) => {
+          rejectInitiate = reject;
+        }),
+    );
+
+    const result = runResumableFileUpload({
+      api,
+      file: new File(["abcdefgh"], "strong.csv", { type: "text/csv" }),
+      importType: "strong-csv",
+      providerId: "strong-csv",
+      sessionStore: store,
+      signal: controller.signal,
+      onProgress: vi.fn(),
+      weightUnit: "kg",
+    });
+    await vi.waitFor(() => expect(api.initiate).toHaveBeenCalledOnce());
+
+    controller.abort();
+    rejectInitiate(new Error("Initiation response was lost"));
+
+    await expect(result).rejects.toMatchObject({ name: "AbortError", message: "Upload cancelled" });
+    expect(api.abort).toHaveBeenCalledWith({ uploadId });
+    expect(api.resume).not.toHaveBeenCalled();
+    expect(store.value).toBeNull();
+  });
+
+  it("treats a missing upload as cancelled when initiation fails before creation", async () => {
+    const uploadId = randomUUID();
+    const api = uploadApi(uploadId);
+    const store = memoryStore();
+    const controller = new AbortController();
+    let rejectInitiate: (reason?: unknown) => void = () => undefined;
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(uploadId);
+    api.initiate.mockImplementation(
+      () =>
+        new Promise<ReturnType<typeof summary>>((_resolve, reject) => {
+          rejectInitiate = reject;
+        }),
+    );
+    api.abort.mockRejectedValue(
+      Object.assign(new Error("Upload was not created"), { data: { code: "NOT_FOUND" } }),
+    );
+
+    const result = runResumableFileUpload({
+      api,
+      file: new File(["abcdefgh"], "strong.csv", { type: "text/csv" }),
+      importType: "strong-csv",
+      providerId: "strong-csv",
+      sessionStore: store,
+      signal: controller.signal,
+      onProgress: vi.fn(),
+      weightUnit: "kg",
+    });
+    await vi.waitFor(() => expect(api.initiate).toHaveBeenCalledOnce());
+
+    controller.abort();
+    rejectInitiate(new Error("Initiation did not reach the server"));
+
+    await expect(result).rejects.toMatchObject({ name: "AbortError", message: "Upload cancelled" });
+    expect(api.abort).toHaveBeenCalledWith({ uploadId });
+    expect(store.value).toBeNull();
+  });
+
+  it("surfaces local upload-session cleanup failures after cancellation", async () => {
+    const uploadId = randomUUID();
+    const api = uploadApi(uploadId);
+    const store = memoryStore();
+    const deleteError = new Error("Upload session could not be removed");
+    const deleteSession = vi.spyOn(store, "delete").mockRejectedValue(deleteError);
+    const controller = new AbortController();
+    let rejectInitiate: (reason?: unknown) => void = () => undefined;
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(uploadId);
+    api.initiate.mockImplementation(
+      () =>
+        new Promise<ReturnType<typeof summary>>((_resolve, reject) => {
+          rejectInitiate = reject;
+        }),
+    );
+
+    const result = runResumableFileUpload({
+      api,
+      file: new File(["abcdefgh"], "strong.csv", { type: "text/csv" }),
+      importType: "strong-csv",
+      providerId: "strong-csv",
+      sessionStore: store,
+      signal: controller.signal,
+      onProgress: vi.fn(),
+      weightUnit: "kg",
+    });
+    await vi.waitFor(() => expect(api.initiate).toHaveBeenCalledOnce());
+
+    controller.abort();
+    rejectInitiate(new Error("Initiation response was lost"));
+
+    await expect(result).rejects.toBe(deleteError);
+    expect(api.abort).toHaveBeenCalledWith({ uploadId });
+    expect(deleteSession).toHaveBeenCalledWith("strong-csv");
+  });
+
+  it.each([
+    ["a generic abort failure", new Error("Unable to abort upload")],
+    ["a null abort failure", null],
+    [
+      "a malformed error data payload",
+      Object.assign(new Error("Malformed error data"), { data: "NOT_FOUND" }),
+    ],
+    [
+      "a conflicting server error",
+      Object.assign(new Error("Upload cannot be aborted"), { data: { code: "CONFLICT" } }),
+    ],
+  ])("surfaces %s after cancellation", async (_label, abortError) => {
+    const uploadId = randomUUID();
+    const api = uploadApi(uploadId);
+    const store = memoryStore();
+    const controller = new AbortController();
+    let rejectInitiate: (reason?: unknown) => void = () => undefined;
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(uploadId);
+    api.initiate.mockImplementation(
+      () =>
+        new Promise<ReturnType<typeof summary>>((_resolve, reject) => {
+          rejectInitiate = reject;
+        }),
+    );
+    api.abort.mockRejectedValue(abortError);
+
+    const result = runResumableFileUpload({
+      api,
+      file: new File(["abcdefgh"], "strong.csv", { type: "text/csv" }),
+      importType: "strong-csv",
+      providerId: "strong-csv",
+      sessionStore: store,
+      signal: controller.signal,
+      onProgress: vi.fn(),
+      weightUnit: "kg",
+    });
+    await vi.waitFor(() => expect(api.initiate).toHaveBeenCalledOnce());
+
+    controller.abort();
+    rejectInitiate(new Error("Initiation response was lost"));
+
+    await expect(result).rejects.toBe(abortError);
+    expect(api.abort).toHaveBeenCalledWith({ uploadId });
+  });
+
+  it("does not persist or queue an upload cancelled while resuming", async () => {
+    const uploadId = randomUUID();
+    const api = uploadApi(uploadId);
+    const store = memoryStore();
+    const controller = new AbortController();
+    let resolveResume: (value: { upload: ReturnType<typeof summary>; parts: [] }) => void = () =>
+      undefined;
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(uploadId);
+    api.resume.mockImplementation(
+      () =>
+        new Promise<{ upload: ReturnType<typeof summary>; parts: [] }>((resolve) => {
+          resolveResume = resolve;
+        }),
+    );
+
+    const result = runResumableFileUpload({
+      api,
+      file: new File(["abcdefgh"], "strong.csv", { type: "text/csv" }),
+      importType: "strong-csv",
+      providerId: "strong-csv",
+      sessionStore: store,
+      signal: controller.signal,
+      onProgress: vi.fn(),
+      weightUnit: "kg",
+    });
+    await vi.waitFor(() => expect(api.resume).toHaveBeenCalledWith({ uploadId }));
+
+    controller.abort();
+    resolveResume({ upload: summary(uploadId), parts: [] });
+
+    await expect(result).rejects.toMatchObject({ name: "AbortError", message: "Upload cancelled" });
+    expect(api.abort).toHaveBeenCalledWith({ uploadId });
+    expect(store.value).toBeNull();
+    expect(api.complete).not.toHaveBeenCalled();
+  });
+
+  it("keeps a queued import when cancellation races completion", async () => {
+    const uploadId = randomUUID();
+    const api = uploadApi(uploadId);
+    const store = memoryStore();
+    const controller = new AbortController();
+    const queued = {
+      ...summary(uploadId),
+      state: "queued",
+      importJobId: `file-import-${uploadId}`,
+    };
+    let resolveComplete: (value: typeof queued) => void = () => undefined;
+    api.complete.mockImplementation(
+      () =>
+        new Promise<typeof queued>((resolve) => {
+          resolveComplete = resolve;
+        }),
+    );
+    api.abort.mockRejectedValue(new Error("Queued imports cannot be aborted"));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 200, headers: { etag: "etag" } })),
+    );
+
+    const result = runResumableFileUpload({
+      api,
+      file: new File(["abc"], "activity.fit"),
+      importType: "fit-file",
+      providerId: "fit-file",
+      sessionStore: store,
+      signal: controller.signal,
+      onProgress: vi.fn(),
+    });
+    await vi.waitFor(() => expect(api.complete).toHaveBeenCalledOnce());
+
+    controller.abort();
+    resolveComplete(queued);
+
+    await expect(result).resolves.toEqual(queued);
+    expect(api.abort).not.toHaveBeenCalled();
+    expect(store.value).toBeNull();
+  });
+
+  it("does not abort a completed import when local session cleanup fails", async () => {
+    const api = uploadApi(randomUUID(), [{ partNumber: 1, etag: "etag", sizeBytes: 3 }]);
+    const store = memoryStore();
+    const controller = new AbortController();
+    const deleteError = new Error("Upload session could not be removed");
+    const deleteSession = vi.spyOn(store, "delete").mockImplementation(async () => {
+      controller.abort();
+      throw deleteError;
+    });
+
+    await expect(
+      runResumableFileUpload({
+        api,
+        file: new File(["abc"], "activity.fit"),
+        importType: "fit-file",
+        providerId: "fit-file",
+        sessionStore: store,
+        signal: controller.signal,
+        onProgress: vi.fn(),
+      }),
+    ).rejects.toBe(deleteError);
+
+    expect(api.abort).not.toHaveBeenCalled();
+    expect(deleteSession).toHaveBeenCalledOnce();
+  });
+
+  it("waits for concurrent workers before removing a cancelled upload session", async () => {
+    const uploadId = randomUUID();
+    const api = uploadApi(uploadId);
+    const controller = new AbortController();
+    let putCount = 0;
+    let releaseLateWrite: () => void = () => undefined;
+    const lateWrite = new Promise<void>((resolve) => {
+      releaseLateWrite = resolve;
+    });
+    const store: UploadSessionStore & { value: StoredUploadSession | null } = {
+      value: null,
+      async get() {
+        return this.value;
+      },
+      async put(session) {
+        putCount++;
+        if (putCount === 2) await lateWrite;
+        this.value = structuredClone(session);
+      },
+      async delete() {
+        this.value = null;
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, request: RequestInit) => {
+        if (url.includes("/1/")) {
+          return new Promise<Response>((_resolve, reject) => {
+            request.signal?.addEventListener(
+              "abort",
+              () => reject(new DOMException("Upload cancelled", "AbortError")),
+              { once: true },
+            );
+          });
+        }
+        return Promise.resolve(new Response(null, { status: 200, headers: { etag: "etag-2" } }));
+      }),
+    );
+
+    const result = runResumableFileUpload({
+      api,
+      file: new File(["abcdefghij"], "activity.fit"),
+      importType: "fit-file",
+      providerId: "fit-file",
+      sessionStore: store,
+      signal: controller.signal,
+      onProgress: vi.fn(),
+    });
+    await vi.waitFor(() => expect(putCount).toBe(2));
+
+    controller.abort();
+    setTimeout(releaseLateWrite, 0);
+
+    await expect(result).rejects.toMatchObject({ name: "AbortError", message: "Upload cancelled" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(store.value).toBeNull();
+  });
+
   it("uploads exact part boundaries and persists sorted completion progress", async () => {
     const uploadId = randomUUID();
     const api = uploadApi(uploadId);
@@ -423,6 +892,7 @@ describe("runResumableFileUpload", () => {
     const controller = new AbortController();
     controller.abort();
     const api = uploadApi(randomUUID());
+    const store = memoryStore();
 
     await expect(
       runResumableFileUpload({
@@ -430,12 +900,14 @@ describe("runResumableFileUpload", () => {
         file: new File(["abc"], "activity.fit"),
         importType: "fit-file",
         providerId: "fit-file",
-        sessionStore: memoryStore(),
+        sessionStore: store,
         signal: controller.signal,
         onProgress: vi.fn(),
       }),
     ).rejects.toMatchObject({ name: "AbortError", message: "Upload cancelled" });
+    expect(api.abort).not.toHaveBeenCalled();
     expect(api.authorizeParts).not.toHaveBeenCalled();
+    expect(store.value).toBeNull();
   });
 });
 
@@ -498,6 +970,7 @@ describe("indexedDbUploadSessionStore", () => {
     sha256: "a".repeat(64),
     partSizeBytes: 5,
     completedParts: [{ partNumber: 1, etag: "etag" }],
+    weightUnit: "lbs",
   };
 
   it("creates the session store and reads validated sessions", async () => {

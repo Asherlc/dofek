@@ -483,7 +483,7 @@ export class StravaProvider implements WebhookProvider {
     const response = await this.#fetchFn(url.toString(), { method: "DELETE" });
     if (!response.ok && response.status !== 404) {
       const text = await response.text();
-      logger.warn(`[strava] Failed to unregister webhook ${subscriptionId}: ${text}`);
+      throw new Error(`Strava webhook removal failed (${response.status}): ${text}`);
     }
   }
 
@@ -549,7 +549,6 @@ export class StravaProvider implements WebhookProvider {
     const fetchFn = this.#fetchFn;
     return {
       oauthConfig: config,
-      reconnectStrategy: "revoke-then-replace",
       exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn),
       revokeExistingTokens: async (tokens) => {
         const token = tokens.refreshToken ?? tokens.accessToken;

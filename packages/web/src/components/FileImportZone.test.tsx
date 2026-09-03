@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { UnitContext } from "../lib/unitContext.ts";
 
 const mocks = vi.hoisted(() => ({
   abort: vi.fn(),
@@ -14,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   sessionGet: vi.fn(async (): Promise<unknown> => null),
   sessionDelete: vi.fn(),
   invalidateAvailableDataTypes: vi.fn(),
+  invalidateActiveImports: vi.fn(),
   invalidateLogs: vi.fn(),
   invalidateProviderStats: vi.fn(),
   invalidateRecords: vi.fn(),
@@ -38,7 +40,10 @@ vi.mock("../lib/trpc.ts", () => {
       logs: { invalidate: mocks.invalidateLogs },
       records: { invalidate: mocks.invalidateRecords },
     },
-    sync: { providerStats: { invalidate: mocks.invalidateProviderStats } },
+    sync: {
+      activeImports: { invalidate: mocks.invalidateActiveImports },
+      providerStats: { invalidate: mocks.invalidateProviderStats },
+    },
   };
   return {
     trpc: {
@@ -105,6 +110,50 @@ describe("FileImportZone", () => {
     expect(screen.getByText(".csv export from Strong app")).toBeTruthy();
   });
 
+  it("offers Strong weight units, defaults to imperial pounds, and uploads the selection", async () => {
+    mocks.runUpload.mockResolvedValue({
+      uploadId: "00000000-0000-4000-8000-0000000000f7",
+      state: "queued",
+      partSizeBytes: 16 * 1024 * 1024,
+      importJobId: "file-import-00000000-0000-4000-8000-0000000000f7",
+    });
+    mocks.resume.mockResolvedValue({
+      upload: { state: "completed", progressPercent: 100 },
+      parts: [],
+    });
+    render(
+      <UnitContext.Provider value={{ unitSystem: "imperial", setUnitSystem: () => {} }}>
+        <FileImportZone
+          providerId="strong-csv"
+          importType="strong-csv"
+          title="Strong"
+          description=".csv export from Strong app"
+          accept=".csv"
+        />
+      </UnitContext.Provider>,
+    );
+
+    const weightUnit = screen.getByRole("combobox", { name: "Weight unit" });
+    expect(weightUnit).toHaveValue("lbs");
+    expect(screen.getByRole("option", { name: "kg" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "lbs" })).toBeTruthy();
+
+    fireEvent.change(weightUnit, { target: { value: "kg" } });
+    fireEvent.drop(screen.getByRole("region", { name: "Strong file drop zone" }), {
+      dataTransfer: { files: [new File(["strong-data"], "strong.csv", { type: "text/csv" })] },
+    });
+
+    await waitFor(() =>
+      expect(mocks.runUpload).toHaveBeenCalledWith(
+        expect.objectContaining({
+          importType: "strong-csv",
+          onUploadInitiated: expect.any(Function),
+          weightUnit: "kg",
+        }),
+      ),
+    );
+  });
+
   it("starts the resumable upload protocol for a dropped file", async () => {
     mocks.runUpload.mockImplementation(async ({ onProgress }) => {
       onProgress({ phase: "uploading", percentage: 42, message: "Uploaded 1 of 3 parts" });
@@ -129,6 +178,7 @@ describe("FileImportZone", () => {
       />,
     );
 
+    expect(screen.queryByRole("combobox", { name: "Weight unit" })).toBeNull();
     fireEvent.drop(screen.getByRole("region", { name: "Garmin file drop zone" }), {
       dataTransfer: { files: [new File(["zip-data"], "garmin.zip", { type: "application/zip" })] },
     });
@@ -141,6 +191,33 @@ describe("FileImportZone", () => {
     expect(mocks.invalidateLogs).toHaveBeenCalledWith({ providerId: "garmin-dump" });
     expect(mocks.invalidateProviderStats).toHaveBeenCalledOnce();
     expect(mocks.invalidateRecords).toHaveBeenCalledOnce();
+  });
+
+  it("reports an unexpected upload failure with the actionable fallback message", async () => {
+    mocks.runUpload.mockRejectedValue("connection reset");
+    render(
+      <FileImportZone
+        providerId="garmin-dump"
+        importType="garmin-dump"
+        title="Garmin"
+        description=".zip account export"
+        accept=".zip"
+      />,
+    );
+
+    const input = screen
+      .getByRole("region", { name: "Garmin file drop zone" })
+      .querySelector("input");
+    if (!input) throw new Error("Expected the file input");
+    fireEvent.change(input, {
+      target: { files: [new File(["zip-data"], "garmin.zip", { type: "application/zip" })] },
+    });
+
+    await waitFor(() => expect(screen.getByText("Upload failed")).toBeTruthy());
+    expect(mocks.captureException).toHaveBeenCalledWith(
+      "connection reset",
+      expect.objectContaining({ tags: { uploadId: "pending" } }),
+    );
   });
 
   it("keeps an upload active across mutation-result rerenders", async () => {
@@ -179,6 +256,228 @@ describe("FileImportZone", () => {
 
     await waitFor(() => expect(screen.getByText("Uploading Kaya export...")).toBeTruthy());
     expect(uploadSignal?.aborted).toBe(false);
+  });
+
+  it("does not restore a stale session after a new upload starts", async () => {
+    let resolveSession: (value: unknown) => void = () => undefined;
+    mocks.sessionGet.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSession = resolve;
+        }),
+    );
+    mocks.runUpload.mockResolvedValue({
+      uploadId: "00000000-0000-4000-8000-0000000000f7",
+      state: "queued",
+      partSizeBytes: 16 * 1024 * 1024,
+      importJobId: "file-import-00000000-0000-4000-8000-0000000000f7",
+    });
+    mocks.resume.mockReturnValue(new Promise(() => undefined));
+    render(
+      <FileImportZone
+        providerId="strong-csv"
+        importType="strong-csv"
+        title="Strong"
+        description=".csv export from Strong app"
+        accept=".csv"
+      />,
+    );
+
+    fireEvent.drop(screen.getByRole("region", { name: "Strong file drop zone" }), {
+      dataTransfer: { files: [new File(["strong-data"], "strong.csv", { type: "text/csv" })] },
+    });
+    await waitFor(() => expect(mocks.runUpload).toHaveBeenCalledOnce());
+
+    await act(async () => resolveSession({ uploadId: "saved-upload" }));
+
+    expect(screen.queryByText("Select the same file to resume upload")).toBeNull();
+    expect(mocks.resume).toHaveBeenCalledWith({
+      uploadId: "00000000-0000-4000-8000-0000000000f7",
+    });
+  });
+
+  it("ignores a stale session lookup failure after a new upload starts", async () => {
+    let rejectSession: (error: Error) => void = () => undefined;
+    mocks.sessionGet.mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectSession = reject;
+        }),
+    );
+    mocks.runUpload.mockResolvedValue({
+      uploadId: "00000000-0000-4000-8000-0000000000f7",
+      state: "queued",
+      partSizeBytes: 16 * 1024 * 1024,
+      importJobId: "file-import-00000000-0000-4000-8000-0000000000f7",
+    });
+    mocks.resume.mockReturnValue(new Promise(() => undefined));
+    render(
+      <FileImportZone
+        providerId="strong-csv"
+        importType="strong-csv"
+        title="Strong"
+        description=".csv export from Strong app"
+        accept=".csv"
+      />,
+    );
+
+    fireEvent.drop(screen.getByRole("region", { name: "Strong file drop zone" }), {
+      dataTransfer: { files: [new File(["strong-data"], "strong.csv", { type: "text/csv" })] },
+    });
+    await waitFor(() => expect(mocks.runUpload).toHaveBeenCalledOnce());
+
+    await act(async () => rejectSession(new Error("late session lookup failure")));
+
+    expect(screen.queryByText("Upload session storage is unavailable")).toBeNull();
+    expect(mocks.captureException).not.toHaveBeenCalled();
+  });
+
+  it("ignores a second file dropped while an import is processing", async () => {
+    mocks.runUpload.mockResolvedValue({
+      uploadId: "00000000-0000-4000-8000-0000000000f7",
+      state: "queued",
+      partSizeBytes: 16 * 1024 * 1024,
+      importJobId: "file-import-00000000-0000-4000-8000-0000000000f7",
+    });
+    mocks.resume.mockReturnValue(new Promise(() => undefined));
+    render(
+      <FileImportZone
+        providerId="strong-csv"
+        importType="strong-csv"
+        title="Strong"
+        description=".csv export from Strong app"
+        accept=".csv"
+      />,
+    );
+
+    const dropZone = screen.getByRole("region", { name: "Strong file drop zone" });
+    fireEvent.drop(dropZone, {
+      dataTransfer: { files: [new File(["first"], "first.csv", { type: "text/csv" })] },
+    });
+    await waitFor(() => expect(mocks.resume).toHaveBeenCalledOnce());
+
+    fireEvent.drop(dropZone, {
+      dataTransfer: { files: [new File(["second"], "second.csv", { type: "text/csv" })] },
+    });
+
+    expect(mocks.runUpload).toHaveBeenCalledOnce();
+  });
+
+  it("does not start a new upload while a server import is active", async () => {
+    mocks.sessionGet.mockResolvedValue({ uploadId: "saved-upload" });
+    mocks.resume.mockReturnValue(new Promise(() => undefined));
+    render(
+      <FileImportZone
+        providerId="strong-csv"
+        importType="strong-csv"
+        title="Strong"
+        description=".csv export from Strong app"
+        accept=".csv"
+        activeImport={{
+          jobId: "file-import-00000000-0000-4000-8000-0000000000f7",
+          status: "running",
+        }}
+      />,
+    );
+    await waitFor(() => expect(mocks.resume).toHaveBeenCalledOnce());
+    expect(screen.queryByText("Select the same file to resume upload")).toBeNull();
+
+    fireEvent.drop(screen.getByRole("region", { name: "Strong file drop zone" }), {
+      dataTransfer: { files: [new File(["strong-data"], "strong.csv", { type: "text/csv" })] },
+    });
+
+    expect(mocks.runUpload).not.toHaveBeenCalled();
+  });
+
+  it("starts a replacement upload after cancelling an active server import", async () => {
+    mocks.resume.mockResolvedValue({
+      upload: { state: "queued", progressPercent: 20 },
+      parts: [],
+    });
+    mocks.runUpload.mockReturnValue(new Promise(() => undefined));
+    render(
+      <FileImportZone
+        providerId="strong-csv"
+        importType="strong-csv"
+        title="Strong"
+        description=".csv export from Strong app"
+        accept=".csv"
+        activeImport={{
+          jobId: "file-import-00000000-0000-4000-8000-0000000000f7",
+          status: "running",
+        }}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    await waitFor(() =>
+      expect(mocks.abort).toHaveBeenCalledWith({
+        uploadId: "00000000-0000-4000-8000-0000000000f7",
+      }),
+    );
+    expect(mocks.invalidateActiveImports).toHaveBeenCalledOnce();
+
+    fireEvent.drop(screen.getByRole("region", { name: "Strong file drop zone" }), {
+      dataTransfer: { files: [new File(["replacement"], "replacement.csv", { type: "text/csv" })] },
+    });
+
+    expect(mocks.runUpload).toHaveBeenCalledOnce();
+  });
+
+  it("continues polling an import committed as cancellation races local completion", async () => {
+    const uploadId = "00000000-0000-4000-8000-0000000000f7";
+    let resolveUpload: (value: {
+      uploadId: string;
+      state: string;
+      partSizeBytes: number;
+      importJobId: string;
+    }) => void = () => undefined;
+    mocks.runUpload.mockImplementation(
+      ({
+        onProgress,
+        onUploadInitiated,
+      }: {
+        onProgress: (progress: { phase: "queueing"; percentage: number; message: string }) => void;
+        onUploadInitiated: (id: string) => void;
+      }) => {
+        onUploadInitiated(uploadId);
+        onProgress({ phase: "queueing", percentage: 95, message: "Queueing import..." });
+        return new Promise((resolve) => {
+          resolveUpload = resolve;
+        });
+      },
+    );
+    mocks.resume.mockResolvedValue({
+      upload: { state: "completed", progressPercent: 100 },
+      parts: [],
+    });
+    render(
+      <FileImportZone
+        providerId="strong-csv"
+        importType="strong-csv"
+        title="Strong"
+        description=".csv export from Strong app"
+        accept=".csv"
+      />,
+    );
+
+    fireEvent.drop(screen.getByRole("region", { name: "Strong file drop zone" }), {
+      dataTransfer: { files: [new File(["strong-data"], "strong.csv", { type: "text/csv" })] },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+
+    await act(async () =>
+      resolveUpload({
+        uploadId,
+        state: "queued",
+        partSizeBytes: 16 * 1024 * 1024,
+        importJobId: `file-import-${uploadId}`,
+      }),
+    );
+
+    await waitFor(() => expect(mocks.resume).toHaveBeenCalledWith({ uploadId }));
+    await waitFor(() => expect(screen.getByText("Import completed")).toBeTruthy());
+    expect(mocks.abort).not.toHaveBeenCalled();
   });
 
   it("prompts for the same file when resumable metadata exists", async () => {
@@ -368,14 +667,12 @@ describe("FileImportZone", () => {
     expect(mocks.abort).toHaveBeenCalledWith({
       uploadId: "00000000-0000-4000-8000-0000000000f7",
     });
+    expect(mocks.invalidateActiveImports).toHaveBeenCalledOnce();
     expect(mocks.captureException).toHaveBeenCalledWith(expect.any(Error), {
       tags: { uploadId: "00000000-0000-4000-8000-0000000000f7" },
     });
-    await waitFor(() =>
-      expect(
-        screen.getByText("Upload cancelled locally. Server cancellation is unavailable"),
-      ).toBeTruthy(),
-    );
+    await waitFor(() => expect(mocks.resume).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("Import queued...")).toBeTruthy();
   });
 
   it("cancels an in-flight local upload before it has a server upload ID", async () => {
@@ -416,5 +713,113 @@ describe("FileImportZone", () => {
     await waitFor(() => expect(screen.getByText("Upload cancelled")).toBeTruthy());
     expect(mocks.abort).not.toHaveBeenCalled();
     expect(mocks.sessionDelete).not.toHaveBeenCalled();
+  });
+
+  it("renders an import without a provider link and accepts drag state changes", () => {
+    render(
+      <FileImportZone
+        importType="fit-file"
+        title="FIT File"
+        description="A local FIT activity export"
+        accept=".fit"
+        showDetailsLink={false}
+        recentLogs={[
+          {
+            id: "sync-success",
+            status: "success",
+            syncedAt: "2026-01-01T00:00:00.000Z",
+            recordCount: 1,
+            durationMs: 10,
+            dataType: "activity",
+            errorMessage: null,
+            authFailureReason: null,
+          },
+          {
+            id: "sync-error",
+            status: "error",
+            syncedAt: "2026-01-02T00:00:00.000Z",
+            recordCount: 0,
+            durationMs: 10,
+            dataType: "activity",
+            errorMessage: "Provider unavailable",
+            authFailureReason: null,
+          },
+        ]}
+      />,
+    );
+
+    const dropZone = screen.getByRole("region", { name: "FIT File file drop zone" });
+    fireEvent.dragOver(dropZone);
+    expect(dropZone.className).toContain("border-blue-500");
+    fireEvent.dragLeave(dropZone);
+    expect(dropZone.className).toContain("border-border-strong");
+    fireEvent.drop(dropZone, { dataTransfer: { files: [] } });
+
+    expect(screen.queryByRole("link", { name: "Details" })).toBeNull();
+  });
+
+  it("reports terminal upload failures and expiry messages", async () => {
+    mocks.resume.mockResolvedValueOnce({
+      upload: { state: "failed", progressPercent: 40, errorMessage: null },
+      parts: [],
+    });
+    const { rerender } = render(
+      <FileImportZone
+        providerId="garmin-dump"
+        importType="garmin-dump"
+        title="Garmin"
+        description=".zip account export"
+        accept=".zip"
+        activeImport={{ jobId: "file-import-failed", status: "running" }}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByText("Import failed")).toBeTruthy());
+
+    mocks.resume.mockResolvedValueOnce({
+      upload: { state: "expired", progressPercent: 20 },
+      parts: [],
+    });
+    rerender(
+      <FileImportZone
+        providerId="garmin-dump"
+        importType="garmin-dump"
+        title="Garmin"
+        description=".zip account export"
+        accept=".zip"
+        activeImport={{ jobId: "file-import-expired", status: "running" }}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByText("Upload expired")).toBeTruthy());
+  });
+
+  it("surfaces failed local cleanup after cancelling a server upload", async () => {
+    mocks.resume.mockResolvedValue({
+      upload: { state: "queued", progressPercent: 20 },
+      parts: [],
+    });
+    mocks.sessionDelete.mockRejectedValue(new Error("Local upload cleanup failed"));
+
+    render(
+      <FileImportZone
+        providerId="garmin-dump"
+        importType="garmin-dump"
+        title="Garmin"
+        description=".zip account export"
+        accept=".zip"
+        activeImport={{
+          jobId: "file-import-00000000-0000-4000-8000-0000000000f7",
+          status: "running",
+        }}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(screen.getByText("Local upload cleanup failed")).toBeTruthy());
+    expect(mocks.captureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { uploadId: "00000000-0000-4000-8000-0000000000f7" },
+    });
   });
 });
