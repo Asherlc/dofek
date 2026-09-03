@@ -69,7 +69,11 @@ function matchesCsvHeader(csvHeaderLine: string, requiredColumns: string[]): boo
 function isCsvLike(fileExtension: string, mimeType: string | null): boolean {
   if (fileExtension === ".csv") return true;
   const lowerMimeType = (mimeType ?? "").toLowerCase();
-  return lowerMimeType.includes("csv") || lowerMimeType.includes("text/plain");
+  return (
+    lowerMimeType.includes("csv") ||
+    lowerMimeType.includes("text/plain") ||
+    (fileExtension === "" && lowerMimeType.startsWith("application/octet-stream"))
+  );
 }
 
 function isAppleHealthLike(fileExtension: string, mimeType: string | null): boolean {

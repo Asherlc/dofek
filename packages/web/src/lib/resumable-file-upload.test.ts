@@ -374,6 +374,78 @@ describe("runResumableFileUpload", () => {
     expect(store.value).toBeNull();
   });
 
+  it("aborts an upload when its initiation response is lost after cancellation", async () => {
+    const uploadId = randomUUID();
+    const api = uploadApi(uploadId);
+    const store = memoryStore();
+    const controller = new AbortController();
+    let rejectInitiate: (reason?: unknown) => void = () => undefined;
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(uploadId);
+    api.initiate.mockImplementation(
+      () =>
+        new Promise<ReturnType<typeof summary>>((_resolve, reject) => {
+          rejectInitiate = reject;
+        }),
+    );
+
+    const result = runResumableFileUpload({
+      api,
+      file: new File(["abcdefgh"], "strong.csv", { type: "text/csv" }),
+      importType: "strong-csv",
+      providerId: "strong-csv",
+      sessionStore: store,
+      signal: controller.signal,
+      onProgress: vi.fn(),
+      weightUnit: "kg",
+    });
+    await vi.waitFor(() => expect(api.initiate).toHaveBeenCalledOnce());
+
+    controller.abort();
+    rejectInitiate(new Error("Initiation response was lost"));
+
+    await expect(result).rejects.toMatchObject({ name: "AbortError", message: "Upload cancelled" });
+    expect(api.abort).toHaveBeenCalledWith({ uploadId });
+    expect(api.resume).not.toHaveBeenCalled();
+    expect(store.value).toBeNull();
+  });
+
+  it("treats a missing upload as cancelled when initiation fails before creation", async () => {
+    const uploadId = randomUUID();
+    const api = uploadApi(uploadId);
+    const store = memoryStore();
+    const controller = new AbortController();
+    let rejectInitiate: (reason?: unknown) => void = () => undefined;
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(uploadId);
+    api.initiate.mockImplementation(
+      () =>
+        new Promise<ReturnType<typeof summary>>((_resolve, reject) => {
+          rejectInitiate = reject;
+        }),
+    );
+    api.abort.mockRejectedValue(
+      Object.assign(new Error("Upload was not created"), { data: { code: "NOT_FOUND" } }),
+    );
+
+    const result = runResumableFileUpload({
+      api,
+      file: new File(["abcdefgh"], "strong.csv", { type: "text/csv" }),
+      importType: "strong-csv",
+      providerId: "strong-csv",
+      sessionStore: store,
+      signal: controller.signal,
+      onProgress: vi.fn(),
+      weightUnit: "kg",
+    });
+    await vi.waitFor(() => expect(api.initiate).toHaveBeenCalledOnce());
+
+    controller.abort();
+    rejectInitiate(new Error("Initiation did not reach the server"));
+
+    await expect(result).rejects.toMatchObject({ name: "AbortError", message: "Upload cancelled" });
+    expect(api.abort).toHaveBeenCalledWith({ uploadId });
+    expect(store.value).toBeNull();
+  });
+
   it("does not persist or queue an upload cancelled while resuming", async () => {
     const uploadId = randomUUID();
     const api = uploadApi(uploadId);
@@ -408,6 +480,48 @@ describe("runResumableFileUpload", () => {
     expect(api.abort).toHaveBeenCalledWith({ uploadId });
     expect(store.value).toBeNull();
     expect(api.complete).not.toHaveBeenCalled();
+  });
+
+  it("keeps a queued import when cancellation races completion", async () => {
+    const uploadId = randomUUID();
+    const api = uploadApi(uploadId);
+    const store = memoryStore();
+    const controller = new AbortController();
+    const queued = {
+      ...summary(uploadId),
+      state: "queued",
+      importJobId: `file-import-${uploadId}`,
+    };
+    let resolveComplete: (value: typeof queued) => void = () => undefined;
+    api.complete.mockImplementation(
+      () =>
+        new Promise<typeof queued>((resolve) => {
+          resolveComplete = resolve;
+        }),
+    );
+    api.abort.mockRejectedValue(new Error("Queued imports cannot be aborted"));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 200, headers: { etag: "etag" } })),
+    );
+
+    const result = runResumableFileUpload({
+      api,
+      file: new File(["abc"], "activity.fit"),
+      importType: "fit-file",
+      providerId: "fit-file",
+      sessionStore: store,
+      signal: controller.signal,
+      onProgress: vi.fn(),
+    });
+    await vi.waitFor(() => expect(api.complete).toHaveBeenCalledOnce());
+
+    controller.abort();
+    resolveComplete(queued);
+
+    await expect(result).resolves.toEqual(queued);
+    expect(api.abort).not.toHaveBeenCalled();
+    expect(store.value).toBeNull();
   });
 
   it("waits for concurrent workers before removing a cancelled upload session", async () => {

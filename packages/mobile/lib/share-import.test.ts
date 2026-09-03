@@ -126,7 +126,7 @@ describe("importSharedFile", () => {
     const file: UploadableMobileFile & { text(): Promise<string> } = {
       uri: "file:///var/mobile/Containers/Data/Application/CEC2FED0-57D4-41EA-B252-288126334734/tmp/com.dofek.app-Inbox/strong_workouts.csv",
       name: "export",
-      type: "text/csv",
+      type: "application/octet-stream",
       size: 80,
       text: vi.fn(
         async () => "Date,Workout Name,Duration,Exercise Name\\n2026-03-10,Leg Day,00:45:00,Squat",

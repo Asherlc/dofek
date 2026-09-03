@@ -160,13 +160,27 @@ function throwIfUploadCancelled(signal: AbortSignal): void {
 async function cleanUpCancelledUpload(
   options: RunUploadOptions,
   uploadId: string | null,
-  initiated: boolean,
+  initiationMayHaveReachedServer: boolean,
 ): Promise<void> {
-  const cleanup: Array<Promise<unknown>> = [options.sessionStore.delete(options.providerId)];
-  if (initiated && uploadId) cleanup.unshift(options.api.abort({ uploadId }));
-  const results = await Promise.allSettled(cleanup);
-  const failure = results.find((result) => result.status === "rejected");
-  if (failure?.status === "rejected") throw failure.reason;
+  const deleteSession = options.sessionStore.delete(options.providerId);
+  if (!initiationMayHaveReachedServer || !uploadId) {
+    await deleteSession;
+    return;
+  }
+  const [abortResult, deleteResult] = await Promise.allSettled([
+    options.api.abort({ uploadId }),
+    deleteSession,
+  ]);
+  if (deleteResult.status === "rejected") throw deleteResult.reason;
+  if (abortResult.status === "rejected" && !isUploadNotFoundError(abortResult.reason)) {
+    throw abortResult.reason;
+  }
+}
+
+function isUploadNotFoundError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null || !("data" in error)) return false;
+  const data = error.data;
+  return typeof data === "object" && data !== null && "code" in data && data.code === "NOT_FOUND";
 }
 
 function sleep(milliseconds: number, signal: AbortSignal): Promise<void> {
@@ -221,7 +235,8 @@ async function uploadPartWithRetry(
 
 export async function runResumableFileUpload(options: RunUploadOptions): Promise<UploadSummary> {
   let uploadId: string | null = null;
-  let initiated = false;
+  let initiationMayHaveReachedServer = false;
+  let completionCommitted = false;
   try {
     options.onProgress({ phase: "preparing", percentage: 0, message: "Preparing upload..." });
     throwIfUploadCancelled(options.signal);
@@ -245,6 +260,7 @@ export async function runResumableFileUpload(options: RunUploadOptions): Promise
       storedSession && sessionMatchesFile(storedSession, options.file, sha256, effectiveWeightUnit)
         ? storedSession.uploadId
         : crypto.randomUUID();
+    initiationMayHaveReachedServer = true;
     const initiatedUpload = await options.api.initiate({
       uploadId,
       importType: options.importType,
@@ -255,7 +271,6 @@ export async function runResumableFileUpload(options: RunUploadOptions): Promise
       fullSync: options.fullSync,
       weightUnit: effectiveWeightUnit,
     });
-    initiated = true;
     throwIfUploadCancelled(options.signal);
     options.onUploadInitiated?.(uploadId);
     const resumed = await options.api.resume({ uploadId });
@@ -331,12 +346,12 @@ export async function runResumableFileUpload(options: RunUploadOptions): Promise
         (first, second) => first.partNumber - second.partNumber,
       ),
     });
-    throwIfUploadCancelled(options.signal);
+    completionCommitted = true;
     await options.sessionStore.delete(options.providerId);
     return completed;
   } catch (error) {
-    if (!options.signal.aborted) throw error;
-    await cleanUpCancelledUpload(options, uploadId, initiated);
+    if (!options.signal.aborted || completionCommitted) throw error;
+    await cleanUpCancelledUpload(options, uploadId, initiationMayHaveReachedServer);
     throw uploadCancelledError();
   }
 }

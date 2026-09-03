@@ -424,6 +424,62 @@ describe("FileImportZone", () => {
     expect(mocks.runUpload).toHaveBeenCalledOnce();
   });
 
+  it("continues polling an import committed as cancellation races local completion", async () => {
+    const uploadId = "00000000-0000-4000-8000-0000000000f7";
+    let resolveUpload: (value: {
+      uploadId: string;
+      state: string;
+      partSizeBytes: number;
+      importJobId: string;
+    }) => void = () => undefined;
+    mocks.runUpload.mockImplementation(
+      ({
+        onProgress,
+        onUploadInitiated,
+      }: {
+        onProgress: (progress: { phase: "queueing"; percentage: number; message: string }) => void;
+        onUploadInitiated: (id: string) => void;
+      }) => {
+        onUploadInitiated(uploadId);
+        onProgress({ phase: "queueing", percentage: 95, message: "Queueing import..." });
+        return new Promise((resolve) => {
+          resolveUpload = resolve;
+        });
+      },
+    );
+    mocks.resume.mockResolvedValue({
+      upload: { state: "completed", progressPercent: 100 },
+      parts: [],
+    });
+    render(
+      <FileImportZone
+        providerId="strong-csv"
+        importType="strong-csv"
+        title="Strong"
+        description=".csv export from Strong app"
+        accept=".csv"
+      />,
+    );
+
+    fireEvent.drop(screen.getByRole("region", { name: "Strong file drop zone" }), {
+      dataTransfer: { files: [new File(["strong-data"], "strong.csv", { type: "text/csv" })] },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+
+    await act(async () =>
+      resolveUpload({
+        uploadId,
+        state: "queued",
+        partSizeBytes: 16 * 1024 * 1024,
+        importJobId: `file-import-${uploadId}`,
+      }),
+    );
+
+    await waitFor(() => expect(mocks.resume).toHaveBeenCalledWith({ uploadId }));
+    await waitFor(() => expect(screen.getByText("Import completed")).toBeTruthy());
+    expect(mocks.abort).not.toHaveBeenCalled();
+  });
+
   it("prompts for the same file when resumable metadata exists", async () => {
     mocks.sessionGet.mockResolvedValue({ uploadId: "saved-upload" });
     render(
@@ -611,14 +667,12 @@ describe("FileImportZone", () => {
     expect(mocks.abort).toHaveBeenCalledWith({
       uploadId: "00000000-0000-4000-8000-0000000000f7",
     });
+    expect(mocks.invalidateActiveImports).toHaveBeenCalledOnce();
     expect(mocks.captureException).toHaveBeenCalledWith(expect.any(Error), {
       tags: { uploadId: "00000000-0000-4000-8000-0000000000f7" },
     });
-    await waitFor(() =>
-      expect(
-        screen.getByText("Upload cancelled locally. Server cancellation is unavailable"),
-      ).toBeTruthy(),
-    );
+    await waitFor(() => expect(mocks.resume).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("Import queued...")).toBeTruthy();
   });
 
   it("cancels an in-flight local upload before it has a server upload ID", async () => {

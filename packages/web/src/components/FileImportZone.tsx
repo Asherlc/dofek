@@ -91,6 +91,7 @@ export function FileImportZone({
   const uploadGenerationRef = useRef(0);
   const currentUploadIdRef = useRef<string | null>(null);
   const cancelledUploadIdRef = useRef<string | null>(null);
+  const pollControllerRef = useRef<AbortController | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stoppedRef = useRef(false);
   const validProviderId = providerId?.length ? providerId : null;
@@ -244,11 +245,15 @@ export function FileImportZone({
         });
       });
     if (activeImportUploadId && activeImportUploadId !== cancelledUploadIdRef.current) {
+      pollControllerRef.current?.abort();
+      pollControllerRef.current = controller;
       void pollUpload(activeImportUploadId, signal);
     }
     return () => {
       stoppedRef.current = true;
       controller.abort();
+      pollControllerRef.current?.abort();
+      pollControllerRef.current = null;
       abortControllerRef.current?.abort();
       if (timerRef.current) clearTimeout(timerRef.current);
     };
@@ -259,6 +264,8 @@ export function FileImportZone({
       if (uploadInProgressRef.current || activeImportInProgress) return;
       const uploadGeneration = ++uploadGenerationRef.current;
       uploadInProgressRef.current = true;
+      pollControllerRef.current?.abort();
+      pollControllerRef.current = null;
       const abortController = new AbortController();
       abortControllerRef.current = abortController;
       localUploadActiveRef.current = true;
@@ -286,8 +293,17 @@ export function FileImportZone({
         });
         localUploadActiveRef.current = false;
         currentUploadIdRef.current = completed.uploadId;
+        const pollController = abortController.signal.aborted
+          ? new AbortController()
+          : abortController;
+        if (pollController !== abortController) {
+          stoppedRef.current = false;
+          cancelledUploadIdRef.current = null;
+          abortControllerRef.current = pollController;
+        }
+        pollControllerRef.current = pollController;
         setState({ phase: "processing", progress: 0, message: "Processing import..." });
-        await pollUpload(completed.uploadId, abortController.signal);
+        await pollUpload(completed.uploadId, pollController.signal);
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
           setState({ phase: "cancelled", progress: 0, message: "Upload cancelled" });
@@ -320,6 +336,7 @@ export function FileImportZone({
   const cancelUpload = useCallback(async () => {
     const localUploadActive = localUploadActiveRef.current;
     abortControllerRef.current?.abort();
+    pollControllerRef.current?.abort();
     stoppedRef.current = true;
     const uploadId = currentUploadIdRef.current;
     cancelledUploadIdRef.current = uploadId;
@@ -328,14 +345,15 @@ export function FileImportZone({
       try {
         await uploadApi.abort({ uploadId });
         setSuccessfullyCancelledUploadId(uploadId);
+      } catch (error) {
+        cancellationError = error;
+        captureException(error, { tags: { uploadId } });
+      } finally {
         try {
           await trpcUtils.sync.activeImports.invalidate();
         } catch (error) {
           captureException(error, { tags: { uploadId } });
         }
-      } catch (error) {
-        cancellationError = error;
-        captureException(error, { tags: { uploadId } });
       }
     }
     if (!localUploadActive && uploadId) {
@@ -351,6 +369,22 @@ export function FileImportZone({
         return;
       }
     }
+    if (!localUploadActive && uploadId && cancellationError) {
+      const pollController = new AbortController();
+      stoppedRef.current = false;
+      cancelledUploadIdRef.current = null;
+      pollControllerRef.current = pollController;
+      setState({
+        phase: "processing",
+        progress: 0,
+        message:
+          cancellationError instanceof Error
+            ? `Unable to cancel import. ${cancellationError.message}`
+            : "Unable to cancel import. Import status is being refreshed.",
+      });
+      void pollUpload(uploadId, pollController.signal);
+      return;
+    }
     setState({
       phase: "cancelled",
       progress: 0,
@@ -359,7 +393,7 @@ export function FileImportZone({
           ? `Upload cancelled locally. ${cancellationError.message}`
           : "Upload cancelled",
     });
-  }, [sessionKey, trpcUtils, uploadApi]);
+  }, [pollUpload, sessionKey, trpcUtils, uploadApi]);
 
   const handleFileSelect = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
