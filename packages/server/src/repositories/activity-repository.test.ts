@@ -467,6 +467,45 @@ describe("ActivityRepository", () => {
       expect(result.items[0]).toHaveProperty("raw_type", "road_cycling");
     });
 
+    it("serializes every unavailable sensor field as null while hydration is pending", async () => {
+      const { repo } = makeRepositoryWithSensorStore([
+        {
+          id: "pending-hydration",
+          canonical_type: "cycling",
+          provider_type: "indoor_cycling",
+          started_at: "2024-01-15T10:00:00.000Z",
+          ended_at: "2024-01-15T11:00:00.000Z",
+          name: "Power Zone Ride",
+          provider_id: "peloton",
+          source_providers: ["peloton"],
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          distance_meters: null,
+          elevation_gain_m: null,
+          total_count: 1,
+        },
+      ]);
+
+      const result = await repo.list({ days: 30, endDate: "2024-02-01", limit: 20, offset: 0 });
+
+      expect(result.items[0]).toMatchObject({
+        avg_hr: null,
+        max_hr: null,
+        avg_power: null,
+        max_power: null,
+        avg_speed: null,
+        max_speed: null,
+        avg_cadence: null,
+        total_distance: null,
+        distance_meters: null,
+        elevation_gain_m: null,
+        elevation_loss_m: null,
+        sample_count: null,
+        location: null,
+      });
+    });
+
     it("hydrates summaries from any member activity id", async () => {
       const { repo, sensorStore } = makeRepositoryWithSensorStore([
         {

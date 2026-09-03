@@ -535,6 +535,17 @@ export class ActivityRepository extends BaseRepository {
   >(row: TRow) {
     const { total_count: _totalCount, member_activity_ids: _memberActivityIds, ...rest } = row;
     return {
+      avg_hr: null,
+      max_hr: null,
+      avg_power: null,
+      max_power: null,
+      avg_speed: null,
+      max_speed: null,
+      avg_cadence: null,
+      total_distance: null,
+      elevation_loss_m: null,
+      sample_count: null,
+      location: null,
       ...rest,
       raw_type: row.provider_type,
       distance_state: activityMeasurementState("Distance", row.distance_meters),
