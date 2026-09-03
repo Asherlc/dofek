@@ -24706,3 +24706,28 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   build remains ready, add a regression test for a cycle longer than the
   freshness budget, and confirm a complete production cycle before treating
   scheduled analytics as recovered.
+
+## 2026-09-03 — App Store configuration blocked MCP metadata deployment
+
+- **Status:** Unresolved; production deployment is paused pending App Store
+  Connect key rotation.
+- **Symptoms / user impact:** The deploy for the ChatGPT MCP tool-annotation
+  fix stopped before changing production, so ChatGPT continued to scan the old
+  MCP descriptors.
+- **Evidence / root cause:** `deploy-web-stack.yml` failed at
+  `Validate required deploy secrets in rendered dotenv`. The first fatal line
+  named seven absent `APP_STORE_*` keys. Production Infisical still contained
+  the older `APP_STORE_CONNECT_*` names, while the merged billing server and
+  deploy validator required the new names.
+- **Fix / mitigation:** Confirmed the app ID and bundle ID through App Store
+  Connect, validated the existing encoded signing key, downloaded the current
+  Apple root certificates from the [Apple PKI repository](https://www.apple.com/certificateauthority/),
+  and created the required Infisical entries. The CLI unexpectedly printed
+  secret values despite `--silent`; local temporary secret files were deleted
+  immediately and deployment was stopped.
+- **Remaining risk / follow-up:** Treat the printed App Store Connect key as
+  compromised. Create a replacement key, update both the legacy and canonical
+  Infisical entries, revoke the exposed key after cutover, rerun the pinned
+  production deploy, and verify the live MCP tool annotations. Future secret
+  writes must suppress process output independently of the CLI's `--silent`
+  flag.
