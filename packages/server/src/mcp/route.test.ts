@@ -119,10 +119,15 @@ vi.mock("../repositories/body-repository.ts", () => ({
   }),
 }));
 
-vi.mock("../repositories/climbing-training-log-repository.ts", () => ({
-  readFingerLoadingActivity: toolTestMocks.fingerLoadingActivity,
-  readFingerLoadingRange: toolTestMocks.fingerLoadingRange,
-}));
+vi.mock("../repositories/climbing-training-log-repository.ts", async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import("../repositories/climbing-training-log-repository.ts")>();
+  return {
+    ...original,
+    readFingerLoadingActivity: toolTestMocks.fingerLoadingActivity,
+    readFingerLoadingRange: toolTestMocks.fingerLoadingRange,
+  };
+});
 
 vi.mock("../repositories/strength-repository.ts", () => ({
   StrengthRepository: vi.fn(function vitestConstructor() {
@@ -332,6 +337,33 @@ function createToolCallRequest(name: string, toolArguments: Record<string, unkno
       arguments: toolArguments,
       name,
     },
+  };
+}
+
+function makeActivitySearchItem(overrides: Record<string, unknown> = {}) {
+  return {
+    avg_hr: null,
+    avg_power: null,
+    canonical_type: "cycling",
+    distance_meters: null,
+    distance_state: { reason: "Distance not recorded", status: "missing" },
+    elevation_gain_m: null,
+    elevation_state: { reason: "Elevation gain not recorded", status: "missing" },
+    end_utc_offset_minutes: 0,
+    ended_at: null,
+    id: "00000000-0000-4000-8000-000000000010",
+    local_time_source: "provider_timezone",
+    modality: null,
+    max_hr: null,
+    name: "Morning Ride",
+    provider_id: "apple_health",
+    provider_type: "cycling",
+    raw_type: "cycling",
+    source_providers: ["apple_health"],
+    start_utc_offset_minutes: 0,
+    started_at: "2026-05-18T10:00:00.000Z",
+    timezone: "UTC",
+    ...overrides,
   };
 }
 
@@ -729,6 +761,20 @@ describe("createMcpRouter", () => {
 
   it("returns object-root structured content for JSON tool calls", async () => {
     authorizeMcpToken();
+    toolTestMocks.activityListRange.mockResolvedValue([
+      {
+        avg_hr: 140,
+        avg_power: 220,
+        canonical_type: "cycling",
+        elevation_gain_m: 450,
+        ended_at: "2026-08-01T11:00:00.000Z",
+        max_hr: 168,
+        max_power: 610,
+        modality: "indoor",
+        provider_type: "ride",
+        started_at: "2026-08-01T10:00:00.000Z",
+      },
+    ]);
 
     const activitySummaryResponse = await request(createTestApp(), {
       authorization: "Bearer good-token",
@@ -747,7 +793,46 @@ describe("createMcpRouter", () => {
         toolCallResponseSchema.parse(parseJsonRpcEvent(activitySummaryResponse.text)).result
           .structuredContent,
       ),
-    ).toEqual({ result: { summaries: [], unclassified_pct: 0 } });
+    ).toEqual({
+      result: {
+        summaries: [
+          {
+            avg_duration_minutes: 60,
+            avg_elevation_gain_m: 450,
+            avg_hr: 140,
+            canonical_type: "cycling",
+            count: 1,
+            max_hr_peak: 168,
+            power_by_modality: {
+              indoor: {
+                activities_total: 1,
+                activities_with_power: 1,
+                avg_power: null,
+                max_power_peak: null,
+                pct: 100,
+              },
+              outdoor: {
+                activities_total: 0,
+                activities_with_power: 0,
+                avg_power: null,
+                max_power_peak: null,
+                pct: 0,
+              },
+              unknown: {
+                activities_total: 0,
+                activities_with_power: 0,
+                avg_power: null,
+                max_power_peak: null,
+                pct: 0,
+              },
+            },
+            total_duration_minutes: 60,
+            total_elevation_gain_m: 450,
+          },
+        ],
+        unclassified_pct: 0,
+      },
+    });
     expect(
       providersOutputSchema.parse(
         toolCallResponseSchema.parse(parseJsonRpcEvent(providersResponse.text)).result
@@ -801,7 +886,21 @@ describe("createMcpRouter", () => {
   it("returns daily health summaries from the metrics repository", async () => {
     authorizeMcpToken();
     toolTestMocks.dailyMetricsList.mockResolvedValue([
-      { date: "2026-05-20", restingHeartRate: 52 },
+      {
+        date: "2026-05-20",
+        distance_km: null,
+        exercise_minutes: null,
+        flights_climbed: null,
+        hrv: null,
+        respiratory_rate_avg: null,
+        skin_temp_c: null,
+        source_providers: ["apple_health"],
+        spo2_avg: null,
+        stand_hours: null,
+        steps: null,
+        user_id: "user-id",
+        walking_speed: null,
+      },
     ]);
 
     const response = await request(createTestApp(), {
@@ -814,7 +913,18 @@ describe("createMcpRouter", () => {
 
     expect(parseToolCallText(response.text)).toEqual({
       date: "2026-05-20",
-      restingHeartRate: 52,
+      distance_km: null,
+      exercise_minutes: null,
+      flights_climbed: null,
+      hrv: null,
+      respiratory_rate_avg: null,
+      skin_temp_c: null,
+      source_providers: ["apple_health"],
+      spo2_avg: null,
+      stand_hours: null,
+      steps: null,
+      user_id: "user-id",
+      walking_speed: null,
     });
     expect(toolTestMocks.dailyMetricsRepository).toHaveBeenCalledWith(
       expect.anything(),
@@ -886,14 +996,19 @@ describe("createMcpRouter", () => {
     toolTestMocks.climbingActivityEntries.mockResolvedValue([
       {
         toDetail: () => ({
+          ascentType: null,
           attemptCount: 3,
+          attempts: [],
           climbType: "boulder",
           grade: "V5",
           gradeSystem: "v_scale",
+          holdType: null,
+          id: "climb-1",
           lead: null,
           locationName: "Pacific Pipe",
           routeName: "Blue Circuit",
           sent: true,
+          sourceName: "kaya",
           wallAngleDegrees: 30,
         }),
       },
@@ -1117,9 +1232,22 @@ describe("createMcpRouter", () => {
     toolTestMocks.strengthExercises.mockResolvedValue([
       {
         toDetail: () => ({
+          equipment: null,
+          exerciseIndex: 0,
           exerciseName: "Pull-up",
+          exerciseType: "strength",
           muscleGroups: ["back"],
-          sets: [{ durationSeconds: null, reps: 5, weightKg: 20 }],
+          sets: [
+            {
+              durationSeconds: null,
+              notes: null,
+              reps: 5,
+              rpe: null,
+              setIndex: 0,
+              setType: null,
+              weightKg: 20,
+            },
+          ],
         }),
       },
     ]);
@@ -1151,7 +1279,7 @@ describe("createMcpRouter", () => {
   it("searches activities and applies the query filter", async () => {
     authorizeMcpToken();
     toolTestMocks.activitySearch.mockResolvedValue({
-      items: [{ canonical_type: "cycling", name: "Morning Ride" }],
+      items: [makeActivitySearchItem()],
       totalCount: 1,
     });
 
@@ -1165,7 +1293,7 @@ describe("createMcpRouter", () => {
       }),
     });
 
-    expect(parseToolCallText(response.text)).toEqual({
+    expect(parseToolCallText(response.text)).toMatchObject({
       items: [{ canonical_type: "cycling", name: "Morning Ride" }],
       totalCount: 1,
     });
@@ -1218,8 +1346,8 @@ describe("createMcpRouter", () => {
     toolTestMocks.activitySearch.mockResolvedValue({
       items: [
         {
+          ...makeActivitySearchItem(),
           location: { centroidLat: 37.8, centroidLng: -122.4, mapPreview: { tiles: ["tile"] } },
-          name: "Morning Ride",
         },
       ],
       totalCount: 1,
@@ -1230,7 +1358,7 @@ describe("createMcpRouter", () => {
       body: createToolCallRequest("search_activities", { to: "2026-05-18" }),
     });
 
-    expect(parseToolCallText(response.text)).toEqual({
+    expect(parseToolCallText(response.text)).toMatchObject({
       items: [{ location: { centroidLat: 37.8, centroidLng: -122.4 }, name: "Morning Ride" }],
       totalCount: 1,
     });
@@ -1803,6 +1931,7 @@ describe("createMcpRouter", () => {
         light_minutes: null,
         provider_id: "apple_health",
         rem_minutes: null,
+        staging_available: false,
         started_at: "2026-05-19T06:00:00.000Z",
       },
     ]);
@@ -2471,8 +2600,12 @@ describe("createMcpRouter", () => {
     authorizeMcpToken();
     toolTestMocks.activitySearch.mockResolvedValue({
       items: [
-        { canonical_type: "cycling", name: "Morning Ride" },
-        { canonical_type: "swim", name: "Pool" },
+        makeActivitySearchItem(),
+        makeActivitySearchItem({
+          canonical_type: "swim",
+          id: "00000000-0000-4000-8000-000000000011",
+          name: "Pool",
+        }),
       ],
       totalCount: 2,
     });
@@ -2484,7 +2617,7 @@ describe("createMcpRouter", () => {
       }),
     });
 
-    expect(parseToolCallText(response.text)).toEqual({
+    expect(parseToolCallText(response.text)).toMatchObject({
       items: [
         { canonical_type: "cycling", name: "Morning Ride" },
         { canonical_type: "swim", name: "Pool" },
@@ -2496,7 +2629,7 @@ describe("createMcpRouter", () => {
   it("matches activity searches against activity names", async () => {
     authorizeMcpToken();
     toolTestMocks.activitySearch.mockResolvedValue({
-      items: [{ canonical_type: "cycling", name: "Morning Ride" }],
+      items: [makeActivitySearchItem()],
       totalCount: 2,
     });
 
@@ -2508,7 +2641,7 @@ describe("createMcpRouter", () => {
       }),
     });
 
-    expect(parseToolCallText(response.text)).toEqual({
+    expect(parseToolCallText(response.text)).toMatchObject({
       items: [{ canonical_type: "cycling", name: "Morning Ride" }],
       totalCount: 2,
     });
@@ -2517,15 +2650,87 @@ describe("createMcpRouter", () => {
   it("returns an activity with its strength, climbing, and finger-loading details", async () => {
     authorizeMcpToken();
     const activityId = "00000000-0000-4000-8000-000000000001";
-    toolTestMocks.activityFindById.mockResolvedValue({ id: activityId, name: "Training" });
+    toolTestMocks.activityFindById.mockResolvedValue({
+      absent_source_external_ids: null,
+      avg_cadence: 60,
+      avg_hr: 140,
+      avg_power: 250,
+      avg_speed: 3,
+      canonical_type: "strength",
+      elevation_gain_m: 100,
+      elevation_loss_m: 100,
+      ended_at: "2026-08-01T11:00:00.000Z",
+      end_utc_offset_minutes: 0,
+      id: activityId,
+      local_time_source: "provider_timezone",
+      max_hr: 170,
+      max_power: 500,
+      max_speed: 5,
+      modality: null,
+      name: "Training",
+      notes: null,
+      perceived_exertion: null,
+      provider_absent_at: null,
+      provider_id: "apple_health",
+      raw_type: "strength",
+      sample_count: 10,
+      source_external_ids: [],
+      source_providers: ["apple_health"],
+      start_utc_offset_minutes: 0,
+      started_at: "2026-08-01T10:00:00.000Z",
+      subsource: null,
+      timezone: "UTC",
+      total_distance: 1000,
+    });
     toolTestMocks.strengthExercises.mockResolvedValue([
-      { toDetail: () => ({ exerciseName: "Pull-up", muscleGroups: ["back"] }) },
+      {
+        toDetail: () => ({
+          equipment: null,
+          exerciseIndex: 0,
+          exerciseName: "Pull-up",
+          exerciseType: "strength",
+          muscleGroups: ["back"],
+          sets: [],
+        }),
+      },
     ]);
     toolTestMocks.climbingActivityEntries.mockResolvedValue([
-      { toDetail: () => ({ grade: "V5", routeName: "Blue Circuit" }) },
+      {
+        toDetail: () => ({
+          ascentType: null,
+          attemptCount: 1,
+          attempts: [],
+          climbType: "boulder",
+          grade: "V5",
+          gradeSystem: "v_scale",
+          holdType: null,
+          id: "climb-1",
+          lead: null,
+          locationName: null,
+          routeName: "Blue Circuit",
+          sent: true,
+          sourceName: "kaya",
+          wallAngleDegrees: null,
+        }),
+      },
     ]);
     toolTestMocks.fingerLoadingActivity.mockResolvedValue([
-      { exercise: "max_hang", effectiveLoadKg: 95 },
+      {
+        activityId,
+        bodyweightKg: 80,
+        edgeSizeMm: 20,
+        effectiveLoadKg: 95,
+        exercise: "max_hang",
+        externalLoadKg: 15,
+        gripPosition: "half_crimp",
+        holdDurationSeconds: 10,
+        laterality: "both",
+        notes: null,
+        restIntervalSeconds: 180,
+        rpe: null,
+        setCount: 5,
+        startedAt: "2026-08-01T10:00:00.000Z",
+      },
     ]);
 
     const response = await request(createTestApp(), {
@@ -2533,8 +2738,8 @@ describe("createMcpRouter", () => {
       body: createToolCallRequest("get_activity_details", { activity_id: activityId }),
     });
 
-    expect(parseToolCallText(response.text)).toEqual({
-      activity: { id: activityId, name: "Training" },
+    expect(parseToolCallText(response.text)).toMatchObject({
+      activity: { canonical_type: "strength", id: activityId, name: "Training" },
       climbing_entries: [{ grade: "V5", routeName: "Blue Circuit" }],
       finger_loading: [{ exercise: "max_hang", effectiveLoadKg: 95 }],
       strength_exercises: [{ exerciseName: "Pull-up", muscleGroups: ["back"] }],
