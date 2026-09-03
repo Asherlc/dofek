@@ -153,8 +153,11 @@ export async function importSharedFile(
       });
     if (!providerId) throw new Error("Unsupported shared file type");
     let weightUnit: StrongWeightUnit | undefined;
-    if (providerId === "strong-csv" && fileExtension === ".csv") {
+    if (providerId === "strong-csv") {
       const selectedWeightUnit = await args.selectStrongWeightUnit?.();
+      if (selectedWeightUnit === undefined) {
+        throw new Error("Choose kg or lbs before importing a Strong export");
+      }
       if (selectedWeightUnit === null) return null;
       weightUnit = selectedWeightUnit;
     }

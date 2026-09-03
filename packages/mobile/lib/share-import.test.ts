@@ -73,12 +73,12 @@ describe("importSharedFile", () => {
     expect(initiate).not.toHaveBeenCalled();
   });
 
-  it("imports a shared Strong CSV when its resolved URI differs", async () => {
+  it("imports an extensionless shared Strong CSV when its resolved URI differs", async () => {
     const uploadId = "7b817a28-7c3b-470b-8e0b-d2b6f5fb3afc";
     const uploadPart = vi.fn(async () => ({ status: 200, headers: { etag: "part-etag" } }));
     const file: UploadableMobileFile & { text(): Promise<string> } = {
       uri: "file:///var/mobile/Containers/Data/Application/CEC2FED0-57D4-41EA-B252-288126334734/tmp/com.dofek.app-Inbox/strong_workouts.csv",
-      name: "Strong Export.csv",
+      name: "Strong Export",
       type: "text/csv",
       size: 80,
       text: vi.fn(
@@ -108,7 +108,7 @@ describe("importSharedFile", () => {
         }),
     };
     const statuses: string[] = [];
-    const selectStrongWeightUnit = vi.fn(async () => "lbs" as const);
+    const selectStrongWeightUnit = vi.fn(async (): Promise<"kg" | "lbs" | null> => "lbs");
 
     const result = await importSharedFile(
       {
@@ -123,7 +123,7 @@ describe("importSharedFile", () => {
     expect(fileUploadApi.initiate).toHaveBeenCalledWith(
       expect.objectContaining({
         importType: "strong-csv",
-        filename: "Strong Export.csv",
+        filename: "Strong Export",
         weightUnit: "lbs",
       }),
     );
