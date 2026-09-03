@@ -142,16 +142,39 @@ describe("importStrongCsv", () => {
     ).rejects.toThrow("transactional database");
   });
 
-  it("fails the import for a nonexistent local workout timestamp", async () => {
+  it("rejects a non-function transaction property", async () => {
     await expect(
       Reflect.apply(importStrongCsv, undefined, [
+        { insert: vi.fn(), execute: vi.fn(), select: vi.fn(), delete: vi.fn(), transaction: null },
+        "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps\n2026-01-15 07:55:54,Leg Day,30m,Squat,0,100,5",
+        "user-1",
+        "kg",
+        "America/Los_Angeles",
+      ]),
+    ).rejects.toThrow("Strong CSV import requires a transactional database");
+  });
+
+  it("fails the import for a nonexistent local workout timestamp", async () => {
+    try {
+      await Reflect.apply(importStrongCsv, undefined, [
         undefined,
         "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps\n2026-03-08 02:30:00,Leg Day,30m,Squat,0,100,5",
         "user-1",
         "kg",
         "America/Los_Angeles",
-      ]),
-    ).rejects.toThrow(StrongCsvValidationError);
+      ]);
+      expect.fail("Expected the nonexistent wall-clock timestamp to be rejected");
+    } catch (error) {
+      expect(error).toBeInstanceOf(StrongCsvValidationError);
+      expect(error).toHaveProperty(
+        "message",
+        "Strong workout timestamp does not exist in America/Los_Angeles: 2026-03-08 02:30:00",
+      );
+      expect(error).toHaveProperty(
+        "cause.message",
+        "Wall-clock timestamp does not exist in America/Los_Angeles",
+      );
+    }
   });
 
   it("chooses the earlier instant for an ambiguous fall-back workout timestamp", async () => {
