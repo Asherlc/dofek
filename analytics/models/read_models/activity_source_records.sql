@@ -120,6 +120,11 @@ source_record_counts AS (
 ),
 
 source_safety_check AS (
+    {% if activity_refresh_scoped %}
+    SELECT
+        0 AS empty_source_guard,
+        0 AS mass_tombstone_guard
+    {% else %}
     SELECT
         throwIf(
             existing_source_record_count > 0
@@ -132,6 +137,7 @@ source_safety_check AS (
             'Activity source mirror would tombstone at least {{ (activity_source_mass_tombstone_ratio * 100) | int }}% of active activity_source_records rows'
         ) AS mass_tombstone_guard
     FROM source_record_counts
+    {% endif %}
 ),
 
 refresh_clock AS (

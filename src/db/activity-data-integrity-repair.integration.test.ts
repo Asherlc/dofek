@@ -19,6 +19,16 @@ const wahooActivityId = "2a7c6fa3-32f1-4ae5-9c99-b981c31e289b";
 const pelotonActivityId = "761483e6-0000-4000-8000-000000000001";
 const namedZoneActivityId = "894ce621-0000-4000-8000-000000000001";
 const unrelatedActivityId = "9f99f9a7-0000-4000-8000-000000000001";
+const dbtEnvironmentKeys = [
+  "DBT_TARGET",
+  "DBT_CLICKHOUSE_SCHEMA",
+  "DBT_ANALYTICS_SOURCE_SCHEMA",
+  "DBT_INGEST_SOURCE_SCHEMA",
+  "DBT_POSTGRES_FITNESS_SOURCE_SCHEMA",
+] as const;
+const priorDbtEnvironment = new Map(
+  dbtEnvironmentKeys.map((key) => [key, process.env[key]] as const),
+);
 
 type NativeClickHouseClient = ReturnType<typeof createClient>;
 
@@ -49,6 +59,10 @@ describe("activity data integrity repair", () => {
   }, 120_000);
 
   afterAll(async () => {
+    for (const [key, value] of priorDbtEnvironment) {
+      if (value == null) delete process.env[key];
+      else process.env[key] = value;
+    }
     if (client) {
       await client.command({ query: `DROP DATABASE IF EXISTS ${database} SYNC` });
       await client.close();
@@ -230,16 +244,28 @@ async function seedProductionDbtFixture(
       priority Int16,
       _peerdb_is_deleted UInt8
     ) ENGINE = ReplacingMergeTree() ORDER BY (provider_id, source_name_pattern)`,
+    `CREATE TABLE ${database}.deduped_sensor (
+      user_id UUID,
+      recorded_at DateTime64(6, 'UTC'),
+      recorded_date Date,
+      channel String,
+      scalar Nullable(Float64),
+      is_deleted UInt8,
+      refreshed_at DateTime64(9, 'UTC')
+    ) ENGINE = ReplacingMergeTree(refreshed_at)
+      ORDER BY (user_id, channel, recorded_at)`,
     `CREATE TABLE ${database}.activity_sensor_sample (
       activity_id UUID,
       user_id UUID,
       recorded_at DateTime64(6, 'UTC'),
+      recorded_date Date,
       channel String,
       scalar Nullable(Float64),
       refresh_version UInt64,
-      is_deleted UInt8
+      is_deleted UInt8,
+      refreshed_at DateTime64(9, 'UTC')
     ) ENGINE = ReplacingMergeTree(refresh_version)
-      ORDER BY (user_id, activity_id, channel, recorded_at)`,
+      ORDER BY (user_id, activity_id, recorded_date, channel, recorded_at)`,
     `CREATE TABLE ${database}.activity_location_summary_rows (
       activity_id UUID,
       user_id UUID,

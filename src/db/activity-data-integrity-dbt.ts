@@ -6,6 +6,7 @@ const ACTIVITY_INTEGRITY_DBT_MODELS = [
   "activity_duplicate_groups",
   "deduped_activities",
   "deduped_activity_members",
+  "activity_sensor_sample",
   "activity_sensor_summary_rows",
   "activity_summary_rows",
 ] as const;

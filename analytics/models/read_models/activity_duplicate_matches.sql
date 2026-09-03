@@ -170,7 +170,10 @@ active_to_tombstoned_matches AS (
             )
         )
         {% if activity_refresh_scoped %}
-        AND left_activity.activity_id IN {{ activity_refresh_ids() }}
+        AND (
+            left_activity.activity_id IN {{ activity_refresh_ids() }}
+            OR right_activity.activity_id IN {{ activity_refresh_ids() }}
+        )
         {% endif %}
 ),
 

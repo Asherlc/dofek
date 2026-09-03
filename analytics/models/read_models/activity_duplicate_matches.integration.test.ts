@@ -86,6 +86,29 @@ ${renderModel(database, true)}`,
 
     await expect(result.json()).resolves.toEqual([{ isDeleted: 1 }]);
   }, 180_000);
+
+  it("keeps an active-to-tombstoned match when only its tombstoned endpoint is scoped", async () => {
+    const activeClient = requireClient(client);
+    await seedFixture(activeClient, database);
+    await activeClient.command({
+      query: `INSERT INTO ${database}.activity_duplicate_matches
+${renderModel(database)}`,
+    });
+    await activeClient.command({
+      query: `INSERT INTO ${database}.activity_duplicate_matches
+${renderModel(database, true, [tombstonedWhoopId])}`,
+    });
+
+    const result = await activeClient.query({
+      query: `SELECT is_deleted AS isDeleted
+        FROM ${database}.activity_duplicate_matches FINAL
+        WHERE activity_id = toUUID('${containedCyclingId}')
+          AND duplicate_activity_id = toUUID('${tombstonedWhoopId}')`,
+      format: "JSONEachRow",
+    });
+
+    await expect(result.json()).resolves.toEqual([{ isDeleted: 0 }]);
+  }, 180_000);
 });
 
 function requireClient(client: ClickHouseClient | undefined): ClickHouseClient {
@@ -115,11 +138,19 @@ function groupsFor(
   return [...members];
 }
 
-function renderModel(database: string, incremental = false): string {
+function renderModel(
+  database: string,
+  incremental = false,
+  scopedActivityIds?: readonly string[],
+): string {
   return renderDbtModelSql(readModelSql("activity_duplicate_matches.sql"), {
     isIncremental: incremental,
-    activityRefreshScoped: false,
+    activityRefreshScoped: scopedActivityIds != null,
   })
+    .replaceAll(
+      "{{ activity_refresh_ids() }}",
+      `CAST([${(scopedActivityIds ?? []).map((id) => `'${id}'`).join(", ")}], 'Array(UUID)')`,
+    )
     .replace(/{{ ref\('activity_source_records'\) }}/g, `${database}.activity_source_records`)
     .replace(
       /{{ source\('postgres_fitness', 'activity'\) }}/g,

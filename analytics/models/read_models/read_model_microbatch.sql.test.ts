@@ -33,12 +33,15 @@ describe("production analytics read-model build", () => {
       "activity_duplicate_groups",
       "deduped_activities",
       "deduped_activity_members",
+      "activity_sensor_sample",
       "activity_sensor_summary_rows",
       "activity_summary_rows",
     ];
 
     expect(scopeMacro).toContain("activity_refresh_user_id");
     expect(scopeMacro).toContain("activity_refresh_activity_ids");
+    expect(scopeMacro).toContain("activity_ids | length > 0");
+    expect(scopeMacro).toContain("user_id | string | trim | length > 0");
     for (const model of scopedModels) {
       const sql = readModel(model);
       expect(sql, model).toContain("activity_refresh_scope_enabled()");
