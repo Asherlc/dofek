@@ -328,6 +328,10 @@ async function selectPostgresActivities(
             activity.user_id::text AS user_id,
             activity.started_at,
             activity.ended_at,
+            to_char(activity.started_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS started_at_exact,
+            CASE WHEN activity.ended_at IS NULL THEN NULL
+              ELSE to_char(activity.ended_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
+            END AS ended_at_exact,
             activity.timezone,
             activity.start_utc_offset_minutes::integer AS start_utc_offset_minutes,
             activity.end_utc_offset_minutes::integer AS end_utc_offset_minutes,
@@ -816,7 +820,12 @@ async function rollbackActivityDataIntegrityWithLease(
     );
   }
 
-  const rollbackMirrorRows = changedRows.map((row) => ({ id: row.id, repaired: row.prior }));
+  const rollbackMirrorRows = changedRows.map((row) => ({
+    id: row.id,
+    repaired: row.prior,
+    repairedStartedAt: row.startedAt,
+    repairedEndedAt: row.endedAt,
+  }));
   await waitForPostgresMirror(clickHouse, artifact.userId, rollbackMirrorRows, dependencies);
   const rebuildReadModels = dependencies.rebuildReadModels ?? runActivityIntegrityDbtBuild;
   await rebuildReadModels({ userId: artifact.userId, activityIds: affectedIds });

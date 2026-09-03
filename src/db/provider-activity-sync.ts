@@ -161,6 +161,7 @@ function normalizeProviderActivityInsert(
     return { values: externalIdValues, updateLocalTimeContext: false, rejected: null };
   }
   let supplied: SuppliedActivityLocalTime;
+  let contextParseFailed = false;
   try {
     if (timezone && (source === "provider_timezone" || source === "unknown")) {
       supplied = providerTimezoneContext(externalIdValues, timezone);
@@ -188,14 +189,15 @@ function normalizeProviderActivityInsert(
       };
     }
   } catch (error: unknown) {
+    contextParseFailed = true;
     captureException(error, {
       tags: { operation: "provider-activity-local-time-context" },
     });
     supplied = {
-      timezone,
-      startUtcOffsetMinutes: externalIdValues.startUtcOffsetMinutes ?? null,
-      endUtcOffsetMinutes: externalIdValues.endUtcOffsetMinutes ?? null,
-      source: timezone && source === "unknown" ? "provider_timezone" : source,
+      timezone: null,
+      startUtcOffsetMinutes: null,
+      endUtcOffsetMinutes: null,
+      source: "unknown",
     };
   }
 
@@ -224,6 +226,7 @@ function normalizeProviderActivityInsert(
     };
   }
 
+  const rejected = contextParseFailed ? originalSupplied : resolution.rejected;
   return {
     values: {
       ...externalIdValues,
@@ -231,14 +234,12 @@ function normalizeProviderActivityInsert(
       startUtcOffsetMinutes: resolution.context.startUtcOffsetMinutes,
       endUtcOffsetMinutes: resolution.context.endUtcOffsetMinutes,
       localTimeSource: resolution.context.source,
-      rejectedProviderTimezone: resolution.rejected ? originalSupplied.timezone : null,
-      rejectedProviderStartUtcOffsetMinutes: resolution.rejected?.startUtcOffsetMinutes ?? null,
-      rejectedProviderEndUtcOffsetMinutes: resolution.rejected?.endUtcOffsetMinutes ?? null,
+      rejectedProviderTimezone: rejected ? originalSupplied.timezone : null,
+      rejectedProviderStartUtcOffsetMinutes: rejected?.startUtcOffsetMinutes ?? null,
+      rejectedProviderEndUtcOffsetMinutes: rejected?.endUtcOffsetMinutes ?? null,
     },
     updateLocalTimeContext: true,
-    rejected: resolution.rejected
-      ? { ...resolution.rejected, timezone: originalSupplied.timezone }
-      : null,
+    rejected: rejected ? { ...rejected, timezone: originalSupplied.timezone } : null,
   };
 }
 

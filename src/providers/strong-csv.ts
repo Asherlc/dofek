@@ -526,7 +526,6 @@ export async function importStrongCsv(
             startUtcOffsetMinutes: localTimeContext?.startUtcOffsetMinutes,
             endUtcOffsetMinutes: localTimeContext?.endUtcOffsetMinutes,
             localTimeSource: localTimeContext?.source,
-            homeTimezone: timezone,
           },
           {
             activityType: resolveProviderActivityType("strength", "strength"),

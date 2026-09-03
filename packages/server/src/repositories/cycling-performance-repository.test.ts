@@ -165,6 +165,13 @@ describe("CyclingPerformanceRepository", () => {
         },
       },
     });
+    const availabilityCall = query.mock.calls[2];
+    expect(availabilityCall?.[1]).toContain(
+      "modality IN ('outdoor', 'road', 'mountain', 'gravel', 'electric', 'cyclocross', 'track', 'bmx')",
+    );
+    expect(availabilityCall?.[1]).toContain(
+      "toDate({startDate:String}) AND toDate({endDate:String})",
+    );
 
     expect(query.mock.calls[0]?.[1]).toContain("FROM analytics.cycling_activity FINAL");
     expect(query.mock.calls[1]?.[1]).toContain("FROM analytics.activity_power_curve FINAL");

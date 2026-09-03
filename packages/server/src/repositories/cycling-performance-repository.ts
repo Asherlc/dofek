@@ -94,7 +94,7 @@ const powerAvailabilityQuery = `
 WITH
   multiIf(
     modality IN ('indoor', 'virtual'), 'indoor',
-    modality IN ('outdoor', 'road', 'mountain'), 'outdoor',
+    modality IN ('outdoor', 'road', 'mountain', 'gravel', 'electric', 'cyclocross', 'track', 'bmx'), 'outdoor',
     'unknown'
   ) AS power_modality,
   (power_samples > 0 OR average_power IS NOT NULL OR normalized_power IS NOT NULL OR best_twenty_minute_power IS NOT NULL) AS has_power
@@ -108,6 +108,8 @@ SELECT
 FROM analytics.cycling_activity FINAL
 WHERE user_id = {userId:UUID}
   AND is_deleted = 0
+  AND toDate(toTimeZone(started_at, {timezone:String})) BETWEEN
+    toDate({startDate:String}) AND toDate({endDate:String})
 GROUP BY power_modality
 ORDER BY power_modality ASC`;
 

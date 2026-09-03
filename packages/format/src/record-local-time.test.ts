@@ -4,10 +4,31 @@ import {
   localTimeContextUnknown,
   offsetMinutesFromTimestamp,
   recordLocalHour,
+  resolveNaiveWallClockInTimezone,
   resolveProviderTimezoneLocalTimeContext,
   resolveRecordLocalTimeContext,
   resolveTimestampOffsetLocalTimeContext,
 } from "./record-local-time.ts";
+
+describe("resolveNaiveWallClockInTimezone", () => {
+  it("chooses the earlier instant for an ambiguous positive-offset fall-back wall clock", () => {
+    expect(
+      resolveNaiveWallClockInTimezone(new Date("2026-10-25T01:30:00.000Z"), "Europe/London"),
+    ).toEqual(new Date("2026-10-25T00:30:00.000Z"));
+  });
+
+  it("chooses the earlier instant for an ambiguous negative-offset fall-back wall clock", () => {
+    expect(
+      resolveNaiveWallClockInTimezone(new Date("2026-11-01T01:30:00.000Z"), "America/Los_Angeles"),
+    ).toEqual(new Date("2026-11-01T08:30:00.000Z"));
+  });
+
+  it("rejects a nonexistent spring-forward wall clock", () => {
+    expect(() =>
+      resolveNaiveWallClockInTimezone(new Date("2026-03-08T02:30:00.000Z"), "America/Los_Angeles"),
+    ).toThrow("Wall-clock timestamp does not exist");
+  });
+});
 
 describe("resolveRecordLocalTimeContext", () => {
   it("derives offsets from a persisted user home timezone", () => {

@@ -222,6 +222,7 @@ async function seedSpecificActivityTypeFixture(
   client: ClickHouseClient,
   targetSchema: string,
   linkedProviderType = "commuting",
+  pelotonActivityType = "cardio",
 ): Promise<void> {
   await runStatements(client, [
     `DROP DATABASE IF EXISTS ${targetSchema} SYNC`,
@@ -231,7 +232,7 @@ async function seedSpecificActivityTypeFixture(
     createSourceActivityTableSql(targetSchema),
     createMetricStreamTableSql(targetSchema),
     createDedupedActivitiesTableSql(targetSchema),
-    insertActivitySourceRecordSql(targetSchema, "cardio"),
+    insertActivitySourceRecordSql(targetSchema, pelotonActivityType),
     `INSERT INTO ${targetSchema}.activity_source_records VALUES (
   '${linkedActivityId}',
   'whoop',
@@ -272,7 +273,7 @@ async function seedSensorBearingRepresentativeFixture(
   client: ClickHouseClient,
   targetSchema: string,
 ): Promise<void> {
-  await seedSpecificActivityTypeFixture(client, targetSchema, "cycling");
+  await seedSpecificActivityTypeFixture(client, targetSchema, "cycling", "cycling");
 }
 
 async function runStatements(client: ClickHouseClient, statements: string[]): Promise<void> {

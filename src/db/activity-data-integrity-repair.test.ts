@@ -50,6 +50,8 @@ const priorSourceRow = {
   canonical_type: "cycling",
   user_id: userId,
   external_id: "workout-1",
+  started_at: new Date("2026-09-01T14:55:54.000Z"),
+  ended_at: new Date("2026-09-01T15:25:54.000Z"),
   timezone: "Etc/GMT+4",
   start_utc_offset_minutes: -300,
   end_utc_offset_minutes: -300,
@@ -64,6 +66,8 @@ const priorSourceRow = {
 
 const repairedSourceRow = {
   ...priorSourceRow,
+  started_at: new Date("2026-09-01T14:55:54.000Z"),
+  ended_at: new Date("2026-09-01T15:25:54.000Z"),
   timezone: "America/Los_Angeles",
   start_utc_offset_minutes: -420,
   end_utc_offset_minutes: -420,
@@ -538,6 +542,57 @@ describe("repairActivityDataIntegrity", () => {
         endUtcOffsetMinutes: -480,
         localTimeSource: "device_timezone",
       },
+    });
+  });
+
+  it("falls back to home time and audits malformed provider timezone evidence", async () => {
+    const directory = await artifactDirectory();
+    const malformedCandidate = {
+      ...postgresCandidate,
+      timezone: "Not/A_Timezone",
+      start_utc_offset_minutes: -420,
+      end_utc_offset_minutes: -420,
+      local_time_source: "provider_timezone",
+    };
+    const result = await repairActivityDataIntegrity(
+      createDatabase(vi.fn().mockResolvedValueOnce([malformedCandidate])),
+      createClickHouse([[priorSourceRow]], [[]]),
+      { execute: false, userId, batchSize: 10, maxBatches: 1, ...window },
+      repairDependencies(directory),
+    );
+
+    const artifact = JSON.parse(await readFile(result.artifactPath, "utf8"));
+    expect(artifact.postgresActivities[0].repaired).toEqual({
+      timezone: "America/Los_Angeles",
+      startUtcOffsetMinutes: -420,
+      endUtcOffsetMinutes: -420,
+      localTimeSource: "home_zone_fallback",
+      rejectedProviderTimezone: "Not/A_Timezone",
+      rejectedProviderStartUtcOffsetMinutes: -420,
+      rejectedProviderEndUtcOffsetMinutes: -420,
+    });
+  });
+
+  it("preserves microsecond timestamp precision in the repair compare-and-swap artifact", async () => {
+    const directory = await artifactDirectory();
+    const preciseCandidate = {
+      ...postgresCandidate,
+      started_at_exact: "2026-09-01T14:55:54.123456Z",
+      ended_at_exact: "2026-09-01T15:25:54.654321Z",
+    };
+    const result = await repairActivityDataIntegrity(
+      createDatabase(vi.fn().mockResolvedValueOnce([preciseCandidate])),
+      createClickHouse([[priorSourceRow]], [[]]),
+      { execute: false, userId, batchSize: 10, maxBatches: 1, ...window },
+      repairDependencies(directory),
+    );
+
+    const artifact = JSON.parse(await readFile(result.artifactPath, "utf8"));
+    expect(artifact.postgresActivities[0]).toMatchObject({
+      startedAt: "2026-09-01T14:55:54.123456Z",
+      endedAt: "2026-09-01T15:25:54.654321Z",
+      repairedStartedAt: "2026-09-01T14:55:54.123456Z",
+      repairedEndedAt: "2026-09-01T15:25:54.654321Z",
     });
   });
 

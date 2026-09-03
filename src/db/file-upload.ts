@@ -2,6 +2,10 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { type Database, executeWithSchema } from "./typed-sql.ts";
 
+export interface TransactionalFileUploadDatabase extends Database {
+  transaction<T>(operation: (transaction: Database) => Promise<T>): Promise<T>;
+}
+
 export const fileUploadImportTypeSchema = z.enum([
   "apple-health",
   "strong-csv",
@@ -162,6 +166,27 @@ function mapFileUpload(row: z.infer<typeof fileUploadRowSchema>): FileUpload {
     completedAt: row.completed_at,
     objectDeletedAt: row.object_deleted_at,
   };
+}
+
+export async function withLockedFileUpload<T>(
+  database: TransactionalFileUploadDatabase,
+  uploadId: string,
+  operation: (transaction: Database, upload: FileUpload) => Promise<T>,
+): Promise<T> {
+  const parsedUploadId = z.uuid().parse(uploadId);
+  return database.transaction(async (transaction) => {
+    const rows = await executeWithSchema(
+      transaction,
+      fileUploadRowSchema,
+      sql`SELECT ${selectFileUploadColumns}
+          FROM fitness.file_upload
+          WHERE id = ${parsedUploadId}::uuid
+          FOR UPDATE`,
+    );
+    const row = rows[0];
+    if (!row) throw new Error(`Upload ${parsedUploadId} was not found`);
+    return operation(transaction, mapFileUpload(row));
+  });
 }
 
 export async function recordFileUploadCompletionParts(
@@ -626,6 +651,8 @@ export async function retryFailedFileUpload(
               version = version + 1
           FROM eligible_retry
           WHERE upload.id = eligible_retry.id
+            AND upload.state = 'failed'
+            AND upload.object_deleted_at IS NULL
           RETURNING upload.*
         ), retried_outbox AS (
           UPDATE fitness.file_upload_outbox AS outbox

@@ -130,8 +130,9 @@ export const loadingPerformanceMonitors: LoadingPerformanceMonitorSpec[] = [
     type: "Threshold",
     aplQuery: `['${dataset}']
 | where message == "metric_stream.consumer_batch"
-| where isnotnull(per_event_sink_latency_ms)
-| summarize p95_per_event_sink_latency_ms = percentile(per_event_sink_latency_ms, 95) by partition, bin(_time, 5m)`,
+| where isnotnull(average_batch_event_cost_ms)
+| summarize sample_count = count(), p95_average_batch_event_cost_ms = percentile(average_batch_event_cost_ms, 95) by partition, bin(_time, 5m)
+| where sample_count >= 3`,
     operator: "Above",
     threshold: 100,
     rangeMinutes: 10,

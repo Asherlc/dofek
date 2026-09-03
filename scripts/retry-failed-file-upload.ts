@@ -5,6 +5,7 @@ import {
   type FileUpload,
   findFileUploadForUser,
   retryFailedFileUpload,
+  withLockedFileUpload,
 } from "../src/db/file-upload.ts";
 import { createDatabaseFromEnv } from "../src/db/index.ts";
 import { createImportUploadStorageFromEnv } from "../src/file-upload-storage.ts";
@@ -17,6 +18,15 @@ interface RetryFailedFileUploadCommand {
   importJobId?: string;
   weightUnit?: "kg" | "lbs";
   timezone?: string;
+}
+
+function requireValidIanaTimezone(timezone: string): string {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format(new Date());
+  } catch {
+    throw new Error(`timezone must be a valid IANA timezone: ${timezone}`);
+  }
+  return timezone;
 }
 
 function requiredUuid(value: string | undefined, option: string): string {
@@ -51,11 +61,7 @@ export function parseRetryFailedFileUploadCommand(
       ? undefined
       : z.string().trim().min(1, "--timezone must not be blank").parse(values.timezone);
   if (timezone) {
-    try {
-      new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format(new Date());
-    } catch {
-      throw new Error(`--timezone must be a valid IANA timezone: ${timezone}`);
-    }
+    requireValidIanaTimezone(timezone);
   }
   return {
     execute,
@@ -83,6 +89,7 @@ function validateRetainedRetry(
     if (!weightUnit) throw new Error("Strong CSV retry requires an explicit weight unit");
     if (!timezone) throw new Error("Strong CSV retry requires an explicit timezone");
   }
+  if (timezone) requireValidIanaTimezone(timezone);
   return { weightUnit, timezone };
 }
 
@@ -122,13 +129,29 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
       );
       return;
     }
-    const retried = await retryFailedFileUpload(database, {
-      uploadId: command.uploadId,
-      userId: command.userId,
-      importJobId: command.importJobId ?? "",
-      ...(corrected.weightUnit ? { weightUnit: corrected.weightUnit } : {}),
-      ...(corrected.timezone ? { timezone: corrected.timezone } : {}),
-    });
+    const retried = await withLockedFileUpload(
+      database,
+      command.uploadId,
+      async (transaction, locked) => {
+        if (locked.userId !== command.userId) {
+          throw new Error(`Upload ${command.uploadId} was not found for the requested user`);
+        }
+        const lockedCorrection = validateRetainedRetry(locked, command);
+        const lockedObject = await storage.headObject(locked.objectKey);
+        if (lockedObject.sizeBytes !== locked.expectedSizeBytes) {
+          throw new Error(
+            `Upload ${locked.id} source size changed: expected ${locked.expectedSizeBytes}, found ${lockedObject.sizeBytes}`,
+          );
+        }
+        return retryFailedFileUpload(transaction, {
+          uploadId: command.uploadId,
+          userId: command.userId,
+          importJobId: command.importJobId ?? "",
+          ...(lockedCorrection.weightUnit ? { weightUnit: lockedCorrection.weightUnit } : {}),
+          ...(lockedCorrection.timezone ? { timezone: lockedCorrection.timezone } : {}),
+        });
+      },
+    );
     console.log(
       JSON.stringify({
         kind: "execute",

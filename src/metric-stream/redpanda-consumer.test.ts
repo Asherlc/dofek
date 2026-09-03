@@ -147,7 +147,7 @@ describe("runMetricStreamEventConsumer", () => {
         event_count: 2,
         deletion_event_count: 1,
         sink_duration_ms: expect.any(Number),
-        per_event_sink_latency_ms: expect.any(Number),
+        average_batch_event_cost_ms: expect.any(Number),
         deletion_events_per_second: expect.any(Number),
       }),
     );
@@ -159,6 +159,80 @@ describe("runMetricStreamEventConsumer", () => {
       }),
     );
     expect(loggerInfo.mock.lastCall?.[1].consumer_lag_growth_per_second).toBeGreaterThan(0);
+  });
+
+  it("reports lag from the consumed offset when a tombstone follows valid data", async () => {
+    const consumer = {
+      connect: vi.fn(async () => undefined),
+      subscribe: vi.fn(async () => undefined),
+      run: vi.fn(async (options) => {
+        await options.eachBatch({
+          batch: {
+            topic: "metric-stream-v1",
+            partition: 4,
+            highWatermark: "30",
+            messages: [
+              { offset: "20", value: Buffer.from(JSON.stringify(event)) },
+              { offset: "21", value: null },
+            ],
+          },
+          commitOffsetsIfNecessary: vi.fn(async () => undefined),
+          heartbeat: vi.fn(async () => undefined),
+          resolveOffset: vi.fn(),
+        });
+      }),
+    };
+
+    await runMetricStreamEventConsumer({
+      consumer,
+      handleEvents: vi.fn(async () => undefined),
+      quarantine: { connect: vi.fn(async () => undefined), write: vi.fn(async () => undefined) },
+      topic: "metric-stream-v1",
+    });
+
+    expect(loggerInfo).toHaveBeenCalledWith(
+      "metric_stream.consumer_batch",
+      expect.objectContaining({ last_offset: "21", consumer_lag: 8 }),
+    );
+  });
+
+  it("reports lag for a tombstone-only batch without fabricating sink cost", async () => {
+    const consumer = {
+      connect: vi.fn(async () => undefined),
+      subscribe: vi.fn(async () => undefined),
+      run: vi.fn(async (options) => {
+        await options.eachBatch({
+          batch: {
+            topic: "metric-stream-v1",
+            partition: 5,
+            highWatermark: "31",
+            messages: [{ offset: "25", value: null }],
+          },
+          commitOffsetsIfNecessary: vi.fn(async () => undefined),
+          heartbeat: vi.fn(async () => undefined),
+          resolveOffset: vi.fn(),
+        });
+      }),
+    };
+
+    await runMetricStreamEventConsumer({
+      consumer,
+      handleEvents: vi.fn(async () => undefined),
+      quarantine: { connect: vi.fn(async () => undefined), write: vi.fn(async () => undefined) },
+      topic: "metric-stream-v1",
+    });
+
+    expect(loggerInfo).toHaveBeenCalledWith(
+      "metric_stream.consumer_batch",
+      expect.objectContaining({
+        last_offset: "25",
+        consumer_lag: 5,
+        event_count: 0,
+        sink_duration_ms: null,
+        average_batch_event_cost_ms: null,
+        deletion_events_per_second: null,
+      }),
+    );
   });
 
   it("subscribes to the metric stream topic and handles parsed events before resolving offsets", async () => {

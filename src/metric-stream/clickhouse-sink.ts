@@ -497,8 +497,17 @@ async function markMetricStreamDeleteCommandsInClickHouse(
       isBatch ? `_${index}` : "",
     ),
   );
-  const renderPredicates = (predicates: readonly string[][]) =>
-    predicates.map((conditions) => `(${conditions.join(" AND ")})`).join(" OR ");
+  const scopedCandidates = candidatePredicates
+    .map(
+      (conditions, index) => `SELECT candidate_row.id AS id, toUInt16(${index}) AS scope_index
+          FROM ${METRIC_STREAM_TABLE} AS candidate_row
+          WHERE ${conditions.join(" AND ")}
+          GROUP BY candidate_row.id`,
+    )
+    .join("\n          UNION ALL\n          ");
+  const correlatedLatestPredicates = latestPredicates
+    .map((conditions, index) => `(scope_index = ${index} AND ${conditions.join(" AND ")})`)
+    .join(" OR ");
 
   await client.command({
     query: `INSERT INTO ${METRIC_STREAM_TABLE} (
@@ -525,8 +534,11 @@ async function markMetricStreamDeleteCommandsInClickHouse(
         ${replacementVersionExpression} AS version,
         latest_row.13 AS generation
       FROM (
+        SELECT DISTINCT id, latest_row
+        FROM (
         SELECT
           metric_stream_row.id AS id,
+          candidate_scope.scope_index AS scope_index,
           argMax(
             tuple(
               metric_stream_row.activity_id,
@@ -548,20 +560,18 @@ async function markMetricStreamDeleteCommandsInClickHouse(
             tuple(metric_stream_row.version, metric_stream_row.ingested_at)
           ) AS latest_row
         FROM ${METRIC_STREAM_TABLE} AS metric_stream_row
-        WHERE metric_stream_row.id IN (
-          SELECT candidate_row.id
-          FROM ${METRIC_STREAM_TABLE} AS candidate_row
-          WHERE ${renderPredicates(candidatePredicates)}
-          GROUP BY candidate_row.id
+        INNER JOIN (
+          ${scopedCandidates}
+        ) AS candidate_scope ON candidate_scope.id = metric_stream_row.id
+        GROUP BY metric_stream_row.id, candidate_scope.scope_index
         )
-        GROUP BY metric_stream_row.id
+        WHERE ${correlatedLatestPredicates}
       )
       WHERE latest_row.14 = 0
         AND lower(hex(SHA256(toString(latest_row.2)))) NOT IN (
           SELECT user_hash
           FROM ${ACCOUNT_ERASURE_FENCE_TABLE} FINAL
-        )
-        AND (${renderPredicates(latestPredicates)})`,
+        )`,
     query_params: queryParams,
   });
   for (const { eventId } of deletes) {

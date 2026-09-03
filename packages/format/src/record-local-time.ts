@@ -180,27 +180,22 @@ export function resolveProviderTimezoneLocalTimeContext(input: {
  */
 export function resolveNaiveWallClockInTimezone(wallClockDate: Date, timezone: string): Date {
   requireValidDate(wallClockDate, "startedAt");
-  const resolveCandidate = (candidate: Date): Date => {
-    const context = resolveRecordLocalTimeContext({
-      startedAt: candidate,
-      timezone,
-      source: "device_timezone",
-    });
-    if (context.startUtcOffsetMinutes === null) {
-      throw new Error("Timezone context did not include a UTC offset");
-    }
-    return new Date(wallClockDate.getTime() - context.startUtcOffsetMinutes * 60_000);
-  };
-  const startedAt = resolveCandidate(resolveCandidate(wallClockDate));
-  const resolvedContext = resolveRecordLocalTimeContext({
-    startedAt,
-    timezone,
-    source: "device_timezone",
-  });
-  const resolvedWallClock = new Date(
-    startedAt.getTime() + (resolvedContext.startUtcOffsetMinutes ?? 0) * 60_000,
-  );
-  if (resolvedWallClock.getTime() !== wallClockDate.getTime()) {
+  const offsets = new Set<number>();
+  for (let deltaMinutes = -1_440; deltaMinutes <= 1_440; deltaMinutes += 30) {
+    offsets.add(
+      offsetInTimezone(new Date(wallClockDate.getTime() + deltaMinutes * 60_000), timezone),
+    );
+  }
+  const candidates = [...offsets]
+    .map((offsetMinutes) => new Date(wallClockDate.getTime() - offsetMinutes * 60_000))
+    .filter(
+      (candidate) =>
+        candidate.getTime() + offsetInTimezone(candidate, timezone) * 60_000 ===
+        wallClockDate.getTime(),
+    )
+    .sort((left, right) => left.getTime() - right.getTime());
+  const startedAt = candidates[0];
+  if (!startedAt) {
     throw new Error(`Wall-clock timestamp does not exist in ${timezone}`);
   }
   return startedAt;

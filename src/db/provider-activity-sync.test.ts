@@ -285,6 +285,38 @@ describe("upsertProviderActivity", () => {
     });
   });
 
+  it("audits a malformed timezone even when its raw offset matches the home zone", async () => {
+    const onConflictDoUpdate = vi.fn();
+    const db = makeMockDb(onConflictDoUpdate);
+
+    await upsertProviderActivity(
+      db,
+      {
+        providerId: "garmin",
+        externalId: "malformed-zone-plausible-offset",
+        activityType: resolveProviderActivityType("running", "running"),
+        startedAt: new Date("2026-09-01T14:55:54.000Z"),
+        timezone: "Not/A_Timezone",
+        startUtcOffsetMinutes: -420,
+        endUtcOffsetMinutes: -420,
+        localTimeSource: "provider_timezone",
+        homeTimezone: "America/Los_Angeles",
+      },
+      { activityType: resolveProviderActivityType("running", "running") },
+    );
+
+    expect(onConflictDoUpdate).toHaveBeenCalledWith({
+      target: [activity.userId, activity.providerId, activity.externalId],
+      set: expect.objectContaining({
+        timezone: "America/Los_Angeles",
+        startUtcOffsetMinutes: -420,
+        localTimeSource: "home_zone_fallback",
+        rejectedProviderTimezone: "Not/A_Timezone",
+        rejectedProviderStartUtcOffsetMinutes: -420,
+      }),
+    });
+  });
+
   it("rejects provider context when neither GPS nor a home timezone can validate it", async () => {
     await upsertProviderActivity(
       makeMockDb(),

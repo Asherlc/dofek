@@ -22,6 +22,8 @@ export const activityIntegrityPostgresCandidateSchema = z.object({
   user_id: postgresUuidSchema,
   started_at: z.coerce.date(),
   ended_at: z.coerce.date().nullable(),
+  started_at_exact: z.string().datetime().optional(),
+  ended_at_exact: z.string().datetime().nullable().optional(),
   timezone: z.string().nullable(),
   start_utc_offset_minutes: z.coerce.number().int().nullable(),
   end_utc_offset_minutes: z.coerce.number().int().nullable(),
@@ -86,29 +88,41 @@ function normalizedLocalTimeContext(
         ? "provider_timezone"
         : row.local_time_source,
   };
-  const supplied: SuppliedActivityLocalTime =
-    row.timezone?.trim() &&
-    (row.local_time_source === "provider_timezone" || row.local_time_source === "unknown")
-      ? resolveProviderTimezoneLocalTimeContext({
-          startedAt: row.started_at,
-          endedAt: row.ended_at,
-          timezone: row.timezone,
-        })
-      : row.local_time_source === "unknown"
-        ? {
-            timezone: null,
-            startUtcOffsetMinutes: null,
-            endUtcOffsetMinutes: null,
-            source: "unknown",
-          }
-        : resolveRecordLocalTimeContext({
+  let supplied: SuppliedActivityLocalTime;
+  let contextParseFailed = false;
+  try {
+    supplied =
+      row.timezone?.trim() &&
+      (row.local_time_source === "provider_timezone" || row.local_time_source === "unknown")
+        ? resolveProviderTimezoneLocalTimeContext({
             startedAt: row.started_at,
             endedAt: row.ended_at,
             timezone: row.timezone,
-            startUtcOffsetMinutes: row.start_utc_offset_minutes,
-            endUtcOffsetMinutes: row.end_utc_offset_minutes,
-            source: row.local_time_source,
-          });
+          })
+        : row.local_time_source === "unknown"
+          ? {
+              timezone: null,
+              startUtcOffsetMinutes: null,
+              endUtcOffsetMinutes: null,
+              source: "unknown",
+            }
+          : resolveRecordLocalTimeContext({
+              startedAt: row.started_at,
+              endedAt: row.ended_at,
+              timezone: row.timezone,
+              startUtcOffsetMinutes: row.start_utc_offset_minutes,
+              endUtcOffsetMinutes: row.end_utc_offset_minutes,
+              source: row.local_time_source,
+            });
+  } catch {
+    contextParseFailed = true;
+    supplied = {
+      timezone: null,
+      startUtcOffsetMinutes: null,
+      endUtcOffsetMinutes: null,
+      source: "unknown",
+    };
+  }
   const resolution = resolvePlausibleActivityLocalTime({
     startedAt: row.started_at,
     endedAt: row.ended_at,
@@ -123,12 +137,13 @@ function normalizedLocalTimeContext(
     endUtcOffsetMinutes: resolution.context.endUtcOffsetMinutes,
     localTimeSource: resolution.context.source,
     rejectedProviderTimezone:
-      (resolution.rejected ? originalSupplied.timezone : null) ?? row.rejected_provider_timezone,
+      (resolution.rejected || contextParseFailed ? originalSupplied.timezone : null) ??
+      row.rejected_provider_timezone,
     rejectedProviderStartUtcOffsetMinutes:
-      (resolution.rejected ? originalSupplied.startUtcOffsetMinutes : null) ??
+      (resolution.rejected || contextParseFailed ? originalSupplied.startUtcOffsetMinutes : null) ??
       row.rejected_provider_start_utc_offset_minutes,
     rejectedProviderEndUtcOffsetMinutes:
-      (resolution.rejected ? originalSupplied.endUtcOffsetMinutes : null) ??
+      (resolution.rejected || contextParseFailed ? originalSupplied.endUtcOffsetMinutes : null) ??
       row.rejected_provider_end_utc_offset_minutes,
   });
 }
@@ -188,10 +203,16 @@ export function buildActivityIntegrityPostgresArtifactRows(
       id: row.id,
       providerId: row.provider_id,
       externalId: row.external_id,
-      startedAt: row.started_at.toISOString(),
-      endedAt: row.ended_at?.toISOString() ?? null,
-      repairedStartedAt: repairedStartedAt.toISOString(),
-      repairedEndedAt: repairedEndedAt?.toISOString() ?? null,
+      startedAt: row.started_at_exact ?? row.started_at.toISOString(),
+      endedAt: row.ended_at_exact ?? row.ended_at?.toISOString() ?? null,
+      repairedStartedAt:
+        repairedStartedAt.getTime() === row.started_at.getTime() && row.started_at_exact
+          ? row.started_at_exact
+          : repairedStartedAt.toISOString(),
+      repairedEndedAt:
+        repairedEndedAt?.getTime() === row.ended_at?.getTime() && row.ended_at_exact
+          ? row.ended_at_exact
+          : (repairedEndedAt?.toISOString() ?? null),
       prior: localTimeContext(row),
       repaired: normalizedLocalTimeContext(repairedRow, homeTimezone, coordinates.get(row.id)),
     });

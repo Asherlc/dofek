@@ -24,6 +24,7 @@ import {
   requeueStuckFileUpload,
   retryFailedFileUpload,
   updateFileUploadProgress,
+  withLockedFileUpload,
 } from "./file-upload.ts";
 
 const uploadId = "00000000-0000-4000-8000-000000000001";
@@ -459,6 +460,21 @@ describe("file upload repository", () => {
       timezone: "America/Los_Angeles",
     });
     expect(mocks.executeWithSchema).toHaveBeenCalledTimes(1);
+  });
+
+  it("holds a row lock while a retained upload operation runs", async () => {
+    const transaction = { execute: vi.fn() };
+    const transactionalDatabase = {
+      execute: vi.fn(),
+      transaction: vi.fn(async (operation) => operation(transaction)),
+    };
+    mocks.executeWithSchema.mockResolvedValueOnce([row({ state: "failed" })]);
+    const operation = vi.fn(async (_transaction, upload) => upload.state);
+
+    await expect(withLockedFileUpload(transactionalDatabase, uploadId, operation)).resolves.toBe(
+      "failed",
+    );
+    expect(operation).toHaveBeenCalledWith(transaction, expect.objectContaining({ id: uploadId }));
   });
 
   it("fails loudly when a failed upload cannot be retried", async () => {

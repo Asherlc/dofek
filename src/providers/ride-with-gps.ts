@@ -241,7 +241,15 @@ export function parseTripToActivity(
   const startedAt = trip.departed_at ? new Date(trip.departed_at) : new Date(trip.created_at);
   const endedAt = trip.duration ? new Date(startedAt.getTime() + trip.duration * 1000) : undefined;
   const location = trip.track_points?.find(
-    (point) => point.latitude !== undefined && point.longitude !== undefined,
+    (point) =>
+      point.latitude !== undefined &&
+      point.longitude !== undefined &&
+      Number.isFinite(point.latitude) &&
+      Number.isFinite(point.longitude) &&
+      point.latitude >= -90 &&
+      point.latitude <= 90 &&
+      point.longitude >= -180 &&
+      point.longitude <= 180,
   );
 
   return {

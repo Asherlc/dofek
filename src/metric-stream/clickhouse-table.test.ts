@@ -4,7 +4,9 @@ import {
   buildMetricStreamProcessingAcknowledgementTableSql,
   METRIC_STREAM_PROCESSING_ACKNOWLEDGEMENT_TABLE,
   METRIC_STREAM_PROVIDER_CURRENT_STATE_RECORDED_AT_PROJECTION,
+  METRIC_STREAM_PROVIDER_EXTERNAL_ID_PROJECTION,
   metricStreamProviderCurrentStateRecordedAtProjectionDefinition,
+  metricStreamProviderExternalIdProjectionDefinition,
 } from "./clickhouse-table.ts";
 
 describe("buildMetricStreamProcessingAcknowledgementTableSql", () => {
@@ -23,6 +25,21 @@ describe("buildMetricStreamProcessingAcknowledgementTableSql", () => {
     expect(sql).toContain("marker_offset UInt64");
     expect(sql).toContain("ENGINE = ReplacingMergeTree(applied_at)");
     expect(sql).toContain("ORDER BY (operation_id, batch_id)");
+  });
+});
+
+describe("metric-stream provider external-ID projection", () => {
+  it("covers replacement rows and orders external-ID lookups", () => {
+    const definition = metricStreamProviderExternalIdProjectionDefinition();
+
+    expect(METRIC_STREAM_PROVIDER_EXTERNAL_ID_PROJECTION).toBe("by_provider_external_id");
+    expect(definition).toContain("activity_id,");
+    expect(definition).toContain("external_id,");
+    expect(definition).toContain("is_deleted,");
+    expect(definition).toContain("generation");
+    expect(definition).toContain(
+      "ORDER BY (user_id, provider_id, external_id, id, version, ingested_at)",
+    );
   });
 });
 

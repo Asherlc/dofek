@@ -11,8 +11,8 @@ describe("buildPostgresFitnessActivityRawTableStatement", () => {
     const statement = buildPostgresFitnessActivityRawTableStatement();
 
     expect(statement).toContain("rejected_provider_timezone Nullable(String)");
-    expect(statement).toContain("rejected_provider_start_utc_offset_minutes Nullable(Int16)");
-    expect(statement).toContain("rejected_provider_end_utc_offset_minutes Nullable(Int16)");
+    expect(statement).toContain("rejected_provider_start_utc_offset_minutes Nullable(Int64)");
+    expect(statement).toContain("rejected_provider_end_utc_offset_minutes Nullable(Int64)");
   });
 });
 

@@ -144,50 +144,55 @@ export async function runMetricStreamEventConsumer(
         }
       }
 
+      const sinkStartedAt = events.length > 0 ? performance.now() : null;
       if (events.length > 0) {
-        const sinkStartedAt = performance.now();
         await options.handleEvents(events, {
           topic: payload.batch.topic,
           partition: payload.batch.partition,
           eventOffsets,
           heartbeat: payload.heartbeat,
         });
-        const sinkDurationMs = performance.now() - sinkStartedAt;
-        const deletionEventCount = events.filter(isMetricStreamDeletedEvent).length;
-        const firstOffset = eventOffsets.at(0);
-        const lastOffset = eventOffsets.at(-1);
-        const highWatermark = payload.batch.highWatermark;
-        const lag =
-          lastOffset === undefined || highWatermark === undefined
-            ? null
-            : Number(BigInt(highWatermark) - BigInt(lastOffset) - 1n);
-        const observedAt = performance.now();
-        const priorLagSample = lagSamplesByPartition.get(payload.batch.partition);
-        const lagElapsedSeconds = priorLagSample
-          ? (observedAt - priorLagSample.observedAt) / 1_000
-          : 0;
-        const lagGrowthPerSecond =
-          lag == null || !priorLagSample || lagElapsedSeconds <= 0
-            ? null
-            : (lag - priorLagSample.lag) / lagElapsedSeconds;
-        if (lag != null) {
-          lagSamplesByPartition.set(payload.batch.partition, { observedAt, lag });
-        }
-        logger.info("metric_stream.consumer_batch", {
-          topic: payload.batch.topic,
-          partition: payload.batch.partition,
-          first_offset: firstOffset,
-          last_offset: lastOffset,
-          high_watermark: highWatermark,
-          consumer_lag: lag,
-          consumer_lag_growth_per_second: lagGrowthPerSecond,
-          event_count: events.length,
-          deletion_event_count: deletionEventCount,
-          sink_duration_ms: sinkDurationMs,
-          per_event_sink_latency_ms: sinkDurationMs / events.length,
-          deletion_events_per_second: (deletionEventCount * 1_000) / Math.max(sinkDurationMs, 1),
-        });
       }
+
+      const sinkDurationMs = sinkStartedAt === null ? null : performance.now() - sinkStartedAt;
+      const deletionEventCount = events.filter(isMetricStreamDeletedEvent).length;
+      const firstOffset = payload.batch.messages.at(0)?.offset;
+      const lastOffset = payload.batch.messages.at(-1)?.offset;
+      const highWatermark = payload.batch.highWatermark;
+      const lag =
+        lastOffset === undefined || highWatermark === undefined
+          ? null
+          : Number(BigInt(highWatermark) - BigInt(lastOffset) - 1n);
+      const observedAt = performance.now();
+      const priorLagSample = lagSamplesByPartition.get(payload.batch.partition);
+      const lagElapsedSeconds = priorLagSample
+        ? (observedAt - priorLagSample.observedAt) / 1_000
+        : 0;
+      const lagGrowthPerSecond =
+        lag == null || !priorLagSample || lagElapsedSeconds <= 0
+          ? null
+          : (lag - priorLagSample.lag) / lagElapsedSeconds;
+      if (lag != null) {
+        lagSamplesByPartition.set(payload.batch.partition, { observedAt, lag });
+      }
+      logger.info("metric_stream.consumer_batch", {
+        topic: payload.batch.topic,
+        partition: payload.batch.partition,
+        first_offset: firstOffset,
+        last_offset: lastOffset,
+        high_watermark: highWatermark,
+        consumer_lag: lag,
+        consumer_lag_growth_per_second: lagGrowthPerSecond,
+        event_count: events.length,
+        deletion_event_count: deletionEventCount,
+        sink_duration_ms: sinkDurationMs,
+        average_batch_event_cost_ms:
+          sinkDurationMs === null ? null : sinkDurationMs / events.length,
+        deletion_events_per_second:
+          sinkDurationMs === null
+            ? null
+            : (deletionEventCount * 1_000) / Math.max(sinkDurationMs, 1),
+      });
 
       for (const message of payload.batch.messages) {
         payload.resolveOffset(message.offset);

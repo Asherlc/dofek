@@ -119,6 +119,21 @@ describe("parseTripToActivity", () => {
       longitude: -123.56,
     });
   });
+
+  it("skips invalid coordinates before selecting local-time evidence", () => {
+    const trip = {
+      ...baseTrip,
+      track_points: [
+        { longitude: -300, latitude: 120, epochSeconds: 1_723_276_200 },
+        { longitude: -123.56, latitude: 38.827, epochSeconds: 1_723_276_201 },
+      ],
+    };
+
+    expect(parseTripToActivity(trip).localTimeCoordinates).toEqual({
+      latitude: 38.827,
+      longitude: -123.56,
+    });
+  });
 });
 
 describe("parseTrackPoints", () => {

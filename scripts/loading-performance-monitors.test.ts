@@ -52,7 +52,7 @@ describe("loadingPerformanceMonitors", () => {
   it.each([
     ["metric-stream-absolute-lag", "consumer_lag", 100_000],
     ["metric-stream-lag-growth", "consumer_lag_growth_per_second", 100],
-    ["metric-stream-sink-latency", "per_event_sink_latency_ms", 100],
+    ["metric-stream-sink-latency", "average_batch_event_cost_ms", 100],
     ["metric-stream-deletion-rate", "deletion_events_per_second", 50],
   ] as const)("defines the %s monitor from sink batch telemetry", (id, field, threshold) => {
     const monitor = loadingPerformanceMonitors.find((candidate) => candidate.id === id);
@@ -64,5 +64,13 @@ describe("loadingPerformanceMonitors", () => {
     expect(monitor?.aplQuery).toContain(field);
     expect(monitor?.triggerAfterNPositiveResults).toBe(2);
     expect(monitor?.triggerFromNRuns).toBe(3);
+  });
+
+  it("requires multiple sink-cost samples before alerting", () => {
+    const monitor = loadingPerformanceMonitors.find(
+      (candidate) => candidate.id === "metric-stream-sink-latency",
+    );
+    expect(monitor?.aplQuery).toContain("sample_count = count()");
+    expect(monitor?.aplQuery).toContain("sample_count >= 3");
   });
 });

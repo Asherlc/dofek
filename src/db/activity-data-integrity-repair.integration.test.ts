@@ -245,8 +245,8 @@ async function seedProductionDbtFixture(
       end_utc_offset_minutes Nullable(Int16),
       local_time_source String,
       rejected_provider_timezone Nullable(String),
-      rejected_provider_start_utc_offset_minutes Nullable(Int16),
-      rejected_provider_end_utc_offset_minutes Nullable(Int16),
+      rejected_provider_start_utc_offset_minutes Nullable(Int64),
+      rejected_provider_end_utc_offset_minutes Nullable(Int64),
       raw String,
       provider_absent_at Nullable(DateTime64(6, 'UTC')),
       deleted_at Nullable(DateTime64(6, 'UTC')),
@@ -398,8 +398,8 @@ async function mirrorPostgresCommit(
             toInt16(-420) AS end_utc_offset_minutes,
             'home_zone_fallback' AS local_time_source,
             'Etc/GMT+4' AS rejected_provider_timezone,
-            toInt16(-300) AS rejected_provider_start_utc_offset_minutes,
-            toInt16(-300) AS rejected_provider_end_utc_offset_minutes,
+            toInt64(-300) AS rejected_provider_start_utc_offset_minutes,
+            toInt64(-300) AS rejected_provider_end_utc_offset_minutes,
             now64(9) AS _peerdb_synced_at,
             _peerdb_version + 100 AS _peerdb_version
           )
@@ -414,8 +414,8 @@ async function mirrorPostgresCommit(
             toInt16(-420) AS end_utc_offset_minutes,
             'home_zone_fallback' AS local_time_source,
             'America/New_York' AS rejected_provider_timezone,
-            toInt16(-420) AS rejected_provider_start_utc_offset_minutes,
-            toInt16(-420) AS rejected_provider_end_utc_offset_minutes,
+            toInt64(-420) AS rejected_provider_start_utc_offset_minutes,
+            toInt64(-420) AS rejected_provider_end_utc_offset_minutes,
             now64(9) AS _peerdb_synced_at,
             _peerdb_version + 100 AS _peerdb_version
           )
@@ -469,8 +469,8 @@ async function mirrorPostgresRollback(
             toInt16(-300) AS end_utc_offset_minutes,
             'provider_timezone' AS local_time_source,
             CAST(NULL, 'Nullable(String)') AS rejected_provider_timezone,
-            CAST(NULL, 'Nullable(Int16)') AS rejected_provider_start_utc_offset_minutes,
-            CAST(NULL, 'Nullable(Int16)') AS rejected_provider_end_utc_offset_minutes,
+            CAST(NULL, 'Nullable(Int64)') AS rejected_provider_start_utc_offset_minutes,
+            CAST(NULL, 'Nullable(Int64)') AS rejected_provider_end_utc_offset_minutes,
             now64(9) AS _peerdb_synced_at,
             _peerdb_version + 100 AS _peerdb_version
           )
@@ -480,12 +480,13 @@ async function mirrorPostgresRollback(
       await client.command({
         query: `INSERT INTO ${database}.activity
           SELECT * REPLACE(
+            'America/New_York' AS timezone,
             toInt16(-420) AS start_utc_offset_minutes,
             toInt16(-420) AS end_utc_offset_minutes,
             'provider_timezone' AS local_time_source,
             CAST(NULL, 'Nullable(String)') AS rejected_provider_timezone,
-            CAST(NULL, 'Nullable(Int16)') AS rejected_provider_start_utc_offset_minutes,
-            CAST(NULL, 'Nullable(Int16)') AS rejected_provider_end_utc_offset_minutes,
+            CAST(NULL, 'Nullable(Int64)') AS rejected_provider_start_utc_offset_minutes,
+            CAST(NULL, 'Nullable(Int64)') AS rejected_provider_end_utc_offset_minutes,
             now64(9) AS _peerdb_synced_at,
             _peerdb_version + 100 AS _peerdb_version
           )

@@ -51,4 +51,10 @@ describe("parseRetryFailedFileUploadCommand", () => {
   ])("rejects invalid command arguments", ({ args, message }) => {
     expect(() => parseRetryFailedFileUploadCommand(args)).toThrow(message);
   });
+
+  it("rejects a non-IANA timezone supplied explicitly", () => {
+    expect(() =>
+      parseRetryFailedFileUploadCommand([...required, "--timezone=Not/A_Timezone"]),
+    ).toThrow("valid IANA timezone");
+  });
 });

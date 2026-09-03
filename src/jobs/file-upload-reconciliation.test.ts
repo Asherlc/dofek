@@ -9,6 +9,12 @@ const repository = vi.hoisted(() => ({
   markObjectDeleted: vi.fn(),
   queue: vi.fn(),
   requeue: vi.fn(async () => true),
+  withLocked: vi.fn(async (database, uploadId, operation) => {
+    const listed = await repository.list.mock.results.at(-1)?.value;
+    const locked = listed?.find((candidate: FileUpload) => candidate.id === uploadId);
+    if (!locked) throw new Error(`Upload ${uploadId} was not found`);
+    return operation(database, locked);
+  }),
   lifecycle: vi.fn(),
   reconciliation: vi.fn(),
   captureException: vi.fn(),
@@ -22,6 +28,7 @@ vi.mock("../db/file-upload.ts", () => ({
   markFileUploadObjectDeleted: repository.markObjectDeleted,
   queueCompletedFileUpload: repository.queue,
   requeueStuckFileUpload: repository.requeue,
+  withLockedFileUpload: repository.withLocked,
 }));
 vi.mock("../file-upload-metrics.ts", () => ({
   fileUploadLifecycleTotal: { add: repository.lifecycle },
@@ -81,7 +88,10 @@ function storage(): ImportUploadStorage {
   };
 }
 
-const database = { execute: vi.fn() };
+const database = {
+  execute: vi.fn(),
+  transaction: vi.fn(async (operation) => operation(database)),
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
