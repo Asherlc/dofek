@@ -58,7 +58,7 @@ function renderDbtBooleanBranches(
     previousIndex = (match.index ?? 0) + match[0].length;
 
     const directive = match[1] ?? "";
-    if (directive.startsWith("if ")) {
+    if (/^if\s+/.test(directive)) {
       frames.push({
         condition: (match[2] ?? "").trim(),
         enabledSql: "",

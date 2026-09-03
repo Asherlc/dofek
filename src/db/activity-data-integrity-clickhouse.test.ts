@@ -5,7 +5,7 @@ import {
   type DerivedSnapshot,
   incompatibleMemberCount,
   snapshotDerivedRows,
-  snapshotDerivedRowsOrFallback,
+  snapshotDerivedRowsOrNull,
   sourceRowsMatchPostgres,
   uint64StringSchema,
   waitForPostgresMirror,
@@ -94,15 +94,12 @@ describe("snapshotDerivedRows", () => {
     expect(client.query).not.toHaveBeenCalled();
   });
 
-  it("preserves the captured pre-state when a failure snapshot is unavailable", async () => {
-    const fallback = compatibilitySnapshot([sourceRowA], []);
+  it("reports an unavailable failure snapshot without substituting the pre-state", async () => {
     const client = {
       query: vi.fn(async () => Promise.reject(new Error("ClickHouse unavailable"))),
     };
 
-    await expect(
-      snapshotDerivedRowsOrFallback(client, userId, [activityA], fallback),
-    ).resolves.toBe(fallback);
+    await expect(snapshotDerivedRowsOrNull(client, userId, [activityA])).resolves.toBeNull();
   });
 
   it("captures an edge reached through a duplicate when groups do not expand the scope", async () => {

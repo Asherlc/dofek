@@ -250,10 +250,11 @@ async function seedProductionDbtFixture(
       recorded_date Date,
       channel String,
       scalar Nullable(Float64),
+      refresh_version UInt64,
       is_deleted UInt8,
       refreshed_at DateTime64(9, 'UTC')
-    ) ENGINE = ReplacingMergeTree(refreshed_at)
-      ORDER BY (user_id, channel, recorded_at)`,
+    ) ENGINE = ReplacingMergeTree(refresh_version)
+      ORDER BY (user_id, channel, recorded_date, recorded_at)`,
     `CREATE TABLE ${database}.activity_sensor_sample (
       activity_id UUID,
       user_id UUID,

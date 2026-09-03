@@ -66,7 +66,7 @@ the artifact without editing it:
 - `userId`, window, selection bound, and `changedActivityIds` are exact;
 - each `postgresActivities[].prior` to `.repaired` local-time transition is
   explainable from the provider timezone or offset;
-- the captured component closure and seven derived projections are expected;
+- the captured component closure and eight derived projections are expected;
   and
 - `incompatibleMemberCount` is zero or has an explicit investigation plan.
 

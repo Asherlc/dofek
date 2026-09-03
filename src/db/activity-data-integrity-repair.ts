@@ -17,7 +17,7 @@ import {
   type DerivedSnapshot,
   incompatibleMemberCount,
   snapshotDerivedRows,
-  snapshotDerivedRowsOrFallback,
+  snapshotDerivedRowsOrNull,
   sourceRowsMatchPostgres,
   uint64StringSchema,
   waitForPostgresMirror,
@@ -153,7 +153,7 @@ const auditArtifactSchema = z.object({
       failedAt: z.string().datetime(),
       stage: z.enum(["cdc_readiness", "dbt_rebuild", "verification"]),
       message: z.string().min(1),
-      ...capturedDerivedRowsSchema,
+      snapshot: z.object(capturedDerivedRowsSchema).nullable(),
     })
     .optional(),
   rollback: z
@@ -701,11 +701,10 @@ async function repairActivityDataIntegrityWithLease(
       artifactPath,
     };
   } catch (error) {
-    const failedState = await snapshotDerivedRowsOrFallback(
+    const failedState = await snapshotDerivedRowsOrNull(
       clickHouse,
       options.userId,
       before.activityIds,
-      before,
     );
     const failed: AuditArtifact = {
       ...postgresCommitted,
@@ -714,7 +713,7 @@ async function repairActivityDataIntegrityWithLease(
         failedAt: now().toISOString(),
         stage: failureStage,
         message: errorMessage(error),
-        ...capturedDerivedRows(failedState),
+        snapshot: failedState ? capturedDerivedRows(failedState) : null,
       },
     };
     await replacePrivateJson(artifactPath, failed, generateRunId);
@@ -786,7 +785,7 @@ function affectedArtifactActivityIds(artifact: AuditArtifact): string[] {
     summaryRowsAfter: artifact.summaryRowsBefore,
   });
   if (artifact.execution) addSnapshotActivityIds(activityIds, artifact.execution);
-  if (artifact.failure) addSnapshotActivityIds(activityIds, artifact.failure);
+  if (artifact.failure?.snapshot) addSnapshotActivityIds(activityIds, artifact.failure.snapshot);
   return [...activityIds];
 }
 

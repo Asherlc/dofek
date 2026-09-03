@@ -346,17 +346,16 @@ ORDER BY summary.activity_id`,
   };
 }
 
-export async function snapshotDerivedRowsOrFallback(
+export async function snapshotDerivedRowsOrNull(
   client: ActivityIntegrityClickHouseClient,
   userId: string,
   selectedIds: readonly string[],
-  fallback: DerivedSnapshot,
-): Promise<DerivedSnapshot> {
+): Promise<DerivedSnapshot | null> {
   try {
     return await snapshotDerivedRows(client, userId, selectedIds);
   } catch (error) {
     captureException(error);
-    return fallback;
+    return null;
   }
 }
 

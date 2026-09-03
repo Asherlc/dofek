@@ -56,7 +56,7 @@ const userIdSchema = z
 const activityIdPrefixSchema = z
   .string()
   .regex(
-    /^[0-9a-f]{1,8}(?:-[0-9a-f]{1,4}(?:-[0-9a-f]{1,4}(?:-[0-9a-f]{1,4}(?:-[0-9a-f]{1,12})?)?)?)?$/i,
+    /^(?:[0-9a-f]{1,8}|[0-9a-f]{8}(?:-[0-9a-f]{1,4}(?:-[0-9a-f]{1,4}(?:-[0-9a-f]{1,4}(?:-[0-9a-f]{1,12})?)?)?)?)$/i,
     "--activity-id must be a hexadecimal UUID prefix",
   );
 const inspectionInputSchema = z.object({

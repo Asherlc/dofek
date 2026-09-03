@@ -15,6 +15,12 @@ describe("parseInspectionArgs", () => {
       activityIds: ["2a", "761"],
     });
   });
+
+  it("rejects a UUID prefix whose first group is shortened before a hyphen", () => {
+    expect(() => parseInspectionArgs([`--user-id=${testUserId}`, "--activity-id=1-2345"])).toThrow(
+      "--activity-id must be a hexadecimal UUID prefix",
+    );
+  });
 });
 
 describe("inspectActivityDataIntegrity", () => {

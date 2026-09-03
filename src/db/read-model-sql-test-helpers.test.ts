@@ -128,6 +128,15 @@ SELECT * FROM state
     expect(renderDbtModelSql(modelSql, { isIncremental: false })).toContain("WHERE active = 0");
   });
 
+  it("renders an if directive separated from its condition by a tab", () => {
+    const renderedSql = renderDbtModelSql(
+      "{% if\tis_incremental() %}SELECT 1{% else %}SELECT 0{% endif %}",
+      { isIncremental: true },
+    );
+
+    expect(renderedSql).toBe("SELECT 1");
+  });
+
   it("selects the unscoped activity refresh branch", () => {
     const scopedModelSql = `${modelSql}
 {% if activity_refresh_scoped %}
