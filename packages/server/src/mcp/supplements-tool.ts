@@ -2,6 +2,8 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SupplementsRepository } from "../repositories/supplements-repository.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { requireMcpScope } from "./token-repository.ts";
+import { jsonToolOutputSchema } from "./tool-output.ts";
+import { jsonContent } from "./tool-utils.ts";
 
 /** Register the authenticated user's current supplement definitions. */
 export function registerSupplementsTool(server: McpServer, context: DofekMcpContext): void {
@@ -12,21 +14,13 @@ export function registerSupplementsTool(server: McpServer, context: DofekMcpCont
       description: "Return the authenticated user's current supplement definitions and nutrients.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: {},
+      outputSchema: jsonToolOutputSchema,
     },
     async () => {
       requireMcpScope(context.scopes, "nutrition:read");
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(
-              await new SupplementsRepository(context.db, context.userId, context.timezone).list(),
-              null,
-              2,
-            ),
-          },
-        ],
-      };
+      return jsonContent(
+        await new SupplementsRepository(context.db, context.userId, context.timezone).list(),
+      );
     },
   );
 }

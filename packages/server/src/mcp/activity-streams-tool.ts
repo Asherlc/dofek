@@ -3,6 +3,7 @@ import { z } from "zod";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { requireMcpScope } from "./token-repository.ts";
+import { jsonToolOutputSchema } from "./tool-output.ts";
 import { jsonContent } from "./tool-utils.ts";
 
 const activityStreamChannelSchema = z.enum([
@@ -28,6 +29,7 @@ export function registerActivityStreamsTool(server: McpServer, context: DofekMcp
         channels: z.array(activityStreamChannelSchema).min(1).optional(),
         downsample_to: z.number().int().min(1).max(2000).optional(),
       },
+      outputSchema: jsonToolOutputSchema,
     },
     async ({ activity_id, channels, downsample_to }) => {
       requireMcpScope(context.scopes, "activity:read");

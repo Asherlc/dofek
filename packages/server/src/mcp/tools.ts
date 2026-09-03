@@ -3,6 +3,7 @@ import {
   type HealthExplorerInput,
   type HealthMetric,
   healthExplorerInputSchema,
+  healthExplorerSnapshotSchema,
   healthMetricSchema,
 } from "@dofek/mcp-contracts/health-explorer";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -51,6 +52,7 @@ import { registerStrengthSessionsTool } from "./strength-sessions-tool.ts";
 import { registerSupplementsTool } from "./supplements-tool.ts";
 import { syncHealth } from "./sync-health.ts";
 import { requireMcpScope } from "./token-repository.ts";
+import { jsonToolOutputSchema } from "./tool-output.ts";
 import { assertDateRange, jsonContent } from "./tool-utils.ts";
 import { registerTrainingLoadTool } from "./training-load-tool.ts";
 
@@ -68,7 +70,6 @@ const healthMetricColumns: Partial<Record<HealthMetric, string>> = {
   exercise_minutes: "exercise_minutes",
   flights_climbed: "flights_climbed",
 };
-
 const recoveryMetricKeys: Partial<
   Record<HealthMetric, DailyRecoveryBaseline["metrics"][number]["metric"]>
 > = {
@@ -77,7 +78,6 @@ const recoveryMetricKeys: Partial<
   respiratory_rate: "respiratory_rate",
   sleep_efficiency: "sleep_efficiency",
 };
-
 const activityMcpRowSchema = z.object({
   canonical_type: z.string(),
   provider_type: z.string().optional().default(""),
@@ -414,7 +414,6 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     version: "0.1.0",
   });
   registerDofekAppResources(server);
-
   server.registerTool(
     "get_daily_health_summary",
     {
@@ -425,6 +424,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         date: dateSchema,
         timezone: z.string().optional(),
       },
+      outputSchema: jsonToolOutputSchema,
     },
     async ({ date, timezone }) => {
       requireMcpScope(context.scopes, "health:read");
@@ -437,7 +437,6 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       return jsonContent(rows[0] ?? null);
     },
   );
-
   server.registerTool(
     "get_health_trends",
     {
@@ -452,6 +451,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         granularity: z.enum(["daily", "weekly"]).optional(),
         timezone: z.string().optional(),
       },
+      outputSchema: jsonToolOutputSchema,
     },
     async ({ start_date, end_date, metrics, granularity, timezone }) => {
       requireMcpScope(context.scopes, "health:read");
@@ -473,7 +473,6 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       );
     },
   );
-
   server.registerTool(
     "get_data_coverage",
     {
@@ -482,6 +481,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         "Return first and last observed dates, observed-day counts, and source providers for every health metric.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: {},
+      outputSchema: jsonToolOutputSchema,
     },
     async () => {
       requireMcpScope(context.scopes, "health:read");
@@ -497,7 +497,6 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       );
     },
   );
-
   registerTrainingLoadTool(server, context);
   registerCyclingPerformanceTool(server, context);
   registerActivityStreamsTool(server, context);
@@ -505,7 +504,6 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
   registerClimbingSessionsTool(server, context);
   registerStrengthSessionsTool(server, context);
   registerSupplementsTool(server, context);
-
   server.registerTool(
     "render_health_explorer",
     {
@@ -513,15 +511,18 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       description:
         "Open the interactive Dofek Analytics Explorer for server-computed health metrics in an exact date range.",
       inputSchema: healthExplorerInputSchema,
+      outputSchema: healthExplorerSnapshotSchema,
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       _meta: { ui: { resourceUri: healthExplorerResourceUri } },
     },
     async (input) => {
       requireMcpScope(context.scopes, "health:read");
       const timezone = input.timezone ?? context.timezone;
-      const snapshot = await new HealthExplorerService({
-        list: (request) => listHealthTrends(context, request),
-      }).snapshot({ ...input, timezone });
+      const snapshot = healthExplorerSnapshotSchema.parse(
+        await new HealthExplorerService({
+          list: (request) => listHealthTrends(context, request),
+        }).snapshot({ ...input, timezone }),
+      );
       return {
         structuredContent: snapshot,
         content: [
@@ -539,7 +540,6 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       };
     },
   );
-
   server.registerTool(
     "get_sleep_summary",
     {
@@ -552,6 +552,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         end_date: dateSchema,
         timezone: z.string().optional(),
       },
+      outputSchema: jsonToolOutputSchema,
     },
     async ({ start_date, end_date, timezone }) => {
       requireMcpScope(context.scopes, "health:read");
@@ -615,7 +616,6 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       );
     },
   );
-
   server.registerTool(
     "search_activities",
     {
@@ -630,6 +630,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         include: z.array(z.literal("mapPreview")).optional(),
         limit: z.number().int().min(1).max(25).optional(),
       },
+      outputSchema: jsonToolOutputSchema,
     },
     async ({ from, to, query, include, limit }) => {
       requireMcpScope(context.scopes, "activity:read");
@@ -673,7 +674,6 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       });
     },
   );
-
   server.registerTool(
     "get_activity_summary",
     {
@@ -694,6 +694,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
           .optional(),
         canonical_types: z.array(z.string()).optional(),
       },
+      outputSchema: jsonToolOutputSchema,
     },
     async ({ start_date, end_date, group_by, canonical_types }) => {
       requireMcpScope(context.scopes, "activity:read");
@@ -715,7 +716,6 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       });
     },
   );
-
   server.registerTool(
     "get_finger_loading",
     {
@@ -728,6 +728,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         end_date: dateSchema,
         timezone: z.string().optional(),
       },
+      outputSchema: jsonToolOutputSchema,
     },
     async ({ start_date, end_date, timezone }) => {
       requireMcpScope(context.scopes, "activity:read");
@@ -761,7 +762,6 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       );
     },
   );
-
   server.registerTool(
     "get_nutrition_summary",
     {
@@ -773,6 +773,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         end_date: dateSchema,
         timezone: z.string().optional(),
       },
+      outputSchema: jsonToolOutputSchema,
     },
     async ({ start_date, end_date, timezone }) => {
       requireMcpScope(context.scopes, "nutrition:read");
@@ -803,7 +804,6 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       );
     },
   );
-
   server.registerTool(
     "get_body_metrics",
     {
@@ -814,6 +814,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         start_date: dateSchema,
         end_date: dateSchema,
       },
+      outputSchema: jsonToolOutputSchema,
     },
     async ({ start_date, end_date }) => {
       requireMcpScope(context.scopes, "health:read");
@@ -847,7 +848,6 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       );
     },
   );
-
   server.registerTool(
     "get_subjective_timeline",
     {
@@ -858,6 +858,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         start_date: dateSchema,
         end_date: dateSchema,
       },
+      outputSchema: jsonToolOutputSchema,
     },
     async ({ start_date, end_date }) => {
       requireMcpScope(context.scopes, "health:read");
@@ -866,7 +867,6 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       return jsonContent(await repository.timeline(start_date, end_date));
     },
   );
-
   server.registerTool(
     "list_providers",
     {
@@ -875,6 +875,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         "List configured Dofek providers with connection status and last-sync timestamps.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: {},
+      outputSchema: jsonToolOutputSchema,
     },
     async () => {
       requireMcpScope(context.scopes, "providers:read");
@@ -909,7 +910,6 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
           )
           .map((provider) => provider.providerId),
       );
-
       const providers = getAllProviders()
         .filter((provider) => provider.validate() === null)
         .map((provider) => {
@@ -936,7 +936,6 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       return jsonContent(providers);
     },
   );
-
   server.registerTool(
     "start_provider_sync",
     {
@@ -955,6 +954,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
           .regex(/^\d{4}-\d{2}-\d{2}$/)
           .optional(),
       },
+      outputSchema: jsonToolOutputSchema,
     },
     async ({ providerId, sinceDays, sinceDate, untilDate }) => {
       requireMcpScope(context.scopes, "sync:write");

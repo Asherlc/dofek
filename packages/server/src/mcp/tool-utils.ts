@@ -1,7 +1,7 @@
-import { serializeJsonText } from "./tool-result.ts";
+import { jsonToolResult } from "./tool-result.ts";
 
 export function jsonContent(value: unknown) {
-  return { content: [{ type: "text" as const, text: serializeJsonText(value) }] };
+  return jsonToolResult(value);
 }
 
 export function assertDateRange(startDate: string, endDate: string): void {

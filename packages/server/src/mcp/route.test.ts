@@ -1,4 +1,5 @@
 import type { AddressInfo } from "node:net";
+import { healthExplorerSnapshotSchema } from "@dofek/mcp-contracts/health-explorer";
 import { captureException } from "dofek/lib/error-reporting";
 import express from "express";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -279,6 +280,7 @@ const toolListResponseSchema = z.object({
         description: z.string(),
         inputSchema: z.object({}).passthrough(),
         name: z.string(),
+        outputSchema: z.object({}).passthrough(),
         title: z.string(),
       }),
     ),
@@ -291,6 +293,7 @@ const toolCallResponseSchema = z.object({
   result: z.object({
     content: z.array(z.object({ text: z.string(), type: z.literal("text") })),
     isError: z.boolean().optional(),
+    structuredContent: z.unknown().optional(),
   }),
 });
 
@@ -531,6 +534,9 @@ describe("createMcpRouter", () => {
 
     const parsedResponse = toolListResponseSchema.parse(parseJsonRpcEvent(response.text));
     const tools = parsedResponse.result.tools;
+    for (const tool of tools) {
+      expect(tool.outputSchema).toMatchObject({ type: "object" });
+    }
     expect(findListedTool(tools, "get_health_trends").description).toContain("HRV and step");
     expect(findListedTool(tools, "render_health_explorer").description).toContain(
       "interactive Dofek Analytics Explorer",
@@ -706,6 +712,31 @@ describe("createMcpRouter", () => {
       expect(findListedTool(tools, name).annotations).toMatchObject({ readOnlyHint: true });
     }
     expect(findListedTool(tools, "start_provider_sync").annotations?.readOnlyHint).not.toBe(true);
+  });
+
+  it("returns object-root structured content for JSON tool calls", async () => {
+    authorizeMcpToken();
+
+    const activitySummaryResponse = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_activity_summary", {
+        end_date: "2026-09-01",
+        start_date: "2026-08-01",
+      }),
+    });
+    const providersResponse = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("list_providers", {}),
+    });
+
+    expect(
+      toolCallResponseSchema.parse(parseJsonRpcEvent(activitySummaryResponse.text)).result
+        .structuredContent,
+    ).toEqual({ result: { summaries: [], unclassified_pct: 0 } });
+    expect(
+      toolCallResponseSchema.parse(parseJsonRpcEvent(providersResponse.text)).result
+        .structuredContent,
+    ).toEqual({ result: [] });
   });
 
   it("returns a subjective timeline using the request context timezone", async () => {
@@ -1517,7 +1548,7 @@ describe("createMcpRouter", () => {
       ],
       _meta: { ui: { resourceUri: "ui://dofek/health-explorer.html" } },
     });
-    expect(parsedResponse.result.structuredContent).toEqual({
+    expect(healthExplorerSnapshotSchema.parse(parsedResponse.result.structuredContent)).toEqual({
       coverage: {
         requested_days: 2,
         by_metric: {

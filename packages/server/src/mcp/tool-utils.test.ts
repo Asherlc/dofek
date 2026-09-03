@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import { jsonContent } from "./tool-utils.ts";
 
 describe("jsonContent", () => {
-  it("returns readable JSON text", () => {
+  it("returns an object-root structured result and readable JSON text", () => {
     expect(jsonContent({ metric: "hrv", value: null })).toEqual({
       content: [{ type: "text", text: '{\n  "metric": "hrv",\n  "value": null\n}' }],
+      structuredContent: { result: { metric: "hrv", value: null } },
     });
   });
 

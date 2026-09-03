@@ -2,7 +2,7 @@ export function jsonToolResult<T>(value: T) {
   const text = serializeJsonText(value);
   return {
     content: [{ type: "text" as const, text }],
-    structuredContent: value,
+    structuredContent: { result: JSON.parse(text) },
   };
 }
 
