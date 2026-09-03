@@ -774,10 +774,7 @@ describe("processImportJob", () => {
       });
 
       await expect(
-        runImportJob(
-          createMockJob({ filePath: tempFilePath, importType: "strong-csv" }),
-          mockDb,
-        ),
+        runImportJob(createMockJob({ filePath: tempFilePath, importType: "strong-csv" }), mockDb),
       ).rejects.toEqual(expect.objectContaining({ name: "UnrecoverableError" }));
       expect(mockLogSync).toHaveBeenCalledWith(
         mockDb,

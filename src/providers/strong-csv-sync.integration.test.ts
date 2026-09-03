@@ -221,7 +221,9 @@ describe("importStrongCsv() (integration)", () => {
       );
       expect(result.errors).toHaveLength(1);
     } finally {
-      await ctx.db.execute(sql`DROP TRIGGER reject_test_strength_set_insert ON fitness.strength_set`);
+      await ctx.db.execute(
+        sql`DROP TRIGGER reject_test_strength_set_insert ON fitness.strength_set`,
+      );
       await ctx.db.execute(sql`DROP FUNCTION fitness.reject_test_strength_set_insert()`);
     }
 
@@ -321,13 +323,7 @@ describe("importStrongCsv() (integration)", () => {
       .onConflictDoNothing();
 
     const csv = `${STRONG_CSV_HEADER}\n2026-08-26 16:00:50,Deadlift,45m,Pull Up,1,0,8,,,,,`;
-    const result = await importStrongCsv(
-      ctx.db,
-      csv,
-      TEST_USER_ID,
-      "lbs",
-      "America/Los_Angeles",
-    );
+    const result = await importStrongCsv(ctx.db, csv, TEST_USER_ID, "lbs", "America/Los_Angeles");
 
     expect(result.errors).toHaveLength(0);
     const workout = (await ctx.db.select().from(activity).where(eq(activity.name, "Deadlift")))[0];
