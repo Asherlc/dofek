@@ -290,6 +290,10 @@ describe("RIDE_WITH_GPS_ACTIVITY_TYPE_MAP", () => {
     expect(RIDE_WITH_GPS_ACTIVITY_TYPE_MAP.trail_running).toBe("running");
   });
 
+  it("maps RideWithGPS hiking-prefixed walks to hiking", () => {
+    expect(RIDE_WITH_GPS_ACTIVITY_TYPE_MAP["walking:hiking"]).toBe("hiking");
+  });
+
   it("maps all entries to canonical types", () => {
     for (const value of Object.values(RIDE_WITH_GPS_ACTIVITY_TYPE_MAP)) {
       expect(CANONICAL_ACTIVITY_TYPES).toContain(classifyLegacyActivityType(value).canonicalType);

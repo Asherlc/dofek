@@ -6,7 +6,7 @@ import {
 import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import { eq } from "drizzle-orm";
 import { resolveUserExerciseWithProvenance } from "../db/exercise-provenance.ts";
-import type { SyncDatabase } from "../db/index.ts";
+import type { Database, SyncDatabase } from "../db/index.ts";
 import { upsertProviderActivity } from "../db/provider-activity-sync.ts";
 import { strengthSet } from "../db/schema/activity.ts";
 import { ensureProvider } from "../db/tokens.ts";
@@ -21,6 +21,19 @@ export const STRONG_PROVIDER_ID = "strong-csv";
 
 export class StrongCsvValidationError extends Error {
   override name = "StrongCsvValidationError";
+}
+
+type TransactionalSyncDatabase = SyncDatabase & Pick<Database, "transaction">;
+
+function hasTransaction(db: SyncDatabase): db is TransactionalSyncDatabase {
+  return "transaction" in db && typeof db.transaction === "function";
+}
+
+function requireTransactionalDatabase(db: SyncDatabase): TransactionalSyncDatabase {
+  if (!hasTransaction(db)) {
+    throw new Error("Strong CSV import requires a transactional database");
+  }
+  return db;
 }
 
 // ============================================================
@@ -447,8 +460,6 @@ export async function importStrongCsv(
   const errors: SyncError[] = [];
   let recordsSynced = 0;
 
-  await ensureProvider(db, STRONG_PROVIDER_ID, "Strong", undefined, userId);
-
   // Auto-detect format: CSV export vs single-workout text share
   let groups: StrongWorkoutGroup[];
   let effectiveWeightUnit: "kg" | "lbs";
@@ -475,130 +486,140 @@ export async function importStrongCsv(
     if (error instanceof StrongCsvValidationError) throw error;
     throw new StrongCsvValidationError(`Invalid Strong timezone: ${timezone ?? "unknown"}`);
   }
+  const transactionalDb = requireTransactionalDatabase(db);
+  await ensureProvider(db, STRONG_PROVIDER_ID, "Strong", undefined, userId);
   const exerciseCache = new Map<string, string>();
 
   for (const [groupIndex, group] of groups.entries()) {
+    const groupCacheKeys = new Set<string>();
     try {
-      const externalId = `strong:${createHash("sha256").update(`${group.date}|${group.workoutName}`).digest("hex").slice(0, 16)}`;
+      const imported = await transactionalDb.transaction(async (transactionDb) => {
+        const externalId = `strong:${createHash("sha256").update(`${group.date}|${group.workoutName}`).digest("hex").slice(0, 16)}`;
 
-      const startedAt = groupStartTimes[groupIndex];
-      if (!startedAt) throw new Error(`Missing validated Strong workout timestamp: ${group.date}`);
-      const durationSeconds = parseDurationString(group.duration);
-      const endedAt =
-        durationSeconds > 0 ? new Date(startedAt.getTime() + durationSeconds * 1000) : null;
-      const localTimeContext = timezone
-        ? resolveRecordLocalTimeContext({
-            startedAt,
-            endedAt,
-            timezone,
-            source: "device_timezone",
-          })
-        : null;
+        const startedAt = groupStartTimes[groupIndex];
+        if (!startedAt) throw new Error(`Missing validated Strong workout timestamp: ${group.date}`);
+        const durationSeconds = parseDurationString(group.duration);
+        const endedAt =
+          durationSeconds > 0 ? new Date(startedAt.getTime() + durationSeconds * 1000) : null;
+        const localTimeContext = timezone
+          ? resolveRecordLocalTimeContext({
+              startedAt,
+              endedAt,
+              timezone,
+              source: "device_timezone",
+            })
+          : null;
 
-      const activityRow = await upsertProviderActivity(
-        db,
-        {
-          providerId: STRONG_PROVIDER_ID,
-          userId,
-          externalId,
-          activityType: resolveProviderActivityType("strength", "strength"),
-          startedAt,
-          endedAt,
-          name: group.workoutName,
-          notes: group.workoutNotes,
-          timezone: localTimeContext?.timezone,
-          startUtcOffsetMinutes: localTimeContext?.startUtcOffsetMinutes,
-          endUtcOffsetMinutes: localTimeContext?.endUtcOffsetMinutes,
-          localTimeSource: localTimeContext?.source,
-          homeTimezone: timezone,
-        },
-        {
-          activityType: resolveProviderActivityType("strength", "strength"),
-          startedAt,
-          endedAt,
-          name: group.workoutName,
-          notes: group.workoutNotes,
-          timezone: localTimeContext?.timezone,
-          startUtcOffsetMinutes: localTimeContext?.startUtcOffsetMinutes,
-          endUtcOffsetMinutes: localTimeContext?.endUtcOffsetMinutes,
-          localTimeSource: localTimeContext?.source,
-        },
-      );
-
-      const activityId = activityRow?.id;
-      if (!activityId) continue;
-
-      // Delete old sets, re-insert
-      await db.delete(strengthSet).where(eq(strengthSet.activityId, activityId));
-
-      // Track exercise index per exercise name within this workout
-      const exerciseIndexMap = new Map<string, number>();
-      const setIndexMap = new Map<string, number>();
-      let nextExerciseIndex = 0;
-
-      const setRows: (typeof strengthSet.$inferInsert)[] = [];
-
-      for (const csvRow of group.sets) {
-        const { exerciseName, equipment } = parseStrongExerciseName(csvRow.exerciseName);
-        const cacheKey = `${exerciseName}|${equipment ?? ""}`;
-        const inferredMuscleGroups = lookupExerciseMuscleGroups(exerciseName);
-
-        let exerciseId = exerciseCache.get(cacheKey);
-        if (!exerciseId) {
-          exerciseId = await resolveUserExerciseWithProvenance(db, {
-            equipment,
-            exerciseType: inferredMuscleGroups ? "STRENGTH" : null,
-            muscleGroups: inferredMuscleGroups,
-            name: exerciseName,
-            providerExerciseId: null,
-            providerExerciseName: csvRow.exerciseName,
+        const activityRow = await upsertProviderActivity(
+          transactionDb,
+          {
             providerId: STRONG_PROVIDER_ID,
             userId,
+            externalId,
+            activityType: resolveProviderActivityType("strength", "strength"),
+            startedAt,
+            endedAt,
+            name: group.workoutName,
+            notes: group.workoutNotes,
+            timezone: localTimeContext?.timezone,
+            startUtcOffsetMinutes: localTimeContext?.startUtcOffsetMinutes,
+            endUtcOffsetMinutes: localTimeContext?.endUtcOffsetMinutes,
+            localTimeSource: localTimeContext?.source,
+            homeTimezone: timezone,
+          },
+          {
+            activityType: resolveProviderActivityType("strength", "strength"),
+            startedAt,
+            endedAt,
+            name: group.workoutName,
+            notes: group.workoutNotes,
+            timezone: localTimeContext?.timezone,
+            startUtcOffsetMinutes: localTimeContext?.startUtcOffsetMinutes,
+            endUtcOffsetMinutes: localTimeContext?.endUtcOffsetMinutes,
+            localTimeSource: localTimeContext?.source,
+          },
+        );
+
+        const activityId = activityRow?.id;
+        if (!activityId) return false;
+
+        // Replace the activity and its sets in one transaction so an exercise
+        // resolution or insert failure cannot erase the previous good import.
+        await transactionDb.delete(strengthSet).where(eq(strengthSet.activityId, activityId));
+
+        // Track exercise index per exercise name within this workout
+        const exerciseIndexMap = new Map<string, number>();
+        const setIndexMap = new Map<string, number>();
+        let nextExerciseIndex = 0;
+
+        const setRows: (typeof strengthSet.$inferInsert)[] = [];
+
+        for (const csvRow of group.sets) {
+          const { exerciseName, equipment } = parseStrongExerciseName(csvRow.exerciseName);
+          const cacheKey = `${exerciseName}|${equipment ?? ""}`;
+          const inferredMuscleGroups = lookupExerciseMuscleGroups(exerciseName);
+
+          let exerciseId = exerciseCache.get(cacheKey);
+          if (!exerciseId) {
+            exerciseId = await resolveUserExerciseWithProvenance(transactionDb, {
+              equipment,
+              exerciseType: inferredMuscleGroups ? "STRENGTH" : null,
+              muscleGroups: inferredMuscleGroups,
+              name: exerciseName,
+              providerExerciseId: null,
+              providerExerciseName: csvRow.exerciseName,
+              providerId: STRONG_PROVIDER_ID,
+              userId,
+            });
+            exerciseCache.set(cacheKey, exerciseId);
+            groupCacheKeys.add(cacheKey);
+          }
+
+          // Compute exercise index (order of first appearance within workout)
+          if (!exerciseIndexMap.has(cacheKey)) {
+            exerciseIndexMap.set(cacheKey, nextExerciseIndex++);
+          }
+          const exerciseIndex = exerciseIndexMap.get(cacheKey) ?? 0;
+          const setIndex = setIndexMap.get(cacheKey) ?? 0;
+          setIndexMap.set(cacheKey, setIndex + 1);
+
+          // Convert weight
+          let weightKg = csvRow.weight;
+          if (weightKg !== null && effectiveWeightUnit === "lbs") {
+            weightKg = Math.round(weightKg * 0.453592 * 1000) / 1000;
+          }
+
+          // Convert distance (Strong exports in km)
+          const distanceMeters = csvRow.distance !== null ? csvRow.distance * 1000 : null;
+
+          setRows.push({
+            activityId,
+            exerciseId,
+            exerciseIndex,
+            setIndex,
+            setType:
+              csvRow.weight === 0 && csvRow.reps === 0 && (csvRow.seconds ?? 0) > 0
+                ? "rest"
+                : "working",
+            weightKg,
+            reps: csvRow.reps,
+            distanceMeters,
+            durationSeconds: csvRow.seconds,
+            rpe: csvRow.rpe,
+            notes: csvRow.notes,
           });
-          exerciseCache.set(cacheKey, exerciseId);
         }
 
-        // Compute exercise index (order of first appearance within workout)
-        if (!exerciseIndexMap.has(cacheKey)) {
-          exerciseIndexMap.set(cacheKey, nextExerciseIndex++);
+        if (setRows.length > 0) {
+          await transactionDb.insert(strengthSet).values(setRows);
         }
-        const exerciseIndex = exerciseIndexMap.get(cacheKey) ?? 0;
-        const setIndex = setIndexMap.get(cacheKey) ?? 0;
-        setIndexMap.set(cacheKey, setIndex + 1);
+        return true;
+      });
 
-        // Convert weight
-        let weightKg = csvRow.weight;
-        if (weightKg !== null && effectiveWeightUnit === "lbs") {
-          weightKg = Math.round(weightKg * 0.453592 * 1000) / 1000;
-        }
-
-        // Convert distance (Strong exports in km)
-        const distanceMeters = csvRow.distance !== null ? csvRow.distance * 1000 : null;
-
-        setRows.push({
-          activityId,
-          exerciseId,
-          exerciseIndex,
-          setIndex,
-          setType:
-            csvRow.weight === 0 && csvRow.reps === 0 && (csvRow.seconds ?? 0) > 0
-              ? "rest"
-              : "working",
-          weightKg,
-          reps: csvRow.reps,
-          distanceMeters,
-          durationSeconds: csvRow.seconds,
-          rpe: csvRow.rpe,
-          notes: csvRow.notes,
-        });
-      }
-
-      if (setRows.length > 0) {
-        await db.insert(strengthSet).values(setRows);
-      }
-
+      if (!imported) continue;
       recordsSynced++;
     } catch (err) {
+      for (const cacheKey of groupCacheKeys) exerciseCache.delete(cacheKey);
       if (err instanceof StrongCsvValidationError) throw err;
       errors.push({
         message: `Failed to import workout "${group.workoutName}" on ${group.date}: ${err instanceof Error ? err.message : String(err)}`,

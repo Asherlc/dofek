@@ -20,6 +20,13 @@ vi.mock("../db/tokens.ts", () => ({
   ensureProvider: vi.fn().mockResolvedValue(undefined),
 }));
 
+function withTransaction<TDatabase extends object>(database: TDatabase) {
+  return Object.assign(database, {
+    transaction: async <TResult>(operation: (transaction: TDatabase) => Promise<TResult>) =>
+      operation(database),
+  });
+}
+
 describe("parseStrongExerciseName", () => {
   it("splits name and equipment from parens", () => {
     expect(parseStrongExerciseName("Squat (Barbell)")).toEqual({
@@ -140,10 +147,10 @@ describe("importStrongCsv", () => {
         returning: vi.fn().mockResolvedValue([]),
       }),
     });
-    const db = {
+    const db = withTransaction({
       insert: vi.fn().mockReturnValue({ values: activityValues }),
       execute: vi.fn(),
-    };
+    });
 
     await Reflect.apply(importStrongCsv, undefined, [
       db,
@@ -167,10 +174,10 @@ describe("importStrongCsv", () => {
         returning: vi.fn().mockResolvedValue([]),
       }),
     });
-    const db = {
+    const db = withTransaction({
       insert: vi.fn().mockReturnValue({ values: activityValues }),
       execute: vi.fn(),
-    };
+    });
 
     await Reflect.apply(importStrongCsv, undefined, [
       db,
@@ -247,7 +254,7 @@ describe("importStrongCsv", () => {
           onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
         }),
       });
-    const db = {
+    const db = withTransaction({
       execute,
       insert,
       delete: vi.fn().mockReturnValue({
@@ -260,7 +267,7 @@ describe("importStrongCsv", () => {
           }),
         }),
       }),
-    };
+    });
 
     const result = await Reflect.apply(importStrongCsv, undefined, [
       db,
@@ -327,7 +334,7 @@ describe("importStrongCsv", () => {
         }),
       })
       .mockReturnValueOnce({ values: vi.fn().mockResolvedValue(undefined) });
-    const db = {
+    const db = withTransaction({
       execute: vi.fn().mockResolvedValue([
         {
           alias_exercise_id: "00000000-0000-4000-8000-000000000001",
@@ -344,7 +351,7 @@ describe("importStrongCsv", () => {
           }),
         }),
       }),
-    };
+    });
 
     const result = await Reflect.apply(importStrongCsv, undefined, [
       db,
