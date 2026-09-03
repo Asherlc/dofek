@@ -245,10 +245,14 @@ describe("GET /api/webhooks/:providerName — validation challenges", () => {
     mockGetAllProviders.mockReturnValue([provider]);
     mockExecuteWithSchema
       .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ id: "expired-1", subscription_external_id: "remote-expired" }])
+      .mockResolvedValueOnce([
+        { id: "expired-1", subscription_external_id: "remote-expired" },
+        { id: "expired-2", subscription_external_id: null },
+      ])
       .mockResolvedValueOnce([
         { id: "pending-1", provider_id: null, verify_token: "other-token", signing_secret: null },
         { id: "pending-2", provider_id: null, verify_token: "pending-token", signing_secret: null },
+        { id: "pending-3", provider_id: null, verify_token: "third-token", signing_secret: null },
       ]);
 
     const res = await request(
@@ -261,6 +265,7 @@ describe("GET /api/webhooks/:providerName — validation challenges", () => {
     expect(res.body).toContain("pending-token");
     expect(provider.handleValidationChallenge).toHaveBeenCalledTimes(2);
     expect(provider.unregisterWebhook).toHaveBeenCalledWith("remote-expired");
+    expect(provider.unregisterWebhook).not.toHaveBeenCalledWith(undefined);
     expect(db.execute).toHaveBeenCalledTimes(1);
     const cleanupQuery = new PgDialect().sqlToQuery(db.execute.mock.calls[0]?.[0]);
     expect(cleanupQuery.sql).toContain("DELETE FROM fitness.webhook_subscription");
