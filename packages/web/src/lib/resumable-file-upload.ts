@@ -110,6 +110,7 @@ interface RunUploadOptions {
   sessionStore: UploadSessionStore;
   signal: AbortSignal;
   onProgress(progress: FileUploadProgress): void;
+  onUploadInitiated?(uploadId: string): void;
   fullSync?: boolean;
   weightUnit?: "kg" | "lbs";
 }
@@ -146,6 +147,26 @@ function sessionMatchesFile(
     session.sha256 === sha256 &&
     session.weightUnit === weightUnit
   );
+}
+
+function uploadCancelledError(): DOMException {
+  return new DOMException("Upload cancelled", "AbortError");
+}
+
+function throwIfUploadCancelled(signal: AbortSignal): void {
+  if (signal.aborted) throw uploadCancelledError();
+}
+
+async function cleanUpCancelledUpload(
+  options: RunUploadOptions,
+  uploadId: string | null,
+  initiated: boolean,
+): Promise<void> {
+  const cleanup: Array<Promise<unknown>> = [options.sessionStore.delete(options.providerId)];
+  if (initiated && uploadId) cleanup.unshift(options.api.abort({ uploadId }));
+  const results = await Promise.allSettled(cleanup);
+  const failure = results.find((result) => result.status === "rejected");
+  if (failure?.status === "rejected") throw failure.reason;
 }
 
 function sleep(milliseconds: number, signal: AbortSignal): Promise<void> {
@@ -199,98 +220,125 @@ async function uploadPartWithRetry(
 }
 
 export async function runResumableFileUpload(options: RunUploadOptions): Promise<UploadSummary> {
-  options.onProgress({ phase: "preparing", percentage: 0, message: "Preparing upload..." });
-  const sha256 = await hashFile(
-    options.file,
-    (percentage) =>
-      options.onProgress({
-        phase: "preparing",
-        percentage: Math.round(percentage * 0.1),
-        message: "Verifying file integrity...",
-      }),
-    options.signal,
-  );
-  const storedSession = await options.sessionStore.get(options.providerId);
-  const uploadId =
-    storedSession && sessionMatchesFile(storedSession, options.file, sha256, options.weightUnit)
-      ? storedSession.uploadId
-      : crypto.randomUUID();
-  const initiated = await options.api.initiate({
-    uploadId,
-    importType: options.importType,
-    filename: options.file.name,
-    contentType: options.file.type || "application/octet-stream",
-    sizeBytes: options.file.size,
-    sha256,
-    fullSync: options.fullSync,
-    weightUnit: options.weightUnit,
-  });
-  const resumed = await options.api.resume({ uploadId });
-  const completedParts = new Map(
-    resumed.parts.map((part) => [
-      part.partNumber,
-      { partNumber: part.partNumber, etag: part.etag },
-    ]),
-  );
-  const session: StoredUploadSession = {
-    providerId: options.providerId,
-    uploadId,
-    importType: options.importType,
-    filename: options.file.name,
-    sizeBytes: options.file.size,
-    lastModified: options.file.lastModified,
-    sha256,
-    partSizeBytes: initiated.partSizeBytes,
-    completedParts: [...completedParts.values()],
-    weightUnit: options.weightUnit,
-  };
-  await options.sessionStore.put(session);
+  let uploadId: string | null = null;
+  let initiated = false;
+  try {
+    options.onProgress({ phase: "preparing", percentage: 0, message: "Preparing upload..." });
+    throwIfUploadCancelled(options.signal);
+    const sha256 = await hashFile(
+      options.file,
+      (percentage) =>
+        options.onProgress({
+          phase: "preparing",
+          percentage: Math.round(percentage * 0.1),
+          message: "Verifying file integrity...",
+        }),
+      options.signal,
+    );
+    throwIfUploadCancelled(options.signal);
+    const storedSession = await options.sessionStore.get(options.providerId);
+    throwIfUploadCancelled(options.signal);
+    const effectiveWeightUnit =
+      options.weightUnit ??
+      (options.importType === "strong-csv" ? storedSession?.weightUnit : undefined);
+    uploadId =
+      storedSession && sessionMatchesFile(storedSession, options.file, sha256, effectiveWeightUnit)
+        ? storedSession.uploadId
+        : crypto.randomUUID();
+    const initiatedUpload = await options.api.initiate({
+      uploadId,
+      importType: options.importType,
+      filename: options.file.name,
+      contentType: options.file.type || "application/octet-stream",
+      sizeBytes: options.file.size,
+      sha256,
+      fullSync: options.fullSync,
+      weightUnit: effectiveWeightUnit,
+    });
+    initiated = true;
+    throwIfUploadCancelled(options.signal);
+    options.onUploadInitiated?.(uploadId);
+    const resumed = await options.api.resume({ uploadId });
+    throwIfUploadCancelled(options.signal);
+    const completedParts = new Map(
+      resumed.parts.map((part) => [
+        part.partNumber,
+        { partNumber: part.partNumber, etag: part.etag },
+      ]),
+    );
+    const session: StoredUploadSession = {
+      providerId: options.providerId,
+      uploadId,
+      importType: options.importType,
+      filename: options.file.name,
+      sizeBytes: options.file.size,
+      lastModified: options.file.lastModified,
+      sha256,
+      partSizeBytes: initiatedUpload.partSizeBytes,
+      completedParts: [...completedParts.values()],
+      weightUnit: effectiveWeightUnit,
+    };
+    await options.sessionStore.put(session);
+    throwIfUploadCancelled(options.signal);
 
-  const partCount = Math.ceil(options.file.size / session.partSizeBytes);
-  const pendingPartNumbers = Array.from({ length: partCount }, (_, index) => index + 1).filter(
-    (partNumber) => !completedParts.has(partNumber),
-  );
-  let nextPartIndex = 0;
-  const uploadWorker = async (): Promise<void> => {
-    while (nextPartIndex < pendingPartNumbers.length) {
-      const partNumber = pendingPartNumbers[nextPartIndex];
-      nextPartIndex++;
-      if (partNumber === undefined) return;
-      const completedPart = await uploadPartWithRetry(
-        options.api,
-        session,
-        options.file,
-        partNumber,
-        options.signal,
-      );
-      completedParts.set(partNumber, completedPart);
-      session.completedParts = [...completedParts.values()].sort(
-        (first, second) => first.partNumber - second.partNumber,
-      );
-      await options.sessionStore.put(session);
-      options.onProgress({
-        phase: "uploading",
-        percentage: 10 + Math.round((completedParts.size / partCount) * 75),
-        message: `Uploaded ${completedParts.size} of ${partCount} parts`,
-      });
+    const partCount = Math.ceil(options.file.size / session.partSizeBytes);
+    const pendingPartNumbers = Array.from({ length: partCount }, (_, index) => index + 1).filter(
+      (partNumber) => !completedParts.has(partNumber),
+    );
+    let nextPartIndex = 0;
+    const uploadWorker = async (): Promise<void> => {
+      while (nextPartIndex < pendingPartNumbers.length) {
+        const partNumber = pendingPartNumbers[nextPartIndex];
+        nextPartIndex++;
+        if (partNumber === undefined) return;
+        const completedPart = await uploadPartWithRetry(
+          options.api,
+          session,
+          options.file,
+          partNumber,
+          options.signal,
+        );
+        completedParts.set(partNumber, completedPart);
+        session.completedParts = [...completedParts.values()].sort(
+          (first, second) => first.partNumber - second.partNumber,
+        );
+        await options.sessionStore.put(session);
+        throwIfUploadCancelled(options.signal);
+        options.onProgress({
+          phase: "uploading",
+          percentage: 10 + Math.round((completedParts.size / partCount) * 75),
+          message: `Uploaded ${completedParts.size} of ${partCount} parts`,
+        });
+      }
+    };
+    const uploadWorkers = Array.from(
+      { length: Math.min(UPLOAD_CONCURRENCY, pendingPartNumbers.length) },
+      () => uploadWorker(),
+    );
+    try {
+      await Promise.all(uploadWorkers);
+    } catch (error) {
+      if (options.signal.aborted) await Promise.allSettled(uploadWorkers);
+      throw error;
     }
-  };
-  await Promise.all(
-    Array.from({ length: Math.min(UPLOAD_CONCURRENCY, pendingPartNumbers.length) }, () =>
-      uploadWorker(),
-    ),
-  );
+    throwIfUploadCancelled(options.signal);
 
-  options.onProgress({ phase: "verifying", percentage: 90, message: "Verifying upload..." });
-  options.onProgress({ phase: "queueing", percentage: 95, message: "Queueing import..." });
-  const completed = await options.api.complete({
-    uploadId,
-    parts: [...completedParts.values()].sort(
-      (first, second) => first.partNumber - second.partNumber,
-    ),
-  });
-  await options.sessionStore.delete(options.providerId);
-  return completed;
+    options.onProgress({ phase: "verifying", percentage: 90, message: "Verifying upload..." });
+    options.onProgress({ phase: "queueing", percentage: 95, message: "Queueing import..." });
+    const completed = await options.api.complete({
+      uploadId,
+      parts: [...completedParts.values()].sort(
+        (first, second) => first.partNumber - second.partNumber,
+      ),
+    });
+    throwIfUploadCancelled(options.signal);
+    await options.sessionStore.delete(options.providerId);
+    return completed;
+  } catch (error) {
+    if (!options.signal.aborted) throw error;
+    await cleanUpCancelledUpload(options, uploadId, initiated);
+    throw uploadCancelledError();
+  }
 }
 
 const DATABASE_NAME = "dofek-file-uploads";

@@ -81,14 +81,26 @@ export function FileImportZone({
     failedCount?: number;
   }>({ phase: "idle", progress: 0 });
   const [dragOver, setDragOver] = useState(false);
+  const [successfullyCancelledUploadId, setSuccessfullyCancelledUploadId] = useState<string | null>(
+    null,
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const localUploadActiveRef = useRef(false);
+  const uploadInProgressRef = useRef(false);
+  const uploadGenerationRef = useRef(0);
   const currentUploadIdRef = useRef<string | null>(null);
   const cancelledUploadIdRef = useRef<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stoppedRef = useRef(false);
   const validProviderId = providerId?.length ? providerId : null;
   const sessionKey = providerId ?? importType;
+  const activeImportUploadId = activeImport ? uploadIdFromJobId(activeImport.jobId) : null;
+  const activeImportWasCancelled =
+    activeImportUploadId !== null && activeImportUploadId === successfullyCancelledUploadId;
+  const activeImportInProgress =
+    (activeImport?.status === "queued" || activeImport?.status === "running") &&
+    !activeImportWasCancelled;
   const { mutateAsync: initiateUpload } = trpc.fileUpload.initiate.useMutation({
     meta: locallyReportedErrorMeta,
   });
@@ -193,11 +205,19 @@ export function FileImportZone({
   useEffect(() => {
     const controller = new AbortController();
     const signal = controller.signal;
+    const sessionGeneration = uploadGenerationRef.current;
     stoppedRef.current = false;
     void indexedDbUploadSessionStore
       .get(sessionKey)
       .then((session) => {
-        if (session && !stoppedRef.current && !signal.aborted) {
+        if (
+          session &&
+          sessionGeneration === uploadGenerationRef.current &&
+          !uploadInProgressRef.current &&
+          !activeImportInProgress &&
+          !stoppedRef.current &&
+          !signal.aborted
+        ) {
           currentUploadIdRef.current = session.uploadId;
           setState({
             phase: "cancelled",
@@ -207,7 +227,15 @@ export function FileImportZone({
         }
       })
       .catch((error: unknown) => {
-        if (stoppedRef.current || signal.aborted) return;
+        if (
+          sessionGeneration !== uploadGenerationRef.current ||
+          uploadInProgressRef.current ||
+          activeImportInProgress ||
+          stoppedRef.current ||
+          signal.aborted
+        ) {
+          return;
+        }
         captureException(error, { tags: { uploadId: "pending" } });
         setState({
           phase: "failed",
@@ -215,9 +243,8 @@ export function FileImportZone({
           message: error instanceof Error ? error.message : "Upload session storage is unavailable",
         });
       });
-    const activeUploadId = activeImport ? uploadIdFromJobId(activeImport.jobId) : null;
-    if (activeUploadId && activeUploadId !== cancelledUploadIdRef.current) {
-      void pollUpload(activeUploadId, signal);
+    if (activeImportUploadId && activeImportUploadId !== cancelledUploadIdRef.current) {
+      void pollUpload(activeImportUploadId, signal);
     }
     return () => {
       stoppedRef.current = true;
@@ -225,12 +252,17 @@ export function FileImportZone({
       abortControllerRef.current?.abort();
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [activeImport, pollUpload, sessionKey]);
+  }, [activeImportInProgress, activeImportUploadId, pollUpload, sessionKey]);
 
   const uploadFile = useCallback(
     async (file: File) => {
+      if (uploadInProgressRef.current || activeImportInProgress) return;
+      const uploadGeneration = ++uploadGenerationRef.current;
+      uploadInProgressRef.current = true;
       const abortController = new AbortController();
       abortControllerRef.current = abortController;
+      localUploadActiveRef.current = true;
+      currentUploadIdRef.current = null;
       stoppedRef.current = false;
       try {
         const completed = await runResumableFileUpload({
@@ -242,6 +274,9 @@ export function FileImportZone({
           signal: abortController.signal,
           fullSync,
           weightUnit: importType === "strong-csv" ? selectedWeightUnit : weightUnit,
+          onUploadInitiated: (uploadId) => {
+            currentUploadIdRef.current = uploadId;
+          },
           onProgress: (progress) =>
             setState({
               phase: progress.phase,
@@ -249,6 +284,7 @@ export function FileImportZone({
               message: progress.message,
             }),
         });
+        localUploadActiveRef.current = false;
         currentUploadIdRef.current = completed.uploadId;
         setState({ phase: "processing", progress: 0, message: "Processing import..." });
         await pollUpload(completed.uploadId, abortController.signal);
@@ -264,25 +300,45 @@ export function FileImportZone({
           message: error instanceof Error ? error.message : "Upload failed",
         });
       } finally {
-        abortControllerRef.current = null;
+        localUploadActiveRef.current = false;
+        if (uploadGeneration === uploadGenerationRef.current) uploadInProgressRef.current = false;
+        if (abortControllerRef.current === abortController) abortControllerRef.current = null;
       }
     },
-    [fullSync, importType, pollUpload, selectedWeightUnit, sessionKey, uploadApi, weightUnit],
+    [
+      activeImportInProgress,
+      fullSync,
+      importType,
+      pollUpload,
+      selectedWeightUnit,
+      sessionKey,
+      uploadApi,
+      weightUnit,
+    ],
   );
 
   const cancelUpload = useCallback(async () => {
+    const localUploadActive = localUploadActiveRef.current;
     abortControllerRef.current?.abort();
     stoppedRef.current = true;
     const uploadId = currentUploadIdRef.current;
     cancelledUploadIdRef.current = uploadId;
     let cancellationError: unknown;
-    if (uploadId) {
+    if (!localUploadActive && uploadId) {
       try {
         await uploadApi.abort({ uploadId });
+        setSuccessfullyCancelledUploadId(uploadId);
+        try {
+          await trpcUtils.sync.activeImports.invalidate();
+        } catch (error) {
+          captureException(error, { tags: { uploadId } });
+        }
       } catch (error) {
         cancellationError = error;
         captureException(error, { tags: { uploadId } });
       }
+    }
+    if (!localUploadActive && uploadId) {
       try {
         await indexedDbUploadSessionStore.delete(sessionKey);
       } catch (error) {
@@ -303,7 +359,7 @@ export function FileImportZone({
           ? `Upload cancelled locally. ${cancellationError.message}`
           : "Upload cancelled",
     });
-  }, [sessionKey, uploadApi]);
+  }, [sessionKey, trpcUtils, uploadApi]);
 
   const handleFileSelect = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {

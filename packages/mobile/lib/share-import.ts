@@ -142,7 +142,9 @@ export async function importSharedFile(
 ): Promise<ShareImportResult | null> {
   try {
     const fileExtension = extensionForFileName(deps.file.name);
-    const csvHeaderLine = fileExtension === ".csv" ? getCsvHeaderLine(await deps.file.text()) : "";
+    const csvHeaderLine = isCsvLike(fileExtension, deps.file.type || null)
+      ? getCsvHeaderLine(await deps.file.text())
+      : "";
     const providerId =
       args.providerId ??
       inferImportProviderFromFile({

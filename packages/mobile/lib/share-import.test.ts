@@ -73,12 +73,59 @@ describe("importSharedFile", () => {
     expect(initiate).not.toHaveBeenCalled();
   });
 
-  it("imports an extensionless shared Strong CSV when its resolved URI differs", async () => {
+  it("does not ask for a source unit when importing a non-Strong shared file", async () => {
+    const uploadId = "8c844e28-7c3b-470b-8e0b-d2b6f5fb3afc";
+    const selectStrongWeightUnit = vi.fn(async (): Promise<"kg" | "lbs" | null> => "kg");
+    const file: UploadableMobileFile & { text(): Promise<string> } = {
+      uri: "file:///tmp/garmin-export.zip",
+      name: "garmin-export.zip",
+      type: "application/zip",
+      size: 80,
+      text: async () => "",
+      sha256: async () => "a".repeat(64),
+      uploadPart: async () => ({ status: 200, headers: { etag: "part-etag" } }),
+    };
+    const fileUploadApi: FileUploadApi = {
+      initiate: vi.fn(async () => ({ uploadId, partSizeBytes: 16 * 1024 * 1024 })),
+      authorizeParts: vi.fn(async () => ({
+        parts: [
+          {
+            partNumber: 1,
+            url: "https://r2.example/part-1",
+            expiresAt: "2026-08-27T20:00:00.000Z",
+          },
+        ],
+      })),
+      complete: vi.fn(async () => ({ uploadId, importJobId: `file-import-${uploadId}` })),
+      resume: vi
+        .fn()
+        .mockResolvedValueOnce({ upload: { uploadId, state: "uploading" }, parts: [] })
+        .mockResolvedValueOnce({
+          upload: { uploadId, state: "completed", progressPercent: 100, errorMessage: null },
+          parts: [],
+        }),
+    };
+
+    await expect(
+      importSharedFile(
+        {
+          fileUri: file.uri,
+          providerId: "garmin-dump",
+          selectStrongWeightUnit,
+        },
+        { file, fileUploadApi, createUploadId: () => uploadId, sleep: async () => {} },
+      ),
+    ).resolves.toEqual({ providerId: "garmin-dump", jobId: `file-import-${uploadId}` });
+
+    expect(selectStrongWeightUnit).not.toHaveBeenCalled();
+  });
+
+  it("imports an extensionless Strong CSV from a generic shared name", async () => {
     const uploadId = "7b817a28-7c3b-470b-8e0b-d2b6f5fb3afc";
     const uploadPart = vi.fn(async () => ({ status: 200, headers: { etag: "part-etag" } }));
     const file: UploadableMobileFile & { text(): Promise<string> } = {
       uri: "file:///var/mobile/Containers/Data/Application/CEC2FED0-57D4-41EA-B252-288126334734/tmp/com.dofek.app-Inbox/strong_workouts.csv",
-      name: "Strong Export",
+      name: "export",
       type: "text/csv",
       size: 80,
       text: vi.fn(
@@ -123,7 +170,7 @@ describe("importSharedFile", () => {
     expect(fileUploadApi.initiate).toHaveBeenCalledWith(
       expect.objectContaining({
         importType: "strong-csv",
-        filename: "Strong Export",
+        filename: "export",
         weightUnit: "lbs",
       }),
     );

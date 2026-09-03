@@ -2095,7 +2095,7 @@ describe("ProvidersScreen", () => {
     });
   });
 
-  it("does not load or delay unit preferences for a non-Strong shared import", async () => {
+  it("does not eagerly load a unit preference before calling shared-import logic", async () => {
     mockImportSharedFile.mockResolvedValue({ providerId: "garmin-dump", jobId: "job-share" });
     mockUseLocalSearchParams.mockReturnValue({
       sharedFile: "file:///tmp/garmin-export.zip",

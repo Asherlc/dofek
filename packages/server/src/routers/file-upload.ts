@@ -41,7 +41,7 @@ const importConfig = {
     contentTypes: ["application/octet-stream", "application/zip", "application/xml", "text/xml"],
   },
   "strong-csv": {
-    extensions: [".csv"],
+    extensions: ["", ".csv"],
     contentTypes: ["text/csv", "application/octet-stream", "text/plain"],
   },
   "cronometer-csv": {
