@@ -249,6 +249,30 @@ credentials, account access, and separate scope decisions before integration.
 7. Sentinel zeros are introduced at read time; the persisted out-of-range audit
    count is zero for every requested metric.
 
+## 2026-09-03 integrity follow-up
+
+The most recent Strong import failure was not a date-plus-workout-name identity
+collision. Existing provider aliases could point at an exercise whose stored
+equipment metadata differed from the current parser's inference. The resolver
+looked up the inferred `(name, equipment)` pair before its durable provider
+alias, raised an alias conflict, and the importer had already deleted the
+activity's prior sets. Alias-first resolution and per-workout transactions now
+preserve the prior good activity and sets on any failure. Partial imports fail
+the durable upload instead of reporting completion.
+
+The failed retained Strong export can be replayed with its actual `lbs` unit
+and `America/Los_Angeles` wall-clock timezone using the dry-run-first operator
+command in the [activity integrity repair runbook](activity-data-integrity-repair-runbook.md).
+The importer resolves the zone at each activity instant, so historical PST,
+PDT, ambiguous-hour, and nonexistent-hour behavior is not approximated with a
+fixed seven-hour shift.
+
+`get_cycling_performance` now reports all-history power availability by
+`indoor`, `outdoor`, and `unknown` modality, including first and last observed
+dates, activity counts, coverage percentage, and contributing source
+providers. This makes the upstream absence of outdoor and 2022 power explicit
+rather than indistinguishable from a requested range with no rides.
+
 ## Production actions still requiring authorization
 
 1. Deploy the branch and migrations.

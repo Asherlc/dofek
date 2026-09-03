@@ -168,7 +168,7 @@ export function buildActivityIntegrityPostgresArtifactRows(
   return rows.map((row) => {
     let repairedStartedAt = row.started_at;
     let repairedEndedAt = row.ended_at;
-    if (row.provider_id === "strong-csv") {
+    if (row.provider_id === "strong-csv" && row.local_time_source === "unknown") {
       if (!homeTimezone) {
         throw new Error("Strong timestamp repair requires the user's home timezone");
       }

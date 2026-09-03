@@ -574,6 +574,93 @@ export async function requeueStuckFileUpload(
   return rows.length > 0;
 }
 
+export interface RetryFailedFileUploadInput {
+  uploadId: string;
+  userId: string;
+  importJobId: string;
+  weightUnit?: "kg" | "lbs";
+  timezone?: string;
+}
+
+/**
+ * Requeue a failed import while its verified source object is still retained.
+ * The upload row and durable outbox are reset in one statement so the retry
+ * cannot be visible without its corrected, persisted import metadata.
+ */
+export async function retryFailedFileUpload(
+  database: Database,
+  input: RetryFailedFileUploadInput,
+): Promise<FileUpload> {
+  const parsed = z
+    .object({
+      uploadId: z.uuid(),
+      userId: z.uuid(),
+      importJobId: z.string().trim().min(1),
+      weightUnit: z.enum(["kg", "lbs"]).optional(),
+      timezone: z.string().trim().min(1).optional(),
+    })
+    .parse(input);
+  const rows = await executeWithSchema(
+    database,
+    fileUploadRowSchema,
+    sql`WITH eligible_retry AS (
+          SELECT upload.id
+          FROM fitness.file_upload AS upload
+          INNER JOIN fitness.file_upload_outbox AS outbox ON outbox.upload_id = upload.id
+          WHERE upload.id = ${parsed.uploadId}::uuid
+            AND upload.user_id = ${parsed.userId}::uuid
+            AND upload.state = 'failed'
+            AND upload.object_deleted_at IS NULL
+            AND outbox.status = 'failed'
+        ), retried_upload AS (
+          UPDATE fitness.file_upload AS upload
+          SET state = 'queued',
+              import_job_id = ${parsed.importJobId},
+              weight_unit = coalesce(${parsed.weightUnit ?? null}, weight_unit),
+              timezone = coalesce(${parsed.timezone ?? null}, timezone),
+              progress_percent = 100,
+              error_code = NULL,
+              error_message = NULL,
+              completed_at = NULL,
+              updated_at = now(),
+              version = version + 1
+          FROM eligible_retry
+          WHERE upload.id = eligible_retry.id
+          RETURNING upload.*
+        ), retried_outbox AS (
+          UPDATE fitness.file_upload_outbox AS outbox
+          SET import_job_id = ${parsed.importJobId},
+              status = 'pending',
+              created_at = now(),
+              dispatched_at = NULL,
+              completed_at = NULL,
+              failure_reason = NULL,
+              failed_at = NULL
+          FROM retried_upload
+          WHERE outbox.upload_id = retried_upload.id
+          RETURNING outbox.upload_id
+        )
+        SELECT ${selectFileUploadColumns}
+        FROM retried_upload`,
+  );
+  if (rows[0]) return mapFileUpload(rows[0]);
+
+  const existing = await findFileUploadForUser(database, parsed.uploadId, parsed.userId);
+  if (!existing) throw new Error(`Upload ${parsed.uploadId} was not found`);
+  if (existing.objectDeletedAt) {
+    throw new Error(`Upload ${parsed.uploadId} source object has already been deleted`);
+  }
+  if (
+    existing.state === "queued" &&
+    existing.importJobId === parsed.importJobId &&
+    existing.weightUnit === (parsed.weightUnit ?? existing.weightUnit) &&
+    existing.timezone === (parsed.timezone ?? existing.timezone)
+  ) {
+    return existing;
+  }
+  throw new Error(`Upload ${parsed.uploadId} cannot be retried from ${existing.state}`);
+}
+
 export async function fileUploadObjectKeyExists(
   database: Database,
   objectKey: string,

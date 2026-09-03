@@ -507,6 +507,40 @@ describe("repairActivityDataIntegrity", () => {
     });
   });
 
+  it("does not reinterpret a Strong timestamp already parsed with timezone context", async () => {
+    const directory = await artifactDirectory();
+    const strongCandidate = {
+      ...postgresCandidate,
+      provider_id: "strong-csv",
+      external_id: "strong:winter-correct",
+      started_at: "2026-01-15T15:55:54.000Z",
+      ended_at: "2026-01-15T16:25:54.000Z",
+      timezone: "America/Los_Angeles",
+      start_utc_offset_minutes: -480,
+      end_utc_offset_minutes: -480,
+      local_time_source: "device_timezone",
+    };
+    const result = await repairActivityDataIntegrity(
+      createDatabase(vi.fn().mockResolvedValueOnce([strongCandidate])),
+      createClickHouse([[priorSourceRow]], [[]]),
+      { execute: false, userId, batchSize: 10, maxBatches: 1, ...window },
+      repairDependencies(directory),
+    );
+
+    const artifact = JSON.parse(await readFile(result.artifactPath, "utf8"));
+    expect(artifact.postgresActivities[0]).toMatchObject({
+      startedAt: "2026-01-15T15:55:54.000Z",
+      repairedStartedAt: "2026-01-15T15:55:54.000Z",
+      repairedEndedAt: "2026-01-15T16:25:54.000Z",
+      repaired: {
+        timezone: "America/Los_Angeles",
+        startUtcOffsetMinutes: -480,
+        endUtcOffsetMinutes: -480,
+        localTimeSource: "device_timezone",
+      },
+    });
+  });
+
   it("paginates a bounded window by the last activity tuple", async () => {
     const directory = await artifactDirectory();
     const secondActivityId = "00000000-0000-4000-8000-000000000002";

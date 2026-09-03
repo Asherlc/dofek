@@ -68,6 +68,24 @@ describe("CyclingPerformanceRepository", () => {
           duration_seconds: 1200,
           best_power: 250,
         },
+      ])
+      .mockResolvedValueOnce([
+        {
+          modality: "indoor",
+          first_observed: "2023-01-02",
+          last_observed: "2026-09-01",
+          activities_with_power: 174,
+          activities_total: 184,
+          source_providers: ["peloton"],
+        },
+        {
+          modality: "outdoor",
+          first_observed: null,
+          last_observed: null,
+          activities_with_power: 0,
+          activities_total: 224,
+          source_providers: [],
+        },
       ]);
     const repository = new CyclingPerformanceRepository(
       { query },
@@ -114,6 +132,32 @@ describe("CyclingPerformanceRepository", () => {
       },
       summary: {
         power_coverage: { activities_with_power: 1, activities_total: 2, pct: 50 },
+        power_availability_by_modality: {
+          indoor: {
+            first_observed: "2023-01-02",
+            last_observed: "2026-09-01",
+            activities_with_power: 174,
+            activities_total: 184,
+            pct: 94.6,
+            source_providers: ["peloton"],
+          },
+          outdoor: {
+            first_observed: null,
+            last_observed: null,
+            activities_with_power: 0,
+            activities_total: 224,
+            pct: 0,
+            source_providers: [],
+          },
+          unknown: {
+            first_observed: null,
+            last_observed: null,
+            activities_with_power: 0,
+            activities_total: 0,
+            pct: 0,
+            source_providers: [],
+          },
+        },
         elevation_gain: {
           total_elevation_gain_m: 1046.4,
           avg_elevation_gain_m: 523.2,
@@ -124,6 +168,8 @@ describe("CyclingPerformanceRepository", () => {
 
     expect(query.mock.calls[0]?.[1]).toContain("FROM analytics.cycling_activity FINAL");
     expect(query.mock.calls[1]?.[1]).toContain("FROM analytics.activity_power_curve FINAL");
+    expect(query.mock.calls[2]?.[1]).toContain("FROM analytics.cycling_activity FINAL");
+    expect(query.mock.calls[2]?.[1]).toContain("'road', 'mountain'");
     expect(query.mock.calls[0]?.[2]).toMatchObject({
       lookbackStartDate: "2026-06-04",
       startDate: "2026-08-29",

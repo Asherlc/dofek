@@ -51,6 +51,13 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   repeatable `--activity-id=<uuid-prefix>` options.
   - Usage: `pnpm tsx scripts/with-env.ts -- pnpm tsx scripts/inspect-activity-data-integrity.ts --user-id=<uuid> --activity-id=<uuid-prefix> --activity-id=<uuid-prefix>`
   - Procedure: [activity data integrity repair runbook](../docs/activity-data-integrity-repair-runbook.md)
+- `retry-failed-file-upload.ts`: Dry-run-first retry for a failed durable file
+  import whose source object is still retained. It verifies the retained object
+  size before atomically persisting corrected import metadata and re-arming the
+  existing outbox row with an operator-supplied stable job ID. Strong retries
+  require an explicit weight unit and IANA timezone.
+  - Usage: `pnpm tsx scripts/with-env.ts -- pnpm tsx scripts/retry-failed-file-upload.ts --upload-id=<uuid> --user-id=<uuid> --weight-unit=lbs --timezone=America/Los_Angeles`
+  - Procedure: [activity data integrity repair runbook](../docs/activity-data-integrity-repair-runbook.md)
 ## Environment & Secrets
 
 - `dev-environment.ts`: Idempotent bootstrap and verification for the

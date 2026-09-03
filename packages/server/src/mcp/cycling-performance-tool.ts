@@ -12,7 +12,7 @@ export function registerCyclingPerformanceTool(server: McpServer, context: Dofek
     {
       title: "Get Cycling Performance",
       description:
-        "Return per-ride normalized power, intensity factor, 5s/1m/5m/20m best efforts, rolling-90-day bests, estimated FTP, elevation gain, and coverage.",
+        "Return per-ride normalized power, intensity factor, 5s/1m/5m/20m best efforts, rolling-90-day bests, estimated FTP, elevation gain, selected-range coverage, and all-history power availability by modality.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: { start_date: dateSchema, end_date: dateSchema },
     },

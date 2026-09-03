@@ -68,6 +68,48 @@ specific journal phase.
 
 ## 1. Dry run
 
+### Retry a retained failed Strong import
+
+If the diagnosis found a failed Strong import with a retained source object,
+repair it before the derived-state dry run. This is a normal replay of the
+immutable provider export through the current transactional importer; it does
+not edit provider payloads or raw sensor observations in place.
+
+First verify the retained object and corrected parsing metadata without
+queueing work:
+
+```bash
+pnpm tsx scripts/with-env.ts -- pnpm tsx scripts/retry-failed-file-upload.ts \
+  --upload-id=<failed-upload-uuid> \
+  --user-id=<user-uuid> \
+  --weight-unit=lbs \
+  --timezone=America/Los_Angeles
+```
+
+Confirm `kind: "dry-run"`, the expected import type and byte count, and the
+corrected unit and timezone. Then queue the exact retry with a stable job ID:
+
+```bash
+pnpm tsx scripts/with-env.ts -- pnpm tsx scripts/retry-failed-file-upload.ts \
+  --upload-id=<failed-upload-uuid> \
+  --user-id=<user-uuid> \
+  --weight-unit=lbs \
+  --timezone=America/Los_Angeles \
+  --job-id=file-import-repair-<date>-strong \
+  --execute
+```
+
+Wait for the upload to reach `completed`. Report strength activity and set
+counts before and after, and verify that the cited deadlift session has sets,
+weights are kilograms, rest entries use `setType: "rest"`, and set indices are
+sequential. If the object is absent, deleted, has a different byte
+count, or the retry fails, stop. Obtain a fresh upload from the user rather
+than reconstructing provider data.
+
+The Strong replay corrects provider-derived activity rows and strength sets.
+The single historical repair below remains the only operation that rewrites
+the overlapping local-time fields and rebuilds the derived ClickHouse models.
+
 Run through the repository environment wrapper without `--execute`:
 
 ```bash
@@ -94,11 +136,14 @@ the artifact without editing it:
 Stop and narrow the input if the selection reaches `batchSize * maxBatches`,
 an unrelated activity appears, or any proposed change is unexplained.
 
-For the September 2026 combined repair, the reviewed dry run must report 79
+For the September 2026 combined repair, use one window covering the complete
+Strong export history as well as the September fixtures. The reviewed dry run must report 79
 offset-plausibility failures (75 stored at `-240`, four at `-300`), the two
 representative-selection groups containing six source rows, zero containment
 groups, the `2a7c6fa3` summary refresh, and every Strong timestamp in the
-bounded window. Do not execute separate offset, representative, speed, or
+bounded window either already corrected by the retained replay or proposed for
+timezone-aware correction from legacy `unknown` context. A Strong row that
+already carries valid timezone context must retain its UTC timestamp. Do not execute separate offset, representative, speed, or
 Strong repairs: they intentionally share one audit and rollback point.
 
 ## 2. Execute

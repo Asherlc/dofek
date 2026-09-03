@@ -63,6 +63,14 @@ describe("CyclingPerformanceRepository integration", () => {
       activities_total: 1,
       pct: 100,
     });
+    expect(result.summary.power_availability_by_modality.outdoor).toEqual({
+      first_observed: "2026-08-30",
+      last_observed: "2026-08-30",
+      activities_with_power: 1,
+      activities_total: 1,
+      pct: 100,
+      source_providers: ["wahoo"],
+    });
     expect(result.rolling_90_day_best["20m"]).toEqual({
       activity_id: activityId,
       date: "2026-08-30",

@@ -22,6 +22,7 @@ import {
   queueCompletedFileUpload,
   recordFileUploadCompletionParts,
   requeueStuckFileUpload,
+  retryFailedFileUpload,
   updateFileUploadProgress,
 } from "./file-upload.ts";
 
@@ -429,6 +430,48 @@ describe("file upload repository", () => {
     mocks.executeWithSchema.mockResolvedValue([{ id: uploadId }]);
     expect(await expireFileUpload(database, uploadId)).toBe(true);
     expect(await requeueStuckFileUpload(database, uploadId)).toBe(true);
+  });
+
+  it("atomically retries a retained failed upload with corrected import metadata", async () => {
+    const retryJobId = `file-import-retry-${uploadId}`;
+    mocks.executeWithSchema.mockResolvedValueOnce([
+      row({
+        state: "queued",
+        import_job_id: retryJobId,
+        import_type: "strong-csv",
+        weight_unit: "lbs",
+        timezone: "America/Los_Angeles",
+      }),
+    ]);
+
+    await expect(
+      retryFailedFileUpload(database, {
+        uploadId,
+        userId,
+        importJobId: retryJobId,
+        weightUnit: "lbs",
+        timezone: "America/Los_Angeles",
+      }),
+    ).resolves.toMatchObject({
+      state: "queued",
+      importJobId: retryJobId,
+      weightUnit: "lbs",
+      timezone: "America/Los_Angeles",
+    });
+    expect(mocks.executeWithSchema).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails loudly when a failed upload cannot be retried", async () => {
+    mocks.executeWithSchema
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([row({ state: "failed", object_deleted_at: now })]);
+    await expect(
+      retryFailedFileUpload(database, {
+        uploadId,
+        userId,
+        importJobId: `file-import-retry-${uploadId}`,
+      }),
+    ).rejects.toThrow("source object has already been deleted");
   });
 
   it("lists reconciliation candidates and validates its limit", async () => {
