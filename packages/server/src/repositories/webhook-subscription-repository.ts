@@ -104,6 +104,12 @@ export class WebhookSubscriptionRepository {
   async *iteratePendingByProviderName(
     providerName: string,
   ): AsyncGenerator<PendingWebhookSubscription> {
+    await this.#db.execute(
+      sql`DELETE FROM fitness.webhook_subscription
+          WHERE provider_name = ${providerName}
+            AND status = 'pending'
+            AND expires_at <= NOW()`,
+    );
     const rows = await executeWithSchema(
       this.#db,
       z.object({ id: z.string(), verify_token: z.string() }),
@@ -182,7 +188,7 @@ export class WebhookSubscriptionRepository {
               status = 'active',
               expires_at = ${input.expiresAt},
               updated_at = NOW()
-          WHERE id = ${id} AND status = 'pending'
+          WHERE id = ${id} AND status = 'pending' AND expires_at > NOW()
           RETURNING id`,
     );
     if (rows.length === 0) {
@@ -193,7 +199,7 @@ export class WebhookSubscriptionRepository {
   async deletePendingSubscription(id: string): Promise<void> {
     await this.#db.execute(
       sql`DELETE FROM fitness.webhook_subscription
-          WHERE id = ${id} AND status = 'pending'`,
+          WHERE id = ${id}`,
     );
   }
 

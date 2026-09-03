@@ -68,9 +68,34 @@ describe("WebhookSubscriptionRepository", () => {
 
     const query = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
     expect(query.sql).toContain("status = 'active'");
+    expect(query.sql).toContain("expires_at > NOW()");
     expect(query.sql).toContain("subscription_external_id");
     expect(query.params).toContain("pending-id");
     expect(query.params).toContain("subscription-1");
+  });
+
+  it("purges expired pending subscriptions before iterating", async () => {
+    const { execute, repository } = makeRepository();
+    execute.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+
+    const pending = repository.iteratePendingByProviderName("test-provider");
+    await pending.next();
+
+    const cleanupQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+    expect(cleanupQuery.sql).toContain("DELETE FROM fitness.webhook_subscription");
+    expect(cleanupQuery.sql).toContain("expires_at <= NOW()");
+    expect(cleanupQuery.params).toContain("test-provider");
+  });
+
+  it("deletes a pending lifecycle row by id regardless of status", async () => {
+    const { execute, repository } = makeRepository();
+
+    await repository.deletePendingSubscription("pending-id");
+
+    const query = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+    expect(query.sql).toContain("DELETE FROM fitness.webhook_subscription");
+    expect(query.sql).not.toContain("status = 'pending'");
+    expect(query.params).toContain("pending-id");
   });
 
   it("rejects activation when the pending subscription no longer exists", async () => {

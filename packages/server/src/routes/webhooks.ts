@@ -374,6 +374,9 @@ export async function registerWebhookForProvider(
   try {
     result = await provider.registerWebhook(callbackUrl, verifyToken);
   } catch (error: unknown) {
+    captureException(error, {
+      tags: { provider: provider.id, webhookPhase: "provider-registration" },
+    });
     try {
       await webhookSubscriptionRepository.deletePendingSubscription(pendingId);
     } catch (cleanupError: unknown) {

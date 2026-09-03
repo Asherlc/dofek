@@ -1198,6 +1198,12 @@ describe("registerWebhookForProvider", () => {
     const cleanupQuery = new PgDialect().sqlToQuery(vi.mocked(db.execute).mock.calls[1]?.[0]);
     expect(cleanupQuery.sql).toContain("DELETE FROM fitness.webhook_subscription");
     expect(cleanupQuery.sql).toContain("status = 'pending'");
+    expect(mockCaptureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "provider unavailable" }),
+      expect.objectContaining({
+        tags: { provider: "test-provider", webhookPhase: "provider-registration" },
+      }),
+    );
   });
 
   it("reports pending-row cleanup failure when remote registration fails", async () => {
@@ -1250,5 +1256,22 @@ describe("registerWebhookForProvider", () => {
         tags: { provider: "test-provider", webhookPhase: "pending-subscription-cleanup" },
       }),
     );
+  });
+
+  it("deletes a committed row when activation persistence fails", async () => {
+    const db = getMockDb();
+    const provider = createMockWebhookProvider({
+      webhookScope: "user",
+      registerWebhook: vi.fn(async () => ({ subscriptionId: "remote-sub" })),
+    });
+    mockExecuteWithSchema.mockRejectedValueOnce(new Error("activation response unavailable"));
+
+    await expect(registerWebhookForProvider(db, provider, "user-1")).rejects.toThrow(
+      "activation response unavailable",
+    );
+
+    expect(provider.unregisterWebhook).toHaveBeenCalledWith("remote-sub");
+    const cleanupQuery = new PgDialect().sqlToQuery(vi.mocked(db.execute).mock.calls[1]?.[0]);
+    expect(cleanupQuery.sql).not.toContain("status = 'pending'");
   });
 });
