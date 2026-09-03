@@ -292,7 +292,7 @@ function renderModelSelectSql(
       "{{ ref('resting_heart_rate_sleep_window') }}",
       `${targetSchema}.resting_heart_rate_sleep_window`,
     )
-    .replaceAll("analytics.v_daily_metrics", `${targetSchema}.v_daily_metrics`)
+    .replaceAll("{{ source('analytics', 'v_daily_metrics') }}", `${targetSchema}.v_daily_metrics`)
     .concat("\nSETTINGS join_use_nulls = 1, max_threads = 1");
 }
 

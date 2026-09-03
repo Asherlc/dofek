@@ -24753,3 +24753,26 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   reports 100% mutation score with all 14 covered mutants killed.
 - **Remaining risk / follow-up:** None identified for this launcher; the full PR
   mutation gate remains the merge authority.
+
+## 2026-09-02 — Analytics integration renderers passed dbt source Jinja to ClickHouse
+
+- **Status:** Fixed in source; isolated CI rerun pending.
+- **Symptoms / user impact:** PR CI's `Integration Tests (2/4)` job failed seven
+  attempts across the daily body-measurement and recovery suites, blocking the
+  activity-integrity repair from merging.
+- **Evidence / root cause:** The first fatal ClickHouse line was
+  `Syntax error ... {{ source('analytics', 'v_daily_metrics') }}`. The analytics
+  models had moved those dependencies from hard-coded relation names to dbt
+  `source()` expressions, while three executable integration renderers still
+  replaced only the former literal names. The unrendered Jinja therefore reached
+  ClickHouse. [Failed CI job](https://github.com/Asherlc/dofek/actions/runs/33707035910/job/100498711456)
+- **Fix / mitigation:** Updated the daily body-measurement, recovery, and sleep
+  integration renderers to resolve the canonical dbt `source()` expressions to
+  their fixture schemas. No retries, timeouts, or parser workarounds were added.
+- **Validation:** The two suites that failed in CI pass locally (8 tests). The
+  proactive sleep suite then lost its ClickHouse connection during fixture
+  teardown because of the separately documented local container restart issue;
+  it did not report a Jinja or SQL parser failure. The isolated CI runner remains
+  authoritative for the full three-suite result.
+- **Remaining risk / follow-up:** Confirm all integration shards pass on the new
+  commit before considering the incident resolved.
