@@ -308,7 +308,7 @@ describe("snapshotDerivedRows", () => {
       is_deleted: 0,
     };
     const client = {
-      query: vi.fn(async ({ query }: { query: string }) => {
+      query: vi.fn(async ({ query }: { query: string; query_params?: Record<string, unknown> }) => {
         if (query.includes("deduped_activities")) {
           return {
             json: async () => [

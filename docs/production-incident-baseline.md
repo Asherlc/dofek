@@ -24778,3 +24778,21 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   authoritative for the full three-suite result.
 - **Remaining risk / follow-up:** Confirm all integration shards pass on the new
   commit before considering the incident resolved.
+
+## 2026-09-02 — Sensor-sample regression mock failed package typechecks
+
+- **Status:** Resolved in source; CI rerun pending.
+- **Symptoms / user impact:** Root and `@dofek/heart-rate-variability` typecheck
+  jobs failed, blocking the activity-integrity PR.
+- **Evidence / root cause:** Both jobs first failed at
+  `activity-data-integrity-clickhouse.test.ts(342,34): error TS2339: Property
+  'query_params' does not exist on type '{ query: string; }'`. The final
+  sensor-sample regression explicitly narrowed its mock callback argument to
+  the query string even though the assertion also reads the request parameters.
+- **Fix / mitigation:** Typed the mock argument with the same optional
+  `query_params` field accepted by the ClickHouse client contract. No compiler
+  rule or check was disabled.
+- **Validation:** The focused test (25/25), root typecheck, and
+  `@dofek/heart-rate-variability` package typecheck pass locally. Confirm the
+  replacement CI jobs pass.
+- **Remaining risk / follow-up:** None after the replacement CI run passes.
