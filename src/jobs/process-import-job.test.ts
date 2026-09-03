@@ -766,6 +766,28 @@ describe("processImportJob", () => {
       );
       expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("10 workouts imported"));
     });
+    it("fails the upload when any Strong workout could not be imported", async () => {
+      await writeFile(tempFilePath, "csv data");
+      mockImportStrongCsv.mockResolvedValueOnce({
+        recordsSynced: 58,
+        errors: [{ message: "Exercise alias Pull Up conflicts with its canonical exercise" }],
+      });
+
+      await expect(
+        runImportJob(
+          createMockJob({ filePath: tempFilePath, importType: "strong-csv" }),
+          mockDb,
+        ),
+      ).rejects.toEqual(expect.objectContaining({ name: "UnrecoverableError" }));
+      expect(mockLogSync).toHaveBeenCalledWith(
+        mockDb,
+        expect.objectContaining({
+          providerId: "strong-csv",
+          status: "error",
+          recordCount: 58,
+        }),
+      );
+    });
     it("reports progress", async () => {
       await writeFile(tempFilePath, "csv data");
       const job = createMockJob({ filePath: tempFilePath, importType: "strong-csv" });
@@ -1637,7 +1659,9 @@ describe("processImportJob", () => {
       });
       await writeFile(tempFilePath, "bad csv");
       const job = createMockJob({ filePath: tempFilePath, importType: "strong-csv" });
-      await runImportJob(job, mockDb);
+      await expect(runImportJob(job, mockDb)).rejects.toEqual(
+        expect.objectContaining({ name: "UnrecoverableError" }),
+      );
       expect(mockLogSync).toHaveBeenCalledWith(
         mockDb,
         expect.objectContaining({ status: "error", errorMessage: "parse error" }),

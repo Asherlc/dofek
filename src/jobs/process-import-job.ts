@@ -271,6 +271,11 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
             importStart,
             userId,
           );
+          if (result.errors.length > 0) {
+            terminalImportError = new UnrecoverableError(
+              `Strong CSV import completed with errors after importing ${result.recordsSynced} workouts: ${result.errors.map((error) => error.message).join("; ")}`,
+            );
+          }
         } else if (importType === "cronometer-csv") {
           await reportImportProgress(job, 0, "Starting Cronometer CSV import...");
           const { readFile } = await import("node:fs/promises");
