@@ -47,6 +47,19 @@ const sourceHeartRateSampleSchema = z.object({
   source_metadata: z.string(),
 });
 
+const userIdSchema = z
+  .string()
+  .regex(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    "--user-id must be a UUID",
+  );
+const activityIdPrefixSchema = z
+  .string()
+  .regex(
+    /^[0-9a-f]{1,8}(?:-[0-9a-f]{1,4}(?:-[0-9a-f]{1,4}(?:-[0-9a-f]{1,4}(?:-[0-9a-f]{1,12})?)?)?)?$/i,
+    "--activity-id must be a hexadecimal UUID prefix",
+  );
+
 export interface ActivityIntegrityInspectionDatabase {
   postgres: SchemaExecutionDatabase;
   clickHouse: Pick<ClickHouseClient, "query">;
@@ -65,15 +78,14 @@ function textArray(values: readonly string[]) {
 }
 
 function assertInspectionInput(input: ActivityIntegrityInspectionInput): void {
-  if (!input.userId.trim()) {
-    throw new Error("--user-id is required");
-  }
+  userIdSchema.parse(input.userId);
   if (
     input.activityIds.length === 0 ||
     input.activityIds.some((activityId) => !activityId.trim())
   ) {
     throw new Error("At least one non-empty --activity-id is required");
   }
+  z.array(activityIdPrefixSchema).parse(input.activityIds);
 }
 
 /**

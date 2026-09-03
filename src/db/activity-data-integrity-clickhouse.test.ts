@@ -165,6 +165,50 @@ describe("snapshotDerivedRows", () => {
     expect(snapshot.activityIds).toEqual([activityA, activityB, activityC]);
     expect(snapshot.matchRows).toEqual([matchAB, matchBC]);
   });
+
+  it("fetches source rows for every member returned by the deduped projection", async () => {
+    const client = {
+      query: vi.fn(
+        async ({
+          query,
+          query_params,
+        }: {
+          query: string;
+          query_params?: Record<string, unknown>;
+        }) => {
+          const activityIds = Array.isArray(query_params?.activityIds)
+            ? query_params.activityIds
+            : [];
+          if (query.includes("deduped_activities")) {
+            return {
+              json: async () => [
+                {
+                  activity_id: activityA,
+                  user_id: userId,
+                  provider_id: "wahoo",
+                  canonical_type: "cycling",
+                  member_activity_ids: [activityA, activityC],
+                  refresh_version: "12",
+                  is_deleted: 0,
+                },
+              ],
+            };
+          }
+          if (query.includes("activity_source_records")) {
+            return {
+              json: async () => sourceRows.filter((row) => activityIds.includes(row.activity_id)),
+            };
+          }
+          return { json: async () => [] };
+        },
+      ),
+    };
+
+    const snapshot = await snapshotDerivedRows(client, userId, [activityA]);
+
+    expect(snapshot.activityIds).toEqual([activityA, activityC]);
+    expect(snapshot.sourceRows).toEqual([sourceRowA, sourceRows[2]]);
+  });
 });
 
 describe("UInt64 parsing", () => {

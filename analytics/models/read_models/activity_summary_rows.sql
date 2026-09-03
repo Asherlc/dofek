@@ -141,6 +141,15 @@ repair_scope_dirty_keys AS (
     SELECT
         activity_id,
         user_id
+    FROM activity_members
+    WHERE user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        AND member_activity_id IN {{ activity_refresh_ids() }}
+
+    UNION DISTINCT
+
+    SELECT
+        activity_id,
+        user_id
     FROM existing_activity_keys
     WHERE user_id = toUUID('{{ var("activity_refresh_user_id") }}')
         AND activity_id IN {{ activity_refresh_ids() }}

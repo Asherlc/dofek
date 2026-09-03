@@ -4,10 +4,14 @@ import {
   parseInspectionArgs,
 } from "./inspect-activity-data-integrity.ts";
 
+const testUserId = "00000000-0000-4000-8000-000000000001";
+
 describe("parseInspectionArgs", () => {
   it("accepts one user and repeated activity IDs", () => {
-    expect(parseInspectionArgs(["--user-id=u", "--activity-id=2a", "--activity-id=761"])).toEqual({
-      userId: "u",
+    expect(
+      parseInspectionArgs([`--user-id=${testUserId}`, "--activity-id=2a", "--activity-id=761"]),
+    ).toEqual({
+      userId: testUserId,
       activityIds: ["2a", "761"],
     });
   });
@@ -123,7 +127,7 @@ describe("inspectActivityDataIntegrity", () => {
 
     const result = await inspectActivityDataIntegrity(
       { postgres, clickHouse },
-      { userId: "u", activityIds: ["2a", "761", "6ca753f3", "369e6444"] },
+      { userId: testUserId, activityIds: ["2a", "761", "6ca753f3", "369e6444"] },
     );
 
     expect(result.activities[0]).toMatchObject({
@@ -162,5 +166,21 @@ describe("inspectActivityDataIntegrity", () => {
         sourceProviderId: "apple_health",
       }),
     ]);
+  });
+
+  it.each([
+    { userId: "not-a-uuid", activityIds: ["2a"], message: "--user-id must be a UUID" },
+    { userId: testUserId, activityIds: ["2a%"], message: "UUID prefix" },
+    { userId: testUserId, activityIds: ["2a_"], message: "UUID prefix" },
+  ])("rejects unsafe inspection input", async ({ userId, activityIds, message }) => {
+    const postgres = { execute: vi.fn() };
+
+    await expect(
+      inspectActivityDataIntegrity(
+        { postgres, clickHouse: { query: vi.fn() } },
+        { userId, activityIds },
+      ),
+    ).rejects.toThrow(message);
+    expect(postgres.execute).not.toHaveBeenCalled();
   });
 });

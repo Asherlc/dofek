@@ -218,19 +218,6 @@ ORDER BY duplicate_groups.activity_id`,
     if (expandedActivityIds.length === activityIds.length) break;
     activityIds = expandedActivityIds;
   }
-  const sourceRows = await queryClickHouseRows(
-    client,
-    clickHouseSourceRowSchema,
-    `SELECT source_records.* REPLACE(
-  toString(source_records.refresh_version) AS refresh_version
-)
-FROM analytics.activity_source_records AS source_records FINAL
-WHERE source_records.user_id = {userId:UUID}
-  AND source_records.activity_id IN {activityIds:Array(UUID)}
-  ${includeDeleted ? "" : "AND source_records.is_deleted = 0"}
-ORDER BY source_records.activity_id`,
-    { userId, activityIds },
-  );
   const dedupedRows = await queryClickHouseRows(
     client,
     clickHouseDedupedActivityRowSchema,
@@ -243,6 +230,20 @@ WHERE deduped.user_id = {userId:UUID}
   )
   ${includeDeleted ? "" : "AND deduped.is_deleted = 0"}
 ORDER BY deduped.activity_id`,
+    { userId, activityIds },
+  );
+  activityIds = unique([...activityIds, ...dedupedRows.flatMap((row) => row.member_activity_ids)]);
+  const sourceRows = await queryClickHouseRows(
+    client,
+    clickHouseSourceRowSchema,
+    `SELECT source_records.* REPLACE(
+  toString(source_records.refresh_version) AS refresh_version
+)
+FROM analytics.activity_source_records AS source_records FINAL
+WHERE source_records.user_id = {userId:UUID}
+  AND source_records.activity_id IN {activityIds:Array(UUID)}
+  ${includeDeleted ? "" : "AND source_records.is_deleted = 0"}
+ORDER BY source_records.activity_id`,
     { userId, activityIds },
   );
   const canonicalActivityIds = unique([
