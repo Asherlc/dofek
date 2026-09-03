@@ -23366,3 +23366,36 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   session nor a local `EXPO_PUBLIC_SENTRY_DSN`, which the mobile config requires.
 - **Remaining risk / follow-up:** Confirm the fresh Metro bundle and the
   remaining hosted checks pass, then remove no configuration guards.
+
+## 2026-09-03 — Strong post-import analytics refresh lacked worker dbt credentials
+
+- **Status:** Root cause confirmed and fix prepared; production deployment and
+  failed-refresh replay are pending.
+- **Symptoms / impact:** A Strong CSV import persisted new relational workout
+  data, but the activity analytics refresh exhausted its retries. Activities,
+  recovery, and training continued serving the previously built ClickHouse
+  models.
+- **Evidence:** The import worker logged `59 workouts imported, 64 errors`, then
+  the activity refresh failed five times. The first fatal database line was
+  ClickHouse error code 194: `Authentication failed: password is incorrect, or
+  there is no user with such name`. A secret-safe probe inside the running
+  worker confirmed that its credentialed `CLICKHOUSE_URL` authenticated while
+  `CLICKHOUSE_PASSWORD` and `DBT_CLICKHOUSE_PASSWORD` were absent.
+- **Root cause:** The worker executes dbt activity-refresh jobs, whose production
+  profile reads `DBT_CLICKHOUSE_PASSWORD` or `CLICKHOUSE_PASSWORD`, but the
+  least-privilege worker environment renderer omitted the existing raw
+  `CLICKHOUSE_PASSWORD`. dbt documents `env_var` as the supported way to supply
+  environment-backed profile values: <https://docs.getdbt.com/reference/dbt-jinja-functions/env_var>.
+- **Fix / mitigation:** Add the existing `CLICKHOUSE_PASSWORD` to the worker's
+  allowed and required service environment. This preserves the current dbt
+  profile contract and makes a missing prerequisite fail before deployment;
+  no retry, timeout, or failure suppression is added. Docker applies `env_file`
+  variables to the service container as documented here:
+  <https://docs.docker.com/compose/how-tos/environment-variables/set-environment-variables/>.
+- **Validation:** The focused renderer regression failed against the old policy
+  because the worker output omitted `CLICKHOUSE_PASSWORD`, then passed after
+  the policy change (7 tests).
+- **Remaining risk / follow-up:** Deploy through the canonical workflow, verify
+  the production worker receives the required variable without exposing its
+  value, replay the exhausted activity refresh, and confirm the affected
+  processing stages and user caches update successfully.
