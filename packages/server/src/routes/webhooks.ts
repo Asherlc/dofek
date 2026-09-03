@@ -72,6 +72,23 @@ function captureWebhookFailure(
   });
 }
 
+async function reconcileExpiredPendingSubscriptions(
+  repository: WebhookSubscriptionRepository,
+  provider: WebhookProvider,
+): Promise<void> {
+  for await (const subscription of repository.iterateExpiredPendingByProviderName(provider.id)) {
+    if (!subscription.subscriptionExternalId) continue;
+    try {
+      await provider.unregisterWebhook(subscription.subscriptionExternalId);
+      await repository.deletePendingSubscription(subscription.id);
+    } catch (error: unknown) {
+      captureException(error, {
+        tags: { provider: provider.id, webhookPhase: "expired-subscription-reconciliation" },
+      });
+    }
+  }
+}
+
 export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouterDeps): Router {
   const router = Router();
   const webhookSubscriptionRepository = new WebhookSubscriptionRepository(db);
@@ -130,6 +147,7 @@ export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouter
         }
       }
       if (response === null) {
+        await reconcileExpiredPendingSubscriptions(webhookSubscriptionRepository, provider);
         for await (const subscription of webhookSubscriptionRepository.iteratePendingByProviderName(
           providerName,
         )) {
@@ -382,6 +400,31 @@ export async function registerWebhookForProvider(
     } catch (cleanupError: unknown) {
       captureException(cleanupError, {
         tags: { provider: provider.id, webhookPhase: "pending-subscription-cleanup" },
+      });
+    }
+    throw error;
+  }
+  try {
+    await webhookSubscriptionRepository.recordPendingSubscriptionExternalId(
+      pendingId,
+      result.subscriptionId,
+    );
+  } catch (error: unknown) {
+    captureException(error, {
+      tags: { provider: provider.id, webhookPhase: "subscription-id-persistence" },
+    });
+    try {
+      await webhookSubscriptionRepository.deletePendingSubscription(pendingId);
+    } catch (cleanupError: unknown) {
+      captureException(cleanupError, {
+        tags: { provider: provider.id, webhookPhase: "pending-subscription-cleanup" },
+      });
+    }
+    try {
+      await provider.unregisterWebhook(result.subscriptionId);
+    } catch (cleanupError: unknown) {
+      captureException(cleanupError, {
+        tags: { provider: provider.id, webhookPhase: "registration-compensation" },
       });
     }
     throw error;

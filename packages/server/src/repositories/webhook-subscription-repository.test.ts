@@ -74,17 +74,31 @@ describe("WebhookSubscriptionRepository", () => {
     expect(query.params).toContain("subscription-1");
   });
 
-  it("purges expired pending subscriptions before iterating", async () => {
+  it("returns expired pending subscriptions with persisted remote ids", async () => {
     const { execute, repository } = makeRepository();
-    execute.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    execute.mockResolvedValue([{ id: "pending-id", subscription_external_id: "remote-id" }]);
 
-    const pending = repository.iteratePendingByProviderName("test-provider");
-    await pending.next();
+    const expired = repository.iterateExpiredPendingByProviderName("test-provider");
+    await expect(expired.next()).resolves.toEqual({
+      done: false,
+      value: { id: "pending-id", subscriptionExternalId: "remote-id" },
+    });
 
-    const cleanupQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
-    expect(cleanupQuery.sql).toContain("DELETE FROM fitness.webhook_subscription");
-    expect(cleanupQuery.sql).toContain("expires_at <= NOW()");
-    expect(cleanupQuery.params).toContain("test-provider");
+    const query = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+    expect(query.sql).toContain("subscription_external_id");
+    expect(query.sql).toContain("expires_at <= NOW()");
+  });
+
+  it("persists the remote subscription id while a row is pending", async () => {
+    const { execute, repository } = makeRepository();
+
+    await repository.recordPendingSubscriptionExternalId("pending-id", "remote-id");
+
+    const query = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+    expect(query.sql).toContain("subscription_external_id");
+    expect(query.sql).toContain("status = 'pending'");
+    expect(query.params).toContain("pending-id");
+    expect(query.params).toContain("remote-id");
   });
 
   it("deletes a pending lifecycle row by id regardless of status", async () => {

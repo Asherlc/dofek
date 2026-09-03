@@ -43,6 +43,11 @@ export interface PendingWebhookSubscription {
   verifyToken: string;
 }
 
+export interface ExpiredPendingWebhookSubscription {
+  id: string;
+  subscriptionExternalId: string | null;
+}
+
 export interface UpsertWebhookSubscriptionInput {
   userId: string | null;
   providerId: string | null;
@@ -104,12 +109,6 @@ export class WebhookSubscriptionRepository {
   async *iteratePendingByProviderName(
     providerName: string,
   ): AsyncGenerator<PendingWebhookSubscription> {
-    await this.#db.execute(
-      sql`DELETE FROM fitness.webhook_subscription
-          WHERE provider_name = ${providerName}
-            AND status = 'pending'
-            AND expires_at <= NOW()`,
-    );
     const rows = await executeWithSchema(
       this.#db,
       z.object({ id: z.string(), verify_token: z.string() }),
@@ -127,6 +126,27 @@ export class WebhookSubscriptionRepository {
           row.verify_token,
           webhookSecretContext(providerName, "verify_token"),
         ),
+      };
+    }
+  }
+
+  async *iterateExpiredPendingByProviderName(
+    providerName: string,
+  ): AsyncGenerator<ExpiredPendingWebhookSubscription> {
+    const rows = await executeWithSchema(
+      this.#db,
+      z.object({ id: z.string(), subscription_external_id: z.string().nullable() }),
+      sql`SELECT id, subscription_external_id
+          FROM fitness.webhook_subscription
+          WHERE provider_name = ${providerName}
+            AND status = 'pending'
+            AND expires_at <= NOW()
+          ORDER BY created_at`,
+    );
+    for (const row of rows) {
+      yield {
+        id: row.id,
+        subscriptionExternalId: row.subscription_external_id,
       };
     }
   }
@@ -194,6 +214,17 @@ export class WebhookSubscriptionRepository {
     if (rows.length === 0) {
       throw new Error("Pending webhook subscription was not found");
     }
+  }
+
+  async recordPendingSubscriptionExternalId(
+    id: string,
+    subscriptionExternalId: string,
+  ): Promise<void> {
+    await this.#db.execute(
+      sql`UPDATE fitness.webhook_subscription
+          SET subscription_external_id = ${subscriptionExternalId}, updated_at = NOW()
+          WHERE id = ${id} AND status = 'pending'`,
+    );
   }
 
   async deletePendingSubscription(id: string): Promise<void> {
