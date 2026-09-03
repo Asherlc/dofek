@@ -234,6 +234,46 @@ Treat R2 archive staleness as a production durability incident. Writers are
 already Redpanda-first; restore the archive before deploying writer changes or
 allowing required Redpanda offsets to expire.
 
+## External-ID deletion projection
+
+Scoped replacement deletes filter by `(user_id, provider_id, external_id)`.
+The base table's activity-oriented ordering cannot prune that lookup, so
+`by_provider_external_id` stores a covering copy ordered for the delete path.
+ClickHouse automatically considers projections when their physical ordering
+matches a query's filters; use `force_optimize_projection_name` during
+verification to fail if the intended projection is not eligible:
+<https://clickhouse.com/blog/10-best-practice-tips#use-projections-for-common-filter-patterns>.
+
+Migration `0074_metric_stream_external_id_projection` adds the definition for
+new parts. It intentionally does not rewrite historical parts during deploy.
+After the metric-stream consumer reaches the topic head and the fresh-message
+delivery gate passes, materialize the existing parts in an approved maintenance
+window:
+
+```sql
+ALTER TABLE ingest.metric_stream
+MATERIALIZE PROJECTION by_provider_external_id;
+```
+
+Monitor `system.mutations` until the command is done, then verify every active
+base-table part contains the projection:
+
+```sql
+SELECT
+  count() AS active_parts,
+  countIf(NOT has(projections, 'by_provider_external_id')) AS missing_projection_parts
+FROM system.parts
+WHERE active
+  AND database = 'ingest'
+  AND table = 'metric_stream';
+```
+
+Do not declare the optimization complete unless `missing_projection_parts` is
+zero and an `EXPLAIN projections = 1` of the scoped external-ID lookup names
+`by_provider_external_id`. Existing parts require explicit materialization;
+ClickHouse documents this separately from adding the projection definition:
+<https://clickhouse.com/docs/data-modeling/projections#filtering-on-columns-which-arent-in-the-primary-key>.
+
 ## Historical Postgres Backfill
 
 The one-time `fitness.metric_stream` to R2 historical backfill has completed and

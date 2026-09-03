@@ -24938,6 +24938,12 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   139 interrupted the producer, and BullMQ correctly resumed the persisted
   full-refresh job; no rogue producer, lost job range, or missing sensor rows
   was found.
+- **Queue-shape evidence:** A 200,000-event sample at offset `1519226000`
+  contained 4,389 deletes in ten contiguous same-revision runs: eight runs of
+  500, one of 290, and one of 99. A 200,000-event frontier sample contained 12
+  singleton delete runs. This mixed distribution justifies batching adjacent
+  same-revision deletes while preserving the topic's delete-before-replacement
+  order, and separately optimizing every external-ID lookup.
 - **Fix / mitigation:** Let the ordered backlog drain without restart, seek, or
   offset manipulation. Added batch telemetry for absolute lag, sink duration,
   per-event latency, and deletion rate, plus an operator warning that a refresh
@@ -24947,8 +24953,11 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   six affected activities hydrating with real sensor summaries. Intermediate
   null results are expected because their events sit near the topic head.
 - **Remaining risk / follow-up:** Axiom monitor creation is blocked by an expired
-  local MCP token. After delivery is quiet, add the external-ID covering
-  projection, decide deletion batching from the measured contiguous-run
-  histogram, preserve per-entity ordering in any future topic split, and enable
-  bounded fatal reports/core dumps plus heap/RSS sampling before another full
-  refresh.
+  local MCP token. The sink batching change and `by_provider_external_id`
+  covering projection are prepared but must not deploy while the backlog is
+  draining; historical projection materialization remains a separate
+  post-drain operator action. A later 127-second sample advanced 39,760 offsets
+  while the head grew by 2,500, reducing lag at about 293 offsets/second and
+  extending the instantaneous ETA to about 26.4 hours. Preserve per-entity
+  ordering in any future topic split, and enable bounded fatal reports/core
+  dumps plus heap/RSS sampling before another full refresh.
