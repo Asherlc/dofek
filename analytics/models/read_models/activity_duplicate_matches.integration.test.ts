@@ -12,6 +12,8 @@ const containedCyclingId = "00000000-0000-4000-8000-000000000102";
 const typedStrengthId = "00000000-0000-4000-8000-000000000103";
 const containingCyclingId = "00000000-0000-4000-8000-000000000104";
 const broadOtherId = "00000000-0000-4000-8000-000000000105";
+const crossProviderOtherId = "00000000-0000-4000-8000-000000000110";
+const crossProviderTombstonedOtherId = "00000000-0000-4000-8000-000000000111";
 const bridgeCyclingId = "00000000-0000-4000-8000-000000000106";
 const bridgeStrengthId = "00000000-0000-4000-8000-000000000107";
 const tombstonedWhoopId = "00000000-0000-4000-8000-000000000108";
@@ -214,6 +216,9 @@ async function seedFixture(client: ClickHouseClient, database: string): Promise<
       ('${broadOtherId}', 'whoop', '${userId}', 'other',
        toDateTime64('2026-06-01 18:00:00', 6, 'UTC'),
        toDateTime64('2026-06-01 19:00:00', 6, 'UTC'), 0),
+      ('${crossProviderOtherId}', 'wahoo', '${userId}', 'other',
+       toDateTime64('2026-06-01 18:00:00', 6, 'UTC'),
+       toDateTime64('2026-06-01 19:00:00', 6, 'UTC'), 0),
       ('${bridgeCyclingId}', 'wahoo', '${userId}', 'cycling',
        toDateTime64('2026-06-01 18:00:00', 6, 'UTC'),
        toDateTime64('2026-06-01 18:20:00', 6, 'UTC'), 0),
@@ -230,6 +235,10 @@ async function seedFixture(client: ClickHouseClient, database: string): Promise<
       ('${tombstonedWhoopId}', '${userId}', 'wahoo', 'other',
        toDateTime64('2026-04-01 15:30:00', 6, 'UTC'),
        toDateTime64('2026-04-01 16:13:00', 6, 'UTC'), 0,
+       toDateTime64('2026-09-01 00:00:00', 6, 'UTC'), NULL),
+      ('${crossProviderTombstonedOtherId}', '${userId}', 'peloton', 'other',
+       toDateTime64('2026-06-01 18:00:00', 6, 'UTC'),
+       toDateTime64('2026-06-01 19:00:00', 6, 'UTC'), 0,
        toDateTime64('2026-09-01 00:00:00', 6, 'UTC'), NULL)`,
   ];
   for (const statement of statements) await client.command({ query: statement });

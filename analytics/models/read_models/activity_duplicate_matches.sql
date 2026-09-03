@@ -54,7 +54,13 @@ active_duplicate_matches AS (
         ON left_activity.user_id = right_activity.user_id
         AND toString(left_activity.activity_id) < toString(right_activity.activity_id)
         AND (
-            left_activity.canonical_type = right_activity.canonical_type
+            (
+                left_activity.canonical_type = right_activity.canonical_type
+                AND (
+                    left_activity.canonical_type != 'other'
+                    OR left_activity.provider_id = right_activity.provider_id
+                )
+            )
             OR (
                 left_activity.canonical_type = 'other'
                 AND right_activity.canonical_type != 'other'
@@ -124,7 +130,13 @@ active_to_tombstoned_matches AS (
     INNER JOIN tombstoned_records AS right_activity
         ON left_activity.user_id = right_activity.user_id
         AND (
-            left_activity.canonical_type = right_activity.canonical_type
+            (
+                left_activity.canonical_type = right_activity.canonical_type
+                AND (
+                    left_activity.canonical_type != 'other'
+                    OR left_activity.provider_id = right_activity.provider_id
+                )
+            )
             OR (
                 left_activity.canonical_type = 'other'
                 AND right_activity.canonical_type != 'other'

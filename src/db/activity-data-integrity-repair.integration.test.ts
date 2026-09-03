@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { createClient } from "@clickhouse/client";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { runActivityIntegrityDbtBuild } from "./activity-data-integrity-dbt.ts";
 import {
   type ActivityIntegrityClickHouseClient,
@@ -14,6 +15,7 @@ import {
 import { TEST_USER_ID } from "./schema/core.ts";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
 import { ensureProvider } from "./tokens.ts";
+import { executeWithSchema } from "./typed-sql.ts";
 
 const wahooActivityId = "2a7c6fa3-32f1-4ae5-9c99-b981c31e289b";
 const pelotonActivityId = "761483e6-0000-4000-8000-000000000001";
@@ -32,6 +34,17 @@ const priorDbtEnvironment = new Map(
 );
 
 type NativeClickHouseClient = ReturnType<typeof createClient>;
+
+const postgresLocalTimeContextSchema = z.object({
+  timezone: z.string().nullable(),
+  start_utc_offset_minutes: z.number().int().nullable(),
+  end_utc_offset_minutes: z.number().int().nullable(),
+  local_time_source: z.string(),
+});
+const postgresActivitySchema = postgresLocalTimeContextSchema.extend({
+  name: z.string().nullable(),
+});
+const activityIntegrityJournalPhaseSchema = z.object({ phase: z.string() });
 
 describe("activity data integrity repair", () => {
   let context: TestContext;
@@ -676,32 +689,34 @@ function scopeClickHouseClient(
 }
 
 async function postgresLocalTimeContext(context: TestContext, activityId: string) {
-  const rows = await context.db.execute(sql`
-    SELECT timezone, start_utc_offset_minutes::integer, end_utc_offset_minutes::integer,
-      local_time_source
-    FROM fitness.activity
-    WHERE id = ${activityId}::uuid
-  `);
+  const rows = await executeWithSchema(
+    context.db,
+    postgresLocalTimeContextSchema,
+    sql`
+      SELECT timezone, start_utc_offset_minutes::integer, end_utc_offset_minutes::integer,
+        local_time_source
+      FROM fitness.activity
+      WHERE id = ${activityId}::uuid
+    `,
+  );
   return rows[0];
 }
 
 async function postgresActivity(context: TestContext, activityId: string) {
-  const rows = await context.db.execute<{
-    timezone: string | null;
-    start_utc_offset_minutes: number | null;
-    end_utc_offset_minutes: number | null;
-    local_time_source: string;
-    name: string | null;
-  }>(sql`
-    SELECT
-      timezone,
-      start_utc_offset_minutes::integer,
-      end_utc_offset_minutes::integer,
-      local_time_source,
-      name
-    FROM fitness.activity
-    WHERE id = ${activityId}::uuid
-  `);
+  const rows = await executeWithSchema(
+    context.db,
+    postgresActivitySchema,
+    sql`
+      SELECT
+        timezone,
+        start_utc_offset_minutes::integer,
+        end_utc_offset_minutes::integer,
+        local_time_source,
+        name
+      FROM fitness.activity
+      WHERE id = ${activityId}::uuid
+    `,
+  );
   return rows[0];
 }
 
@@ -716,10 +731,14 @@ async function activityIntegrityJournalPhase(
   context: TestContext,
   runId: string,
 ): Promise<string | null> {
-  const rows = await context.db.execute<{ phase: string }>(sql`
-    SELECT phase
-    FROM fitness.activity_integrity_repair_journal
-    WHERE run_id = ${runId}::uuid
-  `);
+  const rows = await executeWithSchema(
+    context.db,
+    activityIntegrityJournalPhaseSchema,
+    sql`
+      SELECT phase
+      FROM fitness.activity_integrity_repair_journal
+      WHERE run_id = ${runId}::uuid
+    `,
+  );
   return rows[0]?.phase ?? null;
 }
