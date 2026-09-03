@@ -52,8 +52,9 @@ import { registerStrengthSessionsTool } from "./strength-sessions-tool.ts";
 import { registerSupplementsTool } from "./supplements-tool.ts";
 import { syncHealth } from "./sync-health.ts";
 import { requireMcpScope } from "./token-repository.ts";
-import { jsonToolOutputSchema } from "./tool-output.ts";
-import { assertDateRange, jsonContent } from "./tool-utils.ts";
+import { mcpOutputSchemas } from "./tool-output.ts";
+import { jsonToolResult } from "./tool-result.ts";
+import { assertDateRange } from "./tool-utils.ts";
 import { registerTrainingLoadTool } from "./training-load-tool.ts";
 
 export type { DofekMcpContext } from "./context.ts";
@@ -91,7 +92,6 @@ const activityMcpRowSchema = z.object({
   modality: z.string().nullable().optional(),
 });
 type ActivityMcpRow = z.infer<typeof activityMcpRowSchema>;
-
 function daysBetween(startDate: string, endDate: string): number {
   const start = new Date(`${startDate}T00:00:00Z`);
   const end = new Date(`${endDate}T00:00:00Z`);
@@ -424,7 +424,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         date: dateSchema,
         timezone: z.string().optional(),
       },
-      outputSchema: jsonToolOutputSchema,
+      outputSchema: mcpOutputSchemas.dailyHealthSummary,
     },
     async ({ date, timezone }) => {
       requireMcpScope(context.scopes, "health:read");
@@ -434,7 +434,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         timezone ?? context.timezone,
       );
       const rows = await repository.list(1, date);
-      return jsonContent(rows[0] ?? null);
+      return jsonToolResult(rows[0] ?? null);
     },
   );
   server.registerTool(
@@ -451,7 +451,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         granularity: z.enum(["daily", "weekly"]).optional(),
         timezone: z.string().optional(),
       },
-      outputSchema: jsonToolOutputSchema,
+      outputSchema: mcpOutputSchemas.healthTrends,
     },
     async ({ start_date, end_date, metrics, granularity, timezone }) => {
       requireMcpScope(context.scopes, "health:read");
@@ -463,7 +463,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         granularity: granularity ?? "daily",
         timezone,
       };
-      return jsonContent(
+      return jsonToolResult(
         await healthTrendsResponse(
           context,
           await listHealthTrends(context, input),
@@ -481,14 +481,14 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         "Return first and last observed dates, observed-day counts, and source providers for every health metric.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: {},
-      outputSchema: jsonToolOutputSchema,
+      outputSchema: mcpOutputSchemas.dataCoverage,
     },
     async () => {
       requireMcpScope(context.scopes, "health:read");
       if (!context.sensorStore) {
         throw new Error("get_data_coverage requires the ClickHouse analytics store");
       }
-      return jsonContent(
+      return jsonToolResult(
         await new DataCoverageRepository(
           context.sensorStore,
           context.userId,
@@ -552,7 +552,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         end_date: dateSchema,
         timezone: z.string().optional(),
       },
-      outputSchema: jsonToolOutputSchema,
+      outputSchema: mcpOutputSchemas.sleepSummary,
     },
     async ({ start_date, end_date, timezone }) => {
       requireMcpScope(context.scopes, "health:read");
@@ -577,7 +577,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       const respiratoryRateByDate = new Map(
         dailyMetrics.map((row) => [row.date, row.respiratory_rate_avg]),
       );
-      return jsonContent(
+      return jsonToolResult(
         rows.map((row) => {
           const localTimeContext = {
             timezone: row.timezone,
@@ -630,7 +630,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         include: z.array(z.literal("mapPreview")).optional(),
         limit: z.number().int().min(1).max(25).optional(),
       },
-      outputSchema: jsonToolOutputSchema,
+      outputSchema: mcpOutputSchemas.searchActivities,
     },
     async ({ from, to, query, include, limit }) => {
       requireMcpScope(context.scopes, "activity:read");
@@ -660,8 +660,8 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         });
         throw error;
       }
-      if (include?.includes("mapPreview")) return jsonContent(result);
-      return jsonContent({
+      if (include?.includes("mapPreview")) return jsonToolResult(result);
+      return jsonToolResult({
         ...result,
         items: result.items.map((item) => {
           const location = item.location;
@@ -694,7 +694,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
           .optional(),
         canonical_types: z.array(z.string()).optional(),
       },
-      outputSchema: jsonToolOutputSchema,
+      outputSchema: mcpOutputSchemas.activitySummary,
     },
     async ({ start_date, end_date, group_by, canonical_types }) => {
       requireMcpScope(context.scopes, "activity:read");
@@ -709,7 +709,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       const rows = await repository.listRange(start_date, end_date, canonical_types);
       const parsedRows = rows.map((row) => activityMcpRowSchema.parse(row));
       const unclassifiedCount = parsedRows.filter((row) => row.canonical_type === "other").length;
-      return jsonContent({
+      return jsonToolResult({
         unclassified_pct:
           parsedRows.length === 0 ? 0 : (unclassifiedCount / parsedRows.length) * 100,
         summaries: activitySummaries(parsedRows, group_by ?? "canonical_type", context.timezone),
@@ -728,7 +728,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         end_date: dateSchema,
         timezone: z.string().optional(),
       },
-      outputSchema: jsonToolOutputSchema,
+      outputSchema: mcpOutputSchemas.fingerLoading,
     },
     async ({ start_date, end_date, timezone }) => {
       requireMcpScope(context.scopes, "activity:read");
@@ -740,7 +740,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         timezone: timezone ?? context.timezone,
         userId: context.userId,
       });
-      return jsonContent(
+      return jsonToolResult(
         rows.map((row) => ({
           activity_id: row.activityId,
           bodyweight_kg: row.bodyweightKg,
@@ -773,7 +773,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         end_date: dateSchema,
         timezone: z.string().optional(),
       },
-      outputSchema: jsonToolOutputSchema,
+      outputSchema: mcpOutputSchemas.nutritionSummary,
     },
     async ({ start_date, end_date, timezone }) => {
       requireMcpScope(context.scopes, "nutrition:read");
@@ -784,7 +784,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         timezone ?? context.timezone,
       );
       const rows = await repository.dailyTotalsRange(start_date, end_date);
-      return jsonContent(
+      return jsonToolResult(
         rows.map((row) => ({
           date: row.date,
           total_calories: row.calories,
@@ -814,7 +814,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         start_date: dateSchema,
         end_date: dateSchema,
       },
-      outputSchema: jsonToolOutputSchema,
+      outputSchema: mcpOutputSchemas.bodyMetrics,
     },
     async ({ start_date, end_date }) => {
       requireMcpScope(context.scopes, "health:read");
@@ -824,7 +824,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       }
       const repository = new BodyRepository(context.sensorStore, context.userId, context.timezone);
       const rows = await repository.listReconciledRange(start_date, end_date);
-      return jsonContent(
+      return jsonToolResult(
         rows.map((row) => ({
           date: row.date,
           weight_kg: row.weightKg,
@@ -858,13 +858,13 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         start_date: dateSchema,
         end_date: dateSchema,
       },
-      outputSchema: jsonToolOutputSchema,
+      outputSchema: mcpOutputSchemas.subjectiveTimeline,
     },
     async ({ start_date, end_date }) => {
       requireMcpScope(context.scopes, "health:read");
       assertDateRange(start_date, end_date);
       const repository = new SubjectiveRepository(context.db, context.userId, context.timezone);
-      return jsonContent(await repository.timeline(start_date, end_date));
+      return jsonToolResult(await repository.timeline(start_date, end_date));
     },
   );
   server.registerTool(
@@ -875,7 +875,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         "List configured Dofek providers with connection status and last-sync timestamps.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: {},
-      outputSchema: jsonToolOutputSchema,
+      outputSchema: mcpOutputSchemas.providers,
     },
     async () => {
       requireMcpScope(context.scopes, "providers:read");
@@ -933,7 +933,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
                 : null,
           };
         });
-      return jsonContent(providers);
+      return jsonToolResult(providers);
     },
   );
   server.registerTool(
@@ -954,7 +954,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
           .regex(/^\d{4}-\d{2}-\d{2}$/)
           .optional(),
       },
-      outputSchema: jsonToolOutputSchema,
+      outputSchema: mcpOutputSchemas.providerSync,
     },
     async ({ providerId, sinceDays, sinceDate, untilDate }) => {
       requireMcpScope(context.scopes, "sync:write");
@@ -988,7 +988,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       if (!job) {
         throw new Error(`Provider ${providerId} sync skipped: rate-limit cooldown active`);
       }
-      return jsonContent({
+      return jsonToolResult({
         providerId,
         jobId: toJobId(job.id, providerId),
         queueName: providerSyncQueueName(providerId),

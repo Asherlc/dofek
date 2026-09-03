@@ -7,6 +7,7 @@ import { z } from "zod";
 import { makeMockSensorStore } from "../routers/test-helpers.ts";
 import { createMcpRouter } from "./route.ts";
 import { validateMcpToken } from "./token-repository.ts";
+import { activitySummaryOutputSchema, providersOutputSchema } from "./tool-output.ts";
 import { createDofekMcpServer } from "./tools.ts";
 
 const toolTestMocks = vi.hoisted(() => {
@@ -307,6 +308,7 @@ function parseJsonRpcEvent(text: string): unknown {
 
 function parseToolCallText(responseText: string): unknown {
   const response = toolCallResponseSchema.parse(parseJsonRpcEvent(responseText));
+  if (response.result.isError) throw new Error(response.result.content[0]?.text);
   return JSON.parse(response.result.content[0]?.text ?? "null");
 }
 
@@ -537,6 +539,17 @@ describe("createMcpRouter", () => {
     for (const tool of tools) {
       expect(tool.outputSchema).toMatchObject({ type: "object" });
     }
+    expect(findListedTool(tools, "get_activity_summary").outputSchema).toMatchObject({
+      properties: {
+        result: {
+          properties: {
+            summaries: { type: "array" },
+            unclassified_pct: { type: "number" },
+          },
+          type: "object",
+        },
+      },
+    });
     expect(findListedTool(tools, "get_health_trends").description).toContain("HRV and step");
     expect(findListedTool(tools, "render_health_explorer").description).toContain(
       "interactive Dofek Analytics Explorer",
@@ -730,12 +743,16 @@ describe("createMcpRouter", () => {
     });
 
     expect(
-      toolCallResponseSchema.parse(parseJsonRpcEvent(activitySummaryResponse.text)).result
-        .structuredContent,
+      activitySummaryOutputSchema.parse(
+        toolCallResponseSchema.parse(parseJsonRpcEvent(activitySummaryResponse.text)).result
+          .structuredContent,
+      ),
     ).toEqual({ result: { summaries: [], unclassified_pct: 0 } });
     expect(
-      toolCallResponseSchema.parse(parseJsonRpcEvent(providersResponse.text)).result
-        .structuredContent,
+      providersOutputSchema.parse(
+        toolCallResponseSchema.parse(parseJsonRpcEvent(providersResponse.text)).result
+          .structuredContent,
+      ),
     ).toEqual({ result: [] });
   });
 

@@ -3,8 +3,8 @@ import { dateSchema } from "../lib/date-schema.ts";
 import { TrainingLoadRepository } from "../repositories/training-load-repository.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { requireMcpScope } from "./token-repository.ts";
-import { jsonToolOutputSchema } from "./tool-output.ts";
-import { jsonContent } from "./tool-utils.ts";
+import { trainingLoadOutputSchema } from "./tool-output.ts";
+import { jsonToolResult } from "./tool-result.ts";
 
 /** Register the activity-load analytics tool. */
 export function registerTrainingLoadTool(server: McpServer, context: DofekMcpContext): void {
@@ -19,7 +19,7 @@ export function registerTrainingLoadTool(server: McpServer, context: DofekMcpCon
         start_date: dateSchema,
         end_date: dateSchema,
       },
-      outputSchema: jsonToolOutputSchema,
+      outputSchema: trainingLoadOutputSchema,
     },
     async ({ start_date, end_date }) => {
       requireMcpScope(context.scopes, "activity:read");
@@ -29,7 +29,7 @@ export function registerTrainingLoadTool(server: McpServer, context: DofekMcpCon
       if (!context.sensorStore) {
         throw new Error("get_training_load requires the ClickHouse analytics store");
       }
-      return jsonContent({
+      return jsonToolResult({
         range: {
           start_date,
           end_date,
