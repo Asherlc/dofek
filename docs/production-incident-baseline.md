@@ -24707,6 +24707,37 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   freshness budget, and confirm a complete production cycle before treating
   scheduled analytics as recovered.
 
+## 2026-09-03 — App Store configuration blocked MCP metadata deployment
+
+- **Status:** Resolved operationally; the credential exposure risk remains
+  accepted by operator direction.
+- **Symptoms / user impact:** The deploy for the ChatGPT MCP tool-annotation
+  fix stopped before changing production, so ChatGPT continued to scan the old
+  MCP descriptors.
+- **Evidence / root cause:** `deploy-web-stack.yml` failed at
+  `Validate required deploy secrets in rendered dotenv`. The first fatal line
+  named seven absent `APP_STORE_*` keys. Production Infisical still contained
+  the older `APP_STORE_CONNECT_*` names, while the merged billing server and
+  deploy validator required the new names.
+- **Fix / mitigation:** Confirmed the app ID and bundle ID through App Store
+  Connect, validated the existing encoded signing key, downloaded the current
+  Apple root certificates from the [Apple PKI repository](https://www.apple.com/certificateauthority/),
+  and created the required Infisical entries. The PEM values were then encoded
+  with literal `\\n` sequences so the least-privilege dotenv renderer could
+  parse them. The CLI unexpectedly printed secret values despite `--silent`;
+  local temporary secret files were deleted immediately.
+- **Validation:** The exact production dotenv renderer validated all eight
+  service files. Deploy run
+  [33763273039](https://github.com/Asherlc/dofek/actions/runs/33763273039)
+  completed successfully, both `dofek_web` replicas run image `sha-aef5426`,
+  and an authenticated OpenAI Platform rescan found all 20 MCP tools with
+  explicit read-only, open-world, and destructive annotations.
+- **Remaining risk / follow-up:** The App Store Connect key was exposed in
+  local command output and should be treated as compromised. The operator
+  explicitly directed deployment to proceed with the existing key rather than
+  rotate it. Future secret writes must suppress both stdout and stderr
+  independently of the CLI's `--silent` flag.
+
 ## 2026-09-02 — Local ClickHouse integration fixture restart loop
 
 - **Status:** Unresolved local multi-workspace resource incident; isolated CI
