@@ -128,6 +128,14 @@ export const sleepSummaryOutputSchema = jsonResult(
   ),
 );
 
+const activityLocationSchema = z.object({
+  centroidLat: z.number(),
+  centroidLng: z.number(),
+  mapPreview: osmTilePreviewSchema,
+});
+const activitySearchLocationSchema = activityLocationSchema.extend({
+  mapPreview: osmTilePreviewSchema.optional(),
+});
 const activityListItemSchema = z.object({
   id: z.string(),
   canonical_type: z.string(),
@@ -157,14 +165,7 @@ const activityListItemSchema = z.object({
   total_distance: nullableNumber.optional(),
   elevation_loss_m: nullableNumber.optional(),
   sample_count: nullableNumber.optional(),
-  location: z
-    .object({
-      centroidLat: z.number(),
-      centroidLng: z.number(),
-      mapPreview: osmTilePreviewSchema.optional(),
-    })
-    .nullable()
-    .optional(),
+  location: activitySearchLocationSchema.nullable().optional(),
 });
 export const searchActivitiesOutputSchema = jsonResult(
   z.object({ items: z.array(activityListItemSchema), totalCount: z.number().int().nonnegative() }),
@@ -554,9 +555,11 @@ const activityDetailSchema = z.object({
   max_speed: nullableNumber,
   avg_cadence: nullableNumber,
   total_distance: nullableNumber,
+  distance_meters: nullableNumber.optional(),
   elevation_gain_m: nullableNumber,
   elevation_loss_m: nullableNumber,
   sample_count: nullableNumber,
+  location: activityLocationSchema.nullable().optional(),
   provider_absent_at: nullableString,
 });
 const climbingAscentTypeSchema = z.enum(["Flash", "Onsight", "Redpoint", "Repeat"]);

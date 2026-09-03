@@ -8,6 +8,7 @@ import { makeMockSensorStore } from "../routers/test-helpers.ts";
 import { createMcpRouter } from "./route.ts";
 import { validateMcpToken } from "./token-repository.ts";
 import {
+  activityDetailsOutputSchema,
   activitySummaryOutputSchema,
   healthTrendsOutputSchema,
   providersOutputSchema,
@@ -918,6 +919,25 @@ describe("createMcpRouter", () => {
       const outputSchema = findListedTool(tools, name).outputSchema;
       expect.soft(jsonSchemaAtPath(outputSchema, path), `${name}: ${path.join(".")}`).toBeDefined();
     }
+    const activityDetailsSchema = findListedTool(tools, "get_activity_details").outputSchema;
+    expect
+      .soft(
+        jsonSchemaAtPath(activityDetailsSchema, ["result", "activity", "distance_meters"]),
+        "get_activity_details: result.activity.distance_meters",
+      )
+      .toBeDefined();
+    expect
+      .soft(
+        jsonSchemaAtPath(activityDetailsSchema, [
+          "result",
+          "activity",
+          "location",
+          "mapPreview",
+          "routePath",
+        ]),
+        "get_activity_details: result.activity.location.mapPreview.routePath",
+      )
+      .toBeDefined();
   });
 
   it("returns object-root structured content for JSON tool calls", async () => {
@@ -2919,12 +2939,18 @@ describe("createMcpRouter", () => {
       avg_power: 250,
       avg_speed: 3,
       canonical_type: "strength",
+      distance_meters: 1000,
       elevation_gain_m: 100,
       elevation_loss_m: 100,
       ended_at: "2026-08-01T11:00:00.000Z",
       end_utc_offset_minutes: 0,
       id: activityId,
       local_time_source: "provider_timezone",
+      location: {
+        centroidLat: 37.8,
+        centroidLng: -122.4,
+        mapPreview: makeActivityMapPreview(),
+      },
       max_hr: 170,
       max_power: 500,
       max_speed: 5,
@@ -2999,12 +3025,26 @@ describe("createMcpRouter", () => {
       authorization: "Bearer good-token",
       body: createToolCallRequest("get_activity_details", { activity_id: activityId }),
     });
+    const structuredContent = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text)).result
+      .structuredContent;
 
     expect(parseToolCallText(response.text)).toMatchObject({
       activity: { canonical_type: "strength", id: activityId, name: "Training" },
       climbing_entries: [{ grade: "V5", routeName: "Blue Circuit" }],
       finger_loading: [{ exercise: "max_hang", effectiveLoadKg: 95 }],
       strength_exercises: [{ exerciseName: "Pull-up", muscleGroups: ["back"] }],
+    });
+    expect(activityDetailsOutputSchema.parse(structuredContent)).toMatchObject({
+      result: {
+        activity: {
+          distance_meters: 1000,
+          location: {
+            centroidLat: 37.8,
+            centroidLng: -122.4,
+            mapPreview: makeActivityMapPreview(),
+          },
+        },
+      },
     });
     expect(toolTestMocks.activityFindById).toHaveBeenCalledWith(activityId);
   });
