@@ -24922,3 +24922,31 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   typechecking pass locally.
 - **Remaining risk / follow-up:** Confirm the fresh PR workflow completes with
   Spell Check and the dependent quality gate passing.
+
+## 2026-09-03 — ChatGPT MCP submission reported missing output schemas
+
+- **Status:** Fixed in source; merge, deployment, and portal metadata refresh
+  pending.
+- **Symptoms / user impact:** The ChatGPT submission portal warned that Dofek
+  MCP tools lacked output schemas, blocking confidence in the submission even
+  though the tools continued to return their readable JSON text.
+- **Evidence / root cause:** Source inspection found 19 ordinary tools without
+  a concrete object-root output contract for their natural scalar, array,
+  `null`, or object results. The [MCP Tools specification
+  (2025-11-25)](https://modelcontextprotocol.io/specification/2025-11-25/server/tools#output-schema)
+  requires structured results to conform when `outputSchema` is supplied and
+  recommends serialized JSON text alongside `structuredContent` for backwards
+  compatibility. OpenAI's [MCP server guidance](https://developers.openai.com/plugins/build/mcp-server#define-tools-from-user-goals)
+  also requires an output schema for structured tool results.
+- **Direct fix:** Each ordinary tool now advertises a concrete object-root
+  `{ "result": ... }` schema and returns matching `structuredContent`, while
+  preserving its unwrapped pretty-printed JSON text. `render_health_explorer`
+  instead advertises and returns the direct shared snapshot schema consumed by
+  its Apps UI.
+- **Validation:** The focused MCP unit suite, server typecheck, and relevant
+  lint/format checks validate the source contract; final branch review remains
+  required before merge.
+- **Remaining risk / follow-up:** The portal warning remains until this change
+  is merged and deployed and the submission form refreshes its live tool
+  metadata. After deployment, rescan the live tool catalog in the submission
+  form and retain the result with the release evidence.

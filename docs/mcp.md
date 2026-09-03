@@ -112,6 +112,37 @@ The canonical tool names, schemas, and scope checks are defined in the [MCP tool
 | `list_providers` | `providers:read` | Lists configured providers and status. |
 | `start_provider_sync` | `sync:write` | Enqueues a provider sync job. |
 
+## Output contract
+
+Every Dofek MCP tool advertises an `outputSchema` and, on success, returns
+matching `structuredContent`. MCP requires structured results to conform to an
+advertised output schema, and recommends also returning serialized JSON in a
+text content block for backwards compatibility ([MCP Tools specification,
+2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25/server/tools#structured-content)).
+OpenAI likewise treats schemas as user-facing tool metadata and recommends an
+output schema for structured results ([OpenAI: Build an MCP
+server](https://developers.openai.com/plugins/build/mcp-server#define-tools-from-user-goals)).
+
+For the 19 ordinary tools, the declared schema and `structuredContent` use the
+object-root envelope `{ "result": ... }`. This makes scalar, array, `null`,
+and object natural results valid object-root tool outputs without changing the
+existing pretty-printed JSON text in `content`. For example, an ordinary tool
+that naturally returns an array exposes it as `structuredContent.result`, while
+its text content remains the unwrapped formatted array.
+
+`render_health_explorer` is the intentional exception: it advertises and
+returns the direct shared health-explorer snapshot schema, rather than wrapping
+that snapshot in `result`. Its Apps UI consumer parses that same snapshot
+directly. `structuredContent` is the machine-readable result data, `content`
+remains transcript-visible compatibility text, and component-only metadata is
+kept in `_meta`, consistent with [OpenAI's MCP result
+guidance](https://developers.openai.com/plugins/build/mcp-server#return-useful-results-without-ui).
+
+The ChatGPT submission portal can continue to display its output-schema warning
+until this source change is merged and deployed and the submission form refreshes
+the live MCP tool metadata. Do not interpret the stale portal result as evidence
+that the checked-in tool catalog lacks the contract above.
+
 For Heart Rate Variability (HRV), resting heart rate, respiratory rate, and sleep
 efficiency, `get_health_trends` includes `baseline_relative` on the matching
 aggregate. The context contains the preceding 30-day mean, standard deviation,
