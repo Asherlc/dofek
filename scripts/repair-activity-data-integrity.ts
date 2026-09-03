@@ -1,5 +1,6 @@
 import { parseArgs } from "node:util";
 import * as Sentry from "@sentry/node";
+import { z } from "zod";
 import {
   ACTIVITY_INTEGRITY_MAX_ACCEPTANCE_WINDOW_MS,
   type ActivityIntegrityRepairOptions,
@@ -22,25 +23,56 @@ type ActivityDataIntegrityCommand =
     };
 
 function requiredText(value: string | undefined, option: string): string {
-  if (!value?.trim()) throw new Error(`${option} is required`);
-  return value.trim();
+  return z
+    .string({ error: `${option} is required` })
+    .trim()
+    .min(1, `${option} is required`)
+    .parse(value);
 }
 
 function positiveInteger(value: string | undefined, option: string, fallback: number): number {
-  if (value == null) return fallback;
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 1)
-    throw new Error(`${option} must be a positive integer`);
-  return parsed;
+  return z.coerce
+    .number({ error: `${option} must be a positive integer` })
+    .int(`${option} must be a positive integer`)
+    .positive(`${option} must be a positive integer`)
+    .default(fallback)
+    .parse(value);
 }
 
 function utcDate(value: string | undefined, option: string): Date {
-  const timestamp = requiredText(value, option);
-  if (!/(?:Z|\+00:?00)$/i.test(timestamp)) throw new Error(`${option} must use UTC`);
-  const parsed = new Date(timestamp);
-  if (!Number.isFinite(parsed.getTime())) throw new Error(`${option} must be a valid timestamp`);
-  return parsed;
+  return z
+    .string({ error: `${option} is required` })
+    .trim()
+    .min(1, `${option} is required`)
+    .refine((timestamp) => /(?:Z|\+00:?00)$/i.test(timestamp), `${option} must use UTC`)
+    .pipe(z.iso.datetime({ offset: true, error: `${option} must be a valid timestamp` }))
+    .transform((timestamp) => new Date(timestamp))
+    .parse(value);
 }
+
+const commandModeSchema = z
+  .object({
+    rollbackRequested: z.boolean(),
+    retirementRequested: z.boolean(),
+    repairArgumentsPresent: z.boolean(),
+  })
+  .superRefine((selection, context) => {
+    if (selection.rollbackRequested && selection.retirementRequested) {
+      context.addIssue({
+        code: "custom",
+        message: "--rollback-artifact and --retire-artifact cannot be combined",
+      });
+    }
+    if (
+      (selection.rollbackRequested || selection.retirementRequested) &&
+      selection.repairArgumentsPresent
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "artifact operations cannot be combined with repair options",
+      });
+    }
+  });
 
 export function parseActivityDataIntegrityCommand(
   args: readonly string[],
@@ -68,23 +100,18 @@ export function parseActivityDataIntegrityCommand(
 
   const rollbackRequested = values["rollback-artifact"] != null;
   const retirementRequested = values["retire-artifact"] != null;
+  const repairArgumentsPresent =
+    values["user-id"] != null ||
+    values["start-at"] != null ||
+    values["end-at"] != null ||
+    values.execute ||
+    values["batch-size"] != null ||
+    values["max-batches"] != null ||
+    values["artifact-directory"] != null ||
+    values["acceptance-owner"] != null ||
+    values["acceptance-deadline"] != null;
+  commandModeSchema.parse({ rollbackRequested, retirementRequested, repairArgumentsPresent });
   if (rollbackRequested || retirementRequested) {
-    const repairArgumentsPresent =
-      values["user-id"] != null ||
-      values["start-at"] != null ||
-      values["end-at"] != null ||
-      values.execute ||
-      values["batch-size"] != null ||
-      values["max-batches"] != null ||
-      values["artifact-directory"] != null ||
-      values["acceptance-owner"] != null ||
-      values["acceptance-deadline"] != null;
-    if (rollbackRequested && retirementRequested) {
-      throw new Error("--rollback-artifact and --retire-artifact cannot be combined");
-    }
-    if (repairArgumentsPresent) {
-      throw new Error("artifact operations cannot be combined with repair options");
-    }
     if (rollbackRequested) {
       if (values["accepted-by"] || values.disposition) {
         throw new Error("rollback cannot be combined with retirement options");

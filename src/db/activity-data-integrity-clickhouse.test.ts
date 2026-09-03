@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import {
+  assertActivityIntegrityRebuild,
   type DerivedSnapshot,
   incompatibleMemberCount,
   snapshotDerivedRows,
@@ -42,6 +44,10 @@ function sourceRow(activityId: string): DerivedSnapshot["sourceRows"][number] {
     provider_id: "wahoo",
     user_id: userId,
     canonical_type: "cycling",
+    timezone: null,
+    start_utc_offset_minutes: -240,
+    end_utc_offset_minutes: -240,
+    local_time_source: "provider_offset",
     refresh_version: "10",
     is_deleted: 0,
   };
@@ -124,7 +130,7 @@ describe("snapshotDerivedRows", () => {
               json: async () => groupRows.filter((row) => activityIds.includes(row.activity_id)),
             };
           }
-          if (query.includes("activity_source_records")) {
+          if (query.includes("FROM analytics.activity_source_records AS source_records FINAL")) {
             return { json: async () => sourceRows };
           }
           return { json: async () => [] };
@@ -164,7 +170,7 @@ describe("snapshotDerivedRows", () => {
           if (query.includes("activity_duplicate_groups")) {
             return { json: async () => groupRows };
           }
-          if (query.includes("activity_source_records")) {
+          if (query.includes("FROM analytics.activity_source_records AS source_records FINAL")) {
             return { json: async () => sourceRows };
           }
           return { json: async () => [] };
@@ -176,6 +182,60 @@ describe("snapshotDerivedRows", () => {
 
     expect(snapshot.activityIds).toEqual([activityA, activityB, activityC]);
     expect(snapshot.matchRows).toEqual([matchAB, matchBC]);
+  });
+
+  it("rejects duplicate expansion that exceeds the bounded activity count", async () => {
+    const client = {
+      query: vi.fn(async ({ query }: { query: string }) => {
+        if (query.includes("activity_duplicate_matches")) {
+          return {
+            json: async () =>
+              Array.from({ length: 10_001 }, (_, index) => ({
+                ...matchAB,
+                duplicate_activity_id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+              })),
+          };
+        }
+        return { json: async () => [] };
+      }),
+    };
+
+    await expect(snapshotDerivedRows(client, userId, [activityA])).rejects.toThrow(
+      "activity integrity expansion exceeded 10000 activities",
+    );
+  });
+
+  it("rejects duplicate expansion that does not converge within the iteration bound", async () => {
+    const client = {
+      query: vi.fn(
+        async ({
+          query,
+          query_params,
+        }: {
+          query: string;
+          query_params?: Record<string, unknown>;
+        }) => {
+          if (query.includes("activity_duplicate_matches")) {
+            const activityIds = z.array(z.string()).parse(query_params?.activityIds);
+            const nextActivityId = `00000000-0000-4000-8000-${String(activityIds.length + 100).padStart(12, "0")}`;
+            return {
+              json: async () => [
+                {
+                  ...matchAB,
+                  activity_id: activityIds.at(-1),
+                  duplicate_activity_id: nextActivityId,
+                },
+              ],
+            };
+          }
+          return { json: async () => [] };
+        },
+      ),
+    };
+
+    await expect(snapshotDerivedRows(client, userId, [activityA])).rejects.toThrow(
+      "did not reach a fixpoint within 32 iterations",
+    );
   });
 
   it("fetches source rows for every member returned by the deduped projection", async () => {
@@ -206,7 +266,7 @@ describe("snapshotDerivedRows", () => {
               ],
             };
           }
-          if (query.includes("activity_source_records")) {
+          if (query.includes("FROM analytics.activity_source_records AS source_records FINAL")) {
             return {
               json: async () => sourceRows.filter((row) => activityIds.includes(row.activity_id)),
             };
@@ -319,6 +379,103 @@ describe("sourceRowsMatchPostgres", () => {
     ]) {
       expect(sourceRowsMatchPostgres([{ ...mirrored, ...mismatch }], [repaired])).toBe(false);
     }
+  });
+});
+
+describe("assertActivityIntegrityRebuild", () => {
+  const refreshedVersion = "20";
+  const before = { ...compatibilitySnapshot([], []), highestVersion: "12" };
+  const after: DerivedSnapshot = {
+    sourceRows: [sourceRowA, sourceRowB].map((row) => ({
+      ...row,
+      refresh_version: refreshedVersion,
+    })),
+    matchRows: [{ ...matchAB, refresh_version: refreshedVersion }],
+    groupRows: [activityA, activityB].map((activityId) => ({
+      activity_id: activityId,
+      group_id: activityA,
+      refresh_version: refreshedVersion,
+      is_deleted: 0,
+    })),
+    dedupedRows: [
+      {
+        activity_id: activityA,
+        user_id: userId,
+        provider_id: "wahoo",
+        canonical_type: "cycling",
+        member_activity_ids: [activityA, activityB],
+        refresh_version: refreshedVersion,
+        is_deleted: 0,
+      },
+    ],
+    memberRows: [activityA, activityB].map((memberActivityId) => ({
+      activity_id: activityA,
+      user_id: userId,
+      member_activity_id: memberActivityId,
+      refresh_version: refreshedVersion,
+      is_deleted: 0,
+    })),
+    sensorSummaryRows: [
+      { activity_id: activityA, user_id: userId, refresh_version: refreshedVersion, is_deleted: 0 },
+    ],
+    summaryRows: [
+      { activity_id: activityA, user_id: userId, refresh_version: refreshedVersion, is_deleted: 0 },
+    ],
+    components: [{ groupId: activityA, memberActivityIds: [activityA, activityB] }],
+    highestVersion: refreshedVersion,
+    activityIds: [activityA, activityB],
+  };
+
+  it("accepts fresh, internally consistent rows from every captured model", () => {
+    expect(() => assertActivityIntegrityRebuild(before, after)).not.toThrow();
+  });
+
+  it.each([
+    ["activity_source_records", "sourceRows"],
+    ["activity_duplicate_matches", "matchRows"],
+    ["activity_duplicate_groups", "groupRows"],
+    ["deduped_activities", "dedupedRows"],
+    ["deduped_activity_members", "memberRows"],
+    ["activity_sensor_summary_rows", "sensorSummaryRows"],
+    ["activity_summary_rows", "summaryRows"],
+  ] as const)("rejects stale %s rows", (model, collection) => {
+    const stale = {
+      ...after,
+      [collection]: after[collection].map((row, index) =>
+        index === 0 ? { ...row, refresh_version: "12" } : row,
+      ),
+    };
+    expect(() => assertActivityIntegrityRebuild(before, stale)).toThrow(
+      `activity integrity rebuild left stale ${model} rows`,
+    );
+  });
+
+  it("rejects inconsistent component membership, member mappings, and summary ownership", () => {
+    expect(() =>
+      assertActivityIntegrityRebuild(before, {
+        ...after,
+        components: [{ groupId: activityA, memberActivityIds: [activityA] }],
+      }),
+    ).toThrow("inconsistent canonical components");
+    expect(() =>
+      assertActivityIntegrityRebuild(before, {
+        ...after,
+        memberRows: after.memberRows.slice(0, 1),
+      }),
+    ).toThrow("inconsistent member mappings");
+    expect(() =>
+      assertActivityIntegrityRebuild(before, {
+        ...after,
+        summaryRows: [
+          {
+            activity_id: activityC,
+            user_id: userId,
+            refresh_version: refreshedVersion,
+            is_deleted: 0,
+          },
+        ],
+      }),
+    ).toThrow("summary for a non-canonical activity");
   });
 });
 

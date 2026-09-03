@@ -133,10 +133,21 @@ describe("inspectActivityDataIntegrity", () => {
     expect(result.activities[0]).toMatchObject({
       requestedActivityId: "2a",
       selectedSummaryActivityId: "peloton-member",
+      selectedSummary: { avgSpeed: 8.2, maxHr: 174 },
       selectedSummaryMember: {
         providerId: "peloton",
         canonicalType: "cycling",
         providerType: "indoor_cycling",
+      },
+    });
+    expect(result.activities[1]).toMatchObject({
+      requestedActivityId: "761",
+      selectedSummaryActivityId: "walking-member",
+      selectedSummary: { avgSpeed: 1.4, maxHr: 189 },
+      selectedSummaryMember: {
+        providerId: "apple_health",
+        canonicalType: "walking",
+        providerType: "walking",
       },
     });
     expect(result.strongSessions).toEqual(

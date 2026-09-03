@@ -232,6 +232,20 @@ describe("resolveProviderTimezoneLocalTimeContext", () => {
     });
   });
 
+  it("normalizes a negative fixed Etc/GMT zone using the reversed IANA sign", () => {
+    expect(
+      resolveProviderTimezoneLocalTimeContext({
+        startedAt: new Date("2026-09-01T14:55:54.000Z"),
+        timezone: "Etc/GMT-10",
+      }),
+    ).toEqual({
+      timezone: null,
+      startUtcOffsetMinutes: 600,
+      endUtcOffsetMinutes: null,
+      source: "provider_offset",
+    });
+  });
+
   it("trims a fixed Etc/GMT zone before classifying it", () => {
     expect(
       resolveProviderTimezoneLocalTimeContext({

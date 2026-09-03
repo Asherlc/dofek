@@ -76,20 +76,27 @@ adjacency_with_nodes AS (
     GROUP BY user_id, activity_id
 ),
 
-graph AS (
+graph_entries AS (
     SELECT
         user_id,
-        groupArray(activity_id) AS activity_ids,
-        groupArray(linked_activity_ids) AS linked_activity_ids_by_activity,
-        mapFromArrays(
-            groupArray(activity_id),
-            groupArray(toString(activity_id))
-        ) AS initial_labels
+        groupArray(tuple(activity_id, linked_activity_ids)) AS entries
     FROM adjacency_with_nodes
     GROUP BY user_id
 ),
 
-propagation_16 AS (
+graph AS (
+    SELECT
+        user_id,
+        arrayMap(entry -> entry.1, entries) AS activity_ids,
+        arrayMap(entry -> entry.2, entries) AS linked_activity_ids_by_activity,
+        mapFromArrays(
+            arrayMap(entry -> entry.1, entries),
+            arrayMap(entry -> toString(entry.1), entries)
+        ) AS initial_labels
+    FROM graph_entries
+),
+
+propagation_64 AS (
     SELECT
         user_id,
         activity_ids,
@@ -109,18 +116,18 @@ propagation_16 AS (
                     linked_activity_ids_by_activity
                 )
             ),
-            range(16),
+            range(64),
             initial_labels
         ) AS labels
     FROM graph
 ),
 
-propagation_17 AS (
+propagation_65 AS (
     SELECT
         user_id,
         activity_ids,
         linked_activity_ids_by_activity,
-        labels AS labels_16,
+        labels AS labels_64,
         arrayFold(
             (labels, _) -> mapFromArrays(
                 activity_ids,
@@ -138,29 +145,29 @@ propagation_17 AS (
             ),
             range(1),
             labels
-        ) AS labels_17
-    FROM propagation_16
+        ) AS labels_65
+    FROM propagation_64
 ),
 
 convergence_check AS (
     SELECT throwIf(
         countIf(NOT arrayAll(
-            activity_id -> labels_16[activity_id] = labels_17[activity_id],
+            activity_id -> labels_64[activity_id] = labels_65[activity_id],
             activity_ids
         )) > 0,
-        'Activity duplicate component propagation did not converge within 16 rounds'
+        'Activity duplicate component propagation did not converge within 64 rounds'
     ) AS converged
-    FROM propagation_17
+    FROM propagation_65
 ),
 
 current_duplicate_groups AS (
     SELECT
         activity_id,
         concat(
-            labels_16[activity_id],
+            labels_64[activity_id],
             substring('', 1, convergence_check.converged)
         ) AS group_id
-    FROM propagation_17
+    FROM propagation_65
     ARRAY JOIN activity_ids AS activity_id
     CROSS JOIN convergence_check
 ),

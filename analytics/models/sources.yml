@@ -11,6 +11,8 @@ sources:
       - name: sleep_heart_rate_cutover
       - name: v_activity
       - name: v_activity_members
+      - name: v_daily_metrics
+      - name: v_sleep
   - name: ingest
     schema: "{{ env_var('DBT_INGEST_SOURCE_SCHEMA', 'ingest') }}"
     tables:
@@ -40,3 +42,4 @@ sources:
       - name: sensor_provider_priority
       - name: sleep_session
       - name: user_profile
+      - name: user_profile_current

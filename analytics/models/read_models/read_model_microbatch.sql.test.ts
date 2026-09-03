@@ -270,11 +270,8 @@ describe("production analytics read-model build", () => {
     expect(groupsSql).toContain("ref('activity_source_records')");
     expect(groupsSql).toContain("ref('activity_duplicate_matches')");
     expect(groupsSql).toContain("current_edges AS");
-    expect(groupsSql).toContain("propagation_16 AS");
-    expect(groupsSql).toContain("labels AS labels_16");
-    expect(groupsSql).toContain("labels_17");
     expect(groupsSql).toContain("convergence_check AS");
-    expect(groupsSql).toContain("did not converge within 16 rounds");
+    expect(groupsSql).toContain("groupArray(tuple(activity_id, linked_activity_ids))");
     expect(groupsSql).toContain("UNION ALL");
     expect(groupsSql).toContain("current_duplicate_groups AS");
     expect(groupsSql).toContain("arrayFold(");
@@ -586,7 +583,7 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("order_by='(user_id, activity_id)'");
     expect(sql).toContain("ref('activity_sensor_sample')");
     expect(sql).toContain("ref('resting_heart_rate_sleep_window')");
-    expect(sql).toContain("postgres_fitness.user_profile_current");
+    expect(sql).toContain("source('postgres_fitness', 'user_profile_current')");
     expect(sql).toContain("profile_recompute_lookback_days");
     expect(sql).toContain("groupArray(tuple(");
     expect(sql).toContain("zone_seconds AS");
@@ -748,7 +745,7 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
     expect(sql).toContain("ref('activity_summary_rows')");
     expect(sql).toContain("ref('resting_heart_rate_sleep_window')");
-    expect(sql).toContain("postgres_fitness.user_profile_current");
+    expect(sql).toContain("source('postgres_fitness', 'user_profile_current')");
     expect(sql).toContain("argMax(resting.resting_hr, resting.ended_at)");
     expect(sql).toContain("nullIf(user_profile.resting_hr, 0)");
     expect(sql).toContain("canonical_type IN (");
@@ -803,7 +800,7 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("existing_rows AS");
     expect(sql).toContain("dirty_keys AS");
     expect(sql).toContain("IS DISTINCT FROM tuple(");
-    expect(sql).toContain("analytics.v_daily_metrics");
+    expect(sql).toContain("source('analytics', 'v_daily_metrics')");
     expect(sql).toContain("nullIf(hrv, 0) AS hrv");
     expect(sql).toContain("nullIf(respiratory_rate_avg, 0) AS respiratory_rate");
     expect(sql).toContain("nullIf(efficiency_pct, 0) AS efficiency_pct");
@@ -897,7 +894,7 @@ describe("production analytics read-model build", () => {
     );
     expect(sql).toContain("dirty_dates AS");
     expect(sql).toContain("current_rows.is_deleted = 0");
-    expect(sql).toContain("analytics.v_sleep");
+    expect(sql).toContain("source('analytics', 'v_sleep')");
     expect(sql).toContain("sleep.source_name AS source_name");
     expect(sql).toContain("sleep.source_providers AS source_providers");
     expect(sql).toContain("selected_sleep.source_name AS source_name");
@@ -944,7 +941,7 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("WHERE is_deleted = 0");
     expect(sql).toContain("ref('activity_sensor_sample')");
     expect(sql).toContain("ref('resting_heart_rate_sleep_window')");
-    expect(sql).toContain("postgres_fitness.user_profile_current");
+    expect(sql).toContain("source('postgres_fitness', 'user_profile_current')");
     expect(sql).toContain("FROM {{ this }} FINAL");
     expect(sql).toContain("if(zone_minutes.activity_id IS NULL, 1, 0) AS is_deleted");
     expect(sql).toContain("sensor_samples.scalar >= activity_metadata.ftp * 0.9");

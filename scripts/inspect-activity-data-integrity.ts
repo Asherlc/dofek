@@ -59,6 +59,12 @@ const activityIdPrefixSchema = z
     /^[0-9a-f]{1,8}(?:-[0-9a-f]{1,4}(?:-[0-9a-f]{1,4}(?:-[0-9a-f]{1,4}(?:-[0-9a-f]{1,12})?)?)?)?$/i,
     "--activity-id must be a hexadecimal UUID prefix",
   );
+const inspectionInputSchema = z.object({
+  userId: userIdSchema,
+  activityIds: z
+    .array(activityIdPrefixSchema)
+    .min(1, "At least one non-empty --activity-id is required"),
+});
 
 export interface ActivityIntegrityInspectionDatabase {
   postgres: SchemaExecutionDatabase;
@@ -78,14 +84,7 @@ function textArray(values: readonly string[]) {
 }
 
 function assertInspectionInput(input: ActivityIntegrityInspectionInput): void {
-  userIdSchema.parse(input.userId);
-  if (
-    input.activityIds.length === 0 ||
-    input.activityIds.some((activityId) => !activityId.trim())
-  ) {
-    throw new Error("At least one non-empty --activity-id is required");
-  }
-  z.array(activityIdPrefixSchema).parse(input.activityIds);
+  inspectionInputSchema.parse(input);
 }
 
 /**
@@ -185,17 +184,17 @@ export async function inspectActivityDataIntegrity(
       source.device_id AS source_device_id,
       source.source_type AS source_type,
       source.metadata AS source_metadata
-    FROM analytics.activity_sensor_sample FINAL AS sample
-    INNER JOIN analytics.activity_sensor_summary_rows FINAL AS summary
+    FROM analytics.activity_sensor_sample AS sample FINAL
+    INNER JOIN analytics.activity_sensor_summary_rows AS summary FINAL
       ON summary.user_id = sample.user_id
       AND summary.activity_id = sample.activity_id
       AND summary.is_deleted = 0
-    INNER JOIN analytics.deduped_sensor FINAL AS sensor
+    INNER JOIN analytics.deduped_sensor AS sensor FINAL
       ON sensor.user_id = sample.user_id
       AND sensor.recorded_at = sample.recorded_at
       AND sensor.channel = sample.channel
       AND sensor.is_deleted = 0
-    INNER JOIN ingest.metric_stream FINAL AS source
+    INNER JOIN ingest.metric_stream AS source FINAL
       ON source.id = sensor.source_metric_stream_id
       AND source.is_deleted = 0
     WHERE sample.user_id = {userId:UUID}
@@ -287,11 +286,10 @@ export function parseInspectionArgs(args: readonly string[]): ActivityIntegrityI
     },
     strict: true,
   });
-  const userId = values["user-id"];
-  const activityIds = values["activity-id"] ?? [];
-  const input = { userId: userId ?? "", activityIds };
-  assertInspectionInput(input);
-  return input;
+  return inspectionInputSchema.parse({
+    userId: values["user-id"],
+    activityIds: values["activity-id"],
+  });
 }
 
 function initializeSentry(): void {
@@ -305,9 +303,10 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   initializeSentry();
   const input = parseInspectionArgs(args);
   const postgres = createDatabaseFromEnv();
-  const clickHouse = createClickHouseClientFromEnv();
+  let clickHouse: ReturnType<typeof createClickHouseClientFromEnv> | undefined;
 
   try {
+    clickHouse = createClickHouseClientFromEnv();
     const result = await inspectActivityDataIntegrity({ postgres, clickHouse }, input);
     console.log(JSON.stringify(result, null, 2));
   } catch (error: unknown) {
@@ -315,7 +314,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     throw error;
   } finally {
     await postgres.$client.end();
-    await clickHouse.close?.();
+    await clickHouse?.close?.();
     await Sentry.close(2_000);
   }
 }

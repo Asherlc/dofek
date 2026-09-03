@@ -3,6 +3,8 @@ import { z } from "zod";
 import { captureException } from "../lib/error-reporting.ts";
 
 const MAXIMUM_UINT64 = (1n << 64n) - 1n;
+const MAXIMUM_EXPANSION_ITERATIONS = 32;
+const MAXIMUM_EXPANDED_ACTIVITY_IDS = 10_000;
 const DEFAULT_CDC_READINESS_TIMEOUT_MS = 120_000;
 const DEFAULT_CDC_READINESS_POLL_INTERVAL_MS = 2_000;
 const postgresUuidSchema = z
@@ -20,6 +22,10 @@ export const clickHouseSourceRowSchema = z
     provider_id: z.string().min(1),
     user_id: postgresUuidSchema,
     canonical_type: z.string().min(1),
+    timezone: z.string().nullable(),
+    start_utc_offset_minutes: z.coerce.number().int().nullable(),
+    end_utc_offset_minutes: z.coerce.number().int().nullable(),
+    local_time_source: z.string().min(1),
     refresh_version: uint64StringSchema,
     is_deleted: z.coerce.number().int().min(0).max(1),
   })
@@ -166,22 +172,32 @@ export async function snapshotDerivedRows(
     };
   }
   const selectedIds = unique(selectedActivityIds);
-  const lifecycleFilter = includeDeleted ? "" : "AND is_deleted = 0";
+  const lifecycleFilter = includeDeleted ? "" : "AND selected_duplicate_groups.is_deleted = 0";
   const queryMatchRows = (activityIds: readonly string[]) =>
     queryClickHouseRows(
       client,
       clickHouseMatchRowSchema,
-      `SELECT duplicate_matches.* REPLACE(
-  toString(duplicate_matches.refresh_version) AS refresh_version
-)
+      `SELECT
+  duplicate_matches.activity_id AS activity_id,
+  duplicate_matches.duplicate_activity_id AS duplicate_activity_id,
+  toString(duplicate_matches.refresh_version) AS refresh_version,
+  duplicate_matches.is_deleted AS is_deleted
 FROM analytics.activity_duplicate_matches AS duplicate_matches FINAL
+INNER JOIN analytics.activity_source_records AS left_source FINAL
+  ON left_source.activity_id = duplicate_matches.activity_id
+  AND left_source.user_id = {userId:UUID}
+  AND left_source.is_deleted = 0
+INNER JOIN analytics.activity_source_records AS right_source FINAL
+  ON right_source.activity_id = duplicate_matches.duplicate_activity_id
+  AND right_source.user_id = {userId:UUID}
+  AND right_source.is_deleted = 0
 WHERE (
     duplicate_matches.activity_id IN {activityIds:Array(UUID)}
     OR duplicate_matches.duplicate_activity_id IN {activityIds:Array(UUID)}
   )
   ${includeDeleted ? "" : "AND duplicate_matches.is_deleted = 0"}
 ORDER BY duplicate_matches.activity_id, duplicate_matches.duplicate_activity_id`,
-      { activityIds },
+      { userId, activityIds },
     );
   const queryGroupRows = (activityIds: readonly string[]) =>
     queryClickHouseRows(
@@ -189,27 +205,42 @@ ORDER BY duplicate_matches.activity_id, duplicate_matches.duplicate_activity_id`
       clickHouseGroupRowSchema,
       `WITH selected_groups AS (
   SELECT group_id
-  FROM analytics.activity_duplicate_groups FINAL
-  WHERE activity_id IN {activityIds:Array(UUID)}
+  FROM analytics.activity_duplicate_groups AS selected_duplicate_groups FINAL
+  INNER JOIN analytics.activity_source_records AS selected_source FINAL
+    ON selected_source.activity_id = selected_duplicate_groups.activity_id
+    AND selected_source.user_id = {userId:UUID}
+    AND selected_source.is_deleted = 0
+  WHERE selected_duplicate_groups.activity_id IN {activityIds:Array(UUID)}
     ${lifecycleFilter}
 )
-SELECT duplicate_groups.* REPLACE(
-  toString(duplicate_groups.refresh_version) AS refresh_version
-)
+SELECT
+  duplicate_groups.activity_id AS activity_id,
+  duplicate_groups.group_id AS group_id,
+  toString(duplicate_groups.refresh_version) AS refresh_version,
+  duplicate_groups.is_deleted AS is_deleted
 FROM analytics.activity_duplicate_groups AS duplicate_groups FINAL
+INNER JOIN analytics.activity_source_records AS source_records FINAL
+  ON source_records.activity_id = duplicate_groups.activity_id
+  AND source_records.user_id = {userId:UUID}
+  AND source_records.is_deleted = 0
 WHERE (
     duplicate_groups.activity_id IN {activityIds:Array(UUID)}
     OR duplicate_groups.group_id IN (SELECT group_id FROM selected_groups)
   )
   ${includeDeleted ? "" : "AND duplicate_groups.is_deleted = 0"}
 ORDER BY duplicate_groups.activity_id`,
-      { activityIds },
+      { userId, activityIds },
     );
 
   let activityIds = selectedIds;
   let matchRows: ClickHouseMatchRow[] = [];
   let groupRows: ClickHouseGroupRow[] = [];
-  while (true) {
+  for (let iteration = 0; ; iteration += 1) {
+    if (iteration >= MAXIMUM_EXPANSION_ITERATIONS) {
+      throw new Error(
+        `activity integrity expansion did not reach a fixpoint within ${MAXIMUM_EXPANSION_ITERATIONS} iterations`,
+      );
+    }
     matchRows = await queryMatchRows(activityIds);
     groupRows = await queryGroupRows(activityIds);
     const expandedActivityIds = unique([
@@ -217,6 +248,11 @@ ORDER BY duplicate_groups.activity_id`,
       ...matchRows.flatMap((row) => [row.activity_id, row.duplicate_activity_id]),
       ...groupRows.map((row) => row.activity_id),
     ]);
+    if (expandedActivityIds.length > MAXIMUM_EXPANDED_ACTIVITY_IDS) {
+      throw new Error(
+        `activity integrity expansion exceeded ${MAXIMUM_EXPANDED_ACTIVITY_IDS} activities`,
+      );
+    }
     if (expandedActivityIds.length === activityIds.length) break;
     activityIds = expandedActivityIds;
   }
@@ -342,6 +378,68 @@ export function incompatibleMemberCount(snapshot: DerivedSnapshot): number {
   return count;
 }
 
+function memberSetKey(memberActivityIds: readonly string[]): string {
+  return [...memberActivityIds].sort().join(",");
+}
+
+export function assertActivityIntegrityRebuild(
+  before: DerivedSnapshot,
+  after: DerivedSnapshot,
+): void {
+  const priorHighestVersion = BigInt(before.highestVersion);
+  const models = [
+    ["activity_source_records", after.sourceRows],
+    ["activity_duplicate_matches", after.matchRows],
+    ["activity_duplicate_groups", after.groupRows],
+    ["deduped_activities", after.dedupedRows],
+    ["deduped_activity_members", after.memberRows],
+    ["activity_sensor_summary_rows", after.sensorSummaryRows],
+    ["activity_summary_rows", after.summaryRows],
+  ] as const;
+  for (const [model, rows] of models) {
+    if (rows.some((row) => BigInt(row.refresh_version) <= priorHighestVersion)) {
+      throw new Error(`activity integrity rebuild left stale ${model} rows`);
+    }
+  }
+
+  const componentMemberSets = new Set(
+    after.components.map((component) => memberSetKey(component.memberActivityIds)),
+  );
+  const canonicalMemberSets = new Set(
+    after.dedupedRows.map((row) => memberSetKey(row.member_activity_ids)),
+  );
+  if (
+    componentMemberSets.size !== canonicalMemberSets.size ||
+    [...componentMemberSets].some((members) => !canonicalMemberSets.has(members))
+  ) {
+    throw new Error("activity integrity rebuild published inconsistent canonical components");
+  }
+
+  const expectedMembers = new Set(
+    after.dedupedRows.flatMap((row) =>
+      row.member_activity_ids.map((memberActivityId) => `${row.activity_id}:${memberActivityId}`),
+    ),
+  );
+  const publishedMembers = new Set(
+    after.memberRows.map((row) => `${row.activity_id}:${row.member_activity_id}`),
+  );
+  if (
+    expectedMembers.size !== publishedMembers.size ||
+    [...expectedMembers].some((member) => !publishedMembers.has(member))
+  ) {
+    throw new Error("activity integrity rebuild published inconsistent member mappings");
+  }
+
+  const canonicalIds = new Set(after.dedupedRows.map((row) => row.activity_id));
+  if (
+    [...after.sensorSummaryRows, ...after.summaryRows].some(
+      (row) => !canonicalIds.has(row.activity_id),
+    )
+  ) {
+    throw new Error("activity integrity rebuild published a summary for a non-canonical activity");
+  }
+}
+
 interface RepairedActivityLocalTime {
   id: string;
   repaired: {
@@ -362,9 +460,9 @@ export function sourceRowsMatchPostgres(
     return (
       source != null &&
       source.is_deleted === 0 &&
-      (source.timezone ?? null) === row.repaired.timezone &&
-      (source.start_utc_offset_minutes ?? null) === row.repaired.startUtcOffsetMinutes &&
-      (source.end_utc_offset_minutes ?? null) === row.repaired.endUtcOffsetMinutes &&
+      source.timezone === row.repaired.timezone &&
+      source.start_utc_offset_minutes === row.repaired.startUtcOffsetMinutes &&
+      source.end_utc_offset_minutes === row.repaired.endUtcOffsetMinutes &&
       source.local_time_source === row.repaired.localTimeSource
     );
   });

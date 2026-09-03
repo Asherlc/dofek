@@ -19,6 +19,7 @@ const wahooActivityId = "2a7c6fa3-32f1-4ae5-9c99-b981c31e289b";
 const pelotonActivityId = "761483e6-0000-4000-8000-000000000001";
 const namedZoneActivityId = "894ce621-0000-4000-8000-000000000001";
 const unrelatedActivityId = "9f99f9a7-0000-4000-8000-000000000001";
+const CDC_FIXTURE_TIMEOUT_MS = 120_000;
 const dbtEnvironmentKeys = [
   "DBT_TARGET",
   "DBT_CLICKHOUSE_SCHEMA",
@@ -80,28 +81,29 @@ describe("activity data integrity repair", () => {
     });
     await seedLegacyFalseComponent(client, database);
     const unrelatedBefore = await taskThreeRowsForActivity(client, database, unrelatedActivityId);
-    const mirrorCommittedRows = mirrorPostgresCommit(context, client, database);
-    const repaired = await repairActivityDataIntegrity(
-      context.db,
-      scopedClient,
-      {
-        execute: true,
-        userId: TEST_USER_ID,
-        startAt: new Date("2026-09-01T00:00:00.000Z"),
-        endAt: new Date("2026-09-02T00:00:00.000Z"),
-        batchSize: 10,
-        maxBatches: 1,
-        artifactDirectory,
-        acceptanceOwner: "data-on-call@example.com",
-        acceptanceDeadline: new Date("2026-09-03T18:01:00.000Z"),
-      },
-      {
-        now: () => new Date("2026-09-02T18:01:00.000Z"),
-        generateRunId: randomUUID,
-        cdcReadinessPollIntervalMs: 10,
-      },
-    );
-    await mirrorCommittedRows;
+    const [repaired] = await Promise.all([
+      repairActivityDataIntegrity(
+        context.db,
+        scopedClient,
+        {
+          execute: true,
+          userId: TEST_USER_ID,
+          startAt: new Date("2026-09-01T00:00:00.000Z"),
+          endAt: new Date("2026-09-02T00:00:00.000Z"),
+          batchSize: 10,
+          maxBatches: 1,
+          artifactDirectory,
+          acceptanceOwner: "data-on-call@example.com",
+          acceptanceDeadline: new Date("2026-09-03T18:01:00.000Z"),
+        },
+        {
+          now: () => new Date("2026-09-02T18:01:00.000Z"),
+          generateRunId: randomUUID,
+          cdcReadinessPollIntervalMs: 10,
+        },
+      ),
+      mirrorPostgresCommit(context, client, database),
+    ]);
 
     expect(repaired).toMatchObject({
       selected: 3,
@@ -135,14 +137,12 @@ describe("activity data integrity repair", () => {
       SET name = 'Provider title updated after repair', raw = '{"revision":"later-provider-sync"}'::jsonb
       WHERE id = ${pelotonActivityId}::uuid
     `);
-    const mirrorRollbackRows = mirrorPostgresRollback(context, client, database);
-    const rolledBack = await rollbackActivityDataIntegrity(
-      context.db,
-      scopedClient,
-      repaired.artifactPath,
-      { now: () => new Date("2026-09-02T18:02:00.000Z") },
-    );
-    await mirrorRollbackRows;
+    const [rolledBack] = await Promise.all([
+      rollbackActivityDataIntegrity(context.db, scopedClient, repaired.artifactPath, {
+        now: () => new Date("2026-09-02T18:02:00.000Z"),
+      }),
+      mirrorPostgresRollback(context, client, database),
+    ]);
     expect(rolledBack).toMatchObject({ runId: repaired.runId, updated: 2 });
     await assertCorrectDerivedActivityState(client, database, "rolled back");
     await expect(activityIntegrityJournalPhase(context, repaired.runId)).resolves.toBe(
@@ -331,7 +331,8 @@ async function mirrorPostgresCommit(
   client: NativeClickHouseClient,
   database: string,
 ): Promise<void> {
-  for (let attempt = 0; attempt < 500; attempt += 1) {
+  const deadline = performance.now() + CDC_FIXTURE_TIMEOUT_MS;
+  while (performance.now() < deadline) {
     const peloton = await postgresLocalTimeContext(context, pelotonActivityId);
     const namedZone = await postgresLocalTimeContext(context, namedZoneActivityId);
     if (
@@ -375,7 +376,8 @@ async function mirrorPostgresRollback(
   client: NativeClickHouseClient,
   database: string,
 ): Promise<void> {
-  for (let attempt = 0; attempt < 500; attempt += 1) {
+  const deadline = performance.now() + CDC_FIXTURE_TIMEOUT_MS;
+  while (performance.now() < deadline) {
     const peloton = await postgresActivity(context, pelotonActivityId);
     const namedZone = await postgresActivity(context, namedZoneActivityId);
     if (

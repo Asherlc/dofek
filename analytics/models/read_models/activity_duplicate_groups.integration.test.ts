@@ -95,7 +95,7 @@ ${renderModel(database)}`,
     ]);
   }, 180_000);
 
-  it("fails loudly when a component exceeds the 16-round propagation cap", async () => {
+  it("converges a sparse component beyond the former 16-round propagation cap", async () => {
     const activeClient = requireClient(client);
     const activityIds = Array.from(
       { length: 18 },
@@ -103,12 +103,18 @@ ${renderModel(database)}`,
     );
     await seedChainFixture(activeClient, database, activityIds);
 
-    await expect(
-      activeClient.command({
-        query: `INSERT INTO ${database}.activity_duplicate_groups
+    await activeClient.command({
+      query: `INSERT INTO ${database}.activity_duplicate_groups
 ${renderModel(database)}`,
-      }),
-    ).rejects.toThrow("Activity duplicate component propagation did not converge within 16 rounds");
+    });
+
+    const result = await activeClient.query({
+      query: `SELECT uniqExact(group_id) AS groupCount
+        FROM ${database}.activity_duplicate_groups FINAL
+        WHERE is_deleted = 0`,
+      format: "JSONEachRow",
+    });
+    await expect(result.json()).resolves.toEqual([{ groupCount: 1 }]);
   }, 180_000);
 });
 

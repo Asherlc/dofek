@@ -5,6 +5,10 @@ import type { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  type ClickHouseGroupRow,
+  clickHouseGroupRowSchema,
+} from "./activity-data-integrity-clickhouse.ts";
+import {
   type ActivityIntegrityDatabase,
   type ActivityIntegrityRepairOptions,
   repairActivityDataIntegrity,
@@ -103,6 +107,14 @@ const priorMemberRows = [
     is_deleted: 0,
     refreshed_at: "2026-09-02 18:00:00.000000000",
   },
+  {
+    activity_id: activityId,
+    user_id: userId,
+    member_activity_id: pelotonId,
+    refresh_version: "9007199254740994",
+    is_deleted: 0,
+    refreshed_at: "2026-09-02 18:00:00.000000000",
+  },
 ];
 
 const priorSensorSummaryRows = [
@@ -116,6 +128,39 @@ const priorSensorSummaryRows = [
 ];
 
 const priorSummaryRows = priorSensorSummaryRows.map((row) => ({ ...row }));
+const refreshedDedupedRows = [
+  {
+    ...priorDedupedRows[0],
+    member_activity_ids: [activityId],
+    refresh_version: "9007199254740996",
+  },
+  {
+    ...priorDedupedRows[0],
+    activity_id: pelotonId,
+    provider_id: "wahoo",
+    member_activity_ids: [pelotonId],
+    refresh_version: "9007199254740996",
+  },
+];
+const refreshedMemberRows = [
+  {
+    ...priorMemberRows[0],
+    refresh_version: "9007199254740996",
+  },
+  {
+    ...priorMemberRows[1],
+    activity_id: pelotonId,
+    refresh_version: "9007199254740996",
+  },
+];
+const refreshedSensorSummaryRows = priorSensorSummaryRows.map((row) => ({
+  ...row,
+  refresh_version: "9007199254740996",
+}));
+const refreshedSummaryRows = priorSummaryRows.map((row) => ({
+  ...row,
+  refresh_version: "9007199254740996",
+}));
 
 const priorGroupRows = [
   {
@@ -327,6 +372,34 @@ function createClickHouse(
     }
     return snapshotRows;
   };
+  const defaultDedupedRows = () => {
+    const groupsById = new Map<string, ClickHouseGroupRow[]>();
+    for (const group of clickHouseGroupRowSchema.array().parse(currentSnapshotRows().groups)) {
+      if (group.group_id == null || group.is_deleted !== 0) continue;
+      const members = groupsById.get(group.group_id) ?? [];
+      members.push(group);
+      groupsById.set(group.group_id, members);
+    }
+    return [...groupsById.entries()].map(([groupId, members]) => ({
+      activity_id: groupId,
+      user_id: userId,
+      provider_id: "peloton",
+      canonical_type: "cycling",
+      member_activity_ids: members.map((member) => member.activity_id),
+      refresh_version: members[0]?.refresh_version ?? "0",
+      is_deleted: 0,
+    }));
+  };
+  const defaultMemberRows = () =>
+    defaultDedupedRows().flatMap((deduped) =>
+      deduped.member_activity_ids.map((memberActivityId) => ({
+        activity_id: deduped.activity_id,
+        user_id: userId,
+        member_activity_id: memberActivityId,
+        refresh_version: deduped.refresh_version,
+        is_deleted: 0,
+      })),
+    );
   return {
     query: vi.fn(async ({ query }: { query: string }) => {
       if (query.includes("postgres_fitness.activity")) return queryRows(rows.mirror?.shift() ?? []);
@@ -334,8 +407,10 @@ function createClickHouse(
         return queryRows(currentSnapshotRows().matches);
       if (query.includes("activity_duplicate_groups"))
         return queryRows(currentSnapshotRows().groups);
-      if (query.includes("deduped_activity_members")) return queryRows(rows.members?.shift() ?? []);
-      if (query.includes("deduped_activities")) return queryRows(rows.deduped?.shift() ?? []);
+      if (query.includes("deduped_activity_members"))
+        return queryRows(rows.members ? (rows.members.shift() ?? []) : defaultMemberRows());
+      if (query.includes("deduped_activities"))
+        return queryRows(rows.deduped ? (rows.deduped.shift() ?? []) : defaultDedupedRows());
       if (query.includes("activity_sensor_summary_rows"))
         return queryRows(rows.sensors?.shift() ?? []);
       if (query.includes("activity_summary_rows")) {
@@ -495,10 +570,10 @@ describe("repairActivityDataIntegrity", () => {
       {
         mirror: [[repairedSourceRow]],
         matches: [priorMatchRows, []],
-        deduped: [priorDedupedRows, priorDedupedRows],
-        members: [priorMemberRows, priorMemberRows],
-        sensors: [priorSensorSummaryRows, priorSensorSummaryRows],
-        summaries: [priorSummaryRows, priorSummaryRows],
+        deduped: [priorDedupedRows, refreshedDedupedRows],
+        members: [priorMemberRows, refreshedMemberRows],
+        sensors: [priorSensorSummaryRows, refreshedSensorSummaryRows],
+        summaries: [priorSummaryRows, refreshedSummaryRows],
       },
     );
     const dependencies = repairDependencies(directory);
@@ -1033,7 +1108,7 @@ describe("repairActivityDataIntegrity", () => {
     expect(repairJournalState.record?.phase).toBe("rolled_back");
   });
 
-  it("reports actual incompatible canonical members after the rebuild", async () => {
+  it("fails verification when a rebuilt group still has an incompatible canonical member", async () => {
     const directory = await artifactDirectory();
     const execute = vi.fn(async (query: SQL) => {
       const rendered = dialect.sqlToQuery(query);
@@ -1069,7 +1144,52 @@ describe("repairActivityDataIntegrity", () => {
         },
         repairDependencies(directory),
       ),
-    ).resolves.toMatchObject({ incompatibleMemberCount: 1 });
+    ).rejects.toThrow("activity integrity rebuild retained 1 incompatible canonical member");
+
+    const [artifactName] = await readdir(directory);
+    expect(
+      JSON.parse(await readFile(join(directory, artifactName ?? "missing"), "utf8")),
+    ).toMatchObject({
+      phase: "rebuild_failed",
+      failure: { stage: "verification" },
+    });
+  });
+
+  it("fails verification when a downstream model returns stale rows after dbt succeeds", async () => {
+    const directory = await artifactDirectory();
+    const execute = vi.fn(async (query: SQL) => {
+      const rendered = dialect.sqlToQuery(query);
+      return rendered.sql.includes("FROM fitness.activity")
+        ? [postgresCandidate]
+        : [{ id: activityId }];
+    });
+    const clickhouse = createClickHouse(
+      [[priorSourceRow], [repairedSourceRow]],
+      [priorGroupRows, repairedGroupRows],
+      [],
+      {
+        mirror: [[repairedSourceRow]],
+        deduped: [priorDedupedRows, priorDedupedRows],
+        members: [priorMemberRows, refreshedMemberRows],
+      },
+    );
+
+    await expect(
+      repairActivityDataIntegrity(
+        createDatabase(execute),
+        clickhouse,
+        {
+          execute: true,
+          userId,
+          batchSize: 10,
+          maxBatches: 1,
+          acceptanceOwner: "data-on-call@example.com",
+          acceptanceDeadline: deadline,
+          ...window,
+        },
+        repairDependencies(directory),
+      ),
+    ).rejects.toThrow("activity integrity rebuild left stale deduped_activities rows");
   });
 
   it("requires bounded inputs and explicit acceptance ownership for writes", async () => {

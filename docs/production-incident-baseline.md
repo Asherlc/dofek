@@ -24706,3 +24706,33 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   build remains ready, add a regression test for a cycle longer than the
   freshness budget, and confirm a complete production cycle before treating
   scheduled analytics as recovered.
+
+## 2026-09-02 — Local ClickHouse integration fixture restart loop
+
+- **Status:** Unresolved local multi-workspace resource incident; isolated CI
+  validation remains authoritative.
+- **Symptoms / user impact:** The activity-integrity integration test lost its
+  ClickHouse connection during the first dbt model. The container restarted,
+  dbt reported `RemoteDisconnected`, and subsequent checks returned
+  `ECONNREFUSED`, blocking local validation.
+- **Evidence / root cause:** The first failure coincided with many orphaned
+  test databases, but recreating the workspace volume did not resolve it. A
+  clean-volume rerun failed later in `deduped_activities`, and a subsequent run
+  failed earlier in `activity_duplicate_matches`. ClickHouse emitted no fatal
+  server line; the container restarted externally, its cgroup reported zero
+  OOM kills and a 340 MiB peak under the 1.5 GiB limit, and ten ClickHouse
+  workspace containers were concurrently running on the Docker host. The exact
+  host-level restart cause is not yet confirmed; model-specific failure is
+  ruled out by the moving failure point and focused executable model tests.
+- **Fix / mitigation:** Removed and recreated only the current workspace's
+  `empty-stingray_clickhouse_data` volume, preserving its Postgres, Redis, and
+  Redpanda state and every other workspace. Docker documents that named-volume
+  removal deletes the data held by that specific volume:
+  <https://docs.docker.com/engine/storage/volumes/#remove-volumes>.
+- **Validation:** The executable duplicate-group integration suite passes all
+  three cases, including the 18-node chain. Run the full activity-integrity
+  database test on CI's isolated runner.
+- **Remaining risk / follow-up:** Determine which host component sends the
+  restart and whether aggregate multi-workspace pressure is responsible. A
+  test-process crash can still bypass `afterAll`; add workspace-scoped stale
+  test-database cleanup only if that accumulation independently recurs.

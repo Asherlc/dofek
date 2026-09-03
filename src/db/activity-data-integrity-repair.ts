@@ -6,6 +6,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   type ActivityIntegrityClickHouseClient,
+  assertActivityIntegrityRebuild,
   clickHouseDedupedActivityRowSchema,
   clickHouseDerivedActivityRowSchema,
   clickHouseDerivedMemberRowSchema,
@@ -662,6 +663,13 @@ async function repairActivityDataIntegrityWithLease(
     if (!sourceRowsMatchPostgres(after.sourceRows, changedRows)) {
       throw new Error("activity integrity rebuild did not publish the repaired local-time context");
     }
+    const incompatibleMembers = incompatibleMemberCount(after);
+    if (incompatibleMembers > 0) {
+      throw new Error(
+        `activity integrity rebuild retained ${incompatibleMembers} incompatible canonical member${incompatibleMembers === 1 ? "" : "s"}`,
+      );
+    }
+    assertActivityIntegrityRebuild(before, after);
     const completed: AuditArtifact = {
       ...postgresCommitted,
       phase: "executed",
