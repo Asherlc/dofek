@@ -336,6 +336,13 @@ describe("snapshotDerivedRows", () => {
 
     expect(snapshot).toHaveProperty("sensorSampleRows", [sample]);
     expect(snapshot.highestVersion).toBe("13");
+    const sensorSampleCall = client.query.mock.calls.find(([options]) =>
+      options.query.includes("activity_sensor_sample"),
+    );
+    expect(sensorSampleCall?.[0].query_params).toEqual({
+      userId,
+      canonicalActivityIds: [activityA],
+    });
   });
 });
 
@@ -539,6 +546,19 @@ describe("assertActivityIntegrityRebuild", () => {
       assertActivityIntegrityRebuild(before, {
         ...after,
         summaryRows: [
+          {
+            activity_id: activityC,
+            user_id: userId,
+            refresh_version: refreshedVersion,
+            is_deleted: 0,
+          },
+        ],
+      }),
+    ).toThrow("summary for a non-canonical activity");
+    expect(() =>
+      assertActivityIntegrityRebuild(before, {
+        ...after,
+        sensorSampleRows: [
           {
             activity_id: activityC,
             user_id: userId,
