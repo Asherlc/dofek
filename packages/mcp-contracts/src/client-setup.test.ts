@@ -38,7 +38,7 @@ describe("MCP client setup", () => {
     expect(configuration).toEqual({ name: "dofek", type: "http", url: endpoint });
   });
 
-  it("provides copyable instructions for clients without install deeplinks", () => {
+  it("provides copyable instructions for clients without install deep links", () => {
     expect(buildMcpClientInstructions(endpoint)).toEqual([
       {
         id: "claude-code",

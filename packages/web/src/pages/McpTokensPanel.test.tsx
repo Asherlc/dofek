@@ -104,10 +104,17 @@ describe("McpTokensPanel", () => {
   it("renders without a browser window", () => {
     vi.stubGlobal("window", undefined);
 
-    expect(() => renderToString(<McpTokensPanel />)).not.toThrow();
+    const html = renderToString(<McpTokensPanel />);
+
+    expect(html).not.toContain("Connect an AI client");
+    expect(html).not.toContain("Connect with a manual token");
   });
 
   it("keeps remote client setup and manual tokens off insecure origins", () => {
+    vi.stubGlobal("window", {
+      location: { origin: "http://dofek.example", protocol: "http:" },
+    });
+
     render(<McpTokensPanel />);
 
     expect(screen.queryByText("Connect an AI client")).toBeNull();

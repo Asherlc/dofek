@@ -26,11 +26,11 @@ export function McpClientSetupPanel({ endpoint }: { endpoint: string }) {
       await navigator.clipboard.writeText(value);
       setCopyMessage({ kind: "success", text: successText });
     } catch (error: unknown) {
-      captureException(error, { context: "copy-mcp-client-setup", client });
       setCopyMessage({
         kind: "error",
         text: `Copy failed. Select the ${fallbackTarget} and copy it manually.`,
       });
+      captureException(error, { context: "copy-mcp-client-setup", client });
     }
   }
 

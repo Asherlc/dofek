@@ -150,9 +150,9 @@ export function McpTokensPanel() {
 
   return (
     <div className="space-y-5">
-      {isSecureOrigin !== false ? <McpClientSetupPanel endpoint={mcpEndpoint} /> : null}
+      {isSecureOrigin === true ? <McpClientSetupPanel endpoint={mcpEndpoint} /> : null}
 
-      {isSecureOrigin !== false ? (
+      {isSecureOrigin === true ? (
         <div className="space-y-3 rounded-md border border-border bg-surface-solid p-3">
           <div>
             <p className="text-sm font-medium text-foreground">Connect with a manual token</p>

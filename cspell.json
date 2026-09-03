@@ -23,6 +23,8 @@
     "CIMD",
     "Invalidatable",
     "alertable",
+    "anysphere",
+    "deeplink",
     "refetches",
     "unlogged",
     "CPLUSPLUSFLAGS",

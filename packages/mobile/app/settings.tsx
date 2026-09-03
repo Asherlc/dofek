@@ -903,7 +903,7 @@ export default function SettingsScreen() {
 
       {activeCategory === "advanced" ? (
         <View style={styles.section}>
-          <McpClientSetupPanel endpoint={new URL("/api/mcp", auth.serverUrl).toString()} />
+          <McpClientSetupPanel endpoint={`${auth.serverUrl}/api/mcp`} />
         </View>
       ) : null}
 
