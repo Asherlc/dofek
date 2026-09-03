@@ -483,7 +483,7 @@ export class StravaProvider implements WebhookProvider {
     const response = await this.#fetchFn(url.toString(), { method: "DELETE" });
     if (!response.ok && response.status !== 404) {
       const text = await response.text();
-      logger.warn(`[strava] Failed to unregister webhook ${subscriptionId}: ${text}`);
+      throw new Error(`Strava webhook unregistration failed (${response.status}): ${text}`);
     }
   }
 
