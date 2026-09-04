@@ -202,7 +202,7 @@ describe("RideWithGpsClient — API calls", () => {
               d: 0,
               e: 123,
               t: 1742025600,
-              s: 25,
+              s: 10,
               T: 21,
               h: 140,
               c: 90,
@@ -222,7 +222,7 @@ describe("RideWithGpsClient — API calls", () => {
       distanceMeters: 0,
       elevationMeters: 123,
       epochSeconds: 1742025600,
-      speedKph: 25,
+      speedMetersPerSecond: 10,
       temperatureCelsius: 21,
       heartRateBpm: 140,
       cadenceRpm: 90,
@@ -463,7 +463,7 @@ describe("parseTrackPoints — speed edge cases", () => {
         latitude: 45.5,
         distanceMeters: 0,
         epochSeconds: 1723276200,
-        speedKph: 0,
+        speedMetersPerSecond: 0,
       },
     ];
     const result = parseTrackPoints(points);
@@ -1005,8 +1005,8 @@ describe("RideWithGpsProvider — sync", () => {
       created_at: "2026-03-15T10:00:00Z",
       updated_at: "2026-03-15T10:00:00Z",
       track_points: [
-        { x: -122.6, y: 45.5, d: 0, t: 1742025600, s: 25, h: 140, p: 200 },
-        { x: -122.61, y: 45.51, d: 100, t: 1742025610, s: 30 },
+        { x: -122.6, y: 45.5, d: 0, t: 1742025600, s: 10, h: 140, p: 200 },
+        { x: -122.61, y: 45.51, d: 100, t: 1742025610, s: 12 },
       ],
     };
 
@@ -1056,7 +1056,7 @@ describe("RideWithGpsProvider — sync", () => {
       latitude: 45.5,
       distanceMeters: 0,
       epochSeconds: 1742025600,
-      speedKph: 25,
+      speedMetersPerSecond: 10,
       heartRateBpm: 140,
       powerWatts: 200,
     });
@@ -1095,7 +1095,7 @@ describe("RideWithGpsProvider — sync", () => {
           activityId: "10000000-0000-4000-8000-000000000007",
           providerId: "ride-with-gps",
           channel: "speed",
-          scalar: 25 / 3.6,
+          scalar: 10,
         }),
         expect.objectContaining({
           activityId: "10000000-0000-4000-8000-000000000007",
@@ -1189,7 +1189,7 @@ describe("RideWithGpsProvider — sync", () => {
       y: 45.5 + i * 0.0001,
       d: i * 10,
       t: 1742025600 + i * 5,
-      s: 20 + (i % 5),
+      s: 10 + (i % 5),
     }));
     const tripDetail = {
       id: 99,

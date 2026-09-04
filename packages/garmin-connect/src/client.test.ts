@@ -323,6 +323,46 @@ describe("GarminConnectClient.fromTokens", () => {
     });
   });
 
+  it("normalizes omitted fields in an expired OAuth2 refresh response", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-02T00:00:00Z"));
+    const tokens = makeGarminTokens({
+      expires_at: Math.floor(Date.now() / 1000) - 100,
+    });
+    const responses = [
+      {
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({
+            consumer_key: "test-consumer-key",
+            consumer_secret: "test-consumer-secret",
+          }),
+      },
+      { ok: true, status: 200, json: () => Promise.resolve({}) },
+      {
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ displayName: "testuser", userName: "testuser" }),
+      },
+    ];
+    const fetchFn = vi.fn().mockImplementation(() => Promise.resolve(responses.shift()));
+
+    const client = await GarminConnectClient.fromTokens(tokens, "garmin.com", fetchFn);
+
+    expect(client.getTokens()?.oauth2).toEqual({
+      scope: "",
+      jti: "",
+      token_type: "Bearer",
+      access_token: "",
+      refresh_token: "",
+      expires_in: 0,
+      expires_at: 1_780_358_400,
+      refresh_token_expires_in: 0,
+      refresh_token_expires_at: 1_780_358_400,
+    });
+  });
+
   it("throws GarminRateLimitError when expired-token OAuth2 exchange is rate limited", async () => {
     const tokens = makeGarminTokens({
       expires_at: Math.floor(Date.now() / 1000) - 100,
@@ -1004,6 +1044,21 @@ describe("GarminConnectClient.signIn", () => {
     await expect(
       GarminConnectClient.signIn("test@example.com", "password", "garmin.com", fetchFn),
     ).rejects.toThrow(GarminMfaRequiredError);
+  });
+
+  it("includes an OAuth1 MFA token in the OAuth2 exchange", async () => {
+    const fetchFn = buildSignInMock({
+      oauth1Response: {
+        ok: true,
+        status: 200,
+        text: "oauth_token=token123&oauth_token_secret=secret456&mfa_token=mfa789",
+      },
+    });
+
+    await GarminConnectClient.signIn("test@example.com", "password", "garmin.com", fetchFn);
+
+    const [, oauth2Options] = expectFetchCall(fetchFn, 5);
+    expect(oauth2Options?.body).toBe("mfa_token=mfa789");
   });
 
   it("throws GarminAuthError when login fails", async () => {

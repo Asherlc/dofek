@@ -1,4 +1,4 @@
-import { formatDateTime, formatDurationSeconds } from "@dofek/format/format";
+import { formatDurationSeconds } from "@dofek/format/format";
 import { StyleSheet, Text, View } from "react-native";
 import type { HangboardingDetail as HangboardingDetailData } from "../../server/src/repositories/hangboarding-repository.ts";
 import { colors, spacing } from "../theme";
@@ -14,15 +14,12 @@ function nullableValue(value: string | null): string {
   return value ?? "—";
 }
 
-function intervalTypeLabel(value: "work" | "rest" | null): string {
-  if (value == null) return "—";
-  return value === "work" ? "Work" : "Rest";
+function durationValue(value: number | null): string {
+  return value === null ? "—" : formatDurationSeconds(value);
 }
 
 export function HangboardingDetail({ data, loading, error }: HangboardingDetailProps) {
-  if (data == null && loading) {
-    return <QueryStatePanel variant="loading" minHeight={220} />;
-  }
+  if (data == null && loading) return <QueryStatePanel variant="loading" minHeight={220} />;
 
   if (data == null && error) {
     return (
@@ -60,38 +57,31 @@ export function HangboardingDetail({ data, loading, error }: HangboardingDetailP
 
       <View style={styles.metadataGrid}>
         <Metadata label="Plan" value={nullableValue(data.planName)} />
-        <Metadata label="Session" value={nullableValue(data.sessionId)} />
         <Metadata label="Board" value={nullableValue(data.boardName)} />
-        <Metadata label="Board ID" value={nullableValue(data.boardId)} />
       </View>
 
-      {data.intervals.length === 0 ? (
-        <QueryStatePanel variant="empty" message="No interval data available." minHeight={120} />
-      ) : (
-        <View style={styles.intervalList} accessibilityLabel="Hangboarding intervals">
-          {data.intervals.map((interval) => (
-            <View key={interval.id} style={styles.intervalRow}>
-              <View style={styles.intervalHeader}>
-                <Text style={styles.intervalLabel} testID="hangboarding-interval-label">
-                  {nullableValue(interval.label)}
-                </Text>
-                <Text style={styles.intervalType}>{intervalTypeLabel(interval.intervalType)}</Text>
-              </View>
-              <View style={styles.intervalMetadata}>
-                <Text style={styles.intervalTimestamp}>{formatDateTime(interval.startedAt)}</Text>
-                <Text style={styles.intervalTimestamp}>
-                  {interval.endedAt == null ? "—" : formatDateTime(interval.endedAt)}
-                </Text>
-                <Text style={styles.intervalDuration}>
-                  {interval.durationSeconds == null
-                    ? "—"
-                    : formatDurationSeconds(interval.durationSeconds)}
-                </Text>
-              </View>
+      {data.summary.exercises.length > 0 ? (
+        <View style={styles.exerciseList} accessibilityLabel="Finger loading summary">
+          {data.summary.exercises.map((exercise) => (
+            <View key={exercise.label} style={styles.exerciseRow}>
+              <Text style={styles.exerciseLabel}>{exercise.label}</Text>
+              <Text style={styles.exerciseValue}>
+                {exercise.workIntervalCount} {exercise.workIntervalCount === 1 ? "hang" : "hangs"} ·{" "}
+                {durationValue(exercise.workDurationSeconds)}
+              </Text>
             </View>
           ))}
         </View>
+      ) : (
+        <QueryStatePanel variant="empty" message="No completed hangs recorded." minHeight={96} />
       )}
+
+      <View style={styles.metricsGrid}>
+        <Metadata label="Hangs" value={String(data.summary.workIntervalCount)} />
+        <Metadata label="Hang time" value={durationValue(data.summary.totalWorkDurationSeconds)} />
+        <Metadata label="Rest time" value={durationValue(data.summary.totalRestDurationSeconds)} />
+        <Metadata label="Session time" value={durationValue(data.summary.durationSeconds)} />
+      </View>
     </View>
   );
 }
@@ -116,6 +106,7 @@ const styles = StyleSheet.create({
   },
   warningText: { color: colors.warning, fontSize: 13, lineHeight: 18 },
   metadataGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md },
+  metricsGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md },
   metadataItem: { gap: spacing.xs, minWidth: "46%", flexGrow: 1 },
   metadataLabel: {
     color: colors.textTertiary,
@@ -124,26 +115,13 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   metadataValue: { color: colors.text, fontSize: 14 },
-  intervalList: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    overflow: "hidden",
-  },
-  intervalRow: {
+  exerciseList: { backgroundColor: colors.surface, borderRadius: 12, overflow: "hidden" },
+  exerciseRow: {
     borderBottomColor: colors.surfaceSecondary,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    gap: spacing.sm,
+    gap: spacing.xs,
     padding: spacing.md,
   },
-  intervalHeader: { flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" },
-  intervalLabel: { color: colors.text, flex: 1, fontSize: 14, fontWeight: "600" },
-  intervalType: { color: colors.textSecondary, fontSize: 12, textTransform: "uppercase" },
-  intervalMetadata: { flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" },
-  intervalTimestamp: { color: colors.textTertiary, flex: 1, fontSize: 11 },
-  intervalDuration: {
-    color: colors.text,
-    fontSize: 13,
-    fontVariant: ["tabular-nums"],
-    fontWeight: "600",
-  },
+  exerciseLabel: { color: colors.text, fontSize: 16, fontWeight: "600" },
+  exerciseValue: { color: colors.textSecondary, fontSize: 14 },
 });

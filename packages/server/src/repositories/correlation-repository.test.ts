@@ -236,40 +236,41 @@ describe("computeCorrelation", () => {
     ]);
   });
 
-  it.each([
-    0, 1, 4,
-  ])("returns no inferential statistics when only %i paired points are available", (pairCount) => {
-    const joined = Array.from({ length: pairCount }, (_, index) =>
-      makeJoinedDay({
-        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
-        resting_hr: 60 + index,
-        hrv: 40 - index,
-      }),
-    );
-    const result = computeCorrelation(joined, {
-      metricX: "resting_hr",
-      metricY: "hrv",
-      days: 90,
-      lag: 0,
-    });
+  it.each([0, 1, 4])(
+    "returns no inferential statistics when only %i paired points are available",
+    (pairCount) => {
+      const joined = Array.from({ length: pairCount }, (_, index) =>
+        makeJoinedDay({
+          date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+          resting_hr: 60 + index,
+          hrv: 40 - index,
+        }),
+      );
+      const result = computeCorrelation(joined, {
+        metricX: "resting_hr",
+        metricY: "hrv",
+        days: 90,
+        lag: 0,
+      });
 
-    expect(result).toMatchObject({
-      availability: "insufficient",
-      sampleCount: pairCount,
-      additionalSamplesRequired: 5 - pairCount,
-      confidenceLevel: "insufficient",
-    });
-    expect(result).not.toHaveProperty("spearmanRho");
-    expect(result).not.toHaveProperty("spearmanPValue");
-    expect(result).not.toHaveProperty("pearsonR");
-    expect(result).not.toHaveProperty("pearsonPValue");
-    expect(result).not.toHaveProperty("regression");
-    expect(result.insight).toBe(
-      `Insufficient data to analyze the relationship between Resting Heart Rate and Heart Rate Variability (only ${pairCount} overlapping data ${
-        pairCount === 1 ? "point" : "points"
-      }; ${5 - pairCount} more ${5 - pairCount === 1 ? "sample is" : "samples are"} required).`,
-    );
-  });
+      expect(result).toMatchObject({
+        availability: "insufficient",
+        sampleCount: pairCount,
+        additionalSamplesRequired: 5 - pairCount,
+        confidenceLevel: "insufficient",
+      });
+      expect(result).not.toHaveProperty("spearmanRho");
+      expect(result).not.toHaveProperty("spearmanPValue");
+      expect(result).not.toHaveProperty("pearsonR");
+      expect(result).not.toHaveProperty("pearsonPValue");
+      expect(result).not.toHaveProperty("regression");
+      expect(result.insight).toBe(
+        `Insufficient data to analyze the relationship between Resting Heart Rate and Heart Rate Variability (only ${pairCount} overlapping data ${
+          pairCount === 1 ? "point" : "points"
+        }; ${5 - pairCount} more ${5 - pairCount === 1 ? "sample is" : "samples are"} required).`,
+      );
+    },
+  );
 
   it("returns inferential statistics at the 5-pair boundary", () => {
     const joined = Array.from({ length: 5 }, (_, index) =>
@@ -764,34 +765,32 @@ describe("buildCorrelationObservationPage", () => {
     ]);
   });
 
-  it.each([
-    "hrv",
-    "sleep_duration",
-    "protein",
-    "weight",
-  ] as const)("returns empty provider context for %s when no evidence exists", (metricId) => {
-    const day = makeJoinedDay({
-      date: "2025-02-01",
-      hrv: 45,
-      sleep_duration_min: 480,
-      protein_g: 120,
-      weight_kg: 72,
-    });
-    const page = buildCorrelationObservationPage(
-      [day],
-      {
-        metricX: metricId,
-        metricY: metricId === "hrv" ? "weight" : "hrv",
-        days: null,
-        lag: 0,
-        endDate: day.date,
-      },
-      new Map(),
-      { pageSize: 1 },
-    );
+  it.each(["hrv", "sleep_duration", "protein", "weight"] as const)(
+    "returns empty provider context for %s when no evidence exists",
+    (metricId) => {
+      const day = makeJoinedDay({
+        date: "2025-02-01",
+        hrv: 45,
+        sleep_duration_min: 480,
+        protein_g: 120,
+        weight_kg: 72,
+      });
+      const page = buildCorrelationObservationPage(
+        [day],
+        {
+          metricX: metricId,
+          metricY: metricId === "hrv" ? "weight" : "hrv",
+          days: null,
+          lag: 0,
+          endDate: day.date,
+        },
+        new Map(),
+        { pageSize: 1 },
+      );
 
-    expect(page.items[0]?.x.contributors[0]?.providerIds).toEqual([]);
-  });
+      expect(page.items[0]?.x.contributors[0]?.providerIds).toEqual([]);
+    },
+  );
 
   it("filters activity contributors by metric and falls back to aggregate inputs", () => {
     const day = makeJoinedDay({

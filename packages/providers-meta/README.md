@@ -25,7 +25,7 @@ Supported locations are defined in `WHOOP_WEAR_LOCATIONS`. The `parseWhoopWearLo
 
 ### Statistics
 
-The `ProviderStats` interface tracks counts for 11 data types. `providerStatsBreakdown` returns only non-zero entries with their human-readable labels (defined in `DATA_TYPE_LABELS`).
+The `ProviderStats` interface tracks counts for 10 data types. `providerStatsBreakdown` returns only non-zero entries with their human-readable labels (defined in `DATA_TYPE_LABELS`).
 
 ### Provider Health
 

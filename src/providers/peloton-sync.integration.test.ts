@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { runWithProviderIngestContext } from "../db/provider-ingest-context.ts";
 import { activity } from "../db/schema/activity.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
@@ -519,7 +520,7 @@ describe("PelotonProvider.sync() (integration)", () => {
     expect(rows[0]?.canonicalType).toBe("cycling");
   });
 
-  it("stores timezone and stravaId on activity", async () => {
+  it("rejects an implausible provider timezone while preserving its audit value", async () => {
     const workouts = [
       fakeWorkout({
         id: "workout-tz",
@@ -533,12 +534,22 @@ describe("PelotonProvider.sync() (integration)", () => {
     server.use(...pelotonHandlers(workouts));
 
     const provider = new PelotonProvider();
-    await syncProvider(provider, new Date("2024-01-01T00:00:00Z"));
+    await runWithProviderIngestContext({ homeTimezone: "America/Los_Angeles" }, () =>
+      syncProvider(provider, new Date("2024-01-01T00:00:00Z")),
+    );
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.externalId, "workout-tz"));
 
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.timezone).toBe("America/New_York");
+    expect(rows[0]).toMatchObject({
+      timezone: "America/Los_Angeles",
+      startUtcOffsetMinutes: -480,
+      endUtcOffsetMinutes: -480,
+      localTimeSource: "home_zone_fallback",
+      rejectedProviderTimezone: "America/New_York",
+      rejectedProviderStartUtcOffsetMinutes: -300,
+      rejectedProviderEndUtcOffsetMinutes: -300,
+    });
     expect(rows[0]?.stravaId).toBe("9876543210");
   });
 

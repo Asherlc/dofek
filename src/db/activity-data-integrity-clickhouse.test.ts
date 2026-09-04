@@ -1,0 +1,726 @@
+import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
+import {
+  assertActivityIntegrityRebuild,
+  type DerivedSnapshot,
+  incompatibleMemberCount,
+  snapshotDerivedRows,
+  snapshotDerivedRowsOrNull,
+  sourceRowsMatchPostgres,
+  uint64StringSchema,
+  waitForPostgresMirror,
+} from "./activity-data-integrity-clickhouse.ts";
+
+const userId = "00000000-0000-4000-8000-000000000001";
+const activityA = "00000000-0000-4000-8000-00000000000a";
+const activityB = "00000000-0000-4000-8000-00000000000b";
+const activityC = "00000000-0000-4000-8000-00000000000c";
+
+const matchAB = {
+  activity_id: activityA,
+  duplicate_activity_id: activityB,
+  overlap_ratio: 0.9,
+  refresh_version: "11",
+  is_deleted: 0,
+  refreshed_at: "2026-09-02 18:00:00.000000000",
+};
+const matchBC = {
+  ...matchAB,
+  activity_id: activityB,
+  duplicate_activity_id: activityC,
+};
+
+const groupRows = [activityA, activityB, activityC].map((activityId) => ({
+  activity_id: activityId,
+  group_id: activityA,
+  refresh_version: "12",
+  is_deleted: 0,
+  refreshed_at: "2026-09-02 18:00:00.000000000",
+}));
+
+function sourceRow(activityId: string): DerivedSnapshot["sourceRows"][number] {
+  return {
+    activity_id: activityId,
+    provider_id: "wahoo",
+    user_id: userId,
+    canonical_type: "cycling",
+    timezone: null,
+    start_utc_offset_minutes: -240,
+    end_utc_offset_minutes: -240,
+    local_time_source: "provider_offset",
+    refresh_version: "10",
+    is_deleted: 0,
+  };
+}
+
+const sourceRowA = sourceRow(activityA);
+const sourceRowB = sourceRow(activityB);
+const sourceRows = [sourceRowA, sourceRowB, sourceRow(activityC)];
+
+function compatibilitySnapshot(
+  sources: DerivedSnapshot["sourceRows"],
+  deduped: DerivedSnapshot["dedupedRows"],
+): DerivedSnapshot {
+  return {
+    sourceRows: sources,
+    matchRows: [],
+    groupRows: [],
+    dedupedRows: deduped,
+    memberRows: [],
+    sensorSampleRows: [],
+    sensorSummaryRows: [],
+    summaryRows: [],
+    components: [],
+    highestVersion: "0",
+    activityIds: [],
+  };
+}
+
+describe("snapshotDerivedRows", () => {
+  it("returns the complete empty snapshot without querying ClickHouse", async () => {
+    const client = { query: vi.fn() };
+
+    await expect(snapshotDerivedRows(client, userId, [])).resolves.toEqual({
+      sourceRows: [],
+      matchRows: [],
+      groupRows: [],
+      dedupedRows: [],
+      memberRows: [],
+      sensorSampleRows: [],
+      sensorSummaryRows: [],
+      summaryRows: [],
+      components: [],
+      highestVersion: "0",
+      activityIds: [],
+    });
+    expect(client.query).not.toHaveBeenCalled();
+  });
+
+  it("reports an unavailable failure snapshot without substituting the pre-state", async () => {
+    const client = {
+      query: vi.fn(async () => Promise.reject(new Error("ClickHouse unavailable"))),
+    };
+
+    await expect(snapshotDerivedRowsOrNull(client, userId, [activityA])).resolves.toBeNull();
+  });
+
+  it("captures an edge reached through a duplicate when groups do not expand the scope", async () => {
+    const client = {
+      query: vi.fn(
+        async ({
+          query,
+          query_params,
+        }: {
+          query: string;
+          query_params?: Record<string, unknown>;
+        }) => {
+          const activityIds = Array.isArray(query_params?.activityIds)
+            ? query_params.activityIds.filter(
+                (activityId): activityId is string => typeof activityId === "string",
+              )
+            : [];
+          if (query.includes("activity_duplicate_matches")) {
+            return {
+              json: async () => (activityIds.includes(activityB) ? [matchAB, matchBC] : [matchAB]),
+            };
+          }
+          if (query.includes("activity_duplicate_groups")) {
+            return {
+              json: async () => groupRows.filter((row) => activityIds.includes(row.activity_id)),
+            };
+          }
+          if (query.includes("FROM analytics.activity_source_records AS source_records FINAL")) {
+            return { json: async () => sourceRows };
+          }
+          return { json: async () => [] };
+        },
+      ),
+    };
+
+    const snapshot = await snapshotDerivedRows(client, userId, [activityA]);
+
+    expect(snapshot.activityIds).toEqual([activityA, activityB, activityC]);
+    expect(snapshot.matchRows).toEqual([matchAB, matchBC]);
+    expect(snapshot.components).toEqual([
+      { groupId: activityA, memberActivityIds: [activityA, activityB, activityC] },
+    ]);
+    expect(snapshot.highestVersion).toBe("12");
+  });
+
+  it("captures duplicate edges to a fixpoint after group membership expands the scope", async () => {
+    const client = {
+      query: vi.fn(
+        async ({
+          query,
+          query_params,
+        }: {
+          query: string;
+          query_params?: Record<string, unknown>;
+        }) => {
+          const activityIds = Array.isArray(query_params?.activityIds)
+            ? query_params.activityIds.filter(
+                (activityId): activityId is string => typeof activityId === "string",
+              )
+            : undefined;
+          if (query.includes("activity_duplicate_matches")) {
+            const matches = activityIds?.includes(activityC) ? [matchAB, matchBC] : [matchAB];
+            return { json: async () => matches };
+          }
+          if (query.includes("activity_duplicate_groups")) {
+            return { json: async () => groupRows };
+          }
+          if (query.includes("FROM analytics.activity_source_records AS source_records FINAL")) {
+            return { json: async () => sourceRows };
+          }
+          return { json: async () => [] };
+        },
+      ),
+    };
+
+    const snapshot = await snapshotDerivedRows(client, userId, [activityA]);
+
+    expect(snapshot.activityIds).toEqual([activityA, activityB, activityC]);
+    expect(snapshot.matchRows).toEqual([matchAB, matchBC]);
+  });
+
+  it("rejects duplicate expansion that exceeds the bounded activity count", async () => {
+    const client = {
+      query: vi.fn(async ({ query }: { query: string }) => {
+        if (query.includes("activity_duplicate_matches")) {
+          return {
+            json: async () =>
+              Array.from({ length: 10_001 }, (_, index) => ({
+                ...matchAB,
+                duplicate_activity_id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+              })),
+          };
+        }
+        return { json: async () => [] };
+      }),
+    };
+
+    await expect(snapshotDerivedRows(client, userId, [activityA])).rejects.toThrow(
+      "activity integrity expansion exceeded 10000 activities",
+    );
+  });
+
+  it("rejects duplicate expansion that does not converge within the iteration bound", async () => {
+    const client = {
+      query: vi.fn(
+        async ({
+          query,
+          query_params,
+        }: {
+          query: string;
+          query_params?: Record<string, unknown>;
+        }) => {
+          if (query.includes("activity_duplicate_matches")) {
+            const activityIds = z.array(z.string()).parse(query_params?.activityIds);
+            const nextActivityId = `00000000-0000-4000-8000-${String(activityIds.length + 100).padStart(12, "0")}`;
+            return {
+              json: async () => [
+                {
+                  ...matchAB,
+                  activity_id: activityIds.at(-1),
+                  duplicate_activity_id: nextActivityId,
+                },
+              ],
+            };
+          }
+          return { json: async () => [] };
+        },
+      ),
+    };
+
+    await expect(snapshotDerivedRows(client, userId, [activityA])).rejects.toThrow(
+      "did not reach a fixpoint within 32 iterations",
+    );
+  });
+
+  it("fetches source rows for every member returned by the deduped projection", async () => {
+    const client = {
+      query: vi.fn(
+        async ({
+          query,
+          query_params,
+        }: {
+          query: string;
+          query_params?: Record<string, unknown>;
+        }) => {
+          const activityIds = Array.isArray(query_params?.activityIds)
+            ? query_params.activityIds
+            : [];
+          if (query.includes("deduped_activities")) {
+            return {
+              json: async () => [
+                {
+                  activity_id: activityA,
+                  user_id: userId,
+                  provider_id: "wahoo",
+                  canonical_type: "cycling",
+                  member_activity_ids: [activityA, activityC],
+                  refresh_version: "12",
+                  is_deleted: 0,
+                },
+              ],
+            };
+          }
+          if (query.includes("FROM analytics.activity_source_records AS source_records FINAL")) {
+            return {
+              json: async () => sourceRows.filter((row) => activityIds.includes(row.activity_id)),
+            };
+          }
+          return { json: async () => [] };
+        },
+      ),
+    };
+
+    const snapshot = await snapshotDerivedRows(client, userId, [activityA]);
+
+    expect(snapshot.activityIds).toEqual([activityA, activityC]);
+    expect(snapshot.sourceRows).toEqual([sourceRowA, sourceRows[2]]);
+  });
+
+  it("does not exclude deleted source endpoints from rollback snapshots", async () => {
+    const queries: string[] = [];
+    const client = {
+      query: vi.fn(async ({ query }: { query: string }) => {
+        queries.push(query);
+        return { json: async () => [] };
+      }),
+    };
+
+    await snapshotDerivedRows(client, userId, [activityA], true);
+
+    const matchQuery = queries.find((query) => query.includes("activity_duplicate_matches"));
+    const groupQuery = queries.find((query) => query.includes("activity_duplicate_groups"));
+    expect(matchQuery).not.toContain("left_source.is_deleted = 0");
+    expect(matchQuery).not.toContain("right_source.is_deleted = 0");
+    expect(groupQuery).not.toContain("selected_source.is_deleted = 0");
+    expect(groupQuery).not.toContain("source_records.is_deleted = 0");
+  });
+
+  it("captures activity sensor samples for the rebuilt canonical activity", async () => {
+    const sample = {
+      activity_id: activityA,
+      user_id: userId,
+      refresh_version: "13",
+      is_deleted: 0,
+    };
+    const client = {
+      query: vi.fn(async ({ query }: { query: string; query_params?: Record<string, unknown> }) => {
+        if (query.includes("deduped_activities")) {
+          return {
+            json: async () => [
+              {
+                activity_id: activityA,
+                user_id: userId,
+                provider_id: "wahoo",
+                canonical_type: "cycling",
+                member_activity_ids: [activityA],
+                refresh_version: "12",
+                is_deleted: 0,
+              },
+            ],
+          };
+        }
+        if (query.includes("activity_sensor_sample")) return { json: async () => [sample] };
+        if (query.includes("FROM analytics.activity_source_records AS source_records FINAL")) {
+          return { json: async () => [sourceRowA] };
+        }
+        return { json: async () => [] };
+      }),
+    };
+
+    const snapshot = await snapshotDerivedRows(client, userId, [activityA]);
+
+    expect(snapshot).toHaveProperty("sensorSampleRows", [sample]);
+    expect(snapshot.highestVersion).toBe("13");
+    const sensorSampleCall = client.query.mock.calls.find(([options]) =>
+      options.query.includes("activity_sensor_sample"),
+    );
+    expect(sensorSampleCall?.[0].query_params).toEqual({
+      userId,
+      canonicalActivityIds: [activityA],
+    });
+  });
+});
+
+describe("UInt64 parsing", () => {
+  it("accepts exact safe inputs and rejects negative, fractional, unsafe, and overflowing values", () => {
+    expect(uint64StringSchema.parse(0)).toBe("0");
+    expect(uint64StringSchema.parse("18446744073709551615")).toBe("18446744073709551615");
+    for (const invalid of [
+      -1,
+      1.5,
+      Number.MAX_SAFE_INTEGER + 1,
+      "-1",
+      "1.5",
+      "18446744073709551616",
+    ]) {
+      expect(() => uint64StringSchema.parse(invalid)).toThrow();
+    }
+  });
+});
+
+describe("incompatibleMemberCount", () => {
+  const dedupedRow = {
+    activity_id: activityA,
+    user_id: userId,
+    provider_id: "wahoo",
+    canonical_type: "cycling",
+    member_activity_ids: [activityA, activityB, activityC],
+    refresh_version: "12",
+    is_deleted: 0,
+  };
+
+  it("counts type mismatches while ignoring absent source rows", () => {
+    expect(
+      incompatibleMemberCount(
+        compatibilitySnapshot(
+          [sourceRowA, { ...sourceRowB, canonical_type: "running" }],
+          [dedupedRow],
+        ),
+      ),
+    ).toBe(1);
+  });
+
+  it.each(["cardio", "other"])(
+    "treats a generic %s member as compatible with a specific representative",
+    (genericType) => {
+      expect(
+        incompatibleMemberCount(
+          compatibilitySnapshot(
+            [sourceRowA, { ...sourceRowB, canonical_type: genericType }],
+            [dedupedRow],
+          ),
+        ),
+      ).toBe(0);
+    },
+  );
+
+  it("requires provider consistency only for other activities", () => {
+    expect(
+      incompatibleMemberCount(
+        compatibilitySnapshot(
+          sourceRows.map((row, index) => ({
+            ...row,
+            provider_id: index === 1 ? "peloton" : "wahoo",
+            canonical_type: "other",
+          })),
+          [{ ...dedupedRow, canonical_type: "other" }],
+        ),
+      ),
+    ).toBe(1);
+    expect(
+      incompatibleMemberCount(
+        compatibilitySnapshot(
+          sourceRows.map((row, index) => ({
+            ...row,
+            provider_id: index === 1 ? "peloton" : "wahoo",
+          })),
+          [dedupedRow],
+        ),
+      ),
+    ).toBe(0);
+  });
+});
+
+describe("sourceRowsMatchPostgres", () => {
+  const repaired = {
+    id: activityA,
+    repaired: {
+      timezone: "America/New_York",
+      startUtcOffsetMinutes: -240,
+      endUtcOffsetMinutes: -240,
+      localTimeSource: "provider_timezone",
+    },
+  };
+  const mirrored = {
+    ...sourceRowA,
+    timezone: repaired.repaired.timezone,
+    start_utc_offset_minutes: repaired.repaired.startUtcOffsetMinutes,
+    end_utc_offset_minutes: repaired.repaired.endUtcOffsetMinutes,
+    local_time_source: repaired.repaired.localTimeSource,
+  };
+
+  it("requires a live source row with every repaired local-time field", () => {
+    expect(sourceRowsMatchPostgres([mirrored], [repaired])).toBe(true);
+    expect(sourceRowsMatchPostgres([], [repaired])).toBe(false);
+    for (const mismatch of [
+      { is_deleted: 1 },
+      { timezone: null },
+      { start_utc_offset_minutes: -300 },
+      { end_utc_offset_minutes: -300 },
+      { local_time_source: "provider_offset" },
+    ]) {
+      expect(sourceRowsMatchPostgres([{ ...mirrored, ...mismatch }], [repaired])).toBe(false);
+    }
+  });
+
+  it("requires repaired Strong timestamps to reach the Postgres mirror", () => {
+    const timestampRepair = {
+      ...repaired,
+      startedAt: "2026-01-15T07:55:54.000Z",
+      endedAt: "2026-01-15T08:25:54.000Z",
+      repairedStartedAt: "2026-01-15T15:55:54.000Z",
+      repairedEndedAt: "2026-01-15T16:25:54.000Z",
+    };
+    const timestampMirror = {
+      ...mirrored,
+      started_at: new Date(timestampRepair.repairedStartedAt),
+      ended_at: new Date(timestampRepair.repairedEndedAt),
+    };
+
+    expect(sourceRowsMatchPostgres([timestampMirror], [timestampRepair])).toBe(true);
+    expect(
+      sourceRowsMatchPostgres(
+        [{ ...timestampMirror, started_at: new Date(timestampRepair.startedAt) }],
+        [timestampRepair],
+      ),
+    ).toBe(false);
+    expect(
+      sourceRowsMatchPostgres(
+        [{ ...timestampMirror, ended_at: new Date(timestampRepair.endedAt) }],
+        [timestampRepair],
+      ),
+    ).toBe(false);
+  });
+
+  it("distinguishes a repaired null end time from an omitted end-time repair", () => {
+    const openEndedRepair = {
+      ...repaired,
+      endedAt: "2026-01-15T08:25:54.000Z",
+      repairedEndedAt: null,
+    };
+
+    expect(sourceRowsMatchPostgres([{ ...mirrored, ended_at: null }], [openEndedRepair])).toBe(
+      true,
+    );
+    expect(
+      sourceRowsMatchPostgres(
+        [{ ...mirrored, ended_at: new Date(openEndedRepair.endedAt) }],
+        [openEndedRepair],
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("assertActivityIntegrityRebuild", () => {
+  const refreshedVersion = "20";
+  const before = { ...compatibilitySnapshot([], []), highestVersion: "12" };
+  const after: DerivedSnapshot = {
+    sourceRows: [sourceRowA, sourceRowB].map((row) => ({
+      ...row,
+      refresh_version: refreshedVersion,
+    })),
+    matchRows: [{ ...matchAB, refresh_version: refreshedVersion }],
+    groupRows: [activityA, activityB].map((activityId) => ({
+      activity_id: activityId,
+      group_id: activityA,
+      refresh_version: refreshedVersion,
+      is_deleted: 0,
+    })),
+    dedupedRows: [
+      {
+        activity_id: activityA,
+        user_id: userId,
+        provider_id: "wahoo",
+        canonical_type: "cycling",
+        member_activity_ids: [activityA, activityB],
+        refresh_version: refreshedVersion,
+        is_deleted: 0,
+      },
+    ],
+    memberRows: [activityA, activityB].map((memberActivityId) => ({
+      activity_id: activityA,
+      user_id: userId,
+      member_activity_id: memberActivityId,
+      refresh_version: refreshedVersion,
+      is_deleted: 0,
+    })),
+    sensorSampleRows: [
+      { activity_id: activityA, user_id: userId, refresh_version: refreshedVersion, is_deleted: 0 },
+    ],
+    sensorSummaryRows: [
+      { activity_id: activityA, user_id: userId, refresh_version: refreshedVersion, is_deleted: 0 },
+    ],
+    summaryRows: [
+      { activity_id: activityA, user_id: userId, refresh_version: refreshedVersion, is_deleted: 0 },
+    ],
+    components: [{ groupId: activityA, memberActivityIds: [activityA, activityB] }],
+    highestVersion: refreshedVersion,
+    activityIds: [activityA, activityB],
+  };
+
+  it("accepts fresh, internally consistent rows from every captured model", () => {
+    expect(() => assertActivityIntegrityRebuild(before, after)).not.toThrow();
+  });
+
+  it("rejects stale activity sensor samples", () => {
+    const staleSensorSampleSnapshot = {
+      ...after,
+      sensorSampleRows: [
+        { activity_id: activityA, user_id: userId, refresh_version: "12", is_deleted: 0 },
+      ],
+    };
+
+    expect(() => assertActivityIntegrityRebuild(before, staleSensorSampleSnapshot)).toThrow(
+      "activity integrity rebuild left stale activity_sensor_sample rows",
+    );
+  });
+
+  it.each([
+    ["activity_source_records", "sourceRows"],
+    ["activity_duplicate_matches", "matchRows"],
+    ["activity_duplicate_groups", "groupRows"],
+    ["deduped_activities", "dedupedRows"],
+    ["deduped_activity_members", "memberRows"],
+    ["activity_sensor_summary_rows", "sensorSummaryRows"],
+    ["activity_summary_rows", "summaryRows"],
+  ] as const)("rejects stale %s rows", (model, collection) => {
+    const stale = {
+      ...after,
+      [collection]: after[collection].map((row, index) =>
+        index === 0 ? { ...row, refresh_version: "12" } : row,
+      ),
+    };
+    expect(() => assertActivityIntegrityRebuild(before, stale)).toThrow(
+      `activity integrity rebuild left stale ${model} rows`,
+    );
+  });
+
+  it("rejects inconsistent component membership, member mappings, and summary ownership", () => {
+    expect(() =>
+      assertActivityIntegrityRebuild(before, {
+        ...after,
+        components: [{ groupId: activityA, memberActivityIds: [activityA] }],
+      }),
+    ).toThrow("inconsistent canonical components");
+    expect(() =>
+      assertActivityIntegrityRebuild(before, {
+        ...after,
+        memberRows: after.memberRows.slice(0, 1),
+      }),
+    ).toThrow("inconsistent member mappings");
+    expect(() =>
+      assertActivityIntegrityRebuild(before, {
+        ...after,
+        summaryRows: [
+          {
+            activity_id: activityC,
+            user_id: userId,
+            refresh_version: refreshedVersion,
+            is_deleted: 0,
+          },
+        ],
+      }),
+    ).toThrow("summary for a non-canonical activity");
+    expect(() =>
+      assertActivityIntegrityRebuild(before, {
+        ...after,
+        sensorSampleRows: [
+          {
+            activity_id: activityC,
+            user_id: userId,
+            refresh_version: refreshedVersion,
+            is_deleted: 0,
+          },
+        ],
+      }),
+    ).toThrow("summary for a non-canonical activity");
+  });
+});
+
+describe("waitForPostgresMirror", () => {
+  const repaired = {
+    id: activityA,
+    repaired: {
+      timezone: null,
+      startUtcOffsetMinutes: -240,
+      endUtcOffsetMinutes: -240,
+      localTimeSource: "provider_offset",
+    },
+  };
+  const mirrored = {
+    ...sourceRowA,
+    timezone: null,
+    start_utc_offset_minutes: -240,
+    end_utc_offset_minutes: -240,
+    local_time_source: "provider_offset",
+  };
+
+  it("polls until every changed activity is mirrored", async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ json: async () => [] })
+      .mockResolvedValueOnce({ json: async () => [mirrored] });
+    const sleep = vi.fn(async () => undefined);
+    const monotonicNow = vi.fn().mockReturnValueOnce(0).mockReturnValueOnce(1);
+
+    await waitForPostgresMirror({ query }, userId, [repaired], {
+      cdcReadinessTimeoutMs: 10,
+      cdcReadinessPollIntervalMs: 3,
+      monotonicNow,
+      sleep,
+    });
+
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(query.mock.calls[0]?.[0].query_params).toEqual({ userId, activityIds: [activityA] });
+    expect(sleep).toHaveBeenCalledWith(3);
+  });
+
+  it.each([
+    ["timezone", { rejected_provider_timezone: null }],
+    ["start offset", { rejected_provider_start_utc_offset_minutes: null }],
+    ["end offset", { rejected_provider_end_utc_offset_minutes: null }],
+  ])("waits while rejected provider %s audit evidence is stale", async (_label, mismatch) => {
+    const auditedRepair = {
+      ...repaired,
+      repaired: {
+        ...repaired.repaired,
+        rejectedProviderTimezone: "Etc/GMT+4",
+        rejectedProviderStartUtcOffsetMinutes: -240,
+        rejectedProviderEndUtcOffsetMinutes: -240,
+      },
+    };
+    const auditedMirror = {
+      ...mirrored,
+      rejected_provider_timezone: "Etc/GMT+4",
+      rejected_provider_start_utc_offset_minutes: -240,
+      rejected_provider_end_utc_offset_minutes: -240,
+    };
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ json: async () => [{ ...auditedMirror, ...mismatch }] })
+      .mockResolvedValueOnce({ json: async () => [auditedMirror] });
+    const sleep = vi.fn(async () => undefined);
+    const monotonicNow = vi.fn().mockReturnValueOnce(0).mockReturnValueOnce(1);
+
+    await waitForPostgresMirror({ query }, userId, [auditedRepair], {
+      cdcReadinessTimeoutMs: 10,
+      cdcReadinessPollIntervalMs: 3,
+      monotonicNow,
+      sleep,
+    });
+
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledWith(3);
+  });
+
+  it("fails at the configured deadline without sleeping again", async () => {
+    const query = vi.fn().mockResolvedValue({ json: async () => [] });
+    const sleep = vi.fn(async () => undefined);
+    const monotonicNow = vi.fn().mockReturnValueOnce(5).mockReturnValueOnce(15);
+
+    await expect(
+      waitForPostgresMirror({ query }, userId, [repaired], {
+        cdcReadinessTimeoutMs: 10,
+        cdcReadinessPollIntervalMs: 3,
+        monotonicNow,
+        sleep,
+      }),
+    ).rejects.toThrow("did not publish 1 repaired activities within 10ms");
+    expect(sleep).not.toHaveBeenCalled();
+  });
+});

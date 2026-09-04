@@ -36,6 +36,7 @@ import { ProgressiveOverloadCards } from "../../components/ProgressiveOverloadCa
 import { QueryStatePanel } from "../../components/QueryStatePanel";
 import { TrainingChartEmptyState } from "../../components/TrainingChartEmptyState";
 import { TrainingDistributionCards } from "../../components/TrainingDistributionCards";
+import { isTransientNetworkError } from "../../lib/query-client";
 import { safeParseRows } from "../../lib/safe-parse";
 import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
@@ -156,7 +157,13 @@ const reportedTrainingErrors = new WeakSet<object>();
 
 function useReportQueryError(query: { isError: boolean; error: object | null }) {
   useEffect(() => {
-    if (!query.isError || !query.error || reportedTrainingErrors.has(query.error)) return;
+    if (
+      !query.isError ||
+      !query.error ||
+      isTransientNetworkError(query.error) ||
+      reportedTrainingErrors.has(query.error)
+    )
+      return;
     reportedTrainingErrors.add(query.error);
     captureException(query.error);
   }, [query.isError, query.error]);
@@ -560,18 +567,7 @@ export default function StrainScreen() {
           />
 
           <View style={styles.card}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.cardTitle}>Climbing</Text>
-              <TouchableOpacity
-                accessibilityLabel="Log finger loading or climbing attempts"
-                accessibilityRole="button"
-                activeOpacity={0.7}
-                onPress={() => router.push("/climbing-log")}
-                style={styles.sectionLinkButton}
-              >
-                <Text style={styles.sectionLinkButtonText}>Log session</Text>
-              </TouchableOpacity>
-            </View>
+            <Text style={styles.cardTitle}>Climbing</Text>
             {shouldShowClimbingError ? (
               <Text style={styles.errorText}>
                 {climbingParsed.error?.message ?? "Failed to load climbing data."}

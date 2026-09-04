@@ -69,7 +69,7 @@ activity_metadata AS (
         user_profile.ftp AS ftp,
         coalesce(resting_by_activity.resting_hr, user_profile.resting_hr) AS resting_hr
     FROM activity_bounds
-    INNER JOIN postgres_fitness.user_profile_current AS user_profile
+    INNER JOIN {{ source('postgres_fitness', 'user_profile_current') }} AS user_profile
         ON user_profile.id = activity_bounds.user_id
     LEFT JOIN resting_by_activity
         ON resting_by_activity.activity_id = activity_bounds.activity_id

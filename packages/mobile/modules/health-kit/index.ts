@@ -10,6 +10,7 @@ export interface HealthKitSample {
   sourceName: string;
   sourceBundle: string;
   uuid: string;
+  metadata?: Record<string, string | number | boolean>;
 }
 
 /** A sub-activity within a workout (iOS 16+). Each represents a distinct
@@ -46,6 +47,27 @@ export interface SleepSample {
   sourceName: string;
 }
 
+export type ClinicalRecordType =
+  | "allergy"
+  | "condition"
+  | "coverage"
+  | "immunization"
+  | "labResult"
+  | "medication"
+  | "procedure"
+  | "vitalSign"
+  | "clinicalNote";
+
+export interface ClinicalRecordSample {
+  uuid: string;
+  clinicalType: ClinicalRecordType;
+  displayName: string;
+  sourceName: string;
+  fhirVersion: string;
+  fhir: Record<string, unknown>;
+  downloadedAt: string;
+}
+
 export interface RouteLocation {
   date: string; // ISO 8601
   lat: number;
@@ -58,19 +80,6 @@ export interface RouteLocation {
 export interface DailyStatistic {
   date: string; // YYYY-MM-DD (local timezone)
   value: number;
-}
-
-export interface DietarySample {
-  typeIdentifier: string;
-  value: number;
-  unit: "kcal" | "g";
-  startDate: string;
-  endDate: string;
-  syncIdentifier: string;
-  syncVersion: number;
-  foodEntryId: string;
-  foodName: string;
-  fingerprint: string;
 }
 
 export interface SyncResult {
@@ -123,6 +132,24 @@ export async function queryQuantitySamples(
   return HealthKitModule.queryQuantitySamples(typeIdentifier, startDate, endDate, limit ?? 0);
 }
 
+/** Query category samples such as menstrual flow. */
+export async function queryCategorySamples(
+  typeIdentifier: string,
+  startDate: string,
+  endDate: string,
+): Promise<HealthKitSample[]> {
+  return HealthKitModule.queryCategorySamples(typeIdentifier, startDate, endDate);
+}
+
+/** Query read-only FHIR clinical records during an explicit user-initiated sync. */
+export async function queryClinicalRecords(
+  typeIdentifier: string,
+  startDate: string,
+  endDate: string,
+): Promise<ClinicalRecordSample[]> {
+  return HealthKitModule.queryClinicalRecords(typeIdentifier, startDate, endDate);
+}
+
 /** Query workouts */
 export async function queryWorkouts(startDate: string, endDate: string): Promise<WorkoutSample[]> {
   return HealthKitModule.queryWorkouts(startDate, endDate);
@@ -150,11 +177,6 @@ export async function queryDailyStatistics(
 /** Query GPS route locations for a workout by its UUID */
 export async function queryWorkoutRoutes(workoutUuid: string): Promise<RouteLocation[]> {
   return HealthKitModule.queryWorkoutRoutes(workoutUuid);
-}
-
-/** Write Dofek-owned dietary samples to HealthKit */
-export async function writeDietarySamples(samples: DietarySample[]): Promise<boolean> {
-  return HealthKitModule.writeDietarySamples(samples);
 }
 
 /** Delete Dofek-owned dietary samples by HealthKit sync identifier */

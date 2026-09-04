@@ -91,6 +91,7 @@ async function resolveWhoopPresentExternalIds(
 
 export type WhoopDeveloperWorkoutsPageResult = {
   presentIds: string[];
+  activityTypeNamesById: Record<string, string>;
   nextToken: string | null;
   reachedWindowStart: boolean;
 };
@@ -102,6 +103,7 @@ export async function fetchWhoopDeveloperWorkoutsPage(
 ): Promise<WhoopDeveloperWorkoutsPageResult> {
   const page = await context.client.listDeveloperWorkouts({ limit: 25, nextToken });
   const presentIds: string[] = [];
+  const activityTypeNamesById: Record<string, string> = {};
   let oldestStartMs = Number.POSITIVE_INFINITY;
 
   for (const record of page.records) {
@@ -114,11 +116,15 @@ export async function fetchWhoopDeveloperWorkoutsPage(
       record.id
     ) {
       presentIds.push(record.id);
+      if (record.sport_name) {
+        activityTypeNamesById[record.id] = record.sport_name;
+      }
     }
   }
 
   return {
     presentIds,
+    activityTypeNamesById,
     nextToken: page.next_token ?? null,
     reachedWindowStart: oldestStartMs <= absenceWindow.since.getTime(),
   };
@@ -127,7 +133,10 @@ export async function fetchWhoopDeveloperWorkoutsPage(
 export async function persistWhoopWorkoutsFromCycles(
   context: WhoopSyncContext,
   presentExternalIds: Set<string>,
-  persistenceOptions: { reconcileAbsence: boolean } = { reconcileAbsence: true },
+  persistenceOptions: {
+    reconcileAbsence: boolean;
+    developerActivityTypeNamesById?: Record<string, string>;
+  } = { reconcileAbsence: true },
 ): Promise<number> {
   const { db, providerId, options } = context;
   const { workouts, v2ActivityTypeByActivityId } = collectWhoopWorkouts(context);
@@ -140,8 +149,13 @@ export async function persistWhoopWorkoutsFromCycles(
   for (const workoutRecord of workouts) {
     try {
       const externalId = resolveWhoopWorkoutExternalId(workoutRecord);
-      const v2TypeName = externalId ? v2ActivityTypeByActivityId.get(externalId) : undefined;
-      const parsed = parseWorkout(workoutRecord, v2TypeName);
+      const developerSportName = externalId
+        ? persistenceOptions.developerActivityTypeNamesById?.[externalId]
+        : undefined;
+      const v2ActivityTypeName = externalId
+        ? v2ActivityTypeByActivityId.get(externalId)
+        : undefined;
+      const parsed = parseWorkout(workoutRecord, v2ActivityTypeName, developerSportName);
       if (!parsed) continue;
 
       await upsertProviderActivity(

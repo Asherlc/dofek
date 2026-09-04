@@ -9,25 +9,43 @@ documentation for [date/time input and time-zone handling](https://www.postgresq
 
 The context consists of:
 
-- `timezone`: an IANA zone only when the provider or recording device supplied
-  that zone.
+- `timezone`: the trusted IANA zone supplied by the provider or recording
+  device, or the resolver-selected GPS/home zone used as a fallback.
 - `start_utc_offset_minutes` and `end_utc_offset_minutes`: resolved
   independently so a record that crosses a daylight-saving transition retains
   both clock offsets.
 - `local_time_source`: `provider_timezone`, `provider_offset`,
-  `device_timezone`, `device_offset`, or `unknown`.
+  `device_timezone`, `device_offset`, `user_home_timezone`, `gps_timezone`,
+  `home_zone_fallback`, or `unknown`.
 
-`unknown` is deliberate. Ingestion must not substitute the current viewer,
-profile, server, or request timezone when the record did not carry trusted
-context. Clients render “Local time unavailable” rather than presenting a
-guessed clock time.
+`unknown` is deliberate. Ingestion never substitutes the current viewer,
+server, or request timezone when the record did not carry trusted context.
+For activity providers, GPS coordinates establish the reference zone when
+available; otherwise the user's configured geographic `homeTimezone` does.
+Provider or device context that differs from that zone's offset by more than
+60 minutes at the activity instant is retained in the
+`rejected_provider_*` audit fields and replaced with the reference-zone
+context. The source is recorded as `gps_timezone` or `home_zone_fallback`.
+When neither reference exists, ingestion records `unknown`; the historical
+repair fails its preflight rather than guessing.
+The IANA database distinguishes location zones from fixed-offset zones and
+documents the reversed POSIX signs in the `Etc` area in its
+[theory file](https://data.iana.org/time-zones/theory.html).
 
 ## Historical activity backfill
 
-Migration `0064_record_local_time_context` is schema-only. Historical activity
-rows that already contain a provider-supplied IANA `timezone` can be populated
-after deploy with a separate bounded command. Sleep rows and activities without
-retained trusted context remain `unknown`.
+Migrations `0064_record_local_time_context` and
+`0101_user_home_timezone_context` are schema-only. Historical activity rows
+that already contain a provider-supplied IANA `timezone` can be populated after
+deploy with a separate bounded command. The command also repairs fixed
+`Etc/GMT` provider zones only when that user has already saved a valid
+`homeTimezone` setting. Sleep rows and activities without retained trusted
+context remain `unknown`.
+
+Migration `0101` installs its replacement checks as `NOT VALID`, so deploy does
+not retain an access-exclusive table lock while scanning existing rows. After
+deploy, validate both constraints as a separate monitored operator action
+before running the data backfill.
 
 Start with a dry run over an explicit half-open UTC time window:
 
@@ -37,9 +55,10 @@ pnpm backfill:record-local-time -- \
   --end-at=2025-02-01T00:00:00.000Z
 ```
 
-The command scans at most 20 batches of 250 rows. Invalid stored zones are
-reported as skipped and are not rewritten. Choose explicit smaller bounds when
-operating under load:
+The command scans at most 20 batches of 250 rows. Invalid stored or configured
+zones are reported as skipped and are not rewritten. Confirm the affected user
+has saved the intended geographic `homeTimezone` before repairing fixed zones.
+Choose explicit smaller bounds when operating under load:
 
 ```bash
 pnpm backfill:record-local-time -- \
@@ -61,10 +80,10 @@ pnpm backfill:record-local-time -- \
 ```
 
 Repeat the dry run with the same time window. Advance `--start-at` and `--end-at`
-only when the updated count matches the expected valid candidates. The update is
-idempotent and resumable: it only writes rows whose source is still `unknown`,
+only when the updated count matches the expected valid candidates. The update
+is idempotent and resumable: it uses compare-and-set on each row's prior source,
 paginates eligible rows by ID within the required time window, and resolves the
-start and end offsets from the stored IANA zone independently.
+start and end offsets from the selected IANA zone independently.
 
 Stop if the skipped count is unexpected, database health degrades, or the
 updated count differs from the valid candidate count. Investigate invalid zones

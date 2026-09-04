@@ -49,20 +49,25 @@ import { initSentry, sentryErrorHandler } from "./lib/sentry.ts";
 import { logger } from "./logger.ts";
 import { createMcpOAuthRouter, type McpAuthRateLimitOptions } from "./mcp/oauth-route.ts";
 import { createMcpRouter } from "./mcp/route.ts";
+import { BillingProfileNotFoundError } from "./repositories/billing-repository.ts";
 import { ClickHouseActivitySensorStore } from "./repositories/clickhouse-activity-sensor-store.ts";
+import { DeveloperClientRepository } from "./repositories/developer-client-repository.ts";
 import { LimitedActivitySensorStore } from "./repositories/limited-activity-sensor-store.ts";
 import { appRouter } from "./router.ts";
 import { ensureProvidersRegistered } from "./routers/sync-helpers.ts";
 import { createActivityExportRouter } from "./routes/activity-export.ts";
+import { createAppStoreWebhookRouter } from "./routes/app-store-webhook.ts";
 import { createAuthRouter } from "./routes/auth/index.ts";
 import { authRateLimiter } from "./routes/auth/shared.ts";
 import { createCompanionPairingRouter } from "./routes/companion-pairing.ts";
 import { createCompanionTokenHttpRouter } from "./routes/companion-token.ts";
+import { createDeveloperClientsRouter } from "./routes/developer-clients.ts";
 import { createExportRouter } from "./routes/export.ts";
+import { createExternalWriteApiRouter } from "./routes/external-write-api.ts";
 import { createIngestZosHealthRouter } from "./routes/ingest-zos-health.ts";
+import { createOpenAiAppsChallengeRouter } from "./routes/openai-apps-challenge.ts";
 import { createStripeWebhookRouter } from "./routes/stripe-webhook.ts";
 import { createWebhookRouter } from "./routes/webhooks.ts";
-import { startSlackBot } from "./slack/bot.ts";
 import type { Context } from "./trpc.ts";
 
 export function onUnhandledRejection(reason: unknown): void {
@@ -99,6 +104,7 @@ export interface CreateAppOptions {
   accountErasureRestoreLedger?: AccountErasureRestoreLedger;
   metricStreamPublisher?: MetricStreamEventPublisher;
   mcpAuthRateLimit?: McpAuthRateLimitOptions;
+  openAiAppsChallengeToken?: string;
 }
 
 export function createApp(
@@ -110,6 +116,12 @@ export function createApp(
   const app = express();
   const accountErasureRestoreLedger =
     options.accountErasureRestoreLedger ?? createLazyAccountErasureRestoreLedger();
+  const openAiAppsChallengeToken = (
+    options.openAiAppsChallengeToken ?? process.env.OPENAI_APPS_CHALLENGE_TOKEN
+  )?.trim();
+  if (!openAiAppsChallengeToken) {
+    throw new Error("OPENAI_APPS_CHALLENGE_TOKEN environment variable is required");
+  }
   app.set("trust proxy", 1);
   const limitedSensorStore = new LimitedActivitySensorStore(sensorStore);
 
@@ -122,6 +134,8 @@ export function createApp(
     const result = await checkReadiness({ db, sensorStore });
     res.status(result.status === "ok" ? 200 : 503).json(result);
   });
+
+  app.use("/.well-known", createOpenAiAppsChallengeRouter(openAiAppsChallengeToken));
 
   setupRoutes(app, db, limitedSensorStore, options, accountErasureRestoreLedger);
   // Catch malformed percent-encoded URL params (e.g. %C0) before Sentry sees them.
@@ -241,10 +255,19 @@ function setupRoutes(
   });
 
   // ── Route modules ──
-  // Webhook routes must be mounted before json() middleware — they use raw body for HMAC verification
+  // Webhook routes must be mounted before JSON middleware because signature verification uses raw bodies.
+  app.use("/api/webhooks/app-store", createAppStoreWebhookRouter({ db }));
   app.use("/api/webhooks/stripe", createStripeWebhookRouter({ db }));
   app.use("/api/webhooks", createWebhookRouter({ db, syncQueue }));
   app.use("/api/export", createExportRouter({ db, exportQueue }));
+  app.use(
+    "/api/developer/clients",
+    createDeveloperClientsRouter({
+      db,
+      repository: new DeveloperClientRepository(db),
+    }),
+  );
+  app.use("/api/external/v1", createExternalWriteApiRouter({ db }));
   app.use("/api/activity", createActivityExportRouter({ db, sensorStore }));
   app.use(createMcpOAuthRouter(db, options.mcpAuthRateLimit));
   app.use("/api/mcp", createMcpRouter({ db, sensorStore }));
@@ -288,9 +311,17 @@ function setupRoutes(
         const timezone = timezoneResult.data;
         const appVersion = getSingleHeaderValue(req.headers["x-app-version"]);
         const assetsVersion = getSingleHeaderValue(req.headers["x-assets-version"]);
-        const accessWindow = session
-          ? await getAccessWindowForUser(db, session.userId, timezone)
-          : undefined;
+        let accessWindow: Context["accessWindow"];
+        try {
+          accessWindow = session
+            ? await getAccessWindowForUser(db, session.userId, timezone)
+            : undefined;
+        } catch (error) {
+          if (error instanceof BillingProfileNotFoundError) {
+            throw new TRPCError({ code: "NOT_FOUND", message: error.message });
+          }
+          throw error;
+        }
         return {
           accountErasureRestoreLedger,
           db,
@@ -339,7 +370,6 @@ function setupRoutes(
           req.path.startsWith("/api/") ||
           req.path.startsWith("/auth/") ||
           req.path.startsWith("/admin/queues") ||
-          req.path.startsWith("/slack/") ||
           extname(req.path) !== ""
         ) {
           next();
@@ -352,23 +382,13 @@ function setupRoutes(
   }
 }
 
-/**
- * Fire-and-forget startup tasks.
- * Errors are logged and reported to Sentry but don't crash the server.
- */
-export function runStartupTasks(
-  db: ReturnType<typeof createDatabaseFromEnv>,
-  app: express.Express,
-) {
-  startSlackBot(db, app).catch((err) => {
-    logger.error(`[slack] Slack bot error: ${err}`);
-    captureException(err);
-  });
-}
-
 /** Validate env, create app, and start listening. */
 export async function main() {
   initSentry();
+  const openAiAppsChallengeToken = process.env.OPENAI_APPS_CHALLENGE_TOKEN?.trim();
+  if (!openAiAppsChallengeToken) {
+    throw new Error("OPENAI_APPS_CHALLENGE_TOKEN environment variable is required");
+  }
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
     throw new Error("DATABASE_URL environment variable is required");
@@ -394,12 +414,12 @@ export async function main() {
   const app = createApp(db, sensorStore, {
     accountErasureRestoreLedger,
     metricStreamPublisher,
+    openAiAppsChallengeToken,
   });
 
   app.listen(PORT, () => {
     logger.info(`[server] API running at http://localhost:${PORT}`);
     logger.info(`[server] tRPC at http://localhost:${PORT}/api/trpc`);
-    runStartupTasks(db, app);
   });
 }
 

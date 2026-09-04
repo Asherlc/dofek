@@ -150,7 +150,7 @@ describe("AccountErasurePanel", () => {
     expect(persistedAttempt).toContain("confirmationAttemptedAt");
     expect(persistedAttempt).toContain(cleanupLease.cleanupOwnerNonce);
     expect(persistedAttempt).not.toContain("user-1");
-    expect(await screen.findByText(/could not be verified/i)).toBeInTheDocument();
+    expect(await screen.findByText(/could not confirm the outcome/i)).toBeInTheDocument();
   });
 
   it("persists an actionable cleanup warning when browser purge is blocked", async () => {
@@ -206,6 +206,12 @@ describe("AccountErasurePanel", () => {
     expect(mockFinishCleanup).toHaveBeenCalledWith(cleanupLease);
     expect(mockPurge).not.toHaveBeenCalled();
     expect(mockNavigate).toHaveBeenCalledWith({ to: "/account-deletion" });
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Check the account deletion status page for updates.",
+    );
+    expect(screen.getByRole("alert").textContent).not.toMatch(
+      /preparation|capability|confirmation response/i,
+    );
     const telemetry = mockCaptureException.mock.calls
       .map(
         ([error, context]) =>

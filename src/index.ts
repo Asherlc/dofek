@@ -24,7 +24,7 @@ import {
   type SyncJobData,
 } from "./jobs/queues.ts";
 import { logger } from "./logger.ts";
-import { runMetricStreamClickHouseSinkFromEnv } from "./metric-stream/clickhouse-sink.ts";
+import { startMetricStreamClickHouseSinkFromEnv } from "./metric-stream/clickhouse-sink.ts";
 import { getAllProviders, getEnabledSyncProviders } from "./providers/index.ts";
 
 async function resolveCliUserId(db: ReturnType<typeof createDatabaseFromEnv>): Promise<string> {
@@ -65,6 +65,7 @@ export async function handleSyncCommand(args: string[]): Promise<number> {
         providerId: provider.id,
         sinceDays: fullSync ? undefined : days,
         userId,
+        origin: "manual",
       } satisfies SyncJobData),
     ),
   );
@@ -130,7 +131,7 @@ export async function handleAuthCommand(args: string[]): Promise<number> {
   const oauthProviders = allProviders.filter((p) => p.authSetup);
   const provider = oauthProviders.find((p) => p.id === providerArg);
 
-  if (!providerArg || !provider || !provider.authSetup) {
+  if (!providerArg || !provider?.authSetup) {
     const supported = oauthProviders.map((p) => p.id).join("|");
     logger.error(`Usage: health-data auth <${supported}>`);
     return 1;
@@ -295,7 +296,7 @@ export async function main() {
   }
 
   if (command === "metric-stream-clickhouse-sink") {
-    await runMetricStreamClickHouseSinkFromEnv();
+    await startMetricStreamClickHouseSinkFromEnv();
     return;
   }
 

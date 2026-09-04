@@ -1,7 +1,7 @@
 // swiftlint:disable file_length
 import ExpoModulesCore
 import HealthKit
-import Sentry
+import RNSentry
 
 private final class HealthKitModuleException: ExpoModulesCore.Exception {
     private let exceptionCode: String
@@ -566,6 +566,10 @@ public class HealthKitModule: Module {
                 limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]
             ) { _, results, error in
                 if let error = error {
+                    if HealthKitErrorDetails.isAuthorizationNotDetermined(error) {
+                        promise.resolve([[String: Any]]())
+                        return
+                    }
                     self.rejectHealthKitError(
                         promise,
                         operation: "queryCategorySamples(\(typeIdentifier))",
@@ -578,101 +582,111 @@ public class HealthKitModule: Module {
                     .filter {
                         self.accountStateStore.shouldInclude(sampleDate: $0.startDate)
                     }
-                    .map { sample -> [String: Any] in
-                    return [
-                        "uuid": sample.uuid.uuidString,
-                        "type": typeIdentifier,
-                        "value": sample.value,
-                        "startDate": HealthKitQueries.formatDate(sample.startDate),
-                        "endDate": HealthKitQueries.formatDate(sample.endDate),
-                        "sourceName": sample.sourceRevision.source.name,
-                        "sourceBundle": sample.sourceRevision.source.bundleIdentifier,
-                    ]
-                } ?? []
+                    .compactMap {
+                        HealthKitQueries.transportSample($0, typeIdentifier: typeIdentifier)
+                    } ?? []
                 promise.resolve(samples)
             }
             self.healthStore.execute(query)
         }
 
-        AsyncFunction("writeDietarySamples") { (sampleInputs: [[String: Any]], promise: Promise) in
-            var samples: [HKQuantitySample] = []
-
-            for sampleInput in sampleInputs {
-                guard let typeIdentifier = sampleInput["typeIdentifier"] as? String,
-                      let quantityType = dietaryWriteQuantityType(for: typeIdentifier) else {
-                    self.rejectPromise(
-                        promise,
-                        code: "INVALID_TYPE",
-                        reason: "Unsupported dietary quantity type"
-                    )
-                    return
-                }
-                guard let valueNumber = sampleInput["value"] as? NSNumber else {
-                    self.rejectPromise(
-                        promise,
-                        code: "INVALID_VALUE",
-                        reason: "Dietary sample value must be a number"
-                    )
-                    return
-                }
-                guard let startDateString = sampleInput["startDate"] as? String,
-                      let endDateString = sampleInput["endDate"] as? String,
-                      let startDate = HealthKitQueries.parseDate(startDateString),
-                      let endDate = HealthKitQueries.parseDate(endDateString) else {
-                    self.rejectPromise(
-                        promise,
-                        code: "INVALID_DATE",
-                        reason: "Invalid ISO 8601 date format"
-                    )
-                    return
-                }
-                guard let syncIdentifier = sampleInput["syncIdentifier"] as? String,
-                      let syncVersionNumber = sampleInput["syncVersion"] as? NSNumber,
-                      let foodEntryId = sampleInput["foodEntryId"] as? String,
-                      let foodName = sampleInput["foodName"] as? String,
-                      let fingerprint = sampleInput["fingerprint"] as? String else {
-                    self.rejectPromise(
-                        promise,
-                        code: "INVALID_METADATA",
-                        reason: "Dietary sample metadata is required"
-                    )
-                    return
-                }
-
-                let unit = HealthKitQueries.preferredUnit(for: quantityType)
-                let quantity = HKQuantity(unit: unit, doubleValue: valueNumber.doubleValue)
-                let metadata: [String: Any] = [
-                    HKMetadataKeySyncIdentifier: syncIdentifier,
-                    HKMetadataKeySyncVersion: syncVersionNumber.intValue,
-                    "DofekFoodEntryId": foodEntryId,
-                    "DofekFoodName": foodName,
-                    "DofekFoodFingerprint": fingerprint,
-                    "DofekNutrientType": typeIdentifier,
-                ]
-                samples.append(
-                    HKQuantitySample(
-                        type: quantityType,
-                        quantity: quantity,
-                        start: startDate,
-                        end: endDate,
-                        metadata: metadata
-                    )
+        // Clinical records are deliberately query-only. Do not register them for background
+        // delivery; users initiate each clinical-record sync explicitly.
+        AsyncFunction("queryClinicalRecords") { (typeIdentifier: String, startDateStr: String, endDateStr: String, promise: Promise) in
+            guard clinicalRecordType(for: typeIdentifier) != nil else {
+                self.rejectPromise(
+                    promise,
+                    code: "INVALID_TYPE",
+                    reason: "Unknown clinical record type: \(typeIdentifier)"
                 )
+                return
+            }
+            guard let clinicalType = healthKitClinicalType(for: typeIdentifier) else {
+                self.rejectPromise(
+                    promise,
+                    code: "UNAVAILABLE_TYPE",
+                    reason: "Clinical record type is unavailable on this iOS version: \(typeIdentifier)"
+                )
+                return
+            }
+            guard let startDate = HealthKitQueries.parseDate(startDateStr),
+                  let endDate = HealthKitQueries.parseDate(endDateStr) else {
+                self.rejectPromise(
+                    promise,
+                    code: "INVALID_DATE",
+                    reason: "Invalid ISO 8601 date format"
+                )
+                return
+            }
+            let queryStartDate = self.effectiveStartDate(startDate)
+            guard queryStartDate < endDate else {
+                promise.resolve([[String: Any]]())
+                return
             }
 
-            Task {
-                do {
-                    try await self.healthStore.save(samples)
-                    promise.resolve(true)
-                } catch {
+            let query = HKSampleQuery(
+                sampleType: clinicalType,
+                predicate: HealthKitQueries.datePredicate(start: queryStartDate, end: endDate),
+                limit: HKObjectQueryNoLimit,
+                sortDescriptors: [
+                    NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true),
+                ]
+            ) { _, results, error in
+                if let error {
+                    let authorizationPending = HealthKitErrorDetails
+                        .isAuthorizationNotDetermined(error)
+                    if !authorizationPending {
+                        SentrySDK.capture(error: error) { scope in
+                            scope.setTag(
+                                value: "queryClinicalRecords",
+                                key: "healthkit.operation"
+                            )
+                            scope.setTag(
+                                value: typeIdentifier,
+                                key: "healthkit.sample_type"
+                            )
+                        }
+                    }
                     self.rejectHealthKitError(
                         promise,
-                        operation: "writeDietarySamples",
-                        fallbackCode: "WRITE_ERROR",
+                        operation: "queryClinicalRecords(\(typeIdentifier))",
+                        fallbackCode: authorizationPending
+                            ? "HEALTHKIT_AUTHORIZATION_NOT_DETERMINED"
+                            : "QUERY_ERROR",
                         error: error
                     )
+                    return
                 }
+
+                let records = (results as? [HKClinicalRecord])?
+                        .filter {
+                            self.accountStateStore.shouldInclude(sampleDate: $0.startDate)
+                        }
+                        .compactMap { sample in
+                            do {
+                                return try HealthKitQueries.mapClinicalRecord(
+                                    ClinicalRecordMappingInput(
+                                        clinicalRecordUUID: sample.uuid,
+                                        clinicalTypeIdentifier: sample.clinicalType.identifier,
+                                        clinicalDisplayName: sample.displayName,
+                                        clinicalSourceName: sample.sourceRevision.source.name,
+                                        clinicalFHIRVersion: sample.fhirResource?
+                                            .fhirVersion.stringRepresentation,
+                                        clinicalFHIRData: sample.fhirResource?.data,
+                                        clinicalDownloadDate: sample.startDate
+                                    )
+                                )
+                            } catch {
+                                SentrySDK.capture(error: error) { scope in
+                                    scope.setTag(value: "mapClinicalRecord", key: "healthkit.operation")
+                                    scope.setTag(value: typeIdentifier, key: "healthkit.sample_type")
+                                }
+                                return nil
+                            }
+                        } ?? []
+                promise.resolve(records)
             }
+            self.healthStore.execute(query)
         }
 
         AsyncFunction("deleteDietarySamples") { (syncIdentifiers: [String], promise: Promise) in
@@ -713,11 +727,11 @@ public class HealthKitModule: Module {
         }
 
         AsyncFunction("queryAnchoredSamples") { (typeIdentifier: String, initialStartDateStr: String, promise: Promise) in
-            guard let sampleType = HKQuantityType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: typeIdentifier)) else {
+            guard let sampleType = HealthKitQueries.sampleType(for: typeIdentifier) else {
                 self.rejectPromise(
                     promise,
                     code: "INVALID_TYPE",
-                    reason: "Unknown quantity type: \(typeIdentifier)"
+                    reason: "Unknown sample type: \(typeIdentifier)"
                 )
                 return
             }
@@ -779,23 +793,13 @@ public class HealthKitModule: Module {
                     }
                     let objects: HealthKitAnchoredObjects = queryResult.result
 
-                    let samples = (objects.added as? [HKQuantitySample])?
+                    let samples = objects.added
                         .filter {
                             self.accountStateStore.shouldInclude(sampleDate: $0.startDate)
                         }
-                        .map { sample -> [String: Any] in
-                        let unit = HealthKitQueries.preferredUnit(for: sampleType)
-                        return [
-                            "type": typeIdentifier,
-                            "value": sample.quantity.doubleValue(for: unit),
-                            "unit": unit.unitString,
-                            "startDate": HealthKitQueries.formatDate(sample.startDate),
-                            "endDate": HealthKitQueries.formatDate(sample.endDate),
-                            "sourceName": sample.sourceRevision.source.name,
-                            "sourceBundle": sample.sourceRevision.source.bundleIdentifier,
-                            "uuid": sample.uuid.uuidString,
-                        ]
-                    } ?? []
+                        .compactMap {
+                            HealthKitQueries.transportSample($0, typeIdentifier: typeIdentifier)
+                        }
 
                     let deletedUUIDs = objects.deleted.map { $0.uuid.uuidString }
 
@@ -934,11 +938,11 @@ public class HealthKitModule: Module {
         }
 
         AsyncFunction("enableBackgroundDelivery") { (typeIdentifier: String, promise: Promise) in
-            guard let sampleType = HKQuantityType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: typeIdentifier)) else {
+            guard let sampleType = HealthKitQueries.sampleType(for: typeIdentifier) else {
                 self.rejectPromise(
                     promise,
                     code: "INVALID_TYPE",
-                    reason: "Unknown quantity type: \(typeIdentifier)"
+                    reason: "Unknown sample type: \(typeIdentifier)"
                 )
                 return
             }

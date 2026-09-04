@@ -11,8 +11,8 @@
  *   - 90 WHOOP nights plus 30 Apple Health overlap sessions
  *   - 120 days of deterministic activity history and strength work
  *   - 90 days of nutrition, recent meals, and supplements
- *   - Body composition, labs, DEXA, clinical records, and cycle data
- *   - Journal, life event, and breathwork context for reports/correlation
+ *   - Body composition, labs, DEXA, and clinical records
+ *   - Journal and life-event context for reports/correlation
  *
  * The data is designed to exercise reviewer-facing product surfaces:
  *   - Multi-provider sleep dedup (overlapping but <80% threshold)
@@ -70,18 +70,7 @@ async function seedData() {
 async function main() {
   console.log("Seeding development database...\n");
 
-  // Skip migrations if the schema already exists (e.g., web container already ran them).
-  // This avoids "relation already exists" errors when seed runs after web in Docker Compose.
-  const [{ exists: schemaExists }] = await sql`
-    SELECT EXISTS (
-      SELECT 1 FROM information_schema.tables
-      WHERE table_schema = 'fitness' AND table_name = 'activity'
-    ) AS exists`;
-  if (schemaExists) {
-    console.log("Schema already exists — skipping migrations (web already applied them)");
-  } else {
-    await applyMigrations();
-  }
+  await applyMigrations();
   await seedData();
   await verifySeed(sql);
   console.log(`\nDone. Start the server with:`);

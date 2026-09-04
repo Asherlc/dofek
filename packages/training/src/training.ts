@@ -1,9 +1,12 @@
 import {
   type ActivityModality,
+  isActivityDetailType,
   type LegacyActivityType,
   type ProviderActivityType,
   resolveProviderActivityType,
 } from "./activity-types.ts";
+
+export { isActivityDetailType };
 
 export const OTHER_ACTIVITY_TYPE = "__other__";
 
@@ -222,6 +225,7 @@ export const RIDE_WITH_GPS_ACTIVITY_TYPE_MAP: Record<string, LegacyActivityType>
   running: "running",
   trail_running: "running",
   walking: "walking",
+  "walking:hiking": "hiking",
   hiking: "hiking",
   swimming: "swimming",
 };

@@ -117,7 +117,7 @@ sensor_dirty_keys AS (
 
 body_measurement_dirty_users AS (
     SELECT DISTINCT user_id
-    FROM analytics.body_measurement_sample FINAL
+    FROM {{ source('analytics', 'body_measurement_sample') }} FINAL
     WHERE
         {% if is_incremental() %}
             NOT (SELECT is_empty FROM target_state)
@@ -418,7 +418,7 @@ acsm_estimates AS (
             0
         )) AS vo2max
     FROM acsm_segments
-    INNER JOIN postgres_fitness.user_profile_current AS user_profile
+    INNER JOIN {{ source('postgres_fitness', 'user_profile_current') }} AS user_profile
         ON user_profile.id = acsm_segments.user_id
     LEFT JOIN resting_by_activity AS resting
         ON resting.activity_id = acsm_segments.activity_id

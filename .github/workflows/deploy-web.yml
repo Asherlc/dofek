@@ -82,4 +82,6 @@ jobs:
       image_tag: ${{ github.event_name == 'workflow_dispatch' && inputs.image_tag || '' }}
       automatic_commit_sha: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || '' }}
       ci_run_id: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || '' }}
+      public_url: https://dofek.fit
+      web_host_rule: "Host(`dofek.asherlc.com`) || Host(`dofek.fit`) || Host(`www.dofek.fit`) || Host(`dofek.live`) || Host(`www.dofek.live`)"
     secrets: inherit

@@ -41,6 +41,86 @@ describe("SyncRepository integration", () => {
     );
   });
 
+  describe("last sync timestamps", () => {
+    it("returns ISO strings from PostgreSQL timestamptz rows for both last-sync queries", async () => {
+      await testContext.db.execute(
+        sql`INSERT INTO fitness.provider (id, name, user_id)
+            VALUES ('sync-repository-provider', 'Sync Repository Provider', ${SYNC_REPOSITORY_TEST_USER_ID})`,
+      );
+      await testContext.db.execute(
+        sql`INSERT INTO fitness.sync_log (provider_id, user_id, data_type, status, origin, synced_at)
+            VALUES
+              (
+                'sync-repository-provider',
+                ${SYNC_REPOSITORY_TEST_USER_ID},
+                'activities',
+                'success',
+                'scheduled',
+                '2026-07-09T12:00:00Z'
+              ),
+              (
+                'sync-repository-provider',
+                ${SYNC_REPOSITORY_TEST_USER_ID},
+                'activities',
+                'error',
+                'unknown',
+                '2026-07-09T13:00:00Z'
+              )`,
+      );
+
+      const repository = new SyncRepository(testContext.db, SYNC_REPOSITORY_TEST_USER_ID);
+
+      await expect(repository.getLastSyncTimes()).resolves.toEqual([
+        {
+          providerId: "sync-repository-provider",
+          lastSynced: "2026-07-09T13:00:00.000Z",
+        },
+      ]);
+      await expect(repository.getLastSuccessfulSyncTimes()).resolves.toEqual([
+        {
+          providerId: "sync-repository-provider",
+          lastSynced: "2026-07-09T12:00:00.000Z",
+        },
+      ]);
+    });
+
+    it("ignores a newer successful manual sync when reporting scheduled freshness", async () => {
+      await testContext.db.execute(
+        sql`INSERT INTO fitness.provider (id, name, user_id)
+            VALUES ('sync-repository-provider', 'Sync Repository Provider', ${SYNC_REPOSITORY_TEST_USER_ID})`,
+      );
+      await testContext.db.execute(
+        sql`INSERT INTO fitness.sync_log (provider_id, user_id, data_type, status, origin, synced_at)
+            VALUES
+              (
+                'sync-repository-provider',
+                ${SYNC_REPOSITORY_TEST_USER_ID},
+                'activities',
+                'success',
+                'scheduled',
+                '2026-07-09T12:00:00Z'
+              ),
+              (
+                'sync-repository-provider',
+                ${SYNC_REPOSITORY_TEST_USER_ID},
+                'activities',
+                'success',
+                'manual',
+                '2026-07-09T13:00:00Z'
+              )`,
+      );
+
+      const repository = new SyncRepository(testContext.db, SYNC_REPOSITORY_TEST_USER_ID);
+
+      await expect(repository.getLastSuccessfulSyncTimes()).resolves.toEqual([
+        {
+          providerId: "sync-repository-provider",
+          lastSynced: "2026-07-09T12:00:00.000Z",
+        },
+      ]);
+    });
+  });
+
   describe("getLatestErrors", () => {
     it("returns an error when the latest provider sync timestamp also has a success row", async () => {
       await testContext.db.execute(
@@ -96,6 +176,63 @@ describe("SyncRepository integration", () => {
           errorMessage: "authorization failed",
           authFailureReason: "authorization_failed",
           syncedAt: new Date("2026-07-09T12:00:00Z"),
+        },
+      ]);
+    });
+  });
+
+  describe("getScheduledSyncHealth", () => {
+    it("counts an error after an equal-timestamp success using the defined id ordering", async () => {
+      await ensureProvider(
+        testContext.db,
+        "sync-repository-provider",
+        "Sync Repository Provider",
+        undefined,
+        SYNC_REPOSITORY_TEST_USER_ID,
+      );
+      await testContext.db.execute(
+        sql`INSERT INTO fitness.sync_log (
+              id,
+              provider_id,
+              user_id,
+              data_type,
+              status,
+              error_message,
+              origin,
+              synced_at
+            )
+            VALUES
+              (
+                '00000000-0000-4000-8000-000000000001',
+                'sync-repository-provider',
+                ${SYNC_REPOSITORY_TEST_USER_ID},
+                'sync',
+                'success',
+                NULL,
+                'scheduled',
+                '2026-07-09T12:00:00Z'
+              ),
+              (
+                '00000000-0000-4000-8000-000000000002',
+                'sync-repository-provider',
+                ${SYNC_REPOSITORY_TEST_USER_ID},
+                'sync',
+                'error',
+                'later attempt failed',
+                'scheduled',
+                '2026-07-09T12:00:00Z'
+              )`,
+      );
+
+      const repository = new SyncRepository(testContext.db, SYNC_REPOSITORY_TEST_USER_ID);
+
+      await expect(repository.getScheduledSyncHealth()).resolves.toEqual([
+        {
+          providerId: "sync-repository-provider",
+          lastSuccess: "2026-07-09T12:00:00.000Z",
+          lastAttempt: "2026-07-09T12:00:00.000Z",
+          lastError: "later attempt failed",
+          consecutiveFailures: 1,
         },
       ]);
     });

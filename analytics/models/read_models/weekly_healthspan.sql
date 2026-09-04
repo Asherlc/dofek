@@ -69,7 +69,7 @@ daily_metrics_by_week AS (
         toMonday(date) AS week_start,
         avg(steps) AS avg_steps,
         CAST(coalesce(sum(exercise_minutes), 0), 'Float64') AS weekly_exercise_min
-    FROM analytics.v_daily_metrics
+    FROM {{ source('analytics', 'v_daily_metrics') }}
     GROUP BY user_id, toMonday(date)
 ),
 

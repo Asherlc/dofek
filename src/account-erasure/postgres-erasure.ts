@@ -2,13 +2,9 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../db/index.ts";
 import { executeWithSchema, type SchemaExecutionDatabase } from "../db/typed-sql.ts";
-import {
-  decryptCredentialValue,
-  encryptCredentialValue,
-} from "../security/credential-encryption.ts";
-import { slackCredentialContext } from "../security/slack-credential-context.ts";
 
 const SHARED_SYSTEM_TABLES = new Set([
+  "fitness.app_store_notification",
   "fitness.body_region",
   "fitness.daily_metric_type",
   "fitness.device_priority",
@@ -24,7 +20,6 @@ const SHARED_SYSTEM_TABLES = new Set([
   "fitness.provider_priority_audit",
   "fitness.sensor_device_priority",
   "fitness.sensor_provider_priority",
-  "fitness.slack_installation",
   "fitness.stripe_webhook_event",
 ]);
 
@@ -78,15 +73,6 @@ const countRowSchema = z.object({
   count: z.coerce.number().int().nonnegative(),
 });
 const requestRowSchema = z.object({ id: z.uuid() });
-const sharedSlackInstallationRowSchema = z.object({
-  app_id: z.string().nullable(),
-  bot_id: z.string().nullable(),
-  bot_token: z.string().min(1),
-  bot_user_id: z.string().nullable(),
-  replacement_slack_user_id: z.string().min(1),
-  team_id: z.string().min(1),
-  team_name: z.string().nullable(),
-});
 
 interface ManagedTable {
   directOwner: boolean;
@@ -579,117 +565,6 @@ async function cleanupExerciseCatalog(database: SchemaExecutionDatabase): Promis
   );
 }
 
-async function prepareSlackInstallations(
-  database: SchemaExecutionDatabase,
-  userId: string,
-): Promise<void> {
-  await database.execute(
-    sql`CREATE TEMP TABLE account_erasure_slack_team_candidate
-        ON COMMIT DROP
-        AS
-        SELECT
-          deleting_member.team_id,
-          (
-            count(team_member.user_id) FILTER (
-              WHERE team_member.user_id = ${userId}::uuid
-                OR NOT EXISTS (
-                  SELECT 1
-                  FROM fitness.account_erasure_request AS active_erasure
-                  WHERE active_erasure.user_id = team_member.user_id
-                    AND active_erasure.status <> 'completed'
-                )
-            )
-          )::integer AS member_count
-        FROM fitness.slack_team_membership AS deleting_member
-        JOIN fitness.slack_team_membership AS team_member
-          ON team_member.team_id = deleting_member.team_id
-        WHERE deleting_member.user_id = ${userId}::uuid
-        GROUP BY deleting_member.team_id`,
-  );
-  const sharedInstallations = await executeWithSchema(
-    database,
-    sharedSlackInstallationRowSchema,
-    sql`SELECT
-          installation.app_id,
-          installation.bot_id,
-          installation.bot_token,
-          installation.bot_user_id,
-          installation.team_id,
-          installation.team_name,
-          replacement.slack_user_id AS replacement_slack_user_id
-        FROM account_erasure_slack_team_candidate AS candidate
-        JOIN fitness.slack_installation AS installation
-          ON installation.team_id = candidate.team_id
-        JOIN LATERAL (
-          SELECT membership.slack_user_id
-          FROM fitness.slack_team_membership AS membership
-          WHERE membership.team_id = candidate.team_id
-            AND membership.user_id <> ${userId}::uuid
-            AND NOT EXISTS (
-              SELECT 1
-              FROM fitness.account_erasure_request AS active_erasure
-              WHERE active_erasure.user_id = membership.user_id
-                AND active_erasure.status <> 'completed'
-            )
-          ORDER BY membership.user_id
-          LIMIT 1
-        ) AS replacement ON true
-        WHERE candidate.member_count > 1
-        ORDER BY installation.team_id
-        FOR UPDATE OF installation`,
-  );
-
-  for (const installation of sharedInstallations) {
-    const botToken = await decryptCredentialValue(
-      installation.bot_token,
-      slackCredentialContext(installation.team_id, "bot_token"),
-    );
-    const rawInstallation = {
-      ...(installation.app_id ? { appId: installation.app_id } : {}),
-      bot: {
-        ...(installation.bot_id ? { id: installation.bot_id } : {}),
-        token: botToken,
-        ...(installation.bot_user_id ? { userId: installation.bot_user_id } : {}),
-      },
-      isEnterpriseInstall: false,
-      team: {
-        id: installation.team_id,
-        ...(installation.team_name ? { name: installation.team_name } : {}),
-      },
-      tokenType: "bot",
-      user: { id: installation.replacement_slack_user_id },
-    };
-    const encryptedRawInstallation = await encryptCredentialValue(
-      JSON.stringify(rawInstallation),
-      slackCredentialContext(installation.team_id, "raw_installation"),
-    );
-    await database.execute(
-      sql`UPDATE fitness.slack_installation
-          SET
-            installer_slack_user_id =
-              ${installation.replacement_slack_user_id},
-            raw_installation = to_jsonb(${encryptedRawInstallation}::text),
-            updated_at = NOW()
-          WHERE team_id = ${installation.team_id}`,
-    );
-  }
-}
-
-async function cleanupOrphanedSlackInstallations(database: SchemaExecutionDatabase): Promise<void> {
-  await database.execute(
-    sql`DELETE FROM fitness.slack_installation AS installation
-        WHERE installation.team_id IN (
-          SELECT team_id
-          FROM account_erasure_slack_team_candidate
-        )
-          AND NOT EXISTS (
-            SELECT 1
-            FROM fitness.slack_team_membership AS membership
-            WHERE membership.team_id = installation.team_id
-          )`,
-  );
-}
-
 async function deleteOwnedRows(
   database: SchemaExecutionDatabase,
   tables: readonly ManagedTable[],
@@ -807,7 +682,6 @@ export async function erasePostgresAccount(
     }
 
     await prepareExerciseProvenance(transaction, userId);
-    await prepareSlackInstallations(transaction, userId);
     const tables = await inspectManagedTables(transaction);
     const relationships = await inspectForeignKeys(transaction);
     const deletionOrder = dependencySafeDeletionOrder(tables, relationships);
@@ -815,7 +689,6 @@ export async function erasePostgresAccount(
     await deleteLegacyUserAggregateRows(transaction, userId);
     await resetProviderConnectionBackfillCursor(transaction, userId);
     await cleanupExerciseCatalog(transaction);
-    await cleanupOrphanedSlackInstallations(transaction);
     await transaction.execute(
       sql`UPDATE fitness.provider
           SET user_id = NULL

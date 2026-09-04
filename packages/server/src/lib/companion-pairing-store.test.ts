@@ -442,6 +442,13 @@ describe("InMemoryCompanionPairingStore", () => {
 
     await expect(
       store.setClaimedChallengeToken({
+        shortCode: "MISSING",
+        userId: "user-1",
+        companionToken: "dofek_companion_test",
+      }),
+    ).resolves.toBeNull();
+    await expect(
+      store.setClaimedChallengeToken({
         shortCode: challenge.shortCode,
         userId: "user-1",
         companionToken: "dofek_companion_test",
@@ -473,6 +480,12 @@ describe("InMemoryCompanionPairingStore", () => {
     const store = new InMemoryCompanionPairingStore();
     const challenge = await store.createChallenge();
 
+    await expect(
+      store.releaseClaimedChallengeTokenIssuance({
+        shortCode: "MISSING",
+        userId: "user-1",
+      }),
+    ).resolves.toBeNull();
     await expect(
       store.releaseClaimedChallengeTokenIssuance({
         shortCode: challenge.shortCode,

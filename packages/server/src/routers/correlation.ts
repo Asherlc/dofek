@@ -16,16 +16,16 @@ import {
 } from "../repositories/correlation-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
+export type { CorrelationInput } from "../repositories/correlation-repository.ts";
 // Re-export helpers for backward compatibility
 export {
-  extractMetricValue,
-  downsample,
   computeCorrelation,
   computeCorrelationV2,
   computeStats,
+  downsample,
   emptyStats,
+  extractMetricValue,
 };
-export type { CorrelationInput } from "../repositories/correlation-repository.ts";
 
 const correlationDataPointSchema = z.object({
   x: z.number(),

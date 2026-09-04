@@ -1,6 +1,6 @@
 {
   "name": "@dofek/trainingpeaks",
-  "version": "0.1.5",
+  "version": "0.1.34",
   "description": "Unofficial TrainingPeaks internal API client using cookie-based authentication",
   "type": "module",
   "license": "MIT",
@@ -58,6 +58,6 @@
   },
   "devDependencies": {
     "typescript": "6.0.3",
-    "vitest": "3.2.6"
+    "vitest": "4.1.11"
   }
 }

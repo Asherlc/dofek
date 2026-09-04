@@ -13,7 +13,7 @@
  * 6. Returns 200 only after each actionable event is processed or durably queued
  */
 
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import {
   AccountErasureUserFencedError,
   withAccountErasureUserWriteFence,
@@ -72,6 +72,24 @@ function captureWebhookFailure(
   });
 }
 
+async function reconcileExpiredPendingSubscriptions(
+  repository: WebhookSubscriptionRepository,
+  provider: WebhookProvider,
+): Promise<void> {
+  for await (const subscription of repository.iterateExpiredPendingByProviderName(provider.id)) {
+    try {
+      if (subscription.subscriptionExternalId) {
+        await provider.unregisterWebhook(subscription.subscriptionExternalId);
+      }
+      await repository.deletePendingSubscription(subscription.id);
+    } catch (error: unknown) {
+      captureException(error, {
+        tags: { provider: provider.id, webhookPhase: "expired-subscription-reconciliation" },
+      });
+    }
+  }
+}
+
 export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouterDeps): Router {
   const router = Router();
   const webhookSubscriptionRepository = new WebhookSubscriptionRepository(db);
@@ -127,6 +145,16 @@ export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouter
         response = handleValidationChallenge(query, subscription.verifyToken);
         if (response !== null) {
           break;
+        }
+      }
+      if (response === null) {
+        await reconcileExpiredPendingSubscriptions(webhookSubscriptionRepository, provider);
+        for await (const subscription of webhookSubscriptionRepository.iteratePendingByProviderName(
+          providerName,
+        )) {
+          subscriptionFound = true;
+          response = handleValidationChallenge(query, subscription.verifyToken);
+          if (response !== null) break;
         }
       }
       if (!subscriptionFound) {
@@ -283,6 +311,7 @@ export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouter
                 providerId: provider_id,
                 sinceDays: 1,
                 userId: user_id,
+                origin: "manual",
               });
               return "enqueued";
             },
@@ -337,7 +366,7 @@ export async function registerWebhookForProvider(
   userId: string,
 ): Promise<void> {
   const webhookSubscriptionRepository = new WebhookSubscriptionRepository(db);
-  const publicUrl = process.env.PUBLIC_URL ?? "https://dofek.asherlc.com";
+  const publicUrl = process.env.PUBLIC_URL ?? "https://dofek.fit";
   const callbackUrl = `${publicUrl}/api/webhooks/${provider.id}`;
 
   // For app-level webhooks, check if we already have an active subscription
@@ -352,23 +381,83 @@ export async function registerWebhookForProvider(
   }
 
   const verifyToken = randomBytes(32).toString("hex");
-  const result = await provider.registerWebhook(callbackUrl, verifyToken);
-  const userScoped = provider.webhookScope === "user";
+  const pendingId = randomUUID();
+  await webhookSubscriptionRepository.createPendingSubscription(pendingId, {
+    userId: provider.webhookScope === "user" ? userId : null,
+    providerId: provider.webhookScope === "user" ? provider.id : null,
+    providerName: provider.id,
+    verifyToken,
+    metadata: { callbackUrl },
+  });
+  let result: Awaited<ReturnType<WebhookProvider["registerWebhook"]>>;
   try {
-    await webhookSubscriptionRepository.upsertActiveSubscription({
-      userId: userScoped ? userId : null,
-      providerId: userScoped ? provider.id : null,
-      providerName: provider.id,
-      subscriptionExternalId: result.subscriptionId,
-      verifyToken,
+    result = await provider.registerWebhook(callbackUrl, verifyToken);
+  } catch (error: unknown) {
+    captureException(error, {
+      tags: { provider: provider.id, webhookPhase: "provider-registration" },
+    });
+    try {
+      await webhookSubscriptionRepository.deletePendingSubscription(pendingId);
+    } catch (cleanupError: unknown) {
+      captureException(cleanupError, {
+        tags: { provider: provider.id, webhookPhase: "pending-subscription-cleanup" },
+      });
+    }
+    throw error;
+  }
+  try {
+    await webhookSubscriptionRepository.recordPendingSubscriptionExternalId(
+      pendingId,
+      result.subscriptionId,
+    );
+  } catch (error: unknown) {
+    captureException(error, {
+      tags: { provider: provider.id, webhookPhase: "subscription-id-persistence" },
+    });
+    try {
+      await provider.unregisterWebhook(result.subscriptionId);
+    } catch (cleanupError: unknown) {
+      captureException(cleanupError, {
+        tags: { provider: provider.id, webhookPhase: "registration-compensation" },
+      });
+      try {
+        await webhookSubscriptionRepository.recordPendingSubscriptionExternalId(
+          pendingId,
+          result.subscriptionId,
+        );
+      } catch (retryError: unknown) {
+        captureException(retryError, {
+          tags: { provider: provider.id, webhookPhase: "subscription-id-persistence-retry" },
+        });
+      }
+      throw error;
+    }
+    try {
+      await webhookSubscriptionRepository.deletePendingSubscription(pendingId);
+    } catch (cleanupError: unknown) {
+      captureException(cleanupError, {
+        tags: { provider: provider.id, webhookPhase: "pending-subscription-cleanup" },
+      });
+    }
+    throw error;
+  }
+  try {
+    await webhookSubscriptionRepository.activatePendingSubscription(pendingId, provider.id, {
       signingSecret: result.signingSecret ?? null,
       expiresAt: result.expiresAt ?? null,
-      metadata: { callbackUrl },
+      subscriptionExternalId: result.subscriptionId,
     });
   } catch (error: unknown) {
     captureException(error, {
       tags: { provider: provider.id, webhookPhase: "subscription-persistence" },
     });
+    try {
+      await webhookSubscriptionRepository.deletePendingSubscription(pendingId);
+    } catch (cleanupError: unknown) {
+      captureException(cleanupError, {
+        tags: { provider: provider.id, webhookPhase: "pending-subscription-cleanup" },
+      });
+    }
     try {
       await provider.unregisterWebhook(result.subscriptionId);
     } catch (cleanupError: unknown) {

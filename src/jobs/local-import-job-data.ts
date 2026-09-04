@@ -11,5 +11,6 @@ export interface LocalImportJobData {
     | "garmin-dump"
     | "fit-file";
   weightUnit?: "kg" | "lbs";
+  timezone?: string;
   checkpoint?: unknown;
 }

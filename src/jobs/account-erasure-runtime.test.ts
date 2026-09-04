@@ -197,7 +197,6 @@ const snapshot: AccountErasureRemoteSnapshot = {
   posthogDistinctId: "posthog-distinct-1994",
   processorEmails: [],
   providerConnections: [],
-  slackInstallations: [],
   stripe: null,
   webhooks: [],
 };

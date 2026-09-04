@@ -2,6 +2,10 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { type Database, executeWithSchema } from "./typed-sql.ts";
 
+export interface TransactionalFileUploadDatabase extends Database {
+  transaction<T>(operation: (transaction: Database) => Promise<T>): Promise<T>;
+}
+
 export const fileUploadImportTypeSchema = z.enum([
   "apple-health",
   "strong-csv",
@@ -49,6 +53,7 @@ const fileUploadRowSchema = z.object({
   import_job_id: z.string().min(1).nullable(),
   import_since: z.coerce.date(),
   weight_unit: z.enum(["kg", "lbs"]).nullable(),
+  timezone: z.string().min(1).nullable(),
   progress_percent: z.coerce.number().int().min(0).max(100),
   error_code: z.string().nullable(),
   error_message: z.string().nullable(),
@@ -77,6 +82,8 @@ export interface FileUpload {
   importJobId: string | null;
   since: Date;
   weightUnit: "kg" | "lbs" | null;
+  /** Client timezone captured when the durable import job was created. */
+  timezone?: string | null;
   progressPercent: number;
   errorCode: string | null;
   errorMessage: string | null;
@@ -100,6 +107,7 @@ export interface CreateFileUploadInput {
   expiresAt: Date;
   since: Date;
   weightUnit?: "kg" | "lbs";
+  timezone?: string | null;
 }
 
 export interface FileUploadOutboxRequest {
@@ -126,7 +134,7 @@ const fileUploadOutboxRequestRowSchema = z.object({
 const selectFileUploadColumns = sql`id, user_id, import_type, object_key,
   original_filename, content_type, expected_size_bytes, expected_sha256,
   verified_sha256, r2_multipart_upload_id, state, version, part_size_bytes, completion_parts,
-  import_job_id, import_since, weight_unit, progress_percent, error_code,
+  import_job_id, import_since, weight_unit, timezone, progress_percent, error_code,
   error_message, created_at, updated_at, expires_at, completed_at, object_deleted_at`;
 
 function mapFileUpload(row: z.infer<typeof fileUploadRowSchema>): FileUpload {
@@ -148,6 +156,7 @@ function mapFileUpload(row: z.infer<typeof fileUploadRowSchema>): FileUpload {
     importJobId: row.import_job_id,
     since: row.import_since,
     weightUnit: row.weight_unit,
+    timezone: row.timezone,
     progressPercent: row.progress_percent,
     errorCode: row.error_code,
     errorMessage: row.error_message,
@@ -157,6 +166,27 @@ function mapFileUpload(row: z.infer<typeof fileUploadRowSchema>): FileUpload {
     completedAt: row.completed_at,
     objectDeletedAt: row.object_deleted_at,
   };
+}
+
+export async function withLockedFileUpload<T>(
+  database: TransactionalFileUploadDatabase,
+  uploadId: string,
+  operation: (transaction: Database, upload: FileUpload) => Promise<T>,
+): Promise<T> {
+  const parsedUploadId = z.uuid().parse(uploadId);
+  return database.transaction(async (transaction) => {
+    const rows = await executeWithSchema(
+      transaction,
+      fileUploadRowSchema,
+      sql`SELECT ${selectFileUploadColumns}
+          FROM fitness.file_upload
+          WHERE id = ${parsedUploadId}::uuid
+          FOR UPDATE`,
+    );
+    const row = rows[0];
+    if (!row) throw new Error(`Upload ${parsedUploadId} was not found`);
+    return operation(transaction, mapFileUpload(row));
+  });
 }
 
 export async function recordFileUploadCompletionParts(
@@ -237,7 +267,8 @@ function assertMatchingInitiation(existing: FileUpload, input: CreateFileUploadI
     existing.expectedSha256 === input.expectedSha256 &&
     existing.partSizeBytes === input.partSizeBytes &&
     existing.since.getTime() === input.since.getTime() &&
-    existing.weightUnit === (input.weightUnit ?? null);
+    existing.weightUnit === (input.weightUnit ?? existing.weightUnit) &&
+    existing.timezone === (input.timezone ?? existing.timezone);
   if (!matches) {
     throw new Error(`Upload ${input.id} was already initiated with different metadata`);
   }
@@ -253,12 +284,12 @@ export async function createFileUpload(
     sql`INSERT INTO fitness.file_upload (
           id, user_id, import_type, object_key, original_filename, content_type,
           expected_size_bytes, expected_sha256, part_size_bytes, expires_at,
-          import_since, weight_unit
+          import_since, weight_unit, timezone
         ) VALUES (
           ${input.id}::uuid, ${input.userId}::uuid, ${input.importType}, ${input.objectKey},
           ${input.originalFilename}, ${input.contentType}, ${input.expectedSizeBytes},
           ${input.expectedSha256}, ${input.partSizeBytes}, ${input.expiresAt},
-          ${input.since}, ${input.weightUnit ?? null}
+          ${input.since}, ${input.weightUnit ?? null}, ${input.timezone ?? null}
         )
         ON CONFLICT (id) DO NOTHING
         RETURNING ${selectFileUploadColumns}`,
@@ -566,6 +597,95 @@ export async function requeueStuckFileUpload(
         SELECT id FROM requeued`,
   );
   return rows.length > 0;
+}
+
+export interface RetryFailedFileUploadInput {
+  uploadId: string;
+  userId: string;
+  importJobId: string;
+  weightUnit?: "kg" | "lbs";
+  timezone?: string;
+}
+
+/**
+ * Requeue a failed import while its verified source object is still retained.
+ * The upload row and durable outbox are reset in one statement so the retry
+ * cannot be visible without its corrected, persisted import metadata.
+ */
+export async function retryFailedFileUpload(
+  database: Database,
+  input: RetryFailedFileUploadInput,
+): Promise<FileUpload> {
+  const parsed = z
+    .object({
+      uploadId: z.uuid(),
+      userId: z.uuid(),
+      importJobId: z.string().trim().min(1),
+      weightUnit: z.enum(["kg", "lbs"]).optional(),
+      timezone: z.string().trim().min(1).optional(),
+    })
+    .parse(input);
+  const rows = await executeWithSchema(
+    database,
+    fileUploadRowSchema,
+    sql`WITH eligible_retry AS (
+          SELECT upload.id
+          FROM fitness.file_upload AS upload
+          INNER JOIN fitness.file_upload_outbox AS outbox ON outbox.upload_id = upload.id
+          WHERE upload.id = ${parsed.uploadId}::uuid
+            AND upload.user_id = ${parsed.userId}::uuid
+            AND upload.state = 'failed'
+            AND upload.object_deleted_at IS NULL
+            AND outbox.status = 'failed'
+        ), retried_upload AS (
+          UPDATE fitness.file_upload AS upload
+          SET state = 'queued',
+              import_job_id = ${parsed.importJobId},
+              weight_unit = coalesce(${parsed.weightUnit ?? null}, weight_unit),
+              timezone = coalesce(${parsed.timezone ?? null}, timezone),
+              progress_percent = 100,
+              error_code = NULL,
+              error_message = NULL,
+              completed_at = NULL,
+              updated_at = now(),
+              version = version + 1
+          FROM eligible_retry
+          WHERE upload.id = eligible_retry.id
+            AND upload.state = 'failed'
+            AND upload.object_deleted_at IS NULL
+          RETURNING upload.*
+        ), retried_outbox AS (
+          UPDATE fitness.file_upload_outbox AS outbox
+          SET import_job_id = ${parsed.importJobId},
+              status = 'pending',
+              created_at = now(),
+              dispatched_at = NULL,
+              completed_at = NULL,
+              failure_reason = NULL,
+              failed_at = NULL
+          FROM retried_upload
+          WHERE outbox.upload_id = retried_upload.id
+          RETURNING outbox.upload_id
+        )
+        SELECT ${selectFileUploadColumns}
+        FROM retried_upload`,
+  );
+  if (rows[0]) return mapFileUpload(rows[0]);
+
+  const existing = await findFileUploadForUser(database, parsed.uploadId, parsed.userId);
+  if (!existing) throw new Error(`Upload ${parsed.uploadId} was not found`);
+  if (existing.objectDeletedAt) {
+    throw new Error(`Upload ${parsed.uploadId} source object has already been deleted`);
+  }
+  if (
+    existing.state === "queued" &&
+    existing.importJobId === parsed.importJobId &&
+    existing.weightUnit === (parsed.weightUnit ?? existing.weightUnit) &&
+    existing.timezone === (parsed.timezone ?? existing.timezone)
+  ) {
+    return existing;
+  }
+  throw new Error(`Upload ${parsed.uploadId} cannot be retried from ${existing.state}`);
 }
 
 export async function fileUploadObjectKeyExists(

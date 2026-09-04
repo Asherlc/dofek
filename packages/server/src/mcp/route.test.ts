@@ -1,10 +1,19 @@
 import type { AddressInfo } from "node:net";
+import { healthExplorerSnapshotSchema } from "@dofek/mcp-contracts/health-explorer";
+import { captureException } from "dofek/lib/error-reporting";
 import express from "express";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { makeMockSensorStore } from "../routers/test-helpers.ts";
 import { createMcpRouter } from "./route.ts";
 import { validateMcpToken } from "./token-repository.ts";
+import {
+  activityDetailsOutputSchema,
+  activitySummaryOutputSchema,
+  healthTrendsOutputSchema,
+  providersOutputSchema,
+  searchActivitiesOutputSchema,
+} from "./tool-output.ts";
 import { createDofekMcpServer } from "./tools.ts";
 
 const toolTestMocks = vi.hoisted(() => {
@@ -12,35 +21,49 @@ const toolTestMocks = vi.hoisted(() => {
     activityList: vi.fn(),
     activityListRange: vi.fn(),
     activitySearch: vi.fn(),
-    bodyListRange: vi.fn(),
+    activityFindById: vi.fn(),
+    activityGetStream: vi.fn(),
+    bodyListReconciledRange: vi.fn(),
+    climbingActivityEntries: vi.fn(),
+    cyclingPerformanceListRange: vi.fn(),
     dailyMetricsList: vi.fn(),
     dailyMetricsListRange: vi.fn(),
+    dataCoverageList: vi.fn(),
     ensureProvidersRegistered: vi.fn(),
     fingerLoadingRange: vi.fn(),
-    foodCreate: vi.fn(),
     foodDailyTotalsRange: vi.fn(),
+    fingerLoadingActivity: vi.fn(),
     getAllProviders: vi.fn(),
     getConnectedProviderIds: vi.fn(),
     getLastSyncTimes: vi.fn(),
     getLatestErrors: vi.fn(),
+    getScheduledSyncHealth: vi.fn(),
     getProviderSyncQueue: vi.fn(),
     queueAdd: vi.fn(),
     sleepListRange: vi.fn(),
+    strengthExercises: vi.fn(),
+    supplementsList: vi.fn(),
     subjectiveTimeline: vi.fn(),
+    trainingLoadListRange: vi.fn(),
     withUserWriteFence: vi.fn(),
   };
   return {
     ...mocks,
-    activityRepository: vi.fn(() => ({
-      list: mocks.activityList,
-      listRange: mocks.activityListRange,
-      search: mocks.activitySearch,
-    })),
-    dailyMetricsRepository: vi.fn(() => ({
-      list: mocks.dailyMetricsList,
-      listRange: mocks.dailyMetricsListRange,
-    })),
-    subjectiveRepository: vi.fn(() => ({ timeline: mocks.subjectiveTimeline })),
+    activityRepository: vi.fn(function vitestConstructor() {
+      return {
+        findById: mocks.activityFindById,
+        getStream: mocks.activityGetStream,
+        list: mocks.activityList,
+        listRange: mocks.activityListRange,
+        search: mocks.activitySearch,
+      };
+    }),
+    dailyMetricsRepository: vi.fn(function vitestConstructor() {
+      return { list: mocks.dailyMetricsList, listRange: mocks.dailyMetricsListRange };
+    }),
+    subjectiveRepository: vi.fn(function vitestConstructor() {
+      return { timeline: mocks.subjectiveTimeline };
+    }),
   };
 });
 
@@ -56,35 +79,83 @@ vi.mock("../repositories/activity-repository.ts", () => ({
   ActivityRepository: toolTestMocks.activityRepository,
 }));
 
+vi.mock("../repositories/climbing-repository.ts", () => ({
+  ClimbingRepository: vi.fn(function vitestConstructor() {
+    return { getActivityEntries: toolTestMocks.climbingActivityEntries };
+  }),
+}));
+
 vi.mock("../repositories/daily-metrics-repository.ts", () => ({
   DailyMetricsRepository: toolTestMocks.dailyMetricsRepository,
 }));
 
+vi.mock("../repositories/data-coverage-repository.ts", () => ({
+  DataCoverageRepository: vi.fn(function vitestConstructor() {
+    return { list: toolTestMocks.dataCoverageList };
+  }),
+}));
+
+vi.mock("../repositories/cycling-performance-repository.ts", () => ({
+  CyclingPerformanceRepository: vi.fn(function vitestConstructor() {
+    return { listRange: toolTestMocks.cyclingPerformanceListRange };
+  }),
+}));
+
+vi.mock("../repositories/training-load-repository.ts", () => ({
+  TrainingLoadRepository: vi.fn(function vitestConstructor() {
+    return { listRange: toolTestMocks.trainingLoadListRange };
+  }),
+}));
+
 vi.mock("../repositories/food-repository.ts", () => ({
-  FoodRepository: vi.fn(() => ({
-    create: toolTestMocks.foodCreate,
-    dailyTotalsRange: toolTestMocks.foodDailyTotalsRange,
-  })),
+  FoodRepository: vi.fn(function vitestConstructor() {
+    return { dailyTotalsRange: toolTestMocks.foodDailyTotalsRange };
+  }),
 }));
 
 vi.mock("../repositories/sleep-repository.ts", () => ({
-  SleepRepository: vi.fn(() => ({ listRange: toolTestMocks.sleepListRange })),
+  SleepRepository: vi.fn(function vitestConstructor() {
+    return { listRange: toolTestMocks.sleepListRange };
+  }),
 }));
 
 vi.mock("../repositories/body-repository.ts", () => ({
-  BodyRepository: vi.fn(() => ({ listRange: toolTestMocks.bodyListRange })),
+  BodyRepository: vi.fn(function vitestConstructor() {
+    return { listReconciledRange: toolTestMocks.bodyListReconciledRange };
+  }),
 }));
 
-vi.mock("../repositories/climbing-training-log-repository.ts", () => ({
-  readFingerLoadingRange: toolTestMocks.fingerLoadingRange,
+vi.mock("../repositories/climbing-training-log-repository.ts", async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import("../repositories/climbing-training-log-repository.ts")>();
+  return {
+    ...original,
+    readFingerLoadingActivity: toolTestMocks.fingerLoadingActivity,
+    readFingerLoadingRange: toolTestMocks.fingerLoadingRange,
+  };
+});
+
+vi.mock("../repositories/strength-repository.ts", () => ({
+  StrengthRepository: vi.fn(function vitestConstructor() {
+    return { getExercisesForActivity: toolTestMocks.strengthExercises };
+  }),
+}));
+
+vi.mock("../repositories/supplements-repository.ts", () => ({
+  SupplementsRepository: vi.fn(function vitestConstructor() {
+    return { list: toolTestMocks.supplementsList };
+  }),
 }));
 
 vi.mock("../repositories/sync-repository.ts", () => ({
-  SyncRepository: vi.fn(() => ({
-    getConnectedProviderIds: toolTestMocks.getConnectedProviderIds,
-    getLastSyncTimes: toolTestMocks.getLastSyncTimes,
-    getLatestErrors: toolTestMocks.getLatestErrors,
-  })),
+  SyncRepository: vi.fn(function vitestConstructor() {
+    return {
+      getConnectedProviderIds: toolTestMocks.getConnectedProviderIds,
+      getLastSyncTimes: toolTestMocks.getLastSyncTimes,
+      getLatestErrors: toolTestMocks.getLatestErrors,
+      getScheduledSyncHealth: toolTestMocks.getScheduledSyncHealth,
+    };
+  }),
 }));
 
 vi.mock("../repositories/subjective-repository.ts", () => ({
@@ -117,6 +188,11 @@ import * as enqueueSyncJobModule from "dofek/jobs/enqueue-sync-job";
 vi.mock("@sentry/node", () => ({
   captureException: vi.fn(),
 }));
+
+vi.mock("dofek/lib/error-reporting", async (importOriginal) => {
+  const original = await importOriginal<typeof import("dofek/lib/error-reporting")>();
+  return { ...original, captureException: vi.fn() };
+});
 
 vi.mock("dofek/db/account-erasure", () => ({
   withAccountErasureUserWriteFence: (...args: unknown[]) =>
@@ -195,7 +271,6 @@ const mcpScopes = [
   "health:read",
   "activity:read",
   "nutrition:read",
-  "nutrition:write",
   "providers:read",
   "sync:write",
 ] as const;
@@ -213,9 +288,11 @@ const toolListResponseSchema = z.object({
   result: z.object({
     tools: z.array(
       z.object({
+        annotations: z.object({ readOnlyHint: z.boolean().optional() }).optional(),
         description: z.string(),
         inputSchema: z.object({}).passthrough(),
         name: z.string(),
+        outputSchema: z.object({}).passthrough(),
         title: z.string(),
       }),
     ),
@@ -228,6 +305,7 @@ const toolCallResponseSchema = z.object({
   result: z.object({
     content: z.array(z.object({ text: z.string(), type: z.literal("text") })),
     isError: z.boolean().optional(),
+    structuredContent: z.unknown().optional(),
   }),
 });
 
@@ -241,6 +319,7 @@ function parseJsonRpcEvent(text: string): unknown {
 
 function parseToolCallText(responseText: string): unknown {
   const response = toolCallResponseSchema.parse(parseJsonRpcEvent(responseText));
+  if (response.result.isError) throw new Error(response.result.content[0]?.text);
   return JSON.parse(response.result.content[0]?.text ?? "null");
 }
 
@@ -265,6 +344,103 @@ function createToolCallRequest(name: string, toolArguments: Record<string, unkno
       name,
     },
   };
+}
+
+function makeActivitySearchItem(overrides: Record<string, unknown> = {}) {
+  return {
+    avg_hr: null,
+    avg_power: null,
+    canonical_type: "cycling",
+    distance_meters: null,
+    distance_state: { reason: "Distance not recorded", status: "missing" },
+    elevation_gain_m: null,
+    elevation_state: { reason: "Elevation gain not recorded", status: "missing" },
+    end_utc_offset_minutes: 0,
+    ended_at: null,
+    id: "00000000-0000-4000-8000-000000000010",
+    local_time_source: "provider_timezone",
+    modality: null,
+    max_hr: null,
+    name: "Morning Ride",
+    provider_id: "apple_health",
+    provider_type: "cycling",
+    raw_type: "cycling",
+    source_providers: ["apple_health"],
+    start_utc_offset_minutes: 0,
+    started_at: "2026-05-18T10:00:00.000Z",
+    timezone: "UTC",
+    ...overrides,
+  };
+}
+
+function makeActivityMapPreview() {
+  return {
+    height: 576,
+    routePath: [
+      { x: 120.5, y: 300.25 },
+      { x: 640.75, y: 180.5 },
+    ],
+    tiles: [
+      {
+        height: 256,
+        url: "https://tile.openstreetmap.org/13/1310/3166.png",
+        width: 256,
+        x: 0,
+        y: 0,
+      },
+    ],
+    width: 1024,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function resolveJsonSchemaReference(
+  root: Record<string, unknown>,
+  schema: Record<string, unknown>,
+): Record<string, unknown> {
+  const reference = schema.$ref;
+  if (typeof reference !== "string" || !reference.startsWith("#/")) return schema;
+  const resolved = reference
+    .slice(2)
+    .split("/")
+    .map((segment) => segment.replaceAll("~1", "/").replaceAll("~0", "~"))
+    .reduce<unknown>((value, segment) => (isRecord(value) ? value[segment] : undefined), root);
+  return isRecord(resolved) ? resolved : schema;
+}
+
+function jsonSchemaVariants(
+  root: Record<string, unknown>,
+  schema: Record<string, unknown>,
+): Record<string, unknown>[] {
+  const resolved = resolveJsonSchemaReference(root, schema);
+  return [
+    resolved,
+    ...["anyOf", "oneOf", "allOf"].flatMap((keyword) => {
+      const alternatives = resolved[keyword];
+      return Array.isArray(alternatives)
+        ? alternatives.flatMap((alternative) =>
+            isRecord(alternative) ? jsonSchemaVariants(root, alternative) : [],
+          )
+        : [];
+    }),
+  ];
+}
+
+function jsonSchemaAtPath(root: Record<string, unknown>, path: readonly string[]): unknown {
+  let current: Record<string, unknown> = root;
+  for (const segment of path) {
+    const next = jsonSchemaVariants(root, current).flatMap((variant) => {
+      if (segment === "[]") return isRecord(variant.items) ? [variant.items] : [];
+      const properties = variant.properties;
+      return isRecord(properties) && isRecord(properties[segment]) ? [properties[segment]] : [];
+    })[0];
+    if (!next) return undefined;
+    current = next;
+  }
+  return current;
 }
 
 function findListedTool(
@@ -296,23 +472,28 @@ describe("createMcpRouter", () => {
     toolTestMocks.activityList.mockResolvedValue({ items: [], totalCount: 0 });
     toolTestMocks.activityListRange.mockResolvedValue([]);
     toolTestMocks.activitySearch.mockResolvedValue({ items: [], totalCount: 0 });
-    toolTestMocks.bodyListRange.mockResolvedValue([]);
+    toolTestMocks.activityFindById.mockResolvedValue(null);
+    toolTestMocks.bodyListReconciledRange.mockResolvedValue([]);
+    toolTestMocks.climbingActivityEntries.mockResolvedValue([]);
     toolTestMocks.dailyMetricsList.mockResolvedValue([]);
     toolTestMocks.dailyMetricsListRange.mockResolvedValue([]);
+    toolTestMocks.dataCoverageList.mockResolvedValue([]);
     toolTestMocks.ensureProvidersRegistered.mockResolvedValue(undefined);
-    toolTestMocks.foodCreate.mockResolvedValue(null);
     toolTestMocks.foodDailyTotalsRange.mockResolvedValue([]);
+    toolTestMocks.fingerLoadingActivity.mockResolvedValue([]);
     toolTestMocks.fingerLoadingRange.mockResolvedValue([]);
     toolTestMocks.getAllProviders.mockReturnValue([]);
     toolTestMocks.getConnectedProviderIds.mockResolvedValue([]);
     toolTestMocks.getLastSyncTimes.mockResolvedValue([]);
     toolTestMocks.getLatestErrors.mockResolvedValue([]);
+    toolTestMocks.getScheduledSyncHealth.mockResolvedValue([]);
     toolTestMocks.getProviderSyncQueue.mockReturnValue({
       add: toolTestMocks.queueAdd,
       getJob: vi.fn(),
     });
     toolTestMocks.queueAdd.mockResolvedValue({ id: "job-123" });
     toolTestMocks.sleepListRange.mockResolvedValue([]);
+    toolTestMocks.strengthExercises.mockResolvedValue([]);
     toolTestMocks.subjectiveTimeline.mockResolvedValue({ checkIns: [], injuries: [] });
     toolTestMocks.withUserWriteFence.mockImplementation(
       async (
@@ -463,6 +644,32 @@ describe("createMcpRouter", () => {
 
     const parsedResponse = toolListResponseSchema.parse(parseJsonRpcEvent(response.text));
     const tools = parsedResponse.result.tools;
+    for (const tool of tools) {
+      expect(tool.outputSchema).toMatchObject({ type: "object" });
+    }
+    expect(findListedTool(tools, "get_activity_summary").outputSchema).toMatchObject({
+      properties: {
+        result: {
+          properties: {
+            summaries: { type: "array" },
+            unclassified_pct: { type: "number" },
+          },
+          type: "object",
+        },
+      },
+    });
+    expect(findListedTool(tools, "get_health_trends").description).toContain("HRV and step");
+    expect(findListedTool(tools, "render_health_explorer").description).toContain(
+      "interactive Dofek Analytics Explorer",
+    );
+    expect(findListedTool(tools, "get_sleep_summary").description).toContain("Summarize sleep");
+    expect(findListedTool(tools, "search_activities").description).toContain(
+      "optional date range (defaulting to the last 30 days)",
+    );
+    expect(findListedTool(tools, "list_providers").description).toContain(
+      "configured Dofek providers",
+    );
+    expect(findListedTool(tools, "list_providers").description).toContain("last-sync timestamps");
     expect(findListedTool(tools, "get_daily_health_summary").inputSchema).toMatchObject({
       properties: {
         date: { format: "date", type: "string" },
@@ -475,6 +682,7 @@ describe("createMcpRouter", () => {
       properties: {
         from: { format: "date", type: "string" },
         limit: { maximum: 25, minimum: 1, type: "integer" },
+        include: { type: "array" },
         query: { maxLength: 200, type: "string" },
         to: { format: "date", type: "string" },
       },
@@ -487,6 +695,32 @@ describe("createMcpRouter", () => {
         metrics: { type: "array" },
         start_date: { format: "date", type: "string" },
         timezone: { type: "string" },
+      },
+      required: ["start_date", "end_date"],
+      type: "object",
+    });
+    expect(findListedTool(tools, "get_data_coverage").inputSchema).toMatchObject({
+      properties: {},
+      type: "object",
+    });
+    expect(findListedTool(tools, "get_training_load").inputSchema).toMatchObject({
+      properties: {
+        end_date: { format: "date", type: "string" },
+        start_date: { format: "date", type: "string" },
+      },
+      required: ["start_date", "end_date"],
+      type: "object",
+    });
+    expect(findListedTool(tools, "get_cycling_performance").inputSchema).toMatchObject({
+      required: ["start_date", "end_date"],
+      type: "object",
+    });
+    expect(findListedTool(tools, "render_health_explorer").inputSchema).toMatchObject({
+      properties: {
+        end_date: { format: "date", type: "string" },
+        granularity: { enum: ["daily", "weekly"], type: "string" },
+        metrics: { type: "array" },
+        start_date: { format: "date", type: "string" },
       },
       required: ["start_date", "end_date"],
       type: "object",
@@ -507,7 +741,13 @@ describe("createMcpRouter", () => {
       properties: {
         canonical_types: { type: "array" },
         group_by: {
-          enum: ["canonical_type", "week", "canonical_type_and_week"],
+          enum: [
+            "canonical_type",
+            "week",
+            "canonical_type_and_week",
+            "canonical_type_and_modality",
+            "canonical_type_and_purpose",
+          ],
           type: "string",
         },
       },
@@ -523,6 +763,14 @@ describe("createMcpRouter", () => {
       required: ["start_date", "end_date"],
       type: "object",
     });
+    expect(findListedTool(tools, "get_climbing_sessions").inputSchema).toMatchObject({
+      required: ["start_date", "end_date"],
+      type: "object",
+    });
+    expect(findListedTool(tools, "get_strength_sessions").inputSchema).toMatchObject({
+      required: ["start_date", "end_date"],
+      type: "object",
+    });
     expect(findListedTool(tools, "get_nutrition_summary").inputSchema).toMatchObject({
       required: ["start_date", "end_date"],
       type: "object",
@@ -531,16 +779,25 @@ describe("createMcpRouter", () => {
       required: ["start_date", "end_date"],
       type: "object",
     });
-    expect(findListedTool(tools, "log_food").inputSchema).toMatchObject({
+    expect(findListedTool(tools, "get_activity_details").inputSchema).toMatchObject({
+      properties: { activity_id: { format: "uuid", type: "string" } },
+      required: ["activity_id"],
+      type: "object",
+    });
+    expect(findListedTool(tools, "get_activity_streams").inputSchema).toMatchObject({
       properties: {
-        mealType: { enum: ["breakfast", "lunch", "dinner", "snack", "other"], type: "string" },
-        occurredAt: { format: "date-time", type: "string" },
-        text: { maxLength: 500, minLength: 1, type: "string" },
+        activity_id: { format: "uuid", type: "string" },
+        channels: { type: "array" },
+        downsample_to: { maximum: 2000, minimum: 1, type: "integer" },
       },
-      required: ["text"],
+      required: ["activity_id"],
       type: "object",
     });
     expect(findListedTool(tools, "list_providers").inputSchema).toMatchObject({
+      properties: {},
+      type: "object",
+    });
+    expect(findListedTool(tools, "get_supplements").inputSchema).toMatchObject({
       properties: {},
       type: "object",
     });
@@ -552,6 +809,217 @@ describe("createMcpRouter", () => {
       required: ["providerId"],
       type: "object",
     });
+    for (const name of [
+      "get_daily_health_summary",
+      "get_health_trends",
+      "get_data_coverage",
+      "get_training_load",
+      "get_cycling_performance",
+      "get_sleep_summary",
+      "search_activities",
+      "get_activity_details",
+      "get_activity_streams",
+      "get_activity_summary",
+      "get_finger_loading",
+      "get_climbing_sessions",
+      "get_strength_sessions",
+      "get_nutrition_summary",
+      "get_body_metrics",
+      "get_subjective_timeline",
+      "get_supplements",
+      "list_providers",
+      "render_health_explorer",
+    ]) {
+      expect(findListedTool(tools, name).annotations).toMatchObject({ readOnlyHint: true });
+    }
+    expect(findListedTool(tools, "start_provider_sync").annotations?.readOnlyHint).not.toBe(true);
+  });
+
+  it("advertises concrete sentinel properties for every output schema", async () => {
+    authorizeMcpToken();
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: { id: 2, jsonrpc: "2.0", method: "tools/list" },
+    });
+    const tools = toolListResponseSchema.parse(parseJsonRpcEvent(response.text)).result.tools;
+    const sentinels = [
+      { name: "get_daily_health_summary", path: ["result", "source_providers"] },
+      {
+        name: "get_health_trends",
+        path: [
+          "result",
+          "series",
+          "[]",
+          "points",
+          "[]",
+          "baseline_relative",
+          "baseline",
+          "standardDeviation",
+        ],
+      },
+      { name: "get_data_coverage", path: ["result", "[]", "total_days_observed"] },
+      {
+        name: "get_training_load",
+        path: ["result", "rows", "[]", "coverage", "chronic_window_days"],
+      },
+      {
+        name: "get_cycling_performance",
+        path: ["result", "summary", "elevation_gain", "coverage", "activities_with_elevation"],
+      },
+      { name: "render_health_explorer", path: ["coverage", "by_metric"] },
+      {
+        name: "get_sleep_summary",
+        path: ["result", "[]", "local_time_context", "source"],
+      },
+      {
+        name: "search_activities",
+        path: ["result", "items", "[]", "location", "mapPreview", "routePath"],
+      },
+      {
+        name: "get_activity_summary",
+        path: ["result", "summaries", "[]", "power_by_modality", "indoor", "activities_with_power"],
+      },
+      {
+        name: "get_finger_loading",
+        path: ["result", "[]", "effective_load_formula"],
+      },
+      {
+        name: "get_nutrition_summary",
+        path: ["result", "[]", "excluded_providers"],
+      },
+      {
+        name: "get_body_metrics",
+        path: ["result", "[]", "source_provider_by_metric", "weight_kg"],
+      },
+      {
+        name: "get_subjective_timeline",
+        path: ["result", "injuries", "[]", "resolved_date"],
+      },
+      { name: "list_providers", path: ["result", "[]", "sync_health", "last_success"] },
+      { name: "start_provider_sync", path: ["result", "queueName"] },
+      {
+        name: "get_activity_details",
+        path: ["result", "activity", "source_external_ids"],
+      },
+      { name: "get_activity_streams", path: ["result", "points", "[]", "recorded_at"] },
+      {
+        name: "get_climbing_sessions",
+        path: ["result", "aggregates", "grade_distribution"],
+      },
+      {
+        name: "get_strength_sessions",
+        path: ["result", "aggregates", "by_muscle_group"],
+      },
+      { name: "get_supplements", path: ["result", "[]", "meal"] },
+    ] as const;
+
+    expect(tools).toHaveLength(sentinels.length);
+    for (const { name, path } of sentinels) {
+      const outputSchema = findListedTool(tools, name).outputSchema;
+      expect.soft(jsonSchemaAtPath(outputSchema, path), `${name}: ${path.join(".")}`).toBeDefined();
+    }
+    const activityDetailsSchema = findListedTool(tools, "get_activity_details").outputSchema;
+    expect
+      .soft(
+        jsonSchemaAtPath(activityDetailsSchema, ["result", "activity", "distance_meters"]),
+        "get_activity_details: result.activity.distance_meters",
+      )
+      .toBeDefined();
+    expect
+      .soft(
+        jsonSchemaAtPath(activityDetailsSchema, [
+          "result",
+          "activity",
+          "location",
+          "mapPreview",
+          "routePath",
+        ]),
+        "get_activity_details: result.activity.location.mapPreview.routePath",
+      )
+      .toBeDefined();
+  });
+
+  it("returns object-root structured content for JSON tool calls", async () => {
+    authorizeMcpToken();
+    toolTestMocks.activityListRange.mockResolvedValue([
+      {
+        avg_hr: 140,
+        avg_power: 220,
+        canonical_type: "cycling",
+        elevation_gain_m: 450,
+        ended_at: "2026-08-01T11:00:00.000Z",
+        max_hr: 168,
+        max_power: 610,
+        modality: "indoor",
+        provider_type: "ride",
+        started_at: "2026-08-01T10:00:00.000Z",
+      },
+    ]);
+
+    const activitySummaryResponse = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_activity_summary", {
+        end_date: "2026-09-01",
+        start_date: "2026-08-01",
+      }),
+    });
+    const providersResponse = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("list_providers", {}),
+    });
+
+    expect(
+      activitySummaryOutputSchema.parse(
+        toolCallResponseSchema.parse(parseJsonRpcEvent(activitySummaryResponse.text)).result
+          .structuredContent,
+      ),
+    ).toEqual({
+      result: {
+        summaries: [
+          {
+            avg_duration_minutes: 60,
+            avg_elevation_gain_m: 450,
+            avg_hr: 140,
+            canonical_type: "cycling",
+            count: 1,
+            max_hr_peak: 168,
+            power_by_modality: {
+              indoor: {
+                activities_total: 1,
+                activities_with_power: 1,
+                avg_power: null,
+                max_power_peak: null,
+                pct: 100,
+              },
+              outdoor: {
+                activities_total: 0,
+                activities_with_power: 0,
+                avg_power: null,
+                max_power_peak: null,
+                pct: 0,
+              },
+              unknown: {
+                activities_total: 0,
+                activities_with_power: 0,
+                avg_power: null,
+                max_power_peak: null,
+                pct: 0,
+              },
+            },
+            total_duration_minutes: 60,
+            total_elevation_gain_m: 450,
+          },
+        ],
+        unclassified_pct: 0,
+      },
+    });
+    expect(
+      providersOutputSchema.parse(
+        toolCallResponseSchema.parse(parseJsonRpcEvent(providersResponse.text)).result
+          .structuredContent,
+      ),
+    ).toEqual({ result: [] });
   });
 
   it("returns a subjective timeline using the request context timezone", async () => {
@@ -599,7 +1067,21 @@ describe("createMcpRouter", () => {
   it("returns daily health summaries from the metrics repository", async () => {
     authorizeMcpToken();
     toolTestMocks.dailyMetricsList.mockResolvedValue([
-      { date: "2026-05-20", restingHeartRate: 52 },
+      {
+        date: "2026-05-20",
+        distance_km: null,
+        exercise_minutes: null,
+        flights_climbed: null,
+        hrv: null,
+        respiratory_rate_avg: null,
+        skin_temp_c: null,
+        source_providers: ["apple_health"],
+        spo2_avg: null,
+        stand_hours: null,
+        steps: null,
+        user_id: "user-id",
+        walking_speed: null,
+      },
     ]);
 
     const response = await request(createTestApp(), {
@@ -612,7 +1094,18 @@ describe("createMcpRouter", () => {
 
     expect(parseToolCallText(response.text)).toEqual({
       date: "2026-05-20",
-      restingHeartRate: 52,
+      distance_km: null,
+      exercise_minutes: null,
+      flights_climbed: null,
+      hrv: null,
+      respiratory_rate_avg: null,
+      skin_temp_c: null,
+      source_providers: ["apple_health"],
+      spo2_avg: null,
+      stand_hours: null,
+      steps: null,
+      user_id: "user-id",
+      walking_speed: null,
     });
     expect(toolTestMocks.dailyMetricsRepository).toHaveBeenCalledWith(
       expect.anything(),
@@ -656,7 +1149,9 @@ describe("createMcpRouter", () => {
       expect.objectContaining({
         activity_id: "activity-1",
         effective_load_kg: 90,
+        effective_load_formula: "bodyweight_kg + external_load_kg",
         exercise: "max_hang",
+        total_time_under_tension_seconds: 50,
       }),
     ]);
     expect(toolTestMocks.fingerLoadingRange).toHaveBeenCalledWith({
@@ -668,10 +1163,304 @@ describe("createMcpRouter", () => {
     });
   });
 
+  it("returns climbing sessions with grade and send aggregates", async () => {
+    authorizeMcpToken();
+    toolTestMocks.activityListRange.mockResolvedValue([
+      {
+        avg_hr: 126,
+        ended_at: "2026-07-09T20:30:00.000Z",
+        id: "activity-1",
+        name: "Pacific Pipe",
+        started_at: "2026-07-09T19:00:00.000Z",
+      },
+    ]);
+    toolTestMocks.climbingActivityEntries.mockResolvedValue([
+      {
+        toDetail: () => ({
+          ascentType: null,
+          attemptCount: 3,
+          attempts: [],
+          climbType: "boulder",
+          grade: "V5",
+          gradeSystem: "v_scale",
+          holdType: null,
+          id: "climb-1",
+          lead: null,
+          locationName: "Pacific Pipe",
+          routeName: "Blue Circuit",
+          sent: true,
+          sourceName: "kaya",
+          wallAngleDegrees: 30,
+        }),
+      },
+    ]);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_climbing_sessions", {
+        end_date: "2026-07-10",
+        start_date: "2026-07-01",
+      }),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual({
+      aggregates: {
+        grade_distribution: [
+          {
+            attempts: 3,
+            discipline: "boulder",
+            grade: "V5",
+            grade_system: "v_scale",
+            sends: 1,
+          },
+        ],
+        max_grade_by_discipline: { boulder: "V5", route: null },
+        send_rate: 1,
+        volume: { attempts: 3, climbs: 1, sends: 1, total_vertical_m: null },
+      },
+      sessions: [
+        expect.objectContaining({
+          activity_id: "activity-1",
+          avg_hr: 126,
+          duration_minutes: 90,
+          gym_vs_crag: null,
+          climbs: [
+            expect.objectContaining({
+              discipline: "boulder",
+              wall_angle_degrees: 30,
+            }),
+          ],
+          total_vertical_m: null,
+        }),
+      ],
+    });
+    expect(toolTestMocks.activityListRange).toHaveBeenCalledWith("2026-07-01", "2026-07-10", [
+      "climbing",
+    ]);
+  });
+
+  it("preserves route disciplines and incomplete climbing-session data", async () => {
+    authorizeMcpToken();
+    toolTestMocks.activityListRange.mockResolvedValue([
+      {
+        avg_hr: null,
+        ended_at: null,
+        id: "activity-2",
+        name: null,
+        started_at: "2026-07-11T19:00:00.000Z",
+      },
+    ]);
+    toolTestMocks.climbingActivityEntries.mockResolvedValue([
+      {
+        toDetail: () => ({
+          ascentType: "redpoint",
+          attemptCount: 1,
+          attempts: [],
+          climbType: "route",
+          grade: "5.10",
+          gradeSystem: "yds",
+          holdType: null,
+          id: "climb-1",
+          lead: true,
+          locationName: null,
+          routeName: "Lead route",
+          sent: true,
+          sourceName: "kaya",
+          wallAngleDegrees: null,
+        }),
+      },
+      {
+        toDetail: () => ({
+          ascentType: null,
+          attemptCount: 2,
+          attempts: [],
+          climbType: "route",
+          grade: "5.11",
+          gradeSystem: "yds",
+          holdType: null,
+          id: "climb-2",
+          lead: false,
+          locationName: null,
+          routeName: "Top-rope route",
+          sent: false,
+          sourceName: "kaya",
+          wallAngleDegrees: null,
+        }),
+      },
+      {
+        toDetail: () => ({
+          ascentType: "onsight",
+          attemptCount: 1,
+          attempts: [],
+          climbType: "route",
+          grade: "5.12",
+          gradeSystem: "yds",
+          holdType: null,
+          id: "climb-3",
+          lead: null,
+          locationName: null,
+          routeName: "Unspecified route",
+          sent: true,
+          sourceName: "mountain_project",
+          wallAngleDegrees: null,
+        }),
+      },
+      {
+        toDetail: () => ({
+          ascentType: null,
+          attemptCount: 1,
+          attempts: [],
+          climbType: "route",
+          grade: "not-a-grade",
+          gradeSystem: "yds",
+          holdType: null,
+          id: "climb-4",
+          lead: true,
+          locationName: null,
+          routeName: null,
+          sent: true,
+          sourceName: "kaya",
+          wallAngleDegrees: null,
+        }),
+      },
+      {
+        toDetail: () => ({
+          ascentType: null,
+          attemptCount: 1,
+          attempts: [],
+          climbType: "route",
+          grade: "5.10",
+          gradeSystem: "yds",
+          holdType: null,
+          id: "climb-5",
+          lead: true,
+          locationName: null,
+          routeName: "Lead route",
+          sent: false,
+          sourceName: "kaya",
+          wallAngleDegrees: null,
+        }),
+      },
+    ]);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_climbing_sessions", {
+        end_date: "2026-07-11",
+        start_date: "2026-07-11",
+      }),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual({
+      aggregates: {
+        grade_distribution: [
+          {
+            attempts: 2,
+            discipline: "lead",
+            grade: "5.10",
+            grade_system: "yds",
+            sends: 1,
+          },
+          {
+            attempts: 2,
+            discipline: "top_rope",
+            grade: "5.11",
+            grade_system: "yds",
+            sends: 0,
+          },
+          {
+            attempts: 1,
+            discipline: "route",
+            grade: "5.12",
+            grade_system: "yds",
+            sends: 1,
+          },
+          {
+            attempts: 1,
+            discipline: "lead",
+            grade: "not-a-grade",
+            grade_system: "yds",
+            sends: 1,
+          },
+        ],
+        max_grade_by_discipline: { boulder: null, route: "5.12" },
+        send_rate: 0.6,
+        volume: { attempts: 6, climbs: 5, sends: 3, total_vertical_m: null },
+      },
+      sessions: [
+        expect.objectContaining({
+          activity_id: "activity-2",
+          avg_hr: null,
+          duration_minutes: null,
+          location: null,
+          name: null,
+        }),
+      ],
+    });
+  });
+
+  it("returns strength sessions with volume-load by muscle group", async () => {
+    authorizeMcpToken();
+    toolTestMocks.activityListRange.mockResolvedValue([
+      {
+        avg_hr: 110,
+        ended_at: "2026-07-09T20:00:00.000Z",
+        id: "strength-1",
+        name: "Upper Body",
+        started_at: "2026-07-09T19:00:00.000Z",
+      },
+    ]);
+    toolTestMocks.strengthExercises.mockResolvedValue([
+      {
+        toDetail: () => ({
+          equipment: null,
+          exerciseIndex: 0,
+          exerciseName: "Pull-up",
+          exerciseType: "strength",
+          muscleGroups: ["back"],
+          sets: [
+            {
+              durationSeconds: null,
+              notes: null,
+              reps: 5,
+              rpe: null,
+              setIndex: 0,
+              setType: null,
+              weightKg: 20,
+            },
+          ],
+        }),
+      },
+    ]);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_strength_sessions", {
+        end_date: "2026-07-10",
+        start_date: "2026-07-01",
+      }),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual({
+      aggregates: {
+        by_muscle_group: [{ muscle_group: "back", volume_load_kg: 100 }],
+        volume_load_kg: 100,
+      },
+      sessions: [
+        expect.objectContaining({
+          activity_id: "strength-1",
+          avg_hr: 110,
+          duration_minutes: 60,
+          volume_load_kg: 100,
+        }),
+      ],
+    });
+  });
+
   it("searches activities and applies the query filter", async () => {
     authorizeMcpToken();
     toolTestMocks.activitySearch.mockResolvedValue({
-      items: [{ canonical_type: "cycling", name: "Morning Ride" }],
+      items: [makeActivitySearchItem()],
       totalCount: 1,
     });
 
@@ -685,7 +1474,7 @@ describe("createMcpRouter", () => {
       }),
     });
 
-    expect(parseToolCallText(response.text)).toEqual({
+    expect(parseToolCallText(response.text)).toMatchObject({
       items: [{ canonical_type: "cycling", name: "Morning Ride" }],
       totalCount: 1,
     });
@@ -701,6 +1490,120 @@ describe("createMcpRouter", () => {
       limit: 5,
       query: "cycling",
       startDate: "2026-05-10",
+    });
+  });
+
+  it("reports search activity failures with safe tool context", async () => {
+    authorizeMcpToken();
+    const error = new Error("database search failed");
+    toolTestMocks.activitySearch.mockRejectedValue(error);
+
+    await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("search_activities", {
+        from: "2026-05-10",
+        query: "private activity text",
+        to: "2026-05-18",
+      }),
+    });
+
+    expect(captureException).toHaveBeenCalledWith(error, {
+      extra: {
+        endDate: "2026-05-18",
+        hasQuery: true,
+        limit: 10,
+        startDate: "2026-05-10",
+      },
+      tags: { mcp_tool: "search_activities" },
+    });
+    expect(captureException).not.toHaveBeenCalledWith(
+      error,
+      expect.objectContaining({ extra: expect.objectContaining({ query: expect.anything() }) }),
+    );
+  });
+
+  it("omits map previews from activity search unless requested", async () => {
+    authorizeMcpToken();
+    toolTestMocks.activitySearch.mockResolvedValue({
+      items: [
+        {
+          ...makeActivitySearchItem(),
+          location: {
+            centroidLat: 37.8,
+            centroidLng: -122.4,
+            mapPreview: makeActivityMapPreview(),
+          },
+        },
+      ],
+      totalCount: 1,
+    });
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("search_activities", { to: "2026-05-18" }),
+    });
+
+    expect(parseToolCallText(response.text)).toMatchObject({
+      items: [{ location: { centroidLat: 37.8, centroidLng: -122.4 }, name: "Morning Ride" }],
+      totalCount: 1,
+    });
+  });
+
+  it("returns a complete map preview when activity search requests it", async () => {
+    authorizeMcpToken();
+    toolTestMocks.activitySearch.mockResolvedValue({
+      items: [
+        {
+          ...makeActivitySearchItem(),
+          location: {
+            centroidLat: 37.8,
+            centroidLng: -122.4,
+            mapPreview: makeActivityMapPreview(),
+          },
+        },
+      ],
+      totalCount: 1,
+    });
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("search_activities", {
+        include: ["mapPreview"],
+        to: "2026-05-18",
+      }),
+    });
+    const structuredContent = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text)).result
+      .structuredContent;
+
+    expect(searchActivitiesOutputSchema.parse(structuredContent)).toMatchObject({
+      result: {
+        items: [
+          {
+            location: {
+              centroidLat: 37.8,
+              centroidLng: -122.4,
+              mapPreview: {
+                height: 576,
+                routePath: [
+                  { x: 120.5, y: 300.25 },
+                  { x: 640.75, y: 180.5 },
+                ],
+                tiles: [
+                  {
+                    height: 256,
+                    url: "https://tile.openstreetmap.org/13/1310/3166.png",
+                    width: 256,
+                    x: 0,
+                    y: 0,
+                  },
+                ],
+                width: 1024,
+              },
+            },
+          },
+        ],
+        totalCount: 1,
+      },
     });
   });
 
@@ -722,24 +1625,33 @@ describe("createMcpRouter", () => {
       }),
     });
 
-    expect(parseToolCallText(response.text)).toEqual([
-      {
-        metrics: {
-          hrv: { avg: 40, max: 40, min: 40 },
-          resting_hr: { avg: 57, max: 57, min: 57 },
-          steps: { avg: 6_000, max: 6_000, min: 6_000 },
-        },
-        week: "2026-W20",
+    expect(parseToolCallText(response.text)).toMatchObject({
+      range: {
+        start_date: "2026-05-18",
+        end_date: "2026-05-19",
+        granularity: "weekly",
+        timezone: "UTC",
       },
-      {
-        metrics: {
-          hrv: { avg: 55, max: 60, min: 50 },
-          resting_hr: { avg: 54, max: 55, min: 53 },
-          steps: { avg: 9_000, max: 10_000, min: 8_000 },
-        },
-        week: "2026-W21",
+      requested_metrics: ["hrv", "resting_hr", "steps"],
+      diagnostics: {
+        metrics_with_no_data: [],
+        range_clamped: false,
+        earliest_available: null,
       },
-    ]);
+      series: [
+        expect.objectContaining({
+          metric: "hrv",
+          points: [
+            expect.objectContaining({ key: "2026-W20", value: 40 }),
+            expect.objectContaining({ key: "2026-W21", value: 55 }),
+          ],
+          summary: { average: 47.5, min: 40, max: 55 },
+          coverage: expect.objectContaining({ observed_days: 2 }),
+        }),
+        expect.objectContaining({ metric: "resting_hr" }),
+        expect.objectContaining({ metric: "steps" }),
+      ],
+    });
     expect(toolTestMocks.dailyMetricsListRange).toHaveBeenCalledWith(
       "2026-05-18",
       "2026-05-19",
@@ -747,7 +1659,7 @@ describe("createMcpRouter", () => {
     );
   });
 
-  it("returns default daily health trends and omits unavailable metrics", async () => {
+  it("returns default daily health trends with diagnostics for unavailable metrics", async () => {
     authorizeMcpToken();
     const sensorStore = makeMockSensorStore();
     toolTestMocks.dailyMetricsListRange.mockResolvedValue([
@@ -764,14 +1676,344 @@ describe("createMcpRouter", () => {
       }),
     });
 
-    expect(parseToolCallText(response.text)).toEqual([
-      { date: "2026-05-18", metrics: { hrv: { avg: 50, max: 50, min: 50 } } },
-      { date: "2026-05-19", metrics: { steps: { avg: 10_000, max: 10_000, min: 10_000 } } },
-    ]);
+    expect(parseToolCallText(response.text)).toMatchObject({
+      range: {
+        start_date: "2026-05-18",
+        end_date: "2026-05-19",
+        granularity: "daily",
+        timezone: "America/Los_Angeles",
+      },
+      diagnostics: {
+        metrics_with_no_data: [
+          "resting_hr",
+          "spo2",
+          "respiratory_rate",
+          "sleep_efficiency",
+          "skin_temp",
+          "distance_km",
+          "exercise_minutes",
+          "flights_climbed",
+        ],
+        range_clamped: false,
+        earliest_available: "2026-05-18",
+      },
+      series: expect.arrayContaining([
+        expect.objectContaining({
+          metric: "hrv",
+          points: [
+            expect.objectContaining({ key: "2026-05-18", value: 50 }),
+            expect.objectContaining({ key: "2026-05-19", value: null }),
+          ],
+          coverage: expect.objectContaining({ observed_days: 1 }),
+        }),
+        expect.objectContaining({
+          metric: "resting_hr",
+          points: [],
+          note: "no_data_in_range",
+        }),
+        expect.objectContaining({
+          metric: "steps",
+          points: [
+            expect.objectContaining({ key: "2026-05-18", value: null }),
+            expect.objectContaining({ key: "2026-05-19", value: 10_000 }),
+          ],
+        }),
+      ]),
+    });
     expect(vi.mocked(sensorStore.query).mock.calls[0]?.[2]).toMatchObject({
       rhrEndDate: "2026-05-19",
       rhrWindowStart: "2026-05-17",
       timezone: "America/Los_Angeles",
+    });
+  });
+
+  it("returns first and last observed dates for every health metric", async () => {
+    authorizeMcpToken();
+    toolTestMocks.dataCoverageList.mockResolvedValue([
+      {
+        metric: "resting_hr",
+        first_observed: "2026-03-09",
+        last_observed: "2026-09-01",
+        total_days_observed: 170,
+        source_providers: ["apple_health"],
+      },
+    ]);
+
+    const response = await request(createTestApp(makeMockSensorStore()), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_data_coverage", {}),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual([
+      {
+        metric: "resting_hr",
+        first_observed: "2026-03-09",
+        last_observed: "2026-09-01",
+        total_days_observed: 170,
+        source_providers: ["apple_health"],
+      },
+    ]);
+  });
+
+  it("returns acute and chronic training load with window coverage", async () => {
+    authorizeMcpToken();
+    toolTestMocks.trainingLoadListRange.mockResolvedValue([
+      {
+        date: "2026-09-01",
+        daily_load: 75,
+        acute_load_7d: 420,
+        chronic_load_28d: 350,
+        workload_ratio: 1.2,
+        coverage: { acute_window_days: 7, chronic_window_days: 28 },
+      },
+    ]);
+
+    const response = await request(createTestApp(makeMockSensorStore()), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_training_load", {
+        start_date: "2026-08-01",
+        end_date: "2026-09-01",
+      }),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual({
+      range: {
+        start_date: "2026-08-01",
+        end_date: "2026-09-01",
+        timezone: "UTC",
+      },
+      rows: [
+        {
+          date: "2026-09-01",
+          daily_load: 75,
+          acute_load_7d: 420,
+          chronic_load_28d: 350,
+          workload_ratio: 1.2,
+          coverage: { acute_window_days: 7, chronic_window_days: 28 },
+        },
+      ],
+    });
+    expect(toolTestMocks.trainingLoadListRange).toHaveBeenCalledWith("2026-08-01", "2026-09-01");
+  });
+
+  it("returns exact-range cycling performance and rolling power coverage", async () => {
+    authorizeMcpToken();
+    toolTestMocks.cyclingPerformanceListRange.mockResolvedValue({
+      activities: [],
+      rolling_90_day_best: { "5s": null, "1m": null, "5m": null, "20m": null },
+      summary: {
+        power_coverage: { activities_with_power: 0, activities_total: 0, pct: 0 },
+        power_availability_by_modality: {
+          indoor: {
+            first_observed: "2026-08-01",
+            last_observed: "2026-09-01",
+            activities_with_power: 3,
+            activities_total: 4,
+            pct: 75,
+            source_providers: ["peloton"],
+          },
+          outdoor: {
+            first_observed: null,
+            last_observed: null,
+            activities_with_power: 0,
+            activities_total: 2,
+            pct: 0,
+            source_providers: [],
+          },
+          unknown: {
+            first_observed: null,
+            last_observed: null,
+            activities_with_power: 0,
+            activities_total: 0,
+            pct: 0,
+            source_providers: [],
+          },
+        },
+        elevation_gain: {
+          total_elevation_gain_m: null,
+          avg_elevation_gain_m: null,
+          coverage: { activities_with_elevation: 0, activities_total: 0, pct: 0 },
+        },
+      },
+    });
+
+    const response = await request(createTestApp(makeMockSensorStore()), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_cycling_performance", {
+        start_date: "2026-08-01",
+        end_date: "2026-09-01",
+      }),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual({
+      range: { start_date: "2026-08-01", end_date: "2026-09-01", timezone: "UTC" },
+      activities: [],
+      rolling_90_day_best: { "5s": null, "1m": null, "5m": null, "20m": null },
+      summary: {
+        power_coverage: { activities_with_power: 0, activities_total: 0, pct: 0 },
+        power_availability_by_modality: {
+          indoor: {
+            first_observed: "2026-08-01",
+            last_observed: "2026-09-01",
+            activities_with_power: 3,
+            activities_total: 4,
+            pct: 75,
+            source_providers: ["peloton"],
+          },
+          outdoor: {
+            first_observed: null,
+            last_observed: null,
+            activities_with_power: 0,
+            activities_total: 2,
+            pct: 0,
+            source_providers: [],
+          },
+          unknown: {
+            first_observed: null,
+            last_observed: null,
+            activities_with_power: 0,
+            activities_total: 0,
+            pct: 0,
+            source_providers: [],
+          },
+        },
+        elevation_gain: {
+          total_elevation_gain_m: null,
+          avg_elevation_gain_m: null,
+          coverage: { activities_with_elevation: 0, activities_total: 0, pct: 0 },
+        },
+      },
+    });
+    expect(toolTestMocks.cyclingPerformanceListRange).toHaveBeenCalledWith(
+      "2026-08-01",
+      "2026-09-01",
+    );
+  });
+
+  it("distinguishes an out-of-range metric from a metric with no recorded history", async () => {
+    authorizeMcpToken();
+    toolTestMocks.dailyMetricsListRange.mockResolvedValue([]);
+    toolTestMocks.dataCoverageList.mockResolvedValue([
+      {
+        metric: "resting_hr",
+        first_observed: "2026-03-09",
+        last_observed: "2026-09-01",
+        total_days_observed: 170,
+        source_providers: ["apple_health"],
+      },
+    ]);
+
+    const response = await request(createTestApp(makeMockSensorStore()), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_health_trends", {
+        start_date: "2023-06-01",
+        end_date: "2023-08-01",
+        metrics: ["resting_hr"],
+      }),
+    });
+
+    expect(parseToolCallText(response.text)).toMatchObject({
+      requested_metrics: ["resting_hr"],
+      series: [
+        {
+          metric: "resting_hr",
+          label: "Resting heart rate",
+          unit: "bpm",
+          points: [],
+          note: "no_data_in_range",
+          summary: { average: null, min: null, max: null },
+          coverage: {
+            observed_days: 0,
+            missing_days_truncated_count: 32,
+          },
+        },
+      ],
+      diagnostics: {
+        metrics_with_no_data: ["resting_hr"],
+        range_clamped: true,
+        earliest_available: "2026-03-09",
+      },
+    });
+  });
+
+  it("returns a structured analytics snapshot for the interactive explorer", async () => {
+    authorizeMcpToken();
+    toolTestMocks.dailyMetricsListRange.mockResolvedValue([
+      { date: "2026-05-18", hrv: 50 },
+      { date: "2026-05-19", hrv: 55 },
+    ]);
+
+    const response = await request(createTestApp(makeMockSensorStore()), {
+      authorization: "Bearer good-token",
+      "x-timezone": "America/Los_Angeles",
+      body: createToolCallRequest("render_health_explorer", {
+        end_date: "2026-05-19",
+        metrics: ["hrv"],
+        start_date: "2026-05-18",
+        timezone: "Asia/Tokyo",
+      }),
+    });
+
+    const parsedResponse = z
+      .object({
+        result: z
+          .object({
+            structuredContent: z
+              .object({
+                coverage: z.object({
+                  requested_days: z.number(),
+                  by_metric: z.record(
+                    z.string(),
+                    z.object({
+                      observed_days: z.number(),
+                      missing_days: z.array(z.string()),
+                      missing_days_truncated_count: z.number(),
+                    }),
+                  ),
+                }),
+                series: z.array(z.object({ metric: z.literal("hrv") }).passthrough()),
+              })
+              .passthrough(),
+          })
+          .passthrough(),
+      })
+      .parse(parseJsonRpcEvent(response.text));
+
+    expect(parsedResponse.result).toMatchObject({
+      content: [
+        {
+          type: "text",
+          text: "Dofek Analytics Explorer coverage: hrv 2 of 2 days.",
+        },
+      ],
+      _meta: { ui: { resourceUri: "ui://dofek/health-explorer.html" } },
+    });
+    expect(healthExplorerSnapshotSchema.parse(parsedResponse.result.structuredContent)).toEqual({
+      coverage: {
+        requested_days: 2,
+        by_metric: {
+          hrv: { observed_days: 2, missing_days: [], missing_days_truncated_count: 0 },
+        },
+      },
+      range: {
+        end_date: "2026-05-19",
+        granularity: "daily",
+        start_date: "2026-05-18",
+        timezone: "Asia/Tokyo",
+      },
+      series: [
+        {
+          label: "Heart rate variability",
+          metric: "hrv",
+          note: null,
+          points: [
+            { key: "2026-05-18", value: 50 },
+            { key: "2026-05-19", value: 55 },
+          ],
+          unit: "ms",
+        },
+      ],
+      summary: [{ average: 52.5, max: 55, metric: "hrv", min: 50 }],
     });
   });
 
@@ -826,48 +2068,92 @@ describe("createMcpRouter", () => {
       }),
     });
 
-    expect(parseToolCallText(response.text)).toEqual([
-      {
-        date: "2026-05-19",
-        metrics: {
-          hrv: {
-            avg: 72,
-            max: 72,
-            min: 72,
-            baseline_relative: expect.objectContaining({
-              baseline: {
-                coverage: 0.8,
-                mean: 60,
-                sampleCount: 24,
-                standardDeviation: 6,
-                windowDays: 30,
-                zScore: 2,
+    const structuredContent = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text)).result
+      .structuredContent;
+    expect(healthTrendsOutputSchema.parse(structuredContent)).toMatchObject({
+      result: {
+        series: expect.arrayContaining([
+          expect.objectContaining({
+            metric: "hrv",
+            points: [
+              {
+                baseline_relative: {
+                  baseline: {
+                    coverage: 0.8,
+                    mean: 60,
+                    sampleCount: 24,
+                    standardDeviation: 6,
+                    windowDays: 30,
+                    zScore: 2,
+                  },
+                  comparison: {
+                    baselineDays: 28,
+                    baselineMean: 61,
+                    delta: 5,
+                    direction: "increasing",
+                    recentDays: 7,
+                    recentMean: 66,
+                  },
+                  label: "Heart Rate Variability (HRV)",
+                  metric: "hrv",
+                  value: 72,
+                },
+                key: "2026-05-19",
+                value: 72,
               },
-              comparison: expect.objectContaining({
-                delta: 5,
-                direction: "increasing",
+            ],
+          }),
+        ]),
+      },
+    });
+
+    expect(parseToolCallText(response.text)).toMatchObject({
+      series: [
+        expect.objectContaining({
+          metric: "hrv",
+          points: [
+            expect.objectContaining({
+              key: "2026-05-19",
+              value: 72,
+              baseline_relative: expect.objectContaining({
+                baseline: {
+                  coverage: 0.8,
+                  mean: 60,
+                  sampleCount: 24,
+                  standardDeviation: 6,
+                  windowDays: 30,
+                  zScore: 2,
+                },
+                comparison: expect.objectContaining({
+                  delta: 5,
+                  direction: "increasing",
+                }),
               }),
             }),
-          },
-          resting_hr: {
-            avg: 48,
-            max: 48,
-            min: 48,
-            baseline_relative: expect.objectContaining({
-              baseline: expect.objectContaining({ mean: 52, zScore: -2 }),
+          ],
+        }),
+        expect.objectContaining({
+          metric: "resting_hr",
+          points: [
+            expect.objectContaining({
+              baseline_relative: expect.objectContaining({
+                baseline: expect.objectContaining({ mean: 52, zScore: -2 }),
+              }),
             }),
-          },
-          sleep_efficiency: {
-            avg: 90,
-            max: 90,
-            min: 90,
-            baseline_relative: expect.objectContaining({
-              baseline: expect.objectContaining({ mean: 85, zScore: 2 }),
+          ],
+        }),
+        expect.objectContaining({
+          metric: "sleep_efficiency",
+          points: [
+            expect.objectContaining({
+              baseline_relative: expect.objectContaining({
+                baseline: expect.objectContaining({ mean: 85, zScore: 2 }),
+              }),
             }),
-          },
-        },
-      },
-    ]);
+          ],
+        }),
+      ],
+    });
   });
 
   it("rejects reversed longitudinal date ranges", async () => {
@@ -979,6 +2265,7 @@ describe("createMcpRouter", () => {
         light_minutes: null,
         provider_id: "apple_health",
         rem_minutes: null,
+        staging_available: false,
         started_at: "2026-05-19T06:00:00.000Z",
       },
     ]);
@@ -1002,9 +2289,9 @@ describe("createMcpRouter", () => {
     ]);
   });
 
-  it("aggregates activity summaries by activity type and ISO week", async () => {
+  it("publishes provenance-checked, modality-stratified power with a three-activity gate", async () => {
     authorizeMcpToken();
-    toolTestMocks.activityListRange.mockResolvedValue([
+    const preGateRows = [
       {
         canonical_type: "cycling",
         avg_hr: 140,
@@ -1012,42 +2299,371 @@ describe("createMcpRouter", () => {
         ended_at: "2026-05-18T11:00:00.000Z",
         max_hr: 170,
         max_power: 300,
+        modality: "indoor",
         started_at: "2026-05-18T10:00:00.000Z",
       },
       {
         canonical_type: "cycling",
         avg_hr: 150,
-        avg_power: 200,
-        ended_at: "2026-05-19T10:30:00.000Z",
+        avg_power: 190,
+        ended_at: "2026-05-19T11:00:00.000Z",
         max_hr: 175,
         max_power: 320,
+        modality: "indoor",
         started_at: "2026-05-19T10:00:00.000Z",
+      },
+      {
+        canonical_type: "cycling",
+        avg_hr: 155,
+        avg_power: 200,
+        ended_at: "2026-05-20T11:00:00.000Z",
+        max_hr: 178,
+        max_power: 310,
+        modality: "indoor",
+        started_at: "2026-05-20T10:00:00.000Z",
+      },
+      {
+        canonical_type: "cycling",
+        avg_hr: 145,
+        avg_power: 210,
+        ended_at: "2026-05-21T11:00:00.000Z",
+        max_hr: 176,
+        max_power: 340,
+        modality: "outdoor",
+        started_at: "2026-05-21T10:00:00.000Z",
+      },
+      {
+        canonical_type: "cycling",
+        avg_hr: 148,
+        avg_power: 220,
+        ended_at: "2026-05-22T11:00:00.000Z",
+        max_hr: 177,
+        max_power: 350,
+        modality: "outdoor",
+        started_at: "2026-05-22T10:00:00.000Z",
+      },
+      {
+        canonical_type: "cycling",
+        avg_hr: 149,
+        avg_power: 230,
+        ended_at: "2026-05-23T11:00:00.000Z",
+        max_hr: 179,
+        max_power: 360,
+        modality: null,
+        started_at: "2026-05-23T10:00:00.000Z",
+      },
+      {
+        canonical_type: "cycling",
+        avg_hr: 147,
+        avg_power: 225,
+        ended_at: "2026-05-23T10:30:00.000Z",
+        max_hr: 175,
+        max_power: 355,
+        modality: "road",
+        started_at: "2026-05-23T09:30:00.000Z",
+      },
+      {
+        canonical_type: "running",
+        avg_hr: 160,
+        avg_power: 250,
+        ended_at: "2026-05-23T12:00:00.000Z",
+        max_hr: 180,
+        max_power: 380,
+        modality: "outdoor",
+        started_at: "2026-05-23T11:00:00.000Z",
+      },
+      {
+        canonical_type: "other",
+        avg_hr: null,
+        avg_power: 260,
+        elevation_gain_m: null,
+        ended_at: "2026-05-23T13:00:00.000Z",
+        max_hr: null,
+        max_power: 390,
+        modality: null,
+        provider_type: "kayaking",
+        started_at: "2026-05-23T12:00:00.000Z",
+      },
+    ];
+    toolTestMocks.activityListRange.mockResolvedValue(preGateRows);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_activity_summary", {
+        end_date: "2026-05-23",
+        group_by: "canonical_type_and_week",
+        start_date: "2026-05-18",
+      }),
+    });
+
+    const responseBody = z
+      .object({ summaries: z.array(z.record(z.string(), z.unknown())) })
+      .parse(parseToolCallText(response.text));
+    const summary = responseBody.summaries.find(
+      (candidate) => candidate.canonical_type === "cycling",
+    );
+    expect(summary).toMatchObject({
+      canonical_type: "cycling",
+      power_by_modality: {
+        indoor: {
+          activities_total: 3,
+          activities_with_power: 3,
+          avg_power: 190,
+          max_power_peak: 320,
+          pct: 100,
+        },
+        outdoor: {
+          activities_total: 2,
+          activities_with_power: 2,
+          avg_power: null,
+          max_power_peak: null,
+          pct: 100,
+        },
+        unknown: {
+          activities_total: 2,
+          activities_with_power: 2,
+          avg_power: null,
+          max_power_peak: null,
+          pct: 100,
+        },
+      },
+    });
+    expect(summary).not.toHaveProperty("avg_power");
+    expect(summary).not.toHaveProperty("max_power_peak");
+    expect(summary).not.toHaveProperty("power_coverage");
+    expect(
+      responseBody.summaries.find((candidate) => candidate.canonical_type === "running"),
+    ).toMatchObject({
+      power_by_modality: {
+        outdoor: {
+          activities_total: 1,
+          activities_with_power: 1,
+          avg_power: null,
+          max_power_peak: null,
+          pct: 100,
+        },
+      },
+    });
+    const kayakingSummary = responseBody.summaries.find(
+      (candidate) => candidate.canonical_type === "other",
+    );
+    expect(kayakingSummary).toMatchObject({
+      total_elevation_gain_m: null,
+      power_by_modality: {
+        unknown: {
+          activities_total: 1,
+          activities_with_power: 1,
+          avg_power: null,
+          max_power_peak: null,
+          pct: 100,
+        },
+      },
+    });
+  });
+
+  it("separates activity summaries by modality and reports power and elevation coverage", async () => {
+    authorizeMcpToken();
+    toolTestMocks.activityListRange.mockResolvedValue([
+      {
+        canonical_type: "cycling",
+        avg_hr: 138,
+        avg_power: null,
+        elevation_gain_m: 736,
+        ended_at: "2026-08-30T11:00:00.000Z",
+        max_hr: 170,
+        max_power: null,
+        modality: "outdoor",
+        started_at: "2026-08-30T10:00:00.000Z",
+      },
+      {
+        canonical_type: "cycling",
+        avg_hr: 145,
+        avg_power: 142,
+        elevation_gain_m: 0,
+        ended_at: "2026-08-31T11:00:00.000Z",
+        max_hr: 175,
+        max_power: 260,
+        modality: "indoor",
+        started_at: "2026-08-31T10:00:00.000Z",
       },
     ]);
 
     const response = await request(createTestApp(), {
       authorization: "Bearer good-token",
       body: createToolCallRequest("get_activity_summary", {
-        end_date: "2026-05-19",
-        group_by: "canonical_type_and_week",
-        start_date: "2026-05-18",
+        end_date: "2026-08-31",
+        group_by: "canonical_type_and_modality",
+        start_date: "2026-08-30",
       }),
     });
 
-    expect(parseToolCallText(response.text)).toEqual([
+    expect(parseToolCallText(response.text)).toEqual({
+      unclassified_pct: 0,
+      summaries: [
+        expect.objectContaining({
+          canonical_type: "cycling",
+          modality: "indoor",
+          power_by_modality: expect.objectContaining({
+            indoor: {
+              activities_total: 1,
+              activities_with_power: 1,
+              avg_power: null,
+              max_power_peak: null,
+              pct: 100,
+            },
+          }),
+          total_elevation_gain_m: 0,
+          avg_elevation_gain_m: 0,
+        }),
+        expect.objectContaining({
+          canonical_type: "cycling",
+          modality: "outdoor",
+          power_by_modality: expect.objectContaining({
+            outdoor: {
+              activities_total: 1,
+              activities_with_power: 0,
+              avg_power: null,
+              max_power_peak: null,
+              pct: 0,
+            },
+          }),
+          total_elevation_gain_m: 736,
+          avg_elevation_gain_m: 736,
+        }),
+      ],
+    });
+  });
+
+  it("separates commute cycling from training cycling by purpose", async () => {
+    authorizeMcpToken();
+    toolTestMocks.activityListRange.mockResolvedValue([
       {
         canonical_type: "cycling",
-        avg_duration_minutes: 45,
-        avg_hr: 145,
-        avg_power: 190,
-        count: 2,
-        max_hr_peak: 175,
-        max_power_peak: 320,
-        total_calories: null,
-        total_duration_minutes: 90,
-        week: "2026-W21",
+        avg_hr: 114,
+        avg_power: null,
+        elevation_gain_m: null,
+        ended_at: "2026-08-30T10:22:00.000Z",
+        max_hr: 130,
+        max_power: null,
+        modality: "outdoor",
+        provider_type: "commuting",
+        started_at: "2026-08-30T10:00:00.000Z",
+      },
+      {
+        canonical_type: "cycling",
+        avg_hr: 114,
+        avg_power: null,
+        elevation_gain_m: null,
+        ended_at: "2026-08-30T09:22:00.000Z",
+        max_hr: 130,
+        max_power: null,
+        modality: "outdoor",
+        provider_type: "89",
+        started_at: "2026-08-30T09:00:00.000Z",
+      },
+      {
+        canonical_type: "cycling",
+        avg_hr: 136,
+        avg_power: 180,
+        elevation_gain_m: 310,
+        ended_at: "2026-08-31T11:02:00.000Z",
+        max_hr: 168,
+        max_power: 280,
+        modality: "outdoor",
+        provider_type: "cycling",
+        started_at: "2026-08-31T10:00:00.000Z",
+      },
+      {
+        canonical_type: "running",
+        avg_hr: 150,
+        avg_power: null,
+        elevation_gain_m: null,
+        ended_at: "2026-08-31T12:30:00.000Z",
+        max_hr: 172,
+        max_power: null,
+        modality: "outdoor",
+        provider_type: "running",
+        started_at: "2026-08-31T12:00:00.000Z",
       },
     ]);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_activity_summary", {
+        end_date: "2026-08-31",
+        group_by: "canonical_type_and_purpose",
+        start_date: "2026-08-30",
+      }),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual({
+      unclassified_pct: 0,
+      summaries: [
+        expect.objectContaining({
+          canonical_type: "cycling",
+          purpose: "commute",
+          count: 2,
+          avg_duration_minutes: 22,
+          avg_hr: 114,
+        }),
+        expect.objectContaining({
+          canonical_type: "cycling",
+          purpose: "training",
+          count: 1,
+          avg_duration_minutes: 62,
+          avg_hr: 136,
+        }),
+        expect.objectContaining({
+          canonical_type: "running",
+          purpose: null,
+          count: 1,
+        }),
+      ],
+    });
+  });
+
+  it("reports the percentage of activities that remain unclassified", async () => {
+    authorizeMcpToken();
+    toolTestMocks.activityListRange.mockResolvedValue([
+      ...Array.from({ length: 9 }, (_, index) => ({
+        canonical_type: "cycling",
+        provider_type: "cycling",
+        avg_hr: 136,
+        avg_power: null,
+        elevation_gain_m: null,
+        ended_at: `2026-08-${String(index + 2).padStart(2, "0")}T11:00:00.000Z`,
+        max_hr: 160,
+        max_power: null,
+        started_at: `2026-08-${String(index + 2).padStart(2, "0")}T10:00:00.000Z`,
+      })),
+      {
+        canonical_type: "other",
+        provider_type: "",
+        avg_hr: 114,
+        avg_power: null,
+        elevation_gain_m: null,
+        ended_at: "2026-08-21T11:00:00.000Z",
+        max_hr: 130,
+        max_power: null,
+        started_at: "2026-08-21T10:00:00.000Z",
+      },
+    ]);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_activity_summary", {
+        end_date: "2026-08-21",
+        start_date: "2026-08-02",
+      }),
+    });
+
+    expect(parseToolCallText(response.text)).toMatchObject({
+      unclassified_pct: 10,
+      summaries: expect.arrayContaining([
+        expect.objectContaining({ canonical_type: "cycling", count: 9 }),
+        expect.objectContaining({ canonical_type: "other", count: 1 }),
+      ]),
+    });
   });
 
   it("supports activity-type and week grouping with missing measurements", async () => {
@@ -1071,19 +2687,44 @@ describe("createMcpRouter", () => {
         start_date: "2026-05-18",
       }),
     });
-    expect(parseToolCallText(activityTypeResponse.text)).toEqual([
-      {
-        canonical_type: "running",
-        avg_duration_minutes: null,
-        avg_hr: null,
-        avg_power: null,
-        count: 1,
-        max_hr_peak: null,
-        max_power_peak: null,
-        total_calories: null,
-        total_duration_minutes: 0,
-      },
-    ]);
+    expect(parseToolCallText(activityTypeResponse.text)).toEqual({
+      unclassified_pct: 0,
+      summaries: [
+        {
+          canonical_type: "running",
+          avg_duration_minutes: null,
+          avg_hr: null,
+          count: 1,
+          max_hr_peak: null,
+          power_by_modality: {
+            indoor: {
+              activities_total: 0,
+              activities_with_power: 0,
+              avg_power: null,
+              max_power_peak: null,
+              pct: 0,
+            },
+            outdoor: {
+              activities_total: 0,
+              activities_with_power: 0,
+              avg_power: null,
+              max_power_peak: null,
+              pct: 0,
+            },
+            unknown: {
+              activities_total: 1,
+              activities_with_power: 0,
+              avg_power: null,
+              max_power_peak: null,
+              pct: 0,
+            },
+          },
+          total_elevation_gain_m: null,
+          avg_elevation_gain_m: null,
+          total_duration_minutes: 0,
+        },
+      ],
+    });
 
     const weekResponse = await request(createTestApp(), {
       authorization: "Bearer good-token",
@@ -1093,9 +2734,10 @@ describe("createMcpRouter", () => {
         start_date: "2026-05-18",
       }),
     });
-    expect(parseToolCallText(weekResponse.text)).toEqual([
-      expect.objectContaining({ week: "2026-W21" }),
-    ]);
+    expect(parseToolCallText(weekResponse.text)).toEqual({
+      unclassified_pct: 0,
+      summaries: [expect.objectContaining({ week: "2026-W21" })],
+    });
   });
 
   it("returns daily nutrition totals using the nutrition read scope", async () => {
@@ -1186,13 +2828,28 @@ describe("createMcpRouter", () => {
 
   it("returns body metrics and computes lean mass on the server", async () => {
     authorizeMcpToken();
-    toolTestMocks.bodyListRange.mockResolvedValue([
+    toolTestMocks.bodyListReconciledRange.mockResolvedValue([
       {
-        bmi: 24.5,
-        bodyFatPct: 20,
-        providerId: "withings",
-        recordedAt: "2026-05-18T08:00:00.000Z",
+        date: "2026-05-18",
         weightKg: 80,
+        bodyFatPct: 20,
+        leanMassKg: 64,
+        bmi: 24.5,
+        sourceProviderByMetric: {
+          weightKg: "withings",
+          bodyFatPct: "withings",
+          bmi: "withings",
+        },
+        sources: [
+          {
+            sourceProvider: "withings",
+            recordedAt: "2026-05-18T08:00:00.000Z",
+            weightKg: 80,
+            bodyFatPct: 20,
+            bmi: 24.5,
+          },
+        ],
+        coverage: { sourceCount: 1 },
       },
     ]);
 
@@ -1210,7 +2867,21 @@ describe("createMcpRouter", () => {
         body_fat_pct: 20,
         date: "2026-05-18",
         lean_mass_kg: 64,
-        source_provider: "withings",
+        source_provider_by_metric: {
+          weight_kg: "withings",
+          body_fat_pct: "withings",
+          bmi: "withings",
+        },
+        sources: [
+          {
+            source_provider: "withings",
+            recorded_at: "2026-05-18T08:00:00.000Z",
+            weight_kg: 80,
+            body_fat_pct: 20,
+            bmi: 24.5,
+          },
+        ],
+        coverage: { source_count: 1 },
         weight_kg: 80,
       },
     ]);
@@ -1231,13 +2902,20 @@ describe("createMcpRouter", () => {
       "get_body_metrics requires the ClickHouse analytics store",
     );
 
-    toolTestMocks.bodyListRange.mockResolvedValue([
+    toolTestMocks.bodyListReconciledRange.mockResolvedValue([
       {
+        date: "2026-05-18",
+        weightKg: 80,
         bmi: null,
         bodyFatPct: null,
-        providerId: "withings",
-        recordedAt: "2026-05-18T08:00:00.000Z",
-        weightKg: 80,
+        leanMassKg: null,
+        sourceProviderByMetric: {
+          weightKg: "withings",
+          bodyFatPct: null,
+          bmi: null,
+        },
+        sources: [],
+        coverage: { sourceCount: 1 },
       },
     ]);
     const response = await request(createTestApp(makeMockSensorStore()), {
@@ -1256,8 +2934,12 @@ describe("createMcpRouter", () => {
     authorizeMcpToken();
     toolTestMocks.activitySearch.mockResolvedValue({
       items: [
-        { canonical_type: "cycling", name: "Morning Ride" },
-        { canonical_type: "swim", name: "Pool" },
+        makeActivitySearchItem(),
+        makeActivitySearchItem({
+          canonical_type: "swim",
+          id: "00000000-0000-4000-8000-000000000011",
+          name: "Pool",
+        }),
       ],
       totalCount: 2,
     });
@@ -1269,7 +2951,7 @@ describe("createMcpRouter", () => {
       }),
     });
 
-    expect(parseToolCallText(response.text)).toEqual({
+    expect(parseToolCallText(response.text)).toMatchObject({
       items: [
         { canonical_type: "cycling", name: "Morning Ride" },
         { canonical_type: "swim", name: "Pool" },
@@ -1281,7 +2963,7 @@ describe("createMcpRouter", () => {
   it("matches activity searches against activity names", async () => {
     authorizeMcpToken();
     toolTestMocks.activitySearch.mockResolvedValue({
-      items: [{ canonical_type: "cycling", name: "Morning Ride" }],
+      items: [makeActivitySearchItem()],
       totalCount: 2,
     });
 
@@ -1293,38 +2975,277 @@ describe("createMcpRouter", () => {
       }),
     });
 
-    expect(parseToolCallText(response.text)).toEqual({
+    expect(parseToolCallText(response.text)).toMatchObject({
       items: [{ canonical_type: "cycling", name: "Morning Ride" }],
       totalCount: 2,
     });
   });
 
-  it("logs food entries with the requested meal type and local date", async () => {
+  it("returns an activity with its strength, climbing, and finger-loading details", async () => {
     authorizeMcpToken();
-    toolTestMocks.foodCreate.mockResolvedValue({
-      foodName: "oatmeal with berries",
-      meal: "breakfast",
+    const activityId = "00000000-0000-4000-8000-000000000001";
+    toolTestMocks.activityFindById.mockResolvedValue({
+      absent_source_external_ids: null,
+      avg_cadence: 60,
+      avg_hr: 140,
+      avg_power: 250,
+      avg_speed: 3,
+      canonical_type: "strength",
+      distance_meters: 1000,
+      elevation_gain_m: 100,
+      elevation_loss_m: 100,
+      ended_at: "2026-08-01T11:00:00.000Z",
+      end_utc_offset_minutes: 0,
+      id: activityId,
+      local_time_source: "provider_timezone",
+      location: {
+        centroidLat: 37.8,
+        centroidLng: -122.4,
+        mapPreview: makeActivityMapPreview(),
+      },
+      max_hr: 170,
+      max_power: 500,
+      max_speed: 5,
+      modality: null,
+      name: "Training",
+      notes: null,
+      perceived_exertion: null,
+      provider_absent_at: null,
+      provider_id: "apple_health",
+      raw_type: "strength",
+      sample_count: 10,
+      source_external_ids: [],
+      source_providers: ["apple_health"],
+      start_utc_offset_minutes: 0,
+      started_at: "2026-08-01T10:00:00.000Z",
+      subsource: null,
+      timezone: "UTC",
+      total_distance: 1000,
     });
+    toolTestMocks.strengthExercises.mockResolvedValue([
+      {
+        toDetail: () => ({
+          equipment: null,
+          exerciseIndex: 0,
+          exerciseName: "Pull-up",
+          exerciseType: "strength",
+          muscleGroups: ["back"],
+          sets: [],
+        }),
+      },
+    ]);
+    toolTestMocks.climbingActivityEntries.mockResolvedValue([
+      {
+        toDetail: () => ({
+          ascentType: null,
+          attemptCount: 1,
+          attempts: [],
+          climbType: "boulder",
+          grade: "V5",
+          gradeSystem: "v_scale",
+          holdType: null,
+          id: "climb-1",
+          lead: null,
+          locationName: null,
+          routeName: "Blue Circuit",
+          sent: true,
+          sourceName: "kaya",
+          wallAngleDegrees: null,
+        }),
+      },
+    ]);
+    toolTestMocks.fingerLoadingActivity.mockResolvedValue([
+      {
+        activityId,
+        bodyweightKg: 80,
+        edgeSizeMm: 20,
+        effectiveLoadKg: 95,
+        exercise: "max_hang",
+        externalLoadKg: 15,
+        gripPosition: "half_crimp",
+        holdDurationSeconds: 10,
+        laterality: "both",
+        notes: null,
+        restIntervalSeconds: 180,
+        rpe: null,
+        setCount: 5,
+        startedAt: "2026-08-01T10:00:00.000Z",
+      },
+    ]);
 
     const response = await request(createTestApp(), {
       authorization: "Bearer good-token",
-      body: createToolCallRequest("log_food", {
-        mealType: "breakfast",
-        occurredAt: "2026-05-20T08:30:00.000Z",
-        text: "oatmeal with berries",
+      body: createToolCallRequest("get_activity_details", { activity_id: activityId }),
+    });
+    const structuredContent = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text)).result
+      .structuredContent;
+
+    expect(parseToolCallText(response.text)).toMatchObject({
+      activity: { canonical_type: "strength", id: activityId, name: "Training" },
+      climbing_entries: [{ grade: "V5", routeName: "Blue Circuit" }],
+      finger_loading: [{ exercise: "max_hang", effectiveLoadKg: 95 }],
+      strength_exercises: [{ exerciseName: "Pull-up", muscleGroups: ["back"] }],
+    });
+    expect(activityDetailsOutputSchema.parse(structuredContent)).toMatchObject({
+      result: {
+        activity: {
+          distance_meters: 1000,
+          location: {
+            centroidLat: 37.8,
+            centroidLng: -122.4,
+            mapPreview: makeActivityMapPreview(),
+          },
+        },
+      },
+    });
+    expect(toolTestMocks.activityFindById).toHaveBeenCalledWith(activityId);
+  });
+
+  it("returns the authenticated user's supplement definitions", async () => {
+    authorizeMcpToken();
+    toolTestMocks.supplementsList.mockResolvedValue([
+      { amount: 5, id: "creatine", name: "Creatine", unit: "g" },
+    ]);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_supplements", {}),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual([
+      { amount: 5, id: "creatine", name: "Creatine", unit: "g" },
+    ]);
+  });
+
+  it("returns a capped, channel-filtered activity stream", async () => {
+    authorizeMcpToken();
+    const activityId = "00000000-0000-4000-8000-000000000001";
+    toolTestMocks.activityGetStream.mockResolvedValue([
+      {
+        toDetail: () => ({
+          altitude: 30,
+          cadence: 90,
+          heartRate: 145,
+          lat: 37.8,
+          lng: -122.4,
+          power: 250,
+          recordedAt: "2026-08-30T10:00:00.000Z",
+          speed: 8.5,
+        }),
+      },
+    ]);
+
+    const response = await request(createTestApp(makeMockSensorStore()), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_activity_streams", {
+        activity_id: activityId,
+        channels: ["heart_rate", "position", "power"],
+        downsample_to: 750,
       }),
     });
 
     expect(parseToolCallText(response.text)).toEqual({
-      foodName: "oatmeal with berries",
-      meal: "breakfast",
+      channels: ["heart_rate", "position", "power"],
+      points: [
+        {
+          heart_rate: 145,
+          latitude: 37.8,
+          longitude: -122.4,
+          power: 250,
+          recorded_at: "2026-08-30T10:00:00.000Z",
+        },
+      ],
     });
-    expect(toolTestMocks.foodCreate).toHaveBeenCalledWith({
-      date: "2026-05-20",
-      foodName: "oatmeal with berries",
-      meal: "breakfast",
-      nutrients: {},
+    expect(toolTestMocks.activityGetStream).toHaveBeenCalledWith(activityId, 750);
+  });
+
+  it("returns every stream channel with the default downsample cap", async () => {
+    authorizeMcpToken();
+    const activityId = "00000000-0000-4000-8000-000000000002";
+    toolTestMocks.activityGetStream.mockResolvedValue([
+      {
+        toDetail: () => ({
+          altitude: 30,
+          cadence: 90,
+          heartRate: 145,
+          lat: 37.8,
+          lng: -122.4,
+          power: 250,
+          recordedAt: "2026-08-30T10:00:00.000Z",
+          speed: 8.5,
+        }),
+      },
+    ]);
+
+    const response = await request(createTestApp(makeMockSensorStore()), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_activity_streams", { activity_id: activityId }),
     });
+
+    expect(parseToolCallText(response.text)).toEqual({
+      channels: ["power", "heart_rate", "cadence", "altitude", "speed", "position"],
+      points: [
+        {
+          altitude: 30,
+          cadence: 90,
+          heart_rate: 145,
+          latitude: 37.8,
+          longitude: -122.4,
+          power: 250,
+          recorded_at: "2026-08-30T10:00:00.000Z",
+          speed: 8.5,
+        },
+      ],
+    });
+    expect(toolTestMocks.activityGetStream).toHaveBeenCalledWith(activityId, 500);
+  });
+
+  it("omits every unselected stream channel", async () => {
+    authorizeMcpToken();
+    const activityId = "00000000-0000-4000-8000-000000000003";
+    toolTestMocks.activityGetStream.mockResolvedValue([
+      {
+        toDetail: () => ({
+          altitude: 30,
+          cadence: 90,
+          heartRate: 145,
+          lat: 37.8,
+          lng: -122.4,
+          power: 250,
+          recordedAt: "2026-08-30T10:00:00.000Z",
+          speed: 8.5,
+        }),
+      },
+    ]);
+
+    const response = await request(createTestApp(makeMockSensorStore()), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_activity_streams", {
+        activity_id: activityId,
+        channels: ["cadence"],
+      }),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual({
+      channels: ["cadence"],
+      points: [{ cadence: 90, recorded_at: "2026-08-30T10:00:00.000Z" }],
+    });
+  });
+
+  it("requires the analytics store for activity streams", async () => {
+    authorizeMcpToken();
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_activity_streams", {
+        activity_id: "00000000-0000-4000-8000-000000000004",
+      }),
+    });
+
+    const parsedResponse = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text));
+    expect(parsedResponse.result.isError).toBe(true);
+    expect(parsedResponse.result.content[0]?.text).toBe(
+      "get_activity_streams requires the ClickHouse analytics store",
+    );
   });
 
   it("lists configured providers with connection and reauth state", async () => {
@@ -1335,6 +3256,15 @@ describe("createMcpRouter", () => {
     ]);
     toolTestMocks.getLastSyncTimes.mockResolvedValue([
       { lastSynced: "2026-05-20T12:00:00.000Z", providerId: "wahoo" },
+    ]);
+    toolTestMocks.getScheduledSyncHealth.mockResolvedValue([
+      {
+        providerId: "wahoo",
+        lastSuccess: "2026-05-20T11:00:00.000Z",
+        lastAttempt: "2026-05-20T12:00:00.000Z",
+        lastError: "Wahoo access token expired.",
+        consecutiveFailures: 2,
+      },
     ]);
     toolTestMocks.getLatestErrors.mockResolvedValue([
       {
@@ -1396,6 +3326,14 @@ describe("createMcpRouter", () => {
         lastSyncedAt: null,
         name: "Fitbit",
         needsReauth: false,
+        sync_health: {
+          consecutive_failures: 0,
+          expected_sync_interval_minutes: 30,
+          last_attempt: null,
+          last_error: null,
+          last_success: null,
+          stale: true,
+        },
       },
       {
         authType: "oauth",
@@ -1405,6 +3343,7 @@ describe("createMcpRouter", () => {
         lastSyncedAt: null,
         name: "Strava",
         needsReauth: false,
+        sync_health: null,
       },
       {
         authType: "oauth",
@@ -1414,6 +3353,14 @@ describe("createMcpRouter", () => {
         lastSyncedAt: "2026-05-20T12:00:00.000Z",
         name: "Wahoo",
         needsReauth: true,
+        sync_health: {
+          consecutive_failures: 2,
+          expected_sync_interval_minutes: 30,
+          last_attempt: "2026-05-20T12:00:00.000Z",
+          last_error: "Wahoo access token expired.",
+          last_success: "2026-05-20T11:00:00.000Z",
+          stale: true,
+        },
       },
     ]);
   });
@@ -1457,6 +3404,14 @@ describe("createMcpRouter", () => {
         lastSyncedAt: "2026-05-20T12:00:00.000Z",
         name: "Wahoo",
         needsReauth: false,
+        sync_health: {
+          consecutive_failures: 0,
+          expected_sync_interval_minutes: 30,
+          last_attempt: null,
+          last_error: null,
+          last_success: null,
+          stale: true,
+        },
       },
     ]);
   });
@@ -1499,6 +3454,7 @@ describe("createMcpRouter", () => {
     expect(toolTestMocks.queueAdd).toHaveBeenCalledWith(
       "sync",
       {
+        origin: "manual",
         providerId: "wahoo",
         sinceDays: 7,
         sinceIso: expect.any(String),

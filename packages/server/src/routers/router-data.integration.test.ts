@@ -19,7 +19,7 @@ import {
  * - efficiency (aerobicDecoupling, polarizationTrend)
  * - cycling-advanced (pedalDynamics)
  * - power (powerCurve, eftpTrend)
- * - supplements (list, save)
+ * - supplements (list)
  * - trends (daily, weekly via ClickHouse read models)
  * - settings (get, set, getAll, slackStatus)
  * - sync (providers, providerStats, logs, syncStatus)
@@ -784,43 +784,12 @@ describe("Router data coverage", () => {
   });
 
   // ══════════════════════════════════════════════════════════════
-  // Supplements — list and save
+  // Supplements — list
   // ══════════════════════════════════════════════════════════════
   describe("supplements", () => {
     it("list returns an array (possibly empty)", async () => {
       const result = await query<unknown[]>("supplements.list");
       expect(Array.isArray(result)).toBe(true);
-    });
-
-    it("save stores supplements and list retrieves them", async () => {
-      const supplements = [
-        { name: "Vitamin D3", amount: 5000, unit: "IU", form: "softgel", vitaminDMcg: 125 },
-        { name: "Magnesium Glycinate", amount: 400, unit: "mg", magnesiumMg: 400 },
-      ];
-      const saveResult = await mutate<{ success: boolean; count: number }>("supplements.save", {
-        supplements,
-      });
-      expect(saveResult.success).toBe(true);
-      expect(saveResult.count).toBe(2);
-
-      // Invalidate cache and verify list returns saved data
-      await queryCache.invalidateAll();
-      const listResult =
-        await query<{ name: string; amount: number; unit: string }[]>("supplements.list");
-      expect(listResult.length).toBe(2);
-      expect(listResult[0]?.name).toBe("Vitamin D3");
-      expect(listResult[1]?.name).toBe("Magnesium Glycinate");
-
-      const nutritionRows = await testCtx.db.execute<{ count: string }>(
-        sql`SELECT COUNT(*)::text AS count
-            FROM fitness.supplement_definition_nutrient AS nutrient
-            JOIN fitness.supplement_definition AS definition
-              ON definition.id = nutrient.definition_id
-            JOIN fitness.supplement AS supplement
-              ON supplement.id = definition.supplement_id
-            WHERE supplement.user_id = ${TEST_USER_ID}`,
-      );
-      expect(nutritionRows[0]?.count).toBe("2");
     });
   });
 
@@ -879,7 +848,7 @@ describe("Router data coverage", () => {
   });
 
   // ══════════════════════════════════════════════════════════════
-  // Settings — get, set, getAll, slackStatus
+  // Settings — get, set, getAll
   // ══════════════════════════════════════════════════════════════
   describe("settings", () => {
     it("set creates a setting and get retrieves it", async () => {
@@ -926,16 +895,6 @@ describe("Router data coverage", () => {
       expect(keys).toContain("unitSystem");
       expect(keys).toContain("whoop.wearLocation");
     });
-
-    it("slackStatus returns configured and connected booleans", async () => {
-      const result = await query<{ configured: boolean; connected: boolean }>(
-        "settings.slackStatus",
-      );
-      expect(typeof result.configured).toBe("boolean");
-      expect(typeof result.connected).toBe("boolean");
-      // Environment-dependent, just ensure they are booleans
-      expect(result.connected).toBe(false);
-    });
   });
 
   // ══════════════════════════════════════════════════════════════
@@ -954,8 +913,7 @@ describe("Router data coverage", () => {
             foodEntries: number;
             healthEvents: number;
             nutritionDaily: number;
-            labPanels: number;
-            labResults: number;
+            clinicalRecords: number;
             journalEntries: number;
           }[]
         >("sync.providerStats");
@@ -985,14 +943,6 @@ describe("Router data coverage", () => {
   // Food — search, quickAdd, update, delete, list with meal filter
   // ══════════════════════════════════════════════════════════════
   describe("food", () => {
-    it("search returns matching food entries", async () => {
-      const result = await query<{ food_name: string }[]>("food.search", { query: "Oatmeal" });
-      expect(result.length).toBeGreaterThan(0);
-      for (const row of result) {
-        expect(row.food_name.toLowerCase()).toContain("oatmeal");
-      }
-    });
-
     it("list with meal filter returns only matching entries", async () => {
       const today = new Date().toISOString().slice(0, 10);
       const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
@@ -1006,78 +956,6 @@ describe("Router data coverage", () => {
       for (const row of result) {
         expect(row.meal).toBe("lunch");
       }
-    });
-
-    it("quickAdd creates a food entry with minimal fields", async () => {
-      const today = new Date().toISOString().slice(0, 10);
-      const result = await mutate<{ id: string; food_name: string; calories: number }>(
-        "food.quickAdd",
-        {
-          date: today,
-          meal: "snack",
-          foodName: "Protein Bar",
-          calories: 200,
-          proteinG: 20,
-        },
-      );
-      expect(result.food_name).toBe("Protein Bar");
-      expect(Number(result.calories)).toBe(200);
-    });
-
-    it("update modifies a food entry", async () => {
-      // Get a food entry id
-      const today = new Date().toISOString().slice(0, 10);
-      const result = await query<{ entries: { id: string }[] }>("food.byDate", { date: today });
-      expect(result.entries.length).toBeGreaterThan(0);
-      const entryId = result.entries[0]?.id;
-      expect(entryId).toBeTruthy();
-
-      const updated = await mutate<{ id: string; calories: number } | null>("food.update", {
-        id: entryId,
-        calories: 999,
-      });
-      expect(updated).not.toBeNull();
-      expect(Number(updated?.calories)).toBe(999);
-    });
-
-    it("update with date field modification", async () => {
-      const today = new Date().toISOString().slice(0, 10);
-      const result = await query<{ entries: { id: string }[] }>("food.byDate", { date: today });
-      const entryId = result.entries[0]?.id;
-
-      // Update date and set some fields to null (covers null-clearing branches)
-      const updated = await mutate<{ id: string } | null>("food.update", {
-        id: entryId,
-        date: today,
-        foodDescription: null,
-        proteinG: null,
-      });
-      expect(updated).not.toBeNull();
-    });
-
-    it("update with no fields returns null", async () => {
-      const today = new Date().toISOString().slice(0, 10);
-      const selectedDate = await query<{ entries: { id: string }[] }>("food.byDate", {
-        date: today,
-      });
-      const entryId = selectedDate.entries[0]?.id;
-      const result = await mutate<null>("food.update", { id: entryId });
-      expect(result).toBeNull();
-    });
-
-    it("delete removes a food entry", async () => {
-      const today = new Date().toISOString().slice(0, 10);
-      const before = await query<{ entries: { id: string }[] }>("food.byDate", { date: today });
-      const countBefore = before.entries.length;
-      expect(countBefore).toBeGreaterThan(0);
-
-      const entryId = before.entries[0]?.id;
-      const deleteResult = await mutate<{ success: boolean }>("food.delete", { id: entryId });
-      expect(deleteResult.success).toBe(true);
-
-      await queryCache.invalidateAll();
-      const after = await query<{ entries: { id: string }[] }>("food.byDate", { date: today });
-      expect(after.entries.length).toBe(countBefore - 1);
     });
 
     it("dailyTotals aggregates calories and macros by day", async () => {

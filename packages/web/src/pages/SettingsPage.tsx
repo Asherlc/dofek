@@ -2,6 +2,7 @@ import { formatDateMedium, parseValidDate } from "@dofek/format/format";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useState } from "react";
 import { AccountErasurePanel } from "../components/AccountErasurePanel.tsx";
+import { ClimbingGradeSystemToggle } from "../components/ClimbingGradeSystemToggle.tsx";
 import { DataSourcesPanel } from "../components/DataSourcesPanel.tsx";
 import { ExportPanel } from "../components/ExportPanel.tsx";
 import { LinkedAccountsPanel } from "../components/LinkedAccountsPanel.tsx";
@@ -12,7 +13,6 @@ import { PageSection } from "../components/PageSection.tsx";
 import { PasswordSettingsPanel } from "../components/PasswordSettingsPanel.tsx";
 import { PersonalizationPanel } from "../components/PersonalizationPanel.tsx";
 import { PrimaryGoalSelector } from "../components/PrimaryGoalSelector.tsx";
-import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel.tsx";
 import { UnitSystemToggle } from "../components/UnitSystemToggle.tsx";
 import { ZeppPairingPanel } from "../components/ZeppPairingPanel.tsx";
 import {
@@ -162,7 +162,9 @@ export function SettingsPage() {
                         billingStatus.data.access.startDate,
                         billingStatus.data.access.endDateExclusive,
                       )}).`
-                    : "You currently have full access to your data."}
+                    : billingStatus.data.access.reason === "app_store_subscription"
+                      ? "Full access is enabled."
+                      : "You currently have full access to your data."}
                 </p>
                 <div className="space-y-1">
                   {billingStatus.data.access.kind === "limited" ? (
@@ -255,7 +257,24 @@ export function SettingsPage() {
         ) : null}
 
         {activeCategory === "advanced" ? (
-          <PageSection title="MCP" subtitle="Connect remote MCP clients and manage access tokens">
+          <PageSection
+            title="Developer integrations"
+            subtitle="Register and manage clients that write data through the external API"
+          >
+            <Link
+              to="/developer-integrations"
+              className="inline-flex rounded border border-border px-3 py-2 text-sm text-foreground transition-colors hover:bg-surface-hover"
+            >
+              Manage developer integrations
+            </Link>
+          </PageSection>
+        ) : null}
+
+        {activeCategory === "advanced" ? (
+          <PageSection
+            title="Model Context Protocol (MCP)"
+            subtitle="Connect remote MCP clients and manage access tokens"
+          >
             <McpTokensPanel />
           </PageSection>
         ) : null}
@@ -272,6 +291,15 @@ export function SettingsPage() {
         {activeCategory === "goals-models" ? (
           <PageSection title="Units" subtitle="Choose how measurements are displayed">
             <UnitSystemToggle />
+          </PageSection>
+        ) : null}
+
+        {activeCategory === "goals-models" ? (
+          <PageSection
+            title="Climbing grades"
+            subtitle="Choose the grade systems used for boulders and routes"
+          >
+            <ClimbingGradeSystemToggle />
           </PageSection>
         ) : null}
 
@@ -338,12 +366,6 @@ export function SettingsPage() {
             subtitle="Parameters are automatically learned from your data to improve accuracy"
           >
             <PersonalizationPanel />
-          </PageSection>
-        ) : null}
-
-        {activeCategory === "data-sources" ? (
-          <PageSection title="Integrations" subtitle="Connect external services">
-            <SlackIntegrationPanel />
           </PageSection>
         ) : null}
 

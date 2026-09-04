@@ -3,13 +3,17 @@ import { Pool } from "pg";
 type QueryValue = string | number | boolean | Date | null | undefined;
 type QueryRow = Record<string, unknown>;
 
-export type TaggedQueryClient = {
+export type TaggedQueryExecutor = {
   <TRow extends QueryRow = QueryRow>(
     strings: TemplateStringsArray,
     ...values: QueryValue[]
   ): Promise<TRow[]>;
   unsafe: <TRow extends QueryRow = QueryRow>(queryText: string) => Promise<TRow[]>;
+};
+
+export type TaggedQueryClient = TaggedQueryExecutor & {
   end: () => Promise<void>;
+  transaction: <T>(operation: (transaction: TaggedQueryExecutor) => Promise<T>) => Promise<T>;
 };
 
 function buildQueryText(strings: TemplateStringsArray, values: QueryValue[]): string {
@@ -30,21 +34,53 @@ export function createTaggedQueryClient(
     max: maximumConnections,
   });
 
+  const query = createTaggedQueryExecutor(pool);
+
+  const client: TaggedQueryClient = Object.assign(query, {
+    end: async (): Promise<void> => {
+      await pool.end();
+    },
+    transaction: async <T>(
+      operation: (transaction: TaggedQueryExecutor) => Promise<T>,
+    ): Promise<T> => {
+      const transactionClient = await pool.connect();
+      try {
+        await transactionClient.query("BEGIN");
+        const result = await operation(createTaggedQueryExecutor(transactionClient));
+        await transactionClient.query("COMMIT");
+        return result;
+      } catch (error) {
+        try {
+          await transactionClient.query("ROLLBACK");
+        } catch (rollbackError) {
+          throw new AggregateError(
+            [error, rollbackError],
+            "Transaction failed and rollback also failed",
+            { cause: error },
+          );
+        }
+        throw error;
+      } finally {
+        transactionClient.release();
+      }
+    },
+  });
+
+  return client;
+}
+
+function createTaggedQueryExecutor(queryable: Pick<Pool, "query">): TaggedQueryExecutor {
   const query = async <TRow extends QueryRow = QueryRow>(
     strings: TemplateStringsArray,
     ...values: QueryValue[]
   ): Promise<TRow[]> => {
-    const result = await pool.query<TRow>(buildQueryText(strings, values), values);
+    const result = await queryable.query<TRow>(buildQueryText(strings, values), values);
     return result.rows;
   };
 
   query.unsafe = async <TRow extends QueryRow = QueryRow>(queryText: string): Promise<TRow[]> => {
-    const result = await pool.query<TRow>(queryText);
+    const result = await queryable.query<TRow>(queryText);
     return result.rows;
-  };
-
-  query.end = async (): Promise<void> => {
-    await pool.end();
   };
 
   return query;
