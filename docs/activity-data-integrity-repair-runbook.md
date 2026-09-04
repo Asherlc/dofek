@@ -191,79 +191,108 @@ eight projections:
 - `activity_summary_rows`
 
 Before accepting the repair, require this local-time invariant to return zero
-rows. It checks both persisted provider activities and the canonical Postgres
-projection, including daylight-saving changes at each activity instant. The
-offset calculation uses PostgreSQL's documented `AT TIME ZONE` conversion
-semantics ([PostgreSQL date/time functions](https://www.postgresql.org/docs/current/functions-datetime.html#FUNCTIONS-DATETIME-ZONECONVERT)).
+rows. It validates each persisted provider activity against its own timestamps,
+including daylight-saving changes, then verifies that every non-unknown
+canonical context exactly matches one member's complete context tuple. Comparing
+canonical offsets directly with group-wide bounds is incorrect because those
+bounds can come from different members. The offset calculation uses PostgreSQL's
+documented `AT TIME ZONE` conversion semantics
+([PostgreSQL date/time functions](https://www.postgresql.org/docs/current/functions-datetime.html#FUNCTIONS-DATETIME-ZONECONVERT)).
 
 ```sql
-WITH local_time_rows AS (
-  SELECT
-    'fitness.activity'::text AS relation_name,
-    id,
-    started_at,
-    ended_at,
-    timezone,
-    start_utc_offset_minutes,
-    end_utc_offset_minutes,
-    local_time_source
+WITH persisted_activity_violations AS (
+  SELECT 'fitness.activity'::text AS relation_name, id
   FROM fitness.activity
   WHERE provider_absent_at IS NULL
     AND deleted_at IS NULL
-  UNION ALL
-  SELECT
-    'fitness.v_activity',
-    id,
-    started_at,
-    ended_at,
-    timezone,
-    start_utc_offset_minutes,
-    end_utc_offset_minutes,
-    local_time_source
-  FROM fitness.v_activity
-)
-SELECT *
-FROM local_time_rows
-WHERE (
-    timezone IS NULL
-    AND local_time_source IN (
-      'gps_timezone',
-      'provider_timezone',
-      'device_timezone',
-      'user_home_timezone',
-      'home_zone_fallback'
-    )
-  )
-  OR (
-    timezone IS NOT NULL
-    AND local_time_source NOT IN (
-      'gps_timezone',
-      'provider_timezone',
-      'device_timezone',
-      'user_home_timezone',
-      'home_zone_fallback'
-    )
-  )
-  OR (
-    timezone IS NOT NULL
     AND (
-      start_utc_offset_minutes IS DISTINCT FROM round(
-        extract(epoch FROM (
-          (started_at AT TIME ZONE timezone)
-          - (started_at AT TIME ZONE 'UTC')
-        )) / 60
-      )::integer
+      (
+        local_time_source = 'unknown'
+        AND (
+          timezone IS NOT NULL
+          OR start_utc_offset_minutes IS NOT NULL
+          OR end_utc_offset_minutes IS NOT NULL
+        )
+      )
       OR (
-        ended_at IS NOT NULL
-        AND end_utc_offset_minutes IS DISTINCT FROM round(
-          extract(epoch FROM (
-            (ended_at AT TIME ZONE timezone)
-            - (ended_at AT TIME ZONE 'UTC')
-          )) / 60
-        )::integer
+        local_time_source IN (
+          'gps_timezone',
+          'provider_timezone',
+          'device_timezone',
+          'user_home_timezone',
+          'home_zone_fallback'
+        )
+        AND timezone IS NULL
+      )
+      OR (
+        local_time_source IN ('provider_offset', 'device_offset')
+        AND (
+          timezone IS NOT NULL
+          OR start_utc_offset_minutes IS NULL
+          OR (ended_at IS NOT NULL AND end_utc_offset_minutes IS NULL)
+        )
+      )
+      OR local_time_source NOT IN (
+        'unknown',
+        'gps_timezone',
+        'provider_timezone',
+        'device_timezone',
+        'user_home_timezone',
+        'home_zone_fallback',
+        'provider_offset',
+        'device_offset'
+      )
+      OR (
+        timezone IS NOT NULL
+        AND (
+          start_utc_offset_minutes IS DISTINCT FROM round(
+            extract(epoch FROM (
+              (started_at AT TIME ZONE timezone)
+              - (started_at AT TIME ZONE 'UTC')
+            )) / 60
+          )::integer
+          OR (
+            ended_at IS NOT NULL
+            AND end_utc_offset_minutes IS DISTINCT FROM round(
+              extract(epoch FROM (
+                (ended_at AT TIME ZONE timezone)
+                - (ended_at AT TIME ZONE 'UTC')
+              )) / 60
+            )::integer
+          )
+        )
       )
     )
-  )
+),
+canonical_activity_violations AS (
+  SELECT 'fitness.v_activity'::text AS relation_name, canonical.id
+  FROM fitness.v_activity canonical
+  WHERE (
+      canonical.local_time_source = 'unknown'
+      AND (
+        canonical.timezone IS NOT NULL
+        OR canonical.start_utc_offset_minutes IS NOT NULL
+        OR canonical.end_utc_offset_minutes IS NOT NULL
+      )
+    )
+    OR (
+      canonical.local_time_source <> 'unknown'
+      AND NOT EXISTS (
+        SELECT 1
+        FROM fitness.activity member
+        WHERE member.id = ANY(canonical.member_activity_ids)
+          AND member.timezone IS NOT DISTINCT FROM canonical.timezone
+          AND member.start_utc_offset_minutes
+            IS NOT DISTINCT FROM canonical.start_utc_offset_minutes
+          AND member.end_utc_offset_minutes
+            IS NOT DISTINCT FROM canonical.end_utc_offset_minutes
+          AND member.local_time_source = canonical.local_time_source
+      )
+    )
+)
+SELECT relation_name, id FROM persisted_activity_violations
+UNION ALL
+SELECT relation_name, id FROM canonical_activity_violations
 ORDER BY relation_name, id;
 ```
 

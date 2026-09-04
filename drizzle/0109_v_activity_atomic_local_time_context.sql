@@ -263,6 +263,7 @@ best_context_per_group AS (
         'device_timezone',
         'user_home_timezone'
       ) THEN 2
+      -- Direct source evidence outranks a configured home-zone fallback for travel.
       WHEN r.local_time_source IN ('provider_offset', 'device_offset') THEN 3
       WHEN r.local_time_source = 'home_zone_fallback' THEN 4
       WHEN r.local_time_source = 'unknown' THEN 5
@@ -333,7 +334,10 @@ merged AS (
       WHERE fg2.group_id = b.group_id AND r.notes IS NOT null
       ORDER BY r.prio ASC LIMIT 1
     ) AS notes,
-    context.timezone,
+    CASE
+      WHEN context.local_time_source = 'unknown' THEN null
+      ELSE context.timezone
+    END AS timezone,
     context.start_utc_offset_minutes,
     context.end_utc_offset_minutes,
     context.local_time_source,
