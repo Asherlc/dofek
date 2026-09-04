@@ -154,6 +154,36 @@ ${renderDedupedActivitiesSelectSql(targetSchema)}`,
       },
     ]);
   }, 180_000);
+
+  it("keeps a named timezone and its offsets from the same member", async () => {
+    const activeClient = requireClient(client);
+    await seedNamedTimezoneContextFixture(activeClient, targetSchema);
+
+    await activeClient.command({
+      query: `INSERT INTO ${targetSchema}.deduped_activities
+${renderDedupedActivitiesSelectSql(targetSchema)}`,
+    });
+
+    const result = await activeClient.query({
+      query: `SELECT
+          timezone,
+          start_utc_offset_minutes AS startUtcOffsetMinutes,
+          end_utc_offset_minutes AS endUtcOffsetMinutes,
+          local_time_source AS localTimeSource
+        FROM ${targetSchema}.deduped_activities FINAL
+        WHERE is_deleted = 0`,
+      format: "JSONEachRow",
+    });
+
+    expect(await result.json<LocalTimeContextRow>()).toEqual([
+      {
+        endUtcOffsetMinutes: -420,
+        localTimeSource: "device_timezone",
+        startUtcOffsetMinutes: -420,
+        timezone: "America/Los_Angeles",
+      },
+    ]);
+  }, 180_000);
 });
 
 function requireClickHouseUrl(): string {
@@ -274,6 +304,77 @@ async function seedSensorBearingRepresentativeFixture(
   targetSchema: string,
 ): Promise<void> {
   await seedSpecificActivityTypeFixture(client, targetSchema, "cycling", "cycling");
+}
+
+async function seedNamedTimezoneContextFixture(
+  client: ClickHouseClient,
+  targetSchema: string,
+): Promise<void> {
+  await runStatements(client, [
+    `DROP DATABASE IF EXISTS ${targetSchema} SYNC`,
+    `CREATE DATABASE ${targetSchema}`,
+    createActivitySourceRecordsTableSql(targetSchema),
+    createActivityDuplicateGroupsTableSql(targetSchema),
+    createSourceActivityTableSql(targetSchema),
+    createMetricStreamTableSql(targetSchema),
+    createDedupedActivitiesTableSql(targetSchema),
+    `INSERT INTO ${targetSchema}.activity_source_records VALUES (
+  '${activityId}',
+  'peloton',
+  '${testUserId}',
+  'peloton-offset-only',
+  'strength',
+  'strength',
+  CAST(NULL, 'Nullable(String)'),
+  toDateTime64('2026-09-01 14:55:54', 6, 'UTC'),
+  toDateTime64('2026-09-01 15:55:54', 6, 'UTC'),
+  CAST(NULL, 'Nullable(String)'),
+  CAST(NULL, 'Nullable(String)'),
+  CAST(NULL, 'Nullable(String)'),
+  CAST(NULL, 'Nullable(String)'),
+  -240,
+  -240,
+  'provider_offset',
+  CAST(NULL, 'Nullable(String)'),
+  toDateTime64('2026-09-01 16:00:00', 9, 'UTC'),
+  10,
+  1,
+  0,
+  toDateTime64('2026-09-01 16:01:00', 9, 'UTC')
+)`,
+    `INSERT INTO ${targetSchema}.activity_source_records VALUES (
+  '${linkedActivityId}',
+  'strong-csv',
+  '${testUserId}',
+  'strong-named-zone',
+  'strength',
+  'strength',
+  CAST(NULL, 'Nullable(String)'),
+  toDateTime64('2026-09-01 14:55:54', 6, 'UTC'),
+  toDateTime64('2026-09-01 15:55:54', 6, 'UTC'),
+  CAST(NULL, 'Nullable(String)'),
+  CAST(NULL, 'Nullable(String)'),
+  CAST(NULL, 'Nullable(String)'),
+  'America/Los_Angeles',
+  -420,
+  -420,
+  'device_timezone',
+  CAST(NULL, 'Nullable(String)'),
+  toDateTime64('2026-09-01 16:00:00', 9, 'UTC'),
+  20,
+  1,
+  0,
+  toDateTime64('2026-09-01 16:01:00', 9, 'UTC')
+)`,
+    insertActivityDuplicateGroupSql(targetSchema),
+    `INSERT INTO ${targetSchema}.activity_duplicate_groups VALUES (
+  '${linkedActivityId}',
+  '${groupId}',
+  1,
+  0,
+  toDateTime64('2026-09-01 16:01:00', 9, 'UTC')
+)`,
+  ]);
 }
 
 async function runStatements(client: ClickHouseClient, statements: string[]): Promise<void> {

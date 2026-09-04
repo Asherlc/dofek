@@ -1,10 +1,5 @@
--- Canonical definition of the fitness.v_activity view.
--- This file is the source definition for fresh databases, local test schemas,
--- and future forward migrations that need to update the deployed view.
---
--- To change v_activity: edit THIS file and add a forward migration when the
--- deployed view definition must change.
--- Git merge conflicts here force developers to reconcile concurrent changes.
+-- Forward migration matching drizzle/_views/01_v_activity.sql at migration
+-- creation time. The canonical file remains the source for later changes.
 
 CREATE OR REPLACE VIEW fitness.v_activity AS
 WITH RECURSIVE ranked AS (
