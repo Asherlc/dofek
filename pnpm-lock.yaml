@@ -73,8 +73,8 @@ importers:
         specifier: 3.1106.0
         version: 3.1106.0
       '@bull-board/api':
-        specifier: 8.1.2
-        version: 8.1.2(@bull-board/ui@8.1.2)
+        specifier: 9.4.0
+        version: 9.4.0(@bull-board/ui@9.4.0)(bullmq@5.79.2)
       '@bull-board/express':
         specifier: 8.1.2
         version: 8.1.2(supports-color@11.0.0)
@@ -2222,11 +2222,26 @@ packages:
     peerDependencies:
       '@bull-board/ui': 8.1.2
 
+  '@bull-board/api@9.4.0':
+    resolution: {integrity: sha512-poPku55iQd/VS65BUD8yn/uIHUruDwOVOiPEbThzjCd1nHAzEUEj/D+LWW1t9vzRsvN6xBr5jXlbJDapBnz7aw==}
+    peerDependencies:
+      '@bull-board/ui': 9.4.0
+      bull: ^4.16.5
+      bullmq: ^5.79.2 || ^6.0.0
+    peerDependenciesMeta:
+      bull:
+        optional: true
+      bullmq:
+        optional: true
+
   '@bull-board/express@8.1.2':
     resolution: {integrity: sha512-IldpQLXlezJRzk1BVNJjH+Oi3NBRcBopq9bI2ndLs0R+ySK1ux+TtGDUW+eX2fl0wEHwSpuUgPBAJID695zohA==}
 
   '@bull-board/ui@8.1.2':
     resolution: {integrity: sha512-gC5u9XUSiRile4/VC+WHXtaPvfZV4Mrrz8MSvPe32Hjl2MXStfSuEOb+9Tw/WMpNSZ442tGpFZLz0RDh1Yo3jg==}
+
+  '@bull-board/ui@9.4.0':
+    resolution: {integrity: sha512-oRuCjMawEdpwFpHWWT6tzZLVqaqP+sK7xs1C1AhvTGm4pViNyPKwV7chtSExFOdVZuXJnJOl74WTXsHRfKMF3A==}
 
   '@cacheable/memory@2.2.0':
     resolution: {integrity: sha512-CTLKqLItRCEixEAewD3/j9DB3/o96gpTPD4eJ1v+DGOlxZRZncRQkGYqqnAGCscYd6RNeXfGeiuCphsPtqyIfQ==}
@@ -18298,6 +18313,13 @@ snapshots:
       '@bull-board/ui': 8.1.2
       redis-info: 3.1.0
 
+  '@bull-board/api@9.4.0(@bull-board/ui@9.4.0)(bullmq@5.79.2)':
+    dependencies:
+      '@bull-board/ui': 9.4.0(bullmq@5.79.2)
+      redis-info: 3.1.0
+    optionalDependencies:
+      bullmq: 5.79.2(supports-color@11.0.0)
+
   '@bull-board/express@8.1.2(supports-color@11.0.0)':
     dependencies:
       '@bull-board/api': 8.1.2(@bull-board/ui@8.1.2)
@@ -18310,6 +18332,13 @@ snapshots:
   '@bull-board/ui@8.1.2':
     dependencies:
       '@bull-board/api': 8.1.2(@bull-board/ui@8.1.2)
+
+  '@bull-board/ui@9.4.0(bullmq@5.79.2)':
+    dependencies:
+      '@bull-board/api': 9.4.0(@bull-board/ui@9.4.0)(bullmq@5.79.2)
+    transitivePeerDependencies:
+      - bull
+      - bullmq
 
   '@cacheable/memory@2.2.0':
     dependencies:
