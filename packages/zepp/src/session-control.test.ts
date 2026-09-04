@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createSessionCall,
   drainManualExportQueue,
+  getImuTransferFailureReason,
   getSessionAction,
   handleSessionCall,
   parseSessionCommand,
@@ -12,6 +13,15 @@ import {
 import { makeSessionCallHandlers } from "./test-helpers.ts";
 
 describe("Zepp session control", () => {
+  it.each([
+    [{ readyState: "error", error: "Bluetooth interrupted" }, "Bluetooth interrupted"],
+    [{ readyState: "error" }, "IMU transfer failed."],
+    [{ readyState: "canceled" }, "IMU transfer was canceled."],
+    [{ readyState: "transferred" }, null],
+  ])("normalizes terminal transfer failure %#", (event, expected) => {
+    expect(getImuTransferFailureReason(event, "IMU transfer failed.")).toBe(expected);
+  });
+
   it("offers an explicit start action while idle", () => {
     expect(getSessionAction(SESSION_STATE.IDLE)).toEqual({
       command: SESSION_COMMAND.START,

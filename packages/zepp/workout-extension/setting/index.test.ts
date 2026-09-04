@@ -16,6 +16,8 @@ interface SettingState {
   pairingVerificationUrl: string | null;
   pairingQrImageUrl: string | null;
   pairingExpiresAt: string | null;
+  imuSyncStatus: Record<string, unknown>;
+  transferProgress: Record<string, unknown>;
 }
 
 interface SettingConfiguration {
@@ -94,6 +96,8 @@ function buildWith(values: Readonly<Record<string, string | null>>) {
     pairingVerificationUrl: null,
     pairingQrImageUrl: null,
     pairingExpiresAt: null,
+    imuSyncStatus: {},
+    transferProgress: {},
   };
   const settingsStorage = {
     getItem: vi.fn((key: string) => values[key] ?? null),
@@ -130,6 +134,8 @@ describe("workout extension settings", () => {
       pairingVerificationUrl: null,
       pairingQrImageUrl: null,
       pairingExpiresAt: null,
+      imuSyncStatus: {},
+      transferProgress: {},
     });
     expect(inputConfigurations).toHaveLength(0);
     expect(buttonConfigurations).toHaveLength(2);
@@ -169,6 +175,34 @@ describe("workout extension settings", () => {
       "Check connection",
       "Disconnect Dofek",
     ]);
+  });
+
+  it("shows the shared motion delivery error", () => {
+    buildWith({
+      [STORAGE_KEYS.IMU_SYNC_STATUS]: JSON.stringify({
+        state: "error",
+        reason: "IMU data upload failed.",
+      }),
+    });
+
+    expect(JSON.stringify(viewConfigurations)).toContain("Motion sync: error");
+    expect(JSON.stringify(viewConfigurations)).toContain(
+      "Motion reason: IMU data upload failed.",
+    );
+  });
+
+  it("shows binary transfer failures independently from chunk sync", () => {
+    buildWith({
+      [STORAGE_KEYS.TRANSFER_PROGRESS]: JSON.stringify({
+        state: "error",
+        reason: "Workout IMU transfer was canceled.",
+      }),
+    });
+
+    expect(JSON.stringify(viewConfigurations)).toContain("Transfer: error");
+    expect(JSON.stringify(viewConfigurations)).toContain(
+      "Transfer reason: Workout IMU transfer was canceled.",
+    );
   });
 
   it("renders stored pairing details and the QR image", () => {

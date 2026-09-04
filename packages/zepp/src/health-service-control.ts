@@ -1,20 +1,20 @@
 export interface HealthServiceDependencies {
   queryPermission(): number;
   requestPermission(): Promise<number>;
-  startService(): void;
+  startService(): void | Promise<void>;
 }
 
 export interface ForegroundHealthOwnershipDependencies {
   queryPermission(): number;
   requestPermission(): Promise<number>;
   stopService(): Promise<void>;
-  startService(): void;
+  startService(): void | Promise<void>;
 }
 
 export type ForegroundHealthOwnership = {
   state: "acquired" | "permission-denied";
   reason?: string;
-  release(): void;
+  release(afterMutation?: Promise<unknown>): Promise<void>;
 };
 
 export type HealthServiceStartResult =
@@ -34,7 +34,7 @@ export async function ensureHealthServiceRunning(
     return { state: "permission-denied", reason: PERMISSION_DENIED_REASON };
   }
 
-  dependencies.startService();
+  await dependencies.startService();
   return { state: "started" };
 }
 
@@ -48,18 +48,53 @@ export async function acquireForegroundHealthOwnership(
     return {
       state: "permission-denied",
       reason: PERMISSION_DENIED_REASON,
-      release() {},
+      async release() {},
     };
   }
 
   await dependencies.stopService();
   let released = false;
+  let releaseTask: Promise<void> | null = null;
   return {
     state: "acquired",
-    release() {
-      if (released) return;
+    release(afterMutation) {
+      if (releaseTask) return releaseTask;
+      if (released) return Promise.resolve();
       released = true;
-      dependencies.startService();
+      if (!afterMutation) {
+        const pendingRelease = Promise.resolve(dependencies.startService()).then(() => undefined);
+        releaseTask = pendingRelease;
+        return pendingRelease;
+      }
+      const pendingRelease = restartAfterMutation(afterMutation, dependencies.startService);
+      releaseTask = pendingRelease;
+      return pendingRelease;
     },
   };
+}
+
+async function restartAfterMutation(
+  mutation: Promise<unknown>,
+  startService: () => void | Promise<void>,
+): Promise<void> {
+  const noError = Symbol("no-error");
+  let mutationError: unknown = noError;
+  try {
+    await mutation;
+  } catch (error) {
+    mutationError = error;
+  }
+  try {
+    await startService();
+  } catch (restartError) {
+    if (mutationError !== noError) {
+      throw new AggregateError(
+        [mutationError, restartError],
+        "Foreground health mutation and App Service restart both failed.",
+        { cause: mutationError },
+      );
+    }
+    throw restartError;
+  }
+  if (mutationError !== noError) throw mutationError;
 }

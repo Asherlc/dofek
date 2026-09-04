@@ -52,6 +52,8 @@ interface WorkoutSettingsState {
   pairingVerificationUrl: string | null;
   pairingQrImageUrl: string | null;
   pairingExpiresAt: string | null;
+  imuSyncStatus: Record<string, unknown>;
+  transferProgress: Record<string, unknown>;
 }
 
 const state: WorkoutSettingsState = {
@@ -64,6 +66,8 @@ const state: WorkoutSettingsState = {
   pairingVerificationUrl: null,
   pairingQrImageUrl: null,
   pairingExpiresAt: null,
+  imuSyncStatus: EMPTY_STATUS,
+  transferProgress: EMPTY_STATUS,
 };
 
 AppSettingsPage({
@@ -89,6 +93,12 @@ AppSettingsPage({
       props.settingsStorage.getItem(STORAGE_KEYS.PAIRING_QR_IMAGE_URL) ?? null;
     this.state.pairingExpiresAt =
       props.settingsStorage.getItem(STORAGE_KEYS.PAIRING_EXPIRES_AT) ?? null;
+    this.state.imuSyncStatus = readStatus(
+      props.settingsStorage.getItem(STORAGE_KEYS.IMU_SYNC_STATUS),
+    );
+    this.state.transferProgress = readStatus(
+      props.settingsStorage.getItem(STORAGE_KEYS.TRANSFER_PROGRESS),
+    );
 
     const connectionState = parseConnectionState(this.state.connectionStatus.state);
     const connectionActions = deriveConnectionActions(
@@ -96,6 +106,8 @@ AppSettingsPage({
       Boolean(this.state.apiToken.trim()),
     );
     const connectionReason = this.state.connectionStatus.reason;
+    const imuStatus = this.state.imuSyncStatus;
+    const transferProgress = this.state.transferProgress;
     const hasPairingCode = Boolean(
       this.state.pairingShortCode && this.state.pairingVerificationUrl,
     );
@@ -107,6 +119,16 @@ AppSettingsPage({
       View({ style: { marginTop: "1em" } }, [
         `Connection: ${connectionState}`,
         connectionReason ? `Reason: ${String(connectionReason)}` : "",
+      ]),
+      View({ style: { marginTop: "1em" } }, [
+        `Motion sync: ${String(imuStatus.state ?? "idle")}`,
+        imuStatus.reason ? `Motion reason: ${String(imuStatus.reason)}` : "",
+      ]),
+      View({ style: { marginTop: "1em" } }, [
+        `Transfer: ${String(transferProgress.state ?? "idle")}`,
+        transferProgress.reason
+          ? `Transfer reason: ${String(transferProgress.reason)}`
+          : "",
       ]),
     ];
 

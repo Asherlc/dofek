@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { createImuChunkEnvelope } from "../src/imu-upload.ts";
 import { STORAGE_KEYS } from "../src/storage-keys.ts";
 
 interface RuntimeWidget {
@@ -21,16 +22,39 @@ interface SideRuntime {
   startPairing(): Promise<Record<string, unknown> | null>;
   disconnect(): Promise<void>;
   verifyConnection(): Promise<void>;
+  onReceivedFile(file: {
+    fileName?: string;
+    filePath?: string;
+    params?: Record<string, unknown>;
+    on(
+      event: string,
+      callback: (event: { data: Record<string, unknown> }) => void,
+    ): void;
+  }): void;
 }
 
 interface WatchRuntime {
   state: {
     hasCredentials: boolean;
+    healthOwnership?: Promise<{ release(): Promise<void> }>;
+    transferTask?: unknown;
   };
+  acquireHealthOwnership(): void;
   build(): void;
   onCall(payload: WatchCallPayload): void;
   onInit(): void;
   request(request: { method: string; params?: Record<string, unknown> }): Promise<unknown>;
+  sendFile(
+    path: string,
+    params: Record<string, unknown>,
+  ): { on(event: string, callback: (event: { data: Record<string, unknown> }) => void): void };
+  startTransfer(transfer: {
+    observedHzX100: number;
+    path: string;
+    sampleCount: number;
+    sessionStartMs: number;
+    slot: "A" | "B";
+  }): void;
 }
 
 let sideConfiguration: SideRuntime | undefined;
@@ -220,5 +244,239 @@ describe("Zepp pairing refresh", () => {
       "Saved credentials belong to a different Zepp app",
     );
     expect(calls).toContainEqual({ method: "dofek.connectionChanged", params: {} });
+  });
+
+  it("retains the SDK reason when a received IMU file transfer fails", () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("settings", {
+      settingsStorage: {
+        getItem: vi.fn((key: string) => values.get(key) ?? null),
+        removeItem: vi.fn((key: string) => values.delete(key)),
+        setItem: vi.fn((key: string, value: string) => values.set(key, value)),
+      },
+    });
+    const side = Object.assign({}, requireSideConfiguration());
+
+    side.onReceivedFile({
+      fileName: "normal_a.bin",
+      params: { segmentId: "segment-1", source: "zepp" },
+      on(event, callback) {
+        if (event === "change") {
+          callback({
+            data: { readyState: "error", error: "Bluetooth connection was interrupted." },
+          });
+        }
+      },
+    });
+
+    expect(JSON.parse(values.get(STORAGE_KEYS.TRANSFER_PROGRESS) ?? "{}")).toEqual({
+      state: "error",
+      reason: "Bluetooth connection was interrupted.",
+      segmentId: "segment-1",
+      source: "zepp",
+    });
+  });
+
+  it("records a received IMU file transfer cancellation", () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("settings", {
+      settingsStorage: {
+        getItem: vi.fn((key: string) => values.get(key) ?? null),
+        removeItem: vi.fn((key: string) => values.delete(key)),
+        setItem: vi.fn((key: string, value: string) => values.set(key, value)),
+      },
+    });
+    const side = Object.assign({}, requireSideConfiguration());
+
+    side.onReceivedFile({
+      fileName: "normal_a.bin",
+      params: { segmentId: "segment-1", source: "zepp" },
+      on(event, callback) {
+        if (event === "change") callback({ data: { readyState: "canceled" } });
+      },
+    });
+
+    expect(JSON.parse(values.get(STORAGE_KEYS.TRANSFER_PROGRESS) ?? "{}")).toEqual({
+      state: "error",
+      reason: "IMU transfer was canceled.",
+      segmentId: "segment-1",
+      source: "zepp",
+    });
+  });
+
+  it("persists a synchronous App Service start failure", async () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("settings", {
+      settingsStorage: {
+        getItem: vi.fn((key: string) => values.get(key) ?? null),
+        removeItem: vi.fn((key: string) => values.delete(key)),
+        setItem: vi.fn((key: string, value: string) => values.set(key, value)),
+      },
+    });
+    vi.stubGlobal("appServiceStop", vi.fn(() => 2));
+    vi.stubGlobal("appServiceStart", vi.fn(() => {
+      throw new Error("App Service unavailable");
+    }));
+    const watchConfig = requireWatchConfiguration();
+    const watch = Object.assign({}, watchConfig, {
+      state: { ...watchConfig.state },
+      collectAndDeliverHealth: vi.fn(),
+    });
+
+    watch.acquireHealthOwnership();
+    const ownership = await watch.state.healthOwnership;
+
+    await expect(ownership?.release()).rejects.toThrow("App Service unavailable");
+    expect(JSON.parse(values.get(STORAGE_KEYS.HEALTH_SERVICE_STATUS) ?? "{}")).toEqual({
+      state: "error",
+      reason: "App Service unavailable",
+    });
+  });
+
+  it("keeps the normal transfer barrier until phone persistence is confirmed", async () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("settings", {
+      settingsStorage: {
+        getItem: vi.fn((key: string) => values.get(key) ?? null),
+        removeItem: vi.fn((key: string) => values.delete(key)),
+        setItem: vi.fn((key: string, value: string) => values.set(key, value)),
+      },
+    });
+    const callbacks = new Map<string, (event: { data: Record<string, unknown> }) => void>();
+    const task = {
+      on: vi.fn((event: string, callback: (event: { data: Record<string, unknown> }) => void) => {
+        callbacks.set(event, callback);
+      }),
+    };
+    let confirmPersistence: ((value: { ok: true }) => void) | undefined;
+    const watchConfig = requireWatchConfiguration();
+    const transfer = {
+      observedHzX100: 2_500,
+      path: "data://normal_a.bin",
+      sampleCount: 120,
+      sessionStartMs: 1_720_000_000_000,
+      slot: "A" as const,
+    };
+    const watch = Object.assign({}, watchConfig, {
+      state: { ...watchConfig.state, pendingImuA: transfer },
+      sendFile: vi.fn(() => task),
+      request: vi.fn(
+        () =>
+          new Promise<{ ok: true }>((resolve) => {
+            confirmPersistence = resolve;
+          }),
+      ),
+    });
+
+    watch.startTransfer(transfer);
+    callbacks.get("change")?.({ data: { readyState: "transferred" } });
+
+    expect(watch.state.transferTask).toBe(task);
+    confirmPersistence?.({ ok: true });
+    await vi.waitFor(() => expect(watch.state.transferTask).toBeNull());
+    expect(watch.state.pendingImuA).toBeNull();
+  });
+
+  it("does not acknowledge a watch binary backup until the phone registry contains it", async () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("settings", {
+      settingsStorage: {
+        getItem: vi.fn((key: string) => values.get(key) ?? null),
+        removeItem: vi.fn((key: string) => values.delete(key)),
+        setItem: vi.fn((key: string, value: string) => values.set(key, value)),
+      },
+    });
+    const side = Object.assign({}, requireSideConfiguration());
+    const response = await new Promise<{ error: unknown; result: unknown }>((resolve) => {
+      side.onRequest(
+        {
+          method: "imu.transferComplete",
+          params: { segmentId: "segment-missing", source: "zepp" },
+        },
+        (error, result) => resolve({ error, result }),
+      );
+    });
+
+    expect(response.error).toMatchObject({
+      message: "Phone has not persisted the IMU binary backup yet.",
+    });
+    expect(response.result).toBeNull();
+  });
+
+  it("surfaces registry persistence failure instead of marking a received backup done", () => {
+    const values = new Map<string, string>();
+    values.set(STORAGE_KEYS.IMU_SYNC_STATUS, JSON.stringify({ state: "done", uploaded: 1 }));
+    const persistenceError = new Error("Settings storage unavailable");
+    vi.stubGlobal("settings", {
+      settingsStorage: {
+        getItem: vi.fn((key: string) => values.get(key) ?? null),
+        removeItem: vi.fn((key: string) => values.delete(key)),
+        setItem: vi.fn((key: string, value: string) => {
+          if (key === STORAGE_KEYS.PHONE_IMU_FILES) throw persistenceError;
+          values.set(key, value);
+        }),
+      },
+    });
+    const side = Object.assign({}, requireSideConfiguration());
+
+    side.onReceivedFile({
+      fileName: "normal_a.bin",
+      filePath: "data://inbox/normal_a.bin",
+      params: { segmentId: "segment-1", source: "zepp", sampleCount: "120" },
+      on(event, callback) {
+        if (event === "change") callback({ data: { readyState: "transferred" } });
+      },
+    });
+
+    expect(JSON.parse(values.get(STORAGE_KEYS.TRANSFER_PROGRESS) ?? "{}")).toMatchObject({
+      state: "error",
+      segmentId: "segment-1",
+      source: "zepp",
+      reason: "Settings storage unavailable",
+    });
+    expect(JSON.parse(values.get(STORAGE_KEYS.IMU_SYNC_STATUS) ?? "{}")).toMatchObject({
+      state: "done",
+      uploaded: 1,
+    });
+  });
+
+  it("keeps a binary transfer failure visible after a successful chunk drain", async () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("settings", {
+      settingsStorage: {
+        getItem: vi.fn((key: string) => values.get(key) ?? null),
+        removeItem: vi.fn((key: string) => values.delete(key)),
+        setItem: vi.fn((key: string, value: string) => values.set(key, value)),
+      },
+    });
+    const side = Object.assign({}, requireSideConfiguration());
+    side.onReceivedFile({
+      params: { segmentId: "segment-1", source: "zepp" },
+      on(event, callback) {
+        if (event === "change") {
+          callback({ data: { readyState: "error", error: "Bluetooth interrupted" } });
+        }
+      },
+    });
+
+    const envelope = createImuChunkEnvelope({
+      connectionType: "zepp",
+      installId: "install-1",
+      segmentId: "segment-1",
+      sessionStartMs: 1_720_000_000_000,
+      samples: [{ tMs: 0, ax: 1, ay: 2, az: 3, gx: 4, gy: 5, gz: 6 }],
+    });
+    await new Promise<void>((resolve, reject) => {
+      side.onRequest({ method: "imu.uploadChunk", params: { envelope } }, (error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+    await Promise.resolve();
+
+    expect(JSON.parse(values.get(STORAGE_KEYS.TRANSFER_PROGRESS) ?? "{}")).toMatchObject({
+      state: "error",
+      reason: "Bluetooth interrupted",
+    });
   });
 });

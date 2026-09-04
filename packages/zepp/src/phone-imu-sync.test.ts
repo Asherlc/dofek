@@ -4,12 +4,11 @@ import { persistImuEnvelope, readPhoneImuOutbox } from "./phone-imu-outbox.ts";
 import { drainPhoneImuOutbox } from "./phone-imu-sync.ts";
 
 function createStorage() {
-  let persisted: string | null = null;
+  const persisted = new Map<string, string>();
   return {
-    getItem: vi.fn(() => persisted),
-    setItem: vi.fn((_key: string, value: string) => {
-      persisted = value;
-    }),
+    getItem: vi.fn((key: string) => persisted.get(key) ?? null),
+    removeItem: vi.fn((key: string) => persisted.delete(key)),
+    setItem: vi.fn((key: string, value: string) => persisted.set(key, value)),
   };
 }
 
@@ -58,5 +57,29 @@ describe("phone IMU outbox drain", () => {
       attempts: 1,
       lastError: "offline",
     });
+  });
+
+  it("updates only the bounded upload batch when a long offline queue fails", async () => {
+    const storage = createStorage();
+    for (let index = 0; index < 12; index += 1) {
+      persistImuEnvelope(storage, envelope("segment-long", index * 100));
+    }
+    storage.setItem.mockClear();
+
+    await expect(
+      drainPhoneImuOutbox(storage, async () => {
+        throw new Error("offline");
+      }),
+    ).rejects.toThrow("offline");
+
+    expect(storage.setItem).toHaveBeenCalledTimes(10);
+    expect(storage.setItem).not.toHaveBeenCalledWith("phone_imu_outbox", expect.any(String));
+    expect(readPhoneImuOutbox(storage).pending.slice(0, 10)).toEqual(
+      expect.arrayContaining([expect.objectContaining({ attempts: 1, lastError: "offline" })]),
+    );
+    expect(readPhoneImuOutbox(storage).pending.slice(10)).toEqual([
+      expect.objectContaining({ attempts: 0 }),
+      expect.objectContaining({ attempts: 0 }),
+    ]);
   });
 });

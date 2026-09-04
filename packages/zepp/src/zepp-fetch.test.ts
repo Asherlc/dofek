@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { summarizeZeppFetchResponse } from "./zepp-fetch.ts";
+import { describe, expect, it, vi } from "vitest";
+import { handleDofekUploadFailure, summarizeZeppFetchResponse } from "./zepp-fetch.ts";
 
 describe("summarizeZeppFetchResponse", () => {
   it("accepts a successful JSON-string body", () => {
@@ -82,6 +82,33 @@ describe("summarizeZeppFetchResponse", () => {
       errorMessage: "HTTP 500",
       ok: false,
       status: 500,
+    });
+  });
+});
+
+describe("handleDofekUploadFailure", () => {
+  it("expires invalid credentials and returns the actionable server error for every upload path", () => {
+    const values = new Map([["dofek_api_token", "expired-token"]]);
+    const storage = {
+      removeItem: vi.fn((key: string) => values.delete(key)),
+      setItem: vi.fn((key: string, value: string) => values.set(key, value)),
+    };
+    const error = handleDofekUploadFailure(
+      storage,
+      {
+        body: { error: "Invalid or revoked Dofek connection." },
+        errorMessage: "Invalid or revoked Dofek connection.",
+        ok: false,
+        status: 401,
+      },
+      "Data upload failed.",
+    );
+
+    expect(error.message).toBe("Invalid or revoked Dofek connection.");
+    expect(storage.removeItem).toHaveBeenCalledWith("dofek_api_token");
+    expect(JSON.parse(values.get("dofek_connection_status") ?? "{}")).toEqual({
+      state: "error",
+      reason: "Dofek connection expired. Connect again.",
     });
   });
 });

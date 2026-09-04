@@ -14,7 +14,7 @@ import { LatestOperation } from "../src/latest-operation.ts";
 import { shouldRetryPairingPollFailure } from "../src/pairing-poll.ts";
 import { persistHealthEnvelope } from "../src/phone-health-outbox.ts";
 import { drainPhoneHealthOutbox } from "../src/phone-health-sync.ts";
-import { persistReceivedImuFile } from "../src/phone-imu-files.ts";
+import { persistReceivedImuFile, readReceivedImuFiles } from "../src/phone-imu-files.ts";
 import { persistImuEnvelope } from "../src/phone-imu-outbox.ts";
 import { drainPhoneImuOutbox } from "../src/phone-imu-sync.ts";
 import {
@@ -23,10 +23,18 @@ import {
   captureException as reportPostHogException,
   restoreBufferedTelemetryEvents,
 } from "../src/posthog-client.ts";
-import { createSessionCall, parseSessionCommand } from "../src/session-control.ts";
+import {
+  createSessionCall,
+  getImuTransferFailureReason,
+  parseSessionCommand,
+} from "../src/session-control.ts";
 import { DEFAULT_DOFEK_SERVER_URL, FREQ_MODE_LABELS, STORAGE_KEYS } from "../src/storage-keys.ts";
 import { SyncCoordinator } from "../src/sync-coordinator.ts";
-import { summarizeZeppFetchResponse, type ZeppFetchResponse } from "../src/zepp-fetch.ts";
+import {
+  handleDofekUploadFailure,
+  summarizeZeppFetchResponse,
+  type ZeppFetchResponse,
+} from "../src/zepp-fetch.ts";
 
 BaseSideService.use(messagingPlugin);
 
@@ -113,6 +121,22 @@ function setHealthSyncStatus(payload: Record<string, unknown>): void {
   settings.settingsStorage.setItem(STORAGE_KEYS.HEALTH_SYNC_STATUS, JSON.stringify(payload));
 }
 
+function setImuSyncStatus(payload: Record<string, unknown>): void {
+  settings.settingsStorage.setItem(STORAGE_KEYS.IMU_SYNC_STATUS, JSON.stringify(payload));
+}
+
+function recordImuTransferFailure(
+  error: unknown,
+  context: { segmentId: string; source: unknown },
+): void {
+  const reason = error instanceof Error ? error.message : "IMU file transfer failed.";
+  reportSideException(error, { category: "imu-file-transfer", ...context });
+  settings.settingsStorage.setItem(
+    STORAGE_KEYS.TRANSFER_PROGRESS,
+    JSON.stringify({ state: "error", reason, ...context }),
+  );
+}
+
 async function postHealthEnvelope(
   envelope: HealthEnvelopeV1<HealthUploadPayload>,
 ): Promise<HealthUploadResponse> {
@@ -133,14 +157,7 @@ async function postHealthEnvelope(
   });
   const summary = summarizeZeppFetchResponse(response);
   if (!summary.ok) {
-    if (summary.status === 401) {
-      settings.settingsStorage.removeItem(STORAGE_KEYS.DOFEK_API_TOKEN);
-      settings.settingsStorage.setItem(
-        STORAGE_KEYS.DOFEK_CONNECTION_STATUS,
-        JSON.stringify({ state: "error", reason: "Dofek connection expired. Connect again." }),
-      );
-    }
-    throw new Error(summary.errorMessage ?? "Health data upload failed.");
+    throw handleDofekUploadFailure(settings.settingsStorage, summary, "Health data upload failed.");
   }
   return parseHealthUploadResponse(summary.body);
 }
@@ -164,7 +181,7 @@ async function postImuEnvelope(
   });
   const summary = summarizeZeppFetchResponse(response);
   if (!summary.ok) {
-    throw new Error(summary.errorMessage ?? "IMU data upload failed.");
+    throw handleDofekUploadFailure(settings.settingsStorage, summary, "IMU data upload failed.");
   }
   return parseHealthUploadResponse(summary.body);
 }
@@ -183,10 +200,14 @@ const healthSyncCoordinator = new SyncCoordinator(async (reasons) => {
 });
 
 const imuSyncCoordinator = new SyncCoordinator(async (reasons) => {
+  setImuSyncStatus({ state: "syncing", reasons });
   try {
-    await drainPhoneImuOutbox(settings.settingsStorage, postImuEnvelope);
+    const result = await drainPhoneImuOutbox(settings.settingsStorage, postImuEnvelope);
+    setImuSyncStatus({ state: "done", ...result });
   } catch (error) {
+    const message = error instanceof Error ? error.message : "IMU data upload failed.";
     reportSideException(error, { category: "imu-upload", reasons });
+    setImuSyncStatus({ state: "error", reason: message });
   }
 });
 
@@ -670,31 +691,36 @@ AppSideService(
       file.on("change", (event: { data: Record<string, unknown> }) => {
         if (event.data.readyState === "transferred") {
           const exportPath = file.filePath;
-          if (!exportPath) {
-            logger.error("file transfer complete but no filePath provided by SDK");
-            settings.settingsStorage.setItem(
-              STORAGE_KEYS.TRANSFER_PROGRESS,
-              JSON.stringify({ state: "error", reason: "no file path" }),
-            );
-            return;
-          }
-          settings.settingsStorage.setItem(STORAGE_KEYS.LAST_EXPORT_PATH, exportPath);
           const segmentId =
             typeof file.params?.segmentId === "string" ? file.params.segmentId.trim() : "";
           const source = file.params?.source;
-          if (segmentId && (source === "zepp" || source === "zepp-workout")) {
-            try {
-              persistReceivedImuFile(settings.settingsStorage, {
-                segmentId,
-                source,
-                path: exportPath,
-                sampleCount: Number(file.params?.sampleCount ?? 0),
-                receivedAt: new Date().toISOString(),
-              });
-            } catch (error) {
-              reportSideException(error, { category: "imu-file-persistence", segmentId });
-            }
+          if (!exportPath) {
+            recordImuTransferFailure(new Error("Phone did not provide a received IMU file path."), {
+              segmentId,
+              source,
+            });
+            return;
           }
+          if (!segmentId || (source !== "zepp" && source !== "zepp-workout")) {
+            recordImuTransferFailure(new Error("Received IMU file metadata is invalid."), {
+              segmentId,
+              source,
+            });
+            return;
+          }
+          try {
+            persistReceivedImuFile(settings.settingsStorage, {
+              segmentId,
+              source,
+              path: exportPath,
+              sampleCount: Number(file.params?.sampleCount ?? 0),
+              receivedAt: new Date().toISOString(),
+            });
+          } catch (error) {
+            recordImuTransferFailure(error, { segmentId, source });
+            return;
+          }
+          settings.settingsStorage.setItem(STORAGE_KEYS.LAST_EXPORT_PATH, exportPath);
           settings.settingsStorage.setItem(
             STORAGE_KEYS.TRANSFER_PROGRESS,
             JSON.stringify({
@@ -716,11 +742,12 @@ AppSideService(
           return;
         }
 
-        if (event.data.readyState === "error") {
-          settings.settingsStorage.setItem(
-            STORAGE_KEYS.TRANSFER_PROGRESS,
-            JSON.stringify({ state: "error" }),
-          );
+        const reason = getImuTransferFailureReason(event.data, "IMU file transfer failed.");
+        if (reason) {
+          const segmentId =
+            typeof file.params?.segmentId === "string" ? file.params.segmentId.trim() : "";
+          const source = file.params?.source;
+          recordImuTransferFailure(new Error(reason), { segmentId, source });
         }
       });
     },
@@ -778,13 +805,47 @@ AppSideService(
       }
 
       if (method === "imu.transferComplete") {
-        const status = readJson(settings.settingsStorage.getItem(STORAGE_KEYS.SESSION_STATUS), {});
-        this.setSessionStatus({
-          ...status,
-          transferState: "sent",
-          sampleCount: params.sampleCount ?? status.sampleCount,
-          updatedAt: Date.now(),
-        });
+        const segmentId = typeof params.segmentId === "string" ? params.segmentId.trim() : "";
+        const source = params.source;
+        try {
+          if (!segmentId || (source !== "zepp" && source !== "zepp-workout")) {
+            throw new Error("IMU transfer acknowledgement is invalid.");
+          }
+          const persisted = readReceivedImuFiles(settings.settingsStorage).some(
+            (file) => file.segmentId === segmentId && file.source === source,
+          );
+          if (!persisted) {
+            throw new Error("Phone has not persisted the IMU binary backup yet.");
+          }
+          const status = readJson(
+            settings.settingsStorage.getItem(STORAGE_KEYS.SESSION_STATUS),
+            {},
+          );
+          this.setSessionStatus({
+            ...status,
+            transferState: "sent",
+            sampleCount: params.sampleCount ?? status.sampleCount,
+            updatedAt: Date.now(),
+          });
+          res(null, { ok: true });
+        } catch (error) {
+          recordImuTransferFailure(error, { segmentId, source });
+          res(error, null);
+        }
+        return;
+      }
+
+      if (method === "imu.transferFailed") {
+        const reason =
+          typeof params.reason === "string" && params.reason.trim()
+            ? params.reason.trim()
+            : "IMU file transfer failed.";
+        const segmentId = typeof params.segmentId === "string" ? params.segmentId.trim() : "";
+        const source = params.source;
+        settings.settingsStorage.setItem(
+          STORAGE_KEYS.TRANSFER_PROGRESS,
+          JSON.stringify({ state: "error", reason, segmentId, source }),
+        );
         res(null, { ok: true });
         return;
       }

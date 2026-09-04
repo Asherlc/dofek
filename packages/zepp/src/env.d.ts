@@ -4,6 +4,10 @@ declare module "@zos/fs" {
     path: string;
     options?: { encoding?: string };
   }): ArrayBuffer | string;
+  export function mkdirSync(options: { path: string }): number;
+  export function readdirSync(options: { path: string }): string[] | undefined;
+  export function renameSync(options: { oldPath: string; newPath: string }): number;
+  export function rmSync(options: { path: string }): number;
   export function openSync(options: { path: string; flag: number }): number;
   export function writeSync(options: { fd: number; buffer: ArrayBuffer }): number;
   export function closeSync(options: { fd: number }): void;

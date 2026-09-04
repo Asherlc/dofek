@@ -19,13 +19,17 @@ import {
 import {
   clearPendingImuTransfer,
   type ImuFileSlot,
+  persistAndApplyPendingImuTransfer,
   readPendingImuTransfers,
   savePendingImuTransfer,
 } from "../../src/imu-transfer-storage.ts";
 import { ensureInstallId } from "../../src/install-id.ts";
 import { appendSamples, finalizeSessionFile, resetSessionFile } from "../../src/session-file.ts";
+import { confirmImuTransferPersistence } from "../../src/session-control.ts";
+import { getImuTransferFailureReason } from "../../src/session-control.ts";
 import {
   FLUSH_SAMPLE_THRESHOLD,
+  WORKOUT_IMU_CHUNK_DIRECTORY,
   WORKOUT_IMU_TRANSFER_FILE,
   WORKOUT_SESSION_FILE_A,
   WORKOUT_SESSION_FILE_B,
@@ -45,7 +49,10 @@ import {
   removeUploadedLiveWorkoutSnapshots,
   writeLiveWorkoutBuffer,
 } from "../../src/workout-live-storage.ts";
-import { deliverImuChunk } from "../../src/watch-imu-chunk-sync.ts";
+import {
+  createWatchImuChunkSync,
+  type WatchImuChunkSync,
+} from "../../src/watch-imu-chunk-sync.ts";
 
 const logger = Logger.getLogger("dofek-workout");
 const SAMPLE_INTERVAL_MS = 10_000;
@@ -68,6 +75,7 @@ DataWidget(
       statusWidget: nullable<ReturnType<typeof createWidget>>(),
       focused: false,
       imuController: nullable<ImuSessionController>(),
+      imuChunkSync: nullable<WatchImuChunkSync>(),
       activeImuSlot: "A" as ImuFileSlot,
       pendingImuA: nullable<ImuSegmentResult>(),
       pendingImuB: nullable<ImuSegmentResult>(),
@@ -76,6 +84,13 @@ DataWidget(
     },
 
     build() {
+      this.state.imuChunkSync = createWatchImuChunkSync(
+        WORKOUT_IMU_CHUNK_DIRECTORY,
+        (envelope) => this.request({ method: "imu.uploadChunk", params: { envelope } }),
+      );
+      void this.state.imuChunkSync
+        .retry()
+        .catch((error: unknown) => this.reportError(error, "workout-imu-chunk-retry"));
       const persistedBuffer = readLiveWorkoutBuffer();
       this.state.pendingBatches = persistedBuffer.batches;
       try {
@@ -227,13 +242,15 @@ DataWidget(
     },
 
     setPendingImu(slot: ImuFileSlot, result: ImuSegmentResult | null) {
-      if (slot === "A") {
-        this.state.pendingImuA = result;
-      } else {
-        this.state.pendingImuB = result;
-      }
-      if (result) savePendingImuTransfer(WORKOUT_IMU_TRANSFER_FILE, { ...result, slot });
-      else clearPendingImuTransfer(WORKOUT_IMU_TRANSFER_FILE, slot);
+      persistAndApplyPendingImuTransfer(
+        WORKOUT_IMU_TRANSFER_FILE,
+        slot,
+        result,
+        (persisted) => {
+          if (slot === "A") this.state.pendingImuA = persisted;
+          else this.state.pendingImuB = persisted;
+        },
+      );
     },
 
     isImuTransferring(slot: ImuFileSlot) {
@@ -283,7 +300,10 @@ DataWidget(
         },
         onChunk: ({ sessionStartMs, hasGyroscope, samples }) => {
           const installId = ensureInstallId(settings.settingsStorage);
-          void deliverImuChunk(
+          const sync = this.state.imuChunkSync;
+          if (!sync) throw new Error("Workout IMU chunk sync is unavailable.");
+          void sync
+            .enqueue(
             {
               connectionType: "zepp-workout",
               installId,
@@ -292,8 +312,8 @@ DataWidget(
               hasGyroscope,
               samples,
             },
-            (envelope) => this.request({ method: "imu.uploadChunk", params: { envelope } }),
-          ).catch((error: unknown) => this.reportError(error, "workout-imu-chunk"));
+            )
+            .catch((error: unknown) => this.reportError(error, "workout-imu-chunk"));
         },
         onError: (error) => this.reportError(error, "workout-imu"),
       });
@@ -317,35 +337,65 @@ DataWidget(
       this.sendImuSegment(result, slot);
     },
 
+    handleImuTransferFailure(result: ImuSegmentResult, slot: ImuFileSlot, cause: unknown) {
+      this.setImuTransferring(slot, false);
+      const reason = cause instanceof Error ? cause.message : String(cause);
+      const error = cause instanceof Error ? cause : new Error(reason);
+      const installId = ensureInstallId(settings.settingsStorage);
+      const segmentId = `${installId}:workout-imu:${result.sessionStartMs}`;
+      this.reportError(error, "workout-imu-transfer");
+      void this.request({
+        method: "imu.transferFailed",
+        params: { reason, segmentId, source: "zepp-workout" },
+      }).catch((reportError: unknown) =>
+        this.reportError(reportError, "workout-imu-transfer-status"),
+      );
+    },
+
     sendImuSegment(result: ImuSegmentResult, slot: ImuFileSlot) {
       if (this.isImuTransferring(slot)) return;
       this.setImuTransferring(slot, true);
+      const installId = ensureInstallId(settings.settingsStorage);
+      const segmentId = `${installId}:workout-imu:${result.sessionStartMs}`;
       let task: ReturnType<typeof this.sendFile>;
       try {
-        const installId = ensureInstallId(settings.settingsStorage);
         task = this.sendFile(result.path, {
           type: "imu-session",
           source: "zepp-workout",
-          segmentId: `${installId}:workout-imu:${result.sessionStartMs}`,
+          segmentId,
           sampleCount: String(result.sampleCount),
           observedHzX100: String(result.observedHzX100),
         });
       } catch (error) {
-        this.setImuTransferring(slot, false);
-        this.reportError(error, "workout-imu-transfer");
+        this.handleImuTransferFailure(result, slot, error);
         return;
       }
       task.on("change", (event: { data: Record<string, unknown> }) => {
         const readyState = String(event.data.readyState);
         if (readyState === "transferred") {
-          this.setImuTransferring(slot, false);
-          this.setPendingImu(slot, null);
-          if (this.state.focused && !this.state.imuController) {
-            this.startImuSegment();
+          void confirmImuTransferPersistence(
+            { sampleCount: result.sampleCount, segmentId, source: "zepp-workout" },
+            (payload) => this.request(payload),
+          )
+            .then(() => {
+              this.setImuTransferring(slot, false);
+              this.setPendingImu(slot, null);
+              if (this.state.focused && !this.state.imuController) {
+                this.startImuSegment();
+              }
+            })
+            .catch((error: unknown) => {
+              this.setImuTransferring(slot, false);
+              this.reportError(error, "workout-imu-transfer-confirmation");
+            });
+        } else {
+          const failureReason = getImuTransferFailureReason(
+            event.data,
+            "Workout IMU transfer failed.",
+          );
+          if (failureReason) {
+            this.handleImuTransferFailure(result, slot, new Error(failureReason));
           }
-        } else if (readyState === "error") {
-          this.setImuTransferring(slot, false);
-          this.reportError(new Error("Workout IMU transfer failed."), "workout-imu-transfer");
         }
       });
     },
@@ -363,6 +413,9 @@ DataWidget(
 
     onResume() {
       this.state.focused = true;
+      void this.state.imuChunkSync
+        ?.retry()
+        .catch((error: unknown) => this.reportError(error, "workout-imu-chunk-retry"));
       this.retryImuTransfers();
       this.startCollection();
       this.startImuSegment();

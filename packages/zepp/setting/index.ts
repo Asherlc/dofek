@@ -60,6 +60,8 @@ const PG_STATE: {
   pairingQrImageUrl: string | null;
   pairingExpiresAt: string | null;
   healthSyncStatus: Record<string, unknown>;
+  healthServiceStatus: Record<string, unknown>;
+  imuSyncStatus: Record<string, unknown>;
   lastHealthSync: string | null;
 } = {
   freqModeIndex: 1,
@@ -76,6 +78,8 @@ const PG_STATE: {
   pairingQrImageUrl: null,
   pairingExpiresAt: null,
   healthSyncStatus: EMPTY_RECORD,
+  healthServiceStatus: EMPTY_RECORD,
+  imuSyncStatus: EMPTY_RECORD,
   lastHealthSync: null,
 };
 
@@ -98,6 +102,8 @@ AppSettingsPage({
         : "n/a";
 
     const healthStatus = this.state.healthSyncStatus;
+    const healthServiceStatus = this.state.healthServiceStatus;
+    const imuStatus = this.state.imuSyncStatus;
     const connectionStatus = this.state.connectionStatus;
     const connectionState = parseConnectionState(connectionStatus.state);
     const connectionActions = deriveConnectionActions(
@@ -163,9 +169,28 @@ AppSettingsPage({
           this.state.transferProgress.pct != null
             ? `Progress: ${this.state.transferProgress.pct}%`
             : "",
+          this.state.transferProgress.reason
+            ? `Transfer reason: ${String(this.state.transferProgress.reason)}`
+            : "",
         ]),
       );
     }
+
+    blocks.push(
+      View({ style: { margin: "1em", fontSize: "1.1rem", lineHeight: "1.5rem" } }, [
+        `Background health: ${String(healthServiceStatus.state ?? "idle")}`,
+        healthServiceStatus.reason
+          ? `Background reason: ${String(healthServiceStatus.reason)}`
+          : "",
+      ]),
+    );
+
+    blocks.push(
+      View({ style: { margin: "1em", fontSize: "1.1rem", lineHeight: "1.5rem" } }, [
+        `Motion sync: ${String(imuStatus.state ?? "idle")}`,
+        imuStatus.reason ? `Motion reason: ${String(imuStatus.reason)}` : "",
+      ]),
+    );
 
     // Dofek Health Sync Section
     blocks.push(
@@ -370,6 +395,14 @@ AppSettingsPage({
       props.settingsStorage.getItem(STORAGE_KEYS.PAIRING_EXPIRES_AT) ?? null;
     this.state.healthSyncStatus = readJson(
       props.settingsStorage.getItem(STORAGE_KEYS.HEALTH_SYNC_STATUS),
+      {},
+    );
+    this.state.healthServiceStatus = readJson(
+      props.settingsStorage.getItem(STORAGE_KEYS.HEALTH_SERVICE_STATUS),
+      {},
+    );
+    this.state.imuSyncStatus = readJson(
+      props.settingsStorage.getItem(STORAGE_KEYS.IMU_SYNC_STATUS),
       {},
     );
     this.state.lastHealthSync =

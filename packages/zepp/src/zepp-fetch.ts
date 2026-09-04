@@ -1,3 +1,6 @@
+import { validationIssuesFromDetails } from "./health-contract.ts";
+import { STORAGE_KEYS } from "./storage-keys.ts";
+
 export interface ZeppFetchResponse {
   status?: number;
   statusCode?: number;
@@ -9,6 +12,26 @@ export interface ZeppFetchSummary {
   errorMessage: string | null;
   ok: boolean;
   status: number | null;
+}
+
+interface UploadFailureStorage {
+  removeItem(key: string): unknown;
+  setItem(key: string, value: string): void;
+}
+
+export function handleDofekUploadFailure(
+  storage: UploadFailureStorage,
+  summary: ZeppFetchSummary,
+  fallbackMessage: string,
+): Error {
+  if (summary.status === 401) {
+    storage.removeItem(STORAGE_KEYS.DOFEK_API_TOKEN);
+    storage.setItem(
+      STORAGE_KEYS.DOFEK_CONNECTION_STATUS,
+      JSON.stringify({ state: "error", reason: "Dofek connection expired. Connect again." }),
+    );
+  }
+  return new Error(summary.errorMessage ?? fallbackMessage);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -68,5 +91,3 @@ export function summarizeZeppFetchResponse(response: ZeppFetchResponse): ZeppFet
     status,
   };
 }
-
-import { validationIssuesFromDetails } from "./health-contract.ts";

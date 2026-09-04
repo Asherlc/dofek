@@ -51,12 +51,13 @@ export function createImuSessionController(
   let sampleCount = 0;
   let observedHzX100 = 0;
   let pending: ImuSample[] = [];
+  let segmentSampleOriginMs = 0;
 
   const collector = options.createCollector({
     requestedFreqModeIndex: options.requestedFreqModeIndex,
     onSample(sample) {
       if (!active) return;
-      pending.push(sample);
+      pending.push({ ...sample, tMs: Math.max(0, sample.tMs - segmentSampleOriginMs) });
       sampleCount += 1;
       if (pending.length >= options.flushThreshold) {
         try {
@@ -160,6 +161,7 @@ export function createImuSessionController(
         sampleCount = 0;
         observedHzX100 = 0;
         pending = [];
+        segmentSampleOriginMs = 0;
         options.file.reset(meta(), path);
         active = true;
         ready.start();
@@ -184,6 +186,9 @@ export function createImuSessionController(
         const completed = result();
         path = nextPath;
         sessionStartMs = options.now();
+        const collectorStartMs = ready.getStats().sessionStartMs;
+        segmentSampleOriginMs =
+          collectorStartMs > 0 ? Math.max(0, sessionStartMs - collectorStartMs) : 0;
         sampleCount = 0;
         observedHzX100 = 0;
         pending = [];

@@ -176,6 +176,40 @@ describe("normal Zepp app settings", () => {
     expect(buttonConfigurations.map(({ label }) => label)).not.toContain("Log in and connect");
   });
 
+  it("shows an actionable motion sync failure", () => {
+    buildWith({
+      [STORAGE_KEYS.IMU_SYNC_STATUS]: JSON.stringify({
+        state: "error",
+        reason: "Dofek connection expired. Connect again.",
+      }),
+    });
+
+    expect(JSON.stringify(renderedViews)).toContain("Motion sync: error");
+    expect(JSON.stringify(renderedViews)).toContain(
+      "Motion reason: Dofek connection expired. Connect again.",
+    );
+  });
+
+  it("shows binary transfer and background service failures independently", () => {
+    buildWith({
+      [STORAGE_KEYS.TRANSFER_PROGRESS]: JSON.stringify({
+        state: "error",
+        reason: "IMU transfer was canceled.",
+      }),
+      [STORAGE_KEYS.HEALTH_SERVICE_STATUS]: JSON.stringify({
+        state: "error",
+        reason: "Health service did not start.",
+      }),
+    });
+
+    expect(JSON.stringify(renderedViews)).toContain("Transfer: error");
+    expect(JSON.stringify(renderedViews)).toContain("Transfer reason: IMU transfer was canceled.");
+    expect(JSON.stringify(renderedViews)).toContain("Background health: error");
+    expect(JSON.stringify(renderedViews)).toContain(
+      "Background reason: Health service did not start.",
+    );
+  });
+
   it("sends pairing, verification, and disconnect commands from their respective states", () => {
     const settingsStorage = buildWith({});
 

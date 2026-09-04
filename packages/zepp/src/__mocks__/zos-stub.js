@@ -140,6 +140,7 @@ export const checkSensor = () => true;
 
 export const writeFileSync = () => {};
 export const readFileSync = () => new ArrayBuffer(32);
+export const renameSync = () => 0;
 export const openSync = () => 3;
 export const writeSync = () => {};
 export const closeSync = () => {};
@@ -162,7 +163,8 @@ export const pagePlugin = {};
 
 export const queryPermission = () => [2];
 export const requestPermission = ({ callback }) => callback([2]);
-export const start = () => {};
+export const start = (options) => globalThis.appServiceStart?.(options);
+export const stop = (options) => globalThis.appServiceStop?.(options);
 export const setWakeUpRelaunch = () => {};
 export const showToast = () => {};
 

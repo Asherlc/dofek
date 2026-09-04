@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "@zos/fs";
+import { readFileSync, renameSync, writeFileSync } from "@zos/fs";
 import type { ImuSegmentResult } from "./imu-session-controller.ts";
 
 const VERSION = 1;
@@ -54,7 +54,12 @@ export function readPendingImuTransfers(path: string): PendingImuTransfer[] {
 }
 
 function writePendingImuTransfers(path: string, pending: PendingImuTransfer[]): void {
-  writeFileSync({ path, data: JSON.stringify({ version: VERSION, pending }) });
+  const temporaryPath = `${path}.tmp`;
+  writeFileSync({ path: temporaryPath, data: JSON.stringify({ version: VERSION, pending }) });
+  const result = renameSync({ oldPath: temporaryPath, newPath: path });
+  if (result !== 0) {
+    throw new Error(`Could not commit the pending IMU transfer manifest (${result}).`);
+  }
 }
 
 export function savePendingImuTransfer(path: string, entry: PendingImuTransfer): void {
@@ -67,4 +72,15 @@ export function savePendingImuTransfer(path: string, entry: PendingImuTransfer):
 export function clearPendingImuTransfer(path: string, slot: ImuFileSlot): void {
   const pending = readPendingImuTransfers(path).filter((candidate) => candidate.slot !== slot);
   writePendingImuTransfers(path, pending);
+}
+
+export function persistAndApplyPendingImuTransfer<T extends ImuSegmentResult>(
+  path: string,
+  slot: ImuFileSlot,
+  transfer: T | null,
+  apply: (transfer: T | null) => void,
+): void {
+  if (transfer) savePendingImuTransfer(path, { ...transfer, slot });
+  else clearPendingImuTransfer(path, slot);
+  apply(transfer);
 }

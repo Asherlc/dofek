@@ -47,6 +47,18 @@ const moduleMocks = vi.hoisted(() => ({
   readPendingImuTransfers: vi.fn(),
   savePendingImuTransfer: vi.fn(),
   clearPendingImuTransfer: vi.fn(),
+  persistAndApplyPendingImuTransfer: vi.fn(
+    (
+      path: string,
+      slot: "A" | "B",
+      transfer: ImuSegmentResult | null,
+      apply: (value: ImuSegmentResult | null) => void,
+    ) => {
+      if (transfer) moduleMocks.savePendingImuTransfer(path, { ...transfer, slot });
+      else moduleMocks.clearPendingImuTransfer(path, slot);
+      apply(transfer);
+    },
+  ),
   sendFile: vi.fn(),
 }));
 
@@ -105,6 +117,7 @@ vi.mock("./imu-transfer-storage.ts", () => ({
   readPendingImuTransfers: moduleMocks.readPendingImuTransfers,
   savePendingImuTransfer: moduleMocks.savePendingImuTransfer,
   clearPendingImuTransfer: moduleMocks.clearPendingImuTransfer,
+  persistAndApplyPendingImuTransfer: moduleMocks.persistAndApplyPendingImuTransfer,
 }));
 vi.mock("./workout-live.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("./workout-live.ts")>();
@@ -285,7 +298,7 @@ describe("workout extension data widget", () => {
     expect(context.state.activeImuSlot).toBe("A");
   });
 
-  it("finalizes a focused IMU segment once and frees its slot only after transfer", () => {
+  it("finalizes a focused IMU segment once and frees its slot only after phone persistence", async () => {
     const listeners = new Map<string, TransferListener>();
     moduleMocks.sendFile.mockReturnValue({
       on: vi.fn((event: string, listener: TransferListener) => listeners.set(event, listener)),
@@ -294,6 +307,14 @@ describe("workout extension data widget", () => {
     const context = makeContext();
     context.state.imuController = controller;
     context.state.activeImuSlot = "A";
+    let acknowledgePersistence: ((value: { ok: true }) => void) | undefined;
+    moduleMocks.request.mockImplementation((request) =>
+      request.method === "imu.transferComplete"
+        ? new Promise((resolve) => {
+            acknowledgePersistence = resolve;
+          })
+        : Promise.resolve({ ok: true }),
+    );
 
     context.stopImuSegment.call(context);
     context.stopImuSegment.call(context);
@@ -310,11 +331,65 @@ describe("workout extension data widget", () => {
     });
 
     listeners.get("change")?.({ data: { readyState: "transferred" } });
+    expect(context.state.pendingImuA).toEqual(segmentResult());
+    expect(moduleMocks.clearPendingImuTransfer).not.toHaveBeenCalled();
+
+    acknowledgePersistence?.({ ok: true });
+    await Promise.resolve();
+    await Promise.resolve();
     expect(context.state.pendingImuA).toBeNull();
     expect(moduleMocks.clearPendingImuTransfer).toHaveBeenCalledWith(
       "data://imu/workout_transfers.json",
       "A",
     );
+  });
+
+  it("retains the manifest and publishes the reason when sendFile throws synchronously", async () => {
+    const result = segmentResult();
+    const context = makeContext();
+    context.state.pendingImuA = result;
+    moduleMocks.sendFile.mockImplementationOnce(() => {
+      throw new Error("TransferFile unavailable");
+    });
+
+    context.sendImuSegment.call(context, result, "A");
+    await Promise.resolve();
+
+    expect(context.state.pendingImuA).toBe(result);
+    expect(context.state.transferringImuA).toBe(false);
+    expect(moduleMocks.request).toHaveBeenCalledWith({
+      method: "imu.transferFailed",
+      params: {
+        reason: "TransferFile unavailable",
+        segmentId: "install-1:workout-imu:1720000000000",
+        source: "zepp-workout",
+      },
+    });
+  });
+
+  it("treats a canceled transfer as terminal without clearing the manifest", async () => {
+    const listeners = new Map<string, TransferListener>();
+    moduleMocks.sendFile.mockReturnValue({
+      on: vi.fn((event: string, listener: TransferListener) => listeners.set(event, listener)),
+    });
+    const result = segmentResult();
+    const context = makeContext();
+    context.state.pendingImuA = result;
+
+    context.sendImuSegment.call(context, result, "A");
+    listeners.get("change")?.({ data: { readyState: "canceled" } });
+    await Promise.resolve();
+
+    expect(context.state.pendingImuA).toBe(result);
+    expect(context.state.transferringImuA).toBe(false);
+    expect(moduleMocks.request).toHaveBeenCalledWith({
+      method: "imu.transferFailed",
+      params: {
+        reason: "IMU transfer was canceled.",
+        segmentId: "install-1:workout-imu:1720000000000",
+        source: "zepp-workout",
+      },
+    });
   });
 
   it("alternates files while a prior workout segment is transferring", () => {

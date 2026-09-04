@@ -20,6 +20,8 @@ export const STORAGE_KEYS = {
   PAIRING_QR_IMAGE_URL: "pairing_qr_image_url",
   PAIRING_EXPIRES_AT: "pairing_expires_at",
   HEALTH_SYNC_STATUS: "health_sync_status",
+  HEALTH_SERVICE_STATUS: "health_service_status",
+  IMU_SYNC_STATUS: "imu_sync_status",
   LAST_HEALTH_SYNC: "last_health_sync",
   PHONE_HEALTH_OUTBOX: "phone_health_outbox",
   PHONE_IMU_OUTBOX: "phone_imu_outbox",
@@ -42,6 +44,8 @@ export const WORKOUT_SESSION_FILE_A = "data://imu/workout_a.bin";
 export const WORKOUT_SESSION_FILE_B = "data://imu/workout_b.bin";
 export const NORMAL_IMU_TRANSFER_FILE = "data://imu/normal_transfers.json";
 export const WORKOUT_IMU_TRANSFER_FILE = "data://imu/workout_transfers.json";
+export const NORMAL_IMU_CHUNK_DIRECTORY = "data://imu/normal_chunks";
+export const WORKOUT_IMU_CHUNK_DIRECTORY = "data://imu/workout_chunks";
 export const SESSION_META_FILE = "data://imu/session_meta.json";
 export const BACKGROUND_HEALTH_FILE = "data://health/background.json";
 export const HEALTH_SERVICE_FILE = "app-service/health_service";

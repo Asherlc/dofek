@@ -74,6 +74,17 @@ describe("ensureHealthServiceRunning", () => {
         },
       }),
     ).rejects.toBe(serviceError);
+
+    const asynchronousServiceError = new Error("service callback failed");
+    await expect(
+      ensureHealthServiceRunning({
+        queryPermission: () => 2,
+        requestPermission: vi.fn(),
+        startService: async () => {
+          throw asynchronousServiceError;
+        },
+      }),
+    ).rejects.toBe(asynchronousServiceError);
   });
 });
 
@@ -150,5 +161,55 @@ describe("acquireForegroundHealthOwnership", () => {
       "background-during-stop",
       "foreground-after-stop",
     ]);
+  });
+
+  it("waits for the final foreground mutation before restarting App Service", async () => {
+    let completeDrain: (() => void) | undefined;
+    const drain = new Promise<void>((resolve) => {
+      completeDrain = resolve;
+    });
+    const startService = vi.fn();
+    const ownership = await acquireForegroundHealthOwnership({
+      queryPermission: () => 2,
+      requestPermission: vi.fn(),
+      stopService: vi.fn(async () => undefined),
+      startService,
+    });
+
+    const release = ownership.release(drain);
+    await Promise.resolve();
+    expect(startService).not.toHaveBeenCalled();
+
+    completeDrain?.();
+    await release;
+    expect(startService).toHaveBeenCalledOnce();
+  });
+
+  it("restarts App Service after a rejected foreground mutation and preserves the rejection", async () => {
+    const mutationError = new Error("foreground outbox write failed");
+    const startService = vi.fn();
+    const ownership = await acquireForegroundHealthOwnership({
+      queryPermission: () => 2,
+      requestPermission: vi.fn(),
+      stopService: vi.fn(async () => undefined),
+      startService,
+    });
+
+    await expect(ownership.release(Promise.reject(mutationError))).rejects.toBe(mutationError);
+    expect(startService).toHaveBeenCalledOnce();
+  });
+
+  it("waits for an asynchronous App Service restart and surfaces its failure", async () => {
+    const restartError = new Error("health service callback failed");
+    const ownership = await acquireForegroundHealthOwnership({
+      queryPermission: () => 2,
+      requestPermission: vi.fn(),
+      stopService: vi.fn(async () => undefined),
+      startService: async () => {
+        throw restartError;
+      },
+    });
+
+    await expect(ownership.release()).rejects.toBe(restartError);
   });
 });

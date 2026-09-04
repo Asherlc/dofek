@@ -767,19 +767,19 @@ describe("createIngestZosHealthRouter", () => {
       createTestApp(db, { publishBatch: vi.fn() }),
       {
         version: 1,
-        batchId: "segment-1:0:40",
+        batchId: "segment-1:0:0",
         source: { connectionType: "zepp-workout", installId: "install-1" },
         events: [
           {
-            eventId: "segment-1:0:40",
-            createdAt: "2024-07-03T09:46:40.040Z",
+            eventId: "segment-1:0:0",
+            createdAt: "2024-07-03T09:46:40.000Z",
             payload: {
               segmentId: "segment-1",
               sessionStartMs: 1_720_000_000_000,
               hasGyroscope: true,
               samples: [
                 { tMs: 0, ax: 1, ay: 2, az: 3, gx: 4, gy: 5, gz: 6 },
-                { tMs: 40, ax: 7, ay: 8, az: 9, gx: 10, gy: 11, gz: 12 },
+                { tMs: 0, ax: 7, ay: 8, az: 9, gx: 10, gy: 11, gz: 12 },
               ],
             },
           },
@@ -794,7 +794,7 @@ describe("createIngestZosHealthRouter", () => {
       status: 200,
       body: {
         status: "ok",
-        acceptedEventIds: ["segment-1:0:40"],
+        acceptedEventIds: ["segment-1:0:0"],
         rejected: [],
       },
     });
@@ -804,11 +804,11 @@ describe("createIngestZosHealthRouter", () => {
           expect.objectContaining({
             channel: "imu",
             deviceId: "zepp-workout:install-1",
-            externalId: "amazfit-zepp:install-1:segment-1:0:40:0",
+            externalId: "amazfit-zepp:install-1:segment-1:0:0:0:0",
             vector: [1, 2, 3, 4, 5, 6],
           }),
           expect.objectContaining({
-            externalId: "amazfit-zepp:install-1:segment-1:0:40:40",
+            externalId: "amazfit-zepp:install-1:segment-1:0:0:0:1",
             vector: [7, 8, 9, 10, 11, 12],
           }),
         ],

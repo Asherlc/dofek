@@ -715,13 +715,13 @@ export function createIngestZosHealthRouter(deps: {
       await deps.db.transaction(async (database) => {
         await ensureProvider(database, PROVIDER_ID, PROVIDER_NAME, undefined, userId);
         const rows = acceptedCandidates.flatMap(({ eventId, payload }) =>
-          payload.samples.map((sample) => {
+          payload.samples.map((sample, sampleIndex) => {
             const recordedAt = new Date(payload.sessionStartMs + sample.tMs).toISOString();
             return {
               recordedAt,
               userId,
               providerId: PROVIDER_ID,
-              externalId: `${PROVIDER_ID}:${envelopeResult.data.source.installId}:${eventId}:${sample.tMs}`,
+              externalId: `${PROVIDER_ID}:${envelopeResult.data.source.installId}:${eventId}:${sample.tMs}:${sampleIndex}`,
               deviceId: `${envelopeResult.data.source.connectionType}:${envelopeResult.data.source.installId}`,
               sourceType: SOURCE_TYPE_API,
               channel: payload.hasGyroscope ? "imu" : "accel",

@@ -56,16 +56,17 @@ import {
   type ImuSessionController,
 } from "../src/imu-session-controller.ts";
 import {
-  clearPendingImuTransfer,
   type ImuFileSlot,
   type PendingImuTransfer,
+  persistAndApplyPendingImuTransfer,
   readPendingImuTransfers,
-  savePendingImuTransfer,
 } from "../src/imu-transfer-storage.ts";
 import { createRoundLoginLayout } from "../src/round-layout.ts";
 import {
+  confirmImuTransferPersistence,
   createSessionCall,
   drainManualExportQueue,
+  getImuTransferFailureReason,
   getSessionAction,
   handleSessionCall,
   SESSION_STATE,
@@ -82,13 +83,15 @@ import {
   AUTO_TRANSFER_SAMPLE_COUNT,
   FLUSH_SAMPLE_THRESHOLD,
   HEALTH_SERVICE_FILE,
+  NORMAL_IMU_CHUNK_DIRECTORY,
   NORMAL_IMU_TRANSFER_FILE,
   SESSION_FILE_A,
   SESSION_FILE_B,
   SESSION_META_FILE,
+  STORAGE_KEYS,
 } from "../src/storage-keys.ts";
 import { deliverWatchHealthOutbox } from "../src/watch-health-sync.ts";
-import { deliverImuChunk } from "../src/watch-imu-chunk-sync.ts";
+import { createWatchImuChunkSync, type WatchImuChunkSync } from "../src/watch-imu-chunk-sync.ts";
 
 type TransferTask = {
   on: (event: string, cb: (event: { data: Record<string, unknown> }) => void) => void;
@@ -205,8 +208,9 @@ Page(
       activeFile: initialActiveFile(),
       hasCredentials: false,
       canStartConnection: true,
-      healthSyncing: false,
+      healthSyncTask: nullable<Promise<void>>(),
       healthOwnership: nullable<Promise<ForegroundHealthOwnership>>(),
+      imuChunkSync: nullable<WatchImuChunkSync>(),
       dofekEmail: "",
       pairingVerificationUrl: "",
       pairingShortCode: "",
@@ -214,6 +218,14 @@ Page(
 
     onInit() {
       resetPairingQrReference();
+      this.state.imuChunkSync = createWatchImuChunkSync(NORMAL_IMU_CHUNK_DIRECTORY, (envelope) =>
+        this.request({ method: "imu.uploadChunk", params: { envelope } }),
+      );
+      void this.state.imuChunkSync.retry().catch((error: unknown) => {
+        captureException(error, { operation: "retry-imu-chunks" });
+        logger.error("IMU chunk retry failed %j", error);
+        renderHint("Motion sync pending\nWill retry automatically");
+      });
       this.restorePendingImuTransfers();
       this.acquireHealthOwnership();
       this.refreshPreferences(true);
@@ -369,24 +381,53 @@ Page(
             if (result === 2) resolve();
             else if (result !== 0) reject(new Error(`Health service stop failed (${result}).`));
           }),
-        startService: () => {
-          const result = appService.start({
-            file: HEALTH_SERVICE_FILE,
-            param: "action=start",
-            reload: true,
-            complete_func: (info) => {
-              logger.log("health service start %j", info);
-              if (!info.result) {
-                captureException(new Error("Health service did not start."), {
-                  operation: "restart-health-service",
-                });
-              }
-            },
-          });
-          if (result !== 0 && result !== 2) {
-            throw new Error(`Health service start failed (${result}).`);
-          }
-        },
+        startService: () =>
+          new Promise<void>((resolve, reject) => {
+            const reportStartFailure = (error: Error) => {
+              captureException(error, { operation: "restart-health-service" });
+              settings.settingsStorage.setItem(
+                STORAGE_KEYS.HEALTH_SERVICE_STATUS,
+                JSON.stringify({ state: "error", reason: error.message }),
+              );
+              reject(error);
+            };
+            settings.settingsStorage.setItem(
+              STORAGE_KEYS.HEALTH_SERVICE_STATUS,
+              JSON.stringify({ state: "starting" }),
+            );
+            let result: number | undefined;
+            try {
+              result = appService.start({
+                file: HEALTH_SERVICE_FILE,
+                param: "action=start",
+                reload: true,
+                complete_func: (info) => {
+                  logger.log("health service start %j", info);
+                  if (!info.result) {
+                    reportStartFailure(new Error("Health service did not start."));
+                    return;
+                  }
+                  settings.settingsStorage.setItem(
+                    STORAGE_KEYS.HEALTH_SERVICE_STATUS,
+                    JSON.stringify({ state: "running" }),
+                  );
+                  resolve();
+                },
+              });
+            } catch (error) {
+              reportStartFailure(error instanceof Error ? error : new Error(String(error)));
+              return;
+            }
+            if (result === 2) {
+              settings.settingsStorage.setItem(
+                STORAGE_KEYS.HEALTH_SERVICE_STATUS,
+                JSON.stringify({ state: "running" }),
+              );
+              resolve();
+            } else if (result !== 0) {
+              reportStartFailure(new Error(`Health service start failed (${result}).`));
+            }
+          }),
       });
       this.state.healthOwnership = ownership;
       ownership
@@ -413,10 +454,10 @@ Page(
     },
 
     setPendingImu(slot: ImuFileSlot, transfer: PendingImuTransfer | null) {
-      if (slot === "A") this.state.pendingImuA = transfer;
-      else this.state.pendingImuB = transfer;
-      if (transfer) savePendingImuTransfer(NORMAL_IMU_TRANSFER_FILE, transfer);
-      else clearPendingImuTransfer(NORMAL_IMU_TRANSFER_FILE, slot);
+      persistAndApplyPendingImuTransfer(NORMAL_IMU_TRANSFER_FILE, slot, transfer, (persisted) => {
+        if (slot === "A") this.state.pendingImuA = persisted;
+        else this.state.pendingImuB = persisted;
+      });
     },
 
     restorePendingImuTransfers() {
@@ -482,20 +523,22 @@ Page(
         onChunk: ({ sessionStartMs, hasGyroscope, samples }) => {
           const installId = ensureWatchInstallId();
           const segmentId = `${installId}:normal-imu:${sessionStartMs}`;
-          deliverImuChunk(
-            {
+          const sync = this.state.imuChunkSync;
+          if (!sync) throw new Error("IMU chunk sync is unavailable.");
+          void sync
+            .enqueue({
               connectionType: "zepp",
               installId,
               segmentId,
               sessionStartMs,
               hasGyroscope,
               samples,
-            },
-            (envelope) => this.request({ method: "imu.uploadChunk", params: { envelope } }),
-          ).catch((error: unknown) => {
-            captureException(error, { operation: "upload-imu-chunk" });
-            logger.error("IMU chunk delivery failed %j", error);
-          });
+            })
+            .catch((error: unknown) => {
+              captureException(error, { operation: "upload-imu-chunk", segmentId });
+              logger.error("IMU chunk delivery failed %j", error);
+              renderHint("Motion sync pending\nWill retry automatically");
+            });
         },
         onProgress: createSessionProgressHandler({
           updateWatch: (stats) => this.handleRate(stats),
@@ -741,20 +784,38 @@ Page(
       this.retryPendingImuTransfer();
     },
 
+    handleImuTransferFailure(transfer: PendingImuTransfer, cause: unknown) {
+      this.state.transferTask = null;
+      const reason = cause instanceof Error ? cause.message : String(cause);
+      const segmentId = `${ensureWatchInstallId()}:normal-imu:${transfer.sessionStartMs}`;
+      const error = cause instanceof Error ? cause : new Error(reason);
+      captureException(error, { operation: "transfer-imu-file", segmentId, source: "zepp" });
+      logger.error("IMU file transfer failed %j", error);
+      showToast({ content: reason });
+      renderHint("Motion file pending\nRetry from Zepp settings");
+      this.request({
+        method: "imu.transferFailed",
+        params: { reason, segmentId, source: "zepp" },
+      }).catch((requestError: unknown) => {
+        captureException(requestError, { operation: "report-transfer-failure", segmentId });
+        logger.error("imu.transferFailed failed %j", requestError);
+      });
+    },
+
     startTransfer(transfer: PendingImuTransfer) {
       const { path, sampleCount, observedHzX100, slot } = transfer;
+      const segmentId = `${ensureWatchInstallId()}:normal-imu:${transfer.sessionStartMs}`;
       let task: TransferTask;
       try {
         task = this.sendFile(path, {
           type: "imu-session",
           source: "zepp",
-          segmentId: `${ensureWatchInstallId()}:normal-imu:${transfer.sessionStartMs}`,
+          segmentId,
           sampleCount: String(sampleCount),
           observedHzX100: String(observedHzX100),
         });
       } catch (error) {
-        captureException(error, { operation: "transfer-imu-file" });
-        logger.error("IMU file transfer failed %j", error);
+        this.handleImuTransferFailure(transfer, error);
         return;
       }
 
@@ -769,36 +830,40 @@ Page(
 
       task.on("change", (event: { data: Record<string, unknown> }) => {
         if (String(event.data.readyState) === "transferred") {
-          this.state.transferTask = null;
-          this.setPendingImu(slot, null);
-          this.retryPendingImuTransfer();
-          drainManualExportQueue(
-            {
-              pendingManualExport: this.state.pendingManualExport,
-              logging: this.state.logging,
-              failedTransferPending: Boolean(this.state.pendingImuA || this.state.pendingImuB),
-            },
-            {
-              clearManualExportQueue: () => {
-                this.state.pendingManualExport = false;
-              },
-              transferStoppedSession: () => this.transferStoppedSession(),
-            },
-          );
-          this.request({
-            method: "imu.transferComplete",
-            params: { sampleCount },
-          }).catch((error: unknown) => {
-            captureException(error, { operation: "report-transfer-complete" });
-            logger.error("imu.transferComplete failed %j", error);
-          });
+          void confirmImuTransferPersistence(
+            { sampleCount, segmentId, source: "zepp" },
+            (payload) => this.request(payload),
+          )
+            .then(() => {
+              this.setPendingImu(slot, null);
+              this.state.transferTask = null;
+              this.retryPendingImuTransfer();
+              drainManualExportQueue(
+                {
+                  pendingManualExport: this.state.pendingManualExport,
+                  logging: this.state.logging,
+                  failedTransferPending: Boolean(this.state.pendingImuA || this.state.pendingImuB),
+                },
+                {
+                  clearManualExportQueue: () => {
+                    this.state.pendingManualExport = false;
+                  },
+                  transferStoppedSession: () => this.transferStoppedSession(),
+                },
+              );
+            })
+            .catch((error: unknown) => {
+              this.state.transferTask = null;
+              captureException(error, { operation: "confirm-transfer-persistence", segmentId });
+              logger.error("imu.transferComplete failed %j", error);
+              showToast({ content: "Motion file is still pending" });
+              renderHint("Motion file pending\nRetry from Zepp settings");
+            });
           return;
         }
 
-        if (event.data.readyState === "error") {
-          this.state.transferTask = null;
-          showToast({ content: "Send failed" });
-        }
+        const failureReason = getImuTransferFailureReason(event.data, "IMU file transfer failed.");
+        if (failureReason) this.handleImuTransferFailure(transfer, new Error(failureReason));
       });
     },
 
@@ -831,45 +896,50 @@ Page(
       });
     },
 
-    async collectAndDeliverHealth() {
-      if (this.state.healthSyncing) return;
-      this.state.healthSyncing = true;
-      try {
-        await this.state.healthOwnership;
-        const watchSummary = collectHealthData(
-          {
-            HeartRate,
-            Step,
-            Distance,
-            Sleep,
-            BloodOxygen,
-            BodyTemperature,
-            Stress,
-            Stand,
-            Pai,
-            FatBurning,
-            Workout,
-          },
-          captureException,
-        );
-        const installId = ensureWatchInstallId();
-        const currentOutbox = readBackgroundHealthOutbox(installId);
-        const updatedOutbox = appendWatchHealthSummary(currentOutbox, watchSummary, installId);
-        writeBackgroundHealthOutbox(updatedOutbox);
-        await deliverWatchHealthOutbox({
-          installId,
-          initialOutbox: updatedOutbox,
-          request: (envelope) => this.request({ method: "health.upload", params: { envelope } }),
-          readLatest: () => readBackgroundHealthOutbox(installId),
-          write: writeBackgroundHealthOutbox,
-        });
-      } catch (error) {
-        captureException(error, { operation: "collect-and-deliver-health" });
-        logger.error("health collection or delivery failed %j", error);
-        renderHint("Health sync pending\nWill retry automatically");
-      } finally {
-        this.state.healthSyncing = false;
-      }
+    collectAndDeliverHealth() {
+      if (this.state.healthSyncTask) return this.state.healthSyncTask;
+      const task = (async () => {
+        try {
+          await this.state.healthOwnership;
+          const watchSummary = collectHealthData(
+            {
+              HeartRate,
+              Step,
+              Distance,
+              Sleep,
+              BloodOxygen,
+              BodyTemperature,
+              Stress,
+              Stand,
+              Pai,
+              FatBurning,
+              Workout,
+            },
+            captureException,
+          );
+          const installId = ensureWatchInstallId();
+          const currentOutbox = readBackgroundHealthOutbox(installId);
+          const updatedOutbox = appendWatchHealthSummary(currentOutbox, watchSummary, installId);
+          writeBackgroundHealthOutbox(updatedOutbox);
+          await deliverWatchHealthOutbox({
+            installId,
+            initialOutbox: updatedOutbox,
+            request: (envelope) => this.request({ method: "health.upload", params: { envelope } }),
+            readLatest: () => readBackgroundHealthOutbox(installId),
+            write: writeBackgroundHealthOutbox,
+          });
+        } catch (error) {
+          captureException(error, { operation: "collect-and-deliver-health" });
+          logger.error("health collection or delivery failed %j", error);
+          renderHint("Health sync pending\nWill retry automatically");
+        }
+      })();
+      this.state.healthSyncTask = task;
+      const clearTask = () => {
+        if (this.state.healthSyncTask === task) this.state.healthSyncTask = null;
+      };
+      void task.then(clearTask, clearTask);
+      return task;
     },
 
     onCall(payload: { method: string; params?: Record<string, unknown> } | null) {
@@ -913,7 +983,7 @@ Page(
         this.stopLogging();
       }
       this.state.healthOwnership
-        ?.then((ownership) => ownership.release())
+        ?.then((ownership) => ownership.release(this.state.healthSyncTask ?? Promise.resolve()))
         .catch((error: unknown) => {
           captureException(error, { operation: "release-health-outbox" });
           logger.error("health ownership release failed %j", error);

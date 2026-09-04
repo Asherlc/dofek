@@ -4,7 +4,14 @@ import { createImuSessionController } from "./imu-session-controller.ts";
 import type { CollectorOptions, ImuCollector, ImuSample } from "./types.ts";
 
 function setup(
-  options: { appendError?: Error; resetError?: Error; stopError?: Error; hasGyro?: boolean } = {},
+  options: {
+    appendError?: Error;
+    resetError?: Error;
+    stopError?: Error;
+    hasGyro?: boolean;
+    now?: () => number;
+    collectorSessionStartMs?: number;
+  } = {},
 ) {
   let collectorOptions: CollectorOptions | undefined;
   const collector: ImuCollector = {
@@ -12,7 +19,11 @@ function setup(
     hasGyroscope: options.hasGyro ?? true,
     accelMode: 1,
     gyroMode: options.hasGyro === false ? null : 1,
-    getStats: () => ({ sampleCount: 0, observedHzX100: 0, sessionStartMs: 0 }),
+    getStats: () => ({
+      sampleCount: 0,
+      observedHzX100: 0,
+      sessionStartMs: options.collectorSessionStartMs ?? 0,
+    }),
     start: vi.fn(),
     stop: vi.fn(() => {
       if (options.stopError) throw options.stopError;
@@ -38,7 +49,7 @@ function setup(
     path: "data://imu/session_a.bin",
     requestedFreqModeIndex: 1,
     flushThreshold: 2,
-    now: () => 1_720_000_000_000,
+    now: options.now ?? (() => 1_720_000_000_000),
     displayLease: lease,
     createCollector: (value) => {
       collectorOptions = value;
@@ -117,6 +128,25 @@ describe("createImuSessionController", () => {
       "data://imu/session_b.bin",
     );
     expect(collector.start).toHaveBeenCalledOnce();
+  });
+
+  it("rebases collector-relative timestamps when rotating to a new segment", () => {
+    const times = [1_720_000_000_000, 1_720_000_001_000];
+    const { controller, emit, file } = setup({
+      now: () => times.shift() ?? 1_720_000_001_000,
+      collectorSessionStartMs: 1_720_000_000_000,
+    });
+    controller.start();
+    emit({ ...sample, tMs: 960 });
+    controller.rotate("data://imu/session_b.bin");
+    emit({ ...sample, tMs: 1_040 });
+    controller.stop();
+
+    expect(file.append).toHaveBeenCalledWith(
+      [{ ...sample, tMs: 40 }],
+      true,
+      "data://imu/session_b.bin",
+    );
   });
 
   it("publishes the same persisted chunk for redundant phone delivery", () => {
