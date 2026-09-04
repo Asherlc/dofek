@@ -93,10 +93,13 @@ export async function processScheduledSyncJob(job: ScheduledSyncJob, db: Schedul
   let skippedDisconnected = 0;
   let skippedDueToCooldown = 0;
   let skippedDueToInFlight = 0;
+  let skippedDueToAccountErasure = 0;
   let processedConnections = 0;
 
   function skippedCount(): number {
-    return skippedDisconnected + skippedDueToCooldown + skippedDueToInFlight;
+    return (
+      skippedDisconnected + skippedDueToCooldown + skippedDueToInFlight + skippedDueToAccountErasure
+    );
   }
 
   async function reportDispatchProgress(): Promise<void> {
@@ -168,6 +171,7 @@ export async function processScheduledSyncJob(job: ScheduledSyncJob, db: Schedul
       });
     } catch (error: unknown) {
       if (!(error instanceof AccountErasureUserFencedError)) throw error;
+      skippedDueToAccountErasure += providers.length;
       processedConnections += providers.length;
       logger.info("[scheduled-sync] Skipping one account with active erasure");
       await reportDispatchProgress();

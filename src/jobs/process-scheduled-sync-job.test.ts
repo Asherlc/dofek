@@ -241,13 +241,33 @@ describe("processScheduledSyncJob", () => {
         ) => operation(database),
       );
 
-    await expect(processScheduledSyncJob(createScheduledSyncJob(), db)).resolves.toBeUndefined();
+    const job = createScheduledSyncJob();
+
+    await expect(processScheduledSyncJob(job, db)).resolves.toBeUndefined();
 
     expect(getMockQueue("strava").add).not.toHaveBeenCalled();
     expect(getMockQueue("wahoo").add).toHaveBeenCalledOnce();
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       "[scheduled-sync] Skipping one account with active erasure",
     );
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 60,
+      message: "Scheduled 0 sync jobs, skipped 1.",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 100,
+      message: "Scheduled 1 sync jobs, skipped 1, for 2 users.",
+    });
+  });
+
+  it("rethrows unexpected account-erasure fence failures", async () => {
+    const db = createScheduledSyncDatabase([
+      { user_id: "user-1", provider_id: "strava", has_tokens: true },
+    ]);
+    const fenceError = new Error("database unavailable");
+    mockWithUserWriteFence.mockRejectedValueOnce(fenceError);
+
+    await expect(processScheduledSyncJob(createScheduledSyncJob(), db)).rejects.toBe(fenceError);
   });
 
   it("skips connections whose provider plugin is missing", async () => {
@@ -369,6 +389,26 @@ describe("processScheduledSyncJob", () => {
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       "[scheduled-sync] Enqueued 0 sync jobs for 1 users (1 skipped due to in-flight sync)",
     );
+  });
+
+  it("does not inspect in-flight jobs for providers without step chains", async () => {
+    const stravaQueue = getMockQueue("strava");
+    stravaQueue.getActive = vi.fn().mockResolvedValue([
+      {
+        data: {
+          userId: "user-1",
+          providerId: "strava",
+        },
+      },
+    ]);
+    const db = createScheduledSyncDatabase([
+      { user_id: "user-1", provider_id: "strava", has_tokens: true },
+    ]);
+
+    await processScheduledSyncJob(createScheduledSyncJob(), db);
+
+    expect(stravaQueue.getActive).not.toHaveBeenCalled();
+    expect(stravaQueue.add).toHaveBeenCalledOnce();
   });
 
   it("reports combined skipped provider counts during scheduled sync dispatch", async () => {
