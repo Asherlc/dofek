@@ -190,6 +190,112 @@ eight projections:
 - `activity_sensor_summary_rows`
 - `activity_summary_rows`
 
+Before accepting the repair, require this local-time invariant to return zero
+rows. It validates each persisted provider activity against its own timestamps,
+including daylight-saving changes, then verifies that every non-unknown
+canonical context exactly matches one member's complete context tuple. Comparing
+canonical offsets directly with group-wide bounds is incorrect because those
+bounds can come from different members. The offset calculation uses PostgreSQL's
+documented `AT TIME ZONE` conversion semantics
+([PostgreSQL date/time functions](https://www.postgresql.org/docs/current/functions-datetime.html#FUNCTIONS-DATETIME-ZONECONVERT)).
+
+```sql
+WITH persisted_activity_violations AS (
+  SELECT 'fitness.activity'::text AS relation_name, id
+  FROM fitness.activity
+  WHERE provider_absent_at IS NULL
+    AND deleted_at IS NULL
+    AND (
+      (
+        local_time_source = 'unknown'
+        AND (
+          timezone IS NOT NULL
+          OR start_utc_offset_minutes IS NOT NULL
+          OR end_utc_offset_minutes IS NOT NULL
+        )
+      )
+      OR (
+        local_time_source IN (
+          'gps_timezone',
+          'provider_timezone',
+          'device_timezone',
+          'user_home_timezone',
+          'home_zone_fallback'
+        )
+        AND timezone IS NULL
+      )
+      OR (
+        local_time_source IN ('provider_offset', 'device_offset')
+        AND (
+          timezone IS NOT NULL
+          OR start_utc_offset_minutes IS NULL
+          OR (ended_at IS NOT NULL AND end_utc_offset_minutes IS NULL)
+        )
+      )
+      OR local_time_source NOT IN (
+        'unknown',
+        'gps_timezone',
+        'provider_timezone',
+        'device_timezone',
+        'user_home_timezone',
+        'home_zone_fallback',
+        'provider_offset',
+        'device_offset'
+      )
+      OR (
+        timezone IS NOT NULL
+        AND (
+          start_utc_offset_minutes IS DISTINCT FROM round(
+            extract(epoch FROM (
+              (started_at AT TIME ZONE timezone)
+              - (started_at AT TIME ZONE 'UTC')
+            )) / 60
+          )::integer
+          OR (
+            ended_at IS NOT NULL
+            AND end_utc_offset_minutes IS DISTINCT FROM round(
+              extract(epoch FROM (
+                (ended_at AT TIME ZONE timezone)
+                - (ended_at AT TIME ZONE 'UTC')
+              )) / 60
+            )::integer
+          )
+        )
+      )
+    )
+),
+canonical_activity_violations AS (
+  SELECT 'fitness.v_activity'::text AS relation_name, canonical.id
+  FROM fitness.v_activity canonical
+  WHERE (
+      canonical.local_time_source = 'unknown'
+      AND (
+        canonical.timezone IS NOT NULL
+        OR canonical.start_utc_offset_minutes IS NOT NULL
+        OR canonical.end_utc_offset_minutes IS NOT NULL
+      )
+    )
+    OR (
+      canonical.local_time_source <> 'unknown'
+      AND NOT EXISTS (
+        SELECT 1
+        FROM fitness.activity member
+        WHERE member.id = ANY(canonical.member_activity_ids)
+          AND member.timezone IS NOT DISTINCT FROM canonical.timezone
+          AND member.start_utc_offset_minutes
+            IS NOT DISTINCT FROM canonical.start_utc_offset_minutes
+          AND member.end_utc_offset_minutes
+            IS NOT DISTINCT FROM canonical.end_utc_offset_minutes
+          AND member.local_time_source = canonical.local_time_source
+      )
+    )
+)
+SELECT relation_name, id FROM persisted_activity_violations
+UNION ALL
+SELECT relation_name, id FROM canonical_activity_violations
+ORDER BY relation_name, id;
+```
+
 For example, inspect the visible source and group state:
 
 ```sql
@@ -214,11 +320,27 @@ ORDER BY source.activity_id;
 Confirm valid duplicate edges remain and downstream canonical/member/summary
 IDs agree. In the September 2026 repair, the Peloton member of `2a7c6fa3` is a
 valid metadata mirror and must remain in `source_providers`; this repair does
-not change `activity_duplicate_matches.sql`. Confirm `b20988c5` and `40e593c7`
-select the specific `cycling` / `commuting` evidence, and confirm `2a7c6fa3`
-refreshes to the RideWithGPS moving-speed values (about 5.568 m/s average and
-16.54 m/s maximum). If a later provider update arrives during this window,
-record it; it is not a reason to overwrite provider-owned fields.
+not change `activity_duplicate_matches.sql`. The post-drain acceptance set is
+the following seven canonical activities; every one must have active member,
+sensor-sample, sensor-summary, and activity-summary rows before acceptance:
+
+- `b20988c5`
+- `40e593c7`
+- `32cbb0dc`
+- `1d7a3bc0` (climbing, September 2)
+- `9203bd3b`
+- `54d67057`
+- `61edc6bf` (deadlift, September 3)
+
+Confirm `b20988c5` and `40e593c7` select the specific `cycling` / `commuting`
+evidence, and confirm `2a7c6fa3` refreshes to the RideWithGPS moving-speed
+values (about 5.568 m/s average and 16.54 m/s maximum). `b2b2b14f` must remain
+Peloton-only: the nearby Apple Health and WHOOP records describe the separate
+19:10 cycling activity and are not members of its 20:28 cardio activity. This
+expected grouping follows the raw-fact duplicate policy reviewed in
+[PR #2664](https://github.com/Asherlc/dofek/pull/2664). If a later provider
+update arrives during this window, record it; it is not a reason to overwrite
+provider-owned fields.
 
 ## 4. Accept and retire
 

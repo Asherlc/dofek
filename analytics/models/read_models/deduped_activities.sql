@@ -142,14 +142,16 @@ best_context AS (
                         ranked.local_time_source = 'gps_timezone', 1,
                         ranked.local_time_source IN (
                             'provider_timezone',
-                            'provider_offset',
                             'device_timezone',
-                            'device_offset',
                             'user_home_timezone'
                         ), 2,
-                        ranked.local_time_source = 'home_zone_fallback', 3,
-                        ranked.local_time_source = 'unknown', 4,
-                        5
+                        ranked.local_time_source IN (
+                            'provider_offset',
+                            'device_offset'
+                        ), 3,
+                        ranked.local_time_source = 'home_zone_fallback', 4,
+                        ranked.local_time_source = 'unknown', 5,
+                        6
                     ) ASC,
                     ranked.priority ASC,
                     toString(ranked.activity_id) ASC
