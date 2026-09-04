@@ -19,6 +19,7 @@ const {
   mockCachedProtectedQuery,
   mockProtectedQueryCache,
   mockWithUserWriteFence,
+  mockGetActiveProviderCooldown,
 } = vi.hoisted(() => ({
   mockAdd: vi.fn().mockResolvedValue({ id: "job-123" }),
   mockGetJob: vi.fn(),
@@ -44,6 +45,7 @@ const {
   mockCachedProtectedQuery: vi.fn(),
   mockProtectedQueryCache: new Map<string, { data: unknown; expiresAt: number }>(),
   mockWithUserWriteFence: vi.fn(),
+  mockGetActiveProviderCooldown: vi.fn(),
 }));
 
 function oauthAuthSetup(authUrl: string) {
@@ -182,6 +184,12 @@ vi.mock("dofek/db/account-erasure", () => ({
   withAccountErasureUserWriteFence: mockWithUserWriteFence,
 }));
 
+vi.mock("dofek/jobs/provider-rate-limit-cooldown", () => ({
+  providerRateLimitCooldownStore: {
+    getActive: (...args: unknown[]) => mockGetActiveProviderCooldown(...args),
+  },
+}));
+
 // Mock the dynamic provider imports used in doRegisterProviders
 vi.mock("dofek/providers/wahoo/provider", () => ({ WahooProvider: vi.fn() }));
 vi.mock("dofek/providers/withings", () => ({ WithingsProvider: vi.fn() }));
@@ -283,6 +291,8 @@ describe("syncRouter", () => {
       failed: 0,
     });
     mockWithUserWriteFence.mockReset();
+    mockGetActiveProviderCooldown.mockReset();
+    mockGetActiveProviderCooldown.mockResolvedValue(null);
     mockWithUserWriteFence.mockImplementation(
       async (
         database: MockAdminDb,
@@ -351,6 +361,55 @@ describe("syncRouter", () => {
   });
 
   describe("providers", () => {
+    it("returns an active rate-limit cooldown as deferred sync status", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "garmin",
+          name: "Garmin",
+          validate: () => null,
+          authSetup: () => oauthAuthSetup("https://connect.garmin.com"),
+        },
+      ]);
+      mockGetActiveProviderCooldown.mockResolvedValue({
+        providerId: "garmin",
+        scope: "provider",
+        userId: null,
+        expiresAt: new Date("2026-09-04T04:32:46.000Z"),
+      });
+      const caller = createCaller({
+        db: {
+          execute: vi
+            .fn()
+            .mockResolvedValueOnce([
+              {
+                provider_id: "garmin",
+                updated_at: new Date("2026-09-03T04:00:00.000Z"),
+                has_tokens: true,
+              },
+            ])
+            .mockResolvedValueOnce([
+              { provider_id: "garmin", last_synced: "2026-09-03T04:00:00.000Z" },
+            ])
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([
+              { provider_id: "garmin", last_synced: "2026-09-03T04:00:00.000Z" },
+            ])
+            .mockResolvedValueOnce([]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.providers();
+
+      expect(result.find((provider) => provider.id === "garmin")?.syncFreshness).toEqual({
+        status: "deferred",
+        label: "Sync deferred",
+        description: "Rate limited until 2026-09-04T04:32:46.000Z.",
+      });
+      expect(mockGetActiveProviderCooldown).toHaveBeenCalledWith("garmin", "user-1");
+    });
+
     it("returns manual token connection metadata", async () => {
       mockGetAllProviders.mockReturnValue([
         {
@@ -431,7 +490,7 @@ describe("syncRouter", () => {
           execute: vi
             .fn()
             // First call: oauth tokens
-            .mockResolvedValueOnce([{ provider_id: "wahoo" }])
+            .mockResolvedValueOnce([{ provider_id: "wahoo", has_tokens: true }])
             // Second call: last syncs
             .mockResolvedValueOnce([{ provider_id: "wahoo", last_synced: "2024-01-01" }])
             // Third call: latest errors (none)
@@ -523,7 +582,11 @@ describe("syncRouter", () => {
             execute: vi
               .fn()
               .mockResolvedValueOnce([
-                { provider_id: "wahoo", updated_at: new Date("2026-08-12T10:00:00.000Z") },
+                {
+                  provider_id: "wahoo",
+                  updated_at: new Date("2026-08-12T10:00:00.000Z"),
+                  has_tokens: true,
+                },
               ])
               .mockResolvedValueOnce([
                 { provider_id: "wahoo", last_synced: "2026-08-12T11:55:00.000Z" },
@@ -570,7 +633,11 @@ describe("syncRouter", () => {
             execute: vi
               .fn()
               .mockResolvedValueOnce([
-                { provider_id: "wahoo", updated_at: new Date("2026-08-12T10:00:00.000Z") },
+                {
+                  provider_id: "wahoo",
+                  updated_at: new Date("2026-08-12T10:00:00.000Z"),
+                  has_tokens: true,
+                },
               ])
               .mockResolvedValueOnce([
                 { provider_id: "wahoo", last_synced: "2026-08-12T11:55:00.000Z" },
@@ -612,7 +679,11 @@ describe("syncRouter", () => {
           execute: vi
             .fn()
             .mockResolvedValueOnce([
-              { provider_id: "wahoo", updated_at: new Date("2026-08-12T10:00:00.000Z") },
+              {
+                provider_id: "wahoo",
+                updated_at: new Date("2026-08-12T10:00:00.000Z"),
+                has_tokens: true,
+              },
             ])
             .mockResolvedValueOnce([
               { provider_id: "wahoo", last_synced: "2026-08-12T11:55:00.000Z" },
@@ -710,7 +781,10 @@ describe("syncRouter", () => {
           execute: vi
             .fn()
             // oauth tokens — both have tokens
-            .mockResolvedValueOnce([{ provider_id: "polar" }, { provider_id: "wahoo" }])
+            .mockResolvedValueOnce([
+              { provider_id: "polar", has_tokens: true },
+              { provider_id: "wahoo", has_tokens: true },
+            ])
             // last syncs
             .mockResolvedValueOnce([
               { provider_id: "polar", last_synced: "2024-01-01" },
@@ -808,7 +882,11 @@ describe("syncRouter", () => {
             .fn()
             // oauth tokens saved after reconnect
             .mockResolvedValueOnce([
-              { provider_id: "peloton", updated_at: new Date("2026-06-02T10:05:00Z") },
+              {
+                provider_id: "peloton",
+                updated_at: new Date("2026-06-02T10:05:00Z"),
+                has_tokens: true,
+              },
             ])
             // last syncs
             .mockResolvedValueOnce([{ provider_id: "peloton", last_synced: "2026-06-02" }])
@@ -843,7 +921,11 @@ describe("syncRouter", () => {
           execute: vi
             .fn()
             .mockResolvedValueOnce([
-              { provider_id: "whoop_ble", updated_at: new Date("2026-07-25T00:00:00Z") },
+              {
+                provider_id: "whoop_ble",
+                updated_at: new Date("2026-07-25T00:00:00Z"),
+                has_tokens: false,
+              },
             ])
             .mockResolvedValueOnce([])
             .mockResolvedValueOnce([])
@@ -938,6 +1020,35 @@ describe("syncRouter", () => {
   });
 
   describe("triggerSync", () => {
+    it("rejects a token-backed provider connection whose tokens are missing", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "strava",
+          name: "Strava",
+          validate: () => null,
+          authSetup: () => oauthAuthSetup("https://www.strava.com/oauth/authorize"),
+        },
+      ]);
+      const caller = createCaller({
+        db: {
+          execute: vi.fn().mockResolvedValueOnce([
+            {
+              provider_id: "strava",
+              updated_at: new Date("2026-09-03T04:00:00.000Z"),
+              has_tokens: false,
+            },
+          ]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.triggerSync({ providerId: "strava" })).rejects.toThrow(
+        "Provider not connected: strava",
+      );
+      expect(mockAdd).not.toHaveBeenCalled();
+    });
+
     it("enqueues one sync job per configured provider when providerId is omitted", async () => {
       mockGetAllProviders.mockReturnValue([
         { id: "strava", name: "Strava", validate: () => null },
@@ -1041,9 +1152,10 @@ describe("syncRouter", () => {
 
       const caller = createCaller({
         db: {
-          execute: vi
-            .fn()
-            .mockResolvedValueOnce([{ provider_id: "garmin" }, { provider_id: "wahoo" }]),
+          execute: vi.fn().mockResolvedValueOnce([
+            { provider_id: "garmin", has_tokens: true },
+            { provider_id: "wahoo", has_tokens: true },
+          ]),
         },
         userId: "user-1",
         timezone: "UTC",
@@ -1079,11 +1191,13 @@ describe("syncRouter", () => {
 
       const caller = createCaller({
         db: {
-          execute: vi
-            .fn()
-            .mockResolvedValue([
-              { provider_id: "garmin", updated_at: new Date("2026-07-25T00:00:00Z") },
-            ]),
+          execute: vi.fn().mockResolvedValue([
+            {
+              provider_id: "garmin",
+              updated_at: new Date("2026-07-25T00:00:00Z"),
+              has_tokens: true,
+            },
+          ]),
         },
         userId: "user-1",
         timezone: "UTC",
@@ -1125,7 +1239,7 @@ describe("syncRouter", () => {
 
       const caller = createCaller({
         db: {
-          execute: vi.fn().mockResolvedValueOnce([{ provider_id: "whoop" }]),
+          execute: vi.fn().mockResolvedValueOnce([{ provider_id: "whoop", has_tokens: true }]),
         },
         userId: "user-1",
         timezone: "UTC",
@@ -1170,9 +1284,10 @@ describe("syncRouter", () => {
 
       const caller = createCaller({
         db: {
-          execute: vi
-            .fn()
-            .mockResolvedValueOnce([{ provider_id: "polar" }, { provider_id: "wahoo" }]),
+          execute: vi.fn().mockResolvedValueOnce([
+            { provider_id: "polar", has_tokens: true },
+            { provider_id: "wahoo", has_tokens: true },
+          ]),
         },
         userId: "user-1",
         timezone: "UTC",
@@ -1238,7 +1353,7 @@ describe("syncRouter", () => {
           execute: vi
             .fn()
             // tokens query — only strava has tokens
-            .mockResolvedValueOnce([{ provider_id: "strava" }]),
+            .mockResolvedValueOnce([{ provider_id: "strava", has_tokens: true }]),
         },
         userId: "user-1",
         timezone: "UTC",

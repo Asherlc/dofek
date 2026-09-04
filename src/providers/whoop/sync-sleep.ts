@@ -1,8 +1,9 @@
 import { and, eq, isNotNull } from "drizzle-orm";
-import { sleepSession, sleepStage } from "../../db/schema/activity.ts";
+import { dailyMetrics, sleepSession, sleepStage } from "../../db/schema/activity.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
 import { logger } from "../../logger.ts";
+import { resolveWhoopCycleDay } from "./cycle-day.ts";
 import {
   extractSleepIdsFromCycle,
   inlineSleepSchema,
@@ -90,6 +91,27 @@ export async function syncWhoopSleepSessions(context: WhoopPersistenceContext): 
                     sleepNeedFromNapMinutes: parsed.sleepNeedFromNapMinutes,
                   },
                 });
+              if (!parsed.isNap && parsed.respiratoryRateAvg != null) {
+                const metricDate = resolveWhoopCycleDay(cycle, parsed.endedAt);
+                await db
+                  .insert(dailyMetrics)
+                  .values({
+                    date: metricDate,
+                    providerId,
+                    respiratoryRateAvg: parsed.respiratoryRateAvg,
+                  })
+                  .onConflictDoUpdate({
+                    target: [
+                      dailyMetrics.userId,
+                      dailyMetrics.date,
+                      dailyMetrics.providerId,
+                      dailyMetrics.sourceName,
+                    ],
+                    set: {
+                      respiratoryRateAvg: parsed.respiratoryRateAvg,
+                    },
+                  });
+              }
               count++;
             } catch (err) {
               context.errors.push({

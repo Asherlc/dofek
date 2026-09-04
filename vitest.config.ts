@@ -108,6 +108,7 @@ export default defineConfig({
           name: "integration",
           fileParallelism: false,
           maxWorkers: 1,
+          sequence: { groupOrder: 1 },
           isolate: false,
           include: [
             "analytics/models/**/*.integration.test.ts",

@@ -200,6 +200,27 @@ describe("SyncProviderCard", () => {
     expect(screen.getByText(/^Last successful sync:/)).not.toBeNull();
   });
 
+  it("renders a server-authored rate-limit cooldown", () => {
+    renderProvider({
+      provider: {
+        id: "garmin",
+        name: "Garmin",
+        lastSyncedAt: "2026-09-03T04:00:00.000Z",
+        lastSuccessfulSyncAt: "2026-09-03T04:00:00.000Z",
+        syncFreshness: {
+          status: "deferred",
+          label: "Sync deferred",
+          description: "Rate limited until 2026-09-04T04:32:46.000Z.",
+        },
+        authorized: true,
+        description: null,
+      },
+    });
+
+    expect(screen.getByText("Sync deferred")).not.toBeNull();
+    expect(screen.getByText("Rate limited until 2026-09-04T04:32:46.000Z.")).not.toBeNull();
+  });
+
   it("renders current server freshness without raising an alert", () => {
     renderProvider();
 

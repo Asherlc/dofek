@@ -6,8 +6,13 @@ import { timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorQueryOptions, ActivitySensorStore } from "./activity-repository.ts";
 
 const nullableNumberSchema = z.preprocess(
-  (value) => (value === undefined ? null : value),
+  (value) => (value === undefined || value === "" ? null : value),
   z.coerce.number().nullable(),
+);
+
+const nullableStringSchema = z.preprocess(
+  (value) => (value === undefined || value === "" ? null : value),
+  z.string().nullable(),
 );
 
 const overlappingSleepSessionSchema = z
@@ -19,7 +24,7 @@ const overlappingSleepSessionSchema = z
       .preprocess((value) => (value == null ? [] : value), z.array(z.string()))
       .optional()
       .default([]),
-    timezone: z.string().nullable(),
+    timezone: nullableStringSchema,
     start_utc_offset_minutes: nullableNumberSchema,
     end_utc_offset_minutes: nullableNumberSchema,
     local_time_source: localTimeSourceSchema,
@@ -46,7 +51,7 @@ const clickHouseSleepNightSchema = z
       .preprocess((value) => (value == null ? [] : value), z.array(overlappingSleepSessionSchema))
       .optional()
       .default([]),
-    timezone: z.string().nullable().optional().default(null),
+    timezone: nullableStringSchema.optional().default(null),
     start_utc_offset_minutes: nullableNumberSchema,
     end_utc_offset_minutes: nullableNumberSchema,
     local_time_source: localTimeSourceSchema.optional().default("unknown"),
@@ -89,7 +94,7 @@ const dailySleepPerformanceRowSchema = z.object({
   provider_id: z.string().nullable(),
   source_name: z.string().nullable(),
   source_providers: z.array(z.string()),
-  timezone: z.string().nullable(),
+  timezone: nullableStringSchema,
   start_utc_offset_minutes: nullableNumberSchema,
   end_utc_offset_minutes: nullableNumberSchema,
   local_time_source: localTimeSourceSchema,

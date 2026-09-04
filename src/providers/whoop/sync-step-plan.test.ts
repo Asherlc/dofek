@@ -243,6 +243,38 @@ describe("WHOOP sync step planning", () => {
     ]);
   });
 
+  it("bounds a full sync's daily and heart-rate steps to the earliest observed WHOOP data", async () => {
+    const context = makeContext({
+      since: new Date(0),
+      windowEnd: new Date("2026-03-13T00:00:00.000Z"),
+      cycles: [
+        {
+          recovery: {
+            cycle_id: 1,
+            user_id: 123,
+            created_at: "2026-03-11T08:00:00.000Z",
+            updated_at: "2026-03-11T08:00:00.000Z",
+          },
+        },
+      ],
+    });
+
+    const steps = await planWhoopApiSteps(context);
+
+    expect(steps.filter((step) => step.type === "strain_deep_dive")).toEqual([
+      { type: "strain_deep_dive", date: "2026-03-11" },
+      { type: "strain_deep_dive", date: "2026-03-12" },
+      { type: "strain_deep_dive", date: "2026-03-13" },
+    ]);
+    expect(steps.filter((step) => step.type === "heart_rate")).toEqual([
+      {
+        type: "heart_rate",
+        start: "2026-03-11T00:00:00.000Z",
+        end: "2026-03-13T00:00:00.000Z",
+      },
+    ]);
+  });
+
   it("omits workouts without resolvable activity ids from the step plan", async () => {
     const context = makeContext({
       cycles: [{ workouts: [makeWorkoutRecord({ activity_id: undefined })] }],

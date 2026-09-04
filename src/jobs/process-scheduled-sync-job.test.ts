@@ -67,6 +67,9 @@ vi.mock("../providers/index.ts", () => ({
     if (providerId === "strong-csv") return { id: providerId, importOnly: true as const };
     if (providerId === "whoop") return { id: providerId, scheduledSyncLookbackDays: 30 };
     if (providerId === "unknown-provider") return undefined;
+    if (["strava", "wahoo", "garmin"].includes(providerId)) {
+      return { id: providerId, authSetup: () => ({}) };
+    }
     return { id: providerId };
   },
   isSyncEligibleProvider: (provider: { importOnly?: boolean }) => !provider.importOnly,
@@ -89,6 +92,7 @@ const { processScheduledSyncJob } = await import("./process-scheduled-sync-job.t
 interface ScheduledSyncRow {
   user_id: string;
   provider_id: string;
+  has_tokens?: boolean;
 }
 
 type ScheduledSyncDatabase = SyncDatabase & Pick<Database, "transaction">;
@@ -98,7 +102,12 @@ function createScheduledSyncDatabase(rows: ScheduledSyncRow[]): ScheduledSyncDat
     select: vi.fn(),
     insert: vi.fn(),
     delete: vi.fn(),
-    execute: vi.fn().mockResolvedValue(rows),
+    execute: vi.fn().mockResolvedValue(
+      rows.map((row) => ({
+        ...row,
+        has_tokens: row.has_tokens ?? true,
+      })),
+    ),
     transaction: vi.fn(),
   };
 }
@@ -256,6 +265,19 @@ describe("processScheduledSyncJob", () => {
     expect(providerQueues.has("unknown-provider")).toBe(false);
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       "[scheduled-sync] Skipping non-sync provider unknown-provider",
+    );
+  });
+
+  it("skips a token-backed connection whose tokens are missing", async () => {
+    const db = createScheduledSyncDatabase([
+      { user_id: "user-1", provider_id: "strava", has_tokens: false },
+    ]);
+
+    await processScheduledSyncJob(createScheduledSyncJob(), db);
+
+    expect(getMockQueue("strava").add).not.toHaveBeenCalled();
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      "[scheduled-sync] Skipping disconnected provider strava for user-1",
     );
   });
 

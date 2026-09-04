@@ -30,6 +30,35 @@ function collectWhoopWorkouts(cycles: WhoopCycle[]): WhoopWorkoutRecord[] {
   return workouts;
 }
 
+function resolveDetailedSyncStart(context: WhoopPersistenceContext): Date | null {
+  if (context.since.getTime() !== 0) {
+    return context.since;
+  }
+
+  let earliestObservedMs = Number.POSITIVE_INFINITY;
+  for (const cycle of context.cycles) {
+    const recoveryCreatedAt = cycle.recovery?.created_at;
+    if (!recoveryCreatedAt) continue;
+    const timestampMs = Date.parse(recoveryCreatedAt);
+    if (Number.isFinite(timestampMs)) {
+      earliestObservedMs = Math.min(earliestObservedMs, timestampMs);
+    }
+  }
+
+  if (!Number.isFinite(earliestObservedMs)) {
+    return null;
+  }
+
+  const earliestObserved = new Date(earliestObservedMs);
+  return new Date(
+    Date.UTC(
+      earliestObserved.getUTCFullYear(),
+      earliestObserved.getUTCMonth(),
+      earliestObserved.getUTCDate(),
+    ),
+  );
+}
+
 export async function listWhoopStepDatesNeedingSteps(
   context: Pick<WhoopSyncContext, "db" | "providerId" | "since" | "windowEnd" | "options">,
 ): Promise<string[]> {
@@ -147,8 +176,15 @@ export async function planWhoopApiSteps(
 
   const steps: WhoopSyncStep[] = [];
 
-  for (const date of await listWhoopStepDatesNeedingSteps(context)) {
-    planWhoopStepIfNotQueued(steps, { type: "strain_deep_dive", date }, context, pendingKeys);
+  const detailedSyncStart = resolveDetailedSyncStart(context);
+
+  if (detailedSyncStart) {
+    for (const date of await listWhoopStepDatesNeedingSteps({
+      ...context,
+      since: detailedSyncStart,
+    })) {
+      planWhoopStepIfNotQueued(steps, { type: "strain_deep_dive", date }, context, pendingKeys);
+    }
   }
 
   planWhoopStepIfNotQueued(steps, { type: "developer_workouts" }, context, pendingKeys);
@@ -165,7 +201,10 @@ export async function planWhoopApiSteps(
     planWhoopStepIfNotQueued(steps, { type: "sleep_stages", sleepId }, context, pendingKeys);
   }
 
-  for (const window of listWhoopHeartRateWindows(context.since, context.windowEnd.getTime())) {
+  for (const window of listWhoopHeartRateWindows(
+    detailedSyncStart ?? context.windowEnd,
+    context.windowEnd.getTime(),
+  )) {
     planWhoopStepIfNotQueued(
       steps,
       { type: "heart_rate", start: window.start, end: window.end },

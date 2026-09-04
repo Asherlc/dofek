@@ -11,12 +11,11 @@ import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
 import { enqueueSyncJob } from "dofek/jobs/enqueue-sync-job";
 import { providerSyncQueueName } from "dofek/jobs/queues";
 import { syncWindowFromTriggerInput, syncWindowToJobData } from "dofek/jobs/sync-window";
+import { providerRequiresStoredTokens } from "dofek/lib/custom-auth-providers";
 import { captureException } from "dofek/lib/error-reporting";
-import { ProviderModel } from "dofek/providers/provider-model";
 import { getAllProviders } from "dofek/providers/registry";
 import { z } from "zod";
 import { dateSchema } from "../lib/date-schema.ts";
-import { hasCurrentProviderAuthFailure } from "../lib/provider-auth-state.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { BodyRepository } from "../repositories/body-repository.ts";
 import { readFingerLoadingRange } from "../repositories/climbing-training-log-repository.ts";
@@ -35,11 +34,7 @@ import {
 import { SleepRepository } from "../repositories/sleep-repository.ts";
 import { SubjectiveRepository } from "../repositories/subjective-repository.ts";
 import { SyncRepository } from "../repositories/sync-repository.ts";
-import {
-  CUSTOM_AUTH_PROVIDERS,
-  ensureProvidersRegistered,
-  toJobId,
-} from "../routers/sync-helpers.ts";
+import { ensureProvidersRegistered, toJobId } from "../routers/sync-helpers.ts";
 import { registerActivityDetailsTool } from "./activity-details-tool.ts";
 import { registerActivityStreamsTool } from "./activity-streams-tool.ts";
 import { healthExplorerResourceUri, registerDofekAppResources } from "./app-resource.ts";
@@ -48,9 +43,9 @@ import type { DofekMcpContext } from "./context.ts";
 import { registerCyclingPerformanceTool } from "./cycling-performance-tool.ts";
 import { HealthExplorerService } from "./health-explorer-service.ts";
 import { buildHealthSeries, type HealthTrendRow } from "./health-series-service.ts";
+import { listProviderStatuses } from "./provider-status.ts";
 import { registerStrengthSessionsTool } from "./strength-sessions-tool.ts";
 import { registerSupplementsTool } from "./supplements-tool.ts";
-import { syncHealth } from "./sync-health.ts";
 import { requireMcpScope } from "./token-repository.ts";
 import { mcpOutputSchemas } from "./tool-output.ts";
 import { jsonToolResult } from "./tool-result.ts";
@@ -585,6 +580,23 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
             endUtcOffsetMinutes: row.end_utc_offset_minutes,
             source: row.local_time_source,
           };
+          const onsetTime = formatRecordLocalTime(
+            row.started_at,
+            localTimeContext,
+            "start",
+            undefined,
+            requestedTimezone,
+          );
+          const wakeTime =
+            row.ended_at == null
+              ? "--"
+              : formatRecordLocalTime(
+                  row.ended_at,
+                  localTimeContext,
+                  "end",
+                  undefined,
+                  requestedTimezone,
+                );
           return {
             date: row.date,
             staging_available: row.staging_available,
@@ -592,15 +604,8 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
             sleep_efficiency_pct: row.efficiency_pct,
             time_in_bed_minutes:
               row.duration_minutes == null ? null : row.duration_minutes + (row.awake_minutes ?? 0),
-            onset_time:
-              formatRecordLocalTime(row.started_at, localTimeContext, "start") === "--"
-                ? null
-                : formatRecordLocalTime(row.started_at, localTimeContext, "start"),
-            wake_time:
-              row.ended_at == null ||
-              formatRecordLocalTime(row.ended_at, localTimeContext, "end") === "--"
-                ? null
-                : formatRecordLocalTime(row.ended_at, localTimeContext, "end"),
+            onset_time: onsetTime === "--" ? null : onsetTime,
+            wake_time: wakeTime === "--" ? null : wakeTime,
             local_time_context: localTimeContext,
             stages: {
               rem_minutes: row.rem_minutes,
@@ -879,61 +884,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     },
     async () => {
       requireMcpScope(context.scopes, "providers:read");
-      await ensureProvidersRegistered();
-      const repository = new SyncRepository(context.db, context.userId);
-      const [connectedProviders, lastSyncs, latestErrors, scheduledSyncHealth] = await Promise.all([
-        repository.getConnectedProviderIds(),
-        repository.getLastSyncTimes(),
-        repository.getLatestErrors(),
-        repository.getScheduledSyncHealth(),
-      ]);
-      const connectedProviderIds = new Set(
-        connectedProviders.map((provider) => provider.providerId),
-      );
-      const tokenUpdatedAtMap = new Map(
-        connectedProviders.map((provider) => [provider.providerId, provider.updatedAt]),
-      );
-      const lastSyncMap = new Map(
-        lastSyncs.map((provider) => [provider.providerId, provider.lastSynced]),
-      );
-      const scheduledSyncHealthMap = new Map(
-        scheduledSyncHealth.map((health) => [health.providerId, health]),
-      );
-      const authErrorProviderIds = new Set(
-        latestErrors
-          .filter((provider) =>
-            hasCurrentProviderAuthFailure(
-              provider.authFailureReason,
-              provider.syncedAt,
-              tokenUpdatedAtMap.get(provider.providerId),
-            ),
-          )
-          .map((provider) => provider.providerId),
-      );
-      const providers = getAllProviders()
-        .filter((provider) => provider.validate() === null)
-        .map((provider) => {
-          const model = new ProviderModel(
-            provider,
-            connectedProviderIds,
-            lastSyncMap,
-            CUSTOM_AUTH_PROVIDERS,
-          );
-          return {
-            id: model.id,
-            name: model.name,
-            authType: model.authType,
-            authorized: model.isConnected,
-            lastSyncedAt: model.lastSyncedAt,
-            importOnly: model.importOnly,
-            needsReauth: model.isConnected && authErrorProviderIds.has(model.id),
-            sync_health:
-              model.isConnected && !model.importOnly
-                ? syncHealth(scheduledSyncHealthMap.get(model.id))
-                : null,
-          };
-        });
-      return jsonToolResult(providers);
+      return jsonToolResult(await listProviderStatuses(context));
     },
   );
   server.registerTool(
@@ -966,6 +917,18 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       const validationMessage = provider.validate();
       if (validationMessage) {
         throw new Error(`Provider not configured: ${validationMessage}`);
+      }
+      if (providerRequiresStoredTokens(provider)) {
+        const connections = await new SyncRepository(
+          context.db,
+          context.userId,
+        ).getConnectedProviderIds();
+        const hasTokens = connections.some(
+          (connection) => connection.providerId === providerId && connection.hasTokens,
+        );
+        if (!hasTokens) {
+          throw new Error(`Provider not connected: ${providerId}`);
+        }
       }
       validateSyncWindowTriggerInput({ sinceDays, sinceDate, untilDate });
       const syncWindow = syncWindowFromTriggerInput({

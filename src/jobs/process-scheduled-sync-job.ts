@@ -5,6 +5,7 @@ import {
   withAccountErasureUserWriteFence,
 } from "../db/account-erasure.ts";
 import type { Database, SyncDatabase } from "../db/index.ts";
+import { providerRequiresStoredTokens } from "../lib/custom-auth-providers.ts";
 import { listProviderSyncJobsForUser } from "../lib/sync-request-queue.ts";
 import { logger } from "../logger.ts";
 import { getProvider, isSyncEligibleProvider } from "../providers/index.ts";
@@ -48,23 +49,28 @@ export async function processScheduledSyncJob(job: ScheduledSyncJob, db: Schedul
   // Find every explicit user/provider connection. Non-sync sources are filtered below.
   const rows = await db.execute(
     sql`
-      SELECT pc.user_id, pc.provider_id
+      SELECT pc.user_id,
+             pc.provider_id,
+             ot.provider_id IS NOT NULL AS has_tokens
       FROM fitness.provider_connection pc
+      LEFT JOIN fitness.oauth_token ot
+        ON ot.user_id = pc.user_id
+        AND ot.provider_id = pc.provider_id
     `,
   );
 
   // Group by user
-  const userProviders = new Map<string, string[]>();
+  const userProviders = new Map<string, Array<{ providerId: string; hasTokens: boolean }>>();
   for (const row of rows) {
     const userId = String(row.user_id);
     const providerId = String(row.provider_id);
     const providers = userProviders.get(userId) ?? [];
-    providers.push(providerId);
+    providers.push({ providerId, hasTokens: row.has_tokens === true });
     userProviders.set(userId, providers);
   }
 
   const totalProviderConnections = Array.from(userProviders.values()).reduce(
-    (totalConnections, providerIds) => totalConnections + providerIds.length,
+    (totalConnections, providers) => totalConnections + providers.length,
     0,
   );
   await updateScheduledSyncProgress(
@@ -87,13 +93,22 @@ export async function processScheduledSyncJob(job: ScheduledSyncJob, db: Schedul
     );
   }
 
-  for (const [userId, providerIds] of userProviders) {
+  for (const [userId, providers] of userProviders) {
     try {
       await withAccountErasureUserWriteFence(db, userId, async () => {
-        for (const providerId of providerIds) {
+        for (const { providerId, hasTokens } of providers) {
           const provider = getProvider(providerId);
           if (!provider || !isSyncEligibleProvider(provider)) {
             logger.info(`[scheduled-sync] Skipping non-sync provider ${providerId}`);
+            processedConnections++;
+            await reportDispatchProgress();
+            continue;
+          }
+
+          if (providerRequiresStoredTokens(provider) && !hasTokens) {
+            logger.info(
+              `[scheduled-sync] Skipping disconnected provider ${providerId} for ${userId}`,
+            );
             processedConnections++;
             await reportDispatchProgress();
             continue;
@@ -138,7 +153,7 @@ export async function processScheduledSyncJob(job: ScheduledSyncJob, db: Schedul
       });
     } catch (error: unknown) {
       if (!(error instanceof AccountErasureUserFencedError)) throw error;
-      processedConnections += providerIds.length;
+      processedConnections += providers.length;
       logger.info("[scheduled-sync] Skipping one account with active erasure");
       await reportDispatchProgress();
     }

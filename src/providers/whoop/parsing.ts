@@ -97,6 +97,7 @@ export interface ParsedSleep {
   sleepNeedFromDebtMinutes?: number;
   sleepNeedFromStrainMinutes?: number;
   sleepNeedFromNapMinutes?: number;
+  respiratoryRateAvg?: number;
 }
 
 export interface ParsedSleepStage {
@@ -149,6 +150,7 @@ export const inlineSleepSchema = z.object({
   need_from_strain: z.number().optional(),
   credit_from_naps: z.number().optional(),
   significant: z.boolean().optional(),
+  respiratory_rate: z.number().optional(),
 });
 
 export type InlineSleepRecord = z.infer<typeof inlineSleepSchema>;
@@ -222,6 +224,7 @@ export function parseInlineSleep(
       record.need_from_strain != null ? milliToMinutes(record.need_from_strain) : undefined,
     sleepNeedFromNapMinutes:
       record.credit_from_naps != null ? milliToMinutes(record.credit_from_naps) : undefined,
+    respiratoryRateAvg: record.respiratory_rate,
   };
 }
 

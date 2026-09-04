@@ -111,6 +111,7 @@
     "./jobs/enqueue-sync-job": "./src/jobs/enqueue-sync-job.ts",
     "./jobs/sync-window": "./src/jobs/sync-job-window.ts",
     "./jobs/provider-queue-config": "./src/jobs/provider-queue-config.ts",
+    "./jobs/provider-rate-limit-cooldown": "./src/jobs/provider-rate-limit-cooldown.ts",
     "./jobs/process-export-job": "./src/jobs/process-export-job.ts",
     "./jobs/sync-request-query-registration": "./src/jobs/sync-request-query-registration.ts",
     "./export-email": "./src/export-email.ts",

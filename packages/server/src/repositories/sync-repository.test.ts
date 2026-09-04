@@ -46,13 +46,13 @@ describe("SyncRepository", () => {
       const wahooUpdatedAt = new Date("2026-06-02T10:00:00Z");
       const stravaUpdatedAt = new Date("2026-06-02T11:00:00Z");
       const { repo } = makeRepository([
-        { provider_id: "wahoo", updated_at: wahooUpdatedAt },
-        { provider_id: "strava", updated_at: stravaUpdatedAt },
+        { provider_id: "wahoo", updated_at: wahooUpdatedAt, has_tokens: true },
+        { provider_id: "strava", updated_at: stravaUpdatedAt, has_tokens: false },
       ]);
       const result = await repo.getConnectedProviderIds();
       expect(result).toEqual([
-        { providerId: "wahoo", updatedAt: wahooUpdatedAt },
-        { providerId: "strava", updatedAt: stravaUpdatedAt },
+        { providerId: "wahoo", updatedAt: wahooUpdatedAt, hasTokens: true },
+        { providerId: "strava", updatedAt: stravaUpdatedAt, hasTokens: false },
       ]);
     });
 

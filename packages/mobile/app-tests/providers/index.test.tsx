@@ -470,7 +470,7 @@ function makeProvider(
     recentLogs: Array<{ status: string }>;
     lastSuccessfulSyncAt: string | null;
     syncFreshness: {
-      status: "unknown" | "current" | "overdue";
+      status: "unknown" | "current" | "overdue" | "deferred";
       label: string;
       description: string;
     } | null;
@@ -1130,7 +1130,7 @@ describe("ProvidersScreen", () => {
     expect(screen.queryByTestId("provider-card-auto-supplements")).toBeNull();
   });
 
-  it("renders server-authored overdue and current freshness without evaluating timestamps", async () => {
+  it("renders server-authored overdue, deferred, and current freshness", async () => {
     mockProvidersQuery.mockReturnValue({
       data: [
         {
@@ -1150,6 +1150,24 @@ describe("ProvidersScreen", () => {
           importOnly: false,
           pushOnly: false,
           needsReauth: true,
+        },
+        {
+          id: "garmin",
+          name: "Garmin",
+          description: null,
+          authType: "custom:garmin",
+          tokenAuth: null,
+          authorized: true,
+          lastSyncedAt: "2026-08-12T12:00:00.000Z",
+          lastSuccessfulSyncAt: "2026-08-12T11:45:00.000Z",
+          syncFreshness: {
+            status: "deferred",
+            label: "Sync deferred",
+            description: "Rate limited until 2026-08-12T12:10:00.000Z.",
+          },
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: false,
         },
         {
           id: "wahoo",
@@ -1181,6 +1199,10 @@ describe("ProvidersScreen", () => {
     expect(polarCard.getByText("Sync overdue")).toBeTruthy();
     expect(polarCard.getByText("The last successful sync is overdue.")).toBeTruthy();
     expect(polarCard.getByText(/Last successful sync:/)).toBeTruthy();
+
+    const garminCard = within(screen.getByTestId("provider-card-garmin"));
+    expect(garminCard.getByText("Sync deferred")).toBeTruthy();
+    expect(garminCard.getByText("Rate limited until 2026-08-12T12:10:00.000Z.")).toBeTruthy();
 
     const wahooCard = within(screen.getByTestId("provider-card-wahoo"));
     expect(wahooCard.getByText("Connected")).toBeTruthy();

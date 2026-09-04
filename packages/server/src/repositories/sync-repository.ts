@@ -15,6 +15,7 @@ import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 const tokenRowSchema = z.object({
   provider_id: z.string(),
   updated_at: z.coerce.date(),
+  has_tokens: z.boolean(),
 });
 
 const lastSyncRowSchema = z.object({
@@ -70,6 +71,7 @@ const clickHouseProviderStatsRowSchema = z.object({
 export interface ProviderConnection {
   providerId: string;
   updatedAt: Date;
+  hasTokens: boolean;
 }
 
 export interface LastSync {
@@ -160,19 +162,25 @@ export class SyncRepository {
     this.#providerStatsStore = providerStatsStore;
   }
 
-  /** Get provider connections for this user, including push-only sources without tokens. */
+  /** Get provider connections for this user and whether each has stored sync credentials. */
   async getConnectedProviderIds(): Promise<ProviderConnection[]> {
     const rows = await executeWithSchema(
       this.#db,
       tokenRowSchema,
-      sql`SELECT pc.provider_id, COALESCE(ot.updated_at, pc.created_at) AS updated_at
+      sql`SELECT pc.provider_id,
+                 COALESCE(ot.updated_at, pc.created_at) AS updated_at,
+                 ot.provider_id IS NOT NULL AS has_tokens
           FROM fitness.provider_connection pc
           LEFT JOIN fitness.oauth_token ot
             ON ot.user_id = pc.user_id
             AND ot.provider_id = pc.provider_id
           WHERE pc.user_id = ${this.#userId}`,
     );
-    return rows.map((row) => ({ providerId: row.provider_id, updatedAt: row.updated_at }));
+    return rows.map((row) => ({
+      providerId: row.provider_id,
+      updatedAt: row.updated_at,
+      hasTokens: row.has_tokens,
+    }));
   }
 
   /** Get the most recent sync timestamp per provider. */

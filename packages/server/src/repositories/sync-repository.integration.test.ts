@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
-import { ensureProvider } from "../../../../src/db/tokens.ts";
+import { ensureProvider, saveTokens } from "../../../../src/db/tokens.ts";
 import { SyncRepository } from "./sync-repository.ts";
 
 const SYNC_REPOSITORY_TEST_USER_ID = "00000000-0000-0000-0000-0000000000f2";
@@ -30,6 +30,10 @@ describe("SyncRepository integration", () => {
       sql`DELETE FROM fitness.sync_log
           WHERE user_id = ${SYNC_REPOSITORY_TEST_USER_ID}
             AND provider_id = 'sync-repository-provider'`,
+    );
+    await testContext.db.execute(
+      sql`DELETE FROM fitness.oauth_token
+          WHERE provider_id = 'sync-repository-provider'`,
     );
     await testContext.db.execute(
       sql`DELETE FROM fitness.provider_connection
@@ -262,10 +266,41 @@ describe("SyncRepository integration", () => {
       );
 
       await expect(firstRepository.getConnectedProviderIds()).resolves.toEqual([
-        expect.objectContaining({ providerId: "sync-repository-provider" }),
+        expect.objectContaining({
+          providerId: "sync-repository-provider",
+          hasTokens: false,
+        }),
       ]);
       await expect(secondRepository.getConnectedProviderIds()).resolves.toEqual([
-        expect.objectContaining({ providerId: "sync-repository-provider" }),
+        expect.objectContaining({
+          providerId: "sync-repository-provider",
+          hasTokens: false,
+        }),
+      ]);
+
+      await saveTokens(
+        testContext.db,
+        "sync-repository-provider",
+        {
+          accessToken: "first-user-token",
+          refreshToken: null,
+          expiresAt: new Date("2026-08-01T00:00:00Z"),
+          scopes: null,
+        },
+        SYNC_REPOSITORY_TEST_USER_ID,
+      );
+
+      await expect(firstRepository.getConnectedProviderIds()).resolves.toEqual([
+        expect.objectContaining({
+          providerId: "sync-repository-provider",
+          hasTokens: true,
+        }),
+      ]);
+      await expect(secondRepository.getConnectedProviderIds()).resolves.toEqual([
+        expect.objectContaining({
+          providerId: "sync-repository-provider",
+          hasTokens: false,
+        }),
       ]);
 
       await testContext.db.execute(
