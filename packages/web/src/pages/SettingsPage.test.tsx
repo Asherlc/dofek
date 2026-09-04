@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { normalizeSettingsCategory } from "./settingsCategories.ts";
@@ -14,7 +14,6 @@ type SettingsSearch = {
     | "notifications"
     | "billing"
     | "advanced";
-  zeppPair?: string;
 };
 
 type SettingsNavigation = {
@@ -349,25 +348,6 @@ describe("SettingsPage categories", () => {
     });
   });
 
-  it("writes Zepp deep links to route search state without retaining the pairing code", async () => {
-    mockSearch = { zeppPair: "ABC234" };
-    const { SettingsPage } = await import("./SettingsPage.tsx");
-
-    render(<SettingsPage />);
-
-    expect(screen.getByRole("tab", { name: "Data Sources" }).getAttribute("aria-selected")).toBe(
-      "true",
-    );
-    expect(screen.getByText("DataSourcesPanel")).toBeTruthy();
-    await waitFor(() => expect(mockNavigate).toHaveBeenCalled());
-    const pairingNavigation = mockNavigate.mock.calls[0]?.[0];
-    expect(pairingNavigation?.replace).toBe(true);
-    expect(applySearch(pairingNavigation, { zeppPair: "ABC234" })).toEqual({
-      tab: "data-sources",
-      zeppPair: undefined,
-    });
-  });
-
   it("preserves other search state when changing tabs", async () => {
     mockSearch = { tab: "data-sources" };
     const { SettingsPage } = await import("./SettingsPage.tsx");
@@ -376,10 +356,7 @@ describe("SettingsPage categories", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "Account" }));
     const tabNavigation = mockNavigate.mock.calls[0]?.[0];
-    expect(applySearch(tabNavigation, { tab: "data-sources", zeppPair: "ABC234" })).toEqual({
-      tab: "account",
-      zeppPair: "ABC234",
-    });
+    expect(applySearch(tabNavigation, { tab: "data-sources" })).toEqual({ tab: "account" });
   });
 
   it("associates every tab with the rendered tab panel", async () => {

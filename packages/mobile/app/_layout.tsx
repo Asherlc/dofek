@@ -675,6 +675,12 @@ function AuthGate() {
             }}
           />
           <Stack.Screen
+            name="zepp-pairing"
+            options={{
+              title: "Pair Zepp App",
+            }}
+          />
+          <Stack.Screen
             name="bluetooth-devices/index"
             options={{
               title: "Bluetooth Devices",

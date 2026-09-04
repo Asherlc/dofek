@@ -9,7 +9,6 @@ const captured: {
   validateSearch:
     | ((search: Record<string, unknown>) => {
         tab?: SettingsCategory;
-        zeppPair?: string;
       })
     | null;
 } = { validateSearch: null };
@@ -20,7 +19,6 @@ vi.mock("@tanstack/react-router", () => ({
     (options: {
       validateSearch?: (search: Record<string, unknown>) => {
         tab?: SettingsCategory;
-        zeppPair?: string;
       };
     }) => {
       captured.validateSearch = options.validateSearch ?? null;
@@ -37,13 +35,6 @@ beforeAll(async () => {
 });
 
 describe("settings search validation", () => {
-  it("keeps valid tab and Zepp pairing deep-link values", () => {
-    expect(captured.validateSearch?.({ tab: "data-sources", zeppPair: "ABC234" })).toEqual({
-      tab: "data-sources",
-      zeppPair: "ABC234",
-    });
-  });
-
   it.each([
     ["connections", "data-sources"],
     ["general", "goals-models"],
@@ -67,7 +58,7 @@ describe("settings search validation", () => {
   });
 
   it("drops invalid or empty settings search values", () => {
-    expect(captured.validateSearch?.({ tab: "unknown", zeppPair: "" })).toEqual({});
+    expect(captured.validateSearch?.({ tab: "unknown" })).toEqual({});
     expect(captured.validateSearch?.({ tab: ["connections"] })).toEqual({});
   });
 });

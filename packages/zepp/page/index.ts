@@ -37,6 +37,7 @@ import {
   removeUploadedBackgroundHealthBufferEntries,
   writeBackgroundHealthBuffer,
 } from "../src/background-health-storage.ts";
+import { isConnectionChangedCall } from "../src/connection-control.ts";
 import { collectHealthData } from "../src/health-collector.ts";
 import { createHealthUploadBatches, mergeHealthActivities } from "../src/health-upload.ts";
 import { createImuCollector, FREQ_MODES } from "../src/imu-collector.ts";
@@ -193,6 +194,7 @@ Page(
       dofekEmail: "",
       pairingVerificationUrl: "",
       pairingShortCode: "",
+      preferencesRequestId: 0,
     },
 
     onInit() {
@@ -292,12 +294,15 @@ Page(
       });
     },
 
-    refreshPreferences() {
+    refreshPreferences({ startPairingIfNeeded = true }: { startPairingIfNeeded?: boolean } = {}) {
+      const requestId = this.state.preferencesRequestId + 1;
+      this.state.preferencesRequestId = requestId;
       this.request({
         method: "imu.getPreferences",
         params: {},
       })
         .then((result) => {
+          if (requestId !== this.state.preferencesRequestId) return;
           if (!this.state.logging) {
             this.state.enableGyro = result?.enableGyro === true;
             this.state.freqModeIndex = Number(result?.freqModeIndex ?? 1);
@@ -309,7 +314,7 @@ Page(
           );
           const pairing = isRecord(result?.pairing) ? result.pairing : null;
           this.renderPairing(pairing);
-          if (!this.state.hasCredentials && !pairing) {
+          if (startPairingIfNeeded && !this.state.hasCredentials && !pairing) {
             this.startPairingFromWatch();
           }
           this.publishSessionStatus(
@@ -317,6 +322,7 @@ Page(
           );
         })
         .catch((error) => {
+          if (requestId !== this.state.preferencesRequestId) return;
           logger.error("preference fetch failed %j", error);
           renderHint("Preferences unavailable\nOpen Zepp settings");
         });
@@ -781,6 +787,11 @@ Page(
     },
 
     onCall(payload: { method: string; params?: Record<string, unknown> } | null) {
+      if (isConnectionChangedCall(payload)) {
+        this.refreshPreferences({ startPairingIfNeeded: false });
+        return;
+      }
+
       if (
         handleSessionCall(payload, {
           logging: this.state.logging,

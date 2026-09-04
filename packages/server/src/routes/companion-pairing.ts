@@ -20,14 +20,20 @@ function sendJson(res: import("express").Response, status: number, body: unknown
 }
 
 function buildVerificationUrl(origin: string, shortCode: string): string {
-  const url = new URL("/settings", origin);
-  url.searchParams.set("zeppPair", shortCode);
+  const url = new URL("/zepp-pairing", origin);
+  url.searchParams.set("code", shortCode);
   return url.toString();
 }
 
 function buildQrImageUrl(origin: string, pairingId: string): string {
   const url = new URL(`/api/companion-pairing/qr/${encodeURIComponent(pairingId)}.svg`, origin);
   return url.toString();
+}
+
+function requireSecureProductionOrigin(origin: string): void {
+  if (process.env.NODE_ENV === "production" && new URL(origin).protocol !== "https:") {
+    throw new Error("PUBLIC_URL environment variable must use https in production");
+  }
 }
 
 export function createCompanionPairingRouter(deps: {
@@ -37,6 +43,7 @@ export function createCompanionPairingRouter(deps: {
   const router = Router();
   const store = deps.store ?? getCompanionPairingStore();
   const publicOrigin = getPublicUrlOrigin();
+  requireSecureProductionOrigin(publicOrigin);
 
   router.post("/start", express.json(), async (req, res) => {
     const parsed = pairingStartSchema.safeParse(req.body ?? {});
