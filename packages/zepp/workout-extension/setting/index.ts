@@ -25,13 +25,20 @@ function toggle(
   storage.setItem(key, storage.getItem(key) === "1" ? "0" : "1");
 }
 
-function buildPairingQrImage(sourceUrl: string): HTMLImageElement {
-  const image = new Image(220, 220);
-  image.src = sourceUrl;
-  image.alt = "Dofek Workout pairing QR code";
-  image.style.margin = "0 auto 1em";
-  image.style.display = "block";
-  return image;
+function buildPairingQrImage(sourceUrl: string): unknown {
+  const renderImage: unknown = Reflect.get(globalThis, "Image");
+  if (typeof renderImage !== "function") {
+    throw new Error("Zepp Settings Image component is unavailable");
+  }
+  return Reflect.apply(renderImage, undefined, [
+    {
+      src: sourceUrl,
+      alt: "Dofek Workout pairing QR code",
+      width: 220,
+      height: 220,
+      style: { margin: "0 auto 1em", display: "block" },
+    },
+  ]);
 }
 
 interface WorkoutSettingsState {
@@ -90,7 +97,7 @@ AppSettingsPage({
         "Dofek Workout Sync",
       ]),
       TextInput({
-        title: "Dofek Server URL",
+        label: "Dofek Server URL",
         value: this.state.serverUrl,
         onChange: (value: string) => {
           this.state.serverUrl = value;
@@ -120,7 +127,7 @@ AppSettingsPage({
         ? buildPairingQrImage(this.state.pairingQrImageUrl)
         : View({}, []),
       TextInput({
-        title: "Dofek Email",
+        label: "Dofek Email",
         value: this.state.email,
         onChange: (value: string) => {
           this.state.email = value;
@@ -128,7 +135,7 @@ AppSettingsPage({
         },
       }),
       TextInput({
-        title: "Dofek Password",
+        label: "Dofek Password",
         placeholder: "Enter your Dofek password",
         onChange: (value: string) => {
           this.state.password = value;

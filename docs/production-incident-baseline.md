@@ -23366,3 +23366,39 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   session nor a local `EXPO_PUBLIC_SENTRY_DSN`, which the mobile config requires.
 - **Remaining risk / follow-up:** Confirm the fresh Metro bundle and the
   remaining hosted checks pass, then remove no configuration guards.
+
+## 2026-09-03 — Zepp Store rejected the Dofek application
+
+- **Status:** Fixed in the workspace; Zepp Store resubmission is pending.
+- **Symptoms / impact:** Zepp rejected Dofek version `0.0.1787875865` because
+  its preview image did not meet the store specification and its Settings page
+  displayed no content. The rejection prevented the application from becoming
+  available through the Zepp Store.
+- **Evidence / root cause:** The rejected release tag called the nonexistent
+  `ToggleSwitch` Settings global during every initial render, so the page
+  stopped before returning its render tree. The same code used unsupported
+  `TextInput.title` properties and constructed QR images through the browser
+  DOM API instead of Zepp's render function. Zepp documents `Toggle` with a
+  `value` property, `TextInput.label`, and the `Image` render component in its
+  [Settings App UI API](https://docs.zepp.com/docs/reference/app-settings-api/ui/).
+  The normal-app rectangular previews also used sharp opaque display corners,
+  while Zepp requires the canvas outside the maximized device interface to be
+  transparent in its
+  [App Introduction Screenshots specification](https://docs.zepp.com/docs/distribute/#app-introduction-screenshots).
+- **Fix / mitigation:** Replaced the unsupported Settings calls in the normal
+  app and Workout Extension with Zepp's documented render functions and
+  properties, and updated their runtime-focused tests. Re-masked the six normal
+  app previews to the round and rounded-rectangular device silhouettes and
+  normalized them to 360×360 8-bit RGBA PNGs. Added a pre-submission checklist
+  to the Zepp package documentation. No retry, compatibility shim, or review
+  bypass was added.
+- **Validation:** The Settings regressions failed against the rejected runtime
+  calls and pass after the fix. The complete Zepp suite passes 23 files and 200
+  tests; package lint and TypeScript checks pass. Zeus built both versioned
+  `0.0.1788499448` ZAB archives, and `unzip -t` reports no archive errors. Pixel
+  inspection confirms all six normal-app previews are 360×360 8-bit RGBA PNGs
+  with transparent pixels outside the device display.
+- **Remaining risk / follow-up:** Install the normal-app ZAB on a physical Zepp
+  device, open the Settings page in the current Zepp mobile app, upload the new
+  device-shaped previews, and resubmit the application. Store approval remains
+  external to repository validation.

@@ -23,7 +23,7 @@ interface SettingConfiguration {
 }
 
 interface InputConfiguration {
-  title: string;
+  label: string;
   value?: string;
   placeholder?: string;
   onChange(value: string): void;
@@ -36,28 +36,25 @@ interface ButtonConfiguration {
   onClick(): void;
 }
 
-class FakeImage {
-  readonly height: number;
-  readonly width: number;
-  src = "";
-  alt = "";
-  style: Record<string, string> = {};
-
-  constructor(width: number, height: number) {
-    this.width = width;
-    this.height = height;
-    createdImages.push(this);
-  }
+interface ImageConfiguration {
+  src: string;
+  alt?: string;
+  width?: number;
+  height?: number;
+  style?: Record<string, string>;
 }
 
 let configuration: SettingConfiguration | undefined;
 const inputConfigurations: InputConfiguration[] = [];
 const buttonConfigurations: ButtonConfiguration[] = [];
 const viewConfigurations: Array<{ style: Record<string, unknown>; children: unknown[] }> = [];
-const createdImages: FakeImage[] = [];
+const createdImages: ImageConfiguration[] = [];
 
 beforeAll(async () => {
-  vi.stubGlobal("Image", FakeImage);
+  vi.stubGlobal("Image", (value: ImageConfiguration) => {
+    createdImages.push(value);
+    return value;
+  });
   vi.stubGlobal("AppSettingsPage", (value: SettingConfiguration) => {
     configuration = value;
   });
@@ -132,15 +129,15 @@ describe("workout extension settings", () => {
     });
     expect(inputConfigurations).toHaveLength(3);
     expect(inputConfigurations[0]).toMatchObject({
-      title: "Dofek Server URL",
+      label: "Dofek Server URL",
       value: "https://dofek.example.test",
     });
     expect(inputConfigurations[1]).toMatchObject({
-      title: "Dofek Email",
+      label: "Dofek Email",
       value: "athlete@example.test",
     });
     expect(inputConfigurations[2]).toMatchObject({
-      title: "Dofek Password",
+      label: "Dofek Password",
       placeholder: "Enter your Dofek password",
     });
     expect(buttonConfigurations).toHaveLength(4);
@@ -179,6 +176,7 @@ describe("workout extension settings", () => {
         alt: "Dofek Workout pairing QR code",
         width: 220,
         height: 220,
+        style: { margin: "0 auto 1em", display: "block" },
       }),
     );
   });

@@ -162,6 +162,25 @@ CI versions each build as `0.0.<unix-timestamp>` with code `<timestamp>`, so ver
 2. Upload the normal watch app package to its existing listing in [console.zepp.com](https://console.zepp.com/).
 3. Upload the Workout Extension package to its independent Workout Extension listing and submit both upgrades for review. Zepp requires a separate app ID and submission for a Workout Extension ([Workout Extension quick start](https://docs.zepp.com/docs/guides/workout-extension/quick-start/)).
 
+### Store review checklist
+
+Before submitting either package:
+
+1. Open its Settings page in the Zepp mobile app and verify that the complete
+   page renders, including input labels and the pairing QR image. Settings Apps
+   render only the components documented by Zepp's
+   [Settings App UI API](https://docs.zepp.com/docs/reference/app-settings-api/ui/).
+2. Upload three or more device-appropriate images from `store-screenshots/`,
+   as Zepp recommends. Each preview must be a 360×360 PNG. Keep the canvas
+   outside the round or rounded-rectangular device display transparent, and
+   maximize the display within the canvas as required by Zepp's
+   [App Introduction Screenshots specification](https://docs.zepp.com/docs/distribute/#app-introduction-screenshots).
+3. Use a separate 240×240 store icon in the Console. Do not upload the 248×248
+   system icon from `assets/`; Zepp specifies different dimensions for
+   [system and store icons](https://docs.zepp.com/docs/guides/faq/icon-faq/#q3-what-sizes-do-icon-applications-need-to-output).
+4. Build both packages and upload the newly generated ZAB files rather than a
+   previous release artifact.
+
 ## Output file location
 
 After export, the Side Service stores the received file path in Settings Storage key `last_export_path`. On the phone this is under the mini program's Side Service data sandbox, typically:

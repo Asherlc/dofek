@@ -28,13 +28,20 @@ function toggle(
   storage.setItem(key, current === "1" ? "0" : "1");
 }
 
-function buildPairingQrImage(sourceUrl: string): HTMLImageElement {
-  const image = new Image(220, 220);
-  image.src = sourceUrl;
-  image.alt = "Dofek pairing QR code";
-  image.style.margin = "0 auto 1em";
-  image.style.display = "block";
-  return image;
+function buildPairingQrImage(sourceUrl: string): unknown {
+  const renderImage: unknown = Reflect.get(globalThis, "Image");
+  if (typeof renderImage !== "function") {
+    throw new Error("Zepp Settings Image component is unavailable");
+  }
+  return Reflect.apply(renderImage, undefined, [
+    {
+      src: sourceUrl,
+      alt: "Dofek pairing QR code",
+      width: 220,
+      height: 220,
+      style: { margin: "0 auto 1em", display: "block" },
+    },
+  ]);
 }
 
 const PG_STATE: {
@@ -119,7 +126,7 @@ AppSettingsPage({
         "Keep the Dofek watch app open when starting or stopping from Settings.",
       ]),
       TextInput({
-        title: "Sample rate mode (0=LOW, 1=NORMAL, 2=HIGH)",
+        label: "Sample rate mode (0=LOW, 1=NORMAL, 2=HIGH)",
         bold: false,
         value: String(this.state.freqModeIndex),
         onChange: (value: string) => {
@@ -133,9 +140,9 @@ AppSettingsPage({
       View({ style: { margin: "0 1em", fontSize: "1rem", color: "#888" } }, [
         `Requested: ${FREQ_MODE_LABELS[this.state.freqModeIndex]}. Docs do not publish Hz per mode; the watch records the delivered rate.`,
       ]),
-      ToggleSwitch({
+      Toggle({
         label: "Include gyroscope",
-        checked: this.state.enableGyro,
+        value: this.state.enableGyro,
         onChange: (checked: boolean) => {
           this.state.enableGyro = checked;
           props.settingsStorage.setItem(STORAGE_KEYS.PREF_ENABLE_GYRO, checked ? "true" : "false");
@@ -187,7 +194,7 @@ AppSettingsPage({
       ),
 
       TextInput({
-        title: "Dofek Server URL",
+        label: "Dofek Server URL",
         bold: false,
         value: this.state.dofekServerUrl,
         onChange: (value: string) => {
@@ -222,7 +229,7 @@ AppSettingsPage({
         : View({}, []),
 
       TextInput({
-        title: "Dofek Email",
+        label: "Dofek Email",
         bold: false,
         value: this.state.dofekEmail,
         onChange: (value: string) => {
@@ -232,7 +239,7 @@ AppSettingsPage({
       }),
 
       TextInput({
-        title: "Dofek Password",
+        label: "Dofek Password",
         bold: false,
         placeholder: "Enter your Dofek password",
         onChange: (value: string) => {
