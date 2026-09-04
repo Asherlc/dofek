@@ -190,6 +190,20 @@ function sendJson(res: import("express").Response, status: number, body: unknown
   res.status(status).json(body);
 }
 
+function requestBatchId(body: unknown): string | null {
+  if (
+    typeof body !== "object" ||
+    body === null ||
+    Array.isArray(body) ||
+    !("batchId" in body) ||
+    typeof body.batchId !== "string" ||
+    body.batchId.trim().length === 0
+  ) {
+    return null;
+  }
+  return body.batchId;
+}
+
 export function createIngestZosHealthRouter(deps: {
   db: Database;
   metricStreamPublisher?: MetricStreamEventPublisher;
@@ -220,9 +234,23 @@ export function createIngestZosHealthRouter(deps: {
 
     const parseResult = ingestPayloadSchema.safeParse(req.body);
     if (!parseResult.success) {
+      const details = parseResult.error.flatten();
+      const issuePaths = Object.keys(details.fieldErrors).sort();
+      logger.warn(
+        `[ingest-zos] Invalid payload ${JSON.stringify({
+          batchId: requestBatchId(req.body),
+          issueCount:
+            details.formErrors.length +
+            Object.values(details.fieldErrors).reduce(
+              (count, errors) => count + (errors?.length ?? 0),
+              0,
+            ),
+          issuePaths,
+        })}`,
+      );
       sendJson(res, 400, {
         error: "Invalid payload",
-        details: parseResult.error.flatten(),
+        details,
       });
       return;
     }

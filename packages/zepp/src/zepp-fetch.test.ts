@@ -33,6 +33,29 @@ describe("summarizeZeppFetchResponse", () => {
     });
   });
 
+  it("includes structured validation field paths in failed responses", () => {
+    expect(
+      summarizeZeppFetchResponse({
+        status: 400,
+        body: {
+          error: "Invalid payload",
+          details: {
+            formErrors: [],
+            fieldErrors: {
+              restingHeartRate: ["Expected number"],
+              backgroundSamples: ["Invalid input"],
+            },
+          },
+        },
+      }),
+    ).toMatchObject({
+      errorMessage:
+        "Invalid payload: backgroundSamples: Invalid input; restingHeartRate: Expected number",
+      ok: false,
+      status: 400,
+    });
+  });
+
   it("treats redirects as failed responses", () => {
     expect(summarizeZeppFetchResponse({ status: 302 })).toMatchObject({
       errorMessage: "HTTP 302",

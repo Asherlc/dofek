@@ -39,7 +39,11 @@ function getStatus(response: ZeppFetchResponse): number | null {
 
 function getBodyErrorMessage(body: unknown): string | null {
   if (isRecord(body) && typeof body.error === "string" && body.error.trim()) {
-    return body.error.trim();
+    const error = body.error.trim();
+    const issues = validationIssuesFromDetails(body.details);
+    return issues.length === 0
+      ? error
+      : `${error}: ${issues.map((issue) => `${issue.path}: ${issue.message}`).join("; ")}`;
   }
   if (isRecord(body) && typeof body.message === "string" && body.message.trim()) {
     return body.message.trim();
@@ -64,3 +68,5 @@ export function summarizeZeppFetchResponse(response: ZeppFetchResponse): ZeppFet
     status,
   };
 }
+
+import { validationIssuesFromDetails } from "./health-contract.ts";

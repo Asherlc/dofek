@@ -315,9 +315,34 @@ describe("createIngestZosHealthRouter", () => {
     );
 
     expect(response.status).toBe(400);
-    expect(response.body).toMatchObject({ error: "Invalid payload" });
+    expect(response.body).toEqual({
+      error: "Invalid payload",
+      details: {
+        fieldErrors: { dailyMetrics: ["Invalid input: expected record, received string"] },
+        formErrors: [],
+      },
+    });
+    expect(routeMocks.loggerWarn).toHaveBeenCalledWith(
+      '[ingest-zos] Invalid payload {"batchId":null,"issueCount":1,"issuePaths":["dailyMetrics"]}',
+    );
     expect(execute).not.toHaveBeenCalled();
     expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("logs a parseable batch id without logging health values", async () => {
+    const { db } = createMockDatabase();
+
+    const response = await post(
+      createTestApp(db),
+      { batchId: "batch-123", dailyMetrics: "private-health-value" },
+      { authorization: "Bearer token-123" },
+    );
+
+    expect(response.status).toBe(400);
+    expect(routeMocks.loggerWarn).toHaveBeenCalledWith(
+      '[ingest-zos] Invalid payload {"batchId":"batch-123","issueCount":1,"issuePaths":["dailyMetrics"]}',
+    );
+    expect(routeMocks.loggerWarn.mock.calls.flat().join(" ")).not.toContain("private-health-value");
   });
 
   it("publishes background health samples to the metric stream", async () => {
