@@ -20,17 +20,28 @@ interface RetryFailedFileUploadCommand {
   timezone?: string;
 }
 
-function requireValidIanaTimezone(timezone: string): string {
-  if (/^[+-]\d{2}(?::?\d{2})?$/.test(timezone)) {
-    throw new Error(`timezone must be a valid IANA timezone: ${timezone}`);
+const ianaTimezoneSchema = z.string().superRefine((timezone, context) => {
+  let valid = !/^[+-]\d{2}(?::?\d{2})?$/.test(timezone);
+  if (valid) {
+    try {
+      new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format(new Date());
+    } catch {
+      valid = false;
+    }
   }
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format(new Date());
-  } catch {
-    throw new Error(`timezone must be a valid IANA timezone: ${timezone}`);
+  if (!valid) {
+    context.addIssue({
+      code: "custom",
+      message: `timezone must be a valid IANA timezone: ${timezone}`,
+    });
   }
-  return timezone;
-}
+});
+
+const timezoneOptionSchema = z
+  .string()
+  .trim()
+  .min(1, "--timezone must not be blank")
+  .pipe(ianaTimezoneSchema);
 
 function requiredUuid(value: string | undefined, option: string): string {
   return z.uuid({ error: `${option} is required and must be a UUID` }).parse(value);
@@ -60,12 +71,7 @@ export function parseRetryFailedFileUploadCommand(
         .parse(values["weight-unit"])
     : undefined;
   const timezone =
-    values.timezone == null
-      ? undefined
-      : z.string().trim().min(1, "--timezone must not be blank").parse(values.timezone);
-  if (timezone) {
-    requireValidIanaTimezone(timezone);
-  }
+    values.timezone == null ? undefined : timezoneOptionSchema.parse(values.timezone);
   return {
     execute,
     uploadId: requiredUuid(values["upload-id"], "--upload-id"),
@@ -92,7 +98,7 @@ function validateRetainedRetry(
     if (!command.weightUnit) throw new Error("Strong CSV retry requires an explicit weight unit");
     if (!command.timezone) throw new Error("Strong CSV retry requires an explicit timezone");
   }
-  if (timezone) requireValidIanaTimezone(timezone);
+  if (timezone) ianaTimezoneSchema.parse(timezone);
   return { weightUnit, timezone };
 }
 
