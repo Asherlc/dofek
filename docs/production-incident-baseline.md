@@ -25144,3 +25144,50 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   passes 93 tests.
 - **Remaining risk / follow-up:** Confirm both replacement Stryker jobs and the
   aggregate mutation gate pass in GitHub Actions.
+
+## 2026-09-03 — Post-drain activity context regression and hydration backlog
+
+- **Status:** Canonical local-time fix implemented in source; production
+  deployment and seven-activity hydration remain pending.
+- **Symptoms / user impact:** `f0a20494` projected
+  `America/Los_Angeles` with UTC−4 offsets, while seven activities created
+  during the drain window still lacked current ClickHouse sensor and activity
+  summaries.
+- **Evidence / root cause:** All active raw `fitness.activity` rows passed the
+  named-zone/offset invariant, but 12 `fitness.v_activity` rows failed it. The
+  view selected timezone, start offset, end offset, and provenance with four
+  independent member lookups, so `f0a20494` combined Strong's zone with
+  Peloton's offsets. After deploy, the exact failed analytics steps were
+  `sensor_scalar_sample` and `activity_duplicate_groups`; the first fatal
+  ClickHouse diagnostic was `Code: 159 ... Timeout exceeded: elapsed 240.046
+  sec., maximum: 240.000 sec.` Downstream deduplication and summary models were
+  therefore skipped.
+- **Direct fix:** Select the complete local-time context from one group member
+  in both `fitness.v_activity` and `analytics.deduped_activities`, preferring a
+  named timezone over offset-only evidence, and add executable PostgreSQL and
+  ClickHouse regressions plus the zero-row production invariant. No timeout,
+  retry, or warn-and-continue behavior was added.
+- **Deployment provenance:** Strong import behavior first shipped through the
+  reviewed [PR #2641](https://github.com/Asherlc/dofek/pull/2641) and successful
+  [deploy run 33690234725](https://github.com/Asherlc/dofek/actions/runs/33690234725).
+  The current production image `sha-d1e4f02` came from reviewed
+  [PR #2664](https://github.com/Asherlc/dofek/pull/2664) and successful
+  [deploy run 33828677565](https://github.com/Asherlc/dofek/actions/runs/33828677565),
+  so the Strong merge was intentional rather than an unreviewed gate change.
+- **Validation:** The regression test reproduced the exact mixed tuple:
+  `America/Los_Angeles`, `-240`, `-240`, `provider_offset`. Production queries
+  confirmed `61edc6bf` groups Apple Health with Strong at UTC−7 and confirmed
+  `b2b2b14f` is correctly Peloton-only; its nearby Apple Health and WHOOP rows
+  belong to a separate earlier cycling activity. The focused PostgreSQL suite
+  passes 5/5 with the atomic-context migration, and TypeScript and SQL policy
+  checks pass. The focused ClickHouse case remains pending CI: the local
+  ClickHouse 26.8 container repeatedly exceeded its cgroup ceiling and restarted
+  before returning an assertion at both the default 1536 MiB limit and a
+  temporary 2 GiB limit; after a temporary 3 GiB update it restarted during
+  startup before the final isolated run could begin.
+- **Remaining risk / follow-up:** Deploy the atomic-context migration, require
+  the invariant to return zero rows, identify and correct the query-cost cause
+  of the analytics timeouts, then hydrate and verify `b20988c5`, `40e593c7`,
+  `32cbb0dc`, `1d7a3bc0`, `9203bd3b`, `54d67057`, and `61edc6bf`. The hydration
+  incident remains unresolved until all seven have current active rows in the
+  four downstream activity projections.

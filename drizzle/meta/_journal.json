@@ -778,6 +778,13 @@
       "when": 1788463000001,
       "tag": "0108_validate_activity_rejected_local_time_context",
       "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1788492000000,
+      "tag": "0109_v_activity_atomic_local_time_context",
+      "breakpoints": true
     }
   ]
 }
