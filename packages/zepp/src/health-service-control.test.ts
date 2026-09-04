@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { ensureHealthServiceRunning } from "./health-service-control.ts";
+import {
+  acquireForegroundHealthOwnership,
+  ensureHealthServiceRunning,
+} from "./health-service-control.ts";
 
 describe("ensureHealthServiceRunning", () => {
   it("starts immediately when background permission is already granted", async () => {
@@ -71,5 +74,81 @@ describe("ensureHealthServiceRunning", () => {
         },
       }),
     ).rejects.toBe(serviceError);
+  });
+});
+
+describe("acquireForegroundHealthOwnership", () => {
+  it("waits for App Service shutdown before granting foreground ownership", async () => {
+    let completeStop: (() => void) | undefined;
+    const stopService = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          completeStop = resolve;
+        }),
+    );
+    const startService = vi.fn();
+    let ownsOutbox = false;
+
+    const acquisition = acquireForegroundHealthOwnership({
+      queryPermission: () => 2,
+      requestPermission: vi.fn(),
+      stopService,
+      startService,
+    }).then((ownership) => {
+      ownsOutbox = true;
+      return ownership;
+    });
+
+    await Promise.resolve();
+    expect(ownsOutbox).toBe(false);
+    completeStop?.();
+    const ownership = await acquisition;
+    expect(ownsOutbox).toBe(true);
+
+    ownership.release();
+    ownership.release();
+    expect(startService).toHaveBeenCalledOnce();
+  });
+
+  it("grants foreground-only ownership without stopping or restarting when permission is denied", async () => {
+    const stopService = vi.fn();
+    const startService = vi.fn();
+
+    const ownership = await acquireForegroundHealthOwnership({
+      queryPermission: () => 0,
+      requestPermission: vi.fn(async () => 1),
+      stopService,
+      startService,
+    });
+
+    expect(ownership.state).toBe("permission-denied");
+    expect(stopService).not.toHaveBeenCalled();
+    ownership.release();
+    expect(startService).not.toHaveBeenCalled();
+  });
+
+  it("preserves the last background append before a foreground drain starts", async () => {
+    let completeStop: (() => void) | undefined;
+    const stored = ["background-before-stop"];
+    const acquisition = acquireForegroundHealthOwnership({
+      queryPermission: () => 2,
+      requestPermission: vi.fn(),
+      stopService: () =>
+        new Promise<void>((resolve) => {
+          completeStop = resolve;
+        }),
+      startService: vi.fn(),
+    });
+
+    stored.push("background-during-stop");
+    completeStop?.();
+    await acquisition;
+    stored.push("foreground-after-stop");
+
+    expect(stored).toEqual([
+      "background-before-stop",
+      "background-during-stop",
+      "foreground-after-stop",
+    ]);
   });
 });

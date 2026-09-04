@@ -4,12 +4,7 @@ import { createImuSessionController } from "./imu-session-controller.ts";
 import type { CollectorOptions, ImuCollector, ImuSample } from "./types.ts";
 
 function setup(
-  options: {
-    appendError?: Error;
-    resetError?: Error;
-    stopError?: Error;
-    hasGyro?: boolean;
-  } = {},
+  options: { appendError?: Error; resetError?: Error; stopError?: Error; hasGyro?: boolean } = {},
 ) {
   let collectorOptions: CollectorOptions | undefined;
   const collector: ImuCollector = {

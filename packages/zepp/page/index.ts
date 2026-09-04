@@ -46,7 +46,10 @@ import {
 import { isConnectionChangedCall } from "../src/connection-control.ts";
 import { createDisplayLease } from "../src/display-lease.ts";
 import { collectHealthData } from "../src/health-collector.ts";
-import { ensureHealthServiceRunning } from "../src/health-service-control.ts";
+import {
+  acquireForegroundHealthOwnership,
+  type ForegroundHealthOwnership,
+} from "../src/health-service-control.ts";
 import { createImuCollector, FREQ_MODES } from "../src/imu-collector.ts";
 import {
   createImuSessionController,
@@ -199,6 +202,7 @@ Page(
       hasCredentials: false,
       canStartConnection: true,
       healthSyncing: false,
+      healthOwnership: nullable<Promise<ForegroundHealthOwnership>>(),
       dofekEmail: "",
       pairingVerificationUrl: "",
       pairingShortCode: "",
@@ -206,9 +210,8 @@ Page(
 
     onInit() {
       resetPairingQrReference();
-      this.startHealthService();
+      this.acquireHealthOwnership();
       this.refreshPreferences(true);
-      this.collectAndDeliverHealth();
     },
 
     build() {
@@ -337,8 +340,8 @@ Page(
         });
     },
 
-    startHealthService() {
-      ensureHealthServiceRunning({
+    acquireHealthOwnership() {
+      const ownership = acquireForegroundHealthOwnership({
         queryPermission: () => queryPermission({ permissions: [BG_PERMISSION] })[0],
         requestPermission: () =>
           new Promise((resolve) => {
@@ -347,27 +350,51 @@ Page(
               callback: ([result]) => resolve(result),
             });
           }),
+        stopService: () =>
+          new Promise((resolve, reject) => {
+            const result = appService.stop({
+              file: HEALTH_SERVICE_FILE,
+              complete_func: (info) => {
+                logger.log("health service stop %j", info);
+                if (info.result) resolve();
+                else reject(new Error("Health service did not stop."));
+              },
+            });
+            if (result === 2) resolve();
+            else if (result !== 0) reject(new Error(`Health service stop failed (${result}).`));
+          }),
         startService: () => {
-          appService.start({
-            url: HEALTH_SERVICE_FILE,
+          const result = appService.start({
+            file: HEALTH_SERVICE_FILE,
             param: "action=start",
             reload: true,
             complete_func: (info) => {
               logger.log("health service start %j", info);
+              if (!info.result) {
+                captureException(new Error("Health service did not start."), {
+                  operation: "restart-health-service",
+                });
+              }
             },
           });
+          if (result !== 0 && result !== 2) {
+            throw new Error(`Health service start failed (${result}).`);
+          }
         },
-      })
+      });
+      this.state.healthOwnership = ownership;
+      ownership
         .then((result) => {
           if (result.state === "permission-denied") {
-            showToast({ content: result.reason });
+            showToast({ content: result.reason ?? "Background Service permission denied." });
             renderHint("Enable Background Service\nfor health collection");
           }
+          void this.collectAndDeliverHealth();
         })
         .catch((error: unknown) => {
-          captureException(error, { operation: "start-health-service" });
-          logger.error("health service start failed %j", error);
-          showToast({ content: "Health service failed to start" });
+          captureException(error, { operation: "acquire-health-outbox" });
+          logger.error("health ownership failed %j", error);
+          showToast({ content: "Health sync could not start safely" });
         });
     },
 
@@ -767,6 +794,7 @@ Page(
       if (this.state.healthSyncing) return;
       this.state.healthSyncing = true;
       try {
+        await this.state.healthOwnership;
         const watchSummary = collectHealthData(
           {
             HeartRate,
@@ -843,6 +871,12 @@ Page(
       if (this.state.logging) {
         this.stopLogging();
       }
+      this.state.healthOwnership
+        ?.then((ownership) => ownership.release())
+        .catch((error: unknown) => {
+          captureException(error, { operation: "release-health-outbox" });
+          logger.error("health ownership release failed %j", error);
+        });
     },
   }),
 );

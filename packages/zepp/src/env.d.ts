@@ -137,11 +137,15 @@ declare module "@zos/app" {
 
 declare module "@zos/app-service" {
   export function start(options: {
-    url: string;
+    file: string;
     param?: string;
     reload?: boolean;
-    complete_func?: (info: unknown) => void;
-  }): void;
+    complete_func: (info: { file: string; result: boolean }) => void;
+  }): number;
+  export function stop(options: {
+    file: string;
+    complete_func: (info: { file: string; result: boolean }) => void;
+  }): number;
 }
 
 declare module "@zos/display" {
