@@ -194,6 +194,7 @@ Page(
       dofekEmail: "",
       pairingVerificationUrl: "",
       pairingShortCode: "",
+      preferencesRequestId: 0,
     },
 
     onInit() {
@@ -294,11 +295,14 @@ Page(
     },
 
     refreshPreferences({ startPairingIfNeeded = true }: { startPairingIfNeeded?: boolean } = {}) {
+      const requestId = this.state.preferencesRequestId + 1;
+      this.state.preferencesRequestId = requestId;
       this.request({
         method: "imu.getPreferences",
         params: {},
       })
         .then((result) => {
+          if (requestId !== this.state.preferencesRequestId) return;
           if (!this.state.logging) {
             this.state.enableGyro = result?.enableGyro === true;
             this.state.freqModeIndex = Number(result?.freqModeIndex ?? 1);
@@ -318,6 +322,7 @@ Page(
           );
         })
         .catch((error) => {
+          if (requestId !== this.state.preferencesRequestId) return;
           logger.error("preference fetch failed %j", error);
           renderHint("Preferences unavailable\nOpen Zepp settings");
         });

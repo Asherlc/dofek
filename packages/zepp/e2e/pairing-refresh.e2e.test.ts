@@ -206,4 +206,28 @@ describe("Zepp pairing refresh", () => {
     );
     expect(watch.request).not.toHaveBeenCalledWith({ method: "dofek.startPairing", params: {} });
   });
+
+  it("ignores an older preference response that finishes after the latest response", async () => {
+    const watchConfig = requireWatchConfiguration();
+    const watch = Object.assign({}, watchConfig, { state: { ...watchConfig.state } });
+    const pendingPreferences: Array<(value: unknown) => void> = [];
+    watch.request = vi.fn((request) => {
+      if (request.method === "imu.getPreferences") {
+        return new Promise((resolve) => pendingPreferences.push(resolve));
+      }
+      return Promise.resolve(null);
+    });
+
+    watch.onCall({ method: "dofek.connectionChanged", params: {} });
+    watch.onCall({ method: "dofek.connectionChanged", params: {} });
+    expect(pendingPreferences).toHaveLength(2);
+
+    pendingPreferences[1]?.({ hasCredentials: true, pairing: null });
+    await Promise.resolve();
+    expect(watch.state.hasCredentials).toBe(true);
+
+    pendingPreferences[0]?.({ hasCredentials: false, pairing: null });
+    await Promise.resolve();
+    expect(watch.state.hasCredentials).toBe(true);
+  });
 });
