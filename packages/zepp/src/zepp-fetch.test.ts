@@ -22,9 +22,28 @@ describe("requireSecureDofekServerUrl", () => {
     expect(() => requireSecureDofekServerUrl("https://dofek.example:65536")).toThrow(
       "Dofek server URL must use HTTPS.",
     );
+    expect(() => requireSecureDofekServerUrl("https://dofek.example:0")).toThrow(
+      "Dofek server URL must use HTTPS.",
+    );
+    expect(requireSecureDofekServerUrl("https://dofek.example:1///")).toBe(
+      "https://dofek.example:1",
+    );
+    expect(requireSecureDofekServerUrl("https://dofek.example:65535/path")).toBe(
+      "https://dofek.example:65535/path",
+    );
     expect(requireSecureDofekServerUrl("https://dofek.example:8443")).toBe(
       "https://dofek.example:8443",
     );
+  });
+
+  it.each([
+    "prefix-https://dofek.example",
+    "https://user@dofek.example",
+    "https://dofek.example:443 suffix",
+    "https://dofek.example:",
+    "https://[not-ipv6]",
+  ])("rejects malformed authority %s", (value) => {
+    expect(() => requireSecureDofekServerUrl(value)).toThrow("Dofek server URL must use HTTPS.");
   });
 });
 
@@ -111,6 +130,38 @@ describe("summarizeZeppFetchResponse", () => {
       status: 500,
     });
   });
+
+  it("extracts message and plain-text failures", () => {
+    expect(
+      summarizeZeppFetchResponse({ status: 400, body: { message: "  bad request  " } }),
+    ).toMatchObject({
+      errorMessage: "bad request",
+      ok: false,
+    });
+    expect(summarizeZeppFetchResponse({ status: 503, body: "  unavailable  " })).toMatchObject({
+      body: "  unavailable  ",
+      errorMessage: "unavailable",
+      ok: false,
+    });
+  });
+
+  it.each([199, 300])("treats boundary status %s as failed", (status) => {
+    expect(summarizeZeppFetchResponse({ status })).toEqual({
+      body: undefined,
+      errorMessage: `HTTP ${status}`,
+      ok: false,
+      status,
+    });
+  });
+
+  it("prefers status over statusCode and preserves invalid JSON strings", () => {
+    expect(summarizeZeppFetchResponse({ status: 201, statusCode: 500, body: "{" })).toEqual({
+      body: "{",
+      errorMessage: "{",
+      ok: false,
+      status: 201,
+    });
+  });
 });
 
 describe("handleDofekUploadFailure", () => {
@@ -137,5 +188,19 @@ describe("handleDofekUploadFailure", () => {
       state: "error",
       reason: "Dofek connection expired. Connect again.",
     });
+  });
+
+  it("keeps credentials for non-auth failures and uses the caller fallback", () => {
+    const storage = { removeItem: vi.fn(), setItem: vi.fn() };
+
+    const error = handleDofekUploadFailure(
+      storage,
+      { body: {}, errorMessage: null, ok: false, status: 500 },
+      "Upload failed.",
+    );
+
+    expect(error.message).toBe("Upload failed.");
+    expect(storage.removeItem).not.toHaveBeenCalled();
+    expect(storage.setItem).not.toHaveBeenCalled();
   });
 });

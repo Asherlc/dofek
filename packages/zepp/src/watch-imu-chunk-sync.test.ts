@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { parseImuEnvelope } from "./imu-upload.ts";
+import { createImuChunkEnvelope, parseImuEnvelope } from "./imu-upload.ts";
 import { createWatchImuChunkSync, type WatchImuChunkSync } from "./watch-imu-chunk-sync.ts";
 
 const fsMocks = vi.hoisted(() => ({
@@ -99,6 +99,33 @@ describe("watch IMU chunk sync", () => {
     expect(persistedChunkPaths()).toEqual([]);
   });
 
+  it("creates the durable directory on an empty retry", async () => {
+    const request = vi.fn();
+
+    await createWatchImuChunkSync("data://imu/chunks", request).retry();
+
+    expect(fsMocks.mkdirSync).toHaveBeenCalledWith({ path: "data://imu/chunks" });
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("fails when the durable directory cannot be created", async () => {
+    fsMocks.mkdirSync.mockReturnValue(-7);
+
+    await expect(createWatchImuChunkSync("data://imu/chunks", vi.fn()).retry()).rejects.toThrow(
+      "Could not create the watch IMU chunk directory (-7).",
+    );
+  });
+
+  it("fails before delivery when the temporary record cannot be committed", async () => {
+    fsMocks.renameSync.mockReturnValue(-8);
+    const request = vi.fn();
+
+    expect(() => createWatchImuChunkSync("data://imu/chunks", request).enqueue(input)).toThrow(
+      "Could not commit the watch IMU chunk (-8).",
+    );
+    expect(request).not.toHaveBeenCalled();
+  });
+
   it("stores prolonged offline capture as independent records and ignores an interrupted temp write", async () => {
     const failedRequest = vi.fn(async () => {
       throw new Error("phone unavailable");
@@ -144,6 +171,73 @@ describe("watch IMU chunk sync", () => {
 
     await expect(sync.enqueue(input)).rejects.toThrow("Phone did not persist the IMU chunk.");
     expect(persistedChunkPaths()).toHaveLength(1);
+  });
+
+  it("quarantines a chunk after three omitted acknowledgements", async () => {
+    const sync = createWatchImuChunkSync("data://imu/chunks", async () => ({
+      status: "ok",
+      acceptedEventIds: [],
+      rejected: [],
+    }));
+
+    await expect(sync.enqueue(input)).rejects.toThrow("Phone did not persist the IMU chunk.");
+    await expect(sync.retry()).rejects.toThrow("Phone did not persist the IMU chunk.");
+    await expect(sync.retry()).resolves.toBeUndefined();
+
+    expect(persistedChunkPaths()).toEqual([]);
+    const quarantine = files.get("data://imu/chunks/segment-1%3A0%3A0.rejected") ?? "";
+    expect(quarantine).toContain("Phone repeatedly omitted the IMU chunk acknowledgement.");
+  });
+
+  it("fails when an accepted record cannot be removed", async () => {
+    fsMocks.rmSync.mockReturnValue(-9);
+    const sync = createWatchImuChunkSync("data://imu/chunks", async (envelope: unknown) => ({
+      status: "ok",
+      acceptedEventIds: parseImuEnvelope(envelope).events.map((event) => event.eventId),
+      rejected: [],
+    }));
+
+    await expect(sync.enqueue(input)).rejects.toThrow(
+      "Could not acknowledge the watch IMU chunk (-9).",
+    );
+  });
+
+  it("rejects a non-string persisted record", async () => {
+    directories.add("data://imu/chunks");
+    files.set("data://imu/chunks/event.json", "placeholder");
+    fsMocks.readFileSync.mockReturnValue(new ArrayBuffer(8));
+
+    await expect(createWatchImuChunkSync("data://imu/chunks", vi.fn()).retry()).rejects.toThrow(
+      "Watch IMU chunk record is invalid.",
+    );
+  });
+
+  it.each([-1, 0.5])("rejects a versioned record with attempts %s", async (attempts) => {
+    directories.add("data://imu/chunks");
+    files.set(
+      "data://imu/chunks/event.json",
+      JSON.stringify({ version: 1, envelope: createImuChunkEnvelope(input), attempts }),
+    );
+
+    await expect(createWatchImuChunkSync("data://imu/chunks", vi.fn()).retry()).rejects.toThrow(
+      "Watch IMU chunk record is invalid.",
+    );
+  });
+
+  it("reads and acknowledges a legacy envelope record", async () => {
+    directories.add("data://imu/chunks");
+    const envelope = createImuChunkEnvelope(input);
+    files.set("data://imu/chunks/legacy.json", JSON.stringify(envelope));
+    const request = vi.fn(async () => ({
+      status: "ok",
+      acceptedEventIds: envelope.events.map((event) => event.eventId),
+      rejected: [],
+    }));
+
+    await createWatchImuChunkSync("data://imu/chunks", request).retry();
+
+    expect(request).toHaveBeenCalledWith(envelope);
+    expect(persistedChunkPaths()).toEqual([]);
   });
 
   it("quarantines a permanently rejected chunk so later records can drain", async () => {

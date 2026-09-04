@@ -76,7 +76,8 @@ function readFirstPending(directory: string): PendingRecord | null {
     typeof parsed === "object" &&
     parsed !== null &&
     !Array.isArray(parsed) &&
-    Reflect.get(parsed, "version") === RECORD_VERSION
+    Reflect.get(parsed, "version") === RECORD_VERSION &&
+    Reflect.has(parsed, "envelope")
   ) {
     const attempts = Reflect.get(parsed, "attempts");
     if (!Number.isInteger(attempts) || Number(attempts) < 0) {

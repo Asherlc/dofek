@@ -21,7 +21,7 @@ interface UploadFailureStorage {
 
 export function requireSecureDofekServerUrl(value: string): string {
   const normalized = value.trim().replace(/\/+$/, "");
-  const match = /^https:\/\/(?:\[[0-9a-f:]+\]|[^\s/:@]+)(?::(\d+))?(?:\/[^\s]*)?$/i.exec(
+  const match = /^https:\/\/(?:\[[0-9a-f:]+\]|[^\s/:@[\]]+)(?::(\d+))?(?:\/[^\s]*)?$/i.exec(
     normalized,
   );
   const port = match?.[1] === undefined ? null : Number(match[1]);

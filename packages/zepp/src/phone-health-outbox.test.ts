@@ -116,4 +116,100 @@ describe("phone health outbox", () => {
       "Phone health outbox is not valid JSON.",
     );
   });
+
+  it("round-trips workout-source pending and quarantine entries", () => {
+    const entry = {
+      eventId: "event-1",
+      createdAt: "2024-07-03T10:48:20.000Z",
+      attempts: 2,
+      lastError: "offline",
+      payload: {
+        source: { connectionType: "zepp-workout", installId: "workout-install" },
+        payload: { backgroundSamples: [{ recordedAt: "2024-07-03T10:48:20.000Z" }] },
+      },
+    };
+    const issues = [{ path: "backgroundSamples.0", message: "invalid" }];
+
+    expect(
+      parsePhoneHealthOutbox(
+        JSON.stringify({
+          version: 1,
+          pending: [entry],
+          quarantine: [{ ...entry, issues }],
+        }),
+      ),
+    ).toEqual({ pending: [entry], quarantine: [{ ...entry, issues }] });
+  });
+
+  it.each([
+    ["a null root", null],
+    ["an array root", []],
+    ["an unknown version", { version: 2, pending: [], quarantine: [] }],
+    ["a missing pending queue", { version: 1, quarantine: [] }],
+    ["a missing quarantine queue", { version: 1, pending: [] }],
+  ])("rejects %s", (_description, value) => {
+    expect(() => parsePhoneHealthOutbox(JSON.stringify(value))).toThrow(
+      "Phone health outbox has an invalid shape.",
+    );
+  });
+
+  it.each([
+    ["a non-record entry", null],
+    ["a numeric event ID", { eventId: 1 }],
+    ["a blank event ID", { eventId: " " }],
+    ["a numeric creation time", { eventId: "event-1", createdAt: 1 }],
+    ["a blank creation time", { eventId: "event-1", createdAt: " " }],
+    ["fractional attempts", { eventId: "event-1", createdAt: "now", attempts: 0.5 }],
+    ["negative attempts", { eventId: "event-1", createdAt: "now", attempts: -1 }],
+    [
+      "a non-string last error",
+      { eventId: "event-1", createdAt: "now", attempts: 0, lastError: 1 },
+    ],
+  ])("rejects a pending entry with %s", (_description, entry) => {
+    expect(() =>
+      parsePhoneHealthOutbox(JSON.stringify({ version: 1, pending: [entry], quarantine: [] })),
+    ).toThrow("Phone health outbox entry is invalid.");
+  });
+
+  it.each([
+    ["a non-record source", null],
+    ["an unknown connection type", { connectionType: "other", installId: "install-1" }],
+    ["a non-string install ID", { connectionType: "zepp", installId: 1 }],
+    ["a blank install ID", { connectionType: "zepp", installId: " " }],
+  ])("rejects %s", (_description, source) => {
+    const entry = {
+      eventId: "event-1",
+      createdAt: "2024-07-03T10:48:20.000Z",
+      attempts: 0,
+      payload: {
+        source,
+        payload: { backgroundSamples: [{ recordedAt: "2024-07-03T10:48:20.000Z" }] },
+      },
+    };
+    expect(() =>
+      parsePhoneHealthOutbox(JSON.stringify({ version: 1, pending: [entry], quarantine: [] })),
+    ).toThrow("Phone health outbox source is invalid.");
+  });
+
+  it.each([
+    ["a non-record quarantine entry", null],
+    ["a non-array issue list", { issues: {} }],
+    [
+      "a malformed issue",
+      {
+        eventId: "event-1",
+        createdAt: "2024-07-03T10:48:20.000Z",
+        attempts: 0,
+        payload: {
+          source: { connectionType: "zepp", installId: "install-1" },
+          payload: { backgroundSamples: [{ recordedAt: "2024-07-03T10:48:20.000Z" }] },
+        },
+        issues: [{ path: 1, message: "invalid" }],
+      },
+    ],
+  ])("rejects %s", (_description, entry) => {
+    expect(() =>
+      parsePhoneHealthOutbox(JSON.stringify({ version: 1, pending: [], quarantine: [entry] })),
+    ).toThrow();
+  });
 });
