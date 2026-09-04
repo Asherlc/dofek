@@ -48,7 +48,10 @@ interface WatchRuntime {
   sendFile(
     path: string,
     params: Record<string, unknown>,
-  ): { on(event: string, callback: (event: { data: Record<string, unknown> }) => void): void };
+  ): {
+    cancel(): void;
+    on(event: string, callback: (event: { data: Record<string, unknown> }) => void): void;
+  };
   startTransfer(transfer: {
     observedHzX100: number;
     path: string;

@@ -18,8 +18,10 @@ describe("monitorImuTransfer", () => {
     const confirmation = deferred();
     const onConfirmed = vi.fn();
     const onFailed = vi.fn();
+    const cancel = vi.fn();
     monitorImuTransfer(
       {
+        cancel,
         on: (_event, callback) => {
           change = callback;
         },
@@ -35,6 +37,7 @@ describe("monitorImuTransfer", () => {
 
     change?.({ data: { readyState: "transferred" } });
     await vi.advanceTimersByTimeAsync(100);
+    expect(cancel).toHaveBeenCalledOnce();
     expect(onFailed).toHaveBeenCalledWith(new Error("IMU file transfer timed out."));
     confirmation.resolve();
     await Promise.resolve();
@@ -46,8 +49,10 @@ describe("monitorImuTransfer", () => {
     let change: ((event: { data: Record<string, unknown> }) => void) | undefined;
     const onConfirmed = vi.fn();
     const onFailed = vi.fn();
+    const cancel = vi.fn();
     const monitor = monitorImuTransfer(
       {
+        cancel,
         on: (_event, callback) => {
           change = callback;
         },
@@ -61,9 +66,33 @@ describe("monitorImuTransfer", () => {
     );
 
     monitor.cancel();
+    expect(cancel).toHaveBeenCalledOnce();
     change?.({ data: { readyState: "error" } });
     vi.runAllTimers();
     expect(onConfirmed).not.toHaveBeenCalled();
     expect(onFailed).not.toHaveBeenCalled();
+  });
+
+  it("reports an underlying transfer cancellation failure", () => {
+    const cancellationError = new Error("cancel failed");
+    const onFailed = vi.fn();
+    const monitor = monitorImuTransfer(
+      {
+        cancel: () => {
+          throw cancellationError;
+        },
+        on: vi.fn(),
+      },
+      {
+        confirm: async () => undefined,
+        failureReason: () => null,
+        onConfirmed: vi.fn(),
+        onFailed,
+      },
+    );
+
+    monitor.cancel();
+
+    expect(onFailed).toHaveBeenCalledWith(cancellationError);
   });
 });

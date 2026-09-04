@@ -1,4 +1,5 @@
 export interface ImuTransferTask {
+  cancel(): void;
   on(event: string, callback: (event: { data: Record<string, unknown> }) => void): void;
 }
 
@@ -19,9 +20,10 @@ export function monitorImuTransfer(
   },
 ): ImuTransferMonitor {
   let finished = false;
-  const timer = setTimeout(() => {
-    fail(new Error("IMU file transfer timed out."));
-  }, options.timeoutMs ?? IMU_TRANSFER_TIMEOUT_MS);
+  const timer = setTimeout(
+    () => fail(new Error("IMU file transfer timed out."), true),
+    options.timeoutMs ?? IMU_TRANSFER_TIMEOUT_MS,
+  );
 
   function finish(): boolean {
     if (finished) return false;
@@ -30,9 +32,18 @@ export function monitorImuTransfer(
     return true;
   }
 
-  function fail(error: Error): void {
+  function cancelTask(): Error | undefined {
+    try {
+      task.cancel();
+      return undefined;
+    } catch (error) {
+      return error instanceof Error ? error : new Error(String(error));
+    }
+  }
+
+  function fail(error: Error, cancelTransfer = false): void {
     if (!finish()) return;
-    options.onFailed(error);
+    options.onFailed(cancelTransfer ? (cancelTask() ?? error) : error);
   }
 
   task.on("change", (event) => {
@@ -54,7 +65,9 @@ export function monitorImuTransfer(
 
   return {
     cancel() {
-      finish();
+      if (!finish()) return;
+      const error = cancelTask();
+      if (error) options.onFailed(error);
     },
   };
 }

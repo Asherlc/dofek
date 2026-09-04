@@ -211,7 +211,10 @@ type PageHelpers = {
   sendFile(
     path: string,
     params: Record<string, string>,
-  ): { on(event: string, callback: (event: { data: Record<string, unknown> }) => void): void };
+  ): {
+    cancel(): void;
+    on(event: string, callback: (event: { data: Record<string, unknown> }) => void): void;
+  };
 };
 
 type SideServiceHelpers = {
@@ -264,7 +267,10 @@ interface PageContext {
   sendFile(
     path: string,
     params: Record<string, string>,
-  ): { on(event: string, callback: (event: { data: Record<string, unknown> }) => void): void };
+  ): {
+    cancel(): void;
+    on(event: string, callback: (event: { data: Record<string, unknown> }) => void): void;
+  };
   [key: string]: unknown;
 }
 
