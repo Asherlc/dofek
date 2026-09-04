@@ -650,10 +650,17 @@ describe("repairActivityDataIntegrity", () => {
     });
   });
 
-  it("preserves microsecond timestamp precision in the repair compare-and-swap artifact", async () => {
+  it("preserves microsecond timestamp precision when shifting Strong wall-clock timestamps", async () => {
     const directory = await artifactDirectory();
     const preciseCandidate = {
       ...postgresCandidate,
+      provider_id: "strong-csv",
+      timezone: null,
+      start_utc_offset_minutes: null,
+      end_utc_offset_minutes: null,
+      local_time_source: "unknown",
+      started_at: "2026-09-01T14:55:54.123Z",
+      ended_at: "2026-09-01T15:25:54.654Z",
       started_at_exact: "2026-09-01T14:55:54.123456Z",
       ended_at_exact: "2026-09-01T15:25:54.654321Z",
     };
@@ -668,8 +675,8 @@ describe("repairActivityDataIntegrity", () => {
     expect(artifact.postgresActivities[0]).toMatchObject({
       startedAt: "2026-09-01T14:55:54.123456Z",
       endedAt: "2026-09-01T15:25:54.654321Z",
-      repairedStartedAt: "2026-09-01T14:55:54.123456Z",
-      repairedEndedAt: "2026-09-01T15:25:54.654321Z",
+      repairedStartedAt: "2026-09-01T21:55:54.123456Z",
+      repairedEndedAt: "2026-09-01T22:25:54.654321Z",
     });
   });
 

@@ -180,23 +180,27 @@ export function resolveProviderTimezoneLocalTimeContext(input: {
  */
 export function resolveNaiveWallClockInTimezone(wallClockDate: Date, timezone: string): Date {
   requireValidDate(wallClockDate, "startedAt");
+  const normalizedTimezone = timezone.trim();
   const offsets = new Set<number>();
   for (let deltaMinutes = -1_440; deltaMinutes <= 1_440; deltaMinutes += 30) {
     offsets.add(
-      offsetInTimezone(new Date(wallClockDate.getTime() + deltaMinutes * 60_000), timezone),
+      offsetInTimezone(
+        new Date(wallClockDate.getTime() + deltaMinutes * 60_000),
+        normalizedTimezone,
+      ),
     );
   }
   const candidates = [...offsets]
     .map((offsetMinutes) => new Date(wallClockDate.getTime() - offsetMinutes * 60_000))
     .filter(
       (candidate) =>
-        candidate.getTime() + offsetInTimezone(candidate, timezone) * 60_000 ===
+        candidate.getTime() + offsetInTimezone(candidate, normalizedTimezone) * 60_000 ===
         wallClockDate.getTime(),
     )
     .sort((left, right) => left.getTime() - right.getTime());
   const startedAt = candidates[0];
   if (!startedAt) {
-    throw new Error(`Wall-clock timestamp does not exist in ${timezone}`);
+    throw new Error(`Wall-clock timestamp does not exist in ${normalizedTimezone}`);
   }
   return startedAt;
 }

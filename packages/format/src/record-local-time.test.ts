@@ -11,6 +11,15 @@ import {
 } from "./record-local-time.ts";
 
 describe("resolveNaiveWallClockInTimezone", () => {
+  it("trims the IANA timezone before resolving the wall clock", () => {
+    expect(
+      resolveNaiveWallClockInTimezone(
+        new Date("2026-09-01T07:55:54.000Z"),
+        "  America/Los_Angeles  ",
+      ),
+    ).toEqual(new Date("2026-09-01T14:55:54.000Z"));
+  });
+
   it("chooses the earlier instant for an ambiguous positive-offset fall-back wall clock", () => {
     expect(
       resolveNaiveWallClockInTimezone(new Date("2026-10-25T01:30:00.000Z"), "Europe/London"),

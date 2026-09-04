@@ -31,6 +31,7 @@ describe("buildMetricStreamProcessingAcknowledgementTableSql", () => {
 describe("metric-stream provider external-ID projection", () => {
   it("covers replacement rows and orders external-ID lookups", () => {
     const definition = metricStreamProviderExternalIdProjectionDefinition();
+    const tableSql = buildIngestMetricStreamCreateTableSql();
 
     expect(METRIC_STREAM_PROVIDER_EXTERNAL_ID_PROJECTION).toBe("by_provider_external_id");
     expect(definition).toContain("activity_id,");
@@ -40,6 +41,7 @@ describe("metric-stream provider external-ID projection", () => {
     expect(definition).toContain(
       "ORDER BY (user_id, provider_id, external_id, id, version, ingested_at)",
     );
+    expect(tableSql).toContain(`PROJECTION ${METRIC_STREAM_PROVIDER_EXTERNAL_ID_PROJECTION}`);
   });
 });
 

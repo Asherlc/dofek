@@ -11,7 +11,7 @@ These monitor specs live in `scripts/loading-performance-monitors.ts`. They are 
 | Loading perf: ClickHouse infrastructure errors | ClickHouse DNS, connection refused, timeout, and memory messages | Any matching event | Treat the event as root-cause evidence and fix the infrastructure cause directly. |
 | Metric stream: absolute ClickHouse sink lag | Maximum `consumer_lag` by partition | Above 100,000 for 2 of 3 runs | Determine whether the backlog is growing or draining before intervening. |
 | Metric stream: ClickHouse sink lag growth | Maximum `consumer_lag_growth_per_second` by partition | Above 100 offsets/second for 2 of 3 runs | Compare producer rate, event mix, and sink latency. |
-| Metric stream: slow ClickHouse sink events | p95 `per_event_sink_latency_ms` by partition | Above 100 ms for 2 of 3 runs | Inspect the event class and ClickHouse query cost. |
+| Metric stream: slow ClickHouse sink events | p95 `average_batch_event_cost_ms` by partition | Above 100 ms for 2 of 3 runs | Inspect the event class and ClickHouse query cost. |
 | Metric stream: elevated deletion-event rate | Maximum `deletion_events_per_second` by partition | Above 50/second for 2 of 3 runs | Confirm whether a deliberate replacement sync is running and correlate with external-ID lookup latency. |
 
 ## Creation workflow

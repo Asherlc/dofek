@@ -21,6 +21,9 @@ interface RetryFailedFileUploadCommand {
 }
 
 function requireValidIanaTimezone(timezone: string): string {
+  if (/^[+-]\d{2}(?::?\d{2})?$/.test(timezone)) {
+    throw new Error(`timezone must be a valid IANA timezone: ${timezone}`);
+  }
   try {
     new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format(new Date());
   } catch {

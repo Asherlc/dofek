@@ -174,6 +174,18 @@ function coordinatesByMember(snapshot: DerivedSnapshot) {
   return coordinates;
 }
 
+function timestampWithPreservedPrecision(
+  repaired: Date | null,
+  originalExact: string | null | undefined,
+): string | null {
+  if (!repaired) return null;
+  if (!originalExact) return repaired.toISOString();
+  const fractionalSeconds = originalExact.match(/\.(\d+)Z$/)?.[1];
+  return fractionalSeconds
+    ? repaired.toISOString().replace(/\.\d{3}Z$/, `.${fractionalSeconds}Z`)
+    : repaired.toISOString();
+}
+
 export function buildActivityIntegrityPostgresArtifactRows(
   rows: ActivityIntegrityPostgresCandidate[],
   homeTimezone: string | null,
@@ -205,14 +217,8 @@ export function buildActivityIntegrityPostgresArtifactRows(
       externalId: row.external_id,
       startedAt: row.started_at_exact ?? row.started_at.toISOString(),
       endedAt: row.ended_at_exact ?? row.ended_at?.toISOString() ?? null,
-      repairedStartedAt:
-        repairedStartedAt.getTime() === row.started_at.getTime() && row.started_at_exact
-          ? row.started_at_exact
-          : repairedStartedAt.toISOString(),
-      repairedEndedAt:
-        repairedEndedAt?.getTime() === row.ended_at?.getTime() && row.ended_at_exact
-          ? row.ended_at_exact
-          : (repairedEndedAt?.toISOString() ?? null),
+      repairedStartedAt: timestampWithPreservedPrecision(repairedStartedAt, row.started_at_exact),
+      repairedEndedAt: timestampWithPreservedPrecision(repairedEndedAt, row.ended_at_exact),
       prior: localTimeContext(row),
       repaired: normalizedLocalTimeContext(repairedRow, homeTimezone, coordinates.get(row.id)),
     });

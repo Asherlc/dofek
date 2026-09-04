@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMetricStreamDeletedEvent, createMetricStreamEvent } from "./events.ts";
 import {
   createKafkaMetricStreamConsumerFromEnv,
@@ -84,6 +84,10 @@ beforeEach(() => {
   captureException.mockClear();
   loggerError.mockClear();
   loggerInfo.mockClear();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 describe("runMetricStreamEventConsumer", () => {

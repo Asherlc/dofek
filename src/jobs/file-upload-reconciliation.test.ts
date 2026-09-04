@@ -13,7 +13,7 @@ const repository = vi.hoisted(() => ({
     const listed = await repository.list.mock.results.at(-1)?.value;
     const locked = listed?.find((candidate: FileUpload) => candidate.id === uploadId);
     if (!locked) throw new Error(`Upload ${uploadId} was not found`);
-    return operation(database, locked);
+    return database.transaction((transaction: unknown) => operation(transaction, locked));
   }),
   lifecycle: vi.fn(),
   reconciliation: vi.fn(),
@@ -193,6 +193,7 @@ describe("reconcileFileUploads", () => {
 
     expect(objectStorage.deleteObject).toHaveBeenCalledWith(completed.objectKey);
     expect(repository.markObjectDeleted).toHaveBeenCalledWith(database, completed.id);
+    expect(database.transaction).toHaveBeenCalledOnce();
   });
 
   it("does not delete a terminal upload whose object was deleted before the row lock", async () => {

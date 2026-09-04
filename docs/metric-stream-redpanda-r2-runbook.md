@@ -179,7 +179,7 @@ docker exec "$(docker ps --filter name=dofek_redpanda -q | head -n1)" \
 Alert on both absolute lag and lag growth rate. A large shrinking backlog and a
 smaller growing backlog require different responses. The ClickHouse sink also
 emits `metric_stream.consumer_batch` with `consumer_lag`,
-`sink_duration_ms`, `per_event_sink_latency_ms`, `deletion_event_count`, and
+`sink_duration_ms`, `average_batch_event_cost_ms`, `deletion_event_count`, and
 `deletion_events_per_second`; alerting must cover sink latency and delete rate,
 not only batch commits. KafkaJS exposes the batch high watermark and requires
 manual offset resolution before commit when `eachBatchAutoResolve` is disabled;

@@ -94,6 +94,12 @@ describe("parseRetryFailedFileUploadCommand", () => {
     ).toThrow("valid IANA timezone");
   });
 
+  it("rejects a fixed UTC offset where an IANA timezone is required", () => {
+    expect(() => parseRetryFailedFileUploadCommand([...required, "--timezone=+01:00"])).toThrow(
+      "valid IANA timezone",
+    );
+  });
+
   it("requires corrected Strong metadata even when the failed upload retained old values", async () => {
     const now = new Date("2026-09-03T12:00:00.000Z");
     const upload = {
