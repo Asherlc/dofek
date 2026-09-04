@@ -25,6 +25,20 @@ describe("received IMU file registry", () => {
     expect(readReceivedImuFiles(storage)).toEqual([validFile]);
   });
 
+  it("keeps receipts from both sources when their segment IDs match", () => {
+    const storage = createSettingsStorage();
+    const workoutFile = {
+      ...validFile,
+      source: "zepp-workout",
+      path: "data://inbox/workout_a.bin",
+    } satisfies Parameters<typeof persistReceivedImuFile>[1];
+
+    persistReceivedImuFile(storage, validFile, vi.fn());
+    persistReceivedImuFile(storage, workoutFile, vi.fn());
+
+    expect(readReceivedImuFiles(storage)).toEqual([validFile, workoutFile]);
+  });
+
   it("normalizes both sources and strips unknown metadata", () => {
     expect(
       parseReceivedImuFile({ ...validFile, source: "zepp-workout", unknownField: true }),

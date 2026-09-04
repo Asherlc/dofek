@@ -65,7 +65,8 @@ export function persistReceivedImuFile(
     files = [];
   }
   const withoutReplay = files.filter(
-    (candidate) => candidate.segmentId !== validatedFile.segmentId,
+    (candidate) =>
+      candidate.segmentId !== validatedFile.segmentId || candidate.source !== validatedFile.source,
   );
   storage.setItem(
     STORAGE_KEYS.PHONE_IMU_FILES,

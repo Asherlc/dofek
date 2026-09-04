@@ -14,7 +14,7 @@ vi.mock("@zos/fs", () => ({
 }));
 
 const pending = {
-  slot: "A" as const,
+  slot: "A",
   path: "data://imu/normal_a.bin",
   sampleCount: 120,
   observedHzX100: 2_500,
@@ -22,7 +22,7 @@ const pending = {
   accelFreqMode: 1,
   gyroFreqMode: 1,
   sessionStartMs: 1_720_000_000_000,
-};
+} satisfies Parameters<typeof savePendingImuTransfer>[1];
 
 describe("pending IMU transfer storage", () => {
   const files = new Map<string, ArrayBuffer | string>();
@@ -63,7 +63,11 @@ describe("pending IMU transfer storage", () => {
   });
 
   it("restores the alternate file slot", () => {
-    const pendingB = { ...pending, slot: "B" as const, path: "data://imu/normal_b.bin" };
+    const pendingB = {
+      ...pending,
+      slot: "B",
+      path: "data://imu/normal_b.bin",
+    } satisfies Parameters<typeof savePendingImuTransfer>[1];
     files.set(
       "data://imu/normal_transfers.json",
       JSON.stringify({ version: 1, pending: [pendingB] }),
@@ -116,7 +120,11 @@ describe("pending IMU transfer storage", () => {
   });
 
   it("clears only the acknowledged slot from the latest manifest", () => {
-    const pendingB = { ...pending, slot: "B" as const, path: "data://imu/normal_b.bin" };
+    const pendingB = {
+      ...pending,
+      slot: "B",
+      path: "data://imu/normal_b.bin",
+    } satisfies Parameters<typeof savePendingImuTransfer>[1];
     files.set(
       "data://imu/normal_transfers.json",
       JSON.stringify({ version: 1, pending: [pending, pendingB] }),
@@ -131,7 +139,11 @@ describe("pending IMU transfer storage", () => {
   });
 
   it("replaces only an older transfer in the same slot", () => {
-    const pendingB = { ...pending, slot: "B" as const, path: "data://imu/normal_b.bin" };
+    const pendingB = {
+      ...pending,
+      slot: "B",
+      path: "data://imu/normal_b.bin",
+    } satisfies Parameters<typeof savePendingImuTransfer>[1];
     const replacement = { ...pending, path: "data://imu/new_a.bin", sessionStartMs: 2 };
     files.set(
       "data://imu/normal_transfers.json",
