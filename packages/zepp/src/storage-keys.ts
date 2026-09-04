@@ -38,7 +38,7 @@ export const SESSION_FILE_A = "data://imu/session_a.bin";
 export const SESSION_FILE_B = "data://imu/session_b.bin";
 export const SESSION_META_FILE = "data://imu/session_meta.json";
 export const BACKGROUND_HEALTH_FILE = "data://health/background.json";
-export const SERVICE_FILE = "app-service/imu_service";
+export const HEALTH_SERVICE_FILE = "app-service/health_service";
 
 export const FLUSH_SAMPLE_THRESHOLD = 64;
 export const AUTO_TRANSFER_SAMPLE_COUNT = 5000;

@@ -123,10 +123,6 @@ declare module "@zos/device" {
   export function getDeviceInfo(): { width: number; height: number; screenShape: number };
 }
 
-declare module "@zos/display" {
-  export function setWakeUpRelaunch(enabled: boolean): void;
-}
-
 declare module "@zos/interaction" {
   export function showToast(options: { content: string }): void;
 }

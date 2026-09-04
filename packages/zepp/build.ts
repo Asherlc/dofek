@@ -6,7 +6,7 @@ await build({
     { in: "page/index.ts", out: "page/index" },
     { in: "app-side/index.ts", out: "app-side/index" },
     { in: "setting/index.ts", out: "setting/index" },
-    { in: "app-service/imu_service.ts", out: "app-service/imu_service" },
+    { in: "app-service/health_service.ts", out: "app-service/health_service" },
   ],
   bundle: true,
   platform: "neutral",

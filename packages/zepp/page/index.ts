@@ -3,7 +3,6 @@ import { BasePage } from "@zeppos/zml/base-page";
 import { queryPermission, requestPermission } from "@zos/app";
 import * as appService from "@zos/app-service";
 import { getDeviceInfo, SCREEN_SHAPE_ROUND } from "@zos/device";
-import { setWakeUpRelaunch } from "@zos/display";
 import { showToast } from "@zos/interaction";
 import {
   Accelerometer,
@@ -39,6 +38,7 @@ import {
   writeBackgroundHealthBuffer,
 } from "../src/background-health-storage.ts";
 import { collectHealthData } from "../src/health-collector.ts";
+import { ensureHealthServiceRunning } from "../src/health-service-control.ts";
 import { createHealthUploadBatches, mergeHealthActivities } from "../src/health-upload.ts";
 import { createImuCollector, FREQ_MODES } from "../src/imu-collector.ts";
 import { createRoundLoginLayout } from "../src/round-layout.ts";
@@ -60,7 +60,7 @@ import { createSessionProgressHandler, type SessionProgress } from "../src/sessi
 import {
   AUTO_TRANSFER_SAMPLE_COUNT,
   FLUSH_SAMPLE_THRESHOLD,
-  SERVICE_FILE,
+  HEALTH_SERVICE_FILE,
   SESSION_FILE_A,
   SESSION_FILE_B,
   SESSION_META_FILE,
@@ -199,7 +199,7 @@ Page(
 
     onInit() {
       resetPairingQrReference();
-      setWakeUpRelaunch(true);
+      this.startHealthService();
       this.refreshPreferences();
     },
 
@@ -325,31 +325,38 @@ Page(
         });
     },
 
-    ensureBackgroundPermission(callback: (granted: boolean) => void) {
-      const [status] = queryPermission({ permissions: [BG_PERMISSION] });
-
-      if (status === 2) {
-        callback(true);
-        return;
-      }
-
-      requestPermission({
-        permissions: [BG_PERMISSION],
-        callback: ([result]) => {
-          callback(result === 2);
+    startHealthService() {
+      ensureHealthServiceRunning({
+        queryPermission: () => queryPermission({ permissions: [BG_PERMISSION] })[0],
+        requestPermission: () =>
+          new Promise((resolve) => {
+            requestPermission({
+              permissions: [BG_PERMISSION],
+              callback: ([result]) => resolve(result),
+            });
+          }),
+        startService: () => {
+          appService.start({
+            url: HEALTH_SERVICE_FILE,
+            param: "action=start",
+            reload: true,
+            complete_func: (info) => {
+              logger.log("health service start %j", info);
+            },
+          });
         },
-      });
-    },
-
-    startBackgroundService() {
-      appService.start({
-        url: SERVICE_FILE,
-        param: "action=start",
-        reload: true,
-        complete_func: (info) => {
-          logger.log("app-service start %j", info);
-        },
-      });
+      })
+        .then((result) => {
+          if (result.state === "permission-denied") {
+            showToast({ content: result.reason });
+            renderHint("Enable Background Service\nfor health collection");
+          }
+        })
+        .catch((error: unknown) => {
+          captureException(error, { operation: "start-health-service" });
+          logger.error("health service start failed %j", error);
+          showToast({ content: "Health service failed to start" });
+        });
     },
 
     filePathForSlot(slot: ActiveFileSlot) {
@@ -369,70 +376,59 @@ Page(
         return;
       }
 
-      this.ensureBackgroundPermission((granted) => {
-        if (!granted) {
-          showToast({ content: "Background permission required" });
-          return;
-        }
+      const collector = createImuCollector(
+        {
+          enableGyro: this.state.enableGyro,
+          requestedFreqModeIndex: this.state.freqModeIndex,
+          onSample: (sample) => this.handleSample(sample),
+          onStatus: createSessionProgressHandler({
+            updateWatch: (stats) => this.handleRate(stats),
+            publishHostStatus: (stats) => this.publishSessionStatus(SESSION_STATE.RECORDING, stats),
+          }),
+        },
+        { Accelerometer, Gyroscope, checkSensor },
+      );
 
-        this.startBackgroundService();
+      if (!collector.available) {
+        showToast({ content: collector.reason });
+        renderHint(collector.reason);
+        return;
+      }
 
-        const collector = createImuCollector(
-          {
-            enableGyro: this.state.enableGyro,
-            requestedFreqModeIndex: this.state.freqModeIndex,
-            onSample: (sample) => this.handleSample(sample),
-            onStatus: createSessionProgressHandler({
-              updateWatch: (stats) => this.handleRate(stats),
-              publishHostStatus: (stats) =>
-                this.publishSessionStatus(SESSION_STATE.RECORDING, stats),
-            }),
-          },
-          { Accelerometer, Gyroscope, checkSensor },
-        );
+      this.state.collector = collector;
+      this.state.hasGyro = collector.hasGyroscope;
+      this.state.pendingBuffer = [];
+      this.state.sampleCount = 0;
+      this.state.observedHzX100 = 0;
+      this.state.activeFile = "A";
 
-        if (!collector.available) {
-          showToast({ content: collector.reason });
-          renderHint(collector.reason);
-          return;
-        }
+      resetSessionFile(
+        {
+          hasGyro: collector.hasGyroscope,
+          sessionStartMs: Date.now(),
+          sampleCount: 0,
+          accelFreqMode: collector.accelMode,
+          gyroFreqMode: collector.gyroMode ?? 0,
+          observedHzX100: 0,
+        },
+        this.activeFilePath(),
+      );
 
-        this.state.collector = collector;
-        this.state.hasGyro = collector.hasGyroscope;
-        this.state.pendingBuffer = [];
-        this.state.sampleCount = 0;
-        this.state.observedHzX100 = 0;
-        this.state.activeFile = "A";
+      collector.start();
+      this.state.logging = true;
 
-        resetSessionFile(
-          {
-            hasGyro: collector.hasGyroscope,
-            sessionStartMs: Date.now(),
-            sampleCount: 0,
-            accelFreqMode: collector.accelMode,
-            gyroFreqMode: collector.gyroMode ?? 0,
-            observedHzX100: 0,
-          },
-          this.activeFilePath(),
-        );
+      const modeLabel = FREQ_MODES.find((item) => item.value === collector.accelMode)?.label ?? "?";
+      renderSensorInfo(
+        collector.hasGyroscope ? `Accel · Gyro · ${modeLabel}` : `Accel · ${modeLabel}`,
+      );
+      if (this.state.hasCredentials) {
+        renderHint("");
+      } else if (!this.state.pairingShortCode) {
+        renderHint("Not connected\nCreating pairing code...");
+      }
+      renderSessionControl(SESSION_STATE.RECORDING);
 
-        collector.start();
-        this.state.logging = true;
-
-        const modeLabel =
-          FREQ_MODES.find((item) => item.value === collector.accelMode)?.label ?? "?";
-        renderSensorInfo(
-          collector.hasGyroscope ? `Accel · Gyro · ${modeLabel}` : `Accel · ${modeLabel}`,
-        );
-        if (this.state.hasCredentials) {
-          renderHint("");
-        } else if (!this.state.pairingShortCode) {
-          renderHint("Not connected\nCreating pairing code...");
-        }
-        renderSessionControl(SESSION_STATE.RECORDING);
-
-        this.publishSessionStatus(SESSION_STATE.RECORDING);
-      });
+      this.publishSessionStatus(SESSION_STATE.RECORDING);
     },
 
     renderPairing(pairing: Record<string, unknown> | null) {

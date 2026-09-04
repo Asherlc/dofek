@@ -10,11 +10,11 @@ import {
 } from "../src/background-health-storage.ts";
 import { captureException, loadWatchTelemetryBuffer } from "./telemetry.ts";
 
-const logger = Logger.getLogger("imu-service");
+const logger = Logger.getLogger("health-service");
 
 AppService({
   onInit(this: AppServiceContext) {
-    logger.log("imu_service onInit");
+    logger.log("health_service onInit");
     loadWatchTelemetryBuffer();
     const time = new Time();
     time.onPerMinute(() => {
@@ -31,13 +31,13 @@ AppService({
         const updatedBuffer = appendBackgroundHealthSample(currentBuffer, collected);
         writeBackgroundHealthBuffer(updatedBuffer);
       } catch (error: unknown) {
-        captureException(error);
+        captureException(error, { operation: "collect-and-persist-background-health" });
         logger.error("background health collection failed %j", error);
       }
     });
   },
 
   onDestroy(this: AppServiceContext) {
-    logger.log("imu_service onDestroy");
+    logger.log("health_service onDestroy");
   },
 });
