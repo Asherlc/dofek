@@ -2,8 +2,8 @@
 
 Dofek Workout is an independently packaged Zepp OS Workout Extension. It runs
 as a data widget inside the watch's system Workout app, captures live workout
-metrics and heart rate, and sends durable batches to Dofek through the
-phone-side Side Service.
+metrics, heart rate, and focused motion segments, and sends them to Dofek
+through the phone-side Side Service.
 
 Workout Extensions require API_LEVEL 3.6 or newer and an independent app ID,
 store submission, and review. On a physical watch, users add the extension
@@ -19,6 +19,16 @@ While the widget has focus, `data-widget/index.ts` samples every ten seconds:
   count, and downhill distance;
 - current heart rate when available.
 
+It also starts a foreground motion segment immediately on focus. The shared IMU
+controller captures accelerometer samples and automatically adds gyroscope
+samples when the watch exposes that sensor. The extension has no gyroscope
+toggle. It uses the normal app's binary format, chunked file writer, BLE file
+receiver, and display lease, with two alternating file slots so a completed
+segment can transfer while collection resumes. The display lease uses Zepp's
+documented screen-off controls and is always released when the segment stops
+([`pauseDropWristScreenOff`](https://docs.zepp.com/docs/v2/reference/device-app-api/newAPI/display/pauseDropWristScreenOff/),
+[`resetDropWristScreenOff`](https://docs.zepp.com/docs/v2/reference/device-app-api/newAPI/display/resetDropWristScreenOff/)).
+
 The metric API starts at API_LEVEL 3.6, requires
 `data:user.hd.workout`, and returns JSON strings that the app validates and
 normalizes. See Zepp's
@@ -33,6 +43,8 @@ succeeds, so phone or network failures remain available for retry. Zepp pauses
 registered callbacks and timers when an extension loses focus; the
 `onResume`/`onPause` handlers therefore start and stop collection as described
 in the [official lifecycle](https://docs.zepp.com/docs/guides/workout-extension/quick-start/#life-cycle).
+The same handlers start and finalize motion segments; the extension does not
+and cannot keep high-rate IMU capture active after its widget loses focus.
 
 The build reuses the parent package's `app-side/index.ts` for authentication and
 server requests. That Side Service runs in the Zepp phone app and can
@@ -97,8 +109,11 @@ pnpm typecheck
 pnpm lint
 ```
 
-The package suite covers manifest generation, widget lifecycle and uploads,
-Settings App behavior, shared parsing and storage, and Side Service behavior.
+The package suite covers manifest generation, widget lifecycle, focused motion
+segments and transfers, live-metric uploads, Settings App behavior, shared
+parsing and storage, and Side Service behavior. Simulator motion is synthetic,
+so physical sensor availability, measured callback rate, BLE behavior while the
+phone is suspended, and battery draw still require a paired watch.
 
 ## Layout
 
