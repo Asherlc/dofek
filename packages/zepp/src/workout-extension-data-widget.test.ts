@@ -109,6 +109,12 @@ function makeContext(): DataWidgetContext {
 }
 
 beforeAll(async () => {
+  vi.stubGlobal("settings", {
+    settingsStorage: {
+      getItem: vi.fn(() => "install-1"),
+      setItem: vi.fn(),
+    },
+  });
   vi.stubGlobal("DataWidget", (value: DataWidgetConfiguration) => {
     configuration = value;
   });
@@ -119,6 +125,13 @@ beforeEach(() => {
   vi.clearAllMocks();
   moduleMocks.readLiveWorkoutBuffer.mockReturnValue({ batches: [] });
   moduleMocks.createWidget.mockReturnValue({ setProperty: vi.fn() });
+  moduleMocks.request.mockImplementation(async (request) => ({
+    status: "ok",
+    acceptedEventIds: request.params.envelope.events.map(
+      (event: { eventId: string }) => event.eventId,
+    ),
+    rejected: [],
+  }));
 });
 
 describe("workout extension data widget", () => {
@@ -253,8 +266,15 @@ describe("workout extension data widget", () => {
     };
     const batch = { externalId: "1720000000", snapshots: [uploadedSnapshot] };
     context.state.pendingBatches = [batch];
-    moduleMocks.request.mockImplementation(async () => {
+    moduleMocks.request.mockImplementation(async (request) => {
       batch.snapshots.push(newSnapshot);
+      return {
+        status: "ok",
+        acceptedEventIds: request.params.envelope.events.map(
+          (event: { eventId: string }) => event.eventId,
+        ),
+        rejected: [],
+      };
     });
 
     await context.flushSnapshots.call(context);
@@ -262,21 +282,33 @@ describe("workout extension data widget", () => {
     expect(moduleMocks.request).toHaveBeenCalledWith({
       method: "health.upload",
       params: {
-        data: {
-          activities: [
+        envelope: {
+          version: 1,
+          batchId: "install-1:workout:1720000000:2024-07-03T09:51:52.000Z:2024-07-03T09:51:52.000Z",
+          source: { connectionType: "zepp-workout", installId: "install-1" },
+          events: [
             {
-              externalId: "1720000000",
-              activityType: "other",
-              startedAt: "2024-07-03T09:46:40.000Z",
-              endedAt: "2024-07-03T09:51:52.000Z",
-              raw: {
-                liveSnapshotsByRecordedAt: {
-                  "2024-07-03T09:51:52.000Z": uploadedSnapshot,
-                },
+              eventId:
+                "install-1:workout:1720000000:2024-07-03T09:51:52.000Z:2024-07-03T09:51:52.000Z",
+              createdAt: "2024-07-03T09:51:52.000Z",
+              payload: {
+                activities: [
+                  {
+                    externalId: "1720000000",
+                    activityType: "other",
+                    startedAt: "2024-07-03T09:46:40.000Z",
+                    endedAt: "2024-07-03T09:51:52.000Z",
+                    raw: {
+                      liveSnapshotsByRecordedAt: {
+                        "2024-07-03T09:51:52.000Z": uploadedSnapshot,
+                      },
+                    },
+                  },
+                ],
+                liveWorkoutSamples: [{ externalId: "1720000000", ...uploadedSnapshot }],
               },
             },
           ],
-          liveWorkoutSamples: [{ externalId: "1720000000", ...uploadedSnapshot }],
         },
       },
     });
@@ -300,11 +332,17 @@ describe("workout extension data widget", () => {
     expect(moduleMocks.request).toHaveBeenCalledWith(
       expect.objectContaining({
         params: expect.objectContaining({
-          data: expect.objectContaining({
-            activities: [
+          envelope: expect.objectContaining({
+            events: [
               expect.objectContaining({
-                startedAt: "2024-07-03T09:46:40.000Z",
-                endedAt: "2024-07-03T09:46:40.000Z",
+                payload: expect.objectContaining({
+                  activities: [
+                    expect.objectContaining({
+                      startedAt: "2024-07-03T09:46:40.000Z",
+                      endedAt: "2024-07-03T09:46:40.000Z",
+                    }),
+                  ],
+                }),
               }),
             ],
           }),

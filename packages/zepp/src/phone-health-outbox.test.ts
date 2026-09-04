@@ -59,6 +59,10 @@ describe("phone health outbox", () => {
     expect(readPhoneHealthOutbox(storage).pending.map((entry) => entry.eventId)).toEqual(
       envelope.events.map((event) => event.eventId),
     );
+    expect(readPhoneHealthOutbox(storage).pending[0]?.payload).toEqual({
+      source: envelope.source,
+      payload: envelope.events[0]?.payload,
+    });
   });
 
   it("survives restart and accepts duplicate delivery idempotently", () => {

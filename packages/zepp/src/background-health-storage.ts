@@ -7,7 +7,7 @@ import {
   type BackgroundHealthSample,
 } from "./background-health.ts";
 import { createEmptyOutbox, type OutboxEntry } from "./durable-outbox.ts";
-import type { HealthActivity } from "./health-collector.ts";
+import type { HealthActivity, HealthDataPayload } from "./health-collector.ts";
 import type { ValidationIssue } from "./health-contract.ts";
 import { BACKGROUND_HEALTH_FILE } from "./storage-keys.ts";
 
@@ -52,6 +52,26 @@ function parseActivity(value: unknown): HealthActivity {
   };
 }
 
+function parseSummary(value: unknown): HealthDataPayload {
+  if (
+    !isRecord(value) ||
+    typeof value.collectedAt !== "number" ||
+    !Number.isFinite(value.collectedAt) ||
+    typeof value.date !== "string" ||
+    typeof value.timezoneOffsetMinutes !== "number" ||
+    !Number.isFinite(value.timezoneOffsetMinutes) ||
+    value.activities !== undefined
+  ) {
+    throw new Error("Watch health summary is invalid.");
+  }
+  return {
+    ...value,
+    collectedAt: value.collectedAt,
+    date: value.date,
+    timezoneOffsetMinutes: value.timezoneOffsetMinutes,
+  };
+}
+
 function parseEvent(value: unknown): BackgroundHealthEvent {
   if (!isRecord(value)) {
     throw new Error("Background health event is invalid.");
@@ -61,6 +81,9 @@ function parseEvent(value: unknown): BackgroundHealthEvent {
   }
   if (value.kind === "activity") {
     return { kind: "activity", activity: parseActivity(value.activity) };
+  }
+  if (value.kind === "summary") {
+    return { kind: "summary", summary: parseSummary(value.summary) };
   }
   throw new Error("Background health event is invalid.");
 }
@@ -191,7 +214,7 @@ export function backgroundHealthBufferFromOutbox(
   for (const entry of outbox.pending) {
     if (entry.payload.kind === "sample") {
       buffer.samples.push(entry.payload.sample);
-    } else {
+    } else if (entry.payload.kind === "activity") {
       buffer.activities.push(entry.payload.activity);
     }
   }

@@ -30,6 +30,7 @@ export interface HealthActivity {
   activityType: "other";
   startedAt: string;
   endedAt: string;
+  raw?: Record<string, unknown>;
 }
 
 export interface HealthDataPayload {

@@ -4,13 +4,18 @@ import {
   type DurableOutbox,
   type OutboxEntry,
 } from "./durable-outbox.ts";
-import type { HealthEnvelopeV1, ValidationIssue } from "./health-contract.ts";
+import type { HealthEnvelopeV1, ValidationIssue, ZeppConnectionType } from "./health-contract.ts";
 import type { HealthUploadPayload } from "./health-upload.ts";
 import { STORAGE_KEYS } from "./storage-keys.ts";
 
 const PHONE_OUTBOX_VERSION = 1;
 
-export type PhoneHealthOutbox = DurableOutbox<HealthUploadPayload>;
+export interface PhoneHealthEvent {
+  source: { connectionType: ZeppConnectionType; installId: string };
+  payload: HealthUploadPayload;
+}
+
+export type PhoneHealthOutbox = DurableOutbox<PhoneHealthEvent>;
 
 export interface SettingsStorage {
   getItem(key: string): string | null;
@@ -28,7 +33,26 @@ function parsePayload(value: unknown): HealthUploadPayload {
   return value;
 }
 
-function parseEntry(value: unknown): OutboxEntry<HealthUploadPayload> {
+function parseSource(value: unknown): PhoneHealthEvent["source"] {
+  if (
+    !isRecord(value) ||
+    (value.connectionType !== "zepp" && value.connectionType !== "zepp-workout") ||
+    typeof value.installId !== "string" ||
+    !value.installId.trim()
+  ) {
+    throw new Error("Phone health outbox source is invalid.");
+  }
+  return { connectionType: value.connectionType, installId: value.installId };
+}
+
+function parsePhoneHealthEvent(value: unknown): PhoneHealthEvent {
+  if (!isRecord(value)) {
+    throw new Error("Phone health outbox event is invalid.");
+  }
+  return { source: parseSource(value.source), payload: parsePayload(value.payload) };
+}
+
+function parseEntry(value: unknown): OutboxEntry<PhoneHealthEvent> {
   if (
     !isRecord(value) ||
     typeof value.eventId !== "string" ||
@@ -44,7 +68,7 @@ function parseEntry(value: unknown): OutboxEntry<HealthUploadPayload> {
   return {
     eventId: value.eventId,
     createdAt: value.createdAt,
-    payload: parsePayload(value.payload),
+    payload: parsePhoneHealthEvent(value.payload),
     attempts: Number(value.attempts),
     ...(typeof value.lastError === "string" ? { lastError: value.lastError } : {}),
   };
@@ -105,7 +129,7 @@ export function persistHealthEnvelope(
     outbox = appendOutboxEntry(outbox, {
       eventId: event.eventId,
       createdAt: event.createdAt,
-      payload: event.payload,
+      payload: { source: envelope.source, payload: event.payload },
       attempts: 0,
     });
   }

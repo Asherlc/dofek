@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   appendBackgroundHealthEvents,
+  appendWatchHealthSummary,
+  type BackgroundHealthOutbox,
   collectBackgroundHealthSample,
 } from "./background-health.ts";
 import { createEmptyOutbox } from "./durable-outbox.ts";
@@ -180,18 +182,7 @@ describe("collectBackgroundHealthSample", () => {
 
 describe("appendBackgroundHealthEvents", () => {
   it("deduplicates stable events and retains the newest seven days of minute samples", () => {
-    let outbox = createEmptyOutbox<
-      | { kind: "sample"; sample: { recordedAt: string; heartRate?: number } }
-      | {
-          kind: "activity";
-          activity: {
-            externalId: string;
-            activityType: "other";
-            startedAt: string;
-            endedAt: string;
-          };
-        }
-    >();
+    let outbox: BackgroundHealthOutbox = createEmptyOutbox();
     const activity = {
       externalId: "1720000000",
       activityType: "other" as const,
@@ -253,6 +244,46 @@ describe("appendBackgroundHealthEvents", () => {
     ).toEqual([
       expect.objectContaining({ payload: { kind: "activity", activity: oldActivity } }),
       expect.objectContaining({ payload: { kind: "activity", activity: updatedActivity } }),
+    ]);
+  });
+});
+
+describe("appendWatchHealthSummary", () => {
+  it("durably separates a point-in-time summary from activity revisions", () => {
+    const summary = {
+      collectedAt: 1_720_001_200_000,
+      date: "2024-07-03",
+      timezoneOffsetMinutes: -120,
+      steps: 4321,
+      activities: [
+        {
+          externalId: "activity-1",
+          activityType: "other" as const,
+          startedAt: "2024-07-03T10:00:00.000Z",
+          endedAt: "2024-07-03T10:30:00.000Z",
+        },
+      ],
+    };
+
+    const outbox = appendWatchHealthSummary(createEmptyOutbox(), summary, "install-1");
+
+    expect(outbox.pending).toEqual([
+      expect.objectContaining({
+        eventId: "install-1:summary:2024-07-03T10:06:40.000Z",
+        payload: {
+          kind: "summary",
+          summary: {
+            collectedAt: 1_720_001_200_000,
+            date: "2024-07-03",
+            timezoneOffsetMinutes: -120,
+            steps: 4321,
+          },
+        },
+      }),
+      expect.objectContaining({
+        eventId: "install-1:activity:activity-1:2024-07-03T10:30:00.000Z",
+        payload: { kind: "activity", activity: summary.activities[0] },
+      }),
     ]);
   });
 });

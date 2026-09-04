@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { createHealthEnvelope, validationIssuesFromDetails } from "./health-contract.ts";
+import {
+  createHealthEnvelope,
+  parseHealthEnvelope,
+  parseHealthUploadResponse,
+  validationIssuesFromDetails,
+} from "./health-contract.ts";
 
 describe("createHealthEnvelope", () => {
   it("creates the versioned envelope without changing stable identifiers", () => {
@@ -64,5 +69,75 @@ describe("validationIssuesFromDetails", () => {
         fieldErrors: { steps: ["", 42], other: null },
       }),
     ).toEqual([]);
+  });
+});
+
+describe("health transport parsing", () => {
+  it("accepts a structurally valid health envelope without inspecting private payload fields", () => {
+    expect(
+      parseHealthEnvelope({
+        version: 1,
+        batchId: "batch-1",
+        source: { connectionType: "zepp", installId: "install-1" },
+        events: [
+          {
+            eventId: "event-1",
+            createdAt: "2024-07-03T10:48:20.000Z",
+            payload: { watchSummary: { steps: 10 } },
+          },
+        ],
+      }),
+    ).toEqual({
+      version: 1,
+      batchId: "batch-1",
+      source: { connectionType: "zepp", installId: "install-1" },
+      events: [
+        {
+          eventId: "event-1",
+          createdAt: "2024-07-03T10:48:20.000Z",
+          payload: { watchSummary: { steps: 10 } },
+        },
+      ],
+    });
+  });
+
+  it("rejects malformed envelopes before they can be acknowledged", () => {
+    expect(() =>
+      parseHealthEnvelope({
+        version: 1,
+        batchId: "batch-1",
+        source: { connectionType: "unknown", installId: "install-1" },
+        events: [],
+      }),
+    ).toThrow("Health envelope is invalid.");
+  });
+
+  it("parses accepted and individually rejected event IDs", () => {
+    expect(
+      parseHealthUploadResponse({
+        status: "ok",
+        acceptedEventIds: ["event-1"],
+        rejected: [
+          {
+            eventId: "event-2",
+            issues: [{ path: "watchSummary.steps", message: "Expected number" }],
+          },
+        ],
+      }),
+    ).toEqual({
+      acceptedEventIds: ["event-1"],
+      rejected: [
+        {
+          eventId: "event-2",
+          issues: [{ path: "watchSummary.steps", message: "Expected number" }],
+        },
+      ],
+    });
+  });
+
+  it("rejects malformed upload acknowledgements", () => {
+    expect(() => parseHealthUploadResponse({ status: "ok" })).toThrow(
+      "Health upload response is invalid.",
+    );
   });
 });

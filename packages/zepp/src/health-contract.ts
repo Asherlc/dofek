@@ -26,6 +26,16 @@ export interface ValidationErrorDetails {
   fieldErrors?: unknown;
 }
 
+export interface RejectedHealthEvent {
+  eventId: string;
+  issues: ValidationIssue[];
+}
+
+export interface HealthUploadResponse {
+  acceptedEventIds: string[];
+  rejected: RejectedHealthEvent[];
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -46,6 +56,85 @@ export function createHealthEnvelope<T>(
   }
 
   return { version: 1, ...input };
+}
+
+function isConnectionType(value: unknown): value is ZeppConnectionType {
+  return value === "zepp" || value === "zepp-workout";
+}
+
+export function parseHealthEnvelope(value: unknown): HealthEnvelopeV1<Record<string, unknown>> {
+  if (
+    !isRecord(value) ||
+    value.version !== 1 ||
+    typeof value.batchId !== "string" ||
+    !nonBlank(value.batchId) ||
+    !isRecord(value.source) ||
+    !isConnectionType(value.source.connectionType) ||
+    typeof value.source.installId !== "string" ||
+    !nonBlank(value.source.installId) ||
+    !Array.isArray(value.events) ||
+    value.events.length === 0
+  ) {
+    throw new Error("Health envelope is invalid.");
+  }
+
+  const events: HealthEnvelopeEvent<Record<string, unknown>>[] = [];
+  for (const event of value.events) {
+    if (
+      !isRecord(event) ||
+      typeof event.eventId !== "string" ||
+      !nonBlank(event.eventId) ||
+      typeof event.createdAt !== "string" ||
+      !nonBlank(event.createdAt) ||
+      !isRecord(event.payload)
+    ) {
+      throw new Error("Health envelope is invalid.");
+    }
+    events.push({ eventId: event.eventId, createdAt: event.createdAt, payload: event.payload });
+  }
+
+  return {
+    version: 1,
+    batchId: value.batchId,
+    source: {
+      connectionType: value.source.connectionType,
+      installId: value.source.installId,
+    },
+    events,
+  };
+}
+
+function parseValidationIssue(value: unknown): ValidationIssue {
+  if (!isRecord(value) || typeof value.path !== "string" || typeof value.message !== "string") {
+    throw new Error("Health upload response is invalid.");
+  }
+  return { path: value.path, message: value.message };
+}
+
+export function parseHealthUploadResponse(value: unknown): HealthUploadResponse {
+  if (
+    !isRecord(value) ||
+    value.status !== "ok" ||
+    !Array.isArray(value.acceptedEventIds) ||
+    !value.acceptedEventIds.every((eventId) => typeof eventId === "string" && nonBlank(eventId)) ||
+    !Array.isArray(value.rejected)
+  ) {
+    throw new Error("Health upload response is invalid.");
+  }
+
+  const rejected = value.rejected.map((event) => {
+    if (
+      !isRecord(event) ||
+      typeof event.eventId !== "string" ||
+      !nonBlank(event.eventId) ||
+      !Array.isArray(event.issues)
+    ) {
+      throw new Error("Health upload response is invalid.");
+    }
+    return { eventId: event.eventId, issues: event.issues.map(parseValidationIssue) };
+  });
+
+  return { acceptedEventIds: value.acceptedEventIds, rejected };
 }
 
 function messages(value: unknown): string[] {

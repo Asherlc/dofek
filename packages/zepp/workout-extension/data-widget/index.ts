@@ -3,6 +3,11 @@ import { HeartRate } from "@zos/sensor";
 import { align, createWidget, prop, text_style, widget } from "@zos/ui";
 import { log as Logger, px } from "@zos/utils";
 import { BasePage } from "@zeppos/zml/base-page";
+import { ensureInstallId } from "../../src/install-id.ts";
+import {
+  createWorkoutHealthEnvelope,
+  isWorkoutHealthEventAcknowledged,
+} from "../../src/workout-health-envelope.ts";
 import {
   collectLiveWorkoutSnapshot,
   findLiveWorkoutExternalId,
@@ -111,35 +116,19 @@ DataWidget(
           const snapshotsToUpload = [...batch.snapshots];
           const latestSnapshot = snapshotsToUpload.at(-1);
           if (!latestSnapshot) continue;
-          const durationSeconds = latestSnapshot.metrics.duration ?? 0;
-          const startedAt = new Date(Number(batch.externalId) * 1000).toISOString();
-          const endedAt = new Date(
-            Number(batch.externalId) * 1000 + durationSeconds * 1000,
-          ).toISOString();
-          await this.request({
-            method: "health.upload",
-            params: {
-              data: {
-                activities: [
-                  {
-                    externalId: batch.externalId,
-                    activityType: "other",
-                    startedAt,
-                    endedAt,
-                    raw: {
-                      liveSnapshotsByRecordedAt: Object.fromEntries(
-                        snapshotsToUpload.map((snapshot) => [snapshot.recordedAt, snapshot]),
-                      ),
-                    },
-                  },
-                ],
-                liveWorkoutSamples: snapshotsToUpload.map((snapshot) => ({
-                  externalId: batch.externalId,
-                  ...snapshot,
-                })),
-              },
-            },
-          });
+          const envelope = createWorkoutHealthEnvelope(
+            ensureInstallId(settings.settingsStorage),
+            batch.externalId,
+            snapshotsToUpload,
+          );
+          const response = await this.request({
+              method: "health.upload",
+              params: { envelope },
+            });
+          const eventId = envelope.events[0]?.eventId;
+          if (!eventId || !isWorkoutHealthEventAcknowledged(response, eventId)) {
+            throw new Error("Phone did not acknowledge the workout health batch.");
+          }
           this.state.pendingBatches = removeUploadedLiveWorkoutSnapshots(
             { batches: this.state.pendingBatches },
             batch.externalId,

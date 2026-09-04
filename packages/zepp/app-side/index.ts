@@ -1,8 +1,17 @@
 import { messagingPlugin } from "@zeppos/zml/3.0/module/messaging/plugin/side";
 import { BaseSideService } from "@zeppos/zml/base-side";
 import { deriveConnectionActions, parseConnectionState } from "../src/connection-state.ts";
+import {
+  type HealthEnvelopeV1,
+  type HealthUploadResponse,
+  parseHealthEnvelope,
+  parseHealthUploadResponse,
+} from "../src/health-contract.ts";
+import type { HealthUploadPayload } from "../src/health-upload.ts";
 import { LatestOperation } from "../src/latest-operation.ts";
 import { shouldRetryPairingPollFailure } from "../src/pairing-poll.ts";
+import { persistHealthEnvelope } from "../src/phone-health-outbox.ts";
+import { drainPhoneHealthOutbox } from "../src/phone-health-sync.ts";
 import {
   clearBufferedTelemetryEvents,
   flushTelemetryEvents,
@@ -11,6 +20,7 @@ import {
 } from "../src/posthog-client.ts";
 import { createSessionCall, parseSessionCommand } from "../src/session-control.ts";
 import { DEFAULT_DOFEK_SERVER_URL, FREQ_MODE_LABELS, STORAGE_KEYS } from "../src/storage-keys.ts";
+import { SyncCoordinator } from "../src/sync-coordinator.ts";
 import { summarizeZeppFetchResponse, type ZeppFetchResponse } from "../src/zepp-fetch.ts";
 
 BaseSideService.use(messagingPlugin);
@@ -94,6 +104,55 @@ function getStoredServerUrl(): string {
   return storedServerUrl || DEFAULT_DOFEK_SERVER_URL;
 }
 
+function setHealthSyncStatus(payload: Record<string, unknown>): void {
+  settings.settingsStorage.setItem(STORAGE_KEYS.HEALTH_SYNC_STATUS, JSON.stringify(payload));
+}
+
+async function postHealthEnvelope(
+  envelope: HealthEnvelopeV1<HealthUploadPayload>,
+): Promise<HealthUploadResponse> {
+  const serverUrl = getStoredServerUrl();
+  const apiToken = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN)?.trim();
+  if (!apiToken) {
+    throw new Error("Connect Dofek from Zepp settings first.");
+  }
+
+  const response = await fetch({
+    url: `${serverUrl.replace(/\/$/, "")}/api/ingest/zos-health`,
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiToken}`,
+    },
+    body: JSON.stringify(envelope),
+  });
+  const summary = summarizeZeppFetchResponse(response);
+  if (!summary.ok) {
+    if (summary.status === 401) {
+      settings.settingsStorage.removeItem(STORAGE_KEYS.DOFEK_API_TOKEN);
+      settings.settingsStorage.setItem(
+        STORAGE_KEYS.DOFEK_CONNECTION_STATUS,
+        JSON.stringify({ state: "error", reason: "Dofek connection expired. Connect again." }),
+      );
+    }
+    throw new Error(summary.errorMessage ?? "Health data upload failed.");
+  }
+  return parseHealthUploadResponse(summary.body);
+}
+
+const healthSyncCoordinator = new SyncCoordinator(async (reasons) => {
+  setHealthSyncStatus({ state: "syncing", reasons });
+  try {
+    const result = await drainPhoneHealthOutbox(settings.settingsStorage, postHealthEnvelope);
+    settings.settingsStorage.setItem(STORAGE_KEYS.LAST_HEALTH_SYNC, String(Date.now()));
+    setHealthSyncStatus({ state: "done", ...result });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Health data upload failed.";
+    reportSideException(error, { category: "health-upload", reasons });
+    setHealthSyncStatus({ state: "error", reason: message });
+  }
+});
+
 AppSideService(
   BaseSideService({
     onInit() {
@@ -118,6 +177,9 @@ AppSideService(
 
     onRun() {
       logger.log("side service running");
+      if (settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN)?.trim()) {
+        void healthSyncCoordinator.requestDrain("side-service-run");
+      }
     },
 
     onDestroy() {
@@ -187,6 +249,7 @@ AppSideService(
 
       if (key === STORAGE_KEYS.CMD_SYNC_HEALTH) {
         this.call({ method: "health.collect", params: {} });
+        void healthSyncCoordinator.requestDrain("manual");
       }
 
       if (key === STORAGE_KEYS.CMD_START_PAIRING) {
@@ -360,6 +423,7 @@ AppSideService(
           state: "connected",
           connectionType: DOFEK_COMPANION_CONNECTION_TYPE,
         });
+        void healthSyncCoordinator.requestDrain("pairing-claimed");
         return;
       }
 
@@ -421,6 +485,7 @@ AppSideService(
           state: "connected",
           connectionType: DOFEK_COMPANION_CONNECTION_TYPE,
         });
+        void healthSyncCoordinator.requestDrain("password-login");
       } catch (error) {
         const message = error instanceof Error ? error.message : "Dofek login failed.";
         if (connectionOperations.isCurrent(operation)) {
@@ -467,6 +532,7 @@ AppSideService(
           state: "connected",
           connectionType: DOFEK_COMPANION_CONNECTION_TYPE,
         });
+        void healthSyncCoordinator.requestDrain("connection-verified");
       } catch (error) {
         const message = error instanceof Error ? error.message : "Dofek connection check failed.";
         if (connectionOperations.isCurrent(operation)) {
@@ -508,61 +574,6 @@ AppSideService(
         if (connectionOperations.isCurrent(operation)) {
           this.setConnectionStatus({ state: "error", reason: message });
         }
-        throw error;
-      }
-    },
-
-    async postHealthData(data: Record<string, unknown>) {
-      const serverUrl = getStoredServerUrl();
-      const apiToken = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN)?.trim();
-
-      if (!apiToken) {
-        const message = "Connect Dofek from Zepp settings first.";
-        logger.error(message);
-        settings.settingsStorage.setItem(
-          STORAGE_KEYS.HEALTH_SYNC_STATUS,
-          JSON.stringify({ state: "error", reason: message }),
-        );
-        throw new Error(message);
-      }
-
-      const url = `${serverUrl.replace(/\/$/, "")}/api/ingest/zos-health`;
-
-      try {
-        const response = await fetch({
-          url,
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiToken}`,
-          },
-          body: JSON.stringify(data),
-        });
-        const summary = summarizeZeppFetchResponse(response);
-
-        if (!summary.ok) {
-          const message = summary.errorMessage ?? "health data upload failed";
-          reportSideException(new Error(message), { category: "health-upload" });
-          settings.settingsStorage.setItem(
-            STORAGE_KEYS.HEALTH_SYNC_STATUS,
-            JSON.stringify({ state: "error", reason: message }),
-          );
-          throw new Error(message);
-        }
-
-        settings.settingsStorage.setItem(STORAGE_KEYS.LAST_HEALTH_SYNC, String(Date.now()));
-        settings.settingsStorage.setItem(
-          STORAGE_KEYS.HEALTH_SYNC_STATUS,
-          JSON.stringify({ state: "done" }),
-        );
-        logger.log("health data uploaded successfully");
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "health data upload failed";
-        reportSideException(error, { category: "health-upload-fetch" });
-        settings.settingsStorage.setItem(
-          STORAGE_KEYS.HEALTH_SYNC_STATUS,
-          JSON.stringify({ state: "error", reason: message }),
-        );
         throw error;
       }
     },
@@ -724,14 +735,15 @@ AppSideService(
       }
 
       if (method === "health.upload") {
-        const data = isRecord(params.data) ? params.data : undefined;
-        if (!data) {
-          res(new Error("no health data provided"), null);
-          return;
+        try {
+          const envelope = parseHealthEnvelope(params.envelope);
+          const persisted = persistHealthEnvelope(settings.settingsStorage, envelope);
+          res(null, { status: "ok", ...persisted, rejected: [] });
+          void healthSyncCoordinator.requestDrain("watch-receipt");
+        } catch (error) {
+          reportSideException(error, { category: "health-receipt" });
+          res(error, null);
         }
-        this.postHealthData(data)
-          .then(() => res(null, { ok: true }))
-          .catch((err) => res(err, null));
         return;
       }
 

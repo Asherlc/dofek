@@ -1,5 +1,9 @@
 import { appendOutboxEntry, type DurableOutbox } from "./durable-outbox.ts";
-import { type HealthActivity, workoutHistoryToActivities } from "./health-collector.ts";
+import {
+  type HealthActivity,
+  type HealthDataPayload,
+  workoutHistoryToActivities,
+} from "./health-collector.ts";
 
 const MAX_BACKGROUND_MINUTE_SAMPLES = 7 * 24 * 60;
 
@@ -18,7 +22,8 @@ export interface BackgroundHealthBuffer {
 
 export type BackgroundHealthEvent =
   | { kind: "sample"; sample: BackgroundHealthSample }
-  | { kind: "activity"; activity: HealthActivity };
+  | { kind: "activity"; activity: HealthActivity }
+  | { kind: "summary"; summary: HealthDataPayload };
 
 export type BackgroundHealthOutbox = DurableOutbox<BackgroundHealthEvent>;
 
@@ -126,4 +131,23 @@ export function appendBackgroundHealthEvents(
     ...updated,
     pending: updated.pending.filter((entry) => !expiredEventIds.has(entry.eventId)),
   };
+}
+
+export function appendWatchHealthSummary(
+  outbox: BackgroundHealthOutbox,
+  summary: HealthDataPayload,
+  installId: string,
+): BackgroundHealthOutbox {
+  if (!installId.trim()) {
+    throw new Error("A stable install ID is required for watch health events.");
+  }
+  const { activities = [], ...summaryWithoutActivities } = summary;
+  const createdAt = new Date(summary.collectedAt).toISOString();
+  const withSummary = appendOutboxEntry(outbox, {
+    eventId: `${installId}:summary:${createdAt}`,
+    createdAt,
+    payload: { kind: "summary", summary: summaryWithoutActivities },
+    attempts: 0,
+  });
+  return appendBackgroundHealthEvents(withSummary, { activities }, installId);
 }

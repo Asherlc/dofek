@@ -32,15 +32,15 @@ import {
 } from "@zos/ui";
 import { log as Logger, px } from "@zos/utils";
 import { captureException, ensureWatchInstallId } from "../app-service/telemetry.ts";
+import { appendWatchHealthSummary } from "../src/background-health.ts";
 import {
-  backgroundHealthBufferFromOutbox,
   readBackgroundHealthOutbox,
   writeBackgroundHealthOutbox,
 } from "../src/background-health-storage.ts";
 import { acknowledgeOutboxEntries } from "../src/durable-outbox.ts";
 import { collectHealthData } from "../src/health-collector.ts";
+import { parseHealthUploadResponse } from "../src/health-contract.ts";
 import { ensureHealthServiceRunning } from "../src/health-service-control.ts";
-import { createHealthUploadBatches, mergeHealthActivities } from "../src/health-upload.ts";
 import { createImuCollector, FREQ_MODES } from "../src/imu-collector.ts";
 import { createRoundLoginLayout } from "../src/round-layout.ts";
 import {
@@ -67,6 +67,7 @@ import {
   SESSION_META_FILE,
 } from "../src/storage-keys.ts";
 import type { ImuSample } from "../src/types.ts";
+import { createWatchHealthBatches } from "../src/watch-health-batches.ts";
 
 type ActiveFileSlot = "A" | "B";
 type TransferTask = {
@@ -834,35 +835,30 @@ Page(
           renderHint("Stored health data is invalid\nOpen Zepp settings");
           return;
         }
-        const backgroundBuffer = backgroundHealthBufferFromOutbox(backgroundOutbox);
-        const activities = mergeHealthActivities(
-          watchSummary.activities ?? [],
-          backgroundBuffer.activities,
-        );
-        const uploadBatches = createHealthUploadBatches(
-          watchSummary,
-          activities,
-          backgroundBuffer.samples,
-        );
+        backgroundOutbox = appendWatchHealthSummary(backgroundOutbox, watchSummary, installId);
+        try {
+          writeBackgroundHealthOutbox(backgroundOutbox);
+        } catch (error) {
+          captureException(error, { operation: "persist-health-summary" });
+          logger.error("health summary persistence failed %j", error);
+          renderHint("Health data could not be saved\nOpen Zepp settings");
+          return;
+        }
+        const uploadBatches = createWatchHealthBatches(backgroundOutbox, installId, 100);
         uploadBatches
           .reduce(
-            (previousUpload, data) =>
-              previousUpload.then(() =>
-                this.request({ method: "health.upload", params: { data } }),
-              ),
+            (previousUpload, envelope) =>
+              previousUpload.then(async () => {
+                const response = parseHealthUploadResponse(
+                  await this.request({ method: "health.upload", params: { envelope } }),
+                );
+                const latestOutbox = readBackgroundHealthOutbox(installId);
+                writeBackgroundHealthOutbox(
+                  acknowledgeOutboxEntries(latestOutbox, response.acceptedEventIds),
+                );
+              }),
             Promise.resolve<unknown>(undefined),
           )
-          .then(() => {
-            if (backgroundBuffer.samples.length === 0 && backgroundBuffer.activities.length === 0) {
-              return;
-            }
-            writeBackgroundHealthOutbox(
-              acknowledgeOutboxEntries(
-                readBackgroundHealthOutbox(installId),
-                backgroundOutbox.pending.map((entry) => entry.eventId),
-              ),
-            );
-          })
           .catch((err: unknown) => {
             captureException(err, { operation: "upload-health-data" });
             logger.error("health data upload request failed %j", err);
