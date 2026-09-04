@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { NapInfo, SensorConstructors, SleepStage, SpO2Reading } from "./health-collector.ts";
 import { collectHealthData } from "./health-collector.ts";
 
@@ -108,9 +108,13 @@ function formatLocalDate(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
+function collect(sensors: SensorConstructors) {
+  return collectHealthData(sensors, vi.fn());
+}
+
 describe("collectHealthData", () => {
   it("collects all available sensor data", () => {
-    const result = collectHealthData(makeSensors());
+    const result = collect(makeSensors());
 
     expect(result.collectedAt).toBeGreaterThan(0);
     expect(result.date).toBe(formatLocalDate(new Date(result.collectedAt)));
@@ -164,7 +168,7 @@ describe("collectHealthData", () => {
         }
       },
     });
-    const result = collectHealthData(sensors);
+    const result = collect(sensors);
     expect(result.sleep).toBeUndefined();
   });
 
@@ -185,7 +189,7 @@ describe("collectHealthData", () => {
         }
       },
     });
-    const result = collectHealthData(sensors);
+    const result = collect(sensors);
     expect(result.heartRate).toEqual([]);
     expect(result.heartRateSummary).toBeUndefined();
   });
@@ -204,7 +208,7 @@ describe("collectHealthData", () => {
         }
       },
     });
-    const result = collectHealthData(sensors);
+    const result = collect(sensors);
     expect(result.bloodOxygenCurrent).toBeUndefined();
     expect(result.bloodOxygenHourly).toEqual([]);
     expect(result.spo2Recent).toBeUndefined();
@@ -224,7 +228,7 @@ describe("collectHealthData", () => {
         }
       },
     });
-    const result = collectHealthData(sensors);
+    const result = collect(sensors);
     expect(result.bloodOxygenCurrent).toBe(99);
     expect(result.spo2Recent).toBeUndefined();
   });
@@ -240,7 +244,7 @@ describe("collectHealthData", () => {
         }
       },
     });
-    const result = collectHealthData(sensors);
+    const result = collect(sensors);
     expect(result.bodyTemperatureCurrent).toBeUndefined();
     expect(result.bodyTemperature).toEqual([]);
   });
@@ -260,7 +264,7 @@ describe("collectHealthData", () => {
         }
       },
     });
-    const result = collectHealthData(sensors);
+    const result = collect(sensors);
     expect(result.sleep?.score).toBe(75);
     expect(result.nap).toBeUndefined();
   });
@@ -321,6 +325,7 @@ describe("collectHealthData", () => {
         return [];
       }
     }
+    const captureException = vi.fn();
     const result = collectHealthData(
       makeSensors({
         HeartRate: ThrowingSensor,
@@ -335,11 +340,137 @@ describe("collectHealthData", () => {
         FatBurning: ThrowingSensor,
         Workout: ThrowingSensor,
       } satisfies Partial<SensorConstructors>),
+      captureException,
     );
 
     expect(result.heartRate).toBeUndefined();
     expect(result.steps).toBeUndefined();
     expect(result.sleep).toBeUndefined();
     expect(result.activities).toBeUndefined();
+    expect(captureException).toHaveBeenCalledTimes(11);
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
+      operation: "collect",
+      sensor: "HeartRate",
+    });
+  });
+
+  it("normalizes invalid and sentinel values without discarding valid siblings", () => {
+    const result = collect(
+      makeSensors({
+        HeartRate: class {
+          getToday() {
+            return [61, Number.NaN, Number.POSITIVE_INFINITY, -1, 65];
+          }
+          getResting() {
+            return Number.NaN;
+          }
+          getDailySummary() {
+            return { maximum: { hr_value: Number.POSITIVE_INFINITY, time: -1 } };
+          }
+          getLast() {
+            return 65;
+          }
+        },
+        Step: class {
+          getCurrent() {
+            return -1;
+          }
+          getTarget() {
+            return Number.NaN;
+          }
+        },
+        Distance: class {
+          getCurrent() {
+            return Number.POSITIVE_INFINITY;
+          }
+        },
+        BloodOxygen: class {
+          getCurrent() {
+            return { value: 101 };
+          }
+          getLastDay() {
+            return [98, Number.NaN, 0, 101];
+          }
+          getLastFewHour(_hours: number) {
+            return [
+              { spo2: 97, time: 1_700_000_000 },
+              { spo2: Number.NaN, time: 1_700_000_300 },
+              { spo2: 98, time: Number.POSITIVE_INFINITY },
+            ];
+          }
+        },
+        BodyTemperature: class {
+          getCurrent() {
+            return { current: Number.NaN };
+          }
+          getToday() {
+            return [36.5, Number.NaN, Number.POSITIVE_INFINITY, -1000];
+          }
+        },
+        Stress: class {
+          getToday() {
+            return [30, Number.NaN, -1, 35];
+          }
+          getTodayByHour() {
+            return [25, Number.POSITIVE_INFINITY];
+          }
+          getLastWeek() {
+            return [20, -1, Number.NaN];
+          }
+        },
+        Stand: class {
+          getCurrent() {
+            return -1;
+          }
+        },
+        Pai: class {
+          getCurrent() {
+            return Number.NaN;
+          }
+        },
+        FatBurning: class {
+          getCurrent() {
+            return 2.5;
+          }
+        },
+        Workout: class {
+          getHistory() {
+            return [
+              { startTime: Number.NaN, duration: 600 },
+              { startTime: 1_720_000_000, duration: -1 },
+              { startTime: 1_720_086_400, duration: 1_800 },
+            ];
+          }
+        },
+      }),
+    );
+
+    expect(result).toMatchObject({
+      heartRate: [61, 0, 0, 0, 65],
+      bloodOxygenHourly: [98, 0, 0, 0],
+      spo2Recent: [{ spo2: 97, time: 1_700_000_000 }],
+      bodyTemperature: [36.5, -1000, -1000, -1000],
+      stress: [30, 0, 0, 35],
+      stressByHour: [25, 0],
+      stressWeekly: [20, 0, 0],
+      activities: [
+        {
+          externalId: "1720086400",
+          activityType: "other",
+          startedAt: "2024-07-04T09:46:40.000Z",
+          endedAt: "2024-07-04T10:16:40.000Z",
+        },
+      ],
+    });
+    expect(result.restingHeartRate).toBeUndefined();
+    expect(result.heartRateSummary).toBeUndefined();
+    expect(result.steps).toBeUndefined();
+    expect(result.stepsTarget).toBeUndefined();
+    expect(result.distance).toBeUndefined();
+    expect(result.bloodOxygenCurrent).toBeUndefined();
+    expect(result.bodyTemperatureCurrent).toBeUndefined();
+    expect(result.standHours).toBeUndefined();
+    expect(result.pai).toBeUndefined();
+    expect(result.fatBurning).toBeUndefined();
   });
 });

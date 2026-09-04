@@ -32,6 +32,7 @@ import {
   widget,
 } from "@zos/ui";
 import { log as Logger, px } from "@zos/utils";
+import { captureException } from "../app-service/telemetry.ts";
 import {
   readBackgroundHealthBuffer,
   removeUploadedBackgroundHealthBufferEntries,
@@ -808,19 +809,22 @@ Page(
 
       const method = payload?.method;
       if (method === "health.collect") {
-        const watchSummary = collectHealthData({
-          HeartRate,
-          Step,
-          Distance,
-          Sleep,
-          BloodOxygen,
-          BodyTemperature,
-          Stress,
-          Stand,
-          Pai,
-          FatBurning,
-          Workout,
-        });
+        const watchSummary = collectHealthData(
+          {
+            HeartRate,
+            Step,
+            Distance,
+            Sleep,
+            BloodOxygen,
+            BodyTemperature,
+            Stress,
+            Stand,
+            Pai,
+            FatBurning,
+            Workout,
+          },
+          captureException,
+        );
         const backgroundBuffer = readBackgroundHealthBuffer();
         const activities = mergeHealthActivities(
           watchSummary.activities ?? [],
