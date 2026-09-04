@@ -1,6 +1,37 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ImuSegmentResult, ImuSessionController } from "./imu-session-controller.ts";
 import type { LiveWorkoutSnapshot } from "./workout-live.ts";
 import type { LiveWorkoutBatch } from "./workout-live-storage.ts";
+
+type TransferListener = (event: { data: Record<string, unknown> }) => void;
+
+function segmentResult(path = "data://imu/workout_a.bin"): ImuSegmentResult {
+  return {
+    path,
+    sampleCount: 120,
+    observedHzX100: 2_500,
+    hasGyroscope: true,
+    accelFreqMode: 1,
+    gyroFreqMode: 1,
+    sessionStartMs: 1_720_000_000_000,
+  };
+}
+
+function mockController(): ImuSessionController {
+  return {
+    active: true,
+    available: true,
+    reason: null,
+    hasGyroscope: true,
+    accelFreqMode: 1,
+    gyroFreqMode: 1,
+    sampleCount: 0,
+    observedHzX100: 0,
+    start: vi.fn(() => true),
+    rotate: vi.fn(() => null),
+    stop: vi.fn(() => segmentResult()),
+  };
+}
 
 const moduleMocks = vi.hoisted(() => ({
   collectLiveWorkoutSnapshot: vi.fn(),
@@ -12,15 +43,41 @@ const moduleMocks = vi.hoisted(() => ({
   createWidget: vi.fn(),
   getSportData: vi.fn(),
   heartRateGetLast: vi.fn(() => 148),
+  createImuSessionController: vi.fn(),
+  readPendingImuTransfers: vi.fn(),
+  savePendingImuTransfer: vi.fn(),
+  clearPendingImuTransfer: vi.fn(),
+  persistAndApplyPendingImuTransfer: vi.fn(
+    (
+      path: string,
+      slot: "A" | "B",
+      transfer: ImuSegmentResult | null,
+      apply: (value: ImuSegmentResult | null) => void,
+    ) => {
+      if (transfer) moduleMocks.savePendingImuTransfer(path, { ...transfer, slot });
+      else moduleMocks.clearPendingImuTransfer(path, slot);
+      apply(transfer);
+    },
+  ),
+  sendFile: vi.fn(),
 }));
 
 vi.mock("@zos/app-access", () => ({ getSportData: moduleMocks.getSportData }));
 vi.mock("@zos/sensor", () => ({
+  Accelerometer: class {},
+  Gyroscope: class {},
+  checkSensor: vi.fn(() => true),
   HeartRate: class {
     getLast(): number {
       return moduleMocks.heartRateGetLast();
     }
   },
+}));
+vi.mock("@zos/display", () => ({
+  pauseDropWristScreenOff: vi.fn(() => 0),
+  resetDropWristScreenOff: vi.fn(() => 0),
+  setPageBrightTime: vi.fn(() => 0),
+  resetPageBrightTime: vi.fn(() => 0),
 }));
 vi.mock("@zos/ui", () => ({
   align: { CENTER_H: 1 },
@@ -43,8 +100,24 @@ vi.mock("@zos/utils", () => ({
   px: (value: number) => value,
   text_style: { NONE: 0, WRAP: 1 },
   widget: { TEXT: 3 },
+  pauseDropWristScreenOff: vi.fn(() => 0),
+  resetDropWristScreenOff: vi.fn(() => 0),
+  setPageBrightTime: vi.fn(() => 0),
+  resetPageBrightTime: vi.fn(() => 0),
 }));
-vi.mock("@zeppos/zml/base-page", () => ({ BasePage: (value: unknown) => value }));
+vi.mock("./imu-session-controller.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./imu-session-controller.ts")>();
+  return {
+    ...original,
+    createImuSessionController: moduleMocks.createImuSessionController,
+  };
+});
+vi.mock("./imu-transfer-storage.ts", () => ({
+  readPendingImuTransfers: moduleMocks.readPendingImuTransfers,
+  savePendingImuTransfer: moduleMocks.savePendingImuTransfer,
+  clearPendingImuTransfer: moduleMocks.clearPendingImuTransfer,
+  persistAndApplyPendingImuTransfer: moduleMocks.persistAndApplyPendingImuTransfer,
+}));
 vi.mock("./workout-live.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("./workout-live.ts")>();
   return {
@@ -72,6 +145,13 @@ interface WidgetState {
   flushing: boolean;
   pendingBatches: LiveWorkoutBatch[];
   statusWidget: WidgetReference | null;
+  focused: boolean;
+  imuController: ImuSessionController | null;
+  activeImuSlot: "A" | "B";
+  pendingImuA: ImuSegmentResult | null;
+  pendingImuB: ImuSegmentResult | null;
+  transferringImuA: boolean;
+  transferringImuB: boolean;
 }
 
 interface DataWidgetConfiguration {
@@ -81,6 +161,11 @@ interface DataWidgetConfiguration {
   flushSnapshots(this: DataWidgetContext): Promise<void>;
   startCollection(this: DataWidgetContext): void;
   stopCollection(this: DataWidgetContext): void;
+  startImuSegment(this: DataWidgetContext): void;
+  stopImuSegment(this: DataWidgetContext): void;
+  sendImuSegment(this: DataWidgetContext, result: ImuSegmentResult, slot: "A" | "B"): void;
+  retryImuTransfers(this: DataWidgetContext): void;
+  reportError(this: DataWidgetContext, error: unknown, category: string): void;
   onResume(this: DataWidgetContext): void;
   onPause(this: DataWidgetContext): void;
   onDestroy(this: DataWidgetContext): void;
@@ -89,6 +174,7 @@ interface DataWidgetConfiguration {
 type DataWidgetContext = DataWidgetConfiguration & {
   state: WidgetState;
   request: typeof moduleMocks.request;
+  sendFile: typeof moduleMocks.sendFile;
 };
 
 let configuration: DataWidgetConfiguration | undefined;
@@ -103,12 +189,26 @@ function makeContext(): DataWidgetContext {
       flushing: false,
       pendingBatches: [],
       statusWidget: null,
+      focused: false,
+      imuController: null,
+      activeImuSlot: "A",
+      pendingImuA: null,
+      pendingImuB: null,
+      transferringImuA: false,
+      transferringImuB: false,
     },
     request: moduleMocks.request,
+    sendFile: moduleMocks.sendFile,
   };
 }
 
 beforeAll(async () => {
+  vi.stubGlobal("settings", {
+    settingsStorage: {
+      getItem: vi.fn(() => "install-1"),
+      setItem: vi.fn(),
+    },
+  });
   vi.stubGlobal("DataWidget", (value: DataWidgetConfiguration) => {
     configuration = value;
   });
@@ -118,15 +218,30 @@ beforeAll(async () => {
 beforeEach(() => {
   vi.clearAllMocks();
   moduleMocks.readLiveWorkoutBuffer.mockReturnValue({ batches: [] });
+  moduleMocks.readPendingImuTransfers.mockReturnValue([]);
   moduleMocks.createWidget.mockReturnValue({ setProperty: vi.fn() });
+  moduleMocks.request.mockImplementation(async (request) =>
+    request.method === "health.upload"
+      ? {
+          status: "ok",
+          acceptedEventIds: request.params.envelope.events.map(
+            (event: { eventId: string }) => event.eventId,
+          ),
+          rejected: [],
+        }
+      : { ok: true },
+  );
+  moduleMocks.createImuSessionController.mockImplementation(() => mockController());
+  moduleMocks.sendFile.mockReturnValue({ on: vi.fn() });
 });
 
 describe("workout extension data widget", () => {
-  it("restores durable batches, renders status, and starts collection", () => {
+  it("restores durable batches, renders status, and starts focused collectors", () => {
     const context = makeContext();
     const batch = { externalId: "1720000000", snapshots: [] };
     moduleMocks.readLiveWorkoutBuffer.mockReturnValue({ batches: [batch] });
     context.startCollection = vi.fn();
+    context.startImuSegment = vi.fn();
 
     context.build.call(context);
 
@@ -156,6 +271,171 @@ describe("workout extension data widget", () => {
     });
     expect(context.state.statusWidget).not.toBeNull();
     expect(context.startCollection).toHaveBeenCalledOnce();
+    expect(context.startImuSegment).toHaveBeenCalledOnce();
+    expect(context.state.focused).toBe(true);
+  });
+
+  it("uses the shared controller and automatically records gyroscope when available", () => {
+    const context = makeContext();
+
+    context.startImuSegment.call(context);
+
+    expect(moduleMocks.createImuSessionController).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "data://imu/workout_a.bin",
+        requestedFreqModeIndex: 1,
+        displayLease: expect.any(Object),
+        createCollector: expect.any(Function),
+        file: expect.objectContaining({
+          reset: expect.any(Function),
+          append: expect.any(Function),
+          finalize: expect.any(Function),
+        }),
+      }),
+    );
+    expect(context.state.imuController?.start).toHaveBeenCalledOnce();
+    expect(context.state.activeImuSlot).toBe("A");
+  });
+
+  it("clears a failed IMU controller so focused collection can restart", () => {
+    const controller = mockController();
+    let reportControllerError: ((error: unknown) => void) | undefined;
+    moduleMocks.createImuSessionController.mockImplementation((options) => {
+      reportControllerError = options.onError;
+      return controller;
+    });
+    const context = makeContext();
+    context.reportError = vi.fn();
+    context.startImuSegment.call(context);
+    const error = new Error("motion write failed");
+
+    reportControllerError?.(error);
+
+    expect(context.state.imuController).toBeNull();
+    expect(context.reportError).toHaveBeenCalledWith(error, "workout-imu");
+  });
+
+  it("finalizes a focused IMU segment once and frees its slot only after phone persistence", async () => {
+    const listeners = new Map<string, TransferListener>();
+    moduleMocks.sendFile.mockReturnValue({
+      on: vi.fn((event: string, listener: TransferListener) => listeners.set(event, listener)),
+    });
+    const controller = mockController();
+    const context = makeContext();
+    context.state.imuController = controller;
+    context.state.activeImuSlot = "A";
+    let acknowledgePersistence: ((value: { ok: true }) => void) | undefined;
+    moduleMocks.request.mockImplementation((request) =>
+      request.method === "imu.transferComplete"
+        ? new Promise((resolve) => {
+            acknowledgePersistence = resolve;
+          })
+        : Promise.resolve({ ok: true }),
+    );
+
+    context.stopImuSegment.call(context);
+    context.stopImuSegment.call(context);
+
+    expect(controller.stop).toHaveBeenCalledOnce();
+    expect(context.state.pendingImuA).toEqual(segmentResult());
+    expect(moduleMocks.sendFile).toHaveBeenCalledOnce();
+    expect(moduleMocks.sendFile).toHaveBeenCalledWith("data://imu/workout_a.bin", {
+      type: "imu-session",
+      source: "zepp-workout",
+      segmentId: "install-1:workout-imu:1720000000000",
+      sampleCount: "120",
+      observedHzX100: "2500",
+    });
+
+    listeners.get("change")?.({ data: { readyState: "transferred" } });
+    expect(context.state.pendingImuA).toEqual(segmentResult());
+    expect(moduleMocks.clearPendingImuTransfer).not.toHaveBeenCalled();
+
+    acknowledgePersistence?.({ ok: true });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(context.state.pendingImuA).toBeNull();
+    expect(moduleMocks.clearPendingImuTransfer).toHaveBeenCalledWith(
+      "data://imu/workout_transfers.json",
+      "A",
+    );
+  });
+
+  it("retains the manifest and publishes the reason when sendFile throws synchronously", async () => {
+    const result = segmentResult();
+    const context = makeContext();
+    context.state.pendingImuA = result;
+    moduleMocks.sendFile.mockImplementationOnce(() => {
+      throw new Error("TransferFile unavailable");
+    });
+
+    context.sendImuSegment.call(context, result, "A");
+    await Promise.resolve();
+
+    expect(context.state.pendingImuA).toBe(result);
+    expect(context.state.transferringImuA).toBe(false);
+    expect(moduleMocks.request).toHaveBeenCalledWith({
+      method: "imu.transferFailed",
+      params: {
+        reason: "TransferFile unavailable",
+        segmentId: "install-1:workout-imu:1720000000000",
+        source: "zepp-workout",
+      },
+    });
+  });
+
+  it("treats a canceled transfer as terminal without clearing the manifest", async () => {
+    const listeners = new Map<string, TransferListener>();
+    moduleMocks.sendFile.mockReturnValue({
+      on: vi.fn((event: string, listener: TransferListener) => listeners.set(event, listener)),
+    });
+    const result = segmentResult();
+    const context = makeContext();
+    context.state.pendingImuA = result;
+
+    context.sendImuSegment.call(context, result, "A");
+    listeners.get("change")?.({ data: { readyState: "canceled" } });
+    await Promise.resolve();
+
+    expect(context.state.pendingImuA).toBe(result);
+    expect(context.state.transferringImuA).toBe(false);
+    expect(moduleMocks.request).toHaveBeenCalledWith({
+      method: "imu.transferFailed",
+      params: {
+        reason: "IMU transfer was canceled.",
+        segmentId: "install-1:workout-imu:1720000000000",
+        source: "zepp-workout",
+      },
+    });
+  });
+
+  it("alternates files while a prior workout segment is transferring", () => {
+    const context = makeContext();
+    context.state.pendingImuA = segmentResult();
+
+    context.startImuSegment.call(context);
+
+    expect(moduleMocks.createImuSessionController).toHaveBeenCalledWith(
+      expect.objectContaining({ path: "data://imu/workout_b.bin" }),
+    );
+    expect(context.state.activeImuSlot).toBe("B");
+  });
+
+  it("restores and retries a pending motion file before reusing its slot", () => {
+    const restored = { ...segmentResult("data://imu/workout_a.bin"), slot: "A" as const };
+    moduleMocks.readPendingImuTransfers.mockReturnValue([restored]);
+    const context = makeContext();
+    context.startCollection = vi.fn();
+
+    context.build.call(context);
+
+    expect(moduleMocks.sendFile).toHaveBeenCalledWith(
+      "data://imu/workout_a.bin",
+      expect.objectContaining({ segmentId: "install-1:workout-imu:1720000000000" }),
+    );
+    expect(moduleMocks.createImuSessionController).toHaveBeenCalledWith(
+      expect.objectContaining({ path: "data://imu/workout_b.bin" }),
+    );
   });
 
   it("collects, persists, and reports a live snapshot", async () => {
@@ -212,8 +492,15 @@ describe("workout extension data widget", () => {
     await context.collectSnapshot.call(context);
 
     expect(moduleMocks.loggerError).toHaveBeenCalledWith(
-      "live workout collection failed %j",
+      "%s failed %j",
+      "workout-collection",
       expect.any(Error),
+    );
+    expect(moduleMocks.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "telemetry.report",
+        params: expect.objectContaining({ category: "workout-collection" }),
+      }),
     );
     expect(context.state.collecting).toBe(false);
   });
@@ -253,8 +540,15 @@ describe("workout extension data widget", () => {
     };
     const batch = { externalId: "1720000000", snapshots: [uploadedSnapshot] };
     context.state.pendingBatches = [batch];
-    moduleMocks.request.mockImplementation(async () => {
+    moduleMocks.request.mockImplementation(async (request) => {
       batch.snapshots.push(newSnapshot);
+      return {
+        status: "ok",
+        acceptedEventIds: request.params.envelope.events.map(
+          (event: { eventId: string }) => event.eventId,
+        ),
+        rejected: [],
+      };
     });
 
     await context.flushSnapshots.call(context);
@@ -262,21 +556,33 @@ describe("workout extension data widget", () => {
     expect(moduleMocks.request).toHaveBeenCalledWith({
       method: "health.upload",
       params: {
-        data: {
-          activities: [
+        envelope: {
+          version: 1,
+          batchId: "install-1:workout:1720000000:2024-07-03T09:51:52.000Z:2024-07-03T09:51:52.000Z",
+          source: { connectionType: "zepp-workout", installId: "install-1" },
+          events: [
             {
-              externalId: "1720000000",
-              activityType: "other",
-              startedAt: "2024-07-03T09:46:40.000Z",
-              endedAt: "2024-07-03T09:51:52.000Z",
-              raw: {
-                liveSnapshotsByRecordedAt: {
-                  "2024-07-03T09:51:52.000Z": uploadedSnapshot,
-                },
+              eventId:
+                "install-1:workout:1720000000:2024-07-03T09:51:52.000Z:2024-07-03T09:51:52.000Z",
+              createdAt: "2024-07-03T09:51:52.000Z",
+              payload: {
+                activities: [
+                  {
+                    externalId: "1720000000",
+                    activityType: "other",
+                    startedAt: "2024-07-03T09:46:40.000Z",
+                    endedAt: "2024-07-03T09:51:52.000Z",
+                    raw: {
+                      liveSnapshotsByRecordedAt: {
+                        "2024-07-03T09:51:52.000Z": uploadedSnapshot,
+                      },
+                    },
+                  },
+                ],
+                liveWorkoutSamples: [{ externalId: "1720000000", ...uploadedSnapshot }],
               },
             },
           ],
-          liveWorkoutSamples: [{ externalId: "1720000000", ...uploadedSnapshot }],
         },
       },
     });
@@ -300,11 +606,17 @@ describe("workout extension data widget", () => {
     expect(moduleMocks.request).toHaveBeenCalledWith(
       expect.objectContaining({
         params: expect.objectContaining({
-          data: expect.objectContaining({
-            activities: [
+          envelope: expect.objectContaining({
+            events: [
               expect.objectContaining({
-                startedAt: "2024-07-03T09:46:40.000Z",
-                endedAt: "2024-07-03T09:46:40.000Z",
+                payload: expect.objectContaining({
+                  activities: [
+                    expect.objectContaining({
+                      startedAt: "2024-07-03T09:46:40.000Z",
+                      endedAt: "2024-07-03T09:46:40.000Z",
+                    }),
+                  ],
+                }),
               }),
             ],
           }),
@@ -344,11 +656,13 @@ describe("workout extension data widget", () => {
     expect(context.state.flushing).toBe(false);
   });
 
-  it("starts, stops, resumes, pauses, and destroys collection", () => {
+  it("starts, stops, resumes, pauses, and destroys all focused collection", () => {
     vi.useFakeTimers();
     const context = makeContext();
     context.collectSnapshot = vi.fn().mockResolvedValue(undefined);
     context.flushSnapshots = vi.fn().mockResolvedValue(undefined);
+    context.startImuSegment = vi.fn();
+    context.stopImuSegment = vi.fn();
 
     context.startCollection.call(context);
     const firstInterval = context.state.intervalId;
@@ -360,12 +674,17 @@ describe("workout extension data widget", () => {
     expect(context.collectSnapshot).toHaveBeenCalledTimes(2);
 
     context.onPause.call(context);
+    expect(context.state.focused).toBe(false);
     expect(context.state.intervalId).toBeNull();
     expect(context.flushSnapshots).toHaveBeenCalledOnce();
+    expect(context.stopImuSegment).toHaveBeenCalledOnce();
     context.onResume.call(context);
+    expect(context.state.focused).toBe(true);
     expect(context.state.intervalId).not.toBeNull();
+    expect(context.startImuSegment).toHaveBeenCalledOnce();
     context.onDestroy.call(context);
     expect(context.state.intervalId).toBeNull();
+    expect(context.stopImuSegment).toHaveBeenCalledTimes(2);
     context.stopCollection.call(context);
     expect(context.flushSnapshots).toHaveBeenCalledTimes(3);
     vi.useRealTimers();

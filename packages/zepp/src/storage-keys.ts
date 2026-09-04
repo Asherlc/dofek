@@ -1,5 +1,4 @@
 export const STORAGE_KEYS = {
-  PREF_ENABLE_GYRO: "pref_enable_gyro",
   PREF_FREQ_MODE: "pref_freq_mode",
   CMD_LOGGING: "cmd_logging",
   CMD_TRANSFER: "cmd_transfer",
@@ -21,7 +20,12 @@ export const STORAGE_KEYS = {
   PAIRING_QR_IMAGE_URL: "pairing_qr_image_url",
   PAIRING_EXPIRES_AT: "pairing_expires_at",
   HEALTH_SYNC_STATUS: "health_sync_status",
+  HEALTH_SERVICE_STATUS: "health_service_status",
+  IMU_SYNC_STATUS: "imu_sync_status",
   LAST_HEALTH_SYNC: "last_health_sync",
+  PHONE_HEALTH_OUTBOX: "phone_health_outbox",
+  PHONE_IMU_OUTBOX: "phone_imu_outbox",
+  PHONE_IMU_FILES: "phone_imu_files",
   TELEMETRY_BUFFER: "telemetry_buffer",
   TELEMETRY_INSTALL_ID: "telemetry_install_id",
 } as const;
@@ -34,11 +38,17 @@ export const FREQ_MODE_LABELS: Record<number, string> = {
   2: "HIGH",
 };
 
-export const SESSION_FILE_A = "data://imu/session_a.bin";
-export const SESSION_FILE_B = "data://imu/session_b.bin";
+export const SESSION_FILE_A = "data://imu/normal_a.bin";
+export const SESSION_FILE_B = "data://imu/normal_b.bin";
+export const WORKOUT_SESSION_FILE_A = "data://imu/workout_a.bin";
+export const WORKOUT_SESSION_FILE_B = "data://imu/workout_b.bin";
+export const NORMAL_IMU_TRANSFER_FILE = "data://imu/normal_transfers.json";
+export const WORKOUT_IMU_TRANSFER_FILE = "data://imu/workout_transfers.json";
+export const NORMAL_IMU_CHUNK_DIRECTORY = "data://imu/normal_chunks";
+export const WORKOUT_IMU_CHUNK_DIRECTORY = "data://imu/workout_chunks";
 export const SESSION_META_FILE = "data://imu/session_meta.json";
 export const BACKGROUND_HEALTH_FILE = "data://health/background.json";
-export const SERVICE_FILE = "app-service/imu_service";
+export const HEALTH_SERVICE_FILE = "app-service/health_service";
 
 export const FLUSH_SAMPLE_THRESHOLD = 64;
 export const AUTO_TRANSFER_SAMPLE_COUNT = 5000;

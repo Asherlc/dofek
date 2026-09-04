@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { createImuChunkEnvelope } from "../src/imu-upload.ts";
 import { STORAGE_KEYS } from "../src/storage-keys.ts";
 
 interface RuntimeWidget {
@@ -14,22 +15,65 @@ interface WatchCallPayload {
 
 interface SideRuntime {
   call(payload: WatchCallPayload): void;
+  onInit(): void;
   onRequest(
     request: { method: string; params?: Record<string, unknown> },
     respond: (error: unknown, result: unknown) => void,
   ): void;
   startPairing(): Promise<Record<string, unknown> | null>;
+  disconnect(): Promise<void>;
   verifyConnection(): Promise<void>;
+  onReceivedFile(file: {
+    fileName?: string;
+    filePath?: string;
+    params?: Record<string, unknown>;
+    on(
+      event: string,
+      callback: (event: { data: Record<string, unknown> }) => void,
+    ): void;
+  }): void;
 }
 
 interface WatchRuntime {
   state: {
     hasCredentials: boolean;
+    healthOwnership?: Promise<{ release(): Promise<void> }>;
+    transferTask?: unknown;
+    logging?: boolean;
+    activeFile?: "A" | "B";
+    imuController?: {
+      active: boolean;
+      rotate(path: string): {
+        path: string;
+        sampleCount: number;
+        observedHzX100: number;
+        hasGyroscope: boolean;
+        accelFreqMode: number;
+        gyroFreqMode: number;
+        sessionStartMs: number;
+      } | null;
+    } | null;
   };
+  acquireHealthOwnership(): void;
   build(): void;
   onCall(payload: WatchCallPayload): void;
   onInit(): void;
   request(request: { method: string; params?: Record<string, unknown> }): Promise<unknown>;
+  sendFile(
+    path: string,
+    params: Record<string, unknown>,
+  ): {
+    cancel(): void;
+    on(event: string, callback: (event: { data: Record<string, unknown> }) => void): void;
+  };
+  startTransfer(transfer: {
+    observedHzX100: number;
+    path: string;
+    sampleCount: number;
+    sessionStartMs: number;
+    slot: "A" | "B";
+  }): void;
+  swapAndTransfer(): void;
 }
 
 let sideConfiguration: SideRuntime | undefined;
@@ -70,6 +114,118 @@ afterEach(() => {
 });
 
 describe("Zepp pairing refresh", () => {
+  it("rejects cleartext server URLs before sending a request", async () => {
+    const values = new Map([[STORAGE_KEYS.DOFEK_SERVER_URL, "http://dofek.example"]]);
+    vi.stubGlobal("settings", {
+      settingsStorage: {
+        addListener: vi.fn(),
+        getItem: vi.fn((key: string) => values.get(key) ?? null),
+        removeItem: vi.fn((key: string) => values.delete(key)),
+        setItem: vi.fn((key: string, value: string) => values.set(key, value)),
+      },
+    });
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await expect(Object.assign({}, requireSideConfiguration()).startPairing()).rejects.toThrow(
+      "Dofek server URL must use HTTPS.",
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("returns preferences when a stored server URL is cleartext", async () => {
+    const values = new Map([[STORAGE_KEYS.DOFEK_SERVER_URL, "http://dofek.example/"]]);
+    vi.stubGlobal("settings", {
+      settingsStorage: {
+        addListener: vi.fn(),
+        getItem: vi.fn((key: string) => values.get(key) ?? null),
+        removeItem: vi.fn((key: string) => values.delete(key)),
+        setItem: vi.fn((key: string, value: string) => values.set(key, value)),
+      },
+    });
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    const side = Object.assign({}, requireSideConfiguration());
+
+    const preferences = await new Promise<unknown>((resolve, reject) => {
+      side.onRequest({ method: "imu.getPreferences", params: {} }, (error, result) => {
+        if (error) reject(error);
+        else resolve(result);
+      });
+    });
+
+    expect(preferences).toMatchObject({ serverUrl: "http://dofek.example" });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("requires disconnecting before starting another pairing session", async () => {
+    const values = new Map([[STORAGE_KEYS.DOFEK_API_TOKEN, "existing-token"]]);
+    vi.stubGlobal("settings", {
+      settingsStorage: {
+        addListener: vi.fn(),
+        getItem: vi.fn((key: string) => values.get(key) ?? null),
+        removeItem: vi.fn((key: string) => values.delete(key)),
+        setItem: vi.fn((key: string, value: string) => values.set(key, value)),
+      },
+    });
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await expect(Object.assign({}, requireSideConfiguration()).startPairing()).rejects.toThrow(
+      "Disconnect the existing Dofek connection before pairing again.",
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("notifies the watch when an upload response expires credentials", async () => {
+    const values = new Map<string, string>();
+    const settingsStorage = {
+      addListener: vi.fn(),
+      getItem: vi.fn((key: string) => values.get(key) ?? null),
+      removeItem: vi.fn((key: string) => values.delete(key)),
+      setItem: vi.fn((key: string, value: string) => values.set(key, value)),
+    };
+    vi.stubGlobal("settings", { settingsStorage });
+    vi.stubGlobal("fetch", vi.fn(async () => ({ status: 401, body: { error: "Expired" } })));
+    const side = Object.assign({}, requireSideConfiguration());
+    side.call = vi.fn();
+    side.onInit();
+    values.set(STORAGE_KEYS.DOFEK_API_TOKEN, "expired-token");
+
+    await new Promise<void>((resolve, reject) => {
+      side.onRequest(
+        {
+          method: "health.upload",
+          params: {
+            envelope: {
+              version: 1,
+              batchId: "batch-1",
+              source: { connectionType: "zepp", installId: "install-1" },
+              events: [
+                {
+                  eventId: "event-1",
+                  createdAt: "2024-07-03T10:48:20.000Z",
+                  payload: {
+                    backgroundSamples: [{ recordedAt: "2024-07-03T10:48:20.000Z" }],
+                  },
+                },
+              ],
+            },
+          },
+        },
+        (error) => (error ? reject(error) : resolve()),
+      );
+    });
+
+    await vi.waitFor(() => {
+      expect(values.has(STORAGE_KEYS.DOFEK_API_TOKEN)).toBe(false);
+      expect(side.call).toHaveBeenCalledWith({
+        method: "dofek.connectionChanged",
+        params: {},
+      });
+    });
+  });
+
   it("moves an open watch page from its pairing QR to connected as soon as pairing is claimed", async () => {
     vi.useFakeTimers();
     const values = new Map<string, string>();
@@ -108,19 +264,19 @@ describe("Zepp pairing refresh", () => {
       shortCode: "ABC234",
       verificationUrl: "https://app.example.test/zepp-pairing?code=ABC234",
     };
-    const responses = [
-      { status: 200, body: pairing },
-      {
-        status: 200,
-        body: { state: "claimed", companionToken: "companion-token" },
-      },
-    ];
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => {
-        const response = responses.shift();
-        if (!response) throw new Error("Unexpected Zepp fetch");
-        return response;
+      vi.fn(async (request: { url?: string }) => {
+        if (request.url?.endsWith("/api/companion-pairing/start")) {
+          return { status: 200, body: pairing };
+        }
+        if (request.url?.includes("/api/companion-pairing/status/")) {
+          return {
+            status: 200,
+            body: { state: "claimed", companionToken: "companion-token" },
+          };
+        }
+        return { status: 200, body: { ok: true } };
       }),
     );
 
@@ -161,8 +317,41 @@ describe("Zepp pairing refresh", () => {
     expect(deletedWidgets).toContain(pairingQr);
   });
 
-  it("notifies the watch when verification clears credentials for another Zepp app", async () => {
-    const values = new Map<string, string>([[STORAGE_KEYS.DOFEK_API_TOKEN, "companion-token"]]);
+  it("does not create a new pairing challenge after disconnecting", async () => {
+    const values = new Map<string, string>();
+    const settingsStorage = {
+      addListener: vi.fn(),
+      getItem: vi.fn((key: string) => values.get(key) ?? null),
+      removeItem: vi.fn((key: string) => values.delete(key)),
+      setItem: vi.fn((key: string, value: string) => values.set(key, value)),
+    };
+    vi.stubGlobal("settings", { settingsStorage });
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const side = Object.assign({}, requireSideConfiguration());
+    const watchConfig = requireWatchConfiguration();
+    const watch = Object.assign({}, watchConfig, { state: { ...watchConfig.state } });
+    side.call = (payload) => watch.onCall(payload);
+    watch.request = (request) =>
+      new Promise((resolve, reject) => {
+        side.onRequest(request, (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
+        });
+      });
+
+    await side.disconnect();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("notifies an open watch page when a mismatched credential is cleared", async () => {
+    const values = new Map<string, string>([
+      [STORAGE_KEYS.DOFEK_API_TOKEN, "wrong-app-token"],
+    ]);
     const settingsStorage = {
       addListener: vi.fn(),
       getItem: vi.fn((key: string) => values.get(key) ?? null),
@@ -182,11 +371,297 @@ describe("Zepp pairing refresh", () => {
     side.call = (payload) => calls.push(payload);
 
     await expect(side.verifyConnection()).rejects.toThrow(
-      "Saved credentials belong to a different Zepp app. Connect again.",
+      "Saved credentials belong to a different Zepp app",
     );
-
     expect(values.has(STORAGE_KEYS.DOFEK_API_TOKEN)).toBe(false);
     expect(calls).toContainEqual({ method: "dofek.connectionChanged", params: {} });
+  });
+
+  it("retains the SDK reason when a received IMU file transfer fails", () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("settings", {
+      settingsStorage: {
+        getItem: vi.fn((key: string) => values.get(key) ?? null),
+        removeItem: vi.fn((key: string) => values.delete(key)),
+        setItem: vi.fn((key: string, value: string) => values.set(key, value)),
+      },
+    });
+    const side = Object.assign({}, requireSideConfiguration());
+
+    side.onReceivedFile({
+      fileName: "normal_a.bin",
+      params: { segmentId: "segment-1", source: "zepp" },
+      on(event, callback) {
+        if (event === "change") {
+          callback({
+            data: { readyState: "error", error: "Bluetooth connection was interrupted." },
+          });
+        }
+      },
+    });
+
+    expect(JSON.parse(values.get(STORAGE_KEYS.TRANSFER_PROGRESS) ?? "{}")).toEqual({
+      state: "error",
+      reason: "Bluetooth connection was interrupted.",
+      segmentId: "segment-1",
+      source: "zepp",
+    });
+  });
+
+  it("records a received IMU file transfer cancellation", () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("settings", {
+      settingsStorage: {
+        getItem: vi.fn((key: string) => values.get(key) ?? null),
+        removeItem: vi.fn((key: string) => values.delete(key)),
+        setItem: vi.fn((key: string, value: string) => values.set(key, value)),
+      },
+    });
+    const side = Object.assign({}, requireSideConfiguration());
+
+    side.onReceivedFile({
+      fileName: "normal_a.bin",
+      params: { segmentId: "segment-1", source: "zepp" },
+      on(event, callback) {
+        if (event === "change") callback({ data: { readyState: "canceled" } });
+      },
+    });
+
+    expect(JSON.parse(values.get(STORAGE_KEYS.TRANSFER_PROGRESS) ?? "{}")).toEqual({
+      state: "error",
+      reason: "IMU transfer was canceled.",
+      segmentId: "segment-1",
+      source: "zepp",
+    });
+  });
+
+  it("persists a synchronous App Service start failure", async () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("settings", {
+      settingsStorage: {
+        getItem: vi.fn((key: string) => values.get(key) ?? null),
+        removeItem: vi.fn((key: string) => values.delete(key)),
+        setItem: vi.fn((key: string, value: string) => values.set(key, value)),
+      },
+    });
+    vi.stubGlobal("appServiceStop", vi.fn(() => 2));
+    vi.stubGlobal("appServiceStart", vi.fn(() => {
+      throw new Error("App Service unavailable");
+    }));
+    const watchConfig = requireWatchConfiguration();
+    const watch = Object.assign({}, watchConfig, {
+      state: { ...watchConfig.state },
+      collectAndDeliverHealth: vi.fn(),
+    });
+
+    watch.acquireHealthOwnership();
+    const ownership = await watch.state.healthOwnership;
+    expect(JSON.parse(values.get(STORAGE_KEYS.HEALTH_SERVICE_STATUS) ?? "{}")).toEqual({
+      state: "stopped",
+    });
+
+    await expect(ownership?.release()).rejects.toThrow("App Service unavailable");
+    expect(JSON.parse(values.get(STORAGE_KEYS.HEALTH_SERVICE_STATUS) ?? "{}")).toEqual({
+      state: "error",
+      reason: "App Service unavailable",
+    });
+  });
+
+  it("keeps the normal transfer barrier until phone persistence is confirmed", async () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("settings", {
+      settingsStorage: {
+        getItem: vi.fn((key: string) => values.get(key) ?? null),
+        removeItem: vi.fn((key: string) => values.delete(key)),
+        setItem: vi.fn((key: string, value: string) => values.set(key, value)),
+      },
+    });
+    const callbacks = new Map<string, (event: { data: Record<string, unknown> }) => void>();
+    const task = {
+      on: vi.fn((event: string, callback: (event: { data: Record<string, unknown> }) => void) => {
+        callbacks.set(event, callback);
+      }),
+    };
+    let confirmPersistence: ((value: { ok: true }) => void) | undefined;
+    const watchConfig = requireWatchConfiguration();
+    const transfer = {
+      observedHzX100: 2_500,
+      path: "data://normal_a.bin",
+      sampleCount: 120,
+      sessionStartMs: 1_720_000_000_000,
+      slot: "A" as const,
+    };
+    const watch = Object.assign({}, watchConfig, {
+      state: { ...watchConfig.state, pendingImuA: transfer },
+      sendFile: vi.fn(() => task),
+      request: vi.fn(
+        () =>
+          new Promise<{ ok: true }>((resolve) => {
+            confirmPersistence = resolve;
+          }),
+      ),
+    });
+
+    watch.startTransfer(transfer);
+    callbacks.get("change")?.({ data: { readyState: "transferred" } });
+
+    expect(watch.state.transferTask).toBe(task);
+    confirmPersistence?.({ ok: true });
+    await vi.waitFor(() => expect(watch.state.transferTask).toBeNull());
+    expect(watch.state.pendingImuA).toBeNull();
+  });
+
+  it("queues a finalized normal segment when rotating to the next file fails", () => {
+    const completed = {
+      path: "data://normal_a.bin",
+      sampleCount: 120,
+      observedHzX100: 2_500,
+      hasGyroscope: true,
+      accelFreqMode: 1,
+      gyroFreqMode: 1,
+      sessionStartMs: 1_720_000_000_000,
+    };
+    const controller = {
+      active: false,
+      rotate: vi.fn(() => completed),
+    };
+    const startTransfer = vi.fn();
+    const setPendingImu = vi.fn();
+    const activeFile: "A" = "A";
+    const inactiveFile: "B" = "B";
+    const watchConfig = requireWatchConfiguration();
+    const watch = Object.assign({}, watchConfig, {
+      state: {
+        ...watchConfig.state,
+        activeFile,
+        imuController: controller,
+        logging: true,
+        transferTask: null,
+      },
+      filePathForSlot: (slot: "A" | "B") => `data://normal_${slot.toLowerCase()}.bin`,
+      inactiveFileSlot: () => inactiveFile,
+      pendingImu: () => null,
+      publishSessionStatus: vi.fn(),
+      setPendingImu,
+      startTransfer,
+      writeMetaFile: vi.fn(),
+    });
+    controller.rotate.mockImplementation(() => {
+      watch.state.logging = false;
+      watch.state.imuController = null;
+      return completed;
+    });
+
+    watch.swapAndTransfer();
+
+    expect(setPendingImu).toHaveBeenCalledWith("A", { ...completed, slot: "A" });
+    expect(startTransfer).toHaveBeenCalledWith({ ...completed, slot: "A" });
+    expect(watch.state.logging).toBe(false);
+    expect(watch.state.activeFile).toBe("A");
+    expect(watch.state.imuController).toBeNull();
+  });
+
+  it("does not acknowledge a watch binary backup until the phone registry contains it", async () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("settings", {
+      settingsStorage: {
+        getItem: vi.fn((key: string) => values.get(key) ?? null),
+        removeItem: vi.fn((key: string) => values.delete(key)),
+        setItem: vi.fn((key: string, value: string) => values.set(key, value)),
+      },
+    });
+    const side = Object.assign({}, requireSideConfiguration());
+    const response = await new Promise<{ error: unknown; result: unknown }>((resolve) => {
+      side.onRequest(
+        {
+          method: "imu.transferComplete",
+          params: { segmentId: "segment-missing", source: "zepp" },
+        },
+        (error, result) => resolve({ error, result }),
+      );
+    });
+
+    expect(response.error).toMatchObject({
+      message: "Phone has not persisted the IMU binary backup yet.",
+    });
+    expect(response.result).toBeNull();
+  });
+
+  it("surfaces registry persistence failure instead of marking a received backup done", () => {
+    const values = new Map<string, string>();
+    values.set(STORAGE_KEYS.IMU_SYNC_STATUS, JSON.stringify({ state: "done", uploaded: 1 }));
+    const persistenceError = new Error("Settings storage unavailable");
+    vi.stubGlobal("settings", {
+      settingsStorage: {
+        getItem: vi.fn((key: string) => values.get(key) ?? null),
+        removeItem: vi.fn((key: string) => values.delete(key)),
+        setItem: vi.fn((key: string, value: string) => {
+          if (key === STORAGE_KEYS.PHONE_IMU_FILES) throw persistenceError;
+          values.set(key, value);
+        }),
+      },
+    });
+    const side = Object.assign({}, requireSideConfiguration());
+
+    side.onReceivedFile({
+      fileName: "normal_a.bin",
+      filePath: "data://inbox/normal_a.bin",
+      params: { segmentId: "segment-1", source: "zepp", sampleCount: "120" },
+      on(event, callback) {
+        if (event === "change") callback({ data: { readyState: "transferred" } });
+      },
+    });
+
+    expect(JSON.parse(values.get(STORAGE_KEYS.TRANSFER_PROGRESS) ?? "{}")).toMatchObject({
+      state: "error",
+      segmentId: "segment-1",
+      source: "zepp",
+      reason: "Settings storage unavailable",
+    });
+    expect(JSON.parse(values.get(STORAGE_KEYS.IMU_SYNC_STATUS) ?? "{}")).toMatchObject({
+      state: "done",
+      uploaded: 1,
+    });
+  });
+
+  it("keeps a binary transfer failure visible after a successful chunk drain", async () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("settings", {
+      settingsStorage: {
+        getItem: vi.fn((key: string) => values.get(key) ?? null),
+        removeItem: vi.fn((key: string) => values.delete(key)),
+        setItem: vi.fn((key: string, value: string) => values.set(key, value)),
+      },
+    });
+    const side = Object.assign({}, requireSideConfiguration());
+    side.onReceivedFile({
+      params: { segmentId: "segment-1", source: "zepp" },
+      on(event, callback) {
+        if (event === "change") {
+          callback({ data: { readyState: "error", error: "Bluetooth interrupted" } });
+        }
+      },
+    });
+
+    const envelope = createImuChunkEnvelope({
+      connectionType: "zepp",
+      installId: "install-1",
+      segmentId: "segment-1",
+      sessionStartMs: 1_720_000_000_000,
+      samples: [{ tMs: 0, ax: 1, ay: 2, az: 3, gx: 4, gy: 5, gz: 6 }],
+    });
+    await new Promise<void>((resolve, reject) => {
+      side.onRequest({ method: "imu.uploadChunk", params: { envelope } }, (error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+    await Promise.resolve();
+
+    expect(JSON.parse(values.get(STORAGE_KEYS.TRANSFER_PROGRESS) ?? "{}")).toMatchObject({
+      state: "error",
+      reason: "Bluetooth interrupted",
+    });
   });
 
   it("does not start a new pairing session after a connection-change disconnect notification", async () => {

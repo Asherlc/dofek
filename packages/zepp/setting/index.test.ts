@@ -16,8 +16,22 @@ interface ButtonConfiguration {
   onClick(): void;
 }
 
+interface TextInputConfiguration {
+  label?: string;
+  title?: string;
+}
+
+interface ImageConfiguration {
+  src: string;
+  alt?: string;
+  width?: number;
+  height?: number;
+}
+
 let configuration: SettingConfiguration | undefined;
 const buttonConfigurations: ButtonConfiguration[] = [];
+const imageConfigurations: ImageConfiguration[] = [];
+const textInputConfigurations: TextInputConfiguration[] = [];
 const renderedViews: unknown[] = [];
 
 function isSettingConfiguration(value: unknown): value is SettingConfiguration {
@@ -45,13 +59,21 @@ beforeAll(async () => {
     buttonConfigurations.push(value);
     return value;
   });
-  vi.stubGlobal("TextInput", (value: unknown) => value);
-  vi.stubGlobal("ToggleSwitch", (value: unknown) => value);
+  vi.stubGlobal("TextInput", (value: TextInputConfiguration) => {
+    textInputConfigurations.push(value);
+    return value;
+  });
+  vi.stubGlobal("Image", (value: ImageConfiguration) => {
+    imageConfigurations.push(value);
+    return value;
+  });
   await import("./index.ts");
 });
 
 beforeEach(() => {
   buttonConfigurations.length = 0;
+  imageConfigurations.length = 0;
+  textInputConfigurations.length = 0;
   renderedViews.length = 0;
 });
 
@@ -72,35 +94,135 @@ function button(label: string): ButtonConfiguration {
 }
 
 describe("normal Zepp app settings", () => {
-  it("shows pairing, authoritative status, and connection management controls", () => {
+  it("builds with the documented Zepp Settings component globals", () => {
+    expect(() => buildWith({})).not.toThrow();
+    expect(JSON.stringify(renderedViews)).toContain("Advanced Foreground Recorder");
+    expect(JSON.stringify(renderedViews)).toContain(
+      "Gyroscope data is included automatically when the watch supports it.",
+    );
+  });
+
+  it("uses the documented label property for text inputs", () => {
+    buildWith({});
+
+    expect(textInputConfigurations.map(({ label }) => label)).toEqual([
+      "Sample rate mode (0=LOW, 1=NORMAL, 2=HIGH)",
+      "Dofek Server URL",
+      "Dofek Email",
+      "Dofek Password",
+    ]);
+    expect(textInputConfigurations.every(({ title }) => title === undefined)).toBe(true);
+  });
+
+  it("renders pairing QR codes with the Zepp Image component", () => {
+    expect(() =>
+      buildWith({
+        [STORAGE_KEYS.PAIRING_QR_IMAGE_URL]: "https://dofek.example/pairing.svg",
+      }),
+    ).not.toThrow();
+    expect(imageConfigurations).toEqual([
+      {
+        src: "https://dofek.example/pairing.svg",
+        alt: "Dofek pairing QR code",
+        width: 220,
+        height: 220,
+        style: { margin: "0 auto 1em", display: "block" },
+      },
+    ]);
+  });
+
+  it("shows only management controls for a verified connection", () => {
     buildWith({
+      [STORAGE_KEYS.DOFEK_API_TOKEN]: "verified-token",
       [STORAGE_KEYS.DOFEK_CONNECTION_STATUS]: JSON.stringify({
         state: "connected",
         reason: "Verified by Dofek",
       }),
     });
 
+    expect(buttonConfigurations.map(({ label }) => label)).not.toContain("Create QR / short code");
+    expect(buttonConfigurations.map(({ label }) => label)).not.toContain("Log in and connect");
     expect(buttonConfigurations.map(({ label }) => label)).toEqual(
-      expect.arrayContaining([
-        "Create QR / short code",
-        "Log in and connect",
-        "Check connection",
-        "Disconnect Dofek",
-      ]),
+      expect.arrayContaining(["Check connection", "Disconnect Dofek", "Sync health data now"]),
     );
     expect(JSON.stringify(renderedViews)).toContain("Connection: connected");
     expect(JSON.stringify(renderedViews)).toContain("Reason: Verified by Dofek");
   });
 
-  it("sends pairing, verification, and disconnect commands", () => {
+  it("shows only pairing and login actions while disconnected", () => {
+    buildWith({});
+
+    expect(buttonConfigurations.map(({ label }) => label)).toEqual(
+      expect.arrayContaining(["Create QR / short code", "Log in and connect"]),
+    );
+    expect(buttonConfigurations.map(({ label }) => label)).not.toContain("Check connection");
+    expect(buttonConfigurations.map(({ label }) => label)).not.toContain("Disconnect Dofek");
+    expect(buttonConfigurations.map(({ label }) => label)).not.toContain("Sync health data now");
+  });
+
+  it("requires disconnect before reconnecting when an errored token remains", () => {
+    buildWith({
+      [STORAGE_KEYS.DOFEK_API_TOKEN]: "stored-token",
+      [STORAGE_KEYS.DOFEK_CONNECTION_STATUS]: JSON.stringify({
+        state: "error",
+        reason: "Phone temporarily offline",
+      }),
+    });
+
+    expect(buttonConfigurations.map(({ label }) => label)).toEqual(
+      expect.arrayContaining(["Check connection", "Disconnect Dofek"]),
+    );
+    expect(buttonConfigurations.map(({ label }) => label)).not.toContain("Create QR / short code");
+    expect(buttonConfigurations.map(({ label }) => label)).not.toContain("Log in and connect");
+  });
+
+  it("shows an actionable motion sync failure", () => {
+    buildWith({
+      [STORAGE_KEYS.IMU_SYNC_STATUS]: JSON.stringify({
+        state: "error",
+        reason: "Dofek connection expired. Connect again.",
+      }),
+    });
+
+    expect(JSON.stringify(renderedViews)).toContain("Motion sync: error");
+    expect(JSON.stringify(renderedViews)).toContain(
+      "Motion reason: Dofek connection expired. Connect again.",
+    );
+  });
+
+  it("shows binary transfer and background service failures independently", () => {
+    buildWith({
+      [STORAGE_KEYS.TRANSFER_PROGRESS]: JSON.stringify({
+        state: "error",
+        reason: "IMU transfer was canceled.",
+      }),
+      [STORAGE_KEYS.HEALTH_SERVICE_STATUS]: JSON.stringify({
+        state: "error",
+        reason: "Health service did not start.",
+      }),
+    });
+
+    expect(JSON.stringify(renderedViews)).toContain("Transfer: error");
+    expect(JSON.stringify(renderedViews)).toContain("Transfer reason: IMU transfer was canceled.");
+    expect(JSON.stringify(renderedViews)).toContain("Background health: error");
+    expect(JSON.stringify(renderedViews)).toContain(
+      "Background reason: Health service did not start.",
+    );
+  });
+
+  it("sends pairing, verification, and disconnect commands from their respective states", () => {
     const settingsStorage = buildWith({});
 
     button("Create QR / short code").onClick();
+    expect(settingsStorage.setItem).toHaveBeenCalledWith(STORAGE_KEYS.CMD_START_PAIRING, "1");
+
+    const connectedStorage = buildWith({
+      [STORAGE_KEYS.DOFEK_API_TOKEN]: "verified-token",
+      [STORAGE_KEYS.DOFEK_CONNECTION_STATUS]: JSON.stringify({ state: "connected" }),
+    });
     button("Check connection").onClick();
     button("Disconnect Dofek").onClick();
-
-    expect(settingsStorage.setItem).toHaveBeenCalledWith(STORAGE_KEYS.CMD_START_PAIRING, "1");
-    expect(settingsStorage.setItem).toHaveBeenCalledWith(STORAGE_KEYS.CMD_CHECK_CONNECTION, "1");
-    expect(settingsStorage.setItem).toHaveBeenCalledWith(STORAGE_KEYS.CMD_DISCONNECT, "1");
+    expect(connectedStorage.setItem).toHaveBeenCalledWith(STORAGE_KEYS.CMD_CHECK_CONNECTION, "1");
+    expect(connectedStorage.setItem).toHaveBeenCalledWith(STORAGE_KEYS.CMD_DISCONNECT, "1");
   });
 });

@@ -1,4 +1,5 @@
 import { log as Logger } from "@zos/utils";
+import { ensureInstallId } from "../src/install-id.ts";
 import {
   enqueueTelemetryException,
   restoreBufferedTelemetryEvents,
@@ -25,4 +26,8 @@ export function captureException(error: unknown, context: Record<string, unknown
 
 export function loadWatchTelemetryBuffer(): void {
   restoreBufferedTelemetryEvents(settings.settingsStorage.getItem(STORAGE_KEYS.TELEMETRY_BUFFER));
+}
+
+export function ensureWatchInstallId(): string {
+  return ensureInstallId(settings.settingsStorage);
 }

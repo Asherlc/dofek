@@ -1,6 +1,6 @@
 # Dofek Zepp
 
-Zepp OS mini program that captures raw accelerometer (and optional gyroscope) samples on the watch, buffers them to a watch-side binary file, and exports the file to the phone over BLE. It also uploads daily totals and timestamped heart-rate, stress, body-surface-temperature, and blood-oxygen history through the phone-side Side Service. Zepp documents Side Service as the phone-side runtime; this app uses `@zeppos/zml` messaging between the watch app and Side Service, and the Side Service uses Fetch API for Dofek server calls ([Side Service intro](https://docs.zepp.com/docs/guides/framework/side-service/intro/), [Fetch API](https://docs.zepp.com/docs/reference/side-service-api/fetch/), [HeartRate history](https://docs.zepp.com/docs/reference/device-app-api/newAPI/sensor/HeartRate/), [BodyTemperature history](https://docs.zepp.com/docs/reference/device-app-api/newAPI/sensor/BodyTemperature/), [BloodOxygen history](https://docs.zepp.com/docs/reference/device-app-api/newAPI/sensor/BloodOxygen/)).
+Zepp OS mini program that captures raw accelerometer samples and automatically includes gyroscope samples when the watch exposes that sensor. It buffers motion samples to watch-side binary files and exports them to the phone over BLE. It also uploads daily totals and timestamped heart-rate, stress, body-surface-temperature, and blood-oxygen history through the phone-side Side Service. Zepp documents Side Service as the phone-side runtime; this app uses `@zeppos/zml` messaging between the watch app and Side Service, and the Side Service uses Fetch API for Dofek server calls ([Side Service intro](https://docs.zepp.com/docs/guides/framework/side-service/intro/), [Fetch API](https://docs.zepp.com/docs/reference/side-service-api/fetch/), [HeartRate history](https://docs.zepp.com/docs/reference/device-app-api/newAPI/sensor/HeartRate/), [BodyTemperature history](https://docs.zepp.com/docs/reference/device-app-api/newAPI/sensor/BodyTemperature/), [BloodOxygen history](https://docs.zepp.com/docs/reference/device-app-api/newAPI/sensor/BloodOxygen/)).
 
 The normal watch app also pulls completed workout start times and durations through Zepp's official [`Workout.getHistory()`](https://docs.zepp.com/docs/reference/device-app-api/newAPI/sensor/Workout/) API. A separately packaged Workout Extension captures the richer live metrics exposed by [`getSportData()`](https://docs.zepp.com/docs/reference/device-app-api/newAPI/app-access/getSportData/) on API_LEVEL 3.6+ devices.
 
@@ -21,21 +21,25 @@ Configured in `app.json` as screen-width target groups.
 ```
 ┌──────────────────── Watch ────────────────────┐
 │ Device App page (page/index.ts)               │
-│  • checkSensor() + Accelerometer/Gyroscope    │
-│  • onChange → memory buffer → flush chunks      │
-│  • writes data://imu/session.bin              │
+│  • user-started foreground motion recorder    │
+│  • automatic gyro capability detection        │
+│  • dual files permit record/transfer overlap  │
 ├───────────────────────────────────────────────┤
-│ App Service (app-service/imu_service.ts)      │
-│  • persists low-power health samples/minute   │
+│ App Service (app-service/health_service.ts)   │
+│  • persists low-power health each minute      │
 │  • reconciles completed workout history       │
 │  • CANNOT access IMU sensors (platform limit) │
+├───────────────────────────────────────────────┤
+│ Workout Extension (separate package)          │
+│  • automatic focused motion segments          │
+│  • live system Workout metrics                │
 └───────────────────────┬───────────────────────┘
                         │ TransferFile (BLE)
                         ▼
 ┌──────────────────── Phone ────────────────────┐
 │ Side Service (app-side/index.ts)              │
-│  • onReceivedFile → saves export path         │
-│  • uploads health summaries to Dofek          │
+│  • durably registers received motion files    │
+│  • uploads health and bounded motion chunks   │
 │  • pairs QR/short code or password login      │
 │ Settings App (setting/index.ts)               │
 │  • deliberate start/stop, preferences, export │
@@ -43,24 +47,30 @@ Configured in `app.json` as screen-width target groups.
 └───────────────────────────────────────────────┘
 ```
 
-The separately packaged Workout Extension runs inside Zepp's system Workout app on API_LEVEL 3.6+ devices. It samples every field exposed by `getSportData()`—speed, pace, distance, duration, calories, cadence, altitude, ascent, vertical speed, and supported count/downhill fields—plus current heart rate. Samples are batched once per minute, retried after transient phone/network failures, and ingested as activity-linked metric-stream rows. Zepp pauses extension callbacks while its page is not focused, so the normal app and continuous App Service provide historical reconciliation and low-power background continuity ([Workout Extension lifecycle](https://docs.zepp.com/docs/guides/workout-extension/quick-start/), [`getSportData()`](https://docs.zepp.com/docs/reference/device-app-api/newAPI/app-access/getSportData/)).
+The separately packaged Workout Extension runs inside Zepp's system Workout app on API_LEVEL 3.6+ devices. While its widget is focused, it automatically captures accelerometer data, gyroscope data when available, and live values exposed by `getSportData()`—speed, pace, distance, duration, cadence, altitude, ascent, vertical speed, and supported count/downhill fields—plus current heart rate. It intentionally excludes device-estimated calories. Live metric samples are durably batched once per minute and retried after transient phone/network failures. Motion data uses the same collector, binary format, display lease, persisted transfer manifest, phone outbox, and BLE file receiver as the normal app, with separate alternating files so one completed segment can transfer while the next records. Zepp pauses extension callbacks while its page is not focused, so the extension stops its motion segment on pause and starts a new one on resume ([Workout Extension lifecycle](https://docs.zepp.com/docs/guides/workout-extension/quick-start/), [`getSportData()`](https://docs.zepp.com/docs/reference/device-app-api/newAPI/app-access/getSportData/)).
 
 ### Background collection
 
-The normal watch app starts a continuously running App Service after the user grants `device:os.bg_service`. The service uses `Time.onPerMinute()`—which Zepp supports even though ordinary `setTimeout`/`setInterval` calls are unavailable—to persist minute-level heart rate, blood oxygen, body temperature, stress, and completed workout history. The foreground app uploads the durable rolling seven-day buffer; stable sample identifiers make repeated catch-up uploads idempotent. On API_LEVEL 4.0+ watches, `reload: true` also asks Zepp to restart the service after system restarts, power-mode changes, app updates, and related system-state changes; API_LEVEL 3.x watches restart collection whenever Dofek is reopened. Accelerometer, gyroscope, and geolocation remain foreground-only because Zepp explicitly blocks high-power sensors in App Service ([App Service capabilities and limitations](https://docs.zepp.com/docs/guides/framework/device/app-service/), [App Service `start`](https://docs.zepp.com/docs/reference/device-app-api/newAPI/app-service/start/)).
+After the user grants `device:os.bg_service`, the normal watch app keeps a continuously running App Service while its UI is closed. The service uses `Time.onPerMinute()`—which Zepp supports even though ordinary `setTimeout`/`setInterval` calls are unavailable—to persist minute-level heart rate, blood oxygen, body temperature, stress, and completed workout history. It does not claim an unverified App Service-to-phone messaging path. Opening Dofek stops the service asynchronously before the foreground page reads or drains that outbox; closing the page restarts it. This single-owner handoff prevents App Service and page read-modify-write operations from overwriting one another. On API_LEVEL 4.0+ watches, `reload: true` asks Zepp to restart the service after documented system-state changes. Accelerometer, gyroscope, and geolocation remain foreground-only because Zepp explicitly blocks high-power sensors in App Service ([App Service capabilities and limitations](https://docs.zepp.com/docs/guides/framework/device/app-service/), [App Service `start`](https://docs.zepp.com/docs/reference/device-app-api/newAPI/app-service/start/), [App Service `stop`](https://docs.zepp.com/docs/reference/device-app-api/newAPI/app-service/stop/)).
+
+### Motion capture and battery behavior
+
+There is no gyroscope preference. Each foreground motion session probes the watch once and includes gyroscope samples automatically when available, using the same requested frequency mode as the accelerometer. This maximizes sensor coverage without presenting a control that could silently make otherwise comparable sessions different.
+
+High-rate motion capture is deliberately tied to visible, active UI lifecycles. The normal app records only after **Start session** and keeps its page open; the Workout Extension records automatically only while its widget has focus. Both acquire the same display lease for the active segment, using Zepp's documented wrist-screen-off and page-bright-time controls, then restore the normal display policy when the segment stops ([`pauseDropWristScreenOff`](https://docs.zepp.com/docs/v2/reference/device-app-api/newAPI/display/pauseDropWristScreenOff/), [`resetDropWristScreenOff`](https://docs.zepp.com/docs/v2/reference/device-app-api/newAPI/display/resetDropWristScreenOff/), [`setPageBrightTime`](https://docs.zepp.com/docs/reference/device-app-api/newAPI/display/setPageBrightTime/), [`resetPageBrightTime`](https://docs.zepp.com/docs/reference/device-app-api/newAPI/display/resetPageBrightTime/)). Keeping the display awake and sampling both IMU sensors costs materially more battery than the minute-level App Service; Zepp does not publish a device-independent current-draw figure, so the app records measured callback rate and treats hardware battery testing as the source of truth.
 
 ### Why TransferFile instead of BLE messaging?
 
-Bulk IMU logs are megabytes, while BLE messaging is oriented toward small binary payloads and manual framing. **TransferFile** (API 3.0+) provides queued file transfer, progress events, and completion/error states — better backpressure handling for large exports. Control commands (start/stop/export) still use lightweight Side Service ↔ Device App messages via `@zeppos/zml`.
+Bulk IMU logs are megabytes, while BLE messaging is oriented toward bounded payloads and manual framing. **TransferFile** (API 3.0+) provides queued file transfer, progress events, and completion/error states for a redundant binary backup. Each completed file slot is committed to a durable watch manifest with a temporary write and rename before transfer, restored on restart, and retained through failed or canceled transfers until the phone confirms that it registered the received path. During a connected session, the shared collector also commits each small versioned chunk as an independent watch-side record before requesting delivery. It removes that record only after the phone acknowledges persistence and replays pending records after resume or restart. The phone stores chunk payloads as independent Settings records behind a compact queue index, updates only the bounded upload batch during failures, and retains them until the server acknowledges persistence. The binary file remains a local backup rather than depending on an undocumented Side Service file-reading API ([TransferFile](https://docs.zepp.com/docs/reference/device-app-api/newAPI/transfer-file/TransferFile/), [`readdirSync`](https://docs.zepp.com/docs/reference/device-app-api/newAPI/fs/readdirSync/), [`renameSync`](https://docs.zepp.com/docs/reference/device-app-api/newAPI/fs/renameSync/), [Side Service Fetch API](https://docs.zepp.com/docs/v2/reference/side-service-api/fetch/)).
 
 ### Documented platform limits (called out in code)
 
-1. **App Service cannot use Accelerometer/Gyroscope** — high-power sensors are blocked in background service ([App Service guide](https://docs.zepp.com/docs/guides/framework/device/app-service/)). IMU sampling runs in the Device App page; App Service collects only supported low-power health sensors and completed workout history.
+1. **App Service cannot use Accelerometer/Gyroscope** — high-power sensors are blocked in background service ([App Service guide](https://docs.zepp.com/docs/guides/framework/device/app-service/)). IMU sampling runs only in the visible Device App page or focused Workout Extension widget; App Service collects only supported low-power health sensors and completed workout history.
 2. **App Service has no ordinary JavaScript timers** — `setTimeout` / `setInterval` are unavailable. Background collection uses the supported `Time.onPerMinute()` sensor callback instead ([App Service guide](https://docs.zepp.com/docs/guides/framework/device/app-service/)).
-3. **App Service `@zos/fs` writes** are only guaranteed when the screen is off or in AOD; the page performs normal chunked flushes while logging.
+3. **App Service `@zos/fs` writes** are only guaranteed when the screen is off or in AOD; the foreground recorders perform normal chunked flushes while logging.
 4. **Sample rate is not specified in Hz by Zepp docs** — only `FREQ_MODE_LOW | NORMAL | HIGH`. The app selects the highest mode ≤ user preference and records the **measured delivered rate** from `onChange` callbacks.
 5. **`onChange` delivery** — treated as one sample per callback (per API examples). The header stores measured Hz; verify on hardware.
-6. **Background IMU** — when the mini program UI is destroyed, sensor access stops. `setWakeUpRelaunch(true)` reopens the app after wake, but continuous off-body/screen-off high-rate IMU is not supported by the platform.
+6. **Background IMU** — when the mini program UI is destroyed or the Workout Extension loses focus, sensor access stops. Continuous off-body/screen-off high-rate IMU is not supported by the platform ([App Service capabilities and limitations](https://docs.zepp.com/docs/guides/framework/device/app-service/)).
 
 `configVersion` is **v3** because `app-service` module registration requires v3 schema, while APIs used are Zepp OS 2.0+ `@zos/*` modules.
 
@@ -129,7 +139,7 @@ The package scripts invoke the local `@zeppos/zeus-cli` dependency through `tool
 pnpm dev
 ```
 
-Choose a simulator profile matching one of the supported target widths. Simulator sensor values are synthetic; delivered Hz will not match hardware.
+Choose a simulator profile matching one of the supported target widths. Validate both a round and square target, plus the independent Workout Extension package. Simulator sensor values are synthetic and cannot prove physical sensor availability, delivered Hz, BLE reliability with the phone app suspended, or battery draw; those require a paired watch.
 
 ### On-device (Developer / Bridge mode)
 
@@ -164,6 +174,25 @@ CI versions each build as `0.0.<unix-timestamp>` with code `<timestamp>`, so ver
 1. Download both `.zab` files from the latest GitHub Release.
 2. Upload the normal watch app package to its existing listing in [console.zepp.com](https://console.zepp.com/).
 3. Upload the Workout Extension package to its independent Workout Extension listing and submit both upgrades for review. Zepp requires a separate app ID and submission for a Workout Extension ([Workout Extension quick start](https://docs.zepp.com/docs/guides/workout-extension/quick-start/)).
+
+### Store review checklist
+
+Before submitting either package:
+
+1. Open its Settings page in the Zepp mobile app and verify that the complete
+   page renders, including input labels and the pairing QR image. Settings Apps
+   render only the components documented by Zepp's
+   [Settings App UI API](https://docs.zepp.com/docs/reference/app-settings-api/ui/).
+2. Upload three or more device-appropriate images from `store-screenshots/`,
+   as Zepp recommends. Each preview must be a 360×360 PNG. Keep the canvas
+   outside the round or rounded-rectangular device display transparent, and
+   maximize the display within the canvas as required by Zepp's
+   [App Introduction Screenshots specification](https://docs.zepp.com/docs/distribute/#app-introduction-screenshots).
+3. Use a separate 240×240 store icon in the Console. Do not upload the 248×248
+   system icon from `assets/`; Zepp specifies different dimensions for
+   [system and store icons](https://docs.zepp.com/docs/guides/faq/icon-faq/#q3-what-sizes-do-icon-applications-need-to-output).
+4. Build both packages and upload the newly generated ZAB files rather than a
+   previous release artifact.
 
 ## Output file location
 
@@ -210,7 +239,7 @@ zepp/
   app.json              # Zepp OS API_LEVEL 3.0+ targets + modules
   app.ts                # app entry
   page/index.ts         # watch UI + sensor collector
-  app-service/imu_service.ts
+  app-service/health_service.ts
   workout-extension/    # independently packaged live Workout app extension
   app-side/index.ts     # phone BLE receiver
   setting/index.ts      # phone controls
@@ -220,7 +249,7 @@ zepp/
 
 ## Operational notes
 
-- Recording stays idle until the user starts a session from the watch or phone Settings. Settings sends the command through the Side Service, so the Dofek watch app must be open ([Overall Architecture](https://docs.zepp.com/docs/guides/architecture/arc/)).
+- The normal app's advanced recorder stays idle until the user starts a session from the watch or phone Settings. Settings sends the command through the Side Service, so the Dofek watch app must be open ([Overall Architecture](https://docs.zepp.com/docs/guides/architecture/arc/)). The Workout Extension starts and stops its own focused motion segments automatically with its widget lifecycle.
 - Stop finalizes and transfers the active session before another session can start. Manual export retries a finalized session when needed.
 - BLE throughput varies with connection quality; large sessions may take minutes to transfer.
-- If gyro is disabled or absent (`checkSensor(Gyroscope) === false`), records omit gyro fields.
+- If the gyroscope is absent (`checkSensor(Gyroscope) === false`), records contain accelerometer fields only; there is no user-facing gyro toggle.

@@ -82,8 +82,13 @@ function createMockDatabase(
       };
     }),
   }));
-  const db = { execute, insert } satisfies import("dofek/db").Database;
-  return { db, execute, insert, insertedValues };
+  const transactionDatabase = { execute, insert };
+  const transaction = vi.fn(
+    async <T>(operation: (database: typeof transactionDatabase) => Promise<T>): Promise<T> =>
+      operation(transactionDatabase),
+  );
+  const db = { execute, insert, transaction } satisfies import("dofek/db").Database;
+  return { db, execute, insert, insertedValues, transaction, transactionDatabase };
 }
 
 function createTestApp(
@@ -122,11 +127,11 @@ class InProcessRequest extends IncomingMessage {
   override method: string;
   override url: string;
 
-  constructor(socket: Socket, payload: string, headers: IncomingHttpHeaders) {
+  constructor(socket: Socket, payload: string, headers: IncomingHttpHeaders, url: string) {
     super(socket);
     this.headers = headers;
     this.method = "POST";
-    this.url = "/api/ingest/zos-health";
+    this.url = url;
     this.push(payload);
     this.push(null);
   }
@@ -138,14 +143,35 @@ async function post(
   app: express.Express,
   body: unknown,
   headers: Record<string, string> = {},
+  rawBody = false,
+  url = "/api/ingest/zos-health",
 ): Promise<{ status: number; body: unknown }> {
-  const payload = JSON.stringify(body);
+  const transportBody = rawBody
+    ? body
+    : {
+        version: 1,
+        batchId: "batch-test",
+        source: { connectionType: "zepp", installId: "install-test" },
+        events: [
+          {
+            eventId: "event-test",
+            createdAt: "2024-07-03T10:48:20.000Z",
+            payload: body,
+          },
+        ],
+      };
+  const payload = JSON.stringify(transportBody);
   const socket = new InProcessSocket();
-  const request = new InProcessRequest(new Socket(), payload, {
-    "content-type": "application/json",
-    "content-length": Buffer.byteLength(payload).toString(),
-    ...headers,
-  });
+  const request = new InProcessRequest(
+    new Socket(),
+    payload,
+    {
+      "content-type": "application/json",
+      "content-length": Buffer.byteLength(payload).toString(),
+      ...headers,
+    },
+    url,
+  );
 
   const response: ServerResponse = Reflect.construct(ServerResponse, [request]);
   Reflect.apply(response.assignSocket, response, [socket]);
@@ -228,22 +254,34 @@ describe("createIngestZosHealthRouter", () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
-  it("returns 400 when the payload has no ingest sections", async () => {
+  it("rejects an event whose payload has no ingest sections", async () => {
     const { db, execute, insert } = createMockDatabase();
 
     const response = await post(createTestApp(db), {}, { authorization: "Bearer token-123" });
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(200);
     expect(response.body).toEqual({
-      error:
-        "At least one of dailyMetrics, sleepSessions, activities, backgroundSamples, liveWorkoutSamples, or watchSummary is required.",
+      status: "ok",
+      acceptedEventIds: [],
+      rejected: [
+        {
+          eventId: "event-test",
+          issues: [
+            {
+              path: "$",
+              message:
+                "At least one of dailyMetrics, sleepSessions, activities, backgroundSamples, liveWorkoutSamples, or watchSummary is required.",
+            },
+          ],
+        },
+      ],
     });
     expect(execute).not.toHaveBeenCalled();
     expect(insert).not.toHaveBeenCalled();
   });
 
   it("retains the watch's daily summary and timestamped sensor history", async () => {
-    const { db, execute } = createMockDatabase();
+    const { db, execute, transactionDatabase } = createMockDatabase();
 
     const response = await post(
       createTestApp(db, { publishRows: vi.fn(async () => []) }),
@@ -275,7 +313,7 @@ describe("createIngestZosHealthRouter", () => {
     expect(execute).toHaveBeenCalledTimes(2);
     expect(routeMocks.writeMetricStreamRows).toHaveBeenCalledWith(
       expect.objectContaining({
-        database: db,
+        database: transactionDatabase,
         rows: expect.arrayContaining([
           expect.objectContaining({
             recordedAt: "2024-07-02T22:01:00.000Z",
@@ -305,7 +343,7 @@ describe("createIngestZosHealthRouter", () => {
     );
   });
 
-  it("returns 400 when the payload shape is invalid", async () => {
+  it("rejects an invalid event with actionable field paths", async () => {
     const { db, execute, insert } = createMockDatabase();
 
     const response = await post(
@@ -314,14 +352,149 @@ describe("createIngestZosHealthRouter", () => {
       { authorization: "Bearer token-123" },
     );
 
-    expect(response.status).toBe(400);
-    expect(response.body).toMatchObject({ error: "Invalid payload" });
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      status: "ok",
+      acceptedEventIds: [],
+      rejected: [
+        {
+          eventId: "event-test",
+          issues: [
+            { path: "dailyMetrics", message: "Invalid input: expected record, received string" },
+          ],
+        },
+      ],
+    });
+    expect(routeMocks.loggerWarn).toHaveBeenCalledWith(
+      '[ingest-zos] Rejected health events {"batchId":"batch-test","rejectedEventCount":1,"issuePaths":["dailyMetrics"]}',
+    );
     expect(execute).not.toHaveBeenCalled();
     expect(insert).not.toHaveBeenCalled();
   });
 
-  it("publishes background health samples to the metric stream", async () => {
+  it("commits valid siblings while rejecting only the invalid event", async () => {
+    const { db, execute } = createMockDatabase();
+    const response = await post(
+      createTestApp(db),
+      {
+        version: 1,
+        batchId: "batch-mixed",
+        source: { connectionType: "zepp", installId: "install-test" },
+        events: [
+          {
+            eventId: "valid-event",
+            createdAt: "2024-07-03T10:48:20.000Z",
+            payload: { dailyMetrics: { "2024-07-03": { steps: 1000 } } },
+          },
+          {
+            eventId: "invalid-event",
+            createdAt: "2024-07-03T10:49:20.000Z",
+            payload: { dailyMetrics: "private-health-value" },
+          },
+        ],
+      },
+      { authorization: "Bearer token-123" },
+      true,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      status: "ok",
+      acceptedEventIds: ["valid-event"],
+      rejected: [
+        {
+          eventId: "invalid-event",
+          issues: [
+            { path: "dailyMetrics", message: "Invalid input: expected record, received string" },
+          ],
+        },
+      ],
+    });
+    expect(execute).toHaveBeenCalled();
+    expect(routeMocks.loggerWarn.mock.calls.flat().join(" ")).not.toContain("private-health-value");
+  });
+
+  it("returns 400 for an invalid transport envelope without logging health values", async () => {
     const { db } = createMockDatabase();
+
+    const response = await post(
+      createTestApp(db),
+      { batchId: "batch-123", dailyMetrics: "private-health-value" },
+      { authorization: "Bearer token-123" },
+      true,
+    );
+
+    expect(response.status).toBe(400);
+    expect(routeMocks.loggerWarn).toHaveBeenCalledWith(
+      '[ingest-zos] Invalid envelope {"batchId":"batch-123","issueCount":3,"issuePaths":["events","source","version"]}',
+    );
+    expect(routeMocks.loggerWarn.mock.calls.flat().join(" ")).not.toContain("private-health-value");
+  });
+
+  it.each([[], {}, { batchId: 1 }, { batchId: " " }])(
+    "logs a null batch ID for malformed envelope %#",
+    async (body) => {
+      const { db } = createMockDatabase();
+
+      const response = await post(
+        createTestApp(db),
+        body,
+        { authorization: "Bearer token-123" },
+        true,
+      );
+
+      expect(response.status).toBe(400);
+      expect(routeMocks.loggerWarn).toHaveBeenCalledWith(expect.stringContaining('"batchId":null'));
+    },
+  );
+
+  it("accepts one watch summary and rejects a duplicate summary in the same batch", async () => {
+    const { db } = createMockDatabase();
+    const summary = {
+      collectedAt: 1_720_001_200_000,
+      date: "2024-07-03",
+      timezoneOffsetMinutes: 0,
+    };
+
+    const response = await post(
+      createTestApp(db, { publishRows: vi.fn(async () => []) }),
+      {
+        version: 1,
+        batchId: "batch-duplicate-summary",
+        source: { connectionType: "zepp", installId: "install-test" },
+        events: [
+          {
+            eventId: "summary-1",
+            createdAt: "2024-07-03T10:48:20.000Z",
+            payload: { watchSummary: summary },
+          },
+          {
+            eventId: "summary-2",
+            createdAt: "2024-07-03T10:49:20.000Z",
+            payload: { watchSummary: summary },
+          },
+        ],
+      },
+      { authorization: "Bearer token-123" },
+      true,
+    );
+
+    expect(response.body).toEqual({
+      status: "ok",
+      acceptedEventIds: ["summary-1"],
+      rejected: [
+        {
+          eventId: "summary-2",
+          issues: [
+            { path: "watchSummary", message: "Only one watch summary is allowed per batch." },
+          ],
+        },
+      ],
+    });
+  });
+
+  it("publishes background health samples to the metric stream", async () => {
+    const { db, transactionDatabase } = createMockDatabase();
     const metricStreamPublisher = {
       publishRows: vi.fn(async () => []),
     } satisfies import("../../../../src/metric-stream/redpanda-producer.ts").MetricStreamEventPublisher;
@@ -344,7 +517,7 @@ describe("createIngestZosHealthRouter", () => {
 
     expect(response.status).toBe(200);
     expect(routeMocks.writeMetricStreamBatch).toHaveBeenCalledWith(
-      db,
+      transactionDatabase,
       [
         {
           recordedAt: new Date("2024-07-03T10:48:20.000Z"),
@@ -371,7 +544,7 @@ describe("createIngestZosHealthRouter", () => {
         externalId: "1720000000",
       },
     ]);
-    const { db } = createMockDatabase();
+    const { db, transactionDatabase } = createMockDatabase();
     const metricStreamPublisher = {
       publishRows: vi.fn(async () => []),
     } satisfies import("../../../../src/metric-stream/redpanda-producer.ts").MetricStreamEventPublisher;
@@ -405,9 +578,9 @@ describe("createIngestZosHealthRouter", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(routeMocks.executeWithSchema).toHaveBeenCalledOnce();
+    expect(routeMocks.executeWithSchema).toHaveBeenCalledTimes(2);
     expect(routeMocks.writeMetricStreamRows).toHaveBeenCalledWith({
-      database: db,
+      database: transactionDatabase,
       publisher: metricStreamPublisher,
       rows: expect.arrayContaining([
         expect.objectContaining({
@@ -422,7 +595,7 @@ describe("createIngestZosHealthRouter", () => {
     });
   });
 
-  it("reports a missing activity for live workout samples", async () => {
+  it("rejects a live workout event whose activity is missing", async () => {
     routeMocks.executeWithSchema.mockResolvedValue([]);
     const { db } = createMockDatabase();
     const metricStreamPublisher = {
@@ -443,13 +616,187 @@ describe("createIngestZosHealthRouter", () => {
       { authorization: "Bearer token-123" },
     );
 
-    expect(response.status).toBe(500);
-    expect(response.body).toEqual({ error: "Failed to ingest health data." });
-    const capturedError = routeMocks.captureException.mock.calls[0]?.[0];
-    expect(capturedError).toEqual(
-      new Error("Zepp live workout activity missing-activity was not found."),
-    );
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      status: "ok",
+      acceptedEventIds: [],
+      rejected: [
+        {
+          eventId: "event-test",
+          issues: [
+            {
+              path: "liveWorkoutSamples",
+              message: "Activity missing-activity was not found.",
+            },
+          ],
+        },
+      ],
+    });
+    expect(routeMocks.captureException).not.toHaveBeenCalled();
     expect(metricStreamPublisher.publishRows).not.toHaveBeenCalled();
+  });
+
+  it("commits valid siblings when a live workout event references a missing activity", async () => {
+    routeMocks.executeWithSchema.mockResolvedValue([]);
+    const { db, execute } = createMockDatabase();
+
+    const response = await post(
+      createTestApp(db, { publishRows: vi.fn(async () => []) }),
+      {
+        version: 1,
+        batchId: "batch-missing-live-activity",
+        source: { connectionType: "zepp", installId: "install-test" },
+        events: [
+          {
+            eventId: "daily-event",
+            createdAt: "2024-07-03T10:48:20.000Z",
+            payload: { dailyMetrics: { "2024-07-03": { steps: 1000 } } },
+          },
+          {
+            eventId: "missing-live-event",
+            createdAt: "2024-07-03T10:49:20.000Z",
+            payload: {
+              liveWorkoutSamples: [
+                {
+                  externalId: "missing-activity",
+                  recordedAt: "2024-07-03T10:49:20.000Z",
+                  metrics: { duration: 312 },
+                },
+              ],
+            },
+          },
+        ],
+      },
+      { authorization: "Bearer token-123" },
+      true,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      status: "ok",
+      acceptedEventIds: ["daily-event"],
+      rejected: [
+        {
+          eventId: "missing-live-event",
+          issues: [
+            {
+              path: "liveWorkoutSamples",
+              message: "Activity missing-activity was not found.",
+            },
+          ],
+        },
+      ],
+    });
+    expect(execute).toHaveBeenCalled();
+  });
+
+  it("merges complementary daily metric fields from sibling events", async () => {
+    const { db, execute } = createMockDatabase();
+
+    const response = await post(
+      createTestApp(db),
+      {
+        version: 1,
+        batchId: "batch-daily-merge",
+        source: { connectionType: "zepp", installId: "install-test" },
+        events: [
+          {
+            eventId: "steps-event",
+            createdAt: "2024-07-03T10:48:20.000Z",
+            payload: { dailyMetrics: { "2024-07-03": { steps: 1000 } } },
+          },
+          {
+            eventId: "distance-event",
+            createdAt: "2024-07-03T10:49:20.000Z",
+            payload: { dailyMetrics: { "2024-07-03": { distanceKm: 1.2 } } },
+          },
+        ],
+      },
+      { authorization: "Bearer token-123" },
+      true,
+    );
+
+    expect(response.status).toBe(200);
+    const dailyMetricsQuery = new PgDialect().sqlToQuery(execute.mock.calls[1]?.[0]);
+    expect(dailyMetricsQuery.params).toEqual([
+      "2024-07-03",
+      "amazfit-zepp",
+      userId,
+      1000,
+      1.2,
+      null,
+      null,
+      null,
+      null,
+      null,
+    ]);
+  });
+
+  it("rejects datetime offsets outside the ISO 8601 range", async () => {
+    const { db, execute } = createMockDatabase();
+
+    const response = await post(
+      createTestApp(db),
+      {
+        backgroundSamples: [
+          {
+            recordedAt: "2024-07-03T10:48:20+99:00",
+            heartRate: 72,
+          },
+        ],
+      },
+      { authorization: "Bearer token-123" },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      status: "ok",
+      acceptedEventIds: [],
+      rejected: [
+        {
+          eventId: "event-test",
+          issues: [
+            {
+              path: "backgroundSamples.0.recordedAt",
+              message: "Invalid ISO 8601 timezone offset",
+            },
+          ],
+        },
+      ],
+    });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it.each(["+14:01", "+00:60"])("rejects invalid ISO offset boundary %s", async (offset) => {
+    const { db, execute } = createMockDatabase();
+
+    const response = await post(
+      createTestApp(db),
+      {
+        backgroundSamples: [{ recordedAt: `2024-07-03T10:48:20${offset}`, heartRate: 72 }],
+      },
+      { authorization: "Bearer token-123" },
+    );
+
+    expect(response.body).toMatchObject({
+      acceptedEventIds: [],
+      rejected: [{ issues: [{ path: "backgroundSamples.0.recordedAt" }] }],
+    });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("accepts the maximum ISO offset boundary", async () => {
+    const { db } = createMockDatabase();
+
+    const response = await post(
+      createTestApp(db, { publishRows: vi.fn(async () => []) }),
+      {
+        backgroundSamples: [{ recordedAt: "2024-07-03T10:48:20+14:00", heartRate: 72 }],
+      },
+      { authorization: "Bearer token-123" },
+    );
+
+    expect(response.body).toMatchObject({ acceptedEventIds: ["event-test"], rejected: [] });
   });
 
   it("stores daily metrics, sleep sessions with stages, and activities for a valid payload", async () => {
@@ -505,7 +852,11 @@ describe("createIngestZosHealthRouter", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ status: "ok" });
+    expect(response.body).toEqual({
+      status: "ok",
+      acceptedEventIds: ["event-test"],
+      rejected: [],
+    });
     expect(routeMocks.validateCompanionToken).toHaveBeenCalledWith(db, "token-123");
     expect(execute).toHaveBeenCalledTimes(3);
     const dailyMetricsQuery = new PgDialect().sqlToQuery(execute.mock.calls[1]?.[0]);
@@ -521,7 +872,7 @@ describe("createIngestZosHealthRouter", () => {
       21,
       44,
     ]);
-    expect(routeMocks.executeWithSchema).toHaveBeenCalledOnce();
+    expect(routeMocks.executeWithSchema).not.toHaveBeenCalled();
     expect(insertedValues).toHaveLength(2);
     expect(insertedValues[0]).toMatchObject({
       providerId: "amazfit-zepp",
@@ -611,7 +962,7 @@ describe("createIngestZosHealthRouter", () => {
     });
   });
 
-  it("skips daily metrics with invalid date keys", async () => {
+  it("rejects an envelope event with an invalid daily metric date key", async () => {
     const { db, execute } = createMockDatabase();
 
     const response = await post(
@@ -626,11 +977,184 @@ describe("createIngestZosHealthRouter", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ status: "ok" });
-    expect(execute).toHaveBeenCalledTimes(2);
-    expect(routeMocks.loggerWarn).toHaveBeenCalledWith(
-      "[ingest-zos] Invalid date: not-a-date, skipping",
+    expect(response.body).toEqual({
+      status: "ok",
+      acceptedEventIds: [],
+      rejected: [
+        {
+          eventId: "event-test",
+          issues: [
+            {
+              path: "dailyMetrics.not-a-date",
+              message: "Invalid date",
+            },
+          ],
+        },
+      ],
+    });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("accepts versioned Zepp IMU chunks and writes source-attributed vectors", async () => {
+    const { db } = createMockDatabase();
+    const response = await post(
+      createTestApp(db, { publishRows: vi.fn(async () => []) }),
+      {
+        version: 1,
+        batchId: "segment-1:0:0",
+        source: { connectionType: "zepp-workout", installId: "install-1" },
+        events: [
+          {
+            eventId: "segment-1:0:0",
+            createdAt: "2024-07-03T09:46:40.000Z",
+            payload: {
+              segmentId: "segment-1",
+              sessionStartMs: 1_720_000_000_000,
+              hasGyroscope: true,
+              samples: [
+                { tMs: 0, ax: 1, ay: 2, az: 3, gx: 4, gy: 5, gz: 6 },
+                { tMs: 0, ax: 7, ay: 8, az: 9, gx: 10, gy: 11, gz: 12 },
+              ],
+            },
+          },
+        ],
+      },
+      { authorization: "Bearer token-123" },
+      true,
+      "/api/ingest/zos-imu",
     );
+
+    expect(response).toEqual({
+      status: 200,
+      body: {
+        status: "ok",
+        acceptedEventIds: ["segment-1:0:0"],
+        rejected: [],
+      },
+    });
+    expect(routeMocks.writeMetricStreamRows).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rows: [
+          expect.objectContaining({
+            channel: "imu",
+            deviceId: "zepp-workout:install-1",
+            externalId: "amazfit-zepp:install-1:segment-1:0:0:0:0",
+            vector: [1, 2, 3, 4, 5, 6],
+          }),
+          expect.objectContaining({
+            externalId: "amazfit-zepp:install-1:segment-1:0:0:0:1",
+            vector: [7, 8, 9, 10, 11, 12],
+          }),
+        ],
+      }),
+    );
+  });
+
+  it("rejects invalid Zepp IMU events and logs their issue paths", async () => {
+    const { db } = createMockDatabase();
+    const response = await post(
+      createTestApp(db),
+      {
+        version: 1,
+        batchId: "segment-invalid:0:0",
+        source: { connectionType: "zepp", installId: "install-1" },
+        events: [
+          {
+            eventId: "segment-invalid:0:0",
+            createdAt: "2024-07-03T09:46:40.000Z",
+            payload: {
+              segmentId: "segment-invalid",
+              sessionStartMs: 1_720_000_000_000,
+              hasGyroscope: false,
+              samples: [],
+            },
+          },
+        ],
+      },
+      { authorization: "Bearer token-123" },
+      true,
+      "/api/ingest/zos-imu",
+    );
+
+    expect(response).toMatchObject({
+      status: 200,
+      body: {
+        status: "ok",
+        acceptedEventIds: [],
+        rejected: [{ eventId: "segment-invalid:0:0", issues: [{ path: "samples" }] }],
+      },
+    });
+    expect(routeMocks.writeMetricStreamRows).not.toHaveBeenCalled();
+    expect(routeMocks.loggerWarn).toHaveBeenCalledWith(
+      '[ingest-zos-imu] Rejected IMU events {"batchId":"segment-invalid:0:0","rejectedEventCount":1,"issuePaths":["samples"]}',
+    );
+  });
+
+  it("persists valid IMU siblings while rejecting only malformed events", async () => {
+    const { db } = createMockDatabase();
+    const response = await post(
+      createTestApp(db, { publishRows: vi.fn(async () => []) }),
+      {
+        version: 1,
+        batchId: "segment-mixed",
+        source: { connectionType: "zepp", installId: "install-1" },
+        events: [
+          {
+            eventId: "segment-valid:0:0",
+            createdAt: "2024-07-03T09:46:40.000Z",
+            payload: {
+              segmentId: "segment-valid",
+              sessionStartMs: 1_720_000_000_000,
+              hasGyroscope: false,
+              samples: [{ tMs: 25, ax: 1, ay: 2, az: 3, gx: 0, gy: 0, gz: 0 }],
+            },
+          },
+          {
+            eventId: "segment-invalid:0:0",
+            createdAt: "2024-07-03T09:46:40.000Z",
+            payload: {
+              segmentId: "segment-invalid",
+              sessionStartMs: 1_720_000_000_000,
+              hasGyroscope: false,
+              samples: [],
+            },
+          },
+        ],
+      },
+      { authorization: "Bearer token-123" },
+      true,
+      "/api/ingest/zos-imu",
+    );
+
+    expect(response.body).toMatchObject({
+      acceptedEventIds: ["segment-valid:0:0"],
+      rejected: [{ eventId: "segment-invalid:0:0" }],
+    });
+    expect(routeMocks.writeMetricStreamRows).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rows: [expect.objectContaining({ recordedAt: "2024-07-03T09:46:40.025Z" })],
+      }),
+    );
+  });
+
+  it("returns 400 for a malformed Zepp IMU envelope", async () => {
+    const { db } = createMockDatabase();
+    const response = await post(
+      createTestApp(db),
+      {
+        version: 1,
+        batchId: "segment-invalid:0:0",
+        source: { connectionType: "zepp", installId: "install-1" },
+        events: [],
+      },
+      { authorization: "Bearer token-123" },
+      true,
+      "/api/ingest/zos-imu",
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({ error: "Invalid envelope" });
+    expect(routeMocks.writeMetricStreamRows).not.toHaveBeenCalled();
   });
 
   it("returns 500 when ingest persistence fails", async () => {

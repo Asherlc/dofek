@@ -18,7 +18,6 @@ export interface HeaderMeta {
 }
 
 export interface CollectorOptions {
-  enableGyro?: boolean;
   requestedFreqModeIndex?: number;
   onSample: (sample: ImuSample) => void;
   onStatus?: (stats: { sampleCount: number; observedHzX100: number }) => void;

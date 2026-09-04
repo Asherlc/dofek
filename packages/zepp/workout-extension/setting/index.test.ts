@@ -10,11 +10,14 @@ interface SettingState {
   serverUrl: string;
   email: string;
   password: string;
+  apiToken: string | null;
   connectionStatus: Record<string, unknown>;
   pairingShortCode: string | null;
   pairingVerificationUrl: string | null;
   pairingQrImageUrl: string | null;
   pairingExpiresAt: string | null;
+  imuSyncStatus: Record<string, unknown>;
+  transferProgress: Record<string, unknown>;
 }
 
 interface SettingConfiguration {
@@ -23,7 +26,7 @@ interface SettingConfiguration {
 }
 
 interface InputConfiguration {
-  title: string;
+  label: string;
   value?: string;
   placeholder?: string;
   onChange(value: string): void;
@@ -36,28 +39,25 @@ interface ButtonConfiguration {
   onClick(): void;
 }
 
-class FakeImage {
-  readonly height: number;
-  readonly width: number;
-  src = "";
-  alt = "";
-  style: Record<string, string> = {};
-
-  constructor(width: number, height: number) {
-    this.width = width;
-    this.height = height;
-    createdImages.push(this);
-  }
+interface ImageConfiguration {
+  src: string;
+  alt?: string;
+  width?: number;
+  height?: number;
+  style?: Record<string, string>;
 }
 
 let configuration: SettingConfiguration | undefined;
 const inputConfigurations: InputConfiguration[] = [];
 const buttonConfigurations: ButtonConfiguration[] = [];
 const viewConfigurations: Array<{ style: Record<string, unknown>; children: unknown[] }> = [];
-const createdImages: FakeImage[] = [];
+const createdImages: ImageConfiguration[] = [];
 
 beforeAll(async () => {
-  vi.stubGlobal("Image", FakeImage);
+  vi.stubGlobal("Image", (value: ImageConfiguration) => {
+    createdImages.push(value);
+    return value;
+  });
   vi.stubGlobal("AppSettingsPage", (value: SettingConfiguration) => {
     configuration = value;
   });
@@ -90,11 +90,14 @@ function buildWith(values: Readonly<Record<string, string | null>>) {
     serverUrl: DEFAULT_DOFEK_SERVER_URL,
     email: "",
     password: "",
+    apiToken: null,
     connectionStatus: {},
     pairingShortCode: null,
     pairingVerificationUrl: null,
     pairingQrImageUrl: null,
     pairingExpiresAt: null,
+    imuSyncStatus: {},
+    transferProgress: {},
   };
   const settingsStorage = {
     getItem: vi.fn((key: string) => values[key] ?? null),
@@ -113,10 +116,11 @@ afterEach(() => {
 });
 
 describe("workout extension settings", () => {
-  it("loads saved settings and renders every control", () => {
+  it("loads saved settings and renders only management controls when connected", () => {
     const { rendered } = buildWith({
       [STORAGE_KEYS.DOFEK_SERVER_URL]: "https://dofek.example.test",
       [STORAGE_KEYS.DOFEK_EMAIL]: "athlete@example.test",
+      [STORAGE_KEYS.DOFEK_API_TOKEN]: "verified-token",
       [STORAGE_KEYS.DOFEK_CONNECTION_STATUS]: JSON.stringify({ state: "connected" }),
     });
 
@@ -124,29 +128,18 @@ describe("workout extension settings", () => {
       serverUrl: "https://dofek.example.test",
       email: "athlete@example.test",
       password: "",
+      apiToken: "verified-token",
       connectionStatus: { state: "connected" },
       pairingShortCode: null,
       pairingVerificationUrl: null,
       pairingQrImageUrl: null,
       pairingExpiresAt: null,
+      imuSyncStatus: {},
+      transferProgress: {},
     });
-    expect(inputConfigurations).toHaveLength(3);
-    expect(inputConfigurations[0]).toMatchObject({
-      title: "Dofek Server URL",
-      value: "https://dofek.example.test",
-    });
-    expect(inputConfigurations[1]).toMatchObject({
-      title: "Dofek Email",
-      value: "athlete@example.test",
-    });
-    expect(inputConfigurations[2]).toMatchObject({
-      title: "Dofek Password",
-      placeholder: "Enter your Dofek password",
-    });
-    expect(buttonConfigurations).toHaveLength(4);
+    expect(inputConfigurations).toHaveLength(0);
+    expect(buttonConfigurations).toHaveLength(2);
     expect(buttonConfigurations).toMatchObject([
-      { label: "Create QR / short code", color: "primary", style: { marginTop: "1em" } },
-      { label: "Log in and connect", color: "primary", style: { marginTop: "1em" } },
       { label: "Check connection", color: "secondary", style: { marginTop: "1em" } },
       { label: "Disconnect Dofek", color: "secondary", style: { marginTop: "1em" } },
     ]);
@@ -155,6 +148,61 @@ describe("workout extension settings", () => {
     });
     expect(JSON.stringify(viewConfigurations)).toContain("Motion Extensions");
     expect(rendered).toMatchObject({ style: { style: { padding: "1em" } } });
+  });
+
+  it("renders only pairing and login controls while disconnected", () => {
+    buildWith({});
+
+    expect(inputConfigurations.map(({ label }) => label)).toEqual([
+      "Dofek Server URL",
+      "Dofek Email",
+      "Dofek Password",
+    ]);
+    expect(buttonConfigurations.map(({ label }) => label)).toEqual([
+      "Create QR / short code",
+      "Log in and connect",
+    ]);
+  });
+
+  it("requires disconnect before reconnecting when an errored token remains", () => {
+    buildWith({
+      [STORAGE_KEYS.DOFEK_API_TOKEN]: "stored-token",
+      [STORAGE_KEYS.DOFEK_CONNECTION_STATUS]: JSON.stringify({ state: "error" }),
+    });
+
+    expect(inputConfigurations).toHaveLength(0);
+    expect(buttonConfigurations.map(({ label }) => label)).toEqual([
+      "Check connection",
+      "Disconnect Dofek",
+    ]);
+  });
+
+  it("shows the shared motion delivery error", () => {
+    buildWith({
+      [STORAGE_KEYS.IMU_SYNC_STATUS]: JSON.stringify({
+        state: "error",
+        reason: "IMU data upload failed.",
+      }),
+    });
+
+    expect(JSON.stringify(viewConfigurations)).toContain("Motion sync: error");
+    expect(JSON.stringify(viewConfigurations)).toContain(
+      "Motion reason: IMU data upload failed.",
+    );
+  });
+
+  it("shows binary transfer failures independently from chunk sync", () => {
+    buildWith({
+      [STORAGE_KEYS.TRANSFER_PROGRESS]: JSON.stringify({
+        state: "error",
+        reason: "Workout IMU transfer was canceled.",
+      }),
+    });
+
+    expect(JSON.stringify(viewConfigurations)).toContain("Transfer: error");
+    expect(JSON.stringify(viewConfigurations)).toContain(
+      "Transfer reason: Workout IMU transfer was canceled.",
+    );
   });
 
   it("renders stored pairing details and the QR image", () => {
@@ -179,6 +227,7 @@ describe("workout extension settings", () => {
         alt: "Dofek Workout pairing QR code",
         width: 220,
         height: 220,
+        style: { margin: "0 auto 1em", display: "block" },
       }),
     );
   });
@@ -227,7 +276,7 @@ describe("workout extension settings", () => {
     inputConfigurations[0]?.onChange("https://new.example.test");
     inputConfigurations[1]?.onChange("new@example.test");
     inputConfigurations[2]?.onChange("secret");
-    buttonConfigurations[1]?.onClick();
+    buttonConfigurations.find(({ label }) => label === "Log in and connect")?.onClick();
 
     expect(settingsStorage.setItem).toHaveBeenNthCalledWith(
       1,
@@ -251,21 +300,25 @@ describe("workout extension settings", () => {
     expect(configuration?.state.password).toBe("");
   });
 
-  it("starts pairing and exposes connection management commands", () => {
+  it("starts pairing and exposes connection management commands in their respective states", () => {
     const { settingsStorage } = buildWith({
       [STORAGE_KEYS.CMD_START_PAIRING]: "1",
     });
 
-    buttonConfigurations[0]?.onClick();
-    buttonConfigurations[2]?.onClick();
-    buttonConfigurations[3]?.onClick();
+    buttonConfigurations.find(({ label }) => label === "Create QR / short code")?.onClick();
 
     expect(settingsStorage.setItem).toHaveBeenCalledWith(STORAGE_KEYS.CMD_START_PAIRING, "0");
-    expect(settingsStorage.setItem).toHaveBeenCalledWith(
+    const connected = buildWith({
+      [STORAGE_KEYS.DOFEK_API_TOKEN]: "verified-token",
+      [STORAGE_KEYS.DOFEK_CONNECTION_STATUS]: JSON.stringify({ state: "connected" }),
+    });
+    buttonConfigurations.find(({ label }) => label === "Check connection")?.onClick();
+    buttonConfigurations.find(({ label }) => label === "Disconnect Dofek")?.onClick();
+    expect(connected.settingsStorage.setItem).toHaveBeenCalledWith(
       STORAGE_KEYS.CMD_CHECK_CONNECTION,
       "1",
     );
-    expect(settingsStorage.setItem).toHaveBeenCalledWith(
+    expect(connected.settingsStorage.setItem).toHaveBeenCalledWith(
       STORAGE_KEYS.CMD_DISCONNECT,
       "1",
     );

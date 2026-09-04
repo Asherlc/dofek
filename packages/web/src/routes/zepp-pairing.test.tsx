@@ -37,6 +37,7 @@ it("keeps a non-empty Zepp pairing code from the direct URL", async () => {
   expect(captured.validateSearch?.({ code: "  ABC234  " })).toEqual({ code: "ABC234" });
   expect(captured.validateSearch?.({ code: "" })).toEqual({});
   expect(captured.validateSearch?.({ code: ["ABC234"] })).toEqual({});
+  expect(captured.validateSearch?.({ code: 42 })).toEqual({});
 });
 
 it("passes the validated direct-link code from the route into the pairing page", async () => {

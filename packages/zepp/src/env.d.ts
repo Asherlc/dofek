@@ -4,6 +4,10 @@ declare module "@zos/fs" {
     path: string;
     options?: { encoding?: string };
   }): ArrayBuffer | string;
+  export function mkdirSync(options: { path: string }): number;
+  export function readdirSync(options: { path: string }): string[] | undefined;
+  export function renameSync(options: { oldPath: string; newPath: string }): number;
+  export function rmSync(options: { path: string }): number;
   export function openSync(options: { path: string; flag: number }): number;
   export function writeSync(options: { fd: number; buffer: ArrayBuffer }): number;
   export function closeSync(options: { fd: number }): void;
@@ -123,10 +127,6 @@ declare module "@zos/device" {
   export function getDeviceInfo(): { width: number; height: number; screenShape: number };
 }
 
-declare module "@zos/display" {
-  export function setWakeUpRelaunch(enabled: boolean): void;
-}
-
 declare module "@zos/interaction" {
   export function showToast(options: { content: string }): void;
 }
@@ -141,11 +141,22 @@ declare module "@zos/app" {
 
 declare module "@zos/app-service" {
   export function start(options: {
-    url: string;
+    file: string;
     param?: string;
     reload?: boolean;
-    complete_func?: (info: unknown) => void;
-  }): void;
+    complete_func: (info: { file: string; result: boolean }) => void;
+  }): number;
+  export function stop(options: {
+    file: string;
+    complete_func: (info: { file: string; result: boolean }) => void;
+  }): number;
+}
+
+declare module "@zos/display" {
+  export function pauseDropWristScreenOff(options: { duration: number }): number;
+  export function resetDropWristScreenOff(): number;
+  export function setPageBrightTime(options: { brightTime: number }): number;
+  export function resetPageBrightTime(): number;
 }
 
 declare module "@zos/ble/TransferFile" {
@@ -200,7 +211,10 @@ type PageHelpers = {
   sendFile(
     path: string,
     params: Record<string, string>,
-  ): { on(event: string, callback: (event: { data: Record<string, unknown> }) => void): void };
+  ): {
+    cancel(): void;
+    on(event: string, callback: (event: { data: Record<string, unknown> }) => void): void;
+  };
 };
 
 type SideServiceHelpers = {
@@ -253,14 +267,16 @@ interface PageContext {
   sendFile(
     path: string,
     params: Record<string, string>,
-  ): { on(event: string, callback: (event: { data: Record<string, unknown> }) => void): void };
+  ): {
+    cancel(): void;
+    on(event: string, callback: (event: { data: Record<string, unknown> }) => void): void;
+  };
   [key: string]: unknown;
 }
 
 interface SideServiceContext {
   call(options: { method: string; params: Record<string, unknown> }): void;
   getPreferences(): {
-    enableGyro: boolean;
     freqModeIndex: number;
     hasCredentials: boolean;
     serverUrl: string;
@@ -307,5 +323,5 @@ declare const settings: {
 declare function View(style: Record<string, unknown>, children: unknown[]): unknown;
 declare function Button(options: Record<string, unknown>): unknown;
 declare function TextInput(options: Record<string, unknown>): unknown;
-declare function ToggleSwitch(options: Record<string, unknown>): unknown;
+declare function Toggle(options: Record<string, unknown>): unknown;
 declare const DOFEK_COMPANION_CONNECTION_TYPE: "zepp-main" | "zepp-workout";

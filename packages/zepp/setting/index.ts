@@ -1,3 +1,4 @@
+import { deriveConnectionActions, parseConnectionState } from "../src/connection-state.ts";
 import { getSessionAction, parseSessionState, SESSION_COMMAND } from "../src/session-control.ts";
 import { DEFAULT_DOFEK_SERVER_URL, FREQ_MODE_LABELS, STORAGE_KEYS } from "../src/storage-keys.ts";
 
@@ -28,17 +29,23 @@ function toggle(
   storage.setItem(key, current === "1" ? "0" : "1");
 }
 
-function buildPairingQrImage(sourceUrl: string): HTMLImageElement {
-  const image = new Image(220, 220);
-  image.src = sourceUrl;
-  image.alt = "Dofek pairing QR code";
-  image.style.margin = "0 auto 1em";
-  image.style.display = "block";
-  return image;
+function buildPairingQrImage(sourceUrl: string): unknown {
+  const renderImage: unknown = Reflect.get(globalThis, "Image");
+  if (typeof renderImage !== "function") {
+    throw new Error("Zepp Settings Image component is unavailable");
+  }
+  return Reflect.apply(renderImage, undefined, [
+    {
+      src: sourceUrl,
+      alt: "Dofek pairing QR code",
+      width: 220,
+      height: 220,
+      style: { margin: "0 auto 1em", display: "block" },
+    },
+  ]);
 }
 
 const PG_STATE: {
-  enableGyro: boolean;
   freqModeIndex: number;
   sessionStatus: Record<string, unknown>;
   lastExportPath: string | null;
@@ -53,9 +60,10 @@ const PG_STATE: {
   pairingQrImageUrl: string | null;
   pairingExpiresAt: string | null;
   healthSyncStatus: Record<string, unknown>;
+  healthServiceStatus: Record<string, unknown>;
+  imuSyncStatus: Record<string, unknown>;
   lastHealthSync: string | null;
 } = {
-  enableGyro: false,
   freqModeIndex: 1,
   sessionStatus: EMPTY_RECORD,
   lastExportPath: null,
@@ -70,6 +78,8 @@ const PG_STATE: {
   pairingQrImageUrl: null,
   pairingExpiresAt: null,
   healthSyncStatus: EMPTY_RECORD,
+  healthServiceStatus: EMPTY_RECORD,
+  imuSyncStatus: EMPTY_RECORD,
   lastHealthSync: null,
 };
 
@@ -92,13 +102,22 @@ AppSettingsPage({
         : "n/a";
 
     const healthStatus = this.state.healthSyncStatus;
+    const healthServiceStatus = this.state.healthServiceStatus;
+    const imuStatus = this.state.imuSyncStatus;
     const connectionStatus = this.state.connectionStatus;
+    const connectionState = parseConnectionState(connectionStatus.state);
+    const connectionActions = deriveConnectionActions(
+      connectionState,
+      Boolean(this.state.dofekApiToken.trim()),
+    );
     const hasPairingCode = Boolean(
       this.state.pairingShortCode && this.state.pairingVerificationUrl,
     );
 
     const blocks: Array<unknown> = [
-      View({ style: { margin: "1em", fontSize: "1.3rem", fontWeight: "bold" } }, ["IMU Logger"]),
+      View({ style: { margin: "1em", fontSize: "1.3rem", fontWeight: "bold" } }, [
+        "Advanced Foreground Recorder",
+      ]),
 
       View({ style: { margin: "1em", fontSize: "1.2rem", lineHeight: "1.6rem" } }, [
         `State: ${status.state ?? "idle"}`,
@@ -116,10 +135,10 @@ AppSettingsPage({
         },
       }),
       View({ style: { margin: "0 1em 1em", fontSize: "1rem", color: "#888" } }, [
-        "Keep the Dofek watch app open when starting or stopping from Settings.",
+        "Keep the Dofek watch app open for the entire recording. Gyroscope data is included automatically when the watch supports it.",
       ]),
       TextInput({
-        title: "Sample rate mode (0=LOW, 1=NORMAL, 2=HIGH)",
+        label: "Sample rate mode (0=LOW, 1=NORMAL, 2=HIGH)",
         bold: false,
         value: String(this.state.freqModeIndex),
         onChange: (value: string) => {
@@ -133,14 +152,6 @@ AppSettingsPage({
       View({ style: { margin: "0 1em", fontSize: "1rem", color: "#888" } }, [
         `Requested: ${FREQ_MODE_LABELS[this.state.freqModeIndex]}. Docs do not publish Hz per mode; the watch records the delivered rate.`,
       ]),
-      ToggleSwitch({
-        label: "Include gyroscope",
-        checked: this.state.enableGyro,
-        onChange: (checked: boolean) => {
-          this.state.enableGyro = checked;
-          props.settingsStorage.setItem(STORAGE_KEYS.PREF_ENABLE_GYRO, checked ? "true" : "false");
-        },
-      }),
       Button({
         label: "Transfer finalized session",
         color: "primary",
@@ -158,14 +169,30 @@ AppSettingsPage({
           this.state.transferProgress.pct != null
             ? `Progress: ${this.state.transferProgress.pct}%`
             : "",
+          this.state.transferProgress.reason
+            ? `Transfer reason: ${String(this.state.transferProgress.reason)}`
+            : "",
         ]),
       );
     }
 
-    // Dofek Health Sync Section
-    const hasDofekCredentials = Boolean(
-      this.state.dofekServerUrl.trim() && this.state.dofekApiToken.trim(),
+    blocks.push(
+      View({ style: { margin: "1em", fontSize: "1.1rem", lineHeight: "1.5rem" } }, [
+        `Background health: ${String(healthServiceStatus.state ?? "idle")}`,
+        healthServiceStatus.reason
+          ? `Background reason: ${String(healthServiceStatus.reason)}`
+          : "",
+      ]),
     );
+
+    blocks.push(
+      View({ style: { margin: "1em", fontSize: "1.1rem", lineHeight: "1.5rem" } }, [
+        `Motion sync: ${String(imuStatus.state ?? "idle")}`,
+        imuStatus.reason ? `Motion reason: ${String(imuStatus.reason)}` : "",
+      ]),
+    );
+
+    // Dofek Health Sync Section
     blocks.push(
       View({ style: { margin: "1em", fontSize: "1.3rem", fontWeight: "bold" } }, [
         "Dofek Health Sync",
@@ -175,121 +202,150 @@ AppSettingsPage({
           style: {
             margin: "0 1em 1em",
             fontSize: "1rem",
-            color: hasDofekCredentials ? "#2ecc71" : "#e67e22",
+            color: connectionState === "connected" ? "#2ecc71" : "#e67e22",
             fontWeight: "bold",
           },
         },
         [
-          hasDofekCredentials
-            ? "● Credentials configured"
-            : "○ Not configured — fill in the fields below",
+          connectionState === "connected"
+            ? "● Connected — verified by Dofek"
+            : `○ Connection: ${connectionState}`,
         ],
       ),
-
-      TextInput({
-        title: "Dofek Server URL",
-        bold: false,
-        value: this.state.dofekServerUrl,
-        onChange: (value: string) => {
-          this.state.dofekServerUrl = value;
-          props.settingsStorage.setItem(STORAGE_KEYS.DOFEK_SERVER_URL, value);
-        },
-      }),
-
-      Button({
-        label: "Create QR / short code",
-        color: "primary",
-        style: { margin: "1em", width: "auto", fontSize: "1.3rem" },
-        onClick: () => {
-          toggle(props.settingsStorage, STORAGE_KEYS.CMD_START_PAIRING);
-        },
-      }),
-
-      hasPairingCode
-        ? View({ style: { margin: "1em", fontSize: "1.1rem", lineHeight: "1.5rem" } }, [
-            `Short code: ${this.state.pairingShortCode}`,
-            this.state.pairingVerificationUrl ? `Open: ${this.state.pairingVerificationUrl}` : "",
-            this.state.pairingExpiresAt
-              ? `Expires: ${new Date(this.state.pairingExpiresAt).toLocaleTimeString()}`
-              : "",
-          ])
-        : View({ style: { margin: "0 1em 1em", fontSize: "1.1rem", color: "#888" } }, [
-            "Create a code, then scan the QR or enter the code in Dofek.",
-          ]),
-
-      this.state.pairingQrImageUrl
-        ? buildPairingQrImage(this.state.pairingQrImageUrl)
-        : View({}, []),
-
-      TextInput({
-        title: "Dofek Email",
-        bold: false,
-        value: this.state.dofekEmail,
-        onChange: (value: string) => {
-          this.state.dofekEmail = value;
-          props.settingsStorage.setItem(STORAGE_KEYS.DOFEK_EMAIL, value);
-        },
-      }),
-
-      TextInput({
-        title: "Dofek Password",
-        bold: false,
-        placeholder: "Enter your Dofek password",
-        onChange: (value: string) => {
-          this.state.dofekPassword = value;
-        },
-      }),
-
-      Button({
-        label: "Log in and connect",
-        color: "primary",
-        style: { margin: "1em", width: "auto", fontSize: "1.3rem" },
-        onClick: () => {
-          props.settingsStorage.setItem(STORAGE_KEYS.DOFEK_EMAIL, this.state.dofekEmail);
-          props.settingsStorage.setItem(
-            STORAGE_KEYS.CMD_LOGIN_PASSWORD,
-            JSON.stringify({
-              email: this.state.dofekEmail,
-              password: this.state.dofekPassword,
-              nonce: Date.now(),
-            }),
-          );
-          this.state.dofekPassword = "";
-        },
-      }),
-
       View({ style: { margin: "0 1em 1em", fontSize: "1.1rem", lineHeight: "1.5rem" } }, [
-        `Connection: ${String(connectionStatus.state ?? "not connected")}`,
+        `Connection: ${connectionState}`,
         connectionStatus.reason ? `Reason: ${String(connectionStatus.reason)}` : "",
       ]),
+    );
 
-      Button({
-        label: "Check connection",
-        color: "secondary",
-        style: { margin: "1em", width: "auto", fontSize: "1.3rem" },
-        onClick: () => {
-          toggle(props.settingsStorage, STORAGE_KEYS.CMD_CHECK_CONNECTION);
-        },
-      }),
+    if (connectionActions.showConnectionForm) {
+      blocks.push(
+        TextInput({
+          label: "Dofek Server URL",
+          bold: false,
+          value: this.state.dofekServerUrl,
+          onChange: (value: string) => {
+            this.state.dofekServerUrl = value;
+            props.settingsStorage.setItem(STORAGE_KEYS.DOFEK_SERVER_URL, value);
+          },
+        }),
+      );
+    }
 
-      Button({
-        label: "Disconnect Dofek",
-        color: "secondary",
-        style: { margin: "1em", width: "auto", fontSize: "1.3rem" },
-        onClick: () => {
-          toggle(props.settingsStorage, STORAGE_KEYS.CMD_DISCONNECT);
-        },
-      }),
+    if (connectionActions.showPairing) {
+      blocks.push(
+        Button({
+          label: "Create QR / short code",
+          color: "primary",
+          style: { margin: "1em", width: "auto", fontSize: "1.3rem" },
+          onClick: () => {
+            toggle(props.settingsStorage, STORAGE_KEYS.CMD_START_PAIRING);
+          },
+        }),
+      );
+    }
 
-      Button({
-        label: "Sync health data now",
-        color: "primary",
-        style: { margin: "1em", width: "auto", fontSize: "1.3rem" },
-        onClick: () => {
-          toggle(props.settingsStorage, STORAGE_KEYS.CMD_SYNC_HEALTH);
-        },
-      }),
+    if (connectionActions.showPairing || connectionState === "pairing") {
+      blocks.push(
+        hasPairingCode
+          ? View({ style: { margin: "1em", fontSize: "1.1rem", lineHeight: "1.5rem" } }, [
+              `Short code: ${this.state.pairingShortCode}`,
+              this.state.pairingVerificationUrl ? `Open: ${this.state.pairingVerificationUrl}` : "",
+              this.state.pairingExpiresAt
+                ? `Expires: ${new Date(this.state.pairingExpiresAt).toLocaleTimeString()}`
+                : "",
+            ])
+          : View({ style: { margin: "0 1em 1em", fontSize: "1.1rem", color: "#888" } }, [
+              "Create a code, then scan the QR or enter the code in Dofek.",
+            ]),
 
+        this.state.pairingQrImageUrl
+          ? buildPairingQrImage(this.state.pairingQrImageUrl)
+          : View({}, []),
+      );
+    }
+
+    if (connectionActions.showLogin) {
+      blocks.push(
+        TextInput({
+          label: "Dofek Email",
+          bold: false,
+          value: this.state.dofekEmail,
+          onChange: (value: string) => {
+            this.state.dofekEmail = value;
+            props.settingsStorage.setItem(STORAGE_KEYS.DOFEK_EMAIL, value);
+          },
+        }),
+
+        TextInput({
+          label: "Dofek Password",
+          bold: false,
+          placeholder: "Enter your Dofek password",
+          onChange: (value: string) => {
+            this.state.dofekPassword = value;
+          },
+        }),
+
+        Button({
+          label: "Log in and connect",
+          color: "primary",
+          style: { margin: "1em", width: "auto", fontSize: "1.3rem" },
+          onClick: () => {
+            props.settingsStorage.setItem(STORAGE_KEYS.DOFEK_EMAIL, this.state.dofekEmail);
+            props.settingsStorage.setItem(
+              STORAGE_KEYS.CMD_LOGIN_PASSWORD,
+              JSON.stringify({
+                email: this.state.dofekEmail,
+                password: this.state.dofekPassword,
+                nonce: Date.now(),
+              }),
+            );
+            this.state.dofekPassword = "";
+          },
+        }),
+      );
+    }
+
+    if (connectionActions.showCheck) {
+      blocks.push(
+        Button({
+          label: "Check connection",
+          color: "secondary",
+          style: { margin: "1em", width: "auto", fontSize: "1.3rem" },
+          onClick: () => {
+            toggle(props.settingsStorage, STORAGE_KEYS.CMD_CHECK_CONNECTION);
+          },
+        }),
+      );
+    }
+
+    if (connectionActions.showDisconnect) {
+      blocks.push(
+        Button({
+          label: "Disconnect Dofek",
+          color: "secondary",
+          style: { margin: "1em", width: "auto", fontSize: "1.3rem" },
+          onClick: () => {
+            toggle(props.settingsStorage, STORAGE_KEYS.CMD_DISCONNECT);
+          },
+        }),
+      );
+    }
+
+    if (connectionActions.showSync) {
+      blocks.push(
+        Button({
+          label: "Sync health data now",
+          color: "primary",
+          style: { margin: "1em", width: "auto", fontSize: "1.3rem" },
+          onClick: () => {
+            toggle(props.settingsStorage, STORAGE_KEYS.CMD_SYNC_HEALTH);
+          },
+        }),
+      );
+    }
+
+    blocks.push(
       View({ style: { margin: "1em", fontSize: "1.1rem", lineHeight: "1.5rem" } }, [
         `Status: ${String(healthStatus.state ?? "idle")}`,
         healthStatus.reason ? `Reason: ${String(healthStatus.reason)}` : "",
@@ -308,7 +364,6 @@ AppSettingsPage({
       setItem(key: string, value: string): void;
     };
   }) {
-    this.state.enableGyro = props.settingsStorage.getItem(STORAGE_KEYS.PREF_ENABLE_GYRO) === "true";
     this.state.freqModeIndex = Number(
       props.settingsStorage.getItem(STORAGE_KEYS.PREF_FREQ_MODE) ?? 1,
     );
@@ -340,6 +395,14 @@ AppSettingsPage({
       props.settingsStorage.getItem(STORAGE_KEYS.PAIRING_EXPIRES_AT) ?? null;
     this.state.healthSyncStatus = readJson(
       props.settingsStorage.getItem(STORAGE_KEYS.HEALTH_SYNC_STATUS),
+      {},
+    );
+    this.state.healthServiceStatus = readJson(
+      props.settingsStorage.getItem(STORAGE_KEYS.HEALTH_SERVICE_STATUS),
+      {},
+    );
+    this.state.imuSyncStatus = readJson(
+      props.settingsStorage.getItem(STORAGE_KEYS.IMU_SYNC_STATUS),
       {},
     );
     this.state.lastHealthSync =

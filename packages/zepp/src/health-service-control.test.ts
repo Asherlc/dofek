@@ -1,0 +1,303 @@
+import { describe, expect, it, vi } from "vitest";
+import { appendBackgroundHealthEvents, type BackgroundHealthOutbox } from "./background-health.ts";
+import { createEmptyOutbox } from "./durable-outbox.ts";
+import { parseHealthEnvelope } from "./health-contract.ts";
+import {
+  acquireForegroundHealthOwnership,
+  ensureHealthServiceRunning,
+} from "./health-service-control.ts";
+import { deliverWatchHealthOutbox } from "./watch-health-sync.ts";
+
+describe("ensureHealthServiceRunning", () => {
+  it("starts immediately when background permission is already granted", async () => {
+    const requestPermission = vi.fn<() => Promise<number>>();
+    const startService = vi.fn();
+
+    await expect(
+      ensureHealthServiceRunning({
+        queryPermission: () => 2,
+        requestPermission,
+        startService,
+      }),
+    ).resolves.toEqual({ state: "started" });
+
+    expect(requestPermission).not.toHaveBeenCalled();
+    expect(startService).toHaveBeenCalledOnce();
+  });
+
+  it("requests permission and starts after the request is granted", async () => {
+    const startService = vi.fn();
+
+    await expect(
+      ensureHealthServiceRunning({
+        queryPermission: () => 0,
+        requestPermission: vi.fn(async () => 2),
+        startService,
+      }),
+    ).resolves.toEqual({ state: "started" });
+
+    expect(startService).toHaveBeenCalledOnce();
+  });
+
+  it("returns an actionable state and does not start when permission is denied", async () => {
+    const startService = vi.fn();
+
+    await expect(
+      ensureHealthServiceRunning({
+        queryPermission: () => 0,
+        requestPermission: vi.fn(async () => 1),
+        startService,
+      }),
+    ).resolves.toEqual({
+      state: "permission-denied",
+      reason: "Background health collection requires Background Service permission.",
+    });
+
+    expect(startService).not.toHaveBeenCalled();
+  });
+
+  it("propagates unexpected permission and service failures", async () => {
+    const permissionError = new Error("permission API unavailable");
+    await expect(
+      ensureHealthServiceRunning({
+        queryPermission: () => {
+          throw permissionError;
+        },
+        requestPermission: vi.fn(),
+        startService: vi.fn(),
+      }),
+    ).rejects.toBe(permissionError);
+
+    const serviceError = new Error("service start failed");
+    await expect(
+      ensureHealthServiceRunning({
+        queryPermission: () => 2,
+        requestPermission: vi.fn(),
+        startService: () => {
+          throw serviceError;
+        },
+      }),
+    ).rejects.toBe(serviceError);
+
+    const asynchronousServiceError = new Error("service callback failed");
+    await expect(
+      ensureHealthServiceRunning({
+        queryPermission: () => 2,
+        requestPermission: vi.fn(),
+        startService: async () => {
+          throw asynchronousServiceError;
+        },
+      }),
+    ).rejects.toBe(asynchronousServiceError);
+  });
+});
+
+describe("acquireForegroundHealthOwnership", () => {
+  it("waits for App Service shutdown before granting foreground ownership", async () => {
+    let completeStop: (() => void) | undefined;
+    const stopService = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          completeStop = resolve;
+        }),
+    );
+    const startService = vi.fn();
+    let ownsOutbox = false;
+
+    const acquisition = acquireForegroundHealthOwnership({
+      queryPermission: () => 2,
+      requestPermission: vi.fn(),
+      stopService,
+      startService,
+    }).then((ownership) => {
+      ownsOutbox = true;
+      return ownership;
+    });
+
+    await Promise.resolve();
+    expect(ownsOutbox).toBe(false);
+    completeStop?.();
+    const ownership = await acquisition;
+    expect(ownsOutbox).toBe(true);
+
+    ownership.release();
+    ownership.release();
+    expect(startService).toHaveBeenCalledOnce();
+  });
+
+  it("grants foreground-only ownership without stopping or restarting when permission is denied", async () => {
+    const stopService = vi.fn();
+    const startService = vi.fn();
+
+    const ownership = await acquireForegroundHealthOwnership({
+      queryPermission: () => 0,
+      requestPermission: vi.fn(async () => 1),
+      stopService,
+      startService,
+    });
+
+    expect(ownership.state).toBe("permission-denied");
+    expect(stopService).not.toHaveBeenCalled();
+    ownership.release();
+    expect(startService).not.toHaveBeenCalled();
+  });
+
+  it("requests ownership permission and stops the service after it is granted", async () => {
+    const requestPermission = vi.fn(async () => 2);
+    const stopService = vi.fn(async () => undefined);
+    const ownership = await acquireForegroundHealthOwnership({
+      queryPermission: () => 0,
+      requestPermission,
+      stopService,
+      startService: vi.fn(),
+    });
+
+    expect(ownership.state).toBe("acquired");
+    expect(requestPermission).toHaveBeenCalledOnce();
+    expect(stopService).toHaveBeenCalledOnce();
+  });
+
+  it("preserves the last background append before a foreground drain starts", async () => {
+    let completeStop: (() => void) | undefined;
+    let stored: BackgroundHealthOutbox = appendBackgroundHealthEvents(
+      createEmptyOutbox(),
+      {
+        sample: { recordedAt: "2024-07-03T10:00:00.000Z" },
+        activities: [],
+      },
+      "install-1",
+    );
+    const acquisition = acquireForegroundHealthOwnership({
+      queryPermission: () => 2,
+      requestPermission: vi.fn(),
+      stopService: () =>
+        new Promise<void>((resolve) => {
+          completeStop = resolve;
+        }),
+      startService: vi.fn(),
+    });
+
+    stored = appendBackgroundHealthEvents(
+      stored,
+      {
+        sample: { recordedAt: "2024-07-03T10:01:00.000Z" },
+        activities: [],
+      },
+      "install-1",
+    );
+    completeStop?.();
+    await acquisition;
+    const request = vi.fn(async (envelope: unknown) => {
+      const eventIds = parseHealthEnvelope(envelope).events.map((event) => event.eventId);
+      return { status: "ok", acceptedEventIds: eventIds, rejected: [] };
+    });
+    await deliverWatchHealthOutbox({
+      installId: "install-1",
+      initialOutbox: stored,
+      request,
+      readLatest: () => stored,
+      write: (outbox) => {
+        stored = outbox;
+      },
+    });
+
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        events: [
+          expect.objectContaining({ eventId: expect.stringContaining("10:00:00.000Z") }),
+          expect.objectContaining({ eventId: expect.stringContaining("10:01:00.000Z") }),
+        ],
+      }),
+    );
+    expect(stored.pending).toEqual([]);
+  });
+
+  it("waits for the final foreground mutation before restarting App Service", async () => {
+    let completeDrain: (() => void) | undefined;
+    const drain = new Promise<void>((resolve) => {
+      completeDrain = resolve;
+    });
+    const startService = vi.fn();
+    const ownership = await acquireForegroundHealthOwnership({
+      queryPermission: () => 2,
+      requestPermission: vi.fn(),
+      stopService: vi.fn(async () => undefined),
+      startService,
+    });
+
+    const release = ownership.release(drain);
+    await Promise.resolve();
+    expect(startService).not.toHaveBeenCalled();
+
+    completeDrain?.();
+    await release;
+    expect(startService).toHaveBeenCalledOnce();
+  });
+
+  it("restarts App Service after a rejected foreground mutation and preserves the rejection", async () => {
+    const mutationError = new Error("foreground outbox write failed");
+    const startService = vi.fn();
+    const ownership = await acquireForegroundHealthOwnership({
+      queryPermission: () => 2,
+      requestPermission: vi.fn(),
+      stopService: vi.fn(async () => undefined),
+      startService,
+    });
+
+    await expect(ownership.release(Promise.reject(mutationError))).rejects.toBe(mutationError);
+    expect(startService).toHaveBeenCalledOnce();
+  });
+
+  it("waits for an asynchronous App Service restart and surfaces its failure", async () => {
+    const restartError = new Error("health service callback failed");
+    const ownership = await acquireForegroundHealthOwnership({
+      queryPermission: () => 2,
+      requestPermission: vi.fn(),
+      stopService: vi.fn(async () => undefined),
+      startService: async () => {
+        throw restartError;
+      },
+    });
+
+    await expect(ownership.release()).rejects.toBe(restartError);
+  });
+
+  it("returns the same release promise while an asynchronous restart is pending", async () => {
+    let completeRestart: (() => void) | undefined;
+    const ownership = await acquireForegroundHealthOwnership({
+      queryPermission: () => 2,
+      requestPermission: vi.fn(),
+      stopService: vi.fn(async () => undefined),
+      startService: () =>
+        new Promise<void>((resolve) => {
+          completeRestart = resolve;
+        }),
+    });
+
+    const firstRelease = ownership.release();
+    const secondRelease = ownership.release();
+
+    expect(secondRelease).toBe(firstRelease);
+    completeRestart?.();
+    await firstRelease;
+  });
+
+  it("preserves both failures when mutation and App Service restart fail", async () => {
+    const mutationError = new Error("foreground write failed");
+    const restartError = new Error("restart failed");
+    const ownership = await acquireForegroundHealthOwnership({
+      queryPermission: () => 2,
+      requestPermission: vi.fn(),
+      stopService: vi.fn(async () => undefined),
+      startService: async () => {
+        throw restartError;
+      },
+    });
+
+    await expect(ownership.release(Promise.reject(mutationError))).rejects.toMatchObject({
+      message: "Foreground health mutation and App Service restart both failed.",
+      mutationError,
+      restartError,
+    });
+  });
+});
