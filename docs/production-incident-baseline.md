@@ -25122,3 +25122,24 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   requires enough shared Docker memory for ClickHouse to remain alive. Archive
   or stop only workspaces whose owners confirm they are idle, then rerun the
   exact gate; do not delete another worktree's volumes to make room.
+
+## 2026-09-03 — Mutation shards failed after cooldown fixture elapsed
+
+- **Status:** Fixed in source; replacement CI run pending.
+- **Symptoms / user impact:** Two Stryker shards failed during their initial
+  dry run before executing mutants. This blocked the PR quality gate but did
+  not affect runtime health data.
+- **Evidence / root cause:** The first fatal test expected an active cooldown
+  ending at `2026-09-04T04:32:46.000Z`. CI started after that instant, so the
+  server correctly returned overdue freshness instead of deferred freshness.
+  The second shard selected the same related router test and failed for the
+  same reason.
+- **Direct fix:** The cooldown router regression now pins the clock before the
+  expiry instant and restores real timers afterward. Additional assertions
+  kill mutations that would treat tokenless connections as authorized or load
+  cooldowns for disconnected/import-only providers.
+- **Validation:** Both previously failing mutation shards complete locally with
+  a 100% mutation score and zero surviving mutants. The focused router suite
+  passes 93 tests.
+- **Remaining risk / follow-up:** Confirm both replacement Stryker jobs and the
+  aggregate mutation gate pass in GitHub Actions.

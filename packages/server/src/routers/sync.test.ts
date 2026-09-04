@@ -362,52 +362,58 @@ describe("syncRouter", () => {
 
   describe("providers", () => {
     it("returns an active rate-limit cooldown as deferred sync status", async () => {
-      mockGetAllProviders.mockReturnValue([
-        {
-          id: "garmin",
-          name: "Garmin",
-          validate: () => null,
-          authSetup: () => oauthAuthSetup("https://connect.garmin.com"),
-        },
-      ]);
-      mockGetActiveProviderCooldown.mockResolvedValue({
-        providerId: "garmin",
-        scope: "provider",
-        userId: null,
-        expiresAt: new Date("2026-09-04T04:32:46.000Z"),
-      });
-      const caller = createCaller({
-        db: {
-          execute: vi
-            .fn()
-            .mockResolvedValueOnce([
-              {
-                provider_id: "garmin",
-                updated_at: new Date("2026-09-03T04:00:00.000Z"),
-                has_tokens: true,
-              },
-            ])
-            .mockResolvedValueOnce([
-              { provider_id: "garmin", last_synced: "2026-09-03T04:00:00.000Z" },
-            ])
-            .mockResolvedValueOnce([])
-            .mockResolvedValueOnce([
-              { provider_id: "garmin", last_synced: "2026-09-03T04:00:00.000Z" },
-            ])
-            .mockResolvedValueOnce([]),
-        },
-        userId: "user-1",
-        timezone: "UTC",
-      });
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-09-03T12:00:00.000Z"));
+      try {
+        mockGetAllProviders.mockReturnValue([
+          {
+            id: "garmin",
+            name: "Garmin",
+            validate: () => null,
+            authSetup: () => oauthAuthSetup("https://connect.garmin.com"),
+          },
+        ]);
+        mockGetActiveProviderCooldown.mockResolvedValue({
+          providerId: "garmin",
+          scope: "provider",
+          userId: null,
+          expiresAt: new Date("2026-09-04T04:32:46.000Z"),
+        });
+        const caller = createCaller({
+          db: {
+            execute: vi
+              .fn()
+              .mockResolvedValueOnce([
+                {
+                  provider_id: "garmin",
+                  updated_at: new Date("2026-09-03T04:00:00.000Z"),
+                  has_tokens: true,
+                },
+              ])
+              .mockResolvedValueOnce([
+                { provider_id: "garmin", last_synced: "2026-09-03T04:00:00.000Z" },
+              ])
+              .mockResolvedValueOnce([])
+              .mockResolvedValueOnce([
+                { provider_id: "garmin", last_synced: "2026-09-03T04:00:00.000Z" },
+              ])
+              .mockResolvedValueOnce([]),
+          },
+          userId: "user-1",
+          timezone: "UTC",
+        });
 
-      const result = await caller.providers();
+        const result = await caller.providers();
 
-      expect(result.find((provider) => provider.id === "garmin")?.syncFreshness).toEqual({
-        status: "deferred",
-        label: "Sync deferred",
-        description: "Rate limited until 2026-09-04T04:32:46.000Z.",
-      });
-      expect(mockGetActiveProviderCooldown).toHaveBeenCalledWith("garmin", "user-1");
+        expect(result.find((provider) => provider.id === "garmin")?.syncFreshness).toEqual({
+          status: "deferred",
+          label: "Sync deferred",
+          description: "Rate limited until 2026-09-04T04:32:46.000Z.",
+        });
+        expect(mockGetActiveProviderCooldown).toHaveBeenCalledWith("garmin", "user-1");
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("returns manual token connection metadata", async () => {
@@ -727,12 +733,19 @@ describe("syncRouter", () => {
             .fn()
             .mockResolvedValueOnce([
               {
+                provider_id: "strava",
+                updated_at: new Date("2026-08-12T10:00:00.000Z"),
+                has_tokens: false,
+              },
+              {
                 provider_id: "strong-csv",
                 updated_at: new Date("2026-08-12T10:00:00.000Z"),
+                has_tokens: false,
               },
               {
                 provider_id: "whoop_ble",
                 updated_at: new Date("2026-08-12T10:00:00.000Z"),
+                has_tokens: false,
               },
             ])
             .mockResolvedValueOnce([])
@@ -752,12 +765,16 @@ describe("syncRouter", () => {
       expect(
         result.find((provider: { id: string }) => provider.id === "strava")?.syncFreshness,
       ).toBeNull();
+      expect(result.find((provider: { id: string }) => provider.id === "strava")?.authorized).toBe(
+        false,
+      );
       expect(
         result.find((provider: { id: string }) => provider.id === "strong-csv")?.syncFreshness,
       ).toBeNull();
       expect(
         result.find((provider: { id: string }) => provider.id === "whoop_ble")?.syncFreshness,
       ).toBeNull();
+      expect(mockGetActiveProviderCooldown).not.toHaveBeenCalled();
     });
 
     it("returns needsReauth=true when latest sync has auth error", async () => {
