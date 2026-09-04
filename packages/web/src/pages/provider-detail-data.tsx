@@ -1,5 +1,6 @@
 import { DATA_TYPE_LABELS, type ProviderStats } from "@dofek/providers/provider-stats";
-import { useCallback, useMemo, useState } from "react";
+import { Link } from "@tanstack/react-router";
+import { type ReactNode, useCallback, useMemo, useState } from "react";
 import { ProviderSyncHistoryEntry } from "../components/ProviderSyncHistoryEntry.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { toFilterOptions } from "../lib/provider-detail-filter-options.ts";
@@ -124,6 +125,33 @@ function getStatCount(stats: ProviderStats, key: DataType): number {
   return stats[key];
 }
 
+function RecordsSectionShell({
+  children,
+  providerId,
+  hasClinicalRecords,
+}: {
+  children: ReactNode;
+  providerId: string;
+  hasClinicalRecords: boolean;
+}) {
+  return (
+    <section>
+      <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">Records</h2>
+      {providerId === "apple_health" ? (
+        <div className="mb-3 rounded border border-border bg-surface px-3 py-3 text-xs text-subtle">
+          <p>Clinical records are optional, read-only, and sync only during an explicit sync.</p>
+          {hasClinicalRecords ? (
+            <Link to="/clinical-records" className="mt-2 inline-block text-accent hover:underline">
+              View clinical records
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
+      {children}
+    </section>
+  );
+}
+
 export function RecordsBrowser({
   providerId,
   stats,
@@ -132,6 +160,8 @@ export function RecordsBrowser({
   stats: ProviderStats | undefined;
 }) {
   const availability = trpc.providerDetail.availableDataTypes.useQuery({ providerId });
+  const hasClinicalRecords =
+    (stats?.clinicalRecords ?? 0) > 0 || (availability.data?.includes("clinicalRecords") ?? false);
   const availableTypes = DATA_TYPE_LABELS.filter((dataType) =>
     availability.data?.includes(dataType.key),
   );
@@ -146,37 +176,32 @@ export function RecordsBrowser({
 
   if (availability.isLoading) {
     return (
-      <section>
-        <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">Records</h2>
+      <RecordsSectionShell providerId={providerId} hasClinicalRecords={hasClinicalRecords}>
         <div className="text-xs text-subtle">Loading records...</div>
-      </section>
+      </RecordsSectionShell>
     );
   }
 
   if (availability.isError) {
     return (
-      <section>
-        <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">Records</h2>
+      <RecordsSectionShell providerId={providerId} hasClinicalRecords={hasClinicalRecords}>
         <QueryStatePanel error={availability.error} height={80} />
-      </section>
+      </RecordsSectionShell>
     );
   }
 
   if (availableTypes.length === 0) {
     return (
-      <section>
-        <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">Records</h2>
+      <RecordsSectionShell providerId={providerId} hasClinicalRecords={hasClinicalRecords}>
         <div className="text-xs text-subtle">No records yet for this provider.</div>
-      </section>
+      </RecordsSectionShell>
     );
   }
 
   const recordPanelId = `provider-records-panel-${providerId}`;
 
   return (
-    <section>
-      <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">Records</h2>
-
+    <RecordsSectionShell providerId={providerId} hasClinicalRecords={hasClinicalRecords}>
       <div role="tablist" aria-label="Record types" className="flex flex-wrap gap-1 mb-3">
         {availableTypes.map((dataType) => {
           const tabId = `provider-records-tab-${providerId}-${dataType.key}`;
@@ -217,7 +242,7 @@ export function RecordsBrowser({
           dataType={activeTab}
         />
       </div>
-    </section>
+    </RecordsSectionShell>
   );
 }
 

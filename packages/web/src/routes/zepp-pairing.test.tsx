@@ -1,16 +1,20 @@
-import { isValidElement } from "react";
+// @vitest-environment jsdom
+
+import { render } from "@testing-library/react";
+import type { ReactElement } from "react";
 import { expect, it, vi } from "vitest";
 
 const captured = vi.hoisted<{
   validateSearch: ((search: Record<string, unknown>) => { code?: string }) | null;
-  component: (() => unknown) | null;
-}>(() => ({ component: null, validateSearch: null }));
+  component: (() => ReactElement<{ initialCode?: string }>) | null;
+  pageProps: { initialCode?: string } | null;
+}>(() => ({ component: null, pageProps: null, validateSearch: null }));
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute:
     () =>
     (options: {
-      component?: () => unknown;
+      component?: () => ReactElement<{ initialCode?: string }>;
       validateSearch?: (search: Record<string, unknown>) => { code?: string };
     }) => {
       captured.component = options.component ?? null;
@@ -20,13 +24,17 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("../pages/ZeppPairingPage.tsx", () => ({
-  ZeppPairingPage: () => null,
+  ZeppPairingPage: (props: { initialCode?: string }) => {
+    captured.pageProps = props;
+    return <div data-testid="zepp-pairing-page" />;
+  },
 }));
 
 it("keeps a non-empty Zepp pairing code from the direct URL", async () => {
   await import("./zepp-pairing.tsx");
 
   expect(captured.validateSearch?.({ code: "ABC234" })).toEqual({ code: "ABC234" });
+  expect(captured.validateSearch?.({ code: "  ABC234  " })).toEqual({ code: "ABC234" });
   expect(captured.validateSearch?.({ code: "" })).toEqual({});
   expect(captured.validateSearch?.({ code: ["ABC234"] })).toEqual({});
   expect(captured.validateSearch?.({ code: 42 })).toEqual({});
@@ -35,10 +43,9 @@ it("keeps a non-empty Zepp pairing code from the direct URL", async () => {
 it("passes the validated direct-link code from the route into the pairing page", async () => {
   await import("./zepp-pairing.tsx");
 
-  const element = captured.component?.();
-  expect(isValidElement<{ initialCode?: string }>(element)).toBe(true);
-  if (!isValidElement<{ initialCode?: string }>(element)) {
-    throw new Error("Pairing route did not return a page element");
-  }
-  expect(element.props.initialCode).toBe("ABC234");
+  expect(captured.component).not.toBeNull();
+  if (!captured.component) throw new Error("Zepp pairing route component was not registered");
+  render(captured.component());
+
+  expect(captured.pageProps?.initialCode).toBe("ABC234");
 });

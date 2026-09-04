@@ -6,6 +6,9 @@ export const localTimeSourceSchema = z.enum([
   "provider_offset",
   "device_timezone",
   "device_offset",
+  "user_home_timezone",
+  "gps_timezone",
+  "home_zone_fallback",
   "unknown",
 ]);
 
@@ -29,7 +32,13 @@ interface ResolveRecordLocalTimeContextInput {
   source: LocalTimeSource;
 }
 
-const timezoneSources = new Set<LocalTimeSource>(["provider_timezone", "device_timezone"]);
+const timezoneSources = new Set<LocalTimeSource>([
+  "provider_timezone",
+  "device_timezone",
+  "user_home_timezone",
+  "gps_timezone",
+  "home_zone_fallback",
+]);
 const offsetSources = new Set<LocalTimeSource>(["provider_offset", "device_offset"]);
 
 function requireValidDate(date: Date, field: "startedAt" | "endedAt"): void {
@@ -77,6 +86,10 @@ function offsetInTimezone(date: Date, timezone: string): number {
     values.second ?? 0,
   );
   return Math.round((projectedAsUtc - date.getTime()) / 60_000);
+}
+
+function isFixedEtcGmtZone(timezone: string): boolean {
+  return /^Etc\/GMT(?:[+-]\d{1,2})?$/.test(timezone);
 }
 
 export function localTimeContextUnknown(): RecordLocalTimeContext {
@@ -137,6 +150,61 @@ export function resolveRecordLocalTimeContext(
   return localTimeContextUnknown();
 }
 
+export function resolveProviderTimezoneLocalTimeContext(input: {
+  startedAt: Date;
+  endedAt?: Date | null;
+  timezone: string;
+}): RecordLocalTimeContext {
+  const timezone = input.timezone.trim();
+  if (isFixedEtcGmtZone(timezone)) {
+    return resolveRecordLocalTimeContext({
+      startedAt: input.startedAt,
+      endedAt: input.endedAt,
+      startUtcOffsetMinutes: offsetInTimezone(input.startedAt, timezone),
+      endUtcOffsetMinutes: input.endedAt ? offsetInTimezone(input.endedAt, timezone) : null,
+      source: "provider_offset",
+    });
+  }
+  return resolveRecordLocalTimeContext({
+    startedAt: input.startedAt,
+    endedAt: input.endedAt,
+    timezone,
+    source: "provider_timezone",
+  });
+}
+
+/**
+ * Interpret UTC calendar fields as a naive wall-clock value in an IANA zone.
+ * Ambiguous fall-back values choose the earlier instant; nonexistent spring-
+ * forward values fail instead of being normalized to a different wall time.
+ */
+export function resolveNaiveWallClockInTimezone(wallClockDate: Date, timezone: string): Date {
+  requireValidDate(wallClockDate, "startedAt");
+  const normalizedTimezone = timezone.trim();
+  const offsets = new Set<number>();
+  for (let deltaMinutes = -1_440; deltaMinutes <= 1_440; deltaMinutes += 30) {
+    offsets.add(
+      offsetInTimezone(
+        new Date(wallClockDate.getTime() + deltaMinutes * 60_000),
+        normalizedTimezone,
+      ),
+    );
+  }
+  const candidates = [...offsets]
+    .map((offsetMinutes) => new Date(wallClockDate.getTime() - offsetMinutes * 60_000))
+    .filter(
+      (candidate) =>
+        candidate.getTime() + offsetInTimezone(candidate, normalizedTimezone) * 60_000 ===
+        wallClockDate.getTime(),
+    )
+    .sort((left, right) => left.getTime() - right.getTime());
+  const startedAt = candidates[0];
+  if (!startedAt) {
+    throw new Error(`Wall-clock timestamp does not exist in ${normalizedTimezone}`);
+  }
+  return startedAt;
+}
+
 export function offsetMinutesFromTimestamp(timestamp: string): number | null {
   if (/Z$/i.test(timestamp)) return 0;
   const match = timestamp.match(/([+-])(\d{2}):?(\d{2})$/);
@@ -181,6 +249,7 @@ export function formatRecordLocalTime(
   context: RecordLocalTimeContext,
   boundary: "start" | "end",
   locale?: string,
+  viewerTimezone?: string,
 ): string {
   const date = parseValidDate(timestamp);
   if (!date) return "--";
@@ -197,7 +266,16 @@ export function formatRecordLocalTime(
 
   const offsetMinutes =
     boundary === "start" ? context.startUtcOffsetMinutes : context.endUtcOffsetMinutes;
-  if (offsetMinutes == null) return "--";
+  if (offsetMinutes == null) {
+    if (!viewerTimezone) return "--";
+    try {
+      return timeFormatter(locale, viewerTimezone)
+        .format(date)
+        .replace(/\u202f/g, " ");
+    } catch {
+      return "--";
+    }
+  }
   const shiftedDate = new Date(date.getTime() + offsetMinutes * 60_000);
   return timeFormatter(locale, "UTC")
     .format(shiftedDate)

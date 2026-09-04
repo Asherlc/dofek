@@ -2,7 +2,7 @@ version: 2
 
 sources:
   - name: analytics
-    schema: analytics
+    schema: "{{ env_var('DBT_ANALYTICS_SOURCE_SCHEMA', 'analytics') }}"
     tables:
       - name: body_measurement_sample
       - name: heart_rate_day_change
@@ -11,8 +11,10 @@ sources:
       - name: sleep_heart_rate_cutover
       - name: v_activity
       - name: v_activity_members
+      - name: v_daily_metrics
+      - name: v_sleep
   - name: ingest
-    schema: ingest
+    schema: "{{ env_var('DBT_INGEST_SOURCE_SCHEMA', 'ingest') }}"
     tables:
       - name: metric_stream
         config:
@@ -24,16 +26,15 @@ sources:
         config:
           event_time: ingested_at
   - name: postgres_fitness
-    schema: postgres_fitness
+    schema: "{{ env_var('DBT_POSTGRES_FITNESS_SOURCE_SCHEMA', 'postgres_fitness') }}"
     tables:
       - name: activity
       - name: device_priority
       - name: daily_metrics
       - name: food_entry
       - name: health_event
+      - name: clinical_record
       - name: journal_entry
-      - name: lab_panel
-      - name: lab_result
       - name: provider
       - name: provider_connection
       - name: provider_priority
@@ -41,3 +42,4 @@ sources:
       - name: sensor_provider_priority
       - name: sleep_session
       - name: user_profile
+      - name: user_profile_current

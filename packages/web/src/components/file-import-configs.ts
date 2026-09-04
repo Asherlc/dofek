@@ -15,7 +15,6 @@ export const fileImportConfigs: Record<string, FileImportZoneProps> = {
     description: ".csv export from Strong app",
     accept: ".csv",
     importType: "strong-csv",
-    weightUnit: "kg",
   },
   "cronometer-csv": {
     title: "Cronometer",

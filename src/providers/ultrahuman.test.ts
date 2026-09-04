@@ -307,40 +307,41 @@ describe("UltrahumanProvider", () => {
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
-  it.each([
-    401, 403,
-  ])("marks a rejected personal token response (%s) as requiring authentication", async (status) => {
-    const { db, spies } = createMockDatabase({
-      tokensResult: [
-        {
-          accessToken: "revoked-personal-token",
-          refreshToken: null,
-          expiresAt: new Date("2099-12-31T00:00:00.000Z"),
-          scopes: "self",
-        },
-      ],
-    });
-    const mockFetch: typeof globalThis.fetch = async () =>
-      new Response("token rejected", { status });
+  it.each([401, 403])(
+    "marks a rejected personal token response (%s) as requiring authentication",
+    async (status) => {
+      const { db, spies } = createMockDatabase({
+        tokensResult: [
+          {
+            accessToken: "revoked-personal-token",
+            refreshToken: null,
+            expiresAt: new Date("2099-12-31T00:00:00.000Z"),
+            scopes: "self",
+          },
+        ],
+      });
+      const mockFetch: typeof globalThis.fetch = async () =>
+        new Response("token rejected", { status });
 
-    const result = await new UltrahumanProvider(mockFetch).sync(
-      new SyncRun({
-        db,
-        window: SyncWindow.fromDateRange({
-          sinceDate: "2026-03-01",
-          untilDate: "2026-03-01",
+      const result = await new UltrahumanProvider(mockFetch).sync(
+        new SyncRun({
+          db,
+          window: SyncWindow.fromDateRange({
+            sinceDate: "2026-03-01",
+            untilDate: "2026-03-01",
+          }),
+          userId: "user-1",
         }),
-        userId: "user-1",
-      }),
-    );
+      );
 
-    expect(result.recordsSynced).toBe(0);
-    expect(result.errors).toHaveLength(1);
-    expect(authFailureReasonFromError(result.errors[0]?.cause)).toBe("authentication_failed");
-    expect(spies.values).toHaveBeenCalledWith(
-      expect.objectContaining({ authFailureReason: "authentication_failed" }),
-    );
-  });
+      expect(result.recordsSynced).toBe(0);
+      expect(result.errors).toHaveLength(1);
+      expect(authFailureReasonFromError(result.errors[0]?.cause)).toBe("authentication_failed");
+      expect(spies.values).toHaveBeenCalledWith(
+        expect.objectContaining({ authFailureReason: "authentication_failed" }),
+      );
+    },
+  );
 
   it("fails before loading credentials when the sync user is missing", async () => {
     const { db, spies } = createMockDatabase();

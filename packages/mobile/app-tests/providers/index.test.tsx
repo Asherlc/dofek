@@ -4,13 +4,14 @@ import { ROUTINE_SYNC_DAYS } from "@dofek/providers/sync-actions";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { providerActionLabel } from "../../app/providers/provider-card";
+import { providerActionLabel } from "../../components/providers/provider-card";
 
 const mockPush = vi.fn();
 const mockReplace = vi.fn();
 const mockUseLocalSearchParams = vi.fn().mockReturnValue({});
 const mockSyncMutateAsync = vi.fn();
 const mockImportSharedFile = vi.fn();
+const mockCreateExpoUploadableMobileFile = vi.fn();
 const mockGetDocumentAsync = vi.fn();
 const mockAlert = vi.hoisted(() => vi.fn());
 const mockSendAccessibilityEvent = vi.hoisted(() => vi.fn());
@@ -238,6 +239,11 @@ vi.mock("../../lib/share-import", () => ({
   importSharedFile: (...args: unknown[]) => mockImportSharedFile(...args),
 }));
 
+vi.mock("../../lib/expo-uploadable-file", () => ({
+  createExpoUploadableMobileFile: (...args: unknown[]) =>
+    mockCreateExpoUploadableMobileFile(...args),
+}));
+
 vi.mock("../../lib/telemetry", () => ({
   captureException: vi.fn(),
 }));
@@ -259,11 +265,11 @@ vi.mock("../../modules/health-kit", () => ({
     deletedUUIDs: [],
   }),
   queryDailyStatistics: vi.fn().mockResolvedValue([]),
+  queryCategorySamples: vi.fn().mockResolvedValue([]),
   queryQuantitySamples: vi.fn().mockResolvedValue([]),
   queryWorkouts: vi.fn().mockResolvedValue([]),
   querySleepSamples: vi.fn().mockResolvedValue([]),
   queryWorkoutRoutes: vi.fn().mockResolvedValue([]),
-  writeDietarySamples: vi.fn().mockResolvedValue(true),
   deleteDietarySamples: vi.fn().mockResolvedValue(0),
 }));
 
@@ -271,16 +277,6 @@ const mockSyncHealthKit = vi.fn().mockResolvedValue({ inserted: 0, errors: [] })
 
 vi.mock("../../lib/health-kit-sync", () => ({
   syncHealthKitToServer: (...args: unknown[]) => mockSyncHealthKit(...args),
-}));
-
-const mockSyncDofekFoodToHealthKit = vi.fn().mockResolvedValue({
-  written: 0,
-  skipped: 0,
-  errors: [],
-});
-
-vi.mock("../../lib/health-kit-food-writeback", () => ({
-  syncDofekFoodToHealthKit: (...args: unknown[]) => mockSyncDofekFoodToHealthKit(...args),
 }));
 
 vi.mock("@dofek/format/format", () => ({
@@ -308,6 +304,10 @@ const mockGarminSignIn = vi.fn();
 const mockWhoopSignIn = vi.fn();
 const mockWhoopVerifyCode = vi.fn();
 const mockWhoopSaveTokens = vi.fn();
+const mockInitiateFileUpload = vi.fn();
+const mockAuthorizeFileUploadParts = vi.fn();
+const mockCompleteFileUpload = vi.fn();
+const mockFetchUnitSetting = vi.fn();
 const mockUseRefresh = vi.fn((_options: { invalidate?: () => Promise<void> } | undefined) => ({
   refreshing: false,
   onRefresh: vi.fn(),
@@ -331,6 +331,11 @@ vi.mock("../../lib/trpc", () => ({
       triggerSync: { useMutation: () => ({ mutateAsync: mockSyncMutateAsync }) },
       activeSyncs: { useQuery: (...args: unknown[]) => mockActiveSyncsQuery(...args) },
       activeImports: { useQuery: (...args: unknown[]) => mockActiveImportsQuery(...args) },
+    },
+    fileUpload: {
+      initiate: { useMutation: () => ({ mutateAsync: mockInitiateFileUpload }) },
+      authorizeParts: { useMutation: () => ({ mutateAsync: mockAuthorizeFileUploadParts }) },
+      complete: { useMutation: () => ({ mutateAsync: mockCompleteFileUpload }) },
     },
     credentialAuth: {
       signIn: { useMutation: () => ({ mutateAsync: mockCredentialSignIn }) },
@@ -356,6 +361,9 @@ vi.mock("../../lib/trpc", () => ({
           pushWorkoutRoutes: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
           pushSleepSamples: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
         },
+        fileUpload: {
+          resume: { query: vi.fn() },
+        },
         food: {
           healthKitWriteBackEntries: { query: vi.fn().mockResolvedValue([]) },
         },
@@ -370,6 +378,9 @@ vi.mock("../../lib/trpc", () => ({
         activeSyncs: { invalidate: mockInvalidateActiveSyncs },
         activeImports: { invalidate: mockInvalidateActiveImports },
         syncStatus: { fetch: mockSyncStatusFetch },
+      },
+      settings: {
+        get: { fetch: mockFetchUnitSetting },
       },
     }),
   },
@@ -445,6 +456,7 @@ function setupDefaultMocks() {
   mockDataHealthQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
   mockActiveSyncsQuery.mockReturnValue({ data: [] });
   mockActiveImportsQuery.mockReturnValue({ data: [], error: null });
+  mockFetchUnitSetting.mockResolvedValue({ key: "unitSystem", value: "metric" });
 }
 
 function makeProvider(
@@ -455,6 +467,13 @@ function makeProvider(
     authStatus: "connected" | "not_connected" | "expired";
     authType: string;
     lastSyncAt: string | null;
+    recentLogs: Array<{ status: string }>;
+    lastSuccessfulSyncAt: string | null;
+    syncFreshness: {
+      status: "unknown" | "current" | "overdue" | "deferred";
+      label: string;
+      description: string;
+    } | null;
     importOnly: boolean;
     pushOnly: boolean;
   }> = {},
@@ -466,6 +485,9 @@ function makeProvider(
     authStatus: overrides.authStatus ?? "connected",
     authType: overrides.authType ?? "oauth",
     lastSyncAt: overrides.lastSyncAt ?? null,
+    recentLogs: overrides.recentLogs ?? [],
+    lastSuccessfulSyncAt: overrides.lastSuccessfulSyncAt ?? null,
+    syncFreshness: overrides.syncFreshness ?? null,
     importOnly: overrides.importOnly ?? false,
     pushOnly: overrides.pushOnly ?? false,
     ...overrides,
@@ -502,8 +524,43 @@ describe("providerActionLabel", () => {
 });
 
 describe("ProviderCard", () => {
+  it("shows a failed latest sync independently of connection state", async () => {
+    const { ProviderCard } = await import("../../components/providers/provider-card");
+    render(
+      <ProviderCard
+        provider={makeProvider({ recentLogs: [{ status: "error" }] })}
+        stats={undefined}
+        syncing={false}
+        syncProgress={undefined}
+        onSync={noopFn}
+        onConnect={noopFn}
+        onPress={noopFn}
+      />,
+    );
+
+    expect(screen.getByText("Latest sync failed")).toBeTruthy();
+  });
+
+  it("shows a degraded latest sync as completed with issues", async () => {
+    const { ProviderCard } = await import("../../components/providers/provider-card");
+    render(
+      <ProviderCard
+        provider={makeProvider({ recentLogs: [{ status: "degraded" }] })}
+        stats={undefined}
+        syncing={false}
+        syncProgress={undefined}
+        onSync={noopFn}
+        onConnect={noopFn}
+        onPress={noopFn}
+      />,
+    );
+
+    expect(screen.getByText("Latest sync completed with issues")).toBeTruthy();
+    expect(screen.queryByText("Latest sync failed")).toBeNull();
+  });
+
   it("exposes one primary action and one details control", async () => {
-    const { ProviderCard } = await import("../../app/providers/provider-card");
+    const { ProviderCard } = await import("../../components/providers/provider-card");
     render(
       <ProviderCard
         provider={makeProvider({ label: "Wahoo" })}
@@ -526,7 +583,7 @@ describe("ProviderCard", () => {
   });
 
   it("announces a syncing provider action as busy and disabled", async () => {
-    const { ProviderCard } = await import("../../app/providers/provider-card");
+    const { ProviderCard } = await import("../../components/providers/provider-card");
     render(
       <ProviderCard
         provider={makeProvider({ label: "Wahoo" })}
@@ -545,7 +602,7 @@ describe("ProviderCard", () => {
   });
 
   it("does not nest action buttons inside the card detail button", async () => {
-    const { ProviderCard } = await import("../../app/providers/provider-card");
+    const { ProviderCard } = await import("../../components/providers/provider-card");
     const { container } = render(
       <ProviderCard
         provider={makeProvider({ lastSyncAt: "2026-03-19T12:00:00Z" })}
@@ -563,7 +620,7 @@ describe("ProviderCard", () => {
 
   describe("sync progress", () => {
     it("renders progress bar when syncing with percentage", async () => {
-      const { ProviderCard } = await import("../../app/providers/provider-card");
+      const { ProviderCard } = await import("../../components/providers/provider-card");
       render(
         <ProviderCard
           provider={makeProvider()}
@@ -582,7 +639,7 @@ describe("ProviderCard", () => {
     });
 
     it("renders progress message without percentage", async () => {
-      const { ProviderCard } = await import("../../app/providers/provider-card");
+      const { ProviderCard } = await import("../../components/providers/provider-card");
       render(
         <ProviderCard
           provider={makeProvider()}
@@ -599,7 +656,7 @@ describe("ProviderCard", () => {
     });
 
     it("renders progress bar without message when only percentage is provided", async () => {
-      const { ProviderCard } = await import("../../app/providers/provider-card");
+      const { ProviderCard } = await import("../../components/providers/provider-card");
       render(
         <ProviderCard
           provider={makeProvider()}
@@ -619,7 +676,7 @@ describe("ProviderCard", () => {
 
   describe("normal metadata when not syncing", () => {
     it("renders auth status and last sync time when not syncing", async () => {
-      const { ProviderCard } = await import("../../app/providers/provider-card");
+      const { ProviderCard } = await import("../../components/providers/provider-card");
       render(
         <ProviderCard
           provider={makeProvider({ lastSyncAt: "2026-03-19T12:00:00Z" })}
@@ -637,7 +694,7 @@ describe("ProviderCard", () => {
     });
 
     it("renders 'Never synced' when provider has no lastSyncAt", async () => {
-      const { ProviderCard } = await import("../../app/providers/provider-card");
+      const { ProviderCard } = await import("../../components/providers/provider-card");
       render(
         <ProviderCard
           provider={makeProvider({ lastSyncAt: null })}
@@ -655,7 +712,7 @@ describe("ProviderCard", () => {
     });
 
     it("renders normal metadata when syncing but syncProgress is undefined", async () => {
-      const { ProviderCard } = await import("../../app/providers/provider-card");
+      const { ProviderCard } = await import("../../components/providers/provider-card");
       render(
         <ProviderCard
           provider={makeProvider()}
@@ -673,7 +730,7 @@ describe("ProviderCard", () => {
     });
 
     it("renders 'Not connected' status for disconnected providers", async () => {
-      const { ProviderCard } = await import("../../app/providers/provider-card");
+      const { ProviderCard } = await import("../../components/providers/provider-card");
       render(
         <ProviderCard
           provider={makeProvider({ authStatus: "not_connected" })}
@@ -690,7 +747,7 @@ describe("ProviderCard", () => {
     });
 
     it("renders 'Expired' status for expired providers", async () => {
-      const { ProviderCard } = await import("../../app/providers/provider-card");
+      const { ProviderCard } = await import("../../components/providers/provider-card");
       render(
         <ProviderCard
           provider={makeProvider({ authStatus: "expired" })}
@@ -709,7 +766,7 @@ describe("ProviderCard", () => {
 
   describe("progress percentage clamping", () => {
     it("renders without error when percentage is negative", async () => {
-      const { ProviderCard } = await import("../../app/providers/provider-card");
+      const { ProviderCard } = await import("../../components/providers/provider-card");
       render(
         <ProviderCard
           provider={makeProvider()}
@@ -727,7 +784,7 @@ describe("ProviderCard", () => {
     });
 
     it("renders without error when percentage exceeds 100", async () => {
-      const { ProviderCard } = await import("../../app/providers/provider-card");
+      const { ProviderCard } = await import("../../components/providers/provider-card");
       render(
         <ProviderCard
           provider={makeProvider()}
@@ -745,7 +802,7 @@ describe("ProviderCard", () => {
   });
 
   it("renders provider label", async () => {
-    const { ProviderCard } = await import("../../app/providers/provider-card");
+    const { ProviderCard } = await import("../../components/providers/provider-card");
     render(
       <ProviderCard
         provider={makeProvider({ label: "Wahoo" })}
@@ -761,7 +818,7 @@ describe("ProviderCard", () => {
   });
 
   it("renders the shared file import button alongside sync for providers that support both", async () => {
-    const { ProviderCard } = await import("../../app/providers/provider-card");
+    const { ProviderCard } = await import("../../components/providers/provider-card");
     const importFile = vi.fn();
     render(
       <ProviderCard
@@ -784,7 +841,7 @@ describe("ProviderCard", () => {
 
   it("wires provider ids through the shared file import provider card", async () => {
     const { FileImportProviderCard } = await import(
-      "../../app/providers/file-import-provider-card"
+      "../../components/providers/file-import-provider-card"
     );
     const importProvider = vi.fn();
     render(
@@ -807,7 +864,7 @@ describe("ProviderCard", () => {
 
   it("renders the shared provider summary on file import provider cards", async () => {
     const { FileImportProviderCard } = await import(
-      "../../app/providers/file-import-provider-card"
+      "../../components/providers/file-import-provider-card"
     );
     render(
       <FileImportProviderCard
@@ -822,8 +879,7 @@ describe("ProviderCard", () => {
           healthEvents: 392,
           foodEntries: 0,
           nutritionDaily: 0,
-          labPanels: 0,
-          labResults: 0,
+          clinicalRecords: 0,
           journalEntries: 0,
         }}
         syncing={false}
@@ -853,7 +909,7 @@ describe("ProviderCard", () => {
 
   describe("import-only providers", () => {
     it("keeps the sync action separate from an active file import", async () => {
-      const { ProviderCard } = await import("../../app/providers/provider-card");
+      const { ProviderCard } = await import("../../components/providers/provider-card");
       render(
         <ProviderCard
           provider={makeProvider({ importOnly: false, authStatus: "connected" })}
@@ -874,7 +930,7 @@ describe("ProviderCard", () => {
     });
 
     it("does not render Sync button for import-only providers", async () => {
-      const { ProviderCard } = await import("../../app/providers/provider-card");
+      const { ProviderCard } = await import("../../components/providers/provider-card");
       render(
         <ProviderCard
           provider={makeProvider({ importOnly: true, authStatus: "connected" })}
@@ -892,7 +948,7 @@ describe("ProviderCard", () => {
     });
 
     it("shows 'Import only' instead of connection status", async () => {
-      const { ProviderCard } = await import("../../app/providers/provider-card");
+      const { ProviderCard } = await import("../../components/providers/provider-card");
       render(
         <ProviderCard
           provider={makeProvider({ importOnly: true, authStatus: "connected" })}
@@ -927,6 +983,15 @@ describe("ProvidersScreen", () => {
     mockUseLocalSearchParams.mockReturnValue({});
     mockSyncMutateAsync.mockReset();
     mockImportSharedFile.mockReset();
+    mockCreateExpoUploadableMobileFile.mockReset().mockImplementation((fileUri: string) => ({
+      uri: fileUri,
+      name: "Strong Export.csv",
+      type: "text/csv",
+      size: 78,
+      text: async () => "Date,Workout Name,Duration,Exercise Name",
+      sha256: async () => "a".repeat(64),
+      uploadPart: async () => ({ status: 200, headers: { etag: "part-etag" } }),
+    }));
     mockGetDocumentAsync.mockReset();
     mockAlert.mockReset();
     mockSendAccessibilityEvent.mockReset();
@@ -951,6 +1016,10 @@ describe("ProvidersScreen", () => {
     mockWhoopSignIn.mockReset();
     mockWhoopVerifyCode.mockReset();
     mockWhoopSaveTokens.mockReset();
+    mockInitiateFileUpload.mockReset();
+    mockAuthorizeFileUploadParts.mockReset();
+    mockCompleteFileUpload.mockReset();
+    mockFetchUnitSetting.mockReset();
     mockFileDelete.mockReset();
     mockAuthState.sessionToken = "test-token";
     mockFileBytes.mockClear();
@@ -959,11 +1028,6 @@ describe("ProvidersScreen", () => {
     mockHasEverAuthorized.mockReset().mockReturnValue(true);
     mockRequestPermissions.mockReset().mockResolvedValue(true);
     mockSyncHealthKit.mockReset().mockResolvedValue({ inserted: 0, errors: [] });
-    mockSyncDofekFoodToHealthKit.mockReset().mockResolvedValue({
-      written: 0,
-      skipped: 0,
-      errors: [],
-    });
     setupDefaultMocks();
   });
 
@@ -1009,6 +1073,144 @@ describe("ProvidersScreen", () => {
     await waitFor(() => {
       expect(screen.getByTestId("provider-card-wahoo")).toBeTruthy();
     });
+  });
+
+  it("groups Garmin connection methods and shows the selected method", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        { ...connectedProvider, id: "garmin", name: "Garmin", authType: "custom:garmin" },
+        {
+          ...importOnlyProvider,
+          id: "garmin-dump",
+          name: "Garmin Dump",
+          authType: "file-import",
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    await renderProvidersScreen();
+
+    expect(screen.getByTestId("provider-family-garmin")).toBeTruthy();
+    expect(screen.getByLabelText("Select Garmin Data export")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("Select Garmin Data export"));
+    expect(screen.getByTestId("provider-card-garmin-dump")).toBeTruthy();
+    expect(screen.queryByTestId("provider-card-garmin")).toBeNull();
+  });
+
+  it("groups WHOOP Cloud and Bluetooth and hides Auto-Supplements", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        { ...connectedProvider, id: "whoop", name: "WHOOP (Cloud)", authType: "custom:whoop" },
+        {
+          ...pushOnlyProvider,
+          id: "whoop_ble",
+          name: "WHOOP (Bluetooth)",
+          authType: "none",
+        },
+        {
+          ...connectedProvider,
+          id: "auto-supplements",
+          name: "Auto-Supplements",
+          authType: "none",
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    await renderProvidersScreen();
+
+    expect(screen.getByTestId("provider-family-whoop")).toBeTruthy();
+    expect(screen.getByLabelText("Select WHOOP Bluetooth")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("Select WHOOP Bluetooth"));
+    expect(screen.getByTestId("provider-card-whoop_ble")).toBeTruthy();
+    expect(screen.queryByTestId("provider-card-whoop")).toBeNull();
+    expect(screen.queryByTestId("provider-card-auto-supplements")).toBeNull();
+  });
+
+  it("renders server-authored overdue, deferred, and current freshness", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id: "polar",
+          name: "Polar",
+          description: null,
+          authType: "oauth",
+          tokenAuth: null,
+          authorized: true,
+          lastSyncedAt: "2026-08-12T12:00:00.000Z",
+          lastSuccessfulSyncAt: "2026-08-11T12:00:00.000Z",
+          syncFreshness: {
+            status: "overdue",
+            label: "Sync overdue",
+            description: "The last successful sync is overdue.",
+          },
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: true,
+        },
+        {
+          id: "garmin",
+          name: "Garmin",
+          description: null,
+          authType: "custom:garmin",
+          tokenAuth: null,
+          authorized: true,
+          lastSyncedAt: "2026-08-12T12:00:00.000Z",
+          lastSuccessfulSyncAt: "2026-08-12T11:45:00.000Z",
+          syncFreshness: {
+            status: "deferred",
+            label: "Sync deferred",
+            description: "Rate limited until 2026-08-12T12:10:00.000Z.",
+          },
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: false,
+        },
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          description: null,
+          authType: "oauth",
+          tokenAuth: null,
+          authorized: true,
+          lastSyncedAt: "2026-08-12T12:00:00.000Z",
+          lastSuccessfulSyncAt: "2026-08-12T11:45:00.000Z",
+          syncFreshness: {
+            status: "current",
+            label: "Sync current",
+          },
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: false,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    await renderProvidersScreen();
+
+    const polarCard = within(screen.getByTestId("provider-card-polar"));
+    expect(polarCard.getByText("Expired")).toBeTruthy();
+    expect(polarCard.getByText("Reconnect")).toBeTruthy();
+    expect(polarCard.getByText("Sync overdue")).toBeTruthy();
+    expect(polarCard.getByText("The last successful sync is overdue.")).toBeTruthy();
+    expect(polarCard.getByText(/Last successful sync:/)).toBeTruthy();
+
+    const garminCard = within(screen.getByTestId("provider-card-garmin"));
+    expect(garminCard.getByText("Sync deferred")).toBeTruthy();
+    expect(garminCard.getByText("Rate limited until 2026-08-12T12:10:00.000Z.")).toBeTruthy();
+
+    const wahooCard = within(screen.getByTestId("provider-card-wahoo"));
+    expect(wahooCard.getByText("Connected")).toBeTruthy();
+    expect(wahooCard.getByText("Sync current")).toBeTruthy();
+    expect(wahooCard.getByText(/Last successful sync:/)).toBeTruthy();
+    expect(
+      wahooCard.queryByText("The last successful sync completed within the expected cadence."),
+    ).toBeNull();
   });
 
   it("does not render Sync link for disconnected providers", async () => {
@@ -1117,8 +1319,7 @@ describe("ProvidersScreen", () => {
           foodEntries: 0,
           nutritionDaily: 0,
           healthEvents: 0,
-          labPanels: 0,
-          labResults: 0,
+          clinicalRecords: 0,
           journalEntries: 0,
         },
       ],
@@ -1902,14 +2103,117 @@ describe("ProvidersScreen", () => {
       expect(mockImportSharedFile).toHaveBeenCalledWith(
         expect.objectContaining({
           fileUri: "file:///tmp/Strong%20Export.csv",
-          serverUrl: "https://test.example.com",
-          sessionToken: "test-token",
+          selectStrongWeightUnit: expect.any(Function),
         }),
         expect.objectContaining({
-          readBlob: expect.any(Function),
+          fileUploadApi: expect.objectContaining({
+            initiate: expect.any(Function),
+            authorizeParts: expect.any(Function),
+            complete: expect.any(Function),
+            resume: expect.any(Function),
+          }),
         }),
       );
     });
+  });
+
+  it("does not eagerly load a unit preference before calling shared-import logic", async () => {
+    mockImportSharedFile.mockResolvedValue({ providerId: "garmin-dump", jobId: "job-share" });
+    mockUseLocalSearchParams.mockReturnValue({
+      sharedFile: "file:///tmp/garmin-export.zip",
+    });
+
+    await renderProvidersScreen();
+
+    await waitFor(() => expect(mockImportSharedFile).toHaveBeenCalledOnce());
+    expect(mockFetchUnitSetting).not.toHaveBeenCalled();
+  });
+
+  it("awaits the unit preference after identifying a shared Strong CSV", async () => {
+    let resolveUnitSetting: ((setting: { key: string; value: string }) => void) | undefined;
+    mockFetchUnitSetting.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveUnitSetting = resolve;
+        }),
+    );
+    mockAlert.mockImplementation(
+      (
+        _title: string,
+        _message: string,
+        buttons?: Array<{ text?: string; onPress?: () => void }>,
+      ) => {
+        buttons?.find((button) => button.text === "Pounds (lbs)")?.onPress?.();
+      },
+    );
+    let selection: Promise<"kg" | "lbs" | null> | undefined;
+    mockImportSharedFile.mockImplementation(
+      async (args: { selectStrongWeightUnit?: () => Promise<"kg" | "lbs" | null> }) => {
+        selection = args.selectStrongWeightUnit?.();
+        await selection;
+        return null;
+      },
+    );
+    mockUseLocalSearchParams.mockReturnValue({
+      sharedFile: "file:///tmp/Strong%20Export.csv",
+    });
+
+    await renderProvidersScreen();
+    await waitFor(() => expect(mockFetchUnitSetting).toHaveBeenCalledWith({ key: "unitSystem" }));
+    expect(mockAlert).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveUnitSetting?.({ key: "unitSystem", value: "imperial" });
+    });
+
+    await expect(selection).resolves.toBe("lbs");
+    expect(mockAlert).toHaveBeenCalledWith(
+      "Strong weight unit",
+      "Which unit are the weights in this Strong export?",
+      expect.arrayContaining([
+        expect.objectContaining({ text: "Pounds (lbs)", isPreferred: true }),
+      ]),
+      expect.objectContaining({ cancelable: true }),
+    );
+  });
+
+  it("prompts for Strong weight units with the Dofek preference highlighted", async () => {
+    mockFetchUnitSetting.mockResolvedValue({ key: "unitSystem", value: "imperial" });
+    let selectStrongWeightUnit: (() => Promise<"kg" | "lbs" | null>) | undefined;
+    mockImportSharedFile.mockImplementation(
+      async (args: { selectStrongWeightUnit?: () => Promise<"kg" | "lbs" | null> }) => {
+        selectStrongWeightUnit = args.selectStrongWeightUnit;
+        return { providerId: "strong-csv", jobId: "job-share" };
+      },
+    );
+    mockUseLocalSearchParams.mockReturnValue({
+      sharedFile: "file:///tmp/Strong%20Export.csv",
+    });
+
+    await renderProvidersScreen();
+    await waitFor(() => expect(selectStrongWeightUnit).toBeTypeOf("function"));
+
+    mockAlert.mockImplementation(
+      (
+        _title: string,
+        _message: string,
+        buttons?: Array<{ text?: string; isPreferred?: boolean; onPress?: () => void }>,
+      ) => {
+        buttons?.find((button) => button.text === "Pounds (lbs)")?.onPress?.();
+      },
+    );
+    const selection = selectStrongWeightUnit?.();
+    await waitFor(() =>
+      expect(mockAlert).toHaveBeenCalledWith(
+        "Strong weight unit",
+        "Which unit are the weights in this Strong export?",
+        expect.arrayContaining([
+          expect.objectContaining({ text: "Pounds (lbs)", isPreferred: true }),
+        ]),
+        expect.objectContaining({ cancelable: true }),
+      ),
+    );
+    await expect(selection).resolves.toBe("lbs");
   });
 
   it("deletes a shared file and surfaces auth errors when importing without a session", async () => {
@@ -1969,10 +2273,8 @@ describe("ProvidersScreen", () => {
         expect.objectContaining({
           fileUri: "file:///tmp/garmin-export.zip",
           providerId: "garmin-dump",
-          serverUrl: "https://test.example.com",
-          sessionToken: "test-token",
         }),
-        expect.objectContaining({ readBlob: expect.any(Function) }),
+        expect.objectContaining({ fileUploadApi: expect.any(Object), file: expect.any(Object) }),
       );
     });
   });
@@ -2010,10 +2312,9 @@ describe("ProvidersScreen", () => {
         expect.objectContaining({
           fileUri: "file:///tmp/strong-export.csv",
           providerId: "strong-csv",
-          serverUrl: "https://test.example.com",
-          sessionToken: "test-token",
+          selectStrongWeightUnit: expect.any(Function),
         }),
-        expect.objectContaining({ readBlob: expect.any(Function) }),
+        expect.objectContaining({ fileUploadApi: expect.any(Object), file: expect.any(Object) }),
       );
     });
   });
@@ -2060,10 +2361,8 @@ describe("ProvidersScreen", () => {
         expect.objectContaining({
           fileUri: "file:///tmp/cronometer-export.csv",
           providerId: "cronometer-csv",
-          serverUrl: "https://test.example.com",
-          sessionToken: "test-token",
         }),
-        expect.objectContaining({ readBlob: expect.any(Function) }),
+        expect.objectContaining({ fileUploadApi: expect.any(Object), file: expect.any(Object) }),
       );
     });
   });
@@ -2110,10 +2409,8 @@ describe("ProvidersScreen", () => {
         expect.objectContaining({
           fileUri: "file:///tmp/kaya-export.csv",
           providerId: "kaya-export",
-          serverUrl: "https://test.example.com",
-          sessionToken: "test-token",
         }),
-        expect.objectContaining({ readBlob: expect.any(Function) }),
+        expect.objectContaining({ fileUploadApi: expect.any(Object), file: expect.any(Object) }),
       );
     });
   });
@@ -2272,50 +2569,6 @@ describe("ProvidersScreen", () => {
 
     expect(screen.queryByText("Sync recent data")).toBeNull();
     expect(screen.queryByText("Sync full history…")).toBeNull();
-  });
-
-  it("passes readBlob that uses Expo file blobs without wrapping bytes", async () => {
-    mockImportSharedFile.mockResolvedValue({ providerId: "strong-csv", jobId: "job-share" });
-    mockUseLocalSearchParams.mockReturnValue({
-      sharedFile: "file:///tmp/strong.csv",
-    });
-
-    await renderProvidersScreen();
-
-    await waitFor(() => {
-      expect(mockImportSharedFile).toHaveBeenCalled();
-    });
-
-    const callArgs = mockImportSharedFile.mock.calls[0];
-    expect(callArgs).toBeDefined();
-    expect(callArgs?.[1]).toHaveProperty("readBlob");
-    const readBlob: (uri: string) => Promise<Blob> = callArgs[1].readBlob;
-    const originalBlob = globalThis.Blob;
-    vi.stubGlobal(
-      "Blob",
-      class RejectingArrayBufferBlob extends originalBlob {
-        constructor(parts?: BlobPart[], options?: BlobPropertyBag) {
-          if (parts?.some((part) => part instanceof ArrayBuffer || ArrayBuffer.isView(part))) {
-            throw new Error(
-              "Creating blobs from 'ArrayBuffer' and 'ArrayBufferView' are not supported",
-            );
-          }
-          super(parts, options);
-        }
-      },
-    );
-
-    try {
-      const blob = await readBlob("file:///tmp/strong.csv");
-
-      expect(mockFileBytes).not.toHaveBeenCalled();
-      expect(blob.size).toBeGreaterThan(0);
-      const text = await blob.text();
-      expect(text).toContain("Workout Name");
-      expect(mockFileDelete).toHaveBeenCalledWith("file:///tmp/strong.csv");
-    } finally {
-      vi.unstubAllGlobals();
-    }
   });
 
   it("shows Expired status when provider needsReauth", async () => {
@@ -2623,10 +2876,8 @@ describe("ProvidersScreen", () => {
         expect.objectContaining({
           fileUri: "file:///tmp/apple-health-export.zip",
           providerId: "apple-health",
-          serverUrl: "https://test.example.com",
-          sessionToken: "test-token",
         }),
-        expect.objectContaining({ readBlob: expect.any(Function) }),
+        expect.objectContaining({ fileUploadApi: expect.any(Object), file: expect.any(Object) }),
       );
     });
   });
@@ -2671,27 +2922,6 @@ describe("ProvidersScreen", () => {
       expect(appleCard.getByText("Device locked — unlock to sync Apple Health data")).toBeTruthy();
     });
     expect(mockCaptureException).not.toHaveBeenCalled();
-  });
-
-  it("writes direct Dofek food entries back to Apple Health when Sync is clicked", async () => {
-    await renderProvidersScreen();
-
-    await waitFor(() => {
-      const appleCard = within(screen.getByTestId("provider-card-apple_health"));
-      expect(appleCard.getByText("Sync")).toBeTruthy();
-    });
-
-    const appleCard = within(screen.getByTestId("provider-card-apple_health"));
-    fireEvent.click(appleCard.getByText("Sync"));
-
-    await waitFor(() => {
-      expect(mockSyncDofekFoodToHealthKit).toHaveBeenCalledWith(
-        expect.objectContaining({
-          startDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
-          endDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
-        }),
-      );
-    });
   });
 
   it("shows Connect button when HealthKit was never authorized", async () => {

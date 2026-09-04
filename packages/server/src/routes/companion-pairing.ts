@@ -30,9 +30,9 @@ function buildQrImageUrl(origin: string, pairingId: string): string {
   return url.toString();
 }
 
-function assertSecurePairingOrigin(origin: string): void {
+function requireSecureProductionOrigin(origin: string): void {
   if (process.env.NODE_ENV === "production" && new URL(origin).protocol !== "https:") {
-    throw new Error("Pairing PUBLIC_URL must use https in production");
+    throw new Error("PUBLIC_URL environment variable must use https in production");
   }
 }
 
@@ -43,7 +43,7 @@ export function createCompanionPairingRouter(deps: {
   const router = Router();
   const store = deps.store ?? getCompanionPairingStore();
   const publicOrigin = getPublicUrlOrigin();
-  assertSecurePairingOrigin(publicOrigin);
+  requireSecureProductionOrigin(publicOrigin);
 
   router.post("/start", express.json(), async (req, res) => {
     const parsed = pairingStartSchema.safeParse(req.body ?? {});

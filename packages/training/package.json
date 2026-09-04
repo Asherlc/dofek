@@ -1,6 +1,6 @@
 {
   "name": "@dofek/training",
-  "version": "0.1.5",
+  "version": "0.1.36",
   "description": "Training-science calculations for power, load, performance, and workout planning",
   "type": "module",
   "license": "MIT",
@@ -43,7 +43,9 @@
   },
   "dependencies": {
     "@dofek/scoring": "workspace:*",
-    "@dofek/zones": "workspace:*"
+    "@dofek/zones": "workspace:*",
+    "@openbeta/sandbag": "0.0.55",
+    "zod": "4.4.3"
   },
   "scripts": {
     "build": "tsc",

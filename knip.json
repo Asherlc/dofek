@@ -87,6 +87,12 @@
         "entry": ["src/**/*.test.ts"]
       }
     },
+    "packages/mountain-project-client": {
+      "vitest": {
+        "config": ["../../vitest.config.ts"],
+        "entry": ["src/**/*.test.ts"]
+      }
+    },
     "packages/garmin-connect": {
       "vitest": {
         "config": ["../../vitest.config.ts"],
@@ -114,6 +120,7 @@
         "workout-extension/setting/index.ts",
         "workout-extension/zeus.ts"
       ],
+      "ignore": ["src/__mocks__/**"],
       "ignoreDependencies": ["@zeppos/device-types", "@zos/app-access", "@zos/ui"],
       "vitest": {
         "config": ["vitest.config.ts"],

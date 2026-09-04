@@ -316,6 +316,7 @@ async function runApiStep(
               step.nextToken,
             );
             checkpoint.presentExternalIds.push(...page.presentIds);
+            Object.assign(checkpoint.developerActivityTypeNamesById, page.activityTypeNamesById);
             const degradation = developerWorkoutPaginationDegradation(checkpoint, page.nextToken);
 
             if (page.nextToken && !page.reachedWindowStart && !degradation) {
@@ -351,7 +352,10 @@ async function runApiStep(
             const count = await persistWhoopWorkoutsFromCycles(
               context,
               new Set(checkpoint.presentExternalIds),
-              { reconcileAbsence: checkpoint.developerWorkoutPaginationComplete },
+              {
+                reconcileAbsence: checkpoint.developerWorkoutPaginationComplete,
+                developerActivityTypeNamesById: checkpoint.developerActivityTypeNamesById,
+              },
             );
             return { recordCount: count, result: count };
           },

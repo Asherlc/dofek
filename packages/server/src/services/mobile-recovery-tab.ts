@@ -251,27 +251,35 @@ export async function loadMobileRecoveryTab(
   const goalWeightKg =
     parsedGoalWeightKg != null && Number.isFinite(parsedGoalWeightKg) ? parsedGoalWeightKg : null;
 
-  const [hrvBaseline, weight, bodyFat, weightPrediction, healthspanRaw, decisionContext] =
-    await Promise.all([
-      metricsRepo.getHrvBaseline(days, endDate, restingHeartRateCte),
-      bodyRepo.getSmoothedWeight(weightDays, endDate),
-      bodyRepo.getRecomposition(days, endDate),
-      bodyRepo.getWeightPrediction(weightDays, endDate, goalWeightKg),
-      fetchHealthspanRawData(
-        {
-          userId: ctx.userId,
-          timezone: ctx.timezone,
-          accessWindow: ctx.accessWindow,
-          sensorStore: ctx.sensorStore,
-        },
-        endDate,
-        healthspanWeeks * 7,
-      ),
-      bodyRepo.getBodyDecisionContext(endDate).catch((error: unknown) => {
-        captureException(error);
-        return null;
-      }),
-    ]);
+  const [
+    hrvBaseline,
+    weight,
+    bodyFatTrend,
+    weightPrediction,
+    bodyFatPrediction,
+    healthspanRaw,
+    decisionContext,
+  ] = await Promise.all([
+    metricsRepo.getHrvBaseline(days, endDate, restingHeartRateCte),
+    bodyRepo.getSmoothedWeight(weightDays, endDate),
+    bodyRepo.getSmoothedBodyFat(weightDays, endDate),
+    bodyRepo.getWeightPrediction(weightDays, endDate, goalWeightKg),
+    bodyRepo.getBodyFatPrediction(weightDays, endDate),
+    fetchHealthspanRawData(
+      {
+        userId: ctx.userId,
+        timezone: ctx.timezone,
+        accessWindow: ctx.accessWindow,
+        sensorStore: ctx.sensorStore,
+      },
+      endDate,
+      healthspanWeeks * 7,
+    ),
+    bodyRepo.getBodyDecisionContext(endDate).catch((error: unknown) => {
+      captureException(error);
+      return null;
+    }),
+  ]);
 
   const restingHeartRateBaseline = baselineRelative.find(
     (metric) => metric.metric === "resting_heart_rate",
@@ -339,9 +347,10 @@ export async function loadMobileRecoveryTab(
     trends: deriveTrends(dailyMetrics),
     dailyMetrics,
     weight,
-    bodyFat: bodyFat.map(({ date, bodyFatPct }) => ({ date, bodyFatPct })),
+    bodyFatTrend,
     decisionContext,
     weightPrediction,
+    bodyFatPrediction,
     baselineRelative,
     healthStatus,
     healthspan: buildHealthspanResult(healthspanRaw),

@@ -235,7 +235,6 @@ describe("Zepp pairing refresh", () => {
         body: { state: "connected", connectionType: "zepp-workout" },
       })),
     );
-
     const side = Object.assign({}, requireSideConfiguration());
     const calls: WatchCallPayload[] = [];
     side.call = (payload) => calls.push(payload);
@@ -243,6 +242,7 @@ describe("Zepp pairing refresh", () => {
     await expect(side.verifyConnection()).rejects.toThrow(
       "Saved credentials belong to a different Zepp app",
     );
+    expect(values.has(STORAGE_KEYS.DOFEK_API_TOKEN)).toBe(false);
     expect(calls).toContainEqual({ method: "dofek.connectionChanged", params: {} });
   });
 
@@ -478,5 +478,47 @@ describe("Zepp pairing refresh", () => {
       state: "error",
       reason: "Bluetooth interrupted",
     });
+  });
+
+  it("does not start a new pairing session after a connection-change disconnect notification", async () => {
+    const watchConfig = requireWatchConfiguration();
+    const watch = Object.assign({}, watchConfig, { state: { ...watchConfig.state } });
+    watch.request = vi.fn(async (request) => {
+      if (request.method === "imu.getPreferences") {
+        return { hasCredentials: false, pairing: null };
+      }
+      return null;
+    });
+
+    watch.onCall({ method: "dofek.connectionChanged", params: {} });
+
+    await vi.waitFor(() =>
+      expect(watch.request).toHaveBeenCalledWith({ method: "imu.getPreferences", params: {} }),
+    );
+    expect(watch.request).not.toHaveBeenCalledWith({ method: "dofek.startPairing", params: {} });
+  });
+
+  it("ignores an older preference response that finishes after the latest response", async () => {
+    const watchConfig = requireWatchConfiguration();
+    const watch = Object.assign({}, watchConfig, { state: { ...watchConfig.state } });
+    const pendingPreferences: Array<(value: unknown) => void> = [];
+    watch.request = vi.fn((request) => {
+      if (request.method === "imu.getPreferences") {
+        return new Promise((resolve) => pendingPreferences.push(resolve));
+      }
+      return Promise.resolve(null);
+    });
+
+    watch.onCall({ method: "dofek.connectionChanged", params: {} });
+    watch.onCall({ method: "dofek.connectionChanged", params: {} });
+    expect(pendingPreferences).toHaveLength(2);
+
+    pendingPreferences[1]?.({ hasCredentials: true, pairing: null });
+    await Promise.resolve();
+    expect(watch.state.hasCredentials).toBe(true);
+
+    pendingPreferences[0]?.({ hasCredentials: false, pairing: null });
+    await Promise.resolve();
+    expect(watch.state.hasCredentials).toBe(true);
   });
 });

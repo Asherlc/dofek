@@ -104,22 +104,101 @@ describe("parseTripToActivity", () => {
     const trip = { ...baseTrip, description: null };
     expect(parseTripToActivity(trip).notes).toBeUndefined();
   });
+
+  it("carries the first route coordinate into activity local-time resolution", () => {
+    const trip = {
+      ...baseTrip,
+      track_points: [
+        { epochSeconds: 1_723_276_200 },
+        { longitude: -123.56, latitude: 38.827, epochSeconds: 1_723_276_201 },
+      ],
+    };
+
+    expect(parseTripToActivity(trip).localTimeCoordinates).toEqual({
+      latitude: 38.827,
+      longitude: -123.56,
+    });
+  });
+
+  it("skips invalid coordinates before selecting local-time evidence", () => {
+    const trip = {
+      ...baseTrip,
+      track_points: [
+        { longitude: -300, latitude: 120, epochSeconds: 1_723_276_200 },
+        { longitude: -123.56, latitude: 38.827, epochSeconds: 1_723_276_201 },
+      ],
+    };
+
+    expect(parseTripToActivity(trip).localTimeCoordinates).toEqual({
+      latitude: 38.827,
+      longitude: -123.56,
+    });
+  });
+
+  it.each([
+    ["missing latitude", { longitude: -123.56 }],
+    ["missing longitude", { latitude: 38.827 }],
+    ["NaN latitude", { longitude: -123.56, latitude: Number.NaN }],
+    ["NaN longitude", { longitude: Number.NaN, latitude: 38.827 }],
+    ["infinite latitude", { longitude: -123.56, latitude: Number.POSITIVE_INFINITY }],
+    ["infinite longitude", { longitude: Number.NEGATIVE_INFINITY, latitude: 38.827 }],
+    ["latitude below range", { longitude: -123.56, latitude: -90.01 }],
+    ["latitude above range", { longitude: -123.56, latitude: 90.01 }],
+    ["longitude below range", { longitude: -180.01, latitude: 38.827 }],
+    ["longitude above range", { longitude: 180.01, latitude: 38.827 }],
+  ])("skips %s before selecting local-time evidence", (_label, invalidCoordinate) => {
+    const trip = {
+      ...baseTrip,
+      track_points: [
+        { ...invalidCoordinate, epochSeconds: 1_723_276_200 },
+        { longitude: -123.56, latitude: 38.827, epochSeconds: 1_723_276_201 },
+      ],
+    };
+
+    expect(parseTripToActivity(trip).localTimeCoordinates).toEqual({
+      latitude: 38.827,
+      longitude: -123.56,
+    });
+  });
+
+  it.each([
+    ["minimum latitude", { longitude: 0, latitude: -90 }],
+    ["maximum latitude", { longitude: 0, latitude: 90 }],
+    ["minimum longitude", { longitude: -180, latitude: 0 }],
+    ["maximum longitude", { longitude: 180, latitude: 0 }],
+  ])("accepts the %s boundary as local-time evidence", (_label, coordinate) => {
+    const trip = {
+      ...baseTrip,
+      track_points: [{ ...coordinate, epochSeconds: 1_723_276_200 }],
+    };
+
+    expect(parseTripToActivity(trip).localTimeCoordinates).toEqual(coordinate);
+  });
+
+  it("omits local-time coordinates when no valid route point exists", () => {
+    const trip = {
+      ...baseTrip,
+      track_points: [{ longitude: -300, latitude: 120, epochSeconds: 1_723_276_200 }],
+    };
+
+    expect(parseTripToActivity(trip).localTimeCoordinates).toBeUndefined();
+  });
 });
 
 describe("parseTrackPoints", () => {
-  it("converts speed from km/h to m/s", () => {
+  it("preserves track-point speed already expressed in m/s", () => {
     const points: RideWithGpsTrackPoint[] = [
       {
         longitude: -122.6,
         latitude: 45.5,
         distanceMeters: 0,
         epochSeconds: 1723276200,
-        speedKph: 36,
+        speedMetersPerSecond: 16.54,
       },
     ];
     const result = parseTrackPoints(points);
     expect(result).toHaveLength(1);
-    expect(result[0]?.speed).toBeCloseTo(10, 5); // 36 km/h = 10 m/s
+    expect(result[0]?.speed).toBeCloseTo(16.54, 5);
   });
 
   it("maps all sensor fields", () => {
@@ -130,7 +209,7 @@ describe("parseTrackPoints", () => {
         distanceMeters: 1000,
         elevationMeters: 150,
         epochSeconds: 1723276200,
-        speedKph: 25,
+        speedMetersPerSecond: 25,
         temperatureCelsius: 22,
         heartRateBpm: 145,
         cadenceRpm: 90,
@@ -155,6 +234,25 @@ describe("parseTrackPoints", () => {
     ];
     const result = parseTrackPoints(points);
     expect(result[0]?.recordedAt).toEqual(new Date(1723276200 * 1000));
+  });
+
+  it("omits a negative track-point speed while preserving zero", () => {
+    const result = parseTrackPoints([
+      {
+        longitude: -122.6,
+        latitude: 45.5,
+        epochSeconds: 1723276200,
+        speedMetersPerSecond: -1,
+      },
+      {
+        longitude: -122.6,
+        latitude: 45.5,
+        epochSeconds: 1723276201,
+        speedMetersPerSecond: 0,
+      },
+    ]);
+
+    expect(result.map((point) => point.speed)).toEqual([undefined, 0]);
   });
 
   it("skips points without timestamp", () => {
@@ -223,7 +321,7 @@ describe("parseTrackPoints", () => {
 });
 
 describe("buildRideWithGpsMetricRows", () => {
-  it("converts parsed track points to source rows for metric stream fan-out", () => {
+  it("maps parsed track points to source rows for metric stream fan-out", () => {
     const rows = buildRideWithGpsMetricRows({
       activityId: "activity-1",
       externalId: "trip-1",
@@ -234,7 +332,7 @@ describe("buildRideWithGpsMetricRows", () => {
           latitude: 45.5,
           elevationMeters: 150,
           epochSeconds: 1723276200,
-          speedKph: 36,
+          speedMetersPerSecond: 10,
           temperatureCelsius: 22,
           heartRateBpm: 145,
           cadenceRpm: 90,
@@ -271,7 +369,7 @@ describe("buildRideWithGpsMetricRows", () => {
           longitude: -122.6,
           latitude: 45.5,
           epochSeconds: 1723276200,
-          speedKph: 36,
+          speedMetersPerSecond: 31,
         },
       ],
     });
@@ -279,6 +377,110 @@ describe("buildRideWithGpsMetricRows", () => {
     expect(rows[0]?.speed).toBeUndefined();
     expect(rows[0]?.lat).toBe(45.5);
     expect(rows[0]?.lng).toBe(-122.6);
+  });
+
+  it("does not apply cycling plausibility limits to non-cycling activities", () => {
+    const rows = buildRideWithGpsMetricRows({
+      activityId: "activity-1",
+      externalId: "trip-1",
+      activityType: resolveProviderActivityType("running", "running"),
+      trackPoints: [
+        {
+          longitude: -122.6,
+          latitude: 45.5,
+          epochSeconds: 1723276200,
+          speedMetersPerSecond: 31,
+        },
+      ],
+    });
+
+    expect(rows[0]?.speed).toBe(31);
+  });
+
+  it("omits negative speed samples from outdoor cycling metrics", () => {
+    const rows = buildRideWithGpsMetricRows({
+      activityId: "activity-1",
+      externalId: "trip-1",
+      activityType: resolveProviderActivityType("cycling:road", "road_cycling"),
+      trackPoints: [
+        {
+          longitude: -122.6,
+          latitude: 45.5,
+          epochSeconds: 1723276200,
+          speedMetersPerSecond: -1,
+        },
+        {
+          longitude: -122.6,
+          latitude: 45.5,
+          epochSeconds: 1723276201,
+          speedMetersPerSecond: 10,
+        },
+      ],
+    });
+
+    expect(rows.map((row) => row.speed)).toEqual([undefined, 10]);
+  });
+
+  it("rejects an outdoor cycling stream with an implausible average speed", () => {
+    expect(() =>
+      buildRideWithGpsMetricRows({
+        activityId: "activity-1",
+        externalId: "trip-1",
+        activityType: resolveProviderActivityType("cycling:road", "road_cycling"),
+        trackPoints: [
+          { longitude: -122.6, latitude: 45.5, epochSeconds: 1723276200, speedMetersPerSecond: 20 },
+          { longitude: -122.6, latitude: 45.5, epochSeconds: 1723276201, speedMetersPerSecond: 21 },
+        ],
+      }),
+    ).toThrow("RideWithGPS cycling speed is implausible");
+  });
+
+  it("rejects an outdoor cycling stream with an implausible maximum speed", () => {
+    expect(() =>
+      buildRideWithGpsMetricRows({
+        activityId: "activity-1",
+        externalId: "trip-1",
+        activityType: resolveProviderActivityType("cycling:road", "road_cycling"),
+        trackPoints: [
+          { longitude: -122.6, latitude: 45.5, epochSeconds: 1723276200 },
+          { longitude: -122.6, latitude: 45.5, epochSeconds: 1723276201, speedMetersPerSecond: 1 },
+          { longitude: -122.6, latitude: 45.5, epochSeconds: 1723276202, speedMetersPerSecond: 31 },
+        ],
+      }),
+    ).toThrow("RideWithGPS cycling speed is implausible for activity activity-1 (external trip-1)");
+  });
+
+  it("accepts outdoor cycling speeds at the exact plausibility limits", () => {
+    expect(() =>
+      buildRideWithGpsMetricRows({
+        activityId: "activity-1",
+        externalId: "trip-1",
+        activityType: resolveProviderActivityType("cycling:road", "road_cycling"),
+        trackPoints: [
+          { longitude: -122.6, latitude: 45.5, epochSeconds: 1723276200, speedMetersPerSecond: 10 },
+          { longitude: -122.6, latitude: 45.5, epochSeconds: 1723276201, speedMetersPerSecond: 20 },
+          { longitude: -122.6, latitude: 45.5, epochSeconds: 1723276202, speedMetersPerSecond: 30 },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
+  it("validates long outdoor cycling streams without spreading every speed as function arguments", () => {
+    const trackPoints = Array.from({ length: 150_000 }, (_, index) => ({
+      longitude: -122.6,
+      latitude: 45.5,
+      epochSeconds: 1723276200 + index,
+      speedMetersPerSecond: 10,
+    }));
+
+    expect(
+      buildRideWithGpsMetricRows({
+        activityId: "activity-1",
+        externalId: "trip-1",
+        activityType: resolveProviderActivityType("cycling:road", "road_cycling"),
+        trackPoints,
+      }),
+    ).toHaveLength(trackPoints.length);
   });
 });
 
@@ -316,5 +518,26 @@ describe("RideWithGps — rate-limit aware fetch wiring", () => {
       expect(err.providerId).toBe("ride-with-gps");
       expect(err.statusCode).toBe(429);
     }
+  });
+});
+
+describe("RideWithGpsClient.getTrip", () => {
+  it("accepts a negative raw speed so extraction can omit only that sample", async () => {
+    const fetchFn: typeof globalThis.fetch = async () =>
+      Response.json({
+        trip: {
+          id: 12345,
+          name: "Morning Ride",
+          created_at: "2024-08-10T10:00:00Z",
+          updated_at: "2024-08-10T10:00:00Z",
+          track_points: [{ x: -122.6, y: 45.5, t: 1_723_276_200, s: -1 }],
+        },
+      });
+    const client = new RideWithGpsClient("access-token", fetchFn);
+
+    const { trip } = await client.getTrip(12345);
+
+    expect(trip.track_points[0]?.speedMetersPerSecond).toBe(-1);
+    expect(parseTrackPoints(trip.track_points)[0]?.speed).toBeUndefined();
   });
 });

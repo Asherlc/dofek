@@ -1,5 +1,5 @@
 import ExpoModulesCore
-import Sentry
+import RNSentry
 import WatchConnectivity
 
 public class WatchMotionModule: Module, WatchFileReceiverObserver {

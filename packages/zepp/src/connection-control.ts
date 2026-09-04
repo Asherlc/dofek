@@ -8,11 +8,14 @@ export function createConnectionChangedCall(): ConnectionChangedCall {
 }
 
 export function isConnectionChangedCall(payload: unknown): payload is ConnectionChangedCall {
-  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
-    return false;
-  }
-  const params = Reflect.get(payload, "params");
+  const params =
+    typeof payload === "object" && payload !== null && !Array.isArray(payload)
+      ? Reflect.get(payload, "params")
+      : null;
   return (
+    typeof payload === "object" &&
+    payload !== null &&
+    !Array.isArray(payload) &&
     Reflect.get(payload, "method") === "dofek.connectionChanged" &&
     typeof params === "object" &&
     params !== null &&

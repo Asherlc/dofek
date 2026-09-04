@@ -87,6 +87,27 @@ describe("LifeEventsPanel", () => {
     mocks.listUseQuery.mockReturnValue({ data: [event], error: null, isLoading: false });
   });
 
+  it("shows a loading state while the first life-events list is loading", () => {
+    mocks.listUseQuery.mockReturnValue({
+      data: undefined,
+      error: null,
+      isLoading: true,
+    });
+
+    render(<LifeEventsPanel />);
+
+    expect(screen.getByTestId("query-state-loading")).toBeDefined();
+    expect(screen.queryByText("No life events yet.")).toBeNull();
+  });
+
+  it("shows the empty state after a successful list response with no life events", () => {
+    mocks.listUseQuery.mockReturnValue({ data: [], error: null, isLoading: false });
+
+    render(<LifeEventsPanel />);
+
+    expect(screen.getByText("No life events yet.")).toBeDefined();
+  });
+
   it("renders an initial list failure instead of the empty state", () => {
     const refetch = vi.fn();
     mocks.listUseQuery.mockReturnValue({
@@ -299,6 +320,16 @@ describe("LifeEventsPanel", () => {
     });
   });
 
+  it("disables the add form while a life event is saving", () => {
+    mocks.createUseMutation.mockReturnValue({ error: null, isPending: true, mutate: vi.fn() });
+
+    render(<LifeEventsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "+ Add event" }));
+
+    const saveButton = screen.getByRole<HTMLButtonElement>("button", { name: "Saving..." });
+    expect(saveButton.disabled).toBe(true);
+  });
+
   it("shows and reports delete failures without clearing the selection", () => {
     const deleteError = new Error("Life event could not be deleted");
     let onError: ((error: unknown) => void) | undefined;
@@ -327,6 +358,17 @@ describe("LifeEventsPanel", () => {
     });
   });
 
+  it("disables deletion while the selected life event is being deleted", () => {
+    mocks.deleteUseMutation.mockReturnValue({ error: null, isPending: true, mutate: vi.fn() });
+    mocks.analyzeUseQuery.mockReturnValue({ data: analysisData, error: null, isLoading: false });
+
+    render(<LifeEventsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: /Started creatine/i }));
+
+    const deleteButton = screen.getByRole<HTMLButtonElement>("button", { name: "Deleting..." });
+    expect(deleteButton.disabled).toBe(true);
+  });
+
   it("formats analyzed body weight with the shared unit formatter", () => {
     mocks.analyzeUseQuery.mockReturnValue({
       data: analysisData,
@@ -345,5 +387,151 @@ describe("LifeEventsPanel", () => {
     expect(screen.getByText("176.4 lb")).toBeDefined();
     expect(screen.getByText("175.3 lb")).toBeDefined();
     expect(screen.queryByText("[object Object]")).toBeNull();
+  });
+
+  it("submits range and ongoing events with their selected form semantics", () => {
+    const mutate = vi.fn();
+    mocks.createUseMutation.mockReturnValue({ error: null, isPending: false, mutate });
+
+    render(<LifeEventsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "+ Add event" }));
+    fireEvent.click(screen.getByRole("button", { name: "Date range" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Label" }), {
+      target: { value: "Travel block" },
+    });
+    fireEvent.change(screen.getByLabelText("Start date"), { target: { value: "2026-03-01" } });
+    fireEvent.change(screen.getByLabelText("End date"), { target: { value: "2026-03-07" } });
+    fireEvent.change(screen.getByLabelText("Category"), { target: { value: "lifestyle" } });
+    fireEvent.change(screen.getByLabelText("Notes (optional)"), {
+      target: { value: "Crossed time zones" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(mutate).toHaveBeenLastCalledWith({
+      label: "Travel block",
+      startedAt: "2026-03-01",
+      endedAt: "2026-03-07",
+      category: "lifestyle",
+      ongoing: false,
+      notes: "Crossed time zones",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Ongoing" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(mutate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ endedAt: null, ongoing: true }),
+    );
+  });
+
+  it("submits a one-time event with omitted optional fields as null", () => {
+    const mutate = vi.fn();
+    mocks.createUseMutation.mockReturnValue({ error: null, isPending: false, mutate });
+
+    render(<LifeEventsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "+ Add event" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Label" }), {
+      target: { value: "Moved house" },
+    });
+    fireEvent.change(screen.getByLabelText("Start date"), { target: { value: "2026-04-01" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(mutate).toHaveBeenCalledWith({
+      label: "Moved house",
+      startedAt: "2026-04-01",
+      endedAt: null,
+      category: null,
+      ongoing: false,
+      notes: null,
+    });
+  });
+
+  it("toggles a selected event and shows its loading analysis state", () => {
+    mocks.analyzeUseQuery.mockReturnValue({ data: undefined, error: null, isLoading: true });
+
+    const { container } = render(<LifeEventsPanel />);
+    const eventButton = screen.getByRole("button", { name: /Started creatine/i });
+    fireEvent.click(eventButton);
+
+    expect(container.querySelector(".animate-pulse")).toBeTruthy();
+    fireEvent.click(eventButton);
+    expect(container.querySelector(".animate-pulse")).toBeNull();
+  });
+
+  it("does not add a now suffix to a completed point event", () => {
+    mocks.listUseQuery.mockReturnValue({
+      data: [{ ...event, label: "Race day", ongoing: false }],
+      error: null,
+      isLoading: false,
+    });
+
+    render(<LifeEventsPanel />);
+
+    expect(screen.getByRole("button", { name: /Race day/i }).textContent).not.toContain("now");
+  });
+
+  it("labels a completed point-event analysis as after and reports absent comparison data", () => {
+    const pointEvent = { ...event, label: "Race day", ongoing: false };
+    mocks.listUseQuery.mockReturnValue({ data: [pointEvent], error: null, isLoading: false });
+    mocks.analyzeUseQuery.mockReturnValue({
+      data: { event: pointEvent, metrics: [], sleep: [], bodyComp: [] },
+      error: null,
+      isLoading: false,
+    });
+
+    render(<LifeEventsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: /Race day/i }));
+
+    expect(
+      screen.getByText(/Comparing 30 days before vs\. after\. Before: 0 days of metrics/),
+    ).toBeDefined();
+    expect(screen.queryByText("Resting HR")).toBeNull();
+  });
+
+  it("renders every event category and ended-event analysis details", () => {
+    const categoryEvents = ["diet", "supplement", "injury", "lifestyle", "training", "other"].map(
+      (category) => ({
+        ...event,
+        id: `event-${category}`,
+        label: `${category} event`,
+        category,
+        ended_at: "2026-02-08",
+        ongoing: false,
+        notes: "Recorded context",
+      }),
+    );
+    mocks.listUseQuery.mockReturnValue({ data: categoryEvents, error: null, isLoading: false });
+    mocks.analyzeUseQuery.mockReturnValue({
+      data: {
+        ...analysisData,
+        event: categoryEvents[0],
+        metrics: [
+          { period: "before", days: 10, avg_resting_hr: 60, avg_hrv: 50, avg_steps: 0 },
+          { period: "after", days: 11, avg_resting_hr: 60, avg_hrv: 55, avg_steps: 100 },
+        ],
+        sleep: [
+          { period: "before", nights: 10, avg_sleep_min: 420, avg_deep_min: 80 },
+          { period: "after", nights: 11, avg_sleep_min: 430, avg_deep_min: 90 },
+        ],
+        bodyComp: [
+          { period: "before", measurements: 2, avg_weight: 80, avg_body_fat: 20 },
+          { period: "after", measurements: 3, avg_weight: 81, avg_body_fat: 19 },
+        ],
+      },
+      error: null,
+      isLoading: false,
+    });
+
+    render(<LifeEventsPanel />);
+
+    for (const category of ["diet", "supplement", "injury", "lifestyle", "training", "other"]) {
+      expect(
+        screen.getByRole("button", { name: new RegExp(`${category} event`, "i") }),
+      ).toBeDefined();
+    }
+
+    fireEvent.click(screen.getByRole("button", { name: /diet event/i }));
+    expect(screen.getByText(/Recorded context/)).toBeDefined();
+    expect(screen.getAllByText("During")).toHaveLength(7);
+    expect(screen.getByText("+10%")).toBeDefined();
   });
 });

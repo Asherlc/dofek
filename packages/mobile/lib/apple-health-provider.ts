@@ -5,6 +5,8 @@ import {
   hasEverAuthorized,
   isAvailable,
   queryAnchoredSamples,
+  queryCategorySamples,
+  queryClinicalRecords,
   queryDailyStatistics,
   queryQuantitySamples,
   querySleepSamples,
@@ -44,8 +46,11 @@ export interface AppleHealthProviderCard {
   authStatus: "connected" | "not_connected";
   authType: "none";
   lastSyncAt: null;
+  lastSuccessfulSyncAt: null;
+  syncFreshness: null;
   importOnly: false;
   pushOnly: false;
+  recentLogs: [];
 }
 
 export interface AppleHealthDisplayProvider {
@@ -207,8 +212,11 @@ export class AppleHealthProviderModel {
       authStatus: connected ? "connected" : "not_connected",
       authType: "none",
       lastSyncAt: null,
+      lastSuccessfulSyncAt: null,
+      syncFreshness: null,
       importOnly: false,
       pushOnly: false,
+      recentLogs: [],
     };
   }
 
@@ -349,6 +357,9 @@ export const defaultAppleHealthAuthorizationNative: AppleHealthAuthorizationNati
 export const defaultAppleHealthAdapter: HealthKitAdapter = {
   completeAnchoredQuery,
   queryAnchoredSamples,
+  queryCategorySamples,
+  queryClinicalRecords: (typeIdentifier, startDate, endDate) =>
+    queryClinicalRecords(typeIdentifier, startDate, endDate),
   queryDailyStatistics,
   queryQuantitySamples,
   queryWorkouts,

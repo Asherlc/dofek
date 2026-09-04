@@ -2,7 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { ZeppPairingPage } from "../pages/ZeppPairingPage.tsx";
 
-const zeppPairingSearchSchema = z.object({ code: z.string().min(1).optional() });
+const zeppPairingSearchSchema = z.object({
+  code: z.string().trim().min(1).optional(),
+});
 
 function ZeppPairingRoute() {
   const { code } = Route.useSearch();

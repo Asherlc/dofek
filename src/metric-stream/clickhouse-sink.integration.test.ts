@@ -7,6 +7,7 @@ import {
   insertMetricStreamEventsIntoClickHouse,
   mapMetricStreamEventToClickHouseRow,
   markMetricStreamScopeDeletedInClickHouse,
+  markMetricStreamScopesDeletedInClickHouse,
 } from "./clickhouse-sink.ts";
 import {
   METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE,
@@ -24,6 +25,9 @@ const testEventId = "5e6f7a8b-0c1d-4e2f-8a3b-4c5d6e7f8a90";
 const latestScopeTestEventId = "6f7a8b9c-1d2e-4f3a-9b4c-5d6e7f8a9b01";
 const nullExternalIdTestEventId = "7a8b9c0d-2e3f-404b-8c5d-6e7f8a9b0c12";
 const replacementTestEventId = "8b9c0d1e-3f40-415c-9d6e-7f8a9b0c1d23";
+const batchedDeleteTestEventId = "9c0d1e2f-4051-426d-8e7f-8a9b0c1d2e34";
+const batchedDeleteSecondTestEventId = "ad1e2f30-5162-437e-8f90-9b0c1d2e3f45";
+const batchedDeleteUnrelatedTestEventId = "be2f3041-6273-448f-901a-0c1d2e3f4056";
 const operationRevision = "1000000000000000";
 
 function createCurrentMetricStreamEvent(row: MetricStreamRowInput, revision = operationRevision) {
@@ -51,7 +55,15 @@ async function removeTestEvent(client: ClickHouseClient): Promise<void> {
       DELETE WHERE id IN {ids:Array(UUID)}
       SETTINGS mutations_sync = 1`,
     query_params: {
-      ids: [testEventId, latestScopeTestEventId, nullExternalIdTestEventId, replacementTestEventId],
+      ids: [
+        testEventId,
+        latestScopeTestEventId,
+        nullExternalIdTestEventId,
+        replacementTestEventId,
+        batchedDeleteTestEventId,
+        batchedDeleteSecondTestEventId,
+        batchedDeleteUnrelatedTestEventId,
+      ],
     },
   });
 }
@@ -231,6 +243,75 @@ describe("metric stream ClickHouse sink (integration)", () => {
       format: "JSONEachRow",
     });
     expect((await result.json())[0]?.is_deleted).toBe(1);
+  });
+
+  it("tombstones multiple external-ID scopes in one ordered delete batch", async () => {
+    const baseRow = {
+      recordedAt: "2026-06-09T15:36:12.000Z",
+      userId: testUserId,
+      providerId: "apple_health",
+      sourceType: "file",
+      channel: "heart_rate",
+      scalar: 72,
+    } satisfies Omit<MetricStreamRowInput, "externalId" | "id">;
+    await insertMetricStreamEventsIntoClickHouse(client, [
+      createCurrentMetricStreamEvent(
+        {
+          ...baseRow,
+          id: batchedDeleteTestEventId,
+          externalId: "integration-batched-delete-1",
+        },
+        "999999999999999",
+      ),
+      createCurrentMetricStreamEvent(
+        {
+          ...baseRow,
+          id: batchedDeleteSecondTestEventId,
+          externalId: "integration-batched-delete-2",
+        },
+        "999999999999999",
+      ),
+      createCurrentMetricStreamEvent(
+        {
+          ...baseRow,
+          id: batchedDeleteUnrelatedTestEventId,
+          externalId: "integration-batched-delete-unrelated",
+        },
+        "999999999999999",
+      ),
+    ]);
+    const firstDelete = createCurrentMetricStreamDeletedEvent({
+      userId: testUserId,
+      providerId: "apple_health",
+      externalId: "integration-batched-delete-1",
+    });
+    const secondDelete = createCurrentMetricStreamDeletedEvent({
+      userId: testUserId,
+      providerId: "apple_health",
+      externalId: "integration-batched-delete-2",
+    });
+
+    await markMetricStreamScopesDeletedInClickHouse(client, [firstDelete, secondDelete]);
+
+    const result = await client.query<{ external_id: string; is_deleted: number }>({
+      query: `SELECT external_id, is_deleted
+        FROM ${METRIC_STREAM_TABLE} FINAL
+        WHERE id IN {ids:Array(UUID)}
+        ORDER BY external_id`,
+      query_params: {
+        ids: [
+          batchedDeleteTestEventId,
+          batchedDeleteSecondTestEventId,
+          batchedDeleteUnrelatedTestEventId,
+        ],
+      },
+      format: "JSONEachRow",
+    });
+    expect(await result.json()).toEqual([
+      { external_id: "integration-batched-delete-1", is_deleted: 1 },
+      { external_id: "integration-batched-delete-2", is_deleted: 1 },
+      { external_id: "integration-batched-delete-unrelated", is_deleted: 0 },
+    ]);
   });
 
   it("reactivates the same deterministic row ID after a scoped replacement", async () => {

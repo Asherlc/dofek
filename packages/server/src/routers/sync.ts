@@ -3,6 +3,7 @@ import { TRPCError } from "@trpc/server";
 import type { Job, Queue } from "bullmq";
 import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
 import { enqueueSyncJob } from "dofek/jobs/enqueue-sync-job";
+import { providerRateLimitCooldownStore } from "dofek/jobs/provider-rate-limit-cooldown";
 import {
   createSyncQueue,
   getImportQueue,
@@ -18,10 +19,12 @@ import { captureException } from "dofek/lib/error-reporting";
 import { ProviderModel, providerTokenAuthSchema } from "dofek/providers/provider-model";
 import { getAllProviders } from "dofek/providers/registry";
 import { z } from "zod";
+import { DEFAULT_SCHEDULED_SYNC_INTERVAL_MINUTES } from "../../../../src/jobs/scheduled-sync.ts";
 import { operationStatusOutputSchema, readOperationProgress } from "../lib/operation-progress.ts";
 import { hasCurrentProviderAuthFailure } from "../lib/provider-auth-state.ts";
 import { sanitizeErrorMessage } from "../lib/sanitize-error.ts";
 import { SyncRepository } from "../repositories/sync-repository.ts";
+import { evaluateProviderSyncFreshness } from "../services/provider-sync-freshness.ts";
 import {
   adminProcedure,
   CacheTTL,
@@ -50,9 +53,43 @@ const syncProviderRowOutputSchema = z.object({
   tokenAuth: providerTokenAuthSchema.nullable(),
   authorized: z.boolean(),
   lastSyncedAt: z.string().nullable(),
+  lastSuccessfulSyncAt: z.string().nullable(),
+  syncFreshness: z
+    .discriminatedUnion("status", [
+      z.object({
+        status: z.literal("unknown"),
+        label: z.literal("Sync status unknown"),
+        description: z.string(),
+      }),
+      z.object({ status: z.literal("current"), label: z.literal("Sync current") }),
+      z.object({
+        status: z.literal("deferred"),
+        label: z.literal("Sync deferred"),
+        description: z.string(),
+      }),
+      z.object({
+        status: z.literal("overdue"),
+        label: z.literal("Sync overdue"),
+        description: z.string(),
+      }),
+    ])
+    .nullable(),
   importOnly: z.boolean(),
   pushOnly: z.boolean(),
   needsReauth: z.boolean(),
+  recentLogs: z.array(
+    z.object({
+      id: z.string(),
+      providerId: z.string(),
+      status: z.string(),
+      syncedAt: z.string(),
+      durationMs: z.number().nullable(),
+      recordCount: z.number().nullable(),
+      dataType: z.string(),
+      errorMessage: z.string().nullable(),
+      authFailureReason: z.string().nullable(),
+    }),
+  ),
 });
 
 const syncDateSchema = z
@@ -108,8 +145,7 @@ const providerStatsOutputSchema = z.array(
     healthEvents: z.number().int().nonnegative(),
     metricStream: z.number().int().nonnegative(),
     nutritionDaily: z.number().int().nonnegative(),
-    labPanels: z.number().int().nonnegative(),
-    labResults: z.number().int().nonnegative(),
+    clinicalRecords: z.number().int().nonnegative(),
     journalEntries: z.number().int().nonnegative(),
   }),
 );
@@ -206,8 +242,8 @@ const queueBackpressureStates = ["waiting", "active", "delayed", "failed"] as co
 
 export { sanitizeErrorMessage };
 
-/** @deprecated Legacy queue for syncStatus/activeSyncs backward compat. */
-const legacySyncQueue = createSyncQueue();
+/** Shared CLI queue included in sync status and active-sync listings. */
+const sharedSyncQueue = createSyncQueue();
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -239,22 +275,32 @@ const syncRouterProcedures = {
   providers: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
     .output(z.array(syncProviderRowOutputSchema))
     .query(async ({ ctx }) => {
+      const requestTime = new Date();
       await ensureProvidersRegistered();
       const all = getAllProviders();
       const repo = new SyncRepository(ctx.db, ctx.userId, ctx.sensorStore);
 
-      // Batch: load connections, last sync times, recent auth errors, and stats.
-      const [allConnections, lastSyncs, latestErrors] = await Promise.all([
-        repo.getConnectedProviderIds(),
-        repo.getLastSyncTimes(),
-        repo.getLatestErrors(),
-      ]);
+      // Batch: load connections, latest attempts, recent auth errors, successes, and history.
+      const [allConnections, lastSyncs, latestErrors, lastSuccessfulSyncs, recentLogsByProvider] =
+        await Promise.all([
+          repo.getConnectedProviderIds(),
+          repo.getLastSyncTimes(),
+          repo.getLatestErrors(),
+          repo.getLastSuccessfulSyncTimes(),
+          repo.getRecentLogsByProvider(3),
+        ]);
 
       const connectionSet = new Set(allConnections.map((row) => row.providerId));
+      const credentialedConnectionSet = new Set(
+        allConnections.filter((row) => row.hasTokens).map((row) => row.providerId),
+      );
       const connectionUpdatedAtMap = new Map(
         allConnections.map((row) => [row.providerId, row.updatedAt]),
       );
       const lastSyncMap = new Map(lastSyncs.map((r) => [r.providerId, r.lastSynced]));
+      const lastSuccessfulSyncMap = new Map(
+        lastSuccessfulSyncs.map((row) => [row.providerId, row.lastSynced]),
+      );
       const authErrorProviders = new Set(
         latestErrors
           .filter((r) =>
@@ -266,23 +312,57 @@ const syncRouterProcedures = {
           )
           .map((r) => r.providerId),
       );
-      const registeredProviders = all
+      const registeredProviderModels = all
         .filter((p) => p.validate() === null)
         .map((p) => {
-          const model = new ProviderModel(p, connectionSet, lastSyncMap, CUSTOM_AUTH_PROVIDERS);
-          return {
-            id: model.id,
-            name: model.name,
-            description: null,
-            authType: model.authType,
-            tokenAuth: model.tokenAuth,
-            authorized: model.isConnected,
-            lastSyncedAt: model.lastSyncedAt,
-            importOnly: model.importOnly,
-            pushOnly: false,
-            needsReauth: authErrorProviders.has(model.id),
-          };
+          return new ProviderModel(
+            p,
+            credentialedConnectionSet,
+            lastSyncMap,
+            CUSTOM_AUTH_PROVIDERS,
+          );
         });
+      const cooldowns = new Map(
+        await Promise.all(
+          registeredProviderModels
+            .filter((model) => model.isConnected && !model.importOnly)
+            .map(
+              async (model) =>
+                [
+                  model.id,
+                  await providerRateLimitCooldownStore.getActive(model.id, ctx.userId),
+                ] as const,
+            ),
+        ),
+      );
+      const registeredProviders = registeredProviderModels.map((model) => {
+        const lastSuccessfulSyncAt = lastSuccessfulSyncMap.get(model.id) ?? null;
+        return {
+          id: model.id,
+          name: model.name,
+          description: null,
+          authType: model.authType,
+          tokenAuth: model.tokenAuth,
+          authorized: model.isConnected,
+          lastSyncedAt: model.lastSyncedAt,
+          lastSuccessfulSyncAt,
+          syncFreshness:
+            model.isConnected && !model.importOnly
+              ? evaluateProviderSyncFreshness({
+                  now: requestTime,
+                  lastSuccessfulSyncAt: lastSuccessfulSyncAt
+                    ? new Date(lastSuccessfulSyncAt)
+                    : null,
+                  intervalMinutes: DEFAULT_SCHEDULED_SYNC_INTERVAL_MINUTES,
+                  cooldownUntil: cooldowns.get(model.id)?.expiresAt ?? null,
+                })
+              : null,
+          importOnly: model.importOnly,
+          pushOnly: false,
+          needsReauth: authErrorProviders.has(model.id),
+          recentLogs: recentLogsByProvider.get(model.id) ?? [],
+        };
+      });
 
       const pushProviders = PUSH_PROVIDERS.map((provider) => {
         return {
@@ -293,9 +373,12 @@ const syncRouterProcedures = {
           tokenAuth: null,
           authorized: connectionSet.has(provider.id),
           lastSyncedAt: null,
+          lastSuccessfulSyncAt: null,
+          syncFreshness: null,
           importOnly: false,
           pushOnly: true,
           needsReauth: false,
+          recentLogs: recentLogsByProvider.get(provider.id) ?? [],
         };
       });
 
@@ -358,7 +441,7 @@ const syncRouterProcedures = {
       }
       // Fall back to legacy queue for old jobs
       if (!job) {
-        job = await legacySyncQueue.getJob(rawId);
+        job = await sharedSyncQueue.getJob(rawId);
       }
     } catch (error: unknown) {
       captureException(error, {
@@ -434,7 +517,7 @@ const syncRouterProcedures = {
       ]);
       const jobArrays: Job<SyncJobData>[][] = await Promise.all([
         ...[...providerIds].map((id) => getProviderSyncQueue(id).getJobs(states)),
-        legacySyncQueue.getJobs(states),
+        sharedSyncQueue.getJobs(states),
       ]);
       jobs = jobArrays.flat();
     } catch (error: unknown) {
@@ -591,7 +674,9 @@ function createTriggerSyncProcedure() {
       return withAccountErasureUserWriteFence(ctx.db, ctx.userId, async (transaction) => {
         const repo = new SyncRepository(transaction, ctx.userId);
         const allConnections = await repo.getConnectedProviderIds();
-        const connectionSet = new Set(allConnections.map((row) => row.providerId));
+        const connectionSet = new Set(
+          allConnections.filter((row) => row.hasTokens).map((row) => row.providerId),
+        );
 
         const providerIds: string[] = [];
 
@@ -645,6 +730,7 @@ function createTriggerSyncProcedure() {
                 {
                   providerId,
                   userId: ctx.userId,
+                  origin: "manual",
                   ...syncWindowToJobData(syncWindow, input.sinceDays),
                 },
                 { skipWhenRateLimited: true, singleFlightFullSync: true },

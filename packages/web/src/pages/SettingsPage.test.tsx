@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { normalizeSettingsCategory } from "./settingsCategories.ts";
 
 type SettingsSearch = {
@@ -24,7 +24,15 @@ type SettingsNavigation = {
 const mockNavigate = vi.fn<(options: SettingsNavigation) => void>();
 const mockBillingStatusQuery = vi.fn();
 const mockInvalidate = vi.fn();
-const mockMutation = {
+type MockZeppPairingData = { connectionType: "zepp-main" | "zepp-workout" } | undefined;
+const mockMutation: {
+  data: MockZeppPairingData;
+  error: Error | null;
+  isPending: boolean;
+  isSuccess: boolean;
+  mutate: ReturnType<typeof vi.fn>;
+} = {
+  data: undefined,
   error: null,
   isPending: false,
   isSuccess: false,
@@ -94,14 +102,8 @@ vi.mock("../components/PrimaryGoalSelector.tsx", () => ({
 vi.mock("../components/AccountErasurePanel.tsx", () => ({
   AccountErasurePanel: () => <div>AccountErasurePanel</div>,
 }));
-vi.mock("../components/SlackIntegrationPanel.tsx", () => ({
-  SlackIntegrationPanel: () => <div>SlackIntegrationPanel</div>,
-}));
 vi.mock("../components/UnitSystemToggle.tsx", () => ({
   UnitSystemToggle: () => <div>UnitSystemToggle</div>,
-}));
-vi.mock("./McpTokensPanel.tsx", () => ({
-  McpTokensPanel: () => <div>McpTokensPanel</div>,
 }));
 
 vi.mock("../lib/dashboardLayoutContext.ts", () => ({
@@ -130,6 +132,17 @@ vi.mock("../lib/trpc.ts", () => ({
         useMutation: () => mockMutation,
       },
     },
+    mcp: {
+      listTokens: {
+        useQuery: () => ({ data: [], error: null, isLoading: false }),
+      },
+      createToken: {
+        useMutation: () => mockMutation,
+      },
+      revokeToken: {
+        useMutation: () => mockMutation,
+      },
+    },
     companionPairing: {
       claim: {
         useMutation: () => mockMutation,
@@ -154,6 +167,10 @@ vi.mock("../lib/trpc.ts", () => ({
 beforeEach(() => {
   mockSearch = {};
   mockZeppConnections = [];
+  mockMutation.data = undefined;
+  mockMutation.error = null;
+  mockMutation.isPending = false;
+  mockMutation.isSuccess = false;
   mockBillingStatusQuery.mockReturnValue({
     data: undefined,
     isLoading: false,
@@ -161,6 +178,8 @@ beforeEach(() => {
   });
   vi.clearAllMocks();
 });
+
+afterEach(cleanup);
 
 describe("SettingsPage categories", () => {
   it("renders the complete settings category contract in order", async () => {
@@ -233,6 +252,19 @@ describe("SettingsPage categories", () => {
     expect(screen.getByText("Data Export")).toBeTruthy();
   });
 
+  it("finds Model Context Protocol from MCP search terms", async () => {
+    const { SettingsPage } = await import("./SettingsPage.tsx");
+
+    render(<SettingsPage />);
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search settings" }), {
+      target: { value: "MCP" },
+    });
+
+    expect(screen.getByRole("tab", { name: "Advanced" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Model Context Protocol (MCP)" })).toBeTruthy();
+  });
+
   it("shows an empty state when no category matches the search", async () => {
     const { SettingsPage } = await import("./SettingsPage.tsx");
 
@@ -256,7 +288,10 @@ describe("SettingsPage categories", () => {
     fireEvent.change(searchbox, { target: { value: "medication" } });
     fireEvent.click(screen.getByRole("tab", { name: "Notifications" }));
 
-    expect(searchbox).toHaveValue("");
+    if (!(searchbox instanceof HTMLInputElement)) {
+      throw new Error("Expected the settings search control to be an input.");
+    }
+    expect(searchbox.value).toBe("");
     expect(screen.getAllByRole("tab")).toHaveLength(7);
     expect(mockNavigate).toHaveBeenCalledWith({
       search: expect.any(Function),
@@ -280,7 +315,6 @@ describe("SettingsPage categories", () => {
 
     expect(screen.getByText("DataSourcesPanel")).toBeTruthy();
     expect(screen.getByText("Zepp App Pairing")).toBeTruthy();
-    expect(screen.getByText("Integrations")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Billing" })).toBeNull();
   });
 
@@ -290,7 +324,7 @@ describe("SettingsPage categories", () => {
 
     render(<SettingsPage />);
 
-    expect(screen.getByText("MCP")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Model Context Protocol (MCP)" })).toBeTruthy();
     expect(screen.getByText("Dashboard Layout")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Data Sources" })).toBeNull();
   });
@@ -369,5 +403,178 @@ describe("SettingsPage categories", () => {
     expect(resolvedContainer?.className).toContain("min-h-44");
     expect(resolvedContainer?.className).toContain("sm:min-h-32");
     expect(resolvedContainer?.className).toContain("lg:min-h-28");
+  });
+
+  it("explains a limited access window and offers checkout", async () => {
+    mockSearch = { tab: "billing" };
+    mockBillingStatusQuery.mockReturnValue({
+      data: {
+        access: {
+          kind: "limited",
+          reason: "signup_window",
+          startDate: "2026-08-01",
+          endDateExclusive: "2026-08-08",
+        },
+        canManageBilling: false,
+        hasFullAccess: false,
+      },
+      error: null,
+      isLoading: false,
+    });
+    const { SettingsPage } = await import("./SettingsPage.tsx");
+
+    render(<SettingsPage />);
+
+    expect(screen.getByText(/Your access is limited to your signup week/)).toBeTruthy();
+    expect(
+      screen.getByText(/New data is available only for this first 7 calendar days/),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Subscribe to Full Access" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Manage Billing" })).toBeNull();
+  });
+
+  it("shows Stripe status and billing controls for a paid subscription", async () => {
+    mockSearch = { tab: "billing" };
+    mockBillingStatusQuery.mockReturnValue({
+      data: {
+        access: { kind: "full", reason: "stripe_subscription" },
+        stripeSubscriptionStatus: "past_due",
+        canManageBilling: true,
+        hasFullAccess: true,
+      },
+      error: null,
+      isLoading: false,
+    });
+    const { SettingsPage } = await import("./SettingsPage.tsx");
+
+    render(<SettingsPage />);
+
+    expect(screen.getByText("Stripe subscription status: past_due")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Manage Billing" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Subscribe to Full Access" })).toBeNull();
+  });
+
+  it("shows generic full-access copy without Stripe controls for an App Store subscription", async () => {
+    mockSearch = { tab: "billing" };
+    mockBillingStatusQuery.mockReturnValue({
+      data: {
+        access: { kind: "full", reason: "app_store_subscription" },
+        appStoreSubscriptionStatus: "active",
+        canManageAppStoreSubscription: true,
+        canManageBilling: false,
+        hasFullAccess: true,
+        stripeSubscriptionStatus: null,
+      },
+      error: null,
+      isLoading: false,
+    });
+    const { SettingsPage } = await import("./SettingsPage.tsx");
+
+    render(<SettingsPage />);
+
+    expect(screen.getByText("Full access is enabled.")).toBeTruthy();
+    expect(screen.queryByText(/Stripe subscription status:/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Manage Billing" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Subscribe to Full Access" })).toBeNull();
+  });
+
+  it("shows the pending checkout label while starting a subscription", async () => {
+    mockSearch = { tab: "billing" };
+    mockMutation.isPending = true;
+    mockBillingStatusQuery.mockReturnValue({
+      data: {
+        access: {
+          kind: "limited",
+          reason: "signup_window",
+          startDate: "2026-08-01",
+          endDateExclusive: "2026-08-08",
+        },
+        canManageBilling: false,
+        hasFullAccess: false,
+      },
+      error: null,
+      isLoading: false,
+    });
+    const { SettingsPage } = await import("./SettingsPage.tsx");
+
+    render(<SettingsPage />);
+
+    expect(screen.getByRole("button", { name: "Opening checkout..." })).toHaveProperty(
+      "disabled",
+      true,
+    );
+  });
+
+  it("shows the pending billing-portal label while opening account management", async () => {
+    mockSearch = { tab: "billing" };
+    mockMutation.isPending = true;
+    mockBillingStatusQuery.mockReturnValue({
+      data: {
+        access: { kind: "full", reason: "stripe_subscription" },
+        stripeSubscriptionStatus: "active",
+        canManageBilling: true,
+        hasFullAccess: true,
+      },
+      error: null,
+      isLoading: false,
+    });
+    const { SettingsPage } = await import("./SettingsPage.tsx");
+
+    render(<SettingsPage />);
+
+    expect(screen.getByRole("button", { name: "Opening billing portal..." })).toHaveProperty(
+      "disabled",
+      true,
+    );
+  });
+
+  it("shows the pending pairing label while claiming a Zepp connection", async () => {
+    mockSearch = { tab: "data-sources" };
+    mockMutation.isPending = true;
+    const { SettingsPage } = await import("./SettingsPage.tsx");
+
+    render(<SettingsPage />);
+
+    expect(screen.getByRole("button", { name: "Connecting..." })).toHaveProperty("disabled", true);
+  });
+
+  it.each([
+    ["zepp-main", "Zepp app"],
+    ["zepp-workout", "Workout extension"],
+  ] as const)(
+    "identifies a successful %s Zepp pairing",
+    async (connectionType, connectionLabel) => {
+      mockSearch = { tab: "data-sources" };
+      mockMutation.data = { connectionType };
+      mockMutation.isSuccess = true;
+      const { SettingsPage } = await import("./SettingsPage.tsx");
+
+      render(<SettingsPage />);
+
+      expect(
+        screen.getByText(`${connectionLabel} connected. Return to Zepp to sync.`),
+      ).toBeTruthy();
+    },
+  );
+
+  it("preserves server billing errors and an absent billing response", async () => {
+    mockSearch = { tab: "billing" };
+    mockBillingStatusQuery.mockReturnValue({
+      data: undefined,
+      error: new Error("Billing status is unavailable"),
+      isLoading: false,
+    });
+    const { SettingsPage } = await import("./SettingsPage.tsx");
+    const { rerender } = render(<SettingsPage />);
+
+    expect(screen.getByText("Billing status is unavailable")).toBeTruthy();
+
+    mockBillingStatusQuery.mockReturnValue({ data: undefined, error: null, isLoading: false });
+    rerender(<SettingsPage />);
+
+    expect(screen.queryByText("Billing status is unavailable")).toBeNull();
+    expect(screen.getByRole("region", { name: "Billing" }).textContent).not.toContain(
+      "subscription",
+    );
   });
 });

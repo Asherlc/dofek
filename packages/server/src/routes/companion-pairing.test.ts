@@ -71,6 +71,7 @@ async function request(
 
 describe("createCompanionPairingRouter", () => {
   beforeEach(() => {
+    process.env.NODE_ENV = "test";
     process.env.PUBLIC_URL = "https://app.example.test";
   });
 
@@ -113,17 +114,17 @@ describe("createCompanionPairingRouter", () => {
     });
   });
 
-  it.each([
-    [{ connectionType: "zepp-unknown" }],
-    [[]],
-  ])("rejects an invalid pairing body without treating it as a legacy client", async (body) => {
-    const app = createTestApp(new InMemoryCompanionPairingStore());
+  it.each([[{ connectionType: "zepp-unknown" }], [[]]])(
+    "rejects an invalid pairing body without treating it as a legacy client",
+    async (body) => {
+      const app = createTestApp(new InMemoryCompanionPairingStore());
 
-    const response = await request(app, "POST", "/api/companion-pairing/start", body);
+      const response = await request(app, "POST", "/api/companion-pairing/start", body);
 
-    expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({ error: "Invalid pairing request" });
-  });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: "Invalid pairing request" });
+    },
+  );
 
   it("preserves the requested companion connection type", async () => {
     const app = createTestApp(new InMemoryCompanionPairingStore());
@@ -158,7 +159,7 @@ describe("createCompanionPairingRouter", () => {
     process.env.PUBLIC_URL = "http://app.example.test";
 
     expect(() => createTestApp(new InMemoryCompanionPairingStore())).toThrow(
-      "Pairing PUBLIC_URL must use https in production",
+      "PUBLIC_URL environment variable must use https in production",
     );
   });
 

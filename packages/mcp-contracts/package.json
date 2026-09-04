@@ -1,0 +1,16 @@
+{
+  "name": "@dofek/mcp-contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./client-setup": "./src/client-setup.ts",
+    "./health-explorer": "./src/health-explorer.ts"
+  },
+  "dependencies": {
+    "zod": "4.4.3"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

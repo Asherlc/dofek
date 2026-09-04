@@ -214,6 +214,7 @@ Page(
       dofekEmail: "",
       pairingVerificationUrl: "",
       pairingShortCode: "",
+      preferencesRequestId: 0,
     },
 
     onInit() {
@@ -228,7 +229,7 @@ Page(
       });
       this.restorePendingImuTransfers();
       this.acquireHealthOwnership();
-      this.refreshPreferences(true);
+      this.refreshPreferences({ startPairingIfNeeded: true });
       this.retryPendingImuTransfer();
     },
 
@@ -322,12 +323,15 @@ Page(
       });
     },
 
-    refreshPreferences(allowAutomaticPairing = false) {
+    refreshPreferences({ startPairingIfNeeded = true }: { startPairingIfNeeded?: boolean } = {}) {
+      const requestId = this.state.preferencesRequestId + 1;
+      this.state.preferencesRequestId = requestId;
       this.request({
         method: "imu.getPreferences",
         params: {},
       })
         .then((result) => {
+          if (requestId !== this.state.preferencesRequestId) return;
           if (!this.state.logging) {
             this.state.freqModeIndex = Number(result?.freqModeIndex ?? 1);
           }
@@ -340,7 +344,7 @@ Page(
           const pairing = isRecord(result?.pairing) ? result.pairing : null;
           this.renderPairing(pairing);
           if (
-            allowAutomaticPairing &&
+            startPairingIfNeeded &&
             !this.state.hasCredentials &&
             !pairing &&
             this.state.canStartConnection
@@ -352,6 +356,7 @@ Page(
           );
         })
         .catch((error) => {
+          if (requestId !== this.state.preferencesRequestId) return;
           captureException(error, { operation: "fetch-preferences" });
           logger.error("preference fetch failed %j", error);
           renderHint("Preferences unavailable\nOpen Zepp settings");
@@ -944,7 +949,7 @@ Page(
 
     onCall(payload: { method: string; params?: Record<string, unknown> } | null) {
       if (isConnectionChangedCall(payload)) {
-        this.refreshPreferences();
+        this.refreshPreferences({ startPairingIfNeeded: false });
         return;
       }
 

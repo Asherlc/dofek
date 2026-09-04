@@ -662,39 +662,37 @@ describe("createIngestZosHealthRouter", () => {
     expect(insertedValues[1]?.endedAt).toEqual(new Date("2026-06-28T00:15:00Z"));
   });
 
-  it.each([
-    "deepMinutes",
-    "remMinutes",
-    "lightMinutes",
-    "awakeMinutes",
-  ] as const)("marks staging unavailable when %s is absent", async (missingStage) => {
-    const { db, insertedValues } = createMockDatabase();
-    const completeStages = {
-      deepMinutes: 90,
-      remMinutes: 100,
-      lightMinutes: 250,
-      awakeMinutes: 40,
-    };
+  it.each(["deepMinutes", "remMinutes", "lightMinutes", "awakeMinutes"] as const)(
+    "marks staging unavailable when %s is absent",
+    async (missingStage) => {
+      const { db, insertedValues } = createMockDatabase();
+      const completeStages = {
+        deepMinutes: 90,
+        remMinutes: 100,
+        lightMinutes: 250,
+        awakeMinutes: 40,
+      };
 
-    const response = await post(
-      createTestApp(db),
-      {
-        sleepSessions: [
-          {
-            externalId: `sleep-missing-${missingStage}`,
-            startedAt: "2026-06-27T22:30:00Z",
-            endedAt: "2026-06-28T06:30:00Z",
-            ...completeStages,
-            [missingStage]: undefined,
-          },
-        ],
-      },
-      { authorization: "Bearer token-123" },
-    );
+      const response = await post(
+        createTestApp(db),
+        {
+          sleepSessions: [
+            {
+              externalId: `sleep-missing-${missingStage}`,
+              startedAt: "2026-06-27T22:30:00Z",
+              endedAt: "2026-06-28T06:30:00Z",
+              ...completeStages,
+              [missingStage]: undefined,
+            },
+          ],
+        },
+        { authorization: "Bearer token-123" },
+      );
 
-    expect(response.status).toBe(200);
-    expect(insertedValues[0]).toMatchObject({ stagingAvailable: false });
-  });
+      expect(response.status).toBe(200);
+      expect(insertedValues[0]).toMatchObject({ stagingAvailable: false });
+    },
+  );
 
   it("uses an existing sleep session id when the sleep session insert conflicts", async () => {
     routeMocks.executeWithSchema.mockResolvedValue([{ id: "existing-sleep-session" }]);

@@ -17,26 +17,26 @@ import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget"
 import { ProviderLogo } from "../../components/ProviderLogo";
 import { ProviderStatsBreakdown } from "../../components/ProviderStatsBreakdown";
 import { ProviderSyncHistoryEntry } from "../../components/ProviderSyncHistoryEntry";
+import { ProviderDetailAuthModals } from "../../components/providers/auth-modals";
+import { ProviderDangerZone } from "../../components/providers/provider-danger-zone";
+import { ProviderDetailActionsCard } from "../../components/providers/provider-detail-actions-card";
+import { ProviderDetailExtras } from "../../components/providers/provider-detail-extras";
+import {
+  formatCellValue,
+  formatColumnName,
+  recordAccessibilityLabel,
+} from "../../components/providers/provider-detail-record-format";
+import { ProviderRecordDetailModal } from "../../components/providers/provider-record-detail-modal";
+import {
+  type ProviderDetailActionsResult,
+  useProviderDetailActions,
+} from "../../components/providers/use-provider-detail-actions";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { useAuth } from "../../lib/auth-context";
 import { trpc } from "../../lib/trpc";
 import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useRefresh } from "../../lib/useRefresh";
 import { colors } from "../../theme";
-import { ProviderDetailAuthModals } from "./auth-modals";
-import { ProviderDangerZone } from "./provider-danger-zone";
-import { ProviderDetailActionsCard } from "./provider-detail-actions-card";
-import { ProviderDetailExtras } from "./provider-detail-extras";
-import {
-  formatCellValue,
-  formatColumnName,
-  recordAccessibilityLabel,
-} from "./provider-detail-record-format";
-import { ProviderRecordDetailModal } from "./provider-record-detail-modal";
-import {
-  type ProviderDetailActionsResult,
-  useProviderDetailActions,
-} from "./use-provider-detail-actions";
 
 type DataType = (typeof DATA_TYPE_LABELS)[number]["key"];
 
@@ -505,6 +505,7 @@ export default function ProviderDetailScreen() {
       providerId={providerId}
       providerActions={providerActions}
       displayProvider={providerActions.displayProvider}
+      onOpenClinicalRecords={() => router.push("/clinical-records")}
     />
   );
 }
@@ -538,10 +539,12 @@ function ProviderDetailContent({
   providerId,
   providerActions,
   displayProvider,
+  onOpenClinicalRecords,
 }: {
   providerId: string;
   providerActions: ProviderDetailActionsResult;
   displayProvider: NonNullable<ProviderDetailActionsResult["displayProvider"]>;
+  onOpenClinicalRecords: () => void;
 }) {
   const { serverUrl } = useAuth();
   const trpcUtils = trpc.useUtils();
@@ -697,8 +700,13 @@ function ProviderDetailContent({
           syncDateRange={syncDateRange}
           shouldShowFullSync={shouldShowFullSync}
           shouldShowAppleHealthPermissionBanner={shouldShowAppleHealthPermissionBanner}
+          shouldShowAppleHealthClinicalRecords={providerId === "apple_health"}
+          shouldShowClinicalRecordsLink={
+            providerId === "apple_health" && (providerStats?.clinicalRecords ?? 0) > 0
+          }
           onPrimaryAction={() => void handlePrimaryAction()}
           onFullSync={() => void handleFullSync()}
+          onOpenClinicalRecords={onOpenClinicalRecords}
         />
       )}
 

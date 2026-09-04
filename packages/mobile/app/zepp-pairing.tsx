@@ -4,15 +4,17 @@ import { z } from "zod";
 import { ZeppPairingCard } from "../components/ZeppPairingCard";
 import { colors } from "../theme";
 
-const zeppPairingSearchSchema = z.object({ code: z.string().min(1).optional() });
+const zeppPairingParamsSchema = z.object({
+  code: z.string().trim().min(1).optional(),
+});
 
 export default function ZeppPairingScreen() {
-  const parsed = zeppPairingSearchSchema.safeParse(useLocalSearchParams());
-  const code = parsed.success ? (parsed.data.code ?? "") : "";
+  const parsedParams = zeppPairingParamsSchema.safeParse(useLocalSearchParams());
+  const initialCode = parsedParams.success ? (parsedParams.data.code ?? "") : "";
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <ZeppPairingCard initialCode={code} />
+      <ZeppPairingCard initialCode={initialCode} />
     </ScrollView>
   );
 }

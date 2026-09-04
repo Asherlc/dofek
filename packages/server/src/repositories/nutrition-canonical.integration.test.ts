@@ -267,30 +267,30 @@ describe("canonical nutrition contribution set", () => {
   it.each([
     { date: "2026-01-10", sourceName: "Apple Health" },
     { date: "2026-01-11", sourceName: "   " },
-  ])("collapses the Apple Health $sourceName subsource to its provider label", async ({
-    date,
-    sourceName,
-  }) => {
-    await addEntry({
-      providerId: "apple_health",
-      date,
-      grain: "daily_aggregate",
-      sourceName,
-      nutrients: { calories: 1900, protein: 95 },
-    });
+  ])(
+    "collapses the Apple Health $sourceName subsource to its provider label",
+    async ({ date, sourceName }) => {
+      await addEntry({
+        providerId: "apple_health",
+        date,
+        grain: "daily_aggregate",
+        sourceName,
+        nutrients: { calories: 1900, protein: 95 },
+      });
 
-    const rows = await fetchAggregateRows(date);
+      const rows = await fetchAggregateRows(date);
 
-    expect(rows).toEqual([
-      {
-        calories: 1900,
-        protein_g: 95,
-        resolution_status: "available",
-        contributing_source_labels: ["Apple Health"],
-        contribution_grain: "daily_aggregate",
-      },
-    ]);
-  });
+      expect(rows).toEqual([
+        {
+          calories: 1900,
+          protein_g: 95,
+          resolution_status: "available",
+          contributing_source_labels: ["Apple Health"],
+          contribution_grain: "daily_aggregate",
+        },
+      ]);
+    },
+  );
 
   it("uses one direct-provider identity for provider-named and blank sources", async () => {
     const date = "2026-01-12";

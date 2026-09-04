@@ -2,16 +2,12 @@ import { describe, expect, it } from "vitest";
 import { deriveConnectionActions, parseConnectionState } from "./connection-state.ts";
 
 describe("parseConnectionState", () => {
-  it.each([
-    "disconnected",
-    "pairing",
-    "checking",
-    "connected",
-    "disconnecting",
-    "error",
-  ] as const)("preserves %s", (state) => {
-    expect(parseConnectionState(state)).toBe(state);
-  });
+  it.each(["disconnected", "pairing", "checking", "connected", "disconnecting", "error"] as const)(
+    "preserves %s",
+    (state) => {
+      expect(parseConnectionState(state)).toBe(state);
+    },
+  );
 
   it("migrates the former not-connected label", () => {
     expect(parseConnectionState("not connected")).toBe("disconnected");

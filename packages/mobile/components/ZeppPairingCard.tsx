@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
@@ -20,6 +20,9 @@ interface ZeppPairingCardBodyProps {
 export function ZeppPairingCard({ initialCode = "" }: { initialCode?: string }) {
   const [pairingCode, setPairingCode] = useState(initialCode);
   const [pairingMessage, setPairingMessage] = useState("");
+  useEffect(() => {
+    setPairingCode(initialCode);
+  }, [initialCode]);
   const connectionsQuery = trpc.companionToken.list.useQuery();
   const disconnectMutation = trpc.companionToken.revoke.useMutation({
     onSuccess: async () => {

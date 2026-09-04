@@ -44,7 +44,6 @@ const snapshotWithoutZohoEffects: AccountErasureRemoteSnapshot = {
   posthogDistinctId: "10000000-0000-4000-8000-000000001994",
   processorEmails: [],
   providerConnections: [],
-  slackInstallations: [],
   stripe: null,
   webhooks: [],
 };
@@ -431,23 +430,28 @@ describe("accountErasureProcessorConfigFromEnv", () => {
       },
       "did not acknowledge",
     ],
-  ])("rejects an invalid PostHog bulk deletion response: %s", async (_name, status, body, message) => {
-    const personUuid = "80000000-0000-4000-8000-000000001994";
-    const fetchFn: typeof globalThis.fetch = async (input) => {
-      const requestUrl = new URL(input instanceof Request ? input.url : input.toString());
-      if (requestUrl.pathname.endsWith("/persons/")) {
-        return Response.json({ next: null, results: [{ uuid: personUuid }] });
-      }
-      if (requestUrl.pathname.endsWith("/bulk_delete/")) {
-        return Response.json(body, { status });
-      }
-      throw new Error(`Unexpected request: ${requestUrl}`);
-    };
+  ])(
+    "rejects an invalid PostHog bulk deletion response: %s",
+    async (_name, status, body, message) => {
+      const personUuid = "80000000-0000-4000-8000-000000001994";
+      const fetchFn: typeof globalThis.fetch = async (input) => {
+        const requestUrl = new URL(input instanceof Request ? input.url : input.toString());
+        if (requestUrl.pathname.endsWith("/persons/")) {
+          return Response.json({ next: null, results: [{ uuid: personUuid }] });
+        }
+        if (requestUrl.pathname.endsWith("/bulk_delete/")) {
+          return Response.json(body, { status });
+        }
+        throw new Error(`Unexpected request: ${requestUrl}`);
+      };
 
-    await expect(
-      eraseAccountProcessors(snapshotWithoutZohoEffects, config, processorProgress(), { fetchFn }),
-    ).rejects.toThrow(message);
-  });
+      await expect(
+        eraseAccountProcessors(snapshotWithoutZohoEffects, config, processorProgress(), {
+          fetchFn,
+        }),
+      ).rejects.toThrow(message);
+    },
+  );
 
   it.each([
     [

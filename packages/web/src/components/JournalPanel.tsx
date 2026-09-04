@@ -3,11 +3,8 @@ import { chartColors, statusColors } from "@dofek/scoring/colors";
 import { useMemo, useState } from "react";
 import { z } from "zod";
 import { useTimeRangePreference } from "../hooks/useTimeRangePreference.ts";
-import { locallyReportedErrorMeta } from "../lib/query-client.ts";
-import { captureException } from "../lib/telemetry.ts";
 import { selectedRangeQueryInput, type TimeRangeDays } from "../lib/timeRange.ts";
 import { trpc } from "../lib/trpc.ts";
-import { AddJournalEntryModal } from "./AddJournalEntryModal.tsx";
 import { ChartRangeProvider } from "./DofekChart.tsx";
 import { PaginationControls } from "./PaginationControls.tsx";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
@@ -24,7 +21,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 const CATEGORY_ORDER = ["wellness", "activity", "substance", "nutrition", "custom"];
 
-type Tab = "log" | "trends";
+type Tab = "history" | "trends";
 
 function JournalQueryError({
   error,
@@ -51,7 +48,7 @@ function JournalQueryError({
 }
 
 export function JournalPanel() {
-  const [tab, setTab] = useState<Tab>("log");
+  const [tab, setTab] = useState<Tab>("history");
   const { days, description, setDays } = useTimeRangePreference("behavior");
 
   return (
@@ -61,10 +58,10 @@ export function JournalPanel() {
           <div className="flex gap-2">
             <button
               type="button"
-              className={`px-3 py-1.5 rounded-md text-sm font-medium ${tab === "log" ? "bg-accent/15 text-accent" : "text-muted hover:text-foreground"}`}
-              onClick={() => setTab("log")}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium ${tab === "history" ? "bg-accent/15 text-accent" : "text-muted hover:text-foreground"}`}
+              onClick={() => setTab("history")}
             >
-              Log
+              History
             </button>
             <button
               type="button"
@@ -77,7 +74,7 @@ export function JournalPanel() {
           <TimeRangeSelector days={days} description={description} onChange={setDays} />
         </div>
 
-        {tab === "log" ? (
+        {tab === "history" ? (
           <JournalLog key={days ?? "all"} days={days} />
         ) : (
           <JournalTrends days={days} />
@@ -109,17 +106,8 @@ type JournalEntry = z.infer<typeof entrySchema>;
 const JOURNAL_PAGE_SIZE = 20;
 
 function JournalLog({ days }: { days: TimeRangeDays }) {
-  const [showModal, setShowModal] = useState(false);
   const [page, setPage] = useState(0);
-  const utils = trpc.useUtils();
   const entriesQuery = trpc.journal.entries.useQuery(selectedRangeQueryInput(days));
-  const deleteMutation = trpc.journal.delete.useMutation({
-    meta: locallyReportedErrorMeta,
-    onSuccess: () => utils.journal.entries.invalidate(),
-    onError: (error) => {
-      captureException(error, { operation: "journal.delete" });
-    },
-  });
 
   const entries = useMemo(() => {
     if (!entriesQuery.data) return [];
@@ -151,16 +139,6 @@ function JournalLog({ days }: { days: TimeRangeDays }) {
 
   return (
     <div>
-      <div className="flex justify-end mb-3">
-        <button
-          type="button"
-          className="px-3 py-1.5 rounded-md text-sm font-medium bg-accent/15 text-accent hover:bg-accent/25"
-          onClick={() => setShowModal(true)}
-        >
-          + Add Entry
-        </button>
-      </div>
-
       {entriesQuery.isLoading && entriesQuery.data === undefined && (
         <QueryStatePanel variant="loading" height={96} />
       )}
@@ -190,12 +168,7 @@ function JournalLog({ days }: { days: TimeRangeDays }) {
       )}
 
       {grouped.map(([date, dayEntries]) => (
-        <DayGroup
-          key={date}
-          date={date}
-          entries={dayEntries}
-          onDelete={(id) => deleteMutation.mutate({ id })}
-        />
+        <DayGroup key={date} date={date} entries={dayEntries} />
       ))}
 
       <PaginationControls
@@ -205,34 +178,11 @@ function JournalLog({ days }: { days: TimeRangeDays }) {
         itemLabel="journal entries"
         onPageChange={setPage}
       />
-
-      {deleteMutation.error ? (
-        <p className="text-xs text-red-400 mt-3">{deleteMutation.error.message}</p>
-      ) : null}
-
-      {showModal && (
-        <AddJournalEntryModal
-          isOpen={showModal}
-          onClose={() => setShowModal(false)}
-          onSuccess={() => {
-            setShowModal(false);
-            utils.journal.entries.invalidate();
-          }}
-        />
-      )}
     </div>
   );
 }
 
-function DayGroup({
-  date,
-  entries,
-  onDelete,
-}: {
-  date: string;
-  entries: JournalEntry[];
-  onDelete: (id: string) => void;
-}) {
+function DayGroup({ date, entries }: { date: string; entries: JournalEntry[] }) {
   const dateDisplay = formatDateLong(date);
 
   // Group by category
@@ -260,7 +210,7 @@ function DayGroup({
             </p>
             <div className="space-y-1">
               {catEntries.map((entry) => (
-                <JournalEntryRow key={entry.id} entry={entry} onDelete={onDelete} />
+                <JournalEntryRow key={entry.id} entry={entry} />
               ))}
             </div>
           </div>
@@ -270,33 +220,14 @@ function DayGroup({
   );
 }
 
-function JournalEntryRow({
-  entry,
-  onDelete,
-}: {
-  entry: JournalEntry;
-  onDelete: (id: string) => void;
-}) {
-  const isManual = entry.source.providerId === "dofek";
-
+function JournalEntryRow({ entry }: { entry: JournalEntry }) {
   return (
     <div className="flex items-center justify-between py-1">
       <div className="flex items-center gap-2">
         <span className="text-sm text-foreground">{entry.display_name}</span>
         <AnswerDisplay entry={entry} />
       </div>
-      <div className="flex items-center gap-2">
-        {!isManual && <JournalSourceDetails source={entry.source} />}
-        {isManual && (
-          <button
-            type="button"
-            className="text-xs text-red-400 hover:text-red-300"
-            onClick={() => onDelete(entry.id)}
-          >
-            Delete
-          </button>
-        )}
-      </div>
+      <JournalSourceDetails source={entry.source} />
     </div>
   );
 }

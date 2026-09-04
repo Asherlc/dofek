@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { View } from "react-native";
-import { ProviderDetailActionsCard } from "../../app/providers/provider-detail-actions-card";
+import { ProviderDetailActionsCard } from "../../components/providers/provider-detail-actions-card";
 import { colors } from "../../theme";
 
 const meta = {
@@ -14,8 +14,11 @@ const meta = {
     syncDateRange: null,
     shouldShowFullSync: true,
     shouldShowAppleHealthPermissionBanner: false,
+    shouldShowAppleHealthClinicalRecords: false,
+    shouldShowClinicalRecordsLink: false,
     onPrimaryAction: () => {},
     onFullSync: () => {},
+    onOpenClinicalRecords: () => {},
   },
   decorators: [
     (Story) => (

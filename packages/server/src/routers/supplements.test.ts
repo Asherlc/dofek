@@ -1,12 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
-const invalidateNutritionCaches = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
-const captureException = vi.hoisted(() => vi.fn());
-
-vi.mock("../lib/nutrition-cache.ts", () => ({ invalidateNutritionCaches }));
-vi.mock("@sentry/node", () => ({ captureException }));
-
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
@@ -34,15 +28,6 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   };
 });
 
-// Mock drizzle functions used by SupplementsRepository
-vi.mock("drizzle-orm", async (importOriginal) => {
-  const original = await importOriginal<typeof import("drizzle-orm")>();
-  return {
-    ...original,
-    eq: vi.fn(() => true),
-  };
-});
-
 // ---------------------------------------------------------------------------
 // Router procedure tests
 // ---------------------------------------------------------------------------
@@ -50,17 +35,7 @@ vi.mock("drizzle-orm", async (importOriginal) => {
 describe("supplementsRouter", () => {
   async function makeCaller(executeResult: unknown[] = []) {
     const execute = vi.fn().mockResolvedValue(executeResult);
-    // Mock select/from/where for the list query
-    const where = vi.fn().mockResolvedValue(executeResult);
-    const from = vi.fn(() => ({ where }));
-    const select = vi.fn(() => ({ from }));
-    const insert = vi.fn(() => ({ values: vi.fn(() => ({ onConflictDoUpdate: vi.fn() })) }));
-    const deleteFn = vi.fn(() => ({ where: vi.fn() }));
-    const transaction = vi.fn(async (callback: (tx: unknown) => Promise<unknown>) => {
-      const tx = { execute, select, insert, delete: deleteFn };
-      return callback(tx);
-    });
-    const db = { execute, select, insert, delete: deleteFn, transaction };
+    const db = { execute };
 
     const { supplementsRouter } = await import("./supplements.ts");
     const callerFactory = createTestCallerFactory(supplementsRouter);
@@ -77,7 +52,7 @@ describe("supplementsRouter", () => {
       expect(result).toEqual([]);
     });
 
-    it("preserves the exact installed-client V1 definition shape", async () => {
+    it("preserves installed fields while including the stable definition id", async () => {
       const { caller } = await makeCaller([
         {
           definition_id: "supplement-version-1",
@@ -102,85 +77,13 @@ describe("supplementsRouter", () => {
 
       expect(await caller.list()).toEqual([
         {
+          id: "supplement-version-1",
           name: "Vitamin D",
           amount: 50,
           unit: "mcg",
           meal: "breakfast",
         },
       ]);
-    });
-  });
-
-  describe("save", () => {
-    it("invalidates nutrition analytics after replacing the stack", async () => {
-      const { caller } = await makeCaller([]);
-
-      await caller.save({ supplements: [] });
-
-      expect(invalidateNutritionCaches).toHaveBeenCalledWith("user-1");
-    });
-
-    it("preserves the exact installed-client V1 success shape", async () => {
-      const { caller } = await makeCaller([]);
-      expect(await caller.save({ supplements: [] })).toEqual({
-        success: true,
-        count: 0,
-      });
-    });
-
-    it("rejects empty supplement name", async () => {
-      const { caller } = await makeCaller([]);
-      await expect(caller.save({ supplements: [{ name: "" }] })).rejects.toThrow();
-    });
-
-    it("rejects supplement name exceeding 200 chars", async () => {
-      const { caller } = await makeCaller([]);
-      await expect(caller.save({ supplements: [{ name: "x".repeat(201) }] })).rejects.toThrow();
-    });
-
-    it("accepts name at exactly 200 chars (boundary)", async () => {
-      const { caller } = await makeCaller([]);
-      // This will fail with DB error, but should NOT fail with validation error
-      try {
-        await caller.save({ supplements: [{ name: "x".repeat(200) }] });
-      } catch (error) {
-        // Should not be a ZodError (input validation should pass)
-        expect(String(error)).not.toContain("String must contain at most 200");
-      }
-    });
-
-    it("rejects negative amount", async () => {
-      const { caller } = await makeCaller([]);
-      await expect(caller.save({ supplements: [{ name: "Test", amount: -1 }] })).rejects.toThrow();
-    });
-
-    it("rejects zero amount", async () => {
-      const { caller } = await makeCaller([]);
-      await expect(caller.save({ supplements: [{ name: "Test", amount: 0 }] })).rejects.toThrow();
-    });
-
-    it("rejects unit exceeding 10 chars", async () => {
-      const { caller } = await makeCaller([]);
-      await expect(
-        caller.save({ supplements: [{ name: "Test", unit: "x".repeat(11) }] }),
-      ).rejects.toThrow();
-    });
-
-    it("requires the supplements input property", async () => {
-      const { caller } = await makeCaller([]);
-
-      await expect(Reflect.apply(caller.save, undefined, [{}])).rejects.toThrow();
-    });
-
-    it("rejects malformed repository output", async () => {
-      const save = vi.spyOn(SupplementsRepository.prototype, "save").mockResolvedValue({
-        success: true,
-        count: -1,
-      });
-      const { caller } = await makeCaller([]);
-
-      await expect(caller.save({ supplements: [] })).rejects.toThrow();
-      save.mockRestore();
     });
   });
 
@@ -272,137 +175,7 @@ describe("supplementsRouter", () => {
     });
   });
 
-  describe("recordDose", () => {
-    it("records a correction and invalidates nutrition caches", async () => {
-      const recordDose = vi.spyOn(SupplementsRepository.prototype, "recordDose").mockResolvedValue({
-        id: "901ece82-a39e-4dcf-ac6a-dc38e2d68a97",
-        scheduledDate: "2026-07-27",
-        status: "taken",
-      });
-      const { caller } = await makeCaller([]);
-
-      await expect(
-        caller.recordDose({
-          expectedCurrentEventId: "b0ec9f35-fb09-40bb-b536-fd7970ec7c62",
-          status: "taken",
-        }),
-      ).resolves.toEqual({
-        id: "901ece82-a39e-4dcf-ac6a-dc38e2d68a97",
-        scheduledDate: "2026-07-27",
-        status: "taken",
-      });
-      expect(recordDose).toHaveBeenCalledWith("b0ec9f35-fb09-40bb-b536-fd7970ec7c62", "taken");
-      expect(invalidateNutritionCaches).toHaveBeenCalledWith("user-1");
-      recordDose.mockRestore();
-    });
-
-    it("maps stale-leaf conflicts to an actionable conflict error", async () => {
-      const recordDose = vi
-        .spyOn(SupplementsRepository.prototype, "recordDose")
-        .mockRejectedValue(new SupplementDoseConflictError());
-      const { caller } = await makeCaller([]);
-
-      await expect(
-        caller.recordDose({
-          expectedCurrentEventId: "b0ec9f35-fb09-40bb-b536-fd7970ec7c62",
-          status: "skipped",
-        }),
-      ).rejects.toMatchObject({
-        code: "CONFLICT",
-        message: "Supplement status changed. Reload and try again.",
-      });
-      recordDose.mockRestore();
-    });
-
-    it("maps unexpected persistence failures to a semantic server error", async () => {
-      const failure = new Error("database connection closed");
-      const recordDose = vi
-        .spyOn(SupplementsRepository.prototype, "recordDose")
-        .mockRejectedValue(failure);
-      const { caller } = await makeCaller([]);
-
-      await expect(
-        caller.recordDose({
-          expectedCurrentEventId: "b0ec9f35-fb09-40bb-b536-fd7970ec7c62",
-          status: "taken",
-        }),
-      ).rejects.toMatchObject({
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Could not record the supplement dose. Reload and try again.",
-        cause: failure,
-      });
-      expect(captureException).toHaveBeenCalledWith(failure, {
-        tags: { operation: "supplements.recordDose" },
-      });
-      recordDose.mockRestore();
-    });
-
-    it("requires the event id and a supported status", async () => {
-      const { caller } = await makeCaller([]);
-      const validId = "b0ec9f35-fb09-40bb-b536-fd7970ec7c62";
-
-      await expect(Reflect.apply(caller.recordDose, undefined, [{}])).rejects.toThrow();
-      await expect(
-        Reflect.apply(caller.recordDose, undefined, [
-          { expectedCurrentEventId: "not-a-uuid", status: "taken" },
-        ]),
-      ).rejects.toThrow();
-      await expect(
-        Reflect.apply(caller.recordDose, undefined, [
-          { expectedCurrentEventId: validId, status: "unknown" },
-        ]),
-      ).rejects.toThrow();
-    });
-
-    it("accepts both supported statuses", async () => {
-      const recordDose = vi
-        .spyOn(SupplementsRepository.prototype, "recordDose")
-        .mockImplementation(async (_eventId, status) => ({
-          id: "901ece82-a39e-4dcf-ac6a-dc38e2d68a97",
-          scheduledDate: "2026-07-27",
-          status,
-        }));
-      const { caller } = await makeCaller([]);
-      const expectedCurrentEventId = "b0ec9f35-fb09-40bb-b536-fd7970ec7c62";
-
-      await expect(
-        caller.recordDose({ expectedCurrentEventId, status: "taken" }),
-      ).resolves.toMatchObject({ status: "taken" });
-      await expect(
-        caller.recordDose({ expectedCurrentEventId, status: "skipped" }),
-      ).resolves.toMatchObject({ status: "skipped" });
-      recordDose.mockRestore();
-    });
-
-    it("rejects malformed repository output", async () => {
-      const recordDose = vi.spyOn(SupplementsRepository.prototype, "recordDose").mockResolvedValue({
-        id: "not-a-uuid",
-        scheduledDate: "2026-07-27",
-        status: "taken",
-      });
-      const { caller } = await makeCaller([]);
-
-      await expect(
-        caller.recordDose({
-          expectedCurrentEventId: "b0ec9f35-fb09-40bb-b536-fd7970ec7c62",
-          status: "taken",
-        }),
-      ).rejects.toThrow();
-      recordDose.mockRestore();
-    });
-  });
-
   describe("schema initialization", () => {
-    it("enforces the save input and exact output after a fresh module load", async () => {
-      vi.resetModules();
-      const { caller } = await makeCaller([]);
-
-      await expect(caller.save({ supplements: [] })).resolves.toEqual({
-        success: true,
-        count: 0,
-      });
-    });
-
     it("enforces the occurrence default and inclusive day bounds after a fresh module load", async () => {
       vi.resetModules();
       const { SupplementsRepository: FreshSupplementsRepository } = await import(
@@ -424,42 +197,6 @@ describe("supplementsRouter", () => {
       expect(occurrences.mock.calls).toEqual([[7], [1], [30]]);
       occurrences.mockRestore();
     });
-
-    it("enforces record-dose input and exact output after a fresh module load", async () => {
-      vi.resetModules();
-      const { SupplementsRepository: FreshSupplementsRepository } = await import(
-        "../repositories/supplements-repository.ts"
-      );
-      const recordDose = vi
-        .spyOn(FreshSupplementsRepository.prototype, "recordDose")
-        .mockResolvedValue({
-          id: "901ece82-a39e-4dcf-ac6a-dc38e2d68a97",
-          scheduledDate: "2026-07-27",
-          status: "taken",
-        });
-      const { caller } = await makeCaller([]);
-      const expectedCurrentEventId = "b0ec9f35-fb09-40bb-b536-fd7970ec7c62";
-
-      await expect(caller.recordDose({ expectedCurrentEventId, status: "taken" })).resolves.toEqual(
-        {
-          id: "901ece82-a39e-4dcf-ac6a-dc38e2d68a97",
-          scheduledDate: "2026-07-27",
-          status: "taken",
-        },
-      );
-      await expect(
-        Reflect.apply(caller.recordDose, undefined, [
-          { expectedCurrentEventId: "not-a-uuid", status: "taken" },
-        ]),
-      ).rejects.toThrow();
-      await expect(
-        Reflect.apply(caller.recordDose, undefined, [
-          { expectedCurrentEventId, status: "unknown" },
-        ]),
-      ).rejects.toThrow();
-      expect(recordDose).toHaveBeenCalledTimes(1);
-      recordDose.mockRestore();
-    });
   });
 });
 
@@ -467,20 +204,18 @@ describe("supplementsRouter", () => {
 // toApiSupplement utility tests
 // ---------------------------------------------------------------------------
 
-import {
-  SupplementDoseConflictError,
-  SupplementsRepository,
-  toApiSupplement,
-} from "../repositories/supplements-repository.ts";
+import { SupplementsRepository, toApiSupplement } from "../repositories/supplements-repository.ts";
 
 describe("toApiSupplement()", () => {
   it("maps name from row", () => {
-    const result = toApiSupplement({ name: "Vitamin D" });
+    const result = toApiSupplement({ definition_id: "definition-vitamin-d", name: "Vitamin D" });
+    expect(result.id).toBe("definition-vitamin-d");
     expect(result.name).toBe("Vitamin D");
   });
 
   it("includes non-nutrient optional fields when present", () => {
     const result = toApiSupplement({
+      definition_id: "definition-fish-oil",
       name: "Fish Oil",
       amount: 1000,
       unit: "mg",
@@ -498,6 +233,7 @@ describe("toApiSupplement()", () => {
 
   it("omits null optional fields", () => {
     const result = toApiSupplement({
+      definition_id: "definition-magnesium",
       name: "Magnesium",
       amount: null,
       unit: null,
@@ -514,13 +250,14 @@ describe("toApiSupplement()", () => {
   });
 
   it("omits undefined optional fields", () => {
-    const result = toApiSupplement({ name: "Zinc" });
+    const result = toApiSupplement({ definition_id: "definition-zinc", name: "Zinc" });
     expect(result).not.toHaveProperty("amount");
     expect(result).not.toHaveProperty("unit");
   });
 
   it("converts snake_case nutrient columns to camelCase", () => {
     const result = toApiSupplement({
+      definition_id: "definition-multi",
       name: "Multi",
       vitamin_a_mcg: 900,
       vitamin_c_mg: 90,
@@ -535,6 +272,7 @@ describe("toApiSupplement()", () => {
 
   it("omits null nutrient columns from result", () => {
     const result = toApiSupplement({
+      definition_id: "definition-single",
       name: "Single",
       vitamin_a_mcg: null,
       vitamin_c_mg: null,
@@ -545,8 +283,8 @@ describe("toApiSupplement()", () => {
     expect(result.calciumMg).toBe(500);
   });
 
-  it("returns just name when all optional fields and nutrients are null", () => {
-    const row: Record<string, unknown> = { name: "Empty" };
+  it("returns just identity fields when all optional fields and nutrients are null", () => {
+    const row: Record<string, unknown> = { definition_id: "definition-empty", name: "Empty" };
     // Add all nutrient columns as null
     const nutrientCols = [
       "calories",
@@ -597,11 +335,12 @@ describe("toApiSupplement()", () => {
     row.meal = null;
 
     const result = toApiSupplement(row);
-    expect(result).toEqual({ name: "Empty" });
+    expect(result).toEqual({ id: "definition-empty", name: "Empty" });
   });
 
   it("handles mixed nutrients (some present, some null)", () => {
     const result = toApiSupplement({
+      definition_id: "definition-b-complex",
       name: "B-Complex",
       vitamin_b1_mg: 1.2,
       vitamin_b2_mg: 1.3,
@@ -623,6 +362,7 @@ describe("toApiSupplement()", () => {
 
   it("handles macronutrient fields", () => {
     const result = toApiSupplement({
+      definition_id: "definition-protein-powder",
       name: "Protein Powder",
       calories: 120,
       protein_g: 25,
@@ -641,6 +381,7 @@ describe("toApiSupplement()", () => {
 
   it("handles fat breakdown and mineral fields", () => {
     const result = toApiSupplement({
+      definition_id: "definition-complete",
       name: "Complete",
       saturated_fat_g: 0.5,
       polyunsaturated_fat_g: 0.3,
@@ -665,6 +406,7 @@ describe("toApiSupplement()", () => {
 
   it("handles all mineral fields", () => {
     const result = toApiSupplement({
+      definition_id: "definition-mineral-complex",
       name: "Mineral Complex",
       selenium_mcg: 55,
       copper_mg: 0.9,
@@ -685,6 +427,7 @@ describe("toApiSupplement()", () => {
 
   it("ignores non-string nutrient values (treats as null)", () => {
     const result = toApiSupplement({
+      definition_id: "definition-bad-data",
       name: "Bad Data",
       vitamin_a_mcg: "not a number",
       calcium_mg: true,

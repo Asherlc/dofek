@@ -176,6 +176,16 @@ docker exec "$(docker ps --filter name=dofek_redpanda -q | head -n1)" \
   rpk group describe metric-stream-clickhouse-sink metric-stream-r2-archive
 ```
 
+Alert on both absolute lag and lag growth rate. A large shrinking backlog and a
+smaller growing backlog require different responses. The ClickHouse sink also
+emits `metric_stream.consumer_batch` with `consumer_lag`,
+`sink_duration_ms`, `consumer_lag_growth_per_second`,
+`average_batch_event_cost_ms`, `deletion_event_count`, and
+`deletion_events_per_second`; alerting must cover sink latency and delete rate,
+not only batch commits. KafkaJS exposes the batch high watermark and requires
+manual offset resolution before commit when `eachBatchAutoResolve` is disabled;
+see its [consumer documentation](https://kafka.js.org/docs/consuming#eachbatch).
+
 Check ClickHouse freshness:
 
 ```bash
@@ -199,9 +209,71 @@ The freshness checks must cover:
 - Newest dbt analytics rows that depend on metric stream, especially
   `analytics.daily_activity_load` and `analytics.daily_strain`.
 
+Do not declare a sink backlog resolved from service health alone. Prove that
+the committed offset reaches the topic head, publish a fresh post-drain message
+and observe it in `ingest.metric_stream`, then verify the affected activities
+hydrate with their expected sensor fields.
+
+## Full-refresh visibility window
+
+A full historical refresh currently shares the single ordered metric-stream
+partition with live ingestion. The September 2026 full refresh emitted about
+36.97 million events and delayed live sensor visibility by roughly five hours
+at the observed sink rate. New activities during that interval may temporarily
+show null heart rate or power even though their samples are queued, not lost.
+State this expected delay in the operator confirmation before starting a full
+refresh, and monitor the measured lag rather than assuming a fixed completion
+time.
+
+Do not split or repartition this topic without preserving per-entity ordering:
+a scoped delete must remain before its replacement rows for the same entity.
+Separating bounded historical replay from live ingestion is the preferred
+design direction because it removes this visibility coupling without weakening
+delete-before-replace ordering.
+
 Treat R2 archive staleness as a production durability incident. Writers are
 already Redpanda-first; restore the archive before deploying writer changes or
 allowing required Redpanda offsets to expire.
+
+## External-ID deletion projection
+
+Scoped replacement deletes filter by `(user_id, provider_id, external_id)`.
+The base table's activity-oriented ordering cannot prune that lookup, so
+`by_provider_external_id` stores a covering copy ordered for the delete path.
+ClickHouse automatically considers projections when their physical ordering
+matches a query's filters; use `force_optimize_projection_name` during
+verification to fail if the intended projection is not eligible:
+<https://clickhouse.com/blog/10-best-practice-tips#use-projections-for-common-filter-patterns>.
+
+Migration `0074_metric_stream_external_id_projection` adds the definition for
+new parts. It intentionally does not rewrite historical parts during deploy.
+After the metric-stream consumer reaches the topic head and the fresh-message
+delivery gate passes, materialize the existing parts in an approved maintenance
+window:
+
+```sql
+ALTER TABLE ingest.metric_stream
+MATERIALIZE PROJECTION by_provider_external_id;
+```
+
+Monitor `system.mutations` until the command is done, then verify every active
+base-table part contains the projection:
+
+```sql
+SELECT
+  count() AS active_parts,
+  countIf(NOT has(projections, 'by_provider_external_id')) AS missing_projection_parts
+FROM system.parts
+WHERE active
+  AND database = 'ingest'
+  AND table = 'metric_stream';
+```
+
+Do not declare the optimization complete unless `missing_projection_parts` is
+zero and an `EXPLAIN projections = 1` of the scoped external-ID lookup names
+`by_provider_external_id`. Existing parts require explicit materialization;
+ClickHouse documents this separately from adding the projection definition:
+<https://clickhouse.com/docs/data-modeling/projections#filtering-on-columns-which-arent-in-the-primary-key>.
 
 ## Historical Postgres Backfill
 

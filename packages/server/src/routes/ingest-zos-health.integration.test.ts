@@ -20,7 +20,7 @@ async function post(
   path: string,
   opts: { headers?: Record<string, string>; body: unknown; rawBody?: boolean },
 ): Promise<{ status: number; body: string }> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const server = app.listen(0, () => {
       const port = getPort(server);
       const transportBody = opts.rawBody
@@ -46,9 +46,9 @@ async function post(
           resolve({ status: res.status, body: await res.text() });
           server.close();
         })
-        .catch((_error: unknown) => {
-          resolve({ status: 500, body: "fetch error" });
+        .catch((error: unknown) => {
           server.close();
+          reject(error);
         });
     });
   });
