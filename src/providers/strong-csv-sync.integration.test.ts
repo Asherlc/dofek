@@ -1,5 +1,6 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { runWithProviderIngestContext } from "../db/provider-ingest-context.ts";
 import { activity, strengthSet } from "../db/schema/activity.ts";
 import { TEST_USER_ID } from "../db/schema/core.ts";
 import {
@@ -53,12 +54,8 @@ describe("importStrongCsv() (integration)", () => {
   });
 
   it("imports a single workout with multiple exercises and sets", async () => {
-    const result = await importStrongCsv(
-      ctx.db,
-      SIMPLE_CSV,
-      TEST_USER_ID,
-      "kg",
-      "America/Los_Angeles",
+    const result = await runWithProviderIngestContext({ homeTimezone: "America/Los_Angeles" }, () =>
+      importStrongCsv(ctx.db, SIMPLE_CSV, TEST_USER_ID, "kg", "America/Los_Angeles"),
     );
 
     expect(result.provider).toBe(STRONG_PROVIDER_ID);
@@ -193,6 +190,48 @@ describe("importStrongCsv() (integration)", () => {
     expect(activities).toHaveLength(1);
   });
 
+  it("keeps the prior workout sets when a replacement fails", async () => {
+    const original = `${STRONG_CSV_HEADER}\n2026-08-26 16:00:50,Atomic replacement,45m,Deadlift (Barbell),1,205,4,,,,,`;
+    const replacement = `${STRONG_CSV_HEADER}\n2026-08-26 16:00:50,Atomic replacement,45m,Deadlift (Barbell),1,225,4,,,,,`;
+    await importStrongCsv(ctx.db, original, TEST_USER_ID, "lbs", "America/Los_Angeles");
+    const workout = (
+      await ctx.db.select().from(activity).where(eq(activity.name, "Atomic replacement"))
+    )[0];
+    if (!workout) throw new Error("expected Atomic replacement workout");
+
+    await ctx.db.execute(sql`CREATE FUNCTION fitness.reject_test_strength_set_insert()
+      RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        RAISE EXCEPTION 'test replacement rejection';
+      END;
+      $$`);
+    await ctx.db.execute(sql`CREATE TRIGGER reject_test_strength_set_insert
+      BEFORE INSERT ON fitness.strength_set
+      FOR EACH ROW EXECUTE FUNCTION fitness.reject_test_strength_set_insert()`);
+    try {
+      const result = await importStrongCsv(
+        ctx.db,
+        replacement,
+        TEST_USER_ID,
+        "lbs",
+        "America/Los_Angeles",
+      );
+      expect(result.errors).toHaveLength(1);
+    } finally {
+      await ctx.db.execute(
+        sql`DROP TRIGGER reject_test_strength_set_insert ON fitness.strength_set`,
+      );
+      await ctx.db.execute(sql`DROP FUNCTION fitness.reject_test_strength_set_insert()`);
+    }
+
+    const sets = await ctx.db
+      .select()
+      .from(strengthSet)
+      .where(eq(strengthSet.activityId, workout.id));
+    expect(sets).toHaveLength(1);
+    expect(sets[0]?.weightKg).toBe(92.986);
+  });
+
   it("stores workout and set notes", async () => {
     const result = await importStrongCsv(
       ctx.db,
@@ -252,6 +291,46 @@ describe("importStrongCsv() (integration)", () => {
         ),
       ),
     );
+  });
+
+  it("reuses an established provider alias when inferred equipment changes", async () => {
+    const [canonicalExercise] = await ctx.db
+      .insert(exercise)
+      .values({ name: "Pull Up", equipment: "BODY" })
+      .onConflictDoNothing()
+      .returning();
+    const existingExercise =
+      canonicalExercise ??
+      (
+        await ctx.db
+          .select()
+          .from(exercise)
+          .where(and(eq(exercise.name, "Pull Up"), eq(exercise.equipment, "BODY")))
+      )[0];
+    if (!existingExercise) throw new Error("expected canonical Pull Up exercise");
+
+    await ctx.db
+      .insert(exerciseAlias)
+      .values({
+        exerciseId: existingExercise.id,
+        providerId: STRONG_PROVIDER_ID,
+        providerExerciseId: null,
+        providerExerciseName: "Pull Up",
+      })
+      .onConflictDoNothing();
+
+    const csv = `${STRONG_CSV_HEADER}\n2026-08-26 16:00:50,Deadlift,45m,Pull Up,1,0,8,,,,,`;
+    const result = await importStrongCsv(ctx.db, csv, TEST_USER_ID, "lbs", "America/Los_Angeles");
+
+    expect(result.errors).toHaveLength(0);
+    const workout = (await ctx.db.select().from(activity).where(eq(activity.name, "Deadlift")))[0];
+    if (!workout) throw new Error("expected Deadlift workout");
+    const sets = await ctx.db
+      .select()
+      .from(strengthSet)
+      .where(eq(strengthSet.activityId, workout.id));
+    expect(sets).toHaveLength(1);
+    expect(sets[0]?.exerciseId).toBe(existingExercise.id);
   });
 
   it("returns empty result for empty CSV", async () => {

@@ -9,6 +9,12 @@ const repository = vi.hoisted(() => ({
   markObjectDeleted: vi.fn(),
   queue: vi.fn(),
   requeue: vi.fn(async () => true),
+  withLocked: vi.fn(async (database, uploadId, operation) => {
+    const listed = await repository.list.mock.results.at(-1)?.value;
+    const locked = listed?.find((candidate: FileUpload) => candidate.id === uploadId);
+    if (!locked) throw new Error(`Upload ${uploadId} was not found`);
+    return database.transaction((transaction: unknown) => operation(transaction, locked));
+  }),
   lifecycle: vi.fn(),
   reconciliation: vi.fn(),
   captureException: vi.fn(),
@@ -22,6 +28,7 @@ vi.mock("../db/file-upload.ts", () => ({
   markFileUploadObjectDeleted: repository.markObjectDeleted,
   queueCompletedFileUpload: repository.queue,
   requeueStuckFileUpload: repository.requeue,
+  withLockedFileUpload: repository.withLocked,
 }));
 vi.mock("../file-upload-metrics.ts", () => ({
   fileUploadLifecycleTotal: { add: repository.lifecycle },
@@ -81,7 +88,10 @@ function storage(): ImportUploadStorage {
   };
 }
 
-const database = { execute: vi.fn() };
+const database = {
+  execute: vi.fn(),
+  transaction: vi.fn(async (operation) => operation(database)),
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -183,6 +193,21 @@ describe("reconcileFileUploads", () => {
 
     expect(objectStorage.deleteObject).toHaveBeenCalledWith(completed.objectKey);
     expect(repository.markObjectDeleted).toHaveBeenCalledWith(database, completed.id);
+    expect(database.transaction).toHaveBeenCalledOnce();
+  });
+
+  it("does not delete a terminal upload whose object was deleted before the row lock", async () => {
+    const completed = upload({ state: "completed" });
+    repository.list.mockResolvedValue([completed]);
+    repository.withLocked.mockImplementationOnce(async (transaction, _uploadId, operation) =>
+      operation(transaction, upload({ state: "completed", objectDeletedAt: new Date() })),
+    );
+    const objectStorage = storage();
+
+    await reconcileFileUploads(database, objectStorage);
+
+    expect(objectStorage.deleteObject).not.toHaveBeenCalled();
+    expect(repository.markObjectDeleted).not.toHaveBeenCalled();
   });
 
   it("skips expired repair metrics when the upload already transitioned", async () => {

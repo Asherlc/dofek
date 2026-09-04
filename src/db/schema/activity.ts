@@ -222,6 +222,13 @@ export const activity = fitness.table(
     startUtcOffsetMinutes: bigint("start_utc_offset_minutes", { mode: "number" }),
     endUtcOffsetMinutes: bigint("end_utc_offset_minutes", { mode: "number" }),
     localTimeSource: text("local_time_source").notNull().default("unknown"),
+    rejectedProviderTimezone: text("rejected_provider_timezone"),
+    rejectedProviderStartUtcOffsetMinutes: bigint("rejected_provider_start_utc_offset_minutes", {
+      mode: "number",
+    }),
+    rejectedProviderEndUtcOffsetMinutes: bigint("rejected_provider_end_utc_offset_minutes", {
+      mode: "number",
+    }),
     stravaId: text("strava_id"), // Strava activity ID for cross-provider linking
     raw: jsonb("raw"),
     providerAbsentAt: timestamp("provider_absent_at", { withTimezone: true }),
@@ -242,7 +249,13 @@ export const activity = fitness.table(
         AND ${table.startUtcOffsetMinutes} IS NULL
         AND ${table.endUtcOffsetMinutes} IS NULL
       ) OR (
-        ${table.localTimeSource} IN ('provider_timezone', 'device_timezone', 'user_home_timezone')
+        ${table.localTimeSource} IN (
+          'provider_timezone',
+          'device_timezone',
+          'user_home_timezone',
+          'gps_timezone',
+          'home_zone_fallback'
+        )
         AND NULLIF(btrim(${table.timezone}), '') IS NOT NULL
         AND ${table.startUtcOffsetMinutes} BETWEEN -840 AND 840
         AND (${table.endedAt} IS NULL OR ${table.endUtcOffsetMinutes} BETWEEN -840 AND 840)

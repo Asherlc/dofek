@@ -464,6 +464,14 @@ const cyclingEffortsSchema = z.object({
   "5m": nullableNumber,
   "20m": nullableNumber,
 });
+const cyclingPowerAvailabilitySchema = z.object({
+  first_observed: nullableString,
+  last_observed: nullableString,
+  activities_with_power: z.number(),
+  activities_total: z.number(),
+  pct: z.number(),
+  source_providers: z.array(z.string()),
+});
 export const cyclingPerformanceOutputSchema = jsonResult(
   z.object({
     range: rangeSchema,
@@ -494,6 +502,11 @@ export const cyclingPerformanceOutputSchema = jsonResult(
         activities_with_power: z.number(),
         activities_total: z.number(),
         pct: z.number(),
+      }),
+      power_availability_by_modality: z.object({
+        indoor: cyclingPowerAvailabilitySchema,
+        outdoor: cyclingPowerAvailabilitySchema,
+        unknown: cyclingPowerAvailabilitySchema,
       }),
       elevation_gain: z.object({
         total_elevation_gain_m: nullableNumber,

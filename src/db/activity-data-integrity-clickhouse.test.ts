@@ -385,6 +385,20 @@ describe("incompatibleMemberCount", () => {
     ).toBe(1);
   });
 
+  it.each(["cardio", "other"])(
+    "treats a generic %s member as compatible with a specific representative",
+    (genericType) => {
+      expect(
+        incompatibleMemberCount(
+          compatibilitySnapshot(
+            [sourceRowA, { ...sourceRowB, canonical_type: genericType }],
+            [dedupedRow],
+          ),
+        ),
+      ).toBe(0);
+    },
+  );
+
   it("requires provider consistency only for other activities", () => {
     expect(
       incompatibleMemberCount(
@@ -442,6 +456,53 @@ describe("sourceRowsMatchPostgres", () => {
     ]) {
       expect(sourceRowsMatchPostgres([{ ...mirrored, ...mismatch }], [repaired])).toBe(false);
     }
+  });
+
+  it("requires repaired Strong timestamps to reach the Postgres mirror", () => {
+    const timestampRepair = {
+      ...repaired,
+      startedAt: "2026-01-15T07:55:54.000Z",
+      endedAt: "2026-01-15T08:25:54.000Z",
+      repairedStartedAt: "2026-01-15T15:55:54.000Z",
+      repairedEndedAt: "2026-01-15T16:25:54.000Z",
+    };
+    const timestampMirror = {
+      ...mirrored,
+      started_at: new Date(timestampRepair.repairedStartedAt),
+      ended_at: new Date(timestampRepair.repairedEndedAt),
+    };
+
+    expect(sourceRowsMatchPostgres([timestampMirror], [timestampRepair])).toBe(true);
+    expect(
+      sourceRowsMatchPostgres(
+        [{ ...timestampMirror, started_at: new Date(timestampRepair.startedAt) }],
+        [timestampRepair],
+      ),
+    ).toBe(false);
+    expect(
+      sourceRowsMatchPostgres(
+        [{ ...timestampMirror, ended_at: new Date(timestampRepair.endedAt) }],
+        [timestampRepair],
+      ),
+    ).toBe(false);
+  });
+
+  it("distinguishes a repaired null end time from an omitted end-time repair", () => {
+    const openEndedRepair = {
+      ...repaired,
+      endedAt: "2026-01-15T08:25:54.000Z",
+      repairedEndedAt: null,
+    };
+
+    expect(sourceRowsMatchPostgres([{ ...mirrored, ended_at: null }], [openEndedRepair])).toBe(
+      true,
+    );
+    expect(
+      sourceRowsMatchPostgres(
+        [{ ...mirrored, ended_at: new Date(openEndedRepair.endedAt) }],
+        [openEndedRepair],
+      ),
+    ).toBe(false);
   });
 });
 
@@ -606,6 +667,44 @@ describe("waitForPostgresMirror", () => {
 
     expect(query).toHaveBeenCalledTimes(2);
     expect(query.mock.calls[0]?.[0].query_params).toEqual({ userId, activityIds: [activityA] });
+    expect(sleep).toHaveBeenCalledWith(3);
+  });
+
+  it.each([
+    ["timezone", { rejected_provider_timezone: null }],
+    ["start offset", { rejected_provider_start_utc_offset_minutes: null }],
+    ["end offset", { rejected_provider_end_utc_offset_minutes: null }],
+  ])("waits while rejected provider %s audit evidence is stale", async (_label, mismatch) => {
+    const auditedRepair = {
+      ...repaired,
+      repaired: {
+        ...repaired.repaired,
+        rejectedProviderTimezone: "Etc/GMT+4",
+        rejectedProviderStartUtcOffsetMinutes: -240,
+        rejectedProviderEndUtcOffsetMinutes: -240,
+      },
+    };
+    const auditedMirror = {
+      ...mirrored,
+      rejected_provider_timezone: "Etc/GMT+4",
+      rejected_provider_start_utc_offset_minutes: -240,
+      rejected_provider_end_utc_offset_minutes: -240,
+    };
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ json: async () => [{ ...auditedMirror, ...mismatch }] })
+      .mockResolvedValueOnce({ json: async () => [auditedMirror] });
+    const sleep = vi.fn(async () => undefined);
+    const monotonicNow = vi.fn().mockReturnValueOnce(0).mockReturnValueOnce(1);
+
+    await waitForPostgresMirror({ query }, userId, [auditedRepair], {
+      cdcReadinessTimeoutMs: 10,
+      cdcReadinessPollIntervalMs: 3,
+      monotonicNow,
+      sleep,
+    });
+
+    expect(query).toHaveBeenCalledTimes(2);
     expect(sleep).toHaveBeenCalledWith(3);
   });
 

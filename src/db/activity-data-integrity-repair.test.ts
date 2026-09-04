@@ -39,6 +39,9 @@ const postgresCandidate = {
   start_utc_offset_minutes: -300,
   end_utc_offset_minutes: -300,
   local_time_source: "provider_timezone",
+  rejected_provider_timezone: null,
+  rejected_provider_start_utc_offset_minutes: null,
+  rejected_provider_end_utc_offset_minutes: null,
 };
 
 const priorSourceRow = {
@@ -47,10 +50,15 @@ const priorSourceRow = {
   canonical_type: "cycling",
   user_id: userId,
   external_id: "workout-1",
+  started_at: new Date("2026-09-01T14:55:54.000Z"),
+  ended_at: new Date("2026-09-01T15:25:54.000Z"),
   timezone: "Etc/GMT+4",
   start_utc_offset_minutes: -300,
   end_utc_offset_minutes: -300,
   local_time_source: "provider_timezone",
+  rejected_provider_timezone: null,
+  rejected_provider_start_utc_offset_minutes: null,
+  rejected_provider_end_utc_offset_minutes: null,
   refresh_version: "9007199254740993",
   is_deleted: 0,
   refreshed_at: "2026-09-02 18:00:00.000000000",
@@ -58,10 +66,15 @@ const priorSourceRow = {
 
 const repairedSourceRow = {
   ...priorSourceRow,
-  timezone: null,
-  start_utc_offset_minutes: -240,
-  end_utc_offset_minutes: -240,
-  local_time_source: "provider_offset",
+  started_at: new Date("2026-09-01T14:55:54.000Z"),
+  ended_at: new Date("2026-09-01T15:25:54.000Z"),
+  timezone: "America/Los_Angeles",
+  start_utc_offset_minutes: -420,
+  end_utc_offset_minutes: -420,
+  local_time_source: "home_zone_fallback",
+  rejected_provider_timezone: "Etc/GMT+4",
+  rejected_provider_start_utc_offset_minutes: -300,
+  rejected_provider_end_utc_offset_minutes: -300,
   refresh_version: "9007199254740995",
   refreshed_at: "2026-09-02 19:01:00.000000000",
 };
@@ -440,10 +453,233 @@ function repairDependencies(directory: string, rebuildReadModels = vi.fn(async (
     generateRunId: () => runId,
     now: () => now,
     rebuildReadModels,
+    loadHomeTimezone: vi.fn(async () => "America/Los_Angeles"),
   };
 }
 
 describe("repairActivityDataIntegrity", () => {
+  it("hard-fails when neither GPS nor a configured home zone can validate context", async () => {
+    const directory = await artifactDirectory();
+    const dependencies = {
+      ...repairDependencies(directory),
+      loadHomeTimezone: vi.fn(async () => null),
+    };
+
+    await expect(
+      repairActivityDataIntegrity(
+        createDatabase(vi.fn().mockResolvedValueOnce([postgresCandidate])),
+        createClickHouse([[priorSourceRow]], [[]]),
+        { execute: false, userId, batchSize: 10, maxBatches: 1, ...window },
+        dependencies,
+      ),
+    ).rejects.toThrow(
+      "activity local-time plausibility requires GPS coordinates or a home timezone",
+    );
+  });
+
+  it("repairs a winter Strong wall clock with the zone's standard-time offset", async () => {
+    const directory = await artifactDirectory();
+    const strongCandidate = {
+      ...postgresCandidate,
+      provider_id: "strong-csv",
+      external_id: "strong:winter",
+      started_at: "2026-01-15T07:55:54.000Z",
+      ended_at: "2026-01-15T08:25:54.000Z",
+      timezone: null,
+      start_utc_offset_minutes: null,
+      end_utc_offset_minutes: null,
+      local_time_source: "unknown",
+    };
+    const result = await repairActivityDataIntegrity(
+      createDatabase(vi.fn().mockResolvedValueOnce([strongCandidate])),
+      createClickHouse([[priorSourceRow]], [[]]),
+      { execute: false, userId, batchSize: 10, maxBatches: 1, ...window },
+      repairDependencies(directory),
+    );
+
+    const artifact = JSON.parse(await readFile(result.artifactPath, "utf8"));
+    expect(artifact.postgresActivities[0]).toMatchObject({
+      startedAt: "2026-01-15T07:55:54.000Z",
+      repairedStartedAt: "2026-01-15T15:55:54.000Z",
+      repairedEndedAt: "2026-01-15T16:25:54.000Z",
+      repaired: {
+        timezone: "America/Los_Angeles",
+        startUtcOffsetMinutes: -480,
+        endUtcOffsetMinutes: -480,
+        localTimeSource: "home_zone_fallback",
+      },
+    });
+  });
+
+  it("writes repaired Strong timestamps and their exact prior CAS values in repair order", async () => {
+    const directory = await artifactDirectory();
+    const strongCandidate = {
+      ...postgresCandidate,
+      provider_id: "strong-csv",
+      external_id: "strong:winter-execute",
+      started_at: "2026-01-15T07:55:54.000Z",
+      ended_at: "2026-01-15T08:25:54.000Z",
+      timezone: null,
+      start_utc_offset_minutes: null,
+      end_utc_offset_minutes: null,
+      local_time_source: "unknown",
+    };
+    const strongPriorSource = {
+      ...priorSourceRow,
+      provider_id: "strong-csv",
+      external_id: strongCandidate.external_id,
+      started_at: new Date(strongCandidate.started_at),
+      ended_at: new Date(strongCandidate.ended_at),
+      timezone: null,
+      start_utc_offset_minutes: null,
+      end_utc_offset_minutes: null,
+      local_time_source: "unknown",
+    };
+    const strongRepairedSource = {
+      ...strongPriorSource,
+      started_at: new Date("2026-01-15T15:55:54.000Z"),
+      ended_at: new Date("2026-01-15T16:25:54.000Z"),
+      timezone: "America/Los_Angeles",
+      start_utc_offset_minutes: -480,
+      end_utc_offset_minutes: -480,
+      local_time_source: "home_zone_fallback",
+      refresh_version: "9007199254740995",
+    };
+    let updateTimestampParams: unknown[] = [];
+    const execute = vi.fn(async (query: SQL) => {
+      const rendered = dialect.sqlToQuery(query);
+      if (rendered.sql.includes("SELECT") && rendered.sql.includes("FROM fitness.activity")) {
+        return [strongCandidate];
+      }
+      if (rendered.sql.includes("UPDATE fitness.activity")) {
+        updateTimestampParams = rendered.params.filter(
+          (value) => typeof value === "string" && /^2026-01-15T/.test(value),
+        );
+        return [{ id: activityId }];
+      }
+      throw new Error(`Unexpected repair query: ${rendered.sql}`);
+    });
+
+    await repairActivityDataIntegrity(
+      createDatabase(execute),
+      createClickHouse(
+        [[strongPriorSource], [strongRepairedSource]],
+        [priorGroupRows, repairedGroupRows],
+        [],
+        { mirror: [[strongRepairedSource]] },
+      ),
+      {
+        execute: true,
+        userId,
+        batchSize: 10,
+        maxBatches: 1,
+        acceptanceOwner: "data-on-call@example.com",
+        acceptanceDeadline: deadline,
+        ...window,
+      },
+      repairDependencies(directory),
+    );
+
+    expect(updateTimestampParams).toEqual([
+      "2026-01-15T15:55:54.000Z",
+      "2026-01-15T16:25:54.000Z",
+      "2026-01-15T07:55:54.000Z",
+      "2026-01-15T08:25:54.000Z",
+    ]);
+  });
+
+  it("does not reinterpret a Strong timestamp already parsed with timezone context", async () => {
+    const directory = await artifactDirectory();
+    const strongCandidate = {
+      ...postgresCandidate,
+      provider_id: "strong-csv",
+      external_id: "strong:winter-correct",
+      started_at: "2026-01-15T15:55:54.000Z",
+      ended_at: "2026-01-15T16:25:54.000Z",
+      timezone: "America/Los_Angeles",
+      start_utc_offset_minutes: -480,
+      end_utc_offset_minutes: -480,
+      local_time_source: "device_timezone",
+    };
+    const result = await repairActivityDataIntegrity(
+      createDatabase(vi.fn().mockResolvedValueOnce([strongCandidate])),
+      createClickHouse([[priorSourceRow]], [[]]),
+      { execute: false, userId, batchSize: 10, maxBatches: 1, ...window },
+      repairDependencies(directory),
+    );
+
+    const artifact = JSON.parse(await readFile(result.artifactPath, "utf8"));
+    expect(artifact.postgresActivities[0]).toMatchObject({
+      startedAt: "2026-01-15T15:55:54.000Z",
+      repairedStartedAt: "2026-01-15T15:55:54.000Z",
+      repairedEndedAt: "2026-01-15T16:25:54.000Z",
+      repaired: {
+        timezone: "America/Los_Angeles",
+        startUtcOffsetMinutes: -480,
+        endUtcOffsetMinutes: -480,
+        localTimeSource: "device_timezone",
+      },
+    });
+  });
+
+  it("falls back to home time and audits malformed provider timezone evidence", async () => {
+    const directory = await artifactDirectory();
+    const malformedCandidate = {
+      ...postgresCandidate,
+      timezone: "Not/A_Timezone",
+      start_utc_offset_minutes: -420,
+      end_utc_offset_minutes: -420,
+      local_time_source: "provider_timezone",
+    };
+    const result = await repairActivityDataIntegrity(
+      createDatabase(vi.fn().mockResolvedValueOnce([malformedCandidate])),
+      createClickHouse([[priorSourceRow]], [[]]),
+      { execute: false, userId, batchSize: 10, maxBatches: 1, ...window },
+      repairDependencies(directory),
+    );
+
+    const artifact = JSON.parse(await readFile(result.artifactPath, "utf8"));
+    expect(artifact.postgresActivities[0].repaired).toEqual({
+      timezone: "America/Los_Angeles",
+      startUtcOffsetMinutes: -420,
+      endUtcOffsetMinutes: -420,
+      localTimeSource: "home_zone_fallback",
+      rejectedProviderTimezone: "Not/A_Timezone",
+      rejectedProviderStartUtcOffsetMinutes: -420,
+      rejectedProviderEndUtcOffsetMinutes: -420,
+    });
+  });
+
+  it("preserves microsecond timestamp precision when shifting Strong wall-clock timestamps", async () => {
+    const directory = await artifactDirectory();
+    const preciseCandidate = {
+      ...postgresCandidate,
+      provider_id: "strong-csv",
+      timezone: null,
+      start_utc_offset_minutes: null,
+      end_utc_offset_minutes: null,
+      local_time_source: "unknown",
+      started_at: "2026-09-01T14:55:54.123Z",
+      ended_at: "2026-09-01T15:25:54.654Z",
+      started_at_exact: "2026-09-01T14:55:54.123456Z",
+      ended_at_exact: "2026-09-01T15:25:54.654321Z",
+    };
+    const result = await repairActivityDataIntegrity(
+      createDatabase(vi.fn().mockResolvedValueOnce([preciseCandidate])),
+      createClickHouse([[priorSourceRow]], [[]]),
+      { execute: false, userId, batchSize: 10, maxBatches: 1, ...window },
+      repairDependencies(directory),
+    );
+
+    const artifact = JSON.parse(await readFile(result.artifactPath, "utf8"));
+    expect(artifact.postgresActivities[0]).toMatchObject({
+      startedAt: "2026-09-01T14:55:54.123456Z",
+      endedAt: "2026-09-01T15:25:54.654321Z",
+      repairedStartedAt: "2026-09-01T21:55:54.123456Z",
+      repairedEndedAt: "2026-09-01T22:25:54.654321Z",
+    });
+  });
+
   it("paginates a bounded window by the last activity tuple", async () => {
     const directory = await artifactDirectory();
     const secondActivityId = "00000000-0000-4000-8000-000000000002";
@@ -516,7 +752,7 @@ describe("repairActivityDataIntegrity", () => {
 
     const artifact = JSON.parse(await readFile(result.artifactPath, "utf8"));
     expect(artifact).toMatchObject({
-      schemaVersion: 3,
+      schemaVersion: 4,
       runId,
       phase: "dry_run",
       rollbackEligibility: "not_applicable",
@@ -536,10 +772,13 @@ describe("repairActivityDataIntegrity", () => {
             localTimeSource: "provider_timezone",
           },
           repaired: {
-            timezone: null,
-            startUtcOffsetMinutes: -240,
-            endUtcOffsetMinutes: -240,
-            localTimeSource: "provider_offset",
+            timezone: "America/Los_Angeles",
+            startUtcOffsetMinutes: -420,
+            endUtcOffsetMinutes: -420,
+            localTimeSource: "home_zone_fallback",
+            rejectedProviderTimezone: "Etc/GMT+4",
+            rejectedProviderStartUtcOffsetMinutes: -300,
+            rejectedProviderEndUtcOffsetMinutes: -300,
           },
         },
       ],
@@ -570,7 +809,10 @@ describe("repairActivityDataIntegrity", () => {
       const snapshot = JSON.parse(await readFile(expectedArtifactPath, "utf8"));
       expect(snapshot.phase).toBe("snapshot");
       expect(rendered.sql).toContain("activity.timezone IS NOT DISTINCT FROM");
-      expect(rendered.sql).not.toContain("activity.started_at =");
+      expect(rendered.sql).toContain("activity.started_at = context_values.expected_started_at");
+      expect(rendered.sql).toContain(
+        "activity.rejected_provider_start_utc_offset_minutes IS NOT DISTINCT FROM",
+      );
       return [{ id: activityId }];
     });
     const clickhouse = createClickHouse(
@@ -625,10 +867,13 @@ describe("repairActivityDataIntegrity", () => {
     const directory = await artifactDirectory();
     const normalizedCandidate = {
       ...postgresCandidate,
-      timezone: null,
-      start_utc_offset_minutes: -240,
-      end_utc_offset_minutes: -240,
-      local_time_source: "provider_offset",
+      timezone: "America/Los_Angeles",
+      start_utc_offset_minutes: -420,
+      end_utc_offset_minutes: -420,
+      local_time_source: "home_zone_fallback",
+      rejected_provider_timezone: "Etc/GMT+4",
+      rejected_provider_start_utc_offset_minutes: -300,
+      rejected_provider_end_utc_offset_minutes: -300,
     };
     const execute = vi.fn().mockResolvedValueOnce([normalizedCandidate]);
     const clickhouse = createClickHouse([[repairedSourceRow]], [repairedGroupRows]);
@@ -696,10 +941,13 @@ describe("repairActivityDataIntegrity", () => {
     const directory = await artifactDirectory();
     const normalizedCandidate = {
       ...postgresCandidate,
-      timezone: null,
-      start_utc_offset_minutes: -240,
-      end_utc_offset_minutes: -240,
-      local_time_source: "provider_offset",
+      timezone: "America/Los_Angeles",
+      start_utc_offset_minutes: -420,
+      end_utc_offset_minutes: -420,
+      local_time_source: "home_zone_fallback",
+      rejected_provider_timezone: "Etc/GMT+4",
+      rejected_provider_start_utc_offset_minutes: -300,
+      rejected_provider_end_utc_offset_minutes: -300,
     };
     const execute = vi.fn().mockResolvedValueOnce([normalizedCandidate]);
     const clickhouse = createClickHouse(

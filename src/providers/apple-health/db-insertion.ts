@@ -701,6 +701,7 @@ export async function upsertWorkoutBatch(
     const results: { activityId: string; workout: HealthWorkout }[] = [];
 
     for (const workout of uniqueWorkouts) {
+      const routeLocation = workout.routeLocations?.[0];
       const values = {
         providerId,
         externalId: workoutExternalId(workout),
@@ -709,6 +710,9 @@ export async function upsertWorkoutBatch(
         endedAt: workout.endDate,
         name: workoutName(workout),
         sourceName: workout.sourceName,
+        localTimeCoordinates: routeLocation
+          ? { latitude: routeLocation.lat, longitude: routeLocation.lng }
+          : undefined,
         raw: workoutRawPayload(workout),
       };
 

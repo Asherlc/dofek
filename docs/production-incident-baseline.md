@@ -24956,6 +24956,45 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Confirm the fresh PR workflow completes with
   Spell Check and the dependent quality gate passing.
 
+## 2026-09-03 — Expected full-refresh replay delayed live sensor visibility
+
+- **Status:** Expected operation; no data-loss incident. Delivery-gate
+  verification pending full drain.
+- **Symptoms / user impact:** Six newly synchronized activities temporarily
+  returned null heart rate or power because their metric-stream rows were near
+  the head of a large ordered backlog.
+- **Evidence / root cause:** A user-requested full historical refresh, coincident
+  with a Strong CSV re-import and bounded by
+  `2026-09-03T14:56:42.098Z`, emitted about 36.97 million expected replacement
+  events across multiple providers. The single-partition ClickHouse sink was
+  observed draining at about 1,887 offsets/second. A worker exit with status
+  139 interrupted the producer, and BullMQ correctly resumed the persisted
+  full-refresh job; no rogue producer, lost job range, or missing sensor rows
+  was found.
+- **Queue-shape evidence:** A 200,000-event sample at offset `1519226000`
+  contained 4,389 deletes in ten contiguous same-revision runs: eight runs of
+  500, one of 290, and one of 99. A 200,000-event frontier sample contained 12
+  singleton delete runs. This mixed distribution justifies batching adjacent
+  same-revision deletes while preserving the topic's delete-before-replacement
+  order, and separately optimizing every external-ID lookup.
+- **Fix / mitigation:** Let the ordered backlog drain without restart, seek, or
+  offset manipulation. Added batch telemetry for absolute lag, sink duration,
+  per-event latency, and deletion rate, plus an operator warning that a refresh
+  of this size costs roughly five hours of live sensor visibility.
+- **Validation:** Resolution requires the committed offset at the topic head, a
+  newly published post-drain event visible in `ingest.metric_stream`, and all
+  six affected activities hydrating with real sensor summaries. Intermediate
+  null results are expected because their events sit near the topic head.
+- **Remaining risk / follow-up:** Axiom monitor creation is blocked by an expired
+  local MCP token. The sink batching change and `by_provider_external_id`
+  covering projection are prepared but must not deploy while the backlog is
+  draining; historical projection materialization remains a separate
+  post-drain operator action. A later 127-second sample advanced 39,760 offsets
+  while the head grew by 2,500, reducing lag at about 293 offsets/second and
+  extending the instantaneous ETA to about 26.4 hours. Preserve per-entity
+  ordering in any future topic split, and enable bounded fatal reports/core
+  dumps plus heap/RSS sampling before another full refresh.
+
 ## 2026-09-03 — ChatGPT MCP submission reported missing output schemas
 
 - **Status:** Fixed in source; merge, deployment, and portal metadata refresh

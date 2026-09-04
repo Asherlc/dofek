@@ -120,30 +120,30 @@ describe("activity data integrity repair", () => {
 
     expect(repaired).toMatchObject({
       selected: 3,
-      changed: 2,
-      updated: 2,
+      changed: 3,
+      updated: 3,
       beforeComponentCount: 1,
       afterComponentCount: 2,
     });
     await expect(clickHouseLocalTimeContext(client, database, pelotonActivityId)).resolves.toEqual({
-      timezone: null,
-      start_utc_offset_minutes: -240,
-      end_utc_offset_minutes: -240,
-      local_time_source: "provider_offset",
+      timezone: "America/Los_Angeles",
+      start_utc_offset_minutes: -420,
+      end_utc_offset_minutes: -420,
+      local_time_source: "home_zone_fallback",
     });
     await assertCorrectDerivedActivityState(client, database, "repaired");
     await expect(activityIntegrityJournalPhase(context, repaired.runId)).resolves.toBe("executed");
     expect(await postgresLocalTimeContext(context, pelotonActivityId)).toEqual({
-      timezone: null,
-      start_utc_offset_minutes: -240,
-      end_utc_offset_minutes: -240,
-      local_time_source: "provider_offset",
+      timezone: "America/Los_Angeles",
+      start_utc_offset_minutes: -420,
+      end_utc_offset_minutes: -420,
+      local_time_source: "home_zone_fallback",
     });
     expect(await postgresLocalTimeContext(context, namedZoneActivityId)).toEqual({
-      timezone: "America/New_York",
-      start_utc_offset_minutes: -240,
-      end_utc_offset_minutes: -240,
-      local_time_source: "provider_timezone",
+      timezone: "America/Los_Angeles",
+      start_utc_offset_minutes: -420,
+      end_utc_offset_minutes: -420,
+      local_time_source: "home_zone_fallback",
     });
     await context.db.execute(sql`
       UPDATE fitness.activity
@@ -156,7 +156,7 @@ describe("activity data integrity repair", () => {
       }),
       mirrorPostgresRollback(context, client, database),
     ]);
-    expect(rolledBack).toMatchObject({ runId: repaired.runId, updated: 2 });
+    expect(rolledBack).toMatchObject({ runId: repaired.runId, updated: 3 });
     await assertCorrectDerivedActivityState(client, database, "rolled back");
     await expect(activityIntegrityJournalPhase(context, repaired.runId)).resolves.toBe(
       "rolled_back",
@@ -179,6 +179,11 @@ describe("activity data integrity repair", () => {
 });
 
 async function seedPostgres(context: TestContext): Promise<void> {
+  await context.db.execute(sql`
+    INSERT INTO fitness.user_settings (user_id, key, value)
+    VALUES (${TEST_USER_ID}::uuid, 'homeTimezone', '"America/Los_Angeles"'::jsonb)
+    ON CONFLICT (user_id, key) DO UPDATE SET value = excluded.value
+  `);
   await context.db.execute(sql`
     DELETE FROM fitness.activity
     WHERE id IN (${wahooActivityId}::uuid, ${pelotonActivityId}::uuid, ${namedZoneActivityId}::uuid)
@@ -239,6 +244,9 @@ async function seedProductionDbtFixture(
       start_utc_offset_minutes Nullable(Int16),
       end_utc_offset_minutes Nullable(Int16),
       local_time_source String,
+      rejected_provider_timezone Nullable(String),
+      rejected_provider_start_utc_offset_minutes Nullable(Int64),
+      rejected_provider_end_utc_offset_minutes Nullable(Int64),
       raw String,
       provider_absent_at Nullable(DateTime64(6, 'UTC')),
       deleted_at Nullable(DateTime64(6, 'UTC')),
@@ -268,6 +276,13 @@ async function seedProductionDbtFixture(
       refreshed_at DateTime64(9, 'UTC')
     ) ENGINE = ReplacingMergeTree(refresh_version)
       ORDER BY (user_id, channel, recorded_date, recorded_at)`,
+    `CREATE TABLE ${database}.metric_stream (
+      user_id UUID,
+      activity_id Nullable(UUID),
+      is_deleted UInt8
+    ) ENGINE = ReplacingMergeTree()
+      ORDER BY (user_id, activity_id)
+      SETTINGS allow_nullable_key = 1`,
     `CREATE TABLE ${database}.activity_sensor_sample (
       activity_id UUID,
       user_id UUID,
@@ -301,28 +316,28 @@ async function seedProductionDbtFixture(
         '${wahooActivityId}', 'wahoo', '${TEST_USER_ID}', 'wahoo-ride', 'other',
         'workout', NULL, toDateTime64('2026-09-01 14:50:00', 6, 'UTC'),
         toDateTime64('2026-09-01 15:30:00', 6, 'UTC'), NULL, 'Wahoo ride', NULL,
-        NULL, NULL, NULL, 'unknown', '{}', NULL, NULL, 0,
+        NULL, NULL, NULL, 'unknown', NULL, NULL, NULL, '{}', NULL, NULL, 0,
         toDateTime64('2026-09-02 17:00:00', 9, 'UTC'), 1
       ),
       (
         '${pelotonActivityId}', 'peloton', '${TEST_USER_ID}', 'peloton-ride', 'cycling',
         'cycling', 'indoor', toDateTime64('2026-09-01 14:55:54', 6, 'UTC'),
         toDateTime64('2026-09-01 15:25:54', 6, 'UTC'), NULL, 'Peloton ride', NULL,
-        'Etc/GMT+4', -300, -300, 'provider_timezone', '{}', NULL, NULL, 0,
+        'Etc/GMT+4', -300, -300, 'provider_timezone', NULL, NULL, NULL, '{}', NULL, NULL, 0,
         toDateTime64('2026-09-02 17:00:00', 9, 'UTC'), 1
       ),
       (
         '${namedZoneActivityId}', 'wahoo', '${TEST_USER_ID}', 'named-zone-ride', 'cycling',
         'cycling', NULL, toDateTime64('2026-09-01 15:00:00', 6, 'UTC'),
         toDateTime64('2026-09-01 15:30:00', 6, 'UTC'), NULL, 'Named zone ride', NULL,
-        'America/New_York', -420, -420, 'provider_timezone', '{}', NULL, NULL, 0,
+        'America/New_York', -420, -420, 'provider_timezone', NULL, NULL, NULL, '{}', NULL, NULL, 0,
         toDateTime64('2026-09-02 17:00:00', 9, 'UTC'), 1
       ),
       (
         '${unrelatedActivityId}', 'wahoo', '${TEST_USER_ID}', 'unrelated-ride', 'cycling',
         'cycling', NULL, toDateTime64('2026-08-01 16:00:00', 6, 'UTC'),
         toDateTime64('2026-08-01 17:00:00', 6, 'UTC'), NULL, 'Unrelated ride', NULL,
-        'America/New_York', -240, -240, 'provider_timezone', '{}', NULL, NULL, 0,
+        'America/New_York', -240, -240, 'provider_timezone', NULL, NULL, NULL, '{}', NULL, NULL, 0,
         toDateTime64('2026-09-02 17:00:00', 9, 'UTC'), 1
       )`,
   ];
@@ -353,20 +368,38 @@ async function mirrorPostgresCommit(
 ): Promise<void> {
   const deadline = performance.now() + CDC_FIXTURE_TIMEOUT_MS;
   while (performance.now() < deadline) {
+    const wahoo = await postgresLocalTimeContext(context, wahooActivityId);
     const peloton = await postgresLocalTimeContext(context, pelotonActivityId);
     const namedZone = await postgresLocalTimeContext(context, namedZoneActivityId);
     if (
-      peloton?.timezone === null &&
-      peloton?.start_utc_offset_minutes === -240 &&
-      namedZone?.start_utc_offset_minutes === -240
+      wahoo?.local_time_source === "home_zone_fallback" &&
+      peloton?.timezone === "America/Los_Angeles" &&
+      peloton?.start_utc_offset_minutes === -420 &&
+      namedZone?.start_utc_offset_minutes === -420
     ) {
       await client.command({
         query: `INSERT INTO ${database}.activity
           SELECT * REPLACE(
-            CAST(NULL, 'Nullable(String)') AS timezone,
-            toInt16(-240) AS start_utc_offset_minutes,
-            toInt16(-240) AS end_utc_offset_minutes,
-            'provider_offset' AS local_time_source,
+            'America/Los_Angeles' AS timezone,
+            toInt16(-420) AS start_utc_offset_minutes,
+            toInt16(-420) AS end_utc_offset_minutes,
+            'home_zone_fallback' AS local_time_source,
+            now64(9) AS _peerdb_synced_at,
+            _peerdb_version + 100 AS _peerdb_version
+          )
+          FROM ${database}.activity FINAL
+          WHERE id = '${wahooActivityId}'`,
+      });
+      await client.command({
+        query: `INSERT INTO ${database}.activity
+          SELECT * REPLACE(
+            'America/Los_Angeles' AS timezone,
+            toInt16(-420) AS start_utc_offset_minutes,
+            toInt16(-420) AS end_utc_offset_minutes,
+            'home_zone_fallback' AS local_time_source,
+            'Etc/GMT+4' AS rejected_provider_timezone,
+            toInt64(-300) AS rejected_provider_start_utc_offset_minutes,
+            toInt64(-300) AS rejected_provider_end_utc_offset_minutes,
             now64(9) AS _peerdb_synced_at,
             _peerdb_version + 100 AS _peerdb_version
           )
@@ -376,8 +409,13 @@ async function mirrorPostgresCommit(
       await client.command({
         query: `INSERT INTO ${database}.activity
           SELECT * REPLACE(
-            toInt16(-240) AS start_utc_offset_minutes,
-            toInt16(-240) AS end_utc_offset_minutes,
+            'America/Los_Angeles' AS timezone,
+            toInt16(-420) AS start_utc_offset_minutes,
+            toInt16(-420) AS end_utc_offset_minutes,
+            'home_zone_fallback' AS local_time_source,
+            'America/New_York' AS rejected_provider_timezone,
+            toInt64(-420) AS rejected_provider_start_utc_offset_minutes,
+            toInt64(-420) AS rejected_provider_end_utc_offset_minutes,
             now64(9) AS _peerdb_synced_at,
             _peerdb_version + 100 AS _peerdb_version
           )
@@ -398,9 +436,11 @@ async function mirrorPostgresRollback(
 ): Promise<void> {
   const deadline = performance.now() + CDC_FIXTURE_TIMEOUT_MS;
   while (performance.now() < deadline) {
+    const wahoo = await postgresActivity(context, wahooActivityId);
     const peloton = await postgresActivity(context, pelotonActivityId);
     const namedZone = await postgresActivity(context, namedZoneActivityId);
     if (
+      wahoo?.local_time_source === "unknown" &&
       peloton?.timezone === "Etc/GMT+4" &&
       peloton.start_utc_offset_minutes === -300 &&
       peloton.name === "Provider title updated after repair" &&
@@ -410,11 +450,27 @@ async function mirrorPostgresRollback(
       await client.command({
         query: `INSERT INTO ${database}.activity
           SELECT * REPLACE(
+            CAST(NULL, 'Nullable(String)') AS timezone,
+            CAST(NULL, 'Nullable(Int16)') AS start_utc_offset_minutes,
+            CAST(NULL, 'Nullable(Int16)') AS end_utc_offset_minutes,
+            'unknown' AS local_time_source,
+            now64(9) AS _peerdb_synced_at,
+            _peerdb_version + 100 AS _peerdb_version
+          )
+          FROM ${database}.activity FINAL
+          WHERE id = '${wahooActivityId}'`,
+      });
+      await client.command({
+        query: `INSERT INTO ${database}.activity
+          SELECT * REPLACE(
             'Provider title updated after repair' AS name,
             'Etc/GMT+4' AS timezone,
             toInt16(-300) AS start_utc_offset_minutes,
             toInt16(-300) AS end_utc_offset_minutes,
             'provider_timezone' AS local_time_source,
+            CAST(NULL, 'Nullable(String)') AS rejected_provider_timezone,
+            CAST(NULL, 'Nullable(Int64)') AS rejected_provider_start_utc_offset_minutes,
+            CAST(NULL, 'Nullable(Int64)') AS rejected_provider_end_utc_offset_minutes,
             now64(9) AS _peerdb_synced_at,
             _peerdb_version + 100 AS _peerdb_version
           )
@@ -424,8 +480,13 @@ async function mirrorPostgresRollback(
       await client.command({
         query: `INSERT INTO ${database}.activity
           SELECT * REPLACE(
+            'America/New_York' AS timezone,
             toInt16(-420) AS start_utc_offset_minutes,
             toInt16(-420) AS end_utc_offset_minutes,
+            'provider_timezone' AS local_time_source,
+            CAST(NULL, 'Nullable(String)') AS rejected_provider_timezone,
+            CAST(NULL, 'Nullable(Int64)') AS rejected_provider_start_utc_offset_minutes,
+            CAST(NULL, 'Nullable(Int64)') AS rejected_provider_end_utc_offset_minutes,
             now64(9) AS _peerdb_synced_at,
             _peerdb_version + 100 AS _peerdb_version
           )
@@ -557,10 +618,10 @@ async function assertCorrectDerivedActivityState(
   const expectedPeloton =
     lifecycle === "repaired"
       ? {
-          timezone: null,
-          start_utc_offset_minutes: -240,
-          end_utc_offset_minutes: -240,
-          local_time_source: "provider_offset",
+          timezone: "America/Los_Angeles",
+          start_utc_offset_minutes: -420,
+          end_utc_offset_minutes: -420,
+          local_time_source: "home_zone_fallback",
         }
       : {
           timezone: "Etc/GMT+4",
@@ -571,10 +632,10 @@ async function assertCorrectDerivedActivityState(
   const expectedNamedZone =
     lifecycle === "repaired"
       ? {
-          timezone: "America/New_York",
-          start_utc_offset_minutes: -240,
-          end_utc_offset_minutes: -240,
-          local_time_source: "provider_timezone",
+          timezone: "America/Los_Angeles",
+          start_utc_offset_minutes: -420,
+          end_utc_offset_minutes: -420,
+          local_time_source: "home_zone_fallback",
         }
       : {
           timezone: "America/New_York",
@@ -588,10 +649,10 @@ async function assertCorrectDerivedActivityState(
       activity_id: wahooActivityId,
       provider_id: "wahoo",
       canonical_type: "other",
-      timezone: null,
-      start_utc_offset_minutes: null,
-      end_utc_offset_minutes: null,
-      local_time_source: "unknown",
+      timezone: lifecycle === "repaired" ? "America/Los_Angeles" : null,
+      start_utc_offset_minutes: lifecycle === "repaired" ? -420 : null,
+      end_utc_offset_minutes: lifecycle === "repaired" ? -420 : null,
+      local_time_source: lifecycle === "repaired" ? "home_zone_fallback" : "unknown",
     },
     {
       activity_id: pelotonActivityId,

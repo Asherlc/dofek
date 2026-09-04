@@ -9,21 +9,25 @@ documentation for [date/time input and time-zone handling](https://www.postgresq
 
 The context consists of:
 
-- `timezone`: an IANA zone only when the provider or recording device supplied
-  that zone.
+- `timezone`: the trusted IANA zone supplied by the provider or recording
+  device, or the resolver-selected GPS/home zone used as a fallback.
 - `start_utc_offset_minutes` and `end_utc_offset_minutes`: resolved
   independently so a record that crosses a daylight-saving transition retains
   both clock offsets.
 - `local_time_source`: `provider_timezone`, `provider_offset`,
-  `device_timezone`, `device_offset`, `user_home_timezone`, or `unknown`.
+  `device_timezone`, `device_offset`, `user_home_timezone`, `gps_timezone`,
+  `home_zone_fallback`, or `unknown`.
 
 `unknown` is deliberate. Ingestion never substitutes the current viewer,
 server, or request timezone when the record did not carry trusted context.
-For activity providers, a user-configured geographic home zone may replace a
-fixed `Etc/GMT` label because those labels retain only an offset and cannot
-model daylight-saving transitions. The source is then recorded honestly as
-`user_home_timezone`. Other provider and device zones remain authoritative;
-offset disagreements greater than 60 minutes are logged for investigation.
+For activity providers, GPS coordinates establish the reference zone when
+available; otherwise the user's configured geographic `homeTimezone` does.
+Provider or device context that differs from that zone's offset by more than
+60 minutes at the activity instant is retained in the
+`rejected_provider_*` audit fields and replaced with the reference-zone
+context. The source is recorded as `gps_timezone` or `home_zone_fallback`.
+When neither reference exists, ingestion records `unknown`; the historical
+repair fails its preflight rather than guessing.
 The IANA database distinguishes location zones from fixed-offset zones and
 documents the reversed POSIX signs in the `Etc` area in its
 [theory file](https://data.iana.org/time-zones/theory.html).

@@ -7,6 +7,8 @@ export const localTimeSourceSchema = z.enum([
   "device_timezone",
   "device_offset",
   "user_home_timezone",
+  "gps_timezone",
+  "home_zone_fallback",
   "unknown",
 ]);
 
@@ -34,6 +36,8 @@ const timezoneSources = new Set<LocalTimeSource>([
   "provider_timezone",
   "device_timezone",
   "user_home_timezone",
+  "gps_timezone",
+  "home_zone_fallback",
 ]);
 const offsetSources = new Set<LocalTimeSource>(["provider_offset", "device_offset"]);
 
@@ -167,6 +171,38 @@ export function resolveProviderTimezoneLocalTimeContext(input: {
     timezone,
     source: "provider_timezone",
   });
+}
+
+/**
+ * Interpret UTC calendar fields as a naive wall-clock value in an IANA zone.
+ * Ambiguous fall-back values choose the earlier instant; nonexistent spring-
+ * forward values fail instead of being normalized to a different wall time.
+ */
+export function resolveNaiveWallClockInTimezone(wallClockDate: Date, timezone: string): Date {
+  requireValidDate(wallClockDate, "startedAt");
+  const normalizedTimezone = timezone.trim();
+  const offsets = new Set<number>();
+  for (let deltaMinutes = -1_440; deltaMinutes <= 1_440; deltaMinutes += 30) {
+    offsets.add(
+      offsetInTimezone(
+        new Date(wallClockDate.getTime() + deltaMinutes * 60_000),
+        normalizedTimezone,
+      ),
+    );
+  }
+  const candidates = [...offsets]
+    .map((offsetMinutes) => new Date(wallClockDate.getTime() - offsetMinutes * 60_000))
+    .filter(
+      (candidate) =>
+        candidate.getTime() + offsetInTimezone(candidate, normalizedTimezone) * 60_000 ===
+        wallClockDate.getTime(),
+    )
+    .sort((left, right) => left.getTime() - right.getTime());
+  const startedAt = candidates[0];
+  if (!startedAt) {
+    throw new Error(`Wall-clock timestamp does not exist in ${normalizedTimezone}`);
+  }
+  return startedAt;
 }
 
 export function offsetMinutesFromTimestamp(timestamp: string): number | null {

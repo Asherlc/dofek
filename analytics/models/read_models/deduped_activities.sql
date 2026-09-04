@@ -28,6 +28,18 @@ final_groups AS (
     WHERE is_deleted = 0
 ),
 
+sensor_bearing_members AS (
+    SELECT DISTINCT
+        samples.user_id AS user_id,
+        assumeNotNull(samples.activity_id) AS activity_id
+    FROM {{ source('ingest', 'metric_stream_current') }} AS samples FINAL
+    INNER JOIN ranked
+        ON ranked.user_id = samples.user_id
+        AND ranked.activity_id = samples.activity_id
+    WHERE samples.is_deleted = 0
+        AND samples.activity_id IS NOT null
+),
+
 absent_group_members AS (
     SELECT
         final_groups.group_id AS group_id,
@@ -88,9 +100,59 @@ best AS (
             ranked.ended_at AS ended_at,
             ranked.source_name AS source_name,
             ranked.priority AS priority,
+            sensor_bearing_members.activity_id IS NOT null AS has_sensor_data,
             row_number() OVER (
                 PARTITION BY final_groups.group_id
-                ORDER BY ranked.priority ASC, toString(ranked.activity_id) ASC
+                ORDER BY
+                    ranked.canonical_type IN ('other', 'cardio') ASC,
+                    if(
+                        ranked.provider_type IS NOT null
+                        AND trim(BOTH ' ' FROM ranked.provider_type) != ''
+                        AND lowerUTF8(ranked.provider_type) != lowerUTF8(ranked.canonical_type),
+                        0,
+                        1
+                    ) ASC,
+                    has_sensor_data DESC,
+                    ranked.priority ASC,
+                    toString(ranked.activity_id) ASC
+            ) AS row_number
+        FROM final_groups
+        INNER JOIN ranked
+            ON ranked.activity_id = final_groups.activity_id
+        LEFT JOIN sensor_bearing_members
+            ON sensor_bearing_members.user_id = ranked.user_id
+            AND sensor_bearing_members.activity_id = ranked.activity_id
+    )
+    WHERE row_number = 1
+),
+
+best_context AS (
+    SELECT *
+    FROM (
+        SELECT
+            final_groups.group_id AS group_id,
+            ranked.timezone AS timezone,
+            ranked.start_utc_offset_minutes AS start_utc_offset_minutes,
+            ranked.end_utc_offset_minutes AS end_utc_offset_minutes,
+            ranked.local_time_source AS local_time_source,
+            row_number() OVER (
+                PARTITION BY final_groups.group_id
+                ORDER BY
+                    multiIf(
+                        ranked.local_time_source = 'gps_timezone', 1,
+                        ranked.local_time_source IN (
+                            'provider_timezone',
+                            'provider_offset',
+                            'device_timezone',
+                            'device_offset',
+                            'user_home_timezone'
+                        ), 2,
+                        ranked.local_time_source = 'home_zone_fallback', 3,
+                        ranked.local_time_source = 'unknown', 4,
+                        5
+                    ) ASC,
+                    ranked.priority ASC,
+                    toString(ranked.activity_id) ASC
             ) AS row_number
         FROM final_groups
         INNER JOIN ranked
@@ -113,26 +175,10 @@ merged AS (
         any(best.source_name) AS source_name,
         argMinIf(ranked.name, ranked.priority, ranked.name IS NOT null) AS name,
         argMinIf(ranked.notes, ranked.priority, ranked.notes IS NOT null) AS notes,
-        argMinIf(
-            ranked.timezone,
-            ranked.priority,
-            ranked.local_time_source IN ('provider_timezone', 'device_timezone')
-        ) AS timezone,
-        argMinIf(
-            ranked.start_utc_offset_minutes,
-            ranked.priority,
-            ranked.local_time_source != 'unknown'
-        ) AS start_utc_offset_minutes,
-        argMinIf(
-            ranked.end_utc_offset_minutes,
-            ranked.priority,
-            ranked.local_time_source != 'unknown'
-        ) AS end_utc_offset_minutes,
-        argMinIf(
-            ranked.local_time_source,
-            ranked.priority,
-            ranked.local_time_source != 'unknown'
-        ) AS local_time_source,
+        anyIf(best_context.timezone, best_context.local_time_source != 'unknown') AS timezone,
+        anyIf(best_context.start_utc_offset_minutes, best_context.local_time_source != 'unknown') AS start_utc_offset_minutes,
+        anyIf(best_context.end_utc_offset_minutes, best_context.local_time_source != 'unknown') AS end_utc_offset_minutes,
+        any(best_context.local_time_source) AS local_time_source,
         argMinIf(ranked.raw, ranked.priority, ranked.raw IS NOT null) AS raw,
         maxIf(ranked.source_synced_at, ranked.activity_id IS NOT null) AS source_synced_at,
         arraySort(groupUniqArrayIf(ranked.provider_id, ranked.activity_id IS NOT null)) AS source_providers,
@@ -163,6 +209,8 @@ merged AS (
         ON ranked.activity_id = final_groups.activity_id
     LEFT JOIN absent_source_links
         ON absent_source_links.group_id = best.group_id
+    INNER JOIN best_context
+        ON best_context.group_id = best.group_id
     GROUP BY best.group_id, best.canonical_id
 ),
 

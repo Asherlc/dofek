@@ -1,4 +1,5 @@
 import {
+  localTimeSourceSchema,
   resolveProviderTimezoneLocalTimeContext,
   resolveRecordLocalTimeContext,
 } from "@dofek/format/record-local-time";
@@ -7,6 +8,11 @@ import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
+import {
+  type PlausibleActivityLocalTimeResult,
+  resolvePlausibleActivityLocalTime,
+  type SuppliedActivityLocalTime,
+} from "./activity-local-time.ts";
 import type { SyncDatabase } from "./index.ts";
 import {
   hasProviderActivityListSyncErrors,
@@ -24,11 +30,18 @@ type StoredActivityInsert = typeof activity.$inferInsert;
 
 export type ProviderActivityInsert = Omit<
   StoredActivityInsert,
-  "canonicalType" | "providerType" | "modality"
+  | "canonicalType"
+  | "providerType"
+  | "modality"
+  | "rejectedProviderTimezone"
+  | "rejectedProviderStartUtcOffsetMinutes"
+  | "rejectedProviderEndUtcOffsetMinutes"
 > & {
   activityType: ProviderActivityType;
   /** User-selected geographic zone, used only when a provider emits an untrustworthy fixed zone. */
   homeTimezone?: string | null;
+  /** Optional geographic evidence used ahead of the configured home zone. */
+  localTimeCoordinates?: { latitude: number; longitude: number } | null;
 };
 
 type StoredActivityConflictUpdateKey = Exclude<
@@ -111,8 +124,17 @@ function providerTimezoneContext(values: StoredActivityInsert, timezone: string)
 function normalizeProviderActivityInsert(
   values: ProviderActivityInsert,
   normalizedExternalId: string,
-): { values: StoredActivityInsert; updateLocalTimeContext: boolean } {
-  const { activityType, homeTimezone: explicitHomeTimezone, ...storedValues } = values;
+): {
+  values: StoredActivityInsert;
+  updateLocalTimeContext: boolean;
+  rejected: SuppliedActivityLocalTime | null;
+} {
+  const {
+    activityType,
+    homeTimezone: explicitHomeTimezone,
+    localTimeCoordinates,
+    ...storedValues
+  } = values;
   const externalIdValues: StoredActivityInsert = {
     ...storedValues,
     canonicalType: activityType.canonicalType,
@@ -121,161 +143,104 @@ function normalizeProviderActivityInsert(
     externalId: normalizedExternalId,
   };
   const normalizedHomeTimezone = explicitHomeTimezone ?? getProviderIngestContext()?.homeTimezone;
-  if ((externalIdValues.localTimeSource ?? "unknown") !== "unknown") {
-    const timezone = externalIdValues.timezone?.trim();
-    if (externalIdValues.localTimeSource === "provider_timezone" && timezone) {
-      try {
-        const providerContext = providerTimezoneContext(externalIdValues, timezone);
-        if (normalizedHomeTimezone) {
-          try {
-            const homeContext = resolveRecordLocalTimeContext({
-              startedAt: externalIdValues.startedAt,
-              endedAt: externalIdValues.endedAt,
-              timezone: normalizedHomeTimezone,
-              source: "user_home_timezone",
-            });
-            if (
-              providerContext.startUtcOffsetMinutes != null &&
-              homeContext.startUtcOffsetMinutes != null &&
-              Math.abs(providerContext.startUtcOffsetMinutes - homeContext.startUtcOffsetMinutes) >
-                60
-            ) {
-              logger.warn(
-                `[provider-activity] timezone disagreement provider=${externalIdValues.providerId} external_id=${normalizedExternalId} provider_timezone=${timezone} home_timezone=${normalizedHomeTimezone}`,
-              );
-            }
-          } catch (error: unknown) {
-            captureException(error, {
-              tags: { operation: "provider-activity-home-timezone-context" },
-            });
-          }
-        }
-        return {
-          values: {
-            ...externalIdValues,
-            timezone: providerContext.timezone,
-            startUtcOffsetMinutes: providerContext.startUtcOffsetMinutes,
-            endUtcOffsetMinutes: providerContext.endUtcOffsetMinutes,
-            localTimeSource: providerContext.source,
-          },
-          updateLocalTimeContext: true,
-        };
-      } catch (error: unknown) {
-        captureException(error, {
-          tags: { operation: "provider-activity-local-time-context" },
-        });
-        return {
-          values: {
-            ...externalIdValues,
-            timezone: null,
-            startUtcOffsetMinutes: null,
-            endUtcOffsetMinutes: null,
-            localTimeSource: "unknown",
-          },
-          updateLocalTimeContext: true,
-        };
-      }
-    }
-    if (normalizedHomeTimezone) {
-      try {
-        const homeContext = resolveRecordLocalTimeContext({
-          startedAt: externalIdValues.startedAt,
-          endedAt: externalIdValues.endedAt,
-          timezone: normalizedHomeTimezone,
-          source: "user_home_timezone",
-        });
-        if (
-          externalIdValues.startUtcOffsetMinutes != null &&
-          homeContext.startUtcOffsetMinutes != null &&
-          Math.abs(externalIdValues.startUtcOffsetMinutes - homeContext.startUtcOffsetMinutes) > 60
-        ) {
-          logger.warn(
-            `[provider-activity] timezone disagreement provider=${externalIdValues.providerId} external_id=${normalizedExternalId} provider_timezone=${timezone ?? "offset-only"} home_timezone=${normalizedHomeTimezone}`,
-          );
-        }
-      } catch (error: unknown) {
-        captureException(error, {
-          tags: { operation: "provider-activity-home-timezone-context" },
-        });
-      }
-    }
-    return { values: externalIdValues, updateLocalTimeContext: true };
+  const rawSource = localTimeSourceSchema.safeParse(externalIdValues.localTimeSource ?? "unknown");
+  const source = rawSource.success ? rawSource.data : "unknown";
+  const timezone = externalIdValues.timezone?.trim() || null;
+  const originalSupplied: SuppliedActivityLocalTime = {
+    timezone,
+    startUtcOffsetMinutes: externalIdValues.startUtcOffsetMinutes ?? null,
+    endUtcOffsetMinutes: externalIdValues.endUtcOffsetMinutes ?? null,
+    source: timezone && source === "unknown" ? "provider_timezone" : source,
+  };
+  const hasSuppliedContext =
+    timezone != null ||
+    externalIdValues.startUtcOffsetMinutes != null ||
+    externalIdValues.endUtcOffsetMinutes != null ||
+    source !== "unknown";
+  if (!hasSuppliedContext && !normalizedHomeTimezone && !localTimeCoordinates) {
+    return { values: externalIdValues, updateLocalTimeContext: false, rejected: null };
   }
-
-  const timezone = externalIdValues.timezone?.trim();
-  if (!timezone) {
-    const hasUntrustedContext =
-      externalIdValues.timezone != null ||
-      externalIdValues.startUtcOffsetMinutes != null ||
-      externalIdValues.endUtcOffsetMinutes != null;
-    return hasUntrustedContext
-      ? {
-          values: {
-            ...externalIdValues,
-            timezone: null,
-            startUtcOffsetMinutes: null,
-            endUtcOffsetMinutes: null,
-            localTimeSource: "unknown",
-          },
-          updateLocalTimeContext: true,
-        }
-      : { values: externalIdValues, updateLocalTimeContext: false };
-  }
+  let supplied: SuppliedActivityLocalTime;
+  let contextParseFailed = false;
   try {
-    if (normalizedHomeTimezone) {
-      const providerContext = providerTimezoneContext(externalIdValues, timezone);
-      const homeContext = resolveRecordLocalTimeContext({
+    if (timezone && (source === "provider_timezone" || source === "unknown")) {
+      supplied = providerTimezoneContext(externalIdValues, timezone);
+    } else if (timezone && (source === "device_timezone" || source === "user_home_timezone")) {
+      supplied = resolveRecordLocalTimeContext({
         startedAt: externalIdValues.startedAt,
         endedAt: externalIdValues.endedAt,
-        timezone: normalizedHomeTimezone,
-        source: "user_home_timezone",
+        timezone,
+        source,
       });
-      if (
-        providerContext.startUtcOffsetMinutes != null &&
-        homeContext.startUtcOffsetMinutes != null &&
-        Math.abs(providerContext.startUtcOffsetMinutes - homeContext.startUtcOffsetMinutes) > 60
-      ) {
-        logger.warn(
-          `[provider-activity] timezone disagreement provider=${externalIdValues.providerId} external_id=${normalizedExternalId} provider_timezone=${timezone} home_timezone=${normalizedHomeTimezone}`,
-        );
-      }
-      return {
-        values: {
-          ...externalIdValues,
-          timezone: providerContext.timezone,
-          startUtcOffsetMinutes: providerContext.startUtcOffsetMinutes,
-          endUtcOffsetMinutes: providerContext.endUtcOffsetMinutes,
-          localTimeSource: providerContext.source,
-        },
-        updateLocalTimeContext: true,
-      };
-    }
-    const context = providerTimezoneContext(externalIdValues, timezone);
-    return {
-      values: {
-        ...externalIdValues,
-        timezone: context.timezone,
-        startUtcOffsetMinutes: context.startUtcOffsetMinutes,
-        endUtcOffsetMinutes: context.endUtcOffsetMinutes,
-        localTimeSource: context.source,
-      },
-      updateLocalTimeContext: true,
-    };
-  } catch (error: unknown) {
-    captureException(error, {
-      tags: { operation: "provider-activity-local-time-context" },
-    });
-    return {
-      values: {
-        ...externalIdValues,
+    } else if (source === "provider_offset" || source === "device_offset") {
+      supplied = resolveRecordLocalTimeContext({
+        startedAt: externalIdValues.startedAt,
+        endedAt: externalIdValues.endedAt,
+        startUtcOffsetMinutes: externalIdValues.startUtcOffsetMinutes,
+        endUtcOffsetMinutes: externalIdValues.endUtcOffsetMinutes,
+        source,
+      });
+    } else {
+      supplied = {
         timezone: null,
         startUtcOffsetMinutes: null,
         endUtcOffsetMinutes: null,
-        localTimeSource: "unknown",
-      },
-      updateLocalTimeContext: true,
+        source: "unknown",
+      };
+    }
+  } catch (error: unknown) {
+    contextParseFailed = true;
+    captureException(error, {
+      tags: { operation: "provider-activity-local-time-context" },
+    });
+    supplied = {
+      timezone: null,
+      startUtcOffsetMinutes: null,
+      endUtcOffsetMinutes: null,
+      source: "unknown",
     };
   }
+
+  let resolution: PlausibleActivityLocalTimeResult;
+  try {
+    resolution = resolvePlausibleActivityLocalTime({
+      startedAt: externalIdValues.startedAt,
+      endedAt: externalIdValues.endedAt,
+      supplied,
+      homeTimezone: normalizedHomeTimezone,
+      coordinates: localTimeCoordinates,
+    });
+  } catch (error: unknown) {
+    captureException(error, {
+      tags: { operation: "provider-activity-home-timezone-context" },
+    });
+    resolution = {
+      context: {
+        timezone: null,
+        startUtcOffsetMinutes: null,
+        endUtcOffsetMinutes: null,
+        source: "unknown",
+      },
+      rejected: supplied.source === "unknown" ? null : supplied,
+      reference: null,
+    };
+  }
+
+  const rejected = contextParseFailed ? originalSupplied : resolution.rejected;
+  return {
+    values: {
+      ...externalIdValues,
+      timezone: resolution.context.timezone,
+      startUtcOffsetMinutes: resolution.context.startUtcOffsetMinutes,
+      endUtcOffsetMinutes: resolution.context.endUtcOffsetMinutes,
+      localTimeSource: resolution.context.source,
+      rejectedProviderTimezone: rejected ? originalSupplied.timezone : null,
+      rejectedProviderStartUtcOffsetMinutes: rejected?.startUtcOffsetMinutes ?? null,
+      rejectedProviderEndUtcOffsetMinutes: rejected?.endUtcOffsetMinutes ?? null,
+    },
+    updateLocalTimeContext: true,
+    rejected: rejected ? { ...rejected, timezone: originalSupplied.timezone } : null,
+  };
 }
 
 function normalizeProviderActivityConflictUpdate(
@@ -373,6 +338,10 @@ export async function upsertProviderActivity(
         startUtcOffsetMinutes: normalizedValues.startUtcOffsetMinutes,
         endUtcOffsetMinutes: normalizedValues.endUtcOffsetMinutes,
         localTimeSource: normalizedValues.localTimeSource,
+        rejectedProviderTimezone: normalizedValues.rejectedProviderTimezone,
+        rejectedProviderStartUtcOffsetMinutes:
+          normalizedValues.rejectedProviderStartUtcOffsetMinutes,
+        rejectedProviderEndUtcOffsetMinutes: normalizedValues.rejectedProviderEndUtcOffsetMinutes,
       }
     : {};
 
@@ -384,6 +353,21 @@ export async function upsertProviderActivity(
       set: { ...normalizeProviderActivityConflictUpdate(update), ...contextUpdate },
     })
     .returning({ id: activity.id });
+
+  if (row && normalized.rejected) {
+    logger.warn("activity local-time context rejected", {
+      event: "activity_local_time_context_rejected",
+      provider_id: normalizedValues.providerId,
+      activity_id: row.id,
+      supplied: normalized.rejected,
+      substituted: {
+        timezone: normalizedValues.timezone ?? null,
+        startUtcOffsetMinutes: normalizedValues.startUtcOffsetMinutes ?? null,
+        endUtcOffsetMinutes: normalizedValues.endUtcOffsetMinutes ?? null,
+        source: normalizedValues.localTimeSource ?? "unknown",
+      },
+    });
+  }
 
   return row;
 }

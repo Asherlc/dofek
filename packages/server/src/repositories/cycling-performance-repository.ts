@@ -19,6 +19,15 @@ const effortRowSchema = z.object({
   best_power: z.coerce.number(),
 });
 
+const powerAvailabilityRowSchema = z.object({
+  modality: z.enum(["indoor", "outdoor", "unknown"]),
+  first_observed: z.string().nullable(),
+  last_observed: z.string().nullable(),
+  activities_with_power: z.coerce.number().int().nonnegative(),
+  activities_total: z.coerce.number().int().nonnegative(),
+  source_providers: z.array(z.string()),
+});
+
 const EFFORT_LABELS = { 5: "5s", 60: "1m", 300: "5m", 1200: "20m" } as const;
 type EffortLabel = (typeof EFFORT_LABELS)[keyof typeof EFFORT_LABELS];
 type EffortBest = { activity_id: string; date: string; watts: number };
@@ -81,6 +90,47 @@ WHERE user_id = {userId:UUID}
     toDate({lookbackStartDate:String}) AND toDate({endDate:String})
 ORDER BY started_at ASC, duration_seconds ASC`;
 
+const powerAvailabilityQuery = `
+WITH
+  multiIf(
+    modality IN ('indoor', 'virtual'), 'indoor',
+    modality IN ('outdoor', 'road', 'mountain', 'gravel', 'electric', 'cyclocross', 'track', 'bmx'), 'outdoor',
+    'unknown'
+  ) AS power_modality,
+  (power_samples > 0 OR average_power IS NOT NULL OR normalized_power IS NOT NULL OR best_twenty_minute_power IS NOT NULL) AS has_power
+SELECT
+  power_modality AS modality,
+  nullIf(toString(minIf(toDate(toTimeZone(started_at, {timezone:String})), has_power)), '1970-01-01') AS first_observed,
+  nullIf(toString(maxIf(toDate(toTimeZone(started_at, {timezone:String})), has_power)), '1970-01-01') AS last_observed,
+  countIf(has_power) AS activities_with_power,
+  count() AS activities_total,
+  arraySort(arrayDistinct(arrayFlatten(groupArrayIf(source_providers, has_power)))) AS source_providers
+FROM analytics.cycling_activity FINAL
+WHERE user_id = {userId:UUID}
+  AND is_deleted = 0
+  AND toDate(toTimeZone(started_at, {timezone:String})) BETWEEN
+    toDate({startDate:String}) AND toDate({endDate:String})
+GROUP BY power_modality
+ORDER BY power_modality ASC`;
+
+function emptyPowerAvailability(): {
+  first_observed: string | null;
+  last_observed: string | null;
+  activities_with_power: number;
+  activities_total: number;
+  pct: number;
+  source_providers: string[];
+} {
+  return {
+    first_observed: null,
+    last_observed: null,
+    activities_with_power: 0,
+    activities_total: 0,
+    pct: 0,
+    source_providers: [],
+  };
+}
+
 /** Exact-range cycling analytics derived from deduped ClickHouse read models. */
 export class CyclingPerformanceRepository {
   readonly #store: Pick<ActivitySensorStore, "query">;
@@ -102,9 +152,10 @@ export class CyclingPerformanceRepository {
       startDate,
       endDate,
     };
-    const [rideRows, effortRows] = await Promise.all([
+    const [rideRows, effortRows, powerAvailabilityRows] = await Promise.all([
       this.#store.query(rideRowSchema, ridesQuery, params),
       this.#store.query(effortRowSchema, effortsQuery, params),
+      this.#store.query(powerAvailabilityRowSchema, powerAvailabilityQuery, params),
     ]);
 
     const effortsByActivity = new Map<string, Record<EffortLabel, number | null>>();
@@ -187,6 +238,21 @@ export class CyclingPerformanceRepository {
             elevations.reduce((sum, value) => sum + value, 0),
             1,
           );
+    const powerAvailabilityByModality = {
+      indoor: emptyPowerAvailability(),
+      outdoor: emptyPowerAvailability(),
+      unknown: emptyPowerAvailability(),
+    };
+    for (const row of powerAvailabilityRows) {
+      powerAvailabilityByModality[row.modality] = {
+        first_observed: row.first_observed,
+        last_observed: row.last_observed,
+        activities_with_power: row.activities_with_power,
+        activities_total: row.activities_total,
+        pct: percentage(row.activities_with_power, row.activities_total),
+        source_providers: row.source_providers,
+      };
+    }
 
     return {
       activities,
@@ -197,6 +263,7 @@ export class CyclingPerformanceRepository {
           activities_total: activities.length,
           pct: percentage(activitiesWithPower, activities.length),
         },
+        power_availability_by_modality: powerAvailabilityByModality,
         elevation_gain: {
           total_elevation_gain_m: totalElevation,
           avg_elevation_gain_m:

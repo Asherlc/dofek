@@ -104,6 +104,85 @@ describe("parseTripToActivity", () => {
     const trip = { ...baseTrip, description: null };
     expect(parseTripToActivity(trip).notes).toBeUndefined();
   });
+
+  it("carries the first route coordinate into activity local-time resolution", () => {
+    const trip = {
+      ...baseTrip,
+      track_points: [
+        { epochSeconds: 1_723_276_200 },
+        { longitude: -123.56, latitude: 38.827, epochSeconds: 1_723_276_201 },
+      ],
+    };
+
+    expect(parseTripToActivity(trip).localTimeCoordinates).toEqual({
+      latitude: 38.827,
+      longitude: -123.56,
+    });
+  });
+
+  it("skips invalid coordinates before selecting local-time evidence", () => {
+    const trip = {
+      ...baseTrip,
+      track_points: [
+        { longitude: -300, latitude: 120, epochSeconds: 1_723_276_200 },
+        { longitude: -123.56, latitude: 38.827, epochSeconds: 1_723_276_201 },
+      ],
+    };
+
+    expect(parseTripToActivity(trip).localTimeCoordinates).toEqual({
+      latitude: 38.827,
+      longitude: -123.56,
+    });
+  });
+
+  it.each([
+    ["missing latitude", { longitude: -123.56 }],
+    ["missing longitude", { latitude: 38.827 }],
+    ["NaN latitude", { longitude: -123.56, latitude: Number.NaN }],
+    ["NaN longitude", { longitude: Number.NaN, latitude: 38.827 }],
+    ["infinite latitude", { longitude: -123.56, latitude: Number.POSITIVE_INFINITY }],
+    ["infinite longitude", { longitude: Number.NEGATIVE_INFINITY, latitude: 38.827 }],
+    ["latitude below range", { longitude: -123.56, latitude: -90.01 }],
+    ["latitude above range", { longitude: -123.56, latitude: 90.01 }],
+    ["longitude below range", { longitude: -180.01, latitude: 38.827 }],
+    ["longitude above range", { longitude: 180.01, latitude: 38.827 }],
+  ])("skips %s before selecting local-time evidence", (_label, invalidCoordinate) => {
+    const trip = {
+      ...baseTrip,
+      track_points: [
+        { ...invalidCoordinate, epochSeconds: 1_723_276_200 },
+        { longitude: -123.56, latitude: 38.827, epochSeconds: 1_723_276_201 },
+      ],
+    };
+
+    expect(parseTripToActivity(trip).localTimeCoordinates).toEqual({
+      latitude: 38.827,
+      longitude: -123.56,
+    });
+  });
+
+  it.each([
+    ["minimum latitude", { longitude: 0, latitude: -90 }],
+    ["maximum latitude", { longitude: 0, latitude: 90 }],
+    ["minimum longitude", { longitude: -180, latitude: 0 }],
+    ["maximum longitude", { longitude: 180, latitude: 0 }],
+  ])("accepts the %s boundary as local-time evidence", (_label, coordinate) => {
+    const trip = {
+      ...baseTrip,
+      track_points: [{ ...coordinate, epochSeconds: 1_723_276_200 }],
+    };
+
+    expect(parseTripToActivity(trip).localTimeCoordinates).toEqual(coordinate);
+  });
+
+  it("omits local-time coordinates when no valid route point exists", () => {
+    const trip = {
+      ...baseTrip,
+      track_points: [{ longitude: -300, latitude: 120, epochSeconds: 1_723_276_200 }],
+    };
+
+    expect(parseTripToActivity(trip).localTimeCoordinates).toBeUndefined();
+  });
 });
 
 describe("parseTrackPoints", () => {

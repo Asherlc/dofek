@@ -1,3 +1,4 @@
+import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ executeWithSchema: vi.fn() }));
@@ -22,13 +23,16 @@ import {
   queueCompletedFileUpload,
   recordFileUploadCompletionParts,
   requeueStuckFileUpload,
+  retryFailedFileUpload,
   updateFileUploadProgress,
+  withLockedFileUpload,
 } from "./file-upload.ts";
 
 const uploadId = "00000000-0000-4000-8000-000000000001";
 const userId = "00000000-0000-4000-8000-000000000002";
 const importJobId = `file-import-${uploadId}`;
 const now = new Date("2026-07-20T00:00:00Z");
+const dialect = new PgDialect();
 
 function row(overrides: Record<string, unknown> = {}) {
   return {
@@ -429,6 +433,156 @@ describe("file upload repository", () => {
     mocks.executeWithSchema.mockResolvedValue([{ id: uploadId }]);
     expect(await expireFileUpload(database, uploadId)).toBe(true);
     expect(await requeueStuckFileUpload(database, uploadId)).toBe(true);
+  });
+
+  it("atomically retries a retained failed upload with corrected import metadata", async () => {
+    const retryJobId = `file-import-retry-${uploadId}`;
+    mocks.executeWithSchema.mockResolvedValueOnce([
+      row({
+        state: "queued",
+        import_job_id: retryJobId,
+        import_type: "strong-csv",
+        weight_unit: "lbs",
+        timezone: "America/Los_Angeles",
+      }),
+    ]);
+
+    await expect(
+      retryFailedFileUpload(database, {
+        uploadId,
+        userId,
+        importJobId: retryJobId,
+        weightUnit: "lbs",
+        timezone: "America/Los_Angeles",
+      }),
+    ).resolves.toMatchObject({
+      state: "queued",
+      importJobId: retryJobId,
+      weightUnit: "lbs",
+      timezone: "America/Los_Angeles",
+    });
+    expect(mocks.executeWithSchema).toHaveBeenCalledTimes(1);
+    const query = dialect.sqlToQuery(mocks.executeWithSchema.mock.calls[0]?.[2]);
+    expect(query.params).toContain("lbs");
+    expect(query.params).toContain("America/Los_Angeles");
+  });
+
+  it("returns an already queued retry when its persisted identity and metadata match", async () => {
+    const retryJobId = `file-import-retry-${uploadId}`;
+    const queued = row({
+      state: "queued",
+      import_job_id: retryJobId,
+      weight_unit: "lbs",
+      timezone: "America/Los_Angeles",
+    });
+    mocks.executeWithSchema.mockResolvedValueOnce([]).mockResolvedValueOnce([queued]);
+
+    await expect(
+      retryFailedFileUpload(database, {
+        uploadId,
+        userId,
+        importJobId: retryJobId,
+      }),
+    ).resolves.toMatchObject({
+      state: "queued",
+      importJobId: retryJobId,
+      weightUnit: "lbs",
+      timezone: "America/Los_Angeles",
+    });
+  });
+
+  it.each([
+    ["state", { state: "processing" }],
+    ["job ID", { import_job_id: "different-job" }],
+    ["weight unit", { weight_unit: "kg" }],
+    ["timezone", { timezone: "UTC" }],
+  ])("rejects an already queued retry with mismatched %s", async (_label, overrides) => {
+    const retryJobId = `file-import-retry-${uploadId}`;
+    mocks.executeWithSchema.mockResolvedValueOnce([]).mockResolvedValueOnce([
+      row({
+        state: "queued",
+        import_job_id: retryJobId,
+        weight_unit: "lbs",
+        timezone: "America/Los_Angeles",
+        ...overrides,
+      }),
+    ]);
+
+    await expect(
+      retryFailedFileUpload(database, {
+        uploadId,
+        userId,
+        importJobId: retryJobId,
+        weightUnit: "lbs",
+        timezone: "America/Los_Angeles",
+      }),
+    ).rejects.toThrow("cannot be retried");
+  });
+
+  it("reports a missing upload when an atomic retry finds no persisted row", async () => {
+    mocks.executeWithSchema.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+
+    await expect(
+      retryFailedFileUpload(database, {
+        uploadId,
+        userId,
+        importJobId: `file-import-retry-${uploadId}`,
+      }),
+    ).rejects.toThrow(`Upload ${uploadId} was not found`);
+  });
+
+  it.each([
+    ["blank import job ID", { importJobId: "   " }],
+    ["blank timezone", { importJobId: `file-import-retry-${uploadId}`, timezone: "   " }],
+  ])("rejects retry input with a %s", async (_label, overrides) => {
+    await expect(
+      retryFailedFileUpload(database, {
+        uploadId,
+        userId,
+        ...overrides,
+      }),
+    ).rejects.toThrow();
+    expect(mocks.executeWithSchema).not.toHaveBeenCalled();
+  });
+
+  it("holds a row lock while a retained upload operation runs", async () => {
+    const transaction = { execute: vi.fn() };
+    const transactionalDatabase = {
+      execute: vi.fn(),
+      transaction: vi.fn(async (operation) => operation(transaction)),
+    };
+    mocks.executeWithSchema.mockResolvedValueOnce([row({ state: "failed" })]);
+    const operation = vi.fn(async (_transaction, upload) => upload.state);
+
+    await expect(withLockedFileUpload(transactionalDatabase, uploadId, operation)).resolves.toBe(
+      "failed",
+    );
+    expect(operation).toHaveBeenCalledWith(transaction, expect.objectContaining({ id: uploadId }));
+  });
+
+  it("fails a locked operation when the upload does not exist", async () => {
+    const transactionalDatabase = {
+      execute: vi.fn(),
+      transaction: vi.fn(async (operation) => operation(database)),
+    };
+    mocks.executeWithSchema.mockResolvedValueOnce([]);
+
+    await expect(withLockedFileUpload(transactionalDatabase, uploadId, vi.fn())).rejects.toThrow(
+      `Upload ${uploadId} was not found`,
+    );
+  });
+
+  it("fails loudly when a failed upload cannot be retried", async () => {
+    mocks.executeWithSchema
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([row({ state: "failed", object_deleted_at: now })]);
+    await expect(
+      retryFailedFileUpload(database, {
+        uploadId,
+        userId,
+        importJobId: `file-import-retry-${uploadId}`,
+      }),
+    ).rejects.toThrow("source object has already been deleted");
   });
 
   it("lists reconciliation candidates and validates its limit", async () => {

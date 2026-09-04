@@ -225,6 +225,7 @@ export const RIDE_WITH_GPS_ACTIVITY_TYPE_MAP: Record<string, LegacyActivityType>
   running: "running",
   trail_running: "running",
   walking: "walking",
+  "walking:hiking": "hiking",
   hiking: "hiking",
   swimming: "swimming",
 };

@@ -764,6 +764,20 @@
       "when": 1788325153001,
       "tag": "0106_activity_integrity_repair_journal",
       "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "7",
+      "when": 1788463000000,
+      "tag": "0107_activity_rejected_local_time_context",
+      "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "7",
+      "when": 1788463000001,
+      "tag": "0108_validate_activity_rejected_local_time_context",
+      "breakpoints": true
     }
   ]
 }

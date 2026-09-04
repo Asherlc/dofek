@@ -6,6 +6,7 @@ import {
   insertMetricStreamEventsIntoClickHouse,
   mapMetricStreamEventToClickHouseRow,
   markMetricStreamScopeDeletedInClickHouse,
+  markMetricStreamScopesDeletedInClickHouse,
 } from "./clickhouse-sink.ts";
 import {
   ACCOUNT_ERASURE_FENCE_TABLE,
@@ -673,6 +674,132 @@ describe("applyMetricStreamEventsToClickHouse", () => {
 
     expect(command).toHaveBeenCalledTimes(2);
     expect(firstCommandQuery(command)).toContain(`INSERT INTO ${METRIC_STREAM_TABLE}`);
+  });
+
+  it("batches compatible delete scopes into one stream-table scan", async () => {
+    const command = vi.fn(async () => undefined);
+    const firstDelete = createCurrentMetricStreamDeletedEvent({
+      userId: heartRateEvent.userId,
+      providerId: heartRateEvent.providerId,
+      externalId: "hk:heart-rate-1",
+    });
+    const secondDelete = createCurrentMetricStreamDeletedEvent({
+      userId: heartRateEvent.userId,
+      providerId: heartRateEvent.providerId,
+      externalId: "hk:heart-rate-2",
+    });
+
+    await markMetricStreamScopesDeletedInClickHouse({ command }, [firstDelete, secondDelete]);
+
+    expect(command).toHaveBeenCalledTimes(3);
+    expect(firstCommandQuery(command)).toContain(
+      "candidate_row.external_id = {external_id_0:String}",
+    );
+    expect(firstCommandQuery(command)).toContain("scope_index = 0 AND latest_row.2");
+    expect(firstCommandQuery(command)).toContain("latest_row.6 = {external_id_0:String}");
+    expect(firstCommandQuery(command)).toContain(
+      "candidate_row.external_id = {external_id_1:String}",
+    );
+    expect(command).toHaveBeenNthCalledWith(1, {
+      query: expect.stringContaining(`INSERT INTO ${METRIC_STREAM_TABLE}`),
+      query_params: {
+        external_id_0: "hk:heart-rate-1",
+        external_id_1: "hk:heart-rate-2",
+        provider_id_0: heartRateEvent.providerId,
+        provider_id_1: heartRateEvent.providerId,
+        replacement_version: "2000000000000000",
+        user_id_0: heartRateEvent.userId,
+        user_id_1: heartRateEvent.userId,
+      },
+    });
+  });
+
+  it("batches adjacent current deletes with the same revision while consuming", async () => {
+    const command = vi.fn(async () => undefined);
+    const query = vi.fn(async () => ({ json: async () => [] }));
+    const firstDelete = createCurrentMetricStreamDeletedEvent({
+      userId: heartRateEvent.userId,
+      providerId: heartRateEvent.providerId,
+      externalId: "hk:heart-rate-1",
+    });
+    const secondDelete = createCurrentMetricStreamDeletedEvent({
+      userId: heartRateEvent.userId,
+      providerId: heartRateEvent.providerId,
+      externalId: "hk:heart-rate-2",
+    });
+
+    await applyMetricStreamEventsToClickHouse(
+      { command, insert: vi.fn(async () => undefined), query },
+      [firstDelete, secondDelete],
+    );
+
+    expect(command).toHaveBeenCalledTimes(3);
+    expect(firstCommandQuery(command)).toContain("external_id_0");
+    expect(firstCommandQuery(command)).toContain("external_id_1");
+  });
+
+  it("does not batch adjacent current deletes from different revisions", async () => {
+    const command = vi.fn(async () => undefined);
+    const query = vi.fn(async () => ({ json: async () => [] }));
+    const firstDelete = createMetricStreamDeletedEvent(
+      { userId: heartRateEvent.userId, providerId: heartRateEvent.providerId },
+      operationRevision,
+    );
+    const secondDelete = createMetricStreamDeletedEvent(
+      { userId: heartRateEvent.userId, providerId: heartRateEvent.providerId },
+      "1000000000000001",
+    );
+
+    await applyMetricStreamEventsToClickHouse(
+      { command, insert: vi.fn(async () => undefined), query },
+      [firstDelete, secondDelete],
+    );
+
+    expect(command).toHaveBeenCalledTimes(4);
+    expect(command).toHaveBeenNthCalledWith(1, {
+      query: expect.stringContaining(`INSERT INTO ${METRIC_STREAM_TABLE}`),
+      query_params: expect.objectContaining({
+        replacement_version: "2000000000000000",
+      }),
+    });
+    expect(command).toHaveBeenNthCalledWith(3, {
+      query: expect.stringContaining(`INSERT INTO ${METRIC_STREAM_TABLE}`),
+      query_params: expect.objectContaining({
+        replacement_version: "2000000000000002",
+      }),
+    });
+  });
+
+  it("does not batch same-revision deletes across a replacement row", async () => {
+    const command = vi.fn(async () => undefined);
+    const query = makeEmptyGenerationQuery();
+    const firstDelete = createCurrentMetricStreamDeletedEvent({
+      userId: heartRateEvent.userId,
+      providerId: heartRateEvent.providerId,
+      externalId: "hk:heart-rate-1",
+    });
+    const secondDelete = createCurrentMetricStreamDeletedEvent({
+      userId: heartRateEvent.userId,
+      providerId: heartRateEvent.providerId,
+      externalId: "hk:heart-rate-2",
+    });
+
+    await applyMetricStreamEventsToClickHouse(
+      { command, insert: vi.fn(async () => undefined), query },
+      [firstDelete, heartRateEvent, secondDelete],
+    );
+
+    expect(command).toHaveBeenCalledTimes(4);
+    expect(firstCommandQuery(command)).toContain("{external_id:String}");
+    expect(firstCommandQuery(command)).not.toContain("external_id_0");
+    expect(command).toHaveBeenNthCalledWith(3, {
+      query: expect.stringContaining("{external_id:String}"),
+      query_params: expect.any(Object),
+    });
+    expect(command).toHaveBeenNthCalledWith(3, {
+      query: expect.not.stringContaining("external_id_0"),
+      query_params: expect.any(Object),
+    });
   });
 
   it("marks matching ClickHouse rows deleted before inserting replacement rows", async () => {

@@ -1,11 +1,11 @@
 # Activity Data Integrity Repair Runbook
 
-Use this runbook to correct contradictory local-time context on a bounded set
-of activities and rebuild their derived activity state. This is a manual data
-operation, not a deployment step. It changes only `timezone`,
-`start_utc_offset_minutes`, `end_utc_offset_minutes`, and
-`local_time_source` on `fitness.activity`; it never changes provider identity,
-name, raw payloads, metrics, or sensor observations.
+Use this runbook to correct contradictory local-time context and Strong
+wall-clock timestamps on a bounded set of activities, then rebuild their
+derived activity state. This is a manual data operation, not a deployment
+step. It changes only `started_at`, `ended_at`, the resolved local-time fields,
+and the three `rejected_provider_*` audit fields on `fitness.activity`; it never
+changes provider identity, name, raw payloads, metrics, or sensor observations.
 
 ## Safety model
 
@@ -40,13 +40,75 @@ specific journal phase.
    environment. Never copy either value into an artifact or change record.
 2. Choose a narrow user/window scope. `--start-at` is inclusive and `--end-at`
    is exclusive.
-3. Create an approved durable artifact directory outside the repository. The
+3. Resolve a bare MCP activity-ID prefix to exactly one user before running the
+   inspector or repair:
+
+   ```sql
+   SELECT DISTINCT activity.user_id
+   FROM fitness.activity AS activity
+   WHERE activity.id::text LIKE '<activity-id-prefix>%';
+   ```
+
+   Stop if the query returns zero users or more than one user. Never infer the
+   user from provider metadata.
+4. Verify that `fitness.user_settings` contains the `homeTimezone` key for the
+   user. GPS-derived
+   timezone evidence takes precedence for an activity that has coordinates;
+   otherwise the repair uses the configured home zone. The preflight hard-fails
+   when neither exists. Expected UTC offsets are resolved from that zone at the
+   activity instant, including daylight-saving changes; they are never compared
+   with a fixed `-420` or `-480` value. JavaScript's `Intl.DateTimeFormat`
+   accepts IANA timezone names and applies their rules at the formatted instant;
+   see [MDN's `timeZone` option reference](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Intl/DateTimeFormat/DateTimeFormat#timezone).
+5. Create an approved durable artifact directory outside the repository. The
    command creates directories with mode `0700` and JSON files with mode
    `0600`.
-4. Identify the acceptance owner and deadline. The same individual must be
+6. Identify the acceptance owner and deadline. The same individual must be
    available to verify, roll back, or retire the repair.
 
 ## 1. Dry run
+
+### Retry a retained failed Strong import
+
+If the diagnosis found a failed Strong import with a retained source object,
+repair it before the derived-state dry run. This is a normal replay of the
+immutable provider export through the current transactional importer; it does
+not edit provider payloads or raw sensor observations in place.
+
+First verify the retained object and corrected parsing metadata without
+queueing work:
+
+```bash
+pnpm tsx scripts/with-env.ts -- pnpm tsx scripts/retry-failed-file-upload.ts \
+  --upload-id=<failed-upload-uuid> \
+  --user-id=<user-uuid> \
+  --weight-unit=lbs \
+  --timezone=America/Los_Angeles
+```
+
+Confirm `kind: "dry-run"`, the expected import type and byte count, and the
+corrected unit and timezone. Then queue the exact retry with a stable job ID:
+
+```bash
+pnpm tsx scripts/with-env.ts -- pnpm tsx scripts/retry-failed-file-upload.ts \
+  --upload-id=<failed-upload-uuid> \
+  --user-id=<user-uuid> \
+  --weight-unit=lbs \
+  --timezone=America/Los_Angeles \
+  --job-id=file-import-repair-<date>-strong \
+  --execute
+```
+
+Wait for the upload to reach `completed`. Report strength activity and set
+counts before and after, and verify that the cited deadlift session has sets,
+weights are kilograms, rest entries use `setType: "rest"`, and set indices are
+sequential. If the object is absent, deleted, has a different byte
+count, or the retry fails, stop. Obtain a fresh upload from the user rather
+than reconstructing provider data.
+
+The Strong replay corrects provider-derived activity rows and strength sets.
+The single historical repair below remains the only operation that rewrites
+the overlapping local-time fields and rebuilds the derived ClickHouse models.
 
 Run through the repository environment wrapper without `--execute`:
 
@@ -64,14 +126,25 @@ Confirm the JSON result reports `kind: "dry-run"` and `updated: 0`. Inspect
 the artifact without editing it:
 
 - `userId`, window, selection bound, and `changedActivityIds` are exact;
-- each `postgresActivities[].prior` to `.repaired` local-time transition is
-  explainable from the provider timezone or offset;
+- each `postgresActivities[]` timestamp and local-time transition is explainable
+  from GPS or the configured home zone, and every rejected provider value is
+  retained in the row's `rejected_provider_*` fields;
 - the captured component closure and eight derived projections are expected;
   and
 - `incompatibleMemberCount` is zero or has an explicit investigation plan.
 
 Stop and narrow the input if the selection reaches `batchSize * maxBatches`,
 an unrelated activity appears, or any proposed change is unexplained.
+
+For the September 2026 combined repair, use one window covering the complete
+Strong export history as well as the September fixtures. The reviewed dry run must report 79
+offset-plausibility failures (75 stored at `-240`, four at `-300`), the two
+representative-selection groups containing six source rows, zero containment
+groups, the `2a7c6fa3` summary refresh, and every Strong timestamp in the
+bounded window either already corrected by the retained replay or proposed for
+timezone-aware correction from legacy `unknown` context. A Strong row that
+already carries valid timezone context must retain its UTC timestamp. Do not execute separate offset, representative, speed, or
+Strong repairs: they intentionally share one audit and rollback point.
 
 ## 2. Execute
 
@@ -90,10 +163,11 @@ pnpm tsx scripts/with-env.ts -- pnpm tsx scripts/repair-activity-data-integrity.
   --acceptance-deadline=2026-09-02T23:00:00Z
 ```
 
-The command writes a private snapshot, then atomically applies the
-Postgres local-time CAS and creates a `postgres_committed` journal row. It
-waits for the exact changed local-time fields in the ClickHouse Postgres mirror
-before rebuilding the bounded eight-model dbt scope. On success the journal is
+The command writes a private snapshot, then atomically applies the Postgres
+timestamp/local-time CAS and creates a `postgres_committed` journal row. It
+waits for the exact changed timestamps, resolved context, and rejected-value
+audit fields in the ClickHouse Postgres mirror before rebuilding the bounded
+eight-model dbt scope. On success the journal is
 `executed`; a CDC, dbt, or verification failure records `rebuild_failed` and
 remains a rollback target.
 
@@ -137,10 +211,14 @@ WHERE source.user_id = toUUID('<user-uuid>')
 ORDER BY source.activity_id;
 ```
 
-Confirm the intended false component is split, valid duplicate edges remain,
-and downstream canonical/member/summary IDs agree. If a later provider update
-arrives during this window, record it; it is not a reason to overwrite
-provider-owned fields.
+Confirm valid duplicate edges remain and downstream canonical/member/summary
+IDs agree. In the September 2026 repair, the Peloton member of `2a7c6fa3` is a
+valid metadata mirror and must remain in `source_providers`; this repair does
+not change `activity_duplicate_matches.sql`. Confirm `b20988c5` and `40e593c7`
+select the specific `cycling` / `commuting` evidence, and confirm `2a7c6fa3`
+refreshes to the RideWithGPS moving-speed values (about 5.568 m/s average and
+16.54 m/s maximum). If a later provider update arrives during this window,
+record it; it is not a reason to overwrite provider-owned fields.
 
 ## 4. Accept and retire
 
@@ -174,10 +252,11 @@ pnpm tsx scripts/with-env.ts -- pnpm tsx scripts/repair-activity-data-integrity.
   --rollback-artifact=<artifact-path>
 ```
 
-Rollback performs a user-scoped compare-and-swap only on the four captured
-local-time columns. It never restores provider-owned name, raw payload, or
-other fields. If the captured repaired local-time values no longer match,
-rollback fails loudly rather than overwriting a later local-time update.
+Rollback performs a user-scoped compare-and-swap only on the captured
+timestamps, resolved local-time context, and rejected-provider audit fields. It
+never restores provider-owned name, raw payload, metrics, or sensor samples. If
+the captured repaired values no longer match, rollback fails loudly rather
+than overwriting a later provider update.
 
 After the Postgres rollback transaction commits, the command waits for the
 restored fields in the ClickHouse Postgres mirror and then runs the same bounded

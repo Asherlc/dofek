@@ -2,6 +2,10 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { type Database, executeWithSchema } from "./typed-sql.ts";
 
+export interface TransactionalFileUploadDatabase extends Database {
+  transaction<T>(operation: (transaction: Database) => Promise<T>): Promise<T>;
+}
+
 export const fileUploadImportTypeSchema = z.enum([
   "apple-health",
   "strong-csv",
@@ -162,6 +166,27 @@ function mapFileUpload(row: z.infer<typeof fileUploadRowSchema>): FileUpload {
     completedAt: row.completed_at,
     objectDeletedAt: row.object_deleted_at,
   };
+}
+
+export async function withLockedFileUpload<T>(
+  database: TransactionalFileUploadDatabase,
+  uploadId: string,
+  operation: (transaction: Database, upload: FileUpload) => Promise<T>,
+): Promise<T> {
+  const parsedUploadId = z.uuid().parse(uploadId);
+  return database.transaction(async (transaction) => {
+    const rows = await executeWithSchema(
+      transaction,
+      fileUploadRowSchema,
+      sql`SELECT ${selectFileUploadColumns}
+          FROM fitness.file_upload
+          WHERE id = ${parsedUploadId}::uuid
+          FOR UPDATE`,
+    );
+    const row = rows[0];
+    if (!row) throw new Error(`Upload ${parsedUploadId} was not found`);
+    return operation(transaction, mapFileUpload(row));
+  });
 }
 
 export async function recordFileUploadCompletionParts(
@@ -572,6 +597,95 @@ export async function requeueStuckFileUpload(
         SELECT id FROM requeued`,
   );
   return rows.length > 0;
+}
+
+export interface RetryFailedFileUploadInput {
+  uploadId: string;
+  userId: string;
+  importJobId: string;
+  weightUnit?: "kg" | "lbs";
+  timezone?: string;
+}
+
+/**
+ * Requeue a failed import while its verified source object is still retained.
+ * The upload row and durable outbox are reset in one statement so the retry
+ * cannot be visible without its corrected, persisted import metadata.
+ */
+export async function retryFailedFileUpload(
+  database: Database,
+  input: RetryFailedFileUploadInput,
+): Promise<FileUpload> {
+  const parsed = z
+    .object({
+      uploadId: z.uuid(),
+      userId: z.uuid(),
+      importJobId: z.string().trim().min(1),
+      weightUnit: z.enum(["kg", "lbs"]).optional(),
+      timezone: z.string().trim().min(1).optional(),
+    })
+    .parse(input);
+  const rows = await executeWithSchema(
+    database,
+    fileUploadRowSchema,
+    sql`WITH eligible_retry AS (
+          SELECT upload.id
+          FROM fitness.file_upload AS upload
+          INNER JOIN fitness.file_upload_outbox AS outbox ON outbox.upload_id = upload.id
+          WHERE upload.id = ${parsed.uploadId}::uuid
+            AND upload.user_id = ${parsed.userId}::uuid
+            AND upload.state = 'failed'
+            AND upload.object_deleted_at IS NULL
+            AND outbox.status = 'failed'
+        ), retried_upload AS (
+          UPDATE fitness.file_upload AS upload
+          SET state = 'queued',
+              import_job_id = ${parsed.importJobId},
+              weight_unit = coalesce(${parsed.weightUnit ?? null}, weight_unit),
+              timezone = coalesce(${parsed.timezone ?? null}, timezone),
+              progress_percent = 100,
+              error_code = NULL,
+              error_message = NULL,
+              completed_at = NULL,
+              updated_at = now(),
+              version = version + 1
+          FROM eligible_retry
+          WHERE upload.id = eligible_retry.id
+            AND upload.state = 'failed'
+            AND upload.object_deleted_at IS NULL
+          RETURNING upload.*
+        ), retried_outbox AS (
+          UPDATE fitness.file_upload_outbox AS outbox
+          SET import_job_id = ${parsed.importJobId},
+              status = 'pending',
+              created_at = now(),
+              dispatched_at = NULL,
+              completed_at = NULL,
+              failure_reason = NULL,
+              failed_at = NULL
+          FROM retried_upload
+          WHERE outbox.upload_id = retried_upload.id
+          RETURNING outbox.upload_id
+        )
+        SELECT ${selectFileUploadColumns}
+        FROM retried_upload`,
+  );
+  if (rows[0]) return mapFileUpload(rows[0]);
+
+  const existing = await findFileUploadForUser(database, parsed.uploadId, parsed.userId);
+  if (!existing) throw new Error(`Upload ${parsed.uploadId} was not found`);
+  if (existing.objectDeletedAt) {
+    throw new Error(`Upload ${parsed.uploadId} source object has already been deleted`);
+  }
+  if (
+    existing.state === "queued" &&
+    existing.importJobId === parsed.importJobId &&
+    existing.weightUnit === (parsed.weightUnit ?? existing.weightUnit) &&
+    existing.timezone === (parsed.timezone ?? existing.timezone)
+  ) {
+    return existing;
+  }
+  throw new Error(`Upload ${parsed.uploadId} cannot be retried from ${existing.state}`);
 }
 
 export async function fileUploadObjectKeyExists(
