@@ -2,6 +2,7 @@ export type ZeppConnectionType = "zepp" | "zepp-workout";
 
 export interface HealthEnvelopeEvent<T> {
   eventId: string;
+  createdAt: string;
   payload: T;
 }
 
@@ -39,7 +40,7 @@ export function createHealthEnvelope<T>(
   if (
     !nonBlank(input.batchId) ||
     !nonBlank(input.source.installId) ||
-    input.events.some((event) => !nonBlank(event.eventId))
+    input.events.some((event) => !nonBlank(event.eventId) || !nonBlank(event.createdAt))
   ) {
     throw new Error("Health envelope identifiers must not be blank.");
   }

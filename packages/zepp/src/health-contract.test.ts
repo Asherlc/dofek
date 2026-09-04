@@ -10,6 +10,7 @@ describe("createHealthEnvelope", () => {
         events: [
           {
             eventId: "install-1:background:2024-07-03T10:48:20.000Z",
+            createdAt: "2024-07-03T10:48:20.000Z",
             payload: { backgroundSamples: [] },
           },
         ],
@@ -21,6 +22,7 @@ describe("createHealthEnvelope", () => {
       events: [
         {
           eventId: "install-1:background:2024-07-03T10:48:20.000Z",
+          createdAt: "2024-07-03T10:48:20.000Z",
           payload: { backgroundSamples: [] },
         },
       ],
@@ -32,7 +34,7 @@ describe("createHealthEnvelope", () => {
       createHealthEnvelope({
         batchId: " ",
         source: { connectionType: "zepp-workout", installId: "" },
-        events: [{ eventId: "", payload: {} }],
+        events: [{ eventId: "", createdAt: "", payload: {} }],
       }),
     ).toThrow("Health envelope identifiers must not be blank.");
   });

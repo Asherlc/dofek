@@ -22,6 +22,7 @@ export const STORAGE_KEYS = {
   PAIRING_EXPIRES_AT: "pairing_expires_at",
   HEALTH_SYNC_STATUS: "health_sync_status",
   LAST_HEALTH_SYNC: "last_health_sync",
+  PHONE_HEALTH_OUTBOX: "phone_health_outbox",
   TELEMETRY_BUFFER: "telemetry_buffer",
   TELEMETRY_INSTALL_ID: "telemetry_install_id",
 } as const;
