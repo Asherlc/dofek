@@ -13,19 +13,20 @@ const zeppModules = [
   "@zos/display",
   "@zos/interaction",
   "@zos/app",
+  "@zos/ui",
   "@zos/ble",
   "@zos/app-service",
-  "@zeppos/zml",
   "@zeppos/zml/base-page",
   "@zeppos/zml/base-side",
   "@zeppos/zml/base-app",
   "@zeppos/zml/3.0/module/messaging/plugin/page",
   "@zeppos/zml/3.0/module/messaging/plugin/side",
   "@zeppos/zml/3.0/module/messaging/plugin/app",
+  "@zeppos/zml",
 ];
 const zeppAliases: Record<string, string> = {};
 for (const moduleName of zeppModules) {
-  zeppAliases[moduleName] = zeppStubPath;
+  zeppAliases[moduleName] = `${zeppStubPath}?module=${encodeURIComponent(moduleName)}`;
 }
 
 const sharedTestConfig = {
@@ -96,6 +97,7 @@ export default defineConfig({
             "packages/web/vite.config.test.ts",
             "packages/*/src/**/*.test.{ts,tsx}",
             "packages/zepp/src/**/*.test.ts",
+            "packages/zepp/e2e/**/*.e2e.test.ts",
             "packages/zepp/setting/**/*.test.ts",
             "packages/zepp/workout-extension/**/*.test.ts",
             "scripts/**/*.test.ts",

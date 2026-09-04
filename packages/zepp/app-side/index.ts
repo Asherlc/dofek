@@ -1,6 +1,7 @@
 import { messagingPlugin } from "@zeppos/zml/3.0/module/messaging/plugin/side";
 import { BaseSideService } from "@zeppos/zml/base-side";
 import { deriveConnectionActions, parseConnectionState } from "../src/connection-state.ts";
+import { createConnectionChangedCall } from "../src/connection-control.ts";
 import {
   type HealthEnvelopeV1,
   type HealthUploadResponse,
@@ -291,6 +292,10 @@ AppSideService(
       );
     },
 
+    notifyWatchConnectionChanged() {
+      this.call(createConnectionChangedCall());
+    },
+
     clearPairingInfo() {
       settings.settingsStorage.removeItem(STORAGE_KEYS.PAIRING_ID);
       settings.settingsStorage.removeItem(STORAGE_KEYS.PAIRING_SHORT_CODE);
@@ -431,6 +436,7 @@ AppSideService(
           connectionType: DOFEK_COMPANION_CONNECTION_TYPE,
         });
         this.requestHealthCatchup("pairing-claimed");
+        this.notifyWatchConnectionChanged();
         return;
       }
 
@@ -493,6 +499,7 @@ AppSideService(
           connectionType: DOFEK_COMPANION_CONNECTION_TYPE,
         });
         this.requestHealthCatchup("password-login");
+        this.notifyWatchConnectionChanged();
       } catch (error) {
         const message = error instanceof Error ? error.message : "Dofek login failed.";
         if (connectionOperations.isCurrent(operation)) {
@@ -525,6 +532,7 @@ AppSideService(
         if (!summary.ok) {
           if (summary.status === 401) {
             settings.settingsStorage.removeItem(STORAGE_KEYS.DOFEK_API_TOKEN);
+            this.notifyWatchConnectionChanged();
           }
           throw new Error(summary.errorMessage ?? "Dofek connection check failed.");
         }
@@ -556,6 +564,7 @@ AppSideService(
       if (!apiToken) {
         this.clearPairingInfo();
         this.setConnectionStatus({ state: "disconnected" });
+        this.notifyWatchConnectionChanged();
         return;
       }
 
@@ -576,6 +585,7 @@ AppSideService(
         settings.settingsStorage.removeItem(STORAGE_KEYS.DOFEK_API_TOKEN);
         this.clearPairingInfo();
         this.setConnectionStatus({ state: "disconnected" });
+        this.notifyWatchConnectionChanged();
       } catch (error) {
         const message = error instanceof Error ? error.message : "Failed to disconnect Dofek.";
         if (connectionOperations.isCurrent(operation)) {

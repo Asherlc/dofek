@@ -80,9 +80,9 @@ Each package supports the following ways to connect its phone-side Side Service:
 
 | Flow | Where it starts | Where it finishes | Notes |
 |---|---|---|---|
-| QR from watch | Watch app | Dofek web/mobile settings | The watch renders a Zepp `QRCODE` widget with the Dofek verification URL. Zepp documents this widget for API_LEVEL 2.0+ ([QRCODE](https://docs.zepp.com/docs/reference/device-app-api/newAPI/ui/widget/QRCODE/)). |
-| QR from Zepp iOS app | The installed package's Zepp Settings page | Dofek web/mobile settings | Tap **Create QR / short code**. The Settings App displays the server-generated QR SVG URL as an image. |
-| Short code | Watch or Zepp Settings | Dofek web/mobile settings | Enter the six-character code in Dofek Settings. The server claim endpoint completes the connection for the polling Side Service. |
+| QR from watch | Watch app | Dedicated Dofek Zepp pairing page | The watch renders a Zepp `QRCODE` widget with the Dofek verification URL. Zepp documents this widget for API_LEVEL 2.0+ ([QRCODE](https://docs.zepp.com/docs/reference/device-app-api/newAPI/ui/widget/QRCODE/)). |
+| QR from Zepp iOS app | The installed package's Zepp Settings page | Dedicated Dofek Zepp pairing page | Tap **Create QR / short code**. The Settings App displays the server-generated QR SVG URL as an image. |
+| Short code | Watch or Zepp Settings | Dofek web or mobile Zepp pairing page | Enter the six-character code on the dedicated pairing screen. The server claim endpoint completes the connection for the polling Side Service. |
 | Dofek email/password | Zepp mini program Settings | Zepp Side Service | The Side Service exchanges credentials through Dofek's password-login endpoint. |
 | Dofek email/password | Watch app | Zepp Side Service | The watch asks the Side Service to log in after collecting text with Zepp's system keyboard. `SYSTEM_KEYBOARD` starts at API_LEVEL 4.0, so older watches keep the other pairing flows ([SYSTEM_KEYBOARD](https://docs.zepp.com/docs/reference/device-app-api/newAPI/ui/widget/SYSTEM_KEYBOARD/)). |
 
@@ -91,9 +91,12 @@ page displays the server-verified connection state and offers **Check
 connection** and **Disconnect Dofek**. Dofek Settings also displays whether
 **Zepp app** and **Workout extension** are connected and can disconnect either
 package independently. On the normal watch app, the connection button changes
-to **Disconnect Dofek** after login, so the normal app can also be revoked
-without the phone Settings page. The Zepp Side Service uses Zepp's object-form Fetch API
-to call Dofek and poll for completion ([Fetch API](https://docs.zepp.com/docs/reference/side-service-api/fetch/)).
+to **Disconnect Dofek** as soon as pairing completes, so the normal app can also
+be revoked without the phone Settings page. The Side Service notifies the open
+Device App through Zepp's documented messaging channel, then the watch reloads
+the stored connection state ([overall architecture](https://docs.zepp.com/docs/v2/guides/architecture/arc/)).
+The Zepp Side Service uses Zepp's object-form Fetch API to call Dofek and poll
+for completion ([Fetch API](https://docs.zepp.com/docs/reference/side-service-api/fetch/)).
 
 ### Add the Workout Extension to a workout
 
