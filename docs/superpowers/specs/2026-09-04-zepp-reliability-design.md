@@ -93,9 +93,11 @@ duplicating collection internals.
 
 `app-service/imu_service` becomes `app-service/health_service`. The service uses
 only supported low-power sensors, appends immutable observations to a durable
-watch outbox, and attempts bounded BLE delivery when a phone connection is
-available. It never imports, constructs, or invokes accelerometer or gyroscope
-APIs.
+watch outbox, and never imports, constructs, or invokes accelerometer or
+gyroscope APIs. Because App Service messaging through the ZML page abstraction
+could not be proven, the foreground page stops the service before draining the
+shared file and restarts it on exit; the two runtimes never mutate the outbox
+concurrently ([App Service `stop`](https://docs.zepp.com/docs/reference/device-app-api/newAPI/app-service/stop/)).
 
 ### Side Service and server
 
@@ -115,16 +117,16 @@ deduplication remain server responsibilities.
 The system intentionally uses all supported triggers:
 
 1. Health Service collects supported low-power observations every minute.
-2. Health Service attempts background BLE delivery when connected.
-3. Opening the normal app triggers a watch-to-phone catch-up drain.
-4. Establishing or verifying a Dofek connection triggers a phone-to-server
+2. Opening the normal app takes serialized ownership and triggers a
+   watch-to-phone catch-up drain.
+3. Establishing or verifying a Dofek connection triggers a phone-to-server
    drain and, when the watch is reachable, a watch-to-phone drain.
-5. Settings retains **Sync health data now** as an explicit retry trigger.
-6. Workout Extension persists and uploads focused live metrics and raw-motion
+4. Settings retains **Sync health data now** as an explicit retry trigger.
+5. Workout Extension persists and uploads focused live metrics and raw-motion
    segments.
-7. Completed workout history reconciles the activity envelope after focused
+6. Completed workout history reconciles the activity envelope after focused
    extension gaps.
-8. The Advanced Raw Motion Recorder supplies a separate uninterrupted
+7. The Advanced Raw Motion Recorder supplies a separate uninterrupted
    foreground capture path when the user accepts its power cost.
 
 The normal app and Workout Extension keep independent companion credentials.
@@ -154,11 +156,17 @@ Phone outbox records are removed only after server acknowledgment. Partial
 batch acknowledgments identify accepted event IDs so an interruption never
 requires deleting an entire batch.
 
-Raw IMU files remain on the watch until phone-side persistence is confirmed.
-The phone retains the received file until server-side persistence is confirmed.
-File transfer continues to use Zepp's queue-aware TransferFile facility rather
-than embedding bulk binary data in control messages
-([TransferFile API](https://docs.zepp.com/docs/reference/device-app-api/newAPI/transfer-file/TransferFile/)).
+Raw IMU slot metadata remains on the watch until TransferFile confirms phone
+receipt, and is reconstructed before either slot can be reset after restart.
+The phone durably registers every received binary as a local backup. In
+parallel, bounded versioned sample chunks use a durable phone outbox and are
+removed only after server acknowledgment. The file itself is not claimed to be
+server-uploadable because Zepp documents receiving its path but does not
+document a Side Service API for reading that file into Fetch; keeping the local
+backup is safer than pretending it was uploaded. File transfer continues to use
+Zepp's queue-aware TransferFile facility
+([TransferFile API](https://docs.zepp.com/docs/reference/device-app-api/newAPI/transfer-file/TransferFile/),
+[Side Service Fetch API](https://docs.zepp.com/docs/v2/reference/side-service-api/fetch/)).
 
 ## Transport Contract and Validation
 
@@ -273,7 +281,7 @@ underlying device capability.
 A physical T-Rex 3 audit verifies:
 
 - Health Service continuity after the normal app exits;
-- background BLE delivery and later catch-up after BLE loss;
+- foreground ownership handoff and later catch-up after BLE loss;
 - phone-offline retention followed by server delivery;
 - manual synchronization through the same coordinator;
 - exact invalid-field presentation for a rejected payload;

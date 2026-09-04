@@ -63,6 +63,25 @@ function expectAccepted(response: { status: number; body: string }): void {
   });
 }
 
+function expectRejectedInvalidDailyMetricDates(
+  response: { status: number; body: string },
+  dates: string[],
+): void {
+  expect(response.status).toBe(200);
+  const payload = JSON.parse(response.body);
+  expect(payload).toEqual({
+    status: "ok",
+    acceptedEventIds: [],
+    rejected: [{ eventId: "event-integration", issues: expect.any(Array) }],
+  });
+  expect(payload.rejected[0].issues).toHaveLength(dates.length);
+  expect(payload.rejected[0].issues).toEqual(
+    expect.arrayContaining(
+      dates.map((date) => ({ path: `dailyMetrics.${date}`, message: "Invalid date" })),
+    ),
+  );
+}
+
 describe("POST /api/ingest/zos-health", () => {
   let testCtx: TestContext;
   let app: express.Express;
@@ -304,7 +323,7 @@ describe("POST /api/ingest/zos-health", () => {
     ]);
   });
 
-  it("skips dailyMetrics with invalid date key", async () => {
+  it("rejects dailyMetrics with an invalid date key", async () => {
     const res = await post(app, "/api/ingest/zos-health", {
       headers: { Authorization: `Bearer ${validToken}` },
       body: {
@@ -313,7 +332,7 @@ describe("POST /api/ingest/zos-health", () => {
         },
       },
     });
-    expectAccepted(res);
+    expectRejectedInvalidDailyMetricDates(res, ["not-a-date"]);
   });
 
   // ── Sleep session tests ──
@@ -552,6 +571,52 @@ describe("POST /api/ingest/zos-health", () => {
     );
   });
 
+  it("commits a Zepp IMU chunk before acknowledging it", async () => {
+    const response = await post(app, "/api/ingest/zos-imu", {
+      headers: { Authorization: `Bearer ${validToken}` },
+      rawBody: true,
+      body: {
+        version: 1,
+        batchId: "segment-integration:0:40",
+        source: { connectionType: "zepp", installId: "install-integration" },
+        events: [
+          {
+            eventId: "segment-integration:0:40",
+            createdAt: "2024-07-03T10:48:20.040Z",
+            payload: {
+              segmentId: "segment-integration",
+              sessionStartMs: 1_720_000_000_000,
+              hasGyroscope: false,
+              samples: [
+                { tMs: 0, ax: 1, ay: 2, az: 3, gx: 0, gy: 0, gz: 0 },
+                { tMs: 40, ax: 4, ay: 5, az: 6, gx: 0, gy: 0, gz: 0 },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(JSON.parse(response.body)).toEqual({
+      status: "ok",
+      acceptedEventIds: ["segment-integration:0:40"],
+      rejected: [],
+    });
+    expect(publishedMetricRows).toEqual([
+      expect.objectContaining({
+        channel: "accel",
+        deviceId: "zepp:install-integration",
+        vector: [1, 2, 3],
+      }),
+      expect.objectContaining({
+        channel: "accel",
+        deviceId: "zepp:install-integration",
+        vector: [4, 5, 6],
+      }),
+    ]);
+  });
+
   it("rejects activity with invalid dates at schema validation", async () => {
     const res = await post(app, "/api/ingest/zos-health", {
       headers: { Authorization: `Bearer ${validToken}` },
@@ -737,7 +802,7 @@ describe("POST /api/ingest/zos-health", () => {
     expect(rows.length).toBe(0);
   });
 
-  it("stores daily metrics only for valid date keys", async () => {
+  it("rejects the event without partially storing valid daily metric keys", async () => {
     const res = await post(app, "/api/ingest/zos-health", {
       headers: { Authorization: `Bearer ${validToken}` },
       body: {
@@ -747,16 +812,15 @@ describe("POST /api/ingest/zos-health", () => {
         },
       },
     });
-    expect(res.status).toBe(200);
+    expectRejectedInvalidDailyMetricDates(res, ["not-a-valid-date"]);
 
     const rows = await testCtx.db.execute(
       sql`SELECT date, steps FROM fitness.daily_metrics WHERE user_id = ${TEST_USER_ID}`,
     );
-    expect(rows.length).toBe(1);
-    expect(rows[0].steps).toBe(9000);
+    expect(rows.length).toBe(0);
   });
 
-  it("stores no daily metrics when all date keys are invalid", async () => {
+  it("rejects the event when all daily metric date keys are invalid", async () => {
     const res = await post(app, "/api/ingest/zos-health", {
       headers: { Authorization: `Bearer ${validToken}` },
       body: {
@@ -766,7 +830,7 @@ describe("POST /api/ingest/zos-health", () => {
         },
       },
     });
-    expect(res.status).toBe(200);
+    expectRejectedInvalidDailyMetricDates(res, ["also-not-a-date", "not-a-date"]);
 
     const rows = await testCtx.db.execute(
       sql`SELECT * FROM fitness.daily_metrics WHERE user_id = ${TEST_USER_ID}`,

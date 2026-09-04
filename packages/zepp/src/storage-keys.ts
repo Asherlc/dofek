@@ -22,6 +22,8 @@ export const STORAGE_KEYS = {
   HEALTH_SYNC_STATUS: "health_sync_status",
   LAST_HEALTH_SYNC: "last_health_sync",
   PHONE_HEALTH_OUTBOX: "phone_health_outbox",
+  PHONE_IMU_OUTBOX: "phone_imu_outbox",
+  PHONE_IMU_FILES: "phone_imu_files",
   TELEMETRY_BUFFER: "telemetry_buffer",
   TELEMETRY_INSTALL_ID: "telemetry_install_id",
 } as const;
@@ -34,8 +36,12 @@ export const FREQ_MODE_LABELS: Record<number, string> = {
   2: "HIGH",
 };
 
-export const SESSION_FILE_A = "data://imu/session_a.bin";
-export const SESSION_FILE_B = "data://imu/session_b.bin";
+export const SESSION_FILE_A = "data://imu/normal_a.bin";
+export const SESSION_FILE_B = "data://imu/normal_b.bin";
+export const WORKOUT_SESSION_FILE_A = "data://imu/workout_a.bin";
+export const WORKOUT_SESSION_FILE_B = "data://imu/workout_b.bin";
+export const NORMAL_IMU_TRANSFER_FILE = "data://imu/normal_transfers.json";
+export const WORKOUT_IMU_TRANSFER_FILE = "data://imu/workout_transfers.json";
 export const SESSION_META_FILE = "data://imu/session_meta.json";
 export const BACKGROUND_HEALTH_FILE = "data://health/background.json";
 export const HEALTH_SERVICE_FILE = "app-service/health_service";

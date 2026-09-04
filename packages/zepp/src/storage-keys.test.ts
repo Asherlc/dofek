@@ -17,8 +17,8 @@ describe("Zepp storage keys", () => {
       1: "NORMAL",
       2: "HIGH",
     });
-    expect(SESSION_FILE_A).toBe("data://imu/session_a.bin");
-    expect(SESSION_FILE_B).toBe("data://imu/session_b.bin");
+    expect(SESSION_FILE_A).toBe("data://imu/normal_a.bin");
+    expect(SESSION_FILE_B).toBe("data://imu/normal_b.bin");
     expect(SESSION_META_FILE).toBe("data://imu/session_meta.json");
     expect(HEALTH_SERVICE_FILE).toBe("app-service/health_service");
     expect(FLUSH_SAMPLE_THRESHOLD).toBe(64);

@@ -26,7 +26,7 @@ Configured in `app.json` as screen-width target groups.
 │  • dual files permit record/transfer overlap  │
 ├───────────────────────────────────────────────┤
 │ App Service (app-service/health_service.ts)   │
-│  • persists and delivers health/minute        │
+│  • persists low-power health each minute      │
 │  • reconciles completed workout history       │
 │  • CANNOT access IMU sensors (platform limit) │
 ├───────────────────────────────────────────────┤
@@ -38,8 +38,8 @@ Configured in `app.json` as screen-width target groups.
                         ▼
 ┌──────────────────── Phone ────────────────────┐
 │ Side Service (app-side/index.ts)              │
-│  • onReceivedFile → saves export path         │
-│  • uploads health summaries to Dofek          │
+│  • durably registers received motion files    │
+│  • uploads health and bounded motion chunks   │
 │  • pairs QR/short code or password login      │
 │ Settings App (setting/index.ts)               │
 │  • deliberate start/stop, preferences, export │
@@ -47,11 +47,11 @@ Configured in `app.json` as screen-width target groups.
 └───────────────────────────────────────────────┘
 ```
 
-The separately packaged Workout Extension runs inside Zepp's system Workout app on API_LEVEL 3.6+ devices. While its widget is focused, it automatically captures accelerometer data, gyroscope data when available, and live values exposed by `getSportData()`—speed, pace, distance, duration, cadence, altitude, ascent, vertical speed, and supported count/downhill fields—plus current heart rate. It intentionally excludes device-estimated calories. Live metric samples are durably batched once per minute and retried after transient phone/network failures. Motion data uses the same collector, binary format, display lease, and BLE file receiver as the normal app, with alternating files so one completed segment can transfer while the next records. Zepp pauses extension callbacks while its page is not focused, so the extension stops its motion segment on pause and starts a new one on resume ([Workout Extension lifecycle](https://docs.zepp.com/docs/guides/workout-extension/quick-start/), [`getSportData()`](https://docs.zepp.com/docs/reference/device-app-api/newAPI/app-access/getSportData/)).
+The separately packaged Workout Extension runs inside Zepp's system Workout app on API_LEVEL 3.6+ devices. While its widget is focused, it automatically captures accelerometer data, gyroscope data when available, and live values exposed by `getSportData()`—speed, pace, distance, duration, cadence, altitude, ascent, vertical speed, and supported count/downhill fields—plus current heart rate. It intentionally excludes device-estimated calories. Live metric samples are durably batched once per minute and retried after transient phone/network failures. Motion data uses the same collector, binary format, display lease, persisted transfer manifest, phone outbox, and BLE file receiver as the normal app, with separate alternating files so one completed segment can transfer while the next records. Zepp pauses extension callbacks while its page is not focused, so the extension stops its motion segment on pause and starts a new one on resume ([Workout Extension lifecycle](https://docs.zepp.com/docs/guides/workout-extension/quick-start/), [`getSportData()`](https://docs.zepp.com/docs/reference/device-app-api/newAPI/app-access/getSportData/)).
 
 ### Background collection
 
-The normal watch app starts a continuously running App Service after the user grants `device:os.bg_service`. The service uses `Time.onPerMinute()`—which Zepp supports even though ordinary `setTimeout`/`setInterval` calls are unavailable—to persist minute-level heart rate, blood oxygen, body temperature, stress, and completed workout history. After each collection it attempts to deliver the durable rolling seven-day outbox through Side Service messaging; it removes only event IDs acknowledged by the server. Opening the foreground app provides a second drain path for the same outbox, and stable event IDs make either path idempotent. On API_LEVEL 4.0+ watches, `reload: true` also asks Zepp to restart the service after system restarts, power-mode changes, app updates, and related system-state changes; API_LEVEL 3.x watches restart collection whenever Dofek is reopened. Accelerometer, gyroscope, and geolocation remain foreground-only because Zepp explicitly blocks high-power sensors in App Service ([App Service capabilities and limitations](https://docs.zepp.com/docs/guides/framework/device/app-service/), [App Service `start`](https://docs.zepp.com/docs/reference/device-app-api/newAPI/app-service/start/)).
+After the user grants `device:os.bg_service`, the normal watch app keeps a continuously running App Service while its UI is closed. The service uses `Time.onPerMinute()`—which Zepp supports even though ordinary `setTimeout`/`setInterval` calls are unavailable—to persist minute-level heart rate, blood oxygen, body temperature, stress, and completed workout history. It does not claim an unverified App Service-to-phone messaging path. Opening Dofek stops the service asynchronously before the foreground page reads or drains that outbox; closing the page restarts it. This single-owner handoff prevents App Service and page read-modify-write operations from overwriting one another. On API_LEVEL 4.0+ watches, `reload: true` asks Zepp to restart the service after documented system-state changes. Accelerometer, gyroscope, and geolocation remain foreground-only because Zepp explicitly blocks high-power sensors in App Service ([App Service capabilities and limitations](https://docs.zepp.com/docs/guides/framework/device/app-service/), [App Service `start`](https://docs.zepp.com/docs/reference/device-app-api/newAPI/app-service/start/), [App Service `stop`](https://docs.zepp.com/docs/reference/device-app-api/newAPI/app-service/stop/)).
 
 ### Motion capture and battery behavior
 
@@ -61,7 +61,7 @@ High-rate motion capture is deliberately tied to visible, active UI lifecycles. 
 
 ### Why TransferFile instead of BLE messaging?
 
-Bulk IMU logs are megabytes, while BLE messaging is oriented toward small binary payloads and manual framing. **TransferFile** (API 3.0+) provides queued file transfer, progress events, and completion/error states — better backpressure handling for large exports. Control commands (start/stop/export) still use lightweight Side Service ↔ Device App messages via `@zeppos/zml`.
+Bulk IMU logs are megabytes, while BLE messaging is oriented toward bounded payloads and manual framing. **TransferFile** (API 3.0+) provides queued file transfer, progress events, and completion/error states for a redundant binary backup. Each completed file slot is recorded in a durable watch manifest before transfer and restored on restart; the phone durably registers the received path. During a connected session, the shared collector also sends small versioned chunks through the Side Service's durable phone outbox, which removes them only after the server acknowledges persistence. The binary file remains a local backup rather than depending on an undocumented Side Service file-reading API ([TransferFile](https://docs.zepp.com/docs/reference/device-app-api/newAPI/transfer-file/TransferFile/), [Side Service Fetch API](https://docs.zepp.com/docs/v2/reference/side-service-api/fetch/)).
 
 ### Documented platform limits (called out in code)
 

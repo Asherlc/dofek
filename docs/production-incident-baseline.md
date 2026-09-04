@@ -23402,3 +23402,12 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   device, open the Settings page in the current Zepp mobile app, upload the new
   device-shaped previews, and resubmit the application. Store approval remains
   external to repository validation.
+
+## 2026-09-04 — Local validation found a repeatedly restarting ClickHouse container
+
+- **Status:** Unresolved local-infrastructure issue; Zepp integration coverage completed during a healthy interval.
+- **Symptoms / impact:** The first local run of `pnpm test:integration packages/server/src/routes/ingest-zos-health.integration.test.ts` stopped during dependency startup because the workspace ClickHouse container was unhealthy. A later repository-wide analytics lint lost the same container's HTTP connection while dbt was compiling. There was no production or user impact.
+- **Evidence / root cause:** The exact failed integration setup step was the workspace Compose wrapper's `docker compose ... up -d --wait --wait-timeout 180 db clickhouse redis redpanda`; its first fatal line was `container sordid-robin-clickhouse-1 is unhealthy`. The analytics lint's first fatal line was `RemoteDisconnected('Remote end closed connection without response')` for `http://127.0.0.1:57379`. Docker inspection showed `RestartCount: 22`, `OOMKilled: false`, and health probes timing out or receiving connection refusals. ClickHouse's internal log showed client disconnect errors and ordinary startup warnings, but no server-fatal line explaining the clean exits, so the restart trigger remains unknown. Docker documents that `compose up --wait` waits for services to become running or healthy before succeeding ([Docker Compose reference](https://docs.docker.com/reference/cli/docker/compose/up/)).
+- **Fix / mitigation:** No retry loop, timeout increase, restart, cleanup, or runtime change was added. The Zepp integration suite was rerun once a read-only health check found all dependencies healthy.
+- **Validation:** A final rerun started with all four workspace dependencies healthy and passed all 43 Zepp health/IMU-ingest integration tests in 63.71 seconds. The repository source/policy lint phase also passed all 3,063 files; only the earlier ClickHouse-dependent analytics SQL phase was interrupted.
+- **Remaining risk / follow-up:** Identify which local process is sending the container clean-stop signal or otherwise causing restarts before changing Compose behavior. Capture Docker events and the main ClickHouse log across the next exit; do not add startup retries without causal evidence.

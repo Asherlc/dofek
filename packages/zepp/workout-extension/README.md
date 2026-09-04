@@ -23,8 +23,13 @@ It also starts a foreground motion segment immediately on focus. The shared IMU
 controller captures accelerometer samples and automatically adds gyroscope
 samples when the watch exposes that sensor. The extension has no gyroscope
 toggle. It uses the normal app's binary format, chunked file writer, BLE file
-receiver, and display lease, with two alternating file slots so a completed
-segment can transfer while collection resumes. The display lease uses Zepp's
+receiver, durable phone upload outbox, and display lease, with its own two
+alternating file slots so a completed segment can transfer while collection
+resumes. Pending slot metadata is persisted before transfer and restored before
+either slot can be reset after a widget restart. Connected sessions also send
+bounded, versioned sample chunks through the same server ingestion path used by
+the normal app; the transferred binary remains registered on the phone as a
+redundant local backup. The display lease uses Zepp's
 documented screen-off controls and is always released when the segment stops
 ([`pauseDropWristScreenOff`](https://docs.zepp.com/docs/v2/reference/device-app-api/newAPI/display/pauseDropWristScreenOff/),
 [`resetDropWristScreenOff`](https://docs.zepp.com/docs/v2/reference/device-app-api/newAPI/display/resetDropWristScreenOff/)).
@@ -46,8 +51,8 @@ in the [official lifecycle](https://docs.zepp.com/docs/guides/workout-extension/
 The same handlers start and finalize motion segments; the extension does not
 and cannot keep high-rate IMU capture active after its widget loses focus.
 
-The build reuses the parent package's `app-side/index.ts` for authentication and
-server requests. That Side Service runs in the Zepp phone app and can
+The build reuses the parent package's `app-side/index.ts` for authentication,
+durable motion/health outboxes, and server requests. That Side Service runs in the Zepp phone app and can
 communicate with both the watch app and a server, as documented in Zepp's
 [Side Service introduction](https://docs.zepp.com/docs/guides/framework/side-service/intro/).
 The Zepp phone Settings App can create a QR/short-code pairing challenge or

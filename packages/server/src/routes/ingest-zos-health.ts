@@ -166,6 +166,23 @@ const healthEnvelopeSchema = z.object({
     .max(500),
 });
 
+const imuSampleSchema = z.object({
+  tMs: z.number().int().nonnegative(),
+  ax: z.number().finite(),
+  ay: z.number().finite(),
+  az: z.number().finite(),
+  gx: z.number().finite(),
+  gy: z.number().finite(),
+  gz: z.number().finite(),
+});
+
+const imuPayloadSchema = z.object({
+  segmentId: z.string().trim().min(1),
+  sessionStartMs: z.number().int().nonnegative(),
+  hasGyroscope: z.boolean(),
+  samples: z.array(imuSampleSchema).min(1).max(100),
+});
+
 type IngestPayload = z.infer<typeof ingestPayloadSchema>;
 type RejectedHealthEvent = {
   eventId: string;
@@ -644,6 +661,90 @@ export function createIngestZosHealthRouter(deps: {
       captureException(error);
       logger.error(`[ingest-zos] Failed to ingest health data: ${error}`);
       sendJson(res, 500, { error: "Failed to ingest health data." });
+    }
+  });
+
+  router.post("/zos-imu", express.json(), async (req, res) => {
+    const token = bearerTokenFromHeader(req.headers.authorization);
+    if (token === null) {
+      sendJson(res, 401, { error: "Dofek connection is required." });
+      return;
+    }
+
+    let userId: string;
+    try {
+      const validatedUserId = await validateCompanionToken(deps.db, token);
+      if (!validatedUserId) {
+        sendJson(res, 401, { error: "Invalid or revoked Dofek connection." });
+        return;
+      }
+      userId = validatedUserId;
+    } catch (error) {
+      captureException(error);
+      logger.error(`[ingest-zos-imu] Token validation failed: ${error}`);
+      sendJson(res, 500, { error: "Failed to validate Dofek connection." });
+      return;
+    }
+
+    const envelopeResult = healthEnvelopeSchema.safeParse(req.body);
+    if (!envelopeResult.success) {
+      sendJson(res, 400, { error: "Invalid envelope", details: envelopeResult.error.flatten() });
+      return;
+    }
+
+    const rejected: RejectedHealthEvent[] = [];
+    const acceptedCandidates: Array<{
+      eventId: string;
+      payload: z.infer<typeof imuPayloadSchema>;
+    }> = [];
+    for (const event of envelopeResult.data.events) {
+      const payloadResult = imuPayloadSchema.safeParse(event.payload);
+      if (!payloadResult.success) {
+        rejected.push({ eventId: event.eventId, issues: validationIssues(payloadResult.error) });
+      } else {
+        acceptedCandidates.push({ eventId: event.eventId, payload: payloadResult.data });
+      }
+    }
+
+    if (acceptedCandidates.length === 0) {
+      sendJson(res, 200, { status: "ok", acceptedEventIds: [], rejected });
+      return;
+    }
+
+    try {
+      await deps.db.transaction(async (database) => {
+        await ensureProvider(database, PROVIDER_ID, PROVIDER_NAME, undefined, userId);
+        const rows = acceptedCandidates.flatMap(({ eventId, payload }) =>
+          payload.samples.map((sample) => {
+            const recordedAt = new Date(payload.sessionStartMs + sample.tMs).toISOString();
+            return {
+              recordedAt,
+              userId,
+              providerId: PROVIDER_ID,
+              externalId: `${PROVIDER_ID}:${envelopeResult.data.source.installId}:${eventId}:${sample.tMs}`,
+              deviceId: `${envelopeResult.data.source.connectionType}:${envelopeResult.data.source.installId}`,
+              sourceType: SOURCE_TYPE_API,
+              channel: payload.hasGyroscope ? "imu" : "accel",
+              vector: payload.hasGyroscope
+                ? [sample.ax, sample.ay, sample.az, sample.gx, sample.gy, sample.gz]
+                : [sample.ax, sample.ay, sample.az],
+            } satisfies MetricStreamRowInput;
+          }),
+        );
+        const publisher =
+          deps.metricStreamPublisher ?? (await getDefaultMetricStreamEventPublisher());
+        await writeMetricStreamRows({ database, publisher, rows });
+      });
+      await invalidateAllUserQueries(userId);
+      sendJson(res, 200, {
+        status: "ok",
+        acceptedEventIds: acceptedCandidates.map((event) => event.eventId),
+        rejected,
+      });
+    } catch (error) {
+      captureException(error);
+      logger.error(`[ingest-zos-imu] Failed to ingest IMU data: ${error}`);
+      sendJson(res, 500, { error: "Failed to ingest IMU data." });
     }
   });
 

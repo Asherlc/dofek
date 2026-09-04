@@ -9,10 +9,14 @@ import {
   parseHealthUploadResponse,
 } from "../src/health-contract.ts";
 import type { HealthUploadPayload } from "../src/health-upload.ts";
+import { type ImuChunkPayload, parseImuEnvelope } from "../src/imu-upload.ts";
 import { LatestOperation } from "../src/latest-operation.ts";
 import { shouldRetryPairingPollFailure } from "../src/pairing-poll.ts";
 import { persistHealthEnvelope } from "../src/phone-health-outbox.ts";
 import { drainPhoneHealthOutbox } from "../src/phone-health-sync.ts";
+import { persistReceivedImuFile } from "../src/phone-imu-files.ts";
+import { persistImuEnvelope } from "../src/phone-imu-outbox.ts";
+import { drainPhoneImuOutbox } from "../src/phone-imu-sync.ts";
 import {
   clearBufferedTelemetryEvents,
   flushTelemetryEvents,
@@ -141,6 +145,30 @@ async function postHealthEnvelope(
   return parseHealthUploadResponse(summary.body);
 }
 
+async function postImuEnvelope(
+  envelope: HealthEnvelopeV1<ImuChunkPayload>,
+): Promise<HealthUploadResponse> {
+  const serverUrl = getStoredServerUrl();
+  const apiToken = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN)?.trim();
+  if (!apiToken) {
+    throw new Error("Connect Dofek from Zepp settings first.");
+  }
+  const response = await fetch({
+    url: `${serverUrl.replace(/\/$/, "")}/api/ingest/zos-imu`,
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiToken}`,
+    },
+    body: JSON.stringify(envelope),
+  });
+  const summary = summarizeZeppFetchResponse(response);
+  if (!summary.ok) {
+    throw new Error(summary.errorMessage ?? "IMU data upload failed.");
+  }
+  return parseHealthUploadResponse(summary.body);
+}
+
 const healthSyncCoordinator = new SyncCoordinator(async (reasons) => {
   setHealthSyncStatus({ state: "syncing", reasons });
   try {
@@ -151,6 +179,14 @@ const healthSyncCoordinator = new SyncCoordinator(async (reasons) => {
     const message = error instanceof Error ? error.message : "Health data upload failed.";
     reportSideException(error, { category: "health-upload", reasons });
     setHealthSyncStatus({ state: "error", reason: message });
+  }
+});
+
+const imuSyncCoordinator = new SyncCoordinator(async (reasons) => {
+  try {
+    await drainPhoneImuOutbox(settings.settingsStorage, postImuEnvelope);
+  } catch (error) {
+    reportSideException(error, { category: "imu-upload", reasons });
   }
 });
 
@@ -239,6 +275,7 @@ AppSideService(
         reportSideException(error, { category: "request-watch-health", reason });
       }
       void healthSyncCoordinator.requestDrain(reason);
+      void imuSyncCoordinator.requestDrain(reason);
     },
 
     handleSettingsChange(key: string, newValue: unknown) {
@@ -642,6 +679,22 @@ AppSideService(
             return;
           }
           settings.settingsStorage.setItem(STORAGE_KEYS.LAST_EXPORT_PATH, exportPath);
+          const segmentId =
+            typeof file.params?.segmentId === "string" ? file.params.segmentId.trim() : "";
+          const source = file.params?.source;
+          if (segmentId && (source === "zepp" || source === "zepp-workout")) {
+            try {
+              persistReceivedImuFile(settings.settingsStorage, {
+                segmentId,
+                source,
+                path: exportPath,
+                sampleCount: Number(file.params?.sampleCount ?? 0),
+                receivedAt: new Date().toISOString(),
+              });
+            } catch (error) {
+              reportSideException(error, { category: "imu-file-persistence", segmentId });
+            }
+          }
           settings.settingsStorage.setItem(
             STORAGE_KEYS.TRANSFER_PROGRESS,
             JSON.stringify({
@@ -760,6 +813,19 @@ AppSideService(
           void healthSyncCoordinator.requestDrain("watch-receipt");
         } catch (error) {
           reportSideException(error, { category: "health-receipt" });
+          res(error, null);
+        }
+        return;
+      }
+
+      if (method === "imu.uploadChunk") {
+        try {
+          const envelope = parseImuEnvelope(params.envelope);
+          const persisted = persistImuEnvelope(settings.settingsStorage, envelope);
+          res(null, { status: "ok", ...persisted, rejected: [] });
+          void imuSyncCoordinator.requestDrain("watch-imu-receipt");
+        } catch (error) {
+          reportSideException(error, { category: "imu-receipt" });
           res(error, null);
         }
         return;

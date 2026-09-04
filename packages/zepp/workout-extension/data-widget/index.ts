@@ -16,12 +16,19 @@ import {
   type ImuSegmentResult,
   type ImuSessionController,
 } from "../../src/imu-session-controller.ts";
+import {
+  clearPendingImuTransfer,
+  type ImuFileSlot,
+  readPendingImuTransfers,
+  savePendingImuTransfer,
+} from "../../src/imu-transfer-storage.ts";
 import { ensureInstallId } from "../../src/install-id.ts";
 import { appendSamples, finalizeSessionFile, resetSessionFile } from "../../src/session-file.ts";
 import {
   FLUSH_SAMPLE_THRESHOLD,
-  SESSION_FILE_A,
-  SESSION_FILE_B,
+  WORKOUT_IMU_TRANSFER_FILE,
+  WORKOUT_SESSION_FILE_A,
+  WORKOUT_SESSION_FILE_B,
 } from "../../src/storage-keys.ts";
 import {
   createWorkoutHealthEnvelope,
@@ -38,12 +45,11 @@ import {
   removeUploadedLiveWorkoutSnapshots,
   writeLiveWorkoutBuffer,
 } from "../../src/workout-live-storage.ts";
+import { deliverImuChunk } from "../../src/watch-imu-chunk-sync.ts";
 
 const logger = Logger.getLogger("dofek-workout");
 const SAMPLE_INTERVAL_MS = 10_000;
 const UPLOAD_BATCH_SIZE = 6;
-type ImuFileSlot = "A" | "B";
-
 function nullable<T>(): T | null {
   return null;
 }
@@ -72,6 +78,14 @@ DataWidget(
     build() {
       const persistedBuffer = readLiveWorkoutBuffer();
       this.state.pendingBatches = persistedBuffer.batches;
+      try {
+        for (const transfer of readPendingImuTransfers(WORKOUT_IMU_TRANSFER_FILE)) {
+          if (transfer.slot === "A") this.state.pendingImuA = transfer;
+          else this.state.pendingImuB = transfer;
+        }
+      } catch (error) {
+        this.reportError(error, "workout-imu-restore");
+      }
       createWidget(widget.TEXT, {
         x: px(20),
         y: px(80),
@@ -96,6 +110,7 @@ DataWidget(
       });
       this.state.focused = true;
       this.startCollection();
+      this.retryImuTransfers();
       this.startImuSegment();
     },
 
@@ -204,7 +219,7 @@ DataWidget(
     },
 
     imuPath(slot: ImuFileSlot) {
-      return slot === "A" ? SESSION_FILE_A : SESSION_FILE_B;
+      return slot === "A" ? WORKOUT_SESSION_FILE_A : WORKOUT_SESSION_FILE_B;
     },
 
     pendingImu(slot: ImuFileSlot) {
@@ -217,6 +232,8 @@ DataWidget(
       } else {
         this.state.pendingImuB = result;
       }
+      if (result) savePendingImuTransfer(WORKOUT_IMU_TRANSFER_FILE, { ...result, slot });
+      else clearPendingImuTransfer(WORKOUT_IMU_TRANSFER_FILE, slot);
     },
 
     isImuTransferring(slot: ImuFileSlot) {
@@ -263,6 +280,20 @@ DataWidget(
           reset: resetSessionFile,
           append: appendSamples,
           finalize: finalizeSessionFile,
+        },
+        onChunk: ({ sessionStartMs, hasGyroscope, samples }) => {
+          const installId = ensureInstallId(settings.settingsStorage);
+          void deliverImuChunk(
+            {
+              connectionType: "zepp-workout",
+              installId,
+              segmentId: `${installId}:workout-imu:${sessionStartMs}`,
+              sessionStartMs,
+              hasGyroscope,
+              samples,
+            },
+            (envelope) => this.request({ method: "imu.uploadChunk", params: { envelope } }),
+          ).catch((error: unknown) => this.reportError(error, "workout-imu-chunk"));
         },
         onError: (error) => this.reportError(error, "workout-imu"),
       });

@@ -55,6 +55,13 @@ import {
   createImuSessionController,
   type ImuSessionController,
 } from "../src/imu-session-controller.ts";
+import {
+  clearPendingImuTransfer,
+  type ImuFileSlot,
+  type PendingImuTransfer,
+  readPendingImuTransfers,
+  savePendingImuTransfer,
+} from "../src/imu-transfer-storage.ts";
 import { createRoundLoginLayout } from "../src/round-layout.ts";
 import {
   createSessionCall,
@@ -75,26 +82,22 @@ import {
   AUTO_TRANSFER_SAMPLE_COUNT,
   FLUSH_SAMPLE_THRESHOLD,
   HEALTH_SERVICE_FILE,
+  NORMAL_IMU_TRANSFER_FILE,
   SESSION_FILE_A,
   SESSION_FILE_B,
   SESSION_META_FILE,
 } from "../src/storage-keys.ts";
 import { deliverWatchHealthOutbox } from "../src/watch-health-sync.ts";
+import { deliverImuChunk } from "../src/watch-imu-chunk-sync.ts";
 
-type ActiveFileSlot = "A" | "B";
 type TransferTask = {
   on: (event: string, cb: (event: { data: Record<string, unknown> }) => void) => void;
-};
-type FailedTransfer = {
-  slot: ActiveFileSlot;
-  sampleCount: number;
-  observedHzX100: number;
 };
 
 function nullable<T>(): T | null {
   return null;
 }
-function initialActiveFile(): ActiveFileSlot {
+function initialActiveFile(): ImuFileSlot {
   return "A";
 }
 
@@ -194,7 +197,8 @@ Page(
       imuController: nullable<ImuSessionController>(),
       hasGyro: false,
       transferTask: nullable<TransferTask>(),
-      failedTransfer: nullable<FailedTransfer>(),
+      pendingImuA: nullable<PendingImuTransfer>(),
+      pendingImuB: nullable<PendingImuTransfer>(),
       pendingManualExport: false,
       sampleCount: 0,
       observedHzX100: 0,
@@ -210,8 +214,10 @@ Page(
 
     onInit() {
       resetPairingQrReference();
+      this.restorePendingImuTransfers();
       this.acquireHealthOwnership();
       this.refreshPreferences(true);
+      this.retryPendingImuTransfer();
     },
 
     build() {
@@ -398,8 +404,37 @@ Page(
         });
     },
 
-    filePathForSlot(slot: ActiveFileSlot) {
+    filePathForSlot(slot: ImuFileSlot) {
       return slot === "A" ? SESSION_FILE_A : SESSION_FILE_B;
+    },
+
+    pendingImu(slot: ImuFileSlot) {
+      return slot === "A" ? this.state.pendingImuA : this.state.pendingImuB;
+    },
+
+    setPendingImu(slot: ImuFileSlot, transfer: PendingImuTransfer | null) {
+      if (slot === "A") this.state.pendingImuA = transfer;
+      else this.state.pendingImuB = transfer;
+      if (transfer) savePendingImuTransfer(NORMAL_IMU_TRANSFER_FILE, transfer);
+      else clearPendingImuTransfer(NORMAL_IMU_TRANSFER_FILE, slot);
+    },
+
+    restorePendingImuTransfers() {
+      try {
+        for (const transfer of readPendingImuTransfers(NORMAL_IMU_TRANSFER_FILE)) {
+          if (transfer.slot === "A") this.state.pendingImuA = transfer;
+          else this.state.pendingImuB = transfer;
+        }
+      } catch (error) {
+        captureException(error, { operation: "restore-imu-transfers" });
+        logger.error("IMU transfer restore failed %j", error);
+      }
+    },
+
+    retryPendingImuTransfer() {
+      if (this.state.transferTask) return;
+      const pending = this.state.pendingImuA ?? this.state.pendingImuB;
+      if (pending) this.startTransfer(pending);
     },
 
     inactiveFileSlot() {
@@ -415,7 +450,17 @@ Page(
         return;
       }
 
-      this.state.activeFile = "A";
+      const availableSlot: ImuFileSlot | null = !this.state.pendingImuA
+        ? "A"
+        : !this.state.pendingImuB
+          ? "B"
+          : null;
+      if (!availableSlot) {
+        showToast({ content: "Motion files are waiting to send" });
+        renderHint("Send pending motion files\nbefore recording");
+        return;
+      }
+      this.state.activeFile = availableSlot;
       const controller = createImuSessionController({
         path: this.activeFilePath(),
         requestedFreqModeIndex: this.state.freqModeIndex,
@@ -433,6 +478,24 @@ Page(
           reset: resetSessionFile,
           append: appendSamples,
           finalize: finalizeSessionFile,
+        },
+        onChunk: ({ sessionStartMs, hasGyroscope, samples }) => {
+          const installId = ensureWatchInstallId();
+          const segmentId = `${installId}:normal-imu:${sessionStartMs}`;
+          deliverImuChunk(
+            {
+              connectionType: "zepp",
+              installId,
+              segmentId,
+              sessionStartMs,
+              hasGyroscope,
+              samples,
+            },
+            (envelope) => this.request({ method: "imu.uploadChunk", params: { envelope } }),
+          ).catch((error: unknown) => {
+            captureException(error, { operation: "upload-imu-chunk" });
+            logger.error("IMU chunk delivery failed %j", error);
+          });
         },
         onProgress: createSessionProgressHandler({
           updateWatch: (stats) => this.handleRate(stats),
@@ -615,6 +678,10 @@ Page(
       if (completed) {
         this.state.sampleCount = completed.sampleCount;
         this.state.observedHzX100 = completed.observedHzX100;
+        this.setPendingImu(this.state.activeFile, {
+          ...completed,
+          slot: this.state.activeFile,
+        });
       }
       this.state.imuController = null;
       this.writeMetaFile();
@@ -641,7 +708,7 @@ Page(
       const outgoingPath = this.filePathForSlot(outgoingSlot);
       const nextSlot = this.inactiveFileSlot();
 
-      if (this.state.failedTransfer?.slot === nextSlot) {
+      if (this.pendingImu(nextSlot)) {
         showToast({ content: "Send failed; recording stopped" });
         this.stopLogging();
         return;
@@ -661,12 +728,9 @@ Page(
       this.publishSessionStatus(SESSION_STATE.RECORDING);
       this.writeMetaFile();
 
-      this.startTransfer({
-        path: outgoingPath,
-        sampleCount: completed.sampleCount,
-        observedHzX100: completed.observedHzX100,
-        failedSlot: outgoingSlot,
-      });
+      const transfer = { ...completed, path: outgoingPath, slot: outgoingSlot };
+      this.setPendingImu(outgoingSlot, transfer);
+      this.startTransfer(transfer);
     },
 
     transferStoppedSession() {
@@ -674,44 +738,25 @@ Page(
         return;
       }
 
-      const failedTransfer = this.state.failedTransfer;
-      if (failedTransfer) {
-        this.startTransfer({
-          path: this.filePathForSlot(failedTransfer.slot),
-          sampleCount: failedTransfer.sampleCount,
-          observedHzX100: failedTransfer.observedHzX100,
-          failedSlot: failedTransfer.slot,
-        });
-        return;
-      }
-
-      this.writeMetaFile();
-
-      this.startTransfer({
-        path: this.activeFilePath(),
-        sampleCount: this.state.sampleCount,
-        observedHzX100: this.state.observedHzX100,
-        failedSlot: this.state.activeFile,
-      });
+      this.retryPendingImuTransfer();
     },
 
-    startTransfer({
-      path,
-      sampleCount,
-      observedHzX100,
-      failedSlot,
-    }: {
-      path: string;
-      sampleCount: number;
-      observedHzX100: number;
-      failedSlot: ActiveFileSlot | null;
-    }) {
-      // Transfer the outgoing file in the background
-      const task = this.sendFile(path, {
-        type: "imu-session",
-        sampleCount: String(sampleCount),
-        observedHzX100: String(observedHzX100),
-      });
+    startTransfer(transfer: PendingImuTransfer) {
+      const { path, sampleCount, observedHzX100, slot } = transfer;
+      let task: TransferTask;
+      try {
+        task = this.sendFile(path, {
+          type: "imu-session",
+          source: "zepp",
+          segmentId: `${ensureWatchInstallId()}:normal-imu:${transfer.sessionStartMs}`,
+          sampleCount: String(sampleCount),
+          observedHzX100: String(observedHzX100),
+        });
+      } catch (error) {
+        captureException(error, { operation: "transfer-imu-file" });
+        logger.error("IMU file transfer failed %j", error);
+        return;
+      }
 
       this.state.transferTask = task;
 
@@ -725,14 +770,13 @@ Page(
       task.on("change", (event: { data: Record<string, unknown> }) => {
         if (String(event.data.readyState) === "transferred") {
           this.state.transferTask = null;
-          if (failedSlot && this.state.failedTransfer?.slot === failedSlot) {
-            this.state.failedTransfer = null;
-          }
+          this.setPendingImu(slot, null);
+          this.retryPendingImuTransfer();
           drainManualExportQueue(
             {
               pendingManualExport: this.state.pendingManualExport,
               logging: this.state.logging,
-              failedTransferPending: Boolean(this.state.failedTransfer),
+              failedTransferPending: Boolean(this.state.pendingImuA || this.state.pendingImuB),
             },
             {
               clearManualExportQueue: () => {
@@ -753,9 +797,6 @@ Page(
 
         if (event.data.readyState === "error") {
           this.state.transferTask = null;
-          if (failedSlot) {
-            this.state.failedTransfer = { slot: failedSlot, sampleCount, observedHzX100 };
-          }
           showToast({ content: "Send failed" });
         }
       });
@@ -841,7 +882,7 @@ Page(
         handleSessionCall(payload, {
           logging: this.state.logging,
           transferInProgress: Boolean(this.state.transferTask),
-          failedTransferPending: Boolean(this.state.failedTransfer),
+          failedTransferPending: Boolean(this.state.pendingImuA || this.state.pendingImuB),
           pendingManualExport: this.state.pendingManualExport,
           applyStartPreferences: (params) => {
             this.state.freqModeIndex = Number(params?.freqModeIndex ?? this.state.freqModeIndex);

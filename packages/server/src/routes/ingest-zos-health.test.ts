@@ -127,11 +127,11 @@ class InProcessRequest extends IncomingMessage {
   override method: string;
   override url: string;
 
-  constructor(socket: Socket, payload: string, headers: IncomingHttpHeaders) {
+  constructor(socket: Socket, payload: string, headers: IncomingHttpHeaders, url: string) {
     super(socket);
     this.headers = headers;
     this.method = "POST";
-    this.url = "/api/ingest/zos-health";
+    this.url = url;
     this.push(payload);
     this.push(null);
   }
@@ -144,6 +144,7 @@ async function post(
   body: unknown,
   headers: Record<string, string> = {},
   rawBody = false,
+  url = "/api/ingest/zos-health",
 ): Promise<{ status: number; body: unknown }> {
   const transportBody = rawBody
     ? body
@@ -161,11 +162,16 @@ async function post(
       };
   const payload = JSON.stringify(transportBody);
   const socket = new InProcessSocket();
-  const request = new InProcessRequest(new Socket(), payload, {
-    "content-type": "application/json",
-    "content-length": Buffer.byteLength(payload).toString(),
-    ...headers,
-  });
+  const request = new InProcessRequest(
+    new Socket(),
+    payload,
+    {
+      "content-type": "application/json",
+      "content-length": Buffer.byteLength(payload).toString(),
+      ...headers,
+    },
+    url,
+  );
 
   const response: ServerResponse = Reflect.construct(ServerResponse, [request]);
   Reflect.apply(response.assignSocket, response, [socket]);
@@ -753,6 +759,61 @@ describe("createIngestZosHealthRouter", () => {
       ],
     });
     expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("accepts versioned Zepp IMU chunks and writes source-attributed vectors", async () => {
+    const { db } = createMockDatabase();
+    const response = await post(
+      createTestApp(db, { publishBatch: vi.fn() }),
+      {
+        version: 1,
+        batchId: "segment-1:0:40",
+        source: { connectionType: "zepp-workout", installId: "install-1" },
+        events: [
+          {
+            eventId: "segment-1:0:40",
+            createdAt: "2024-07-03T09:46:40.040Z",
+            payload: {
+              segmentId: "segment-1",
+              sessionStartMs: 1_720_000_000_000,
+              hasGyroscope: true,
+              samples: [
+                { tMs: 0, ax: 1, ay: 2, az: 3, gx: 4, gy: 5, gz: 6 },
+                { tMs: 40, ax: 7, ay: 8, az: 9, gx: 10, gy: 11, gz: 12 },
+              ],
+            },
+          },
+        ],
+      },
+      { authorization: "Bearer token-123" },
+      true,
+      "/api/ingest/zos-imu",
+    );
+
+    expect(response).toEqual({
+      status: 200,
+      body: {
+        status: "ok",
+        acceptedEventIds: ["segment-1:0:40"],
+        rejected: [],
+      },
+    });
+    expect(routeMocks.writeMetricStreamRows).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rows: [
+          expect.objectContaining({
+            channel: "imu",
+            deviceId: "zepp-workout:install-1",
+            externalId: "amazfit-zepp:install-1:segment-1:0:40:0",
+            vector: [1, 2, 3, 4, 5, 6],
+          }),
+          expect.objectContaining({
+            externalId: "amazfit-zepp:install-1:segment-1:0:40:40",
+            vector: [7, 8, 9, 10, 11, 12],
+          }),
+        ],
+      }),
+    );
   });
 
   it("returns 500 when ingest persistence fails", async () => {

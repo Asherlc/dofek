@@ -33,6 +33,7 @@ function setup(
     finalize: vi.fn(),
   };
   const onError = vi.fn();
+  const onChunk = vi.fn();
   const controller = createImuSessionController({
     path: "data://imu/session_a.bin",
     requestedFreqModeIndex: 1,
@@ -44,6 +45,7 @@ function setup(
       return collector;
     },
     file,
+    onChunk,
     onError,
   });
   const emit = (sample: ImuSample) => {
@@ -54,7 +56,7 @@ function setup(
     if (!collectorOptions?.onStatus) throw new Error("collector status handler missing");
     collectorOptions.onStatus({ sampleCount, observedHzX100 });
   };
-  return { collector, controller, emit, file, lease, onError, status };
+  return { collector, controller, emit, file, lease, onChunk, onError, status };
 }
 
 const sample: ImuSample = { tMs: 1, ax: 1, ay: 2, az: 3, gx: 4, gy: 5, gz: 6 };
@@ -115,6 +117,19 @@ describe("createImuSessionController", () => {
       "data://imu/session_b.bin",
     );
     expect(collector.start).toHaveBeenCalledOnce();
+  });
+
+  it("publishes the same persisted chunk for redundant phone delivery", () => {
+    const { controller, emit, onChunk } = setup();
+    controller.start();
+    emit(sample);
+    emit({ ...sample, tMs: 2 });
+
+    expect(onChunk).toHaveBeenCalledWith({
+      sessionStartMs: 1_720_000_000_000,
+      hasGyroscope: true,
+      samples: [sample, { ...sample, tMs: 2 }],
+    });
   });
 
   it("releases the display lease when session setup fails", () => {

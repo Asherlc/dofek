@@ -5,7 +5,7 @@ import type { LiveWorkoutBatch } from "./workout-live-storage.ts";
 
 type TransferListener = (event: { data: Record<string, unknown> }) => void;
 
-function segmentResult(path = "data://imu/session_a.bin"): ImuSegmentResult {
+function segmentResult(path = "data://imu/workout_a.bin"): ImuSegmentResult {
   return {
     path,
     sampleCount: 120,
@@ -44,6 +44,9 @@ const moduleMocks = vi.hoisted(() => ({
   getSportData: vi.fn(),
   heartRateGetLast: vi.fn(() => 148),
   createImuSessionController: vi.fn(),
+  readPendingImuTransfers: vi.fn(),
+  savePendingImuTransfer: vi.fn(),
+  clearPendingImuTransfer: vi.fn(),
   sendFile: vi.fn(),
 }));
 
@@ -98,6 +101,11 @@ vi.mock("./imu-session-controller.ts", async (importOriginal) => {
     createImuSessionController: moduleMocks.createImuSessionController,
   };
 });
+vi.mock("./imu-transfer-storage.ts", () => ({
+  readPendingImuTransfers: moduleMocks.readPendingImuTransfers,
+  savePendingImuTransfer: moduleMocks.savePendingImuTransfer,
+  clearPendingImuTransfer: moduleMocks.clearPendingImuTransfer,
+}));
 vi.mock("./workout-live.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("./workout-live.ts")>();
   return {
@@ -198,6 +206,7 @@ beforeAll(async () => {
 beforeEach(() => {
   vi.clearAllMocks();
   moduleMocks.readLiveWorkoutBuffer.mockReturnValue({ batches: [] });
+  moduleMocks.readPendingImuTransfers.mockReturnValue([]);
   moduleMocks.createWidget.mockReturnValue({ setProperty: vi.fn() });
   moduleMocks.request.mockImplementation(async (request) =>
     request.method === "health.upload"
@@ -261,7 +270,7 @@ describe("workout extension data widget", () => {
 
     expect(moduleMocks.createImuSessionController).toHaveBeenCalledWith(
       expect.objectContaining({
-        path: "data://imu/session_a.bin",
+        path: "data://imu/workout_a.bin",
         requestedFreqModeIndex: 1,
         displayLease: expect.any(Object),
         createCollector: expect.any(Function),
@@ -292,7 +301,7 @@ describe("workout extension data widget", () => {
     expect(controller.stop).toHaveBeenCalledOnce();
     expect(context.state.pendingImuA).toEqual(segmentResult());
     expect(moduleMocks.sendFile).toHaveBeenCalledOnce();
-    expect(moduleMocks.sendFile).toHaveBeenCalledWith("data://imu/session_a.bin", {
+    expect(moduleMocks.sendFile).toHaveBeenCalledWith("data://imu/workout_a.bin", {
       type: "imu-session",
       source: "zepp-workout",
       segmentId: "install-1:workout-imu:1720000000000",
@@ -302,6 +311,10 @@ describe("workout extension data widget", () => {
 
     listeners.get("change")?.({ data: { readyState: "transferred" } });
     expect(context.state.pendingImuA).toBeNull();
+    expect(moduleMocks.clearPendingImuTransfer).toHaveBeenCalledWith(
+      "data://imu/workout_transfers.json",
+      "A",
+    );
   });
 
   it("alternates files while a prior workout segment is transferring", () => {
@@ -311,9 +324,26 @@ describe("workout extension data widget", () => {
     context.startImuSegment.call(context);
 
     expect(moduleMocks.createImuSessionController).toHaveBeenCalledWith(
-      expect.objectContaining({ path: "data://imu/session_b.bin" }),
+      expect.objectContaining({ path: "data://imu/workout_b.bin" }),
     );
     expect(context.state.activeImuSlot).toBe("B");
+  });
+
+  it("restores and retries a pending motion file before reusing its slot", () => {
+    const restored = { ...segmentResult("data://imu/workout_a.bin"), slot: "A" as const };
+    moduleMocks.readPendingImuTransfers.mockReturnValue([restored]);
+    const context = makeContext();
+    context.startCollection = vi.fn();
+
+    context.build.call(context);
+
+    expect(moduleMocks.sendFile).toHaveBeenCalledWith(
+      "data://imu/workout_a.bin",
+      expect.objectContaining({ segmentId: "install-1:workout-imu:1720000000000" }),
+    );
+    expect(moduleMocks.createImuSessionController).toHaveBeenCalledWith(
+      expect.objectContaining({ path: "data://imu/workout_b.bin" }),
+    );
   });
 
   it("collects, persists, and reports a live snapshot", async () => {

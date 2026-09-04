@@ -23,6 +23,7 @@ interface ImuSessionControllerOptions {
     append(samples: ImuSample[], hasGyro: boolean, path: string): void;
     finalize(sampleCount: number, observedHzX100: number, path: string): void;
   };
+  onChunk?(chunk: { sessionStartMs: number; hasGyroscope: boolean; samples: ImuSample[] }): void;
   onProgress?(stats: { sampleCount: number; observedHzX100: number }): void;
   onError(error: unknown): void;
 }
@@ -104,8 +105,10 @@ export function createImuSessionController(
 
   function flush(finalize: boolean): void {
     if (pending.length > 0 && ready) {
-      options.file.append(pending, ready.hasGyroscope, path);
+      const samples = pending;
+      options.file.append(samples, ready.hasGyroscope, path);
       pending = [];
+      options.onChunk?.({ sessionStartMs, hasGyroscope: ready.hasGyroscope, samples });
     }
     if (finalize) {
       options.file.finalize(sampleCount, observedHzX100, path);
