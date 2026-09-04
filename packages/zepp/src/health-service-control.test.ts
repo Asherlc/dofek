@@ -142,6 +142,21 @@ describe("acquireForegroundHealthOwnership", () => {
     expect(startService).not.toHaveBeenCalled();
   });
 
+  it("requests ownership permission and stops the service after it is granted", async () => {
+    const requestPermission = vi.fn(async () => 2);
+    const stopService = vi.fn(async () => undefined);
+    const ownership = await acquireForegroundHealthOwnership({
+      queryPermission: () => 0,
+      requestPermission,
+      stopService,
+      startService: vi.fn(),
+    });
+
+    expect(ownership.state).toBe("acquired");
+    expect(requestPermission).toHaveBeenCalledOnce();
+    expect(stopService).toHaveBeenCalledOnce();
+  });
+
   it("preserves the last background append before a foreground drain starts", async () => {
     let completeStop: (() => void) | undefined;
     let stored: BackgroundHealthOutbox = appendBackgroundHealthEvents(
@@ -245,6 +260,26 @@ describe("acquireForegroundHealthOwnership", () => {
     });
 
     await expect(ownership.release()).rejects.toBe(restartError);
+  });
+
+  it("returns the same release promise while an asynchronous restart is pending", async () => {
+    let completeRestart: (() => void) | undefined;
+    const ownership = await acquireForegroundHealthOwnership({
+      queryPermission: () => 2,
+      requestPermission: vi.fn(),
+      stopService: vi.fn(async () => undefined),
+      startService: () =>
+        new Promise<void>((resolve) => {
+          completeRestart = resolve;
+        }),
+    });
+
+    const firstRelease = ownership.release();
+    const secondRelease = ownership.release();
+
+    expect(secondRelease).toBe(firstRelease);
+    completeRestart?.();
+    await firstRelease;
   });
 
   it("preserves both failures when mutation and App Service restart fail", async () => {

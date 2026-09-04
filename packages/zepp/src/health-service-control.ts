@@ -63,14 +63,11 @@ export async function acquireForegroundHealthOwnership(
   }
 
   await dependencies.stopService();
-  let released = false;
   let releaseTask: Promise<void> | null = null;
   return {
     state: "acquired",
     release(afterMutation) {
       if (releaseTask) return releaseTask;
-      if (released) return Promise.resolve();
-      released = true;
       if (!afterMutation) {
         const pendingRelease = Promise.resolve(dependencies.startService()).then(() => undefined);
         releaseTask = pendingRelease;

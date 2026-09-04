@@ -62,6 +62,59 @@ describe("pending IMU transfer storage", () => {
     expect(readPendingImuTransfers("data://imu/normal_transfers.json")).toEqual([pending]);
   });
 
+  it("restores the alternate file slot", () => {
+    const pendingB = { ...pending, slot: "B" as const, path: "data://imu/normal_b.bin" };
+    files.set(
+      "data://imu/normal_transfers.json",
+      JSON.stringify({ version: 1, pending: [pendingB] }),
+    );
+
+    expect(readPendingImuTransfers("data://imu/normal_transfers.json")).toEqual([pendingB]);
+  });
+
+  it.each([
+    null,
+    [],
+    "invalid",
+    { ...pending, slot: "C" },
+    { ...pending, path: 1 },
+    { ...pending, path: " " },
+    { ...pending, sampleCount: 1.5 },
+    { ...pending, observedHzX100: 1.5 },
+    { ...pending, hasGyroscope: "yes" },
+    { ...pending, accelFreqMode: 1.5 },
+    { ...pending, gyroFreqMode: 1.5 },
+    { ...pending, sessionStartMs: 1.5 },
+  ])("rejects invalid pending transfer metadata %#", (entry) => {
+    files.set("data://imu/normal_transfers.json", JSON.stringify({ version: 1, pending: [entry] }));
+
+    expect(() => readPendingImuTransfers("data://imu/normal_transfers.json")).toThrow(
+      "Pending IMU transfer manifest is invalid.",
+    );
+  });
+
+  it.each([
+    "null",
+    "[]",
+    JSON.stringify({ version: 2, pending: [] }),
+    JSON.stringify({ version: 1, pending: {} }),
+  ])("rejects invalid manifest shape %#", (contents) => {
+    files.set("data://imu/normal_transfers.json", contents);
+    expect(() => readPendingImuTransfers("data://imu/normal_transfers.json")).toThrow(
+      "Pending IMU transfer manifest is invalid.",
+    );
+  });
+
+  it("returns an empty list only for a missing manifest", () => {
+    expect(readPendingImuTransfers("data://imu/missing.json")).toEqual([]);
+
+    const readError = new Error("storage unavailable");
+    vi.mocked(readFileSync).mockImplementationOnce(() => {
+      throw readError;
+    });
+    expect(() => readPendingImuTransfers("data://imu/normal_transfers.json")).toThrow(readError);
+  });
+
   it("clears only the acknowledged slot from the latest manifest", () => {
     const pendingB = { ...pending, slot: "B" as const, path: "data://imu/normal_b.bin" };
     files.set(
@@ -75,6 +128,22 @@ describe("pending IMU transfer storage", () => {
       path: "data://imu/normal_transfers.json.tmp",
       data: JSON.stringify({ version: 1, pending: [pendingB] }),
     });
+  });
+
+  it("replaces only an older transfer in the same slot", () => {
+    const pendingB = { ...pending, slot: "B" as const, path: "data://imu/normal_b.bin" };
+    const replacement = { ...pending, path: "data://imu/new_a.bin", sessionStartMs: 2 };
+    files.set(
+      "data://imu/normal_transfers.json",
+      JSON.stringify({ version: 1, pending: [pending, pendingB] }),
+    );
+
+    savePendingImuTransfer("data://imu/normal_transfers.json", replacement, vi.fn());
+
+    expect(readPendingImuTransfers("data://imu/normal_transfers.json")).toEqual([
+      pendingB,
+      replacement,
+    ]);
   });
 
   it("applies in-memory slot state only after the manifest commit succeeds", () => {
@@ -106,6 +175,40 @@ describe("pending IMU transfer storage", () => {
     expect(onDiscard).toHaveBeenCalledOnce();
     expect(files.get("data://imu/normal_transfers.json.corrupt")).toBe("not-json");
     expect(readPendingImuTransfers("data://imu/normal_transfers.json")).toEqual([pending]);
+  });
+
+  it("fails loudly when a corrupt manifest cannot be quarantined", () => {
+    files.set("data://imu/normal_transfers.json", "not-json");
+    vi.mocked(renameSync).mockReturnValueOnce(-1);
+    const onDiscard = vi.fn();
+
+    expect(() =>
+      savePendingImuTransfer("data://imu/normal_transfers.json", pending, onDiscard),
+    ).toThrow("Could not quarantine the corrupt IMU transfer manifest (-1).");
+    expect(onDiscard).not.toHaveBeenCalled();
+  });
+
+  it("persists before applying both present and cleared in-memory state", () => {
+    const apply = vi.fn();
+
+    persistAndApplyPendingImuTransfer(
+      "data://imu/normal_transfers.json",
+      "A",
+      pending,
+      apply,
+      vi.fn(),
+    );
+    persistAndApplyPendingImuTransfer(
+      "data://imu/normal_transfers.json",
+      "A",
+      null,
+      apply,
+      vi.fn(),
+    );
+
+    expect(apply).toHaveBeenNthCalledWith(1, pending);
+    expect(apply).toHaveBeenNthCalledWith(2, null);
+    expect(readPendingImuTransfers("data://imu/normal_transfers.json")).toEqual([]);
   });
 
   it("rejects non-text manifest reads", () => {

@@ -63,11 +63,7 @@ function parseActivity(value: unknown): HealthActivity {
 }
 
 function parseSummary(value: unknown): HealthDataPayload {
-  const summary = parseWatchHealthSummary(value);
-  if (summary.activities !== undefined) {
-    throw new Error("Watch health summary is invalid.");
-  }
-  return summary;
+  return parseWatchHealthSummary(value);
 }
 
 function parseEvent(value: unknown): BackgroundHealthEvent {
