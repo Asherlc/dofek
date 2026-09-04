@@ -722,7 +722,7 @@ describe("createIngestZosHealthRouter", () => {
     });
   });
 
-  it("skips daily metrics with invalid date keys", async () => {
+  it("rejects an envelope event with an invalid daily metric date key", async () => {
     const { db, execute } = createMockDatabase();
 
     const response = await post(
@@ -739,13 +739,20 @@ describe("createIngestZosHealthRouter", () => {
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
       status: "ok",
-      acceptedEventIds: ["event-test"],
-      rejected: [],
+      acceptedEventIds: [],
+      rejected: [
+        {
+          eventId: "event-test",
+          issues: [
+            {
+              path: "dailyMetrics.not-a-date",
+              message: "Invalid date",
+            },
+          ],
+        },
+      ],
     });
-    expect(execute).toHaveBeenCalledTimes(2);
-    expect(routeMocks.loggerWarn).toHaveBeenCalledWith(
-      "[ingest-zos] Invalid date: not-a-date, skipping",
-    );
+    expect(execute).not.toHaveBeenCalled();
   });
 
   it("returns 500 when ingest persistence fails", async () => {

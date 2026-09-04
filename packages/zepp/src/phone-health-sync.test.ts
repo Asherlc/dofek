@@ -92,6 +92,65 @@ describe("drainPhoneHealthOutbox", () => {
     ]);
   });
 
+  it("preserves events appended while a successful upload is in flight", async () => {
+    const storage = createStorage();
+    persistHealthEnvelope(storage, envelope);
+    const concurrentEnvelope = createHealthEnvelope({
+      batchId: "concurrent-watch-batch",
+      source: envelope.source,
+      events: [
+        {
+          eventId: "event-3",
+          createdAt: "2024-07-03T10:02:00.000Z",
+          payload: { backgroundSamples: [{ recordedAt: "2024-07-03T10:02:00.000Z" }] },
+        },
+      ],
+    });
+
+    const post = vi.fn(async (batch: HealthEnvelopeV1<HealthUploadPayload>) => {
+      if (batch.events.some((event) => event.eventId === "event-1")) {
+        persistHealthEnvelope(storage, concurrentEnvelope);
+      }
+      return { acceptedEventIds: batch.events.map((event) => event.eventId), rejected: [] };
+    });
+
+    await expect(drainPhoneHealthOutbox(storage, post)).resolves.toEqual({
+      uploaded: 3,
+      quarantined: 0,
+    });
+    expect(post).toHaveBeenCalledTimes(2);
+    expect(readPhoneHealthOutbox(storage).pending).toEqual([]);
+  });
+
+  it("preserves concurrent events when an upload fails", async () => {
+    const storage = createStorage();
+    persistHealthEnvelope(storage, envelope);
+    const concurrentEnvelope = createHealthEnvelope({
+      batchId: "concurrent-watch-batch",
+      source: envelope.source,
+      events: [
+        {
+          eventId: "event-3",
+          createdAt: "2024-07-03T10:02:00.000Z",
+          payload: { backgroundSamples: [{ recordedAt: "2024-07-03T10:02:00.000Z" }] },
+        },
+      ],
+    });
+
+    await expect(
+      drainPhoneHealthOutbox(storage, async () => {
+        persistHealthEnvelope(storage, concurrentEnvelope);
+        throw new Error("network unavailable");
+      }),
+    ).rejects.toThrow("network unavailable");
+
+    expect(readPhoneHealthOutbox(storage).pending).toEqual([
+      expect.objectContaining({ eventId: "event-1", attempts: 1 }),
+      expect.objectContaining({ eventId: "event-2", attempts: 1 }),
+      expect.objectContaining({ eventId: "event-3", attempts: 0 }),
+    ]);
+  });
+
   it("retains and marks events omitted from a successful server acknowledgement", async () => {
     const storage = createStorage();
     persistHealthEnvelope(storage, envelope);

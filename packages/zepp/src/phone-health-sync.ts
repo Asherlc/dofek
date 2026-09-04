@@ -91,6 +91,7 @@ export async function drainPhoneHealthOutbox(
       response = await post(createBatchEnvelope(entries));
     } catch (error) {
       const message = errorMessage(error);
+      outbox = readPhoneHealthOutbox(storage);
       for (const entry of entries) {
         outbox = recordOutboxAttempt(outbox, entry.eventId, message);
       }
@@ -100,6 +101,7 @@ export async function drainPhoneHealthOutbox(
 
     const batchIds = new Set(entries.map((entry) => entry.eventId));
     const acceptedEventIds = response.acceptedEventIds.filter((eventId) => batchIds.has(eventId));
+    outbox = readPhoneHealthOutbox(storage);
     outbox = acknowledgeOutboxEntries(outbox, acceptedEventIds);
     uploaded += acceptedEventIds.length;
 

@@ -122,9 +122,14 @@ export function createImuSessionController(
 
   function fail(error: unknown): void {
     active = false;
-    ready?.stop();
-    pending = [];
-    releaseDisplay();
+    try {
+      ready?.stop();
+    } catch (stopError) {
+      options.onError(stopError);
+    } finally {
+      pending = [];
+      releaseDisplay();
+    }
     options.onError(error);
   }
 
@@ -158,8 +163,13 @@ export function createImuSessionController(
         return true;
       } catch (error) {
         active = false;
-        ready.stop();
-        releaseDisplay();
+        try {
+          ready.stop();
+        } catch (stopError) {
+          options.onError(stopError);
+        } finally {
+          releaseDisplay();
+        }
         options.onError(error);
         return false;
       }
@@ -184,18 +194,26 @@ export function createImuSessionController(
     stop() {
       if (!active || !ready) return null;
       active = false;
-      ready.stop();
+      let stopFailed = false;
       let completed: ImuSegmentResult | null = null;
       try {
-        flush(true);
-        completed = result();
-      } catch (error) {
-        options.onError(error);
-        return null;
+        try {
+          ready.stop();
+        } catch (error) {
+          stopFailed = true;
+          options.onError(error);
+        }
+        try {
+          flush(true);
+          completed = result();
+        } catch (error) {
+          options.onError(error);
+          return null;
+        }
       } finally {
         releaseDisplay();
       }
-      return completed;
+      return stopFailed ? null : completed;
     },
   };
 }

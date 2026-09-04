@@ -114,12 +114,22 @@ const watchSummarySchema = z.object({
   fatBurning: z.number().int().nonnegative().optional(),
 });
 
+const dailyMetricsSchema = z
+  .record(z.string(), dailyMetricsDataSchema)
+  .superRefine((metrics, context) => {
+    for (const date of Object.keys(metrics)) {
+      if (!z.iso.date().safeParse(date).success) {
+        context.addIssue({ code: "custom", path: [date], message: "Invalid date" });
+      }
+    }
+  });
+
 const missingIngestSectionMessage =
   "At least one of dailyMetrics, sleepSessions, activities, backgroundSamples, liveWorkoutSamples, or watchSummary is required.";
 
 const ingestPayloadSchema = z
   .object({
-    dailyMetrics: z.record(z.string(), dailyMetricsDataSchema).optional(),
+    dailyMetrics: dailyMetricsSchema.optional(),
     sleepSessions: z.array(sleepSessionSchema).optional(),
     activities: z.array(activitySchema).optional(),
     backgroundSamples: z.array(backgroundHealthSampleSchema).optional(),
@@ -392,11 +402,6 @@ export function createIngestZosHealthRouter(deps: {
         }
         if (Object.keys(normalizedDailyMetrics).length > 0) {
           for (const [dateStr, metrics] of Object.entries(normalizedDailyMetrics)) {
-            const date = new Date(dateStr);
-            if (Number.isNaN(date.getTime())) {
-              logger.warn(`[ingest-zos] Invalid date: ${dateStr}, skipping`);
-              continue;
-            }
             await database.execute(
               sql`INSERT INTO fitness.daily_metrics
                 (date, provider_id, user_id, steps, distance_km, stand_hours, spo2_avg, skin_temp_c, stress_high_minutes, exercise_minutes, source_name)

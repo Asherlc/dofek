@@ -3,7 +3,14 @@ import type { DisplayLease } from "./display-lease.ts";
 import { createImuSessionController } from "./imu-session-controller.ts";
 import type { CollectorOptions, ImuCollector, ImuSample } from "./types.ts";
 
-function setup(options: { appendError?: Error; resetError?: Error; hasGyro?: boolean } = {}) {
+function setup(
+  options: {
+    appendError?: Error;
+    resetError?: Error;
+    stopError?: Error;
+    hasGyro?: boolean;
+  } = {},
+) {
   let collectorOptions: CollectorOptions | undefined;
   const collector: ImuCollector = {
     available: true,
@@ -12,7 +19,9 @@ function setup(options: { appendError?: Error; resetError?: Error; hasGyro?: boo
     gyroMode: options.hasGyro === false ? null : 1,
     getStats: () => ({ sampleCount: 0, observedHzX100: 0, sessionStartMs: 0 }),
     start: vi.fn(),
-    stop: vi.fn(),
+    stop: vi.fn(() => {
+      if (options.stopError) throw options.stopError;
+    }),
   };
   const lease: DisplayLease = {
     acquired: false,
@@ -132,6 +141,29 @@ describe("createImuSessionController", () => {
     expect(controller.active).toBe(false);
     expect(collector.stop).toHaveBeenCalledOnce();
     expect(lease.release).toHaveBeenCalledOnce();
+    expect(onError).toHaveBeenCalledWith(appendError);
+  });
+
+  it("releases the display lease when sensor shutdown throws during explicit stop", () => {
+    const stopError = new Error("sensor shutdown failed");
+    const { controller, lease, onError } = setup({ stopError });
+    controller.start();
+
+    expect(controller.stop()).toBeNull();
+    expect(lease.release).toHaveBeenCalledOnce();
+    expect(onError).toHaveBeenCalledWith(stopError);
+  });
+
+  it("releases the display lease when sensor shutdown throws after a write failure", () => {
+    const appendError = new Error("write failed");
+    const stopError = new Error("sensor shutdown failed");
+    const { controller, emit, lease, onError } = setup({ appendError, stopError });
+    controller.start();
+    emit(sample);
+    emit({ ...sample, tMs: 2 });
+
+    expect(lease.release).toHaveBeenCalledOnce();
+    expect(onError).toHaveBeenCalledWith(stopError);
     expect(onError).toHaveBeenCalledWith(appendError);
   });
 });
