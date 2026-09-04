@@ -239,7 +239,7 @@ zepp/
   app.json              # Zepp OS API_LEVEL 3.0+ targets + modules
   app.ts                # app entry
   page/index.ts         # watch UI + sensor collector
-  app-service/imu_service.ts
+  app-service/health_service.ts
   workout-extension/    # independently packaged live Workout app extension
   app-side/index.ts     # phone BLE receiver
   setting/index.ts      # phone controls

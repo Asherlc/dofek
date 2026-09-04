@@ -112,7 +112,7 @@
         "page/index.ts",
         "app-side/index.ts",
         "setting/index.ts",
-        "app-service/imu_service.ts",
+        "app-service/health_service.ts",
         "tools/zeus.ts",
         "workout-extension/app.ts",
         "workout-extension/build.ts",
