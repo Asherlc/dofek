@@ -272,7 +272,7 @@ describe("record-local time context schema", () => {
     expect(violations).toEqual([]);
   });
 
-  it("does not project a retained legacy timezone as unknown context", async () => {
+  it("flags but does not expose a retained legacy timezone with unknown provenance", async () => {
     const externalId = `legacy-unknown-zone-${randomUUID()}`;
     await context.db.execute(sql`
       INSERT INTO fitness.activity (
@@ -298,6 +298,16 @@ describe("record-local time context schema", () => {
         'unknown'
       )
     `);
+
+    const persistedViolations = await context.db.execute<{ violation_count: number }>(sql`
+      SELECT COUNT(*)::integer AS violation_count
+      FROM fitness.activity
+      WHERE external_id = ${externalId}::text
+        AND local_time_source = 'unknown'
+        AND timezone IS NOT NULL
+    `);
+
+    expect(persistedViolations).toEqual([{ violation_count: 1 }]);
 
     const rows = await context.db.execute<{
       end_utc_offset_minutes: number | null;
