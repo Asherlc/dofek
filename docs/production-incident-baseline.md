@@ -25191,3 +25191,24 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `32cbb0dc`, `1d7a3bc0`, `9203bd3b`, `54d67057`, and `61edc6bf`. The hydration
   incident remains unresolved until all seven have current active rows in the
   four downstream activity projections.
+
+## 2026-09-04 — Expo patch drift blocked the merged PR mobile bundle gate
+
+- **Status:** Fixed and validated in source; replacement CI run pending.
+- **Symptoms / user impact:** The `Build Mobile / Metro Bundle` check failed
+  before exporting the iOS bundle, blocking PR 2669 after its merge conflicts
+  were resolved.
+- **Evidence / root cause:** The exact failed command was
+  `cd packages/mobile && pnpm expo install --check`. Its first fatal diagnostic
+  was `expo@57.0.19 - expected version: ~57.0.20`, followed by five related Expo
+  SDK patch mismatches and `Found outdated dependencies`. Expo's dependency
+  validation requires compatible package versions for the installed SDK
+  ([Expo CLI dependency validation](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation)).
+- **Direct fix:** Updated the six reported Expo packages to their exact expected
+  patch versions and regenerated the pnpm lockfile and release-age exceptions.
+  No validation bypass, ignore, or compatibility fallback was added.
+- **Validation:** The exact compatibility check now reports `Dependencies are
+  up to date`, and `pnpm expo export --platform ios --clear` successfully
+  produces the iOS Metro bundle.
+- **Remaining risk / follow-up:** Confirm the replacement Metro Bundle job and
+  complete PR workflow pass on the fix commit.
