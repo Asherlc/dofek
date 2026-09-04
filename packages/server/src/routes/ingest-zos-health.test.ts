@@ -431,6 +431,68 @@ describe("createIngestZosHealthRouter", () => {
     expect(routeMocks.loggerWarn.mock.calls.flat().join(" ")).not.toContain("private-health-value");
   });
 
+  it.each([[], {}, { batchId: 1 }, { batchId: " " }])(
+    "logs a null batch ID for malformed envelope %#",
+    async (body) => {
+      const { db } = createMockDatabase();
+
+      const response = await post(
+        createTestApp(db),
+        body,
+        { authorization: "Bearer token-123" },
+        true,
+      );
+
+      expect(response.status).toBe(400);
+      expect(routeMocks.loggerWarn).toHaveBeenCalledWith(expect.stringContaining('"batchId":null'));
+    },
+  );
+
+  it("accepts one watch summary and rejects a duplicate summary in the same batch", async () => {
+    const { db } = createMockDatabase();
+    const summary = {
+      collectedAt: 1_720_001_200_000,
+      date: "2024-07-03",
+      timezoneOffsetMinutes: 0,
+    };
+
+    const response = await post(
+      createTestApp(db, { publishRows: vi.fn(async () => []) }),
+      {
+        version: 1,
+        batchId: "batch-duplicate-summary",
+        source: { connectionType: "zepp", installId: "install-test" },
+        events: [
+          {
+            eventId: "summary-1",
+            createdAt: "2024-07-03T10:48:20.000Z",
+            payload: { watchSummary: summary },
+          },
+          {
+            eventId: "summary-2",
+            createdAt: "2024-07-03T10:49:20.000Z",
+            payload: { watchSummary: summary },
+          },
+        ],
+      },
+      { authorization: "Bearer token-123" },
+      true,
+    );
+
+    expect(response.body).toEqual({
+      status: "ok",
+      acceptedEventIds: ["summary-1"],
+      rejected: [
+        {
+          eventId: "summary-2",
+          issues: [
+            { path: "watchSummary", message: "Only one watch summary is allowed per batch." },
+          ],
+        },
+      ],
+    });
+  });
+
   it("publishes background health samples to the metric stream", async () => {
     const { db, transactionDatabase } = createMockDatabase();
     const metricStreamPublisher = {
@@ -703,6 +765,38 @@ describe("createIngestZosHealthRouter", () => {
       ],
     });
     expect(execute).not.toHaveBeenCalled();
+  });
+
+  it.each(["+14:01", "+00:60"])("rejects invalid ISO offset boundary %s", async (offset) => {
+    const { db, execute } = createMockDatabase();
+
+    const response = await post(
+      createTestApp(db),
+      {
+        backgroundSamples: [{ recordedAt: `2024-07-03T10:48:20${offset}`, heartRate: 72 }],
+      },
+      { authorization: "Bearer token-123" },
+    );
+
+    expect(response.body).toMatchObject({
+      acceptedEventIds: [],
+      rejected: [{ issues: [{ path: "backgroundSamples.0.recordedAt" }] }],
+    });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("accepts the maximum ISO offset boundary", async () => {
+    const { db } = createMockDatabase();
+
+    const response = await post(
+      createTestApp(db, { publishRows: vi.fn(async () => []) }),
+      {
+        backgroundSamples: [{ recordedAt: "2024-07-03T10:48:20+14:00", heartRate: 72 }],
+      },
+      { authorization: "Bearer token-123" },
+    );
+
+    expect(response.body).toMatchObject({ acceptedEventIds: ["event-test"], rejected: [] });
   });
 
   it("stores daily metrics, sleep sessions with stages, and activities for a valid payload", async () => {
@@ -993,6 +1087,53 @@ describe("createIngestZosHealthRouter", () => {
     expect(routeMocks.writeMetricStreamRows).not.toHaveBeenCalled();
     expect(routeMocks.loggerWarn).toHaveBeenCalledWith(
       '[ingest-zos-imu] Rejected IMU events {"batchId":"segment-invalid:0:0","rejectedEventCount":1,"issuePaths":["samples"]}',
+    );
+  });
+
+  it("persists valid IMU siblings while rejecting only malformed events", async () => {
+    const { db } = createMockDatabase();
+    const response = await post(
+      createTestApp(db, { publishRows: vi.fn(async () => []) }),
+      {
+        version: 1,
+        batchId: "segment-mixed",
+        source: { connectionType: "zepp", installId: "install-1" },
+        events: [
+          {
+            eventId: "segment-valid:0:0",
+            createdAt: "2024-07-03T09:46:40.000Z",
+            payload: {
+              segmentId: "segment-valid",
+              sessionStartMs: 1_720_000_000_000,
+              hasGyroscope: false,
+              samples: [{ tMs: 25, ax: 1, ay: 2, az: 3, gx: 0, gy: 0, gz: 0 }],
+            },
+          },
+          {
+            eventId: "segment-invalid:0:0",
+            createdAt: "2024-07-03T09:46:40.000Z",
+            payload: {
+              segmentId: "segment-invalid",
+              sessionStartMs: 1_720_000_000_000,
+              hasGyroscope: false,
+              samples: [],
+            },
+          },
+        ],
+      },
+      { authorization: "Bearer token-123" },
+      true,
+      "/api/ingest/zos-imu",
+    );
+
+    expect(response.body).toMatchObject({
+      acceptedEventIds: ["segment-valid:0:0"],
+      rejected: [{ eventId: "segment-invalid:0:0" }],
+    });
+    expect(routeMocks.writeMetricStreamRows).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rows: [expect.objectContaining({ recordedAt: "2024-07-03T09:46:40.025Z" })],
+      }),
     );
   });
 
