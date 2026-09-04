@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { trpc } from "../lib/trpc.ts";
+import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 type ZeppConnection = { connectionType: "zepp-main" | "zepp-workout" };
 
 interface ZeppPairingPanelBodyProps {
-  connections: ZeppConnection[];
+  connections?: ZeppConnection[];
   connectionsError: string | null;
   disconnectError: string | null;
   isConnectionsLoading: boolean;
@@ -19,6 +20,7 @@ interface ZeppPairingPanelBodyProps {
 
 export function ZeppPairingPanel({ initialCode = "" }: { initialCode?: string }) {
   const [pairingCode, setPairingCode] = useState(initialCode);
+  useEffect(() => setPairingCode(initialCode), [initialCode]);
   const connectionsQuery = trpc.companionToken.list.useQuery();
   const revokeMutation = trpc.companionToken.revoke.useMutation({
     onSuccess: async () => {
@@ -36,7 +38,9 @@ export function ZeppPairingPanel({ initialCode = "" }: { initialCode?: string })
 
   return (
     <ZeppPairingPanelBody
-      connections={connectionsQuery.data ?? []}
+      connections={
+        connectionsQuery.isLoading || connectionsQuery.error ? undefined : connectionsQuery.data
+      }
       connectionsError={connectionsQuery.error?.message ?? null}
       disconnectError={revokeMutation.error?.message ?? null}
       isConnectionsLoading={connectionsQuery.isLoading}
@@ -75,10 +79,10 @@ export function ZeppPairingPanelBody({
       <div className="space-y-2 rounded border border-border bg-surface-solid p-3">
         <p className="text-xs font-medium text-foreground">Current connections</p>
         {isConnectionsLoading ? (
-          <p className="text-xs text-subtle">Checking connections…</p>
+          <QueryStatePanel variant="loading" message="Checking connections…" height={72} />
         ) : connectionsError ? (
-          <p className="text-xs text-red-400">{connectionsError}</p>
-        ) : connections.length ? (
+          <QueryStatePanel error={connectionsError} height={72} />
+        ) : connections?.length ? (
           connections.map(({ connectionType }) => {
             const label = connectionType === "zepp-main" ? "Zepp app" : "Workout extension";
             return (

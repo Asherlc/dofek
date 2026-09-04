@@ -1,7 +1,7 @@
 import { messagingPlugin } from "@zeppos/zml/3.0/module/messaging/plugin/side";
 import { BaseSideService } from "@zeppos/zml/base-side";
-import { deriveConnectionActions, parseConnectionState } from "../src/connection-state.ts";
 import { createConnectionChangedCall } from "../src/connection-control.ts";
+import { deriveConnectionActions, parseConnectionState } from "../src/connection-state.ts";
 import {
   type HealthEnvelopeV1,
   type HealthUploadResponse,
@@ -541,6 +541,7 @@ AppSideService(
         }
         if (getString(summary.body, "connectionType") !== DOFEK_COMPANION_CONNECTION_TYPE) {
           settings.settingsStorage.removeItem(STORAGE_KEYS.DOFEK_API_TOKEN);
+          this.notifyWatchConnectionChanged();
           throw new Error("Saved credentials belong to a different Zepp app. Connect again.");
         }
         this.setConnectionStatus({

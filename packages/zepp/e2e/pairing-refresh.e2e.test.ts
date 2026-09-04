@@ -7,13 +7,20 @@ interface RuntimeWidget {
   setProperty(property: string, value: unknown): void;
 }
 
+interface WatchCallPayload {
+  method: string;
+  params?: Record<string, unknown>;
+}
+
 interface SideRuntime {
-  call(payload: Record<string, unknown>): void;
+  call(payload: WatchCallPayload): void;
   onRequest(
     request: { method: string; params?: Record<string, unknown> },
     respond: (error: unknown, result: unknown) => void,
   ): void;
   startPairing(): Promise<Record<string, unknown> | null>;
+  disconnect(): Promise<void>;
+  verifyConnection(): Promise<void>;
 }
 
 interface WatchRuntime {
@@ -21,7 +28,7 @@ interface WatchRuntime {
     hasCredentials: boolean;
   };
   build(): void;
-  onCall(payload: { method: string; params?: Record<string, unknown> }): void;
+  onCall(payload: WatchCallPayload): void;
   onInit(): void;
   request(request: { method: string; params?: Record<string, unknown> }): Promise<unknown>;
 }
@@ -102,29 +109,29 @@ describe("Zepp pairing refresh", () => {
       shortCode: "ABC234",
       verificationUrl: "https://app.example.test/zepp-pairing?code=ABC234",
     };
-    const responses = [
-      { status: 200, body: pairing },
-      {
-        status: 200,
-        body: { state: "claimed", companionToken: "companion-token" },
-      },
-    ];
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => {
-        const response = responses.shift();
-        if (!response) throw new Error("Unexpected Zepp fetch");
-        return response;
+      vi.fn(async (request: { url?: string }) => {
+        if (request.url?.endsWith("/api/companion-pairing/start")) {
+          return { status: 200, body: pairing };
+        }
+        if (request.url?.includes("/api/companion-pairing/status/")) {
+          return {
+            status: 200,
+            body: { state: "claimed", companionToken: "companion-token" },
+          };
+        }
+        return { status: 200, body: { ok: true } };
       }),
     );
 
     const side = Object.assign({}, requireSideConfiguration());
     const watchConfig = requireWatchConfiguration();
     const watch = Object.assign({}, watchConfig, { state: { ...watchConfig.state } });
-    const calls: Record<string, unknown>[] = [];
+    const calls: WatchCallPayload[] = [];
     side.call = (payload) => {
       calls.push(payload);
-      watch.onCall(payload as { method: string; params?: Record<string, unknown> });
+      watch.onCall(payload);
     };
     watch.request = (request) =>
       new Promise((resolve, reject) => {
@@ -153,5 +160,65 @@ describe("Zepp pairing refresh", () => {
     expect(watch.state.hasCredentials).toBe(true);
     expect(connectionButton).toBeDefined();
     expect(deletedWidgets).toContain(pairingQr);
+  });
+
+  it("does not create a new pairing challenge after disconnecting", async () => {
+    const values = new Map<string, string>();
+    const settingsStorage = {
+      addListener: vi.fn(),
+      getItem: vi.fn((key: string) => values.get(key) ?? null),
+      removeItem: vi.fn((key: string) => values.delete(key)),
+      setItem: vi.fn((key: string, value: string) => values.set(key, value)),
+    };
+    vi.stubGlobal("settings", { settingsStorage });
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const side = Object.assign({}, requireSideConfiguration());
+    const watchConfig = requireWatchConfiguration();
+    const watch = Object.assign({}, watchConfig, { state: { ...watchConfig.state } });
+    side.call = (payload) => watch.onCall(payload);
+    watch.request = (request) =>
+      new Promise((resolve, reject) => {
+        side.onRequest(request, (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
+        });
+      });
+
+    await side.disconnect();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("notifies an open watch page when a mismatched credential is cleared", async () => {
+    const values = new Map<string, string>([
+      [STORAGE_KEYS.DOFEK_API_TOKEN, "wrong-app-token"],
+    ]);
+    const settingsStorage = {
+      addListener: vi.fn(),
+      getItem: vi.fn((key: string) => values.get(key) ?? null),
+      removeItem: vi.fn((key: string) => values.delete(key)),
+      setItem: vi.fn((key: string, value: string) => values.set(key, value)),
+    };
+    vi.stubGlobal("settings", { settingsStorage });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        status: 200,
+        body: { state: "connected", connectionType: "zepp-workout" },
+      })),
+    );
+
+    const side = Object.assign({}, requireSideConfiguration());
+    const calls: WatchCallPayload[] = [];
+    side.call = (payload) => calls.push(payload);
+
+    await expect(side.verifyConnection()).rejects.toThrow(
+      "Saved credentials belong to a different Zepp app",
+    );
+    expect(calls).toContainEqual({ method: "dofek.connectionChanged", params: {} });
   });
 });

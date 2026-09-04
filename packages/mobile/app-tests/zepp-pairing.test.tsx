@@ -1,12 +1,18 @@
 // @vitest-environment jsdom
 
 import { render, screen } from "@testing-library/react";
-import { expect, it, vi } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
 import ZeppPairingScreen from "../app/zepp-pairing";
 
+const route = vi.hoisted<{ params: Record<string, unknown> }>(() => ({ params: {} }));
+
 vi.mock("expo-router", () => ({
-  useLocalSearchParams: () => ({ code: "ABC234" }),
+  useLocalSearchParams: () => route.params,
 }));
+
+beforeEach(() => {
+  route.params = { code: "ABC234" };
+});
 
 vi.mock("../lib/trpc", () => ({
   trpc: {
@@ -42,4 +48,15 @@ it("prefills the code on the dedicated mobile pairing screen", () => {
   render(<ZeppPairingScreen />);
 
   expect(screen.getByPlaceholderText("Short code").getAttribute("value")).toBe("ABC234");
+});
+
+it.each([
+  { code: "" },
+  { code: ["ABC234"] },
+  { code: 42 },
+])("does not pass an invalid runtime code to the pairing card", (params) => {
+  route.params = params;
+  render(<ZeppPairingScreen />);
+
+  expect(screen.getByPlaceholderText("Short code").getAttribute("value")).toBe("");
 });

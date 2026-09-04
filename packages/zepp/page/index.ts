@@ -43,8 +43,8 @@ import {
   readBackgroundHealthOutbox,
   writeBackgroundHealthOutbox,
 } from "../src/background-health-storage.ts";
-import { createDisplayLease } from "../src/display-lease.ts";
 import { isConnectionChangedCall } from "../src/connection-control.ts";
+import { createDisplayLease } from "../src/display-lease.ts";
 import { collectHealthData } from "../src/health-collector.ts";
 import { ensureHealthServiceRunning } from "../src/health-service-control.ts";
 import { createImuCollector, FREQ_MODES } from "../src/imu-collector.ts";
@@ -207,7 +207,7 @@ Page(
     onInit() {
       resetPairingQrReference();
       this.startHealthService();
-      this.refreshPreferences();
+      this.refreshPreferences(true);
       this.collectAndDeliverHealth();
     },
 
@@ -301,7 +301,7 @@ Page(
       });
     },
 
-    refreshPreferences() {
+    refreshPreferences(allowAutomaticPairing = false) {
       this.request({
         method: "imu.getPreferences",
         params: {},
@@ -318,7 +318,12 @@ Page(
           );
           const pairing = isRecord(result?.pairing) ? result.pairing : null;
           this.renderPairing(pairing);
-          if (!this.state.hasCredentials && !pairing && this.state.canStartConnection) {
+          if (
+            allowAutomaticPairing &&
+            !this.state.hasCredentials &&
+            !pairing &&
+            this.state.canStartConnection
+          ) {
             this.startPairingFromWatch();
           }
           this.publishSessionStatus(
