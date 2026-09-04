@@ -15,6 +15,7 @@ interface WatchCallPayload {
 
 interface SideRuntime {
   call(payload: WatchCallPayload): void;
+  onInit(): void;
   onRequest(
     request: { method: string; params?: Record<string, unknown> },
     respond: (error: unknown, result: unknown) => void,
@@ -95,6 +96,74 @@ afterEach(() => {
 });
 
 describe("Zepp pairing refresh", () => {
+  it("rejects cleartext server URLs before sending a request", async () => {
+    const values = new Map([[STORAGE_KEYS.DOFEK_SERVER_URL, "http://dofek.example"]]);
+    vi.stubGlobal("settings", {
+      settingsStorage: {
+        addListener: vi.fn(),
+        getItem: vi.fn((key: string) => values.get(key) ?? null),
+        removeItem: vi.fn((key: string) => values.delete(key)),
+        setItem: vi.fn((key: string, value: string) => values.set(key, value)),
+      },
+    });
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await expect(Object.assign({}, requireSideConfiguration()).startPairing()).rejects.toThrow(
+      "Dofek server URL must use HTTPS.",
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("notifies the watch when an upload response expires credentials", async () => {
+    const values = new Map<string, string>();
+    const settingsStorage = {
+      addListener: vi.fn(),
+      getItem: vi.fn((key: string) => values.get(key) ?? null),
+      removeItem: vi.fn((key: string) => values.delete(key)),
+      setItem: vi.fn((key: string, value: string) => values.set(key, value)),
+    };
+    vi.stubGlobal("settings", { settingsStorage });
+    vi.stubGlobal("fetch", vi.fn(async () => ({ status: 401, body: { error: "Expired" } })));
+    const side = Object.assign({}, requireSideConfiguration());
+    side.call = vi.fn();
+    side.onInit();
+    values.set(STORAGE_KEYS.DOFEK_API_TOKEN, "expired-token");
+
+    await new Promise<void>((resolve, reject) => {
+      side.onRequest(
+        {
+          method: "health.upload",
+          params: {
+            envelope: {
+              version: 1,
+              batchId: "batch-1",
+              source: { connectionType: "zepp", installId: "install-1" },
+              events: [
+                {
+                  eventId: "event-1",
+                  createdAt: "2024-07-03T10:48:20.000Z",
+                  payload: {
+                    backgroundSamples: [{ recordedAt: "2024-07-03T10:48:20.000Z" }],
+                  },
+                },
+              ],
+            },
+          },
+        },
+        (error) => (error ? reject(error) : resolve()),
+      );
+    });
+
+    await vi.waitFor(() => {
+      expect(values.has(STORAGE_KEYS.DOFEK_API_TOKEN)).toBe(false);
+      expect(side.call).toHaveBeenCalledWith({
+        method: "dofek.connectionChanged",
+        params: {},
+      });
+    });
+  });
+
   it("moves an open watch page from its pairing QR to connected as soon as pairing is claimed", async () => {
     vi.useFakeTimers();
     const values = new Map<string, string>();
@@ -325,6 +394,9 @@ describe("Zepp pairing refresh", () => {
 
     watch.acquireHealthOwnership();
     const ownership = await watch.state.healthOwnership;
+    expect(JSON.parse(values.get(STORAGE_KEYS.HEALTH_SERVICE_STATUS) ?? "{}")).toEqual({
+      state: "stopped",
+    });
 
     await expect(ownership?.release()).rejects.toThrow("App Service unavailable");
     expect(JSON.parse(values.get(STORAGE_KEYS.HEALTH_SERVICE_STATUS) ?? "{}")).toEqual({

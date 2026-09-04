@@ -18,3 +18,13 @@ export function makeSessionCallHandlers(
     ...overrides,
   };
 }
+
+export function createSettingsStorage(initial: Readonly<Record<string, string>> = {}) {
+  const persisted = new Map(Object.entries(initial));
+  return {
+    persisted,
+    getItem: vi.fn((key: string) => persisted.get(key) ?? null),
+    removeItem: vi.fn((key: string) => persisted.delete(key)),
+    setItem: vi.fn((key: string, value: string) => persisted.set(key, value)),
+  };
+}

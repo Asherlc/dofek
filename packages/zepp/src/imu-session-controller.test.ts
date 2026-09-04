@@ -186,10 +186,15 @@ describe("createImuSessionController", () => {
 
   it("releases the display lease when sensor shutdown throws during explicit stop", () => {
     const stopError = new Error("sensor shutdown failed");
-    const { controller, lease, onError } = setup({ stopError });
+    const { controller, emit, file, lease, onError } = setup({ stopError });
     controller.start();
+    emit(sample);
 
-    expect(controller.stop()).toBeNull();
+    expect(controller.stop()).toMatchObject({
+      path: "data://imu/session_a.bin",
+      sampleCount: 1,
+    });
+    expect(file.finalize).toHaveBeenCalledOnce();
     expect(lease.release).toHaveBeenCalledOnce();
     expect(onError).toHaveBeenCalledWith(stopError);
   });

@@ -3,6 +3,16 @@ import type { ImuSegmentResult } from "./imu-session-controller.ts";
 
 const VERSION = 1;
 
+class CorruptImuTransferManifestError extends Error {
+  readonly originalError: unknown;
+
+  constructor(originalError?: unknown) {
+    super("Pending IMU transfer manifest is invalid.");
+    this.name = "CorruptImuTransferManifestError";
+    this.originalError = originalError;
+  }
+}
+
 export type ImuFileSlot = "A" | "B";
 export type PendingImuTransfer = ImuSegmentResult & { slot: ImuFileSlot };
 
@@ -45,12 +55,21 @@ export function readPendingImuTransfers(path: string): PendingImuTransfer[] {
     if (isRecord(error) && error.code === "ENOENT") return [];
     throw error;
   }
-  if (typeof contents !== "string") return [];
-  const parsed: unknown = JSON.parse(contents);
-  if (!isRecord(parsed) || parsed.version !== VERSION || !Array.isArray(parsed.pending)) {
-    throw new Error("Pending IMU transfer manifest is invalid.");
+  if (typeof contents !== "string") throw new CorruptImuTransferManifestError();
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(contents);
+  } catch (error) {
+    throw new CorruptImuTransferManifestError(error);
   }
-  return parsed.pending.map(parsePending);
+  if (!isRecord(parsed) || parsed.version !== VERSION || !Array.isArray(parsed.pending)) {
+    throw new CorruptImuTransferManifestError();
+  }
+  try {
+    return parsed.pending.map(parsePending);
+  } catch (error) {
+    throw new CorruptImuTransferManifestError(error);
+  }
 }
 
 function writePendingImuTransfers(path: string, pending: PendingImuTransfer[]): void {
@@ -62,15 +81,44 @@ function writePendingImuTransfers(path: string, pending: PendingImuTransfer[]): 
   }
 }
 
-export function savePendingImuTransfer(path: string, entry: PendingImuTransfer): void {
-  const pending = readPendingImuTransfers(path).filter(
+function readPendingForMutation(
+  path: string,
+  onDiscard: (error: unknown) => void,
+): PendingImuTransfer[] {
+  try {
+    return readPendingImuTransfers(path);
+  } catch (error) {
+    if (!(error instanceof CorruptImuTransferManifestError)) throw error;
+    const quarantineResult = renameSync({ oldPath: path, newPath: `${path}.corrupt` });
+    if (quarantineResult !== 0) {
+      throw new Error(
+        `Could not quarantine the corrupt IMU transfer manifest (${quarantineResult}).`,
+      );
+    }
+    onDiscard(error);
+    return [];
+  }
+}
+
+export function savePendingImuTransfer(
+  path: string,
+  entry: PendingImuTransfer,
+  onDiscard: (error: unknown) => void,
+): void {
+  const pending = readPendingForMutation(path, onDiscard).filter(
     (candidate) => candidate.slot !== entry.slot,
   );
   writePendingImuTransfers(path, [...pending, entry]);
 }
 
-export function clearPendingImuTransfer(path: string, slot: ImuFileSlot): void {
-  const pending = readPendingImuTransfers(path).filter((candidate) => candidate.slot !== slot);
+export function clearPendingImuTransfer(
+  path: string,
+  slot: ImuFileSlot,
+  onDiscard: (error: unknown) => void,
+): void {
+  const pending = readPendingForMutation(path, onDiscard).filter(
+    (candidate) => candidate.slot !== slot,
+  );
   writePendingImuTransfers(path, pending);
 }
 
@@ -79,8 +127,9 @@ export function persistAndApplyPendingImuTransfer<T extends ImuSegmentResult>(
   slot: ImuFileSlot,
   transfer: T | null,
   apply: (transfer: T | null) => void,
+  onDiscard: (error: unknown) => void,
 ): void {
-  if (transfer) savePendingImuTransfer(path, { ...transfer, slot });
-  else clearPendingImuTransfer(path, slot);
+  if (transfer) savePendingImuTransfer(path, { ...transfer, slot }, onDiscard);
+  else clearPendingImuTransfer(path, slot, onDiscard);
   apply(transfer);
 }

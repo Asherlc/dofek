@@ -16,7 +16,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function parseFile(value: unknown): ReceivedImuFile {
+export function parseReceivedImuFile(value: unknown): ReceivedImuFile {
   if (
     !isRecord(value) ||
     typeof value.segmentId !== "string" ||
@@ -24,8 +24,9 @@ function parseFile(value: unknown): ReceivedImuFile {
     (value.source !== "zepp" && value.source !== "zepp-workout") ||
     typeof value.path !== "string" ||
     !value.path.trim() ||
+    typeof value.sampleCount !== "number" ||
     !Number.isInteger(value.sampleCount) ||
-    Number(value.sampleCount) < 0 ||
+    value.sampleCount < 0 ||
     typeof value.receivedAt !== "string" ||
     !value.receivedAt.trim()
   ) {
@@ -35,7 +36,7 @@ function parseFile(value: unknown): ReceivedImuFile {
     segmentId: value.segmentId,
     source: value.source,
     path: value.path,
-    sampleCount: Number(value.sampleCount),
+    sampleCount: value.sampleCount,
     receivedAt: value.receivedAt,
   };
 }
@@ -47,14 +48,17 @@ export function readReceivedImuFiles(storage: SettingsStorage): ReceivedImuFile[
   if (!isRecord(parsed) || parsed.version !== VERSION || !Array.isArray(parsed.files)) {
     throw new Error("Received IMU file registry is invalid.");
   }
-  return parsed.files.map(parseFile);
+  return parsed.files.map(parseReceivedImuFile);
 }
 
 export function persistReceivedImuFile(storage: SettingsStorage, file: ReceivedImuFile): void {
+  const validatedFile = parseReceivedImuFile(file);
   const files = readReceivedImuFiles(storage);
-  const withoutReplay = files.filter((candidate) => candidate.segmentId !== file.segmentId);
+  const withoutReplay = files.filter(
+    (candidate) => candidate.segmentId !== validatedFile.segmentId,
+  );
   storage.setItem(
     STORAGE_KEYS.PHONE_IMU_FILES,
-    JSON.stringify({ version: VERSION, files: [...withoutReplay, file] }),
+    JSON.stringify({ version: VERSION, files: [...withoutReplay, validatedFile] }),
   );
 }

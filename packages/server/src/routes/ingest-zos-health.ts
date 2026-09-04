@@ -44,6 +44,17 @@ const datetimeString = z
   .string()
   .regex(
     /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/,
+  )
+  .refine(
+    (value) => {
+      if (value.endsWith("Z")) return true;
+      const match = /[+-](\d{2}):(\d{2})$/.exec(value);
+      if (!match) return false;
+      const hours = Number(match[1]);
+      const minutes = Number(match[2]);
+      return hours < 14 ? minutes <= 59 : hours === 14 && minutes === 0;
+    },
+    { message: "Invalid ISO 8601 timezone offset" },
   );
 
 const sleepStageSchema = z.object({
@@ -200,7 +211,10 @@ function combineIngestPayloads(payloads: readonly IngestPayload[]): IngestPayloa
   const combined: IngestPayload = {};
   for (const payload of payloads) {
     if (payload.dailyMetrics) {
-      combined.dailyMetrics = { ...combined.dailyMetrics, ...payload.dailyMetrics };
+      combined.dailyMetrics ??= {};
+      for (const [date, metrics] of Object.entries(payload.dailyMetrics)) {
+        combined.dailyMetrics[date] = { ...combined.dailyMetrics[date], ...metrics };
+      }
     }
     if (payload.sleepSessions) {
       combined.sleepSessions = [...(combined.sleepSessions ?? []), ...payload.sleepSessions];
@@ -398,11 +412,74 @@ export function createIngestZosHealthRouter(deps: {
       return;
     }
 
-    const data = combineIngestPayloads(acceptedCandidates.map((event) => event.payload));
+    let acceptedEvents = acceptedCandidates;
+    const preflightRejectedCount = rejected.length;
 
     try {
       await deps.db.transaction(async (database) => {
         await ensureProvider(database, PROVIDER_ID, PROVIDER_NAME, undefined, userId);
+
+        const liveExternalIds = [
+          ...new Set(
+            acceptedEvents.flatMap(
+              ({ payload }) => payload.liveWorkoutSamples?.map((sample) => sample.externalId) ?? [],
+            ),
+          ),
+        ];
+        if (liveExternalIds.length > 0) {
+          const externalIdParameters = sql.join(
+            liveExternalIds.map((externalId) => sql`${externalId}`),
+            sql`, `,
+          );
+          const existingActivities = await executeWithSchema(
+            database,
+            z.object({ externalId: z.string() }),
+            sql`SELECT external_id AS "externalId"
+              FROM fitness.activity
+              WHERE user_id = ${userId}
+                AND provider_id = ${PROVIDER_ID}
+                AND external_id = ANY(ARRAY[${externalIdParameters}]::text[])`,
+          );
+          const existingExternalIds = new Set(
+            existingActivities.map((activity) => activity.externalId),
+          );
+          let remainingEvents = acceptedEvents;
+          while (true) {
+            const suppliedExternalIds = new Set(
+              remainingEvents.flatMap(
+                ({ payload }) => payload.activities?.map((activity) => activity.externalId) ?? [],
+              ),
+            );
+            const nextEvents: typeof remainingEvents = [];
+            let removedAny = false;
+            for (const event of remainingEvents) {
+              const missingExternalId = event.payload.liveWorkoutSamples?.find(
+                (sample) =>
+                  !existingExternalIds.has(sample.externalId) &&
+                  !suppliedExternalIds.has(sample.externalId),
+              )?.externalId;
+              if (missingExternalId) {
+                rejected.push({
+                  eventId: event.eventId,
+                  issues: [
+                    {
+                      path: "liveWorkoutSamples",
+                      message: `Activity ${missingExternalId} was not found.`,
+                    },
+                  ],
+                });
+                removedAny = true;
+              } else {
+                nextEvents.push(event);
+              }
+            }
+            remainingEvents = nextEvents;
+            if (!removedAny) break;
+          }
+          acceptedEvents = remainingEvents;
+        }
+
+        const data = combineIngestPayloads(acceptedEvents.map((event) => event.payload));
 
         // Process daily metrics — upsert with raw SQL since the unique
         // constraint is a NULLS NOT DISTINCT index on (user_id, date, provider_id, source_name)
@@ -615,9 +692,7 @@ export function createIngestZosHealthRouter(deps: {
           );
           for (const sample of data.liveWorkoutSamples) {
             const activityId = activityIdByExternalId.get(sample.externalId);
-            if (!activityId) {
-              throw new Error(`Zepp live workout activity ${sample.externalId} was not found.`);
-            }
+            if (!activityId) throw new Error("Validated Zepp workout activity was not persisted.");
             const baseExternalId = `zepp-live-${sample.externalId}-${sample.recordedAt}`;
             if (sample.heartRate !== undefined) {
               rows.push({
@@ -651,10 +726,19 @@ export function createIngestZosHealthRouter(deps: {
         }
       });
 
+      if (rejected.length > preflightRejectedCount) {
+        logger.warn(
+          `[ingest-zos] Rejected unresolved live workout events ${JSON.stringify({
+            batchId: envelopeResult.data.batchId,
+            rejectedEventCount: rejected.length - preflightRejectedCount,
+          })}`,
+        );
+      }
+
       await invalidateAllUserQueries(userId);
       sendJson(res, 200, {
         status: "ok",
-        acceptedEventIds: acceptedCandidates.map((event) => event.eventId),
+        acceptedEventIds: acceptedEvents.map((event) => event.eventId),
         rejected,
       });
     } catch (error) {

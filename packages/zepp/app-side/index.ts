@@ -14,7 +14,11 @@ import { LatestOperation } from "../src/latest-operation.ts";
 import { shouldRetryPairingPollFailure } from "../src/pairing-poll.ts";
 import { persistHealthEnvelope } from "../src/phone-health-outbox.ts";
 import { drainPhoneHealthOutbox } from "../src/phone-health-sync.ts";
-import { persistReceivedImuFile, readReceivedImuFiles } from "../src/phone-imu-files.ts";
+import {
+  parseReceivedImuFile,
+  persistReceivedImuFile,
+  readReceivedImuFiles,
+} from "../src/phone-imu-files.ts";
 import { persistImuEnvelope } from "../src/phone-imu-outbox.ts";
 import { drainPhoneImuOutbox } from "../src/phone-imu-sync.ts";
 import {
@@ -32,6 +36,7 @@ import { DEFAULT_DOFEK_SERVER_URL, FREQ_MODE_LABELS, STORAGE_KEYS } from "../src
 import { SyncCoordinator } from "../src/sync-coordinator.ts";
 import {
   handleDofekUploadFailure,
+  requireSecureDofekServerUrl,
   summarizeZeppFetchResponse,
   type ZeppFetchResponse,
 } from "../src/zepp-fetch.ts";
@@ -40,6 +45,7 @@ BaseSideService.use(messagingPlugin);
 
 const logger = Logger.getLogger("imu-side");
 const connectionOperations = new LatestOperation();
+let notifyWatchConnectionChanged: (() => void) | null = null;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -114,7 +120,7 @@ function reportSideException(error: unknown, context: Record<string, unknown> = 
 
 function getStoredServerUrl(): string {
   const storedServerUrl = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_SERVER_URL)?.trim();
-  return storedServerUrl || DEFAULT_DOFEK_SERVER_URL;
+  return requireSecureDofekServerUrl(storedServerUrl || DEFAULT_DOFEK_SERVER_URL);
 }
 
 function setHealthSyncStatus(payload: Record<string, unknown>): void {
@@ -157,7 +163,13 @@ async function postHealthEnvelope(
   });
   const summary = summarizeZeppFetchResponse(response);
   if (!summary.ok) {
-    throw handleDofekUploadFailure(settings.settingsStorage, summary, "Health data upload failed.");
+    const error = handleDofekUploadFailure(
+      settings.settingsStorage,
+      summary,
+      "Health data upload failed.",
+    );
+    if (summary.status === 401) notifyWatchConnectionChanged?.();
+    throw error;
   }
   return parseHealthUploadResponse(summary.body);
 }
@@ -181,7 +193,13 @@ async function postImuEnvelope(
   });
   const summary = summarizeZeppFetchResponse(response);
   if (!summary.ok) {
-    throw handleDofekUploadFailure(settings.settingsStorage, summary, "IMU data upload failed.");
+    const error = handleDofekUploadFailure(
+      settings.settingsStorage,
+      summary,
+      "IMU data upload failed.",
+    );
+    if (summary.status === 401) notifyWatchConnectionChanged?.();
+    throw error;
   }
   return parseHealthUploadResponse(summary.body);
 }
@@ -214,6 +232,7 @@ const imuSyncCoordinator = new SyncCoordinator(async (reasons) => {
 AppSideService(
   BaseSideService({
     onInit() {
+      notifyWatchConnectionChanged = () => this.notifyWatchConnectionChanged();
       ensureTelemetryInstallId();
       flushBufferedTelemetryFromWatch();
       settings.settingsStorage.addListener("change", ({ key, newValue }) => {
@@ -241,6 +260,7 @@ AppSideService(
     },
 
     onDestroy() {
+      notifyWatchConnectionChanged = null;
       logger.log("side service destroyed");
     },
 
@@ -709,13 +729,16 @@ AppSideService(
             return;
           }
           try {
-            persistReceivedImuFile(settings.settingsStorage, {
-              segmentId,
-              source,
-              path: exportPath,
-              sampleCount: Number(file.params?.sampleCount ?? 0),
-              receivedAt: new Date().toISOString(),
-            });
+            persistReceivedImuFile(
+              settings.settingsStorage,
+              parseReceivedImuFile({
+                segmentId,
+                source,
+                path: exportPath,
+                sampleCount: Number(file.params?.sampleCount ?? 0),
+                receivedAt: new Date().toISOString(),
+              }),
+            );
           } catch (error) {
             recordImuTransferFailure(error, { segmentId, source });
             return;

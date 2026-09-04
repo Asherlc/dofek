@@ -63,4 +63,26 @@ describe("SyncCoordinator", () => {
     await expect(coordinator.requestDrain("manual")).resolves.toBeUndefined();
     expect(drain).toHaveBeenCalledTimes(2);
   });
+
+  it("does not strand a request arriving during the idle handoff", async () => {
+    const firstDrain = deferred();
+    const drain = vi
+      .fn<(reasons: readonly string[]) => Promise<void>>()
+      .mockImplementationOnce(async () => firstDrain.promise)
+      .mockResolvedValueOnce(undefined);
+    const coordinator = new SyncCoordinator(drain);
+
+    const first = coordinator.requestDrain("first");
+    let handoff: Promise<void> | undefined;
+    void firstDrain.promise.then(() => {
+      handoff = coordinator.requestDrain("handoff");
+    });
+    firstDrain.resolve();
+    await first;
+    await Promise.resolve();
+    await handoff;
+
+    expect(drain).toHaveBeenCalledTimes(2);
+    expect(drain).toHaveBeenNthCalledWith(2, ["handoff"]);
+  });
 });

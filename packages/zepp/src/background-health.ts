@@ -144,5 +144,17 @@ export function appendWatchHealthSummary(
     payload: { kind: "summary", summary: summaryWithoutActivities },
     attempts: 0,
   });
-  return appendBackgroundHealthEvents(withSummary, { activities }, installId);
+  const summaries = withSummary.pending.filter((entry) => entry.payload.kind === "summary");
+  const overflow = summaries.length - MAX_BACKGROUND_MINUTE_SAMPLES;
+  const expiredSummaryIds = new Set(
+    overflow > 0 ? summaries.slice(0, overflow).map((summary) => summary.eventId) : [],
+  );
+  const boundedSummaryOutbox =
+    overflow > 0
+      ? {
+          ...withSummary,
+          pending: withSummary.pending.filter((entry) => !expiredSummaryIds.has(entry.eventId)),
+        }
+      : withSummary;
+  return appendBackgroundHealthEvents(boundedSummaryOutbox, { activities }, installId);
 }

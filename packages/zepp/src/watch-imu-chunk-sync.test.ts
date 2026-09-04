@@ -134,4 +134,46 @@ describe("watch IMU chunk sync", () => {
     expect(persistedChunkPaths()).toEqual([]);
     expect(files.get("data://imu/chunks/interrupted.tmp")).toBe("incomplete JSON");
   });
+
+  it("retains a chunk when the phone omits its acknowledgement", async () => {
+    const sync = createWatchImuChunkSync("data://imu/chunks", async () => ({
+      status: "ok",
+      acceptedEventIds: [],
+      rejected: [],
+    }));
+
+    await expect(sync.enqueue(input)).rejects.toThrow("Phone did not persist the IMU chunk.");
+    expect(persistedChunkPaths()).toHaveLength(1);
+  });
+
+  it("quarantines a permanently rejected chunk so later records can drain", async () => {
+    const failedRequest = vi.fn(async () => {
+      throw new Error("phone unavailable");
+    });
+    const initialSync = createWatchImuChunkSync("data://imu/chunks", failedRequest);
+    const [sample] = input.samples;
+    if (!sample) throw new Error("Test IMU sample is missing.");
+    await expect(initialSync.enqueue(input)).rejects.toThrow("phone unavailable");
+    await expect(
+      initialSync.enqueue({ ...input, samples: [{ ...sample, tMs: 100 }] }),
+    ).rejects.toThrow("phone unavailable");
+
+    const replayRequest = vi.fn(async (envelope: unknown) => {
+      const parsed = parseImuEnvelope(envelope);
+      const eventId = parsed.events[0]?.eventId ?? "";
+      return eventId === "segment-1:0:0"
+        ? {
+            status: "ok",
+            acceptedEventIds: [],
+            rejected: [{ eventId, issues: [{ path: "samples.0", message: "Invalid sample" }] }],
+          }
+        : { status: "ok", acceptedEventIds: [eventId], rejected: [] };
+    });
+
+    await createWatchImuChunkSync("data://imu/chunks", replayRequest).retry();
+
+    expect(replayRequest).toHaveBeenCalledTimes(2);
+    expect(persistedChunkPaths()).toEqual([]);
+    expect(files.has("data://imu/chunks/segment-1%3A0%3A0.rejected")).toBe(true);
+  });
 });

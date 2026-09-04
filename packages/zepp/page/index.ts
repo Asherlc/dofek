@@ -55,6 +55,7 @@ import {
   createImuSessionController,
   type ImuSessionController,
 } from "../src/imu-session-controller.ts";
+import * as imuTransfer from "../src/imu-transfer-monitor.ts";
 import {
   type ImuFileSlot,
   type PendingImuTransfer,
@@ -93,16 +94,10 @@ import {
 import { deliverWatchHealthOutbox } from "../src/watch-health-sync.ts";
 import { createWatchImuChunkSync, type WatchImuChunkSync } from "../src/watch-imu-chunk-sync.ts";
 
-type TransferTask = {
-  on: (event: string, cb: (event: { data: Record<string, unknown> }) => void) => void;
-};
-
 function nullable<T>(): T | null {
   return null;
 }
-function initialActiveFile(): ImuFileSlot {
-  return "A";
-}
+const initialActiveFile = (): ImuFileSlot => "A";
 
 BasePage.use(pagePlugin);
 
@@ -199,7 +194,8 @@ Page(
       freqModeIndex: 1,
       imuController: nullable<ImuSessionController>(),
       hasGyro: false,
-      transferTask: nullable<TransferTask>(),
+      transferTask: nullable<imuTransfer.ImuTransferTask>(),
+      transferMonitor: nullable<imuTransfer.ImuTransferMonitor>(),
       pendingImuA: nullable<PendingImuTransfer>(),
       pendingImuB: nullable<PendingImuTransfer>(),
       pendingManualExport: false,
@@ -375,15 +371,22 @@ Page(
           }),
         stopService: () =>
           new Promise((resolve, reject) => {
+            const recordStopped = () => {
+              settings.settingsStorage.setItem(
+                STORAGE_KEYS.HEALTH_SERVICE_STATUS,
+                JSON.stringify({ state: "stopped" }),
+              );
+              resolve();
+            };
             const result = appService.stop({
               file: HEALTH_SERVICE_FILE,
               complete_func: (info) => {
                 logger.log("health service stop %j", info);
-                if (info.result) resolve();
+                if (info.result) recordStopped();
                 else reject(new Error("Health service did not stop."));
               },
             });
-            if (result === 2) resolve();
+            if (result === 2) recordStopped();
             else if (result !== 0) reject(new Error(`Health service stop failed (${result}).`));
           }),
         startService: () =>
@@ -459,10 +462,16 @@ Page(
     },
 
     setPendingImu(slot: ImuFileSlot, transfer: PendingImuTransfer | null) {
-      persistAndApplyPendingImuTransfer(NORMAL_IMU_TRANSFER_FILE, slot, transfer, (persisted) => {
-        if (slot === "A") this.state.pendingImuA = persisted;
-        else this.state.pendingImuB = persisted;
-      });
+      persistAndApplyPendingImuTransfer(
+        NORMAL_IMU_TRANSFER_FILE,
+        slot,
+        transfer,
+        (persisted) => {
+          if (slot === "A") this.state.pendingImuA = persisted;
+          else this.state.pendingImuB = persisted;
+        },
+        (error) => captureException(error, { operation: "discard-corrupt-imu-manifest" }),
+      );
     },
 
     restorePendingImuTransfers() {
@@ -790,6 +799,7 @@ Page(
     },
 
     handleImuTransferFailure(transfer: PendingImuTransfer, cause: unknown) {
+      this.state.transferMonitor = null;
       this.state.transferTask = null;
       const reason = cause instanceof Error ? cause.message : String(cause);
       const segmentId = `${ensureWatchInstallId()}:normal-imu:${transfer.sessionStartMs}`;
@@ -810,7 +820,7 @@ Page(
     startTransfer(transfer: PendingImuTransfer) {
       const { path, sampleCount, observedHzX100, slot } = transfer;
       const segmentId = `${ensureWatchInstallId()}:normal-imu:${transfer.sessionStartMs}`;
-      let task: TransferTask;
+      let task: imuTransfer.ImuTransferTask;
       try {
         task = this.sendFile(path, {
           type: "imu-session",
@@ -833,42 +843,32 @@ Page(
         logger.log("transfer %d%%", pct);
       });
 
-      task.on("change", (event: { data: Record<string, unknown> }) => {
-        if (String(event.data.readyState) === "transferred") {
-          void confirmImuTransferPersistence(
-            { sampleCount, segmentId, source: "zepp" },
-            (payload) => this.request(payload),
-          )
-            .then(() => {
-              this.setPendingImu(slot, null);
-              this.state.transferTask = null;
-              this.retryPendingImuTransfer();
-              drainManualExportQueue(
-                {
-                  pendingManualExport: this.state.pendingManualExport,
-                  logging: this.state.logging,
-                  failedTransferPending: Boolean(this.state.pendingImuA || this.state.pendingImuB),
-                },
-                {
-                  clearManualExportQueue: () => {
-                    this.state.pendingManualExport = false;
-                  },
-                  transferStoppedSession: () => this.transferStoppedSession(),
-                },
-              );
-            })
-            .catch((error: unknown) => {
-              this.state.transferTask = null;
-              captureException(error, { operation: "confirm-transfer-persistence", segmentId });
-              logger.error("imu.transferComplete failed %j", error);
-              showToast({ content: "Motion file is still pending" });
-              renderHint("Motion file pending\nRetry from Zepp settings");
-            });
-          return;
-        }
-
-        const failureReason = getImuTransferFailureReason(event.data, "IMU file transfer failed.");
-        if (failureReason) this.handleImuTransferFailure(transfer, new Error(failureReason));
+      this.state.transferMonitor = imuTransfer.monitorImuTransfer(task, {
+        confirm: () =>
+          confirmImuTransferPersistence({ sampleCount, segmentId, source: "zepp" }, (payload) =>
+            this.request(payload),
+          ),
+        failureReason: (data) => getImuTransferFailureReason(data, "IMU file transfer failed."),
+        onConfirmed: () => {
+          this.state.transferMonitor = null;
+          this.setPendingImu(slot, null);
+          this.state.transferTask = null;
+          this.retryPendingImuTransfer();
+          drainManualExportQueue(
+            {
+              pendingManualExport: this.state.pendingManualExport,
+              logging: this.state.logging,
+              failedTransferPending: Boolean(this.state.pendingImuA || this.state.pendingImuB),
+            },
+            {
+              clearManualExportQueue: () => {
+                this.state.pendingManualExport = false;
+              },
+              transferStoppedSession: () => this.transferStoppedSession(),
+            },
+          );
+        },
+        onFailed: (error) => this.handleImuTransferFailure(transfer, error),
       });
     },
 
@@ -984,6 +984,8 @@ Page(
     },
 
     onDestroy() {
+      this.state.transferMonitor?.cancel();
+      this.state.transferMonitor = null;
       if (this.state.logging) {
         this.stopLogging();
       }

@@ -10,7 +10,7 @@ interface SettingState {
   serverUrl: string;
   email: string;
   password: string;
-  apiToken: string;
+  apiToken: string | null;
   connectionStatus: Record<string, unknown>;
   pairingShortCode: string | null;
   pairingVerificationUrl: string | null;
@@ -90,7 +90,7 @@ function buildWith(values: Readonly<Record<string, string | null>>) {
     serverUrl: DEFAULT_DOFEK_SERVER_URL,
     email: "",
     password: "",
-    apiToken: "",
+    apiToken: null,
     connectionStatus: {},
     pairingShortCode: null,
     pairingVerificationUrl: null,

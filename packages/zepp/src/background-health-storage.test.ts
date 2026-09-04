@@ -1,15 +1,20 @@
-import { readFileSync, writeFileSync } from "@zos/fs";
+import { readFileSync, renameSync, writeFileSync } from "@zos/fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { appendBackgroundHealthEvents, type BackgroundHealthOutbox } from "./background-health.ts";
 import {
   parseBackgroundHealthOutbox,
   readBackgroundHealthOutbox,
+  readBackgroundHealthOutboxForCollection,
   serializeBackgroundHealthOutbox,
   writeBackgroundHealthOutbox,
 } from "./background-health-storage.ts";
 import { createEmptyOutbox } from "./durable-outbox.ts";
 
-vi.mock("@zos/fs", () => ({ readFileSync: vi.fn(), writeFileSync: vi.fn() }));
+vi.mock("@zos/fs", () => ({
+  readFileSync: vi.fn(),
+  renameSync: vi.fn(() => 0),
+  writeFileSync: vi.fn(),
+}));
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -85,8 +90,60 @@ describe("background health outbox storage", () => {
 
     vi.mocked(readFileSync).mockReturnValueOnce("not-json");
     expect(() => readBackgroundHealthOutbox(installId)).toThrow(
-      "Background health outbox is not valid JSON.",
+      "Background health outbox storage is corrupt.",
     );
+
+    vi.mocked(readFileSync).mockReturnValueOnce(new ArrayBuffer(1));
+    expect(() => readBackgroundHealthOutbox(installId)).toThrow(
+      "Background health outbox storage returned non-text data.",
+    );
+  });
+
+  it("recovers corrupt persisted data for the next collection and reports the discard", () => {
+    const onDiscard = vi.fn();
+    vi.mocked(readFileSync).mockReturnValueOnce("not-json");
+
+    expect(readBackgroundHealthOutboxForCollection(installId, onDiscard)).toEqual({
+      pending: [],
+      quarantine: [],
+    });
+    expect(onDiscard).toHaveBeenCalledOnce();
+    expect(renameSync).toHaveBeenCalledWith({
+      oldPath: "data://health/background.json",
+      newPath: "data://health/background.json.corrupt",
+    });
+  });
+
+  it("does not leak unknown summary fields through parsing", () => {
+    const serialized = JSON.stringify({
+      version: 1,
+      pending: [
+        {
+          eventId: "summary-1",
+          createdAt: "2024-07-03T10:48:20.000Z",
+          attempts: 0,
+          payload: {
+            kind: "summary",
+            summary: {
+              collectedAt: 1_720_003_700_000,
+              date: "2024-07-03",
+              timezoneOffsetMinutes: 0,
+              privateValue: "must-not-survive",
+            },
+          },
+        },
+      ],
+      quarantine: [],
+    });
+
+    expect(parseBackgroundHealthOutbox(serialized, installId).pending[0]?.payload).toEqual({
+      kind: "summary",
+      summary: {
+        collectedAt: 1_720_003_700_000,
+        date: "2024-07-03",
+        timezoneOffsetMinutes: 0,
+      },
+    });
   });
 
   it("writes only the canonical versioned representation", () => {

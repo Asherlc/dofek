@@ -305,4 +305,20 @@ describe("appendWatchHealthSummary", () => {
       }),
     ]);
   });
+
+  it("retains only the newest seven days of minute summaries", () => {
+    let outbox = createEmptyOutbox<import("./background-health.ts").BackgroundHealthEvent>();
+    for (let minute = 0; minute <= 10_080; minute += 1) {
+      const collectedAt = minute * 60_000;
+      outbox = appendWatchHealthSummary(
+        outbox,
+        { collectedAt, date: "2024-07-03", timezoneOffsetMinutes: 0 },
+        "install-1",
+      );
+    }
+
+    const summaries = outbox.pending.filter((entry) => entry.payload.kind === "summary");
+    expect(summaries).toHaveLength(10_080);
+    expect(summaries[0]?.createdAt).toBe(new Date(60_000).toISOString());
+  });
 });

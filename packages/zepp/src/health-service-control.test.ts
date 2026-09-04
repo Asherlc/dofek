@@ -1,8 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
+import { appendBackgroundHealthEvents, type BackgroundHealthOutbox } from "./background-health.ts";
+import { createEmptyOutbox } from "./durable-outbox.ts";
+import { parseHealthEnvelope } from "./health-contract.ts";
 import {
   acquireForegroundHealthOwnership,
   ensureHealthServiceRunning,
 } from "./health-service-control.ts";
+import { deliverWatchHealthOutbox } from "./watch-health-sync.ts";
 
 describe("ensureHealthServiceRunning", () => {
   it("starts immediately when background permission is already granted", async () => {
@@ -140,7 +144,14 @@ describe("acquireForegroundHealthOwnership", () => {
 
   it("preserves the last background append before a foreground drain starts", async () => {
     let completeStop: (() => void) | undefined;
-    const stored = ["background-before-stop"];
+    let stored: BackgroundHealthOutbox = appendBackgroundHealthEvents(
+      createEmptyOutbox(),
+      {
+        sample: { recordedAt: "2024-07-03T10:00:00.000Z" },
+        activities: [],
+      },
+      "install-1",
+    );
     const acquisition = acquireForegroundHealthOwnership({
       queryPermission: () => 2,
       requestPermission: vi.fn(),
@@ -151,16 +162,39 @@ describe("acquireForegroundHealthOwnership", () => {
       startService: vi.fn(),
     });
 
-    stored.push("background-during-stop");
+    stored = appendBackgroundHealthEvents(
+      stored,
+      {
+        sample: { recordedAt: "2024-07-03T10:01:00.000Z" },
+        activities: [],
+      },
+      "install-1",
+    );
     completeStop?.();
     await acquisition;
-    stored.push("foreground-after-stop");
+    const request = vi.fn(async (envelope: unknown) => {
+      const eventIds = parseHealthEnvelope(envelope).events.map((event) => event.eventId);
+      return { status: "ok", acceptedEventIds: eventIds, rejected: [] };
+    });
+    await deliverWatchHealthOutbox({
+      installId: "install-1",
+      initialOutbox: stored,
+      request,
+      readLatest: () => stored,
+      write: (outbox) => {
+        stored = outbox;
+      },
+    });
 
-    expect(stored).toEqual([
-      "background-before-stop",
-      "background-during-stop",
-      "foreground-after-stop",
-    ]);
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        events: [
+          expect.objectContaining({ eventId: expect.stringContaining("10:00:00.000Z") }),
+          expect.objectContaining({ eventId: expect.stringContaining("10:01:00.000Z") }),
+        ],
+      }),
+    );
+    expect(stored.pending).toEqual([]);
   });
 
   it("waits for the final foreground mutation before restarting App Service", async () => {
@@ -211,5 +245,24 @@ describe("acquireForegroundHealthOwnership", () => {
     });
 
     await expect(ownership.release()).rejects.toBe(restartError);
+  });
+
+  it("preserves both failures when mutation and App Service restart fail", async () => {
+    const mutationError = new Error("foreground write failed");
+    const restartError = new Error("restart failed");
+    const ownership = await acquireForegroundHealthOwnership({
+      queryPermission: () => 2,
+      requestPermission: vi.fn(),
+      stopService: vi.fn(async () => undefined),
+      startService: async () => {
+        throw restartError;
+      },
+    });
+
+    await expect(ownership.release(Promise.reject(mutationError))).rejects.toMatchObject({
+      message: "Foreground health mutation and App Service restart both failed.",
+      mutationError,
+      restartError,
+    });
   });
 });

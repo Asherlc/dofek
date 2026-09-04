@@ -10,7 +10,7 @@ const zeppPairingParamsSchema = z.object({
 
 export default function ZeppPairingScreen() {
   const parsedParams = zeppPairingParamsSchema.safeParse(useLocalSearchParams());
-  const initialCode = parsedParams.success ? (parsedParams.data.code ?? "") : "";
+  const initialCode = parsedParams.success ? parsedParams.data.code : undefined;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>

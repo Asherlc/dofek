@@ -81,4 +81,53 @@ describe("deliverWatchHealthOutbox", () => {
 
     expect(stored.pending.map((entry) => entry.eventId)).toEqual(["event-1"]);
   });
+
+  it("quarantines a submitted event explicitly rejected by the phone", async () => {
+    let stored = sampleOutbox();
+
+    await deliverWatchHealthOutbox({
+      installId: "install-1",
+      initialOutbox: stored,
+      request: async () => ({
+        status: "ok",
+        acceptedEventIds: [],
+        rejected: [
+          {
+            eventId: "event-1",
+            issues: [{ path: "backgroundSamples.0", message: "Invalid sample" }],
+          },
+        ],
+      }),
+      readLatest: () => stored,
+      write: (outbox) => {
+        stored = outbox;
+      },
+    });
+
+    expect(stored.pending).toEqual([]);
+    expect(stored.quarantine).toEqual([
+      expect.objectContaining({
+        eventId: "event-1",
+        issues: [{ path: "backgroundSamples.0", message: "Invalid sample" }],
+      }),
+    ]);
+  });
+
+  it("rejects acknowledgements for events outside the submitted batch", async () => {
+    const stored = sampleOutbox();
+
+    await expect(
+      deliverWatchHealthOutbox({
+        installId: "install-1",
+        initialOutbox: stored,
+        request: async () => ({
+          status: "ok",
+          acceptedEventIds: ["foreign-event"],
+          rejected: [],
+        }),
+        readLatest: () => stored,
+        write: vi.fn(),
+      }),
+    ).rejects.toThrow("Health upload response references an event outside the submitted batch.");
+  });
 });

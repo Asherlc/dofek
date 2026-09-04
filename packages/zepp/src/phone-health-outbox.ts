@@ -5,7 +5,7 @@ import {
   type OutboxEntry,
 } from "./durable-outbox.ts";
 import type { HealthEnvelopeV1, ValidationIssue, ZeppConnectionType } from "./health-contract.ts";
-import type { HealthUploadPayload } from "./health-upload.ts";
+import { type HealthUploadPayload, parseHealthUploadPayload } from "./health-upload.ts";
 import { STORAGE_KEYS } from "./storage-keys.ts";
 
 const PHONE_OUTBOX_VERSION = 1;
@@ -27,13 +27,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function parsePayload(value: unknown): HealthUploadPayload {
-  if (!isRecord(value)) {
-    throw new Error("Phone health outbox payload is invalid.");
-  }
-  return value;
-}
-
 function parseSource(value: unknown): PhoneHealthEvent["source"] {
   if (
     !isRecord(value) ||
@@ -50,7 +43,7 @@ function parsePhoneHealthEvent(value: unknown): PhoneHealthEvent {
   if (!isRecord(value)) {
     throw new Error("Phone health outbox event is invalid.");
   }
-  return { source: parseSource(value.source), payload: parsePayload(value.payload) };
+  return { source: parseSource(value.source), payload: parseHealthUploadPayload(value.payload) };
 }
 
 function parseEntry(value: unknown): OutboxEntry<PhoneHealthEvent> {
@@ -114,7 +107,7 @@ export function serializePhoneHealthOutbox(outbox: PhoneHealthOutbox): string {
 
 export function readPhoneHealthOutbox(storage: SettingsStorage): PhoneHealthOutbox {
   const serialized = storage.getItem(STORAGE_KEYS.PHONE_HEALTH_OUTBOX);
-  return serialized ? parsePhoneHealthOutbox(serialized) : createEmptyOutbox();
+  return serialized === null ? createEmptyOutbox() : parsePhoneHealthOutbox(serialized);
 }
 
 export function writePhoneHealthOutbox(storage: SettingsStorage, outbox: PhoneHealthOutbox): void {

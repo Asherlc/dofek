@@ -2,6 +2,17 @@ import { describe, expect, it } from "vitest";
 import { createImuChunkEnvelope, parseImuEnvelope } from "./imu-upload.ts";
 
 describe("IMU upload envelope", () => {
+  it("rejects invalid sample values before creating an envelope", () => {
+    expect(() =>
+      createImuChunkEnvelope({
+        connectionType: "zepp",
+        installId: "install-1",
+        segmentId: "segment-1",
+        sessionStartMs: 1_720_000_000_000,
+        samples: [{ tMs: -1, ax: 1, ay: 2, az: 3, gx: 4, gy: 5, gz: Number.NaN }],
+      }),
+    ).toThrow("IMU envelope is invalid.");
+  });
   it("creates a stable chunk identity and round-trips the payload", () => {
     const envelope = createImuChunkEnvelope({
       connectionType: "zepp",

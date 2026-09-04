@@ -49,8 +49,9 @@ export function createImuChunkEnvelope(input: {
   hasGyroscope?: boolean;
   samples: ImuSample[];
 }): HealthEnvelopeV1<ImuChunkPayload> {
-  const first = input.samples[0];
-  const last = input.samples.at(-1);
+  const samples = input.samples.map(parseSample);
+  const first = samples[0];
+  const last = samples.at(-1);
   if (!first || !last) {
     throw new Error("Cannot create an empty IMU chunk.");
   }
@@ -66,7 +67,7 @@ export function createImuChunkEnvelope(input: {
           segmentId: input.segmentId,
           sessionStartMs: input.sessionStartMs,
           hasGyroscope: input.hasGyroscope ?? true,
-          samples: input.samples,
+          samples,
         },
       },
     ],

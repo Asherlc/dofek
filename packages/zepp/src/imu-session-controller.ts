@@ -202,13 +202,11 @@ export function createImuSessionController(
     stop() {
       if (!active || !ready) return null;
       active = false;
-      let stopFailed = false;
       let completed: ImuSegmentResult | null = null;
       try {
         try {
           ready.stop();
         } catch (error) {
-          stopFailed = true;
           options.onError(error);
         }
         try {
@@ -221,7 +219,7 @@ export function createImuSessionController(
       } finally {
         releaseDisplay();
       }
-      return stopFailed ? null : completed;
+      return completed;
     },
   };
 }

@@ -19,6 +19,14 @@ interface UploadFailureStorage {
   setItem(key: string, value: string): void;
 }
 
+export function requireSecureDofekServerUrl(value: string): string {
+  const normalized = value.trim().replace(/\/+$/, "");
+  if (!/^https:\/\/[^\s/]+(?:\/[^\s]*)?$/i.test(normalized)) {
+    throw new Error("Dofek server URL must use HTTPS.");
+  }
+  return normalized;
+}
+
 export function handleDofekUploadFailure(
   storage: UploadFailureStorage,
   summary: ZeppFetchSummary,

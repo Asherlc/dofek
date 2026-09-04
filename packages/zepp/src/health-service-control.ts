@@ -24,6 +24,16 @@ export type HealthServiceStartResult =
 const PERMISSION_DENIED_REASON =
   "Background health collection requires Background Service permission.";
 
+class HealthMutationRestartError extends Error {
+  constructor(
+    readonly mutationError: unknown,
+    readonly restartError: unknown,
+  ) {
+    super("Foreground health mutation and App Service restart both failed.");
+    this.name = "HealthMutationRestartError";
+  }
+}
+
 export async function ensureHealthServiceRunning(
   dependencies: HealthServiceDependencies,
 ): Promise<HealthServiceStartResult> {
@@ -88,11 +98,7 @@ async function restartAfterMutation(
     await startService();
   } catch (restartError) {
     if (mutationError !== noError) {
-      throw new AggregateError(
-        [mutationError, restartError],
-        "Foreground health mutation and App Service restart both failed.",
-        { cause: mutationError },
-      );
+      throw new HealthMutationRestartError(mutationError, restartError);
     }
     throw restartError;
   }

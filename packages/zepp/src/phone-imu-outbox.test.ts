@@ -1,21 +1,16 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { createImuChunkEnvelope } from "./imu-upload.ts";
-import { persistImuEnvelope, readPhoneImuOutbox } from "./phone-imu-outbox.ts";
+import {
+  persistImuEnvelope,
+  readPhoneImuOutbox,
+  readPhoneImuPendingBatch,
+} from "./phone-imu-outbox.ts";
 import { STORAGE_KEYS } from "./storage-keys.ts";
-
-function createStorage() {
-  const persisted = new Map<string, string>();
-  return {
-    persisted,
-    getItem: vi.fn((key: string) => persisted.get(key) ?? null),
-    removeItem: vi.fn((key: string) => persisted.delete(key)),
-    setItem: vi.fn((key: string, value: string) => persisted.set(key, value)),
-  };
-}
+import { createSettingsStorage } from "./test-helpers.ts";
 
 describe("phone IMU outbox", () => {
   it("persists before acknowledging and deduplicates replayed chunks", () => {
-    const storage = createStorage();
+    const storage = createSettingsStorage();
     const envelope = createImuChunkEnvelope({
       connectionType: "zepp",
       installId: "install-1",
@@ -32,7 +27,7 @@ describe("phone IMU outbox", () => {
   });
 
   it("stores high-rate chunk payloads independently from the compact queue index", () => {
-    const storage = createStorage();
+    const storage = createSettingsStorage();
     for (const tMs of [0, 100, 200]) {
       persistImuEnvelope(
         storage,
@@ -55,7 +50,7 @@ describe("phone IMU outbox", () => {
   });
 
   it("migrates the existing monolithic queue without losing pending chunks", () => {
-    const storage = createStorage();
+    const storage = createSettingsStorage();
     const envelope = createImuChunkEnvelope({
       connectionType: "zepp",
       installId: "install-1",
@@ -79,5 +74,25 @@ describe("phone IMU outbox", () => {
         key.startsWith(`${STORAGE_KEYS.PHONE_IMU_OUTBOX}:pending:`),
       ),
     ).toHaveLength(1);
+  });
+
+  it("bounds the sharded scan used to assemble a same-source upload batch", () => {
+    const storage = createSettingsStorage();
+    for (let index = 0; index <= 100; index += 1) {
+      persistImuEnvelope(
+        storage,
+        createImuChunkEnvelope({
+          connectionType: "zepp",
+          installId: index === 0 || index === 100 ? "target" : `other-${index}`,
+          segmentId: `segment-${index}`,
+          sessionStartMs: 1_720_000_000_000,
+          samples: [{ tMs: index, ax: 1, ay: 2, az: 3, gx: 4, gy: 5, gz: 6 }],
+        }),
+      );
+    }
+    storage.getItem.mockClear();
+
+    expect(readPhoneImuPendingBatch(storage, 2)).toHaveLength(1);
+    expect(storage.getItem).toHaveBeenCalledTimes(101);
   });
 });

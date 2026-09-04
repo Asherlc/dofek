@@ -70,7 +70,7 @@ Bulk IMU logs are megabytes, while BLE messaging is oriented toward bounded payl
 3. **App Service `@zos/fs` writes** are only guaranteed when the screen is off or in AOD; the foreground recorders perform normal chunked flushes while logging.
 4. **Sample rate is not specified in Hz by Zepp docs** — only `FREQ_MODE_LOW | NORMAL | HIGH`. The app selects the highest mode ≤ user preference and records the **measured delivered rate** from `onChange` callbacks.
 5. **`onChange` delivery** — treated as one sample per callback (per API examples). The header stores measured Hz; verify on hardware.
-6. **Background IMU** — when the mini program UI is destroyed or the Workout Extension loses focus, sensor access stops. `setWakeUpRelaunch(true)` reopens the normal app after wake, but continuous off-body/screen-off high-rate IMU is not supported by the platform.
+6. **Background IMU** — when the mini program UI is destroyed or the Workout Extension loses focus, sensor access stops. Continuous off-body/screen-off high-rate IMU is not supported by the platform ([App Service capabilities and limitations](https://docs.zepp.com/docs/guides/framework/device/app-service/)).
 
 `configVersion` is **v3** because `app-service` module registration requires v3 schema, while APIs used are Zepp OS 2.0+ `@zos/*` modules.
 

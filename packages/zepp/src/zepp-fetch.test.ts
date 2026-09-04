@@ -1,5 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
-import { handleDofekUploadFailure, summarizeZeppFetchResponse } from "./zepp-fetch.ts";
+import {
+  handleDofekUploadFailure,
+  requireSecureDofekServerUrl,
+  summarizeZeppFetchResponse,
+} from "./zepp-fetch.ts";
+
+describe("requireSecureDofekServerUrl", () => {
+  it("accepts HTTPS and rejects cleartext or malformed server URLs", () => {
+    expect(requireSecureDofekServerUrl(" https://dofek.example/path/ ")).toBe(
+      "https://dofek.example/path",
+    );
+    expect(() => requireSecureDofekServerUrl("http://dofek.example")).toThrow(
+      "Dofek server URL must use HTTPS.",
+    );
+    expect(() => requireSecureDofekServerUrl("not-a-url")).toThrow(
+      "Dofek server URL must use HTTPS.",
+    );
+  });
+});
 
 describe("summarizeZeppFetchResponse", () => {
   it("accepts a successful JSON-string body", () => {

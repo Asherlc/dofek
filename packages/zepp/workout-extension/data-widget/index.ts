@@ -12,6 +12,10 @@ import { BasePage } from "@zeppos/zml/base-page";
 import { createDisplayLease } from "../../src/display-lease.ts";
 import { createImuCollector } from "../../src/imu-collector.ts";
 import {
+  type ImuTransferMonitor,
+  monitorImuTransfer,
+} from "../../src/imu-transfer-monitor.ts";
+import {
   createImuSessionController,
   type ImuSegmentResult,
   type ImuSessionController,
@@ -81,6 +85,8 @@ DataWidget(
       pendingImuB: nullable<ImuSegmentResult>(),
       transferringImuA: false,
       transferringImuB: false,
+      imuTransferMonitorA: nullable<ImuTransferMonitor>(),
+      imuTransferMonitorB: nullable<ImuTransferMonitor>(),
     },
 
     build() {
@@ -250,6 +256,7 @@ DataWidget(
           if (slot === "A") this.state.pendingImuA = persisted;
           else this.state.pendingImuB = persisted;
         },
+        (error) => this.reportError(error, "discard-corrupt-imu-manifest"),
       );
     },
 
@@ -263,6 +270,11 @@ DataWidget(
       } else {
         this.state.transferringImuB = transferring;
       }
+    },
+
+    setImuTransferMonitor(slot: ImuFileSlot, monitor: ImuTransferMonitor | null) {
+      if (slot === "A") this.state.imuTransferMonitorA = monitor;
+      else this.state.imuTransferMonitorB = monitor;
     },
 
     startImuSegment() {
@@ -370,34 +382,28 @@ DataWidget(
         this.handleImuTransferFailure(result, slot, error);
         return;
       }
-      task.on("change", (event: { data: Record<string, unknown> }) => {
-        const readyState = String(event.data.readyState);
-        if (readyState === "transferred") {
-          void confirmImuTransferPersistence(
+      this.setImuTransferMonitor(
+        slot,
+        monitorImuTransfer(task, {
+          confirm: () =>
+            confirmImuTransferPersistence(
             { sampleCount: result.sampleCount, segmentId, source: "zepp-workout" },
             (payload) => this.request(payload),
-          )
-            .then(() => {
-              this.setImuTransferring(slot, false);
-              this.setPendingImu(slot, null);
-              if (this.state.focused && !this.state.imuController) {
-                this.startImuSegment();
-              }
-            })
-            .catch((error: unknown) => {
-              this.setImuTransferring(slot, false);
-              this.reportError(error, "workout-imu-transfer-confirmation");
-            });
-        } else {
-          const failureReason = getImuTransferFailureReason(
-            event.data,
-            "Workout IMU transfer failed.",
-          );
-          if (failureReason) {
-            this.handleImuTransferFailure(result, slot, new Error(failureReason));
-          }
-        }
-      });
+            ),
+          failureReason: (data) =>
+            getImuTransferFailureReason(data, "Workout IMU transfer failed."),
+          onConfirmed: () => {
+            this.setImuTransferMonitor(slot, null);
+            this.setImuTransferring(slot, false);
+            this.setPendingImu(slot, null);
+            if (this.state.focused && !this.state.imuController) this.startImuSegment();
+          },
+          onFailed: (error) => {
+            this.setImuTransferMonitor(slot, null);
+            this.handleImuTransferFailure(result, slot, error);
+          },
+        }),
+      );
     },
 
     retryImuTransfers() {
@@ -429,6 +435,10 @@ DataWidget(
 
     onDestroy() {
       this.state.focused = false;
+      this.state.imuTransferMonitorA?.cancel();
+      this.state.imuTransferMonitorB?.cancel();
+      this.state.imuTransferMonitorA = null;
+      this.state.imuTransferMonitorB = null;
       this.stopImuSegment();
       this.stopCollection();
     },

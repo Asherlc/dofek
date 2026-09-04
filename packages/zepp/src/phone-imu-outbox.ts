@@ -7,6 +7,7 @@ import { STORAGE_KEYS } from "./storage-keys.ts";
 
 const VERSION = 2;
 const LEGACY_VERSION = 1;
+const MAX_PENDING_BATCH_SCAN = 100;
 
 type QueueName = "pending" | "quarantine";
 
@@ -176,7 +177,7 @@ export function readPhoneImuPendingBatch(
   if (!firstId) return [];
   const first = readStoredEntry(storage, "pending", firstId);
   const entries = [first];
-  for (const eventId of index.pending.slice(1)) {
+  for (const eventId of index.pending.slice(1, MAX_PENDING_BATCH_SCAN)) {
     if (entries.length >= limit) break;
     const entry = readStoredEntry(storage, "pending", eventId);
     if (

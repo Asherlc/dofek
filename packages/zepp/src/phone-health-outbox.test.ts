@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { createHealthEnvelope, type HealthEnvelopeV1 } from "./health-contract.ts";
 import type { HealthUploadPayload } from "./health-upload.ts";
 import {
@@ -7,15 +7,12 @@ import {
   readPhoneHealthOutbox,
 } from "./phone-health-outbox.ts";
 import { STORAGE_KEYS } from "./storage-keys.ts";
+import { createSettingsStorage } from "./test-helpers.ts";
 
 function createStorage(initial: string | null = null) {
-  let persisted = initial;
-  return {
-    getItem: vi.fn(() => persisted),
-    setItem: vi.fn((_key: string, value: string) => {
-      persisted = value;
-    }),
-  };
+  return createSettingsStorage(
+    initial === null ? {} : { [STORAGE_KEYS.PHONE_HEALTH_OUTBOX]: initial },
+  );
 }
 
 const envelope: HealthEnvelopeV1<HealthUploadPayload> = createHealthEnvelope({
@@ -92,6 +89,31 @@ describe("phone health outbox", () => {
     );
     expect(() => parsePhoneHealthOutbox('{"version":1,"pending":"invalid"}')).toThrow(
       "Phone health outbox has an invalid shape.",
+    );
+    expect(() =>
+      parsePhoneHealthOutbox(
+        JSON.stringify({
+          version: 1,
+          pending: [
+            {
+              eventId: "event-1",
+              createdAt: "2024-07-03T10:48:20.000Z",
+              attempts: 0,
+              payload: {
+                source: { connectionType: "zepp", installId: "install-1" },
+                payload: { backgroundSamples: [{ recordedAt: 123 }] },
+              },
+            },
+          ],
+          quarantine: [],
+        }),
+      ),
+    ).toThrow("Health upload payload is invalid.");
+  });
+
+  it("treats an empty stored value as corruption rather than an empty outbox", () => {
+    expect(() => readPhoneHealthOutbox(createStorage(""))).toThrow(
+      "Phone health outbox is not valid JSON.",
     );
   });
 });

@@ -43,6 +43,29 @@ describe("createWorkoutHealthEnvelope", () => {
       ],
     });
   });
+
+  it("derives activity bounds from snapshots when the external ID is nonnumeric", () => {
+    const snapshots = [
+      { recordedAt: "2024-07-03T09:51:52.000Z", metrics: { duration: 312 } },
+      { recordedAt: "2024-07-03T09:52:02.000Z", metrics: { duration: 322 } },
+    ];
+
+    const envelope = createWorkoutHealthEnvelope("install-1", "workout-uuid", snapshots);
+
+    expect(envelope.events[0]?.payload.activities?.[0]).toMatchObject({
+      externalId: "workout-uuid",
+      startedAt: "2024-07-03T09:46:40.000Z",
+      endedAt: "2024-07-03T09:52:02.000Z",
+    });
+  });
+
+  it("rejects an invalid snapshot timestamp with an actionable error", () => {
+    expect(() =>
+      createWorkoutHealthEnvelope("install-1", "workout-uuid", [
+        { recordedAt: "not-a-date", metrics: { duration: 1 } },
+      ]),
+    ).toThrow("Workout snapshot timestamp is invalid.");
+  });
 });
 
 describe("isWorkoutHealthEventAcknowledged", () => {

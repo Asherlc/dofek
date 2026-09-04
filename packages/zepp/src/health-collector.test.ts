@@ -114,7 +114,8 @@ function collect(sensors: SensorConstructors) {
 
 describe("collectHealthData", () => {
   it("collects all available sensor data", () => {
-    const result = collect(makeSensors());
+    const captureException = vi.fn();
+    const result = collectHealthData(makeSensors(), captureException);
 
     expect(result.collectedAt).toBeGreaterThan(0);
     expect(result.date).toBe(formatLocalDate(new Date(result.collectedAt)));
@@ -151,6 +152,7 @@ describe("collectHealthData", () => {
         endedAt: "2024-07-04T10:16:40.000Z",
       },
     ]);
+    expect(captureException).not.toHaveBeenCalled();
   });
 
   it("handles missing sleep data gracefully", () => {

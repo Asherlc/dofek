@@ -516,7 +516,7 @@ describe("createIngestZosHealthRouter", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(routeMocks.executeWithSchema).toHaveBeenCalledOnce();
+    expect(routeMocks.executeWithSchema).toHaveBeenCalledTimes(2);
     expect(routeMocks.writeMetricStreamRows).toHaveBeenCalledWith({
       database: transactionDatabase,
       publisher: metricStreamPublisher,
@@ -533,7 +533,7 @@ describe("createIngestZosHealthRouter", () => {
     });
   });
 
-  it("reports a missing activity for live workout samples", async () => {
+  it("rejects a live workout event whose activity is missing", async () => {
     routeMocks.executeWithSchema.mockResolvedValue([]);
     const { db } = createMockDatabase();
     const metricStreamPublisher = {
@@ -554,13 +554,155 @@ describe("createIngestZosHealthRouter", () => {
       { authorization: "Bearer token-123" },
     );
 
-    expect(response.status).toBe(500);
-    expect(response.body).toEqual({ error: "Failed to ingest health data." });
-    const capturedError = routeMocks.captureException.mock.calls[0]?.[0];
-    expect(capturedError).toEqual(
-      new Error("Zepp live workout activity missing-activity was not found."),
-    );
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      status: "ok",
+      acceptedEventIds: [],
+      rejected: [
+        {
+          eventId: "event-test",
+          issues: [
+            {
+              path: "liveWorkoutSamples",
+              message: "Activity missing-activity was not found.",
+            },
+          ],
+        },
+      ],
+    });
+    expect(routeMocks.captureException).not.toHaveBeenCalled();
     expect(metricStreamPublisher.publishRows).not.toHaveBeenCalled();
+  });
+
+  it("commits valid siblings when a live workout event references a missing activity", async () => {
+    routeMocks.executeWithSchema.mockResolvedValue([]);
+    const { db, execute } = createMockDatabase();
+
+    const response = await post(
+      createTestApp(db, { publishRows: vi.fn(async () => []) }),
+      {
+        version: 1,
+        batchId: "batch-missing-live-activity",
+        source: { connectionType: "zepp", installId: "install-test" },
+        events: [
+          {
+            eventId: "daily-event",
+            createdAt: "2024-07-03T10:48:20.000Z",
+            payload: { dailyMetrics: { "2024-07-03": { steps: 1000 } } },
+          },
+          {
+            eventId: "missing-live-event",
+            createdAt: "2024-07-03T10:49:20.000Z",
+            payload: {
+              liveWorkoutSamples: [
+                {
+                  externalId: "missing-activity",
+                  recordedAt: "2024-07-03T10:49:20.000Z",
+                  metrics: { duration: 312 },
+                },
+              ],
+            },
+          },
+        ],
+      },
+      { authorization: "Bearer token-123" },
+      true,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      status: "ok",
+      acceptedEventIds: ["daily-event"],
+      rejected: [
+        {
+          eventId: "missing-live-event",
+          issues: [
+            {
+              path: "liveWorkoutSamples",
+              message: "Activity missing-activity was not found.",
+            },
+          ],
+        },
+      ],
+    });
+    expect(execute).toHaveBeenCalled();
+  });
+
+  it("merges complementary daily metric fields from sibling events", async () => {
+    const { db, execute } = createMockDatabase();
+
+    const response = await post(
+      createTestApp(db),
+      {
+        version: 1,
+        batchId: "batch-daily-merge",
+        source: { connectionType: "zepp", installId: "install-test" },
+        events: [
+          {
+            eventId: "steps-event",
+            createdAt: "2024-07-03T10:48:20.000Z",
+            payload: { dailyMetrics: { "2024-07-03": { steps: 1000 } } },
+          },
+          {
+            eventId: "distance-event",
+            createdAt: "2024-07-03T10:49:20.000Z",
+            payload: { dailyMetrics: { "2024-07-03": { distanceKm: 1.2 } } },
+          },
+        ],
+      },
+      { authorization: "Bearer token-123" },
+      true,
+    );
+
+    expect(response.status).toBe(200);
+    const dailyMetricsQuery = new PgDialect().sqlToQuery(execute.mock.calls[1]?.[0]);
+    expect(dailyMetricsQuery.params).toEqual([
+      "2024-07-03",
+      "amazfit-zepp",
+      userId,
+      1000,
+      1.2,
+      null,
+      null,
+      null,
+      null,
+      null,
+    ]);
+  });
+
+  it("rejects datetime offsets outside the ISO 8601 range", async () => {
+    const { db, execute } = createMockDatabase();
+
+    const response = await post(
+      createTestApp(db),
+      {
+        backgroundSamples: [
+          {
+            recordedAt: "2024-07-03T10:48:20+99:00",
+            heartRate: 72,
+          },
+        ],
+      },
+      { authorization: "Bearer token-123" },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      status: "ok",
+      acceptedEventIds: [],
+      rejected: [
+        {
+          eventId: "event-test",
+          issues: [
+            {
+              path: "backgroundSamples.0.recordedAt",
+              message: "Invalid ISO 8601 timezone offset",
+            },
+          ],
+        },
+      ],
+    });
+    expect(execute).not.toHaveBeenCalled();
   });
 
   it("stores daily metrics, sleep sessions with stages, and activities for a valid payload", async () => {
@@ -762,7 +904,7 @@ describe("createIngestZosHealthRouter", () => {
   it("accepts versioned Zepp IMU chunks and writes source-attributed vectors", async () => {
     const { db } = createMockDatabase();
     const response = await post(
-      createTestApp(db, { publishBatch: vi.fn() }),
+      createTestApp(db, { publishRows: vi.fn(async () => []) }),
       {
         version: 1,
         batchId: "segment-1:0:0",

@@ -5,7 +5,7 @@ import {
   collectBackgroundHealthSample,
 } from "../src/background-health.ts";
 import {
-  readBackgroundHealthOutbox,
+  readBackgroundHealthOutboxForCollection,
   writeBackgroundHealthOutbox,
 } from "../src/background-health-storage.ts";
 import { captureException, ensureWatchInstallId, loadWatchTelemetryBuffer } from "./telemetry.ts";
@@ -28,7 +28,9 @@ AppService({
           Stress,
           Workout,
         });
-        const currentOutbox = readBackgroundHealthOutbox(installId);
+        const currentOutbox = readBackgroundHealthOutboxForCollection(installId, (error) =>
+          captureException(error, { operation: "discard-corrupt-background-health-outbox" }),
+        );
         const updatedOutbox = appendBackgroundHealthEvents(currentOutbox, collected, installId);
         writeBackgroundHealthOutbox(updatedOutbox);
       } catch (error: unknown) {

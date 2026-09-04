@@ -14,8 +14,15 @@ export function createWorkoutHealthEnvelope(
   }
   const eventId = `${installId}:workout:${externalId}:${firstSnapshot.recordedAt}:${latestSnapshot.recordedAt}`;
   const durationSeconds = latestSnapshot.metrics.duration ?? 0;
-  const startedAt = new Date(Number(externalId) * 1000).toISOString();
-  const endedAt = new Date(Number(externalId) * 1000 + durationSeconds * 1000).toISOString();
+  const firstDurationSeconds = firstSnapshot.metrics.duration ?? durationSeconds;
+  const firstRecordedAtMs = new Date(firstSnapshot.recordedAt).getTime();
+  const latestRecordedAtMs = new Date(latestSnapshot.recordedAt).getTime();
+  if (!Number.isFinite(firstRecordedAtMs) || !Number.isFinite(latestRecordedAtMs)) {
+    throw new Error("Workout snapshot timestamp is invalid.");
+  }
+  const startedAtMs = firstRecordedAtMs - firstDurationSeconds * 1000;
+  const startedAt = new Date(startedAtMs).toISOString();
+  const endedAt = new Date(startedAtMs + durationSeconds * 1000).toISOString();
 
   return {
     version: 1,

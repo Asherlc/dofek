@@ -15,17 +15,21 @@ export class SyncCoordinator {
       return this.#inFlight;
     }
 
-    this.#inFlight = this.#run().finally(() => {
-      this.#inFlight = null;
-    });
+    this.#inFlight = this.#run();
     return this.#inFlight;
   }
 
   async #run(): Promise<void> {
-    while (this.#pendingReasons.size > 0) {
-      const reasons = [...this.#pendingReasons];
-      this.#pendingReasons.clear();
-      await this.#drain(reasons);
+    try {
+      while (this.#pendingReasons.size > 0) {
+        const reasons = [...this.#pendingReasons];
+        this.#pendingReasons.clear();
+        await this.#drain(reasons);
+      }
+      this.#inFlight = null;
+    } catch (error) {
+      this.#inFlight = null;
+      throw error;
     }
   }
 }

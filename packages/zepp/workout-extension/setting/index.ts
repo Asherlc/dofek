@@ -46,7 +46,7 @@ interface WorkoutSettingsState {
   serverUrl: string;
   email: string;
   password: string;
-  apiToken: string;
+  apiToken: string | null;
   connectionStatus: Record<string, unknown>;
   pairingShortCode: string | null;
   pairingVerificationUrl: string | null;
@@ -60,7 +60,7 @@ const state: WorkoutSettingsState = {
   serverUrl: DEFAULT_DOFEK_SERVER_URL,
   email: "",
   password: "",
-  apiToken: "",
+  apiToken: null,
   connectionStatus: EMPTY_STATUS,
   pairingShortCode: null,
   pairingVerificationUrl: null,
@@ -81,7 +81,7 @@ AppSettingsPage({
     this.state.serverUrl =
       props.settingsStorage.getItem(STORAGE_KEYS.DOFEK_SERVER_URL) ?? DEFAULT_DOFEK_SERVER_URL;
     this.state.email = props.settingsStorage.getItem(STORAGE_KEYS.DOFEK_EMAIL) ?? "";
-    this.state.apiToken = props.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN) ?? "";
+    this.state.apiToken = props.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN);
     this.state.connectionStatus = readStatus(
       props.settingsStorage.getItem(STORAGE_KEYS.DOFEK_CONNECTION_STATUS),
     );
@@ -103,7 +103,7 @@ AppSettingsPage({
     const connectionState = parseConnectionState(this.state.connectionStatus.state);
     const connectionActions = deriveConnectionActions(
       connectionState,
-      Boolean(this.state.apiToken.trim()),
+      Boolean(this.state.apiToken?.trim()),
     );
     const connectionReason = this.state.connectionStatus.reason;
     const imuStatus = this.state.imuSyncStatus;

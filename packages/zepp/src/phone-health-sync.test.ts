@@ -3,20 +3,11 @@ import { createHealthEnvelope, type HealthEnvelopeV1 } from "./health-contract.t
 import type { HealthUploadPayload } from "./health-upload.ts";
 import { persistHealthEnvelope, readPhoneHealthOutbox } from "./phone-health-outbox.ts";
 import { drainPhoneHealthOutbox } from "./phone-health-sync.ts";
-
-function createStorage() {
-  let persisted: string | null = null;
-  return {
-    getItem: vi.fn(() => persisted),
-    setItem: vi.fn((_key: string, value: string) => {
-      persisted = value;
-    }),
-  };
-}
+import { createSettingsStorage } from "./test-helpers.ts";
 
 const envelope = createHealthEnvelope({
   batchId: "watch-batch",
-  source: { connectionType: "zepp" as const, installId: "install-1" },
+  source: { connectionType: "zepp", installId: "install-1" },
   events: [
     {
       eventId: "event-1",
@@ -35,7 +26,7 @@ const envelope = createHealthEnvelope({
 
 describe("drainPhoneHealthOutbox", () => {
   it("acknowledges accepted events and quarantines individually rejected siblings", async () => {
-    const storage = createStorage();
+    const storage = createSettingsStorage();
     persistHealthEnvelope(storage, envelope);
     const post = vi.fn(async (_batch: HealthEnvelopeV1<HealthUploadPayload>) => ({
       acceptedEventIds: ["event-1"],
@@ -69,7 +60,7 @@ describe("drainPhoneHealthOutbox", () => {
   });
 
   it("records attempts and retains events when transport fails", async () => {
-    const storage = createStorage();
+    const storage = createSettingsStorage();
     persistHealthEnvelope(storage, envelope);
     const transportError = new Error("network unavailable");
 
@@ -93,7 +84,7 @@ describe("drainPhoneHealthOutbox", () => {
   });
 
   it("preserves events appended while a successful upload is in flight", async () => {
-    const storage = createStorage();
+    const storage = createSettingsStorage();
     persistHealthEnvelope(storage, envelope);
     const concurrentEnvelope = createHealthEnvelope({
       batchId: "concurrent-watch-batch",
@@ -123,7 +114,7 @@ describe("drainPhoneHealthOutbox", () => {
   });
 
   it("preserves concurrent events when an upload fails", async () => {
-    const storage = createStorage();
+    const storage = createSettingsStorage();
     persistHealthEnvelope(storage, envelope);
     const concurrentEnvelope = createHealthEnvelope({
       batchId: "concurrent-watch-batch",
@@ -152,7 +143,7 @@ describe("drainPhoneHealthOutbox", () => {
   });
 
   it("retains and marks events omitted from a successful server acknowledgement", async () => {
-    const storage = createStorage();
+    const storage = createSettingsStorage();
     persistHealthEnvelope(storage, envelope);
 
     await expect(
