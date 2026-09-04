@@ -293,7 +293,7 @@ Page(
       });
     },
 
-    refreshPreferences() {
+    refreshPreferences({ startPairingIfNeeded = true }: { startPairingIfNeeded?: boolean } = {}) {
       this.request({
         method: "imu.getPreferences",
         params: {},
@@ -310,7 +310,7 @@ Page(
           );
           const pairing = isRecord(result?.pairing) ? result.pairing : null;
           this.renderPairing(pairing);
-          if (!this.state.hasCredentials && !pairing) {
+          if (startPairingIfNeeded && !this.state.hasCredentials && !pairing) {
             this.startPairingFromWatch();
           }
           this.publishSessionStatus(
@@ -783,7 +783,7 @@ Page(
 
     onCall(payload: { method: string; params?: Record<string, unknown> } | null) {
       if (isConnectionChangedCall(payload)) {
-        this.refreshPreferences();
+        this.refreshPreferences({ startPairingIfNeeded: false });
         return;
       }
 

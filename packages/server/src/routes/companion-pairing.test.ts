@@ -13,6 +13,7 @@ vi.mock("../logger.ts", () => ({
 }));
 
 const originalPublicUrl = process.env.PUBLIC_URL;
+const originalNodeEnv = process.env.NODE_ENV;
 const pairingStartResponseSchema = z.object({
   pairingId: z.string(),
   shortCode: z.string(),
@@ -70,6 +71,7 @@ async function request(
 
 describe("createCompanionPairingRouter", () => {
   beforeEach(() => {
+    process.env.NODE_ENV = "test";
     process.env.PUBLIC_URL = "https://app.example.test";
   });
 
@@ -78,6 +80,11 @@ describe("createCompanionPairingRouter", () => {
       delete process.env.PUBLIC_URL;
     } else {
       process.env.PUBLIC_URL = originalPublicUrl;
+    }
+    if (originalNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = originalNodeEnv;
     }
   });
 
@@ -145,6 +152,15 @@ describe("createCompanionPairingRouter", () => {
     expect(await response.json()).toMatchObject({
       verificationUrl: expect.stringContaining("http://app.example.test/zepp-pairing?code="),
     });
+  });
+
+  it("rejects an HTTP public app URL in production", () => {
+    process.env.NODE_ENV = "production";
+    process.env.PUBLIC_URL = "http://app.example.test";
+
+    expect(() => createTestApp(new InMemoryCompanionPairingStore())).toThrow(
+      "PUBLIC_URL environment variable must use https in production",
+    );
   });
 
   it("fails loudly when PUBLIC_URL is missing", async () => {

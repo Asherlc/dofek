@@ -6,10 +6,8 @@ const meta = {
   title: "Settings/ZeppPairingPanel",
   component: ZeppPairingPanelBody,
   args: {
-    connections: [],
-    connectionsError: null,
+    connectionsState: { status: "success", connections: [] },
     disconnectError: null,
-    isConnectionsLoading: false,
     isPairingError: false,
     isPairingPending: false,
     pairingCode: "ABC234",
@@ -27,7 +25,10 @@ export const Ready: Story = {};
 
 export const Connected: Story = {
   args: {
-    connections: [{ connectionType: "zepp-main" }],
+    connectionsState: {
+      status: "success",
+      connections: [{ connectionType: "zepp-main" }],
+    },
     pairingCode: "",
     pairingMessage: "Zepp app connected. Return to Zepp to sync.",
   },

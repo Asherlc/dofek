@@ -12,5 +12,10 @@ describe("Zepp connection control", () => {
     expect(isConnectionChangedCall(null)).toBe(false);
     expect(isConnectionChangedCall({ method: "health.collect" })).toBe(false);
     expect(isConnectionChangedCall({ method: 42 })).toBe(false);
+    expect(isConnectionChangedCall({ method: "dofek.connectionChanged" })).toBe(false);
+    expect(isConnectionChangedCall({ method: "dofek.connectionChanged", params: [] })).toBe(false);
+    expect(
+      isConnectionChangedCall({ method: "dofek.connectionChanged", params: { unexpected: true } }),
+    ).toBe(false);
   });
 });

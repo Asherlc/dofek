@@ -7,6 +7,8 @@ import { ZeppPairingPanel, ZeppPairingPanelBody } from "./ZeppPairingPanel.tsx";
 const mocks = vi.hoisted<{
   claim: ReturnType<typeof vi.fn>;
   connections: Array<{ connectionType: "zepp-main" | "zepp-workout" }>;
+  connectionsError: Error | null;
+  isConnectionsLoading: boolean;
   pairingOnSuccess: (() => Promise<void>) | null;
   refetch: ReturnType<typeof vi.fn>;
   revoke: ReturnType<typeof vi.fn>;
@@ -14,6 +16,8 @@ const mocks = vi.hoisted<{
 }>(() => ({
   claim: vi.fn(),
   connections: [],
+  connectionsError: null,
+  isConnectionsLoading: false,
   pairingOnSuccess: null,
   refetch: vi.fn().mockResolvedValue(undefined),
   revoke: vi.fn(),
@@ -41,8 +45,8 @@ vi.mock("../lib/trpc.ts", () => ({
       list: {
         useQuery: () => ({
           data: mocks.connections,
-          error: null,
-          isLoading: false,
+          error: mocks.connectionsError,
+          isLoading: mocks.isConnectionsLoading,
           refetch: mocks.refetch,
         }),
       },
@@ -59,6 +63,8 @@ vi.mock("../lib/trpc.ts", () => ({
 beforeEach(() => {
   mocks.claim.mockClear();
   mocks.connections = [];
+  mocks.connectionsError = null;
+  mocks.isConnectionsLoading = false;
   mocks.pairingOnSuccess = null;
   mocks.refetch.mockClear();
   mocks.revoke.mockClear();
@@ -71,6 +77,25 @@ it("prefills and submits the pairing code from a direct pairing URL", () => {
   expect(screen.getByRole("textbox", { name: "Short code" }).getAttribute("value")).toBe("ABC234");
   fireEvent.click(screen.getByRole("button", { name: "Connect Zepp App" }));
   expect(mocks.claim).toHaveBeenCalledWith({ code: "ABC234" });
+});
+
+it("updates the pairing code when the direct-link code changes", () => {
+  const { rerender } = render(<ZeppPairingPanel initialCode="ABC234" />);
+
+  rerender(<ZeppPairingPanel initialCode="XYZ789" />);
+
+  expect(screen.getByRole("textbox", { name: "Short code" }).getAttribute("value")).toBe("XYZ789");
+  fireEvent.click(screen.getByRole("button", { name: "Connect Zepp App" }));
+  expect(mocks.claim).toHaveBeenLastCalledWith({ code: "XYZ789" });
+});
+
+it("renders a failed connection query as an explicit query error state", () => {
+  mocks.connectionsError = new Error("Could not load Zepp connections");
+
+  render(<ZeppPairingPanel />);
+
+  expect(screen.getByTestId("query-state-error")).toBeTruthy();
+  expect(screen.getByText("Could not load Zepp connections")).toBeTruthy();
 });
 
 it("refreshes connections after successful pairing and disconnect", async () => {
@@ -89,10 +114,8 @@ it("refreshes connections after successful pairing and disconnect", async () => 
 
 it("shows connection loading and query errors", () => {
   const props = {
-    connections: [],
-    connectionsError: null,
+    connectionsState: { status: "loading" as const },
     disconnectError: null,
-    isConnectionsLoading: true,
     isPairingError: false,
     isPairingPending: false,
     pairingCode: "",
@@ -108,8 +131,10 @@ it("shows connection loading and query errors", () => {
   rerender(
     <ZeppPairingPanelBody
       {...props}
-      connectionsError="Could not load Zepp connections"
-      isConnectionsLoading={false}
+      connectionsState={{
+        status: "error",
+        error: new Error("Could not load Zepp connections"),
+      }}
     />,
   );
   expect(screen.getByText("Could not load Zepp connections")).toBeTruthy();
@@ -120,10 +145,11 @@ it("renders connected and error states and forwards user actions", () => {
   const onPairingCodeChange = vi.fn();
   render(
     <ZeppPairingPanelBody
-      connections={[{ connectionType: "zepp-main" }]}
-      connectionsError={null}
+      connectionsState={{
+        status: "success",
+        connections: [{ connectionType: "zepp-main" }],
+      }}
       disconnectError="Could not disconnect Zepp"
-      isConnectionsLoading={false}
       isPairingError
       isPairingPending={false}
       pairingCode="ABC234"

@@ -1,14 +1,20 @@
 import { useLocalSearchParams } from "expo-router";
 import { ScrollView, StyleSheet } from "react-native";
+import { z } from "zod";
 import { ZeppPairingCard } from "../components/ZeppPairingCard";
 import { colors } from "../theme";
 
+const zeppPairingParamsSchema = z.object({
+  code: z.string().trim().min(1).optional(),
+});
+
 export default function ZeppPairingScreen() {
-  const { code } = useLocalSearchParams<{ code?: string }>();
+  const parsedParams = zeppPairingParamsSchema.safeParse(useLocalSearchParams());
+  const initialCode = parsedParams.success ? (parsedParams.data.code ?? "") : "";
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <ZeppPairingCard initialCode={typeof code === "string" ? code : ""} />
+      <ZeppPairingCard initialCode={initialCode} />
     </ScrollView>
   );
 }

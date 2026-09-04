@@ -453,6 +453,7 @@ AppSideService(
         }
         if (getString(summary.body, "connectionType") !== DOFEK_COMPANION_CONNECTION_TYPE) {
           settings.settingsStorage.removeItem(STORAGE_KEYS.DOFEK_API_TOKEN);
+          this.notifyWatchConnectionChanged();
           throw new Error("Saved credentials belong to a different Zepp app. Connect again.");
         }
         this.setConnectionStatus({

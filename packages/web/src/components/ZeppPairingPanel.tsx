@@ -1,13 +1,16 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { trpc } from "../lib/trpc.ts";
+import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 type ZeppConnection = { connectionType: "zepp-main" | "zepp-workout" };
+type ZeppConnectionsState =
+  | { status: "loading" }
+  | { status: "error"; error: unknown }
+  | { status: "success"; connections: ZeppConnection[] };
 
 interface ZeppPairingPanelBodyProps {
-  connections: ZeppConnection[];
-  connectionsError: string | null;
+  connectionsState: ZeppConnectionsState;
   disconnectError: string | null;
-  isConnectionsLoading: boolean;
   isPairingError: boolean;
   isPairingPending: boolean;
   pairingCode: string;
@@ -20,6 +23,9 @@ interface ZeppPairingPanelBodyProps {
 export function ZeppPairingPanel({ initialCode = "" }: { initialCode?: string }) {
   const [pairingCode, setPairingCode] = useState(initialCode);
   const connectionsQuery = trpc.companionToken.list.useQuery();
+  useEffect(() => {
+    setPairingCode(initialCode);
+  }, [initialCode]);
   const revokeMutation = trpc.companionToken.revoke.useMutation({
     onSuccess: async () => {
       await connectionsQuery.refetch();
@@ -33,13 +39,18 @@ export function ZeppPairingPanel({ initialCode = "" }: { initialCode?: string })
   });
   const connectionLabel =
     pairingMutation.data?.connectionType === "zepp-workout" ? "Workout extension" : "Zepp app";
+  const connectionsState: ZeppConnectionsState = connectionsQuery.isLoading
+    ? { status: "loading" }
+    : connectionsQuery.error
+      ? { status: "error", error: connectionsQuery.error }
+      : connectionsQuery.data
+        ? { status: "success", connections: connectionsQuery.data }
+        : { status: "error", error: new Error("Zepp connections response was missing.") };
 
   return (
     <ZeppPairingPanelBody
-      connections={connectionsQuery.data ?? []}
-      connectionsError={connectionsQuery.error?.message ?? null}
+      connectionsState={connectionsState}
       disconnectError={revokeMutation.error?.message ?? null}
-      isConnectionsLoading={connectionsQuery.isLoading}
       isPairingError={pairingMutation.isError}
       isPairingPending={pairingMutation.isPending}
       pairingCode={pairingCode}
@@ -56,10 +67,8 @@ export function ZeppPairingPanel({ initialCode = "" }: { initialCode?: string })
 }
 
 export function ZeppPairingPanelBody({
-  connections,
-  connectionsError,
+  connectionsState,
   disconnectError,
-  isConnectionsLoading,
   isPairingError,
   isPairingPending,
   pairingCode,
@@ -74,12 +83,16 @@ export function ZeppPairingPanelBody({
     <div className="space-y-3">
       <div className="space-y-2 rounded border border-border bg-surface-solid p-3">
         <p className="text-xs font-medium text-foreground">Current connections</p>
-        {isConnectionsLoading ? (
-          <p className="text-xs text-subtle">Checking connections…</p>
-        ) : connectionsError ? (
-          <p className="text-xs text-red-400">{connectionsError}</p>
-        ) : connections.length ? (
-          connections.map(({ connectionType }) => {
+        {connectionsState.status === "loading" ? (
+          <QueryStatePanel variant="loading" message="Checking connections…" height={48} />
+        ) : connectionsState.status === "error" ? (
+          <QueryStatePanel
+            error={connectionsState.error}
+            contextLabel="Zepp connections"
+            height={72}
+          />
+        ) : connectionsState.connections.length ? (
+          connectionsState.connections.map(({ connectionType }) => {
             const label = connectionType === "zepp-main" ? "Zepp app" : "Workout extension";
             return (
               <div key={connectionType} className="flex items-center justify-between gap-3">
@@ -96,7 +109,7 @@ export function ZeppPairingPanelBody({
             );
           })
         ) : (
-          <p className="text-xs text-subtle">No Zepp apps connected</p>
+          <QueryStatePanel variant="empty" message="No Zepp apps connected" height={48} />
         )}
         {disconnectError ? <p className="text-xs text-red-400">{disconnectError}</p> : null}
       </div>

@@ -7,13 +7,19 @@ interface RuntimeWidget {
   setProperty(property: string, value: unknown): void;
 }
 
+interface WatchCallPayload {
+  method: string;
+  params?: Record<string, unknown>;
+}
+
 interface SideRuntime {
-  call(payload: Record<string, unknown>): void;
+  call(payload: WatchCallPayload): void;
   onRequest(
     request: { method: string; params?: Record<string, unknown> },
     respond: (error: unknown, result: unknown) => void,
   ): void;
   startPairing(): Promise<Record<string, unknown> | null>;
+  verifyConnection(): Promise<void>;
 }
 
 interface WatchRuntime {
@@ -21,7 +27,7 @@ interface WatchRuntime {
     hasCredentials: boolean;
   };
   build(): void;
-  onCall(payload: { method: string; params?: Record<string, unknown> }): void;
+  onCall(payload: WatchCallPayload): void;
   onInit(): void;
   request(request: { method: string; params?: Record<string, unknown> }): Promise<unknown>;
 }
@@ -121,10 +127,10 @@ describe("Zepp pairing refresh", () => {
     const side = Object.assign({}, requireSideConfiguration());
     const watchConfig = requireWatchConfiguration();
     const watch = Object.assign({}, watchConfig, { state: { ...watchConfig.state } });
-    const calls: Record<string, unknown>[] = [];
+    const calls: WatchCallPayload[] = [];
     side.call = (payload) => {
       calls.push(payload);
-      watch.onCall(payload as { method: string; params?: Record<string, unknown> });
+      watch.onCall(payload);
     };
     watch.request = (request) =>
       new Promise((resolve, reject) => {
@@ -153,5 +159,51 @@ describe("Zepp pairing refresh", () => {
     expect(watch.state.hasCredentials).toBe(true);
     expect(connectionButton).toBeDefined();
     expect(deletedWidgets).toContain(pairingQr);
+  });
+
+  it("notifies the watch when verification clears credentials for another Zepp app", async () => {
+    const values = new Map<string, string>([[STORAGE_KEYS.DOFEK_API_TOKEN, "companion-token"]]);
+    const settingsStorage = {
+      addListener: vi.fn(),
+      getItem: vi.fn((key: string) => values.get(key) ?? null),
+      removeItem: vi.fn((key: string) => values.delete(key)),
+      setItem: vi.fn((key: string, value: string) => values.set(key, value)),
+    };
+    vi.stubGlobal("settings", { settingsStorage });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        status: 200,
+        body: { state: "connected", connectionType: "zepp-workout" },
+      })),
+    );
+    const side = Object.assign({}, requireSideConfiguration());
+    const calls: WatchCallPayload[] = [];
+    side.call = (payload) => calls.push(payload);
+
+    await expect(side.verifyConnection()).rejects.toThrow(
+      "Saved credentials belong to a different Zepp app. Connect again.",
+    );
+
+    expect(values.has(STORAGE_KEYS.DOFEK_API_TOKEN)).toBe(false);
+    expect(calls).toContainEqual({ method: "dofek.connectionChanged", params: {} });
+  });
+
+  it("does not start a new pairing session after a connection-change disconnect notification", async () => {
+    const watchConfig = requireWatchConfiguration();
+    const watch = Object.assign({}, watchConfig, { state: { ...watchConfig.state } });
+    watch.request = vi.fn(async (request) => {
+      if (request.method === "imu.getPreferences") {
+        return { hasCredentials: false, pairing: null };
+      }
+      return null;
+    });
+
+    watch.onCall({ method: "dofek.connectionChanged", params: {} });
+
+    await vi.waitFor(() =>
+      expect(watch.request).toHaveBeenCalledWith({ method: "imu.getPreferences", params: {} }),
+    );
+    expect(watch.request).not.toHaveBeenCalledWith({ method: "dofek.startPairing", params: {} });
   });
 });
