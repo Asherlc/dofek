@@ -51,9 +51,19 @@ export function readReceivedImuFiles(storage: SettingsStorage): ReceivedImuFile[
   return parsed.files.map(parseReceivedImuFile);
 }
 
-export function persistReceivedImuFile(storage: SettingsStorage, file: ReceivedImuFile): void {
+export function persistReceivedImuFile(
+  storage: SettingsStorage,
+  file: ReceivedImuFile,
+  reportCorruption: (error: unknown) => void,
+): void {
   const validatedFile = parseReceivedImuFile(file);
-  const files = readReceivedImuFiles(storage);
+  let files: ReceivedImuFile[];
+  try {
+    files = readReceivedImuFiles(storage);
+  } catch (error) {
+    reportCorruption(error);
+    files = [];
+  }
   const withoutReplay = files.filter(
     (candidate) => candidate.segmentId !== validatedFile.segmentId,
   );
@@ -61,4 +71,23 @@ export function persistReceivedImuFile(storage: SettingsStorage, file: ReceivedI
     STORAGE_KEYS.PHONE_IMU_FILES,
     JSON.stringify({ version: VERSION, files: [...withoutReplay, validatedFile] }),
   );
+}
+
+export function acknowledgeReceivedImuFile(
+  storage: SettingsStorage,
+  segmentId: string,
+  source: ZeppConnectionType,
+): boolean {
+  const files = readReceivedImuFiles(storage);
+  const remaining = files.filter((file) => file.segmentId !== segmentId || file.source !== source);
+  if (remaining.length === files.length) return false;
+  if (remaining.length === 0) {
+    storage.removeItem(STORAGE_KEYS.PHONE_IMU_FILES);
+  } else {
+    storage.setItem(
+      STORAGE_KEYS.PHONE_IMU_FILES,
+      JSON.stringify({ version: VERSION, files: remaining }),
+    );
+  }
+  return true;
 }

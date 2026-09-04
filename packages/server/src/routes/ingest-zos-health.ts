@@ -590,15 +590,17 @@ export function createIngestZosHealthRouter(deps: {
               })
               .returning({ id: sleepSession.id });
 
-            const existingSessionRows = await executeWithSchema(
-              database,
-              z.object({ id: z.string() }),
-              sql`SELECT id FROM fitness.sleep_session
-                WHERE user_id = ${userId} AND provider_id = ${PROVIDER_ID} AND external_id = ${session.externalId}
-                LIMIT 1`,
-            );
-            const existingId = existingSessionRows[0]?.id;
-            const sessionId = insertedSession?.id ?? existingId;
+            let sessionId = insertedSession?.id;
+            if (!sessionId) {
+              const existingSessionRows = await executeWithSchema(
+                database,
+                z.object({ id: z.string() }),
+                sql`SELECT id FROM fitness.sleep_session
+                  WHERE user_id = ${userId} AND provider_id = ${PROVIDER_ID} AND external_id = ${session.externalId}
+                  LIMIT 1`,
+              );
+              sessionId = existingSessionRows[0]?.id;
+            }
 
             if (session.stages && sessionId) {
               for (const stage of session.stages) {
@@ -788,6 +790,18 @@ export function createIngestZosHealthRouter(deps: {
       } else {
         acceptedCandidates.push({ eventId: event.eventId, payload: payloadResult.data });
       }
+    }
+
+    if (rejected.length > 0) {
+      logger.warn(
+        `[ingest-zos-imu] Rejected IMU events ${JSON.stringify({
+          batchId: envelopeResult.data.batchId,
+          rejectedEventCount: rejected.length,
+          issuePaths: [
+            ...new Set(rejected.flatMap((event) => event.issues.map((issue) => issue.path))),
+          ].sort(),
+        })}`,
+      );
     }
 
     if (acceptedCandidates.length === 0) {

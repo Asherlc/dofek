@@ -181,9 +181,10 @@ export function createImuSessionController(
     },
     rotate(nextPath) {
       if (!active || !ready) return null;
+      let completed: ImuSegmentResult | null = null;
       try {
         flush(true);
-        const completed = result();
+        completed = result();
         path = nextPath;
         sessionStartMs = options.now();
         const collectorStartMs = ready.getStats().sessionStartMs;
@@ -196,7 +197,7 @@ export function createImuSessionController(
         return completed;
       } catch (error) {
         fail(error);
-        return null;
+        return completed;
       }
     },
     stop() {

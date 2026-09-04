@@ -20,7 +20,7 @@ export type PhoneHealthOutbox = DurableOutbox<PhoneHealthEvent>;
 export interface SettingsStorage {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
-  removeItem?(key: string): unknown;
+  removeItem(key: string): unknown;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -16,6 +16,15 @@ describe("requireSecureDofekServerUrl", () => {
     expect(() => requireSecureDofekServerUrl("not-a-url")).toThrow(
       "Dofek server URL must use HTTPS.",
     );
+    expect(() => requireSecureDofekServerUrl("https://dofek.example:invalid-port")).toThrow(
+      "Dofek server URL must use HTTPS.",
+    );
+    expect(() => requireSecureDofekServerUrl("https://dofek.example:65536")).toThrow(
+      "Dofek server URL must use HTTPS.",
+    );
+    expect(requireSecureDofekServerUrl("https://dofek.example:8443")).toBe(
+      "https://dofek.example:8443",
+    );
   });
 });
 

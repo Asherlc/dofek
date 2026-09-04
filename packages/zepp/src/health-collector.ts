@@ -160,11 +160,17 @@ export function workoutHistoryToActivities(history: WorkoutHistoryEntry[]): Heal
       continue;
     }
     const startedAtMilliseconds = historyEntry.startTime * 1000;
+    const endedAtMilliseconds = startedAtMilliseconds + historyEntry.duration * 1000;
+    const startedAt = new Date(startedAtMilliseconds);
+    const endedAt = new Date(endedAtMilliseconds);
+    if (Number.isNaN(startedAt.getTime()) || Number.isNaN(endedAt.getTime())) {
+      continue;
+    }
     activities.push({
       externalId: String(historyEntry.startTime),
       activityType: "other",
-      startedAt: new Date(startedAtMilliseconds).toISOString(),
-      endedAt: new Date(startedAtMilliseconds + historyEntry.duration * 1000).toISOString(),
+      startedAt: startedAt.toISOString(),
+      endedAt: endedAt.toISOString(),
     });
   }
   return activities;

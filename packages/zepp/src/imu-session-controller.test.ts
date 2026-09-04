@@ -382,7 +382,7 @@ describe("createImuSessionController", () => {
     );
   });
 
-  it("stops the session when rotating to the next file fails", () => {
+  it("returns the finalized segment and stops the session when the next file reset fails", () => {
     const resetError = new Error("next file reset failed");
     const { collector, controller, file, lease, onError } = setup();
     controller.start();
@@ -390,7 +390,10 @@ describe("createImuSessionController", () => {
       throw resetError;
     });
 
-    expect(controller.rotate("data://imu/session_b.bin")).toBeNull();
+    expect(controller.rotate("data://imu/session_b.bin")).toMatchObject({
+      path: "data://imu/session_a.bin",
+      sampleCount: 0,
+    });
     expect(controller.active).toBe(false);
     expect(collector.stop).toHaveBeenCalledOnce();
     expect(lease.release).toHaveBeenCalledOnce();

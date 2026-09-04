@@ -15,7 +15,9 @@ import { makeSessionCallHandlers } from "./test-helpers.ts";
 describe("Zepp session control", () => {
   it.each([
     [{ readyState: "error", error: "Bluetooth interrupted" }, "Bluetooth interrupted"],
+    [{ readyState: "error", error: "   " }, "IMU transfer failed."],
     [{ readyState: "error" }, "IMU transfer failed."],
+    [{ readyState: "canceled", error: "Watch disconnected" }, "Watch disconnected"],
     [{ readyState: "canceled" }, "IMU transfer was canceled."],
     [{ readyState: "transferred" }, null],
   ])("normalizes terminal transfer failure %#", (event, expected) => {

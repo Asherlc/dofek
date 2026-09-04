@@ -563,6 +563,7 @@ Page(
           logger.error("foreground IMU session failed %j", error);
           this.state.logging = false;
           this.state.imuController = null;
+          this.publishSessionStatus(SESSION_STATE.IDLE);
           renderSessionControl(SESSION_STATE.IDLE);
           renderHint("Recorder stopped\nOpen Zepp settings for details");
         },
@@ -777,17 +778,16 @@ Page(
         renderSessionControl(SESSION_STATE.IDLE);
         return;
       }
-
+      const transfer = { ...completed, path: outgoingPath, slot: outgoingSlot };
+      this.setPendingImu(outgoingSlot, transfer);
+      this.startTransfer(transfer);
+      if (!this.state.logging) return;
       this.state.activeFile = nextSlot;
       this.state.sampleCount = 0;
       this.state.observedHzX100 = 0;
 
       this.publishSessionStatus(SESSION_STATE.RECORDING);
       this.writeMetaFile();
-
-      const transfer = { ...completed, path: outgoingPath, slot: outgoingSlot };
-      this.setPendingImu(outgoingSlot, transfer);
-      this.startTransfer(transfer);
     },
 
     transferStoppedSession() {

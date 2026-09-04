@@ -9,6 +9,7 @@ import {
   writeBackgroundHealthOutbox,
 } from "./background-health-storage.ts";
 import { createEmptyOutbox } from "./durable-outbox.ts";
+import type { HealthActivity } from "./health-collector.ts";
 
 vi.mock("@zos/fs", () => ({
   readFileSync: vi.fn(),
@@ -30,10 +31,10 @@ const sample = {
 };
 const activity = {
   externalId: "1720000000",
-  activityType: "other" as const,
+  activityType: "other",
   startedAt: "2024-07-03T09:46:40.000Z",
   endedAt: "2024-07-03T10:46:40.000Z",
-};
+} satisfies HealthActivity;
 const canonicalSampleEntry = {
   eventId: "sample-1",
   createdAt: sample.recordedAt,
@@ -159,33 +160,21 @@ describe("background health outbox storage", () => {
     );
   });
 
-  it("drops non-finite optional legacy readings instead of retaining corrupt values", () => {
-    const parsed = parseBackgroundHealthOutbox(
-      JSON.stringify({
-        samples: [
-          {
-            recordedAt: sample.recordedAt,
-            heartRate: "72",
-            bloodOxygenPercent: Number.NaN,
-            bodyTemperatureCelsius: null,
-            stress: Number.POSITIVE_INFINITY,
-          },
-        ],
-        activities: [],
-      }),
-      installId,
-    );
-
-    expect(parsed.pending[0]?.payload).toStrictEqual({
-      kind: "sample",
-      sample: {
-        recordedAt: sample.recordedAt,
-        heartRate: undefined,
-        bloodOxygenPercent: undefined,
-        bodyTemperatureCelsius: undefined,
-        stress: undefined,
-      },
-    });
+  it.each([
+    ["heartRate", "72"],
+    ["bloodOxygenPercent", Number.NaN],
+    ["bodyTemperatureCelsius", null],
+    ["stress", Number.POSITIVE_INFINITY],
+  ])("rejects malformed optional legacy reading %s", (field, value) => {
+    expect(() =>
+      parseBackgroundHealthOutbox(
+        JSON.stringify({
+          samples: [{ recordedAt: sample.recordedAt, [field]: value }],
+          activities: [],
+        }),
+        installId,
+      ),
+    ).toThrow("Background health sample metric is invalid.");
   });
 
   it("bounds legacy samples to seven days", () => {

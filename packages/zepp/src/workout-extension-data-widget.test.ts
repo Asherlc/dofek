@@ -105,7 +105,6 @@ vi.mock("@zos/utils", () => ({
   setPageBrightTime: vi.fn(() => 0),
   resetPageBrightTime: vi.fn(() => 0),
 }));
-vi.mock("@zeppos/zml/base-page", () => ({ BasePage: (value: unknown) => value }));
 vi.mock("./imu-session-controller.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("./imu-session-controller.ts")>();
   return {
@@ -296,6 +295,24 @@ describe("workout extension data widget", () => {
     );
     expect(context.state.imuController?.start).toHaveBeenCalledOnce();
     expect(context.state.activeImuSlot).toBe("A");
+  });
+
+  it("clears a failed IMU controller so focused collection can restart", () => {
+    const controller = mockController();
+    let reportControllerError: ((error: unknown) => void) | undefined;
+    moduleMocks.createImuSessionController.mockImplementation((options) => {
+      reportControllerError = options.onError;
+      return controller;
+    });
+    const context = makeContext();
+    context.reportError = vi.fn();
+    context.startImuSegment.call(context);
+    const error = new Error("motion write failed");
+
+    reportControllerError?.(error);
+
+    expect(context.state.imuController).toBeNull();
+    expect(context.reportError).toHaveBeenCalledWith(error, "workout-imu");
   });
 
   it("finalizes a focused IMU segment once and frees its slot only after phone persistence", async () => {

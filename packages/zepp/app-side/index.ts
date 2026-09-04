@@ -15,9 +15,9 @@ import { shouldRetryPairingPollFailure } from "../src/pairing-poll.ts";
 import { persistHealthEnvelope } from "../src/phone-health-outbox.ts";
 import { drainPhoneHealthOutbox } from "../src/phone-health-sync.ts";
 import {
+  acknowledgeReceivedImuFile,
   parseReceivedImuFile,
   persistReceivedImuFile,
-  readReceivedImuFiles,
 } from "../src/phone-imu-files.ts";
 import { persistImuEnvelope } from "../src/phone-imu-outbox.ts";
 import { drainPhoneImuOutbox } from "../src/phone-imu-sync.ts";
@@ -45,6 +45,8 @@ BaseSideService.use(messagingPlugin);
 
 const logger = Logger.getLogger("imu-side");
 const connectionOperations = new LatestOperation();
+const SYNC_RETRY_BASE_DELAY_MS = 30_000;
+const MAX_SYNC_RETRY_ATTEMPTS = 3;
 let notifyWatchConnectionChanged: (() => void) | null = null;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -120,7 +122,11 @@ function reportSideException(error: unknown, context: Record<string, unknown> = 
 
 function getStoredServerUrl(): string {
   const storedServerUrl = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_SERVER_URL)?.trim();
-  return requireSecureDofekServerUrl(storedServerUrl || DEFAULT_DOFEK_SERVER_URL);
+  return (storedServerUrl || DEFAULT_DOFEK_SERVER_URL).replace(/\/+$/, "");
+}
+
+function requireStoredServerUrl(): string {
+  return requireSecureDofekServerUrl(getStoredServerUrl());
 }
 
 function setHealthSyncStatus(payload: Record<string, unknown>): void {
@@ -146,11 +152,11 @@ function recordImuTransferFailure(
 async function postHealthEnvelope(
   envelope: HealthEnvelopeV1<HealthUploadPayload>,
 ): Promise<HealthUploadResponse> {
-  const serverUrl = getStoredServerUrl();
   const apiToken = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN)?.trim();
   if (!apiToken) {
     throw new Error("Connect Dofek from Zepp settings first.");
   }
+  const serverUrl = requireStoredServerUrl();
 
   const response = await fetch({
     url: `${serverUrl.replace(/\/$/, "")}/api/ingest/zos-health`,
@@ -177,11 +183,11 @@ async function postHealthEnvelope(
 async function postImuEnvelope(
   envelope: HealthEnvelopeV1<ImuChunkPayload>,
 ): Promise<HealthUploadResponse> {
-  const serverUrl = getStoredServerUrl();
   const apiToken = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN)?.trim();
   if (!apiToken) {
     throw new Error("Connect Dofek from Zepp settings first.");
   }
+  const serverUrl = requireStoredServerUrl();
   const response = await fetch({
     url: `${serverUrl.replace(/\/$/, "")}/api/ingest/zos-imu`,
     method: "POST",
@@ -204,30 +210,48 @@ async function postImuEnvelope(
   return parseHealthUploadResponse(summary.body);
 }
 
-const healthSyncCoordinator = new SyncCoordinator(async (reasons) => {
-  setHealthSyncStatus({ state: "syncing", reasons });
-  try {
-    const result = await drainPhoneHealthOutbox(settings.settingsStorage, postHealthEnvelope);
-    settings.settingsStorage.setItem(STORAGE_KEYS.LAST_HEALTH_SYNC, String(Date.now()));
-    setHealthSyncStatus({ state: "done", ...result });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Health data upload failed.";
-    reportSideException(error, { category: "health-upload", reasons });
-    setHealthSyncStatus({ state: "error", reason: message });
-  }
-});
+const healthSyncCoordinator = new SyncCoordinator(
+  async (reasons) => {
+    setHealthSyncStatus({ state: "syncing", reasons });
+    try {
+      const result = await drainPhoneHealthOutbox(settings.settingsStorage, postHealthEnvelope);
+      settings.settingsStorage.setItem(STORAGE_KEYS.LAST_HEALTH_SYNC, String(Date.now()));
+      setHealthSyncStatus({ state: "done", ...result });
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Health data upload failed.";
+      reportSideException(error, { category: "health-upload", reasons });
+      setHealthSyncStatus({ state: "error", reason: message });
+      return false;
+    }
+  },
+  {
+    retryBaseDelayMs: SYNC_RETRY_BASE_DELAY_MS,
+    maxRetryAttempts: MAX_SYNC_RETRY_ATTEMPTS,
+    onRetryError: (error) => reportSideException(error, { category: "health-upload-retry" }),
+  },
+);
 
-const imuSyncCoordinator = new SyncCoordinator(async (reasons) => {
-  setImuSyncStatus({ state: "syncing", reasons });
-  try {
-    const result = await drainPhoneImuOutbox(settings.settingsStorage, postImuEnvelope);
-    setImuSyncStatus({ state: "done", ...result });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "IMU data upload failed.";
-    reportSideException(error, { category: "imu-upload", reasons });
-    setImuSyncStatus({ state: "error", reason: message });
-  }
-});
+const imuSyncCoordinator = new SyncCoordinator(
+  async (reasons) => {
+    setImuSyncStatus({ state: "syncing", reasons });
+    try {
+      const result = await drainPhoneImuOutbox(settings.settingsStorage, postImuEnvelope);
+      setImuSyncStatus({ state: "done", ...result });
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "IMU data upload failed.";
+      reportSideException(error, { category: "imu-upload", reasons });
+      setImuSyncStatus({ state: "error", reason: message });
+      return false;
+    }
+  },
+  {
+    retryBaseDelayMs: SYNC_RETRY_BASE_DELAY_MS,
+    maxRetryAttempts: MAX_SYNC_RETRY_ATTEMPTS,
+    onRetryError: (error) => reportSideException(error, { category: "imu-upload-retry" }),
+  },
+);
 
 AppSideService(
   BaseSideService({
@@ -241,7 +265,17 @@ AppSideService(
       const pairingId = settings.settingsStorage.getItem(STORAGE_KEYS.PAIRING_ID)?.trim();
       const apiToken = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN)?.trim();
       if (pairingId && !apiToken) {
-        this.schedulePairingPoll(pairingId, getStoredServerUrl(), connectionOperations.begin());
+        try {
+          this.schedulePairingPoll(
+            pairingId,
+            requireStoredServerUrl(),
+            connectionOperations.begin(),
+          );
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Dofek server URL is invalid.";
+          this.setConnectionStatus({ state: "error", reason: message });
+          reportSideException(error, { category: "pairing-poll-url" });
+        }
       }
       if (apiToken) {
         this.verifyConnection().catch((error: unknown) => {
@@ -412,8 +446,8 @@ AppSideService(
         throw new Error("Disconnect the existing Dofek connection before pairing again.");
       }
       const operation = connectionOperations.begin();
-      const serverUrl = getStoredServerUrl();
       try {
+        const serverUrl = requireStoredServerUrl();
         this.setConnectionStatus({ state: "pairing" });
         const response = await fetch({
           url: `${serverUrl.replace(/\/$/, "")}/api/companion-pairing/start`,
@@ -536,12 +570,12 @@ AppSideService(
       }
       const operation = connectionOperations.begin();
       const payload = readJson(rawPayload, {});
-      const serverUrl = getStoredServerUrl();
       const email = getString(payload, "email");
       const password = getRawString(payload, "password");
       settings.settingsStorage.removeItem(STORAGE_KEYS.CMD_LOGIN_PASSWORD);
 
       try {
+        const serverUrl = requireStoredServerUrl();
         if (!serverUrl || !email || !password) {
           throw new Error("Server URL, email, and password are required.");
         }
@@ -589,7 +623,6 @@ AppSideService(
 
     async verifyConnection() {
       const operation = connectionOperations.begin();
-      const serverUrl = getStoredServerUrl();
       const apiToken = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN)?.trim();
       if (!apiToken) {
         this.setConnectionStatus({ state: "disconnected" });
@@ -598,6 +631,7 @@ AppSideService(
 
       this.setConnectionStatus({ state: "checking" });
       try {
+        const serverUrl = requireStoredServerUrl();
         const response = await fetch({
           url: `${serverUrl.replace(/\/$/, "")}/api/companion-token/current`,
           method: "GET",
@@ -638,7 +672,6 @@ AppSideService(
 
     async disconnect() {
       const operation = connectionOperations.begin();
-      const serverUrl = getStoredServerUrl();
       const apiToken = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN)?.trim();
       if (!apiToken) {
         this.clearPairingInfo();
@@ -649,6 +682,7 @@ AppSideService(
 
       this.setConnectionStatus({ state: "disconnecting" });
       try {
+        const serverUrl = requireStoredServerUrl();
         const response = await fetch({
           url: `${serverUrl.replace(/\/$/, "")}/api/companion-token/current`,
           method: "DELETE",
@@ -738,6 +772,13 @@ AppSideService(
                 sampleCount: Number(file.params?.sampleCount ?? 0),
                 receivedAt: new Date().toISOString(),
               }),
+              (error) => {
+                reportSideException(error, {
+                  category: "imu-file-registry-corruption",
+                  segmentId,
+                  source,
+                });
+              },
             );
           } catch (error) {
             recordImuTransferFailure(error, { segmentId, source });
@@ -834,10 +875,7 @@ AppSideService(
           if (!segmentId || (source !== "zepp" && source !== "zepp-workout")) {
             throw new Error("IMU transfer acknowledgement is invalid.");
           }
-          const persisted = readReceivedImuFiles(settings.settingsStorage).some(
-            (file) => file.segmentId === segmentId && file.source === source,
-          );
-          if (!persisted) {
+          if (!acknowledgeReceivedImuFile(settings.settingsStorage, segmentId, source)) {
             throw new Error("Phone has not persisted the IMU binary backup yet.");
           }
           const status = readJson(

@@ -1,6 +1,20 @@
 import { vi } from "vitest";
 import type { SessionCallHandlers } from "./session-control.ts";
 
+export function deferred() {
+  let resolvePromise: (() => void) | undefined;
+  const promise = new Promise<void>((resolve) => {
+    resolvePromise = resolve;
+  });
+  return {
+    promise,
+    resolve: () => {
+      if (!resolvePromise) throw new Error("Deferred promise was not initialized");
+      resolvePromise();
+    },
+  };
+}
+
 export function makeSessionCallHandlers(
   overrides: Partial<SessionCallHandlers> = {},
 ): SessionCallHandlers {

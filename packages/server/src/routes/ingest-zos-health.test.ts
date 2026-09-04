@@ -778,7 +778,7 @@ describe("createIngestZosHealthRouter", () => {
       21,
       44,
     ]);
-    expect(routeMocks.executeWithSchema).toHaveBeenCalledOnce();
+    expect(routeMocks.executeWithSchema).not.toHaveBeenCalled();
     expect(insertedValues).toHaveLength(2);
     expect(insertedValues[0]).toMatchObject({
       providerId: "amazfit-zepp",
@@ -954,6 +954,66 @@ describe("createIngestZosHealthRouter", () => {
         ],
       }),
     );
+  });
+
+  it("rejects invalid Zepp IMU events and logs their issue paths", async () => {
+    const { db } = createMockDatabase();
+    const response = await post(
+      createTestApp(db),
+      {
+        version: 1,
+        batchId: "segment-invalid:0:0",
+        source: { connectionType: "zepp", installId: "install-1" },
+        events: [
+          {
+            eventId: "segment-invalid:0:0",
+            createdAt: "2024-07-03T09:46:40.000Z",
+            payload: {
+              segmentId: "segment-invalid",
+              sessionStartMs: 1_720_000_000_000,
+              hasGyroscope: false,
+              samples: [],
+            },
+          },
+        ],
+      },
+      { authorization: "Bearer token-123" },
+      true,
+      "/api/ingest/zos-imu",
+    );
+
+    expect(response).toMatchObject({
+      status: 200,
+      body: {
+        status: "ok",
+        acceptedEventIds: [],
+        rejected: [{ eventId: "segment-invalid:0:0", issues: [{ path: "samples" }] }],
+      },
+    });
+    expect(routeMocks.writeMetricStreamRows).not.toHaveBeenCalled();
+    expect(routeMocks.loggerWarn).toHaveBeenCalledWith(
+      '[ingest-zos-imu] Rejected IMU events {"batchId":"segment-invalid:0:0","rejectedEventCount":1,"issuePaths":["samples"]}',
+    );
+  });
+
+  it("returns 400 for a malformed Zepp IMU envelope", async () => {
+    const { db } = createMockDatabase();
+    const response = await post(
+      createTestApp(db),
+      {
+        version: 1,
+        batchId: "segment-invalid:0:0",
+        source: { connectionType: "zepp", installId: "install-1" },
+        events: [],
+      },
+      { authorization: "Bearer token-123" },
+      true,
+      "/api/ingest/zos-imu",
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({ error: "Invalid envelope" });
+    expect(routeMocks.writeMetricStreamRows).not.toHaveBeenCalled();
   });
 
   it("returns 500 when ingest persistence fails", async () => {

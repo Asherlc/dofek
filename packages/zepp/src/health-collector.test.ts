@@ -109,7 +109,8 @@ function formatLocalDate(date: Date): string {
 }
 
 function collect(sensors: SensorConstructors) {
-  return collectHealthData(sensors, vi.fn());
+  const captureException = vi.fn();
+  return { result: collectHealthData(sensors, captureException), captureException };
 }
 
 describe("collectHealthData", () => {
@@ -170,8 +171,9 @@ describe("collectHealthData", () => {
         }
       },
     });
-    const result = collect(sensors);
+    const { result, captureException } = collect(sensors);
     expect(result.sleep).toBeUndefined();
+    expect(captureException).not.toHaveBeenCalled();
   });
 
   it("handles heart rate without daily summary maximum", () => {
@@ -191,9 +193,10 @@ describe("collectHealthData", () => {
         }
       },
     });
-    const result = collect(sensors);
+    const { result, captureException } = collect(sensors);
     expect(result.heartRate).toEqual([]);
     expect(result.heartRateSummary).toBeUndefined();
+    expect(captureException).not.toHaveBeenCalled();
   });
 
   it("handles blood oxygen with zero current value", () => {
@@ -210,10 +213,11 @@ describe("collectHealthData", () => {
         }
       },
     });
-    const result = collect(sensors);
+    const { result, captureException } = collect(sensors);
     expect(result.bloodOxygenCurrent).toBeUndefined();
     expect(result.bloodOxygenHourly).toEqual([]);
     expect(result.spo2Recent).toBeUndefined();
+    expect(captureException).not.toHaveBeenCalled();
   });
 
   it("handles empty spo2 recent readings", () => {
@@ -230,9 +234,10 @@ describe("collectHealthData", () => {
         }
       },
     });
-    const result = collect(sensors);
+    const { result, captureException } = collect(sensors);
     expect(result.bloodOxygenCurrent).toBe(99);
     expect(result.spo2Recent).toBeUndefined();
+    expect(captureException).not.toHaveBeenCalled();
   });
 
   it("handles body temperature with zero current", () => {
@@ -246,9 +251,10 @@ describe("collectHealthData", () => {
         }
       },
     });
-    const result = collect(sensors);
+    const { result, captureException } = collect(sensors);
     expect(result.bodyTemperatureCurrent).toBeUndefined();
     expect(result.bodyTemperature).toEqual([]);
+    expect(captureException).not.toHaveBeenCalled();
   });
 
   it("handles empty nap data", () => {
@@ -266,9 +272,10 @@ describe("collectHealthData", () => {
         }
       },
     });
-    const result = collect(sensors);
+    const { result, captureException } = collect(sensors);
     expect(result.sleep?.score).toBe(75);
     expect(result.nap).toBeUndefined();
+    expect(captureException).not.toHaveBeenCalled();
   });
 
   it("handles unavailable sensors gracefully", () => {
@@ -357,7 +364,7 @@ describe("collectHealthData", () => {
   });
 
   it("normalizes invalid and sentinel values without discarding valid siblings", () => {
-    const result = collect(
+    const { result, captureException } = collect(
       makeSensors({
         HeartRate: class {
           getToday() {
@@ -440,6 +447,7 @@ describe("collectHealthData", () => {
             return [
               { startTime: Number.NaN, duration: 600 },
               { startTime: 1_720_000_000, duration: -1 },
+              { startTime: 9_000_000_000_000, duration: 1_800 },
               { startTime: 1_720_086_400, duration: 1_800 },
             ];
           }
@@ -474,5 +482,6 @@ describe("collectHealthData", () => {
     expect(result.standHours).toBeUndefined();
     expect(result.pai).toBeUndefined();
     expect(result.fatBurning).toBeUndefined();
+    expect(captureException).not.toHaveBeenCalled();
   });
 });

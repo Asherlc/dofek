@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { parseImuEnvelope } from "./imu-upload.ts";
-import { createWatchImuChunkSync } from "./watch-imu-chunk-sync.ts";
+import { createWatchImuChunkSync, type WatchImuChunkSync } from "./watch-imu-chunk-sync.ts";
 
 const fsMocks = vi.hoisted(() => ({
   mkdirSync: vi.fn<(options: { path: string }) => number>(),
@@ -20,13 +20,13 @@ const fsMocks = vi.hoisted(() => ({
 vi.mock("@zos/fs", () => fsMocks);
 
 const input = {
-  connectionType: "zepp" as const,
+  connectionType: "zepp",
   installId: "install-1",
   segmentId: "segment-1",
   sessionStartMs: 1_720_000_000_000,
   hasGyroscope: true,
   samples: [{ tMs: 0, ax: 1, ay: 2, az: 3, gx: 4, gy: 5, gz: 6 }],
-};
+} satisfies Parameters<WatchImuChunkSync["enqueue"]>[0];
 
 const files = new Map<string, string>();
 const directories = new Set<string>();

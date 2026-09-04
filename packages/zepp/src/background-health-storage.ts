@@ -28,7 +28,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function optionalFiniteNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  if (value === undefined) return undefined;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  throw new Error("Background health sample metric is invalid.");
 }
 
 function parseSample(value: unknown): BackgroundHealthSample {

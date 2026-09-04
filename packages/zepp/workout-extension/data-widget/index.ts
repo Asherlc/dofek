@@ -327,7 +327,10 @@ DataWidget(
             )
             .catch((error: unknown) => this.reportError(error, "workout-imu-chunk"));
         },
-        onError: (error) => this.reportError(error, "workout-imu"),
+        onError: (error) => {
+          this.state.imuController = null;
+          this.reportError(error, "workout-imu");
+        },
       });
       if (!controller.available) {
         this.reportError(new Error(controller.reason ?? "IMU sensors are unavailable."), "workout-imu");

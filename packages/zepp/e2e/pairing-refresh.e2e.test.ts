@@ -39,6 +39,20 @@ interface WatchRuntime {
     hasCredentials: boolean;
     healthOwnership?: Promise<{ release(): Promise<void> }>;
     transferTask?: unknown;
+    logging?: boolean;
+    activeFile?: "A" | "B";
+    imuController?: {
+      active: boolean;
+      rotate(path: string): {
+        path: string;
+        sampleCount: number;
+        observedHzX100: number;
+        hasGyroscope: boolean;
+        accelFreqMode: number;
+        gyroFreqMode: number;
+        sessionStartMs: number;
+      } | null;
+    } | null;
   };
   acquireHealthOwnership(): void;
   build(): void;
@@ -59,6 +73,7 @@ interface WatchRuntime {
     sessionStartMs: number;
     slot: "A" | "B";
   }): void;
+  swapAndTransfer(): void;
 }
 
 let sideConfiguration: SideRuntime | undefined;
@@ -114,6 +129,50 @@ describe("Zepp pairing refresh", () => {
 
     await expect(Object.assign({}, requireSideConfiguration()).startPairing()).rejects.toThrow(
       "Dofek server URL must use HTTPS.",
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("returns preferences when a stored server URL is cleartext", async () => {
+    const values = new Map([[STORAGE_KEYS.DOFEK_SERVER_URL, "http://dofek.example/"]]);
+    vi.stubGlobal("settings", {
+      settingsStorage: {
+        addListener: vi.fn(),
+        getItem: vi.fn((key: string) => values.get(key) ?? null),
+        removeItem: vi.fn((key: string) => values.delete(key)),
+        setItem: vi.fn((key: string, value: string) => values.set(key, value)),
+      },
+    });
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    const side = Object.assign({}, requireSideConfiguration());
+
+    const preferences = await new Promise<unknown>((resolve, reject) => {
+      side.onRequest({ method: "imu.getPreferences", params: {} }, (error, result) => {
+        if (error) reject(error);
+        else resolve(result);
+      });
+    });
+
+    expect(preferences).toMatchObject({ serverUrl: "http://dofek.example" });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("requires disconnecting before starting another pairing session", async () => {
+    const values = new Map([[STORAGE_KEYS.DOFEK_API_TOKEN, "existing-token"]]);
+    vi.stubGlobal("settings", {
+      settingsStorage: {
+        addListener: vi.fn(),
+        getItem: vi.fn((key: string) => values.get(key) ?? null),
+        removeItem: vi.fn((key: string) => values.delete(key)),
+        setItem: vi.fn((key: string, value: string) => values.set(key, value)),
+      },
+    });
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await expect(Object.assign({}, requireSideConfiguration()).startPairing()).rejects.toThrow(
+      "Disconnect the existing Dofek connection before pairing again.",
     );
     expect(fetchSpy).not.toHaveBeenCalled();
   });
@@ -450,6 +509,56 @@ describe("Zepp pairing refresh", () => {
     confirmPersistence?.({ ok: true });
     await vi.waitFor(() => expect(watch.state.transferTask).toBeNull());
     expect(watch.state.pendingImuA).toBeNull();
+  });
+
+  it("queues a finalized normal segment when rotating to the next file fails", () => {
+    const completed = {
+      path: "data://normal_a.bin",
+      sampleCount: 120,
+      observedHzX100: 2_500,
+      hasGyroscope: true,
+      accelFreqMode: 1,
+      gyroFreqMode: 1,
+      sessionStartMs: 1_720_000_000_000,
+    };
+    const controller = {
+      active: false,
+      rotate: vi.fn(() => completed),
+    };
+    const startTransfer = vi.fn();
+    const setPendingImu = vi.fn();
+    const activeFile: "A" = "A";
+    const inactiveFile: "B" = "B";
+    const watchConfig = requireWatchConfiguration();
+    const watch = Object.assign({}, watchConfig, {
+      state: {
+        ...watchConfig.state,
+        activeFile,
+        imuController: controller,
+        logging: true,
+        transferTask: null,
+      },
+      filePathForSlot: (slot: "A" | "B") => `data://normal_${slot.toLowerCase()}.bin`,
+      inactiveFileSlot: () => inactiveFile,
+      pendingImu: () => null,
+      publishSessionStatus: vi.fn(),
+      setPendingImu,
+      startTransfer,
+      writeMetaFile: vi.fn(),
+    });
+    controller.rotate.mockImplementation(() => {
+      watch.state.logging = false;
+      watch.state.imuController = null;
+      return completed;
+    });
+
+    watch.swapAndTransfer();
+
+    expect(setPendingImu).toHaveBeenCalledWith("A", { ...completed, slot: "A" });
+    expect(startTransfer).toHaveBeenCalledWith({ ...completed, slot: "A" });
+    expect(watch.state.logging).toBe(false);
+    expect(watch.state.activeFile).toBe("A");
+    expect(watch.state.imuController).toBeNull();
   });
 
   it("does not acknowledge a watch binary backup until the phone registry contains it", async () => {

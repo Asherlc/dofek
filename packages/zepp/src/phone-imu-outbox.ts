@@ -154,9 +154,7 @@ function readIndex(storage: SettingsStorage): PhoneImuOutboxIndex {
 }
 
 function removeStoredEntry(storage: SettingsStorage, queue: QueueName, eventId: string): void {
-  const key = entryKey(queue, eventId);
-  if (storage.removeItem) storage.removeItem(key);
-  else storage.setItem(key, "");
+  storage.removeItem(entryKey(queue, eventId));
 }
 
 export function readPhoneImuOutbox(storage: SettingsStorage): PhoneImuOutbox {

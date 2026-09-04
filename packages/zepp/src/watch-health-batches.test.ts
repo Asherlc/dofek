@@ -85,7 +85,9 @@ describe("createWatchHealthBatches", () => {
     };
 
     expect(
-      createWatchHealthBatches(outbox, "install-1", 2).map((batch) => batch.events.length),
-    ).toEqual([2, 1]);
+      createWatchHealthBatches(outbox, "install-1", 3).map((batch) =>
+        batch.events.map((event) => event.eventId),
+      ),
+    ).toEqual([["summary-1", "sample-1"], ["summary-2"]]);
   });
 });

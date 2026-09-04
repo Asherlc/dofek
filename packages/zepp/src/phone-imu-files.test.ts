@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  acknowledgeReceivedImuFile,
   parseReceivedImuFile,
   persistReceivedImuFile,
   readReceivedImuFiles,
@@ -9,17 +10,17 @@ import { createSettingsStorage } from "./test-helpers.ts";
 describe("received IMU file registry", () => {
   const validFile = {
     segmentId: "install-1:normal-imu:1720000000000",
-    source: "zepp" as const,
+    source: "zepp",
     path: "data://inbox/normal_a.bin",
     sampleCount: 120,
     receivedAt: "2024-07-03T10:00:00.000Z",
-  };
+  } satisfies Parameters<typeof persistReceivedImuFile>[1];
 
   it("durably retains a received binary backup and deduplicates its transfer replay", () => {
     const storage = createSettingsStorage();
 
-    persistReceivedImuFile(storage, validFile);
-    persistReceivedImuFile(storage, validFile);
+    persistReceivedImuFile(storage, validFile, vi.fn());
+    persistReceivedImuFile(storage, validFile, vi.fn());
 
     expect(readReceivedImuFiles(storage)).toEqual([validFile]);
   });
@@ -62,11 +63,37 @@ describe("received IMU file registry", () => {
     const storage = createSettingsStorage();
 
     expect(() =>
-      persistReceivedImuFile(storage, {
-        ...validFile,
-        sampleCount: Number.NaN,
-      }),
+      persistReceivedImuFile(
+        storage,
+        {
+          ...validFile,
+          sampleCount: Number.NaN,
+        },
+        vi.fn(),
+      ),
     ).toThrow("Received IMU file registry is invalid.");
     expect(storage.setItem).not.toHaveBeenCalled();
+  });
+
+  it("replaces a corrupt registry when receiving the next valid file and reports corruption", () => {
+    const storage = createSettingsStorage({ phone_imu_files: "not-json" });
+    const reportCorruption = vi.fn();
+
+    persistReceivedImuFile(storage, validFile, reportCorruption);
+
+    expect(reportCorruption).toHaveBeenCalledOnce();
+    expect(reportCorruption).toHaveBeenCalledWith(expect.any(Error));
+    expect(readReceivedImuFiles(storage)).toEqual([validFile]);
+  });
+
+  it("removes a received file only after its matching acknowledgement", () => {
+    const storage = createSettingsStorage();
+    persistReceivedImuFile(storage, validFile, vi.fn());
+
+    expect(acknowledgeReceivedImuFile(storage, validFile.segmentId, "zepp-workout")).toBe(false);
+    expect(readReceivedImuFiles(storage)).toEqual([validFile]);
+    expect(acknowledgeReceivedImuFile(storage, validFile.segmentId, validFile.source)).toBe(true);
+    expect(readReceivedImuFiles(storage)).toEqual([]);
+    expect(storage.removeItem).toHaveBeenCalledWith("phone_imu_files");
   });
 });

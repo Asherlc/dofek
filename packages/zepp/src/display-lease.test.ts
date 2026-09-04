@@ -38,6 +38,17 @@ describe("createDisplayLease", () => {
     expect(lease.acquired).toBe(false);
   });
 
+  it("does not change brightness when suspending wrist-drop screen-off fails", () => {
+    const deps = dependencies();
+    deps.pauseDropWristScreenOff.mockReturnValue(1);
+    const lease = createDisplayLease(deps);
+
+    expect(() => lease.acquire()).toThrow("Unable to suspend wrist-drop screen-off.");
+    expect(deps.setPageBrightTime).not.toHaveBeenCalled();
+    expect(deps.resetDropWristScreenOff).not.toHaveBeenCalled();
+    expect(lease.acquired).toBe(false);
+  });
+
   it("attempts both release operations when one reset fails", () => {
     const deps = dependencies();
     deps.resetPageBrightTime.mockReturnValue(1);
@@ -45,6 +56,18 @@ describe("createDisplayLease", () => {
     lease.acquire();
 
     expect(() => lease.release()).toThrow("Unable to restore the display timeout.");
+    expect(deps.resetDropWristScreenOff).toHaveBeenCalledOnce();
+    expect(lease.acquired).toBe(false);
+  });
+
+  it("reports wrist restoration failure after restoring the display timeout", () => {
+    const deps = dependencies();
+    deps.resetDropWristScreenOff.mockReturnValue(1);
+    const lease = createDisplayLease(deps);
+    lease.acquire();
+
+    expect(() => lease.release()).toThrow("Unable to restore wrist-drop screen-off.");
+    expect(deps.resetPageBrightTime).toHaveBeenCalledOnce();
     expect(deps.resetDropWristScreenOff).toHaveBeenCalledOnce();
     expect(lease.acquired).toBe(false);
   });

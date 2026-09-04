@@ -1,13 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { monitorImuTransfer } from "./imu-transfer-monitor.ts";
-
-function deferred() {
-  let resolve: (() => void) | undefined;
-  const promise = new Promise<void>((value) => {
-    resolve = value;
-  });
-  return { promise, resolve: () => resolve?.() };
-}
+import { deferred } from "./test-helpers.ts";
 
 afterEach(() => vi.useRealTimers());
 

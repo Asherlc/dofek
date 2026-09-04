@@ -49,6 +49,14 @@ export function createImuChunkEnvelope(input: {
   hasGyroscope?: boolean;
   samples: ImuSample[];
 }): HealthEnvelopeV1<ImuChunkPayload> {
+  if (
+    !input.installId.trim() ||
+    !input.segmentId.trim() ||
+    !Number.isInteger(input.sessionStartMs) ||
+    input.sessionStartMs < 0
+  ) {
+    throw new Error("IMU envelope is invalid.");
+  }
   const samples = input.samples.map(parseSample);
   const first = samples[0];
   const last = samples.at(-1);
@@ -56,13 +64,17 @@ export function createImuChunkEnvelope(input: {
     throw new Error("Cannot create an empty IMU chunk.");
   }
   const eventId = `${input.segmentId}:${first.tMs}:${last.tMs}`;
+  const createdAt = new Date(input.sessionStartMs + last.tMs);
+  if (Number.isNaN(createdAt.getTime())) {
+    throw new Error("IMU envelope is invalid.");
+  }
   return createHealthEnvelope({
     batchId: eventId,
     source: { connectionType: input.connectionType, installId: input.installId },
     events: [
       {
         eventId,
-        createdAt: new Date(input.sessionStartMs + last.tMs).toISOString(),
+        createdAt: createdAt.toISOString(),
         payload: {
           segmentId: input.segmentId,
           sessionStartMs: input.sessionStartMs,
