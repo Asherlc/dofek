@@ -18,6 +18,23 @@ import {
 } from "react-native";
 import { OperationProgressBar } from "../../components/OperationProgressBar";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
+import {
+  CredentialAuthModal,
+  GarminAuthModal,
+  TokenAuthModal,
+  WhoopAuthModal,
+} from "../../components/providers/auth-modals.tsx";
+import { FileImportProviderCard } from "../../components/providers/file-import-provider-card.tsx";
+import { getFileImportProviderConfig } from "../../components/providers/file-import-providers.ts";
+import {
+  importProviderLabel,
+  type Provider,
+  ProviderCard,
+  type SyncLog,
+  SyncLogRow,
+} from "../../components/providers/provider-card.tsx";
+import { styles } from "../../components/providers/styles.ts";
+import { SyncAllControls } from "../../components/providers/sync-all-controls.tsx";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { useAppleHealthProviderModel } from "../../lib/apple-health-provider";
 import { createProviderHandoffCode } from "../../lib/auth";
@@ -39,23 +56,6 @@ import { trpc } from "../../lib/trpc";
 import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useRefresh } from "../../lib/useRefresh";
 import { colors } from "../../theme";
-import {
-  CredentialAuthModal,
-  GarminAuthModal,
-  TokenAuthModal,
-  WhoopAuthModal,
-} from "./auth-modals.tsx";
-import { FileImportProviderCard } from "./file-import-provider-card.tsx";
-import { getFileImportProviderConfig } from "./file-import-providers.ts";
-import {
-  importProviderLabel,
-  type Provider,
-  ProviderCard,
-  type SyncLog,
-  SyncLogRow,
-} from "./provider-card.tsx";
-import { styles } from "./styles.ts";
-import { SyncAllControls } from "./sync-all-controls.tsx";
 
 const hiddenProviderIds = new Set(["auto-supplements"]);
 function deleteSharedFile(fileUri: string): void {

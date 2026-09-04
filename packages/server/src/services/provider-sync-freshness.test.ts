@@ -58,4 +58,19 @@ describe("evaluateProviderSyncFreshness", () => {
       description: "The last successful sync is overdue.",
     });
   });
+
+  it("reports an active provider cooldown before freshness", () => {
+    expect(
+      evaluateProviderSyncFreshness({
+        now,
+        lastSuccessfulSyncAt: new Date("2026-08-12T11:15:00.000Z"),
+        intervalMinutes,
+        cooldownUntil: new Date("2026-08-12T12:10:00.000Z"),
+      }),
+    ).toEqual({
+      status: "deferred",
+      label: "Sync deferred",
+      description: "Rate limited until 2026-08-12T12:10:00.000Z.",
+    });
+  });
 });

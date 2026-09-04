@@ -3,6 +3,7 @@ import { TRPCError } from "@trpc/server";
 import type { Job, Queue } from "bullmq";
 import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
 import { enqueueSyncJob } from "dofek/jobs/enqueue-sync-job";
+import { providerRateLimitCooldownStore } from "dofek/jobs/provider-rate-limit-cooldown";
 import {
   createSyncQueue,
   getImportQueue,
@@ -61,6 +62,11 @@ const syncProviderRowOutputSchema = z.object({
         description: z.string(),
       }),
       z.object({ status: z.literal("current"), label: z.literal("Sync current") }),
+      z.object({
+        status: z.literal("deferred"),
+        label: z.literal("Sync deferred"),
+        description: z.string(),
+      }),
       z.object({
         status: z.literal("overdue"),
         label: z.literal("Sync overdue"),
@@ -285,6 +291,9 @@ const syncRouterProcedures = {
         ]);
 
       const connectionSet = new Set(allConnections.map((row) => row.providerId));
+      const credentialedConnectionSet = new Set(
+        allConnections.filter((row) => row.hasTokens).map((row) => row.providerId),
+      );
       const connectionUpdatedAtMap = new Map(
         allConnections.map((row) => [row.providerId, row.updatedAt]),
       );
@@ -303,36 +312,57 @@ const syncRouterProcedures = {
           )
           .map((r) => r.providerId),
       );
-      const registeredProviders = all
+      const registeredProviderModels = all
         .filter((p) => p.validate() === null)
         .map((p) => {
-          const model = new ProviderModel(p, connectionSet, lastSyncMap, CUSTOM_AUTH_PROVIDERS);
-          const lastSuccessfulSyncAt = lastSuccessfulSyncMap.get(model.id) ?? null;
-          return {
-            id: model.id,
-            name: model.name,
-            description: null,
-            authType: model.authType,
-            tokenAuth: model.tokenAuth,
-            authorized: model.isConnected,
-            lastSyncedAt: model.lastSyncedAt,
-            lastSuccessfulSyncAt,
-            syncFreshness:
-              model.isConnected && !model.importOnly
-                ? evaluateProviderSyncFreshness({
-                    now: requestTime,
-                    lastSuccessfulSyncAt: lastSuccessfulSyncAt
-                      ? new Date(lastSuccessfulSyncAt)
-                      : null,
-                    intervalMinutes: DEFAULT_SCHEDULED_SYNC_INTERVAL_MINUTES,
-                  })
-                : null,
-            importOnly: model.importOnly,
-            pushOnly: false,
-            needsReauth: authErrorProviders.has(model.id),
-            recentLogs: recentLogsByProvider.get(model.id) ?? [],
-          };
+          return new ProviderModel(
+            p,
+            credentialedConnectionSet,
+            lastSyncMap,
+            CUSTOM_AUTH_PROVIDERS,
+          );
         });
+      const cooldowns = new Map(
+        await Promise.all(
+          registeredProviderModels
+            .filter((model) => model.isConnected && !model.importOnly)
+            .map(
+              async (model) =>
+                [
+                  model.id,
+                  await providerRateLimitCooldownStore.getActive(model.id, ctx.userId),
+                ] as const,
+            ),
+        ),
+      );
+      const registeredProviders = registeredProviderModels.map((model) => {
+        const lastSuccessfulSyncAt = lastSuccessfulSyncMap.get(model.id) ?? null;
+        return {
+          id: model.id,
+          name: model.name,
+          description: null,
+          authType: model.authType,
+          tokenAuth: model.tokenAuth,
+          authorized: model.isConnected,
+          lastSyncedAt: model.lastSyncedAt,
+          lastSuccessfulSyncAt,
+          syncFreshness:
+            model.isConnected && !model.importOnly
+              ? evaluateProviderSyncFreshness({
+                  now: requestTime,
+                  lastSuccessfulSyncAt: lastSuccessfulSyncAt
+                    ? new Date(lastSuccessfulSyncAt)
+                    : null,
+                  intervalMinutes: DEFAULT_SCHEDULED_SYNC_INTERVAL_MINUTES,
+                  cooldownUntil: cooldowns.get(model.id)?.expiresAt ?? null,
+                })
+              : null,
+          importOnly: model.importOnly,
+          pushOnly: false,
+          needsReauth: authErrorProviders.has(model.id),
+          recentLogs: recentLogsByProvider.get(model.id) ?? [],
+        };
+      });
 
       const pushProviders = PUSH_PROVIDERS.map((provider) => {
         return {
@@ -644,7 +674,9 @@ function createTriggerSyncProcedure() {
       return withAccountErasureUserWriteFence(ctx.db, ctx.userId, async (transaction) => {
         const repo = new SyncRepository(transaction, ctx.userId);
         const allConnections = await repo.getConnectedProviderIds();
-        const connectionSet = new Set(allConnections.map((row) => row.providerId));
+        const connectionSet = new Set(
+          allConnections.filter((row) => row.hasTokens).map((row) => row.providerId),
+        );
 
         const providerIds: string[] = [];
 

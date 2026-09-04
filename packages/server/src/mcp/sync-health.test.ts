@@ -36,4 +36,19 @@ describe("syncHealth", () => {
       stale: true,
     });
   });
+
+  it("explains when a stale provider is deferred by an active rate-limit cooldown", () => {
+    expect(
+      syncHealth(undefined, {
+        expiresAt: new Date("2026-09-04T04:32:46.000Z"),
+      }),
+    ).toEqual({
+      last_success: null,
+      last_attempt: null,
+      last_error: "Rate limited; sync deferred until 2026-09-04T04:32:46.000Z",
+      consecutive_failures: 0,
+      expected_sync_interval_minutes: 30,
+      stale: true,
+    });
+  });
 });

@@ -39,6 +39,7 @@ const toolTestMocks = vi.hoisted(() => {
     getLatestErrors: vi.fn(),
     getScheduledSyncHealth: vi.fn(),
     getProviderSyncQueue: vi.fn(),
+    getProviderRateLimitCooldown: vi.fn(),
     queueAdd: vi.fn(),
     sleepListRange: vi.fn(),
     strengthExercises: vi.fn(),
@@ -181,6 +182,12 @@ vi.mock("dofek/jobs/queues", async (importOriginal) => {
 vi.mock("dofek/providers/registry", () => ({
   getAllProviders: toolTestMocks.getAllProviders,
   registerProvider: vi.fn(),
+}));
+
+vi.mock("dofek/jobs/provider-rate-limit-cooldown", () => ({
+  providerRateLimitCooldownStore: {
+    getActive: toolTestMocks.getProviderRateLimitCooldown,
+  },
 }));
 
 import * as enqueueSyncJobModule from "dofek/jobs/enqueue-sync-job";
@@ -491,6 +498,7 @@ describe("createMcpRouter", () => {
       add: toolTestMocks.queueAdd,
       getJob: vi.fn(),
     });
+    toolTestMocks.getProviderRateLimitCooldown.mockResolvedValue(null);
     toolTestMocks.queueAdd.mockResolvedValue({ id: "job-123" });
     toolTestMocks.sleepListRange.mockResolvedValue([]);
     toolTestMocks.strengthExercises.mockResolvedValue([]);
@@ -2247,7 +2255,7 @@ describe("createMcpRouter", () => {
     ]);
   });
 
-  it("returns null clock and duration fields when sleep local-time data is unavailable", async () => {
+  it("uses the requested timezone for sleep clock times when record-local context is unavailable", async () => {
     authorizeMcpToken();
     toolTestMocks.dailyMetricsListRange.mockResolvedValue([]);
     toolTestMocks.sleepListRange.mockResolvedValue([
@@ -2281,7 +2289,7 @@ describe("createMcpRouter", () => {
 
     expect(parseToolCallText(response.text)).toEqual([
       expect.objectContaining({
-        onset_time: null,
+        onset_time: "11:00 PM",
         time_in_bed_minutes: null,
         total_duration_minutes: null,
         wake_time: null,
@@ -3251,8 +3259,21 @@ describe("createMcpRouter", () => {
   it("lists configured providers with connection and reauth state", async () => {
     authorizeMcpToken();
     toolTestMocks.getConnectedProviderIds.mockResolvedValue([
-      { providerId: "fitbit", updatedAt: new Date("2026-05-20T11:00:00.000Z") },
-      { providerId: "wahoo", updatedAt: new Date("2026-05-20T11:00:00.000Z") },
+      {
+        providerId: "fitbit",
+        updatedAt: new Date("2026-05-20T11:00:00.000Z"),
+        hasTokens: true,
+      },
+      {
+        providerId: "strava",
+        updatedAt: new Date("2026-05-20T11:00:00.000Z"),
+        hasTokens: false,
+      },
+      {
+        providerId: "wahoo",
+        updatedAt: new Date("2026-05-20T11:00:00.000Z"),
+        hasTokens: true,
+      },
     ]);
     toolTestMocks.getLastSyncTimes.mockResolvedValue([
       { lastSynced: "2026-05-20T12:00:00.000Z", providerId: "wahoo" },
@@ -3368,7 +3389,11 @@ describe("createMcpRouter", () => {
   it("clears MCP provider reauth state when tokens were updated after the latest auth error", async () => {
     authorizeMcpToken();
     toolTestMocks.getConnectedProviderIds.mockResolvedValue([
-      { providerId: "wahoo", updatedAt: new Date("2026-05-20T12:05:00.000Z") },
+      {
+        providerId: "wahoo",
+        updatedAt: new Date("2026-05-20T12:05:00.000Z"),
+        hasTokens: true,
+      },
     ]);
     toolTestMocks.getLastSyncTimes.mockResolvedValue([
       { lastSynced: "2026-05-20T12:00:00.000Z", providerId: "wahoo" },
@@ -3413,6 +3438,46 @@ describe("createMcpRouter", () => {
           stale: true,
         },
       },
+    ]);
+  });
+
+  it("explains an active provider rate-limit cooldown in MCP sync health", async () => {
+    authorizeMcpToken();
+    toolTestMocks.getConnectedProviderIds.mockResolvedValue([
+      {
+        providerId: "garmin",
+        updatedAt: new Date("2026-09-04T02:32:46.000Z"),
+        hasTokens: true,
+      },
+    ]);
+    toolTestMocks.getProviderRateLimitCooldown.mockResolvedValue({
+      providerId: "garmin",
+      scope: "user",
+      userId: "00000000-0000-0000-0000-000000000001",
+      expiresAt: new Date("2026-09-04T04:32:46.000Z"),
+    });
+    toolTestMocks.getAllProviders.mockReturnValue([
+      {
+        authSetup: () => ({ automatedLogin: async () => ({}) }),
+        id: "garmin",
+        name: "Garmin Connect",
+        validate: () => null,
+      },
+    ]);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("list_providers", {}),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual([
+      expect.objectContaining({
+        id: "garmin",
+        authorized: true,
+        sync_health: expect.objectContaining({
+          last_error: "Rate limited; sync deferred until 2026-09-04T04:32:46.000Z",
+        }),
+      }),
     ]);
   });
 
@@ -3470,6 +3535,35 @@ describe("createMcpRouter", () => {
       queueName: "sync-wahoo",
       status: "queued",
     });
+  });
+
+  it("rejects a token-backed provider whose connection has no tokens", async () => {
+    authorizeMcpToken();
+    toolTestMocks.getAllProviders.mockReturnValue([
+      {
+        id: "strava",
+        name: "Strava",
+        validate: () => null,
+        authSetup: () => ({ oauthConfig: {}, exchangeCode: async () => ({}) }),
+      },
+    ]);
+    toolTestMocks.getConnectedProviderIds.mockResolvedValue([
+      {
+        providerId: "strava",
+        updatedAt: new Date("2026-09-03T04:00:00.000Z"),
+        hasTokens: false,
+      },
+    ]);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("start_provider_sync", { providerId: "strava" }),
+    });
+
+    const parsedResponse = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text));
+    expect(parsedResponse.result.isError).toBe(true);
+    expect(parsedResponse.result.content[0]?.text).toBe("Provider not connected: strava");
+    expect(toolTestMocks.queueAdd).not.toHaveBeenCalled();
   });
 
   it("rejects provider sync dispatch before queueing when account erasure is active", async () => {

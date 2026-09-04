@@ -14,6 +14,7 @@ export type AuthStatus = "connected" | "not_connected" | "expired";
 export type ProviderSyncFreshness =
   | { status: "unknown"; label: "Sync status unknown"; description: string }
   | { status: "current"; label: "Sync current" }
+  | { status: "deferred"; label: "Sync deferred"; description: string }
   | { status: "overdue"; label: "Sync overdue"; description: string };
 
 export interface Provider {

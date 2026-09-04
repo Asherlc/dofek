@@ -296,6 +296,11 @@ function whoopHandlers(
 
 const server = setupServer();
 const metricStreamCapture = createCapturingMetricStreamPublisher();
+const TEST_SYNC_UNTIL = new Date("2026-03-15T23:59:59.999Z");
+
+function integrationSyncWindow(since: string): SyncWindow {
+  return SyncWindow.fromSince({ since: new Date(since), until: TEST_SYNC_UNTIL });
+}
 
 describe("WhoopProvider.sync() (integration)", () => {
   let ctx: TestContext;
@@ -333,7 +338,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     const result = await provider.sync(
       new SyncRun({
         db: ctx.db,
-        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        window: integrationSyncWindow("2026-02-01T00:00:00Z"),
         metricStreamPublisher: metricStreamCapture.publisher,
       }),
     );
@@ -351,6 +356,48 @@ describe("WhoopProvider.sync() (integration)", () => {
     expect(day.hrv).toBeCloseTo(65.5);
     expect(day.spo2Avg).toBeCloseTo(97.2);
     expect(day.skinTempC).toBeCloseTo(33.7);
+  });
+
+  it("merges inline respiratory rate into recovery's canonical cycle day", async () => {
+    const baseCycle = fakeCycle();
+    const baseRecovery = baseCycle.recovery;
+    const baseSleep = baseCycle.sleeps?.[0];
+    if (!baseRecovery || !baseSleep) throw new Error("expected complete fake WHOOP cycle");
+    const cycles = [
+      fakeCycle({
+        days: ["2026-03-05"],
+        recovery: {
+          ...baseRecovery,
+          created_at: "2026-03-06T01:00:00.000Z",
+          updated_at: "2026-03-06T01:30:00.000Z",
+        },
+        sleeps: [
+          {
+            ...baseSleep,
+            during: "['2026-03-05T16:30:00Z','2026-03-06T00:30:00Z')",
+            respiratory_rate: 13.5,
+          },
+        ],
+      }),
+    ];
+    server.use(...whoopHandlers(cycles));
+
+    const result = await new WhoopProvider().sync(
+      new SyncRun({
+        db: ctx.db,
+        window: integrationSyncWindow("2026-03-05T00:00:00Z"),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    const rows = await ctx.db
+      .select()
+      .from(dailyMetrics)
+      .where(and(eq(dailyMetrics.providerId, "whoop"), eq(dailyMetrics.date, "2026-03-05")));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.hrv).toBeCloseTo(65.5);
+    expect(rows[0]?.respiratoryRateAvg).toBeCloseTo(13.5);
   });
 
   it("syncs BFF v0 flat recovery format into daily_metrics", async () => {
@@ -377,7 +424,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     const result = await provider.sync(
       new SyncRun({
         db: ctx.db,
-        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        window: integrationSyncWindow("2026-02-01T00:00:00Z"),
         metricStreamPublisher: metricStreamCapture.publisher,
       }),
     );
@@ -412,7 +459,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     const result = await provider.sync(
       new SyncRun({
         db: ctx.db,
-        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        window: integrationSyncWindow("2026-02-01T00:00:00Z"),
         metricStreamPublisher: metricStreamCapture.publisher,
       }),
     );
@@ -437,7 +484,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     const result = await provider.sync(
       new SyncRun({
         db: ctx.db,
-        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        window: integrationSyncWindow("2026-02-01T00:00:00Z"),
         metricStreamPublisher: metricStreamCapture.publisher,
       }),
     );
@@ -461,7 +508,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     await provider.sync(
       new SyncRun({
         db: ctx.db,
-        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        window: integrationSyncWindow("2026-02-01T00:00:00Z"),
         metricStreamPublisher: metricStreamCapture.publisher,
       }),
     );
@@ -501,7 +548,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     const result = await provider.sync(
       new SyncRun({
         db: ctx.db,
-        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        window: integrationSyncWindow("2026-02-01T00:00:00Z"),
         metricStreamPublisher: metricStreamCapture.publisher,
       }),
     );
@@ -572,7 +619,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     const result = await provider.sync(
       new SyncRun({
         db: ctx.db,
-        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        window: integrationSyncWindow("2026-02-01T00:00:00Z"),
         metricStreamPublisher: metricStreamCapture.publisher,
       }),
     );
@@ -603,7 +650,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     const result = await provider.sync(
       new SyncRun({
         db: ctx.db,
-        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        window: integrationSyncWindow("2026-02-01T00:00:00Z"),
         metricStreamPublisher: metricStreamCapture.publisher,
       }),
     );
@@ -662,7 +709,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     await provider.sync(
       new SyncRun({
         db: ctx.db,
-        window: SyncWindow.fromSince({ since: new Date("2026-03-04T00:00:00Z") }),
+        window: integrationSyncWindow("2026-03-04T00:00:00Z"),
         metricStreamPublisher: metricStreamCapture.publisher,
       }),
     );
@@ -685,7 +732,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     const result = await provider.sync(
       new SyncRun({
         db: ctx.db,
-        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        window: integrationSyncWindow("2026-03-01T00:00:00Z"),
         metricStreamPublisher: metricStreamCapture.publisher,
       }),
     );
@@ -722,14 +769,14 @@ describe("WhoopProvider.sync() (integration)", () => {
     await provider.sync(
       new SyncRun({
         db: ctx.db,
-        window: SyncWindow.fromSince({ since: new Date("2026-03-07T00:00:00Z") }),
+        window: integrationSyncWindow("2026-03-07T00:00:00Z"),
         metricStreamPublisher: metricStreamCapture.publisher,
       }),
     );
     await provider.sync(
       new SyncRun({
         db: ctx.db,
-        window: SyncWindow.fromSince({ since: new Date("2026-03-07T00:00:00Z") }),
+        window: integrationSyncWindow("2026-03-07T00:00:00Z"),
         metricStreamPublisher: metricStreamCapture.publisher,
       }),
     );
@@ -787,7 +834,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     const result = await provider.sync(
       new SyncRun({
         db: ctx.db,
-        window: SyncWindow.fromSince({ since: new Date("2026-03-10T00:00:00Z") }),
+        window: integrationSyncWindow("2026-03-10T00:00:00Z"),
         metricStreamPublisher: metricStreamCapture.publisher,
       }),
     );
@@ -883,7 +930,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     const result = await provider.sync(
       new SyncRun({
         db: ctx.db,
-        window: SyncWindow.fromSince({ since: new Date("2026-03-10T00:00:00Z") }),
+        window: integrationSyncWindow("2026-03-10T00:00:00Z"),
         metricStreamPublisher: metricStreamCapture.publisher,
       }),
     );
@@ -1027,7 +1074,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     const result = await provider.sync(
       new SyncRun({
         db: ctx.db,
-        window: SyncWindow.fromSince({ since: new Date("2026-03-10T00:00:00Z") }),
+        window: integrationSyncWindow("2026-03-10T00:00:00Z"),
         metricStreamPublisher: metricStreamCapture.publisher,
       }),
     );
@@ -1067,7 +1114,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     const result = await provider.sync(
       new SyncRun({
         db: ctx.db,
-        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        window: integrationSyncWindow("2026-02-01T00:00:00Z"),
         metricStreamPublisher: metricStreamCapture.publisher,
       }),
     );
@@ -1090,7 +1137,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     await provider.sync(
       new SyncRun({
         db: ctx.db,
-        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        window: integrationSyncWindow("2026-02-01T00:00:00Z"),
         metricStreamPublisher: metricStreamCapture.publisher,
       }),
     );
@@ -1110,7 +1157,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     const result = await provider.sync(
       new SyncRun({
         db: ctx.db,
-        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        window: integrationSyncWindow("2026-02-01T00:00:00Z"),
         metricStreamPublisher: metricStreamCapture.publisher,
       }),
     );
@@ -1179,7 +1226,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     const result = await provider.sync(
       new SyncRun({
         db: ctx.db,
-        window: SyncWindow.fromSince({ since: new Date("2026-02-28T00:00:00Z") }),
+        window: integrationSyncWindow("2026-02-28T00:00:00Z"),
         metricStreamPublisher: metricStreamCapture.publisher,
       }),
     );
@@ -1211,7 +1258,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     const result = await provider.sync(
       new SyncRun({
         db: ctx.db,
-        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        window: integrationSyncWindow("2026-02-01T00:00:00Z"),
         metricStreamPublisher: metricStreamCapture.publisher,
       }),
     );
@@ -1250,7 +1297,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     const result = await provider.sync(
       new SyncRun({
         db: ctx.db,
-        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        window: integrationSyncWindow("2026-02-01T00:00:00Z"),
         metricStreamPublisher: metricStreamCapture.publisher,
       }),
     );
@@ -1301,7 +1348,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     const result = await provider.sync(
       new SyncRun({
         db: ctx.db,
-        window: SyncWindow.fromSince({ since: new Date("2026-02-28T00:00:00Z") }),
+        window: integrationSyncWindow("2026-02-28T00:00:00Z"),
         metricStreamPublisher: metricStreamCapture.publisher,
       }),
     );
@@ -1356,7 +1403,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     const result = await provider.sync(
       new SyncRun({
         db: ctx.db,
-        window: SyncWindow.fromSince({ since: new Date("2026-02-28T00:00:00Z") }),
+        window: integrationSyncWindow("2026-02-28T00:00:00Z"),
         metricStreamPublisher: metricStreamCapture.publisher,
       }),
     );

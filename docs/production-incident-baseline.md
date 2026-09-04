@@ -25042,6 +25042,109 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Confirm the replacement Knip job and full PR
   workflow pass on the fix commit.
 
+## 2026-09-03 — Unbounded WHOOP full sync blocked current health updates
+
+- **Status:** Root cause fixed in source; deployment and live queue remediation
+  pending.
+- **Symptoms / user impact:** WHOOP appeared stale in the authenticated MCP and
+  scheduled refreshes could not make current data available while a manual full
+  sync worked through decades of dates with no user data. Respiratory-rate data
+  present in WHOOP's payload was also absent from Dofek's daily metrics.
+- **Evidence / root cause:** The active BullMQ checkpoint reported 3,814 of
+  24,112 API steps complete while processing June 1980, although the user's
+  earliest observed WHOOP recovery is in March 2026. `SyncWindow.full()` starts
+  at the Unix epoch, and the WHOOP planner used that boundary directly for
+  per-day sleep, activity, and heart-rate requests.
+- **Direct fix:** Full-sync detailed steps now begin at the earliest valid WHOOP
+  cycle day returned by the bootstrap fetch, falling back to the recovery
+  timestamp only when a cycle has no valid canonical day. WHOOP main-sleep
+  respiratory rate is persisted into the canonical daily metric row. The same
+  investigation also corrected MCP sleep null/timezone rendering and made
+  provider authorization and active rate-limit cooldowns truthful.
+- **Validation:** The Docker-free changed-file suite passes 1,939 unit and
+  mobile tests across the WHOOP planner and ingestion path, ClickHouse sleep
+  repository, provider status and dispatch, MCP routes, shared sync router,
+  and both clients. The bounded WHOOP integration suite passes 39 tests
+  against real Postgres and Redis, and SyncRepository's real-Postgres suite
+  passes 5 tests including token-presence semantics.
+- **Remaining risk / follow-up:** The currently deployed worker still has the
+  old active job and must not be declared healthy until the fix is deployed,
+  that job is safely replaced, a bounded sync completes, and live MCP data
+  shows a fresh WHOOP success plus populated respiratory rate. The bootstrap
+  cycle scan remains bounded to roughly 200-day pages from the epoch; it is far
+  smaller than the removed per-day fan-out but can be optimized separately if
+  production evidence justifies it.
+
+## 2026-09-03 — Changed integration gate rejected mixed worker counts
+
+- **Status:** Fixed and validated in source.
+- **Symptoms / user impact:** `pnpm test:changed:all` exited before collecting
+  tests, so the database-backed validation gate could not run.
+- **Evidence / root cause:** Vitest 4 reported that the `unit` and `integration`
+  projects had different `maxWorkers` values in the same default
+  `sequence.groupOrder`. The integration project intentionally uses one worker
+  and no isolation for shared database fixtures, while the unit projects remain
+  parallel.
+- **Direct fix:** Assigned the integration project its own later group so its
+  one-worker execution no longer conflicts with the parallel unit group. This
+  follows Vitest's documented project sequencing model, where distinct groups
+  run in ascending order ([Vitest project sequencing](https://vitest.dev/config/sequence#sequence-grouporder)).
+- **Validation:** The original mixed-worker fatal no longer occurs. Vitest
+  collected both project groups, and focused real-database suites pass 44 tests
+  after the integration fixtures were bounded to deterministic dates.
+- **Remaining risk / follow-up:** Retain the distinct group whenever project
+  worker counts differ. The complete changed-file gate was separately blocked
+  by shared Docker memory pressure described below.
+
+## 2026-09-03 — Shared Docker memory pressure killed local ClickHouse validation
+
+- **Status:** Environmental blocker isolated; no product-code mitigation made.
+- **Symptoms / user impact:** The changed-file integration gate lost ClickHouse
+  HTTP connections and could not complete locally. This affected validation
+  only; it did not affect production health data.
+- **Evidence / root cause:** Docker lifecycle events recorded ClickHouse exiting
+  with code 137 and restarting five times without an application fatal log.
+  Docker Desktop exposed 7.65 GiB while dozens of other worktrees' Postgres,
+  ClickHouse, Redis, and Redpanda containers were running concurrently. The
+  current ClickHouse process was not individually over its 1.5 GiB limit and
+  was not marked OOM-killed after restart. That evidence is consistent with a
+  SIGKILL under shared Docker VM pressure, but Docker did not attribute the
+  termination to a container-level OOM event.
+- **Fix / mitigation:** Preserved every other worktree's state, stopped only
+  this worktree's ClickHouse and Redpanda services, and ran the affected WHOOP
+  and SyncRepository integration tests against the required isolated Postgres
+  and Redis services. No timeout, retry, memory-limit, or warn-and-continue
+  behavior was added.
+- **Validation:** The reduced dependency set passes the WHOOP integration suite
+  39/39 and SyncRepository integration suite 5/5. The 1,939-test Docker-free
+  changed suite, repository lint policy checks, and full TypeScript check also
+  pass.
+- **Remaining risk / follow-up:** A complete `pnpm test:changed:all` run still
+  requires enough shared Docker memory for ClickHouse to remain alive. Archive
+  or stop only workspaces whose owners confirm they are idle, then rerun the
+  exact gate; do not delete another worktree's volumes to make room.
+
+## 2026-09-03 — Mutation shards failed after cooldown fixture elapsed
+
+- **Status:** Fixed in source; replacement CI run pending.
+- **Symptoms / user impact:** Two Stryker shards failed during their initial
+  dry run before executing mutants. This blocked the PR quality gate but did
+  not affect runtime health data.
+- **Evidence / root cause:** The first fatal test expected an active cooldown
+  ending at `2026-09-04T04:32:46.000Z`. CI started after that instant, so the
+  server correctly returned overdue freshness instead of deferred freshness.
+  The second shard selected the same related router test and failed for the
+  same reason.
+- **Direct fix:** The cooldown router regression now pins the clock before the
+  expiry instant and restores real timers afterward. Additional assertions
+  kill mutations that would treat tokenless connections as authorized or load
+  cooldowns for disconnected/import-only providers.
+- **Validation:** Both previously failing mutation shards complete locally with
+  a 100% mutation score and zero surviving mutants. The focused router suite
+  passes 93 tests.
+- **Remaining risk / follow-up:** Confirm both replacement Stryker jobs and the
+  aggregate mutation gate pass in GitHub Actions.
+
 ## 2026-09-03 — Post-drain activity context regression and hydration backlog
 
 - **Status:** Canonical local-time fix implemented in source; production
@@ -25088,3 +25191,24 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `32cbb0dc`, `1d7a3bc0`, `9203bd3b`, `54d67057`, and `61edc6bf`. The hydration
   incident remains unresolved until all seven have current active rows in the
   four downstream activity projections.
+
+## 2026-09-04 — Expo patch drift blocked the merged PR mobile bundle gate
+
+- **Status:** Fixed and validated in source; replacement CI run pending.
+- **Symptoms / user impact:** The `Build Mobile / Metro Bundle` check failed
+  before exporting the iOS bundle, blocking PR 2669 after its merge conflicts
+  were resolved.
+- **Evidence / root cause:** The exact failed command was
+  `cd packages/mobile && pnpm expo install --check`. Its first fatal diagnostic
+  was `expo@57.0.19 - expected version: ~57.0.20`, followed by five related Expo
+  SDK patch mismatches and `Found outdated dependencies`. Expo's dependency
+  validation requires compatible package versions for the installed SDK
+  ([Expo CLI dependency validation](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation)).
+- **Direct fix:** Updated the six reported Expo packages to their exact expected
+  patch versions and regenerated the pnpm lockfile and release-age exceptions.
+  No validation bypass, ignore, or compatibility fallback was added.
+- **Validation:** The exact compatibility check now reports `Dependencies are
+  up to date`, and `pnpm expo export --platform ios --clear` successfully
+  produces the iOS Metro bundle.
+- **Remaining risk / follow-up:** Confirm the replacement Metro Bundle job and
+  complete PR workflow pass on the fix commit.

@@ -105,7 +105,7 @@ vi.mock("../../theme", () => ({
   },
 }));
 
-import { SyncAllControls } from "../../app/providers/sync-all-controls";
+import { SyncAllControls } from "../../components/providers/sync-all-controls";
 
 describe("SyncAllControls", () => {
   it("makes recent sync the directly available primary action", () => {

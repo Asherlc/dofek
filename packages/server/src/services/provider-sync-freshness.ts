@@ -12,19 +12,34 @@ export type ProviderSyncFreshness =
       status: "overdue";
       label: "Sync overdue";
       description: string;
+    }
+  | {
+      status: "deferred";
+      label: "Sync deferred";
+      description: string;
     };
 
 interface ProviderSyncFreshnessInput {
   now: Date;
   lastSuccessfulSyncAt: Date | null;
   intervalMinutes: number;
+  cooldownUntil?: Date | null;
 }
 
 export function evaluateProviderSyncFreshness({
   now,
   lastSuccessfulSyncAt,
   intervalMinutes,
+  cooldownUntil,
 }: ProviderSyncFreshnessInput): ProviderSyncFreshness {
+  if (cooldownUntil && cooldownUntil.getTime() > now.getTime()) {
+    return {
+      status: "deferred",
+      label: "Sync deferred",
+      description: `Rate limited until ${cooldownUntil.toISOString()}.`,
+    };
+  }
+
   if (!lastSuccessfulSyncAt) {
     return {
       status: "unknown",
