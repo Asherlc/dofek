@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as ZeppPairingRouteImport } from './routes/zepp-pairing'
 import { Route as WeeklyReportRouteImport } from './routes/weekly-report'
 import { Route as TrainingRouteImport } from './routes/training'
 import { Route as TrackingRouteImport } from './routes/tracking'
@@ -59,6 +60,11 @@ import { Route as BodyHeartRateRouteImport } from './routes/body/heart-rate'
 import { Route as ActivityIdRouteImport } from './routes/activity.$id'
 import { Route as AdminUsersUserIdRouteImport } from './routes/admin/users/$userId'
 
+const ZeppPairingRoute = ZeppPairingRouteImport.update({
+  id: '/zepp-pairing',
+  path: '/zepp-pairing',
+  getParentRoute: () => rootRouteImport,
+} as Parameters<typeof ZeppPairingRouteImport.update>[0])
 const WeeklyReportRoute = WeeklyReportRouteImport.update({
   id: '/weekly-report',
   path: '/weekly-report',
@@ -345,6 +351,7 @@ export interface FileRoutesByFullPath {
   '/tracking': typeof TrackingRoute
   '/training': typeof TrainingRouteWithChildren
   '/weekly-report': typeof WeeklyReportRoute
+  '/zepp-pairing': typeof ZeppPairingRoute
   '/activity/$id': typeof ActivityIdRoute
   '/body/heart-rate': typeof BodyHeartRateRoute
   '/nutrition/analytics': typeof NutritionAnalyticsRoute
@@ -391,6 +398,7 @@ export interface FileRoutesByTo {
   '/terms': typeof TermsRoute
   '/tracking': typeof TrackingRoute
   '/weekly-report': typeof WeeklyReportRoute
+  '/zepp-pairing': typeof ZeppPairingRoute
   '/activity/$id': typeof ActivityIdRoute
   '/body/heart-rate': typeof BodyHeartRateRoute
   '/nutrition/analytics': typeof NutritionAnalyticsRoute
@@ -443,6 +451,7 @@ export interface FileRoutesById {
   '/tracking': typeof TrackingRoute
   '/training': typeof TrainingRouteWithChildren
   '/weekly-report': typeof WeeklyReportRoute
+  '/zepp-pairing': typeof ZeppPairingRoute
   '/activity/$id': typeof ActivityIdRoute
   '/body/heart-rate': typeof BodyHeartRateRoute
   '/nutrition/analytics': typeof NutritionAnalyticsRoute
@@ -496,6 +505,7 @@ export interface FileRouteTypes {
     | '/tracking'
     | '/training'
     | '/weekly-report'
+    | '/zepp-pairing'
     | '/activity/$id'
     | '/body/heart-rate'
     | '/nutrition/analytics'
@@ -542,6 +552,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/tracking'
     | '/weekly-report'
+    | '/zepp-pairing'
     | '/activity/$id'
     | '/body/heart-rate'
     | '/nutrition/analytics'
@@ -593,6 +604,7 @@ export interface FileRouteTypes {
     | '/tracking'
     | '/training'
     | '/weekly-report'
+    | '/zepp-pairing'
     | '/activity/$id'
     | '/body/heart-rate'
     | '/nutrition/analytics'
@@ -645,11 +657,19 @@ export interface RootRouteChildren {
   TrackingRoute: typeof TrackingRoute
   TrainingRoute: typeof TrainingRouteWithChildren
   WeeklyReportRoute: typeof WeeklyReportRoute
+  ZeppPairingRoute: typeof ZeppPairingRoute
   ActivityIdRoute: typeof ActivityIdRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/zepp-pairing': {
+      id: '/zepp-pairing'
+      path: '/zepp-pairing'
+      fullPath: '/zepp-pairing'
+      preLoaderRoute: typeof ZeppPairingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/weekly-report': {
       id: '/weekly-report'
       path: '/weekly-report'
@@ -1108,6 +1128,7 @@ const rootRouteChildren: RootRouteChildren = {
   TrackingRoute: TrackingRoute,
   TrainingRoute: TrainingRouteWithChildren,
   WeeklyReportRoute: WeeklyReportRoute,
+  ZeppPairingRoute: ZeppPairingRoute,
   ActivityIdRoute: ActivityIdRoute,
 }
 export const routeTree = rootRouteImport

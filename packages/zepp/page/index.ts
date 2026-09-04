@@ -37,6 +37,7 @@ import {
   removeUploadedBackgroundHealthBufferEntries,
   writeBackgroundHealthBuffer,
 } from "../src/background-health-storage.ts";
+import { isConnectionChangedCall } from "../src/connection-control.ts";
 import { collectHealthData } from "../src/health-collector.ts";
 import { createHealthUploadBatches, mergeHealthActivities } from "../src/health-upload.ts";
 import { createImuCollector, FREQ_MODES } from "../src/imu-collector.ts";
@@ -781,6 +782,11 @@ Page(
     },
 
     onCall(payload: { method: string; params?: Record<string, unknown> } | null) {
+      if (isConnectionChangedCall(payload)) {
+        this.refreshPreferences();
+        return;
+      }
+
       if (
         handleSessionCall(payload, {
           logging: this.state.logging,

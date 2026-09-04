@@ -20,8 +20,8 @@ function sendJson(res: import("express").Response, status: number, body: unknown
 }
 
 function buildVerificationUrl(origin: string, shortCode: string): string {
-  const url = new URL("/settings", origin);
-  url.searchParams.set("zeppPair", shortCode);
+  const url = new URL("/zepp-pairing", origin);
+  url.searchParams.set("code", shortCode);
   return url.toString();
 }
 

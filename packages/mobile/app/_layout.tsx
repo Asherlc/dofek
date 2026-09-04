@@ -634,6 +634,12 @@ function AuthGate() {
             }}
           />
           <Stack.Screen
+            name="zepp-pairing"
+            options={{
+              title: "Pair Zepp App",
+            }}
+          />
+          <Stack.Screen
             name="account-deletion"
             options={{
               title: "Account Deletion Status",

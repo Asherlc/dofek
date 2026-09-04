@@ -17,8 +17,8 @@ interface ZeppPairingCardBodyProps {
   onDisconnect: (connectionType: "zepp-main" | "zepp-workout") => void;
 }
 
-export function ZeppPairingCard() {
-  const [pairingCode, setPairingCode] = useState("");
+export function ZeppPairingCard({ initialCode = "" }: { initialCode?: string }) {
+  const [pairingCode, setPairingCode] = useState(initialCode);
   const [pairingMessage, setPairingMessage] = useState("");
   const connectionsQuery = trpc.companionToken.list.useQuery();
   const disconnectMutation = trpc.companionToken.revoke.useMutation({

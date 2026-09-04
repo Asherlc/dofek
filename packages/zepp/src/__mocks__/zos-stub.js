@@ -130,6 +130,12 @@ export const FatBurning = class FatBurning {
   }
 };
 
+export const Workout = class Workout {
+  getHistory() {
+    return [];
+  }
+};
+
 export const checkSensor = () => true;
 
 export const writeFileSync = () => {};
@@ -145,3 +151,33 @@ export const O_CREAT = 8;
 export const log = { getLogger: () => ({ log: () => {}, error: () => {} }) };
 export const px = (v) => v;
 export const getDeviceInfo = () => ({ width: 480, height: 480 });
+export const SCREEN_SHAPE_ROUND = "round";
+
+const withPluginSupport = (factory) => Object.assign(factory, { use: () => {} });
+export const BaseSideService = withPluginSupport((configuration) => configuration);
+export const BasePage = withPluginSupport((configuration) => configuration);
+export const BaseApp = withPluginSupport((configuration) => configuration);
+export const messagingPlugin = {};
+export const pagePlugin = {};
+
+export const queryPermission = () => [2];
+export const requestPermission = ({ callback }) => callback([2]);
+export const start = () => {};
+export const setWakeUpRelaunch = () => {};
+export const showToast = () => {};
+
+export const align = { CENTER_H: "center" };
+export const inputType = { CHAR: "char" };
+export const prop = { TEXT: "text" };
+export const text_style = { NONE: "none", WRAP: "wrap" };
+export const widget = { BUTTON: "button", QRCODE: "qrcode", TEXT: "text" };
+export const createKeyboard = () => {};
+export const createWidget = (kind, properties) =>
+  globalThis.createWidget?.(kind, properties) ?? {
+    kind,
+    properties: { ...properties },
+    setProperty(property, value) {
+      this.properties[property] = value;
+    },
+  };
+export const deleteWidget = (value) => globalThis.deleteWidget?.(value);

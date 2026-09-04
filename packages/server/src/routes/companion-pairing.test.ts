@@ -91,7 +91,7 @@ describe("createCompanionPairingRouter", () => {
 
     expect(response.status).toBe(200);
     expect(body).toMatchObject({
-      verificationUrl: expect.stringContaining("https://app.example.test/settings?zeppPair="),
+      verificationUrl: expect.stringContaining("https://app.example.test/zepp-pairing?code="),
       qrImageUrl: expect.stringContaining("https://app.example.test/api/companion-pairing/qr/"),
     });
   });
@@ -143,7 +143,7 @@ describe("createCompanionPairingRouter", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
-      verificationUrl: expect.stringContaining("http://app.example.test/settings?zeppPair="),
+      verificationUrl: expect.stringContaining("http://app.example.test/zepp-pairing?code="),
     });
   });
 
