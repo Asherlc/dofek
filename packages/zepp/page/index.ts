@@ -31,12 +31,13 @@ import {
   widget,
 } from "@zos/ui";
 import { log as Logger, px } from "@zos/utils";
-import { captureException } from "../app-service/telemetry.ts";
+import { captureException, ensureWatchInstallId } from "../app-service/telemetry.ts";
 import {
-  readBackgroundHealthBuffer,
-  removeUploadedBackgroundHealthBufferEntries,
-  writeBackgroundHealthBuffer,
+  backgroundHealthBufferFromOutbox,
+  readBackgroundHealthOutbox,
+  writeBackgroundHealthOutbox,
 } from "../src/background-health-storage.ts";
+import { acknowledgeOutboxEntries } from "../src/durable-outbox.ts";
 import { collectHealthData } from "../src/health-collector.ts";
 import { ensureHealthServiceRunning } from "../src/health-service-control.ts";
 import { createHealthUploadBatches, mergeHealthActivities } from "../src/health-upload.ts";
@@ -823,7 +824,17 @@ Page(
           },
           captureException,
         );
-        const backgroundBuffer = readBackgroundHealthBuffer();
+        const installId = ensureWatchInstallId();
+        let backgroundOutbox: ReturnType<typeof readBackgroundHealthOutbox>;
+        try {
+          backgroundOutbox = readBackgroundHealthOutbox(installId);
+        } catch (error) {
+          captureException(error, { operation: "read-health-outbox" });
+          logger.error("health outbox read failed %j", error);
+          renderHint("Stored health data is invalid\nOpen Zepp settings");
+          return;
+        }
+        const backgroundBuffer = backgroundHealthBufferFromOutbox(backgroundOutbox);
         const activities = mergeHealthActivities(
           watchSummary.activities ?? [],
           backgroundBuffer.activities,
@@ -845,14 +856,15 @@ Page(
             if (backgroundBuffer.samples.length === 0 && backgroundBuffer.activities.length === 0) {
               return;
             }
-            writeBackgroundHealthBuffer(
-              removeUploadedBackgroundHealthBufferEntries(
-                readBackgroundHealthBuffer(),
-                backgroundBuffer,
+            writeBackgroundHealthOutbox(
+              acknowledgeOutboxEntries(
+                readBackgroundHealthOutbox(installId),
+                backgroundOutbox.pending.map((entry) => entry.eventId),
               ),
             );
           })
           .catch((err: unknown) => {
+            captureException(err, { operation: "upload-health-data" });
             logger.error("health data upload request failed %j", err);
           });
       }

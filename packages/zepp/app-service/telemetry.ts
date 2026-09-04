@@ -26,3 +26,13 @@ export function captureException(error: unknown, context: Record<string, unknown
 export function loadWatchTelemetryBuffer(): void {
   restoreBufferedTelemetryEvents(settings.settingsStorage.getItem(STORAGE_KEYS.TELEMETRY_BUFFER));
 }
+
+export function ensureWatchInstallId(): string {
+  const existing = settings.settingsStorage.getItem(STORAGE_KEYS.TELEMETRY_INSTALL_ID)?.trim();
+  if (existing) {
+    return existing;
+  }
+  const installId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  settings.settingsStorage.setItem(STORAGE_KEYS.TELEMETRY_INSTALL_ID, installId);
+  return installId;
+}

@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  appendBackgroundHealthSample,
+  appendBackgroundHealthEvents,
   collectBackgroundHealthSample,
-  emptyBackgroundHealthBuffer,
 } from "./background-health.ts";
+import { createEmptyOutbox } from "./durable-outbox.ts";
 
 describe("collectBackgroundHealthSample", () => {
   it("collects low-power readings and completed workouts", () => {
@@ -136,11 +136,62 @@ describe("collectBackgroundHealthSample", () => {
     });
     expect(captureException).not.toHaveBeenCalled();
   });
+
+  it("omits non-finite background values before persistence", () => {
+    const captureException = vi.fn();
+    const result = collectBackgroundHealthSample(
+      {
+        captureException,
+        HeartRate: class {
+          getLast() {
+            return Number.POSITIVE_INFINITY;
+          }
+        },
+        BloodOxygen: class {
+          getCurrent() {
+            return { value: 101 };
+          }
+        },
+        BodyTemperature: class {
+          getCurrent() {
+            return { current: Number.NaN };
+          }
+        },
+        Stress: class {
+          getToday() {
+            return [30, Number.POSITIVE_INFINITY];
+          }
+        },
+        Workout: class {
+          getHistory() {
+            return [];
+          }
+        },
+      },
+      1_720_003_700_000,
+    );
+
+    expect(result).toEqual({
+      sample: { recordedAt: "2024-07-03T10:48:20.000Z", stress: 30 },
+      activities: [],
+    });
+  });
 });
 
-describe("appendBackgroundHealthSample", () => {
-  it("deduplicates activities and retains the newest seven days of minute samples", () => {
-    let buffer = emptyBackgroundHealthBuffer();
+describe("appendBackgroundHealthEvents", () => {
+  it("deduplicates stable events and retains the newest seven days of minute samples", () => {
+    let outbox = createEmptyOutbox<
+      | { kind: "sample"; sample: { recordedAt: string; heartRate?: number } }
+      | {
+          kind: "activity";
+          activity: {
+            externalId: string;
+            activityType: "other";
+            startedAt: string;
+            endedAt: string;
+          };
+        }
+    >();
     const activity = {
       externalId: "1720000000",
       activityType: "other" as const,
@@ -149,18 +200,32 @@ describe("appendBackgroundHealthSample", () => {
     };
 
     for (let minute = 0; minute <= 10_080; minute++) {
-      buffer = appendBackgroundHealthSample(buffer, {
-        sample: { recordedAt: new Date(minute * 60_000).toISOString(), heartRate: 60 },
-        activities: [activity],
-      });
+      outbox = appendBackgroundHealthEvents(
+        outbox,
+        {
+          sample: { recordedAt: new Date(minute * 60_000).toISOString(), heartRate: 60 },
+          activities: [activity],
+        },
+        "install-1",
+      );
     }
 
-    expect(buffer.samples).toHaveLength(10_080);
-    expect(buffer.samples[0]?.recordedAt).toBe(new Date(60_000).toISOString());
-    expect(buffer.activities).toEqual([activity]);
+    const samples = outbox.pending.filter((entry) => entry.payload.kind === "sample");
+    const activities = outbox.pending.filter((entry) => entry.payload.kind === "activity");
+    expect(samples).toHaveLength(10_080);
+    expect(samples[0]).toMatchObject({
+      eventId: `install-1:background-sample:${new Date(60_000).toISOString()}`,
+      payload: { kind: "sample", sample: { recordedAt: new Date(60_000).toISOString() } },
+    });
+    expect(activities).toEqual([
+      expect.objectContaining({
+        eventId: `install-1:activity:${activity.externalId}:${activity.endedAt}`,
+        payload: { kind: "activity", activity },
+      }),
+    ]);
   });
 
-  it("replaces an older activity with the newest history record", () => {
+  it("retains activity revisions as separate raw events", () => {
     const oldActivity = {
       externalId: "1720000000",
       activityType: "other" as const,
@@ -170,13 +235,24 @@ describe("appendBackgroundHealthSample", () => {
     const updatedActivity = { ...oldActivity, endedAt: "2024-07-03T10:50:00.000Z" };
 
     expect(
-      appendBackgroundHealthSample(
-        { samples: [], activities: [oldActivity] },
+      appendBackgroundHealthEvents(
+        appendBackgroundHealthEvents(
+          createEmptyOutbox(),
+          {
+            sample: { recordedAt: "2024-07-03T10:49:00.000Z" },
+            activities: [oldActivity],
+          },
+          "install-1",
+        ),
         {
           sample: { recordedAt: "2024-07-03T10:50:00.000Z" },
           activities: [updatedActivity],
         },
-      ).activities,
-    ).toEqual([updatedActivity]);
+        "install-1",
+      ).pending.filter((entry) => entry.payload.kind === "activity"),
+    ).toEqual([
+      expect.objectContaining({ payload: { kind: "activity", activity: oldActivity } }),
+      expect.objectContaining({ payload: { kind: "activity", activity: updatedActivity } }),
+    ]);
   });
 });
