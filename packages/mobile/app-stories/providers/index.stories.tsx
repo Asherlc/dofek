@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import type { ComponentType } from "react";
 import { View } from "react-native";
-import { ProviderCard } from "../../app/providers/provider-card.tsx";
+import { ProviderCard } from "../../components/providers/provider-card.tsx";
 import { AuthProvider } from "../../lib/auth-context";
 
 // ── ProviderCard ──

@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { View } from "react-native";
 import { within } from "storybook/test";
-import { SyncAllControls } from "../../app/providers/sync-all-controls";
+import { SyncAllControls } from "../../components/providers/sync-all-controls";
 import { colors } from "../../theme";
 
 const meta = {

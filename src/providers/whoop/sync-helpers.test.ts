@@ -9,6 +9,7 @@ import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { SyncWindow } from "../sync-window.ts";
 import { syncWhoopDailyActivity } from "./sync-daily-activity.ts";
+import { syncWhoopRecovery } from "./sync-recovery.ts";
 import {
   syncWhoopSleepSessions,
   syncWhoopSleepStages,
@@ -547,6 +548,96 @@ describe("WHOOP sync helpers", () => {
       providerId: "whoop",
       respiratoryRateAvg: 13.5,
     });
+  });
+
+  it("falls back to the sleep end day when cycle and recovery dates are invalid", async () => {
+    const db = makeDb();
+    const cycles: WhoopCycle[] = [
+      {
+        days: ["not-a-date"],
+        recovery: {
+          user_id: 123,
+          created_at: "also-not-a-date",
+          updated_at: "2026-05-02T14:00:00.000Z",
+        },
+        sleeps: [
+          {
+            during: "['2026-05-02T06:00:00Z','2026-05-02T14:00:00Z')",
+            state: "complete",
+            time_in_bed: 28_800_000,
+            wake_duration: 1_800_000,
+            light_sleep_duration: 12_000_000,
+            slow_wave_sleep_duration: 6_000_000,
+            rem_sleep_duration: 7_200_000,
+            respiratory_rate: 13.5,
+          },
+        ],
+      },
+    ];
+    const context = makeContext({ db: db.db, cycles });
+
+    await expect(syncWhoopSleepSessions(context)).resolves.toBe(1);
+
+    expect(db.chain.values).toHaveBeenCalledWith({
+      date: "2026-05-02",
+      providerId: "whoop",
+      respiratoryRateAvg: 13.5,
+    });
+  });
+
+  it("falls back to the recovery day when canonical cycle dates are invalid", async () => {
+    const db = makeDb();
+    const cycles: WhoopCycle[] = [
+      {
+        days: ["not-a-date"],
+        recovery: {
+          cycle_id: 1,
+          user_id: 123,
+          created_at: "2026-05-02T14:00:00.000Z",
+          updated_at: "2026-05-02T14:00:00.000Z",
+          resting_heart_rate: 52,
+          hrv_rmssd: 0.06,
+        },
+      },
+    ];
+    const context = makeContext({ db: db.db, cycles });
+
+    await expect(syncWhoopRecovery(context)).resolves.toBe(1);
+
+    expect(db.chain.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        date: "2026-05-02",
+        providerId: "whoop",
+        hrv: 60,
+      }),
+    );
+  });
+
+  it("uses the first valid canonical cycle date before the recovery timestamp", async () => {
+    const db = makeDb();
+    const cycles: WhoopCycle[] = [
+      {
+        days: ["not-a-date", "2026-05-01"],
+        recovery: {
+          cycle_id: 1,
+          user_id: 123,
+          created_at: "2026-05-02T14:00:00.000Z",
+          updated_at: "2026-05-02T14:00:00.000Z",
+          resting_heart_rate: 52,
+          hrv_rmssd: 0.06,
+        },
+      },
+    ];
+    const context = makeContext({ db: db.db, cycles });
+
+    await expect(syncWhoopRecovery(context)).resolves.toBe(1);
+
+    expect(db.chain.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        date: "2026-05-01",
+        providerId: "whoop",
+      }),
+    );
   });
 
   it("persists sleep stages when a matching session exists", async () => {

@@ -59,7 +59,7 @@ import {
   GarminAuthModal,
   TokenAuthModal,
   WhoopAuthModal,
-} from "../../app/providers/auth-modals";
+} from "../../components/providers/auth-modals";
 
 describe("provider auth modals", () => {
   beforeEach(() => {

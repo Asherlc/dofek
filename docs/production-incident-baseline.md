@@ -25056,7 +25056,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   at the Unix epoch, and the WHOOP planner used that boundary directly for
   per-day sleep, activity, and heart-rate requests.
 - **Direct fix:** Full-sync detailed steps now begin at the earliest valid WHOOP
-  recovery date returned by the bootstrap cycle fetch. WHOOP main-sleep
+  cycle day returned by the bootstrap fetch, falling back to the recovery
+  timestamp only when a cycle has no valid canonical day. WHOOP main-sleep
   respiratory rate is persisted into the canonical daily metric row. The same
   investigation also corrected MCP sleep null/timezone rendering and made
   provider authorization and active rate-limit cooldowns truthful.

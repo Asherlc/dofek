@@ -275,6 +275,123 @@ describe("WHOOP sync step planning", () => {
     ]);
   });
 
+  it("bounds a full sync from a canonical cycle day when recovery is absent", async () => {
+    const context = makeContext({
+      since: new Date(0),
+      windowEnd: new Date("2026-03-13T00:00:00.000Z"),
+      cycles: [{ days: ["2026-03-10"] }],
+    });
+
+    const steps = await planWhoopApiSteps(context);
+
+    expect(steps.filter((step) => step.type === "strain_deep_dive")).toEqual([
+      { type: "strain_deep_dive", date: "2026-03-10" },
+      { type: "strain_deep_dive", date: "2026-03-11" },
+      { type: "strain_deep_dive", date: "2026-03-12" },
+      { type: "strain_deep_dive", date: "2026-03-13" },
+    ]);
+    expect(steps.filter((step) => step.type === "heart_rate")).toEqual([
+      {
+        type: "heart_rate",
+        start: "2026-03-10T00:00:00.000Z",
+        end: "2026-03-13T00:00:00.000Z",
+      },
+    ]);
+  });
+
+  it("prefers the canonical cycle day over a later recovery creation timestamp", async () => {
+    const context = makeContext({
+      since: new Date(0),
+      windowEnd: new Date("2026-03-13T00:00:00.000Z"),
+      cycles: [
+        {
+          days: ["2026-03-10"],
+          recovery: {
+            cycle_id: 1,
+            user_id: 123,
+            created_at: "2026-03-11T08:00:00.000Z",
+            updated_at: "2026-03-11T08:00:00.000Z",
+          },
+        },
+      ],
+    });
+
+    const steps = await planWhoopApiSteps(context);
+
+    expect(steps.filter((step) => step.type === "strain_deep_dive")[0]).toEqual({
+      type: "strain_deep_dive",
+      date: "2026-03-10",
+    });
+    expect(steps.filter((step) => step.type === "heart_rate")[0]).toEqual({
+      type: "heart_rate",
+      start: "2026-03-10T00:00:00.000Z",
+      end: "2026-03-13T00:00:00.000Z",
+    });
+  });
+
+  it("falls back to recovery when canonical cycle days are invalid", async () => {
+    const context = makeContext({
+      since: new Date(0),
+      windowEnd: new Date("2026-03-13T00:00:00.000Z"),
+      cycles: [
+        {
+          days: ["not-a-date"],
+          recovery: {
+            cycle_id: 1,
+            user_id: 123,
+            created_at: "2026-03-11T08:00:00.000Z",
+            updated_at: "2026-03-11T08:00:00.000Z",
+          },
+        },
+      ],
+    });
+
+    const steps = await planWhoopApiSteps(context);
+
+    expect(steps.filter((step) => step.type === "strain_deep_dive")[0]).toEqual({
+      type: "strain_deep_dive",
+      date: "2026-03-11",
+    });
+  });
+
+  it("ignores an invalid recovery timestamp after observing a valid cycle day", async () => {
+    const context = makeContext({
+      since: new Date(0),
+      windowEnd: new Date("2026-03-13T00:00:00.000Z"),
+      cycles: [
+        { days: ["2026-03-10"] },
+        {
+          recovery: {
+            cycle_id: 2,
+            user_id: 123,
+            created_at: "not-a-date",
+            updated_at: "2026-03-11T08:00:00.000Z",
+          },
+        },
+      ],
+    });
+
+    const steps = await planWhoopApiSteps(context);
+
+    expect(steps.filter((step) => step.type === "strain_deep_dive")[0]).toEqual({
+      type: "strain_deep_dive",
+      date: "2026-03-10",
+    });
+  });
+
+  it("keeps a full sync bounded when cycles have no observable date", async () => {
+    const context = makeContext({
+      since: new Date(0),
+      windowEnd: new Date("2026-03-13T00:00:00.000Z"),
+      cycles: [{}],
+    });
+
+    const steps = await planWhoopApiSteps(context);
+
+    expect(steps.filter((step) => step.type === "strain_deep_dive")).toEqual([]);
+    expect(steps.filter((step) => step.type === "heart_rate")).toEqual([]);
+  });
+
   it("omits workouts without resolvable activity ids from the step plan", async () => {
     const context = makeContext({
       cycles: [{ workouts: [makeWorkoutRecord({ activity_id: undefined })] }],

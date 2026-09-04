@@ -4,7 +4,7 @@ import type { OperationResultObservable, TRPCLink } from "@trpc/client";
 import type { AppRouter } from "dofek-server/router";
 import { useMemo } from "react";
 import { View } from "react-native";
-import { ProviderDangerZone } from "../../app/providers/provider-danger-zone";
+import { ProviderDangerZone } from "../../components/providers/provider-danger-zone";
 import { trpc } from "../../lib/trpc";
 
 function createMockLink(): TRPCLink<AppRouter> {

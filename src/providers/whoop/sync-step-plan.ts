@@ -4,6 +4,7 @@ import { dailyMetrics, sleepSession, sleepStage } from "../../db/schema/activity
 import { getTokenUserId } from "../../db/token-user-context.ts";
 import { planSyncStepIfRequestNotPending } from "../../lib/sync-request-query.ts";
 import { listPendingSyncRequestQueryKeys } from "../../lib/sync-request-queue.ts";
+import { normalizeWhoopDay } from "./cycle-day.ts";
 import { extractSleepIdsFromCycle, resolveWhoopWorkoutExternalId } from "./parsing.ts";
 import { whoopSyncStepToApiQuery } from "./sync-api-query.ts";
 import type { WhoopSyncStep } from "./sync-checkpoint.ts";
@@ -37,11 +38,22 @@ function resolveDetailedSyncStart(context: WhoopPersistenceContext): Date | null
 
   let earliestObservedMs = Number.POSITIVE_INFINITY;
   for (const cycle of context.cycles) {
-    const recoveryCreatedAt = cycle.recovery?.created_at;
-    if (!recoveryCreatedAt) continue;
-    const timestampMs = Date.parse(recoveryCreatedAt);
-    if (Number.isFinite(timestampMs)) {
-      earliestObservedMs = Math.min(earliestObservedMs, timestampMs);
+    let earliestCycleDayMs = Number.POSITIVE_INFINITY;
+    for (const cycleDay of cycle.days ?? []) {
+      const normalizedCycleDay = normalizeWhoopDay(cycleDay);
+      if (normalizedCycleDay) {
+        earliestCycleDayMs = Math.min(earliestCycleDayMs, Date.parse(normalizedCycleDay));
+      }
+    }
+
+    if (Number.isFinite(earliestCycleDayMs)) {
+      earliestObservedMs = Math.min(earliestObservedMs, earliestCycleDayMs);
+      continue;
+    }
+
+    const recoveryDay = normalizeWhoopDay(cycle.recovery?.created_at);
+    if (recoveryDay) {
+      earliestObservedMs = Math.min(earliestObservedMs, Date.parse(recoveryDay));
     }
   }
 
