@@ -182,24 +182,43 @@ describe("collectBackgroundHealthSample", () => {
 
 describe("appendBackgroundHealthEvents", () => {
   it("deduplicates stable events and retains the newest seven days of minute samples", () => {
-    let outbox: BackgroundHealthOutbox = createEmptyOutbox();
     const activity = {
       externalId: "1720000000",
       activityType: "other" as const,
       startedAt: "2024-07-03T09:46:40.000Z",
       endedAt: "2024-07-03T10:46:40.000Z",
     };
-
-    for (let minute = 0; minute <= 10_080; minute++) {
-      outbox = appendBackgroundHealthEvents(
-        outbox,
-        {
-          sample: { recordedAt: new Date(minute * 60_000).toISOString(), heartRate: 60 },
-          activities: [activity],
-        },
-        "install-1",
-      );
-    }
+    const existingSamples: BackgroundHealthOutbox["pending"] = Array.from(
+      { length: 10_080 },
+      (_, minute) => {
+        const recordedAt = new Date(minute * 60_000).toISOString();
+        return {
+          eventId: `install-1:background-sample:${recordedAt}`,
+          createdAt: recordedAt,
+          payload: { kind: "sample" as const, sample: { recordedAt, heartRate: 60 } },
+          attempts: 0,
+        };
+      },
+    );
+    const outbox = appendBackgroundHealthEvents(
+      {
+        pending: [
+          ...existingSamples,
+          {
+            eventId: `install-1:activity:${activity.externalId}:${activity.endedAt}`,
+            createdAt: activity.endedAt,
+            payload: { kind: "activity", activity },
+            attempts: 0,
+          },
+        ],
+        quarantine: [],
+      },
+      {
+        sample: { recordedAt: new Date(10_080 * 60_000).toISOString(), heartRate: 60 },
+        activities: [activity],
+      },
+      "install-1",
+    );
 
     const samples = outbox.pending.filter((entry) => entry.payload.kind === "sample");
     const activities = outbox.pending.filter((entry) => entry.payload.kind === "activity");
