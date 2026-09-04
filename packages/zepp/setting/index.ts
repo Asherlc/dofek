@@ -46,7 +46,6 @@ function buildPairingQrImage(sourceUrl: string): unknown {
 }
 
 const PG_STATE: {
-  enableGyro: boolean;
   freqModeIndex: number;
   sessionStatus: Record<string, unknown>;
   lastExportPath: string | null;
@@ -63,7 +62,6 @@ const PG_STATE: {
   healthSyncStatus: Record<string, unknown>;
   lastHealthSync: string | null;
 } = {
-  enableGyro: false,
   freqModeIndex: 1,
   sessionStatus: EMPTY_RECORD,
   lastExportPath: null,
@@ -111,7 +109,9 @@ AppSettingsPage({
     );
 
     const blocks: Array<unknown> = [
-      View({ style: { margin: "1em", fontSize: "1.3rem", fontWeight: "bold" } }, ["IMU Logger"]),
+      View({ style: { margin: "1em", fontSize: "1.3rem", fontWeight: "bold" } }, [
+        "Advanced Foreground Recorder",
+      ]),
 
       View({ style: { margin: "1em", fontSize: "1.2rem", lineHeight: "1.6rem" } }, [
         `State: ${status.state ?? "idle"}`,
@@ -129,7 +129,7 @@ AppSettingsPage({
         },
       }),
       View({ style: { margin: "0 1em 1em", fontSize: "1rem", color: "#888" } }, [
-        "Keep the Dofek watch app open when starting or stopping from Settings.",
+        "Keep the Dofek watch app open for the entire recording. Gyroscope data is included automatically when the watch supports it.",
       ]),
       TextInput({
         label: "Sample rate mode (0=LOW, 1=NORMAL, 2=HIGH)",
@@ -146,14 +146,6 @@ AppSettingsPage({
       View({ style: { margin: "0 1em", fontSize: "1rem", color: "#888" } }, [
         `Requested: ${FREQ_MODE_LABELS[this.state.freqModeIndex]}. Docs do not publish Hz per mode; the watch records the delivered rate.`,
       ]),
-      Toggle({
-        label: "Include gyroscope",
-        value: this.state.enableGyro,
-        onChange: (checked: boolean) => {
-          this.state.enableGyro = checked;
-          props.settingsStorage.setItem(STORAGE_KEYS.PREF_ENABLE_GYRO, checked ? "true" : "false");
-        },
-      }),
       Button({
         label: "Transfer finalized session",
         color: "primary",
@@ -347,7 +339,6 @@ AppSettingsPage({
       setItem(key: string, value: string): void;
     };
   }) {
-    this.state.enableGyro = props.settingsStorage.getItem(STORAGE_KEYS.PREF_ENABLE_GYRO) === "true";
     this.state.freqModeIndex = Number(
       props.settingsStorage.getItem(STORAGE_KEYS.PREF_FREQ_MODE) ?? 1,
     );

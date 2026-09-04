@@ -1,5 +1,4 @@
 export const STORAGE_KEYS = {
-  PREF_ENABLE_GYRO: "pref_enable_gyro",
   PREF_FREQ_MODE: "pref_freq_mode",
   CMD_LOGGING: "cmd_logging",
   CMD_TRANSFER: "cmd_transfer",

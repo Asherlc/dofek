@@ -15,11 +15,6 @@ export interface BackgroundHealthSample {
   stress?: number;
 }
 
-export interface BackgroundHealthBuffer {
-  samples: BackgroundHealthSample[];
-  activities: HealthActivity[];
-}
-
 export type BackgroundHealthEvent =
   | { kind: "sample"; sample: BackgroundHealthSample }
   | { kind: "activity"; activity: HealthActivity }

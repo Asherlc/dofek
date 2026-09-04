@@ -2,7 +2,6 @@ import { readFileSync, writeFileSync } from "@zos/fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { appendBackgroundHealthEvents, type BackgroundHealthOutbox } from "./background-health.ts";
 import {
-  backgroundHealthBufferFromOutbox,
   parseBackgroundHealthOutbox,
   readBackgroundHealthOutbox,
   serializeBackgroundHealthOutbox,
@@ -70,13 +69,6 @@ describe("background health outbox storage", () => {
         installId,
       ),
     ).toThrow("Background health sample is invalid.");
-  });
-
-  it("projects pending entries without including quarantined data", () => {
-    expect(backgroundHealthBufferFromOutbox(populatedOutbox())).toEqual({
-      samples: [sample],
-      activities: [activity],
-    });
   });
 
   it("reads missing storage as empty but surfaces stored corruption", () => {

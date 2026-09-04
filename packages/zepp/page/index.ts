@@ -3,6 +3,12 @@ import { BasePage } from "@zeppos/zml/base-page";
 import { queryPermission, requestPermission } from "@zos/app";
 import * as appService from "@zos/app-service";
 import { getDeviceInfo, SCREEN_SHAPE_ROUND } from "@zos/device";
+import {
+  pauseDropWristScreenOff,
+  resetDropWristScreenOff,
+  resetPageBrightTime,
+  setPageBrightTime,
+} from "@zos/display";
 import { showToast } from "@zos/interaction";
 import {
   Accelerometer,
@@ -37,11 +43,14 @@ import {
   readBackgroundHealthOutbox,
   writeBackgroundHealthOutbox,
 } from "../src/background-health-storage.ts";
-import { acknowledgeOutboxEntries } from "../src/durable-outbox.ts";
+import { createDisplayLease } from "../src/display-lease.ts";
 import { collectHealthData } from "../src/health-collector.ts";
-import { parseHealthUploadResponse } from "../src/health-contract.ts";
 import { ensureHealthServiceRunning } from "../src/health-service-control.ts";
 import { createImuCollector, FREQ_MODES } from "../src/imu-collector.ts";
+import {
+  createImuSessionController,
+  type ImuSessionController,
+} from "../src/imu-session-controller.ts";
 import { createRoundLoginLayout } from "../src/round-layout.ts";
 import {
   createSessionCall,
@@ -66,8 +75,7 @@ import {
   SESSION_FILE_B,
   SESSION_META_FILE,
 } from "../src/storage-keys.ts";
-import type { ImuSample } from "../src/types.ts";
-import { createWatchHealthBatches } from "../src/watch-health-batches.ts";
+import { deliverWatchHealthOutbox } from "../src/watch-health-sync.ts";
 
 type ActiveFileSlot = "A" | "B";
 type TransferTask = {
@@ -81,9 +89,6 @@ type FailedTransfer = {
 
 function nullable<T>(): T | null {
   return null;
-}
-function emptyArray<T>(): T[] {
-  return [];
 }
 function initialActiveFile(): ActiveFileSlot {
   return "A";
@@ -181,10 +186,8 @@ Page(
   BasePage({
     state: {
       logging: false,
-      enableGyro: false,
       freqModeIndex: 1,
-      pendingBuffer: emptyArray<ImuSample>(),
-      collector: nullable<ReturnType<typeof createImuCollector>>(),
+      imuController: nullable<ImuSessionController>(),
       hasGyro: false,
       transferTask: nullable<TransferTask>(),
       failedTransfer: nullable<FailedTransfer>(),
@@ -194,6 +197,7 @@ Page(
       activeFile: initialActiveFile(),
       hasCredentials: false,
       canStartConnection: true,
+      healthSyncing: false,
       dofekEmail: "",
       pairingVerificationUrl: "",
       pairingShortCode: "",
@@ -203,6 +207,7 @@ Page(
       resetPairingQrReference();
       this.startHealthService();
       this.refreshPreferences();
+      this.collectAndDeliverHealth();
     },
 
     build() {
@@ -236,7 +241,6 @@ Page(
           );
           this.onCall(
             createSessionCall(action.command, {
-              enableGyro: this.state.enableGyro,
               freqModeIndex: this.state.freqModeIndex,
             }),
           );
@@ -303,7 +307,6 @@ Page(
       })
         .then((result) => {
           if (!this.state.logging) {
-            this.state.enableGyro = result?.enableGyro === true;
             this.state.freqModeIndex = Number(result?.freqModeIndex ?? 1);
           }
           this.state.hasCredentials = result?.hasCredentials === true;
@@ -322,6 +325,7 @@ Page(
           );
         })
         .catch((error) => {
+          captureException(error, { operation: "fetch-preferences" });
           logger.error("preference fetch failed %j", error);
           renderHint("Preferences unavailable\nOpen Zepp settings");
         });
@@ -378,56 +382,62 @@ Page(
         return;
       }
 
-      const collector = createImuCollector(
-        {
-          enableGyro: this.state.enableGyro,
-          requestedFreqModeIndex: this.state.freqModeIndex,
-          onSample: (sample) => this.handleSample(sample),
-          onStatus: createSessionProgressHandler({
-            updateWatch: (stats) => this.handleRate(stats),
-            publishHostStatus: (stats) => this.publishSessionStatus(SESSION_STATE.RECORDING, stats),
-          }),
+      this.state.activeFile = "A";
+      const controller = createImuSessionController({
+        path: this.activeFilePath(),
+        requestedFreqModeIndex: this.state.freqModeIndex,
+        flushThreshold: FLUSH_SAMPLE_THRESHOLD,
+        now: Date.now,
+        displayLease: createDisplayLease({
+          pauseDropWristScreenOff,
+          resetDropWristScreenOff,
+          setPageBrightTime,
+          resetPageBrightTime,
+        }),
+        createCollector: (options) =>
+          createImuCollector(options, { Accelerometer, Gyroscope, checkSensor }),
+        file: {
+          reset: resetSessionFile,
+          append: appendSamples,
+          finalize: finalizeSessionFile,
         },
-        { Accelerometer, Gyroscope, checkSensor },
-      );
+        onProgress: createSessionProgressHandler({
+          updateWatch: (stats) => this.handleRate(stats),
+          publishHostStatus: (stats) => this.publishSessionStatus(SESSION_STATE.RECORDING, stats),
+        }),
+        onError: (error) => {
+          captureException(error, { operation: "foreground-imu-session" });
+          logger.error("foreground IMU session failed %j", error);
+          this.state.logging = false;
+          this.state.imuController = null;
+          renderSessionControl(SESSION_STATE.IDLE);
+          renderHint("Recorder stopped\nOpen Zepp settings for details");
+        },
+      });
 
-      if (!collector.available) {
-        showToast({ content: collector.reason });
-        renderHint(collector.reason);
+      if (!controller.available) {
+        const reason = controller.reason ?? "IMU sensors are unavailable.";
+        showToast({ content: reason });
+        renderHint(reason);
         return;
       }
 
-      this.state.collector = collector;
-      this.state.hasGyro = collector.hasGyroscope;
-      this.state.pendingBuffer = [];
+      this.state.imuController = controller;
+      this.state.hasGyro = controller.hasGyroscope;
       this.state.sampleCount = 0;
       this.state.observedHzX100 = 0;
-      this.state.activeFile = "A";
-
-      resetSessionFile(
-        {
-          hasGyro: collector.hasGyroscope,
-          sessionStartMs: Date.now(),
-          sampleCount: 0,
-          accelFreqMode: collector.accelMode,
-          gyroFreqMode: collector.gyroMode ?? 0,
-          observedHzX100: 0,
-        },
-        this.activeFilePath(),
-      );
-
-      collector.start();
+      if (!controller.start()) {
+        this.state.imuController = null;
+        return;
+      }
       this.state.logging = true;
 
-      const modeLabel = FREQ_MODES.find((item) => item.value === collector.accelMode)?.label ?? "?";
+      const modeLabel =
+        FREQ_MODES.find((item) => item.value === controller.accelFreqMode)?.label ?? "?";
       renderSensorInfo(
-        collector.hasGyroscope ? `Accel · Gyro · ${modeLabel}` : `Accel · ${modeLabel}`,
+        controller.hasGyroscope ? `Accel · Gyro · ${modeLabel}` : `Accel · ${modeLabel}`,
       );
-      if (this.state.hasCredentials) {
-        renderHint("");
-      } else if (!this.state.pairingShortCode) {
-        renderHint("Not connected\nCreating pairing code...");
-      }
+      renderHint("Foreground recorder\nKeep this screen open");
       renderSessionControl(SESSION_STATE.RECORDING);
 
       this.publishSessionStatus(SESSION_STATE.RECORDING);
@@ -480,6 +490,7 @@ Page(
           this.renderPairing(isRecord(result) ? result : null);
         })
         .catch((error: unknown) => {
+          captureException(error, { operation: "start-watch-pairing" });
           logger.error("watch pairing start failed %j", error);
           renderHint("Pairing failed\nOpen Zepp settings");
         });
@@ -496,6 +507,7 @@ Page(
           onCancel: () => undefined,
         });
       } catch (error) {
+        captureException(error, { operation: "open-watch-keyboard" });
         logger.error("keyboard open failed %j", error);
         showToast({ content: "Keyboard requires Zepp OS 4" });
       }
@@ -520,6 +532,7 @@ Page(
                   renderHint("Connected");
                 })
                 .catch((error: unknown) => {
+                  captureException(error, { operation: "watch-password-login" });
                   logger.error("watch login failed %j", error);
                   renderHint("Login failed\nCheck password");
                 });
@@ -541,46 +554,21 @@ Page(
           renderHint("Not connected\nCreate code in Zepp settings");
         })
         .catch((error: unknown) => {
+          captureException(error, { operation: "watch-disconnect" });
           logger.error("watch disconnect failed %j", error);
           renderHint("Disconnect failed\nOpen Zepp settings");
         });
     },
 
-    handleSample(sample: ImuSample) {
-      this.state.pendingBuffer.push(sample);
-      this.state.sampleCount += 1;
-
-      if (this.state.pendingBuffer.length >= FLUSH_SAMPLE_THRESHOLD) {
-        this.flushBuffer(false);
-      }
-
-      if (this.state.sampleCount >= AUTO_TRANSFER_SAMPLE_COUNT && !this.state.transferTask) {
-        this.swapAndTransfer();
-      }
-    },
-
     handleRate(stats: { sampleCount: number; observedHzX100: number }) {
+      this.state.sampleCount = stats.sampleCount;
       this.state.observedHzX100 = stats.observedHzX100;
       renderSamples(
         `${stats.sampleCount} samples\n` + `${(stats.observedHzX100 / 100).toFixed(2)} Hz`,
       );
       this.writeMetaFile();
-    },
-
-    flushBuffer(finalize: boolean) {
-      const path = this.activeFilePath();
-      if (!this.state.pendingBuffer.length) {
-        if (finalize) {
-          finalizeSessionFile(this.state.sampleCount, this.state.observedHzX100, path);
-        }
-        return;
-      }
-
-      appendSamples(this.state.pendingBuffer, this.state.hasGyro, path);
-      this.state.pendingBuffer = [];
-
-      if (finalize) {
-        finalizeSessionFile(this.state.sampleCount, this.state.observedHzX100, path);
+      if (stats.sampleCount >= AUTO_TRANSFER_SAMPLE_COUNT && !this.state.transferTask) {
+        this.swapAndTransfer();
       }
     },
 
@@ -590,8 +578,12 @@ Page(
       }
 
       this.state.logging = false;
-      this.state.collector?.stop();
-      this.flushBuffer(true);
+      const completed = this.state.imuController?.stop();
+      if (completed) {
+        this.state.sampleCount = completed.sampleCount;
+        this.state.observedHzX100 = completed.observedHzX100;
+      }
+      this.state.imuController = null;
       this.writeMetaFile();
       renderSessionControl(SESSION_STATE.IDLE);
       renderSensorInfo("Session finalized");
@@ -622,41 +614,24 @@ Page(
         return;
       }
 
-      // Flush pending samples and finalize the current file before handing it off
-      this.flushBuffer(false);
-      finalizeSessionFile(this.state.sampleCount, this.state.observedHzX100, outgoingPath);
+      const completed = this.state.imuController?.rotate(this.filePathForSlot(nextSlot));
+      if (!completed) {
+        this.state.logging = false;
+        renderSessionControl(SESSION_STATE.IDLE);
+        return;
+      }
 
-      const sampleCountSnapshot = this.state.sampleCount;
-      const observedHzX100Snapshot = this.state.observedHzX100;
-
-      // Swap to the other file — sensor keeps running without a gap
       this.state.activeFile = nextSlot;
       this.state.sampleCount = 0;
       this.state.observedHzX100 = 0;
-      this.state.pendingBuffer = [];
-
-      const collector = this.state.collector;
-      if (collector?.available) {
-        resetSessionFile(
-          {
-            hasGyro: this.state.hasGyro,
-            sessionStartMs: Date.now(),
-            sampleCount: 0,
-            accelFreqMode: collector.accelMode,
-            gyroFreqMode: collector.gyroMode ?? 0,
-            observedHzX100: 0,
-          },
-          this.activeFilePath(),
-        );
-      }
 
       this.publishSessionStatus(SESSION_STATE.RECORDING);
       this.writeMetaFile();
 
       this.startTransfer({
         path: outgoingPath,
-        sampleCount: sampleCountSnapshot,
-        observedHzX100: observedHzX100Snapshot,
+        sampleCount: completed.sampleCount,
+        observedHzX100: completed.observedHzX100,
         failedSlot: outgoingSlot,
       });
     },
@@ -677,7 +652,6 @@ Page(
         return;
       }
 
-      this.flushBuffer(true);
       this.writeMetaFile();
 
       this.startTransfer({
@@ -738,6 +712,7 @@ Page(
             method: "imu.transferComplete",
             params: { sampleCount },
           }).catch((error: unknown) => {
+            captureException(error, { operation: "report-transfer-complete" });
             logger.error("imu.transferComplete failed %j", error);
           });
           return;
@@ -777,8 +752,49 @@ Page(
           sessionFile: this.activeFilePath(),
         },
       }).catch((error) => {
+        captureException(error, { operation: "publish-session-status" });
         logger.error("status publish failed %j", error);
       });
+    },
+
+    async collectAndDeliverHealth() {
+      if (this.state.healthSyncing) return;
+      this.state.healthSyncing = true;
+      try {
+        const watchSummary = collectHealthData(
+          {
+            HeartRate,
+            Step,
+            Distance,
+            Sleep,
+            BloodOxygen,
+            BodyTemperature,
+            Stress,
+            Stand,
+            Pai,
+            FatBurning,
+            Workout,
+          },
+          captureException,
+        );
+        const installId = ensureWatchInstallId();
+        const currentOutbox = readBackgroundHealthOutbox(installId);
+        const updatedOutbox = appendWatchHealthSummary(currentOutbox, watchSummary, installId);
+        writeBackgroundHealthOutbox(updatedOutbox);
+        await deliverWatchHealthOutbox({
+          installId,
+          initialOutbox: updatedOutbox,
+          request: (envelope) => this.request({ method: "health.upload", params: { envelope } }),
+          readLatest: () => readBackgroundHealthOutbox(installId),
+          write: writeBackgroundHealthOutbox,
+        });
+      } catch (error) {
+        captureException(error, { operation: "collect-and-deliver-health" });
+        logger.error("health collection or delivery failed %j", error);
+        renderHint("Health sync pending\nWill retry automatically");
+      } finally {
+        this.state.healthSyncing = false;
+      }
     },
 
     onCall(payload: { method: string; params?: Record<string, unknown> } | null) {
@@ -789,7 +805,6 @@ Page(
           failedTransferPending: Boolean(this.state.failedTransfer),
           pendingManualExport: this.state.pendingManualExport,
           applyStartPreferences: (params) => {
-            this.state.enableGyro = params?.enableGyro === true;
             this.state.freqModeIndex = Number(params?.freqModeIndex ?? this.state.freqModeIndex);
           },
           handleBlockedStart: () => {
@@ -809,60 +824,7 @@ Page(
 
       const method = payload?.method;
       if (method === "health.collect") {
-        const watchSummary = collectHealthData(
-          {
-            HeartRate,
-            Step,
-            Distance,
-            Sleep,
-            BloodOxygen,
-            BodyTemperature,
-            Stress,
-            Stand,
-            Pai,
-            FatBurning,
-            Workout,
-          },
-          captureException,
-        );
-        const installId = ensureWatchInstallId();
-        let backgroundOutbox: ReturnType<typeof readBackgroundHealthOutbox>;
-        try {
-          backgroundOutbox = readBackgroundHealthOutbox(installId);
-        } catch (error) {
-          captureException(error, { operation: "read-health-outbox" });
-          logger.error("health outbox read failed %j", error);
-          renderHint("Stored health data is invalid\nOpen Zepp settings");
-          return;
-        }
-        backgroundOutbox = appendWatchHealthSummary(backgroundOutbox, watchSummary, installId);
-        try {
-          writeBackgroundHealthOutbox(backgroundOutbox);
-        } catch (error) {
-          captureException(error, { operation: "persist-health-summary" });
-          logger.error("health summary persistence failed %j", error);
-          renderHint("Health data could not be saved\nOpen Zepp settings");
-          return;
-        }
-        const uploadBatches = createWatchHealthBatches(backgroundOutbox, installId, 100);
-        uploadBatches
-          .reduce(
-            (previousUpload, envelope) =>
-              previousUpload.then(async () => {
-                const response = parseHealthUploadResponse(
-                  await this.request({ method: "health.upload", params: { envelope } }),
-                );
-                const latestOutbox = readBackgroundHealthOutbox(installId);
-                writeBackgroundHealthOutbox(
-                  acknowledgeOutboxEntries(latestOutbox, response.acceptedEventIds),
-                );
-              }),
-            Promise.resolve<unknown>(undefined),
-          )
-          .catch((err: unknown) => {
-            captureException(err, { operation: "upload-health-data" });
-            logger.error("health data upload request failed %j", err);
-          });
+        void this.collectAndDeliverHealth();
       }
     },
 

@@ -144,6 +144,13 @@ declare module "@zos/app-service" {
   }): void;
 }
 
+declare module "@zos/display" {
+  export function pauseDropWristScreenOff(options: { duration: number }): number;
+  export function resetDropWristScreenOff(): number;
+  export function setPageBrightTime(options: { brightTime: number }): number;
+  export function resetPageBrightTime(): number;
+}
+
 declare module "@zos/ble/TransferFile" {
   class Outbox {
     enqueueFile(path: string, params: Record<string, string>): Task;
@@ -256,7 +263,6 @@ interface PageContext {
 interface SideServiceContext {
   call(options: { method: string; params: Record<string, unknown> }): void;
   getPreferences(): {
-    enableGyro: boolean;
     freqModeIndex: number;
     hasCredentials: boolean;
     serverUrl: string;

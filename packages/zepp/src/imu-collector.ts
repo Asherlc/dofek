@@ -99,12 +99,12 @@ export function createImuCollector(
     checkSensor: (ctor: SensorCtor) => boolean;
   },
 ): ImuCollector {
-  const { enableGyro = false, requestedFreqModeIndex = 1, onSample, onStatus } = options;
+  const { requestedFreqModeIndex = 1, onSample, onStatus } = options;
 
   const { Accelerometer, Gyroscope, checkSensor } = deps;
 
   const hasAccelerometer = checkSensor(Accelerometer);
-  const hasGyroscope = enableGyro && checkSensor(Gyroscope);
+  const hasGyroscope = checkSensor(Gyroscope);
 
   if (!hasAccelerometer) {
     return {

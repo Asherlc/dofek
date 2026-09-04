@@ -178,7 +178,7 @@ AppSideService(
     onRun() {
       logger.log("side service running");
       if (settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN)?.trim()) {
-        void healthSyncCoordinator.requestDrain("side-service-run");
+        this.requestHealthCatchup("side-service-run");
       }
     },
 
@@ -196,7 +196,6 @@ AppSideService(
       const connectionState = parseConnectionState(connectionStatus.state);
       const connectionActions = deriveConnectionActions(connectionState, Boolean(apiToken));
       return {
-        enableGyro: settings.settingsStorage.getItem(STORAGE_KEYS.PREF_ENABLE_GYRO) === "true",
         freqModeIndex: Number(settings.settingsStorage.getItem(STORAGE_KEYS.PREF_FREQ_MODE) ?? 1),
         hasCredentials: Boolean(serverUrl && apiToken && connectionState === "connected"),
         canStartConnection: connectionActions.showPairing,
@@ -232,6 +231,15 @@ AppSideService(
       settings.settingsStorage.setItem(STORAGE_KEYS.SESSION_STATUS, JSON.stringify(payload));
     },
 
+    requestHealthCatchup(reason: string) {
+      try {
+        this.call({ method: "health.collect", params: {} });
+      } catch (error) {
+        reportSideException(error, { category: "request-watch-health", reason });
+      }
+      void healthSyncCoordinator.requestDrain(reason);
+    },
+
     handleSettingsChange(key: string, newValue: unknown) {
       if (key === STORAGE_KEYS.CMD_LOGGING) {
         const command = parseSessionCommand(newValue);
@@ -248,8 +256,7 @@ AppSideService(
       }
 
       if (key === STORAGE_KEYS.CMD_SYNC_HEALTH) {
-        this.call({ method: "health.collect", params: {} });
-        void healthSyncCoordinator.requestDrain("manual");
+        this.requestHealthCatchup("manual");
       }
 
       if (key === STORAGE_KEYS.CMD_START_PAIRING) {
@@ -423,7 +430,7 @@ AppSideService(
           state: "connected",
           connectionType: DOFEK_COMPANION_CONNECTION_TYPE,
         });
-        void healthSyncCoordinator.requestDrain("pairing-claimed");
+        this.requestHealthCatchup("pairing-claimed");
         return;
       }
 
@@ -485,7 +492,7 @@ AppSideService(
           state: "connected",
           connectionType: DOFEK_COMPANION_CONNECTION_TYPE,
         });
-        void healthSyncCoordinator.requestDrain("password-login");
+        this.requestHealthCatchup("password-login");
       } catch (error) {
         const message = error instanceof Error ? error.message : "Dofek login failed.";
         if (connectionOperations.isCurrent(operation)) {
@@ -532,7 +539,7 @@ AppSideService(
           state: "connected",
           connectionType: DOFEK_COMPANION_CONNECTION_TYPE,
         });
-        void healthSyncCoordinator.requestDrain("connection-verified");
+        this.requestHealthCatchup("connection-verified");
       } catch (error) {
         const message = error instanceof Error ? error.message : "Dofek connection check failed.";
         if (connectionOperations.isCurrent(operation)) {

@@ -1,9 +1,28 @@
 import { getSportData } from "@zos/app-access";
-import { HeartRate } from "@zos/sensor";
+import {
+  pauseDropWristScreenOff,
+  resetDropWristScreenOff,
+  resetPageBrightTime,
+  setPageBrightTime,
+} from "@zos/display";
+import { Accelerometer, checkSensor, Gyroscope, HeartRate } from "@zos/sensor";
 import { align, createWidget, prop, text_style, widget } from "@zos/ui";
 import { log as Logger, px } from "@zos/utils";
 import { BasePage } from "@zeppos/zml/base-page";
+import { createDisplayLease } from "../../src/display-lease.ts";
+import { createImuCollector } from "../../src/imu-collector.ts";
+import {
+  createImuSessionController,
+  type ImuSegmentResult,
+  type ImuSessionController,
+} from "../../src/imu-session-controller.ts";
 import { ensureInstallId } from "../../src/install-id.ts";
+import { appendSamples, finalizeSessionFile, resetSessionFile } from "../../src/session-file.ts";
+import {
+  FLUSH_SAMPLE_THRESHOLD,
+  SESSION_FILE_A,
+  SESSION_FILE_B,
+} from "../../src/storage-keys.ts";
 import {
   createWorkoutHealthEnvelope,
   isWorkoutHealthEventAcknowledged,
@@ -23,6 +42,7 @@ import {
 const logger = Logger.getLogger("dofek-workout");
 const SAMPLE_INTERVAL_MS = 10_000;
 const UPLOAD_BATCH_SIZE = 6;
+type ImuFileSlot = "A" | "B";
 
 function nullable<T>(): T | null {
   return null;
@@ -40,6 +60,13 @@ DataWidget(
       flushing: false,
       pendingBatches: emptyArray<LiveWorkoutBatch>(),
       statusWidget: nullable<ReturnType<typeof createWidget>>(),
+      focused: false,
+      imuController: nullable<ImuSessionController>(),
+      activeImuSlot: "A" as ImuFileSlot,
+      pendingImuA: nullable<ImuSegmentResult>(),
+      pendingImuB: nullable<ImuSegmentResult>(),
+      transferringImuA: false,
+      transferringImuB: false,
     },
 
     build() {
@@ -67,7 +94,24 @@ DataWidget(
         text_style: text_style.WRAP,
         text: "Collecting live workout data",
       });
+      this.state.focused = true;
       this.startCollection();
+      this.startImuSegment();
+    },
+
+    reportError(error: unknown, category: string) {
+      logger.error("%s failed %j", category, error);
+      void this.request({
+        method: "telemetry.report",
+        params: {
+          message: error instanceof Error ? error.message : String(error),
+          name: error instanceof Error ? error.name : "Error",
+          stack: error instanceof Error ? error.stack : undefined,
+          category,
+        },
+      }).catch((reportError: unknown) => {
+        logger.error("telemetry report failed %j", reportError);
+      });
     },
 
     async collectSnapshot() {
@@ -102,7 +146,7 @@ DataWidget(
           await this.flushSnapshots();
         }
       } catch (error: unknown) {
-        logger.error("live workout collection failed %j", error);
+        this.reportError(error, "workout-collection");
       } finally {
         this.state.collecting = false;
       }
@@ -139,16 +183,7 @@ DataWidget(
         this.state.statusWidget?.setProperty(prop.TEXT, "Live workout data synced");
       } catch (error: unknown) {
         writeLiveWorkoutBuffer({ batches: this.state.pendingBatches });
-        logger.error("live workout upload failed %j", error);
-        void this.request({
-          method: "telemetry.report",
-          params: {
-            message: error instanceof Error ? error.message : String(error),
-            name: error instanceof Error ? error.name : "Error",
-            stack: error instanceof Error ? error.stack : undefined,
-            category: "workout-upload",
-          },
-        });
+        this.reportError(error, "workout-upload");
       } finally {
         this.state.flushing = false;
       }
@@ -168,15 +203,149 @@ DataWidget(
       void this.flushSnapshots();
     },
 
+    imuPath(slot: ImuFileSlot) {
+      return slot === "A" ? SESSION_FILE_A : SESSION_FILE_B;
+    },
+
+    pendingImu(slot: ImuFileSlot) {
+      return slot === "A" ? this.state.pendingImuA : this.state.pendingImuB;
+    },
+
+    setPendingImu(slot: ImuFileSlot, result: ImuSegmentResult | null) {
+      if (slot === "A") {
+        this.state.pendingImuA = result;
+      } else {
+        this.state.pendingImuB = result;
+      }
+    },
+
+    isImuTransferring(slot: ImuFileSlot) {
+      return slot === "A" ? this.state.transferringImuA : this.state.transferringImuB;
+    },
+
+    setImuTransferring(slot: ImuFileSlot, transferring: boolean) {
+      if (slot === "A") {
+        this.state.transferringImuA = transferring;
+      } else {
+        this.state.transferringImuB = transferring;
+      }
+    },
+
+    startImuSegment() {
+      if (this.state.imuController?.active) return;
+      const slot: ImuFileSlot | null = !this.state.pendingImuA
+        ? "A"
+        : !this.state.pendingImuB
+          ? "B"
+          : null;
+      if (!slot) {
+        this.state.statusWidget?.setProperty(
+          prop.TEXT,
+          "Workout metrics active\nMotion files waiting to send",
+        );
+        return;
+      }
+
+      const controller = createImuSessionController({
+        path: this.imuPath(slot),
+        requestedFreqModeIndex: 1,
+        flushThreshold: FLUSH_SAMPLE_THRESHOLD,
+        now: Date.now,
+        displayLease: createDisplayLease({
+          pauseDropWristScreenOff,
+          resetDropWristScreenOff,
+          setPageBrightTime,
+          resetPageBrightTime,
+        }),
+        createCollector: (options) =>
+          createImuCollector(options, { Accelerometer, Gyroscope, checkSensor }),
+        file: {
+          reset: resetSessionFile,
+          append: appendSamples,
+          finalize: finalizeSessionFile,
+        },
+        onError: (error) => this.reportError(error, "workout-imu"),
+      });
+      if (!controller.available) {
+        this.reportError(new Error(controller.reason ?? "IMU sensors are unavailable."), "workout-imu");
+        return;
+      }
+      if (!controller.start()) return;
+      this.state.activeImuSlot = slot;
+      this.state.imuController = controller;
+    },
+
+    stopImuSegment() {
+      const controller = this.state.imuController;
+      if (!controller) return;
+      this.state.imuController = null;
+      const result = controller.stop();
+      if (!result) return;
+      const slot = this.state.activeImuSlot;
+      this.setPendingImu(slot, result);
+      this.sendImuSegment(result, slot);
+    },
+
+    sendImuSegment(result: ImuSegmentResult, slot: ImuFileSlot) {
+      if (this.isImuTransferring(slot)) return;
+      this.setImuTransferring(slot, true);
+      let task: ReturnType<typeof this.sendFile>;
+      try {
+        const installId = ensureInstallId(settings.settingsStorage);
+        task = this.sendFile(result.path, {
+          type: "imu-session",
+          source: "zepp-workout",
+          segmentId: `${installId}:workout-imu:${result.sessionStartMs}`,
+          sampleCount: String(result.sampleCount),
+          observedHzX100: String(result.observedHzX100),
+        });
+      } catch (error) {
+        this.setImuTransferring(slot, false);
+        this.reportError(error, "workout-imu-transfer");
+        return;
+      }
+      task.on("change", (event: { data: Record<string, unknown> }) => {
+        const readyState = String(event.data.readyState);
+        if (readyState === "transferred") {
+          this.setImuTransferring(slot, false);
+          this.setPendingImu(slot, null);
+          if (this.state.focused && !this.state.imuController) {
+            this.startImuSegment();
+          }
+        } else if (readyState === "error") {
+          this.setImuTransferring(slot, false);
+          this.reportError(new Error("Workout IMU transfer failed."), "workout-imu-transfer");
+        }
+      });
+    },
+
+    retryImuTransfers() {
+      const pendingA = this.state.pendingImuA;
+      if (pendingA && !this.state.transferringImuA) {
+        this.sendImuSegment(pendingA, "A");
+      }
+      const pendingB = this.state.pendingImuB;
+      if (pendingB && !this.state.transferringImuB) {
+        this.sendImuSegment(pendingB, "B");
+      }
+    },
+
     onResume() {
+      this.state.focused = true;
+      this.retryImuTransfers();
       this.startCollection();
+      this.startImuSegment();
     },
 
     onPause() {
+      this.state.focused = false;
+      this.stopImuSegment();
       this.stopCollection();
     },
 
     onDestroy() {
+      this.state.focused = false;
+      this.stopImuSegment();
       this.stopCollection();
     },
   }),

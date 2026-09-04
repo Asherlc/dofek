@@ -1,7 +1,6 @@
 import { readFileSync, writeFileSync } from "@zos/fs";
 import {
   appendBackgroundHealthEvents,
-  type BackgroundHealthBuffer,
   type BackgroundHealthEvent,
   type BackgroundHealthOutbox,
   type BackgroundHealthSample,
@@ -205,18 +204,4 @@ export function readBackgroundHealthOutbox(installId: string): BackgroundHealthO
 
 export function writeBackgroundHealthOutbox(outbox: BackgroundHealthOutbox): void {
   writeFileSync({ path: BACKGROUND_HEALTH_FILE, data: serializeBackgroundHealthOutbox(outbox) });
-}
-
-export function backgroundHealthBufferFromOutbox(
-  outbox: BackgroundHealthOutbox,
-): BackgroundHealthBuffer {
-  const buffer: BackgroundHealthBuffer = { samples: [], activities: [] };
-  for (const entry of outbox.pending) {
-    if (entry.payload.kind === "sample") {
-      buffer.samples.push(entry.payload.sample);
-    } else if (entry.payload.kind === "activity") {
-      buffer.activities.push(entry.payload.activity);
-    }
-  }
-  return buffer;
 }

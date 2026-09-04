@@ -47,7 +47,7 @@ describe("Zepp session control", () => {
   });
 
   it("maps Settings commands to explicit watch calls", () => {
-    const preferences = { enableGyro: true, freqModeIndex: 2 };
+    const preferences = { freqModeIndex: 2 };
 
     expect(createSessionCall(SESSION_COMMAND.START, preferences)).toEqual({
       method: "logging.start",
@@ -61,7 +61,7 @@ describe("Zepp session control", () => {
 
   it("applies start preferences before starting an idle session", () => {
     const events: string[] = [];
-    const params = { enableGyro: true, freqModeIndex: 2 };
+    const params = { freqModeIndex: 2 };
 
     expect(
       handleSessionCall(
@@ -84,7 +84,7 @@ describe("Zepp session control", () => {
 
     expect(
       handleSessionCall(
-        { method: "logging.start", params: { enableGyro: true, freqModeIndex: 2 } },
+        { method: "logging.start", params: { freqModeIndex: 2 } },
         makeSessionCallHandlers({
           logging: true,
           applyStartPreferences,
@@ -156,7 +156,7 @@ describe("Zepp session control", () => {
 
     expect(
       handleSessionCall(
-        { method: "logging.start", params: { enableGyro: true, freqModeIndex: 2 } },
+        { method: "logging.start", params: { freqModeIndex: 2 } },
         makeSessionCallHandlers({
           ...state,
           applyStartPreferences,

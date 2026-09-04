@@ -28,17 +28,10 @@ interface ImageConfiguration {
   height?: number;
 }
 
-interface ToggleConfiguration {
-  label: string;
-  value?: boolean;
-  checked?: boolean;
-}
-
 let configuration: SettingConfiguration | undefined;
 const buttonConfigurations: ButtonConfiguration[] = [];
 const imageConfigurations: ImageConfiguration[] = [];
 const textInputConfigurations: TextInputConfiguration[] = [];
-const toggleConfigurations: ToggleConfiguration[] = [];
 const renderedViews: unknown[] = [];
 
 function isSettingConfiguration(value: unknown): value is SettingConfiguration {
@@ -74,10 +67,6 @@ beforeAll(async () => {
     imageConfigurations.push(value);
     return value;
   });
-  vi.stubGlobal("Toggle", (value: ToggleConfiguration) => {
-    toggleConfigurations.push(value);
-    return value;
-  });
   await import("./index.ts");
 });
 
@@ -85,7 +74,6 @@ beforeEach(() => {
   buttonConfigurations.length = 0;
   imageConfigurations.length = 0;
   textInputConfigurations.length = 0;
-  toggleConfigurations.length = 0;
   renderedViews.length = 0;
 });
 
@@ -108,16 +96,10 @@ function button(label: string): ButtonConfiguration {
 describe("normal Zepp app settings", () => {
   it("builds with the documented Zepp Settings component globals", () => {
     expect(() => buildWith({})).not.toThrow();
-  });
-
-  it("passes the gyroscope state through the documented Toggle value property", () => {
-    buildWith({ [STORAGE_KEYS.PREF_ENABLE_GYRO]: "true" });
-
-    expect(toggleConfigurations).toHaveLength(1);
-    expect(toggleConfigurations[0]).toEqual(
-      expect.objectContaining({ label: "Include gyroscope", value: true }),
+    expect(JSON.stringify(renderedViews)).toContain("Advanced Foreground Recorder");
+    expect(JSON.stringify(renderedViews)).toContain(
+      "Gyroscope data is included automatically when the watch supports it.",
     );
-    expect(toggleConfigurations[0]?.checked).toBeUndefined();
   });
 
   it("uses the documented label property for text inputs", () => {
