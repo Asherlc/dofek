@@ -1,3 +1,4 @@
+import { deriveConnectionActions, parseConnectionState } from "../../src/connection-state.ts";
 import { DEFAULT_DOFEK_SERVER_URL, STORAGE_KEYS } from "../../src/storage-keys.ts";
 
 const EMPTY_STATUS: Record<string, unknown> = {};
@@ -45,6 +46,7 @@ interface WorkoutSettingsState {
   serverUrl: string;
   email: string;
   password: string;
+  apiToken: string;
   connectionStatus: Record<string, unknown>;
   pairingShortCode: string | null;
   pairingVerificationUrl: string | null;
@@ -56,6 +58,7 @@ const state: WorkoutSettingsState = {
   serverUrl: DEFAULT_DOFEK_SERVER_URL,
   email: "",
   password: "",
+  apiToken: "",
   connectionStatus: EMPTY_STATUS,
   pairingShortCode: null,
   pairingVerificationUrl: null,
@@ -74,6 +77,7 @@ AppSettingsPage({
     this.state.serverUrl =
       props.settingsStorage.getItem(STORAGE_KEYS.DOFEK_SERVER_URL) ?? DEFAULT_DOFEK_SERVER_URL;
     this.state.email = props.settingsStorage.getItem(STORAGE_KEYS.DOFEK_EMAIL) ?? "";
+    this.state.apiToken = props.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN) ?? "";
     this.state.connectionStatus = readStatus(
       props.settingsStorage.getItem(STORAGE_KEYS.DOFEK_CONNECTION_STATUS),
     );
@@ -86,16 +90,28 @@ AppSettingsPage({
     this.state.pairingExpiresAt =
       props.settingsStorage.getItem(STORAGE_KEYS.PAIRING_EXPIRES_AT) ?? null;
 
-    const connectionState = String(this.state.connectionStatus.state ?? "not connected");
+    const connectionState = parseConnectionState(this.state.connectionStatus.state);
+    const connectionActions = deriveConnectionActions(
+      connectionState,
+      Boolean(this.state.apiToken.trim()),
+    );
     const connectionReason = this.state.connectionStatus.reason;
     const hasPairingCode = Boolean(
       this.state.pairingShortCode && this.state.pairingVerificationUrl,
     );
 
-    return View({ style: { padding: "1em" } }, [
+    const blocks: unknown[] = [
       View({ style: { fontSize: "1.4rem", fontWeight: "bold", marginBottom: "1em" } }, [
         "Dofek Workout Sync",
       ]),
+      View({ style: { marginTop: "1em" } }, [
+        `Connection: ${connectionState}`,
+        connectionReason ? `Reason: ${String(connectionReason)}` : "",
+      ]),
+    ];
+
+    if (connectionActions.showConnectionForm) {
+      blocks.push(
       TextInput({
         label: "Dofek Server URL",
         value: this.state.serverUrl,
@@ -104,6 +120,11 @@ AppSettingsPage({
           props.settingsStorage.setItem(STORAGE_KEYS.DOFEK_SERVER_URL, value);
         },
       }),
+      );
+    }
+
+    if (connectionActions.showPairing) {
+      blocks.push(
       Button({
         label: "Create QR / short code",
         color: "primary",
@@ -112,6 +133,11 @@ AppSettingsPage({
           toggle(props.settingsStorage, STORAGE_KEYS.CMD_START_PAIRING);
         },
       }),
+      );
+    }
+
+    if (connectionActions.showPairing || connectionState === "pairing") {
+      blocks.push(
       hasPairingCode
         ? View({ style: { marginTop: "1em", lineHeight: "1.5rem" } }, [
             `Short code: ${this.state.pairingShortCode}`,
@@ -126,6 +152,11 @@ AppSettingsPage({
       this.state.pairingQrImageUrl
         ? buildPairingQrImage(this.state.pairingQrImageUrl)
         : View({}, []),
+      );
+    }
+
+    if (connectionActions.showLogin) {
+      blocks.push(
       TextInput({
         label: "Dofek Email",
         value: this.state.email,
@@ -157,10 +188,11 @@ AppSettingsPage({
           this.state.password = "";
         },
       }),
-      View({ style: { marginTop: "1em" } }, [
-        `Connection: ${connectionState}`,
-        connectionReason ? `Reason: ${String(connectionReason)}` : "",
-      ]),
+      );
+    }
+
+    if (connectionActions.showCheck) {
+      blocks.push(
       Button({
         label: "Check connection",
         color: "secondary",
@@ -169,6 +201,11 @@ AppSettingsPage({
           toggle(props.settingsStorage, STORAGE_KEYS.CMD_CHECK_CONNECTION);
         },
       }),
+      );
+    }
+
+    if (connectionActions.showDisconnect) {
+      blocks.push(
       Button({
         label: "Disconnect Dofek",
         color: "secondary",
@@ -177,10 +214,16 @@ AppSettingsPage({
           toggle(props.settingsStorage, STORAGE_KEYS.CMD_DISCONNECT);
         },
       }),
+      );
+    }
+
+    blocks.push(
       View({ style: { marginTop: "1em", color: "#888" } }, [
         "On the watch, open Workout and choose a workout. Open that workout's settings, select Motion Extensions, then add Dofek Workout.",
         "Live samples are buffered and retried when the phone is unavailable.",
       ]),
-    ]);
+    );
+
+    return View({ style: { padding: "1em" } }, blocks);
   },
 });

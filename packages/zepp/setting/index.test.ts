@@ -149,35 +149,64 @@ describe("normal Zepp app settings", () => {
     ]);
   });
 
-  it("shows pairing, authoritative status, and connection management controls", () => {
+  it("shows only management controls for a verified connection", () => {
     buildWith({
+      [STORAGE_KEYS.DOFEK_API_TOKEN]: "verified-token",
       [STORAGE_KEYS.DOFEK_CONNECTION_STATUS]: JSON.stringify({
         state: "connected",
         reason: "Verified by Dofek",
       }),
     });
 
+    expect(buttonConfigurations.map(({ label }) => label)).not.toContain("Create QR / short code");
+    expect(buttonConfigurations.map(({ label }) => label)).not.toContain("Log in and connect");
     expect(buttonConfigurations.map(({ label }) => label)).toEqual(
-      expect.arrayContaining([
-        "Create QR / short code",
-        "Log in and connect",
-        "Check connection",
-        "Disconnect Dofek",
-      ]),
+      expect.arrayContaining(["Check connection", "Disconnect Dofek", "Sync health data now"]),
     );
     expect(JSON.stringify(renderedViews)).toContain("Connection: connected");
     expect(JSON.stringify(renderedViews)).toContain("Reason: Verified by Dofek");
   });
 
-  it("sends pairing, verification, and disconnect commands", () => {
+  it("shows only pairing and login actions while disconnected", () => {
+    buildWith({});
+
+    expect(buttonConfigurations.map(({ label }) => label)).toEqual(
+      expect.arrayContaining(["Create QR / short code", "Log in and connect"]),
+    );
+    expect(buttonConfigurations.map(({ label }) => label)).not.toContain("Check connection");
+    expect(buttonConfigurations.map(({ label }) => label)).not.toContain("Disconnect Dofek");
+    expect(buttonConfigurations.map(({ label }) => label)).not.toContain("Sync health data now");
+  });
+
+  it("requires disconnect before reconnecting when an errored token remains", () => {
+    buildWith({
+      [STORAGE_KEYS.DOFEK_API_TOKEN]: "stored-token",
+      [STORAGE_KEYS.DOFEK_CONNECTION_STATUS]: JSON.stringify({
+        state: "error",
+        reason: "Phone temporarily offline",
+      }),
+    });
+
+    expect(buttonConfigurations.map(({ label }) => label)).toEqual(
+      expect.arrayContaining(["Check connection", "Disconnect Dofek"]),
+    );
+    expect(buttonConfigurations.map(({ label }) => label)).not.toContain("Create QR / short code");
+    expect(buttonConfigurations.map(({ label }) => label)).not.toContain("Log in and connect");
+  });
+
+  it("sends pairing, verification, and disconnect commands from their respective states", () => {
     const settingsStorage = buildWith({});
 
     button("Create QR / short code").onClick();
+    expect(settingsStorage.setItem).toHaveBeenCalledWith(STORAGE_KEYS.CMD_START_PAIRING, "1");
+
+    const connectedStorage = buildWith({
+      [STORAGE_KEYS.DOFEK_API_TOKEN]: "verified-token",
+      [STORAGE_KEYS.DOFEK_CONNECTION_STATUS]: JSON.stringify({ state: "connected" }),
+    });
     button("Check connection").onClick();
     button("Disconnect Dofek").onClick();
-
-    expect(settingsStorage.setItem).toHaveBeenCalledWith(STORAGE_KEYS.CMD_START_PAIRING, "1");
-    expect(settingsStorage.setItem).toHaveBeenCalledWith(STORAGE_KEYS.CMD_CHECK_CONNECTION, "1");
-    expect(settingsStorage.setItem).toHaveBeenCalledWith(STORAGE_KEYS.CMD_DISCONNECT, "1");
+    expect(connectedStorage.setItem).toHaveBeenCalledWith(STORAGE_KEYS.CMD_CHECK_CONNECTION, "1");
+    expect(connectedStorage.setItem).toHaveBeenCalledWith(STORAGE_KEYS.CMD_DISCONNECT, "1");
   });
 });

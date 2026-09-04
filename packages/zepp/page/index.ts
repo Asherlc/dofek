@@ -191,6 +191,7 @@ Page(
       observedHzX100: 0,
       activeFile: initialActiveFile(),
       hasCredentials: false,
+      canStartConnection: true,
       dofekEmail: "",
       pairingVerificationUrl: "",
       pairingShortCode: "",
@@ -304,13 +305,14 @@ Page(
             this.state.freqModeIndex = Number(result?.freqModeIndex ?? 1);
           }
           this.state.hasCredentials = result?.hasCredentials === true;
+          this.state.canStartConnection = result?.canStartConnection === true;
           connectionButton?.setProperty(
             prop.TEXT,
             this.state.hasCredentials ? "Disconnect Dofek" : "Login on watch",
           );
           const pairing = isRecord(result?.pairing) ? result.pairing : null;
           this.renderPairing(pairing);
-          if (!this.state.hasCredentials && !pairing) {
+          if (!this.state.hasCredentials && !pairing && this.state.canStartConnection) {
             this.startPairingFromWatch();
           }
           this.publishSessionStatus(

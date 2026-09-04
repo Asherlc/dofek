@@ -1,5 +1,6 @@
 import { messagingPlugin } from "@zeppos/zml/3.0/module/messaging/plugin/side";
 import { BaseSideService } from "@zeppos/zml/base-side";
+import { deriveConnectionActions, parseConnectionState } from "../src/connection-state.ts";
 import { LatestOperation } from "../src/latest-operation.ts";
 import { shouldRetryPairingPollFailure } from "../src/pairing-poll.ts";
 import {
@@ -74,6 +75,7 @@ function flushBufferedTelemetryFromWatch(): void {
     })
     .catch((error: unknown) => {
       logger.error("telemetry flush failed %j", error);
+      reportSideException(error, { category: "telemetry-flush" });
     });
 }
 
@@ -110,7 +112,7 @@ AppSideService(
           reportSideException(error, { category: "connection-verification" });
         });
       } else if (!pairingId) {
-        this.setConnectionStatus({ state: "not connected" });
+        this.setConnectionStatus({ state: "disconnected" });
       }
     },
 
@@ -125,10 +127,18 @@ AppSideService(
     getPreferences() {
       const serverUrl = getStoredServerUrl();
       const apiToken = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN)?.trim();
+      const connectionStatus = readJson(
+        settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_CONNECTION_STATUS),
+        {},
+      );
+      const connectionState = parseConnectionState(connectionStatus.state);
+      const connectionActions = deriveConnectionActions(connectionState, Boolean(apiToken));
       return {
         enableGyro: settings.settingsStorage.getItem(STORAGE_KEYS.PREF_ENABLE_GYRO) === "true",
         freqModeIndex: Number(settings.settingsStorage.getItem(STORAGE_KEYS.PREF_FREQ_MODE) ?? 1),
-        hasCredentials: Boolean(serverUrl && apiToken),
+        hasCredentials: Boolean(serverUrl && apiToken && connectionState === "connected"),
+        canStartConnection: connectionActions.showPairing,
+        connectionState,
         serverUrl,
         pairing: this.getPairingInfo(),
       };
@@ -245,6 +255,9 @@ AppSideService(
     },
 
     async startPairing() {
+      if (settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN)?.trim()) {
+        throw new Error("Disconnect the existing Dofek connection before pairing again.");
+      }
       const operation = connectionOperations.begin();
       const serverUrl = getStoredServerUrl();
       try {
@@ -363,6 +376,9 @@ AppSideService(
     },
 
     async loginWithPassword(rawPayload: string) {
+      if (settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN)?.trim()) {
+        throw new Error("Disconnect the existing Dofek connection before logging in again.");
+      }
       const operation = connectionOperations.begin();
       const payload = readJson(rawPayload, {});
       const serverUrl = getStoredServerUrl();
@@ -375,7 +391,7 @@ AppSideService(
           throw new Error("Server URL, email, and password are required.");
         }
 
-        this.setConnectionStatus({ state: "connecting" });
+        this.setConnectionStatus({ state: "checking" });
         const response = await fetch({
           url: `${serverUrl.replace(/\/$/, "")}/api/companion-token/password-login`,
           method: "POST",
@@ -419,7 +435,7 @@ AppSideService(
       const serverUrl = getStoredServerUrl();
       const apiToken = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN)?.trim();
       if (!apiToken) {
-        this.setConnectionStatus({ state: "not connected" });
+        this.setConnectionStatus({ state: "disconnected" });
         return;
       }
 
@@ -466,7 +482,7 @@ AppSideService(
       const apiToken = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN)?.trim();
       if (!apiToken) {
         this.clearPairingInfo();
-        this.setConnectionStatus({ state: "not connected" });
+        this.setConnectionStatus({ state: "disconnected" });
         return;
       }
 
@@ -486,7 +502,7 @@ AppSideService(
         }
         settings.settingsStorage.removeItem(STORAGE_KEYS.DOFEK_API_TOKEN);
         this.clearPairingInfo();
-        this.setConnectionStatus({ state: "not connected" });
+        this.setConnectionStatus({ state: "disconnected" });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Failed to disconnect Dofek.";
         if (connectionOperations.isCurrent(operation)) {

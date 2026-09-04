@@ -10,6 +10,7 @@ interface SettingState {
   serverUrl: string;
   email: string;
   password: string;
+  apiToken: string;
   connectionStatus: Record<string, unknown>;
   pairingShortCode: string | null;
   pairingVerificationUrl: string | null;
@@ -87,6 +88,7 @@ function buildWith(values: Readonly<Record<string, string | null>>) {
     serverUrl: DEFAULT_DOFEK_SERVER_URL,
     email: "",
     password: "",
+    apiToken: "",
     connectionStatus: {},
     pairingShortCode: null,
     pairingVerificationUrl: null,
@@ -110,10 +112,11 @@ afterEach(() => {
 });
 
 describe("workout extension settings", () => {
-  it("loads saved settings and renders every control", () => {
+  it("loads saved settings and renders only management controls when connected", () => {
     const { rendered } = buildWith({
       [STORAGE_KEYS.DOFEK_SERVER_URL]: "https://dofek.example.test",
       [STORAGE_KEYS.DOFEK_EMAIL]: "athlete@example.test",
+      [STORAGE_KEYS.DOFEK_API_TOKEN]: "verified-token",
       [STORAGE_KEYS.DOFEK_CONNECTION_STATUS]: JSON.stringify({ state: "connected" }),
     });
 
@@ -121,29 +124,16 @@ describe("workout extension settings", () => {
       serverUrl: "https://dofek.example.test",
       email: "athlete@example.test",
       password: "",
+      apiToken: "verified-token",
       connectionStatus: { state: "connected" },
       pairingShortCode: null,
       pairingVerificationUrl: null,
       pairingQrImageUrl: null,
       pairingExpiresAt: null,
     });
-    expect(inputConfigurations).toHaveLength(3);
-    expect(inputConfigurations[0]).toMatchObject({
-      label: "Dofek Server URL",
-      value: "https://dofek.example.test",
-    });
-    expect(inputConfigurations[1]).toMatchObject({
-      label: "Dofek Email",
-      value: "athlete@example.test",
-    });
-    expect(inputConfigurations[2]).toMatchObject({
-      label: "Dofek Password",
-      placeholder: "Enter your Dofek password",
-    });
-    expect(buttonConfigurations).toHaveLength(4);
+    expect(inputConfigurations).toHaveLength(0);
+    expect(buttonConfigurations).toHaveLength(2);
     expect(buttonConfigurations).toMatchObject([
-      { label: "Create QR / short code", color: "primary", style: { marginTop: "1em" } },
-      { label: "Log in and connect", color: "primary", style: { marginTop: "1em" } },
       { label: "Check connection", color: "secondary", style: { marginTop: "1em" } },
       { label: "Disconnect Dofek", color: "secondary", style: { marginTop: "1em" } },
     ]);
@@ -152,6 +142,33 @@ describe("workout extension settings", () => {
     });
     expect(JSON.stringify(viewConfigurations)).toContain("Motion Extensions");
     expect(rendered).toMatchObject({ style: { style: { padding: "1em" } } });
+  });
+
+  it("renders only pairing and login controls while disconnected", () => {
+    buildWith({});
+
+    expect(inputConfigurations.map(({ label }) => label)).toEqual([
+      "Dofek Server URL",
+      "Dofek Email",
+      "Dofek Password",
+    ]);
+    expect(buttonConfigurations.map(({ label }) => label)).toEqual([
+      "Create QR / short code",
+      "Log in and connect",
+    ]);
+  });
+
+  it("requires disconnect before reconnecting when an errored token remains", () => {
+    buildWith({
+      [STORAGE_KEYS.DOFEK_API_TOKEN]: "stored-token",
+      [STORAGE_KEYS.DOFEK_CONNECTION_STATUS]: JSON.stringify({ state: "error" }),
+    });
+
+    expect(inputConfigurations).toHaveLength(0);
+    expect(buttonConfigurations.map(({ label }) => label)).toEqual([
+      "Check connection",
+      "Disconnect Dofek",
+    ]);
   });
 
   it("renders stored pairing details and the QR image", () => {
@@ -225,7 +242,7 @@ describe("workout extension settings", () => {
     inputConfigurations[0]?.onChange("https://new.example.test");
     inputConfigurations[1]?.onChange("new@example.test");
     inputConfigurations[2]?.onChange("secret");
-    buttonConfigurations[1]?.onClick();
+    buttonConfigurations.find(({ label }) => label === "Log in and connect")?.onClick();
 
     expect(settingsStorage.setItem).toHaveBeenNthCalledWith(
       1,
@@ -249,21 +266,25 @@ describe("workout extension settings", () => {
     expect(configuration?.state.password).toBe("");
   });
 
-  it("starts pairing and exposes connection management commands", () => {
+  it("starts pairing and exposes connection management commands in their respective states", () => {
     const { settingsStorage } = buildWith({
       [STORAGE_KEYS.CMD_START_PAIRING]: "1",
     });
 
-    buttonConfigurations[0]?.onClick();
-    buttonConfigurations[2]?.onClick();
-    buttonConfigurations[3]?.onClick();
+    buttonConfigurations.find(({ label }) => label === "Create QR / short code")?.onClick();
 
     expect(settingsStorage.setItem).toHaveBeenCalledWith(STORAGE_KEYS.CMD_START_PAIRING, "0");
-    expect(settingsStorage.setItem).toHaveBeenCalledWith(
+    const connected = buildWith({
+      [STORAGE_KEYS.DOFEK_API_TOKEN]: "verified-token",
+      [STORAGE_KEYS.DOFEK_CONNECTION_STATUS]: JSON.stringify({ state: "connected" }),
+    });
+    buttonConfigurations.find(({ label }) => label === "Check connection")?.onClick();
+    buttonConfigurations.find(({ label }) => label === "Disconnect Dofek")?.onClick();
+    expect(connected.settingsStorage.setItem).toHaveBeenCalledWith(
       STORAGE_KEYS.CMD_CHECK_CONNECTION,
       "1",
     );
-    expect(settingsStorage.setItem).toHaveBeenCalledWith(
+    expect(connected.settingsStorage.setItem).toHaveBeenCalledWith(
       STORAGE_KEYS.CMD_DISCONNECT,
       "1",
     );
