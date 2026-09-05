@@ -1,6 +1,6 @@
 {
   "name": "@dofek/scoring",
-  "version": "0.1.36",
+  "version": "0.1.37",
   "description": "Platform-agnostic health scoring models, labels, colors, and design tokens",
   "type": "module",
   "license": "MIT",
