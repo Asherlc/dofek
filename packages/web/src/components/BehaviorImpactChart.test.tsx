@@ -141,7 +141,7 @@ describe("BehaviorImpactChart", () => {
     expect(screen.getByText("Association evidence unavailable")).toBeDefined();
     expect(
       screen.getByText(
-        "No association evidence is available for the current results. Log boolean journal entries (Yes/No) for at least 5 days in each group to describe their association with next-day readiness.",
+        "No association evidence is available for the current results. This comparison needs at least 5 Yes days and 5 No days for the same question, with next-day readiness data.",
       ),
     ).toBeDefined();
     expect(screen.queryByTestId("readiness-association-axis")).toBeNull();
@@ -351,7 +351,7 @@ describe("BehaviorImpactChart", () => {
     render(<BehaviorImpactChart days={90} />);
 
     expect(screen.getByTestId("query-state-empty")).toHaveTextContent(
-      "Not enough journal data yet. Log boolean journal entries (Yes/No) for at least 5 days in each group to describe their association with next-day readiness.",
+      "This comparison needs at least 5 Yes days and 5 No days for the same question, with next-day readiness data.",
     );
     expect(screen.queryByRole("alert")).toBeNull();
   });

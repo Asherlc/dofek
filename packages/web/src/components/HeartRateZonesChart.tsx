@@ -319,7 +319,7 @@ export function WeeklyHrZonesChart({
             <span className="text-dim">(max heart rate: {maxHeartRateLabel})</span>
           )}
         </h3>
-        <ChartDescriptionTooltip description="This chart shows the percentage of weekly training time spent in each heart rate zone." />
+        <ChartDescriptionTooltip description="Weekly training time by heart rate zone, shown as a percentage." />
       </div>
       <DofekChart option={option} height={220} />
     </div>

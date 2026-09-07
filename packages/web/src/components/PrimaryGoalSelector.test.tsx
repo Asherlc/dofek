@@ -64,7 +64,7 @@ describe("PrimaryGoalSelector", () => {
   it("renders the four primary goal options", () => {
     render(<PrimaryGoalSelector />);
 
-    expect(screen.getByRole("heading", { name: "Primary goal" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "What would you like to focus on?" })).toBeTruthy();
     expect(screen.getByText("Race preparation")).toBeTruthy();
     expect(screen.getByText("Sleep consistency")).toBeTruthy();
     expect(screen.getByText("Strength progression")).toBeTruthy();

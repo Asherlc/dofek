@@ -192,8 +192,8 @@ export default function SleepScreen() {
       ) : nightly.length === 0 ? (
         <QueryStatePanel
           variant="empty"
-          title="No sleep data"
-          message="No sleep data has been synced yet."
+          title="No sleep records in this period"
+          message="Try a longer date range or check your sleep source."
         />
       ) : (
         <>
@@ -253,6 +253,7 @@ export default function SleepScreen() {
                   title="Average Duration"
                   value={formatDurationMinutes(averageSleepMinutes)}
                   trend={durationTrend}
+                  chartDescription="Recorded sleep duration for the latest 14 nights in this period."
                   color={colors.blue}
                   subtitle={`Last ${days} nights`}
                   onViewData={scrollToSleepSources}
@@ -263,6 +264,7 @@ export default function SleepScreen() {
                   title="Average Efficiency"
                   value={formatIntensity(averageEfficiencyPercent)}
                   trend={efficiencyTrend}
+                  chartDescription="Recorded sleep efficiency for the latest 14 nights in this period, shown as a percentage."
                   color={colors.purple}
                   subtitle={`Last ${days} nights`}
                   onViewData={scrollToSleepSources}
@@ -276,7 +278,7 @@ export default function SleepScreen() {
             <View style={styles.card}>
               <ChartTitleWithTooltip
                 title="Schedule Consistency"
-                description="This chart tracks how consistent your sleep and wake timing has been over recent nights."
+                description="Scores range from 0 to 100; higher scores mean your sleep and wake times varied less. The dashed line marks the average."
                 textStyle={styles.cardTitle}
               />
               <View style={styles.consistencyRow}>

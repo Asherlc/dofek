@@ -8,7 +8,7 @@ import { EvidenceDetails } from "./EvidenceDetails.tsx";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 const NO_ASSOCIATION_EVIDENCE_MESSAGE =
-  "No association evidence is available for the current results. Log boolean journal entries (Yes/No) for at least 5 days in each group to describe their association with next-day readiness.";
+  "No association evidence is available for the current results. This comparison needs at least 5 Yes days and 5 No days for the same question, with next-day readiness data.";
 
 function ReadinessAssociationBar({
   label,
@@ -183,7 +183,7 @@ export function BehaviorImpactChart({ days }: { days: TimeRangeDays }) {
         <QueryStatePanel
           contextLabel="Behavior associations"
           variant="empty"
-          message="Not enough journal data yet. Log boolean journal entries (Yes/No) for at least 5 days in each group to describe their association with next-day readiness."
+          message="This comparison needs at least 5 Yes days and 5 No days for the same question, with next-day readiness data."
           height={120}
         />
       </div>

@@ -758,7 +758,7 @@ export default function CorrelationScreen() {
             <View style={styles.card}>
               <ChartTitleWithTooltip
                 title="Scatter Plot"
-                description="This chart plots each data point and a trend line to visualize how the two metrics relate."
+                description="Each point is a paired observation. The trend line shows the direction of the association; it does not prove cause."
                 textStyle={styles.cardTitle}
               />
               <ScatterPlot

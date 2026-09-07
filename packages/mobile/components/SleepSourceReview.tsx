@@ -41,7 +41,7 @@ export function SleepSourceReview({ nights }: { nights: SleepSourceReviewNight[]
         Sleep Sources
       </Text>
       <Text style={styles.description}>
-        Review the canonical session selected for each night and any overlapping sessions.
+        See which sleep record is used for each night and compare overlapping records.
       </Text>
       <View style={styles.nights}>
         {nights.map((night) => {
@@ -68,7 +68,7 @@ export function SleepSourceReview({ nights }: { nights: SleepSourceReviewNight[]
                 <Text style={styles.mergedSources}>Merged with {mergedSources.join(", ")}</Text>
               )}
               {overlaps.length === 0 ? (
-                <Text style={styles.noOverlap}>No overlapping sessions</Text>
+                <Text style={styles.noOverlap}>No overlapping sleep records</Text>
               ) : (
                 <>
                   <Pressable
@@ -86,6 +86,9 @@ export function SleepSourceReview({ nights }: { nights: SleepSourceReviewNight[]
                   </Pressable>
                   {expanded && (
                     <View style={styles.overlaps}>
+                      <Text style={styles.overlapHeading}>
+                        Other sleep records covering the same time
+                      </Text>
                       {overlaps.map((session) => (
                         <View key={session.sessionId} style={styles.overlap}>
                           <Text style={styles.overlapSource}>
@@ -197,6 +200,11 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 4,
     padding: 10,
+  },
+  overlapHeading: {
+    color: colors.textTertiary,
+    fontSize: 12,
+    fontWeight: "600",
   },
   overlap: {
     gap: 2,

@@ -283,7 +283,12 @@ function MiniChartFrame({
 }) {
   if (error) return <QueryStatePanel error={error} height={height} />;
   return (
-    <ChartContainer loading={loading} data={data} height={height} emptyMessage="No chart data yet.">
+    <ChartContainer
+      loading={loading}
+      data={data}
+      height={height}
+      emptyMessage="No chart data to display."
+    >
       {children}
     </ChartContainer>
   );

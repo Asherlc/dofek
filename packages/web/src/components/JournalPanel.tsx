@@ -164,7 +164,7 @@ function JournalLog({ days }: { days: TimeRangeDays }) {
       )}
 
       {!entriesQuery.isLoading && entriesQuery.data !== undefined && entries.length === 0 && (
-        <p className="text-dim text-sm text-center py-8">No journal entries yet.</p>
+        <p className="text-dim text-sm text-center py-8">No journal entries to display.</p>
       )}
 
       {grouped.map(([date, dayEntries]) => (
@@ -390,7 +390,7 @@ function JournalTrends({ days }: { days: TimeRangeDays }) {
             retrying={trendsQuery.isFetching}
           />
         ) : null}
-        <p className="text-dim text-sm text-center py-8">No numeric journal data to chart.</p>
+        <p className="text-dim text-sm text-center py-8">No journal trends yet.</p>
       </div>
     );
   }

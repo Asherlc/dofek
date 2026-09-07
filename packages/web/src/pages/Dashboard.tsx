@@ -178,7 +178,7 @@ export function Dashboard() {
     ) : !insightsQuery.isFetched ? (
       <QueryStatePanel variant="loading" height={160} />
     ) : !topInsight ? (
-      <QueryStatePanel variant="empty" message="No insights yet." height={160} />
+      <QueryStatePanel variant="empty" message="No insights to display." height={160} />
     ) : null;
 
   return (

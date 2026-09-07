@@ -97,8 +97,7 @@ export function AccountDeletionStatusView({
         Account deletion status
       </Text>
       <Text style={styles.intro}>
-        This page uses a capability saved on this device. It does not require an active Dofek
-        session.
+        Check your deletion request here without signing in. Use the same device.
       </Text>
 
       {isLoading && !capability && !onRecover ? (
@@ -110,13 +109,12 @@ export function AccountDeletionStatusView({
 
       {onRecover && !capability ? (
         <View style={styles.recoveryCard}>
-          <Text style={styles.cardTitle}>Recover an accepted request</Text>
+          <Text style={styles.cardTitle}>Check your deletion request</Text>
           <Text style={styles.cardText}>
-            The confirmation response may have been interrupted after your session was revoked.
-            Reusing the saved preparation safely recovers the same request and status capability.
+            We couldn&apos;t confirm whether deletion started. Check the status of your request.
           </Text>
           <TouchableOpacity
-            accessibilityLabel="Recover deletion status"
+            accessibilityLabel="Check deletion status"
             accessibilityRole="button"
             accessibilityState={{ busy: isRecovering, disabled: isRecovering }}
             disabled={isRecovering}
@@ -124,7 +122,7 @@ export function AccountDeletionStatusView({
             style={[styles.primaryButton, isRecovering && styles.disabledButton]}
           >
             <Text style={styles.primaryButtonText}>
-              {isRecovering ? "Recovering..." : "Recover deletion status"}
+              {isRecovering ? "Checking..." : "Check deletion status"}
             </Text>
           </TouchableOpacity>
         </View>
@@ -140,8 +138,8 @@ export function AccountDeletionStatusView({
         <View style={styles.card}>
           <Text style={styles.cardTitle}>No saved request</Text>
           <Text style={styles.cardText}>
-            This device does not have an account deletion status capability. Start deletion from
-            Settings while signed in, or return to the device where you made the request.
+            No deletion request is saved on this device. Use the device where you requested
+            deletion, or sign in to start a request.
           </Text>
           <TouchableOpacity
             accessibilityLabel="Sign in to request account deletion"
@@ -203,7 +201,7 @@ export function AccountDeletionStatusView({
               <Text style={styles.errorText}>
                 {capability.localCleanupBlockedByAnotherSession
                   ? "Local cleanup belongs to the deleted account, but another account is active on this device. Sign out of that account before retrying cleanup."
-                  : "Some device data could not be cleared. Unlock the device and retry local cleanup. Your deletion request and saved status capability are safe."}
+                  : "Some device data could not be cleared. Unlock the device and retry local cleanup. You can still check your deletion status here."}
               </Text>
               {onRetryLocalCleanup ? (
                 <TouchableOpacity

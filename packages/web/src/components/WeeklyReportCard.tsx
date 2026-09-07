@@ -17,7 +17,7 @@ export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
   if (!data) {
     return (
       <div className="card p-6 flex items-center justify-center h-[320px]">
-        <span className="text-dim text-sm">No weekly data yet</span>
+        <span className="text-dim text-sm">No weekly data to display</span>
       </div>
     );
   }

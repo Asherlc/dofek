@@ -153,7 +153,7 @@ export function LifeEventsPanel() {
       />
 
       {eventList?.length === 0 ? (
-        <p className="text-dim text-sm text-center py-6">No life events yet.</p>
+        <p className="text-dim text-sm text-center py-6">No life events to display.</p>
       ) : null}
 
       {/* Add form */}

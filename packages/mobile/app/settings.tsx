@@ -881,20 +881,20 @@ export default function SettingsScreen() {
         <DataExportSection serverUrl={auth.serverUrl} sessionToken={auth.sessionToken} />
       ) : null}
 
-      {/* ── Help & Support ── */}
+      {/* ── Support ── */}
       {activeCategory === "account" ? (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Help & Support</Text>
-          <Text style={styles.sectionDescription}>Get help from our team</Text>
+          <Text style={styles.sectionTitle}>Contact support</Text>
+          <Text style={styles.sectionDescription}>We&apos;ll reply by email</Text>
           <TouchableOpacity
             style={styles.card}
             onPress={() => router.push("/support")}
             activeOpacity={0.7}
             accessibilityRole="button"
-            accessibilityLabel="Contact Support"
+            accessibilityLabel="Send a message"
           >
             <View style={styles.dataSourcesRow}>
-              <Text style={styles.navigationLabel}>Contact Support</Text>
+              <Text style={styles.navigationLabel}>Send a message</Text>
               <Text style={styles.navigationChevron}>›</Text>
             </View>
           </TouchableOpacity>

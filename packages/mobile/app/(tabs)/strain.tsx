@@ -375,7 +375,7 @@ export default function StrainScreen() {
   const displayedDate = workloadResult?.displayedDate;
   const strainDateLabel =
     displayedDate == null
-      ? "No training load yet"
+      ? "No training load to display"
       : displayedDate === todayWorkload?.date
         ? "Today"
         : `Last training day: ${formatDateShort(displayedDate)}`;
@@ -526,7 +526,7 @@ export default function StrainScreen() {
           <View style={styles.card}>
             <ChartTitleWithTooltip
               title={`Daily Strain (${days} Days)`}
-              description="This chart shows your day-to-day strain trend across the selected date range."
+              description="Daily strain scores for the selected period. The dashed line marks the average."
               textStyle={styles.cardTitle}
             />
             {strainTrendAvailability?.status === "available" ? (
@@ -597,7 +597,7 @@ export default function StrainScreen() {
             <View style={styles.card}>
               <ChartTitleWithTooltip
                 title="Weekly Volume"
-                description="This chart shows your total training hours by week."
+                description="Recorded training duration per week. The longest week fills the bar."
                 textStyle={styles.cardTitle}
               />
               <View style={styles.volumeStack}>

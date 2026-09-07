@@ -25220,3 +25220,36 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   produces the iOS Metro bundle.
 - **Remaining risk / follow-up:** Confirm the replacement Metro Bundle job and
   complete PR workflow pass on the fix commit.
+
+## 2026-09-07 — Local integration startup exhausted Docker address pools
+
+- **Scope / impact:** Local validation in `humble-dugong` only; no production
+  impact observed. Apple Health replacement regression tests could not start
+  through the normal Compose wrapper.
+- **Evidence / root cause:**
+  `pnpm test:integration -- src/providers/apple-health/import.integration.test.ts -t 'Apple Health archive replacement'`
+  failed before tests with `failed to create network humble-dugong_default: all
+  predefined address pools have been fully subnetted`. Read-only inspection
+  showed all default Docker subnet pools allocated to existing networks.
+- **Operator fix:** Created only the workspace's Compose-labeled
+  `humble-dugong_default` bridge on an inspected, non-overlapping subnet. No
+  other workspace resources or tracked Compose configuration changed. Docker
+  supports [explicit non-overlapping bridge subnets](https://docs.docker.com/reference/cli/docker/network/create/#specify-advanced-options).
+- **Validation:** Compose adopted the network and started the workspace
+  services. The focused PostgreSQL regression run reached assertions and
+  reproduced seven data-preservation failures before the application fix. The
+  normal Vitest reruns then timed out in template setup under high host load. A
+  fresh clone of the normal runner's fully migrated template passed all nine
+  direct PostgreSQL preservation, replacement, and rollback scenarios,
+  including failures in both 501st-record insert batches. The clone was
+  dropped. This direct validation does not imply the normal Vitest suite
+  passed. SQL lint subsequently passed against the workspace ClickHouse
+  service.
+- **Cleanup:** Confirmed all four workspace volumes were created during this
+  validation (2026-09-07T15:41:17Z), then ran
+  `pnpm compose -- down --remove-orphans --volumes`; all four containers, four
+  volumes, and the explicit workspace network were removed successfully. Other
+  workspace resources were untouched.
+- **Follow-up:** Improve workspace archive cleanup so abandoned networks are
+  reclaimed with their owning workspace. No retry, timeout, service-memory, or
+  production configuration changes were introduced.

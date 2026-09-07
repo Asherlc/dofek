@@ -143,8 +143,7 @@ export function AccountErasurePanel() {
       {preparation ? (
         <div className="space-y-3 rounded border border-red-900/70 bg-red-950/20 p-3">
           <p className="text-xs text-red-200">
-            Final confirmation: deletion will start immediately, your session will end, and new
-            writes will be blocked.
+            Deletion starts immediately and you&apos;ll be signed out. This cannot be undone.
           </p>
           <button
             type="button"

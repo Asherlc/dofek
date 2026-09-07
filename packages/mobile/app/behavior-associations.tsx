@@ -17,7 +17,7 @@ const DAY_OPTIONS = [
 ];
 
 const NO_ASSOCIATION_EVIDENCE_MESSAGE =
-  "No association evidence is available for the current results. Log boolean journal entries (Yes/No) for at least 5 days in each group to describe their association with next-day readiness.";
+  "No association evidence is available for the current results. This comparison needs at least 5 Yes days and 5 No days for the same question, with next-day readiness data.";
 
 function ProviderSourceDetails({ sources }: { sources: ProviderProvenance[] }) {
   const [expanded, setExpanded] = useState(false);
@@ -104,8 +104,8 @@ export default function BehaviorAssociationsScreen() {
       ) : !data || data.length === 0 ? (
         <QueryStatePanel
           variant="empty"
-          title="Not enough journal data yet"
-          message="Log boolean journal entries (Yes/No) for at least 5 days in each group to describe their association with next-day readiness."
+          title="Not enough journal data"
+          message="This comparison needs at least 5 Yes days and 5 No days for the same question, with next-day readiness data."
         />
       ) : associationRows.length === 0 ? (
         <>

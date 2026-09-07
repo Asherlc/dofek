@@ -409,7 +409,7 @@ describe("Dashboard", () => {
       expect.anything(),
       expect.objectContaining({ enabled: false }),
     );
-    expect(screen.queryByText("No insights yet.")).toBeNull();
+    expect(screen.queryByText("No insights to display.")).toBeNull();
     expect(screen.getByTestId("query-state-loading")).toBeTruthy();
   });
 
@@ -436,7 +436,7 @@ describe("Dashboard", () => {
       expect.anything(),
       expect.objectContaining({ enabled: false }),
     );
-    expect(screen.queryByText("No insights yet.")).toBeNull();
+    expect(screen.queryByText("No insights to display.")).toBeNull();
     expect(screen.getByText("Insights unavailable until dashboard data loads.")).toBeTruthy();
   });
 
@@ -516,7 +516,7 @@ describe("Dashboard", () => {
     render(<Dashboard />);
 
     expect(screen.getByTestId("query-state-empty")).toBeTruthy();
-    expect(screen.getByText("No insights yet.")).toBeTruthy();
+    expect(screen.getByText("No insights to display.")).toBeTruthy();
     expect(screen.queryByText("Sleep consistency + Heart Rate Variability")).toBeNull();
   });
 

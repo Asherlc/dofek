@@ -677,7 +677,7 @@ function AuthGate() {
           <Stack.Screen
             name="zepp-pairing"
             options={{
-              title: "Pair Zepp App",
+              title: "Pair your Zepp app",
             }}
           />
           <Stack.Screen
@@ -731,7 +731,7 @@ function AuthGate() {
           <Stack.Screen
             name="support"
             options={{
-              title: "Help & Support",
+              title: "Contact support",
             }}
           />
           <Stack.Screen

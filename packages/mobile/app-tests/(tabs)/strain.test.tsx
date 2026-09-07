@@ -926,7 +926,7 @@ describe("StrainScreen recent activity navigation", () => {
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
 
-    expect(screen.getByText("No Hangboarding sessions yet.")).toBeTruthy();
+    expect(screen.getByText("No Hangboarding sessions to display.")).toBeTruthy();
   });
 
   it("reports malformed Hangboarding daily rows while rendering valid summary metrics", async () => {
@@ -964,7 +964,7 @@ describe("StrainScreen recent activity navigation", () => {
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
 
-    expect(screen.getByText("No Hangboarding sessions yet.")).toBeTruthy();
+    expect(screen.getByText("No Hangboarding sessions to display.")).toBeTruthy();
     expect(screen.queryByText("Training refresh failed")).toBeNull();
   });
 

@@ -49,7 +49,7 @@ export function QueryStatePanel({
   }
 
   const resolvedTitle =
-    title ?? (variant === "error" ? "Could not load this section" : "No data yet");
+    title ?? (variant === "error" ? "Could not load this section" : "No data to display");
 
   return (
     <View

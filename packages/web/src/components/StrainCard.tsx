@@ -113,7 +113,7 @@ export function StrainCard({ data, strainTarget, loading }: StrainCardProps) {
   if (!data || data.timeSeries.length === 0) {
     return (
       <div className="card p-6 flex items-center justify-center h-[200px]">
-        <span className="text-dim text-sm">No strain data yet</span>
+        <span className="text-dim text-sm">No strain data to display</span>
       </div>
     );
   }

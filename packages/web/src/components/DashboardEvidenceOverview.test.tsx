@@ -354,7 +354,7 @@ describe("DashboardEvidenceOverview", () => {
       />,
     );
 
-    expect(screen.getAllByText("No chart data yet.")).toHaveLength(2);
+    expect(screen.getAllByText("No chart data to display.")).toHaveLength(2);
     expect(screen.queryByText("Average resting heart rate: 56 bpm")).toBeNull();
   });
 
@@ -370,7 +370,7 @@ describe("DashboardEvidenceOverview", () => {
     );
 
     expect(loadingResult.container.querySelector(".animate-spin")).not.toBeNull();
-    expect(screen.getAllByText("No chart data yet.")).toHaveLength(1);
+    expect(screen.getAllByText("No chart data to display.")).toHaveLength(1);
 
     loadingResult.unmount();
 
@@ -385,7 +385,7 @@ describe("DashboardEvidenceOverview", () => {
     );
 
     expect(screen.getByText("Resting heart rate chart failed.")).toBeTruthy();
-    expect(screen.getAllByText("No chart data yet.")).toHaveLength(1);
+    expect(screen.getAllByText("No chart data to display.")).toHaveLength(1);
   });
 
   it("labels resting heart rate axes with observed values instead of padded domains", () => {

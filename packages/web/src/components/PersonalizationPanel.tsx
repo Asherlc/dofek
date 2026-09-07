@@ -56,7 +56,7 @@ export function PersonalizationPanel() {
         </div>
         {data.fittedAt && (
           <span className="text-xs text-subtle">
-            Last refit attempt {formatDateMedium(data.fittedAt)}
+            Last recalculation attempt {formatDateMedium(data.fittedAt)}
           </span>
         )}
       </div>
@@ -123,7 +123,7 @@ export function PersonalizationPanel() {
           disabled={refitMutation.isPending}
           className="text-xs font-medium text-accent hover:text-accent-secondary border border-accent rounded px-3 py-1.5 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {refitMutation.isPending ? "Refitting..." : "Refit Now"}
+          {refitMutation.isPending ? "Recalculating…" : "Recalculate"}
         </button>
         {data.isPersonalized && (
           <button
@@ -152,10 +152,6 @@ function ParamCard<T>({
   renderValue: (v: T) => string;
 }) {
   const isPersonalized = modelCard.status === "personalized";
-  const lastFit = modelCard.lastSuccessfulFitAt
-    ? formatDateMedium(modelCard.lastSuccessfulFitAt)
-    : modelCard.lastFitSummary;
-
   return (
     <article
       aria-label={`${modelCard.title} model evidence`}
@@ -173,10 +169,17 @@ function ParamCard<T>({
       <p className="text-sm text-foreground font-mono">{renderValue(effective)}</p>
       {isPersonalized && <p className="text-[11px] text-dim">Default: {renderValue(defaults)}</p>}
       <dl className="pt-2 space-y-1 text-[11px] text-subtle">
-        <EvidenceRow label="Last successful fit" value={lastFit} />
+        {modelCard.lastSuccessfulFitAt ? (
+          <EvidenceRow
+            label="Last successful update"
+            value={formatDateMedium(modelCard.lastSuccessfulFitAt)}
+          />
+        ) : (
+          <EvidenceRow label="Update status" value={modelCard.lastFitSummary} />
+        )}
         <EvidenceRow label="Data window" value={modelCard.dataWindow} />
-        <EvidenceRow label="Data sufficiency" value={modelCard.dataSufficiency} />
-        <EvidenceRow label="Fit evidence" value={modelCard.fitEvidence} />
+        <EvidenceRow label="Available data" value={modelCard.dataSufficiency} />
+        <EvidenceRow label="Calculation details" value={modelCard.fitEvidence} />
         <EvidenceRow label="Uncertainty" value={modelCard.uncertainty} />
       </dl>
       <div className="pt-1 text-[11px] text-subtle">

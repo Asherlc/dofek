@@ -169,7 +169,7 @@ describe("BehaviorAssociationsScreen", () => {
     expect(screen.getByText("Association evidence unavailable")).toBeTruthy();
     expect(
       screen.getByText(
-        "No association evidence is available for the current results. Log boolean journal entries (Yes/No) for at least 5 days in each group to describe their association with next-day readiness.",
+        "No association evidence is available for the current results. This comparison needs at least 5 Yes days and 5 No days for the same question, with next-day readiness data.",
       ),
     ).toBeTruthy();
     expect(screen.queryByText("Meditation")).toBeNull();
@@ -226,7 +226,7 @@ describe("BehaviorAssociationsScreen", () => {
 
     expect(
       screen.getByText(
-        "Log boolean journal entries (Yes/No) for at least 5 days in each group to describe their association with next-day readiness.",
+        "This comparison needs at least 5 Yes days and 5 No days for the same question, with next-day readiness data.",
       ),
     ).toBeTruthy();
     expect(screen.queryByText("Evidence")).toBeNull();
@@ -278,7 +278,7 @@ describe("BehaviorAssociationsScreen", () => {
     render(<BehaviorAssociationsScreen />);
 
     expect(screen.getByText("Behavior association data is unavailable.")).toBeTruthy();
-    expect(screen.queryByText("Not enough journal data yet")).toBeNull();
+    expect(screen.queryByText("Not enough journal data")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Retry behavior associations" }));
     expect(mocks.refetch).toHaveBeenCalledOnce();
   });

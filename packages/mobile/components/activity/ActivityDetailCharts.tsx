@@ -114,7 +114,7 @@ export function LineChart({
       <View style={chartStyles.container}>
         <ChartTitleWithTooltip
           title={label}
-          description={`This chart shows how your ${label.toLowerCase()} changed over the activity timeline.`}
+          description={`${label} uses ${unit} on the vertical axis. Drag across the plot to inspect recorded samples.`}
           textStyle={chartStyles.title}
         />
         <View {...panResponder.panHandlers}>
@@ -255,7 +255,7 @@ export function AreaChart({
       <View style={chartStyles.container}>
         <ChartTitleWithTooltip
           title={label}
-          description={`This chart shows how your ${label.toLowerCase()} changed over the activity timeline.`}
+          description={`${label} uses ${unit} on the vertical axis. Drag across the plot to inspect recorded samples.`}
           textStyle={chartStyles.title}
         />
         <View {...panResponder.panHandlers}>
