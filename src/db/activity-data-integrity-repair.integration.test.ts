@@ -309,7 +309,7 @@ async function seedProductionDbtFixture(
       (
         '${TEST_USER_ID}', toDateTime64('2026-09-01 15:10:00', 6, 'UTC'),
         toDate('2026-09-01'), 'heart_rate', 150, 1, 0,
-        toDateTime64('2026-09-02 17:00:00', 9, 'UTC')
+        now64(9)
       )`,
     `INSERT INTO ${database}.activity VALUES
       (

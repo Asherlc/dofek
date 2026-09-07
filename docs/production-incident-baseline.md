@@ -25271,3 +25271,28 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   the Zepp typecheck, Zepp lint, and both production package builds also pass.
 - **Remaining risk / follow-up:** Confirm the replacement PR mutation shard and
   aggregate gate pass on the fix commit.
+
+## 2026-09-07 — Aged activity-repair fixture blocked integration shard 3
+
+- **Status:** Fixed in source; replacement CI validation pending.
+- **Symptoms / user impact:** `Test / Integration Tests (3/4)` failed three
+  consecutive PR 2677 runs and blocked the aggregate test and CI gates even
+  though the PR's Zepp-specific checks passed.
+- **Evidence / root cause:** The exact failing command was
+  `pnpm exec vitest run --project integration --coverage --shard=3/4`. Its first
+  fatal line was `AssertionError: expected [] to deeply equal [ …(2) ]` in
+  `activity-data-integrity-repair.integration.test.ts`. The fixture gave its
+  synthetic sensor row a fixed September 2 `refreshed_at`, while the September
+  7 dbt run processed only September 4–7 for the model's three-day lookback.
+  dbt microbatch models split processing by their configured `event_time` and
+  can reprocess prior batches through `lookback`
+  ([dbt microbatch documentation](https://docs.getdbt.com/docs/build/incremental-microbatch)).
+- **Direct fix:** Preserve the fixture's historical `recorded_at` while setting
+  its synthetic ingestion `refreshed_at` with ClickHouse `now64(9)`, keeping it
+  inside the production model's refresh-time microbatch window. No retry,
+  timeout, model setting, or CI bypass was added.
+- **Validation:** The exact replacement integration shard and aggregate gates
+  are pending CI. The previous exact-head run passed every other test, build,
+  typecheck, lint, mutation, and security check.
+- **Remaining risk / follow-up:** Confirm the replacement integration shard 3,
+  aggregate test gate, and CI gate pass on the fixture-fix commit.
