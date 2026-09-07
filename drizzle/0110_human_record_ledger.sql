@@ -59,6 +59,7 @@ CREATE TABLE fitness.human_record_change (
   CONSTRAINT human_record_change_owner_key UNIQUE (id, user_id),
   CONSTRAINT human_record_change_undo_fk FOREIGN KEY (undo_change_id, user_id)
   REFERENCES fitness.human_record_change (id, user_id),
+  CONSTRAINT human_record_change_undo_kind_valid CHECK ((kind = 'undo') = (undo_change_id IS NOT NULL)),
   CONSTRAINT human_record_change_hash_valid CHECK (request_hash ~ '^[0-9a-f]{64}$'),
   CONSTRAINT human_record_change_kind_valid CHECK (kind IN ('create', 'update', 'clear', 'delete', 'restore', 'undo', 'legacy_delete')),
   CONSTRAINT human_record_change_channel_valid CHECK (channel IN ('web', 'mobile', 'mcp', 'migration')),
@@ -86,6 +87,8 @@ CREATE TABLE fitness.human_record_target (
   CONSTRAINT human_record_target_not_self CHECK (predecessor_id IS NULL OR predecessor_id <> id),
   CONSTRAINT human_record_target_fields_valid CHECK (fitness.human_record_fields_valid(fields))
 );
+--> statement-breakpoint
+CREATE INDEX human_record_target_change_idx ON fitness.human_record_target (change_id, user_id);
 --> statement-breakpoint
 CREATE FUNCTION fitness.require_human_record_predecessor()
 RETURNS trigger

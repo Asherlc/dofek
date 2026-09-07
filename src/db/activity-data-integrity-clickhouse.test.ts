@@ -103,6 +103,32 @@ describe("queryClickHouseRows", () => {
 });
 
 describe("snapshotDerivedRows", () => {
+  it.each([null, false, 0, "", "invalid-date"])(
+    "rejects an invalid activity start (%s) before deriving rebuild bounds",
+    async (started_at) => {
+      const client = {
+        query: vi.fn(async ({ query }: { query: string }) => ({
+          json: async () =>
+            query.startsWith("SELECT source_records.*") ? [{ ...sourceRowA, started_at }] : [],
+        })),
+      };
+      await expect(snapshotDerivedRows(client, userId, [activityA])).rejects.toThrow("started_at");
+    },
+  );
+
+  it("parses an ISO activity start without changing its instant", async () => {
+    const client = {
+      query: vi.fn(async ({ query }: { query: string }) => ({
+        json: async () =>
+          query.startsWith("SELECT source_records.*")
+            ? [{ ...sourceRowA, started_at: "2026-09-01T14:55:54.000Z" }]
+            : [],
+      })),
+    };
+    const snapshot = await snapshotDerivedRows(client, userId, [activityA]);
+    expect(snapshot.sourceRows[0]?.started_at).toEqual(new Date("2026-09-01T14:55:54.000Z"));
+  });
+
   it("rejects source rows without the activity start required for historical rebuild bounds", async () => {
     const { started_at: _startedAt, ...incompleteSource } = sourceRowA;
     const client = {

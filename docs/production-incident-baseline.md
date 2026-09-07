@@ -25249,9 +25249,12 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   resource pressure. The exact cause of the ClickHouse process exits remains
   unconfirmed; its current cgroup counters reported no OOM kill.
 - **Direct fix / validation:** After the user authorized stopping any other
-  workspace, stopped 73 inspected Compose containers from other workspaces.
-  Preserved every container and volume, the four current-workspace services,
-  and the four unrelated k3d containers. Available VM memory rose to
+  workspace, a later mitigation-time inventory identified 73 Compose containers
+  from other workspaces to stop. This was a new inventory, not the earlier
+  75-container pressure snapshot. The 73 stopped containers were separate from
+  the four current-workspace services and four unrelated k3d containers that
+  remained running (eight running after the stop). Every container and volume
+  was preserved. Available VM memory rose to
   5,845,320 kB and memory pressure's `full avg10` fell to 0.91. The unchanged
   ten-test PostgreSQL ledger suite passed in 4.42 seconds, and the local ledger
   migration applied successfully.
@@ -25573,3 +25576,27 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   Preserve the existing layout measurements, limits, and request waits.
 - **Validation / follow-up:** Confirm the replacement settings layout cases
   and full browser job pass before merging.
+
+## 2026-09-07 — Human-record foundation merge blocked by review conversations
+
+- **Symptoms / impact:** The direct squash merge of [PR 2678](https://github.com/Asherlc/dofek/pull/2678)
+  failed with a base-branch-policy rejection despite green checks on
+  `d222042e21ed1e771fffcd225054f26149808128`. No production impact occurred.
+- **Evidence / cause:** Branch protection required conversation resolution;
+  nine CodeRabbit threads remained unresolved. Review also exposed date
+  coercion accepting null/boolean/numeric activity starts, a missing undo-kind
+  constraint, and expression indexes lost by the DBML generator.
+- **Direct fixes:** Restrict activity-start inputs before date coercion; enforce
+  the undo pair in SQL and Drizzle; generate expression indexes from schema
+  metadata. Add the target lookup index, isolate constraint assertions, validate
+  query results, and clarify read-only projections and Docker authorization.
+  A real Postgres replication-role fixture proves disconnected cycles cannot
+  become readable heads under the existing successor uniqueness constraint.
+- **Validation:** Regression tests failed before the corresponding fixes;
+  all 17,617 unit/mobile tests and 18 ledger/repair database tests now pass
+  (21 unit/mobile skips). Lint, root/server/web typechecks, SQLFluff, Squawk,
+  and spellcheck pass. Independent review found no remaining issues.
+- **Remaining risk / follow-up:** Push the reviewed fixes, reply to and resolve
+  the conversations, and require fresh CI before merging. Inspect conversation
+  status alongside CI early in future merge work. No bypass, retry, or timeout
+  adjustment was added.

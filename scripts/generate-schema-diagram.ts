@@ -1,6 +1,8 @@
 import { execSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { pgGenerate } from "drizzle-dbml-generator";
+import { is, SQL, sql } from "drizzle-orm";
+import { getTableConfig, PgDialect, PgTable } from "drizzle-orm/pg-core";
 import plantumlEncoder from "plantuml-encoder";
 import { drizzleSchema as schema } from "../src/db/drizzle-schema.ts";
 
@@ -32,6 +34,33 @@ export function normalizeGeneratedDbml(dbml: string): string {
     .map((line) => line.trimEnd())
     .join("\n")
     .trimEnd()}\n`;
+}
+
+export function generateSchemaDbml(inputSchema: Record<string, unknown>): string {
+  const dialect = new PgDialect();
+  const expressionIndexes = new Map<string, string>();
+  for (const table of Object.values(inputSchema)) {
+    if (!is(table, PgTable)) continue;
+    for (const { config } of getTableConfig(table).indexes) {
+      if (!config.columns.some((column) => is(column, SQL))) continue;
+      const columns = config.columns.map((column) =>
+        is(column, SQL)
+          ? `\`${dialect.sqlToQuery(sql`${column}`.inlineParams()).sql}\``
+          : JSON.stringify(column.name),
+      );
+      expressionIndexes.set(config.name, `(${columns.join(", ")})`);
+    }
+  }
+  const dbml = pgGenerate({ schema: inputSchema, relational: false });
+  return normalizeGeneratedDbml(
+    dbml.replace(
+      /^([ \t]*)[^\n]*?(\[name: '([^']+)'[^\n]*\])$/gm,
+      (line: string, indentation: string, settings: string, name: string) => {
+        const columns = expressionIndexes.get(name);
+        return columns ? `${indentation}${columns} ${settings}` : line;
+      },
+    ),
+  );
 }
 
 /** Extract table blocks from DBML by tracking brace depth */
@@ -149,9 +178,7 @@ export function buildPlantUml(tables: Table[], refs: Ref[]): string {
 
 // --- Main script execution ---
 function main() {
-  // Generate DBML from Drizzle schema (also writes the .dbml file)
-  pgGenerate({ schema, out: dbmlPath, relational: false });
-  const dbml = normalizeGeneratedDbml(readFileSync(dbmlPath, "utf-8"));
+  const dbml = generateSchemaDbml(schema);
   writeFileSync(dbmlPath, dbml);
 
   const tables = parseTables(dbml);

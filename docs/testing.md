@@ -158,9 +158,11 @@ docker stats --no-stream
 
 Inspect CPU, memory, and process/thread counts together. Docker's
 [`stats` documentation](https://docs.docker.com/reference/cli/docker/container/stats/)
-explains that `PIDS` includes kernel threads, not just processes. If resource
-relief requires another workspace to stop, first agree on the affected
-containers, then use `docker stop CONTAINER_ID` with the inspected identifiers.
+explains that `PIDS` includes kernel threads, not just processes. Start with
+current-workspace cleanup. If resource relief requires another workspace to
+stop, obtain explicit approval from that workspace's owner and record the
+approved container IDs before using `docker stop CONTAINER_ID` with those
+inspected identifiers. Without that approval, preserve its running services.
 Preserve containers and volumes rather than deleting state; the
 [`stop` command](https://docs.docker.com/reference/cli/docker/container/stop/)
 signals the running process and may forcibly terminate it after its grace

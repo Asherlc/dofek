@@ -1,13 +1,25 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { erasePostgresAccount } from "../account-erasure/postgres-erasure.ts";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
+import { executeWithSchema } from "./typed-sql.ts";
 
 let ctx: TestContext;
 let userId: string;
 let otherUserId: string;
 const hash = "a".repeat(64);
+const idRowSchema = z.object({ id: z.uuid() });
+const settingRowSchema = z.object({ set_config: z.string() });
+const provenanceSchema = z.object({ target_id: z.uuid(), change_id: z.uuid() });
+const headRowSchema = provenanceSchema.extend({ user_id: z.uuid(), identity_id: z.uuid() });
+const fieldRowSchema = z.object({
+  field: z.string(),
+  operation: z.enum(["set", "clear"]),
+  value: z.union([z.string(), z.number(), z.boolean(), z.null()]),
+});
+const visibilityRowSchema = z.object({ deleted: z.boolean() });
 
 async function identity(owner = userId, sourceKey = randomUUID()) {
   const id = randomUUID();
@@ -88,13 +100,38 @@ describe("human record ledger constraints", () => {
     await target(second, command);
     await expect(target(first, await change())).rejects.toMatchObject({ cause: { code: "23505" } });
     const successor = await change();
-    await target(first, successor, head);
+    const nextHead = await target(first, successor, head);
     await expect(target(first, await change(), head)).rejects.toMatchObject({
       cause: { code: "23505" },
     });
-    await expect(target(first, successor, head)).rejects.toMatchObject({
-      cause: { code: "23505" },
+    await expect(target(first, successor, nextHead)).rejects.toMatchObject({
+      cause: { code: "23505", constraint: "human_record_target_change_key" },
     });
+  });
+
+  it("requires an undo target exactly for undo commands", async () => {
+    const original = await change();
+    for (const kind of [
+      "create",
+      "update",
+      "clear",
+      "delete",
+      "restore",
+      "legacy_delete",
+      "undo",
+    ]) {
+      const undoTarget = kind === "undo" ? null : original;
+      await expect(
+        ctx.db.execute(sql`INSERT INTO fitness.human_record_change
+          (user_id, request_id, request_hash, kind, channel, schema_version, undo_change_id)
+          VALUES (${userId}, ${randomUUID()}, ${hash}, ${kind}, 'web', 1, ${undoTarget})`),
+      ).rejects.toMatchObject({
+        cause: { code: "23514", constraint: "human_record_change_undo_kind_valid" },
+      });
+      await ctx.db.execute(sql`INSERT INTO fitness.human_record_change
+        (user_id, request_id, request_hash, kind, channel, schema_version, undo_change_id)
+        VALUES (${userId}, ${randomUUID()}, ${hash}, ${kind}, 'web', 1, ${kind === "undo" ? original : null})`);
+    }
   });
 
   it("rejects cross-owner identity, command, predecessor, and undo references", async () => {
@@ -204,7 +241,9 @@ describe("human record ledger constraints", () => {
       ).rejects.toMatchObject({ cause: { code: "55000" } });
       await expect(
         ctx.db.transaction(async (tx) => {
-          await tx.execute(
+          await executeWithSchema(
+            tx,
+            settingRowSchema,
             sql`SELECT set_config('dofek.account_erasure_request_id', ${randomUUID()}, true)`,
           );
           await tx.execute(sql`DELETE FROM fitness.${sql.identifier(table)} WHERE id = ${id}`);
@@ -228,12 +267,16 @@ describe("human record ledger constraints", () => {
       VALUES (${userId}, ${provider}, ${externalId}, '2026-09-07', 'Imported again')`);
     await ctx.db.execute(sql`DELETE FROM fitness.food_entry WHERE provider_id = ${provider}`);
     await ctx.db.execute(sql`DELETE FROM fitness.provider WHERE id = ${provider}`);
-    const rows = await ctx.db.execute(
+    const rows = await executeWithSchema(
+      ctx.db,
+      idRowSchema,
       sql`SELECT id FROM fitness.human_record_identity WHERE id = ${record}`,
     );
     expect(rows).toHaveLength(1);
     expect(
-      await ctx.db.execute(
+      await executeWithSchema(
+        ctx.db,
+        idRowSchema,
         sql`SELECT id FROM fitness.human_record_target WHERE identity_id = ${record}`,
       ),
     ).toHaveLength(1);
@@ -255,7 +298,9 @@ describe("human record ledger constraints", () => {
       VALUES (${request}, ${userId}, ${hash}, 'test', ${randomUUID()}, ${randomUUID()}, now(), now())`);
     await expect(
       ctx.db.transaction(async (tx) => {
-        await tx.execute(
+        await executeWithSchema(
+          tx,
+          settingRowSchema,
           sql`SELECT set_config('dofek.account_erasure_request_id', ${request}, true)`,
         );
         await tx.execute(
@@ -265,7 +310,9 @@ describe("human record ledger constraints", () => {
     ).rejects.toMatchObject({ cause: { code: "55000" } });
     await expect(
       ctx.db.transaction(async (tx) => {
-        await tx.execute(
+        await executeWithSchema(
+          tx,
+          settingRowSchema,
           sql`SELECT set_config('dofek.account_erasure_request_id', ${request}, true)`,
         );
         await tx.execute(
@@ -273,19 +320,25 @@ describe("human record ledger constraints", () => {
         );
       }),
     ).rejects.toMatchObject({ cause: { code: "55000" } });
-    const otherBefore = await ctx.db.execute(
+    const otherBefore = await executeWithSchema(
+      ctx.db,
+      idRowSchema,
       sql`SELECT id FROM fitness.human_record_target WHERE user_id = ${otherUserId}`,
     );
     await erasePostgresAccount(ctx.db, request, userId);
     for (const table of ["human_record_target", "human_record_change", "human_record_identity"]) {
       expect(
-        await ctx.db.execute(
+        await executeWithSchema(
+          ctx.db,
+          idRowSchema,
           sql`SELECT id FROM fitness.${sql.identifier(table)} WHERE user_id = ${userId}`,
         ),
       ).toHaveLength(0);
     }
     expect(
-      await ctx.db.execute(
+      await executeWithSchema(
+        ctx.db,
+        idRowSchema,
         sql`SELECT id FROM fitness.human_record_target WHERE user_id = ${otherUserId}`,
       ),
     ).toEqual(otherBefore);
@@ -293,6 +346,59 @@ describe("human record ledger constraints", () => {
 });
 
 describe("human record ledger projections", () => {
+  it("projects only valid heads when replication has inserted a disconnected cycle", async () => {
+    const record = await identity();
+    const validChange = await change();
+    const validHead = randomUUID();
+    const first = randomUUID();
+    const second = randomUUID();
+    const firstChange = await change();
+    const secondChange = await change();
+    await ctx.db.transaction(async (tx) => {
+      await tx.execute(sql`SET LOCAL session_replication_role = replica`);
+      await tx.execute(sql`INSERT INTO fitness.human_record_target
+        (id, user_id, identity_id, change_id, predecessor_id, fields, deleted)
+        VALUES
+          (${validHead}, ${userId}, ${record}, ${validChange}, NULL,
+            '{"name":{"operation":"set","value":"Valid"}}', false),
+          (${first}, ${userId}, ${record}, ${firstChange}, ${second},
+            '{"name":{"operation":"set","value":"Cycle"}}', true),
+          (${second}, ${userId}, ${record}, ${secondChange}, ${first}, '{}', NULL)`);
+    });
+    await expect(
+      ctx.db.transaction(async (tx) => {
+        await tx.execute(sql`SET LOCAL session_replication_role = replica`);
+        await tx.execute(sql`INSERT INTO fitness.human_record_target
+          (user_id, identity_id, change_id, predecessor_id)
+          VALUES (${userId}, ${record}, ${await change()}, ${first})`);
+      }),
+    ).rejects.toMatchObject({
+      cause: { code: "23505", constraint: "human_record_target_successor_key" },
+    });
+    const heads = await executeWithSchema(
+      ctx.db,
+      headRowSchema,
+      sql`SELECT user_id, identity_id, target_id, change_id
+        FROM fitness.v_human_record_head WHERE identity_id = ${record}`,
+    );
+    expect(heads).toEqual([
+      { user_id: userId, identity_id: record, target_id: validHead, change_id: validChange },
+    ]);
+    const fields = await executeWithSchema(
+      ctx.db,
+      fieldRowSchema,
+      sql`SELECT field, operation, value FROM fitness.v_human_record_field
+        WHERE identity_id = ${record}`,
+    );
+    expect(fields).toEqual([{ field: "name", operation: "set", value: "Valid" }]);
+    const visibility = await executeWithSchema(
+      ctx.db,
+      visibilityRowSchema,
+      sql`SELECT deleted FROM fitness.v_human_record_visibility WHERE identity_id = ${record}`,
+    );
+    expect(visibility).toEqual([{ deleted: false }]);
+  });
+
   it("rejects writes through the head projection", async () => {
     const record = await identity();
     const command = await change();
@@ -319,20 +425,32 @@ describe("human record ledger projections", () => {
       notes: { operation: "clear" },
     });
 
-    const heads = await ctx.db.execute(sql`SELECT user_id, identity_id, target_id, change_id
-      FROM fitness.v_human_record_head WHERE identity_id = ${record}`);
+    const heads = await executeWithSchema(
+      ctx.db,
+      headRowSchema,
+      sql`SELECT user_id, identity_id, target_id, change_id
+      FROM fitness.v_human_record_head WHERE identity_id = ${record}`,
+    );
     expect(heads).toEqual([
       { user_id: userId, identity_id: record, target_id: third, change_id: thirdChange },
     ]);
-    const fields = await ctx.db.execute(sql`SELECT field, operation, value
-      FROM fitness.v_human_record_field WHERE identity_id = ${record} ORDER BY field`);
+    const fields = await executeWithSchema(
+      ctx.db,
+      fieldRowSchema,
+      sql`SELECT field, operation, value
+      FROM fitness.v_human_record_field WHERE identity_id = ${record} ORDER BY field`,
+    );
     expect(fields).toEqual([
       { field: "name", operation: "set", value: null },
       { field: "notes", operation: "clear", value: null },
     ]);
     expect(
-      await ctx.db.execute(sql`SELECT deleted FROM fitness.v_human_record_visibility
-      WHERE identity_id = ${record}`),
+      await executeWithSchema(
+        ctx.db,
+        visibilityRowSchema,
+        sql`SELECT deleted FROM fitness.v_human_record_visibility
+      WHERE identity_id = ${record}`,
+      ),
     ).toEqual([]);
   });
 
@@ -354,8 +472,12 @@ describe("human record ledger projections", () => {
       VALUES (${edit}, ${userId}, ${record}, ${editChange}, ${deleted},
         '{"notes":{"operation":"set","value":"Still kept"}}')`);
     expect(
-      await ctx.db.execute(sql`SELECT deleted FROM fitness.v_human_record_visibility
-      WHERE identity_id = ${record}`),
+      await executeWithSchema(
+        ctx.db,
+        visibilityRowSchema,
+        sql`SELECT deleted FROM fitness.v_human_record_visibility
+      WHERE identity_id = ${record}`,
+      ),
     ).toEqual([{ deleted: true }]);
 
     const restoreChange = await changeAt("2026-09-07T02:00:00Z", userId, "restore");
@@ -364,8 +486,12 @@ describe("human record ledger projections", () => {
       (id, user_id, identity_id, change_id, predecessor_id, deleted)
       VALUES (${restore}, ${userId}, ${record}, ${restoreChange}, ${edit}, false)`);
     expect(
-      await ctx.db.execute(sql`SELECT deleted FROM fitness.v_human_record_visibility
-      WHERE identity_id = ${record}`),
+      await executeWithSchema(
+        ctx.db,
+        visibilityRowSchema,
+        sql`SELECT deleted FROM fitness.v_human_record_visibility
+      WHERE identity_id = ${record}`,
+      ),
     ).toEqual([{ deleted: false }]);
 
     const finalDeleteChange = await changeAt("2026-09-07T01:00:00Z", userId, "delete");
@@ -374,13 +500,21 @@ describe("human record ledger projections", () => {
       (id, user_id, identity_id, change_id, predecessor_id, deleted)
       VALUES (${finalDelete}, ${userId}, ${record}, ${finalDeleteChange}, ${restore}, true)`);
 
-    const visibility = await ctx.db.execute(sql`SELECT deleted, target_id, change_id
-      FROM fitness.v_human_record_visibility WHERE identity_id = ${record}`);
+    const visibility = await executeWithSchema(
+      ctx.db,
+      visibilityRowSchema.extend(provenanceSchema.shape),
+      sql`SELECT deleted, target_id, change_id
+      FROM fitness.v_human_record_visibility WHERE identity_id = ${record}`,
+    );
     expect(visibility).toEqual([
       { deleted: true, target_id: finalDelete, change_id: finalDeleteChange },
     ]);
-    const fields = await ctx.db.execute(sql`SELECT field, operation, value
-      FROM fitness.v_human_record_field WHERE identity_id = ${record} ORDER BY field`);
+    const fields = await executeWithSchema(
+      ctx.db,
+      fieldRowSchema,
+      sql`SELECT field, operation, value
+      FROM fitness.v_human_record_field WHERE identity_id = ${record} ORDER BY field`,
+    );
     expect(fields).toEqual([
       { field: "name", operation: "set", value: "Kept" },
       { field: "notes", operation: "set", value: "Still kept" },
@@ -403,11 +537,14 @@ describe("human record ledger projections", () => {
       name: { operation: "set", value: "Other" },
     });
 
-    const rows =
-      await ctx.db.execute(sql`SELECT user_id, identity_id, field, operation, value, target_id, change_id
+    const rows = await executeWithSchema(
+      ctx.db,
+      fieldRowSchema.extend(headRowSchema.shape),
+      sql`SELECT user_id, identity_id, field, operation, value, target_id, change_id
       FROM fitness.v_human_record_field
       WHERE identity_id IN (${first}, ${second}, ${other})
-      ORDER BY value #>> '{}'`);
+      ORDER BY value #>> '{}'`,
+    );
     expect(rows).toEqual([
       {
         user_id: userId,

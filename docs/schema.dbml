@@ -1740,7 +1740,7 @@ table fitness.activity_integrity_repair_journal {
 
   indexes {
     artifact_path [name: 'activity_integrity_repair_journal_artifact_path_key', unique]
-    () [name: 'activity_integrity_repair_journal_single_eligible_idx', unique]
+    (`(true)`) [name: 'activity_integrity_repair_journal_single_eligible_idx', unique]
 
 
 
@@ -1804,7 +1804,7 @@ table fitness.processing_operation {
 
   indexes {
 
-    (user_id, kind, external_correlation_key) [name: 'processing_operation_correlation_key', unique]
+    (`coalesce("fitness"."processing_operation"."user_id", '00000000-0000-0000-0000-000000000000'::uuid)`, "kind", "external_correlation_key") [name: 'processing_operation_correlation_key', unique]
     (user_id, created_at, id) [name: 'processing_operation_user_created_idx']
 
 
@@ -1898,6 +1898,7 @@ table fitness.human_record_change {
 
 
 
+
   }
 }
 
@@ -1925,6 +1926,7 @@ table fitness.human_record_target {
   deleted boolean
 
   indexes {
+    (change_id, user_id) [name: 'human_record_target_change_idx']
     (identity_id, change_id) [name: 'human_record_target_change_key', unique]
     (identity_id, predecessor_id) [name: 'human_record_target_successor_key', unique]
     (id, identity_id, user_id) [name: 'human_record_target_owner_key', unique]

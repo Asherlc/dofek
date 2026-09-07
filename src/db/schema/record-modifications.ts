@@ -4,6 +4,7 @@ import {
   boolean,
   check,
   foreignKey,
+  index,
   jsonb,
   text,
   timestamp,
@@ -72,6 +73,10 @@ export const humanRecordChange = fitness.table(
       columns: [table.undoChangeId, table.userId],
       foreignColumns: [table.id, table.userId],
     }),
+    check(
+      "human_record_change_undo_kind_valid",
+      sql`(${table.kind} = 'undo') = (${table.undoChangeId} IS NOT NULL)`,
+    ),
     check("human_record_change_hash_valid", sql`${table.requestHash} ~ '^[0-9a-f]{64}$'`),
     check(
       "human_record_change_kind_valid",
@@ -101,6 +106,7 @@ export const humanRecordTarget = fitness.table(
     deleted: boolean("deleted"),
   },
   (table) => [
+    index("human_record_target_change_idx").on(table.changeId, table.userId),
     unique("human_record_target_change_key").on(table.identityId, table.changeId),
     unique("human_record_target_successor_key")
       .on(table.identityId, table.predecessorId)

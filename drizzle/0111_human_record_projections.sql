@@ -1,3 +1,4 @@
+-- DISTINCT keeps this view read-only, including INSERTs into the append-only ledger.
 CREATE VIEW fitness.v_human_record_head AS
 SELECT DISTINCT
   target.user_id,

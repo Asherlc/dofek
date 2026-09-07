@@ -22,7 +22,7 @@ export const clickHouseSourceRowSchema = z
     provider_id: z.string().min(1),
     user_id: postgresUuidSchema,
     canonical_type: z.string().min(1),
-    started_at: z.coerce.date(),
+    started_at: z.union([z.string(), z.date()]).pipe(z.coerce.date()),
     ended_at: z.coerce.date().nullable().optional(),
     timezone: z.string().nullable(),
     start_utc_offset_minutes: z.coerce.number().int().nullable(),

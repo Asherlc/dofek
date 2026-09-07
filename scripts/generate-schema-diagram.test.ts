@@ -1,7 +1,10 @@
+import { sql } from "drizzle-orm";
+import { index, pgEnum, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import {
   buildPlantUml,
   extractTables,
+  generateSchemaDbml,
   normalizeGeneratedDbml,
   parseColumnLine,
   parseColumns,
@@ -9,6 +12,33 @@ import {
   parseTables,
   type Table,
 } from "./generate-schema-diagram.ts";
+
+describe("generateSchemaDbml", () => {
+  it("preserves constant and composite SQL index expressions from schema metadata", () => {
+    const category = pgEnum("category", ["food", "activity"]);
+    const owner = pgTable("owner", { id: uuid().primaryKey() });
+    const example = pgTable(
+      "example",
+      {
+        id: uuid(),
+        name: text(),
+        ownerId: uuid("owner_id").references(() => owner.id),
+        category: category(),
+      },
+      (table) => [
+        uniqueIndex("single_row_idx").on(sql`(true)`),
+        index("name_expression_idx").on(table.id, sql`lower(${table.name})`),
+        index("name_idx").on(table.name),
+      ],
+    );
+    const dbml = generateSchemaDbml({ category, owner, example });
+    expect(dbml).toContain("(`(true)`) [name: 'single_row_idx', unique]");
+    expect(dbml).toContain('("id", `lower("example"."name")`) [name: \'name_expression_idx\']');
+    expect(dbml).toContain("name [name: 'name_idx']");
+    expect(dbml).toContain("example.owner_id > owner.id");
+    expect(dbml).toContain("    (`(true)`) [name: 'single_row_idx', unique]\n");
+  });
+});
 
 describe("normalizeGeneratedDbml", () => {
   it("removes generator whitespace while preserving one final newline", () => {
