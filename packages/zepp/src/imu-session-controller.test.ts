@@ -20,6 +20,7 @@ function setup(
   } = {},
 ) {
   let collectorOptions: CollectorOptions | undefined;
+  let defaultNow = 1_720_000_000_000;
   const start = vi.fn(() => {
     if (options.startError) throw options.startError;
   });
@@ -70,7 +71,7 @@ function setup(
     path: "data://imu/session_a.bin",
     requestedFreqModeIndex: 1,
     flushThreshold: 2,
-    now: options.now ?? (() => 1_720_000_000_000),
+    now: options.now ?? (() => defaultNow++),
     displayLease: lease,
     createCollector: (value) => {
       collectorOptions = value;
@@ -92,7 +93,7 @@ function setup(
   return { collector, controller, emit, file, lease, onChunk, onError, onProgress, status };
 }
 
-const sample: ImuSample = { tMs: 1, ax: 1, ay: 2, az: 3, gx: 4, gy: 5, gz: 6 };
+const sample: ImuSample = { tMs: 1, sensor: "accelerometer", x: 1, y: 2, z: 3 };
 
 describe("createImuSessionController", () => {
   it("starts an automatic gyro-capable segment with a display lease and canonical header", () => {
@@ -117,7 +118,7 @@ describe("createImuSessionController", () => {
       }),
       "data://imu/session_a.bin",
     );
-    expect(collector.start).toHaveBeenCalledOnce();
+    expect(collector.start).toHaveBeenCalledWith(1_720_000_000_000);
   });
 
   it("falls back to accelerometer-only and flushes/finalizes once", () => {
@@ -129,7 +130,6 @@ describe("createImuSessionController", () => {
 
     expect(file.append).toHaveBeenCalledWith(
       [sample, { ...sample, tMs: 2 }],
-      false,
       "data://imu/session_a.bin",
     );
     expect(file.append).toHaveBeenCalledTimes(1);
@@ -173,11 +173,22 @@ describe("createImuSessionController", () => {
     emit({ ...sample, tMs: 1_040 });
     controller.stop();
 
-    expect(file.append).toHaveBeenCalledWith(
-      [{ ...sample, tMs: 40 }],
-      true,
-      "data://imu/session_b.bin",
-    );
+    expect(file.append).toHaveBeenCalledWith([{ ...sample, tMs: 40 }], "data://imu/session_b.bin");
+  });
+
+  it("clamps a callback racing with segment rotation to the new segment origin", () => {
+    const times = [1_000, 1_010];
+    const { controller, emit, file } = setup({
+      now: () => times.shift() ?? 1_010,
+      collectorSessionStartMs: 1_000,
+    });
+    controller.start();
+    controller.rotate("data://imu/session_b.bin");
+
+    emit({ ...sample, tMs: 5 });
+    controller.stop();
+
+    expect(file.append).toHaveBeenCalledWith([{ ...sample, tMs: 0 }], "data://imu/session_b.bin");
   });
 
   it("publishes the same persisted chunk for redundant phone delivery", () => {
@@ -189,6 +200,9 @@ describe("createImuSessionController", () => {
     expect(onChunk).toHaveBeenCalledWith({
       sessionStartMs: 1_720_000_000_000,
       hasGyroscope: true,
+      sampleOffset: 0,
+      accelFreqMode: 1,
+      gyroFreqMode: 1,
       samples: [sample, { ...sample, tMs: 2 }],
     });
   });
@@ -288,7 +302,7 @@ describe("createImuSessionController", () => {
     status(2, 5_000);
     expect(controller.sampleCount).toBe(1);
     expect(controller.observedHzX100).toBe(2_500);
-    expect(file.append).toHaveBeenCalledExactlyOnceWith([sample], true, "data://imu/session_a.bin");
+    expect(file.append).toHaveBeenCalledExactlyOnceWith([sample], "data://imu/session_a.bin");
     expect(onProgress).toHaveBeenCalledTimes(1);
   });
 
@@ -364,7 +378,7 @@ describe("createImuSessionController", () => {
     expect(onError).not.toHaveBeenCalled();
   });
 
-  it("keeps collector-relative timestamps when the collector has no start time", () => {
+  it("uses the controller clock even when collector stats are not initialized", () => {
     const times = [1_720_000_000_000, 1_720_000_001_000];
     const { controller, emit, file } = setup({
       now: () => times.shift() ?? 1_720_000_001_000,
@@ -375,11 +389,7 @@ describe("createImuSessionController", () => {
     emit({ ...sample, tMs: 1_040 });
     controller.stop();
 
-    expect(file.append).toHaveBeenCalledWith(
-      [{ ...sample, tMs: 1_040 }],
-      true,
-      "data://imu/session_b.bin",
-    );
+    expect(file.append).toHaveBeenCalledWith([{ ...sample, tMs: 40 }], "data://imu/session_b.bin");
   });
 
   it("returns the finalized segment and stops the session when the next file reset fails", () => {
@@ -412,4 +422,56 @@ describe("createImuSessionController", () => {
     expect(lease.release).toHaveBeenCalledOnce();
     expect(onError).toHaveBeenCalledExactlyOnceWith(finalizeError);
   });
+});
+
+it("emits vector offsets independent of tied timestamps and resets them on rotation", () => {
+  const times = [1000, 1010];
+  const { controller, emit, onChunk } = setup({ now: () => times.shift() ?? 1010 });
+  controller.start();
+  emit({ ...sample, tMs: 5 });
+  emit({ ...sample, tMs: 5 });
+  emit({ ...sample, tMs: 5, sensor: "gyroscope" });
+  controller.rotate("data://imu/session_b.bin");
+  emit({ ...sample, tMs: 15 });
+  controller.stop();
+  expect(onChunk.mock.calls.map((call) => call[0])).toEqual([
+    {
+      sessionStartMs: 1000,
+      hasGyroscope: true,
+      sampleOffset: 0,
+      accelFreqMode: 1,
+      gyroFreqMode: 1,
+      samples: [
+        { ...sample, tMs: 5 },
+        { ...sample, tMs: 5 },
+      ],
+    },
+    {
+      sessionStartMs: 1000,
+      hasGyroscope: true,
+      sampleOffset: 2,
+      accelFreqMode: 1,
+      gyroFreqMode: 1,
+      samples: [{ ...sample, tMs: 5, sensor: "gyroscope" }],
+    },
+    {
+      sessionStartMs: 1010,
+      hasGyroscope: true,
+      sampleOffset: 0,
+      accelFreqMode: 1,
+      gyroFreqMode: 1,
+      samples: [{ ...sample, tMs: 5 }],
+    },
+  ]);
+});
+
+it("defers rotation until the file timestamp can advance without altering sensor time", () => {
+  const { controller, emit, file } = setup({ now: () => 1000 });
+  controller.start();
+  emit({ ...sample, tMs: 0 });
+  expect(controller.rotate("data://imu/session_b.bin")).toBeNull();
+  expect(controller.active).toBe(true);
+  expect(file.reset).toHaveBeenCalledTimes(1);
+  controller.stop();
+  expect(file.append).toHaveBeenCalledWith([{ ...sample, tMs: 0 }], "data://imu/session_a.bin");
 });

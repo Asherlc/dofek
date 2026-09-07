@@ -14,6 +14,10 @@ import { isConnectionChangedCall } from "../../src/connection-control.ts";
 import { createDisplayLease } from "../../src/display-lease.ts";
 import { createImuCollector } from "../../src/imu-collector.ts";
 import {
+  restoreWatchImuConnection,
+  updateWatchImuConnection,
+} from "../../src/imu-connection-storage.ts";
+import {
   type ImuTransferMonitor,
   monitorImuTransfer,
 } from "../../src/imu-transfer-monitor.ts";
@@ -22,6 +26,7 @@ import {
   type ImuSegmentResult,
   type ImuSessionController,
 } from "../../src/imu-session-controller.ts";
+import type { ImuConnectionBinding } from "../../src/imu-upload.ts";
 import {
   clearPendingImuTransfer,
   type ImuFileSlot,
@@ -35,6 +40,7 @@ import { confirmImuTransferPersistence } from "../../src/session-control.ts";
 import { getImuTransferFailureReason } from "../../src/session-control.ts";
 import {
   FLUSH_SAMPLE_THRESHOLD,
+  STORAGE_KEYS,
   WORKOUT_IMU_CHUNK_DIRECTORY,
   WORKOUT_IMU_TRANSFER_FILE,
   WORKOUT_SESSION_FILE_A,
@@ -47,7 +53,6 @@ import {
 import {
   collectLiveWorkoutSnapshot,
   findLiveWorkoutExternalId,
-  type LiveWorkoutSnapshot,
 } from "../../src/workout-live.ts";
 import {
   type LiveWorkoutBatch,
@@ -56,6 +61,7 @@ import {
   writeLiveWorkoutBuffer,
 } from "../../src/workout-live-storage.ts";
 import {
+  createWatchImuChunkHandler,
   createWatchImuChunkSync,
   type WatchImuChunkSync,
 } from "../../src/watch-imu-chunk-sync.ts";
@@ -80,6 +86,9 @@ DataWidget(
       pairingQr: nullable<ReturnType<typeof createWidget>>(),
       pairingUrl: nullable<string>(),
       intervalId: nullable<ReturnType<typeof setInterval>>(),
+      heartRate: nullable<HeartRate>(),
+      heartRateCallback: nullable<() => void>(),
+      currentHeartRate: 0,
       collecting: false,
       flushing: false,
       pendingBatches: emptyArray<LiveWorkoutBatch>(),
@@ -87,6 +96,7 @@ DataWidget(
       focused: false,
       imuController: nullable<ImuSessionController>(),
       imuChunkSync: nullable<WatchImuChunkSync>(),
+      imuConnection: nullable<ImuConnectionBinding>(),
       activeImuSlot: "A" as ImuFileSlot,
       pendingImuA: nullable<ImuSegmentResult>(),
       pendingImuB: nullable<ImuSegmentResult>(),
@@ -97,6 +107,9 @@ DataWidget(
     },
 
     build() {
+      this.state.imuConnection = restoreWatchImuConnection(settings.settingsStorage, (error) =>
+        this.reportError(error, "restore-workout-imu-connection"),
+      );
       this.state.imuChunkSync = createWatchImuChunkSync(
         WORKOUT_IMU_CHUNK_DIRECTORY,
         (envelope) => this.request({ method: "imu.uploadChunk", params: { envelope } }),
@@ -239,8 +252,10 @@ DataWidget(
       if (this.state.collecting) return;
       this.state.collecting = true;
       try {
-        const heartRate = new HeartRate();
-        const snapshot = await collectLiveWorkoutSnapshot(getSportData, () => heartRate.getLast());
+        const snapshot = await collectLiveWorkoutSnapshot(
+          getSportData,
+          () => this.state.currentHeartRate,
+        );
         const externalId = findLiveWorkoutExternalId(
           snapshot,
           this.state.pendingBatches.map((batch) => batch.externalId),
@@ -311,11 +326,27 @@ DataWidget(
 
     startCollection() {
       if (this.state.intervalId !== null) return;
+      const heartRate = (this.state.heartRate ??= new HeartRate());
+      const callback = () => {
+        if (this.state.heartRateCallback !== callback) return;
+        try {
+          this.state.currentHeartRate = heartRate.getCurrent();
+        } catch (error: unknown) {
+          this.state.currentHeartRate = 0;
+          this.reportError(error, "workout-heart-rate");
+        }
+      };
+      this.state.heartRateCallback = callback;
+      heartRate.onCurrentChange(callback);
       void this.collectSnapshot();
       this.state.intervalId = setInterval(() => void this.collectSnapshot(), SAMPLE_INTERVAL_MS);
     },
 
     stopCollection() {
+      const callback = this.state.heartRateCallback;
+      this.state.heartRateCallback = null;
+      this.state.currentHeartRate = 0;
+      if (callback) this.state.heartRate?.offCurrentChange(callback);
       if (this.state.intervalId !== null) {
         clearInterval(this.state.intervalId);
         this.state.intervalId = null;
@@ -363,6 +394,14 @@ DataWidget(
 
     startImuSegment() {
       if (this.state.imuController?.active) return;
+      const imuConnection = this.state.imuConnection;
+      if (!imuConnection) {
+        this.state.statusWidget?.setProperty(
+          prop.TEXT,
+          "Workout metrics active\nConnect Dofek for motion",
+        );
+        return;
+      }
       const slot: ImuFileSlot | null = !this.state.pendingImuA
         ? "A"
         : !this.state.pendingImuB
@@ -393,23 +432,14 @@ DataWidget(
           append: appendSamples,
           finalize: finalizeSessionFile,
         },
-        onChunk: ({ sessionStartMs, hasGyroscope, samples }) => {
-          const installId = ensureInstallId(settings.settingsStorage);
-          const sync = this.state.imuChunkSync;
-          if (!sync) throw new Error("Workout IMU chunk sync is unavailable.");
-          void sync
-            .enqueue(
-            {
-              connectionType: "zepp-workout",
-              installId,
-              segmentId: `${installId}:workout-imu:${sessionStartMs}`,
-              sessionStartMs,
-              hasGyroscope,
-              samples,
-            },
-            )
-            .catch((error: unknown) => this.reportError(error, "workout-imu-chunk"));
-        },
+        onChunk: createWatchImuChunkHandler({
+          connectionType: "zepp-workout",
+          segmentName: "workout-imu",
+          getInstallId: () => ensureInstallId(settings.settingsStorage),
+          getDestination: () => imuConnection,
+          getSync: () => this.state.imuChunkSync,
+          onError: (error) => this.reportError(error, "workout-imu-chunk"),
+        }),
         onError: (error) => {
           this.state.imuController = null;
           this.reportError(error, "workout-imu");
@@ -503,6 +533,11 @@ DataWidget(
       }
     },
 
+    async refreshImuConnection() {
+      const result = await this.request({ method: "imu.getPreferences", params: {} });
+      this.state.imuConnection = updateWatchImuConnection(settings.settingsStorage, result);
+    },
+
     onResume() {
       this.state.focused = true;
       void this.refreshConnection();
@@ -511,7 +546,11 @@ DataWidget(
         .catch((error: unknown) => this.reportError(error, "workout-imu-chunk-retry"));
       this.retryImuTransfers();
       this.startCollection();
-      this.startImuSegment();
+      void this.refreshImuConnection()
+        .catch((error: unknown) => this.reportError(error, "workout-imu-connection"))
+        .finally(() => {
+          if (this.state.focused) this.startImuSegment();
+        });
     },
 
     onPause() {

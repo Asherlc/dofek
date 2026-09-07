@@ -6,6 +6,7 @@ import type { MetricStreamRowInput } from "../../../../src/metric-stream/events.
 import { generateCompanionToken, hashCompanionToken } from "../companion/token-repository.ts";
 
 const { createIngestZosHealthRouter } = await import("./ingest-zos-health.ts");
+const { createIngestZosImuRouter } = await import("./ingest-zos-imu.ts");
 
 const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
 
@@ -113,18 +114,14 @@ describe("POST /api/ingest/zos-health", () => {
     `);
 
     app = express();
-    app.use(
-      "/api/ingest",
-      createIngestZosHealthRouter({
-        db: testCtx.db,
-        metricStreamPublisher: {
-          publishRows: async (rows) => {
-            publishedMetricRows.push(...rows);
-            return [];
-          },
-        },
-      }),
-    );
+    const metricStreamPublisher = {
+      publishRows: async (rows: MetricStreamRowInput[]) => {
+        publishedMetricRows.push(...rows);
+        return [];
+      },
+    };
+    app.use("/api/ingest", createIngestZosHealthRouter({ db: testCtx.db, metricStreamPublisher }));
+    app.use("/api/ingest", createIngestZosImuRouter({ db: testCtx.db, metricStreamPublisher }));
   });
 
   beforeEach(async () => {
@@ -651,20 +648,25 @@ describe("POST /api/ingest/zos-health", () => {
       headers: { Authorization: `Bearer ${validToken}` },
       rawBody: true,
       body: {
+        accountId: TEST_USER_ID,
         version: 1,
-        batchId: "segment-integration:0:40",
+        batchId: "segment-integration:0",
         source: { connectionType: "zepp", installId: "install-integration" },
         events: [
           {
-            eventId: "segment-integration:0:40",
+            eventId: "segment-integration:0",
             createdAt: "2024-07-03T10:48:20.040Z",
             payload: {
+              formatVersion: 2,
               segmentId: "segment-integration",
               sessionStartMs: 1_720_000_000_000,
               hasGyroscope: false,
+              sampleOffset: 0,
+              accelFreqMode: 1,
+              gyroFreqMode: 0,
               samples: [
-                { tMs: 0, ax: 1, ay: 2, az: 3, gx: 0, gy: 0, gz: 0 },
-                { tMs: 40, ax: 4, ay: 5, az: 6, gx: 0, gy: 0, gz: 0 },
+                { tMs: 0, sensor: "accelerometer", x: 1, y: 2, z: 3 },
+                { tMs: 40, sensor: "accelerometer", x: 4, y: 5, z: 6 },
               ],
             },
           },
@@ -675,17 +677,17 @@ describe("POST /api/ingest/zos-health", () => {
     expect(response.status).toBe(200);
     expect(JSON.parse(response.body)).toEqual({
       status: "ok",
-      acceptedEventIds: ["segment-integration:0:40"],
+      acceptedEventIds: ["segment-integration:0"],
       rejected: [],
     });
     expect(publishedMetricRows).toEqual([
       expect.objectContaining({
-        channel: "accel",
+        channel: "accelerometer",
         deviceId: "zepp:install-integration",
         vector: [1, 2, 3],
       }),
       expect.objectContaining({
-        channel: "accel",
+        channel: "accelerometer",
         deviceId: "zepp:install-integration",
         vector: [4, 5, 6],
       }),

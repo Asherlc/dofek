@@ -99,13 +99,13 @@ describe("decodeBin", () => {
     expect(result.observedHz).toBe(26);
     expect(result.samples).toHaveLength(2);
     expect(result.samples[0]?.tMs).toBe(0);
-    expect(result.samples[0]?.ax).toBeCloseTo(1.0);
-    expect(result.samples[0]?.ay).toBeCloseTo(0.5);
-    expect(result.samples[0]?.az).toBeCloseTo(-9.8);
+    expect(result.samples[0]?.x).toBeCloseTo(1.0);
+    expect(result.samples[0]?.y).toBeCloseTo(0.5);
+    expect(result.samples[0]?.z).toBeCloseTo(-9.8);
     expect(result.samples[1]?.tMs).toBe(100);
-    expect(result.samples[1]?.ax).toBeCloseTo(1.1);
-    expect(result.samples[1]?.ay).toBeCloseTo(0.6);
-    expect(result.samples[1]?.az).toBeCloseTo(-9.7);
+    expect(result.samples[1]?.x).toBeCloseTo(1.1);
+    expect(result.samples[1]?.y).toBeCloseTo(0.6);
+    expect(result.samples[1]?.z).toBeCloseTo(-9.7);
   });
 
   it("decodes a session with gyro", () => {
@@ -125,14 +125,15 @@ describe("decodeBin", () => {
 
     expect(result.hasGyro).toBe(true);
     expect(result.gyroFreqMode).toBe(1);
-    expect(result.samples).toHaveLength(1);
+    expect(result.samples).toHaveLength(2);
+    expect(result.samples[1]?.sensor).toBe("gyroscope");
     expect(result.samples[0]?.tMs).toBe(50);
-    expect(result.samples[0]?.ax).toBeCloseTo(0.0);
-    expect(result.samples[0]?.ay).toBeCloseTo(0.1);
-    expect(result.samples[0]?.az).toBeCloseTo(-9.8);
-    expect(result.samples[0]?.gx).toBeCloseTo(0.5);
-    expect(result.samples[0]?.gy).toBeCloseTo(-0.3);
-    expect(result.samples[0]?.gz).toBeCloseTo(0.0);
+    expect(result.samples[0]?.x).toBeCloseTo(0.0);
+    expect(result.samples[0]?.y).toBeCloseTo(0.1);
+    expect(result.samples[0]?.z).toBeCloseTo(-9.8);
+    expect(result.samples[1]?.x).toBeCloseTo(0.5);
+    expect(result.samples[1]?.y).toBeCloseTo(-0.3);
+    expect(result.samples[1]?.z).toBeCloseTo(0.0);
   });
 
   it("throws on invalid magic", () => {
@@ -164,7 +165,7 @@ describe("decodeBin", () => {
     const result = decodeBin(buffer);
 
     expect(result.samples).toHaveLength(3);
-    expect(result.samples[2]).toEqual({ tMs: 200, ax: 7, ay: 8, az: 9 });
+    expect(result.samples[2]).toEqual({ tMs: 200, sensor: "accelerometer", x: 7, y: 8, z: 9 });
   });
 
   it("round-trips a 64-bit epoch-ms session timestamp", () => {
@@ -205,4 +206,54 @@ describe("decodeBin", () => {
     expect(result.samples).toHaveLength(0);
     expect(result.sampleCount).toBe(0);
   });
+});
+
+it("rejects unsupported versions and trailing incomplete chunk headers", () => {
+  const header = createHeader({ sampleCount: 0 });
+  new DataView(header).setUint8(4, 3);
+  expect(() => decodeBin(header)).toThrow("Unsupported");
+  new DataView(header).setUint8(4, 1);
+  expect(() => decodeBin(concat(header, new ArrayBuffer(1)))).toThrow("Truncated");
+});
+
+function encodeV2Fixture(
+  samples: Array<{ tMs: number; sensor: string; x: number; y: number; z: number }>,
+): ArrayBuffer {
+  const chunk = new ArrayBuffer(4 + samples.length * 20);
+  const view = new DataView(chunk);
+  view.setUint16(0, samples.length, true);
+  samples.forEach((sample, index) => {
+    const offset = 4 + index * 20;
+    view.setUint32(offset, sample.tMs, true);
+    view.setUint32(offset + 4, sample.sensor === "accelerometer" ? 0 : 1, true);
+    view.setFloat32(offset + 8, sample.x, true);
+    view.setFloat32(offset + 12, sample.y, true);
+    view.setFloat32(offset + 16, sample.z, true);
+  });
+  return chunk;
+}
+
+it("decodes independently timestamped v2 vectors", () => {
+  const samples = [
+    { tMs: 3, sensor: "gyroscope" as const, x: 1, y: 2, z: 3 },
+    { tMs: 8, sensor: "accelerometer" as const, x: 4, y: 5, z: 6 },
+  ];
+  const header = createHeader({ hasGyro: true, sampleCount: 2 });
+  new DataView(header).setUint8(4, 2);
+  const result = decodeBin(concat(header, encodeV2Fixture(samples)));
+  expect(result.version).toBe(2);
+  expect(result.samples).toEqual(samples);
+});
+it("validates v2 tags, gyro flags, count and truncated vectors", () => {
+  const chunk = encodeV2Fixture([{ tMs: 3, sensor: "gyroscope", x: 1, y: 2, z: 3 }]);
+  const header = createHeader({ hasGyro: true, sampleCount: 1 });
+  const view = new DataView(header);
+  view.setUint8(4, 2);
+  view.setUint8(5, 0);
+  expect(() => decodeBin(concat(header, chunk))).toThrow("flag");
+  view.setUint8(5, 1);
+  expect(() => decodeBin(concat(header, chunk.slice(0, -1)))).toThrow("Truncated");
+  new DataView(chunk).setUint32(8, 2, true);
+  expect(() => decodeBin(concat(header, chunk))).toThrow("tag");
+  expect(() => decodeBin(header)).toThrow("count mismatch");
 });

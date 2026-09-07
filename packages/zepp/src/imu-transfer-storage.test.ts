@@ -2,6 +2,7 @@ import { readFileSync, renameSync, writeFileSync } from "@zos/fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   clearPendingImuTransfer,
+  initialImuFileSlot,
   persistAndApplyPendingImuTransfer,
   readPendingImuTransfers,
   savePendingImuTransfer,
@@ -45,6 +46,10 @@ describe("pending IMU transfer storage", () => {
       files.delete(oldPath);
       return 0;
     });
+  });
+
+  it("starts new transfer sessions in slot A", () => {
+    expect(initialImuFileSlot()).toBe("A");
   });
 
   it("persists completed slot metadata and restores it after restart", () => {

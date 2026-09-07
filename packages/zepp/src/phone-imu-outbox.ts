@@ -1,7 +1,7 @@
 import { createEmptyOutbox, type DurableOutbox, type OutboxEntry } from "./durable-outbox.ts";
-import type { HealthEnvelopeV1, ValidationIssue, ZeppConnectionType } from "./health-contract.ts";
-import type { ImuChunkPayload } from "./imu-upload.ts";
-import { parseImuEnvelope } from "./imu-upload.ts";
+import type { ValidationIssue, ZeppConnectionType } from "./health-contract.ts";
+import type { ImuChunkPayload, ImuConnectionBinding, ImuEnvelope } from "./imu-upload.ts";
+import { parseImuConnectionBinding, parseImuEnvelope } from "./imu-upload.ts";
 import type { SettingsStorage } from "./phone-health-outbox.ts";
 import { STORAGE_KEYS } from "./storage-keys.ts";
 
@@ -19,12 +19,45 @@ interface PhoneImuOutboxIndex {
 export interface PhoneImuEvent {
   source: { connectionType: ZeppConnectionType; installId: string };
   payload: ImuChunkPayload;
+  connection?: LegacyImuConnectionReceipt | ImuConnectionBinding;
+}
+
+interface LegacyImuConnectionReceipt {
+  serverUrl: string;
+  token: string;
 }
 
 export type PhoneImuOutbox = DurableOutbox<PhoneImuEvent>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseConnection(
+  value: unknown,
+): LegacyImuConnectionReceipt | ImuConnectionBinding | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value) || typeof value.serverUrl !== "string" || !value.serverUrl.trim()) {
+    throw new Error("Phone IMU connection binding is invalid.");
+  }
+  if (typeof value.accountId === "string" && value.accountId.trim() && !("token" in value)) {
+    return { serverUrl: value.serverUrl, accountId: value.accountId };
+  }
+  if (typeof value.token === "string" && value.token.trim() && !("accountId" in value)) {
+    return { serverUrl: value.serverUrl, token: value.token };
+  }
+  throw new Error("Phone IMU connection binding is invalid.");
+}
+
+function sameConnection(
+  left: PhoneImuEvent["connection"],
+  right: PhoneImuEvent["connection"],
+): boolean {
+  if (!left || !right) return left === right;
+  if (left.serverUrl !== right.serverUrl) return false;
+  return "accountId" in left
+    ? "accountId" in right && left.accountId === right.accountId
+    : "token" in right && left.token === right.token;
 }
 
 function parseEntry(value: unknown): OutboxEntry<PhoneImuEvent> {
@@ -51,7 +84,11 @@ function parseEntry(value: unknown): OutboxEntry<PhoneImuEvent> {
   return {
     eventId: event.eventId,
     createdAt: event.createdAt,
-    payload: { source: envelope.source, payload: event.payload },
+    payload: {
+      source: envelope.source,
+      payload: event.payload,
+      connection: parseConnection(value.payload.connection),
+    },
     attempts: Number(value.attempts),
     ...(typeof value.lastError === "string" ? { lastError: value.lastError } : {}),
   };
@@ -169,23 +206,57 @@ export function readPhoneImuOutbox(storage: SettingsStorage): PhoneImuOutbox {
 export function readPhoneImuPendingBatch(
   storage: SettingsStorage,
   limit: number,
+  connection?: ImuConnectionBinding,
 ): OutboxEntry<PhoneImuEvent>[] {
+  return scanPhoneImuPendingBatch(storage, limit, connection, 0).entries;
+}
+
+export function scanPhoneImuPendingBatch(
+  storage: SettingsStorage,
+  limit: number,
+  connection: ImuConnectionBinding | undefined,
+  startIndex: number,
+): { entries: OutboxEntry<PhoneImuEvent>[]; nextStartIndex: number } {
   const index = readIndex(storage);
-  const firstId = index.pending[0];
-  if (!firstId) return [];
-  const first = readStoredEntry(storage, "pending", firstId);
+  let first: OutboxEntry<PhoneImuEvent> | undefined;
+  let firstIndex: number | undefined;
+  for (const [offset, eventId] of index.pending.slice(startIndex).entries()) {
+    const entry = readStoredEntry(storage, "pending", eventId);
+    if (connection && !sameConnection(entry.payload.connection, connection)) continue;
+    first = entry;
+    firstIndex = startIndex + offset;
+    break;
+  }
+  if (!first || firstIndex === undefined) {
+    return { entries: [], nextStartIndex: index.pending.length };
+  }
   const entries = [first];
-  for (const eventId of index.pending.slice(1, MAX_PENDING_BATCH_SCAN)) {
+  for (const eventId of index.pending.slice(firstIndex + 1, firstIndex + MAX_PENDING_BATCH_SCAN)) {
     if (entries.length >= limit) break;
     const entry = readStoredEntry(storage, "pending", eventId);
     if (
       entry.payload.source.connectionType === first.payload.source.connectionType &&
-      entry.payload.source.installId === first.payload.source.installId
+      entry.payload.source.installId === first.payload.source.installId &&
+      sameConnection(entry.payload.connection, first.payload.connection)
     ) {
       entries.push(entry);
     }
   }
-  return entries;
+  return { entries, nextStartIndex: firstIndex };
+}
+
+export function hasRecoverableLegacyPhoneImuEntries(storage: SettingsStorage): boolean {
+  const index = readIndex(storage);
+  const hasPending = index.pending.some((eventId) => {
+    const connection = readStoredEntry(storage, "pending", eventId).payload.connection;
+    return !connection || !("accountId" in connection);
+  });
+  if (hasPending) return true;
+  return index.quarantine.some((eventId) => {
+    const entry = readStoredEntry(storage, "quarantine", eventId);
+    const isLegacy = !entry.payload.connection || !("accountId" in entry.payload.connection);
+    return isLegacy && entry.issues.some((issue) => issue.path === "connection");
+  });
 }
 
 export function recordPhoneImuOutboxAttempts(
@@ -236,8 +307,17 @@ export function quarantinePhoneImuOutboxEntry(
 
 export function persistImuEnvelope(
   storage: SettingsStorage,
-  envelope: HealthEnvelopeV1<ImuChunkPayload>,
+  envelope: ImuEnvelope,
+  legacyRecoveryBinding?: ImuConnectionBinding,
 ): { acceptedEventIds: string[] } {
+  const connection = envelope.destination
+    ? parseImuConnectionBinding(envelope.destination)
+    : legacyRecoveryBinding
+      ? parseImuConnectionBinding(legacyRecoveryBinding)
+      : undefined;
+  if (!connection) {
+    throw new LegacyImuAccountBindingRequiredError();
+  }
   const index = readIndex(storage);
   const known = new Set([...index.pending, ...index.quarantine]);
   for (const event of envelope.events) {
@@ -245,7 +325,7 @@ export function persistImuEnvelope(
     const entry = {
       eventId: event.eventId,
       createdAt: event.createdAt,
-      payload: { source: envelope.source, payload: event.payload },
+      payload: { source: envelope.source, payload: event.payload, connection },
       attempts: 0,
     } satisfies OutboxEntry<PhoneImuEvent>;
     const key = entryKey("pending", event.eventId);
@@ -257,4 +337,61 @@ export function persistImuEnvelope(
   }
   persistIndex(storage, index);
   return { acceptedEventIds: envelope.events.map((event) => event.eventId) };
+}
+
+export class LegacyImuAccountBindingRequiredError extends Error {
+  constructor() {
+    super("Choose the account for retained motion recordings in Zepp settings.");
+    this.name = "LegacyImuAccountBindingRequiredError";
+  }
+}
+
+export function assignLegacyPhoneImuOutbox(
+  storage: SettingsStorage,
+  binding: ImuConnectionBinding,
+): number {
+  const connection = parseImuConnectionBinding(binding);
+  const index = readIndex(storage);
+  let assigned = 0;
+  for (const eventId of index.pending) {
+    const entry = readStoredEntry(storage, "pending", eventId);
+    if (entry.payload.connection && "accountId" in entry.payload.connection) continue;
+    storage.setItem(
+      entryKey("pending", eventId),
+      serializeEntry({
+        ...entry,
+        payload: { ...entry.payload, connection },
+      }),
+    );
+    assigned += 1;
+  }
+  const reassignedQuarantineIds: string[] = [];
+  for (const eventId of [...index.quarantine]) {
+    const entry = readStoredEntry(storage, "quarantine", eventId);
+    if (
+      (entry.payload.connection && "accountId" in entry.payload.connection) ||
+      !entry.issues.some((issue) => issue.path === "connection")
+    ) {
+      continue;
+    }
+    storage.setItem(
+      entryKey("pending", eventId),
+      serializeEntry({
+        eventId: entry.eventId,
+        createdAt: entry.createdAt,
+        payload: { ...entry.payload, connection },
+        attempts: entry.attempts,
+        ...(entry.lastError ? { lastError: entry.lastError } : {}),
+      }),
+    );
+    index.quarantine = index.quarantine.filter((candidate) => candidate !== eventId);
+    if (!index.pending.includes(eventId)) index.pending.push(eventId);
+    reassignedQuarantineIds.push(eventId);
+    assigned += 1;
+  }
+  persistIndex(storage, index);
+  for (const eventId of reassignedQuarantineIds) {
+    removeStoredEntry(storage, "quarantine", eventId);
+  }
+  return assigned;
 }

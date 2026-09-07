@@ -20,10 +20,17 @@ interface ImuSessionControllerOptions {
   createCollector(options: CollectorOptions): ImuCollector;
   file: {
     reset(meta: SessionFileMeta, path: string): void;
-    append(samples: ImuSample[], hasGyro: boolean, path: string): void;
+    append(samples: ImuSample[], path: string): void;
     finalize(sampleCount: number, observedHzX100: number, path: string): void;
   };
-  onChunk?(chunk: { sessionStartMs: number; hasGyroscope: boolean; samples: ImuSample[] }): void;
+  onChunk?(chunk: {
+    sessionStartMs: number;
+    hasGyroscope: boolean;
+    samples: ImuSample[];
+    sampleOffset: number;
+    accelFreqMode: number;
+    gyroFreqMode: number;
+  }): void;
   onProgress?(stats: { sampleCount: number; observedHzX100: number }): void;
   onError(error: unknown): void;
 }
@@ -52,6 +59,8 @@ export function createImuSessionController(
   let observedHzX100 = 0;
   let pending: ImuSample[] = [];
   let segmentSampleOriginMs = 0;
+  let collectorStartMs = 0;
+  let flushedSampleCount = 0;
 
   const collector = options.createCollector({
     requestedFreqModeIndex: options.requestedFreqModeIndex,
@@ -107,9 +116,17 @@ export function createImuSessionController(
   function flush(finalize: boolean): void {
     if (pending.length > 0 && ready) {
       const samples = pending;
-      options.file.append(samples, ready.hasGyroscope, path);
+      options.file.append(samples, path);
       pending = [];
-      options.onChunk?.({ sessionStartMs, hasGyroscope: ready.hasGyroscope, samples });
+      options.onChunk?.({
+        sessionStartMs,
+        hasGyroscope: ready.hasGyroscope,
+        samples,
+        sampleOffset: flushedSampleCount,
+        accelFreqMode: ready.accelMode,
+        gyroFreqMode: ready.gyroMode ?? 0,
+      });
+      flushedSampleCount += samples.length;
     }
     if (finalize) {
       options.file.finalize(sampleCount, observedHzX100, path);
@@ -162,9 +179,11 @@ export function createImuSessionController(
         observedHzX100 = 0;
         pending = [];
         segmentSampleOriginMs = 0;
+        collectorStartMs = sessionStartMs;
+        flushedSampleCount = 0;
         options.file.reset(meta(), path);
         active = true;
-        ready.start();
+        ready.start(collectorStartMs);
         return true;
       } catch (error) {
         active = false;
@@ -181,15 +200,16 @@ export function createImuSessionController(
     },
     rotate(nextPath) {
       if (!active || !ready) return null;
+      const nextSessionStartMs = options.now();
+      if (nextSessionStartMs <= sessionStartMs) return null;
       let completed: ImuSegmentResult | null = null;
       try {
         flush(true);
         completed = result();
         path = nextPath;
-        sessionStartMs = options.now();
-        const collectorStartMs = ready.getStats().sessionStartMs;
-        segmentSampleOriginMs =
-          collectorStartMs > 0 ? Math.max(0, sessionStartMs - collectorStartMs) : 0;
+        sessionStartMs = nextSessionStartMs;
+        segmentSampleOriginMs = sessionStartMs - collectorStartMs;
+        flushedSampleCount = 0;
         sampleCount = 0;
         observedHzX100 = 0;
         pending = [];

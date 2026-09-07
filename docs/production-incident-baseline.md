@@ -23852,6 +23852,14 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Confirm the fresh Metro bundle and the
   remaining hosted checks pass, then remove no configuration guards.
 
+## 2026-09-06 — Local Zepp validation blocked by Docker network and memory exhaustion
+
+- **Status / impact:** Local validation remains blocked; no production service was changed. Source tests and typechecks passed, both Zepp packages built, and the new raw-vector ClickHouse regression passed in its initial run. Full analytics lint and the complete seven-test sink integration suite could not finish reliably.
+- **Initial command / cause:** `pnpm test:integration -- src/metric-stream/clickhouse-sink.integration.test.ts` failed during Compose startup with `all predefined address pools have been fully subnetted`. Network inspection found `gifted-chicken_default` had no connected containers; removing only that empty network let the current workspace create its own network and start services. Docker requires disconnected containers before [network removal](https://docs.docker.com/reference/cli/docker/network/rm/).
+- **Memory evidence:** During an isolated repeat, live Docker events recorded `oom` at `2026-09-07T05:41:17Z`, followed by exit code `137`. The Docker VM reported 8,216,862,720 bytes of memory and 74 running containers. Post-restart `OOMKilled=false` and reset cgroup counters did not expose the earlier event. Captured memory samples peaked below the 1.5 GiB container cap, so the evidence does not distinguish an unsampled container spike from broader VM memory pressure. Raw local captures: `/tmp/dofek-zepp-sink-events.log` and `/tmp/dofek-zepp-sink-stats.log`.
+- **Effect on checks:** The initial seven-test integration run passed the new Zepp test and two existing tests before a restart caused timeouts and connection resets. `pnpm lint` passed all non-database checks but SQLFluff failed with `RemoteDisconnected` while compiling against ClickHouse. Another isolated run captured the OOM; a final direct run of the full sink suite failed in setup with `socket hang up`.
+- **Mitigation attempted:** Stopped only this workspace's unused Postgres, Redis and Redpanda containers, health-checked the existing ClickHouse container, and reran the same seven-test sink suite directly with the workspace environment. Connection loss persisted. No other running workspace containers, volumes, memory caps, timeouts, retries, test skips or production configuration were changed.
+- **Follow-up:** On 2026-09-07, the user explicitly approved committing and pushing this change so CI can complete the blocked checks. Hosted results remain pending; no test gate was disabled. Restore sufficient local Docker capacity and capture Docker events live during future restarts rather than relying solely on post-restart status.
 ## 2026-09-04 — Local validation found a repeatedly restarting ClickHouse container
 
 - **Status:** Mitigated local-infrastructure issue; all required Zepp integration and repository lint gates completed.
@@ -25221,6 +25229,63 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Confirm the replacement Metro Bundle job and
   complete PR workflow pass on the fix commit.
 
+## 2026-09-07 — Zepp capture PR failed security, dead-code, and mutation gates
+
+- **Status:** Resolved. The final replacement workflow passed all 113 checks.
+- **Symptoms / user impact:** PR 2676 was mergeable but blocked by CodeQL,
+  project SAST, and Knip after the Zepp workout-capture merge. No deployed data
+  path was affected.
+- **Evidence / root cause:** The [failed workflow](https://github.com/Asherlc/dofek/actions/runs/34143579342)
+  reported `packages/zepp/tools/decode-imu.ts` as unused. The
+  [SAST job](https://github.com/Asherlc/dofek/actions/runs/34143578822/job/101810660737)
+  first failed on `semgrep.no-console-log-in-production` at decoder lines 18
+  and 25. CodeQL separately annotated both authenticated handlers in
+  `packages/server/src/routes/ingest-zos-imu.ts` with `Missing rate limiting`.
+  The documented decoder was absent from Knip's Zepp entry list, it wrote CLI
+  output through `console.log`, and the new router authenticated requests
+  without an Express rate limiter.
+- **Direct fix:** Registered the decoder as a Knip entry, wrote CLI results
+  through `process.stdout`, and applied a 600-request-per-15-minute limiter to
+  the Zepp IMU router before authentication. Node documents `process.stdout`
+  as the standard output stream ([Node process API](https://nodejs.org/api/process.html#processstdout)),
+  and the limiter uses the project's existing `express-rate-limit` middleware
+  pattern.
+- **Validation:** The exact Knip command passes with the required mobile Sentry
+  configuration present. Zepp lint, server typecheck, and the 31-test IMU route
+  suite pass; the route test verifies request 601 receives HTTP 429 without an
+  additional token lookup. In the first
+  [replacement workflow](https://github.com/Asherlc/dofek/actions/runs/34144454455),
+  CodeQL, SAST, and Knip passed. Its first fatal mutation diagnostics were
+  surviving input-validation and queue-control mutants in the newly added Zepp
+  modules. Focused local Stryker runs now report 100% for companion account
+  handoff, side upload, sync coordinators, and phone IMU drain; 88.0%
+  for the durable phone outbox; 93.2% for the transfer manifest; 94.6% for IMU
+  envelopes; and 82.1% for durable watch upload, all above the enforced 75%
+  threshold. The same workflow's
+  integration shard separately failed after three successful dbt executions:
+  `activity-data-integrity-repair.integration.test.ts` expected two
+  `activity_sensor_summary_rows` and received none, then retries were stopped by
+  its rollback-eligible journal guard. That test and its serving models were
+  unchanged by the Zepp branch.
+- **Direct mutation fix:** Added boundary cases for malformed bindings, token
+  trimming, legacy account receipts, cross-account selection, disconnected
+  queues, acknowledgements, quarantine recovery, retry wiring, and watch chunk
+  handoff. Removed redundant response-ID filters whose downstream durable queue
+  operations already ignore unknown IDs, and made the selected current binding
+  the explicit upload destination. The second replacement run exposed an
+  uncovered initial file-slot helper; its direct behavior test raises the
+  focused transfer-manifest mutation score from the shard's 50% to 93.2%. The
+  next run exposed under-tested validation branches in the IMU envelope shard;
+  direct destination-normalization, versioned sample-limit, gyroscope-marker,
+  and transport-metadata boundary cases raise that file from 72.8% to 94.6%.
+  After the final parser correction, [Stryker shard 12](https://github.com/Asherlc/dofek/actions/runs/34161690449/job/101865225562)
+  scored `record-fields.ts` at 42.86% because its existing `isRecord` and
+  `nullable` branches had no direct coverage. Boundary tests raised the exact
+  local mutation run to 100% with 21 killed mutations and no survivors or
+  uncovered mutations.
+- **Remaining risk / follow-up:** The [final replacement workflow](https://github.com/Asherlc/dofek/actions/runs/34162519280)
+  passed all 113 checks, including every integration and mutation shard. No
+  resilience knob or validation bypass remains.
 ## 2026-09-07 — Local Docker capacity blocked modification-system validation
 
 - **Status:** Address-pool exhaustion and local resource pressure resolved.
@@ -25577,6 +25642,18 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Validation / follow-up:** Confirm the replacement settings layout cases
   and full browser job pass before merging.
 
+## 2026-09-07 — Zepp outbox test wording blocked spell check
+
+- **Scope / impact:** PR #2676 validation only; no production impact.
+- **Evidence / root cause:** The [spell-check job](https://github.com/Asherlc/dofek/actions/runs/34164619692/job/101873232778)
+  failed while checking changed text. Its first fatal diagnostic was
+  `packages/zepp/src/phone-imu-sync.test.ts:240:16 - Unknown word (rescan)`.
+  The new performance regression test used a word that was absent from the
+  repository dictionary.
+- **Direct fix:** Rephrased the test title as “scan … again.” No runtime code,
+  dictionary exception, or CI setting changed.
+- **Validation / follow-up:** The focused CSpell command passes locally. Confirm
+  the replacement spell-check job and aggregate CI gate pass before merging.
 ## 2026-09-07 — Human-record foundation merge blocked by review conversations
 
 - **Symptoms / impact:** The direct squash merge of [PR 2678](https://github.com/Asherlc/dofek/pull/2678)

@@ -1,5 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ImuSegmentResult, ImuSessionController } from "./imu-session-controller.ts";
+import { STORAGE_KEYS } from "./storage-keys.ts";
 import type { LiveWorkoutSnapshot } from "./workout-live.ts";
 import type { LiveWorkoutBatch } from "./workout-live-storage.ts";
 
@@ -44,6 +45,10 @@ const moduleMocks = vi.hoisted(() => ({
   deleteWidget: vi.fn(),
   getSportData: vi.fn(),
   heartRateGetLast: vi.fn(() => 148),
+  heartRateConstruct: vi.fn(),
+  heartRateGetCurrent: vi.fn(() => 162),
+  heartRateOnCurrentChange: vi.fn<(callback: () => void) => void>(),
+  heartRateOffCurrentChange: vi.fn<(callback: () => void) => void>(),
   createImuSessionController: vi.fn(),
   readPendingImuTransfers: vi.fn(),
   savePendingImuTransfer: vi.fn(),
@@ -69,6 +74,12 @@ vi.mock("@zos/sensor", () => ({
   Gyroscope: class {},
   checkSensor: vi.fn(() => true),
   HeartRate: class {
+    constructor() {
+      moduleMocks.heartRateConstruct();
+    }
+    getCurrent = moduleMocks.heartRateGetCurrent;
+    onCurrentChange = moduleMocks.heartRateOnCurrentChange;
+    offCurrentChange = moduleMocks.heartRateOffCurrentChange;
     getLast(): number {
       return moduleMocks.heartRateGetLast();
     }
@@ -90,6 +101,12 @@ vi.mock("@zos/ui", () => ({
 }));
 vi.mock("@zos/utils", () => ({
   HeartRate: class {
+    constructor() {
+      moduleMocks.heartRateConstruct();
+    }
+    getCurrent = moduleMocks.heartRateGetCurrent;
+    onCurrentChange = moduleMocks.heartRateOnCurrentChange;
+    offCurrentChange = moduleMocks.heartRateOffCurrentChange;
     getLast(): number {
       return moduleMocks.heartRateGetLast();
     }
@@ -149,6 +166,7 @@ interface WidgetState {
   statusWidget: WidgetReference | null;
   focused: boolean;
   imuController: ImuSessionController | null;
+  imuConnection: { serverUrl: string; accountId: string } | null;
   activeImuSlot: "A" | "B";
   pendingImuA: ImuSegmentResult | null;
   pendingImuB: ImuSegmentResult | null;
@@ -171,6 +189,7 @@ interface DataWidgetConfiguration {
   stopImuSegment(this: DataWidgetContext): void;
   sendImuSegment(this: DataWidgetContext, result: ImuSegmentResult, slot: "A" | "B"): void;
   retryImuTransfers(this: DataWidgetContext): void;
+  refreshImuConnection(this: DataWidgetContext): Promise<void>;
   reportError(this: DataWidgetContext, error: unknown, category: string): void;
   onResume(this: DataWidgetContext): void;
   onPause(this: DataWidgetContext): void;
@@ -198,6 +217,7 @@ function makeContext(): DataWidgetContext {
       statusWidget: null,
       focused: false,
       imuController: null,
+      imuConnection: { serverUrl: "https://dofek.test", accountId: "account-1" },
       activeImuSlot: "A",
       pendingImuA: null,
       pendingImuB: null,
@@ -212,7 +232,12 @@ function makeContext(): DataWidgetContext {
 beforeAll(async () => {
   vi.stubGlobal("settings", {
     settingsStorage: {
-      getItem: vi.fn(() => "install-1"),
+      getItem: vi.fn((key: string) =>
+        key === STORAGE_KEYS.IMU_CONNECTION_BINDING
+          ? JSON.stringify({ serverUrl: "https://dofek.test", accountId: "account-1" })
+          : "install-1",
+      ),
+      removeItem: vi.fn(),
       setItem: vi.fn(),
     },
   });
@@ -237,7 +262,11 @@ beforeEach(() => {
           rejected: [],
         }
       : request.method === "imu.getPreferences"
-        ? { hasCredentials: true, pairing: null }
+        ? {
+            hasCredentials: true,
+            pairing: null,
+            imuConnection: { serverUrl: "https://dofek.test", accountId: "account-1" },
+          }
         : { ok: true },
   );
   moduleMocks.createImuSessionController.mockImplementation(() => mockController());
@@ -642,8 +671,7 @@ describe("workout extension data widget", () => {
       expect.any(Function),
     );
     const heartRateReader = moduleMocks.collectLiveWorkoutSnapshot.mock.calls[0]?.[1];
-    expect(heartRateReader?.()).toBe(148);
-    expect(moduleMocks.heartRateGetLast).toHaveBeenCalledOnce();
+    expect(heartRateReader?.()).toBe(0);
     expect(moduleMocks.findLiveWorkoutExternalId).toHaveBeenCalledWith(snapshot, []);
     expect(moduleMocks.writeLiveWorkoutBuffer).toHaveBeenCalledWith({
       batches: context.state.pendingBatches,
@@ -676,12 +704,13 @@ describe("workout extension data widget", () => {
       "workout-collection",
       expect.any(Error),
     );
-    expect(moduleMocks.request).toHaveBeenCalledWith(
-      expect.objectContaining({
-        method: "telemetry.report",
-        params: expect.objectContaining({ category: "workout-collection" }),
+    expect(moduleMocks.request).toHaveBeenCalledWith({
+      method: "telemetry.report",
+      params: expect.objectContaining({
+        message: "sensor unavailable",
+        category: "workout-collection",
       }),
-    );
+    });
     expect(context.state.collecting).toBe(false);
   });
 
@@ -825,7 +854,7 @@ describe("workout extension data widget", () => {
         snapshots: [{ recordedAt: "2024-07-03T09:51:52.000Z", metrics: {} }],
       },
     ];
-    moduleMocks.request.mockRejectedValue(new Error("offline"));
+    moduleMocks.request.mockRejectedValueOnce(new Error("offline")).mockResolvedValue(undefined);
 
     await context.flushSnapshots.call(context);
 
@@ -836,7 +865,7 @@ describe("workout extension data widget", () => {
     expect(context.state.flushing).toBe(false);
   });
 
-  it("starts, stops, resumes, pauses, and destroys all focused collection", () => {
+  it("starts, stops, resumes, pauses, and destroys all focused collection", async () => {
     vi.useFakeTimers();
     const context = makeContext();
     context.collectSnapshot = vi.fn().mockResolvedValue(undefined);
@@ -859,6 +888,9 @@ describe("workout extension data widget", () => {
     expect(context.flushSnapshots).toHaveBeenCalledOnce();
     expect(context.stopImuSegment).toHaveBeenCalledOnce();
     context.onResume.call(context);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
     expect(context.state.focused).toBe(true);
     expect(context.state.intervalId).not.toBeNull();
     expect(context.startImuSegment).toHaveBeenCalledOnce();
@@ -868,5 +900,90 @@ describe("workout extension data widget", () => {
     context.stopCollection.call(context);
     expect(context.flushSnapshots).toHaveBeenCalledTimes(3);
     vi.useRealTimers();
+  });
+
+  it("reads continuous heart rate only in callbacks and clears it across focus changes", async () => {
+    vi.useFakeTimers();
+    try {
+      const context = makeContext();
+      const collectSnapshot = context.collectSnapshot;
+      context.collectSnapshot = vi.fn().mockResolvedValue(undefined);
+      context.flushSnapshots = vi.fn().mockResolvedValue(undefined);
+      moduleMocks.collectLiveWorkoutSnapshot.mockResolvedValue({ metrics: {} });
+      moduleMocks.findLiveWorkoutExternalId.mockReturnValue(undefined);
+
+      context.startCollection.call(context);
+      context.onResume.call(context);
+      expect(moduleMocks.heartRateConstruct).toHaveBeenCalledOnce();
+      expect(moduleMocks.heartRateOnCurrentChange).toHaveBeenCalledOnce();
+      expect(moduleMocks.heartRateGetCurrent).not.toHaveBeenCalled();
+      const firstCallback = moduleMocks.heartRateOnCurrentChange.mock.calls[0]?.[0];
+      expect(firstCallback).toBeTypeOf("function");
+      firstCallback?.();
+      await collectSnapshot.call(context);
+      const reader = moduleMocks.collectLiveWorkoutSnapshot.mock.calls[0]?.[1];
+      expect(reader()).toBe(162);
+      expect(moduleMocks.heartRateGetCurrent).toHaveBeenCalledOnce();
+
+      context.onPause.call(context);
+      expect(moduleMocks.heartRateOffCurrentChange).toHaveBeenCalledWith(firstCallback);
+      expect(reader()).toBe(0);
+      firstCallback?.();
+      expect(reader()).toBe(0);
+
+      context.onResume.call(context);
+      expect(moduleMocks.heartRateConstruct).toHaveBeenCalledOnce();
+      expect(moduleMocks.heartRateOnCurrentChange).toHaveBeenCalledTimes(2);
+      firstCallback?.();
+      expect(reader()).toBe(0);
+      const resumedCallback = moduleMocks.heartRateOnCurrentChange.mock.calls[1]?.[0];
+      moduleMocks.heartRateGetCurrent.mockReturnValueOnce(175);
+      resumedCallback?.();
+      expect(reader()).toBe(175);
+
+      context.onDestroy.call(context);
+      context.onDestroy.call(context);
+      expect(moduleMocks.heartRateOffCurrentChange).toHaveBeenCalledTimes(2);
+      expect(moduleMocks.heartRateOffCurrentChange).toHaveBeenLastCalledWith(resumedCallback);
+      expect(reader()).toBe(0);
+      expect(moduleMocks.heartRateGetLast).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears the cached heart rate and reports a continuous sensor read failure", async () => {
+    vi.useFakeTimers();
+    try {
+      const context = makeContext();
+      const collectSnapshot = context.collectSnapshot;
+      context.collectSnapshot = vi.fn().mockResolvedValue(undefined);
+      context.flushSnapshots = vi.fn().mockResolvedValue(undefined);
+      moduleMocks.collectLiveWorkoutSnapshot.mockResolvedValue({ metrics: {} });
+      moduleMocks.findLiveWorkoutExternalId.mockReturnValue(undefined);
+      context.startCollection.call(context);
+      const callback = moduleMocks.heartRateOnCurrentChange.mock.calls[0]?.[0];
+      callback?.();
+      await collectSnapshot.call(context);
+      const reader = moduleMocks.collectLiveWorkoutSnapshot.mock.calls[0]?.[1];
+      expect(reader()).toBe(162);
+
+      moduleMocks.heartRateGetCurrent.mockImplementationOnce(() => {
+        throw new Error("heart rate sensor unavailable");
+      });
+      callback?.();
+
+      expect(reader()).toBe(0);
+      expect(moduleMocks.request).toHaveBeenCalledWith({
+        method: "telemetry.report",
+        params: expect.objectContaining({
+          message: "heart rate sensor unavailable",
+          category: "workout-heart-rate",
+        }),
+      });
+      context.onDestroy.call(context);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

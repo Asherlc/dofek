@@ -1,11 +1,9 @@
 export interface ImuSample {
   tMs: number;
-  ax: number;
-  ay: number;
-  az: number;
-  gx?: number;
-  gy?: number;
-  gz?: number;
+  sensor: "accelerometer" | "gyroscope";
+  x: number;
+  y: number;
+  z: number;
 }
 
 export interface HeaderMeta {
@@ -32,7 +30,7 @@ export interface CollectorStats {
 export interface ErrorCollector {
   available: false;
   reason: string;
-  start(): void;
+  start(sessionStartMs?: number): void;
   stop(): void;
 }
 
@@ -42,7 +40,7 @@ export interface ReadyCollector {
   accelMode: number;
   gyroMode: number | null;
   getStats(): CollectorStats;
-  start(): void;
+  start(sessionStartMs?: number): void;
   stop(): void;
 }
 

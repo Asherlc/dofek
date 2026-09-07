@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { type ClickHouseClient, createClickHouseClientFromEnv } from "../db/clickhouse.ts";
 import { buildClickHouseBootstrapStatementsForNativeMetricStream } from "../db/clickhouse-metric-stream-bootstrap.ts";
 import {
@@ -30,6 +31,35 @@ const batchedDeleteSecondTestEventId = "ad1e2f30-5162-437e-8f90-9b0c1d2e3f45";
 const batchedDeleteUnrelatedTestEventId = "be2f3041-6273-448f-901a-0c1d2e3f4056";
 const operationRevision = "1000000000000000";
 
+const zeppMetricRowsSchema = z.array(
+  z.object({
+    id: z.string(),
+    channel: z.string(),
+    vector: z.array(z.number()),
+    metadata: z.string(),
+  }),
+);
+
+const zeppSamples = [
+  { channel: "accelerometer", vector: [1.25, -2.5, 980], units: "cm/s²" },
+  { channel: "gyroscope", vector: [-10, 20, 30.5], units: "deg/s" },
+  { channel: "accelerometer", vector: [4, 5, 981], units: "cm/s²" },
+].map((sample, index) =>
+  createMetricStreamEvent(
+    {
+      recordedAt: "2026-06-11T14:36:12.042Z",
+      userId: testUserId,
+      providerId: "amazfit-zepp",
+      externalId: `zos-imu:1781188572000:${index}:${sample.channel}`,
+      sourceType: "api",
+      channel: sample.channel,
+      vector: sample.vector,
+      metadata: { units: sample.units },
+    },
+    operationRevision,
+  ),
+);
+
 function createCurrentMetricStreamEvent(row: MetricStreamRowInput, revision = operationRevision) {
   return createMetricStreamEvent(row, revision);
 }
@@ -60,6 +90,7 @@ async function removeTestEvent(client: ClickHouseClient): Promise<void> {
         latestScopeTestEventId,
         nullExternalIdTestEventId,
         replacementTestEventId,
+        ...zeppSamples.map((event) => event.id),
         batchedDeleteTestEventId,
         batchedDeleteSecondTestEventId,
         batchedDeleteUnrelatedTestEventId,
@@ -82,6 +113,28 @@ describe("metric stream ClickHouse sink (integration)", () => {
   afterAll(async () => {
     await removeTestEvent(client);
     await client.close?.();
+  });
+
+  it("retains Zepp vectors and units, distinct same-millisecond records, and deduplicated retries", async () => {
+    await applyMetricStreamEventsToClickHouse(client, zeppSamples);
+    await applyMetricStreamEventsToClickHouse(client, zeppSamples);
+
+    const result = await client.query({
+      query: `SELECT id, channel, vector, metadata
+        FROM ${METRIC_STREAM_TABLE} FINAL
+        WHERE id IN {ids:Array(UUID)}
+        ORDER BY external_id`,
+      query_params: { ids: zeppSamples.map((event) => event.id) },
+      format: "JSONEachRow",
+    });
+    expect(zeppMetricRowsSchema.parse(await result.json())).toEqual(
+      zeppSamples.map((event) => ({
+        id: event.id,
+        channel: event.channel,
+        vector: event.vector,
+        metadata: JSON.stringify(event.metadata),
+      })),
+    );
   });
 
   it("inserts events whose recordedAt carries a UTC Z suffix", async () => {

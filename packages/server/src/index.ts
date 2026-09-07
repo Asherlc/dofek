@@ -65,6 +65,7 @@ import { createDeveloperClientsRouter } from "./routes/developer-clients.ts";
 import { createExportRouter } from "./routes/export.ts";
 import { createExternalWriteApiRouter } from "./routes/external-write-api.ts";
 import { createIngestZosHealthRouter } from "./routes/ingest-zos-health.ts";
+import { createIngestZosImuRouter } from "./routes/ingest-zos-imu.ts";
 import { createOpenAiAppsChallengeRouter } from "./routes/openai-apps-challenge.ts";
 import { createStripeWebhookRouter } from "./routes/stripe-webhook.ts";
 import { createWebhookRouter } from "./routes/webhooks.ts";
@@ -272,6 +273,7 @@ function setupRoutes(
   app.use(createMcpOAuthRouter(db, options.mcpAuthRateLimit));
   app.use("/api/mcp", createMcpRouter({ db, sensorStore }));
   app.use("/api/ingest", createIngestZosHealthRouter({ db }));
+  app.use("/api/ingest", createIngestZosImuRouter({ db }));
   app.use("/api/companion-pairing/start", authRateLimiter);
   app.use("/api/companion-pairing", createCompanionPairingRouter({ db }));
   app.use("/api/companion-token", createCompanionTokenHttpRouter({ db }));
