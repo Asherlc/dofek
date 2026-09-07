@@ -97,7 +97,7 @@ vi.mock("../../components/RouteMap", () => ({
   RouteMap: () => null,
 }));
 
-vi.mock("../../app/activity/useChartScrub", () => ({
+vi.mock("../../components/activity/useChartScrub", () => ({
   useChartScrub: () => ({
     touchIndex: null,
     panResponder: { panHandlers: {} },

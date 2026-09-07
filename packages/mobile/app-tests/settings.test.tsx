@@ -813,7 +813,7 @@ describe("SettingsScreen medication doses", () => {
     expect(screen.getByText("No medication reminders yet.")).toBeTruthy();
     expect(screen.getByText("Medication Doses")).toBeTruthy();
     expect(screen.getByText("Review imported medication dose events")).toBeTruthy();
-    expect(screen.getByText("No medication dose events yet.")).toBeTruthy();
+    expect(screen.getByText("No medication dose events to display.")).toBeTruthy();
   });
 });
 

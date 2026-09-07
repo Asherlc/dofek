@@ -253,10 +253,7 @@ export function SettingsPage() {
         ) : null}
 
         {activeCategory === "data-sources" ? (
-          <PageSection
-            title="Zepp App Pairing"
-            subtitle="Connect the Zepp watch app to this account"
-          >
+          <PageSection title="Pair your Zepp app" subtitle="Enter the code shown in Zepp">
             <ZeppPairingPanel />
           </PageSection>
         ) : null}
@@ -285,10 +282,7 @@ export function SettingsPage() {
         ) : null}
 
         {activeCategory === "goals-models" ? (
-          <PageSection
-            title="Primary goal"
-            subtitle="Choose the outcome Dofek should optimize toward"
-          >
+          <PageSection title="Primary goal" subtitle="What would you like to focus on?">
             <PrimaryGoalSelector showHeading={false} />
           </PageSection>
         ) : null}
@@ -381,12 +375,12 @@ export function SettingsPage() {
         ) : null}
 
         {activeCategory === "account" ? (
-          <PageSection title="Help & Support" subtitle="Get help from our team">
+          <PageSection title="Contact support" subtitle="We'll reply by email">
             <Link
               to="/support"
               className="inline-flex items-center gap-2 rounded border border-border-strong px-4 py-2 text-sm text-foreground transition-colors hover:bg-accent/10"
             >
-              Contact Support
+              Send a message
             </Link>
           </PageSection>
         ) : null}
@@ -394,7 +388,7 @@ export function SettingsPage() {
         {activeCategory === "privacy-export" ? (
           <PageSection
             title="Danger Zone"
-            subtitle="Permanently close your account and start durable deletion"
+            subtitle="Permanently close your account and delete your Dofek data"
             card={false}
           >
             <div className="rounded-lg border border-red-900/60 bg-surface-solid p-4 space-y-3">

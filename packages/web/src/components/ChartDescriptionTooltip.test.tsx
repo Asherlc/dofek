@@ -5,7 +5,7 @@ import { ChartDescriptionTooltip } from "./ChartDescriptionTooltip.tsx";
 
 describe("ChartDescriptionTooltip", () => {
   it("opens and explicitly closes a labeled chart explanation", async () => {
-    render(<ChartDescriptionTooltip description="This chart shows your weekly training load." />);
+    render(<ChartDescriptionTooltip description="Weekly training load in hours." />);
 
     const trigger = screen.getByRole("button", { name: "About this chart" });
     expect(trigger).toHaveTextContent("About");
@@ -17,14 +17,14 @@ describe("ChartDescriptionTooltip", () => {
 
     const dialog = screen.getByRole("dialog", {
       name: "About this chart",
-      description: "This chart shows your weekly training load.",
+      description: "Weekly training load in hours.",
     });
     const descriptionId = dialog.getAttribute("aria-describedby");
     expect(descriptionId).not.toBeNull();
     expect(document.getElementById(descriptionId ?? "")).toHaveTextContent(
-      "This chart shows your weekly training load.",
+      "Weekly training load in hours.",
     );
-    expect(screen.getByText("This chart shows your weekly training load.")).toBeInTheDocument();
+    expect(screen.getByText("Weekly training load in hours.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Close chart explanation" }));
     await waitFor(() => {

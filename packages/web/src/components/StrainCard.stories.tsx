@@ -32,7 +32,7 @@ const meta = {
       currentStrain: 12.5,
       progressPercent: 83,
       zone: "Maintain",
-      explanation: "Your readiness is moderate. Aim for a balanced training load.",
+      explanation: "Based on the recovery score.",
     },
   },
 } satisfies Meta<typeof StrainCard>;
@@ -71,7 +71,7 @@ export const CurrentStrainFromTarget: Story = {
       currentStrain: 12.5,
       progressPercent: 83,
       zone: "Maintain",
-      explanation: "Your readiness is moderate. Aim for a balanced training load.",
+      explanation: "Based on the recovery score.",
     },
   },
 };
@@ -110,7 +110,7 @@ export const TargetMarker: Story = {
       currentStrain: 11.2,
       progressPercent: 68,
       zone: "Push",
-      explanation: "Recovery is strong. Push for a high-strain day to build fitness.",
+      explanation: "Based on the recovery score.",
     },
   },
 };
@@ -143,7 +143,7 @@ export const HighStrain: Story = {
       currentStrain: 18.2,
       progressPercent: 114,
       zone: "Push",
-      explanation: "You have exceeded your target. Consider extra recovery.",
+      explanation: "Based on the recovery score.",
     },
   },
 };
@@ -176,7 +176,7 @@ export const LowStrain: Story = {
       currentStrain: 4.1,
       progressPercent: 34,
       zone: "Recovery",
-      explanation: "Take it easy today to allow your body to bounce back stronger.",
+      explanation: "Based on the recovery score.",
     },
   },
 };

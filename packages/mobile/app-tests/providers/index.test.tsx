@@ -2917,6 +2917,22 @@ describe("ProvidersScreen", () => {
     });
   });
 
+  it("shows partial HealthKit errors and refreshes queries for successful writes", async () => {
+    mockSyncHealthKit.mockResolvedValueOnce({
+      inserted: 4,
+      deleted: 0,
+      errors: ["Route service unavailable"],
+    });
+    await renderProvidersScreen();
+    const appleCard = within(screen.getByTestId("provider-card-apple_health"));
+    await waitFor(() => expect(appleCard.getByText("Sync")).toBeTruthy());
+    fireEvent.click(appleCard.getByText("Sync"));
+    await waitFor(() => {
+      expect(appleCard.getByText("4 records synced; Route service unavailable")).toBeTruthy();
+      expect(mockInvalidate).toHaveBeenCalled();
+    });
+  });
+
   it("shows an actionable message without reporting when Apple Health becomes locked", async () => {
     const { captureException } = await import("../../lib/telemetry");
     const mockCaptureException = vi.mocked(captureException);

@@ -1,5 +1,4 @@
 import { PageLayout } from "../components/PageLayout.tsx";
-import { PageSection } from "../components/PageSection.tsx";
 import { SupportPanel } from "../components/SupportPanel.tsx";
 import { useAuth } from "../lib/auth-context.tsx";
 
@@ -7,8 +6,8 @@ export function SupportPage() {
   const { user } = useAuth();
 
   return (
-    <PageLayout title="Help & Support" subtitle="Reach the team for help with your account">
-      <PageSection title="Contact Support" subtitle="Send us a message and we'll reply by email">
+    <PageLayout title="Contact support" subtitle="We'll reply by email">
+      <div className="card p-6">
         {user ? (
           <SupportPanel />
         ) : (
@@ -25,7 +24,7 @@ export function SupportPage() {
             </a>
           </div>
         )}
-      </PageSection>
+      </div>
     </PageLayout>
   );
 }

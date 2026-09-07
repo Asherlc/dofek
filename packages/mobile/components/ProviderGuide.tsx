@@ -26,10 +26,7 @@ export function ProviderGuide({ onDismiss, providers }: ProviderGuideProps) {
       {/* Welcome header */}
       <View style={styles.header}>
         <Text style={styles.title}>Welcome to Dofek</Text>
-        <Text style={styles.subtitle}>
-          Connect your health and fitness accounts to unlock personalized insights, recovery
-          tracking, training analysis, and more.
-        </Text>
+        <Text style={styles.subtitle}>Connect a health app or device to get started.</Text>
       </View>
 
       {/* Category cards */}

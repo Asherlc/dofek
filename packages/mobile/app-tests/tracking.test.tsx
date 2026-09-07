@@ -228,9 +228,9 @@ describe("TrackingScreen", () => {
     const { default: TrackingScreen } = await import("../app/tracking");
     render(<TrackingScreen />);
 
-    expect(screen.getByText("No numeric journal data to chart")).toBeTruthy();
+    expect(screen.getByText("No journal trends yet")).toBeTruthy();
     expect(
-      screen.getByText("Sync a numeric or Yes/No journal observation to start reviewing trends."),
+      screen.getByText("Sync journal entries with numbers or Yes/No answers to see trends."),
     ).toBeTruthy();
   });
 

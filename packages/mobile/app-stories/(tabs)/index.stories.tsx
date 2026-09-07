@@ -90,7 +90,7 @@ function createSeededProviders(sleepDataUnavailable: boolean) {
               methodVersion: "sleep-need-heuristic-v1",
               uncertainty: "not_established",
               valueQualifier: "About",
-              summaryLabel: "Heuristic estimate",
+              summaryLabel: "Estimated sleep need",
               componentLabels: {
                 baseline: "Baseline estimate",
                 strainDebt: "Previous-day load adjustment",
@@ -100,10 +100,10 @@ function createSeededProviders(sleepDataUnavailable: boolean) {
                 "Baseline uses the average of 12 qualifying nights followed by at-or-above-median heart rate variability.",
               coverageLabel:
                 "Sleep-debt input uses 11 observed nights from the model's recent-night window.",
-              methodLabel: "Method: sleep-need-heuristic-v1",
+              methodLabel: "Baseline average plus previous-day load and sleep-debt adjustments.",
               uncertaintyLabel: "Uncertainty: not established",
               limitationLabel:
-                "This is a descriptive heuristic estimate, not a sleep recommendation. Its uncertainty has not been established.",
+                "This is an estimate, not a sleep recommendation. Its uncertainty has not been established.",
             },
             recentNights: [],
           },
@@ -121,8 +121,7 @@ function createSeededProviders(sleepDataUnavailable: boolean) {
       date: todayDate,
       action: {
         id: "strain_target",
-        title: "Train hard today — aim for 16.2 strain",
-        summary: "Recovery is strong (82). Push for a high-strain day to build fitness.",
+        title: "Suggested strain: 16.2",
         zone: "Push",
       },
       supportingFacts: sleepDataUnavailable
@@ -135,11 +134,8 @@ function createSeededProviders(sleepDataUnavailable: boolean) {
             { label: "Sleep performance", value: "88 (Good)" },
           ],
       caveats: sleepDataUnavailable
-        ? [
-            "Sleep performance was unavailable, so this plan uses recovery and recent workload instead.",
-          ]
+        ? ["Sleep performance was unavailable; recent workload is shown for context."]
         : [],
-      confidence: sleepDataUnavailable ? "moderate" : "high",
       freshness: {
         recoveryDate: todayDate,
         sleepDate: sleepDataUnavailable ? null : localDateString(-1),

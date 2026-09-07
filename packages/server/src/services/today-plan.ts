@@ -117,7 +117,6 @@ export async function loadTodayPlan(
         : {
             targetStrain: strainTarget.targetStrain,
             zone: strainTarget.zone,
-            explanation: strainTarget.explanation,
             readinessScore: strainTarget.readinessScore ?? 0,
             workloadRatio: strainTarget.workloadRatio ?? null,
           },

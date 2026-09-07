@@ -225,10 +225,7 @@ export function ActivityDetailPage() {
       ) : null}
 
       {hasGps && (
-        <Section
-          title="Route Map"
-          description="This map shows your recorded route, including start and finish locations."
-        >
+        <Section title="Route Map" description="Recorded GPS path with start and finish locations.">
           <RouteMap points={points} onRegisterHoverCallback={mapHoverRef} />
         </Section>
       )}
@@ -236,7 +233,7 @@ export function ActivityDetailPage() {
       {(hasHr || hasPower || hasSpeed || hasCadence) && (
         <Section
           title="Performance"
-          description="This chart overlays heart rate, power, speed, and cadence so you can see how effort changed during the workout."
+          description="Heart rate, power, speed, and cadence aligned over the workout."
         >
           <MetricsChart
             points={points}
@@ -302,10 +299,7 @@ export function ActivityDetailPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {hasAltitude && (
-          <Section
-            title="Elevation Profile"
-            description="This chart shows how your elevation changed over time during the activity."
-          >
+          <Section title="Elevation Profile" description="Elevation over elapsed activity time.">
             <ElevationChart
               points={points}
               loading={stream.isLoading}
@@ -318,7 +312,7 @@ export function ActivityDetailPage() {
         {showHrZones && (
           <Section
             title="Heart Rate Zones"
-            description="This chart shows how much time you spent in each heart rate zone."
+            description="Recorded duration and percentage of activity time in each heart rate zone."
           >
             {hrZones.error && !hrZonesHaveCachedData ? (
               <QueryStatePanel error={hrZones.error} height={250} />
@@ -334,7 +328,7 @@ export function ActivityDetailPage() {
         {isCycling && hasPower && (powerZones.error || powerZones.data != null) && (
           <Section
             title="Power Zones"
-            description="This chart shows how much time you spent in each power zone."
+            description="Recorded duration and percentage of activity time in each power zone."
           >
             {powerZones.error && powerZones.data == null ? (
               <QueryStatePanel error={powerZones.error} height={250} />

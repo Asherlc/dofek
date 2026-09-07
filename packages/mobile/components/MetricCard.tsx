@@ -40,14 +40,14 @@ export function MetricCard({
 }: MetricCardProps) {
   const nonNullCount = trend ? trend.filter((v) => v != null).length : 0;
   const hasTrendChart = nonNullCount >= 2;
-  const description =
-    chartDescription ?? `This chart shows the recent trend for ${title.toLowerCase()}.`;
 
   return (
     <View style={styles.card}>
       <View style={styles.titleRow}>
         <Text style={styles.title}>{title}</Text>
-        {hasTrendChart && <ChartDescriptionTooltip title={title} description={description} />}
+        {hasTrendChart && chartDescription ? (
+          <ChartDescriptionTooltip title={title} description={chartDescription} />
+        ) : null}
       </View>
       <View style={styles.row}>
         <View style={styles.valueContainer}>

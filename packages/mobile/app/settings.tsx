@@ -27,6 +27,7 @@ import {
 import { AccountErasurePanel } from "../components/AccountErasurePanel";
 import { ClimbingGradeSystemSettings } from "../components/ClimbingGradeSystemSettings";
 import { DataExportSection } from "../components/DataExportSection";
+import { GoalWeightSettingsSection } from "../components/GoalWeightSettingsSection";
 import { McpClientSetupPanel } from "../components/McpClientSetupPanel";
 import { MedicationDoseEventsPanel } from "../components/MedicationDoseEventsPanel";
 import { MedicationRemindersPanel } from "../components/MedicationRemindersPanel";
@@ -34,6 +35,7 @@ import { PersonalizationPanel } from "../components/PersonalizationPanel";
 import { PrimaryGoalSelector } from "../components/PrimaryGoalSelector";
 import { ProviderLogo } from "../components/ProviderLogo";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
+import { styles } from "../components/settings.styles";
 import { ZeppPairingCard } from "../components/ZeppPairingCard";
 import { AppStoreBillingService } from "../lib/app-store-billing";
 import { useAuth } from "../lib/auth-context";
@@ -42,8 +44,6 @@ import { trpc } from "../lib/trpc";
 import { useRefresh } from "../lib/useRefresh";
 import type { AppStoreProduct } from "../modules/app-store-billing";
 import { colors } from "../theme";
-import { styles } from "./settings.styles";
-import { GoalWeightSettingsSection } from "./settings-goal-weight";
 
 type UnitSystem = "metric" | "imperial";
 type AppStoreBillingAction = "manage" | "restore" | "subscribe";
@@ -893,20 +893,20 @@ export default function SettingsScreen() {
         <DataExportSection serverUrl={auth.serverUrl} sessionToken={auth.sessionToken} />
       ) : null}
 
-      {/* ── Help & Support ── */}
+      {/* ── Support ── */}
       {activeCategory === "account" ? (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Help & Support</Text>
-          <Text style={styles.sectionDescription}>Get help from our team</Text>
+          <Text style={styles.sectionTitle}>Contact support</Text>
+          <Text style={styles.sectionDescription}>We&apos;ll reply by email</Text>
           <TouchableOpacity
             style={styles.card}
             onPress={() => router.push("/support")}
             activeOpacity={0.7}
             accessibilityRole="button"
-            accessibilityLabel="Contact Support"
+            accessibilityLabel="Send a message"
           >
             <View style={styles.dataSourcesRow}>
-              <Text style={styles.navigationLabel}>Contact Support</Text>
+              <Text style={styles.navigationLabel}>Send a message</Text>
               <Text style={styles.navigationChevron}>›</Text>
             </View>
           </TouchableOpacity>

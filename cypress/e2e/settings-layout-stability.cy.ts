@@ -239,9 +239,9 @@ describe("Settings layout stability", () => {
         "aria-busy",
         "true",
       );
-      cy.contains("main section h3", "Zepp App Pairing").then(($heading) => {
+      cy.contains("main section h3", "Pair your Zepp app").then(($heading) => {
         const heading = $heading.get(0);
-        if (!heading) throw new Error("Zepp App Pairing heading was not rendered");
+        if (!heading) throw new Error("Pair your Zepp app heading was not rendered");
         initialZeppPairingTop = documentTop(heading);
       });
       cy.contains("main section h3", "Data Sources").then(($heading) => {
@@ -255,9 +255,9 @@ describe("Settings layout stability", () => {
       cy.contains("main", "Apple Health").should("exist");
       cy.window().then((win) => waitForStableLayout(win, true));
 
-      cy.contains("main section h3", "Zepp App Pairing").then(($heading) => {
+      cy.contains("main section h3", "Pair your Zepp app").then(($heading) => {
         const heading = $heading.get(0);
-        if (!heading) throw new Error("Zepp App Pairing heading was not rendered");
+        if (!heading) throw new Error("Pair your Zepp app heading was not rendered");
         finalZeppPairingTop = documentTop(heading);
       });
       cy.contains("main section h3", "Data Sources").then(($heading) => {
@@ -286,7 +286,7 @@ describe("Settings layout stability", () => {
         const evidence =
           `CLS ${cls.toFixed(4)}; sources: ${sources.join(", ") || "none"}; ` +
           `Data Sources height delta ${dataSourcesHeightDelta}px; ` +
-          `normalized Zepp App Pairing delta ${downstreamDelta}px`;
+          `normalized Zepp pairing delta ${downstreamDelta}px`;
         expect(Math.abs(dataSourcesHeightDelta), evidence).to.be.lessThan(1);
         expect(downstreamDelta, evidence).to.be.lessThan(1);
         expect(cls, evidence).to.be.at.most(0.001);

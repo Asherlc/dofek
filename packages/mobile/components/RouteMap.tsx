@@ -73,7 +73,7 @@ export function RouteMap({ points, hoveredPosition }: RouteMapProps) {
     <View style={styles.container}>
       <ChartTitleWithTooltip
         title="Route Map"
-        description="This map shows your recorded route, including start and finish locations."
+        description="Markers identify the first and last recorded GPS points."
         textStyle={styles.title}
       />
       <View style={styles.mapWrapper} onLayout={handleLayout}>

@@ -194,7 +194,11 @@ export default function ProvidersScreen() {
         syncRangeDays: 7,
         onProgress: setHealthKitProgress,
       });
-      setHealthKitProgress(`Done — ${result.inserted} records synced`);
+      setHealthKitProgress(
+        result.errors.length > 0
+          ? `${result.inserted} records synced; ${result.errors.join("; ")}`
+          : `Done — ${result.inserted} records synced`,
+      );
       trpcUtils.invalidate();
     } catch (error: unknown) {
       if (!isHealthKitDatabaseInaccessible(error)) {

@@ -17,12 +17,10 @@ const todayPlanResultSchema = z.discriminatedUnion("status", [
     action: z.object({
       id: z.literal("strain_target"),
       title: z.string(),
-      summary: z.string(),
       zone: z.enum(["Push", "Maintain", "Recovery"]),
     }),
-    supportingFacts: z.tuple([supportingFactSchema, supportingFactSchema]),
+    supportingFacts: z.array(supportingFactSchema),
     caveats: z.array(z.string()),
-    confidence: z.enum(["high", "moderate", "low"]),
     freshness: z.object({
       recoveryDate: z.string().nullable(),
       sleepDate: z.string().nullable(),
@@ -35,7 +33,6 @@ const todayPlanResultSchema = z.discriminatedUnion("status", [
     date: z.string(),
     action: z.null(),
     supportingFacts: z.tuple([]),
-    confidence: z.literal("low"),
     freshness: z.object({
       recoveryDate: z.string().nullable(),
       sleepDate: z.string().nullable(),

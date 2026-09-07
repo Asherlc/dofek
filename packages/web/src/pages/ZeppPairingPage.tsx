@@ -1,13 +1,12 @@
 import { PageLayout } from "../components/PageLayout.tsx";
-import { PageSection } from "../components/PageSection.tsx";
 import { ZeppPairingPanel } from "../components/ZeppPairingPanel.tsx";
 
 export function ZeppPairingPage({ initialCode }: { initialCode?: string }) {
   return (
-    <PageLayout title="Pair Zepp App" subtitle="Connect a Zepp watch app to your Dofek account">
-      <PageSection title="Zepp App Pairing" subtitle="Enter the code shown by Zepp">
+    <PageLayout title="Pair your Zepp app" subtitle="Enter the code shown in Zepp">
+      <div className="card p-6">
         <ZeppPairingPanel initialCode={initialCode} />
-      </PageSection>
+      </div>
     </PageLayout>
   );
 }

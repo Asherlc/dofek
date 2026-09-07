@@ -244,7 +244,7 @@ describe("AccountDeletionStatusScreen", () => {
 
     render(<AccountDeletionStatusScreen />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Recover deletion status" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Check deletion status" }));
 
     await waitFor(() =>
       expect(mockConfirm).toHaveBeenCalledWith({ preparationToken: "p".repeat(43) }),
@@ -269,7 +269,7 @@ describe("AccountDeletionStatusScreen", () => {
     mockPurge.mockResolvedValueOnce({ errors: [new Error("Keychain unavailable")] });
 
     render(<AccountDeletionStatusScreen />);
-    fireEvent.click(await screen.findByRole("button", { name: "Recover deletion status" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Check deletion status" }));
 
     expect(await screen.findByRole("button", { name: "Retry local cleanup" })).toBeTruthy();
   });
@@ -314,7 +314,7 @@ describe("AccountDeletionStatusScreen", () => {
       return originalSetItem?.(key, ...args) ?? Promise.resolve();
     });
 
-    fireEvent.click(await screen.findByRole("button", { name: "Recover deletion status" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Check deletion status" }));
 
     await waitFor(() => expect(mockConfirm).toHaveBeenCalledOnce());
     expect(mockBeginCleanupForNonce).toHaveBeenCalledWith(cleanupLease.cleanupOwnerNonce);
@@ -340,7 +340,7 @@ describe("AccountDeletionStatusScreen", () => {
     );
     const rendered = render(<AccountDeletionStatusScreen />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Recover deletion status" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Check deletion status" }));
     await waitFor(() => expect(mockPurge).toHaveBeenCalledOnce());
     rendered.unmount();
     expect(mockFinishCleanup).not.toHaveBeenCalled();

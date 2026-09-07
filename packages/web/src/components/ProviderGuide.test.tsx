@@ -33,7 +33,7 @@ describe("ProviderGuide", () => {
 
   it("renders description text", () => {
     render(<ProviderGuide onDismiss={vi.fn()} providers={mockProviders} />);
-    expect(screen.getByText(/Connect your health and fitness accounts/)).toBeTruthy();
+    expect(screen.getByText("Connect a health app or device to get started.")).toBeTruthy();
   });
 
   it("renders category titles for categories with available providers", () => {

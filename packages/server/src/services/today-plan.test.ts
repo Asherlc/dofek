@@ -105,7 +105,6 @@ describe("loadTodayPlan", () => {
     expect(plan.supportingFacts[0]?.label).toBe("Recovery");
     expect(plan.supportingFacts[1]?.label).toBe("Sleep performance");
     expect(plan.supportingFacts[0]?.value).toBe("80/100");
-    expect(plan.confidence).toBe("high");
     expect(plan.freshness.recoveryDate).toBe("2026-07-26");
     expect(plan.freshness.sleepDate).toBe("2026-07-26");
   });
@@ -200,7 +199,7 @@ describe("loadTodayPlan", () => {
     expect(plan.freshness.sleepDate).toBe("2026-07-26");
   });
 
-  it("does not treat partially missing sleep rows as usable sleep for confidence", async () => {
+  it("does not treat partially missing sleep rows as usable sleep", async () => {
     const query = vi.fn(async (_schema: unknown, queryText: unknown) => {
       const sqlText = String(queryText);
       if (sqlText.includes("analytics.daily_recovery")) {
@@ -235,11 +234,10 @@ describe("loadTodayPlan", () => {
     expect(plan.status).toBe("ready");
     if (plan.status !== "ready") return;
     expect(plan.missingInputs).toContain("sleep");
-    expect(plan.confidence).not.toBe("high");
     expect(plan.freshness.sleepDate).toBeNull();
   });
 
-  it("does not treat fully missing sleep rows as usable sleep for confidence and falls back to workload ratio", async () => {
+  it("does not treat fully missing sleep rows as usable sleep and falls back to workload ratio", async () => {
     const query = vi.fn(async (_schema: unknown, queryText: unknown) => {
       const sqlText = String(queryText);
       if (sqlText.includes("analytics.daily_recovery")) {
@@ -274,7 +272,6 @@ describe("loadTodayPlan", () => {
     expect(plan.status).toBe("ready");
     if (plan.status !== "ready") return;
     expect(plan.missingInputs).toContain("sleep");
-    expect(plan.confidence).not.toBe("high");
     expect(plan.freshness.sleepDate).toBeNull();
     expect(plan.supportingFacts[1]?.label).toBe("Recent-to-baseline workload ratio");
     expect(plan.supportingFacts[1]?.value).toBe("4");

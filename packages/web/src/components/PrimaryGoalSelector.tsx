@@ -56,11 +56,8 @@ export function PrimaryGoalSelector({ showHeading = true }: { showHeading?: bool
       {showHeading ? (
         <div>
           <h2 id="primary-goal-heading" className="text-sm font-medium text-foreground">
-            Primary goal
+            What would you like to focus on?
           </h2>
-          <p className="text-xs text-subtle mt-0.5">
-            Choose the outcome Dofek should optimize toward. You can change this anytime.
-          </p>
         </div>
       ) : null}
       {(writeError ?? setting.error) && (

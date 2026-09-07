@@ -77,17 +77,15 @@ export function AccountDeletionStatusView({
           </Link>
           <h1 className="text-3xl font-semibold">Account deletion status</h1>
           <p className="text-sm text-muted">
-            This page uses a capability saved in this browser. It does not require an active Dofek
-            session.
+            Check your deletion request here without signing in. Use the same browser.
           </p>
         </header>
 
         {onRecover && !capability ? (
           <section className="rounded-xl border border-amber-700/50 bg-amber-950/20 p-5 space-y-3">
-            <h2 className="text-lg font-semibold">Recover an accepted request</h2>
+            <h2 className="text-lg font-semibold">Check your deletion request</h2>
             <p className="text-sm text-subtle">
-              The confirmation response may have been interrupted after your session was revoked.
-              Reusing the saved preparation safely recovers the same request and status capability.
+              We could not confirm whether deletion started. Check the status of your request.
             </p>
             <button
               type="button"
@@ -95,7 +93,7 @@ export function AccountDeletionStatusView({
               onClick={onRecover}
               className="rounded bg-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
             >
-              {isRecovering ? "Recovering..." : "Recover deletion status"}
+              {isRecovering ? "Checking..." : "Check deletion status"}
             </button>
           </section>
         ) : null}
@@ -104,8 +102,8 @@ export function AccountDeletionStatusView({
           <section className="rounded-xl border border-border bg-surface p-5 space-y-4">
             <h2 className="text-lg font-semibold">No saved request</h2>
             <p className="mt-2 text-sm text-muted">
-              This browser does not have an account deletion status capability. Start deletion from
-              Settings while signed in, or return to the browser where you made the request.
+              No deletion request is saved in this browser. Use the browser where you requested
+              deletion, or sign in to start a request.
             </p>
             <Link
               to="/login"
@@ -167,7 +165,7 @@ export function AccountDeletionStatusView({
                 <p className="text-sm text-red-300">
                   {capability.localCleanupBlockedByAnotherSession
                     ? "Local cleanup belongs to the deleted account, but another account is active in this browser. Sign out of that account before retrying cleanup."
-                    : "Some browser data could not be cleared. Close other Dofek tabs, then retry local cleanup. Your deletion request and saved status capability are safe."}
+                    : "Some browser data could not be cleared. Close other Dofek tabs, then retry local cleanup. You can still check your deletion status here."}
                 </p>
                 {onRetryLocalCleanup ? (
                   <button

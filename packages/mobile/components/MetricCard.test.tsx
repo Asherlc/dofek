@@ -66,8 +66,15 @@ describe("MetricCard", () => {
     expect(screen.queryByText(/Trend/)).toBeNull();
   });
 
-  it("shows chart tooltip button when trend chart is rendered", () => {
-    render(<MetricCard title="Stress" value="1.2" trend={[1, 2, 3]} />);
+  it("shows supplied chart help when a trend chart is rendered", () => {
+    render(
+      <MetricCard
+        title="Stress"
+        value="1.2"
+        trend={[1, 2, 3]}
+        chartDescription="Daily stress scores on a 0–3 scale."
+      />,
+    );
     expect(screen.getByLabelText("About Stress")).toBeTruthy();
   });
 

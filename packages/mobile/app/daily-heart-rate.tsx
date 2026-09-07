@@ -7,10 +7,10 @@ import {
   sourceColor,
 } from "../components/charts/MultiSourceHeartRateChart";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
+import { rootStackScreenOptions } from "../lib/root-stack-screen-options";
 import { trpc } from "../lib/trpc";
 import { useTodayQueryDate } from "../lib/useTodayQueryDate";
 import { colors } from "../theme";
-import { rootStackScreenOptions } from "./_layout-options";
 
 function formatDisplayDate(dateString: string): string {
   const [year, month, day] = dateString.split("-");

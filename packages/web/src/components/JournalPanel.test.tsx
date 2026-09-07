@@ -98,7 +98,7 @@ describe("JournalPanel", () => {
     render(<JournalPanel />);
 
     expect(screen.getByText("Journal entries are unavailable")).toBeDefined();
-    expect(screen.queryByText("No journal entries yet.")).toBeNull();
+    expect(screen.queryByText("No journal entries to display.")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Retry journal entries" }));
     expect(refetch).toHaveBeenCalledOnce();
   });
@@ -120,7 +120,7 @@ describe("JournalPanel", () => {
 
     render(<JournalPanel />);
 
-    expect(screen.getByText("No journal entries yet.")).toBeDefined();
+    expect(screen.getByText("No journal entries to display.")).toBeDefined();
   });
 
   it("retains cached entries during a background refresh failure", () => {
@@ -284,7 +284,7 @@ describe("JournalPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Trends" }));
 
     expect(screen.getByText("Journal trends failed to load")).toBeDefined();
-    expect(screen.queryByText("No numeric journal data to chart.")).toBeNull();
+    expect(screen.queryByText("No journal trends yet.")).toBeNull();
   });
 
   it("shows a loading state while trend evidence has not arrived", () => {
@@ -313,7 +313,7 @@ describe("JournalPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Trends" }));
 
     expect(screen.getByText("Journal trends refresh failed")).toBeDefined();
-    expect(screen.getByText("No numeric journal data to chart.")).toBeDefined();
+    expect(screen.getByText("No journal trends yet.")).toBeDefined();
   });
 
   it("keeps chartable trend evidence visible during a background refresh failure", () => {

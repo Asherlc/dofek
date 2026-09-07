@@ -191,7 +191,7 @@ describe("PersonalizationPanel", () => {
     });
     render(<PersonalizationPanel />);
     expect(screen.getByText("Personalized")).toBeTruthy();
-    expect(screen.getByText(/Last refit attempt/)).toBeTruthy();
+    expect(screen.getByText(/Last recalculation attempt/)).toBeTruthy();
   });
 
   it("renders parameter cards with learned data", () => {
@@ -261,7 +261,7 @@ describe("PersonalizationPanel", () => {
     vi.mocked(trpc.personalization.refit.useMutation).mockReturnValue({ mutate, isPending: false });
 
     render(<PersonalizationPanel />);
-    const refitButton = screen.getByText("Refit Now");
+    const refitButton = screen.getByText("Recalculate");
     // In our test-setup TouchableOpacity/Pressable are rendered as <button>
     fireEvent.click(refitButton);
     expect(mutate).toHaveBeenCalled();
@@ -320,5 +320,7 @@ describe("PersonalizationPanel", () => {
     expect(
       within(card).getByText("Successful fit time unavailable until this model is refit"),
     ).toBeTruthy();
+    expect(within(card).getByText(/Update status:/)).toBeTruthy();
+    expect(within(card).queryByText(/Last successful update:/)).toBeNull();
   });
 });

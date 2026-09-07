@@ -47,7 +47,7 @@ function EnduranceTab() {
 
       <Section
         title="Ramp Rate"
-        subtitle="How quickly your fitness load is building week over week"
+        subtitle="Change in cycling chronic training load between consecutive weekly endpoints. Positive values indicate an increase; negative values indicate a decrease."
       >
         {rampRate.error ? (
           <QueryStatePanel error={rampRate.error} />

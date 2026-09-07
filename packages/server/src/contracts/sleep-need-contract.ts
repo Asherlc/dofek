@@ -33,7 +33,7 @@ const sleepNeedEstimateMetadataSchema = z
     methodVersion: z.literal("sleep-need-heuristic-v1"),
     uncertainty: z.literal("not_established"),
     valueQualifier: z.literal("About"),
-    summaryLabel: z.literal("Heuristic estimate"),
+    summaryLabel: z.literal("Estimated sleep need"),
     componentLabels: z
       .object({
         baseline: z.literal("Baseline estimate"),
@@ -43,10 +43,10 @@ const sleepNeedEstimateMetadataSchema = z
       .strict(),
     basisLabel: z.string(),
     coverageLabel: z.string(),
-    methodLabel: z.literal("Method: sleep-need-heuristic-v1"),
+    methodLabel: z.literal("Baseline average plus previous-day load and sleep-debt adjustments."),
     uncertaintyLabel: z.literal("Uncertainty: not established"),
     limitationLabel: z.literal(
-      "This is a descriptive heuristic estimate, not a sleep recommendation. Its uncertainty has not been established.",
+      "This is an estimate, not a sleep recommendation. Its uncertainty has not been established.",
     ),
   })
   .strict();
@@ -234,7 +234,7 @@ export function toSleepNeedV2(computation: SleepNeedComputation): SleepNeedV2 {
       methodVersion: "sleep-need-heuristic-v1",
       uncertainty: "not_established",
       valueQualifier: "About",
-      summaryLabel: "Heuristic estimate",
+      summaryLabel: "Estimated sleep need",
       componentLabels: {
         baseline: "Baseline estimate",
         strainDebt: "Previous-day load adjustment",
@@ -242,10 +242,10 @@ export function toSleepNeedV2(computation: SleepNeedComputation): SleepNeedV2 {
       },
       basisLabel,
       coverageLabel: `Sleep-debt input uses ${computation.debtObservedNightCount} observed ${observedNightNoun} from the model's recent-night window.`,
-      methodLabel: "Method: sleep-need-heuristic-v1",
+      methodLabel: "Baseline average plus previous-day load and sleep-debt adjustments.",
       uncertaintyLabel: "Uncertainty: not established",
       limitationLabel:
-        "This is a descriptive heuristic estimate, not a sleep recommendation. Its uncertainty has not been established.",
+        "This is an estimate, not a sleep recommendation. Its uncertainty has not been established.",
     },
     recentNights: computation.recentNights,
   });

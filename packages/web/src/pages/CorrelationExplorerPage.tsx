@@ -559,11 +559,11 @@ export function CorrelationExplorerPage() {
             {data.availability === "available" && dataPoints.length > 0 && hasMetricMetadata && (
               <div
                 className="card p-4"
-                title="This chart plots each data point and overlays a trend line so you can see whether two metrics move together."
+                title="Each point is a paired observation. The trend line shows association direction; it does not prove cause."
               >
                 <div className="mb-2 flex items-center gap-2">
                   <h3 className="text-xs text-subtle uppercase tracking-wider">Scatter Plot</h3>
-                  <ChartDescriptionTooltip description="This chart plots each data point and overlays a trend line so you can see whether two metrics move together." />
+                  <ChartDescriptionTooltip description="Each point is a paired observation. The trend line shows the direction of the association; it does not prove cause." />
                 </div>
                 <ScatterPlot
                   dataPoints={dataPoints}

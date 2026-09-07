@@ -1,8 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { AreaChart, LineChart } from "../../app/activity/ActivityDetailCharts";
+import { AreaChart, LineChart } from "./ActivityDetailCharts";
 
-vi.mock("../../app/activity/useChartScrub", () => ({
+vi.mock("./useChartScrub", () => ({
   useChartScrub: () => ({
     touchIndex: null,
     panResponder: { panHandlers: {} },

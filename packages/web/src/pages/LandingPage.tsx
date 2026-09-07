@@ -122,13 +122,6 @@ const TRUST_POINTS = [
   "Managed by Dofek",
 ] as const;
 
-const PLAN_POINTS = [
-  "Supported sources",
-  "Web dashboard and iPhone app",
-  "Trends, correlations, and source comparisons",
-  "Export and deletion controls",
-] as const;
-
 export interface LandingPageProvider {
   id: string;
   name: string;
@@ -169,7 +162,6 @@ export function LandingPageView({
         <InspectionSection />
         <MobileAppSection />
         <TrustSection />
-        <PricingSection />
         <FinalCta />
       </main>
       <Footer />
@@ -197,12 +189,6 @@ function LandingNav() {
             className="hidden text-sm font-medium text-muted transition-colors hover:text-foreground sm:inline"
           >
             Sources
-          </a>
-          <a
-            href="#pricing"
-            className="hidden text-sm font-medium text-muted transition-colors hover:text-foreground sm:inline"
-          >
-            Pricing
           </a>
           <Link
             to="/login"
@@ -301,7 +287,7 @@ function DashboardPreview() {
 
 function OverviewPreview() {
   return (
-    <div className="rounded-xl border border-border bg-surface p-3.5">
+    <div className="border-t border-border pt-3.5">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
           <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-accent-secondary">
@@ -314,11 +300,12 @@ function OverviewPreview() {
           {DEMO_PREVIEW.rangeDays} days
         </div>
       </div>
-      <div className="grid gap-3 lg:grid-cols-2">
+      <div className="grid gap-x-4 divide-y divide-border sm:grid-cols-2 sm:divide-y-0">
         <CorrelationPanel />
         <TrendPanel />
-        <ComparisonPanel />
-        <HealthMonitorPreview />
+        <div className="sm:col-span-2">
+          <HealthMonitorPreview />
+        </div>
       </div>
     </div>
   );
@@ -342,7 +329,7 @@ function DailySummaryPreview() {
   ] as const;
 
   return (
-    <div className="mb-3 rounded-xl border border-border bg-surface-solid p-4">
+    <div className="mb-3 pb-3">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-muted">
@@ -385,23 +372,14 @@ function CorrelationPanel() {
   const heartRateVariabilityAxis = `Heart rate variability (${hrvUnit})`;
 
   return (
-    <div className="rounded-xl border border-border bg-surface-solid p-3.5">
+    <div className="min-w-0 py-3">
       <div className="text-xs font-semibold uppercase tracking-[0.08em] text-muted">
         Illustrative relationship
       </div>
       <div className="mt-1 text-sm text-muted">Sleep consistency + Heart Rate Variability</div>
       <div className="mt-3 grid grid-cols-[0.55fr_1fr] items-end gap-3">
         <div>
-          <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted">
-            Illustrative sample
-          </div>
-          <div className="mt-1 text-3xl font-bold text-accent">Example points</div>
-          <div className="mt-1 text-xs font-medium text-accent-secondary">
-            No measured correlation
-          </div>
-          <div className="text-xs text-subtle">
-            No sample size or confidence interval is shown for this illustration.
-          </div>
+          <div className="mt-1 text-xl font-bold text-accent">Example points</div>
         </div>
         <LandingPreviewScatterPlot
           accessibleName={`Illustrative scatter plot for demonstration only. X-axis: ${sleepConsistencyAxis}. Y-axis: ${heartRateVariabilityAxis}.`}
@@ -413,14 +391,7 @@ function CorrelationPanel() {
       </div>
       <div className="mt-3 space-y-1 border-t border-border pt-2 text-[10px] leading-4 text-subtle">
         <p>Example source types: sleep + heart rate variability</p>
-        <p>Illustrative data only—not a measured Dofek result.</p>
-        <p>
-          Real relationships can reflect missing observations or other factors; association does not
-          establish causation.
-        </p>
-        <p className="font-semibold text-muted">
-          Next: connect sources to compare your own paired records.
-        </p>
+        <p>Illustrative data only. Association does not establish causation.</p>
       </div>
     </div>
   );
@@ -436,7 +407,7 @@ function TrendPanel() {
   const heartRateAxis = `Resting heart rate (${heartRateUnit})`;
 
   return (
-    <div className="rounded-xl border border-border bg-surface-solid p-3.5">
+    <div className="min-w-0 py-3">
       <div className="text-xs font-semibold uppercase tracking-[0.08em] text-muted">
         Recent trend
       </div>
@@ -466,44 +437,6 @@ function TrendPanel() {
       </div>
       <div className="mt-3 space-y-1 border-t border-border pt-2 text-[10px] leading-4 text-subtle">
         <p>Example source: Oura</p>
-        <p>Confidence: high coverage; not a diagnosis.</p>
-        <p className="font-semibold text-muted">Next: review training and meal timing.</p>
-      </div>
-    </div>
-  );
-}
-
-function ComparisonPanel() {
-  const units = useUnitConverter();
-  const sleepConsistencyAxis = `Sleep consistency (${units.percentageLabel})`;
-
-  return (
-    <div className="rounded-xl border border-border bg-surface-solid p-3.5">
-      <div className="text-xs font-semibold uppercase tracking-[0.08em] text-muted">
-        Training load compared with sleep consistency
-      </div>
-      <div className="mt-1 text-sm text-muted">Harder weeks align with less consistent sleep.</div>
-      <div className="mt-3 grid grid-cols-[0.45fr_1fr] items-end gap-3">
-        <div>
-          <div className="text-2xl font-bold text-accent">r = -0.46</div>
-          <div className="mt-1 text-xs font-medium text-accent-secondary">Moderate negative</div>
-          <div className="text-xs text-subtle">22 paired days of {DEMO_PREVIEW.rangeDays}</div>
-        </div>
-        <LandingPreviewScatterPlot
-          accessibleName={`Example training and sleep scatter plot. X-axis: Training load (points). Y-axis: ${sleepConsistencyAxis}.`}
-          descending={true}
-          xAxisLabel="Training load (points)"
-          xTickLabels={["0", "120"]}
-          yAxisLabel={sleepConsistencyAxis}
-          yTickLabels={["65", "95"]}
-        />
-      </div>
-      <div className="mt-3 space-y-1 border-t border-border pt-2 text-[10px] leading-4 text-subtle">
-        <p>Example sources: Garmin load + Oura sleep</p>
-        <p>Confidence: low; descriptive only.</p>
-        <p className="font-semibold text-muted">
-          Next: inspect high-load weeks with lower sleep consistency.
-        </p>
       </div>
     </div>
   );
@@ -521,16 +454,13 @@ function HealthMonitorPreview() {
   ] as const;
 
   return (
-    <div className="rounded-xl border border-border bg-surface-solid p-3.5">
+    <div className="min-w-0 py-3">
       <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">
         Health monitor
       </div>
-      <div className="mt-3">
+      <div className="mt-3 grid gap-x-5 sm:grid-cols-2">
         {metrics.map((metric) => (
-          <div
-            key={metric.label}
-            className="grid grid-cols-[1fr_auto] items-baseline gap-3 border-t border-border py-1.5 first:border-t-0"
-          >
+          <div key={metric.label} className="flex items-baseline justify-between gap-3 py-1.5">
             <div className="truncate text-[10px] font-semibold uppercase tracking-[0.08em] text-muted">
               {metric.label}
             </div>
@@ -634,7 +564,7 @@ function InspectionSection() {
             {INSPECTION_POINTS.map((point) => (
               <div
                 key={point}
-                className="flex items-center gap-3 rounded-lg border border-border bg-surface-solid p-4 text-sm font-medium text-muted"
+                className="flex items-center gap-3 py-2 text-sm font-medium text-muted"
               >
                 <CheckCircleIcon />
                 {point}
@@ -685,7 +615,7 @@ function MobileAppSection() {
             {MOBILE_APP_POINTS.map((point) => (
               <div
                 key={point}
-                className="flex items-center gap-3 rounded-lg border border-border bg-surface/35 p-4 text-sm font-medium text-muted"
+                className="flex items-center gap-3 py-2 text-sm font-medium text-muted"
               >
                 <CheckCircleIcon />
                 {point}
@@ -810,53 +740,11 @@ function TrustSection() {
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           {TRUST_POINTS.map((point) => (
-            <div
-              key={point}
-              className="rounded-lg border border-border bg-surface/35 p-4 text-sm leading-6 text-muted"
-            >
+            <div key={point} className="py-2 text-sm leading-6 text-muted">
               <span className="mr-2 font-semibold text-accent-secondary">✓</span>
               {point}
             </div>
           ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function PricingSection() {
-  return (
-    <section id="pricing" className="bg-surface/35 py-16 sm:py-20">
-      <div className="mx-auto max-w-4xl px-4 sm:px-6">
-        <div className="text-center">
-          <h2 className="font-serif text-4xl font-semibold tracking-normal text-foreground">
-            One managed plan
-          </h2>
-          <p className="mt-4 text-lg text-muted">
-            One subscription for the dashboard, iPhone app, and data controls.
-          </p>
-        </div>
-        <div className="mt-10 rounded-2xl border border-border-strong bg-surface-solid p-6 shadow-xl shadow-accent/5 sm:p-8">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <h3 className="text-2xl font-semibold text-foreground">Dofek Managed</h3>
-              <p className="mt-2 text-sm text-muted">
-                For people who want their records in one place.
-              </p>
-            </div>
-            <div className="text-left sm:text-right">
-              <div className="text-3xl font-bold text-accent">One plan</div>
-              <div className="text-sm text-muted">Core dashboard included</div>
-            </div>
-          </div>
-          <ul className="mt-8 grid gap-3 sm:grid-cols-2">
-            {PLAN_POINTS.map((point) => (
-              <li key={point} className="text-sm leading-6 text-muted">
-                <span className="mr-2 font-semibold text-accent-secondary">✓</span>
-                {point}
-              </li>
-            ))}
-          </ul>
         </div>
       </div>
     </section>
@@ -913,9 +801,6 @@ function Footer() {
             className="transition-colors hover:text-foreground"
           >
             GitHub
-          </a>
-          <a href="#pricing" className="transition-colors hover:text-foreground">
-            Pricing
           </a>
           <Link to="/privacy" className="transition-colors hover:text-foreground">
             Privacy

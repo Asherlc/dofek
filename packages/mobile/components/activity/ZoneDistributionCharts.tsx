@@ -8,9 +8,9 @@ import {
 } from "@dofek/zones/zones";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import Svg, { G, Rect, Text as SvgText } from "react-native-svg";
-import { AccessibleChart } from "../../components/AccessibleChart";
-import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { colors } from "../../theme";
+import { AccessibleChart } from "../AccessibleChart";
+import { ChartTitleWithTooltip } from "../ChartTitleWithTooltip";
 import { ACTIVITY_CHART_WIDTH } from "./chartDimensions";
 
 function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
@@ -202,7 +202,7 @@ export function HrZonesChart({
     <ZoneDistributionChart
       zones={zones}
       title="Heart Rate Zones"
-      description="This chart shows how much time you spent in each heart rate zone during the activity."
+      description="Bars show both recorded duration and percentage of activity time in each heart rate zone."
       zoneColors={HEART_RATE_ZONE_COLORS}
       emptyMessage="No heart rate zone data"
       loading={loading}
@@ -216,7 +216,7 @@ export function PowerZonesChart({ zones }: { zones: ActivityPowerZone[] }) {
     <ZoneDistributionChart
       zones={zones}
       title="Power Zones"
-      description="This chart shows how much time you spent in each power zone."
+      description="Bars show both recorded duration and percentage of activity time in each power zone."
       zoneColors={POWER_ZONE_COLORS}
       emptyMessage="No power zone data"
     />

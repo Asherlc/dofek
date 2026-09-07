@@ -215,37 +215,14 @@ describe("LandingPage", () => {
     render(<LandingPage />);
 
     expect(screen.getByText("Illustrative relationship")).toBeTruthy();
-    expect(screen.getByText("Illustrative sample")).toBeTruthy();
     expect(screen.getByText("Example points")).toBeTruthy();
-    expect(screen.getByText("No measured correlation")).toBeTruthy();
     expect(
-      screen.getByText("No sample size or confidence interval is shown for this illustration."),
-    ).toBeTruthy();
-    expect(screen.getByText("Example source types: sleep + heart rate variability")).toBeTruthy();
-    expect(screen.getByText("Illustrative data only—not a measured Dofek result.")).toBeTruthy();
-    expect(
-      screen.getByText(
-        "Real relationships can reflect missing observations or other factors; association does not establish causation.",
-      ),
-    ).toBeTruthy();
-    expect(
-      screen.getByText("Next: connect sources to compare your own paired records."),
+      screen.getByText("Illustrative data only. Association does not establish causation."),
     ).toBeTruthy();
 
     expect(screen.getByText("+3 bpm vs prior 7 days")).toBeTruthy();
     expect(screen.getByText("7 of 7 nights")).toBeTruthy();
     expect(screen.getByText("Example source: Oura")).toBeTruthy();
-    expect(screen.getByText("Confidence: high coverage; not a diagnosis.")).toBeTruthy();
-    expect(screen.getByText("Next: review training and meal timing.")).toBeTruthy();
-
-    expect(screen.getByText("r = -0.46")).toBeTruthy();
-    expect(screen.getByText("Moderate negative")).toBeTruthy();
-    expect(screen.getByText("22 paired days of 30")).toBeTruthy();
-    expect(screen.getByText("Example sources: Garmin load + Oura sleep")).toBeTruthy();
-    expect(screen.getByText("Confidence: low; descriptive only.")).toBeTruthy();
-    expect(
-      screen.getByText("Next: inspect high-load weeks with lower sleep consistency."),
-    ).toBeTruthy();
   });
 
   it("gives preview charts accessible names, axes, units, and time context", () => {
@@ -261,15 +238,9 @@ describe("LandingPage", () => {
         name: "Example resting heart rate trend. X-axis: May 21 to May 27, 2026. Y-axis: Resting heart rate (bpm).",
       }),
     ).toBeTruthy();
-    expect(
-      screen.getByRole("img", {
-        name: "Example training and sleep scatter plot. X-axis: Training load (points). Y-axis: Sleep consistency (%).",
-      }),
-    ).toBeTruthy();
 
-    expect(screen.getAllByText("Sleep consistency (%)")).toHaveLength(2);
+    expect(screen.getByText("Sleep consistency (%)")).toBeTruthy();
     expect(screen.getByText("Heart rate variability (ms)")).toBeTruthy();
-    expect(screen.getByText("Training load (points)")).toBeTruthy();
     expect(screen.getByText("Resting heart rate (bpm)")).toBeTruthy();
     expect(screen.getByText("May 21")).toBeTruthy();
     expect(screen.getByText("May 27")).toBeTruthy();
@@ -324,13 +295,12 @@ describe("LandingPage", () => {
     expect(screen.queryByText("Credential sync")).toBeNull();
   });
 
-  it("includes inspection, mobile, trust, and pricing sections", () => {
+  it("includes inspection, mobile, and trust sections", () => {
     render(<LandingPage />);
 
     expect(screen.getByText("What you can check")).toBeTruthy();
     expect(screen.getByText("iPhone app included")).toBeTruthy();
     expect(screen.getByText("Your data stays yours")).toBeTruthy();
-    expect(screen.getByText("One managed plan")).toBeTruthy();
   });
 
   it("renders the empty usable provider state without claiming integrations are available", () => {

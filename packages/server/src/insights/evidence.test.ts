@@ -9,9 +9,8 @@ describe("createInsightEvidence", () => {
       method:
         "Observed-group mean comparison (with versus without the behavior); candidate differences use Welch's t-test with Benjamini–Hochberg screening.",
       interpretation:
-        "This observational association does not establish that the behavior caused the outcome.",
-      limitations:
-        "The displayed counts are the observed groups; missing observations and unmeasured confounders may affect this estimate. No confidence interval is available for this exploratory comparison.",
+        "This association does not prove cause. Missing data and other factors may affect it.",
+      limitations: "No confidence interval is available for this comparison.",
       recommendation: "This is not a prescription or recommendation to change the behavior.",
       observationWindow: "Daily observations",
       estimateLabel: "25% higher",
@@ -25,9 +24,8 @@ describe("createInsightEvidence", () => {
       method:
         "Spearman rank correlation over paired observations with Benjamini–Hochberg screening.",
       interpretation:
-        "This correlation describes co-movement in the observed data; it does not establish causation.",
-      limitations:
-        "The displayed n is the number of paired observations; missing observations and unmeasured confounders may affect this estimate. No confidence interval is available for this exploratory correlation.",
+        "This correlation does not prove cause. Missing data and other factors may affect it.",
+      limitations: "No confidence interval is available for this correlation.",
       recommendation: "Use this as a hypothesis, not a prescription or treatment recommendation.",
       observationWindow: "Daily observations",
     });

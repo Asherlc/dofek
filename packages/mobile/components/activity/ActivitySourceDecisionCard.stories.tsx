@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { View } from "react-native";
-import { ActivitySourceDecisionCard } from "../../app/activity/ActivitySourceDecisionCard";
+import { ActivitySourceDecisionCard } from "./ActivitySourceDecisionCard";
 
 const meta = {
   title: "Activity/ActivitySourceDecisionCard",
