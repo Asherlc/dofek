@@ -499,10 +499,10 @@ describe("ClickHouse account erasure (integration)", () => {
       });
       await client.command({
         query: `CREATE TABLE \`${managedDatabase}\`.sleep_rows (
-          session_id UUID,
+          selected_session_id UUID,
           value String
         ) ENGINE = MergeTree
-        ORDER BY session_id
+        ORDER BY selected_session_id
         SETTINGS
           old_parts_lifetime = 1,
           cleanup_delay_period = 1,
@@ -597,8 +597,8 @@ describe("ClickHouse account erasure (integration)", () => {
       await client.insert({
         table: `${managedDatabase}.sleep_rows`,
         values: [
-          { session_id: sleepSessionId, value: "delete-sleep" },
-          { session_id: otherSleepSessionId, value: "keep-other-sleep" },
+          { selected_session_id: sleepSessionId, value: "delete-sleep" },
+          { selected_session_id: otherSleepSessionId, value: "keep-other-sleep" },
         ],
         format: "JSONEachRow",
         clickhouse_settings: { log_queries: 0 },

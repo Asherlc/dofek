@@ -124,6 +124,7 @@ const identifierColumnDefinitions: Readonly<Record<string, readonly IdentifierCo
     operation_id: [{ cardinality: "scalar", family: "operationIds", valueType: "uuid" }],
     panel_id: [{ cardinality: "scalar", family: "recordIds", valueType: "uuid" }],
     primary_activity_id: [{ cardinality: "scalar", family: "activityIds", valueType: "uuid" }],
+    selected_session_id: [{ cardinality: "scalar", family: "sleepIds", valueType: "uuid" }],
     session_id: [{ cardinality: "scalar", family: "sleepIds", valueType: "uuid" }],
     sleep_id: [{ cardinality: "scalar", family: "sleepIds", valueType: "uuid" }],
     sleep_session_id: [{ cardinality: "scalar", family: "sleepIds", valueType: "uuid" }],

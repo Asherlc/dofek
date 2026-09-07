@@ -160,6 +160,42 @@ function successfulQuery() {
 }
 
 describe("eraseClickHouseAccount", () => {
+  it.each(["UUID", "Nullable(UUID)"])(
+    "erases selected sleep session relations typed %s",
+    async (type) => {
+      const sleepId = "50000000-0000-4000-8000-000000001994";
+      const command = vi.fn<ClickHouseCommandClient["command"]>(async () => undefined);
+      const insert = vi.fn<NonNullable<ClickHouseCommandClient["insert"]>>(async () => undefined);
+      const query = queryReturningTables([
+        managedTable("daily_sleep", [["selected_session_id", type]]),
+      ]);
+      await eraseClickHouseAccount(
+        { command, insert, query },
+        {
+          activityIds: [],
+          operationIds: [],
+          sleepSessionIds: [sleepId],
+          userId,
+        },
+      );
+      const capture = query.mock.calls.find(([options]) =>
+        options.query.includes(" AS sleep_ids"),
+      )?.[0];
+      expect(capture?.query).toContain("`selected_session_id` IN {sleep_ids:Array(UUID)}");
+      expect(capture?.query.replace(/\s+/g, " ")).toContain(
+        "arrayFlatten(groupArray(arrayConcat([ifNull(toString(`selected_session_id`), '')]))) ) ) AS sleep_ids",
+      );
+      expect(capture?.query_params?.sleep_ids).toEqual([sleepId]);
+      const mutation = command.mock.calls.find(([options]) =>
+        options.query.includes("ALTER TABLE `analytics`.`daily_sleep`"),
+      )?.[0];
+      expect(mutation?.query).toContain("SHA256(toString(`selected_session_id`))");
+      expect(mutation?.query_params?.sleep_ids_hashes).toEqual([
+        createHash("sha256").update(sleepId).digest("hex"),
+      ]);
+    },
+  );
+
   it.each([
     ["postgres_fitness", "activity", "group_id", "UUID", "activity_ids", "UUID"],
     ["postgres_fitness", "activity", "group_id", "Nullable(UUID)", "activity_ids", "UUID"],
