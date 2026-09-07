@@ -120,15 +120,11 @@ const weeklyReport = {
     decisionSupport: null,
     emptyState: {
       reportKind: "weekly" as const,
-      title: "Your weekly report will appear here",
-      message: "No activity, sleep, or recovery data is available for this report yet.",
+      title: "No weekly report for this period.",
       minimumObservedDays: 1,
       acceptedDataTypes: ["activity", "sleep", "recovery"] as const,
       requirement:
-        "At least 1 observed day of activity, sleep, or recovery data is required to create a weekly report.",
-      previewTitle: "When ready, your weekly report will include",
-      previewItems: ["Training time and activity count", "Average nightly sleep"],
-      note: "This preview shows report sections only. No personal values or conclusions are estimated.",
+        "Sync at least one day of activity, sleep, or recovery data from this period to create a report.",
     },
     recovery: {
       range: { startDate: "2026-07-19", endDate: "2026-07-25" },
@@ -239,15 +235,11 @@ describe("health report route", () => {
           decisionSupport: null,
           emptyState: {
             reportKind: "monthly" as const,
-            title: "Your monthly report will appear here",
-            message: "No activity, sleep, or recovery data is available for this report yet.",
+            title: "No monthly report for this period.",
             minimumObservedDays: 1,
             acceptedDataTypes: ["activity", "sleep", "recovery"] as const,
             requirement:
-              "At least 1 observed day of activity, sleep, or recovery data is required to create a monthly report.",
-            previewTitle: "When ready, your monthly report will include",
-            previewItems: ["Training time and activity count", "Average daily strain"],
-            note: "This preview shows report sections only. No personal values or conclusions are estimated.",
+              "Sync at least one day of activity, sleep, or recovery data from this period to create a report.",
           },
           recovery: {
             range: { startDate: "2026-07-01", endDate: "2026-07-31" },
@@ -332,14 +324,10 @@ describe("health report route", () => {
           current: null,
           emptyState: {
             reportKind: "weekly" as const,
-            title: "Server weekly preview title",
-            message: "Server weekly preview message.",
+            title: "Server weekly absence title",
             minimumObservedDays: 1,
             acceptedDataTypes: ["activity", "sleep", "recovery"] as const,
             requirement: "Server weekly coverage requirement.",
-            previewTitle: "Server weekly structure",
-            previewItems: ["Training time and activity count", "Average nightly sleep"],
-            note: "Server no-estimate note.",
           },
         },
       },
@@ -349,7 +337,7 @@ describe("health report route", () => {
 
     renderRoute("empty-weekly-token");
 
-    expect(screen.getByText("Weekly empty Server weekly preview title")).toBeTruthy();
+    expect(screen.getByText("Weekly empty Server weekly absence title")).toBeTruthy();
   });
 
   it("renders an empty monthly shared report from stored server empty state", () => {
@@ -363,14 +351,10 @@ describe("health report route", () => {
           decisionSupport: null,
           emptyState: {
             reportKind: "monthly" as const,
-            title: "Server monthly preview title",
-            message: "Server monthly preview message.",
+            title: "Server monthly absence title",
             minimumObservedDays: 1,
             acceptedDataTypes: ["activity", "sleep", "recovery"] as const,
             requirement: "Server monthly coverage requirement.",
-            previewTitle: "Server monthly structure",
-            previewItems: ["Average daily strain", "Month-over-month training and sleep changes"],
-            note: "Server no-estimate note.",
           },
           recovery: {
             range: { startDate: "2026-07-01", endDate: "2026-07-31" },
@@ -384,7 +368,7 @@ describe("health report route", () => {
 
     renderRoute("empty-monthly-token");
 
-    expect(screen.getByText("Monthly empty Server monthly preview title")).toBeTruthy();
+    expect(screen.getByText("Monthly empty Server monthly absence title")).toBeTruthy();
   });
 
   it("shows a loading state without falling back to owner management", () => {

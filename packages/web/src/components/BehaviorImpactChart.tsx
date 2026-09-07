@@ -217,28 +217,27 @@ export function BehaviorImpactChart({ days }: { days: TimeRangeDays }) {
           Association with Next-Day Readiness
         </h3>
         {evidence ? (
-          <EvidenceDetails
-            className="mb-4"
-            textClassName="text-dim"
-            details={[
-              { key: "method", label: "Method", value: evidence.method },
-              {
-                key: "interpretation",
-                label: "Interpretation",
-                value: evidence.interpretation,
-              },
-              {
-                key: "uncertainty",
-                label: "Uncertainty",
-                value: evidence.uncertainty,
-              },
-              {
-                key: "observation-window",
-                label: "Observation window",
-                value: evidence.observationWindow,
-              },
-            ]}
-          />
+          <div className="mb-4">
+            <EvidenceDetails
+              details={[
+                { key: "interpretation", value: evidence.interpretation },
+                { key: "uncertainty", value: evidence.uncertainty },
+              ]}
+            />
+            <details className="mt-2 text-xs text-dim">
+              <summary className="cursor-pointer">Calculation details</summary>
+              <EvidenceDetails
+                details={[
+                  { key: "method", value: evidence.method },
+                  {
+                    key: "observation-window",
+                    label: "Observation window",
+                    value: evidence.observationWindow,
+                  },
+                ]}
+              />
+            </details>
+          </div>
         ) : null}
         <div
           className="mb-1 hidden text-[10px] text-dim sm:grid sm:grid-cols-[10rem_minmax(0,1fr)_6rem] sm:gap-3"

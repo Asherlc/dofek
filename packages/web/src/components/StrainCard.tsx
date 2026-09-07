@@ -182,7 +182,7 @@ export function StrainCard({ data, strainTarget, loading }: StrainCardProps) {
             <div className="mt-1 pt-2 border-t border-border">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-subtle">
-                  Target:{" "}
+                  Suggested strain:{" "}
                   <span className="text-foreground font-medium">{strainTarget.targetStrain}</span> (
                   {strainTarget.zone})
                 </span>

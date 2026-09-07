@@ -221,16 +221,11 @@ describe("Dashboard", () => {
         date: "2026-05-27",
         action: {
           id: "strain_target",
-          title: "No change needs attention — aim for 12 strain",
-          summary: "Stay in range",
+          title: "Suggested strain: 12",
           zone: "Maintain",
         },
-        supportingFacts: [
-          { label: "Recovery", value: "60/100" },
-          { label: "Strain target", value: "12" },
-        ],
+        supportingFacts: [{ label: "Recovery", value: "60/100" }],
         caveats: [],
-        confidence: "moderate",
         freshness: { recoveryDate: "2026-05-27", sleepDate: null },
         missingInputs: ["sleep"],
       },

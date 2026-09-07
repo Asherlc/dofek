@@ -51,6 +51,7 @@ function ProviderSourceDetails({ sources }: { sources: ProviderProvenance[] }) {
 
 export default function BehaviorAssociationsScreen() {
   const { days, description, setDays } = useTimeRangePreference("behavior");
+  const [calculationOpen, setCalculationOpen] = useState(false);
   const query = trpc.behaviorImpact.impactSummary.useQuery({ days });
   const data = query.data;
   const associationRows = data?.filter((item) => item.association) ?? [];
@@ -70,12 +71,23 @@ export default function BehaviorAssociationsScreen() {
       {evidence ? (
         <Card title="Evidence">
           <View style={styles.evidenceDetails}>
-            <Text style={styles.evidenceText}>Method: {evidence.method}</Text>
-            <Text style={styles.evidenceText}>Interpretation: {evidence.interpretation}</Text>
-            <Text style={styles.evidenceText}>Uncertainty: {evidence.uncertainty}</Text>
-            <Text style={styles.evidenceText}>
-              Observation window: {evidence.observationWindow}
-            </Text>
+            <Text style={styles.evidenceText}>{evidence.interpretation}</Text>
+            <Text style={styles.evidenceText}>{evidence.uncertainty}</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ expanded: calculationOpen }}
+              onPress={() => setCalculationOpen((open) => !open)}
+            >
+              <Text style={styles.technicalDetails}>Calculation details</Text>
+            </Pressable>
+            {calculationOpen ? (
+              <View>
+                <Text style={styles.evidenceText}>{evidence.method}</Text>
+                <Text style={styles.evidenceText}>
+                  Observation window: {evidence.observationWindow}
+                </Text>
+              </View>
+            ) : null}
           </View>
         </Card>
       ) : null}

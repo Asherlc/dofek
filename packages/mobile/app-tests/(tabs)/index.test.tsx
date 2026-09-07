@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockRouterPush = vi.fn();
@@ -188,8 +188,7 @@ describe("TodayScreen independent loading states", () => {
       date: "2026-03-21",
       action: {
         id: "strain_target",
-        title: "No change needs attention — aim for 12 strain",
-        summary: "Moderate recovery (60). Aim for a steady training day.",
+        title: "Suggested strain: 12",
         zone: "Maintain",
       },
       supportingFacts: [
@@ -197,7 +196,6 @@ describe("TodayScreen independent loading states", () => {
         { label: "Sleep performance", value: "88 (Good)" },
       ],
       caveats: [],
-      confidence: "high",
       freshness: { recoveryDate: "2026-03-21", sleepDate: "2026-03-20" },
       missingInputs: [],
     };
@@ -242,7 +240,7 @@ describe("TodayScreen independent loading states", () => {
           methodVersion: "sleep-need-heuristic-v1",
           uncertainty: "not_established",
           valueQualifier: "About",
-          summaryLabel: "Heuristic estimate",
+          summaryLabel: "Estimated sleep need",
           componentLabels: {
             baseline: "Baseline estimate",
             strainDebt: "Previous-day load adjustment",
@@ -252,10 +250,10 @@ describe("TodayScreen independent loading states", () => {
             "Baseline uses the average of 7 qualifying nights followed by at-or-above-median heart rate variability.",
           coverageLabel:
             "Sleep-debt input uses 1 observed night from the model's recent-night window.",
-          methodLabel: "Method: sleep-need-heuristic-v1",
+          methodLabel: "Baseline average plus previous-day load and sleep-debt adjustments.",
           uncertaintyLabel: "Uncertainty: not established",
           limitationLabel:
-            "This is a descriptive heuristic estimate, not a sleep recommendation. Its uncertainty has not been established.",
+            "This is an estimate, not a sleep recommendation. Its uncertainty has not been established.",
         },
         recentNights: [],
       },
@@ -538,8 +536,9 @@ describe("TodayScreen independent loading states", () => {
     expect(screen.queryByText("SLEEP COACH")).toBeNull();
     expect(screen.getByText("About 8h 37m")).toBeTruthy();
     expect(screen.getByText("+17m")).toBeTruthy();
-    expect(screen.getByText("Heuristic estimate")).toBeTruthy();
+    expect(screen.getByText("Estimated sleep need")).toBeTruthy();
     expect(screen.getByText("Previous-day load adjustment")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "How this is calculated" }));
     expect(
       screen.getByText(
         "Baseline uses the average of 7 qualifying nights followed by at-or-above-median heart rate variability.",
@@ -550,11 +549,12 @@ describe("TodayScreen independent loading states", () => {
         "Sleep-debt input uses 1 observed night from the model's recent-night window.",
       ),
     ).toBeTruthy();
-    expect(screen.getByText("Method: sleep-need-heuristic-v1")).toBeTruthy();
-    expect(screen.getByText("Uncertainty: not established")).toBeTruthy();
+    expect(
+      screen.getByText("Baseline average plus previous-day load and sleep-debt adjustments."),
+    ).toBeTruthy();
     expect(
       screen.getByText(
-        "This is a descriptive heuristic estimate, not a sleep recommendation. Its uncertainty has not been established.",
+        "This is an estimate, not a sleep recommendation. Its uncertainty has not been established.",
       ),
     ).toBeTruthy();
     expect(screen.queryByText("recommended tonight")).toBeNull();

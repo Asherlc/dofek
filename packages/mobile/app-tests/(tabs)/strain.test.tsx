@@ -527,7 +527,7 @@ describe("StrainScreen recent activity navigation", () => {
         currentStrain: 10,
         progressPercent: 71,
         zone: "Push",
-        explanation: "Recovery is strong. Push for a high-strain day to build fitness.",
+        explanation: "Based on the recovery score.",
         dailyLoad: 50,
         acuteLoad: 90,
         chronicLoad: 80,
@@ -555,7 +555,7 @@ describe("StrainScreen recent activity navigation", () => {
     render(<StrainScreen />);
 
     expect(screen.queryByTestId("query-state-loading")).toBeNull();
-    expect(screen.getByText("Daily Strain Target")).toBeTruthy();
+    expect(screen.getByText("Suggested strain")).toBeTruthy();
     expect(screen.getByText("71% reached")).toBeTruthy();
     expect(screen.getByText("Morning Ride")).toBeTruthy();
   });
@@ -596,7 +596,7 @@ describe("StrainScreen recent activity navigation", () => {
         currentStrain: 10,
         progressPercent: 71,
         zone: "Push",
-        explanation: "Recovery is strong (78). Push for a high-strain day to build fitness.",
+        explanation: "Based on a recovery score of 78/100.",
         dailyLoad: 50,
         acuteLoad: 90,
         chronicLoad: 80,
@@ -608,7 +608,7 @@ describe("StrainScreen recent activity navigation", () => {
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
 
-    expect(screen.getByText("Daily Strain Target")).toBeTruthy();
+    expect(screen.getByText("Suggested strain")).toBeTruthy();
     expect(screen.getByText("14")).toBeTruthy();
     expect(screen.getByText("Push")).toBeTruthy();
     expect(screen.getByText("71% reached")).toBeTruthy();
@@ -621,7 +621,7 @@ describe("StrainScreen recent activity navigation", () => {
         currentStrain: 0,
         progressPercent: 0,
         zone: "Maintain",
-        explanation: "Moderate recovery (50). Aim for a steady training day.",
+        explanation: "Based on a recovery score of 50/100.",
         dailyLoad: 0,
         acuteLoad: 133,
         chronicLoad: 33,
@@ -724,7 +724,7 @@ describe("StrainScreen recent activity navigation", () => {
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
 
-    expect(screen.queryByText("Daily Strain Target")).toBeNull();
+    expect(screen.queryByText("Suggested strain")).toBeNull();
   });
 
   it("navigates to activities list when tapping View all", async () => {

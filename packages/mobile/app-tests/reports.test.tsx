@@ -41,14 +41,10 @@ vi.mock("../lib/trpc", () => ({
                   decisionSupport: null,
                   emptyState: {
                     reportKind: "weekly",
-                    title: "Server weekly preview title",
-                    message: "Server weekly preview message.",
+                    title: "Server weekly absence title",
                     minimumObservedDays: 1,
                     acceptedDataTypes: ["activity", "sleep", "recovery"],
                     requirement: "Server weekly coverage requirement.",
-                    previewTitle: "Server weekly structure",
-                    previewItems: ["Training time and activity count", "Average nightly sleep"],
-                    note: "Server weekly no-estimate note.",
                   },
                 }
               : {
@@ -94,17 +90,10 @@ vi.mock("../lib/trpc", () => ({
                       history: [],
                       emptyState: {
                         reportKind: "monthly",
-                        title: "Server monthly preview title",
-                        message: "Server monthly preview message.",
+                        title: "Server monthly absence title",
                         minimumObservedDays: 1,
                         acceptedDataTypes: ["activity", "sleep", "recovery"],
                         requirement: "Server monthly coverage requirement.",
-                        previewTitle: "Server monthly structure",
-                        previewItems: [
-                          "Average daily strain",
-                          "Month-over-month training and sleep changes",
-                        ],
-                        note: "Server monthly no-estimate note.",
                       },
                       decisionSupport: null,
                     }
@@ -218,25 +207,17 @@ describe("ReportsScreen", () => {
     expect(mockPush).toHaveBeenCalledWith("/alerts");
   });
 
-  it("renders the server-owned empty report previews without deriving requirements", async () => {
+  it("renders server-owned report absence and requirements", async () => {
     monthlyQueryControl.weeklyEmpty = true;
     monthlyQueryControl.monthlyEmpty = true;
     const { default: ReportsScreen } = await import("../app/reports");
 
     render(<ReportsScreen />);
 
-    expect(screen.getByText("Server weekly preview title")).toBeTruthy();
-    expect(screen.getByText("Server weekly preview message.")).toBeTruthy();
+    expect(screen.getByText("Server weekly absence title")).toBeTruthy();
     expect(screen.getByText("Server weekly coverage requirement.")).toBeTruthy();
-    expect(screen.getByText("Server weekly structure")).toBeTruthy();
-    expect(screen.getByText("Training time and activity count")).toBeTruthy();
-    expect(screen.getByText("Server weekly no-estimate note.")).toBeTruthy();
-    expect(screen.getByText("Server monthly preview title")).toBeTruthy();
-    expect(screen.getByText("Server monthly preview message.")).toBeTruthy();
+    expect(screen.getByText("Server monthly absence title")).toBeTruthy();
     expect(screen.getByText("Server monthly coverage requirement.")).toBeTruthy();
-    expect(screen.getByText("Server monthly structure")).toBeTruthy();
-    expect(screen.getByText("Average daily strain")).toBeTruthy();
-    expect(screen.getByText("Server monthly no-estimate note.")).toBeTruthy();
   });
 
   it("renders report metrics without a decision summary when synthesis is unavailable", async () => {

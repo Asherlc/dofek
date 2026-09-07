@@ -443,7 +443,7 @@ export default function StrainScreen() {
           {/* Strain Target */}
           {strainTarget && (
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>Daily Strain Target</Text>
+              <Text style={styles.cardTitle}>Suggested strain</Text>
               <View style={styles.targetHeader}>
                 <View style={styles.targetValueRow}>
                   <Text style={styles.targetValue}>{strainTarget.targetStrain}</Text>

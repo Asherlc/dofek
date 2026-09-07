@@ -158,7 +158,7 @@ function createSeededProviders(hasActivities: boolean, trainingUnavailable: bool
             currentPhysiologyLoad: 450,
             progressPercent: 93,
             zone: "Push",
-            explanation: "Your recovery and training load support a productive training day.",
+            explanation: "Based on a recovery score of 78/100.",
             dailyLoad: 450,
             acuteLoad: 380,
             chronicLoad: 400,

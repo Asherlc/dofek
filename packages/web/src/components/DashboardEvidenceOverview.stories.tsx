@@ -30,9 +30,8 @@ const evidence: InsightEvidence = {
   label: "Descriptive correlation",
   method: "Spearman rank correlation over paired observations with Benjamini–Hochberg screening.",
   interpretation:
-    "This correlation describes co-movement in the observed data; it does not establish causation.",
-  limitations:
-    "The displayed n is the number of paired observations; missing observations and unmeasured confounders may affect this estimate. No confidence interval is available for this exploratory correlation.",
+    "This correlation does not prove cause. Missing data and other factors may affect it.",
+  limitations: "No confidence interval is available for this correlation.",
   recommendation: "Use this as a hypothesis, not a prescription or treatment recommendation.",
 };
 

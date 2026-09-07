@@ -422,14 +422,22 @@ describe("trpc", () => {
       await expectSanitizedClickHouseError(internalError);
     });
 
-    it("hides missing analytics-store configuration from tRPC callers", async () => {
+    it("explains missing analytics configuration and reports its diagnostic", async () => {
       const internalError = new TRPCError({
         code: "INTERNAL_SERVER_ERROR",
         message:
           "Activity calendar requires the ClickHouse activity analytics store. Set CLICKHOUSE_URL and retry.",
       });
 
-      await expectSanitizedClickHouseError(internalError);
+      const caller = createSanitizerCaller(internalError);
+      await expect(caller.test()).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message:
+          "Analytics are unavailable because the analytics service is not configured. Contact support.",
+      });
+      expect(captureException).toHaveBeenCalledWith(internalError, {
+        tags: { dependency: "clickhouse", trpcPath: "test" },
+      });
     });
 
     it("does not hide timeout errors when the message is not from ClickHouse", async () => {
