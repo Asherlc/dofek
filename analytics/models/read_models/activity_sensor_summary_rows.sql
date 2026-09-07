@@ -34,13 +34,11 @@ sample_source_versions AS MATERIALIZED (
 
 current_activity AS (
     SELECT
-        id AS activity_id,
+        activity_id,
         user_id,
         started_at
-    FROM {{ source('postgres_fitness', 'activity') }} FINAL
-    WHERE _peerdb_is_deleted = 0
-        AND provider_absent_at IS null
-        AND deleted_at IS null
+    FROM {{ ref('deduped_activities') }} FINAL
+    WHERE is_deleted = 0
 ),
 
 existing_summary_state AS (
@@ -76,8 +74,7 @@ repair_scope_dirty_keys AS (
         deduped.activity_id,
         deduped.user_id
     FROM {{ ref('deduped_activities') }} AS deduped FINAL
-    WHERE deduped.is_deleted = 0
-        AND deduped.user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+    WHERE deduped.user_id = toUUID('{{ var("activity_refresh_user_id") }}')
         AND (
             deduped.activity_id IN {{ activity_refresh_ids() }}
             OR hasAny(deduped.member_activity_ids, {{ activity_refresh_ids() }})

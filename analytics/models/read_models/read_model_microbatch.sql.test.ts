@@ -398,6 +398,7 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("lookback=3");
     expect(sql).toContain("source('ingest', 'metric_stream_freshness')");
     expect(sql).toContain("ref('deduped_activity_members')");
+    expect(sql).toContain("member_activity_id IN {{ activity_refresh_ids() }}");
     expect(sql).not.toContain("source('analytics', 'v_activity_members')");
     expect(sql).toContain("channel = 'location'");
     expect(sql).toContain("argMax(point, version) AS point");
@@ -475,9 +476,8 @@ describe("production analytics read-model build", () => {
     expect(normalizedSql).toContain(
       "LIMIT 1 BY user_id, activity_id, channel, recorded_at",
     );
-    expect(sql).toContain("source('postgres_fitness', 'activity') }} FINAL");
-    expect(sql).toContain("provider_absent_at IS null");
-    expect(sql).toContain("deleted_at IS null");
+    expect(sql).toContain("ref('deduped_activities') }} FINAL");
+    expect(sql).toContain("WHERE is_deleted = 0");
     expect(normalizedSql).toContain(
       "LEFT JOIN existing_summary_state ON existing_summary_state.activity_id = sample_source_versions.activity_id",
     );
@@ -517,9 +517,10 @@ describe("production analytics read-model build", () => {
       "FROM {{ ref('activity_location_sample') }} AS location_samples INNER JOIN current_dirty_keys",
     );
     expect(normalizedSql).toContain("LIMIT 1 BY source_metric_stream_id");
-    expect(sql).toContain("source('postgres_fitness', 'activity') }} FINAL");
-    expect(sql).toContain("provider_absent_at IS null");
-    expect(sql).toContain("deleted_at IS null");
+    expect(sql).toContain("ref('deduped_activities') }} FINAL");
+    expect(sql).toContain("WHERE is_deleted = 0");
+    expect(sql).toContain("repair_scope_dirty_keys AS");
+    expect(sql).toContain("hasAny(deduped.member_activity_ids");
     expect(sql).toContain("restored_dirty_keys AS");
     expect(sql).toContain("prior_summary.is_deleted = 0");
     expect(sql).not.toContain("source('analytics', 'v_activity')");
@@ -618,6 +619,10 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("ref('activity_location_summary_rows')");
     expect(sql).toContain("(user_id, activity_id) IN");
     expect(sql).toContain("changed_raw_activity");
+    expect(normalizedSql).toContain("activity.group_id AS activity_id");
+    expect(normalizedSql).toContain(
+      "current_activity.activity_id = changed_raw_activity.activity_id",
+    );
     expect(sql).toContain("dirty_key_candidates");
     expect(sql).toContain("dedupe_mapping_dirty_keys");
     expect(sql).toContain("canonical_dirty_keys");

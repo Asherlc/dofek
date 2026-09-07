@@ -165,6 +165,7 @@ function renderActivitySensorSummaryRowsSelectSql(targetSchema: string): string 
     .replaceAll("{{ initial_lookback_days }}", "120")
     .replaceAll("{{ this }}", `${targetSchema}.activity_sensor_summary_rows`)
     .replaceAll("{{ ref('activity_sensor_sample') }}", `${targetSchema}.activity_sensor_sample`)
+    .replaceAll("{{ ref('deduped_activities') }}", `${targetSchema}.source_activity`)
     .replaceAll("{{ source('postgres_fitness', 'activity') }}", `${targetSchema}.source_activity`)
     .concat("\nSETTINGS join_use_nulls = 1, enable_materialized_cte = 1");
 }
@@ -205,15 +206,13 @@ async function runStatements(client: ClickHouseClient, statements: string[]): Pr
 
 function createSourceActivityTableSql(targetSchema: string): string {
   return `CREATE TABLE ${targetSchema}.source_activity (
-  id UUID,
+  activity_id UUID,
   user_id UUID,
   started_at DateTime64(6, 'UTC'),
-  provider_absent_at Nullable(DateTime64(6, 'UTC')),
-  deleted_at Nullable(DateTime64(6, 'UTC')),
-  _peerdb_is_deleted UInt8
+  is_deleted UInt8
 )
 ENGINE = ReplacingMergeTree()
-ORDER BY id`;
+ORDER BY activity_id`;
 }
 
 function createActivitySensorSampleTableSql(targetSchema: string): string {
@@ -234,10 +233,10 @@ ORDER BY (user_id, activity_id, recorded_date, channel, recorded_at)`;
 
 function insertCurrentActivitiesSql(targetSchema: string): string {
   return `INSERT INTO ${targetSchema}.source_activity VALUES
-  ('${historicalActivityId}', '${testUserId}', toDateTime64('2019-07-16 14:56:37', 6, 'UTC'), NULL, NULL, 0),
-  ('${unrelatedActivityId}', '${testUserId}', toDateTime64('2026-07-04 01:00:00', 6, 'UTC'), NULL, NULL, 0),
-  ('${tombstonedActivityId}', '${testUserId}', toDateTime64('2026-07-05 01:00:00', 6, 'UTC'), NULL, NULL, 0),
-  ('${singleAltitudeActivityId}', '${testUserId}', toDateTime64('2026-07-06 01:00:00', 6, 'UTC'), NULL, NULL, 0)`;
+  ('${historicalActivityId}', '${testUserId}', toDateTime64('2019-07-16 14:56:37', 6, 'UTC'), 0),
+  ('${unrelatedActivityId}', '${testUserId}', toDateTime64('2026-07-04 01:00:00', 6, 'UTC'), 0),
+  ('${tombstonedActivityId}', '${testUserId}', toDateTime64('2026-07-05 01:00:00', 6, 'UTC'), 0),
+  ('${singleAltitudeActivityId}', '${testUserId}', toDateTime64('2026-07-06 01:00:00', 6, 'UTC'), 0)`;
 }
 
 function insertHistoricalPowerSamplesSql(targetSchema: string): string {

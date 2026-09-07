@@ -9,6 +9,7 @@
 ) }}
 
 {% set initial_lookback_days = var('initial_lookback_days', 120) %}
+{% set activity_refresh_scoped = activity_refresh_scope_enabled() %}
 
 WITH
 {% if is_incremental() %}
@@ -25,13 +26,11 @@ target_state AS (
 
 current_activity AS (
     SELECT
-        id AS activity_id,
+        activity_id,
         user_id,
         started_at
-    FROM {{ source('postgres_fitness', 'activity') }} FINAL
-    WHERE _peerdb_is_deleted = 0
-        AND provider_absent_at IS null
-        AND deleted_at IS null
+    FROM {{ ref('deduped_activities') }} FINAL
+    WHERE is_deleted = 0
 ),
 
 existing_summary AS (
@@ -48,6 +47,29 @@ existing_summary AS (
         WHERE 1 = 0
     {% endif %}
 ),
+
+{% if activity_refresh_scoped %}
+repair_scope_dirty_keys AS (
+    SELECT
+        deduped.activity_id,
+        deduped.user_id
+    FROM {{ ref('deduped_activities') }} AS deduped FINAL
+    WHERE deduped.user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        AND (
+            deduped.activity_id IN {{ activity_refresh_ids() }}
+            OR hasAny(deduped.member_activity_ids, {{ activity_refresh_ids() }})
+        )
+
+    UNION DISTINCT
+
+    SELECT
+        activity_id,
+        user_id
+    FROM existing_summary
+    WHERE user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        AND activity_id IN {{ activity_refresh_ids() }}
+),
+{% endif %}
 
 initial_dirty_keys AS (
     SELECT
@@ -122,6 +144,12 @@ dirty_keys AS (
         activity_id,
         user_id
     FROM (
+        {% if activity_refresh_scoped %}
+        SELECT
+            activity_id,
+            user_id
+        FROM repair_scope_dirty_keys
+        {% else %}
         SELECT
             activity_id,
             user_id
@@ -141,6 +169,7 @@ dirty_keys AS (
             activity_id,
             user_id
         FROM restored_dirty_keys
+        {% endif %}
     )
 ),
 

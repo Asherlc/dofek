@@ -25,7 +25,10 @@ describe("runActivityIntegrityDbtBuild", () => {
     const selection = args[args.indexOf("--select") + 1] ?? "";
 
     expect(selection).toContain(
-      "deduped_activity_members activity_sensor_sample activity_sensor_summary_rows",
+      "deduped_activity_members activity_sensor_sample activity_location_sample",
+    );
+    expect(selection).toContain(
+      "activity_sensor_sample activity_location_sample activity_sensor_summary_rows activity_location_summary_rows activity_summary_rows activity_vo2max_estimate",
     );
     child.emit("close", 0);
     await expect(build).resolves.toBeUndefined();

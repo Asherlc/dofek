@@ -166,7 +166,7 @@ describe("buildClickHouseBootstrapStatements", () => {
       sql.indexOf("CREATE TABLE IF NOT EXISTS analytics.deduped_sensor"),
       sql.indexOf("CREATE VIEW IF NOT EXISTS analytics.deduped_location"),
     );
-    expect(dedupedSensorDefinition).not.toContain("activity_id");
+    expect(dedupedSensorDefinition).not.toMatch(/\n\s+activity_id\s/);
     expect(sql).toContain("JSONExtract(metric_stream.point, 'coordinates', 'Array(Float64)')");
     expect(sql).toContain("parsed_points.point.2");
     expect(sql).toContain("parsed_points.point.1");
@@ -231,8 +231,7 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).not.toContain("FROM postgres_fitness_live.v_activity");
     expect(sql).not.toContain("FROM postgres_fitness_live.v_activity_members");
     expect(sql).toContain("WITH RECURSIVE");
-    expect(sql).toContain("connected_components AS");
-    expect(sql).toContain("min(toString(connected_activity_id)) AS group_id");
+    expect(sql).not.toContain("min(toString(connected_activity_id)) AS group_id");
     expect(sql).toContain("min(toString(connected_sleep_id)) AS group_id");
     expect(sql).not.toContain("connected_measurement_id");
     expect(sql).toContain("JOIN analytics.deduped_sensor AS");

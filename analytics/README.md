@@ -98,6 +98,23 @@ stage is evaluated once per build instead of being inlined into every aggregate
 branch. ClickHouse introduced materialized CTEs for exactly this shared-result
 reuse and requires `enable_materialized_cte`:
 <https://clickhouse.com/blog/clickhouse-release-26-03>.
+The activity sample, sensor summary, location summary, activity summary, and
+VO2 max models use the persisted activity-group UUID as their lifecycle key.
+Member and alias UUIDs are accepted only as dirty lookup inputs and resolve to
+both the current group and any superseded group row that must be tombstoned.
+Scalar channels are unioned from deduplicated samples across every member;
+location selects one coherent provider track for the group so overlapping
+routes are not combined. Consequently, changing the display representative
+does not change the group's heart rate, GPS, elevation, or other populated
+summary values. `source_activity_id` remains nullable sample provenance used
+to rank payload-bearing representatives; it does not restrict the served group
+union.
+
+The TypeScript bootstrap views use the same persisted group identity contract.
+[Migration 0078](../src/db/clickhouse-migrations/0078_stable_activity_read_views.ts)
+recreates pre-dbt activity views so an upgraded deployment cannot retain the
+older dynamic/minimum-member identity behavior. Apply ClickHouse migrations
+before refreshing dbt models.
 The serving-facing `analytics.activity_summary` object is a thin ClickHouse view
 over `analytics.activity_summary_rows FINAL`; the expensive activity/sample
 joins belong in incremental dbt models, not in web/API requests. Complex
@@ -206,12 +223,19 @@ these flags as the supported historical backfill controls and recommends
 providing both bounds:
 <https://docs.getdbt.com/docs/build/incremental-microbatch#backfills>.
 
-When the semantics of an `activity_sensor_summary_rows` or
-`activity_summary_rows` field change, existing append-incremental rows are not
-rewritten by the model change alone. Run an explicit, monitored rebuild of the
-upstream sensor summary, location summary, and downstream activity summary, in
-dependency order, with an `initial_lookback_days` that covers every retained
-activity that should remain in all three tables. dbt recommends rebuilding an
+When activity grouping or an `activity_sensor_summary_rows`,
+`activity_location_summary_rows`, `activity_summary_rows`, or
+`activity_vo2max_estimate` field changes, existing append-incremental rows are
+not rewritten by the model change alone. First apply migrations 0076 through
+0078 and verify that PostgreSQL group membership has reached ClickHouse CDC.
+If historical scalar provenance was projected before migration 0077, run the
+bounded microbatch replay above in this order:
+`sensor_scalar_sample`, `deduped_sensor`, `activity_sensor_sample`, then
+`activity_location_sample`. After that replay, run an explicit, monitored full
+refresh of the sensor summary, location summary, final activity summary, and
+VO2 max estimate in dependency order, with an `initial_lookback_days` that
+covers every retained activity that should remain in all four tables. dbt
+recommends rebuilding an
 incremental model when its logic changes because historical transformations
 remain in the target table, using `--full-refresh` for the rebuild:
 <https://docs.getdbt.com/docs/build/incremental-models#how-do-i-rebuild-an-incremental-model>.
@@ -252,13 +276,13 @@ pnpm tsx scripts/with-env.ts -- env \
   --profiles-dir analytics \
   --full-refresh \
   --vars '{"initial_lookback_days": 3650}' \
-  --select activity_sensor_summary_rows activity_location_summary_rows activity_summary_rows
+  --select activity_sensor_summary_rows activity_location_summary_rows activity_summary_rows activity_vo2max_estimate
 ```
 
 The lookback is a full-refresh retention boundary, not just the scope of the
 semantic change. A full refresh drops rows older than
 `initial_lookback_days`, and later incremental runs will not re-add those
-unchanged activities. The three selected models must all report `PASS` with no
+unchanged activities. The four selected models must all report `PASS` with no
 warnings or errors before the operator treats the rebuild as complete.
 
 The `cycling_activity` modality normalization requires the same explicit

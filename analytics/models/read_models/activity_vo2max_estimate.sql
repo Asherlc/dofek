@@ -28,15 +28,13 @@ WITH target_state AS (
 
 current_activity AS (
     SELECT
-        id AS activity_id,
+        activity_id,
         user_id,
         canonical_type,
         started_at,
         ended_at
-    FROM {{ source('postgres_fitness', 'activity') }} FINAL
-    WHERE _peerdb_is_deleted = 0
-        AND provider_absent_at IS null
-        AND deleted_at IS null
+    FROM {{ ref('deduped_activities') }} FINAL
+    WHERE is_deleted = 0
         AND canonical_type IN (
             'cycling',
             'running',
@@ -80,7 +78,7 @@ initial_activity_dirty_keys AS (
 ),
 
 changed_raw_activity AS (
-    SELECT id
+    SELECT group_id AS activity_id
     FROM {{ source('postgres_fitness', 'activity') }} FINAL
     WHERE
         {% if is_incremental() %}
@@ -97,7 +95,7 @@ activity_source_dirty_keys AS (
         current_activity.user_id AS user_id
     FROM current_activity
     INNER JOIN changed_raw_activity
-        ON changed_raw_activity.id = current_activity.activity_id
+        ON changed_raw_activity.activity_id = current_activity.activity_id
 ),
 
 sensor_dirty_keys AS (
