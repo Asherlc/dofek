@@ -25261,8 +25261,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   surviving input-validation and queue-control mutants in the newly added Zepp
   modules. Focused local Stryker runs now report 100% for companion account
   handoff, side upload, sync coordinators, and phone IMU drain; 88.0%
-  for the durable phone outbox; 82.2% for IMU envelopes; and 82.1% for durable
-  watch upload, all above the enforced 75% threshold. The same workflow's
+  for the durable phone outbox; 93.2% for the transfer manifest; 82.2% for IMU
+  envelopes; and 82.1% for durable watch upload, all above the enforced 75%
+  threshold. The same workflow's
   integration shard separately failed after three successful dbt executions:
   `activity-data-integrity-repair.integration.test.ts` expected two
   `activity_sensor_summary_rows` and received none, then retries were stopped by
@@ -25273,7 +25274,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   queues, acknowledgements, quarantine recovery, retry wiring, and watch chunk
   handoff. Removed redundant response-ID filters whose downstream durable queue
   operations already ignore unknown IDs, and made the selected current binding
-  the explicit upload destination.
+  the explicit upload destination. The second replacement run exposed an
+  uncovered initial file-slot helper; its direct behavior test raises the
+  focused transfer-manifest mutation score from the shard's 50% to 93.2%.
 - **Remaining risk / follow-up:** Confirm the replacement mutation and aggregate
   CI gates pass. If the activity-integrity integration failure recurs on the new
   head, investigate why its incremental sensor summary stays empty before
