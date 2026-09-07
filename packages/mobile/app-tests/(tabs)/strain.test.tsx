@@ -846,7 +846,8 @@ describe("StrainScreen recent activity navigation", () => {
 
     expect(screen.getByText("Best Boulder Grade")).toBeTruthy();
     expect(screen.getByText("V4")).toBeTruthy();
-    expect(screen.getByText(/strain:climbing.volumeByGrade/)).toBeTruthy();
+    expect(screen.getByText("Climbing data could not be loaded. Please try again.")).toBeTruthy();
+    expect(screen.queryByText(/Zod parse failed/)).toBeNull();
     expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
       context: "strain:climbing.volumeByGrade",
       zodError: expect.any(Object),
@@ -949,7 +950,8 @@ describe("StrainScreen recent activity navigation", () => {
 
     expect(screen.getByText("Sessions")).toBeTruthy();
     expect(screen.getByText("1")).toBeTruthy();
-    expect(screen.getByText(/strain:climbing.hangboarding.daily/)).toBeTruthy();
+    expect(screen.getByText("Climbing data could not be loaded. Please try again.")).toBeTruthy();
+    expect(screen.queryByText(/Zod parse failed/)).toBeNull();
     expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
       context: "strain:climbing.hangboarding.daily",
       zodError: expect.any(Object),

@@ -1,5 +1,6 @@
 import { formatDateTime } from "@dofek/format/format";
 import { formatDoseStatus, medicationDoseEventSchema } from "@dofek/format/medication-dose-events";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { StyleSheet, Text, View } from "react-native";
 import { z } from "zod";
 import { trpc } from "../lib/trpc";
@@ -25,7 +26,13 @@ export function MedicationDoseEventsPanel({
   }
 
   if (doseEvents.error) {
-    return <QueryStatePanel variant="error" minHeight={96} message={doseEvents.error.message} />;
+    return (
+      <QueryStatePanel
+        variant="error"
+        minHeight={96}
+        message={userFacingErrorMessage(doseEvents.error)}
+      />
+    );
   }
 
   const events = z.array(medicationDoseEventSchema).parse(doseEvents.data?.events ?? []);

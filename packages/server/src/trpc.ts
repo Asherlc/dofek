@@ -5,6 +5,7 @@ import { middlewareMarker } from "@trpc/server/unstable-core-do-not-import";
 import type { Database } from "dofek/db";
 import { queryCache } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
+import { ZodError } from "zod";
 import type { AccountErasureRestoreLedger } from "../../../src/account-erasure/restore-ledger.ts";
 import type { MetricStreamEventPublisher } from "../../../src/metric-stream/redpanda-producer.ts";
 import type { AccessWindow } from "./billing/entitlement.ts";
@@ -49,6 +50,7 @@ const fullAccessWindow: AccessWindow = { kind: "full", paid: true, reason: "paid
 
 const UNEXPECTED_SERVER_ERROR_MESSAGE =
   "We couldn't complete this request. Please try again. If the problem continues, contact support.";
+const INVALID_INPUT_MESSAGE = "Some information is invalid. Check your entries and try again.";
 
 function shouldSanitizeInternalError(error: TRPCError): boolean {
   if (error.code !== "INTERNAL_SERVER_ERROR") return false;
@@ -59,6 +61,11 @@ function shouldSanitizeInternalError(error: TRPCError): boolean {
 
 const trpc = initTRPC.context<Context>().create({
   errorFormatter({ error, shape }) {
+    if (error.code === "BAD_REQUEST" && error.cause instanceof ZodError) {
+      const data = { ...shape.data };
+      delete data.stack;
+      return { ...shape, message: INVALID_INPUT_MESSAGE, data };
+    }
     if (!shouldSanitizeInternalError(error)) return shape;
 
     const data = { ...shape.data };

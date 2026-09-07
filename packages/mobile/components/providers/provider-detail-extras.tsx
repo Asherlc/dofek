@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import {
   parseWhoopWearLocation,
   WHOOP_WEAR_LOCATION_SETTING_KEY,
@@ -48,7 +49,7 @@ function WhoopWearLocationPicker() {
       {
         onError: (error) => {
           trpcUtils.settings.get.setData({ key: WHOOP_WEAR_LOCATION_SETTING_KEY }, previousSetting);
-          setWriteError(error.message);
+          setWriteError(userFacingErrorMessage(error));
           captureException(error, { context: "whoop-wear-location-write" });
         },
         onSettled: () => {
@@ -64,8 +65,13 @@ function WhoopWearLocationPicker() {
       <Text style={styles.subtitle}>
         Where do you wear your WHOOP? This helps us interpret your sensor data.
       </Text>
-      {(writeError ?? setting.error?.message) && (
-        <Text style={styles.errorText}>{writeError ?? setting.error?.message}</Text>
+      {(writeError ?? setting.error) && (
+        <Text style={styles.errorText}>
+          {userFacingErrorMessage(
+            writeError ?? setting.error,
+            "The provider setting could not be saved. Please try again.",
+          )}
+        </Text>
       )}
       <View style={styles.optionsContainer}>
         {WHOOP_WEAR_LOCATIONS.map((location) => {

@@ -5,6 +5,7 @@ import {
   PASSWORD_REQUIREMENT_TEXT,
 } from "@dofek/auth/auth";
 import { formatDateMedium } from "@dofek/format/format";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import {
   type ClimbingGradePreference,
   resolveClimbingGradePreference,
@@ -224,7 +225,7 @@ export default function SettingsScreen() {
       await trpcUtils.auth.passwordCredentialStatus.invalidate();
       Alert.alert("Password Updated", "Your password has been saved.");
     },
-    onError: (error) => Alert.alert("Error", error.message),
+    onError: (error) => Alert.alert("Error", userFacingErrorMessage(error)),
   });
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -275,7 +276,7 @@ export default function SettingsScreen() {
   function failAppStoreBillingAction(error: unknown): void {
     setAppStoreBillingAction(null);
     setAppStoreBillingError(
-      error instanceof Error ? error.message : "App Store billing could not be completed.",
+      userFacingErrorMessage(error, "App Store billing could not be completed."),
     );
   }
 
@@ -340,7 +341,7 @@ export default function SettingsScreen() {
         onError: (error) => {
           trpcUtils.settings.get.setData({ key: "unitSystem" }, previousSetting);
           captureException(error, { context: "unit-system-write" });
-          Alert.alert("Error", error.message);
+          Alert.alert("Error", userFacingErrorMessage(error));
         },
         onSettled: () => {
           void trpcUtils.settings.get.invalidate({ key: "unitSystem" });
@@ -359,7 +360,7 @@ export default function SettingsScreen() {
         onError: (error) => {
           trpcUtils.settings.get.setData({ key }, previousSetting);
           captureException(error, { context: "climbing-grade-systems-write" });
-          Alert.alert("Error", error.message);
+          Alert.alert("Error", userFacingErrorMessage(error));
         },
         onSettled: () => {
           void trpcUtils.settings.get.invalidate({ key });
@@ -556,7 +557,14 @@ export default function SettingsScreen() {
 
       {activeCategory === "goals-models" ? (
         <ClimbingGradeSystemSettings
-          errorMessage={climbingGradeSetting.error?.message ?? null}
+          errorMessage={
+            climbingGradeSetting.error
+              ? userFacingErrorMessage(
+                  climbingGradeSetting.error,
+                  "Climbing grade settings could not be loaded. Please try again.",
+                )
+              : null
+          }
           onChange={handleClimbingGradeChange}
           preference={climbingGradePreference}
           saving={setSettingMutation.isPending}
@@ -593,7 +601,9 @@ export default function SettingsScreen() {
           {passwordStatus.isLoading ? (
             <ActivityIndicator color={colors.accent} size="small" />
           ) : passwordStatus.error ? (
-            <Text style={styles.passwordErrorText}>{passwordStatus.error.message}</Text>
+            <Text style={styles.passwordErrorText}>
+              {userFacingErrorMessage(passwordStatus.error)}
+            </Text>
           ) : (
             <View style={styles.card}>
               {passwordStatus.data?.hasPassword ? (
@@ -678,7 +688,7 @@ export default function SettingsScreen() {
           <Text style={styles.sectionTitle}>Units</Text>
           <Text style={styles.sectionDescription}>Choose how measurements are displayed</Text>
           {unitSetting.error && (
-            <Text style={styles.unitErrorText}>{unitSetting.error.message}</Text>
+            <Text style={styles.unitErrorText}>{userFacingErrorMessage(unitSetting.error)}</Text>
           )}
           <View style={styles.unitRow}>
             {UNIT_OPTIONS.map((option) => {
@@ -740,7 +750,9 @@ export default function SettingsScreen() {
             {billingStatus.isLoading ? (
               <ActivityIndicator color={colors.accent} size="small" />
             ) : billingStatus.error ? (
-              <Text style={styles.billingErrorText}>{billingStatus.error.message}</Text>
+              <Text style={styles.billingErrorText}>
+                {userFacingErrorMessage(billingStatus.error)}
+              </Text>
             ) : billingStatus.data ? (
               <>
                 <Text style={styles.billingStatusText}>

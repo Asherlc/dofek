@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { HealthReportShareButton } from "../components/HealthReportShareButton.tsx";
 import { MonthlyReportContent } from "../components/MonthlyReportContent.tsx";
@@ -43,7 +44,7 @@ function MonthlyReportPage() {
     >
       {report.error && !data ? (
         <ReportRecoveryPanel
-          message={report.error.message}
+          message={userFacingErrorMessage(report.error)}
           onRetry={retry}
           onReviewData={reviewData}
           retrying={report.isFetching}
@@ -64,7 +65,7 @@ function MonthlyReportPage() {
         <div className="space-y-4">
           {report.error ? (
             <ReportRecoveryPanel
-              message={report.error.message}
+              message={userFacingErrorMessage(report.error)}
               onRetry={retry}
               onReviewData={reviewData}
               preserved

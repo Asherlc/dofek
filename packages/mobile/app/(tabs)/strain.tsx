@@ -5,6 +5,7 @@ import {
   formatNumber,
   formatTrainingLoad,
 } from "@dofek/format/format";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { aggregateWeeklyVolume, StrainScore } from "@dofek/scoring/scoring";
 import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
@@ -430,7 +431,14 @@ export default function StrainScreen() {
         <QueryStatePanel
           variant="error"
           title="Could not load training data"
-          message={trainingQuery.error?.message}
+          message={
+            trainingQuery.error
+              ? userFacingErrorMessage(
+                  trainingQuery.error,
+                  "Training data could not be loaded. Please try again.",
+                )
+              : undefined
+          }
         />
       ) : (
         <>
@@ -570,7 +578,10 @@ export default function StrainScreen() {
             <Text style={styles.cardTitle}>Climbing</Text>
             {shouldShowClimbingError ? (
               <Text style={styles.errorText}>
-                {climbingParsed.error?.message ?? "Failed to load climbing data."}
+                {userFacingErrorMessage(
+                  climbingParsed.error,
+                  "Climbing data could not be loaded. Please try again.",
+                )}
               </Text>
             ) : null}
             {shouldShowClimbingSection ? (
@@ -589,7 +600,10 @@ export default function StrainScreen() {
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Weekly Volume</Text>
               <Text style={styles.errorText}>
-                {weeklyVolumeParsed.error.message ?? "Failed to load weekly volume."}
+                {userFacingErrorMessage(
+                  weeklyVolumeParsed.error,
+                  "Weekly volume could not be loaded. Please try again.",
+                )}
               </Text>
             </View>
           )}
@@ -644,7 +658,10 @@ export default function StrainScreen() {
               <ActivityIndicator color={colors.accent} style={styles.activitiesLoader} />
             ) : activitiesParsed.error ? (
               <Text style={styles.errorText}>
-                {activitiesParsed.error.message ?? "Failed to load activities."}
+                {userFacingErrorMessage(
+                  activitiesParsed.error,
+                  "Recent activities could not be loaded. Please try again.",
+                )}
               </Text>
             ) : activities.length > 0 ? (
               <View style={styles.activitiesStack}>

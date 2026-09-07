@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { useEffect, useState } from "react";
 import { trpc } from "../lib/trpc.ts";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
@@ -50,14 +51,26 @@ export function ZeppPairingPanel({ initialCode = "" }: { initialCode?: string })
   return (
     <ZeppPairingPanelBody
       connectionsState={connectionsState}
-      disconnectError={revokeMutation.error?.message ?? null}
+      disconnectError={
+        revokeMutation.error
+          ? userFacingErrorMessage(
+              revokeMutation.error,
+              "The device could not be disconnected. Please try again.",
+            )
+          : null
+      }
       isPairingError={pairingMutation.isError}
       isPairingPending={pairingMutation.isPending}
       pairingCode={pairingCode}
       pairingMessage={
         pairingMutation.isSuccess
           ? `${connectionLabel} connected. Return to Zepp to sync.`
-          : (pairingMutation.error?.message ?? null)
+          : pairingMutation.error
+            ? userFacingErrorMessage(
+                pairingMutation.error,
+                "The pairing code could not be created. Please try again.",
+              )
+            : null
       }
       onDisconnect={(connectionType) => revokeMutation.mutate({ connectionType })}
       onPairingCodeChange={setPairingCode}

@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { operationalStatusColors } from "@dofek/scoring/colors";
 import { Component, type ReactNode } from "react";
 import { captureException } from "../lib/telemetry.ts";
@@ -60,7 +61,10 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             Something went wrong
           </h2>
           <p className="mb-4 max-w-md text-center text-xs" style={{ color: errorTone.foreground }}>
-            {this.state.error?.message ?? "An unexpected error occurred."}
+            {userFacingErrorMessage(
+              this.state.error,
+              "We couldn't display this section. Please try again.",
+            )}
           </p>
           <button
             type="button"

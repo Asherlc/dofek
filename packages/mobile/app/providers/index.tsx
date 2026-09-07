@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { groupProviderEntries, providerFamily } from "@dofek/providers/provider-catalog";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { ROUTINE_SYNC_DAYS } from "@dofek/providers/sync-actions";
@@ -178,9 +179,7 @@ export default function ProvidersScreen() {
       }
     } catch (error: unknown) {
       captureException(error, { context: "healthkit-connect" });
-      setHealthKitProgress(
-        error instanceof Error ? error.message : "Failed to connect to Apple Health",
-      );
+      setHealthKitProgress(userFacingErrorMessage(error, "Failed to connect to Apple Health"));
     } finally {
       setHealthKitSyncing(false);
     }
@@ -204,7 +203,7 @@ export default function ProvidersScreen() {
     } catch (error: unknown) {
       if (!isHealthKitDatabaseInaccessible(error)) {
         captureException(error, { context: "healthkit-manual-sync" });
-        setHealthKitProgress(error instanceof Error ? error.message : "Sync failed");
+        setHealthKitProgress(userFacingErrorMessage(error, "Sync failed"));
         return;
       }
       setHealthKitProgress(HEALTHKIT_DATABASE_INACCESSIBLE_MESSAGE);
@@ -245,8 +244,7 @@ export default function ProvidersScreen() {
         } catch (error: unknown) {
           captureException(error, { context: "sync-status-poll" });
           if (!isMounted.current) return;
-          const message =
-            error instanceof Error ? error.message : "Sync status is temporarily unavailable.";
+          const message = userFacingErrorMessage(error, "Sync status is temporarily unavailable.");
           setSyncProgress((previous) => {
             const next = { ...previous };
             for (const providerId of activeProviderIds) {
@@ -399,7 +397,7 @@ export default function ProvidersScreen() {
         setSharedImportState({
           status: "error",
           progress: 0,
-          message: error instanceof Error ? error.message : "Import failed",
+          message: userFacingErrorMessage(error, "Import failed"),
           providerId,
         });
       } finally {
@@ -440,7 +438,10 @@ export default function ProvidersScreen() {
         setSharedImportState({
           status: "error",
           progress: 0,
-          message: error instanceof Error ? error.message : providerConfig.selectionErrorMessage,
+          message:
+            error instanceof Error
+              ? userFacingErrorMessage(error)
+              : providerConfig.selectionErrorMessage,
           providerId: providerConfig.providerId,
         });
       }
@@ -575,7 +576,7 @@ export default function ProvidersScreen() {
       } catch (error: unknown) {
         captureException(error, { context: "sync-all" });
         if (!isMounted.current) return;
-        setSyncAllError(error instanceof Error ? error.message : "Sync failed");
+        setSyncAllError(userFacingErrorMessage(error, "Sync failed"));
         setSyncingProviders(new Set());
         setAnySyncing(false);
       }
@@ -608,7 +609,7 @@ export default function ProvidersScreen() {
             captureException(error, { context: "provider-handoff" });
             Alert.alert(
               "Unable to connect provider",
-              error instanceof Error ? error.message : "Provider connection failed",
+              userFacingErrorMessage(error, "Provider connection failed"),
             );
           }
           break;
@@ -632,7 +633,7 @@ export default function ProvidersScreen() {
               context: "connect-provider-list",
               providerId: provider.id,
             });
-            Alert.alert("Unable to connect provider", error.message);
+            Alert.alert("Unable to connect provider", userFacingErrorMessage(error));
           }
           break;
         case "custom:whoop":
@@ -800,7 +801,10 @@ export default function ProvidersScreen() {
             </Text>
             {sharedImportState.status === "error" ? (
               <Text style={[styles.shareImportMessage, styles.shareImportError]}>
-                {sharedImportState.message}
+                {userFacingErrorMessage(
+                  sharedImportState.message,
+                  "The shared file could not be imported. Check the file and try again.",
+                )}
               </Text>
             ) : (
               <OperationProgressBar

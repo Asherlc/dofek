@@ -4,6 +4,7 @@ import {
   PASSWORD_MIN_LENGTH,
   PASSWORD_REQUIREMENT_TEXT,
 } from "@dofek/auth/auth";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { useState } from "react";
 import { useAuth } from "../lib/auth-context.tsx";
 import { trpc } from "../lib/trpc.ts";
@@ -68,7 +69,7 @@ export function PasswordSettingsPanel() {
   }
 
   if (status.error) {
-    return <p className="text-sm text-red-400">{status.error.message}</p>;
+    return <p className="text-sm text-red-400">{userFacingErrorMessage(status.error)}</p>;
   }
 
   return (
@@ -148,7 +149,7 @@ export function PasswordSettingsPanel() {
         </p>
       )}
       {setPassword.error ? (
-        <p className="text-xs text-red-400">{setPassword.error.message}</p>
+        <p className="text-xs text-red-400">{userFacingErrorMessage(setPassword.error)}</p>
       ) : null}
       {success ? <p className="text-xs text-accent">{success}</p> : null}
       <button

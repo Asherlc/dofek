@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { useState } from "react";
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { colors } from "../theme";
@@ -103,7 +104,14 @@ export function SupportPanel({
         keyboardType="email-address"
       />
 
-      {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+      {errorMessage ? (
+        <Text style={styles.errorText}>
+          {userFacingErrorMessage(
+            errorMessage,
+            "Your support request could not be sent. Please try again.",
+          )}
+        </Text>
+      ) : null}
 
       <TouchableOpacity
         style={[styles.primaryButton, !canSubmit && styles.buttonDisabled]}

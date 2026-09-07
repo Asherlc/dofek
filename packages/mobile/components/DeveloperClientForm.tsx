@@ -2,6 +2,7 @@ import {
   type DeveloperClientInput,
   DeveloperClientInputSchema,
 } from "@dofek/auth/developer-clients";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import type { z } from "zod";
@@ -136,7 +137,7 @@ export function DeveloperClientForm({
           accessibilityRole="alert"
           style={styles.error}
         >
-          {issue.message}
+          {userFacingErrorMessage(issue.message, "Check this value and try again.")}
         </Text>
       ))}
       {error ? (

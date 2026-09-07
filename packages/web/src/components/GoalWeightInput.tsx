@@ -1,4 +1,5 @@
 import { formatMeasurementText } from "@dofek/format/units";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { useEffect, useRef, useState } from "react";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
@@ -30,7 +31,7 @@ export function GoalWeightInput() {
       setEditing(false);
     },
     onError: (error) => {
-      setSaveError(error.message);
+      setSaveError(userFacingErrorMessage(error));
     },
   });
 

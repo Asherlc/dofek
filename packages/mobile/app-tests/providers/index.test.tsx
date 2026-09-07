@@ -729,6 +729,24 @@ describe("ProviderCard", () => {
       expect(screen.getByText("Never synced")).toBeTruthy();
     });
 
+    it("replaces a technical message left after a failed sync", async () => {
+      const { ProviderCard } = await import("../../components/providers/provider-card");
+      render(
+        <ProviderCard
+          provider={makeProvider()}
+          stats={undefined}
+          syncing={false}
+          syncProgress={{ message: "TypeError: Cannot read properties of undefined" }}
+          onSync={noopFn}
+          onConnect={noopFn}
+          onPress={noopFn}
+        />,
+      );
+
+      expect(screen.getByText("The sync or import failed. Please try again.")).toBeTruthy();
+      expect(screen.queryByText(/TypeError/)).toBeNull();
+    });
+
     it("renders 'Not connected' status for disconnected providers", async () => {
       const { ProviderCard } = await import("../../components/providers/provider-card");
       render(

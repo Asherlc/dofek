@@ -12,6 +12,7 @@ import {
 } from "@dofek/format/format";
 import { formatRecordLocalTime } from "@dofek/format/record-local-time";
 import type { UnitConverter } from "@dofek/format/units";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { providerSourceLabel } from "@dofek/providers/providers";
 import { getActivityIconInfo } from "@dofek/training/activity-icons";
 import type { MuscleGroupInput } from "@dofek/training/muscle-groups";
@@ -562,7 +563,7 @@ export default function ActivityDetailScreen() {
       captureException(error);
       Alert.alert(
         "Recompute Failed",
-        error instanceof Error ? error.message : "Unable to recompute activity.",
+        userFacingErrorMessage(error, "Unable to recompute activity."),
       );
     },
   });
@@ -654,7 +655,12 @@ export default function ActivityDetailScreen() {
   if (detail.error || !detail.data) {
     return (
       <View style={styles.errorContainer}>
-        <Text style={styles.errorText}>{detail.error?.message ?? "Activity not found"}</Text>
+        <Text style={styles.errorText}>
+          {userFacingErrorMessage(
+            detail.error,
+            "This activity could not be found. Return to Activities and try again.",
+          )}
+        </Text>
       </View>
     );
   }
@@ -728,10 +734,7 @@ export default function ActivityDetailScreen() {
         });
       } catch (error) {
         captureException(error);
-        Alert.alert(
-          "Export Failed",
-          error instanceof Error ? error.message : "Unable to export activity.",
-        );
+        Alert.alert("Export Failed", userFacingErrorMessage(error, "Unable to export activity."));
       } finally {
         setExportingFormat(null);
       }
@@ -863,7 +866,7 @@ export default function ActivityDetailScreen() {
 
       {isClimbingActivity && climbingEntries.error && (
         <View style={climbingStyles.container}>
-          <Text style={styles.errorText}>{climbingEntries.error.message}</Text>
+          <Text style={styles.errorText}>{userFacingErrorMessage(climbingEntries.error)}</Text>
         </View>
       )}
       {(climbingEntries.data?.length ?? 0) > 0 && (
@@ -924,7 +927,14 @@ export default function ActivityDetailScreen() {
             <HrZonesChart
               zones={zones}
               loading={hrZones.isLoading}
-              errorMessage={hrZones.error?.message}
+              errorMessage={
+                hrZones.error
+                  ? userFacingErrorMessage(
+                      hrZones.error,
+                      "Heart rate zones could not be loaded. Please try again.",
+                    )
+                  : undefined
+              }
             />
           )}
 

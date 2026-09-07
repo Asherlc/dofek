@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { operationalStatusColors } from "@dofek/scoring/colors";
 import { fontSize, fontWeight } from "@dofek/scoring/tokens";
 import type { StyleProp, ViewStyle } from "react-native";
@@ -21,13 +22,7 @@ export function getQueryErrorMessage(
   error: unknown,
   fallback = "Could not load this section.",
 ): string {
-  if (error instanceof Error && error.message.trim().length > 0) {
-    return error.message;
-  }
-  if (typeof error === "string" && error.trim().length > 0) {
-    return error;
-  }
-  return fallback;
+  return userFacingErrorMessage(error, fallback);
 }
 
 export function QueryStatePanel({
@@ -50,6 +45,8 @@ export function QueryStatePanel({
 
   const resolvedTitle =
     title ?? (variant === "error" ? "Could not load this section" : "No data to display");
+  const resolvedMessage =
+    variant === "error" && message ? userFacingErrorMessage(message) : message;
 
   return (
     <View
@@ -76,11 +73,11 @@ export function QueryStatePanel({
       <Text style={[styles.title, variant === "error" ? styles.errorText : null]}>
         {resolvedTitle}
       </Text>
-      {message ? (
+      {resolvedMessage ? (
         <Text
           style={[styles.message, variant === "error" ? styles.errorText : styles.emptyMessage]}
         >
-          {message}
+          {resolvedMessage}
         </Text>
       ) : null}
       {onRetry ? (

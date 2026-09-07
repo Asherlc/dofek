@@ -847,7 +847,11 @@ describe("repairActivityDataIntegrity", () => {
 
     expect(result).toMatchObject({ updated: 1, changed: 1, beforeComponentCount: 1 });
     expect(result.afterComponentCount).toBe(2);
-    expect(dependencies.rebuildReadModels).toHaveBeenCalledOnce();
+    expect(dependencies.rebuildReadModels).toHaveBeenCalledWith({
+      userId,
+      activityIds: [activityId, pelotonId],
+      startAt: window.startAt,
+    });
     const artifact = JSON.parse(await readFile(result.artifactPath, "utf8"));
     expect(artifact).toMatchObject({
       phase: "executed",
@@ -1299,6 +1303,7 @@ describe("repairActivityDataIntegrity", () => {
     expect(rollbackRebuildReadModels).toHaveBeenCalledWith({
       userId,
       activityIds: [activityId, pelotonId],
+      startAt: window.startAt,
     });
   });
 
@@ -1737,6 +1742,7 @@ describe("rollbackActivityDataIntegrity", () => {
     expect(rebuildReadModels).toHaveBeenCalledWith({
       userId,
       activityIds: [activityId, pelotonId],
+      startAt: window.startAt,
     });
   });
 

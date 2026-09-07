@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import {
   BOULDER_GRADE_SYSTEMS,
   type ClimbingGradePreference,
@@ -28,7 +29,12 @@ export function ClimbingGradeSystemSettings({
         Choose the grade systems used for boulders and routes
       </Text>
       {errorMessage && !preference ? (
-        <Text style={styles.unitErrorText}>{errorMessage}</Text>
+        <Text style={styles.unitErrorText}>
+          {userFacingErrorMessage(
+            errorMessage,
+            "Climbing grade settings could not be loaded. Please try again.",
+          )}
+        </Text>
       ) : null}
       {preference ? null : <ActivityIndicator color={colors.accent} size="small" />}
       {preference ? <Text style={styles.label}>Boulder grades</Text> : null}

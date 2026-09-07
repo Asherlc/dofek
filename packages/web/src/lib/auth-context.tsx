@@ -1,4 +1,5 @@
 import { ACCOUNT_ERASURE_CLEANUP_OWNERSHIP_ERROR_MESSAGE } from "@dofek/auth/account-erasure";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { clearAccountErasurePreparation } from "./account-erasure-storage.ts";
 import type { AuthUser } from "./auth.ts";
@@ -133,7 +134,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (error: unknown) {
       captureException(error, { source: "auth-bootstrap" });
-      setBootstrapError(error instanceof Error ? error.message : String(error));
+      setBootstrapError(
+        userFacingErrorMessage(error, "Your session could not be restored. Please sign in again."),
+      );
     } finally {
       stateLock?.release();
       setIsLoading(false);

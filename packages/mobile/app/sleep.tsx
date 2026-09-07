@@ -10,6 +10,7 @@ import {
 } from "@dofek/format/format";
 import { formatRecordLocalTime } from "@dofek/format/record-local-time";
 import { getMissingSleepStates } from "@dofek/format/sleep-data-state";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { sleepDebtColor } from "@dofek/scoring/scoring";
 import { useRef } from "react";
@@ -188,7 +189,7 @@ export default function SleepScreen() {
           <Text style={styles.loadingText}>Loading sleep data...</Text>
         </View>
       ) : sleepQuery.isError && !sleepQuery.data ? (
-        <QueryStatePanel variant="error" message={sleepQuery.error.message} />
+        <QueryStatePanel variant="error" message={userFacingErrorMessage(sleepQuery.error)} />
       ) : nightly.length === 0 ? (
         <QueryStatePanel
           variant="empty"

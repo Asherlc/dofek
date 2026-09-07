@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { groupProviderEntries, providerFamily } from "@dofek/providers/provider-catalog";
 import { ROUTINE_SYNC_DAYS } from "@dofek/providers/sync-actions";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -163,7 +164,7 @@ export function DataSourcesPanel() {
         });
         updateState(providerId, {
           status: "error",
-          message: err instanceof Error ? err.message : "Sync failed",
+          message: userFacingErrorMessage(err, "Sync failed"),
         });
       }
     },
@@ -213,7 +214,7 @@ export function DataSourcesPanel() {
         );
       } catch (err: unknown) {
         captureException(err, { operation: "sync.triggerSync" });
-        const message = err instanceof Error ? err.message : "Sync failed";
+        const message = userFacingErrorMessage(err, "Sync failed");
         setSyncAllError(message);
         for (const p of enabled) {
           updateState(p.id, {
@@ -360,7 +361,7 @@ export function DataSourcesPanel() {
               operation: "connect-provider",
               providerId: provider.id,
             });
-            updateState(provider.id, { status: "error", message: error.message });
+            updateState(provider.id, { status: "error", message: userFacingErrorMessage(error) });
           }
           break;
         case "custom:whoop":
@@ -466,7 +467,7 @@ export function DataSourcesPanel() {
       >
         {activeSyncs.error ? (
           <p role="alert" className="text-sm text-red-400">
-            {activeSyncs.error.message}
+            {userFacingErrorMessage(activeSyncs.error)}
           </p>
         ) : null}
 

@@ -102,6 +102,24 @@ describe("tRPC error serialization", () => {
     expect(result.observedError?.cause).toBe(validationResult.error);
   });
 
+  it("describes invalid request input without exposing Zod issue details", async () => {
+    const validationResult = z.object({ date: z.iso.date() }).safeParse({ date: "tomorrow" });
+    if (validationResult.success) {
+      throw new Error("expected the fixture to fail date validation");
+    }
+    const validationError = new TRPCError({
+      code: "BAD_REQUEST",
+      cause: validationResult.error,
+    });
+
+    const result = await serializeTransportError(validationError);
+
+    expect(result.status).toBe(400);
+    expect(result.body).toContain("Some information is invalid. Check your entries and try again.");
+    expect(result.body).not.toContain("invalid_format");
+    expect(result.body).not.toContain("tomorrow");
+  });
+
   it("hides a default internal message even when the error has a cause", async () => {
     const rootCause = new Error("private database failure");
     const defaultError = new TRPCError({

@@ -1,4 +1,5 @@
 import { formatDateTime } from "@dofek/format/format";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { Link, useParams } from "@tanstack/react-router";
 import type { AppRouterOutputs } from "dofek-server/router";
 import type { ReactNode } from "react";
@@ -103,7 +104,14 @@ function AdminUserDetailLoader() {
   return (
     <AdminUserDetailContent
       detail={detailQuery.data}
-      errorMessage={detailQuery.error?.message}
+      errorMessage={
+        detailQuery.error
+          ? userFacingErrorMessage(
+              detailQuery.error,
+              "The account details could not be loaded. Please try again.",
+            )
+          : undefined
+      }
       isAdminViewer={true}
       isLoading={detailQuery.isLoading}
       onToggleAdmin={() => {
@@ -171,7 +179,12 @@ export function AdminUserDetailContent({
   if (errorMessage) {
     return (
       <PageLayout title="Admin User">
-        <div className="card p-4 text-center text-red-400 text-xs">{errorMessage}</div>
+        <div className="card p-4 text-center text-red-400 text-xs">
+          {userFacingErrorMessage(
+            errorMessage,
+            "The account details could not be loaded. Please try again.",
+          )}
+        </div>
       </PageLayout>
     );
   }

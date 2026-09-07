@@ -6,6 +6,7 @@ import {
   type PublicAccountErasureStatus,
   PublicAccountErasureStatusSchema,
 } from "@dofek/auth/account-erasure";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
@@ -309,9 +310,10 @@ export function AccountDeletionStatusScreen({
         captureException(restoreError, { source: "account-erasure-mobile-status-restore" });
         if (active) {
           setError(
-            restoreError instanceof Error
-              ? restoreError.message
-              : "Saved deletion status could not be read.",
+            userFacingErrorMessage(
+              restoreError,
+              "Saved deletion status could not be read. Please sign in and try again.",
+            ),
           );
         }
       })
@@ -337,9 +339,10 @@ export function AccountDeletionStatusScreen({
           source: "account-erasure-mobile-public-status",
         });
         setError(
-          refreshError instanceof Error
-            ? refreshError.message
-            : "Deletion status could not be loaded.",
+          userFacingErrorMessage(
+            refreshError,
+            "Deletion status could not be loaded. Please try again.",
+          ),
         );
       } finally {
         setIsLoading(false);
@@ -390,7 +393,14 @@ export function AccountDeletionStatusScreen({
       await saveMobileAccountErasureStatusCapability(finalizedCapability);
       setRecoverablePreparation(null);
       setCapability(finalizedCapability);
-      setError(purgeResult.errors[0]?.message ?? null);
+      setError(
+        purgeResult.errors[0]
+          ? userFacingErrorMessage(
+              purgeResult.errors[0],
+              "Local account data could not be cleared. Please try again.",
+            )
+          : null,
+      );
       await refresh(finalizedCapability);
     } catch (recoveryError: unknown) {
       captureException(
@@ -402,7 +412,10 @@ export function AccountDeletionStatusScreen({
         { source: "account-erasure-mobile-confirm-recovery" },
       );
       setError(
-        recoveryError instanceof Error ? recoveryError.message : "Deletion status recovery failed.",
+        userFacingErrorMessage(
+          recoveryError,
+          "Deletion status recovery failed. Please sign in and try again.",
+        ),
       );
     } finally {
       if (cleanupLease) {
@@ -428,9 +441,10 @@ export function AccountDeletionStatusScreen({
     } catch (forgetError: unknown) {
       captureException(forgetError, { source: "account-erasure-mobile-status-forget" });
       setError(
-        forgetError instanceof Error
-          ? forgetError.message
-          : "Saved deletion status was not cleared.",
+        userFacingErrorMessage(
+          forgetError,
+          "Saved deletion status was not cleared. Please try again.",
+        ),
       );
     }
   }
@@ -454,14 +468,24 @@ export function AccountDeletionStatusScreen({
       };
       await saveMobileAccountErasureStatusCapability(updated);
       setCapability(updated);
-      setError(result.errors[0]?.message ?? null);
+      setError(
+        result.errors[0]
+          ? userFacingErrorMessage(
+              result.errors[0],
+              "Local account data could not be cleared. Please try again.",
+            )
+          : null,
+      );
       if (!updated.localCleanupPending) {
         onLocalCleanupComplete?.();
       }
     } catch (saveError: unknown) {
       captureException(saveError, { source: "account-erasure-mobile-cleanup-status-save" });
       setError(
-        saveError instanceof Error ? saveError.message : "Local cleanup status could not be saved.",
+        userFacingErrorMessage(
+          saveError,
+          "Local cleanup status could not be saved. Please try again.",
+        ),
       );
     } finally {
       if (cleanupLease) {
@@ -482,9 +506,10 @@ export function AccountDeletionStatusScreen({
     void Linking.openURL("mailto:asherlc@asherlc.com").catch((contactError: unknown) => {
       captureException(contactError, { source: "account-erasure-mobile-contact-support" });
       setError(
-        contactError instanceof Error
-          ? contactError.message
-          : "The email application could not be opened.",
+        userFacingErrorMessage(
+          contactError,
+          "The email application could not be opened. Please contact support another way.",
+        ),
       );
     });
   }
