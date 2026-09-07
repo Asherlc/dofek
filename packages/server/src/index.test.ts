@@ -181,6 +181,9 @@ vi.mock("./routes/developer-clients.ts", () => ({
 vi.mock("./routes/ingest-zos-health.ts", () => ({
   createIngestZosHealthRouter: vi.fn(() => express.Router()),
 }));
+vi.mock("./routes/ingest-zos-imu.ts", () => ({
+  createIngestZosImuRouter: vi.fn(() => express.Router()),
+}));
 vi.mock("./routes/companion-pairing.ts", () => ({
   createCompanionPairingRouter: vi.fn(() => express.Router()),
 }));
@@ -408,6 +411,16 @@ describe("createApp", () => {
     const fakeDb = createDatabaseFromEnv();
     createApp(fakeDb, makeMockSensorStore());
     expect(createIngestZosHealthRouter).toHaveBeenCalledWith({ db: fakeDb });
+  });
+
+  it("passes db to createIngestZosImuRouter", async () => {
+    const { createIngestZosImuRouter } = await import("./routes/ingest-zos-imu.ts");
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    const fakeDb = createDatabaseFromEnv();
+
+    createApp(fakeDb, makeMockSensorStore());
+
+    expect(createIngestZosImuRouter).toHaveBeenCalledWith({ db: fakeDb });
   });
 
   it("mounts the App Store webhook at its public path with its database dependency", async () => {

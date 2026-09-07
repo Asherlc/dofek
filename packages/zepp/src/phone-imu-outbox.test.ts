@@ -3,6 +3,7 @@ import { createImuChunkEnvelope as createChunk } from "./imu-upload.ts";
 import {
   acknowledgePhoneImuOutboxEntries,
   assignLegacyPhoneImuOutbox,
+  hasRecoverableLegacyPhoneImuEntries,
   persistImuEnvelope,
   quarantinePhoneImuOutboxEntry,
   readPhoneImuOutbox,
@@ -311,6 +312,142 @@ describe("phone IMU outbox", () => {
     ).toEqual(["segment-b:0"]);
   });
 
+  it("does not mix normal-app and workout-extension chunks in one batch", () => {
+    const storage = createSettingsStorage();
+    for (const [segmentId, connectionType] of [
+      ["segment-app", "zepp"],
+      ["segment-workout", "zepp-workout"],
+    ] satisfies [string, "zepp" | "zepp-workout"][]) {
+      persistImuEnvelope(
+        storage,
+        createImuChunkEnvelope({
+          connectionType,
+          installId: "install-1",
+          segmentId,
+          sessionStartMs: 1_720_000_000_000,
+          samples: [{ tMs: 0, sensor: "accelerometer", x: 1, y: 2, z: 3 }],
+        }),
+      );
+    }
+
+    expect(readPhoneImuPendingBatch(storage, 2).map((entry) => entry.eventId)).toEqual([
+      "segment-app:0",
+    ]);
+  });
+
+  it("reads historical token receipts and batches only an identical legacy connection", () => {
+    const storage = createSettingsStorage();
+    for (const segmentId of ["legacy-a", "legacy-b", "legacy-c"]) {
+      persistImuEnvelope(
+        storage,
+        createImuChunkEnvelope({
+          connectionType: "zepp",
+          installId: "install-1",
+          segmentId,
+          sessionStartMs: 1_720_000_000_000,
+          samples: [{ tMs: 0, sensor: "accelerometer", x: 1, y: 2, z: 3 }],
+        }),
+      );
+    }
+    const pendingKeys = [...storage.persisted.keys()].filter((key) => key.includes(":pending:"));
+    for (const [index, key] of pendingKeys.entries()) {
+      const entry = JSON.parse(storage.persisted.get(key) ?? "{}");
+      entry.payload.connection = {
+        serverUrl: index === 2 ? "https://other.test" : "https://dofek.test",
+        token: index === 1 ? "other-token" : "legacy-token",
+      };
+      storage.persisted.set(key, JSON.stringify(entry));
+    }
+
+    expect(readPhoneImuOutbox(storage).pending.map((entry) => entry.payload.connection)).toEqual([
+      { serverUrl: "https://dofek.test", token: "legacy-token" },
+      { serverUrl: "https://dofek.test", token: "other-token" },
+      { serverUrl: "https://other.test", token: "legacy-token" },
+    ]);
+    expect(readPhoneImuPendingBatch(storage, 3).map((entry) => entry.eventId)).toEqual([
+      "legacy-a:0",
+    ]);
+  });
+
+  it.each([
+    ["a null connection", null],
+    ["an array connection", []],
+    ["a non-string server", { serverUrl: 1, accountId: "account-1" }],
+    ["a blank server", { serverUrl: "  ", accountId: "account-1" }],
+    ["a blank account", { serverUrl: "https://dofek.test", accountId: "  " }],
+    ["a blank legacy token", { serverUrl: "https://dofek.test", token: "  " }],
+    [
+      "both account and token credentials",
+      { serverUrl: "https://dofek.test", accountId: "account-1", token: "legacy-token" },
+    ],
+    ["no credential", { serverUrl: "https://dofek.test" }],
+  ])("rejects a stored entry with %s", (_description, connection) => {
+    const storage = createSettingsStorage();
+    persistImuEnvelope(
+      storage,
+      createImuChunkEnvelope({
+        connectionType: "zepp",
+        installId: "install-1",
+        segmentId: "invalid-connection",
+        sessionStartMs: 1_720_000_000_000,
+        samples: [{ tMs: 0, sensor: "accelerometer", x: 1, y: 2, z: 3 }],
+      }),
+    );
+    const key = [...storage.persisted.keys()].find((candidate) => candidate.includes(":pending:"));
+    if (!key) throw new Error("Expected a pending shard.");
+    const entry = JSON.parse(storage.persisted.get(key) ?? "{}");
+    entry.payload.connection = connection;
+    storage.persisted.set(key, JSON.stringify(entry));
+
+    expect(() => readPhoneImuOutbox(storage)).toThrow("Phone IMU connection binding is invalid");
+  });
+
+  it("reports only unbound quarantine entries rejected for account recovery", () => {
+    const storage = createSettingsStorage();
+    for (const segmentId of ["bound", "other-issue", "recoverable"]) {
+      persistImuEnvelope(
+        storage,
+        createImuChunkEnvelope({
+          connectionType: "zepp",
+          installId: "install-1",
+          segmentId,
+          sessionStartMs: 1_720_000_000_000,
+          samples: [{ tMs: 0, sensor: "accelerometer", x: 1, y: 2, z: 3 }],
+        }),
+      );
+      quarantinePhoneImuOutboxEntry(
+        storage,
+        `${segmentId}:0`,
+        segmentId === "other-issue"
+          ? [{ path: "samples.0", message: "Invalid sample" }]
+          : [
+              { path: "samples.0", message: "Invalid sample" },
+              { path: "connection", message: "Original account unknown" },
+            ],
+      );
+    }
+    for (const [key, serialized] of storage.persisted) {
+      if (!key.includes(":quarantine:") || key.includes("bound")) continue;
+      const entry = JSON.parse(serialized);
+      delete entry.payload.connection;
+      storage.persisted.set(key, JSON.stringify(entry));
+    }
+
+    expect(hasRecoverableLegacyPhoneImuEntries(storage)).toBe(true);
+
+    expect(
+      assignLegacyPhoneImuOutbox(storage, {
+        serverUrl: "https://dofek.test",
+        accountId: "account-2",
+      }),
+    ).toBe(1);
+    expect(readPhoneImuOutbox(storage).quarantine.map((entry) => entry.eventId)).toEqual([
+      "bound:0",
+      "other-issue:0",
+    ]);
+    expect(hasRecoverableLegacyPhoneImuEntries(storage)).toBe(false);
+  });
+
   it("records attempts only for pending entries", () => {
     const storage = createSettingsStorage();
     const envelope = createImuChunkEnvelope({
@@ -341,7 +478,11 @@ describe("phone IMU outbox", () => {
     });
     persistImuEnvelope(storage, envelope);
 
+    storage.setItem.mockClear();
+    storage.removeItem.mockClear();
     expect(acknowledgePhoneImuOutboxEntries(storage, ["missing"])).toBe(0);
+    expect(storage.setItem).not.toHaveBeenCalled();
+    expect(storage.removeItem).not.toHaveBeenCalled();
     expect(acknowledgePhoneImuOutboxEntries(storage, ["segment-ack:0"])).toBe(1);
     expect(readPhoneImuOutbox(storage)).toEqual({ pending: [], quarantine: [] });
     expect(storage.removeItem).toHaveBeenCalledWith(
@@ -373,15 +514,31 @@ describe("phone IMU outbox", () => {
   });
 
   it.each([
-    ["not JSON", "{"],
-    ["an array index", "[]"],
-    ["an unknown version", '{"version":3,"pending":[],"quarantine":[]}'],
-    ["a non-array pending index", '{"version":2,"pending":{},"quarantine":[]}'],
-    ["a blank pending identifier", '{"version":2,"pending":[" "],"quarantine":[]}'],
-    ["a non-string quarantine identifier", '{"version":2,"pending":[],"quarantine":[1]}'],
-  ])("rejects %s", (_description, serialized) => {
+    ["not JSON", "{", "Expected property name"],
+    ["an array index", "[]", "Phone IMU outbox is invalid"],
+    [
+      "an unknown version",
+      '{"version":3,"pending":[],"quarantine":[]}',
+      "Phone IMU outbox is invalid",
+    ],
+    [
+      "a non-array pending index",
+      '{"version":2,"pending":{},"quarantine":[]}',
+      "Phone IMU outbox index is invalid",
+    ],
+    [
+      "a blank pending identifier",
+      '{"version":2,"pending":[" "],"quarantine":[]}',
+      "Phone IMU outbox index is invalid",
+    ],
+    [
+      "a non-string quarantine identifier",
+      '{"version":2,"pending":[],"quarantine":[1]}',
+      "Phone IMU outbox index is invalid",
+    ],
+  ])("rejects %s", (_description, serialized, expectedMessage) => {
     const storage = createSettingsStorage({ [STORAGE_KEYS.PHONE_IMU_OUTBOX]: serialized });
-    expect(() => readPhoneImuOutbox(storage)).toThrow();
+    expect(() => readPhoneImuOutbox(storage)).toThrow(expectedMessage);
   });
 
   it("rejects an index whose sharded entry is missing", () => {

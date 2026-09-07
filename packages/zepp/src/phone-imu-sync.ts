@@ -38,16 +38,13 @@ export async function drainPhoneImuOutbox(
     }
     const entries = readPhoneImuPendingBatch(storage, 10, currentConnection);
     const first = entries[0];
-    const last = entries.at(-1);
-    if (!first || !last) {
+    if (!first) {
       if (hasRecoverableLegacyPhoneImuEntries(storage)) {
         throw new LegacyImuAccountBindingRequiredError();
       }
       return { uploaded, quarantined };
     }
-    if (!first.payload.connection || !("accountId" in first.payload.connection)) {
-      throw new LegacyImuAccountBindingRequiredError();
-    }
+    const last = entries.at(-1) ?? first;
     const envelope = createHealthEnvelope<ImuChunkPayload>({
       batchId: `phone-imu:${first.eventId}:${last.eventId}`,
       source: first.payload.source,
@@ -60,7 +57,7 @@ export async function drainPhoneImuOutbox(
 
     let response: HealthUploadResponse;
     try {
-      response = await post(envelope, first.payload.connection);
+      response = await post(envelope, currentConnection);
     } catch (error) {
       const message = error instanceof Error ? error.message : "IMU upload failed.";
       recordPhoneImuOutboxAttempts(
@@ -71,11 +68,9 @@ export async function drainPhoneImuOutbox(
       throw error;
     }
 
-    const batchIds = new Set(entries.map((entry) => entry.eventId));
-    const accepted = response.acceptedEventIds.filter((eventId) => batchIds.has(eventId));
+    const accepted = response.acceptedEventIds;
     uploaded += acknowledgePhoneImuOutboxEntries(storage, accepted);
     for (const rejected of response.rejected) {
-      if (!batchIds.has(rejected.eventId)) continue;
       if (quarantinePhoneImuOutboxEntry(storage, rejected.eventId, rejected.issues)) {
         quarantined += 1;
       }

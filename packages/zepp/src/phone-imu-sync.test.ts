@@ -37,6 +37,43 @@ function envelope(segmentId: string, tMs: number) {
 }
 
 describe("phone IMU outbox drain", () => {
+  it("does nothing while disconnected when no recording is retained", async () => {
+    const post = vi.fn();
+
+    await expect(drainPhoneImuOutbox(createSettingsStorage(), null, post)).resolves.toEqual({
+      uploaded: 0,
+      quarantined: 0,
+    });
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it("requires reconnection for a bound recording when there is no active connection", async () => {
+    const storage = createSettingsStorage();
+    persistImuEnvelope(storage, envelope("segment-1", 0));
+    const post = vi.fn();
+
+    await expect(drainPhoneImuOutbox(storage, null, post)).rejects.toThrow(
+      "Reconnect Dofek to upload retained motion recordings",
+    );
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it("returns without uploading when retained recordings belong to another account", async () => {
+    const storage = createSettingsStorage();
+    persistImuEnvelope(storage, envelope("segment-1", 0));
+    const post = vi.fn();
+
+    await expect(
+      drainPhoneImuOutbox(
+        storage,
+        { serverUrl: "https://dofek.test", accountId: "account-2" },
+        post,
+      ),
+    ).resolves.toEqual({ uploaded: 0, quarantined: 0 });
+    expect(post).not.toHaveBeenCalled();
+    expect(readPhoneImuOutbox(storage).pending).toHaveLength(1);
+  });
+
   it("preserves a chunk appended while the server request is in flight", async () => {
     const storage = createSettingsStorage();
     persistImuEnvelope(storage, envelope("segment-1", 0));
@@ -94,6 +131,65 @@ describe("phone IMU outbox drain", () => {
     expect(readPhoneImuOutbox(storage).pending.slice(10)).toEqual([
       expect.objectContaining({ attempts: 0 }),
       expect.objectContaining({ attempts: 0 }),
+    ]);
+  });
+
+  it("uses the first and last event IDs in a multi-event upload batch", async () => {
+    const storage = createSettingsStorage();
+    for (const offset of [0, 100, 200]) {
+      persistImuEnvelope(storage, envelope("segment-batch", offset));
+    }
+    const post = vi.fn<PostImuEnvelope>(async (batch) => ({
+      acceptedEventIds: batch.events.map((event) => event.eventId),
+      rejected: [],
+    }));
+
+    await drainPhoneImuOutbox(storage, binding, post);
+
+    expect(post.mock.calls[0]?.[0].batchId).toBe("phone-imu:segment-batch:0:segment-batch:200");
+  });
+
+  it("quarantines rejected batch entries and ignores foreign response IDs", async () => {
+    const storage = createSettingsStorage();
+    persistImuEnvelope(storage, envelope("segment-accepted", 0));
+    persistImuEnvelope(storage, envelope("segment-rejected", 0));
+    const issues = [{ path: "samples.0", message: "Invalid sample" }];
+
+    await expect(
+      drainPhoneImuOutbox(storage, binding, async () => ({
+        acceptedEventIds: ["segment-accepted:0", "foreign:0"],
+        rejected: [
+          { eventId: "foreign-rejected:0", issues },
+          { eventId: "segment-rejected:0", issues },
+        ],
+      })),
+    ).resolves.toEqual({ uploaded: 1, quarantined: 1 });
+    expect(readPhoneImuOutbox(storage)).toMatchObject({
+      pending: [],
+      quarantine: [{ eventId: "segment-rejected:0", issues }],
+    });
+  });
+
+  it("retains and marks every entry omitted from the server response", async () => {
+    const storage = createSettingsStorage();
+    persistImuEnvelope(storage, envelope("segment-unresolved-a", 0));
+    persistImuEnvelope(storage, envelope("segment-unresolved-b", 0));
+
+    await expect(
+      drainPhoneImuOutbox(storage, binding, async () => ({
+        acceptedEventIds: [],
+        rejected: [],
+      })),
+    ).rejects.toThrow("Server did not acknowledge 2 IMU chunks");
+    expect(readPhoneImuOutbox(storage).pending).toEqual([
+      expect.objectContaining({
+        attempts: 1,
+        lastError: "Server did not acknowledge 2 IMU chunks.",
+      }),
+      expect.objectContaining({
+        attempts: 1,
+        lastError: "Server did not acknowledge 2 IMU chunks.",
+      }),
     ]);
   });
 
@@ -205,6 +301,9 @@ describe("phone IMU outbox drain", () => {
         { serverUrl: "https://dofek.test", accountId: "account-2" },
         vi.fn(),
       ),
-    ).rejects.toThrow("Choose the account for retained motion recordings");
+    ).rejects.toMatchObject({
+      name: "LegacyImuAccountBindingRequiredError",
+      message: "Choose the account for retained motion recordings in Zepp settings.",
+    });
   });
 });

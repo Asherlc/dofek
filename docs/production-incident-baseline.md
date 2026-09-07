@@ -25229,9 +25229,11 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Confirm the replacement Metro Bundle job and
   complete PR workflow pass on the fix commit.
 
-## 2026-09-07 — Zepp capture PR failed security and dead-code gates
+## 2026-09-07 — Zepp capture PR failed security, dead-code, and mutation gates
 
-- **Status:** Fixed in source; replacement CI run pending.
+- **Status:** Security and dead-code gates resolved; mutation fixes validated
+  locally; replacement CI run pending. An unrelated activity-integrity
+  integration failure remains under observation.
 - **Symptoms / user impact:** PR 2676 was mergeable but blocked by CodeQL,
   project SAST, and Knip after the Zepp workout-capture merge. No deployed data
   path was affected.
@@ -25253,6 +25255,26 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Validation:** The exact Knip command passes with the required mobile Sentry
   configuration present. Zepp lint, server typecheck, and the 31-test IMU route
   suite pass; the route test verifies request 601 receives HTTP 429 without an
-  additional token lookup.
-- **Remaining risk / follow-up:** Confirm the replacement CodeQL, SAST, Knip,
-  and aggregate CI checks pass on the pushed fix commit.
+  additional token lookup. In the first
+  [replacement workflow](https://github.com/Asherlc/dofek/actions/runs/34144454455),
+  CodeQL, SAST, and Knip passed. Its first fatal mutation diagnostics were
+  surviving input-validation and queue-control mutants in the newly added Zepp
+  modules. Focused local Stryker runs now report 100% for companion account
+  handoff, side upload, sync coordinators, and phone IMU drain; 88.0%
+  for the durable phone outbox; 82.2% for IMU envelopes; and 82.1% for durable
+  watch upload, all above the enforced 75% threshold. The same workflow's
+  integration shard separately failed after three successful dbt executions:
+  `activity-data-integrity-repair.integration.test.ts` expected two
+  `activity_sensor_summary_rows` and received none, then retries were stopped by
+  its rollback-eligible journal guard. That test and its serving models were
+  unchanged by the Zepp branch.
+- **Direct mutation fix:** Added boundary cases for malformed bindings, token
+  trimming, legacy account receipts, cross-account selection, disconnected
+  queues, acknowledgements, quarantine recovery, retry wiring, and watch chunk
+  handoff. Removed redundant response-ID filters whose downstream durable queue
+  operations already ignore unknown IDs, and made the selected current binding
+  the explicit upload destination.
+- **Remaining risk / follow-up:** Confirm the replacement mutation and aggregate
+  CI gates pass. If the activity-integrity integration failure recurs on the new
+  head, investigate why its incremental sensor summary stays empty before
+  changing the repair behavior.

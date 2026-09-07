@@ -210,7 +210,7 @@ export function readPhoneImuPendingBatch(
 ): OutboxEntry<PhoneImuEvent>[] {
   const index = readIndex(storage);
   let first: OutboxEntry<PhoneImuEvent> | undefined;
-  let firstIndex = -1;
+  let firstIndex: number | undefined;
   for (const [indexPosition, eventId] of index.pending.entries()) {
     const entry = readStoredEntry(storage, "pending", eventId);
     if (connection && !sameConnection(entry.payload.connection, connection)) continue;
@@ -218,7 +218,7 @@ export function readPhoneImuPendingBatch(
     firstIndex = indexPosition;
     break;
   }
-  if (!first) return [];
+  if (!first || firstIndex === undefined) return [];
   const entries = [first];
   for (const eventId of index.pending.slice(firstIndex + 1, firstIndex + MAX_PENDING_BATCH_SCAN)) {
     if (entries.length >= limit) break;

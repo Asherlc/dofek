@@ -24,7 +24,10 @@ export type ImuChunkInput = {
   gyroFreqMode: number;
 };
 
-type ImuChunkData = Omit<ImuChunkInput, "connectionType" | "installId" | "segmentId">;
+type ImuChunkData = Omit<
+  ImuChunkInput,
+  "destination" | "connectionType" | "installId" | "segmentId"
+>;
 
 type ImuEnvelope = ReturnType<typeof createImuChunkEnvelope>;
 

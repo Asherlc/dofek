@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { persistImuConnectionBinding } from "./imu-connection-storage.ts";
+import { persistImuConnectionBinding, readImuConnectionBinding } from "./imu-connection-storage.ts";
 import { createImuChunkEnvelope } from "./imu-upload.ts";
-import { persistReceivedImuEnvelope } from "./phone-imu-account.ts";
+import {
+  assignLegacyImuToCurrentAccount,
+  persistReceivedImuEnvelope,
+} from "./phone-imu-account.ts";
 import { readPhoneImuOutbox } from "./phone-imu-outbox.ts";
 import { STORAGE_KEYS } from "./storage-keys.ts";
 import { createSettingsStorage } from "./test-helpers.ts";
@@ -21,6 +24,23 @@ function historicalEnvelope() {
 }
 
 describe("phone IMU account handoff", () => {
+  it("requires a verified current account before assigning historical recordings", () => {
+    expect(() => assignLegacyImuToCurrentAccount(createSettingsStorage())).toThrow(
+      "Connect and verify Dofek before assigning recordings",
+    );
+  });
+
+  it("persists the verified account as the explicit historical-recovery choice", () => {
+    const storage = createSettingsStorage();
+    const binding = { serverUrl: "https://dofek.test", accountId: "account-1" };
+    persistImuConnectionBinding(storage, STORAGE_KEYS.IMU_CONNECTION_BINDING, binding);
+
+    expect(assignLegacyImuToCurrentAccount(storage)).toBe(0);
+    expect(readImuConnectionBinding(storage, STORAGE_KEYS.LEGACY_IMU_RECOVERY_BINDING)).toEqual(
+      binding,
+    );
+  });
+
   it("accepts a historical watch chunk only after explicit recovery assignment", () => {
     const storage = createSettingsStorage({ [STORAGE_KEYS.DOFEK_API_TOKEN]: "fresh-token" });
     const envelope = historicalEnvelope();
@@ -46,5 +66,14 @@ describe("phone IMU account handoff", () => {
     expect(() => persistReceivedImuEnvelope(createSettingsStorage(), historicalEnvelope())).toThrow(
       "Connect Dofek",
     );
+  });
+
+  it("treats a whitespace-only companion token as disconnected", () => {
+    const storage = createSettingsStorage({ [STORAGE_KEYS.DOFEK_API_TOKEN]: "   " });
+
+    expect(() => persistReceivedImuEnvelope(storage, historicalEnvelope())).toThrow(
+      "Connect Dofek",
+    );
+    expect(readPhoneImuOutbox(storage)).toEqual({ pending: [], quarantine: [] });
   });
 });

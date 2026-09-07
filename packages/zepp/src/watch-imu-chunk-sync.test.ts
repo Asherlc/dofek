@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createImuChunkEnvelope, parseImuEnvelope } from "./imu-upload.ts";
-import { createWatchImuChunkSync, type WatchImuChunkSync } from "./watch-imu-chunk-sync.ts";
+import {
+  createWatchImuChunkHandler,
+  createWatchImuChunkSync,
+  type WatchImuChunkSync,
+} from "./watch-imu-chunk-sync.ts";
 
 const fsMocks = vi.hoisted(() => ({
   mkdirSync: vi.fn<(options: { path: string }) => number>(),
@@ -332,5 +336,87 @@ describe("watch IMU chunk sync", () => {
     await createWatchImuChunkSync("data://imu/chunks", request).retry();
     expect(request).toHaveBeenCalledWith(parseImuEnvelope(legacy));
     expect(persistedChunkPaths()).toEqual([]);
+  });
+});
+
+describe("watch IMU chunk handler", () => {
+  const chunk = {
+    sessionStartMs: 1_720_000_000_000,
+    hasGyroscope: false,
+    sampleOffset: 4,
+    accelFreqMode: 2,
+    gyroFreqMode: 0,
+    samples: [{ tMs: 4, sensor: "accelerometer" as const, x: 1, y: 2, z: 3 }],
+  };
+
+  it("binds each chunk to the current install, segment, and destination", async () => {
+    const enqueue = vi.fn(async () => undefined);
+    const onError = vi.fn();
+    const handler = createWatchImuChunkHandler({
+      connectionType: "zepp-workout",
+      segmentName: "workout",
+      getInstallId: () => "install-1",
+      getDestination: () => input.destination,
+      getSync: () => ({ enqueue, retry: vi.fn() }),
+      onError,
+    });
+
+    handler(chunk);
+    await Promise.resolve();
+
+    expect(enqueue).toHaveBeenCalledExactlyOnceWith({
+      ...chunk,
+      destination: input.destination,
+      connectionType: "zepp-workout",
+      installId: "install-1",
+      segmentId: "install-1:workout:1720000000000",
+    });
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("reports an asynchronous enqueue failure with its stable segment ID", async () => {
+    const failure = new Error("offline");
+    const onError = vi.fn();
+    const handler = createWatchImuChunkHandler({
+      connectionType: "zepp",
+      segmentName: "app",
+      getInstallId: () => "install-2",
+      getDestination: () => input.destination,
+      getSync: () => ({ enqueue: vi.fn(async () => Promise.reject(failure)), retry: vi.fn() }),
+      onError,
+    });
+
+    handler(chunk);
+    await vi.waitFor(() =>
+      expect(onError).toHaveBeenCalledExactlyOnceWith(failure, "install-2:app:1720000000000"),
+    );
+  });
+
+  it("fails before looking up sync when no destination is bound", () => {
+    const getSync = vi.fn();
+    const handler = createWatchImuChunkHandler({
+      connectionType: "zepp",
+      segmentName: "app",
+      getInstallId: () => "install-1",
+      getDestination: () => null,
+      getSync,
+      onError: vi.fn(),
+    });
+
+    expect(() => handler(chunk)).toThrow("Connect Dofek before recording motion data");
+    expect(getSync).not.toHaveBeenCalled();
+  });
+
+  it("fails when the durable chunk sync is unavailable", () => {
+    const handler = createWatchImuChunkHandler({
+      connectionType: "zepp",
+      segmentName: "app",
+      getInstallId: () => "install-1",
+      getDestination: () => input.destination,
+      getSync: () => null,
+      onError: vi.fn(),
+    });
+
+    expect(() => handler(chunk)).toThrow("IMU chunk sync is unavailable");
   });
 });
