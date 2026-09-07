@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { createImuChunkEnvelope, parseImuEnvelope } from "./imu-upload.ts";
+import {
+  createImuChunkEnvelope,
+  parseImuConnectionBinding,
+  parseImuEnvelope,
+} from "./imu-upload.ts";
 
 function validEnvelope() {
   return createImuChunkEnvelope({
@@ -16,6 +20,27 @@ function validEnvelope() {
 }
 
 describe("IMU upload envelope", () => {
+  it("validates and normalizes immutable capture destinations", () => {
+    expect(
+      parseImuConnectionBinding({
+        serverUrl: "https://dofek.test///",
+        accountId: " account-1 ",
+      }),
+    ).toEqual({ serverUrl: "https://dofek.test", accountId: "account-1" });
+
+    for (const value of [
+      null,
+      [],
+      {},
+      { serverUrl: 1, accountId: "account-1" },
+      { serverUrl: " ", accountId: "account-1" },
+      { serverUrl: "https://dofek.test", accountId: 1 },
+      { serverUrl: "https://dofek.test", accountId: " " },
+    ]) {
+      expect(() => parseImuConnectionBinding(value)).toThrow("IMU connection binding is invalid.");
+    }
+  });
+
   it("round-trips the immutable capture destination", () => {
     const envelope = createImuChunkEnvelope({
       connectionType: "zepp",
@@ -111,6 +136,74 @@ describe("IMU upload envelope", () => {
 
     expect(envelope.events[0]?.createdAt).toBe("1970-01-01T00:00:00.000Z");
     expect(envelope.events[0]?.payload.hasGyroscope).toBe(false);
+  });
+
+  it("enforces versioned chunk sample limits and gyroscope metadata", () => {
+    const sample = { tMs: 0, sensor: "accelerometer" as const, x: 1, y: 2, z: 3 };
+    const envelope = validEnvelope();
+    const event = envelope.events[0];
+    if (!event) throw new Error("Expected a valid fixture event.");
+
+    const parsePayload = (payload: Record<string, unknown>) =>
+      parseImuEnvelope({ ...envelope, events: [{ ...event, payload }] });
+    const common = {
+      segmentId: "segment-1",
+      sessionStartMs: 1_720_000_000_000,
+      hasGyroscope: false,
+    };
+
+    expect(
+      parsePayload({ ...common, formatVersion: 1, samples: Array(200).fill(sample) }),
+    ).toBeDefined();
+    expect(() =>
+      parsePayload({ ...common, formatVersion: 1, samples: Array(201).fill(sample) }),
+    ).toThrow("IMU envelope is invalid.");
+    expect(
+      parsePayload({
+        ...common,
+        formatVersion: 2,
+        sampleOffset: 0,
+        accelFreqMode: 1,
+        gyroFreqMode: 0,
+        samples: Array(128).fill(sample),
+      }),
+    ).toBeDefined();
+    expect(() =>
+      parsePayload({
+        ...common,
+        formatVersion: 2,
+        sampleOffset: 0,
+        accelFreqMode: 1,
+        gyroFreqMode: 0,
+        samples: Array(129).fill(sample),
+      }),
+    ).toThrow("IMU envelope is invalid.");
+    expect(() =>
+      parsePayload({
+        ...common,
+        formatVersion: 2,
+        sampleOffset: 0,
+        accelFreqMode: 1,
+        gyroFreqMode: 0,
+        samples: [{ ...sample, sensor: "gyroscope" }],
+      }),
+    ).toThrow("IMU envelope is invalid.");
+  });
+
+  it.each([
+    { sampleOffset: -1, accelFreqMode: 1, gyroFreqMode: 1 },
+    { sampleOffset: 0, accelFreqMode: 256, gyroFreqMode: 1 },
+    { sampleOffset: 0, accelFreqMode: 1, gyroFreqMode: 256 },
+  ])("rejects invalid version 2 transport metadata %#", (metadata) => {
+    const envelope = validEnvelope();
+    const event = envelope.events[0];
+    if (!event) throw new Error("Expected a valid fixture event.");
+    expect(() =>
+      parseImuEnvelope({
+        ...envelope,
+        events: [{ ...event, payload: { ...event.payload, ...metadata } }],
+      }),
+    ).toThrow("IMU envelope is invalid.");
   });
 
   it.each([
