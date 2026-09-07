@@ -10,6 +10,7 @@ const ACTIVITY_INTEGRITY_DBT_MODELS = [
   "activity_location_sample",
   "activity_sensor_summary_rows",
   "activity_location_summary_rows",
+  "activity_stream_points",
   "activity_summary_rows",
   "activity_vo2max_estimate",
 ] as const;

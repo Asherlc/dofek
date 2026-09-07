@@ -376,8 +376,13 @@ latest_location_samples AS (
   FROM (
     SELECT *
     FROM ${databases.analytics}.activity_location_sample
-    ORDER BY source_metric_stream_id ASC, refresh_version DESC
-    LIMIT 1 BY source_metric_stream_id
+    ORDER BY
+      user_id ASC,
+      activity_id ASC,
+      source_metric_stream_id ASC,
+      refresh_version DESC,
+      is_deleted DESC
+    LIMIT 1 BY user_id, activity_id, source_metric_stream_id
   )
   WHERE is_deleted = 0
 ),

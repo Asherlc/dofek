@@ -262,7 +262,7 @@ describe("activity payload dbt batch reconciliation", () => {
     await runDbtBatch(
       database,
       artifactDirectory,
-      ["activity_location_sample", "activity_location_summary_rows"],
+      ["activity_location_sample", "activity_location_summary_rows", "activity_stream_points"],
       "2026-09-06",
       "2026-09-07",
     );
@@ -285,12 +285,17 @@ describe("activity payload dbt batch reconciliation", () => {
       })),
     ]);
     await expectLocationCentroid(client, database, routeGroupId, 37.915, -122.085);
+    const unchangedStreamVersion = await getLocationStreamVersion(
+      client,
+      database,
+      unrelatedRouteGroupId,
+    );
 
     await moveRouteMember(client, database);
     await runDbtBatch(
       database,
       artifactDirectory,
-      ["activity_location_sample", "activity_location_summary_rows", "activity_stream_points"],
+      ["activity_location_sample", "activity_location_summary_rows"],
       "2026-09-07",
       "2026-09-08",
     );
@@ -337,14 +342,54 @@ describe("activity payload dbt batch reconciliation", () => {
         refresh_clock_count: 1,
       })),
     );
+    await expectHistoricalLocationMappingsNewerThanStream(client, database);
     await expectActiveLocationPointIds(client, database, routeGroupId, []);
     await expectActiveLocationPointIds(client, database, movedRouteGroupId, providerBPointIds);
     await expectNoActiveLocationSummary(client, database, routeGroupId);
     await expectLocationCentroid(client, database, movedRouteGroupId, 37.915, -122.085);
+
+    await runDbtBatch(
+      database,
+      artifactDirectory,
+      ["activity_stream_points"],
+      "2026-09-07",
+      "2026-09-08",
+    );
     await expectLocationStreamState(client, database, [
       { activity_id: routeGroupId, point_count: 0, is_deleted: 1 },
       { activity_id: movedRouteGroupId, point_count: 4, is_deleted: 0 },
     ]);
+    expect(await getLocationStreamVersion(client, database, unrelatedRouteGroupId)).toBe(
+      unchangedStreamVersion,
+    );
+
+    const priorOldGroupStreamVersion = await getLocationStreamVersion(
+      client,
+      database,
+      routeGroupId,
+    );
+    const priorMovedGroupStreamVersion = await getLocationStreamVersion(
+      client,
+      database,
+      movedRouteGroupId,
+    );
+    await runDbtBatch(
+      database,
+      artifactDirectory,
+      ["activity_stream_points"],
+      "2026-09-07",
+      "2026-09-08",
+      [routeMemberId, routeGroupId],
+    );
+    expect(await getLocationStreamVersion(client, database, routeGroupId)).not.toBe(
+      priorOldGroupStreamVersion,
+    );
+    expect(await getLocationStreamVersion(client, database, movedRouteGroupId)).not.toBe(
+      priorMovedGroupStreamVersion,
+    );
+    expect(await getLocationStreamVersion(client, database, unrelatedRouteGroupId)).toBe(
+      unchangedStreamVersion,
+    );
 
     const compiledSql = await readFile(
       join(
@@ -408,20 +453,36 @@ async function seedLocationFixture(client: ClickHouseClient, database: string): 
 
 async function moveRouteMember(client: ClickHouseClient, database: string): Promise<void> {
   await runStatements(client, [
-    `INSERT INTO ${database}.deduped_activities VALUES
-      ('${routeGroupId}', '${userId}', toDateTime64('2026-09-03 10:00:00', 6, 'UTC'),
-       toDateTime64('2026-09-03 11:00:00', 6, 'UTC'),
-       toDateTime64('2026-09-07 23:00:00', 9, 'UTC'), ['${retainedRouteMemberId}'], 2, 0,
-       toDateTime64('2026-09-07 23:00:00', 9, 'UTC')),
-      ('${movedRouteGroupId}', '${userId}', toDateTime64('2026-09-03 10:00:00', 6, 'UTC'),
-       toDateTime64('2026-09-03 11:00:00', 6, 'UTC'),
-       toDateTime64('2026-09-07 23:00:00', 9, 'UTC'), ['${routeMemberId}'], 2, 0,
-       toDateTime64('2026-09-07 23:00:00', 9, 'UTC'))`,
-    `INSERT INTO ${database}.deduped_activity_members VALUES
-      ('${movedRouteGroupId}', '${userId}', toDateTime64('2026-09-03 10:00:00', 6, 'UTC'),
-       toDateTime64('2026-09-03 11:00:00', 6, 'UTC'),
-       toDateTime64('2026-09-07 23:00:00', 9, 'UTC'), '${routeMemberId}', 2, 0,
-       toDateTime64('2026-09-07 23:00:00', 9, 'UTC'))`,
+    `INSERT INTO ${database}.deduped_activities
+      SELECT toUUID('${routeGroupId}'), toUUID('${userId}'),
+        toDateTime64('2026-09-03 10:00:00', 6, 'UTC'),
+        toNullable(toDateTime64('2026-09-03 11:00:00', 6, 'UTC')),
+        move_refreshed_at, [toUUID('${retainedRouteMemberId}')], toUInt64(2), toUInt8(0),
+        move_refreshed_at
+      FROM (
+        SELECT max(refreshed_at) + INTERVAL 1 MICROSECOND AS move_refreshed_at
+        FROM ${database}.activity_location_sample
+      )`,
+    `INSERT INTO ${database}.deduped_activities
+      SELECT toUUID('${movedRouteGroupId}'), toUUID('${userId}'),
+        toDateTime64('2026-09-03 10:00:00', 6, 'UTC'),
+        toNullable(toDateTime64('2026-09-03 11:00:00', 6, 'UTC')),
+        move_refreshed_at, [toUUID('${routeMemberId}')], toUInt64(2), toUInt8(0),
+        move_refreshed_at
+      FROM (
+        SELECT max(refreshed_at) + INTERVAL 1 MICROSECOND AS move_refreshed_at
+        FROM ${database}.activity_location_sample
+      )`,
+    `INSERT INTO ${database}.deduped_activity_members
+      SELECT toUUID('${movedRouteGroupId}'), toUUID('${userId}'),
+        toDateTime64('2026-09-03 10:00:00', 6, 'UTC'),
+        toNullable(toDateTime64('2026-09-03 11:00:00', 6, 'UTC')),
+        move_refreshed_at, toUUID('${routeMemberId}'), toUInt64(2), toUInt8(0),
+        move_refreshed_at
+      FROM (
+        SELECT max(refreshed_at) + INTERVAL 1 MICROSECOND AS move_refreshed_at
+        FROM ${database}.activity_location_sample
+      )`,
   ]);
 }
 
@@ -506,6 +567,47 @@ async function expectLocationStreamState(
     format: "JSONEachRow",
   });
   expect(await result.json()).toEqual(expected);
+}
+
+async function getLocationStreamVersion(
+  client: ClickHouseClient,
+  database: string,
+  activityId: string,
+): Promise<string> {
+  const result = await client.query({
+    query: `SELECT toString(refresh_version) AS refresh_version
+      FROM ${database}.activity_stream_points FINAL
+      WHERE activity_id = toUUID('${activityId}')`,
+    format: "JSONEachRow",
+  });
+  const [row] = z.array(z.object({ refresh_version: z.string() })).parse(await result.json());
+  if (!row) throw new Error(`Missing stream row for activity ${activityId}`);
+  return row.refresh_version;
+}
+
+async function expectHistoricalLocationMappingsNewerThanStream(
+  client: ClickHouseClient,
+  database: string,
+): Promise<void> {
+  const result = await client.query({
+    query: `WITH prior_stream AS (
+        SELECT refresh_version, refreshed_at
+        FROM ${database}.activity_stream_points FINAL
+        WHERE activity_id = toUUID('${routeGroupId}')
+      )
+      SELECT
+        toUInt32(countIf(location.refresh_version > prior_stream.refresh_version))
+          AS newer_mapping_count,
+        toUInt32(countIf(location.refreshed_at < prior_stream.refreshed_at))
+          AS historical_mapping_count
+      FROM ${database}.activity_location_sample AS location FINAL
+      CROSS JOIN prior_stream
+      WHERE toString(location.source_metric_stream_id) IN (${providerBPointIds
+        .map((id) => `'${id}'`)
+        .join(",")})`,
+    format: "JSONEachRow",
+  });
+  expect(await result.json()).toEqual([{ newer_mapping_count: 8, historical_mapping_count: 8 }]);
 }
 
 async function seedSensorFixture(client: ClickHouseClient, database: string): Promise<void> {
@@ -597,6 +699,7 @@ async function runDbtBatch(
   models: readonly string[],
   start: string,
   end: string,
+  activityIds?: readonly string[],
 ): Promise<void> {
   const url = new URL(requireClickHouseUrl());
   const result = await runProcess(
@@ -624,6 +727,12 @@ async function runDbtBatch(
       JSON.stringify({
         activity_sensor_sample_begin: start,
         initial_lookback_days: 365,
+        ...(activityIds
+          ? {
+              activity_refresh_user_id: userId,
+              activity_refresh_activity_ids: activityIds,
+            }
+          : {}),
       }),
       "--select",
       models.join(" "),

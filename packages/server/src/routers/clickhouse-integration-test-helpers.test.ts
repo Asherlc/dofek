@@ -91,6 +91,14 @@ describe("clickhouse integration test helpers", () => {
           command.includes(".metric_stream"),
       ),
     ).toBe(true);
+    const streamPointsSelect = setupCommands.find(
+      (command) => command.includes("INSERT INTO") && command.includes(".activity_stream_points"),
+    );
+    expect(streamPointsSelect).toBeDefined();
+    expect(streamPointsSelect).toContain(
+      "LIMIT 1 BY user_id, activity_id, source_metric_stream_id",
+    );
+    expect(streamPointsSelect).toContain("refresh_version DESC,\n      is_deleted DESC");
     expect(
       setupCommands.some(
         (command) =>

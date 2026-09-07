@@ -1,8 +1,8 @@
 # Task 6 report
 
-Status: fix round 3 complete. The original Task 6 implementation and first two
-fix rounds are recorded below; this round closes the remaining composite
-location-mapping identity finding.
+Status: fix round 4 complete. The original Task 6 implementation and prior fix
+rounds are recorded below; this round closes the stream watermark defect and
+the server integration-harness parity miss.
 
 ## Implementation
 
@@ -284,3 +284,68 @@ identity, not merely the upstream raw ID. Suggested guidance: add a read-model
 review checklist item requiring every `LIMIT ... BY` tuple to be compared with
 the producer's documented logical key; continue using
 `integration-tests-ready` for lifecycle transitions.
+
+## Fix round 4
+
+`activity_stream_points` no longer compares upstream semantic
+`refreshed_at` timestamps with a downstream wall-clock timestamp reconstructed
+from its own row version. It now computes the upstream maximum UInt64
+`refresh_version` independently for each `(user_id, activity_id)` in sensor and
+location samples and compares those values with the existing stream row's
+per-group maximum version. Missing existing rows and either newer upstream
+source dirty only that group. Initial population, stale-group tombstones, and
+restored-group behavior remain intact.
+
+Scoped repair now resolves current stable groups from either supplied group or
+member IDs through `deduped_activities.member_activity_ids`, and resolves prior
+group rows directly from existing stream keys. The integrity dbt selection now
+includes `activity_stream_points` after its sensor/location sources so a
+targeted repair publishes the stream immediately. The actual dbt fixture also
+executes this scoped member-plus-prior-key path and proves the unrelated group
+does not rebuild.
+
+The server ClickHouse integration harness now mirrors production's location
+sample identity and ordering: latest rows are selected by
+`(user_id, activity_id, source_metric_stream_id)` with `refresh_version DESC,
+is_deleted DESC`. This keeps old-group tombstones and new-group active mappings
+for the same raw point from collapsing in integration environments.
+
+### Transition-first RED evidence
+
+- `rtk bash -lc 'set -a; . ./.env.local; set +a; pnpm vitest run --project integration src/db/activity-payload-dbt-microbatch.integration.test.ts -t "remaps routes" --retry=0'` failed after the historical remap. The first fatal assertion expected the old-group tombstone and new four-point stream, but received only the stale old-group three-point stream. Before running the stream model, the fixture proved all eight old/new location mappings had a newer row version than the existing stream while every semantic `refreshed_at` remained older. This isolates the mixed-clock watermark as the cause.
+- The focused unit RED run failed three independent assertions: missing per-group source-version CTEs in `activity_stream_points`, missing `activity_stream_points` in the integrity dbt selection, and the server harness's remaining global `LIMIT 1 BY source_metric_stream_id`.
+
+The fixture no longer relies on a future hard-coded lifecycle timestamp. It
+derives the move timestamp as the prior location sample's semantic maximum plus
+one microsecond, guaranteeing it advances source lifecycle while remaining
+historical relative to the already-materialized stream row.
+
+### Fix-round GREEN evidence
+
+- `rtk bash -lc 'set -a; . ./.env.local; set +a; pnpm vitest run --project integration src/db/activity-payload-dbt-microbatch.integration.test.ts -t "remaps routes" --retry=0'`: 1 focused test passed in 21.15s, including the unscoped version-watermark transition and the explicit scoped member/prior-key repair.
+- `rtk pnpm vitest run analytics/models/read_models/read_model_microbatch.sql.test.ts src/db/activity-data-integrity-dbt.test.ts packages/server/src/routers/clickhouse-integration-test-helpers.test.ts --retry=0`: 3 files, 49 tests passed.
+- `rtk pnpm analytics:build`: all 39 models passed with no warnings, errors, or skips.
+- `rtk pnpm typecheck`: `TypeScript: No errors found`.
+- Escalated `rtk pnpm lint:sandbox`: passed all repository format and policy gates across 3,230 files after applying its deterministic formatting to two changed tests.
+- Focused SQLFluff no longer throws its initial LT09 Jinja-layout exception after the conditional target-state CTE was made formatter-safe. It retains only three ST03 false positives for CTEs used in the alternate incremental/scoped branch: `target_state`, `current_activity`, and `existing_stream_points`. No suppression, lint configuration, or timeout changed.
+- `rtk git diff --check`: clean.
+
+### Fix-round rollout and retrospective
+
+No schema migration is required. Rebuild `activity_stream_points` after the
+group-keyed sensor and location sample models during the existing Task 6
+rollout. Targeted integrity repair now selects it automatically, and supplied
+repair IDs must continue to contain the current member plus any prior stable
+group key discovered during reconciliation.
+
+What went well: separating the location-sample run from the stream run made
+the two clocks directly observable and produced a time-independent regression.
+What required investigation: the test harness materializes its generated
+stream SELECT through an `INSERT`, not a view, so the parity assertion belongs
+on the emitted synchronization command. Useful context next time: downstream
+incremental consumers should compare monotonic source versions to their own
+per-key materialization versions; semantic timestamps are payload provenance,
+not lifecycle watermarks. Suggested guidance: document that rule alongside the
+existing microbatch anti-join guidance and add stream consumers to the
+read-model logical-key review checklist; continue using
+`integration-tests-ready` for real dbt lifecycle coverage.

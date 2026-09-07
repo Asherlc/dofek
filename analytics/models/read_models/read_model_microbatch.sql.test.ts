@@ -550,6 +550,20 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("ref('activity_location_sample')");
     expect(sql).toContain("sample_dirty_keys AS");
     expect(sql).toContain("location_dirty_keys AS");
+    expect(sql).toContain("sensor_source_versions AS");
+    expect(sql).toContain("location_source_versions AS");
+    expect(sql).toContain("existing_stream_state AS");
+    expect(sql).toContain("repair_scope_dirty_keys AS");
+    expect(normalizedSql).toContain(
+      "sensor_source_versions.refresh_version > existing_stream_state.stream_refresh_version",
+    );
+    expect(normalizedSql).toContain(
+      "location_source_versions.refresh_version > existing_stream_state.stream_refresh_version",
+    );
+    expect(normalizedSql).not.toContain("fromUnixTimestamp64Nano");
+    expect(normalizedSql).not.toContain(
+      "refreshed_at > (SELECT last_refreshed_at FROM target_state)",
+    );
     expect(sql).toContain("existing_stream_points AS");
     expect(sql).toContain("stale_dirty_keys AS");
     expect(sql).toContain("restored_dirty_keys AS");
