@@ -195,12 +195,10 @@ export function ProviderCard({
         <View style={styles.cardMeta}>
           {!showingProgress && syncProgress?.message ? (
             <Text style={styles.cardMetaText}>
-              {syncProgress.status === "error"
-                ? userFacingErrorMessage(
-                    syncProgress.message,
-                    "The sync or import failed. Please try again.",
-                  )
-                : syncProgress.message}
+              {userFacingErrorMessage(
+                syncProgress.message,
+                "The sync or import failed. Please try again.",
+              )}
             </Text>
           ) : (
             <Text style={styles.cardMetaText}>

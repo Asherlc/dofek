@@ -19,6 +19,49 @@ function errorText(error: unknown): string | null {
   return trimmed ? trimmed : null;
 }
 
+function includesAny(value: string, candidates: readonly string[]): boolean {
+  return candidates.some((candidate) => value.includes(candidate));
+}
+
+function isTechnicalDiagnostic(message: string): boolean {
+  const normalized = message.toLowerCase();
+  const trimmed = message.trim();
+  const isSerializedValue =
+    (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+    (trimmed.startsWith("[") && trimmed.endsWith("]"));
+  const hasStackFrame = message
+    .split("\n")
+    .some((line) => line.trimStart().toLowerCase().startsWith("at "));
+  const containsSqlQuery = normalized.includes("select ") && normalized.includes(" from ");
+
+  return (
+    normalized.startsWith("unexpected") ||
+    includesAny(normalized, [
+      "zod parse failed",
+      "zoderror",
+      "invalid_type",
+      "invalid_format",
+      "invalid_value",
+      "invalid input: expected",
+      "cannot read properties",
+      "is not a function",
+      "unexpected token",
+      "json.parse",
+      "typeerror:",
+      "referenceerror:",
+      "syntaxerror:",
+      "drizzlequeryerror:",
+      "postgreserror:",
+      "clickhouseerror:",
+      "failed query:",
+      "params:",
+    ]) ||
+    hasStackFrame ||
+    containsSqlQuery ||
+    isSerializedValue
+  );
+}
+
 /**
  * Returns text that is safe to present directly to a person. Specific messages
  * authored for users pass through; browser, network, validation, and runtime
@@ -49,11 +92,7 @@ export function userFacingErrorMessage(error: unknown, fallback = DEFAULT_ERROR_
     return TIMEOUT_ERROR_MESSAGE;
   }
 
-  if (
-    /^unexpected\b|Zod parse failed|ZodError|invalid_(?:type|format|value)|Invalid input:\s*expected|Cannot read properties|is not a function|Unexpected token|JSON\.parse|\b(?:TypeError|ReferenceError|SyntaxError|DrizzleQueryError|PostgresError|ClickHouseError):|Failed query:|\bSELECT\b[\s\S]+\bFROM\b|\bparams:|\n\s*at\s|^\s*[[{][\s\S]*[\]}]\s*$/i.test(
-      message,
-    )
-  ) {
+  if (isTechnicalDiagnostic(message)) {
     return fallback;
   }
 

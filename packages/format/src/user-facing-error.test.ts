@@ -38,6 +38,16 @@ describe("userFacingErrorMessage", () => {
     );
   });
 
+  it.each([
+    "Error: broken\n    at handler (/app/server.ts:1:1)",
+    "Failed query: SELECT * FROM users\nparams: []",
+    '{"code":"invalid_type"}',
+  ])("replaces multiline and serialized diagnostics: %s", (message) => {
+    expect(userFacingErrorMessage(message, "The data could not be loaded.")).toBe(
+      "The data could not be loaded.",
+    );
+  });
+
   it("turns authentication codes into useful guidance", () => {
     expect(userFacingErrorMessage({ message: "UNAUTHORIZED" })).toBe(
       "Your session has expired. Sign in and try again.",
