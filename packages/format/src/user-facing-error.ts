@@ -25,10 +25,9 @@ function includesAny(value: string, candidates: readonly string[]): boolean {
 
 function isTechnicalDiagnostic(message: string): boolean {
   const normalized = message.toLowerCase();
-  const trimmed = message.trim();
   const isSerializedValue =
-    (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
-    (trimmed.startsWith("[") && trimmed.endsWith("]"));
+    (message.startsWith("{") && message.endsWith("}")) ||
+    (message.startsWith("[") && message.endsWith("]"));
   const hasStackFrame = message
     .split("\n")
     .some((line) => line.trimStart().toLowerCase().startsWith("at "));
