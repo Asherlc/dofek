@@ -17,6 +17,7 @@ function memberRow(id: string, groupId = group, anchorId = first) {
     created_at: createdAt,
     group_created_at: createdAt,
     anchor_activity_id: anchorId,
+    overlapping_activity_ids: [],
   };
 }
 
@@ -39,6 +40,7 @@ describe("activity group reconciliation adapter", () => {
           created_at: createdAt,
           group_created_at: createdAt,
           anchor_activity_id: first,
+          overlapping_activity_ids: [second],
         },
         {
           id: second,
@@ -46,9 +48,9 @@ describe("activity group reconciliation adapter", () => {
           created_at: "2026-09-02T10:00:00Z",
           group_created_at: "2026-09-02T10:00:00Z",
           anchor_activity_id: second,
+          overlapping_activity_ids: [],
         },
       ],
-      [{ activity_id: first, overlapping_activity_id: second }],
       [],
     ];
     const execute = vi.fn(async (_query: SQL) => responses.shift() ?? []);
@@ -78,7 +80,6 @@ describe("activity group reconciliation adapter", () => {
       [],
       [memberRow(first), memberRow(second)],
       [],
-      [],
       [{ id: newerGroup }],
     ]);
     await reconcileActivityGroups(database, userId);
@@ -92,7 +93,7 @@ describe("activity group reconciliation adapter", () => {
   });
 
   it("fails a split without changing membership when group allocation returns no identity", async () => {
-    const database = databaseWithRows([[], [memberRow(first), memberRow(second)], [], [], []]);
+    const database = databaseWithRows([[], [memberRow(first), memberRow(second)], [], []]);
     await expect(reconcileActivityGroups(database, userId)).rejects.toThrow(
       "Activity group insert did not return an ID",
     );
@@ -100,7 +101,7 @@ describe("activity group reconciliation adapter", () => {
   });
 
   it("avoids rewriting already reconciled memberships", async () => {
-    const database = databaseWithRows([[], [memberRow(first)], [], []]);
+    const database = databaseWithRows([[], [memberRow(first)], []]);
     await reconcileActivityGroups(database, userId);
     expect(database.queries().filter((query) => /INSERT|UPDATE/.test(query.sql))).toEqual([]);
   });
@@ -110,7 +111,6 @@ describe("activity group reconciliation adapter", () => {
     const database = databaseWithRows([
       [],
       [memberRow(first)],
-      [],
       [
         { alias_id: group, group_id: newerGroup },
         { alias_id: newerGroup, group_id: terminal },
@@ -126,7 +126,6 @@ describe("activity group reconciliation adapter", () => {
     const database = databaseWithRows([
       [],
       [memberRow(first)],
-      [],
       [
         { alias_id: group, group_id: newerGroup },
         { alias_id: newerGroup, group_id: group },

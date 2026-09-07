@@ -209,6 +209,40 @@ describe("transactional activity group reconciliation", () => {
     ]);
   });
 
+  it("preserves the surviving member's identity when its oldest member is tombstoned during the grouping read", async () => {
+    const first = await activity();
+    const second = await activity("group-test-b", undefined, undefined, "2026-09-02T10:00:00Z");
+    await reconcile();
+    expect(await membership(second.id)).toEqual([{ group_id: first.groupId }]);
+
+    let statementCount = 0;
+    let tombstoned = false;
+    await context.db.transaction(async (transaction) => {
+      await reconcileActivityGroups(
+        {
+          async execute(query) {
+            const rows = await transaction.execute(query);
+            statementCount++;
+            if (statementCount === 2) {
+              // Hold the first grouping read's result at the adapter boundary while a
+              // separate PostgreSQL connection commits the tombstone. Subsequent SQL
+              // statements would now observe a different READ COMMITTED snapshot.
+              await context.db.execute(sql`UPDATE fitness.activity
+              SET deleted_at = now() WHERE id = ${first.id}`);
+              tombstoned = true;
+            }
+            return rows;
+          },
+        },
+        userId,
+      );
+    });
+    expect(tombstoned).toBe(true);
+    expect(await membership(second.id)).toEqual([{ group_id: first.groupId }]);
+    await reconcile();
+    expect(await membership(second.id)).toEqual([{ group_id: first.groupId }]);
+  });
+
   it("holds the per-user lock until transaction completion and leaves other users independent", async () => {
     await activity();
     const lock = (id: string) =>
