@@ -126,6 +126,16 @@ must remain available to matching so a later duplicate can inherit group
 visibility. This requires changing the current early deletion filter; simply
 renaming `deleted_at` is insufficient.
 
+For example, deleting a current group containing A and B records targets A and
+B only. If source C later joins that component, it inherits the component's
+effective hidden state at read time; no C target is appended to the original
+command, and C acquires no independent tombstone. If C subsequently separates
+from all tombstoned members and has no deletion assertion of its own, that
+inherited hiding ends. The current matching graph supplies this association;
+the design does not require a separately persisted group-level assertion or a
+permanent group identifier. Historical targets and effective group visibility
+answer different questions and must remain distinguishable in provenance.
+
 If two independently modified groups later join, compatible assertions combine.
 Conflicting explicit values for the same field produce an explainable conflict;
 provider priority and wall-clock timestamps do not silently choose a human winner.

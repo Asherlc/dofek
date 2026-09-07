@@ -25262,8 +25262,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 ## 2026-09-07 — Historical sensor fixture fell outside the repair build window
 
-- **Status:** Reproduced locally; fix and passing verification pending. This was a
-  documentation-only PR check, not a deployed runtime change.
+- **Status:** Fixed and verified locally; replacement CI verification pending.
+  The initial failure was a documentation-only PR check, not a deployed change.
 - **Evidence:** [Integration shard 3/4, run 34141117493](https://github.com/Asherlc/dofek/actions/runs/34141117493/job/101803595315)
   failed in `src/db/activity-data-integrity-repair.integration.test.ts:693`:
   `AssertionError: expected [] to deeply equal` the two expected activity IDs.
@@ -25279,9 +25279,62 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `pnpm test:integration -- src/db/activity-data-integrity-repair.integration.test.ts`
   reproduced the empty sensor-summary assertion in 25.52 seconds, with the same
   September 4–7 dbt batches and subsequent repair-journal retry failures.
-- **Impact / follow-up:** PR 2678 remains draft and not ready. Both production
+- **Impact / follow-up:** PR 2678 is not ready to merge; the author marked it
+  ready for review on September 7. Both production
   repair and rollback call the helper without historical event-time bounds.
-  Confirm the bounded historical repair approach, add executable coverage, and
-  rerun CI after the fix. Do not move the fixture date or relax assertions merely
-  to pass the check. dbt documents explicit start and end bounds for
+  The approved fix passes explicit bounds from the earliest affected original,
+  corrected, or expanded source activity through the next UTC day after CDC
+  readiness. Repair and rollback retain their user/activity scope. The original
+  fixture dates and assertions remain intact. dbt documents start and end bounds for
   [historical microbatch backfills](https://docs.getdbt.com/docs/build/incremental-microbatch#backfills).
+
+## 2026-09-07 — Follow-up validation exposed UTC and migration-lint defects
+
+- **Status:** UTC and migration corrections verified locally; replacement CI
+  verification pending. No production changes or bypasses.
+- **Evidence / cause:** The bounded repair implementation passes the original
+  sensor-summary assertion, but the same real-database command fails rollback
+  with `PostgreSQL CDC mirror did not publish 3 repaired activities within
+  120000ms`. ClickHouse emits `2026-09-01 14:50:00.000000` without a timezone;
+  JavaScript on the Los Angeles workstation interprets it as `21:50Z`, not the
+  intended `14:50Z`. The rollback barrier consequently compares different
+  instants. Requesting ClickHouse's documented
+  [UTC ISO output](https://clickhouse.com/docs/reference/settings/formats/date-time#date_time_output_format)
+  fixes the timestamp comparison without a longer barrier timeout.
+- **UTC and repair validation:** The new real-ClickHouse regression first failed
+  with `Invalid ISO datetime`; requesting `date_time_output_format: 'iso'` then
+  preserved the UTC zone, fractional seconds, and nulls. The complete command
+  `pnpm test:integration -- src/db/activity-data-integrity-repair.integration.test.ts`
+  passed both tests in 21.01 seconds, including repair and rollback with three
+  dbt builds reporting `PASS=8 WARN=0 ERROR=0`. No test retries were needed.
+  The 95 focused unit tests, root/server/web typechecks, and full local lint
+  also passed. Existing CDC readiness polling remains necessary for mirror
+  consistency; no resilience settings were added or increased.
+- **Independent CI failures:** On commit `4d710eb`,
+  [SQLFluff](https://github.com/Asherlc/dofek/actions/runs/34145224514/job/101816174102)
+  rejects formatting and lateral subquery structure in the new migrations;
+  [Squawk](https://github.com/Asherlc/dofek/actions/runs/34145224514/job/101816174227)
+  rejects `schema_version integer` with `prefer-bigint-over-int`; and
+  [cspell](https://github.com/Asherlc/dofek/actions/runs/34145224514/job/101816174075)
+  rejects the reimport fixture label with `Unknown word`. Local migration SQLFluff reproduces its
+  failures. The aggregate lint gate fails because those required checks fail.
+- **Impact / follow-up:** CI remains red. `pnpm lint` does not include these
+  three migration/spelling checks. The approved migration correction uses
+  `bigint` consistently in SQL, Drizzle, and generated diagrams; fixes SQL
+  formatting; and projects owner/identity provenance from the lateral query's
+  terminal select so SQLFluff recognizes its correlation. Recursive history
+  remains scoped, and the fixture label uses ordinary wording.
+- **Query-plan validation:** An intermediate outer projection sourced from the
+  lateral result delayed owner/identity filtering until after global head
+  discovery. The final views select outer provenance directly from the head;
+  scoped `EXPLAIN` shows indexed identity/owner head discovery before per-head
+  recursion. `DISTINCT` keeps the head view structurally read-only. See the
+  [projection migration](../drizzle/0111_human_record_projections.sql) and
+  PostgreSQL's [updatable-view rules](https://www.postgresql.org/docs/current/sql-createview.html#SQL-CREATEVIEW-UPDATABLE-VIEWS).
+- **Migration validation:** Exact SQLFluff, Squawk, migration policy, and full
+  cspell commands passed (Squawk: two files, zero issues; cspell: 2,500 files,
+  zero issues). All 14 ledger/projection tests passed using a fresh migrated
+  PostgreSQL test database, including read-only behavior. Existing workspace
+  database contents were not reset. Full unit/mobile validation passed 17,662
+  tests with 21 existing skips. Push and confirm replacement CI; no retry,
+  timeout, lint suppression, or size-limit change was added.

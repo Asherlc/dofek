@@ -20,6 +20,8 @@ describe("runActivityIntegrityDbtBuild", () => {
     const build = runActivityIntegrityDbtBuild({
       userId: "00000000-0000-4000-8000-000000000001",
       activityIds: ["00000000-0000-4000-8000-000000000002"],
+      eventTimeStart: new Date("2026-09-01T00:00:00.000Z"),
+      eventTimeEnd: new Date("2026-09-08T00:00:00.000Z"),
     });
     const args = vi.mocked(spawn).mock.calls[0]?.[1] ?? [];
     const selection = args[args.indexOf("--select") + 1] ?? "";
@@ -40,12 +42,16 @@ describe("runActivityIntegrityDbtBuild", () => {
     const build = runActivityIntegrityDbtBuild({
       userId: "00000000-0000-4000-8000-000000000001",
       activityIds: ["00000000-0000-4000-8000-000000000002"],
+      eventTimeStart: new Date("2026-09-01T00:00:00.000Z"),
+      eventTimeEnd: new Date("2026-09-08T00:00:00.000Z"),
     });
     const call = vi.mocked(spawn).mock.calls[0];
     const args = call?.[1] ?? [];
     const variables = JSON.parse(args[args.indexOf("--vars") + 1] ?? "null");
 
     expect(call?.[0]).toBe("uv");
+    expect(args[args.indexOf("--event-time-start") + 1]).toBe("2026-09-01T00:00:00");
+    expect(args[args.indexOf("--event-time-end") + 1]).toBe("2026-09-08T00:00:00");
     expect(variables).toEqual({
       activity_refresh_user_id: "00000000-0000-4000-8000-000000000001",
       activity_refresh_activity_ids: ["00000000-0000-4000-8000-000000000002"],
@@ -75,6 +81,8 @@ describe("runActivityIntegrityDbtBuild", () => {
       const build = runActivityIntegrityDbtBuild({
         userId: "00000000-0000-4000-8000-000000000001",
         activityIds: ["00000000-0000-4000-8000-000000000002"],
+        eventTimeStart: new Date("2026-09-01T00:00:00.000Z"),
+        eventTimeEnd: new Date("2026-09-08T00:00:00.000Z"),
       });
       expect(vi.mocked(spawn).mock.calls[0]?.[2]?.env).toMatchObject({
         DBT_TARGET: "dev",
@@ -97,6 +105,8 @@ describe("runActivityIntegrityDbtBuild", () => {
     const build = runActivityIntegrityDbtBuild({
       userId: "00000000-0000-4000-8000-000000000001",
       activityIds: ["00000000-0000-4000-8000-000000000002"],
+      eventTimeStart: new Date("2026-09-01T00:00:00.000Z"),
+      eventTimeEnd: new Date("2026-09-08T00:00:00.000Z"),
     });
     child.emit("close", null);
 
@@ -110,6 +120,8 @@ describe("runActivityIntegrityDbtBuild", () => {
     const build = runActivityIntegrityDbtBuild({
       userId: "00000000-0000-4000-8000-000000000001",
       activityIds: ["00000000-0000-4000-8000-000000000002"],
+      eventTimeStart: new Date("2026-09-01T00:00:00.000Z"),
+      eventTimeEnd: new Date("2026-09-08T00:00:00.000Z"),
     });
     child.emit("close", 2);
 

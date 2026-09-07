@@ -1886,7 +1886,7 @@ table fitness.human_record_change {
   client_id text
   recorded_at "timestamp with time zone" [not null, default: `now()`]
   effective_at "timestamp with time zone"
-  schema_version integer [not null]
+  schema_version bigint [not null]
   undo_change_id uuid
 
   indexes {

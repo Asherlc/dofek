@@ -53,12 +53,12 @@ CREATE TABLE fitness.human_record_change (
   client_id text,
   recorded_at timestamp with time zone DEFAULT now() NOT NULL,
   effective_at timestamp with time zone,
-  schema_version integer NOT NULL,
+  schema_version bigint NOT NULL,
   undo_change_id uuid,
   CONSTRAINT human_record_change_request_key UNIQUE (user_id, request_id),
   CONSTRAINT human_record_change_owner_key UNIQUE (id, user_id),
   CONSTRAINT human_record_change_undo_fk FOREIGN KEY (undo_change_id, user_id)
-    REFERENCES fitness.human_record_change (id, user_id),
+  REFERENCES fitness.human_record_change (id, user_id),
   CONSTRAINT human_record_change_hash_valid CHECK (request_hash ~ '^[0-9a-f]{64}$'),
   CONSTRAINT human_record_change_kind_valid CHECK (kind IN ('create', 'update', 'clear', 'delete', 'restore', 'undo', 'legacy_delete')),
   CONSTRAINT human_record_change_channel_valid CHECK (channel IN ('web', 'mobile', 'mcp', 'migration')),
@@ -78,11 +78,11 @@ CREATE TABLE fitness.human_record_target (
   CONSTRAINT human_record_target_successor_key UNIQUE NULLS NOT DISTINCT (identity_id, predecessor_id),
   CONSTRAINT human_record_target_owner_key UNIQUE (id, identity_id, user_id),
   CONSTRAINT human_record_target_identity_fk FOREIGN KEY (identity_id, user_id)
-    REFERENCES fitness.human_record_identity (id, user_id),
+  REFERENCES fitness.human_record_identity (id, user_id),
   CONSTRAINT human_record_target_change_fk FOREIGN KEY (change_id, user_id)
-    REFERENCES fitness.human_record_change (id, user_id),
+  REFERENCES fitness.human_record_change (id, user_id),
   CONSTRAINT human_record_target_predecessor_fk FOREIGN KEY (predecessor_id, identity_id, user_id)
-    REFERENCES fitness.human_record_target (id, identity_id, user_id),
+  REFERENCES fitness.human_record_target (id, identity_id, user_id),
   CONSTRAINT human_record_target_not_self CHECK (predecessor_id IS NULL OR predecessor_id <> id),
   CONSTRAINT human_record_target_fields_valid CHECK (fitness.human_record_fields_valid(fields))
 );

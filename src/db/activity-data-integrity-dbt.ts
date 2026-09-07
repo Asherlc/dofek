@@ -11,10 +11,16 @@ const ACTIVITY_INTEGRITY_DBT_MODELS = [
   "activity_summary_rows",
 ] as const;
 
-export async function runActivityIntegrityDbtBuild(input: {
+export interface ActivityIntegrityDbtBuildInput {
   userId: string;
   activityIds: readonly string[];
-}): Promise<void> {
+  eventTimeStart: Date;
+  eventTimeEnd: Date;
+}
+
+export async function runActivityIntegrityDbtBuild(
+  input: ActivityIntegrityDbtBuildInput,
+): Promise<void> {
   const variables = {
     activity_refresh_user_id: input.userId,
     activity_refresh_activity_ids: input.activityIds,
@@ -34,6 +40,10 @@ export async function runActivityIntegrityDbtBuild(input: {
         "analytics",
         "--threads",
         "1",
+        "--event-time-start",
+        input.eventTimeStart.toISOString().slice(0, 19),
+        "--event-time-end",
+        input.eventTimeEnd.toISOString().slice(0, 19),
         "--vars",
         JSON.stringify(variables),
         "--select",

@@ -44,6 +44,7 @@ function sourceRow(activityId: string): DerivedSnapshot["sourceRows"][number] {
     provider_id: "wahoo",
     user_id: userId,
     canonical_type: "cycling",
+    started_at: new Date("2026-09-01T14:55:54.000Z"),
     timezone: null,
     start_utc_offset_minutes: -240,
     end_utc_offset_minutes: -240,
@@ -77,6 +78,15 @@ function compatibilitySnapshot(
 }
 
 describe("snapshotDerivedRows", () => {
+  it("rejects source rows without the activity start required for historical rebuild bounds", async () => {
+    const { started_at: _startedAt, ...incompleteSource } = sourceRowA;
+    const client = {
+      query: vi.fn(async ({ query }: { query: string }) => ({
+        json: async () => (query.startsWith("SELECT source_records.*") ? [incompleteSource] : []),
+      })),
+    };
+    await expect(snapshotDerivedRows(client, userId, [activityA])).rejects.toThrow("started_at");
+  });
   it("returns the complete empty snapshot without querying ClickHouse", async () => {
     const client = { query: vi.fn() };
 

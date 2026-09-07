@@ -458,6 +458,56 @@ function repairDependencies(directory: string, rebuildReadModels = vi.fn(async (
 }
 
 describe("repairActivityDataIntegrity", () => {
+  it("rebuilds the expanded historical graph through the UTC day after CDC becomes ready", async () => {
+    const directory = await artifactDirectory();
+    const olderMember = {
+      ...incompatibleMemberSourceRow,
+      canonical_type: "cycling",
+      started_at: new Date("2026-08-29T23:30:00.000Z"),
+    };
+    const clickhouse = createClickHouse(
+      [
+        [priorSourceRow, olderMember],
+        [repairedSourceRow, { ...olderMember, refresh_version: "9007199254740996" }],
+      ],
+      [priorGroupRows, repairedGroupRows],
+      [],
+      {
+        mirror: [[priorSourceRow], [repairedSourceRow]],
+        deduped: [priorDedupedRows, refreshedDedupedRows],
+        members: [priorMemberRows, refreshedMemberRows],
+      },
+    );
+    let currentTime = new Date("2026-09-02T23:59:59.000Z");
+    const dependencies = {
+      ...repairDependencies(directory),
+      now: () => currentTime,
+      sleep: async () => {
+        currentTime = new Date("2026-09-03T00:00:01.000Z");
+      },
+    };
+    await repairActivityDataIntegrity(
+      createDatabase(vi.fn().mockResolvedValue([postgresCandidate])),
+      clickhouse,
+      {
+        execute: true,
+        userId,
+        batchSize: 10,
+        maxBatches: 1,
+        acceptanceOwner: "data-on-call@example.com",
+        acceptanceDeadline: deadline,
+        ...window,
+      },
+      dependencies,
+    );
+    expect(dependencies.rebuildReadModels).toHaveBeenCalledWith({
+      userId,
+      activityIds: [activityId, pelotonId],
+      eventTimeStart: new Date("2026-08-29T00:00:00.000Z"),
+      eventTimeEnd: new Date("2026-09-04T00:00:00.000Z"),
+    });
+  });
+
   it("hard-fails when neither GPS nor a configured home zone can validate context", async () => {
     const directory = await artifactDirectory();
     const dependencies = {
@@ -476,6 +526,84 @@ describe("repairActivityDataIntegrity", () => {
       "activity local-time plausibility requires GPS coordinates or a home timezone",
     );
   });
+
+  it.each([
+    {
+      zone: "America/Los_Angeles",
+      original: "2026-09-01T23:30:00.000Z",
+      corrected: "2026-09-02T06:30:00.000Z",
+      offset: -420,
+      start: "2026-09-01T00:00:00.000Z",
+    },
+    {
+      zone: "Asia/Tokyo",
+      original: "2026-09-01T00:30:00.000Z",
+      corrected: "2026-08-31T15:30:00.000Z",
+      offset: 540,
+      start: "2026-08-31T00:00:00.000Z",
+    },
+  ])(
+    "covers original and corrected UTC days for $zone",
+    async ({ zone, original, corrected, offset, start }) => {
+      const directory = await artifactDirectory();
+      const candidate = {
+        ...postgresCandidate,
+        provider_id: "strong-csv",
+        timezone: null,
+        start_utc_offset_minutes: null,
+        end_utc_offset_minutes: null,
+        local_time_source: "unknown",
+        started_at: original,
+        ended_at: null,
+      };
+      const source = {
+        ...priorSourceRow,
+        provider_id: "strong-csv",
+        started_at: new Date(original),
+        ended_at: null,
+        timezone: null,
+        start_utc_offset_minutes: null,
+        end_utc_offset_minutes: null,
+        local_time_source: "unknown",
+      };
+      const mirror = {
+        ...source,
+        started_at: new Date(corrected),
+        timezone: zone,
+        start_utc_offset_minutes: offset,
+        end_utc_offset_minutes: null,
+        local_time_source: "home_zone_fallback",
+      };
+      const rebuildReadModels = vi.fn(async () => {
+        throw new Error("stop after capturing build bounds");
+      });
+      await expect(
+        repairActivityDataIntegrity(
+          createDatabase(vi.fn().mockResolvedValue([candidate])),
+          createClickHouse([[source]], [[]], [], { mirror: [[mirror]] }),
+          {
+            execute: true,
+            userId,
+            batchSize: 10,
+            maxBatches: 1,
+            acceptanceOwner: "data-on-call@example.com",
+            acceptanceDeadline: deadline,
+            ...window,
+          },
+          {
+            ...repairDependencies(directory, rebuildReadModels),
+            loadHomeTimezone: async () => zone,
+          },
+        ),
+      ).rejects.toThrow("stop after capturing build bounds");
+      expect(rebuildReadModels).toHaveBeenCalledWith({
+        userId,
+        activityIds: [activityId],
+        eventTimeStart: new Date(start),
+        eventTimeEnd: new Date("2026-09-03T00:00:00.000Z"),
+      });
+    },
+  );
 
   it("repairs a winter Strong wall clock with the zone's standard-time offset", async () => {
     const directory = await artifactDirectory();
@@ -1299,6 +1427,8 @@ describe("repairActivityDataIntegrity", () => {
     expect(rollbackRebuildReadModels).toHaveBeenCalledWith({
       userId,
       activityIds: [activityId, pelotonId],
+      eventTimeStart: new Date("2026-09-01T00:00:00.000Z"),
+      eventTimeEnd: new Date("2026-09-03T00:00:00.000Z"),
     });
   });
 
@@ -1625,6 +1755,53 @@ describe("rollbackActivityDataIntegrity", () => {
     expect(clickhouse.insert).not.toHaveBeenCalled();
   });
 
+  it.each(["execution", "failure"] as const)(
+    "includes historical identities captured in the %s snapshot during rollback",
+    async (phase) => {
+      const { result, rollbackDb } = await executedArtifact();
+      const artifact = JSON.parse(await readFile(result.artifactPath, "utf8"));
+      const olderId = "00000000-0000-4000-8000-000000000110";
+      const snapshot = {
+        ...artifact.execution,
+        sourceRowsAfter: [
+          ...artifact.execution.sourceRowsAfter,
+          { ...priorSourceRow, activity_id: olderId, started_at: "2026-08-25T22:00:00.000Z" },
+        ],
+      };
+      if (phase === "execution") artifact.execution = snapshot;
+      else
+        artifact.failure = {
+          failedAt: now.toISOString(),
+          stage: "verification",
+          message: "verification failed",
+          snapshot,
+        };
+      await writeFile(result.artifactPath, JSON.stringify(artifact), "utf8");
+      let currentTime = new Date("2026-09-02T23:59:59.000Z");
+      const rebuildReadModels = vi.fn(async () => undefined);
+      await rollbackActivityDataIntegrity(
+        rollbackDb,
+        createClickHouse([[priorSourceRow]], [priorGroupRows], [], {
+          mirror: [[repairedSourceRow], [priorSourceRow]],
+        }),
+        result.artifactPath,
+        {
+          rebuildReadModels,
+          now: () => currentTime,
+          sleep: async () => {
+            currentTime = new Date("2026-09-03T00:00:01.000Z");
+          },
+        },
+      );
+      expect(rebuildReadModels).toHaveBeenCalledWith({
+        userId,
+        activityIds: [activityId, pelotonId, olderId],
+        eventTimeStart: new Date("2026-08-25T00:00:00.000Z"),
+        eventTimeEnd: new Date("2026-09-04T00:00:00.000Z"),
+      });
+    },
+  );
+
   it("rejects a tampered audit artifact before rollback", async () => {
     const { result, rollbackDb } = await executedArtifact();
     const artifact = JSON.parse(await readFile(result.artifactPath, "utf8"));
@@ -1737,6 +1914,8 @@ describe("rollbackActivityDataIntegrity", () => {
     expect(rebuildReadModels).toHaveBeenCalledWith({
       userId,
       activityIds: [activityId, pelotonId],
+      eventTimeStart: new Date("2026-09-01T00:00:00.000Z"),
+      eventTimeEnd: new Date("2026-09-03T00:00:00.000Z"),
     });
   });
 

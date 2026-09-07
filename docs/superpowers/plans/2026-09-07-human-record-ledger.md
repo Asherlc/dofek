@@ -68,7 +68,7 @@ fitness.human_record_change
   client_id text nullable (required for mcp; no caller-supplied actor identity)
   recorded_at timestamptz not null
   effective_at timestamptz nullable
-  schema_version integer not null, positive
+  schema_version bigint not null, positive
   undo_change_id uuid nullable (same-user FK to human_record_change)
   unique(user_id, request_id)
   unique(id, user_id)
@@ -145,7 +145,9 @@ await expect(database.execute(sql`
 **Files:**
 
 - Create `drizzle/0111_human_record_projections.sql` and register it in
-  `drizzle/meta/_journal.json`; never rewrite the already-applied ledger migration.
+  `drizzle/meta/_journal.json`. The user approved correcting the new, unmerged
+  ledger and projection migrations for CI on September 7; validate the corrected
+  sequence on a fresh test database, without resetting existing local data.
 - Extend `src/db/record-modifications.integration.test.ts`.
 
 **Read interface:**
@@ -192,8 +194,9 @@ expect(fields).toEqual([
 
 The pass criterion is executable PostgreSQL evidence, not SQL-string assertions.
 This subsystem does not yet expose mutation tools, migrate activity deletion,
-or make effective domain reads consume the ledger. Keep the PR draft until the
-full design's integration gates are satisfied. The testing runbook should gain
+or make effective domain reads consume the ledger. Do not merge it as delivery
+of the full system until the design's integration gates are satisfied; the author
+controls the PR's draft/review state. The testing runbook should gain
 a verified network-address-pool recovery note after local recovery succeeds.
 
 PostgreSQL references: [constraints](https://www.postgresql.org/docs/current/ddl-constraints.html),

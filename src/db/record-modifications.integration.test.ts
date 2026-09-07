@@ -225,7 +225,7 @@ describe("human record ledger constraints", () => {
     await target(record, await change());
     await ctx.db.execute(sql`DELETE FROM fitness.food_entry WHERE provider_id = ${provider}`);
     await ctx.db.execute(sql`INSERT INTO fitness.food_entry (user_id, provider_id, external_id, date, food_name)
-      VALUES (${userId}, ${provider}, ${externalId}, '2026-09-07', 'Resynced')`);
+      VALUES (${userId}, ${provider}, ${externalId}, '2026-09-07', 'Imported again')`);
     await ctx.db.execute(sql`DELETE FROM fitness.food_entry WHERE provider_id = ${provider}`);
     await ctx.db.execute(sql`DELETE FROM fitness.provider WHERE id = ${provider}`);
     const rows = await ctx.db.execute(

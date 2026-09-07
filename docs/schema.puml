@@ -1211,7 +1211,7 @@ entity "human_record_change" {
   client_id : text
   recorded_at : timestamp
   effective_at : timestamp
-  schema_version : integer
+  schema_version : bigint
   undo_change_id : uuid
 }
 

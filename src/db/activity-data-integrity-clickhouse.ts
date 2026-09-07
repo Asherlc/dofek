@@ -22,7 +22,7 @@ export const clickHouseSourceRowSchema = z
     provider_id: z.string().min(1),
     user_id: postgresUuidSchema,
     canonical_type: z.string().min(1),
-    started_at: z.coerce.date().optional(),
+    started_at: z.coerce.date(),
     ended_at: z.coerce.date().nullable().optional(),
     timezone: z.string().nullable(),
     start_utc_offset_minutes: z.coerce.number().int().nullable(),
@@ -127,7 +127,10 @@ export async function queryClickHouseRows<T extends object>(
     query,
     query_params: queryParams,
     format: "JSONEachRow",
-    clickhouse_settings: { output_format_json_quote_64bit_integers: 1 },
+    clickhouse_settings: {
+      output_format_json_quote_64bit_integers: 1,
+      date_time_output_format: "iso",
+    },
   });
   return z.array(schema).parse(await response.json());
 }

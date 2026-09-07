@@ -1,9 +1,9 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   check,
   foreignKey,
-  integer,
   jsonb,
   text,
   timestamp,
@@ -61,7 +61,7 @@ export const humanRecordChange = fitness.table(
     clientId: text("client_id"),
     recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
     effectiveAt: timestamp("effective_at", { withTimezone: true }),
-    schemaVersion: integer("schema_version").notNull(),
+    schemaVersion: bigint("schema_version", { mode: "number" }).notNull(),
     undoChangeId: uuid("undo_change_id"),
   },
   (table) => [
