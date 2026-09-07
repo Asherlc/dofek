@@ -26,6 +26,7 @@ import {
 import { AccountErasurePanel } from "../components/AccountErasurePanel";
 import { ClimbingGradeSystemSettings } from "../components/ClimbingGradeSystemSettings";
 import { DataExportSection } from "../components/DataExportSection";
+import { GoalWeightSettingsSection } from "../components/GoalWeightSettingsSection";
 import { McpClientSetupPanel } from "../components/McpClientSetupPanel";
 import { MedicationDoseEventsPanel } from "../components/MedicationDoseEventsPanel";
 import { MedicationRemindersPanel } from "../components/MedicationRemindersPanel";
@@ -33,6 +34,7 @@ import { PersonalizationPanel } from "../components/PersonalizationPanel";
 import { PrimaryGoalSelector } from "../components/PrimaryGoalSelector";
 import { ProviderLogo } from "../components/ProviderLogo";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
+import { styles } from "../components/settings.styles";
 import { ZeppPairingCard } from "../components/ZeppPairingCard";
 import { AppStoreBillingService } from "../lib/app-store-billing";
 import { useAuth } from "../lib/auth-context";
@@ -41,8 +43,6 @@ import { trpc } from "../lib/trpc";
 import { useRefresh } from "../lib/useRefresh";
 import type { AppStoreProduct } from "../modules/app-store-billing";
 import { colors } from "../theme";
-import { styles } from "./settings.styles";
-import { GoalWeightSettingsSection } from "./settings-goal-weight";
 
 type UnitSystem = "metric" | "imperial";
 type AppStoreBillingAction = "manage" | "restore" | "subscribe";

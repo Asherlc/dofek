@@ -1,5 +1,4 @@
 import { formatSpO2Measurement } from "@dofek/format/format";
-import type { UnitConverter } from "@dofek/format/units";
 import { baselineRelativeMetricSchema } from "dofek-server/baseline-relative-metrics";
 import {
   type HealthStatusMetric,
@@ -17,7 +16,6 @@ import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { TodayPlanCard } from "../components/TodayPlanCard.tsx";
 import { useProcessingStatus } from "../hooks/useProcessingStatus.ts";
 import { useTodayQueryDate } from "../hooks/useTodayQueryDate.ts";
-import { chartColors } from "../lib/chartTheme.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 
@@ -44,14 +42,6 @@ const trendRowSchema = z.object({
 });
 type TrendRow = z.infer<typeof trendRowSchema>;
 
-const dailyMetricRowSchema = z.object({
-  date: z.string(),
-  hrv: z.number().nullable(),
-  spo2_avg: z.number().nullable(),
-  skin_temp_c: z.number().nullable(),
-  steps: z.number().nullable(),
-});
-
 const restingHeartRateChartRowSchema = z
   .object({
     date: z.string(),
@@ -62,55 +52,11 @@ const restingHeartRateChartRowSchema = z
     restingHeartRate: row.resting_hr,
   }));
 
-export function healthMonitorSubtitle(): string {
-  return "Latest values vs. rolling average";
-}
-
-type DailyMetricRow = z.infer<typeof dailyMetricRowSchema>;
-
-export function spo2TempSectionConfig(
-  hasSpO2: boolean,
-  hasSkinTemp: boolean,
-  units: UnitConverter,
-): { title: string; subtitle: string; yAxis: { name: string; min?: number }[] } {
-  if (hasSpO2 && hasSkinTemp) {
-    return {
-      title: "Blood Oxygen Saturation (SpO2) & Skin Temperature",
-      subtitle: "Blood oxygen saturation and wrist skin temperature over time",
-      yAxis: [{ name: "Blood Oxygen Saturation (%)", min: 90 }, { name: units.temperatureLabel }],
-    };
-  }
-  if (hasSpO2) {
-    return {
-      title: "Blood Oxygen Saturation (SpO2)",
-      subtitle: "Blood oxygen saturation over time",
-      yAxis: [{ name: "Blood Oxygen Saturation (%)", min: 90 }],
-    };
-  }
-  return {
-    title: "Skin Temperature",
-    subtitle: "Wrist skin temperature over time",
-    yAxis: [{ name: units.temperatureLabel }],
-  };
-}
-
-export function buildSkinTempSeries(metrics: DailyMetricRow[], units: UnitConverter) {
-  return {
-    name: "Skin Temp",
-    data: metrics.map((dailyMetric): [string, number | null] => [
-      dailyMetric.date,
-      dailyMetric.skin_temp_c != null ? units.convertTemperature(dailyMetric.skin_temp_c) : null,
-    ]),
-    color: chartColors.amber,
-    yAxisIndex: 1 as const,
-  };
-}
-
-export function buildHealthMetrics(trendData: TrendRow | undefined): HealthStatusMetric[] {
+function buildHealthMetrics(trendData: TrendRow | undefined): HealthStatusMetric[] {
   return trendData?.healthStatus ?? [];
 }
 
-export function isCoreDashboardReady({
+function isCoreDashboardReady({
   readinessReady,
   workloadRatioReady,
   strainTargetReady,

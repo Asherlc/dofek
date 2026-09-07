@@ -82,11 +82,7 @@ const APPLICATION_ENVIRONMENT_KEYS = [
   "ZOHO_DESK_REFRESH_TOKEN",
 ] as const;
 
-const WEB_ONLY_ENVIRONMENT_KEYS = [
-  "GEMINI_API_KEY",
-  "MISTRAL_API_KEY",
-  "OPENAI_APPS_CHALLENGE_TOKEN",
-] as const;
+const WEB_ONLY_ENVIRONMENT_KEYS = ["OPENAI_APPS_CHALLENGE_TOKEN"] as const;
 
 const APP_STORE_ENVIRONMENT_KEYS = [
   "APP_STORE_ISSUER_ID",
@@ -197,7 +193,6 @@ describe("renderDeployServiceEnvironmentFiles", () => {
     );
     expect(worker).not.toHaveProperty("CLOUDFLARE_API_TOKEN");
     expect(worker).not.toHaveProperty("APP_STORE_PRIVATE_KEY");
-    expect(worker).not.toHaveProperty("GEMINI_API_KEY");
     expect(worker).not.toHaveProperty("OTA_PRIVATE_KEY_B64");
 
     expect(parseEnv(readFileSync(paths.analyticsWorker, "utf8"))).toEqual({

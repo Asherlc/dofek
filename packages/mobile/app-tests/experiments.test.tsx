@@ -145,7 +145,7 @@ vi.mock("../theme", () => ({
   colors: new Proxy({}, { get: () => "#71717a" }),
 }));
 
-vi.mock("../app/_layout-options", () => ({
+vi.mock("../lib/root-stack-screen-options", () => ({
   rootStackScreenOptions: {},
 }));
 

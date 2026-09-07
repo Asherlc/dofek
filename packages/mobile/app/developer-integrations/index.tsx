@@ -14,8 +14,8 @@ import { getQueryErrorMessage, QueryStatePanel } from "../../components/QuerySta
 import { useAuth } from "../../lib/auth-context";
 import { createMobileDeveloperClientsApi } from "../../lib/developer-clients";
 import { openExternalUrl } from "../../lib/open-external-url";
+import { rootStackScreenOptions } from "../../lib/root-stack-screen-options";
 import { colors, fontSize, fontWeight, radius, spacing } from "../../theme";
-import { rootStackScreenOptions } from "../_layout-options";
 
 const externalApiDocsUrl = "https://github.com/Asherlc/dofek/blob/main/docs/external-api.md";
 

@@ -1,6 +1,29 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  Outlet,
+  RouterProvider,
+} from "@tanstack/react-router";
 import type { InsightEvidence } from "dofek-server/types";
 import { DashboardEvidenceOverview } from "./DashboardEvidenceOverview";
+
+function withRouter(Story: () => React.ReactNode) {
+  const rootRoute = createRootRoute({ component: Outlet });
+  const storyRoute = createRoute({ getParentRoute: () => rootRoute, path: "/", component: Story });
+  const heartRateRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/body/heart-rate",
+    component: () => <p>Resting heart rate data</p>,
+  });
+  const router = createRouter({
+    routeTree: rootRoute.addChildren([storyRoute, heartRateRoute]),
+    history: createMemoryHistory({ initialEntries: ["/"] }),
+  });
+  return <RouterProvider router={router} />;
+}
 
 const evidence: InsightEvidence = {
   relationship: "correlation",
@@ -69,18 +92,12 @@ const meta = {
         { x: 75, y: 88, date: "2026-05-27" },
       ],
     },
-    trainingSleepPoints: [
-      { date: "2026-05-23", trainingLoad: 42, sleepConsistency: 86 },
-      { date: "2026-05-24", trainingLoad: 58, sleepConsistency: 78 },
-      { date: "2026-05-25", trainingLoad: 66, sleepConsistency: 72 },
-      { date: "2026-05-26", trainingLoad: 81, sleepConsistency: 67 },
-      { date: "2026-05-27", trainingLoad: 94, sleepConsistency: 61 },
-    ],
   },
   parameters: {
     layout: "fullscreen",
   },
   decorators: [
+    withRouter,
     (Story) => (
       <div className="min-h-screen bg-page p-6">
         <Story />
@@ -104,7 +121,6 @@ export const Loading: Story = {
       restingHeartRateTrendLabel: "Waiting for baseline",
       restingHeartRatePoints: null,
     },
-    trainingSleepPoints: null,
     healthMonitor: (
       <div className="grid gap-3 sm:grid-cols-3" aria-busy="true">
         {[0, 1, 2].map((placeholder) => (
@@ -129,7 +145,6 @@ export const Empty: Story = {
       restingHeartRateTrendLabel: "Waiting for baseline",
       restingHeartRatePoints: null,
     },
-    trainingSleepPoints: null,
     healthMonitor: <p className="text-sm text-muted">No recent health metrics yet.</p>,
   },
 };

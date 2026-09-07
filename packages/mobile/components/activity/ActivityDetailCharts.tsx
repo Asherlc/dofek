@@ -10,9 +10,9 @@ import Svg, {
   Stop,
   Text as SvgText,
 } from "react-native-svg";
-import { AccessibleChart } from "../../components/AccessibleChart";
-import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { colors } from "../../theme";
+import { AccessibleChart } from "../AccessibleChart";
+import { ChartTitleWithTooltip } from "../ChartTitleWithTooltip";
 import { ACTIVITY_CHART_WIDTH } from "./chartDimensions";
 import { useChartScrub } from "./useChartScrub";
 

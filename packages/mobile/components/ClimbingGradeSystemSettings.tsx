@@ -5,8 +5,8 @@ import {
   ROUTE_GRADE_SYSTEMS,
 } from "@dofek/training/climbing-grades";
 import { ActivityIndicator, Text, TouchableOpacity, View } from "react-native";
-import { styles } from "../app/settings.styles";
 import { colors } from "../theme";
+import { styles } from "./settings.styles";
 
 interface ClimbingGradeSystemSettingsProps {
   errorMessage: string | null;

@@ -22,12 +22,6 @@ export interface RestingHeartRatePoint {
   value: number;
 }
 
-export interface TrainingSleepComparisonPoint {
-  date: string;
-  trainingLoad: number;
-  sleepConsistency: number;
-}
-
 export function formatDashboardRange(endDate: string, days: number): string {
   const end = new Date(`${endDate}T12:00:00Z`);
   const start = new Date(end);
@@ -99,7 +93,6 @@ export function DashboardEvidenceOverview({
   trend,
   restingHeartRateLoading = false,
   restingHeartRateError = null,
-  trainingSleepPoints,
   healthMonitor,
 }: {
   days: number;
@@ -109,7 +102,6 @@ export function DashboardEvidenceOverview({
   trend: DashboardTrendSnapshot;
   restingHeartRateLoading?: boolean;
   restingHeartRateError?: unknown;
-  trainingSleepPoints?: TrainingSleepComparisonPoint[] | null | undefined;
   healthMonitor: ReactNode;
 }) {
   const units = useUnitConverter();
@@ -146,22 +138,9 @@ export function DashboardEvidenceOverview({
       .map((point) => ({ date: point.date, xValue: point.x, yValue: point.y })) ?? [];
   const restingHeartRatePoints =
     trend.restingHeartRatePoints?.filter((point) => Number.isFinite(point.value)) ?? [];
-  const trainingSleepChartPoints =
-    trainingSleepPoints
-      ?.filter(
-        (point) => Number.isFinite(point.trainingLoad) && Number.isFinite(point.sleepConsistency),
-      )
-      .map((point) => ({
-        date: point.date,
-        xValue: point.trainingLoad,
-        yValue: point.sleepConsistency,
-      })) ?? [];
 
   return (
-    <section
-      aria-label="Dashboard overview"
-      className="dashboard-hero card p-5 sm:p-6 lg:min-h-[calc(100vh-4rem)]"
-    >
+    <section aria-label="Dashboard overview" className="dashboard-hero space-y-5">
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-xl font-semibold tracking-tight text-foreground">Overview</h2>
@@ -172,7 +151,7 @@ export function DashboardEvidenceOverview({
         </span>
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-3">
+      <div className="grid gap-3 lg:grid-cols-2">
         <EvidenceCard eyebrow={`Key ${relationshipHeading.toLowerCase()}`}>
           {insightError ? (
             insightError
@@ -268,28 +247,9 @@ export function DashboardEvidenceOverview({
             </section>
           ) : null}
         </EvidenceCard>
-
-        <EvidenceCard eyebrow="Training load compared with sleep consistency">
-          <h3 className="max-w-sm text-base font-medium leading-relaxed text-foreground">
-            Higher load weeks can be reviewed beside sleep and recovery.
-          </h3>
-          <div className="mt-5">
-            <MiniChartFrame data={trainingSleepChartPoints}>
-              <MiniScatter
-                points={trainingSleepChartPoints}
-                labels={{
-                  xAxis: "Load",
-                  xMetric: "Training load",
-                  yAxis: "Sleep",
-                  yMetric: "Sleep consistency",
-                }}
-              />
-            </MiniChartFrame>
-          </div>
-        </EvidenceCard>
       </div>
 
-      <div className="mt-3 rounded-lg border border-border bg-surface p-4">
+      <div className="border-t border-border pt-4">
         <p className="mb-3 text-xs font-bold uppercase tracking-[0.16em] text-muted">
           Health monitor
         </p>

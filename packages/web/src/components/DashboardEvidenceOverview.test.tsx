@@ -151,7 +151,6 @@ describe("DashboardEvidenceOverview", () => {
       "Observation window: Daily observations",
     );
     expect(screen.getByText("Recent trend")).toBeTruthy();
-    expect(screen.getByText("Training load compared with sleep consistency")).toBeTruthy();
     expect(screen.queryByText("Compare sources")).toBeNull();
     expect(screen.queryByText("Connected source coverage")).toBeNull();
     expect(screen.getByText("Health monitor")).toBeTruthy();
@@ -355,8 +354,7 @@ describe("DashboardEvidenceOverview", () => {
       />,
     );
 
-    expect(screen.getAllByText("No chart data yet.")).toHaveLength(3);
-    expect(screen.queryByText("Training load: 10, Sleep consistency: 82")).toBeNull();
+    expect(screen.getAllByText("No chart data yet.")).toHaveLength(2);
     expect(screen.queryByText("Average resting heart rate: 56 bpm")).toBeNull();
   });
 
@@ -372,7 +370,7 @@ describe("DashboardEvidenceOverview", () => {
     );
 
     expect(loadingResult.container.querySelector(".animate-spin")).not.toBeNull();
-    expect(screen.getAllByText("No chart data yet.")).toHaveLength(2);
+    expect(screen.getAllByText("No chart data yet.")).toHaveLength(1);
 
     loadingResult.unmount();
 
@@ -387,7 +385,7 @@ describe("DashboardEvidenceOverview", () => {
     );
 
     expect(screen.getByText("Resting heart rate chart failed.")).toBeTruthy();
-    expect(screen.getAllByText("No chart data yet.")).toHaveLength(2);
+    expect(screen.getAllByText("No chart data yet.")).toHaveLength(1);
   });
 
   it("labels resting heart rate axes with observed values instead of padded domains", () => {

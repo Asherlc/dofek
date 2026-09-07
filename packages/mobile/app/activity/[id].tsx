@@ -35,6 +35,16 @@ import {
   View,
 } from "react-native";
 import { ActivityPerceivedExertion } from "../../components/ActivityPerceivedExertion";
+import {
+  AreaChart,
+  CHART_COLORS,
+  chartStyles,
+  LineChart,
+} from "../../components/activity/ActivityDetailCharts";
+import { ActivitySourceDecisionCard } from "../../components/activity/ActivitySourceDecisionCard";
+import { ProviderAbsentBanner } from "../../components/activity/ProviderAbsentBanner";
+import { styles } from "../../components/activity/styles";
+import { HrZonesChart, PowerZonesChart } from "../../components/activity/ZoneDistributionCharts";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { HangboardingDetail } from "../../components/HangboardingDetail";
 import { MuscleGroupBodyDiagram } from "../../components/MuscleGroupBodyDiagram";
@@ -45,11 +55,6 @@ import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { colors } from "../../theme";
-import { AreaChart, CHART_COLORS, chartStyles, LineChart } from "./ActivityDetailCharts";
-import { ActivitySourceDecisionCard } from "./ActivitySourceDecisionCard";
-import { ProviderAbsentBanner } from "./ProviderAbsentBanner";
-import { styles } from "./styles";
-import { HrZonesChart, PowerZonesChart } from "./ZoneDistributionCharts";
 
 function activityIcon(type: string): string {
   return getActivityIconInfo(type).emoji;

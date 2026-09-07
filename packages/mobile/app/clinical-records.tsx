@@ -3,9 +3,9 @@ import { Stack, useRouter } from "expo-router";
 import { useState } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
+import { rootStackScreenOptions } from "../lib/root-stack-screen-options";
 import { trpc } from "../lib/trpc";
 import { colors, fontSize, fontWeight, radius, spacing } from "../theme";
-import { rootStackScreenOptions } from "./_layout-options";
 
 const PAGE_SIZE = 20;
 
