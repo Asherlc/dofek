@@ -9,6 +9,7 @@ describe("normal Zepp app Settings entry point", () => {
       [STORAGE_KEYS.PAIRING_VERIFICATION_URL]:
         "https://dofek.example.test/zepp-pairing?code=ABC234",
       [STORAGE_KEYS.PAIRING_QR_IMAGE_URL]: "https://dofek.example.test/pairing.svg",
+      [STORAGE_KEYS.PAIRING_EXPIRES_AT]: "2999-01-01T00:00:00.000Z",
       [STORAGE_KEYS.DOFEK_CONNECTION_STATUS]: JSON.stringify({ state: "pairing" }),
     });
 

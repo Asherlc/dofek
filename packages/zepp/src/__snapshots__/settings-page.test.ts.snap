@@ -143,6 +143,130 @@ exports[`styles connection and delivery errors distinctly from retry information
 }
 `;
 
+exports[`zepp-main > hides pairing details without valid expiry data 1`] = `
+{
+  "controls": [
+    {
+      "label": "Cancel pairing",
+      "style": {
+        "background": "#edf4f2",
+        "borderRadius": "12px",
+        "boxShadow": "none",
+        "color": "#006b61",
+        "fontSize": "14px",
+        "fontWeight": "600",
+        "marginTop": "10px",
+        "padding": "12px 16px",
+        "textTransform": "none",
+        "width": "100%",
+      },
+      "type": "button",
+    },
+    {
+      "label": "Start session",
+      "style": {
+        "background": "#006b61",
+        "borderRadius": "12px",
+        "boxShadow": "none",
+        "color": "#ffffff",
+        "fontSize": "14px",
+        "fontWeight": "600",
+        "marginTop": "10px",
+        "padding": "12px 16px",
+        "textTransform": "none",
+        "width": "100%",
+      },
+      "type": "button",
+    },
+    {
+      "label": "Transfer saved session",
+      "style": {
+        "background": "#edf4f2",
+        "borderRadius": "12px",
+        "boxShadow": "none",
+        "color": "#006b61",
+        "fontSize": "14px",
+        "fontWeight": "600",
+        "marginTop": "10px",
+        "padding": "12px 16px",
+        "textTransform": "none",
+        "width": "100%",
+      },
+      "type": "button",
+    },
+    {
+      "bold": false,
+      "label": "Sample rate mode (0 low · 1 normal · 2 high)",
+      "type": "input",
+      "value": "1",
+    },
+  ],
+  "styles": {
+    "{"background":"#f2f6f4","color":"#172b32","minHeight":"100vh","fontFamily":"-apple-system, BlinkMacSystemFont, sans-serif","boxSizing":"border-box","padding":"24px 16px"}": 1,
+    "{"background":"#ffffff","border":"1px solid #e1e8e7","borderRadius":"20px","padding":"22px","marginBottom":"16px"}": 4,
+    "{"display":"flex","justifyContent":"space-between","gap":"16px","padding":"10px 0","borderBottom":"1px solid #e1e8e7","fontSize":"14px"}": 12,
+    "{"display":"inline-block","marginTop":"16px","padding":"6px 11px","borderRadius":"20px","fontSize":"12px","fontWeight":"600","color":"#865b20","background":"#fff0d7"}": 1,
+    "{"lineHeight":"1.55","overflowWrap":"anywhere","color":"#006b61","fontSize":"11px","fontWeight":"700","letterSpacing":"2px","marginBottom":"12px"}": 1,
+    "{"lineHeight":"1.55","overflowWrap":"anywhere","color":"#536970","fontSize":"12px","marginTop":"14px"}": 1,
+    "{"lineHeight":"1.55","overflowWrap":"anywhere","color":"#536970","fontSize":"12px","marginTop":"8px"}": 1,
+    "{"lineHeight":"1.55","overflowWrap":"anywhere","color":"#536970","fontSize":"14px","marginBottom":"14px"}": 1,
+    "{"lineHeight":"1.55","overflowWrap":"anywhere","color":"#536970","fontSize":"14px","marginBottom":"18px"}": 4,
+    "{"lineHeight":"1.55","overflowWrap":"anywhere","color":"#536970","fontSize":"14px"}": 1,
+    "{"lineHeight":"1.55","overflowWrap":"anywhere","color":"#536970","fontSize":"16px","marginTop":"4px"}": 1,
+    "{"lineHeight":"1.55","overflowWrap":"anywhere","color":"#536970"}": 12,
+    "{"lineHeight":"1.55","overflowWrap":"anywhere","fontSize":"18px","fontWeight":"700","letterSpacing":"-0.3px","marginBottom":"5px"}": 4,
+    "{"lineHeight":"1.55","overflowWrap":"anywhere","fontSize":"32px","fontWeight":"750","letterSpacing":"-1px"}": 1,
+    "{"lineHeight":"1.55","overflowWrap":"anywhere","textAlign":"center","fontSize":"10px","letterSpacing":"1.5px","color":"#536970","padding":"10px 0 20px"}": 1,
+    "{"lineHeight":"1.55","overflowWrap":"anywhere","textAlign":"right","fontWeight":"600","minWidth":"0"}": 12,
+    "{"maxWidth":"480px","margin":"0 auto"}": 1,
+    "{"padding":"10px 6px 26px"}": 1,
+  },
+  "text": [
+    "DOFEK  /  ZEPP",
+    "Dofek",
+    "Your health, connected.",
+    "○ Waiting for approval",
+    "Finish pairing",
+    "Connect your watch to your Dofek account.",
+    "Waiting for approval on your phone",
+    "Pairing code expired. Cancel pairing, then create a new code.",
+    "Watch recorder",
+    "Record a motion session with the Dofek watch app open.",
+    "Session",
+    "Ready to record",
+    "Samples captured",
+    "0",
+    "Keep the watch app open until recording finishes. Gyroscope data is included automatically when supported.",
+    "Sync activity",
+    "Delivery status from your watch and phone.",
+    "Health sync",
+    "idle",
+    "Background collection",
+    "idle",
+    "Motion upload",
+    "idle",
+    "File transfer",
+    "idle",
+    "Last health sync",
+    "Not synced yet",
+    "Advanced",
+    "Server configuration and device details.",
+    "Server",
+    "https://dofek.fit",
+    "Use the default server unless you host your own Dofek instance.",
+    "Requested mode",
+    "NORMAL",
+    "Measured sample rate",
+    "Not recorded yet",
+    "Gyroscope in session",
+    "No",
+    "Last export",
+    "None yet",
+    "DOFEK  ·  YOUR DATA, TOGETHER",
+  ],
+}
+`;
+
 exports[`zepp-main > preserves pairing, login, and server configuration commands 1`] = `
 {
   "controls": [
@@ -454,11 +578,11 @@ exports[`zepp-main > puts the connection and pairing before app controls and adv
 }
 `;
 
-exports[`zepp-main > renders pairing details without optional QR or expiry data 1`] = `
+exports[`zepp-main > shows a valid pairing code when no QR image is available 1`] = `
 {
   "controls": [
     {
-      "source": "https://dofek.example/pair",
+      "source": "https://dofek.example/zepp-pairing?code=ABC234",
       "type": "link",
     },
     {
@@ -524,9 +648,9 @@ exports[`zepp-main > renders pairing details without optional QR or expiry data 
     "{"lineHeight":"1.55","overflowWrap":"anywhere","color":"#006b61","fontSize":"11px","fontWeight":"700","letterSpacing":"2px","marginBottom":"12px"}": 1,
     "{"lineHeight":"1.55","overflowWrap":"anywhere","color":"#536970","fontSize":"10px","letterSpacing":"1.8px","fontWeight":"700"}": 1,
     "{"lineHeight":"1.55","overflowWrap":"anywhere","color":"#536970","fontSize":"12px","marginTop":"14px"}": 1,
+    "{"lineHeight":"1.55","overflowWrap":"anywhere","color":"#536970","fontSize":"12px","marginTop":"6px"}": 1,
     "{"lineHeight":"1.55","overflowWrap":"anywhere","color":"#536970","fontSize":"12px","marginTop":"8px"}": 1,
     "{"lineHeight":"1.55","overflowWrap":"anywhere","color":"#536970","fontSize":"12px","textAlign":"center","marginTop":"12px"}": 1,
-    "{"lineHeight":"1.55","overflowWrap":"anywhere","color":"#536970","fontSize":"14px","marginBottom":"14px"}": 1,
     "{"lineHeight":"1.55","overflowWrap":"anywhere","color":"#536970","fontSize":"14px","marginBottom":"18px"}": 4,
     "{"lineHeight":"1.55","overflowWrap":"anywhere","color":"#536970","fontSize":"16px","marginTop":"4px"}": 1,
     "{"lineHeight":"1.55","overflowWrap":"anywhere","color":"#536970"}": 12,
@@ -547,9 +671,9 @@ exports[`zepp-main > renders pairing details without optional QR or expiry data 
     "○ Waiting for approval",
     "Finish pairing",
     "Connect your watch to your Dofek account.",
-    "Waiting for approval on your phone",
     "PAIRING CODE",
     "ABC234",
+    "Expires <localized time>",
     "Open Dofek to finish pairing",
     "On another device? Scan the QR or enter this code in Dofek → Settings → Connections.",
     "Watch recorder",

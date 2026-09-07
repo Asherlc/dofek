@@ -25266,8 +25266,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   command toggling, login defaults, sample-rate boundaries, recorder state,
   transfer progress, and error styling. No mutation threshold or exclusion was
   changed.
-- **Validation:** The exact mutation command now kills all 229 mutants for
-  `settings-page.ts`, producing a 100.00% mutation score. The focused 25-test
-  suite, Zepp typecheck, and Zepp lint also pass.
+- **Validation:** The exact mutation command now kills all 250 mutants for
+  `settings-page.ts`, producing a 100.00% mutation score. All 622 Zepp tests,
+  the Zepp typecheck, Zepp lint, and both production package builds also pass.
 - **Remaining risk / follow-up:** Confirm the replacement PR mutation shard and
   aggregate gate pass on the fix commit.

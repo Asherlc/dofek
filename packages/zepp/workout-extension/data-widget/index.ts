@@ -78,7 +78,7 @@ DataWidget(
       connectionMessage: nullable<string>(),
       workoutStatus: "Collecting live workout data",
       pairingQr: nullable<ReturnType<typeof createWidget>>(),
-      pairingUrl: "",
+      pairingUrl: nullable<string>(),
       intervalId: nullable<ReturnType<typeof setInterval>>(),
       collecting: false,
       flushing: false,
@@ -153,7 +153,7 @@ DataWidget(
     clearPairing() {
       if (this.state.pairingQr) deleteWidget(this.state.pairingQr);
       this.state.pairingQr = null;
-      this.state.pairingUrl = "";
+      this.state.pairingUrl = null;
     },
 
     async refreshConnection(startPairingIfNeeded = true) {
@@ -185,16 +185,16 @@ DataWidget(
           if (this.state.pairingUrl !== verificationUrl) {
             this.clearPairing();
             const size = px(120);
-            const x = Math.floor((getDeviceInfo().width - size) / 2);
-            const y = px(260);
+            const qrX = Math.floor((getDeviceInfo().width - size) / 2);
+            const qrY = px(260);
             this.state.pairingQr = createWidget(widget.QRCODE, {
               content: verificationUrl,
-              x,
-              y,
+              x: qrX,
+              y: qrY,
               w: size,
               h: size,
-              bg_x: x - px(8),
-              bg_y: y - px(8),
+              bg_x: qrX - px(8),
+              bg_y: qrY - px(8),
               bg_w: size + px(16),
               bg_h: size + px(16),
             });

@@ -1,10 +1,11 @@
+import { z } from "zod/v3";
 import {
   type ConnectionState,
   deriveConnectionActions,
   parseConnectionState,
 } from "./connection-state.ts";
 import { getSessionAction, parseSessionState } from "./session-control.ts";
-import { DEFAULT_DOFEK_SERVER_URL, FREQ_MODE_LABELS, STORAGE_KEYS as K } from "./storage-keys.ts";
+import { DEFAULT_DOFEK_SERVER_URL, FREQ_MODE_LABELS, STORAGE_KEYS } from "./storage-keys.ts";
 
 declare function Image(props: Record<string, unknown>): unknown;
 declare function Link(props: { source: string }, children: unknown[]): unknown;
@@ -27,6 +28,14 @@ const CONNECTION_LABELS: Record<ConnectionState, string> = {
   disconnecting: "Disconnecting",
   error: "Needs attention",
 };
+const STORED_STATUS_SCHEMA = z.object({
+  state: z.string().optional(),
+  reason: z.string().optional(),
+  sampleCount: z.number().int().nonnegative().optional(),
+  observedHzX100: z.number().finite().nonnegative().optional(),
+  hasGyro: z.boolean().optional(),
+  pct: z.number().finite().min(0).max(100).optional(),
+});
 
 function text(value: string, style: Style = {}) {
   return View({ style: { lineHeight: "1.55", overflowWrap: "anywhere", ...style } }, [value]);
@@ -94,16 +103,17 @@ function row(label: string, value: string) {
   );
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Object.prototype.toString.call(value) === "[object Object]";
-}
-
 function status(storage: SettingsStorage, key: string): Record<string, unknown> {
   const raw = storage.getItem(key);
   if (!raw) return {};
   try {
     const parsed: unknown = JSON.parse(raw);
-    return isRecord(parsed) ? Object.fromEntries(Object.entries(parsed)) : {};
+    const validation = STORED_STATUS_SCHEMA.safeParse(parsed);
+    if (validation.success) return validation.data;
+    const details = validation.error.issues
+      .map((issue) => `${issue.path.join(".") || "value"}: ${issue.message}`)
+      .join("; ");
+    return { state: "error", reason: `Stored settings data is invalid: ${details}` };
   } catch (error) {
     return {
       state: "error",
@@ -112,21 +122,24 @@ function status(storage: SettingsStorage, key: string): Record<string, unknown> 
   }
 }
 
+function statusMessage(value: Record<string, unknown>) {
+  if (!value.reason) return [];
+  return [
+    text(String(value.reason), {
+      color: value.state === "error" ? "#a63c32" : MUTED,
+      background: value.state === "error" ? "#fff1ee" : "#f4f7f6",
+      padding: "10px 12px",
+      borderRadius: "10px",
+      fontSize: "13px",
+      marginTop: "8px",
+    }),
+  ];
+}
+
 function statusRows(label: string, value: Record<string, unknown>) {
   return View({}, [
     row(label, String(value.state ?? "idle").replaceAll("_", " ")),
-    ...(value.reason
-      ? [
-          text(String(value.reason), {
-            color: value.state === "error" ? "#a63c32" : MUTED,
-            background: value.state === "error" ? "#fff1ee" : "#f4f7f6",
-            padding: "10px 12px",
-            borderRadius: "10px",
-            fontSize: "13px",
-            marginTop: "8px",
-          }),
-        ]
-      : []),
+    ...statusMessage(value),
   ]);
 }
 
@@ -140,19 +153,22 @@ export function createSettingsPage(app: "zepp-main" | "zepp-workout") {
   return {
     state: { password: "" },
     build({ settingsStorage: storage }: { settingsStorage: SettingsStorage }) {
-      const connection = status(storage, K.DOFEK_CONNECTION_STATUS);
-      const hasToken = Boolean(storage.getItem(K.DOFEK_API_TOKEN)?.trim());
+      const connection = status(storage, STORAGE_KEYS.DOFEK_CONNECTION_STATUS);
+      const hasToken = Boolean(storage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN)?.trim());
       const storedState = parseConnectionState(connection.state);
       const connectionState =
         storedState === "connected" && !hasToken ? "disconnected" : storedState;
       const actions = deriveConnectionActions(connectionState, hasToken);
       const connected = connectionState === "connected";
       const pairing = connectionState === "pairing";
-      const shortCode = storage.getItem(K.PAIRING_SHORT_CODE);
-      const verificationUrl = storage.getItem(K.PAIRING_VERIFICATION_URL);
-      const qrUrl = storage.getItem(K.PAIRING_QR_IMAGE_URL);
-      const expiresAt = storage.getItem(K.PAIRING_EXPIRES_AT);
-      const serverUrl = storage.getItem(K.DOFEK_SERVER_URL) ?? DEFAULT_DOFEK_SERVER_URL;
+      const shortCode = storage.getItem(STORAGE_KEYS.PAIRING_SHORT_CODE);
+      const verificationUrl = storage.getItem(STORAGE_KEYS.PAIRING_VERIFICATION_URL);
+      const qrUrl = storage.getItem(STORAGE_KEYS.PAIRING_QR_IMAGE_URL);
+      const expiresAt = storage.getItem(STORAGE_KEYS.PAIRING_EXPIRES_AT);
+      const expiresAtMilliseconds = Date.parse(expiresAt ?? "");
+      const pairingIsFresh =
+        Number.isFinite(expiresAtMilliseconds) && expiresAtMilliseconds > Date.now();
+      const serverUrl = storage.getItem(STORAGE_KEYS.DOFEK_SERVER_URL) ?? DEFAULT_DOFEK_SERVER_URL;
       const blocks: unknown[] = [
         View({ style: { padding: "10px 6px 26px" } }, [
           text("DOFEK  /  ZEPP", {
@@ -197,7 +213,7 @@ export function createSettingsPage(app: "zepp-main" | "zepp-workout") {
         );
       }
       if (actions.showPairing || pairing) {
-        if (shortCode && verificationUrl) {
+        if (shortCode && verificationUrl && pairingIsFresh) {
           connectionContent.push(
             View(
               {
@@ -240,15 +256,11 @@ export function createSettingsPage(app: "zepp-main" | "zepp-workout") {
                   letterSpacing: "4px",
                   marginTop: "6px",
                 }),
-                ...(expiresAt
-                  ? [
-                      text(`Expires ${new Date(expiresAt).toLocaleTimeString()}`, {
-                        color: MUTED,
-                        fontSize: "12px",
-                        marginTop: "6px",
-                      }),
-                    ]
-                  : []),
+                text(`Expires ${new Date(expiresAtMilliseconds).toLocaleTimeString()}`, {
+                  color: MUTED,
+                  fontSize: "12px",
+                  marginTop: "6px",
+                }),
               ],
             ),
             View(
@@ -270,15 +282,24 @@ export function createSettingsPage(app: "zepp-main" | "zepp-workout") {
           );
         } else {
           connectionContent.push(
-            text("Create a code, then open Dofek on this phone to approve the connection.", {
-              color: MUTED,
-              fontSize: "14px",
-            }),
+            text(
+              shortCode || verificationUrl || qrUrl || expiresAt
+                ? "Pairing code expired. Cancel pairing, then create a new code."
+                : "Create a code, then open Dofek on this phone to approve the connection.",
+              {
+                color: MUTED,
+                fontSize: "14px",
+              },
+            ),
           );
         }
         if (actions.showPairing)
           connectionContent.push(
-            action("Create pairing code", () => toggle(storage, K.CMD_START_PAIRING), true),
+            action(
+              "Create pairing code",
+              () => toggle(storage, STORAGE_KEYS.CMD_START_PAIRING),
+              true,
+            ),
           );
       }
       if (connected) {
@@ -288,10 +309,12 @@ export function createSettingsPage(app: "zepp-main" | "zepp-workout") {
       }
       if (actions.showCheck)
         connectionContent.push(
-          action("Check connection", () => toggle(storage, K.CMD_CHECK_CONNECTION)),
+          action("Check connection", () => toggle(storage, STORAGE_KEYS.CMD_CHECK_CONNECTION)),
         );
       if (pairing)
-        connectionContent.push(action("Cancel pairing", () => toggle(storage, K.CMD_DISCONNECT)));
+        connectionContent.push(
+          action("Cancel pairing", () => toggle(storage, STORAGE_KEYS.CMD_DISCONNECT)),
+        );
       blocks.push(
         card(
           connected ? "Connected to Dofek" : pairing ? "Finish pairing" : "Connect to Dofek",
@@ -311,8 +334,8 @@ export function createSettingsPage(app: "zepp-main" | "zepp-workout") {
               TextInput({
                 label: "Email",
                 bold: false,
-                value: storage.getItem(K.DOFEK_EMAIL) ?? "",
-                onChange: (value: string) => storage.setItem(K.DOFEK_EMAIL, value),
+                value: storage.getItem(STORAGE_KEYS.DOFEK_EMAIL) ?? "",
+                onChange: (value: string) => storage.setItem(STORAGE_KEYS.DOFEK_EMAIL, value),
               }),
               TextInput({
                 label: "Password",
@@ -324,9 +347,9 @@ export function createSettingsPage(app: "zepp-main" | "zepp-workout") {
               }),
               action("Log in", () => {
                 storage.setItem(
-                  K.CMD_LOGIN_PASSWORD,
+                  STORAGE_KEYS.CMD_LOGIN_PASSWORD,
                   JSON.stringify({
-                    email: storage.getItem(K.DOFEK_EMAIL) ?? "",
+                    email: storage.getItem(STORAGE_KEYS.DOFEK_EMAIL) ?? "",
                     password: this.state.password,
                     nonce: Date.now(),
                   }),
@@ -338,7 +361,7 @@ export function createSettingsPage(app: "zepp-main" | "zepp-workout") {
         );
       }
 
-      const session = status(storage, K.SESSION_STATUS);
+      const session = status(storage, STORAGE_KEYS.SESSION_STATUS);
       if (workout) {
         blocks.push(
           card("Set up on your watch", "Add Dofek Workout to each workout you want to capture.", [
@@ -382,13 +405,14 @@ export function createSettingsPage(app: "zepp-main" | "zepp-workout") {
         blocks.push(
           card("Watch recorder", "Record a motion session with the Dofek watch app open.", [
             row("Session", session.state === "recording" ? "Recording" : "Ready to record"),
+            ...statusMessage(session),
             row("Samples captured", String(session.sampleCount ?? 0)),
             action(
               sessionAction.label,
-              () => storage.setItem(K.CMD_LOGGING, sessionAction.command),
+              () => storage.setItem(STORAGE_KEYS.CMD_LOGGING, sessionAction.command),
               true,
             ),
-            action("Transfer saved session", () => toggle(storage, K.CMD_TRANSFER)),
+            action("Transfer saved session", () => toggle(storage, STORAGE_KEYS.CMD_TRANSFER)),
             text(
               "Keep the watch app open until recording finishes. Gyroscope data is included automatically when supported.",
               { color: MUTED, fontSize: "12px", marginTop: "14px" },
@@ -398,15 +422,15 @@ export function createSettingsPage(app: "zepp-main" | "zepp-workout") {
       }
 
       const syncRows = [
-        statusRows("Motion upload", status(storage, K.IMU_SYNC_STATUS)),
-        statusRows("File transfer", status(storage, K.TRANSFER_PROGRESS)),
+        statusRows("Motion upload", status(storage, STORAGE_KEYS.IMU_SYNC_STATUS)),
+        statusRows("File transfer", status(storage, STORAGE_KEYS.TRANSFER_PROGRESS)),
       ];
       if (!workout) {
         syncRows.unshift(
-          statusRows("Health sync", status(storage, K.HEALTH_SYNC_STATUS)),
-          statusRows("Background collection", status(storage, K.HEALTH_SERVICE_STATUS)),
+          statusRows("Health sync", status(storage, STORAGE_KEYS.HEALTH_SYNC_STATUS)),
+          statusRows("Background collection", status(storage, STORAGE_KEYS.HEALTH_SERVICE_STATUS)),
         );
-        const lastSync = storage.getItem(K.LAST_HEALTH_SYNC);
+        const lastSync = storage.getItem(STORAGE_KEYS.LAST_HEALTH_SYNC);
         syncRows.push(
           row(
             "Last health sync",
@@ -414,7 +438,9 @@ export function createSettingsPage(app: "zepp-main" | "zepp-workout") {
           ),
         );
         if (actions.showSync)
-          syncRows.push(action("Sync now", () => toggle(storage, K.CMD_SYNC_HEALTH), true));
+          syncRows.push(
+            action("Sync now", () => toggle(storage, STORAGE_KEYS.CMD_SYNC_HEALTH), true),
+          );
       }
       blocks.push(card("Sync activity", "Delivery status from your watch and phone.", syncRows));
 
@@ -425,7 +451,7 @@ export function createSettingsPage(app: "zepp-main" | "zepp-workout") {
             label: "Server URL",
             bold: false,
             value: serverUrl,
-            onChange: (value: string) => storage.setItem(K.DOFEK_SERVER_URL, value),
+            onChange: (value: string) => storage.setItem(STORAGE_KEYS.DOFEK_SERVER_URL, value),
           }),
         );
       } else advanced.push(row("Server", serverUrl));
@@ -437,7 +463,7 @@ export function createSettingsPage(app: "zepp-main" | "zepp-workout") {
         }),
       );
       if (!workout) {
-        const mode = Number(storage.getItem(K.PREF_FREQ_MODE) ?? 1);
+        const mode = Number(storage.getItem(STORAGE_KEYS.PREF_FREQ_MODE) ?? 1);
         advanced.push(
           TextInput({
             label: "Sample rate mode (0 low · 1 normal · 2 high)",
@@ -446,7 +472,7 @@ export function createSettingsPage(app: "zepp-main" | "zepp-workout") {
             onChange: (value: string) => {
               const parsed = Number(value);
               if (Number.isInteger(parsed) && parsed >= 0 && parsed <= 2)
-                storage.setItem(K.PREF_FREQ_MODE, String(parsed));
+                storage.setItem(STORAGE_KEYS.PREF_FREQ_MODE, String(parsed));
             },
           }),
           row("Requested mode", FREQ_MODE_LABELS[mode] ?? "Unknown"),
@@ -457,10 +483,10 @@ export function createSettingsPage(app: "zepp-main" | "zepp-workout") {
               : "Not recorded yet",
           ),
           row("Gyroscope in session", session.hasGyro ? "Yes" : "No"),
-          row("Last export", storage.getItem(K.LAST_EXPORT_PATH) ?? "None yet"),
+          row("Last export", storage.getItem(STORAGE_KEYS.LAST_EXPORT_PATH) ?? "None yet"),
         );
       }
-      const transfer = status(storage, K.TRANSFER_PROGRESS);
+      const transfer = status(storage, STORAGE_KEYS.TRANSFER_PROGRESS);
       if (transfer.pct != null) advanced.push(row("Transfer progress", `${transfer.pct}%`));
       if (actions.showDisconnect && !pairing) {
         advanced.push(
@@ -473,7 +499,7 @@ export function createSettingsPage(app: "zepp-main" | "zepp-workout") {
               }),
               Button({
                 label: "Disconnect",
-                onClick: () => toggle(storage, K.CMD_DISCONNECT),
+                onClick: () => toggle(storage, STORAGE_KEYS.CMD_DISCONNECT),
                 style: {
                   width: "100%",
                   boxShadow: "none",
