@@ -4,6 +4,7 @@ import {
   assertActivityIntegrityRebuild,
   type DerivedSnapshot,
   incompatibleMemberCount,
+  queryClickHouseRows,
   snapshotDerivedRows,
   snapshotDerivedRowsOrNull,
   sourceRowsMatchPostgres,
@@ -76,6 +77,30 @@ function compatibilitySnapshot(
     activityIds: [],
   };
 }
+
+describe("queryClickHouseRows", () => {
+  it("requests UTC ISO timestamps and quoted 64-bit integers from ClickHouse", async () => {
+    const client = { query: vi.fn(async () => ({ json: async () => [] })) };
+
+    await queryClickHouseRows(
+      client,
+      z.object({ refresh_version: z.string() }),
+      "SELECT refresh_version FROM analytics.activity_source_records WHERE user_id = {userId:UUID}",
+      { userId },
+    );
+
+    expect(client.query).toHaveBeenCalledExactlyOnceWith({
+      query:
+        "SELECT refresh_version FROM analytics.activity_source_records WHERE user_id = {userId:UUID}",
+      query_params: { userId },
+      format: "JSONEachRow",
+      clickhouse_settings: {
+        output_format_json_quote_64bit_integers: 1,
+        date_time_output_format: "iso",
+      },
+    });
+  });
+});
 
 describe("snapshotDerivedRows", () => {
   it("rejects source rows without the activity start required for historical rebuild bounds", async () => {

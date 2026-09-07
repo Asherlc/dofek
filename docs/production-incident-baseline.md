@@ -25338,3 +25338,28 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   database contents were not reset. Full unit/mobile validation passed 17,662
   tests with 21 existing skips. Push and confirm replacement CI; no retry,
   timeout, lint suppression, or size-limit change was added.
+
+## 2026-09-07 — Mutation gate lacked coverage for ClickHouse output options
+
+- **Status:** Test correction verified locally; replacement CI verification
+  pending. Production behavior and mutation configuration are unchanged.
+- **Evidence:** [Stryker shard 2](https://github.com/Asherlc/dofek/actions/runs/34154158814/job/101843153325)
+  ran `pnpm exec stryker run stryker.ci.config.json --mutate
+  "src/db/activity-data-integrity-clickhouse.ts:25-25,src/db/activity-data-integrity-clickhouse.ts:130-133"`.
+  First fatal: `Final mutation score 0.00 under breaking threshold 75`.
+  Its surviving object-literal mutation replaces the query's integer-quoting
+  and UTC ISO output options with an empty object.
+- **Cause / impact:** The real-engine regression detects incorrect timestamp
+  output, but the intentionally Docker-free mutation tier excludes integration
+  tests. Unit tests did not assert the production helper's emitted client-query
+  options, so this mutation survived and CI remained red despite ordinary tests
+  passing. SQLFluff, migration lint, and spelling passed on this run.
+- **Direct correction / validation:** The colocated unit test now asserts both
+  output options at the external client boundary. With the exact empty-options
+  mutant it failed (one failed, 33 passed); restoring unchanged production code
+  passed all 34 tests. The exact scoped Stryker command scored 100%, with one
+  killed mutant and zero survivors, timeouts, uncovered mutants, or errors.
+  The real-engine regression remains intact. No collection, threshold, or
+  suppression changes were made. Finish replacement CI verification. Stryker
+  documents the separate
+  [Vitest runner configuration](https://stryker-mutator.io/docs/stryker-js/vitest-runner/).
