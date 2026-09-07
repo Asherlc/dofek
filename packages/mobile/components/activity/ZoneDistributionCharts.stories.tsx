@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { View } from "react-native";
-import { HrZonesChart, PowerZonesChart } from "../../app/activity/ZoneDistributionCharts";
+import { HrZonesChart, PowerZonesChart } from "./ZoneDistributionCharts";
 
 const heartRateZones = [
   { zone: 0, label: "Below Zone 1", minPct: 0, maxPct: 50, seconds: 180, percent: 5.8 },

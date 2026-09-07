@@ -39,7 +39,7 @@ console.log({
 | `@dofek/scoring/colors` | Semantic, chart, surface, text, sleep-stage, and activity colors |
 | `@dofek/scoring/tokens` | Framework-neutral typography, spacing, radius, animation, and chart tokens |
 | `@dofek/scoring/strain-target` | Daily strain-target calculation and result types |
-| `@dofek/scoring/today-plan` | Deterministic ready/insufficient-data Today Plan result with a primary action, supporting facts, server-authored caveats, confidence, freshness, and shared presentation helpers |
+| `@dofek/scoring/today-plan` | Deterministic ready/insufficient-data Today Plan result with a primary action, supporting facts, server-authored caveats, freshness, and shared presentation helpers |
 | `@dofek/scoring/epistemic-status` | Shared Observed / Estimated / Associated / Suggested / Unavailable status vocabulary |
 | `@dofek/scoring/sleep-performance` | Sleep-performance components, tiers, and recommended-bedtime calculation |
 | `@dofek/scoring/healthspan-years` | Score-to-years mapping and formatting |
@@ -54,8 +54,7 @@ console.log({
 - `zScoreToRecoveryScore` uses a Dofek-defined asymmetric sigmoid where a
   z-score of zero maps to 62.
 - Strain targets use Dofek-defined readiness bands.
-- Today Plan keeps Push and Recovery recommendations actionable while presenting
-  the Maintain band as the neutral “No change needs attention” state
+- Today Plan presents a suggested strain target with supporting observations
   ([rule builder](./src/today-plan.ts), [executable tests](./src/today-plan.test.ts)).
 - Ready Today Plan results include server-authored supporting observations and
   caveats for missing or stale inputs; clients render these values without

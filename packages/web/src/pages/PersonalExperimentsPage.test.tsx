@@ -221,10 +221,10 @@ describe("PersonalExperimentsPage", () => {
     const { PersonalExperimentsPage } = await import("./PersonalExperimentsPage.tsx");
     render(<PersonalExperimentsPage search={state.search} />);
 
-    fireEvent.change(screen.getByLabelText("Hypothesis"), {
+    fireEvent.change(screen.getByLabelText("What do you want to test?"), {
       target: { value: "Does earlier bedtime improve HRV?" },
     });
-    fireEvent.change(screen.getByLabelText("Intervention"), {
+    fireEvent.change(screen.getByLabelText("What will you change?"), {
       target: { value: "Lights out by 10pm" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Start experiment" }));
@@ -418,8 +418,12 @@ describe("PersonalExperimentsPage", () => {
     ).toBeTruthy();
     expect(screen.getByText("Late flight")).toBeTruthy();
 
-    fireEvent.change(screen.getByLabelText("Adherence"), { target: { value: "partial" } });
-    fireEvent.change(screen.getByLabelText("Confounder"), { target: { value: "Late flight" } });
+    fireEvent.change(screen.getByLabelText("Did you follow the plan today?"), {
+      target: { value: "partial" },
+    });
+    fireEvent.change(screen.getByLabelText("Anything else that might affect the result?"), {
+      target: { value: "Late flight" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Record today's check-in" }));
 
     expect(state.checkInInput).toMatchObject({

@@ -14,7 +14,7 @@ export default function ZeppPairingScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <ZeppPairingCard initialCode={initialCode} />
+      <ZeppPairingCard initialCode={initialCode} showTitle={false} />
     </ScrollView>
   );
 }

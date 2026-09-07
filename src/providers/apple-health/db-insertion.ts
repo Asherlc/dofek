@@ -28,9 +28,9 @@ function hasTransaction(db: SyncDatabase): db is TransactionalSyncDatabase {
   return "transaction" in db && typeof db.transaction === "function";
 }
 
-function requireTransactionalDatabase(db: SyncDatabase): TransactionalSyncDatabase {
+export function requireTransactionalDatabase(db: SyncDatabase): TransactionalSyncDatabase {
   if (!hasTransaction(db)) {
-    throw new Error("Apple Health workout upsert requires a transactional database");
+    throw new Error("Apple Health import requires a transactional database");
   }
   return db;
 }

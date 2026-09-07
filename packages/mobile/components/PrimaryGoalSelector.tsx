@@ -52,14 +52,7 @@ export function PrimaryGoalSelector({ showHeading = true }: { showHeading?: bool
 
   return (
     <View style={styles.container}>
-      {showHeading ? (
-        <>
-          <Text style={styles.title}>Primary goal</Text>
-          <Text style={styles.subtitle}>
-            Choose the outcome Dofek should optimize toward. You can change this anytime.
-          </Text>
-        </>
-      ) : null}
+      {showHeading ? <Text style={styles.title}>What would you like to focus on?</Text> : null}
       {(writeError ?? setting.error) && (
         <Text style={styles.errorText}>
           {userFacingErrorMessage(
@@ -106,10 +99,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "700",
     color: colors.text,
-  },
-  subtitle: {
-    fontSize: 13,
-    color: colors.textSecondary,
   },
   errorText: {
     color: colors.negative,

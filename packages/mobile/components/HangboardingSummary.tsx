@@ -25,7 +25,11 @@ export function HangboardingSummary({ data, loading }: HangboardingSummaryProps)
 
   if (data == null || data.sessionCount === 0) {
     return (
-      <QueryStatePanel variant="empty" message="No Hangboarding sessions yet." minHeight={220} />
+      <QueryStatePanel
+        variant="empty"
+        message="No Hangboarding sessions to display."
+        minHeight={220}
+      />
     );
   }
 
@@ -63,7 +67,7 @@ export function HangboardingSummary({ data, loading }: HangboardingSummaryProps)
             height={48}
           />
         ) : (
-          <Text style={styles.emptyText}>No daily Hangboarding duration</Text>
+          <Text style={styles.emptyText}>No daily Hangboarding duration to display</Text>
         )}
       </View>
 

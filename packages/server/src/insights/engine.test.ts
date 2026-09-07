@@ -608,7 +608,7 @@ describe("computeInsights()", () => {
       expect(insight.evidence).toEqual(
         expect.objectContaining({
           label: expect.stringMatching(/^Descriptive /),
-          interpretation: expect.stringContaining("does not establish"),
+          interpretation: expect.stringContaining("does not prove cause"),
           recommendation: expect.stringContaining("not a prescription"),
         }),
       );

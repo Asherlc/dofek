@@ -23,7 +23,7 @@ export function MealSection({ mealName, entries, totalCalories }: MealSectionPro
       {entries.length > 0 ? (
         entries.map((entry) => <FoodEntryCard key={entry.id} entry={entry} />)
       ) : (
-        <Text style={styles.emptyText}>No entries yet</Text>
+        <Text style={styles.emptyText}>No entries to display</Text>
       )}
     </View>
   );

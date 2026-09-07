@@ -74,7 +74,7 @@ export function PersonalizationPanel() {
         </View>
         {data.fittedAt && (
           <Text style={styles.statusDate}>
-            Last refit attempt {formatDateMedium(data.fittedAt)}
+            Last recalculation attempt {formatDateMedium(data.fittedAt)}
           </Text>
         )}
       </View>
@@ -118,14 +118,14 @@ export function PersonalizationPanel() {
           disabled={refitMutation.isPending}
           activeOpacity={0.7}
           accessibilityRole="button"
-          accessibilityLabel="Refit Now"
+          accessibilityLabel="Recalculate"
           accessibilityState={{
             busy: refitMutation.isPending,
             disabled: refitMutation.isPending,
           }}
         >
           <Text style={[styles.refitText, refitMutation.isPending && styles.textDisabled]}>
-            {refitMutation.isPending ? "Refitting..." : "Refit Now"}
+            {refitMutation.isPending ? "Recalculating…" : "Recalculate"}
           </Text>
         </TouchableOpacity>
         {data.isPersonalized && (
@@ -161,10 +161,6 @@ function ParamCard({
   defaultValue: string;
 }) {
   const isPersonalized = modelCard.status === "personalized";
-  const lastFit = modelCard.lastSuccessfulFitAt
-    ? formatDateMedium(modelCard.lastSuccessfulFitAt)
-    : modelCard.lastFitSummary;
-
   return (
     <View style={styles.paramCard}>
       <View style={styles.paramHeader}>
@@ -185,10 +181,17 @@ function ParamCard({
       <Text style={styles.paramValue}>{value}</Text>
       {isPersonalized && <Text style={styles.paramDefault}>Default: {defaultValue}</Text>}
       <View style={styles.modelEvidence}>
-        <EvidenceRow label="Last successful fit" value={lastFit} />
+        {modelCard.lastSuccessfulFitAt ? (
+          <EvidenceRow
+            label="Last successful update"
+            value={formatDateMedium(modelCard.lastSuccessfulFitAt)}
+          />
+        ) : (
+          <EvidenceRow label="Update status" value={modelCard.lastFitSummary} />
+        )}
         <EvidenceRow label="Data window" value={modelCard.dataWindow} />
-        <EvidenceRow label="Data sufficiency" value={modelCard.dataSufficiency} />
-        <EvidenceRow label="Fit evidence" value={modelCard.fitEvidence} />
+        <EvidenceRow label="Available data" value={modelCard.dataSufficiency} />
+        <EvidenceRow label="Calculation details" value={modelCard.fitEvidence} />
         <EvidenceRow label="Uncertainty" value={modelCard.uncertainty} />
         <Text style={styles.evidenceLabel}>Excluded data:</Text>
         {modelCard.excludedData.map((exclusion) => (

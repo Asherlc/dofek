@@ -25221,6 +25221,71 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Confirm the replacement Metro Bundle job and
   complete PR workflow pass on the fix commit.
 
+## 2026-09-07 — Local integration startup exhausted Docker address pools
+
+- **Scope / impact:** Local validation in `humble-dugong` only; no production
+  impact observed. Apple Health replacement regression tests could not start
+  through the normal Compose wrapper.
+- **Evidence / root cause:**
+  `pnpm test:integration -- src/providers/apple-health/import.integration.test.ts -t 'Apple Health archive replacement'`
+  failed before tests with `failed to create network humble-dugong_default: all
+  predefined address pools have been fully subnetted`. Read-only inspection
+  showed all default Docker subnet pools allocated to existing networks.
+- **Operator fix:** Created only the workspace's Compose-labeled
+  `humble-dugong_default` bridge on an inspected, non-overlapping subnet. No
+  other workspace resources or tracked Compose configuration changed. Docker
+  supports [explicit non-overlapping bridge subnets](https://docs.docker.com/reference/cli/docker/network/create/#specify-advanced-options).
+- **Validation:** Compose adopted the network and started the workspace
+  services. The focused PostgreSQL regression run reached assertions and
+  reproduced seven data-preservation failures before the application fix. The
+  normal Vitest reruns then timed out in template setup under high host load. A
+  fresh clone of the normal runner's fully migrated template passed all nine
+  direct PostgreSQL preservation, replacement, and rollback scenarios,
+  including failures in both 501st-record insert batches. The clone was
+  dropped. This direct validation does not imply the normal Vitest suite
+  passed. SQL lint subsequently passed against the workspace ClickHouse
+  service.
+- **Cleanup:** Confirmed all four workspace volumes were created during this
+  validation (2026-09-07T15:41:17Z), then ran
+  `pnpm compose -- down --remove-orphans --volumes`; all four containers, four
+  volumes, and the explicit workspace network were removed successfully. Other
+  workspace resources were untouched.
+- **Follow-up:** Improve workspace archive cleanup so abandoned networks are
+  reclaimed with their owning workspace. No retry, timeout, service-memory, or
+  production configuration changes were introduced.
+
+## 2026-09-07 — Audit PR spell check rejected an encoded contraction
+
+- **Scope / impact:** PR #2680 validation only; no production impact.
+- **Evidence / root cause:** The [Spell Check job](https://github.com/Asherlc/dofek/actions/runs/34153962937/job/101842086975)
+  ran `pnpm exec cspell --no-progress` and reported an unknown word at
+  `AccountDeletionStatusPage.tsx:87:18`. The encoded apostrophe split the
+  contraction in the deletion recovery message into an unrecognized fragment.
+- **Direct fix:** Use “could not” in the matching web and mobile messages.
+  No dictionary exception or check suppression was added.
+- **Validation / follow-up:** The exact spell-check command passed locally
+  across 2,494 files with zero issues; Biome passed for both changed components.
+  The [replacement Spell Check job](https://github.com/Asherlc/dofek/actions/runs/34154423716/job/101843615344)
+  passed on `9457370b2`.
+
+## 2026-09-07 — Analytics error tests missed duplicate reporting mutations
+
+- **Scope / impact:** PR #2680 mutation gate only; no production impact.
+- **Evidence / root cause:** The [Stryker shard 1 job](https://github.com/Asherlc/dofek/actions/runs/34154423716/job/101843746485)
+  ran `pnpm exec stryker run stryker.ci.config.json` against changed `trpc.ts`
+  ranges and failed with `Final mutation score 65.12 under breaking threshold 75`.
+  Fifteen mutations survived: tests did not assert that each analytics failure
+  was reported exactly once and omitted one configuration-message verb form.
+- **Direct fix:** Expand the existing middleware tests to check one diagnostic
+  report per failure and all three supported configuration-message verb forms.
+  Production behavior, mutation thresholds, and exclusions are unchanged.
+- **Validation / follow-up:** All 42 focused middleware tests and Biome pass.
+  The exact mutation ranges pass locally at 83.72 (36 killed, seven survived).
+  Remaining survivors broaden the guard for already sanitized errors; no
+  artificial production branches were added to exercise them. The replacement
+  [mutation shard](https://github.com/Asherlc/dofek/actions/runs/34155414249/job/101846881990)
+  and aggregate mutation gate passed on `19857ce53`.
+
 ## 2026-09-07 — Zepp Workout phone Settings rendered blank with a saved QR
 
 - **Status:** Fixed and validated locally; released-package and physical-phone
@@ -25296,3 +25361,31 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   typecheck, lint, mutation, and security check.
 - **Remaining risk / follow-up:** Confirm the replacement integration shard 3,
   aggregate test gate, and CI gate pass on the fixture-fix commit.
+
+## 2026-09-07 — Removed ramp-rate labels remained in an integration assertion
+
+- **Scope / impact:** PR #2680 merge validation only; no production impact.
+- **Evidence / root cause:** [Integration shard 3](https://github.com/Asherlc/dofek/actions/runs/34156219009/job/101849789772)
+  ran `pnpm exec vitest run --project integration --coverage --shard=3/4`.
+  Its only failing test reported `AssertionError: expected false to be true`
+  at `router-logic.integration.test.ts:1079`. The assertion still required the
+  removed Safe/Aggressive/Danger classifications despite the intended signed
+  weekly load-change observation.
+- **Direct fix:** Update that existing assertion to verify the observation,
+  current value matching the latest week, and the existing empty result text.
+  No application code or test-runner setting changed.
+- **Validation / follow-up:** All 60 focused cycling tests, Biome, and
+  whitespace checks pass. The [replacement integration shard](https://github.com/Asherlc/dofek/actions/runs/34157574211/job/101853064825)
+  passed on `8bbd50730`, as did all other integration shards.
+
+## 2026-09-07 — Settings layout tests used the old Zepp pairing heading
+
+- **Scope / impact:** PR #2680 browser validation only; no production impact.
+- **Evidence / root cause:** The [web E2E job](https://github.com/Asherlc/dofek/actions/runs/34157574211/job/101852832352)
+  failed two settings layout cases with `Expected to find content: 'Zepp App Pairing'`
+  after the heading changed to “Pair your Zepp app.” The remaining 43 browser
+  cases passed. The selector failed before layout measurements completed.
+- **Direct fix:** Update both heading selectors and their diagnostic text.
+  Preserve the existing layout measurements, limits, and request waits.
+- **Validation / follow-up:** Confirm the replacement settings layout cases
+  and full browser job pass before merging.

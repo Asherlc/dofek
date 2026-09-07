@@ -2,7 +2,7 @@ import { formatDurationMinutes, formatSleepDebtInline } from "@dofek/format/form
 import { formatSummaryDateContext } from "@dofek/format/summary-date-context";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { useRouter } from "expo-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import Animated, {
   Easing,
@@ -31,6 +31,7 @@ import { colors, duration } from "../../theme";
 
 export default function TodayScreen() {
   const router = useRouter();
+  const [sleepCalculationOpen, setSleepCalculationOpen] = useState(false);
   const providerGuide = useProviderGuide();
   const endDate = useTodayQueryDate();
 
@@ -169,7 +170,7 @@ export default function TodayScreen() {
         <View style={styles.ringSection}>
           <ChartTitleWithTooltip
             title="Recovery"
-            description="This ring visualizes your readiness score based on recovery-related signals."
+            description="Readiness is scored from 0 to 100. Tap the ring to open recovery details."
             textStyle={styles.sectionLabel}
           />
           <TouchableOpacity
@@ -187,7 +188,7 @@ export default function TodayScreen() {
             ) : (
               <View style={[styles.emptyRing, { width: 180, height: 180 }]}>
                 <Text style={styles.emptyRingText}>--</Text>
-                <Text style={styles.emptyRingSubtext}>No data yet</Text>
+                <Text style={styles.emptyRingSubtext}>No score available</Text>
               </View>
             )}
           </TouchableOpacity>
@@ -195,7 +196,7 @@ export default function TodayScreen() {
         <View style={styles.ringSection}>
           <ChartTitleWithTooltip
             title="Strain"
-            description="This gauge shows your most recent daily training strain relative to your recent baseline."
+            description="Daily training strain compared with your recent baseline. Tap the gauge to open training details."
             textStyle={styles.sectionLabel}
           />
           <TouchableOpacity
@@ -325,7 +326,6 @@ export default function TodayScreen() {
               <Text style={styles.noDataText}>No sleep data</Text>
             ) : sleepNeed.availability === "available" ? (
               <>
-                <Text style={styles.sleepNeedSubtitle}>{sleepNeed.epistemicStatus.label}</Text>
                 <Text style={styles.sleepNeedTotal}>
                   {`${sleepNeed.estimateMetadata.valueQualifier} ${formatDurationMinutes(sleepNeed.totalNeedMinutes)}`}
                 </Text>
@@ -358,23 +358,29 @@ export default function TodayScreen() {
                     </Text>
                   </View>
                 </View>
-                <View style={styles.sleepNeedMetadata}>
-                  <Text style={styles.sleepNeedMetadataText}>
-                    {sleepNeed.estimateMetadata.basisLabel}
-                  </Text>
-                  <Text style={styles.sleepNeedMetadataText}>
-                    {sleepNeed.estimateMetadata.coverageLabel}
-                  </Text>
-                  <Text style={styles.sleepNeedMetadataText}>
-                    {sleepNeed.estimateMetadata.methodLabel}
-                  </Text>
-                  <Text style={styles.sleepNeedMetadataText}>
-                    {sleepNeed.estimateMetadata.uncertaintyLabel}
-                  </Text>
-                  <Text style={styles.sleepNeedMetadataText}>
-                    {sleepNeed.estimateMetadata.limitationLabel}
-                  </Text>
-                </View>
+                <Text style={styles.sleepNeedMetadataText}>
+                  {sleepNeed.estimateMetadata.limitationLabel}
+                </Text>
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: sleepCalculationOpen }}
+                  onPress={() => setSleepCalculationOpen((open) => !open)}
+                >
+                  <Text style={styles.sleepNeedMetadataText}>How this is calculated</Text>
+                </TouchableOpacity>
+                {sleepCalculationOpen ? (
+                  <View style={styles.sleepNeedMetadata}>
+                    <Text style={styles.sleepNeedMetadataText}>
+                      {sleepNeed.estimateMetadata.methodLabel}
+                    </Text>
+                    <Text style={styles.sleepNeedMetadataText}>
+                      {sleepNeed.estimateMetadata.basisLabel}
+                    </Text>
+                    <Text style={styles.sleepNeedMetadataText}>
+                      {sleepNeed.estimateMetadata.coverageLabel}
+                    </Text>
+                  </View>
+                ) : null}
               </>
             ) : (
               <>

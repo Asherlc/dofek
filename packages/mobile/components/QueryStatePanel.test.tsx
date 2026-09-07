@@ -123,9 +123,9 @@ describe("QueryStatePanel", () => {
   });
 
   it("renders the empty title and message", () => {
-    render(<QueryStatePanel variant="empty" message="No entries yet" />);
+    render(<QueryStatePanel variant="empty" message="No entries to display" />);
     expect(screen.getByTestId("query-state-empty")).toBeTruthy();
-    expect(screen.getByText("No data yet")).toBeTruthy();
-    expect(screen.getByText("No entries yet")).toBeTruthy();
+    expect(screen.getByText("No data to display")).toBeTruthy();
+    expect(screen.getByText("No entries to display")).toBeTruthy();
   });
 });

@@ -16,9 +16,16 @@ interface ZeppPairingCardBodyProps {
   onPairingCodeChange: (value: string) => void;
   onClaimPairing: () => void;
   onDisconnect: (connectionType: "zepp-main" | "zepp-workout") => void;
+  showTitle?: boolean;
 }
 
-export function ZeppPairingCard({ initialCode = "" }: { initialCode?: string }) {
+export function ZeppPairingCard({
+  initialCode = "",
+  showTitle = true,
+}: {
+  initialCode?: string;
+  showTitle?: boolean;
+}) {
   const [pairingCode, setPairingCode] = useState(initialCode);
   const [pairingMessage, setPairingMessage] = useState("");
   useEffect(() => {
@@ -85,6 +92,7 @@ export function ZeppPairingCard({ initialCode = "" }: { initialCode?: string }) 
       onDisconnect={(connectionType) => {
         disconnectMutation.mutate({ connectionType });
       }}
+      showTitle={showTitle}
     />
   );
 }
@@ -101,13 +109,14 @@ export function ZeppPairingCardBody({
   onPairingCodeChange,
   onClaimPairing,
   onDisconnect,
+  showTitle = true,
 }: ZeppPairingCardBodyProps) {
   const normalizedPairingCode = pairingCode.trim();
 
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Zepp App Pairing</Text>
-      <Text style={styles.sectionDescription}>Connect the Zepp watch app to this account</Text>
+      {showTitle ? <Text style={styles.sectionTitle}>Pair your Zepp app</Text> : null}
+      <Text style={styles.sectionDescription}>Enter the code shown in Zepp</Text>
       <View style={styles.card}>
         <Text style={styles.statusTitle}>Current connections</Text>
         {isConnectionsLoading ? (

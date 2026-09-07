@@ -44,7 +44,7 @@ export function QueryStatePanel({
   }
 
   const resolvedTitle =
-    title ?? (variant === "error" ? "Could not load this section" : "No data yet");
+    title ?? (variant === "error" ? "Could not load this section" : "No data to display");
   const resolvedMessage =
     variant === "error" && message ? userFacingErrorMessage(message) : message;
 

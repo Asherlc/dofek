@@ -154,8 +154,7 @@ export function AccountErasurePanel() {
       {preparation ? (
         <View style={styles.finalCard}>
           <Text style={styles.finalText}>
-            Final confirmation: deletion starts immediately, your session ends, and new writes are
-            blocked.
+            Deletion starts immediately and you&apos;ll be signed out. This cannot be undone.
           </Text>
           <TouchableOpacity
             accessibilityRole="button"

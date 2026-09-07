@@ -58,7 +58,7 @@ export function QueryStatePanel({
   const resolvedMessage =
     variant === "error" && typeof message === "string"
       ? userFacingErrorMessage(message, getQueryErrorMessage(error))
-      : (message ?? (variant === "error" ? getQueryErrorMessage(error) : "No data yet."));
+      : (message ?? (variant === "error" ? getQueryErrorMessage(error) : "No data to display."));
   const errorTone = operationalStatusColors.danger;
 
   return (

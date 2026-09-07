@@ -1410,7 +1410,7 @@ describe("upsertWorkoutBatch", () => {
     };
 
     await expect(upsertWorkoutBatch(nonTransactionalDb, "p1", [makeWorkout()])).rejects.toThrow(
-      "Apple Health workout upsert requires a transactional database",
+      "Apple Health import requires a transactional database",
     );
   });
 
@@ -1419,7 +1419,7 @@ describe("upsertWorkoutBatch", () => {
     const invalidTransactionDb = { ...db, transaction: undefined };
 
     await expect(upsertWorkoutBatch(invalidTransactionDb, "p1", [makeWorkout()])).rejects.toThrow(
-      "Apple Health workout upsert requires a transactional database",
+      "Apple Health import requires a transactional database",
     );
   });
 

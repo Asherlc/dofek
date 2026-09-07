@@ -38,6 +38,7 @@ import { invalidateSyncedHealthData } from "../lib/invalidate-synced-health-data
 import { resolveMedicationReminderNotificationPath } from "../lib/medication-reminder-notifications";
 import { MobileQueryPersistenceProvider } from "../lib/mobile-query-persistence";
 import { createAppQueryClient } from "../lib/query-client";
+import { rootStackScreenOptions } from "../lib/root-stack-screen-options";
 import { runAfterUiIdle } from "../lib/runAfterUiIdle";
 import { getTrpcUrl } from "../lib/server";
 import {
@@ -72,7 +73,6 @@ import {
   disconnect as whoopDisconnect,
 } from "../modules/whoop-ble";
 import { colors } from "../theme";
-import { rootStackScreenOptions } from "./_layout-options";
 import LoginScreen from "./login";
 
 try {
@@ -677,7 +677,7 @@ function AuthGate() {
           <Stack.Screen
             name="zepp-pairing"
             options={{
-              title: "Pair Zepp App",
+              title: "Pair your Zepp app",
             }}
           />
           <Stack.Screen
@@ -731,7 +731,7 @@ function AuthGate() {
           <Stack.Screen
             name="support"
             options={{
-              title: "Help & Support",
+              title: "Contact support",
             }}
           />
           <Stack.Screen

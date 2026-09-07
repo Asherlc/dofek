@@ -1,8 +1,4 @@
-import {
-  formatTodayPlanConfidence,
-  formatTodayPlanFreshness,
-  type TodayPlanResult,
-} from "@dofek/scoring/today-plan";
+import { formatTodayPlanFreshness, type TodayPlanResult } from "@dofek/scoring/today-plan";
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { colors, radius, spacing } from "../theme";
@@ -59,7 +55,6 @@ export function TodayPlanCard({ plan, loading = false, error }: TodayPlanCardPro
         {refreshWarning}
         <Text style={styles.message}>{plan.message}</Text>
         <Text style={styles.meta}>{plan.epistemicStatus?.label}</Text>
-        <Text style={styles.meta}>{formatTodayPlanConfidence(plan.confidence)}</Text>
       </View>
     );
   }
@@ -74,7 +69,6 @@ export function TodayPlanCard({ plan, loading = false, error }: TodayPlanCardPro
       </View>
       {refreshWarning}
       <Text style={styles.title}>{plan.action.title}</Text>
-      <Text style={styles.summary}>{plan.action.summary}</Text>
       <Pressable
         onPress={() => setEvidenceOpen((current) => !current)}
         accessibilityRole="button"
@@ -108,7 +102,6 @@ export function TodayPlanCard({ plan, loading = false, error }: TodayPlanCardPro
         </View>
       ) : null}
       <Text style={styles.meta}>{plan.epistemicStatus?.label}</Text>
-      <Text style={styles.meta}>{formatTodayPlanConfidence(plan.confidence)}</Text>
       {freshness != null ? <Text style={styles.meta}>{freshness}</Text> : null}
     </View>
   );
@@ -142,11 +135,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: colors.text,
-  },
-  summary: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    lineHeight: 18,
   },
   whyButton: {
     alignSelf: "flex-start",

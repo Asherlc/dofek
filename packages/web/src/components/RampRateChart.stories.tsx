@@ -17,7 +17,7 @@ const meta = {
   args: {
     data: weeks,
     currentRampRate: 4.2,
-    recommendation: "Productive build. Keep the next increase below 5 fitness points.",
+    recommendation: "Weekly training-load change: +4.2 points",
   },
   decorators: [
     (Story) => (
@@ -36,17 +36,17 @@ export const Loading: Story = {
   args: {
     data: [],
     currentRampRate: 0,
-    recommendation: "Loading the latest training recommendation.",
+    recommendation: "Loading weekly training-load change.",
     loading: true,
   },
 };
 export const Empty: Story = {
   args: { data: [], currentRampRate: 0, recommendation: "Log more training to establish a trend." },
 };
-export const AggressiveBuild: Story = {
+export const Increase: Story = {
   args: {
     currentRampRate: 7.4,
-    recommendation: "Ramp rate is high. Hold or reduce load this week.",
+    recommendation: "Weekly training-load change: +7.4 points",
     data: [
       ...weeks.slice(0, -1),
       { week: "2026-05-25", ctlStart: 57.1, ctlEnd: 64.5, rampRate: 7.4 },

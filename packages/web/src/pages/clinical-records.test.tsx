@@ -120,7 +120,7 @@ describe("ClinicalRecordsPage", () => {
     queryMocks.list.mockReturnValue(queryResult({ records: [], nextOffset: null }));
     render(<ClinicalRecordsPage />);
     expect(screen.getByTestId("query-state-empty")).toHaveTextContent(
-      "No clinical records have been synced yet.",
+      "No clinical records to display.",
     );
   });
 

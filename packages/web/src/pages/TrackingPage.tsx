@@ -7,7 +7,7 @@ import { SubjectiveTrackingPanel } from "../components/SubjectiveTrackingPanel.t
 export function TrackingPage() {
   return (
     <PageLayout>
-      <PageSection title="Journal" subtitle="Daily behavioral self-reports and trends">
+      <PageSection title="Journal" subtitle="See how your journal entries change over time">
         <JournalPanel />
       </PageSection>
       <PageSection title="Life Events" subtitle="Track changes and see their impact">

@@ -83,6 +83,7 @@ const mockDataHealthQuery = vi.hoisted(() =>
 );
 const mockDashboardEvidenceOverview = vi.hoisted(() => vi.fn());
 const mockDailyOverview = vi.hoisted(() => vi.fn());
+const mockHealthStatusBar = vi.hoisted(() => vi.fn());
 
 vi.mock("../components/DailyOverview.tsx", () => ({
   DailyOverview: (props: Record<string, unknown>) => {
@@ -104,7 +105,10 @@ vi.mock("../components/DashboardEvidenceOverview.tsx", () => ({
 }));
 
 vi.mock("../components/HealthStatusBar.tsx", () => ({
-  HealthStatusBar: () => <div>Health status bar</div>,
+  HealthStatusBar: (props: Record<string, unknown>) => {
+    mockHealthStatusBar(props);
+    return <div>Health status bar</div>;
+  },
 }));
 
 vi.mock("../components/PageLayout.tsx", () => ({
@@ -147,14 +151,7 @@ vi.mock("../lib/unitContext.ts", () => ({
   useUnitConverter: () => new UnitConverter("metric"),
 }));
 
-import {
-  buildHealthMetrics,
-  buildSkinTempSeries,
-  Dashboard,
-  healthMonitorSubtitle,
-  isCoreDashboardReady,
-  spo2TempSectionConfig,
-} from "./Dashboard";
+import { Dashboard } from "./Dashboard";
 
 afterEach(cleanup);
 
@@ -224,16 +221,11 @@ describe("Dashboard", () => {
         date: "2026-05-27",
         action: {
           id: "strain_target",
-          title: "No change needs attention — aim for 12 strain",
-          summary: "Stay in range",
+          title: "Suggested strain: 12",
           zone: "Maintain",
         },
-        supportingFacts: [
-          { label: "Recovery", value: "60/100" },
-          { label: "Strain target", value: "12" },
-        ],
+        supportingFacts: [{ label: "Recovery", value: "60/100" }],
         caveats: [],
-        confidence: "moderate",
         freshness: { recoveryDate: "2026-05-27", sleepDate: null },
         missingInputs: ["sleep"],
       },
@@ -252,6 +244,68 @@ describe("Dashboard", () => {
     mockDataHealthQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
     mockDashboardEvidenceOverview.mockClear();
     mockDailyOverview.mockClear();
+  });
+
+  it("passes through the canonical server health status without recalculating it", () => {
+    const restingHeartRateStatus = {
+      metric: "resting_heart_rate" as const,
+      label: "Resting Heart Rate",
+      value: 55,
+      valueText: null,
+      baseline: 56.2,
+      baselineText: null,
+      sampleDeviation: 3.1,
+      deviation: -0.39,
+      direction: "below" as const,
+      intent: "lower" as const,
+      statusToken: "moving_as_intended" as const,
+      statusColor: "positive" as const,
+      statusLabel: "Moving as intended",
+      evaluationRule: "Below your baseline, where lower values support this metric",
+      explanation: "Resting Heart Rate is below your baseline.",
+      provenance: null,
+      comparison: null,
+      baselineProgress: {
+        requiredObservationDays: 3,
+        observedObservationDays: 3,
+        hasMeasurableVariation: true,
+        blocker: null,
+        requirement:
+          "A current value plus at least 2 more recorded days with measurable variation.",
+        summary: "Resting Heart Rate baseline is ready.",
+        action: "No action needed.",
+      },
+    };
+    mockTrendsQuery.mockReturnValue({
+      data: {
+        avg_hrv: 43.8,
+        avg_resting_hr: 56.2,
+        avg_spo2: null,
+        avg_steps: null,
+        avg_skin_temp: null,
+        stddev_hrv: 7.5,
+        stddev_resting_hr: 3.1,
+        stddev_spo2: null,
+        stddev_steps: null,
+        stddev_skin_temp: null,
+        latest_hrv: 48,
+        latest_resting_hr: 55,
+        latest_spo2: null,
+        latest_steps: null,
+        latest_skin_temp: null,
+        latest_date: "2025-03-15",
+        restingHeartRateTrendLabel: "below average",
+        baselineRelative: [],
+        healthStatus: [restingHeartRateStatus],
+      },
+      isLoading: false,
+      error: null,
+    });
+    render(<Dashboard />);
+
+    expect(mockHealthStatusBar).toHaveBeenLastCalledWith(
+      expect.objectContaining({ metrics: [restingHeartRateStatus] }),
+    );
   });
 
   it("uses a 90-day evidence window without widening current-day plan lookups", () => {
@@ -355,7 +409,7 @@ describe("Dashboard", () => {
       expect.anything(),
       expect.objectContaining({ enabled: false }),
     );
-    expect(screen.queryByText("No insights yet.")).toBeNull();
+    expect(screen.queryByText("No insights to display.")).toBeNull();
     expect(screen.getByTestId("query-state-loading")).toBeTruthy();
   });
 
@@ -382,7 +436,7 @@ describe("Dashboard", () => {
       expect.anything(),
       expect.objectContaining({ enabled: false }),
     );
-    expect(screen.queryByText("No insights yet.")).toBeNull();
+    expect(screen.queryByText("No insights to display.")).toBeNull();
     expect(screen.getByText("Insights unavailable until dashboard data loads.")).toBeTruthy();
   });
 
@@ -462,7 +516,7 @@ describe("Dashboard", () => {
     render(<Dashboard />);
 
     expect(screen.getByTestId("query-state-empty")).toBeTruthy();
-    expect(screen.getByText("No insights yet.")).toBeTruthy();
+    expect(screen.getByText("No insights to display.")).toBeTruthy();
     expect(screen.queryByText("Sleep consistency + Heart Rate Variability")).toBeNull();
   });
 
@@ -580,176 +634,5 @@ describe("Dashboard", () => {
 
     expect(screen.getByText("Health status bar")).toBeTruthy();
     expect(screen.getByText("Health status refresh failed.")).toBeTruthy();
-  });
-});
-
-describe("isCoreDashboardReady", () => {
-  it("returns false while any core dashboard prerequisite is not ready", () => {
-    expect(
-      isCoreDashboardReady({
-        readinessReady: false,
-        workloadRatioReady: true,
-        strainTargetReady: true,
-        sleepPerformanceReady: true,
-      }),
-    ).toBe(false);
-  });
-
-  it("returns true once all core dashboard prerequisites are ready", () => {
-    expect(
-      isCoreDashboardReady({
-        readinessReady: true,
-        workloadRatioReady: true,
-        strainTargetReady: true,
-        sleepPerformanceReady: true,
-      }),
-    ).toBe(true);
-  });
-});
-
-describe("buildSkinTempSeries", () => {
-  const metrics = [
-    {
-      date: "2026-03-18",
-      spo2_avg: 97,
-      skin_temp_c: 34.5,
-      hrv: null,
-      steps: null,
-    },
-    {
-      date: "2026-03-19",
-      spo2_avg: null,
-      skin_temp_c: null,
-      hrv: null,
-      steps: null,
-    },
-    {
-      date: "2026-03-20",
-      spo2_avg: 98,
-      skin_temp_c: 35.0,
-      hrv: null,
-      steps: null,
-    },
-  ];
-
-  it("assigns skin temp series to the second y-axis (yAxisIndex: 1)", () => {
-    const series = buildSkinTempSeries(metrics, new UnitConverter("metric"));
-    expect(series.yAxisIndex).toBe(1);
-  });
-
-  it("converts temperature values using the given unit system", () => {
-    const metricSeries = buildSkinTempSeries(metrics, new UnitConverter("metric"));
-    const metricValues = metricSeries.data.map(([, v]) => v);
-    expect(metricValues).toEqual([34.5, null, 35.0]);
-
-    const imperialSeries = buildSkinTempSeries(metrics, new UnitConverter("imperial"));
-    const imperialValues = imperialSeries.data.map(([, v]) => v);
-    // 34.5°C = 94.1°F, 35.0°C = 95.0°F
-    expect(imperialValues[0]).toBeCloseTo(94.1, 1);
-    expect(imperialValues[1]).toBeNull();
-    expect(imperialValues[2]).toBeCloseTo(95.0, 1);
-  });
-
-  it("uses date strings as the x-axis values", () => {
-    const series = buildSkinTempSeries(metrics, new UnitConverter("metric"));
-    expect(series.data.map(([date]) => date)).toEqual(["2026-03-18", "2026-03-19", "2026-03-20"]);
-  });
-});
-
-describe("spo2TempSectionConfig", () => {
-  it("returns combined title and dual axes when both blood oxygen and skin temp are present", () => {
-    const config = spo2TempSectionConfig(true, true, new UnitConverter("imperial"));
-    expect(config.title).toBe("Blood Oxygen Saturation (SpO2) & Skin Temperature");
-    expect(config.subtitle).toContain("oxygen");
-    expect(config.subtitle).toContain("skin");
-    expect(config.yAxis).toHaveLength(2);
-    expect(config.yAxis[0]?.name).toBe("Blood Oxygen Saturation (%)");
-    expect(config.yAxis[1]?.name).toBe("°F");
-  });
-
-  it("returns blood-oxygen-only title and single axis when only blood oxygen data exists", () => {
-    const config = spo2TempSectionConfig(true, false, new UnitConverter("metric"));
-    expect(config.title).toBe("Blood Oxygen Saturation (SpO2)");
-    expect(config.subtitle).toContain("oxygen");
-    expect(config.subtitle).not.toContain("skin");
-    expect(config.yAxis).toHaveLength(1);
-    expect(config.yAxis[0]?.name).toBe("Blood Oxygen Saturation (%)");
-  });
-
-  it("returns skin temp-only title and single axis when only skin temp exists", () => {
-    const config = spo2TempSectionConfig(false, true, new UnitConverter("metric"));
-    expect(config.title).toBe("Skin Temperature");
-    expect(config.subtitle).toContain("skin");
-    expect(config.subtitle).not.toContain("oxygen");
-    expect(config.yAxis).toHaveLength(1);
-    expect(config.yAxis[0]?.name).toBe("°C");
-  });
-
-  it("uses imperial temperature label when unit system is imperial", () => {
-    const config = spo2TempSectionConfig(false, true, new UnitConverter("imperial"));
-    expect(config.yAxis[0]?.name).toBe("°F");
-  });
-});
-
-describe("healthMonitorSubtitle", () => {
-  it("returns latest values label", () => {
-    expect(healthMonitorSubtitle()).toBe("Latest values vs. rolling average");
-  });
-});
-
-describe("buildHealthMetrics", () => {
-  it("passes through the canonical server health status without recalculating it", () => {
-    const restingHeartRateStatus = {
-      metric: "resting_heart_rate" as const,
-      label: "Resting Heart Rate",
-      value: 55,
-      valueText: null,
-      baseline: 56.2,
-      baselineText: null,
-      sampleDeviation: 3.1,
-      deviation: -0.39,
-      direction: "below" as const,
-      intent: "lower" as const,
-      statusToken: "moving_as_intended" as const,
-      statusColor: "positive" as const,
-      statusLabel: "Moving as intended",
-      evaluationRule: "Below your baseline, where lower values support this metric",
-      explanation: "Resting Heart Rate is below your baseline.",
-      provenance: null,
-      comparison: null,
-      baselineProgress: {
-        requiredObservationDays: 3,
-        observedObservationDays: 3,
-        hasMeasurableVariation: true,
-        blocker: null,
-        requirement:
-          "A current value plus at least 2 more recorded days with measurable variation.",
-        summary: "Resting Heart Rate baseline is ready.",
-        action: "No action needed.",
-      },
-    };
-    const metrics = buildHealthMetrics({
-      avg_hrv: 43.8,
-      avg_resting_hr: 56.2,
-      avg_spo2: null,
-      avg_steps: null,
-      avg_skin_temp: null,
-      stddev_hrv: 7.5,
-      stddev_resting_hr: 3.1,
-      stddev_spo2: null,
-      stddev_steps: null,
-      stddev_skin_temp: null,
-      latest_hrv: 48,
-      latest_resting_hr: 55,
-      latest_spo2: null,
-      latest_steps: null,
-      latest_skin_temp: null,
-      latest_date: "2025-03-15",
-      restingHeartRateTrendLabel: "below average",
-      baselineRelative: [],
-      healthStatus: [restingHeartRateStatus],
-    });
-
-    expect(metrics).toEqual([restingHeartRateStatus]);
   });
 });

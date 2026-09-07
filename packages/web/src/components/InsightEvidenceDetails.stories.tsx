@@ -7,8 +7,8 @@ const evidence: InsightEvidence = {
   label: "Descriptive association",
   method: "Observed-group mean comparison over paired observations.",
   interpretation:
-    "This observational association describes the observed data; it does not establish causation.",
-  limitations: "Missing observations and unmeasured confounders may affect this estimate.",
+    "This association does not prove cause. Missing data and other factors may affect it.",
+  limitations: "No confidence interval is available for this comparison.",
   recommendation: "Use this as a hypothesis, not a prescription or treatment recommendation.",
   estimateLabel: "15% lower",
 };
