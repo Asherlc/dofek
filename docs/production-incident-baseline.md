@@ -25361,3 +25361,19 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   typecheck, lint, mutation, and security check.
 - **Remaining risk / follow-up:** Confirm the replacement integration shard 3,
   aggregate test gate, and CI gate pass on the fixture-fix commit.
+
+## 2026-09-07 — Removed ramp-rate labels remained in an integration assertion
+
+- **Scope / impact:** PR #2680 merge validation only; no production impact.
+- **Evidence / root cause:** [Integration shard 3](https://github.com/Asherlc/dofek/actions/runs/34156219009/job/101849789772)
+  ran `pnpm exec vitest run --project integration --coverage --shard=3/4`.
+  Its only failing test reported `AssertionError: expected false to be true`
+  at `router-logic.integration.test.ts:1079`. The assertion still required the
+  removed Safe/Aggressive/Danger classifications despite the intended signed
+  weekly load-change observation.
+- **Direct fix:** Update that existing assertion to verify the observation,
+  current value matching the latest week, and the existing empty result text.
+  No application code or test-runner setting changed.
+- **Validation / follow-up:** All 60 focused cycling tests, Biome, and
+  whitespace checks pass. Confirm the replacement integration shard passes
+  before merging.
