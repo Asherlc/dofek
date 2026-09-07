@@ -275,7 +275,8 @@ async function seedProductionDbtFixture(
       refresh_version UInt64,
       is_deleted UInt8,
       refreshed_at DateTime64(9, 'UTC'),
-      provider_id String
+      provider_id String,
+      source_activity_id Nullable(UUID)
     ) ENGINE = ReplacingMergeTree(refresh_version)
       ORDER BY (user_id, channel, recorded_date, recorded_at)`,
     `CREATE TABLE ${database}.metric_stream (
@@ -311,7 +312,7 @@ async function seedProductionDbtFixture(
       (
         '${TEST_USER_ID}', toDateTime64('2026-09-01 15:10:00', 6, 'UTC'),
         toDate('2026-09-01'), 'heart_rate', 150, 1, 0,
-        now64(9), 'wahoo'
+        now64(9), 'wahoo', '${wahooActivityId}'
       )`,
     `INSERT INTO ${database}.activity VALUES
       (

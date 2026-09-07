@@ -76,6 +76,7 @@ device_priority_match AS (
 )
 SELECT
   metric_stream_rows.id AS id,
+  metric_stream_rows.activity_id AS activity_id,
   metric_stream_rows.user_id AS user_id,
   metric_stream_rows.recorded_at AS recorded_at,
   toDate(metric_stream_rows.recorded_at) AS recorded_date,
@@ -98,6 +99,7 @@ LEFT JOIN device_priority_match
 function buildSensorScalarSampleTableSql(): string {
   return `CREATE TABLE IF NOT EXISTS analytics.sensor_scalar_sample (
   id UUID,
+  activity_id Nullable(UUID),
   user_id UUID,
   recorded_at DateTime64(6, 'UTC'),
   recorded_date Date,
@@ -117,6 +119,7 @@ ORDER BY (user_id, channel, recorded_date, recorded_at, provider_id, id)`;
 export function buildSensorScalarSampleBackfillSql(recordedAtRange?: RecordedAtRangeSql): string {
   return `INSERT INTO analytics.sensor_scalar_sample (
   id,
+  activity_id,
   user_id,
   recorded_at,
   recorded_date,
@@ -141,6 +144,7 @@ function buildDedupedSensorTableSql(): string {
   scalar Nullable(Float32),
   provider_id Nullable(String),
   source_metric_stream_id Nullable(UUID),
+  source_activity_id Nullable(UUID),
   provider_priority UInt16,
   refresh_version UInt64,
   is_deleted UInt8,
@@ -159,6 +163,7 @@ export function buildDedupedSensorRecomputeInsertSql(pendingKeySql: string): str
   scalar,
   provider_id,
   source_metric_stream_id,
+  source_activity_id,
   provider_priority,
   refresh_version,
   is_deleted,
@@ -175,6 +180,7 @@ SELECT
   argMinIf(samples.scalar, (samples.provider_priority, samples.provider_id, samples.id), samples._peerdb_is_deleted = 0) AS scalar,
   argMinIf(samples.provider_id, (samples.provider_priority, samples.provider_id, samples.id), samples._peerdb_is_deleted = 0) AS provider_id,
   argMinIf(samples.id, (samples.provider_priority, samples.provider_id, samples.id), samples._peerdb_is_deleted = 0) AS source_metric_stream_id,
+  tupleElement(argMinIf(tuple(samples.activity_id), (samples.provider_priority, samples.provider_id, samples.id), samples._peerdb_is_deleted = 0), 1) AS source_activity_id,
   coalesce(minIf(samples.provider_priority, samples._peerdb_is_deleted = 0), 65535) AS provider_priority,
   toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
   if(countIf(samples._peerdb_is_deleted = 0) = 0, 1, 0) AS is_deleted,

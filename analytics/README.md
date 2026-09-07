@@ -31,17 +31,30 @@ edges. The [activity model](models/read_models/deduped_activities.sql) uses the
 group UUID as `activity_id` and the chosen member UUID as `primary_activity_id`.
 Representative selection orders deduped sensor presence, sample count, elevation
 presence, specific canonical type, provider-type refinement, provider priority,
-then member UUID. Samples count toward a member only when their winning provider
-matches and their timestamp lies within its inclusive normalized window; the
-group's served sample union remains provider-independent. This attribution cannot
-distinguish overlapping members from the same provider. Location payload and
+then member UUID. Samples count toward a member only when the winning sample's
+nullable `source_activity_id` equals that member's UUID and its timestamp lies
+within the inclusive normalized window; overlapping same-provider members do not
+share payload credit. The group's served sample union remains independent of source
+activity linkage and provider. The display name follows the selected representative,
+including a null name; notes and raw provenance retain their existing fallbacks.
+Location payload and
 relational strength sets are not available to this upstream scalar projection.
 Missing persisted membership fails the build. Existing deployments must apply
 [migration 0076](../src/db/clickhouse-migrations/0076_stable_activity_group_id.ts)
 and deliver PostgreSQL membership through CDC before refreshing these models;
 the migration only adds nullable columns, using ClickHouse's
 [ADD COLUMN](https://clickhouse.com/docs/reference/statements/alter/column#add-column)
-without inventing membership for existing rows. `activity_sensor_sample` and
+without inventing membership for existing rows.
+[Migration 0077](../src/db/clickhouse-migrations/0077_sensor_source_activity_id.ts)
+adds nullable source-activity columns to existing scalar and deduped sensor tables.
+Reprocess the required sensor history through `sensor_scalar_sample` and then
+`deduped_sensor` before rebuilding activity representatives; old projected samples
+remain unlinked until that refresh and must not be credited by provider/time inference.
+The [staging model](models/staging/sensor_scalar_sample.sql) preserves the latest
+nullable link, and the [deduplication model](models/read_models/deduped_sensor.sql)
+keeps it with the winning sample using tuple-valued
+[argMin](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/argmin).
+`activity_sensor_sample` and
 `activity_location_sample` are bounded microbatch intermediates over sample
 time. `body_measurement` incrementally rebuilds only users whose body samples
 or priority inputs changed, and `analytics.v_body_measurement` is a thin

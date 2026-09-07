@@ -44,7 +44,8 @@ export function buildPostgresFitnessActivityRawTableStatement(
   provider_absent_at Nullable(DateTime64(6, 'UTC')),
   deleted_at Nullable(DateTime64(6, 'UTC')),
   created_at DateTime64(6, 'UTC'),
-${peerDbMetadataColumnDefinitions}
+${peerDbMetadataColumnDefinitions},
+  group_id Nullable(UUID)
 )
 ${replacingMergeTreeTable("id")}`;
 }

@@ -7,6 +7,10 @@ import {
 } from "./clickhouse-raw-tables.ts";
 
 describe("buildPostgresFitnessActivityRawTableStatement", () => {
+  it("appends nullable persisted membership after PeerDB metadata like migration 0076", () => {
+    const statement = buildPostgresFitnessActivityRawTableStatement();
+    expect(statement).toMatch(/_peerdb_version Int64 DEFAULT 0,\s+group_id Nullable\(UUID\)\s*\)/);
+  });
   it("mirrors rejected provider local-time evidence for repair verification", () => {
     const statement = buildPostgresFitnessActivityRawTableStatement();
 

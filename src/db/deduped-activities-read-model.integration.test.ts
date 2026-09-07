@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { readModelSql, renderDbtModelSql } from "./read-model-sql-test-helpers.ts";
+import { extractCteSql, readModelSql, renderDbtModelSql } from "./read-model-sql-test-helpers.ts";
 
 const activityId = "00000000-0000-0000-0000-000000000101";
 const linkedActivityId = "00000000-0000-0000-0000-000000000102";
@@ -191,6 +191,18 @@ ${renderDedupedActivitiesSelectSql(targetSchema)}`,
     await activeClient.command({
       query: `INSERT INTO ${targetSchema}.deduped_activities ${renderDedupedActivitiesSelectSql(targetSchema)}`,
     });
+    const before = await activeClient.query({
+      query: `SELECT primary_activity_id, provider_id, canonical_type, name FROM ${targetSchema}.deduped_activities FINAL`,
+      format: "JSONEachRow",
+    });
+    expect(await before.json()).toEqual([
+      {
+        primary_activity_id: linkedActivityId,
+        provider_id: "whoop",
+        canonical_type: "cycling",
+        name: null,
+      },
+    ]);
     // The generic, higher-priority member now has more samples than the specific member.
     await activeClient.command({
       query: `INSERT INTO ${targetSchema}.deduped_sensor (user_id, provider_id, recorded_at, channel) VALUES
@@ -202,7 +214,8 @@ ${renderDedupedActivitiesSelectSql(targetSchema)}`,
     });
     const result = await activeClient.query({
       query: `SELECT toString(activity_id) AS activityId, toString(primary_activity_id) AS primaryId,
-        provider_id AS providerId, arraySort(member_activity_ids) AS members, is_deleted AS isDeleted
+        provider_id AS providerId, canonical_type AS activityType, name,
+        arraySort(member_activity_ids) AS members, is_deleted AS isDeleted
         FROM ${targetSchema}.deduped_activities FINAL`,
       format: "JSONEachRow",
     });
@@ -211,9 +224,43 @@ ${renderDedupedActivitiesSelectSql(targetSchema)}`,
         activityId: groupId,
         primaryId: activityId,
         providerId: "peloton",
+        activityType: "cardio",
+        name: "Power Zone Ride",
         members: [activityId, linkedActivityId],
         isDeleted: 0,
       },
+    ]);
+  });
+
+  it("does not credit an overlapping metadata-only member of the same provider", async () => {
+    const activeClient = requireClient(client);
+    await seedSpecificActivityTypeFixture(activeClient, targetSchema, "cycling", "cycling");
+    await activeClient.command({
+      query: `ALTER TABLE ${targetSchema}.activity_source_records
+      UPDATE provider_id = 'whoop' WHERE activity_id = '${activityId}' SETTINGS mutations_sync = 2`,
+    });
+    // Both windows and providers match; only the lower-priority linked member owns this sample.
+    const sql = renderDedupedActivitiesSelectSql(targetSchema);
+    const credits = await activeClient.query({
+      query: `WITH ranked AS (${extractCteSql(sql, "ranked")}),
+      sensor_bearing_members AS (${extractCteSql(sql, "sensor_bearing_members")})
+      SELECT ranked.activity_id AS memberId, toUInt32(coalesce(sensor_sample_count, 0)) AS sampleCount
+      FROM ranked LEFT JOIN sensor_bearing_members
+        ON ranked.activity_id = sensor_bearing_members.activity_id
+        AND ranked.user_id = sensor_bearing_members.user_id
+      ORDER BY memberId SETTINGS join_use_nulls = 1`,
+      format: "JSONEachRow",
+    });
+    expect(await credits.json()).toEqual([
+      { memberId: activityId, sampleCount: 0 },
+      { memberId: linkedActivityId, sampleCount: 1 },
+    ]);
+    const result = await activeClient.query({
+      query: renderDedupedActivitiesSelectSql(targetSchema),
+      format: "JSONEachRow",
+    });
+    expect(await result.json()).toEqual([
+      expect.objectContaining({ activity_id: groupId, primary_activity_id: linkedActivityId }),
     ]);
   });
 
@@ -625,6 +672,7 @@ async function seedTablesAndMembership(
   await client.command({
     query: `CREATE TABLE ${database}.deduped_sensor (
     user_id UUID, provider_id String, recorded_at DateTime64(6, 'UTC'), channel String,
+    source_activity_id Nullable(UUID) DEFAULT if(provider_id = 'peloton', toUUID('${activityId}'), toUUID('${linkedActivityId}')),
     is_deleted UInt8 DEFAULT 0, refresh_version UInt64 DEFAULT 1
   ) ENGINE = ReplacingMergeTree(refresh_version) ORDER BY (user_id, channel, recorded_at)`,
   });

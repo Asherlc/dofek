@@ -44,6 +44,7 @@ WITH metric_stream_versions AS (
 metric_stream_rows AS (
     SELECT
         id,
+        tupleElement(argMax(tuple(activity_id), version), 1) AS activity_id,
         argMax(user_id, version) AS user_id,
         argMax(recorded_at, version) AS recorded_at,
         argMax(channel, version) AS channel,
@@ -104,6 +105,7 @@ device_priority_match AS (
 
 SELECT
     metric_stream_rows.id AS id,
+    metric_stream_rows.activity_id AS activity_id,
     metric_stream_rows.user_id AS user_id,
     metric_stream_rows.recorded_at AS recorded_at,
     toDate(metric_stream_rows.recorded_at) AS recorded_date,

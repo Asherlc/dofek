@@ -51,6 +51,11 @@ SELECT
         (samples.provider_priority, samples.provider_id, samples.id),
         samples._peerdb_is_deleted = 0
     ) AS source_metric_stream_id,
+    tupleElement(argMinIf(
+        tuple(samples.activity_id),
+        (samples.provider_priority, samples.provider_id, samples.id),
+        samples._peerdb_is_deleted = 0
+    ), 1) AS source_activity_id,
     coalesce(
         minIf(samples.provider_priority, samples._peerdb_is_deleted = 0),
         65535

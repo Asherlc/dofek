@@ -53,7 +53,7 @@ sensor_bearing_members AS (
     FROM {{ ref('deduped_sensor') }} AS samples FINAL
     INNER JOIN ranked
         ON ranked.user_id = samples.user_id
-        AND ranked.provider_id = samples.provider_id
+        AND ranked.activity_id = samples.source_activity_id
     WHERE samples.is_deleted = 0
         AND samples.recorded_at >= ranked.started_at
         AND samples.recorded_at <= greatest(
@@ -122,6 +122,7 @@ best AS (
             ranked.started_at AS started_at,
             ranked.ended_at AS ended_at,
             ranked.source_name AS source_name,
+            ranked.name AS name,
             ranked.priority AS priority,
             coalesce(sensor_bearing_members.sensor_sample_count, 0) AS sensor_sample_count,
             coalesce(sensor_bearing_members.has_elevation, 0) AS has_elevation,
@@ -197,7 +198,7 @@ merged AS (
         minIf(ranked.started_at, ranked.activity_id IS NOT null) AS started_at,
         maxIf(coalesce(ranked.ended_at, ranked.started_at + INTERVAL 12 HOUR), ranked.activity_id IS NOT null) AS ended_at,
         any(best.source_name) AS source_name,
-        argMinIf(ranked.name, ranked.priority, ranked.name IS NOT null) AS name,
+        tupleElement(any(tuple(best.name)), 1) AS name,
         argMinIf(ranked.notes, ranked.priority, ranked.notes IS NOT null) AS notes,
         anyIf(best_context.timezone, best_context.local_time_source != 'unknown') AS timezone,
         anyIf(best_context.start_utc_offset_minutes, best_context.local_time_source != 'unknown') AS start_utc_offset_minutes,
