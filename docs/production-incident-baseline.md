@@ -25262,7 +25262,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 ## 2026-09-07 — Historical sensor fixture fell outside the repair build window
 
-- **Status:** Diagnosed; fix and executable verification pending. This was a
+- **Status:** Reproduced locally; fix and passing verification pending. This was a
   documentation-only PR check, not a deployed runtime change.
 - **Evidence:** [Integration shard 3/4, run 34141117493](https://github.com/Asherlc/dofek/actions/runs/34141117493/job/101803595315)
   failed in `src/db/activity-data-integrity-repair.integration.test.ts:693`:
@@ -25275,7 +25275,13 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   succeeded without reading the fixture, leaving sensor summaries empty.
   Subsequent retries encountered the first attempt's unresolved repair journal;
   that is a secondary symptom, not the initial failure.
-- **Impact / follow-up:** PR 2678 remains draft and not ready. Verify the
-  historical scoped-repair contract and add bounded event-time coverage before
-  implementing a fix. Do not move the fixture date or relax assertions merely
-  to pass the check. Local database capacity currently blocks reproduction.
+- **Local reproduction:** After resource relief, the unchanged command
+  `pnpm test:integration -- src/db/activity-data-integrity-repair.integration.test.ts`
+  reproduced the empty sensor-summary assertion in 25.52 seconds, with the same
+  September 4–7 dbt batches and subsequent repair-journal retry failures.
+- **Impact / follow-up:** PR 2678 remains draft and not ready. Both production
+  repair and rollback call the helper without historical event-time bounds.
+  Confirm the bounded historical repair approach, add executable coverage, and
+  rerun CI after the fix. Do not move the fixture date or relax assertions merely
+  to pass the check. dbt documents explicit start and end bounds for
+  [historical microbatch backfills](https://docs.getdbt.com/docs/build/incremental-microbatch#backfills).

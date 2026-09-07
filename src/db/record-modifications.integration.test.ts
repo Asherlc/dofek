@@ -25,6 +25,14 @@ async function change(owner = userId, requestId = randomUUID()) {
   return id;
 }
 
+async function changeAt(recordedAt: string, owner = userId, kind = "update") {
+  const id = randomUUID();
+  await ctx.db.execute(sql`INSERT INTO fitness.human_record_change
+    (id, user_id, request_id, request_hash, kind, channel, recorded_at, schema_version)
+    VALUES (${id}, ${owner}, ${randomUUID()}, ${hash}, ${kind}, 'web', ${recordedAt}, 1)`);
+  return id;
+}
+
 async function target(
   identityId: string,
   changeId: string,
@@ -281,5 +289,153 @@ describe("human record ledger constraints", () => {
         sql`SELECT id FROM fitness.human_record_target WHERE user_id = ${otherUserId}`,
       ),
     ).toEqual(otherBefore);
+  });
+});
+
+describe("human record ledger projections", () => {
+  it("rejects writes through the head projection", async () => {
+    const record = await identity();
+    const command = await change();
+    await expect(
+      ctx.db.execute(sql`INSERT INTO fitness.v_human_record_head
+        (user_id, identity_id, target_id, change_id)
+        VALUES (${userId}, ${record}, ${randomUUID()}, ${command})`),
+    ).rejects.toMatchObject({ cause: { code: "55000" } });
+  });
+
+  it("projects the nearest field decisions by predecessor order, including null sets and clears", async () => {
+    const record = await identity();
+    const firstChange = await changeAt("2026-09-07T03:00:00Z");
+    const first = await target(record, firstChange, null, userId, {
+      name: { operation: "set", value: "Original" },
+      notes: { operation: "set", value: "Remember this" },
+    });
+    const secondChange = await changeAt("2026-09-07T02:00:00Z");
+    const second = await target(record, secondChange, first, userId, {
+      name: { operation: "set", value: null },
+    });
+    const thirdChange = await changeAt("2026-09-07T01:00:00Z");
+    const third = await target(record, thirdChange, second, userId, {
+      notes: { operation: "clear" },
+    });
+
+    const heads = await ctx.db.execute(sql`SELECT user_id, identity_id, target_id, change_id
+      FROM fitness.v_human_record_head WHERE identity_id = ${record}`);
+    expect(heads).toEqual([
+      { user_id: userId, identity_id: record, target_id: third, change_id: thirdChange },
+    ]);
+    const fields = await ctx.db.execute(sql`SELECT field, operation, value
+      FROM fitness.v_human_record_field WHERE identity_id = ${record} ORDER BY field`);
+    expect(fields).toEqual([
+      { field: "name", operation: "set", value: null },
+      { field: "notes", operation: "clear", value: null },
+    ]);
+    expect(
+      await ctx.db.execute(sql`SELECT deleted FROM fitness.v_human_record_visibility
+      WHERE identity_id = ${record}`),
+    ).toEqual([]);
+  });
+
+  it("inherits visibility independently from ordinary edits, restores, and misleading clocks", async () => {
+    const record = await identity();
+    const createdChange = await changeAt("2026-09-07T05:00:00Z");
+    const created = await target(record, createdChange, null, userId, {
+      name: { operation: "set", value: "Kept" },
+    });
+    const deletedChange = await changeAt("2026-09-07T04:00:00Z", userId, "delete");
+    const deleted = randomUUID();
+    await ctx.db.execute(sql`INSERT INTO fitness.human_record_target
+      (id, user_id, identity_id, change_id, predecessor_id, deleted)
+      VALUES (${deleted}, ${userId}, ${record}, ${deletedChange}, ${created}, true)`);
+    const editChange = await changeAt("2026-09-07T03:00:00Z");
+    const edit = randomUUID();
+    await ctx.db.execute(sql`INSERT INTO fitness.human_record_target
+      (id, user_id, identity_id, change_id, predecessor_id, fields)
+      VALUES (${edit}, ${userId}, ${record}, ${editChange}, ${deleted},
+        '{"notes":{"operation":"set","value":"Still kept"}}')`);
+    expect(
+      await ctx.db.execute(sql`SELECT deleted FROM fitness.v_human_record_visibility
+      WHERE identity_id = ${record}`),
+    ).toEqual([{ deleted: true }]);
+
+    const restoreChange = await changeAt("2026-09-07T02:00:00Z", userId, "restore");
+    const restore = randomUUID();
+    await ctx.db.execute(sql`INSERT INTO fitness.human_record_target
+      (id, user_id, identity_id, change_id, predecessor_id, deleted)
+      VALUES (${restore}, ${userId}, ${record}, ${restoreChange}, ${edit}, false)`);
+    expect(
+      await ctx.db.execute(sql`SELECT deleted FROM fitness.v_human_record_visibility
+      WHERE identity_id = ${record}`),
+    ).toEqual([{ deleted: false }]);
+
+    const finalDeleteChange = await changeAt("2026-09-07T01:00:00Z", userId, "delete");
+    const finalDelete = randomUUID();
+    await ctx.db.execute(sql`INSERT INTO fitness.human_record_target
+      (id, user_id, identity_id, change_id, predecessor_id, deleted)
+      VALUES (${finalDelete}, ${userId}, ${record}, ${finalDeleteChange}, ${restore}, true)`);
+
+    const visibility = await ctx.db.execute(sql`SELECT deleted, target_id, change_id
+      FROM fitness.v_human_record_visibility WHERE identity_id = ${record}`);
+    expect(visibility).toEqual([
+      { deleted: true, target_id: finalDelete, change_id: finalDeleteChange },
+    ]);
+    const fields = await ctx.db.execute(sql`SELECT field, operation, value
+      FROM fitness.v_human_record_field WHERE identity_id = ${record} ORDER BY field`);
+    expect(fields).toEqual([
+      { field: "name", operation: "set", value: "Kept" },
+      { field: "notes", operation: "set", value: "Still kept" },
+    ]);
+  });
+
+  it("isolates multi-target commands and exact projection provenance by user and identity", async () => {
+    const first = await identity();
+    const second = await identity();
+    const other = await identity(otherUserId);
+    const sharedChange = await change();
+    const firstTarget = await target(first, sharedChange, null, userId, {
+      name: { operation: "set", value: "First" },
+    });
+    const secondTarget = await target(second, sharedChange, null, userId, {
+      name: { operation: "set", value: "Second" },
+    });
+    const otherChange = await change(otherUserId);
+    const otherTarget = await target(other, otherChange, null, otherUserId, {
+      name: { operation: "set", value: "Other" },
+    });
+
+    const rows =
+      await ctx.db.execute(sql`SELECT user_id, identity_id, field, operation, value, target_id, change_id
+      FROM fitness.v_human_record_field
+      WHERE identity_id IN (${first}, ${second}, ${other})
+      ORDER BY value #>> '{}'`);
+    expect(rows).toEqual([
+      {
+        user_id: userId,
+        identity_id: first,
+        field: "name",
+        operation: "set",
+        value: "First",
+        target_id: firstTarget,
+        change_id: sharedChange,
+      },
+      {
+        user_id: otherUserId,
+        identity_id: other,
+        field: "name",
+        operation: "set",
+        value: "Other",
+        target_id: otherTarget,
+        change_id: otherChange,
+      },
+      {
+        user_id: userId,
+        identity_id: second,
+        field: "name",
+        operation: "set",
+        value: "Second",
+        target_id: secondTarget,
+        change_id: sharedChange,
+      },
+    ]);
   });
 });
