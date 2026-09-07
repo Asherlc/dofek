@@ -36,9 +36,17 @@ function isTechnicalDiagnostic(message: string): boolean {
 
   return (
     normalized.startsWith("unexpected") ||
+    includesAny(message, [
+      "ZodError",
+      "TypeError:",
+      "ReferenceError:",
+      "SyntaxError:",
+      "DrizzleQueryError:",
+      "PostgresError:",
+      "ClickHouseError:",
+    ]) ||
     includesAny(normalized, [
       "zod parse failed",
-      "zoderror",
       "invalid_type",
       "invalid_format",
       "invalid_value",
@@ -47,12 +55,6 @@ function isTechnicalDiagnostic(message: string): boolean {
       "is not a function",
       "unexpected token",
       "json.parse",
-      "typeerror:",
-      "referenceerror:",
-      "syntaxerror:",
-      "drizzlequeryerror:",
-      "postgreserror:",
-      "clickhouseerror:",
       "failed query:",
       "params:",
     ]) ||
