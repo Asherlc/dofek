@@ -27,6 +27,7 @@ import {
   DAILY_METRIC_TYPES,
   METRIC_STREAM_TYPES,
   NUTRITION_TYPES,
+  requireTransactionalDatabase,
   upsertBodyMeasurementBatch,
   upsertDailyMetricsBatch,
   upsertHealthEventBatch,
@@ -506,7 +507,8 @@ export function readZipEntries(
         if (match(entry.fileName)) {
           zipfile.openReadStream(entry, (err2, stream) => {
             if (err2 || !stream) {
-              zipfile.readEntry();
+              zipfile.close();
+              reject(err2 ?? new Error(`Failed to read ZIP entry: ${entry.fileName}`));
               return;
             }
             const chunks: Buffer[] = [];
@@ -515,7 +517,10 @@ export function readZipEntries(
               results.push({ name: entry.fileName, data: Buffer.concat(chunks) });
               zipfile.readEntry();
             });
-            stream.on("error", () => zipfile.readEntry());
+            stream.on("error", (error) => {
+              zipfile.close();
+              reject(error);
+            });
           });
         } else {
           zipfile.readEntry();
@@ -568,20 +573,11 @@ export async function importClinicalRecords(
     throw new Error("apple-health clinical import requires user context");
   }
 
-  // A ZIP import is a complete replacement for this provider's clinical records.
-  await db
-    .delete(clinicalRecord)
-    .where(and(eq(clinicalRecord.userId, scopedUserId), eq(clinicalRecord.providerId, providerId)));
-
   // Read all FHIR JSON files from the zip
   const clinicalFiles = await readZipEntries(
     zipPath,
     (name) => name.includes("clinical-records/") && name.endsWith(".json"),
   );
-
-  if (clinicalFiles.length === 0) {
-    return { inserted: 0, skipped: 0, errors };
-  }
 
   // Parse files, separating by resource type
   const observations: { obs: FhirObservation; raw: Record<string, unknown>; fileName: string }[] =
@@ -610,6 +606,15 @@ export async function importClinicalRecords(
       const raw: unknown = JSON.parse(file.data.toString("utf-8"));
       const result = fhirResourceSchema.safeParse(raw);
       if (!result.success) {
+        const resource = z.object({ resourceType: z.string() }).safeParse(raw);
+        if (
+          resource.success &&
+          fhirResourceSchema.options.some(
+            (schema) => schema.shape.resourceType.value === resource.data.resourceType,
+          )
+        ) {
+          throw result.error;
+        }
         skipped++;
         continue;
       }
@@ -639,7 +644,8 @@ export async function importClinicalRecords(
   }
 
   // Build source name map from XML stubs
-  const sourceNameMap = await buildSourceNameMap(xmlPath);
+  const sourceNameMap =
+    clinicalFiles.length > 0 ? await buildSourceNameMap(xmlPath) : new Map<string, string>();
 
   const downloadedAt = new Date();
   const batch: (typeof clinicalRecord.$inferInsert)[] = [];
@@ -790,15 +796,38 @@ export async function importClinicalRecords(
       });
     }
   }
-  let inserted = 0;
-  for (let i = 0; i < batch.length; i += 500) {
-    const persisted = await db
-      .insert(clinicalRecord)
-      .values(batch.slice(i, i + 500))
-      .onConflictDoNothing()
-      .returning({ id: clinicalRecord.id });
-    inserted += persisted.length;
+  for (const row of batch) {
+    if ([row.recordedAt, row.issuedAt].some((date) => date && Number.isNaN(date.getTime()))) {
+      errors.push({
+        message: `Invalid clinical record date: ${row.externalId}`,
+        externalId: row.externalId,
+      });
+    }
   }
+  if (errors.length > 0) {
+    return { inserted: 0, skipped, errors };
+  }
+
+  const inserted = await requireTransactionalDatabase(db).transaction(async (tx) => {
+    // A validated ZIP is a complete replacement, including an empty archive.
+    await tx
+      .delete(clinicalRecord)
+      .where(
+        and(eq(clinicalRecord.userId, scopedUserId), eq(clinicalRecord.providerId, providerId)),
+      );
+
+    let inserted = 0;
+    for (let i = 0; i < batch.length; i += 500) {
+      const persisted = await tx
+        .insert(clinicalRecord)
+        .values(batch.slice(i, i + 500))
+        .onConflictDoNothing()
+        .returning({ id: clinicalRecord.id });
+      inserted += persisted.length;
+    }
+
+    return inserted;
+  });
 
   return { inserted, skipped, errors };
 }
@@ -814,23 +843,10 @@ export async function importMedicationDoseEvents(
     throw new Error("apple-health medication dose import requires user context");
   }
 
-  await db
-    .delete(medicationDoseEvent)
-    .where(
-      and(
-        eq(medicationDoseEvent.userId, scopedUserId),
-        eq(medicationDoseEvent.providerId, providerId),
-      ),
-    );
-
   const doseEventFiles = await readZipEntries(
     zipPath,
     (name) => name.endsWith(".json") && name.includes("MedicationDoseEvent"),
   );
-
-  if (doseEventFiles.length === 0) {
-    return { inserted: 0, skipped: 0, errors };
-  }
 
   const skipped = 0;
   const batch: (typeof medicationDoseEvent.$inferInsert)[] = [];
@@ -863,39 +879,54 @@ export async function importMedicationDoseEvents(
     }
   }
 
-  const upsertMedicationDoseEvents = async (
-    values: Array<typeof medicationDoseEvent.$inferInsert>,
-  ) => {
-    await db
-      .insert(medicationDoseEvent)
-      .values(values)
-      .onConflictDoUpdate({
-        target: [
-          medicationDoseEvent.userId,
-          medicationDoseEvent.providerId,
-          medicationDoseEvent.externalId,
-        ],
-        set: {
-          medicationName: sql`excluded.medication_name`,
-          medicationConceptId: sql`excluded.medication_concept_id`,
-          doseStatus: sql`excluded.dose_status`,
-          recordedAt: sql`excluded.recorded_at`,
-          sourceName: sql`excluded.source_name`,
-          raw: sql`excluded.raw`,
-        },
-      });
-  };
-
-  for (let batchStart = 0; batchStart < batch.length; batchStart += 500) {
-    const batchSlice = batch.slice(batchStart, batchStart + 500);
-    if (hasDuplicateMedicationDoseConflictKeys(batchSlice)) {
-      for (const row of batchSlice) {
-        await upsertMedicationDoseEvents([row]);
-      }
-    } else {
-      await upsertMedicationDoseEvents(batchSlice);
-    }
+  if (errors.length > 0) {
+    return { inserted: 0, skipped, errors };
   }
+
+  await requireTransactionalDatabase(db).transaction(async (tx) => {
+    await tx
+      .delete(medicationDoseEvent)
+      .where(
+        and(
+          eq(medicationDoseEvent.userId, scopedUserId),
+          eq(medicationDoseEvent.providerId, providerId),
+        ),
+      );
+
+    const upsertMedicationDoseEvents = async (
+      values: Array<typeof medicationDoseEvent.$inferInsert>,
+    ) => {
+      await tx
+        .insert(medicationDoseEvent)
+        .values(values)
+        .onConflictDoUpdate({
+          target: [
+            medicationDoseEvent.userId,
+            medicationDoseEvent.providerId,
+            medicationDoseEvent.externalId,
+          ],
+          set: {
+            medicationName: sql`excluded.medication_name`,
+            medicationConceptId: sql`excluded.medication_concept_id`,
+            doseStatus: sql`excluded.dose_status`,
+            recordedAt: sql`excluded.recorded_at`,
+            sourceName: sql`excluded.source_name`,
+            raw: sql`excluded.raw`,
+          },
+        });
+    };
+
+    for (let batchStart = 0; batchStart < batch.length; batchStart += 500) {
+      const batchSlice = batch.slice(batchStart, batchStart + 500);
+      if (hasDuplicateMedicationDoseConflictKeys(batchSlice)) {
+        for (const row of batchSlice) {
+          await upsertMedicationDoseEvents([row]);
+        }
+      } else {
+        await upsertMedicationDoseEvents(batchSlice);
+      }
+    }
+  });
 
   return { inserted: batch.length, skipped, errors };
 }

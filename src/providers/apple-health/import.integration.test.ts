@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,12 +17,141 @@ import {
   type FhirObservation,
   parseFhirObservation,
 } from "./fhir.ts";
-import { extractExportXml, importAppleHealthFile, importClinicalRecords } from "./import.ts";
+import {
+  extractExportXml,
+  importAppleHealthFile,
+  importClinicalRecords,
+  importMedicationDoseEvents,
+} from "./import.ts";
 import { AppleHealthProvider } from "./provider.ts";
 import { streamHealthExport } from "./streaming.ts";
 import { enrichWorkoutFromStats, type HealthWorkout } from "./workouts.ts";
 
 const APPLE_HEALTH_PROVIDER_ID = "apple_health";
+
+describe("Apple Health archive replacement", () => {
+  let ctx: TestContext;
+  let directory: string;
+  let archiveNumber = 0;
+  const userId = "00000000-0000-0000-0000-000000000001";
+
+  beforeAll(async () => {
+    ctx = await setupTestDatabase();
+    await ctx.db
+      .insert(schema.provider)
+      .values({ id: "apple_health", name: "Apple Health" })
+      .onConflictDoNothing();
+    directory = join(tmpdir(), `ah-replacement-${Date.now()}`);
+    mkdirSync(directory, { recursive: true });
+  }, 120_000);
+
+  afterAll(async () => {
+    if (directory) rmSync(directory, { recursive: true, force: true });
+    if (ctx) await ctx.cleanup();
+  });
+
+  function archive(files: string[], kind: "clinical" | "medication") {
+    const contents = join(directory, String(archiveNumber++));
+    const records = join(contents, "clinical-records");
+    mkdirSync(records, { recursive: true });
+    const xmlPath = join(contents, "export.xml");
+    writeFileSync(xmlPath, "<HealthData/>");
+    const entryNames = files.map((content, index) => {
+      const name = `clinical-records/${kind === "medication" ? "MedicationDoseEvent" : "Observation"}-${String(index).padStart(4, "0")}.json`;
+      writeFileSync(join(contents, name), content);
+      return name;
+    });
+    const zipPath = join(contents, "export.zip");
+    execFileSync("zip", ["-q", zipPath, "export.xml", ...entryNames], { cwd: contents });
+    return { zipPath, xmlPath };
+  }
+
+  for (const kind of ["clinical", "medication"] as const) {
+    const payload = (id: string, name = "Replacement") =>
+      JSON.stringify(
+        kind === "clinical"
+          ? { resourceType: "Condition", id, code: { text: name } }
+          : {
+              uuid: id,
+              startDate: "2026-09-01T12:00:00Z",
+              medicationDisplayName: name,
+              logStatus: 1,
+            },
+      );
+
+    const replace = (files: string[]) => {
+      const { zipPath, xmlPath } = archive(files, kind);
+      return runWithTokenUser(userId, () =>
+        kind === "clinical"
+          ? importClinicalRecords(ctx.db, "apple_health", zipPath, xmlPath)
+          : importMedicationDoseEvents(ctx.db, "apple_health", zipPath),
+      );
+    };
+    const read = () =>
+      kind === "clinical"
+        ? ctx.db.select().from(schema.clinicalRecord)
+        : ctx.db.select().from(schema.medicationDoseEvent);
+
+    it(`${kind}: preserves the previous snapshot when a replacement contains malformed JSON`, async () => {
+      await replace([payload("previous")]);
+      const before = await read();
+      const result = await replace([payload("replacement"), "{invalid"]);
+      expect(result.errors).toHaveLength(1);
+      expect(await read()).toEqual(before);
+      expect(result.inserted).toBe(0);
+    });
+
+    it(`${kind}: rolls back deletion and earlier batches when PostgreSQL rejects a later batch`, async () => {
+      await replace([payload("previous")]);
+      const before = await read();
+      const files = Array.from({ length: 501 }, (_, index) =>
+        payload(`new-${index}`, index === 500 ? "Invalid\u0000text" : "Replacement"),
+      );
+      await expect(replace(files)).rejects.toMatchObject({ cause: { code: "22021" } });
+      expect(await read()).toEqual(before);
+    });
+
+    it(`${kind}: preserves the previous snapshot when the ZIP cannot be read`, async () => {
+      await replace([payload("previous")]);
+      const before = await read();
+      const { zipPath, xmlPath } = archive([], kind);
+      writeFileSync(zipPath, "invalid archive");
+      await expect(
+        runWithTokenUser(userId, () =>
+          kind === "clinical"
+            ? importClinicalRecords(ctx.db, "apple_health", zipPath, xmlPath)
+            : importMedicationDoseEvents(ctx.db, "apple_health", zipPath),
+        ),
+      ).rejects.toThrow();
+      expect(await read()).toEqual(before);
+    });
+
+    it(`${kind}: replaces a valid snapshot and clears it for a valid empty archive`, async () => {
+      await replace([payload("previous")]);
+      expect(await replace([payload("replacement")])).toMatchObject({ inserted: 1, errors: [] });
+      expect((await read()).map((row) => row.externalId)).toEqual(["replacement"]);
+      expect(await replace([])).toMatchObject({ inserted: 0, errors: [] });
+      expect(await read()).toEqual([]);
+    });
+  }
+
+  it("preserves clinical records when a supported FHIR resource fails schema validation", async () => {
+    const valid = archive(
+      [JSON.stringify({ resourceType: "Condition", id: "previous", code: { text: "Previous" } })],
+      "clinical",
+    );
+    await runWithTokenUser(userId, () =>
+      importClinicalRecords(ctx.db, "apple_health", valid.zipPath, valid.xmlPath),
+    );
+    const before = await ctx.db.select().from(schema.clinicalRecord);
+    const invalid = archive([JSON.stringify({ resourceType: "Condition", id: 123 })], "clinical");
+    const result = await runWithTokenUser(userId, () =>
+      importClinicalRecords(ctx.db, "apple_health", invalid.zipPath, invalid.xmlPath),
+    );
+    expect(result.errors).toHaveLength(1);
+    expect(await ctx.db.select().from(schema.clinicalRecord)).toEqual(before);
+  });
+});
 
 type PublishedMetricStreamRow = MetricStreamRowInput;
 
