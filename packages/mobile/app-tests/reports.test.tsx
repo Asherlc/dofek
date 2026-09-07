@@ -1,6 +1,10 @@
 /** @vitest-environment jsdom */
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  monthlyReportRecovery,
+  weeklyReportRecovery,
+} from "../../server/src/contracts/report-recovery.ts";
 
 const monthlyQueryControl = vi.hoisted(() => ({
   showEmpty: false,
@@ -39,6 +43,7 @@ vi.mock("../lib/trpc", () => ({
                   current: null,
                   history: [],
                   decisionSupport: null,
+                  recovery: weeklyReportRecovery(12, "2026-07-24"),
                   emptyState: {
                     reportKind: "weekly",
                     title: "Server weekly absence title",
@@ -88,6 +93,7 @@ vi.mock("../lib/trpc", () => ({
                   ? {
                       current: null,
                       history: [],
+                      recovery: monthlyReportRecovery(6, "2026-07-24"),
                       emptyState: {
                         reportKind: "monthly",
                         title: "Server monthly absence title",
@@ -112,11 +118,7 @@ vi.mock("../lib/trpc", () => ({
                             avgSleepTrend: null,
                           },
                       history: [],
-                      recovery: {
-                        range: { startDate: "2026-02-01", endDate: "2026-07-24" },
-                        emptyMessage:
-                          "No activity, sleep, or recovery data was found from 2026-02-01 through 2026-07-24. Sync your providers, then retry or review processing alerts.",
-                      },
+                      recovery: monthlyReportRecovery(6, "2026-07-24"),
                       decisionSupport: monthlyQueryControl.showDecisionSupport
                         ? {
                             whatChanged: ["Monthly training increased."],
@@ -214,10 +216,16 @@ describe("ReportsScreen", () => {
 
     render(<ReportsScreen />);
 
-    expect(screen.getByText("Server weekly absence title")).toBeTruthy();
-    expect(screen.getByText("Server weekly coverage requirement.")).toBeTruthy();
-    expect(screen.getByText("Server monthly absence title")).toBeTruthy();
-    expect(screen.getByText("Server monthly coverage requirement.")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "No weekly report for this period. Sync at least one day of activity, sleep, or recovery data from this period to create a report. Period: 2026-05-03 through 2026-07-24.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "No monthly report for this period. Sync at least one day of activity, sleep, or recovery data from this period to create a report. Period: 2026-02-01 through 2026-07-24.",
+      ),
+    ).toBeTruthy();
   });
 
   it("renders report metrics without a decision summary when synthesis is unavailable", async () => {
@@ -250,7 +258,7 @@ describe("ReportsScreen", () => {
 
     expect(
       screen.getByText(
-        "No activity, sleep, or recovery data was found from 2026-02-01 through 2026-07-24. Sync your providers, then retry or review processing alerts.",
+        "No monthly report for this period. Sync at least one day of activity, sleep, or recovery data from this period to create a report. Period: 2026-02-01 through 2026-07-24.",
       ),
     ).toBeTruthy();
     expect(screen.getByRole("button", { name: "Review data alerts" })).toBeTruthy();

@@ -61,7 +61,7 @@ describe("weeklyReportRouter", () => {
       expect(result.recovery).toEqual({
         range: { startDate: "2026-03-01", endDate: "2026-03-24" },
         emptyMessage:
-          "No activity, sleep, or recovery data was found from 2026-03-01 through 2026-03-24. Sync your providers, then retry or review processing alerts.",
+          "No weekly report for this period. Sync at least one day of activity, sleep, or recovery data from this period to create a report. Period: 2026-03-01 through 2026-03-24.",
       });
     });
 

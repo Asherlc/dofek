@@ -2,6 +2,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { monthlyReportRecovery } from "../../../server/src/contracts/report-recovery.ts";
 
 const captured = vi.hoisted<{ component: (() => ReactElement) | null }>(() => ({
   component: null,
@@ -74,11 +75,7 @@ vi.mock("../lib/trpc.ts", () => ({
                           avgSleepTrend: null,
                         },
                     history: [],
-                    recovery: {
-                      range: { startDate: "2026-02-01", endDate: "2026-07-24" },
-                      emptyMessage:
-                        "No activity, sleep, or recovery data was found from 2026-02-01 through 2026-07-24. Sync your providers, then retry or review processing alerts.",
-                    },
+                    recovery: monthlyReportRecovery(6, "2026-07-24"),
                   },
             isLoading: false,
             isFetching: false,
@@ -167,7 +164,7 @@ describe("Monthly report route", () => {
 
     expect(
       screen.getByText(
-        "No activity, sleep, or recovery data was found from 2026-02-01 through 2026-07-24. Sync your providers, then retry or review processing alerts.",
+        "No monthly report for this period. Sync at least one day of activity, sleep, or recovery data from this period to create a report. Period: 2026-02-01 through 2026-07-24.",
       ),
     ).toBeTruthy();
     expect(screen.getByRole("button", { name: "Review data alerts" })).toBeTruthy();
