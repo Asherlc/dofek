@@ -211,7 +211,8 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("materialized='incremental'");
     expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
     expect(sql).toContain("ref('activity_source_records')");
-    expect(sql).toContain("ref('activity_duplicate_groups')");
+    expect(sql).toContain("assumeNotNull(group_id) AS activity_id");
+    expect(sql).toContain("ref('deduped_sensor')");
     expect(sql).toContain("current_deduped_activities AS");
     expect(sql).toContain("member_activity_ids");
     expect(sql).toContain("'memberActivityId', toString(ranked.activity_id)");
@@ -244,6 +245,7 @@ describe("production analytics read-model build", () => {
     expect(sourceRecordsSql).toContain("active_provider_priority AS");
     expect(sourceRecordsSql).toContain("device_priority_match AS");
     expect(sourceRecordsSql).toContain("current_source_records AS");
+    expect(sourceRecordsSql).toContain("active_activity.group_id AS group_id");
     expect(sourceRecordsSql).toContain("provider_absent_at IS NULL");
     expect(sourceRecordsSql).toContain("deleted_at IS NULL");
     expect(sourceRecordsSql).toContain("length(active_device_priority.source_name_pattern) DESC");
@@ -273,13 +275,9 @@ describe("production analytics read-model build", () => {
 
     expect(groupsSql).toContain("materialized='incremental'");
     expect(groupsSql).toContain("ref('activity_source_records')");
-    expect(groupsSql).toContain("ref('activity_duplicate_matches')");
-    expect(groupsSql).toContain("current_edges AS");
-    expect(groupsSql).toContain("convergence_check AS");
-    expect(groupsSql).toContain("groupArray(tuple(activity_id, linked_activity_ids))");
+    expect(groupsSql).toContain("toString(source_records.group_id) AS group_id");
     expect(groupsSql).toContain("UNION ALL");
     expect(groupsSql).toContain("current_duplicate_groups AS");
-    expect(groupsSql).toContain("arrayFold(");
   });
 
   it("fails closed instead of tombstoning all activity source records from an empty source scan", () => {

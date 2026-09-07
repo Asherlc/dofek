@@ -23,8 +23,25 @@ Model dependencies are declared with dbt `ref()` calls. `sensor_scalar_sample`
 stages scalar metric samples, `deduped_sensor` reads `sensor_scalar_sample`, and
 `activity_vo2max_estimate` reads `deduped_sensor` to keep the expensive VO2 max
 activity/sample joins out of web/API requests. `deduped_activities` materializes
-the activity overlap graph once, and `deduped_activity_members` exposes canonical
-activity/member aliases for downstream models. `activity_sensor_sample` and
+persisted PostgreSQL activity groups, and `deduped_activity_members` exposes canonical
+activity/member aliases for downstream models. `activity_duplicate_matches`
+retains overlap evidence for integrity diagnostics; `activity_duplicate_groups`
+projects `activity_source_records.group_id` without deriving identity from those
+edges. The [activity model](models/read_models/deduped_activities.sql) uses the
+group UUID as `activity_id` and the chosen member UUID as `primary_activity_id`.
+Representative selection orders deduped sensor presence, sample count, elevation
+presence, specific canonical type, provider-type refinement, provider priority,
+then member UUID. Samples count toward a member only when their winning provider
+matches and their timestamp lies within its inclusive normalized window; the
+group's served sample union remains provider-independent. This attribution cannot
+distinguish overlapping members from the same provider. Location payload and
+relational strength sets are not available to this upstream scalar projection.
+Missing persisted membership fails the build. Existing deployments must apply
+[migration 0076](../src/db/clickhouse-migrations/0076_stable_activity_group_id.ts)
+and deliver PostgreSQL membership through CDC before refreshing these models;
+the migration only adds nullable columns, using ClickHouse's
+[ADD COLUMN](https://clickhouse.com/docs/reference/statements/alter/column#add-column)
+without inventing membership for existing rows. `activity_sensor_sample` and
 `activity_location_sample` are bounded microbatch intermediates over sample
 time. `body_measurement` incrementally rebuilds only users whose body samples
 or priority inputs changed, and `analytics.v_body_measurement` is a thin
@@ -126,9 +143,9 @@ freshness as their microbatch event time so late provider stream syncs and
 late activity dedupe changes can reattach older workout samples outside the
 normal recorded-time lookback. `deduped_activities` and `deduped_activity_members`
 materialize canonical activity identity once, but incremental runs only rebuild
-activity windows affected by new raw activity changes; provider/device priority
-changes intentionally rebuild the full activity dedupe graph because they can
-change canonical selection globally. The final resting heart rate, activity
+activity groups affected by scoped member or group IDs; provider/device priority
+changes can change representative selection globally while persisted group IDs
+remain stable. The final resting heart rate, activity
 aggregate, and activity summary models use dirty keys from those intermediates
 and `max_threads=1` to keep the offline aggregate work out of web/API requests.
 `activity_vo2max_estimate` also uses dirty activity/user keys and

@@ -24,13 +24,13 @@ WITH target_state AS (
 {% if activity_refresh_scoped %}
 prior_scope_member_ids AS (
     {% if is_incremental() %}
-        SELECT member_activity_id AS activity_id
-        FROM {{ this }} FINAL
-        WHERE is_deleted = 0
-            AND user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        SELECT prior_members.member_activity_id AS activity_id
+        FROM {{ this }} AS prior_members FINAL
+        WHERE prior_members.is_deleted = 0
+            AND prior_members.user_id = toUUID('{{ var("activity_refresh_user_id") }}')
             AND (
-                activity_id IN {{ activity_refresh_ids() }}
-                OR member_activity_id IN {{ activity_refresh_ids() }}
+                prior_members.activity_id IN {{ activity_refresh_ids() }}
+                OR prior_members.member_activity_id IN {{ activity_refresh_ids() }}
             )
     {% else %}
         SELECT CAST(null, 'Nullable(UUID)') AS activity_id

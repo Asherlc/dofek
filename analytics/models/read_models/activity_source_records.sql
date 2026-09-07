@@ -13,16 +13,40 @@
 {% set activity_source_mass_tombstone_ratio = var('activity_source_mass_tombstone_ratio', 0.95) %}
 {% set activity_refresh_scoped = activity_refresh_scope_enabled() %}
 
-WITH active_activity AS (
+WITH
+{% if activity_refresh_scoped %}
+prior_scope_members AS (
+    {% if is_incremental() %}
+        SELECT activity_id
+        FROM {{ this }} FINAL
+        WHERE is_deleted = 0
+            AND user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+            AND (activity_id IN {{ activity_refresh_ids() }} OR group_id IN {{ activity_refresh_ids() }})
+    {% else %}
+        SELECT CAST(NULL, 'Nullable(UUID)') AS activity_id
+        WHERE 1 = 0
+    {% endif %}
+),
+{% endif %}
+
+active_activity AS (
     SELECT *
     FROM {{ source('postgres_fitness', 'activity') }} FINAL
     WHERE
         _peerdb_is_deleted = 0
         AND provider_absent_at IS NULL
         AND deleted_at IS NULL
+        AND throwIf(
+            group_id IS NULL OR group_id = toUUID('00000000-0000-0000-0000-000000000000'),
+            'Active activity is missing persisted group_id; reconcile PostgreSQL membership before CDC'
+        ) = 0
         {% if activity_refresh_scoped %}
         AND user_id = toUUID('{{ var("activity_refresh_user_id") }}')
-        AND id IN {{ activity_refresh_ids() }}
+        AND (
+            id IN {{ activity_refresh_ids() }}
+            OR group_id IN {{ activity_refresh_ids() }}
+            OR id IN (SELECT activity_id FROM prior_scope_members)
+        )
         {% endif %}
 ),
 
@@ -64,6 +88,7 @@ device_priority_match AS (
 current_source_records AS (
     SELECT
         active_activity.id AS activity_id,
+        active_activity.group_id AS group_id,
         active_activity.provider_id AS provider_id,
         active_activity.user_id AS user_id,
         active_activity.external_id AS external_id,
@@ -96,7 +121,7 @@ existing_source_records AS (
         WHERE is_deleted = 0
             {% if activity_refresh_scoped %}
             AND user_id = toUUID('{{ var("activity_refresh_user_id") }}')
-            AND activity_id IN {{ activity_refresh_ids() }}
+            AND (activity_id IN {{ activity_refresh_ids() }} OR group_id IN {{ activity_refresh_ids() }})
             {% endif %}
     {% else %}
         SELECT CAST(NULL, 'Nullable(UUID)') AS activity_id
@@ -148,6 +173,7 @@ refresh_clock AS (
 
 SELECT
     activity_id,
+    group_id,
     provider_id,
     user_id,
     external_id,
@@ -177,6 +203,7 @@ UNION ALL
 
 SELECT
     assumeNotNull(activity_id) AS activity_id,
+    CAST(NULL, 'Nullable(UUID)') AS group_id,
     CAST(NULL, 'Nullable(String)') AS provider_id,
     CAST(NULL, 'Nullable(UUID)') AS user_id,
     CAST(NULL, 'Nullable(String)') AS external_id,

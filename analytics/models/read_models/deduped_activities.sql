@@ -15,6 +15,10 @@ WITH ranked AS (
     SELECT *
     FROM {{ ref('activity_source_records') }} FINAL
     WHERE is_deleted = 0
+        AND throwIf(
+            group_id IS null OR group_id = toUUID('00000000-0000-0000-0000-000000000000'),
+            'Active activity source record is missing persisted group_id'
+        ) = 0
         {% if activity_refresh_scoped %}
         AND user_id = toUUID('{{ var("activity_refresh_user_id") }}')
         {% endif %}
@@ -24,20 +28,39 @@ final_groups AS (
     SELECT
         activity_id,
         group_id
-    FROM {{ ref('activity_duplicate_groups') }} FINAL
-    WHERE is_deleted = 0
+    FROM ranked
+
+    UNION DISTINCT
+
+    SELECT
+        id AS activity_id,
+        group_id
+    FROM {{ source('postgres_fitness', 'activity') }} FINAL
+    WHERE _peerdb_is_deleted = 0
+        AND deleted_at IS null
+        AND provider_absent_at IS NOT null
+        {% if activity_refresh_scoped %}
+        AND user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        {% endif %}
 ),
 
 sensor_bearing_members AS (
-    SELECT DISTINCT
+    SELECT
         samples.user_id AS user_id,
-        assumeNotNull(samples.activity_id) AS activity_id
-    FROM {{ source('ingest', 'metric_stream_current') }} AS samples FINAL
+        ranked.activity_id AS activity_id,
+        count() AS sensor_sample_count,
+        countIf(samples.channel = 'altitude') > 0 AS has_elevation
+    FROM {{ ref('deduped_sensor') }} AS samples FINAL
     INNER JOIN ranked
         ON ranked.user_id = samples.user_id
-        AND ranked.activity_id = samples.activity_id
+        AND ranked.provider_id = samples.provider_id
     WHERE samples.is_deleted = 0
-        AND samples.activity_id IS NOT null
+        AND samples.recorded_at >= ranked.started_at
+        AND samples.recorded_at <= greatest(
+            coalesce(ranked.ended_at, ranked.started_at + INTERVAL 12 HOUR),
+            ranked.started_at
+        )
+    GROUP BY samples.user_id, ranked.activity_id
 ),
 
 absent_group_members AS (
@@ -89,7 +112,7 @@ best AS (
     SELECT *
     FROM (
         SELECT
-            final_groups.group_id AS group_id,
+            ranked.group_id AS group_id,
             ranked.activity_id AS canonical_id,
             ranked.provider_id AS provider_id,
             ranked.user_id AS user_id,
@@ -100,25 +123,26 @@ best AS (
             ranked.ended_at AS ended_at,
             ranked.source_name AS source_name,
             ranked.priority AS priority,
-            sensor_bearing_members.activity_id IS NOT null AS has_sensor_data,
+            coalesce(sensor_bearing_members.sensor_sample_count, 0) AS sensor_sample_count,
+            coalesce(sensor_bearing_members.has_elevation, 0) AS has_elevation,
             row_number() OVER (
-                PARTITION BY final_groups.group_id
+                PARTITION BY ranked.group_id
                 ORDER BY
+                    sensor_sample_count > 0 DESC,
+                    sensor_sample_count DESC,
+                    has_elevation DESC,
                     ranked.canonical_type IN ('other', 'cardio') ASC,
                     if(
                         ranked.provider_type IS NOT null
                         AND trim(BOTH ' ' FROM ranked.provider_type) != ''
-                        AND lowerUTF8(ranked.provider_type) != lowerUTF8(ranked.canonical_type),
+                        AND lowerUTF8(trim(BOTH ' ' FROM ranked.provider_type)) != lowerUTF8(ranked.canonical_type),
                         0,
                         1
                     ) ASC,
-                    has_sensor_data DESC,
                     ranked.priority ASC,
                     toString(ranked.activity_id) ASC
             ) AS row_number
-        FROM final_groups
-        INNER JOIN ranked
-            ON ranked.activity_id = final_groups.activity_id
+        FROM ranked
         LEFT JOIN sensor_bearing_members
             ON sensor_bearing_members.user_id = ranked.user_id
             AND sensor_bearing_members.activity_id = ranked.activity_id
@@ -130,13 +154,13 @@ best_context AS (
     SELECT *
     FROM (
         SELECT
-            final_groups.group_id AS group_id,
+            ranked.group_id AS group_id,
             ranked.timezone AS timezone,
             ranked.start_utc_offset_minutes AS start_utc_offset_minutes,
             ranked.end_utc_offset_minutes AS end_utc_offset_minutes,
             ranked.local_time_source AS local_time_source,
             row_number() OVER (
-                PARTITION BY final_groups.group_id
+                PARTITION BY ranked.group_id
                 ORDER BY
                     multiIf(
                         ranked.local_time_source = 'gps_timezone', 1,
@@ -156,9 +180,7 @@ best_context AS (
                     ranked.priority ASC,
                     toString(ranked.activity_id) ASC
             ) AS row_number
-        FROM final_groups
-        INNER JOIN ranked
-            ON ranked.activity_id = final_groups.activity_id
+        FROM ranked
     )
     WHERE row_number = 1
 ),
@@ -218,7 +240,8 @@ merged AS (
 
 current_deduped_activities AS (
     SELECT
-        id AS activity_id,
+        assumeNotNull(group_id) AS activity_id,
+        id AS primary_activity_id,
         provider_id,
         user_id,
         canonical_type,
@@ -246,13 +269,13 @@ current_deduped_activities AS (
 {% if activity_refresh_scoped %}
 prior_scope_member_ids AS (
     {% if is_incremental() %}
-        SELECT arrayJoin(member_activity_ids) AS activity_id
-        FROM {{ this }} FINAL
-        WHERE is_deleted = 0
-            AND user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        SELECT arrayJoin(prior_activities.member_activity_ids) AS activity_id
+        FROM {{ this }} AS prior_activities FINAL
+        WHERE prior_activities.is_deleted = 0
+            AND prior_activities.user_id = toUUID('{{ var("activity_refresh_user_id") }}')
             AND (
-                activity_id IN {{ activity_refresh_ids() }}
-                OR hasAny(member_activity_ids, {{ activity_refresh_ids() }})
+                prior_activities.activity_id IN {{ activity_refresh_ids() }}
+                OR hasAny(prior_activities.member_activity_ids, {{ activity_refresh_ids() }})
             )
     {% else %}
         SELECT CAST(null, 'Nullable(UUID)') AS activity_id
@@ -290,6 +313,7 @@ scoped_current_deduped_activities AS (
 existing_deduped_activities AS (
     SELECT
         deduped.activity_id,
+        deduped.primary_activity_id,
         deduped.provider_id,
         deduped.user_id,
         deduped.canonical_type,
@@ -345,7 +369,7 @@ SELECT
     activity_id,
     provider_id,
     assumeNotNull(user_id) AS user_id,
-    activity_id AS primary_activity_id,
+    primary_activity_id,
     canonical_type,
     provider_type,
     modality,
@@ -377,7 +401,7 @@ SELECT
     activity_id,
     provider_id,
     assumeNotNull(user_id) AS user_id,
-    activity_id AS primary_activity_id,
+    primary_activity_id,
     canonical_type,
     provider_type,
     modality,

@@ -11,6 +11,7 @@ const activityB = "00000000-0000-4000-8000-000000000202";
 const activityC = "00000000-0000-4000-8000-000000000203";
 const activityD = "00000000-0000-4000-8000-000000000204";
 const userA = "00000000-0000-4000-8000-000000000001";
+const persistedGroup = "00000000-0000-4000-8000-000000000901";
 const userB = "00000000-0000-4000-8000-000000000002";
 const tombstonedActivity = "00000000-0000-4000-8000-000000000205";
 const otherUserActivity = "00000000-0000-4000-8000-000000000206";
@@ -39,7 +40,7 @@ describe("activity_duplicate_groups read model", () => {
     await client.close();
   });
 
-  it("assigns one group to every activity in a four-node duplicate chain", async () => {
+  it("projects the persisted group rather than deriving identity from duplicate edges", async () => {
     const activeClient = requireClient(client);
     await seedFixture(activeClient, database);
 
@@ -59,19 +60,19 @@ ${renderModel(database)}`,
     });
 
     expect(groupRowsSchema.parse(await result.json<unknown>())).toEqual([
-      { activityId: activityA, groupId: activityA },
-      { activityId: activityB, groupId: activityA },
-      { activityId: activityC, groupId: activityA },
-      { activityId: activityD, groupId: activityA },
+      { activityId: activityA, groupId: persistedGroup },
+      { activityId: activityB, groupId: persistedGroup },
+      { activityId: activityC, groupId: persistedGroup },
+      { activityId: activityD, groupId: persistedGroup },
     ]);
   }, 180_000);
 
-  it("ignores duplicate edges whose endpoint is inactive or belongs to another user", async () => {
+  it("keeps persisted groups distinct despite cross-user overlap evidence", async () => {
     const activeClient = requireClient(client);
     await seedFixture(activeClient, database);
     await activeClient.command({
-      query: `INSERT INTO ${database}.activity_source_records VALUES
-        ('${otherUserActivity}', '${userB}', 0)`,
+      query: `INSERT INTO ${database}.activity_source_records (activity_id, user_id, is_deleted, group_id) VALUES
+        ('${otherUserActivity}', '${userB}', 0, '${otherUserActivity}')`,
     });
     await activeClient.command({
       query: `INSERT INTO ${database}.activity_duplicate_matches VALUES
@@ -95,15 +96,15 @@ ${renderModel(database)}`,
     });
 
     expect(groupRowsSchema.parse(await result.json<unknown>())).toEqual([
-      { activityId: activityA, groupId: activityA },
-      { activityId: activityB, groupId: activityA },
-      { activityId: activityC, groupId: activityA },
-      { activityId: activityD, groupId: activityA },
+      { activityId: activityA, groupId: persistedGroup },
+      { activityId: activityB, groupId: persistedGroup },
+      { activityId: activityC, groupId: persistedGroup },
+      { activityId: activityD, groupId: persistedGroup },
       { activityId: otherUserActivity, groupId: otherUserActivity },
     ]);
   }, 180_000);
 
-  it("converges a sparse component beyond the former 16-round propagation cap", async () => {
+  it("projects every member of a large persisted group", async () => {
     const activeClient = requireClient(client);
     const activityIds = Array.from(
       { length: 18 },
@@ -135,7 +136,7 @@ ${renderModel(database)}`,
     await activeClient.command({ query: `TRUNCATE TABLE ${database}.activity_source_records` });
     await activeClient.command({ query: `TRUNCATE TABLE ${database}.activity_duplicate_matches` });
     await activeClient.command({
-      query: `INSERT INTO ${database}.activity_source_records VALUES
+      query: `INSERT INTO ${database}.activity_source_records (activity_id, user_id, is_deleted) VALUES
         ('${activityA}', '${userA}', 0),
         ('${activityB}', '${userA}', 0),
         ('${activityC}', '${userA}', 0)`,
@@ -208,7 +209,8 @@ async function seedFixture(client: ClickHouseClient, database: string): Promise<
     `CREATE TABLE ${database}.activity_source_records (
       activity_id UUID,
       user_id UUID,
-      is_deleted UInt8
+      is_deleted UInt8,
+      group_id Nullable(UUID) DEFAULT '${persistedGroup}'
     ) ENGINE = ReplacingMergeTree() ORDER BY activity_id`,
     `CREATE TABLE ${database}.activity_duplicate_matches (
       activity_id UUID,
@@ -222,7 +224,7 @@ async function seedFixture(client: ClickHouseClient, database: string): Promise<
       is_deleted UInt8,
       refreshed_at DateTime64(9, 'UTC')
     ) ENGINE = ReplacingMergeTree(refresh_version) ORDER BY activity_id`,
-    `INSERT INTO ${database}.activity_source_records VALUES
+    `INSERT INTO ${database}.activity_source_records (activity_id, user_id, is_deleted) VALUES
       ('${activityA}', '${userA}', 0),
       ('${activityB}', '${userA}', 0),
       ('${activityC}', '${userA}', 0),
@@ -244,7 +246,7 @@ async function seedChainFixture(
   await client.command({ query: `TRUNCATE TABLE ${database}.activity_duplicate_matches` });
   await client.command({ query: `TRUNCATE TABLE ${database}.activity_duplicate_groups` });
   await client.command({
-    query: `INSERT INTO ${database}.activity_source_records VALUES
+    query: `INSERT INTO ${database}.activity_source_records (activity_id, user_id, is_deleted) VALUES
       ${activityIds.map((activityId) => `('${activityId}', '${userA}', 0)`).join(",\n      ")}`,
   });
   await client.command({
