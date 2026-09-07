@@ -55,9 +55,11 @@ The [staging model](models/staging/sensor_scalar_sample.sql) preserves the lates
 nullable link, and the [deduplication model](models/read_models/deduped_sensor.sql)
 keeps it with the winning sample using tuple-valued
 [argMin](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/argmin).
-`activity_sensor_sample` and
-`activity_location_sample` are bounded microbatch intermediates over sample
-time. `body_measurement` incrementally rebuilds only users whose body samples
+`activity_sensor_sample` is a bounded microbatch intermediary over source
+refresh time. `activity_location_sample` is an append-incremental current-state
+reconciliation: changed activity, membership, and scoped repair keys identify
+affected stable groups, then provider selection reads each affected group's
+complete current tracks before replacing or tombstoning route points. `body_measurement` incrementally rebuilds only users whose body samples
 or priority inputs changed, and `analytics.v_body_measurement` is a thin
 active-row view over that dbt-owned canonical table. Insert-triggered
 materialized views reduce provider changes to compact `(user_id, provider_id)`
@@ -165,15 +167,17 @@ Production `DBT_SAFE_MODELS` currently selects `sensor_scalar_sample`,
 `activity_aerobic_efficiency`, `activity_polarization_zones`,
 `activity_power_curve`, `cycling_activity`, `daily_cycling`, `provider_stats`,
 `daily_activity_load`, `daily_strain`, `healthspan_activity_zone_minutes`,
-and `weekly_healthspan`. Activity sample-time models use dbt's `microbatch`
+and `weekly_healthspan`. Scalar activity sample models use dbt's `microbatch`
 incremental strategy with daily batches and short lookbacks so ClickHouse
 processes bounded windows instead of one large activity/window query. Activity
 stream staging uses the `metric_stream_freshness` source alias and batches by
 `_peerdb_synced_at`; downstream activity sample membership models
-(`activity_sensor_sample` and `activity_location_sample`) use upstream source
-freshness as their microbatch event time so late provider stream syncs and
-late activity dedupe changes can reattach older workout samples outside the
-normal recorded-time lookback. `deduped_activities` and `deduped_activity_members`
+(`activity_sensor_sample`) use upstream source freshness as their microbatch
+event time so late provider stream syncs and late activity dedupe changes can
+reattach older workout samples outside the normal recorded-time lookback.
+Location reconciliation deliberately is not event-time microbatched: its
+provider counts must see complete current tracks for affected groups, and its
+target reconciliation is limited to those groups. `deduped_activities` and `deduped_activity_members`
 materialize canonical activity identity once, but incremental runs only rebuild
 activity groups affected by scoped member or group IDs; provider/device priority
 changes can change representative selection globally while persisted group IDs
@@ -214,7 +218,7 @@ pnpm tsx scripts/with-env.ts -- env \
   --threads 1 \
   --event-time-start "2025-01-01" \
   --event-time-end "2025-02-01" \
-  --select "sensor_scalar_sample deduped_sensor activity_sensor_sample activity_location_sample"
+  --select "sensor_scalar_sample deduped_sensor activity_sensor_sample"
 ```
 
 For a microbatch replay, choose the smallest interval that contains the data
@@ -232,10 +236,11 @@ not rewritten by the model change alone. First apply migrations 0076 through
 0078 and verify that PostgreSQL group membership has reached ClickHouse CDC.
 If historical scalar provenance was projected before migration 0077, run the
 bounded microbatch replay above in this order:
-`sensor_scalar_sample`, `deduped_sensor`, `activity_sensor_sample`, then
-`activity_location_sample`. After that replay, run an explicit, monitored full
-refresh of the sensor summary, location summary, final activity summary, and
-VO2 max estimate in dependency order, with an `initial_lookback_days` that
+`sensor_scalar_sample`, `deduped_sensor`, then `activity_sensor_sample`.
+After that replay, first run an explicit, monitored full refresh of
+`activity_location_sample`, then full-refresh the sensor summary, location
+summary, final activity summary, and VO2 max estimate in dependency order, with
+an `initial_lookback_days` that
 covers every retained activity that should remain in all four tables. dbt
 recommends rebuilding an
 incremental model when its logic changes because historical transformations

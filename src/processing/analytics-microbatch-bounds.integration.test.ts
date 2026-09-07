@@ -15,7 +15,6 @@ const microbatchModels = [
   "sensor_scalar_sample",
   "deduped_sensor",
   "activity_sensor_sample",
-  "activity_location_sample",
 ] as const;
 const batchEventSchema = z.object({
   info: z.object({
@@ -204,7 +203,6 @@ ORDER BY (user_id, member_activity_id)`,
         sensor_scalar_sample: { batchIndex: 1, totalBatches: 1 },
         deduped_sensor: { batchIndex: 1, totalBatches: 1 },
         activity_sensor_sample: { batchIndex: 1, totalBatches: 1 },
-        activity_location_sample: { batchIndex: 1, totalBatches: 1 },
       });
     } finally {
       await Promise.all([

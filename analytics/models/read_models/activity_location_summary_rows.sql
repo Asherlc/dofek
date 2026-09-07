@@ -14,12 +14,7 @@
 WITH
 {% if is_incremental() %}
 target_state AS (
-    SELECT
-        coalesce(
-            max(refreshed_at),
-            toDateTime64('1970-01-01 00:00:00', 9, 'UTC')
-        ) AS last_refreshed_at,
-        count() = 0 AS is_empty
+    SELECT count() = 0 AS is_empty
     FROM {{ this }}
 ),
 {% endif %}
@@ -33,19 +28,41 @@ current_activity AS (
     WHERE is_deleted = 0
 ),
 
-existing_summary AS (
+existing_summary_state AS (
     {% if is_incremental() %}
         SELECT
             activity_id,
-            user_id
-        FROM {{ this }} FINAL
-        WHERE is_deleted = 0
+            user_id,
+            max(refresh_version) AS summary_refresh_version,
+            argMax(is_deleted, refresh_version) AS is_deleted
+        FROM {{ this }}
+        GROUP BY activity_id, user_id
     {% else %}
         SELECT
             CAST(null, 'Nullable(UUID)') AS activity_id,
-            CAST(null, 'Nullable(UUID)') AS user_id
+            CAST(null, 'Nullable(UUID)') AS user_id,
+            CAST(null, 'Nullable(UInt64)') AS summary_refresh_version,
+            CAST(null, 'Nullable(UInt8)') AS is_deleted
         WHERE 1 = 0
     {% endif %}
+),
+
+existing_summary AS (
+    SELECT
+        activity_id,
+        user_id,
+        summary_refresh_version
+    FROM existing_summary_state
+    WHERE is_deleted = 0
+),
+
+location_source_versions AS MATERIALIZED (
+    SELECT
+        activity_id,
+        user_id,
+        max(refresh_version) AS refresh_version
+    FROM {{ ref('activity_location_sample') }}
+    GROUP BY activity_id, user_id
 ),
 
 {% if activity_refresh_scoped %}
@@ -86,17 +103,25 @@ initial_dirty_keys AS (
 ),
 
 location_dirty_keys AS (
+    {% if is_incremental() %}
     SELECT DISTINCT
-        activity_id,
-        user_id
-    FROM {{ ref('activity_location_sample') }}
-    WHERE
-        {% if is_incremental() %}
-            NOT (SELECT is_empty FROM target_state)
-            AND refreshed_at > (SELECT last_refreshed_at FROM target_state)
-        {% else %}
-            1 = 0
-        {% endif %}
+        location_source_versions.activity_id AS activity_id,
+        location_source_versions.user_id AS user_id
+    FROM location_source_versions
+    LEFT JOIN existing_summary_state
+        ON existing_summary_state.activity_id = location_source_versions.activity_id
+        AND existing_summary_state.user_id = location_source_versions.user_id
+    WHERE NOT (SELECT is_empty FROM target_state)
+        AND (
+            existing_summary_state.activity_id IS null
+            OR location_source_versions.refresh_version
+                > existing_summary_state.summary_refresh_version
+        )
+    {% else %}
+    SELECT CAST(null, 'Nullable(UUID)') AS activity_id,
+        CAST(null, 'Nullable(UUID)') AS user_id
+    WHERE 1 = 0
+    {% endif %}
 ),
 
 stale_dirty_keys AS (

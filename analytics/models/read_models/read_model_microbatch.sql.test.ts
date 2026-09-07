@@ -77,7 +77,6 @@ describe("production analytics read-model build", () => {
     expect(entrypoint).toContain("DBT_E2E_MICROBATCH_VARS=");
     expect(entrypoint).toContain('"sensor_scalar_sample_begin":"2026-01-01"');
     expect(entrypoint).toContain('"activity_sensor_sample_begin":"2026-01-01"');
-    expect(entrypoint).toContain('"activity_location_sample_begin":"2026-01-01"');
     expect(entrypoint).toContain('"deduped_sensor_begin":"2026-01-01"');
     expect(analyticsBlockMatch?.groups?.body).toContain("run_dbt_safe_builds");
     expect(analyticsBlockMatch?.groups?.body).not.toContain("DBT_E2E_MICROBATCH_VARS");
@@ -385,27 +384,27 @@ describe("production analytics read-model build", () => {
     expect(activityLocationSampleSql).not.toContain("source('postgres_fitness', 'metric_stream')");
   });
 
-  it("materializes activity location membership as a microbatch intermediary", () => {
+  it("reconciles activity location membership from complete affected-group tracks", () => {
     expect(existsSync(new URL("./activity_location_sample.sql", import.meta.url))).toBe(true);
     const sql = readModel("activity_location_sample");
 
-    expect(sql).toContain("incremental_strategy='microbatch'");
-    expect(sql).toContain(
-      "activity_location_sample_begin = var('activity_location_sample_begin', default_microbatch_begin)",
-    );
-    expect(sql).toContain("begin=activity_location_sample_begin");
-    expect(sql).toContain("event_time='refreshed_at'");
-    expect(sql).toContain("lookback=3");
+    expect(sql).toContain("incremental_strategy='append'");
+    expect(sql).toContain("affected_groups AS MATERIALIZED");
+    expect(sql).toContain("affected_location_rows AS MATERIALIZED");
+    expect(sql).toContain("provider_counts AS");
+    expect(sql).toContain("existing_location_samples AS MATERIALIZED");
     expect(sql).toContain("source('ingest', 'metric_stream_freshness')");
     expect(sql).toContain("ref('deduped_activity_members')");
     expect(sql).toContain("member_activity_id IN {{ activity_refresh_ids() }}");
     expect(sql).not.toContain("source('analytics', 'v_activity_members')");
     expect(sql).toContain("channel = 'location'");
-    expect(sql).toContain("argMax(point, version) AS point");
+    expect(sql).toContain(
+      "argMax(location_versions.point, location_versions.version) AS point",
+    );
     expect(sql).toContain("toString(point) AS point_text");
-    expect(sql).toContain("startsWith(location_rows.point_text, '{')");
-    expect(sql).toContain("JSONExtract(location_rows.point_text, 'coordinates', 'Array(Float64)')[2]");
-    expect(sql).toContain("trim(BOTH '()' FROM location_rows.point_text)");
+    expect(sql).toContain("startsWith(affected_location_rows.point_text, '{')");
+    expect(sql).toContain("JSONExtract(affected_location_rows.point_text, 'coordinates', 'Array(Float64)')[2]");
+    expect(sql).toContain("trim(BOTH '()' FROM affected_location_rows.point_text)");
   });
 
   it("uses the same null-ended activity window for duplicate matches and merged activities", () => {
@@ -447,9 +446,7 @@ describe("production analytics read-model build", () => {
       "greatest(samples.refreshed_at, activity_days.source_synced_at) AS source_refreshed_at",
     );
     expect(activitySensorSampleSql).toContain("source_refreshed_at AS refreshed_at");
-    expect(activityLocationSampleSql).toContain(
-      "greatest(location_rows.ingested_at, activity_members.source_synced_at) AS source_refreshed_at",
-    );
+    expect(activityLocationSampleSql).toContain("affected_group_refresh.source_refreshed_at");
     expect(activityLocationSampleSql).toContain("source_refreshed_at AS refreshed_at");
     expect(activityLocationSampleSql).not.toContain("now64(9) AS refreshed_at");
     expect(sleepHeartRateSampleSql).toContain(

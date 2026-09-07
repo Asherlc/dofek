@@ -113,3 +113,119 @@ The original rebuild ordering remains required. Rebuild `sensor_scalar_sample` a
 - What required investigation: stale local physical schemas produced genuine ClickHouse unknown-column errors despite current source definitions; applying migrations before dbt proved the rollout dependency. ClickHouse alias shadowing and SQLFluff's incremental-Jinja false-positive also required isolated checks.
 - Useful context next time: start analytics validation with `pnpm setup-db` whenever a task follows a schema-owning task in the same long-lived workspace. Keep member IDs explicitly classified as provenance/dirty keys versus published identities during every downstream audit.
 - Suggested guidance update: add “apply pending ClickHouse migrations before `pnpm analytics:build` in long-lived workspaces” to `docs/testing.md`; continue using `integration-tests-ready` for database behavior. A future SQL lint skill/runbook could record the narrowly reproduced dbt incremental ST03 limitation so agents do not repeatedly attempt semantic rewrites for it.
+
+## Fix round 2
+
+The two microbatch correctness findings are closed.
+
+- `activity_sensor_sample` still uses daily dbt microbatches, but its prior-row
+  reconciliation is now limited to the exact `(user_id, channel, recorded_at)`
+  keys present in the injected source batch. A replayed active sample is mapped
+  only to current groups that contain its non-null `source_activity_id`; a
+  deletion has no desired active mapping and therefore tombstones existing
+  mappings for that replayed key. Unrelated historical target rows are never
+  compared with a one-batch source slice. `join_use_nulls=1` makes the
+  left-anti-join tombstone predicate executable for UUID keys.
+- `activity_location_sample` is now an ordinary append-incremental current-state
+  reconciliation rather than an event-time microbatch. Raw arrival changes,
+  activity-group lifecycle changes, and explicit repair scope select affected
+  stable groups. Complete current location versions are then resolved only for
+  those groups' current members, one provider track wins deterministically by
+  complete active point count and provider ID, and only those groups' prior
+  point IDs are reconciled. Losing-provider arrivals advance the affected
+  group's source freshness even when the winning track does not change.
+- `activity_location_summary_rows` now invalidates from the location sample
+  table's monotonic `refresh_version`. This avoids comparing historical source
+  timestamps with a summary row's wall-clock refresh and guarantees that a
+  route-provider switch recomputes the visible centroid/distance.
+- Location was removed from the microbatch-bounds contract, E2E vars, and
+  microbatch documentation. Historical rollout now bounded-replays scalar
+  staging/deduplication/sample models, full-refreshes the location current-state
+  sample model, and then full-refreshes both summaries and downstream activity
+  models in dependency order.
+
+### Transition-first RED evidence
+
+- `rtk pnpm test:integration -- src/db/activity-payload-dbt-microbatch.integration.test.ts`
+  initially failed after the Sep 6 replay: both old and new group mappings were
+  active instead of the old mapping being tombstoned. Inspecting the compiled
+  batch showed a correctly injected source predicate but no emitted tombstone.
+  Direct execution isolated the cause: with ClickHouse's default
+  `join_use_nulls=0`, an unmatched non-nullable UUID became the zero UUID, so
+  `activity_samples.activity_id IS NULL` was false.
+- `rtk pnpm test:integration -- src/db/activity-payload-dbt-microbatch.integration.test.ts -t "preserves unrelated routes"`
+  initially returned five active points after a partial provider-B arrival:
+  provider A's complete three-point route plus B's two points. Expected output
+  remained A's three points until B became the complete four-point winner.
+- During GREEN implementation, the first incremental location compile failed
+  with `Correlated subqueries are not supported in JOINs yet ...
+  affected_groups`; fully qualified affected-key CTE outputs and non-correlated
+  filtering fixed the ClickHouse analyzer shape without changing the design.
+  The next behavioral run exposed the stale summary centroid (37.81 instead of
+  37.915), which proved historical source-time watermark comparison could not
+  observe the provider switch; `refresh_version` invalidation fixed it.
+
+### Fix-round GREEN evidence
+
+- `rtk pnpm test:integration -- src/db/activity-payload-dbt-microbatch.integration.test.ts`:
+  1 file, 2 tests passed in 23.35s. The actual dbt-compiled transitions prove
+  day-2 source isolation, replay-only sensor rekeying, old/new sensor summaries,
+  unrelated-route preservation, partial-track stability, complete-track
+  provider switching, all old-point tombstones, and the final B-only summary.
+- `rtk pnpm test:integration -- src/db/activity-group-payload-union.integration.test.ts`:
+  1 file, 4 tests passed against real ClickHouse.
+- `rtk pnpm vitest run analytics/models/read_models/read_model_microbatch.sql.test.ts src/processing/analytics-microbatch-bounds.test.ts scripts/run-analytics-build.test.ts scripts/run-local-analytics-build.test.ts`:
+  4 files, 52 tests passed.
+- `rtk pnpm analytics:build`: all 39 models passed; the output identifies
+  `activity_sensor_sample` as a four-batch microbatch model and
+  `activity_location_sample` as one ordinary incremental model.
+- Generated SQL inspection under `analytics/target/run` showed each sensor
+  batch wrapping `deduped_sensor` with its exact daily `refreshed_at` bounds and
+  joining prior target rows through `batch_sample_keys`. The location SQL reads
+  complete `ingest.metric_stream` location state without an injected event-time
+  predicate, builds `affected_groups`, and reads prior target rows only for
+  reconciliation with those groups.
+- `rtk pnpm typecheck`: `TypeScript: No errors found`.
+- Escalated `rtk pnpm lint:sandbox`: passed all repository format and policy
+  gates across 3,230 files.
+- Focused SQLFluff on the three changed dbt models has no actionable layout or
+  syntax finding. It emits only ST03 unused-CTE reports caused by selecting one
+  Jinja branch: `activity_days` in the sensor model; `target_state`,
+  `activity_group_state`, and `activity_members` in the location model; and
+  `target_state`, `current_activity`, and `existing_summary` in the location
+  summary. Each reported CTE is used in the opposite incremental/scoped branch
+  and all three models execute in the real dbt transition suite and 39-model
+  build. No suppression or lint configuration change was added.
+- `rtk git diff --check`: clean.
+
+The combined compatibility run passed all four payload-union tests, while the
+independent Testcontainers-based microbatch-bounds suite timed out in its
+`beforeAll` before executing a test: first fatal line `Error: Hook timed out in
+180000ms` at `analytics-microbatch-bounds.integration.test.ts:69`. The actual
+workspace-Compose dbt transitions and the full dbt build both passed; no timeout
+or harness configuration was changed. An accidental ignored 109 MB
+`analytics/.venv` created by a diagnostic compile was removed; it is fully
+rebuildable and the repository continues to use `.venv-analytics`.
+
+### Fix-round rollout and retrospective
+
+Apply migrations 0076-0078 and wait for membership CDC as before. Replay
+`sensor_scalar_sample`, `deduped_sensor`, and `activity_sensor_sample` over the
+required source-refresh interval. Then full-refresh
+`activity_location_sample`, followed by `activity_sensor_summary_rows`,
+`activity_location_summary_rows`, `activity_summary_rows`, and
+`activity_vo2max_estimate`. Scoped repairs must continue to carry prior/current
+group and member/alias IDs; sensor membership moves additionally require the
+underlying sample key to appear in an explicit upstream replay.
+
+What went well: inspecting actual dbt-generated SQL separated source-batch
+scope from target reconciliation and exposed a real ClickHouse null-join
+semantic hidden by manual SQL rendering. What required investigation: location
+correctness spans both complete provider-track selection and downstream summary
+invalidation, so point rows could be correct while the served summary stayed
+stale. Useful context next time: every event-time model that anti-joins a target
+must prove source and target scopes independently, and summary dirty keys should
+follow monotonic row versions when source event time can be historical.
+Suggested guidance: add this microbatch anti-join rule and the
+current-state-route/full-refresh rollout to `analytics/README.md` (completed in
+this round); use `integration-tests-ready` for future dbt transition fixtures.
