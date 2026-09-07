@@ -121,7 +121,7 @@ Last updated: 2026-06-23
 - **Verdict:** TOO FRAGILE — SRAM auth migration is a significant risk. The RE'd endpoints could break at any time.
 
 ### Zepp (Amazfit/Huami)
-- **Official API:** Exists ([zepp-health/rest-api](https://github.com/zepp-health/rest-api/wiki)) with OAuth 2.0, but registration at dev.huami.com is effectively closed (months of silence, partner prioritization).
+- **Official API:** OAuth 2.0 access requires organizational partner approval; individual applicants are excluded by the published enrollment requirements. Approval availability and Dofek's detailed-workout entitlement remain unverified ([partner requirements](https://github.com/zepp-health/rest-api/wiki), [capture/access audit](zepp-capture-audit.md)).
 - **Internal API:** Implemented through `packages/zepp-client` and `src/providers/amazfit-zepp.ts`. The current credential flow uses Zepp US2 encrypted registration (`api-user-us2.zepp.com/v2/registrations/tokens`) followed by token exchange at `api-mifit-us2.zepp.com/v2/client/login`; older `account.huami.com` / `account.zepp.com` token exchange hosts are stale.
 - **Data:** First sync slice stores daily steps, distance, sleep sessions, and minute-level heart rate samples from `band_data.json`.
 - **Auth limitation:** Must use direct Zepp email+password account (not Xiaomi/Google SSO).

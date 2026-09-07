@@ -72,6 +72,14 @@ function button(label: string): ButtonConfiguration {
 }
 
 describe("normal Zepp app settings", () => {
+  it("shows the watch session upload acknowledgement status", () => {
+    buildWith({
+      [STORAGE_KEYS.SESSION_STATUS]: JSON.stringify({ transferState: "sent" }),
+    });
+
+    expect(JSON.stringify(renderedViews)).toContain("Upload: sent");
+  });
+
   it("shows pairing, authoritative status, and connection management controls", () => {
     buildWith({
       [STORAGE_KEYS.DOFEK_CONNECTION_STATUS]: JSON.stringify({

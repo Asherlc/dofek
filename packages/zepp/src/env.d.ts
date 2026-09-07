@@ -43,6 +43,9 @@ declare module "@zos/sensor" {
   }
 
   export class HeartRate {
+    getCurrent(): number;
+    onCurrentChange(callback: () => void): void;
+    offCurrentChange(callback: () => void): void;
     getToday(): number[];
     getResting(): number;
     getDailySummary(): { maximum?: { hr_value: number; time: number } };

@@ -54,7 +54,9 @@ export interface ClickHouseMetricStreamRow {
   channel: string;
   activity_id: string | null;
   scalar: number | null;
+  vector: number[];
   point: string | null;
+  metadata: string;
   id: string;
   ingested_at: string;
   is_deleted: 0 | 1;
@@ -93,7 +95,9 @@ export function mapMetricStreamEventToClickHouseRow(
     channel: event.channel,
     activity_id: event.activityId ?? null,
     scalar: event.scalar ?? null,
+    vector: event.vector ?? [],
     point: normalizePointForClickHouse(event.point),
+    metadata: JSON.stringify(event.metadata ?? null),
     id: event.id,
     ingested_at: new Date().toISOString(),
     is_deleted: 0,

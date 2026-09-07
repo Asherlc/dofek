@@ -83,13 +83,13 @@ describe("writeSessionMetaFile", () => {
 
 describe("appendSamples", () => {
   it("does not call openSync for empty samples", () => {
-    appendSamples([], false, SESSION_FILE);
+    appendSamples([], SESSION_FILE);
     expect(mockOpenSync).not.toHaveBeenCalled();
   });
 
   it("writes chunk to session file", () => {
-    const samples = [{ tMs: 0, ax: 1, ay: 2, az: 3 }];
-    appendSamples(samples, false, SESSION_FILE);
+    const samples = [{ tMs: 0, sensor: "accelerometer" as const, x: 1, y: 2, z: 3 }];
+    appendSamples(samples, SESSION_FILE);
 
     expect(mockOpenSync).toHaveBeenCalledWith({
       path: SESSION_FILE,
@@ -100,21 +100,21 @@ describe("appendSamples", () => {
   });
 
   it("encodes gyro records when hasGyro is true", () => {
-    const samples = [{ tMs: 10, ax: 0, ay: 0, az: 9.8, gx: 0.1, gy: 0.2, gz: 0.3 }];
-    appendSamples(samples, true, SESSION_FILE);
+    const samples = [{ tMs: 10, sensor: "accelerometer" as const, x: 0, y: 0, z: 9.8 }];
+    appendSamples(samples, SESSION_FILE);
 
     const writeCalls = mockWriteSync.mock.calls;
     const writeFirstCall = writeCalls[0];
     if (!writeFirstCall) throw new Error("expected writeSync to be called");
-    expect(writeFirstCall[0].buffer.byteLength).toBe(4 + 28);
+    expect(writeFirstCall[0].buffer.byteLength).toBe(4 + 20);
   });
 
   it("throws when the file system writes only part of a chunk", () => {
     mockWriteSync.mockReturnValueOnce(1);
 
-    expect(() => appendSamples([{ tMs: 0, ax: 1, ay: 2, az: 3 }], false, SESSION_FILE)).toThrow(
-      "Session file write incomplete: wrote 1 of 20 bytes",
-    );
+    expect(() =>
+      appendSamples([{ tMs: 0, sensor: "accelerometer" as const, x: 1, y: 2, z: 3 }], SESSION_FILE),
+    ).toThrow("Session file write incomplete: wrote 1 of 24 bytes");
     expect(mockCloseSync).toHaveBeenCalledTimes(1);
   });
 });
@@ -163,4 +163,13 @@ describe("finalizeSessionFile", () => {
 
     expect(mockOpenSync).not.toHaveBeenCalled();
   });
+});
+
+it("rebases rotated files without changing absolute sensor time", () => {
+  const sample = { tMs: 5020, sensor: "gyroscope" as const, x: 1, y: 2, z: 3 };
+  appendSamples([sample], SESSION_FILE, -5000);
+  const written = mockWriteSync.mock.calls[0]?.[0].buffer;
+  if (!written) throw new Error("no chunk written");
+  expect(new DataView(written).getUint32(4, true)).toBe(20);
+  expect(sample.tMs).toBe(5020);
 });

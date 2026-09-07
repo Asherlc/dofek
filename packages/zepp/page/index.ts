@@ -40,10 +40,15 @@ import {
 import { collectHealthData } from "../src/health-collector.ts";
 import { createHealthUploadBatches, mergeHealthActivities } from "../src/health-upload.ts";
 import { createImuCollector, FREQ_MODES } from "../src/imu-collector.ts";
+import {
+  type PendingImuFile,
+  readPendingImuFiles,
+  writePendingImuFiles,
+} from "../src/imu-pending-files.ts";
+import { uploadImuFile } from "../src/imu-upload.ts";
 import { createRoundLoginLayout } from "../src/round-layout.ts";
 import {
   createSessionCall,
-  drainManualExportQueue,
   getSessionAction,
   handleSessionCall,
   SESSION_STATE,
@@ -67,14 +72,11 @@ import {
 import type { ImuSample } from "../src/types.ts";
 
 type ActiveFileSlot = "A" | "B";
-type TransferTask = {
-  on: (event: string, cb: (event: { data: Record<string, unknown> }) => void) => void;
-};
-type FailedTransfer = {
-  slot: ActiveFileSlot;
-  sampleCount: number;
-  observedHzX100: number;
-};
+type FailedTransfer = PendingImuFile;
+type TransferState = "idle" | "uploading" | "sent" | "error";
+function initialTransferState(): TransferState {
+  return "idle";
+}
 
 function nullable<T>(): T | null {
   return null;
@@ -183,12 +185,16 @@ Page(
       pendingBuffer: emptyArray<ImuSample>(),
       collector: nullable<ReturnType<typeof createImuCollector>>(),
       hasGyro: false,
-      transferTask: nullable<TransferTask>(),
+      transferInProgress: false,
+      transferState: initialTransferState(),
+      pendingFiles: emptyArray<PendingImuFile>(),
       failedTransfer: nullable<FailedTransfer>(),
       pendingManualExport: false,
       sampleCount: 0,
       observedHzX100: 0,
       activeFile: initialActiveFile(),
+      sessionStartMs: 0,
+      fileStartMs: 0,
       hasCredentials: false,
       dofekEmail: "",
       pairingVerificationUrl: "",
@@ -197,6 +203,8 @@ Page(
 
     onInit() {
       resetPairingQrReference();
+      this.state.pendingFiles = readPendingImuFiles();
+      this.state.failedTransfer = this.state.pendingFiles[0] ?? null;
       setWakeUpRelaunch(true);
       this.refreshPreferences();
     },
@@ -362,6 +370,10 @@ Page(
     },
 
     startLogging() {
+      if (this.state.transferInProgress || this.state.pendingFiles.length > 0) {
+        showToast({ content: "Upload pending sessions before starting" });
+        return;
+      }
       if (this.state.logging) {
         return;
       }
@@ -394,17 +406,20 @@ Page(
           return;
         }
 
+        this.state.transferState = "idle";
         this.state.collector = collector;
         this.state.hasGyro = collector.hasGyroscope;
         this.state.pendingBuffer = [];
         this.state.sampleCount = 0;
         this.state.observedHzX100 = 0;
         this.state.activeFile = "A";
+        this.state.sessionStartMs = Date.now();
+        this.state.fileStartMs = this.state.sessionStartMs;
 
         resetSessionFile(
           {
             hasGyro: collector.hasGyroscope,
-            sessionStartMs: Date.now(),
+            sessionStartMs: this.state.fileStartMs,
             sampleCount: 0,
             accelFreqMode: collector.accelMode,
             gyroFreqMode: collector.gyroMode ?? 0,
@@ -413,7 +428,7 @@ Page(
           this.activeFilePath(),
         );
 
-        collector.start();
+        collector.start(this.state.sessionStartMs);
         this.state.logging = true;
 
         const modeLabel =
@@ -553,7 +568,7 @@ Page(
         this.flushBuffer(false);
       }
 
-      if (this.state.sampleCount >= AUTO_TRANSFER_SAMPLE_COUNT && !this.state.transferTask) {
+      if (this.state.sampleCount >= AUTO_TRANSFER_SAMPLE_COUNT && !this.state.transferInProgress) {
         this.swapAndTransfer();
       }
     },
@@ -575,7 +590,11 @@ Page(
         return;
       }
 
-      appendSamples(this.state.pendingBuffer, this.state.hasGyro, path);
+      appendSamples(
+        this.state.pendingBuffer,
+        path,
+        this.state.sessionStartMs - this.state.fileStartMs,
+      );
       this.state.pendingBuffer = [];
 
       if (finalize) {
@@ -591,6 +610,11 @@ Page(
       this.state.logging = false;
       this.state.collector?.stop();
       this.flushBuffer(true);
+      this.rememberPendingFile(
+        this.state.activeFile,
+        this.state.sampleCount,
+        this.state.observedHzX100,
+      );
       this.writeMetaFile();
       renderSessionControl(SESSION_STATE.IDLE);
       renderSensorInfo("Session finalized");
@@ -602,7 +626,7 @@ Page(
     },
 
     swapAndTransfer() {
-      if (this.state.transferTask) {
+      if (this.state.transferInProgress) {
         return;
       }
 
@@ -610,6 +634,10 @@ Page(
         this.transferStoppedSession();
         return;
       }
+
+      const nextFileStartMs = Date.now();
+      // A distinct header timestamp is the import identity for each rotated file.
+      if (nextFileStartMs <= this.state.fileStartMs) return;
 
       const outgoingSlot = this.state.activeFile;
       const outgoingPath = this.filePathForSlot(outgoingSlot);
@@ -625,11 +653,13 @@ Page(
       this.flushBuffer(false);
       finalizeSessionFile(this.state.sampleCount, this.state.observedHzX100, outgoingPath);
 
+      this.rememberPendingFile(outgoingSlot, this.state.sampleCount, this.state.observedHzX100);
       const sampleCountSnapshot = this.state.sampleCount;
       const observedHzX100Snapshot = this.state.observedHzX100;
 
       // Swap to the other file — sensor keeps running without a gap
       this.state.activeFile = nextSlot;
+      this.state.fileStartMs = nextFileStartMs;
       this.state.sampleCount = 0;
       this.state.observedHzX100 = 0;
       this.state.pendingBuffer = [];
@@ -639,7 +669,7 @@ Page(
         resetSessionFile(
           {
             hasGyro: this.state.hasGyro,
-            sessionStartMs: Date.now(),
+            sessionStartMs: this.state.fileStartMs,
             sampleCount: 0,
             accelFreqMode: collector.accelMode,
             gyroFreqMode: collector.gyroMode ?? 0,
@@ -661,7 +691,7 @@ Page(
     },
 
     transferStoppedSession() {
-      if (this.state.transferTask) {
+      if (this.state.transferInProgress) {
         return;
       }
 
@@ -687,7 +717,7 @@ Page(
       });
     },
 
-    startTransfer({
+    async startTransfer({
       path,
       sampleCount,
       observedHzX100,
@@ -698,58 +728,98 @@ Page(
       observedHzX100: number;
       failedSlot: ActiveFileSlot | null;
     }) {
-      // Transfer the outgoing file in the background
-      const task = this.sendFile(path, {
-        type: "imu-session",
-        sampleCount: String(sampleCount),
-        observedHzX100: String(observedHzX100),
-      });
-
-      this.state.transferTask = task;
-
-      task.on("progress", (event: { data: Record<string, unknown> }) => {
-        const loadedSize = Number(event.data.loadedSize);
-        const fileSize = Number(event.data.fileSize);
-        const pct = fileSize > 0 ? Math.floor((loadedSize * 100) / fileSize) : 0;
-        logger.log("transfer %d%%", pct);
-      });
-
-      task.on("change", (event: { data: Record<string, unknown> }) => {
-        if (String(event.data.readyState) === "transferred") {
-          this.state.transferTask = null;
-          if (failedSlot && this.state.failedTransfer?.slot === failedSlot) {
-            this.state.failedTransfer = null;
-          }
-          drainManualExportQueue(
-            {
-              pendingManualExport: this.state.pendingManualExport,
-              logging: this.state.logging,
-              failedTransferPending: Boolean(this.state.failedTransfer),
-            },
-            {
-              clearManualExportQueue: () => {
-                this.state.pendingManualExport = false;
-              },
-              transferStoppedSession: () => this.transferStoppedSession(),
-            },
+      if (this.state.transferInProgress) return;
+      this.state.transferInProgress = true;
+      try {
+        if (sampleCount > 0) {
+          this.state.transferState = "uploading";
+          this.publishSessionStatus(
+            this.state.logging ? SESSION_STATE.RECORDING : SESSION_STATE.IDLE,
           );
-          this.request({
-            method: "imu.transferComplete",
-            params: { sampleCount },
-          }).catch((error: unknown) => {
-            logger.error("imu.transferComplete failed %j", error);
-          });
-          return;
-        }
-
-        if (event.data.readyState === "error") {
-          this.state.transferTask = null;
-          if (failedSlot) {
-            this.state.failedTransfer = { slot: failedSlot, sampleCount, observedHzX100 };
+          if (!failedSlot) throw new Error("IMU upload requires a pending file slot");
+          let pendingFile = this.state.pendingFiles.find((file) => file.slot === failedSlot);
+          if (!pendingFile) throw new Error("IMU upload requires a finalized pending file");
+          if (!pendingFile.connection) {
+            const response: unknown = await this.request({
+              method: "imu.getConnection",
+              params: {},
+            });
+            if (
+              !isRecord(response) ||
+              typeof response.serverUrl !== "string" ||
+              !response.serverUrl.trim() ||
+              typeof response.accountId !== "string" ||
+              !response.accountId.trim()
+            ) {
+              throw new Error("Connect Dofek before uploading this session");
+            }
+            const boundFile = {
+              ...pendingFile,
+              connection: { serverUrl: response.serverUrl, accountId: response.accountId },
+            };
+            const boundFiles = this.state.pendingFiles.map((file) =>
+              file.slot === failedSlot ? boundFile : file,
+            );
+            writePendingImuFiles(boundFiles);
+            this.state.pendingFiles = boundFiles;
+            pendingFile = boundFile;
           }
-          showToast({ content: "Send failed" });
+          const connection = pendingFile.connection;
+          await uploadImuFile(path, (batch) =>
+            this.request({ method: "imu.upload", params: { ...batch, connection } }),
+          );
         }
-      });
+        const remainingFiles = this.state.pendingFiles.filter((file) => file.slot !== failedSlot);
+        writePendingImuFiles(remainingFiles);
+        this.state.pendingFiles = remainingFiles;
+        this.state.transferState = sampleCount > 0 ? "sent" : "idle";
+        if (sampleCount > 0)
+          this.publishSessionStatus(
+            this.state.logging ? SESSION_STATE.RECORDING : SESSION_STATE.IDLE,
+          );
+        this.state.failedTransfer =
+          remainingFiles.find(
+            (file) => !this.state.logging || file.slot !== this.state.activeFile,
+          ) ?? null;
+        this.state.transferInProgress = false;
+        if (!this.state.logging) {
+          this.state.pendingManualExport = false;
+          if (this.state.failedTransfer) this.transferStoppedSession();
+        }
+      } catch (error: unknown) {
+        this.state.transferInProgress = false;
+        if (failedSlot)
+          this.state.failedTransfer = this.state.pendingFiles.find(
+            (file) => file.slot === failedSlot,
+          ) ?? { slot: failedSlot, sampleCount, observedHzX100 };
+        this.state.transferState = "error";
+        this.publishSessionStatus(
+          this.state.logging ? SESSION_STATE.RECORDING : SESSION_STATE.IDLE,
+        );
+        logger.error("IMU upload failed %j", error);
+        const message = error instanceof Error ? error.message : "Session upload failed";
+        showToast({ content: message });
+        renderHint(message);
+        try {
+          await this.request({
+            method: "telemetry.report",
+            params: {
+              message: error instanceof Error ? error.message : String(error),
+              category: "imu-upload",
+            },
+          });
+        } catch (telemetryError: unknown) {
+          logger.error("IMU upload error reporting failed %j", telemetryError);
+        }
+      }
+    },
+
+    rememberPendingFile(slot: ActiveFileSlot, sampleCount: number, observedHzX100: number) {
+      const pending = this.state.pendingFiles.filter((file) => file.slot !== slot);
+      const previous = this.state.pendingFiles.find((file) => file.slot === slot);
+      pending.push({ ...previous, slot, sampleCount, observedHzX100 });
+      writePendingImuFiles(pending);
+      this.state.pendingFiles = pending;
     },
 
     writeMetaFile() {
@@ -774,6 +844,8 @@ Page(
           observedHzX100: progress?.observedHzX100 ?? this.state.observedHzX100,
           hasGyro: this.state.hasGyro,
           sessionFile: this.activeFilePath(),
+          transferState: this.state.transferState,
+          pendingFileCount: this.state.pendingFiles.length,
         },
       }).catch((error) => {
         logger.error("status publish failed %j", error);
@@ -784,7 +856,7 @@ Page(
       if (
         handleSessionCall(payload, {
           logging: this.state.logging,
-          transferInProgress: Boolean(this.state.transferTask),
+          transferInProgress: Boolean(this.state.transferInProgress),
           failedTransferPending: Boolean(this.state.failedTransfer),
           pendingManualExport: this.state.pendingManualExport,
           applyStartPreferences: (params) => {

@@ -37,10 +37,12 @@ function writeBuffer(fd: number, buffer: ArrayBuffer): void {
   }
 }
 
-export function appendSamples(samples: ImuSample[], hasGyro: boolean, path: string): void {
+export function appendSamples(samples: ImuSample[], path: string, timeOffsetMs = 0): void {
   if (!samples.length) return;
 
-  const chunk = encodeChunk(samples, hasGyro);
+  const chunk = encodeChunk(
+    samples.map((sample) => ({ ...sample, tMs: sample.tMs + timeOffsetMs })),
+  );
   const fd = openSync({
     path,
     flag: O_WRONLY | O_APPEND | O_CREAT,

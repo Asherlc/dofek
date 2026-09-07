@@ -26,6 +26,26 @@ const nullExternalIdTestEventId = "7a8b9c0d-2e3f-404b-8c5d-6e7f8a9b0c12";
 const replacementTestEventId = "8b9c0d1e-3f40-415c-9d6e-7f8a9b0c1d23";
 const operationRevision = "1000000000000000";
 
+const zeppSamples = [
+  { channel: "accelerometer", vector: [1.25, -2.5, 980], units: "cm/s²" },
+  { channel: "gyroscope", vector: [-10, 20, 30.5], units: "deg/s" },
+  { channel: "accelerometer", vector: [4, 5, 981], units: "cm/s²" },
+].map((sample, index) =>
+  createMetricStreamEvent(
+    {
+      recordedAt: "2026-06-11T14:36:12.042Z",
+      userId: testUserId,
+      providerId: "amazfit-zepp",
+      externalId: `zos-imu:1781188572000:${index}:${sample.channel}`,
+      sourceType: "api",
+      channel: sample.channel,
+      vector: sample.vector,
+      metadata: { units: sample.units },
+    },
+    operationRevision,
+  ),
+);
+
 function createCurrentMetricStreamEvent(row: MetricStreamRowInput, revision = operationRevision) {
   return createMetricStreamEvent(row, revision);
 }
@@ -51,7 +71,13 @@ async function removeTestEvent(client: ClickHouseClient): Promise<void> {
       DELETE WHERE id IN {ids:Array(UUID)}
       SETTINGS mutations_sync = 1`,
     query_params: {
-      ids: [testEventId, latestScopeTestEventId, nullExternalIdTestEventId, replacementTestEventId],
+      ids: [
+        testEventId,
+        latestScopeTestEventId,
+        nullExternalIdTestEventId,
+        replacementTestEventId,
+        ...zeppSamples.map((event) => event.id),
+      ],
     },
   });
 }
@@ -70,6 +96,33 @@ describe("metric stream ClickHouse sink (integration)", () => {
   afterAll(async () => {
     await removeTestEvent(client);
     await client.close?.();
+  });
+
+  it("retains Zepp vectors and units, distinct same-millisecond records, and deduplicated retries", async () => {
+    await applyMetricStreamEventsToClickHouse(client, zeppSamples);
+    await applyMetricStreamEventsToClickHouse(client, zeppSamples);
+
+    const result = await client.query<{
+      id: string;
+      channel: string;
+      vector: number[];
+      metadata: string;
+    }>({
+      query: `SELECT id, channel, vector, metadata
+        FROM ${METRIC_STREAM_TABLE} FINAL
+        WHERE id IN {ids:Array(UUID)}
+        ORDER BY external_id`,
+      query_params: { ids: zeppSamples.map((event) => event.id) },
+      format: "JSONEachRow",
+    });
+    expect(await result.json()).toEqual(
+      zeppSamples.map((event) => ({
+        id: event.id,
+        channel: event.channel,
+        vector: event.vector,
+        metadata: JSON.stringify(event.metadata),
+      })),
+    );
   });
 
   it("inserts events whose recordedAt carries a UTC Z suffix", async () => {

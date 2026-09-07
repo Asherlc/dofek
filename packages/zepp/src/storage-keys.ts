@@ -4,8 +4,6 @@ export const STORAGE_KEYS = {
   CMD_LOGGING: "cmd_logging",
   CMD_TRANSFER: "cmd_transfer",
   SESSION_STATUS: "session_status",
-  LAST_EXPORT_PATH: "last_export_path",
-  TRANSFER_PROGRESS: "transfer_progress",
   CMD_SYNC_HEALTH: "cmd_sync_health",
   CMD_START_PAIRING: "cmd_start_pairing",
   CMD_CHECK_CONNECTION: "cmd_check_connection",

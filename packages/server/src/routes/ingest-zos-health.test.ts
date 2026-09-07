@@ -1,10 +1,7 @@
-import type { IncomingHttpHeaders } from "node:http";
-import { IncomingMessage, ServerResponse } from "node:http";
-import { Socket } from "node:net";
-import { Duplex } from "node:stream";
 import { PgDialect } from "drizzle-orm/pg-core";
 import express from "express";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { postJsonInProcess } from "./test-helpers.ts";
 
 const routeMocks = vi.hoisted(() => ({
   captureException: vi.fn<(error: unknown) => void>(),
@@ -95,79 +92,8 @@ function createTestApp(
   return app;
 }
 
-class InProcessSocket extends Duplex {
-  readonly #chunks: Buffer[] = [];
-
-  get responseBody(): string {
-    const rawResponse = Buffer.concat(this.#chunks).toString("utf8");
-    const bodyStart = rawResponse.indexOf("\r\n\r\n");
-    if (bodyStart === -1) {
-      throw new Error("Response body separator was not found");
-    }
-    return rawResponse.slice(bodyStart + 4);
-  }
-
-  override _write(
-    chunk: Buffer | string,
-    encoding: BufferEncoding,
-    callback: (error?: Error | null) => void,
-  ): void {
-    this.#chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding));
-    callback();
-  }
-}
-
-class InProcessRequest extends IncomingMessage {
-  override headers: IncomingHttpHeaders;
-  override method: string;
-  override url: string;
-
-  constructor(socket: Socket, payload: string, headers: IncomingHttpHeaders) {
-    super(socket);
-    this.headers = headers;
-    this.method = "POST";
-    this.url = "/api/ingest/zos-health";
-    this.push(payload);
-    this.push(null);
-  }
-
-  override _read(): void {}
-}
-
-async function post(
-  app: express.Express,
-  body: unknown,
-  headers: Record<string, string> = {},
-): Promise<{ status: number; body: unknown }> {
-  const payload = JSON.stringify(body);
-  const socket = new InProcessSocket();
-  const request = new InProcessRequest(new Socket(), payload, {
-    "content-type": "application/json",
-    "content-length": Buffer.byteLength(payload).toString(),
-    ...headers,
-  });
-
-  const response: ServerResponse = Reflect.construct(ServerResponse, [request]);
-  Reflect.apply(response.assignSocket, response, [socket]);
-
-  return new Promise((resolve, reject) => {
-    response.on("finish", () => {
-      resolve({
-        status: response.statusCode,
-        body: JSON.parse(socket.responseBody),
-      });
-    });
-    response.on("error", reject);
-    request.on("error", reject);
-
-    Reflect.apply(app.handle, app, [
-      request,
-      response,
-      (error: unknown) => {
-        reject(error instanceof Error ? error : new Error("Request was not handled"));
-      },
-    ]);
-  });
+function post(app: express.Express, body: unknown, headers: Record<string, string> = {}) {
+  return postJsonInProcess(app, "/api/ingest/zos-health", body, headers);
 }
 
 describe("createIngestZosHealthRouter", () => {

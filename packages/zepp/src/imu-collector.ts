@@ -122,7 +122,6 @@ export function createImuCollector(
   const accelMode = pickBestMode(accelerometer, requestedMode);
   const gyroMode = gyroscope ? pickBestMode(gyroscope, requestedMode) : null;
 
-  let latestGyro = { x: 0, y: 0, z: 0 };
   let sessionStartMs = 0;
   let sampleCount = 0;
   let windowStartMs = 0;
@@ -130,24 +129,13 @@ export function createImuCollector(
   let observedHzX100 = 0;
   let running = false;
 
-  const handleGyroChange = (value: { x: number; y: number; z: number }) => {
-    if (value && typeof value.x === "number") {
-      latestGyro = value;
-    } else {
-      latestGyro = gyroscope?.getCurrent() ?? { x: 0, y: 0, z: 0 };
-    }
-  };
-
-  const handleAccelChange = (value: { x: number; y: number; z: number }) => {
+  const record = (
+    sensor: "accelerometer" | "gyroscope",
+    value: { x: number; y: number; z: number },
+  ) => {
     if (!running) return;
 
     const now = Date.now();
-    if (!sessionStartMs) {
-      sessionStartMs = now;
-      windowStartMs = now;
-    }
-
-    const reading = value && typeof value.x === "number" ? value : accelerometer.getCurrent();
 
     sampleCount += 1;
     windowCount += 1;
@@ -168,13 +156,24 @@ export function createImuCollector(
 
     onSample({
       tMs: now - sessionStartMs,
-      ax: reading.x,
-      ay: reading.y,
-      az: reading.z,
-      gx: latestGyro.x,
-      gy: latestGyro.y,
-      gz: latestGyro.z,
+      sensor,
+      x: value.x,
+      y: value.y,
+      z: value.z,
     });
+  };
+
+  const handleAccelChange = (value: { x: number; y: number; z: number }) => {
+    if (!running) return;
+    record(
+      "accelerometer",
+      value && typeof value.x === "number" ? value : accelerometer.getCurrent(),
+    );
+  };
+  const handleGyroChange = (value: { x: number; y: number; z: number }) => {
+    if (!running) return;
+    if (gyroscope)
+      record("gyroscope", value && typeof value.x === "number" ? value : gyroscope.getCurrent());
   };
 
   return {
@@ -185,15 +184,14 @@ export function createImuCollector(
     getStats(): CollectorStats {
       return { sampleCount, observedHzX100, sessionStartMs };
     },
-    start() {
+    start(startMs = Date.now()) {
       if (running) return;
 
-      sessionStartMs = 0;
+      sessionStartMs = startMs;
       sampleCount = 0;
-      windowStartMs = 0;
+      windowStartMs = startMs;
       windowCount = 0;
       observedHzX100 = 0;
-      latestGyro = { x: 0, y: 0, z: 0 };
       running = true;
 
       accelerometer.setFreqMode(accelMode);

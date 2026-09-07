@@ -1,11 +1,9 @@
 export interface BinarySample {
   tMs: number;
-  ax: number;
-  ay: number;
-  az: number;
-  gx?: number;
-  gy?: number;
-  gz?: number;
+  sensor: "accelerometer" | "gyroscope";
+  x: number;
+  y: number;
+  z: number;
 }
 
 export interface DecodedSession {
@@ -38,6 +36,7 @@ export function decodeBin(buffer: ArrayBufferLike): DecodedSession {
   }
 
   const version = view.getUint8(4);
+  if (version !== 1 && version !== 2) throw new Error(`Unsupported IMU format version: ${version}`);
   const flags = view.getUint8(5);
   const hasGyro = (flags & FLAG_HAS_GYRO) !== 0;
   const sessionStartMsLow = view.getUint32(8, true);
@@ -50,37 +49,46 @@ export function decodeBin(buffer: ArrayBufferLike): DecodedSession {
 
   const samples: BinarySample[] = [];
   let offset = HEADER_SIZE;
-  const recordSize = hasGyro ? GYRO_RECORD_SIZE : ACCEL_RECORD_SIZE;
+  const recordSize = version === 2 ? 20 : hasGyro ? GYRO_RECORD_SIZE : ACCEL_RECORD_SIZE;
+  let recordCount = 0;
 
-  while (offset + 4 <= view.byteLength) {
+  while (offset < view.byteLength) {
+    if (offset + 4 > view.byteLength) throw new Error("Truncated chunk header");
     const chunkCount = view.getUint16(offset, true);
     offset += 4;
 
+    recordCount += chunkCount;
     const maxReadable = Math.floor((view.byteLength - offset) / recordSize);
     const actualCount = Math.min(chunkCount, maxReadable);
 
     for (let i = 0; i < actualCount; i++) {
       const tMs = view.getUint32(offset, true);
       offset += 4;
-      const ax = view.getFloat32(offset, true);
-      offset += 4;
-      const ay = view.getFloat32(offset, true);
-      offset += 4;
-      const az = view.getFloat32(offset, true);
-      offset += 4;
-
-      const sample: BinarySample = { tMs, ax, ay, az };
-
-      if (hasGyro) {
-        sample.gx = view.getFloat32(offset, true);
-        offset += 4;
-        sample.gy = view.getFloat32(offset, true);
-        offset += 4;
-        sample.gz = view.getFloat32(offset, true);
-        offset += 4;
+      const tag = version === 2 ? view.getUint32(offset, true) : 0;
+      if (version === 2) offset += 4;
+      if (tag !== 0 && tag !== 1) throw new Error("Invalid IMU sensor tag");
+      if (tag === 1 && !hasGyro) throw new Error("Gyroscope record without header flag");
+      const xValue = view.getFloat32(offset, true);
+      const yValue = view.getFloat32(offset + 4, true);
+      const zValue = view.getFloat32(offset + 8, true);
+      offset += 12;
+      samples.push({
+        tMs,
+        sensor: tag === 0 ? "accelerometer" : "gyroscope",
+        x: xValue,
+        y: yValue,
+        z: zValue,
+      });
+      if (version === 1 && hasGyro) {
+        samples.push({
+          tMs,
+          sensor: "gyroscope",
+          x: view.getFloat32(offset, true),
+          y: view.getFloat32(offset + 4, true),
+          z: view.getFloat32(offset + 8, true),
+        });
+        offset += 12;
       }
-
-      samples.push(sample);
     }
 
     if (actualCount < chunkCount) {
@@ -90,9 +98,9 @@ export function decodeBin(buffer: ArrayBufferLike): DecodedSession {
     }
   }
 
-  if (samples.length !== sampleCount) {
+  if (recordCount !== sampleCount) {
     throw new Error(
-      `Sample count mismatch: header declared ${sampleCount} but decoded ${samples.length}`,
+      `Sample count mismatch: header declared ${sampleCount} but decoded ${recordCount}`,
     );
   }
 

@@ -6,7 +6,6 @@ import { BasePage } from "@zeppos/zml/base-page";
 import {
   collectLiveWorkoutSnapshot,
   findLiveWorkoutExternalId,
-  type LiveWorkoutSnapshot,
 } from "../../src/workout-live.ts";
 import {
   type LiveWorkoutBatch,
@@ -31,6 +30,9 @@ DataWidget(
   BasePage({
     state: {
       intervalId: nullable<ReturnType<typeof setInterval>>(),
+      heartRate: nullable<HeartRate>(),
+      heartRateCallback: nullable<() => void>(),
+      currentHeartRate: 0,
       collecting: false,
       flushing: false,
       pendingBatches: emptyArray<LiveWorkoutBatch>(),
@@ -69,8 +71,10 @@ DataWidget(
       if (this.state.collecting) return;
       this.state.collecting = true;
       try {
-        const heartRate = new HeartRate();
-        const snapshot = await collectLiveWorkoutSnapshot(getSportData, () => heartRate.getLast());
+        const snapshot = await collectLiveWorkoutSnapshot(
+          getSportData,
+          () => this.state.currentHeartRate,
+        );
         const externalId = findLiveWorkoutExternalId(
           snapshot,
           this.state.pendingBatches.map((batch) => batch.externalId),
@@ -98,6 +102,7 @@ DataWidget(
         }
       } catch (error: unknown) {
         logger.error("live workout collection failed %j", error);
+        this.reportError(error, "workout-collection");
       } finally {
         this.state.collecting = false;
       }
@@ -151,27 +156,48 @@ DataWidget(
       } catch (error: unknown) {
         writeLiveWorkoutBuffer({ batches: this.state.pendingBatches });
         logger.error("live workout upload failed %j", error);
-        void this.request({
-          method: "telemetry.report",
-          params: {
-            message: error instanceof Error ? error.message : String(error),
-            name: error instanceof Error ? error.name : "Error",
-            stack: error instanceof Error ? error.stack : undefined,
-            category: "workout-upload",
-          },
-        });
+        this.reportError(error, "workout-upload");
       } finally {
         this.state.flushing = false;
       }
     },
 
+    reportError(error: unknown, category: string) {
+      void this.request({
+        method: "telemetry.report",
+        params: {
+          message: error instanceof Error ? error.message : String(error),
+          name: error instanceof Error ? error.name : "Error",
+          stack: error instanceof Error ? error.stack : undefined,
+          category,
+        },
+      });
+    },
+
     startCollection() {
       if (this.state.intervalId !== null) return;
+      const heartRate = (this.state.heartRate ??= new HeartRate());
+      const callback = () => {
+        if (this.state.heartRateCallback !== callback) return;
+        try {
+          this.state.currentHeartRate = heartRate.getCurrent();
+        } catch (error: unknown) {
+          this.state.currentHeartRate = 0;
+          logger.error("live workout heart rate failed %j", error);
+          this.reportError(error, "workout-heart-rate");
+        }
+      };
+      this.state.heartRateCallback = callback;
+      heartRate.onCurrentChange(callback);
       void this.collectSnapshot();
       this.state.intervalId = setInterval(() => void this.collectSnapshot(), SAMPLE_INTERVAL_MS);
     },
 
     stopCollection() {
+      const callback = this.state.heartRateCallback;
+      this.state.heartRateCallback = null;
+      this.state.currentHeartRate = 0;
+      if (callback) this.state.heartRate?.offCurrentChange(callback);
       if (this.state.intervalId !== null) {
         clearInterval(this.state.intervalId);
         this.state.intervalId = null;

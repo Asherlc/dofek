@@ -41,8 +41,6 @@ const PG_STATE: {
   enableGyro: boolean;
   freqModeIndex: number;
   sessionStatus: Record<string, unknown>;
-  lastExportPath: string | null;
-  transferProgress: Record<string, unknown>;
   dofekServerUrl: string;
   dofekEmail: string;
   dofekPassword: string;
@@ -58,8 +56,6 @@ const PG_STATE: {
   enableGyro: false,
   freqModeIndex: 1,
   sessionStatus: EMPTY_RECORD,
-  lastExportPath: null,
-  transferProgress: EMPTY_RECORD,
   dofekServerUrl: "",
   dofekEmail: "",
   dofekPassword: "",
@@ -105,7 +101,6 @@ AppSettingsPage({
         `Samples: ${status.sampleCount ?? 0}`,
         `Delivered rate: ${rate}`,
         `Gyro in session: ${status.hasGyro ? "yes" : "no"}`,
-        `Last export: ${this.state.lastExportPath ?? "none"}`,
       ]),
       Button({
         label: `${sessionAction.label} on watch`,
@@ -142,7 +137,7 @@ AppSettingsPage({
         },
       }),
       Button({
-        label: "Transfer finalized session",
+        label: "Upload finalized session",
         color: "primary",
         style: { margin: "1em", width: "auto", fontSize: "1.3rem" },
         onClick: () => {
@@ -151,13 +146,11 @@ AppSettingsPage({
       }),
     ];
 
-    if (this.state.transferProgress.state) {
+    if (status.transferState) {
       blocks.push(
         View({ style: { margin: "1em", fontSize: "1.1rem" } }, [
-          `Transfer: ${this.state.transferProgress.state}`,
-          this.state.transferProgress.pct != null
-            ? `Progress: ${this.state.transferProgress.pct}%`
-            : "",
+          `Upload: ${status.transferState}`,
+          `Pending files: ${status.pendingFileCount ?? 0}`,
         ]),
       );
     }
@@ -314,12 +307,6 @@ AppSettingsPage({
     );
     this.state.sessionStatus = readJson(
       props.settingsStorage.getItem(STORAGE_KEYS.SESSION_STATUS),
-      {},
-    );
-    this.state.lastExportPath =
-      props.settingsStorage.getItem(STORAGE_KEYS.LAST_EXPORT_PATH) ?? null;
-    this.state.transferProgress = readJson(
-      props.settingsStorage.getItem(STORAGE_KEYS.TRANSFER_PROGRESS),
       {},
     );
     this.state.dofekServerUrl =

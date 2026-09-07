@@ -1,7 +1,7 @@
 import type { HeaderMeta, ImuSample } from "./types.ts";
 
 export const MAGIC = 0x314d5549;
-export const FORMAT_VERSION = 1;
+export const FORMAT_VERSION = 2;
 export const HEADER_SIZE = 32;
 export const FLAG_HAS_GYRO = 1;
 
@@ -45,37 +45,23 @@ export function patchHeaderSampleCount(
   return headerBuffer;
 }
 
-export function encodeChunk(samples: ImuSample[], hasGyro: boolean): ArrayBuffer {
-  const recordSize = hasGyro ? 28 : 16;
-  const buffer = new ArrayBuffer(4 + samples.length * recordSize);
+export function encodeChunk(samples: ImuSample[]): ArrayBuffer {
+  if (samples.length > 65535) throw new Error("IMU chunk exceeds 65535 records");
+  const buffer = new ArrayBuffer(4 + samples.length * 20);
   const view = new DataView(buffer);
-
   view.setUint16(0, samples.length, true);
-  view.setUint16(2, 0, true);
-
   let offset = 4;
-  for (let i = 0; i < samples.length; i += 1) {
-    const sample = samples[i];
-    if (!sample) continue;
-    view.setUint32(offset, sample.tMs >>> 0, true);
-    offset += 4;
-    view.setFloat32(offset, sample.ax, true);
-    offset += 4;
-    view.setFloat32(offset, sample.ay, true);
-    offset += 4;
-    view.setFloat32(offset, sample.az, true);
-    offset += 4;
-
-    if (hasGyro) {
-      view.setFloat32(offset, sample.gx || 0, true);
-      offset += 4;
-      view.setFloat32(offset, sample.gy || 0, true);
-      offset += 4;
-      view.setFloat32(offset, sample.gz || 0, true);
-      offset += 4;
+  for (const sample of samples) {
+    if (!Number.isInteger(sample.tMs) || sample.tMs < 0 || sample.tMs > 0xffffffff) {
+      throw new Error("IMU timestamp offset is outside uint32 range");
     }
+    view.setUint32(offset, sample.tMs, true);
+    view.setUint32(offset + 4, sample.sensor === "accelerometer" ? 0 : 1, true);
+    view.setFloat32(offset + 8, sample.x, true);
+    view.setFloat32(offset + 12, sample.y, true);
+    view.setFloat32(offset + 16, sample.z, true);
+    offset += 20;
   }
-
   return buffer;
 }
 

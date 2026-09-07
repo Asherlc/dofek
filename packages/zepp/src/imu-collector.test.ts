@@ -294,7 +294,7 @@ describe("createImuCollector", () => {
 
     expect(onSample).toHaveBeenCalledTimes(1);
     const sample = firstCallArg(onSample);
-    expect(sample).toMatchObject({ ax: 1, ay: 2, az: 3, gx: 0, gy: 0, gz: 0 });
+    expect(sample).toMatchObject({ sensor: "accelerometer", x: 1, y: 2, z: 3 });
     expect(sample.tMs).toBeGreaterThanOrEqual(0);
     expect(sample.tMs).toBeLessThan(100);
 
@@ -361,7 +361,7 @@ describe("createImuCollector", () => {
     accelCb({ x: 1, y: 2, z: 3 });
 
     const sample = firstCallArg(onSample);
-    expect(sample).toMatchObject({ gx: 4, gy: 5, gz: 6, ax: 1, ay: 2, az: 3 });
+    expect(sample).toMatchObject({ sensor: "gyroscope", x: 4, y: 5, z: 6 });
   });
 
   it("uses getCurrent fallback when gyro change value is missing x", () => {
@@ -387,7 +387,7 @@ describe("createImuCollector", () => {
     accelCb({ x: 1, y: 2, z: 3 });
 
     const sample = firstCallArg(onSample);
-    expect(sample).toMatchObject({ gx: 99, gy: 88, gz: 77 });
+    expect(sample).toMatchObject({ sensor: "gyroscope", x: 99, y: 88, z: 77 });
   });
 
   it("calls onStatus after collecting samples for over a second", () => {
@@ -501,6 +501,32 @@ describe("createImuCollector", () => {
     expect(onSample).not.toHaveBeenCalled();
   });
 
+  it("does not read stopped sensors when late callbacks contain no reading", () => {
+    const accel = makeMockSensor();
+    const gyro = makeMockSensor();
+    const onSample = vi.fn();
+    const collector = createImuCollector(
+      { onSample, enableGyro: true },
+      {
+        Accelerometer: ctorFor(accel),
+        Gyroscope: ctorFor(gyro),
+        checkSensor: () => true,
+      },
+    );
+    if (!collector.available) throw new Error("collector unavailable");
+    collector.start();
+    const accelCallback = firstCallArg(accel.onChange);
+    const gyroCallback = firstCallArg(gyro.onChange);
+    collector.stop();
+
+    accelCallback({});
+    gyroCallback({});
+
+    expect(accel.getCurrent).not.toHaveBeenCalled();
+    expect(gyro.getCurrent).not.toHaveBeenCalled();
+    expect(onSample).not.toHaveBeenCalled();
+  });
+
   it("start() resets state for a new session", () => {
     vi.useFakeTimers();
     const accel = makeMockSensor();
@@ -554,7 +580,7 @@ describe("createImuCollector", () => {
     accelCb({ y: 8, z: 9 });
 
     const sample = firstCallArg(onSample);
-    expect(sample).toMatchObject({ ax: 7, ay: 8, az: 9 });
+    expect(sample).toMatchObject({ sensor: "accelerometer", x: 7, y: 8, z: 9 });
   });
 
   it("defaults enableGyro to false when not specified", () => {
@@ -634,12 +660,12 @@ describe("createImuCollector", () => {
     accelCb({ x: 1, y: 2, z: 3 });
 
     const sample = firstCallArg(onSample);
-    expect(sample.gx).toBe(11);
-    expect(sample.gy).toBe(22);
-    expect(sample.gz).toBe(33);
+    expect(sample.x).toBe(11);
+    expect(sample.y).toBe(22);
+    expect(sample.z).toBe(33);
   });
 
-  it("start/stop/start resets gyro to zero between sessions", () => {
+  it("start/stop/start records the new accelerometer independently", () => {
     const accel = makeMockSensor();
     const gyro = makeMockSensor();
     const onSample = vi.fn();
@@ -664,10 +690,12 @@ describe("createImuCollector", () => {
     const accelCb = firstCallArg(accel.onChange);
     accelCb({ x: 1, y: 2, z: 3 });
 
-    const sample = firstCallArg(onSample);
-    expect(sample.gx).toBe(0);
-    expect(sample.gy).toBe(0);
-    expect(sample.gz).toBe(0);
+    expect(onSample.mock.calls.at(-1)?.[0]).toMatchObject({
+      sensor: "accelerometer",
+      x: 1,
+      y: 2,
+      z: 3,
+    });
   });
 
   it("uses gyro getCurrent reading when the change value is invalid", () => {
@@ -693,6 +721,34 @@ describe("createImuCollector", () => {
     accelCb({ x: 1, y: 2, z: 3 });
 
     const sample = firstCallArg(onSample);
-    expect(sample).toMatchObject({ gx: 0, gy: 0, gz: 0 });
+    expect(sample).toMatchObject({ sensor: "gyroscope", x: 0, y: 0, z: 0 });
   });
+});
+
+it("retains each gyro callback with its own offset from start", () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(10000);
+  const accel = makeMockSensor();
+  const gyro = makeMockSensor();
+  const onSample = vi.fn();
+  const collector = createImuCollector(
+    { enableGyro: true, onSample },
+    { Accelerometer: ctorFor(accel), Gyroscope: ctorFor(gyro), checkSensor: () => true },
+  );
+  collector.start();
+  vi.advanceTimersByTime(10);
+  firstCallArg(gyro.onChange)({ x: 1, y: 2, z: 3 });
+  vi.advanceTimersByTime(7);
+  firstCallArg(gyro.onChange)({ x: 4, y: 5, z: 6 });
+  vi.advanceTimersByTime(3);
+  firstCallArg(accel.onChange)({ x: 7, y: 8, z: 9 });
+  expect(onSample.mock.calls.map((call) => call[0])).toEqual([
+    { tMs: 10, sensor: "gyroscope", x: 1, y: 2, z: 3 },
+    { tMs: 17, sensor: "gyroscope", x: 4, y: 5, z: 6 },
+    { tMs: 20, sensor: "accelerometer", x: 7, y: 8, z: 9 },
+  ]);
+  collector.stop();
+  firstCallArg(gyro.onChange)({ x: 9, y: 9, z: 9 });
+  expect(onSample).toHaveBeenCalledTimes(3);
+  vi.useRealTimers();
 });
