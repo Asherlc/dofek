@@ -7,6 +7,7 @@ import * as eventSchema from "./schema/events.ts";
 import * as externalSchema from "./schema/external.ts";
 import * as nutritionSchema from "./schema/nutrition.ts";
 import * as processingSchema from "./schema/processing.ts";
+import * as recordModificationsSchema from "./schema/record-modifications.ts";
 import * as referenceSchema from "./schema/reference.ts";
 
 export const drizzleSchema = {
@@ -20,4 +21,5 @@ export const drizzleSchema = {
   ...eventSchema,
   ...externalSchema,
   ...processingSchema,
+  ...recordModificationsSchema,
 };

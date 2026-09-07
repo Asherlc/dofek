@@ -125,6 +125,54 @@ Use the vcpkg commit and bootstrap sequence from
 mode as documented by Microsoft:
 <https://learn.microsoft.com/vcpkg/concepts/manifest-mode>.
 
+### Docker Address-Pool Exhaustion
+
+If `pnpm compose:up` fails with `all predefined address pools have been fully
+subnetted`, inspect networks before changing daemon configuration:
+
+```bash
+docker network ls
+docker network inspect NETWORK_NAME --format '{{json .Labels}} {{len .Containers}}'
+```
+
+Resolve the owning workspace from the Compose labels. Obtain explicit approval
+before removing another workspace's network, then recheck that it has zero
+attached containers immediately before `docker network rm NETWORK_NAME`.
+Never disconnect live containers to make a network removable. Docker documents
+[network inspection](https://docs.docker.com/reference/cli/docker/network/inspect/)
+and requires connected containers to be disconnected before
+[network removal](https://docs.docker.com/reference/cli/docker/network/rm/).
+After freeing an approved unused network, rerun `pnpm compose:up` from the
+current workspace; do not replace its generated service ports while running.
+
+### Shared Docker VM Resource Pressure
+
+When independent services restart or database setup times out, collect capacity
+and usage evidence before increasing timeouts:
+
+```bash
+docker info --format 'CPUs={{.NCPU}} Memory={{.MemTotal}} Running={{.ContainersRunning}}'
+docker ps --format '{{.ID}} {{.Names}} {{.Label "com.docker.compose.project"}}'
+docker stats --no-stream
+```
+
+Inspect CPU, memory, and process/thread counts together. Docker's
+[`stats` documentation](https://docs.docker.com/reference/cli/docker/container/stats/)
+explains that `PIDS` includes kernel threads, not just processes. Start with
+current-workspace cleanup. If resource relief requires another workspace to
+stop, obtain explicit approval from that workspace's owner and record the
+approved container IDs before using `docker stop CONTAINER_ID` with those
+inspected identifiers. Without that approval, preserve its running services.
+Preserve containers and volumes rather than deleting state; the
+[`stop` command](https://docs.docker.com/reference/cli/docker/container/stop/)
+signals the running process and may forcibly terminate it after its grace
+period. Warn active users before interrupting their services.
+
+Measure capacity again, verify current-workspace service health, and rerun the
+exact failed command unchanged. Record what was stopped so those workspaces
+can restart their services when needed. The September 7 recovery evidence is in
+the [incident baseline](production-incident-baseline.md#2026-09-07--local-docker-capacity-blocked-modification-system-validation).
+
 ### Docker Disk Recovery
 
 If a required validation command fails with `No space left on device`, inspect usage before
