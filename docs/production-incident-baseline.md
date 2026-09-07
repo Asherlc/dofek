@@ -25286,6 +25286,151 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** The [final replacement workflow](https://github.com/Asherlc/dofek/actions/runs/34162519280)
   passed all 113 checks, including every integration and mutation shard. No
   resilience knob or validation bypass remains.
+## 2026-09-07 — Local Docker capacity blocked modification-system validation
+
+- **Status:** Address-pool exhaustion and local resource pressure resolved.
+  No production changes made.
+- **Symptoms / user impact:** SQL lint and database-backed implementation tests
+  could not run in the `stupid-termite` workspace. All three requested TypeScript
+  checks passed; the Docker-free lint stages passed.
+- **Evidence / root cause:** `pnpm lint` failed in its SQLFluff/dbt stage with
+  `dbt tried to connect to the database and failed` (ClickHouse connection
+  refused). Starting the required dependencies with `pnpm compose:up` then
+  failed while creating `stupid-termite_default`: `all predefined address pools
+  have been fully subnetted`. Read-only Docker inspection found
+  `laughing-dugong_default` and `lucid-mule_default` each had zero attached
+  containers, but their Compose labels identify other workspaces.
+- **Mitigation:** After explicit approval and rechecking zero attached
+  containers, removed only `laughing-dugong_default`. No containers or volumes
+  were removed; its workspace can recreate the network. This allowed creation
+  of `stupid-termite_default` and the required backing services.
+- **Subsequent evidence:** `pnpm compose:up` failed with `application not healthy
+  after 3m0s`; ClickHouse repeatedly restarted. The focused PostgreSQL ledger
+  suite subsequently failed in template setup with `Hook timed out in 120000ms`.
+  Read-only Docker inspection reported 75 running containers, 10 CPUs, and
+  8,216,862,720 bytes of VM memory. `/proc/meminfo` showed only 300,756 kB
+  available; `/proc/loadavg` was `516.73 583.33 447.42`; memory pressure's
+  `full avg10` was 75.08. These measurements establish severe shared-VM
+  resource pressure. The exact cause of the ClickHouse process exits remains
+  unconfirmed; its current cgroup counters reported no OOM kill.
+- **Direct fix / validation:** After the user authorized stopping any other
+  workspace, a later mitigation-time inventory identified 73 Compose containers
+  from other workspaces to stop. This was a new inventory, not the earlier
+  75-container pressure snapshot. The 73 stopped containers were separate from
+  the four current-workspace services and four unrelated k3d containers that
+  remained running (eight running after the stop). Every container and volume
+  was preserved. Available VM memory rose to
+  5,845,320 kB and memory pressure's `full avg10` fell to 0.91. The unchanged
+  ten-test PostgreSQL ledger suite passed in 4.42 seconds, and the local ledger
+  migration applied successfully.
+- **Remaining risk / follow-up:** Other workspaces need their services started
+  when next used. No daemon reconfiguration, timeout increase, validation
+  bypass, or resilience knob was added. Add the verified address-pool recovery
+  and resource-pressure diagnostics to the local testing runbook.
+
+## 2026-09-07 — Historical sensor fixture fell outside the repair build window
+
+- **Status:** Fixed and verified locally; replacement CI verification pending.
+  The initial failure was a documentation-only PR check, not a deployed change.
+- **Evidence:** [Integration shard 3/4, run 34141117493](https://github.com/Asherlc/dofek/actions/runs/34141117493/job/101803595315)
+  failed in `src/db/activity-data-integrity-repair.integration.test.ts:693`:
+  `AssertionError: expected [] to deeply equal` the two expected activity IDs.
+  Source, deduplication, and group assertions had already passed.
+- **Cause:** The fixture seeds `deduped_sensor.refreshed_at` on September 2;
+  `activity_sensor_sample` uses that event time, while the September 7 repair
+  build executed only September 4–7 batches. The repair dbt helper supplies
+  activity scope but no historical sensor-sample start bound. The batches
+  succeeded without reading the fixture, leaving sensor summaries empty.
+  Subsequent retries encountered the first attempt's unresolved repair journal;
+  that is a secondary symptom, not the initial failure.
+- **Local reproduction:** After resource relief, the unchanged command
+  `pnpm test:integration -- src/db/activity-data-integrity-repair.integration.test.ts`
+  reproduced the empty sensor-summary assertion in 25.52 seconds, with the same
+  September 4–7 dbt batches and subsequent repair-journal retry failures.
+- **Impact / follow-up:** PR 2678 is not ready to merge; the author marked it
+  ready for review on September 7. Both production
+  repair and rollback call the helper without historical event-time bounds.
+  The approved fix passes explicit bounds from the earliest affected original,
+  corrected, or expanded source activity through the next UTC day after CDC
+  readiness. Repair and rollback retain their user/activity scope. The original
+  fixture dates and assertions remain intact. dbt documents start and end bounds for
+  [historical microbatch backfills](https://docs.getdbt.com/docs/build/incremental-microbatch#backfills).
+
+## 2026-09-07 — Follow-up validation exposed UTC and migration-lint defects
+
+- **Status:** UTC and migration corrections verified locally; replacement CI
+  verification pending. No production changes or bypasses.
+- **Evidence / cause:** The bounded repair implementation passes the original
+  sensor-summary assertion, but the same real-database command fails rollback
+  with `PostgreSQL CDC mirror did not publish 3 repaired activities within
+  120000ms`. ClickHouse emits `2026-09-01 14:50:00.000000` without a timezone;
+  JavaScript on the Los Angeles workstation interprets it as `21:50Z`, not the
+  intended `14:50Z`. The rollback barrier consequently compares different
+  instants. Requesting ClickHouse's documented
+  [UTC ISO output](https://clickhouse.com/docs/reference/settings/formats/date-time#date_time_output_format)
+  fixes the timestamp comparison without a longer barrier timeout.
+- **UTC and repair validation:** The new real-ClickHouse regression first failed
+  with `Invalid ISO datetime`; requesting `date_time_output_format: 'iso'` then
+  preserved the UTC zone, fractional seconds, and nulls. The complete command
+  `pnpm test:integration -- src/db/activity-data-integrity-repair.integration.test.ts`
+  passed both tests in 21.01 seconds, including repair and rollback with three
+  dbt builds reporting `PASS=8 WARN=0 ERROR=0`. No test retries were needed.
+  The 95 focused unit tests, root/server/web typechecks, and full local lint
+  also passed. Existing CDC readiness polling remains necessary for mirror
+  consistency; no resilience settings were added or increased.
+- **Independent CI failures:** On commit `4d710eb`,
+  [SQLFluff](https://github.com/Asherlc/dofek/actions/runs/34145224514/job/101816174102)
+  rejects formatting and lateral subquery structure in the new migrations;
+  [Squawk](https://github.com/Asherlc/dofek/actions/runs/34145224514/job/101816174227)
+  rejects `schema_version integer` with `prefer-bigint-over-int`; and
+  [cspell](https://github.com/Asherlc/dofek/actions/runs/34145224514/job/101816174075)
+  rejects the reimport fixture label with `Unknown word`. Local migration SQLFluff reproduces its
+  failures. The aggregate lint gate fails because those required checks fail.
+- **Impact / follow-up:** CI remains red. `pnpm lint` does not include these
+  three migration/spelling checks. The approved migration correction uses
+  `bigint` consistently in SQL, Drizzle, and generated diagrams; fixes SQL
+  formatting; and projects owner/identity provenance from the lateral query's
+  terminal select so SQLFluff recognizes its correlation. Recursive history
+  remains scoped, and the fixture label uses ordinary wording.
+- **Query-plan validation:** An intermediate outer projection sourced from the
+  lateral result delayed owner/identity filtering until after global head
+  discovery. The final views select outer provenance directly from the head;
+  scoped `EXPLAIN` shows indexed identity/owner head discovery before per-head
+  recursion. `DISTINCT` keeps the head view structurally read-only. See the
+  [projection migration](../drizzle/0111_human_record_projections.sql) and
+  PostgreSQL's [updatable-view rules](https://www.postgresql.org/docs/current/sql-createview.html#SQL-CREATEVIEW-UPDATABLE-VIEWS).
+- **Migration validation:** Exact SQLFluff, Squawk, migration policy, and full
+  cspell commands passed (Squawk: two files, zero issues; cspell: 2,500 files,
+  zero issues). All 14 ledger/projection tests passed using a fresh migrated
+  PostgreSQL test database, including read-only behavior. Existing workspace
+  database contents were not reset. Full unit/mobile validation passed 17,662
+  tests with 21 existing skips. Push and confirm replacement CI; no retry,
+  timeout, lint suppression, or size-limit change was added.
+
+## 2026-09-07 — Mutation gate lacked coverage for ClickHouse output options
+
+- **Status:** Test correction verified locally; replacement CI verification
+  pending. Production behavior and mutation configuration are unchanged.
+- **Evidence:** [Stryker shard 2](https://github.com/Asherlc/dofek/actions/runs/34154158814/job/101843153325)
+  ran `pnpm exec stryker run stryker.ci.config.json --mutate
+  "src/db/activity-data-integrity-clickhouse.ts:25-25,src/db/activity-data-integrity-clickhouse.ts:130-133"`.
+  First fatal: `Final mutation score 0.00 under breaking threshold 75`.
+  Its surviving object-literal mutation replaces the query's integer-quoting
+  and UTC ISO output options with an empty object.
+- **Cause / impact:** The real-engine regression detects incorrect timestamp
+  output, but the intentionally Docker-free mutation tier excludes integration
+  tests. Unit tests did not assert the production helper's emitted client-query
+  options, so this mutation survived and CI remained red despite ordinary tests
+  passing. SQLFluff, migration lint, and spelling passed on this run.
+- **Direct correction / validation:** The colocated unit test now asserts both
+  output options at the external client boundary. With the exact empty-options
+  mutant it failed (one failed, 33 passed); restoring unchanged production code
+  passed all 34 tests. The exact scoped Stryker command scored 100%, with one
+  killed mutant and zero survivors, timeouts, uncovered mutants, or errors.
+  The real-engine regression remains intact. No collection, threshold, or
+  suppression changes were made. Finish replacement CI verification. Stryker
+  documents the separate
+  [Vitest runner configuration](https://stryker-mutator.io/docs/stryker-js/vitest-runner/).
 
 ## 2026-09-07 — Local integration startup exhausted Docker address pools
 
@@ -25428,6 +25573,47 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Confirm the replacement integration shard 3,
   aggregate test gate, and CI gate pass on the fixture-fix commit.
 
+## 2026-09-07 — Historical repair validation after merging current main
+
+- **Status:** PR 2678 passed all CI checks on `73ede0f`; validation of the merge
+  with current main is pending. See the
+  [successful CI run](https://github.com/Asherlc/dofek/actions/runs/34155122228).
+- **Resolution:** Preserve both independently appended incident histories. Keep
+  the activity repair fixture's fixed historical `refreshed_at` timestamp instead
+  of the current-time adjustment from PR 2677: the explicit repair/rollback
+  event-time bounds now exercise that historical case without aging out. The
+  [regression suite](../src/db/activity-data-integrity-repair.integration.test.ts)
+  tests the production rebuild path, not a moving fixture window.
+- **Follow-up:** Revalidate the integrated branch and merge only after its
+  required checks pass. No workflow bypass, timeout change, or production
+  operation is part of this conflict resolution.
+
+## 2026-09-07 — Reconciled concurrent activity-repair CI fixes
+
+- **Symptoms / impact:** PR 2679 advanced main while PR 2678 awaited its merge,
+  producing conflicts in five activity-repair source/test files. No production
+  outage occurred; the merge was blocked. See the
+  [incoming change](https://github.com/Asherlc/dofek/pull/2679).
+- **Cause / resolution:** Both branches changed historical dbt rebuild inputs.
+  Keep one canonical `eventTimeStart`/`eventTimeEnd` contract and explicit CLI
+  bounds; derive the incoming `activity_sensor_sample_begin` variable from that
+  same start. Accept dbt-owned sensor-table creation in the fixture while
+  preserving fixed historical timestamps and repair/rollback assertions. The
+  [command builder](../src/db/activity-data-integrity-dbt.ts) implements the
+  combined contract; dbt documents these controls in its
+  [microbatch guide](https://docs.getdbt.com/docs/build/incremental-microbatch).
+- **Validation:** The command-boundary test first failed because the emitted
+  variables omitted `activity_sensor_sample_begin`; after reconciliation all
+  96 related unit tests and all 16 ledger/repair database tests passed. The
+  real-database regression exercises initial table creation, historical repair,
+  and rollback through the production dbt command. All 17,767 unit/mobile tests
+  passed (21 skipped), along with repository lint and root/server/web
+  typechecks. The exactly-once rebuild assertion was retained after review.
+  No retries, waits, or gate bypasses were added.
+- **Remaining risk / follow-up:** The integrated commit must pass fresh CI before
+  merge. Future conflict reviews should compare semantic changes against both
+  parents, including automatically merged test assertions.
+
 ## 2026-09-07 — Removed ramp-rate labels remained in an integration assertion
 
 - **Scope / impact:** PR #2680 merge validation only; no production impact.
@@ -25468,3 +25654,26 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   dictionary exception, or CI setting changed.
 - **Validation / follow-up:** The focused CSpell command passes locally. Confirm
   the replacement spell-check job and aggregate CI gate pass before merging.
+## 2026-09-07 — Human-record foundation merge blocked by review conversations
+
+- **Symptoms / impact:** The direct squash merge of [PR 2678](https://github.com/Asherlc/dofek/pull/2678)
+  failed with a base-branch-policy rejection despite green checks on
+  `d222042e21ed1e771fffcd225054f26149808128`. No production impact occurred.
+- **Evidence / cause:** Branch protection required conversation resolution;
+  nine CodeRabbit threads remained unresolved. Review also exposed date
+  coercion accepting null/boolean/numeric activity starts, a missing undo-kind
+  constraint, and expression indexes lost by the DBML generator.
+- **Direct fixes:** Restrict activity-start inputs before date coercion; enforce
+  the undo pair in SQL and Drizzle; generate expression indexes from schema
+  metadata. Add the target lookup index, isolate constraint assertions, validate
+  query results, and clarify read-only projections and Docker authorization.
+  A real Postgres replication-role fixture proves disconnected cycles cannot
+  become readable heads under the existing successor uniqueness constraint.
+- **Validation:** Regression tests failed before the corresponding fixes;
+  all 17,617 unit/mobile tests and 18 ledger/repair database tests now pass
+  (21 unit/mobile skips). Lint, root/server/web typechecks, SQLFluff, Squawk,
+  and spellcheck pass. Independent review found no remaining issues.
+- **Remaining risk / follow-up:** Push the reviewed fixes, reply to and resolve
+  the conversations, and require fresh CI before merging. Inspect conversation
+  status alongside CI early in future merge work. No bypass, retry, or timeout
+  adjustment was added.

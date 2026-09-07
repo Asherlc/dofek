@@ -86,6 +86,22 @@ See `src/db/sensor-channels.ts` for the full list of channel constants.
 
 ## Tables
 
+### Human record ledger foundation
+
+`human_record_identity` stores stable user-owned source identities;
+`human_record_change` stores commands; `human_record_target` stores their exact
+source targets and append-only predecessor chains. The command check requires
+`undo_change_id` exactly when `kind = 'undo'`; its foreign key also requires the
+referenced command to belong to the same user. The target change lookup index
+supports foreign-key checks during account erasure. See the
+[schema](../src/db/schema/record-modifications.ts),
+[migration](../drizzle/0110_human_record_ledger.sql), and PostgreSQL's
+[constraint documentation](https://www.postgresql.org/docs/current/ddl-constraints.html).
+
+The head, field, and visibility views are read-only projections, not additional
+stored state. Domain mutation services and MCP/UI integration are not part of
+this foundation. See the [projection definitions](../drizzle/0111_human_record_projections.sql).
+
 ### Reference
 
 | Table | Purpose |

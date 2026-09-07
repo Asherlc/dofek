@@ -21,7 +21,10 @@ import {
   uint64StringSchema,
   waitForPostgresMirror,
 } from "./activity-data-integrity-clickhouse.ts";
-import { runActivityIntegrityDbtBuild } from "./activity-data-integrity-dbt.ts";
+import {
+  type ActivityIntegrityDbtBuildInput,
+  runActivityIntegrityDbtBuild,
+} from "./activity-data-integrity-dbt.ts";
 import {
   assertNoEligibleActivityIntegrityJournal,
   createPostgresCommittedActivityIntegrityJournal,
@@ -168,11 +171,7 @@ interface ActivityIntegrityRepairDependencies {
   artifactDirectory?: string;
   generateRunId?: () => string;
   now?: () => Date;
-  rebuildReadModels?: (input: {
-    userId: string;
-    activityIds: readonly string[];
-    startAt: Date;
-  }) => Promise<void>;
+  rebuildReadModels?: (input: ActivityIntegrityDbtBuildInput) => Promise<void>;
   loadHomeTimezone?: (db: SchemaExecutionDatabase, userId: string) => Promise<string | null>;
   cdcReadinessTimeoutMs?: number;
   cdcReadinessPollIntervalMs?: number;
@@ -183,11 +182,7 @@ interface ActivityIntegrityRepairDependencies {
 interface ActivityIntegrityRollbackDependencies {
   now?: () => Date;
   generateRunId?: () => string;
-  rebuildReadModels?: (input: {
-    userId: string;
-    activityIds: readonly string[];
-    startAt: Date;
-  }) => Promise<void>;
+  rebuildReadModels?: (input: ActivityIntegrityDbtBuildInput) => Promise<void>;
   cdcReadinessTimeoutMs?: number;
   cdcReadinessPollIntervalMs?: number;
   monotonicNow?: () => number;
@@ -501,6 +496,28 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function artifactDbtEventTimeBounds(artifact: AuditArtifact, now: Date) {
+  const sourceRows = [
+    ...artifact.sourceRowsBefore,
+    ...(artifact.execution?.sourceRowsAfter ?? []),
+    ...(artifact.failure?.snapshot?.sourceRowsAfter ?? []),
+  ];
+  const starts = [
+    ...artifact.postgresActivities.flatMap((row) => [
+      new Date(row.startedAt).getTime(),
+      new Date(row.repairedStartedAt).getTime(),
+    ]),
+    ...sourceRows.map((row) => row.started_at.getTime()),
+  ];
+  const eventTimeStart = new Date(
+    starts.reduce((earliest, start) => Math.min(earliest, start), Infinity),
+  );
+  eventTimeStart.setUTCHours(0, 0, 0, 0);
+  const eventTimeEnd = new Date(now);
+  eventTimeEnd.setUTCHours(24, 0, 0, 0);
+  return { eventTimeStart, eventTimeEnd };
+}
+
 async function repairActivityDataIntegrityWithLease(
   db: ActivityIntegrityDatabase,
   clickHouse: ActivityIntegrityClickHouseClient,
@@ -630,7 +647,7 @@ async function repairActivityDataIntegrityWithLease(
     await rebuildReadModels({
       userId: options.userId,
       activityIds: before.activityIds,
-      startAt: options.startAt,
+      ...artifactDbtEventTimeBounds(artifact, now()),
     });
     failureStage = "verification";
     const after = await snapshotDerivedRows(clickHouse, options.userId, before.activityIds);
@@ -840,7 +857,7 @@ async function rollbackActivityDataIntegrityWithLease(
   await rebuildReadModels({
     userId: artifact.userId,
     activityIds: affectedIds,
-    startAt: new Date(artifact.window.startAt),
+    ...artifactDbtEventTimeBounds(artifact, now()),
   });
   const verified = await snapshotDerivedRows(clickHouse, artifact.userId, affectedIds);
   if (!sourceRowsMatchPostgres(verified.sourceRows, rollbackMirrorRows)) {
