@@ -140,6 +140,30 @@ function makeCaller(
   })).caller;
 }
 
+function makeResolvedCaller(
+  rows: Record<string, unknown>[],
+  sensorStore: unknown = makeSensorStoreStub(),
+  requestedId = "00000000-0000-0000-0000-000000000001",
+) {
+  const resolvedGroupId = typeof rows[0]?.id === "string" ? rows[0].id : requestedId;
+  return makeTestCaller(
+    createCaller,
+    [
+      rows.length > 0
+        ? [
+            {
+              requested_id: requestedId,
+              resolved_group_id: resolvedGroupId,
+              resolution_kind: requestedId === resolvedGroupId ? "group" : "member",
+            },
+          ]
+        : [],
+      rows,
+    ],
+    (db) => ({ db, sensorStore, userId: "user-1", timezone: "UTC" }),
+  ).caller;
+}
+
 function makeCallerWithoutSensorStore(rows: Record<string, unknown>[] = []) {
   return makeTestCaller(createCaller, [rows], (db) => ({ db, userId: "user-1", timezone: "UTC" }))
     .caller;
@@ -412,7 +436,7 @@ describe("activityRouter", () => {
         elevation_loss_m: 280,
         sample_count: 3600,
       };
-      const caller = makeCaller([row]);
+      const caller = makeResolvedCaller([row]);
       const result = await caller.byId({ id: "00000000-0000-0000-0000-000000000001" });
 
       expect(result.id).toBe("abc-123");
@@ -472,7 +496,7 @@ describe("activityRouter", () => {
         elevation_loss_m: null,
         sample_count: null,
       };
-      const caller = makeCaller([row]);
+      const caller = makeResolvedCaller([row]);
       const result = await caller.byId({ id: "00000000-0000-0000-0000-000000000001" });
 
       expect(result.endedAt).toBeNull();
@@ -514,15 +538,23 @@ describe("activityRouter", () => {
       };
       const caller = createCaller({
         db: {
-          execute: postgresExecute.mockResolvedValueOnce([
-            {
-              id: "00000000-0000-0000-0000-000000000001",
-              user_id: "user-1",
-              started_at: "2024-01-01T10:00:00Z",
-              ended_at: "2024-01-01T11:00:00Z",
-              member_activity_ids: ["00000000-0000-0000-0000-000000000001"],
-            },
-          ]),
+          execute: postgresExecute
+            .mockResolvedValueOnce([
+              {
+                requested_id: "00000000-0000-0000-0000-000000000001",
+                resolved_group_id: "00000000-0000-0000-0000-000000000001",
+                resolution_kind: "group",
+              },
+            ])
+            .mockResolvedValueOnce([
+              {
+                id: "00000000-0000-0000-0000-000000000001",
+                user_id: "user-1",
+                started_at: "2024-01-01T10:00:00Z",
+                ended_at: "2024-01-01T11:00:00Z",
+                member_activity_ids: ["00000000-0000-0000-0000-000000000001"],
+              },
+            ]),
         },
         sensorStore,
         userId: "user-1",
@@ -534,7 +566,7 @@ describe("activityRouter", () => {
       });
 
       expect(result).toHaveLength(1);
-      expect(postgresExecute).toHaveBeenCalledTimes(1);
+      expect(postgresExecute).toHaveBeenCalledTimes(2);
       expect(sensorStore.getStream).toHaveBeenCalledTimes(1);
     });
 
@@ -866,18 +898,27 @@ describe("activityRouter", () => {
     });
 
     it("enqueues recompute for all grouped member activities and invalidates caches", async () => {
-      const execute = vi.fn().mockResolvedValueOnce([
-        {
-          id: "00000000-0000-0000-0000-000000000001",
-          user_id: "user-1",
-          started_at: "2026-04-01T10:00:00Z",
-          ended_at: "2026-04-01T11:00:00Z",
-          member_activity_ids: [
-            "00000000-0000-0000-0000-000000000001",
-            "00000000-0000-0000-0000-000000000002",
-          ],
-        },
-      ]);
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([
+          {
+            requested_id: "00000000-0000-0000-0000-000000000001",
+            resolved_group_id: "00000000-0000-0000-0000-000000000001",
+            resolution_kind: "group",
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            id: "00000000-0000-0000-0000-000000000001",
+            user_id: "user-1",
+            started_at: "2026-04-01T10:00:00Z",
+            ended_at: "2026-04-01T11:00:00Z",
+            member_activity_ids: [
+              "00000000-0000-0000-0000-000000000001",
+              "00000000-0000-0000-0000-000000000002",
+            ],
+          },
+        ]);
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
@@ -1056,7 +1097,7 @@ describe("activityRouter", () => {
         .mockResolvedValue([]);
       const activityId = "00000000-0000-0000-0000-000000000001";
 
-      const caller = makeCaller([
+      const caller = makeResolvedCaller([
         makeActivityRow({
           id: activityId,
         }),

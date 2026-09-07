@@ -99,3 +99,120 @@ describe("ActivityRepository exact-range search", () => {
     expect(result.totalCount).toBe(1);
   });
 });
+
+const RESOLUTION_GROUP_ID = "70000000-0000-4000-8000-000000000001";
+const RESOLUTION_MEMBER_ID = "70000000-0000-4000-8000-000000000002";
+const RESOLUTION_SECOND_MEMBER_ID = "70000000-0000-4000-8000-000000000003";
+const RESOLUTION_ALIAS_ID = "70000000-0000-4000-8000-000000000004";
+const OTHER_USER_ID = "70000000-0000-4000-8000-000000000005";
+const OTHER_GROUP_ID = "70000000-0000-4000-8000-000000000006";
+const OTHER_MEMBER_ID = "70000000-0000-4000-8000-000000000007";
+const OTHER_ALIAS_ID = "70000000-0000-4000-8000-000000000008";
+
+describe("ActivityRepository stable activity id resolution", () => {
+  let testContext: TestContext;
+
+  beforeAll(async () => {
+    testContext = await setupTestDatabase();
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES ('activity_resolution_test', 'Activity Resolution Test', ${TEST_USER_ID})`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name)
+          VALUES (${OTHER_USER_ID}, 'Activity Resolution Other User')`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES ('activity_resolution_other', 'Activity Resolution Other', ${OTHER_USER_ID})`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.activity (
+            id, group_id, provider_id, user_id, external_id, canonical_type, provider_type,
+            started_at, ended_at, name
+          ) VALUES
+          (
+            ${RESOLUTION_MEMBER_ID}, ${RESOLUTION_GROUP_ID}, 'activity_resolution_test',
+            ${TEST_USER_ID}, 'member-1', 'cycling', 'ride',
+            '2026-08-01T10:00:00Z', '2026-08-01T11:00:00Z', 'Stable Group Ride'
+          ),
+          (
+            ${RESOLUTION_SECOND_MEMBER_ID}, ${RESOLUTION_GROUP_ID}, 'activity_resolution_test',
+            ${TEST_USER_ID}, 'member-2', 'cycling', 'cycling',
+            '2026-08-01T10:00:00Z', '2026-08-01T11:00:00Z', 'Stable Group Ride'
+          )`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.activity_group (id, user_id, anchor_activity_id)
+          VALUES (${RESOLUTION_ALIAS_ID}, ${TEST_USER_ID}, NULL)`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.activity_group_alias (alias_id, group_id, user_id, reason)
+          VALUES (${RESOLUTION_ALIAS_ID}, ${RESOLUTION_GROUP_ID}, ${TEST_USER_ID}, 'merge')`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.activity (
+            id, group_id, provider_id, user_id, external_id, canonical_type, provider_type,
+            started_at, ended_at, name
+          ) VALUES (
+            ${OTHER_MEMBER_ID}, ${OTHER_GROUP_ID}, 'activity_resolution_other', ${OTHER_USER_ID},
+            'other-member', 'running', 'running', '2026-08-02T10:00:00Z',
+            '2026-08-02T11:00:00Z', 'Other User Run'
+          )`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.activity_group (id, user_id, anchor_activity_id)
+          VALUES (${OTHER_ALIAS_ID}, ${OTHER_USER_ID}, NULL)`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.activity_group_alias (alias_id, group_id, user_id, reason)
+          VALUES (${OTHER_ALIAS_ID}, ${OTHER_GROUP_ID}, ${OTHER_USER_ID}, 'merge')`,
+    );
+  }, 60_000);
+
+  afterAll(async () => {
+    await testContext?.cleanup();
+  });
+
+  it("returns a direct stable group without substitution metadata", async () => {
+    const repository = new ActivityRepository(testContext.db, TEST_USER_ID, "UTC");
+
+    const activity = await repository.findById(RESOLUTION_GROUP_ID);
+
+    expect(activity).toMatchObject({ id: RESOLUTION_GROUP_ID, name: "Stable Group Ride" });
+    expect(activity).not.toHaveProperty("resolved_from");
+  });
+
+  it("resolves a member id to its stable group and reports the requested id", async () => {
+    const repository = new ActivityRepository(testContext.db, TEST_USER_ID, "UTC");
+
+    await expect(repository.findById(RESOLUTION_MEMBER_ID)).resolves.toMatchObject({
+      id: RESOLUTION_GROUP_ID,
+      resolved_from: RESOLUTION_MEMBER_ID,
+    });
+  });
+
+  it("resolves a merged historical alias to its retained stable group", async () => {
+    const repository = new ActivityRepository(testContext.db, TEST_USER_ID, "UTC");
+
+    await expect(repository.findById(RESOLUTION_ALIAS_ID)).resolves.toMatchObject({
+      id: RESOLUTION_GROUP_ID,
+      resolved_from: RESOLUTION_ALIAS_ID,
+    });
+  });
+
+  it.each([OTHER_GROUP_ID, OTHER_MEMBER_ID, OTHER_ALIAS_ID])(
+    "does not reveal a cross-user group, member, or alias (%s)",
+    async (activityId) => {
+      const repository = new ActivityRepository(testContext.db, TEST_USER_ID, "UTC");
+
+      await expect(repository.findById(activityId)).resolves.toBeNull();
+    },
+  );
+
+  it("returns null when no group, member, or alias matches", async () => {
+    const repository = new ActivityRepository(testContext.db, TEST_USER_ID, "UTC");
+
+    await expect(repository.findById("70000000-0000-4000-8000-000000000099")).resolves.toBeNull();
+  });
+});

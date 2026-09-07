@@ -247,7 +247,7 @@ export const activityRouter = router({
       const { currentEftp } = await powerRepo.getEftpTrend(ChartRange.fromDays(90));
       if (currentEftp == null) return null;
 
-      const zones = await activityRepo.getPowerZones(input.id, currentEftp);
+      const zones = await activityRepo.getPowerZones(activity.id, currentEftp);
       return { zones, ftp: currentEftp };
     }),
 
@@ -266,7 +266,7 @@ export const activityRouter = router({
         throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
       }
       const repo = new StrengthRepository(ctx.db, ctx.userId, ctx.timezone);
-      const exercises = await repo.getExercisesForActivity(input.id);
+      const exercises = await repo.getExercisesForActivity(activity.id);
       return exercises.map((exercise) => exercise.toDetail());
     }),
 

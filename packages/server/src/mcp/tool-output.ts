@@ -523,6 +523,7 @@ export const cyclingPerformanceOutputSchema = jsonResult(
 
 const activityDetailSchema = z.object({
   id: z.string(),
+  resolved_from: nullableString.optional(),
   canonical_type: z.string(),
   raw_type: z.string(),
   modality: nullableString,

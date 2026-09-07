@@ -936,6 +936,12 @@ describe("createMcpRouter", () => {
       .toBeDefined();
     expect
       .soft(
+        jsonSchemaAtPath(activityDetailsSchema, ["result", "activity", "resolved_from"]),
+        "get_activity_details: result.activity.resolved_from",
+      )
+      .toBeDefined();
+    expect
+      .soft(
         jsonSchemaAtPath(activityDetailsSchema, [
           "result",
           "activity",
@@ -3106,7 +3112,63 @@ describe("createMcpRouter", () => {
         },
       },
     });
+    expect(activityDetailsOutputSchema.parse(structuredContent).result.activity).not.toHaveProperty(
+      "resolved_from",
+    );
     expect(toolTestMocks.activityFindById).toHaveBeenCalledWith(activityId);
+  });
+
+  it("reports member-id substitution and hydrates detail families by stable group id", async () => {
+    authorizeMcpToken();
+    const requestedMemberId = "00000000-0000-4000-8000-000000000011";
+    const stableGroupId = "00000000-0000-4000-8000-000000000012";
+    toolTestMocks.activityFindById.mockResolvedValue({
+      absent_source_external_ids: null,
+      avg_cadence: null,
+      avg_hr: null,
+      avg_power: null,
+      avg_speed: null,
+      canonical_type: "strength",
+      elevation_gain_m: null,
+      elevation_loss_m: null,
+      ended_at: "2026-08-01T11:00:00.000Z",
+      end_utc_offset_minutes: 0,
+      id: stableGroupId,
+      local_time_source: "provider_timezone",
+      max_hr: null,
+      max_power: null,
+      max_speed: null,
+      modality: null,
+      name: "Training",
+      notes: null,
+      perceived_exertion: null,
+      provider_absent_at: null,
+      provider_id: "apple_health",
+      raw_type: "strength",
+      resolved_from: requestedMemberId,
+      sample_count: null,
+      source_external_ids: [],
+      source_providers: ["apple_health"],
+      start_utc_offset_minutes: 0,
+      started_at: "2026-08-01T10:00:00.000Z",
+      subsource: null,
+      timezone: "UTC",
+      total_distance: null,
+    });
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_activity_details", { activity_id: requestedMemberId }),
+    });
+
+    expect(parseToolCallText(response.text)).toMatchObject({
+      activity: { id: stableGroupId, resolved_from: requestedMemberId },
+    });
+    expect(toolTestMocks.strengthExercises).toHaveBeenCalledWith(stableGroupId);
+    expect(toolTestMocks.climbingActivityEntries).toHaveBeenCalledWith(stableGroupId);
+    expect(toolTestMocks.fingerLoadingActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ activityId: stableGroupId }),
+    );
   });
 
   it("returns the authenticated user's supplement definitions", async () => {
