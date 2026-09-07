@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { createImuChunkEnvelope as createChunk } from "./imu-upload.ts";
 import {
   acknowledgePhoneImuOutboxEntries,
   assignLegacyPhoneImuOutbox,
@@ -11,26 +10,7 @@ import {
   recordPhoneImuOutboxAttempts,
 } from "./phone-imu-outbox.ts";
 import { STORAGE_KEYS } from "./storage-keys.ts";
-import { createSettingsStorage } from "./test-helpers.ts";
-
-function createImuChunkEnvelope(
-  input: Omit<
-    Parameters<typeof createChunk>[0],
-    "sampleOffset" | "hasGyroscope" | "accelFreqMode" | "gyroFreqMode"
-  >,
-) {
-  return createChunk({
-    ...input,
-    destination: input.destination ?? {
-      serverUrl: "https://dofek.test",
-      accountId: "account-1",
-    },
-    sampleOffset: input.samples[0]?.tMs ?? 0,
-    hasGyroscope: false,
-    accelFreqMode: 1,
-    gyroFreqMode: 0,
-  });
-}
+import { createImuChunkEnvelope, createSettingsStorage } from "./test-helpers.ts";
 
 describe("phone IMU outbox", () => {
   it("returns an empty outbox when no index has been persisted", () => {

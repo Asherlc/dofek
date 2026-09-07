@@ -1,3 +1,4 @@
+import { z } from "zod/v3";
 import {
   type HealthEnvelopeV1,
   type HealthUploadResponse,
@@ -27,9 +28,25 @@ type SideFetch = (request: {
   body?: string;
 }) => Promise<ZeppFetchResponse>;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+const nonBlankString = z.string().refine((value) => value.trim().length > 0);
+
+const connectionResponseSchema = z.object({ accountId: nonBlankString });
+
+const connectionBindingSchema = z.object({
+  serverUrl: z.string(),
+  accountId: nonBlankString,
+});
+
+const uploadResponseSchema = z.object({
+  status: z.literal("ok"),
+  acceptedEventIds: z.array(nonBlankString),
+  rejected: z.array(
+    z.object({
+      eventId: nonBlankString,
+      issues: z.array(z.object({ path: z.string(), message: z.string() })),
+    }),
+  ),
+});
 
 export async function getImuConnection(
   serverUrl: string,
@@ -45,18 +62,13 @@ export async function getImuConnection(
       headers: { Authorization: `Bearer ${token.trim()}` },
     }),
   );
-  if (
-    response.status !== 200 ||
-    !response.ok ||
-    !isRecord(response.body) ||
-    typeof response.body.accountId !== "string" ||
-    !response.body.accountId.trim()
-  ) {
+  const parsedBody = connectionResponseSchema.safeParse(response.body);
+  if (response.status !== 200 || !response.ok || !parsedBody.success) {
     throw new Error(
       response.errorMessage ?? "Dofek did not return a valid IMU connection binding.",
     );
   }
-  return { serverUrl: normalizedUrl, accountId: response.body.accountId };
+  return { serverUrl: normalizedUrl, accountId: parsedBody.data.accountId };
 }
 
 export async function postImuEnvelope(
@@ -67,15 +79,11 @@ export async function postImuEnvelope(
   fetch: SideFetch,
 ): Promise<HealthUploadResponse> {
   if (!token.trim()) throw new Error("Connect Dofek from Zepp settings first.");
-  if (
-    !isRecord(connection) ||
-    typeof connection.serverUrl !== "string" ||
-    typeof connection.accountId !== "string" ||
-    !connection.accountId.trim()
-  ) {
+  const parsedConnection = connectionBindingSchema.safeParse(connection);
+  if (!parsedConnection.success) {
     throw new Error("Missing or invalid IMU connection binding.");
   }
-  if (connection.serverUrl !== serverUrl.replace(/\/$/, "")) {
+  if (parsedConnection.data.serverUrl !== serverUrl.replace(/\/$/, "")) {
     throw new Error("Reconnect the original Dofek server to upload this recording.");
   }
   const response = summarizeZeppFetchResponse(
@@ -85,19 +93,13 @@ export async function postImuEnvelope(
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token.trim()}` },
       body: JSON.stringify({
         ...envelope,
-        accountId: connection.accountId,
+        accountId: parsedConnection.data.accountId,
       }),
     }),
   );
-  if (
-    response.status !== 200 ||
-    !response.ok ||
-    typeof response.body !== "object" ||
-    response.body === null ||
-    !("status" in response.body) ||
-    response.body.status !== "ok"
-  ) {
+  const parsedBody = uploadResponseSchema.safeParse(response.body);
+  if (response.status !== 200 || !response.ok || !parsedBody.success) {
     throw new ImuUploadFailure(response);
   }
-  return parseHealthUploadResponse(response.body);
+  return parseHealthUploadResponse(parsedBody.data);
 }

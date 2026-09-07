@@ -176,6 +176,21 @@ describe("createImuSessionController", () => {
     expect(file.append).toHaveBeenCalledWith([{ ...sample, tMs: 40 }], "data://imu/session_b.bin");
   });
 
+  it("clamps a callback racing with segment rotation to the new segment origin", () => {
+    const times = [1_000, 1_010];
+    const { controller, emit, file } = setup({
+      now: () => times.shift() ?? 1_010,
+      collectorSessionStartMs: 1_000,
+    });
+    controller.start();
+    controller.rotate("data://imu/session_b.bin");
+
+    emit({ ...sample, tMs: 5 });
+    controller.stop();
+
+    expect(file.append).toHaveBeenCalledWith([{ ...sample, tMs: 0 }], "data://imu/session_b.bin");
+  });
+
   it("publishes the same persisted chunk for redundant phone delivery", () => {
     const { controller, emit, onChunk } = setup();
     controller.start();

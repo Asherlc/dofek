@@ -68,9 +68,11 @@ export async function drainPhoneImuOutbox(
       throw error;
     }
 
-    const accepted = response.acceptedEventIds;
+    const submitted = new Set(entries.map((entry) => entry.eventId));
+    const accepted = response.acceptedEventIds.filter((eventId) => submitted.has(eventId));
     uploaded += acknowledgePhoneImuOutboxEntries(storage, accepted);
     for (const rejected of response.rejected) {
+      if (!submitted.has(rejected.eventId)) continue;
       if (quarantinePhoneImuOutboxEntry(storage, rejected.eventId, rejected.issues)) {
         quarantined += 1;
       }

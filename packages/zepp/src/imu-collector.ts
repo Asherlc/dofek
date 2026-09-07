@@ -14,6 +14,34 @@ export interface SensorCtor {
   new (...args: never[]): ZosSensor;
 }
 
+type SensorVector = { x: number; y: number; z: number };
+
+function isFiniteSensorVector(value: unknown): value is SensorVector {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("x" in value) ||
+    !("y" in value) ||
+    !("z" in value)
+  ) {
+    return false;
+  }
+  return (
+    typeof value.x === "number" &&
+    Number.isFinite(value.x) &&
+    typeof value.y === "number" &&
+    Number.isFinite(value.y) &&
+    typeof value.z === "number" &&
+    Number.isFinite(value.z)
+  );
+}
+
+function currentFiniteVector(value: unknown, sensor: ZosSensor): SensorVector | null {
+  if (isFiniteSensorVector(value)) return value;
+  const current = sensor.getCurrent();
+  return isFiniteSensorVector(current) ? current : null;
+}
+
 export const FREQ_MODES: FreqModeEntry[] = [
   { value: 0, label: "LOW", rank: 0 },
   { value: 1, label: "NORMAL", rank: 1 },
@@ -165,15 +193,15 @@ export function createImuCollector(
 
   const handleAccelChange = (value: { x: number; y: number; z: number }) => {
     if (!running) return;
-    record(
-      "accelerometer",
-      value && typeof value.x === "number" ? value : accelerometer.getCurrent(),
-    );
+    const vector = currentFiniteVector(value, accelerometer);
+    if (vector) record("accelerometer", vector);
   };
   const handleGyroChange = (value: { x: number; y: number; z: number }) => {
     if (!running) return;
-    if (gyroscope)
-      record("gyroscope", value && typeof value.x === "number" ? value : gyroscope.getCurrent());
+    if (gyroscope) {
+      const vector = currentFiniteVector(value, gyroscope);
+      if (vector) record("gyroscope", vector);
+    }
   };
 
   return {

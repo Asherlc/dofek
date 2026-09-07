@@ -392,6 +392,47 @@ describe("createImuCollector", () => {
     expect(sample).toMatchObject({ sensor: "gyroscope", x: 99, y: 88, z: 77 });
   });
 
+  it("uses a finite fallback when a sensor callback contains an invalid vector", () => {
+    const accel = makeMockSensor({ currentValue: { x: 9, y: 8, z: 7 } });
+    const onSample = vi.fn();
+    const collector = createImuCollector(
+      { onSample },
+      {
+        Accelerometer: ctorFor(accel),
+        Gyroscope: ctorFor(makeMockSensor()),
+        checkSensor: () => true,
+      },
+    );
+    if (!collector.available) throw new Error("collector unavailable");
+    collector.start();
+
+    firstCallArg(accel.onChange)({ x: 1, y: Number.NaN, z: 3 });
+
+    expect(onSample).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ sensor: "accelerometer", x: 9, y: 8, z: 7 }),
+    );
+  });
+
+  it("drops a sample when both callback and current sensor vectors are invalid", () => {
+    const gyro = makeMockSensor({ currentValue: { x: 9, y: 8, z: Number.POSITIVE_INFINITY } });
+    const onSample = vi.fn();
+    const collector = createImuCollector(
+      { onSample },
+      {
+        Accelerometer: ctorFor(makeMockSensor()),
+        Gyroscope: ctorFor(gyro),
+        checkSensor: () => true,
+      },
+    );
+    if (!collector.available) throw new Error("collector unavailable");
+    collector.start();
+
+    firstCallArg(gyro.onChange)({ x: 1, y: 2, z: Number.NaN });
+
+    expect(onSample).not.toHaveBeenCalled();
+    expect(collector.getStats().sampleCount).toBe(0);
+  });
+
   it("calls onStatus after collecting samples for over a second", () => {
     vi.useFakeTimers();
     const accel = makeMockSensor();

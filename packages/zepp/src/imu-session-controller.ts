@@ -66,7 +66,7 @@ export function createImuSessionController(
     requestedFreqModeIndex: options.requestedFreqModeIndex,
     onSample(sample) {
       if (!active) return;
-      pending.push({ ...sample, tMs: sample.tMs - segmentSampleOriginMs });
+      pending.push({ ...sample, tMs: Math.max(0, sample.tMs - segmentSampleOriginMs) });
       sampleCount += 1;
       if (pending.length >= options.flushThreshold) {
         try {

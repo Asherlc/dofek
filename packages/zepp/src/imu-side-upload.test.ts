@@ -137,6 +137,21 @@ describe("postImuEnvelope", () => {
     ["a string body", { status: 200, body: "invalid" }],
     ["a missing acknowledgement", { status: 200, body: {} }],
     [
+      "a malformed accepted event",
+      { status: 200, body: { status: "ok", acceptedEventIds: [1], rejected: [] } },
+    ],
+    [
+      "a malformed rejection",
+      {
+        status: 200,
+        body: {
+          status: "ok",
+          acceptedEventIds: [],
+          rejected: [{ eventId: "event-1", issues: [{ path: 1, message: "Invalid" }] }],
+        },
+      },
+    ],
+    [
       "a negative acknowledgement",
       { status: 200, body: { status: "error", acceptedEventIds: [], rejected: [] } },
     ],

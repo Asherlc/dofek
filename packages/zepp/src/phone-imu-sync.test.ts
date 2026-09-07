@@ -1,27 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { createImuChunkEnvelope as createChunk } from "./imu-upload.ts";
 import {
   assignLegacyPhoneImuOutbox,
   persistImuEnvelope,
   readPhoneImuOutbox,
 } from "./phone-imu-outbox.ts";
 import { drainPhoneImuOutbox, type PostImuEnvelope } from "./phone-imu-sync.ts";
-import { createSettingsStorage } from "./test-helpers.ts";
-
-function createImuChunkEnvelope(
-  input: Omit<
-    Parameters<typeof createChunk>[0],
-    "sampleOffset" | "hasGyroscope" | "accelFreqMode" | "gyroFreqMode"
-  >,
-) {
-  return createChunk({
-    ...input,
-    sampleOffset: input.samples[0]?.tMs ?? 0,
-    hasGyroscope: false,
-    accelFreqMode: 1,
-    gyroFreqMode: 0,
-  });
-}
+import { createImuChunkEnvelope, createSettingsStorage } from "./test-helpers.ts";
 
 const binding = { serverUrl: "https://dofek.test", accountId: "account-1" };
 
@@ -153,19 +137,28 @@ describe("phone IMU outbox drain", () => {
     const storage = createSettingsStorage();
     persistImuEnvelope(storage, envelope("segment-accepted", 0));
     persistImuEnvelope(storage, envelope("segment-rejected", 0));
+    persistImuEnvelope(storage, {
+      ...envelope("other-account-accepted", 0),
+      destination: { ...binding, accountId: "account-2" },
+    });
+    persistImuEnvelope(storage, {
+      ...envelope("other-account-rejected", 0),
+      destination: { ...binding, accountId: "account-2" },
+    });
     const issues = [{ path: "samples.0", message: "Invalid sample" }];
 
     await expect(
       drainPhoneImuOutbox(storage, binding, async () => ({
-        acceptedEventIds: ["segment-accepted:0", "foreign:0"],
+        acceptedEventIds: ["segment-accepted:0", "other-account-accepted:0", "foreign:0"],
         rejected: [
+          { eventId: "other-account-rejected:0", issues },
           { eventId: "foreign-rejected:0", issues },
           { eventId: "segment-rejected:0", issues },
         ],
       })),
     ).resolves.toEqual({ uploaded: 1, quarantined: 1 });
     expect(readPhoneImuOutbox(storage)).toMatchObject({
-      pending: [],
+      pending: [{ eventId: "other-account-accepted:0" }, { eventId: "other-account-rejected:0" }],
       quarantine: [{ eventId: "segment-rejected:0", issues }],
     });
   });

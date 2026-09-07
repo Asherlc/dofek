@@ -1,5 +1,25 @@
 import { vi } from "vitest";
+import { createImuChunkEnvelope as createChunk } from "./imu-upload.ts";
 import type { SessionCallHandlers } from "./session-control.ts";
+
+export function createImuChunkEnvelope(
+  input: Omit<
+    Parameters<typeof createChunk>[0],
+    "sampleOffset" | "hasGyroscope" | "accelFreqMode" | "gyroFreqMode"
+  >,
+) {
+  return createChunk({
+    ...input,
+    destination: input.destination ?? {
+      serverUrl: "https://dofek.test",
+      accountId: "account-1",
+    },
+    sampleOffset: input.samples[0]?.tMs ?? 0,
+    hasGyroscope: false,
+    accelFreqMode: 1,
+    gyroFreqMode: 0,
+  });
+}
 
 export function deferred() {
   let resolvePromise: (() => void) | undefined;

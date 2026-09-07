@@ -158,6 +158,32 @@ describe("Zepp pairing refresh", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("reports and clears a corrupt saved IMU binding while returning preferences", async () => {
+    const values = new Map<string, string>([
+      [STORAGE_KEYS.DOFEK_API_TOKEN, "companion-token"],
+      [STORAGE_KEYS.DOFEK_CONNECTION_STATUS, JSON.stringify({ state: "connected" })],
+      [STORAGE_KEYS.IMU_CONNECTION_BINDING, "{"],
+    ]);
+    const settingsStorage = {
+      addListener: vi.fn(),
+      getItem: vi.fn((key: string) => values.get(key) ?? null),
+      removeItem: vi.fn((key: string) => values.delete(key)),
+      setItem: vi.fn((key: string, value: string) => values.set(key, value)),
+    };
+    vi.stubGlobal("settings", { settingsStorage });
+    const side = Object.assign({}, requireSideConfiguration());
+
+    const preferences = await new Promise<unknown>((resolve, reject) => {
+      side.onRequest({ method: "imu.getPreferences", params: {} }, (error, result) => {
+        if (error) reject(error);
+        else resolve(result);
+      });
+    });
+
+    expect(preferences).toMatchObject({ hasCredentials: true, imuConnection: null });
+    expect(settingsStorage.removeItem).toHaveBeenCalledWith(STORAGE_KEYS.IMU_CONNECTION_BINDING);
+  });
+
   it("requires disconnecting before starting another pairing session", async () => {
     const values = new Map([[STORAGE_KEYS.DOFEK_API_TOKEN, "existing-token"]]);
     vi.stubGlobal("settings", {

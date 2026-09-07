@@ -12,7 +12,7 @@ import type { HealthUploadPayload } from "../src/health-upload.ts";
 import {
   persistImuConnectionBinding,
   persistVerifiedImuConnection,
-  readImuConnectionBinding,
+  restoreWatchImuConnection,
 } from "../src/imu-connection-storage.ts";
 import {
   getImuConnection,
@@ -292,7 +292,9 @@ AppSideService(
         pairing: this.getPairingInfo(),
         imuConnection:
           connectionState === "connected" && apiToken
-            ? readImuConnectionBinding(settings.settingsStorage)
+            ? restoreWatchImuConnection(settings.settingsStorage, (error) =>
+                reportSideException(error, { category: "imu-binding-restore" }),
+              )
             : null,
       };
     },
@@ -431,7 +433,11 @@ AppSideService(
       settings.settingsStorage.setItem(STORAGE_KEYS.PAIRING_ID, pairingId);
       settings.settingsStorage.setItem(STORAGE_KEYS.PAIRING_SHORT_CODE, shortCode);
       settings.settingsStorage.setItem(STORAGE_KEYS.PAIRING_VERIFICATION_URL, verificationUrl);
-      settings.settingsStorage.setItem(STORAGE_KEYS.PAIRING_QR_IMAGE_URL, qrImageUrl);
+      if (qrImageUrl) {
+        settings.settingsStorage.setItem(STORAGE_KEYS.PAIRING_QR_IMAGE_URL, qrImageUrl);
+      } else {
+        settings.settingsStorage.removeItem(STORAGE_KEYS.PAIRING_QR_IMAGE_URL);
+      }
       settings.settingsStorage.setItem(STORAGE_KEYS.PAIRING_EXPIRES_AT, expiresAt);
       this.setConnectionStatus({ state: "pairing", shortCode, verificationUrl });
 
