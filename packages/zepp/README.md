@@ -183,6 +183,11 @@ Before submitting either package:
    page renders, including input labels and the pairing QR image. Settings Apps
    render only the components documented by Zepp's
    [Settings App UI API](https://docs.zepp.com/docs/reference/app-settings-api/ui/).
+   Call injected components such as `Image` directly. The
+   [Settings renderer](https://zepp-os.zepp.com/app-settings/v1.0.1/app-settings.global.1767162754628.prod.js)
+   supplies them as local bindings and shadows unsupported globals, including
+   `Reflect` and `globalThis`; looking up components through those globals
+   throws during rendering.
 2. Upload three or more device-appropriate images from `store-screenshots/`,
    as Zepp recommends. Each preview must be a 360×360 PNG. Keep the canvas
    outside the round or rounded-rectangular device display transparent, and

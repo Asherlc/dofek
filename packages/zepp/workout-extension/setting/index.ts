@@ -26,20 +26,16 @@ function toggle(
   storage.setItem(key, storage.getItem(key) === "1" ? "0" : "1");
 }
 
+declare function Image(props: Record<string, unknown>): unknown;
+
 function buildPairingQrImage(sourceUrl: string): unknown {
-  const renderImage: unknown = Reflect.get(globalThis, "Image");
-  if (typeof renderImage !== "function") {
-    throw new Error("Zepp Settings Image component is unavailable");
-  }
-  return Reflect.apply(renderImage, undefined, [
-    {
-      src: sourceUrl,
-      alt: "Dofek Workout pairing QR code",
-      width: 220,
-      height: 220,
-      style: { margin: "0 auto 1em", display: "block" },
-    },
-  ]);
+  return Image({
+    src: sourceUrl,
+    alt: "Dofek Workout pairing QR code",
+    width: 220,
+    height: 220,
+    style: { margin: "0 auto 1em", display: "block" },
+  });
 }
 
 interface WorkoutSettingsState {

@@ -25220,3 +25220,30 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   produces the iOS Metro bundle.
 - **Remaining risk / follow-up:** Confirm the replacement Metro Bundle job and
   complete PR workflow pass on the fix commit.
+
+## 2026-09-07 — Zepp Workout phone Settings rendered blank with a saved QR
+
+- **Status:** Fixed and validated locally; released-package and physical-phone
+  verification pending.
+- **Symptoms / user impact:** The user reported a blank Dofek Workout Settings
+  page in the Zepp phone app, preventing access to its pairing controls.
+- **Evidence / root cause:** Running the bundled Workout Settings entry point
+  with a saved pairing QR URL through the simulator's official
+  [Settings renderer](https://zepp-os.zepp.com/app-settings/v1.0.1/app-settings.global.1767162754628.prod.js)
+  in JSDOM produced an empty page and
+  `TypeError: Cannot read properties of undefined (reading 'get')`.
+  `buildPairingQrImage` used `Reflect.get(globalThis, "Image")`, but that runtime
+  shadows `Reflect` and `globalThis` and injects `Image` as a local binding.
+  The normal app contained the same defect. Existing tests exposed components
+  on Node globals and therefore missed the sandbox restriction.
+- **Direct fix:** Both Settings pages now call the injected `Image` directly,
+  following its [component API](https://docs.zepp.com/docs/reference/app-settings-api/ui/image/).
+  Added regression tests that bundle each page and execute it with lexical
+  component bindings and the restricted globals.
+- **Validation:** Both regression tests reproduced the exact exception before
+  the fix and passed afterward. The official renderer then rendered empty,
+  pairing, and connected fixtures for both packages without errors; pairing
+  fixtures contained the expected QR image and short code.
+- **Remaining risk / follow-up:** Publish updated packages and verify the
+  Workout Settings page on the affected phone. No retries, waits, or fallback
+  behavior were added to application code.

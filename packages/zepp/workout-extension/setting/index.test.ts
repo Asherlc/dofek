@@ -1,3 +1,4 @@
+import { renderSettingsInSandbox } from "../../setting/test-helpers.ts";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_DOFEK_SERVER_URL, STORAGE_KEYS } from "../../src/storage-keys.ts";
 
@@ -116,6 +117,17 @@ afterEach(() => {
 });
 
 describe("workout extension settings", () => {
+  it("renders a saved pairing QR with Zepp's injected Image and shadowed globals", async () => {
+    const images = await renderSettingsInSandbox(new URL("./index.ts", import.meta.url), {
+      [STORAGE_KEYS.PAIRING_QR_IMAGE_URL]: "https://dofek.example.test/pairing.svg",
+      [STORAGE_KEYS.PAIRING_SHORT_CODE]: "ABC234",
+      [STORAGE_KEYS.PAIRING_VERIFICATION_URL]: "https://dofek.example.test/zepp-pairing?code=ABC234",
+    });
+    expect(images).toEqual([expect.objectContaining({
+      src: "https://dofek.example.test/pairing.svg", width: 220, height: 220,
+    })]);
+  });
+
   it("loads saved settings and renders only management controls when connected", () => {
     const { rendered } = buildWith({
       [STORAGE_KEYS.DOFEK_SERVER_URL]: "https://dofek.example.test",
