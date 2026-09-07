@@ -110,6 +110,119 @@ describe("ClickHouse account erasure (integration)", () => {
     await client.close?.();
   });
 
+  it("erases UUID group and source-activity relations alongside legacy string groups without crossing families", async () => {
+    const database = databaseName("account_erasure_groups");
+    const userId = randomUUID();
+    const otherUserId = randomUUID();
+    const activityId = randomUUID();
+    const otherActivityId = randomUUID();
+    const groupId = randomUUID();
+    const otherGroupId = randomUUID();
+    const staging = `deduped_sensor__dbt_new_data_${randomUUID().replaceAll("-", "_")}`;
+    const tables = [
+      {
+        name: "activity",
+        columns: "id UUID, user_id UUID, group_id Nullable(UUID)",
+        rows: [
+          { id: activityId, user_id: userId, group_id: groupId, value: "delete" },
+          { id: otherActivityId, user_id: otherUserId, group_id: otherGroupId, value: "keep" },
+        ],
+      },
+      {
+        name: "activity_source_records",
+        columns: "activity_id UUID, group_id UUID",
+        rows: [
+          { activity_id: activityId, group_id: groupId, value: "delete" },
+          { activity_id: otherActivityId, group_id: otherGroupId, value: "keep" },
+        ],
+      },
+      {
+        name: "uuid_group_rows",
+        columns: "group_id UUID",
+        rows: [
+          { group_id: groupId, value: "delete" },
+          { group_id: otherGroupId, value: "keep" },
+        ],
+      },
+      ...["deduped_sensor", staging].map((name) => ({
+        name,
+        columns: "source_activity_id Nullable(UUID)",
+        rows: [
+          { source_activity_id: activityId, value: "delete" },
+          { source_activity_id: otherActivityId, value: "keep" },
+          { source_activity_id: null, value: "keep-unlinked" },
+        ],
+      })),
+      {
+        name: "legacy_members",
+        columns: "activity_id UUID, group_id LowCardinality(String)",
+        rows: [
+          { activity_id: activityId, group_id: "legacy-delete", value: "delete" },
+          { activity_id: otherActivityId, group_id: "legacy-keep", value: "keep" },
+        ],
+      },
+      {
+        name: "legacy_groups",
+        columns: "group_id Nullable(String)",
+        rows: [
+          { group_id: "legacy-delete", value: "delete" },
+          { group_id: "legacy-keep", value: "keep" },
+          { group_id: groupId, value: "keep-string-uuid" },
+        ],
+      },
+    ];
+    await createDatabase(client, database);
+    try {
+      if (!client.insert) throw new Error("ClickHouse integration client requires insert support");
+      for (const table of tables) {
+        await client.command({
+          query: `CREATE TABLE \`${database}\`.\`${table.name}\` (${table.columns}, value String)
+          ENGINE = MergeTree ORDER BY tuple()
+          SETTINGS old_parts_lifetime = 1, cleanup_delay_period = 1,
+          cleanup_delay_period_random_add = 0, max_cleanup_delay_period = 1`,
+          clickhouse_settings: { log_queries: 0 },
+        });
+        await client.insert({
+          table: `${database}.${table.name}`,
+          values: table.rows,
+          format: "JSONEachRow",
+          clickhouse_settings: { log_queries: 0 },
+        });
+      }
+      await eraseClickHouseAccount(
+        client,
+        { activityIds: [], operationIds: [], sleepSessionIds: [], userId },
+        {
+          managedDatabases: [database],
+          orphanStagingMinimumAgeMilliseconds: 0,
+          physicalPartPollIntervalMilliseconds: 1_000,
+          physicalPartWaitTimeoutMilliseconds: 45_000,
+        },
+      );
+      for (const name of [
+        "activity",
+        "activity_source_records",
+        "uuid_group_rows",
+        "legacy_members",
+      ]) {
+        await expect(tableValues(client, database, name)).resolves.toEqual(["keep"]);
+      }
+      for (const name of ["deduped_sensor", staging]) {
+        await expect(tableValues(client, database, name)).resolves.toEqual([
+          "keep",
+          "keep-unlinked",
+        ]);
+      }
+      await expect(tableValues(client, database, "legacy_groups")).resolves.toEqual([
+        "keep",
+        "keep-string-uuid",
+      ]);
+    } finally {
+      await cleanFences(client, userId, []);
+      await dropDatabase(client, database);
+    }
+  }, 120_000);
+
   it("erases current provider and heart-rate read models while preserving the cutover marker", async () => {
     const userId = randomUUID();
     const otherUserId = randomUUID();

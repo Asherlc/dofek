@@ -106,93 +106,30 @@ interface PersonalDataPredicate {
   sql: string;
 }
 
-const identifierColumnDefinitions: Readonly<Record<string, IdentifierColumnDefinition>> = {
-  activity_id: {
-    cardinality: "scalar",
-    family: "activityIds",
-    valueType: "uuid",
-  },
-  canonical_id: {
-    cardinality: "scalar",
-    family: "activityIds",
-    valueType: "uuid",
-  },
-  connected_activity_id: {
-    cardinality: "scalar",
-    family: "activityIds",
-    valueType: "uuid",
-  },
-  duplicate_activity_id: {
-    cardinality: "scalar",
-    family: "activityIds",
-    valueType: "uuid",
-  },
-  group_id: {
-    cardinality: "scalar",
-    family: "stringRelationIds",
-    valueType: "string",
-  },
-  linked_activity_id: {
-    cardinality: "scalar",
-    family: "activityIds",
-    valueType: "uuid",
-  },
-  measurement_id: {
-    cardinality: "scalar",
-    family: "recordIds",
-    valueType: "uuid",
-  },
-  member_activity_id: {
-    cardinality: "scalar",
-    family: "activityIds",
-    valueType: "uuid",
-  },
-  member_activity_ids: {
-    cardinality: "array",
-    family: "activityIds",
-    valueType: "uuid",
-  },
-  metric_stream_id: {
-    cardinality: "scalar",
-    family: "recordIds",
-    valueType: "uuid",
-  },
-  operation_id: {
-    cardinality: "scalar",
-    family: "operationIds",
-    valueType: "uuid",
-  },
-  panel_id: {
-    cardinality: "scalar",
-    family: "recordIds",
-    valueType: "uuid",
-  },
-  primary_activity_id: {
-    cardinality: "scalar",
-    family: "activityIds",
-    valueType: "uuid",
-  },
-  session_id: {
-    cardinality: "scalar",
-    family: "sleepIds",
-    valueType: "uuid",
-  },
-  sleep_id: {
-    cardinality: "scalar",
-    family: "sleepIds",
-    valueType: "uuid",
-  },
-  sleep_session_id: {
-    cardinality: "scalar",
-    family: "sleepIds",
-    valueType: "uuid",
-  },
-  source_metric_stream_id: {
-    cardinality: "scalar",
-    family: "recordIds",
-    valueType: "uuid",
-  },
-};
+const identifierColumnDefinitions: Readonly<Record<string, readonly IdentifierColumnDefinition[]>> =
+  {
+    activity_id: [{ cardinality: "scalar", family: "activityIds", valueType: "uuid" }],
+    canonical_id: [{ cardinality: "scalar", family: "activityIds", valueType: "uuid" }],
+    connected_activity_id: [{ cardinality: "scalar", family: "activityIds", valueType: "uuid" }],
+    duplicate_activity_id: [{ cardinality: "scalar", family: "activityIds", valueType: "uuid" }],
+    group_id: [
+      { cardinality: "scalar", family: "activityIds", valueType: "uuid" },
+      { cardinality: "scalar", family: "stringRelationIds", valueType: "string" },
+    ],
+    linked_activity_id: [{ cardinality: "scalar", family: "activityIds", valueType: "uuid" }],
+    measurement_id: [{ cardinality: "scalar", family: "recordIds", valueType: "uuid" }],
+    member_activity_id: [{ cardinality: "scalar", family: "activityIds", valueType: "uuid" }],
+    member_activity_ids: [{ cardinality: "array", family: "activityIds", valueType: "uuid" }],
+    metric_stream_id: [{ cardinality: "scalar", family: "recordIds", valueType: "uuid" }],
+    operation_id: [{ cardinality: "scalar", family: "operationIds", valueType: "uuid" }],
+    panel_id: [{ cardinality: "scalar", family: "recordIds", valueType: "uuid" }],
+    primary_activity_id: [{ cardinality: "scalar", family: "activityIds", valueType: "uuid" }],
+    session_id: [{ cardinality: "scalar", family: "sleepIds", valueType: "uuid" }],
+    sleep_id: [{ cardinality: "scalar", family: "sleepIds", valueType: "uuid" }],
+    sleep_session_id: [{ cardinality: "scalar", family: "sleepIds", valueType: "uuid" }],
+    source_activity_id: [{ cardinality: "scalar", family: "activityIds", valueType: "uuid" }],
+    source_metric_stream_id: [{ cardinality: "scalar", family: "recordIds", valueType: "uuid" }],
+  };
 
 const harmlessIdentifierColumns = new Set([
   "absent_source_external_ids",
@@ -284,8 +221,8 @@ function isUserProfileTable(table: PhysicalTable): boolean {
 
 function identifierColumns(table: PhysicalTable): Array<[string, IdentifierColumnDefinition]> {
   const definitions: Array<[string, IdentifierColumnDefinition]> = [];
-  for (const [columnName] of table.columns) {
-    const definition = identifierColumnDefinitions[columnName];
+  for (const [columnName, actualType] of table.columns) {
+    const definition = resolveIdentifierColumnDefinition(table, columnName, actualType);
     if (definition) {
       definitions.push([columnName, definition]);
     }
@@ -301,12 +238,10 @@ function isPersonalDataTable(table: PhysicalTable): boolean {
   );
 }
 
-function validateIdentifierColumnType(
-  table: PhysicalTable,
-  columnName: string,
+function matchesIdentifierColumnType(
   definition: IdentifierColumnDefinition,
   actualType: string,
-): void {
+): boolean {
   const expectedTypes =
     definition.valueType === "uuid"
       ? definition.cardinality === "array"
@@ -315,11 +250,25 @@ function validateIdentifierColumnType(
       : definition.cardinality === "array"
         ? new Set(["Array(String)", "Array(Nullable(String))"])
         : new Set(["String", "Nullable(String)", "LowCardinality(String)"]);
-  if (!expectedTypes.has(actualType)) {
+  return expectedTypes.has(actualType);
+}
+
+function resolveIdentifierColumnDefinition(
+  table: PhysicalTable,
+  columnName: string,
+  actualType: string,
+): IdentifierColumnDefinition | undefined {
+  const alternatives = identifierColumnDefinitions[columnName];
+  if (!alternatives) return undefined;
+  const definition = alternatives.find((candidate) =>
+    matchesIdentifierColumnType(candidate, actualType),
+  );
+  if (!definition) {
     throw new Error(
       `Unhandled ClickHouse account-erasure schema drift: ${tableKey(table)}.${columnName} has type ${actualType}`,
     );
   }
+  return definition;
 }
 
 function validatePhysicalTableSchema(table: PhysicalTable): void {
@@ -331,9 +280,8 @@ function validatePhysicalTableSchema(table: PhysicalTable): void {
     );
   }
   for (const [columnName, actualType] of table.columns) {
-    const definition = identifierColumnDefinitions[columnName];
+    const definition = resolveIdentifierColumnDefinition(table, columnName, actualType);
     if (definition) {
-      validateIdentifierColumnType(table, columnName, definition, actualType);
       continue;
     }
     if (
