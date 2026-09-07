@@ -164,6 +164,9 @@ entity "activity" {
   start_utc_offset_minutes : bigint
   end_utc_offset_minutes : bigint
   local_time_source : text
+  rejected_provider_timezone : text
+  rejected_provider_start_utc_offset_minutes : bigint
+  rejected_provider_end_utc_offset_minutes : bigint
   strava_id : text
   raw : jsonb
   provider_absent_at : timestamp
@@ -559,6 +562,13 @@ entity "account_erasure_request" {
   updated_at : timestamp
 }
 
+entity "app_store_notification" {
+  * notification_uuid : uuid <<PK>>
+  --
+  signed_date : bigint
+  processed_at : timestamp
+}
+
 entity "auth_account" {
   * id : uuid <<PK>>
   --
@@ -678,6 +688,14 @@ entity "user_billing" {
   stripe_current_period_end : timestamp
   stripe_subscription_event_id : text
   stripe_subscription_event_created : bigint
+  app_store_account_token : uuid
+  app_store_original_transaction_id : text
+  app_store_transaction_id : text
+  app_store_product_id : text
+  app_store_subscription_status : text
+  app_store_expires_at : timestamp
+  app_store_revocation_at : timestamp
+  app_store_environment : text
   paid_grant_reason : text
   created_at : timestamp
   updated_at : timestamp
@@ -799,6 +817,7 @@ entity "file_upload" {
   import_job_id : text
   import_since : timestamp
   weight_unit : text
+  timezone : text
   progress_percent : bigint
   error_code : text
   error_message : text
@@ -1083,6 +1102,24 @@ entity "external_link" {
   created_at : timestamp
 }
 
+entity "activity_integrity_repair_journal" {
+  * run_id : uuid <<PK>>
+  --
+  user_id : uuid
+  artifact_path : text
+  artifact_checksum : text
+  acceptance_owner : text
+  acceptance_deadline : timestamp
+  phase : text
+  accepted_by : text
+  retirement_disposition : text
+  retired_at : timestamp
+  retirement_receipt_path : text
+  retirement_receipt_checksum : text
+  created_at : timestamp
+  updated_at : timestamp
+}
+
 entity "processing_alert_dismissal" {
   user_id : uuid <<FK>>
   operation_id : uuid <<FK>>
@@ -1161,6 +1198,41 @@ entity "processing_stage_event" {
   metadata_schema_version : integer
   metadata : jsonb
   idempotency_key : text
+}
+
+entity "human_record_change" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  request_id : uuid
+  request_hash : text
+  kind : text
+  channel : text
+  client_id : text
+  recorded_at : timestamp
+  effective_at : timestamp
+  schema_version : integer
+  undo_change_id : uuid
+}
+
+entity "human_record_identity" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  domain : text
+  namespace : text
+  source_key : text
+}
+
+entity "human_record_target" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid
+  identity_id : uuid
+  change_id : uuid
+  predecessor_id : uuid
+  fields : jsonb
+  deleted : boolean
 }
 
 exercise ||--o{ exercise_alias
@@ -1267,5 +1339,7 @@ user_profile ||--o{ processing_operation
 processing_operation ||--o{ processing_operation_output
 processing_operation ||--o{ processing_queue_outbox
 processing_operation ||--o{ processing_stage_event
+user_profile ||--o{ human_record_change
+user_profile ||--o{ human_record_identity
 
 @enduml

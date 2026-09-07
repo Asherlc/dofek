@@ -25221,10 +25221,10 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Confirm the replacement Metro Bundle job and
   complete PR workflow pass on the fix commit.
 
-## 2026-09-07 — Local Docker address pools blocked modification-system validation
+## 2026-09-07 — Local Docker capacity blocked modification-system validation
 
-- **Status:** Unresolved local development prerequisite; no production impact
-  observed and no production changes made.
+- **Status:** Address-pool exhaustion and local resource pressure resolved.
+  No production changes made.
 - **Symptoms / user impact:** SQL lint and database-backed implementation tests
   could not run in the `stupid-termite` workspace. All three requested TypeScript
   checks passed; the Docker-free lint stages passed.
@@ -25235,11 +25235,47 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   have been fully subnetted`. Read-only Docker inspection found
   `laughing-dugong_default` and `lucid-mule_default` each had zero attached
   containers, but their Compose labels identify other workspaces.
-- **Mitigation:** No cross-workspace cleanup, daemon reconfiguration, validation
-  bypass, or retry/timeout change was performed. The design remains separate
-  from unimplemented runtime behavior.
-- **Remaining risk / follow-up:** Obtain approval for narrowly scoped unused
-  network cleanup, recheck ownership and attachments immediately before any
-  removal, start this workspace's dependencies, and rerun SQL lint and the
-  database-backed tests. Add an address-pool diagnostic section to the local
-  testing runbook after the recovery is verified.
+- **Mitigation:** After explicit approval and rechecking zero attached
+  containers, removed only `laughing-dugong_default`. No containers or volumes
+  were removed; its workspace can recreate the network. This allowed creation
+  of `stupid-termite_default` and the required backing services.
+- **Subsequent evidence:** `pnpm compose:up` failed with `application not healthy
+  after 3m0s`; ClickHouse repeatedly restarted. The focused PostgreSQL ledger
+  suite subsequently failed in template setup with `Hook timed out in 120000ms`.
+  Read-only Docker inspection reported 75 running containers, 10 CPUs, and
+  8,216,862,720 bytes of VM memory. `/proc/meminfo` showed only 300,756 kB
+  available; `/proc/loadavg` was `516.73 583.33 447.42`; memory pressure's
+  `full avg10` was 75.08. These measurements establish severe shared-VM
+  resource pressure. The exact cause of the ClickHouse process exits remains
+  unconfirmed; its current cgroup counters reported no OOM kill.
+- **Direct fix / validation:** After the user authorized stopping any other
+  workspace, stopped 73 inspected Compose containers from other workspaces.
+  Preserved every container and volume, the four current-workspace services,
+  and the four unrelated k3d containers. Available VM memory rose to
+  5,845,320 kB and memory pressure's `full avg10` fell to 0.91. The unchanged
+  ten-test PostgreSQL ledger suite passed in 4.42 seconds, and the local ledger
+  migration applied successfully.
+- **Remaining risk / follow-up:** Other workspaces need their services started
+  when next used. No daemon reconfiguration, timeout increase, validation
+  bypass, or resilience knob was added. Add the verified address-pool recovery
+  and resource-pressure diagnostics to the local testing runbook.
+
+## 2026-09-07 — Historical sensor fixture fell outside the repair build window
+
+- **Status:** Diagnosed; fix and executable verification pending. This was a
+  documentation-only PR check, not a deployed runtime change.
+- **Evidence:** [Integration shard 3/4, run 34141117493](https://github.com/Asherlc/dofek/actions/runs/34141117493/job/101803595315)
+  failed in `src/db/activity-data-integrity-repair.integration.test.ts:693`:
+  `AssertionError: expected [] to deeply equal` the two expected activity IDs.
+  Source, deduplication, and group assertions had already passed.
+- **Cause:** The fixture seeds `deduped_sensor.refreshed_at` on September 2;
+  `activity_sensor_sample` uses that event time, while the September 7 repair
+  build executed only September 4–7 batches. The repair dbt helper supplies
+  activity scope but no historical sensor-sample start bound. The batches
+  succeeded without reading the fixture, leaving sensor summaries empty.
+  Subsequent retries encountered the first attempt's unresolved repair journal;
+  that is a secondary symptom, not the initial failure.
+- **Impact / follow-up:** PR 2678 remains draft and not ready. Verify the
+  historical scoped-repair contract and add bounded event-time coverage before
+  implementing a fix. Do not move the fixture date or relax assertions merely
+  to pass the check. Local database capacity currently blocks reproduction.
