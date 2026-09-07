@@ -1,4 +1,5 @@
 import { formatRelativeTime } from "@dofek/format/format";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import {
   type ProcessingDisplayStage,
   type ProcessingDisplayStatus,
@@ -90,7 +91,10 @@ export function ProcessingStatusWidget({
     return (
       <SourceProcessingStatusCard
         heading="Processing status is unavailable"
-        message={error.message}
+        message={userFacingErrorMessage(
+          error,
+          "Processing status could not be loaded. Please try again.",
+        )}
         progress={null}
         status="failed"
       />
@@ -229,7 +233,10 @@ export function ProcessingStatusWidget({
       {datasetDetails}
       {dismissMutation.error ? (
         <p className="mt-2 text-xs font-medium text-red-700" role="alert">
-          {dismissMutation.error.message}
+          {userFacingErrorMessage(
+            dismissMutation.error,
+            "The processing notice could not be dismissed. Please try again.",
+          )}
         </p>
       ) : null}
     </SourceProcessingStatusCard>

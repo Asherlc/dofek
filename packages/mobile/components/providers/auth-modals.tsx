@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -60,7 +61,7 @@ export function CredentialAuthModal({
         source: "provider-credential-auth-sign-in",
         providerId,
       });
-      setError(err instanceof Error ? err.message : "Sign in failed");
+      setError(userFacingErrorMessage(err, "Sign in failed"));
     } finally {
       setLoading(false);
     }
@@ -176,7 +177,9 @@ export function TokenAuthModal({
         source: "provider-token-auth-connect",
         providerId,
       });
-      setError(caught instanceof Error ? caught.message : "Token connection failed");
+      setError(
+        userFacingErrorMessage(caught, "The token could not be connected. Check it and try again."),
+      );
       setLoading(false);
       return;
     }
@@ -190,7 +193,9 @@ export function TokenAuthModal({
         source: "provider-token-auth-instructions",
         providerId,
       });
-      setError(caught instanceof Error ? caught.message : "Could not open token instructions");
+      setError(
+        userFacingErrorMessage(caught, "Token instructions could not be opened. Please try again."),
+      );
     });
   }, [instructionsUrl, providerId]);
 
@@ -331,7 +336,7 @@ export function GarminAuthModal({
         source: "provider-garmin-auth-sign-in",
         providerId: "garmin",
       });
-      setError(error_ instanceof Error ? error_.message : "Sign in failed");
+      setError(userFacingErrorMessage(error_, "Sign in failed. Check your details and try again."));
     } finally {
       setLoading(false);
     }
@@ -462,7 +467,7 @@ export function WhoopAuthModal({
         source: "provider-whoop-auth-sign-in",
         providerId: "whoop",
       });
-      setError(error_ instanceof Error ? error_.message : "Sign in failed");
+      setError(userFacingErrorMessage(error_, "Sign in failed. Check your details and try again."));
     } finally {
       setLoading(false);
     }
@@ -483,7 +488,9 @@ export function WhoopAuthModal({
         source: "provider-whoop-auth-verify",
         providerId: "whoop",
       });
-      setError(error_ instanceof Error ? error_.message : "Verification failed");
+      setError(
+        userFacingErrorMessage(error_, "Verification failed. Check the code and try again."),
+      );
     } finally {
       setLoading(false);
     }

@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import type { ActivityHrZone, ActivityPowerZone, ZoneDistributionDatum } from "@dofek/zones/zones";
 import {
   createZoneDistributionRows,
@@ -53,7 +54,12 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
           textStyle={zoneChartStyles.title}
         />
         <View style={zoneChartStyles.emptyState}>
-          <Text style={zoneChartStyles.errorStateText}>{errorMessage}</Text>
+          <Text style={zoneChartStyles.errorStateText}>
+            {userFacingErrorMessage(
+              errorMessage,
+              "Heart rate zones could not be loaded. Please try again.",
+            )}
+          </Text>
         </View>
       </View>
     );

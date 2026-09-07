@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { providerDangerZoneCopy } from "@dofek/providers/provider-disconnect";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ModalDialog, ModalDialogTitle } from "../components/ModalDialog.tsx";
@@ -77,7 +78,7 @@ export function ProviderDangerZone({
       setShowDisconnectConfirm(false);
     } catch (error: unknown) {
       captureException(error, { context: "provider-disconnect" });
-      setDisconnectError(error instanceof Error ? error.message : "Unable to disconnect provider.");
+      setDisconnectError(userFacingErrorMessage(error, "Unable to disconnect provider."));
     } finally {
       disconnectInFlight.current = false;
       setDisconnectPending(false);
@@ -104,7 +105,7 @@ export function ProviderDangerZone({
       completionStarted.current = true;
       void finishDeletion().catch((error: unknown) => {
         captureException(error, { context: "provider-delete-finish" });
-        setErrorMessage(error instanceof Error ? error.message : "Failed to refresh provider data");
+        setErrorMessage(userFacingErrorMessage(error, "Failed to refresh provider data"));
         setOperationId(null);
       });
       return;
@@ -116,7 +117,7 @@ export function ProviderDangerZone({
     }
     if (deletionStatus.error) {
       captureException(deletionStatus.error, { context: "provider-delete-status" });
-      setErrorMessage(deletionStatus.error.message);
+      setErrorMessage(userFacingErrorMessage(deletionStatus.error));
       setOperationId(null);
     }
   }, [deletionStatus.data, deletionStatus.error, finishDeletion, operationId]);
@@ -133,7 +134,7 @@ export function ProviderDangerZone({
       setOperationId(result.operationId);
     } catch (error: unknown) {
       captureException(error, { context: "provider-delete-all-data" });
-      setErrorMessage(error instanceof Error ? error.message : "Failed to delete provider data");
+      setErrorMessage(userFacingErrorMessage(error, "Failed to delete provider data"));
     }
   };
 
@@ -269,7 +270,14 @@ export function ProviderDangerZone({
               />
             </div>
           )}
-          {errorMessage && <p className="text-xs text-red-400">{errorMessage}</p>}
+          {errorMessage && (
+            <p className="text-xs text-red-400">
+              {userFacingErrorMessage(
+                errorMessage,
+                "The provider action could not be completed. Please try again.",
+              )}
+            </p>
+          )}
           {!operationId && (
             <div className="flex justify-end gap-2">
               <button

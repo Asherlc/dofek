@@ -1,4 +1,5 @@
 import { formatDateMedium, parseValidDate } from "@dofek/format/format";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useState } from "react";
 import { AccountErasurePanel } from "../components/AccountErasurePanel.tsx";
@@ -80,7 +81,7 @@ export function SettingsPage() {
     } catch (error: unknown) {
       captureException(error, { source: "billing-checkout-operation-create" });
       setCheckoutClientError(
-        error instanceof Error ? error.message : "Checkout could not be started in this browser.",
+        userFacingErrorMessage(error, "Checkout could not be started in this browser."),
       );
     }
   }
@@ -152,7 +153,7 @@ export function SettingsPage() {
               </p>
             ) : billingStatus.error ? (
               <p className={`${billingRegionClassName} text-sm text-red-400`}>
-                {billingStatus.error.message}
+                {userFacingErrorMessage(billingStatus.error)}
               </p>
             ) : billingStatus.data ? (
               <div className={`${billingRegionClassName} space-y-3`}>
@@ -211,13 +212,17 @@ export function SettingsPage() {
                   )}
                 </div>
                 {checkoutSessionMutation.error ? (
-                  <p className="text-sm text-red-400">{checkoutSessionMutation.error.message}</p>
+                  <p className="text-sm text-red-400">
+                    {userFacingErrorMessage(checkoutSessionMutation.error)}
+                  </p>
                 ) : null}
                 {checkoutClientError ? (
                   <p className="text-sm text-red-400">{checkoutClientError}</p>
                 ) : null}
                 {portalSessionMutation.error ? (
-                  <p className="text-sm text-red-400">{portalSessionMutation.error.message}</p>
+                  <p className="text-sm text-red-400">
+                    {userFacingErrorMessage(portalSessionMutation.error)}
+                  </p>
                 ) : null}
               </div>
             ) : (

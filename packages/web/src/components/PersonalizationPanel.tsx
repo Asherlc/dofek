@@ -4,6 +4,7 @@ import {
   formatIntensity,
   formatStandardDeviation,
 } from "@dofek/format/format";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import type { PersonalizationModelCard } from "dofek-server/types";
 import { useEffect } from "react";
 import { captureException } from "../lib/telemetry.ts";
@@ -33,7 +34,7 @@ export function PersonalizationPanel() {
   }
 
   if (status.error) {
-    return <p className="text-sm text-red-400">{status.error.message}</p>;
+    return <p className="text-sm text-red-400">{userFacingErrorMessage(status.error)}</p>;
   }
 
   const data = status.data;

@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { SYNC_ALL_ACTIONS } from "@dofek/providers/sync-actions";
 import { type ComponentRef, useCallback, useRef, useState } from "react";
 import {
@@ -70,7 +71,7 @@ export function SyncAllControls({
       ) : null}
       {errorMessage ? (
         <Text style={styles.error} accessibilityRole="alert">
-          {errorMessage}
+          {userFacingErrorMessage(errorMessage, "The sync could not start. Please try again.")}
         </Text>
       ) : null}
 

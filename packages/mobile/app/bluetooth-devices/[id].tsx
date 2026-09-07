@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -25,7 +26,10 @@ import { colors, fontSize, fontWeight, radius, spacing } from "../../theme";
 type DeviceAction = "connect" | "disconnect" | "forget" | "start-streaming" | "stop-streaming";
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return userFacingErrorMessage(
+    error,
+    "The Bluetooth device could not be updated. Check Bluetooth and try again.",
+  );
 }
 
 function isConnected(connectionState: string): boolean {
@@ -76,7 +80,12 @@ export default function BluetoothDeviceDetailScreen() {
           setDevices(update.devices);
           setError(null);
         } else {
-          setError(update.error);
+          setError(
+            userFacingErrorMessage(
+              update.error,
+              "The Bluetooth device could not be refreshed. Check Bluetooth and try again.",
+            ),
+          );
         }
       });
     } catch (subscriptionError: unknown) {

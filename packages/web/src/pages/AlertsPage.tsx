@@ -1,4 +1,5 @@
 import { formatRelativeTime } from "@dofek/format/format";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import {
   PROCESSING_ALERTS_EMPTY_PREVIEW,
   type ProcessingAlert,
@@ -42,7 +43,7 @@ export function AlertsPage() {
   const visibleAlerts = alerts.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
   const failurePresentation = alertsQuery.error
     ? processingAlertsFailurePresentation({
-        errorMessage: alertsQuery.error.message,
+        errorMessage: userFacingErrorMessage(alertsQuery.error),
         hasSnapshot: alertsQuery.data !== undefined,
         lastCheckedLabel: alertsQuery.data
           ? formatRelativeTime(alertsQuery.data.generatedAt)
@@ -79,7 +80,7 @@ export function AlertsPage() {
               className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700"
               role="alert"
             >
-              {dismissMutation.error.message}
+              {userFacingErrorMessage(dismissMutation.error)}
             </p>
           ) : null}
           {visibleAlerts.map((alert) => (
@@ -124,7 +125,7 @@ export function AlertsPage() {
               ) : null}
               {syncMutation.error && syncMutation.variables?.providerId === alert.providerId ? (
                 <p className="mt-3 text-xs font-medium text-red-600" role="alert">
-                  {syncMutation.error.message}
+                  {userFacingErrorMessage(syncMutation.error)}
                 </p>
               ) : null}
             </article>

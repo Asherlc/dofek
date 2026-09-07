@@ -1,4 +1,5 @@
 import { formatDateTime } from "@dofek/format/format";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { useEffect, useState } from "react";
 import { McpClientSetupPanel } from "../components/McpClientSetupPanel.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
@@ -87,7 +88,7 @@ export function McpTokensPanel() {
       await trpcUtils.mcp.listTokens.invalidate();
     } catch (error: unknown) {
       captureException(error, { context: "create-mcp-token" });
-      setErrorMessage(error instanceof Error ? error.message : "Failed to create MCP token.");
+      setErrorMessage(userFacingErrorMessage(error, "Failed to create MCP token."));
     }
   };
 
@@ -109,7 +110,7 @@ export function McpTokensPanel() {
       await trpcUtils.mcp.listTokens.invalidate();
     } catch (error: unknown) {
       captureException(error, { context: "revoke-mcp-token" });
-      setErrorMessage(error instanceof Error ? error.message : "Failed to revoke MCP token.");
+      setErrorMessage(userFacingErrorMessage(error, "Failed to revoke MCP token."));
     }
   };
 
@@ -133,7 +134,7 @@ export function McpTokensPanel() {
           "New token created, but failed to revoke the old token. Revoke the old token manually.",
         );
       } else {
-        setErrorMessage(error instanceof Error ? error.message : "Failed to rotate MCP token.");
+        setErrorMessage(userFacingErrorMessage(error, "Failed to rotate MCP token."));
       }
     } finally {
       await trpcUtils.mcp.listTokens.invalidate();
@@ -257,7 +258,14 @@ export function McpTokensPanel() {
         </div>
       ) : null}
 
-      {errorMessage ? <p className="text-sm text-red-400">{errorMessage}</p> : null}
+      {errorMessage ? (
+        <p className="text-sm text-red-400">
+          {userFacingErrorMessage(
+            errorMessage,
+            "The token action could not be completed. Please try again.",
+          )}
+        </p>
+      ) : null}
 
       <div className="space-y-2">
         {(tokens.data ?? []).length === 0 ? (

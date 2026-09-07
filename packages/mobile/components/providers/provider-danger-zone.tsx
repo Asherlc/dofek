@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { providerDangerZoneCopy } from "@dofek/providers/provider-disconnect";
 import { statusColors } from "@dofek/scoring/colors";
 import { type ComponentRef, useCallback, useEffect, useRef, useState } from "react";
@@ -84,7 +85,7 @@ export function ProviderDangerZone({
       setShowDisconnectConfirm(false);
     } catch (error: unknown) {
       captureException(error, { context: "provider-disconnect" });
-      setDisconnectError(error instanceof Error ? error.message : "Unable to disconnect provider.");
+      setDisconnectError(userFacingErrorMessage(error, "Unable to disconnect provider."));
     } finally {
       disconnectInFlight.current = false;
       setDisconnectPending(false);
@@ -113,7 +114,7 @@ export function ProviderDangerZone({
         captureException(error, { context: "provider-delete-finish" });
         Alert.alert(
           "Refresh Failed",
-          error instanceof Error ? error.message : "Failed to refresh provider data",
+          userFacingErrorMessage(error, "Failed to refresh provider data"),
         );
         setOperationId(null);
       });
@@ -126,7 +127,7 @@ export function ProviderDangerZone({
     }
     if (deletionStatus.error) {
       captureException(deletionStatus.error, { context: "provider-delete-status" });
-      Alert.alert("Delete Failed", deletionStatus.error.message);
+      Alert.alert("Delete Failed", userFacingErrorMessage(deletionStatus.error));
       setOperationId(null);
     }
   }, [deletionStatus.data, deletionStatus.error, finishDeletion, operationId]);
@@ -142,10 +143,7 @@ export function ProviderDangerZone({
       setOperationId(result.operationId);
     } catch (error: unknown) {
       captureException(error, { context: "provider-delete-all-data" });
-      Alert.alert(
-        "Delete Failed",
-        error instanceof Error ? error.message : "Failed to delete provider data",
-      );
+      Alert.alert("Delete Failed", userFacingErrorMessage(error, "Failed to delete provider data"));
     }
   };
 

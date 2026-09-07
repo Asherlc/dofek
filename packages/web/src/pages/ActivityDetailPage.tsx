@@ -12,6 +12,7 @@ import {
 } from "@dofek/format/format";
 import { formatRecordLocalTime } from "@dofek/format/record-local-time";
 import type { UnitConverter } from "@dofek/format/units";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { providerSourceLabel } from "@dofek/providers/providers";
 import { activityMetricColors, statusColors } from "@dofek/scoring/colors";
 import {
@@ -279,7 +280,7 @@ export function ActivityDetailPage() {
           description="The climbs recorded during this session, including grades and send status."
         >
           {climbingEntries.error ? (
-            <p className="text-sm text-red-400">{climbingEntries.error.message}</p>
+            <p className="text-sm text-red-400">{userFacingErrorMessage(climbingEntries.error)}</p>
           ) : (
             <ClimbingEntryBreakdown entries={climbingEntries.data ?? []} />
           )}

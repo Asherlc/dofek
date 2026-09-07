@@ -7,6 +7,7 @@ import {
   shiftDateYmd,
 } from "@dofek/format/format";
 import { formatMeasurementText } from "@dofek/format/units";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { activityMetricColors } from "@dofek/scoring/colors";
 import { Link } from "@tanstack/react-router";
 import {
@@ -545,10 +546,10 @@ function HealthMonitorPreview() {
 }
 
 function ProviderStrip({ providers, error }: { providers: FeaturedProvider[]; error?: unknown }) {
-  const errorMessage =
-    error instanceof Error && error.message.trim().length > 0
-      ? error.message
-      : "Supported sources are temporarily unavailable.";
+  const errorMessage = userFacingErrorMessage(
+    error,
+    "Supported sources are temporarily unavailable. Please try again.",
+  );
 
   return (
     <section id="integrations" className="border-b border-border bg-surface/35 py-8">

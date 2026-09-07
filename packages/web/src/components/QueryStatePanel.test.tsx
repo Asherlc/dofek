@@ -2,7 +2,7 @@
 import { operationalStatusColors } from "@dofek/scoring/colors";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { QueryStatePanel } from "./QueryStatePanel.tsx";
+import { getQueryErrorMessage, QueryStatePanel } from "./QueryStatePanel.tsx";
 
 function relativeLuminance(hexColor: string): number {
   const linearChannel = (start: number) => {
@@ -108,6 +108,36 @@ describe("QueryStatePanel", () => {
   it("falls back when the error has no usable message", () => {
     render(<QueryStatePanel error={new Error("")} />);
     expect(screen.getByText("Failed to load data.")).toBeDefined();
+  });
+
+  it("replaces technical validation details with a readable message", () => {
+    render(
+      <QueryStatePanel
+        error={
+          new Error('dashboard: Zod parse failed: [{ "code": "invalid_type", "path": ["score"] }]')
+        }
+      />,
+    );
+
+    expect(screen.getByText("Failed to load data.")).toBeDefined();
+    expect(screen.queryByText(/Zod parse failed/)).toBeNull();
+  });
+
+  it("explains connection failures without exposing fetch errors", () => {
+    render(<QueryStatePanel error={new TypeError("Failed to fetch")} />);
+
+    expect(
+      screen.getByText("We couldn't reach the server. Check your connection and try again."),
+    ).toBeDefined();
+    expect(screen.queryByText("Failed to fetch")).toBeNull();
+  });
+
+  it.each([
+    ["UNAUTHORIZED", "Your session has expired. Sign in and try again."],
+    ["Invalid input: expected string, received undefined", "Failed to load data."],
+    ["DrizzleQueryError: Failed query: select * from fitness.user", "Failed to load data."],
+  ])("turns %s into readable guidance", (technicalMessage, expectedMessage) => {
+    expect(getQueryErrorMessage(new Error(technicalMessage))).toBe(expectedMessage);
   });
 
   it("offers a retry action for recoverable query failures", () => {

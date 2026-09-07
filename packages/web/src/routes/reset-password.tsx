@@ -4,6 +4,7 @@ import {
   PASSWORD_MIN_LENGTH,
   PASSWORD_REQUIREMENT_TEXT,
 } from "@dofek/auth/auth";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { createFileRoute, Link, useSearch } from "@tanstack/react-router";
 import { useState } from "react";
 import { PasswordInput } from "../components/PasswordInput.tsx";
@@ -35,7 +36,7 @@ function PasswordResetForm({ token }: { token: string }) {
       setSuccess(true);
     } catch (err: unknown) {
       captureException(err, { operation: "auth.password-reset-confirm" });
-      setError(err instanceof Error ? err.message : "Password reset failed");
+      setError(userFacingErrorMessage(err, "Password reset failed"));
     } finally {
       setSubmitting(false);
     }

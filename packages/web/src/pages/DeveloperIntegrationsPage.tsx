@@ -4,6 +4,7 @@ import type {
   DeveloperClientSummary,
 } from "@dofek/auth/developer-clients";
 import { formatDateTime } from "@dofek/format/format";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { DeveloperClientForm } from "../components/DeveloperClientForm.tsx";
@@ -25,7 +26,7 @@ export interface DeveloperIntegrationsPageContentProps {
 }
 
 function errorMessage(error: unknown): string | null {
-  return error instanceof Error ? error.message : null;
+  return error instanceof Error ? userFacingErrorMessage(error) : null;
 }
 
 export function DeveloperIntegrationsPageContent({

@@ -1,4 +1,5 @@
 import { formatDateYmd } from "@dofek/format/format";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { trpc } from "../lib/trpc";
@@ -33,11 +34,17 @@ export function SubjectiveTrackingPanel() {
       >
         <Text style={styles.checkInText}>All clear today</Text>
       </Pressable>
-      {saveCheckIn.error ? <Text style={styles.error}>{saveCheckIn.error.message}</Text> : null}
+      {saveCheckIn.error ? (
+        <Text style={styles.error}>{userFacingErrorMessage(saveCheckIn.error)}</Text>
+      ) : null}
       {regions.isLoading && regions.data === undefined ? (
         <QueryStatePanel variant="loading" minHeight={72} />
       ) : regions.error && regions.data === undefined ? (
-        <QueryStatePanel variant="error" message={regions.error.message} minHeight={96} />
+        <QueryStatePanel
+          variant="error"
+          message={userFacingErrorMessage(regions.error)}
+          minHeight={96}
+        />
       ) : regions.data?.length ? (
         <>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -89,13 +96,19 @@ export function SubjectiveTrackingPanel() {
         <QueryStatePanel variant="empty" message="No body regions are available." minHeight={96} />
       )}
       {regions.error && regions.data !== undefined ? (
-        <Text style={styles.error}>{regions.error.message}</Text>
+        <Text style={styles.error}>{userFacingErrorMessage(regions.error)}</Text>
       ) : null}
-      {createInjury.error ? <Text style={styles.error}>{createInjury.error.message}</Text> : null}
+      {createInjury.error ? (
+        <Text style={styles.error}>{userFacingErrorMessage(createInjury.error)}</Text>
+      ) : null}
       {injuries.isLoading && injuries.data === undefined ? (
         <QueryStatePanel variant="loading" minHeight={72} />
       ) : injuries.error && injuries.data === undefined ? (
-        <QueryStatePanel variant="error" message={injuries.error.message} minHeight={96} />
+        <QueryStatePanel
+          variant="error"
+          message={userFacingErrorMessage(injuries.error)}
+          minHeight={96}
+        />
       ) : injuries.data?.length ? (
         injuries.data.map((injury) => (
           <Text key={injury.id} style={styles.injury}>

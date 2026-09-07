@@ -10,6 +10,10 @@ function BrokenView(): never {
   throw new Error("Dashboard rendering failed");
 }
 
+function TechnicallyBrokenView(): never {
+  throw new Error("TypeError: Cannot read properties of undefined (reading 'score')");
+}
+
 describe("ErrorBoundary", () => {
   it("renders an announced, visibly identified fallback with an accessible retry", () => {
     const onReset = vi.fn();
@@ -44,5 +48,17 @@ describe("ErrorBoundary", () => {
 
     fireEvent.click(retryButton);
     expect(onReset).toHaveBeenCalledOnce();
+  });
+
+  it("does not expose technical rendering details", () => {
+    render(
+      <ErrorBoundary>
+        <TechnicallyBrokenView />
+      </ErrorBoundary>,
+      { onCaughtError: () => {} },
+    );
+
+    expect(screen.getByText("We couldn't display this section. Please try again.")).toBeDefined();
+    expect(screen.queryByText(/Cannot read properties/)).toBeNull();
   });
 });
