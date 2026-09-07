@@ -25220,3 +25220,79 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   produces the iOS Metro bundle.
 - **Remaining risk / follow-up:** Confirm the replacement Metro Bundle job and
   complete PR workflow pass on the fix commit.
+
+## 2026-09-07 — Zepp Workout phone Settings rendered blank with a saved QR
+
+- **Status:** Fixed and validated locally; released-package and physical-phone
+  verification pending.
+- **Symptoms / user impact:** The user reported a blank Dofek Workout Settings
+  page in the Zepp phone app, preventing access to its pairing controls.
+- **Evidence / root cause:** Running the bundled Workout Settings entry point
+  with a saved pairing QR URL through the simulator's official
+  [Settings renderer](https://zepp-os.zepp.com/app-settings/v1.0.1/app-settings.global.1767162754628.prod.js)
+  in JSDOM produced an empty page and
+  `TypeError: Cannot read properties of undefined (reading 'get')`.
+  `buildPairingQrImage` used `Reflect.get(globalThis, "Image")`, but that runtime
+  shadows `Reflect` and `globalThis` and injects `Image` as a local binding.
+  The normal app contained the same defect. Existing tests exposed components
+  on Node globals and therefore missed the sandbox restriction.
+- **Direct fix:** Both Settings pages now call the injected `Image` directly,
+  following its [component API](https://docs.zepp.com/docs/reference/app-settings-api/ui/image/).
+  Added regression tests that bundle each page and execute it with lexical
+  component bindings and the restricted globals.
+- **Validation:** Both regression tests reproduced the exact exception before
+  the fix and passed afterward. The official renderer then rendered empty,
+  pairing, and connected fixtures for both packages without errors; pairing
+  fixtures contained the expected QR image and short code.
+- **Remaining risk / follow-up:** Publish updated packages and verify the
+  Workout Settings page on the affected phone. No retries, waits, or fallback
+  behavior were added to application code.
+
+## 2026-09-07 — Zepp Settings mutation coverage blocked PR 2677
+
+- **Status:** Fixed and validated locally; replacement CI run pending.
+- **Symptoms / user impact:** `Test / Stryker (0)` failed and blocked the PR's
+  aggregate Mutation Testing gate before the Zepp pairing and Settings fixes
+  could be reviewed for merge.
+- **Evidence / root cause:** The exact failed command was
+  `pnpm exec stryker run stryker.ci.config.json --mutate "packages/zepp/src/settings-page.ts"`.
+  Its first fatal line was `Final mutation score 42.98 under breaking threshold
+  75`. The new renderer tests verified user actions and visible text but did not
+  assert the complete rendered design contract, so 120 covered visual mutants
+  survived. Stryker marks a mutant as survived when tests still pass after its
+  code change ([Stryker mutation testing](https://stryker-mutator.io/docs/mutation-testing-elements/mutation-testing/)).
+- **Direct fix:** Added compact render-contract snapshots and focused tests for
+  stored-status validation, optional pairing data, whitespace credentials,
+  command toggling, login defaults, sample-rate boundaries, recorder state,
+  transfer progress, and error styling. No mutation threshold or exclusion was
+  changed.
+- **Validation:** The exact mutation command now kills all 256 mutants for
+  `settings-page.ts`, producing a 100.00% mutation score. All 625 Zepp tests,
+  the Zepp typecheck, Zepp lint, and both production package builds also pass.
+- **Remaining risk / follow-up:** Confirm the replacement PR mutation shard and
+  aggregate gate pass on the fix commit.
+
+## 2026-09-07 — Aged activity-repair fixture blocked integration shard 3
+
+- **Status:** Fixed in source; replacement CI validation pending.
+- **Symptoms / user impact:** `Test / Integration Tests (3/4)` failed three
+  consecutive PR 2677 runs and blocked the aggregate test and CI gates even
+  though the PR's Zepp-specific checks passed.
+- **Evidence / root cause:** The exact failing command was
+  `pnpm exec vitest run --project integration --coverage --shard=3/4`. Its first
+  fatal line was `AssertionError: expected [] to deeply equal [ …(2) ]` in
+  `activity-data-integrity-repair.integration.test.ts`. The fixture gave its
+  synthetic sensor row a fixed September 2 `refreshed_at`, while the September
+  7 dbt run processed only September 4–7 for the model's three-day lookback.
+  dbt microbatch models split processing by their configured `event_time` and
+  can reprocess prior batches through `lookback`
+  ([dbt microbatch documentation](https://docs.getdbt.com/docs/build/incremental-microbatch)).
+- **Direct fix:** Preserve the fixture's historical `recorded_at` while setting
+  its synthetic ingestion `refreshed_at` with ClickHouse `now64(9)`, keeping it
+  inside the production model's refresh-time microbatch window. No retry,
+  timeout, model setting, or CI bypass was added.
+- **Validation:** The exact replacement integration shard and aggregate gates
+  are pending CI. The previous exact-head run passed every other test, build,
+  typecheck, lint, mutation, and security check.
+- **Remaining risk / follow-up:** Confirm the replacement integration shard 3,
+  aggregate test gate, and CI gate pass on the fixture-fix commit.

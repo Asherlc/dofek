@@ -42,3 +42,28 @@ export function createSettingsStorage(initial: Readonly<Record<string, string>> 
     setItem: vi.fn((key: string, value: string) => persisted.set(key, value)),
   };
 }
+
+export function createSettingsComponents() {
+  const buttons: Array<{ label: string; onClick(): void }> = [];
+  const inputs: Array<{ label: string; value?: string; onChange(value: string): void }> = [];
+  const links: Array<{ source: string }> = [];
+  const images: Array<{ src: string }> = [];
+  vi.stubGlobal("View", (props: unknown, children: unknown[]) => ({ props, children }));
+  vi.stubGlobal("Button", (props: (typeof buttons)[number]) => {
+    buttons.push(props);
+    return { button: props };
+  });
+  vi.stubGlobal("TextInput", (props: (typeof inputs)[number]) => {
+    inputs.push(props);
+    return { input: props };
+  });
+  vi.stubGlobal("Link", (props: (typeof links)[number], children: unknown[]) => {
+    links.push(props);
+    return { link: props, children };
+  });
+  vi.stubGlobal("Image", (props: (typeof images)[number]) => {
+    images.push(props);
+    return { image: props };
+  });
+  return { buttons, inputs, links, images };
+}
