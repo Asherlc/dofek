@@ -64,6 +64,12 @@ connection. Update both packages to the current release before pairing; Dofek
 rejects older ambiguous connection requests so a legacy Workout Extension
 cannot revoke the normal app's credential.
 
+When opened while unpaired, the watch widget automatically creates or reuses a
+pairing challenge and displays a QR code and short code. Scan it with your phone
+to pair; the widget restores workout status when the phone reports a connected
+state. Returning to the widget refreshes its connection state. QR rendering uses
+Zepp’s native [QRCODE widget](https://docs.zepp.com/docs/reference/device-app-api/newAPI/ui/widget/QRCODE/).
+
 ## Pair and enable the extension
 
 1. In the Zepp iOS app, open the installed **Dofek Workout** package's Settings.

@@ -1,4 +1,5 @@
 import { getSportData } from "@zos/app-access";
+import { getDeviceInfo } from "@zos/device";
 import {
   pauseDropWristScreenOff,
   resetDropWristScreenOff,
@@ -6,9 +7,10 @@ import {
   setPageBrightTime,
 } from "@zos/display";
 import { Accelerometer, checkSensor, Gyroscope, HeartRate } from "@zos/sensor";
-import { align, createWidget, prop, text_style, widget } from "@zos/ui";
+import { align, createWidget, deleteWidget, prop, text_style, widget } from "@zos/ui";
 import { log as Logger, px } from "@zos/utils";
 import { BasePage } from "@zeppos/zml/base-page";
+import { isConnectionChangedCall } from "../../src/connection-control.ts";
 import { createDisplayLease } from "../../src/display-lease.ts";
 import { createImuCollector } from "../../src/imu-collector.ts";
 import {
@@ -72,6 +74,11 @@ function emptyArray<T>(): T[] {
 DataWidget(
   BasePage({
     state: {
+      connectionRequestId: 0,
+      connectionMessage: nullable<string>(),
+      workoutStatus: "Collecting live workout data",
+      pairingQr: nullable<ReturnType<typeof createWidget>>(),
+      pairingUrl: "",
       intervalId: nullable<ReturnType<typeof setInterval>>(),
       collecting: false,
       flushing: false,
@@ -110,7 +117,7 @@ DataWidget(
       createWidget(widget.TEXT, {
         x: px(20),
         y: px(80),
-        w: px(440),
+        w: getDeviceInfo().width - px(40),
         h: px(60),
         color: 0xffffff,
         text_size: px(34),
@@ -121,8 +128,8 @@ DataWidget(
       this.state.statusWidget = createWidget(widget.TEXT, {
         x: px(20),
         y: px(160),
-        w: px(440),
-        h: px(120),
+        w: getDeviceInfo().width - px(40),
+        h: px(80),
         color: 0x9ca3af,
         text_size: px(26),
         align_h: align.CENTER_H,
@@ -130,9 +137,87 @@ DataWidget(
         text: "Collecting live workout data",
       });
       this.state.focused = true;
+      void this.refreshConnection();
       this.startCollection();
       this.retryImuTransfers();
       this.startImuSegment();
+    },
+
+    setWorkoutStatus(status: string) {
+      this.state.workoutStatus = status;
+      if (this.state.connectionMessage === null) {
+        this.state.statusWidget?.setProperty(prop.TEXT, status);
+      }
+    },
+
+    clearPairing() {
+      if (this.state.pairingQr) deleteWidget(this.state.pairingQr);
+      this.state.pairingQr = null;
+      this.state.pairingUrl = "";
+    },
+
+    async refreshConnection(startPairingIfNeeded = true) {
+      if (!this.state.focused) return;
+      const requestId = ++this.state.connectionRequestId;
+      this.state.connectionMessage = "Checking Dofek connection";
+      this.state.statusWidget?.setProperty(prop.TEXT, this.state.connectionMessage);
+      try {
+        const preferences = await this.request({ method: "imu.getPreferences", params: {} });
+        if (requestId !== this.state.connectionRequestId) return;
+        if (preferences?.hasCredentials === true) {
+          this.clearPairing();
+          this.state.connectionMessage = null;
+          this.setWorkoutStatus(this.state.workoutStatus);
+          return;
+        }
+        let pairing = preferences?.pairing;
+        if (!pairing && startPairingIfNeeded && preferences?.canStartConnection === true) {
+          pairing = await this.request({ method: "dofek.startPairing", params: {} });
+          if (requestId !== this.state.connectionRequestId) return;
+        }
+        const verificationUrl =
+          pairing && typeof pairing === "object" && "verificationUrl" in pairing &&
+          typeof pairing.verificationUrl === "string" ? pairing.verificationUrl : "";
+        const shortCode =
+          pairing && typeof pairing === "object" && "shortCode" in pairing &&
+          typeof pairing.shortCode === "string" ? pairing.shortCode : "";
+        if (verificationUrl && shortCode) {
+          if (this.state.pairingUrl !== verificationUrl) {
+            this.clearPairing();
+            const size = px(120);
+            const x = Math.floor((getDeviceInfo().width - size) / 2);
+            const y = px(260);
+            this.state.pairingQr = createWidget(widget.QRCODE, {
+              content: verificationUrl,
+              x,
+              y,
+              w: size,
+              h: size,
+              bg_x: x - px(8),
+              bg_y: y - px(8),
+              bg_w: size + px(16),
+              bg_h: size + px(16),
+            });
+            this.state.pairingUrl = verificationUrl;
+          }
+          this.state.connectionMessage = `Scan QR to pair\nCode ${shortCode}`;
+        } else {
+          this.clearPairing();
+          this.state.connectionMessage = "Not paired\nOpen Dofek Workout settings in Zepp";
+        }
+        this.state.statusWidget?.setProperty(prop.TEXT, this.state.connectionMessage);
+      } catch (error) {
+        if (requestId !== this.state.connectionRequestId) return;
+        this.reportError(error, "workout-pairing");
+        this.clearPairing();
+        const reason = error instanceof Error ? error.message : String(error);
+        this.state.connectionMessage = `${reason}\nOpen Zepp settings to pair`;
+        this.state.statusWidget?.setProperty(prop.TEXT, this.state.connectionMessage);
+      }
+    },
+
+    onCall(payload: { method: string; params?: Record<string, unknown> } | null) {
+      if (isConnectionChangedCall(payload)) void this.refreshConnection(false);
     },
 
     reportError(error: unknown, category: string) {
@@ -174,8 +259,7 @@ DataWidget(
           (count, pendingBatch) => count + pendingBatch.snapshots.length,
           0,
         );
-        this.state.statusWidget?.setProperty(
-          prop.TEXT,
+        this.setWorkoutStatus(
           `Captured ${pendingSampleCount} live sample${pendingSampleCount === 1 ? "" : "s"}`,
         );
         if (pendingSampleCount >= UPLOAD_BATCH_SIZE) {
@@ -216,7 +300,7 @@ DataWidget(
           ).batches;
           writeLiveWorkoutBuffer({ batches: this.state.pendingBatches });
         }
-        this.state.statusWidget?.setProperty(prop.TEXT, "Live workout data synced");
+        this.setWorkoutStatus("Live workout data synced");
       } catch (error: unknown) {
         writeLiveWorkoutBuffer({ batches: this.state.pendingBatches });
         this.reportError(error, "workout-upload");
@@ -285,8 +369,7 @@ DataWidget(
           ? "B"
           : null;
       if (!slot) {
-        this.state.statusWidget?.setProperty(
-          prop.TEXT,
+        this.setWorkoutStatus(
           "Workout metrics active\nMotion files waiting to send",
         );
         return;
@@ -422,6 +505,7 @@ DataWidget(
 
     onResume() {
       this.state.focused = true;
+      void this.refreshConnection();
       void this.state.imuChunkSync
         ?.retry()
         .catch((error: unknown) => this.reportError(error, "workout-imu-chunk-retry"));
@@ -432,12 +516,15 @@ DataWidget(
 
     onPause() {
       this.state.focused = false;
+      this.state.connectionRequestId++;
       this.stopImuSegment();
       this.stopCollection();
     },
 
     onDestroy() {
+      this.clearPairing();
       this.state.focused = false;
+      this.state.connectionRequestId++;
       this.state.imuTransferMonitorA?.cancel();
       this.state.imuTransferMonitorB?.cancel();
       this.state.imuTransferMonitorA = null;
