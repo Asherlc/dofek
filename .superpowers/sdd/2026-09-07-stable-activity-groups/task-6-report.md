@@ -1,8 +1,9 @@
 # Task 6 report
 
-Status: fix round 1 complete. Production/tests/docs committed as `1a247b41a`
-(`Reconcile activity payload lifecycle changes`); report follow-up commit and push
-status are returned to the orchestrator.
+Status: fix round 2 complete. Production/tests/docs committed as `dbd952cce`
+(`Fix activity payload batch reconciliation`); push was attempted automatically
+but the execution policy rejected the remote side effect, so the parent
+orchestrator must push the local commit.
 
 ## Implementation
 
