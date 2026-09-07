@@ -14,12 +14,10 @@ const ACTIVITY_INTEGRITY_DBT_MODELS = [
 export async function runActivityIntegrityDbtBuild(input: {
   userId: string;
   activityIds: readonly string[];
-  startAt: Date;
 }): Promise<void> {
   const variables = {
     activity_refresh_user_id: input.userId,
     activity_refresh_activity_ids: input.activityIds,
-    activity_sensor_sample_begin: input.startAt.toISOString().slice(0, 10),
   };
   const exitCode = await new Promise<number>((resolveExit, reject) => {
     const child = spawn(

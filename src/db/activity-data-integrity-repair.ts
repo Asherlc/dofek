@@ -168,11 +168,7 @@ interface ActivityIntegrityRepairDependencies {
   artifactDirectory?: string;
   generateRunId?: () => string;
   now?: () => Date;
-  rebuildReadModels?: (input: {
-    userId: string;
-    activityIds: readonly string[];
-    startAt: Date;
-  }) => Promise<void>;
+  rebuildReadModels?: (input: { userId: string; activityIds: readonly string[] }) => Promise<void>;
   loadHomeTimezone?: (db: SchemaExecutionDatabase, userId: string) => Promise<string | null>;
   cdcReadinessTimeoutMs?: number;
   cdcReadinessPollIntervalMs?: number;
@@ -183,11 +179,7 @@ interface ActivityIntegrityRepairDependencies {
 interface ActivityIntegrityRollbackDependencies {
   now?: () => Date;
   generateRunId?: () => string;
-  rebuildReadModels?: (input: {
-    userId: string;
-    activityIds: readonly string[];
-    startAt: Date;
-  }) => Promise<void>;
+  rebuildReadModels?: (input: { userId: string; activityIds: readonly string[] }) => Promise<void>;
   cdcReadinessTimeoutMs?: number;
   cdcReadinessPollIntervalMs?: number;
   monotonicNow?: () => number;
@@ -630,7 +622,6 @@ async function repairActivityDataIntegrityWithLease(
     await rebuildReadModels({
       userId: options.userId,
       activityIds: before.activityIds,
-      startAt: options.startAt,
     });
     failureStage = "verification";
     const after = await snapshotDerivedRows(clickHouse, options.userId, before.activityIds);
@@ -837,11 +828,7 @@ async function rollbackActivityDataIntegrityWithLease(
   }));
   await waitForPostgresMirror(clickHouse, artifact.userId, rollbackMirrorRows, dependencies);
   const rebuildReadModels = dependencies.rebuildReadModels ?? runActivityIntegrityDbtBuild;
-  await rebuildReadModels({
-    userId: artifact.userId,
-    activityIds: affectedIds,
-    startAt: new Date(artifact.window.startAt),
-  });
+  await rebuildReadModels({ userId: artifact.userId, activityIds: affectedIds });
   const verified = await snapshotDerivedRows(clickHouse, artifact.userId, affectedIds);
   if (!sourceRowsMatchPostgres(verified.sourceRows, rollbackMirrorRows)) {
     throw new Error("rollback rebuild did not publish the restored local-time context");
