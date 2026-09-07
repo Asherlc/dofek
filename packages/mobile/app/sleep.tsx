@@ -253,7 +253,7 @@ export default function SleepScreen() {
                   title="Average Duration"
                   value={formatDurationMinutes(averageSleepMinutes)}
                   trend={durationTrend}
-                  chartDescription="Recorded sleep duration for the latest 14 nights in this period."
+                  chartDescription="Recorded sleep duration by night in this period."
                   color={colors.blue}
                   subtitle={`Last ${days} nights`}
                   onViewData={scrollToSleepSources}
@@ -264,7 +264,7 @@ export default function SleepScreen() {
                   title="Average Efficiency"
                   value={formatIntensity(averageEfficiencyPercent)}
                   trend={efficiencyTrend}
-                  chartDescription="Recorded sleep efficiency for the latest 14 nights in this period, shown as a percentage."
+                  chartDescription="Recorded sleep efficiency by night in this period, shown as a percentage."
                   color={colors.purple}
                   subtitle={`Last ${days} nights`}
                   onViewData={scrollToSleepSources}

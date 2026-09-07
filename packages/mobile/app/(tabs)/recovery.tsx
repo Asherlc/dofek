@@ -452,7 +452,7 @@ export default function RecoveryScreen() {
             title="Heart Rate Variability"
             value={formatHRV(hrvContext?.value)}
             trend={hrvValues.slice(-14)}
-            chartDescription="The latest 14 recorded heart rate variability values, measured in milliseconds."
+            chartDescription="Recorded heart rate variability values, measured in milliseconds."
             color={colors.positive}
             subtitle={hrvContext ? formatBaselineContext(hrvContext, { unit: "ms" }) : undefined}
             trendDirection={
@@ -474,7 +474,7 @@ export default function RecoveryScreen() {
             }
             unit="bpm"
             trend={restingHeartRateValues.slice(-14)}
-            chartDescription="The latest 14 recorded resting heart rates, measured in beats per minute."
+            chartDescription="Recorded resting heart rates, measured in beats per minute."
             color={colors.warning}
             subtitle={
               restingHeartRateContext
@@ -546,7 +546,7 @@ export default function RecoveryScreen() {
             value={latestStress != null ? formatNumber(latestStress) : "--"}
             unit="/ 3"
             trend={stressValues.slice(-14)}
-            chartDescription="The latest 14 daily stress scores on a 0–3 scale."
+            chartDescription="Daily stress scores on a 0–3 scale."
             color={
               (latestStress ?? 0) >= 2
                 ? colors.danger
