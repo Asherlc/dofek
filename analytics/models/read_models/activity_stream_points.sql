@@ -4,7 +4,8 @@
     engine='ReplacingMergeTree(refresh_version)',
     order_by='(user_id, activity_id)',
     query_settings={
-        'max_threads': 1
+        'max_threads': 1,
+        'join_use_nulls': 1
     }
 ) }}
 
@@ -215,9 +216,12 @@ latest_location_samples AS (
             FROM active_dirty_keys
         )
         ORDER BY
+            user_id ASC,
+            activity_id ASC,
             source_metric_stream_id ASC,
-            refresh_version DESC
-        LIMIT 1 BY source_metric_stream_id
+            refresh_version DESC,
+            is_deleted DESC
+        LIMIT 1 BY user_id, activity_id, source_metric_stream_id
     )
     WHERE is_deleted = 0
 ),

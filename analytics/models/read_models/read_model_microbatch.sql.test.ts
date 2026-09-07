@@ -494,6 +494,7 @@ describe("production analytics read-model build", () => {
     expect(normalizedSql).toContain("WHERE existing_summary_state.activity_id IS null");
     expect(sql).toContain("restored_dirty_keys AS");
     expect(sql).toContain("prior_summary.is_deleted = 0");
+    expect(sql).toContain("'join_use_nulls': 1");
     expect(sql).not.toContain("source('analytics', 'v_activity')");
     expect(normalizedSql).not.toContain("ref('activity_sensor_sample') }} AS sensor_samples FINAL");
     expect(normalizedSql).not.toContain("FROM {{ ref('deduped_sensor') }}");
@@ -507,13 +508,15 @@ describe("production analytics read-model build", () => {
     const normalizedSql = compactWhitespace(sql);
 
     expect(sql).toContain("ref('activity_location_sample')");
-    expect(sql).toContain("affected_location_sample_ids AS");
+    expect(sql).toContain("affected_location_sample_keys AS");
     expect(sql).toContain("latest_location_samples AS");
     expect(sql).toContain("current_dirty_keys AS");
     expect(normalizedSql).toContain(
       "FROM {{ ref('activity_location_sample') }} AS location_samples INNER JOIN current_dirty_keys",
     );
-    expect(normalizedSql).toContain("LIMIT 1 BY source_metric_stream_id");
+    expect(normalizedSql).toContain(
+      "LIMIT 1 BY user_id, activity_id, source_metric_stream_id",
+    );
     expect(sql).toContain("ref('deduped_activities') }} FINAL");
     expect(sql).toContain("WHERE is_deleted = 0");
     expect(sql).toContain("repair_scope_dirty_keys AS");
@@ -564,9 +567,12 @@ describe("production analytics read-model build", () => {
     expect(normalizedSql).toContain("WHERE location_samples.lat IS NOT null AND location_samples.lng IS NOT null");
     expect(sql).toContain("toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version");
     expect(normalizedSql).toContain("LIMIT 1 BY user_id, activity_id, channel, recorded_at");
-    expect(normalizedSql).toContain("LIMIT 1 BY source_metric_stream_id");
+    expect(normalizedSql).toContain(
+      "LIMIT 1 BY user_id, activity_id, source_metric_stream_id",
+    );
     expect(normalizedSql).toContain("if(points_by_activity.activity_id IS null, 1, 0) AS is_deleted");
     expect(sql).toContain("refresh_clock.refreshed_at AS refreshed_at");
+    expect(sql).toContain("'join_use_nulls': 1");
     expect(sql).not.toContain("activity_stream_points_max_points");
     expect(normalizedSql).not.toContain("modulo( point_index - 1");
     expect(normalizedSql).not.toContain("intDiv(point_count");
@@ -682,7 +688,9 @@ describe("production analytics read-model build", () => {
     expect(normalizedLocationSql).toContain(
       "current_activity.activity_id = active_dirty_keys.activity_id",
     );
-    expect(normalizedLocationSql).toContain("LIMIT 1 BY source_metric_stream_id");
+    expect(normalizedLocationSql).toContain(
+      "LIMIT 1 BY user_id, activity_id, source_metric_stream_id",
+    );
     expect(normalizedLocationSql).toContain("FROM latest_location_samples WHERE lat IS NOT null");
     expect(normalizedLocationSql).not.toContain("WHERE (user_id, activity_id) IN");
     expect(normalizedLocationSql).not.toContain(

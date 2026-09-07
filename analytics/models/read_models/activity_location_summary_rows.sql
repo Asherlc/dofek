@@ -4,7 +4,8 @@
     engine='ReplacingMergeTree(refresh_version)',
     order_by='(user_id, activity_id)',
     query_settings={
-        'max_threads': 1
+        'max_threads': 1,
+        'join_use_nulls': 1
     }
 ) }}
 
@@ -217,8 +218,11 @@ current_dirty_keys AS (
         AND current_activity.user_id = active_dirty_keys.user_id
 ),
 
-affected_location_sample_ids AS (
-    SELECT DISTINCT location_samples.source_metric_stream_id AS source_metric_stream_id
+affected_location_sample_keys AS (
+    SELECT DISTINCT
+        location_samples.user_id AS user_id,
+        location_samples.activity_id AS activity_id,
+        location_samples.source_metric_stream_id AS source_metric_stream_id
     FROM {{ ref('activity_location_sample') }} AS location_samples
     INNER JOIN current_dirty_keys
         ON current_dirty_keys.activity_id = location_samples.activity_id
@@ -230,14 +234,17 @@ latest_location_samples AS (
     FROM (
         SELECT *
         FROM {{ ref('activity_location_sample') }}
-        WHERE source_metric_stream_id IN (
-            SELECT source_metric_stream_id
-            FROM affected_location_sample_ids
+        WHERE (user_id, activity_id, source_metric_stream_id) IN (
+            SELECT user_id, activity_id, source_metric_stream_id
+            FROM affected_location_sample_keys
         )
         ORDER BY
+            user_id ASC,
+            activity_id ASC,
             source_metric_stream_id ASC,
-            refresh_version DESC
-        LIMIT 1 BY source_metric_stream_id
+            refresh_version DESC,
+            is_deleted DESC
+        LIMIT 1 BY user_id, activity_id, source_metric_stream_id
     )
     WHERE is_deleted = 0
 ),

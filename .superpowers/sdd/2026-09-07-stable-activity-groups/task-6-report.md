@@ -1,9 +1,8 @@
 # Task 6 report
 
-Status: fix round 2 complete. Production/tests/docs committed as `dbd952cce`
-(`Fix activity payload batch reconciliation`); push was attempted automatically
-but the execution policy rejected the remote side effect, so the parent
-orchestrator must push the local commit.
+Status: fix round 3 complete. The original Task 6 implementation and first two
+fix rounds are recorded below; this round closes the remaining composite
+location-mapping identity finding.
 
 ## Implementation
 
@@ -230,3 +229,58 @@ follow monotonic row versions when source event time can be historical.
 Suggested guidance: add this microbatch anti-join rule and the
 current-state-route/full-refresh rollout to `analytics/README.md` (completed in
 this round); use `integration-tests-ready` for future dbt transition fixtures.
+
+## Fix round 3
+
+The remaining Important finding is closed. Every downstream reader now treats
+an `activity_location_sample` mapping as
+`(user_id, activity_id, source_metric_stream_id)`. The physical sample key was
+already group-aware and did not change. `activity_location_summary_rows` and
+`activity_stream_points` were the only consumers still collapsing versions by
+raw point ID alone; both now select the latest version per composite mapping,
+with `is_deleted DESC` as the deterministic tie-breaker when versions are
+equal. Nullable join semantics also make their existing empty-payload
+tombstone branches effective instead of publishing active rows with null or
+empty payloads.
+
+The actual-dbt location transition fixture now keeps a retained member in the
+old group while moving the route-owning member to a new stable group. It reuses
+the same four provider-B raw point IDs, proves the four old-group mappings are
+tombstoned and the four new-group mappings are active, and verifies each
+old/new pair shares one statement refresh clock. The old location summary and
+stream row tombstone; the new group retains the complete four-point stream and
+the exact provider-B centroid. Existing unrelated-route and complete-track
+provider-switch assertions remain in the same executable scenario.
+
+### Transition-first RED evidence
+
+- `rtk bash -lc 'set -a; . ./.env.local; set +a; pnpm vitest run --project integration src/db/activity-payload-dbt-microbatch.integration.test.ts -t "preserves unrelated routes"'` failed after the true group move. The first behavioral failure was `AssertionError: expected [ { active_count: 1 } ] to deeply equal [ { active_count: 0 } ]`; row diagnostics showed the old group remained active while the new group had the correct centroid. The cause was global `LIMIT 1 BY source_metric_stream_id`, which selected across the equal-clock old tombstone/new active pair. Once that collapse was corrected, the same test exposed the models' default non-nullable left-join values, which made the existing `IS null` tombstone predicates false.
+
+### Fix-round GREEN evidence
+
+- `rtk bash -lc 'set -a; . ./.env.local; set +a; pnpm vitest run --project integration src/db/activity-payload-dbt-microbatch.integration.test.ts --retry=0'`: 1 file, 2 tests passed in 25.22s against actual dbt-compiled SQL and ClickHouse.
+- `rtk pnpm vitest run analytics/models/read_models/read_model_microbatch.sql.test.ts --retry=0`: 1 file, 38 tests passed.
+- `rtk pnpm analytics:build`: all 39 models passed with no warnings, errors, or skips.
+- `rtk pnpm typecheck`: `TypeScript: No errors found`.
+- Escalated `rtk pnpm lint:sandbox`: passed all formatting and repository policy gates across 3,230 files. Its first run failed only on Biome's requested wrapping of two newly added arrays; applying Biome's deterministic formatting made the unchanged gate pass.
+- Focused SQLFluff passed `activity_stream_points.sql`. `activity_location_summary_rows.sql` retains only its three documented incremental/scoped Jinja ST03 false positives (`target_state`, `current_activity`, and `existing_summary`); the model passes the real transition suite and the 39-model build. No suppression or lint configuration change was added.
+- `rtk git diff --check`: clean.
+
+### Fix-round rollout and retrospective
+
+No migration or rebuild-order change is required beyond fix round 2: rebuild
+the group-aware location sample model before its summary and stream consumers.
+Because the physical sample key already contains user and group identity,
+existing remapped rows become correct as soon as those downstream read models
+are rebuilt.
+
+What went well: a true stable-group move made raw-point reuse visible and
+protected summary and stream output in one transition. What required
+investigation: ClickHouse's UUID `IN` expression in the test diagnostic
+returned no rows until the UUID was compared through its string projection;
+this was fixture-query behavior, not production. Useful context next time: any
+`ReplacingMergeTree` reader must collapse by the table's full logical mapping
+identity, not merely the upstream raw ID. Suggested guidance: add a read-model
+review checklist item requiring every `LIMIT ... BY` tuple to be compared with
+the producer's documented logical key; continue using
+`integration-tests-ready` for lifecycle transitions.

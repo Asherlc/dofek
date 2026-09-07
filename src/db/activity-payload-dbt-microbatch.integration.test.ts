@@ -20,6 +20,8 @@ const routeGroupId = "00000000-0000-0000-0000-000000001030";
 const unrelatedRouteGroupId = "00000000-0000-0000-0000-000000001031";
 const routeMemberId = "00000000-0000-0000-0000-000000001032";
 const unrelatedRouteMemberId = "00000000-0000-0000-0000-000000001033";
+const movedRouteGroupId = "00000000-0000-0000-0000-000000001034";
+const retainedRouteMemberId = "00000000-0000-0000-0000-000000001035";
 const providerAPointIds = [
   "00000000-0000-0000-0000-000000001040",
   "00000000-0000-0000-0000-000000001041",
@@ -151,7 +153,7 @@ describe("activity payload dbt batch reconciliation", () => {
     expect(compiledSql).toContain("INNER JOIN batch_sample_keys");
   }, 240_000);
 
-  it("preserves unrelated routes and switches providers from complete affected-group tracks", async () => {
+  it("preserves unrelated routes, switches providers, and remaps routes across groups", async () => {
     await seedLocationFixture(client, database);
 
     await insertLocationPoints(client, database, [
@@ -183,7 +185,7 @@ describe("activity payload dbt batch reconciliation", () => {
     await runDbtBatch(
       database,
       artifactDirectory,
-      ["activity_location_sample", "activity_location_summary_rows"],
+      ["activity_location_sample", "activity_location_summary_rows", "activity_stream_points"],
       "2026-09-03",
       "2026-09-04",
     );
@@ -284,6 +286,66 @@ describe("activity payload dbt batch reconciliation", () => {
     ]);
     await expectLocationCentroid(client, database, routeGroupId, 37.915, -122.085);
 
+    await moveRouteMember(client, database);
+    await runDbtBatch(
+      database,
+      artifactDirectory,
+      ["activity_location_sample", "activity_location_summary_rows", "activity_stream_points"],
+      "2026-09-07",
+      "2026-09-08",
+    );
+
+    const movedPointResult = await client.query({
+      query: `SELECT toString(activity_id) AS activity_id,
+          toString(source_metric_stream_id) AS source_metric_stream_id,
+          is_deleted
+        FROM ${database}.activity_location_sample FINAL
+        WHERE toString(source_metric_stream_id) IN (${providerBPointIds
+          .map((id) => `'${id}'`)
+          .join(",")})
+        ORDER BY activity_id, source_metric_stream_id`,
+      format: "JSONEachRow",
+    });
+    expect(await movedPointResult.json()).toEqual([
+      ...providerBPointIds.map((source_metric_stream_id) => ({
+        activity_id: routeGroupId,
+        source_metric_stream_id,
+        is_deleted: 1,
+      })),
+      ...providerBPointIds.map((source_metric_stream_id) => ({
+        activity_id: movedRouteGroupId,
+        source_metric_stream_id,
+        is_deleted: 0,
+      })),
+    ]);
+    const pairedRefreshResult = await client.query({
+      query: `SELECT toString(source_metric_stream_id) AS source_metric_stream_id,
+          toUInt32(count()) AS mapping_count,
+          toUInt32(uniqExact(refresh_version)) AS refresh_clock_count
+        FROM ${database}.activity_location_sample FINAL
+        WHERE toString(source_metric_stream_id) IN (${providerBPointIds
+          .map((id) => `'${id}'`)
+          .join(",")})
+        GROUP BY source_metric_stream_id
+        ORDER BY source_metric_stream_id`,
+      format: "JSONEachRow",
+    });
+    expect(await pairedRefreshResult.json()).toEqual(
+      providerBPointIds.map((source_metric_stream_id) => ({
+        source_metric_stream_id,
+        mapping_count: 2,
+        refresh_clock_count: 1,
+      })),
+    );
+    await expectActiveLocationPointIds(client, database, routeGroupId, []);
+    await expectActiveLocationPointIds(client, database, movedRouteGroupId, providerBPointIds);
+    await expectNoActiveLocationSummary(client, database, routeGroupId);
+    await expectLocationCentroid(client, database, movedRouteGroupId, 37.915, -122.085);
+    await expectLocationStreamState(client, database, [
+      { activity_id: routeGroupId, point_count: 0, is_deleted: 1 },
+      { activity_id: movedRouteGroupId, point_count: 4, is_deleted: 0 },
+    ]);
+
     const compiledSql = await readFile(
       join(
         artifactDirectory,
@@ -317,10 +379,12 @@ async function seedLocationFixture(client: ClickHouseClient, database: string): 
     createDedupedActivitiesSql(database),
     createDedupedActivityMembersSql(database),
     createMetricStreamSql(database),
+    createActivitySensorSampleSql(database),
     `INSERT INTO ${database}.deduped_activities VALUES
       ('${routeGroupId}', '${userId}', toDateTime64('2026-09-03 10:00:00', 6, 'UTC'),
        toDateTime64('2026-09-03 11:00:00', 6, 'UTC'),
-       toDateTime64('2026-09-03 12:00:00', 9, 'UTC'), ['${routeMemberId}'], 1, 0,
+       toDateTime64('2026-09-03 12:00:00', 9, 'UTC'),
+       ['${routeMemberId}', '${retainedRouteMemberId}'], 1, 0,
        toDateTime64('2026-09-03 12:00:00', 9, 'UTC')),
       ('${unrelatedRouteGroupId}', '${userId}', toDateTime64('2026-09-04 10:00:00', 6, 'UTC'),
        toDateTime64('2026-09-04 11:00:00', 6, 'UTC'),
@@ -331,10 +395,33 @@ async function seedLocationFixture(client: ClickHouseClient, database: string): 
        toDateTime64('2026-09-03 11:00:00', 6, 'UTC'),
        toDateTime64('2026-09-03 12:00:00', 9, 'UTC'), '${routeMemberId}', 1, 0,
        toDateTime64('2026-09-03 12:00:00', 9, 'UTC')),
+      ('${routeGroupId}', '${userId}', toDateTime64('2026-09-03 10:00:00', 6, 'UTC'),
+       toDateTime64('2026-09-03 11:00:00', 6, 'UTC'),
+       toDateTime64('2026-09-03 12:00:00', 9, 'UTC'), '${retainedRouteMemberId}', 1, 0,
+       toDateTime64('2026-09-03 12:00:00', 9, 'UTC')),
       ('${unrelatedRouteGroupId}', '${userId}', toDateTime64('2026-09-04 10:00:00', 6, 'UTC'),
        toDateTime64('2026-09-04 11:00:00', 6, 'UTC'),
        toDateTime64('2026-09-04 12:00:00', 9, 'UTC'), '${unrelatedRouteMemberId}', 1, 0,
        toDateTime64('2026-09-04 12:00:00', 9, 'UTC'))`,
+  ]);
+}
+
+async function moveRouteMember(client: ClickHouseClient, database: string): Promise<void> {
+  await runStatements(client, [
+    `INSERT INTO ${database}.deduped_activities VALUES
+      ('${routeGroupId}', '${userId}', toDateTime64('2026-09-03 10:00:00', 6, 'UTC'),
+       toDateTime64('2026-09-03 11:00:00', 6, 'UTC'),
+       toDateTime64('2026-09-07 23:00:00', 9, 'UTC'), ['${retainedRouteMemberId}'], 2, 0,
+       toDateTime64('2026-09-07 23:00:00', 9, 'UTC')),
+      ('${movedRouteGroupId}', '${userId}', toDateTime64('2026-09-03 10:00:00', 6, 'UTC'),
+       toDateTime64('2026-09-03 11:00:00', 6, 'UTC'),
+       toDateTime64('2026-09-07 23:00:00', 9, 'UTC'), ['${routeMemberId}'], 2, 0,
+       toDateTime64('2026-09-07 23:00:00', 9, 'UTC'))`,
+    `INSERT INTO ${database}.deduped_activity_members VALUES
+      ('${movedRouteGroupId}', '${userId}', toDateTime64('2026-09-03 10:00:00', 6, 'UTC'),
+       toDateTime64('2026-09-03 11:00:00', 6, 'UTC'),
+       toDateTime64('2026-09-07 23:00:00', 9, 'UTC'), '${routeMemberId}', 2, 0,
+       toDateTime64('2026-09-07 23:00:00', 9, 'UTC'))`,
   ]);
 }
 
@@ -390,6 +477,35 @@ async function expectLocationCentroid(
     .parse(await result.json());
   expect(summary?.centroid_lat).toBeCloseTo(expectedLat, 4);
   expect(summary?.centroid_lng).toBeCloseTo(expectedLng, 4);
+}
+
+async function expectNoActiveLocationSummary(
+  client: ClickHouseClient,
+  database: string,
+  activityId: string,
+): Promise<void> {
+  const result = await client.query({
+    query: `SELECT count() AS active_count
+      FROM ${database}.activity_location_summary_rows FINAL
+      WHERE activity_id = toUUID('${activityId}') AND is_deleted = 0`,
+    format: "JSONEachRow",
+  });
+  expect(await result.json()).toEqual([{ active_count: 0 }]);
+}
+
+async function expectLocationStreamState(
+  client: ClickHouseClient,
+  database: string,
+  expected: Array<{ activity_id: string; point_count: number; is_deleted: number }>,
+): Promise<void> {
+  const result = await client.query({
+    query: `SELECT toString(activity_id) AS activity_id, length(points) AS point_count, is_deleted
+      FROM ${database}.activity_stream_points FINAL
+      WHERE toString(activity_id) IN ('${routeGroupId}', '${movedRouteGroupId}')
+      ORDER BY activity_id`,
+    format: "JSONEachRow",
+  });
+  expect(await result.json()).toEqual(expected);
 }
 
 async function seedSensorFixture(client: ClickHouseClient, database: string): Promise<void> {
@@ -620,6 +736,20 @@ function createMetricStreamSql(database: string): string {
     version UInt64,
     is_deleted UInt8
   ) ENGINE = MergeTree ORDER BY (id, version)`;
+}
+
+function createActivitySensorSampleSql(database: string): string {
+  return `CREATE TABLE ${database}.activity_sensor_sample (
+    activity_id UUID,
+    user_id UUID,
+    recorded_at DateTime64(9, 'UTC'),
+    channel String,
+    scalar Nullable(Float64),
+    refresh_version UInt64,
+    is_deleted UInt8,
+    refreshed_at DateTime64(9, 'UTC')
+  ) ENGINE = ReplacingMergeTree(refresh_version)
+    ORDER BY (user_id, activity_id, channel, recorded_at)`;
 }
 
 function requireClickHouseUrl(): string {
