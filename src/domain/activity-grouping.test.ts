@@ -129,30 +129,36 @@ describe("activity group reconciliation", () => {
         { id: "group-b", anchorActivityId: "activity-b", createdAt: january2 },
       ],
       members: [
+        { id: "activity-d", createdAt: january3, groupId: null },
         { id: "activity-c", createdAt: january3, groupId: null },
         { id: "activity-b", createdAt: january2, groupId: "group-b" },
         { id: "activity-a", createdAt: january1, groupId: "group-a" },
       ],
-      overlaps: [{ activityId: "activity-b", overlappingActivityId: "activity-a" }],
+      overlaps: [
+        { activityId: "activity-b", overlappingActivityId: "activity-a" },
+        { activityId: "activity-c", overlappingActivityId: "activity-b" },
+      ],
     };
+    expect(permutations(input.overlaps)).toHaveLength(2);
     const expected = {
       aliases: [{ aliasGroupId: "group-b", groupId: "group-a", reason: "merged" }],
       components: [
         {
-          memberIds: ["activity-a", "activity-b"],
+          memberIds: ["activity-a", "activity-b", "activity-c"],
           target: { groupId: "group-a", kind: "existing" },
         },
         {
-          memberIds: ["activity-c"],
-          target: { anchorActivityId: "activity-c", kind: "new" },
+          memberIds: ["activity-d"],
+          target: { anchorActivityId: "activity-d", kind: "new" },
         },
       ],
       memberships: [
         { activityId: "activity-a", target: { groupId: "group-a", kind: "existing" } },
         { activityId: "activity-b", target: { groupId: "group-a", kind: "existing" } },
+        { activityId: "activity-c", target: { groupId: "group-a", kind: "existing" } },
         {
-          activityId: "activity-c",
-          target: { anchorActivityId: "activity-c", kind: "new" },
+          activityId: "activity-d",
+          target: { anchorActivityId: "activity-d", kind: "new" },
         },
       ],
     };
