@@ -908,7 +908,7 @@ describe("production analytics read-model build", () => {
     expect(normalizedSql).toContain(
       "ORDER BY live_sleep.duration_minutes DESC NULLS LAST, live_sleep.started_at DESC",
     );
-    expect(sql).toContain("if(selected_sleep.user_id IS NULL, 1, 0) AS is_deleted");
+    expect(sql).toContain("if(selected_sleep.user_id IS null, 1, 0) AS is_deleted");
     expect(sql).toContain("rows_to_write.is_deleted AS is_deleted");
     expect(sql).not.toContain("source('postgres_fitness', 'metric_stream')");
     expect(sql).not.toContain("ref('deduped_sensor')");
