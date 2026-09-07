@@ -91,6 +91,7 @@ describe("activity data integrity repair", () => {
     await runActivityIntegrityDbtBuild({
       userId: TEST_USER_ID,
       activityIds: [wahooActivityId, pelotonActivityId, namedZoneActivityId, unrelatedActivityId],
+      startAt: new Date("2026-09-01T00:00:00.000Z"),
     });
     await seedLegacyFalseComponent(client, database);
     const unrelatedBefore = await taskThreeRowsForActivity(client, database, unrelatedActivityId);
