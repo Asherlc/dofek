@@ -7,66 +7,43 @@ import { View } from "react-native";
 import { trpc } from "../lib/trpc";
 import { SubjectiveTrackingPanel } from "./SubjectiveTrackingPanel";
 
-type SubjectiveStoryScenario = "empty" | "logged" | "error" | "loading";
-
-const regions = [{ id: "left_hand", label: "Left hand", kind: "hand", parent_id: null }];
+type SubjectiveStoryScenario = "empty" | "injuries" | "error" | "loading";
 
 function createMockLink(scenario: SubjectiveStoryScenario): TRPCLink<AppRouter> {
-  return () =>
-    ({ op }) => {
-      const result: OperationResultObservable<AppRouter, unknown> = {
-        subscribe(observer) {
-          if (scenario === "loading") return { unsubscribe: () => {} };
-          if (scenario === "error") {
-            observer.error?.(TRPCClientError.from(new Error("Subjective data is unavailable.")));
-            return { unsubscribe: () => {} };
-          }
-          const data =
-            op.path === "subjective.regions"
-              ? regions
-              : op.path === "subjective.checkIn"
-                ? {
-                    date: "2026-08-02",
-                    logged: scenario === "logged",
-                    symptoms:
-                      scenario === "logged"
-                        ? [
-                            {
-                              id: "symptom-story",
-                              body_region_id: "left_hand",
-                              kind: "tenderness",
-                              score: 4,
-                            },
-                          ]
-                        : [],
-                  }
-                : op.path === "subjective.injuries"
-                  ? scenario === "logged"
-                    ? [
-                        {
-                          id: "injury-story",
-                          kind: "niggle",
-                          body_region_id: "left_hand",
-                          onset_date: "2026-08-01",
-                          resolved_date: null,
-                          severity: 3,
-                          description: "Morning tenderness",
-                          created_at: "2026-08-01T08:00:00.000Z",
-                          updated_at: "2026-08-01T08:00:00.000Z",
-                        },
-                      ]
-                    : []
-                  : null;
-          observer.next?.({ result: { data } });
-          observer.complete?.();
+  return () => () => {
+    const result: OperationResultObservable<AppRouter, unknown> = {
+      subscribe(observer) {
+        if (scenario === "loading") return { unsubscribe: () => {} };
+        if (scenario === "error") {
+          observer.error?.(TRPCClientError.from(new Error("Subjective data is unavailable.")));
           return { unsubscribe: () => {} };
-        },
-        pipe() {
-          return result;
-        },
-      };
-      return result;
+        }
+        const data =
+          scenario === "injuries"
+            ? [
+                {
+                  id: "injury-story",
+                  kind: "niggle",
+                  body_region_id: "left_hand",
+                  onset_date: "2026-08-01",
+                  resolved_date: null,
+                  severity: 3,
+                  description: "Morning tenderness",
+                  created_at: "2026-08-01T08:00:00.000Z",
+                  updated_at: "2026-08-01T08:00:00.000Z",
+                },
+              ]
+            : [];
+        observer.next?.({ result: { data } });
+        observer.complete?.();
+        return { unsubscribe: () => {} };
+      },
+      pipe() {
+        return result;
+      },
     };
+    return result;
+  };
 }
 
 function SubjectiveStoryFrame({ scenario }: { scenario: SubjectiveStoryScenario }) {
@@ -100,8 +77,8 @@ export const Empty: Story = {
   tags: ["review-scenario", "review-scenario-empty-data"],
 };
 
-export const LoggedWithInjury: Story = {
-  render: () => <SubjectiveStoryFrame scenario="logged" />,
+export const InjuriesPresent: Story = {
+  render: () => <SubjectiveStoryFrame scenario="injuries" />,
 };
 
 export const Loading: Story = {

@@ -116,7 +116,6 @@ describe("Router SQL validity", () => {
     it("byDate", () => expectValidSql("food.byDate", { date: "2025-01-15" }));
     it("byDateV2", () => expectValidSql("food.byDateV2", { date: "2025-01-15" }));
     it("dailyTotals", () => expectValidSql("food.dailyTotals", { days: 30 }));
-    it("search", () => expectValidSql("food.search", { query: "test" }));
   });
 
   // ── Insights ──

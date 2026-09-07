@@ -8,14 +8,14 @@ This module provides the iOS-native HealthKit bridge used by the mobile app to:
 - query daily aggregate statistics
 - incrementally query samples and deletions with a native-persisted opaque anchor
 - enable background delivery + observer events
-- write dietary energy
 
 ## Structure
 
 - `index.ts`: TypeScript API exported to React Native code.
 - `src/HealthKitModule.ts`: Expo native-module binding (`requireNativeModule("HealthKit")`).
 - `ios/HealthKitModule.swift`: Main Swift module implementation.
-- `ios/HealthKitTypes.swift`: Canonical HealthKit read/write type sets.
+- `ios/HealthKitTypes.swift`: Canonical HealthKit read/write type sets used for
+  authorization and legacy-sample cleanup.
 - `ios/HealthKitQueries.swift`: Shared date/unit/query helpers.
 - `Tests/`: Swift unit tests for query/type helpers.
 

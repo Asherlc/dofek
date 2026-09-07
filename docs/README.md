@@ -47,9 +47,9 @@ the exact section.
 | [chart-range-framework.md](chart-range-framework.md) | Backend framework for selected chart ranges, endpoint defaults, and All-history semantics. |
 | [daily-heart-rate.md](daily-heart-rate.md) | Daily Heart Rate navigation and local calendar-day semantics across web and mobile. |
 | [mcp.md](mcp.md) | Remote MCP endpoint setup, scopes, and tools. |
-| [nutrition-ai-input.md](nutrition-ai-input.md) | Web + iOS meal logging flow for natural-language AI input. |
 | [file-upload-architecture.md](file-upload-architecture.md) | Durable browser import uploads, R2 object verification, transactional outbox delivery, and recovery. |
 | [app-password-auth.md](app-password-auth.md) | Email/password login, password reset, and Settings password management. |
+| [external-api.md](external-api.md) | Target-agnostic authenticated write API, explicit external identity linking, nutrition writes, and account-erasure coordination. |
 | [credential-encryption.md](credential-encryption.md) | Stored credential encryption, required key material, context binding, and rotation boundary. |
 | [posthog-support.md](posthog-support.md) | In-app support ticket flow, PostHog Conversations integration, and failure handling. |
 | [roadmap.md](roadmap.md) | Product strategy and release gates across the Daily Brief, experiments, goals, trust, and onboarding. |
@@ -97,6 +97,7 @@ Cross-provider reverse-engineering references:
 | [clickhouse-cdc-health-runbook.md](clickhouse-cdc-health-runbook.md) | Preventing, diagnosing, and recovering lost PeerDB CDC slots. |
 | [clickhouse-body-measurement-staleness-runbook.md](clickhouse-body-measurement-staleness-runbook.md) | Diagnosing body measurements across the Redpanda sink and ClickHouse analytics layers. |
 | [sleep-quality-backfill-runbook.md](sleep-quality-backfill-runbook.md) | Conservatively repairing historical sleep stage availability and sentinel-zero fields in bounded windows. |
+| [activity-data-integrity-repair-runbook.md](activity-data-integrity-repair-runbook.md) | Auditable repair and monotonic rollback for contradictory activity local time and false derived groups. |
 | [processing-status-runbook.md](processing-status-runbook.md) | Deploying and diagnosing provider/import processing across Postgres, Redpanda, PeerDB, ClickHouse, dbt, and cache refresh. |
 | [account-erasure-runbook.md](account-erasure-runbook.md) | Operating durable account deletion across write fences, remote processors, Postgres, ClickHouse, R2, backups, clients, and restore reconciliation. |
 | [metric-stream-redpanda-r2-runbook.md](metric-stream-redpanda-r2-runbook.md) | Current Redpanda ingest and R2 archive health, plus the unimplemented bounded-replay gap. |

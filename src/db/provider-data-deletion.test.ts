@@ -11,7 +11,7 @@ const userId = "00000000-0000-4000-8000-000000000001";
 const eventId = "10000000-0000-4000-8000-000000000001";
 const operationRevision = "1000000000000000";
 
-async function findProviderDataDeletionRequestWithFreshSchema(execute: ReturnType<typeof vi.fn>) {
+async function findProviderDataDeletionRequestWithFreshSchema(execute: CallableVitestMock) {
   vi.resetModules();
   const { findProviderDataDeletionRequest } = await import("./provider-data-deletion.ts");
   return findProviderDataDeletionRequest({ execute }, userId, "garmin", eventId);

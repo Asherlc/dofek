@@ -22,10 +22,12 @@ interface StorybookLegacyEventEmitterConstructor {
 
 const StorybookLegacyEventEmitter: StorybookLegacyEventEmitterConstructor = StorybookEventEmitter;
 
-export { StorybookEventEmitter as EventEmitter };
-export { StorybookLegacyEventEmitter as LegacyEventEmitter };
-export { StorybookNativeModule as NativeModule };
 export type { EventSubscription };
+export {
+  StorybookEventEmitter as EventEmitter,
+  StorybookLegacyEventEmitter as LegacyEventEmitter,
+  StorybookNativeModule as NativeModule,
+};
 
 export class CodedError extends Error {
   code: string;

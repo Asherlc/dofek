@@ -42,16 +42,19 @@ only; it never contains metric payloads.
    manifest containing only paths that emitted rows.
 2. The worker records relational fences and/or published metric batches, then
    queues reconciliation work in Postgres.
-3. `scripts/check-clickhouse-cdc.ts`, run by the production `cdc-health` service
-   every five minutes, compares each pending operation with exact ClickHouse
-   evidence. It queues analytics only after every emitted path for a dataset is
-   present.
-4. The analytics worker runs every production dbt model sequentially and records
+3. The production `processing-reconciliation` service runs the reconciliation
+   script synchronously, then waits 300 seconds before the next run. It compares
+   each pending operation with exact ClickHouse evidence and queues analytics
+   only after every emitted path for a dataset is present.
+4. Independently, the `cdc-health` service runs
+   `scripts/check-clickhouse-cdc.ts` every five minutes and records only the
+   bounded CDC result for its health probe.
+5. The analytics worker runs every production dbt model sequentially and records
    the status of every selected model. dbt writes execution status only for
    executed nodes to `run_results.json`; those identifiers are resolved through
    the full project `manifest.json` ([dbt run results](https://docs.getdbt.com/reference/artifacts/run-results-json),
    [dbt manifest](https://docs.getdbt.com/reference/artifacts/manifest-json)).
-5. The cache warmer records each registered query-family outcome. A dataset is
+6. The cache warmer records each registered query-family outcome. A dataset is
    ready only after its required analytics and cache work succeeds or is
    explicitly skipped.
 
@@ -63,13 +66,15 @@ cache warmer may reuse the same facts without duplicating lifecycle state.
 Use the normal production deployment workflow; do not deploy these pieces
 manually out of order.
 
-1. Quiesce the analytics worker and metric-stream ClickHouse sink with the
-   existing deploy overlay.
+1. Quiesce `analytics-worker`, `metric-stream-clickhouse-sink`, and
+   `processing-reconciliation` with the existing deploy overlay.
 2. Run the one-shot `migrate` entrypoint. It applies Postgres migration
    `0056_processing_status.sql` and ClickHouse migration
    `0051_metric_stream_processing_acknowledgement` plus
    `0052_processing_flow_markers` before new application code starts.
-3. Deploy the new web and worker image while consumers remain quiesced.
+3. Deploy the new web and worker image while `analytics-worker`,
+   `metric-stream-clickhouse-sink`, and `processing-reconciliation` remain
+   quiesced.
 4. Run the checked-in PeerDB setup. For an existing mirror, setup inspects its
    mappings through the PeerDB API. If a required marker is absent, setup pauses
    that mirror, adds the table through `flowConfigUpdate`, and waits for the
@@ -88,8 +93,8 @@ manually out of order.
    A setup failure is fatal. If it occurs after pause, inspect the error and the
    mirror state before resuming the deployment; do not drop the mirror as a
    shortcut.
-5. Restore the analytics worker and metric-stream sink only after migration and
-   PeerDB setup pass.
+5. Restore `analytics-worker`, `metric-stream-clickhouse-sink`, and
+   `processing-reconciliation` only after migration and PeerDB setup pass.
 
 The schema is additive and remains compatible with the old app during the
 rolling update. Image rollback does not remove the new database tables.
@@ -185,12 +190,14 @@ exceptions remain in Sentry/logs rather than the ledger.
 
 ## Monitoring and Retention
 
-The `cdc-health` service logs a processing reconciliation summary after every
-successful check and reports failures to Sentry. Alert on repeated
-`processing reconciliation` failures, non-completed outbox rows older than the
-five-minute reconciliation interval, analytics/cache `failed` events, and
-operations whose latest nonterminal event exceeds the dataset's freshness
-target.
+The `processing-reconciliation` service logs a summary after each synchronous
+run, then waits 300 seconds before the next run. Its script initializes Sentry
+and reports reconciliation failures there; the entrypoint logs the nonzero exit
+before the next scheduled retry. Alert on repeated `processing reconciliation`
+failures, outbox rows that persist across two completed reconciliation
+summaries, analytics/cache `failed` events, and operations whose latest
+nonterminal event exceeds the dataset's freshness target. Monitor `cdc-health`
+independently for a stale or failing bounded CDC result.
 
 The ledger is append-only and is not physically purged in the first release.
 `processing.status` considers operations created in the last 90 days;

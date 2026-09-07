@@ -61,14 +61,14 @@ describe("mobile export cache", () => {
     expect(mobileExportCacheDirectoryUri()).toBe("file:///cache/dofek-exports-v1/");
   });
 
-  it.each([
-    "",
-    "../private.zip",
-    "nested/private.zip",
-    "private email.zip",
-  ])("rejects unsafe export cache filename %j", (filename) => {
-    expect(() => createMobileExportCacheFile(filename)).toThrow("Export cache filename is invalid");
-  });
+  it.each(["", "../private.zip", "nested/private.zip", "private email.zip"])(
+    "rejects unsafe export cache filename %j",
+    (filename) => {
+      expect(() => createMobileExportCacheFile(filename)).toThrow(
+        "Export cache filename is invalid",
+      );
+    },
+  );
 
   it("deletes the dedicated directory recursively when it exists", () => {
     purgeMobileExportCache();

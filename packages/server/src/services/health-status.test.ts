@@ -355,39 +355,37 @@ describe("buildDailyMetricHealthStatuses", () => {
 });
 
 describe("buildHealthMetricEvidence", () => {
-  it.each([
-    "hrv",
-    "spo2",
-    "steps",
-    "skin_temperature",
-  ] as const)("authors provenance and personal comparison context for %s", (_metric) => {
-    expect(
-      buildHealthMetricEvidence(
-        [
-          { date: "2026-07-25", value: 66, sourceProviders: ["whoop"] },
-          { date: "2026-07-30", value: 72, sourceProviders: ["whoop", "garmin", "whoop"] },
-          { date: "2026-07-01", value: 60, sourceProviders: ["garmin"] },
-          { date: "2026-07-31", value: Number.NaN, sourceProviders: ["invalid"] },
-        ],
-        30,
-      ),
-    ).toEqual({
-      provenance: {
-        latestDate: "2026-07-30",
-        sourceProviders: ["garmin", "whoop"],
-        observedDays: 3,
-        windowDays: 30,
-      },
-      comparison: {
-        recentDays: 7,
-        baselineDays: 28,
-        recentMean: 69,
-        baselineMean: 60,
-        delta: 9,
-        direction: "increasing",
-      },
-    });
-  });
+  it.each(["hrv", "spo2", "steps", "skin_temperature"] as const)(
+    "authors provenance and personal comparison context for %s",
+    (_metric) => {
+      expect(
+        buildHealthMetricEvidence(
+          [
+            { date: "2026-07-25", value: 66, sourceProviders: ["whoop"] },
+            { date: "2026-07-30", value: 72, sourceProviders: ["whoop", "garmin", "whoop"] },
+            { date: "2026-07-01", value: 60, sourceProviders: ["garmin"] },
+            { date: "2026-07-31", value: Number.NaN, sourceProviders: ["invalid"] },
+          ],
+          30,
+        ),
+      ).toEqual({
+        provenance: {
+          latestDate: "2026-07-30",
+          sourceProviders: ["garmin", "whoop"],
+          observedDays: 3,
+          windowDays: 30,
+        },
+        comparison: {
+          recentDays: 7,
+          baselineDays: 28,
+          recentMean: 69,
+          baselineMean: 60,
+          delta: 9,
+          direction: "increasing",
+        },
+      });
+    },
+  );
 
   it("keeps recent and baseline comparison boundaries exclusive", () => {
     expect(
@@ -477,19 +475,18 @@ describe("buildRestingHeartRateTrendLabel", () => {
     { latest: 48, average: 54, label: "below average" },
     { latest: 60, average: 54, label: "above average" },
     { latest: 54, average: 54, label: "at average" },
-  ])("returns the server-owned comparison label for $latest/$average", ({
-    latest,
-    average,
-    label,
-  }) => {
-    expect(
-      buildRestingHeartRateTrendLabel({
-        latest,
-        average,
-        baselineProgress: { blocker: null },
-      }),
-    ).toBe(label);
-  });
+  ])(
+    "returns the server-owned comparison label for $latest/$average",
+    ({ latest, average, label }) => {
+      expect(
+        buildRestingHeartRateTrendLabel({
+          latest,
+          average,
+          baselineProgress: { blocker: null },
+        }),
+      ).toBe(label);
+    },
+  );
 });
 
 describe("buildHealthStatusFromSummary", () => {
@@ -666,24 +663,23 @@ describe("buildHealthStatusFromSummary", () => {
       statusToken: "far_from_baseline",
       evaluationRule: "Well outside your usual range: at least 2 standard deviations from baseline",
     },
-  ])("returns the exact evaluated rule at value $value", ({
-    value,
-    statusToken,
-    evaluationRule,
-  }) => {
-    expect(
-      buildHealthStatusFromSummary({
-        metric: "skin_temperature",
-        label: "Skin Temperature",
-        value,
-        baseline: 50,
-        sampleDeviation: 10,
-        intent: "neutral",
-        observedDays: 3,
-        processingStatus: null,
-      }),
-    ).toMatchObject({ statusToken, evaluationRule });
-  });
+  ])(
+    "returns the exact evaluated rule at value $value",
+    ({ value, statusToken, evaluationRule }) => {
+      expect(
+        buildHealthStatusFromSummary({
+          metric: "skin_temperature",
+          label: "Skin Temperature",
+          value,
+          baseline: 50,
+          sampleDeviation: 10,
+          intent: "neutral",
+          observedDays: 3,
+          processingStatus: null,
+        }),
+      ).toMatchObject({ statusToken, evaluationRule });
+    },
+  );
 
   it.each([
     { value: 70, direction: "above" as const, deviation: 2 },
@@ -819,15 +815,13 @@ describe("buildWeightHealthStatus", () => {
       intent: "maintain",
       statusToken: "near_baseline",
     },
-  ])("classifies weight using $intent goal intent", ({
-    goalWeightKg,
-    values,
-    intent,
-    statusToken,
-  }) => {
-    expect(buildWeightHealthStatus(values, goalWeightKg)).toMatchObject({
-      intent,
-      statusToken,
-    });
-  });
+  ])(
+    "classifies weight using $intent goal intent",
+    ({ goalWeightKg, values, intent, statusToken }) => {
+      expect(buildWeightHealthStatus(values, goalWeightKg)).toMatchObject({
+        intent,
+        statusToken,
+      });
+    },
+  );
 });

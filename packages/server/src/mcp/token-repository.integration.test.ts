@@ -43,14 +43,7 @@ describe("MCP token repository (integration)", () => {
     const created = await createMcpToken(ctx.db, {
       userId: testUserId,
       name: "Codex",
-      scopes: [
-        "health:read",
-        "activity:read",
-        "nutrition:read",
-        "nutrition:write",
-        "providers:read",
-        "sync:write",
-      ],
+      scopes: ["health:read", "activity:read", "nutrition:read", "providers:read", "sync:write"],
       expiresAt: null,
     });
 
@@ -58,7 +51,6 @@ describe("MCP token repository (integration)", () => {
       "health:read",
       "activity:read",
       "nutrition:read",
-      "nutrition:write",
       "providers:read",
       "sync:write",
     ]);
@@ -72,7 +64,6 @@ describe("MCP token repository (integration)", () => {
       "health:read",
       "activity:read",
       "nutrition:read",
-      "nutrition:write",
       "providers:read",
       "sync:write",
     ]);
@@ -130,7 +121,7 @@ describe("MCP token repository (integration)", () => {
     await createMcpToken(ctx.db, {
       userId: testUserId,
       name: "Second",
-      scopes: ["activity:read", "nutrition:write"],
+      scopes: ["activity:read", "nutrition:read"],
       expiresAt: null,
     });
 
@@ -139,6 +130,6 @@ describe("MCP token repository (integration)", () => {
     expect(tokens).toHaveLength(2);
     const byName = new Map(tokens.map((token) => [token.name, token]));
     expect(byName.get("First")?.scopes).toEqual(["health:read"]);
-    expect(byName.get("Second")?.scopes).toEqual(["activity:read", "nutrition:write"]);
+    expect(byName.get("Second")?.scopes).toEqual(["activity:read", "nutrition:read"]);
   });
 });

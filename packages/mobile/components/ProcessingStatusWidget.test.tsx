@@ -2,19 +2,25 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type ProcessingStatusSnapshot, ProcessingStatusWidget } from "./ProcessingStatusWidget";
 
-const { mockDismissOperation, mockDismissState, mockInvalidateAlerts, mockInvalidateStatus } =
-  vi.hoisted(() => {
-    const mockDismissState: { error: Error | null; isPending: boolean } = {
-      error: null,
-      isPending: false,
-    };
-    return {
-      mockDismissOperation: vi.fn(),
-      mockDismissState,
-      mockInvalidateAlerts: vi.fn(),
-      mockInvalidateStatus: vi.fn(),
-    };
-  });
+const {
+  mockDismissOperation,
+  mockDismissState,
+  mockInvalidateAlerts,
+  mockInvalidateStatus,
+  mockPush,
+} = vi.hoisted(() => {
+  const mockDismissState: { error: Error | null; isPending: boolean } = {
+    error: null,
+    isPending: false,
+  };
+  return {
+    mockDismissOperation: vi.fn(),
+    mockDismissState,
+    mockInvalidateAlerts: vi.fn(),
+    mockInvalidateStatus: vi.fn(),
+    mockPush: vi.fn(),
+  };
+});
 
 vi.mock("../lib/trpc", () => ({
   trpc: {
@@ -43,6 +49,10 @@ vi.mock("../lib/trpc", () => ({
       },
     }),
   },
+}));
+
+vi.mock("expo-router", () => ({
+  useRouter: () => ({ push: mockPush }),
 }));
 
 const snapshot: ProcessingStatusSnapshot = {
@@ -127,7 +137,8 @@ function failedWahooSnapshot(overrides: Partial<ProcessingStatusSnapshot> = {}) 
         status: "failed" as const,
         datasets: failedDatasets.map((dataset) => dataset.key),
         dismissed: false,
-        errorMessage: "Wahoo returned a server error. Reconnect Wahoo, then try again.",
+        errorCode: "provider_sync_failed",
+        errorMessage: "Wahoo could not be synced. Try the sync again later.",
         timeline: [],
       },
     ],
@@ -222,51 +233,56 @@ describe("ProcessingStatusWidget", () => {
     expect(screen.queryByTestId("processing-status-progress")).toBeNull();
   });
 
-  it.each([
-    "failed",
-    "blocked",
-  ] as const)("surfaces %s datasets, their last ready age, and the actionable error", (status) => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-07-22T14:00:00.000Z"));
-    render(
-      <ProcessingStatusWidget
-        data={{
-          ...snapshot,
-          overallStatus: status,
-          datasets: [
-            {
-              ...activityDataset,
-              status,
-              progressPercentage: null,
-              lastFailedAt: "2026-07-22T13:00:00.000Z",
-              lastReadyAt: "2026-07-22T12:00:00.000Z",
-            },
-          ],
-          operations: [
-            {
-              ...operation,
-              status,
-              dismissed: false,
-              errorMessage: "Reconnect Garmin, then start the sync again.",
-              timeline: [
-                {
-                  ...timelineEvent,
-                  status: "failed",
-                  errorMessage: "Reconnect Garmin, then start the sync again.",
-                },
-              ],
-            },
-          ],
-        }}
-      />,
-    );
+  it.each(["failed", "blocked"] as const)(
+    "surfaces %s datasets, their last ready age, and the actionable error",
+    (status) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-07-22T14:00:00.000Z"));
+      render(
+        <ProcessingStatusWidget
+          data={{
+            ...snapshot,
+            overallStatus: status,
+            datasets: [
+              {
+                ...activityDataset,
+                status,
+                progressPercentage: null,
+                lastFailedAt: "2026-07-22T13:00:00.000Z",
+                lastReadyAt: "2026-07-22T12:00:00.000Z",
+              },
+            ],
+            operations: [
+              {
+                ...operation,
+                status,
+                dismissed: false,
+                errorMessage: "Reconnect Garmin, then start the sync again.",
+                errorCode: "provider_auth_failed",
+                timeline: [
+                  {
+                    ...timelineEvent,
+                    status: "failed",
+                    errorMessage: "Reconnect Garmin, then start the sync again.",
+                  },
+                ],
+              },
+            ],
+          }}
+        />,
+      );
 
-    expect(screen.getByText("Garmin sync didn’t finish")).toBeTruthy();
-    expect(screen.getByText("Activities")).toBeTruthy();
-    expect(screen.getByText(`${status === "failed" ? "Failed" : "Blocked"}: 1h ago`)).toBeTruthy();
-    expect(screen.getByText("Last successful update: 2h ago")).toBeTruthy();
-    expect(screen.getByText("Reconnect Garmin, then start the sync again.")).toBeTruthy();
-  });
+      expect(screen.getByText("Garmin sync didn’t finish")).toBeTruthy();
+      expect(screen.getByText("Activities")).toBeTruthy();
+      expect(
+        screen.getByText(`${status === "failed" ? "Failed" : "Blocked"}: 1h ago`),
+      ).toBeTruthy();
+      expect(screen.getByText("Last successful update: 2h ago")).toBeTruthy();
+      expect(screen.getByText("Reconnect Garmin, then start the sync again.")).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "Reconnect Garmin" }));
+      expect(mockPush).toHaveBeenCalledWith("/providers/garmin");
+    },
+  );
 
   it("groups current failed datasets by operation and offers dismissal", () => {
     vi.useFakeTimers();
@@ -283,9 +299,8 @@ describe("ProcessingStatusWidget", () => {
     expect(screen.getByText("Provider summaries")).toBeTruthy();
     expect(screen.getByText("Failed: 16d ago")).toBeTruthy();
     expect(screen.getByText("Last successful update: 16d ago")).toBeTruthy();
-    expect(
-      screen.getByText("Wahoo returned a server error. Reconnect Wahoo, then try again."),
-    ).toBeTruthy();
+    expect(screen.getByText("Wahoo could not be synced. Try the sync again later.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Reconnect Wahoo" })).toBeNull();
     expect(
       screen.queryByText("Try the update again. If it still fails, reconnect the data source."),
     ).toBeNull();

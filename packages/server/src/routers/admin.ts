@@ -4,9 +4,10 @@ import { getProviderRateLimitStatusFromRedis } from "dofek/admin/provider-rate-l
 import { invalidateAllUserQueries, queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { resolveAccessWindow } from "../billing/entitlement.ts";
+import { resolveAccessWindow, toAppStoreSubscriptionState } from "../billing/entitlement.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
+import { DeveloperClientRepository } from "../repositories/developer-client-repository.ts";
 import { adminProcedure, router } from "../trpc.ts";
 
 // ── Schemas for admin queries ──
@@ -46,6 +47,10 @@ const userDetailBillingSchema = z.object({
   stripe_subscription_id: z.string().nullable(),
   stripe_subscription_status: z.string().nullable(),
   stripe_current_period_end: timestampStringSchema.nullable(),
+  app_store_product_id: z.string().nullable(),
+  app_store_subscription_status: z.string().nullable(),
+  app_store_expires_at: timestampStringSchema.nullable(),
+  app_store_revocation_at: timestampStringSchema.nullable(),
   paid_grant_reason: z.string().nullable(),
   created_at: timestampStringSchema,
   updated_at: timestampStringSchema,
@@ -164,6 +169,22 @@ const paginationInput = z.object({
 });
 
 const countSchema = z.object({ count: z.coerce.number() });
+const developerClientSupportSummarySchema = z
+  .object({
+    clientId: z.string(),
+    name: z.string(),
+    scopes: z.array(z.literal("nutrition:write")),
+    status: z.enum(["active", "revoked"]),
+    createdAt: timestampStringSchema,
+    lastRotatedAt: timestampStringSchema,
+    ownerName: z.string().nullable(),
+    ownerEmail: z.string().nullable(),
+  })
+  .strict();
+const developerClientSupportListSchema = z.array(developerClientSupportSummarySchema);
+const developerClientSupportRevokeSchema = z.object({ revoked: z.literal(true) }).strict();
+const developerClientNotFoundMessage =
+  "The developer integration was not found or is already revoked.";
 
 function requireBodyMeasurementStore(sensorStore: ActivitySensorStore | undefined) {
   if (!sensorStore) {
@@ -173,6 +194,24 @@ function requireBodyMeasurementStore(sensorStore: ActivitySensorStore | undefine
 }
 
 export const adminRouter = router({
+  externalClients: adminProcedure
+    .output(developerClientSupportListSchema)
+    .query(({ ctx }) => new DeveloperClientRepository(ctx.db).listForSupport()),
+
+  revokeExternalClient: adminProcedure
+    .input(z.object({ clientId: z.string().min(1) }))
+    .output(developerClientSupportRevokeSchema)
+    .mutation(async ({ ctx, input }) => {
+      const revoked = await new DeveloperClientRepository(ctx.db).revokeForSupport(
+        ctx.userId,
+        input.clientId,
+      );
+      if (!revoked) {
+        throw new TRPCError({ code: "NOT_FOUND", message: developerClientNotFoundMessage });
+      }
+      return { revoked: true as const };
+    }),
+
   /** High-level overview: row counts for all key tables */
   overview: adminProcedure.query(async ({ ctx }) => {
     const bodyStore = requireBodyMeasurementStore(ctx.sensorStore);
@@ -192,9 +231,8 @@ export const adminRouter = router({
             ('auth_account'),
             ('oauth_token'),
             ('provider'),
-            ('lab_panel'),
+            ('clinical_record'),
             ('journal_entry'),
-            ('breathwork_session'),
             ('supplement'),
             ('life_events'),
             ('nutrient'),
@@ -202,6 +240,8 @@ export const adminRouter = router({
             ('supplement_definition'),
             ('supplement_definition_nutrient'),
             ('supplement_dose_event'),
+            ('breathwork_session'),
+            ('menstrual_period'),
             ('metric_stream')
         ),
         base_estimates AS (
@@ -296,6 +336,10 @@ export const adminRouter = router({
                      stripe_subscription_id,
                      stripe_subscription_status,
                      stripe_current_period_end::text AS stripe_current_period_end,
+                     app_store_product_id,
+                     app_store_subscription_status,
+                     app_store_expires_at::text AS app_store_expires_at,
+                     app_store_revocation_at::text AS app_store_revocation_at,
                      paid_grant_reason,
                      created_at::text AS created_at,
                      updated_at::text AS updated_at
@@ -337,6 +381,12 @@ export const adminRouter = router({
       timezone: ctx.timezone,
       paidGrantReason: billing?.paid_grant_reason ?? null,
       stripeSubscriptionStatus: billing?.stripe_subscription_status ?? null,
+      appStoreSubscription: toAppStoreSubscriptionState({
+        productId: billing?.app_store_product_id ?? null,
+        status: billing?.app_store_subscription_status ?? null,
+        expiresAt: billing?.app_store_expires_at ?? null,
+        revokedAt: billing?.app_store_revocation_at ?? null,
+      }),
     });
     return {
       profile,

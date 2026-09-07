@@ -1,19 +1,30 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
+
+const developerClientRepositoryMocks = vi.hoisted(() => ({
+  listForSupport: vi.fn(),
+  revokeForSupport: vi.fn(),
+}));
 
 vi.mock("../logger.ts", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
 vi.mock("../trpc.ts", async () => {
-  const { initTRPC } = await import("@trpc/server");
+  const { initTRPC, TRPCError } = await import("@trpc/server");
   const trpc = initTRPC
     .context<{ db: unknown; userId: string | null; timezone: string; sensorStore?: unknown }>()
     .create();
+  const adminProcedure = trpc.procedure.use(({ ctx, next }) => {
+    if (ctx.userId !== "admin-1") {
+      throw new TRPCError({ code: "FORBIDDEN", message: "Admin access required" });
+    }
+    return next();
+  });
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
-    adminProcedure: trpc.procedure,
+    adminProcedure,
     cachedProtectedQuery: () => trpc.procedure,
     cachedProtectedQueryLight: () => trpc.procedure,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
@@ -61,19 +72,27 @@ vi.mock("dofek/admin/provider-rate-limit-status", () => ({
   ]),
 }));
 
+vi.mock("../repositories/developer-client-repository.ts", () => ({
+  DeveloperClientRepository: class {
+    listForSupport = developerClientRepositoryMocks.listForSupport;
+    revokeForSupport = developerClientRepositoryMocks.revokeForSupport;
+  },
+}));
+
 import { adminRouter } from "./admin.ts";
 
 const createCaller = createTestCallerFactory(adminRouter);
 
 function makeCaller(
-  execute: ReturnType<typeof vi.fn>,
+  execute: CallableVitestMock,
   sensorQuery = vi.fn().mockResolvedValue([]),
   timezone = "UTC",
+  userId = "admin-1",
 ) {
   return createCaller({
     db: { execute },
     sensorStore: { query: sensorQuery },
-    userId: "admin-1",
+    userId,
     timezone,
   });
 }
@@ -109,6 +128,79 @@ function mockPaginatedExecute(rows: unknown[], countRows: unknown[]) {
 }
 
 describe("adminRouter", () => {
+  describe("external developer clients", () => {
+    beforeEach(() => {
+      developerClientRepositoryMocks.listForSupport.mockReset();
+      developerClientRepositoryMocks.revokeForSupport.mockReset();
+    });
+
+    it("blocks non-admin list and revoke calls", async () => {
+      const caller = makeCaller(vi.fn(), vi.fn(), "UTC", "member-1");
+
+      await expect(caller.externalClients()).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(caller.revokeExternalClient({ clientId: "ext_private" })).rejects.toMatchObject({
+        code: "FORBIDDEN",
+      });
+      expect(developerClientRepositoryMocks.listForSupport).not.toHaveBeenCalled();
+      expect(developerClientRepositoryMocks.revokeForSupport).not.toHaveBeenCalled();
+    });
+
+    it("returns only support-safe client and owner metadata", async () => {
+      developerClientRepositoryMocks.listForSupport.mockResolvedValue([
+        {
+          clientId: "ext_support",
+          name: "Meal importer",
+          ownerName: "Owner Name",
+          ownerEmail: "owner@example.test",
+          scopes: ["nutrition:write"],
+          status: "active",
+          createdAt: "2026-08-24T20:00:00.000Z",
+          lastRotatedAt: "2026-08-24T21:00:00.000Z",
+        },
+      ]);
+
+      const result = await makeCaller(vi.fn()).externalClients();
+
+      expect(result).toEqual([
+        {
+          clientId: "ext_support",
+          name: "Meal importer",
+          ownerName: "Owner Name",
+          ownerEmail: "owner@example.test",
+          scopes: ["nutrition:write"],
+          status: "active",
+          createdAt: "2026-08-24T20:00:00.000Z",
+          lastRotatedAt: "2026-08-24T21:00:00.000Z",
+        },
+      ]);
+      expect(JSON.stringify(result)).not.toMatch(
+        /secret|redirect|grant|subject|audit|ownerUserId|owner_user_id/,
+      );
+    });
+
+    it("delegates audited revocation and returns a specific not-found error", async () => {
+      developerClientRepositoryMocks.revokeForSupport.mockResolvedValueOnce(true);
+      const caller = makeCaller(vi.fn());
+
+      await expect(caller.revokeExternalClient({ clientId: "ext_support" })).resolves.toEqual({
+        revoked: true,
+      });
+      expect(developerClientRepositoryMocks.revokeForSupport).toHaveBeenCalledWith(
+        "admin-1",
+        "ext_support",
+      );
+
+      developerClientRepositoryMocks.revokeForSupport.mockResolvedValueOnce(false);
+      await expect(caller.revokeExternalClient({ clientId: "ext_support" })).rejects.toMatchObject({
+        code: "NOT_FOUND",
+        message: "The developer integration was not found or is already revoked.",
+      });
+      await expect(caller.revokeExternalClient({ clientId: "" })).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+      });
+    });
+  });
+
   describe("overview", () => {
     it("returns table row counts", async () => {
       const rows = [
@@ -142,6 +234,21 @@ describe("adminRouter", () => {
       await caller.overview();
 
       expect(getSqlText(execute.mock.calls[0]?.[0])).toContain("supplement_dose_event");
+    });
+
+    it("includes retained health record tables in the catalog overview", async () => {
+      const rows = [
+        { table_name: "breathwork_session", row_count: "2" },
+        { table_name: "menstrual_period", row_count: "3" },
+      ];
+      const execute = vi.fn().mockResolvedValue(rows);
+      const caller = makeCaller(execute);
+
+      await expect(caller.overview()).resolves.toEqual([rows[1], rows[0]]);
+
+      const sqlText = getSqlText(execute.mock.calls[0]?.[0]);
+      expect(sqlText).toContain("breathwork_session");
+      expect(sqlText).toContain("menstrual_period");
     });
 
     it("uses chunk estimates for metric stream hypertable counts", async () => {
@@ -202,6 +309,10 @@ describe("adminRouter", () => {
           stripe_subscription_id: "sub_123",
           stripe_subscription_status: "active",
           stripe_current_period_end: "2026-05-01T00:00:00Z",
+          app_store_product_id: "com.dofek.premium.monthly",
+          app_store_subscription_status: "active",
+          app_store_expires_at: "2026-06-01T00:00:00Z",
+          app_store_revocation_at: null,
           paid_grant_reason: null,
           created_at: "2024-01-03T00:00:00Z",
           updated_at: "2024-01-04T00:00:00Z",
@@ -235,6 +346,10 @@ describe("adminRouter", () => {
       expect(result.flags.providerGuideDismissed).toBe(true);
       expect(result.billing?.stripe_customer_id).toBe("cus_123");
       expect(result.billing?.stripe_subscription_status).toBe("active");
+      expect(result.billing?.app_store_product_id).toBe("com.dofek.premium.monthly");
+      expect(result.billing?.app_store_subscription_status).toBe("active");
+      expect(result.billing?.app_store_expires_at).toBe("2026-06-01T00:00:00Z");
+      expect(result.billing?.app_store_revocation_at).toBeNull();
       expect(result.access).toEqual({
         kind: "full",
         paid: true,
@@ -290,6 +405,47 @@ describe("adminRouter", () => {
       });
     });
 
+    it("derives App Store access when Stripe and paid grants are absent", async () => {
+      const execute = vi.fn();
+      execute.mockResolvedValueOnce([
+        {
+          id: "00000000-0000-0000-0000-000000000001",
+          name: "Test",
+          email: "test@test.com",
+          birth_date: null,
+          is_admin: false,
+          created_at: "2026-07-21T01:30:00.000Z",
+          updated_at: "2026-07-21T01:30:00.000Z",
+        },
+      ]);
+      execute.mockResolvedValueOnce([]);
+      execute.mockResolvedValueOnce([
+        {
+          user_id: "00000000-0000-0000-0000-000000000001",
+          stripe_customer_id: null,
+          stripe_subscription_id: null,
+          stripe_subscription_status: null,
+          stripe_current_period_end: null,
+          app_store_product_id: "com.dofek.premium.monthly",
+          app_store_subscription_status: "active",
+          app_store_expires_at: "2099-10-01T00:00:00.000Z",
+          app_store_revocation_at: null,
+          paid_grant_reason: null,
+          created_at: "2026-07-21T01:30:00.000Z",
+          updated_at: "2026-07-21T01:30:00.000Z",
+        },
+      ]);
+      execute.mockResolvedValueOnce([]);
+      execute.mockResolvedValueOnce([]);
+      execute.mockResolvedValueOnce([]);
+
+      const result = await makeCaller(execute).userDetail({
+        userId: "00000000-0000-0000-0000-000000000001",
+      });
+
+      expect(result.access).toEqual({ kind: "full", paid: true, reason: "app_store_subscription" });
+    });
+
     it("uses paid grant reason from billing when present", async () => {
       const execute = vi.fn();
       execute.mockResolvedValueOnce([
@@ -311,6 +467,10 @@ describe("adminRouter", () => {
           stripe_subscription_id: null,
           stripe_subscription_status: null,
           stripe_current_period_end: null,
+          app_store_product_id: null,
+          app_store_subscription_status: null,
+          app_store_expires_at: null,
+          app_store_revocation_at: null,
           paid_grant_reason: "existing_account",
           created_at: "2026-04-10T18:30:00.000Z",
           updated_at: "2026-04-10T18:30:00.000Z",

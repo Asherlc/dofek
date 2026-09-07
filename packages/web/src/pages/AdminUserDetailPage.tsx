@@ -1,5 +1,6 @@
 import { formatDateTime } from "@dofek/format/format";
 import { Link, useParams } from "@tanstack/react-router";
+import type { AppRouterOutputs } from "dofek-server/router";
 import type { ReactNode } from "react";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { useAuth } from "../lib/auth-context.tsx";
@@ -32,27 +33,12 @@ function statusLabel(enabled: boolean): string {
   return enabled ? "Yes" : "No";
 }
 
-function accessLabel(
-  access:
-    | { kind: "full"; paid: true; reason: "paid_grant" | "stripe_subscription" }
-    | {
-        kind: "limited";
-        paid: false;
-        reason: "free_signup_week";
-        startDate: string;
-        endDateExclusive: string;
-      },
-): string {
-  if (access.kind === "limited") {
-    return `Limited to ${access.startDate} through ${access.endDateExclusive}`;
-  }
-  return access.reason === "stripe_subscription"
-    ? "Full access from Stripe subscription"
-    : "Full access from local grant";
-}
-
 type AdminUserAccess =
-  | { kind: "full"; paid: true; reason: "paid_grant" | "stripe_subscription" }
+  | {
+      kind: "full";
+      paid: true;
+      reason: "paid_grant" | "stripe_subscription" | "app_store_subscription";
+    }
   | {
       kind: "limited";
       paid: false;
@@ -61,53 +47,19 @@ type AdminUserAccess =
       endDateExclusive: string;
     };
 
-export interface AdminUserDetail {
-  profile: {
-    id: string;
-    name: string;
-    email: string | null;
-    birth_date: string | null;
-    is_admin: boolean;
-    created_at: string;
-    updated_at: string;
-  };
-  flags: {
-    providerGuideDismissed: boolean;
-  };
-  billing: {
-    user_id: string;
-    stripe_customer_id: string | null;
-    stripe_subscription_id: string | null;
-    stripe_subscription_status: string | null;
-    stripe_current_period_end: string | null;
-    paid_grant_reason: string | null;
-    created_at: string;
-    updated_at: string;
-  } | null;
-  access: AdminUserAccess;
-  stripeLinks: {
-    customer: string | null;
-    subscription: string | null;
-  };
-  accounts: {
-    id: string;
-    auth_provider: string;
-    provider_account_id: string;
-    email: string | null;
-    name: string | null;
-    created_at: string;
-  }[];
-  providers: {
-    id: string;
-    name: string;
-    created_at: string;
-  }[];
-  sessions: {
-    id: string;
-    created_at: string;
-    expires_at: string;
-  }[];
+function accessLabel(access: AdminUserAccess): string {
+  if (access.kind === "limited") {
+    return `Limited to ${access.startDate} through ${access.endDateExclusive}`;
+  }
+  if (access.reason === "stripe_subscription") {
+    return "Full access from Stripe subscription";
+  }
+  return access.reason === "app_store_subscription"
+    ? "Full access from App Store subscription"
+    : "Full access from local grant";
 }
+
+export type AdminUserDetail = AppRouterOutputs["admin"]["userDetail"];
 
 export interface AdminUserDetailContentProps {
   detail: AdminUserDetail | null | undefined;
@@ -312,6 +264,15 @@ export function AdminUserDetailContent({
               </DetailRow>
               <DetailRow label="Current period end">
                 {formatTimestamp(detail.billing?.stripe_current_period_end)}
+              </DetailRow>
+              <DetailRow label="App Store product">
+                {detail.billing?.app_store_product_id ?? "—"}
+              </DetailRow>
+              <DetailRow label="App Store status">
+                {detail.billing?.app_store_subscription_status ?? "—"}
+              </DetailRow>
+              <DetailRow label="App Store access end">
+                {formatTimestamp(detail.billing?.app_store_expires_at)}
               </DetailRow>
             </dl>
 

@@ -93,6 +93,13 @@ export const CANONICAL_ACTIVITY_TYPES = [
 
 export type CanonicalActivityType = (typeof CANONICAL_ACTIVITY_TYPES)[number];
 
+export function isActivityDetailType(
+  activityType: string,
+  detailType: "strength" | "climbing" | "hangboard",
+): boolean {
+  return activityType === detailType;
+}
+
 export const ACTIVITY_MODALITIES = [
   "road",
   "mountain",

@@ -30,11 +30,25 @@ function makeDatabase(rowsOrRowSets: TestDatabaseRow[] | TestDatabaseRow[][] = [
 
   const execute = vi.fn().mockImplementation(async (query) => {
     const compiled = dialect.sqlToQuery(query);
-    if (compiled.sql.includes("fitness.v_activity") || compiled.sql.includes("fitness.activity")) {
+    const normalizedSql = compiled.sql.replace(/\s+/g, " ");
+    const isCanonicalVisibilityQuery =
+      normalizedSql.includes("FROM fitness.activity") &&
+      normalizedSql.includes("id IN") &&
+      normalizedSql.includes("provider_absent_at IS NULL") &&
+      normalizedSql.includes("deleted_at IS NULL");
+    if (isCanonicalVisibilityQuery) {
       const stringParams = compiled.params.filter(
         (param): param is string => typeof param === "string",
       );
-      return stringParams.slice(1).map((id) => ({ id }));
+      const activityIdCount = (normalizedSql.match(/::uuid/g) ?? []).length - 1;
+      return stringParams.slice(1, activityIdCount + 1).map((id) => ({ id }));
+    }
+    const isVisibleActivityRangeQuery =
+      normalizedSql.includes("FROM fitness.v_activity") &&
+      normalizedSql.includes("WHERE user_id =") &&
+      normalizedSql.includes("started_at >=");
+    if (isVisibleActivityRangeQuery) {
+      return [{ id: "activity-1" }];
     }
     return [];
   });
@@ -276,6 +290,13 @@ describe("ActivitiesCalendarRepository", () => {
           end_utc_offset_minutes: -420,
           local_time_source: "device_timezone",
         }),
+        makeActivityRow({
+          id: "home-timezone-context",
+          timezone: "America/Los_Angeles",
+          start_utc_offset_minutes: -480,
+          end_utc_offset_minutes: -420,
+          local_time_source: "user_home_timezone",
+        }),
       ],
       [{ max_hr: null, resting_hr: null, ftp: 250 }],
       [],
@@ -298,6 +319,12 @@ describe("ActivitiesCalendarRepository", () => {
       startUtcOffsetMinutes: -480,
       endUtcOffsetMinutes: -420,
       source: "device_timezone",
+    });
+    expect(contextById.get("home-timezone-context")).toEqual({
+      timezone: "America/Los_Angeles",
+      startUtcOffsetMinutes: -480,
+      endUtcOffsetMinutes: -420,
+      source: "user_home_timezone",
     });
   });
 

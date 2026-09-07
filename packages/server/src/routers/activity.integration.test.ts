@@ -371,7 +371,7 @@ describe("Hangboarding activity router integration", () => {
       sql`INSERT INTO fitness.activity_interval (
             activity_id, interval_index, label, interval_type, started_at, ended_at
           ) VALUES (
-            ${activityId}::uuid, 0, 'Step 1: Work', 'work',
+            ${activityId}::uuid, 0, 'Step 1: 19 mm edge', 'work',
             '2026-08-08T14:00:00Z'::timestamptz, '2026-08-08T14:00:07Z'::timestamptz
           )`,
     );
@@ -389,9 +389,12 @@ describe("Hangboarding activity router integration", () => {
     });
     await expect(caller.hangboardDetails({ id: activityId })).resolves.toMatchObject({
       planName: "Repeaters",
-      sessionId: "router-session",
       boardName: "Tension Board",
-      intervals: [expect.objectContaining({ intervalType: "work", durationSeconds: 7 })],
+      summary: expect.objectContaining({
+        workIntervalCount: 1,
+        totalWorkDurationSeconds: 7,
+        exercises: [expect.objectContaining({ label: "19 mm edge" })],
+      }),
     });
     await expect(
       caller.hangboardDetails({ id: "00000000-0000-0000-0000-000000000099" }),

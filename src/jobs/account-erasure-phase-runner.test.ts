@@ -35,7 +35,6 @@ const snapshot: AccountErasureRemoteSnapshot = {
   posthogDistinctId: request.userId ?? "missing-user",
   processorEmails: ["person@example.test"],
   providerConnections: [],
-  slackInstallations: [],
   stripe: null,
   webhooks: [],
 };

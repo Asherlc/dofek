@@ -320,25 +320,26 @@ describe("CyclingAnalyticsProvider — rate-limit aware fetch wiring", () => {
     );
   });
 
-  it.each([
-    401, 403,
-  ])("marks a rejected personal token response (%s) as requiring authentication", async (status) => {
-    const mockFetch: typeof globalThis.fetch = async () =>
-      new Response("sensitive rejection response", { status });
-    const { db } = createMockDatabase();
+  it.each([401, 403])(
+    "marks a rejected personal token response (%s) as requiring authentication",
+    async (status) => {
+      const mockFetch: typeof globalThis.fetch = async () =>
+        new Response("sensitive rejection response", { status });
+      const { db } = createMockDatabase();
 
-    const result = await new CyclingAnalyticsProvider(mockFetch).sync(
-      new SyncRun({
-        db,
-        window: SyncWindow.fromDateRange({ sinceDate: "2026-03-01", untilDate: "2026-03-01" }),
-      }),
-    );
+      const result = await new CyclingAnalyticsProvider(mockFetch).sync(
+        new SyncRun({
+          db,
+          window: SyncWindow.fromDateRange({ sinceDate: "2026-03-01", untilDate: "2026-03-01" }),
+        }),
+      );
 
-    expect(result.recordsSynced).toBe(0);
-    expect(result.errors).toHaveLength(1);
-    expect(authFailureReasonFromError(result.errors[0]?.cause)).toBe("authentication_failed");
-    expect(result.errors[0]?.message).not.toContain("sensitive rejection response");
-  });
+      expect(result.recordsSynced).toBe(0);
+      expect(result.errors).toHaveLength(1);
+      expect(authFailureReasonFromError(result.errors[0]?.cause)).toBe("authentication_failed");
+      expect(result.errors[0]?.message).not.toContain("sensitive rejection response");
+    },
+  );
 
   it("returns elapsed sync duration", async () => {
     process.env.CYCLING_ANALYTICS_CLIENT_ID = "test-id";
@@ -513,7 +514,7 @@ describe("cyclingAnalyticsOAuthConfig", () => {
     process.env.CYCLING_ANALYTICS_CLIENT_SECRET = "test-secret";
     delete process.env.OAUTH_REDIRECT_URI;
     const config = cyclingAnalyticsOAuthConfig();
-    expect(config?.redirectUri).toBe("https://dofek.asherlc.com/callback");
+    expect(config?.redirectUri).toBe("https://dofek.fit/callback");
   });
 });
 

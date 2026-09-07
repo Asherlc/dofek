@@ -1,4 +1,24 @@
-import { summarizeZeppFetchResponse, type ZeppFetchResponse } from "./zepp-fetch.ts";
+import {
+  type HealthEnvelopeV1,
+  type HealthUploadResponse,
+  parseHealthUploadResponse,
+} from "./health-contract.ts";
+import type { ImuChunkPayload } from "./imu-upload.ts";
+
+export type { ImuConnectionBinding } from "./imu-upload.ts";
+
+import {
+  summarizeZeppFetchResponse,
+  type ZeppFetchResponse,
+  type ZeppFetchSummary,
+} from "./zepp-fetch.ts";
+
+export class ImuUploadFailure extends Error {
+  constructor(readonly summary: ZeppFetchSummary) {
+    super(summary.errorMessage ?? "Dofek did not acknowledge the IMU batch.");
+    this.name = "ImuUploadFailure";
+  }
+}
 
 type SideFetch = (request: {
   url: string;
@@ -39,14 +59,14 @@ export async function getImuConnection(
   return { serverUrl: normalizedUrl, accountId: response.body.accountId };
 }
 
-export async function postImuBatch(
+export async function postImuEnvelope(
   serverUrl: string,
   token: string,
-  data: Record<string, unknown>,
+  envelope: HealthEnvelopeV1<ImuChunkPayload>,
+  connection: unknown,
   fetch: SideFetch,
-): Promise<{ ok: true }> {
+): Promise<HealthUploadResponse> {
   if (!token.trim()) throw new Error("Connect Dofek from Zepp settings first.");
-  const { connection } = data;
   if (
     !isRecord(connection) ||
     typeof connection.serverUrl !== "string" ||
@@ -64,8 +84,7 @@ export async function postImuBatch(
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token.trim()}` },
       body: JSON.stringify({
-        data: data.data,
-        sampleOffset: data.sampleOffset,
+        ...envelope,
         accountId: connection.accountId,
       }),
     }),
@@ -78,7 +97,7 @@ export async function postImuBatch(
     !("status" in response.body) ||
     response.body.status !== "ok"
   ) {
-    throw new Error(response.errorMessage ?? "Dofek did not acknowledge the IMU batch.");
+    throw new ImuUploadFailure(response);
   }
-  return { ok: true };
+  return parseHealthUploadResponse(response.body);
 }

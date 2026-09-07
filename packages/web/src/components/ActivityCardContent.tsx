@@ -74,6 +74,8 @@ export function ActivityCardContent({
     activity.startedAt,
     activity.localTimeContext,
     "start",
+    undefined,
+    Intl.DateTimeFormat().resolvedOptions().timeZone,
   );
   const processedRelative = activity.lastProcessedAt
     ? formatRelativeTime(activity.lastProcessedAt)

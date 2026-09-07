@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   ADDITIVE_QUANTITY_TYPES,
+  BACKGROUND_HEALTH_KIT_TYPES,
+  MENSTRUAL_FLOW_TYPE_IDENTIFIER,
   NON_ADDITIVE_QUANTITY_TYPES,
   syncHealthKitObserverChanges,
   syncHealthKitToServer,
@@ -12,6 +14,11 @@ vi.mock("./telemetry", () => ({ captureException: vi.fn() }));
 describe("syncHealthKitToServer", () => {
   function createMockClient() {
     return {
+      clinicalRecords: {
+        push: {
+          mutate: vi.fn().mockResolvedValue({ upserted: 0 }),
+        },
+      },
       healthKitSync: {
         pushQuantitySamples: {
           mutate: vi.fn().mockResolvedValue({ inserted: 5, errors: [] }),
@@ -34,6 +41,7 @@ describe("syncHealthKitToServer", () => {
 
   function createMockHealthKit() {
     return {
+      queryClinicalRecords: vi.fn().mockResolvedValue([]),
       queryDailyStatistics: vi.fn().mockResolvedValue([{ date: "2026-03-21", value: 5000 }]),
       queryQuantitySamples: vi.fn().mockResolvedValue([
         {
@@ -47,6 +55,7 @@ describe("syncHealthKitToServer", () => {
           uuid: "sample-1",
         },
       ]),
+      queryCategorySamples: vi.fn().mockResolvedValue([]),
       queryAnchoredSamples: vi.fn().mockResolvedValue({
         queryId: "query-1",
         samples: [],
@@ -95,6 +104,192 @@ describe("syncHealthKitToServer", () => {
     );
     expect(healthKit.queryWorkouts).toHaveBeenCalledTimes(1);
     expect(healthKit.querySleepSamples).toHaveBeenCalledTimes(1);
+    expect(healthKit.queryCategorySamples).toHaveBeenCalledWith(
+      MENSTRUAL_FLOW_TYPE_IDENTIFIER,
+      expect.any(String),
+      expect.any(String),
+    );
+    expect(BACKGROUND_HEALTH_KIT_TYPES).toContain(MENSTRUAL_FLOW_TYPE_IDENTIFIER);
+  });
+
+  it("pushes mapped clinical records only during an explicit sync", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const clinicalRecord = {
+      uuid: "659ee585-b399-4c21-841f-97fe49fdc465",
+      clinicalType: "condition" as const,
+      displayName: "Migraine",
+      sourceName: "Example Health System",
+      fhirVersion: "4.0.1",
+      fhir: { resourceType: "Condition", id: "condition-1" },
+      downloadedAt: "2026-04-25T17:15:30.000Z",
+    };
+    healthKit.queryDailyStatistics.mockResolvedValue([]);
+    healthKit.queryQuantitySamples.mockResolvedValue([]);
+    healthKit.queryCategorySamples.mockResolvedValue([]);
+    healthKit.queryWorkouts.mockResolvedValue([]);
+    healthKit.querySleepSamples.mockResolvedValue([]);
+    client.healthKitSync.pushWorkouts.mutate.mockResolvedValue({ inserted: 0 });
+    healthKit.queryClinicalRecords.mockImplementation(async (typeIdentifier: string) =>
+      typeIdentifier === "HKClinicalTypeIdentifierConditionRecord" ? [clinicalRecord] : [],
+    );
+    client.clinicalRecords.push.mutate.mockResolvedValue({ upserted: 1 });
+
+    const result = await syncHealthKitToServer({
+      trpcClient: client,
+      healthKit,
+      syncRangeDays: 7,
+    });
+
+    expect(healthKit.queryClinicalRecords).toHaveBeenCalledTimes(9);
+    expect(healthKit.queryClinicalRecords).toHaveBeenCalledWith(
+      "HKClinicalTypeIdentifierConditionRecord",
+      expect.any(String),
+      expect.any(String),
+    );
+    expect(client.clinicalRecords.push.mutate).toHaveBeenCalledWith({
+      records: [
+        {
+          externalId: clinicalRecord.uuid,
+          clinicalType: clinicalRecord.clinicalType,
+          displayName: clinicalRecord.displayName,
+          sourceName: clinicalRecord.sourceName,
+          fhirVersion: clinicalRecord.fhirVersion,
+          fhir: clinicalRecord.fhir,
+          downloadedAt: clinicalRecord.downloadedAt,
+        },
+      ],
+    });
+    expect(result).toEqual({ deleted: 0, inserted: 1, errors: [] });
+  });
+
+  it("batches clinical records at the server endpoint limit", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    healthKit.queryDailyStatistics.mockResolvedValue([]);
+    healthKit.queryQuantitySamples.mockResolvedValue([]);
+    healthKit.queryCategorySamples.mockResolvedValue([]);
+    healthKit.queryWorkouts.mockResolvedValue([]);
+    healthKit.querySleepSamples.mockResolvedValue([]);
+    client.healthKitSync.pushWorkouts.mutate.mockResolvedValue({ inserted: 0 });
+    healthKit.queryClinicalRecords.mockImplementation(async (typeIdentifier: string) =>
+      typeIdentifier === "HKClinicalTypeIdentifierConditionRecord"
+        ? Array.from({ length: 101 }, (_, index) => ({
+            uuid: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+            clinicalType: "condition" as const,
+            displayName: `Condition ${index}`,
+            sourceName: "Example Health System",
+            fhirVersion: "4.0.1",
+            fhir: { resourceType: "Condition", id: `condition-${index}` },
+            downloadedAt: "2026-04-25T17:15:30.000Z",
+          }))
+        : [],
+    );
+    client.clinicalRecords.push.mutate.mockImplementation(async ({ records }) => ({
+      upserted: records.length,
+    }));
+
+    const result = await syncHealthKitToServer({
+      trpcClient: client,
+      healthKit,
+      syncRangeDays: 7,
+    });
+
+    expect(
+      client.clinicalRecords.push.mutate.mock.calls.map(([input]) => input.records.length),
+    ).toEqual([100, 1]);
+    expect(result.inserted).toBe(101);
+  });
+
+  it("reports specific clinical-record progress and structured stages", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const onProgress = vi.fn();
+    const onStage = vi.fn();
+    healthKit.queryClinicalRecords.mockImplementation(async (typeIdentifier: string) =>
+      typeIdentifier === "HKClinicalTypeIdentifierLabResultRecord"
+        ? [
+            {
+              uuid: "659ee585-b399-4c21-841f-97fe49fdc465",
+              clinicalType: "labResult",
+              displayName: "CBC",
+              sourceName: "Example Health System",
+              fhirVersion: "4.0.1",
+              fhir: { resourceType: "DiagnosticReport" },
+              downloadedAt: "2026-04-25T17:15:30.000Z",
+            },
+          ]
+        : [],
+    );
+
+    await syncHealthKitToServer({
+      trpcClient: client,
+      healthKit,
+      syncRangeDays: 7,
+      onProgress,
+      onStage,
+    });
+
+    expect(onProgress).toHaveBeenCalledWith("Querying clinical Lab Result records...");
+    expect(onProgress).toHaveBeenCalledWith("Pushing 1 clinical Lab Result record...");
+    expect(onStage).toHaveBeenCalledWith({
+      operation: "queryClinicalRecords",
+      typeIdentifier: "HKClinicalTypeIdentifierLabResultRecord",
+    });
+    expect(onStage).toHaveBeenCalledWith({
+      operation: "pushClinicalRecords",
+      typeIdentifier: "HKClinicalTypeIdentifierLabResultRecord",
+      batchIndex: 1,
+      batchCount: 1,
+      itemCount: 1,
+    });
+  });
+
+  it("does not add clinical records to observer sync", () => {
+    expect(BACKGROUND_HEALTH_KIT_TYPES).not.toContain("HKClinicalTypeIdentifierLabResultRecord");
+  });
+
+  it("uploads menstrual flow with cycle-start metadata and source identity", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const cycleStart = {
+      type: "HKCategoryTypeIdentifierMenstrualFlow",
+      value: 2,
+      unit: "category",
+      startDate: "2026-08-01T08:00:00-07:00",
+      endDate: "2026-08-01T08:05:00-07:00",
+      sourceName: "Cycle Source",
+      sourceBundle: "com.example.cycle-source",
+      uuid: "cycle-start-1",
+      metadata: { HKMetadataKeyMenstrualCycleStart: true },
+    };
+    healthKit.queryDailyStatistics.mockResolvedValue([]);
+    healthKit.queryQuantitySamples.mockResolvedValue([]);
+    healthKit.queryCategorySamples.mockResolvedValue([cycleStart]);
+    healthKit.queryWorkouts.mockResolvedValue([]);
+    healthKit.querySleepSamples.mockResolvedValue([]);
+
+    await syncHealthKitToServer({
+      trpcClient: client,
+      healthKit,
+      syncRangeDays: 30,
+    });
+
+    expect(client.healthKitSync.pushQuantitySamples.mutate).toHaveBeenCalledWith({
+      samples: [cycleStart],
+    });
+  });
+
+  it("continues full sync when menstrual flow permission is not determined", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    healthKit.queryCategorySamples.mockRejectedValue({
+      code: "HEALTHKIT_AUTHORIZATION_NOT_DETERMINED",
+    });
+
+    await expect(
+      syncHealthKitToServer({ trpcClient: client, healthKit, syncRangeDays: 1 }),
+    ).resolves.toEqual(expect.objectContaining({ inserted: expect.any(Number) }));
   });
 
   it("queries walking biomechanics quantity samples", async () => {
@@ -639,6 +834,11 @@ describe("syncHealthKitToServer", () => {
 describe("syncHealthKitObserverChanges", () => {
   function createMockClient() {
     return {
+      clinicalRecords: {
+        push: {
+          mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
+        },
+      },
       healthKitSync: {
         pushQuantitySamples: {
           mutate: vi.fn().mockResolvedValue({ inserted: 1, errors: [] }),
@@ -661,8 +861,10 @@ describe("syncHealthKitObserverChanges", () => {
 
   function createMockHealthKit() {
     return {
+      queryClinicalRecords: vi.fn().mockResolvedValue([]),
       queryDailyStatistics: vi.fn().mockResolvedValue([]),
       queryQuantitySamples: vi.fn().mockResolvedValue([]),
+      queryCategorySamples: vi.fn().mockResolvedValue([]),
       queryAnchoredSamples: vi.fn().mockResolvedValue({
         queryId: "query-1",
         samples: [
@@ -720,6 +922,46 @@ describe("syncHealthKitObserverChanges", () => {
     expect(healthKit.queryQuantitySamples).not.toHaveBeenCalled();
     expect(healthKit.queryWorkouts).not.toHaveBeenCalled();
     expect(healthKit.querySleepSamples).not.toHaveBeenCalled();
+  });
+
+  it("uploads and deletes menstrual flow through the anchored observer path", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const cycleStart = {
+      type: MENSTRUAL_FLOW_TYPE_IDENTIFIER,
+      value: 2,
+      unit: "category",
+      startDate: "2026-08-01T08:00:00-07:00",
+      endDate: "2026-08-01T08:05:00-07:00",
+      sourceName: "Cycle Source",
+      sourceBundle: "com.example.cycle-source",
+      uuid: "cycle-start-new",
+      metadata: { HKMetadataKeyMenstrualCycleStart: true },
+    };
+    healthKit.queryAnchoredSamples.mockResolvedValue({
+      queryId: "query-cycle",
+      samples: [cycleStart],
+      deletedUUIDs: ["cycle-start-deleted"],
+    });
+
+    await syncHealthKitObserverChanges({
+      trpcClient: client,
+      healthKit,
+      typeIdentifiers: [MENSTRUAL_FLOW_TYPE_IDENTIFIER],
+    });
+
+    expect(client.healthKitSync.pushQuantitySamples.mutate).toHaveBeenCalledWith({
+      samples: [cycleStart],
+    });
+    expect(client.healthKitSync.deleteQuantitySamples.mutate).toHaveBeenCalledWith({
+      deletedUUIDs: ["cycle-start-deleted"],
+      typeIdentifier: MENSTRUAL_FLOW_TYPE_IDENTIFIER,
+    });
+    expect(healthKit.completeAnchoredQuery).toHaveBeenCalledWith(
+      MENSTRUAL_FLOW_TYPE_IDENTIFIER,
+      "query-cycle",
+      true,
+    );
   });
 
   it("never uploads observer samples at or before the device erasure cutoff", async () => {

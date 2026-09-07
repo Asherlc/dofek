@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createSessionCall,
   drainManualExportQueue,
+  getImuTransferFailureReason,
   getSessionAction,
   handleSessionCall,
   parseSessionCommand,
@@ -12,6 +13,17 @@ import {
 import { makeSessionCallHandlers } from "./test-helpers.ts";
 
 describe("Zepp session control", () => {
+  it.each([
+    [{ readyState: "error", error: "Bluetooth interrupted" }, "Bluetooth interrupted"],
+    [{ readyState: "error", error: "   " }, "IMU transfer failed."],
+    [{ readyState: "error" }, "IMU transfer failed."],
+    [{ readyState: "canceled", error: "Watch disconnected" }, "Watch disconnected"],
+    [{ readyState: "canceled" }, "IMU transfer was canceled."],
+    [{ readyState: "transferred" }, null],
+  ])("normalizes terminal transfer failure %#", (event, expected) => {
+    expect(getImuTransferFailureReason(event, "IMU transfer failed.")).toBe(expected);
+  });
+
   it("offers an explicit start action while idle", () => {
     expect(getSessionAction(SESSION_STATE.IDLE)).toEqual({
       command: SESSION_COMMAND.START,
@@ -47,7 +59,7 @@ describe("Zepp session control", () => {
   });
 
   it("maps Settings commands to explicit watch calls", () => {
-    const preferences = { enableGyro: true, freqModeIndex: 2 };
+    const preferences = { freqModeIndex: 2 };
 
     expect(createSessionCall(SESSION_COMMAND.START, preferences)).toEqual({
       method: "logging.start",
@@ -61,7 +73,7 @@ describe("Zepp session control", () => {
 
   it("applies start preferences before starting an idle session", () => {
     const events: string[] = [];
-    const params = { enableGyro: true, freqModeIndex: 2 };
+    const params = { freqModeIndex: 2 };
 
     expect(
       handleSessionCall(
@@ -84,7 +96,7 @@ describe("Zepp session control", () => {
 
     expect(
       handleSessionCall(
-        { method: "logging.start", params: { enableGyro: true, freqModeIndex: 2 } },
+        { method: "logging.start", params: { freqModeIndex: 2 } },
         makeSessionCallHandlers({
           logging: true,
           applyStartPreferences,
@@ -156,7 +168,7 @@ describe("Zepp session control", () => {
 
     expect(
       handleSessionCall(
-        { method: "logging.start", params: { enableGyro: true, freqModeIndex: 2 } },
+        { method: "logging.start", params: { freqModeIndex: 2 } },
         makeSessionCallHandlers({
           ...state,
           applyStartPreferences,

@@ -107,23 +107,21 @@ describe("ProgressiveOverload", () => {
       trend: "stable",
       direction: "was stable",
     },
-  ] as const)("authors neutral $trend interpretation and explicit deload context", ({
-    exerciseName,
-    volumes,
-    trend,
-    direction,
-  }) => {
-    const detail = new ProgressiveOverload(
-      exerciseName,
-      volumes.map((totalVolumeKg, index) => ({
-        week: `2026-01-${String(5 + index * 7).padStart(2, "0")}`,
-        totalVolumeKg,
-      })),
-    ).toDetail();
+  ] as const)(
+    "authors neutral $trend interpretation and explicit deload context",
+    ({ exerciseName, volumes, trend, direction }) => {
+      const detail = new ProgressiveOverload(
+        exerciseName,
+        volumes.map((totalVolumeKg, index) => ({
+          week: `2026-01-${String(5 + index * 7).padStart(2, "0")}`,
+          totalVolumeKg,
+        })),
+      ).toDetail();
 
-    expect(detail.trend).toBe(trend);
-    expect(detail.interpretation).toContain(`Recorded weekly volume ${direction}`);
-    expect(detail.interpretation).toContain("not inherently good or bad");
-    expect(detail.deloadContext).toBe(DELOAD_CONTEXT);
-  });
+      expect(detail.trend).toBe(trend);
+      expect(detail.interpretation).toContain(`Recorded weekly volume ${direction}`);
+      expect(detail.interpretation).toContain("not inherently good or bad");
+      expect(detail.deloadContext).toBe(DELOAD_CONTEXT);
+    },
+  );
 });

@@ -1,59 +1,132 @@
 import * as Sentry from "@sentry/node";
 import { TRPCError } from "@trpc/server";
-import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
+import type { Database } from "dofek/db";
+import {
+  AccountErasureUserFencedError,
+  withAccountErasureUserWriteFence,
+} from "dofek/db/account-erasure";
 import { recordUserExternalEffect } from "dofek/db/user-external-effect";
-import { sql } from "drizzle-orm";
+import { invalidateAllUserQueries } from "dofek/lib/cache";
 import { z } from "zod";
+import { APP_STORE_SUBSCRIPTION_PRODUCT_ID } from "../billing/app-store-subscription.ts";
+import { verifyAppStoreTransaction as verifySignedAppStoreTransaction } from "../billing/app-store-verifier.ts";
 import { getStripeBillingConfig } from "../billing/config.ts";
-import { resolveAccessWindow } from "../billing/entitlement.ts";
 import { createStripeClient } from "../billing/stripe-client.ts";
-import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
-import { BillingRepository } from "../repositories/billing-repository.ts";
+import {
+  BillingProfileNotFoundError,
+  BillingRepository,
+} from "../repositories/billing-repository.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 
-const billingStatusRowSchema = z.object({
-  id: z.string(),
-  created_at: timestampStringSchema,
-  paid_grant_reason: z.string().nullable(),
-  stripe_subscription_status: z.string().nullable(),
-  stripe_customer_id: z.string().nullable(),
+const accessWindowSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("full"),
+    paid: z.literal(true),
+    reason: z.enum(["paid_grant", "stripe_subscription", "app_store_subscription"]),
+  }),
+  z.object({
+    kind: z.literal("limited"),
+    paid: z.literal(false),
+    reason: z.literal("free_signup_week"),
+    startDate: z.string(),
+    endDateExclusive: z.string(),
+  }),
+]);
+const billingStatusSchema = z.object({
+  hasFullAccess: z.boolean(),
+  access: accessWindowSchema,
+  stripeSubscriptionStatus: z.string().nullable(),
+  canManageBilling: z.boolean(),
+  appStoreSubscriptionStatus: z.string().nullable(),
+  canManageAppStoreSubscription: z.boolean(),
+});
+const appStorePurchaseContextSchema = z.object({
+  productId: z.literal(APP_STORE_SUBSCRIPTION_PRODUCT_ID),
+  appAccountToken: z.uuid(),
 });
 
-export const billingRouter = router({
-  status: protectedProcedure.query(async ({ ctx }) => {
-    const rows = await executeWithSchema(
-      ctx.db,
-      billingStatusRowSchema,
-      sql`SELECT
-            profile.id,
-            profile.created_at::text AS created_at,
-            billing.paid_grant_reason,
-            billing.stripe_subscription_status,
-            billing.stripe_customer_id
-          FROM fitness.user_profile profile
-          LEFT JOIN fitness.user_billing billing ON billing.user_id = profile.id
-          WHERE profile.id = ${ctx.userId}
-          LIMIT 1`,
-    );
-    const row = rows[0];
-    if (!row) {
-      throw new Error(`Authenticated user ${ctx.userId} does not exist`);
+async function getBillingStatus(db: Pick<Database, "execute">, userId: string, timezone: string) {
+  let status: Awaited<ReturnType<BillingRepository["getAccessStatus"]>>;
+  try {
+    status = await new BillingRepository(db).getAccessStatus(userId, timezone);
+  } catch (error) {
+    if (error instanceof BillingProfileNotFoundError) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "Authenticated user profile not found" });
     }
+    throw error;
+  }
 
-    const access = resolveAccessWindow({
-      userCreatedAt: row.created_at,
-      timezone: ctx.timezone,
-      paidGrantReason: row.paid_grant_reason,
-      stripeSubscriptionStatus: row.stripe_subscription_status,
-    });
+  return {
+    hasFullAccess: status.access.kind === "full",
+    ...status,
+  };
+}
 
-    return {
-      hasFullAccess: access.kind === "full",
-      access,
-      stripeSubscriptionStatus: row.stripe_subscription_status,
-      canManageBilling: row.stripe_customer_id !== null,
-    };
-  }),
+export const billingRouter = router({
+  status: protectedProcedure
+    .output(billingStatusSchema)
+    .query(({ ctx }) => getBillingStatus(ctx.db, ctx.userId, ctx.timezone)),
+
+  appStorePurchaseContext: protectedProcedure
+    .output(appStorePurchaseContextSchema)
+    .query(async ({ ctx }) => {
+      try {
+        const appAccountToken = await withAccountErasureUserWriteFence(
+          ctx.db,
+          ctx.userId,
+          async (transaction) => {
+            const billingRepository = new BillingRepository(transaction);
+            return billingRepository.getOrCreateAppStoreAccountToken(ctx.userId);
+          },
+        );
+        return {
+          productId: APP_STORE_SUBSCRIPTION_PRODUCT_ID,
+          appAccountToken,
+        };
+      } catch (error) {
+        if (error instanceof AccountErasureUserFencedError) {
+          throw new TRPCError({ code: "CONFLICT", message: error.message });
+        }
+        throw error;
+      }
+    }),
+
+  verifyAppStoreTransaction: protectedProcedure
+    .input(z.object({ signedTransaction: z.string().min(1) }))
+    .output(billingStatusSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const status = await withAccountErasureUserWriteFence(
+          ctx.db,
+          ctx.userId,
+          async (transaction) => {
+            const billingRepository = new BillingRepository(transaction);
+            const appAccountToken = await billingRepository.getOrCreateAppStoreAccountToken(
+              ctx.userId,
+            );
+            const subscription = await verifySignedAppStoreTransaction(
+              input.signedTransaction,
+              appAccountToken,
+            );
+            await billingRepository.applyAppStoreSubscription(subscription);
+            return getBillingStatus(transaction, ctx.userId, ctx.timezone);
+          },
+        );
+        try {
+          await invalidateAllUserQueries(ctx.userId);
+        } catch (error) {
+          Sentry.captureException(error, {
+            tags: { source: "app-store-billing-cache-invalidation" },
+          });
+        }
+        return status;
+      } catch (error) {
+        if (error instanceof AccountErasureUserFencedError) {
+          throw new TRPCError({ code: "CONFLICT", message: error.message });
+        }
+        throw error;
+      }
+    }),
 
   createCheckoutSession: protectedProcedure
     .input(z.object({ operationId: z.uuid() }))

@@ -5,7 +5,7 @@ import {
   groupFoodEntryNutrientDetails,
 } from "@dofek/nutrition/food-entry-nutrition";
 import { useState } from "react";
-import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { colors } from "../theme";
 
 export interface FoodEntry {
@@ -22,11 +22,9 @@ export interface FoodEntry {
 
 interface FoodEntryCardProps {
   entry: FoodEntry;
-  onDelete: (id: string) => void;
-  deleting: boolean;
 }
 
-export function FoodEntryCard({ entry, onDelete, deleting }: FoodEntryCardProps) {
+export function FoodEntryCard({ entry }: FoodEntryCardProps) {
   const [expanded, setExpanded] = useState(false);
   const displayName = entry.food_name ?? "Unnamed nutrition entry";
   const nutrientDetails = foodEntryNutrientDetailsFromLegacyColumns(entry);
@@ -48,20 +46,12 @@ export function FoodEntryCard({ entry, onDelete, deleting }: FoodEntryCardProps)
     formatFoodEntryNutrientDetailsForAccessibility(nutrientDetails) ||
     "No nutrient details recorded";
 
-  function handleLongPress() {
-    Alert.alert("Delete Entry", `Remove "${displayName}"?`, [
-      { text: "Cancel", style: "cancel" },
-      { text: "Delete", style: "destructive", onPress: () => onDelete(entry.id) },
-    ]);
-  }
-
   return (
     <View style={styles.wrapper}>
       <TouchableOpacity
-        style={[styles.container, deleting && styles.deleting]}
+        style={styles.container}
         activeOpacity={0.7}
         onPress={() => setExpanded((current) => !current)}
-        onLongPress={handleLongPress}
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}
         accessibilityHint={
@@ -69,7 +59,7 @@ export function FoodEntryCard({ entry, onDelete, deleting }: FoodEntryCardProps)
             ? "Detailed nutrient values are shown below."
             : "Double tap to show detailed nutrient values."
         }
-        accessibilityState={{ busy: deleting, disabled: deleting, expanded }}
+        accessibilityState={{ expanded }}
       >
         <View style={styles.leftSection}>
           <Text style={styles.name}>{displayName}</Text>
@@ -119,9 +109,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingVertical: 10,
     paddingHorizontal: 4,
-  },
-  deleting: {
-    opacity: 0.5,
   },
   leftSection: {
     flex: 1,

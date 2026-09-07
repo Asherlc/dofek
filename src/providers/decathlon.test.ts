@@ -506,7 +506,7 @@ describe("decathlonOAuthConfig", () => {
     process.env.DECATHLON_CLIENT_SECRET = "test-secret";
     delete process.env.OAUTH_REDIRECT_URI;
     const config = decathlonOAuthConfig();
-    expect(config?.redirectUri).toBe("https://dofek.asherlc.com/callback");
+    expect(config?.redirectUri).toBe("https://dofek.fit/callback");
   });
 });
 

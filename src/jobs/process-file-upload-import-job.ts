@@ -105,6 +105,7 @@ function localJob(
     userId: upload.userId,
     importType: upload.importType,
     weightUnit: upload.weightUnit ?? undefined,
+    timezone: upload.timezone ?? undefined,
     checkpoint: job.data.checkpoint,
   };
   return {

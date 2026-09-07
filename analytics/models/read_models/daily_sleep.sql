@@ -87,7 +87,7 @@ live_sleep AS (
         sleep.awake_minutes AS awake_minutes,
         sleep.efficiency_pct AS efficiency_pct,
         sleep.staging_available AS staging_available
-    FROM analytics.v_sleep AS sleep
+    FROM {{ source('analytics', 'v_sleep') }} AS sleep
     INNER JOIN changed_users
         ON changed_users.user_id = sleep.user_id
     WHERE sleep.is_nap = false

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mockExecute = vi.fn().mockResolvedValue([]);
 const mockReconcile = vi.fn().mockResolvedValue(undefined);
 const mockCaptureException = vi.fn();
+const { mockLoggerWarn } = vi.hoisted(() => ({ mockLoggerWarn: vi.fn() }));
 
 vi.mock("./provider-activity-absence.ts", () => ({
   reconcileProviderActivityAbsence: (...args: unknown[]) => mockReconcile(...args),
@@ -10,6 +11,9 @@ vi.mock("./provider-activity-absence.ts", () => ({
 }));
 vi.mock("@sentry/node", () => ({
   captureException: (...args: unknown[]) => mockCaptureException(...args),
+}));
+vi.mock("../logger.ts", () => ({
+  logger: { debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn: mockLoggerWarn },
 }));
 
 import type { SyncDatabase } from "./index.ts";
@@ -20,6 +24,7 @@ import {
   ProviderActivityListSync,
   upsertProviderActivity,
 } from "./provider-activity-sync.ts";
+import { runWithProviderIngestContext } from "./provider-ingest-context.ts";
 import { activity } from "./schema/activity.ts";
 
 function makeMockDb(onConflictDoUpdate = vi.fn()): SyncDatabase {
@@ -85,6 +90,443 @@ describe("findUniqueProviderActivityByExactIdentity", () => {
 describe("upsertProviderActivity", () => {
   beforeEach(() => {
     mockCaptureException.mockClear();
+    mockLoggerWarn.mockClear();
+  });
+
+  it("rejects a fixed Etc/GMT provider offset that conflicts with the home zone", async () => {
+    const onConflictDoUpdate = vi.fn();
+    const db = makeMockDb(onConflictDoUpdate);
+
+    await upsertProviderActivity(
+      db,
+      {
+        providerId: "peloton",
+        externalId: "workout-1",
+        activityType: resolveProviderActivityType("cycling", "indoor_cycling"),
+        startedAt: new Date("2026-09-01T14:55:54.000Z"),
+        endedAt: new Date("2026-09-01T15:25:54.000Z"),
+        timezone: "Etc/GMT+4",
+        homeTimezone: "America/Los_Angeles",
+      },
+      { activityType: resolveProviderActivityType("cycling", "indoor_cycling") },
+    );
+
+    const values = vi.mocked(db.insert).mock.results[0]?.value.values;
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        timezone: "America/Los_Angeles",
+        startUtcOffsetMinutes: -420,
+        endUtcOffsetMinutes: -420,
+        localTimeSource: "home_zone_fallback",
+        rejectedProviderTimezone: "Etc/GMT+4",
+        rejectedProviderStartUtcOffsetMinutes: -240,
+        rejectedProviderEndUtcOffsetMinutes: -240,
+      }),
+    );
+    expect(onConflictDoUpdate).toHaveBeenCalledWith({
+      target: [activity.userId, activity.providerId, activity.externalId],
+      set: expect.objectContaining({
+        timezone: "America/Los_Angeles",
+        startUtcOffsetMinutes: -420,
+        endUtcOffsetMinutes: -420,
+        localTimeSource: "home_zone_fallback",
+        rejectedProviderTimezone: "Etc/GMT+4",
+        rejectedProviderStartUtcOffsetMinutes: -240,
+      }),
+    });
+  });
+
+  it("uses the run-scoped home timezone when a fixed provider zone is implausible", async () => {
+    const onConflictDoUpdate = vi.fn();
+    const db = makeMockDb(onConflictDoUpdate);
+
+    await runWithProviderIngestContext({ homeTimezone: "America/Los_Angeles" }, () =>
+      upsertProviderActivity(
+        db,
+        {
+          providerId: "kaya",
+          externalId: "ascent-1",
+          activityType: resolveProviderActivityType("climbing", "rock_climbing"),
+          startedAt: new Date("2026-09-01T14:55:54.000Z"),
+          endedAt: new Date("2026-09-01T15:25:54.000Z"),
+          timezone: "Etc/GMT+4",
+        },
+        { activityType: resolveProviderActivityType("climbing", "rock_climbing") },
+      ),
+    );
+
+    const values = vi.mocked(db.insert).mock.results[0]?.value.values;
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        timezone: "America/Los_Angeles",
+        startUtcOffsetMinutes: -420,
+        endUtcOffsetMinutes: -420,
+        localTimeSource: "home_zone_fallback",
+        rejectedProviderStartUtcOffsetMinutes: -240,
+      }),
+    );
+  });
+
+  it("rejects a conflicting explicitly sourced fixed Etc/GMT zone", async () => {
+    const onConflictDoUpdate = vi.fn();
+    const db = makeMockDb(onConflictDoUpdate);
+
+    await runWithProviderIngestContext({ homeTimezone: "America/Los_Angeles" }, () =>
+      upsertProviderActivity(
+        db,
+        {
+          providerId: "peloton",
+          externalId: "workout-explicit-zone",
+          activityType: resolveProviderActivityType("cycling", "indoor_cycling"),
+          startedAt: new Date("2026-09-01T14:55:54.000Z"),
+          endedAt: new Date("2026-09-01T15:25:54.000Z"),
+          timezone: "Etc/GMT+4",
+          startUtcOffsetMinutes: -240,
+          endUtcOffsetMinutes: -240,
+          localTimeSource: "provider_timezone",
+        },
+        { activityType: resolveProviderActivityType("cycling", "indoor_cycling") },
+      ),
+    );
+
+    const values = vi.mocked(db.insert).mock.results[0]?.value.values;
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        timezone: "America/Los_Angeles",
+        startUtcOffsetMinutes: -420,
+        endUtcOffsetMinutes: -420,
+        localTimeSource: "home_zone_fallback",
+        rejectedProviderStartUtcOffsetMinutes: -240,
+      }),
+    );
+    expect(onConflictDoUpdate).toHaveBeenCalledWith({
+      target: [activity.userId, activity.providerId, activity.externalId],
+      set: expect.objectContaining({
+        timezone: "America/Los_Angeles",
+        startUtcOffsetMinutes: -420,
+        endUtcOffsetMinutes: -420,
+        localTimeSource: "home_zone_fallback",
+        rejectedProviderStartUtcOffsetMinutes: -240,
+      }),
+    });
+  });
+
+  it("normalizes contradictory offsets for an explicitly sourced named provider zone", async () => {
+    const onConflictDoUpdate = vi.fn();
+    const db = makeMockDb(onConflictDoUpdate);
+
+    await upsertProviderActivity(
+      db,
+      {
+        providerId: "garmin",
+        externalId: "named-explicit-zone",
+        activityType: resolveProviderActivityType("running", "running"),
+        startedAt: new Date("2026-09-01T14:55:54.000Z"),
+        timezone: "America/New_York",
+        startUtcOffsetMinutes: -420,
+        endUtcOffsetMinutes: -420,
+        localTimeSource: "provider_timezone",
+        homeTimezone: "America/Los_Angeles",
+      },
+      { activityType: resolveProviderActivityType("running", "running") },
+    );
+
+    expect(onConflictDoUpdate).toHaveBeenCalledWith({
+      target: [activity.userId, activity.providerId, activity.externalId],
+      set: expect.objectContaining({
+        timezone: "America/Los_Angeles",
+        startUtcOffsetMinutes: -420,
+        endUtcOffsetMinutes: null,
+        localTimeSource: "home_zone_fallback",
+        rejectedProviderTimezone: "America/New_York",
+        rejectedProviderStartUtcOffsetMinutes: -240,
+      }),
+    });
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      "activity local-time context rejected",
+      expect.objectContaining({ activity_id: "activity-id", provider_id: "garmin" }),
+    );
+  });
+
+  it("downgrades an invalid explicitly sourced provider timezone to unknown", async () => {
+    const onConflictDoUpdate = vi.fn();
+    const db = makeMockDb(onConflictDoUpdate);
+
+    await upsertProviderActivity(
+      db,
+      {
+        providerId: "garmin",
+        externalId: "invalid-explicit-zone",
+        activityType: resolveProviderActivityType("running", "running"),
+        startedAt: new Date("2026-09-01T14:55:54.000Z"),
+        timezone: "Not/A_Timezone",
+        startUtcOffsetMinutes: -240,
+        endUtcOffsetMinutes: -240,
+        localTimeSource: "provider_timezone",
+      },
+      { activityType: resolveProviderActivityType("running", "running") },
+    );
+
+    const explicitUnknown = {
+      timezone: null,
+      startUtcOffsetMinutes: null,
+      endUtcOffsetMinutes: null,
+      localTimeSource: "unknown",
+    };
+    expect(vi.mocked(db.insert).mock.results[0]?.value.values).toHaveBeenCalledWith(
+      expect.objectContaining(explicitUnknown),
+    );
+    expect(onConflictDoUpdate).toHaveBeenCalledWith({
+      target: [activity.userId, activity.providerId, activity.externalId],
+      set: expect.objectContaining(explicitUnknown),
+    });
+    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { operation: "provider-activity-local-time-context" },
+    });
+  });
+
+  it("audits a malformed timezone even when its raw offset matches the home zone", async () => {
+    const onConflictDoUpdate = vi.fn();
+    const db = makeMockDb(onConflictDoUpdate);
+
+    await upsertProviderActivity(
+      db,
+      {
+        providerId: "garmin",
+        externalId: "malformed-zone-plausible-offset",
+        activityType: resolveProviderActivityType("running", "running"),
+        startedAt: new Date("2026-09-01T14:55:54.000Z"),
+        timezone: "Not/A_Timezone",
+        startUtcOffsetMinutes: -420,
+        endUtcOffsetMinutes: -420,
+        localTimeSource: "provider_timezone",
+        homeTimezone: "America/Los_Angeles",
+      },
+      { activityType: resolveProviderActivityType("running", "running") },
+    );
+
+    expect(onConflictDoUpdate).toHaveBeenCalledWith({
+      target: [activity.userId, activity.providerId, activity.externalId],
+      set: expect.objectContaining({
+        timezone: "America/Los_Angeles",
+        startUtcOffsetMinutes: -420,
+        localTimeSource: "home_zone_fallback",
+        rejectedProviderTimezone: "Not/A_Timezone",
+        rejectedProviderStartUtcOffsetMinutes: -420,
+      }),
+    });
+  });
+
+  it("rejects provider context when neither GPS nor a home timezone can validate it", async () => {
+    await upsertProviderActivity(
+      makeMockDb(),
+      {
+        providerId: "garmin",
+        externalId: "provider-zone-without-home",
+        activityType: resolveProviderActivityType("running", "running"),
+        startedAt: new Date("2026-09-01T14:55:54.000Z"),
+        timezone: "America/New_York",
+        localTimeSource: "provider_timezone",
+      },
+      { activityType: resolveProviderActivityType("running", "running") },
+    );
+
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      "activity local-time context rejected",
+      expect.objectContaining({
+        supplied: expect.objectContaining({ timezone: "America/New_York" }),
+        substituted: expect.objectContaining({ source: "unknown" }),
+      }),
+    );
+  });
+
+  it("does not warn when provider and home timezones differ by exactly 60 minutes", async () => {
+    await upsertProviderActivity(
+      makeMockDb(),
+      {
+        providerId: "garmin",
+        externalId: "one-hour-zone-difference",
+        activityType: resolveProviderActivityType("running", "running"),
+        startedAt: new Date("2026-09-01T14:55:54.000Z"),
+        timezone: "America/New_York",
+        localTimeSource: "provider_timezone",
+        homeTimezone: "America/Chicago",
+      },
+      { activityType: resolveProviderActivityType("running", "running") },
+    );
+
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockLoggerWarn).not.toHaveBeenCalled();
+  });
+
+  it("reports an invalid home zone and rejects provider context that cannot be validated", async () => {
+    const onConflictDoUpdate = vi.fn();
+    const db = makeMockDb(onConflictDoUpdate);
+
+    await upsertProviderActivity(
+      db,
+      {
+        providerId: "garmin",
+        externalId: "invalid-home-zone",
+        activityType: resolveProviderActivityType("running", "running"),
+        startedAt: new Date("2026-09-01T14:55:54.000Z"),
+        timezone: "America/New_York",
+        startUtcOffsetMinutes: -240,
+        endUtcOffsetMinutes: null,
+        localTimeSource: "provider_timezone",
+        homeTimezone: "Not/A_Timezone",
+      },
+      { activityType: resolveProviderActivityType("running", "running") },
+    );
+
+    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { operation: "provider-activity-home-timezone-context" },
+    });
+    expect(onConflictDoUpdate).toHaveBeenCalledWith({
+      target: [activity.userId, activity.providerId, activity.externalId],
+      set: expect.objectContaining({
+        timezone: null,
+        localTimeSource: "unknown",
+        rejectedProviderTimezone: "America/New_York",
+      }),
+    });
+  });
+
+  it.each([
+    ["Etc/GMT", 0],
+    ["Etc/GMT+10", -600],
+  ])("normalizes the fixed-zone grammar %s to its derived offset", async (timezone, offset) => {
+    const db = makeMockDb();
+    await upsertProviderActivity(
+      db,
+      {
+        providerId: "peloton",
+        externalId: `workout-${timezone}`,
+        activityType: resolveProviderActivityType("cycling", "indoor_cycling"),
+        startedAt: new Date("2026-09-01T14:55:54.000Z"),
+        timezone,
+        homeTimezone: "  America/Los_Angeles  ",
+      },
+      { activityType: resolveProviderActivityType("cycling", "indoor_cycling") },
+    );
+    expect(vi.mocked(db.insert).mock.results[0]?.value.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        timezone: "America/Los_Angeles",
+        startUtcOffsetMinutes: -420,
+        endUtcOffsetMinutes: null,
+        localTimeSource: "home_zone_fallback",
+        rejectedProviderTimezone: timezone,
+        rejectedProviderStartUtcOffsetMinutes: offset,
+      }),
+    );
+  });
+
+  it.each(["prefixEtc/GMT+4", "Etc/GMT+4suffix"])(
+    "does not classify malformed zone %s as a fixed Etc/GMT zone",
+    async (timezone) => {
+      const db = makeMockDb();
+      await upsertProviderActivity(
+        db,
+        {
+          providerId: "peloton",
+          externalId: "malformed-zone",
+          activityType: resolveProviderActivityType("cycling", "indoor_cycling"),
+          startedAt: new Date("2026-09-01T14:55:54.000Z"),
+          timezone,
+          homeTimezone: "America/Los_Angeles",
+        },
+        { activityType: resolveProviderActivityType("cycling", "indoor_cycling") },
+      );
+      expect(mockCaptureException).toHaveBeenCalledOnce();
+      expect(vi.mocked(db.insert).mock.results[0]?.value.values).toHaveBeenCalledWith(
+        expect.objectContaining({
+          timezone: "America/Los_Angeles",
+          localTimeSource: "home_zone_fallback",
+          rejectedProviderTimezone: timezone,
+        }),
+      );
+    },
+  );
+
+  it("logs only provider/home offset disagreements above 60 minutes", async () => {
+    for (const startUtcOffsetMinutes of [-360, -359]) {
+      const db = makeMockDb();
+      await upsertProviderActivity(
+        db,
+        {
+          providerId: "whoop",
+          externalId: `offset-${startUtcOffsetMinutes}`,
+          activityType: resolveProviderActivityType("running", "running"),
+          startedAt: new Date("2026-09-01T14:55:54.000Z"),
+          timezone: null,
+          startUtcOffsetMinutes,
+          endUtcOffsetMinutes: startUtcOffsetMinutes,
+          localTimeSource: "provider_offset",
+          homeTimezone: "America/Los_Angeles",
+        },
+        { activityType: resolveProviderActivityType("running", "running") },
+      );
+    }
+    expect(mockLoggerWarn).toHaveBeenCalledOnce();
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      "activity local-time context rejected",
+      expect.objectContaining({
+        provider_id: "whoop",
+        supplied: expect.objectContaining({ startUtcOffsetMinutes: -359 }),
+        substituted: expect.objectContaining({ startUtcOffsetMinutes: -420 }),
+      }),
+    );
+  });
+
+  it("rejects a named provider zone that conflicts with the home zone", async () => {
+    const onConflictDoUpdate = vi.fn();
+    const db = makeMockDb(onConflictDoUpdate);
+
+    await upsertProviderActivity(
+      db,
+      {
+        providerId: "garmin",
+        externalId: "named-provider-zone",
+        activityType: resolveProviderActivityType("running", "running"),
+        startedAt: new Date("2026-09-01T14:55:54.000Z"),
+        timezone: "America/New_York",
+        homeTimezone: "America/Los_Angeles",
+      },
+      { activityType: resolveProviderActivityType("running", "running") },
+    );
+
+    expect(onConflictDoUpdate).toHaveBeenCalledWith({
+      target: [activity.userId, activity.providerId, activity.externalId],
+      set: expect.objectContaining({
+        timezone: "America/Los_Angeles",
+        startUtcOffsetMinutes: -420,
+        endUtcOffsetMinutes: null,
+        localTimeSource: "home_zone_fallback",
+        rejectedProviderTimezone: "America/New_York",
+      }),
+    });
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      "activity local-time context rejected",
+      expect.objectContaining({ activity_id: "activity-id", provider_id: "garmin" }),
+    );
+  });
+
+  it("does not log when provider and home named zones agree", async () => {
+    const db = makeMockDb();
+    await upsertProviderActivity(
+      db,
+      {
+        providerId: "garmin",
+        externalId: "matching-provider-zone",
+        activityType: resolveProviderActivityType("running", "running"),
+        startedAt: new Date("2026-09-01T14:55:54.000Z"),
+        timezone: "America/Los_Angeles",
+        homeTimezone: "America/Los_Angeles",
+      },
+      { activityType: resolveProviderActivityType("running", "running") },
+    );
+    expect(mockLoggerWarn).not.toHaveBeenCalled();
   });
 
   it("does not include providerAbsentAt in conflict updates", async () => {
@@ -187,6 +629,9 @@ describe("upsertProviderActivity", () => {
         startUtcOffsetMinutes: null,
         endUtcOffsetMinutes: null,
         localTimeSource: "unknown",
+        rejectedProviderTimezone: "Not/A_Timezone",
+        rejectedProviderStartUtcOffsetMinutes: 123,
+        rejectedProviderEndUtcOffsetMinutes: 124,
       }),
     );
     expect(onConflictDoUpdate).toHaveBeenCalledWith({
@@ -199,6 +644,9 @@ describe("upsertProviderActivity", () => {
         startUtcOffsetMinutes: null,
         endUtcOffsetMinutes: null,
         localTimeSource: "unknown",
+        rejectedProviderTimezone: "Not/A_Timezone",
+        rejectedProviderStartUtcOffsetMinutes: 123,
+        rejectedProviderEndUtcOffsetMinutes: 124,
       },
     });
     expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
@@ -219,6 +667,7 @@ describe("upsertProviderActivity", () => {
         startedAt: new Date("2026-03-08T09:30:00.000Z"),
         endedAt: new Date("2026-03-08T10:30:00.000Z"),
         timezone: "  America/Los_Angeles  ",
+        homeTimezone: "America/Los_Angeles",
       },
       { activityType: resolveProviderActivityType("indoor_cycling", "indoor_cycling") },
     );
@@ -238,6 +687,9 @@ describe("upsertProviderActivity", () => {
         providerType: "indoor_cycling",
         modality: "indoor",
         ...expectedContext,
+        rejectedProviderTimezone: null,
+        rejectedProviderStartUtcOffsetMinutes: null,
+        rejectedProviderEndUtcOffsetMinutes: null,
       },
     });
     expect(mockCaptureException).not.toHaveBeenCalled();
@@ -258,6 +710,7 @@ describe("upsertProviderActivity", () => {
         startUtcOffsetMinutes: -420,
         endUtcOffsetMinutes: -420,
         localTimeSource: "provider_offset",
+        homeTimezone: "America/Los_Angeles",
       },
       { activityType: resolveProviderActivityType("running", "running") },
     );
@@ -272,6 +725,9 @@ describe("upsertProviderActivity", () => {
         startUtcOffsetMinutes: -420,
         endUtcOffsetMinutes: -420,
         localTimeSource: "provider_offset",
+        rejectedProviderTimezone: null,
+        rejectedProviderStartUtcOffsetMinutes: null,
+        rejectedProviderEndUtcOffsetMinutes: null,
       },
     });
     expect(mockCaptureException).not.toHaveBeenCalled();
@@ -311,6 +767,9 @@ describe("upsertProviderActivity", () => {
         providerType: "indoor_cycling",
         modality: "indoor",
         ...explicitUnknown,
+        rejectedProviderTimezone: null,
+        rejectedProviderStartUtcOffsetMinutes: null,
+        rejectedProviderEndUtcOffsetMinutes: null,
       },
     });
     expect(mockCaptureException).not.toHaveBeenCalled();

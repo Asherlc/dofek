@@ -5,7 +5,7 @@ import {
 import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import type { SyncDatabase } from "../../../../src/db/index.ts";
+import type { Database, SyncDatabase } from "../../../../src/db/index.ts";
 import { getProviderDataGenerations } from "../../../../src/db/provider-data-deletion.ts";
 import {
   BODY_MEASUREMENT_COLUMN_TO_CHANNEL,
@@ -56,6 +56,8 @@ const INTEGER_METRIC_STREAM_COLUMNS = new Set([
 
 const MAX_SLEEP_SESSION_GAP_MS = 90 * 60 * 1000;
 
+type HealthKitSyncDatabase = SyncDatabase & Pick<Database, "transaction">;
+
 const ignoredProviderDerivedTypes = new Set([
   "HKQuantityTypeIdentifierRestingHeartRate",
   "HKQuantityTypeIdentifierVO2Max",
@@ -74,6 +76,7 @@ export interface HealthKitSample {
   sourceName: string;
   sourceBundle: string;
   uuid: string;
+  metadata?: Record<string, string | number | boolean>;
 }
 
 export interface WorkoutSample {
@@ -344,12 +347,12 @@ export class HealthKitDeletionTombstonesUnsupportedError extends Error {
 
 /** Data access for HealthKit sync operations (inserts, upserts, batch writes). */
 export class HealthKitSyncRepository {
-  readonly #db: SyncDatabase;
+  readonly #db: HealthKitSyncDatabase;
   readonly #userId: string;
   readonly #metricStreamPublisher?: MetricStreamEventPublisher;
 
   constructor(
-    db: SyncDatabase,
+    db: HealthKitSyncDatabase,
     userId: string,
     metricStreamPublisher?: MetricStreamEventPublisher,
   ) {
@@ -579,8 +582,8 @@ export class HealthKitSyncRepository {
       for (const sample of batch) {
         const externalId = `hk:${sample.uuid}`;
         await this.#db.execute(
-          sql`INSERT INTO fitness.health_event (user_id, provider_id, external_id, type, value, unit, source_name, start_date, end_date)
-              VALUES (${this.#userId}, ${PROVIDER_ID}, ${externalId}, ${sample.type}, ${sample.value}, ${sample.unit}, ${sample.sourceName}, ${sample.startDate}::timestamptz, ${sample.endDate}::timestamptz)
+          sql`INSERT INTO fitness.health_event (user_id, provider_id, external_id, type, value, unit, source_name, source_bundle, metadata, start_date, end_date)
+              VALUES (${this.#userId}, ${PROVIDER_ID}, ${externalId}, ${sample.type}, ${sample.value}, ${sample.unit}, ${sample.sourceName}, ${sample.sourceBundle}, ${sample.metadata === undefined ? null : JSON.stringify(sample.metadata)}::jsonb, ${sample.startDate}::timestamptz, ${sample.endDate}::timestamptz)
               ON CONFLICT (user_id, provider_id, external_id) DO NOTHING`,
         );
         inserted++;

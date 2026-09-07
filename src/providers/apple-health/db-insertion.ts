@@ -10,7 +10,7 @@ import {
 import { NUTRIENT_ID_MAP } from "../../db/nutrient-columns.ts";
 import { upsertProviderActivity } from "../../db/provider-activity-sync.ts";
 import { activity, dailyMetrics, sleepSession, sleepStage } from "../../db/schema/activity.ts";
-import { healthEvent, labResult } from "../../db/schema/clinical.ts";
+import { healthEvent } from "../../db/schema/clinical.ts";
 import { foodEntry, foodEntryNutrient } from "../../db/schema/nutrition.ts";
 import { SOURCE_TYPE_FILE } from "../../db/sensor-channels.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
@@ -168,8 +168,6 @@ export const ALL_ROUTED_TYPES = new Set([
 function dateToString(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
-
-export { labResult };
 
 export async function upsertMetricStreamBatch(
   db: SyncDatabase,
@@ -703,6 +701,7 @@ export async function upsertWorkoutBatch(
     const results: { activityId: string; workout: HealthWorkout }[] = [];
 
     for (const workout of uniqueWorkouts) {
+      const routeLocation = workout.routeLocations?.[0];
       const values = {
         providerId,
         externalId: workoutExternalId(workout),
@@ -711,6 +710,9 @@ export async function upsertWorkoutBatch(
         endedAt: workout.endDate,
         name: workoutName(workout),
         sourceName: workout.sourceName,
+        localTimeCoordinates: routeLocation
+          ? { latitude: routeLocation.lat, longitude: routeLocation.lng }
+          : undefined,
         raw: workoutRawPayload(workout),
       };
 
@@ -778,7 +780,16 @@ function workoutName(workout: HealthWorkout): string {
 }
 
 function workoutRawPayload(workout: HealthWorkout): Record<string, unknown> {
-  const raw: Record<string, unknown> = { durationSeconds: workout.durationSeconds };
+  const raw: Record<string, unknown> = {
+    durationSeconds: workout.durationSeconds,
+    appleHealth: {
+      workoutActivityType: workout.activityType.providerType,
+      sourceName: workout.sourceName,
+      ...(workout.metadata && Object.keys(workout.metadata).length > 0
+        ? { metadata: workout.metadata }
+        : {}),
+    },
+  };
   if (workout.distanceMeters !== undefined) raw.distanceMeters = workout.distanceMeters;
   if (workout.avgHeartRate !== undefined) raw.avgHeartRate = workout.avgHeartRate;
   if (workout.maxHeartRate !== undefined) raw.maxHeartRate = workout.maxHeartRate;

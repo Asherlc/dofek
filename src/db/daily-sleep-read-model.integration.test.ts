@@ -217,7 +217,7 @@ function renderDailySleepSelectSql(targetSchema: string, isIncremental: boolean)
       "{{ source('postgres_fitness', 'sleep_session') }}",
       `${targetSchema}.sleep_session`,
     )
-    .replaceAll("analytics.v_sleep", `${targetSchema}.v_sleep`)
+    .replaceAll("{{ source('analytics', 'v_sleep') }}", `${targetSchema}.v_sleep`)
     .concat("\nSETTINGS join_use_nulls = 1, max_threads = 1");
 }
 

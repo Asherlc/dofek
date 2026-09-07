@@ -28,4 +28,25 @@ describe("fitRecordsToSensorSamples", () => {
       samples: ["2026-01-19T12:58:55.000Z", 245],
     });
   });
+
+  it("preserves scalar metadata and converts nullish parser values safely", () => {
+    const record = {
+      recordedAt: new Date("2026-01-19T12:58:55.000Z"),
+      raw: {
+        device_name: "Edge 1050",
+        is_indoor: true,
+        missing_value: undefined,
+        null_value: null,
+      },
+    } satisfies ParsedFitRecord;
+
+    const [row] = fitRecordsToSensorSamples([record], "wahoo", "activity-1", null);
+
+    expect(row?.raw).toEqual({
+      device_name: "Edge 1050",
+      is_indoor: true,
+      missing_value: null,
+      null_value: null,
+    });
+  });
 });

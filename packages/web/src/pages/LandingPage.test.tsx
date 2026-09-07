@@ -182,7 +182,6 @@ describe("LandingPage", () => {
     expect(screen.getByText(/late dinners show up next to less consistent sleep/i)).toBeTruthy();
     expect(screen.getAllByText(/training load vs sleep/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/resting heart rate is up/i)).toBeTruthy();
-    expect(screen.getByText(/log food from Slack/i)).toBeTruthy();
     expect(screen.getAllByText(/web and iPhone/i).length).toBeGreaterThan(0);
     expect(screen.queryByText(/export confidence/i)).toBeNull();
     expect(screen.queryByText("No data")).toBeNull();

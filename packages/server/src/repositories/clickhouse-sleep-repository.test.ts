@@ -211,6 +211,48 @@ describe("fetchSleepNights", () => {
     expect(rows[0]?.source_providers).toEqual([]);
   });
 
+  it("preserves ClickHouse empty nullable sleep values as null", async () => {
+    const query = vi.fn().mockResolvedValue([
+      {
+        date: "2026-03-14",
+        provider_id: "apple_health",
+        started_at: "2026-03-13T22:00:00Z",
+        ended_at: "2026-03-14T06:00:00Z",
+        timezone: "",
+        start_utc_offset_minutes: "",
+        end_utc_offset_minutes: "",
+        local_time_source: "unknown",
+        duration_minutes: "",
+        deep_minutes: "",
+        rem_minutes: "",
+        light_minutes: "",
+        awake_minutes: "",
+        efficiency_pct: "",
+        staging_available: false,
+      },
+    ]);
+
+    const rows = await fetchSleepNights({
+      sensorStore: { query },
+      userId: "user-1",
+      timezone: "UTC",
+      endDate: "2026-03-15",
+      days: 30,
+    });
+
+    expect(rows[0]).toMatchObject({
+      timezone: null,
+      start_utc_offset_minutes: null,
+      end_utc_offset_minutes: null,
+      duration_minutes: null,
+      deep_minutes: null,
+      rem_minutes: null,
+      light_minutes: null,
+      awake_minutes: null,
+      efficiency_pct: null,
+    });
+  });
+
   it("normalizes null nightly and nested overlap arrays", async () => {
     const baseRow = {
       date: "2026-03-14",

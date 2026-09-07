@@ -7,14 +7,10 @@ export const Route = createFileRoute("/settings")({
     search: Record<string, unknown>,
   ): {
     tab?: SettingsCategory;
-    zeppPair?: string;
   } => {
     const tab = normalizeSettingsCategory(search.tab);
     return {
       ...(tab ? { tab } : {}),
-      ...(typeof search.zeppPair === "string" && search.zeppPair.length > 0
-        ? { zeppPair: search.zeppPair }
-        : {}),
     };
   },
   component: SettingsPage,

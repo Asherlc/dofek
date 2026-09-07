@@ -216,6 +216,33 @@ best_per_group AS (
   JOIN ranked r ON r.id = fg.activity_id
   ORDER BY fg.group_id, r.prio ASC, r.id ASC
 ),
+best_context_per_group AS (
+  SELECT DISTINCT ON (fg.group_id)
+    fg.group_id,
+    r.timezone,
+    r.start_utc_offset_minutes,
+    r.end_utc_offset_minutes,
+    r.local_time_source
+  FROM final_groups fg
+  JOIN ranked r ON r.id = fg.activity_id
+  ORDER BY
+    fg.group_id,
+    CASE
+      WHEN r.local_time_source = 'gps_timezone' THEN 1
+      WHEN r.local_time_source IN (
+        'provider_timezone',
+        'device_timezone',
+        'user_home_timezone'
+      ) THEN 2
+      -- Direct source evidence outranks a configured home-zone fallback for travel.
+      WHEN r.local_time_source IN ('provider_offset', 'device_offset') THEN 3
+      WHEN r.local_time_source = 'home_zone_fallback' THEN 4
+      WHEN r.local_time_source = 'unknown' THEN 5
+      ELSE 6
+    END ASC,
+    r.prio ASC,
+    r.id ASC
+),
 group_bounds AS (
   SELECT
     fg.group_id,
@@ -268,22 +295,13 @@ merged AS (
     (SELECT r.notes FROM final_groups fg2 JOIN ranked r ON r.id = fg2.activity_id
      WHERE fg2.group_id = b.group_id AND r.notes IS NOT NULL
      ORDER BY r.prio ASC LIMIT 1) AS notes,
-    (SELECT r.timezone FROM final_groups fg2 JOIN ranked r ON r.id = fg2.activity_id
-     WHERE fg2.group_id = b.group_id
-       AND r.local_time_source IN ('provider_timezone', 'device_timezone')
-     ORDER BY r.prio ASC LIMIT 1) AS timezone,
-    (SELECT r.start_utc_offset_minutes
-     FROM final_groups fg2 JOIN ranked r ON r.id = fg2.activity_id
-     WHERE fg2.group_id = b.group_id AND r.local_time_source <> 'unknown'
-     ORDER BY r.prio ASC LIMIT 1) AS start_utc_offset_minutes,
-    (SELECT r.end_utc_offset_minutes
-     FROM final_groups fg2 JOIN ranked r ON r.id = fg2.activity_id
-     WHERE fg2.group_id = b.group_id AND r.local_time_source <> 'unknown'
-     ORDER BY r.prio ASC LIMIT 1) AS end_utc_offset_minutes,
-    (SELECT r.local_time_source
-     FROM final_groups fg2 JOIN ranked r ON r.id = fg2.activity_id
-     WHERE fg2.group_id = b.group_id AND r.local_time_source <> 'unknown'
-     ORDER BY r.prio ASC LIMIT 1) AS local_time_source,
+    CASE
+      WHEN context.local_time_source = 'unknown' THEN NULL
+      ELSE context.timezone
+    END AS timezone,
+    context.start_utc_offset_minutes,
+    context.end_utc_offset_minutes,
+    context.local_time_source,
     (SELECT jsonb_object_agg(sub.key, sub.value)
      FROM (
        SELECT raw_entry.key, raw_entry.value,
@@ -321,6 +339,7 @@ merged AS (
     absent_source_links.absent_source_external_ids
   FROM best_per_group b
   JOIN group_bounds bounds ON bounds.group_id = b.group_id
+  JOIN best_context_per_group context ON context.group_id = b.group_id
   LEFT JOIN absent_source_links ON absent_source_links.group_id = b.group_id
   WHERE NOT EXISTS (
     SELECT 1 FROM tombstoned_groups tg WHERE tg.group_id = b.group_id

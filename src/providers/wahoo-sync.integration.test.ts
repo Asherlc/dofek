@@ -6,12 +6,12 @@ import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { activity } from "../db/schema/activity.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
-import { ensureProvider, saveTokens } from "../db/tokens.ts";
+import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
 import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
-import type { WahooWorkout } from "./wahoo/client.ts";
+import { WAHOO_API_BASE, type WahooWorkout } from "./wahoo/client.ts";
 import { WahooProvider } from "./wahoo/provider.ts";
 
 // Fake Wahoo API responses
@@ -236,9 +236,68 @@ describe("WahooProvider.sync() (integration)", () => {
     );
 
     // Verify token was refreshed in DB
-    const { loadTokens } = await import("../db/tokens.ts");
     const tokens = await loadTokens(ctx.db, "wahoo");
     expect(tokens?.accessToken).toBe("refreshed-token");
+  });
+
+  it("refreshes and retries when Wahoo rejects a locally unexpired access token", async () => {
+    await saveTokens(ctx.db, "wahoo", {
+      accessToken: "stale-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user_read workouts_read",
+    });
+
+    const attemptedTokens: string[] = [];
+    server.use(
+      http.post(`${WAHOO_API_BASE}/oauth/token`, async ({ request }) => {
+        const body = new URLSearchParams(await request.text());
+        expect(body.get("grant_type")).toBe("refresh_token");
+        expect(body.get("refresh_token")).toBe("valid-refresh");
+        return HttpResponse.json({
+          access_token: "refreshed-after-rejection",
+          refresh_token: "rotated-refresh",
+          expires_in: 7200,
+          scope: "user_read workouts_read",
+        });
+      }),
+      http.get(`${WAHOO_API_BASE}/v1/workouts`, ({ request }) => {
+        const authorization = request.headers.get("Authorization");
+        if (authorization) attemptedTokens.push(authorization);
+        if (authorization === "Bearer stale-token") {
+          return HttpResponse.json({ error: "Access token has expired" }, { status: 401 });
+        }
+        if (authorization === "Bearer refreshed-after-rejection") {
+          return HttpResponse.json({
+            workouts: [],
+            total: 0,
+            page: 1,
+            per_page: 30,
+            order: "descending",
+            sort: "starts",
+          });
+        }
+        return HttpResponse.json({ error: "Unexpected token" }, { status: 401 });
+      }),
+    );
+
+    const provider = new WahooProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+        userId: "00000000-0000-0000-0000-000000000001",
+      }),
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.duration).toBeLessThan(60_000);
+    expect(attemptedTokens).toEqual(["Bearer stale-token", "Bearer refreshed-after-rejection"]);
+    await expect(loadTokens(ctx.db, "wahoo")).resolves.toMatchObject({
+      accessToken: "refreshed-after-rejection",
+      refreshToken: "rotated-refresh",
+    });
   });
 
   it("downloads FIT files and publishes Redpanda metric stream events", async () => {

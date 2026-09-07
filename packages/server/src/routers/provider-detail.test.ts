@@ -219,31 +219,17 @@ const expectedListColumns = {
     "fiber_g",
     "sugar_g",
   ],
-  labPanels: [
+  clinicalRecords: [
     "id",
     "provider_id",
     "external_id",
-    "name",
-    "loinc_code",
-    "status",
+    "clinical_type",
+    "display_name",
     "source_name",
+    "fhir_version",
+    "downloaded_at",
     "recorded_at",
     "issued_at",
-    "created_at",
-  ],
-  labResults: [
-    "id",
-    "provider_id",
-    "panel_id",
-    "external_id",
-    "test_name",
-    "loinc_code",
-    "value",
-    "value_text",
-    "unit",
-    "status",
-    "recorded_at",
-    "created_at",
   ],
   journalEntries: [
     "id",
@@ -267,8 +253,7 @@ const expectedListColumnCases = [
   ["foodEntries", expectedListColumns.foodEntries],
   ["healthEvents", expectedListColumns.healthEvents],
   ["nutritionDaily", expectedListColumns.nutritionDaily],
-  ["labPanels", expectedListColumns.labPanels],
-  ["labResults", expectedListColumns.labResults],
+  ["clinicalRecords", expectedListColumns.clinicalRecords],
   ["journalEntries", expectedListColumns.journalEntries],
 ] satisfies Array<[keyof typeof expectedListColumns, string[]]>;
 
@@ -291,15 +276,17 @@ describe("providerDetailRouter", () => {
       ["healthEvents", "fitness.health_event", "start_date", "id"],
       ["metricStream", "ingest.metric_stream", "recorded_at", "id"],
       ["nutritionDaily", "fitness.v_nutrition_provider_daily", "date", "date"],
-      ["labPanels", "fitness.lab_panel", "recorded_at", "id"],
-      ["labResults", "fitness.lab_result", "recorded_at", "id"],
+      ["clinicalRecords", "fitness.clinical_record", "downloaded_at", "id"],
       ["journalEntries", "fitness.journal_entry", "date", "id"],
-    ] as const)("returns correct mapping for %s", (dataType, expectedTable, expectedOrder, expectedId) => {
-      const result = tableInfo(dataType);
-      expect(result.table).toBe(expectedTable);
-      expect(result.orderColumn).toBe(expectedOrder);
-      expect(result.idColumn).toBe(expectedId);
-    });
+    ] as const)(
+      "returns correct mapping for %s",
+      (dataType, expectedTable, expectedOrder, expectedId) => {
+        const result = tableInfo(dataType);
+        expect(result.table).toBe(expectedTable);
+        expect(result.orderColumn).toBe(expectedOrder);
+        expect(result.idColumn).toBe(expectedId);
+      },
+    );
 
     it("covers every value in dataTypeEnum", () => {
       for (const dt of dataTypeEnum.options) {
@@ -314,8 +301,8 @@ describe("providerDetailRouter", () => {
   // ── dataTypeEnum ──
 
   describe("dataTypeEnum", () => {
-    it("contains exactly 11 data types", () => {
-      expect(dataTypeEnum.options).toHaveLength(11);
+    it("contains exactly 10 data types", () => {
+      expect(dataTypeEnum.options).toHaveLength(10);
     });
 
     it("includes all expected data types", () => {
@@ -328,8 +315,7 @@ describe("providerDetailRouter", () => {
         "healthEvents",
         "metricStream",
         "nutritionDaily",
-        "labPanels",
-        "labResults",
+        "clinicalRecords",
         "journalEntries",
       ];
       expect(dataTypeEnum.options).toEqual(expected);
@@ -339,8 +325,8 @@ describe("providerDetailRouter", () => {
   // ── PROVIDER_ACCOUNT_TABLES ──
 
   describe("PROVIDER_ACCOUNT_TABLES", () => {
-    it("contains 18 child tables", () => {
-      expect(PROVIDER_ACCOUNT_TABLES).toHaveLength(18);
+    it("contains 14 child tables", () => {
+      expect(PROVIDER_ACCOUNT_TABLES).toHaveLength(14);
     });
 
     it("includes all required child tables", () => {
@@ -351,8 +337,7 @@ describe("providerDetailRouter", () => {
       expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.daily_metrics");
       expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.sleep_session");
       expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.food_entry");
-      expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.lab_result");
-      expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.lab_panel");
+      expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.clinical_record");
       expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.medication_dose_event");
       expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.supplement_dose_event");
       expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.health_event");
@@ -367,12 +352,6 @@ describe("providerDetailRouter", () => {
     it("ends with OAuth token then provider connection (FK order)", () => {
       const lastTwo = PROVIDER_ACCOUNT_TABLES.slice(-2);
       expect(lastTwo).toEqual(["fitness.oauth_token", "fitness.provider_connection"]);
-    });
-
-    it("deletes lab_result before lab_panel (FK order)", () => {
-      const resultIndex = PROVIDER_ACCOUNT_TABLES.indexOf("fitness.lab_result");
-      const panelIndex = PROVIDER_ACCOUNT_TABLES.indexOf("fitness.lab_panel");
-      expect(resultIndex).toBeLessThan(panelIndex);
     });
   });
 
@@ -655,25 +634,26 @@ describe("providerDetailRouter", () => {
       expect(sqlText).toContain("OFFSET");
     });
 
-    it.each(
-      expectedListColumnCases,
-    )("selects explicit list columns for %s", async (dataType, expectedColumns) => {
-      const mockExecute = vi.fn().mockResolvedValue([]);
-      const caller = createCaller({
-        db: { execute: mockExecute },
-        userId: "user-1",
-        timezone: "UTC",
-      });
+    it.each(expectedListColumnCases)(
+      "selects explicit list columns for %s",
+      async (dataType, expectedColumns) => {
+        const mockExecute = vi.fn().mockResolvedValue([]);
+        const caller = createCaller({
+          db: { execute: mockExecute },
+          userId: "user-1",
+          timezone: "UTC",
+        });
 
-      await caller.records({ providerId: "test-provider", dataType });
+        await caller.records({ providerId: "test-provider", dataType });
 
-      const sqlText = extractSqlText(mockExecute.mock.calls[0][0]);
-      const selectClause = sqlText.slice(
-        sqlText.indexOf("SELECT") + "SELECT".length,
-        sqlText.indexOf("FROM"),
-      );
-      expect(selectClause.trim()).toBe(expectedColumns.join(", "));
-    });
+        const sqlText = extractSqlText(mockExecute.mock.calls[0][0]);
+        const selectClause = sqlText.slice(
+          sqlText.indexOf("SELECT") + "SELECT".length,
+          sqlText.indexOf("FROM"),
+        );
+        expect(selectClause.trim()).toBe(expectedColumns.join(", "));
+      },
+    );
 
     it("queries body measurement records through ClickHouse", async () => {
       const mockExecute = vi.fn().mockResolvedValue([]);

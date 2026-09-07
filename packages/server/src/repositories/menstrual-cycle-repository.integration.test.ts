@@ -1,205 +1,160 @@
-import { sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { z } from "zod";
-import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
+import { eq } from "drizzle-orm";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { drizzleSchema as schema } from "../../../../src/db/drizzle-schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { ensureProvider } from "../../../../src/db/tokens.ts";
 import { MenstrualCycleRepository } from "./menstrual-cycle-repository.ts";
 
-const periodIdRowSchema = z.object({ id: z.string().uuid() });
+const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
+const OTHER_USER_ID = "00000000-0000-0000-0000-0000000000c7";
 
-describe("MenstrualCycleRepository period durations", () => {
-  let testContext: TestContext;
+describe("MenstrualCycleRepository with Postgres", () => {
+  let context: TestContext;
+  let sequence = 0;
 
   beforeAll(async () => {
-    testContext = await setupTestDatabase();
-    await testContext.db.execute(
-      sql`INSERT INTO fitness.menstrual_period (user_id, start_date, end_date, notes)
-          VALUES
-            (${TEST_USER_ID}, CURRENT_DATE - 10, CURRENT_DATE - 6, 'five-day period'),
-            (${TEST_USER_ID}, CURRENT_DATE - 4, CURRENT_DATE - 4, 'one-day period'),
-            (${TEST_USER_ID}, CURRENT_DATE - 2, NULL, 'open period')`,
-    );
+    context = await setupTestDatabase();
+    await context.db
+      .insert(schema.userProfile)
+      .values({ id: OTHER_USER_ID, name: "Other Cycle User" })
+      .onConflictDoNothing();
+    await ensureProvider(context.db, "apple_health", "Apple Health", undefined, TEST_USER_ID);
+    await ensureProvider(context.db, "garmin", "Garmin", undefined, TEST_USER_ID);
   }, 60_000);
 
   afterAll(async () => {
-    await testContext?.cleanup();
+    await context?.cleanup();
   });
 
-  it("returns inclusive calendar-day durations from history", async () => {
-    const repository = new MenstrualCycleRepository(testContext.db, TEST_USER_ID);
+  beforeEach(async () => {
+    await context.db.delete(schema.healthEvent);
+  });
 
-    const periods = await repository.getHistory(1);
-    const byNotes = new Map(periods.map((period) => [period.notes, period]));
-
-    expect(byNotes.get("five-day period")).toMatchObject({
-      durationDays: 5,
-      durationLabel: "5 days",
+  async function seedStart(
+    timestamp: string,
+    options: {
+      userId?: string;
+      providerId?: string;
+      sourceName?: string | null;
+      sourceBundle?: string | null;
+      cycleStart?: boolean;
+    } = {},
+  ) {
+    sequence += 1;
+    await context.db.insert(schema.healthEvent).values({
+      userId: options.userId ?? TEST_USER_ID,
+      providerId: options.providerId ?? "apple_health",
+      externalId: `cycle-integration-${sequence}`,
+      type: "HKCategoryTypeIdentifierMenstrualFlow",
+      value: 2,
+      unit: "category",
+      sourceName: options.sourceName === undefined ? "Cycle Source" : options.sourceName,
+      sourceBundle: options.sourceBundle === undefined ? "com.example.cycle" : options.sourceBundle,
+      metadata: { HKMetadataKeyMenstrualCycleStart: options.cycleStart ?? true },
+      startDate: new Date(timestamp),
+      endDate: new Date(timestamp),
     });
-    expect(byNotes.get("one-day period")).toMatchObject({
-      durationDays: 1,
-      durationLabel: "1 day",
+  }
+
+  function repository(timezone = "UTC") {
+    return new MenstrualCycleRepository(context.db, TEST_USER_ID, timezone);
+  }
+
+  it("groups exact local dates, preserves sources, and excludes non-start and other-user rows", async () => {
+    await seedStart("2026-08-02T06:30:00Z", {
+      sourceName: "Late Cycle Source",
+      sourceBundle: "com.example.late-cycle",
     });
-    expect(byNotes.get("open period")).toMatchObject({
-      durationDays: null,
-      durationLabel: null,
+    await seedStart("2026-08-01T15:00:00Z", {
+      providerId: "garmin",
+      sourceName: "Garmin Connect",
+      sourceBundle: null,
     });
+    await seedStart("2026-08-03T12:00:00Z", { cycleStart: false });
+    await seedStart("2026-08-01T12:00:00Z", { userId: OTHER_USER_ID });
+
+    const history = await repository("America/Los_Angeles").getHistory(
+      6,
+      new Date("2026-08-14T12:00:00Z"),
+    );
+
+    expect(history).toEqual([
+      {
+        id: "cycle-start:2026-08-01",
+        startDate: "2026-08-01",
+        sources: [
+          {
+            providerId: "apple_health",
+            sourceName: "Late Cycle Source",
+            sourceBundle: "com.example.late-cycle",
+          },
+          {
+            providerId: "garmin",
+            sourceName: "Garmin Connect",
+            sourceBundle: null,
+          },
+        ],
+      },
+    ]);
   });
 
-  it("returns the same canonical duration fields after logging a period", async () => {
-    const repository = new MenstrualCycleRepository(testContext.db, TEST_USER_ID);
-
-    const period = await repository.logPeriod("2099-01-10", "2099-01-14", "logged period");
-
-    expect(period).toMatchObject({
-      startDate: "2099-01-10",
-      endDate: "2099-01-14",
-      durationDays: 5,
-      durationLabel: "5 days",
-    });
+  it("returns no history when no provider cycle starts exist", async () => {
+    const result = await repository().getCurrentPhase(new Date("2026-08-14T12:00:00Z"));
+    expect(result.availability.status).toBe("no-history");
   });
 
-  it("corrects a period by stable ID and returns its inclusive duration", async () => {
-    const repository = new MenstrualCycleRepository(testContext.db, TEST_USER_ID);
-    const [row] = await executeWithSchema(
-      testContext.db,
-      periodIdRowSchema,
-      sql`INSERT INTO fitness.menstrual_period (user_id, start_date, end_date, notes)
-          VALUES (${TEST_USER_ID}, '2099-02-10', '2099-02-11', 'before correction')
-          RETURNING id`,
-    );
-    if (!row) throw new Error("Expected correction fixture row");
+  it("estimates a phase from three completed regular intervals", async () => {
+    for (const date of ["2026-05-13", "2026-06-10", "2026-07-08", "2026-08-05"]) {
+      await seedStart(`${date}T12:00:00Z`);
+    }
 
-    const corrected = await repository.updatePeriod(
-      row.id,
-      "2099-02-12",
-      "2099-02-15",
-      "after correction",
-    );
-
-    expect(corrected).toMatchObject({
-      id: row.id,
-      startDate: "2099-02-12",
-      endDate: "2099-02-15",
-      durationDays: 4,
-      durationLabel: "4 days",
-      notes: "after correction",
-    });
-  });
-
-  it("deletes only a period owned by the repository user", async () => {
-    const secondUserId = "00000000-0000-4000-8000-000000000216";
-    const ownedPeriodId = "00000000-0000-4000-8000-000000002166";
-    const otherPeriodId = "00000000-0000-4000-8000-000000002167";
-    await testContext.db.execute(
-      sql`INSERT INTO fitness.user_profile (id, name)
-          VALUES (${secondUserId}, 'Cycle Integration Other User')`,
-    );
-    await testContext.db.execute(
-      sql`INSERT INTO fitness.menstrual_period (id, user_id, start_date)
-          VALUES
-            (${ownedPeriodId}, ${TEST_USER_ID}, '2099-03-01'),
-            (${otherPeriodId}, ${secondUserId}, '2099-03-01')`,
-    );
-    const repository = new MenstrualCycleRepository(testContext.db, TEST_USER_ID);
-
-    await expect(
-      repository.updatePeriod(otherPeriodId, "2099-03-02", null, null),
-    ).resolves.toBeNull();
-    await expect(repository.deletePeriod(otherPeriodId)).resolves.toBe(false);
-    await expect(repository.deletePeriod(ownedPeriodId)).resolves.toBe(true);
-
-    const rows = await executeWithSchema(
-      testContext.db,
-      periodIdRowSchema,
-      sql`SELECT id
-          FROM fitness.menstrual_period
-          WHERE id IN (${ownedPeriodId}, ${otherPeriodId})
-          ORDER BY id`,
-    );
-    expect(rows).toEqual([{ id: otherPeriodId }]);
-  });
-
-  it("preserves the per-user unique start-date constraint during correction", async () => {
-    const repository = new MenstrualCycleRepository(testContext.db, TEST_USER_ID);
-    const firstPeriodId = "00000000-0000-4000-8000-000000002168";
-    await testContext.db.execute(
-      sql`INSERT INTO fitness.menstrual_period (id, user_id, start_date)
-          VALUES
-            (${firstPeriodId}, ${TEST_USER_ID}, '2099-04-01'),
-            ('00000000-0000-4000-8000-000000002169', ${TEST_USER_ID}, '2099-04-08')`,
-    );
-
-    await expect(repository.updatePeriod(firstPeriodId, "2099-04-08", null, null)).rejects.toThrow(
-      "A period is already recorded for 2099-04-08. Choose a different start date.",
-    );
-  });
-});
-
-describe("MenstrualCycleRepository phase estimate history", () => {
-  let testContext: TestContext;
-
-  beforeAll(async () => {
-    testContext = await setupTestDatabase();
-    await testContext.db.execute(
-      sql`INSERT INTO fitness.menstrual_period (user_id, start_date)
-          VALUES
-            (${TEST_USER_ID}, '2026-04-05'),
-            (${TEST_USER_ID}, '2026-05-02'),
-            (${TEST_USER_ID}, '2026-06-02'),
-            (${TEST_USER_ID}, '2026-07-01')`,
-    );
-  }, 60_000);
-
-  afterAll(async () => {
-    await testContext?.cleanup();
-  });
-
-  it("uses the same completed cycle intervals for average, count, and observed range", async () => {
-    const repository = new MenstrualCycleRepository(testContext.db, TEST_USER_ID);
-
-    const result = await repository.getCurrentPhase(new Date("2026-07-13T12:00:00Z"));
-
+    const result = await repository().getCurrentPhase(new Date("2026-08-14T12:00:00Z"));
     expect(result).toMatchObject({
       phase: "follicular",
-      dayOfCycle: 13,
-      cycleLength: 29,
-      estimate: {
-        basis: "personal-cycle-average",
-        completedCycleCount: 3,
-        observedCycleLengthRange: {
-          minimumDays: 27,
-          maximumDays: 31,
-        },
-        methodLabel: "Phase and cycle length use the average of 3 completed cycles.",
-        uncertaintyLabel: "Recorded cycle lengths ranged from 27 to 31 days.",
-      },
+      dayOfCycle: 10,
+      cycleLength: 28,
+      availability: { status: "estimated" },
     });
   });
 
-  it("withholds a regular-cycle phase model for irregular intervals", async () => {
-    await testContext.db.execute(
-      sql`DELETE FROM fitness.menstrual_period WHERE user_id = ${TEST_USER_ID}`,
-    );
-    await testContext.db.execute(
-      sql`INSERT INTO fitness.menstrual_period (user_id, start_date)
-          VALUES
-            (${TEST_USER_ID}, '2026-03-01'),
-            (${TEST_USER_ID}, '2026-03-23'),
-            (${TEST_USER_ID}, '2026-04-26'),
-            (${TEST_USER_ID}, '2026-05-18')`,
-    );
-    const repository = new MenstrualCycleRepository(testContext.db, TEST_USER_ID);
+  it("returns sparse history for fewer than three completed intervals", async () => {
+    for (const date of ["2026-06-01", "2026-06-29", "2026-07-27"]) {
+      await seedStart(`${date}T12:00:00Z`);
+    }
+    const result = await repository().getCurrentPhase(new Date("2026-08-01T12:00:00Z"));
+    expect(result.availability.status).toBe("sparse-history");
+  });
 
-    const result = await repository.getCurrentPhase(new Date("2026-05-23T12:00:00Z"));
+  it("returns irregular history for out-of-range intervals", async () => {
+    for (const date of ["2026-03-01", "2026-04-06", "2026-05-12", "2026-06-17"]) {
+      await seedStart(`${date}T12:00:00Z`);
+    }
+    const result = await repository().getCurrentPhase(new Date("2026-06-20T12:00:00Z"));
+    expect(result.availability.status).toBe("irregular-history");
+  });
 
-    expect(result).toMatchObject({
-      phase: null,
-      cycleLength: null,
-      estimate: null,
-      availability: {
-        status: "irregular-history",
-      },
-    });
+  it("returns conflicting history for distinct starts fewer than 21 days apart", async () => {
+    await seedStart("2026-06-01T12:00:00Z");
+    await seedStart("2026-06-20T12:00:00Z", { providerId: "garmin" });
+    const result = await repository().getCurrentPhase(new Date("2026-06-25T12:00:00Z"));
+    expect(result.availability.status).toBe("conflicting-history");
+  });
+
+  it("returns stale history beyond the average cycle plus seven days", async () => {
+    for (const date of ["2026-03-01", "2026-03-29", "2026-04-26", "2026-05-24"]) {
+      await seedStart(`${date}T12:00:00Z`);
+    }
+    const result = await repository().getCurrentPhase(new Date("2026-07-10T12:00:00Z"));
+    expect(result.availability.status).toBe("stale-history");
+  });
+
+  it("does not expose another user's only record", async () => {
+    await seedStart("2026-08-01T12:00:00Z", { userId: OTHER_USER_ID });
+    const rows = await context.db
+      .select()
+      .from(schema.healthEvent)
+      .where(eq(schema.healthEvent.userId, OTHER_USER_ID));
+    expect(rows).toHaveLength(1);
+    await expect(repository().getHistory(6, new Date("2026-08-14T12:00:00Z"))).resolves.toEqual([]);
   });
 });

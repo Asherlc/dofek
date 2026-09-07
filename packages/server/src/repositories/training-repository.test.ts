@@ -13,7 +13,7 @@ import { TrainingRepository } from "./training-repository.ts";
 // ---------------------------------------------------------------------------
 
 describe("TrainingRepository", () => {
-  function executedSql(execute: ReturnType<typeof vi.fn>, callIndex = 0): string {
+  function executedSql(execute: CallableVitestMock, callIndex = 0): string {
     return collectSqlText(execute.mock.calls[callIndex]?.[0]);
   }
 

@@ -10,15 +10,14 @@ describe("standardViewHeader", () => {
 AS`);
   });
 
-  it.each([
-    "daily_sleep",
-    "analytics.daily_sleep;",
-    "DROP analytics.daily_sleep",
-  ])("rejects invalid qualified view name %s", (viewName) => {
-    expect(() => standardViewHeader(viewName)).toThrow(
-      `Invalid ClickHouse qualified name: ${viewName}`,
-    );
-  });
+  it.each(["daily_sleep", "analytics.daily_sleep;", "DROP analytics.daily_sleep"])(
+    "rejects invalid qualified view name %s",
+    (viewName) => {
+      expect(() => standardViewHeader(viewName)).toThrow(
+        `Invalid ClickHouse qualified name: ${viewName}`,
+      );
+    },
+  );
 });
 
 describe("refreshableMergeTreeViewHeader", () => {
@@ -42,25 +41,21 @@ AS`);
     );
   });
 
-  it.each([
-    "user_id",
-    "(user_id, 1date)",
-    "(user_id, date);",
-  ])("rejects invalid order by expression %s", (orderBy) => {
-    expect(() =>
-      refreshableMergeTreeViewHeader("analytics.daily_sleep", orderBy, "15 MINUTE"),
-    ).toThrow(`Invalid ClickHouse ORDER BY expression: ${orderBy}`);
-  });
+  it.each(["user_id", "(user_id, 1date)", "(user_id, date);"])(
+    "rejects invalid order by expression %s",
+    (orderBy) => {
+      expect(() =>
+        refreshableMergeTreeViewHeader("analytics.daily_sleep", orderBy, "15 MINUTE"),
+      ).toThrow(`Invalid ClickHouse ORDER BY expression: ${orderBy}`);
+    },
+  );
 
-  it.each([
-    "0 MINUTE",
-    "15",
-    "15 MINUTES",
-    "15 MINUTE;",
-    "every 15 MINUTE",
-  ])("rejects invalid refresh interval %s", (refreshEvery) => {
-    expect(() =>
-      refreshableMergeTreeViewHeader("analytics.daily_sleep", "(user_id, date)", refreshEvery),
-    ).toThrow(`Invalid ClickHouse refresh interval: ${refreshEvery}`);
-  });
+  it.each(["0 MINUTE", "15", "15 MINUTES", "15 MINUTE;", "every 15 MINUTE"])(
+    "rejects invalid refresh interval %s",
+    (refreshEvery) => {
+      expect(() =>
+        refreshableMergeTreeViewHeader("analytics.daily_sleep", "(user_id, date)", refreshEvery),
+      ).toThrow(`Invalid ClickHouse refresh interval: ${refreshEvery}`);
+    },
+  );
 });

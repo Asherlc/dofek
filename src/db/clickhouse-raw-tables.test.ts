@@ -1,9 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildPostgresFitnessActivityRawTableStatement,
   buildPostgresFitnessProviderConnectionRawTableStatement,
   buildPostgresFitnessProviderRawTableStatement,
   buildPostgresFitnessRawTableStatements,
 } from "./clickhouse-raw-tables.ts";
+
+describe("buildPostgresFitnessActivityRawTableStatement", () => {
+  it("mirrors rejected provider local-time evidence for repair verification", () => {
+    const statement = buildPostgresFitnessActivityRawTableStatement();
+
+    expect(statement).toContain("rejected_provider_timezone Nullable(String)");
+    expect(statement).toContain("rejected_provider_start_utc_offset_minutes Nullable(Int64)");
+    expect(statement).toContain("rejected_provider_end_utc_offset_minutes Nullable(Int64)");
+  });
+});
 
 describe("buildPostgresFitnessProviderConnectionRawTableStatement", () => {
   it("builds the canonical provider connection mirror", () => {

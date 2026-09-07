@@ -30,6 +30,7 @@ export interface HealthActivity {
   activityType: "other";
   startedAt: string;
   endedAt: string;
+  raw?: Record<string, unknown>;
 }
 
 export interface HealthDataPayload {
@@ -110,19 +111,75 @@ export interface SensorConstructors {
   Workout: new () => { getHistory(): WorkoutHistoryEntry[] };
 }
 
-export function workoutHistoryToActivities(history: WorkoutHistoryEntry[]): HealthActivity[] {
-  return history.map((historyEntry) => {
-    const startedAtMilliseconds = historyEntry.startTime * 1000;
-    return {
-      externalId: String(historyEntry.startTime),
-      activityType: "other",
-      startedAt: new Date(startedAtMilliseconds).toISOString(),
-      endedAt: new Date(startedAtMilliseconds + historyEntry.duration * 1000).toISOString(),
-    };
+export type CaptureHealthException = (
+  error: unknown,
+  context: { operation: "collect"; sensor: keyof SensorConstructors },
+) => void;
+
+function finiteNumber(value: number): number | undefined {
+  return Number.isFinite(value) ? value : undefined;
+}
+
+function positiveNumber(value: number): number | undefined {
+  return Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+function nonNegativeNumber(value: number): number | undefined {
+  return Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function nonNegativeInteger(value: number): number | undefined {
+  return Number.isInteger(value) && value >= 0 ? value : undefined;
+}
+
+function positiveSeries(values: number[]): number[] {
+  return values.map((value) => positiveNumber(value) ?? 0);
+}
+
+function temperatureSeries(values: number[]): number[] {
+  return values.map((value) => {
+    const finite = finiteNumber(value);
+    return finite !== undefined && finite > -1000 ? finite : -1000;
   });
 }
 
-export function collectHealthData(sensors: SensorConstructors): HealthDataPayload {
+function reportCollectionError(
+  captureException: CaptureHealthException,
+  sensor: keyof SensorConstructors,
+  error: unknown,
+): void {
+  captureException(error, { operation: "collect", sensor });
+}
+
+export function workoutHistoryToActivities(history: WorkoutHistoryEntry[]): HealthActivity[] {
+  const activities: HealthActivity[] = [];
+  for (const historyEntry of history) {
+    const startTime = positiveNumber(historyEntry.startTime);
+    const duration = nonNegativeNumber(historyEntry.duration);
+    if (startTime === undefined || duration === undefined) {
+      continue;
+    }
+    const startedAtMilliseconds = historyEntry.startTime * 1000;
+    const endedAtMilliseconds = startedAtMilliseconds + historyEntry.duration * 1000;
+    const startedAt = new Date(startedAtMilliseconds);
+    const endedAt = new Date(endedAtMilliseconds);
+    if (Number.isNaN(startedAt.getTime()) || Number.isNaN(endedAt.getTime())) {
+      continue;
+    }
+    activities.push({
+      externalId: String(historyEntry.startTime),
+      activityType: "other",
+      startedAt: startedAt.toISOString(),
+      endedAt: endedAt.toISOString(),
+    });
+  }
+  return activities;
+}
+
+export function collectHealthData(
+  sensors: SensorConstructors,
+  captureException: CaptureHealthException,
+): HealthDataPayload {
   const now = Date.now();
   const currentDate = new Date(now);
   const today = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, "0")}-${String(currentDate.getDate()).padStart(2, "0")}`;
@@ -135,117 +192,149 @@ export function collectHealthData(sensors: SensorConstructors): HealthDataPayloa
 
   try {
     const heartRate = new sensors.HeartRate();
-    payload.heartRate = heartRate.getToday();
-    payload.restingHeartRate = heartRate.getResting();
+    payload.heartRate = positiveSeries(heartRate.getToday());
+    payload.restingHeartRate = positiveNumber(heartRate.getResting());
     const dailySummary = heartRate.getDailySummary();
-    if (dailySummary?.maximum) {
+    const maxHr = dailySummary?.maximum && positiveNumber(dailySummary.maximum.hr_value);
+    const maxHrTime = dailySummary?.maximum && nonNegativeInteger(dailySummary.maximum.time);
+    if (maxHr !== undefined && maxHrTime !== undefined) {
       payload.heartRateSummary = {
-        maxHr: dailySummary.maximum.hr_value,
-        maxHrTime: dailySummary.maximum.time,
+        maxHr,
+        maxHrTime,
       };
     }
-  } catch {
-    // HeartRate sensor unavailable
+  } catch (error) {
+    reportCollectionError(captureException, "HeartRate", error);
   }
 
   try {
     const step = new sensors.Step();
-    payload.steps = step.getCurrent();
-    payload.stepsTarget = step.getTarget();
-  } catch {
-    // Step sensor unavailable
+    payload.steps = nonNegativeInteger(step.getCurrent());
+    payload.stepsTarget = nonNegativeInteger(step.getTarget());
+  } catch (error) {
+    reportCollectionError(captureException, "Step", error);
   }
 
   try {
     const distance = new sensors.Distance();
-    payload.distance = distance.getCurrent();
-  } catch {
-    // Distance sensor unavailable
+    payload.distance = nonNegativeNumber(distance.getCurrent());
+  } catch (error) {
+    reportCollectionError(captureException, "Distance", error);
   }
 
   try {
     const sleep = new sensors.Sleep();
     sleep.updateInfo();
     const info = sleep.getInfo();
-    if (info && info.totalTime > 0) {
+    const totalTime = info && positiveNumber(info.totalTime);
+    if (info && totalTime !== undefined) {
+      const score = nonNegativeNumber(info.score);
+      const deepMinutes = nonNegativeNumber(info.deepTime);
+      const startTime = nonNegativeNumber(info.startTime);
+      const endTime = nonNegativeNumber(info.endTime);
+      const stages = sleep
+        .getStage()
+        .filter(
+          (stage) =>
+            nonNegativeInteger(stage.model) !== undefined &&
+            nonNegativeNumber(stage.start) !== undefined &&
+            nonNegativeNumber(stage.stop) !== undefined,
+        );
       payload.sleep = {
-        score: info.score,
-        deepMinutes: info.deepTime,
-        startTime: info.startTime,
-        endTime: info.endTime,
-        totalTime: info.totalTime,
-        stages: sleep.getStage(),
+        score: score ?? 0,
+        deepMinutes: deepMinutes ?? 0,
+        startTime: startTime ?? 0,
+        endTime: endTime ?? 0,
+        totalTime,
+        stages,
       };
     }
     const napData = sleep.getNap();
-    if (napData && napData.length > 0) {
-      payload.nap = napData;
+    const validNaps = napData?.filter(
+      (nap) =>
+        positiveNumber(nap.length) !== undefined &&
+        nonNegativeNumber(nap.start) !== undefined &&
+        nonNegativeNumber(nap.stop) !== undefined,
+    );
+    if (validNaps && validNaps.length > 0) {
+      payload.nap = validNaps;
     }
-  } catch {
-    // Sleep sensor unavailable
+  } catch (error) {
+    reportCollectionError(captureException, "Sleep", error);
   }
 
   try {
     const bloodOxygen = new sensors.BloodOxygen();
     const current = bloodOxygen.getCurrent();
-    if (current && current.value > 0) {
-      payload.bloodOxygenCurrent = current.value;
+    const currentValue = current && positiveNumber(current.value);
+    if (currentValue !== undefined && currentValue <= 100) {
+      payload.bloodOxygenCurrent = currentValue;
     }
-    payload.bloodOxygenHourly = bloodOxygen.getLastDay();
+    payload.bloodOxygenHourly = bloodOxygen.getLastDay().map((value) => {
+      const valid = positiveNumber(value);
+      return valid !== undefined && valid <= 100 ? valid : 0;
+    });
     const recent = bloodOxygen.getLastFewHour(6);
-    if (recent && recent.length > 0) {
-      payload.spo2Recent = recent;
+    const validRecent = recent?.filter(
+      (reading) =>
+        positiveNumber(reading.spo2) !== undefined &&
+        reading.spo2 <= 100 &&
+        nonNegativeInteger(reading.time) !== undefined,
+    );
+    if (validRecent && validRecent.length > 0) {
+      payload.spo2Recent = validRecent;
     }
-  } catch {
-    // BloodOxygen sensor unavailable
+  } catch (error) {
+    reportCollectionError(captureException, "BloodOxygen", error);
   }
 
   try {
     const bodyTemp = new sensors.BodyTemperature();
     const current = bodyTemp.getCurrent();
-    if (current && current.current > 0) {
-      payload.bodyTemperatureCurrent = current.current;
+    const currentValue = current && positiveNumber(current.current);
+    if (currentValue !== undefined) {
+      payload.bodyTemperatureCurrent = currentValue;
     }
-    payload.bodyTemperature = bodyTemp.getToday();
-  } catch {
-    // BodyTemperature sensor unavailable
+    payload.bodyTemperature = temperatureSeries(bodyTemp.getToday());
+  } catch (error) {
+    reportCollectionError(captureException, "BodyTemperature", error);
   }
 
   try {
     const stress = new sensors.Stress();
-    payload.stress = stress.getToday();
-    payload.stressByHour = stress.getTodayByHour();
-    payload.stressWeekly = stress.getLastWeek();
-  } catch {
-    // Stress sensor unavailable
+    payload.stress = positiveSeries(stress.getToday());
+    payload.stressByHour = positiveSeries(stress.getTodayByHour());
+    payload.stressWeekly = positiveSeries(stress.getLastWeek());
+  } catch (error) {
+    reportCollectionError(captureException, "Stress", error);
   }
 
   try {
     const stand = new sensors.Stand();
-    payload.standHours = stand.getCurrent();
-  } catch {
-    // Stand sensor unavailable
+    payload.standHours = nonNegativeInteger(stand.getCurrent());
+  } catch (error) {
+    reportCollectionError(captureException, "Stand", error);
   }
 
   try {
     const pai = new sensors.Pai();
-    payload.pai = pai.getCurrent();
-  } catch {
-    // Pai sensor unavailable
+    payload.pai = nonNegativeNumber(pai.getCurrent());
+  } catch (error) {
+    reportCollectionError(captureException, "Pai", error);
   }
 
   try {
     const fatBurning = new sensors.FatBurning();
-    payload.fatBurning = fatBurning.getCurrent();
-  } catch {
-    // FatBurning sensor unavailable
+    payload.fatBurning = nonNegativeInteger(fatBurning.getCurrent());
+  } catch (error) {
+    reportCollectionError(captureException, "FatBurning", error);
   }
 
   try {
     const workout = new sensors.Workout();
     payload.activities = workoutHistoryToActivities(workout.getHistory());
-  } catch {
-    // Workout sensor unavailable
+  } catch (error) {
+    reportCollectionError(captureException, "Workout", error);
   }
 
   return payload;

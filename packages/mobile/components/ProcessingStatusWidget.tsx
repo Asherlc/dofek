@@ -9,6 +9,7 @@ import {
   processingStatusMessage,
   processingTarget,
 } from "@dofek/providers/processing-status";
+import { useRouter } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { trpc } from "../lib/trpc";
 import { colors, spacing } from "../theme";
@@ -38,6 +39,7 @@ export interface ProcessingStatusSnapshot {
     datasets: string[];
     dismissed: boolean;
     errorMessage: string | null;
+    errorCode?: string | null;
     timeline: Array<{
       sequence: number;
       stage: ProcessingDisplayStage;
@@ -68,6 +70,7 @@ export function ProcessingStatusWidget({
   contextLabel,
   alwaysVisible = false,
 }: ProcessingStatusWidgetProps) {
+  const router = useRouter();
   const trpcUtils = trpc.useUtils();
   const dismissMutation = trpc.processing.dismiss.useMutation({
     onSuccess: async () => {
@@ -183,16 +186,33 @@ export function ProcessingStatusWidget({
                     <Text style={styles.datasetError}>{group.errorMessage}</Text>
                   ) : null}
                 </View>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Dismiss ${labelPrefix} failure`}
-                  accessibilityState={{ disabled: dismissMutation.isPending }}
-                  disabled={dismissMutation.isPending}
-                  onPress={() => dismissMutation.mutate({ operationId: group.operationId })}
-                  style={[styles.dismissButton, dismissMutation.isPending && styles.actionDisabled]}
-                >
-                  <Text style={styles.dismissButtonText}>Dismiss</Text>
-                </Pressable>
+                <View style={styles.failureActions}>
+                  {group.requiresReconnect && group.providerId && group.providerLabel ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Reconnect ${group.providerLabel}`}
+                      onPress={() => router.push(`/providers/${group.providerId}`)}
+                      style={styles.reconnectButton}
+                    >
+                      <Text style={styles.reconnectButtonText}>
+                        Reconnect {group.providerLabel}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Dismiss ${labelPrefix} failure`}
+                    accessibilityState={{ disabled: dismissMutation.isPending }}
+                    disabled={dismissMutation.isPending}
+                    onPress={() => dismissMutation.mutate({ operationId: group.operationId })}
+                    style={[
+                      styles.dismissButton,
+                      dismissMutation.isPending && styles.actionDisabled,
+                    ]}
+                  >
+                    <Text style={styles.dismissButtonText}>Dismiss</Text>
+                  </Pressable>
+                </View>
               </View>
             </View>
           );
@@ -253,6 +273,15 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   failureGroupCopy: { flex: 1, gap: 2 },
+  failureActions: { gap: spacing.xs },
+  reconnectButton: {
+    alignItems: "center",
+    backgroundColor: colors.accent,
+    borderRadius: 6,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  reconnectButtonText: { color: "#ffffff", fontSize: 12, fontWeight: "700" },
   dismissButton: {
     alignItems: "center",
     borderColor: colors.surfaceSecondary,

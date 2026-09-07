@@ -2,25 +2,24 @@ import { describe, expect, it } from "vitest";
 import { providerSyncLogPresentation } from "./sync-log-presentation.ts";
 
 describe("providerSyncLogPresentation", () => {
-  it.each([
-    "access_token_expired",
-    "refresh_token_revoked",
-    "session_expired",
-  ])("explains that %s requires reconnecting before data can resume", (authFailureReason) => {
-    expect(
-      providerSyncLogPresentation({
-        authFailureReason,
-        dataType: "strength",
-        providerName: "WHOOP",
-        status: "error",
-      }),
-    ).toEqual({
-      dataTypeLabel: "Strength",
-      heading: "Authorization expired",
-      message: "Reconnect WHOOP to resume Strength data.",
-      tone: "danger",
-    });
-  });
+  it.each(["access_token_expired", "refresh_token_revoked", "session_expired"])(
+    "explains that %s requires reconnecting before data can resume",
+    (authFailureReason) => {
+      expect(
+        providerSyncLogPresentation({
+          authFailureReason,
+          dataType: "strength",
+          providerName: "WHOOP",
+          status: "error",
+        }),
+      ).toEqual({
+        dataTypeLabel: "Strength",
+        heading: "Authorization expired",
+        message: "Reconnect WHOOP to resume Strength data.",
+        tone: "danger",
+      });
+    },
+  );
 
   it("distinguishes a failed authorization attempt from an expired authorization", () => {
     expect(

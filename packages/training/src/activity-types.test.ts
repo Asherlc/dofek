@@ -3,6 +3,7 @@ import {
   ACTIVITY_MODALITIES,
   CANONICAL_ACTIVITY_TYPES,
   classifyLegacyActivityType,
+  isActivityDetailType,
   LEGACY_ACTIVITY_TYPES,
   resolveProviderActivityType,
   resolveRawProviderActivityType,
@@ -150,6 +151,15 @@ const EXPECTED_LEGACY_CLASSIFICATIONS = [
 describe("CANONICAL_ACTIVITY_TYPES", () => {
   it("includes hangboard as a canonical activity type", () => {
     expect(CANONICAL_ACTIVITY_TYPES).toContain("hangboard");
+  });
+});
+
+describe("isActivityDetailType", () => {
+  it("matches the activity detail types that enable specialized sections", () => {
+    expect(isActivityDetailType("strength", "strength")).toBe(true);
+    expect(isActivityDetailType("climbing", "climbing")).toBe(true);
+    expect(isActivityDetailType("hangboard", "hangboard")).toBe(true);
+    expect(isActivityDetailType("strength", "running")).toBe(false);
   });
 });
 

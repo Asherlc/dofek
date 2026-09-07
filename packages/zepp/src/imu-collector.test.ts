@@ -30,7 +30,7 @@ function makeMockSensor(
 }
 
 /** Returns the first argument the mock was called with, asserting it was called. */
-function firstCallArg(mockFn: ReturnType<typeof vi.fn>) {
+function firstCallArg(mockFn: CallableVitestMock) {
   const [firstCall] = mockFn.mock.calls;
   if (!firstCall) throw new Error("expected mock to have been called at least once");
   return firstCall[0];
@@ -142,11 +142,11 @@ describe("createImuCollector", () => {
     }
   });
 
-  it("detects gyroscope when enableGyro is true and sensor exists", () => {
+  it("automatically detects gyroscope when the sensor exists", () => {
     const accel = makeMockSensor();
     const gyro = makeMockSensor();
     const collector = createImuCollector(
-      { enableGyro: true, onSample: vi.fn() },
+      { onSample: vi.fn() },
       {
         Accelerometer: ctorFor(accel),
         Gyroscope: ctorFor(gyro),
@@ -160,14 +160,16 @@ describe("createImuCollector", () => {
     }
   });
 
-  it("reports no gyroscope when enableGyro is false", () => {
+  it("falls back to accelerometer-only when gyroscope is unavailable", () => {
     const accel = makeMockSensor();
+    const gyroCtor = ctorFor(makeMockSensor());
+    const accelCtor = ctorFor(accel);
     const collector = createImuCollector(
-      { enableGyro: false, onSample: vi.fn() },
+      { onSample: vi.fn() },
       {
-        Accelerometer: ctorFor(accel),
-        Gyroscope: ctorFor(makeMockSensor()),
-        checkSensor: () => true,
+        Accelerometer: accelCtor,
+        Gyroscope: gyroCtor,
+        checkSensor: (ctor) => ctor === accelCtor,
       },
     );
 
@@ -200,7 +202,7 @@ describe("createImuCollector", () => {
     const accel = makeMockSensor();
     const gyro = makeMockSensor();
     const collector = createImuCollector(
-      { enableGyro: true, onSample: vi.fn() },
+      { onSample: vi.fn() },
       {
         Accelerometer: ctorFor(accel),
         Gyroscope: ctorFor(gyro),
@@ -306,7 +308,7 @@ describe("createImuCollector", () => {
     const accel = makeMockSensor({ supported: [0, 1, 2] });
     const gyro = makeMockSensor({ supported: [0] });
     const collector = createImuCollector(
-      { enableGyro: true, requestedFreqModeIndex: 1, onSample: vi.fn() },
+      { requestedFreqModeIndex: 1, onSample: vi.fn() },
       {
         Accelerometer: ctorFor(accel),
         Gyroscope: ctorFor(gyro),
@@ -324,7 +326,7 @@ describe("createImuCollector", () => {
     const accel = makeMockSensor({ supported: [0, 1] });
     const gyro = makeMockSensor({ supported: [0] });
     const collector = createImuCollector(
-      { enableGyro: true, requestedFreqModeIndex: 2, onSample: vi.fn() },
+      { requestedFreqModeIndex: 2, onSample: vi.fn() },
       {
         Accelerometer: ctorFor(accel),
         Gyroscope: ctorFor(gyro),
@@ -343,7 +345,7 @@ describe("createImuCollector", () => {
     const gyro = makeMockSensor({ currentValue: { x: 10, y: 20, z: 30 } });
     const onSample = vi.fn();
     const collector = createImuCollector(
-      { enableGyro: true, onSample },
+      { onSample },
       {
         Accelerometer: ctorFor(accel),
         Gyroscope: ctorFor(gyro),
@@ -369,7 +371,7 @@ describe("createImuCollector", () => {
     const gyro = makeMockSensor({ currentValue: { x: 99, y: 88, z: 77 } });
     const onSample = vi.fn();
     const collector = createImuCollector(
-      { enableGyro: true, onSample },
+      { onSample },
       {
         Accelerometer: ctorFor(accel),
         Gyroscope: ctorFor(gyro),
@@ -506,7 +508,7 @@ describe("createImuCollector", () => {
     const gyro = makeMockSensor();
     const onSample = vi.fn();
     const collector = createImuCollector(
-      { onSample, enableGyro: true },
+      { onSample },
       {
         Accelerometer: ctorFor(accel),
         Gyroscope: ctorFor(gyro),
@@ -583,43 +585,6 @@ describe("createImuCollector", () => {
     expect(sample).toMatchObject({ sensor: "accelerometer", x: 7, y: 8, z: 9 });
   });
 
-  it("defaults enableGyro to false when not specified", () => {
-    const accel = makeMockSensor();
-    const gyro = makeMockSensor();
-    const collector = createImuCollector(
-      { onSample: vi.fn() },
-      {
-        Accelerometer: ctorFor(accel),
-        Gyroscope: ctorFor(gyro),
-        checkSensor: () => true,
-      },
-    );
-
-    if (!collector.available) return;
-
-    expect(collector.hasGyroscope).toBe(false);
-    expect(collector.gyroMode).toBeNull();
-  });
-
-  it("does not configure gyroscope when enableGyro is false", () => {
-    const accel = makeMockSensor();
-    const gyro = makeMockSensor();
-    const collector = createImuCollector(
-      { enableGyro: false, onSample: vi.fn() },
-      {
-        Accelerometer: ctorFor(accel),
-        Gyroscope: ctorFor(gyro),
-        checkSensor: () => true,
-      },
-    );
-
-    if (!collector.available) return;
-
-    collector.start();
-    expect(gyro.onChange).not.toHaveBeenCalled();
-    expect(gyro.start).not.toHaveBeenCalled();
-  });
-
   it("does not emit samples before start() is called", () => {
     const accel = makeMockSensor();
     const onSample = vi.fn();
@@ -642,7 +607,7 @@ describe("createImuCollector", () => {
     const gyro = makeMockSensor({ currentValue: { x: 11, y: 22, z: 33 } });
     const onSample = vi.fn();
     const collector = createImuCollector(
-      { enableGyro: true, onSample },
+      { onSample },
       {
         Accelerometer: ctorFor(accel),
         Gyroscope: ctorFor(gyro),
@@ -670,7 +635,7 @@ describe("createImuCollector", () => {
     const gyro = makeMockSensor();
     const onSample = vi.fn();
     const collector = createImuCollector(
-      { enableGyro: true, onSample },
+      { onSample },
       {
         Accelerometer: ctorFor(accel),
         Gyroscope: ctorFor(gyro),
@@ -703,7 +668,7 @@ describe("createImuCollector", () => {
     const gyro = makeMockSensor({ currentValue: { x: 0, y: 0, z: 0 } });
     const onSample = vi.fn();
     const collector = createImuCollector(
-      { enableGyro: true, onSample },
+      { onSample },
       {
         Accelerometer: ctorFor(accel),
         Gyroscope: ctorFor(gyro),
@@ -732,7 +697,7 @@ it("retains each gyro callback with its own offset from start", () => {
   const gyro = makeMockSensor();
   const onSample = vi.fn();
   const collector = createImuCollector(
-    { enableGyro: true, onSample },
+    { onSample },
     { Accelerometer: ctorFor(accel), Gyroscope: ctorFor(gyro), checkSensor: () => true },
   );
   collector.start();

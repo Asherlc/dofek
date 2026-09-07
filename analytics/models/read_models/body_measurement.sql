@@ -43,7 +43,7 @@ existing_user_state AS (
 ),
 {% endif %}
 
-dirty_users AS materialized (
+dirty_users AS MATERIALIZED (
     SELECT source_user_refreshes.user_id AS user_id
     FROM source_user_refreshes
     CROSS JOIN priority_refresh

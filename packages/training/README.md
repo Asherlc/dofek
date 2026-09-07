@@ -49,7 +49,7 @@ Every public module is imported as `@dofek/training/<subpath>`.
 | Subpath | Purpose |
 | --- | --- |
 | `activity-icons` | Normalize activity names into framework-neutral icon categories |
-| `climbing-grades` | Parse V-scale and Yosemite Decimal System climbing grades |
+| `climbing-grades` | Validate, order, and convert Sandbag-supported boulder and route climbing grades |
 | `derived-cardio` | Cycling and submaximal walking/running VO2 max estimates and validation |
 | `endurance-types` | Endurance and indoor-cycling type guards |
 | `grade-adjusted-pace` | Grade cost factor and adjusted running pace |

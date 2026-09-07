@@ -110,7 +110,6 @@ production Infisical environment; never commit values to this repository.
 | Retention proof | `AXIOM_API_TOKEN`, `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`; optional `AXIOM_LOG_DATASET`, `AXIOM_ORG_ID`, `SENTRY_API_HOST` |
 | Stripe and archive cleanup | Existing Stripe credentials, `DB_BACKUPS_R2_BUCKET`, `METRIC_STREAM_R2_BUCKET`, and the R2 credentials above |
 | Replay and CDC proof | `REDPANDA_BROKERS`, `METRIC_STREAM_TOPIC`, ClickHouse credentials, and the PeerDB/MinIO stack configuration |
-| Shared Slack installations | Every stored Slack bot token must still authenticate for its recorded workspace and carry `users:read`; the deploy backfill verifies both before account-erasure-capable services roll out |
 
 Credential requirements:
 
@@ -160,16 +159,6 @@ Credential requirements:
   erasure ledger, database backup, metric archive, import, and export buckets
   used by the workflow:
   <https://developers.cloudflare.com/r2/api/tokens/#permissions>.
-- Slack's `auth.test` method must return the workspace recorded with each bot
-  token, and `users.info` must remain available through the existing
-  `users:read` scope. A successful lookup is accepted only when the returned
-  user ID matches and the user object names the installed workspace; visibility
-  of a foreign Slack Connect user is not membership proof. Slack documents the
-  token identity response, the method scope, and the workspace-qualified user
-  fields:
-  [auth.test](https://docs.slack.dev/reference/methods/auth.test/),
-  [users.info](https://docs.slack.dev/reference/methods/users.info/),
-  [user object](https://docs.slack.dev/reference/objects/user-object/).
 
 Before a production rollout:
 
@@ -202,16 +191,6 @@ Before a production rollout:
    is empty or inaccessible.
 6. Confirm the web and worker startup gates can read and reconcile the R2
    restore ledger before accepting traffic or jobs.
-7. Let the post-migration Slack membership one-shot complete before the first
-   account-erasure-capable web or worker rollout. It writes installer
-   relationships recorded during OAuth and non-installer relationships proven
-   by exact `users.info` workspace membership in one transaction. It must stop
-   the rollout on a missing `users:read` scope, an invalid or wrong-workspace
-   token, a concurrent database change, or an ambiguous unqualified legacy
-   identity. For an ambiguity, do not infer from the Slack user ID: obtain an
-   account-owner-confirmed mapping containing the Dofek user, Slack workspace,
-   and Slack user, record it through the normal team-scoped membership path,
-   and rerun the one-shot.
 
 See [deploy/README.md](../deploy/README.md) for the production rollout sequence,
 [clickhouse-cdc-health-runbook.md](clickhouse-cdc-health-runbook.md) for PeerDB

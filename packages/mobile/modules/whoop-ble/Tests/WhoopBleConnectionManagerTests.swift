@@ -2,6 +2,22 @@ import XCTest
 @testable import WhoopBLE
 
 final class WhoopBleConnectionManagerTests: XCTestCase {
+    func testRestoredStreamingEmitsFinalStreamingSnapshotAfterReconnect() {
+        let manager = WhoopBleConnectionManager()
+        manager.setState(.ready)
+        var snapshots: [ConnectionState] = [manager.state]
+
+        WhoopBleStreamRestorer.restoreIfNeeded(
+            wasStreaming: true,
+            startStreaming: manager.startStreaming,
+            activateImu: {},
+            emitDeviceState: { snapshots.append(manager.state) }
+        )
+
+        XCTAssertEqual(manager.state, .streaming)
+        XCTAssertEqual(snapshots, [.ready, .streaming])
+    }
+
     func testSyncOnBleQueueRunsInlineWhenAlreadyOnBleQueue() {
         let manager = WhoopBleConnectionManager()
         let expectation = expectation(description: "ble queue work finished")

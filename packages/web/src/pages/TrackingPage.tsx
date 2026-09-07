@@ -13,7 +13,7 @@ export function TrackingPage() {
       <PageSection title="Life Events" subtitle="Track changes and see their impact">
         <LifeEventsPanel />
       </PageSection>
-      <PageSection title="Body State" subtitle="Log soreness, stiffness, tenderness, and niggles">
+      <PageSection title="Injuries and Niggles" subtitle="Track injury events and their impact">
         <SubjectiveTrackingPanel />
       </PageSection>
     </PageLayout>

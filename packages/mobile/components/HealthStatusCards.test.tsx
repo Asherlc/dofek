@@ -251,36 +251,35 @@ describe("HealthStatusCards", () => {
     { statusToken: "moving_as_intended" as const, statusLabel: "Moving as intended", symbol: "✓" },
     { statusToken: "notable_deviation" as const, statusLabel: "Notable deviation", symbol: "!" },
     { statusToken: "far_from_baseline" as const, statusLabel: "Far from baseline", symbol: "×" },
-  ])("renders $statusToken as the non-color symbol $symbol", ({
-    statusToken,
-    statusLabel,
-    symbol,
-  }) => {
-    render(
-      <HealthStatusCards
-        metrics={[
-          {
-            metric: "hrv",
-            label: "Heart Rate Variability (HRV)",
-            value: 50,
-            valueText: "50 ms",
-            baseline: 50,
-            baselineText: "50 ms",
-            sampleDeviation: 5,
-            deviation: 0,
-            direction: "aligned",
-            intent: "neutral",
-            statusToken,
-            statusColor: "positive",
-            statusLabel,
-            evaluationRule: "Server-selected rule.",
-            explanation: "Server-selected explanation.",
-            baselineProgress: readyBaselineProgress,
-          },
-        ]}
-      />,
-    );
+  ])(
+    "renders $statusToken as the non-color symbol $symbol",
+    ({ statusToken, statusLabel, symbol }) => {
+      render(
+        <HealthStatusCards
+          metrics={[
+            {
+              metric: "hrv",
+              label: "Heart Rate Variability (HRV)",
+              value: 50,
+              valueText: "50 ms",
+              baseline: 50,
+              baselineText: "50 ms",
+              sampleDeviation: 5,
+              deviation: 0,
+              direction: "aligned",
+              intent: "neutral",
+              statusToken,
+              statusColor: "positive",
+              statusLabel,
+              evaluationRule: "Server-selected rule.",
+              explanation: "Server-selected explanation.",
+              baselineProgress: readyBaselineProgress,
+            },
+          ]}
+        />,
+      );
 
-    expect(screen.getByLabelText(`${statusLabel} status`).textContent).toBe(symbol);
-  });
+      expect(screen.getByLabelText(`${statusLabel} status`).textContent).toBe(symbol);
+    },
+  );
 });

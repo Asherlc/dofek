@@ -72,6 +72,7 @@ const PROVIDER_QUEUE_CONFIGS: ReadonlyMap<string, ProviderQueueConfig> = new Map
   // WHOOP sync is step-chained: one BullMQ job ≈ one API step (~3 HTTP calls with auth).
   // Job limiter paces steps; adaptive fetch paces individual HTTP calls.
   ["whoop", frequentProvider(1, { max: 1, duration: 1_000 })],
+  ["kaya", frequentProvider(1)],
   ["oura", frequentProvider()],
   ["peloton", frequentProvider()],
   ["ultrahuman", frequentProvider()],
@@ -81,6 +82,7 @@ const PROVIDER_QUEUE_CONFIGS: ReadonlyMap<string, ProviderQueueConfig> = new Map
   ["zwift", frequentProvider()],
   ["wger", frequentProvider()],
   ["concept2", frequentProvider()],
+  ["mountain-project", frequentProvider()],
   ["auto-supplements", frequentProvider()],
 
   // ── Daily tier ──

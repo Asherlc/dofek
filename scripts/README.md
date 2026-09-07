@@ -5,10 +5,22 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
 ## Database & Seeding
 
 - `seed-dev-db.ts`: Seeds a local development or review-app database with deterministic reviewer data.
-  - Creates the `Review User`, `dev-session`, connected providers, sync logs, 180 days of recovery metrics, 120 days of activities, nutrition, body composition, labs, DEXA scans, cycle data, journal entries, life events, and breathwork sessions.
+  - Creates the `Review User`, `dev-session`, connected providers, sync logs, 180 days of recovery metrics, 120 days of activities, nutrition, body composition, labs, DEXA scans, journal entries, and life events.
   - Populates the main web and mobile review surfaces while keeping generated data deterministic across runs.
   - Automatically applies migrations when needed and verifies representative row counts before reporting success.
   - Usage: `DATABASE_URL=... pnpm seed`
+- `seed-openai-reviewer-demo.ts`: Seeds only the existing
+  `asherlc+openai-review@asherlc.com` account with deterministic synthetic
+  daily HRV/steps (August 18–31, 2026), seven sleep records, four activities,
+  and three provider last-sync records. It fails when that exact account is
+  absent, removes only its own source-tagged rows, and never reads or copies
+  another account's health data.
+  - Usage: `pnpm seed:openai-reviewer-demo`
+  - Target database: the command uses `.env.local`'s `DATABASE_URL` when that
+    file is present; otherwise it uses the production database URL exported by
+    Infisical. Do not prefix this command with `DATABASE_URL=...`, because the
+    environment wrapper intentionally applies `.env.local` after shell
+    variables.
 - `seed-review-clickhouse.ts`: Refreshes review-user relational tables in
   ClickHouse and inserts 90 deterministic review body-weight samples directly
   into canonical `ingest.metric_stream`. It tombstones only its own prior
@@ -22,13 +34,30 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   ownership for exercises and provider aliases from historical strength sets,
   in bounded batches, then verifies that no attributable rows were missed.
   - Usage: `DATABASE_URL=... pnpm backfill:exercise-provenance`
-- `backfill-slack-team-memberships.ts`: Verifies every stored Slack bot token
-  against its recorded workspace, uses team-qualified Slack API responses to
-  reconstruct legacy Dofek memberships, and fails before writing on missing
-  scopes or ambiguous identities. It defaults to a dry run.
-  - Dry run: `DATABASE_URL=... pnpm backfill:slack-team-memberships`
-  - Execute: `DATABASE_URL=... pnpm backfill:slack-team-memberships -- --execute`
-
+- `repair-activity-data-integrity.ts`: Dry-run-first, user/window-bounded repair
+  for activity local-time context, Strong naive wall-clock timestamps, and the
+  dbt-owned ClickHouse grouping and summary read models. GPS evidence precedes
+  the configured home timezone, and preflight fails when neither can establish
+  a reference zone. A global PostgreSQL advisory lease serializes runs, a
+  bounded CDC barrier precedes the affected-key dbt refresh, and the private
+  audit artifact supports compare-and-swap rollback of the complete timestamp,
+  rejected-provider audit, and eight-model derived-state change. PostgreSQL documents advisory locks
+  in its [explicit locking reference](https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS).
+  - Usage: `pnpm tsx scripts/with-env.ts -- pnpm tsx scripts/repair-activity-data-integrity.ts --user-id=<uuid> --start-at=<utc> --end-at=<utc>`
+  - Procedure: [activity data integrity repair runbook](../docs/activity-data-integrity-repair-runbook.md)
+- `inspect-activity-data-integrity.ts`: Read-only diagnosis of selected activity
+  groups, their chosen sensor-summary members, Strong set parentage, and peak
+  heart-rate provenance. Requires one `--user-id=<uuid>` and one or more
+  repeatable `--activity-id=<uuid-prefix>` options.
+  - Usage: `pnpm tsx scripts/with-env.ts -- pnpm tsx scripts/inspect-activity-data-integrity.ts --user-id=<uuid> --activity-id=<uuid-prefix> --activity-id=<uuid-prefix>`
+  - Procedure: [activity data integrity repair runbook](../docs/activity-data-integrity-repair-runbook.md)
+- `retry-failed-file-upload.ts`: Dry-run-first retry for a failed durable file
+  import whose source object is still retained. It verifies the retained object
+  size before atomically persisting corrected import metadata and re-arming the
+  existing outbox row with an operator-supplied stable job ID. Strong retries
+  require an explicit weight unit and IANA timezone.
+  - Usage: `pnpm tsx scripts/with-env.ts -- pnpm tsx scripts/retry-failed-file-upload.ts --upload-id=<uuid> --user-id=<uuid> --weight-unit=lbs --timezone=America/Los_Angeles`
+  - Procedure: [activity data integrity repair runbook](../docs/activity-data-integrity-repair-runbook.md)
 ## Environment & Secrets
 
 - `dev-environment.ts`: Idempotent bootstrap and verification for the
@@ -65,20 +94,13 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   - Docker documents [Compose project-name isolation](https://docs.docker.com/compose/how-tos/project-name/) and the [`--project-directory` option](https://docs.docker.com/reference/cli/docker/compose/).
 - `compose-env.ts`: Generates workspace-specific ports and connection URLs in `.env.local`; `--up` also starts Postgres, ClickHouse, and Redis through the pinned Compose identity.
 - `run-tests.ts`: Starts the workspace Compose dependencies, validates `.env.local`, and runs the requested integration-inclusive Vitest tier with `TEST_DATABASE_URL` set.
-- `conductor-archive.ts`: Conductor archive hook that removes Docker Compose resources for the current workspace Compose project.
-  - Runs `docker compose down --remove-orphans --volumes` for the default compose file and `docker-compose.e2e.yml` using the physical workspace identity.
-  - Removes any remaining containers labeled with the current workspace's Compose project name.
-  - Preserves shared images and build cache; Docker documents the exact [`down --volumes` scope](https://docs.docker.com/reference/cli/docker/compose/down/).
-  - Usage: `pnpm tsx scripts/conductor-archive.ts`
 - `check-dns-records.sh`: Validates that every domain in `deploy/stack.yml` has a matching record in `deploy/dns.tf`. Prevents 521 errors due to missing DNS records.
 - `generate-schema-diagram.ts`: Generates DBML and PlantUML diagrams from the Drizzle schema modules (`src/db/schema/`).
   - Uses `drizzle-dbml-generator` and custom parsing logic to build a high-quality ERD.
   - Outputs: `docs/schema.dbml`, `docs/schema.puml`.
-- `fix-ts-expect-errors.ts`: Automated removal of `@ts-expect-error` comments across the codebase.
-  - Handles standalone lines, inline comments, and specific test patterns like `MockFetchFn`.
 - `no-suppressions.ts`: Scans every tracked TypeScript file and rejects lint,
   type-check, coverage, or mutation-test suppression comments. Generated TanStack
-  route trees and the suppression-removal utility are the only exclusions.
+  route trees are the only exclusion.
   File discovery uses Git's tracked-file index via
   [`git ls-files`](https://git-scm.com/docs/git-ls-files).
   - Usage: `pnpm lint:suppressions`
@@ -98,6 +120,9 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   are lost, inactive, or retaining dangerous WAL, and when active ClickHouse
   mirrors have stale `_peerdb_synced_at` values.
   - Usage: `pnpm check:clickhouse-cdc`
+- `reconcile-pending-processing.ts`: Reconciles pending processing operations
+  after the CDC health monitor records a successful bounded CDC result. It
+  reports its own failures without changing the recorded CDC health state.
 - `check-database-backup-freshness.ts`: Lists every page of the private
   `dofek-db-backups` R2 bucket and fails when no backup exists, object metadata
   is incomplete, or the newest recovery point is at least 24 hours old.

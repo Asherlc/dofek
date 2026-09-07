@@ -102,7 +102,7 @@ function makeDatabase(responses: unknown[][]) {
   return { database, execute };
 }
 
-function compiledCall(execute: ReturnType<typeof vi.fn>, callIndex: number) {
+function compiledCall(execute: CallableVitestMock, callIndex: number) {
   return dialect.sqlToQuery(execute.mock.calls[callIndex]?.[0]);
 }
 

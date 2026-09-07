@@ -513,6 +513,38 @@ describe("FitbitProvider — authSetup", () => {
     expect(verifierMatch?.[1]).not.toBe("undefined");
     expect(verifierMatch?.[1]).toMatch(/^[A-Za-z0-9_%-]{20,}$/);
   });
+
+  it("returns a Fitbit profile identity when the profile omits a display name", async () => {
+    process.env.FITBIT_CLIENT_ID = "test-id";
+    process.env.FITBIT_CLIENT_SECRET = "test-secret";
+    const fetchProfile: typeof fetch = async (input, init) => {
+      expect(input.toString()).toBe("https://api.fitbit.com/1/user/-/profile.json");
+      expect(init?.headers).toEqual({ Authorization: "Bearer profile-token" });
+      return Response.json({ user: { encodedId: "fitbit-user-id" } });
+    };
+    const setup = new FitbitProvider(fetchProfile).authSetup();
+    if (!setup.getUserIdentity) throw new Error("getUserIdentity not defined");
+
+    await expect(setup.getUserIdentity("profile-token")).resolves.toEqual({
+      providerAccountId: "fitbit-user-id",
+      email: null,
+      emailVerified: false,
+      name: null,
+    });
+  });
+
+  it("includes Fitbit's response body when profile identity lookup fails", async () => {
+    process.env.FITBIT_CLIENT_ID = "test-id";
+    process.env.FITBIT_CLIENT_SECRET = "test-secret";
+    const setup = new FitbitProvider(
+      async () => new Response("access denied", { status: 403 }),
+    ).authSetup();
+    if (!setup.getUserIdentity) throw new Error("getUserIdentity not defined");
+
+    await expect(setup.getUserIdentity("profile-token")).rejects.toThrow(
+      "Fitbit profile API error (403): access denied",
+    );
+  });
 });
 
 describe("FitbitProvider", () => {
@@ -725,6 +757,29 @@ describe("FitbitProvider", () => {
   });
 
   describe("sync()", () => {
+    it("retains non-Error transport failures from each independent sync step", async () => {
+      setupEnv();
+      const provider = new FitbitProvider(async () => {
+        throw "upstream transport unavailable";
+      });
+
+      const result = await provider.sync(
+        new SyncRun({
+          db: createMockDb(),
+          window: SyncWindow.fromDateRange({ sinceDate: "2026-03-01", untilDate: "2026-03-01" }),
+        }),
+      );
+
+      expect(result.recordsSynced).toBe(0);
+      expect(result.errors.map((error) => error.message)).toEqual([
+        "activity: upstream transport unavailable",
+        "sleep: upstream transport unavailable",
+        "daily_metrics 2026-03-01: upstream transport unavailable",
+        "weight 2026-03-01: upstream transport unavailable",
+      ]);
+      expectReasonableDuration(result.duration);
+    });
+
     it("syncs activities, sleep, daily metrics, and body measurements with user-scoped targets", async () => {
       setupEnv();
       const mockFetch = createMockApiFetch({

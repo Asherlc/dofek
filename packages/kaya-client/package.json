@@ -1,0 +1,18 @@
+{
+  "name": "@dofek/kaya-client",
+  "version": "0.1.0",
+  "description": "Unofficial Kaya API client using the observed Kaya web application protocol",
+  "type": "module",
+  "license": "MIT",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/client.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "4.4.3"
+  }
+}

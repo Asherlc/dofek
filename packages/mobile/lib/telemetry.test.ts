@@ -9,11 +9,15 @@ const mocks = vi.hoisted(() => {
   const mockEmit = vi.fn();
   const mockGetLogger = vi.fn().mockReturnValue({ emit: mockEmit });
   const mockResourceFromAttributes = vi.fn().mockReturnValue({ resource: "mock" });
-  const mockBatchLogRecordProcessor = vi.fn().mockReturnValue({ processor: "mock" });
-  const mockLoggerProvider = vi.fn().mockImplementation(() => ({
-    getLogger: mocks.mockGetLogger,
-    forceFlush: mocks.mockForceFlush,
-  }));
+  const mockBatchLogRecordProcessor = vi.fn(function batchLogRecordProcessorConstructor() {
+    return { processor: "mock" };
+  });
+  const mockLoggerProvider = vi.fn(function loggerProviderConstructor() {
+    return {
+      getLogger: mocks.mockGetLogger,
+      forceFlush: mocks.mockForceFlush,
+    };
+  });
   const mockForceFlush = vi.fn().mockResolvedValue(undefined);
   return {
     mockInit,
@@ -40,11 +44,16 @@ const posthogMocks = vi.hoisted(() => {
   const captureException = vi.fn();
   const flush = vi.fn().mockResolvedValue(undefined);
   const register = vi.fn();
-  const mockPosthogConstructor = vi.fn((_apiKey: string, _options: PostHogClientOptions) => ({
-    captureException,
-    flush,
-    register,
-  }));
+  const mockPosthogConstructor = vi.fn(function posthogConstructor(
+    _apiKey: string,
+    _options: PostHogClientOptions,
+  ) {
+    return {
+      captureException,
+      flush,
+      register,
+    };
+  });
   return { captureException, flush, register, mockPosthogConstructor };
 });
 

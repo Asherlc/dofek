@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMetricStreamDeletedEvent, createMetricStreamEvent } from "./events.ts";
 import {
   createKafkaMetricStreamConsumerFromEnv,
@@ -7,8 +7,10 @@ import {
 
 const captureException = vi.hoisted(() => vi.fn());
 const loggerError = vi.hoisted(() => vi.fn());
+const loggerInfo = vi.hoisted(() => vi.fn());
 const operationRevision = "1000000000000000";
 const kafkaConsumerConnect = vi.hoisted(() => vi.fn(async () => undefined));
+const kafkaConsumerOn = vi.hoisted(() => vi.fn());
 const kafkaConsumerSubscribe = vi.hoisted(() => vi.fn(async () => undefined));
 const kafkaConsumerRun = vi.hoisted(() => vi.fn(async () => undefined));
 const kafkaAdminConnect = vi.hoisted(() => vi.fn(async () => undefined));
@@ -20,24 +22,31 @@ const kafkaProducerSend = vi.hoisted(() => vi.fn(async () => undefined));
 const kafkaConsumerFactory = vi.hoisted(() =>
   vi.fn(() => ({
     connect: kafkaConsumerConnect,
+    events: {
+      CRASH: "consumer.crash",
+      DISCONNECT: "consumer.disconnect",
+      GROUP_JOIN: "consumer.group_join",
+      REBALANCING: "consumer.rebalancing",
+      STOP: "consumer.stop",
+    },
+    on: kafkaConsumerOn,
     subscribe: kafkaConsumerSubscribe,
     run: kafkaConsumerRun,
   })),
 );
 const kafkaConstructor = vi.hoisted(() =>
-  vi.fn(() => ({
-    admin: () => ({
-      alterConfigs: kafkaAdminAlterConfigs,
-      connect: kafkaAdminConnect,
-      createTopics: kafkaAdminCreateTopics,
-      disconnect: kafkaAdminDisconnect,
-    }),
-    consumer: kafkaConsumerFactory,
-    producer: () => ({
-      connect: kafkaProducerConnect,
-      send: kafkaProducerSend,
-    }),
-  })),
+  vi.fn(function vitestConstructor() {
+    return {
+      admin: () => ({
+        alterConfigs: kafkaAdminAlterConfigs,
+        connect: kafkaAdminConnect,
+        createTopics: kafkaAdminCreateTopics,
+        disconnect: kafkaAdminDisconnect,
+      }),
+      consumer: kafkaConsumerFactory,
+      producer: () => ({ connect: kafkaProducerConnect, send: kafkaProducerSend }),
+    };
+  }),
 );
 
 vi.mock("kafkajs", () => ({
@@ -52,6 +61,7 @@ vi.mock("@sentry/node", () => ({
 vi.mock("../logger.ts", () => ({
   logger: {
     error: loggerError,
+    info: loggerInfo,
   },
 }));
 
@@ -73,9 +83,168 @@ const event = createMetricStreamEvent(
 beforeEach(() => {
   captureException.mockClear();
   loggerError.mockClear();
+  loggerInfo.mockClear();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 describe("runMetricStreamEventConsumer", () => {
+  it("reports lag, sink latency, and deletion throughput for each consumed batch", async () => {
+    vi.spyOn(performance, "now")
+      .mockReturnValueOnce(1_000)
+      .mockReturnValueOnce(1_100)
+      .mockReturnValueOnce(1_200)
+      .mockReturnValueOnce(2_200)
+      .mockReturnValueOnce(2_400)
+      .mockReturnValueOnce(3_200);
+    const deleteEvent = createMetricStreamDeletedEvent(
+      { activityId: "20000000-0000-4000-8000-000000000001" },
+      operationRevision,
+    );
+    const consumer = {
+      connect: vi.fn(async () => undefined),
+      subscribe: vi.fn(async () => undefined),
+      run: vi.fn(async (options) => {
+        await options.eachBatch({
+          batch: {
+            topic: "metric-stream-v1",
+            partition: 2,
+            highWatermark: "30",
+            messages: [
+              { offset: "20", value: Buffer.from(JSON.stringify(deleteEvent)) },
+              { offset: "21", value: Buffer.from(JSON.stringify(event)) },
+            ],
+          },
+          commitOffsetsIfNecessary: vi.fn(async () => undefined),
+          heartbeat: vi.fn(async () => undefined),
+          resolveOffset: vi.fn(),
+        });
+        await options.eachBatch({
+          batch: {
+            topic: "metric-stream-v1",
+            partition: 2,
+            highWatermark: "50",
+            messages: [{ offset: "22", value: Buffer.from(JSON.stringify(event)) }],
+          },
+          commitOffsetsIfNecessary: vi.fn(async () => undefined),
+          heartbeat: vi.fn(async () => undefined),
+          resolveOffset: vi.fn(),
+        });
+      }),
+    };
+
+    await runMetricStreamEventConsumer({
+      consumer,
+      handleEvents: vi.fn(async () => undefined),
+      quarantine: {
+        connect: vi.fn(async () => undefined),
+        write: vi.fn(async () => undefined),
+      },
+      topic: "metric-stream-v1",
+    });
+
+    expect(loggerInfo).toHaveBeenCalledWith(
+      "metric_stream.consumer_batch",
+      expect.objectContaining({
+        topic: "metric-stream-v1",
+        partition: 2,
+        first_offset: "20",
+        last_offset: "21",
+        high_watermark: "30",
+        consumer_lag: 8,
+        consumer_lag_growth_per_second: null,
+        event_count: 2,
+        deletion_event_count: 1,
+        sink_duration_ms: 100,
+        average_batch_event_cost_ms: 50,
+        deletion_events_per_second: 10,
+      }),
+    );
+    expect(loggerInfo).toHaveBeenLastCalledWith(
+      "metric_stream.consumer_batch",
+      expect.objectContaining({
+        consumer_lag: 27,
+        consumer_lag_growth_per_second: 9.5,
+      }),
+    );
+  });
+
+  it("reports lag from the consumed offset when a tombstone follows valid data", async () => {
+    const consumer = {
+      connect: vi.fn(async () => undefined),
+      subscribe: vi.fn(async () => undefined),
+      run: vi.fn(async (options) => {
+        await options.eachBatch({
+          batch: {
+            topic: "metric-stream-v1",
+            partition: 4,
+            highWatermark: "30",
+            messages: [
+              { offset: "20", value: Buffer.from(JSON.stringify(event)) },
+              { offset: "21", value: null },
+            ],
+          },
+          commitOffsetsIfNecessary: vi.fn(async () => undefined),
+          heartbeat: vi.fn(async () => undefined),
+          resolveOffset: vi.fn(),
+        });
+      }),
+    };
+
+    await runMetricStreamEventConsumer({
+      consumer,
+      handleEvents: vi.fn(async () => undefined),
+      quarantine: { connect: vi.fn(async () => undefined), write: vi.fn(async () => undefined) },
+      topic: "metric-stream-v1",
+    });
+
+    expect(loggerInfo).toHaveBeenCalledWith(
+      "metric_stream.consumer_batch",
+      expect.objectContaining({ last_offset: "21", consumer_lag: 8 }),
+    );
+  });
+
+  it("reports lag for a tombstone-only batch without fabricating sink cost", async () => {
+    const consumer = {
+      connect: vi.fn(async () => undefined),
+      subscribe: vi.fn(async () => undefined),
+      run: vi.fn(async (options) => {
+        await options.eachBatch({
+          batch: {
+            topic: "metric-stream-v1",
+            partition: 5,
+            highWatermark: "31",
+            messages: [{ offset: "25", value: null }],
+          },
+          commitOffsetsIfNecessary: vi.fn(async () => undefined),
+          heartbeat: vi.fn(async () => undefined),
+          resolveOffset: vi.fn(),
+        });
+      }),
+    };
+
+    await runMetricStreamEventConsumer({
+      consumer,
+      handleEvents: vi.fn(async () => undefined),
+      quarantine: { connect: vi.fn(async () => undefined), write: vi.fn(async () => undefined) },
+      topic: "metric-stream-v1",
+    });
+
+    expect(loggerInfo).toHaveBeenCalledWith(
+      "metric_stream.consumer_batch",
+      expect.objectContaining({
+        last_offset: "25",
+        consumer_lag: 5,
+        event_count: 0,
+        sink_duration_ms: null,
+        average_batch_event_cost_ms: null,
+        deletion_events_per_second: null,
+      }),
+    );
+  });
+
   it("subscribes to the metric stream topic and handles parsed events before resolving offsets", async () => {
     const connect = vi.fn(async () => undefined);
     const subscribe = vi.fn(async () => undefined);
@@ -124,9 +293,62 @@ describe("runMetricStreamEventConsumer", () => {
       topic: "metric-stream-v1",
       partition: 2,
       eventOffsets: ["12"],
+      heartbeat,
     });
     expect(resolveOffset).toHaveBeenCalledWith("12");
     expect(commitOffsetsIfNecessary).toHaveBeenCalled();
+  });
+
+  it("registers a supplied lifecycle listener before consuming events", async () => {
+    const observeGroupLifecycle = vi.fn();
+    const lifecycleListener = {
+      markGroupJoined: vi.fn(),
+      markUnavailable: vi.fn(),
+    };
+    const consumer = {
+      connect: vi.fn(async () => undefined),
+      observeGroupLifecycle,
+      subscribe: vi.fn(async () => undefined),
+      run: vi.fn(async () => undefined),
+    };
+
+    await runMetricStreamEventConsumer({
+      consumer,
+      handleEvents: vi.fn(async () => undefined),
+      lifecycleListener,
+      quarantine: {
+        connect: vi.fn(async () => undefined),
+        write: vi.fn(async () => undefined),
+      },
+      topic: "metric-stream-v1",
+    });
+
+    expect(observeGroupLifecycle).toHaveBeenCalledWith(lifecycleListener);
+    expect(observeGroupLifecycle.mock.invocationCallOrder[0]).toBeLessThan(
+      consumer.run.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
+  });
+
+  it("does not register the consumer lifecycle observer without a listener", async () => {
+    const observeGroupLifecycle = vi.fn();
+    const consumer = {
+      connect: vi.fn(async () => undefined),
+      observeGroupLifecycle,
+      subscribe: vi.fn(async () => undefined),
+      run: vi.fn(async () => undefined),
+    };
+
+    await runMetricStreamEventConsumer({
+      consumer,
+      handleEvents: vi.fn(async () => undefined),
+      quarantine: {
+        connect: vi.fn(async () => undefined),
+        write: vi.fn(async () => undefined),
+      },
+      topic: "metric-stream-v1",
+    });
+
+    expect(observeGroupLifecycle).not.toHaveBeenCalled();
   });
 
   it("passes delete events to sinks in Redpanda batch order", async () => {
@@ -135,6 +357,7 @@ describe("runMetricStreamEventConsumer", () => {
       operationRevision,
     );
     const handleEvents = vi.fn(async () => undefined);
+    const heartbeat = vi.fn(async () => undefined);
     const quarantine = {
       connect: vi.fn(async () => undefined),
       write: vi.fn(async () => undefined),
@@ -159,7 +382,7 @@ describe("runMetricStreamEventConsumer", () => {
             ],
           },
           commitOffsetsIfNecessary: vi.fn(async () => undefined),
-          heartbeat: vi.fn(async () => undefined),
+          heartbeat,
           resolveOffset: vi.fn(),
         });
       }),
@@ -176,6 +399,7 @@ describe("runMetricStreamEventConsumer", () => {
       topic: "metric-stream-v1",
       partition: 2,
       eventOffsets: ["20", "21"],
+      heartbeat,
     });
   });
 
@@ -386,6 +610,7 @@ describe("runMetricStreamEventConsumer", () => {
   it("writes malformed payloads durably before handling later events and committing", async () => {
     const order: string[] = [];
     const resolveOffset = vi.fn((offset: string) => order.push(`resolve:${offset}`));
+    const heartbeat = vi.fn(async () => undefined);
     const handleEvents = vi.fn(async () => {
       order.push("handle");
     });
@@ -411,7 +636,7 @@ describe("runMetricStreamEventConsumer", () => {
           commitOffsetsIfNecessary: vi.fn(async () => {
             order.push("commit");
           }),
-          heartbeat: vi.fn(async () => undefined),
+          heartbeat,
           resolveOffset,
         });
       }),
@@ -435,6 +660,7 @@ describe("runMetricStreamEventConsumer", () => {
       topic: "metric-stream-v1",
       partition: 2,
       eventOffsets: ["15"],
+      heartbeat,
     });
     expect(order).toEqual(["quarantine", "handle", "resolve:14", "resolve:15", "commit"]);
   });
@@ -445,6 +671,7 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
     kafkaConstructor.mockClear();
     kafkaConsumerFactory.mockClear();
     kafkaConsumerConnect.mockClear();
+    kafkaConsumerOn.mockClear();
     kafkaConsumerSubscribe.mockClear();
     kafkaConsumerRun.mockClear();
     kafkaAdminConnect.mockClear();
@@ -541,5 +768,52 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
       ],
     });
     expect(kafkaProducerConnect).toHaveBeenCalledOnce();
+  });
+
+  it("forwards Kafka group lifecycle events to sink readiness", () => {
+    const { consumer } = createKafkaMetricStreamConsumerFromEnv("metric-stream-clickhouse-sink", {
+      METRIC_STREAM_TOPIC: "metric-stream-v1",
+      REDPANDA_BROKERS: "redpanda:9092",
+    });
+    const readiness = {
+      markGroupJoined: vi.fn(),
+      markUnavailable: vi.fn(),
+    };
+
+    consumer.observeGroupLifecycle?.(readiness);
+
+    expect(kafkaConsumerOn).toHaveBeenCalledWith("consumer.group_join", expect.any(Function));
+    expect(kafkaConsumerOn).toHaveBeenCalledWith("consumer.rebalancing", expect.any(Function));
+    expect(kafkaConsumerOn).toHaveBeenCalledWith("consumer.disconnect", expect.any(Function));
+    expect(kafkaConsumerOn).toHaveBeenCalledWith("consumer.stop", expect.any(Function));
+    expect(kafkaConsumerOn).toHaveBeenCalledWith("consumer.crash", expect.any(Function));
+
+    const groupJoinListener = kafkaConsumerOn.mock.calls.find(
+      ([eventName]) => eventName === "consumer.group_join",
+    )?.[1];
+    const unavailableListeners = kafkaConsumerOn.mock.calls
+      .filter(
+        ([eventName]) =>
+          eventName === "consumer.rebalancing" ||
+          eventName === "consumer.disconnect" ||
+          eventName === "consumer.stop" ||
+          eventName === "consumer.crash",
+      )
+      .map(([, listener]) => listener);
+    if (
+      typeof groupJoinListener !== "function" ||
+      unavailableListeners.length !== 4 ||
+      unavailableListeners.some((listener) => typeof listener !== "function")
+    ) {
+      throw new Error("expected Kafka lifecycle listeners");
+    }
+
+    groupJoinListener();
+    for (const unavailableListener of unavailableListeners) {
+      unavailableListener();
+    }
+
+    expect(readiness.markGroupJoined).toHaveBeenCalledOnce();
+    expect(readiness.markUnavailable).toHaveBeenCalledTimes(4);
   });
 });

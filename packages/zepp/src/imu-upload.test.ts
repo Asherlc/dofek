@@ -1,105 +1,275 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { concatArrayBuffers, createHeader, encodeChunk } from "./imu-format.ts";
-import { uploadImuFile } from "./imu-upload.ts";
+import { describe, expect, it } from "vitest";
+import { createImuChunkEnvelope, parseImuEnvelope } from "./imu-upload.ts";
 
-const readFile = vi.hoisted(() => vi.fn());
-vi.mock("@zos/fs", () => ({ readFileSync: readFile }));
-
-function recording(count: number): ArrayBuffer {
-  return concatArrayBuffers([
-    createHeader({ sessionStartMs: 1_780_000_000_000, sampleCount: count, hasGyro: true }),
-    encodeChunk(
-      Array.from({ length: count }, (_, i) => ({
-        tMs: i * 10,
-        sensor: i % 2 ? "gyroscope" : "accelerometer",
-        x: i,
-        y: 2,
-        z: 3,
-      })),
-    ),
-  ]);
+function validEnvelope() {
+  return createImuChunkEnvelope({
+    connectionType: "zepp",
+    installId: "install-1",
+    segmentId: "segment-1",
+    sessionStartMs: 1_720_000_000_000,
+    sampleOffset: 0,
+    accelFreqMode: 1,
+    gyroFreqMode: 1,
+    hasGyroscope: true,
+    samples: [{ tMs: 0, sensor: "accelerometer", x: 1, y: 2, z: 3 }],
+  });
 }
 
-beforeEach(() => vi.resetAllMocks());
-
-describe("uploadImuFile", () => {
-  it("does not acknowledge an unexpectedly empty recording", async () => {
-    readFile.mockReturnValue(recording(0));
-    const send = vi.fn();
-    await expect(uploadImuFile("file", send)).rejects.toThrow("no samples");
-    expect(send).not.toHaveBeenCalled();
-  });
-  it("sends bounded self-contained batches with stable file time and record offsets", async () => {
-    const file = recording(260);
-    readFile.mockReturnValue(file);
-    const send = vi.fn().mockResolvedValue({ ok: true });
-    await uploadImuFile("data://imu/a.bin", send);
-    expect(send.mock.calls.map(([batch]) => batch.sampleOffset)).toEqual([0, 128, 256]);
-    expect(
-      send.mock.calls.map(([batch]) =>
-        new DataView(Uint8Array.from(batch.data).buffer).getUint32(16, true),
-      ),
-    ).toEqual([128, 128, 4]);
-    for (const [batch] of send.mock.calls) {
-      expect(batch.data.length).toBeLessThanOrEqual(32 + 4 + 128 * 20);
-      expect(batch.data.slice(8, 16)).toEqual(Array.from(new Uint8Array(file).slice(8, 16)));
-    }
-    const firstAttempt = send.mock.calls.map(([batch]) => batch);
-    send.mockClear();
-    await uploadImuFile("data://imu/a.bin", send);
-    expect(send.mock.calls.map(([batch]) => batch)).toEqual(firstAttempt);
-  });
-
-  it("waits for acknowledgement before sending the next batch", async () => {
-    readFile.mockReturnValue(recording(129));
-    let acknowledge = (_value: { ok: boolean }) => {};
-    const send = vi
-      .fn()
-      .mockImplementationOnce(
-        () =>
-          new Promise((resolve) => {
-            acknowledge = resolve;
-          }),
-      )
-      .mockResolvedValue({ ok: true });
-    const upload = uploadImuFile("file", send);
-    expect(send).toHaveBeenCalledTimes(1);
-    acknowledge({ ok: true });
-    await upload;
-    expect(send).toHaveBeenCalledTimes(2);
-  });
-
-  it("rejects missing acknowledgement and network failure without continuing", async () => {
-    readFile.mockReturnValue(recording(129));
-    const send = vi.fn().mockResolvedValue({ ok: false });
-    await expect(uploadImuFile("file", send)).rejects.toThrow("acknowledge");
-    expect(send).toHaveBeenCalledTimes(1);
-    send.mockRejectedValue(new Error("offline"));
-    await expect(uploadImuFile("file", send)).rejects.toThrow("offline");
-  });
-
-  it("validates the entire file before publishing any part", async () => {
-    const file = recording(129);
-    readFile.mockReturnValue(file.slice(0, -1));
-    const send = vi.fn();
-    await expect(uploadImuFile("file", send)).rejects.toThrow("truncated");
-    expect(send).not.toHaveBeenCalled();
-    new DataView(file).setUint32(16, 130, true);
-    readFile.mockReturnValue(file);
-    await expect(uploadImuFile("file", send)).rejects.toThrow("count");
-  });
-
-  it("retains original legacy paired records and offsets", async () => {
-    const header = createHeader({ sessionStartMs: 1000, sampleCount: 1, hasGyro: true });
-    new DataView(header).setUint8(4, 1);
-    const chunk = new ArrayBuffer(32);
-    new DataView(chunk).setUint16(0, 1, true);
-    readFile.mockReturnValue(concatArrayBuffers([header, chunk]));
-    const send = vi.fn().mockResolvedValue({ ok: true });
-    await uploadImuFile("file", send);
-    expect(send).toHaveBeenCalledWith({
-      data: Array.from(new Uint8Array(concatArrayBuffers([header, chunk]))),
+describe("IMU upload envelope", () => {
+  it("round-trips the immutable capture destination", () => {
+    const envelope = createImuChunkEnvelope({
+      connectionType: "zepp",
+      installId: "install-1",
+      destination: { serverUrl: "https://dofek.test", accountId: "account-1" },
+      segmentId: "segment-destination",
+      sessionStartMs: 1_720_000_000_000,
       sampleOffset: 0,
+      accelFreqMode: 1,
+      gyroFreqMode: 1,
+      hasGyroscope: false,
+      samples: [{ tMs: 0, sensor: "accelerometer", x: 1, y: 2, z: 3 }],
+    });
+
+    expect(parseImuEnvelope(envelope).destination).toEqual({
+      serverUrl: "https://dofek.test",
+      accountId: "account-1",
     });
   });
+
+  it("accepts historical envelopes without a capture destination", () => {
+    expect(parseImuEnvelope(validEnvelope()).destination).toBeUndefined();
+  });
+  it("rejects invalid sample values before creating an envelope", () => {
+    expect(() =>
+      createImuChunkEnvelope({
+        connectionType: "zepp",
+        installId: "install-1",
+        segmentId: "segment-1",
+        sessionStartMs: 1_720_000_000_000,
+        sampleOffset: 0,
+        accelFreqMode: 1,
+        gyroFreqMode: 1,
+        hasGyroscope: true,
+        samples: [{ tMs: -1, sensor: "gyroscope", x: 4, y: 5, z: Number.NaN }],
+      }),
+    ).toThrow("IMU envelope is invalid.");
+  });
+
+  it.each([
+    { installId: " ", segmentId: "segment-1", sessionStartMs: 1_720_000_000_000 },
+    { installId: "install-1", segmentId: " ", sessionStartMs: 1_720_000_000_000 },
+    { installId: "install-1", segmentId: "segment-1", sessionStartMs: 1.5 },
+  ])("rejects invalid chunk metadata %#", ({ installId, segmentId, sessionStartMs }) => {
+    expect(() =>
+      createImuChunkEnvelope({
+        connectionType: "zepp",
+        installId,
+        segmentId,
+        sessionStartMs,
+        sampleOffset: 0,
+        accelFreqMode: 1,
+        gyroFreqMode: 1,
+        hasGyroscope: true,
+        samples: [{ tMs: 0, sensor: "accelerometer", x: 1, y: 2, z: 3 }],
+      }),
+    ).toThrow("IMU envelope is invalid.");
+  });
+  it("creates a stable chunk identity and round-trips the payload", () => {
+    const envelope = createImuChunkEnvelope({
+      connectionType: "zepp",
+      installId: "install-1",
+      segmentId: "segment-1",
+      sessionStartMs: 1_720_000_000_000,
+      sampleOffset: 0,
+      accelFreqMode: 1,
+      gyroFreqMode: 1,
+      hasGyroscope: true,
+      samples: [
+        { tMs: 0, sensor: "accelerometer", x: 1, y: 2, z: 3 },
+        { tMs: 40, sensor: "gyroscope", x: 10, y: 11, z: 12 },
+      ],
+    });
+
+    expect(envelope.batchId).toBe("segment-1:0");
+    expect(envelope.events[0]?.eventId).toBe("segment-1:0");
+    expect(envelope.events[0]?.createdAt).toBe("2024-07-03T09:46:40.040Z");
+    expect(parseImuEnvelope(envelope)).toEqual(envelope);
+  });
+
+  it("preserves an explicit accelerometer-only marker", () => {
+    const envelope = createImuChunkEnvelope({
+      connectionType: "zepp",
+      installId: "install-1",
+      segmentId: "segment-1",
+      sessionStartMs: 0,
+      sampleOffset: 0,
+      accelFreqMode: 1,
+      gyroFreqMode: 0,
+      hasGyroscope: false,
+      samples: [{ tMs: 0, sensor: "accelerometer", x: 1, y: 2, z: 3 }],
+    });
+
+    expect(envelope.events[0]?.createdAt).toBe("1970-01-01T00:00:00.000Z");
+    expect(envelope.events[0]?.payload.hasGyroscope).toBe(false);
+  });
+
+  it.each([
+    null,
+    [],
+    "invalid",
+    { ...validEnvelope(), version: 2 },
+    { ...validEnvelope(), batchId: 1 },
+    { ...validEnvelope(), batchId: " " },
+    { ...validEnvelope(), source: null },
+    { ...validEnvelope(), source: { connectionType: "other", installId: "install-1" } },
+    { ...validEnvelope(), source: { connectionType: "zepp", installId: 1 } },
+    { ...validEnvelope(), source: { connectionType: "zepp", installId: " " } },
+    { ...validEnvelope(), events: {} },
+    { ...validEnvelope(), events: [] },
+  ])("rejects invalid envelope metadata %#", (value) => {
+    expect(() => parseImuEnvelope(value)).toThrow("IMU envelope is invalid.");
+  });
+
+  it.each([
+    null,
+    [],
+    "invalid",
+    { ...validEnvelope().events[0], eventId: 1 },
+    { ...validEnvelope().events[0], eventId: " " },
+    { ...validEnvelope().events[0], createdAt: 1 },
+    { ...validEnvelope().events[0], createdAt: " " },
+    { ...validEnvelope().events[0], payload: null },
+    {
+      ...validEnvelope().events[0],
+      payload: { ...validEnvelope().events[0]?.payload, segmentId: 1 },
+    },
+    {
+      ...validEnvelope().events[0],
+      payload: { ...validEnvelope().events[0]?.payload, segmentId: " " },
+    },
+    {
+      ...validEnvelope().events[0],
+      payload: { ...validEnvelope().events[0]?.payload, sessionStartMs: 1.5 },
+    },
+    {
+      ...validEnvelope().events[0],
+      payload: { ...validEnvelope().events[0]?.payload, hasGyroscope: "true" },
+    },
+    {
+      ...validEnvelope().events[0],
+      payload: { ...validEnvelope().events[0]?.payload, samples: {} },
+    },
+    {
+      ...validEnvelope().events[0],
+      payload: { ...validEnvelope().events[0]?.payload, samples: [] },
+    },
+  ])("rejects invalid envelope events %#", (event) => {
+    expect(() => parseImuEnvelope({ ...validEnvelope(), events: [event] })).toThrow(
+      "IMU envelope is invalid.",
+    );
+  });
+
+  it.each([
+    null,
+    [],
+    "invalid",
+    { tMs: "0", ax: 1, ay: 2, az: 3, gx: 4, gy: 5, gz: 6 },
+    { tMs: 0.5, ax: 1, ay: 2, az: 3, gx: 4, gy: 5, gz: 6 },
+    { tMs: -1, ax: 1, ay: 2, az: 3, gx: 4, gy: 5, gz: 6 },
+    { tMs: 0, ax: Number.NaN, ay: 2, az: 3, gx: 4, gy: 5, gz: 6 },
+    { tMs: 0, ax: 1, ay: Number.NaN, az: 3, gx: 4, gy: 5, gz: 6 },
+    { tMs: 0, ax: 1, ay: 2, az: Number.NaN, gx: 4, gy: 5, gz: 6 },
+    { tMs: 0, ax: 1, ay: 2, az: 3, gx: Number.NaN, gy: 5, gz: 6 },
+    { tMs: 0, ax: 1, ay: 2, az: 3, gx: 4, gy: Number.NaN, gz: 6 },
+    { tMs: 0, ax: 1, ay: 2, az: 3, gx: 4, gy: 5, gz: Number.NaN },
+  ])("rejects invalid persisted samples %#", (sample) => {
+    const envelope = validEnvelope();
+    const event = envelope.events[0];
+    if (!event) throw new Error("Expected a valid fixture event.");
+    expect(() =>
+      parseImuEnvelope({
+        ...envelope,
+        events: [{ ...event, payload: { ...event.payload, samples: [sample] } }],
+      }),
+    ).toThrow("IMU envelope is invalid.");
+  });
+
+  it("rejects malformed samples before phone persistence", () => {
+    const envelope = createImuChunkEnvelope({
+      connectionType: "zepp",
+      installId: "install-1",
+      segmentId: "segment-1",
+      sessionStartMs: 1_720_000_000_000,
+      sampleOffset: 0,
+      accelFreqMode: 1,
+      gyroFreqMode: 1,
+      hasGyroscope: true,
+      samples: [{ tMs: 0, sensor: "accelerometer", x: 1, y: 2, z: 3 }],
+    });
+    const malformed = {
+      ...envelope,
+      events: envelope.events.map((event) => ({
+        ...event,
+        payload: { ...event.payload, samples: [{ tMs: -1, ax: 1, ay: 2, az: 3 }] },
+      })),
+    };
+
+    expect(() => parseImuEnvelope(malformed)).toThrow("IMU envelope is invalid.");
+  });
+});
+
+it("assigns distinct IDs to equal-timestamp chunks using their vector offsets", () => {
+  const first = validEnvelope();
+  const payload = first.events[0]?.payload;
+  if (payload?.formatVersion !== 2) throw new Error("Expected version 2 fixture.");
+  const input = { connectionType: "zepp" as const, installId: "install-1", ...payload };
+  const next = createImuChunkEnvelope({ ...input, sampleOffset: 1 });
+  expect(next.events[0]?.eventId).not.toBe(first.events[0]?.eventId);
+});
+it("normalizes historical paired envelopes without changing their stored event IDs", () => {
+  const historical = {
+    version: 1,
+    batchId: "legacy:0:40",
+    source: { connectionType: "zepp", installId: "old" },
+    events: [
+      {
+        eventId: "legacy:0:40",
+        createdAt: "2024-07-03T09:46:40.040Z",
+        payload: {
+          segmentId: "legacy",
+          sessionStartMs: 1720000000000,
+          hasGyroscope: true,
+          samples: [{ tMs: 40, ax: 1, ay: 2, az: 3, gx: 4, gy: 5, gz: 6 }],
+        },
+      },
+    ],
+  };
+  const parsed = parseImuEnvelope(historical);
+  expect(parsed.events[0]).toEqual({
+    ...historical.events[0],
+    payload: {
+      formatVersion: 1,
+      segmentId: "legacy",
+      sessionStartMs: 1720000000000,
+      hasGyroscope: true,
+      samples: [
+        { tMs: 40, sensor: "accelerometer", x: 1, y: 2, z: 3 },
+        { tMs: 40, sensor: "gyroscope", x: 4, y: 5, z: 6 },
+      ],
+    },
+  });
+  expect(parseImuEnvelope(parsed)).toEqual(parsed);
+});
+it("does not invent gyro samples when historical metadata says accelerometer-only", () => {
+  const envelope = validEnvelope();
+  const payload = {
+    segmentId: "legacy",
+    sessionStartMs: 1720000000000,
+    hasGyroscope: false,
+    samples: [{ tMs: 0, ax: 1, ay: 2, az: 3, gx: 0, gy: 0, gz: 0 }],
+  };
+  expect(
+    parseImuEnvelope({ ...envelope, events: [{ ...envelope.events[0], payload }] }).events[0]
+      ?.payload.samples,
+  ).toEqual([{ tMs: 0, sensor: "accelerometer", x: 1, y: 2, z: 3 }]);
 });

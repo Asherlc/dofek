@@ -53,7 +53,7 @@ activity_meta AS (
         activity_bounds.ended_at AS ended_at,
         user_profile.max_hr AS max_hr
     FROM activity_bounds
-    INNER JOIN postgres_fitness.user_profile_current AS user_profile
+    INNER JOIN {{ source('postgres_fitness', 'user_profile_current') }} AS user_profile
         ON user_profile.id = activity_bounds.user_id
     WHERE user_profile.max_hr IS NOT NULL
 ),

@@ -746,7 +746,7 @@ describe("suuntoOAuthConfig — exact URL values", () => {
     process.env.SUUNTO_CLIENT_SECRET = "secret";
     delete process.env.OAUTH_REDIRECT_URI;
     const config = suuntoOAuthConfig();
-    expect(config?.redirectUri).toBe("https://dofek.asherlc.com/callback");
+    expect(config?.redirectUri).toBe("https://dofek.fit/callback");
   });
 
   it("uses OAUTH_REDIRECT_URI when set", () => {

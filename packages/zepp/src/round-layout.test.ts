@@ -15,32 +15,33 @@ describe("createRoundLoginLayout", () => {
     });
   });
 
-  it.each(
-    ROUND_DEVICE_WIDTHS,
-  )("keeps the login action inside the %ipx round framebuffer and safe circle", (deviceWidth) => {
-    const { button, hint } = createRoundLoginLayout(zeppPxForWidth(deviceWidth), deviceWidth);
-    const buttonCorners: [number, number][] = [
-      [button.x, button.y],
-      [button.x + button.w, button.y],
-      [button.x, button.y + button.h],
-      [button.x + button.w, button.y + button.h],
-    ];
-    const center = deviceWidth / 2;
-    const safeRadius = center - 2;
+  it.each(ROUND_DEVICE_WIDTHS)(
+    "keeps the login action inside the %ipx round framebuffer and safe circle",
+    (deviceWidth) => {
+      const { button, hint } = createRoundLoginLayout(zeppPxForWidth(deviceWidth), deviceWidth);
+      const buttonCorners: [number, number][] = [
+        [button.x, button.y],
+        [button.x + button.w, button.y],
+        [button.x, button.y + button.h],
+        [button.x + button.w, button.y + button.h],
+      ];
+      const center = deviceWidth / 2;
+      const safeRadius = center - 2;
 
-    expect(button.x).toBeGreaterThanOrEqual(0);
-    expect(button.y).toBeGreaterThanOrEqual(0);
-    expect(button.x + button.w).toBeLessThanOrEqual(deviceWidth);
-    expect(button.y + button.h).toBeLessThanOrEqual(deviceWidth);
-    expect(button.radius).toBe(Math.ceil(button.h / 2));
-    expect(hint.x).toBeGreaterThanOrEqual(0);
-    expect(hint.y).toBeGreaterThanOrEqual(0);
-    expect(hint.x + hint.w).toBeLessThanOrEqual(deviceWidth);
-    expect(hint.y + hint.h).toBeLessThanOrEqual(deviceWidth);
-    expect(hint.y + hint.h).toBeLessThanOrEqual(button.y);
+      expect(button.x).toBeGreaterThanOrEqual(0);
+      expect(button.y).toBeGreaterThanOrEqual(0);
+      expect(button.x + button.w).toBeLessThanOrEqual(deviceWidth);
+      expect(button.y + button.h).toBeLessThanOrEqual(deviceWidth);
+      expect(button.radius).toBe(Math.ceil(button.h / 2));
+      expect(hint.x).toBeGreaterThanOrEqual(0);
+      expect(hint.y).toBeGreaterThanOrEqual(0);
+      expect(hint.x + hint.w).toBeLessThanOrEqual(deviceWidth);
+      expect(hint.y + hint.h).toBeLessThanOrEqual(deviceWidth);
+      expect(hint.y + hint.h).toBeLessThanOrEqual(button.y);
 
-    for (const [x, y] of buttonCorners) {
-      expect(Math.hypot(x - center, y - center)).toBeLessThanOrEqual(safeRadius);
-    }
-  });
+      for (const [x, y] of buttonCorners) {
+        expect(Math.hypot(x - center, y - center)).toBeLessThanOrEqual(safeRadius);
+      }
+    },
+  );
 });

@@ -25,6 +25,10 @@ describe("buildActivityReadModelRefreshStatements", () => {
     expect(activitySql).toContain(
       "coalesce(nullIf(local_time_source, ''), 'unknown') AS local_time_source",
     );
+    expect(activitySql).toMatch(
+      /tuple\(\s*ranked\.timezone,\s*ranked\.start_utc_offset_minutes,\s*ranked\.end_utc_offset_minutes,\s*ranked\.local_time_source\s*\)/,
+    );
+    expect(activitySql).not.toContain("argMinIf( ranked.timezone, ranked.priority");
     expect(statements[3]).toContain("arrayJoin(member_activity_ids)");
   });
 });

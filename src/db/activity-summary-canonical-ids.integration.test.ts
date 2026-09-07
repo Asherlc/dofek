@@ -1,10 +1,10 @@
 import { randomBytes } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { buildActivitySensorSummaryRowsTableSql } from "./clickhouse-activity-sensor-summary.ts";
 import { buildActivitySummaryRowsTableSql } from "./clickhouse-activity-summary.ts";
+import { readModelSql, renderDbtModelSql } from "./read-model-sql-test-helpers.ts";
 
 const canonicalActivityId = "00000000-0000-0000-0000-000000000111";
 const memberActivityId = "00000000-0000-0000-0000-000000000222";
@@ -29,6 +29,13 @@ interface ActivityMetricPresenceRow {
   elevation_loss_m: number | null;
   total_distance: number | null;
 }
+
+const clickHouseUuidSchema = z
+  .string()
+  .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+const canonicalLifecycleRowsSchema = z.array(
+  z.object({ activity_id: clickHouseUuidSchema, is_deleted: z.coerce.number().int() }),
+);
 
 describe("activity_summary_rows canonical activity ids", () => {
   let client: ClickHouseClient | undefined;
@@ -142,6 +149,28 @@ ${renderActivitySummaryRowsSelectSql(targetSchema)}`,
     ]);
   }, 180_000);
 
+  it("maps a scoped member refresh to its canonical summary", async () => {
+    const activeClient = requireClient(client);
+    await seedDedupeMappingRefreshFixture(activeClient, targetSchema);
+
+    await activeClient.command({
+      query: `INSERT INTO ${targetSchema}.activity_summary_rows
+${renderActivitySummaryRowsSelectSql(targetSchema, [memberActivityId])}`,
+    });
+
+    const result = await activeClient.query({
+      query: `SELECT toString(activity_id) AS activity_id, is_deleted
+        FROM ${targetSchema}.activity_summary_rows FINAL
+        WHERE is_deleted = 0
+        ORDER BY activity_id`,
+      format: "JSONEachRow",
+    });
+
+    expect(canonicalLifecycleRowsSchema.parse(await result.json<unknown>())).toEqual([
+      { activity_id: canonicalActivityId, is_deleted: 0 },
+    ]);
+  }, 180_000);
+
   it("preserves missing measurements as NULL and recorded zeros as zero", async () => {
     const activeClient = requireClient(client);
     await seedMetricPresenceFixture(activeClient, targetSchema);
@@ -209,23 +238,19 @@ async function waitForClickHouse(client: ClickHouseClient): Promise<void> {
   throw lastError instanceof Error ? lastError : new Error("ClickHouse did not become ready");
 }
 
-function readProjectFile(relativePath: string): string {
-  return readFileSync(join(import.meta.dirname, "../..", relativePath), "utf8");
-}
-
-function renderActivitySummaryRowsSelectSql(targetSchema: string): string {
-  return readProjectFile("analytics/models/read_models/activity_summary_rows.sql")
-    .replace(/{{ config\([\s\S]*?\) }}\s*/, "")
-    .replace(/\{% set initial_lookback_days = var\('initial_lookback_days', 120\) %\}/g, "")
-    .replace(
-      /\{% if is_incremental\(\) %}\(count\(\) = 0\)\{% else %}1\{% endif %}/g,
-      "(count() = 0)",
+function renderActivitySummaryRowsSelectSql(
+  targetSchema: string,
+  scopedActivityIds?: readonly string[],
+): string {
+  return renderDbtModelSql(readModelSql("activity_summary_rows.sql"), {
+    isIncremental: true,
+    activityRefreshScoped: scopedActivityIds != null,
+  })
+    .replaceAll('{{ var("activity_refresh_user_id") }}', testUserId)
+    .replaceAll(
+      "{{ activity_refresh_ids() }}",
+      `CAST([${(scopedActivityIds ?? []).map((id) => `'${id}'`).join(", ")}], 'Array(UUID)')`,
     )
-    .replace(
-      /FROM \{% if is_incremental\(\) %}{{ this }}\{% else %}\(SELECT CAST\(null, 'Nullable\(DateTime64\(9, ''UTC''\)\)'\) AS refreshed_at\)\{% endif %}/g,
-      `FROM ${targetSchema}.activity_summary_rows`,
-    )
-    .replace(/\{% if is_incremental\(\) %}\s*([\s\S]*?)\s*\{% else %}[\s\S]*?\{% endif %}/g, "$1")
     .replace(/{{ initial_lookback_days }}/g, "120")
     .replace(/{{ this }}/g, `${targetSchema}.activity_summary_rows`)
     .replace(/{{ ref\('deduped_activities'\) }}/g, `${targetSchema}.deduped_activities`)
@@ -414,12 +439,12 @@ function insertDedupedActivityMembersSql(targetSchema: string): string {
 
 function insertCanonicalSensorSummarySql(targetSchema: string): string {
   return `INSERT INTO ${targetSchema}.activity_sensor_summary_rows VALUES
-  ('${canonicalActivityId}', '${testUserId}', 150.0, 180, 90, 220.0, 500, 8.0, 16.0, 85.0, NULL, NULL, NULL, NULL, NULL, NULL, 100.0, 40.0, NULL, NULL, NULL, NULL, 1200, 1200, 600, toDateTime64('2026-05-31 18:08:51', 6, 'UTC'), toDateTime64('2026-05-31 19:42:38', 6, 'UTC'), NULL, NULL, NULL, NULL, NULL, 200, 0, toDateTime64('2026-05-31 23:30:00', 9, 'UTC'))`;
+  ('${canonicalActivityId}', '${testUserId}', 150.0, 180, 90, 220.0, 500, 8.0, 16.0, 85.0, NULL, NULL, NULL, NULL, NULL, NULL, 100.0, 40.0, NULL, NULL, NULL, NULL, 1200, 1200, 600, toDateTime64('2026-05-31 18:08:51', 6, 'UTC'), toDateTime64('2026-05-31 19:42:38', 6, 'UTC'), NULL, NULL, NULL, NULL, NULL, 200, 200, 0, toDateTime64('2026-05-31 23:30:00', 9, 'UTC'))`;
 }
 
 function insertDirtyRawMemberSensorSummarySql(targetSchema: string): string {
   return `INSERT INTO ${targetSchema}.activity_sensor_summary_rows VALUES
-  ('${memberActivityId}', '${testUserId}', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 300, 0, toDateTime64('2026-06-01 00:10:00', 9, 'UTC'))`;
+  ('${memberActivityId}', '${testUserId}', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 300, 300, 0, toDateTime64('2026-06-01 00:10:00', 9, 'UTC'))`;
 }
 
 function insertCanonicalLocationSummarySql(targetSchema: string): string {

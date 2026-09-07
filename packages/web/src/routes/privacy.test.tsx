@@ -14,7 +14,7 @@ describe("PrivacyPage", () => {
 
     render(<PrivacyPage />);
 
-    expect(screen.getByText("Last updated: July 29, 2026")).toBeInTheDocument();
+    expect(screen.getByText("Last updated: September 2, 2026")).toBeInTheDocument();
     expect(screen.getByText(/PostgreSQL \(TimescaleDB\)/)).toBeInTheDocument();
     expect(screen.getByText(/ClickHouse/)).toBeInTheDocument();
     expect(screen.getByText(/Redpanda/)).toBeInTheDocument();
@@ -67,5 +67,27 @@ describe("PrivacyPage", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/never sold or shared with third parties/i)).not.toBeInTheDocument();
+  });
+
+  it("identifies Apple and Stripe as the payment processors for their purchase channels", () => {
+    const PrivacyPage = Route.options.component;
+    if (!PrivacyPage) throw new Error("Privacy route is missing its page component");
+
+    render(<PrivacyPage />);
+
+    expect(
+      screen.getByText(/Apple processes App Store subscription purchases/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Stripe processes purchases made on the Dofek website/i),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Apple App Store & Privacy/i })).toHaveAttribute(
+      "href",
+      "https://www.apple.com/legal/privacy/data/en/app-store/",
+    );
+    expect(screen.getByRole("link", { name: /Stripe Privacy Center/i })).toHaveAttribute(
+      "href",
+      "https://stripe.com/legal/privacy-center",
+    );
   });
 });

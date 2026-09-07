@@ -10,6 +10,7 @@
 ) }}
 
 {% set initial_lookback_days = var('initial_lookback_days', 120) %}
+{% set activity_refresh_scoped = activity_refresh_scope_enabled() %}
 
 WITH current_activity AS (
     SELECT
@@ -126,6 +127,35 @@ existing_activity_keys AS (
     {% endif %}
 ),
 
+{% if activity_refresh_scoped %}
+repair_scope_dirty_keys AS (
+    SELECT
+        activity_id,
+        user_id
+    FROM current_activity
+    WHERE user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        AND activity_id IN {{ activity_refresh_ids() }}
+
+    UNION DISTINCT
+
+    SELECT
+        activity_id,
+        user_id
+    FROM activity_members
+    WHERE user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        AND member_activity_id IN {{ activity_refresh_ids() }}
+
+    UNION DISTINCT
+
+    SELECT
+        activity_id,
+        user_id
+    FROM existing_activity_keys
+    WHERE user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        AND activity_id IN {{ activity_refresh_ids() }}
+),
+{% endif %}
+
 stale_activity_dirty_keys AS (
     SELECT
         existing_activity_keys.activity_id AS activity_id,
@@ -189,6 +219,12 @@ dirty_keys AS (
         activity_id,
         user_id
     FROM (
+        {% if activity_refresh_scoped %}
+        SELECT
+            activity_id,
+            user_id
+        FROM repair_scope_dirty_keys
+        {% else %}
         SELECT
             activity_id,
             user_id
@@ -198,6 +234,7 @@ dirty_keys AS (
             activity_id,
             user_id
         FROM stale_activity_dirty_keys
+        {% endif %}
     )
 ),
 

@@ -141,12 +141,6 @@ function createSeededProviders() {
     modelCards: settingsModelCards,
   });
 
-  // settings.slackStatus (used by SlackIntegrationPanel)
-  queryClient.setQueryData([["settings", "slackStatus"], { type: "query" }], {
-    configured: true,
-    connected: false,
-    channelName: null,
-  });
   queryClient.setQueryData([["billing", "status"], { type: "query" }], {
     hasFullAccess: false,
     access: {
@@ -204,5 +198,11 @@ export const Default: Story = {};
 export const AccountPassword: Story = {
   play: async ({ canvasElement, userEvent }) => {
     await userEvent.click(await within(canvasElement).findByRole("button", { name: "Account" }));
+  },
+};
+
+export const Advanced: Story = {
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(await within(canvasElement).findByRole("button", { name: "Advanced" }));
   },
 };

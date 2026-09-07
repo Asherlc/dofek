@@ -1,4 +1,9 @@
-import { type HealthActivity, workoutHistoryToActivities } from "./health-collector.ts";
+import { appendOutboxEntry, type DurableOutbox } from "./durable-outbox.ts";
+import {
+  type HealthActivity,
+  type HealthDataPayload,
+  workoutHistoryToActivities,
+} from "./health-collector.ts";
 
 const MAX_BACKGROUND_MINUTE_SAMPLES = 7 * 24 * 60;
 
@@ -10,10 +15,12 @@ export interface BackgroundHealthSample {
   stress?: number;
 }
 
-export interface BackgroundHealthBuffer {
-  samples: BackgroundHealthSample[];
-  activities: HealthActivity[];
-}
+export type BackgroundHealthEvent =
+  | { kind: "sample"; sample: BackgroundHealthSample }
+  | { kind: "activity"; activity: HealthActivity }
+  | { kind: "summary"; summary: HealthDataPayload };
+
+export type BackgroundHealthOutbox = DurableOutbox<BackgroundHealthEvent>;
 
 interface BackgroundHealthDependencies {
   captureException(error: unknown): void;
@@ -24,10 +31,6 @@ interface BackgroundHealthDependencies {
   Workout: new () => { getHistory(): Array<{ startTime: number; duration: number }> };
 }
 
-export function emptyBackgroundHealthBuffer(): BackgroundHealthBuffer {
-  return { samples: [], activities: [] };
-}
-
 export function collectBackgroundHealthSample(
   sensors: BackgroundHealthDependencies,
   now = Date.now(),
@@ -36,21 +39,29 @@ export function collectBackgroundHealthSample(
 
   try {
     const heartRate = new sensors.HeartRate().getLast();
-    if (heartRate > 0) sample.heartRate = heartRate;
+    if (Number.isFinite(heartRate) && heartRate > 0) sample.heartRate = heartRate;
   } catch (error) {
     sensors.captureException(error);
   }
 
   try {
     const bloodOxygenPercent = new sensors.BloodOxygen().getCurrent().value;
-    if (bloodOxygenPercent > 0) sample.bloodOxygenPercent = bloodOxygenPercent;
+    if (
+      Number.isFinite(bloodOxygenPercent) &&
+      bloodOxygenPercent > 0 &&
+      bloodOxygenPercent <= 100
+    ) {
+      sample.bloodOxygenPercent = bloodOxygenPercent;
+    }
   } catch (error) {
     sensors.captureException(error);
   }
 
   try {
     const bodyTemperatureCelsius = new sensors.BodyTemperature().getCurrent().current;
-    if (bodyTemperatureCelsius > 0) sample.bodyTemperatureCelsius = bodyTemperatureCelsius;
+    if (Number.isFinite(bodyTemperatureCelsius) && bodyTemperatureCelsius > 0) {
+      sample.bodyTemperatureCelsius = bodyTemperatureCelsius;
+    }
   } catch (error) {
     sensors.captureException(error);
   }
@@ -59,7 +70,7 @@ export function collectBackgroundHealthSample(
     const stressReadings = new sensors.Stress().getToday();
     for (let index = stressReadings.length - 1; index >= 0; index -= 1) {
       const stress = stressReadings[index];
-      if (stress !== undefined && stress > 0) {
+      if (stress !== undefined && Number.isFinite(stress) && stress > 0) {
         sample.stress = stress;
         break;
       }
@@ -78,18 +89,72 @@ export function collectBackgroundHealthSample(
   return { sample, activities };
 }
 
-export function appendBackgroundHealthSample(
-  buffer: BackgroundHealthBuffer,
-  collected: { sample: BackgroundHealthSample; activities: HealthActivity[] },
-): BackgroundHealthBuffer {
-  const activitiesByExternalId = new Map(
-    [...buffer.activities, ...collected.activities].map((activity) => [
-      activity.externalId,
-      activity,
-    ]),
-  );
+export function appendBackgroundHealthEvents(
+  outbox: BackgroundHealthOutbox,
+  collected: { sample?: BackgroundHealthSample; activities: HealthActivity[] },
+  installId: string,
+): BackgroundHealthOutbox {
+  if (!installId.trim()) {
+    throw new Error("A stable install ID is required for background health events.");
+  }
+
+  let updated = outbox;
+  if (collected.sample) {
+    updated = appendOutboxEntry(updated, {
+      eventId: `${installId}:background-sample:${collected.sample.recordedAt}`,
+      createdAt: collected.sample.recordedAt,
+      payload: { kind: "sample", sample: collected.sample },
+      attempts: 0,
+    });
+  }
+  for (const activity of collected.activities) {
+    updated = appendOutboxEntry(updated, {
+      eventId: `${installId}:activity:${activity.externalId}:${activity.endedAt}`,
+      createdAt: activity.endedAt,
+      payload: { kind: "activity", activity },
+      attempts: 0,
+    });
+  }
+
+  const samples = updated.pending.filter((entry) => entry.payload.kind === "sample");
+  const overflow = samples.length - MAX_BACKGROUND_MINUTE_SAMPLES;
+  if (overflow <= 0) {
+    return updated;
+  }
+  const expiredEventIds = new Set(samples.slice(0, overflow).map((entry) => entry.eventId));
   return {
-    samples: [...buffer.samples, collected.sample].slice(-MAX_BACKGROUND_MINUTE_SAMPLES),
-    activities: [...activitiesByExternalId.values()],
+    ...updated,
+    pending: updated.pending.filter((entry) => !expiredEventIds.has(entry.eventId)),
   };
+}
+
+export function appendWatchHealthSummary(
+  outbox: BackgroundHealthOutbox,
+  summary: HealthDataPayload,
+  installId: string,
+): BackgroundHealthOutbox {
+  if (!installId.trim()) {
+    throw new Error("A stable install ID is required for watch health events.");
+  }
+  const { activities = [], ...summaryWithoutActivities } = summary;
+  const createdAt = new Date(summary.collectedAt).toISOString();
+  const withSummary = appendOutboxEntry(outbox, {
+    eventId: `${installId}:summary:${createdAt}`,
+    createdAt,
+    payload: { kind: "summary", summary: summaryWithoutActivities },
+    attempts: 0,
+  });
+  const summaries = withSummary.pending.filter((entry) => entry.payload.kind === "summary");
+  const overflow = summaries.length - MAX_BACKGROUND_MINUTE_SAMPLES;
+  const expiredSummaryIds = new Set(
+    overflow > 0 ? summaries.slice(0, overflow).map((summary) => summary.eventId) : [],
+  );
+  const boundedSummaryOutbox =
+    overflow > 0
+      ? {
+          ...withSummary,
+          pending: withSummary.pending.filter((entry) => !expiredSummaryIds.has(entry.eventId)),
+        }
+      : withSummary;
+  return appendBackgroundHealthEvents(boundedSummaryOutbox, { activities }, installId);
 }

@@ -146,7 +146,7 @@ class GarminImportProgressCoordinator {
     const importJobId = observedBatchJob.parent?.id;
     if (!importJobId) return;
     const importJob = await this.#importQueue.getJob(importJobId);
-    if (!importJob || importJob.data.importType !== "garmin-dump") {
+    if (importJob?.data.importType !== "garmin-dump") {
       return;
     }
     const checkpoint = garminImportCheckpointSchema.safeParse(importJob.data.checkpoint);

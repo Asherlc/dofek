@@ -82,7 +82,13 @@ function displayRecordLocalTime(
   startedAt: string,
   localTimeContext: RecordLocalTimeContext,
 ): string {
-  const localTime = formatRecordLocalTime(startedAt, localTimeContext, "start");
+  const localTime = formatRecordLocalTime(
+    startedAt,
+    localTimeContext,
+    "start",
+    undefined,
+    Intl.DateTimeFormat().resolvedOptions().timeZone,
+  );
   return localTime === "--" ? "Local time unavailable" : localTime;
 }
 
@@ -291,16 +297,6 @@ export default function ActivitiesScreen() {
         />
       }
     >
-      <TouchableOpacity
-        style={styles.recordButton}
-        onPress={() => router.push("/record")}
-        activeOpacity={0.7}
-        accessibilityRole="button"
-        accessibilityLabel="Record Activity"
-      >
-        <Text style={styles.recordButtonText}>Record Activity</Text>
-      </TouchableOpacity>
-
       <ProcessingStatusWidget
         data={processingStatus.data}
         error={processingStatus.error}
@@ -773,17 +769,6 @@ const styles = StyleSheet.create({
   },
   backgroundErrorPanel: {
     marginBottom: spacing.md,
-  },
-  recordButton: {
-    backgroundColor: colors.accent,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.md,
-    alignItems: "center",
-  },
-  recordButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
   },
   controlsPanel: {
     backgroundColor: colors.surface,

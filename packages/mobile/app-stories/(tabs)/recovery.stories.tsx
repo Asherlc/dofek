@@ -184,6 +184,15 @@ function createSeededProviders(healthspanInsufficient = false, recoveryUnavailab
         weeklyChange: -0.2,
         interpolated: false,
       })),
+      bodyFatTrend: trendDates.map((date, index) => ({
+        date,
+        rawBodyFatPct: 24.2 - index * 0.04,
+        rawBodyFatStatus: { kind: "observed", label: "Observed" },
+        smoothedBodyFatPct: 24.2 - index * 0.04,
+        smoothedBodyFatStatus: { kind: "estimated", label: "Estimated" },
+        weeklyChange: -0.28,
+        interpolated: false,
+      })),
       decisionContext: {
         latestMeasurement: {
           date: endDate,
@@ -222,6 +231,12 @@ function createSeededProviders(healthspanInsufficient = false, recoveryUnavailab
           estimatedDate: dates.date(60),
           daysRemaining: 60,
         },
+        projectionLine: [],
+      },
+      bodyFatPrediction: {
+        ratePerWeek: -0.28,
+        rateConfidence: 0.72,
+        periodDeltas: { days7: -0.2, days14: -0.42, days30: -0.86 },
         projectionLine: [],
       },
       baselineRelative: [

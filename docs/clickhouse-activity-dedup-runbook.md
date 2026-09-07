@@ -18,7 +18,7 @@ including overlapping duplicates from multiple providers or devices.
 
 ## Symptom
 
-`https://dofek.asherlc.com/activities` shows duplicate cards with the same start
+`https://dofek.fit/activities` shows duplicate cards with the same start
 time and overlapping durations. Some duplicates have metrics and others have
 empty or partial metrics.
 

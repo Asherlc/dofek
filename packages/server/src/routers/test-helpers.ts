@@ -2,6 +2,7 @@ import type { AnyRouter } from "@trpc/server";
 import { initTRPC } from "@trpc/server";
 import { sql } from "drizzle-orm";
 import { vi } from "vitest";
+import type { z } from "zod";
 import type {
   ProviderDataGenerationContext,
   ProviderDataScope,
@@ -83,18 +84,21 @@ function isMatrix(rows: unknown[] | unknown[][]): rows is unknown[][] {
   return rows.length > 0 && Array.isArray(rows[0]);
 }
 
+function isRows<T>(value: unknown): value is T[] {
+  return Array.isArray(value);
+}
+
 export function makeMockSensorStore(rows: unknown[] | unknown[][] = []): ActivitySensorStore {
-  let queryMock: ReturnType<typeof vi.fn>;
-  if (isMatrix(rows)) {
-    queryMock = vi.fn();
-    for (const batch of rows) {
-      queryMock.mockResolvedValueOnce(batch);
-    }
-  } else {
-    queryMock = vi.fn().mockResolvedValue(rows);
-  }
+  const rowBatches = isMatrix(rows) ? [...rows] : undefined;
+  const queryTarget: Pick<ActivitySensorStore, "query"> = {
+    query: async <TSchema extends z.ZodType>(_schema: TSchema): Promise<z.infer<TSchema>[]> => {
+      const batch = rowBatches ? (rowBatches.shift() ?? []) : rows;
+      return isRows<z.infer<TSchema>>(batch) ? batch : [];
+    },
+  };
+  vi.spyOn(queryTarget, "query");
   return {
-    query: queryMock,
+    query: queryTarget.query,
     getActivitySummaries: vi.fn().mockResolvedValue([]),
     getStream: vi.fn().mockResolvedValue([]),
     getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),

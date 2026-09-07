@@ -28,7 +28,7 @@ describe("exercise metadata source files", () => {
 
 describe("EXERCISE_MUSCLE_GROUPS", () => {
   it("uses Free Exercise DB plus local overrides as the broad baseline", () => {
-    expect(Object.keys(EXERCISE_MUSCLE_GROUPS)).toHaveLength(878);
+    expect(Object.keys(EXERCISE_MUSCLE_GROUPS)).toHaveLength(881);
     expect(EXERCISE_MUSCLE_GROUPS["barbell full squat"]).toEqual({
       primaryMuscleGroups: ["QUADRICEPS"],
       secondaryMuscleGroups: ["CALVES", "GLUTES", "HAMSTRINGS", "LOWER_BACK"],
@@ -61,6 +61,24 @@ describe("lookupExerciseMuscleGroups", () => {
       "GLUTES",
       "HAMSTRINGS",
     ]);
+    expect(lookupExerciseMuscleGroups("Squat")).toEqual([
+      "QUADRICEPS",
+      "GLUTES",
+      "HAMSTRINGS",
+      "LOWER_BACK",
+    ]);
+    expect(lookupExerciseMuscleGroups("Deadlift")).toEqual([
+      "HAMSTRINGS",
+      "GLUTES",
+      "LOWER_BACK",
+      "QUADRICEPS",
+      "TRAPS",
+      "FOREARMS",
+    ]);
+  });
+
+  it("maps reported upper-body exercises to muscle groups", () => {
+    expect(lookupExerciseMuscleGroups("Overhead Press")).toEqual(["SHOULDERS", "TRICEPS"]);
   });
 
   it("normalizes imported exercise names from any provider", () => {

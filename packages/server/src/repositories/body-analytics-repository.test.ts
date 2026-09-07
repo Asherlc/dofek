@@ -514,6 +514,62 @@ describe("BodyAnalyticsRepository", () => {
     });
   });
 
+  describe("getSmoothedBodyFat", () => {
+    it("builds an interpolated, server-authored body-fat trend", async () => {
+      const { repo } = makeRepository([
+        { date: "2024-01-01", weight_kg: "80", body_fat_pct: "20" },
+        { date: "2024-01-03", weight_kg: "80", body_fat_pct: "22" },
+      ]);
+
+      const result = await repo.getSmoothedBodyFat(null, "2024-06-01");
+
+      expect(result).toEqual([
+        expect.objectContaining({
+          date: "2024-01-01",
+          rawBodyFatPct: 20,
+          smoothedBodyFatPct: 20,
+          interpolated: false,
+        }),
+        expect.objectContaining({
+          date: "2024-01-02",
+          rawBodyFatPct: null,
+          smoothedBodyFatPct: 20.1,
+          interpolated: true,
+        }),
+        expect.objectContaining({
+          date: "2024-01-03",
+          rawBodyFatPct: 22,
+          smoothedBodyFatPct: 20.3,
+          interpolated: false,
+        }),
+      ]);
+    });
+
+    it("labels observed and interpolated body-fat points by provenance", async () => {
+      const { repo } = makeRepository([
+        { date: "2024-01-01", weight_kg: "80", body_fat_pct: "20" },
+        { date: "2024-01-03", weight_kg: "80", body_fat_pct: "22" },
+      ]);
+
+      const result = await repo.getSmoothedBodyFat(null, "2024-06-01");
+
+      expect(result).toMatchObject([
+        {
+          rawBodyFatStatus: { kind: "observed", label: "Observed" },
+          smoothedBodyFatStatus: { kind: "estimated", label: "Estimated" },
+        },
+        {
+          rawBodyFatStatus: null,
+          smoothedBodyFatStatus: { kind: "estimated", label: "Estimated" },
+        },
+        {
+          rawBodyFatStatus: { kind: "observed", label: "Observed" },
+          smoothedBodyFatStatus: { kind: "estimated", label: "Estimated" },
+        },
+      ]);
+    });
+  });
+
   describe("getRecomposition", () => {
     it("returns empty array when no data", async () => {
       const { repo } = makeRepository([]);
@@ -1386,6 +1442,24 @@ describe("BodyAnalyticsRepository", () => {
       expect(result.periodDeltas.days7).toBeNull();
       expect(result.periodDeltas.days14).toBeNull();
       expect(result.periodDeltas.days30).toBeNull();
+    });
+  });
+
+  describe("getBodyFatPrediction", () => {
+    it("predicts body-fat change from the smoothed history", async () => {
+      const rows = Array.from({ length: 14 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: "80",
+        body_fat_pct: String(22 - index / 10),
+      }));
+      const { repo } = makeRepository(rows);
+
+      const result = await repo.getBodyFatPrediction(90, "2024-01-14");
+
+      expect(result.ratePerWeek).toBeLessThan(0);
+      expect(result.rateConfidence).not.toBeNull();
+      expect(result.periodDeltas.days7).toBeLessThan(0);
+      expect(result.projectionLine[0]).toEqual(expect.objectContaining({ date: "2024-01-15" }));
     });
   });
 });

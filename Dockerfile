@@ -7,7 +7,7 @@ COPY package.json ./
 # Node Alpine omits Corepack; npm is used only to install the pinned bootstrap tools.
 RUN npm install -g npm@12.0.1 corepack@0.35.0 && corepack enable && corepack prepare --activate
 
-FROM python:3.13.14-alpine3.24 AS dbt-tools
+FROM python:3.13.15-alpine3.24 AS dbt-tools
 RUN apk add --no-cache build-base && \
     pip install --no-cache-dir \
     dbt-core==1.11.12 \
@@ -58,6 +58,8 @@ ARG DEPENDENCY_CACHE_BUST
 COPY .npmrc package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY patches ./patches
 COPY packages/server/package.json ./packages/server/
+COPY packages/mcp-app/package.json ./packages/mcp-app/
+COPY packages/mcp-contracts/package.json ./packages/mcp-contracts/
 COPY packages/web/package.json ./packages/web/
 COPY packages/whoop-whoop/package.json ./packages/whoop-whoop/
 COPY packages/eight-sleep/package.json ./packages/eight-sleep/
@@ -65,8 +67,10 @@ COPY packages/zwift-client/package.json ./packages/zwift-client/
 COPY packages/zepp-client/package.json ./packages/zepp-client/
 COPY packages/trainerroad-client/package.json ./packages/trainerroad-client/
 COPY packages/velohero-client/package.json ./packages/velohero-client/
+COPY packages/mountain-project-client/package.json ./packages/mountain-project-client/
 COPY packages/garmin-connect/package.json ./packages/garmin-connect/
 COPY packages/trainingpeaks-connect/package.json ./packages/trainingpeaks-connect/
+COPY packages/kaya-client/package.json ./packages/kaya-client/
 COPY packages/provider-http/package.json ./packages/provider-http/
 COPY packages/peloton-client/package.json ./packages/peloton-client/
 COPY packages/xert-client/package.json ./packages/xert-client/
@@ -108,6 +112,7 @@ RUN --mount=type=secret,id=SENTRY_AUTH_TOKEN,required=false \
     SENTRY_AUTH_TOKEN="$(cat /run/secrets/SENTRY_AUTH_TOKEN 2>/dev/null || true)" \
     && REQUIRE_SENTRY_AUTH_TOKEN="$REQUIRE_SENTRY_RELEASE_UPLOAD" \
     && export SENTRY_AUTH_TOKEN REQUIRE_SENTRY_AUTH_TOKEN \
+    && pnpm --filter dofek-mcp-app build \
     && cd packages/web && pnpm run build
 
 # ── Server image (Express API + sync runner) ────────────────────────────
@@ -134,6 +139,9 @@ COPY --from=server-deps --chown=node:node /app/node_modules ./node_modules
 COPY --from=server-deps --chown=node:node /app/packages ./packages
 COPY --from=source --chown=node:node /app/packages/server/src ./packages/server/src
 COPY --from=source --chown=node:node /app/packages/server/package.json ./packages/server/
+COPY --from=source --chown=node:node /app/packages/mcp-contracts/src ./packages/mcp-contracts/src
+COPY --from=source --chown=node:node /app/packages/mcp-contracts/package.json ./packages/mcp-contracts/
+COPY --from=client-build --chown=node:node /app/packages/mcp-app/dist ./packages/mcp-app/dist
 COPY --from=source --chown=node:node /app/packages/whoop-whoop/src ./packages/whoop-whoop/src
 COPY --from=source --chown=node:node /app/packages/whoop-whoop/package.json ./packages/whoop-whoop/
 COPY --from=source --chown=node:node /app/packages/eight-sleep/src ./packages/eight-sleep/src
@@ -146,10 +154,14 @@ COPY --from=source --chown=node:node /app/packages/trainerroad-client/src ./pack
 COPY --from=source --chown=node:node /app/packages/trainerroad-client/package.json ./packages/trainerroad-client/
 COPY --from=source --chown=node:node /app/packages/velohero-client/src ./packages/velohero-client/src
 COPY --from=source --chown=node:node /app/packages/velohero-client/package.json ./packages/velohero-client/
+COPY --from=source --chown=node:node /app/packages/mountain-project-client/src ./packages/mountain-project-client/src
+COPY --from=source --chown=node:node /app/packages/mountain-project-client/package.json ./packages/mountain-project-client/
 COPY --from=source --chown=node:node /app/packages/garmin-connect/src ./packages/garmin-connect/src
 COPY --from=source --chown=node:node /app/packages/garmin-connect/package.json ./packages/garmin-connect/
 COPY --from=source --chown=node:node /app/packages/trainingpeaks-connect/src ./packages/trainingpeaks-connect/src
 COPY --from=source --chown=node:node /app/packages/trainingpeaks-connect/package.json ./packages/trainingpeaks-connect/
+COPY --from=source --chown=node:node /app/packages/kaya-client/src ./packages/kaya-client/src
+COPY --from=source --chown=node:node /app/packages/kaya-client/package.json ./packages/kaya-client/
 COPY --from=source --chown=node:node /app/packages/provider-http/src ./packages/provider-http/src
 COPY --from=source --chown=node:node /app/packages/provider-http/package.json ./packages/provider-http/
 COPY --from=source --chown=node:node /app/packages/peloton-client/src ./packages/peloton-client/src
@@ -195,6 +207,7 @@ RUN ln -sfn /app node_modules/dofek && \
     ln -sfn /app/packages/trainingpeaks-connect node_modules/trainingpeaks-connect && \
     ln -sfn /app/packages/whoop-whoop node_modules/whoop-whoop && \
     mkdir -p node_modules/@dofek && \
+    ln -sfn /app/packages/kaya-client node_modules/@dofek/kaya-client && \
     ln -sfn /app/packages/format node_modules/@dofek/format && \
     ln -sfn /app/packages/filter-columns node_modules/@dofek/filter-columns && \
     ln -sfn /app/packages/stats node_modules/@dofek/stats && \
@@ -207,6 +220,7 @@ RUN ln -sfn /app node_modules/dofek && \
     ln -sfn /app/packages/imu node_modules/@dofek/imu && \
     ln -sfn /app/packages/providers-meta node_modules/@dofek/providers && \
     ln -sfn /app/packages/provider-http node_modules/@dofek/provider-http && \
+    ln -sfn /app/packages/mountain-project-client node_modules/@dofek/mountain-project && \
     ln -sfn /app/packages/peloton-client node_modules/@dofek/peloton && \
     ln -sfn /app/packages/xert-client node_modules/@dofek/xert && \
     ln -sfn /app/packages/recovery node_modules/@dofek/recovery && \
@@ -228,8 +242,8 @@ RUN mkdir -p /app/job-files && chown node:node /app/job-files
 # Create updates directory for OTA bundles (bind mount point)
 RUN mkdir -p /app/updates && chown node:node /app/updates
 
-# Run as non-root user (node user is built into node:26-alpine, uid 1000)
-USER node
+# Run as non-root user (node user is built into node:26-alpine, uid/gid 1000)
+USER 1000:1000
 
 ENTRYPOINT ["./entrypoint.sh"]
 CMD ["sync"]

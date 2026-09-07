@@ -219,7 +219,6 @@ describe("DofekOAuthServerProvider", () => {
       expect(html).toContain("Allow the MCP client to access Dofek?");
       expect(html).toContain("View your daily health summaries");
       expect(html).toContain("Search your activities");
-      expect(html).toContain("Log food entries");
       expect(html).toContain("View your connected data sources");
       expect(html).toContain("Start data synchronization");
       expect(html).toContain(`value="${MCP_OAUTH_SCOPES.join(" ")}"`);

@@ -117,6 +117,35 @@ describe("GradientBoostedTrees", () => {
     expect(() => model.fit([[1], [2]], [1])).toThrow();
   });
 
+  it("keeps a constant target as a leaf model with zero feature importance", () => {
+    const model = new GradientBoostedTrees({
+      nEstimators: 3,
+      maxDepth: 3,
+      learningRate: 0.2,
+      minSamplesLeaf: 1,
+    });
+
+    model.fit([[1], [2], [3], [4]], [7, 7, 7, 7]);
+
+    expect(model.predict([99])).toBe(7);
+    expect(model.rSquared).toBe(1);
+    expect(model.featureImportances).toEqual([0]);
+  });
+
+  it("uses a mean leaf when a feature has no distinct split", () => {
+    const model = new GradientBoostedTrees({
+      nEstimators: 1,
+      maxDepth: 3,
+      learningRate: 1,
+      minSamplesLeaf: 1,
+    });
+
+    model.fit([[4], [4], [4]], [2, 5, 8]);
+
+    expect(model.predict([4])).toBeCloseTo(5, 10);
+    expect(model.featureImportances).toEqual([0]);
+  });
+
   it("serializes and deserializes", () => {
     const featureMatrix = Array.from({ length: 50 }, (_, i) => [i, i * 2]);
     const targets = featureMatrix.map(([x1, x2]) => (x1 ?? 0) + (x2 ?? 0));

@@ -57,13 +57,13 @@ interface TestImportJob {
   id: string;
   queueQualifiedName: string;
   data: ImportJobData;
-  updateData: ReturnType<typeof vi.fn>;
-  moveToWaitingChildren: ReturnType<typeof vi.fn>;
-  getChildrenValues: ReturnType<typeof vi.fn>;
-  getIgnoredChildrenFailures: ReturnType<typeof vi.fn>;
-  extendLock: ReturnType<typeof vi.fn>;
-  updateProgress: ReturnType<typeof vi.fn>;
-  log: ReturnType<typeof vi.fn>;
+  updateData: CallableVitestMock;
+  moveToWaitingChildren: CallableVitestMock;
+  getChildrenValues: CallableVitestMock;
+  getIgnoredChildrenFailures: CallableVitestMock;
+  extendLock: CallableVitestMock;
+  updateProgress: CallableVitestMock;
+  log: CallableVitestMock;
 }
 
 function createJob(checkpoint?: unknown): TestImportJob {

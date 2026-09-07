@@ -1,16 +1,15 @@
-import nodemailer from "nodemailer";
-
 interface PlainTextEmailInput {
   subject: string;
   text: string;
   toEmail: string;
 }
 
-interface BrevoSmtpConfig {
+interface BrevoEmailConfig {
+  apiKey: string;
   fromEmail: string;
-  smtpKey: string;
-  smtpUser: string;
 }
+
+const BREVO_EMAIL_URL = "https://api.brevo.com/v3/smtp/email";
 
 function requiredEnv(name: string): string {
   const value = process.env[name];
@@ -20,27 +19,31 @@ function requiredEnv(name: string): string {
   return value;
 }
 
-function readBrevoConfig(): BrevoSmtpConfig {
+function readBrevoConfig(): BrevoEmailConfig {
   return {
+    apiKey: requiredEnv("BREVO_API_KEY"),
     fromEmail: requiredEnv("EXPORT_EMAIL_FROM"),
-    smtpKey: requiredEnv("BREVO_SMTP_KEY"),
-    smtpUser: requiredEnv("BREVO_SMTP_USER"),
   };
 }
 
 export async function sendPlainTextEmail(input: PlainTextEmailInput): Promise<void> {
   const config = readBrevoConfig();
-  const transporter = nodemailer.createTransport({
-    auth: { pass: config.smtpKey, user: config.smtpUser },
-    host: "smtp-relay.brevo.com",
-    port: 587,
-    secure: false,
+  const response = await fetch(BREVO_EMAIL_URL, {
+    body: JSON.stringify({
+      sender: { email: config.fromEmail },
+      subject: input.subject,
+      textContent: input.text,
+      to: [{ email: input.toEmail }],
+    }),
+    headers: {
+      accept: "application/json",
+      "api-key": config.apiKey,
+      "content-type": "application/json",
+    },
+    method: "POST",
   });
 
-  await transporter.sendMail({
-    from: config.fromEmail,
-    subject: input.subject,
-    text: input.text,
-    to: input.toEmail,
-  });
+  if (!response.ok) {
+    throw new Error(`Brevo email request failed with status ${response.status}`);
+  }
 }

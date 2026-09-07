@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 interface RedisMockState {
   client: object;
-  RedisConnection: ReturnType<typeof vi.fn>;
+  RedisConnection: CallableVitestMock;
 }
 
 const redisMocks = vi.hoisted<RedisMockState>(() => {
@@ -110,20 +110,19 @@ describe("RedisQueryCacheRegistry", () => {
     });
   });
 
-  it.each([
-    "mget",
-    "smembers",
-    "srem",
-  ])("fails loudly when the Redis client does not support %s", async (missingCommand) => {
-    redisMocks.client = {
-      mget: vi.fn(),
-      smembers: vi.fn(),
-      srem: vi.fn(),
-      [missingCommand]: undefined,
-    };
+  it.each(["mget", "smembers", "srem"])(
+    "fails loudly when the Redis client does not support %s",
+    async (missingCommand) => {
+      redisMocks.client = {
+        mget: vi.fn(),
+        smembers: vi.fn(),
+        srem: vi.fn(),
+        [missingCommand]: undefined,
+      };
 
-    await expect(new RedisQueryCacheRegistry().listKeys()).rejects.toThrow(
-      "Redis client does not support query-cache registry commands",
-    );
-  });
+      await expect(new RedisQueryCacheRegistry().listKeys()).rejects.toThrow(
+        "Redis client does not support query-cache registry commands",
+      );
+    },
+  );
 });

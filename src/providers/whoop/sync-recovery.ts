@@ -1,6 +1,7 @@
 import { dailyMetrics } from "../../db/schema/activity.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { logger } from "../../logger.ts";
+import { resolveWhoopCycleDay } from "./cycle-day.ts";
 import { parseRecovery, resolveRecoveryState } from "./parsing.ts";
 import type { WhoopPersistenceContext } from "./sync-types.ts";
 
@@ -27,10 +28,7 @@ export async function syncWhoopRecovery(context: WhoopPersistenceContext): Promi
               `[whoop] Parsed recovery: rhr=${parsed.restingHr}, hrv=${parsed.hrv}, ` +
                 `spo2=${parsed.spo2}, skinTemp=${parsed.skinTemp}`,
             );
-            const cycleDayRaw =
-              cycle.days?.[0] ?? new Date(cycle.recovery.created_at).toISOString().split("T")[0];
-            if (!cycleDayRaw) throw new Error("Could not determine cycle day");
-            const cycleDay = cycleDayRaw;
+            const cycleDay = resolveWhoopCycleDay(cycle, cycle.recovery.created_at);
 
             await db
               .insert(dailyMetrics)

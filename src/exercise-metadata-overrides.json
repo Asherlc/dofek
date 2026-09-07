@@ -15,6 +15,14 @@
     "primaryMuscleGroups": ["LATS", "UPPER_BACK"],
     "secondaryMuscleGroups": ["BICEPS"]
   },
+  "deadlift": {
+    "primaryMuscleGroups": ["HAMSTRINGS", "GLUTES", "LOWER_BACK"],
+    "secondaryMuscleGroups": ["QUADRICEPS", "TRAPS", "FOREARMS"]
+  },
+  "overhead press": {
+    "primaryMuscleGroups": ["SHOULDERS"],
+    "secondaryMuscleGroups": ["TRICEPS"]
+  },
   "pull up": {
     "primaryMuscleGroups": ["LATS", "UPPER_BACK"],
     "secondaryMuscleGroups": ["BICEPS"]
@@ -22,5 +30,9 @@
   "romanian deadlift": {
     "primaryMuscleGroups": ["HAMSTRINGS", "GLUTES"],
     "secondaryMuscleGroups": ["LOWER_BACK"]
+  },
+  "squat": {
+    "primaryMuscleGroups": ["QUADRICEPS", "GLUTES"],
+    "secondaryMuscleGroups": ["HAMSTRINGS", "LOWER_BACK"]
   }
 }

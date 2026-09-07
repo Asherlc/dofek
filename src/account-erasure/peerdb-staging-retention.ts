@@ -124,8 +124,7 @@ function assertLifecycleConfiguration(
 ): number {
   const rule = lifecycle.rules.find((candidate) => candidate.id === RETENTION_RULE_ID);
   if (
-    !rule ||
-    rule.status !== "Enabled" ||
+    rule?.status !== "Enabled" ||
     rule.expirationDays !== MAX_RETENTION_DAYS ||
     rule.filter.prefix !== "" ||
     rule.filter.hasAnd ||

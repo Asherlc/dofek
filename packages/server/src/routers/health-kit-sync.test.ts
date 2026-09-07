@@ -1254,35 +1254,38 @@ describe("healthKitSyncRouter", () => {
     it.each([
       ["2026-03-08T01:30:00-08:00", "2026-03-08T03:30:00-07:00", [-480, -420, "device_offset"]],
       ["2026-03-08T01:30:00-08:00", "2026-03-08T03:30:00", [null, null, "unknown"]],
-    ])("stores record-local sleep context for %s to %s", async (startDate, endDate, expectedContext) => {
-      const execute = makeExecute();
-      const caller = createCaller({
-        db: { execute },
-        userId: "user-1",
-        timezone: "UTC",
-      });
+    ])(
+      "stores record-local sleep context for %s to %s",
+      async (startDate, endDate, expectedContext) => {
+        const execute = makeExecute();
+        const caller = createCaller({
+          db: { execute },
+          userId: "user-1",
+          timezone: "UTC",
+        });
 
-      await caller.pushSleepSamples({
-        samples: [
-          {
-            uuid: "sleep-local-time",
-            startDate,
-            endDate,
-            value: "inBed",
-            sourceName: "Apple Watch",
-          },
-        ],
-      });
+        await caller.pushSleepSamples({
+          samples: [
+            {
+              uuid: "sleep-local-time",
+              startDate,
+              endDate,
+              value: "inBed",
+              sourceName: "Apple Watch",
+            },
+          ],
+        });
 
-      const sleepCall = execute.mock.calls.find((call: unknown[]) => {
-        const serialized = JSON.stringify(call[0]);
-        return serialized.includes("sleep_session") && serialized.includes("INSERT");
-      });
-      const serialized = JSON.stringify(sleepCall?.[0]);
-      for (const expected of expectedContext) {
-        expect(serialized).toContain(JSON.stringify(expected));
-      }
-    });
+        const sleepCall = execute.mock.calls.find((call: unknown[]) => {
+          const serialized = JSON.stringify(call[0]);
+          return serialized.includes("sleep_session") && serialized.includes("INSERT");
+        });
+        const serialized = JSON.stringify(sleepCall?.[0]);
+        for (const expected of expectedContext) {
+          expect(serialized).toContain(JSON.stringify(expected));
+        }
+      },
+    );
 
     it("stores null sleep_type for short sessions", async () => {
       const execute = makeExecute();
@@ -2803,6 +2806,7 @@ describe("healthKitSyncRouter", () => {
         expect.objectContaining({
           activityType: { providerType: "13", canonicalType: "cycling", modality: null },
         }),
+        expect.anything(),
       );
     });
 
@@ -2843,6 +2847,7 @@ describe("healthKitSyncRouter", () => {
             totalDistance: 10000,
           }),
         }),
+        expect.anything(),
       );
     });
 
@@ -2898,6 +2903,7 @@ describe("healthKitSyncRouter", () => {
             ],
           }),
         }),
+        expect.anything(),
         expect.anything(),
       );
     });

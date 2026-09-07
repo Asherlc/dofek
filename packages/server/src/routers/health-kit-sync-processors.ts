@@ -6,7 +6,7 @@ import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
 import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import type { SyncDatabase } from "../../../../src/db/index.ts";
+import type { Database as DrizzleDatabase, SyncDatabase } from "../../../../src/db/index.ts";
 import { ProviderActivityListSync } from "../../../../src/db/provider-activity-sync.ts";
 import {
   BODY_MEASUREMENT_COLUMN_TO_CHANNEL,
@@ -18,10 +18,12 @@ import {
   type MetricStreamEventPublisher,
 } from "../../../../src/metric-stream/redpanda-producer.ts";
 import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metric-stream.ts";
+import { replaceHangTenIntervals } from "../../../../src/providers/apple-health/hang-ten-intervals.ts";
 import {
   buildAppleHealthWorkoutIdentity,
   collectAppleHealthWorkoutIdentities,
 } from "../../../../src/providers/apple-health/workout-identity.ts";
+import { applyWorkoutMetadata } from "../../../../src/providers/apple-health/workouts.ts";
 import { canonicalizeTimestampForExternalId } from "../lib/canonical-timestamp.ts";
 import { computeBoundsFromIsoTimestamps } from "../lib/health-kit-sync-helpers.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
@@ -60,6 +62,8 @@ function extractDate(isoString: string): string {
 }
 
 export { computeBoundsFromIsoTimestamps };
+
+type WorkoutSyncDatabase = SyncDatabase & Pick<DrizzleDatabase, "transaction">;
 
 function dateInTimezone(timestamp: string, timezone: string): string {
   const date = new Date(timestamp);
@@ -404,7 +408,7 @@ function appleHealthLocalTimeContext(startTimestamp: string, endTimestamp: strin
 
 /** Process workout samples */
 export async function processWorkouts(
-  db: SyncDatabase,
+  db: WorkoutSyncDatabase,
   userId: string,
   workouts: WorkoutSample[],
   options: ProcessWorkoutsOptions,
@@ -418,44 +422,62 @@ export async function processWorkouts(
   });
 
   let inserted = 0;
-  for (let i = 0; i < workouts.length; i += BATCH_SIZE) {
-    const batch = workouts.slice(i, i + BATCH_SIZE);
-    for (const workout of batch) {
-      const activityType = resolveProviderActivityType(
-        workout.workoutType,
-        workoutActivityTypeMap[workout.workoutType] ?? "other",
-      );
-
-      const rawData = {
-        duration: workout.duration,
-        totalDistance: workout.totalDistance,
+  for (const workout of workouts) {
+    const normalizedWorkout = applyWorkoutMetadata(
+      {
+        activityType: resolveProviderActivityType(
+          workout.workoutType,
+          workoutActivityTypeMap[workout.workoutType] ?? "other",
+        ),
         sourceName: workout.sourceName,
-        workoutType: workout.workoutType,
-        metadata: workout.metadata,
-        workoutActivities: workout.workoutActivities,
-      };
+        durationSeconds: workout.duration,
+        startDate: new Date(workout.startDate),
+        endDate: new Date(workout.endDate),
+      },
+      workout.metadata ?? {},
+    );
 
-      await activitySync.upsert(
+    const rawData = {
+      duration: workout.duration,
+      totalDistance: workout.totalDistance,
+      sourceName: workout.sourceName,
+      workoutType: workout.workoutType,
+      metadata: workout.metadata,
+      workoutActivities: workout.workoutActivities,
+      ...(normalizedWorkout.hangTen ? { hangTen: normalizedWorkout.hangTen } : {}),
+    };
+
+    const values = {
+      userId,
+      providerId: PROVIDER_ID,
+      externalId: appleHealthWorkoutExternalId(workout.uuid),
+      activityType: normalizedWorkout.activityType,
+      startedAt: normalizedWorkout.startDate,
+      endedAt: normalizedWorkout.endDate,
+      name: normalizedWorkout.hangTen?.planName,
+      sourceName: normalizedWorkout.sourceName,
+      ...appleHealthLocalTimeContext(workout.startDate, workout.endDate),
+      raw: rawData,
+    };
+    await db.transaction(async (transactionDb) => {
+      const returned = await activitySync.upsert(
+        values,
         {
-          userId,
-          providerId: PROVIDER_ID,
-          externalId: appleHealthWorkoutExternalId(workout.uuid),
-          activityType,
-          startedAt: new Date(workout.startDate),
-          endedAt: new Date(workout.endDate),
+          activityType: normalizedWorkout.activityType,
+          startedAt: normalizedWorkout.startDate,
+          endedAt: normalizedWorkout.endDate,
+          name: normalizedWorkout.hangTen?.planName,
+          sourceName: normalizedWorkout.sourceName,
           ...appleHealthLocalTimeContext(workout.startDate, workout.endDate),
           raw: rawData,
         },
-        {
-          activityType,
-          startedAt: new Date(workout.startDate),
-          endedAt: new Date(workout.endDate),
-          ...appleHealthLocalTimeContext(workout.startDate, workout.endDate),
-          raw: rawData,
-        },
+        transactionDb,
       );
-      inserted++;
-    }
+      if (returned && normalizedWorkout.hangTen) {
+        await replaceHangTenIntervals(transactionDb, returned.id, normalizedWorkout);
+      }
+    });
+    inserted++;
   }
 
   await activitySync.reconcile(undefined, {

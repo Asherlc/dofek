@@ -20,6 +20,7 @@ page/index.js
 app-side/index.js
 setting/index.js
 app-service/imu_service.js
+app-service/health_service.js
 workout-extension/app.json
 workout-extension/assets/
 workout-extension/icon.png

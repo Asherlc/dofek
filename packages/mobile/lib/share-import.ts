@@ -1,16 +1,13 @@
-import { z } from "zod";
+import {
+  type FileUploadApi,
+  runMobileResumableFileUpload,
+  type UploadableMobileFile,
+  type UploadImportType,
+} from "./resumable-file-upload";
 import { captureException } from "./telemetry";
 
-const importProviderIds = [
-  "apple-health",
-  "strong-csv",
-  "cronometer-csv",
-  "garmin-dump",
-  "fit-file",
-  "kaya-export",
-] as const;
-
-export type ImportProviderId = (typeof importProviderIds)[number];
+export type ImportProviderId = UploadImportType;
+export type StrongWeightUnit = "kg" | "lbs";
 
 export interface InferImportProviderInput {
   fileName: string;
@@ -29,16 +26,19 @@ export interface ShareImportProgress {
 export interface ImportSharedFileArgs {
   fileUri: string;
   providerId?: ImportProviderId;
-  serverUrl: string;
-  sessionToken: string;
   onProgress?: (progress: ShareImportProgress) => void;
+  selectStrongWeightUnit?: () => Promise<StrongWeightUnit | null>;
 }
 
-interface ImportSharedFileDeps {
-  fetchImpl?: typeof fetch;
-  readBlob?: (fileUri: string) => Promise<Blob>;
+export interface SharedImportFile extends UploadableMobileFile {
+  readHeader(maxBytes: number): Promise<string>;
+}
+
+export interface ImportSharedFileDeps {
+  createUploadId(): string;
+  file: SharedImportFile;
+  fileUploadApi: FileUploadApi;
   sleep?: (milliseconds: number) => Promise<void>;
-  now?: () => number;
 }
 
 export interface ShareImportResult {
@@ -46,125 +46,57 @@ export interface ShareImportResult {
   jobId: string;
 }
 
-interface SharedFileInfo {
-  fileName: string;
-  fileExtension: string;
-}
-
-interface UploadTarget {
-  uploadUrl: string;
-  statusUrl: string;
-}
-
-const uploadResponseSchema = z
-  .object({
-    status: z.string().optional(),
-    jobId: z.string().optional(),
-    error: z.string().optional(),
-    message: z.string().optional(),
-  })
-  .passthrough();
-
-const statusResponseSchema = z
-  .object({
-    status: z.enum(["uploading", "assembling", "processing", "done", "error"]),
-    progress: z.number().optional(),
-    message: z.string().optional(),
-    error: z.string().optional(),
-  })
-  .passthrough();
-
 function normalizeExtension(fileExtension: string): string {
   const trimmed = fileExtension.trim().toLowerCase();
   if (trimmed === "") return "";
   return trimmed.startsWith(".") ? trimmed : `.${trimmed}`;
 }
 
-function getSharedFileInfo(fileUri: string): SharedFileInfo {
-  const uriWithoutQuery = fileUri.split("?")[0] ?? fileUri;
-  const encodedName = uriWithoutQuery.split("/").pop() ?? "shared-file";
-  const fileName = decodeURIComponent(encodedName);
+function extensionForFileName(fileName: string): string {
   const dotIndex = fileName.lastIndexOf(".");
-  const fileExtension = dotIndex >= 0 ? normalizeExtension(fileName.slice(dotIndex)) : "";
-  return { fileName, fileExtension };
-}
-
-function getUploadTarget(serverUrl: string, providerId: ImportProviderId): UploadTarget {
-  const baseUrl = serverUrl.replace(/\/+$/, "");
-  switch (providerId) {
-    case "apple-health":
-      return {
-        uploadUrl: `${baseUrl}/api/upload/apple-health?fullSync=true`,
-        statusUrl: `${baseUrl}/api/upload/apple-health/status`,
-      };
-    case "strong-csv":
-      return {
-        uploadUrl: `${baseUrl}/api/upload/strong-csv?units=kg`,
-        statusUrl: `${baseUrl}/api/upload/strong-csv/status`,
-      };
-    case "cronometer-csv":
-      return {
-        uploadUrl: `${baseUrl}/api/upload/cronometer-csv`,
-        statusUrl: `${baseUrl}/api/upload/cronometer-csv/status`,
-      };
-    case "garmin-dump":
-      return {
-        uploadUrl: `${baseUrl}/api/upload/garmin-dump`,
-        statusUrl: `${baseUrl}/api/upload/garmin-dump/status`,
-      };
-    case "fit-file":
-      return {
-        uploadUrl: `${baseUrl}/api/upload/fit-file`,
-        statusUrl: `${baseUrl}/api/upload/fit-file/status`,
-      };
-    case "kaya-export":
-      return {
-        uploadUrl: `${baseUrl}/api/upload/kaya-export`,
-        statusUrl: `${baseUrl}/api/upload/kaya-export/status`,
-      };
-  }
+  return dotIndex >= 0 ? normalizeExtension(fileName.slice(dotIndex)) : "";
 }
 
 function matchesCsvHeader(csvHeaderLine: string, requiredColumns: string[]): boolean {
-  const normalized = csvHeaderLine
-    .replace(/^\uFEFF/, "")
-    .trim()
-    .toLowerCase();
-  if (normalized === "") return false;
+  const normalized = normalizeCsvHeader(csvHeaderLine);
+  if (!isVerifiedCsvHeader(normalized)) return false;
   return requiredColumns.every((column) => normalized.includes(column));
 }
 
-function parseErrorMessage(data: unknown, fallback: string): string {
-  const parsed = z
-    .object({
-      error: z.string().optional(),
-      message: z.string().optional(),
-    })
-    .safeParse(data);
-  if (!parsed.success) return fallback;
-  return parsed.data.error ?? parsed.data.message ?? fallback;
+function normalizeCsvHeader(csvHeaderLine: string): string {
+  return csvHeaderLine
+    .replace(/^\uFEFF/, "")
+    .trim()
+    .toLowerCase();
 }
 
-async function parseJsonResponse(response: Response, source: string): Promise<unknown> {
-  const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
-  if (!response.ok && !contentType.includes("json")) {
-    return {};
-  }
+function isVerifiedCsvHeader(csvHeaderLine: string): boolean {
+  return csvHeaderLine.includes(",") && Array.from(csvHeaderLine).every(isTextCharacter);
+}
 
-  return response.json().catch((error: unknown) => {
-    captureException(error, {
-      source,
-      url: response.url,
-      status: response.status,
-    });
-    return {};
-  });
+function isTextCharacter(character: string): boolean {
+  const codePoint = character.codePointAt(0);
+  return (
+    codePoint !== undefined &&
+    codePoint !== 0xfffd &&
+    (codePoint === 0x09 || (codePoint >= 0x20 && (codePoint < 0x7f || codePoint > 0x9f)))
+  );
+}
+
+function isExtensionlessGenericBinary(fileExtension: string, mimeType: string | null): boolean {
+  return (
+    fileExtension === "" && (mimeType ?? "").toLowerCase().startsWith("application/octet-stream")
+  );
 }
 
 function isCsvLike(fileExtension: string, mimeType: string | null): boolean {
   if (fileExtension === ".csv") return true;
   const lowerMimeType = (mimeType ?? "").toLowerCase();
-  return lowerMimeType.includes("csv") || lowerMimeType.includes("text/plain");
+  return (
+    lowerMimeType.includes("csv") ||
+    lowerMimeType.includes("text/plain") ||
+    isExtensionlessGenericBinary(fileExtension, mimeType)
+  );
 }
 
 function isAppleHealthLike(fileExtension: string, mimeType: string | null): boolean {
@@ -191,34 +123,18 @@ export function inferImportProviderFromFile({
   const normalizedExtension = normalizeExtension(fileExtension);
   const normalizedFileName = fileName.trim().toLowerCase();
 
-  if (isGarminDumpLike(normalizedFileName, normalizedExtension)) {
-    return "garmin-dump";
-  }
-
-  if (normalizedExtension === ".fit") {
-    return "fit-file";
-  }
-
-  if (isAppleHealthLike(normalizedExtension, mimeType)) {
-    return "apple-health";
-  }
-
-  if (!isCsvLike(normalizedExtension, mimeType)) {
-    return null;
-  }
-
+  if (isGarminDumpLike(normalizedFileName, normalizedExtension)) return "garmin-dump";
+  if (normalizedExtension === ".fit") return "fit-file";
+  if (isAppleHealthLike(normalizedExtension, mimeType)) return "apple-health";
+  if (!isCsvLike(normalizedExtension, mimeType)) return null;
   if (matchesCsvHeader(csvHeaderLine, ["date", "workout name", "duration", "exercise name"])) {
     return "strong-csv";
   }
-
-  if (matchesCsvHeader(csvHeaderLine, ["day", "meal", "food name"])) {
-    return "cronometer-csv";
-  }
-
+  if (matchesCsvHeader(csvHeaderLine, ["day", "meal", "food name"])) return "cronometer-csv";
+  if (isExtensionlessGenericBinary(normalizedExtension, mimeType)) return null;
   if (normalizedFileName.includes("cronometer")) return "cronometer-csv";
   if (normalizedFileName.includes("strong")) return "strong-csv";
   if (normalizedFileName.includes("kaya")) return "kaya-export";
-
   return null;
 }
 
@@ -231,267 +147,97 @@ function getCsvHeaderLine(csvText: string): string {
   );
 }
 
-function hasBlobTextReader(blob: Blob): boolean {
-  return typeof Reflect.get(blob, "text") === "function";
-}
+const CSV_HEADER_PROBE_BYTES = 16 * 1024;
 
-async function readBlobText(blob: Blob, fileUri: string, fetchImpl: typeof fetch): Promise<string> {
-  try {
-    if (hasBlobTextReader(blob)) {
-      return await blob.text();
-    }
-  } catch (error) {
-    captureException(error, {
-      source: "share-import-readblobtext-text",
-      fileUri,
-    });
-  }
-
-  try {
-    const arrayBuffer = await blob.arrayBuffer();
-    return new TextDecoder().decode(arrayBuffer);
-  } catch (error) {
-    captureException(error, {
-      source: "share-import-readblobtext-arraybuffer",
-      fileUri,
-    });
-  }
-
-  // Fallback to fetching the file URI directly
-  const response = await fetchImpl(fileUri);
-  if (!response.ok) {
-    throw new Error(`Failed to read shared file via fetch fallback (${response.status})`);
-  }
-  return response.text();
-}
-
-async function readBlob(fetchImpl: typeof fetch, fileUri: string): Promise<Blob> {
-  const response = await fetchImpl(fileUri);
-  if (!response.ok) {
-    throw new Error(`Failed to read shared file (${response.status})`);
-  }
-  return response.blob();
-}
-
-async function parseUploadResponse(response: Response): Promise<{ jobId: string }> {
-  const json = await parseJsonResponse(response, "share-import-upload-response-json-parse");
-  const parsed = uploadResponseSchema.safeParse(json);
-  if (!response.ok) {
-    throw new Error(parseErrorMessage(json, `Upload failed (HTTP ${response.status})`));
-  }
-  if (!parsed.success || !parsed.data.jobId) {
-    throw new Error("Upload did not return a job ID");
-  }
-  return { jobId: parsed.data.jobId };
-}
-
-function getChunkedUploadFileExtension(
+function progressForUpload(
+  progress: { phase: "preparing" | "uploading" | "queueing"; percentage: number; message: string },
   providerId: ImportProviderId,
-  fileExtension: string,
-): string {
-  if (providerId === "apple-health") {
-    return fileExtension === ".xml" ? ".xml" : ".zip";
-  }
-  if (providerId === "garmin-dump") return ".zip";
-  if (providerId === "fit-file") return ".fit";
-  return ".csv";
-}
-
-async function uploadChunkedFile(
-  fetchImpl: typeof fetch,
-  target: UploadTarget,
-  blob: Blob,
-  providerId: ImportProviderId,
-  fileExtension: string,
-  sessionToken: string,
-  onProgress?: (progress: ShareImportProgress) => void,
-  now?: () => number,
-): Promise<string> {
-  const chunkSize = 50 * 1024 * 1024;
-  const totalChunks = Math.max(1, Math.ceil(blob.size / chunkSize));
-  const uploadId = `share-${(now ?? Date.now)()}-${Math.random().toString(36).slice(2, 8)}`;
-  const uploadFileExtension = getChunkedUploadFileExtension(providerId, fileExtension);
-  let jobId: string | null = null;
-
-  for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
-    const start = chunkIndex * chunkSize;
-    const end = Math.min(start + chunkSize, blob.size);
-    const chunk = blob.slice(start, end);
-    onProgress?.({
-      status: "uploading",
-      progress: Math.round(((chunkIndex + 1) / totalChunks) * 50),
-      message:
-        totalChunks > 1
-          ? `Uploading chunk ${chunkIndex + 1} of ${totalChunks}...`
-          : "Uploading file...",
-      providerId,
-    });
-
-    const response = await fetchImpl(target.uploadUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${sessionToken}`,
-        "Content-Type": "application/octet-stream",
-        "x-upload-id": uploadId,
-        "x-chunk-index": String(chunkIndex),
-        "x-chunk-total": String(totalChunks),
-        "x-file-ext": uploadFileExtension,
-      },
-      body: chunk,
-    });
-
-    const result = await parseUploadResponse(response);
-    jobId = result.jobId;
-  }
-
-  if (!jobId) {
-    throw new Error("Upload did not return a job ID");
-  }
-  return jobId;
-}
-
-async function pollImportStatus(
-  fetchImpl: typeof fetch,
-  sleep: (milliseconds: number) => Promise<void>,
-  statusUrl: string,
-  jobId: string,
-  sessionToken: string,
-  providerId: ImportProviderId,
-  onProgress?: (progress: ShareImportProgress) => void,
-): Promise<void> {
-  const maxAttempts = 600;
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const response = await fetchImpl(`${statusUrl}/${jobId}`, {
-      headers: {
-        Authorization: `Bearer ${sessionToken}`,
-      },
-    });
-    const json = await parseJsonResponse(response, "share-import-status-response-json-parse");
-    if (!response.ok) {
-      throw new Error(parseErrorMessage(json, `Status check failed (HTTP ${response.status})`));
-    }
-
-    const parsed = statusResponseSchema.safeParse(json);
-    if (!parsed.success) {
-      throw new Error("Invalid status response from server");
-    }
-
-    const status = parsed.data.status;
-    const progress = parsed.data.progress ?? 0;
-    const message = parsed.data.message ?? "Processing import...";
-
-    if (status === "done") {
-      onProgress?.({
-        status: "done",
-        progress: 100,
-        message: "Import complete.",
-        providerId,
-      });
-      return;
-    }
-
-    if (status === "error") {
-      throw new Error(parsed.data.message ?? parsed.data.error ?? "Import failed");
-    }
-
-    onProgress?.({
-      status: "processing",
-      progress: Math.max(50, progress),
-      message,
-      providerId,
-    });
-
-    await sleep(1000);
-  }
-
-  throw new Error("Import timed out");
+): ShareImportProgress {
+  return {
+    status:
+      progress.phase === "preparing"
+        ? "reading"
+        : progress.phase === "uploading"
+          ? "uploading"
+          : "processing",
+    progress: progress.percentage,
+    message: progress.message,
+    providerId,
+  };
 }
 
 export async function importSharedFile(
   args: ImportSharedFileArgs,
-  deps: ImportSharedFileDeps = {},
-): Promise<ShareImportResult> {
-  const fetchImpl = deps.fetchImpl ?? fetch;
-  const sleep =
-    deps.sleep ??
-    ((milliseconds: number) =>
-      new Promise<void>((resolve) => {
-        setTimeout(resolve, milliseconds);
-      }));
-
-  const { fileName, fileExtension } = getSharedFileInfo(args.fileUri);
-  args.onProgress?.({
-    status: "reading",
-    progress: 0,
-    message: `Preparing ${fileName}...`,
-    providerId: args.providerId,
-  });
-
+  deps: ImportSharedFileDeps,
+): Promise<ShareImportResult | null> {
   try {
-    const readBlobFn = deps.readBlob ?? ((uri: string) => readBlob(fetchImpl, uri));
-    const blob = await readBlobFn(args.fileUri);
-    const mimeType = blob.type || null;
-
+    const fileExtension = extensionForFileName(deps.file.name);
     const csvHeaderLine =
-      fileExtension === ".csv"
-        ? getCsvHeaderLine(await readBlobText(blob, args.fileUri, fetchImpl))
+      !args.providerId && isCsvLike(fileExtension, deps.file.type || null)
+        ? getCsvHeaderLine(await deps.file.readHeader(CSV_HEADER_PROBE_BYTES))
         : "";
-
     const providerId =
       args.providerId ??
       inferImportProviderFromFile({
-        fileName,
+        fileName: deps.file.name,
         fileExtension,
-        mimeType,
+        mimeType: deps.file.type || null,
         csvHeaderLine,
       });
-
-    if (!providerId) {
-      throw new Error("Unsupported shared file type");
+    if (!providerId) throw new Error("Unsupported shared file type");
+    let weightUnit: StrongWeightUnit | undefined;
+    if (providerId === "strong-csv") {
+      const selectedWeightUnit = await args.selectStrongWeightUnit?.();
+      if (selectedWeightUnit === undefined) {
+        throw new Error("Choose kg or lbs before importing a Strong export");
+      }
+      if (selectedWeightUnit === null) return null;
+      weightUnit = selectedWeightUnit;
     }
 
-    const target = getUploadTarget(args.serverUrl, providerId);
-    const jobId = await uploadChunkedFile(
-      fetchImpl,
-      target,
-      blob,
-      providerId,
-      fileExtension,
-      args.sessionToken,
-      args.onProgress,
-      deps.now,
-    );
-
-    args.onProgress?.({
-      status: "processing",
-      progress: 50,
-      message: "Processing import...",
-      providerId,
+    const completed = await runMobileResumableFileUpload({
+      api: deps.fileUploadApi,
+      file: deps.file,
+      importType: providerId,
+      weightUnit,
+      createUploadId: deps.createUploadId,
+      onProgress: (progress) => args.onProgress?.(progressForUpload(progress, providerId)),
     });
+    if (!completed.importJobId)
+      throw new Error("Upload completion did not return an import job ID");
 
-    await pollImportStatus(
-      fetchImpl,
-      sleep,
-      target.statusUrl,
-      jobId,
-      args.sessionToken,
-      providerId,
-      args.onProgress,
-    );
-
-    return { providerId, jobId };
+    const sleep =
+      deps.sleep ??
+      ((milliseconds) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
+    for (;;) {
+      const { upload } = await deps.fileUploadApi.resume({ uploadId: completed.uploadId });
+      if (upload.state === "completed") {
+        args.onProgress?.({
+          status: "done",
+          progress: 100,
+          message: "Import complete.",
+          providerId,
+        });
+        return { providerId, jobId: completed.importJobId };
+      }
+      if (upload.state === "failed") {
+        throw new Error(upload.errorMessage ?? "Import failed");
+      }
+      if (upload.state === "aborted" || upload.state === "expired") {
+        throw new Error(upload.state === "expired" ? "Upload expired" : "Upload cancelled");
+      }
+      args.onProgress?.({
+        status: "processing",
+        progress: upload.progressPercent ?? 95,
+        message: upload.state === "queued" ? "Import queued..." : "Processing import...",
+        providerId,
+      });
+      await sleep(1000);
+    }
   } catch (error: unknown) {
-    captureException(error, {
-      source: "share-import-import-shared-file",
-      fileUri: args.fileUri,
-      serverUrl: args.serverUrl,
-    });
+    captureException(error, { source: "share-import-import-shared-file", fileUri: args.fileUri });
     const message = error instanceof Error ? error.message : "Import failed";
-    args.onProgress?.({
-      status: "error",
-      progress: 0,
-      message,
-    });
+    args.onProgress?.({ status: "error", progress: 0, message, providerId: args.providerId });
     throw error;
   }
 }

@@ -335,25 +335,57 @@ merged AS (
     any(best.source_name) AS source_name,
     argMinIf(ranked.name, ranked.priority, ranked.name IS NOT NULL) AS name,
     argMinIf(ranked.notes, ranked.priority, ranked.notes IS NOT NULL) AS notes,
-    argMinIf(
-      ranked.timezone,
-      ranked.priority,
-      ranked.local_time_source IN ('provider_timezone', 'device_timezone')
+    tupleElement(
+      argMinIf(
+        tuple(
+          ranked.timezone,
+          ranked.start_utc_offset_minutes,
+          ranked.end_utc_offset_minutes,
+          ranked.local_time_source
+        ),
+        tuple(ranked.priority, toString(ranked.id)),
+        ranked.local_time_source != 'unknown'
+      ),
+      1
     ) AS timezone,
-    argMinIf(
-      ranked.start_utc_offset_minutes,
-      ranked.priority,
-      ranked.local_time_source != 'unknown'
+    tupleElement(
+      argMinIf(
+        tuple(
+          ranked.timezone,
+          ranked.start_utc_offset_minutes,
+          ranked.end_utc_offset_minutes,
+          ranked.local_time_source
+        ),
+        tuple(ranked.priority, toString(ranked.id)),
+        ranked.local_time_source != 'unknown'
+      ),
+      2
     ) AS start_utc_offset_minutes,
-    argMinIf(
-      ranked.end_utc_offset_minutes,
-      ranked.priority,
-      ranked.local_time_source != 'unknown'
+    tupleElement(
+      argMinIf(
+        tuple(
+          ranked.timezone,
+          ranked.start_utc_offset_minutes,
+          ranked.end_utc_offset_minutes,
+          ranked.local_time_source
+        ),
+        tuple(ranked.priority, toString(ranked.id)),
+        ranked.local_time_source != 'unknown'
+      ),
+      3
     ) AS end_utc_offset_minutes,
-    argMinIf(
-      ranked.local_time_source,
-      ranked.priority,
-      ranked.local_time_source != 'unknown'
+    tupleElement(
+      argMinIf(
+        tuple(
+          ranked.timezone,
+          ranked.start_utc_offset_minutes,
+          ranked.end_utc_offset_minutes,
+          ranked.local_time_source
+        ),
+        tuple(ranked.priority, toString(ranked.id)),
+        ranked.local_time_source != 'unknown'
+      ),
+      4
     ) AS local_time_source,
     argMinIf(ranked.raw, ranked.priority, ranked.raw IS NOT NULL) AS raw,
     arraySort(groupUniqArrayIf(ranked.provider_id, ranked.id IS NOT NULL)) AS source_providers,
@@ -761,11 +793,7 @@ providers AS (
   WHERE _peerdb_is_deleted = 0
   UNION DISTINCT
   SELECT DISTINCT user_id, provider_id
-  FROM postgres_fitness.lab_panel FINAL
-  WHERE _peerdb_is_deleted = 0
-  UNION DISTINCT
-  SELECT DISTINCT user_id, provider_id
-  FROM postgres_fitness.lab_result FINAL
+  FROM postgres_fitness.clinical_record FINAL
   WHERE _peerdb_is_deleted = 0
   UNION DISTINCT
   SELECT DISTINCT user_id, provider_id
@@ -831,15 +859,9 @@ nutrition_daily_counts AS (
   WHERE _peerdb_is_deleted = 0
   GROUP BY user_id, provider_id
 ),
-lab_panel_counts AS (
+clinical_record_counts AS (
   SELECT user_id, provider_id, count() AS count
-  FROM postgres_fitness.lab_panel FINAL
-  WHERE _peerdb_is_deleted = 0
-  GROUP BY user_id, provider_id
-),
-lab_result_counts AS (
-  SELECT user_id, provider_id, count() AS count
-  FROM postgres_fitness.lab_result FINAL
+  FROM postgres_fitness.clinical_record FINAL
   WHERE _peerdb_is_deleted = 0
   GROUP BY user_id, provider_id
 ),
@@ -865,8 +887,7 @@ SELECT
   coalesce(health_event_counts.count, 0) AS health_events,
   coalesce(metric_stream_counts.count, 0) AS metric_stream,
   coalesce(nutrition_daily_counts.count, 0) AS nutrition_daily,
-  coalesce(lab_panel_counts.count, 0) AS lab_panels,
-  coalesce(lab_result_counts.count, 0) AS lab_results,
+  coalesce(clinical_record_counts.count, 0) AS clinical_records,
   coalesce(journal_entry_counts.count, 0) AS journal_entries,
   toUInt8(0) AS is_deleted,
   refresh_clock.refresh_version AS refresh_version,
@@ -897,12 +918,9 @@ LEFT JOIN health_event_counts
 LEFT JOIN nutrition_daily_counts
   ON nutrition_daily_counts.user_id = providers.user_id
  AND nutrition_daily_counts.provider_id = providers.provider_id
-LEFT JOIN lab_panel_counts
-  ON lab_panel_counts.user_id = providers.user_id
- AND lab_panel_counts.provider_id = providers.provider_id
-LEFT JOIN lab_result_counts
-  ON lab_result_counts.user_id = providers.user_id
- AND lab_result_counts.provider_id = providers.provider_id
+LEFT JOIN clinical_record_counts
+  ON clinical_record_counts.user_id = providers.user_id
+ AND clinical_record_counts.provider_id = providers.provider_id
 LEFT JOIN journal_entry_counts
   ON journal_entry_counts.user_id = providers.user_id
  AND journal_entry_counts.provider_id = providers.provider_id`;

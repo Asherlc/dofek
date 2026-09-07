@@ -775,35 +775,33 @@ describe("recoveryRouter.sleepAnalytics", () => {
     expect(result.sleepDebt).toBe(480);
   });
 
-  it.each([
-    "deep_minutes",
-    "rem_minutes",
-    "light_minutes",
-    "awake_minutes",
-  ] as const)("withholds every stage percentage when %s is missing", async (missingStage) => {
-    const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue([]) },
-      userId: "user-1",
-      sensorStore: makeSensorStore([
-        sleepNightRow({
-          [missingStage]: null,
-        }),
-      ]),
-    });
-    const result = await caller.sleepAnalytics({});
+  it.each(["deep_minutes", "rem_minutes", "light_minutes", "awake_minutes"] as const)(
+    "withholds every stage percentage when %s is missing",
+    async (missingStage) => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        sensorStore: makeSensorStore([
+          sleepNightRow({
+            [missingStage]: null,
+          }),
+        ]),
+      });
+      const result = await caller.sleepAnalytics({});
 
-    expect(result.nightly[0]).toMatchObject({
-      deepPct: null,
-      remPct: null,
-      lightPct: null,
-      awakePct: null,
-      stageState: {
-        status: "missing",
-        reason: "Sleep stages were not reported for this night.",
-        nextAction: "Sync sleep data from a source that reports sleep stages.",
-      },
-    });
-  });
+      expect(result.nightly[0]).toMatchObject({
+        deepPct: null,
+        remPct: null,
+        lightPct: null,
+        awakePct: null,
+        stageState: {
+          status: "missing",
+          reason: "Sleep stages were not reported for this night.",
+          nextAction: "Sync sleep data from a source that reports sleep stages.",
+        },
+      });
+    },
+  );
 
   it("withholds stage percentages when staging is unavailable despite complete stage minutes", async () => {
     const caller = createCaller({
@@ -940,32 +938,35 @@ describe("recoveryRouter.sleepAnalytics", () => {
     ["rem_minutes", 105],
     ["light_minutes", 255],
     ["awake_minutes", 30],
-  ] as const)("keeps Apple Health sleep unavailable when only %s is reported", async (presentStage, stageMinutes) => {
-    const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue([]) },
-      userId: "user-1",
-      sensorStore: makeSensorStore([
-        sleepNightRow({
-          deep_minutes: null,
-          rem_minutes: null,
-          light_minutes: null,
-          awake_minutes: null,
-          [presentStage]: stageMinutes,
-        }),
-      ]),
-    });
-    const result = await caller.sleepAnalytics({});
+  ] as const)(
+    "keeps Apple Health sleep unavailable when only %s is reported",
+    async (presentStage, stageMinutes) => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        sensorStore: makeSensorStore([
+          sleepNightRow({
+            deep_minutes: null,
+            rem_minutes: null,
+            light_minutes: null,
+            awake_minutes: null,
+            [presentStage]: stageMinutes,
+          }),
+        ]),
+      });
+      const result = await caller.sleepAnalytics({});
 
-    expect(result.nightly[0]).toMatchObject({
-      sleepMinutes: null,
-      deepPct: null,
-      remPct: null,
-      lightPct: null,
-      awakePct: null,
-      sleepState: { status: "missing" },
-      stageState: { status: "missing" },
-    });
-  });
+      expect(result.nightly[0]).toMatchObject({
+        sleepMinutes: null,
+        deepPct: null,
+        remPct: null,
+        lightPct: null,
+        awakePct: null,
+        sleepState: { status: "missing" },
+        stageState: { status: "missing" },
+      });
+    },
+  );
 
   it("keeps missing duration null when Apple Health stages provide sleep minutes", async () => {
     const caller = createCaller({

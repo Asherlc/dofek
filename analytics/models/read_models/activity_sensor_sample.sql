@@ -1,5 +1,6 @@
 {% set default_microbatch_begin = run_started_at.strftime('%Y-%m-%d') %}
 {% set activity_sensor_sample_begin = var('activity_sensor_sample_begin', default_microbatch_begin) %}
+{% set activity_refresh_scoped = activity_refresh_scope_enabled() %}
 
 {{ config(
     materialized='incremental',
@@ -13,6 +14,14 @@
     concurrent_batches=false,
     engine='ReplacingMergeTree(refresh_version)',
     order_by='(user_id, activity_id, recorded_date, channel, recorded_at)',
+    settings={
+        'deduplicate_merge_projection_mode': 'rebuild',
+        'lightweight_mutation_projection_mode': 'rebuild'
+    },
+    projections=[{
+        'name': 'by_activity_source_refresh_version',
+        'query': 'SELECT activity_id, user_id, max(refresh_version) AS source_refresh_version GROUP BY activity_id, user_id'
+    }],
     query_settings={
         'max_threads': 1
     }
@@ -31,6 +40,13 @@ WITH current_activity AS (
         source_synced_at
     FROM {{ ref('deduped_activities') }} FINAL
     WHERE is_deleted = 0
+        {% if activity_refresh_scoped %}
+        AND user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        AND (
+            activity_id IN {{ activity_refresh_ids() }}
+            OR hasAny(member_activity_ids, {{ activity_refresh_ids() }})
+        )
+        {% endif %}
 ),
 
 activity_days AS (

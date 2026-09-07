@@ -4,12 +4,10 @@ import { and, eq } from "drizzle-orm";
 import express from "express";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../../src/db/test-helpers.ts";
 import { failOnUnhandledExternalRequest } from "../../../../../src/test/msw.ts";
 import { SyncRepository } from "../../repositories/sync-repository.ts";
-import { createAuthRouter } from "./index.ts";
-import { getOAuthStateStoreRef } from "./shared.ts";
 
 const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
 const EXISTING_TOKENS = {
@@ -24,6 +22,8 @@ const mswServer = setupServer();
 describe("data provider OAuth reconnect", () => {
   let appServer: ReturnType<import("express").Express["listen"]>;
   let baseUrl: string;
+  let createAuthRouter: typeof import("./index.ts").createAuthRouter;
+  let getOAuthStateStoreRef: typeof import("./shared.ts").getOAuthStateStoreRef;
   let testCtx: TestContext;
 
   beforeAll(async () => {
@@ -32,6 +32,10 @@ describe("data provider OAuth reconnect", () => {
     process.env.WAHOO_CLIENT_ID = "test-wahoo-client";
     process.env.WAHOO_CLIENT_SECRET = "test-wahoo-secret";
 
+    mswServer.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    vi.resetModules();
+    ({ createAuthRouter } = await import("./index.ts"));
+    ({ getOAuthStateStoreRef } = await import("./shared.ts"));
     testCtx = await setupTestDatabase();
     const app = express();
     app.use(createAuthRouter(testCtx.db));
@@ -43,7 +47,6 @@ describe("data provider OAuth reconnect", () => {
         resolve();
       });
     });
-    mswServer.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
   });
 
   beforeEach(async () => {

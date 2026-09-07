@@ -5,6 +5,124 @@ import XCTest
 
 final class HealthKitQueriesTests: XCTestCase {
 
+    func testClinicalRecordMapsFHIRPayloadAndDownloadDate() throws {
+        let fixture = ClinicalRecordMappingInput(
+            clinicalRecordUUID: UUID(uuidString: "659EE585-B399-4C21-841F-97FE49FDC465")!,
+            clinicalTypeIdentifier: "HKClinicalTypeIdentifierConditionRecord",
+            clinicalDisplayName: "Migraine",
+            clinicalSourceName: "Example Health System",
+            clinicalFHIRVersion: "4.0.1",
+            clinicalFHIRData: Data(
+                #"{"resourceType":"Condition","id":"condition-1","code":{"text":"Migraine"}}"#
+                    .utf8
+            ),
+            clinicalDownloadDate: Date(timeIntervalSince1970: 1_777_137_330)
+        )
+
+        let result = try HealthKitQueries.mapClinicalRecord(fixture)
+
+        XCTAssertEqual(result["uuid"] as? String, "659EE585-B399-4C21-841F-97FE49FDC465")
+        XCTAssertEqual(result["clinicalType"] as? String, "condition")
+        XCTAssertEqual(result["displayName"] as? String, "Migraine")
+        XCTAssertEqual(result["sourceName"] as? String, "Example Health System")
+        XCTAssertEqual(result["fhirVersion"] as? String, "4.0.1")
+        XCTAssertEqual(result["downloadedAt"] as? String, "2026-04-25T17:15:30Z")
+
+        let fhir = try XCTUnwrap(result["fhir"] as? [String: Any])
+        XCTAssertEqual(fhir["resourceType"] as? String, "Condition")
+        XCTAssertEqual(fhir["id"] as? String, "condition-1")
+        XCTAssertEqual((fhir["code"] as? [String: Any])?["text"] as? String, "Migraine")
+    }
+
+    func testClinicalRecordRejectsMissingFHIRPayload() {
+        let fixture = ClinicalRecordMappingInput(
+            clinicalRecordUUID: UUID(),
+            clinicalTypeIdentifier: "HKClinicalTypeIdentifierConditionRecord",
+            clinicalDisplayName: "Migraine",
+            clinicalSourceName: "Example Health System",
+            clinicalFHIRVersion: nil,
+            clinicalFHIRData: nil,
+            clinicalDownloadDate: Date()
+        )
+
+        XCTAssertThrowsError(try HealthKitQueries.mapClinicalRecord(fixture)) { error in
+            XCTAssertEqual(
+                error.localizedDescription,
+                "The clinical record does not contain a FHIR payload and version."
+            )
+        }
+    }
+
+    func testClinicalRecordRejectsFHIRPayloadThatIsNotAJSONObject() {
+        let fixture = ClinicalRecordMappingInput(
+            clinicalRecordUUID: UUID(),
+            clinicalTypeIdentifier: "HKClinicalTypeIdentifierConditionRecord",
+            clinicalDisplayName: "Migraine",
+            clinicalSourceName: "Example Health System",
+            clinicalFHIRVersion: "4.0.1",
+            clinicalFHIRData: Data("[]".utf8),
+            clinicalDownloadDate: Date()
+        )
+
+        XCTAssertThrowsError(try HealthKitQueries.mapClinicalRecord(fixture)) { error in
+            XCTAssertEqual(
+                error.localizedDescription,
+                "The clinical record FHIR payload is not a JSON object."
+            )
+        }
+    }
+
+    func testClinicalRecordRejectsUnsupportedHealthKitType() {
+        let fixture = ClinicalRecordMappingInput(
+            clinicalRecordUUID: UUID(),
+            clinicalTypeIdentifier: "HKClinicalTypeIdentifierUnknownRecord",
+            clinicalDisplayName: "Unknown",
+            clinicalSourceName: "Example Health System",
+            clinicalFHIRVersion: "4.0.1",
+            clinicalFHIRData: Data(#"{"resourceType":"Unknown"}"#.utf8),
+            clinicalDownloadDate: Date()
+        )
+
+        XCTAssertThrowsError(try HealthKitQueries.mapClinicalRecord(fixture)) { error in
+            XCTAssertEqual(
+                error.localizedDescription,
+                "The clinical record has an unsupported HealthKit type."
+            )
+        }
+    }
+
+    func testSampleTypeResolvesMenstrualFlowCategory() {
+        let sampleType = HealthKitQueries.sampleType(
+            for: HKCategoryTypeIdentifier.menstrualFlow.rawValue
+        )
+
+        XCTAssertEqual(sampleType?.identifier, HKCategoryTypeIdentifier.menstrualFlow.rawValue)
+    }
+
+    func testTransportSamplePreservesMenstrualCycleStartMetadata() {
+        let type = HKCategoryType.categoryType(forIdentifier: .menstrualFlow)!
+        let start = Date(timeIntervalSince1970: 1_786_140_000)
+        let end = start.addingTimeInterval(300)
+        let sample = HKCategorySample(
+            type: type,
+            value: HKCategoryValueMenstrualFlow.medium.rawValue,
+            start: start,
+            end: end,
+            metadata: [HKMetadataKeyMenstrualCycleStart: true]
+        )
+
+        let result = HealthKitQueries.transportSample(
+            sample,
+            typeIdentifier: HKCategoryTypeIdentifier.menstrualFlow.rawValue
+        )
+
+        XCTAssertEqual(result?["type"] as? String, HKCategoryTypeIdentifier.menstrualFlow.rawValue)
+        XCTAssertEqual(result?["unit"] as? String, "category")
+        XCTAssertEqual(result?["value"] as? Int, HKCategoryValueMenstrualFlow.medium.rawValue)
+        let metadata = result?["metadata"] as? [String: Bool]
+        XCTAssertEqual(metadata?[HKMetadataKeyMenstrualCycleStart], true)
+    }
+
     // MARK: - parseDate
 
     func testParseDateWithFractionalSeconds() {

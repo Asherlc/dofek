@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compactWhitespace, readModelSql } from "./read-model-sql-test-helpers.ts";
+import { compactWhitespace, readModelSql } from "../../../src/db/read-model-sql-test-helpers.ts";
 
 const modelSql = readModelSql("provider_metric_stream_daily.sql");
 
@@ -20,7 +20,7 @@ describe("provider_metric_stream_daily model", () => {
     expect(modelSql).toContain("source('analytics', 'metric_stream_day_change')");
     expect(modelSql).toContain("source('ingest', 'metric_stream_current')");
     expect(modelSql).toContain("existing_daily_state AS");
-    expect(modelSql).toContain("dirty_days AS materialized");
+    expect(modelSql).toContain("dirty_days AS MATERIALIZED");
     expect(normalizedSql).toContain("LIMIT {{ provider_metric_stream_day_batch_size }}");
     expect(normalizedSql).toContain(
       "argMax( tuple(recorded_at, ingested_at, version, is_deleted), tuple(version, ingested_at) )",

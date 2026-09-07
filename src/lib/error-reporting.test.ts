@@ -7,7 +7,9 @@ const posthogMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("posthog-node", () => ({
-  PostHog: vi.fn().mockImplementation(() => posthogMocks),
+  PostHog: vi.fn(function vitestConstructor() {
+    return posthogMocks;
+  }),
 }));
 
 vi.mock("@sentry/node", () => ({

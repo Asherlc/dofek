@@ -535,11 +535,6 @@ vi.mock("expo-apple-authentication", () => ({
   AppleAuthenticationButtonStyle: { WHITE: 0 },
 }));
 
-vi.mock("expo-camera", () => ({
-  CameraView: () => null,
-  useCameraPermissions: () => [{ granted: false }, vi.fn()],
-}));
-
 vi.mock("expo-haptics", () => ({
   selectionAsync: vi.fn(() => Promise.resolve()),
   impactAsync: vi.fn(() => Promise.resolve()),
@@ -561,6 +556,7 @@ vi.mock("./modules/health-kit", async () => {
     requestPermissions: vi.fn(() => Promise.resolve(true)),
     requestAuthorization: vi.fn(() => Promise.resolve(true)),
     queryDailyStatistics: vi.fn(() => Promise.resolve([])),
+    queryCategorySamples: vi.fn(() => Promise.resolve([])),
     queryQuantitySamples: vi.fn(() => Promise.resolve([])),
     queryWorkouts: vi.fn(() => Promise.resolve([])),
     queryWorkoutRoutes: vi.fn(() => Promise.resolve([])),
@@ -589,6 +585,25 @@ vi.mock("./modules/background-refresh", () => ({
   scheduleRefresh: vi.fn(),
   isBackgroundRefreshAvailable: vi.fn(() => false),
   addBackgroundRefreshListener: vi.fn(() => ({ remove: vi.fn() })),
+}));
+
+// ── App Store billing native module mock ───────────────────────────
+vi.mock("./modules/app-store-billing", () => ({
+  APP_STORE_PREMIUM_MONTHLY_PRODUCT_ID: "com.dofek.premium.monthly",
+  loadProduct: vi.fn(() =>
+    Promise.resolve({
+      productID: "com.dofek.premium.monthly",
+      displayName: "Dofek Premium",
+      description: "Full access",
+      displayPrice: "$4.99",
+    }),
+  ),
+  purchase: vi.fn(() => Promise.resolve({ outcome: "cancelled" })),
+  restoreCurrentEntitlements: vi.fn(() => Promise.resolve([])),
+  startTransactionUpdates: vi.fn(() => ({ remove: vi.fn() })),
+  stopTransactionUpdates: vi.fn(),
+  finishTransaction: vi.fn(() => Promise.resolve()),
+  showManageSubscriptions: vi.fn(() => Promise.resolve()),
 }));
 
 // ── expo-updates mock ─────────────────────────────────────────────
@@ -641,6 +656,7 @@ vi.mock("./modules/ble-heart-rate", () => ({
   getBufferedSampleCount: vi.fn(() => 0),
   peekBufferedSamples: vi.fn(() => Promise.resolve([])),
   confirmSamplesDrain: vi.fn(),
+  disconnectAndClearBufferedSamples: vi.fn(() => Promise.resolve()),
   disconnect: vi.fn(),
   addConnectionStateListener: vi.fn(() => ({ remove: vi.fn() })),
   addHeartRateListener: vi.fn(() => ({ remove: vi.fn() })),

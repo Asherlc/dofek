@@ -111,10 +111,6 @@ vi.mock("../components/PageLayout.tsx", () => ({
   PageLayout: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 
-vi.mock("../hooks/useAutoSync.ts", () => ({
-  useAutoSync: () => {},
-}));
-
 vi.mock("../hooks/useTodayQueryDate.ts", () => ({
   useTodayQueryDate: () => "2026-05-27",
 }));

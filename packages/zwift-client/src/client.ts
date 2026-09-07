@@ -11,7 +11,7 @@ import type {
 const ZWIFT_AUTH_URL = "https://secure.zwift.com/auth/realms/zwift/protocol/openid-connect/token";
 const ZWIFT_API_BASE = "https://us-or-rly101.zwift.com";
 
-export { ZWIFT_AUTH_URL, ZWIFT_API_BASE };
+export { ZWIFT_API_BASE, ZWIFT_AUTH_URL };
 
 /**
  * Required default headers for all Zwift API requests.

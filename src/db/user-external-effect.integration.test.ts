@@ -5,8 +5,6 @@ import {
   decryptAccountErasureSnapshot,
 } from "../account-erasure/remote-snapshot.ts";
 import type { Provider } from "../providers/types.ts";
-import { encryptCredentialValue } from "../security/credential-encryption.ts";
-import { slackCredentialContext } from "../security/slack-credential-context.ts";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
 import { listUserExternalEffects, recordUserExternalEffect } from "./user-external-effect.ts";
 
@@ -85,37 +83,6 @@ describe("user external effect provenance (integration)", () => {
             'failed'
           )`,
     );
-    const teamId = "T-SNAPSHOT-1995";
-    const encryptedBotToken = await encryptCredentialValue(
-      "xoxb-snapshot-1995",
-      slackCredentialContext(teamId, "bot_token"),
-    );
-    const encryptedInstallation = await encryptCredentialValue(
-      JSON.stringify({ team: { id: teamId } }),
-      slackCredentialContext(teamId, "raw_installation"),
-    );
-    await context.db.execute(
-      sql`INSERT INTO fitness.slack_installation (
-            team_id,
-            bot_token,
-            installer_slack_user_id,
-            raw_installation
-          )
-          VALUES (
-            ${teamId},
-            ${encryptedBotToken},
-            'U-SNAPSHOT-1995',
-            to_jsonb(${encryptedInstallation}::text)
-          )`,
-    );
-    await context.db.execute(
-      sql`INSERT INTO fitness.slack_team_membership (
-            team_id, user_id, slack_user_id
-          )
-          VALUES
-            (${teamId}, ${userId}::uuid, 'U-SNAPSHOT-1995'),
-            (${teamId}, ${otherUserId}::uuid, 'U-OTHER-1995')`,
-    );
   }, 120_000);
 
   afterAll(async () => {
@@ -193,14 +160,6 @@ describe("user external effect provenance (integration)", () => {
           sessionIds: ["external-effect-session"],
           userId,
         }),
-        slackInstallations: [
-          {
-            botToken: "xoxb-snapshot-1995",
-            memberCount: 2,
-            slackUserId: "U-SNAPSHOT-1995",
-            teamId: "T-SNAPSHOT-1995",
-          },
-        ],
         webhooks: [
           {
             providerId: "external-effect-provider",

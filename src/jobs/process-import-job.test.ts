@@ -1,8 +1,9 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { WaitingChildrenError } from "bullmq";
+import { UnrecoverableError, WaitingChildrenError } from "bullmq";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
+import { getProviderIngestContext } from "../db/provider-ingest-context.ts";
 import { createMetricStreamEvent, type MetricStreamRowInput } from "../metric-stream/events.ts";
 import type { MetricStreamPublishOptions } from "../metric-stream/redpanda-producer.ts";
 import type { KayaImportDatabase } from "../providers/kaya/import.ts";
@@ -113,6 +114,13 @@ const mockLogSync = vi.fn().mockResolvedValue(undefined);
 vi.mock("../db/sync-log.ts", () => ({
   logSync: (...args: unknown[]) => mockLogSync(...args),
 }));
+const mockLoadUserHomeTimezone = vi.fn(
+  async (_database: unknown, _userId: string): Promise<string | null> => "America/Los_Angeles",
+);
+vi.mock("../db/home-timezone.ts", () => ({
+  loadUserHomeTimezone: (database: unknown, userId: string) =>
+    mockLoadUserHomeTimezone(database, userId),
+}));
 const mockEnsureProvider = vi.fn().mockResolvedValue(undefined);
 vi.mock("../db/tokens.ts", () => ({
   ensureProvider: (...args: unknown[]) => mockEnsureProvider(...args),
@@ -200,13 +208,13 @@ interface MockJob {
   id: string;
   queueQualifiedName: string;
   data: ImportJobData;
-  updateProgress: ReturnType<typeof vi.fn>;
-  updateData: ReturnType<typeof vi.fn>;
-  moveToWaitingChildren: ReturnType<typeof vi.fn>;
-  getChildrenValues: ReturnType<typeof vi.fn>;
-  getIgnoredChildrenFailures: ReturnType<typeof vi.fn>;
-  extendLock: ReturnType<typeof vi.fn>;
-  log: ReturnType<typeof vi.fn>;
+  updateProgress: CallableVitestMock;
+  updateData: CallableVitestMock;
+  moveToWaitingChildren: CallableVitestMock;
+  getChildrenValues: CallableVitestMock;
+  getIgnoredChildrenFailures: CallableVitestMock;
+  extendLock: CallableVitestMock;
+  log: CallableVitestMock;
 }
 
 function createMockJob(overrides: Partial<ImportJobData> = {}): MockJob {
@@ -250,6 +258,7 @@ describe("processImportJob", () => {
     await writeFile(tempFilePath, "test data");
     // Restore default return values after clearAllMocks
     mockLogSync.mockResolvedValue(undefined);
+    mockLoadUserHomeTimezone.mockResolvedValue("America/Los_Angeles");
     mockEnsureProvider.mockResolvedValue(undefined);
     mockCaptureException.mockReset();
     mockImportAppleHealthFile.mockResolvedValue({ recordsSynced: 42, errors: [] });
@@ -286,6 +295,33 @@ describe("processImportJob", () => {
     vi.restoreAllMocks();
   });
   describe("apple-health import", () => {
+    it("runs imports with the persisted home timezone in provider ingest context", async () => {
+      mockImportAppleHealthFile.mockImplementationOnce(async () => {
+        expect(getProviderIngestContext()).toEqual({ homeTimezone: "America/Los_Angeles" });
+        return { recordsSynced: 1, errors: [] };
+      });
+      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
+
+      await runImportJob(job, mockDb);
+
+      expect(mockLoadUserHomeTimezone).toHaveBeenCalledWith(mockDb, "user-1");
+    });
+
+    it("runs imports with an explicit null ingest timezone when no home timezone is persisted", async () => {
+      mockLoadUserHomeTimezone.mockResolvedValueOnce(null);
+      mockImportAppleHealthFile.mockImplementationOnce(async () => {
+        expect(getProviderIngestContext()).toEqual({ homeTimezone: null });
+        return { recordsSynced: 1, errors: [] };
+      });
+
+      await runImportJob(
+        createMockJob({ filePath: tempFilePath, importType: "apple-health" }),
+        mockDb,
+      );
+
+      expect(mockLoadUserHomeTimezone).toHaveBeenCalledWith(mockDb, "user-1");
+    });
+
     it("records the import lifecycle and correlates emitted metric batches", async () => {
       mockImportAppleHealthFile.mockImplementationOnce(
         async (
@@ -661,6 +697,7 @@ describe("processImportJob", () => {
         filePath: tempFilePath,
         importType: "strong-csv",
         weightUnit: "lbs",
+        timezone: "America/Los_Angeles",
       });
       await runImportJob(job, mockDb);
       expect(mockImportStrongCsv).toHaveBeenCalledWith(
@@ -668,10 +705,11 @@ describe("processImportJob", () => {
         "Date,Exercise,Reps\n2024-01-01,Squat,10",
         "user-1",
         "lbs",
+        "America/Los_Angeles",
       );
     });
 
-    it("defaults to kg when weightUnit is not specified", async () => {
+    it("passes no weight unit when the upload has no unit", async () => {
       await writeFile(tempFilePath, "csv data");
       const job = createMockJob({
         filePath: tempFilePath,
@@ -679,7 +717,35 @@ describe("processImportJob", () => {
         weightUnit: undefined,
       });
       await runImportJob(job, mockDb);
-      expect(mockImportStrongCsv).toHaveBeenCalledWith(mockDb, "csv data", "user-1", "kg");
+      expect(mockImportStrongCsv).toHaveBeenCalledWith(
+        mockDb,
+        "csv data",
+        "user-1",
+        undefined,
+        undefined,
+      );
+    });
+    it("makes Strong validation failures terminal", async () => {
+      await writeFile(tempFilePath, "csv data");
+      const validationError = new Error("Strong CSV has no Weight Unit declaration");
+      validationError.name = "StrongCsvValidationError";
+      mockImportStrongCsv.mockRejectedValueOnce(validationError);
+
+      await expect(
+        runImportJob(createMockJob({ filePath: tempFilePath, importType: "strong-csv" }), mockDb),
+      ).rejects.toEqual(expect.objectContaining({ name: "UnrecoverableError" }));
+      expect(mockCaptureException).toHaveBeenCalledWith(expect.any(UnrecoverableError), {
+        tags: { phase: "file-import" },
+      });
+    });
+    it("does not misclassify unrelated Strong import errors as terminal validation failures", async () => {
+      await writeFile(tempFilePath, "csv data");
+      const unexpectedError = new Error("R2 unavailable");
+      mockImportStrongCsv.mockRejectedValueOnce(unexpectedError);
+
+      await expect(
+        runImportJob(createMockJob({ filePath: tempFilePath, importType: "strong-csv" }), mockDb),
+      ).rejects.toBe(unexpectedError);
     });
     it("logs sync and completion message on success", async () => {
       await writeFile(tempFilePath, "csv data");
@@ -699,6 +765,25 @@ describe("processImportJob", () => {
         expect.stringContaining("Strong CSV import complete"),
       );
       expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("10 workouts imported"));
+    });
+    it("fails the upload when any Strong workout could not be imported", async () => {
+      await writeFile(tempFilePath, "csv data");
+      mockImportStrongCsv.mockResolvedValueOnce({
+        recordsSynced: 58,
+        errors: [{ message: "Exercise alias Pull Up conflicts with its canonical exercise" }],
+      });
+
+      await expect(
+        runImportJob(createMockJob({ filePath: tempFilePath, importType: "strong-csv" }), mockDb),
+      ).rejects.toEqual(expect.objectContaining({ name: "UnrecoverableError" }));
+      expect(mockLogSync).toHaveBeenCalledWith(
+        mockDb,
+        expect.objectContaining({
+          providerId: "strong-csv",
+          status: "error",
+          recordCount: 58,
+        }),
+      );
     });
     it("reports progress", async () => {
       await writeFile(tempFilePath, "csv data");
@@ -1159,11 +1244,15 @@ describe("processImportJob", () => {
       await expect(access(tempFilePath)).rejects.toThrow();
     });
     it("cleans up uploaded file even when import fails", async () => {
-      mockImportAppleHealthFile.mockRejectedValue(new Error("parse error"));
+      const parseError = new Error("parse error");
+      mockImportAppleHealthFile.mockRejectedValue(parseError);
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       await expect(runImportJob(job, mockDb)).rejects.toThrow("parse error");
 
       await expect(access(tempFilePath)).rejects.toThrow();
+      expect(mockCaptureException).toHaveBeenCalledWith(parseError, {
+        tags: { phase: "file-import" },
+      });
       expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(mockDb, {
         operationId: processingOperationId,
         stage: "ingest",
@@ -1172,6 +1261,29 @@ describe("processImportJob", () => {
         errorMessage: "The file could not be imported. Check the file and try again.",
         idempotencyKey: "worker-failed",
       });
+    });
+    it("records the failed stage and cache invalidation before surfacing telemetry failure", async () => {
+      const importError = new Error("parse error");
+      const telemetryError = new Error("telemetry unavailable");
+      mockImportAppleHealthFile.mockRejectedValueOnce(importError);
+      mockCaptureException.mockImplementationOnce(() => {
+        throw telemetryError;
+      });
+      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
+
+      await expect(runImportJob(job, mockDb)).rejects.toMatchObject({
+        name: "AggregateError",
+        errors: [importError, telemetryError],
+      });
+      expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(mockDb, {
+        operationId: processingOperationId,
+        stage: "ingest",
+        status: "failed",
+        errorCode: "file_import_failed",
+        errorMessage: "The file could not be imported. Check the file and try again.",
+        idempotencyKey: "worker-failed",
+      });
+      expect(mockInvalidateAllUserQueries).toHaveBeenCalledWith("user-1");
     });
     it("turns an invalid Apple Health archive into an unrecoverable import failure", async () => {
       const message =
@@ -1544,7 +1656,9 @@ describe("processImportJob", () => {
       });
       await writeFile(tempFilePath, "bad csv");
       const job = createMockJob({ filePath: tempFilePath, importType: "strong-csv" });
-      await runImportJob(job, mockDb);
+      await expect(runImportJob(job, mockDb)).rejects.toEqual(
+        expect.objectContaining({ name: "UnrecoverableError" }),
+      );
       expect(mockLogSync).toHaveBeenCalledWith(
         mockDb,
         expect.objectContaining({ status: "error", errorMessage: "parse error" }),

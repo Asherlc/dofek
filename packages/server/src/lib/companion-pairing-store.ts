@@ -392,8 +392,7 @@ export class InMemoryCompanionPairingStore implements CompanionPairingStore {
   }): Promise<CompanionPairingChallenge | null> {
     const challenge = await this.getByShortCode(shortCode, now);
     if (
-      !challenge ||
-      !challenge.claimedAt ||
+      !challenge?.claimedAt ||
       challenge.userId !== userId ||
       !challenge.tokenIssuing ||
       challenge.companionToken
@@ -415,8 +414,7 @@ export class InMemoryCompanionPairingStore implements CompanionPairingStore {
   }): Promise<CompanionPairingChallenge | null> {
     const challenge = await this.getByShortCode(shortCode);
     if (
-      !challenge ||
-      !challenge.claimedAt ||
+      !challenge?.claimedAt ||
       challenge.userId !== userId ||
       !challenge.tokenIssuing ||
       challenge.companionToken

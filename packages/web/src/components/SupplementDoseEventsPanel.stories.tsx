@@ -52,17 +52,19 @@ function createMockLink(scenario: Scenario): TRPCLink<AppRouter> {
             );
             return { unsubscribe: () => {} };
           }
+          if (op.path !== "supplements.occurrences") {
+            observer.error?.(TRPCClientError.from(new Error(`Unexpected operation: ${op.path}`)));
+            return { unsubscribe: () => {} };
+          }
           observer.next?.({
             result: {
               data:
-                op.path === "supplements.occurrences"
-                  ? scenario === "empty"
-                    ? {
-                        occurrences: [],
-                        counts: { planned: 0, taken: 0, skipped: 0, unknown: 0 },
-                      }
-                    : occurrences
-                  : { id: "new-event", status: "taken" },
+                scenario === "empty"
+                  ? {
+                      occurrences: [],
+                      counts: { planned: 0, taken: 0, skipped: 0, unknown: 0 },
+                    }
+                  : occurrences,
             },
           });
           observer.complete?.();

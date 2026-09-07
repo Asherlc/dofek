@@ -73,7 +73,7 @@ stale_activity_keys AS (
 ),
 {% endif %}
 
-activity_keys AS materialized (
+activity_keys AS MATERIALIZED (
     SELECT
         activity_id,
         user_id
@@ -238,7 +238,7 @@ power_sample_state AS (
     FROM power_sample_energy
 ),
 
-power_sample_endpoints AS materialized (
+power_sample_endpoints AS MATERIALIZED (
     SELECT
         activity_id,
         user_id,

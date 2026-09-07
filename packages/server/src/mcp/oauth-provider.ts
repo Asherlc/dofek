@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { OAuthRegisteredClientsStore } from "@modelcontextprotocol/sdk/server/auth/clients.js";
 import {
   AccessDeniedError,
   InvalidGrantError,
@@ -19,6 +20,8 @@ import type {
 import type { Database } from "dofek/db";
 import type { Response } from "express";
 import { z } from "zod";
+import { McpOAuthClientMetadataResolver } from "./oauth-client-metadata.ts";
+import { McpOAuthClientResolver } from "./oauth-client-resolver.ts";
 import { McpOAuthClientsStore } from "./oauth-client-store.ts";
 import {
   createAuthorizationCode,
@@ -33,7 +36,6 @@ export const MCP_OAUTH_SCOPES = [
   "health:read",
   "activity:read",
   "nutrition:read",
-  "nutrition:write",
   "providers:read",
   "sync:write",
 ] as const satisfies readonly McpScope[];
@@ -47,7 +49,6 @@ const MCP_SCOPE_LABELS: Record<McpScope, string> = {
   "activity:read": "Search your activities",
   "health:read": "View your daily health summaries",
   "nutrition:read": "View your nutrition summaries",
-  "nutrition:write": "Log food entries",
   "providers:read": "View your connected data sources",
   "sync:write": "Start data synchronization",
 };
@@ -147,12 +148,15 @@ export function oauthAccessTokenName(client: OAuthClientInformationFull): string
 export class DofekOAuthServerProvider implements OAuthServerProvider {
   readonly #db: Pick<Database, "execute">;
   readonly #resource: URL;
-  readonly clientsStore: McpOAuthClientsStore;
+  readonly clientsStore: OAuthRegisteredClientsStore;
 
   constructor(db: Pick<Database, "execute">, resource: URL) {
     this.#db = db;
     this.#resource = resource;
-    this.clientsStore = new McpOAuthClientsStore(db);
+    this.clientsStore = new McpOAuthClientResolver(
+      new McpOAuthClientsStore(db),
+      new McpOAuthClientMetadataResolver(),
+    );
   }
 
   async authorize(
@@ -281,7 +285,7 @@ export class DofekOAuthServerProvider implements OAuthServerProvider {
 
   async verifyAccessToken(token: string): Promise<AuthInfo> {
     const validated = await validateMcpToken(this.#db, token);
-    if (!validated || !validated.oauthClientId || validated.oauthResource !== this.#resource.href) {
+    if (!validated?.oauthClientId || validated.oauthResource !== this.#resource.href) {
       throw new InvalidTokenError("Invalid or expired access token");
     }
     return {

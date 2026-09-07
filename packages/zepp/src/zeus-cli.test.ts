@@ -75,17 +75,15 @@ describe("runZeusCli", () => {
     expect(loadedIds).toEqual([MODULE_ALIAS_PATH, ZEUS_MAIN_PATH]);
   });
 
-  it.each([
-    {},
-    null,
-    undefined,
-    "module-alias",
-  ])("fails before loading Zeus when module-alias exports %s", (moduleAlias) => {
-    const { commonJsRequire, loadedIds } = createFakeRequire(moduleAlias);
+  it.each([{}, null, undefined, "module-alias"])(
+    "fails before loading Zeus when module-alias exports %s",
+    (moduleAlias) => {
+      const { commonJsRequire, loadedIds } = createFakeRequire(moduleAlias);
 
-    expect(() => runZeusCli(commonJsRequire)).toThrow(
-      "Zeus CLI module-alias dependency is missing addAlias()",
-    );
-    expect(loadedIds).toEqual([MODULE_ALIAS_PATH]);
-  });
+      expect(() => runZeusCli(commonJsRequire)).toThrow(
+        "Zeus CLI module-alias dependency is missing addAlias()",
+      );
+      expect(loadedIds).toEqual([MODULE_ALIAS_PATH]);
+    },
+  );
 });

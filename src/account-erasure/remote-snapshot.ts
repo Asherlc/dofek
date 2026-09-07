@@ -10,7 +10,6 @@ import {
   decryptCredentialValue,
   encryptCredentialValue,
 } from "../security/credential-encryption.ts";
-import { slackCredentialContext } from "../security/slack-credential-context.ts";
 
 const providerConnectionRowSchema = z.object({ provider_id: z.string().min(1) });
 const webhookRowSchema = z.object({
@@ -50,12 +49,6 @@ const authIdentitySnapshotRowSchema = z.object({
   provider_account_id: z.string().min(1),
 });
 const sessionIdRowSchema = z.object({ id: z.string().min(1) });
-const slackInstallationRowSchema = z.object({
-  bot_token: z.string().min(1),
-  member_count: z.coerce.number().int().positive(),
-  slack_user_id: z.string().min(1),
-  team_id: z.string().min(1),
-});
 
 export class AppleRevocationCredentialMissingError extends Error {
   constructor() {
@@ -151,14 +144,6 @@ export const accountErasureRemoteSnapshotSchema = z.object({
       subscriptionId: z.string().min(1).nullable(),
     })
     .nullable(),
-  slackInstallations: z.array(
-    z.object({
-      botToken: z.string().min(1),
-      memberCount: z.number().int().positive(),
-      slackUserId: z.string().min(1),
-      teamId: z.string().min(1),
-    }),
-  ),
   webhooks: z.array(
     z.object({
       providerId: z.string().min(1),
@@ -322,64 +307,6 @@ async function loadAppleCredentials(
   );
 }
 
-async function loadSlackInstallations(
-  database: TransactionDatabase,
-  userId: string,
-): Promise<AccountErasureRemoteSnapshot["slackInstallations"]> {
-  await database.execute(
-    sql`SELECT pg_advisory_xact_lock(
-          hashtextextended(
-            'account-erasure-slack-team:' || membership.team_id,
-            0
-          )
-        )
-        FROM fitness.slack_team_membership AS membership
-        WHERE membership.user_id = ${userId}::uuid
-        ORDER BY membership.team_id`,
-  );
-  const rows = await executeWithSchema(
-    database,
-    slackInstallationRowSchema,
-    // Count the snapshot user plus teammates who are not already deleting.
-    // Per-team advisory locks serialize concurrent erasure snapshots, so the
-    // final deleting member deterministically observes a count of one.
-    sql`SELECT
-          installation.bot_token,
-          membership.slack_user_id,
-          membership.team_id,
-          (
-            SELECT count(*)::integer
-            FROM fitness.slack_team_membership AS team_member
-            WHERE team_member.team_id = membership.team_id
-              AND (
-                team_member.user_id = ${userId}::uuid
-                OR NOT EXISTS (
-                  SELECT 1
-                  FROM fitness.account_erasure_request AS active_erasure
-                  WHERE active_erasure.user_id = team_member.user_id
-                    AND active_erasure.status <> 'completed'
-                )
-              )
-          ) AS member_count
-        FROM fitness.slack_team_membership AS membership
-        JOIN fitness.slack_installation AS installation
-          ON installation.team_id = membership.team_id
-        WHERE membership.user_id = ${userId}::uuid
-        ORDER BY membership.team_id`,
-  );
-  return Promise.all(
-    rows.map(async (row) => ({
-      botToken: await decryptCredentialValue(
-        row.bot_token,
-        slackCredentialContext(row.team_id, "bot_token"),
-      ),
-      memberCount: row.member_count,
-      slackUserId: row.slack_user_id,
-      teamId: row.team_id,
-    })),
-  );
-}
-
 export async function createEncryptedAccountErasureSnapshot(
   database: TransactionDatabase,
   userId: string,
@@ -399,7 +326,6 @@ export async function createEncryptedAccountErasureSnapshot(
     externalEffects,
     authIdentityRows,
     sessionRows,
-    slackInstallations,
   ] = await Promise.all([
     loadProviderConnections(database, userId, providers),
     executeWithSchema(
@@ -496,7 +422,6 @@ export async function createEncryptedAccountErasureSnapshot(
             WHERE user_id = ${userId}::uuid
             ORDER BY id`,
     ),
-    loadSlackInstallations(database, userId),
   ]);
 
   const billing = billingRows[0];
@@ -528,7 +453,6 @@ export async function createEncryptedAccountErasureSnapshot(
     processorEmails: processorEmailRows.map((row) => row.email),
     posthogDistinctId: userId,
     providerConnections,
-    slackInstallations,
     stripe: billing
       ? {
           customerId: billing.stripe_customer_id,

@@ -7,7 +7,6 @@ import {
   AnomalyDetectionRepository,
   type AnomalyRow,
   checkAnomalies,
-  sendAnomalyAlertToSlack,
 } from "../repositories/anomaly-detection-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
@@ -25,8 +24,8 @@ function requireSensorStore(
 }
 
 // ── Re-exports (preserve public API) ───────────────────────────────
-export type { AnomalyRow, AnomalyCheckResult };
-export { checkAnomalies, sendAnomalyAlertToSlack };
+export type { AnomalyCheckResult, AnomalyRow };
+export { checkAnomalies };
 
 // ── Router ───────────────────────────────────────────────────────────
 

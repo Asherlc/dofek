@@ -41,7 +41,7 @@ const importConfig = {
     contentTypes: ["application/octet-stream", "application/zip", "application/xml", "text/xml"],
   },
   "strong-csv": {
-    extensions: [".csv"],
+    extensions: ["", ".csv"],
     contentTypes: ["text/csv", "application/octet-stream", "text/plain"],
   },
   "cronometer-csv": {
@@ -340,8 +340,8 @@ export function createFileUploadRouter(dependencies: FileUploadRouterDependencie
               partSizeBytes: DEFAULT_PART_SIZE_BYTES,
               expiresAt: new Date(Date.now() + UPLOAD_TTL_MS),
               since,
-              weightUnit:
-                input.importType === "strong-csv" ? (input.weightUnit ?? "kg") : undefined,
+              weightUnit: input.importType === "strong-csv" ? input.weightUnit : undefined,
+              timezone: ctx.timezone,
             });
             if (!existingUpload) {
               fileUploadLifecycleTotal.add(1, {

@@ -23,9 +23,12 @@ describe("data-quality presentation metadata", () => {
     ["sync_freshness", "dashboard", "Review dashboard"],
     ["outliers", "dashboard", "Review dashboard"],
     ["manual_edits", "journal", "Review journal"],
-  ] as const)("maps %s to the shared review destination", (key: DataQualityCheckKey, destination, label) => {
-    expect(getDataQualityReview(key)).toEqual({ destination, label });
-  });
+  ] as const)(
+    "maps %s to the shared review destination",
+    (key: DataQualityCheckKey, destination, label) => {
+      expect(getDataQualityReview(key)).toEqual({ destination, label });
+    },
+  );
 
   it("assigns distinct keys to repeated detail text", () => {
     expect(getDataQualityDetailItems("coverage", ["Repeated", "Repeated"])).toEqual([

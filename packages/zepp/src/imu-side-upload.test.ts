@@ -1,28 +1,47 @@
 import { describe, expect, it, vi } from "vitest";
-import { getImuConnection, postImuBatch } from "./imu-side-upload.ts";
+import { getImuConnection, postImuEnvelope } from "./imu-side-upload.ts";
+import { createImuChunkEnvelope } from "./imu-upload.ts";
 
 const connection = { serverUrl: "https://dofek.test", accountId: "account-1" };
 
-describe("postImuBatch", () => {
+const envelope = createImuChunkEnvelope({
+  connectionType: "zepp",
+  installId: "install-1",
+  segmentId: "segment-1",
+  sessionStartMs: 1_720_000_000_000,
+  sampleOffset: 0,
+  accelFreqMode: 1,
+  gyroFreqMode: 0,
+  hasGyroscope: false,
+  samples: [{ tMs: 0, sensor: "accelerometer", x: 1, y: 2, z: 3 }],
+});
+
+describe("postImuEnvelope", () => {
   it("sends to the paired server using its companion token", async () => {
-    const fetch = vi.fn().mockResolvedValue({ status: 200, body: '{"status":"ok"}' });
-    const data = { data: [1, 2], sampleOffset: 128, connection };
+    const fetch = vi.fn().mockResolvedValue({
+      status: 200,
+      body: {
+        status: "ok",
+        acceptedEventIds: ["segment-1:0"],
+        rejected: [],
+      },
+    });
     await expect(
-      postImuBatch("https://dofek.test/", "companion-token", data, fetch),
-    ).resolves.toEqual({ ok: true });
+      postImuEnvelope("https://dofek.test/", "companion-token", envelope, connection, fetch),
+    ).resolves.toEqual({ acceptedEventIds: ["segment-1:0"], rejected: [] });
     expect(fetch).toHaveBeenCalledWith({
       url: "https://dofek.test/api/ingest/zos-imu",
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer companion-token" },
-      body: JSON.stringify({ data: [1, 2], sampleOffset: 128, accountId: "account-1" }),
+      body: JSON.stringify({ ...envelope, accountId: "account-1" }),
     });
   });
 
   it("requires a connection and explicit server acknowledgement", async () => {
     const fetch = vi.fn();
-    await expect(postImuBatch("https://dofek.test", "", {}, fetch)).rejects.toThrow(
-      "Connect Dofek",
-    );
+    await expect(
+      postImuEnvelope("https://dofek.test", "", envelope, connection, fetch),
+    ).rejects.toThrow("Connect Dofek");
     expect(fetch).not.toHaveBeenCalled();
     for (const response of [
       {},
@@ -31,7 +50,7 @@ describe("postImuBatch", () => {
     ]) {
       fetch.mockResolvedValueOnce(response);
       await expect(
-        postImuBatch("https://dofek.test", "token", { connection }, fetch),
+        postImuEnvelope("https://dofek.test", "token", envelope, connection, fetch),
       ).rejects.toThrow();
     }
   });
@@ -39,7 +58,7 @@ describe("postImuBatch", () => {
   it("rejects server changes before sending captured data", async () => {
     const fetch = vi.fn();
     await expect(
-      postImuBatch("https://other.test", "token", { connection }, fetch),
+      postImuEnvelope("https://other.test", "token", envelope, connection, fetch),
     ).rejects.toThrow("original Dofek server");
     expect(fetch).not.toHaveBeenCalled();
   });
@@ -49,16 +68,10 @@ describe("postImuBatch", () => {
       .fn()
       .mockResolvedValue({ status: 409, body: { error: "Reconnect the original Dofek account." } });
     await expect(
-      postImuBatch(
-        "https://dofek.test",
-        "new-token",
-        { data: [1], sampleOffset: 0, connection },
-        fetch,
-      ),
+      postImuEnvelope("https://dofek.test", "new-token", envelope, connection, fetch),
     ).rejects.toThrow("original Dofek account");
     expect(JSON.parse(fetch.mock.calls[0]?.[0].body)).toEqual({
-      data: [1],
-      sampleOffset: 0,
+      ...envelope,
       accountId: "account-1",
     });
   });
@@ -67,7 +80,7 @@ describe("postImuBatch", () => {
     const fetch = vi.fn();
     for (const binding of [undefined, {}, { serverUrl: "https://dofek.test", accountId: "" }]) {
       await expect(
-        postImuBatch("https://dofek.test", "token", { connection: binding }, fetch),
+        postImuEnvelope("https://dofek.test", "token", envelope, binding, fetch),
       ).rejects.toThrow("connection binding");
     }
     expect(fetch).not.toHaveBeenCalled();

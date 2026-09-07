@@ -114,23 +114,34 @@ export async function resolveUserExerciseWithProvenance(
   const rows = await executeWithSchema(
     database,
     resolvedExerciseRowSchema,
-    sql`WITH inserted_exercise AS (
+    sql`WITH existing_alias AS MATERIALIZED (
+          SELECT id, exercise_id
+          FROM fitness.exercise_alias
+          WHERE provider_id = ${input.providerId}
+            AND provider_exercise_name = ${input.providerExerciseName}
+          ORDER BY id
+          LIMIT 1
+        ),
+        inserted_exercise AS (
           INSERT INTO fitness.exercise (
             name,
             equipment,
             muscle_groups,
             exercise_type
           )
-          VALUES (
+          SELECT
             ${input.name},
             ${input.equipment},
             ${textArrayExpression(input.muscleGroups)},
             ${input.exerciseType}
-          )
+          WHERE NOT EXISTS (SELECT 1 FROM existing_alias)
           ON CONFLICT DO NOTHING
           RETURNING id
         ),
         resolved_exercise AS MATERIALIZED (
+          SELECT exercise_id AS id
+          FROM existing_alias
+          UNION ALL
           SELECT id
           FROM inserted_exercise
           UNION ALL
@@ -138,6 +149,7 @@ export async function resolveUserExerciseWithProvenance(
           FROM fitness.exercise
           WHERE name = ${input.name}
             AND equipment IS NOT DISTINCT FROM ${input.equipment}
+            AND NOT EXISTS (SELECT 1 FROM existing_alias)
           ORDER BY id
           LIMIT 1
         ),

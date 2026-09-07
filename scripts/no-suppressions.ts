@@ -14,10 +14,7 @@ const forbiddenSuppressionPatterns = [
 ];
 
 function isExcluded(filePath: string): boolean {
-  return (
-    path.posix.basename(filePath) === "routeTree.gen.ts" ||
-    filePath === "scripts/fix-ts-expect-errors.ts"
-  );
+  return path.posix.basename(filePath) === "routeTree.gen.ts";
 }
 
 function trackedTypeScriptFiles(): string[] {

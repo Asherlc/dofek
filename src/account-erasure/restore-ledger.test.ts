@@ -219,28 +219,25 @@ describe("R2AccountErasureRestoreLedger", () => {
     );
   });
 
-  it.each([
-    null,
-    "not-an-error",
-    {},
-    { $metadata: null },
-    { $metadata: { httpStatusCode: 503 } },
-  ])("does not classify a non-412 write failure as an idempotent conflict: %s", async (error) => {
-    const client = makeClient(async () => {
-      throw error;
-    });
-    const ledger = new R2AccountErasureRestoreLedger(client, "erasure-ledger");
+  it.each([null, "not-an-error", {}, { $metadata: null }, { $metadata: { httpStatusCode: 503 } }])(
+    "does not classify a non-412 write failure as an idempotent conflict: %s",
+    async (error) => {
+      const client = makeClient(async () => {
+        throw error;
+      });
+      const ledger = new R2AccountErasureRestoreLedger(client, "erasure-ledger");
 
-    await expect(
-      ledger.recordIntent({
-        keyId: "test-v1",
-        requestId,
-        requestedAt: "2026-07-26T12:00:00.000Z",
-        statusToken,
-        userHash,
-      }),
-    ).rejects.toBeDefined();
-  });
+      await expect(
+        ledger.recordIntent({
+          keyId: "test-v1",
+          requestId,
+          requestedAt: "2026-07-26T12:00:00.000Z",
+          statusToken,
+          userHash,
+        }),
+      ).rejects.toBeDefined();
+    },
+  );
 
   it("propagates a non-412 object error without attempting an immutable lookup", async () => {
     const error = Object.assign(new Error("precondition unavailable"), {
@@ -312,22 +309,19 @@ describe("R2AccountErasureRestoreLedger", () => {
     await expect(ledger.findIntent({ keyId: "test-v1", requestId, userHash })).rejects.toBe(error);
   });
 
-  it.each([
-    null,
-    "not-an-error",
-    {},
-    { $metadata: null },
-    { $metadata: { httpStatusCode: 403 } },
-  ])("does not classify a non-404 read failure as not found: %s", async (error) => {
-    const client = makeClient(async () => {
-      throw error;
-    });
-    const ledger = new R2AccountErasureRestoreLedger(client, "erasure-ledger");
+  it.each([null, "not-an-error", {}, { $metadata: null }, { $metadata: { httpStatusCode: 403 } }])(
+    "does not classify a non-404 read failure as not found: %s",
+    async (error) => {
+      const client = makeClient(async () => {
+        throw error;
+      });
+      const ledger = new R2AccountErasureRestoreLedger(client, "erasure-ledger");
 
-    await expect(
-      ledger.findIntent({ keyId: "test-v1", requestId, userHash }),
-    ).rejects.toBeDefined();
-  });
+      await expect(
+        ledger.findIntent({ keyId: "test-v1", requestId, userHash }),
+      ).rejects.toBeDefined();
+    },
+  );
 
   it("rejects an object without a body and malformed sealed intent JSON", async () => {
     const clientWithoutBody = new S3Client({

@@ -7,9 +7,6 @@ const gradeProgressionQuery = vi.hoisted(() => vi.fn());
 const volumeByGradeQuery = vi.hoisted(() => vi.fn());
 const sessionSummaryQuery = vi.hoisted(() => vi.fn());
 const hangboardingSummaryQuery = vi.hoisted(() => vi.fn());
-const fingerLoadingHistoryQuery = vi.hoisted(() => vi.fn());
-const logFingerLoadingMutation = vi.hoisted(() => vi.fn());
-const logClimbingSessionMutation = vi.hoisted(() => vi.fn());
 const recentActivitiesSection = vi.hoisted(() => vi.fn());
 const trainingDaysState = vi.hoisted<{ days: number | null }>(() => ({ days: 90 }));
 
@@ -27,14 +24,6 @@ vi.mock("../../components/ClimbingGradeProgressionChart.tsx", () => ({
 
 vi.mock("../../components/ClimbingVolumeByGradeChart.tsx", () => ({
   ClimbingVolumeByGradeChart: () => <div>Volume by Grade component</div>,
-}));
-
-vi.mock("../../components/FingerLoadingLog.tsx", () => ({
-  FingerLoadingLog: () => <div>Finger Loading form</div>,
-}));
-
-vi.mock("../../components/ClimbingAttemptLog.tsx", () => ({
-  ClimbingAttemptLog: () => <div>Climbing Attempts form</div>,
 }));
 
 vi.mock("../../components/RecentActivitiesSection.tsx", () => ({
@@ -69,22 +58,10 @@ vi.mock("../../lib/trpc.ts", () => ({
   trpc: {
     climbing: {
       gradeProgression: { useQuery: gradeProgressionQuery },
-      fingerLoadingHistory: { useQuery: fingerLoadingHistoryQuery },
-      logFingerLoading: { useMutation: logFingerLoadingMutation },
-      logClimbingSession: { useMutation: logClimbingSessionMutation },
       volumeByGrade: { useQuery: volumeByGradeQuery },
       sessionSummary: { useQuery: sessionSummaryQuery },
       hangboardingSummary: { useQuery: hangboardingSummaryQuery },
     },
-    useUtils: () => ({
-      activity: { invalidate: vi.fn() },
-      climbing: {
-        fingerLoadingHistory: { invalidate: vi.fn() },
-        invalidate: vi.fn(),
-        sessionSummary: { invalidate: vi.fn() },
-      },
-      mobileDashboard: { training: { invalidate: vi.fn() } },
-    }),
   },
 }));
 
@@ -99,18 +76,12 @@ describe("ClimbingTab", () => {
     volumeByGradeQuery.mockReset();
     sessionSummaryQuery.mockReset();
     hangboardingSummaryQuery.mockReset();
-    fingerLoadingHistoryQuery.mockReset();
-    logFingerLoadingMutation.mockReset();
-    logClimbingSessionMutation.mockReset();
     recentActivitiesSection.mockReset();
     trainingDaysState.days = 90;
     gradeProgressionQuery.mockReturnValue({ data: [], isLoading: false, error: null });
     volumeByGradeQuery.mockReturnValue({ data: [], isLoading: false, error: null });
     sessionSummaryQuery.mockReturnValue({ data: [], isLoading: false, error: null });
     hangboardingSummaryQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
-    fingerLoadingHistoryQuery.mockReturnValue({ data: [], isLoading: false, error: null });
-    logFingerLoadingMutation.mockReturnValue({ error: null, isPending: false, mutate: vi.fn() });
-    logClimbingSessionMutation.mockReturnValue({ error: null, isPending: false, mutate: vi.fn() });
   });
 
   afterEach(() => {

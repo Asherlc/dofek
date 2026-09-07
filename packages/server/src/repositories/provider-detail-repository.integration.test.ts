@@ -278,6 +278,30 @@ describe("ProviderDetailRepository provider data deletion (integration)", () => 
       sql`INSERT INTO fitness.daily_metrics (provider_id, user_id, date)
           VALUES (${providerId}, ${userId}, '2026-07-17')`,
     );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.clinical_record (
+            user_id, provider_id, external_id, clinical_type, display_name,
+            source_name, fhir_version, fhir, downloaded_at
+          ) VALUES
+            (
+              ${userId}, ${providerId}, 'selected-provider-clinical-record',
+              'condition', 'Selected provider condition', 'Integration fixture', 'R4',
+              '{"resourceType":"Condition","id":"selected-provider-clinical-record"}'::jsonb,
+              now()
+            ),
+            (
+              ${userId}, ${retainedProviderId}, 'retained-provider-clinical-record',
+              'condition', 'Retained provider condition', 'Integration fixture', 'R4',
+              '{"resourceType":"Condition","id":"retained-provider-clinical-record"}'::jsonb,
+              now()
+            ),
+            (
+              ${secondUserId}, ${providerId}, 'second-user-clinical-record',
+              'condition', 'Second user condition', 'Integration fixture', 'R4',
+              '{"resourceType":"Condition","id":"second-user-clinical-record"}'::jsonb,
+              now()
+            )`,
+    );
   }, 120_000);
 
   afterAll(async () => {
@@ -332,6 +356,24 @@ describe("ProviderDetailRepository provider data deletion (integration)", () => 
       sql`SELECT count(*) AS count FROM fitness.oauth_token
           WHERE provider_id = ${providerId}`,
     );
+    const [selectedClinicalRecordCount] = await executeWithSchema(
+      testContext.db,
+      countSchema,
+      sql`SELECT count(*) AS count FROM fitness.clinical_record
+          WHERE provider_id = ${providerId} AND user_id = ${userId}`,
+    );
+    const [retainedProviderClinicalRecordCount] = await executeWithSchema(
+      testContext.db,
+      countSchema,
+      sql`SELECT count(*) AS count FROM fitness.clinical_record
+          WHERE provider_id = ${retainedProviderId} AND user_id = ${userId}`,
+    );
+    const [secondUserClinicalRecordCount] = await executeWithSchema(
+      testContext.db,
+      countSchema,
+      sql`SELECT count(*) AS count FROM fitness.clinical_record
+          WHERE provider_id = ${providerId} AND user_id = ${secondUserId}`,
+    );
 
     expect(activityCount?.count).toBe(0);
     expect(dailyMetricsCount?.count).toBe(0);
@@ -339,6 +381,9 @@ describe("ProviderDetailRepository provider data deletion (integration)", () => 
     expect(secondUserActivityCount?.count).toBe(1);
     expect(connectionCount?.count).toBe(2);
     expect(allTokenCount?.count).toBe(2);
+    expect(selectedClinicalRecordCount?.count).toBe(0);
+    expect(retainedProviderClinicalRecordCount?.count).toBe(1);
+    expect(secondUserClinicalRecordCount?.count).toBe(1);
   });
 
   it("authorizes canonical deletion from retained rows after disconnect and emits its outbox event", async () => {

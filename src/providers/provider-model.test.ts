@@ -7,16 +7,16 @@ describe("ProviderModel", () => {
     vi.unstubAllEnvs();
   });
 
-  it.each([
-    "not-a-url",
-    "http://example.com/token",
-  ])("rejects a non-HTTPS token URL at the shared schema boundary: %s", (instructionsUrl) => {
-    const result = providerTokenAuthSchema.safeParse({
-      label: "Personal token",
-      instructionsUrl,
-    });
-    expect(result.success).toBe(false);
-  });
+  it.each(["not-a-url", "http://example.com/token"])(
+    "rejects a non-HTTPS token URL at the shared schema boundary: %s",
+    (instructionsUrl) => {
+      const result = providerTokenAuthSchema.safeParse({
+        label: "Personal token",
+        instructionsUrl,
+      });
+      expect(result.success).toBe(false);
+    },
+  );
 
   it("isConnected is true for providers without authSetup", () => {
     const model = new ProviderModel({ id: "strong-csv", name: "Strong" }, new Set());
@@ -113,45 +113,44 @@ describe("ProviderModel", () => {
   it.each([
     { configuredOAuth: false, clientId: "", clientSecret: "" },
     { configuredOAuth: true, clientId: "client-id", clientSecret: "client-secret" },
-  ])("exposes Cycling Analytics personal-token auth when OAuth configured is $configuredOAuth", ({
-    clientId,
-    clientSecret,
-  }) => {
-    vi.stubEnv("CYCLING_ANALYTICS_CLIENT_ID", clientId);
-    vi.stubEnv("CYCLING_ANALYTICS_CLIENT_SECRET", clientSecret);
+  ])(
+    "exposes Cycling Analytics personal-token auth when OAuth configured is $configuredOAuth",
+    ({ clientId, clientSecret }) => {
+      vi.stubEnv("CYCLING_ANALYTICS_CLIENT_ID", clientId);
+      vi.stubEnv("CYCLING_ANALYTICS_CLIENT_SECRET", clientSecret);
 
-    const model = new ProviderModel(new CyclingAnalyticsProvider(), new Set());
+      const model = new ProviderModel(new CyclingAnalyticsProvider(), new Set());
 
-    expect(model.authType).toBe("token");
-    expect(model.tokenAuth).toEqual({
-      label: "Personal API token",
-      instructionsUrl: "https://www.cyclinganalytics.com/developer/api/authentication",
-    });
-  });
+      expect(model.authType).toBe("token");
+      expect(model.tokenAuth).toEqual({
+        label: "Personal API token",
+        instructionsUrl: "https://www.cyclinganalytics.com/developer/api/authentication",
+      });
+    },
+  );
 
-  it.each([
-    "javascript:alert('xss')",
-    "http://example.com/token",
-    "not-a-url",
-  ])("does not expose an unsafe manual token instructions URL: %s", (instructionsUrl) => {
-    const model = new ProviderModel(
-      {
-        id: "unsafe-token-provider",
-        name: "Unsafe Token Provider",
-        authSetup: () => ({
-          manualToken: {
-            label: "Personal token",
-            instructionsUrl,
-            exchangeToken: async () => ({}),
-          },
-        }),
-      },
-      new Set(),
-    );
+  it.each(["javascript:alert('xss')", "http://example.com/token", "not-a-url"])(
+    "does not expose an unsafe manual token instructions URL: %s",
+    (instructionsUrl) => {
+      const model = new ProviderModel(
+        {
+          id: "unsafe-token-provider",
+          name: "Unsafe Token Provider",
+          authSetup: () => ({
+            manualToken: {
+              label: "Personal token",
+              instructionsUrl,
+              exchangeToken: async () => ({}),
+            },
+          }),
+        },
+        new Set(),
+      );
 
-    expect(model.authType).toBe("none");
-    expect(model.tokenAuth).toBeNull();
-  });
+      expect(model.authType).toBe("none");
+      expect(model.tokenAuth).toBeNull();
+    },
+  );
 
   it.each([
     {},

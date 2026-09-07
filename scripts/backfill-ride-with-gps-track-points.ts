@@ -46,6 +46,7 @@ const storedTrackPointSchema = z
     distanceMeters: z.number().optional(),
     elevationMeters: z.number().optional(),
     epochSeconds: z.number().optional(),
+    speedMetersPerSecond: z.number().optional(),
     speedKph: z.number().optional(),
     temperatureCelsius: z.number().optional(),
     heartRateBpm: z.number().optional(),
@@ -56,6 +57,8 @@ const storedTrackPointSchema = z
     d: z.number().optional(),
     e: z.number().optional(),
     t: z.number().optional(),
+    // Preserve negative numeric samples long enough for parseTrackPoints to
+    // omit only the speed without rejecting an otherwise valid activity.
     s: z.number().optional(),
     T: z.number().optional(),
     h: z.number().optional(),
@@ -70,7 +73,7 @@ const storedTrackPointSchema = z
       distanceMeters: point.distanceMeters ?? point.d,
       elevationMeters: point.elevationMeters ?? point.e,
       epochSeconds: point.epochSeconds ?? point.t,
-      speedKph: point.speedKph ?? point.s,
+      speedMetersPerSecond: point.speedMetersPerSecond ?? point.speedKph ?? point.s,
       temperatureCelsius: point.temperatureCelsius ?? point.T,
       heartRateBpm: point.heartRateBpm ?? point.h,
       cadenceRpm: point.cadenceRpm ?? point.c,

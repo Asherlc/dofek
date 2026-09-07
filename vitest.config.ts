@@ -13,19 +13,20 @@ const zeppModules = [
   "@zos/display",
   "@zos/interaction",
   "@zos/app",
+  "@zos/ui",
   "@zos/ble",
   "@zos/app-service",
-  "@zeppos/zml",
   "@zeppos/zml/base-page",
   "@zeppos/zml/base-side",
   "@zeppos/zml/base-app",
   "@zeppos/zml/3.0/module/messaging/plugin/page",
   "@zeppos/zml/3.0/module/messaging/plugin/side",
   "@zeppos/zml/3.0/module/messaging/plugin/app",
+  "@zeppos/zml",
 ];
 const zeppAliases: Record<string, string> = {};
 for (const moduleName of zeppModules) {
-  zeppAliases[moduleName] = zeppStubPath;
+  zeppAliases[moduleName] = `${zeppStubPath}?zepp-module=${encodeURIComponent(moduleName)}`;
 }
 
 const sharedTestConfig = {
@@ -35,11 +36,7 @@ const sharedTestConfig = {
   teardownTimeout: 60_000,
   fileParallelism: true,
   pool: "forks" as const,
-  poolOptions: {
-    forks: {
-      execArgv: ["--no-experimental-webstorage"],
-    },
-  },
+  execArgv: ["--no-experimental-webstorage"],
   retry: 2,
 };
 
@@ -56,6 +53,7 @@ const sharedTestEnv = {
   CREDENTIAL_ENCRYPTION_KEY_BASE64: testCredentialEncryptionKey,
   CREDENTIAL_ENCRYPTION_KEY_NAMESPACE: "dofek-test",
   CREDENTIAL_ENCRYPTION_KEY_NAME: "provider-credentials-test",
+  OPENAI_APPS_CHALLENGE_TOKEN: "test-openai-apps-challenge-token",
   PUBLIC_URL: "https://app.example.test",
   // Classify the test environment as non-production by default so no test run is
   // ever treated as a production deployment. The production-only guard in
@@ -96,6 +94,7 @@ export default defineConfig({
             "packages/web/vite.config.test.ts",
             "packages/*/src/**/*.test.{ts,tsx}",
             "packages/zepp/src/**/*.test.ts",
+            "packages/zepp/e2e/**/*.e2e.test.ts",
             "packages/zepp/setting/**/*.test.ts",
             "packages/zepp/workout-extension/**/*.test.ts",
             "scripts/**/*.test.ts",
@@ -110,13 +109,11 @@ export default defineConfig({
           ...sharedTestConfig,
           name: "integration",
           fileParallelism: false,
-          poolOptions: {
-            forks: {
-              ...sharedTestConfig.poolOptions.forks,
-              singleFork: true,
-            },
-          },
+          maxWorkers: 1,
+          sequence: { groupOrder: 1 },
+          isolate: false,
           include: [
+            "analytics/models/**/*.integration.test.ts",
             "src/**/*.integration.test.ts",
             "packages/*/src/**/*.integration.test.ts",
             "scripts/**/*.integration.test.ts",

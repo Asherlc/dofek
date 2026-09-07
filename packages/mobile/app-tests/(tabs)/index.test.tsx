@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockRouterPush = vi.fn();
@@ -121,10 +121,6 @@ vi.mock("../../lib/trpc", () => ({
       processing: { status: { invalidate: vi.fn() } },
     }),
   },
-}));
-
-vi.mock("../../lib/useAutoSync", () => ({
-  useAutoSync: vi.fn(),
 }));
 
 vi.mock("../../lib/useRefresh", () => ({
@@ -626,21 +622,7 @@ describe("TodayScreen independent loading states", () => {
     const { default: TodayScreen } = await import("../../app/(tabs)/index");
     render(<TodayScreen />);
 
-    expect(screen.getByText(/Resting Heart Rate: 70/)).toBeTruthy();
-  });
-
-  it("opens add food with today's date and auto-selected meal", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 2, 21, 15, 30));
-
-    const { default: TodayScreen } = await import("../../app/(tabs)/index");
-    render(<TodayScreen />);
-
-    fireEvent.click(screen.getByText("Log Food"));
-
-    expect(mockRouterPush).toHaveBeenCalledWith(
-      "/food/add?meal=snack&date=2026-03-21&mode=quickadd",
-    );
+    expect(screen.getByText("Resting Heart Rate: 70 (baseline 60 ± 3)")).toBeTruthy();
   });
 
   it("refreshes dashboard and anomaly queries when pull-to-refresh runs", async () => {

@@ -164,12 +164,3 @@ describe("finalizeSessionFile", () => {
     expect(mockOpenSync).not.toHaveBeenCalled();
   });
 });
-
-it("rebases rotated files without changing absolute sensor time", () => {
-  const sample = { tMs: 5020, sensor: "gyroscope" as const, x: 1, y: 2, z: 3 };
-  appendSamples([sample], SESSION_FILE, -5000);
-  const written = mockWriteSync.mock.calls[0]?.[0].buffer;
-  if (!written) throw new Error("no chunk written");
-  expect(new DataView(written).getUint32(4, true)).toBe(20);
-  expect(sample.tMs).toBe(5020);
-});

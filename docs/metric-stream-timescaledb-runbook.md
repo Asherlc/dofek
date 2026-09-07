@@ -244,7 +244,7 @@ WHERE hypertable_schema = 'fitness'
 Check app health:
 
 ```bash
-curl -fsS https://dofek.asherlc.com/healthz
+curl -fsS https://dofek.fit/healthz
 ```
 
 Check for future-dated chunks after any incident involving unexpected chunk

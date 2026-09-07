@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { runWithProviderIngestContext } from "../db/provider-ingest-context.ts";
 import {
   importStrongCsv,
   isStrongCsvFormat,
@@ -9,13 +10,23 @@ import {
   parseStrongExerciseName,
   parseStrongText,
   parseStrongTextDate,
+  parseStrongWallClockTimestamp,
   STRONG_PROVIDER_ID,
   StrongCsvProvider,
+  StrongCsvValidationError,
+  strongCsvWeightUnit,
 } from "./strong-csv.ts";
 
 vi.mock("../db/tokens.ts", () => ({
   ensureProvider: vi.fn().mockResolvedValue(undefined),
 }));
+
+function withTransaction<TDatabase extends object>(database: TDatabase) {
+  return Object.assign(database, {
+    transaction: async <TResult>(operation: (transaction: TDatabase) => Promise<TResult>) =>
+      operation(database),
+  });
+}
 
 describe("parseStrongExerciseName", () => {
   it("splits name and equipment from parens", () => {
@@ -103,31 +114,191 @@ describe("parseDurationString", () => {
 });
 
 describe("importStrongCsv", () => {
-  it("fills inferred muscle groups without overwriting existing exercise metadata", async () => {
-    const execute = vi.fn().mockResolvedValue([]);
+  it("identifies validation errors for durable import handling", () => {
+    expect(new StrongCsvValidationError("invalid unit").name).toBe("StrongCsvValidationError");
+  });
+
+  it("fails the import for an invalid workout timestamp", async () => {
+    await expect(
+      Reflect.apply(importStrongCsv, undefined, [
+        undefined,
+        "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps\n2026-02-30 10:00:00,Leg Day,30m,Squat,0,100,5",
+        "user-1",
+        "kg",
+        "America/Los_Angeles",
+      ]),
+    ).rejects.toThrow(StrongCsvValidationError);
+  });
+
+  it("requires a transactional database before importing", async () => {
+    await expect(
+      importStrongCsv(
+        { insert: vi.fn(), execute: vi.fn(), select: vi.fn(), delete: vi.fn() },
+        "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps\n2026-01-15 07:55:54,Leg Day,30m,Squat,0,100,5",
+        "user-1",
+        "kg",
+        "America/Los_Angeles",
+      ),
+    ).rejects.toThrow("transactional database");
+  });
+
+  it("rejects a non-function transaction property", async () => {
+    await expect(
+      Reflect.apply(importStrongCsv, undefined, [
+        { insert: vi.fn(), execute: vi.fn(), select: vi.fn(), delete: vi.fn(), transaction: null },
+        "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps\n2026-01-15 07:55:54,Leg Day,30m,Squat,0,100,5",
+        "user-1",
+        "kg",
+        "America/Los_Angeles",
+      ]),
+    ).rejects.toThrow("Strong CSV import requires a transactional database");
+  });
+
+  it("fails the import for a nonexistent local workout timestamp", async () => {
+    const error = await Reflect.apply(importStrongCsv, undefined, [
+      undefined,
+      "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps\n2026-03-08 02:30:00,Leg Day,30m,Squat,0,100,5",
+      "user-1",
+      "kg",
+      "America/Los_Angeles",
+    ]).then(
+      () => new Error("Expected the nonexistent wall-clock timestamp to be rejected"),
+      (rejection: unknown) => rejection,
+    );
+
+    expect(error).toBeInstanceOf(StrongCsvValidationError);
+    expect(error).toHaveProperty(
+      "message",
+      "Strong workout timestamp does not exist in America/Los_Angeles: 2026-03-08 02:30:00",
+    );
+    expect(error).toHaveProperty(
+      "cause.message",
+      "Wall-clock timestamp does not exist in America/Los_Angeles",
+    );
+  });
+
+  it("chooses the earlier instant for an ambiguous fall-back workout timestamp", async () => {
+    const activityValues = vi.fn().mockReturnValue({
+      onConflictDoUpdate: vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([]),
+      }),
+    });
+    const db = withTransaction({
+      insert: vi.fn().mockReturnValue({ values: activityValues }),
+      execute: vi.fn(),
+    });
+
+    await runWithProviderIngestContext({ homeTimezone: "America/Los_Angeles" }, () =>
+      Reflect.apply(importStrongCsv, undefined, [
+        db,
+        "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps\n2026-11-01 01:30:00,Leg Day,30m,Squat,0,100,5",
+        "user-1",
+        "kg",
+        "America/Los_Angeles",
+      ]),
+    );
+
+    expect(activityValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        startedAt: new Date("2026-11-01T08:30:00.000Z"),
+        startUtcOffsetMinutes: -420,
+      }),
+    );
+  });
+
+  it("uses standard time for a winter Strong wall-clock timestamp", async () => {
+    const activityValues = vi.fn().mockReturnValue({
+      onConflictDoUpdate: vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([]),
+      }),
+    });
+    const db = withTransaction({
+      insert: vi.fn().mockReturnValue({ values: activityValues }),
+      execute: vi.fn(),
+    });
+
+    await runWithProviderIngestContext({ homeTimezone: "America/Los_Angeles" }, () =>
+      Reflect.apply(importStrongCsv, undefined, [
+        db,
+        "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps\n2026-01-15 07:55:54,Leg Day,30m,Squat,0,100,5",
+        "user-1",
+        "kg",
+        "America/Los_Angeles",
+      ]),
+    );
+
+    expect(activityValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        startedAt: new Date("2026-01-15T15:55:54.000Z"),
+        startUtcOffsetMinutes: -480,
+      }),
+    );
+  });
+
+  it("validates every workout timestamp before writing any activity", async () => {
+    const db = { insert: vi.fn() };
+
+    await expect(
+      Reflect.apply(importStrongCsv, undefined, [
+        db,
+        [
+          "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps",
+          "2026-03-07 10:00:00,Valid Workout,30m,Squat,0,100,5",
+          "2026-03-08 02:30:00,Invalid Workout,30m,Squat,0,100,5",
+        ].join("\n"),
+        "user-1",
+        "kg",
+        "America/Los_Angeles",
+      ]),
+    ).rejects.toThrow(StrongCsvValidationError);
+
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  it("treats an invalid upload timezone as a terminal validation failure", async () => {
+    await expect(
+      Reflect.apply(importStrongCsv, undefined, [
+        undefined,
+        "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps\n2026-03-07 10:00:00,Leg Day,30m,Squat,0,100,5",
+        "user-1",
+        "kg",
+        "Fake/Zone",
+      ]),
+    ).rejects.toMatchObject({
+      name: "StrongCsvValidationError",
+      message: "Invalid Strong timezone: Fake/Zone",
+      cause: expect.objectContaining({ message: "Invalid IANA timezone: Fake/Zone" }),
+    });
+  });
+
+  it("persists complete ordered sets with units, rest typing, distance, and exercise indices", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        alias_exercise_id: "00000000-0000-4000-8000-000000000001",
+        exercise_id: "00000000-0000-4000-8000-000000000001",
+        source_linked: true,
+      },
+    ]);
+    const activityValues = vi.fn().mockReturnValue({
+      onConflictDoUpdate: vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([{ id: "activity-1" }]),
+      }),
+    });
+    const strengthSetValues = vi.fn().mockResolvedValue(undefined);
     const insert = vi
       .fn()
       .mockReturnValueOnce({
-        values: vi.fn().mockReturnValue({
-          onConflictDoUpdate: vi.fn().mockReturnValue({
-            returning: vi.fn().mockResolvedValue([{ id: "activity-1" }]),
-          }),
-        }),
+        values: activityValues,
+      })
+      .mockReturnValueOnce({
+        values: strengthSetValues,
       })
       .mockReturnValueOnce({
         values: vi.fn().mockReturnValue({
           onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
         }),
-      })
-      .mockReturnValueOnce({
-        values: vi.fn().mockReturnValue({
-          onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
-        }),
-      })
-      .mockReturnValueOnce({
-        values: vi.fn().mockResolvedValue(undefined),
       });
-    const db = {
+    const db = withTransaction({
       execute,
       insert,
       delete: vi.fn().mockReturnValue({
@@ -140,23 +311,163 @@ describe("importStrongCsv", () => {
           }),
         }),
       }),
-    };
+    });
 
-    await Reflect.apply(importStrongCsv, undefined, [
-      db,
-      [
-        "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Distance,Seconds,Notes,Workout Notes,RPE",
-        '2024-11-02 10:00:00,"Leg Day","30m","Bulgarian Split Squat",1,24,8,,,,',
-      ].join("\n"),
-      "user-1",
-      "kg",
-    ]);
+    const result = await runWithProviderIngestContext({ homeTimezone: "America/Los_Angeles" }, () =>
+      Reflect.apply(importStrongCsv, undefined, [
+        db,
+        [
+          "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Distance,Seconds,Notes,Workout Notes,RPE",
+          '2024-11-02 10:00:00,"Leg Day","30m","Bulgarian Split Squat",0,0,0,,300,,',
+          '2024-11-02 10:00:00,"Leg Day","30m","Bulgarian Split Squat",1,24,8,,,,',
+          '2024-11-02 10:00:00,"Leg Day","30m","Bulgarian Split Squat",2,0,8,1.5,0,,,8.5',
+          '2024-11-02 10:00:00,"Leg Day","30m","Calf Raise (Machine)",3,45,10,,,,',
+        ].join("\n"),
+        "user-1",
+        "lbs",
+        "America/Los_Angeles",
+      ]),
+    );
 
     const exerciseStatement = sqlText(execute.mock.calls[0]?.[0]);
     expect(exerciseStatement).toContain("muscle_groups = COALESCE(");
     expect(exerciseStatement).toContain("ARRAY[");
     expect(exerciseStatement).toContain("fitness.exercise_source");
     expect(exerciseStatement).toContain("fitness.exercise_alias_source");
+    expect(activityValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        startedAt: new Date("2024-11-02T17:00:00.000Z"),
+        endedAt: new Date("2024-11-02T17:30:00.000Z"),
+        timezone: "America/Los_Angeles",
+        startUtcOffsetMinutes: -420,
+        localTimeSource: "device_timezone",
+      }),
+    );
+    expect(result).toMatchObject({ provider: STRONG_PROVIDER_ID, recordsSynced: 1, errors: [] });
+    const activityInsert = activityValues.mock.calls[0]?.[0];
+    expect(activityInsert.externalId).toMatch(/^strong:[0-9a-f]{16}$/);
+    expect(strengthSetValues).toHaveBeenCalledWith([
+      expect.objectContaining({
+        exerciseIndex: 0,
+        setIndex: 0,
+        setType: "rest",
+        weightKg: 0,
+        reps: 0,
+        durationSeconds: 300,
+      }),
+      expect.objectContaining({
+        exerciseIndex: 0,
+        setIndex: 1,
+        setType: "working",
+        weightKg: 10.886,
+        reps: 8,
+      }),
+      expect.objectContaining({
+        exerciseIndex: 0,
+        setIndex: 2,
+        setType: "working",
+        weightKg: 0,
+        reps: 8,
+        distanceMeters: 1500,
+        rpe: 8.5,
+      }),
+      expect.objectContaining({
+        exerciseIndex: 1,
+        setIndex: 0,
+        setType: "working",
+        weightKg: 20.412,
+        reps: 10,
+      }),
+    ]);
+  });
+
+  it("does not replace prior sets when the activity upsert returns no row", async () => {
+    const deleteRows = vi.fn();
+    const db = withTransaction({
+      execute: vi.fn(),
+      insert: vi.fn().mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          onConflictDoUpdate: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([]) }),
+        }),
+      }),
+      delete: deleteRows,
+      select: vi.fn(),
+    });
+
+    const result = await importStrongCsv(
+      db,
+      "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps\n2026-01-15 07:55:54,Leg Day,0m,Squat,0,100,5",
+      "user-1",
+      "kg",
+      "America/Los_Angeles",
+    );
+
+    expect(result.recordsSynced).toBe(0);
+    expect(deleteRows).not.toHaveBeenCalled();
+  });
+
+  it("imports text shares when no timezone is available", async () => {
+    const activityValues = vi.fn().mockReturnValue({
+      onConflictDoUpdate: vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([{ id: "activity-1" }]),
+      }),
+    });
+    const insert = vi
+      .fn()
+      .mockReturnValueOnce({ values: activityValues })
+      .mockReturnValueOnce({
+        values: vi.fn().mockReturnValue({
+          onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+        }),
+      })
+      .mockReturnValueOnce({
+        values: vi.fn().mockReturnValue({
+          onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+        }),
+      })
+      .mockReturnValueOnce({ values: vi.fn().mockResolvedValue(undefined) });
+    const db = withTransaction({
+      execute: vi.fn().mockResolvedValue([
+        {
+          alias_exercise_id: "00000000-0000-4000-8000-000000000001",
+          exercise_id: "00000000-0000-4000-8000-000000000001",
+          source_linked: true,
+        },
+      ]),
+      insert,
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([{ id: "exercise-1" }]),
+          }),
+        }),
+      }),
+    });
+
+    const result = await Reflect.apply(importStrongCsv, undefined, [
+      db,
+      [
+        "Home",
+        "Friday, April 10, 2026 at 16:39",
+        "",
+        "Bench Press (Dumbbell)",
+        "Set 1: 50 lb × 13",
+      ].join("\n"),
+      "user-1",
+      "kg",
+    ]);
+
+    expect(activityValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        startedAt: new Date("2026-04-10T16:39:00.000Z"),
+        timezone: undefined,
+        startUtcOffsetMinutes: undefined,
+        endUtcOffsetMinutes: undefined,
+        localTimeSource: undefined,
+      }),
+    );
+    expect(result).toMatchObject({ provider: STRONG_PROVIDER_ID, recordsSynced: 1, errors: [] });
   });
 });
 
@@ -184,6 +495,37 @@ describe("parseStrongCsv", () => {
     expect(group.sets[0]?.reps).toBe(10);
     expect(group.sets[1]?.weight).toBe(155);
     expect(group.sets[1]?.reps).toBe(8);
+  });
+
+  it("matches normalized CSV headers instead of assuming their positions", () => {
+    const groups = parseStrongCsv(
+      [
+        " Exercise Name , Reps , Weight , Date , Workout Name , Duration , Set Order , Distance , Seconds , Notes , Workout Notes , RPE ",
+        "Squat (Barbell),6,155,2024-11-02 10:00:00,Leg Day,30m,1,,,,,",
+      ].join("\n"),
+    );
+    expect(groups[0]?.workoutName).toBe("Leg Day");
+    expect(groups[0]?.sets[0]).toMatchObject({
+      exerciseName: "Squat (Barbell)",
+      weight: 155,
+      reps: 6,
+    });
+  });
+
+  it("uses Strong's documented column order when header names are unavailable", () => {
+    const groups = parseStrongCsv(
+      [
+        "a,b,c,d,e,f,g,h,i,j,k,l",
+        "2024-11-02 10:00:00,Leg Day,30m,Squat (Barbell),1,155,6,,,,,",
+      ].join("\n"),
+    );
+
+    expect(groups[0]).toMatchObject({
+      date: "2024-11-02 10:00:00",
+      workoutName: "Leg Day",
+      duration: "30m",
+      sets: [expect.objectContaining({ exerciseName: "Squat (Barbell)", weight: 155, reps: 6 })],
+    });
   });
 
   it("groups rows by date and workout name", () => {
@@ -540,6 +882,11 @@ describe("isStrongCsvFormat", () => {
     expect(isStrongCsvFormat(csv)).toBe(true);
   });
 
+  it("returns true for reordered Strong CSV headers", () => {
+    const csv = "Exercise Name,Set Order,Date,Workout Name\nSquat,0,2026-09-01,Leg Day";
+    expect(isStrongCsvFormat(csv)).toBe(true);
+  });
+
   it("returns false for single-workout text format", () => {
     const text =
       "Home\nFriday, April 10, 2026 at 16:39\n\nBench Press (Dumbbell)\nSet 1: 50 lb × 13";
@@ -633,6 +980,68 @@ describe("parseStrongTextDate", () => {
   it("returns Invalid Date for unknown month names in the expected format", () => {
     const date = parseStrongTextDate("Monday, Summer 1, 2026 at 12:00");
     expect(Number.isNaN(date.getTime())).toBe(true);
+  });
+});
+
+describe("parseStrongWallClockTimestamp", () => {
+  it("accepts a date-only Strong export as local midnight", () => {
+    expect(parseStrongWallClockTimestamp("2026-09-01").toISOString()).toBe(
+      "2026-09-01T00:00:00.000Z",
+    );
+  });
+
+  it("rejects invalid calendar values instead of normalizing them", () => {
+    expect(Number.isNaN(parseStrongWallClockTimestamp("2026-02-30 10:00:00").getTime())).toBe(true);
+  });
+
+  it("preserves every supplied wall-clock component and rejects suffixes", () => {
+    expect(parseStrongWallClockTimestamp("2024-02-29 23:59:59").toISOString()).toBe(
+      "2024-02-29T23:59:59.000Z",
+    );
+    expect(Number.isNaN(parseStrongWallClockTimestamp("2024-02-29 24:00:00").getTime())).toBe(true);
+    expect(Number.isNaN(parseStrongWallClockTimestamp("2024-02-29 trailing").getTime())).toBe(true);
+  });
+});
+
+describe("strongCsvWeightUnit", () => {
+  it("reads the declared export unit instead of assuming one", () => {
+    expect(strongCsvWeightUnit("Date,Weight Unit,Weight\n2026-09-01,lbs,155")).toBe("lbs");
+  });
+
+  it.each([
+    ["kg", "kg"],
+    ["kgs", "kg"],
+    ["kilograms", "kg"],
+    ["lb", "lbs"],
+    ["pounds", "lbs"],
+  ] satisfies Array<[string, "kg" | "lbs"]>)(
+    "normalizes the declared %s unit",
+    (declared, expected) => {
+      expect(strongCsvWeightUnit(`\uFEFFDate,Weight Unit\n2026-09-01,${declared}`)).toBe(expected);
+    },
+  );
+
+  it("rejects unsupported units and treats a missing declaration as absent", () => {
+    expect(() => strongCsvWeightUnit("Date,Weight Unit\n2026-09-01,stone")).toThrow(
+      "Unsupported Strong CSV weight unit: stone",
+    );
+    expect(strongCsvWeightUnit("Date,Weight\n2026-09-01,155")).toBeNull();
+  });
+
+  it("rejects mixed unit declarations", () => {
+    expect(() => strongCsvWeightUnit("Date,Weight Unit\n2026-09-01,kg\n2026-09-02,lbs")).toThrow(
+      StrongCsvValidationError,
+    );
+  });
+
+  it("rejects a partially blank unit declaration", () => {
+    expect(() => strongCsvWeightUnit("Date,Weight Unit\n2026-09-01,kg\n2026-09-02,")).toThrow(
+      StrongCsvValidationError,
+    );
+  });
+
+  it("allows upload metadata to supply a blank declaration column", () => {
+    expect(strongCsvWeightUnit("Date,Weight Unit\n2026-09-01,")).toBeNull();
   });
 });
 
@@ -977,17 +1386,15 @@ describe("parseStrongExerciseName — additional cases", () => {
     expect(result.equipment).toBe("Dumbbell");
   });
 
-  it.each([
-    "Curl",
-    "Curl (Dumbbell",
-    "(Dumbbell)",
-    "Curl ()",
-  ])("does not invent equipment for malformed parentheses: %s", (name) => {
-    expect(parseStrongExerciseName(name)).toEqual({
-      equipment: null,
-      exerciseName: name,
-    });
-  });
+  it.each(["Curl", "Curl (Dumbbell", "(Dumbbell)", "Curl ()"])(
+    "does not invent equipment for malformed parentheses: %s",
+    (name) => {
+      expect(parseStrongExerciseName(name)).toEqual({
+        equipment: null,
+        exerciseName: name,
+      });
+    },
+  );
 });
 
 describe("parseDurationString — additional cases", () => {

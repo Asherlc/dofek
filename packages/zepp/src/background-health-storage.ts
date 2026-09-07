@@ -1,32 +1,52 @@
-import { readFileSync, writeFileSync } from "@zos/fs";
-import {
-  type BackgroundHealthBuffer,
-  type BackgroundHealthSample,
-  emptyBackgroundHealthBuffer,
+import { readFileSync, renameSync, writeFileSync } from "@zos/fs";
+import type {
+  BackgroundHealthEvent,
+  BackgroundHealthOutbox,
+  BackgroundHealthSample,
 } from "./background-health.ts";
-import type { HealthActivity } from "./health-collector.ts";
+import { createEmptyOutbox, type OutboxEntry } from "./durable-outbox.ts";
+import type { HealthActivity, HealthDataPayload } from "./health-collector.ts";
+import type { ValidationIssue } from "./health-contract.ts";
 import { BACKGROUND_HEALTH_FILE } from "./storage-keys.ts";
+import { parseWatchHealthSummary } from "./watch-health-summary-parser.ts";
+
+const OUTBOX_VERSION = 1;
+const CORRUPT_BACKGROUND_HEALTH_FILE = `${BACKGROUND_HEALTH_FILE}.corrupt`;
+
+class CorruptBackgroundHealthOutboxError extends Error {
+  readonly originalError: unknown;
+
+  constructor(message: string, originalError?: unknown) {
+    super(message);
+    this.name = "CorruptBackgroundHealthOutboxError";
+    this.originalError = originalError;
+  }
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function optionalNumber(value: unknown): number | undefined {
-  return typeof value === "number" ? value : undefined;
+function optionalFiniteNumber(value: unknown): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  throw new Error("Background health sample metric is invalid.");
 }
 
-function parseSample(value: unknown): BackgroundHealthSample | undefined {
-  if (!isRecord(value) || typeof value.recordedAt !== "string") return undefined;
+function parseSample(value: unknown): BackgroundHealthSample {
+  if (!isRecord(value) || typeof value.recordedAt !== "string") {
+    throw new Error("Background health sample is invalid.");
+  }
   return {
     recordedAt: value.recordedAt,
-    heartRate: optionalNumber(value.heartRate),
-    bloodOxygenPercent: optionalNumber(value.bloodOxygenPercent),
-    bodyTemperatureCelsius: optionalNumber(value.bodyTemperatureCelsius),
-    stress: optionalNumber(value.stress),
+    heartRate: optionalFiniteNumber(value.heartRate),
+    bloodOxygenPercent: optionalFiniteNumber(value.bloodOxygenPercent),
+    bodyTemperatureCelsius: optionalFiniteNumber(value.bodyTemperatureCelsius),
+    stress: optionalFiniteNumber(value.stress),
   };
 }
 
-function parseActivity(value: unknown): HealthActivity | undefined {
+function parseActivity(value: unknown): HealthActivity {
   if (
     !isRecord(value) ||
     typeof value.externalId !== "string" ||
@@ -34,7 +54,7 @@ function parseActivity(value: unknown): HealthActivity | undefined {
     typeof value.startedAt !== "string" ||
     typeof value.endedAt !== "string"
   ) {
-    return undefined;
+    throw new Error("Background health activity is invalid.");
   }
   return {
     externalId: value.externalId,
@@ -44,77 +64,176 @@ function parseActivity(value: unknown): HealthActivity | undefined {
   };
 }
 
-export function parseBackgroundHealthBuffer(serialized: string): BackgroundHealthBuffer {
-  try {
-    const parsed: unknown = JSON.parse(serialized);
-    if (!isRecord(parsed) || !Array.isArray(parsed.samples) || !Array.isArray(parsed.activities)) {
-      return emptyBackgroundHealthBuffer();
-    }
-    return {
-      samples: parsed.samples.flatMap((value) => {
-        const sample = parseSample(value);
-        return sample ? [sample] : [];
-      }),
-      activities: parsed.activities.flatMap((value) => {
-        const activity = parseActivity(value);
-        return activity ? [activity] : [];
-      }),
-    };
-  } catch {
-    return emptyBackgroundHealthBuffer();
-  }
+function parseSummary(value: unknown): HealthDataPayload {
+  return parseWatchHealthSummary(value);
 }
 
-export function readBackgroundHealthBuffer(): BackgroundHealthBuffer {
+function parseEvent(value: unknown): BackgroundHealthEvent {
+  if (!isRecord(value)) {
+    throw new Error("Background health event is invalid.");
+  }
+  if (value.kind === "sample") {
+    return { kind: "sample", sample: parseSample(value.sample) };
+  }
+  if (value.kind === "activity") {
+    return { kind: "activity", activity: parseActivity(value.activity) };
+  }
+  if (value.kind === "summary") {
+    return { kind: "summary", summary: parseSummary(value.summary) };
+  }
+  throw new Error("Background health event is invalid.");
+}
+
+function parseEntry(value: unknown): OutboxEntry<BackgroundHealthEvent> {
+  if (
+    !isRecord(value) ||
+    typeof value.eventId !== "string" ||
+    !value.eventId.trim() ||
+    typeof value.createdAt !== "string" ||
+    !Number.isInteger(value.attempts) ||
+    Number(value.attempts) < 0 ||
+    (value.lastError !== undefined && typeof value.lastError !== "string")
+  ) {
+    throw new Error("Background health outbox entry is invalid.");
+  }
+  return {
+    eventId: value.eventId,
+    createdAt: value.createdAt,
+    payload: parseEvent(value.payload),
+    attempts: Number(value.attempts),
+    ...(typeof value.lastError === "string" ? { lastError: value.lastError } : {}),
+  };
+}
+
+function parseIssue(value: unknown): ValidationIssue {
+  if (!isRecord(value) || typeof value.path !== "string" || typeof value.message !== "string") {
+    throw new Error("Background health quarantine issue is invalid.");
+  }
+  return { path: value.path, message: value.message };
+}
+
+function parseCanonicalOutbox(parsed: Record<string, unknown>): BackgroundHealthOutbox {
+  if (
+    parsed.version !== OUTBOX_VERSION ||
+    !Array.isArray(parsed.pending) ||
+    !Array.isArray(parsed.quarantine)
+  ) {
+    throw new Error("Background health outbox has an invalid shape.");
+  }
+  return {
+    pending: parsed.pending.map(parseEntry),
+    quarantine: parsed.quarantine.map((value) => {
+      if (!isRecord(value) || !Array.isArray(value.issues)) {
+        throw new Error("Background health quarantine entry is invalid.");
+      }
+      return { ...parseEntry(value), issues: value.issues.map(parseIssue) };
+    }),
+  };
+}
+
+function migrateLegacyBuffer(
+  parsed: Record<string, unknown>,
+  installId: string,
+): BackgroundHealthOutbox {
+  if (!Array.isArray(parsed.samples) || !Array.isArray(parsed.activities)) {
+    throw new Error("Background health outbox has an invalid shape.");
+  }
+  const entries: Array<OutboxEntry<BackgroundHealthEvent>> = [
+    ...parsed.samples.slice(-7 * 24 * 60).map((value) => {
+      const sample = parseSample(value);
+      return {
+        eventId: `${installId}:background-sample:${sample.recordedAt}`,
+        createdAt: sample.recordedAt,
+        payload: { kind: "sample" as const, sample },
+        attempts: 0,
+      };
+    }),
+    ...parsed.activities.map((value) => {
+      const activity = parseActivity(value);
+      return {
+        eventId: `${installId}:activity:${activity.externalId}:${activity.endedAt}`,
+        createdAt: activity.endedAt,
+        payload: { kind: "activity" as const, activity },
+        attempts: 0,
+      };
+    }),
+  ];
+  return {
+    pending: [...new Map(entries.map((entry) => [entry.eventId, entry])).values()],
+    quarantine: [],
+  };
+}
+
+export function parseBackgroundHealthOutbox(
+  serialized: string,
+  installId: string,
+): BackgroundHealthOutbox {
+  let parsed: unknown;
   try {
-    const contents = readFileSync({
+    parsed = JSON.parse(serialized);
+  } catch {
+    throw new Error("Background health outbox is not valid JSON.");
+  }
+  if (!isRecord(parsed)) {
+    throw new Error("Background health outbox has an invalid shape.");
+  }
+  return "version" in parsed
+    ? parseCanonicalOutbox(parsed)
+    : migrateLegacyBuffer(parsed, installId);
+}
+
+export function serializeBackgroundHealthOutbox(outbox: BackgroundHealthOutbox): string {
+  return JSON.stringify({ version: OUTBOX_VERSION, ...outbox });
+}
+
+export function readBackgroundHealthOutbox(installId: string): BackgroundHealthOutbox {
+  let contents: ArrayBuffer | string;
+  try {
+    contents = readFileSync({
       path: BACKGROUND_HEALTH_FILE,
       options: { encoding: "utf8" },
     });
-    return typeof contents === "string"
-      ? parseBackgroundHealthBuffer(contents)
-      : emptyBackgroundHealthBuffer();
-  } catch {
-    return emptyBackgroundHealthBuffer();
+  } catch (error) {
+    if (isRecord(error) && error.code === "ENOENT") {
+      return createEmptyOutbox();
+    }
+    throw error;
+  }
+  if (typeof contents !== "string") {
+    throw new CorruptBackgroundHealthOutboxError(
+      "Background health outbox storage returned non-text data.",
+    );
+  }
+  try {
+    return parseBackgroundHealthOutbox(contents, installId);
+  } catch (error) {
+    throw new CorruptBackgroundHealthOutboxError(
+      "Background health outbox storage is corrupt.",
+      error,
+    );
   }
 }
 
-export function writeBackgroundHealthBuffer(buffer: BackgroundHealthBuffer): void {
-  writeFileSync({ path: BACKGROUND_HEALTH_FILE, data: JSON.stringify(buffer) });
+export function readBackgroundHealthOutboxForCollection(
+  installId: string,
+  onDiscard: (error: unknown) => void,
+): BackgroundHealthOutbox {
+  try {
+    return readBackgroundHealthOutbox(installId);
+  } catch (error) {
+    if (!(error instanceof CorruptBackgroundHealthOutboxError)) throw error;
+    const quarantineResult = renameSync({
+      oldPath: BACKGROUND_HEALTH_FILE,
+      newPath: CORRUPT_BACKGROUND_HEALTH_FILE,
+    });
+    if (quarantineResult !== 0) {
+      throw new Error(`Could not quarantine corrupt background health data (${quarantineResult}).`);
+    }
+    onDiscard(error);
+    return createEmptyOutbox();
+  }
 }
 
-function samplesMatch(left: BackgroundHealthSample, right: BackgroundHealthSample): boolean {
-  return (
-    left.recordedAt === right.recordedAt &&
-    left.heartRate === right.heartRate &&
-    left.bloodOxygenPercent === right.bloodOxygenPercent &&
-    left.bodyTemperatureCelsius === right.bodyTemperatureCelsius &&
-    left.stress === right.stress
-  );
-}
-
-function activitiesMatch(left: HealthActivity, right: HealthActivity): boolean {
-  return (
-    left.externalId === right.externalId &&
-    left.activityType === right.activityType &&
-    left.startedAt === right.startedAt &&
-    left.endedAt === right.endedAt
-  );
-}
-
-export function removeUploadedBackgroundHealthBufferEntries(
-  current: BackgroundHealthBuffer,
-  uploaded: BackgroundHealthBuffer,
-): BackgroundHealthBuffer {
-  return {
-    samples: current.samples.filter(
-      (sample) => !uploaded.samples.some((uploadedSample) => samplesMatch(sample, uploadedSample)),
-    ),
-    activities: current.activities.filter(
-      (activity) =>
-        !uploaded.activities.some((uploadedActivity) =>
-          activitiesMatch(activity, uploadedActivity),
-        ),
-    ),
-  };
+export function writeBackgroundHealthOutbox(outbox: BackgroundHealthOutbox): void {
+  writeFileSync({ path: BACKGROUND_HEALTH_FILE, data: serializeBackgroundHealthOutbox(outbox) });
 }

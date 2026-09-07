@@ -5,8 +5,9 @@ import {
   markFileUploadObjectDeleted,
   queueCompletedFileUpload,
   requeueStuckFileUpload,
+  type TransactionalFileUploadDatabase,
+  withLockedFileUpload,
 } from "../db/file-upload.ts";
-import type { Database } from "../db/typed-sql.ts";
 import { fileUploadLifecycleTotal, fileUploadReconciliationTotal } from "../file-upload-metrics.ts";
 import type { ImportUploadStorage } from "../file-upload-storage.ts";
 import { captureException } from "../lib/error-reporting.ts";
@@ -30,7 +31,7 @@ function reportReconciliationItemFailure(
 }
 
 export async function reconcileFileUploads(
-  database: Database,
+  database: TransactionalFileUploadDatabase,
   storage: ImportUploadStorage,
 ): Promise<void> {
   const uploads = await listFileUploadsForReconciliation(database);
@@ -79,8 +80,16 @@ export async function reconcileFileUploads(
         }
         continue;
       }
-      await storage.deleteObject(upload.objectKey);
-      await markFileUploadObjectDeleted(database, upload.id);
+      await withLockedFileUpload(database, upload.id, async (transaction, locked) => {
+        if (
+          locked.objectDeletedAt ||
+          !["completed", "failed", "aborted", "expired"].includes(locked.state)
+        ) {
+          return;
+        }
+        await storage.deleteObject(locked.objectKey);
+        await markFileUploadObjectDeleted(transaction, locked.id);
+      });
     } catch (error) {
       reportReconciliationItemFailure(error, "upload", { uploadId: upload.id });
     }
@@ -107,7 +116,7 @@ export interface FileUploadReconciler {
 }
 
 export function startFileUploadReconciler(
-  database: Database,
+  database: TransactionalFileUploadDatabase,
   storage: ImportUploadStorage,
 ): FileUploadReconciler {
   let running: Promise<void> | null = null;

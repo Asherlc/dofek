@@ -2,7 +2,7 @@
 
 <!-- cspell:ignore ciphertext -->
 
-Dofek encrypts stored provider tokens, webhook secrets, Slack installations,
+Dofek encrypts stored provider tokens and webhook secrets,
 and dynamic MCP client secrets through
 `src/security/credential-encryption.ts`.
 

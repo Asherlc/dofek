@@ -5,7 +5,7 @@ describe("SERVER_URL", () => {
     vi.stubEnv("EXPO_PUBLIC_SERVER_URL", "");
     vi.resetModules();
     const { SERVER_URL } = await import("./server");
-    expect(SERVER_URL).toBe("https://dofek.asherlc.com");
+    expect(SERVER_URL).toBe("https://dofek.fit");
   });
 
   it("uses EXPO_PUBLIC_SERVER_URL when set", async () => {

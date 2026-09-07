@@ -114,11 +114,11 @@ validation scan's stronger lock during the initial constraint addition:
 | `fitness.activity` | Any timed activity (type, times, raw JSONB summary from provider) |
 | `fitness.activity_interval` | Laps/intervals with time ranges (metrics computed at query time from sensor_sample) |
 | `fitness.sensor_sample` | Time-series sensor data (TimescaleDB hypertable) — all channels at any frequency |
-| `fitness.finger_loading_entry` | Manual finger-loading protocols with raw edge, grip, load, bodyweight, laterality, set, hold, rest, RPE, and note values |
-| `fitness.climbing_entry` | Imported aggregate climbs or manual climb definitions, including grade, wall angle, hold type, route, and location |
-| `fitness.climbing_attempt` | Ordered raw outcomes, failure reasons, and notes for attempts on a manual climb |
+| `fitness.finger_loading_entry` | Finger-loading protocols with raw edge, grip, load, bodyweight, laterality, set, hold, rest, RPE, and note values; existing rows remain read-only in the application |
+| `fitness.climbing_entry` | Imported/provider climbs and retained historical Dofek-created climb definitions, including grade, wall angle, hold type, route, and location |
+| `fitness.climbing_attempt` | Ordered raw outcomes, failure reasons, and notes for attempts on a retained climbing entry |
 
-Manual climbing entries leave the legacy aggregate `sent` and `attempt_count`
+Retained Dofek-created climbing entries leave the legacy aggregate `sent` and `attempt_count`
 columns null. Serving queries derive those values from `climbing_attempt`; imported
 provider rows retain their provider-supplied aggregates. Finger-loading effective
 load is likewise derived as bodyweight plus signed external load and is never
@@ -223,7 +223,7 @@ documentation.
 `food_entry_nutrient`. Daily totals are derived from those rows instead of
 inserted separately.
 
-**FatSecret**, manual food logging, and Slack meal logging write `itemized`
+**FatSecret** and manual food logging write `itemized`
 entries through the normalized food path. Supplement schedules do not create
 food entries. Their nutrients enter
 `fitness.v_nutrition_canonical_nutrient` only while the current dose-event

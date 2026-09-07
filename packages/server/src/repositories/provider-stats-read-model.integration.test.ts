@@ -2,14 +2,14 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
-  extractCteSql,
-  readModelSql,
-  renderDbtModelSql,
-} from "../../../../analytics/models/read_models/read-model-sql-test-helpers.ts";
-import {
   type ClickHouseClient,
   createClickHouseClientFromEnv,
 } from "../../../../src/db/clickhouse.ts";
+import {
+  extractCteSql,
+  readModelSql,
+  renderDbtModelSql,
+} from "../../../../src/db/read-model-sql-test-helpers.ts";
 
 const countSchema = z.array(z.object({ count: z.coerce.number().int() }));
 const providerSchema = z.array(
@@ -346,8 +346,7 @@ describe("provider stats read model", () => {
         health_events UInt64,
         metric_stream UInt64,
         nutrition_daily UInt64,
-        lab_panels UInt64,
-        lab_results UInt64,
+        clinical_records UInt64,
         journal_entries UInt64,
         is_deleted UInt8,
         refresh_version UInt64,
@@ -365,8 +364,8 @@ describe("provider stats read model", () => {
       });
       await client.command({
         query: `INSERT INTO ${targetTable} VALUES
-          ({userId:UUID}, 'alpha_provider', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, now64(9) - INTERVAL 2 HOUR),
-          ({userId:UUID}, 'beta_provider', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, now64(9) - INTERVAL 1 HOUR)`,
+          ({userId:UUID}, 'alpha_provider', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, now64(9) - INTERVAL 2 HOUR),
+          ({userId:UUID}, 'beta_provider', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, now64(9) - INTERVAL 1 HOUR)`,
         query_params: { userId },
       });
 
@@ -574,8 +573,7 @@ describe("provider stats read model", () => {
         health_events UInt64,
         metric_stream UInt64,
         nutrition_daily UInt64,
-        lab_panels UInt64,
-        lab_results UInt64,
+        clinical_records UInt64,
         journal_entries UInt64,
         is_deleted UInt8,
         refresh_version UInt64,
@@ -593,8 +591,8 @@ describe("provider stats read model", () => {
       });
       await client.command({
         query: `INSERT INTO ${targetTable} VALUES
-          ({userId:UUID}, 'alpha_provider', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, now64(9) - INTERVAL 2 HOUR),
-          ({userId:UUID}, 'beta_provider', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, now64(9) - INTERVAL 1 HOUR)`,
+          ({userId:UUID}, 'alpha_provider', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, now64(9) - INTERVAL 2 HOUR),
+          ({userId:UUID}, 'beta_provider', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, now64(9) - INTERVAL 1 HOUR)`,
         query_params: { userId },
       });
 
@@ -662,15 +660,7 @@ describe("provider stats read model", () => {
           _peerdb_version Int64`,
       },
       {
-        name: "lab_panel",
-        columns: `
-          user_id UUID,
-          provider_id String,
-          _peerdb_is_deleted Int8,
-          _peerdb_version Int64`,
-      },
-      {
-        name: "lab_result",
+        name: "clinical_record",
         columns: `
           user_id UUID,
           provider_id String,
@@ -745,8 +735,7 @@ describe("provider stats read model", () => {
         health_events: 0,
         metric_stream: 0,
         nutrition_daily: 0,
-        lab_panels: 0,
-        lab_results: 0,
+        clinical_records: 0,
         journal_entries: 0,
         is_deleted: 1,
       });

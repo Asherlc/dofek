@@ -34,6 +34,7 @@ vi.mock("../modules/health-kit", () => ({
   setObserverSyncInProgress: (...args: unknown[]) => mockSetObserverSyncInProgress(...args),
   teardownBackgroundObservers: (...args: unknown[]) => mockTeardownBackgroundObservers(...args),
   queryDailyStatistics: vi.fn().mockResolvedValue([]),
+  queryCategorySamples: vi.fn().mockResolvedValue([]),
   queryQuantitySamples: vi.fn().mockResolvedValue([]),
   queryWorkouts: vi.fn().mockResolvedValue([]),
   queryWorkoutRoutes: vi.fn().mockResolvedValue([]),
@@ -554,21 +555,20 @@ describe("initBackgroundHealthKitSync", () => {
     vi.useRealTimers();
   });
 
-  it.each([
-    null,
-    "locked",
-    { code: "OTHER_ERROR" },
-  ])("reports a non-HealthKit database error to Sentry: %j", async (syncError) => {
-    vi.mocked(queryWorkouts).mockRejectedValueOnce(syncError);
+  it.each([null, "locked", { code: "OTHER_ERROR" }])(
+    "reports a non-HealthKit database error to Sentry: %j",
+    async (syncError) => {
+      vi.mocked(queryWorkouts).mockRejectedValueOnce(syncError);
 
-    await initBackgroundHealthKitSync(createMockClient());
+      await initBackgroundHealthKitSync(createMockClient());
 
-    await vi.waitFor(() => {
-      expect(mockCaptureException).toHaveBeenCalledWith(syncError, {
-        source: "bg-healthkit-sync",
+      await vi.waitFor(() => {
+        expect(mockCaptureException).toHaveBeenCalledWith(syncError, {
+          source: "bg-healthkit-sync",
+        });
       });
-    });
-  });
+    },
+  );
 
   it("skips init when HealthKit is not available", async () => {
     mockIsAvailable.mockReturnValueOnce(false);
