@@ -5,6 +5,7 @@ import {
   formatNumber,
 } from "@dofek/format/format";
 import { formatMeasurementText } from "@dofek/format/units";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import type { ActivityHrZone, ActivityPowerZone, ZoneDistributionDatum } from "@dofek/zones/zones";
 import {
   createZoneDistributionRows,
@@ -91,7 +92,12 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
   if (errorMessage) {
     return (
       <div className="flex items-center justify-center text-center px-4" style={{ height }}>
-        <span className="text-red-400 text-sm">{errorMessage}</span>
+        <span className="text-red-400 text-sm">
+          {userFacingErrorMessage(
+            errorMessage,
+            "Heart rate zones could not be loaded. Please try again.",
+          )}
+        </span>
       </div>
     );
   }

@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { locallyReportedErrorMeta } from "../lib/query-client.ts";
@@ -62,7 +63,7 @@ export function CredentialAuthModal({
           operation: "credentialAuth.signIn",
           providerId,
         });
-        setError(err instanceof Error ? err.message : "Sign in failed");
+        setError(userFacingErrorMessage(err, "Sign in failed"));
       } finally {
         setLoading(false);
       }
@@ -192,7 +193,12 @@ export function TokenAuthModal({
           operation: "tokenAuth.connect",
           providerId,
         });
-        setError(caught instanceof Error ? caught.message : "Token connection failed");
+        setError(
+          userFacingErrorMessage(
+            caught,
+            "The token could not be connected. Check it and try again.",
+          ),
+        );
         setLoading(false);
         return;
       }
@@ -310,7 +316,7 @@ export function GarminAuthModal({
           operation: "garminAuth.signIn",
           providerId: "garmin",
         });
-        setError(err instanceof Error ? err.message : "Sign in failed");
+        setError(userFacingErrorMessage(err, "Sign in failed"));
       } finally {
         setLoading(false);
       }
@@ -448,7 +454,7 @@ export function WhoopAuthModal({
         }
       } catch (err: unknown) {
         captureException(err, { operation, providerId: "whoop" });
-        setError(err instanceof Error ? err.message : "Sign in failed");
+        setError(userFacingErrorMessage(err, "Sign in failed"));
       } finally {
         setLoading(false);
       }
@@ -472,7 +478,7 @@ export function WhoopAuthModal({
         }
       } catch (err: unknown) {
         captureException(err, { operation, providerId: "whoop" });
-        setError(err instanceof Error ? err.message : "Verification failed");
+        setError(userFacingErrorMessage(err, "Verification failed"));
       } finally {
         setLoading(false);
       }

@@ -7,6 +7,7 @@ import {
   medicationReminderSchema,
   parseMedicationReminders,
 } from "@dofek/format/medication-reminders";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { z } from "zod";
@@ -83,11 +84,23 @@ export function MedicationRemindersPanel({
   }
 
   if (setting.error) {
-    return <QueryStatePanel variant="error" minHeight={96} message={setting.error.message} />;
+    return (
+      <QueryStatePanel
+        variant="error"
+        minHeight={96}
+        message={userFacingErrorMessage(setting.error)}
+      />
+    );
   }
 
   if (doseEvents.error) {
-    return <QueryStatePanel variant="error" minHeight={96} message={doseEvents.error.message} />;
+    return (
+      <QueryStatePanel
+        variant="error"
+        minHeight={96}
+        message={userFacingErrorMessage(doseEvents.error)}
+      />
+    );
   }
 
   let reminders: MedicationReminder[] = [];
@@ -124,7 +137,7 @@ export function MedicationRemindersPanel({
             { key: MEDICATION_REMINDERS_SETTINGS_KEY },
             previousSetting,
           );
-          setWriteError(error.message);
+          setWriteError(userFacingErrorMessage(error));
           captureException(error, { context: "medication-reminders-write" });
         },
         onSettled: () => {

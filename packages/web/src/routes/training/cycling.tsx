@@ -1,4 +1,5 @@
 import { formatDateMedium, formatNumber } from "@dofek/format/format";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
@@ -254,7 +255,14 @@ function CyclingContent({ days }: { days: TimeRangeDays }) {
               onPageChange={setActivityPage}
               onBulkDelete={(ids) => bulkDelete.mutate({ ids })}
               bulkDeletePending={bulkDelete.isPending}
-              bulkDeleteError={bulkDelete.error?.message}
+              bulkDeleteError={
+                bulkDelete.error
+                  ? userFacingErrorMessage(
+                      bulkDelete.error,
+                      "The activities could not be deleted. Please try again.",
+                    )
+                  : undefined
+              }
             />
           </Section>
         </>

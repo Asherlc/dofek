@@ -1,4 +1,5 @@
 import { formatDateYmd } from "@dofek/format/format";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { useState } from "react";
 import { trpc } from "../lib/trpc.ts";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
@@ -35,7 +36,7 @@ export function SubjectiveTrackingPanel() {
         All clear today
       </button>
       {saveCheckIn.error ? (
-        <p className="text-sm text-red-600">{saveCheckIn.error.message}</p>
+        <p className="text-sm text-red-600">{userFacingErrorMessage(saveCheckIn.error)}</p>
       ) : null}
       {regions.isLoading && regions.data === undefined ? (
         <QueryStatePanel variant="loading" contextLabel="Body regions" height={72} />
@@ -90,10 +91,10 @@ export function SubjectiveTrackingPanel() {
         <p className="text-sm text-dim">No body regions are available.</p>
       )}
       {regions.error && regions.data !== undefined ? (
-        <p className="text-sm text-red-600">{regions.error.message}</p>
+        <p className="text-sm text-red-600">{userFacingErrorMessage(regions.error)}</p>
       ) : null}
       {createInjury.error ? (
-        <p className="text-sm text-red-600">{createInjury.error.message}</p>
+        <p className="text-sm text-red-600">{userFacingErrorMessage(createInjury.error)}</p>
       ) : null}
       {injuries.isLoading && injuries.data === undefined ? (
         <QueryStatePanel variant="loading" contextLabel="Injury events" height={96} />

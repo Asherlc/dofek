@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import {
   PRIMARY_GOAL_OPTIONS,
   PRIMARY_GOAL_SETTINGS_KEY,
@@ -39,7 +40,7 @@ export function PrimaryGoalSelector({ showHeading = true }: { showHeading?: bool
       {
         onError: (error) => {
           trpcUtils.settings.get.setData({ key: PRIMARY_GOAL_SETTINGS_KEY }, previousSetting);
-          setWriteError(error.message);
+          setWriteError(userFacingErrorMessage(error));
           captureException(error, { context: "primary-goal-write" });
         },
         onSettled: () => {
@@ -59,8 +60,13 @@ export function PrimaryGoalSelector({ showHeading = true }: { showHeading?: bool
           </Text>
         </>
       ) : null}
-      {(writeError ?? setting.error?.message) && (
-        <Text style={styles.errorText}>{writeError ?? setting.error?.message}</Text>
+      {(writeError ?? setting.error) && (
+        <Text style={styles.errorText}>
+          {userFacingErrorMessage(
+            writeError ?? setting.error,
+            "Your primary goal could not be saved. Please try again.",
+          )}
+        </Text>
       )}
       <View style={styles.optionsContainer}>
         {PRIMARY_GOAL_OPTIONS.map((option) => {

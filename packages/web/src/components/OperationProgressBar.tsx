@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 export interface OperationProgressBarProps {
   message?: string;
   percentage?: number;
@@ -14,11 +15,12 @@ function clampPercentage(percentage: number): number {
 
 export function OperationProgressBar({ message, percentage }: OperationProgressBarProps) {
   const boundedPercentage = percentage === undefined ? undefined : clampPercentage(percentage);
+  const displayMessage = message ? userFacingErrorMessage(message) : undefined;
 
   return (
     <div className="space-y-1">
       <div
-        aria-label={message ?? "Operation progress"}
+        aria-label={displayMessage ?? "Operation progress"}
         aria-valuemax={100}
         aria-valuemin={0}
         aria-valuenow={boundedPercentage}
@@ -33,7 +35,7 @@ export function OperationProgressBar({ message, percentage }: OperationProgressB
           style={{ width: `${boundedPercentage ?? 35}%` }}
         />
       </div>
-      {message && <span className="block text-xs text-subtle">{message}</span>}
+      {displayMessage && <span className="block text-xs text-subtle">{displayMessage}</span>}
     </div>
   );
 }

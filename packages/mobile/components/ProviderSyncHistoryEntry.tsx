@@ -1,4 +1,5 @@
 import { formatDurationSeconds, formatTime } from "@dofek/format/format";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import {
   type ProviderSyncLogTone,
   providerSyncLogPresentation,
@@ -69,7 +70,15 @@ export function ProviderSyncHistoryEntry({ providerName, entry }: ProviderSyncHi
           {entry.authFailureReason ? (
             <DiagnosticValue label="Authorization reason" value={entry.authFailureReason} />
           ) : null}
-          {entry.errorMessage ? <DiagnosticValue label="Error" value={entry.errorMessage} /> : null}
+          {entry.errorMessage ? (
+            <DiagnosticValue
+              label="Error"
+              value={userFacingErrorMessage(
+                entry.errorMessage,
+                "The sync failed. Please try again.",
+              )}
+            />
+          ) : null}
           <DiagnosticValue label="Log ID" value={entry.id} />
         </View>
       ) : null}

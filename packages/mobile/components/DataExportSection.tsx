@@ -1,4 +1,5 @@
 import { formatDateMedium } from "@dofek/format/format";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { File as ExpoFile } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -74,7 +75,7 @@ async function getResponseErrorMessage(response: Response, fallback: string): Pr
     const parsed = ErrorResponseSchema.safeParse(await response.json());
     if (!parsed.success) return fallback;
     if (typeof parsed.data.error === "string") return parsed.data.error;
-    if (parsed.data.error?.message) return parsed.data.error.message;
+    if (parsed.data.error?.message) return userFacingErrorMessage(parsed.data.error);
     return parsed.data.message ?? fallback;
   } catch (error: unknown) {
     captureException(error, { source: "data-export-response-error-json" });
@@ -128,7 +129,7 @@ export function DataExportSection({ serverUrl, sessionToken }: DataExportSection
       captureException(error, { context: "data-export-list" });
       if (!isMounted.current) return;
       setExportState("error");
-      setExportMessage(error instanceof Error ? error.message : "Failed to load exports");
+      setExportMessage(userFacingErrorMessage(error, "Failed to load exports"));
     } finally {
       if (isMounted.current) {
         setExportsLoading(false);
@@ -207,7 +208,7 @@ export function DataExportSection({ serverUrl, sessionToken }: DataExportSection
       captureException(error, { context: "data-export-download" });
       if (!isMounted.current) return;
       setExportState("error");
-      setExportMessage(error instanceof Error ? error.message : "Failed to download export");
+      setExportMessage(userFacingErrorMessage(error, "Failed to download export"));
     } finally {
       if (file) {
         try {

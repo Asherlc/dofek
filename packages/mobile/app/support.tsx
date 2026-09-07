@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SupportPanel } from "../components/SupportPanel";
 import { trpc } from "../lib/trpc";
@@ -14,7 +15,14 @@ export default function SupportScreen() {
         <View style={styles.card}>
           <SupportPanel
             isPending={createTicket.isPending}
-            errorMessage={createTicket.error?.message ?? null}
+            errorMessage={
+              createTicket.error
+                ? userFacingErrorMessage(
+                    createTicket.error,
+                    "Your support request could not be sent. Please try again.",
+                  )
+                : null
+            }
             ticketId={createTicket.data?.ticketId ?? null}
             onReset={() => createTicket.reset()}
             onSubmit={(draft) => createTicket.mutate(draft)}

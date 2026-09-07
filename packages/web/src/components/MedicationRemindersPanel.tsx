@@ -7,6 +7,7 @@ import {
   medicationReminderSchema,
   parseMedicationReminders,
 } from "@dofek/format/medication-reminders";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { captureException } from "../lib/telemetry.ts";
@@ -89,7 +90,7 @@ export function MedicationRemindersPanel({
             { key: MEDICATION_REMINDERS_SETTINGS_KEY },
             previousSetting,
           );
-          setWriteError(error.message);
+          setWriteError(userFacingErrorMessage(error));
           captureException(error, { context: "medication-reminders-write" });
         },
         onSettled: () => {

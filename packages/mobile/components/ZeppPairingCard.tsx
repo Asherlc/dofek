@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { useEffect, useState } from "react";
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { trpc } from "../lib/trpc";
@@ -43,7 +44,7 @@ export function ZeppPairingCard({ initialCode = "" }: { initialCode?: string }) 
       await connectionsQuery.refetch();
     },
     onError: (error) => {
-      setPairingMessage(error.message);
+      setPairingMessage(userFacingErrorMessage(error));
     },
   });
 
@@ -55,8 +56,22 @@ export function ZeppPairingCard({ initialCode = "" }: { initialCode?: string }) 
   return (
     <ZeppPairingCardBody
       connections={connectionsQuery.data ?? []}
-      connectionsError={connectionsQuery.error?.message ?? null}
-      disconnectError={disconnectMutation.error?.message ?? null}
+      connectionsError={
+        connectionsQuery.error
+          ? userFacingErrorMessage(
+              connectionsQuery.error,
+              "Paired devices could not be loaded. Please try again.",
+            )
+          : null
+      }
+      disconnectError={
+        disconnectMutation.error
+          ? userFacingErrorMessage(
+              disconnectMutation.error,
+              "The device could not be disconnected. Please try again.",
+            )
+          : null
+      }
       isConnectionsLoading={connectionsQuery.isLoading}
       pairingCode={pairingCode}
       pairingMessage={pairingMessage}

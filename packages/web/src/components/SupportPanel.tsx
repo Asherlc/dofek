@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { type FormEvent, useState } from "react";
 import { trpc } from "../lib/trpc.ts";
 
@@ -95,7 +96,14 @@ export function SupportPanel() {
         />
       </div>
 
-      {createTicket.error && <p className="text-sm text-red-400">{createTicket.error.message}</p>}
+      {createTicket.error && (
+        <p className="text-sm text-red-400">
+          {userFacingErrorMessage(
+            createTicket.error,
+            "Your support request could not be sent. Please try again.",
+          )}
+        </p>
+      )}
 
       <button
         type="submit"

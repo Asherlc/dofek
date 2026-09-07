@@ -1,4 +1,5 @@
 import { accountErasureCleanupWasBlocked } from "@dofek/auth/account-erasure";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
@@ -47,7 +48,12 @@ export function AccountErasurePanel() {
       setPreparation(capability);
     } catch (error: unknown) {
       captureException(error, { source: "account-erasure-prepare" });
-      setLocalError(error instanceof Error ? error.message : String(error));
+      setLocalError(
+        userFacingErrorMessage(
+          error,
+          "Account deletion could not be prepared. Please sign in and try again.",
+        ),
+      );
     }
   }
 
@@ -94,7 +100,7 @@ export function AccountErasurePanel() {
           : new Error("Account erasure confirmation failed."),
         { source: "account-erasure-confirm" },
       );
-      const message = error instanceof Error ? error.message : String(error);
+      const message = userFacingErrorMessage(error, "Account deletion could not be started.");
       setLocalError(
         accepted
           ? "Account deletion was accepted and your session was closed. Check the account deletion status page for updates."

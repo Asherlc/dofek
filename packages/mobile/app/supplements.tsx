@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { MEAL_OPTIONS } from "@dofek/nutrition/meal";
 import { useEffect, useMemo } from "react";
 import {
@@ -76,7 +77,9 @@ export default function SupplementsScreen() {
 
       {stack.error && (
         <Text style={styles.errorText}>
-          {hasCanonicalStack ? `Refresh failed: ${stack.error.message}` : stack.error.message}
+          {hasCanonicalStack
+            ? `Refresh failed: ${userFacingErrorMessage(stack.error)}`
+            : userFacingErrorMessage(stack.error)}
         </Text>
       )}
 
@@ -109,7 +112,9 @@ export default function SupplementsScreen() {
           Health (NIH) adult upper limits, and medication-review guidance
         </Text>
         {safetyReview.isLoading && <Text style={styles.loadingText}>Loading...</Text>}
-        {safetyReview.error && <Text style={styles.errorText}>{safetyReview.error.message}</Text>}
+        {safetyReview.error && (
+          <Text style={styles.errorText}>{userFacingErrorMessage(safetyReview.error)}</Text>
+        )}
         {safetyReview.data && (
           <>
             <View

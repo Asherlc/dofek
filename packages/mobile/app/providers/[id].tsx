@@ -1,4 +1,5 @@
 import { formatRelativeTime } from "@dofek/format/format";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { providerHealth } from "@dofek/providers/provider-health";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { DATA_TYPE_LABELS } from "@dofek/providers/provider-stats";
@@ -89,7 +90,10 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
     return (
       <View style={recordStyles.emptyContainer}>
         <Text style={recordStyles.errorText}>
-          {records.error?.message ?? "Failed to load records."}
+          {userFacingErrorMessage(
+            records.error,
+            "Provider records could not be loaded. Please try again.",
+          )}
         </Text>
       </View>
     );

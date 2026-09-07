@@ -53,6 +53,15 @@ describe("processing status presentation", () => {
     expect(processingStatusMessage({ status: "active", errorMessage: "Ignore this." })).toBeNull();
   });
 
+  it("replaces technical processing failures with recovery guidance", () => {
+    expect(
+      processingStatusMessage({
+        status: "failed",
+        errorMessage: "TypeError: Cannot read properties of undefined (reading 'status')",
+      }),
+    ).toBe("Try the update again. If it still fails, reconnect the data source.");
+  });
+
   it("names the provider and area when one area is updating", () => {
     const target = processingTarget({
       providerId: "garmin",
