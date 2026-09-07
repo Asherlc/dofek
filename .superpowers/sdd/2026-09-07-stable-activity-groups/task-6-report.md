@@ -1,8 +1,8 @@
 # Task 6 report
 
-Status: fix round 4 complete. The original Task 6 implementation and prior fix
-rounds are recorded below; this round closes the stream watermark defect and
-the server integration-harness parity miss.
+Status: fix round 5 complete. The original Task 6 implementation and prior fix
+rounds are recorded below; this final round closes ordinary unscoped stream
+restoration after a group's latest stream row has been tombstoned.
 
 ## Implementation
 
@@ -349,3 +349,62 @@ not lifecycle watermarks. Suggested guidance: document that rule alongside the
 existing microbatch anti-join guidance and add stream consumers to the
 read-model logical-key review checklist; continue using
 `integration-tests-ready` for real dbt lifecycle coverage.
+
+## Fix round 5
+
+`activity_stream_points` now treats a current active activity whose latest
+stream state is a tombstone as dirty during an ordinary unscoped incremental
+run. Restoration uses the existing per-group `existing_stream_state` once and
+joins it to `current_activity`; it no longer performs two `FINAL` scans that
+both resolve to the same latest tombstone and therefore cannot reveal an older
+active row. This also gives a group with tombstone-only stream history the same
+deterministic rebuild contract. Initial, source-version, stale, and scoped
+dirty-key branches are unchanged.
+
+The actual-dbt transition now builds a four-point active stream, tombstones the
+group, restores the group without changing its location-sample version, and
+runs the ordinary unscoped model. It proves the four points republish, the
+source version remains unchanged, and an unrelated active group does not
+rebuild. A second current group seeded with only a prior stream tombstone is
+also reprocessed and remains explicitly tombstoned because it has no payload.
+
+### Transition-first RED evidence
+
+- `rtk pnpm vitest run analytics/models/read_models/read_model_microbatch.sql.test.ts --retry=0`: 1 file, 38 tests run, 1 failed. The first intended failure expected restoration to read `existing_stream_state` and found the old duplicate `{{ this }} FINAL` history predicate instead.
+- `rtk bash -lc 'set -a; . ./.env.local; set +a; pnpm vitest run --project integration src/db/activity-payload-dbt-microbatch.integration.test.ts -t "remaps routes" --retry=0'`: 1 focused test failed after restoration. The first behavioral assertion expected `{ is_deleted: 0, point_count: 4 }` and received `{ is_deleted: 1, point_count: 0 }`, while the fixture held the location source version constant.
+
+### Fix-round GREEN evidence
+
+- `rtk pnpm vitest run analytics/models/read_models/read_model_microbatch.sql.test.ts --retry=0`: 1 file, 38 tests passed.
+- Escalated `rtk bash -lc 'set -a; . ./.env.local; set +a; pnpm vitest run --project integration src/db/activity-payload-dbt-microbatch.integration.test.ts --retry=0'`: 1 file, 2 tests passed in 34.17s against actual dbt-compiled SQL and ClickHouse. The focused transition alone passed in 24.68s.
+- `rtk pnpm vitest run analytics/models/read_models/read_model_microbatch.sql.test.ts src/db/activity-data-integrity-dbt.test.ts packages/server/src/routers/clickhouse-integration-test-helpers.test.ts --retry=0`: 3 files, 49 tests passed.
+- Escalated `rtk pnpm analytics:build`: all 39 dbt models passed with no warnings, errors, or skips.
+- `rtk pnpm typecheck`: `TypeScript: No errors found`.
+- Escalated `rtk pnpm lint:sandbox`: passed all formatting and repository policy gates across 3,230 files.
+- Focused SQLFluff reports only the same three Jinja branch-analysis ST03 findings documented in fix round 4 (`target_state`, `current_activity`, and `existing_stream_points`). All three CTEs are exercised by alternate compiled branches; no suppression or lint configuration changed.
+- `rtk git diff --check`: clean.
+
+The first sandboxed integration rerun failed before test execution with
+`connect EPERM 127.0.0.1:57038`; the identical escalated command passed. The
+first sandboxed dbt build and lint runs similarly stopped at
+`listen EPERM .../tsx-502/...pipe`; their identical escalated commands passed.
+SQLFluff's first sandboxed attempt could not access the existing uv cache; the
+escalated run reached the model and produced only the documented ST03 reports.
+
+### Fix-round rollout and retrospective
+
+No migration or rebuild-order change is required. The existing Task 6 rollout
+must still rebuild `activity_stream_points` after group-keyed sensor and
+location samples. Once deployed, an ordinary incremental run is sufficient to
+republish any current active group whose latest stream state is a tombstone,
+even when its upstream sample versions have not changed.
+
+What went well: the executable delete/restore sequence isolated lifecycle
+restoration from payload watermarks and made the one-state predicate obvious.
+What required investigation: the previous query attempted to recover history
+through a second `FINAL` read, but `FINAL` necessarily exposed the same winning
+tombstone as the first read. Useful context next time: restoration rules should
+be expressed from current lifecycle plus latest materialized state, not inferred
+from superseded `ReplacingMergeTree` history. Suggested guidance: add that
+contract to the analytics incremental-model checklist and continue using
+`integration-tests-ready` for real dbt lifecycle transitions.

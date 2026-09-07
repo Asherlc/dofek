@@ -22,6 +22,8 @@ const routeMemberId = "00000000-0000-0000-0000-000000001032";
 const unrelatedRouteMemberId = "00000000-0000-0000-0000-000000001033";
 const movedRouteGroupId = "00000000-0000-0000-0000-000000001034";
 const retainedRouteMemberId = "00000000-0000-0000-0000-000000001035";
+const tombstoneOnlyGroupId = "00000000-0000-0000-0000-000000001036";
+const tombstoneOnlyMemberId = "00000000-0000-0000-0000-000000001037";
 const providerAPointIds = [
   "00000000-0000-0000-0000-000000001040",
   "00000000-0000-0000-0000-000000001041",
@@ -363,6 +365,61 @@ describe("activity payload dbt batch reconciliation", () => {
       unchangedStreamVersion,
     );
 
+    const unchangedLocationVersion = await getLocationSampleVersion(
+      client,
+      database,
+      movedRouteGroupId,
+    );
+    await setRouteGroupDeleted(client, database, true, 3);
+    await runDbtBatch(
+      database,
+      artifactDirectory,
+      ["activity_stream_points"],
+      "2026-09-07",
+      "2026-09-08",
+    );
+    await expectLocationStreamState(client, database, [
+      { activity_id: routeGroupId, point_count: 0, is_deleted: 1 },
+      { activity_id: movedRouteGroupId, point_count: 0, is_deleted: 1 },
+    ]);
+    const deletedStreamVersion = await getLocationStreamVersion(
+      client,
+      database,
+      movedRouteGroupId,
+    );
+    await seedTombstoneOnlyCurrentGroup(client, database);
+    const tombstoneOnlyPriorVersion = await getLocationStreamVersion(
+      client,
+      database,
+      tombstoneOnlyGroupId,
+    );
+
+    await setRouteGroupDeleted(client, database, false, 4);
+    await runDbtBatch(
+      database,
+      artifactDirectory,
+      ["activity_stream_points"],
+      "2026-09-07",
+      "2026-09-08",
+    );
+    await expectLocationStreamState(client, database, [
+      { activity_id: routeGroupId, point_count: 0, is_deleted: 1 },
+      { activity_id: movedRouteGroupId, point_count: 4, is_deleted: 0 },
+    ]);
+    expect(await getLocationStreamVersion(client, database, movedRouteGroupId)).not.toBe(
+      deletedStreamVersion,
+    );
+    expect(await getLocationSampleVersion(client, database, movedRouteGroupId)).toBe(
+      unchangedLocationVersion,
+    );
+    expect(await getLocationStreamVersion(client, database, tombstoneOnlyGroupId)).not.toBe(
+      tombstoneOnlyPriorVersion,
+    );
+    await expectDeletedLocationStream(client, database, tombstoneOnlyGroupId);
+    expect(await getLocationStreamVersion(client, database, unrelatedRouteGroupId)).toBe(
+      unchangedStreamVersion,
+    );
+
     const priorOldGroupStreamVersion = await getLocationStreamVersion(
       client,
       database,
@@ -486,6 +543,40 @@ async function moveRouteMember(client: ClickHouseClient, database: string): Prom
   ]);
 }
 
+async function setRouteGroupDeleted(
+  client: ClickHouseClient,
+  database: string,
+  isDeleted: boolean,
+  version: number,
+): Promise<void> {
+  await client.command({
+    query: `INSERT INTO ${database}.deduped_activities
+      SELECT activity_id, user_id, started_at, ended_at, source_synced_at, member_activity_ids,
+        toUInt64(${version}), toUInt8(${isDeleted ? 1 : 0}),
+        refreshed_at + INTERVAL 1 MICROSECOND
+      FROM ${database}.deduped_activities FINAL
+      WHERE activity_id = toUUID('${movedRouteGroupId}')`,
+  });
+}
+
+async function seedTombstoneOnlyCurrentGroup(
+  client: ClickHouseClient,
+  database: string,
+): Promise<void> {
+  await runStatements(client, [
+    `INSERT INTO ${database}.deduped_activities VALUES
+      ('${tombstoneOnlyGroupId}', '${userId}',
+       toDateTime64('2026-09-03 10:00:00', 6, 'UTC'),
+       toDateTime64('2026-09-03 11:00:00', 6, 'UTC'),
+       toDateTime64('2026-09-03 12:00:00', 9, 'UTC'), ['${tombstoneOnlyMemberId}'], 1, 0,
+       toDateTime64('2026-09-03 12:00:00', 9, 'UTC'))`,
+    `INSERT INTO ${database}.activity_stream_points
+      SELECT toUUID('${userId}'), toUUID('${tombstoneOnlyGroupId}'),
+        CAST([], 'Array(Tuple(DateTime64(6, ''UTC''), Nullable(Float64), Nullable(Float64), Nullable(Float64), Nullable(Float64), Nullable(Float64), Nullable(Float64), Nullable(Float64)))'),
+        toUInt64(1), toUInt8(1), toDateTime64('2026-09-03 12:00:00', 9, 'UTC')`,
+  ]);
+}
+
 async function insertLocationPoints(
   client: ClickHouseClient,
   database: string,
@@ -583,6 +674,36 @@ async function getLocationStreamVersion(
   const [row] = z.array(z.object({ refresh_version: z.string() })).parse(await result.json());
   if (!row) throw new Error(`Missing stream row for activity ${activityId}`);
   return row.refresh_version;
+}
+
+async function getLocationSampleVersion(
+  client: ClickHouseClient,
+  database: string,
+  activityId: string,
+): Promise<string> {
+  const result = await client.query({
+    query: `SELECT toString(max(refresh_version)) AS refresh_version
+      FROM ${database}.activity_location_sample
+      WHERE activity_id = toUUID('${activityId}')`,
+    format: "JSONEachRow",
+  });
+  const [row] = z.array(z.object({ refresh_version: z.string() })).parse(await result.json());
+  if (!row) throw new Error(`Missing location sample rows for activity ${activityId}`);
+  return row.refresh_version;
+}
+
+async function expectDeletedLocationStream(
+  client: ClickHouseClient,
+  database: string,
+  activityId: string,
+): Promise<void> {
+  const result = await client.query({
+    query: `SELECT length(points) AS point_count, is_deleted
+      FROM ${database}.activity_stream_points FINAL
+      WHERE activity_id = toUUID('${activityId}')`,
+    format: "JSONEachRow",
+  });
+  expect(await result.json()).toEqual([{ point_count: 0, is_deleted: 1 }]);
 }
 
 async function expectHistoricalLocationMappingsNewerThanStream(

@@ -153,23 +153,11 @@ restored_dirty_keys AS (
         SELECT
             tombstoned_stream_points.activity_id AS activity_id,
             tombstoned_stream_points.user_id AS user_id
-        FROM (
-            SELECT
-                activity_id,
-                user_id
-            FROM {{ this }} FINAL
-            WHERE is_deleted = 1
-        ) AS tombstoned_stream_points
+        FROM existing_stream_state AS tombstoned_stream_points
         INNER JOIN current_activity
             ON current_activity.activity_id = tombstoned_stream_points.activity_id
             AND current_activity.user_id = tombstoned_stream_points.user_id
-        WHERE EXISTS (
-            SELECT 1
-            FROM {{ this }} AS prior_stream_points FINAL
-            WHERE prior_stream_points.activity_id = tombstoned_stream_points.activity_id
-                AND prior_stream_points.user_id = tombstoned_stream_points.user_id
-                AND prior_stream_points.is_deleted = 0
-        )
+        WHERE tombstoned_stream_points.is_deleted = 1
     {% else %}
         SELECT
             CAST(null, 'Nullable(UUID)') AS activity_id,

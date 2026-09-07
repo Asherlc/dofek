@@ -567,6 +567,13 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("existing_stream_points AS");
     expect(sql).toContain("stale_dirty_keys AS");
     expect(sql).toContain("restored_dirty_keys AS");
+    expect(normalizedSql).toContain(
+      "FROM existing_stream_state AS tombstoned_stream_points INNER JOIN current_activity",
+    );
+    expect(normalizedSql).toContain("WHERE tombstoned_stream_points.is_deleted = 1");
+    expect(normalizedSql).not.toContain(
+      "FROM {{ this }} AS prior_stream_points FINAL",
+    );
     expect(sql).toContain("latest_sensor_samples AS");
     expect(sql).toContain("latest_location_samples AS");
     expect(normalizedSql).toContain("FROM current_activity WHERE (SELECT is_empty FROM target_state)");
