@@ -25247,3 +25247,27 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Publish updated packages and verify the
   Workout Settings page on the affected phone. No retries, waits, or fallback
   behavior were added to application code.
+
+## 2026-09-07 — Zepp Settings mutation coverage blocked PR 2677
+
+- **Status:** Fixed and validated locally; replacement CI run pending.
+- **Symptoms / user impact:** `Test / Stryker (0)` failed and blocked the PR's
+  aggregate Mutation Testing gate before the Zepp pairing and Settings fixes
+  could be reviewed for merge.
+- **Evidence / root cause:** The exact failed command was
+  `pnpm exec stryker run stryker.ci.config.json --mutate "packages/zepp/src/settings-page.ts"`.
+  Its first fatal line was `Final mutation score 42.98 under breaking threshold
+  75`. The new renderer tests verified user actions and visible text but did not
+  assert the complete rendered design contract, so 120 covered visual mutants
+  survived. Stryker marks a mutant as survived when tests still pass after its
+  code change ([Stryker mutation testing](https://stryker-mutator.io/docs/mutation-testing-elements/mutation-testing/)).
+- **Direct fix:** Added compact render-contract snapshots and focused tests for
+  stored-status validation, optional pairing data, whitespace credentials,
+  command toggling, login defaults, sample-rate boundaries, recorder state,
+  transfer progress, and error styling. No mutation threshold or exclusion was
+  changed.
+- **Validation:** The exact mutation command now kills all 229 mutants for
+  `settings-page.ts`, producing a 100.00% mutation score. The focused 25-test
+  suite, Zepp typecheck, and Zepp lint also pass.
+- **Remaining risk / follow-up:** Confirm the replacement PR mutation shard and
+  aggregate gate pass on the fix commit.

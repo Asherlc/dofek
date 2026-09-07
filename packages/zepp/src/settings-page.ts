@@ -94,14 +94,16 @@ function row(label: string, value: string) {
   );
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Object.prototype.toString.call(value) === "[object Object]";
+}
+
 function status(storage: SettingsStorage, key: string): Record<string, unknown> {
   const raw = storage.getItem(key);
   if (!raw) return {};
   try {
     const parsed: unknown = JSON.parse(raw);
-    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
-      ? Object.fromEntries(Object.entries(parsed))
-      : {};
+    return isRecord(parsed) ? Object.fromEntries(Object.entries(parsed)) : {};
   } catch (error) {
     return {
       state: "error",
