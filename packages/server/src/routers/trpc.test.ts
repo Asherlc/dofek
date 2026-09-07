@@ -374,6 +374,7 @@ describe("trpc", () => {
         code: "SERVICE_UNAVAILABLE",
         message: analyticsUnavailableMessage,
       });
+      expect(captureException).toHaveBeenCalledOnce();
       expect(captureException).toHaveBeenCalledWith(reportableError, {
         tags: { dependency: "clickhouse", trpcPath: "test" },
       });
@@ -422,23 +423,30 @@ describe("trpc", () => {
       await expectSanitizedClickHouseError(internalError);
     });
 
-    it("explains missing analytics configuration and reports its diagnostic", async () => {
-      const internalError = new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          "Activity calendar requires the ClickHouse activity analytics store. Set CLICKHOUSE_URL and retry.",
-      });
+    it.each([
+      "Activity calendar requires the ClickHouse activity analytics store. Set CLICKHOUSE_URL and retry.",
+      "Activity queries require ClickHouse. Set CLICKHOUSE_URL and retry.",
+      "ClickHouse is required for activity analytics. Set CLICKHOUSE_URL and retry.",
+    ])(
+      "explains missing analytics configuration and reports its diagnostic once: %s",
+      async (message) => {
+        const internalError = new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message,
+        });
 
-      const caller = createSanitizerCaller(internalError);
-      await expect(caller.test()).rejects.toMatchObject({
-        code: "PRECONDITION_FAILED",
-        message:
-          "Analytics are unavailable because the analytics service is not configured. Contact support.",
-      });
-      expect(captureException).toHaveBeenCalledWith(internalError, {
-        tags: { dependency: "clickhouse", trpcPath: "test" },
-      });
-    });
+        const caller = createSanitizerCaller(internalError);
+        await expect(caller.test()).rejects.toMatchObject({
+          code: "PRECONDITION_FAILED",
+          message:
+            "Analytics are unavailable because the analytics service is not configured. Contact support.",
+        });
+        expect(captureException).toHaveBeenCalledOnce();
+        expect(captureException).toHaveBeenCalledWith(internalError, {
+          tags: { dependency: "clickhouse", trpcPath: "test" },
+        });
+      },
+    );
 
     it("does not hide timeout errors when the message is not from ClickHouse", async () => {
       const timeoutError = Object.assign(new Error("postgres request timed out"), {

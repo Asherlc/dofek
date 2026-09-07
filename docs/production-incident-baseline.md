@@ -25265,4 +25265,22 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   No dictionary exception or check suppression was added.
 - **Validation / follow-up:** The exact spell-check command passed locally
   across 2,494 files with zero issues; Biome passed for both changed components.
-  Confirmation from the replacement PR job remains pending.
+  The [replacement Spell Check job](https://github.com/Asherlc/dofek/actions/runs/34154423716/job/101843615344)
+  passed on `9457370b2`.
+
+## 2026-09-07 — Analytics error tests missed duplicate reporting mutations
+
+- **Scope / impact:** PR #2680 mutation gate only; no production impact.
+- **Evidence / root cause:** The [Stryker shard 1 job](https://github.com/Asherlc/dofek/actions/runs/34154423716/job/101843746485)
+  ran `pnpm exec stryker run stryker.ci.config.json` against changed `trpc.ts`
+  ranges and failed with `Final mutation score 65.12 under breaking threshold 75`.
+  Fifteen mutations survived: tests did not assert that each analytics failure
+  was reported exactly once and omitted one configuration-message verb form.
+- **Direct fix:** Expand the existing middleware tests to check one diagnostic
+  report per failure and all three supported configuration-message verb forms.
+  Production behavior, mutation thresholds, and exclusions are unchanged.
+- **Validation / follow-up:** All 42 focused middleware tests and Biome pass.
+  The exact mutation ranges pass locally at 83.72 (36 killed, seven survived).
+  Remaining survivors broaden the guard for already sanitized errors; no
+  artificial production branches were added to exercise them. Replacement CI
+  confirmation remains pending.
