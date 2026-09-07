@@ -21,8 +21,8 @@ The call sites are:
 
 Model dependencies are declared with dbt `ref()` calls. `sensor_scalar_sample`
 stages scalar metric samples, `deduped_sensor` reads `sensor_scalar_sample`, and
-`activity_vo2max_estimate` reads `deduped_sensor` to keep the expensive VO2 max
-activity/sample joins out of web/API requests. `deduped_activities` materializes
+`activity_vo2max_estimate` reads group-keyed `activity_sensor_sample` to keep the
+expensive VO2 max activity/sample joins out of web/API requests. `deduped_activities` materializes
 persisted PostgreSQL activity groups, and `deduped_activity_members` exposes canonical
 activity/member aliases for downstream models. `activity_duplicate_matches`
 retains overlap evidence for integrity diagnostics; `activity_duplicate_groups`
@@ -34,9 +34,10 @@ presence, specific canonical type, provider-type refinement, provider priority,
 then member UUID. Samples count toward a member only when the winning sample's
 nullable `source_activity_id` equals that member's UUID and its timestamp lies
 within the inclusive normalized window; overlapping same-provider members do not
-share payload credit. The group's served sample union remains independent of source
-activity linkage and provider. The display name follows the selected representative,
-including a null name; notes and raw provenance retain their existing fallbacks.
+share payload credit. The group's served sample union accepts unlinked ambient
+samples and samples linked to any current member, never only the representative.
+The display name follows the selected representative, including a null name;
+notes and raw provenance retain their existing fallbacks.
 Location payload and
 relational strength sets are not available to this upstream scalar projection.
 Missing persisted membership fails the build. Existing deployments must apply
@@ -107,8 +108,9 @@ location selects one coherent provider track for the group so overlapping
 routes are not combined. Consequently, changing the display representative
 does not change the group's heart rate, GPS, elevation, or other populated
 summary values. `source_activity_id` remains nullable sample provenance used
-to rank payload-bearing representatives; it does not restrict the served group
-union.
+to rank payload-bearing representatives and to remove samples whose linked member
+leaves the group. A null source stays eligible as ambient sensor data; a non-null
+source is eligible for every group that currently contains that member.
 
 The TypeScript bootstrap views use the same persisted group identity contract.
 [Migration 0078](../src/db/clickhouse-migrations/0078_stable_activity_read_views.ts)

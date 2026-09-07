@@ -13,6 +13,8 @@ describe("0078_stable_activity_read_views", () => {
     ]);
     expect(sql).toContain("active_activity.group_id");
     expect(sql).toContain("group_id AS id");
+    expect(sql).toContain("tombstoned_groups AS");
+    expect(sql).toContain("final_groups.group_id NOT IN (SELECT group_id FROM tombstoned_groups)");
     expect(sql).not.toContain("min(toString(connected_activity_id)) AS group_id");
     expect(sql).not.toContain("connected_components AS");
   });

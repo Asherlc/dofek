@@ -27,26 +27,42 @@
     }
 ) }}
 
-WITH current_activity AS (
+WITH activity_group_state AS (
     SELECT
-        activity_id,
-        user_id,
-        started_at,
-        ended_at,
+        deduped.activity_id AS group_activity_id,
+        deduped.user_id AS user_id,
+        deduped.started_at AS started_at,
+        deduped.ended_at AS ended_at,
         greatest(
-            coalesce(ended_at, started_at + INTERVAL 12 HOUR),
-            started_at
+            coalesce(deduped.ended_at, deduped.started_at + INTERVAL 12 HOUR),
+            deduped.started_at
         ) AS effective_ended_at,
-        source_synced_at
-    FROM {{ ref('deduped_activities') }} FINAL
-    WHERE is_deleted = 0
+        deduped.source_synced_at AS source_synced_at,
+        deduped.member_activity_ids AS member_activity_ids,
+        deduped.is_deleted AS is_deleted,
+        deduped.refreshed_at AS refreshed_at
+    FROM {{ ref('deduped_activities') }} AS deduped FINAL
+    WHERE 1 = 1
         {% if activity_refresh_scoped %}
-        AND user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        AND deduped.user_id = toUUID('{{ var("activity_refresh_user_id") }}')
         AND (
-            activity_id IN {{ activity_refresh_ids() }}
-            OR hasAny(member_activity_ids, {{ activity_refresh_ids() }})
+            deduped.activity_id IN {{ activity_refresh_ids() }}
+            OR hasAny(deduped.member_activity_ids, {{ activity_refresh_ids() }})
         )
         {% endif %}
+),
+
+current_activity AS (
+    SELECT
+        activity_group_state.group_activity_id AS activity_id,
+        activity_group_state.user_id,
+        activity_group_state.started_at,
+        activity_group_state.ended_at,
+        activity_group_state.effective_ended_at,
+        activity_group_state.source_synced_at,
+        activity_group_state.member_activity_ids
+    FROM activity_group_state
+    WHERE activity_group_state.is_deleted = 0
 ),
 
 activity_days AS (
@@ -57,6 +73,7 @@ activity_days AS (
         ended_at,
         effective_ended_at,
         source_synced_at,
+        member_activity_ids,
         arrayJoin(arrayMap(
             day_offset -> addDays(toDate(started_at), day_offset),
             range(toUInt64(dateDiff('day', started_at, effective_ended_at)) + 1)
@@ -80,16 +97,68 @@ activity_samples AS (
         AND activity_days.recorded_date = samples.recorded_date
         AND samples.recorded_at >= activity_days.started_at
         AND samples.recorded_at <= activity_days.effective_ended_at
+        AND (
+            samples.source_activity_id IS null
+            OR has(activity_days.member_activity_ids, assumeNotNull(samples.source_activity_id))
+        )
+),
+
+{% if is_incremental() %}
+existing_activity_samples AS (
+    SELECT existing_samples.*
+    FROM {{ this }} AS existing_samples FINAL
+    INNER JOIN activity_group_state
+        ON activity_group_state.group_activity_id = existing_samples.activity_id
+        AND activity_group_state.user_id = existing_samples.user_id
+    WHERE existing_samples.is_deleted = 0
+),
+
+stale_activity_samples AS (
+    SELECT
+        existing_samples.activity_id AS stale_activity_id,
+        existing_samples.user_id AS stale_user_id,
+        existing_samples.recorded_at AS stale_recorded_at,
+        existing_samples.recorded_date AS stale_recorded_date,
+        existing_samples.channel AS stale_channel,
+        existing_samples.scalar AS stale_scalar,
+        greatest(existing_samples.refreshed_at, activity_group_state.refreshed_at) AS stale_refreshed_at
+    FROM existing_activity_samples AS existing_samples
+    INNER JOIN activity_group_state
+        ON activity_group_state.group_activity_id = existing_samples.activity_id
+        AND activity_group_state.user_id = existing_samples.user_id
+    LEFT JOIN activity_samples
+        ON activity_samples.activity_id = existing_samples.activity_id
+        AND activity_samples.user_id = existing_samples.user_id
+        AND activity_samples.recorded_at = existing_samples.recorded_at
+        AND activity_samples.channel = existing_samples.channel
+    WHERE activity_samples.activity_id IS null
 )
+{% endif %}
 
 SELECT
-    activity_id,
-    user_id,
-    recorded_at,
-    recorded_date,
-    channel,
-    scalar,
+    activity_samples.activity_id,
+    activity_samples.user_id,
+    activity_samples.recorded_at,
+    activity_samples.recorded_date,
+    activity_samples.channel,
+    activity_samples.scalar,
     toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
-    is_deleted,
-    source_refreshed_at AS refreshed_at
+    activity_samples.is_deleted,
+    activity_samples.source_refreshed_at AS refreshed_at
 FROM activity_samples
+
+{% if is_incremental() %}
+UNION ALL
+
+SELECT
+    stale_activity_samples.stale_activity_id AS activity_id,
+    stale_activity_samples.stale_user_id AS user_id,
+    stale_activity_samples.stale_recorded_at AS recorded_at,
+    stale_activity_samples.stale_recorded_date AS recorded_date,
+    stale_activity_samples.stale_channel AS channel,
+    stale_activity_samples.stale_scalar AS scalar,
+    toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+    1 AS is_deleted,
+    stale_activity_samples.stale_refreshed_at AS refreshed_at
+FROM stale_activity_samples
+{% endif %}

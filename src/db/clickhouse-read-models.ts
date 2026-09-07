@@ -228,6 +228,10 @@ absent_source_links AS (
     ON tombstoned.id = final_groups.activity_id
   GROUP BY final_groups.group_id
 ),
+tombstoned_groups AS (
+  SELECT DISTINCT group_id
+  FROM tombstoned
+),
 best AS (
   SELECT *
   FROM (
@@ -258,6 +262,7 @@ best AS (
     FROM final_groups
     INNER JOIN ranked
       ON ranked.id = final_groups.activity_id
+    WHERE final_groups.group_id NOT IN (SELECT group_id FROM tombstoned_groups)
   )
   WHERE row_number = 1
 ),
@@ -268,7 +273,27 @@ merged AS (
     any(best.provider_id) AS provider_id,
     any(best.user_id) AS user_id,
     any(best.canonical_type) AS canonical_type,
-    any(best.provider_type) AS provider_type,
+    coalesce(
+      nullIf(argMinIf(
+        lowerUTF8(trimBoth(ranked.provider_type)),
+        tuple(
+          ranked.canonical_type IN ('other', 'cardio'),
+          lowerUTF8(trimBoth(ranked.provider_type))
+            = lowerUTF8(trimBoth(ranked.canonical_type)),
+          ranked.priority,
+          toString(ranked.id)
+        ),
+        ranked.provider_type IS NOT NULL
+        AND trimBoth(ranked.provider_type) != ''
+        AND (
+          ranked.canonical_type = best.canonical_type
+          OR ranked.canonical_type IN ('other', 'cardio')
+          OR best.canonical_type IN ('other', 'cardio')
+        )
+      ), ''),
+      lowerUTF8(trimBoth(any(best.provider_type))),
+      ''
+    ) AS provider_type,
     any(best.modality) AS modality,
     minIf(ranked.started_at, ranked.id IS NOT NULL) AS started_at,
     maxIf(

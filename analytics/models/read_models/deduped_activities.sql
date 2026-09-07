@@ -193,7 +193,27 @@ merged AS (
         any(best.provider_id) AS provider_id,
         any(best.user_id) AS user_id,
         any(best.canonical_type) AS canonical_type,
-        any(best.provider_type) AS provider_type,
+        coalesce(
+            nullIf(argMinIf(
+                lowerUTF8(trim(BOTH ' ' FROM ranked.provider_type)),
+                tuple(
+                    ranked.canonical_type IN ('other', 'cardio'),
+                    lowerUTF8(trim(BOTH ' ' FROM ranked.provider_type))
+                        = lowerUTF8(trim(BOTH ' ' FROM ranked.canonical_type)),
+                    ranked.priority,
+                    toString(ranked.activity_id)
+                ),
+                ranked.provider_type IS NOT null
+                AND trim(BOTH ' ' FROM ranked.provider_type) != ''
+                AND (
+                    ranked.canonical_type = best.canonical_type
+                    OR ranked.canonical_type IN ('other', 'cardio')
+                    OR best.canonical_type IN ('other', 'cardio')
+                )
+            ), ''),
+            lowerUTF8(trim(BOTH ' ' FROM any(best.provider_type))),
+            ''
+        ) AS provider_type,
         any(best.modality) AS modality,
         minIf(ranked.started_at, ranked.activity_id IS NOT null) AS started_at,
         maxIf(coalesce(ranked.ended_at, ranked.started_at + INTERVAL 12 HOUR), ranked.activity_id IS NOT null) AS ended_at,

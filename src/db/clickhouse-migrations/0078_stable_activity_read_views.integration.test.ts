@@ -9,6 +9,7 @@ const userId = "00000000-0000-0000-0000-000000000001";
 const groupId = "00000000-0000-0000-0000-000000000100";
 const pelotonId = "00000000-0000-0000-0000-000000000101";
 const whoopId = "00000000-0000-0000-0000-000000000102";
+const absentId = "00000000-0000-0000-0000-000000000103";
 
 describe("0078 stable activity read views", () => {
   const database = `stable_activity_views_${randomUUID().replaceAll("-", "")}`;
@@ -81,6 +82,25 @@ describe("0078 stable activity read views", () => {
         member_activity_ids: [pelotonId, whoopId],
       },
     ]);
+  });
+
+  it("excludes a group when one of its persisted members is provider-absent", async () => {
+    await runIsolated(`INSERT INTO postgres_fitness.activity
+      (id, group_id, provider_id, user_id, external_id, canonical_type, provider_type,
+       started_at, ended_at, name, source_name, provider_absent_at, created_at,
+       _peerdb_is_deleted, _peerdb_version)
+      VALUES
+      ('${absentId}', '${groupId}', 'route-provider', '${userId}', 'route-absent-1',
+       'cycling', '', now64(6), now64(6) + INTERVAL 1 HOUR, 'Recorded Route',
+       'Route Provider', now64(6), now64(6), 0, 1)`);
+
+    const result = await client.query({
+      query: `SELECT toString(activity.id) AS id FROM ${database}.v_activity AS activity
+        WHERE activity.id = toUUID('${groupId}')`,
+      format: "JSONEachRow",
+    });
+
+    expect(await result.json()).toEqual([]);
   });
 
   it("fails loudly when an active mirrored member lacks persisted identity", async () => {
