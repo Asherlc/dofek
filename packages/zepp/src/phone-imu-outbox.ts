@@ -208,17 +208,28 @@ export function readPhoneImuPendingBatch(
   limit: number,
   connection?: ImuConnectionBinding,
 ): OutboxEntry<PhoneImuEvent>[] {
+  return scanPhoneImuPendingBatch(storage, limit, connection, 0).entries;
+}
+
+export function scanPhoneImuPendingBatch(
+  storage: SettingsStorage,
+  limit: number,
+  connection: ImuConnectionBinding | undefined,
+  startIndex: number,
+): { entries: OutboxEntry<PhoneImuEvent>[]; nextStartIndex: number } {
   const index = readIndex(storage);
   let first: OutboxEntry<PhoneImuEvent> | undefined;
   let firstIndex: number | undefined;
-  for (const [indexPosition, eventId] of index.pending.entries()) {
+  for (const [offset, eventId] of index.pending.slice(startIndex).entries()) {
     const entry = readStoredEntry(storage, "pending", eventId);
     if (connection && !sameConnection(entry.payload.connection, connection)) continue;
     first = entry;
-    firstIndex = indexPosition;
+    firstIndex = startIndex + offset;
     break;
   }
-  if (!first || firstIndex === undefined) return [];
+  if (!first || firstIndex === undefined) {
+    return { entries: [], nextStartIndex: index.pending.length };
+  }
   const entries = [first];
   for (const eventId of index.pending.slice(firstIndex + 1, firstIndex + MAX_PENDING_BATCH_SCAN)) {
     if (entries.length >= limit) break;
@@ -231,7 +242,7 @@ export function readPhoneImuPendingBatch(
       entries.push(entry);
     }
   }
-  return entries;
+  return { entries, nextStartIndex: firstIndex };
 }
 
 export function hasRecoverableLegacyPhoneImuEntries(storage: SettingsStorage): boolean {

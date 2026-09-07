@@ -38,6 +38,17 @@ describe("IMU connection storage", () => {
     expect(storage.removeItem).toHaveBeenCalledWith(STORAGE_KEYS.IMU_CONNECTION_BINDING);
   });
 
+  it("clears a recovered null binding while preserving authenticated preferences", () => {
+    const storage = createSettingsStorage({
+      [STORAGE_KEYS.IMU_CONNECTION_BINDING]: JSON.stringify(binding),
+    });
+
+    expect(
+      updateWatchImuConnection(storage, { hasCredentials: true, imuConnection: null }),
+    ).toBeNull();
+    expect(storage.removeItem).toHaveBeenCalledWith(STORAGE_KEYS.IMU_CONNECTION_BINDING);
+  });
+
   it("reports and clears a corrupt watch cache", () => {
     const storage = createSettingsStorage({ [STORAGE_KEYS.IMU_CONNECTION_BINDING]: "{" });
     const onError = vi.fn();

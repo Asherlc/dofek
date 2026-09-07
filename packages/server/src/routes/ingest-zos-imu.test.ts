@@ -2,7 +2,7 @@ import type { Database } from "dofek/db";
 import express from "express";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { WriteMetricStreamRowsOptions } from "../../../../src/metric-stream/write-metric-stream.ts";
-import { getJsonInProcess, postJsonInProcess } from "./test-helpers.ts";
+import { getJsonInProcess, getJsonResponseInProcess, postJsonInProcess } from "./test-helpers.ts";
 
 const mocks = vi.hoisted(() => ({
   validateToken: vi.fn(),
@@ -96,6 +96,11 @@ describe("Zepp IMU envelope ingestion", () => {
   });
   it("returns an authenticated account binding without writes", async () => {
     expect(await connection()).toEqual({ status: 200, body: { accountId: userId } });
+    await expect(
+      getJsonResponseInProcess(app(), "/api/ingest/zos-imu/connection", {
+        authorization: "Bearer valid",
+      }),
+    ).resolves.toMatchObject({ headers: { "cache-control": "no-store" } });
     expect(mocks.validateToken).toHaveBeenCalledWith(db, "valid");
     expect(mocks.ensureProvider).not.toHaveBeenCalled();
     expect(mocks.write).not.toHaveBeenCalled();

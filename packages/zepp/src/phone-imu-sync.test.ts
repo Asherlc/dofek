@@ -237,6 +237,63 @@ describe("phone IMU outbox drain", () => {
     expect(readPhoneImuOutbox(storage).pending).toEqual([]);
   });
 
+  it("does not rescan an older account prefix for every current-account batch", async () => {
+    const storage = createSettingsStorage();
+    for (let index = 0; index < 50; index += 1) {
+      persistImuEnvelope(storage, {
+        ...envelope(`foreign-${index}`, 0),
+        destination: { ...binding, accountId: "account-2" },
+      });
+    }
+    for (let index = 0; index < 30; index += 1) {
+      persistImuEnvelope(storage, envelope(`current-${index}`, 0));
+    }
+    storage.getItem.mockClear();
+    const post = vi.fn<PostImuEnvelope>(async (batch) => ({
+      acceptedEventIds: batch.events.map((event) => event.eventId),
+      rejected: [],
+    }));
+
+    await drainPhoneImuOutbox(storage, binding, post);
+
+    expect(post).toHaveBeenCalledTimes(3);
+    const foreignShardReads = storage.getItem.mock.calls.filter(([key]) =>
+      key.includes(":pending:foreign-"),
+    );
+    expect(foreignShardReads.length).toBeLessThanOrEqual(150);
+  });
+
+  it("wraps the scan when an earlier retained entry becomes eligible during upload", async () => {
+    const storage = createSettingsStorage();
+    persistImuEnvelope(storage, {
+      ...envelope("earlier", 0),
+      destination: { ...binding, accountId: "account-2" },
+    });
+    persistImuEnvelope(storage, envelope("current", 0));
+    let requestCount = 0;
+
+    await expect(
+      drainPhoneImuOutbox(storage, binding, async (batch) => {
+        requestCount += 1;
+        if (requestCount === 1) {
+          const earlierKey = [...storage.persisted.keys()].find((key) =>
+            key.includes(":pending:earlier"),
+          );
+          if (!earlierKey) throw new Error("Expected the retained earlier entry.");
+          const earlier = JSON.parse(storage.persisted.get(earlierKey) ?? "{}");
+          earlier.payload.connection = binding;
+          storage.persisted.set(earlierKey, JSON.stringify(earlier));
+        }
+        return {
+          acceptedEventIds: batch.events.map((event) => event.eventId),
+          rejected: [],
+        };
+      }),
+    ).resolves.toEqual({ uploaded: 2, quarantined: 0 });
+    expect(requestCount).toBe(2);
+    expect(readPhoneImuOutbox(storage).pending).toEqual([]);
+  });
+
   it("retains legacy entries until the user explicitly assigns their account", async () => {
     const storage = createSettingsStorage();
     persistImuEnvelope(storage, envelope("segment-1", 0));

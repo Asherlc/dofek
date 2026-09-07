@@ -392,6 +392,27 @@ describe("watch IMU chunk handler", () => {
     );
   });
 
+  it("reports a synchronous durable-write failure with its stable segment ID", () => {
+    const failure = new Error("storage full");
+    const onError = vi.fn();
+    const handler = createWatchImuChunkHandler({
+      connectionType: "zepp",
+      segmentName: "app",
+      getInstallId: () => "install-2",
+      getDestination: () => input.destination,
+      getSync: () => ({
+        enqueue: vi.fn(() => {
+          throw failure;
+        }),
+        retry: vi.fn(),
+      }),
+      onError,
+    });
+
+    expect(() => handler(chunk)).not.toThrow();
+    expect(onError).toHaveBeenCalledExactlyOnceWith(failure, "install-2:app:1720000000000");
+  });
+
   it("fails before looking up sync when no destination is bound", () => {
     const getSync = vi.fn();
     const handler = createWatchImuChunkHandler({

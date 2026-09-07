@@ -13,6 +13,7 @@ import {
   quarantinePhoneImuOutboxEntry,
   readPhoneImuPendingBatch,
   recordPhoneImuOutboxAttempts,
+  scanPhoneImuPendingBatch,
 } from "./phone-imu-outbox.ts";
 
 export type PostImuEnvelope = (
@@ -27,6 +28,7 @@ export async function drainPhoneImuOutbox(
 ): Promise<{ uploaded: number; quarantined: number }> {
   let uploaded = 0;
   let quarantined = 0;
+  let scanStartIndex = 0;
   while (true) {
     if (!currentConnection) {
       const [oldest] = readPhoneImuPendingBatch(storage, 1);
@@ -36,9 +38,14 @@ export async function drainPhoneImuOutbox(
       }
       throw new Error("Reconnect Dofek to upload retained motion recordings.");
     }
-    const entries = readPhoneImuPendingBatch(storage, 10, currentConnection);
+    const scan = scanPhoneImuPendingBatch(storage, 10, currentConnection, scanStartIndex);
+    const entries = scan.entries;
     const first = entries[0];
     if (!first) {
+      if (scanStartIndex > 0) {
+        scanStartIndex = 0;
+        continue;
+      }
       if (hasRecoverableLegacyPhoneImuEntries(storage)) {
         throw new LegacyImuAccountBindingRequiredError();
       }
@@ -88,5 +95,6 @@ export async function drainPhoneImuOutbox(
       );
       throw new Error(message);
     }
+    scanStartIndex = scan.nextStartIndex;
   }
 }

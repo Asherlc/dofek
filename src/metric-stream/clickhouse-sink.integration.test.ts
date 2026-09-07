@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { type ClickHouseClient, createClickHouseClientFromEnv } from "../db/clickhouse.ts";
 import { buildClickHouseBootstrapStatementsForNativeMetricStream } from "../db/clickhouse-metric-stream-bootstrap.ts";
 import {
@@ -29,6 +30,15 @@ const batchedDeleteTestEventId = "9c0d1e2f-4051-426d-8e7f-8a9b0c1d2e34";
 const batchedDeleteSecondTestEventId = "ad1e2f30-5162-437e-8f90-9b0c1d2e3f45";
 const batchedDeleteUnrelatedTestEventId = "be2f3041-6273-448f-901a-0c1d2e3f4056";
 const operationRevision = "1000000000000000";
+
+const zeppMetricRowsSchema = z.array(
+  z.object({
+    id: z.string(),
+    channel: z.string(),
+    vector: z.array(z.number()),
+    metadata: z.string(),
+  }),
+);
 
 const zeppSamples = [
   { channel: "accelerometer", vector: [1.25, -2.5, 980], units: "cm/s²" },
@@ -109,12 +119,7 @@ describe("metric stream ClickHouse sink (integration)", () => {
     await applyMetricStreamEventsToClickHouse(client, zeppSamples);
     await applyMetricStreamEventsToClickHouse(client, zeppSamples);
 
-    const result = await client.query<{
-      id: string;
-      channel: string;
-      vector: number[];
-      metadata: string;
-    }>({
+    const result = await client.query({
       query: `SELECT id, channel, vector, metadata
         FROM ${METRIC_STREAM_TABLE} FINAL
         WHERE id IN {ids:Array(UUID)}
@@ -122,7 +127,7 @@ describe("metric stream ClickHouse sink (integration)", () => {
       query_params: { ids: zeppSamples.map((event) => event.id) },
       format: "JSONEachRow",
     });
-    expect(await result.json()).toEqual(
+    expect(zeppMetricRowsSchema.parse(await result.json())).toEqual(
       zeppSamples.map((event) => ({
         id: event.id,
         channel: event.channel,

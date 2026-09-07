@@ -218,14 +218,18 @@ export function createWatchImuChunkHandler(options: {
     if (!destination) throw new Error("Connect Dofek before recording motion data.");
     const sync = options.getSync();
     if (!sync) throw new Error("IMU chunk sync is unavailable.");
-    void sync
-      .enqueue({
-        ...chunk,
-        destination,
-        connectionType: options.connectionType,
-        installId,
-        segmentId,
-      })
-      .catch((error: unknown) => options.onError(error, segmentId));
+    try {
+      void sync
+        .enqueue({
+          ...chunk,
+          destination,
+          connectionType: options.connectionType,
+          installId,
+          segmentId,
+        })
+        .catch((error: unknown) => options.onError(error, segmentId));
+    } catch (error) {
+      options.onError(error, segmentId);
+    }
   };
 }

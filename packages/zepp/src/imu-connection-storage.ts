@@ -53,6 +53,10 @@ export function updateWatchImuConnection(
     storage.removeItem(STORAGE_KEYS.IMU_CONNECTION_BINDING);
     return null;
   }
+  if (preferences.imuConnection === null) {
+    storage.removeItem(STORAGE_KEYS.IMU_CONNECTION_BINDING);
+    return null;
+  }
   const binding = parseImuConnectionBinding(preferences.imuConnection);
   persistImuConnectionBinding(storage, STORAGE_KEYS.IMU_CONNECTION_BINDING, binding);
   return binding;

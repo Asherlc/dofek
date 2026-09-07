@@ -158,7 +158,7 @@ export function createIngestZosImuRouter(deps: {
   router.get("/zos-imu/connection", async (req, res) => {
     const userId = await authenticate(req, res);
     if (userId === null) return;
-    res.status(200).json({ accountId: userId });
+    res.set("Cache-Control", "no-store").status(200).json({ accountId: userId });
   });
 
   router.post("/zos-imu", express.json({ limit: "100kb" }), async (req, res) => {

@@ -25231,9 +25231,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 ## 2026-09-07 — Zepp capture PR failed security, dead-code, and mutation gates
 
-- **Status:** Security and dead-code gates resolved; mutation fixes validated
-  locally; replacement CI run pending. An unrelated activity-integrity
-  integration failure remains under observation.
+- **Status:** Resolved. The final replacement workflow passed all 113 checks.
 - **Symptoms / user impact:** PR 2676 was mergeable but blocked by CodeQL,
   project SAST, and Knip after the Zepp workout-capture merge. No deployed data
   path was affected.
@@ -25280,10 +25278,15 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   next run exposed under-tested validation branches in the IMU envelope shard;
   direct destination-normalization, versioned sample-limit, gyroscope-marker,
   and transport-metadata boundary cases raise that file from 72.8% to 94.6%.
-- **Remaining risk / follow-up:** Confirm the replacement mutation and aggregate
-  CI gates pass. If the activity-integrity integration failure recurs on the new
-  head, investigate why its incremental sensor summary stays empty before
-  changing the repair behavior.
+  After the final parser correction, [Stryker shard 12](https://github.com/Asherlc/dofek/actions/runs/34161690449/job/101865225562)
+  scored `record-fields.ts` at 42.86% because its existing `isRecord` and
+  `nullable` branches had no direct coverage. Boundary tests raised the exact
+  local mutation run to 100% with 21 killed mutations and no survivors or
+  uncovered mutations.
+- **Remaining risk / follow-up:** The [final replacement workflow](https://github.com/Asherlc/dofek/actions/runs/34162519280)
+  passed all 113 checks, including every integration and mutation shard. No
+  resilience knob or validation bypass remains.
+
 ## 2026-09-07 — Local integration startup exhausted Docker address pools
 
 - **Scope / impact:** Local validation in `humble-dugong` only; no production

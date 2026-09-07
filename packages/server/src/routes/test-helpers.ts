@@ -1,4 +1,4 @@
-import type { IncomingHttpHeaders } from "node:http";
+import type { IncomingHttpHeaders, OutgoingHttpHeaders } from "node:http";
 import { IncomingMessage, ServerResponse } from "node:http";
 import { Socket } from "node:net";
 import { Duplex } from "node:stream";
@@ -55,7 +55,12 @@ export async function postJsonInProcess(
   body: unknown,
   headers: Record<string, string> = {},
 ): Promise<{ status: number; body: unknown }> {
-  return requestJsonInProcess(app, path, "POST", JSON.stringify(body), headers);
+  const payload = JSON.stringify(body);
+  if (payload === undefined) {
+    throw new TypeError("postJsonInProcess requires a JSON-serializable body.");
+  }
+  const response = await requestJsonInProcess(app, path, "POST", payload, headers);
+  return { status: response.status, body: response.body };
 }
 
 export async function getJsonInProcess(
@@ -63,6 +68,15 @@ export async function getJsonInProcess(
   path: string,
   headers: Record<string, string> = {},
 ): Promise<{ status: number; body: unknown }> {
+  const response = await requestJsonInProcess(app, path, "GET", "", headers);
+  return { status: response.status, body: response.body };
+}
+
+export function getJsonResponseInProcess(
+  app: express.Express,
+  path: string,
+  headers: Record<string, string> = {},
+): Promise<{ status: number; body: unknown; headers: OutgoingHttpHeaders }> {
   return requestJsonInProcess(app, path, "GET", "", headers);
 }
 
@@ -72,7 +86,7 @@ async function requestJsonInProcess(
   method: string,
   payload: string,
   headers: Record<string, string>,
-): Promise<{ status: number; body: unknown }> {
+): Promise<{ status: number; body: unknown; headers: OutgoingHttpHeaders }> {
   const socket = new InProcessSocket();
   const request = new InProcessRequest(
     new Socket(),
@@ -94,6 +108,7 @@ async function requestJsonInProcess(
       resolve({
         status: response.statusCode,
         body: JSON.parse(socket.responseBody),
+        headers: response.getHeaders(),
       });
     });
     response.on("error", reject);
