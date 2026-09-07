@@ -84,7 +84,7 @@ export function AccountDeletionStatusView({
           <section className="rounded-xl border border-amber-700/50 bg-amber-950/20 p-5 space-y-3">
             <h2 className="text-lg font-semibold">Check your deletion request</h2>
             <p className="text-sm text-subtle">
-              We couldn&apos;t confirm whether deletion started. Check the status of your request.
+              We could not confirm whether deletion started. Check the status of your request.
             </p>
             <button
               type="button"

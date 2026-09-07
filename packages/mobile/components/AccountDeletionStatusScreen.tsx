@@ -111,7 +111,7 @@ export function AccountDeletionStatusView({
         <View style={styles.recoveryCard}>
           <Text style={styles.cardTitle}>Check your deletion request</Text>
           <Text style={styles.cardText}>
-            We couldn&apos;t confirm whether deletion started. Check the status of your request.
+            We could not confirm whether deletion started. Check the status of your request.
           </Text>
           <TouchableOpacity
             accessibilityLabel="Check deletion status"

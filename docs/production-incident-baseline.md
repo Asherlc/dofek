@@ -25253,3 +25253,16 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Follow-up:** Improve workspace archive cleanup so abandoned networks are
   reclaimed with their owning workspace. No retry, timeout, service-memory, or
   production configuration changes were introduced.
+
+## 2026-09-07 — Audit PR spell check rejected an encoded contraction
+
+- **Scope / impact:** PR #2680 validation only; no production impact.
+- **Evidence / root cause:** The [Spell Check job](https://github.com/Asherlc/dofek/actions/runs/34153962937/job/101842086975)
+  ran `pnpm exec cspell --no-progress` and reported an unknown word at
+  `AccountDeletionStatusPage.tsx:87:18`. The encoded apostrophe split the
+  contraction in the deletion recovery message into an unrecognized fragment.
+- **Direct fix:** Use “could not” in the matching web and mobile messages.
+  No dictionary exception or check suppression was added.
+- **Validation / follow-up:** The exact spell-check command passed locally
+  across 2,494 files with zero issues; Biome passed for both changed components.
+  Confirmation from the replacement PR job remains pending.
