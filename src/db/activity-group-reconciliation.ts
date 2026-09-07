@@ -4,21 +4,21 @@ import { reconcileActivityGroups as decideActivityGroups } from "../domain/activ
 import { executeWithSchema, type SchemaExecutionDatabase } from "./typed-sql.ts";
 
 const memberSchema = z.object({
-  id: z.uuid(),
-  group_id: z.uuid(),
+  id: z.guid(),
+  group_id: z.guid(),
   created_at: z.coerce.date(),
   group_created_at: z.coerce.date(),
-  anchor_activity_id: z.uuid(),
-  overlapping_activity_ids: z.array(z.uuid()),
+  anchor_activity_id: z.guid(),
+  overlapping_activity_ids: z.array(z.guid()),
 });
-const aliasSchema = z.object({ alias_id: z.uuid(), group_id: z.uuid() });
+const aliasSchema = z.object({ alias_id: z.guid(), group_id: z.guid() });
 
 /** Must run inside the canonical commit transaction; the lock lasts until commit/rollback. */
 export async function reconcileActivityGroups(
   transaction: SchemaExecutionDatabase,
   userId: string,
 ): Promise<void> {
-  z.uuid().parse(userId);
+  z.guid().parse(userId);
   await transaction.execute(
     sql`SELECT pg_advisory_xact_lock(hashtextextended(${`activity-groups:${userId}`}, 0))`,
   );
@@ -109,7 +109,7 @@ export async function reconcileActivityGroups(
     if (component.target.kind === "new") {
       const inserted = await executeWithSchema(
         transaction,
-        z.object({ id: z.uuid() }),
+        z.object({ id: z.guid() }),
         sql`
         INSERT INTO fitness.activity_group (user_id, anchor_activity_id)
         VALUES (${userId}::uuid, ${component.target.anchorActivityId}::uuid) RETURNING id`,

@@ -30,6 +30,13 @@ function databaseWithRows(responses: unknown[][]) {
 }
 
 describe("activity group reconciliation adapter", () => {
+  it("accepts PostgreSQL UUID identities without RFC version bits", async () => {
+    const postgresId = "00000000-0000-0000-0000-000000000001";
+    const database = databaseWithRows([[], [memberRow(postgresId, postgresId, postgresId)], []]);
+    await expect(reconcileActivityGroups(database, postgresId)).resolves.toBeUndefined();
+    expect(database.queries().filter((query) => /INSERT|UPDATE/.test(query.sql))).toEqual([]);
+  });
+
   it("translates stored member and oldest-anchor metadata into durable merge decisions", async () => {
     const responses: unknown[][] = [
       [],

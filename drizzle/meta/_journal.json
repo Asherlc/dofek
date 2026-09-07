@@ -792,6 +792,13 @@
       "when": 1788768000000,
       "tag": "0110_stable_activity_groups",
       "breakpoints": true
+    },
+    {
+      "idx": 113,
+      "version": "7",
+      "when": 1788800400000,
+      "tag": "0111_v_activity_stable_groups",
+      "breakpoints": true
     }
   ]
 }
