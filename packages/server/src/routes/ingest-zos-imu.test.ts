@@ -100,6 +100,28 @@ describe("Zepp IMU envelope ingestion", () => {
     expect(mocks.ensureProvider).not.toHaveBeenCalled();
     expect(mocks.write).not.toHaveBeenCalled();
   });
+  it("rate limits repeated authenticated requests before another token lookup", async () => {
+    const instance = app();
+    for (let index = 0; index < 600; index += 1) {
+      expect(
+        (
+          await getJsonInProcess(instance, "/api/ingest/zos-imu/connection", {
+            authorization: "Bearer valid",
+          })
+        ).status,
+      ).toBe(200);
+    }
+
+    expect(
+      await getJsonInProcess(instance, "/api/ingest/zos-imu/connection", {
+        authorization: "Bearer valid",
+      }),
+    ).toMatchObject({
+      status: 429,
+      body: { error: "Too many Zepp IMU requests. Retry later." },
+    });
+    expect(mocks.validateToken).toHaveBeenCalledTimes(600);
+  });
   it("rejects missing and revoked companion tokens for binding and ingest", async () => {
     expect((await connection(null)).status).toBe(401);
     expect((await post({}, null)).status).toBe(401);

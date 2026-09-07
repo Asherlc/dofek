@@ -2,6 +2,7 @@ import type { Database } from "dofek/db";
 import { ensureProvider } from "dofek/db/tokens";
 import { captureException } from "dofek/lib/error-reporting";
 import express, { type Request, type Response, Router } from "express";
+import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import { SOURCE_TYPE_API } from "../../../../src/db/sensor-channels.ts";
 import type { MetricStreamRowInput } from "../../../../src/metric-stream/events.ts";
@@ -124,6 +125,15 @@ export function createIngestZosImuRouter(deps: {
   metricStreamPublisher?: MetricStreamEventPublisher;
 }): Router {
   const router = Router();
+  router.use(
+    rateLimit({
+      windowMs: 15 * 60 * 1000,
+      limit: 600,
+      standardHeaders: "draft-7",
+      legacyHeaders: false,
+      message: { error: "Too many Zepp IMU requests. Retry later." },
+    }),
+  );
   async function authenticate(req: Request, res: Response): Promise<string | null> {
     const authorization = req.headers.authorization;
     const token = authorization?.startsWith("Bearer ") ? authorization.slice(7) : "";

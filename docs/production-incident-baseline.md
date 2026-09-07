@@ -25228,3 +25228,31 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   produces the iOS Metro bundle.
 - **Remaining risk / follow-up:** Confirm the replacement Metro Bundle job and
   complete PR workflow pass on the fix commit.
+
+## 2026-09-07 — Zepp capture PR failed security and dead-code gates
+
+- **Status:** Fixed in source; replacement CI run pending.
+- **Symptoms / user impact:** PR 2676 was mergeable but blocked by CodeQL,
+  project SAST, and Knip after the Zepp workout-capture merge. No deployed data
+  path was affected.
+- **Evidence / root cause:** The [failed workflow](https://github.com/Asherlc/dofek/actions/runs/34143579342)
+  reported `packages/zepp/tools/decode-imu.ts` as unused. The
+  [SAST job](https://github.com/Asherlc/dofek/actions/runs/34143578822/job/101810660737)
+  first failed on `semgrep.no-console-log-in-production` at decoder lines 18
+  and 25. CodeQL separately annotated both authenticated handlers in
+  `packages/server/src/routes/ingest-zos-imu.ts` with `Missing rate limiting`.
+  The documented decoder was absent from Knip's Zepp entry list, it wrote CLI
+  output through `console.log`, and the new router authenticated requests
+  without an Express rate limiter.
+- **Direct fix:** Registered the decoder as a Knip entry, wrote CLI results
+  through `process.stdout`, and applied a 600-request-per-15-minute limiter to
+  the Zepp IMU router before authentication. Node documents `process.stdout`
+  as the standard output stream ([Node process API](https://nodejs.org/api/process.html#processstdout)),
+  and the limiter uses the project's existing `express-rate-limit` middleware
+  pattern.
+- **Validation:** The exact Knip command passes with the required mobile Sentry
+  configuration present. Zepp lint, server typecheck, and the 31-test IMU route
+  suite pass; the route test verifies request 601 receives HTTP 429 without an
+  additional token lookup.
+- **Remaining risk / follow-up:** Confirm the replacement CodeQL, SAST, Knip,
+  and aggregate CI checks pass on the pushed fix commit.

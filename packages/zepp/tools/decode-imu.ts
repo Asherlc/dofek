@@ -15,12 +15,12 @@ const raw = readFileSync(inputPath);
 const { samples, ...header } = decodeBin(
   raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength),
 );
-console.log(JSON.stringify({ ...header, decodedVectors: samples.length }, null, 2));
+process.stdout.write(`${JSON.stringify({ ...header, decodedVectors: samples.length }, null, 2)}\n`);
 
 if (values.output) {
   const rows = samples.map((sample) =>
     [sample.tMs, header.sessionStartMs + sample.tMs, sample.sensor, sample.x, sample.y, sample.z].join(","),
   );
   writeFileSync(values.output, ["t_ms,timestamp_ms,sensor,x,y,z", ...rows, ""].join("\n"));
-  console.log(`Wrote ${values.output}`);
+  process.stdout.write(`Wrote ${values.output}\n`);
 }
