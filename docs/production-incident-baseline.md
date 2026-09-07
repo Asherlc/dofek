@@ -25220,3 +25220,26 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   produces the iOS Metro bundle.
 - **Remaining risk / follow-up:** Confirm the replacement Metro Bundle job and
   complete PR workflow pass on the fix commit.
+
+## 2026-09-07 — Local Docker address pools blocked modification-system validation
+
+- **Status:** Unresolved local development prerequisite; no production impact
+  observed and no production changes made.
+- **Symptoms / user impact:** SQL lint and database-backed implementation tests
+  could not run in the `stupid-termite` workspace. All three requested TypeScript
+  checks passed; the Docker-free lint stages passed.
+- **Evidence / root cause:** `pnpm lint` failed in its SQLFluff/dbt stage with
+  `dbt tried to connect to the database and failed` (ClickHouse connection
+  refused). Starting the required dependencies with `pnpm compose:up` then
+  failed while creating `stupid-termite_default`: `all predefined address pools
+  have been fully subnetted`. Read-only Docker inspection found
+  `laughing-dugong_default` and `lucid-mule_default` each had zero attached
+  containers, but their Compose labels identify other workspaces.
+- **Mitigation:** No cross-workspace cleanup, daemon reconfiguration, validation
+  bypass, or retry/timeout change was performed. The design remains separate
+  from unimplemented runtime behavior.
+- **Remaining risk / follow-up:** Obtain approval for narrowly scoped unused
+  network cleanup, recheck ownership and attachments immediately before any
+  removal, start this workspace's dependencies, and rerun SQL lint and the
+  database-backed tests. Add an address-pool diagnostic section to the local
+  testing runbook after the recovery is verified.
