@@ -1,0 +1,146 @@
+import { sql } from "drizzle-orm";
+import { z } from "zod";
+import { reconcileActivityGroups as decideActivityGroups } from "../domain/activity-grouping.ts";
+import { executeWithSchema, type SchemaExecutionDatabase } from "./typed-sql.ts";
+
+const memberSchema = z.object({
+  id: z.uuid(),
+  group_id: z.uuid(),
+  created_at: z.coerce.date(),
+  group_created_at: z.coerce.date(),
+  anchor_activity_id: z.uuid(),
+});
+const overlapSchema = z.object({ activity_id: z.uuid(), overlapping_activity_id: z.uuid() });
+const aliasSchema = z.object({ alias_id: z.uuid(), group_id: z.uuid() });
+
+/** Must run inside the canonical commit transaction; the lock lasts until commit/rollback. */
+export async function reconcileActivityGroups(
+  transaction: SchemaExecutionDatabase,
+  userId: string,
+): Promise<void> {
+  z.uuid().parse(userId);
+  await transaction.execute(
+    sql`SELECT pg_advisory_xact_lock(hashtextextended(${`activity-groups:${userId}`}, 0))`,
+  );
+  // Read members and group ownership in one snapshot: concurrent new inserts are reconciled
+  // by their own canonical commit, never introduced as an anchor without its member here.
+  // The oldest active member owns a split. Fully inactive groups remain untouched.
+  const members = await executeWithSchema(
+    transaction,
+    memberSchema,
+    sql`
+    SELECT a.id, a.group_id, a.created_at, g.created_at AS group_created_at,
+      first_value(a.id) OVER (PARTITION BY g.id ORDER BY a.created_at, a.id) AS anchor_activity_id
+    FROM fitness.activity_group g
+    JOIN fitness.activity a ON a.group_id = g.id AND a.user_id = g.user_id
+    WHERE g.user_id = ${userId}::uuid AND a.deleted_at IS NULL AND a.provider_absent_at IS NULL`,
+  );
+  const groups = new Map(
+    members.map((member) => [
+      member.group_id,
+      {
+        id: member.group_id,
+        anchorActivityId: member.anchor_activity_id,
+        createdAt: member.group_created_at,
+      },
+    ]),
+  );
+  const originalGroups = new Map(members.map((member) => [member.id, member.group_id]));
+  const overlaps = await executeWithSchema(
+    transaction,
+    overlapSchema,
+    sql`
+    WITH active AS (
+      SELECT id, provider_id, canonical_type, started_at,
+        COALESCE(ended_at, started_at + interval '1 hour') AS ended_at
+      FROM fitness.activity
+      WHERE user_id = ${userId}::uuid AND deleted_at IS NULL AND provider_absent_at IS NULL
+    ), pair_metrics AS (
+      SELECT a.id AS activity_id, b.id AS overlapping_activity_id,
+        a.provider_id AS provider_a, b.provider_id AS provider_b,
+        a.canonical_type AS type_a, b.canonical_type AS type_b,
+        EXTRACT(EPOCH FROM (LEAST(a.ended_at, b.ended_at) - GREATEST(a.started_at, b.started_at))) AS overlap_seconds,
+        EXTRACT(EPOCH FROM (GREATEST(a.ended_at, b.ended_at) - LEAST(a.started_at, b.started_at))) AS union_seconds,
+        LEAST(EXTRACT(EPOCH FROM (a.ended_at - a.started_at)),
+          EXTRACT(EPOCH FROM (b.ended_at - b.started_at))) AS shorter_duration_seconds
+      FROM active a JOIN active b ON a.id < b.id
+        AND a.started_at < b.ended_at AND a.ended_at > b.started_at
+    )
+    SELECT activity_id, overlapping_activity_id FROM pair_metrics
+    WHERE overlap_seconds / NULLIF(union_seconds, 0) > 0.8
+      OR (provider_a <> provider_b AND type_a = type_b
+        AND overlap_seconds / NULLIF(shorter_duration_seconds, 0) > 0.8)`,
+  );
+  const storedAliases = await executeWithSchema(
+    transaction,
+    aliasSchema,
+    sql`
+    SELECT alias_id, group_id FROM fitness.activity_group_alias WHERE user_id = ${userId}::uuid`,
+  );
+  const targets = new Map(storedAliases.map((alias) => [alias.alias_id, alias.group_id]));
+  function resolveTarget(groupId: string): string {
+    const visited = new Set<string>();
+    let target = groupId;
+    let next = targets.get(target);
+    while (next !== undefined) {
+      if (visited.has(target)) throw new Error(`Activity group alias cycle at ${target}`);
+      visited.add(target);
+      target = next;
+      next = targets.get(target);
+    }
+    return target;
+  }
+  const decision = decideActivityGroups({
+    members: members.map((member) => ({
+      id: member.id,
+      groupId: member.group_id,
+      createdAt: member.created_at,
+    })),
+    groups: [...groups.values()],
+    overlaps: overlaps.map((overlap) => ({
+      activityId: overlap.activity_id,
+      overlappingActivityId: overlap.overlapping_activity_id,
+    })),
+  });
+  for (const component of decision.components) {
+    let groupId: string;
+    if (component.target.kind === "new") {
+      const inserted = await executeWithSchema(
+        transaction,
+        z.object({ id: z.uuid() }),
+        sql`
+        INSERT INTO fitness.activity_group (user_id, anchor_activity_id)
+        VALUES (${userId}::uuid, ${component.target.anchorActivityId}::uuid) RETURNING id`,
+      );
+      const createdGroup = inserted[0];
+      if (!createdGroup) throw new Error("Activity group insert did not return an ID");
+      groupId = createdGroup.id;
+    } else {
+      groupId = resolveTarget(component.target.groupId);
+    }
+    if (component.memberIds.every((id) => originalGroups.get(id) === groupId)) continue;
+    const memberIds = sql.join(
+      component.memberIds.map((id) => sql`${id}::uuid`),
+      sql`, `,
+    );
+    await transaction.execute(sql`UPDATE fitness.activity SET group_id = ${groupId}::uuid
+      WHERE user_id = ${userId}::uuid AND id IN (${memberIds}) AND group_id IS DISTINCT FROM ${groupId}::uuid`);
+  }
+  for (const alias of decision.aliases) {
+    const groupId = resolveTarget(alias.groupId);
+    if (groupId === alias.aliasGroupId)
+      throw new Error(`Activity group merge would create an alias cycle for ${groupId}`);
+    // Active split components have already moved; carry remaining inactive members with the merge.
+    await transaction.execute(sql`UPDATE fitness.activity SET group_id = ${groupId}::uuid
+      WHERE user_id = ${userId}::uuid AND group_id = ${alias.aliasGroupId}::uuid`);
+    await transaction.execute(sql`UPDATE fitness.activity_group_alias SET group_id = ${groupId}::uuid
+      WHERE user_id = ${userId}::uuid AND group_id = ${alias.aliasGroupId}::uuid`);
+    await transaction.execute(sql`INSERT INTO fitness.activity_group_alias (alias_id, group_id, user_id, reason)
+      VALUES (${alias.aliasGroupId}::uuid, ${groupId}::uuid, ${userId}::uuid, 'merge')
+      ON CONFLICT (alias_id) DO UPDATE SET group_id = excluded.group_id`);
+    for (const [aliasId, target] of targets) {
+      if (target === alias.aliasGroupId) targets.set(aliasId, groupId);
+    }
+    targets.set(alias.aliasGroupId, groupId);
+  }
+}

@@ -406,6 +406,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         : undefined;
 
     const syncStart = Date.now();
+    let recordingCanonicalCommit = false;
 
     try {
       if (
@@ -491,11 +492,13 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         "relational",
       );
       if (result.recordsSynced > 0 && emittedRelationalDatasetKeys.length > 0) {
+        recordingCanonicalCommit = true;
         await recordRelationalCanonicalCommits(requireTransactionalSyncDatabase(db), {
           operationId: processingOperation.id,
           datasetKeys: emittedRelationalDatasetKeys,
           idempotencyKey: `worker-relational-commit:${job.id ?? "unidentified-job"}`,
         });
+        recordingCanonicalCommit = false;
       }
       const outputManifest = await getProcessingOutputManifest(db, processingOperation.id);
       const noOutputDatasetKeys = processingOperation.datasetKeys.filter(
@@ -564,6 +567,10 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         syncErrorsTotal.add(result.errors.length, { provider: provider.id, data_type: "sync" });
       }
     } catch (err: unknown) {
+      if (recordingCanonicalCommit) {
+        captureException(err, { tags: { provider: provider.id, phase: "canonical-commit" } });
+        throw err;
+      }
       if (err instanceof ProviderRateLimitError) {
         const retryAt = await scheduleRateLimitRetry(db, job, err, since, until);
         const message = `Rate limited; retry scheduled for ${retryAt}`;

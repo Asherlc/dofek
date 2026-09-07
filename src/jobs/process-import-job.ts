@@ -408,6 +408,28 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
     importError = error;
   }
 
+  const emittedRelationalDatasetKeys = processingDatasetKeysForOutputPath(
+    datasetKeys,
+    "relational",
+  );
+  if (
+    !importFailed &&
+    !importSkipped &&
+    importedRecordCount > 0 &&
+    emittedRelationalDatasetKeys.length > 0
+  ) {
+    try {
+      await recordRelationalCanonicalCommits(requireTransactionalDatabase(db), {
+        operationId: processingOperation.id,
+        datasetKeys: emittedRelationalDatasetKeys,
+        idempotencyKey: `worker-relational-commit:${job.id}`,
+      });
+    } catch (error) {
+      captureException(error, { tags: { phase: "canonical-commit" } });
+      throw error;
+    }
+  }
+
   if (shouldCleanUpUploadedFile && !metricStreamPublisher?.hasUnpublishedBatchIntents) {
     const { unlink } = await import("node:fs/promises");
     try {
@@ -456,17 +478,6 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
   }
   if (importSkipped) return;
 
-  const emittedRelationalDatasetKeys = processingDatasetKeysForOutputPath(
-    datasetKeys,
-    "relational",
-  );
-  if (importedRecordCount > 0 && emittedRelationalDatasetKeys.length > 0) {
-    await recordRelationalCanonicalCommits(requireTransactionalDatabase(db), {
-      operationId: processingOperation.id,
-      datasetKeys: emittedRelationalDatasetKeys,
-      idempotencyKey: `worker-relational-commit:${job.id}`,
-    });
-  }
   if (importedRecordCount === 0 && !metricStreamPublisher?.hasPublishedBatches) {
     for (const datasetKey of datasetKeys) {
       for (const stage of ["analytics", "cache_refresh"] as const) {

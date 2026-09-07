@@ -464,6 +464,21 @@ describe("processSyncJob", () => {
     expect(mockInvalidateAllUserQueries).not.toHaveBeenCalled();
   });
 
+  it("reports and rethrows activity canonical commit failures without declaring sync success", async () => {
+    const error = new Error("Activity grouping failed");
+    mockGetEnabledSyncProviders.mockReturnValue([
+      createMockProvider({ processingDatasetKeys: ["activity"] }),
+    ]);
+    mockRecordRelationalCanonicalCommits.mockRejectedValueOnce(error);
+    await expect(runSyncJob(createMockJob(), mockDb)).rejects.toBe(error);
+    expect(mockCaptureException).toHaveBeenCalledWith(error, expect.any(Object));
+    expect(mockAppendProcessingStageEvent).not.toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({ stage: "ingest", status: "succeeded" }),
+    );
+    expect(mockEnqueueDebouncedPostSyncMaintenance).not.toHaveBeenCalled();
+  });
+
   it("records a retry-stable processing lifecycle and correlates metric batches", async () => {
     const provider = createMockProvider({
       id: "garmin",
