@@ -1,4 +1,5 @@
 import { formatNumber, formatSigned } from "@dofek/format/format";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { providerLabel } from "@dofek/providers/providers";
 import { chartColors } from "@dofek/scoring/colors";
 import { CORRELATION_AVAILABILITY_DESCRIPTION } from "@dofek/stats/correlation";
@@ -675,7 +676,7 @@ export default function CorrelationScreen() {
 
       {observationsQuery.isError && metricX !== metricY && (
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>{observationsQuery.error.message}</Text>
+          <Text style={styles.emptyText}>{userFacingErrorMessage(observationsQuery.error)}</Text>
         </View>
       )}
 

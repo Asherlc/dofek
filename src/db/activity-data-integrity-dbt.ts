@@ -24,6 +24,7 @@ export async function runActivityIntegrityDbtBuild(
   const variables = {
     activity_refresh_user_id: input.userId,
     activity_refresh_activity_ids: input.activityIds,
+    activity_sensor_sample_begin: input.eventTimeStart.toISOString().slice(0, 10),
   };
   const exitCode = await new Promise<number>((resolveExit, reject) => {
     const child = spawn(

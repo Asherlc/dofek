@@ -1,4 +1,5 @@
 import { formatDateMedium } from "@dofek/format/format";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import {
   DEFAULT_HEALTH_REPORT_SHARE_EXPIRY_DAYS,
   HEALTH_REPORT_SHARE_EXPIRY_OPTIONS,
@@ -47,7 +48,14 @@ export function HealthReportShareButton({
   });
 
   const reportLabel = `${input.reportType} report`;
-  const errorMessage = clientError ?? generateReport.error?.message ?? null;
+  const errorMessage = clientError
+    ? userFacingErrorMessage(clientError, "The report could not be shared. Please try again.")
+    : generateReport.error
+      ? userFacingErrorMessage(
+          generateReport.error,
+          "The report could not be created. Please try again.",
+        )
+      : null;
   const buttonDisabled = disabled || generateReport.isPending;
 
   return (

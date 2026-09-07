@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { StyleSheet, Text, View } from "react-native";
 import { colors } from "../theme";
 
@@ -22,11 +23,12 @@ export function OperationProgressBar({
   percentage,
 }: OperationProgressBarProps) {
   const boundedPercentage = percentage === undefined ? undefined : clampPercentage(percentage);
+  const displayMessage = message ? userFacingErrorMessage(message) : undefined;
 
   return (
     <View style={styles.container}>
       <View
-        accessibilityLabel={message ?? "Operation progress"}
+        accessibilityLabel={displayMessage ?? "Operation progress"}
         accessibilityRole="progressbar"
         accessibilityValue={
           boundedPercentage === undefined ? undefined : { min: 0, max: 100, now: boundedPercentage }
@@ -45,7 +47,7 @@ export function OperationProgressBar({
           ]}
         />
       </View>
-      {message ? <Text style={styles.message}>{message}</Text> : null}
+      {displayMessage ? <Text style={styles.message}>{displayMessage}</Text> : null}
     </View>
   );
 }

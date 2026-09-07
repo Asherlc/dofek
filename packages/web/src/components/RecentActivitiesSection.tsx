@@ -1,5 +1,6 @@
 import { activityDataStateSchema } from "@dofek/format/activity-data-state";
 import { formatDateYmd } from "@dofek/format/format";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { useMemo, useState } from "react";
 import { z } from "zod";
 import { useTrainingDays } from "../lib/trainingDaysContext.ts";
@@ -85,7 +86,14 @@ export function RecentActivitiesSection({
       activities={assertRows(activities.data?.items, activityRowSchema)}
       additionalColumns={additionalColumns}
       loading={activities.isLoading || additionalDataLoading}
-      error={activities.error?.message}
+      error={
+        activities.error
+          ? userFacingErrorMessage(
+              activities.error,
+              "Activities could not be loaded. Please try again.",
+            )
+          : undefined
+      }
       emptyMessage={emptyMessage}
       totalCount={activities.data?.totalCount}
       page={page}
@@ -95,7 +103,14 @@ export function RecentActivitiesSection({
         bulkDelete.mutate({ ids });
       }}
       bulkDeletePending={bulkDelete.isPending}
-      bulkDeleteError={bulkDelete.error?.message}
+      bulkDeleteError={
+        bulkDelete.error
+          ? userFacingErrorMessage(
+              bulkDelete.error,
+              "The activities could not be deleted. Please try again.",
+            )
+          : undefined
+      }
     />
   );
 }

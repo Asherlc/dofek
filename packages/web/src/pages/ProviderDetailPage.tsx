@@ -1,4 +1,5 @@
 import { formatDateYmd, formatRelativeTime } from "@dofek/format/format";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { providerHealth } from "@dofek/providers/provider-health";
 import { Link, useParams } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -191,7 +192,7 @@ export function ProviderDetailPage() {
         });
         setSyncStatus("error");
         setSyncPercentage(undefined);
-        setSyncMessage(err instanceof Error ? err.message : "Sync failed");
+        setSyncMessage(userFacingErrorMessage(err, "Sync failed"));
       }
     },
     [providerId, syncMutation, trpcUtils],
@@ -247,7 +248,7 @@ export function ProviderDetailPage() {
           operation: "reconnect-provider",
           providerId: provider.id,
         });
-        setReconnectError(error.message);
+        setReconnectError(userFacingErrorMessage(error));
         return;
       }
       case "custom:garmin":

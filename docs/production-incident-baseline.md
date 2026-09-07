@@ -25454,3 +25454,29 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Follow-up:** Revalidate the integrated branch and merge only after its
   required checks pass. No workflow bypass, timeout change, or production
   operation is part of this conflict resolution.
+
+## 2026-09-07 — Reconciled concurrent activity-repair CI fixes
+
+- **Symptoms / impact:** PR 2679 advanced main while PR 2678 awaited its merge,
+  producing conflicts in five activity-repair source/test files. No production
+  outage occurred; the merge was blocked. See the
+  [incoming change](https://github.com/Asherlc/dofek/pull/2679).
+- **Cause / resolution:** Both branches changed historical dbt rebuild inputs.
+  Keep one canonical `eventTimeStart`/`eventTimeEnd` contract and explicit CLI
+  bounds; derive the incoming `activity_sensor_sample_begin` variable from that
+  same start. Accept dbt-owned sensor-table creation in the fixture while
+  preserving fixed historical timestamps and repair/rollback assertions. The
+  [command builder](../src/db/activity-data-integrity-dbt.ts) implements the
+  combined contract; dbt documents these controls in its
+  [microbatch guide](https://docs.getdbt.com/docs/build/incremental-microbatch).
+- **Validation:** The command-boundary test first failed because the emitted
+  variables omitted `activity_sensor_sample_begin`; after reconciliation all
+  96 related unit tests and all 16 ledger/repair database tests passed. The
+  real-database regression exercises initial table creation, historical repair,
+  and rollback through the production dbt command. All 17,767 unit/mobile tests
+  passed (21 skipped), along with repository lint and root/server/web
+  typechecks. The exactly-once rebuild assertion was retained after review.
+  No retries, waits, or gate bypasses were added.
+- **Remaining risk / follow-up:** The integrated commit must pass fresh CI before
+  merge. Future conflict reviews should compare semantic changes against both
+  parents, including automatically merged test assertions.

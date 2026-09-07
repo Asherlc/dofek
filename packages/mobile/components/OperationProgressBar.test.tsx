@@ -21,6 +21,13 @@ describe("OperationProgressBar", () => {
     expect(screen.getByText("Waiting for deletion worker...")).toBeTruthy();
   });
 
+  it("does not expose technical operation messages", () => {
+    render(<OperationProgressBar message="Failed query: SELECT * FROM users" />);
+
+    expect(screen.getByText("We couldn't complete this request. Please try again.")).toBeTruthy();
+    expect(screen.queryByText(/SELECT/)).toBeNull();
+  });
+
   it("renders simultaneous operations as independent progress bars", () => {
     render(
       <OperationProgressBars

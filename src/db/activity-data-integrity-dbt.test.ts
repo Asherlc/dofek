@@ -55,6 +55,7 @@ describe("runActivityIntegrityDbtBuild", () => {
     expect(variables).toEqual({
       activity_refresh_user_id: "00000000-0000-4000-8000-000000000001",
       activity_refresh_activity_ids: ["00000000-0000-4000-8000-000000000002"],
+      activity_sensor_sample_begin: "2026-09-01",
     });
     expect(call?.[2]).toMatchObject({
       cwd: process.cwd(),

@@ -975,7 +975,12 @@ describe("repairActivityDataIntegrity", () => {
 
     expect(result).toMatchObject({ updated: 1, changed: 1, beforeComponentCount: 1 });
     expect(result.afterComponentCount).toBe(2);
-    expect(dependencies.rebuildReadModels).toHaveBeenCalledOnce();
+    expect(dependencies.rebuildReadModels).toHaveBeenCalledExactlyOnceWith({
+      userId,
+      activityIds: [activityId, pelotonId],
+      eventTimeStart: new Date("2026-09-01T00:00:00.000Z"),
+      eventTimeEnd: new Date("2026-09-03T00:00:00.000Z"),
+    });
     const artifact = JSON.parse(await readFile(result.artifactPath, "utf8"));
     expect(artifact).toMatchObject({
       phase: "executed",

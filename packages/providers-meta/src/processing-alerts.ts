@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 export const PROCESSING_ALERT_ACTIONS = [
   "retry_sync",
   "reconnect",
@@ -50,9 +51,14 @@ export function processingAlertsFailurePresentation(input: {
       ? "Showing cached alerts from a previous check."
       : `Showing alerts last checked ${input.lastCheckedLabel}.`;
 
+  const errorMessage = userFacingErrorMessage(
+    input.errorMessage,
+    "The alert status check failed. Please try again.",
+  );
+
   return {
     title: input.hasSnapshot ? "Alert status may be out of date" : "Alert status is unavailable",
-    message: `${statusScope} Your synced health data is still available, and this status check did not pause syncs or imports. Details: ${input.errorMessage}`,
+    message: `${statusScope} Your synced health data is still available, and this status check did not pause syncs or imports. Details: ${errorMessage}`,
     retryLabel: "Retry alert status",
   };
 }

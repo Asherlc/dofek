@@ -1,4 +1,5 @@
 import { formatDurationSeconds, formatRelativeTime } from "@dofek/format/format";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { ActivityIndicator, Text, TouchableOpacity, View } from "react-native";
 import { OperationProgressBar } from "../../components/OperationProgressBar";
@@ -193,7 +194,12 @@ export function ProviderCard({
       ) : (
         <View style={styles.cardMeta}>
           {!showingProgress && syncProgress?.message ? (
-            <Text style={styles.cardMetaText}>{syncProgress.message}</Text>
+            <Text style={styles.cardMetaText}>
+              {userFacingErrorMessage(
+                syncProgress.message,
+                "The sync or import failed. Please try again.",
+              )}
+            </Text>
           ) : (
             <Text style={styles.cardMetaText}>
               {provider.importOnly
@@ -271,7 +277,7 @@ export function SyncLogRow({ log }: { log: SyncLog }) {
         </View>
         {isError && log.errorMessage ? (
           <Text style={styles.logError} numberOfLines={2}>
-            {log.errorMessage}
+            {userFacingErrorMessage(log.errorMessage, "The sync failed. Please try again.")}
           </Text>
         ) : null}
       </View>

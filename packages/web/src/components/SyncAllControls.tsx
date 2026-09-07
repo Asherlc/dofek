@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { SYNC_ALL_ACTIONS } from "@dofek/providers/sync-actions";
 import { useRef, useState } from "react";
 import { ModalDialog, ModalDialogDescription, ModalDialogTitle } from "./ModalDialog.tsx";
@@ -49,7 +50,7 @@ export function SyncAllControls({
       ) : null}
       {errorMessage ? (
         <p role="alert" className="text-xs text-red-400">
-          {errorMessage}
+          {userFacingErrorMessage(errorMessage, "The sync could not start. Please try again.")}
         </p>
       ) : null}
 

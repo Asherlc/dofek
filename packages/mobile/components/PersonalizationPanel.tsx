@@ -4,6 +4,7 @@ import {
   formatIntensity,
   formatStandardDeviation,
 } from "@dofek/format/format";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import type { PersonalizationModelCard } from "dofek-server/types";
 import { useEffect } from "react";
 import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -33,7 +34,7 @@ export function PersonalizationPanel() {
   }
 
   if (status.error) {
-    return <Text style={styles.errorText}>{status.error.message}</Text>;
+    return <Text style={styles.errorText}>{userFacingErrorMessage(status.error)}</Text>;
   }
 
   const data = status.data;

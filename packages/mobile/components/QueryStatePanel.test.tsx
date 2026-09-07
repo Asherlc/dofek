@@ -33,6 +33,21 @@ describe("getQueryErrorMessage", () => {
   it("falls back when no usable error message exists", () => {
     expect(getQueryErrorMessage(new Error(""), "Fallback message")).toBe("Fallback message");
   });
+
+  it("replaces technical validation details with the supplied fallback", () => {
+    expect(
+      getQueryErrorMessage(
+        new Error('strain: Zod parse failed: [{ "code": "invalid_type", "path": ["volume"] }]'),
+        "Could not load training data. Please try again.",
+      ),
+    ).toBe("Could not load training data. Please try again.");
+  });
+
+  it("explains connection failures without exposing fetch errors", () => {
+    expect(getQueryErrorMessage(new TypeError("Network request failed"))).toBe(
+      "We couldn't reach the server. Check your connection and try again.",
+    );
+  });
 });
 
 describe("QueryStatePanel", () => {

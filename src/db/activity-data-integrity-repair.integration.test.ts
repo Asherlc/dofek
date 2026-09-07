@@ -298,18 +298,6 @@ async function seedProductionDbtFixture(
     ) ENGINE = ReplacingMergeTree()
       ORDER BY (user_id, activity_id)
       SETTINGS allow_nullable_key = 1`,
-    `CREATE TABLE ${database}.activity_sensor_sample (
-      activity_id UUID,
-      user_id UUID,
-      recorded_at DateTime64(6, 'UTC'),
-      recorded_date Date,
-      channel String,
-      scalar Nullable(Float64),
-      refresh_version UInt64,
-      is_deleted UInt8,
-      refreshed_at DateTime64(9, 'UTC')
-    ) ENGINE = ReplacingMergeTree(refresh_version)
-      ORDER BY (user_id, activity_id, recorded_date, channel, recorded_at)`,
     `CREATE TABLE ${database}.activity_location_summary_rows (
       activity_id UUID,
       user_id UUID,
