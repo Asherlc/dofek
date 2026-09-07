@@ -237,7 +237,7 @@ describe("phone IMU outbox drain", () => {
     expect(readPhoneImuOutbox(storage).pending).toEqual([]);
   });
 
-  it("does not rescan an older account prefix for every current-account batch", async () => {
+  it("does not scan an older account prefix again for every current-account batch", async () => {
     const storage = createSettingsStorage();
     for (let index = 0; index < 50; index += 1) {
       persistImuEnvelope(storage, {

@@ -25455,3 +25455,16 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   Preserve the existing layout measurements, limits, and request waits.
 - **Validation / follow-up:** Confirm the replacement settings layout cases
   and full browser job pass before merging.
+
+## 2026-09-07 — Zepp outbox test wording blocked spell check
+
+- **Scope / impact:** PR #2676 validation only; no production impact.
+- **Evidence / root cause:** The [spell-check job](https://github.com/Asherlc/dofek/actions/runs/34164619692/job/101873232778)
+  failed while checking changed text. Its first fatal diagnostic was
+  `packages/zepp/src/phone-imu-sync.test.ts:240:16 - Unknown word (rescan)`.
+  The new performance regression test used a word that was absent from the
+  repository dictionary.
+- **Direct fix:** Rephrased the test title as “scan … again.” No runtime code,
+  dictionary exception, or CI setting changed.
+- **Validation / follow-up:** The focused CSpell command passes locally. Confirm
+  the replacement spell-check job and aggregate CI gate pass before merging.
