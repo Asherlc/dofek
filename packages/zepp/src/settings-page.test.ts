@@ -306,6 +306,22 @@ it("surfaces schema-invalid stored status fields", () => {
   expect(text).not.toContain("NaN Hz");
 });
 
+it("renders invalid stored health-sync timestamps as not synced", () => {
+  for (const lastSync of ["invalid", "Infinity", "8640000000000001", " "]) {
+    const { text } = render("zepp-main", { [STORAGE_KEYS.LAST_HEALTH_SYNC]: lastSync });
+    expect(text).toContain("Not synced yet");
+    expect(text).not.toContain("Invalid Date");
+  }
+});
+
+it("formats a valid stored health-sync timestamp", () => {
+  const timestamp = Date.UTC(2026, 8, 7, 12, 30);
+  const { text } = render("zepp-main", {
+    [STORAGE_KEYS.LAST_HEALTH_SYNC]: String(timestamp),
+  });
+  expect(text).toContain(new Date(timestamp).toLocaleString());
+});
+
 it("treats a pairing code expiring now as expired", () => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-09-07T12:00:00Z"));

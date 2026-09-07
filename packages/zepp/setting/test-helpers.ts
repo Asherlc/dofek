@@ -17,9 +17,18 @@ export async function renderSettingsInSandbox(
   const bundle = outputFiles[0];
   if (!bundle) throw new Error("Settings bundle was not generated");
   const images: Record<string, unknown>[] = [];
+  const buttons: Array<{
+    label?: string;
+    onClick?: () => void;
+  }> = [];
+  const inputs: Array<{
+    label?: string;
+    onChange?: (value: string) => void;
+  }> = [];
+  const storedValues = new Map(Object.entries(values));
   const settingsStorage = {
-    getItem: (key: string) => values[key] ?? null,
-    setItem: () => undefined,
+    getItem: (key: string) => storedValues.get(key) ?? null,
+    setItem: (key: string, value: string) => storedValues.set(key, value),
   };
   const components = {
     AppSettingsPage(configuration: {
@@ -28,8 +37,14 @@ export async function renderSettingsInSandbox(
       configuration.build({ settingsStorage });
     },
     View: (props: unknown, children: unknown[]) => ({ props, children }),
-    Button: (props: unknown) => props,
-    TextInput: (props: unknown) => props,
+    Button: (props: (typeof buttons)[number]) => {
+      buttons.push(props);
+      return props;
+    },
+    TextInput: (props: (typeof inputs)[number]) => {
+      inputs.push(props);
+      return props;
+    },
     Link: (props: unknown, children: unknown[]) => ({ props, children }),
     Image: (props: Record<string, unknown>) => {
       images.push(props);
@@ -45,5 +60,5 @@ export async function renderSettingsInSandbox(
     })(components);`,
     { components },
   );
-  return images;
+  return { buttons, images, inputs, storage: settingsStorage };
 }

@@ -4,7 +4,7 @@ import { renderSettingsInSandbox } from "./test-helpers.ts";
 
 describe("normal Zepp app Settings entry point", () => {
   it("renders a saved pairing QR in Zepp's restricted Settings sandbox", async () => {
-    const images = await renderSettingsInSandbox(new URL("./index.ts", import.meta.url), {
+    const { images } = await renderSettingsInSandbox(new URL("./index.ts", import.meta.url), {
       [STORAGE_KEYS.PAIRING_SHORT_CODE]: "ABC234",
       [STORAGE_KEYS.PAIRING_VERIFICATION_URL]:
         "https://dofek.example.test/zepp-pairing?code=ABC234",

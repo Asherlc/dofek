@@ -36,6 +36,7 @@ const STORED_STATUS_SCHEMA = z.object({
   hasGyro: z.boolean().optional(),
   pct: z.number().finite().min(0).max(100).optional(),
 });
+const STORED_TIMESTAMP_SCHEMA = z.coerce.number().finite().nonnegative().max(8_640_000_000_000_000);
 
 function text(value: string, style: Style = {}) {
   return View({ style: { lineHeight: "1.55", overflowWrap: "anywhere", ...style } }, [value]);
@@ -145,6 +146,12 @@ function statusRows(label: string, value: Record<string, unknown>) {
 
 function toggle(storage: SettingsStorage, key: string) {
   storage.setItem(key, storage.getItem(key) === "1" ? "0" : "1");
+}
+
+function storedDate(value: string | null): Date | null {
+  if (!value?.trim()) return null;
+  const parsed = STORED_TIMESTAMP_SCHEMA.safeParse(value);
+  return parsed.success ? new Date(parsed.data) : null;
 }
 
 export function createSettingsPage(app: "zepp-main" | "zepp-workout") {
@@ -430,12 +437,9 @@ export function createSettingsPage(app: "zepp-main" | "zepp-workout") {
           statusRows("Health sync", status(storage, STORAGE_KEYS.HEALTH_SYNC_STATUS)),
           statusRows("Background collection", status(storage, STORAGE_KEYS.HEALTH_SERVICE_STATUS)),
         );
-        const lastSync = storage.getItem(STORAGE_KEYS.LAST_HEALTH_SYNC);
+        const lastSync = storedDate(storage.getItem(STORAGE_KEYS.LAST_HEALTH_SYNC));
         syncRows.push(
-          row(
-            "Last health sync",
-            lastSync ? new Date(Number(lastSync)).toLocaleString() : "Not synced yet",
-          ),
+          row("Last health sync", lastSync ? lastSync.toLocaleString() : "Not synced yet"),
         );
         if (actions.showSync)
           syncRows.push(
