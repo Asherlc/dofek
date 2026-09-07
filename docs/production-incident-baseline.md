@@ -25375,5 +25375,17 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   current value matching the latest week, and the existing empty result text.
   No application code or test-runner setting changed.
 - **Validation / follow-up:** All 60 focused cycling tests, Biome, and
-  whitespace checks pass. Confirm the replacement integration shard passes
-  before merging.
+  whitespace checks pass. The [replacement integration shard](https://github.com/Asherlc/dofek/actions/runs/34157574211/job/101853064825)
+  passed on `8bbd50730`, as did all other integration shards.
+
+## 2026-09-07 — Settings layout tests used the old Zepp pairing heading
+
+- **Scope / impact:** PR #2680 browser validation only; no production impact.
+- **Evidence / root cause:** The [web E2E job](https://github.com/Asherlc/dofek/actions/runs/34157574211/job/101852832352)
+  failed two settings layout cases with `Expected to find content: 'Zepp App Pairing'`
+  after the heading changed to “Pair your Zepp app.” The remaining 43 browser
+  cases passed. The selector failed before layout measurements completed.
+- **Direct fix:** Update both heading selectors and their diagnostic text.
+  Preserve the existing layout measurements, limits, and request waits.
+- **Validation / follow-up:** Confirm the replacement settings layout cases
+  and full browser job pass before merging.
