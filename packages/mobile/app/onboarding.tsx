@@ -10,12 +10,9 @@ export default function OnboardingScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.header}>
-        <Text style={styles.kicker}>First-run setup</Text>
-        <Text style={styles.title}>Set up Dofek with your real data</Text>
+        <Text style={styles.title}>Set up Dofek</Text>
         <Text style={styles.subtitle}>
-          Dofek is useful after it has data to work with. Start by choosing a primary goal,
-          connecting the sources you already use, then open the dashboard when sync has something to
-          show.
+          Choose a goal and connect your health apps. Your dashboard will update as data syncs.
         </Text>
       </View>
 
@@ -61,11 +58,6 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 22,
     gap: 12,
-  },
-  kicker: {
-    color: colors.accent,
-    fontSize: 13,
-    fontWeight: "700",
   },
   title: {
     color: colors.text,

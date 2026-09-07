@@ -17,7 +17,7 @@ const DAY_OPTIONS = [
 ];
 
 const NO_ASSOCIATION_EVIDENCE_MESSAGE =
-  "No association evidence is available for the current results. Log boolean journal entries (Yes/No) for at least 5 days in each group to describe their association with next-day readiness.";
+  "No association evidence is available for the current results. This comparison needs at least 5 Yes days and 5 No days for the same question, with next-day readiness data.";
 
 function ProviderSourceDetails({ sources }: { sources: ProviderProvenance[] }) {
   const [expanded, setExpanded] = useState(false);
@@ -51,6 +51,7 @@ function ProviderSourceDetails({ sources }: { sources: ProviderProvenance[] }) {
 
 export default function BehaviorAssociationsScreen() {
   const { days, description, setDays } = useTimeRangePreference("behavior");
+  const [calculationOpen, setCalculationOpen] = useState(false);
   const query = trpc.behaviorImpact.impactSummary.useQuery({ days });
   const data = query.data;
   const associationRows = data?.filter((item) => item.association) ?? [];
@@ -70,12 +71,23 @@ export default function BehaviorAssociationsScreen() {
       {evidence ? (
         <Card title="Evidence">
           <View style={styles.evidenceDetails}>
-            <Text style={styles.evidenceText}>Method: {evidence.method}</Text>
-            <Text style={styles.evidenceText}>Interpretation: {evidence.interpretation}</Text>
-            <Text style={styles.evidenceText}>Uncertainty: {evidence.uncertainty}</Text>
-            <Text style={styles.evidenceText}>
-              Observation window: {evidence.observationWindow}
-            </Text>
+            <Text style={styles.evidenceText}>{evidence.interpretation}</Text>
+            <Text style={styles.evidenceText}>{evidence.uncertainty}</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ expanded: calculationOpen }}
+              onPress={() => setCalculationOpen((open) => !open)}
+            >
+              <Text style={styles.technicalDetails}>Calculation details</Text>
+            </Pressable>
+            {calculationOpen ? (
+              <View>
+                <Text style={styles.evidenceText}>{evidence.method}</Text>
+                <Text style={styles.evidenceText}>
+                  Observation window: {evidence.observationWindow}
+                </Text>
+              </View>
+            ) : null}
           </View>
         </Card>
       ) : null}
@@ -92,8 +104,8 @@ export default function BehaviorAssociationsScreen() {
       ) : !data || data.length === 0 ? (
         <QueryStatePanel
           variant="empty"
-          title="Not enough journal data yet"
-          message="Log boolean journal entries (Yes/No) for at least 5 days in each group to describe their association with next-day readiness."
+          title="Not enough journal data"
+          message="This comparison needs at least 5 Yes days and 5 No days for the same question, with next-day readiness data."
         />
       ) : associationRows.length === 0 ? (
         <>

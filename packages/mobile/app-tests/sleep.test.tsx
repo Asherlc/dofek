@@ -72,7 +72,7 @@ describe("SleepScreen", () => {
     render(<SleepScreen />);
 
     expect(screen.getByText("Sleep analytics are unavailable.")).toBeTruthy();
-    expect(screen.queryByText("No sleep data has been synced yet.")).toBeNull();
+    expect(screen.queryByText("No sleep records in this period")).toBeNull();
   });
 
   it("shows one truthful empty state without zero-valued summary measurements", async () => {
@@ -86,7 +86,8 @@ describe("SleepScreen", () => {
     const { default: SleepScreen } = await import("../app/sleep");
     render(<SleepScreen />);
 
-    expect(screen.getByText("No sleep data has been synced yet.")).toBeTruthy();
+    expect(screen.getByText("No sleep records in this period")).toBeTruthy();
+    expect(screen.getByText("Try a longer date range or check your sleep source.")).toBeTruthy();
     expect(screen.queryByText("Sleep Debt (14 Days)")).toBeNull();
     expect(screen.queryByText("No sleep debt")).toBeNull();
     expect(screen.queryByText("Average Duration")).toBeNull();

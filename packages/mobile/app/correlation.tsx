@@ -1,4 +1,5 @@
 import { formatNumber, formatSigned } from "@dofek/format/format";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { providerLabel } from "@dofek/providers/providers";
 import { chartColors } from "@dofek/scoring/colors";
 import { CORRELATION_AVAILABILITY_DESCRIPTION } from "@dofek/stats/correlation";
@@ -675,7 +676,7 @@ export default function CorrelationScreen() {
 
       {observationsQuery.isError && metricX !== metricY && (
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>{observationsQuery.error.message}</Text>
+          <Text style={styles.emptyText}>{userFacingErrorMessage(observationsQuery.error)}</Text>
         </View>
       )}
 
@@ -758,7 +759,7 @@ export default function CorrelationScreen() {
             <View style={styles.card}>
               <ChartTitleWithTooltip
                 title="Scatter Plot"
-                description="This chart plots each data point and a trend line to visualize how the two metrics relate."
+                description="Each point is a paired observation. The trend line shows the direction of the association; it does not prove cause."
                 textStyle={styles.cardTitle}
               />
               <ScatterPlot

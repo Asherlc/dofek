@@ -439,6 +439,38 @@ describe("initBackgroundHealthKitSync", () => {
     vi.useRealTimers();
   });
 
+  it.each(["Route service unavailable", "fetch failed: The request timed out."])(
+    "refreshes queries after partial writes while retaining failed observer acknowledgement: %s",
+    async (message) => {
+      vi.useFakeTimers();
+      try {
+        const client = createMockClient();
+        const refreshQueries = vi.fn();
+        await initBackgroundHealthKitSync(client, refreshQueries);
+        await vi.runAllTimersAsync();
+        refreshQueries.mockClear();
+        vi.mocked(queryDailyStatistics).mockResolvedValueOnce([
+          { date: "2026-03-22", value: 1000 },
+        ]);
+        client.healthKitSync.pushQuantitySamples.mutate.mockResolvedValueOnce({
+          inserted: 1,
+          errors: [message],
+        });
+        const listener = mockAddSampleUpdateListener.mock.calls[0][0];
+        listener({
+          typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+          updateId: "partial-update",
+        });
+        await vi.advanceTimersByTimeAsync(5000);
+        await vi.runAllTimersAsync();
+        expect(refreshQueries).toHaveBeenCalledTimes(1);
+        expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["partial-update"], false);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
   it("marks native observer sync lifecycle while draining deliveries (DOFEK-MOBILE-1C)", async () => {
     const client = createMockClient();
     await initBackgroundHealthKitSync(client);

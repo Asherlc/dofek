@@ -1,4 +1,5 @@
 import { formatRelativeTime } from "@dofek/format/format";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { operationalStatusColors } from "@dofek/scoring/colors";
 import { Link } from "@tanstack/react-router";
@@ -131,7 +132,11 @@ export function SyncProviderCard({
 
       {/* Status message */}
       {!pushOnly && state.message && state.status !== "syncing" && (
-        <span className="text-xs text-subtle mt-1">{state.message}</span>
+        <span className="text-xs text-subtle mt-1">
+          {state.status === "error"
+            ? userFacingErrorMessage(state.message, "The sync failed. Please try again.")
+            : state.message}
+        </span>
       )}
       {state.status !== "syncing" && !state.message && lastSyncedRelative && (
         <span className="text-xs text-dim mt-1">

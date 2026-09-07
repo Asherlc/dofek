@@ -28,4 +28,21 @@ describe("ProviderSyncHistoryEntry", () => {
     expect(screen.getByText("raw-log-123")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Hide diagnostics" })).toBeTruthy();
   });
+
+  it("does not show raw runtime details in error diagnostics", () => {
+    render(
+      <ProviderSyncHistoryEntry
+        providerName="WHOOP"
+        entry={{
+          ...expiredAuthorizationEntry,
+          authFailureReason: null,
+          errorMessage: "TypeError: Cannot read properties of undefined (reading 'token')",
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Show diagnostics" }));
+    expect(screen.getByText("The sync failed. Please try again.")).toBeTruthy();
+    expect(screen.queryByText(/Cannot read properties/)).toBeNull();
+  });
 });

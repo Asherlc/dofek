@@ -26,7 +26,7 @@ const sampleData = {
     methodVersion: "sleep-need-heuristic-v1",
     uncertainty: "not_established",
     valueQualifier: "About",
-    summaryLabel: "Heuristic estimate",
+    summaryLabel: "Estimated sleep need",
     componentLabels: {
       baseline: "Baseline estimate",
       strainDebt: "Previous-day load adjustment",
@@ -35,10 +35,10 @@ const sampleData = {
     basisLabel:
       "Baseline uses the average of 12 qualifying nights followed by at-or-above-median heart rate variability.",
     coverageLabel: "Sleep-debt input uses 11 observed nights from the model's recent-night window.",
-    methodLabel: "Method: sleep-need-heuristic-v1",
+    methodLabel: "Baseline average plus previous-day load and sleep-debt adjustments.",
     uncertaintyLabel: "Uncertainty: not established",
     limitationLabel:
-      "This is a descriptive heuristic estimate, not a sleep recommendation. Its uncertainty has not been established.",
+      "This is an estimate, not a sleep recommendation. Its uncertainty has not been established.",
   },
   recentNights: [
     {

@@ -1,4 +1,5 @@
 import type { DeveloperClientSecret } from "@dofek/auth/developer-clients";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { useEffect, useRef, useState } from "react";
 import { captureException } from "../lib/telemetry.ts";
 import { ModalDialog, ModalDialogDescription, ModalDialogTitle } from "./ModalDialog.tsx";
@@ -104,7 +105,10 @@ export function DeveloperClientSecretDialog({
           {copyError?.generation === copyGeneration.current &&
           copyError.credentialContext === credentialContext ? (
             <p role="alert" className="text-sm text-red-400">
-              {copyError.message}
+              {userFacingErrorMessage(
+                copyError,
+                "The client secret could not be copied. Please try again.",
+              )}
             </p>
           ) : null}
           <div className="flex justify-end">

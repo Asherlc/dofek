@@ -18,6 +18,7 @@ import {
   type RecordLocalTimeContext,
 } from "@dofek/format/record-local-time";
 import { formatMeasurementText, type UnitConverter } from "@dofek/format/units";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
@@ -319,19 +320,19 @@ export default function ActivitiesScreen() {
       />
 
       {bulkDelete.error ? (
-        <QueryStatePanel variant="error" message={bulkDelete.error.message} />
+        <QueryStatePanel variant="error" message={userFacingErrorMessage(bulkDelete.error)} />
       ) : null}
 
       {overviewQuery.isLoading && !overviewQuery.data ? (
         <QueryStatePanel variant="loading" minHeight={100} />
       ) : overviewQuery.isError && !overviewQuery.data ? (
-        <QueryStatePanel variant="error" message={overviewQuery.error.message} />
+        <QueryStatePanel variant="error" message={userFacingErrorMessage(overviewQuery.error)} />
       ) : (
         <>
           {overviewQuery.isError ? (
             <QueryStatePanel
               variant="error"
-              message={overviewQuery.error.message}
+              message={userFacingErrorMessage(overviewQuery.error)}
               minHeight={72}
               style={styles.backgroundErrorPanel}
             />
@@ -343,13 +344,13 @@ export default function ActivitiesScreen() {
       {calendarQuery.isLoading && !calendarQuery.data ? (
         <QueryStatePanel variant="loading" minHeight={180} />
       ) : calendarQuery.isError && !calendarQuery.data ? (
-        <QueryStatePanel variant="error" message={calendarQuery.error.message} />
+        <QueryStatePanel variant="error" message={userFacingErrorMessage(calendarQuery.error)} />
       ) : (
         <>
           {calendarQuery.isError ? (
             <QueryStatePanel
               variant="error"
-              message={calendarQuery.error.message}
+              message={userFacingErrorMessage(calendarQuery.error)}
               minHeight={72}
               style={styles.backgroundErrorPanel}
             />
@@ -361,7 +362,7 @@ export default function ActivitiesScreen() {
       {query.isLoading && !query.data ? (
         <QueryStatePanel variant="loading" minHeight={200} />
       ) : query.isError && !query.data ? (
-        <QueryStatePanel variant="error" message={query.error.message} />
+        <QueryStatePanel variant="error" message={userFacingErrorMessage(query.error)} />
       ) : !dayGroups || dayGroups.length === 0 ? (
         <QueryStatePanel variant="empty" message={`No activities in the last ${weeks} weeks.`} />
       ) : (
@@ -369,7 +370,7 @@ export default function ActivitiesScreen() {
           {query.isError ? (
             <QueryStatePanel
               variant="error"
-              message={query.error.message}
+              message={userFacingErrorMessage(query.error)}
               minHeight={72}
               style={styles.backgroundErrorPanel}
             />

@@ -1,7 +1,6 @@
 import { formatDurationMinutes, formatHRV, formatMonthYear } from "@dofek/format/format";
 import { textColors } from "@dofek/scoring/colors";
 import type { MonthlyReportData, MonthSummary } from "dofek-server/types";
-import { EmptyStatePreview } from "./EmptyStatePreview.tsx";
 import { ReportDecisionSynthesis } from "./ReportDecisionSynthesis.tsx";
 
 export function MonthlyReportContent({ data }: { data: MonthlyReportData | undefined }) {
@@ -14,7 +13,12 @@ export function MonthlyReportContent({ data }: { data: MonthlyReportData | undef
   }
 
   if (!data.current) {
-    return <EmptyStatePreview content={data.emptyState} />;
+    return (
+      <section className="card p-6">
+        <h3 className="text-base font-semibold text-foreground">{data.emptyState.title}</h3>
+        <p className="mt-2 text-sm text-muted">{data.emptyState.requirement}</p>
+      </section>
+    );
   }
 
   return (

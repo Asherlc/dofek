@@ -306,7 +306,7 @@ describe("DailyOverview", () => {
     expect(screen.getByText("Night of Sat, Aug 1, 2026 · America/Los_Angeles")).toBeTruthy();
   });
 
-  it("renders contextual descriptions below each score ring", () => {
+  it("renders strain and sleep context below their score rings", () => {
     render(
       <DailyOverview
         readiness={mockReadiness}
@@ -317,8 +317,6 @@ describe("DailyOverview", () => {
         sleepLoading={false}
       />,
     );
-    // Recovery description
-    expect(screen.getByText(/ready for high-intensity/)).toBeTruthy();
     // Strain description (moderate strain = productive)
     expect(screen.getByText(/productive training day/)).toBeTruthy();
     // Sleep description (Good tier)
@@ -497,7 +495,7 @@ describe("DailyOverview", () => {
       currentStrain: 12.5,
       progressPercent: 89,
       zone: "Push" as const,
-      explanation: "Recovery is strong (75). Push for a high-strain day to build fitness.",
+      explanation: "Based on a recovery score of 75/100.",
       dailyLoad: 100,
       acuteLoad: 80,
       chronicLoad: 70,
@@ -551,7 +549,7 @@ describe("DailyOverview", () => {
       currentStrain: 0,
       progressPercent: 0,
       zone: "Maintain" as const,
-      explanation: "Moderate recovery (50). Aim for a steady training day.",
+      explanation: "Based on a recovery score of 50/100.",
       dailyLoad: 0,
       acuteLoad: 133,
       chronicLoad: 33,

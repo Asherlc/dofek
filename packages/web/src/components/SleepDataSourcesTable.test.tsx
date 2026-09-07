@@ -48,7 +48,7 @@ describe("SleepDataSourcesTable", () => {
     expect(screen.getByText("Partial")).toBeDefined();
   });
 
-  it("identifies the selected session and discloses canonical overlaps", () => {
+  it("identifies the sleep record used and discloses overlapping records", () => {
     render(
       <SleepDataSourcesTable
         rows={[
@@ -79,7 +79,7 @@ describe("SleepDataSourcesTable", () => {
       />,
     );
 
-    expect(screen.getByText("Selected session")).toBeDefined();
+    expect(screen.getByText("Sleep record used")).toBeDefined();
     expect(screen.getByText("Merged sources")).toBeDefined();
     expect(screen.getByText("WHOOP (Cloud) · WHOOP 4.0")).toBeDefined();
     expect(screen.getByText("Apple Health")).toBeDefined();

@@ -100,7 +100,7 @@ vi.mock("../theme", () => ({
   spacing: { xs: 4, md: 12, lg: 16 },
 }));
 
-vi.mock("../app/_layout-options", () => ({
+vi.mock("../lib/root-stack-screen-options", () => ({
   rootStackScreenOptions: {},
 }));
 

@@ -10,6 +10,7 @@ import {
 } from "@dofek/format/format";
 import { formatRecordLocalTime } from "@dofek/format/record-local-time";
 import { getMissingSleepStates } from "@dofek/format/sleep-data-state";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { sleepDebtColor } from "@dofek/scoring/scoring";
 import { useRef } from "react";
@@ -188,12 +189,12 @@ export default function SleepScreen() {
           <Text style={styles.loadingText}>Loading sleep data...</Text>
         </View>
       ) : sleepQuery.isError && !sleepQuery.data ? (
-        <QueryStatePanel variant="error" message={sleepQuery.error.message} />
+        <QueryStatePanel variant="error" message={userFacingErrorMessage(sleepQuery.error)} />
       ) : nightly.length === 0 ? (
         <QueryStatePanel
           variant="empty"
-          title="No sleep data"
-          message="No sleep data has been synced yet."
+          title="No sleep records in this period"
+          message="Try a longer date range or check your sleep source."
         />
       ) : (
         <>
@@ -253,6 +254,7 @@ export default function SleepScreen() {
                   title="Average Duration"
                   value={formatDurationMinutes(averageSleepMinutes)}
                   trend={durationTrend}
+                  chartDescription="Recorded sleep duration by night in this period."
                   color={colors.blue}
                   subtitle={`Last ${days} nights`}
                   onViewData={scrollToSleepSources}
@@ -263,6 +265,7 @@ export default function SleepScreen() {
                   title="Average Efficiency"
                   value={formatIntensity(averageEfficiencyPercent)}
                   trend={efficiencyTrend}
+                  chartDescription="Recorded sleep efficiency by night in this period, shown as a percentage."
                   color={colors.purple}
                   subtitle={`Last ${days} nights`}
                   onViewData={scrollToSleepSources}
@@ -276,7 +279,7 @@ export default function SleepScreen() {
             <View style={styles.card}>
               <ChartTitleWithTooltip
                 title="Schedule Consistency"
-                description="This chart tracks how consistent your sleep and wake timing has been over recent nights."
+                description="Scores range from 0 to 100; higher scores mean your sleep and wake times varied less. The dashed line marks the average."
                 textStyle={styles.cardTitle}
               />
               <View style={styles.consistencyRow}>

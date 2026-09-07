@@ -46,6 +46,30 @@ async function serializeTransportError(error: unknown) {
 }
 
 describe("tRPC error serialization", () => {
+  it("serializes a configuration failure with the feature and support action", async () => {
+    const diagnostic = new Error("CLICKHOUSE_URL environment variable is required");
+    const testRouter = router({
+      running: router({
+        dynamicsV2: publicProcedure.query(() => {
+          throw diagnostic;
+        }),
+      }),
+    });
+    const response = await fetchRequestHandler({
+      endpoint: "/api/trpc",
+      req: new Request("https://app.example.test/api/trpc/running.dynamicsV2"),
+      router: testRouter,
+      createContext: () => testContext({ userId: "user-1", timezone: "UTC", sensorStore: {} }),
+    });
+    expect(response.status).toBe(412);
+    const body = await response.json();
+    expect(body.error.message).toBe(
+      "Running analytics are unavailable because the analytics service is not configured. Contact support.",
+    );
+    expect(body.error.data.code).toBe("PRECONDITION_FAILED");
+    expect(JSON.stringify(body)).not.toContain("CLICKHOUSE_URL");
+  });
+
   it("hides raw SQL and parameters while keeping the original error observable", async () => {
     const databaseError = new Error(
       "Failed query: SELECT user_id FROM fitness.session WHERE id = $1\nparams: private-session",
@@ -76,6 +100,24 @@ describe("tRPC error serialization", () => {
     expect(result.body).not.toContain("rejected-user-id");
     expect(result.body).not.toContain("pattern");
     expect(result.observedError?.cause).toBe(validationResult.error);
+  });
+
+  it("describes invalid request input without exposing Zod issue details", async () => {
+    const validationResult = z.object({ date: z.iso.date() }).safeParse({ date: "tomorrow" });
+    if (validationResult.success) {
+      throw new Error("expected the fixture to fail date validation");
+    }
+    const validationError = new TRPCError({
+      code: "BAD_REQUEST",
+      cause: validationResult.error,
+    });
+
+    const result = await serializeTransportError(validationError);
+
+    expect(result.status).toBe(400);
+    expect(result.body).toContain("Some information is invalid. Check your entries and try again.");
+    expect(result.body).not.toContain("invalid_format");
+    expect(result.body).not.toContain("tomorrow");
   });
 
   it("hides a default internal message even when the error has a cause", async () => {

@@ -3,6 +3,7 @@ import {
   formatSupplementDoseStatus,
   type SupplementDoseOccurrence,
 } from "@dofek/format/supplement-dose-events";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { StyleSheet, Text, View } from "react-native";
 import { trpc } from "../lib/trpc";
 import { colors, spacing } from "../theme";
@@ -16,11 +17,23 @@ export function SupplementDoseEventsPanel() {
     return <QueryStatePanel variant="loading" minHeight={96} />;
   }
   if (query.error && !hasCachedOccurrences) {
-    return <QueryStatePanel variant="error" minHeight={96} message={query.error.message} />;
+    return (
+      <QueryStatePanel
+        variant="error"
+        minHeight={96}
+        message={userFacingErrorMessage(query.error)}
+      />
+    );
   }
   if (!query.data || query.data.occurrences.length === 0) {
     if (query.error) {
-      return <QueryStatePanel variant="error" minHeight={96} message={query.error.message} />;
+      return (
+        <QueryStatePanel
+          variant="error"
+          minHeight={96}
+          message={userFacingErrorMessage(query.error)}
+        />
+      );
     }
     return (
       <QueryStatePanel
@@ -35,7 +48,11 @@ export function SupplementDoseEventsPanel() {
   return (
     <View style={styles.list}>
       {query.error ? (
-        <QueryStatePanel variant="error" minHeight={72} message={query.error.message} />
+        <QueryStatePanel
+          variant="error"
+          minHeight={72}
+          message={userFacingErrorMessage(query.error)}
+        />
       ) : null}
       <Text style={styles.counts}>
         Taken {counts.taken} · Skipped {counts.skipped} · Unknown {counts.unknown} · Planned{" "}

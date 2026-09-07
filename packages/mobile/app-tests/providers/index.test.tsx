@@ -729,6 +729,24 @@ describe("ProviderCard", () => {
       expect(screen.getByText("Never synced")).toBeTruthy();
     });
 
+    it("replaces a technical message left after a failed sync", async () => {
+      const { ProviderCard } = await import("../../components/providers/provider-card");
+      render(
+        <ProviderCard
+          provider={makeProvider()}
+          stats={undefined}
+          syncing={false}
+          syncProgress={{ message: "TypeError: Cannot read properties of undefined" }}
+          onSync={noopFn}
+          onConnect={noopFn}
+          onPress={noopFn}
+        />,
+      );
+
+      expect(screen.getByText("The sync or import failed. Please try again.")).toBeTruthy();
+      expect(screen.queryByText(/TypeError/)).toBeNull();
+    });
+
     it("renders 'Not connected' status for disconnected providers", async () => {
       const { ProviderCard } = await import("../../components/providers/provider-card");
       render(
@@ -2896,6 +2914,22 @@ describe("ProvidersScreen", () => {
 
     await waitFor(() => {
       expect(mockSyncHealthKit).toHaveBeenCalledWith(expect.objectContaining({ syncRangeDays: 7 }));
+    });
+  });
+
+  it("shows partial HealthKit errors and refreshes queries for successful writes", async () => {
+    mockSyncHealthKit.mockResolvedValueOnce({
+      inserted: 4,
+      deleted: 0,
+      errors: ["Route service unavailable"],
+    });
+    await renderProvidersScreen();
+    const appleCard = within(screen.getByTestId("provider-card-apple_health"));
+    await waitFor(() => expect(appleCard.getByText("Sync")).toBeTruthy());
+    fireEvent.click(appleCard.getByText("Sync"));
+    await waitFor(() => {
+      expect(appleCard.getByText("4 records synced; Route service unavailable")).toBeTruthy();
+      expect(mockInvalidate).toHaveBeenCalled();
     });
   });
 

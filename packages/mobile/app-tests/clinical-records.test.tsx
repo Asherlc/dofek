@@ -167,7 +167,7 @@ describe("ClinicalRecordsScreen", () => {
     mocks.list.mockReturnValue(queryResult({ records: [], nextOffset: null }));
     render(<ClinicalRecordsScreen />);
     expect(screen.getByTestId("query-state-empty").textContent).toContain(
-      "No clinical records have been synced yet.",
+      "No clinical records to display.",
     );
   });
 

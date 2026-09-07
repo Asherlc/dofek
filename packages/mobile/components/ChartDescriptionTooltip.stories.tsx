@@ -6,7 +6,7 @@ const meta = {
   component: ChartDescriptionTooltip,
   args: {
     title: "Ramp Rate",
-    description: "This chart shows how quickly your training load is changing week to week.",
+    description: "Weekly change in training load; positive values are increases.",
   },
 } satisfies Meta<typeof ChartDescriptionTooltip>;
 

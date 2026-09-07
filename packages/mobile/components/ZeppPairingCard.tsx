@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { useEffect, useState } from "react";
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { trpc } from "../lib/trpc";
@@ -15,9 +16,16 @@ interface ZeppPairingCardBodyProps {
   onPairingCodeChange: (value: string) => void;
   onClaimPairing: () => void;
   onDisconnect: (connectionType: "zepp-main" | "zepp-workout") => void;
+  showTitle?: boolean;
 }
 
-export function ZeppPairingCard({ initialCode = "" }: { initialCode?: string }) {
+export function ZeppPairingCard({
+  initialCode = "",
+  showTitle = true,
+}: {
+  initialCode?: string;
+  showTitle?: boolean;
+}) {
   const [pairingCode, setPairingCode] = useState(initialCode);
   const [pairingMessage, setPairingMessage] = useState("");
   useEffect(() => {
@@ -43,7 +51,7 @@ export function ZeppPairingCard({ initialCode = "" }: { initialCode?: string }) 
       await connectionsQuery.refetch();
     },
     onError: (error) => {
-      setPairingMessage(error.message);
+      setPairingMessage(userFacingErrorMessage(error));
     },
   });
 
@@ -55,8 +63,22 @@ export function ZeppPairingCard({ initialCode = "" }: { initialCode?: string }) 
   return (
     <ZeppPairingCardBody
       connections={connectionsQuery.data ?? []}
-      connectionsError={connectionsQuery.error?.message ?? null}
-      disconnectError={disconnectMutation.error?.message ?? null}
+      connectionsError={
+        connectionsQuery.error
+          ? userFacingErrorMessage(
+              connectionsQuery.error,
+              "Paired devices could not be loaded. Please try again.",
+            )
+          : null
+      }
+      disconnectError={
+        disconnectMutation.error
+          ? userFacingErrorMessage(
+              disconnectMutation.error,
+              "The device could not be disconnected. Please try again.",
+            )
+          : null
+      }
       isConnectionsLoading={connectionsQuery.isLoading}
       pairingCode={pairingCode}
       pairingMessage={pairingMessage}
@@ -70,6 +92,7 @@ export function ZeppPairingCard({ initialCode = "" }: { initialCode?: string }) 
       onDisconnect={(connectionType) => {
         disconnectMutation.mutate({ connectionType });
       }}
+      showTitle={showTitle}
     />
   );
 }
@@ -86,13 +109,14 @@ export function ZeppPairingCardBody({
   onPairingCodeChange,
   onClaimPairing,
   onDisconnect,
+  showTitle = true,
 }: ZeppPairingCardBodyProps) {
   const normalizedPairingCode = pairingCode.trim();
 
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Zepp App Pairing</Text>
-      <Text style={styles.sectionDescription}>Connect the Zepp watch app to this account</Text>
+      {showTitle ? <Text style={styles.sectionTitle}>Pair your Zepp app</Text> : null}
+      <Text style={styles.sectionDescription}>Enter the code shown in Zepp</Text>
       <View style={styles.card}>
         <Text style={styles.statusTitle}>Current connections</Text>
         {isConnectionsLoading ? (

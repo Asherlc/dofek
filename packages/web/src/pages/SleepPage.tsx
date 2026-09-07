@@ -171,7 +171,7 @@ export function SleepPage() {
         <PageSection
           id="sleep-data-sources"
           title="Data Sources"
-          subtitle="Which canonical session was selected and which overlapping sessions disagreed"
+          subtitle="See which sleep record is used for each night and compare overlapping records"
         >
           <SleepDataSourcesTable
             key={days ?? "all"}

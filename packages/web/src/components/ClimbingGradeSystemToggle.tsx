@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import {
   type BoulderGradeSystem,
   type ClimbingGradePreference,
@@ -37,7 +38,7 @@ export function ClimbingGradeSystemToggle() {
 
   if (!setting.data) {
     if (setting.error) {
-      return <p role="alert">{setting.error.message}</p>;
+      return <p role="alert">{userFacingErrorMessage(setting.error)}</p>;
     }
     return <p aria-busy="true">Loading climbing grade systems…</p>;
   }
@@ -53,7 +54,7 @@ export function ClimbingGradeSystemToggle() {
       {
         onError: (error) => {
           utils.settings.get.setData({ key: SETTINGS_KEY }, previous);
-          setWriteError(error.message);
+          setWriteError(userFacingErrorMessage(error));
           captureException(error, { context: "climbing-grade-systems-write" });
         },
         onSettled: () => void utils.settings.get.invalidate({ key: SETTINGS_KEY }),
@@ -77,9 +78,12 @@ export function ClimbingGradeSystemToggle() {
         value={preference.route}
         disabled={mutation.isPending}
       />
-      {(writeError ?? setting.error?.message) ? (
+      {(writeError ?? setting.error) ? (
         <p className="text-sm text-red-400" role="alert">
-          {writeError ?? setting.error?.message}
+          {userFacingErrorMessage(
+            writeError ?? setting.error,
+            "Climbing grade settings could not be saved. Please try again.",
+          )}
         </p>
       ) : null}
     </div>

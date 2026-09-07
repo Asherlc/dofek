@@ -23,7 +23,7 @@ export function SleepPerformanceCard({ data, loading }: SleepPerformanceCardProp
     }
     return (
       <div className="card p-6 flex items-center justify-center h-[140px]">
-        <span className="text-dim text-sm">No sleep data yet</span>
+        <span className="text-dim text-sm">No sleep data to display</span>
       </div>
     );
   }

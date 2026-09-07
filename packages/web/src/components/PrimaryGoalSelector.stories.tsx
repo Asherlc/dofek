@@ -11,12 +11,7 @@ function PrimaryGoalSelectorPreview({ initialGoal }: { initialGoal: PrimaryGoal 
 
   return (
     <section className="space-y-3 w-[420px] p-4">
-      <div>
-        <h2 className="text-sm font-medium text-foreground">Primary goal</h2>
-        <p className="text-xs text-subtle mt-0.5">
-          Choose the outcome Dofek should optimize toward. You can change this anytime.
-        </p>
-      </div>
+      <h2 className="text-sm font-medium text-foreground">What would you like to focus on?</h2>
       <div className="grid gap-2 sm:grid-cols-2">
         {PRIMARY_GOAL_OPTIONS.map((option) => {
           const isSelected = currentGoal === option.id;

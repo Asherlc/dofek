@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { useState } from "react";
 import { locallyReportedErrorMeta } from "../../../lib/query-client.ts";
 import { captureException } from "../../../lib/telemetry.ts";
@@ -30,7 +31,7 @@ export function RecomputeActivityButton({ activityId }: { activityId: string }) 
     onError: (error) => {
       setIsRecomputing(false);
       captureException(error, { context: "activity-recompute" });
-      setErrorMessage(error instanceof Error ? error.message : "Unable to recompute activity.");
+      setErrorMessage(userFacingErrorMessage(error, "Unable to recompute activity."));
     },
   });
 
@@ -44,7 +45,14 @@ export function RecomputeActivityButton({ activityId }: { activityId: string }) 
       >
         {recomputeMutation.isPending || isRecomputing ? "Recomputing..." : "Recompute"}
       </button>
-      {errorMessage ? <p className="text-xs text-red-400">{errorMessage}</p> : null}
+      {errorMessage ? (
+        <p className="text-xs text-red-400">
+          {userFacingErrorMessage(
+            errorMessage,
+            "The activity could not be recomputed. Please try again.",
+          )}
+        </p>
+      ) : null}
     </div>
   );
 }

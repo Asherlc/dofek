@@ -12,7 +12,6 @@ import { statusColors } from "@dofek/scoring/colors";
 import {
   StrainScore,
   scoreColor,
-  scoreDescription,
   scoreLabel,
   sleepTierColor,
   sleepTierDescription,
@@ -414,7 +413,6 @@ function ReadinessRing({
       >
         {ringLabel}
       </span>
-      <p className="text-[11px] text-subtle text-center leading-tight">{scoreDescription(score)}</p>
     </div>
   );
 }

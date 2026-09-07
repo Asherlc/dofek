@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ScrollView, StyleSheet, Text } from "react-native";
@@ -12,7 +13,10 @@ import { scanAndConnect } from "../../modules/ble-heart-rate";
 import { colors, fontSize, fontWeight, spacing } from "../../theme";
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return userFacingErrorMessage(
+    error,
+    "Bluetooth devices could not be loaded. Check Bluetooth and try again.",
+  );
 }
 
 export default function BluetoothDevicesScreen() {
@@ -52,7 +56,12 @@ export default function BluetoothDevicesScreen() {
           setDevices(update.devices);
           setError(null);
         } else {
-          setError(update.error);
+          setError(
+            userFacingErrorMessage(
+              update.error,
+              "Bluetooth devices could not be refreshed. Check Bluetooth and try again.",
+            ),
+          );
         }
       });
     } catch (subscriptionError: unknown) {

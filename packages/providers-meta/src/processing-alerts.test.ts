@@ -69,4 +69,15 @@ describe("processing alert contract", () => {
       retryLabel: "Retry alert status",
     });
   });
+
+  it("does not include runtime diagnostics in an alert failure", () => {
+    const presentation = processingAlertsFailurePresentation({
+      errorMessage: "TypeError: Cannot read properties of undefined (reading 'alerts')",
+      hasSnapshot: false,
+      lastCheckedLabel: null,
+    });
+
+    expect(presentation.message).toContain("The alert status check failed. Please try again.");
+    expect(presentation.message).not.toContain("Cannot read properties");
+  });
 });

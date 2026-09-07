@@ -189,6 +189,34 @@ describe("DataConnectionBanner", () => {
     expect(banner).not.toHaveTextContent("Second server message");
   });
 
+  it("turns a technical single-query failure into connection guidance", async () => {
+    onlineManager.setOnline(true);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const observer = new QueryObserver(queryClient, {
+      queryKey: ["technical-failure"],
+      queryFn: async () => {
+        throw new TypeError("Failed to fetch");
+      },
+    });
+    const failed = new Promise<void>((resolve) => {
+      observer.subscribe((result) => {
+        if (result.error) resolve();
+      });
+    });
+
+    renderBanner(queryClient);
+    await act(async () => {
+      await failed;
+    });
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "We couldn't reach the server. Check your connection and try again.",
+    );
+    expect(screen.getByRole("status")).not.toHaveTextContent("Failed to fetch");
+  });
+
   it("starts only one manual retry when the retry control is activated twice rapidly", async () => {
     onlineManager.setOnline(true);
     const queryClient = new QueryClient({

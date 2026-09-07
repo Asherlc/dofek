@@ -69,7 +69,7 @@ export function ClinicalRecordsPage() {
         <QueryStatePanel
           variant="empty"
           title="No clinical records"
-          message="No clinical records have been synced yet."
+          message="No clinical records to display."
         />
       ) : records ? (
         <div className="space-y-5">
@@ -133,7 +133,7 @@ export function ClinicalRecordsPage() {
           </nav>
         </div>
       ) : (
-        <QueryStatePanel variant="empty" message="No clinical records have been synced yet." />
+        <QueryStatePanel variant="empty" message="No clinical records to display." />
       )}
     </PageLayout>
   );

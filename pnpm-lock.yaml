@@ -750,12 +750,6 @@ importers:
 
   packages/server:
     dependencies:
-      '@ai-sdk/google':
-        specifier: 3.0.43
-        version: 3.0.43(zod@4.4.3)
-      '@ai-sdk/mistral':
-        specifier: 3.0.24
-        version: 3.0.24(zod@4.4.3)
       '@apple/app-store-server-library':
         specifier: 3.1.0
         version: 3.1.0(encoding@0.1.13)
@@ -825,9 +819,6 @@ importers:
       '@trpc/server':
         specifier: 11.18.0
         version: 11.18.0(typescript@6.0.3)
-      ai:
-        specifier: 7.0.47
-        version: 7.0.47(zod@4.4.3)
       arctic:
         specifier: 3.7.0
         version: 3.7.0
@@ -1217,37 +1208,15 @@ packages:
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
-  '@ai-sdk/google@3.0.43':
-    resolution: {integrity: sha512-NGCgP5g8HBxrNdxvF8Dhww+UKfqAkZAmyYBvbu9YLoBkzAmGKDBGhVptN/oXPB5Vm0jggMdoLycZ8JReQM8Zqg==}
-    engines: {node: '>=18'}
-    peerDependencies:
-      zod: ^3.25.76 || ^4.1.8
-
-  '@ai-sdk/mistral@3.0.24':
-    resolution: {integrity: sha512-krBTH2KHxtX8lCkSYSL4ZKSpn2EoJ5cNmBa9BmFL62KO1h5lYY6ivEwQb93TgY/hs2pkAIe4HJFIMX5kG1XtXg==}
-    engines: {node: '>=18'}
-    peerDependencies:
-      zod: ^3.25.76 || ^4.1.8
-
   '@ai-sdk/otel@1.0.47':
     resolution: {integrity: sha512-FjygY9amKH+32msWKHrrcmwLrif8JtRlsvcx5+Z78WzdUXWMXh775ZMVjaZcSNlN9wgfnW+d+RC1vj9hJzmBIA==}
     engines: {node: '>=22'}
-
-  '@ai-sdk/provider-utils@4.0.19':
-    resolution: {integrity: sha512-3eG55CrSWCu2SXlqq2QCsFjo3+E7+Gmg7i/oRVoSZzIodTuDSfLb3MRje67xE9RFea73Zao7Lm4mADIfUETKGg==}
-    engines: {node: '>=18'}
-    peerDependencies:
-      zod: ^3.25.76 || ^4.1.8
 
   '@ai-sdk/provider-utils@5.0.18':
     resolution: {integrity: sha512-UBNCrkxS5llgN2/RXLBRkjCFTIuL6YB1Goq5c+yRecnznhtX4XPjTwLHz2hrsTltTVZ0rqVegtnwFXdPBkjDHA==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
-
-  '@ai-sdk/provider@3.0.8':
-    resolution: {integrity: sha512-oGMAgGoQdBXbZqNG0Ze56CHjDZ1IDYOwGYxYjO5KLSlz5HiNQ9udIXsPZ61VWaHGZ5XW/jyjmr6t2xz2jGVwbQ==}
-    engines: {node: '>=18'}
 
   '@ai-sdk/provider@4.0.4':
     resolution: {integrity: sha512-tbHKNLirllUNF3ZlkCsXnwab2ZV1Sl4b1H/Cp9ruCce15IBmskE8Gwkk0yo9xDWY+jho2of7lVXtwSsyrq7cwQ==}
@@ -16818,18 +16787,6 @@ snapshots:
       '@vercel/oidc': 3.2.0
       zod: 4.4.3
 
-  '@ai-sdk/google@3.0.43(zod@4.4.3)':
-    dependencies:
-      '@ai-sdk/provider': 3.0.8
-      '@ai-sdk/provider-utils': 4.0.19(zod@4.4.3)
-      zod: 4.4.3
-
-  '@ai-sdk/mistral@3.0.24(zod@4.4.3)':
-    dependencies:
-      '@ai-sdk/provider': 3.0.8
-      '@ai-sdk/provider-utils': 4.0.19(zod@4.4.3)
-      zod: 4.4.3
-
   '@ai-sdk/otel@1.0.47(zod@4.4.3)':
     dependencies:
       '@ai-sdk/provider': 4.0.4
@@ -16837,13 +16794,6 @@ snapshots:
       ai: 7.0.47(zod@4.4.3)
     transitivePeerDependencies:
       - zod
-
-  '@ai-sdk/provider-utils@4.0.19(zod@4.4.3)':
-    dependencies:
-      '@ai-sdk/provider': 3.0.8
-      '@standard-schema/spec': 1.1.0
-      eventsource-parser: 3.1.0
-      zod: 4.4.3
 
   '@ai-sdk/provider-utils@5.0.18(zod@4.4.3)':
     dependencies:
@@ -16853,10 +16803,6 @@ snapshots:
       eventsource-parser: 3.1.0
       undici: 7.29.0
       zod: 4.4.3
-
-  '@ai-sdk/provider@3.0.8':
-    dependencies:
-      json-schema: 0.4.0
 
   '@ai-sdk/provider@4.0.4':
     dependencies:

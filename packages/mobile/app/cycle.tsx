@@ -2,9 +2,9 @@ import { CYCLE_TRACKING_SAFETY_NOTICE, PHASE_DISPLAY } from "@dofek/scoring/mens
 import { Stack, useRouter } from "expo-router";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
+import { rootStackScreenOptions } from "../lib/root-stack-screen-options";
 import { trpc } from "../lib/trpc";
 import { colors, fontSize, fontWeight, radius, spacing } from "../theme";
-import { rootStackScreenOptions } from "./_layout-options";
 
 function sourceLabel(source: {
   providerId: string;

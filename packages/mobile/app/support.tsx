@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SupportPanel } from "../components/SupportPanel";
 import { trpc } from "../lib/trpc";
@@ -9,12 +10,18 @@ export default function SupportScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Contact Support</Text>
-        <Text style={styles.sectionDescription}>Send us a message and we'll reply by email.</Text>
+        <Text style={styles.sectionDescription}>We&apos;ll reply by email.</Text>
         <View style={styles.card}>
           <SupportPanel
             isPending={createTicket.isPending}
-            errorMessage={createTicket.error?.message ?? null}
+            errorMessage={
+              createTicket.error
+                ? userFacingErrorMessage(
+                    createTicket.error,
+                    "Your support request could not be sent. Please try again.",
+                  )
+                : null
+            }
             ticketId={createTicket.data?.ticketId ?? null}
             onReset={() => createTicket.reset()}
             onSubmit={(draft) => createTicket.mutate(draft)}
@@ -37,14 +44,6 @@ const styles = StyleSheet.create({
   },
   section: {
     marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: colors.textSecondary,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: 2,
   },
   sectionDescription: {
     fontSize: 13,

@@ -1,4 +1,5 @@
 import { formatDateYmd } from "@dofek/format/format";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import * as WebBrowser from "expo-web-browser";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAppleHealthProviderModel } from "../../lib/apple-health-provider";
@@ -167,9 +168,7 @@ export function useProviderDetailActions(
         } catch (error: unknown) {
           captureException(error, { context: "provider-sync-poll" });
           if (!isMounted.current) return;
-          setSyncMessage(
-            error instanceof Error ? error.message : "Sync status is temporarily unavailable.",
-          );
+          setSyncMessage(userFacingErrorMessage(error, "Sync status is temporarily unavailable."));
           await new Promise((resolve) => setTimeout(resolve, 1000));
           if (!isMounted.current) return;
           return poll();
@@ -223,7 +222,7 @@ export function useProviderDetailActions(
       invalidateProviderData();
     } catch (error: unknown) {
       captureException(error, { context: "healthkit-connect" });
-      setSyncMessage(error instanceof Error ? error.message : "Failed to connect to Apple Health");
+      setSyncMessage(userFacingErrorMessage(error, "Failed to connect to Apple Health"));
     } finally {
       setIsSyncing(false);
     }
@@ -253,7 +252,7 @@ export function useProviderDetailActions(
           await trpcUtils.sync.providers.invalidate();
         } catch (error: unknown) {
           captureException(error, { context: "connect-provider-detail" });
-          setSyncMessage(error instanceof Error ? error.message : "Provider connection failed");
+          setSyncMessage(userFacingErrorMessage(error, "Provider connection failed"));
         }
         break;
       }
@@ -276,7 +275,7 @@ export function useProviderDetailActions(
             context: "connect-provider-detail",
             providerId: displayProvider.id,
           });
-          setSyncMessage(error.message);
+          setSyncMessage(userFacingErrorMessage(error));
         }
         break;
       case "custom:whoop":

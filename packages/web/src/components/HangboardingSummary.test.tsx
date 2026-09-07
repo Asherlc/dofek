@@ -133,6 +133,6 @@ describe("HangboardingSummary", () => {
       />,
     );
 
-    expect(screen.getByText("No Hangboarding sessions yet.")).toBeTruthy();
+    expect(screen.getByText("No Hangboarding sessions to display.")).toBeTruthy();
   });
 });

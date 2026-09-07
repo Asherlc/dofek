@@ -390,6 +390,12 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
     );
   } catch (error) {
     if (!isAuthorizationNotDetermined(error)) {
+      if (!isHealthKitDatabaseInaccessible(error)) {
+        captureException(error, {
+          source: "health-kit-category-query",
+          typeIdentifier: MENSTRUAL_FLOW_TYPE_IDENTIFIER,
+        });
+      }
       throw error;
     }
     menstrualFlowSamples = [];
