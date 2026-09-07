@@ -30,6 +30,7 @@ export async function renderSettingsInSandbox(
     View: (props: unknown, children: unknown[]) => ({ props, children }),
     Button: (props: unknown) => props,
     TextInput: (props: unknown) => props,
+    Link: (props: unknown, children: unknown[]) => ({ props, children }),
     Image: (props: Record<string, unknown>) => {
       images.push(props);
       return props;
@@ -38,7 +39,7 @@ export async function renderSettingsInSandbox(
 
   // Zepp injects components as lexical bindings and shadows unsupported globals.
   runInNewContext(
-    `(function ({ AppSettingsPage, View, Button, TextInput, Image }) {
+    `(function ({ AppSettingsPage, View, Button, TextInput, Link, Image }) {
       var Reflect, globalThis;
       ${bundle.text}
     })(components);`,

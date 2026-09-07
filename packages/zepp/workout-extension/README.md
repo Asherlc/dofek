@@ -58,7 +58,10 @@ communicate with both the watch app and a server, as documented in Zepp's
 The Zepp phone Settings App can create a QR/short-code pairing challenge or
 send a password-login request to the Side Service. It shows the server-verified
 connection state and error reason and provides **Check connection** and
-**Disconnect Dofek** actions. The Workout Extension uses its own
+**Disconnect** actions. Its shared Settings layout puts pairing first and links
+directly to the Dofek pairing page on the same phone; Zepp documents this with
+its [Link component](https://docs.zepp.com/docs/reference/app-settings-api/ui/link/).
+The Workout Extension uses its own
 `zepp-workout` connection, independently of the normal Zepp app's `zepp-main`
 connection. Update both packages to the current release before pairing; Dofek
 rejects older ambiguous connection requests so a legacy Workout Extension
@@ -73,10 +76,11 @@ Zepp’s native [QRCODE widget](https://docs.zepp.com/docs/reference/device-app-
 ## Pair and enable the extension
 
 1. In the Zepp iOS app, open the installed **Dofek Workout** package's Settings.
-2. Tap **Create QR / short code**, then scan the QR or enter the six-character
-   code in Dofek web/mobile **Settings → Connections**. You can instead enter
-   your Dofek email and password and tap **Log in and connect**.
-3. Confirm that the Zepp Settings page says **Connection: connected**. Use
+2. Tap **Create pairing code**, then tap **Open Dofek to finish pairing**. On a
+   different device, scan the QR or enter the six-character code in Dofek
+   **Settings → Connections**. You can instead enter your Dofek email and
+   password and tap **Log in**.
+3. Confirm that the Zepp Settings page says **Connected**. Use
    **Check connection** to verify the saved credential against Dofek.
 4. On the watch, open the system **Workout** app and choose a workout.
 5. Open that workout's settings, select **Motion Extensions**, and add

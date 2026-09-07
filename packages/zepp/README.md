@@ -91,14 +91,19 @@ Each package supports the following ways to connect its phone-side Side Service:
 | Flow | Where it starts | Where it finishes | Notes |
 |---|---|---|---|
 | QR from watch | Watch app | Dedicated Dofek Zepp pairing page | The watch renders a Zepp `QRCODE` widget with the Dofek verification URL. Zepp documents this widget for API_LEVEL 2.0+ ([QRCODE](https://docs.zepp.com/docs/reference/device-app-api/newAPI/ui/widget/QRCODE/)). |
-| QR from Zepp iOS app | The installed package's Zepp Settings page | Dedicated Dofek Zepp pairing page | Tap **Create QR / short code**. The Settings App displays the server-generated QR SVG URL as an image. |
+| QR from Zepp iOS app | The installed package's Zepp Settings page | Dedicated Dofek Zepp pairing page | Tap **Create pairing code**. The Settings App displays the server-generated QR image, short code, and a same-phone **Open Dofek to finish pairing** link. |
 | Short code | Watch or Zepp Settings | Dofek web or mobile Zepp pairing page | Enter the six-character code on the dedicated pairing screen. The server claim endpoint completes the connection for the polling Side Service. |
 | Dofek email/password | Zepp mini program Settings | Zepp Side Service | The Side Service exchanges credentials through Dofek's password-login endpoint. |
 | Dofek email/password | Watch app | Zepp Side Service | The watch asks the Side Service to log in after collecting text with Zepp's system keyboard. `SYSTEM_KEYBOARD` starts at API_LEVEL 4.0, so older watches keep the other pairing flows ([SYSTEM_KEYBOARD](https://docs.zepp.com/docs/reference/device-app-api/newAPI/ui/widget/SYSTEM_KEYBOARD/)). |
 
 Pairing challenges expire after ten minutes. After pairing, the Zepp Settings
 page displays the server-verified connection state and offers **Check
-connection** and **Disconnect Dofek**. Dofek Settings also displays whether
+connection** and **Disconnect**. Both packages use the same Settings layout:
+connection and pairing first, package-specific controls next, delivery status
+next, and server/device details under **Advanced**. Delivery errors remain visible
+while disconnected. Zepp rerenders the page after Settings Storage changes, as described by its
+[Settings App lifecycle](https://docs.zepp.com/docs/guides/framework/app-settings/register/).
+Dofek Settings also displays whether
 **Zepp app** and **Workout extension** are connected and can disconnect either
 package independently. On the normal watch app, the connection button changes
 to **Disconnect Dofek** as soon as pairing completes, so the normal app can also

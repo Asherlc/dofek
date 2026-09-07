@@ -1,0 +1,149 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createSettingsPage } from "./settings-page.ts";
+import { STORAGE_KEYS as K } from "./storage-keys.ts";
+import { createSettingsComponents, createSettingsStorage } from "./test-helpers.ts";
+
+beforeEach(() => vi.unstubAllGlobals());
+
+function render(app: "zepp-main" | "zepp-workout", values: Record<string, string> = {}) {
+  const ui = createSettingsComponents();
+  const storage = createSettingsStorage(values);
+  const page = createSettingsPage(app);
+  const tree = page.build({ settingsStorage: storage });
+  return { ...ui, storage, page, text: JSON.stringify(tree) };
+}
+
+for (const app of ["zepp-main", "zepp-workout"] as const) {
+  describe(app, () => {
+    it("puts the connection and pairing before app controls and advanced details", () => {
+      const { text, buttons } = render(app, {
+        [K.DOFEK_API_TOKEN]: "test-token",
+        [K.DOFEK_CONNECTION_STATUS]: JSON.stringify({ state: "connected" }),
+      });
+      const appSection = app === "zepp-main" ? "Watch recorder" : "Set up on your watch";
+      expect(text.indexOf("Connect to Dofek")).toBeLessThan(text.indexOf(appSection));
+      expect(text.indexOf(appSection)).toBeLessThan(text.indexOf("Sync activity"));
+      expect(text.indexOf("Sync activity")).toBeLessThan(text.indexOf("Advanced"));
+      expect(text).toContain("Connected");
+      expect(buttons.map(({ label }) => label)).toContain("Disconnect");
+    });
+
+    it("shows the shared QR card and a same-phone pairing link", () => {
+      const url = "https://dofek.example/zepp-pairing?code=ABC234";
+      const { images, links, text, buttons } = render(app, {
+        [K.DOFEK_CONNECTION_STATUS]: JSON.stringify({ state: "pairing" }),
+        [K.PAIRING_SHORT_CODE]: "ABC234",
+        [K.PAIRING_VERIFICATION_URL]: url,
+        [K.PAIRING_QR_IMAGE_URL]: "https://dofek.example/pairing.svg",
+        [K.PAIRING_EXPIRES_AT]: "2026-09-07T20:00:00Z",
+      });
+      expect(images).toEqual([
+        expect.objectContaining({ src: "https://dofek.example/pairing.svg" }),
+      ]);
+      expect(links).toContainEqual(expect.objectContaining({ source: url }));
+      expect(text).toContain("Open Dofek to finish pairing");
+      expect(text).toContain("ABC234");
+      expect(text).toContain("Expires");
+      expect(buttons.map(({ label }) => label)).toContain("Cancel pairing");
+    });
+
+    it("preserves pairing, login, and server configuration commands", () => {
+      const { buttons, inputs, storage } = render(app);
+      buttons.find(({ label }) => label === "Create pairing code")?.onClick();
+      expect(storage.getItem(K.CMD_START_PAIRING)).toBe("1");
+      inputs.find(({ label }) => label === "Server URL")?.onChange("https://custom.example");
+      inputs.find(({ label }) => label === "Email")?.onChange("athlete@example.test");
+      inputs.find(({ label }) => label === "Password")?.onChange("test-password");
+      buttons.find(({ label }) => label === "Log in")?.onClick();
+      expect(storage.getItem(K.DOFEK_SERVER_URL)).toBe("https://custom.example");
+      expect(JSON.parse(storage.getItem(K.CMD_LOGIN_PASSWORD) ?? "{}")).toEqual({
+        email: "athlete@example.test",
+        password: "test-password",
+        nonce: expect.any(Number),
+      });
+    });
+
+    it("shows connected actions and surfaces each delivery error", () => {
+      const { text, buttons, storage } = render(app, {
+        [K.DOFEK_API_TOKEN]: "test-token",
+        [K.DOFEK_CONNECTION_STATUS]: JSON.stringify({ state: "connected" }),
+        [K.IMU_SYNC_STATUS]: JSON.stringify({ state: "error", reason: "Phone upload failed" }),
+        [K.TRANSFER_PROGRESS]: JSON.stringify({ state: "error", reason: "Transfer canceled" }),
+      });
+      expect(text).toContain("Connected");
+      expect(text).toContain("Phone upload failed");
+      expect(text).toContain("Transfer canceled");
+      buttons.find(({ label }) => label === "Check connection")?.onClick();
+      buttons.find(({ label }) => label === "Disconnect")?.onClick();
+      expect(storage.getItem(K.CMD_CHECK_CONNECTION)).toBe("1");
+      expect(storage.getItem(K.CMD_DISCONNECT)).toBe("1");
+      expect(buttons.map(({ label }) => label)).not.toContain("Create pairing code");
+    });
+
+    it("keeps actionable connection errors visible and allows checking an existing token", () => {
+      const { text, buttons } = render(app, {
+        [K.DOFEK_API_TOKEN]: "test-token",
+        [K.DOFEK_CONNECTION_STATUS]: JSON.stringify({
+          state: "error",
+          reason: "Reconnect your watch",
+        }),
+      });
+      expect(text).toContain("Reconnect your watch");
+      expect(buttons.map(({ label }) => label)).toContain("Check connection");
+      expect(buttons.map(({ label }) => label)).not.toContain("Log in");
+    });
+
+    it("reports malformed stored status and renders the recovery controls", () => {
+      const { text, buttons } = render(app, { [K.DOFEK_CONNECTION_STATUS]: "{" });
+      expect(text).toContain("Stored settings data is invalid");
+      expect(buttons.map(({ label }) => label)).toContain("Create pairing code");
+    });
+
+    it("keeps delivery failures visible while disconnected", () => {
+      const values: Record<string, string> = {
+        [K.IMU_SYNC_STATUS]: JSON.stringify({ state: "error", reason: "Upload failed" }),
+        [K.TRANSFER_PROGRESS]: JSON.stringify({ state: "error", reason: "Transfer failed" }),
+      };
+      if (app === "zepp-main") {
+        values[K.HEALTH_SERVICE_STATUS] = JSON.stringify({
+          state: "error",
+          reason: "Background collection stopped",
+        });
+      }
+
+      const { text } = render(app, values);
+      expect(text).toContain("Sync activity");
+      expect(text).toContain("Upload failed");
+      expect(text).toContain("Transfer failed");
+      if (app === "zepp-main") expect(text).toContain("Background collection stopped");
+    });
+  });
+}
+
+it("preserves recorder start/stop, file transfer, and health sync", () => {
+  const { text, buttons, storage } = render("zepp-main", {
+    [K.DOFEK_API_TOKEN]: "test-token",
+    [K.DOFEK_CONNECTION_STATUS]: JSON.stringify({ state: "connected" }),
+    [K.SESSION_STATUS]: JSON.stringify({
+      state: "recording",
+      sampleCount: 42,
+      observedHzX100: 2500,
+      hasGyro: true,
+    }),
+    [K.HEALTH_SERVICE_STATUS]: JSON.stringify({
+      state: "error",
+      reason: "Health service did not start",
+    }),
+    [K.LAST_EXPORT_PATH]: "data://session.bin",
+  });
+  expect(text).toContain("42");
+  expect(text).toContain("25.00 Hz");
+  expect(text).toContain("Health service did not start");
+  expect(text).toContain("data://session.bin");
+  buttons.find(({ label }) => label === "Stop & transfer")?.onClick();
+  buttons.find(({ label }) => label === "Transfer saved session")?.onClick();
+  buttons.find(({ label }) => label === "Sync now")?.onClick();
+  expect(storage.getItem(K.CMD_LOGGING)).toBe("stop");
+  expect(storage.getItem(K.CMD_TRANSFER)).toBe("1");
+  expect(storage.getItem(K.CMD_SYNC_HEALTH)).toBe("1");
+});
