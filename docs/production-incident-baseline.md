@@ -25275,3 +25275,34 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   attribution remains unknown, and the already tracked repeated tombstone append
   for unchanged payload-free activity streams remains assigned to the final
   branch fix pass.
+
+## 2026-09-08 — Local ClickHouse verification was OOM-killed and Docker became unresponsive
+
+- **Status:** Docker Desktop recovered after an approved restart; feature-level
+  focused tests pass, and the final changed integration gate remains to be
+  rerun from clean workspace state.
+- **Symptoms / user impact:** `pnpm test:changed:all` lost its ClickHouse
+  connection during `router-logic.integration.test.ts`; downstream router tests
+  failed or skipped, ClickHouse restarted twice, and subsequent `docker ps` and
+  `docker inspect` calls hung. This blocks final local whole-branch verification
+  but does not affect a deployed environment.
+- **Evidence / root cause:** The first test fatal was `ECONNRESET: socket hang
+  up`. Docker Desktop's VM log recorded cgroup OOM-kill telemetry at the same
+  timestamps as both ClickHouse restarts, including reaping the ClickHouse
+  process IDs. Persisted ClickHouse query logs showed the heaviest completed
+  query used about 342 MiB, while one-second metrics observed roughly 727 MiB
+  peak cgroup use; those samples did not capture the terminating allocation.
+  macOS reported 57% memory free, so host memory exhaustion was not observed.
+  The Docker API then became unresponsive even though the ClickHouse HTTP port
+  remained reachable. The exact allocation that crossed the 1536 MiB container
+  ceiling is not yet identified.
+- **Mitigation:** The failed test run was stopped after the causal connection
+  loss, then Docker Desktop was restarted with explicit approval because the
+  daemon was unresponsive. No timeout, retry, memory-limit increase, skipped
+  test, or production query rewrite was added. A previous clean isolated run
+  proved migration 0078 passes 3/3, and the repaired activity integration slice
+  passes 119/119.
+- **Remaining risk / follow-up:** Reset only this workspace's Compose state,
+  inspect fresh cgroup/query metrics, and rerun the unchanged final integration
+  gate once. If the OOM recurs, isolate the exact test/query before changing
+  steady-state code or resource limits.
