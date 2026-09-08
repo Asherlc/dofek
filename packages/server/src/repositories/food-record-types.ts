@@ -110,11 +110,9 @@ export const foodRecordHistoryPageSchema = z.object({
 });
 
 export type FoodRecordVisibility = z.infer<typeof foodRecordVisibilitySchema>;
-export type FoodRecordCursor = z.infer<typeof foodRecordCursorSchema>;
 export type FoodRecordSearchInput = z.infer<typeof foodRecordSearchInputSchema>;
 export type FoodRecordSearchResult = z.infer<typeof foodRecordSearchResultSchema>;
 export type FoodRecordFieldDecision = z.infer<typeof foodRecordFieldDecisionSchema>;
-export type FoodRecordNutrientDecision = z.infer<typeof foodRecordNutrientDecisionSchema>;
 export type FoodRecordHistoryItem = z.infer<typeof foodRecordHistoryItemSchema>;
 export type FoodRecordHistoryPage = z.infer<typeof foodRecordHistoryPageSchema>;
 

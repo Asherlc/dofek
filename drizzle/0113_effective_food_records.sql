@@ -60,7 +60,6 @@ SELECT
     WHEN identity.id IS NULL THEN 'A stable identity has not been assigned to this food entry.'
     WHEN NULLIF(BTRIM(source.external_id), '') IS NULL
       THEN 'This food entry has no stable provider external ID and cannot be modified safely.'
-    ELSE NULL
   END AS modification_unavailable_reason,
   source.date AS source_date,
   source.meal AS source_meal,
@@ -92,57 +91,57 @@ SELECT
 FROM fitness.food_entry AS source
 LEFT JOIN fitness.human_record_identity AS identity
   ON
-    identity.user_id = source.user_id
+    source.user_id = identity.user_id
     AND identity.domain = 'nutrition.food'
-    AND identity.namespace = source.provider_id
+    AND source.provider_id = identity.namespace
     AND identity.source_key = CASE
       WHEN NULLIF(BTRIM(source.external_id), '') IS NOT NULL
         THEN 'external:' || source.external_id
       ELSE 'row:' || source.id::text
     END
 LEFT JOIN fitness.v_human_record_head AS head
-  ON head.user_id = identity.user_id AND head.identity_id = identity.id
+  ON identity.user_id = head.user_id AND identity.id = head.identity_id
 LEFT JOIN fitness.v_human_record_visibility AS visibility
-  ON visibility.user_id = identity.user_id AND visibility.identity_id = identity.id
+  ON identity.user_id = visibility.user_id AND identity.id = visibility.identity_id
 LEFT JOIN fitness.v_human_record_field AS date_decision
   ON
-    date_decision.user_id = identity.user_id
-    AND date_decision.identity_id = identity.id
+    identity.user_id = date_decision.user_id
+    AND identity.id = date_decision.identity_id
     AND date_decision.field = 'date'
 LEFT JOIN fitness.v_human_record_field AS meal_decision
   ON
-    meal_decision.user_id = identity.user_id
-    AND meal_decision.identity_id = identity.id
+    identity.user_id = meal_decision.user_id
+    AND identity.id = meal_decision.identity_id
     AND meal_decision.field = 'meal'
 LEFT JOIN fitness.v_human_record_field AS food_name_decision
   ON
-    food_name_decision.user_id = identity.user_id
-    AND food_name_decision.identity_id = identity.id
+    identity.user_id = food_name_decision.user_id
+    AND identity.id = food_name_decision.identity_id
     AND food_name_decision.field = 'food_name'
 LEFT JOIN fitness.v_human_record_field AS food_description_decision
   ON
-    food_description_decision.user_id = identity.user_id
-    AND food_description_decision.identity_id = identity.id
+    identity.user_id = food_description_decision.user_id
+    AND identity.id = food_description_decision.identity_id
     AND food_description_decision.field = 'food_description'
 LEFT JOIN fitness.v_human_record_field AS category_decision
   ON
-    category_decision.user_id = identity.user_id
-    AND category_decision.identity_id = identity.id
+    identity.user_id = category_decision.user_id
+    AND identity.id = category_decision.identity_id
     AND category_decision.field = 'category'
 LEFT JOIN fitness.v_human_record_field AS number_of_units_decision
   ON
-    number_of_units_decision.user_id = identity.user_id
-    AND number_of_units_decision.identity_id = identity.id
+    identity.user_id = number_of_units_decision.user_id
+    AND identity.id = number_of_units_decision.identity_id
     AND number_of_units_decision.field = 'number_of_units'
 LEFT JOIN fitness.v_human_record_field AS serving_unit_decision
   ON
-    serving_unit_decision.user_id = identity.user_id
-    AND serving_unit_decision.identity_id = identity.id
+    identity.user_id = serving_unit_decision.user_id
+    AND identity.id = serving_unit_decision.identity_id
     AND serving_unit_decision.field = 'serving_unit'
 LEFT JOIN fitness.v_human_record_field AS serving_weight_decision
   ON
-    serving_weight_decision.user_id = identity.user_id
-    AND serving_weight_decision.identity_id = identity.id
+    identity.user_id = serving_weight_decision.user_id
+    AND identity.id = serving_weight_decision.identity_id
     AND serving_weight_decision.field = 'serving_weight_grams';
 --> statement-breakpoint
 
@@ -162,27 +161,28 @@ SELECT
   decision.target_id,
   target.change_id
 FROM fitness.v_food_entry_effective AS effective
-CROSS JOIN LATERAL (
-  SELECT nutrient.nutrient_id
-  FROM fitness.food_entry_nutrient AS nutrient
-  WHERE nutrient.food_entry_id = effective.source_entry_id
+CROSS JOIN
+  LATERAL (
+    SELECT nutrient.nutrient_id
+    FROM fitness.food_entry_nutrient AS nutrient
+    WHERE nutrient.food_entry_id = effective.source_entry_id
 
-  UNION
+    UNION
 
-  SELECT decision.nutrient_id
-  FROM fitness.v_human_food_nutrient_decision AS decision
-  WHERE decision.identity_id = effective.record_id
-) AS candidate
+    SELECT candidate_decision.nutrient_id
+    FROM fitness.v_human_food_nutrient_decision AS candidate_decision
+    WHERE candidate_decision.identity_id = effective.record_id
+  ) AS candidate
 LEFT JOIN fitness.food_entry_nutrient AS source
   ON
-    source.food_entry_id = effective.source_entry_id
-    AND source.nutrient_id = candidate.nutrient_id
+    effective.source_entry_id = source.food_entry_id
+    AND candidate.nutrient_id = source.nutrient_id
 LEFT JOIN fitness.v_human_food_nutrient_decision AS decision
   ON
-    decision.user_id = effective.user_id
-    AND decision.identity_id = effective.record_id
-    AND decision.nutrient_id = candidate.nutrient_id
-LEFT JOIN fitness.human_record_target AS target ON target.id = decision.target_id;
+    effective.user_id = decision.user_id
+    AND effective.record_id = decision.identity_id
+    AND candidate.nutrient_id = decision.nutrient_id
+LEFT JOIN fitness.human_record_target AS target ON decision.target_id = target.id;
 --> statement-breakpoint
 
 CREATE VIEW fitness.v_food_entry_with_nutrition AS
@@ -231,6 +231,7 @@ WITH nutrients AS (
   FROM fitness.v_food_entry_effective_nutrient
   GROUP BY source_entry_id
 )
+
 SELECT
   food.source_entry_id AS id,
   food.provider_id,
@@ -295,7 +296,7 @@ SELECT
   food.confirmed,
   food.created_at
 FROM fitness.v_food_entry_effective AS food
-LEFT JOIN nutrients ON nutrients.source_entry_id = food.source_entry_id;
+LEFT JOIN nutrients ON food.source_entry_id = nutrients.source_entry_id;
 --> statement-breakpoint
 
 CREATE VIEW fitness.v_nutrition_entry_classification AS
@@ -379,17 +380,17 @@ grouped AS (
     COALESCE(
       ARRAY_AGG(DISTINCT source_key ORDER BY source_key)
       FILTER (WHERE effective_grain = 'itemized'),
-      ARRAY[]::text []
+      ARRAY[]::text[]
     ) AS itemized_source_keys,
     COALESCE(
       ARRAY_AGG(DISTINCT source_key ORDER BY source_key)
       FILTER (WHERE effective_grain = 'daily_aggregate'),
-      ARRAY[]::text []
+      ARRAY[]::text[]
     ) AS aggregate_source_keys,
     COALESCE(
       ARRAY_AGG(DISTINCT source_key ORDER BY source_key)
       FILTER (WHERE effective_grain = 'ambiguous'),
-      ARRAY[]::text []
+      ARRAY[]::text[]
     ) AS ambiguous_source_keys
   FROM confirmed
   GROUP BY user_id, date
@@ -424,14 +425,14 @@ decisions AS (
           AND grouped.ambiguous_source_count = 1
           AND grouped.ambiguous_entry_count = 1
         )
-        THEN ARRAY[]::text []
-      WHEN grouped.itemized_source_count > 1 THEN ARRAY[]::text []
+        THEN ARRAY[]::text[]
+      WHEN grouped.itemized_source_count > 1 THEN ARRAY[]::text[]
       WHEN grouped.itemized_source_count = 1 THEN grouped.itemized_source_keys
-      WHEN grouped.aggregate_source_count > 1 THEN ARRAY[]::text []
+      WHEN grouped.aggregate_source_count > 1 THEN ARRAY[]::text[]
       WHEN grouped.aggregate_source_count = 1 THEN grouped.aggregate_source_keys
       WHEN grouped.ambiguous_source_count = 1 AND grouped.ambiguous_entry_count = 1
         THEN grouped.ambiguous_source_keys
-      ELSE ARRAY[]::text []
+      ELSE ARRAY[]::text[]
     END AS contributing_source_keys,
     CASE
       WHEN grouped.itemized_source_count = 1 AND grouped.ambiguous_source_count = 0
@@ -588,66 +589,72 @@ date_context AS (
     END AS resolution_message,
     ARRAY(
       SELECT DISTINCT value
-      FROM UNNEST(
-        COALESCE(resolution.source_providers, ARRAY[]::text [])
-        || COALESCE(supplement.provider_ids, ARRAY[]::text [])
-      ) AS value
+      FROM
+        UNNEST(
+          COALESCE(resolution.source_providers, ARRAY[]::text[])
+          || COALESCE(supplement.provider_ids, ARRAY[]::text[])
+        ) AS value
       ORDER BY value
     ) AS source_providers,
     ARRAY(
       SELECT DISTINCT value
-      FROM UNNEST(
-        COALESCE(resolution.contributing_providers, ARRAY[]::text [])
-        || CASE
-          WHEN resolution.user_id IS NULL OR resolution.resolution_status = 'available'
-            THEN COALESCE(supplement.provider_ids, ARRAY[]::text [])
-          ELSE ARRAY[]::text []
-        END
-      ) AS value
+      FROM
+        UNNEST(
+          COALESCE(resolution.contributing_providers, ARRAY[]::text[])
+          || CASE
+            WHEN resolution.user_id IS NULL OR resolution.resolution_status = 'available'
+              THEN COALESCE(supplement.provider_ids, ARRAY[]::text[])
+            ELSE ARRAY[]::text[]
+          END
+        ) AS value
       ORDER BY value
     ) AS contributing_providers,
     ARRAY(
       SELECT DISTINCT value
-      FROM UNNEST(
-        COALESCE(resolution.excluded_providers, ARRAY[]::text [])
-        || CASE
-          WHEN resolution.resolution_status = 'source_conflict'
-            THEN COALESCE(supplement.provider_ids, ARRAY[]::text [])
-          ELSE ARRAY[]::text []
-        END
-      ) AS value
+      FROM
+        UNNEST(
+          COALESCE(resolution.excluded_providers, ARRAY[]::text[])
+          || CASE
+            WHEN resolution.resolution_status = 'source_conflict'
+              THEN COALESCE(supplement.provider_ids, ARRAY[]::text[])
+            ELSE ARRAY[]::text[]
+          END
+        ) AS value
       ORDER BY value
     ) AS excluded_providers,
     ARRAY(
       SELECT DISTINCT value
-      FROM UNNEST(
-        COALESCE(resolution.source_labels, ARRAY[]::text [])
-        || COALESCE(supplement.source_labels, ARRAY[]::text [])
-      ) AS value
+      FROM
+        UNNEST(
+          COALESCE(resolution.source_labels, ARRAY[]::text[])
+          || COALESCE(supplement.source_labels, ARRAY[]::text[])
+        ) AS value
       ORDER BY value
     ) AS source_labels,
     ARRAY(
       SELECT DISTINCT value
-      FROM UNNEST(
-        COALESCE(resolution.contributing_source_labels, ARRAY[]::text [])
-        || CASE
-          WHEN resolution.user_id IS NULL OR resolution.resolution_status = 'available'
-            THEN COALESCE(supplement.source_labels, ARRAY[]::text [])
-          ELSE ARRAY[]::text []
-        END
-      ) AS value
+      FROM
+        UNNEST(
+          COALESCE(resolution.contributing_source_labels, ARRAY[]::text[])
+          || CASE
+            WHEN resolution.user_id IS NULL OR resolution.resolution_status = 'available'
+              THEN COALESCE(supplement.source_labels, ARRAY[]::text[])
+            ELSE ARRAY[]::text[]
+          END
+        ) AS value
       ORDER BY value
     ) AS contributing_source_labels,
     ARRAY(
       SELECT DISTINCT value
-      FROM UNNEST(
-        COALESCE(resolution.excluded_source_labels, ARRAY[]::text [])
-        || CASE
-          WHEN resolution.resolution_status = 'source_conflict'
-            THEN COALESCE(supplement.source_labels, ARRAY[]::text [])
-          ELSE ARRAY[]::text []
-        END
-      ) AS value
+      FROM
+        UNNEST(
+          COALESCE(resolution.excluded_source_labels, ARRAY[]::text[])
+          || CASE
+            WHEN resolution.resolution_status = 'source_conflict'
+              THEN COALESCE(supplement.source_labels, ARRAY[]::text[])
+            ELSE ARRAY[]::text[]
+          END
+        ) AS value
       ORDER BY value
     ) AS excluded_source_labels,
     resolution.contribution_grain,
@@ -660,47 +667,61 @@ date_context AS (
 SELECT
   context.date,
   context.user_id,
-  CASE WHEN context.resolution_status = 'available'
-    THEN SUM(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'calories')::integer
+  CASE
+    WHEN context.resolution_status = 'available'
+      THEN SUM(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'calories')::integer
   END AS calories,
-  CASE WHEN context.resolution_status = 'available'
-    THEN SUM(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'protein')
+  CASE
+    WHEN context.resolution_status = 'available'
+      THEN SUM(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'protein')
   END AS protein_g,
-  CASE WHEN context.resolution_status = 'available'
-    THEN SUM(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'carbohydrate')
+  CASE
+    WHEN context.resolution_status = 'available'
+      THEN SUM(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'carbohydrate')
   END AS carbs_g,
-  CASE WHEN context.resolution_status = 'available'
-    THEN SUM(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'fat')
+  CASE
+    WHEN context.resolution_status = 'available'
+      THEN SUM(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'fat')
   END AS fat_g,
-  CASE WHEN context.resolution_status = 'available'
-    THEN SUM(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'saturated_fat')
+  CASE
+    WHEN context.resolution_status = 'available'
+      THEN SUM(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'saturated_fat')
   END AS saturated_fat_g,
-  CASE WHEN context.resolution_status = 'available'
-    THEN SUM(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'polyunsaturated_fat')
+  CASE
+    WHEN context.resolution_status = 'available'
+      THEN SUM(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'polyunsaturated_fat')
   END AS polyunsaturated_fat_g,
-  CASE WHEN context.resolution_status = 'available'
-    THEN SUM(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'monounsaturated_fat')
+  CASE
+    WHEN context.resolution_status = 'available'
+      THEN SUM(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'monounsaturated_fat')
   END AS monounsaturated_fat_g,
-  CASE WHEN context.resolution_status = 'available'
-    THEN SUM(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'trans_fat')
+  CASE
+    WHEN context.resolution_status = 'available'
+      THEN SUM(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'trans_fat')
   END AS trans_fat_g,
-  CASE WHEN context.resolution_status = 'available'
-    THEN SUM(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'cholesterol')
+  CASE
+    WHEN context.resolution_status = 'available'
+      THEN SUM(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'cholesterol')
   END AS cholesterol_mg,
-  CASE WHEN context.resolution_status = 'available'
-    THEN SUM(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'sodium')
+  CASE
+    WHEN context.resolution_status = 'available'
+      THEN SUM(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'sodium')
   END AS sodium_mg,
-  CASE WHEN context.resolution_status = 'available'
-    THEN SUM(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'potassium')
+  CASE
+    WHEN context.resolution_status = 'available'
+      THEN SUM(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'potassium')
   END AS potassium_mg,
-  CASE WHEN context.resolution_status = 'available'
-    THEN SUM(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'fiber')
+  CASE
+    WHEN context.resolution_status = 'available'
+      THEN SUM(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'fiber')
   END AS fiber_g,
-  CASE WHEN context.resolution_status = 'available'
-    THEN SUM(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'sugar')
+  CASE
+    WHEN context.resolution_status = 'available'
+      THEN SUM(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'sugar')
   END AS sugar_g,
-  CASE WHEN context.resolution_status = 'available'
-    THEN SUM(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'water')::integer
+  CASE
+    WHEN context.resolution_status = 'available'
+      THEN SUM(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'water')::integer
   END AS water_ml,
   CASE WHEN context.resolution_status = 'available' THEN MIN(nutrient.created_at) END AS created_at,
   context.resolution_status,
