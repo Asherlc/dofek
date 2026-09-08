@@ -42,14 +42,42 @@ describe("activity_power_curve model", () => {
     );
   });
 
-  it("computes duration candidates from materialized endpoints and cumulative state", () => {
+  it("uses the approved standard duration set", () => {
+    const durationValuesSql = extractCteSql(modelSql, "duration_values");
+
+    expect(durationValuesSql).toContain(
+      "arrayJoin([1, 5, 15, 30, 60, 120, 300, 600, 720, 1200, 1800, 2400, 3600, 5400])",
+    );
+  });
+
+  it("preserves measured zero power samples", () => {
+    const powerSampleGroupsSql = extractCteSql(modelSql, "power_sample_groups");
+
+    expect(powerSampleGroupsSql).toContain("sensor.scalar >= 0");
+    expect(powerSampleGroupsSql).not.toContain("sensor.scalar > 0");
+  });
+
+  it("integrates elapsed-time windows at fractional endpoints", () => {
     expect(modelSql).toContain("power_sample_groups AS (");
-    expect(modelSql).toContain("power_sample_endpoints AS MATERIALIZED (");
+    expect(modelSql).toContain("cumulative_energy");
     expect(modelSql).toContain("cumulative_discontinuities");
-    expect(modelSql).toContain("INNER JOIN power_sample_endpoints AS end_sample");
-    expect(modelSql).not.toContain("ANY INNER JOIN power_sample_endpoints AS end_sample");
-    expect(modelSql).not.toContain("arrayFirstIndex(");
-    expect(modelSql).not.toContain("arraySlice(");
+    expect(modelSql).toContain("ASOF INNER JOIN power_sample_endpoints AS end_sample");
+    expect(modelSql).toContain("end_sample.previous_power * greatest(");
+    expect(modelSql).toContain("end_sample.recorded_offset");
+    expect(modelSql).not.toContain("end_sample.recorded_at = addSeconds(");
+  });
+
+  it("emits offset, coverage, sampling quality, and source provenance", () => {
+    const activeRowsSql = extractCteSql(modelSql, "active_rows");
+
+    expect(activeRowsSql).toContain("start_offset_seconds");
+    expect(activeRowsSql).toContain("observed_samples");
+    expect(activeRowsSql).toContain("median_sample_interval_seconds");
+    expect(activeRowsSql).toContain("largest_gap_seconds");
+    expect(activeRowsSql).toContain("coverage_pct");
+    expect(activeRowsSql).toContain("power_measurement_kind");
+    expect(activeRowsSql).toContain("source_providers");
+    expect(activeRowsSql).toContain("source_devices");
   });
 
   it("emits per-duration tombstones for deleted activities", () => {

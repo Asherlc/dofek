@@ -30,11 +30,16 @@
     "LICENSE"
   ],
   "exports": {
+    "./power-duration-reference": "./src/power-duration-reference.ts",
     "./*": "./src/*.ts"
   },
   "publishConfig": {
     "access": "public",
     "exports": {
+      "./power-duration-reference": {
+        "types": "./dist/power-duration-reference.d.ts",
+        "import": "./dist/power-duration-reference.js"
+      },
       "./*": {
         "types": "./dist/*.d.ts",
         "import": "./dist/*.js"

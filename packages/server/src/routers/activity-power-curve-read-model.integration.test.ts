@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { referenceBestPower } from "@dofek/training/power-duration-reference";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -29,6 +30,11 @@ const unalignedActivityStartedAt = testTimestamp(14_400);
 const planActivityStartedAt = testTimestamp(18_000);
 const duplicateVersionActivityStartedAt = testTimestamp(25_200);
 const starvationActivityStartedAt = testTimestamp(28_800);
+const referenceConstantStartedAt = testTimestamp(32_400);
+const referenceZeroStartedAt = testTimestamp(36_000);
+const referenceIrregularStartedAt = testTimestamp(39_600);
+const referenceDropoutStartedAt = testTimestamp(43_200);
+const referencePelotonStartedAt = testTimestamp(46_800);
 const unchangedActivityId = randomUUID();
 const regularActivityId = randomUUID();
 const gappedActivityId = randomUUID();
@@ -39,11 +45,26 @@ const planActivityId = randomUUID();
 const duplicateVersionActivityId = "00000000-0000-4000-8000-000000000020";
 const tombstonedActivityId = "00000000-0000-4000-8000-000000000010";
 const starvationActivityId = "ffffffff-ffff-4fff-8fff-fffffffffff0";
+const referenceConstantActivityId = randomUUID();
+const referenceZeroActivityId = randomUUID();
+const referenceIrregularActivityId = randomUUID();
+const referenceDropoutActivityId = randomUUID();
+const referencePelotonActivityId = randomUUID();
 const readModelRowSchema = z.object({
   activity_id: z.string(),
   duration_seconds: z.coerce.number(),
   best_power: z.coerce.number().nullable(),
   is_deleted: z.coerce.number(),
+});
+const evidenceRowSchema = readModelRowSchema.extend({
+  start_offset_seconds: z.coerce.number().nullable(),
+  observed_samples: z.coerce.number().nullable(),
+  median_sample_interval_seconds: z.coerce.number().nullable(),
+  largest_gap_seconds: z.coerce.number().nullable(),
+  coverage_pct: z.coerce.number().nullable(),
+  power_measurement_kind: z.string().nullable(),
+  source_providers: z.array(z.string()),
+  source_devices: z.array(z.string()),
 });
 
 function renderActivityPowerCurveSql(
@@ -83,6 +104,11 @@ function powerSampleRows(
   activityId: string,
   startedAt: string,
   samples: readonly { offsetSeconds: number; power: number }[],
+  options: {
+    providerId?: string;
+    deviceId?: string;
+    measurementKind?: "direct" | "estimated" | "unknown";
+  } = {},
 ): ClickHouseMetricStreamSeedRow[] {
   const startedAtMs = Date.parse(startedAt);
 
@@ -90,10 +116,12 @@ function powerSampleRows(
     activityId,
     userId: testUserId,
     recordedAt: new Date(startedAtMs + sample.offsetSeconds * 1000).toISOString(),
-    providerId: "test_provider",
+    providerId: options.providerId ?? "test_provider",
+    deviceId: options.deviceId,
     sourceType: "api",
     channel: "power",
     scalar: sample.power,
+    metadata: JSON.stringify({ measurement_kind: options.measurementKind ?? "direct" }),
   }));
 }
 
@@ -123,7 +151,11 @@ describe("activity_power_curve read model", () => {
     testContext = await setupTestDatabase();
     await testContext.db.execute(sql`
       INSERT INTO fitness.provider (id, name, user_id)
-      VALUES ('test_provider', 'Test Provider', ${testUserId})
+      VALUES
+        ('test_provider', 'Test Provider', ${testUserId}),
+        ('wahoo', 'Wahoo', ${testUserId}),
+        ('strava', 'Strava', ${testUserId}),
+        ('peloton', 'Peloton', ${testUserId})
       ON CONFLICT DO NOTHING
     `);
     sensorStore = await createClickHouseTestActivitySensorStore(testContext);
@@ -153,6 +185,14 @@ describe("activity_power_curve read model", () => {
         activity_date Nullable(String),
         duration_seconds UInt32,
         best_power Nullable(Int32),
+        start_offset_seconds Nullable(Float64),
+        observed_samples Nullable(UInt64),
+        median_sample_interval_seconds Nullable(Float64),
+        largest_gap_seconds Nullable(Float64),
+        coverage_pct Nullable(Float64),
+        power_measurement_kind Nullable(String),
+        source_providers Array(String),
+        source_devices Array(String),
         is_deleted UInt8,
         refresh_version UInt64,
         refreshed_at DateTime64(9, 'UTC')
@@ -162,7 +202,10 @@ describe("activity_power_curve read model", () => {
 
     try {
       await client.command({
-        query: `INSERT INTO ${targetTable} VALUES (
+        query: `INSERT INTO ${targetTable} (
+          activity_id, user_id, started_at, activity_date, duration_seconds, best_power,
+          is_deleted, refresh_version, refreshed_at
+        ) VALUES (
           {activityId:UUID}, {userId:UUID}, parseDateTime64BestEffort({startedAt:String}, 6), '2026-07-01',
           5, 200, 0, 1, now64(9) + INTERVAL 1 DAY
         )`,
@@ -216,7 +259,7 @@ describe("activity_power_curve read model", () => {
       format: "JSONEachRow",
     });
 
-    await expect(result.json()).resolves.toEqual([{ "count()": 12 }]);
+    await expect(result.json()).resolves.toEqual([{ "count()": 13 }]);
   });
 
   it("uses elapsed timestamp duration instead of sample count for power windows", async () => {
@@ -349,7 +392,10 @@ describe("activity_power_curve read model", () => {
     await syncClickHouseTestActivitySensorStore(testContext);
     const client = getClickHouseTestClient(testContext);
     await client.command({
-      query: `INSERT INTO analytics.activity_sensor_sample
+      query: `INSERT INTO analytics.activity_sensor_sample (
+          activity_id, user_id, recorded_at, recorded_date, channel, scalar,
+          refresh_version, is_deleted, refreshed_at
+        )
         SELECT
           {activityId:UUID},
           {userId:UUID},
@@ -419,6 +465,14 @@ describe("activity_power_curve read model", () => {
         activity_date Nullable(String),
         duration_seconds UInt32,
         best_power Nullable(Int32),
+        start_offset_seconds Nullable(Float64),
+        observed_samples Nullable(UInt64),
+        median_sample_interval_seconds Nullable(Float64),
+        largest_gap_seconds Nullable(Float64),
+        coverage_pct Nullable(Float64),
+        power_measurement_kind Nullable(String),
+        source_providers Array(String),
+        source_devices Array(String),
         is_deleted UInt8,
         refresh_version UInt64,
         refreshed_at DateTime64(9, 'UTC')
@@ -428,7 +482,10 @@ describe("activity_power_curve read model", () => {
 
     try {
       await client.command({
-        query: `INSERT INTO ${targetTable}
+        query: `INSERT INTO ${targetTable} (
+          activity_id, user_id, started_at, activity_date, duration_seconds, best_power,
+          is_deleted, refresh_version, refreshed_at
+        )
           SELECT
             activity_id,
             user_id,
@@ -465,7 +522,10 @@ describe("activity_power_curve read model", () => {
         },
       });
       await client.command({
-        query: `INSERT INTO ${targetTable} VALUES (
+        query: `INSERT INTO ${targetTable} (
+          activity_id, user_id, started_at, activity_date, duration_seconds, best_power,
+          is_deleted, refresh_version, refreshed_at
+        ) VALUES (
           {activityId:UUID}, {userId:UUID}, NULL, NULL, 5, NULL, 1, 2, now64(9)
         )`,
         query_params: {
@@ -481,7 +541,8 @@ describe("activity_power_curve read model", () => {
           duration_seconds,
           best_power,
           is_deleted
-        FROM (${renderActivityPowerCurveSql(true, targetTable, 1)}) AS power_curve`,
+        FROM (${renderActivityPowerCurveSql(true, targetTable, 1)}) AS power_curve
+        WHERE duration_seconds = 5`,
       );
 
       expect(rows).toEqual([
@@ -534,7 +595,7 @@ describe("activity_power_curve read model", () => {
     expect(rows).toEqual([]);
   });
 
-  it("preserves the exact-duration endpoint requirement for unaligned samples", async () => {
+  it("integrates through an unaligned fractional endpoint", async () => {
     const renderedSql = renderNonIncrementalActivityPowerCurveSql();
 
     await insertActivity(
@@ -570,6 +631,159 @@ describe("activity_power_curve read model", () => {
       `,
     );
 
-    expect(rows).toEqual([]);
+    expect(rows).toEqual([
+      {
+        activity_id: unalignedActivityId,
+        best_power: 200,
+        duration_seconds: 5,
+        is_deleted: 0,
+      },
+    ]);
+  });
+
+  it("matches the independent elapsed-time reference across real-world sampling cases", async () => {
+    const constantSamples = Array.from({ length: 31 }, (_, offsetSeconds) => ({
+      offsetSeconds,
+      power: 250,
+    }));
+    const zeroSamples = [300, 300, 0, 300, 300, 300].map((power, offsetSeconds) => ({
+      offsetSeconds,
+      power,
+    }));
+    const irregularSamples = [
+      { offsetSeconds: 0, power: 100 },
+      { offsetSeconds: 1.5, power: 200 },
+      { offsetSeconds: 3.5, power: 300 },
+      { offsetSeconds: 5.5, power: 400 },
+    ];
+    const dropoutSamples = [
+      { offsetSeconds: 0, power: 500 },
+      { offsetSeconds: 1, power: 500 },
+      { offsetSeconds: 2, power: 500 },
+      { offsetSeconds: 20, power: 100 },
+    ];
+    const pelotonSamples = [
+      { offsetSeconds: 0, power: 200 },
+      { offsetSeconds: 5, power: 200 },
+      { offsetSeconds: 10, power: 200 },
+    ];
+    const activities = [
+      [referenceConstantActivityId, "reference-constant", referenceConstantStartedAt, 30],
+      [referenceZeroActivityId, "reference-zero", referenceZeroStartedAt, 5],
+      [referenceIrregularActivityId, "reference-irregular", referenceIrregularStartedAt, 5.5],
+      [referenceDropoutActivityId, "reference-dropout", referenceDropoutStartedAt, 20],
+      [referencePelotonActivityId, "reference-peloton", referencePelotonStartedAt, 10],
+    ] as const;
+
+    for (const [activityId, name, startedAt, duration] of activities) {
+      await insertActivity(
+        testContext,
+        activityId,
+        name,
+        startedAt,
+        new Date(Date.parse(startedAt) + duration * 1000).toISOString(),
+      );
+    }
+    await seedClickHouseMetricStreamRows(testContext, [
+      ...powerSampleRows(referenceConstantActivityId, referenceConstantStartedAt, constantSamples, {
+        providerId: "wahoo",
+        deviceId: "elemnt-bolt",
+      }),
+      ...powerSampleRows(referenceConstantActivityId, referenceConstantStartedAt, constantSamples, {
+        providerId: "strava",
+        deviceId: "strava-import",
+      }),
+      ...powerSampleRows(referenceZeroActivityId, referenceZeroStartedAt, zeroSamples, {
+        providerId: "wahoo",
+        deviceId: "elemnt-roam",
+      }),
+      ...powerSampleRows(
+        referenceIrregularActivityId,
+        referenceIrregularStartedAt,
+        irregularSamples,
+        {
+          providerId: "wahoo",
+          deviceId: "estimated-power",
+          measurementKind: "estimated",
+        },
+      ),
+      ...powerSampleRows(referenceDropoutActivityId, referenceDropoutStartedAt, dropoutSamples, {
+        providerId: "wahoo",
+      }),
+      ...powerSampleRows(referencePelotonActivityId, referencePelotonStartedAt, pelotonSamples, {
+        providerId: "peloton",
+        deviceId: "peloton-bike",
+      }),
+    ]);
+    await syncClickHouseTestActivitySensorStore(testContext);
+
+    const rows = await sensorStore.query(
+      evidenceRowSchema,
+      `SELECT
+        toString(activity_id) AS activity_id,
+        duration_seconds,
+        best_power,
+        start_offset_seconds,
+        observed_samples,
+        median_sample_interval_seconds,
+        largest_gap_seconds,
+        coverage_pct,
+        power_measurement_kind,
+        source_providers,
+        source_devices,
+        is_deleted
+      FROM (${renderNonIncrementalActivityPowerCurveSql()}) AS power_curve
+      WHERE (activity_id, duration_seconds) IN (
+        ('${referenceConstantActivityId}', 30),
+        ('${referenceZeroActivityId}', 5),
+        ('${referenceIrregularActivityId}', 5),
+        ('${referenceDropoutActivityId}', 15),
+        ('${referencePelotonActivityId}', 1),
+        ('${referencePelotonActivityId}', 5)
+      )
+      ORDER BY activity_id, duration_seconds`,
+    );
+
+    const cases = [
+      [referenceConstantActivityId, constantSamples, 30],
+      [referenceZeroActivityId, zeroSamples, 5],
+      [referenceIrregularActivityId, irregularSamples, 5],
+      [referenceDropoutActivityId, dropoutSamples, 15],
+      [referencePelotonActivityId, pelotonSamples, 1],
+      [referencePelotonActivityId, pelotonSamples, 5],
+    ] as const;
+    for (const [activityId, samples, duration] of cases) {
+      const expected = referenceBestPower(
+        samples.map(({ offsetSeconds, power }) => ({
+          elapsedSeconds: offsetSeconds,
+          watts: power,
+        })),
+        duration,
+      );
+      const row = rows.find(
+        (candidate) =>
+          candidate.activity_id === activityId && candidate.duration_seconds === duration,
+      );
+      if (expected === null) {
+        expect(row).toBeUndefined();
+      } else {
+        expect(row?.best_power).toBeCloseTo(expected.watts, 1);
+        expect(row?.start_offset_seconds).toBeCloseTo(expected.startOffsetSeconds, 3);
+      }
+    }
+
+    const constant = rows.find(
+      (row) => row.activity_id === referenceConstantActivityId && row.duration_seconds === 30,
+    );
+    expect(constant).toMatchObject({
+      coverage_pct: 100,
+      observed_samples: 31,
+      power_measurement_kind: "direct",
+    });
+    expect(constant?.source_providers).toHaveLength(1);
+    expect(constant?.source_devices).toHaveLength(1);
+    expect(rows.find((row) => row.activity_id === referenceIrregularActivityId)).toMatchObject({
+      power_measurement_kind: "estimated",
+    });
   });
 });

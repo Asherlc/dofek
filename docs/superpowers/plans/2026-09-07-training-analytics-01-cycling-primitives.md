@@ -440,7 +440,7 @@ source_providers Array(String), source_devices Array(String),
 is_deleted, refresh_version, refreshed_at
 ```
 
-- [ ] **Step 1: Write the independent numerical reference tests.** Implement tests before the reference function. Fixtures must include constant 250 W at 1 Hz, a measured zero inside a window, irregular timestamps with a fractional boundary, a dropout that invalidates a high candidate, and five-second Peloton samples where one-second power is unavailable.
+- [x] **Step 1: Write the independent numerical reference tests.** Implement tests before the reference function. Fixtures must include constant 250 W at 1 Hz, a measured zero inside a window, irregular timestamps with a fractional boundary, a dropout that invalidates a high candidate, and five-second Peloton samples where one-second power is unavailable.
 
 ```ts
 expect(referenceBestPower(constant250, 20)).toMatchObject({ watts: 250, startOffsetSeconds: 0 });
@@ -448,33 +448,33 @@ expect(referenceBestPower(withDropout, 30)).toBeNull();
 expect(referenceBestPower(fiveSecondSamples, 1)).toBeNull();
 ```
 
-- [ ] **Step 2: Run the reference tests and witness RED.**
+- [x] **Step 2: Run the reference tests and witness RED.**
 
 Run: `pnpm vitest run --project unit packages/training/src/power-duration-reference.test.ts`
 
 Expected: FAIL because the reference function is absent.
 
-- [ ] **Step 3: Implement the small reference integrator.** Sort samples, reject negative/non-finite power, preserve zero, calculate the median positive interval, treat each sample as a left-continuous step until the next sample, interpolate cumulative energy at window boundaries, reject windows crossing excessive gaps, and reject requested durations shorter than the median source interval. Export it through an explicit package subpath because production custom-duration validation in Task 6 also consumes it; this is not a test-only export.
+- [x] **Step 3: Implement the small reference integrator.** Sort samples, reject negative/non-finite power, preserve zero, calculate the median positive interval, treat each sample as a left-continuous step until the next sample, interpolate cumulative energy at window boundaries, reject windows crossing excessive gaps, and reject requested durations shorter than the median source interval. Export it through an explicit package subpath because production custom-duration validation in Task 6 also consumes it; this is not a test-only export.
 
-- [ ] **Step 4: Run reference tests and witness GREEN.**
+- [x] **Step 4: Run reference tests and witness GREEN.**
 
 Run: `pnpm vitest run --project unit packages/training/src/power-duration-reference.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 5: Strengthen the dbt SQL tests before changing SQL.** Assert the duration array is exactly the approved default list, `scalar >= 0` rather than `scalar > 0`, window energy supports fractional duration endpoints, output includes start offset/coverage/provenance, and no equality join to `addSeconds(start, duration)` remains.
+- [x] **Step 5: Strengthen the dbt SQL tests before changing SQL.** Assert the duration array is exactly the approved default list, `scalar >= 0` rather than `scalar > 0`, window energy supports fractional duration endpoints, output includes start offset/coverage/provenance, and no equality join to `addSeconds(start, duration)` remains.
 
-- [ ] **Step 6: Run dbt SQL tests and witness RED.**
+- [x] **Step 6: Run dbt SQL tests and witness RED.**
 
 Run: `pnpm vitest run --project unit analytics/models/read_models/activity_power_curve.sql.test.ts`
 
 Expected: FAIL on duration list, zero filtering, and endpoint semantics.
 
-- [ ] **Step 7: Rewrite the dbt calculation.** Use sorted timestamp/power arrays; derive interval durations, cumulative energy, cumulative discontinuities, median interval, and candidate start times; calculate energy at `start + duration` from the containing segment rather than exact timestamp equality; rank by average power and earliest start offset. Return null/no active row for unsupported resolution. Propagate the set of selected source providers/devices and collapse measurement kind to `estimated` if any contributing source is estimated, `direct` only if all are direct, otherwise `unknown`.
+- [x] **Step 7: Rewrite the dbt calculation.** Use sorted timestamp/power arrays; derive interval durations, cumulative energy, cumulative discontinuities, median interval, and candidate start times; calculate energy at `start + duration` from the containing segment rather than exact timestamp equality; rank by average power and earliest start offset. Return null/no active row for unsupported resolution. Propagate the set of selected source providers/devices and collapse measurement kind to `estimated` if any contributing source is estimated, `direct` only if all are direct, otherwise `unknown`.
 
-- [ ] **Step 8: Extend the executable ClickHouse integration fixture.** Seed the same five reference cases and compare `best_power` and `start_offset_seconds` to `referenceBestPower`. Add duplicate Wahoo/Strava activities with overlapping streams and assert only the canonical activity contributes one curve. Assert the zero sample lowers the result and the dropout candidate is excluded.
+- [x] **Step 8: Extend the executable ClickHouse integration fixture.** Seed the same five reference cases and compare `best_power` and `start_offset_seconds` to `referenceBestPower`. Add duplicate Wahoo/Strava samples with overlapping streams and assert only the canonical sample set contributes one curve. Assert the zero sample lowers the result and the dropout candidate is excluded.
 
-- [ ] **Step 9: Run unit and integration suites.**
+- [x] **Step 9: Run unit and integration suites.**
 
 Run: `pnpm vitest run --project unit packages/training/src/power-duration-reference.test.ts analytics/models/read_models/activity_power_curve.sql.test.ts`
 
@@ -482,7 +482,7 @@ Run: `pnpm test:integration -- packages/server/src/routers/activity-power-curve-
 
 Expected: PASS and numeric results match the independent fixture within `0.1 W`.
 
-- [ ] **Step 10: Validate SQL and commit.**
+- [x] **Step 10: Validate SQL and commit.**
 
 Run: `pnpm lint:analytics-sql`
 
