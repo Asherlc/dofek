@@ -76,7 +76,7 @@ export const strengthRouter = router({
       const exercises = await repo.getEstimatedOneRepMax(range.days);
       return exercises.map((exercise) => exercise.toDetail());
     },
-    { keyVersion: "estimated-max-trend-v1" },
+    { keyVersion: "estimated-max-trend-v2" },
   ),
 
   muscleGroupVolume: selectedChartRangeQuery(
@@ -99,7 +99,7 @@ export const strengthRouter = router({
     },
     {
       outputSchema: z.array(progressiveOverloadRowSchema),
-      keyVersion: "progressive-overload-evidence-v1",
+      keyVersion: "progressive-overload-evidence-v2",
     },
   ),
 

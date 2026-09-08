@@ -1,6 +1,13 @@
 import { formatDateShort } from "@dofek/format/format";
 import { formatMeasurementText } from "@dofek/format/units";
 import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
+import {
+  ambiguousStrengthExerciseNames,
+  isSameStrengthExercise,
+  type StrengthExerciseIdentity,
+  strengthExerciseDisplayLabel,
+  strengthExerciseIdentityKey,
+} from "@dofek/training/training";
 import type { EstimatedOneRepMaxRow } from "dofek-server/types";
 import { useState } from "react";
 import { dofekAxis, dofekGrid, dofekSeries, dofekTooltip, seriesColor } from "../lib/chartTheme.ts";
@@ -15,17 +22,25 @@ interface EstimatedMaxChartProps {
 
 export function EstimatedMaxChart({ exercises, loading }: EstimatedMaxChartProps) {
   const units = useUnitConverter();
-  const [selectedExerciseName, setSelectedExerciseName] = useState(
-    exercises[0]?.exerciseName ?? null,
+  const [selectedIdentity, setSelectedIdentity] = useState<StrengthExerciseIdentity | null>(
+    exercises[0]
+      ? { exerciseName: exercises[0].exerciseName, equipment: exercises[0].equipment }
+      : null,
   );
+  const ambiguousNames = ambiguousStrengthExerciseNames(exercises);
   const selectedExercise =
-    exercises.find((exercise) => exercise.exerciseName === selectedExerciseName) ?? exercises[0];
+    exercises.find(
+      (exercise) => selectedIdentity && isSameStrengthExercise(exercise, selectedIdentity),
+    ) ?? exercises[0];
   const selectedExerciseIndex = selectedExercise ? exercises.indexOf(selectedExercise) : 0;
+  const selectedExerciseLabel = selectedExercise
+    ? strengthExerciseDisplayLabel(selectedExercise, ambiguousNames)
+    : null;
   const series = selectedExercise
     ? [
         {
           ...dofekSeries.line(
-            selectedExercise.exerciseName,
+            selectedExerciseLabel ?? selectedExercise.exerciseName,
             selectedExercise.history.map((historyEntry) => [
               historyEntry.date,
               units.convertWeight(historyEntry.estimatedMax),
@@ -65,21 +80,29 @@ export function EstimatedMaxChart({ exercises, loading }: EstimatedMaxChartProps
         <fieldset className="mb-3 flex flex-wrap gap-2">
           <legend className="sr-only">Choose an exercise to chart</legend>
           {exercises.map((exercise) => {
-            const isSelected = exercise.exerciseName === selectedExercise?.exerciseName;
+            const label = strengthExerciseDisplayLabel(exercise, ambiguousNames);
+            const isSelected = selectedExercise
+              ? isSameStrengthExercise(exercise, selectedExercise)
+              : false;
             return (
               <button
-                key={exercise.exerciseName}
+                key={strengthExerciseIdentityKey(exercise)}
                 type="button"
-                aria-label={`Chart ${exercise.exerciseName}`}
+                aria-label={`Chart ${label}`}
                 aria-pressed={isSelected}
-                onClick={() => setSelectedExerciseName(exercise.exerciseName)}
+                onClick={() =>
+                  setSelectedIdentity({
+                    exerciseName: exercise.exerciseName,
+                    equipment: exercise.equipment,
+                  })
+                }
                 className={`rounded-lg border px-3 py-1.5 text-left text-xs transition-colors ${
                   isSelected
                     ? "border-accent bg-accent/10 text-foreground"
                     : "border-border-strong bg-accent/5 text-muted hover:bg-surface-hover hover:text-foreground"
                 }`}
               >
-                {exercise.exerciseName}
+                {label}
               </button>
             );
           })}

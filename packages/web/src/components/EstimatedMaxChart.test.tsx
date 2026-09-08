@@ -15,6 +15,7 @@ import { EstimatedMaxChart } from "./EstimatedMaxChart.tsx";
 const exercises = [
   {
     exerciseName: "Barbell Back Squat",
+    equipment: null,
     history: [
       { date: "2026-05-01", estimatedMax: 118, actualWeight: 100, actualReps: 5 },
       { date: "2026-07-01", estimatedMax: 128, actualWeight: 110, actualReps: 5 },
@@ -29,6 +30,7 @@ const exercises = [
   },
   {
     exerciseName: "Single-Arm Cable Row",
+    equipment: null,
     history: [
       { date: "2026-05-08", estimatedMax: 70, actualWeight: 60, actualReps: 5 },
       { date: "2026-07-08", estimatedMax: 65, actualWeight: 55, actualReps: 5 },
@@ -42,6 +44,10 @@ const exercises = [
     },
   },
 ];
+
+const firstExercise = exercises.at(0);
+const secondExercise = exercises.at(1);
+if (!firstExercise || !secondExercise) throw new Error("Expected two estimated-max fixtures");
 
 const chartOptionSchema = z.object({
   legend: z.unknown().optional(),
@@ -62,6 +68,38 @@ function chartOption(): z.infer<typeof chartOptionSchema> {
 }
 
 describe("EstimatedMaxChart", () => {
+  it("selects and distinguishes same-name equipment variants", () => {
+    render(
+      <EstimatedMaxChart
+        exercises={[
+          {
+            ...firstExercise,
+            exerciseName: "Chest Press",
+            equipment: "BARBELL",
+          },
+          {
+            ...secondExercise,
+            exerciseName: "Chest Press",
+            equipment: "DUMBBELL",
+          },
+        ]}
+      />,
+    );
+
+    const barbell = screen.getByRole("button", { name: "Chart Chest Press (Barbell)" });
+    const dumbbell = screen.getByRole("button", { name: "Chart Chest Press (Dumbbell)" });
+    expect(barbell).toHaveAttribute("aria-pressed", "true");
+    expect(dumbbell).toHaveAttribute("aria-pressed", "false");
+    expect(chartOption().series.at(0)?.name).toBe("Chest Press (Barbell)");
+
+    fireEvent.click(dumbbell);
+
+    expect(barbell).toHaveAttribute("aria-pressed", "false");
+    expect(dumbbell).toHaveAttribute("aria-pressed", "true");
+    expect(chartOption().series.at(0)?.name).toBe("Chest Press (Dumbbell)");
+    expect(screen.getByText("5.0 kg")).toBeVisible();
+  });
+
   it("renders an accessible wrapping selector outside a single-series plot", () => {
     render(<EstimatedMaxChart exercises={exercises} />);
 

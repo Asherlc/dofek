@@ -1015,6 +1015,7 @@ describe("StrainScreen recent activity navigation", () => {
       progressiveOverload: [
         {
           exerciseName: "Back Squat",
+          equipment: "BARBELL",
           observations: [
             { week: "2026-03-09", totalVolumeKg: 1_000 },
             { week: "2026-03-23", totalVolumeKg: 1_200 },

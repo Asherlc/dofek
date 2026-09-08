@@ -13,6 +13,7 @@ import type {
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 const { captureException } = vi.hoisted(() => ({ captureException: vi.fn() }));
+const cachedQueryOptions = vi.hoisted((): Array<{ maxAge: number; keyVersion?: string }> => []);
 
 vi.mock("@sentry/node", () => ({ captureException }));
 
@@ -28,7 +29,10 @@ vi.mock("../trpc.ts", async () => {
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
-    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQuery: (options: { maxAge: number; keyVersion?: string }) => {
+      cachedQueryOptions.push(options);
+      return trpc.procedure;
+    },
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -159,6 +163,10 @@ describe("climbingRouter", () => {
           wallAngleDegrees: null,
         },
       ]);
+      expect(cachedQueryOptions).toContainEqual({
+        maxAge: 3_600_000,
+        keyVersion: "climbing-activity-group-v1",
+      });
     } finally {
       activityLookup.mockRestore();
     }

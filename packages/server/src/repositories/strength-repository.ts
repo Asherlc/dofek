@@ -1,3 +1,4 @@
+import type { StrengthExerciseIdentity } from "@dofek/training/training";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../../../../src/db/index.ts";
@@ -8,7 +9,6 @@ import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import {
   ProgressiveOverload,
   type ProgressiveOverloadObservation,
-  type StrengthExerciseIdentity,
 } from "./progressive-overload.ts";
 
 // ---------------------------------------------------------------------------

@@ -76,7 +76,10 @@ export const climbingRouter = router({
       return repository.getFingerLoadingHistory(input.days);
     }),
 
-  activityEntries: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
+  activityEntries: cachedProtectedQuery({
+    maxAge: CacheTTL.LONG,
+    keyVersion: "climbing-activity-group-v1",
+  })
     .input(z.object({ id: z.guid() }))
     .query(async ({ ctx, input }): Promise<ClimbingActivityEntryRow[]> => {
       return runClimbingQuery(async () => {

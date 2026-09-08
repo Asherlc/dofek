@@ -7,6 +7,7 @@ import { ProgressiveOverloadCards } from "./ProgressiveOverloadCards";
 
 const evidence = {
   exerciseName: "Back Squat",
+  equipment: "BARBELL",
   observations: [
     { week: "2026-01-05", totalVolumeKg: 4_800 },
     { week: "2026-01-19", totalVolumeKg: 5_100 },
@@ -37,6 +38,24 @@ const evidence = {
 };
 
 describe("ProgressiveOverloadCards", () => {
+  it("visibly and accessibly distinguishes same-name equipment variants", () => {
+    render(
+      <ProgressiveOverloadCards
+        exercises={[
+          { ...evidence, exerciseName: "Chest Press", equipment: "BARBELL" },
+          { ...evidence, exerciseName: "Chest Press", equipment: "DUMBBELL" },
+        ]}
+        loading={false}
+        units={new UnitConverter("metric")}
+      />,
+    );
+
+    expect(screen.getByText("Chest Press (Barbell)")).toBeTruthy();
+    expect(screen.getByText("Chest Press (Dumbbell)")).toBeTruthy();
+    expect(screen.getByLabelText(/^Chest Press \(Barbell\)\./)).toBeTruthy();
+    expect(screen.getByLabelText(/^Chest Press \(Dumbbell\)\./)).toBeTruthy();
+  });
+
   it("renders complete server-authored evidence in one accessible exercise summary", () => {
     render(
       <ProgressiveOverloadCards

@@ -101,6 +101,10 @@ describe("strengthRouter", () => {
       expect(result).toHaveLength(2);
       const bench = result.find((r) => r.exerciseName === "Bench Press");
       expect(bench?.history).toHaveLength(2);
+      expect(cachedQueryOptions).toContainEqual({
+        maxAge: 3_600_000,
+        keyVersion: "estimated-max-trend-v2",
+      });
     });
 
     it("returns empty for no data", async () => {
@@ -127,13 +131,6 @@ describe("strengthRouter", () => {
   });
 
   describe("progressiveOverload", () => {
-    it("uses a versioned cache key for its evidence contract", () => {
-      expect(cachedQueryOptions).toContainEqual({
-        maxAge: 3_600_000,
-        keyVersion: "progressive-overload-evidence-v1",
-      });
-    });
-
     it("computes regression slope and descriptive direction for exercises", async () => {
       const rows = [
         {
@@ -170,6 +167,10 @@ describe("strengthRouter", () => {
       expect(result[0]?.uncertainty).toMatchObject({
         availability: "unavailable",
         reason: "insufficient_observations",
+      });
+      expect(cachedQueryOptions).toContainEqual({
+        maxAge: 3_600_000,
+        keyVersion: "progressive-overload-evidence-v2",
       });
     });
 

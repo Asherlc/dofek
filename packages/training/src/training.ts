@@ -12,6 +12,57 @@ export const OTHER_ACTIVITY_TYPE = "__other__";
 
 export const STRENGTH_ACTIVITY_TYPES = ["strength"] as const;
 
+export interface StrengthExerciseIdentity {
+  exerciseName: string;
+  equipment: string | null;
+}
+
+/** Compare the structured identity used by strength history series. */
+export function isSameStrengthExercise(
+  left: StrengthExerciseIdentity,
+  right: StrengthExerciseIdentity,
+): boolean {
+  return left.exerciseName === right.exerciseName && left.equipment === right.equipment;
+}
+
+/** Collision-safe React/list key for a structured strength exercise identity. */
+export function strengthExerciseIdentityKey(identity: StrengthExerciseIdentity): string {
+  return JSON.stringify([identity.exerciseName, identity.equipment]);
+}
+
+/** Names that require equipment to distinguish multiple returned series. */
+export function ambiguousStrengthExerciseNames(
+  identities: readonly StrengthExerciseIdentity[],
+): ReadonlySet<string> {
+  const seen = new Set<string>();
+  const ambiguous = new Set<string>();
+  for (const identity of identities) {
+    if (seen.has(identity.exerciseName)) ambiguous.add(identity.exerciseName);
+    seen.add(identity.exerciseName);
+  }
+  return ambiguous;
+}
+
+function equipmentDisplayLabel(equipment: string | null): string {
+  const words =
+    equipment
+      ?.trim()
+      .toLowerCase()
+      .split(/[_\s-]+/)
+      .filter(Boolean) ?? [];
+  if (words.length === 0) return "Unspecified equipment";
+  return words.map((word) => `${word[0]?.toUpperCase() ?? ""}${word.slice(1)}`).join(" ");
+}
+
+/** Human label that adds equipment only when the exercise name is ambiguous. */
+export function strengthExerciseDisplayLabel(
+  identity: StrengthExerciseIdentity,
+  namesRequiringEquipment: ReadonlySet<string>,
+): string {
+  if (!namesRequiringEquipment.has(identity.exerciseName)) return identity.exerciseName;
+  return `${identity.exerciseName} (${equipmentDisplayLabel(identity.equipment)})`;
+}
+
 // ============================================================
 // Cycling activity types
 // ============================================================

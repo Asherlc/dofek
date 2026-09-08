@@ -16,6 +16,7 @@ import { ProgressiveOverloadCards } from "./ProgressiveOverloadCards.tsx";
 
 const evidence = {
   exerciseName: "Back Squat",
+  equipment: "BARBELL",
   observations: [
     { week: "2026-01-05", totalVolumeKg: 4_800 },
     { week: "2026-01-19", totalVolumeKg: 5_100 },
@@ -46,6 +47,23 @@ const evidence = {
 } satisfies ProgressiveOverloadRow;
 
 describe("ProgressiveOverloadCards", () => {
+  it("visibly distinguishes same-name equipment variants without changing ordinary labels", () => {
+    render(
+      <ProgressiveOverloadCards
+        exercises={[
+          { ...evidence, exerciseName: "Chest Press", equipment: "BARBELL" },
+          { ...evidence, exerciseName: "Chest Press", equipment: "DUMBBELL" },
+          { ...evidence, exerciseName: "Back Squat", equipment: "BARBELL" },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Chest Press (Barbell)")).toBeVisible();
+    expect(screen.getByText("Chest Press (Dumbbell)")).toBeVisible();
+    expect(screen.getByText("Back Squat")).toBeVisible();
+    expect(screen.queryByText("Back Squat (Barbell)")).toBeNull();
+  });
+
   it("renders complete server-authored evidence without positive or negative status styling", () => {
     render(
       <ProgressiveOverloadCards

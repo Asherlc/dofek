@@ -5,6 +5,7 @@ import { EstimatedMaxChart } from "./EstimatedMaxChart.tsx";
 const exercises: EstimatedOneRepMaxRow[] = [
   {
     exerciseName: "Back Squat",
+    equipment: "BARBELL",
     history: [
       { date: "2026-06-01", estimatedMax: 118, actualWeight: 100, actualReps: 5 },
       { date: "2026-06-15", estimatedMax: 123, actualWeight: 105, actualReps: 5 },
@@ -20,6 +21,7 @@ const exercises: EstimatedOneRepMaxRow[] = [
   },
   {
     exerciseName: "Bench Press",
+    equipment: "BARBELL",
     history: [
       { date: "2026-06-01", estimatedMax: 86, actualWeight: 75, actualReps: 4 },
       { date: "2026-07-01", estimatedMax: 91, actualWeight: 80, actualReps: 4 },
@@ -34,6 +36,7 @@ const exercises: EstimatedOneRepMaxRow[] = [
   },
   {
     exerciseName: "Single-Arm Cable Row",
+    equipment: "CABLE",
     history: [
       { date: "2026-06-03", estimatedMax: 70, actualWeight: 60, actualReps: 5 },
       { date: "2026-07-03", estimatedMax: 65, actualWeight: 55, actualReps: 5 },
@@ -48,6 +51,7 @@ const exercises: EstimatedOneRepMaxRow[] = [
   },
   {
     exerciseName: "Bulgarian Split Squat",
+    equipment: "DUMBBELL",
     history: [
       { date: "2026-06-05", estimatedMax: 45, actualWeight: 40, actualReps: 4 },
       { date: "2026-07-05", estimatedMax: 45, actualWeight: 40, actualReps: 4 },

@@ -1,5 +1,10 @@
 import { formatDateMedium } from "@dofek/format/format";
 import { formatMeasurementText, type UnitConverter } from "@dofek/format/units";
+import {
+  ambiguousStrengthExerciseNames,
+  strengthExerciseDisplayLabel,
+  strengthExerciseIdentityKey,
+} from "@dofek/training/training";
 import type { ProgressiveOverloadRow } from "dofek-server/types";
 import { StyleSheet, Text, View } from "react-native";
 import { colors } from "../theme";
@@ -41,10 +46,14 @@ function countLabel(exercise: ProgressiveOverloadRow): string {
   return `${exercise.period.observationCount} recorded weeks across ${exercise.period.elapsedWeekCount} calendar weeks`;
 }
 
-function accessibilityLabel(exercise: ProgressiveOverloadRow, units: UnitConverter): string {
+function accessibilityLabel(
+  exercise: ProgressiveOverloadRow,
+  units: UnitConverter,
+  exerciseLabel: string,
+): string {
   const interval = intervalLabel(exercise, units);
   return `${[
-    exercise.exerciseName,
+    exerciseLabel,
     rateLabel(exercise, units),
     `${formatDateMedium(exercise.period.startWeek)} to ${formatDateMedium(exercise.period.endWeek)}`,
     countLabel(exercise),
@@ -63,6 +72,7 @@ export function ProgressiveOverloadCards({
   loading = false,
   units,
 }: ProgressiveOverloadCardsProps) {
+  const ambiguousNames = ambiguousStrengthExerciseNames(exercises);
   return (
     <View style={styles.section}>
       <Text style={styles.title}>Exercise Volume Trends</Text>
@@ -73,14 +83,15 @@ export function ProgressiveOverloadCards({
       {!loading
         ? exercises.map((exercise) => {
             const interval = intervalLabel(exercise, units);
+            const exerciseLabel = strengthExerciseDisplayLabel(exercise, ambiguousNames);
             return (
               <View
-                key={exercise.exerciseName}
+                key={strengthExerciseIdentityKey(exercise)}
                 accessible
-                accessibilityLabel={accessibilityLabel(exercise, units)}
+                accessibilityLabel={accessibilityLabel(exercise, units, exerciseLabel)}
                 style={styles.card}
               >
-                <Text style={styles.exercise}>{exercise.exerciseName}</Text>
+                <Text style={styles.exercise}>{exerciseLabel}</Text>
                 <Text style={styles.detail}>{rateLabel(exercise, units)}</Text>
                 <Text style={styles.detail}>{periodLabel(exercise)}</Text>
                 <Text style={styles.detail}>{countLabel(exercise)}</Text>

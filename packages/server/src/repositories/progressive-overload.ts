@@ -1,16 +1,11 @@
 import { circularMovingBlockBootstrapInterval } from "@dofek/stats/block-bootstrap";
 import { linearRegression } from "@dofek/stats/correlation";
+import type { StrengthExerciseIdentity } from "@dofek/training/training";
 import type {
   ProgressiveOverloadRow,
   ProgressiveOverloadTrend,
   ProgressiveOverloadUncertainty,
 } from "../contracts/progressive-overload.ts";
-
-/** Canonical public identity for a strength exercise observation series. */
-export interface StrengthExerciseIdentity {
-  exerciseName: string;
-  equipment: string | null;
-}
 
 export interface ProgressiveOverloadObservation {
   week: string;
