@@ -268,3 +268,52 @@ No server payload, database query, schema, cache namespace, parser, or Task 9 me
 What went well: the reviewer example became a direct domain invariant and identical public-component fixtures proved the fix on both platforms. What required investigation: adding the raw equipment discriminator resolves the ordinary separator collision but is not alone a global uniqueness proof, because an exercise name can equal that resulting label; the second RED cycle drove a deterministic final allocator. Useful next-time context: display-label design should distinguish identity-key injectivity, readable formatting, and collection-level label allocation as separate contracts.
 
 Suggested guidance update for approval: add a shared-domain rule that any selector or repeated card keyed by a structured identity must use a collection-aware, permutation-stable label allocator when readable formatting can be lossy. Reuse `superpowers:receiving-code-review`, `superpowers:test-driven-development`, and `superpowers:verification-before-completion`; no new skill is needed.
+
+## Review fix round 4
+
+Status: both downstream presentation transformations were fixed and verified in implementation commit `6c3d6dfe7e279a8b272d21023fdb940e7d53dc95`.
+
+### Files
+
+- `packages/training/src/training.ts`
+- `packages/training/src/training.test.ts`
+- `packages/web/src/components/EstimatedMaxChart.tsx`
+- `packages/web/src/components/ProgressiveOverloadCards.tsx`
+- `packages/web/src/components/ProgressiveOverloadCards.test.tsx`
+- `packages/mobile/components/ProgressiveOverloadCards.tsx`
+- `packages/mobile/components/ProgressiveOverloadCards.test.tsx`
+- This report.
+
+### Fixes
+
+- The shared list allocator now returns structured presentation objects `{ baseLabel, discriminator, label }`. `label` retains the round-3 injective complete accessible/display string, while the two semantic parts let layout consumers present identity details without parsing that string.
+- Web progressive-overload cards truncate only the readable `baseLabel`. A collision discriminator is rendered in its own visible `whitespace-normal break-words` field with no truncation class, so `FREE-WEIGHT` and `FREE_WEIGHT` remain distinguishable even when the main exercise title is wider than its card.
+- Web estimated-max and mobile overload continue to consume the complete allocated `label`; shared identity keys, deterministic second-order collision handling, and concise noncollision labels are unchanged.
+- Mobile accessibility construction now treats the allocated identity label as a separate immutable segment. Only evidence/prose segments have a trailing period normalized. A semicolon separates identity from evidence, so `Squat; Increasing…` and `Squat.; Increasing…` preserve the server-distinct punctuation and produce unique spoken labels.
+- The approved cache namespaces remain unchanged: `estimated-max-trend-v2`, `progressive-overload-evidence-v2`, `training-activity-states-v3`, and `climbing-activity-group-v1`.
+
+### Strict RED evidence
+
+Command before production edits:
+
+`rtk pnpm vitest run --project unit --project mobile packages/web/src/components/ProgressiveOverloadCards.test.tsx packages/mobile/components/ProgressiveOverloadCards.test.tsx --retry=0`
+
+Result: exit 1; 2 files failed, 2 tests failed and 7 passed. The web component had no separately selectable `recorded as …` nodes because the full label remained inside one `truncate` title. The mobile component returned the identical `Squat. Increasing…` accessible label for both `Squat` and `Squat.`, causing the unique label query to match both cards.
+
+### GREEN and final verification
+
+- `rtk pnpm vitest run --project unit --project mobile packages/training/src/training.test.ts packages/web/src/components/EstimatedMaxChart.test.tsx packages/web/src/components/ProgressiveOverloadCards.test.tsx packages/mobile/components/ProgressiveOverloadCards.test.tsx packages/server/src/routers/strength-stress.test.ts packages/server/src/routers/mobile-dashboard.test.ts packages/server/src/routers/climbing.test.ts --retry=0`: exit 0; 7 files, 159 tests passed. This includes the unchanged cache-version behavior tests.
+- `rtk pnpm typecheck`: exit 0; `TypeScript: No errors found`.
+- `rtk pnpm exec biome check packages/training/src/training.ts packages/training/src/training.test.ts packages/web/src/components/EstimatedMaxChart.tsx packages/web/src/components/EstimatedMaxChart.test.tsx packages/web/src/components/ProgressiveOverloadCards.tsx packages/web/src/components/ProgressiveOverloadCards.test.tsx packages/mobile/components/ProgressiveOverloadCards.tsx packages/mobile/components/ProgressiveOverloadCards.test.tsx`: exit 0; 8 files checked, no fixes applied.
+- `rtk git diff --check`: exit 0.
+- After strengthening the web assertion to require both discriminator nodes to be visible, `rtk pnpm vitest run --project unit packages/web/src/components/ProgressiveOverloadCards.test.tsx --retry=0` passed all 4 tests and its targeted Biome/diff checks remained clean.
+
+### Compatibility, rollout, and concerns
+
+No server payload, SQL, schema, cache namespace, parser, or Task 9 behavior changed. The shared helper's return type changes from complete strings to structured presentation objects and all repository consumers were migrated in the same commit. User-visible text is unchanged except for the intended web line decomposition and the mobile identity/evidence semicolon. No Task 8 concern remains.
+
+### Retrospective
+
+What went well: both findings reproduced at public component boundaries without snapshots or internal-function assertions, and a structured shared result removed any need for client string parsing. What required investigation: mobile's normalization looked like prose cleanup but operated after identity and evidence had been merged, which silently changed domain identity. Useful next-time context: lossless identity text should remain typed separately from prose through the last formatting boundary.
+
+Suggested guidance update for approval: document that identity-bearing labels must not be passed through general prose punctuation/whitespace normalizers, and that any required discriminator must escape truncating containers. Reuse `superpowers:receiving-code-review`, `superpowers:test-driven-development`, and `superpowers:verification-before-completion`; no new skill is needed.
