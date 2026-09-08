@@ -117,7 +117,7 @@ describe("ClimbingProgressionRepository", () => {
   it("merges exact cross-provider entry duplicates once and preserves all evidence", async () => {
     const duplicate = {
       ...baseRow,
-      source_providers: ["kaya", "strava"],
+      source_providers: ["strava", "kaya"],
       member_activity_ids: [
         "00000000-0000-4000-8000-000000000011",
         "00000000-0000-4000-8000-000000000012",
@@ -127,6 +127,9 @@ describe("ClimbingProgressionRepository", () => {
       entry_provider: "strava",
       source_name: "Strava",
       external_id: "strava-problem-9",
+      route_name: "  BLUE arete ",
+      location_name: " PACIFIC pipe ",
+      ascent_type: " redPOINT ",
     };
     const repository = new ClimbingProgressionRepository(
       executeDb([{ ...baseRow, source_providers: ["kaya", "strava"] }, duplicate]),

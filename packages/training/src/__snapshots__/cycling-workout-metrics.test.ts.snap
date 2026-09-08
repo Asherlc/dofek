@@ -527,14 +527,14 @@ exports[`computeCyclingWorkoutMetrics > does not manufacture FTP-dependent metri
 }
 `;
 
-exports[`computeCyclingWorkoutMetrics > supports native five-second sampling without treating resampled seconds as observations 1`] = `
+exports[`computeCyclingWorkoutMetrics > sorts irregular samples while excluding invalid and out-of-range observations 1`] = `
 {
   "aerobicEfficiency": {
-    "pairedSeconds": 600,
-    "powerToHeartRateRatio": 1.385,
+    "pairedSeconds": 0,
+    "powerToHeartRateRatio": null,
   },
   "cadence": {
-    "averageRpm": 85,
+    "averageRpm": null,
   },
   "cardiacDrift": {
     "firstHalfPowerToHeartRate": null,
@@ -545,52 +545,56 @@ exports[`computeCyclingWorkoutMetrics > supports native five-second sampling wit
   },
   "coverage": {
     "cadence": {
-      "coveragePct": 100,
-      "coveredSeconds": 600,
-      "largestGapSeconds": 5,
-      "medianSampleIntervalSeconds": 5,
-      "missingSeconds": 0,
-      "observedSamples": 120,
+      "coveragePct": 0,
+      "coveredSeconds": 0,
+      "largestGapSeconds": null,
+      "medianSampleIntervalSeconds": null,
+      "missingSeconds": 12,
+      "observedSamples": 0,
       "zeroSeconds": 0,
     },
     "heartRate": {
-      "coveragePct": 100,
-      "coveredSeconds": 600,
-      "largestGapSeconds": 5,
-      "medianSampleIntervalSeconds": 5,
-      "missingSeconds": 0,
-      "observedSamples": 120,
+      "coveragePct": 0,
+      "coveredSeconds": 0,
+      "largestGapSeconds": null,
+      "medianSampleIntervalSeconds": null,
+      "missingSeconds": 12,
+      "observedSamples": 0,
       "zeroSeconds": 0,
     },
     "power": {
       "coveragePct": 100,
-      "coveredSeconds": 600,
-      "largestGapSeconds": 5,
-      "medianSampleIntervalSeconds": 5,
+      "coveredSeconds": 12,
+      "largestGapSeconds": 4,
+      "medianSampleIntervalSeconds": 4,
       "missingSeconds": 0,
-      "observedSamples": 120,
+      "observedSamples": 4,
       "zeroSeconds": 0,
     },
   },
-  "durationSeconds": 600,
+  "durationSeconds": 12,
   "heartRate": {
-    "averageBpm": 130,
-    "maximumBpm": 130,
+    "averageBpm": null,
+    "maximumBpm": null,
   },
   "heartRateZones": null,
   "intervalDetection": null,
   "intervalSource": "none",
   "intervals": [],
   "power": {
-    "averageWatts": 180,
+    "averageWatts": 200,
     "intensityFactor": null,
-    "normalizedWatts": 180,
+    "normalizedWatts": null,
     "trainingStressScore": null,
-    "variabilityIndex": 1,
-    "workKilojoules": 108,
+    "variabilityIndex": null,
+    "workKilojoules": 2.4,
   },
   "powerZones": null,
   "unavailableReasons": [
+    {
+      "metric": "normalized_power",
+      "reason": "fewer than 30 seconds of power are available",
+    },
     {
       "metric": "intensity_factor",
       "reason": "no valid FTP was effective for this activity",
@@ -600,6 +604,18 @@ exports[`computeCyclingWorkoutMetrics > supports native five-second sampling wit
       "reason": "no valid FTP was effective for this activity",
     },
     {
+      "metric": "heart_rate",
+      "reason": "no heart-rate samples are available",
+    },
+    {
+      "metric": "cadence",
+      "reason": "no cadence samples are available",
+    },
+    {
+      "metric": "aerobic_efficiency",
+      "reason": "no synchronized power and heart-rate samples are available",
+    },
+    {
       "metric": "cardiac_drift",
       "reason": "activity is shorter than 20 minutes",
     },
@@ -607,7 +623,7 @@ exports[`computeCyclingWorkoutMetrics > supports native five-second sampling wit
 }
 `;
 
-exports[`computeCyclingWorkoutMetrics > supports native five-second sampling without treating resampled seconds as observations 2`] = `
+exports[`computeCyclingWorkoutMetrics > supports native five-second sampling without treating resampled seconds as observations 1`] = `
 {
   "aerobicEfficiency": {
     "pairedSeconds": 600,

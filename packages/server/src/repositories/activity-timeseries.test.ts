@@ -13,9 +13,9 @@ describe("synchronizeActivityTimeseries", () => {
       resolution: "raw",
       fill: "none",
       samples: [
-        { recordedAt: at(0), stream: "power", value: 0, sourceIndex: 0 },
-        { recordedAt: at(1), stream: "heart_rate", value: 140, sourceIndex: 1 },
         { recordedAt: at(2), stream: "power", value: 200, sourceIndex: 0 },
+        { recordedAt: at(1), stream: "heart_rate", value: 140, sourceIndex: 1 },
+        { recordedAt: at(0), stream: "power", value: 0, sourceIndex: 0 },
       ],
     });
 
@@ -42,9 +42,9 @@ describe("synchronizeActivityTimeseries", () => {
       resolution: "5s",
       fill: "none",
       samples: [
+        { recordedAt: at(4), stream: "power", value: 300, sourceIndex: 2 },
         { recordedAt: at(0), stream: "power", value: 100, sourceIndex: 0 },
         { recordedAt: at(1), stream: "power", value: 200, sourceIndex: 1 },
-        { recordedAt: at(4), stream: "power", value: 300, sourceIndex: 2 },
       ],
     });
 
@@ -160,5 +160,18 @@ describe("synchronizeActivityTimeseries", () => {
       states: ["missing"],
       availabilityReason: "Moving time requires provider-recorded moving time or speed samples.",
     });
+  });
+
+  it("rejects a sample with an invalid timestamp", () => {
+    expect(() =>
+      synchronizeActivityTimeseries({
+        startedAt,
+        endedAt: at(2),
+        streams: ["power"],
+        resolution: "raw",
+        fill: "none",
+        samples: [{ recordedAt: "not-a-date", stream: "power", value: 100, sourceIndex: 0 }],
+      }),
+    ).toThrow("Invalid activity sample timestamp: not-a-date");
   });
 });

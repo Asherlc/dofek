@@ -163,6 +163,106 @@ exports[`RecoveryTrainingSeriesRepository > aligns the prior calendar day's load
 }
 `;
 
+exports[`RecoveryTrainingSeriesRepository > bounds rolling body-weight windows and excludes future, null, and non-positive values 1`] = `
+{
+  "filters": {
+    "modalities": [],
+    "providers": [],
+  },
+  "interpretation": {
+    "causality": "The series exposes aligned observations for analysis and does not claim that correlations are causal.",
+    "date_alignment": "Rows use local calendar dates. previous_day_training_load is the immediately preceding calendar day, including across DST transitions.",
+    "filter_scope": "Provider and modality filters apply to activity exposure and every training-load channel; recovery, sleep, body, subjective, and nutrition observations are unfiltered.",
+  },
+  "range": {
+    "end_date": "2026-06-15",
+    "start_date": "2026-06-15",
+    "timezone": "UTC",
+  },
+  "requested_streams": [
+    "body_weight",
+  ],
+  "rows": [
+    {
+      "body_weight": {
+        "direct_measurement_kind": "direct",
+        "direct_source_provider": "withings",
+        "direct_status": "observed",
+        "direct_value_kg": 70,
+        "nearby_evidence": {
+          "reason": "No valid positive directly measured body weight is available",
+          "value_kg": null,
+        },
+        "rolling": {
+          "average_28d_kg": 69.75,
+          "average_7d_kg": 71,
+          "observed_days_28d": 4,
+          "observed_days_7d": 2,
+        },
+      },
+      "date": "2026-06-15",
+    },
+  ],
+}
+`;
+
+exports[`RecoveryTrainingSeriesRepository > lists every missing sleep field without substituting zeros 1`] = `
+{
+  "filters": {
+    "modalities": [],
+    "providers": [],
+  },
+  "interpretation": {
+    "causality": "The series exposes aligned observations for analysis and does not claim that correlations are causal.",
+    "date_alignment": "Rows use local calendar dates. previous_day_training_load is the immediately preceding calendar day, including across DST transitions.",
+    "filter_scope": "Provider and modality filters apply to activity exposure and every training-load channel; recovery, sleep, body, subjective, and nutrition observations are unfiltered.",
+  },
+  "range": {
+    "end_date": "2026-06-15",
+    "start_date": "2026-06-15",
+    "timezone": "UTC",
+  },
+  "requested_streams": [
+    "sleep",
+  ],
+  "rows": [
+    {
+      "date": "2026-06-15",
+      "sleep": {
+        "duration_minutes": null,
+        "efficiency_pct": null,
+        "ended_at": null,
+        "local_time_context": {
+          "end_utc_offset_minutes": null,
+          "source": "unknown",
+          "start_utc_offset_minutes": null,
+          "timezone": null,
+        },
+        "missing_fields": [
+          "duration_minutes",
+          "efficiency_pct",
+          "stages_minutes",
+          "ended_at",
+        ],
+        "selected_session_id": "sleep-incomplete",
+        "source_providers": [
+          "whoop",
+        ],
+        "stages_minutes": {
+          "awake": null,
+          "deep": null,
+          "light": null,
+          "rem": null,
+        },
+        "staging_available": false,
+        "started_at": "2026-06-15T07:00:00.000Z",
+        "status": "observed",
+      },
+    },
+  ],
+}
+`;
+
 exports[`RecoveryTrainingSeriesRepository > passes provider and modality filters to compact activity exposure 1`] = `
 {
   "filters": {
@@ -219,6 +319,55 @@ exports[`RecoveryTrainingSeriesRepository > passes provider and modality filters
         ],
       },
       "date": "2026-06-01",
+    },
+  ],
+}
+`;
+
+exports[`RecoveryTrainingSeriesRepository > returns an explicit zero exposure when no matching activities exist 1`] = `
+{
+  "filters": {
+    "modalities": [],
+    "providers": [],
+  },
+  "interpretation": {
+    "causality": "The series exposes aligned observations for analysis and does not claim that correlations are causal.",
+    "date_alignment": "Rows use local calendar dates. previous_day_training_load is the immediately preceding calendar day, including across DST transitions.",
+    "filter_scope": "Provider and modality filters apply to activity exposure and every training-load channel; recovery, sleep, body, subjective, and nutrition observations are unfiltered.",
+  },
+  "range": {
+    "end_date": "2026-06-15",
+    "start_date": "2026-06-15",
+    "timezone": "UTC",
+  },
+  "requested_streams": [
+    "activities",
+  ],
+  "rows": [
+    {
+      "activity_exposure": {
+        "activity_count": 0,
+        "canonical_types": [],
+        "date_attribution": {
+          "analysis_timezone_assumptions": 0,
+          "authoritative_records": 0,
+        },
+        "duration": {
+          "invalid_interval_activities": 0,
+          "missing_end_activities": 0,
+          "reason": null,
+          "status": "observed",
+          "supported_activities": 0,
+          "total_activities": 0,
+          "value_minutes": 0,
+        },
+        "modalities": [],
+        "source_activity_count": 0,
+        "source_activity_ids": [],
+        "source_activity_ids_truncated": false,
+        "source_providers": [],
+      },
+      "date": "2026-06-15",
     },
   ],
 }

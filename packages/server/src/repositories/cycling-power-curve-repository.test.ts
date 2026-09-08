@@ -3,6 +3,13 @@ import { CyclingPowerCurveRepository } from "./cycling-power-curve-repository.ts
 
 const userId = "00000000-0000-4000-8000-000000000001";
 
+function snapshotQuery(query: string): string {
+  return query
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .join("\n");
+}
+
 function curveRow(overrides: Record<string, unknown> = {}) {
   return {
     activity_id: "00000000-0000-4000-8000-000000000010",
@@ -51,7 +58,7 @@ describe("CyclingPowerCurveRepository", () => {
     ];
     const query = vi.fn(async (_schema, queryText: string) => {
       if (queryText.includes("power-curve:standard:bests")) return rows;
-      if (queryText.includes("power-curve:standard:page")) return rows.slice(0, 3);
+      if (queryText.includes("power-curve:standard:page")) return rows;
       if (queryText.includes("nearby-weight:observations")) {
         return [
           {
@@ -82,7 +89,7 @@ describe("CyclingPowerCurveRepository", () => {
       providers: ["wahoo"],
       includeActivityCurve: true,
       cursor: null,
-      limit: 2,
+      limit: 3,
     });
 
     expect(result).toMatchSnapshot();
@@ -101,8 +108,26 @@ describe("CyclingPowerCurveRepository", () => {
       },
       quality: { continuity_tolerance_seconds: 5 },
     });
-    expect(result.activity_curve).toHaveLength(2);
+    expect(result.activity_curve).toHaveLength(3);
     expect(result.next_cursor).toEqual(expect.any(String));
+    expect(
+      query.mock.calls.map(([, queryText, parameters]) => ({
+        queryText: snapshotQuery(queryText),
+        parameters,
+      })),
+    ).toMatchSnapshot();
+
+    const nextPage = await repository.listRange({
+      startDate: "2026-03-01",
+      endDate: "2026-08-28",
+      durationsSeconds: [300, 1200, 1800, 3600],
+      modalities: ["outdoor", "virtual"],
+      providers: ["wahoo"],
+      includeActivityCurve: true,
+      cursor: result.next_cursor,
+      limit: 3,
+    });
+    expect(nextPage).toMatchSnapshot();
 
     const standardBestCall = query.mock.calls.find((call) =>
       String(call[1]).includes("power-curve:standard:bests"),
@@ -158,6 +183,81 @@ describe("CyclingPowerCurveRepository", () => {
     expect(customCall?.[1]).toContain("ASOF INNER JOIN power_sample_endpoints");
     expect(customCall?.[1]).toContain("duration_values.duration_seconds >=");
     expect(customCall?.[2]).toMatchObject({ durations: [421] });
+    expect(
+      query.mock.calls.map(([, queryText, parameters]) => ({
+        queryText: snapshotQuery(queryText),
+        parameters,
+      })),
+    ).toMatchSnapshot();
+  });
+
+  it("reports incomplete and unknown power evidence without claiming a trustworthy best", async () => {
+    const query = vi.fn(async (_schema, queryText: string) => {
+      if (queryText.includes("power-curve:standard:bests")) {
+        return [
+          curveRow({
+            coverage_pct: 98,
+            largest_gap_seconds: null,
+            median_sample_interval_seconds: null,
+            power_measurement_kind: "unknown",
+          }),
+        ];
+      }
+      return [];
+    });
+    const result = await new CyclingPowerCurveRepository({ query }, userId, "UTC").listRange({
+      startDate: "2026-06-01",
+      endDate: "2026-06-30",
+      durationsSeconds: [1200],
+      modalities: [],
+      providers: [],
+      includeActivityCurve: false,
+      cursor: null,
+      limit: 50,
+    });
+
+    expect(result).toMatchSnapshot();
+    expect(result.bests[0]).toMatchObject({
+      power_kind: "unknown",
+      quality: { status: "limited", coverage_pct: 98 },
+    });
+  });
+
+  it("does not emit a cursor when the activity page exactly fills the requested limit", async () => {
+    const query = vi.fn(async (_schema, queryText: string) => {
+      if (queryText.includes("power-curve:standard:bests")) return [curveRow()];
+      if (queryText.includes("power-curve:standard:page")) return [curveRow()];
+      return [];
+    });
+    const result = await new CyclingPowerCurveRepository({ query }, userId, "UTC").listRange({
+      startDate: "2026-06-01",
+      endDate: "2026-06-30",
+      durationsSeconds: [1200],
+      modalities: [],
+      providers: [],
+      includeActivityCurve: true,
+      cursor: null,
+      limit: 1,
+    });
+
+    expect(result.activity_curve).toHaveLength(1);
+    expect(result.next_cursor).toBeNull();
+  });
+
+  it("accepts exactly 32 distinct requested durations", async () => {
+    const query = vi.fn().mockResolvedValue([]);
+    const result = await new CyclingPowerCurveRepository({ query }, userId, "UTC").listRange({
+      startDate: "2026-06-01",
+      endDate: "2026-06-30",
+      durationsSeconds: Array.from({ length: 32 }, (_, index) => index + 1),
+      modalities: [],
+      providers: [],
+      includeActivityCurve: false,
+      cursor: null,
+      limit: 50,
+    });
+
+    expect(result.bests).toEqual([]);
   });
 
   it("rejects excessive duration requests before querying", async () => {

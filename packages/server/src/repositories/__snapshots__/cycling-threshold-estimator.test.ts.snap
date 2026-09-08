@@ -1,5 +1,91 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`CyclingThresholdEstimator > falls through best-supported methods to sustained power evidence 1`] = `
+{
+  "end_date": "2026-08-01",
+  "requested_method": "best_supported",
+  "result": {
+    "assumptions": [
+      "The best 40–70-minute mean power was a continuous maximal or near-maximal effort",
+      "Sustained power is used as a threshold estimate and is not measured FTP",
+    ],
+    "classification": "estimated",
+    "confidence": "moderate",
+    "evidence": {
+      "efforts": [
+        {
+          "activity_id": "00000000-0000-4000-8000-000000000201",
+          "canonical_type": "cycling",
+          "date": "2026-07-15",
+          "duration_seconds": 3600,
+          "member_activity_ids": [
+            "00000000-0000-4000-8000-000000000201",
+          ],
+          "power_kind": "direct",
+          "quality": {
+            "continuity_tolerance_seconds": 5,
+            "coverage_pct": 100,
+            "largest_gap_seconds": 1,
+            "median_sample_interval_seconds": 1,
+            "observed_samples": 3601,
+            "reasons": [],
+            "status": "high",
+          },
+          "source_devices": [
+            "elemnt-bolt",
+          ],
+          "source_providers": [
+            "wahoo",
+          ],
+          "start_offset_seconds": 30,
+          "started_at": "2026-07-15T15:00:00.000Z",
+          "watts": 255,
+          "watts_per_kg": null,
+          "watts_per_kg_reason": "not used by estimator",
+          "weight": {
+            "reason": "not used by estimator",
+            "value_kg": null,
+          },
+        },
+      ],
+      "threshold_history": [],
+    },
+    "method": "sustained_40_to_70_minutes",
+    "model": null,
+    "relevant_activity_ids": [
+      "00000000-0000-4000-8000-000000000201",
+    ],
+    "threshold_watts": 255,
+    "uncertainty": {
+      "kind": "not_quantifiable",
+      "reason": "Observed sustained efforts do not provide a statistical uncertainty interval",
+      "watts": null,
+    },
+    "watts_per_kg": 3.643,
+    "watts_per_kg_reason": null,
+  },
+  "start_date": "2026-05-01",
+  "unavailable_reason": null,
+  "weight": {
+    "distance_days": 0,
+    "kind": "measured",
+    "method": "same_day",
+    "quality": "high",
+    "sources": [
+      {
+        "date": "2026-08-01",
+        "measurement_kind": "direct",
+        "provider": "withings",
+        "recorded_at": "2026-08-01T08:00:00.000Z",
+        "source_record_id": "weight-1",
+        "value_kg": 70,
+      },
+    ],
+    "value_kg": 70,
+  },
+}
+`;
+
 exports[`CyclingThresholdEstimator > labels 95 percent of maximal 20-minute power as an estimate 1`] = `
 {
   "end_date": "2026-08-01",
@@ -82,6 +168,114 @@ exports[`CyclingThresholdEstimator > labels 95 percent of maximal 20-minute powe
       },
     ],
     "value_kg": 70,
+  },
+}
+`;
+
+exports[`CyclingThresholdEstimator > limits confidence for mixed-quality efforts and explains unavailable W/kg 1`] = `
+{
+  "end_date": "2026-08-01",
+  "requested_method": "sustained_40_to_70_minutes",
+  "result": {
+    "assumptions": [
+      "The best 40–70-minute mean power was a continuous maximal or near-maximal effort",
+      "Sustained power is used as a threshold estimate and is not measured FTP",
+    ],
+    "classification": "estimated",
+    "confidence": "limited",
+    "evidence": {
+      "efforts": [
+        {
+          "activity_id": "00000000-0000-4000-8000-000000000201",
+          "canonical_type": "cycling",
+          "date": "2026-07-15",
+          "duration_seconds": 2400,
+          "member_activity_ids": [
+            "00000000-0000-4000-8000-000000000201",
+          ],
+          "power_kind": "direct",
+          "quality": {
+            "continuity_tolerance_seconds": 5,
+            "coverage_pct": 100,
+            "largest_gap_seconds": 1,
+            "median_sample_interval_seconds": 1,
+            "observed_samples": 2401,
+            "reasons": [],
+            "status": "high",
+          },
+          "source_devices": [
+            "elemnt-bolt",
+          ],
+          "source_providers": [
+            "wahoo",
+          ],
+          "start_offset_seconds": 30,
+          "started_at": "2026-07-15T15:00:00.000Z",
+          "watts": 270,
+          "watts_per_kg": null,
+          "watts_per_kg_reason": "not used by estimator",
+          "weight": {
+            "reason": "not used by estimator",
+            "value_kg": null,
+          },
+        },
+        {
+          "activity_id": "00000000-0000-4000-8000-000000000202",
+          "canonical_type": "cycling",
+          "date": "2026-07-15",
+          "duration_seconds": 3000,
+          "member_activity_ids": [
+            "00000000-0000-4000-8000-000000000201",
+          ],
+          "power_kind": "estimated",
+          "quality": {
+            "continuity_tolerance_seconds": 5,
+            "coverage_pct": 100,
+            "largest_gap_seconds": 1,
+            "median_sample_interval_seconds": 1,
+            "observed_samples": 3001,
+            "reasons": [],
+            "status": "limited",
+          },
+          "source_devices": [
+            "elemnt-bolt",
+          ],
+          "source_providers": [
+            "wahoo",
+          ],
+          "start_offset_seconds": 30,
+          "started_at": "2026-07-15T15:00:00.000Z",
+          "watts": 280,
+          "watts_per_kg": null,
+          "watts_per_kg_reason": "not used by estimator",
+          "weight": {
+            "reason": "not used by estimator",
+            "value_kg": null,
+          },
+        },
+      ],
+      "threshold_history": [],
+    },
+    "method": "sustained_40_to_70_minutes",
+    "model": null,
+    "relevant_activity_ids": [
+      "00000000-0000-4000-8000-000000000201",
+      "00000000-0000-4000-8000-000000000202",
+    ],
+    "threshold_watts": 280,
+    "uncertainty": {
+      "kind": "not_quantifiable",
+      "reason": "Observed sustained efforts do not provide a statistical uncertainty interval",
+      "watts": null,
+    },
+    "watts_per_kg": null,
+    "watts_per_kg_reason": "No nearby weight",
+  },
+  "start_date": "2026-05-01",
+  "unavailable_reason": null,
+  "weight": {
+    "reason": "No nearby weight",
+    "value_kg": null,
   },
 }
 `;

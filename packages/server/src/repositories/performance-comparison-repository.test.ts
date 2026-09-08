@@ -65,7 +65,27 @@ function database(reference: Record<string, unknown>, candidates: Record<string,
 
 describe("PerformanceComparisonRepository", () => {
   it("derives a repeated provider workout identity and compares deduped cycling metrics", async () => {
-    const first = activityRow();
+    const first = activityRow({
+      source_raw_evidence: [
+        { sourceActivityId: FIRST_ID, provider: "peloton", raw: null },
+        {
+          sourceActivityId: FIRST_ID,
+          provider: "peloton",
+          raw: {
+            pelotonClassId: "  class-abc  ",
+            classId: "class-abc",
+            workoutId: "   ",
+            rideId: 42,
+            movingTime: 1800,
+          },
+        },
+        {
+          sourceActivityId: FIRST_ID,
+          provider: "wahoo",
+          raw: { pelotonClassId: "class-abc", moving_time: "1800" },
+        },
+      ],
+    });
     const second = activityRow({
       activity_id: SECOND_ID,
       started_at: "2026-07-01T17:00:00.000Z",
@@ -124,8 +144,9 @@ describe("PerformanceComparisonRepository", () => {
       ]),
     };
 
+    const db = database(first, [first, second]);
     const result = await new PerformanceComparisonRepository(
-      database(first, [first, second]),
+      db,
       sensorStore,
       USER_ID,
       "America/Los_Angeles",
@@ -141,6 +162,8 @@ describe("PerformanceComparisonRepository", () => {
     });
 
     expect(result).toMatchSnapshot();
+    expect(db.execute.mock.calls.map(([query]) => queryText(query))).toMatchSnapshot();
+    expect(sensorStore.query.mock.calls).toMatchSnapshot();
     expect(result.equivalence).toMatchObject({
       basis: "derived_from_reference",
       confidence: "high",
@@ -234,8 +257,19 @@ describe("PerformanceComparisonRepository", () => {
 
   it("accepts an explicit Peloton class identity as high-confidence provider evidence", async () => {
     const row = activityRow();
+    const unmatchedEvidence = activityRow({
+      activity_id: SECOND_ID,
+      ended_at: null,
+      local_date: "2026-07-01",
+      started_at: "2026-07-01T17:00:00.000Z",
+      source_external_ids: null,
+      member_activity_ids: [SECOND_ID],
+      source_raw_evidence: [],
+      local_time_source: "unknown",
+      date_was_authoritative: false,
+    });
     const result = await new PerformanceComparisonRepository(
-      database(row, [row]),
+      database(row, [row, unmatchedEvidence]),
       { query: vi.fn().mockResolvedValue([]) },
       USER_ID,
       "UTC",
@@ -261,6 +295,26 @@ describe("PerformanceComparisonRepository", () => {
       confidence: "high",
     });
     expect(result.performances[0]?.equivalence_evidence_count).toBe(1);
+    expect(result.performances[1]).toMatchObject({
+      activity_id: SECOND_ID,
+      duration_seconds: null,
+      equivalence_evidence_count: 0,
+      quality: {
+        comparable: true,
+        flags: [
+          "duration_unavailable",
+          "timezone_assumed_from_analysis_context",
+          "cycling_sensor_summary_unavailable",
+          "equivalence_evidence_unavailable",
+        ],
+      },
+    });
+    expect(result.coverage).toMatchObject({
+      activities_with_missing_duration: 1,
+      timezone_assumed_activities: 1,
+      performances_with_equivalence_evidence: 1,
+      performances_with_moving_duration: 0,
+    });
   });
 
   it.each([
@@ -492,9 +546,9 @@ describe("PerformanceComparisonRepository", () => {
             rpe: 9,
           },
           {
-            activity_id: SECOND_ID,
+            activity_id: FIRST_ID,
             set_id: "00000000-0000-4000-8000-000000000103",
-            set_activity_id: SECOND_ID,
+            set_activity_id: FIRST_ID,
             set_provider: "hevy",
             exercise_id: exerciseId,
             exercise_index: 0,
@@ -527,12 +581,18 @@ describe("PerformanceComparisonRepository", () => {
 
     expect(result).toMatchSnapshot();
     expect(result.equivalence).toMatchObject({ basis: "explicit", confidence: "high" });
-    expect(result.performances[1]?.metrics.strength).toMatchObject({
-      best_estimated_one_rep_max_kg: expect.closeTo(128.33, 2),
-      valid_volume_kg_reps: 550,
+    expect(result.performances[0]?.metrics.strength).toMatchObject({
+      valid_volume_kg_reps: 500,
       volume_status: "partial",
       estimated_one_rep_max_status: "partial",
       suspicious_sets: 1,
+    });
+    expect(result.performances[1]?.metrics.strength).toMatchObject({
+      best_estimated_one_rep_max_kg: expect.closeTo(128.33, 2),
+      valid_volume_kg_reps: 550,
+      volume_status: "complete",
+      estimated_one_rep_max_status: "complete",
+      suspicious_sets: 0,
     });
     expect(result.performances[1]?.delta_to_baseline).toMatchObject({
       strength_volume_kg_reps: null,

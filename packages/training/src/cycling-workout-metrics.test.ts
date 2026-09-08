@@ -76,7 +76,6 @@ describe("computeCyclingWorkoutMetrics", () => {
     expect(result).toMatchSnapshot();
     expect(result.power.averageWatts).toBe(180);
     expect(result.power.normalizedWatts).toBe(180);
-    expect(result).toMatchSnapshot();
     expect(result.coverage.power).toMatchObject({
       observedSamples: 120,
       coveredSeconds: 600,
@@ -85,6 +84,37 @@ describe("computeCyclingWorkoutMetrics", () => {
       medianSampleIntervalSeconds: 5,
       largestGapSeconds: 5,
     });
+  });
+
+  it("sorts irregular samples while excluding invalid and out-of-range observations", () => {
+    const result = computeCyclingWorkoutMetrics({
+      durationSeconds: 12,
+      samples: [
+        { elapsedSeconds: 10, powerWatts: 100 },
+        { elapsedSeconds: 0, powerWatts: 100 },
+        { elapsedSeconds: 6, powerWatts: 300 },
+        { elapsedSeconds: 2, powerWatts: 200 },
+        { elapsedSeconds: 4, powerWatts: null },
+        { elapsedSeconds: 8, powerWatts: Number.NaN },
+        { elapsedSeconds: 9, powerWatts: -1 },
+        { elapsedSeconds: -1, powerWatts: 999 },
+        { elapsedSeconds: 12, powerWatts: 999 },
+      ],
+      settings: null,
+      intervals: [],
+    });
+
+    expect(result).toMatchSnapshot();
+    expect(result.coverage.power).toEqual({
+      observedSamples: 4,
+      coveredSeconds: 12,
+      missingSeconds: 0,
+      zeroSeconds: 0,
+      coveragePct: 100,
+      medianSampleIntervalSeconds: 4,
+      largestGapSeconds: 4,
+    });
+    expect(result.power.averageWatts).toBe(200);
   });
 
   it("preserves measured zero power and reports a dropout as missing rather than zero", () => {

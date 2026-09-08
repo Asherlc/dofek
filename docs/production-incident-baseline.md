@@ -25763,9 +25763,16 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Direct fixes:** Align the three Expo packages with the SDK compatibility map;
   move the shared performance-equivalence contract into a dependency-neutral
   type module; add the legitimate domain terms to the project dictionary and
-  rephrase the test descriptions.
+  rephrase the test descriptions. Add exact analytical result and query-contract
+  assertions plus boundary cases for pagination, missing samples, load windows,
+  threshold selection, duplicate consolidation, suspicious strength sets, and
+  bounded provenance.
 - **Validation / follow-up:** Expo dependency validation, Dependency Cruiser,
-  and CSpell pass locally. Merge remains gated on the replacement CI run and its
-  mutation shards. Surviving analytical mutants require focused behavioral tests;
-  the mutation threshold and production-module scope remain unchanged. No timeout,
-  retry, ignored check, or threshold adjustment was added.
+  CSpell, root typecheck, the 9,223-test changed unit/mobile suite, and the full
+  local lint gate pass. Focused mutation runs now pass for cycling metrics and
+  performance-comparison modality metrics; the complete replacement CI run
+  remains the merge gate. One otherwise-passing shard in run 34249990223 failed
+  while finalizing its artifact with GitHub's `403 Forbidden`, so a clean
+  replacement run is required to distinguish transient artifact infrastructure
+  from code failures. The mutation threshold and production-module scope remain
+  unchanged. No timeout, retry, ignored check, or threshold adjustment was added.

@@ -3,7 +3,14 @@ import { AnalyticalTrainingLoadRepository } from "./analytical-training-load-rep
 
 const userId = "00000000-0000-4000-8000-000000000001";
 
-function settingsRow() {
+function queryText(query: unknown): string {
+  if (typeof query !== "object" || query === null || !("queryChunks" in query)) {
+    throw new Error("Expected Drizzle SQL query object");
+  }
+  return JSON.stringify(Reflect.get(query, "queryChunks"));
+}
+
+function settingsRow(overrides: Record<string, unknown> = {}) {
   return {
     id: "00000000-0000-4000-8000-000000000100",
     user_id: userId,
@@ -18,6 +25,7 @@ function settingsRow() {
     notes: null,
     created_at: "2026-01-01T00:00:00.000Z",
     updated_at: "2026-01-01T00:00:00.000Z",
+    ...overrides,
   };
 }
 
@@ -76,10 +84,11 @@ describe("AnalyticalTrainingLoadRepository", () => {
       ]);
     const query = vi.fn(async (_schema, queryText: string) => {
       if (queryText.includes("analytical-load:cycling")) {
+        const finalWeekPower = [100, 150, 200, 250, 200, 150, 250];
         return activityDates.map((date, index) => ({
           activity_id: `00000000-0000-4000-9000-${String(index + 1).padStart(12, "0")}`,
           date,
-          normalized_power: 250,
+          normalized_power: index < 21 ? 250 : (finalWeekPower[index - 21] ?? 250),
           elapsed_seconds: 3600,
           source_providers: ["wahoo"],
           first_observed_date: "2026-06-01",
@@ -108,6 +117,13 @@ describe("AnalyticalTrainingLoadRepository", () => {
     const result = await repository.listRange("2026-06-28", "2026-06-28");
 
     expect(result).toMatchSnapshot();
+    expect(execute.mock.calls.map(([query]) => queryText(query))).toMatchSnapshot();
+    expect(
+      query.mock.calls.map(([, clickHouseQuery, parameters]) => ({
+        query: clickHouseQuery,
+        parameters,
+      })),
+    ).toMatchSnapshot();
     expect(result.range).toEqual({
       start_date: "2026-06-28",
       end_date: "2026-06-28",
@@ -128,11 +144,11 @@ describe("AnalyticalTrainingLoadRepository", () => {
           unit: "TSS points",
           status: "available",
           rolling: {
-            acute_7d_sum: 700,
-            chronic_28d_weekly_equivalent: 700,
-            workload_ratio: 1,
-            monotony_7d: null,
-            strain_7d: null,
+            acute_7d_sum: 416,
+            chronic_28d_weekly_equivalent: 629,
+            workload_ratio: 0.661,
+            monotony_7d: 1.978,
+            strain_7d: 822.92,
             acute_coverage_days: 7,
             chronic_coverage_days: 28,
           },
@@ -159,9 +175,7 @@ describe("AnalyticalTrainingLoadRepository", () => {
       working_sets: 4,
       suspicious_sets_excluded: 0,
     });
-    expect(result.rows[0]?.channels.cycling_power_tss.rolling.unavailable_reasons).toContain(
-      "Monotony and strain are unavailable because the seven-day load variance is zero.",
-    );
+    expect(result.rows[0]?.channels.cycling_power_tss.rolling.unavailable_reasons).toEqual([]);
   });
 
   it("does not turn unsupported activity load into zero", async () => {
@@ -253,6 +267,62 @@ describe("AnalyticalTrainingLoadRepository", () => {
     });
   });
 
+  it("uses settings effective on the activity date and rejects nonascending HR zones", async () => {
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce([
+        settingsRow({
+          id: "00000000-0000-4000-8000-000000000102",
+          effective_from: "2026-06-16",
+          ftp: 300,
+        }),
+        settingsRow({
+          id: "00000000-0000-4000-8000-000000000101",
+          effective_from: "2026-06-15",
+          ftp: 200,
+          hr_zone_pcts: [0.6, 0.6, 0.8],
+        }),
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          first_session_rpe_date: null,
+          first_climbing_date: null,
+          first_finger_date: null,
+          first_strength_date: null,
+        },
+      ]);
+    const query = vi.fn(async (_schema, clickHouseQuery: string) =>
+      clickHouseQuery.includes("analytical-load:cycling")
+        ? [
+            {
+              activity_id: "00000000-0000-4000-9000-000000000001",
+              date: "2026-06-15",
+              normalized_power: 200,
+              elapsed_seconds: 3600,
+              source_providers: ["wahoo"],
+              first_observed_date: "2026-06-15",
+              date_was_authoritative: true,
+            },
+          ]
+        : [],
+    );
+    const result = await new AnalyticalTrainingLoadRepository(
+      { execute },
+      { query },
+      userId,
+      "UTC",
+    ).listRange("2026-06-15", "2026-06-15");
+
+    expect(result).toMatchSnapshot();
+    expect(result.rows[0]?.channels.cycling_power_tss.daily_value).toBe(100);
+    expect(
+      query.mock.calls.some(([, clickHouseQuery]) =>
+        String(clickHouseQuery).includes("analytical-load:heart-rate"),
+      ),
+    ).toBe(false);
+  });
+
   it("applies provider and modality filters to cycling and heart-rate source queries", async () => {
     const execute = vi
       .fn()
@@ -269,10 +339,19 @@ describe("AnalyticalTrainingLoadRepository", () => {
     const query = vi.fn().mockResolvedValue([]);
     const repository = new AnalyticalTrainingLoadRepository({ execute }, { query }, userId, "UTC");
 
-    await repository.listRange("2026-06-01", "2026-06-01", {
+    const result = await repository.listRange("2026-06-01", "2026-06-01", {
       providers: ["peloton"],
       modalities: ["indoor"],
     });
+
+    expect(result).toMatchSnapshot();
+    expect(execute.mock.calls.map(([query]) => queryText(query))).toMatchSnapshot();
+    expect(
+      query.mock.calls.map(([, clickHouseQuery, parameters]) => ({
+        query: clickHouseQuery,
+        parameters,
+      })),
+    ).toMatchSnapshot();
 
     const cyclingCall = query.mock.calls.find((call) =>
       String(call[1]).includes("analytical-load:cycling"),

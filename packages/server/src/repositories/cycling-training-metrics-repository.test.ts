@@ -5,6 +5,20 @@ const userId = "00000000-0000-4000-8000-000000000001";
 const activityId = "00000000-0000-4000-8000-000000000010";
 const memberActivityId = "00000000-0000-4000-8000-000000000011";
 
+function queryText(query: unknown): string {
+  if (typeof query !== "object" || query === null || !("queryChunks" in query)) {
+    throw new Error("Expected Drizzle SQL query object");
+  }
+  return JSON.stringify(Reflect.get(query, "queryChunks"));
+}
+
+function snapshotQuery(query: string): string {
+  return query
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .join("\n");
+}
+
 function settingsRow(overrides: Record<string, unknown> = {}) {
   return {
     id: "00000000-0000-4000-8000-000000000100",
@@ -120,6 +134,13 @@ describe("CyclingTrainingMetricsRepository", () => {
     });
 
     expect(result).toMatchSnapshot();
+    expect(execute.mock.calls.map(([query]) => queryText(query))).toMatchSnapshot();
+    expect(
+      query.mock.calls.map(([, clickHouseQuery, parameters]) => ({
+        query: snapshotQuery(clickHouseQuery),
+        parameters,
+      })),
+    ).toMatchSnapshot();
     expect(result.range).toEqual({
       start_date: "2026-06-01",
       end_date: "2026-06-30",
@@ -253,6 +274,13 @@ describe("CyclingTrainingMetricsRepository", () => {
     });
 
     expect(result).toMatchSnapshot();
+    expect(execute.mock.calls.map(([query]) => queryText(query))).toMatchSnapshot();
+    expect(
+      query.mock.calls.map(([, clickHouseQuery, parameters]) => ({
+        query: snapshotQuery(clickHouseQuery),
+        parameters,
+      })),
+    ).toMatchSnapshot();
     expect(result.activities[0]?.thresholds.ftp).toBeNull();
     expect(result.activities[0]?.metrics.power.intensity_factor).toBeNull();
     expect(result.activities[0]?.metrics.unavailable_reasons).toContainEqual({
@@ -261,8 +289,119 @@ describe("CyclingTrainingMetricsRepository", () => {
     });
   });
 
+  it("preserves limited estimated-power, timezone, and recorded-interval evidence", async () => {
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce([settingsRow({ ftp: 0, threshold_hr: 0 })])
+      .mockResolvedValueOnce([
+        {
+          member_activity_id: memberActivityId,
+          interval_index: 2,
+          label: "Easy",
+          interval_type: "recovery",
+          started_at: "2026-06-15T15:20:00.000Z",
+          ended_at: "2026-06-15T15:25:00.000Z",
+        },
+        {
+          member_activity_id: memberActivityId,
+          interval_index: 1,
+          label: "Warm up",
+          interval_type: "warm_up",
+          started_at: "2026-06-15T15:00:00.000Z",
+          ended_at: "2026-06-15T15:10:00.000Z",
+        },
+        {
+          member_activity_id: memberActivityId,
+          interval_index: 3,
+          label: "Cool down",
+          interval_type: "cooldown",
+          started_at: "2026-06-15T15:50:00.000Z",
+          ended_at: null,
+        },
+      ]);
+    const query = vi.fn(async (_schema, queryText: string) => {
+      if (queryText.includes("cycling-training-metrics:activities")) {
+        return [
+          activityRow({
+            activity_timezone: null,
+            local_time_source: "unknown",
+            member_activity_ids: [memberActivityId],
+          }),
+        ];
+      }
+      if (queryText.includes("cycling-training-metrics:samples")) {
+        return [
+          {
+            activity_id: activityId,
+            elapsed_seconds: 0,
+            power: 200,
+            heart_rate: null,
+            cadence: null,
+            source_providers: ["virtual"],
+            source_devices: ["trainer"],
+            power_measurement_kinds: ["estimated", "unknown"],
+          },
+          {
+            activity_id: "00000000-0000-4000-8000-000000000099",
+            elapsed_seconds: 0,
+            power: 999,
+            heart_rate: 200,
+            cadence: 120,
+            source_providers: ["other"],
+            source_devices: ["other"],
+            power_measurement_kinds: ["direct"],
+          },
+        ];
+      }
+      if (queryText.includes("cycling-training-metrics:power-curve")) {
+        return [
+          {
+            activity_id: activityId,
+            duration_seconds: 300,
+            best_power: 220,
+            start_offset_seconds: 30,
+            observed_samples: 55,
+            coverage_pct: 98,
+            largest_gap_seconds: null,
+            median_sample_interval_seconds: null,
+            power_measurement_kind: "estimated",
+          },
+        ];
+      }
+      return [];
+    });
+    const result = await new CyclingTrainingMetricsRepository(
+      { execute },
+      { query },
+      userId,
+      "UTC",
+    ).listRange({
+      startDate: "2026-06-01",
+      endDate: "2026-06-30",
+      modalities: [],
+      providers: [],
+      durationsSeconds: [300],
+      cursor: null,
+      limit: 10,
+    });
+
+    expect(result).toMatchSnapshot();
+    expect(result.activities[0]).toMatchObject({
+      provenance: {
+        timezone_assumption_required: true,
+        power_measurement_kinds: ["estimated", "unknown"],
+      },
+      quality: { status: "limited", trustworthy_for_longitudinal_comparison: false },
+    });
+    expect(result.activities[0]?.best_powers[0]?.quality.status).toBe("limited");
+    expect(result.activities[0]?.metrics.intervals.map((interval) => interval.type)).toEqual([
+      "warmup",
+      "recovery",
+    ]);
+  });
+
   it("returns a stable cursor and never double-counts the lookahead activity", async () => {
-    const execute = vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    const execute = vi.fn().mockResolvedValue([]);
     const query = vi.fn(async (_schema, queryText: string) => {
       if (queryText.includes("cycling-training-metrics:activities")) {
         return [
@@ -288,7 +427,25 @@ describe("CyclingTrainingMetricsRepository", () => {
     });
 
     expect(result).toMatchSnapshot();
+    expect(execute.mock.calls.map(([query]) => queryText(query))).toMatchSnapshot();
+    expect(
+      query.mock.calls.map(([, clickHouseQuery, parameters]) => ({
+        query: snapshotQuery(clickHouseQuery),
+        parameters,
+      })),
+    ).toMatchSnapshot();
     expect(result.activities.map((activity) => activity.activity_id)).toEqual([activityId]);
     expect(result.next_cursor).toEqual(expect.any(String));
+
+    const nextPage = await repository.listRange({
+      startDate: "2026-06-01",
+      endDate: "2026-06-30",
+      modalities: [],
+      providers: [],
+      durationsSeconds: [],
+      cursor: result.next_cursor,
+      limit: 1,
+    });
+    expect(nextPage).toMatchSnapshot();
   });
 });

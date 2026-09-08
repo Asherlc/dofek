@@ -288,6 +288,46 @@ describe("FingerLoadingProgressionRepository", () => {
     expect(result.daily[0]).toMatchObject({ high_intensity_entries: 1, high_intensity_day: true });
   });
 
+  it.each([
+    {
+      label: "effective load",
+      thresholds: {
+        minEffectiveLoadKg: 100,
+        minLoadToBodyweightRatio: null,
+        minRpe: null,
+      },
+    },
+    {
+      label: "load-to-bodyweight ratio",
+      thresholds: {
+        minEffectiveLoadKg: null,
+        minLoadToBodyweightRatio: 1.25,
+        minRpe: null,
+      },
+    },
+    {
+      label: "RPE",
+      thresholds: {
+        minEffectiveLoadKg: null,
+        minLoadToBodyweightRatio: null,
+        minRpe: 8,
+      },
+    },
+  ])("treats the exact $label threshold as high intensity", async ({ thresholds }) => {
+    const result = await new FingerLoadingProgressionRepository(
+      databaseFor([row()]),
+      USER_ID,
+      "UTC",
+    ).listRange({ ...baseInput, thresholds });
+
+    expect(result.high_intensity).toMatchObject({
+      status: "available",
+      matching_entries: 1,
+      days: 1,
+    });
+    expect(result.sessions[0]?.entries[0]?.high_intensity).toBe(true);
+  });
+
   it("consolidates exact duplicate observations from different canonical members", async () => {
     const result = await new FingerLoadingProgressionRepository(
       databaseFor([

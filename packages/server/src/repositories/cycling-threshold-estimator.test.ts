@@ -223,6 +223,77 @@ describe("CyclingThresholdEstimator", () => {
     });
   });
 
+  it("limits confidence for mixed-quality efforts and explains unavailable W/kg", async () => {
+    const deps = dependencies();
+    deps.nearbyWeight.getForDate.mockResolvedValue({ value_kg: null, reason: "No nearby weight" });
+    deps.powerCurve.listRange.mockResolvedValue({
+      start_date: baseInput.startDate,
+      end_date: baseInput.endDate,
+      durations_seconds: [2400, 3000],
+      bests: [
+        effort(2400, 270),
+        {
+          ...effort(3000, 280),
+          activity_id: "00000000-0000-4000-8000-000000000202",
+          power_kind: "estimated" as const,
+          quality: { ...effort(3000, 280).quality, status: "limited" as const },
+        },
+      ],
+      activity_curve: [],
+      next_cursor: null,
+    });
+
+    const result = await new CyclingThresholdEstimator(deps).estimate({
+      ...baseInput,
+      method: "sustained_40_to_70_minutes",
+    });
+
+    expect(result).toMatchSnapshot();
+    expect(result.result).toMatchObject({
+      threshold_watts: 280,
+      confidence: "limited",
+      watts_per_kg: null,
+      watts_per_kg_reason: "No nearby weight",
+      relevant_activity_ids: [activityId, "00000000-0000-4000-8000-000000000202"],
+    });
+  });
+
+  it("falls through best-supported methods to sustained power evidence", async () => {
+    const deps = dependencies();
+    deps.powerCurve.listRange.mockResolvedValueOnce({
+      start_date: baseInput.startDate,
+      end_date: baseInput.endDate,
+      durations_seconds: [2400, 3000, 3600, 4200],
+      bests: [effort(3600, 255)],
+      activity_curve: [],
+      next_cursor: null,
+    });
+
+    const result = await new CyclingThresholdEstimator(deps).estimate({
+      ...baseInput,
+      method: "best_supported",
+    });
+
+    expect(result).toMatchSnapshot();
+    expect(result.result?.method).toBe("sustained_40_to_70_minutes");
+    expect(deps.thresholds.listHistory).toHaveBeenCalledOnce();
+    expect(deps.powerCurve.listRange).toHaveBeenCalledOnce();
+  });
+
+  it("does not substitute configured FTP when a provider-filtered history has no match", async () => {
+    const deps = dependencies();
+    deps.thresholds.getApplicableConfiguredFtp.mockResolvedValue(configured);
+
+    const result = await new CyclingThresholdEstimator(deps).estimate({
+      ...baseInput,
+      providers: ["zwift"],
+      method: "recorded_provider",
+    });
+
+    expect(result.result).toBeNull();
+    expect(deps.thresholds.getApplicableConfiguredFtp).not.toHaveBeenCalled();
+  });
+
   it("returns critical-power fit diagnostics without calling CP measured FTP", async () => {
     const deps = dependencies();
     deps.powerCurve.listRange.mockResolvedValue({
