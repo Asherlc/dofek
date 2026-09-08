@@ -3,6 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import { osmTilePreview } from "../lib/osm-tile.ts";
 import { ActivityRepository, StreamPoint } from "./activity-repository.ts";
 
+const loggerMocks = vi.hoisted(() => ({ info: vi.fn() }));
+
+vi.mock("../logger.ts", () => ({ logger: { info: loggerMocks.info } }));
+
 // ---------------------------------------------------------------------------
 // Domain models
 // ---------------------------------------------------------------------------
@@ -1203,6 +1207,7 @@ describe("ActivityRepository", () => {
     });
 
     it("reuses one resolution when downstream hydration receives the stable group id", async () => {
+      loggerMocks.info.mockClear();
       const { repo, execute } = makeRepositoryWithSensorStore([
         {
           id: "stable-group-id",
@@ -1234,12 +1239,24 @@ describe("ActivityRepository", () => {
       ]);
 
       const activity = await repo.findById("member-id");
-      await repo.getStream(activity?.id ?? "missing", 500);
+      const canonicalActivity = await repo.findById(activity?.id ?? "missing");
 
       const resolutionQueryCount = execute.mock.calls.filter(([query]) =>
         dialect.sqlToQuery(query).sql.includes("identity_candidates"),
       ).length;
       expect(resolutionQueryCount).toBe(1);
+      expect(activity).toMatchObject({
+        id: "stable-group-id",
+        resolved_from: "member-id",
+      });
+      expect(canonicalActivity).not.toHaveProperty("resolved_from");
+      const canonicalLookup = dialect.sqlToQuery(execute.mock.calls[2]?.[0]);
+      expect(canonicalLookup.params).toContain("stable-group-id");
+      expect(loggerMocks.info).toHaveBeenCalledWith("activity.id_resolved", {
+        requestedActivityId: "member-id",
+        resolvedGroupId: "stable-group-id",
+        resolutionKind: "member",
+      });
     });
   });
 

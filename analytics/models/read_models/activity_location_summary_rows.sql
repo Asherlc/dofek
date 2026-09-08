@@ -13,6 +13,15 @@
 {% set activity_refresh_scoped = activity_refresh_scope_enabled() %}
 
 WITH
+location_source_versions AS MATERIALIZED (
+    SELECT
+        activity_id,
+        user_id,
+        max(refresh_version) AS refresh_version
+    FROM {{ ref('activity_location_sample') }}
+    GROUP BY activity_id, user_id
+),
+
 {% if is_incremental() %}
 target_state AS (
     SELECT count() = 0 AS is_empty
@@ -55,15 +64,6 @@ existing_summary AS (
         summary_refresh_version
     FROM existing_summary_state
     WHERE is_deleted = 0
-),
-
-location_source_versions AS MATERIALIZED (
-    SELECT
-        activity_id,
-        user_id,
-        max(refresh_version) AS refresh_version
-    FROM {{ ref('activity_location_sample') }}
-    GROUP BY activity_id, user_id
 ),
 
 {% if activity_refresh_scoped %}

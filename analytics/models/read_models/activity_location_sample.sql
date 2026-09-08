@@ -13,6 +13,13 @@
 ) }}
 
 WITH
+location_versions AS MATERIALIZED (
+    SELECT *
+    FROM {{ source('ingest', 'metric_stream_freshness') }}
+    WHERE channel = 'location'
+        AND (point IS NOT NULL OR is_deleted = 1)
+),
+
 {% if is_incremental() %}
 target_state AS (
     SELECT
@@ -40,13 +47,6 @@ activity_members AS (
         member_activity_id
     FROM {{ ref('deduped_activity_members') }} FINAL
     WHERE is_deleted = 0
-),
-
-location_versions AS MATERIALIZED (
-    SELECT *
-    FROM {{ source('ingest', 'metric_stream_freshness') }}
-    WHERE channel = 'location'
-        AND (point IS NOT NULL OR is_deleted = 1)
 ),
 
 {% if is_incremental() %}

@@ -326,7 +326,7 @@ describe("clickhouse integration test helpers", () => {
             command.includes("local_time_source") &&
             (tableName !== "deduped_activities" ||
               command.includes(
-                "coalesce(nullIf(local_time_source, ''), 'unknown') AS local_time_source",
+                "coalesce(nullIf(activity.local_time_source, ''), 'unknown') AS local_time_source",
               )),
         ),
       ).toBe(true);

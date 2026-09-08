@@ -28,7 +28,20 @@
     }
 ) }}
 
-WITH activity_group_state AS (
+WITH batch_samples AS MATERIALIZED (
+    SELECT *
+    FROM {{ ref('deduped_sensor') }}
+),
+
+batch_sample_keys AS MATERIALIZED (
+    SELECT DISTINCT
+        user_id,
+        channel,
+        recorded_at
+    FROM batch_samples
+),
+
+activity_group_state AS (
     SELECT
         deduped.activity_id AS group_activity_id,
         deduped.user_id AS user_id,
@@ -80,19 +93,6 @@ activity_days AS (
             range(toUInt64(dateDiff('day', started_at, effective_ended_at)) + 1)
         )) AS recorded_date
     FROM current_activity
-),
-
-batch_samples AS MATERIALIZED (
-    SELECT *
-    FROM {{ ref('deduped_sensor') }}
-),
-
-batch_sample_keys AS MATERIALIZED (
-    SELECT DISTINCT
-        user_id,
-        channel,
-        recorded_at
-    FROM batch_samples
 ),
 
 activity_samples AS (

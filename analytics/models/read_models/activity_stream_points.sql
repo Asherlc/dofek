@@ -11,7 +11,25 @@
     }
 ) }}
 
-WITH target_state AS (
+WITH sensor_source_versions AS MATERIALIZED (
+    SELECT
+        activity_id,
+        user_id,
+        max(refresh_version) AS refresh_version
+    FROM {{ ref('activity_sensor_sample') }}
+    GROUP BY activity_id, user_id
+),
+
+location_source_versions AS MATERIALIZED (
+    SELECT
+        activity_id,
+        user_id,
+        max(refresh_version) AS refresh_version
+    FROM {{ ref('activity_location_sample') }}
+    GROUP BY activity_id, user_id
+),
+
+target_state AS (
     {% if is_incremental() %}
     SELECT count() = 0 AS is_empty
     FROM {{ this }}
@@ -55,24 +73,6 @@ existing_stream_points AS (
         user_id
     FROM existing_stream_state
     WHERE is_deleted = 0
-),
-
-sensor_source_versions AS MATERIALIZED (
-    SELECT
-        activity_id,
-        user_id,
-        max(refresh_version) AS refresh_version
-    FROM {{ ref('activity_sensor_sample') }}
-    GROUP BY activity_id, user_id
-),
-
-location_source_versions AS MATERIALIZED (
-    SELECT
-        activity_id,
-        user_id,
-        max(refresh_version) AS refresh_version
-    FROM {{ ref('activity_location_sample') }}
-    GROUP BY activity_id, user_id
 ),
 
 {% if activity_refresh_scoped %}

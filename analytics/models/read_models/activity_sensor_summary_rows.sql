@@ -16,13 +16,6 @@
 {% set activity_refresh_scoped = activity_refresh_scope_enabled() %}
 
 WITH
-{% if is_incremental() %}
-target_state AS (
-    SELECT count() = 0 AS is_empty
-    FROM {{ this }}
-),
-{% endif %}
-
 sample_source_versions AS MATERIALIZED (
     SELECT
         activity_id,
@@ -31,6 +24,13 @@ sample_source_versions AS MATERIALIZED (
     FROM {{ ref('activity_sensor_sample') }}
     GROUP BY activity_id, user_id
 ),
+
+{% if is_incremental() %}
+target_state AS (
+    SELECT count() = 0 AS is_empty
+    FROM {{ this }}
+),
+{% endif %}
 
 current_activity AS (
     SELECT
