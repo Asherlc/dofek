@@ -1026,7 +1026,7 @@ function StrengthExerciseBreakdown({
         const hasRpe = exercise.sets.some((set) => set.rpe != null);
 
         return (
-          <div key={exercise.exerciseIndex}>
+          <div key={`${exercise.activityId}:${exercise.exerciseIndex}`}>
             <div className="flex items-baseline gap-2 mb-2">
               <h3 className="text-sm font-medium text-foreground">{exercise.exerciseName}</h3>
               {exercise.equipment && (

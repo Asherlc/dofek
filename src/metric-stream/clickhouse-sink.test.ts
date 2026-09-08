@@ -748,6 +748,38 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     expect(firstCommandQuery(command)).toContain("external_id_1");
   });
 
+  it("leaves a failed delete chunk unacknowledged and stops before replacement rows", async () => {
+    const deletes = Array.from({ length: 101 }, (_, index) =>
+      createCurrentMetricStreamDeletedEvent({
+        userId: heartRateEvent.userId,
+        providerId: heartRateEvent.providerId,
+        externalId: `chunk-failure-${index}`,
+      }),
+    );
+    const acknowledgedIds: string[] = [];
+    let streamWrites = 0;
+    const command = vi.fn(
+      async (options: { query: string; query_params?: Record<string, unknown> }) => {
+        if (options.query.startsWith(`INSERT INTO ${METRIC_STREAM_TABLE} (`)) {
+          streamWrites += 1;
+          if (streamWrites === 2) throw new Error("second chunk rejected");
+        } else {
+          acknowledgedIds.push(String(options.query_params?.event_id));
+        }
+      },
+    );
+    const insert = vi.fn(async () => undefined);
+    const query = makeEmptyGenerationQuery();
+
+    await expect(
+      applyMetricStreamEventsToClickHouse({ command, insert, query }, [...deletes, heartRateEvent]),
+    ).rejects.toThrow("second chunk rejected");
+
+    expect(streamWrites).toBe(2);
+    expect(acknowledgedIds).toEqual(deletes.slice(0, 100).map((event) => event.eventId));
+    expect(insert).not.toHaveBeenCalled();
+  });
+
   it("does not batch adjacent current deletes from different revisions", async () => {
     const command = vi.fn(async () => undefined);
     const query = vi.fn(async () => ({ json: async () => [] }));

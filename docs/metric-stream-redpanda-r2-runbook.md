@@ -214,6 +214,16 @@ the committed offset reaches the topic head, publish a fresh post-drain message
 and observe it in `ingest.metric_stream`, then verify the affected activities
 hydrate with their expected sensor fields.
 
+If the committed offset stays fixed and sink logs report `HTML Form Exception:
+Too many form fields`, inspect the adjacent deletion run. Each deletion scope
+adds up to seven query parameters. The sink bounds each sequential request to
+100 scopes, retaining delete-before-replacement order and acknowledging each
+scope only after its request succeeds. ClickHouse's default `http_max_fields`
+is 1,000 and covers request headers, query parameters, and form data; reduce
+the request size instead of increasing that limit
+([ClickHouse settings source](https://github.com/ClickHouse/ClickHouse/blob/v26.6.1.1193-stable/src/Core/Settings.cpp#L2451-L2453),
+[sink implementation](../src/metric-stream/clickhouse-sink.ts)).
+
 ## Full-refresh visibility window
 
 A full historical refresh currently shares the single ordered metric-stream

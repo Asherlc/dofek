@@ -859,6 +859,7 @@ describe("ActivityDetailPage", () => {
     mockStrengthExercisesUseQuery.mockReturnValue({
       data: [
         {
+          activityId: "10000000-0000-4000-8000-000000000001",
           exerciseIndex: 0,
           exerciseName: "Pull-up",
           equipment: null,
@@ -1496,6 +1497,7 @@ describe("ActivityDetailPage", () => {
       Object.assign(mockActivity, { activityType: "strength", name: "Strength session" });
       const exercises: StrengthExerciseDetail[] = [
         {
+          activityId: "10000000-0000-4000-8000-000000000001",
           exerciseIndex: 0,
           exerciseName: "Bench Press",
           equipment: "BARBELL",
@@ -1869,6 +1871,7 @@ describe("ActivityDetailPage", () => {
     it("keeps recorded strength details visible with a refresh error", async () => {
       const exercises: StrengthExerciseDetail[] = [
         {
+          activityId: "10000000-0000-4000-8000-000000000001",
           exerciseIndex: 0,
           exerciseName: "Weighted pull-up",
           equipment: null,

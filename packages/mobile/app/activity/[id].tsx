@@ -210,6 +210,7 @@ const statsStyles = StyleSheet.create({
 // ── Strength Exercise Breakdown ──
 
 interface StrengthExercise {
+  activityId: string;
   exerciseIndex: number;
   exerciseName: string;
   equipment: string | null;
@@ -259,7 +260,10 @@ function ExerciseBreakdown({
         const hasDuration = exercise.sets.some((set) => set.durationSeconds != null);
 
         return (
-          <View key={exercise.exerciseIndex} style={exerciseStyles.exerciseCard}>
+          <View
+            key={`${exercise.activityId}:${exercise.exerciseIndex}`}
+            style={exerciseStyles.exerciseCard}
+          >
             <View style={exerciseStyles.exerciseHeader}>
               <Text style={exerciseStyles.exerciseName}>{exercise.exerciseName}</Text>
               {exercise.equipment && (
