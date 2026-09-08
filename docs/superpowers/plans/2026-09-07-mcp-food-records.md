@@ -719,3 +719,23 @@ git status --short
 ```
 
 Expected: only the approved food lifecycle, its shared server foundation, tests, schema output, and docs are present; the worktree is clean.
+
+## Validation Results
+
+### 2026-09-08
+
+- `pnpm vitest run --project integration src/db/food-record-modifications.integration.test.ts packages/server/src/repositories/nutrition-canonical.integration.test.ts packages/server/src/repositories/food-record-repository.integration.test.ts packages/server/src/services/food-record-service.integration.test.ts packages/server/src/mcp/token-repository.integration.test.ts packages/server/src/mcp/oauth.integration.test.ts` exited 1 before executing tests because `TEST_DATABASE_URL` was unset; all 64 tests were skipped. The same attempt also showed sandbox `EPERM` for loopback Redis. Per `docs/testing.md`, the files were rerun through the repository integration wrapper rather than changing tests.
+- `pnpm test:integration -- src/db/food-record-modifications.integration.test.ts packages/server/src/repositories/nutrition-canonical.integration.test.ts packages/server/src/repositories/food-record-repository.integration.test.ts packages/server/src/services/food-record-service.integration.test.ts packages/server/src/mcp/token-repository.integration.test.ts packages/server/src/mcp/oauth.integration.test.ts` exited 0: 6 files and 64 tests passed.
+- `pnpm vitest run --project unit packages/server/src/repositories/food-record-repository.test.ts packages/server/src/services/food-record-service.test.ts packages/server/src/mcp/food-record-tools.test.ts packages/server/src/mcp/tool-result.test.ts packages/server/src/mcp/route.test.ts packages/server/src/mcp/token-repository.test.ts packages/server/src/mcp/oauth-provider.test.ts packages/server/src/mcp/oauth-route.test.ts packages/server/src/routers/mcp.test.ts packages/web/src/pages/McpTokensPanel.test.tsx` initially made no progress under sandboxed local-port access and was interrupted with exit 130. The unchanged command with local HTTP/Redis access exited 0: 10 files and 195 tests passed.
+- `pnpm schema:diagram` initially exited 1 because the sandbox denied the `tsx` IPC socket. The unchanged command with local IPC access exited 0 and regenerated `docs/schema.dbml` and `docs/schema.puml`; both already matched the committed schema.
+- `pnpm lint:migrations` initially exited 1 because the sandbox denied the `tsx` IPC socket. The unchanged command with local IPC access exited 0: migration policy passed.
+- `pnpm typecheck` exited 0: no TypeScript errors.
+- `pnpm --dir packages/server typecheck` exited 0.
+- `pnpm --dir packages/web typecheck` exited 0.
+- `pnpm lint` initially exited 1 because the sandbox denied the first `tsx` IPC socket. The unchanged command with local IPC access exited 0: dependency versions, Biome, suppression/workflow/analytics/mobile policies, Storybook/review scenarios, mobile routes, and SQLFluff passed.
+- `pnpm test:changed:all` initially exited 1: 184 files and 2,083 tests passed, 11 files and 4 tests failed, and 163 tests were skipped. Four provider tests reported `Unable to start the native FIT decoder`; `.build/fit-decoder/bin/dofek-fit-decoder` was absent on the arm64 host and `VCPKG_ROOT` was unset. ClickHouse-backed setup also reported `socket hang up` followed by `ECONNREFUSED`; the workspace container log recorded unclean restarts under its 1.5 GiB cgroup while concurrent joins reduced available memory. Docker had 24 running containers in an 8.2 GB VM.
+- The native decoder was built without source changes using the workflow-pinned Microsoft vcpkg commit `9e593bb18ea69cc5095e012465dcd675a822ed0d`; `file .build/fit-decoder/bin/dofek-fit-decoder` then reported a native Mach-O arm64 executable. No other workspace was stopped and no memory limit, retry, wait, ignore, or threshold was changed.
+- The unchanged `pnpm test:changed:all` rerun exited 0: 195 files and 2,250 tests passed with no failures or skips in 340.65 seconds. ClickHouse remained available for the full run.
+- `git diff --check` exited 0.
+
+The completed branch introduces no dependency or environment-variable changes.
