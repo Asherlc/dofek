@@ -367,6 +367,8 @@ export interface CreateFoodEntryInput {
   foodDescription?: string | null;
   category?: string | null;
   numberOfUnits?: number | null;
+  servingUnit?: string | null;
+  servingWeightGrams?: number | null;
   nutrients: Record<string, number>;
   calories?: number | null;
   proteinG?: number | null;
@@ -803,11 +805,12 @@ export class FoodRepository {
     );
     const foodEntryInsert = sql`INSERT INTO fitness.food_entry (
       user_id, provider_id, external_id, date, meal, food_name, food_description,
-      category, number_of_units, nutrition_grain
+      category, number_of_units, serving_unit, serving_weight_grams, nutrition_grain
     ) VALUES (
       ${this.#userId}, ${DOFEK_PROVIDER_ID}, ${input.externalId ?? null}, ${input.date}::date,
       ${input.meal ?? null}, ${input.foodName}, ${input.foodDescription ?? null},
-      ${input.category ?? null}, ${input.numberOfUnits ?? null}, 'itemized'
+      ${input.category ?? null}, ${input.numberOfUnits ?? null}, ${input.servingUnit ?? null},
+      ${input.servingWeightGrams ?? null}, 'itemized'
     )`;
 
     const idRows = await executeWithSchema(

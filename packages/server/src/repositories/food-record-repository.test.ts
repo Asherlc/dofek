@@ -2,7 +2,7 @@ import type { Database } from "dofek/db";
 import { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
-import { FoodRecordRepository } from "./food-record-repository.ts";
+import { FoodRecordConflictError, FoodRecordRepository } from "./food-record-repository.ts";
 import { type EffectiveFoodRecord, FoodRecordPreconditionError } from "./food-record-types.ts";
 
 const userId = "10000000-0000-4000-8000-000000000001";
@@ -312,5 +312,121 @@ describe("FoodRecordRepository", () => {
       }),
     );
     expect(unstable.execute).toHaveBeenCalledOnce();
+  });
+
+  it("loads stored request attribution and target metadata for replay", async () => {
+    const requestId = "60000000-0000-4000-8000-000000000020";
+    const { execute, repository } = makeRepository([
+      [
+        {
+          request_id: requestId,
+          request_hash: "d".repeat(64),
+          kind: "delete",
+          client_id: "token:client-1",
+          identity_id: recordId,
+          target_version: version,
+          predecessor_version: null,
+        },
+      ],
+    ]);
+
+    await expect(repository.findRequest(requestId)).resolves.toEqual({
+      requestId,
+      requestHash: "d".repeat(64),
+      kind: "delete",
+      actor: { channel: "mcp", clientId: "token:client-1" },
+      identityId: recordId,
+      version,
+      predecessorVersion: null,
+    });
+    expect(queryDetails(execute.mock.calls[0]?.[0]).params).toEqual(
+      expect.arrayContaining([userId, requestId]),
+    );
+  });
+
+  it("locks the identity before checking request reuse and appends decisions", async () => {
+    const requestId = "60000000-0000-4000-8000-000000000021";
+    const nextVersion = "40000000-0000-4000-8000-000000000021";
+    const { execute, repository } = makeRepository([
+      [
+        {
+          identity_id: recordId,
+          source_entry_id: sourceEntryId,
+          current_version: null,
+          modifiable: true,
+        },
+      ],
+      [],
+      [{ change_id: changeId }],
+      [{ version: nextVersion }],
+      [],
+    ]);
+
+    await expect(
+      repository.appendChange({
+        identityId: recordId,
+        expectedVersion: null,
+        requestId,
+        requestHash: "e".repeat(64),
+        kind: "update",
+        actor: { channel: "mcp", clientId: "token:client-1" },
+        fields: { meal: { operation: "set", value: "dinner" } },
+        nutrients: { protein: { operation: "set", amount: 14 } },
+        deleted: null,
+      }),
+    ).resolves.toEqual({
+      identityId: recordId,
+      sourceEntryId,
+      version: nextVersion,
+      predecessorVersion: null,
+      requestHash: "e".repeat(64),
+      kind: "update",
+      actor: { channel: "mcp", clientId: "token:client-1" },
+      replayed: false,
+    });
+
+    const queries = execute.mock.calls.map((call) => queryDetails(call[0]));
+    expect(queries[0]?.sql).toContain("FOR UPDATE");
+    expect(queries[1]?.sql).toContain("human_record_change");
+    expect(queries[2]?.sql).toContain("INSERT INTO fitness.human_record_change");
+    expect(queries[2]?.params).toEqual(
+      expect.arrayContaining([userId, requestId, "e".repeat(64), "update", "token:client-1"]),
+    );
+    expect(queries[3]?.sql).toContain("INSERT INTO fitness.human_record_target");
+    expect(queries[4]?.sql).toContain("INSERT INTO fitness.human_food_nutrient_decision");
+  });
+
+  it("rejects stale nullable expected versions with the locked current version", async () => {
+    const { repository } = makeRepository([
+      [
+        {
+          identity_id: recordId,
+          source_entry_id: sourceEntryId,
+          current_version: version,
+          modifiable: true,
+        },
+      ],
+      [],
+    ]);
+
+    await expect(
+      repository.appendChange({
+        identityId: recordId,
+        expectedVersion: null,
+        requestId: "60000000-0000-4000-8000-000000000022",
+        requestHash: "f".repeat(64),
+        kind: "delete",
+        actor: { channel: "mcp", clientId: "token:client-1" },
+        fields: {},
+        nutrients: {},
+        deleted: true,
+      }),
+    ).rejects.toEqual(
+      expect.objectContaining({
+        name: FoodRecordConflictError.name,
+        recordId,
+        currentVersion: version,
+      }),
+    );
   });
 });
