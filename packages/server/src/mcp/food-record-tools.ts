@@ -19,6 +19,7 @@ import type { DofekMcpContext } from "./context.ts";
 import { requireMcpScope } from "./token-repository.ts";
 import { mcpOutputSchemas } from "./tool-output.ts";
 import { jsonToolError, jsonToolResult } from "./tool-result.ts";
+import { assertDateRange } from "./tool-utils.ts";
 
 const nutrientIds = new Set(Object.keys(NUTRIENT_FIELD_BY_ID));
 const nutrientIdSchema = z.string().refine((value) => nutrientIds.has(value), {
@@ -166,6 +167,20 @@ function requireMutationScopes(context: DofekMcpContext): void {
   requireMcpScope(context.scopes, "nutrition:write");
 }
 
+function dateRangeToolError(
+  startDate: string,
+  endDate: string,
+): ReturnType<typeof jsonToolError> | null {
+  try {
+    assertDateRange(startDate, endDate);
+    return null;
+  } catch (error: unknown) {
+    if (error instanceof Error) return jsonToolError("INVALID_ARGUMENT", error.message);
+    captureException(error);
+    return jsonToolError("INTERNAL_ERROR", "The food record request could not be completed.");
+  }
+}
+
 function scalarSetToDomain(set: {
   date?: string;
   meal?: (typeof mealEnum.enumValues)[number] | null;
@@ -230,6 +245,8 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
     },
     async ({ start_date, end_date, query, visibility, cursor, limit }) => {
       requireMcpScope(context.scopes, "nutrition:read");
+      const rangeError = dateRangeToolError(start_date, end_date);
+      if (rangeError) return rangeError;
       return foodToolResult(async () => {
         const result = await repository.search({
           startDate: start_date,

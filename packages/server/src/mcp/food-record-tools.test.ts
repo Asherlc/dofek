@@ -269,6 +269,25 @@ describe("registerFoodRecordTools", () => {
     ).toBe(true);
   });
 
+  it("rejects an inverted search range before calling the repository", async () => {
+    const { tool } = setup();
+
+    const result = await tool("search_food_entries").handler({
+      start_date: "2026-09-08",
+      end_date: "2026-09-07",
+    });
+
+    expect(parseResult(result)).toEqual({
+      error: {
+        code: "INVALID_ARGUMENT",
+        message: "start_date must be on or before end_date",
+      },
+    });
+    expect(result).toMatchObject({ isError: true });
+    expect(mocks.search).not.toHaveBeenCalled();
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
   it("maps detail and history output without exposing camel-case fields", async () => {
     const { tool } = setup();
     mocks.history.mockResolvedValue({
