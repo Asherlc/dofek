@@ -145,3 +145,68 @@ The expanded real-database GREEN run also caught and drove two SQL corrections b
 What went well: focused unit RED isolated the public identity loss and router bypass, while the real PostgreSQL fixture demonstrated metadata loss without confusing it with set inflation. What required investigation: projecting an added identity field through every SQL CTE and positional group clause needed real execution; the database suite caught both omissions immediately. Useful next-time context: aggregate queries should document set ownership and metadata ownership as separate provenance decisions.
 
 Suggested guidance update for approval: document in `packages/server/README.md` that structured analytics output identities include equipment and that aggregate mirror selection must enrich exercise metadata independently of set ownership. For similar fixes, reuse `superpowers:test-driven-development`, `integration-tests-ready`, and `superpowers:verification-before-completion`; no new skill is needed.
+
+## Review fix round 2
+
+Status: both remaining review findings were fixed and verified in implementation commit `059afc26031975b1b7636c318917aee9945a0b84`.
+
+### Files
+
+- `packages/training/src/training.ts`
+- `packages/server/src/repositories/progressive-overload.ts`
+- `packages/server/src/repositories/strength-repository.ts`
+- `packages/server/src/routers/strength.ts`
+- `packages/server/src/routers/strength-stress.test.ts`
+- `packages/server/src/routers/mobile-dashboard.ts`
+- `packages/server/src/routers/mobile-dashboard.test.ts`
+- `packages/server/src/routers/climbing.ts`
+- `packages/server/src/routers/climbing.test.ts`
+- `packages/web/src/components/EstimatedMaxChart.tsx`
+- `packages/web/src/components/EstimatedMaxChart.test.tsx`
+- `packages/web/src/components/EstimatedMaxChart.stories.tsx`
+- `packages/web/src/components/ProgressiveOverloadCards.tsx`
+- `packages/web/src/components/ProgressiveOverloadCards.test.tsx`
+- `packages/web/src/components/ProgressiveOverloadCards.stories.tsx`
+- `packages/mobile/components/ProgressiveOverloadCards.tsx`
+- `packages/mobile/components/ProgressiveOverloadCards.test.tsx`
+- `packages/mobile/components/ProgressiveOverloadCards.stories.tsx`
+- `packages/mobile/app-tests/(tabs)/strain.test.tsx`
+- This report.
+
+### Client identity and cache rollout
+
+- The canonical public strength-series identity is now shared from `@dofek/training/training` as the structured tuple `{ exerciseName, equipment }`. Selection compares both fields, while list keys serialize the tuple as JSON; no delimiter-concatenated identifier is used, so provider text cannot create delimiter collisions.
+- Web estimated-max selection now retains the full tuple. Same-name BARBELL and DUMBBELL buttons independently select their matching series, have distinct React keys and `aria-label` values, and expose the selected state correctly.
+- Web and mobile progressive-overload cards now key by the same tuple. Equipment is appended to visible labels only when the returned collection contains an ambiguous exercise name, preserving ordinary single-equipment labels. Mobile accessible summaries use the same disambiguated label; web's visible text remains accessible DOM content.
+- Server repository types import the same shared identity model, removing a server-local duplicate definition without changing the round-1 response fields.
+- Runtime cache namespaces were advanced for every strict payload affected by the two review rounds: `estimated-max-trend-v2`, `progressive-overload-evidence-v2`, and mobile `training-activity-states-v3`. The climbing activity-entry route now uses `climbing-activity-group-v1`, preventing an old silently empty member/alias result from surviving the resolved-group deployment.
+- Cache assertions were folded into successful resolver behavior tests that also validate returned payloads. No static-config-only test was added; generic cache-key isolation remains covered by the existing tRPC cache middleware tests.
+
+### Strict RED evidence
+
+Command before production edits:
+
+`rtk pnpm vitest run --project unit --project mobile packages/web/src/components/EstimatedMaxChart.test.tsx packages/web/src/components/ProgressiveOverloadCards.test.tsx packages/mobile/components/ProgressiveOverloadCards.test.tsx packages/server/src/routers/strength-stress.test.ts packages/server/src/routers/mobile-dashboard.test.ts packages/server/src/routers/climbing.test.ts --retry=0`
+
+Result: exit 1; 6 files failed, 7 tests failed and 69 passed. Estimated-max rendered duplicate `Chart Chest Press` controls, both variants appeared selected, React reported a duplicate key, and clicking could not select the dumbbell series. Web and mobile overload cards rendered duplicate `Chest Press` labels and duplicate keys, while mobile accessible labels also collided. Route behavior still registered `estimated-max-trend-v1`, `progressive-overload-evidence-v1`, mobile `training-activity-states-v2`, and an unversioned climbing long-cache entry.
+
+### GREEN and final verification
+
+- `rtk pnpm vitest run --project unit --project mobile packages/training/src/training.test.ts packages/web/src/components/EstimatedMaxChart.test.tsx packages/web/src/components/ProgressiveOverloadCards.test.tsx packages/mobile/components/ProgressiveOverloadCards.test.tsx packages/server/src/routers/strength-stress.test.ts packages/server/src/routers/mobile-dashboard.test.ts packages/server/src/routers/climbing.test.ts --retry=0`: exit 0; 7 files, 153 tests passed. The component run emitted no duplicate-key warnings.
+- `rtk pnpm typecheck`: exit 0; `TypeScript: No errors found`.
+- `rtk pnpm exec biome check 'packages/mobile/app-tests/(tabs)/strain.test.tsx' packages/mobile/components/ProgressiveOverloadCards.stories.tsx packages/mobile/components/ProgressiveOverloadCards.test.tsx packages/mobile/components/ProgressiveOverloadCards.tsx packages/server/src/repositories/progressive-overload.ts packages/server/src/repositories/strength-repository.ts packages/server/src/routers/climbing.test.ts packages/server/src/routers/climbing.ts packages/server/src/routers/mobile-dashboard.test.ts packages/server/src/routers/mobile-dashboard.ts packages/server/src/routers/strength-stress.test.ts packages/server/src/routers/strength.ts packages/training/src/training.ts packages/web/src/components/EstimatedMaxChart.stories.tsx packages/web/src/components/EstimatedMaxChart.test.tsx packages/web/src/components/EstimatedMaxChart.tsx packages/web/src/components/ProgressiveOverloadCards.stories.tsx packages/web/src/components/ProgressiveOverloadCards.test.tsx packages/web/src/components/ProgressiveOverloadCards.tsx`: exit 0; 19 files checked, no fixes applied.
+- `rtk git diff --check`: exit 0.
+
+This round changes only client identity rendering/selection and cache namespaces; it does not modify SQL or database semantics, so no new real-PostgreSQL test was required. The round-1 database suite remains the executable proof for the payload identity and union behavior feeding these clients.
+
+### Compatibility, rollout, and concerns
+
+There is no new response-contract change in this round. Web and mobile now consume the additive `equipment` field introduced in round 1. The cache namespace changes intentionally make pre-deploy strength, mobile-training, and climbing values unreachable after rollout; normal cache warming repopulates the new namespaces. No schema migration, parser change, compatibility fallback, or Task 9 metadata work was added.
+
+No Task 8 concern remains. The prior broad-suite failures recorded in round 1 are outside these two findings; this focused review round did not expand into those parked issues.
+
+### Retrospective
+
+What went well: one same-name/different-equipment fixture reproduced selection, React-key, visible-label, and accessibility failures on both platforms, and behavior-level router tests pinned every deploy boundary. What required investigation: cache versions were distributed across strength, mobile-dashboard, and climbing routers rather than tied to the shared response type. Useful next-time context: when a public domain identity gains a dimension, the design checklist should enumerate client selection state, list keys, labels, accessibility text, and persistent-cache consumers together.
+
+Suggested guidance update for approval: add that identity-and-cache-consumer checklist to `packages/training/README.md` and the stable activity group rollout notes. Reuse `superpowers:receiving-code-review`, `superpowers:test-driven-development`, and `superpowers:verification-before-completion` for similar cross-platform contract reviews; no new skill is needed.
