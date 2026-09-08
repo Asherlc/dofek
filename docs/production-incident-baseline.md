@@ -25278,9 +25278,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 ## 2026-09-08 — Broad activity power-curve fixture exhausted local ClickHouse memory
 
-- **Status:** Root cause fixed in test infrastructure; focused unit and real
-  ClickHouse/PostgreSQL integration tests pass, and the final changed
-  integration gate remains to be rerun from clean workspace state.
+- **Status:** Resolved. Root cause fixed in test infrastructure; focused and
+  whole-branch real-database verification pass from clean workspace state.
 - **Symptoms / user impact:** `pnpm test:changed:all` lost its ClickHouse
   connection during `router-logic.integration.test.ts`; downstream router tests
   failed or skipped, ClickHouse restarted twice, and subsequent `docker ps` and
@@ -25310,9 +25309,11 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   not exist, then the helper unit suite passed 8/8. From a clean workspace
   ClickHouse process, the real power-curve integration suite passed 8/8 in
   14.07 seconds; an independent review reran it 8/8 in 10.84 seconds, passed
-  server typecheck, and found no blocking issues. Migration 0078 separately
-  passes 3/3, and the repaired activity integration slice passes 119/119.
-- **Remaining risk / follow-up:** Rerun the final changed integration gate once
-  from clean workspace state. If it passes, no local ClickHouse resource change
-  is warranted; deployment and the bounded historical activity refresh remain
-  the feature-level follow-up.
+  server typecheck, and found no blocking issues. After removing only this
+  workspace's disposable Compose state, `pnpm test:changed:all` passed 434 test
+  files and 7,779 tests in 459.87 seconds while ClickHouse remained healthy.
+  Migration 0078 separately passes 3/3, and the repaired activity integration
+  slice passes 119/119.
+- **Remaining risk / follow-up:** No local ClickHouse resource change is
+  warranted. Deployment and the bounded historical activity refresh remain the
+  feature-level follow-up.
