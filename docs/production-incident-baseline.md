@@ -25246,11 +25246,16 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   unambiguous exercise names; ambiguous or absent catalogue names remain null.
 - **Validation:** A synthetic no-mock MCP integration fixture uses real
   PostgreSQL and ClickHouse current schemas to model grouped activities with
-  disjoint structured and sensor payloads. It changes a representative,
-  reconciles and refreshes, re-fetches stable/member/alias IDs, parses the
-  response through `activityDetailsOutputSchema`, and preserves typed sets,
-  specific activity classification, sensor summaries, and the set of populated
-  fields. During local
+  equal-richness, disjoint structured payloads on two members and sensor data on
+  a third member. It changes only provider priority before reconciliation and
+  refresh, then re-fetches stable/member/alias IDs, parses the response through
+  `activityDetailsOutputSchema`, and preserves both structured payloads, the
+  third-member sensor summary, specific activity classification, and the set of
+  populated fields. An overlapping sample attributed to a member of another
+  group is excluded, so timestamp coincidence cannot satisfy the sensor-union
+  assertion. The executable ClickHouse fixture preserves nullable
+  `source_activity_id`, applies current-member/null-provenance sample mapping,
+  and ranks representatives with source-attributed sensor evidence. During local
   validation, the first fatal read-model error was `Active activity is missing
   persisted group identity`; the shared test mirror omitted `group_id`. After
   adding that required column, the real cross-store visibility suite passed

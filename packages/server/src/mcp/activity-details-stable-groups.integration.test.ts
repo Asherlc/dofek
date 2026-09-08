@@ -34,6 +34,7 @@ const ids = {
   secondCommutePeloton: "84000000-0000-4000-8000-000000000012",
   firstStrengthExercise: "85000000-0000-4000-8000-000000000001",
   secondStrengthExercise: "85000000-0000-4000-8000-000000000002",
+  firstStrengthAppleExercise: "85000000-0000-4000-8000-000000000003",
 } as const;
 
 const primaryActivitySchema = z.object({ primary_activity_id: z.string().uuid() });
@@ -88,7 +89,7 @@ describe("MCP activity details stable group contract", () => {
         end_utc_offset_minutes, local_time_source, raw
       ) VALUES
         (${ids.firstStrengthApple}, ${ids.firstStrengthGroup}, 'apple_health', ${TEST_USER_ID},
-          'synthetic-strength-one-apple', 'strength', 'strength',
+          'synthetic-strength-one-apple', 'strength', 'functional_strength',
           '2099-04-10T17:00:00Z', '2099-04-10T18:00:00Z', 'Fixture Session Alpha', 'Strong',
           'America/Los_Angeles', -420, -420, 'device_timezone', '{"sourceName":"Strong"}'),
         (${ids.firstStrengthStrong}, ${ids.firstStrengthGroup}, 'strong-csv', ${TEST_USER_ID},
@@ -129,7 +130,8 @@ describe("MCP activity details stable group contract", () => {
     await context.db.execute(sql`INSERT INTO fitness.exercise (id, name, muscle_groups, equipment)
       VALUES
         (${ids.firstStrengthExercise}, 'Fixture Movement Alpha', ARRAY['back', 'glutes'], 'barbell'),
-        (${ids.secondStrengthExercise}, 'Fixture Movement Beta', ARRAY['quadriceps'], 'machine')`);
+        (${ids.secondStrengthExercise}, 'Fixture Movement Beta', ARRAY['quadriceps'], 'machine'),
+        (${ids.firstStrengthAppleExercise}, 'Fixture Movement Delta', ARRAY['shoulders'], 'cable')`);
     await context.db.execute(sql`INSERT INTO fitness.strength_set (
         activity_id, exercise_id, exercise_index, set_index, set_type,
         weight_kg, reps, duration_seconds
@@ -141,6 +143,13 @@ describe("MCP activity details stable group contract", () => {
         (${ids.firstStrengthStrong}, ${ids.firstStrengthExercise}, 0, 4, 'working', 45.678, 8, NULL),
         (${ids.firstStrengthStrong}, ${ids.firstStrengthExercise}, 0, 5, 'rest', 0, 0, 83),
         (${ids.firstStrengthStrong}, ${ids.firstStrengthExercise}, 0, 6, 'working', 56.789, 12, NULL),
+        (${ids.firstStrengthApple}, ${ids.firstStrengthAppleExercise}, 0, 0, 'working', 14.246, 13, NULL),
+        (${ids.firstStrengthApple}, ${ids.firstStrengthAppleExercise}, 0, 1, 'rest', 0, 0, 31),
+        (${ids.firstStrengthApple}, ${ids.firstStrengthAppleExercise}, 0, 2, 'working', 25.357, 11, NULL),
+        (${ids.firstStrengthApple}, ${ids.firstStrengthAppleExercise}, 0, 3, 'working', 36.468, 9, NULL),
+        (${ids.firstStrengthApple}, ${ids.firstStrengthAppleExercise}, 0, 4, 'working', 47.579, 7, NULL),
+        (${ids.firstStrengthApple}, ${ids.firstStrengthAppleExercise}, 0, 5, 'rest', 0, 0, 59),
+        (${ids.firstStrengthApple}, ${ids.firstStrengthAppleExercise}, 0, 6, 'working', 58.681, 5, NULL),
         (${ids.secondStrengthStrong}, ${ids.secondStrengthExercise}, 0, 0, 'working', 17.89, 6, NULL)`);
 
     await context.db.transaction((transaction) =>
@@ -148,6 +157,15 @@ describe("MCP activity details stable group contract", () => {
     );
     sensorStore = await createClickHouseTestActivitySensorStore(context);
     await seedClickHouseMetricStreamRows(context, [
+      {
+        activityId: ids.firstStrengthWhoop,
+        userId: TEST_USER_ID,
+        recordedAt: "2099-04-10T17:05:00Z",
+        channel: "heart_rate",
+        providerId: "whoop",
+        sourceType: "api",
+        scalar: 67,
+      },
       {
         activityId: ids.firstCommuteWhoop,
         userId: TEST_USER_ID,
@@ -165,6 +183,15 @@ describe("MCP activity details stable group contract", () => {
         providerId: "whoop",
         sourceType: "api",
         scalar: 79,
+      },
+      {
+        activityId: ids.secondStrengthStrong,
+        userId: TEST_USER_ID,
+        recordedAt: "2099-04-14T15:15:00Z",
+        channel: "heart_rate",
+        providerId: "strong-csv",
+        sourceType: "api",
+        scalar: 137,
       },
       {
         activityId: ids.secondCommuteWhoop,
@@ -227,6 +254,9 @@ describe("MCP activity details stable group contract", () => {
     const firstMovement = before.strength_exercises.find(
       (exercise) => exercise.exerciseName === "Fixture Movement Alpha",
     );
+    const appleMovement = before.strength_exercises.find(
+      (exercise) => exercise.exerciseName === "Fixture Movement Delta",
+    );
     expect(before.activity).toMatchObject({
       id: ids.firstStrengthGroup,
       canonical_type: "strength",
@@ -234,7 +264,12 @@ describe("MCP activity details stable group contract", () => {
       timezone: "America/Los_Angeles",
       start_utc_offset_minutes: -420,
       local_time_source: "device_timezone",
+      avg_hr: 67,
     });
+    expect(before.strength_exercises.map(({ exerciseName }) => exerciseName).sort()).toEqual([
+      "Fixture Movement Alpha",
+      "Fixture Movement Delta",
+    ]);
     expect(firstMovement?.sets.map(({ setIndex }) => setIndex)).toEqual([0, 1, 2, 3, 4, 5, 6]);
     expect(firstMovement?.sets.filter(({ setType }) => setType === "working")).toMatchObject([
       { weightKg: 12.345, reps: 2 },
@@ -246,6 +281,22 @@ describe("MCP activity details stable group contract", () => {
     expect(firstMovement?.sets.filter(({ setType }) => setType === "rest")).toEqual([
       expect.objectContaining({ setIndex: 1, weightKg: 0, reps: 0, durationSeconds: 47 }),
       expect.objectContaining({ setIndex: 5, weightKg: 0, reps: 0, durationSeconds: 83 }),
+    ]);
+    expect(
+      appleMovement?.sets.map(({ setType, weightKg, reps, durationSeconds }) => ({
+        setType,
+        weightKg,
+        reps,
+        durationSeconds,
+      })),
+    ).toEqual([
+      { setType: "working", weightKg: 14.246, reps: 13, durationSeconds: null },
+      { setType: "rest", weightKg: 0, reps: 0, durationSeconds: 31 },
+      { setType: "working", weightKg: 25.357, reps: 11, durationSeconds: null },
+      { setType: "working", weightKg: 36.468, reps: 9, durationSeconds: null },
+      { setType: "working", weightKg: 47.579, reps: 7, durationSeconds: null },
+      { setType: "rest", weightKg: 0, reps: 0, durationSeconds: 59 },
+      { setType: "working", weightKg: 58.681, reps: 5, durationSeconds: null },
     ]);
 
     const secondStrength = await getDetails(ids.secondStrengthGroup);
@@ -272,11 +323,19 @@ describe("MCP activity details stable group contract", () => {
         })
       ).json(),
     );
-    const commuteGroupIds = new Set<string>([ids.firstCommuteGroup, ids.secondCommuteGroup]);
-    const commuteRepresentatives = allRepresentatives.filter(({ activity_id }) =>
-      commuteGroupIds.has(activity_id),
+    const assertedGroupIds = new Set<string>([
+      ids.firstStrengthGroup,
+      ids.firstCommuteGroup,
+      ids.secondCommuteGroup,
+    ]);
+    const assertedRepresentatives = allRepresentatives.filter(({ activity_id }) =>
+      assertedGroupIds.has(activity_id),
     );
-    expect(commuteRepresentatives).toEqual([
+    expect(assertedRepresentatives).toEqual([
+      {
+        activity_id: ids.firstStrengthGroup,
+        primary_activity_id: ids.firstStrengthWhoop,
+      },
       {
         activity_id: ids.firstCommuteGroup,
         primary_activity_id: ids.firstCommuteWhoop,
@@ -299,14 +358,6 @@ describe("MCP activity details stable group contract", () => {
       avg_hr: 90,
     });
 
-    await context.db.execute(sql`INSERT INTO fitness.strength_set (
-        activity_id, exercise_id, exercise_index, set_index, set_type,
-        weight_kg, reps, duration_seconds
-      )
-      SELECT ${ids.firstStrengthApple}::uuid, exercise_id, exercise_index, set_index, set_type,
-        weight_kg, reps, duration_seconds
-      FROM fitness.strength_set
-      WHERE activity_id = ${ids.firstStrengthStrong}::uuid`);
     await context.db.execute(sql`UPDATE fitness.provider_priority
       SET priority = CASE provider_id WHEN 'apple_health' THEN 0 WHEN 'strong-csv' THEN 50 ELSE priority END
       WHERE provider_id IN ('apple_health', 'strong-csv')`);
@@ -324,7 +375,7 @@ describe("MCP activity details stable group contract", () => {
     expect(afterPrimary.primary_activity_id).toBe(ids.firstStrengthApple);
 
     const after = await getDetails(ids.firstStrengthGroup);
-    expect(after.activity.id).toBe(ids.firstStrengthGroup);
+    expect(after.activity).toMatchObject({ id: ids.firstStrengthGroup, avg_hr: 67 });
     expect(after.strength_exercises).toEqual(before.strength_exercises);
     expect(populatedPaths(after).sort()).toEqual(populatedPaths(before).sort());
 

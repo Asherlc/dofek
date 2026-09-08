@@ -39,25 +39,53 @@ specific journal phase.
 When activity identity or payload availability is wrong but the raw provider
 rows are intact, repair derived state in this order:
 
-1. Reconcile persisted `fitness.activity_group` membership and aliases in the
-   same PostgreSQL transaction as the activity canonical commit. Do not derive
-   a replacement group ID from the currently selected display member.
+1. Execute a bounded canonical activity replay for one pull provider represented
+   in the affected user's groups. From an authenticated MCP client with
+   `sync:write`, invoke the public operation below and wait for the returned job
+   to succeed:
+
+   ```text
+   start_provider_sync
+   {"providerId":"<provider-id>","sinceDate":"<YYYY-MM-DD>","untilDate":"<YYYY-MM-DD>"}
+   ```
+
+   The activity canonical-commit path calls group reconciliation before it
+   records the relational commit, in the same PostgreSQL transaction; see
+   [`recordRelationalCanonicalCommits`](../src/processing/processing-event-store.ts).
+   Do not derive a replacement group ID from the selected display member or
+   update group rows manually. If no affected pull provider supports a bounded
+   replay, stop: this runbook does not authorize an ad hoc group mutation.
    PostgreSQL transactions make the membership and alias changes visible as one
    unit ([PostgreSQL transaction documentation](https://www.postgresql.org/docs/current/tutorial-transactions.html)).
-2. Wait for the reconciled `group_id`, activity members, and provider priorities
-   to reach the ClickHouse PostgreSQL mirror. Then rebuild the current canonical
-   relational projection and the affected ClickHouse models in dependency
-   order. Use dbt graph selection for the bounded dependency closure rather than
-   manually inserting derived rows
+2. Before waiting for CDC, verify the regular PostgreSQL view directly:
+
+   ```sql
+   SELECT id, primary_activity_id, canonical_type, provider_type,
+          member_activity_ids
+   FROM fitness.v_activity
+   WHERE user_id = '<user-uuid>'::uuid
+     AND started_at >= '<start-utc>'::timestamptz
+     AND started_at < '<end-utc>'::timestamptz
+   ORDER BY started_at, id;
+   ```
+
+   `fitness.v_activity` is a regular view, so it reflects the underlying
+   committed PostgreSQL rows when queried; it is not a projection to rebuild
+   ([PostgreSQL `CREATE VIEW`](https://www.postgresql.org/docs/current/sql-createview.html)).
+   Stop if its group identity, membership, or representative is wrong.
+3. Wait for the reconciled `group_id`, activity members, and provider priorities
+   to reach the ClickHouse PostgreSQL mirror. Then rebuild the affected
+   ClickHouse models in dependency order. Use dbt graph selection for the
+   bounded dependency closure rather than manually inserting derived rows
    ([dbt graph operators](https://docs.getdbt.com/reference/node-selection/graph-operators)).
-3. Verify the stable group ID through direct group, member, and historical alias
+4. Verify the stable group ID through direct group, member, and historical alias
    lookups. A member or alias request must return the stable group and expose
    `resolved_from`. Verify structured sets and deduplicated sensor, GPS, and
    elevation payloads independently of the selected representative. Use
    ClickHouse `FINAL` for operator verification of current
    `ReplacingMergeTree` state
    ([ClickHouse `FINAL` modifier](https://clickhouse.com/docs/sql-reference/statements/select/from#final-modifier)).
-4. Re-import Strong only when an inspection proves the stored provider source
+5. Re-import Strong only when an inspection proves the stored provider source
    rows or strength-set rows are corrupt. Empty hydrated output, a changed
    representative, or a stale read model is not evidence that the immutable
    provider export must be replayed. Preserve the original upload and use the
