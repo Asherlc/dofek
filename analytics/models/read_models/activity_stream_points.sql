@@ -24,7 +24,8 @@ current_activity AS (
     SELECT
         activity_id,
         user_id,
-        started_at
+        started_at,
+        refresh_version
     FROM {{ ref('deduped_activities') }} FINAL
     WHERE is_deleted = 0
 ),
@@ -158,6 +159,8 @@ restored_dirty_keys AS (
             ON current_activity.activity_id = tombstoned_stream_points.activity_id
             AND current_activity.user_id = tombstoned_stream_points.user_id
         WHERE tombstoned_stream_points.is_deleted = 1
+            AND current_activity.refresh_version
+                > tombstoned_stream_points.stream_refresh_version
     {% else %}
         SELECT
             CAST(null, 'Nullable(UUID)') AS activity_id,

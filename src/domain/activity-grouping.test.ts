@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { type ActivityGroupingInput, reconcileActivityGroups } from "./activity-grouping.ts";
 
 const january1 = new Date("2026-01-01T00:00:00.000Z");
@@ -214,6 +214,34 @@ describe("activity group reconciliation", () => {
     });
 
     expect(result.components[0]?.target).toEqual({ groupId: "group-a", kind: "existing" });
+  });
+
+  it("uses code-unit UUID ordering independently of ambient locale collation", () => {
+    const lowerUuid = "00000000-0000-4000-8000-00000000000a";
+    const higherUuid = "00000000-0000-4000-8000-00000000000b";
+    const localeCompare = vi
+      .spyOn(String.prototype, "localeCompare")
+      .mockImplementation(function reverseCodeUnitOrder(this: string, other: string) {
+        const left = String(this);
+        return left < other ? 1 : left > other ? -1 : 0;
+      });
+
+    let anchorIds: string[];
+    try {
+      anchorIds = permutations([lowerUuid, higherUuid]).map((ids) => {
+        const result = reconcileActivityGroups({
+          groups: [],
+          members: ids.map((id) => ({ id, createdAt: january1, groupId: null })),
+          overlaps: [{ activityId: lowerUuid, overlappingActivityId: higherUuid }],
+        });
+        const target = result.components[0]?.target;
+        return target?.kind === "new" ? target.anchorActivityId : "missing";
+      });
+    } finally {
+      localeCompare.mockRestore();
+    }
+
+    expect(anchorIds).toEqual([lowerUuid, lowerUuid]);
   });
 
   it("builds transitive components and ignores overlap edges outside the input members", () => {

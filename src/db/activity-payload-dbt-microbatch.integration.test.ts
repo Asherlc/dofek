@@ -370,7 +370,7 @@ describe("activity payload dbt batch reconciliation", () => {
       database,
       movedRouteGroupId,
     );
-    await setRouteGroupDeleted(client, database, true, 3);
+    await setRouteGroupDeleted(client, database, true);
     await runDbtBatch(
       database,
       artifactDirectory,
@@ -394,7 +394,7 @@ describe("activity payload dbt batch reconciliation", () => {
       tombstoneOnlyGroupId,
     );
 
-    await setRouteGroupDeleted(client, database, false, 4);
+    await setRouteGroupDeleted(client, database, false);
     await runDbtBatch(
       database,
       artifactDirectory,
@@ -416,6 +416,33 @@ describe("activity payload dbt batch reconciliation", () => {
       tombstoneOnlyPriorVersion,
     );
     await expectDeletedLocationStream(client, database, tombstoneOnlyGroupId);
+    expect(await getLocationStreamVersion(client, database, unrelatedRouteGroupId)).toBe(
+      unchangedStreamVersion,
+    );
+
+    const processedTombstoneVersion = await getLocationStreamVersion(
+      client,
+      database,
+      tombstoneOnlyGroupId,
+    );
+    const processedTombstoneTransitionCount = await getStreamTransitionCount(
+      client,
+      database,
+      tombstoneOnlyGroupId,
+    );
+    await runDbtBatch(
+      database,
+      artifactDirectory,
+      ["activity_stream_points"],
+      "2026-09-07",
+      "2026-09-08",
+    );
+    expect(await getLocationStreamVersion(client, database, tombstoneOnlyGroupId)).toBe(
+      processedTombstoneVersion,
+    );
+    expect(await getStreamTransitionCount(client, database, tombstoneOnlyGroupId)).toBe(
+      processedTombstoneTransitionCount,
+    );
     expect(await getLocationStreamVersion(client, database, unrelatedRouteGroupId)).toBe(
       unchangedStreamVersion,
     );
@@ -547,14 +574,18 @@ async function setRouteGroupDeleted(
   client: ClickHouseClient,
   database: string,
   isDeleted: boolean,
-  version: number,
 ): Promise<void> {
   await client.command({
     query: `INSERT INTO ${database}.deduped_activities
       SELECT activity_id, user_id, started_at, ended_at, source_synced_at, member_activity_ids,
-        toUInt64(${version}), toUInt8(${isDeleted ? 1 : 0}),
+        stream_state.next_refresh_version, toUInt8(${isDeleted ? 1 : 0}),
         refreshed_at + INTERVAL 1 MICROSECOND
       FROM ${database}.deduped_activities FINAL
+      CROSS JOIN (
+        SELECT max(refresh_version) + 1 AS next_refresh_version
+        FROM ${database}.activity_stream_points
+        WHERE activity_id = toUUID('${movedRouteGroupId}')
+      ) AS stream_state
       WHERE activity_id = toUUID('${movedRouteGroupId}')`,
   });
 }
@@ -568,7 +599,7 @@ async function seedTombstoneOnlyCurrentGroup(
       ('${tombstoneOnlyGroupId}', '${userId}',
        toDateTime64('2026-09-03 10:00:00', 6, 'UTC'),
        toDateTime64('2026-09-03 11:00:00', 6, 'UTC'),
-       toDateTime64('2026-09-03 12:00:00', 9, 'UTC'), ['${tombstoneOnlyMemberId}'], 1, 0,
+       toDateTime64('2026-09-03 12:00:00', 9, 'UTC'), ['${tombstoneOnlyMemberId}'], 2, 0,
        toDateTime64('2026-09-03 12:00:00', 9, 'UTC'))`,
     `INSERT INTO ${database}.activity_stream_points
       SELECT toUUID('${userId}'), toUUID('${tombstoneOnlyGroupId}'),
@@ -674,6 +705,24 @@ async function getLocationStreamVersion(
   const [row] = z.array(z.object({ refresh_version: z.string() })).parse(await result.json());
   if (!row) throw new Error(`Missing stream row for activity ${activityId}`);
   return row.refresh_version;
+}
+
+async function getStreamTransitionCount(
+  client: ClickHouseClient,
+  database: string,
+  activityId: string,
+): Promise<number> {
+  const result = await client.query({
+    query: `SELECT toUInt32(uniqExact(refresh_version)) AS transition_count
+      FROM ${database}.activity_stream_points
+      WHERE activity_id = toUUID('${activityId}')`,
+    format: "JSONEachRow",
+  });
+  const [row] = z
+    .array(z.object({ transition_count: z.coerce.number() }))
+    .parse(await result.json());
+  if (!row) throw new Error(`Missing stream transition count for activity ${activityId}`);
+  return row.transition_count;
 }
 
 async function getLocationSampleVersion(

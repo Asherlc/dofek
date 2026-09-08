@@ -1,4 +1,5 @@
 import type { CanonicalActivityType } from "@dofek/training/activity-types";
+import { compareCodeUnits } from "./code-unit-comparator.ts";
 
 export interface ActivityRepresentativePayload {
   readonly completeStrengthWorkingSetCount: number;
@@ -94,7 +95,7 @@ function compareActivityRepresentativeRanks(
   const priorityComparison = left[10] - right[10];
   if (priorityComparison !== 0) return priorityComparison;
 
-  return left[11].localeCompare(right[11]);
+  return compareCodeUnits(left[11], right[11]);
 }
 
 export function selectActivityRepresentative<T extends ActivityRepresentativeCandidate>(

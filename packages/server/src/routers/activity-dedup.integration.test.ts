@@ -172,12 +172,15 @@ describe("Persisted PostgreSQL activity representatives", () => {
   });
 
   it.each(["", "   ", " STRENGTH "])(
-    "treats an unrefined provider type %j as equal",
+    "normalizes an unrefined provider type %j before comparing priority",
     async (providerType) => {
+      await context.db.execute(sql`UPDATE fitness.provider_priority
+        SET priority = CASE provider_id WHEN 'wahoo' THEN 99 ELSE 1 END
+        WHERE provider_id IN ('wahoo', 'apple_health')`);
       await context.db.execute(
         sql`UPDATE fitness.activity SET provider_type = ${providerType} WHERE id = ${firstId}::uuid`,
       );
-      expect((await readProjection())[0]?.primary_activity_id).toBe(firstId);
+      expect((await readProjection())[0]?.primary_activity_id).toBe(secondId);
     },
   );
 

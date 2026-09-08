@@ -1,3 +1,5 @@
+import { compareCodeUnits } from "./code-unit-comparator.ts";
+
 export interface ActivityGroupMember {
   readonly id: string;
   readonly createdAt: Date;
@@ -48,11 +50,15 @@ export interface ActivityGroupingDecision {
 }
 
 function compareMembers(left: ActivityGroupMember, right: ActivityGroupMember): number {
-  return left.createdAt.getTime() - right.createdAt.getTime() || left.id.localeCompare(right.id);
+  return (
+    left.createdAt.getTime() - right.createdAt.getTime() || compareCodeUnits(left.id, right.id)
+  );
 }
 
 function compareGroups(left: ExistingActivityGroup, right: ExistingActivityGroup): number {
-  return left.createdAt.getTime() - right.createdAt.getTime() || left.id.localeCompare(right.id);
+  return (
+    left.createdAt.getTime() - right.createdAt.getTime() || compareCodeUnits(left.id, right.id)
+  );
 }
 
 function connectedComponents(
@@ -127,7 +133,7 @@ export function reconcileActivityGroups(input: ActivityGroupingInput): ActivityG
       const winner = retainingGroups[0];
       component.sort(compareMembers);
       const newGroupAnchorActivityId = component[0].id;
-      component.sort((left, right) => left.id.localeCompare(right.id));
+      component.sort((left, right) => compareCodeUnits(left.id, right.id));
 
       if (winner === undefined) {
         return {
@@ -148,9 +154,9 @@ export function reconcileActivityGroups(input: ActivityGroupingInput): ActivityG
   );
 
   return {
-    aliases: aliases.sort((left, right) => left.aliasGroupId.localeCompare(right.aliasGroupId)),
+    aliases: aliases.sort((left, right) => compareCodeUnits(left.aliasGroupId, right.aliasGroupId)),
     components: componentDecisions.sort((left, right) =>
-      left.memberIds[0].localeCompare(right.memberIds[0]),
+      compareCodeUnits(left.memberIds[0], right.memberIds[0]),
     ),
     memberships: componentDecisions.flatMap((component) =>
       component.memberIds.map((activityId) => ({ activityId, target: component.target })),

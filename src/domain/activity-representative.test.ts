@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   type ActivityRepresentativeCandidate,
   activityRepresentativeRank,
@@ -174,6 +174,29 @@ describe("activity representative selection", () => {
         "00000000-0000-0000-0000-000000000004",
       );
     }
+  });
+
+  it("uses code-unit UUID ordering independently of ambient locale collation", () => {
+    const lowerUuid = "00000000-0000-4000-8000-00000000000a";
+    const higherUuid = "00000000-0000-4000-8000-00000000000b";
+    const members = [candidate({ id: lowerUuid }), candidate({ id: higherUuid })];
+    const localeCompare = vi
+      .spyOn(String.prototype, "localeCompare")
+      .mockImplementation(function reverseCodeUnitOrder(this: string, other: string) {
+        const left = String(this);
+        return left < other ? 1 : left > other ? -1 : 0;
+      });
+
+    let selectedIds: (string | undefined)[];
+    try {
+      selectedIds = permutations(members).map(
+        (permutation) => selectActivityRepresentative(permutation)?.id,
+      );
+    } finally {
+      localeCompare.mockRestore();
+    }
+
+    expect(selectedIds).toEqual([lowerUuid, lowerUuid]);
   });
 
   it("returns the documented rank tuple", () => {
