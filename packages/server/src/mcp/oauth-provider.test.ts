@@ -218,6 +218,7 @@ describe("DofekOAuthServerProvider", () => {
       const html = responseMocks.send.mock.calls[0]?.[0] ?? "";
       expect(html).toContain("Allow the MCP client to access Dofek?");
       expect(html).toContain("View your daily health summaries");
+      expect(html).toContain("Log health observations");
       expect(html).toContain("Search your activities");
       expect(html).toContain("View your connected data sources");
       expect(html).toContain("Start data synchronization");

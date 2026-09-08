@@ -157,7 +157,14 @@ describe("McpTokensPanel", () => {
     await waitFor(() => {
       expect(createTokenMutateAsync).toHaveBeenCalledWith({
         name: "Codex",
-        scopes: ["health:read", "activity:read", "nutrition:read", "providers:read", "sync:write"],
+        scopes: [
+          "health:read",
+          "health:write",
+          "activity:read",
+          "nutrition:read",
+          "providers:read",
+          "sync:write",
+        ],
         expiresAt: null,
       });
     });
@@ -171,6 +178,7 @@ describe("McpTokensPanel", () => {
 
     for (const label of [
       "Health summaries",
+      "Log health observations",
       "Activity history",
       "Nutrition summaries",
       "Provider status",
@@ -224,7 +232,14 @@ describe("McpTokensPanel", () => {
     await waitFor(() => {
       expect(createTokenMutateAsync).toHaveBeenCalledWith({
         name: "Codex",
-        scopes: ["health:read", "activity:read", "nutrition:read", "providers:read", "sync:write"],
+        scopes: [
+          "health:read",
+          "health:write",
+          "activity:read",
+          "nutrition:read",
+          "providers:read",
+          "sync:write",
+        ],
         expiresAt: "2026-06-01T23:59:59.999Z",
       });
     });

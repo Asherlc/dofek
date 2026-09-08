@@ -4,7 +4,7 @@
   "app_info": {
     "display_name": "Dofek",
     "subtitle": "Personal health analytics",
-    "description": "Dofek helps users review server-computed health trends, sleep, activities, nutrition, body metrics, subjective health events, and connected provider status, with optional food logging and provider sync actions.",
+    "description": "Dofek helps users review server-computed health trends, sleep, activities, nutrition, body metrics, subjective health events, and connected provider status, with optional injury logging, food logging, and provider sync actions.",
     "category": "LIFESTYLE"
   },
   "tools": {
@@ -150,6 +150,22 @@
         "read_only_justification": "Only retrieves the user's recorded check-ins, symptoms, and injury events.",
         "open_world_justification": "Does not write to public internet state or third-party systems.",
         "destructive_justification": "Does not delete, overwrite, revoke access, or perform irreversible actions."
+      }
+    },
+    "list_body_regions": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Only retrieves canonical body-region IDs and labels used for private subjective health records.",
+        "open_world_justification": "Does not write to public internet state or third-party systems.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform irreversible actions."
+      }
+    },
+    "log_injury": {
+      "annotations": { "readOnlyHint": false, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Creates a private injury or niggle event in the user's Dofek account.",
+        "open_world_justification": "Only changes the user's private Dofek data and does not publish externally.",
+        "destructive_justification": "Creates an event but does not delete, overwrite, revoke access, or perform irreversible actions."
       }
     },
     "log_food": {

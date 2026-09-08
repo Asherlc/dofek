@@ -135,7 +135,7 @@ Input:
 ```json
 {
   "name": "Codex",
-  "scopes": ["health:read", "activity:read", "nutrition:read", "providers:read", "sync:write"],
+  "scopes": ["health:read", "health:write", "activity:read", "nutrition:read", "providers:read", "sync:write"],
   "expiresAt": null
 }
 ```
@@ -149,6 +149,7 @@ List existing token metadata with `mcp.listTokens`. Revoke a token with `mcp.rev
 | Scope | Allows |
 |-------|--------|
 | `health:read` | Read daily health summaries. |
+| `health:write` | Log user-owned health observations such as injuries. |
 | `activity:read` | Search activity summaries. |
 | `nutrition:read` | Read daily nutrition summaries. |
 | `providers:read` | List configured providers and connection status. |
@@ -175,6 +176,9 @@ The canonical tool names, schemas, and scope checks are defined in the [MCP tool
 | `get_finger_loading` | `activity:read` | Returns structured finger-loading protocols, effective load, and total time under tension inside exact date boundaries. |
 | `get_nutrition_summary` | `nutrition:read` | Returns daily calorie, macronutrient, fiber, and meal totals. |
 | `get_body_metrics` | `health:read` | Returns one reconciled body-composition record per local date plus all per-source values. |
+| `get_subjective_timeline` | `health:read` | Returns recorded check-ins, symptoms, and injury events for an exact date range. |
+| `list_body_regions` | `health:read` | Lists canonical body-region IDs and labels accepted by subjective health tools. |
+| `log_injury` | `health:write` | Logs a private injury or niggle with onset, optional resolution and severity, description, and canonical body region. |
 | `list_providers` | `providers:read` | Lists configured providers and status. |
 | `start_provider_sync` | `sync:write` | Enqueues a provider sync job. |
 
@@ -189,7 +193,7 @@ OpenAI likewise treats schemas as user-facing tool metadata and recommends an
 output schema for structured results ([OpenAI: Build an MCP
 server](https://developers.openai.com/plugins/build/mcp-server#define-tools-from-user-goals)).
 
-For the 19 ordinary tools, the declared schema and `structuredContent` use the
+For the 21 ordinary tools, the declared schema and `structuredContent` use the
 object-root envelope `{ "result": ... }`. This makes scalar, array, `null`,
 and object natural results valid object-root tool outputs without changing the
 existing pretty-printed JSON text in `content`. For example, an ordinary tool

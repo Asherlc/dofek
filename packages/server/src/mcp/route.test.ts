@@ -40,10 +40,13 @@ const toolTestMocks = vi.hoisted(() => {
     getScheduledSyncHealth: vi.fn(),
     getProviderSyncQueue: vi.fn(),
     getProviderRateLimitCooldown: vi.fn(),
+    invalidateUserQueryDomains: vi.fn(),
     queueAdd: vi.fn(),
     sleepListRange: vi.fn(),
     strengthExercises: vi.fn(),
     supplementsList: vi.fn(),
+    subjectiveCreateInjury: vi.fn(),
+    subjectiveRegions: vi.fn(),
     subjectiveTimeline: vi.fn(),
     trainingLoadListRange: vi.fn(),
     withUserWriteFence: vi.fn(),
@@ -63,7 +66,11 @@ const toolTestMocks = vi.hoisted(() => {
       return { list: mocks.dailyMetricsList, listRange: mocks.dailyMetricsListRange };
     }),
     subjectiveRepository: vi.fn(function vitestConstructor() {
-      return { timeline: mocks.subjectiveTimeline };
+      return {
+        createInjury: mocks.subjectiveCreateInjury,
+        regions: mocks.subjectiveRegions,
+        timeline: mocks.subjectiveTimeline,
+      };
     }),
   };
 });
@@ -159,9 +166,14 @@ vi.mock("../repositories/sync-repository.ts", () => ({
   }),
 }));
 
-vi.mock("../repositories/subjective-repository.ts", () => ({
-  SubjectiveRepository: toolTestMocks.subjectiveRepository,
-}));
+vi.mock("../repositories/subjective-repository.ts", async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import("../repositories/subjective-repository.ts")>();
+  return {
+    ...original,
+    SubjectiveRepository: toolTestMocks.subjectiveRepository,
+  };
+});
 
 vi.mock("../routers/sync-helpers.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("../routers/sync-helpers.ts")>();
@@ -204,6 +216,10 @@ vi.mock("dofek/lib/error-reporting", async (importOriginal) => {
 vi.mock("dofek/db/account-erasure", () => ({
   withAccountErasureUserWriteFence: (...args: unknown[]) =>
     toolTestMocks.withUserWriteFence(...args),
+}));
+
+vi.mock("dofek/lib/cache", () => ({
+  invalidateUserQueryDomains: toolTestMocks.invalidateUserQueryDomains,
 }));
 
 vi.mock("./tools.ts", async (importOriginal) => {
@@ -276,6 +292,7 @@ function createTestApp(sensorStore = undefined) {
 
 const mcpScopes = [
   "health:read",
+  "health:write",
   "activity:read",
   "nutrition:read",
   "providers:read",
@@ -499,9 +516,11 @@ describe("createMcpRouter", () => {
       getJob: vi.fn(),
     });
     toolTestMocks.getProviderRateLimitCooldown.mockResolvedValue(null);
+    toolTestMocks.invalidateUserQueryDomains.mockResolvedValue(undefined);
     toolTestMocks.queueAdd.mockResolvedValue({ id: "job-123" });
     toolTestMocks.sleepListRange.mockResolvedValue([]);
     toolTestMocks.strengthExercises.mockResolvedValue([]);
+    toolTestMocks.subjectiveRegions.mockResolvedValue([]);
     toolTestMocks.subjectiveTimeline.mockResolvedValue({ checkIns: [], injuries: [] });
     toolTestMocks.withUserWriteFence.mockImplementation(
       async (
@@ -741,6 +760,26 @@ describe("createMcpRouter", () => {
       required: ["start_date", "end_date"],
       type: "object",
     });
+    expect(findListedTool(tools, "list_body_regions").inputSchema).toMatchObject({
+      properties: {},
+      type: "object",
+    });
+    expect(findListedTool(tools, "log_injury").inputSchema).toMatchObject({
+      properties: {
+        body_region_id: { minLength: 1, type: "string" },
+        description: { minLength: 1, type: "string" },
+        kind: { enum: ["injury", "niggle"], type: "string" },
+        onset_date: { format: "date", type: "string" },
+        resolved_date: {
+          anyOf: [{ format: "date", type: "string" }, { type: "null" }],
+        },
+        severity: {
+          anyOf: [{ maximum: 10, minimum: 0, type: "integer" }, { type: "null" }],
+        },
+      },
+      required: ["kind", "body_region_id", "onset_date", "description"],
+      type: "object",
+    });
     expect(findListedTool(tools, "get_sleep_summary").inputSchema).toMatchObject({
       required: ["start_date", "end_date"],
       type: "object",
@@ -834,12 +873,14 @@ describe("createMcpRouter", () => {
       "get_nutrition_summary",
       "get_body_metrics",
       "get_subjective_timeline",
+      "list_body_regions",
       "get_supplements",
       "list_providers",
       "render_health_explorer",
     ]) {
       expect(findListedTool(tools, name).annotations).toMatchObject({ readOnlyHint: true });
     }
+    expect(findListedTool(tools, "log_injury").annotations?.readOnlyHint).not.toBe(true);
     expect(findListedTool(tools, "start_provider_sync").annotations?.readOnlyHint).not.toBe(true);
   });
 
@@ -904,6 +945,8 @@ describe("createMcpRouter", () => {
         name: "get_subjective_timeline",
         path: ["result", "injuries", "[]", "resolved_date"],
       },
+      { name: "list_body_regions", path: ["result", "[]", "label"] },
+      { name: "log_injury", path: ["result", "body_region_id"] },
       { name: "list_providers", path: ["result", "[]", "sync_health", "last_success"] },
       { name: "start_provider_sync", path: ["result", "queueName"] },
       {
@@ -1053,6 +1096,149 @@ describe("createMcpRouter", () => {
       "UTC",
     );
     expect(toolTestMocks.subjectiveTimeline).toHaveBeenCalledWith("2026-05-01", "2026-05-20");
+  });
+
+  it("lists the canonical body regions available for injury logging", async () => {
+    authorizeMcpToken(["health:read"]);
+    toolTestMocks.subjectiveRegions.mockResolvedValue([
+      {
+        id: "left_knee",
+        kind: "joint",
+        label: "Left knee",
+        parent_id: "left_leg",
+        sort_order: 20,
+      },
+    ]);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("list_body_regions", {}),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual([
+      {
+        id: "left_knee",
+        kind: "joint",
+        label: "Left knee",
+        parent_id: "left_leg",
+        sort_order: 20,
+      },
+    ]);
+  });
+
+  it("logs a user-scoped injury with optional fields defaulted to unrecorded", async () => {
+    authorizeMcpToken(["health:write"]);
+    toolTestMocks.subjectiveRegions.mockResolvedValue([
+      {
+        id: "left_knee",
+        kind: "joint",
+        label: "Left knee",
+        parent_id: "left_leg",
+        sort_order: 20,
+      },
+    ]);
+    toolTestMocks.subjectiveCreateInjury.mockResolvedValue({
+      body_region_id: "left_knee",
+      created_at: "2026-09-08T12:00:00.000Z",
+      description: "Sore after trail run",
+      id: "11111111-1111-4111-8111-111111111111",
+      kind: "niggle",
+      onset_date: "2026-09-07",
+      resolved_date: null,
+      severity: null,
+      updated_at: "2026-09-08T12:00:00.000Z",
+    });
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer write-token",
+      body: createToolCallRequest("log_injury", {
+        body_region_id: "left_knee",
+        description: "Sore after trail run",
+        kind: "niggle",
+        onset_date: "2026-09-07",
+      }),
+    });
+
+    expect(parseToolCallText(response.text)).toMatchObject({
+      body_region_id: "left_knee",
+      description: "Sore after trail run",
+      kind: "niggle",
+      resolved_date: null,
+      severity: null,
+    });
+    expect(toolTestMocks.withUserWriteFence).toHaveBeenCalledOnce();
+    expect(toolTestMocks.subjectiveCreateInjury).toHaveBeenCalledWith({
+      bodyRegionId: "left_knee",
+      description: "Sore after trail run",
+      kind: "niggle",
+      onsetDate: "2026-09-07",
+      resolvedDate: null,
+      severity: null,
+    });
+    expect(toolTestMocks.invalidateUserQueryDomains).toHaveBeenCalledWith("user-id", [
+      "subjective",
+    ]);
+  });
+
+  it("rejects injury logging when the body region is unknown", async () => {
+    authorizeMcpToken(["health:write"]);
+    toolTestMocks.subjectiveRegions.mockResolvedValue([]);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer write-token",
+      body: createToolCallRequest("log_injury", {
+        body_region_id: "unknown_region",
+        description: "Pain",
+        kind: "injury",
+        onset_date: "2026-09-07",
+      }),
+    });
+
+    const parsedResponse = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text));
+    expect(parsedResponse.result.isError).toBe(true);
+    expect(parsedResponse.result.content[0]?.text).toBe(
+      "Unknown body_region_id: unknown_region. Use list_body_regions to choose a valid ID.",
+    );
+    expect(toolTestMocks.subjectiveCreateInjury).not.toHaveBeenCalled();
+  });
+
+  it("rejects injury resolution dates before onset", async () => {
+    authorizeMcpToken(["health:write"]);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer write-token",
+      body: createToolCallRequest("log_injury", {
+        body_region_id: "left_knee",
+        description: "Pain",
+        kind: "injury",
+        onset_date: "2026-09-07",
+        resolved_date: "2026-09-06",
+      }),
+    });
+
+    const parsedResponse = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text));
+    expect(parsedResponse.result.isError).toBe(true);
+    expect(parsedResponse.result.content[0]?.text).toBe(
+      "resolved_date must be on or after onset_date",
+    );
+    expect(toolTestMocks.subjectiveCreateInjury).not.toHaveBeenCalled();
+  });
+
+  it("requires health write permission to log an injury", async () => {
+    authorizeMcpToken(["health:read"]);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer read-token",
+      body: createToolCallRequest("log_injury", {
+        body_region_id: "left_knee",
+        description: "Pain",
+        kind: "injury",
+        onset_date: "2026-09-07",
+      }),
+    });
+
+    expect(response.text).toContain("requires scope: health:write");
+    expect(toolTestMocks.subjectiveCreateInjury).not.toHaveBeenCalled();
   });
 
   it("returns a tool error for a reversed subjective timeline range", async () => {
