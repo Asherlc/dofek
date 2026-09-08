@@ -17,6 +17,7 @@ const sourceEntryId = "30000000-0000-4000-8000-000000000001";
 const firstVersion = "40000000-0000-4000-8000-000000000001";
 const secondVersion = "40000000-0000-4000-8000-000000000002";
 const requestId = "50000000-0000-4000-8000-000000000001";
+const changeId = "60000000-0000-4000-8000-000000000001";
 
 function record(overrides: Partial<EffectiveFoodRecord> = {}): EffectiveFoodRecord {
   return {
@@ -43,6 +44,7 @@ function record(overrides: Partial<EffectiveFoodRecord> = {}): EffectiveFoodReco
 
 function head(overrides: Partial<FoodRecordHead> = {}): FoodRecordHead {
   return {
+    changeId,
     identityId: recordId,
     sourceEntryId,
     version: secondVersion,
@@ -64,6 +66,7 @@ function setup(overrides: Partial<FoodRecordRepositoryCommands> = {}) {
     createSourceAndIdentity: vi.fn(async () => head({ kind: "create", predecessorVersion: null })),
     appendChange: vi.fn(async () => head()),
     findRequest: vi.fn(async () => null),
+    get: vi.fn(async () => record({ version: secondVersion })),
     getAtVersion: vi.fn(async (_identityId, version) => {
       if (version === null) return record({ version: null });
       return snapshots.get(version) ?? null;
@@ -100,7 +103,7 @@ describe("FoodRecordService", () => {
       nutrients: { calories: 220 },
     });
     const { invalidateNutritionCaches, repository, service, withUserWriteFence } = setup({
-      getAtVersion: vi.fn(async () => created),
+      get: vi.fn(async () => created),
     });
 
     await expect(
@@ -116,7 +119,11 @@ describe("FoodRecordService", () => {
         servingWeightGrams: 180,
         nutrients: { calories: 220 },
       }),
-    ).resolves.toEqual({ record: created, affectedDates: ["2026-09-07"] });
+    ).resolves.toEqual({
+      operation: { changeId, resultingVersion: secondVersion, replayed: false },
+      record: created,
+      affectedDates: ["2026-09-07"],
+    });
 
     expect(withUserWriteFence).toHaveBeenCalledOnce();
     expect(repository.createSourceAndIdentity).toHaveBeenCalledWith(
@@ -209,20 +216,22 @@ describe("FoodRecordService", () => {
     );
   });
 
-  it("returns the original target snapshot for an exact replay without invalidating caches", async () => {
-    const replayed = record({ version: firstVersion, foodName: "Original result" });
+  it("returns the original receipt and current record for replay without invalidation metadata", async () => {
+    const current = record({ version: secondVersion, foodName: "Current result" });
     const { invalidateNutritionCaches, repository, service } = setup({
       appendChange: vi.fn(async () =>
         head({ version: firstVersion, predecessorVersion: null, replayed: true }),
       ),
-      getAtVersion: vi.fn(async () => replayed),
+      get: vi.fn(async () => current),
     });
 
     await expect(service.delete({ recordId, expectedVersion: null, requestId })).resolves.toEqual({
-      record: replayed,
-      affectedDates: ["2026-09-07"],
+      operation: { changeId, resultingVersion: firstVersion, replayed: true },
+      record: current,
+      affectedDates: [],
     });
-    expect(repository.getAtVersion).toHaveBeenCalledWith(recordId, firstVersion);
+    expect(repository.get).toHaveBeenCalledWith(recordId);
+    expect(repository.getAtVersion).not.toHaveBeenCalled();
     expect(invalidateNutritionCaches).not.toHaveBeenCalled();
   });
 
@@ -284,11 +293,8 @@ describe("FoodRecordService", () => {
 
   it("returns sorted old and new dates for a date-moving update", async () => {
     const { service } = setup({
-      getAtVersion: vi.fn(async (_identityId, version) =>
-        version === firstVersion
-          ? record({ date: "2026-09-08" })
-          : record({ version: secondVersion, date: "2026-09-06" }),
-      ),
+      get: vi.fn(async () => record({ version: secondVersion, date: "2026-09-06" })),
+      getAtVersion: vi.fn(async () => record({ date: "2026-09-08" })),
     });
 
     await expect(
@@ -301,6 +307,9 @@ describe("FoodRecordService", () => {
         nutrientSet: {},
         nutrientClear: [],
       }),
-    ).resolves.toMatchObject({ affectedDates: ["2026-09-06", "2026-09-08"] });
+    ).resolves.toMatchObject({
+      operation: { changeId, resultingVersion: secondVersion, replayed: false },
+      affectedDates: ["2026-09-06", "2026-09-08"],
+    });
   });
 });

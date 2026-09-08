@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { ensureProvider } from "../../../../src/db/tokens.ts";
 import { FoodRecordRepository } from "../repositories/food-record-repository.ts";
@@ -28,12 +28,16 @@ describe.sequential("FoodRecordService with Postgres", () => {
     await context?.cleanup();
   });
 
-  function service(forUser = userId, clientId = "token:integration-client") {
+  function service(
+    forUser = userId,
+    clientId = "token:integration-client",
+    invalidateNutritionCaches: (userId: string) => Promise<void> = async () => undefined,
+  ) {
     return new FoodRecordService({
       database: context.db,
       userId: forUser,
       actor: { channel: "mcp", clientId },
-      invalidateNutritionCaches: async () => undefined,
+      invalidateNutritionCaches,
     });
   }
 
@@ -150,7 +154,11 @@ describe.sequential("FoodRecordService with Postgres", () => {
       nutrientSet: { sodium: null, protein: 15 },
       nutrientClear: ["calories"],
     });
-    expect(replay).toEqual(updated);
+    expect(replay).toEqual({
+      operation: { ...updated.operation, replayed: true },
+      record: restored.record,
+      affectedDates: [],
+    });
 
     const history = await new FoodRecordRepository(context.db, userId).history(
       created.record.recordId,
@@ -280,6 +288,147 @@ describe.sequential("FoodRecordService with Postgres", () => {
         requestId: randomUUID(),
       }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("replays a stable receipt with current replacement facts and no new side effects", async () => {
+    const externalId = randomUUID();
+    const sourceEntryId = await addProviderFood({
+      externalId,
+      date: "2026-09-04",
+      name: "Original source",
+      nutrients: { calories: 300, protein: 10 },
+    });
+    const repository = new FoodRecordRepository(context.db, userId);
+    const { identityId } = await repository.resolveStableIdentity(sourceEntryId);
+    const invalidator = vi.fn(async () => undefined);
+    const commands = service(userId, "token:replacement-replay", invalidator);
+    const updateRequest = randomUUID();
+    const updated = await commands.update({
+      recordId: identityId,
+      expectedVersion: null,
+      requestId: updateRequest,
+      set: { meal: "dinner" },
+      clear: [],
+      nutrientSet: { protein: 20 },
+      nutrientClear: [],
+    });
+    expect(updated).toMatchObject({
+      operation: { replayed: false },
+      record: {
+        sourceEntryId,
+        date: "2026-09-04",
+        foodName: "Original source",
+        nutrients: { calories: 300, protein: 20 },
+      },
+      affectedDates: ["2026-09-04"],
+    });
+
+    await context.db.execute(sql`DELETE FROM fitness.food_entry WHERE id = ${sourceEntryId}`);
+    const replacementId = await addProviderFood({
+      externalId,
+      date: "2026-09-09",
+      name: "Replacement source",
+      nutrients: { calories: 450, protein: 12 },
+    });
+    const beforeReplay = await context.db.execute(sql`
+      SELECT COUNT(*)::int AS count
+      FROM fitness.human_record_change
+      WHERE user_id = ${userId} AND request_id = ${updateRequest}
+    `);
+
+    const replay = await commands.update({
+      recordId: identityId,
+      expectedVersion: null,
+      requestId: updateRequest,
+      set: { meal: "dinner" },
+      clear: [],
+      nutrientSet: { protein: 20 },
+      nutrientClear: [],
+    });
+
+    expect(replay.operation).toEqual({ ...updated.operation, replayed: true });
+    expect(replay.affectedDates).toEqual([]);
+    expect(replay.record).toMatchObject({
+      sourceEntryId: replacementId,
+      date: "2026-09-09",
+      meal: "dinner",
+      foodName: "Replacement source",
+      nutrients: { calories: 450, protein: 20 },
+    });
+    expect(
+      await context.db.execute(sql`
+        SELECT COUNT(*)::int AS count
+        FROM fitness.human_record_change
+        WHERE user_id = ${userId} AND request_id = ${updateRequest}
+      `),
+    ).toEqual(beforeReplay);
+    expect(invalidator).toHaveBeenCalledOnce();
+  });
+
+  it("reports the stored identity's current head for changed create request reuse", async () => {
+    const commands = service(userId, "token:create-conflict");
+    const createRequest = randomUUID();
+    const created = await commands.create({
+      requestId: createRequest,
+      date: "2026-09-05",
+      foodName: "Create conflict source",
+      nutrients: {},
+    });
+    const deleted = await commands.delete({
+      recordId: created.record.recordId,
+      expectedVersion: created.record.version,
+      requestId: randomUUID(),
+    });
+
+    await expect(
+      commands.create({
+        requestId: createRequest,
+        date: "2026-09-05",
+        foodName: "Changed create body",
+        nutrients: {},
+      }),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      details: {
+        recordId: created.record.recordId,
+        currentVersion: deleted.record.version,
+      },
+    });
+  });
+
+  it("reports the current head when create reuses a non-create request ID", async () => {
+    const sourceEntryId = await addProviderFood({ name: "Cross operation source" });
+    const { identityId } = await new FoodRecordRepository(context.db, userId).resolveStableIdentity(
+      sourceEntryId,
+    );
+    const commands = service(userId, "token:cross-operation-conflict");
+    const updateRequest = randomUUID();
+    const updated = await commands.update({
+      recordId: identityId,
+      expectedVersion: null,
+      requestId: updateRequest,
+      set: { meal: "dinner" },
+      clear: [],
+      nutrientSet: {},
+      nutrientClear: [],
+    });
+    const deleted = await commands.delete({
+      recordId: identityId,
+      expectedVersion: updated.record.version,
+      requestId: randomUUID(),
+    });
+
+    await expect(
+      commands.create({
+        requestId: updateRequest,
+        date: "2026-09-05",
+        foodName: "Cross operation create",
+        nutrients: {},
+      }),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      details: { recordId: identityId, currentVersion: deleted.record.version },
+    });
   });
 
   it("rejects commands while account erasure is active", async () => {

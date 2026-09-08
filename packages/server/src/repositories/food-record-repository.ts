@@ -98,6 +98,7 @@ type EffectiveFoodRecordRow = z.infer<typeof effectiveFoodRecordRowSchema>;
 type HistoryRow = z.infer<typeof historyRowSchema>;
 
 const storedRequestRowSchema = z.object({
+  change_id: z.uuid(),
   request_id: z.uuid(),
   request_hash: z.string().regex(/^[0-9a-f]{64}$/),
   kind: z.enum(["create", "update", "delete", "restore"]),
@@ -116,6 +117,7 @@ const lockedHeadRowSchema = z.object({
 
 const changeIdRowSchema = z.object({ change_id: z.uuid() });
 const versionRowSchema = z.object({ version: z.uuid() });
+const currentVersionRowSchema = z.object({ current_version: z.uuid().nullable() });
 
 export type FoodRecordCommandKind = "create" | "update" | "delete" | "restore";
 export interface FoodRecordActor {
@@ -124,6 +126,7 @@ export interface FoodRecordActor {
 }
 
 export interface StoredFoodRecordRequest {
+  changeId: string;
   requestId: string;
   requestHash: string;
   kind: FoodRecordCommandKind;
@@ -134,6 +137,7 @@ export interface StoredFoodRecordRequest {
 }
 
 export interface FoodRecordHead {
+  changeId: string;
   identityId: string;
   sourceEntryId: string;
   version: string;
@@ -176,6 +180,7 @@ export interface FoodRecordRepositoryCommands {
   findRequest(requestId: string): Promise<StoredFoodRecordRequest | null>;
   createSourceAndIdentity(input: CreateFoodRecordSourceInput): Promise<FoodRecordHead>;
   appendChange(input: AppendFoodRecordChangeInput): Promise<FoodRecordHead>;
+  get(identityId: string): Promise<EffectiveFoodRecord | null>;
   getAtVersion(identityId: string, version: string | null): Promise<EffectiveFoodRecord | null>;
 }
 
@@ -402,6 +407,7 @@ function mapHistory(row: HistoryRow): FoodRecordHistoryItem {
 
 function mapStoredRequest(row: z.infer<typeof storedRequestRowSchema>): StoredFoodRecordRequest {
   return {
+    changeId: row.change_id,
     requestId: row.request_id,
     requestHash: row.request_hash,
     kind: row.kind,
@@ -441,6 +447,7 @@ export class FoodRecordRepository {
       storedRequestRowSchema,
       sql`
         SELECT
+          change.id AS change_id,
           change.request_id,
           change.request_hash,
           change.kind,
@@ -508,6 +515,27 @@ export class FoodRecordRepository {
     return rows[0] ?? null;
   }
 
+  async #currentVersion(identityId: string): Promise<string | null> {
+    const rows = await executeWithSchema(
+      this.#database,
+      currentVersionRowSchema,
+      sql`
+        SELECT target.id AS current_version
+        FROM fitness.human_record_target AS target
+        WHERE target.user_id = ${this.#userId}
+          AND target.identity_id = ${identityId}::uuid
+          AND NOT EXISTS (
+            SELECT 1 FROM fitness.human_record_target AS successor
+            WHERE successor.user_id = target.user_id
+              AND successor.identity_id = target.identity_id
+              AND successor.predecessor_id = target.id
+          )
+        LIMIT 1
+      `,
+    );
+    return rows[0]?.current_version ?? null;
+  }
+
   async createSourceAndIdentity(input: CreateFoodRecordSourceInput): Promise<FoodRecordHead> {
     const requestId = z.uuid().parse(input.requestId);
     const sourceKey = `external:${input.externalId}`;
@@ -537,11 +565,16 @@ export class FoodRecordRepository {
     const stored = await this.findRequest(requestId);
     if (stored) {
       if (!requestMatches(stored, { ...input, identityId, kind: "create" })) {
-        throw new FoodRecordConflictError(identityId, stored.version, "Request ID was reused.");
+        throw new FoodRecordConflictError(
+          stored.identityId,
+          await this.#currentVersion(stored.identityId),
+          "Request ID was reused.",
+        );
       }
       const locked = await this.#lockHead(identityId);
       if (!locked) throw new Error("Replayed food record source could not be resolved");
       return {
+        changeId: stored.changeId,
         identityId,
         sourceEntryId: locked.source_entry_id,
         version: stored.version,
@@ -595,6 +628,7 @@ export class FoodRecordRepository {
         );
       }
       return {
+        changeId: stored.changeId,
         identityId,
         sourceEntryId: locked.source_entry_id,
         version: stored.version,
@@ -657,6 +691,7 @@ export class FoodRecordRepository {
         `);
       }
       return {
+        changeId,
         identityId,
         sourceEntryId: locked.source_entry_id,
         version: nextVersion,

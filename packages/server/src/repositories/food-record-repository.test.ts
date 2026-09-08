@@ -319,6 +319,7 @@ describe("FoodRecordRepository", () => {
     const { execute, repository } = makeRepository([
       [
         {
+          change_id: changeId,
           request_id: requestId,
           request_hash: "d".repeat(64),
           kind: "delete",
@@ -331,6 +332,7 @@ describe("FoodRecordRepository", () => {
     ]);
 
     await expect(repository.findRequest(requestId)).resolves.toEqual({
+      changeId,
       requestId,
       requestHash: "d".repeat(64),
       kind: "delete",
@@ -375,6 +377,7 @@ describe("FoodRecordRepository", () => {
         deleted: null,
       }),
     ).resolves.toEqual({
+      changeId,
       identityId: recordId,
       sourceEntryId,
       version: nextVersion,

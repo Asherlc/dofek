@@ -152,6 +152,11 @@ export class FoodRecordError extends Error {
 }
 
 export interface FoodRecordMutationResult {
+  operation: {
+    changeId: string;
+    resultingVersion: string;
+    replayed: boolean;
+  };
   record: EffectiveFoodRecord;
   affectedDates: string[];
 }
@@ -301,11 +306,22 @@ export class FoodRecordService {
             actor: this.#actor,
           });
           const record = requireRecord(
-            await repository.getAtVersion(head.identityId, head.version),
+            await repository.get(head.identityId),
             head.identityId,
             head.version,
           );
-          return { result: { record, affectedDates: [record.date] }, replayed: head.replayed };
+          return {
+            result: {
+              operation: {
+                changeId: head.changeId,
+                resultingVersion: head.version,
+                replayed: head.replayed,
+              },
+              record,
+              affectedDates: head.replayed ? [] : [record.date],
+            },
+            replayed: head.replayed,
+          };
         },
       );
       if (!outcome.replayed) await this.#invalidateNutritionCaches(this.#userId);
@@ -371,12 +387,13 @@ export class FoodRecordService {
             deleted,
           });
           const record = requireRecord(
-            await repository.getAtVersion(head.identityId, head.version),
+            await repository.get(head.identityId),
             head.identityId,
             head.version,
           );
-          const affectedDates =
-            kind === "update"
+          const affectedDates = head.replayed
+            ? []
+            : kind === "update"
               ? sortedDates(
                   requireRecord(
                     await repository.getAtVersion(head.identityId, head.predecessorVersion),
@@ -386,7 +403,18 @@ export class FoodRecordService {
                   record.date,
                 )
               : [record.date];
-          return { result: { record, affectedDates }, replayed: head.replayed };
+          return {
+            result: {
+              operation: {
+                changeId: head.changeId,
+                resultingVersion: head.version,
+                replayed: head.replayed,
+              },
+              record,
+              affectedDates,
+            },
+            replayed: head.replayed,
+          };
         },
       );
       if (!outcome.replayed) await this.#invalidateNutritionCaches(this.#userId);
