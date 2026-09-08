@@ -24,6 +24,13 @@ const movedRouteGroupId = "00000000-0000-0000-0000-000000001034";
 const retainedRouteMemberId = "00000000-0000-0000-0000-000000001035";
 const tombstoneOnlyGroupId = "00000000-0000-0000-0000-000000001036";
 const tombstoneOnlyMemberId = "00000000-0000-0000-0000-000000001037";
+const productionSliceGroupId = "00000000-0000-0000-0000-000000001038";
+const productionSliceMemberId = "00000000-0000-0000-0000-000000001039";
+const productionSliceProviderBMemberId = "00000000-0000-0000-0000-000000001048";
+const productionSliceRemappedGroupId = "00000000-0000-0000-0000-000000001049";
+const productionRestoreGroupId = "00000000-0000-0000-0000-000000001050";
+const productionRestoreMemberId = "00000000-0000-0000-0000-000000001051";
+const productionRestorePointId = "00000000-0000-0000-0000-000000001052";
 const providerAPointIds = [
   "00000000-0000-0000-0000-000000001040",
   "00000000-0000-0000-0000-000000001041",
@@ -489,6 +496,205 @@ describe("activity payload dbt batch reconciliation", () => {
     expect(compiledSql).toContain("affected_groups AS MATERIALIZED");
     expect(compiledSql).not.toContain("where ingested_at >= '2026-09-06 00:00:00'");
   }, 240_000);
+
+  it("does not append payload-free tombstones across an unchanged production dependency slice", async () => {
+    await seedProductionLifecycleSliceFixture(client, database);
+    await runDbtBatch(
+      database,
+      artifactDirectory,
+      ["deduped_activities"],
+      "2026-09-07",
+      "2026-09-08",
+    );
+    await runDbtBatch(
+      database,
+      artifactDirectory,
+      ["activity_stream_points"],
+      "2026-09-07",
+      "2026-09-08",
+    );
+    await expectDeletedLocationStream(client, database, productionSliceGroupId);
+    const initialActivityVersion = await getDedupedActivityVersion(
+      client,
+      database,
+      productionSliceGroupId,
+    );
+    const initialActivityHistory = await getDedupedActivityHistory(
+      client,
+      database,
+      productionSliceGroupId,
+    );
+    const initialStreamVersion = await getLocationStreamVersion(
+      client,
+      database,
+      productionSliceGroupId,
+    );
+    const initialTransitionCount = await getStreamTransitionCount(
+      client,
+      database,
+      productionSliceGroupId,
+    );
+
+    await runDbtBatch(
+      database,
+      artifactDirectory,
+      ["deduped_activities", "activity_stream_points"],
+      "2026-09-07",
+      "2026-09-08",
+    );
+
+    const rebuiltActivityVersion = await getDedupedActivityVersion(
+      client,
+      database,
+      productionSliceGroupId,
+    );
+    expect(
+      await getLocationStreamVersion(client, database, productionSliceGroupId),
+      `unchanged deduped activity version moved from ${initialActivityVersion} to ${rebuiltActivityVersion}`,
+    ).toBe(initialStreamVersion);
+    expect(await getStreamTransitionCount(client, database, productionSliceGroupId)).toBe(
+      initialTransitionCount,
+    );
+    expect(rebuiltActivityVersion).toBe(initialActivityVersion);
+    expect(await getDedupedActivityHistory(client, database, productionSliceGroupId)).toEqual(
+      initialActivityHistory,
+    );
+
+    await changeActivitySourceRecord(client, database, productionSliceProviderBMemberId, {
+      priority: 5,
+    });
+    await runDbtBatch(
+      database,
+      artifactDirectory,
+      ["deduped_activities", "activity_stream_points"],
+      "2026-09-07",
+      "2026-09-08",
+    );
+    const priorityActivityState = await getDedupedActivityState(
+      client,
+      database,
+      productionSliceGroupId,
+    );
+    expect(priorityActivityState.primary_activity_id).toBe(productionSliceProviderBMemberId);
+    expect(BigInt(priorityActivityState.refresh_version)).toBeGreaterThan(
+      BigInt(rebuiltActivityVersion),
+    );
+
+    await client.command({
+      query: `INSERT INTO ${database}.deduped_sensor VALUES
+        ('${userId}', toDateTime64('2026-09-07 10:30:00', 9, 'UTC'), 'heart_rate',
+         '${productionSliceMemberId}', 1, 0)`,
+    });
+    await runDbtBatch(
+      database,
+      artifactDirectory,
+      ["deduped_activities", "activity_stream_points"],
+      "2026-09-07",
+      "2026-09-08",
+    );
+    const sensorActivityState = await getDedupedActivityState(
+      client,
+      database,
+      productionSliceGroupId,
+    );
+    expect(sensorActivityState.primary_activity_id).toBe(productionSliceMemberId);
+    expect(BigInt(sensorActivityState.refresh_version)).toBeGreaterThan(
+      BigInt(priorityActivityState.refresh_version),
+    );
+
+    const preRemapStreamVersion = await getLocationStreamVersion(
+      client,
+      database,
+      productionSliceGroupId,
+    );
+    await changeActivitySourceRecord(client, database, productionSliceProviderBMemberId, {
+      groupId: productionSliceRemappedGroupId,
+    });
+    await runDbtBatch(
+      database,
+      artifactDirectory,
+      ["deduped_activities", "activity_stream_points"],
+      "2026-09-07",
+      "2026-09-08",
+    );
+    const remappedActivityState = await getDedupedActivityState(
+      client,
+      database,
+      productionSliceGroupId,
+    );
+    expect(remappedActivityState.member_activity_ids).toEqual([productionSliceMemberId]);
+    expect(BigInt(remappedActivityState.refresh_version)).toBeGreaterThan(
+      BigInt(sensorActivityState.refresh_version),
+    );
+    expect(
+      BigInt(await getLocationStreamVersion(client, database, productionSliceGroupId)),
+    ).toBeGreaterThan(BigInt(preRemapStreamVersion));
+
+    await changeActivitySourceRecord(client, database, productionRestoreMemberId, {
+      isDeleted: true,
+    });
+    await runDbtBatch(
+      database,
+      artifactDirectory,
+      ["deduped_activities", "activity_stream_points"],
+      "2026-09-07",
+      "2026-09-08",
+    );
+    await expectDeletedLocationStream(client, database, productionRestoreGroupId);
+    const deletedActivityVersion = await getDedupedActivityVersion(
+      client,
+      database,
+      productionRestoreGroupId,
+    );
+    const deletedStreamVersion = await getLocationStreamVersion(
+      client,
+      database,
+      productionRestoreGroupId,
+    );
+
+    await changeActivitySourceRecord(client, database, productionRestoreMemberId, {
+      isDeleted: false,
+    });
+    await runDbtBatch(
+      database,
+      artifactDirectory,
+      ["deduped_activities", "activity_stream_points"],
+      "2026-09-07",
+      "2026-09-08",
+    );
+    expect(
+      BigInt(await getDedupedActivityVersion(client, database, productionRestoreGroupId)),
+    ).toBeGreaterThan(BigInt(deletedActivityVersion));
+    expect(
+      BigInt(await getLocationStreamVersion(client, database, productionRestoreGroupId)),
+    ).toBeGreaterThan(BigInt(deletedStreamVersion));
+    await expectActiveLocationStream(client, database, productionRestoreGroupId, 1);
+
+    const scopedActivityHistory = await getDedupedActivityHistory(
+      client,
+      database,
+      productionSliceGroupId,
+    );
+    const unrelatedRestoreVersion = await getDedupedActivityVersion(
+      client,
+      database,
+      productionRestoreGroupId,
+    );
+    await runDbtBatch(
+      database,
+      artifactDirectory,
+      ["deduped_activities"],
+      "2026-09-07",
+      "2026-09-08",
+      [productionSliceMemberId],
+    );
+    expect(await getDedupedActivityHistory(client, database, productionSliceGroupId)).toEqual(
+      scopedActivityHistory,
+    );
+    expect(await getDedupedActivityVersion(client, database, productionRestoreGroupId)).toBe(
+      unrelatedRestoreVersion,
+    );
+  }, 240_000);
 });
 
 type LocationPointFixture = readonly [
@@ -608,6 +814,98 @@ async function seedTombstoneOnlyCurrentGroup(
   ]);
 }
 
+async function seedProductionLifecycleSliceFixture(
+  client: ClickHouseClient,
+  database: string,
+): Promise<void> {
+  await runStatements(client, [
+    `DROP DATABASE IF EXISTS ${database} SYNC`,
+    `CREATE DATABASE ${database}`,
+    createActivitySourceRecordsSql(database),
+    createSourceActivitySql(database),
+    createProducerDedupedSensorSql(database),
+    createActivitySensorSampleSql(database),
+    createActivityLocationSampleSql(database),
+    createActivityStreamPointsSql(database),
+    `INSERT INTO ${database}.activity_source_records (
+       activity_id, group_id, provider_id, user_id, external_id, canonical_type,
+       provider_type, modality, started_at, ended_at, source_name, name, notes,
+       timezone, start_utc_offset_minutes, end_utc_offset_minutes,
+       local_time_source, raw, source_synced_at, priority, refresh_version, is_deleted,
+       refreshed_at
+      ) VALUES
+      (
+       '${productionSliceMemberId}', '${productionSliceGroupId}', 'wahoo', '${userId}',
+       'production-slice', 'cycling', 'cycling', NULL,
+       toDateTime64('2026-09-07 10:00:00', 6, 'UTC'),
+       toDateTime64('2026-09-07 11:00:00', 6, 'UTC'), 'Wahoo', 'Morning Ride', NULL,
+       'America/Los_Angeles', -420, -420, 'provider_timezone', '{}',
+       toDateTime64('2026-09-07 12:00:00', 9, 'UTC'), 10, 1, 0,
+       toDateTime64('2026-09-07 12:00:00', 9, 'UTC')
+      ),
+      (
+       '${productionSliceProviderBMemberId}', '${productionSliceGroupId}', 'garmin', '${userId}',
+       'production-slice-provider-b', 'cycling', 'cycling', NULL,
+       toDateTime64('2026-09-07 10:00:00', 6, 'UTC'),
+       toDateTime64('2026-09-07 11:00:00', 6, 'UTC'), 'Garmin', 'Garmin Ride', NULL,
+       'America/Los_Angeles', -420, -420, 'provider_timezone', '{}',
+       toDateTime64('2026-09-07 12:00:00', 9, 'UTC'), 20, 1, 0,
+       toDateTime64('2026-09-07 12:00:00', 9, 'UTC')
+      ),
+      (
+       '${productionRestoreMemberId}', '${productionRestoreGroupId}', 'wahoo', '${userId}',
+       'production-restore', 'cycling', 'cycling', NULL,
+       toDateTime64('2026-09-07 13:00:00', 6, 'UTC'),
+       toDateTime64('2026-09-07 14:00:00', 6, 'UTC'), 'Wahoo', 'Restorable Ride', NULL,
+       'America/Los_Angeles', -420, -420, 'provider_timezone', '{}',
+       toDateTime64('2026-09-07 15:00:00', 9, 'UTC'), 10, 1, 0,
+       toDateTime64('2026-09-07 15:00:00', 9, 'UTC')
+      )`,
+    `INSERT INTO ${database}.activity_location_sample VALUES (
+       '${productionRestoreGroupId}', '${userId}',
+       toDateTime64('2026-09-07 13:30:00', 9, 'UTC'), '${productionRestorePointId}',
+       37.8, -122.3, 1, 0, toDateTime64('2026-09-07 15:00:00', 9, 'UTC')
+      )`,
+  ]);
+}
+
+async function changeActivitySourceRecord(
+  client: ClickHouseClient,
+  database: string,
+  activityId: string,
+  change: { groupId?: string; priority?: number; isDeleted?: boolean },
+): Promise<void> {
+  await client.command({
+    query: `INSERT INTO ${database}.activity_source_records
+      SELECT
+        activity_id,
+        ${change.groupId ? `toUUID('${change.groupId}')` : "group_id"} AS group_id,
+        provider_id,
+        user_id,
+        external_id,
+        canonical_type,
+        provider_type,
+        modality,
+        started_at,
+        ended_at,
+        source_name,
+        name,
+        notes,
+        timezone,
+        start_utc_offset_minutes,
+        end_utc_offset_minutes,
+        local_time_source,
+        raw,
+        source_synced_at,
+        ${change.priority ?? "priority"} AS priority,
+        refresh_version + 1 AS refresh_version,
+        toUInt8(${change.isDeleted ? 1 : 0}) AS is_deleted,
+        refreshed_at + INTERVAL 1 SECOND AS refreshed_at
+      FROM ${database}.activity_source_records FINAL
+      WHERE activity_id = toUUID('${activityId}')`,
+  });
+}
+
 async function insertLocationPoints(
   client: ClickHouseClient,
   database: string,
@@ -707,6 +1005,78 @@ async function getLocationStreamVersion(
   return row.refresh_version;
 }
 
+async function getDedupedActivityVersion(
+  client: ClickHouseClient,
+  database: string,
+  activityId: string,
+): Promise<string> {
+  const result = await client.query({
+    query: `SELECT toString(refresh_version) AS refresh_version
+      FROM ${database}.deduped_activities FINAL
+      WHERE activity_id = toUUID('${activityId}')`,
+    format: "JSONEachRow",
+  });
+  const [row] = z.array(z.object({ refresh_version: z.string() })).parse(await result.json());
+  if (!row) throw new Error(`Missing deduped activity row for activity ${activityId}`);
+  return row.refresh_version;
+}
+
+async function getDedupedActivityState(
+  client: ClickHouseClient,
+  database: string,
+  activityId: string,
+): Promise<{
+  primary_activity_id: string;
+  member_activity_ids: string[];
+  refresh_version: string;
+}> {
+  const result = await client.query({
+    query: `SELECT
+        toString(primary_activity_id) AS primary_activity_id,
+        arrayMap(member_id -> toString(member_id), member_activity_ids) AS member_activity_ids,
+        toString(refresh_version) AS refresh_version
+      FROM ${database}.deduped_activities FINAL
+      WHERE activity_id = toUUID('${activityId}') AND is_deleted = 0`,
+    format: "JSONEachRow",
+  });
+  const [row] = z
+    .array(
+      z.object({
+        primary_activity_id: z.string(),
+        member_activity_ids: z.array(z.string()),
+        refresh_version: z.string(),
+      }),
+    )
+    .parse(await result.json());
+  if (!row) throw new Error(`Missing active deduped activity ${activityId}`);
+  return row;
+}
+
+async function getDedupedActivityHistory(
+  client: ClickHouseClient,
+  database: string,
+  activityId: string,
+): Promise<{ row_count: number; transition_count: number }> {
+  const result = await client.query({
+    query: `SELECT
+        toUInt32(count()) AS row_count,
+        toUInt32(uniqExact(refresh_version)) AS transition_count
+      FROM ${database}.deduped_activities
+      WHERE activity_id = toUUID('${activityId}')`,
+    format: "JSONEachRow",
+  });
+  const [row] = z
+    .array(
+      z.object({
+        row_count: z.coerce.number(),
+        transition_count: z.coerce.number(),
+      }),
+    )
+    .parse(await result.json());
+  if (!row) throw new Error(`Missing deduped activity history for activity ${activityId}`);
+  return row;
+}
+
 async function getStreamTransitionCount(
   client: ClickHouseClient,
   database: string,
@@ -753,6 +1123,21 @@ async function expectDeletedLocationStream(
     format: "JSONEachRow",
   });
   expect(await result.json()).toEqual([{ point_count: 0, is_deleted: 1 }]);
+}
+
+async function expectActiveLocationStream(
+  client: ClickHouseClient,
+  database: string,
+  activityId: string,
+  pointCount: number,
+): Promise<void> {
+  const result = await client.query({
+    query: `SELECT length(points) AS point_count, is_deleted
+      FROM ${database}.activity_stream_points FINAL
+      WHERE activity_id = toUUID('${activityId}')`,
+    format: "JSONEachRow",
+  });
+  expect(await result.json()).toEqual([{ point_count: pointCount, is_deleted: 0 }]);
 }
 
 async function expectHistoricalLocationMappingsNewerThanStream(
@@ -1029,6 +1414,97 @@ function createActivitySensorSampleSql(database: string): string {
     refreshed_at DateTime64(9, 'UTC')
   ) ENGINE = ReplacingMergeTree(refresh_version)
     ORDER BY (user_id, activity_id, channel, recorded_at)`;
+}
+
+function createActivitySourceRecordsSql(database: string): string {
+  return `CREATE TABLE ${database}.activity_source_records (
+    activity_id UUID,
+    group_id Nullable(UUID),
+    provider_id Nullable(String),
+    user_id Nullable(UUID),
+    external_id Nullable(String),
+    canonical_type Nullable(String),
+    provider_type Nullable(String),
+    modality Nullable(String),
+    started_at Nullable(DateTime64(6, 'UTC')),
+    ended_at Nullable(DateTime64(6, 'UTC')),
+    source_name Nullable(String),
+    name Nullable(String),
+    notes Nullable(String),
+    timezone Nullable(String),
+    start_utc_offset_minutes Nullable(Int16),
+    end_utc_offset_minutes Nullable(Int16),
+    local_time_source LowCardinality(String),
+    raw Nullable(String),
+    source_synced_at Nullable(DateTime64(9, 'UTC')),
+    priority Nullable(Int32),
+    refresh_version UInt64,
+    is_deleted UInt8,
+    refreshed_at DateTime64(9, 'UTC')
+  ) ENGINE = ReplacingMergeTree(refresh_version) ORDER BY activity_id`;
+}
+
+function createSourceActivitySql(database: string): string {
+  return `CREATE TABLE ${database}.activity (
+    id UUID,
+    group_id Nullable(UUID),
+    provider_id Nullable(String),
+    user_id UUID,
+    external_id Nullable(String),
+    provider_absent_at Nullable(DateTime64(6, 'UTC')),
+    raw Nullable(String),
+    source_name Nullable(String),
+    deleted_at Nullable(DateTime64(6, 'UTC')),
+    _peerdb_is_deleted Int8,
+    _peerdb_version Int64
+  ) ENGINE = ReplacingMergeTree(_peerdb_version) ORDER BY id`;
+}
+
+function createProducerDedupedSensorSql(database: string): string {
+  return `CREATE TABLE ${database}.deduped_sensor (
+    user_id UUID,
+    recorded_at DateTime64(9, 'UTC'),
+    channel String,
+    source_activity_id Nullable(UUID),
+    refresh_version UInt64,
+    is_deleted UInt8
+  ) ENGINE = ReplacingMergeTree(refresh_version)
+    ORDER BY (user_id, channel, recorded_at)`;
+}
+
+function createActivityLocationSampleSql(database: string): string {
+  return `CREATE TABLE ${database}.activity_location_sample (
+    activity_id UUID,
+    user_id UUID,
+    recorded_at DateTime64(9, 'UTC'),
+    source_metric_stream_id UUID,
+    lat Nullable(Float64),
+    lng Nullable(Float64),
+    refresh_version UInt64,
+    is_deleted UInt8,
+    refreshed_at DateTime64(9, 'UTC')
+  ) ENGINE = ReplacingMergeTree(refresh_version)
+    ORDER BY (user_id, activity_id, source_metric_stream_id)`;
+}
+
+function createActivityStreamPointsSql(database: string): string {
+  return `CREATE TABLE ${database}.activity_stream_points (
+    user_id UUID,
+    activity_id UUID,
+    points Array(Tuple(
+      DateTime64(6, 'UTC'),
+      Nullable(Float64),
+      Nullable(Float64),
+      Nullable(Float64),
+      Nullable(Float64),
+      Nullable(Float64),
+      Nullable(Float64),
+      Nullable(Float64)
+    )),
+    refresh_version UInt64,
+    is_deleted UInt8,
+    refreshed_at DateTime64(9, 'UTC')
+  ) ENGINE = ReplacingMergeTree(refresh_version) ORDER BY (user_id, activity_id)`;
 }
 
 function requireClickHouseUrl(): string {

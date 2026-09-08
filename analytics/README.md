@@ -38,6 +38,14 @@ share payload credit. The group's served sample union accepts unlinked ambient
 samples and samples linked to any current member, never only the representative.
 The display name follows the selected representative, including a null name;
 notes and raw provenance retain their existing fallbacks.
+Incremental `deduped_activities` builds compare the complete current group row
+with the latest target state. Target-equivalent rows are not appended and keep
+their lifecycle version; membership, representative, display, ranking, sensor,
+absence, or other served-content transitions append a strictly newer version.
+That version is the causal watermark used by downstream activity payload models,
+while [`ReplacingMergeTree`](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replacingmergetree)
+uses it to retain the latest state for each activity group. Full refreshes still
+emit the complete current state.
 Location payload and
 relational strength sets are not available to this upstream scalar projection.
 Missing persisted membership fails the build. Existing deployments must apply

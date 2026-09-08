@@ -221,14 +221,18 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("{% if is_incremental() %}");
     expect(sql).toContain("'join_use_nulls': 1");
     expect(normalizedSql).toContain(
-      "source_external_ids, absent_source_external_ids, member_activity_ids, refresh_clock.refresh_version AS refresh_version, 0 AS is_deleted, refresh_clock.refreshed_at AS refreshed_at",
+      "source_external_ids, absent_source_external_ids, member_activity_ids, lifecycle_refresh_version AS refresh_version, 0 AS is_deleted, lifecycle_refreshed_at AS refreshed_at FROM versioned_current_deduped_activities",
     );
     expect(normalizedSql).toContain(
-      "source_external_ids, absent_source_external_ids, member_activity_ids, refresh_clock.refresh_version AS refresh_version, 1 AS is_deleted, refresh_clock.refreshed_at AS refreshed_at",
+      "greatest( stale_deduped_activities.refresh_version + 1, refresh_clock.refresh_version ) AS refresh_version, 1 AS is_deleted",
     );
     expect(normalizedSql).toContain("FROM existing_deduped_activities");
     expect(normalizedSql).toContain("FROM {{ this }} AS deduped FINAL");
-    expect(normalizedSql).toContain("WHERE deduped.is_deleted = 0");
+    expect(normalizedSql).toContain("existing_deduped_activities.is_deleted = 0");
+    expect(sql).toContain("isNotDistinctFrom(current_activities.primary_activity_id");
+    expect(sql).toContain("current_activities.member_activity_ids =");
+    expect(sql).toContain("WHERE has_changed = 1");
+    expect(sql).toContain("arraySort(groupArray(final_groups.activity_id))");
     expect(normalizedSql).toContain(
       "ON scoped_current_deduped_activities.activity_id = existing_deduped_activities.activity_id AND scoped_current_deduped_activities.user_id = existing_deduped_activities.user_id",
     );

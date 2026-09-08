@@ -87,17 +87,26 @@ absent_group_members AS (
 absent_source_links AS (
     SELECT
         group_id,
-        groupArrayIf(
-            map(
-                'providerId', assumeNotNull(provider_id),
-                'externalId', assumeNotNull(external_id),
-                'memberActivityId', toString(activity_id),
-                'providerAbsentAt', toString(assumeNotNull(provider_absent_at)),
-                'subsource', coalesce(subsource, '')
+        arraySort(
+            source -> tuple(
+                source['providerId'],
+                source['externalId'],
+                source['memberActivityId'],
+                source['providerAbsentAt'],
+                source['subsource']
             ),
-            provider_id IS NOT null
-            AND external_id IS NOT null
-            AND external_id != ''
+            groupArrayIf(
+                map(
+                    'providerId', assumeNotNull(provider_id),
+                    'externalId', assumeNotNull(external_id),
+                    'memberActivityId', toString(activity_id),
+                    'providerAbsentAt', toString(assumeNotNull(provider_absent_at)),
+                    'subsource', coalesce(subsource, '')
+                ),
+                provider_id IS NOT null
+                AND external_id IS NOT null
+                AND external_id != ''
+            )
         ) AS absent_source_external_ids
     FROM absent_group_members
     GROUP BY group_id
@@ -227,26 +236,34 @@ merged AS (
         argMinIf(ranked.raw, ranked.priority, ranked.raw IS NOT null) AS raw,
         maxIf(ranked.source_synced_at, ranked.activity_id IS NOT null) AS source_synced_at,
         arraySort(groupUniqArrayIf(ranked.provider_id, ranked.activity_id IS NOT null)) AS source_providers,
-        groupArrayIf(
-            map(
-                'providerId', ranked.provider_id,
-                'externalId', ranked.external_id,
-                'memberActivityId', toString(ranked.activity_id),
-                'subsource', coalesce(
-                    nullIf(trim(BOTH ' ' FROM JSONExtractString(ranked.raw, 'sourceName')), ''),
-                    nullIf(trim(BOTH ' ' FROM ranked.source_name), ''),
-                    ''
-                )
+        arraySort(
+            source -> tuple(
+                source['providerId'],
+                source['externalId'],
+                source['memberActivityId'],
+                source['subsource']
             ),
-            ranked.activity_id IS NOT null
-            AND ranked.external_id IS NOT null
-            AND ranked.external_id != ''
+            groupArrayIf(
+                map(
+                    'providerId', ranked.provider_id,
+                    'externalId', ranked.external_id,
+                    'memberActivityId', toString(ranked.activity_id),
+                    'subsource', coalesce(
+                        nullIf(trim(BOTH ' ' FROM JSONExtractString(ranked.raw, 'sourceName')), ''),
+                        nullIf(trim(BOTH ' ' FROM ranked.source_name), ''),
+                        ''
+                    )
+                ),
+                ranked.activity_id IS NOT null
+                AND ranked.external_id IS NOT null
+                AND ranked.external_id != ''
+            )
         ) AS source_external_ids,
         coalesce(
             any(absent_source_links.absent_source_external_ids),
             CAST([], 'Array(Map(String, String))')
         ) AS absent_source_external_ids,
-        groupArray(final_groups.activity_id) AS member_activity_ids
+        arraySort(groupArray(final_groups.activity_id)) AS member_activity_ids
     FROM best
     INNER JOIN final_groups
         ON final_groups.group_id = best.group_id
@@ -354,9 +371,12 @@ existing_deduped_activities AS (
         deduped.source_providers,
         deduped.source_external_ids,
         deduped.absent_source_external_ids,
-        deduped.member_activity_ids
+        deduped.member_activity_ids,
+        deduped.refresh_version,
+        deduped.is_deleted,
+        deduped.refreshed_at
     FROM {{ this }} AS deduped FINAL
-    WHERE deduped.is_deleted = 0
+    WHERE 1 = 1
         {% if activity_refresh_scoped %}
         AND deduped.user_id = toUUID('{{ var("activity_refresh_user_id") }}')
         AND (
@@ -375,7 +395,8 @@ stale_deduped_activities AS (
     LEFT JOIN scoped_current_deduped_activities
         ON scoped_current_deduped_activities.activity_id = existing_deduped_activities.activity_id
         AND scoped_current_deduped_activities.user_id = existing_deduped_activities.user_id
-    WHERE scoped_current_deduped_activities.activity_id IS null
+    WHERE existing_deduped_activities.is_deleted = 0
+        AND scoped_current_deduped_activities.activity_id IS null
 )
 {% endif %}
 
@@ -384,6 +405,71 @@ refresh_clock AS (
     SELECT
         toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
         now64(9) AS refreshed_at
+),
+
+current_deduped_activity_state AS (
+    SELECT
+        current_activities.*,
+        {% if is_incremental() %}
+        existing_activities.refresh_version AS previous_refresh_version,
+        existing_activities.refreshed_at AS previous_refreshed_at,
+        toUInt8(
+            existing_activities.activity_id IS null
+            OR existing_activities.is_deleted = 1
+            OR NOT (
+                isNotDistinctFrom(current_activities.primary_activity_id, existing_activities.primary_activity_id)
+                AND isNotDistinctFrom(current_activities.provider_id, existing_activities.provider_id)
+                AND isNotDistinctFrom(current_activities.canonical_type, existing_activities.canonical_type)
+                AND isNotDistinctFrom(current_activities.provider_type, existing_activities.provider_type)
+                AND isNotDistinctFrom(current_activities.modality, existing_activities.modality)
+                AND isNotDistinctFrom(current_activities.started_at, existing_activities.started_at)
+                AND isNotDistinctFrom(current_activities.ended_at, existing_activities.ended_at)
+                AND isNotDistinctFrom(current_activities.source_name, existing_activities.source_name)
+                AND isNotDistinctFrom(current_activities.name, existing_activities.name)
+                AND isNotDistinctFrom(current_activities.notes, existing_activities.notes)
+                AND isNotDistinctFrom(current_activities.timezone, existing_activities.timezone)
+                AND isNotDistinctFrom(current_activities.start_utc_offset_minutes, existing_activities.start_utc_offset_minutes)
+                AND isNotDistinctFrom(current_activities.end_utc_offset_minutes, existing_activities.end_utc_offset_minutes)
+                AND isNotDistinctFrom(current_activities.local_time_source, existing_activities.local_time_source)
+                AND isNotDistinctFrom(current_activities.raw, existing_activities.raw)
+                AND isNotDistinctFrom(current_activities.source_synced_at, existing_activities.source_synced_at)
+                AND current_activities.source_providers = existing_activities.source_providers
+                AND current_activities.source_external_ids = existing_activities.source_external_ids
+                AND current_activities.absent_source_external_ids = existing_activities.absent_source_external_ids
+                AND current_activities.member_activity_ids = existing_activities.member_activity_ids
+            )
+        ) AS has_changed
+        {% else %}
+        CAST(null, 'Nullable(UInt64)') AS previous_refresh_version,
+        CAST(null, 'Nullable(DateTime64(9, \'UTC\'))') AS previous_refreshed_at,
+        toUInt8(1) AS has_changed
+        {% endif %}
+    FROM scoped_current_deduped_activities AS current_activities
+    {% if is_incremental() %}
+    LEFT JOIN existing_deduped_activities AS existing_activities
+        ON existing_activities.activity_id = current_activities.activity_id
+        AND existing_activities.user_id = current_activities.user_id
+    {% endif %}
+),
+
+versioned_current_deduped_activities AS (
+    SELECT
+        current_deduped_activity_state.*,
+        if(
+            has_changed = 0,
+            coalesce(previous_refresh_version, refresh_clock.refresh_version),
+            greatest(
+                coalesce(previous_refresh_version + 1, toUInt64(0)),
+                refresh_clock.refresh_version
+            )
+        ) AS lifecycle_refresh_version,
+        if(
+            has_changed = 0,
+            coalesce(previous_refreshed_at, refresh_clock.refreshed_at),
+            refresh_clock.refreshed_at
+        ) AS lifecycle_refreshed_at
+    FROM current_deduped_activity_state
+    CROSS JOIN refresh_clock
 )
 
 SELECT
@@ -409,11 +495,13 @@ SELECT
     source_external_ids,
     absent_source_external_ids,
     member_activity_ids,
-    refresh_clock.refresh_version AS refresh_version,
+    lifecycle_refresh_version AS refresh_version,
     0 AS is_deleted,
-    refresh_clock.refreshed_at AS refreshed_at
-FROM scoped_current_deduped_activities
-CROSS JOIN refresh_clock
+    lifecycle_refreshed_at AS refreshed_at
+FROM versioned_current_deduped_activities
+{% if is_incremental() %}
+WHERE has_changed = 1
+{% endif %}
 
 {% if is_incremental() %}
 UNION ALL
@@ -441,7 +529,10 @@ SELECT
     source_external_ids,
     absent_source_external_ids,
     member_activity_ids,
-    refresh_clock.refresh_version AS refresh_version,
+    greatest(
+        stale_deduped_activities.refresh_version + 1,
+        refresh_clock.refresh_version
+    ) AS refresh_version,
     1 AS is_deleted,
     refresh_clock.refreshed_at AS refreshed_at
 FROM stale_deduped_activities
