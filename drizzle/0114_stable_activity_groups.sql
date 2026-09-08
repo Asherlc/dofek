@@ -14,7 +14,7 @@ CREATE TABLE fitness.activity_group_alias (
   reason text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT activity_group_alias_user_group_fk FOREIGN KEY (user_id, group_id)
-    REFERENCES fitness.activity_group (user_id, id),
+  REFERENCES fitness.activity_group (user_id, id),
   CONSTRAINT activity_group_alias_not_self CHECK (alias_id <> group_id),
   CONSTRAINT activity_group_alias_reason CHECK (reason = 'merge')
 );
@@ -44,33 +44,57 @@ CREATE TRIGGER activity_backfill_group
 AFTER UPDATE OF group_id ON fitness.activity
 FOR EACH ROW EXECUTE FUNCTION fitness.ensure_activity_group();
 --> statement-breakpoint
-UPDATE fitness.activity SET group_id = id WHERE group_id IS NULL;
+UPDATE fitness.activity SET group_id = id
+WHERE group_id IS NULL;
 --> statement-breakpoint
 DROP TRIGGER activity_backfill_group ON fitness.activity;
 --> statement-breakpoint
 -- Capture membership from the existing view, whose public ID is still the
 -- current representative. Replacing that view belongs to a later migration.
 WITH visible_members AS MATERIALIZED (
-  SELECT id AS group_id, user_id, unnest(member_activity_ids) AS activity_id
+  SELECT
+    id AS group_id,
+    user_id,
+    unnest(member_activity_ids) AS activity_id
   FROM fitness.v_activity
 )
+
 UPDATE fitness.activity AS member
 SET group_id = visible_members.group_id
 FROM visible_members
-WHERE member.id = visible_members.activity_id
+WHERE
+  member.id = visible_members.activity_id
   AND member.user_id = visible_members.user_id
   AND member.group_id IS DISTINCT FROM visible_members.group_id;
 --> statement-breakpoint
 DELETE FROM fitness.activity_group AS candidate
 WHERE NOT EXISTS (
-  SELECT 1 FROM fitness.activity AS member WHERE member.group_id = candidate.id
+  SELECT 1 FROM fitness.activity AS member
+  WHERE member.group_id = candidate.id
 );
 --> statement-breakpoint
 ALTER TABLE fitness.activity
-  ALTER COLUMN group_id SET DEFAULT gen_random_uuid(),
-  ALTER COLUMN group_id SET NOT NULL,
-  ADD CONSTRAINT activity_user_group_fk FOREIGN KEY (user_id, group_id)
-    REFERENCES fitness.activity_group (user_id, id)
-    DEFERRABLE INITIALLY DEFERRED;
+ADD CONSTRAINT activity_group_id_not_null
+CHECK (group_id IS NOT NULL) NOT VALID;
+--> statement-breakpoint
+ALTER TABLE fitness.activity
+ADD CONSTRAINT activity_user_group_fk FOREIGN KEY (user_id, group_id)
+REFERENCES fitness.activity_group (user_id, id)
+DEFERRABLE INITIALLY DEFERRED NOT VALID;
+--> statement-breakpoint
+ALTER TABLE fitness.activity
+VALIDATE CONSTRAINT activity_group_id_not_null;
+--> statement-breakpoint
+ALTER TABLE fitness.activity
+VALIDATE CONSTRAINT activity_user_group_fk;
+--> statement-breakpoint
+ALTER TABLE fitness.activity
+ALTER COLUMN group_id SET DEFAULT gen_random_uuid();
+--> statement-breakpoint
+ALTER TABLE fitness.activity
+ALTER COLUMN group_id SET NOT NULL;
+--> statement-breakpoint
+ALTER TABLE fitness.activity
+DROP CONSTRAINT activity_group_id_not_null;
 --> statement-breakpoint
 CREATE INDEX activity_user_group_idx ON fitness.activity (user_id, group_id);
