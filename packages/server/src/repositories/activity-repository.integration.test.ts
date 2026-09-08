@@ -116,6 +116,8 @@ const ABSENT_UNREFINED_MEMBER_ID = "70000000-0000-4000-8000-000000000012";
 const ABSENT_REFINED_MEMBER_ID = "70000000-0000-4000-8000-000000000013";
 const ABSENT_WINNER_MEMBER_ID = "70000000-0000-4000-8000-000000000014";
 const ABSENT_ALIAS_ID = "70000000-0000-4000-8000-000000000016";
+const ABSENT_EXERCISE_ID = "70000000-0000-4000-8000-000000000017";
+const ABSENT_INCOMPLETE_EXERCISE_ID = "70000000-0000-4000-8000-000000000018";
 
 describe("ActivityRepository stable activity id resolution", () => {
   let testContext: TestContext;
@@ -188,7 +190,7 @@ describe("ActivityRepository stable activity id resolution", () => {
     await testContext.db.execute(
       sql`INSERT INTO fitness.provider_priority (provider_id, priority)
           VALUES
-            ('activity_resolution_absent_generic', 0),
+            ('activity_resolution_absent_generic', 90),
             ('activity_resolution_absent_unrefined', 0),
             ('activity_resolution_absent_refined', 20),
             ('activity_resolution_absent_winner', 90),
@@ -233,6 +235,30 @@ describe("ActivityRepository stable activity id resolution", () => {
             'activity_resolution_absent_winner', ${TEST_USER_ID}, 'absent-winner',
             'cycling', 'Workout', '2026-08-03T10:00:00Z', '2026-08-03T11:00:00Z',
             'Preferred absent ride', 'Preferred Trainer', '2026-08-04T00:00:00Z', NULL
+          )`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.exercise (id, name, muscle_groups, equipment)
+          VALUES
+            (${ABSENT_EXERCISE_ID}, 'Absent payload zero lift', ARRAY['legs']::text[], 'barbell'),
+            (${ABSENT_INCOMPLETE_EXERCISE_ID}, 'Absent incomplete lift', ARRAY['legs']::text[], 'barbell')`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.strength_set (
+            activity_id, exercise_id, exercise_index, set_index, set_type,
+            weight_kg, reps, duration_seconds, distance_meters
+          ) VALUES
+          (
+            ${ABSENT_GENERIC_MEMBER_ID}, ${ABSENT_EXERCISE_ID}, 0, 0, 'working',
+            0, 0, NULL, NULL
+          ),
+          (
+            ${ABSENT_WINNER_MEMBER_ID}, ${ABSENT_EXERCISE_ID}, 0, 0, 'working',
+            NULL, NULL, NULL, NULL
+          ),
+          (
+            ${ABSENT_WINNER_MEMBER_ID}, ${ABSENT_INCOMPLETE_EXERCISE_ID}, 1, 0, 'working',
+            NULL, NULL, NULL, NULL
           )`,
     );
     await testContext.db.execute(
@@ -334,8 +360,11 @@ describe("ActivityRepository stable activity id resolution", () => {
   it("selects the same deterministic non-deleted fallback for an absent group, members, and alias", async () => {
     const requestedIds = [
       ABSENT_GROUP_ID,
+      ABSENT_DELETED_MEMBER_ID,
       ABSENT_GENERIC_MEMBER_ID,
       ABSENT_UNREFINED_MEMBER_ID,
+      ABSENT_REFINED_MEMBER_ID,
+      ABSENT_WINNER_MEMBER_ID,
       ABSENT_ALIAS_ID,
     ];
 
@@ -356,35 +385,59 @@ describe("ActivityRepository stable activity id resolution", () => {
       })),
     ).toEqual([
       {
-        canonical_type: "cycling",
+        canonical_type: "other",
         id: ABSENT_GROUP_ID,
-        name: "Preferred absent ride",
-        provider_id: "activity_resolution_absent_winner",
-        raw_type: "Workout",
+        name: "Generic absent activity",
+        provider_id: "activity_resolution_absent_generic",
+        raw_type: "other",
         resolved_from: undefined,
       },
       {
-        canonical_type: "cycling",
+        canonical_type: "other",
         id: ABSENT_GROUP_ID,
-        name: "Preferred absent ride",
-        provider_id: "activity_resolution_absent_winner",
-        raw_type: "Workout",
+        name: "Generic absent activity",
+        provider_id: "activity_resolution_absent_generic",
+        raw_type: "other",
+        resolved_from: ABSENT_DELETED_MEMBER_ID,
+      },
+      {
+        canonical_type: "other",
+        id: ABSENT_GROUP_ID,
+        name: "Generic absent activity",
+        provider_id: "activity_resolution_absent_generic",
+        raw_type: "other",
         resolved_from: ABSENT_GENERIC_MEMBER_ID,
       },
       {
-        canonical_type: "cycling",
+        canonical_type: "other",
         id: ABSENT_GROUP_ID,
-        name: "Preferred absent ride",
-        provider_id: "activity_resolution_absent_winner",
-        raw_type: "Workout",
+        name: "Generic absent activity",
+        provider_id: "activity_resolution_absent_generic",
+        raw_type: "other",
         resolved_from: ABSENT_UNREFINED_MEMBER_ID,
       },
       {
-        canonical_type: "cycling",
+        canonical_type: "other",
         id: ABSENT_GROUP_ID,
-        name: "Preferred absent ride",
-        provider_id: "activity_resolution_absent_winner",
-        raw_type: "Workout",
+        name: "Generic absent activity",
+        provider_id: "activity_resolution_absent_generic",
+        raw_type: "other",
+        resolved_from: ABSENT_REFINED_MEMBER_ID,
+      },
+      {
+        canonical_type: "other",
+        id: ABSENT_GROUP_ID,
+        name: "Generic absent activity",
+        provider_id: "activity_resolution_absent_generic",
+        raw_type: "other",
+        resolved_from: ABSENT_WINNER_MEMBER_ID,
+      },
+      {
+        canonical_type: "other",
+        id: ABSENT_GROUP_ID,
+        name: "Generic absent activity",
+        provider_id: "activity_resolution_absent_generic",
+        raw_type: "other",
         resolved_from: ABSENT_ALIAS_ID,
       },
     ]);

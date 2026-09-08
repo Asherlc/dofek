@@ -1032,11 +1032,25 @@ describe("ActivityRepository", () => {
       expect(fallbackQuery.sql).toContain("a.deleted_at IS NULL");
       expect(fallbackQuery.sql).toContain("LEFT JOIN fitness.provider_priority");
       expect(fallbackQuery.sql).toContain("LEFT JOIN LATERAL");
+      expect(fallbackQuery.sql).toContain("s.set_type = 'working'");
+      expect(fallbackQuery.sql).toContain("s.weight_kg IS NOT NULL");
+      expect(fallbackQuery.sql).toContain("COUNT(*) AS set_count");
+      expect(fallbackQuery.sql).toContain("COUNT(DISTINCT s.exercise_id) AS exercise_count");
       expect(fallbackQuery.sql).toContain("a.canonical_type NOT IN");
       expect(fallbackQuery.sql).toContain("NULLIF(LOWER(TRIM(a.provider_type)), '')");
       expect(fallbackQuery.sql).toContain("COALESCE(dp.priority, pp.priority, 100)");
       expect(fallbackQuery.sql).toContain("a.id ASC");
       expect(fallbackQuery.sql).not.toContain("ORDER BY (a.id =");
+      const fallbackOrder = fallbackQuery.sql.slice(fallbackQuery.sql.indexOf("ORDER BY"));
+      expect(fallbackOrder.indexOf("payload.complete_working_set_count DESC")).toBeLessThan(
+        fallbackOrder.indexOf("payload.set_count DESC"),
+      );
+      expect(fallbackOrder.indexOf("payload.set_count DESC")).toBeLessThan(
+        fallbackOrder.indexOf("payload.exercise_count DESC"),
+      );
+      expect(fallbackOrder.indexOf("payload.exercise_count DESC")).toBeLessThan(
+        fallbackOrder.indexOf("a.canonical_type NOT IN"),
+      );
     });
 
     it("returns a row without summaries when no sensor store is configured", async () => {

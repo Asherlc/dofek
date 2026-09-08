@@ -810,12 +810,29 @@ export class ActivityRepository extends BaseRepository {
               dp2.source_name_pattern ASC
             LIMIT 1
           ) dp ON true
+          LEFT JOIN LATERAL (
+            SELECT
+              COUNT(*) FILTER (
+                WHERE s.set_type = 'working'
+                  AND (
+                    s.weight_kg IS NOT NULL OR s.reps IS NOT NULL
+                    OR s.duration_seconds IS NOT NULL OR s.distance_meters IS NOT NULL
+                  )
+              ) AS complete_working_set_count,
+              COUNT(*) AS set_count,
+              COUNT(DISTINCT s.exercise_id) AS exercise_count
+            FROM fitness.strength_set s
+            WHERE s.activity_id = a.id
+          ) payload ON true
           WHERE a.group_id = ${groupId}::uuid
             AND a.user_id = ${this.userId}::uuid
             AND a.provider_absent_at IS NOT NULL
             AND a.deleted_at IS NULL
             ${this.timestampAccessPredicate(sql`a.started_at`)}
           ORDER BY
+            payload.complete_working_set_count DESC,
+            payload.set_count DESC,
+            payload.exercise_count DESC,
             (a.canonical_type NOT IN ('cardio', 'other')) DESC,
             COALESCE(
               NULLIF(LOWER(TRIM(a.provider_type)), '') <> LOWER(a.canonical_type::text),
