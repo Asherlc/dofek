@@ -322,14 +322,17 @@ function postgresChannels(
     row.finger_entries === 0
       ? emptyChannel(row.date, coverage?.first_finger_date ?? null)
       : row.finger_load_kg_seconds == null
-        ? unavailableChannel("No complete finger-loading entries are available.", {
-            sourceProviders: row.finger_source_providers,
-            sourceActivityIds: row.finger_activity_ids,
-            contributingRecords: row.finger_entries,
-            supportedRecords: 0,
-            firstObservedDate: coverage?.first_finger_date ?? null,
-            context: { entries: row.finger_entries },
-          })
+        ? unavailableChannel(
+            "Exact finger-load volume requires repetitions per set, which the canonical source schema does not record.",
+            {
+              sourceProviders: row.finger_source_providers,
+              sourceActivityIds: row.finger_activity_ids,
+              contributingRecords: row.finger_entries,
+              supportedRecords: 0,
+              firstObservedDate: coverage?.first_finger_date ?? null,
+              context: { entries: row.finger_entries },
+            },
+          )
         : baseAvailable({
             value: row.finger_load_kg_seconds,
             activityIds: row.finger_activity_ids,
@@ -389,7 +392,7 @@ function definitions() {
     climbing_attempts:
       "Recorded attempt counts. Entries with unknown attempts are reported as missing, not failed or zero.",
     finger_load:
-      "Sum of (recorded body weight + external load) × hang seconds × set count, in kg-seconds.",
+      "Effective-load kg-seconds require repetitions per set and remain unavailable while the canonical source schema does not record repetitions.",
     strength_volume:
       "Sum of weight × reps for non-warmup load-bearing sets with 1–100 reps and 0–500 kg.",
     rolling:
@@ -493,8 +496,7 @@ export class AnalyticalTrainingLoadRepository {
             ) AS climb ON TRUE
             LEFT JOIN LATERAL (
               SELECT
-                SUM((entry.bodyweight_kg + entry.external_load_kg)
-                  * entry.hold_duration_seconds * entry.set_count)::real AS load_kg_seconds,
+                NULL::real AS load_kg_seconds,
                 COUNT(*)::int AS entries
               FROM fitness.finger_loading_entry AS entry
               WHERE entry.activity_id = ANY(activity.member_activity_ids)

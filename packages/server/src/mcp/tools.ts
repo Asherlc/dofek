@@ -46,6 +46,7 @@ import { registerCyclingPerformanceTool } from "./cycling-performance-tool.ts";
 import { registerCyclingPowerCurveTool } from "./cycling-power-curve-tool.ts";
 import { registerCyclingThresholdEstimateTool } from "./cycling-threshold-estimate-tool.ts";
 import { registerCyclingTrainingMetricsTool } from "./cycling-training-metrics-tool.ts";
+import { registerFingerLoadingProgressionTool } from "./finger-loading-progression-tool.ts";
 import { HealthExplorerService } from "./health-explorer-service.ts";
 import { buildHealthSeries, type HealthTrendRow } from "./health-series-service.ts";
 import { listProviderStatuses } from "./provider-status.ts";
@@ -508,6 +509,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
   registerActivityTimeseriesTool(server, context);
   registerActivityDetailsTool(server, context);
   registerClimbingProgressionTool(server, context);
+  registerFingerLoadingProgressionTool(server, context);
   registerClimbingSessionsTool(server, context);
   registerStrengthSessionsTool(server, context);
   registerSupplementsTool(server, context);
@@ -774,7 +776,10 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
           rpe: row.rpe,
           set_count: row.setCount,
           started_at: row.startedAt,
-          total_time_under_tension_seconds: row.holdDurationSeconds * row.setCount,
+          total_time_under_tension_seconds: null,
+          total_time_under_tension_status: "unavailable" as const,
+          total_time_under_tension_reason:
+            "Exact time under tension requires repetitions per set, which the canonical source schema does not record.",
         })),
       );
     },

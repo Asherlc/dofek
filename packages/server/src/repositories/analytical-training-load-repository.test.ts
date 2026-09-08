@@ -53,7 +53,7 @@ describe("AnalyticalTrainingLoadRepository", () => {
           climbing_entries_with_attempts: 4,
           climbing_session_minutes: 90,
           climbing_activity_ids: [`00000000-0000-4000-8001-${String(index + 1).padStart(12, "0")}`],
-          finger_load_kg_seconds: 1_000,
+          finger_load_kg_seconds: null,
           finger_entries: 1,
           finger_activity_ids: [`00000000-0000-4000-8002-${String(index + 1).padStart(12, "0")}`],
           strength_volume_kg_reps: 500,
@@ -138,7 +138,13 @@ describe("AnalyticalTrainingLoadRepository", () => {
         heart_rate_zone_load: { daily_value: 120, unit: "weighted zone-minutes" },
         session_rpe: { daily_value: 300, unit: "RPE-minutes" },
         climbing_attempts: { daily_value: 10, unit: "attempts" },
-        finger_load: { daily_value: 1000, unit: "kg-seconds" },
+        finger_load: {
+          daily_value: null,
+          unit: "kg-seconds",
+          status: "unavailable",
+          reason:
+            "Exact finger-load volume requires repetitions per set, which the canonical source schema does not record.",
+        },
         strength_volume: { daily_value: 500, unit: "kg-reps" },
       },
     });

@@ -12,6 +12,7 @@ import {
 import { sourceReferenceSchema } from "./analytical-evidence.ts";
 import { analyticalTrainingLoadOutputSchema } from "./analytical-training-load-output.ts";
 import { cyclingTrainingMetricsOutputSchema } from "./cycling-training-metrics-output.ts";
+import { fingerLoadingProgressionOutputSchema } from "./finger-loading-progression-output.ts";
 
 const nullableNumber = z.number().nullable();
 const nullableString = z.string().nullable();
@@ -225,7 +226,9 @@ export const fingerLoadingOutputSchema = jsonResult(
       rpe: nullableNumber,
       set_count: z.number().int(),
       started_at: z.string(),
-      total_time_under_tension_seconds: z.number(),
+      total_time_under_tension_seconds: nullableNumber,
+      total_time_under_tension_status: z.literal("unavailable"),
+      total_time_under_tension_reason: z.string().min(1),
     }),
   ),
 );
@@ -945,6 +948,7 @@ export const mcpOutputSchemas = {
   dailyHealthSummary: dailyHealthSummaryOutputSchema,
   dataCoverage: dataCoverageOutputSchema,
   fingerLoading: fingerLoadingOutputSchema,
+  fingerLoadingProgression: fingerLoadingProgressionOutputSchema,
   healthTrends: healthTrendsOutputSchema,
   nutritionSummary: nutritionSummaryOutputSchema,
   providerSync: providerSyncOutputSchema,

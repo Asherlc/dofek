@@ -226,7 +226,13 @@ describe("AnalyticalTrainingLoadRepository database semantics", () => {
         status: "partial",
         coverage: { contributing_records: 2, supported_records: 1 },
       },
-      finger_load: { daily_value: 4000, unit: "kg-seconds" },
+      finger_load: {
+        daily_value: null,
+        unit: "kg-seconds",
+        status: "unavailable",
+        reason:
+          "Exact finger-load volume requires repetitions per set, which the canonical source schema does not record.",
+      },
       strength_volume: {
         daily_value: 500,
         status: "partial",

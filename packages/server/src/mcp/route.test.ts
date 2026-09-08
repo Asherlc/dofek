@@ -41,6 +41,7 @@ const toolTestMocks = vi.hoisted(() => {
     dataCoverageList: vi.fn(),
     ensureProvidersRegistered: vi.fn(),
     fingerLoadingRange: vi.fn(),
+    fingerLoadingProgressionListRange: vi.fn(),
     foodDailyTotalsRange: vi.fn(),
     fingerLoadingActivity: vi.fn(),
     getAllProviders: vi.fn(),
@@ -186,6 +187,12 @@ vi.mock("../repositories/climbing-training-log-repository.ts", async (importOrig
     readFingerLoadingRange: toolTestMocks.fingerLoadingRange,
   };
 });
+
+vi.mock("../repositories/finger-loading-progression-repository.ts", () => ({
+  FingerLoadingProgressionRepository: vi.fn(function vitestConstructor() {
+    return { listRange: toolTestMocks.fingerLoadingProgressionListRange };
+  }),
+}));
 
 vi.mock("../repositories/strength-repository.ts", () => ({
   StrengthRepository: vi.fn(function vitestConstructor() {
@@ -587,6 +594,58 @@ describe("createMcpRouter", () => {
     toolTestMocks.foodDailyTotalsRange.mockResolvedValue([]);
     toolTestMocks.fingerLoadingActivity.mockResolvedValue([]);
     toolTestMocks.fingerLoadingRange.mockResolvedValue([]);
+    toolTestMocks.fingerLoadingProgressionListRange.mockResolvedValue({
+      range: { start_date: "2026-07-01", end_date: "2026-07-31", timezone: "UTC" },
+      channel: { id: "finger_loading", interchangeable_with: [], note: "Separate channel." },
+      definitions: {
+        effective_load: "Effective load.",
+        time_under_tension: "Time under tension.",
+        effective_load_kg_seconds: "Exposure.",
+        high_intensity: "Threshold classification.",
+        duplicate_handling: "Canonical deduplication.",
+        consecutive_days: "Consecutive days.",
+      },
+      coverage: {
+        sessions: 0,
+        entries: 0,
+        first_observed_date: null,
+        timezone_assumed_sessions: 0,
+        merged_exact_duplicate_records: 0,
+        possible_duplicate_groups: 0,
+        entries_excluded_from_aggregates: 0,
+      },
+      summary: {
+        sessions: 0,
+        entries: 0,
+        total_time_under_tension_seconds: null,
+        effective_load_kg_seconds: null,
+        exposure_calculation: {
+          status: "unavailable",
+          reason: "Repetitions are unavailable.",
+        },
+        max_effective_load_kg: null,
+        max_load_to_bodyweight_ratio: null,
+      },
+      high_intensity: {
+        status: "unavailable",
+        thresholds: {
+          min_effective_load_kg: null,
+          min_load_to_bodyweight_ratio: null,
+          min_rpe: null,
+        },
+        matching_entries: null,
+        days: null,
+        reason: "Threshold required.",
+      },
+      daily: [],
+      combined_climbing_finger_exposure: {
+        definition: "Calendar exposure without numeric load combination.",
+        first_joint_coverage_date: null,
+        daily: [],
+      },
+      sessions: [],
+      pagination: { limit: 100, has_more: false, next_cursor: null },
+    });
     toolTestMocks.getAllProviders.mockReturnValue([]);
     toolTestMocks.getConnectedProviderIds.mockResolvedValue([]);
     toolTestMocks.getLastSyncTimes.mockResolvedValue([]);
@@ -925,6 +984,17 @@ describe("createMcpRouter", () => {
       required: ["start_date", "end_date"],
       type: "object",
     });
+    expect(findListedTool(tools, "get_finger_loading_progression").inputSchema).toMatchObject({
+      properties: {
+        providers: { type: "array" },
+        protocols: { type: "array" },
+        min_effective_load_kg: { exclusiveMinimum: 0, type: "number" },
+        min_load_to_bodyweight_ratio: { exclusiveMinimum: 0, type: "number" },
+        min_rpe: { maximum: 10, minimum: 0, type: "number" },
+      },
+      required: ["start_date", "end_date"],
+      type: "object",
+    });
     expect(findListedTool(tools, "get_climbing_sessions").inputSchema).toMatchObject({
       required: ["start_date", "end_date"],
       type: "object",
@@ -1008,6 +1078,7 @@ describe("createMcpRouter", () => {
       "get_activity_timeseries",
       "get_activity_summary",
       "get_finger_loading",
+      "get_finger_loading_progression",
       "get_climbing_progression",
       "get_climbing_sessions",
       "get_strength_sessions",
@@ -1087,6 +1158,10 @@ describe("createMcpRouter", () => {
       {
         name: "get_finger_loading",
         path: ["result", "[]", "effective_load_formula"],
+      },
+      {
+        name: "get_finger_loading_progression",
+        path: ["result", "daily", "[]", "effective_load_kg_seconds"],
       },
       {
         name: "get_nutrition_summary",
@@ -1363,7 +1438,10 @@ describe("createMcpRouter", () => {
         effective_load_kg: 90,
         effective_load_formula: "bodyweight_kg + external_load_kg",
         exercise: "max_hang",
-        total_time_under_tension_seconds: 50,
+        total_time_under_tension_seconds: null,
+        total_time_under_tension_status: "unavailable",
+        total_time_under_tension_reason:
+          "Exact time under tension requires repetitions per set, which the canonical source schema does not record.",
       }),
     ]);
     expect(toolTestMocks.fingerLoadingRange).toHaveBeenCalledWith({

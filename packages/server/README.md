@@ -216,8 +216,10 @@ dropouts are not silently treated as continuous exposure.
 Session-RPE load is session duration in minutes multiplied by recorded RPE, following Foster's
 method ([Foster 1998](https://pubmed.ncbi.nlm.nih.gov/9662690/)). Climbing load uses only recorded
 attempt counts; an entry without attempt information is missing rather than a failed attempt or
-zero. Finger load is `(bodyweight_kg + external_load_kg) × hold_seconds × set_count`, preserving
-signed assistance in `external_load_kg`. Strength volume includes non-warmup/non-rest sets only when
+zero. Finger effective load is `bodyweight_kg + external_load_kg`, preserving signed assistance.
+Exact kg-second volume would additionally require `hang_seconds × repetitions × sets`; the
+analytical channel returns it as unavailable because the raw schema lacks repetitions per set.
+Strength volume includes non-warmup/non-rest sets only when
 weight is greater than zero and at most 500 kg and reps are 1–100. Excluded sets remain visible in
 coverage and anomaly counts rather than contaminating volume.
 
@@ -265,6 +267,39 @@ device, GPS, or home-zone context when available and use the user's analysis tim
 the source context is unknown. The versioned session cursor is bound to the user, exact request
 filters, date range, and normalized-grade preference and uses keyset comparison, so malformed or
 mismatched cursors fail and deletion of the prior cursor row does not lose subsequent sessions.
+
+`get_finger_loading_progression` requires `activity:read` and an inclusive date range. Optional
+provider and protocol filters apply to both coverage and results; detailed sessions use a
+versioned, request-bound keyset cursor while daily and whole-range aggregates remain complete.
+Every entry returns the recorded protocol, grip, edge, signed external load, body weight,
+laterality, sets, hang/rest durations, RPE, notes, and source activity/provider evidence. Positive
+external load is separately labeled added weight, negative external load is separately labeled
+assistance, and effective load remains the transparent calculation
+`bodyweight_kg + original_external_load_kg`.
+
+Repetitions within each set are `null` with `not_recorded_by_canonical_schema`, because the current
+raw entry schema does not contain that observation. Consequently, exact time under tension and
+kg-second exposure are also `null` with an explicit reason rather than silently assuming one
+repetition per set. Exact matching entries on different provider members of one canonical activity
+are consolidated while retaining every contributing entry, activity, and provider ID. Conflicting
+cross-provider entries with the same protocol/grip/edge/laterality identity remain in detail, are
+flagged, and are excluded from load and high-intensity aggregates. Dates use the same stored named-
+timezone/UTC-offset precedence as climbing progression, and unknown source time context is
+explicitly flagged as assumed from the user's analysis timezone.
+
+Pain is likewise returned as `null` with `not_recorded_by_canonical_schema`; free-text notes are
+preserved but are not reclassified as pain observations. Entry provenance lists source-recorded
+and server-calculated fields separately so body weight or protocol input is not mislabeled as a
+server calculation, and derived load values are not mislabeled as source measurements.
+
+High-intensity classification is unavailable unless the caller supplies at least one effective-
+load, load-to-bodyweight, or RPE threshold. With thresholds, an entry matches when it meets any
+configured threshold, and the response echoes the thresholds used. Consecutive exposure-day counts
+are descriptive only. A separate calendar-day union reports climbing-or-finger exposure and its
+consecutive-day streak without combining their numeric loads. Each component and the union use
+`observed`, `not_observed`, or `unavailable`; confirmed absence and numeric streaks begin only when
+both channels have coverage. Finger loading remains its own channel and is never summed with or
+treated as biologically interchangeable with climbing, cycling, or generic strength load.
 
 
 ## Development
