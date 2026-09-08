@@ -157,11 +157,12 @@ const mockMetricStreamPublishRows = vi.fn(
     rows.map((row) => createMetricStreamEvent(row, options.operationRevision)),
 );
 const mockMetricStreamReplaceRows = vi.fn();
+const mockCreateMetricStreamEventPublisherForRoute = vi.fn(async () => ({
+  publishRows: mockMetricStreamPublishRows,
+  replaceRows: mockMetricStreamReplaceRows,
+}));
 vi.mock("../metric-stream/redpanda-producer.ts", () => ({
-  getDefaultMetricStreamEventPublisher: vi.fn(async () => ({
-    publishRows: mockMetricStreamPublishRows,
-    replaceRows: mockMetricStreamReplaceRows,
-  })),
+  createKafkaMetricStreamEventPublisherForRoute: mockCreateMetricStreamEventPublisherForRoute,
 }));
 
 // Mock dependencies — the mock functions are accessed via module-level refs
@@ -400,6 +401,7 @@ describe("processSyncJob", () => {
     );
     mockMetricStreamPublishRows.mockClear();
     mockMetricStreamReplaceRows.mockClear();
+    mockCreateMetricStreamEventPublisherForRoute.mockClear();
     mockWithUserWriteFence.mockImplementation(
       async (
         database: unknown,
@@ -496,6 +498,7 @@ describe("processSyncJob", () => {
     const job = createMockJob({
       providerId: "garmin",
       userId: "00000000-0000-4000-8000-000000000001",
+      targetRefreshWindow: { type: "full" },
     });
     Object.assign(job, { id: "bull-sync-1852" });
 
@@ -544,6 +547,7 @@ describe("processSyncJob", () => {
         }),
       }),
     );
+    expect(mockCreateMetricStreamEventPublisherForRoute).toHaveBeenCalledWith("history");
     expect(mockRecordMetricStreamBatchPublished).toHaveBeenCalledWith(
       mockDb,
       expect.objectContaining({
@@ -557,6 +561,37 @@ describe("processSyncJob", () => {
       datasetKeys: ["recovery", "training"],
       idempotencyKey: "worker-relational-commit:bull-sync-1852",
     });
+  });
+
+  it("routes rolling provider sync metric output to the live stream", async () => {
+    const provider = createMockProvider({
+      sync: vi.fn(async (run: SyncRun) => {
+        await run.options.metricStreamPublisher?.publishRows(
+          [
+            {
+              recordedAt: "2026-06-02T10:00:00.000Z",
+              userId: "00000000-0000-4000-8000-000000000001",
+              providerId: "test-provider",
+              externalId: "heart-rate-live",
+              sourceType: "api",
+              channel: "heart_rate",
+              scalar: 72,
+            },
+          ],
+          { operationRevision: "1000000000000000" },
+        );
+        return { provider: "test-provider", recordsSynced: 1, errors: [], duration: 100 };
+      }),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob({ targetRefreshWindow: { type: "days", days: 7 } }), mockDb);
+
+    expect(mockCreateMetricStreamEventPublisherForRoute).toHaveBeenCalledWith("live");
+    expect(mockRecordMetricStreamBatchPublished).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({ expectedEventCount: 1 }),
+    );
   });
 
   it("records metric-only output without fabricating a relational dependency", async () => {
