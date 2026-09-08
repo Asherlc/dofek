@@ -25771,7 +25771,11 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   corrected, the fresh E2E dbt build identified a third stale target contract:
   `sensor_scalar_sample.provider_priority` remained `UInt16` while the current
   model emits `Int32`, and dbt failed with `New column types:
-  ['provider_priority Int32']`.
+  ['provider_priority Int32']`. Before the corrected head could run, `main`
+  merged the food-record MCP work, which had independently claimed Postgres
+  migration numbers 0112/0113 and expanded `tool-output.ts`; the resulting base
+  conflict exposed both duplicate migration identities and Biome's 1,000-line
+  module limit.
 - **Direct fixes:** Align the three Expo packages with the SDK compatibility map;
   move the shared performance-equivalence contract into a dependency-neutral
   type module; add the legitimate domain terms to the project dictionary and
@@ -25785,7 +25789,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   and make migration 0077 introspect and alter the dbt-owned read model only
   when that table already exists. Define both sensor target tables with `Int32`
   provider priority and add migration 0078 to convert existing targets before
-  dbt runs.
+  dbt runs. Preserve both feature sets by renumbering the unmerged analytics
+  migrations to 0114/0115, combining their MCP registries, and extracting the
+  cohesive food-record output schemas into their own module.
 - **Validation / follow-up:** Expo dependency validation, Dependency Cruiser,
   CSpell, root typecheck, the 9,232-test changed unit/mobile suite, and the full
   local lint gate pass. Focused mutation runs now pass for cycling metrics,
@@ -25794,7 +25800,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   the production-dbt-path integrity repair integration suite pass with the
   current provenance fixture. The migration 0078 real-engine integration test
   verifies the type conversion and idempotency. The complete replacement CI run
-  remains the merge gate. One otherwise-passing shard in run 34249990223 failed
+  remains the merge gate. After merging current `main`, the 9,391-test changed
+  unit/mobile suite and 38 focused real-database migration and nutrition tests
+  pass. One otherwise-passing shard in run 34249990223 failed
   while finalizing its artifact with GitHub's `403 Forbidden`, so a clean
   replacement run is required to distinguish transient artifact infrastructure
   from code failures. The mutation threshold and production-module scope remain

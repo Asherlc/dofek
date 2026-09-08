@@ -49,6 +49,11 @@ const calorieResolutionRowSchema = z.object({
   calories: z.coerce.number(),
   resolution_status: z.string(),
 });
+const effectiveDailyRowSchema = z.object({
+  calories: z.coerce.number(),
+  protein_g: z.coerce.number().nullable(),
+});
+const countRowSchema = z.object({ count: z.coerce.number() });
 
 describe("canonical nutrition contribution set", () => {
   let context: TestContext;
@@ -83,17 +88,20 @@ describe("canonical nutrition contribution set", () => {
     meal?: "breakfast" | "lunch" | "dinner" | "snack" | "other" | null;
     confirmed?: boolean;
     sourceName?: string | null;
+    externalId?: string | null;
     nutrients: Record<string, number>;
   }): Promise<string> {
     const id = crypto.randomUUID();
     await context.db.execute(sql`
       INSERT INTO fitness.food_entry (
-        id, user_id, provider_id, date, nutrition_grain, food_name, meal, source_name, confirmed
+        id, user_id, provider_id, external_id, date, nutrition_grain, food_name, meal, source_name,
+        confirmed
       )
       VALUES (
         ${id},
         ${input.userId ?? TEST_USER_ID},
         ${input.providerId},
+        ${input.externalId ?? null},
         ${input.date}::date,
         ${input.grain ?? null}::fitness.nutrition_entry_grain,
         ${input.foodName ?? null},
@@ -110,6 +118,40 @@ describe("canonical nutrition contribution set", () => {
       VALUES ${sql.join(nutrientRows, sql`, `)}
     `);
     return id;
+  }
+
+  async function createFoodIdentity(providerId: string, externalId: string) {
+    const identityId = crypto.randomUUID();
+    await context.db.execute(sql`INSERT INTO fitness.human_record_identity
+      (id, user_id, domain, namespace, source_key)
+      VALUES (${identityId}, ${TEST_USER_ID}, 'nutrition.food', ${providerId},
+        ${`external:${externalId}`})`);
+    return identityId;
+  }
+
+  async function appendFoodDecision(input: {
+    identityId: string;
+    predecessorId?: string | null;
+    deleted?: boolean | null;
+    protein?: { operation: "set" | "clear"; amount: number | null };
+  }) {
+    const changeId = crypto.randomUUID();
+    const targetId = crypto.randomUUID();
+    await context.db.execute(sql`INSERT INTO fitness.human_record_change
+      (id, user_id, request_id, request_hash, kind, channel, schema_version)
+      VALUES (${changeId}, ${TEST_USER_ID}, ${crypto.randomUUID()}, ${"b".repeat(64)},
+        'update', 'web', 1)`);
+    await context.db.execute(sql`INSERT INTO fitness.human_record_target
+      (id, user_id, identity_id, change_id, predecessor_id, deleted)
+      VALUES (${targetId}, ${TEST_USER_ID}, ${input.identityId}, ${changeId},
+        ${input.predecessorId ?? null}, ${input.deleted ?? null})`);
+    if (input.protein) {
+      await context.db.execute(sql`INSERT INTO fitness.human_food_nutrient_decision
+        (target_id, identity_id, user_id, nutrient_id, operation, amount)
+        VALUES (${targetId}, ${input.identityId}, ${TEST_USER_ID}, 'protein',
+          ${input.protein.operation}, ${input.protein.amount})`);
+    }
+    return targetId;
   }
 
   async function fetchAggregateRows(date: string) {
@@ -688,5 +730,94 @@ describe("canonical nutrition contribution set", () => {
 
     expect(rows[0]?.loggingCompleteness).toBe("no_logging");
     expect(rows[0]?.sourceProviders).toContain("nutrition-itemized");
+  });
+
+  it("applies effective nutrient corrections and visibility exactly once to canonical totals", async () => {
+    const date = "2026-01-17";
+    const providerId = "nutrition-itemized";
+    const externalId = crypto.randomUUID();
+    await addEntry({
+      providerId,
+      externalId,
+      date,
+      grain: "itemized",
+      foodName: "Editable meal",
+      meal: "lunch",
+      nutrients: { calories: 500, protein: 20 },
+    });
+    const identityId = await createFoodIdentity(providerId, externalId);
+    const corrected = await appendFoodDecision({
+      identityId,
+      protein: { operation: "set", amount: 30 },
+    });
+
+    expect(
+      await executeWithSchema(
+        context.db,
+        effectiveDailyRowSchema,
+        sql`SELECT calories, protein_g FROM fitness.v_nutrition_daily
+          WHERE user_id = ${TEST_USER_ID} AND date = ${date}::date`,
+      ),
+    ).toEqual([{ calories: 500, protein_g: 30 }]);
+    expect(
+      await executeWithSchema(
+        context.db,
+        effectiveDailyRowSchema,
+        sql`SELECT calories, protein_g FROM fitness.v_nutrition_provider_daily
+          WHERE user_id = ${TEST_USER_ID} AND provider_id = ${providerId}
+            AND date = ${date}::date`,
+      ),
+    ).toEqual([{ calories: 500, protein_g: 20 }]);
+
+    const deleted = await appendFoodDecision({
+      identityId,
+      predecessorId: corrected,
+      deleted: true,
+    });
+    expect(
+      await executeWithSchema(
+        context.db,
+        effectiveDailyRowSchema,
+        sql`SELECT calories, protein_g FROM fitness.v_nutrition_daily
+          WHERE user_id = ${TEST_USER_ID} AND date = ${date}::date`,
+      ),
+    ).toEqual([]);
+
+    const restored = await appendFoodDecision({
+      identityId,
+      predecessorId: deleted,
+      deleted: false,
+    });
+    expect(
+      await executeWithSchema(
+        context.db,
+        effectiveDailyRowSchema,
+        sql`SELECT calories, protein_g FROM fitness.v_nutrition_daily
+          WHERE user_id = ${TEST_USER_ID} AND date = ${date}::date`,
+      ),
+    ).toEqual([{ calories: 500, protein_g: 30 }]);
+
+    await appendFoodDecision({
+      identityId,
+      predecessorId: restored,
+      protein: { operation: "set", amount: null },
+    });
+    expect(
+      await executeWithSchema(
+        context.db,
+        effectiveDailyRowSchema,
+        sql`SELECT calories, protein_g FROM fitness.v_nutrition_daily
+          WHERE user_id = ${TEST_USER_ID} AND date = ${date}::date`,
+      ),
+    ).toEqual([{ calories: 500, protein_g: null }]);
+    expect(
+      await executeWithSchema(
+        context.db,
+        countRowSchema,
+        sql`SELECT COUNT(*) AS count FROM fitness.v_nutrition_canonical_nutrient
+          WHERE user_id = ${TEST_USER_ID} AND date = ${date}::date
+            AND nutrient_id = 'protein'`,
+      ),
+    ).toEqual([{ count: 0 }]);
   });
 });

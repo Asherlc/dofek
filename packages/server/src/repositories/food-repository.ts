@@ -386,6 +386,8 @@ export interface CreateFoodEntryInput {
   foodDescription?: string | null;
   category?: string | null;
   numberOfUnits?: number | null;
+  servingUnit?: string | null;
+  servingWeightGrams?: number | null;
   nutrients: Record<string, number>;
   calories?: number | null;
   proteinG?: number | null;
@@ -819,14 +821,20 @@ export class FoodRepository {
     return executeWithSchema(
       this.#db,
       healthKitWriteBackFoodEntryRowSchema,
-      sql`SELECT id, date, food_name, calories, protein_g, carbs_g, fat_g
-          FROM fitness.v_food_entry_with_nutrition
-          WHERE user_id = ${this.#userId}
-            AND provider_id = ${DOFEK_PROVIDER_ID}
-            AND confirmed = true
-            AND date >= ${startDate}::date
-            AND date <= ${endDate}::date
-          ORDER BY date ASC, food_name ASC, id ASC`,
+      sql`SELECT entry.id, entry.date, entry.food_name,
+            MAX(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'calories')::integer AS calories,
+            MAX(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'protein') AS protein_g,
+            MAX(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'carbohydrate') AS carbs_g,
+            MAX(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'fat') AS fat_g
+          FROM fitness.food_entry AS entry
+          LEFT JOIN fitness.food_entry_nutrient AS nutrient ON nutrient.food_entry_id = entry.id
+          WHERE entry.user_id = ${this.#userId}
+            AND entry.provider_id = ${DOFEK_PROVIDER_ID}
+            AND entry.confirmed = true
+            AND entry.date >= ${startDate}::date
+            AND entry.date <= ${endDate}::date
+          GROUP BY entry.id
+          ORDER BY entry.date ASC, entry.food_name ASC, entry.id ASC`,
     );
   }
 
@@ -851,11 +859,12 @@ export class FoodRepository {
     );
     const foodEntryInsert = sql`INSERT INTO fitness.food_entry (
       user_id, provider_id, external_id, date, meal, food_name, food_description,
-      category, number_of_units, nutrition_grain
+      category, number_of_units, serving_unit, serving_weight_grams, nutrition_grain
     ) VALUES (
       ${this.#userId}, ${DOFEK_PROVIDER_ID}, ${input.externalId ?? null}, ${input.date}::date,
       ${input.meal ?? null}, ${input.foodName}, ${input.foodDescription ?? null},
-      ${input.category ?? null}, ${input.numberOfUnits ?? null}, 'itemized'
+      ${input.category ?? null}, ${input.numberOfUnits ?? null}, ${input.servingUnit ?? null},
+      ${input.servingWeightGrams ?? null}, 'itemized'
     )`;
 
     const idRows = await executeWithSchema(

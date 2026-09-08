@@ -72,6 +72,9 @@ export function createMcpRouter(options: CreateMcpRouterOptions): Router {
     const server = createDofekMcpServer({
       db: options.db,
       userId: validatedToken.userId,
+      clientId: validatedToken.oauthClientId
+        ? `oauth:${validatedToken.oauthClientId}`
+        : `token:${validatedToken.tokenId}`,
       scopes: validatedToken.scopes,
       timezone: getSingleHeaderValue(request.headers["x-timezone"]) ?? "UTC",
       sensorStore: options.sensorStore,

@@ -23,9 +23,9 @@ export interface Table {
 
 export interface Ref {
   fromTable: string;
-  fromCol: string;
+  fromCols: string[];
   toTable: string;
-  toCol: string;
+  toCols: string[];
 }
 
 export function normalizeGeneratedDbml(dbml: string): string {
@@ -131,14 +131,24 @@ export function parseTables(dbml: string): Table[] {
 /** Parse refs from DBML and mark FK columns on the provided tables */
 export function parseRefs(dbml: string, tables: Table[]): Ref[] {
   const refs: Ref[] = [];
-  const refRegex = /ref\s+\w+:\s+fitness\.(\w+)\.(\w+)\s*>\s*fitness\.(\w+)\.(\w+)/g;
+  const refRegex =
+    /ref\s+\w+:\s+fitness\.(\w+)\.(\([^)]+\)|\w+)\s*>\s*fitness\.(\w+)\.(\([^)]+\)|\w+)/g;
   for (const match of dbml.matchAll(refRegex)) {
-    refs.push({ fromTable: match[1], fromCol: match[2], toTable: match[3], toCol: match[4] });
+    const fromCols = match[2]
+      .replace(/^\(|\)$/g, "")
+      .split(",")
+      .map((column) => column.trim());
+    const toCols = match[4]
+      .replace(/^\(|\)$/g, "")
+      .split(",")
+      .map((column) => column.trim());
+    refs.push({ fromTable: match[1], fromCols, toTable: match[3], toCols });
 
-    // Mark FK columns
     const table = tables.find((t) => t.name === match[1]);
-    const col = table?.columns.find((c) => c.name === match[2]);
-    if (col) col.fk = true;
+    for (const fromCol of fromCols) {
+      const column = table?.columns.find((candidate) => candidate.name === fromCol);
+      if (column) column.fk = true;
+    }
   }
   return refs;
 }

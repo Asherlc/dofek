@@ -13,6 +13,12 @@ import { sourceReferenceSchema } from "./analytical-evidence.ts";
 import { analyticalTrainingLoadOutputSchema } from "./analytical-training-load-output.ts";
 import { cyclingTrainingMetricsOutputSchema } from "./cycling-training-metrics-output.ts";
 import { fingerLoadingProgressionOutputSchema } from "./finger-loading-progression-output.ts";
+import {
+  foodRecordDetailOutputSchema,
+  foodRecordHistoryOutputSchema,
+  foodRecordMutationOutputSchema,
+  foodRecordSearchOutputSchema,
+} from "./food-record-output.ts";
 import { nutritionSummaryItemSchema } from "./nutrition-summary-output.ts";
 import { strengthProgressionOutputSchema } from "./strength-progression-output.ts";
 
@@ -943,6 +949,10 @@ export const mcpOutputSchemas = {
   fingerLoading: fingerLoadingOutputSchema,
   fingerLoadingProgression: fingerLoadingProgressionOutputSchema,
   strengthProgression: strengthProgressionOutputSchema,
+  foodRecordDetail: foodRecordDetailOutputSchema,
+  foodRecordHistory: foodRecordHistoryOutputSchema,
+  foodRecordMutation: foodRecordMutationOutputSchema,
+  foodRecordSearch: foodRecordSearchOutputSchema,
   healthTrends: healthTrendsOutputSchema,
   nutritionSummary: nutritionSummaryOutputSchema,
   providerSync: providerSyncOutputSchema,
