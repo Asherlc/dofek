@@ -25747,3 +25747,23 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Validation / follow-up:** The exact dependency check and both CI-equivalent
   iOS export commands pass locally. Require fresh green CI before merging the
   PR.
+
+## 2026-09-08 — GitHub artifact finalization blocked passing integration shards
+
+- **Scope / impact:** [PR #2685](https://github.com/Asherlc/dofek/pull/2685)
+  validation only; no production impact. Integration shards
+  [1/4](https://github.com/Asherlc/dofek/actions/runs/34253659222/job/102154840958)
+  and
+  [4/4](https://github.com/Asherlc/dofek/actions/runs/34253659222/job/102154840810)
+  were marked failed after their test commands completed successfully.
+- **Evidence / root cause:** Both shards passed all 51 assigned test files and
+  uploaded their coverage archives. The exact failing step was
+  `actions/upload-artifact`; its first fatal diagnostic was
+  `Failed to FinalizeArtifact: Received non-retryable error: Failed request:
+  (403) Forbidden: Error from intermediary with HTTP status code 403
+  "Forbidden"`. Matching failures after successful uploads in two independent
+  runners isolate the failure to GitHub's artifact-finalization intermediary,
+  not repository tests.
+- **Resolution / validation:** Keep artifact publication as a hard gate with no
+  retry, timeout, or warn-and-continue behavior. Require a fresh workflow run
+  to pass artifact finalization and every aggregate gate before merge.
