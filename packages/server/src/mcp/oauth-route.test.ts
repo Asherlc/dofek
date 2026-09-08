@@ -96,6 +96,7 @@ describe("createMcpOAuthRouter", () => {
       for (const scope of MCP_OAUTH_SCOPES) {
         expect(metadata.scopes_supported).toContain(scope);
       }
+      expect(metadata.scopes_supported).toContain("nutrition:write");
     });
 
     it("advertises every supported scope from the authorization-server metadata", async () => {
@@ -104,6 +105,7 @@ describe("createMcpOAuthRouter", () => {
       const metadata = authorizationServerMetadataSchema.parse(await response.json());
       expect(metadata.client_id_metadata_document_supported).toBe(true);
       expect(metadata.scopes_supported).toEqual([...MCP_OAUTH_SCOPES]);
+      expect(metadata.scopes_supported).toContain("nutrition:write");
     });
 
     it("publishes the Dofek resource and issuer URLs in the metadata", async () => {

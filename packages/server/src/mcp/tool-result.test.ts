@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { jsonToolResult } from "./tool-result.ts";
+import { jsonToolError, jsonToolResult } from "./tool-result.ts";
 
 describe("jsonToolResult", () => {
   it("returns an object-root structured result and readable JSON text", () => {
@@ -31,5 +31,54 @@ describe("jsonToolResult", () => {
     ],
   ])("rejects %s instead of emitting malformed text content", (_label, value) => {
     expect(() => jsonToolResult(value)).toThrow();
+  });
+});
+
+describe("jsonToolError", () => {
+  it("returns a safe JSON tool error with optional details", () => {
+    expect(
+      jsonToolError("CONFLICT", "The food record changed. Read it again.", {
+        current_version: "target-2",
+      }),
+    ).toEqual({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              error: {
+                code: "CONFLICT",
+                message: "The food record changed. Read it again.",
+                details: { current_version: "target-2" },
+              },
+            },
+            null,
+            2,
+          ),
+        },
+      ],
+      isError: true,
+    });
+  });
+
+  it("omits details when none are safe to return", () => {
+    expect(jsonToolError("INTERNAL_ERROR", "The request could not be completed.")).toEqual({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              error: {
+                code: "INTERNAL_ERROR",
+                message: "The request could not be completed.",
+              },
+            },
+            null,
+            2,
+          ),
+        },
+      ],
+      isError: true,
+    });
   });
 });

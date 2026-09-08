@@ -6,6 +6,14 @@ export function jsonToolResult<T>(value: T) {
   };
 }
 
+export function jsonToolError(code: string, message: string, details?: Record<string, unknown>) {
+  const error = details === undefined ? { code, message } : { code, message, details };
+  return {
+    content: [{ type: "text" as const, text: serializeJsonText({ error }) }],
+    isError: true,
+  };
+}
+
 /** Canonical text serialization for MCP JSON results. */
 export function serializeJsonText(value: unknown): string {
   const text = JSON.stringify(value, null, 2);
