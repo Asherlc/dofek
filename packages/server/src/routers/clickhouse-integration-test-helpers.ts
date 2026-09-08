@@ -106,6 +106,7 @@ const rawTableSyncs: RawTableSync[] = [
     tableName: "activity",
     columns: [
       "id",
+      "group_id",
       "provider_id",
       "user_id",
       "external_id",

@@ -353,7 +353,7 @@ describe("Activity summary deduplication", () => {
       query: vi.fn(queryMock),
       getActivitySummaries: vi.fn().mockResolvedValue([
         {
-          activity_id: memberActivityId,
+          activity_id: canonicalActivityId,
           avg_hr: 144,
           max_hr: 171,
           avg_power: 212,
@@ -810,9 +810,7 @@ describe("Activity summary deduplication", () => {
       expect.arrayContaining([expect.objectContaining({ zone: 2, seconds: 120 })]),
     );
 
-    expect(sensorStore.getActivitySummaries).toHaveBeenCalledWith(
-      expect.arrayContaining([canonicalActivityId, memberActivityId]),
-    );
+    expect(sensorStore.getActivitySummaries).toHaveBeenCalledWith([canonicalActivityId]);
     expect(sensorStore.getStream).toHaveBeenCalledWith(
       expect.objectContaining({
         activityId: canonicalActivityId,

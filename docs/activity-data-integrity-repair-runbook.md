@@ -34,6 +34,40 @@ Do not begin another historical repair while a journal row is eligible. Do not
 force a failed CAS or a CDC timeout: preserve the artifact and investigate the
 specific journal phase.
 
+## Stable activity-group refresh order
+
+When activity identity or payload availability is wrong but the raw provider
+rows are intact, repair derived state in this order:
+
+1. Reconcile persisted `fitness.activity_group` membership and aliases in the
+   same PostgreSQL transaction as the activity canonical commit. Do not derive
+   a replacement group ID from the currently selected display member.
+   PostgreSQL transactions make the membership and alias changes visible as one
+   unit ([PostgreSQL transaction documentation](https://www.postgresql.org/docs/current/tutorial-transactions.html)).
+2. Wait for the reconciled `group_id`, activity members, and provider priorities
+   to reach the ClickHouse PostgreSQL mirror. Then rebuild the current canonical
+   relational projection and the affected ClickHouse models in dependency
+   order. Use dbt graph selection for the bounded dependency closure rather than
+   manually inserting derived rows
+   ([dbt graph operators](https://docs.getdbt.com/reference/node-selection/graph-operators)).
+3. Verify the stable group ID through direct group, member, and historical alias
+   lookups. A member or alias request must return the stable group and expose
+   `resolved_from`. Verify structured sets and deduplicated sensor, GPS, and
+   elevation payloads independently of the selected representative. Use
+   ClickHouse `FINAL` for operator verification of current
+   `ReplacingMergeTree` state
+   ([ClickHouse `FINAL` modifier](https://clickhouse.com/docs/sql-reference/statements/select/from#final-modifier)).
+4. Re-import Strong only when an inspection proves the stored provider source
+   rows or strength-set rows are corrupt. Empty hydrated output, a changed
+   representative, or a stale read model is not evidence that the immutable
+   provider export must be replayed. Preserve the original upload and use the
+   retained-upload procedure below if raw corruption is proven.
+
+Stop if persisted group membership is unresolved, an alias points outside the
+user scope, CDC has not delivered the new membership, or any populated payload
+field disappears after a representative-only change. Do not proceed to a later
+stage to compensate for an earlier-stage failure.
+
 ## Preconditions
 
 1. Confirm `DATABASE_URL` and `CLICKHOUSE_URL` point at the intended

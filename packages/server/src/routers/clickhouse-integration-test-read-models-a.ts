@@ -11,6 +11,7 @@ export function buildTestDedupedActivitiesSelectSql(
   id AS activity_id,
   provider_id,
   user_id,
+  primary_activity_id,
   canonical_type,
   provider_type,
   modality,
