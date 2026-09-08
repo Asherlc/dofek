@@ -73,10 +73,20 @@ rows are intact, repair derived state in this order:
    committed PostgreSQL rows when queried; it is not a projection to rebuild
    ([PostgreSQL `CREATE VIEW`](https://www.postgresql.org/docs/current/sql-createview.html)).
    Stop if its group identity, membership, or representative is wrong.
-3. Wait for the reconciled `group_id`, activity members, and provider priorities
-   to reach the ClickHouse PostgreSQL mirror. Then rebuild the affected
-   ClickHouse models in dependency order. Use dbt graph selection for the
-   bounded dependency closure rather than manually inserting derived rows
+3. After verifying the regular PostgreSQL `fitness.v_activity` view in step 2,
+   follow the canonical
+   [microbatch replay and historical full-refresh procedure](../analytics/README.md#microbatch-start-bounds-and-historical-backfills)
+   exactly. Apply ClickHouse migrations 0076 through 0078, verify that the
+   reconciled PostgreSQL membership has reached ClickHouse through CDC, and,
+   when the documented provenance condition applies, run the documented
+   bounded microbatch replay in its stated order. Then calculate and record
+   `required_lookback_days` with the documented preflight and run the documented
+   retention-aware full refresh in dependency order. Its command must include
+   an explicit `initial_lookback_days` that covers the preflight value. Never
+   omit that variable or accept the 120-day default; stop before running dbt if
+   the preflight value is missing or the proposed command does not cover it.
+   Use dbt graph selection for the bounded dependency closure rather than
+   manually inserting derived rows
    ([dbt graph operators](https://docs.getdbt.com/reference/node-selection/graph-operators)).
 4. Verify the stable group ID through direct group, member, and historical alias
    lookups. A member or alias request must return the stable group and expose

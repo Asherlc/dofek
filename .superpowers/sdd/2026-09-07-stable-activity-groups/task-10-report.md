@@ -4,13 +4,12 @@
 
 Task 10 pins the stable activity-group contract through real PostgreSQL and ClickHouse behavior and the public MCP request path. The regression fixtures use synthetic identifiers and current final-schema models. No production behavior was changed to accommodate test doubles, and the parked Task 6 repeated stream-tombstone work was not touched.
 
-Task 10's sanitized base is remote commit `92e6785f6`; review-fix commit
-`a32c4d1cc` is also published on `origin/fix/activity-representative-selection`.
-Its fixtures use deliberately artificial dates, names, identifiers, and
-measurements while preserving the required structural invariants. The remote
-branch contains the sanitized replacement history followed by the normal review
-fix and report updates; superseded local fixture commits are not ancestors of
-the remote head.
+Task 10's sanitized base is commit `92e6785f6`, and review-fix implementation
+begins at `a32c4d1cc`. Its fixtures use deliberately artificial dates, names,
+identifiers, and measurements while preserving the required structural
+invariants. Superseded local fixture commits are not ancestors of the sanitized
+history. Publication status is recorded at handoff rather than inside this
+commit-internal report.
 
 ## RED evidence
 
@@ -74,10 +73,9 @@ The fixtures prove:
   Strong before the first fetch. Both arbitrary movement series retain five
   working sets at sequential indexes and two typed rest entries after a
   representative change.
-- A second strength group requested by stable group ID remains non-empty because
-  hydration includes its non-requested member's structured payload. A
-  payload-free member cannot become representative in that scenario because
-  payload richness is the first ranking criterion.
+- A second deliberately artificial strength group requested by stable group ID
+  returns non-empty structured exercise details that parse through the current
+  `activityDetailsOutputSchema`.
 - Two deliberately artificial WHOOP cycling/commuting + Peloton cardio groups retain the specific `cycling` classification, `commuting` refinement, and distinct non-null heart-rate summaries even though their metadata and sensor evidence are disjoint.
 - Changing only Apple Health and Strong provider priorities after the first
   fetch changes the PostgreSQL display representative without copying or
@@ -200,7 +198,12 @@ the changed SQL builders were exercised by the passing real ClickHouse suite.
    within one transaction.
 2. Verify the regular PostgreSQL `fitness.v_activity` view directly before CDC;
    it is not a relational projection to rebuild.
-3. Wait for CDC and perform a bounded dependency-aware ClickHouse dbt refresh.
+3. Follow the anchored canonical analytics procedure: apply ClickHouse
+   migrations 0076 through 0078, verify CDC membership, replay historical
+   provenance with the documented bounded microbatch when required, and run
+   the retention-aware full refresh in dependency order. The documented
+   preflight lookback must be passed explicitly; the default 120-day retention
+   is never acceptable for historical repair.
 4. Verify stable/member/alias resolution, structured and sensor union, and
    finalized ClickHouse rows.
 5. Re-import Strong only when the raw stored source or set rows themselves are
@@ -210,6 +213,12 @@ New operational claims cite the official PostgreSQL transaction and `CREATE
 VIEW` documentation, dbt graph-operator documentation, and ClickHouse `FINAL`
 documentation.
 
+Review fix round 2 changed documentation only. Targeted cspell reported zero
+issues across this runbook and report. The repository has no documentation
+link-check script; direct internal-link validation found the canonical analytics
+heading and the runbook reference to its generated anchor. `rtk git diff
+--check` produced no output.
+
 `docs/production-incident-baseline.md` records the generalized symptoms, user impact, captured technical failures, proven representative-coupling causes, implemented code/test repair, local stale-schema evidence, and remaining deployment/historical-refresh risk. Historical attribution of the set-row transposition writer remains explicitly unknown because current parser and persistence fixtures do not reproduce it.
 
 ## Remaining risks
@@ -217,8 +226,8 @@ documentation.
 - Production deployment and a bounded historical activity-group refresh remain operator work; this task records the safe order but does not claim they have occurred.
 - Historical set-row transposition attribution remains unknown until raw stored source rows or historical writer evidence demonstrate the cause.
 - The Task 6 repeated stream-tombstone append issue remains intentionally parked for the whole-branch fix pass.
-- The sanitized base, review-fix implementation, and report commits are
-  published on the remote branch; the task handoff records the final head.
+- Commit and publication status are recorded in the task handoff rather than
+  embedded as a self-referential report SHA.
 
 ## Retrospective
 
