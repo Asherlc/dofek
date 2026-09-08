@@ -25802,13 +25802,59 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   performance-comparison modality metrics. The focused ClickHouse join test and
   the production-dbt-path integrity repair integration suite pass with the
   current provenance fixture. The migration 0078 real-engine integration test
-  verifies the type conversion and idempotency. The complete replacement CI run
-  remains the merge gate. After merging current `main`, the 9,391-test changed
+  verifies the type conversion and idempotency. After merging the food-record
+  base, the 9,391-test changed
   unit/mobile suite and 38 focused real-database migration and nutrition tests
   pass. The focused critical-power mutation run now passes at 91.75% for that
-  module and 78.68% for the aggregate report. One otherwise-passing shard in
-  run 34249990223 failed
+  module and 78.68% for the aggregate report. The replacement
+  [run 34267627061](https://github.com/Asherlc/dofek/actions/runs/34267627061)
+  completed with 103 successful jobs, four intentional skips, and no failures,
+  including all mutation, integration, E2E, security, and native build gates.
+  `main` then advanced with the injury-logging MCP work before GitHub could
+  merge the PR; after combining that registry and documentation, lint,
+  typecheck, and the 9,395-test changed unit/mobile suite pass locally. A fresh
+  check rollup on that exact head remains the merge gate. One otherwise-passing
+  shard in run 34249990223 failed
   while finalizing its artifact with GitHub's `403 Forbidden`, so a clean
   replacement run is required to distinguish transient artifact infrastructure
   from code failures. The mutation threshold and production-module scope remain
   unchanged. No timeout, retry, ignored check, or threshold adjustment was added.
+
+## 2026-09-08 — Expo patch drift blocked MCP injury logging PR validation
+
+- **Scope / impact:** [PR #2685](https://github.com/Asherlc/dofek/pull/2685)
+  validation only; no production impact. The `Build Mobile / Metro Bundle` job
+  stopped before bundle export.
+- **Evidence / root cause:** [Job 102142563023](https://github.com/Asherlc/dofek/actions/runs/34250146372/job/102142563023)
+  failed at `cd packages/mobile && pnpm expo install --check`. Its first fatal
+  diagnostic reported `expo`, `expo-modules-core`, and `expo-router` were one
+  patch behind the SDK 57 compatibility set. Expo documents this command as a
+  dependency-version validation check
+  ([Expo CLI](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation)).
+- **Direct fix:** Pin those three packages to the compatible stable patches
+  available on September 8, 2026: 57.0.21, 57.0.17, and 57.0.20, respectively.
+  No retry, timeout,
+  compatibility exclusion, or CI bypass was added.
+- **Validation / follow-up:** The exact dependency check and both CI-equivalent
+  iOS export commands pass locally. Require fresh green CI before merging the
+  PR.
+
+## 2026-09-08 — GitHub artifact finalization blocked passing integration shards
+
+- **Scope / impact:** [PR #2685](https://github.com/Asherlc/dofek/pull/2685)
+  validation only; no production impact. Integration shards
+  [1/4](https://github.com/Asherlc/dofek/actions/runs/34253659222/job/102154840958)
+  and
+  [4/4](https://github.com/Asherlc/dofek/actions/runs/34253659222/job/102154840810)
+  were marked failed after their test commands completed successfully.
+- **Evidence / root cause:** Both shards passed all 51 assigned test files and
+  uploaded their coverage archives. The exact failing step was
+  `actions/upload-artifact`; its first fatal diagnostic was
+  `Failed to FinalizeArtifact: Received non-retryable error: Failed request:
+  (403) Forbidden: Error from intermediary with HTTP status code 403
+  "Forbidden"`. Matching failures after successful uploads in two independent
+  runners isolate the failure to GitHub's artifact-finalization intermediary,
+  not repository tests.
+- **Resolution / validation:** Keep artifact publication as a hard gate with no
+  retry, timeout, or warn-and-continue behavior. Require a fresh workflow run
+  to pass artifact finalization and every aggregate gate before merge.

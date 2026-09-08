@@ -135,7 +135,7 @@ Input:
 ```json
 {
   "name": "Codex",
-  "scopes": ["health:read", "activity:read", "nutrition:read", "providers:read", "sync:write"],
+  "scopes": ["health:read", "health:write", "activity:read", "nutrition:read", "providers:read", "sync:write"],
   "expiresAt": null
 }
 ```
@@ -156,11 +156,15 @@ Granting that scope does not change the other default scopes.
 | Scope | Allows |
 |-------|--------|
 | `health:read` | Read daily health summaries. |
+| `health:write` | Log user-owned health observations such as injuries. |
 | `activity:read` | Search activity summaries. |
 | `nutrition:read` | Read daily nutrition summaries and effective food records. |
 | `nutrition:write` | Create, update, delete, and restore food records; also requires `nutrition:read`. |
 | `providers:read` | List configured providers and connection status. |
 | `sync:write` | Enqueue provider sync jobs. |
+
+`health:write` is never granted by default. Manual-token users must select it,
+and OAuth clients must request it explicitly.
 
 ## Tools
 
@@ -196,6 +200,9 @@ The canonical tool names, schemas, and scope checks are defined in the [MCP tool
 | `restore_food_entry` | `nutrition:read` + `nutrition:write` | Restores a deleted record while retaining its field and nutrient decisions. |
 | `get_food_entry_history` | `nutrition:read` | Returns the paginated command and decision history for a food record. |
 | `get_body_metrics` | `health:read` | Returns reconciled body metrics, value kinds, source values, and 7/28-day rolling weight statistics. |
+| `get_subjective_timeline` | `health:read` | Returns recorded check-ins, symptoms, and injury events for an exact date range. |
+| `list_body_regions` | `health:read` | Lists canonical body-region IDs and labels accepted by subjective health tools. |
+| `log_injury` | `health:write` | Logs a private injury or niggle with onset, optional resolution and severity, description, and canonical body region. |
 | `list_providers` | `providers:read` | Lists configured providers and status. |
 | `start_provider_sync` | `sync:write` | Enqueues a provider sync job. |
 

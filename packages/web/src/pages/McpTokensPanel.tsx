@@ -9,6 +9,7 @@ import { trpc } from "../lib/trpc.ts";
 
 type McpScope =
   | "health:read"
+  | "health:write"
   | "activity:read"
   | "nutrition:read"
   | "nutrition:write"
@@ -17,6 +18,7 @@ type McpScope =
 
 const mcpScopeOptions: Array<{ value: McpScope; label: string }> = [
   { value: "health:read", label: "Health summaries" },
+  { value: "health:write", label: "Log health observations" },
   { value: "activity:read", label: "Activity history" },
   { value: "nutrition:read", label: "Nutrition summaries" },
   { value: "nutrition:write", label: "Modify food records" },
@@ -25,7 +27,9 @@ const mcpScopeOptions: Array<{ value: McpScope; label: string }> = [
 ];
 
 const mcpScopeValues = mcpScopeOptions.map((option) => option.value);
-const defaultMcpScopeValues = mcpScopeValues.filter((scope) => scope !== "nutrition:write");
+const defaultMcpScopeValues = mcpScopeValues.filter(
+  (scope) => scope !== "health:write" && scope !== "nutrition:write",
+);
 
 function formatTimestamp(value: Date | string | null): string {
   if (!value) return "Never";
@@ -68,6 +72,14 @@ export function McpTokensPanel() {
   const toggleScope = (scope: McpScope) => {
     setSelectedScopes((current) => {
       const next = new Set(current);
+      if (scope === "nutrition:write" && !next.has(scope)) {
+        next.add("nutrition:read");
+        next.add(scope);
+        return next;
+      }
+      if (scope === "nutrition:read" && next.has("nutrition:write")) {
+        return next;
+      }
       if (next.has(scope)) {
         next.delete(scope);
       } else {
@@ -219,6 +231,9 @@ export function McpTokensPanel() {
                 <input
                   type="checkbox"
                   checked={selectedScopes.has(option.value)}
+                  disabled={
+                    option.value === "nutrition:read" && selectedScopes.has("nutrition:write")
+                  }
                   onChange={() => toggleScope(option.value)}
                   className="h-4 w-4 accent-accent"
                 />

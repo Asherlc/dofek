@@ -166,10 +166,52 @@ describe("McpTokensPanel", () => {
     expect(invalidateMcp).toHaveBeenCalled();
   });
 
+  it("requires explicit selection to grant health write access", async () => {
+    createTokenMutateAsync.mockResolvedValueOnce({
+      token: "dofek_mcp_writer",
+      metadata: {},
+    });
+
+    render(<McpTokensPanel />);
+
+    expect(screen.getByLabelText("Log health observations").getAttribute("checked")).toBeNull();
+    fireEvent.click(screen.getByLabelText("Log health observations"));
+    fireEvent.click(screen.getByRole("button", { name: "Create Token" }));
+
+    await waitFor(() => {
+      expect(createTokenMutateAsync).toHaveBeenCalledWith({
+        name: "Codex",
+        scopes: [
+          "health:read",
+          "health:write",
+          "activity:read",
+          "nutrition:read",
+          "providers:read",
+          "sync:write",
+        ],
+        expiresAt: null,
+      });
+    });
+  });
+
   it("offers nutrition write access without selecting it by default", () => {
     render(<McpTokensPanel />);
 
     expect(screen.getByLabelText("Modify food records")).toHaveProperty("checked", false);
+  });
+
+  it("keeps nutrition read access selected when nutrition write access is selected", () => {
+    render(<McpTokensPanel />);
+
+    fireEvent.click(screen.getByLabelText("Nutrition summaries"));
+    fireEvent.click(screen.getByLabelText("Modify food records"));
+
+    expect(screen.getByLabelText("Nutrition summaries")).toHaveProperty("checked", true);
+    expect(screen.getByLabelText("Modify food records")).toHaveProperty("checked", true);
+
+    fireEvent.click(screen.getByLabelText("Nutrition summaries"));
+
+    expect(screen.getByLabelText("Nutrition summaries")).toHaveProperty("checked", true);
   });
 
   it("creates a token with nutrition write access only when selected", async () => {

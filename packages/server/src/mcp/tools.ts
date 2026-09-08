@@ -32,7 +32,6 @@ import {
   localDateString,
 } from "../repositories/resting-heart-rate-query.ts";
 import { SleepRepository } from "../repositories/sleep-repository.ts";
-import { SubjectiveRepository } from "../repositories/subjective-repository.ts";
 import { SyncRepository } from "../repositories/sync-repository.ts";
 import { ensureProvidersRegistered, toJobId } from "../routers/sync-helpers.ts";
 import { registerActivityDetailsTool } from "./activity-details-tool.ts";
@@ -59,6 +58,7 @@ import { listProviderStatuses } from "./provider-status.ts";
 import { registerRecoveryTrainingSeriesTool } from "./recovery-training-series-tool.ts";
 import { registerStrengthProgressionTool } from "./strength-progression-tool.ts";
 import { registerStrengthSessionsTool } from "./strength-sessions-tool.ts";
+import { registerSubjectiveTools } from "./subjective-tools.ts";
 import { registerSupplementsTool } from "./supplements-tool.ts";
 import { registerThresholdHistoryTool } from "./threshold-history-tool.ts";
 import { requireMcpScope } from "./token-repository.ts";
@@ -877,25 +877,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       );
     },
   );
-  server.registerTool(
-    "get_subjective_timeline",
-    {
-      title: "Get Subjective Timeline",
-      description: "Return raw subjective check-ins, symptoms, and injury events for a date range.",
-      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
-      inputSchema: {
-        start_date: dateSchema,
-        end_date: dateSchema,
-      },
-      outputSchema: mcpOutputSchemas.subjectiveTimeline,
-    },
-    async ({ start_date, end_date }) => {
-      requireMcpScope(context.scopes, "health:read");
-      assertDateRange(start_date, end_date);
-      const repository = new SubjectiveRepository(context.db, context.userId, context.timezone);
-      return jsonToolResult(await repository.timeline(start_date, end_date));
-    },
-  );
+  registerSubjectiveTools(server, context);
   server.registerTool(
     "list_providers",
     {
