@@ -34,9 +34,9 @@ entity "exercise_alias" {
 }
 
 entity "exercise_alias_source" {
-  alias_id : uuid
-  source_id : uuid
-  exercise_id : uuid
+  alias_id : uuid <<FK>>
+  source_id : uuid <<FK>>
+  exercise_id : uuid <<FK>>
   created_at : timestamp
 }
 
@@ -132,7 +132,7 @@ entity "user_profile" {
 entity "webhook_subscription" {
   * id : uuid <<PK>>
   --
-  user_id : uuid
+  user_id : uuid <<FK>>
   provider_id : text <<FK>>
   provider_name : text
   subscription_external_id : text
@@ -418,7 +418,7 @@ entity "supplement_definition" {
   * id : uuid <<PK>>
   --
   supplement_id : uuid <<FK>>
-  supersedes_definition_id : uuid
+  supersedes_definition_id : uuid <<FK>>
   name : text
   amount : real
   unit : text
@@ -440,13 +440,13 @@ entity "supplement_dose_event" {
   * id : uuid <<PK>>
   --
   user_id : uuid <<FK>>
-  supplement_id : uuid
-  definition_id : uuid
+  supplement_id : uuid <<FK>>
+  definition_id : uuid <<FK>>
   provider_id : text <<FK>>
   external_id : text
-  scheduled_date : date
+  scheduled_date : date <<FK>>
   status : supplement_dose_status
-  supersedes_event_id : uuid
+  supersedes_event_id : uuid <<FK>>
   recorded_at : timestamp
   source_name : text
   raw : jsonb
@@ -1201,9 +1201,9 @@ entity "processing_stage_event" {
 }
 
 entity "human_food_nutrient_decision" {
-  target_id : uuid
-  identity_id : uuid
-  user_id : uuid
+  target_id : uuid <<FK>>
+  identity_id : uuid <<FK>>
+  user_id : uuid <<FK>>
   nutrient_id : text <<FK>>
   operation : text
   amount : real
@@ -1221,7 +1221,7 @@ entity "human_record_change" {
   recorded_at : timestamp
   effective_at : timestamp
   schema_version : bigint
-  undo_change_id : uuid
+  undo_change_id : uuid <<FK>>
 }
 
 entity "human_record_identity" {
@@ -1236,25 +1236,29 @@ entity "human_record_identity" {
 entity "human_record_target" {
   * id : uuid <<PK>>
   --
-  user_id : uuid
-  identity_id : uuid
-  change_id : uuid
-  predecessor_id : uuid
+  user_id : uuid <<FK>>
+  identity_id : uuid <<FK>>
+  change_id : uuid <<FK>>
+  predecessor_id : uuid <<FK>>
   fields : jsonb
   deleted : boolean
 }
 
 exercise ||--o{ exercise_alias
 provider ||--o{ exercise_alias
+exercise_alias ||--o{ exercise_alias_source
+exercise_source ||--o{ exercise_alias_source
 exercise ||--o{ exercise_source
 user_profile ||--o{ exercise_source
 provider ||--o{ exercise_source
 user_profile ||--o{ oauth_token
 provider ||--o{ oauth_token
+provider_connection ||--o{ oauth_token
 user_profile ||--o{ provider
 user_profile ||--o{ provider_connection
 provider ||--o{ provider_connection
 provider ||--o{ webhook_subscription
+provider_connection ||--o{ webhook_subscription
 provider ||--o{ activity
 user_profile ||--o{ activity
 activity ||--o{ activity_interval
@@ -1277,10 +1281,14 @@ food_entry ||--o{ food_entry_nutrient
 nutrient ||--o{ food_entry_nutrient
 user_profile ||--o{ supplement
 supplement ||--o{ supplement_definition
+supplement_definition ||--o{ supplement_definition
 supplement_definition ||--o{ supplement_definition_nutrient
 nutrient ||--o{ supplement_definition_nutrient
 user_profile ||--o{ supplement_dose_event
 provider ||--o{ supplement_dose_event
+supplement ||--o{ supplement_dose_event
+supplement_definition ||--o{ supplement_dose_event
+supplement_dose_event ||--o{ supplement_dose_event
 user_profile ||--o{ clinical_record
 provider ||--o{ clinical_record
 provider ||--o{ health_event
@@ -1349,7 +1357,12 @@ processing_operation ||--o{ processing_operation_output
 processing_operation ||--o{ processing_queue_outbox
 processing_operation ||--o{ processing_stage_event
 nutrient ||--o{ human_food_nutrient_decision
+human_record_target ||--o{ human_food_nutrient_decision
 user_profile ||--o{ human_record_change
+human_record_change ||--o{ human_record_change
 user_profile ||--o{ human_record_identity
+human_record_identity ||--o{ human_record_target
+human_record_change ||--o{ human_record_target
+human_record_target ||--o{ human_record_target
 
 @enduml
