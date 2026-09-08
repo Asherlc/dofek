@@ -9,7 +9,8 @@ Task 10's sanitized base is remote commit `92e6785f6`; review-fix commit
 Its fixtures use deliberately artificial dates, names, identifiers, and
 measurements while preserving the required structural invariants. The remote
 branch contains the sanitized replacement history followed by the normal review
-fix; superseded local fixture commits are not ancestors of the remote head.
+fix and report updates; superseded local fixture commits are not ancestors of
+the remote head.
 
 ## RED evidence
 
@@ -177,7 +178,7 @@ passed alone after the final harness change: 1 file, 1 test, 8.60 seconds.
 checked the three changed TypeScript files with no fixes; and
 `rtk git diff --check` produced no output.
 
-The first two combined real-database attempts were interrupted by a ClickHouse
+Repeated combined real-database attempts were interrupted by a ClickHouse
 container OOM at its fixed 1.5 GiB limit. Docker events recorded `container oom`
 and exit 137; there was no test assertion failure. The test adapter was still
 replaying the retired pre-dbt activity-summary query. Replacing that adapter
@@ -216,8 +217,8 @@ documentation.
 - Production deployment and a bounded historical activity-group refresh remain operator work; this task records the safe order but does not claim they have occurred.
 - Historical set-row transposition attribution remains unknown until raw stored source rows or historical writer evidence demonstrate the cause.
 - The Task 6 repeated stream-tombstone append issue remains intentionally parked for the whole-branch fix pass.
-- The sanitized base and review-fix implementation commit are published on the
-  remote branch; this report follows in a separate normal commit.
+- The sanitized base, review-fix implementation, and report commits are
+  published on the remote branch; the task handoff records the final head.
 
 ## Retrospective
 
