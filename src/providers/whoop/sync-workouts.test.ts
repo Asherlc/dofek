@@ -413,6 +413,14 @@ describe("WHOOP workout sync helpers", () => {
           activityId: "activity-1",
           exerciseId: "exercise-1",
           weightKg: 60,
+          raw: expect.objectContaining({
+            complete: true,
+            msk_total_volume_kg: 600,
+            number_of_reps: 10,
+            providerExerciseId: "BENCHPRESS",
+            providerExerciseName: "Bench Press",
+            weight_kg: 60,
+          }),
         }),
       ]),
     );
@@ -573,6 +581,14 @@ describe("WHOOP workout sync helpers", () => {
         exerciseId: "exercise-1",
         weightKg: 60,
         reps: 10,
+        raw: expect.objectContaining({
+          complete: true,
+          during: "['2026-05-01T10:05:00Z','2026-05-01T10:05:30Z')",
+          number_of_reps: 10,
+          providerExerciseId: "BENCHPRESS",
+          providerExerciseName: "Bench Press",
+          weight_kg: 60,
+        }),
       }),
     ]);
   });

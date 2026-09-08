@@ -38,6 +38,7 @@ describe("deduped sensor source activity attribution", () => {
     await command(`CREATE TABLE ${database}.metric_stream (
       id UUID, activity_id Nullable(UUID), user_id UUID, recorded_at DateTime64(6, 'UTC'),
       channel String, provider_id String, device_id Nullable(String), scalar Nullable(Float32),
+      external_id Nullable(String), source_type Nullable(String), metadata String,
       ingested_at DateTime64(9), is_deleted UInt8, version Int64
     ) ENGINE = ReplacingMergeTree(version) ORDER BY id`);
     await command(
@@ -66,7 +67,9 @@ describe("deduped sensor source activity attribution", () => {
     await command(`DROP TABLE IF EXISTS ${database}.deduped_sensor SYNC`);
     // Winner starts linked, then the latest version explicitly removes the link.
     // A lower-priority sample at that same timestamp must not supply its member ID.
-    await command(`INSERT INTO ${database}.metric_stream VALUES
+    await command(`INSERT INTO ${database}.metric_stream
+      (id, activity_id, user_id, recorded_at, channel, provider_id, device_id, scalar,
+       ingested_at, is_deleted, version) VALUES
       ('00000000-0000-0000-0000-000000000010', '${member}', '${user}', '2026-09-07 10:00:00', 'power', 'winner', NULL, 100, now64(9), 0, 1),
       ('00000000-0000-0000-0000-000000000010', NULL, '${user}', '2026-09-07 10:00:00', 'power', 'winner', NULL, 101, now64(9), 0, 2),
       ('00000000-0000-0000-0000-000000000011', '${member}', '${user}', '2026-09-07 10:00:00', 'power', 'loser', NULL, 200, now64(9), 0, 1),
@@ -117,7 +120,7 @@ describe("deduped sensor source activity attribution", () => {
   it("upgrades existing sensor tables idempotently and keeps historical rows unlinked until refresh", async () => {
     await resetSensorFixture();
     const migration = clickHouseMigrations("postgres://test").find(
-      (entry) => entry.id === "0077_sensor_source_activity_id",
+      (entry) => entry.id === "0080_sensor_source_activity_id",
     );
     expect(migration).toBeDefined();
     if (!migration?.run) throw new Error("0077 must handle absent dbt tables");

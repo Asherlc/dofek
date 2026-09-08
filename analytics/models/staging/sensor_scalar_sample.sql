@@ -11,6 +11,7 @@
     lookback=3,
     full_refresh=false,
     concurrent_batches=false,
+    on_schema_change='append_new_columns',
     engine='ReplacingMergeTree(_peerdb_version)',
     order_by='(user_id, channel, recorded_date, recorded_at, provider_id, id)',
     query_settings={
@@ -29,6 +30,8 @@ WITH metric_stream_versions AS (
             'cadence',
             'altitude',
             'grade',
+            'distance',
+            'temperature',
             'left_right_balance',
             'left_torque_effectiveness',
             'right_torque_effectiveness',
@@ -43,26 +46,38 @@ WITH metric_stream_versions AS (
 
 metric_stream_rows AS (
     SELECT
-        id,
-        tupleElement(argMax(tuple(activity_id), version), 1) AS activity_id,
-        argMax(user_id, version) AS user_id,
-        argMax(recorded_at, version) AS recorded_at,
-        argMax(channel, version) AS channel,
-        argMax(provider_id, version) AS provider_id,
-        argMax(device_id, version) AS device_id,
-        coalesce(argMax(scalar, version), 0) AS scalar,
-        argMax(ingested_at, version) AS ingested_at,
-        argMax(is_deleted, version) AS is_deleted,
-        max(version) AS source_version
+        metric_stream_versions.id AS id,
+        tupleElement(
+            argMax(tuple(metric_stream_versions.activity_id), metric_stream_versions.version),
+            1
+        ) AS activity_id,
+        argMax(metric_stream_versions.activity_id, metric_stream_versions.version)
+            AS member_activity_id,
+        argMax(metric_stream_versions.user_id, metric_stream_versions.version) AS user_id,
+        argMax(metric_stream_versions.recorded_at, metric_stream_versions.version) AS recorded_at,
+        argMax(metric_stream_versions.channel, metric_stream_versions.version) AS channel,
+        argMax(metric_stream_versions.provider_id, metric_stream_versions.version) AS provider_id,
+        argMax(metric_stream_versions.external_id, metric_stream_versions.version)
+            AS source_external_id,
+        argMax(metric_stream_versions.device_id, metric_stream_versions.version) AS device_id,
+        argMax(metric_stream_versions.source_type, metric_stream_versions.version) AS source_type,
+        argMax(metric_stream_versions.metadata, metric_stream_versions.version) AS metadata,
+        coalesce(
+            argMax(metric_stream_versions.scalar, metric_stream_versions.version),
+            0
+        ) AS scalar,
+        argMax(metric_stream_versions.ingested_at, metric_stream_versions.version) AS ingested_at,
+        argMax(metric_stream_versions.is_deleted, metric_stream_versions.version) AS is_deleted,
+        max(metric_stream_versions.version) AS source_version
     FROM metric_stream_versions
-    GROUP BY id
+    GROUP BY metric_stream_versions.id
 ),
 
 active_sensor_provider_priority AS (
     SELECT
         provider_id,
         channel,
-        priority
+        toNullable(priority) AS priority
     FROM {{ source('postgres_fitness', 'sensor_provider_priority') }} FINAL
     WHERE _peerdb_is_deleted = 0
 ),
@@ -72,7 +87,7 @@ active_sensor_device_priority AS (
         provider_id,
         source_name_pattern,
         channel,
-        priority
+        toNullable(priority) AS priority
     FROM {{ source('postgres_fitness', 'sensor_device_priority') }} FINAL
     WHERE _peerdb_is_deleted = 0
 ),
@@ -106,12 +121,20 @@ device_priority_match AS (
 SELECT
     metric_stream_rows.id AS id,
     metric_stream_rows.activity_id AS activity_id,
+    metric_stream_rows.member_activity_id AS member_activity_id,
     metric_stream_rows.user_id AS user_id,
     metric_stream_rows.recorded_at AS recorded_at,
     toDate(metric_stream_rows.recorded_at) AS recorded_date,
     metric_stream_rows.channel AS channel,
     metric_stream_rows.provider_id AS provider_id,
+    metric_stream_rows.source_external_id AS source_external_id,
     metric_stream_rows.device_id AS device_id,
+    metric_stream_rows.source_type AS source_type,
+    multiIf(
+        JSONExtractString(metadata, 'measurement_kind') = 'direct', 'direct',
+        JSONExtractString(metadata, 'measurement_kind') = 'estimated', 'estimated',
+        'unknown'
+    ) AS measurement_kind,
     assumeNotNull(metric_stream_rows.scalar) AS scalar,
     coalesce(
         device_priority_match.priority,

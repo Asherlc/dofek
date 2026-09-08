@@ -156,6 +156,17 @@ describe("importStrongCsv() (integration)", () => {
     expect(sets).toHaveLength(1);
     // 225 lbs * 0.453592 = ~102.058 kg
     expect(sets[0]?.weightKg).toBeCloseTo(102.058, 1);
+    expect(sets[0]?.raw).toEqual({
+      distance: null,
+      exerciseName: "Squat (Barbell)",
+      notes: null,
+      reps: 5,
+      rpe: null,
+      seconds: null,
+      setOrder: 1,
+      weight: 225,
+      weightUnit: "lbs",
+    });
   });
 
   it("stores zero-load timed rows as rests and keeps sequential CSV order", async () => {

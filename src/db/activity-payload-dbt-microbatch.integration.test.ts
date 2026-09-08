@@ -622,7 +622,8 @@ describe("activity payload dbt batch reconciliation", () => {
     );
 
     await client.command({
-      query: `INSERT INTO ${database}.deduped_sensor VALUES
+      query: `INSERT INTO ${database}.deduped_sensor
+        (user_id, recorded_at, channel, source_activity_id, refresh_version, is_deleted) VALUES
         ('${userId}', toDateTime64('2026-09-07 10:30:00', 9, 'UTC'), 'heart_rate',
          '${productionSliceMemberId}', 1, 0)`,
     });
@@ -922,10 +923,14 @@ async function seedProductionLifecycleSliceFixture(
        toDateTime64('2026-09-07 18:00:00', 9, 'UTC'), 30, 1, 0,
        toDateTime64('2026-09-07 18:00:00', 9, 'UTC')
       )`,
-    `INSERT INTO ${database}.activity_location_sample VALUES (
+    `INSERT INTO ${database}.activity_location_sample
+      (activity_id, user_id, recorded_at, recorded_date, source_metric_stream_id,
+       lat, lng, refresh_version, is_deleted, source_refreshed_at, refreshed_at) VALUES (
        '${productionRestoreGroupId}', '${userId}',
-       toDateTime64('2026-09-07 13:30:00', 9, 'UTC'), '${productionRestorePointId}',
-       37.8, -122.3, 1, 0, toDateTime64('2026-09-07 15:00:00', 9, 'UTC')
+       toDateTime64('2026-09-07 13:30:00', 9, 'UTC'), toDate('2026-09-07'),
+       '${productionRestorePointId}', 37.8, -122.3, 1, 0,
+       toDateTime64('2026-09-07 15:00:00', 9, 'UTC'),
+       toDateTime64('2026-09-07 15:00:00', 9, 'UTC')
       )`,
   ]);
 }
@@ -1001,7 +1006,9 @@ async function insertLocationPoints(
       toDateTime64('${ingestedAt}', 9, 'UTC'), 1, 0)`,
   );
   await client.command({
-    query: `INSERT INTO ${database}.metric_stream VALUES ${values.join(",")}`,
+    query: `INSERT INTO ${database}.metric_stream
+      (id, activity_id, user_id, recorded_at, provider_id, channel, point,
+       ingested_at, version, is_deleted) VALUES ${values.join(",")}`,
   });
 }
 
@@ -1271,7 +1278,9 @@ async function seedSensorFixture(client: ClickHouseClient, database: string): Pr
        toDateTime64('2026-09-05 12:00:00', 9, 'UTC'),
        ['${unrelatedMemberId}'], 1, 0,
        toDateTime64('2026-09-05 12:00:00', 9, 'UTC'))`,
-    `INSERT INTO ${database}.deduped_sensor VALUES
+    `INSERT INTO ${database}.deduped_sensor
+      (user_id, recorded_at, recorded_date, channel, scalar, source_activity_id,
+       refresh_version, is_deleted, refreshed_at) VALUES
       ('${userId}', toDateTime64('2026-09-04 10:30:00', 9, 'UTC'), toDate('2026-09-04'),
        'heart_rate', 100, '${movedMemberId}', 1, 0,
        toDateTime64('2026-09-04 12:00:00', 9, 'UTC')),
@@ -1297,7 +1306,9 @@ async function moveMemberAndReplaySensor(
        toDateTime64('2026-09-06 12:00:00', 9, 'UTC'),
        ['${movedMemberId}'], 2, 0,
        toDateTime64('2026-09-06 12:00:00', 9, 'UTC'))`,
-    `INSERT INTO ${database}.deduped_sensor VALUES
+    `INSERT INTO ${database}.deduped_sensor
+      (user_id, recorded_at, recorded_date, channel, scalar, source_activity_id,
+       refresh_version, is_deleted, refreshed_at) VALUES
       ('${userId}', toDateTime64('2026-09-04 10:30:00', 9, 'UTC'), toDate('2026-09-04'),
        'heart_rate', 100, '${movedMemberId}', 2, 0,
        toDateTime64('2026-09-06 12:00:00', 9, 'UTC'))`,
@@ -1453,7 +1464,15 @@ function createDedupedSensorSql(database: string): string {
     recorded_date Date,
     channel String,
     scalar Nullable(Float64),
+    provider_id Nullable(String),
+    member_activity_id Nullable(UUID),
+    device_id Nullable(String),
+    source_external_id Nullable(String),
+    source_type Nullable(String),
+    measurement_kind LowCardinality(String),
+    source_metric_stream_id Nullable(UUID),
     source_activity_id Nullable(UUID),
+    provider_priority Int32,
     refresh_version UInt64,
     is_deleted UInt8,
     refreshed_at DateTime64(9, 'UTC')
@@ -1485,6 +1504,10 @@ function createMetricStreamSql(database: string): string {
     provider_id String,
     channel String,
     point Point,
+    external_id Nullable(String),
+    device_id Nullable(String),
+    source_type Nullable(String),
+    metadata String,
     ingested_at DateTime64(9, 'UTC'),
     version UInt64,
     is_deleted UInt8
@@ -1496,8 +1519,16 @@ function createActivitySensorSampleSql(database: string): string {
     activity_id UUID,
     user_id UUID,
     recorded_at DateTime64(9, 'UTC'),
+    recorded_date Date,
     channel String,
     scalar Nullable(Float64),
+    provider_id Nullable(String),
+    member_activity_id Nullable(UUID),
+    device_id Nullable(String),
+    source_external_id Nullable(String),
+    source_type Nullable(String),
+    source_metric_stream_id Nullable(UUID),
+    measurement_kind LowCardinality(String),
     refresh_version UInt64,
     is_deleted UInt8,
     refreshed_at DateTime64(9, 'UTC')
@@ -1553,10 +1584,21 @@ function createProducerDedupedSensorSql(database: string): string {
   return `CREATE TABLE ${database}.deduped_sensor (
     user_id UUID,
     recorded_at DateTime64(9, 'UTC'),
+    recorded_date Date,
     channel String,
+    scalar Nullable(Float64),
+    provider_id Nullable(String),
+    member_activity_id Nullable(UUID),
+    device_id Nullable(String),
+    source_external_id Nullable(String),
+    source_type Nullable(String),
+    measurement_kind LowCardinality(String),
+    source_metric_stream_id Nullable(UUID),
     source_activity_id Nullable(UUID),
+    provider_priority Int32,
     refresh_version UInt64,
-    is_deleted UInt8
+    is_deleted UInt8,
+    refreshed_at DateTime64(9, 'UTC')
   ) ENGINE = ReplacingMergeTree(refresh_version)
     ORDER BY (user_id, channel, recorded_at)`;
 }
@@ -1566,11 +1608,19 @@ function createActivityLocationSampleSql(database: string): string {
     activity_id UUID,
     user_id UUID,
     recorded_at DateTime64(9, 'UTC'),
+    recorded_date Date,
     source_metric_stream_id UUID,
+    member_activity_id Nullable(UUID),
+    provider_id Nullable(String),
+    source_external_id Nullable(String),
+    device_id Nullable(String),
+    source_type Nullable(String),
+    measurement_kind LowCardinality(String),
     lat Nullable(Float64),
     lng Nullable(Float64),
     refresh_version UInt64,
     is_deleted UInt8,
+    source_refreshed_at DateTime64(9, 'UTC'),
     refreshed_at DateTime64(9, 'UTC')
   ) ENGINE = ReplacingMergeTree(refresh_version)
     ORDER BY (user_id, activity_id, source_metric_stream_id)`;

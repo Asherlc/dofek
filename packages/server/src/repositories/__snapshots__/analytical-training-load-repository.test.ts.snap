@@ -1,0 +1,1809 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`AnalyticalTrainingLoadRepository > applies provider and modality filters to cycling and heart-rate source queries 1`] = `
+{
+  "definitions": {
+    "climbing_attempts": "Recorded attempt counts. Entries with unknown attempts are reported as missing, not failed or zero.",
+    "cycling_power_tss": "Elapsed hours × (normalized power ÷ effective FTP)² × 100. Missing FTP or normalized power is not zero.",
+    "finger_load": "Effective-load kg-seconds require repetitions per set and remain unavailable while the canonical source schema does not record repetitions.",
+    "heart_rate_zone_load": "Sum of covered minutes in each configured threshold-HR zone multiplied by its one-based zone number.",
+    "monotony_strain": "Monotony is seven-day mean ÷ population standard deviation; strain is seven-day sum × monotony. Zero variance is unavailable.",
+    "rolling": "Acute is a 7-day sum; chronic is the 28-day sum divided by four; ratio is acute ÷ chronic only with complete windows. These descriptive values do not diagnose injury risk.",
+    "session_rpe": "Recorded session RPE multiplied by activity duration in minutes.",
+    "strength_volume": "Sum of weight × reps for non-warmup load-bearing sets with 1–100 reps and 0–500 kg.",
+  },
+  "range": {
+    "date_policy": "analysis_timezone",
+    "end_date": "2026-06-01",
+    "start_date": "2026-06-01",
+    "timezone": "UTC",
+  },
+  "rows": [
+    {
+      "channels": {
+        "climbing_attempts": {
+          "context": {},
+          "coverage": {
+            "contributing_records": 0,
+            "first_observed_date": null,
+            "source_activity_count": 0,
+            "source_activity_ids_truncated": false,
+            "supported_records": 0,
+          },
+          "daily_value": null,
+          "date_attribution": {
+            "analysis_timezone_activities": 0,
+            "authoritative_activities": 0,
+          },
+          "reason": "Source coverage had not begun by this date.",
+          "rolling": {
+            "acute_7d_sum": null,
+            "acute_coverage_days": 0,
+            "chronic_28d_weekly_equivalent": null,
+            "chronic_coverage_days": 0,
+            "monotony_7d": null,
+            "strain_7d": null,
+            "unavailable_reasons": [
+              "Seven complete daily values are required for acute load.",
+              "Twenty-eight complete daily values are required for chronic load.",
+            ],
+            "workload_ratio": null,
+          },
+          "source_activity_ids": [],
+          "source_providers": [],
+          "status": "unavailable",
+          "unit": "attempts",
+          "value_kind": "calculated",
+        },
+        "cycling_power_tss": {
+          "context": {},
+          "coverage": {
+            "contributing_records": 0,
+            "first_observed_date": null,
+            "source_activity_count": 0,
+            "source_activity_ids_truncated": false,
+            "supported_records": 0,
+          },
+          "daily_value": null,
+          "date_attribution": {
+            "analysis_timezone_activities": 0,
+            "authoritative_activities": 0,
+          },
+          "reason": "Source coverage had not begun by this date.",
+          "rolling": {
+            "acute_7d_sum": null,
+            "acute_coverage_days": 0,
+            "chronic_28d_weekly_equivalent": null,
+            "chronic_coverage_days": 0,
+            "monotony_7d": null,
+            "strain_7d": null,
+            "unavailable_reasons": [
+              "Seven complete daily values are required for acute load.",
+              "Twenty-eight complete daily values are required for chronic load.",
+            ],
+            "workload_ratio": null,
+          },
+          "source_activity_ids": [],
+          "source_providers": [],
+          "status": "unavailable",
+          "unit": "TSS points",
+          "value_kind": "calculated",
+        },
+        "finger_load": {
+          "context": {},
+          "coverage": {
+            "contributing_records": 0,
+            "first_observed_date": null,
+            "source_activity_count": 0,
+            "source_activity_ids_truncated": false,
+            "supported_records": 0,
+          },
+          "daily_value": null,
+          "date_attribution": {
+            "analysis_timezone_activities": 0,
+            "authoritative_activities": 0,
+          },
+          "reason": "Source coverage had not begun by this date.",
+          "rolling": {
+            "acute_7d_sum": null,
+            "acute_coverage_days": 0,
+            "chronic_28d_weekly_equivalent": null,
+            "chronic_coverage_days": 0,
+            "monotony_7d": null,
+            "strain_7d": null,
+            "unavailable_reasons": [
+              "Seven complete daily values are required for acute load.",
+              "Twenty-eight complete daily values are required for chronic load.",
+            ],
+            "workload_ratio": null,
+          },
+          "source_activity_ids": [],
+          "source_providers": [],
+          "status": "unavailable",
+          "unit": "kg-seconds",
+          "value_kind": "calculated",
+        },
+        "heart_rate_zone_load": {
+          "context": {},
+          "coverage": {
+            "contributing_records": 0,
+            "first_observed_date": null,
+            "source_activity_count": 0,
+            "source_activity_ids_truncated": false,
+            "supported_records": 0,
+          },
+          "daily_value": null,
+          "date_attribution": {
+            "analysis_timezone_activities": 0,
+            "authoritative_activities": 0,
+          },
+          "reason": "Source coverage had not begun by this date.",
+          "rolling": {
+            "acute_7d_sum": null,
+            "acute_coverage_days": 0,
+            "chronic_28d_weekly_equivalent": null,
+            "chronic_coverage_days": 0,
+            "monotony_7d": null,
+            "strain_7d": null,
+            "unavailable_reasons": [
+              "Seven complete daily values are required for acute load.",
+              "Twenty-eight complete daily values are required for chronic load.",
+            ],
+            "workload_ratio": null,
+          },
+          "source_activity_ids": [],
+          "source_providers": [],
+          "status": "unavailable",
+          "unit": "weighted zone-minutes",
+          "value_kind": "calculated",
+        },
+        "session_rpe": {
+          "context": {},
+          "coverage": {
+            "contributing_records": 0,
+            "first_observed_date": null,
+            "source_activity_count": 0,
+            "source_activity_ids_truncated": false,
+            "supported_records": 0,
+          },
+          "daily_value": null,
+          "date_attribution": {
+            "analysis_timezone_activities": 0,
+            "authoritative_activities": 0,
+          },
+          "reason": "Source coverage had not begun by this date.",
+          "rolling": {
+            "acute_7d_sum": null,
+            "acute_coverage_days": 0,
+            "chronic_28d_weekly_equivalent": null,
+            "chronic_coverage_days": 0,
+            "monotony_7d": null,
+            "strain_7d": null,
+            "unavailable_reasons": [
+              "Seven complete daily values are required for acute load.",
+              "Twenty-eight complete daily values are required for chronic load.",
+            ],
+            "workload_ratio": null,
+          },
+          "source_activity_ids": [],
+          "source_providers": [],
+          "status": "unavailable",
+          "unit": "RPE-minutes",
+          "value_kind": "calculated",
+        },
+        "strength_volume": {
+          "context": {},
+          "coverage": {
+            "contributing_records": 0,
+            "first_observed_date": null,
+            "source_activity_count": 0,
+            "source_activity_ids_truncated": false,
+            "supported_records": 0,
+          },
+          "daily_value": null,
+          "date_attribution": {
+            "analysis_timezone_activities": 0,
+            "authoritative_activities": 0,
+          },
+          "reason": "Source coverage had not begun by this date.",
+          "rolling": {
+            "acute_7d_sum": null,
+            "acute_coverage_days": 0,
+            "chronic_28d_weekly_equivalent": null,
+            "chronic_coverage_days": 0,
+            "monotony_7d": null,
+            "strain_7d": null,
+            "unavailable_reasons": [
+              "Seven complete daily values are required for acute load.",
+              "Twenty-eight complete daily values are required for chronic load.",
+            ],
+            "workload_ratio": null,
+          },
+          "source_activity_ids": [],
+          "source_providers": [],
+          "status": "unavailable",
+          "unit": "kg-reps",
+          "value_kind": "calculated",
+        },
+      },
+      "date": "2026-06-01",
+    },
+  ],
+  "total_daily_load": {
+    "reason": "Modality-specific loads use different units and are not treated as biologically interchangeable.",
+    "value": null,
+  },
+}
+`;
+
+exports[`AnalyticalTrainingLoadRepository > applies provider and modality filters to cycling and heart-rate source queries 2`] = `
+[
+  "[{"value":["\\n        SELECT *\\n        FROM fitness.sport_settings\\n        WHERE user_id = "]},"00000000-0000-4000-8000-000000000001",{"value":["\\n          AND sport = "]},"cycling",{"value":["\\n        ORDER BY effective_from DESC\\n      "]}]",
+  "[{"value":["\\n          WITH activity_contributions AS (\\n            SELECT\\n              activity.id,\\n              activity.source_providers,\\n              "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["(activity.started_at AT TIME ZONE "]},"UTC",{"value":[")::date"]}]},{"value":[" AS date,\\n              "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["false"]}]},{"value":[" AS date_was_authoritative,\\n              GREATEST(EXTRACT(EPOCH FROM (activity.ended_at - activity.started_at)) / 60.0, 0)\\n                AS duration_minutes,\\n              activity.perceived_exertion,\\n              climb.attempts,\\n              climb.entries,\\n              climb.entries_with_attempts,\\n              finger.load_kg_seconds,\\n              finger.entries AS finger_entries,\\n              strength.volume_kg_reps,\\n              strength.working_sets,\\n              strength.suspicious_sets\\n            FROM fitness.v_activity AS activity\\n            LEFT JOIN LATERAL (\\n              SELECT\\n                SUM(entry.attempt_count)::int AS attempts,\\n                COUNT(*)::int AS entries,\\n                COUNT(entry.attempt_count)::int AS entries_with_attempts\\n              FROM fitness.climbing_entry AS entry\\n              WHERE entry.activity_id = ANY(activity.member_activity_ids)\\n            ) AS climb ON TRUE\\n            LEFT JOIN LATERAL (\\n              SELECT\\n                NULL::real AS load_kg_seconds,\\n                COUNT(*)::int AS entries\\n              FROM fitness.finger_loading_entry AS entry\\n              WHERE entry.activity_id = ANY(activity.member_activity_ids)\\n            ) AS finger ON TRUE\\n            LEFT JOIN LATERAL (\\n              SELECT\\n                SUM(set.weight_kg * set.reps) FILTER (\\n                  WHERE set.set_type NOT IN ('warmup', 'rest')\\n                    AND set.weight_kg > 0 AND set.weight_kg <= 500\\n                    AND set.reps BETWEEN 1 AND 100\\n                )::real AS volume_kg_reps,\\n                COUNT(*) FILTER (\\n                  WHERE set.set_type NOT IN ('warmup', 'rest')\\n                    AND set.weight_kg > 0 AND set.weight_kg <= 500\\n                    AND set.reps BETWEEN 1 AND 100\\n                )::int AS working_sets,\\n                COUNT(*) FILTER (\\n                  WHERE set.set_type NOT IN ('warmup', 'rest')\\n                    AND (set.weight_kg IS NULL OR set.weight_kg <= 0 OR set.weight_kg > 500\\n                      OR set.reps IS NULL OR set.reps < 1 OR set.reps > 100)\\n                )::int AS suspicious_sets\\n              FROM fitness.strength_set AS set\\n              WHERE set.activity_id = ANY(activity.member_activity_ids)\\n            ) AS strength ON TRUE\\n            WHERE activity.user_id = "]},"00000000-0000-4000-8000-000000000001",{"value":["::uuid\\n              AND "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["activity.source_providers && ARRAY["]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"peloton",{"value":[""]}]}]},{"value":["]::text[]"]}]},{"value":["\\n              AND "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["activity.modality::text IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"indoor",{"value":[""]}]}]},{"value":[")"]}]},{"value":["\\n              AND "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["(activity.started_at AT TIME ZONE "]},"UTC",{"value":[")::date"]}]},{"value":["\\n                BETWEEN "]},"2026-05-05",{"value":["::date AND "]},"2026-06-01",{"value":["::date\\n          ),\\n          provider_contributions AS (\\n            SELECT\\n              contribution.date,\\n              provider_id,\\n              bool_or(contribution.duration_minutes > 0) AS has_session_rpe,\\n              bool_or(contribution.entries > 0) AS has_climbing,\\n              bool_or(contribution.finger_entries > 0) AS has_finger,\\n              bool_or(contribution.working_sets > 0 OR contribution.suspicious_sets > 0)\\n                AS has_strength\\n            FROM activity_contributions AS contribution\\n            CROSS JOIN LATERAL unnest(contribution.source_providers) AS provider_id\\n            GROUP BY contribution.date, provider_id\\n          ),\\n          providers_by_date AS (\\n            SELECT\\n              date,\\n              COALESCE(array_agg(provider_id ORDER BY provider_id)\\n                FILTER (WHERE has_session_rpe), ARRAY[]::text[])\\n                AS session_rpe_source_providers,\\n              COALESCE(array_agg(provider_id ORDER BY provider_id)\\n                FILTER (WHERE has_climbing), ARRAY[]::text[]) AS climbing_source_providers,\\n              COALESCE(array_agg(provider_id ORDER BY provider_id)\\n                FILTER (WHERE has_finger), ARRAY[]::text[]) AS finger_source_providers,\\n              COALESCE(array_agg(provider_id ORDER BY provider_id)\\n                FILTER (WHERE has_strength), ARRAY[]::text[]) AS strength_source_providers\\n            FROM provider_contributions\\n            GROUP BY date\\n          ),\\n          daily AS (\\n          SELECT\\n            date,\\n            SUM(duration_minutes * perceived_exertion)\\n              FILTER (WHERE perceived_exertion IS NOT NULL AND duration_minutes > 0)::real\\n              AS session_rpe_load,\\n            COUNT(*) FILTER (WHERE duration_minutes > 0)::int\\n              AS session_rpe_activities,\\n            COUNT(*) FILTER (WHERE perceived_exertion IS NOT NULL AND duration_minutes > 0)::int\\n              AS session_rpe_supported_activities,\\n            (COALESCE(array_agg(DISTINCT id::text ORDER BY id::text)\\n              FILTER (WHERE duration_minutes > 0), ARRAY[]::text[]))[1:100]\\n              AS session_rpe_activity_ids,\\n            COUNT(DISTINCT id) FILTER (WHERE duration_minutes > 0 AND date_was_authoritative)::int\\n              AS session_rpe_authoritative_count,\\n            COUNT(DISTINCT id) FILTER (WHERE duration_minutes > 0 AND NOT date_was_authoritative)::int\\n              AS session_rpe_assumed_count,\\n            SUM(attempts)::int AS climbing_attempts,\\n            SUM(entries)::int AS climbing_entries,\\n            SUM(entries_with_attempts)::int AS climbing_entries_with_attempts,\\n            SUM(duration_minutes) FILTER (WHERE entries > 0)::real AS climbing_session_minutes,\\n            (COALESCE(array_agg(DISTINCT id::text ORDER BY id::text)\\n              FILTER (WHERE entries > 0), ARRAY[]::text[]))[1:100]\\n              AS climbing_activity_ids,\\n            COUNT(DISTINCT id) FILTER (WHERE entries > 0)::int AS climbing_activities,\\n            COUNT(DISTINCT id) FILTER (WHERE entries > 0 AND date_was_authoritative)::int\\n              AS climbing_authoritative_count,\\n            COUNT(DISTINCT id) FILTER (WHERE entries > 0 AND NOT date_was_authoritative)::int\\n              AS climbing_assumed_count,\\n            SUM(load_kg_seconds)::real AS finger_load_kg_seconds,\\n            SUM(finger_entries)::int AS finger_entries,\\n            (COALESCE(array_agg(DISTINCT id::text ORDER BY id::text)\\n              FILTER (WHERE finger_entries > 0), ARRAY[]::text[]))[1:100]\\n              AS finger_activity_ids,\\n            COUNT(DISTINCT id) FILTER (WHERE finger_entries > 0)::int AS finger_activities,\\n            COUNT(DISTINCT id) FILTER (WHERE finger_entries > 0 AND date_was_authoritative)::int\\n              AS finger_authoritative_count,\\n            COUNT(DISTINCT id) FILTER (WHERE finger_entries > 0 AND NOT date_was_authoritative)::int\\n              AS finger_assumed_count,\\n            SUM(volume_kg_reps)::real AS strength_volume_kg_reps,\\n            SUM(working_sets)::int AS strength_working_sets,\\n            SUM(suspicious_sets)::int AS strength_suspicious_sets,\\n            (COALESCE(array_agg(DISTINCT id::text ORDER BY id::text)\\n              FILTER (WHERE working_sets > 0 OR suspicious_sets > 0), ARRAY[]::text[]))[1:100]\\n              AS strength_activity_ids,\\n            COUNT(DISTINCT id) FILTER (WHERE working_sets > 0 OR suspicious_sets > 0)::int\\n              AS strength_activities,\\n            COUNT(DISTINCT id) FILTER (\\n              WHERE (working_sets > 0 OR suspicious_sets > 0) AND date_was_authoritative\\n            )::int AS strength_authoritative_count,\\n            COUNT(DISTINCT id) FILTER (\\n              WHERE (working_sets > 0 OR suspicious_sets > 0) AND NOT date_was_authoritative\\n            )::int AS strength_assumed_count\\n          FROM activity_contributions\\n          GROUP BY date\\n          )\\n          SELECT\\n            daily.date::text AS date,\\n            providers.session_rpe_source_providers,\\n            providers.climbing_source_providers,\\n            providers.finger_source_providers,\\n            providers.strength_source_providers,\\n            daily.session_rpe_load,\\n            daily.session_rpe_activities,\\n            daily.session_rpe_supported_activities,\\n            daily.session_rpe_activity_ids,\\n            daily.session_rpe_authoritative_count,\\n            daily.session_rpe_assumed_count,\\n            daily.climbing_attempts,\\n            daily.climbing_entries,\\n            daily.climbing_entries_with_attempts,\\n            daily.climbing_session_minutes,\\n            daily.climbing_activity_ids,\\n            daily.climbing_activities,\\n            daily.climbing_authoritative_count,\\n            daily.climbing_assumed_count,\\n            daily.finger_load_kg_seconds,\\n            daily.finger_entries,\\n            daily.finger_activity_ids,\\n            daily.finger_activities,\\n            daily.finger_authoritative_count,\\n            daily.finger_assumed_count,\\n            daily.strength_volume_kg_reps,\\n            daily.strength_working_sets,\\n            daily.strength_suspicious_sets,\\n            daily.strength_activity_ids,\\n            daily.strength_activities,\\n            daily.strength_authoritative_count,\\n            daily.strength_assumed_count\\n          FROM daily\\n          INNER JOIN providers_by_date AS providers ON providers.date = daily.date\\n          ORDER BY date\\n        "]}]",
+  "[{"value":["\\n          SELECT\\n            min("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["(activity.started_at AT TIME ZONE "]},"UTC",{"value":[")::date"]}]},{"value":[")\\n              FILTER (WHERE activity.perceived_exertion IS NOT NULL\\n                AND activity.ended_at > activity.started_at)::text AS first_session_rpe_date,\\n            min("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["(activity.started_at AT TIME ZONE "]},"UTC",{"value":[")::date"]}]},{"value":[")\\n              FILTER (WHERE EXISTS (\\n                SELECT 1 FROM fitness.climbing_entry AS entry\\n                WHERE entry.activity_id = ANY(activity.member_activity_ids)\\n              ))::text AS first_climbing_date,\\n            min("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["(activity.started_at AT TIME ZONE "]},"UTC",{"value":[")::date"]}]},{"value":[")\\n              FILTER (WHERE EXISTS (\\n                SELECT 1 FROM fitness.finger_loading_entry AS entry\\n                WHERE entry.activity_id = ANY(activity.member_activity_ids)\\n              ))::text AS first_finger_date,\\n            min("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["(activity.started_at AT TIME ZONE "]},"UTC",{"value":[")::date"]}]},{"value":[")\\n              FILTER (WHERE EXISTS (\\n                SELECT 1 FROM fitness.strength_set AS strength_set\\n                WHERE strength_set.activity_id = ANY(activity.member_activity_ids)\\n              ))::text AS first_strength_date\\n          FROM fitness.v_activity AS activity\\n          WHERE activity.user_id = "]},"00000000-0000-4000-8000-000000000001",{"value":["::uuid\\n            AND "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["activity.source_providers && ARRAY["]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"peloton",{"value":[""]}]}]},{"value":["]::text[]"]}]},{"value":["\\n            AND "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["activity.modality::text IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"indoor",{"value":[""]}]}]},{"value":[")"]}]},{"value":["\\n        "]}]",
+]
+`;
+
+exports[`AnalyticalTrainingLoadRepository > applies provider and modality filters to cycling and heart-rate source queries 3`] = `
+[
+  {
+    "parameters": {
+      "calculationStart": "2026-05-05",
+      "endDate": "2026-06-01",
+      "modalities": [
+        "indoor",
+      ],
+      "providers": [
+        "peloton",
+      ],
+      "timezone": "UTC",
+      "userId": "00000000-0000-4000-8000-000000000001",
+    },
+    "query": "/* analytical-load:cycling */
+        WITH all_cycling AS (
+          SELECT
+            cycling.activity_id,
+            toDate(toTimeZone(activity.started_at, {timezone:String})) AS date,
+            cycling.normalized_power,
+            cycling.elapsed_seconds,
+            activity.source_providers,
+            false AS date_was_authoritative
+          FROM analytics.cycling_activity AS cycling FINAL
+          INNER JOIN analytics.deduped_activities AS activity FINAL
+            ON activity.activity_id = cycling.activity_id AND activity.user_id = cycling.user_id
+          WHERE cycling.user_id = {userId:UUID}
+            AND cycling.is_deleted = 0 AND activity.is_deleted = 0
+            AND (empty({providers:Array(String)})
+              OR hasAny(activity.source_providers, {providers:Array(String)}))
+            AND (empty({modalities:Array(String)})
+              OR has({modalities:Array(String)}, activity.modality))
+        ),
+        first_observed AS (SELECT minOrNull(date) AS date FROM all_cycling)
+        SELECT
+          toString(all_cycling.activity_id) AS activity_id,
+          toString(all_cycling.date) AS date,
+          normalized_power,
+          elapsed_seconds,
+          source_providers,
+          toString(first_observed.date) AS first_observed_date,
+          date_was_authoritative
+        FROM all_cycling CROSS JOIN first_observed
+        WHERE all_cycling.date BETWEEN toDate({calculationStart:String}) AND toDate({endDate:String})
+        UNION ALL
+        SELECT NULL, NULL, NULL, NULL, [], toString(date), false
+        FROM first_observed
+        WHERE date IS NOT NULL
+        ORDER BY date",
+  },
+  {
+    "parameters": {
+      "modalities": [
+        "indoor",
+      ],
+      "providers": [
+        "peloton",
+      ],
+      "segmentEnd": "2026-06-01",
+      "segmentStart": "2026-05-05",
+      "thresholdHr": 175,
+      "timezone": "UTC",
+      "upperPcts": [
+        0.6,
+        0.7,
+        0.8,
+        0.9,
+      ],
+      "userId": "00000000-0000-4000-8000-000000000001",
+    },
+    "query": "/* analytical-load:heart-rate */
+          WITH ordered AS (
+            SELECT
+              sensor.activity_id,
+              toDate(toTimeZone(activity.started_at, {timezone:String})) AS date,
+              sensor.recorded_at,
+              sensor.scalar AS heart_rate,
+              leadInFrame(sensor.recorded_at, 1, sensor.recorded_at) OVER (
+                PARTITION BY sensor.activity_id ORDER BY sensor.recorded_at
+                ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+              ) AS next_recorded_at,
+              sensor.provider_id
+              , false AS date_was_authoritative
+            FROM analytics.activity_sensor_sample AS sensor FINAL
+            INNER JOIN analytics.deduped_activities AS activity FINAL
+              ON activity.activity_id = sensor.activity_id AND activity.user_id = sensor.user_id
+            WHERE sensor.user_id = {userId:UUID}
+              AND sensor.channel = 'heart_rate' AND sensor.scalar > 0 AND sensor.is_deleted = 0
+              AND activity.is_deleted = 0
+              AND (empty({providers:Array(String)})
+                OR hasAny(activity.source_providers, {providers:Array(String)}))
+              AND (empty({modalities:Array(String)})
+                OR has({modalities:Array(String)}, activity.modality))
+              AND toDate(toTimeZone(activity.started_at, {timezone:String}))
+                BETWEEN toDate({segmentStart:String}) AND toDate({segmentEnd:String})
+          ),
+          weighted AS (
+            SELECT *,
+              least(greatest(dateDiff('second', recorded_at, next_recorded_at), 0), 10) AS seconds,
+              arrayFirstIndex(pct -> heart_rate < {thresholdHr:Float64} * pct,
+                {upperPcts:Array(Float64)}) AS bounded_zone
+            FROM ordered
+          )
+          SELECT
+            toString(date) AS date,
+            sum(seconds * if(bounded_zone = 0, length({upperPcts:Array(Float64)}) + 1,
+              bounded_zone)) / 60.0 AS load_points,
+            sum(seconds) AS covered_seconds,
+            uniqExact(activity_id) AS activity_count,
+            arraySlice(arraySort(groupUniqArray(toString(activity_id))), 1, 100) AS activity_ids,
+            arraySort(groupUniqArrayIf(provider_id, provider_id != '')) AS source_providers,
+            toString(min(date) OVER ()) AS first_observed_date,
+            uniqExactIf(activity_id, date_was_authoritative) AS authoritative_activity_count,
+            uniqExactIf(activity_id, NOT date_was_authoritative) AS assumed_activity_count
+          FROM weighted
+          GROUP BY date
+          ORDER BY date",
+  },
+]
+`;
+
+exports[`AnalyticalTrainingLoadRepository > caps per-channel activity ID evidence while retaining the total count 1`] = `
+{
+  "definitions": {
+    "climbing_attempts": "Recorded attempt counts. Entries with unknown attempts are reported as missing, not failed or zero.",
+    "cycling_power_tss": "Elapsed hours × (normalized power ÷ effective FTP)² × 100. Missing FTP or normalized power is not zero.",
+    "finger_load": "Effective-load kg-seconds require repetitions per set and remain unavailable while the canonical source schema does not record repetitions.",
+    "heart_rate_zone_load": "Sum of covered minutes in each configured threshold-HR zone multiplied by its one-based zone number.",
+    "monotony_strain": "Monotony is seven-day mean ÷ population standard deviation; strain is seven-day sum × monotony. Zero variance is unavailable.",
+    "rolling": "Acute is a 7-day sum; chronic is the 28-day sum divided by four; ratio is acute ÷ chronic only with complete windows. These descriptive values do not diagnose injury risk.",
+    "session_rpe": "Recorded session RPE multiplied by activity duration in minutes.",
+    "strength_volume": "Sum of weight × reps for non-warmup load-bearing sets with 1–100 reps and 0–500 kg.",
+  },
+  "range": {
+    "date_policy": "source_context",
+    "end_date": "2026-06-01",
+    "start_date": "2026-06-01",
+    "timezone": "UTC",
+  },
+  "rows": [
+    {
+      "channels": {
+        "climbing_attempts": {
+          "context": {},
+          "coverage": {
+            "contributing_records": 0,
+            "first_observed_date": null,
+            "source_activity_count": 0,
+            "source_activity_ids_truncated": false,
+            "supported_records": 0,
+          },
+          "daily_value": null,
+          "date_attribution": {
+            "analysis_timezone_activities": 0,
+            "authoritative_activities": 0,
+          },
+          "reason": "Source coverage had not begun by this date.",
+          "rolling": {
+            "acute_7d_sum": null,
+            "acute_coverage_days": 0,
+            "chronic_28d_weekly_equivalent": null,
+            "chronic_coverage_days": 0,
+            "monotony_7d": null,
+            "strain_7d": null,
+            "unavailable_reasons": [
+              "Seven complete daily values are required for acute load.",
+              "Twenty-eight complete daily values are required for chronic load.",
+            ],
+            "workload_ratio": null,
+          },
+          "source_activity_ids": [],
+          "source_providers": [],
+          "status": "unavailable",
+          "unit": "attempts",
+          "value_kind": "calculated",
+        },
+        "cycling_power_tss": {
+          "context": {
+            "activities": 105,
+          },
+          "coverage": {
+            "contributing_records": 105,
+            "first_observed_date": "2026-06-01",
+            "source_activity_count": 105,
+            "source_activity_ids_truncated": true,
+            "supported_records": 105,
+          },
+          "daily_value": 10500,
+          "date_attribution": {
+            "analysis_timezone_activities": 0,
+            "authoritative_activities": 105,
+          },
+          "reason": null,
+          "rolling": {
+            "acute_7d_sum": null,
+            "acute_coverage_days": 1,
+            "chronic_28d_weekly_equivalent": null,
+            "chronic_coverage_days": 1,
+            "monotony_7d": null,
+            "strain_7d": null,
+            "unavailable_reasons": [
+              "Seven complete daily values are required for acute load.",
+              "Twenty-eight complete daily values are required for chronic load.",
+            ],
+            "workload_ratio": null,
+          },
+          "source_activity_ids": [
+            "00000000-0000-4000-9000-000000000001",
+            "00000000-0000-4000-9000-000000000002",
+            "00000000-0000-4000-9000-000000000003",
+            "00000000-0000-4000-9000-000000000004",
+            "00000000-0000-4000-9000-000000000005",
+            "00000000-0000-4000-9000-000000000006",
+            "00000000-0000-4000-9000-000000000007",
+            "00000000-0000-4000-9000-000000000008",
+            "00000000-0000-4000-9000-000000000009",
+            "00000000-0000-4000-9000-000000000010",
+            "00000000-0000-4000-9000-000000000011",
+            "00000000-0000-4000-9000-000000000012",
+            "00000000-0000-4000-9000-000000000013",
+            "00000000-0000-4000-9000-000000000014",
+            "00000000-0000-4000-9000-000000000015",
+            "00000000-0000-4000-9000-000000000016",
+            "00000000-0000-4000-9000-000000000017",
+            "00000000-0000-4000-9000-000000000018",
+            "00000000-0000-4000-9000-000000000019",
+            "00000000-0000-4000-9000-000000000020",
+            "00000000-0000-4000-9000-000000000021",
+            "00000000-0000-4000-9000-000000000022",
+            "00000000-0000-4000-9000-000000000023",
+            "00000000-0000-4000-9000-000000000024",
+            "00000000-0000-4000-9000-000000000025",
+            "00000000-0000-4000-9000-000000000026",
+            "00000000-0000-4000-9000-000000000027",
+            "00000000-0000-4000-9000-000000000028",
+            "00000000-0000-4000-9000-000000000029",
+            "00000000-0000-4000-9000-000000000030",
+            "00000000-0000-4000-9000-000000000031",
+            "00000000-0000-4000-9000-000000000032",
+            "00000000-0000-4000-9000-000000000033",
+            "00000000-0000-4000-9000-000000000034",
+            "00000000-0000-4000-9000-000000000035",
+            "00000000-0000-4000-9000-000000000036",
+            "00000000-0000-4000-9000-000000000037",
+            "00000000-0000-4000-9000-000000000038",
+            "00000000-0000-4000-9000-000000000039",
+            "00000000-0000-4000-9000-000000000040",
+            "00000000-0000-4000-9000-000000000041",
+            "00000000-0000-4000-9000-000000000042",
+            "00000000-0000-4000-9000-000000000043",
+            "00000000-0000-4000-9000-000000000044",
+            "00000000-0000-4000-9000-000000000045",
+            "00000000-0000-4000-9000-000000000046",
+            "00000000-0000-4000-9000-000000000047",
+            "00000000-0000-4000-9000-000000000048",
+            "00000000-0000-4000-9000-000000000049",
+            "00000000-0000-4000-9000-000000000050",
+            "00000000-0000-4000-9000-000000000051",
+            "00000000-0000-4000-9000-000000000052",
+            "00000000-0000-4000-9000-000000000053",
+            "00000000-0000-4000-9000-000000000054",
+            "00000000-0000-4000-9000-000000000055",
+            "00000000-0000-4000-9000-000000000056",
+            "00000000-0000-4000-9000-000000000057",
+            "00000000-0000-4000-9000-000000000058",
+            "00000000-0000-4000-9000-000000000059",
+            "00000000-0000-4000-9000-000000000060",
+            "00000000-0000-4000-9000-000000000061",
+            "00000000-0000-4000-9000-000000000062",
+            "00000000-0000-4000-9000-000000000063",
+            "00000000-0000-4000-9000-000000000064",
+            "00000000-0000-4000-9000-000000000065",
+            "00000000-0000-4000-9000-000000000066",
+            "00000000-0000-4000-9000-000000000067",
+            "00000000-0000-4000-9000-000000000068",
+            "00000000-0000-4000-9000-000000000069",
+            "00000000-0000-4000-9000-000000000070",
+            "00000000-0000-4000-9000-000000000071",
+            "00000000-0000-4000-9000-000000000072",
+            "00000000-0000-4000-9000-000000000073",
+            "00000000-0000-4000-9000-000000000074",
+            "00000000-0000-4000-9000-000000000075",
+            "00000000-0000-4000-9000-000000000076",
+            "00000000-0000-4000-9000-000000000077",
+            "00000000-0000-4000-9000-000000000078",
+            "00000000-0000-4000-9000-000000000079",
+            "00000000-0000-4000-9000-000000000080",
+            "00000000-0000-4000-9000-000000000081",
+            "00000000-0000-4000-9000-000000000082",
+            "00000000-0000-4000-9000-000000000083",
+            "00000000-0000-4000-9000-000000000084",
+            "00000000-0000-4000-9000-000000000085",
+            "00000000-0000-4000-9000-000000000086",
+            "00000000-0000-4000-9000-000000000087",
+            "00000000-0000-4000-9000-000000000088",
+            "00000000-0000-4000-9000-000000000089",
+            "00000000-0000-4000-9000-000000000090",
+            "00000000-0000-4000-9000-000000000091",
+            "00000000-0000-4000-9000-000000000092",
+            "00000000-0000-4000-9000-000000000093",
+            "00000000-0000-4000-9000-000000000094",
+            "00000000-0000-4000-9000-000000000095",
+            "00000000-0000-4000-9000-000000000096",
+            "00000000-0000-4000-9000-000000000097",
+            "00000000-0000-4000-9000-000000000098",
+            "00000000-0000-4000-9000-000000000099",
+            "00000000-0000-4000-9000-000000000100",
+          ],
+          "source_providers": [
+            "wahoo",
+          ],
+          "status": "available",
+          "unit": "TSS points",
+          "value_kind": "calculated",
+        },
+        "finger_load": {
+          "context": {},
+          "coverage": {
+            "contributing_records": 0,
+            "first_observed_date": null,
+            "source_activity_count": 0,
+            "source_activity_ids_truncated": false,
+            "supported_records": 0,
+          },
+          "daily_value": null,
+          "date_attribution": {
+            "analysis_timezone_activities": 0,
+            "authoritative_activities": 0,
+          },
+          "reason": "Source coverage had not begun by this date.",
+          "rolling": {
+            "acute_7d_sum": null,
+            "acute_coverage_days": 0,
+            "chronic_28d_weekly_equivalent": null,
+            "chronic_coverage_days": 0,
+            "monotony_7d": null,
+            "strain_7d": null,
+            "unavailable_reasons": [
+              "Seven complete daily values are required for acute load.",
+              "Twenty-eight complete daily values are required for chronic load.",
+            ],
+            "workload_ratio": null,
+          },
+          "source_activity_ids": [],
+          "source_providers": [],
+          "status": "unavailable",
+          "unit": "kg-seconds",
+          "value_kind": "calculated",
+        },
+        "heart_rate_zone_load": {
+          "context": {},
+          "coverage": {
+            "contributing_records": 0,
+            "first_observed_date": null,
+            "source_activity_count": 0,
+            "source_activity_ids_truncated": false,
+            "supported_records": 0,
+          },
+          "daily_value": null,
+          "date_attribution": {
+            "analysis_timezone_activities": 0,
+            "authoritative_activities": 0,
+          },
+          "reason": "Source coverage had not begun by this date.",
+          "rolling": {
+            "acute_7d_sum": null,
+            "acute_coverage_days": 0,
+            "chronic_28d_weekly_equivalent": null,
+            "chronic_coverage_days": 0,
+            "monotony_7d": null,
+            "strain_7d": null,
+            "unavailable_reasons": [
+              "Seven complete daily values are required for acute load.",
+              "Twenty-eight complete daily values are required for chronic load.",
+            ],
+            "workload_ratio": null,
+          },
+          "source_activity_ids": [],
+          "source_providers": [],
+          "status": "unavailable",
+          "unit": "weighted zone-minutes",
+          "value_kind": "calculated",
+        },
+        "session_rpe": {
+          "context": {},
+          "coverage": {
+            "contributing_records": 0,
+            "first_observed_date": null,
+            "source_activity_count": 0,
+            "source_activity_ids_truncated": false,
+            "supported_records": 0,
+          },
+          "daily_value": null,
+          "date_attribution": {
+            "analysis_timezone_activities": 0,
+            "authoritative_activities": 0,
+          },
+          "reason": "Source coverage had not begun by this date.",
+          "rolling": {
+            "acute_7d_sum": null,
+            "acute_coverage_days": 0,
+            "chronic_28d_weekly_equivalent": null,
+            "chronic_coverage_days": 0,
+            "monotony_7d": null,
+            "strain_7d": null,
+            "unavailable_reasons": [
+              "Seven complete daily values are required for acute load.",
+              "Twenty-eight complete daily values are required for chronic load.",
+            ],
+            "workload_ratio": null,
+          },
+          "source_activity_ids": [],
+          "source_providers": [],
+          "status": "unavailable",
+          "unit": "RPE-minutes",
+          "value_kind": "calculated",
+        },
+        "strength_volume": {
+          "context": {},
+          "coverage": {
+            "contributing_records": 0,
+            "first_observed_date": null,
+            "source_activity_count": 0,
+            "source_activity_ids_truncated": false,
+            "supported_records": 0,
+          },
+          "daily_value": null,
+          "date_attribution": {
+            "analysis_timezone_activities": 0,
+            "authoritative_activities": 0,
+          },
+          "reason": "Source coverage had not begun by this date.",
+          "rolling": {
+            "acute_7d_sum": null,
+            "acute_coverage_days": 0,
+            "chronic_28d_weekly_equivalent": null,
+            "chronic_coverage_days": 0,
+            "monotony_7d": null,
+            "strain_7d": null,
+            "unavailable_reasons": [
+              "Seven complete daily values are required for acute load.",
+              "Twenty-eight complete daily values are required for chronic load.",
+            ],
+            "workload_ratio": null,
+          },
+          "source_activity_ids": [],
+          "source_providers": [],
+          "status": "unavailable",
+          "unit": "kg-reps",
+          "value_kind": "calculated",
+        },
+      },
+      "date": "2026-06-01",
+    },
+  ],
+  "total_daily_load": {
+    "reason": "Modality-specific loads use different units and are not treated as biologically interchangeable.",
+    "value": null,
+  },
+}
+`;
+
+exports[`AnalyticalTrainingLoadRepository > does not turn unsupported activity load into zero 1`] = `
+{
+  "definitions": {
+    "climbing_attempts": "Recorded attempt counts. Entries with unknown attempts are reported as missing, not failed or zero.",
+    "cycling_power_tss": "Elapsed hours × (normalized power ÷ effective FTP)² × 100. Missing FTP or normalized power is not zero.",
+    "finger_load": "Effective-load kg-seconds require repetitions per set and remain unavailable while the canonical source schema does not record repetitions.",
+    "heart_rate_zone_load": "Sum of covered minutes in each configured threshold-HR zone multiplied by its one-based zone number.",
+    "monotony_strain": "Monotony is seven-day mean ÷ population standard deviation; strain is seven-day sum × monotony. Zero variance is unavailable.",
+    "rolling": "Acute is a 7-day sum; chronic is the 28-day sum divided by four; ratio is acute ÷ chronic only with complete windows. These descriptive values do not diagnose injury risk.",
+    "session_rpe": "Recorded session RPE multiplied by activity duration in minutes.",
+    "strength_volume": "Sum of weight × reps for non-warmup load-bearing sets with 1–100 reps and 0–500 kg.",
+  },
+  "range": {
+    "date_policy": "analysis_timezone",
+    "end_date": "2026-06-15",
+    "start_date": "2026-06-14",
+    "timezone": "UTC",
+  },
+  "rows": [
+    {
+      "channels": {
+        "climbing_attempts": {
+          "context": {},
+          "coverage": {
+            "contributing_records": 0,
+            "first_observed_date": "2026-06-15",
+            "source_activity_count": 0,
+            "source_activity_ids_truncated": false,
+            "supported_records": 0,
+          },
+          "daily_value": null,
+          "date_attribution": {
+            "analysis_timezone_activities": 0,
+            "authoritative_activities": 0,
+          },
+          "reason": "Source coverage had not begun by this date.",
+          "rolling": {
+            "acute_7d_sum": null,
+            "acute_coverage_days": 0,
+            "chronic_28d_weekly_equivalent": null,
+            "chronic_coverage_days": 0,
+            "monotony_7d": null,
+            "strain_7d": null,
+            "unavailable_reasons": [
+              "Seven complete daily values are required for acute load.",
+              "Twenty-eight complete daily values are required for chronic load.",
+            ],
+            "workload_ratio": null,
+          },
+          "source_activity_ids": [],
+          "source_providers": [],
+          "status": "unavailable",
+          "unit": "attempts",
+          "value_kind": "calculated",
+        },
+        "cycling_power_tss": {
+          "context": {},
+          "coverage": {
+            "contributing_records": 0,
+            "first_observed_date": "2026-06-15",
+            "source_activity_count": 0,
+            "source_activity_ids_truncated": false,
+            "supported_records": 0,
+          },
+          "daily_value": null,
+          "date_attribution": {
+            "analysis_timezone_activities": 0,
+            "authoritative_activities": 0,
+          },
+          "reason": "Source coverage had not begun by this date.",
+          "rolling": {
+            "acute_7d_sum": null,
+            "acute_coverage_days": 0,
+            "chronic_28d_weekly_equivalent": null,
+            "chronic_coverage_days": 0,
+            "monotony_7d": null,
+            "strain_7d": null,
+            "unavailable_reasons": [
+              "Seven complete daily values are required for acute load.",
+              "Twenty-eight complete daily values are required for chronic load.",
+            ],
+            "workload_ratio": null,
+          },
+          "source_activity_ids": [],
+          "source_providers": [],
+          "status": "unavailable",
+          "unit": "TSS points",
+          "value_kind": "calculated",
+        },
+        "finger_load": {
+          "context": {},
+          "coverage": {
+            "contributing_records": 0,
+            "first_observed_date": null,
+            "source_activity_count": 0,
+            "source_activity_ids_truncated": false,
+            "supported_records": 0,
+          },
+          "daily_value": null,
+          "date_attribution": {
+            "analysis_timezone_activities": 0,
+            "authoritative_activities": 0,
+          },
+          "reason": "Source coverage had not begun by this date.",
+          "rolling": {
+            "acute_7d_sum": null,
+            "acute_coverage_days": 0,
+            "chronic_28d_weekly_equivalent": null,
+            "chronic_coverage_days": 0,
+            "monotony_7d": null,
+            "strain_7d": null,
+            "unavailable_reasons": [
+              "Seven complete daily values are required for acute load.",
+              "Twenty-eight complete daily values are required for chronic load.",
+            ],
+            "workload_ratio": null,
+          },
+          "source_activity_ids": [],
+          "source_providers": [],
+          "status": "unavailable",
+          "unit": "kg-seconds",
+          "value_kind": "calculated",
+        },
+        "heart_rate_zone_load": {
+          "context": {},
+          "coverage": {
+            "contributing_records": 0,
+            "first_observed_date": null,
+            "source_activity_count": 0,
+            "source_activity_ids_truncated": false,
+            "supported_records": 0,
+          },
+          "daily_value": null,
+          "date_attribution": {
+            "analysis_timezone_activities": 0,
+            "authoritative_activities": 0,
+          },
+          "reason": "Source coverage had not begun by this date.",
+          "rolling": {
+            "acute_7d_sum": null,
+            "acute_coverage_days": 0,
+            "chronic_28d_weekly_equivalent": null,
+            "chronic_coverage_days": 0,
+            "monotony_7d": null,
+            "strain_7d": null,
+            "unavailable_reasons": [
+              "Seven complete daily values are required for acute load.",
+              "Twenty-eight complete daily values are required for chronic load.",
+            ],
+            "workload_ratio": null,
+          },
+          "source_activity_ids": [],
+          "source_providers": [],
+          "status": "unavailable",
+          "unit": "weighted zone-minutes",
+          "value_kind": "calculated",
+        },
+        "session_rpe": {
+          "context": {},
+          "coverage": {
+            "contributing_records": 0,
+            "first_observed_date": null,
+            "source_activity_count": 0,
+            "source_activity_ids_truncated": false,
+            "supported_records": 0,
+          },
+          "daily_value": null,
+          "date_attribution": {
+            "analysis_timezone_activities": 0,
+            "authoritative_activities": 0,
+          },
+          "reason": "Source coverage had not begun by this date.",
+          "rolling": {
+            "acute_7d_sum": null,
+            "acute_coverage_days": 0,
+            "chronic_28d_weekly_equivalent": null,
+            "chronic_coverage_days": 0,
+            "monotony_7d": null,
+            "strain_7d": null,
+            "unavailable_reasons": [
+              "Seven complete daily values are required for acute load.",
+              "Twenty-eight complete daily values are required for chronic load.",
+            ],
+            "workload_ratio": null,
+          },
+          "source_activity_ids": [],
+          "source_providers": [],
+          "status": "unavailable",
+          "unit": "RPE-minutes",
+          "value_kind": "calculated",
+        },
+        "strength_volume": {
+          "context": {},
+          "coverage": {
+            "contributing_records": 0,
+            "first_observed_date": "2026-06-15",
+            "source_activity_count": 0,
+            "source_activity_ids_truncated": false,
+            "supported_records": 0,
+          },
+          "daily_value": null,
+          "date_attribution": {
+            "analysis_timezone_activities": 0,
+            "authoritative_activities": 0,
+          },
+          "reason": "Source coverage had not begun by this date.",
+          "rolling": {
+            "acute_7d_sum": null,
+            "acute_coverage_days": 0,
+            "chronic_28d_weekly_equivalent": null,
+            "chronic_coverage_days": 0,
+            "monotony_7d": null,
+            "strain_7d": null,
+            "unavailable_reasons": [
+              "Seven complete daily values are required for acute load.",
+              "Twenty-eight complete daily values are required for chronic load.",
+            ],
+            "workload_ratio": null,
+          },
+          "source_activity_ids": [],
+          "source_providers": [],
+          "status": "unavailable",
+          "unit": "kg-reps",
+          "value_kind": "calculated",
+        },
+      },
+      "date": "2026-06-14",
+    },
+    {
+      "channels": {
+        "climbing_attempts": {
+          "context": {
+            "entries": 2,
+            "entries_with_attempt_data": 0,
+            "session_minutes": 60,
+          },
+          "coverage": {
+            "contributing_records": 2,
+            "first_observed_date": "2026-06-15",
+            "source_activity_count": 1,
+            "source_activity_ids_truncated": false,
+            "supported_records": 0,
+          },
+          "daily_value": null,
+          "date_attribution": {
+            "analysis_timezone_activities": 0,
+            "authoritative_activities": 0,
+          },
+          "reason": "Attempt information is missing for all 2 climbing entries.",
+          "rolling": {
+            "acute_7d_sum": null,
+            "acute_coverage_days": 0,
+            "chronic_28d_weekly_equivalent": null,
+            "chronic_coverage_days": 0,
+            "monotony_7d": null,
+            "strain_7d": null,
+            "unavailable_reasons": [
+              "Seven complete daily values are required for acute load.",
+              "Twenty-eight complete daily values are required for chronic load.",
+            ],
+            "workload_ratio": null,
+          },
+          "source_activity_ids": [
+            "00000000-0000-4000-8001-000000000001",
+          ],
+          "source_providers": [
+            "manual",
+          ],
+          "status": "unavailable",
+          "unit": "attempts",
+          "value_kind": "calculated",
+        },
+        "cycling_power_tss": {
+          "context": {
+            "activities": 1,
+          },
+          "coverage": {
+            "contributing_records": 1,
+            "first_observed_date": "2026-06-15",
+            "source_activity_count": 1,
+            "source_activity_ids_truncated": false,
+            "supported_records": 0,
+          },
+          "daily_value": null,
+          "date_attribution": {
+            "analysis_timezone_activities": 1,
+            "authoritative_activities": 0,
+          },
+          "reason": "No valid FTP was effective for 1 cycling activity.",
+          "rolling": {
+            "acute_7d_sum": null,
+            "acute_coverage_days": 0,
+            "chronic_28d_weekly_equivalent": null,
+            "chronic_coverage_days": 0,
+            "monotony_7d": null,
+            "strain_7d": null,
+            "unavailable_reasons": [
+              "Seven complete daily values are required for acute load.",
+              "Twenty-eight complete daily values are required for chronic load.",
+            ],
+            "workload_ratio": null,
+          },
+          "source_activity_ids": [
+            "00000000-0000-4000-9000-000000000001",
+          ],
+          "source_providers": [
+            "peloton",
+          ],
+          "status": "unavailable",
+          "unit": "TSS points",
+          "value_kind": "calculated",
+        },
+        "finger_load": {
+          "context": {},
+          "coverage": {
+            "contributing_records": 0,
+            "first_observed_date": null,
+            "source_activity_count": 0,
+            "source_activity_ids_truncated": false,
+            "supported_records": 0,
+          },
+          "daily_value": null,
+          "date_attribution": {
+            "analysis_timezone_activities": 0,
+            "authoritative_activities": 0,
+          },
+          "reason": "Source coverage had not begun by this date.",
+          "rolling": {
+            "acute_7d_sum": null,
+            "acute_coverage_days": 0,
+            "chronic_28d_weekly_equivalent": null,
+            "chronic_coverage_days": 0,
+            "monotony_7d": null,
+            "strain_7d": null,
+            "unavailable_reasons": [
+              "Seven complete daily values are required for acute load.",
+              "Twenty-eight complete daily values are required for chronic load.",
+            ],
+            "workload_ratio": null,
+          },
+          "source_activity_ids": [],
+          "source_providers": [],
+          "status": "unavailable",
+          "unit": "kg-seconds",
+          "value_kind": "calculated",
+        },
+        "heart_rate_zone_load": {
+          "context": {},
+          "coverage": {
+            "contributing_records": 0,
+            "first_observed_date": null,
+            "source_activity_count": 0,
+            "source_activity_ids_truncated": false,
+            "supported_records": 0,
+          },
+          "daily_value": null,
+          "date_attribution": {
+            "analysis_timezone_activities": 0,
+            "authoritative_activities": 0,
+          },
+          "reason": "Source coverage had not begun by this date.",
+          "rolling": {
+            "acute_7d_sum": null,
+            "acute_coverage_days": 0,
+            "chronic_28d_weekly_equivalent": null,
+            "chronic_coverage_days": 0,
+            "monotony_7d": null,
+            "strain_7d": null,
+            "unavailable_reasons": [
+              "Seven complete daily values are required for acute load.",
+              "Twenty-eight complete daily values are required for chronic load.",
+            ],
+            "workload_ratio": null,
+          },
+          "source_activity_ids": [],
+          "source_providers": [],
+          "status": "unavailable",
+          "unit": "weighted zone-minutes",
+          "value_kind": "calculated",
+        },
+        "session_rpe": {
+          "context": {
+            "activities": 0,
+          },
+          "coverage": {
+            "contributing_records": 0,
+            "first_observed_date": null,
+            "source_activity_count": 0,
+            "source_activity_ids_truncated": false,
+            "supported_records": 0,
+          },
+          "daily_value": null,
+          "date_attribution": {
+            "analysis_timezone_activities": 0,
+            "authoritative_activities": 0,
+          },
+          "reason": "No activity has both duration and recorded session RPE.",
+          "rolling": {
+            "acute_7d_sum": null,
+            "acute_coverage_days": 0,
+            "chronic_28d_weekly_equivalent": null,
+            "chronic_coverage_days": 0,
+            "monotony_7d": null,
+            "strain_7d": null,
+            "unavailable_reasons": [
+              "Seven complete daily values are required for acute load.",
+              "Twenty-eight complete daily values are required for chronic load.",
+            ],
+            "workload_ratio": null,
+          },
+          "source_activity_ids": [],
+          "source_providers": [],
+          "status": "unavailable",
+          "unit": "RPE-minutes",
+          "value_kind": "calculated",
+        },
+        "strength_volume": {
+          "context": {
+            "suspicious_sets_excluded": 1,
+            "working_sets": 0,
+          },
+          "coverage": {
+            "contributing_records": 1,
+            "first_observed_date": "2026-06-15",
+            "source_activity_count": 1,
+            "source_activity_ids_truncated": false,
+            "supported_records": 0,
+          },
+          "daily_value": null,
+          "date_attribution": {
+            "analysis_timezone_activities": 0,
+            "authoritative_activities": 0,
+          },
+          "reason": "All 1 strength sets were excluded by validation rules.",
+          "rolling": {
+            "acute_7d_sum": null,
+            "acute_coverage_days": 0,
+            "chronic_28d_weekly_equivalent": null,
+            "chronic_coverage_days": 0,
+            "monotony_7d": null,
+            "strain_7d": null,
+            "unavailable_reasons": [
+              "Seven complete daily values are required for acute load.",
+              "Twenty-eight complete daily values are required for chronic load.",
+            ],
+            "workload_ratio": null,
+          },
+          "source_activity_ids": [
+            "00000000-0000-4000-8003-000000000001",
+          ],
+          "source_providers": [
+            "manual",
+          ],
+          "status": "unavailable",
+          "unit": "kg-reps",
+          "value_kind": "calculated",
+        },
+      },
+      "date": "2026-06-15",
+    },
+  ],
+  "total_daily_load": {
+    "reason": "Modality-specific loads use different units and are not treated as biologically interchangeable.",
+    "value": null,
+  },
+}
+`;
+
+exports[`AnalyticalTrainingLoadRepository > returns a complete date spine with independent load channels and rolling definitions 1`] = `
+{
+  "definitions": {
+    "climbing_attempts": "Recorded attempt counts. Entries with unknown attempts are reported as missing, not failed or zero.",
+    "cycling_power_tss": "Elapsed hours × (normalized power ÷ effective FTP)² × 100. Missing FTP or normalized power is not zero.",
+    "finger_load": "Effective-load kg-seconds require repetitions per set and remain unavailable while the canonical source schema does not record repetitions.",
+    "heart_rate_zone_load": "Sum of covered minutes in each configured threshold-HR zone multiplied by its one-based zone number.",
+    "monotony_strain": "Monotony is seven-day mean ÷ population standard deviation; strain is seven-day sum × monotony. Zero variance is unavailable.",
+    "rolling": "Acute is a 7-day sum; chronic is the 28-day sum divided by four; ratio is acute ÷ chronic only with complete windows. These descriptive values do not diagnose injury risk.",
+    "session_rpe": "Recorded session RPE multiplied by activity duration in minutes.",
+    "strength_volume": "Sum of weight × reps for non-warmup load-bearing sets with 1–100 reps and 0–500 kg.",
+  },
+  "range": {
+    "date_policy": "analysis_timezone",
+    "end_date": "2026-06-28",
+    "start_date": "2026-06-28",
+    "timezone": "America/Los_Angeles",
+  },
+  "rows": [
+    {
+      "channels": {
+        "climbing_attempts": {
+          "context": {
+            "entries": 4,
+            "entries_with_attempt_data": 4,
+            "session_minutes": 90,
+          },
+          "coverage": {
+            "contributing_records": 4,
+            "first_observed_date": "2026-06-01",
+            "source_activity_count": 1,
+            "source_activity_ids_truncated": false,
+            "supported_records": 4,
+          },
+          "daily_value": 10,
+          "date_attribution": {
+            "analysis_timezone_activities": 0,
+            "authoritative_activities": 0,
+          },
+          "reason": null,
+          "rolling": {
+            "acute_7d_sum": 70,
+            "acute_coverage_days": 7,
+            "chronic_28d_weekly_equivalent": 70,
+            "chronic_coverage_days": 28,
+            "monotony_7d": null,
+            "strain_7d": null,
+            "unavailable_reasons": [
+              "Monotony and strain are unavailable because the seven-day load variance is zero.",
+            ],
+            "workload_ratio": 1,
+          },
+          "source_activity_ids": [
+            "00000000-0000-4000-8001-000000000028",
+          ],
+          "source_providers": [
+            "kaya",
+          ],
+          "status": "available",
+          "unit": "attempts",
+          "value_kind": "calculated",
+        },
+        "cycling_power_tss": {
+          "context": {
+            "activities": 1,
+          },
+          "coverage": {
+            "contributing_records": 1,
+            "first_observed_date": "2026-06-01",
+            "source_activity_count": 1,
+            "source_activity_ids_truncated": false,
+            "supported_records": 1,
+          },
+          "daily_value": 100,
+          "date_attribution": {
+            "analysis_timezone_activities": 1,
+            "authoritative_activities": 0,
+          },
+          "reason": null,
+          "rolling": {
+            "acute_7d_sum": 416,
+            "acute_coverage_days": 7,
+            "chronic_28d_weekly_equivalent": 629,
+            "chronic_coverage_days": 28,
+            "monotony_7d": 1.978,
+            "strain_7d": 822.92,
+            "unavailable_reasons": [],
+            "workload_ratio": 0.661,
+          },
+          "source_activity_ids": [
+            "00000000-0000-4000-9000-000000000028",
+          ],
+          "source_providers": [
+            "wahoo",
+          ],
+          "status": "available",
+          "unit": "TSS points",
+          "value_kind": "calculated",
+        },
+        "finger_load": {
+          "context": {
+            "entries": 1,
+          },
+          "coverage": {
+            "contributing_records": 1,
+            "first_observed_date": "2026-06-01",
+            "source_activity_count": 1,
+            "source_activity_ids_truncated": false,
+            "supported_records": 0,
+          },
+          "daily_value": null,
+          "date_attribution": {
+            "analysis_timezone_activities": 0,
+            "authoritative_activities": 0,
+          },
+          "reason": "Exact finger-load volume requires repetitions per set, which the canonical source schema does not record.",
+          "rolling": {
+            "acute_7d_sum": null,
+            "acute_coverage_days": 0,
+            "chronic_28d_weekly_equivalent": null,
+            "chronic_coverage_days": 0,
+            "monotony_7d": null,
+            "strain_7d": null,
+            "unavailable_reasons": [
+              "Seven complete daily values are required for acute load.",
+              "Twenty-eight complete daily values are required for chronic load.",
+            ],
+            "workload_ratio": null,
+          },
+          "source_activity_ids": [
+            "00000000-0000-4000-8002-000000000028",
+          ],
+          "source_providers": [
+            "manual",
+          ],
+          "status": "unavailable",
+          "unit": "kg-seconds",
+          "value_kind": "calculated",
+        },
+        "heart_rate_zone_load": {
+          "context": {
+            "covered_seconds": 3600,
+          },
+          "coverage": {
+            "contributing_records": 1,
+            "first_observed_date": "2026-06-01",
+            "source_activity_count": 1,
+            "source_activity_ids_truncated": false,
+            "supported_records": 1,
+          },
+          "daily_value": 120,
+          "date_attribution": {
+            "analysis_timezone_activities": undefined,
+            "authoritative_activities": undefined,
+          },
+          "reason": null,
+          "rolling": {
+            "acute_7d_sum": 840,
+            "acute_coverage_days": 7,
+            "chronic_28d_weekly_equivalent": 840,
+            "chronic_coverage_days": 28,
+            "monotony_7d": null,
+            "strain_7d": null,
+            "unavailable_reasons": [
+              "Monotony and strain are unavailable because the seven-day load variance is zero.",
+            ],
+            "workload_ratio": 1,
+          },
+          "source_activity_ids": [
+            "00000000-0000-4000-9001-000000000028",
+          ],
+          "source_providers": [
+            "wahoo",
+          ],
+          "status": "available",
+          "unit": "weighted zone-minutes",
+          "value_kind": "calculated",
+        },
+        "session_rpe": {
+          "context": {
+            "activities": 1,
+            "activities_with_rpe": 1,
+          },
+          "coverage": {
+            "contributing_records": 1,
+            "first_observed_date": "2026-06-01",
+            "source_activity_count": 1,
+            "source_activity_ids_truncated": false,
+            "supported_records": 1,
+          },
+          "daily_value": 300,
+          "date_attribution": {
+            "analysis_timezone_activities": 0,
+            "authoritative_activities": 0,
+          },
+          "reason": null,
+          "rolling": {
+            "acute_7d_sum": 2100,
+            "acute_coverage_days": 7,
+            "chronic_28d_weekly_equivalent": 2100,
+            "chronic_coverage_days": 28,
+            "monotony_7d": null,
+            "strain_7d": null,
+            "unavailable_reasons": [
+              "Monotony and strain are unavailable because the seven-day load variance is zero.",
+            ],
+            "workload_ratio": 1,
+          },
+          "source_activity_ids": [
+            "00000000-0000-4000-8000-000000000028",
+          ],
+          "source_providers": [
+            "manual",
+          ],
+          "status": "available",
+          "unit": "RPE-minutes",
+          "value_kind": "calculated",
+        },
+        "strength_volume": {
+          "context": {
+            "suspicious_sets_excluded": 0,
+            "working_sets": 4,
+          },
+          "coverage": {
+            "contributing_records": 4,
+            "first_observed_date": "2026-06-01",
+            "source_activity_count": 1,
+            "source_activity_ids_truncated": false,
+            "supported_records": 4,
+          },
+          "daily_value": 500,
+          "date_attribution": {
+            "analysis_timezone_activities": 0,
+            "authoritative_activities": 0,
+          },
+          "reason": null,
+          "rolling": {
+            "acute_7d_sum": 3500,
+            "acute_coverage_days": 7,
+            "chronic_28d_weekly_equivalent": 3500,
+            "chronic_coverage_days": 28,
+            "monotony_7d": null,
+            "strain_7d": null,
+            "unavailable_reasons": [
+              "Monotony and strain are unavailable because the seven-day load variance is zero.",
+            ],
+            "workload_ratio": 1,
+          },
+          "source_activity_ids": [
+            "00000000-0000-4000-8003-000000000028",
+          ],
+          "source_providers": [
+            "manual",
+          ],
+          "status": "available",
+          "unit": "kg-reps",
+          "value_kind": "calculated",
+        },
+      },
+      "date": "2026-06-28",
+    },
+  ],
+  "total_daily_load": {
+    "reason": "Modality-specific loads use different units and are not treated as biologically interchangeable.",
+    "value": null,
+  },
+}
+`;
+
+exports[`AnalyticalTrainingLoadRepository > returns a complete date spine with independent load channels and rolling definitions 2`] = `
+[
+  "[{"value":["\\n        SELECT *\\n        FROM fitness.sport_settings\\n        WHERE user_id = "]},"00000000-0000-4000-8000-000000000001",{"value":["\\n          AND sport = "]},"cycling",{"value":["\\n        ORDER BY effective_from DESC\\n      "]}]",
+  "[{"value":["\\n          WITH activity_contributions AS (\\n            SELECT\\n              activity.id,\\n              activity.source_providers,\\n              "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["(activity.started_at AT TIME ZONE "]},"America/Los_Angeles",{"value":[")::date"]}]},{"value":[" AS date,\\n              "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["false"]}]},{"value":[" AS date_was_authoritative,\\n              GREATEST(EXTRACT(EPOCH FROM (activity.ended_at - activity.started_at)) / 60.0, 0)\\n                AS duration_minutes,\\n              activity.perceived_exertion,\\n              climb.attempts,\\n              climb.entries,\\n              climb.entries_with_attempts,\\n              finger.load_kg_seconds,\\n              finger.entries AS finger_entries,\\n              strength.volume_kg_reps,\\n              strength.working_sets,\\n              strength.suspicious_sets\\n            FROM fitness.v_activity AS activity\\n            LEFT JOIN LATERAL (\\n              SELECT\\n                SUM(entry.attempt_count)::int AS attempts,\\n                COUNT(*)::int AS entries,\\n                COUNT(entry.attempt_count)::int AS entries_with_attempts\\n              FROM fitness.climbing_entry AS entry\\n              WHERE entry.activity_id = ANY(activity.member_activity_ids)\\n            ) AS climb ON TRUE\\n            LEFT JOIN LATERAL (\\n              SELECT\\n                NULL::real AS load_kg_seconds,\\n                COUNT(*)::int AS entries\\n              FROM fitness.finger_loading_entry AS entry\\n              WHERE entry.activity_id = ANY(activity.member_activity_ids)\\n            ) AS finger ON TRUE\\n            LEFT JOIN LATERAL (\\n              SELECT\\n                SUM(set.weight_kg * set.reps) FILTER (\\n                  WHERE set.set_type NOT IN ('warmup', 'rest')\\n                    AND set.weight_kg > 0 AND set.weight_kg <= 500\\n                    AND set.reps BETWEEN 1 AND 100\\n                )::real AS volume_kg_reps,\\n                COUNT(*) FILTER (\\n                  WHERE set.set_type NOT IN ('warmup', 'rest')\\n                    AND set.weight_kg > 0 AND set.weight_kg <= 500\\n                    AND set.reps BETWEEN 1 AND 100\\n                )::int AS working_sets,\\n                COUNT(*) FILTER (\\n                  WHERE set.set_type NOT IN ('warmup', 'rest')\\n                    AND (set.weight_kg IS NULL OR set.weight_kg <= 0 OR set.weight_kg > 500\\n                      OR set.reps IS NULL OR set.reps < 1 OR set.reps > 100)\\n                )::int AS suspicious_sets\\n              FROM fitness.strength_set AS set\\n              WHERE set.activity_id = ANY(activity.member_activity_ids)\\n            ) AS strength ON TRUE\\n            WHERE activity.user_id = "]},"00000000-0000-4000-8000-000000000001",{"value":["::uuid\\n              AND "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["true"]}]},{"value":["\\n              AND "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["true"]}]},{"value":["\\n              AND "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["(activity.started_at AT TIME ZONE "]},"America/Los_Angeles",{"value":[")::date"]}]},{"value":["\\n                BETWEEN "]},"2026-06-01",{"value":["::date AND "]},"2026-06-28",{"value":["::date\\n          ),\\n          provider_contributions AS (\\n            SELECT\\n              contribution.date,\\n              provider_id,\\n              bool_or(contribution.duration_minutes > 0) AS has_session_rpe,\\n              bool_or(contribution.entries > 0) AS has_climbing,\\n              bool_or(contribution.finger_entries > 0) AS has_finger,\\n              bool_or(contribution.working_sets > 0 OR contribution.suspicious_sets > 0)\\n                AS has_strength\\n            FROM activity_contributions AS contribution\\n            CROSS JOIN LATERAL unnest(contribution.source_providers) AS provider_id\\n            GROUP BY contribution.date, provider_id\\n          ),\\n          providers_by_date AS (\\n            SELECT\\n              date,\\n              COALESCE(array_agg(provider_id ORDER BY provider_id)\\n                FILTER (WHERE has_session_rpe), ARRAY[]::text[])\\n                AS session_rpe_source_providers,\\n              COALESCE(array_agg(provider_id ORDER BY provider_id)\\n                FILTER (WHERE has_climbing), ARRAY[]::text[]) AS climbing_source_providers,\\n              COALESCE(array_agg(provider_id ORDER BY provider_id)\\n                FILTER (WHERE has_finger), ARRAY[]::text[]) AS finger_source_providers,\\n              COALESCE(array_agg(provider_id ORDER BY provider_id)\\n                FILTER (WHERE has_strength), ARRAY[]::text[]) AS strength_source_providers\\n            FROM provider_contributions\\n            GROUP BY date\\n          ),\\n          daily AS (\\n          SELECT\\n            date,\\n            SUM(duration_minutes * perceived_exertion)\\n              FILTER (WHERE perceived_exertion IS NOT NULL AND duration_minutes > 0)::real\\n              AS session_rpe_load,\\n            COUNT(*) FILTER (WHERE duration_minutes > 0)::int\\n              AS session_rpe_activities,\\n            COUNT(*) FILTER (WHERE perceived_exertion IS NOT NULL AND duration_minutes > 0)::int\\n              AS session_rpe_supported_activities,\\n            (COALESCE(array_agg(DISTINCT id::text ORDER BY id::text)\\n              FILTER (WHERE duration_minutes > 0), ARRAY[]::text[]))[1:100]\\n              AS session_rpe_activity_ids,\\n            COUNT(DISTINCT id) FILTER (WHERE duration_minutes > 0 AND date_was_authoritative)::int\\n              AS session_rpe_authoritative_count,\\n            COUNT(DISTINCT id) FILTER (WHERE duration_minutes > 0 AND NOT date_was_authoritative)::int\\n              AS session_rpe_assumed_count,\\n            SUM(attempts)::int AS climbing_attempts,\\n            SUM(entries)::int AS climbing_entries,\\n            SUM(entries_with_attempts)::int AS climbing_entries_with_attempts,\\n            SUM(duration_minutes) FILTER (WHERE entries > 0)::real AS climbing_session_minutes,\\n            (COALESCE(array_agg(DISTINCT id::text ORDER BY id::text)\\n              FILTER (WHERE entries > 0), ARRAY[]::text[]))[1:100]\\n              AS climbing_activity_ids,\\n            COUNT(DISTINCT id) FILTER (WHERE entries > 0)::int AS climbing_activities,\\n            COUNT(DISTINCT id) FILTER (WHERE entries > 0 AND date_was_authoritative)::int\\n              AS climbing_authoritative_count,\\n            COUNT(DISTINCT id) FILTER (WHERE entries > 0 AND NOT date_was_authoritative)::int\\n              AS climbing_assumed_count,\\n            SUM(load_kg_seconds)::real AS finger_load_kg_seconds,\\n            SUM(finger_entries)::int AS finger_entries,\\n            (COALESCE(array_agg(DISTINCT id::text ORDER BY id::text)\\n              FILTER (WHERE finger_entries > 0), ARRAY[]::text[]))[1:100]\\n              AS finger_activity_ids,\\n            COUNT(DISTINCT id) FILTER (WHERE finger_entries > 0)::int AS finger_activities,\\n            COUNT(DISTINCT id) FILTER (WHERE finger_entries > 0 AND date_was_authoritative)::int\\n              AS finger_authoritative_count,\\n            COUNT(DISTINCT id) FILTER (WHERE finger_entries > 0 AND NOT date_was_authoritative)::int\\n              AS finger_assumed_count,\\n            SUM(volume_kg_reps)::real AS strength_volume_kg_reps,\\n            SUM(working_sets)::int AS strength_working_sets,\\n            SUM(suspicious_sets)::int AS strength_suspicious_sets,\\n            (COALESCE(array_agg(DISTINCT id::text ORDER BY id::text)\\n              FILTER (WHERE working_sets > 0 OR suspicious_sets > 0), ARRAY[]::text[]))[1:100]\\n              AS strength_activity_ids,\\n            COUNT(DISTINCT id) FILTER (WHERE working_sets > 0 OR suspicious_sets > 0)::int\\n              AS strength_activities,\\n            COUNT(DISTINCT id) FILTER (\\n              WHERE (working_sets > 0 OR suspicious_sets > 0) AND date_was_authoritative\\n            )::int AS strength_authoritative_count,\\n            COUNT(DISTINCT id) FILTER (\\n              WHERE (working_sets > 0 OR suspicious_sets > 0) AND NOT date_was_authoritative\\n            )::int AS strength_assumed_count\\n          FROM activity_contributions\\n          GROUP BY date\\n          )\\n          SELECT\\n            daily.date::text AS date,\\n            providers.session_rpe_source_providers,\\n            providers.climbing_source_providers,\\n            providers.finger_source_providers,\\n            providers.strength_source_providers,\\n            daily.session_rpe_load,\\n            daily.session_rpe_activities,\\n            daily.session_rpe_supported_activities,\\n            daily.session_rpe_activity_ids,\\n            daily.session_rpe_authoritative_count,\\n            daily.session_rpe_assumed_count,\\n            daily.climbing_attempts,\\n            daily.climbing_entries,\\n            daily.climbing_entries_with_attempts,\\n            daily.climbing_session_minutes,\\n            daily.climbing_activity_ids,\\n            daily.climbing_activities,\\n            daily.climbing_authoritative_count,\\n            daily.climbing_assumed_count,\\n            daily.finger_load_kg_seconds,\\n            daily.finger_entries,\\n            daily.finger_activity_ids,\\n            daily.finger_activities,\\n            daily.finger_authoritative_count,\\n            daily.finger_assumed_count,\\n            daily.strength_volume_kg_reps,\\n            daily.strength_working_sets,\\n            daily.strength_suspicious_sets,\\n            daily.strength_activity_ids,\\n            daily.strength_activities,\\n            daily.strength_authoritative_count,\\n            daily.strength_assumed_count\\n          FROM daily\\n          INNER JOIN providers_by_date AS providers ON providers.date = daily.date\\n          ORDER BY date\\n        "]}]",
+  "[{"value":["\\n          SELECT\\n            min("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["(activity.started_at AT TIME ZONE "]},"America/Los_Angeles",{"value":[")::date"]}]},{"value":[")\\n              FILTER (WHERE activity.perceived_exertion IS NOT NULL\\n                AND activity.ended_at > activity.started_at)::text AS first_session_rpe_date,\\n            min("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["(activity.started_at AT TIME ZONE "]},"America/Los_Angeles",{"value":[")::date"]}]},{"value":[")\\n              FILTER (WHERE EXISTS (\\n                SELECT 1 FROM fitness.climbing_entry AS entry\\n                WHERE entry.activity_id = ANY(activity.member_activity_ids)\\n              ))::text AS first_climbing_date,\\n            min("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["(activity.started_at AT TIME ZONE "]},"America/Los_Angeles",{"value":[")::date"]}]},{"value":[")\\n              FILTER (WHERE EXISTS (\\n                SELECT 1 FROM fitness.finger_loading_entry AS entry\\n                WHERE entry.activity_id = ANY(activity.member_activity_ids)\\n              ))::text AS first_finger_date,\\n            min("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["(activity.started_at AT TIME ZONE "]},"America/Los_Angeles",{"value":[")::date"]}]},{"value":[")\\n              FILTER (WHERE EXISTS (\\n                SELECT 1 FROM fitness.strength_set AS strength_set\\n                WHERE strength_set.activity_id = ANY(activity.member_activity_ids)\\n              ))::text AS first_strength_date\\n          FROM fitness.v_activity AS activity\\n          WHERE activity.user_id = "]},"00000000-0000-4000-8000-000000000001",{"value":["::uuid\\n            AND "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["true"]}]},{"value":["\\n            AND "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["true"]}]},{"value":["\\n        "]}]",
+]
+`;
+
+exports[`AnalyticalTrainingLoadRepository > returns a complete date spine with independent load channels and rolling definitions 3`] = `
+[
+  {
+    "parameters": {
+      "calculationStart": "2026-06-01",
+      "endDate": "2026-06-28",
+      "modalities": [],
+      "providers": [],
+      "timezone": "America/Los_Angeles",
+      "userId": "00000000-0000-4000-8000-000000000001",
+    },
+    "query": "/* analytical-load:cycling */
+        WITH all_cycling AS (
+          SELECT
+            cycling.activity_id,
+            toDate(toTimeZone(activity.started_at, {timezone:String})) AS date,
+            cycling.normalized_power,
+            cycling.elapsed_seconds,
+            activity.source_providers,
+            false AS date_was_authoritative
+          FROM analytics.cycling_activity AS cycling FINAL
+          INNER JOIN analytics.deduped_activities AS activity FINAL
+            ON activity.activity_id = cycling.activity_id AND activity.user_id = cycling.user_id
+          WHERE cycling.user_id = {userId:UUID}
+            AND cycling.is_deleted = 0 AND activity.is_deleted = 0
+            AND (empty({providers:Array(String)})
+              OR hasAny(activity.source_providers, {providers:Array(String)}))
+            AND (empty({modalities:Array(String)})
+              OR has({modalities:Array(String)}, activity.modality))
+        ),
+        first_observed AS (SELECT minOrNull(date) AS date FROM all_cycling)
+        SELECT
+          toString(all_cycling.activity_id) AS activity_id,
+          toString(all_cycling.date) AS date,
+          normalized_power,
+          elapsed_seconds,
+          source_providers,
+          toString(first_observed.date) AS first_observed_date,
+          date_was_authoritative
+        FROM all_cycling CROSS JOIN first_observed
+        WHERE all_cycling.date BETWEEN toDate({calculationStart:String}) AND toDate({endDate:String})
+        UNION ALL
+        SELECT NULL, NULL, NULL, NULL, [], toString(date), false
+        FROM first_observed
+        WHERE date IS NOT NULL
+        ORDER BY date",
+  },
+  {
+    "parameters": {
+      "modalities": [],
+      "providers": [],
+      "segmentEnd": "2026-06-28",
+      "segmentStart": "2026-06-01",
+      "thresholdHr": 175,
+      "timezone": "America/Los_Angeles",
+      "upperPcts": [
+        0.6,
+        0.7,
+        0.8,
+        0.9,
+      ],
+      "userId": "00000000-0000-4000-8000-000000000001",
+    },
+    "query": "/* analytical-load:heart-rate */
+          WITH ordered AS (
+            SELECT
+              sensor.activity_id,
+              toDate(toTimeZone(activity.started_at, {timezone:String})) AS date,
+              sensor.recorded_at,
+              sensor.scalar AS heart_rate,
+              leadInFrame(sensor.recorded_at, 1, sensor.recorded_at) OVER (
+                PARTITION BY sensor.activity_id ORDER BY sensor.recorded_at
+                ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+              ) AS next_recorded_at,
+              sensor.provider_id
+              , false AS date_was_authoritative
+            FROM analytics.activity_sensor_sample AS sensor FINAL
+            INNER JOIN analytics.deduped_activities AS activity FINAL
+              ON activity.activity_id = sensor.activity_id AND activity.user_id = sensor.user_id
+            WHERE sensor.user_id = {userId:UUID}
+              AND sensor.channel = 'heart_rate' AND sensor.scalar > 0 AND sensor.is_deleted = 0
+              AND activity.is_deleted = 0
+              AND (empty({providers:Array(String)})
+                OR hasAny(activity.source_providers, {providers:Array(String)}))
+              AND (empty({modalities:Array(String)})
+                OR has({modalities:Array(String)}, activity.modality))
+              AND toDate(toTimeZone(activity.started_at, {timezone:String}))
+                BETWEEN toDate({segmentStart:String}) AND toDate({segmentEnd:String})
+          ),
+          weighted AS (
+            SELECT *,
+              least(greatest(dateDiff('second', recorded_at, next_recorded_at), 0), 10) AS seconds,
+              arrayFirstIndex(pct -> heart_rate < {thresholdHr:Float64} * pct,
+                {upperPcts:Array(Float64)}) AS bounded_zone
+            FROM ordered
+          )
+          SELECT
+            toString(date) AS date,
+            sum(seconds * if(bounded_zone = 0, length({upperPcts:Array(Float64)}) + 1,
+              bounded_zone)) / 60.0 AS load_points,
+            sum(seconds) AS covered_seconds,
+            uniqExact(activity_id) AS activity_count,
+            arraySlice(arraySort(groupUniqArray(toString(activity_id))), 1, 100) AS activity_ids,
+            arraySort(groupUniqArrayIf(provider_id, provider_id != '')) AS source_providers,
+            toString(min(date) OVER ()) AS first_observed_date,
+            uniqExactIf(activity_id, date_was_authoritative) AS authoritative_activity_count,
+            uniqExactIf(activity_id, NOT date_was_authoritative) AS assumed_activity_count
+          FROM weighted
+          GROUP BY date
+          ORDER BY date",
+  },
+]
+`;
+
+exports[`AnalyticalTrainingLoadRepository > uses settings effective on the activity date and rejects HR zones that do not increase 1`] = `
+{
+  "definitions": {
+    "climbing_attempts": "Recorded attempt counts. Entries with unknown attempts are reported as missing, not failed or zero.",
+    "cycling_power_tss": "Elapsed hours × (normalized power ÷ effective FTP)² × 100. Missing FTP or normalized power is not zero.",
+    "finger_load": "Effective-load kg-seconds require repetitions per set and remain unavailable while the canonical source schema does not record repetitions.",
+    "heart_rate_zone_load": "Sum of covered minutes in each configured threshold-HR zone multiplied by its one-based zone number.",
+    "monotony_strain": "Monotony is seven-day mean ÷ population standard deviation; strain is seven-day sum × monotony. Zero variance is unavailable.",
+    "rolling": "Acute is a 7-day sum; chronic is the 28-day sum divided by four; ratio is acute ÷ chronic only with complete windows. These descriptive values do not diagnose injury risk.",
+    "session_rpe": "Recorded session RPE multiplied by activity duration in minutes.",
+    "strength_volume": "Sum of weight × reps for non-warmup load-bearing sets with 1–100 reps and 0–500 kg.",
+  },
+  "range": {
+    "date_policy": "analysis_timezone",
+    "end_date": "2026-06-15",
+    "start_date": "2026-06-15",
+    "timezone": "UTC",
+  },
+  "rows": [
+    {
+      "channels": {
+        "climbing_attempts": {
+          "context": {},
+          "coverage": {
+            "contributing_records": 0,
+            "first_observed_date": null,
+            "source_activity_count": 0,
+            "source_activity_ids_truncated": false,
+            "supported_records": 0,
+          },
+          "daily_value": null,
+          "date_attribution": {
+            "analysis_timezone_activities": 0,
+            "authoritative_activities": 0,
+          },
+          "reason": "Source coverage had not begun by this date.",
+          "rolling": {
+            "acute_7d_sum": null,
+            "acute_coverage_days": 0,
+            "chronic_28d_weekly_equivalent": null,
+            "chronic_coverage_days": 0,
+            "monotony_7d": null,
+            "strain_7d": null,
+            "unavailable_reasons": [
+              "Seven complete daily values are required for acute load.",
+              "Twenty-eight complete daily values are required for chronic load.",
+            ],
+            "workload_ratio": null,
+          },
+          "source_activity_ids": [],
+          "source_providers": [],
+          "status": "unavailable",
+          "unit": "attempts",
+          "value_kind": "calculated",
+        },
+        "cycling_power_tss": {
+          "context": {
+            "activities": 1,
+          },
+          "coverage": {
+            "contributing_records": 1,
+            "first_observed_date": "2026-06-15",
+            "source_activity_count": 1,
+            "source_activity_ids_truncated": false,
+            "supported_records": 1,
+          },
+          "daily_value": 100,
+          "date_attribution": {
+            "analysis_timezone_activities": 0,
+            "authoritative_activities": 1,
+          },
+          "reason": null,
+          "rolling": {
+            "acute_7d_sum": null,
+            "acute_coverage_days": 1,
+            "chronic_28d_weekly_equivalent": null,
+            "chronic_coverage_days": 1,
+            "monotony_7d": null,
+            "strain_7d": null,
+            "unavailable_reasons": [
+              "Seven complete daily values are required for acute load.",
+              "Twenty-eight complete daily values are required for chronic load.",
+            ],
+            "workload_ratio": null,
+          },
+          "source_activity_ids": [
+            "00000000-0000-4000-9000-000000000001",
+          ],
+          "source_providers": [
+            "wahoo",
+          ],
+          "status": "available",
+          "unit": "TSS points",
+          "value_kind": "calculated",
+        },
+        "finger_load": {
+          "context": {},
+          "coverage": {
+            "contributing_records": 0,
+            "first_observed_date": null,
+            "source_activity_count": 0,
+            "source_activity_ids_truncated": false,
+            "supported_records": 0,
+          },
+          "daily_value": null,
+          "date_attribution": {
+            "analysis_timezone_activities": 0,
+            "authoritative_activities": 0,
+          },
+          "reason": "Source coverage had not begun by this date.",
+          "rolling": {
+            "acute_7d_sum": null,
+            "acute_coverage_days": 0,
+            "chronic_28d_weekly_equivalent": null,
+            "chronic_coverage_days": 0,
+            "monotony_7d": null,
+            "strain_7d": null,
+            "unavailable_reasons": [
+              "Seven complete daily values are required for acute load.",
+              "Twenty-eight complete daily values are required for chronic load.",
+            ],
+            "workload_ratio": null,
+          },
+          "source_activity_ids": [],
+          "source_providers": [],
+          "status": "unavailable",
+          "unit": "kg-seconds",
+          "value_kind": "calculated",
+        },
+        "heart_rate_zone_load": {
+          "context": {},
+          "coverage": {
+            "contributing_records": 0,
+            "first_observed_date": null,
+            "source_activity_count": 0,
+            "source_activity_ids_truncated": false,
+            "supported_records": 0,
+          },
+          "daily_value": null,
+          "date_attribution": {
+            "analysis_timezone_activities": 0,
+            "authoritative_activities": 0,
+          },
+          "reason": "Source coverage had not begun by this date.",
+          "rolling": {
+            "acute_7d_sum": null,
+            "acute_coverage_days": 0,
+            "chronic_28d_weekly_equivalent": null,
+            "chronic_coverage_days": 0,
+            "monotony_7d": null,
+            "strain_7d": null,
+            "unavailable_reasons": [
+              "Seven complete daily values are required for acute load.",
+              "Twenty-eight complete daily values are required for chronic load.",
+            ],
+            "workload_ratio": null,
+          },
+          "source_activity_ids": [],
+          "source_providers": [],
+          "status": "unavailable",
+          "unit": "weighted zone-minutes",
+          "value_kind": "calculated",
+        },
+        "session_rpe": {
+          "context": {},
+          "coverage": {
+            "contributing_records": 0,
+            "first_observed_date": null,
+            "source_activity_count": 0,
+            "source_activity_ids_truncated": false,
+            "supported_records": 0,
+          },
+          "daily_value": null,
+          "date_attribution": {
+            "analysis_timezone_activities": 0,
+            "authoritative_activities": 0,
+          },
+          "reason": "Source coverage had not begun by this date.",
+          "rolling": {
+            "acute_7d_sum": null,
+            "acute_coverage_days": 0,
+            "chronic_28d_weekly_equivalent": null,
+            "chronic_coverage_days": 0,
+            "monotony_7d": null,
+            "strain_7d": null,
+            "unavailable_reasons": [
+              "Seven complete daily values are required for acute load.",
+              "Twenty-eight complete daily values are required for chronic load.",
+            ],
+            "workload_ratio": null,
+          },
+          "source_activity_ids": [],
+          "source_providers": [],
+          "status": "unavailable",
+          "unit": "RPE-minutes",
+          "value_kind": "calculated",
+        },
+        "strength_volume": {
+          "context": {},
+          "coverage": {
+            "contributing_records": 0,
+            "first_observed_date": null,
+            "source_activity_count": 0,
+            "source_activity_ids_truncated": false,
+            "supported_records": 0,
+          },
+          "daily_value": null,
+          "date_attribution": {
+            "analysis_timezone_activities": 0,
+            "authoritative_activities": 0,
+          },
+          "reason": "Source coverage had not begun by this date.",
+          "rolling": {
+            "acute_7d_sum": null,
+            "acute_coverage_days": 0,
+            "chronic_28d_weekly_equivalent": null,
+            "chronic_coverage_days": 0,
+            "monotony_7d": null,
+            "strain_7d": null,
+            "unavailable_reasons": [
+              "Seven complete daily values are required for acute load.",
+              "Twenty-eight complete daily values are required for chronic load.",
+            ],
+            "workload_ratio": null,
+          },
+          "source_activity_ids": [],
+          "source_providers": [],
+          "status": "unavailable",
+          "unit": "kg-reps",
+          "value_kind": "calculated",
+        },
+      },
+      "date": "2026-06-15",
+    },
+  ],
+  "total_daily_load": {
+    "reason": "Modality-specific loads use different units and are not treated as biologically interchangeable.",
+    "value": null,
+  },
+}
+`;

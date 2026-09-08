@@ -10,7 +10,7 @@ const tableCountSchema = z.tuple([z.object({ count: z.coerce.number().int().nonn
 
 export function createMigration(): ClickHouseMigration {
   return {
-    id: "0076_stable_activity_group_id",
+    id: "0079_stable_activity_group_id",
     statements: [mirrorStatement, projectionStatement],
     run: async (client) => {
       if (!client.query) throw new Error("ClickHouse migrations require a query-capable client");

@@ -222,6 +222,25 @@ describe("clickHouseMigrations", () => {
       ]),
     });
     expect(
+      migrations.find((migration) => migration.id === "0076_activity_sensor_provenance"),
+    ).toMatchObject({
+      id: "0076_activity_sensor_provenance",
+      statements: expect.arrayContaining([
+        expect.stringContaining("analytics.sensor_scalar_sample"),
+        expect.stringContaining("analytics.activity_sensor_sample"),
+        expect.stringContaining("analytics.activity_location_sample"),
+      ]),
+      run: expect.any(Function),
+    });
+    expect(
+      migrations.find((migration) => migration.id === "0078_sensor_provider_priority_type"),
+    ).toMatchObject({
+      statements: [
+        expect.stringContaining("analytics.sensor_scalar_sample"),
+        expect.stringContaining("analytics.deduped_sensor"),
+      ],
+    });
+    expect(
       migrations.find((migration) => migration.id === "0069_canonical_activity_types"),
     ).toMatchObject({
       id: "0069_canonical_activity_types",
@@ -269,9 +288,9 @@ describe("clickHouseMigrations", () => {
       ]),
     });
     expect(
-      migrations.find((migration) => migration.id === "0078_stable_activity_read_views"),
+      migrations.find((migration) => migration.id === "0081_stable_activity_read_views"),
     ).toMatchObject({
-      id: "0078_stable_activity_read_views",
+      id: "0081_stable_activity_read_views",
       statements: expect.arrayContaining([
         "DROP VIEW IF EXISTS analytics.v_activity_members",
         "DROP VIEW IF EXISTS analytics.v_activity",

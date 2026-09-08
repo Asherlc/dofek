@@ -32,21 +32,35 @@ import {
   localDateString,
 } from "../repositories/resting-heart-rate-query.ts";
 import { SleepRepository } from "../repositories/sleep-repository.ts";
-import { SubjectiveRepository } from "../repositories/subjective-repository.ts";
 import { SyncRepository } from "../repositories/sync-repository.ts";
 import { ensureProvidersRegistered, toJobId } from "../routers/sync-helpers.ts";
 import { registerActivityDetailsTool } from "./activity-details-tool.ts";
 import { registerActivityStreamsTool } from "./activity-streams-tool.ts";
+import { registerActivityTimeseriesTool } from "./activity-timeseries-tool.ts";
 import { healthExplorerResourceUri, registerDofekAppResources } from "./app-resource.ts";
+import { registerClimbingProgressionTool } from "./climbing-progression-tool.ts";
 import { registerClimbingSessionsTool } from "./climbing-sessions-tool.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { registerCyclingPerformanceTool } from "./cycling-performance-tool.ts";
+import { registerCyclingPowerCurveTool } from "./cycling-power-curve-tool.ts";
+import { registerCyclingThresholdEstimateTool } from "./cycling-threshold-estimate-tool.ts";
+import { registerCyclingTrainingMetricsTool } from "./cycling-training-metrics-tool.ts";
+import { registerFingerLoadingProgressionTool } from "./finger-loading-progression-tool.ts";
 import { registerFoodRecordTools } from "./food-record-tools.ts";
 import { HealthExplorerService } from "./health-explorer-service.ts";
 import { buildHealthSeries, type HealthTrendRow } from "./health-series-service.ts";
+import {
+  assertNutritionSummaryDateRange,
+  toNutritionSummaryOutput,
+} from "./nutrition-summary-output.ts";
+import { registerPerformanceComparisonTool } from "./performance-comparison-tool.ts";
 import { listProviderStatuses } from "./provider-status.ts";
+import { registerRecoveryTrainingSeriesTool } from "./recovery-training-series-tool.ts";
+import { registerStrengthProgressionTool } from "./strength-progression-tool.ts";
 import { registerStrengthSessionsTool } from "./strength-sessions-tool.ts";
+import { registerSubjectiveTools } from "./subjective-tools.ts";
 import { registerSupplementsTool } from "./supplements-tool.ts";
+import { registerThresholdHistoryTool } from "./threshold-history-tool.ts";
 import { requireMcpScope } from "./token-repository.ts";
 import { mcpOutputSchemas } from "./tool-output.ts";
 import { jsonToolResult } from "./tool-result.ts";
@@ -494,9 +508,19 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     },
   );
   registerTrainingLoadTool(server, context);
+  registerRecoveryTrainingSeriesTool(server, context);
+  registerPerformanceComparisonTool(server, context);
   registerCyclingPerformanceTool(server, context);
+  registerCyclingPowerCurveTool(server, context);
+  registerCyclingTrainingMetricsTool(server, context);
+  registerCyclingThresholdEstimateTool(server, context);
+  registerThresholdHistoryTool(server, context);
   registerActivityStreamsTool(server, context);
+  registerActivityTimeseriesTool(server, context);
   registerActivityDetailsTool(server, context);
+  registerClimbingProgressionTool(server, context);
+  registerFingerLoadingProgressionTool(server, context);
+  registerStrengthProgressionTool(server, context);
   registerClimbingSessionsTool(server, context);
   registerStrengthSessionsTool(server, context);
   registerSupplementsTool(server, context);
@@ -764,7 +788,10 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
           rpe: row.rpe,
           set_count: row.setCount,
           started_at: row.startedAt,
-          total_time_under_tension_seconds: row.holdDurationSeconds * row.setCount,
+          total_time_under_tension_seconds: null,
+          total_time_under_tension_status: "unavailable" as const,
+          total_time_under_tension_reason:
+            "Exact time under tension requires repetitions per set, which the canonical source schema does not record.",
         })),
       );
     },
@@ -773,7 +800,8 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     "get_nutrition_summary",
     {
       title: "Get Nutrition Summary",
-      description: "Return daily calorie, macronutrient, fiber, and meal totals for a date range.",
+      description:
+        "Return a complete daily date spine of calorie, macronutrient, fiber, and meal totals with source resolution and conservative logging-completeness status. Missing nutrition stays null.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: {
         start_date: dateSchema,
@@ -785,37 +813,22 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     async ({ start_date, end_date, timezone }) => {
       requireMcpScope(context.scopes, "nutrition:read");
       assertDateRange(start_date, end_date);
+      assertNutritionSummaryDateRange(start_date, end_date);
       const repository = new FoodRepository(
         context.db,
         context.userId,
         timezone ?? context.timezone,
       );
       const rows = await repository.dailyTotalsRange(start_date, end_date);
-      return jsonToolResult(
-        rows.map((row) => ({
-          date: row.date,
-          total_calories: row.calories,
-          protein_g: row.proteinGrams,
-          carbs_g: row.carbsGrams,
-          fat_g: row.fatGrams,
-          fiber_g: row.fiberGrams,
-          meal_count: row.mealCount,
-          resolution_status: row.resolutionStatus,
-          resolution_message: row.resolutionMessage,
-          source_provider:
-            row.contributingProviders.length === 1 ? row.contributingProviders[0] : null,
-          source_providers: row.sourceProviders,
-          contributing_providers: row.contributingProviders,
-          excluded_providers: row.excludedProviders,
-        })),
-      );
+      return jsonToolResult(rows.map(toNutritionSummaryOutput));
     },
   );
   server.registerTool(
     "get_body_metrics",
     {
       title: "Get Body Metrics",
-      description: "Return weight and body-composition measurements for an exact date range.",
+      description:
+        "Return reconciled weight and body-composition measurements, explicit value kinds, source provenance, and 7/28-day rolling weight statistics for an exact date range.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: {
         start_date: dateSchema,
@@ -835,9 +848,18 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         rows.map((row) => ({
           date: row.date,
           weight_kg: row.weightKg,
+          weight_measurement_kind: row.weightMeasurementKind,
           body_fat_pct: row.bodyFatPct,
+          body_fat_measurement_kind: row.bodyFatMeasurementKind,
           lean_mass_kg: row.leanMassKg,
+          lean_mass_measurement_kind: row.leanMassMeasurementKind,
           bmi: row.bmi,
+          weight_rolling: {
+            average_7d_kg: row.weightRolling.average7dKg,
+            average_28d_kg: row.weightRolling.average28dKg,
+            observed_days_7d: row.weightRolling.observedDays7d,
+            observed_days_28d: row.weightRolling.observedDays28d,
+          },
           source_provider_by_metric: {
             weight_kg: row.sourceProviderByMetric.weightKg,
             body_fat_pct: row.sourceProviderByMetric.bodyFatPct,
@@ -855,25 +877,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       );
     },
   );
-  server.registerTool(
-    "get_subjective_timeline",
-    {
-      title: "Get Subjective Timeline",
-      description: "Return raw subjective check-ins, symptoms, and injury events for a date range.",
-      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
-      inputSchema: {
-        start_date: dateSchema,
-        end_date: dateSchema,
-      },
-      outputSchema: mcpOutputSchemas.subjectiveTimeline,
-    },
-    async ({ start_date, end_date }) => {
-      requireMcpScope(context.scopes, "health:read");
-      assertDateRange(start_date, end_date);
-      const repository = new SubjectiveRepository(context.db, context.userId, context.timezone);
-      return jsonToolResult(await repository.timeline(start_date, end_date));
-    },
-  );
+  registerSubjectiveTools(server, context);
   server.registerTool(
     "list_providers",
     {

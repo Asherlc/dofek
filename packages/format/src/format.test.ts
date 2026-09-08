@@ -262,6 +262,13 @@ describe("formatClimbingAttemptResult", () => {
     expect(formatClimbingAttemptResult(false, 1)).toBe("Attempted 1 time");
     expect(formatClimbingAttemptResult(false, 3)).toBe("Attempted 3 times");
   });
+
+  it("does not manufacture a failed attempt when the result is absent", () => {
+    expect(formatClimbingAttemptResult(null, null)).toBe("Outcome not recorded");
+    expect(formatClimbingAttemptResult(true, null)).toBe("Sent; attempt count not recorded");
+    expect(formatClimbingAttemptResult(false, null)).toBe("Not sent; attempt count not recorded");
+    expect(formatClimbingAttemptResult(null, 3)).toBe("3 attempts; outcome not recorded");
+  });
 });
 
 describe("formatReadinessDifference", () => {

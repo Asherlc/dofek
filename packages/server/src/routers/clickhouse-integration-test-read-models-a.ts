@@ -136,6 +136,13 @@ SELECT
   samples.recorded_date AS recorded_date,
   samples.channel AS channel,
   samples.scalar AS scalar,
+  samples.provider_id AS provider_id,
+  samples.member_activity_id AS member_activity_id,
+  samples.device_id AS device_id,
+  samples.source_external_id AS source_external_id,
+  samples.source_type AS source_type,
+  samples.source_metric_stream_id AS source_metric_stream_id,
+  samples.measurement_kind AS measurement_kind,
   toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
   samples.is_deleted AS is_deleted,
   now64(9) AS refreshed_at
@@ -156,18 +163,76 @@ INNER JOIN current_activity
 export function buildTestActivityLocationSampleSelectSql(
   databases: IsolatedClickHouseDatabases,
 ): string {
-  return `SELECT
-  activity_id,
-  user_id,
-  recorded_at,
-  toDate(recorded_at) AS recorded_date,
-  generateUUIDv4() AS source_metric_stream_id,
-  lat,
-  lng,
+  return `WITH activity_members AS (
+  SELECT
+    activity_id,
+    user_id,
+    arrayJoin(member_activity_ids) AS member_activity_id
+  FROM ${databases.analytics}.deduped_activities FINAL
+  WHERE is_deleted = 0
+),
+location_rows AS (
+  SELECT
+    id,
+    activity_id AS member_activity_id,
+    user_id,
+    recorded_at,
+    provider_id,
+    external_id AS source_external_id,
+    device_id,
+    source_type,
+    metadata,
+    toString(point) AS point_text,
+    is_deleted
+  FROM ${databases.ingest}.metric_stream FINAL
+  WHERE channel = 'location'
+),
+provider_counts AS (
+  SELECT
+    activity_members.activity_id AS activity_id,
+    location_rows.provider_id AS provider_id,
+    countIf(location_rows.is_deleted = 0) AS sample_count,
+    row_number() OVER (
+      PARTITION BY activity_members.activity_id
+      ORDER BY sample_count DESC, location_rows.provider_id ASC
+    ) AS row_number
+  FROM location_rows
+  INNER JOIN activity_members
+    ON activity_members.member_activity_id = location_rows.member_activity_id
+  GROUP BY activity_members.activity_id, location_rows.provider_id
+),
+best_source AS (
+  SELECT activity_id, provider_id
+  FROM provider_counts
+  WHERE row_number = 1
+)
+SELECT
+  activity_members.activity_id AS activity_id,
+  activity_members.user_id AS user_id,
+  location_rows.recorded_at AS recorded_at,
+  toDate(location_rows.recorded_at) AS recorded_date,
+  location_rows.id AS source_metric_stream_id,
+  activity_members.member_activity_id AS member_activity_id,
+  location_rows.provider_id AS provider_id,
+  location_rows.source_external_id AS source_external_id,
+  location_rows.device_id AS device_id,
+  location_rows.source_type AS source_type,
+  multiIf(
+    JSONExtractString(location_rows.metadata, 'measurement_kind') = 'direct', 'direct',
+    JSONExtractString(location_rows.metadata, 'measurement_kind') = 'estimated', 'estimated',
+    'unknown'
+  ) AS measurement_kind,
+  toFloat32(toFloat64OrNull(splitByChar(',', trim(BOTH '()' FROM location_rows.point_text))[2])) AS lat,
+  toFloat32(toFloat64OrNull(splitByChar(',', trim(BOTH '()' FROM location_rows.point_text))[1])) AS lng,
   toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
-  toUInt8(0) AS is_deleted,
+  location_rows.is_deleted AS is_deleted,
   now64(6, 'UTC') AS refreshed_at
-FROM ${databases.analytics}.deduped_location`;
+FROM location_rows
+INNER JOIN activity_members
+  ON activity_members.member_activity_id = location_rows.member_activity_id
+INNER JOIN best_source
+  ON best_source.activity_id = activity_members.activity_id
+ AND best_source.provider_id = location_rows.provider_id`;
 }
 
 export function buildTestActivityLocationSummarySelectSql(

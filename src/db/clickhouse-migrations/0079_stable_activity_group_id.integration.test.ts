@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createMigration } from "./0076_stable_activity_group_id.ts";
+import { createMigration } from "./0079_stable_activity_group_id.ts";
 
 describe("stable activity group column migration", () => {
   const database = `activity_group_migration_${randomUUID().replaceAll("-", "")}`;

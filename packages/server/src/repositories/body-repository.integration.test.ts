@@ -183,6 +183,68 @@ describe("BodyRepository exact local-date range", () => {
     ]);
   });
 
+  it("keeps an invalid high-priority weight as provenance but selects the valid weight", async () => {
+    const client = getClickHouseTestClient(testContext);
+    const userId = randomUUID();
+    const invalidProvider = `body-invalid-${userId}`;
+    const validProvider = `body-valid-${userId}`;
+
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name, email)
+          VALUES (${userId}::uuid, 'Body validity fixture', ${`${userId}@example.com`})`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES
+            (${invalidProvider}, 'Invalid Scale Fixture', ${userId}::uuid),
+            (${validProvider}, 'Valid Scale Fixture', ${userId}::uuid)`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.provider_priority (provider_id, priority, body_priority)
+          VALUES (${invalidProvider}, 1, 1), (${validProvider}, 10, 10)`,
+    );
+    await syncClickHouseTestActivitySensorStore(testContext);
+
+    for (const [index, row] of [
+      { providerId: invalidProvider, weightKg: 0 },
+      { providerId: validProvider, weightKg: 80 },
+    ].entries()) {
+      await client.command({
+        query: `INSERT INTO analytics.body_measurement_sample (
+          id, provider_id, user_id, recorded_at, channel, external_id, device_id,
+          source_type, scalar, _peerdb_synced_at, _peerdb_is_deleted, _peerdb_version
+        ) VALUES (
+          {id:UUID}, {providerId:String}, {userId:UUID}, '2026-05-20 15:00:00',
+          'body_weight', {externalId:String}, {providerId:String}, 'integration_test',
+          {weightKg:Float64}, now64(9), 0, {version:Int64}
+        )`,
+        query_params: {
+          externalId: `body-validity-${index}`,
+          id: randomUUID(),
+          providerId: row.providerId,
+          userId,
+          version: index + 1,
+          weightKg: row.weightKg,
+        },
+      });
+    }
+
+    const rows = await new BodyRepository(store, userId, "America/Los_Angeles").listReconciledRange(
+      "2026-05-20",
+      "2026-05-20",
+    );
+
+    expect(rows[0]).toMatchObject({
+      weightKg: 80,
+      sourceProviderByMetric: { weightKg: validProvider },
+      weightRolling: { average7dKg: 80, observedDays7d: 1 },
+      sources: [
+        expect.objectContaining({ sourceProvider: invalidProvider, weightKg: 0 }),
+        expect.objectContaining({ sourceProvider: validProvider, weightKg: 80 }),
+      ],
+    });
+  });
+
   it("returns provider provenance and configured local clock time", async () => {
     const client = getClickHouseTestClient(testContext);
     const userId = randomUUID();

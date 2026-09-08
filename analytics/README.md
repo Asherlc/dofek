@@ -49,12 +49,12 @@ emit the complete current state.
 Location payload and
 relational strength sets are not available to this upstream scalar projection.
 Missing persisted membership fails the build. Existing deployments must apply
-[migration 0076](../src/db/clickhouse-migrations/0076_stable_activity_group_id.ts)
+[migration 0079](../src/db/clickhouse-migrations/0079_stable_activity_group_id.ts)
 and deliver PostgreSQL membership through CDC before refreshing these models;
 the migration only adds nullable columns, using ClickHouse's
 [ADD COLUMN](https://clickhouse.com/docs/reference/statements/alter/column#add-column)
 without inventing membership for existing rows.
-[Migration 0077](../src/db/clickhouse-migrations/0077_sensor_source_activity_id.ts)
+[Migration 0080](../src/db/clickhouse-migrations/0080_sensor_source_activity_id.ts)
 adds nullable source-activity columns to existing scalar and deduped sensor tables.
 Reprocess the required sensor history through `sensor_scalar_sample` and then
 `deduped_sensor` before rebuilding activity representatives; old projected samples
@@ -123,7 +123,7 @@ leaves the group. A null source stays eligible as ambient sensor data; a non-nul
 source is eligible for every group that currently contains that member.
 
 The TypeScript bootstrap views use the same persisted group identity contract.
-[Migration 0078](../src/db/clickhouse-migrations/0078_stable_activity_read_views.ts)
+[Migration 0081](../src/db/clickhouse-migrations/0081_stable_activity_read_views.ts)
 recreates pre-dbt activity views so an upgraded deployment cannot retain the
 older dynamic/minimum-member identity behavior. Apply ClickHouse migrations
 before refreshing dbt models.
@@ -162,6 +162,74 @@ request.
 `healthspan_activity_zone_minutes` are compact serving models over daily
 metrics, sleep, activity summaries, and bounded activity samples for dashboard,
 recovery, stress, sleep-need, and healthspan routes.
+
+## Cycling power-duration semantics and refresh
+
+`activity_power_curve` computes rolling power against elapsed time, not sample
+count. Samples are treated as a left-continuous step function. For samples
+`(t_i, P_i)`, segment energy is `P_i * (t_(i+1) - t_i)` and a candidate of
+duration `d` is `(E(t + d) - E(t)) / d`. Energy at a fractional endpoint uses
+the containing segment, so irregular samples are time-weighted correctly and
+do not require a sample exactly at `t + d`. Native zero watts contributes zero
+energy; it is never converted to missing. ClickHouse documents the array and
+cumulative-array functions used by the model in its
+[array-functions reference](https://clickhouse.com/docs/sql-reference/functions/array-functions).
+
+For each activity, the median positive sample interval defines the source
+resolution. Durations shorter than that resolution are unavailable. A gap
+larger than `max(5 seconds, 2 * median interval)` marks a discontinuity, and no
+winning window may cross it. Active rows preserve the winning start offset,
+observed sample count, coverage, median interval, largest gap, selected
+providers/devices, and direct/estimated/unknown power evidence. Request-time
+custom durations use the same semantics over bounded
+`analytics.activity_sensor_sample` input.
+
+Per-activity MCP workout metrics intentionally do not add another stored source of truth. The
+server pages canonical rows from `cycling_activity`, resolves identity and timezone evidence from
+`deduped_activities`, and reads only power, heart-rate, and cadence channels for those selected
+activity IDs from `activity_sensor_sample FINAL`. It joins standard-duration evidence from
+`activity_power_curve FINAL` and effective-dated thresholds from Postgres at request time. This
+bounded fan-out keeps native samples out of the LLM payload while preserving missing-time and
+measurement-kind evidence. The duplicate test fixture inserts the same ride through two source
+members and verifies that canonical activity duration and work are calculated once.
+
+Because `activity_power_curve` is append-incremental, a formula or
+standard-duration change does not rewrite unchanged historical activities.
+Before rebuilding, record the active row/activity count, oldest activity, and
+duration inventory:
+
+```sql
+SELECT
+    countIf(is_deleted = 0) AS active_curve_rows,
+    uniqExactIf(activity_id, is_deleted = 0) AS active_activities,
+    minIf(started_at, is_deleted = 0) AS oldest_activity,
+    arraySort(groupUniqArrayIf(duration_seconds, is_deleted = 0)) AS durations
+FROM analytics.activity_power_curve FINAL;
+```
+
+Then run a monitored, model-only full refresh from the production analytics
+environment. Do not add this historical operation to deploys, scheduled
+workers, request paths, or test setup:
+
+```sh
+pnpm tsx scripts/with-env.ts -- env \
+  DBT_TARGET=prod \
+  UV_PROJECT_ENVIRONMENT=../.venv-analytics \
+  uv run --project analytics dbt build \
+  --project-dir analytics \
+  --profiles-dir analytics \
+  --threads 1 \
+  --full-refresh \
+  --select activity_power_curve
+```
+
+Repeat the preflight query after success. Verify the retained activity range is
+unchanged unless the maintenance record explains a source-data delta, and
+verify the duration inventory includes `1, 5, 15, 30, 60, 120, 180, 300, 420,
+600, 720, 1200, 1800, 2400, 3600, 5400, 7200` where source resolution and
+activity length support them. dbt recommends a full refresh when incremental
+model logic changes because existing rows retain the old transformation
+([dbt incremental model guidance](https://docs.getdbt.com/docs/build/incremental-models#how-do-i-rebuild-an-incremental-model)).
 
 Production `DBT_SAFE_MODELS` currently selects `sensor_scalar_sample`,
 `deduped_sensor`, `activity_source_records`, `activity_duplicate_matches`,
@@ -242,8 +310,8 @@ earlier verification fails:
    ```
 
    It applies pending migrations in registry order. Verify migrations
-   `0076_stable_activity_group_id`, `0077_sensor_source_activity_id`, and
-   `0078_stable_activity_read_views` are present in
+   `0079_stable_activity_group_id`, `0080_sensor_source_activity_id`, and
+   `0081_stable_activity_read_views` are present in
    `analytics.schema_migrations` before continuing. See the standard
    [`entrypoint.sh`](../entrypoint.sh) and ordered
    [migration registry](../src/db/clickhouse-migrations/registry.ts).
@@ -252,9 +320,9 @@ earlier verification fails:
    SELECT id
    FROM analytics.schema_migrations
    WHERE id IN (
-       '0076_stable_activity_group_id',
-       '0077_sensor_source_activity_id',
-       '0078_stable_activity_read_views'
+       '0079_stable_activity_group_id',
+       '0080_sensor_source_activity_id',
+       '0081_stable_activity_read_views'
    )
    ORDER BY id;
    ```

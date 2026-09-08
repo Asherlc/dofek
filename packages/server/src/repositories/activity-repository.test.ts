@@ -1260,6 +1260,34 @@ describe("ActivityRepository", () => {
     });
   });
 
+  describe("findSensorWindow", () => {
+    it("returns the canonical window for a visible member id", async () => {
+      const { repo, execute } = makeRepository([
+        {
+          id: "canonical-id",
+          user_id: "user-1",
+          started_at: "2024-01-15T10:00:00.000Z",
+          ended_at: "2024-01-15T11:00:00.000Z",
+          member_activity_ids: ["canonical-id", "member-id"],
+        },
+      ]);
+
+      await expect(repo.findSensorWindow("member-id")).resolves.toEqual({
+        activityId: "canonical-id",
+        userId: "user-1",
+        startedAt: "2024-01-15T10:00:00.000Z",
+        endedAt: "2024-01-15T11:00:00.000Z",
+        memberActivityIds: ["canonical-id", "member-id"],
+      });
+      const resolutionQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(resolutionQuery.sql).toContain("identity_candidates");
+      expect(resolutionQuery.params).toEqual(expect.arrayContaining(["member-id", "user-1"]));
+      const windowQuery = dialect.sqlToQuery(execute.mock.calls[1]?.[0]);
+      expect(windowQuery.sql).toContain("WHERE a.id =");
+      expect(windowQuery.params).toEqual(expect.arrayContaining(["canonical-id", "user-1"]));
+    });
+  });
+
   describe("getStream", () => {
     it("fails when no sensor store is configured", async () => {
       const { repo } = makeRepository([{ id: "activity-id" }]);

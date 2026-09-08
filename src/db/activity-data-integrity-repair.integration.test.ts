@@ -287,11 +287,17 @@ async function seedProductionDbtFixture(
       recorded_date Date,
       channel String,
       scalar Nullable(Float64),
+      provider_id Nullable(String),
+      member_activity_id Nullable(UUID),
+      device_id Nullable(String),
+      source_external_id Nullable(String),
+      source_type Nullable(String),
+      source_metric_stream_id Nullable(UUID),
+      measurement_kind LowCardinality(String),
+      source_activity_id Nullable(UUID),
       refresh_version UInt64,
       is_deleted UInt8,
-      refreshed_at DateTime64(9, 'UTC'),
-      provider_id String,
-      source_activity_id Nullable(UUID)
+      refreshed_at DateTime64(9, 'UTC')
     ) ENGINE = ReplacingMergeTree(refresh_version)
       ORDER BY (user_id, channel, recorded_date, recorded_at)`,
     `CREATE TABLE ${database}.metric_stream (
@@ -302,6 +308,10 @@ async function seedProductionDbtFixture(
       provider_id String,
       channel String,
       point Point,
+      external_id Nullable(String),
+      device_id Nullable(String),
+      source_type Nullable(String),
+      metadata String,
       ingested_at DateTime64(9, 'UTC'),
       version UInt64,
       is_deleted UInt8
@@ -348,13 +358,17 @@ async function seedProductionDbtFixture(
     `INSERT INTO ${database}.deduped_sensor VALUES
       (
         '${TEST_USER_ID}', toDateTime64('2026-09-01 15:10:00', 6, 'UTC'),
-        toDate('2026-09-01'), 'heart_rate', 150, 1, 0,
-        toDateTime64('2026-09-02 17:00:00', 9, 'UTC'), 'wahoo', '${wahooActivityId}'
+        toDate('2026-09-01'), 'heart_rate', 150, 'wahoo', '${wahooActivityId}',
+        NULL, 'heart-rate-1', 'activity', '10000000-0000-0000-0000-000000000001',
+        'direct', '${wahooActivityId}', 1, 0,
+        toDateTime64('2026-09-02 17:00:00', 9, 'UTC')
       ),
       (
         '${TEST_USER_ID}', toDateTime64('2026-09-01 15:15:00', 6, 'UTC'),
-        toDate('2026-09-01'), 'heart_rate', 145, 1, 0,
-        toDateTime64('2026-09-02 17:00:00', 9, 'UTC'), 'peloton', '${pelotonActivityId}'
+        toDate('2026-09-01'), 'heart_rate', 145, 'peloton', '${pelotonActivityId}',
+        NULL, 'heart-rate-2', 'activity', '10000000-0000-0000-0000-000000000002',
+        'direct', '${pelotonActivityId}', 1, 0,
+        toDateTime64('2026-09-02 17:00:00', 9, 'UTC')
       )`,
     `INSERT INTO ${database}.activity VALUES
       (

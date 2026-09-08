@@ -910,10 +910,8 @@ export class ActivityRepository extends BaseRepository {
 
   /** Downsampled metric stream for a single activity. */
   async getStream(activityId: string, maxPoints: number): Promise<StreamPoint[]> {
-    const resolution = await this.#resolveActivityId(activityId);
-    if (!resolution) throw activityNotFoundError();
     const sensorStore = this.#requireSensorStore("activity streams");
-    const window = await this.#findActivitySensorWindow(resolution.resolved_group_id);
+    const window = await this.findSensorWindow(activityId);
     if (!window) throw activityNotFoundError();
     const rows = await sensorStore.getStream(window, maxPoints);
     return rows.map((row) => new StreamPoint(streamPointRowSchema.parse(row)));
@@ -921,10 +919,8 @@ export class ActivityRepository extends BaseRepository {
 
   /** HR zone distribution for a single activity using the canonical Karvonen model. */
   async getHrZones(activityId: string): Promise<import("@dofek/zones/zones").ActivityHrZone[]> {
-    const resolution = await this.#resolveActivityId(activityId);
-    if (!resolution) throw activityNotFoundError();
     const sensorStore = this.#requireSensorStore("heart-rate zones");
-    const window = await this.#findActivitySensorWindow(resolution.resolved_group_id);
+    const window = await this.findSensorWindow(activityId);
     if (!window) throw activityNotFoundError();
     return mapHrZones(await sensorStore.getHeartRateZoneSeconds(window));
   }
@@ -934,10 +930,8 @@ export class ActivityRepository extends BaseRepository {
     activityId: string,
     ftp: number,
   ): Promise<import("@dofek/zones/zones").ActivityPowerZone[]> {
-    const resolution = await this.#resolveActivityId(activityId);
-    if (!resolution) throw activityNotFoundError();
     const sensorStore = this.#requireSensorStore("power zones");
-    const window = await this.#findActivitySensorWindow(resolution.resolved_group_id);
+    const window = await this.findSensorWindow(activityId);
     if (!window) throw activityNotFoundError();
     return mapPowerZones(await sensorStore.getPowerZoneSeconds(window, ftp));
   }
@@ -949,7 +943,10 @@ export class ActivityRepository extends BaseRepository {
     return this.#sensorStore;
   }
 
-  async #findActivitySensorWindow(groupId: string): Promise<ActivitySensorWindow | null> {
+  /** Resolves any visible member ID to its owned canonical activity sensor window. */
+  async findSensorWindow(activityId: string): Promise<ActivitySensorWindow | null> {
+    const resolution = await this.#resolveActivityId(activityId);
+    if (!resolution) return null;
     const rows = await this.query(
       activitySensorWindowRowSchema,
       sql`SELECT
@@ -959,7 +956,7 @@ export class ActivityRepository extends BaseRepository {
             a.ended_at::text AS ended_at,
             a.member_activity_ids
           FROM fitness.v_activity a
-          WHERE a.id = ${groupId}::uuid
+          WHERE a.id = ${resolution.resolved_group_id}::uuid
             AND a.user_id = ${this.userId}
             ${this.timestampAccessPredicate(sql`a.started_at`)}`,
     );
@@ -975,9 +972,7 @@ export class ActivityRepository extends BaseRepository {
   }
 
   async getActivityMemberIds(activityId: string): Promise<string[] | null> {
-    const resolution = await this.#resolveActivityId(activityId);
-    if (!resolution) return null;
-    const window = await this.#findActivitySensorWindow(resolution.resolved_group_id);
+    const window = await this.findSensorWindow(activityId);
     if (!window) return null;
     return window.memberActivityIds;
   }

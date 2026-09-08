@@ -8,9 +8,12 @@ import {
   finishProviderActivityListSync,
   upsertProviderActivity,
 } from "../db/provider-activity-sync.ts";
+import { recordProviderThresholdObservation } from "../db/provider-threshold-observation.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
+import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { captureException } from "../lib/error-reporting.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { logger } from "../logger.ts";
 import { fetchProviderPages } from "../sync/pagination.ts";
@@ -209,10 +212,16 @@ export class ZwiftProvider implements SyncProvider {
     let recordsSynced = 0;
 
     await ensureProvider(db, this.id, this.name, ZWIFT_API_BASE);
+    const userId = options?.userId ?? getTokenUserId();
+    if (!userId) {
+      throw new Error("Zwift sync requires a user ID");
+    }
 
     let client: ZwiftClient;
+    let authenticatedAthleteId: string;
     try {
       const { accessToken, athleteId } = await this.#resolveTokens(db);
+      authenticatedAthleteId = athleteId;
       client = new ZwiftClient(accessToken, athleteId, this.#fetchFn);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
@@ -372,6 +381,52 @@ export class ZwiftProvider implements SyncProvider {
         message: `activity: ${err instanceof Error ? err.message : String(err)}`,
         cause: err,
       });
+    }
+
+    const observedAt = new Date();
+    const thresholdSources = [
+      {
+        recordId: `profile:${authenticatedAthleteId}`,
+        thresholdType: "ftp",
+        load: async () => {
+          const profile = await runWithAuthRetry((activeClient) => activeClient.getProfile());
+          return { value: profile.ftp, raw: { ftp: profile.ftp } };
+        },
+      },
+      {
+        recordId: `power-profile:${authenticatedAthleteId}`,
+        thresholdType: "modeled_ftp",
+        load: async () => {
+          const curve = await runWithAuthRetry((activeClient) => activeClient.getPowerCurve());
+          return { value: curve.zFtp, raw: { zFtp: curve.zFtp } };
+        },
+      },
+    ];
+
+    for (const source of thresholdSources) {
+      try {
+        const evidence = await source.load();
+        if (evidence.value === undefined || evidence.value <= 0) continue;
+        const inserted = await recordProviderThresholdObservation(db, {
+          userId,
+          providerId: this.id,
+          providerRecordId: source.recordId,
+          sport: "cycling",
+          thresholdType: source.thresholdType,
+          value: evidence.value,
+          unit: "watt",
+          observedAt,
+          raw: evidence.raw,
+        });
+        if (inserted) recordsSynced++;
+      } catch (error) {
+        captureException(error, { tags: { provider: this.id, phase: "threshold_observation" } });
+        errors.push({
+          message: `threshold ${source.thresholdType}: ${error instanceof Error ? error.message : String(error)}`,
+          cause: error,
+          context: { thresholdType: source.thresholdType },
+        });
+      }
     }
 
     return {

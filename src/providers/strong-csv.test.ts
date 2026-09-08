@@ -361,6 +361,17 @@ describe("importStrongCsv", () => {
         setType: "working",
         weightKg: 10.886,
         reps: 8,
+        raw: {
+          distance: null,
+          exerciseName: "Bulgarian Split Squat",
+          notes: null,
+          reps: 8,
+          rpe: null,
+          seconds: null,
+          setOrder: 1,
+          weight: 24,
+          weightUnit: "lbs",
+        },
       }),
       expect.objectContaining({
         exerciseIndex: 0,

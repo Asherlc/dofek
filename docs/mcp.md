@@ -135,7 +135,7 @@ Input:
 ```json
 {
   "name": "Codex",
-  "scopes": ["health:read", "activity:read", "nutrition:read", "providers:read", "sync:write"],
+  "scopes": ["health:read", "health:write", "activity:read", "nutrition:read", "providers:read", "sync:write"],
   "expiresAt": null
 }
 ```
@@ -156,11 +156,15 @@ Granting that scope does not change the other default scopes.
 | Scope | Allows |
 |-------|--------|
 | `health:read` | Read daily health summaries. |
+| `health:write` | Log user-owned health observations such as injuries. |
 | `activity:read` | Search activity summaries. |
 | `nutrition:read` | Read daily nutrition summaries and effective food records. |
 | `nutrition:write` | Create, update, delete, and restore food records; also requires `nutrition:read`. |
 | `providers:read` | List configured providers and connection status. |
 | `sync:write` | Enqueue provider sync jobs. |
+
+`health:write` is never granted by default. Manual-token users must select it,
+and OAuth clients must request it explicitly.
 
 ## Tools
 
@@ -178,10 +182,16 @@ The canonical tool names, schemas, and scope checks are defined in the [MCP tool
 | `get_activity_streams` | `activity:read` | Returns a capped, downsampled activity sensor stream with caller-selected channels. |
 | `get_activity_summary` | `activity:read` | Aggregates activity volume and effort by type, ISO week, modality, or purpose, including unclassified and power coverage. |
 | `get_cycling_performance` | `activity:read` | Returns exact-range per-ride normalized power, intensity factor, standard best efforts, rolling-90-day bests, FTP estimates, elevation, and coverage. |
-| `get_training_load` | `activity:read` | Returns daily load, rolling 7-day acute load, rolling 28-day chronic load, and ACWR with window coverage. |
+| `get_training_load` | `activity:read`; also `nutrition:read` when requested | Returns daily load and rolling windows; analytical detail preserves modality channels and can include aligned nutrition. |
+| `get_recovery_training_series` | Scope depends on selected streams: `health:read`, `activity:read`, and/or `nutrition:read` | Returns a selected, date-aligned recovery, sleep, weight, load, subjective, compact activity-exposure, and nutrition series without causal interpretation. |
+| `compare_performances` | `activity:read` | Compares only explicitly or strongly evidenced equivalent workouts, routes, climbs, strength exercises, or standardized tests with contextual deltas and provenance. |
 | `get_climbing_sessions` | `activity:read` | Returns exact-range climbing sessions with grades, attempts, sends, discipline, wall angle, and explicit unavailable fields. |
+| `get_climbing_progression` | `activity:read` | Returns longitudinal climbing grade, attempt, send-rate, frequency, rolling-exposure, duplicate, and provenance analysis. |
 | `get_finger_loading` | `activity:read` | Returns structured finger-loading protocols, effective load, and total time under tension inside exact date boundaries. |
-| `get_nutrition_summary` | `nutrition:read` | Returns daily calorie, macronutrient, fiber, and meal totals. |
+| `get_finger_loading_progression` | `activity:read` | Returns longitudinal finger-load detail, explicit-threshold high-intensity days, consecutive exposure, and provenance as a separate load channel. |
+| `get_strength_sessions` | `activity:read` | Returns high-level exact-range strength sessions and aggregates. |
+| `get_strength_progression` | `activity:read` | Returns normalized set history, original provider values, anomaly exclusions, Epley e1RM/PR evidence, volume trends, and frequency. |
+| `get_nutrition_summary` | `nutrition:read` | Returns a daily date spine of calorie, macronutrient, fiber, and meal totals with source resolution and logging-completeness status. |
 | `search_food_entries` | `nutrition:read` | Searches effective food records by inclusive date range, optional text, and visibility. |
 | `get_food_entry` | `nutrition:read` | Returns one effective food record with its version, modifiability, normalized nutrients, source provider, and provenance. |
 | `create_food_entry` | `nutrition:read` + `nutrition:write` | Creates one itemized Dofek food record. |
@@ -189,7 +199,10 @@ The canonical tool names, schemas, and scope checks are defined in the [MCP tool
 | `delete_food_entry` | `nutrition:read` + `nutrition:write` | Appends a deletion tombstone; this is the only food tool advertised as destructive. |
 | `restore_food_entry` | `nutrition:read` + `nutrition:write` | Restores a deleted record while retaining its field and nutrient decisions. |
 | `get_food_entry_history` | `nutrition:read` | Returns the paginated command and decision history for a food record. |
-| `get_body_metrics` | `health:read` | Returns one reconciled body-composition record per local date plus all per-source values. |
+| `get_body_metrics` | `health:read` | Returns reconciled body metrics, value kinds, source values, and 7/28-day rolling weight statistics. |
+| `get_subjective_timeline` | `health:read` | Returns recorded check-ins, symptoms, and injury events for an exact date range. |
+| `list_body_regions` | `health:read` | Lists canonical body-region IDs and labels accepted by subjective health tools. |
+| `log_injury` | `health:write` | Logs a private injury or niggle with onset, optional resolution and severity, description, and canonical body region. |
 | `list_providers` | `providers:read` | Lists configured providers and status. |
 | `start_provider_sync` | `sync:write` | Enqueues a provider sync job. |
 
@@ -311,7 +324,7 @@ OpenAI likewise treats schemas as user-facing tool metadata and recommends an
 output schema for structured results ([OpenAI: Build an MCP
 server](https://developers.openai.com/plugins/build/mcp-server#define-tools-from-user-goals)).
 
-For the 26 ordinary tools, the declared schema and `structuredContent` use the
+For ordinary tools, the declared schema and `structuredContent` use the
 object-root envelope `{ "result": ... }`. This makes scalar, array, `null`,
 and object natural results valid object-root tool outputs without changing the
 existing pretty-printed JSON text in `content`. For example, an ordinary tool
@@ -352,14 +365,103 @@ It first keeps the latest provider-attributed value for each metric and local
 date, then selects the first non-null value by configured `body_priority`
 (falling back to the general provider priority and then `100`). Its
 `source_provider_by_metric` identifies each winner, while `sources` retains the
-provider-level values and timestamps from provider-attributed raw samples. See the
+provider-level values and timestamps from provider-attributed raw samples. Weight is labeled
+`direct` only when it is finite and positive. Because the canonical body sample does not retain a
+composition measurement method, body-fat percentage is labeled `unknown`; lean mass derived from
+weight and body-fat percentage is labeled `calculated_from_unknown_composition`. DEXA and consumer
+BIA values therefore are not conflated or promoted by provider-name assumptions. Invalid weight
+values remain in `sources` for provenance but cannot win reconciliation or enter a rolling mean. No
+composition value is substituted for body weight. Each returned measurement day includes the arithmetic mean of observed
+daily direct weights in its trailing 7- and 28-calendar-day windows plus the number of observed days
+in each window; gaps are omitted from the mean rather than filled or changed to zero. See the
 [body repository](../packages/server/src/repositories/body-repository.ts).
+
+`get_nutrition_summary` returns every date in the requested range. A date with no records has null
+energy/macros, zero meal count, and `logging_completeness: "no_logging"`. Supplement dose events do
+not count as food logging even when their nutrients are present in the canonical total. A date with food or nutrition records is
+`unknown_completeness`; no connected nutrition source currently supplies an explicit daily complete
+or partial observation. Low energy intake is never used as a completeness heuristic.
+`resolution_status` remains a separate
+description of which overlapping nutrition source was selected, so completeness and source conflict
+are not conflated. See the canonical [food repository](../packages/server/src/repositories/food-repository.ts).
+Dense nutrition responses are bounded to 366 inclusive days; callers split longer histories into
+date chunks. For one aligned response, call `get_training_load` with `detail: "analytical"` and
+`include_nutrition: true`. That path requires both `activity:read` and `nutrition:read` and preserves
+the independent modality load channels alongside the canonical nutrition resolution and completeness
+fields.
 
 `get_training_load` reads the canonical incremental `daily_strain` model. ACWR is
 `null` until the 28-day chronic window is complete; each row reports the current
 7-day and 28-day window coverage explicitly. See the
 [daily-strain model](../analytics/models/read_models/daily_strain.sql) and
 [training-load repository](../packages/server/src/repositories/training-load-repository.ts).
+Analytical `get_training_load` preserves its existing analysis-timezone calendar contract and
+labels that choice as `date_policy: "analysis_timezone"`.
+
+`get_recovery_training_series` returns an inclusive local-calendar date spine capped at 366 days.
+Callers select only the needed `health`, `sleep`, `body_weight`, `training_load`, `subjective`,
+`activities`, and `nutrition` streams; nutrition is opt-in. Missing scalar observations remain null
+and carry `missing` status. HRV, respiratory rate, and step provider attribution is explicitly
+labeled as applying to the canonical daily row because the current daily view does not attribute
+every scalar independently. Resting HR is separately labeled as calculated from canonical
+deduplicated samples; its current read model does not expose contributing provider IDs. Sleep
+retains onset/wake timestamps, selected session, stage coverage, providers, named timezone, UTC
+offsets, and local-time source. Body weight distinguishes a direct measurement on that date from
+same-day/interpolated/nearest direct-measurement evidence and includes 7/28-day rolling coverage.
+
+Training load remains six separate modality-specific channels. Each response date also exposes the
+immediately preceding local-calendar day's load channels, calculated by calendar date rather than a
+fixed 24-hour subtraction, so load-to-next-day recovery alignment remains correct across daylight-
+saving transitions. Subjective symptoms and active injuries are aligned by their recorded dates;
+daily fatigue is explicitly unavailable because the canonical subjective schema does not record it.
+Activities are returned as bounded daily aggregates rather than an unpaginated hydrated list. The
+aggregate retains canonical activity IDs/providers and counts dates attributed from authoritative
+named-zone/offset context separately from dates that required the analysis-timezone assumption.
+Activity-ID evidence is capped at 100 IDs per day with the total count and truncation flag returned.
+Duration is zero only on an observed empty day; a missing end or invalid interval makes the daily
+duration null with partial/unavailable status and supported/total counts. Activity exposure and all
+load channels use the same source-resolved start offset before falling back to analysis timezone.
+Each load channel reports authoritative-activity and analysis-timezone-activity counts. The latter
+counts activities intentionally grouped by the configured analysis timezone rather than by
+provider/device-local source context. This source-context policy is explicitly selected by the
+recovery endpoint and does not change the standalone analytical training-load tool's
+analysis-timezone default.
+Optional provider and modality filters apply to both activity exposure and all training-load
+channels; other recovery streams remain unfiltered. Stream-specific authorization and dependencies
+mean nutrition-only and subjective-only requests do not require the ClickHouse analytics store.
+The endpoint's interpretation block states that these observations support association analysis but do not establish causality. See the
+[series repository](../packages/server/src/repositories/recovery-training-series-repository.ts).
+
+`compare_performances` requires either a canonical reference activity or an explicit equivalence
+key. Reference activities may derive only a single identity for which Dofek currently has a strong
+contract: a Peloton class ID, one exact climb composite (type, grade system/grade, route, and
+location, and lead/top-rope state when recorded), or one normalized strength exercise ID. Explicit
+Peloton class IDs use the same contracted provider identity. Provider-scoped cycling route names,
+standardized-test activity name/provider type, and exact normalized activity names are caller
+assertions labeled `user_asserted`. When no single strong identity exists, the tool refuses to
+compare. Sport, duration, and effort similarity alone never establish equivalence.
+
+Candidate activities come from canonical `fitness.v_activity`, preventing duplicate provider
+workouts from being counted twice. Cycling power, heart rate, cadence, distance, elevation, and
+sample coverage come from deduplicated `analytics.activity_summary_rows FINAL`; average activity
+temperature is calculated from `analytics.activity_sensor_sample FINAL`. Numeric deltas are
+candidate minus the requested reference or earliest in-range match. Missing values stay null.
+Strength volume and Epley estimates exclude suspicious or conflicting sets. Exact cross-provider climbing
+observations and strength sets are consolidated, while conflicting observations are excluded and
+reported; climbing attempts and outcomes preserve partial/unavailable state and never produce exact
+deltas unless both performances have complete coverage. Strength volume and estimated-1RM values
+likewise report complete/partial/unavailable state, and their deltas require complete coverage in
+both performances. Each performance includes bounded, source-record-level equivalence evidence.
+Provider-reported moving duration is returned with raw
+field/source evidence and remains null when providers conflict. Route context is claimed only for a
+caller-asserted provider-scoped cycling name and provider type; Dofek does not claim an upstream
+route identifier that its normalized ingestion contract does not expose. Fuzzy near matches are
+explicitly not evaluated because similarity does not establish equivalence. Per-performance
+equivalence evidence is capped at 100 records, moving
+duration evidence at 20, and nested climbing source evidence at 20 IDs/providers; total counts and
+truncation flags preserve coverage. Results use reference-bound stable keyset cursors and include
+provider, member activity, timezone, quality, and deduplication provenance. The comparisons are
+descriptive and make no causal claim.
 
 `get_cycling_performance` reads the deduped `cycling_activity` and
 `activity_power_curve` models. Per-ride FTP is 95% of the best observed

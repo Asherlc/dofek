@@ -388,6 +388,56 @@ describe("production analytics read-model build", () => {
     expect(activityLocationSampleSql).not.toContain("source('postgres_fitness', 'metric_stream')");
   });
 
+  it("carries the selected sensor source through canonical activity samples", () => {
+    const sensorSql = readProjectFile("analytics/models/staging/sensor_scalar_sample.sql");
+    const dedupedSql = readModel("deduped_sensor");
+    const activitySampleSql = readModel("activity_sensor_sample");
+    const locationSampleSql = readModel("activity_location_sample");
+
+    expect(sensorSql).toContain(
+      "argMax(metric_stream_versions.activity_id, metric_stream_versions.version)",
+    );
+    expect(sensorSql).toContain(
+      "argMax(metric_stream_versions.external_id, metric_stream_versions.version)",
+    );
+    expect(sensorSql).toContain(
+      "argMax(metric_stream_versions.source_type, metric_stream_versions.version) AS source_type",
+    );
+    expect(sensorSql).toContain(
+      "argMax(metric_stream_versions.metadata, metric_stream_versions.version) AS metadata",
+    );
+    expect(sensorSql).toContain("JSONExtractString(metadata, 'measurement_kind')");
+    expect(sensorSql.match(/toNullable\(priority\) AS priority/g)).toHaveLength(2);
+    expect(sensorSql).toContain("'distance'");
+    expect(sensorSql).toContain("'temperature'");
+
+    for (const sourceColumn of [
+      "member_activity_id",
+      "device_id",
+      "source_external_id",
+      "source_type",
+      "measurement_kind",
+    ]) {
+      expect(dedupedSql).toContain(`samples.${sourceColumn}`);
+      expect(activitySampleSql).toContain(`samples.${sourceColumn} AS ${sourceColumn}`);
+    }
+    expect(activitySampleSql).not.toContain("source('ingest'");
+
+    expect(locationSampleSql).toContain(
+      "argMax(location_versions.device_id, location_versions.version) AS device_id",
+    );
+    expect(locationSampleSql).toContain(
+      "argMax(location_versions.external_id, location_versions.version) AS source_external_id",
+    );
+    expect(locationSampleSql).toContain(
+      "argMax(location_versions.source_type, location_versions.version) AS source_type",
+    );
+    expect(locationSampleSql).toContain(
+      "affected_location_rows.member_activity_id AS member_activity_id",
+    );
+    expect(locationSampleSql).toContain("affected_location_rows.provider_id AS provider_id");
+  });
+
   it("reconciles activity location membership from complete affected-group tracks", () => {
     expect(existsSync(new URL("./activity_location_sample.sql", import.meta.url))).toBe(true);
     const sql = readModel("activity_location_sample");

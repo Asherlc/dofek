@@ -16,7 +16,7 @@ const tableSchema = z.array(z.object({ name: z.string() }));
 
 export function createMigration(): ClickHouseMigration {
   return {
-    id: "0077_sensor_source_activity_id",
+    id: "0080_sensor_source_activity_id",
     statements,
     run: async (client) => {
       if (!client.query) throw new Error("ClickHouse migrations require a query-capable client");

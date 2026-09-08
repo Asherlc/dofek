@@ -389,8 +389,8 @@ interface ClimbingEntry {
   id: string;
   climbType: "boulder" | "route";
   grade: string;
-  sent: boolean;
-  attemptCount: number;
+  sent: boolean | null;
+  attemptCount: number | null;
   attempts: Array<{
     attemptIndex: number;
     failureReason: "fell" | "pumped" | "skin" | "technique" | "fear" | null;
@@ -401,7 +401,7 @@ interface ClimbingEntry {
   holdType: "crimp" | "sloper" | "pinch" | "pocket" | "jug" | null;
   routeName: string | null;
   locationName: string | null;
-  sourceName: string;
+  sourceName: string | null;
   wallAngleDegrees: number | null;
 }
 

@@ -12,6 +12,7 @@
     lookback=3,
     full_refresh=false,
     concurrent_batches=false,
+    on_schema_change='append_new_columns',
     engine='ReplacingMergeTree(refresh_version)',
     order_by='(user_id, activity_id, recorded_date, channel, recorded_at)',
     settings={
@@ -103,6 +104,13 @@ activity_samples AS (
         samples.recorded_date AS recorded_date,
         samples.channel AS channel,
         samples.scalar AS scalar,
+        samples.provider_id AS provider_id,
+        samples.member_activity_id AS member_activity_id,
+        samples.device_id AS device_id,
+        samples.source_external_id AS source_external_id,
+        samples.source_type AS source_type,
+        samples.source_metric_stream_id AS source_metric_stream_id,
+        samples.measurement_kind AS measurement_kind,
         samples.is_deleted AS is_deleted,
         greatest(samples.refreshed_at, activity_days.source_synced_at) AS source_refreshed_at
     FROM batch_samples AS samples
@@ -140,6 +148,13 @@ stale_activity_samples AS (
         existing_samples.recorded_date AS stale_recorded_date,
         existing_samples.channel AS stale_channel,
         existing_samples.scalar AS stale_scalar,
+        existing_samples.provider_id AS stale_provider_id,
+        existing_samples.member_activity_id AS stale_member_activity_id,
+        existing_samples.device_id AS stale_device_id,
+        existing_samples.source_external_id AS stale_source_external_id,
+        existing_samples.source_type AS stale_source_type,
+        existing_samples.source_metric_stream_id AS stale_source_metric_stream_id,
+        existing_samples.measurement_kind AS stale_measurement_kind,
         greatest(existing_samples.refreshed_at, activity_group_state.refreshed_at) AS stale_refreshed_at
     FROM existing_activity_samples AS existing_samples
     INNER JOIN activity_group_state
@@ -161,6 +176,13 @@ SELECT
     activity_samples.recorded_date,
     activity_samples.channel,
     activity_samples.scalar,
+    activity_samples.provider_id,
+    activity_samples.member_activity_id,
+    activity_samples.device_id,
+    activity_samples.source_external_id,
+    activity_samples.source_type,
+    activity_samples.source_metric_stream_id,
+    activity_samples.measurement_kind,
     toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
     activity_samples.is_deleted,
     activity_samples.source_refreshed_at AS refreshed_at
@@ -176,6 +198,13 @@ SELECT
     stale_activity_samples.stale_recorded_date AS recorded_date,
     stale_activity_samples.stale_channel AS channel,
     stale_activity_samples.stale_scalar AS scalar,
+    stale_activity_samples.stale_provider_id AS provider_id,
+    stale_activity_samples.stale_member_activity_id AS member_activity_id,
+    stale_activity_samples.stale_device_id AS device_id,
+    stale_activity_samples.stale_source_external_id AS source_external_id,
+    stale_activity_samples.stale_source_type AS source_type,
+    stale_activity_samples.stale_source_metric_stream_id AS source_metric_stream_id,
+    stale_activity_samples.stale_measurement_kind AS measurement_kind,
     toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
     1 AS is_deleted,
     stale_activity_samples.stale_refreshed_at AS refreshed_at

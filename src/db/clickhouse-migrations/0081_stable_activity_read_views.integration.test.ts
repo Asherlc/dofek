@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { type ClickHouseClient, createClickHouseClientFromEnv } from "../clickhouse.ts";
 import { buildPostgresFitnessActivityRawTableStatement } from "../clickhouse-raw-tables.ts";
-import { createMigration } from "./0078_stable_activity_read_views.ts";
+import { createMigration } from "./0081_stable_activity_read_views.ts";
 
 const userId = "00000000-0000-0000-0000-000000000001";
 const groupId = "00000000-0000-0000-0000-000000000100";
@@ -11,7 +11,7 @@ const pelotonId = "00000000-0000-0000-0000-000000000101";
 const whoopId = "00000000-0000-0000-0000-000000000102";
 const absentId = "00000000-0000-0000-0000-000000000103";
 
-describe("0078 stable activity read views", () => {
+describe("0081 stable activity read views", () => {
   const database = `stable_activity_views_${randomUUID().replaceAll("-", "")}`;
   let client: ClickHouseClient;
 

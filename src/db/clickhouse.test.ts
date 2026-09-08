@@ -166,7 +166,7 @@ describe("buildClickHouseBootstrapStatements", () => {
       sql.indexOf("CREATE TABLE IF NOT EXISTS analytics.deduped_sensor"),
       sql.indexOf("CREATE VIEW IF NOT EXISTS analytics.deduped_location"),
     );
-    expect(dedupedSensorDefinition).not.toMatch(/\n\s+activity_id\s/);
+    expect(dedupedSensorDefinition).not.toMatch(/^\s*activity_id\s/m);
     expect(sql).toContain("JSONExtract(metric_stream.point, 'coordinates', 'Array(Float64)')");
     expect(sql).toContain("parsed_points.point.2");
     expect(sql).toContain("parsed_points.point.1");

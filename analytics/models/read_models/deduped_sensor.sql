@@ -11,6 +11,7 @@
     lookback=3,
     full_refresh=false,
     concurrent_batches=false,
+    on_schema_change='append_new_columns',
     engine='ReplacingMergeTree(refresh_version)',
     order_by='(user_id, channel, recorded_date, recorded_at)',
     query_settings={
@@ -46,6 +47,31 @@ SELECT
         (samples.provider_priority, samples.provider_id, samples.id),
         samples._peerdb_is_deleted = 0
     ) AS provider_id,
+    argMinIf(
+        samples.member_activity_id,
+        (samples.provider_priority, samples.provider_id, samples.id),
+        samples._peerdb_is_deleted = 0
+    ) AS member_activity_id,
+    argMinIf(
+        samples.device_id,
+        (samples.provider_priority, samples.provider_id, samples.id),
+        samples._peerdb_is_deleted = 0
+    ) AS device_id,
+    argMinIf(
+        samples.source_external_id,
+        (samples.provider_priority, samples.provider_id, samples.id),
+        samples._peerdb_is_deleted = 0
+    ) AS source_external_id,
+    argMinIf(
+        samples.source_type,
+        (samples.provider_priority, samples.provider_id, samples.id),
+        samples._peerdb_is_deleted = 0
+    ) AS source_type,
+    argMinIf(
+        samples.measurement_kind,
+        (samples.provider_priority, samples.provider_id, samples.id),
+        samples._peerdb_is_deleted = 0
+    ) AS measurement_kind,
     argMinIf(
         samples.id,
         (samples.provider_priority, samples.provider_id, samples.id),

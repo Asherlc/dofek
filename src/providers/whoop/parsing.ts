@@ -10,6 +10,7 @@ import type {
   WhoopMetricValue,
   WhoopRecoveryRecord,
   WhoopSleepRecord,
+  WhoopWeightliftingSet,
   WhoopWeightliftingWorkoutResponse,
   WhoopWorkoutRecord,
 } from "@dofek/whoop/types";
@@ -525,6 +526,10 @@ export interface ParsedStrengthSet {
   durationSeconds: number | null;
   strapLocation: string | null;
   strapLocationLaterality: string | null;
+  raw: WhoopWeightliftingSet & {
+    providerExerciseId: string;
+    providerExerciseName: string;
+  };
 }
 
 export interface ParsedWeightliftingWorkout {
@@ -560,6 +565,11 @@ export function parseWeightliftingWorkout(
           durationSeconds: isTimeFormat && set.time_in_seconds > 0 ? set.time_in_seconds : null,
           strapLocation: set.strap_location ?? null,
           strapLocationLaterality: set.strap_location_laterality ?? null,
+          raw: {
+            ...set,
+            providerExerciseId: details.exercise_id,
+            providerExerciseName: details.name,
+          },
         });
         setIndex++;
       }

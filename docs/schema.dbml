@@ -622,6 +622,28 @@ table fitness.finger_loading_entry {
   }
 }
 
+table fitness.provider_threshold_observation {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  user_id uuid [not null]
+  provider_id text [not null]
+  provider_record_id text [not null]
+  sport text [not null]
+  threshold_type text [not null]
+  value real [not null]
+  unit text [not null]
+  observed_at "timestamp with time zone" [not null]
+  effective_at "timestamp with time zone"
+  raw jsonb [not null]
+  created_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    (user_id, sport, threshold_type, observed_at) [name: 'provider_threshold_observation_history_idx']
+    (user_id, provider_id, provider_record_id, threshold_type, observed_at) [name: 'provider_threshold_observation_source_idx']
+
+
+  }
+}
+
 table fitness.sleep_session {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   provider_id text [not null]
@@ -706,6 +728,7 @@ table fitness.strength_set {
   strap_location_laterality text
   rpe real
   notes text
+  raw jsonb [not null, default: `{}`]
   created_at "timestamp with time zone" [not null, default: `now()`]
 
   indexes {
@@ -2002,6 +2025,10 @@ ref daily_metrics_provider_id_provider_id_fk: fitness.daily_metrics.provider_id 
 ref daily_metrics_user_id_user_profile_id_fk: fitness.daily_metrics.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
 ref finger_loading_entry_activity_id_activity_id_fk: fitness.finger_loading_entry.activity_id > fitness.activity.id [delete: cascade, update: no action]
+
+ref provider_threshold_observation_user_id_user_profile_id_fk: fitness.provider_threshold_observation.user_id > fitness.user_profile.id [delete: cascade, update: no action]
+
+ref provider_threshold_observation_provider_id_provider_id_fk: fitness.provider_threshold_observation.provider_id > fitness.provider.id [delete: cascade, update: no action]
 
 ref sleep_session_provider_id_provider_id_fk: fitness.sleep_session.provider_id > fitness.provider.id [delete: no action, update: no action]
 

@@ -684,6 +684,9 @@ describe("FoodRepository", () => {
           fat_g: "85",
           fiber_g: "32",
           meal_count: "4",
+          logging_completeness: "unknown_completeness",
+          logging_completeness_reason:
+            "Nutrition was logged, but no source explicitly reported whether the day was complete.",
           source_providers: ["fatsecret"],
         },
       ]);
@@ -703,6 +706,62 @@ describe("FoodRepository", () => {
       expect(result[0]?.resolutionMessage).toBe(availableResolutionRow.resolution_message);
       expect(result[0]?.contributingProviders).toEqual(["dofek"]);
       expect(result[0]?.excludedProviders).toEqual([]);
+      expect(result[0]?.loggingCompleteness).toBe("unknown_completeness");
+      expect(result[0]?.loggingCompletenessReason).toContain("no source explicitly reported");
+    });
+
+    it("returns a no-logging date spine without turning missing nutrition into zero", async () => {
+      const { repo, execute } = makeRepository([
+        {
+          date: "2024-06-16",
+          calories: null,
+          protein_g: null,
+          carbs_g: null,
+          fat_g: null,
+          fiber_g: null,
+          meal_count: 0,
+          logging_completeness: "no_logging",
+          logging_completeness_reason: "No food or nutrition records were logged for this date.",
+          resolution_status: "available",
+          resolution_message: "No nutrition sources contributed records for this date.",
+          source_providers: [],
+          contributing_providers: [],
+          excluded_providers: [],
+          source_labels: [],
+          contributing_source_labels: [],
+          excluded_source_labels: [],
+        },
+      ]);
+
+      const result = await repo.dailyTotalsRange("2024-06-15", "2024-06-16");
+
+      expect(result[0]?.loggingCompleteness).toBe("no_logging");
+      expect(result[0]?.calories).toBeNull();
+      expect(result[0]?.proteinGrams).toBeNull();
+      expect(JSON.stringify(execute.mock.calls[0]?.[0])).toContain("generate_series");
+    });
+
+    it("does not infer logging completeness from a low calorie total", async () => {
+      const { repo } = makeRepository([
+        {
+          ...availableResolutionRow,
+          date: "2024-06-15",
+          calories: 150,
+          protein_g: 5,
+          carbs_g: 20,
+          fat_g: 4,
+          fiber_g: 1,
+          meal_count: 1,
+          logging_completeness: "unknown_completeness",
+          logging_completeness_reason:
+            "Nutrition was logged, but no source explicitly reported whether the day was complete.",
+        },
+      ]);
+
+      const result = await repo.dailyTotalsRange("2024-06-15", "2024-06-15");
+
+      expect(result[0]?.calories).toBe(150);
+      expect(result[0]?.loggingCompleteness).toBe("unknown_completeness");
     });
   });
 

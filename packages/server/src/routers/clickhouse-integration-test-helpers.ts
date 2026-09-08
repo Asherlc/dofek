@@ -71,6 +71,8 @@ export interface ClickHouseMetricStreamSeedRow {
   point?: string;
   metadata?: string;
   generation?: number;
+  isDeleted?: boolean;
+  version?: number;
 }
 
 export interface ClickHouseActivityPolarizationZoneSeedRow {
@@ -298,6 +300,14 @@ const rawTableSyncs: RawTableSync[] = [
       "recovery_priority",
       "daily_activity_priority",
     ],
+  },
+  {
+    tableName: "sensor_provider_priority",
+    columns: ["provider_id", "channel", "priority"],
+  },
+  {
+    tableName: "sensor_device_priority",
+    columns: ["provider_id", "source_name_pattern", "channel", "priority"],
   },
   {
     tableName: "user_profile",
@@ -862,8 +872,8 @@ function formatClickHouseMetricStreamSeedValue(row: ClickHouseMetricStreamSeedRo
     ${formatNullableClickHouseString(row.point ?? "")},
     ${formatNullableClickHouseString(row.metadata ?? "")},
     now64(9),
-    0,
-    1,
+    ${row.isDeleted ? 1 : 0},
+    ${row.version ?? 1},
     ${row.generation ?? 0}
   )`;
 }

@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { createMigration } from "./0076_stable_activity_group_id.ts";
+import { createMigration } from "./0079_stable_activity_group_id.ts";
 import { clickHouseMigrations } from "./registry.ts";
 
 describe("stable activity group migration", () => {
   it("registers the persisted membership columns without a fabricated group default", () => {
     const migration = clickHouseMigrations("postgres://test").find(
-      (candidate) => candidate.id === "0076_stable_activity_group_id",
+      (candidate) => candidate.id === "0079_stable_activity_group_id",
     );
     expect(migration?.statements).toEqual(
       expect.arrayContaining([

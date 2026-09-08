@@ -250,11 +250,15 @@ describe("stable activity group payload union", () => {
     await seedFixture(activeClient, database, routeId);
     await runStatements(activeClient, [
       `TRUNCATE TABLE ${database}.metric_stream_freshness`,
-      `INSERT INTO ${database}.metric_stream_freshness VALUES
+      `INSERT INTO ${database}.metric_stream_freshness
+        (id, activity_id, user_id, recorded_at, provider_id, channel, point,
+         ingested_at, version, is_deleted) VALUES
         ('${providerAPointIds[0]}', '${routeId}', '${userId}', toDateTime64('2026-09-03 14:10:00', 9, 'UTC'), 'provider-a', 'location', tuple(-122.50, 37.70), toDateTime64('2026-09-03 16:02:00', 9, 'UTC'), 1, 0),
         ('${providerAPointIds[1]}', '${routeId}', '${userId}', toDateTime64('2026-09-03 14:20:00', 9, 'UTC'), 'provider-a', 'location', tuple(-122.40, 37.80), toDateTime64('2026-09-03 16:02:00', 9, 'UTC'), 1, 0)`,
       `INSERT INTO ${database}.activity_location_sample ${renderModel("activity_location_sample.sql", database, false)}`,
-      `INSERT INTO ${database}.metric_stream_freshness VALUES
+      `INSERT INTO ${database}.metric_stream_freshness
+        (id, activity_id, user_id, recorded_at, provider_id, channel, point,
+         ingested_at, version, is_deleted) VALUES
         ('${providerBPointIds[0]}', '${routeId}', '${userId}', toDateTime64('2026-09-03 14:10:00', 9, 'UTC'), 'provider-b', 'location', tuple(-122.301, 37.901), toDateTime64('2026-09-03 17:02:00', 9, 'UTC'), 1, 0),
         ('${providerBPointIds[1]}', '${routeId}', '${userId}', toDateTime64('2026-09-03 14:20:00', 9, 'UTC'), 'provider-b', 'location', tuple(-122.300, 37.900), toDateTime64('2026-09-03 17:02:00', 9, 'UTC'), 1, 0),
         ('${providerBPointIds[2]}', '${routeId}', '${userId}', toDateTime64('2026-09-03 14:30:00', 9, 'UTC'), 'provider-b', 'location', tuple(-122.299, 37.899), toDateTime64('2026-09-03 17:02:00', 9, 'UTC'), 1, 0)`,
@@ -390,7 +394,9 @@ async function seedFixture(
       ('${groupId}', '${userId}', toDateTime64('2026-09-03 14:00:00', 6, 'UTC'), toDateTime64('2026-09-03 15:00:00', 6, 'UTC'), toDateTime64('2026-09-03 16:00:00', 9, 'UTC'), '${pelotonId}', 1, 0, toDateTime64('2026-09-03 16:00:00', 9, 'UTC')),
       ('${groupId}', '${userId}', toDateTime64('2026-09-03 14:00:00', 6, 'UTC'), toDateTime64('2026-09-03 15:00:00', 6, 'UTC'), toDateTime64('2026-09-03 16:00:00', 9, 'UTC'), '${whoopId}', 1, 0, toDateTime64('2026-09-03 16:00:00', 9, 'UTC')),
       ('${groupId}', '${userId}', toDateTime64('2026-09-03 14:00:00', 6, 'UTC'), toDateTime64('2026-09-03 15:00:00', 6, 'UTC'), toDateTime64('2026-09-03 16:00:00', 9, 'UTC'), '${routeId}', 1, 0, toDateTime64('2026-09-03 16:00:00', 9, 'UTC'))`,
-    `INSERT INTO ${database}.deduped_sensor VALUES
+    `INSERT INTO ${database}.deduped_sensor
+      (user_id, recorded_at, recorded_date, channel, scalar, source_activity_id,
+       is_deleted, refreshed_at) VALUES
       ('${userId}', toDateTime64('2026-09-03 14:10:00', 9, 'UTC'), toDate('2026-09-03'), 'heart_rate', 100, '${heartRateOwner}', 0, toDateTime64('2026-09-03 16:01:00', 9, 'UTC')),
       ('${userId}', toDateTime64('2026-09-03 14:20:00', 9, 'UTC'), toDate('2026-09-03'), 'heart_rate', 120, '${heartRateOwner}', 0, toDateTime64('2026-09-03 16:01:00', 9, 'UTC')),
       ('${userId}', toDateTime64('2026-09-03 14:30:00', 9, 'UTC'), toDate('2026-09-03'), 'altitude', 10, '${altitudeOwner}', 0, toDateTime64('2026-09-03 16:01:00', 9, 'UTC')),
@@ -398,7 +404,9 @@ async function seedFixture(
       ('${userId}', toDateTime64('2026-09-03 14:32:00', 9, 'UTC'), toDate('2026-09-03'), 'altitude', 15, '${altitudeOwner}', 0, toDateTime64('2026-09-03 16:01:00', 9, 'UTC')),
       ('${userId}', toDateTime64('2026-09-03 14:33:00', 9, 'UTC'), toDate('2026-09-03'), 'altitude', 15, '${altitudeOwner}', 0, toDateTime64('2026-09-03 16:01:00', 9, 'UTC')),
       ('${userId}', toDateTime64('2026-09-03 14:40:00', 9, 'UTC'), toDate('2026-09-03'), 'heart_rate', 110, NULL, 0, toDateTime64('2026-09-03 16:01:00', 9, 'UTC'))`,
-    `INSERT INTO ${database}.metric_stream_freshness VALUES
+    `INSERT INTO ${database}.metric_stream_freshness
+      (id, activity_id, user_id, recorded_at, provider_id, channel, point,
+       ingested_at, version, is_deleted) VALUES
       (generateUUIDv4(), '${routeId}', '${userId}', toDateTime64('2026-09-03 14:10:00', 9, 'UTC'), 'route-provider', 'location', tuple(-122.28, 37.80), toDateTime64('2026-09-03 16:02:00', 9, 'UTC'), 1, 0),
       (generateUUIDv4(), '${routeId}', '${userId}', toDateTime64('2026-09-03 14:20:00', 9, 'UTC'), 'route-provider', 'location', tuple(-122.27, 37.81), toDateTime64('2026-09-03 16:02:00', 9, 'UTC'), 1, 0)`,
     `INSERT INTO ${database}.activity_source_records ${renderModel("activity_source_records.sql", database, false)}`,
@@ -512,7 +520,10 @@ function createDedupedActivityMembersSql(database: string): string {
 function createDedupedSensorSql(database: string): string {
   return `CREATE TABLE ${database}.deduped_sensor (
     user_id UUID, recorded_at DateTime64(9, 'UTC'), recorded_date Date, channel String,
-    scalar Nullable(Float64), source_activity_id Nullable(UUID), is_deleted UInt8,
+    scalar Nullable(Float64), provider_id Nullable(String), member_activity_id Nullable(UUID),
+    device_id Nullable(String), source_external_id Nullable(String), source_type Nullable(String),
+    measurement_kind LowCardinality(String), source_metric_stream_id Nullable(UUID),
+    source_activity_id Nullable(UUID), provider_priority Int32, is_deleted UInt8,
     refreshed_at DateTime64(9, 'UTC')) ENGINE = ReplacingMergeTree
     ORDER BY (user_id, recorded_date, channel, recorded_at)`;
 }
@@ -520,14 +531,20 @@ function createDedupedSensorSql(database: string): string {
 function createMetricStreamSql(database: string): string {
   return `CREATE TABLE ${database}.metric_stream_freshness (
     id UUID, activity_id Nullable(UUID), user_id UUID, recorded_at DateTime64(9, 'UTC'),
-    provider_id String, channel String, point Point, ingested_at DateTime64(9, 'UTC'),
+    provider_id String, channel String, point Point, external_id Nullable(String),
+    device_id Nullable(String), source_type Nullable(String), metadata String,
+    ingested_at DateTime64(9, 'UTC'),
     version UInt64, is_deleted UInt8) ENGINE = MergeTree ORDER BY id`;
 }
 
 function createActivitySensorSampleSql(database: string): string {
   return `CREATE TABLE ${database}.activity_sensor_sample (
     activity_id UUID, user_id UUID, recorded_at DateTime64(9, 'UTC'), recorded_date Date,
-    channel String, scalar Nullable(Float64), refresh_version UInt64, is_deleted UInt8,
+    channel String, scalar Nullable(Float64), provider_id Nullable(String),
+    member_activity_id Nullable(UUID), device_id Nullable(String),
+    source_external_id Nullable(String), source_type Nullable(String),
+    source_metric_stream_id Nullable(UUID), measurement_kind LowCardinality(String),
+    refresh_version UInt64, is_deleted UInt8,
     refreshed_at DateTime64(9, 'UTC')) ENGINE = ReplacingMergeTree(refresh_version)
     ORDER BY (user_id, activity_id, recorded_date, channel, recorded_at)`;
 }
@@ -535,7 +552,10 @@ function createActivitySensorSampleSql(database: string): string {
 function createActivityLocationSampleSql(database: string): string {
   return `CREATE TABLE ${database}.activity_location_sample (
     activity_id UUID, user_id UUID, recorded_at DateTime64(9, 'UTC'), recorded_date Date,
-    source_metric_stream_id UUID, lat Nullable(Float32), lng Nullable(Float32),
+    source_metric_stream_id UUID, member_activity_id Nullable(UUID),
+    provider_id Nullable(String), source_external_id Nullable(String),
+    device_id Nullable(String), source_type Nullable(String),
+    measurement_kind LowCardinality(String), lat Nullable(Float32), lng Nullable(Float32),
     refresh_version UInt64, is_deleted UInt8, source_refreshed_at DateTime64(9, 'UTC'),
     refreshed_at DateTime64(9, 'UTC')) ENGINE = ReplacingMergeTree(refresh_version)
     ORDER BY (user_id, activity_id, recorded_date, recorded_at, source_metric_stream_id)`;

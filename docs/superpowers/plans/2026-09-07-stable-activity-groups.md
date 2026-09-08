@@ -55,7 +55,7 @@
 
 - Modify: `src/db/schema/activity.ts`
 - Modify: `src/db/schema/index.ts` if required by the schema barrel
-- Create: `drizzle/0114_stable_activity_groups.sql`
+- Create: `drizzle/0116_stable_activity_groups.sql`
 - Modify: `drizzle/meta/_journal.json`
 - Create: `src/db/stable-activity-groups-migration.integration.test.ts`
 
@@ -118,7 +118,7 @@
 **Files:**
 
 - Modify: `drizzle/_views/01_v_activity.sql`
-- Create: `drizzle/0115_v_activity_stable_groups.sql`
+- Create: `drizzle/0117_v_activity_stable_groups.sql`
 - Modify: `drizzle/meta/_journal.json`
 - Modify: `packages/server/src/routers/activity-dedup.integration.test.ts`
 - Modify: `src/db/activity-overlap-plan.integration.test.ts`
@@ -153,8 +153,8 @@
 - Modify: `analytics/models/read_models/read_model_microbatch.sql.test.ts`
 - Modify: `analytics/models/read_models/activity_duplicate_groups.integration.test.ts`
 - Modify: `analytics/models/read_models/activity_duplicate_matches.integration.test.ts`
-- Create: `src/db/clickhouse-migrations/0076_stable_activity_group_id.ts`
-- Create: `src/db/clickhouse-migrations/0076_stable_activity_group_id.test.ts`
+- Create: `src/db/clickhouse-migrations/0079_stable_activity_group_id.ts`
+- Create: `src/db/clickhouse-migrations/0079_stable_activity_group_id.test.ts`
 - Modify: `src/db/clickhouse-migrations/registry.ts`
 
 **Produces:** ClickHouse activity rows keyed by the persisted PostgreSQL group, not a recomputed connected-component label.

@@ -1,3 +1,4 @@
+import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
@@ -115,6 +116,7 @@ const { MockZwiftClient } = vi.hoisted(() => {
     });
     getFitnessData = vi.fn().mockImplementation(async () => MockZwiftClient.fitnessData);
     getPowerCurve = vi.fn().mockImplementation(async () => MockZwiftClient.powerCurve);
+    getProfile = vi.fn().mockImplementation(async () => MockZwiftClient.authenticatedProfile);
     getAuthenticatedProfile = vi.fn().mockImplementation(async () => {
       MockZwiftClient.getAuthenticatedProfileCalls += 1;
       return MockZwiftClient.authenticatedProfile;
@@ -671,9 +673,17 @@ describe("ZwiftProvider.sync() — activity sync", () => {
 });
 
 describe("ZwiftProvider.sync() — power curve sync", () => {
-  it("skips power curve insert when no zFtp and no vo2Max", async () => {
+  it("records explicit profile FTP and zFTP as separate provider observations", async () => {
     MockZwiftClient.activities = [];
-    MockZwiftClient.powerCurve = {};
+    MockZwiftClient.authenticatedProfile = {
+      id: 12345,
+      firstName: "Test",
+      lastName: "User",
+      ftp: 250,
+      weight: 72000,
+      height: 180,
+    };
+    MockZwiftClient.powerCurve = { zFtp: 260 };
 
     const db = makeMockDb({
       tokens: {
@@ -686,11 +696,59 @@ describe("ZwiftProvider.sync() — power curve sync", () => {
 
     const provider = new ZwiftProvider();
     const result = await provider.sync(
-      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-01-01") }),
+        userId: "user-1",
+      }),
     );
     expect(result.provider).toBe("zwift");
-    // recordsSynced should be 0 since nothing was synced
-    expect(result.recordsSynced).toBe(0);
+    const thresholdQueries = db.execute.mock.calls
+      .map(([query]) => new PgDialect().sqlToQuery(query))
+      .filter((query) => query.sql.includes("provider_threshold_observation"));
+    expect(thresholdQueries).toHaveLength(2);
+    expect(thresholdQueries.map((query) => query.params)).toEqual(
+      expect.arrayContaining([
+        expect.arrayContaining(["profile:12345", 250, JSON.stringify({ ftp: 250 })]),
+        expect.arrayContaining(["power-profile:12345", 260, JSON.stringify({ zFtp: 260 })]),
+      ]),
+    );
+  });
+
+  it("does not record zero or absent FTP values", async () => {
+    MockZwiftClient.activities = [];
+    MockZwiftClient.authenticatedProfile = {
+      id: 12345,
+      firstName: "Test",
+      lastName: "User",
+      ftp: 0,
+      weight: 72000,
+      height: 180,
+    };
+    MockZwiftClient.powerCurve = { zFtp: 0 };
+
+    const db = makeMockDb({
+      tokens: {
+        accessToken: "valid-token",
+        refreshToken: "refresh",
+        expiresAt: new Date("2099-01-01"),
+        scopes: "athleteId:12345",
+      },
+    });
+
+    const result = await new ZwiftProvider().sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-01-01") }),
+        userId: "user-1",
+      }),
+    );
+
+    expect(result.errors).toEqual([]);
+    const thresholdQueries = db.execute.mock.calls.filter(([query]) =>
+      new PgDialect().sqlToQuery(query).sql.includes("provider_threshold_observation"),
+    );
+    expect(thresholdQueries).toHaveLength(0);
   });
 });
 
