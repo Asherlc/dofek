@@ -174,6 +174,31 @@ afterEach(() => {
 });
 
 describe("renderDeployServiceEnvironmentFiles", () => {
+  it("gives only the migration-phase web artifact the explicit legacy producer topic", () => {
+    const directory = makeTemporaryDirectory();
+    const sourcePath = join(directory, "all.env");
+    writeFileSync(
+      sourcePath,
+      dotenv({
+        ...completeDeployEnvironment(),
+        METRIC_STREAM_TOPIC: "unassigned-topic",
+      }),
+    );
+    const paths = renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services"));
+    const web = parseEnv(readFileSync(paths.web, "utf8"));
+    const migrationWeb = parseEnv(
+      readFileSync(join(directory, "services", "web-pre-migration.env"), "utf8"),
+    );
+
+    expect(migrationWeb).toEqual({ ...web, METRIC_STREAM_TOPIC: "metric-stream-v1" });
+    expect(migrationWeb).toMatchObject({
+      METRIC_STREAM_LIVE_TOPIC: "metric-stream-live-v1",
+      METRIC_STREAM_HISTORY_TOPIC: "metric-stream-history-v1",
+    });
+    expect(web).not.toHaveProperty("METRIC_STREAM_TOPIC");
+    expect(migrationWeb).not.toHaveProperty("METRIC_STREAM_CONSUMER_GROUP");
+  });
+
   it("renders each durable consumer's designated topic and independent group", () => {
     const directory = makeTemporaryDirectory();
     const sourcePath = join(directory, "all.env");
@@ -414,6 +439,7 @@ describe("renderDeployServiceEnvironmentFiles", () => {
       databaseOperations: "database-operations.env",
       r2Operations: "r2-operations.env",
       web: "web.env",
+      webPreMigration: "web-pre-migration.env",
       worker: "worker.env",
       metricStreamClickhouseSink: "metric-stream-clickhouse-sink.env",
       metricStreamLiveClickhouseSink: "metric-stream-live-clickhouse-sink.env",

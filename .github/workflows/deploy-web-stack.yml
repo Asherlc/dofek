@@ -209,6 +209,7 @@ jobs:
             echo "DATABASE_OPERATIONS_ENV_FILE=$SERVICE_ENV_DIRECTORY/database-operations.env"
             echo "R2_OPERATIONS_ENV_FILE=$SERVICE_ENV_DIRECTORY/r2-operations.env"
             echo "WEB_ENV_FILE=$SERVICE_ENV_DIRECTORY/web.env"
+            echo "WEB_PRE_MIGRATION_ENV_FILE=$SERVICE_ENV_DIRECTORY/web-pre-migration.env"
             echo "WORKER_ENV_FILE=$SERVICE_ENV_DIRECTORY/worker.env"
             echo "METRIC_STREAM_CLICKHOUSE_SINK_ENV_FILE=$SERVICE_ENV_DIRECTORY/metric-stream-clickhouse-sink.env"
             echo "METRIC_STREAM_LIVE_CLICKHOUSE_SINK_ENV_FILE=$SERVICE_ENV_DIRECTORY/metric-stream-live-clickhouse-sink.env"
@@ -565,6 +566,7 @@ jobs:
 
           echo "Applying dependency changes with app image ${pre_migration_image_tag} before migrations."
           IMAGE_TAG="$pre_migration_image_tag" \
+            WEB_ENV_FILE="${WEB_PRE_MIGRATION_ENV_FILE:?WEB_PRE_MIGRATION_ENV_FILE is required}" \
             node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
             docker stack deploy $STACK_FILE_FLAGS \
               -c deploy/stack.cdc-quiesce.yml \

@@ -183,6 +183,18 @@ Required app, database, ClickHouse, PeerDB, export, and mobile pipeline keys are
 listed in the deploy steps and mobile CI sections below. Missing required keys
 must fail the workflow before rollout.
 
+The renderer also creates `web-pre-migration.env` for the canonical dependency
+apply, which can still run the previously deployed web image. This artifact
+contains the normal web environment plus `METRIC_STREAM_TOPIC` derived strictly
+from `METRIC_STREAM_LEGACY_TOPIC`. The workflow selects it with a command-scoped
+`WEB_ENV_FILE` assignment for that apply only; both requested-image deployment
+phases use `web.env`, whose producer contract contains only live/history keys.
+The explicit live/history values remain in the migration artifact for clean-slate
+deploys that already use the requested image. No generic producer key is required
+in Infisical. See the [renderer](../scripts/deploy-service-environment.ts) and
+[workflow](../.github/workflows/deploy-web-stack.yml); Bash documents the scope of
+[command-prefixed environment assignments](https://www.gnu.org/software/bash/manual/html_node/Environment.html).
+
 The web image build and post-rollout Sentry release step also require the
 GitHub Actions `SENTRY_AUTH_TOKEN` secret already used for browser source-map
 uploads. The token must be able to manage releases for both `dofek-web` and

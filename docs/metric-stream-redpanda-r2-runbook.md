@@ -80,7 +80,7 @@ Store these in Infisical before enabling the services:
 
 Missing secrets must fail service startup. Do not use blank defaults.
 
-The production topic contract contains exactly the three explicit route keys.
+The external production topic contract contains exactly the three explicit route keys.
 Create/verify them in Infisical before deployment. The
 [service renderer](../scripts/deploy-service-environment.ts) fails before
 writing any service files if a required route is missing or blank. Web and worker
@@ -89,6 +89,13 @@ as internal `METRIC_STREAM_TOPIC` plus its fixed `METRIC_STREAM_CONSUMER_GROUP`.
 Do not create a generic topic or group in Infisical for these services.
 The shared archive configuration reads both internal values through
 [Redpanda Connect environment interpolation](https://docs.redpanda.com/connect/configuration/interpolation/#environment-variables).
+
+The pre-migration dependency apply is the only producer exception: it selects
+`web-pre-migration.env`, which also maps the explicit legacy topic to the generic
+key expected by the previously deployed web image. The two requested-image
+deployment phases select the normal `web.env`. This is an isolated deployment
+artifact, not an external generic topic or a steady-state producer fallback;
+see the [deployment environment procedure](../deploy/README.md#production-secrets).
 
 ## R2 Object Layout
 
