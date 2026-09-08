@@ -123,6 +123,7 @@ describe("climbing router integration", () => {
   let climbingActivityId: string;
   let visibleClimbingActivityId: string;
   let routeActivityId: string;
+  let visibleRouteActivityId: string;
 
   beforeAll(async () => {
     const dayInMilliseconds = 24 * 60 * 60 * 1_000;
@@ -201,6 +202,19 @@ describe("climbing router integration", () => {
       throw new Error("Failed to resolve the merged climbing activity");
     }
     visibleClimbingActivityId = visibleClimbingActivity.id;
+
+    const visibleRouteActivities = await executeWithSchema(
+      testContext.db,
+      z.object({ id: z.string() }),
+      sql`SELECT id::text AS id
+          FROM fitness.v_activity
+          WHERE ${routeActivityId}::uuid = ANY(member_activity_ids)`,
+    );
+    const visibleRouteActivity = visibleRouteActivities[0];
+    if (!visibleRouteActivity) {
+      throw new Error("Failed to resolve the route activity");
+    }
+    visibleRouteActivityId = visibleRouteActivity.id;
 
     await testContext.db.execute(
       sql`INSERT INTO fitness.climbing_entry (
@@ -319,7 +333,7 @@ describe("climbing router integration", () => {
           hardestRouteGrade: null,
         }),
         expect.objectContaining({
-          activityId: routeActivityId,
+          activityId: visibleRouteActivityId,
           attempts: 2,
           sends: 1,
           hardestBoulderGrade: null,

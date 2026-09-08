@@ -1,3 +1,4 @@
+import type { StrengthExerciseIdentity } from "@dofek/training/training";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../../../../src/db/index.ts";
@@ -58,11 +59,11 @@ export interface EstimatedMaxTrendEvidence {
 
 /** An exercise with estimated 1RM history over time. */
 export class EstimatedOneRepMax {
-  readonly #exerciseName: string;
+  readonly #identity: StrengthExerciseIdentity;
   readonly #history: OneRepMaxEntryRow[];
 
-  constructor(exerciseName: string, history: OneRepMaxEntryRow[]) {
-    this.#exerciseName = exerciseName;
+  constructor(identity: StrengthExerciseIdentity, history: OneRepMaxEntryRow[]) {
+    this.#identity = identity;
     this.#history = history;
   }
 
@@ -103,7 +104,7 @@ export class EstimatedOneRepMax {
 
   toDetail() {
     return {
-      exerciseName: this.#exerciseName,
+      ...this.#identity,
       history: this.#history,
       trend: this.trend,
     };
@@ -227,6 +228,7 @@ const volumeRowSchema = z.object({
 
 const oneRepMaxRowSchema = z.object({
   exercise_name: z.string(),
+  equipment: z.string().nullable(),
   workout_date: dateStringSchema,
   estimated_max: z.coerce.number(),
   actual_weight: z.coerce.number(),
@@ -241,12 +243,15 @@ const muscleGroupRowSchema = z.object({
 
 const overloadRowSchema = z.object({
   exercise_name: z.string(),
+  equipment: z.string().nullable(),
   week: dateStringSchema,
   weekly_volume: z.coerce.number(),
 });
 
 const exerciseSetRowSchema = z.object({
-  activity_id: z.string().uuid(),
+  member_activity_id: z.string(),
+  member_provider_id: z.string(),
+  source_priority: z.coerce.number(),
   exercise_name: z.string(),
   equipment: z.string().nullable(),
   muscle_groups: z.array(z.string()).nullable(),
@@ -286,22 +291,179 @@ export class StrengthRepository {
     this.#timezone = timezone;
   }
 
-  /** Weekly tonnage: SUM(weight_kg * reps) grouped by week. */
-  async getVolumeOverTime(days: RangeDays): Promise<VolumeWeek[]> {
+  #dedupedStrengthSets(days: RangeDays) {
     const rangeFilter = ChartRange.fromDays(days).postgresTimestampAfterNow(sql`a.started_at`);
-    const rows = await executeWithSchema(
-      this.#db,
-      volumeRowSchema,
-      sql`SELECT
-            date_trunc('week', (a.started_at AT TIME ZONE ${this.#timezone})::date)::date::text AS week,
-            COALESCE(SUM(ss.weight_kg * ss.reps) FILTER (WHERE ss.set_type = 'working'), 0)::real AS total_volume_kg,
-            COUNT(ss.id) FILTER (WHERE ss.set_type = 'working')::int AS set_count,
-            COUNT(DISTINCT a.id)::int AS workout_count
+    return sql`WITH strength_source_rows AS (
+          SELECT
+            a.id AS group_activity_id,
+            a.started_at,
+            member.id AS member_activity_id,
+            COALESCE(dp.priority, pp.priority, 100) AS source_priority,
+            e.name AS exercise_name,
+            LOWER(REGEXP_REPLACE(TRIM(e.name), '[[:space:]]+', ' ', 'g')) AS normalized_exercise_name,
+            e.equipment,
+            LOWER(REGEXP_REPLACE(TRIM(COALESCE(e.equipment, '')), '[[:space:]]+', ' ', 'g')) AS normalized_equipment,
+            e.muscle_groups,
+            e.exercise_type,
+            ss.set_index,
+            ss.set_type,
+            ss.weight_kg,
+            ss.reps,
+            ss.distance_meters,
+            ss.duration_seconds,
+            ss.rpe,
+            ss.notes
           FROM fitness.v_activity a
           JOIN fitness.strength_set ss ON ss.activity_id = ANY(a.member_activity_ids)
+          JOIN fitness.exercise e ON e.id = ss.exercise_id
+          JOIN fitness.activity member ON member.id = ss.activity_id
+          LEFT JOIN fitness.provider_priority pp ON pp.provider_id = member.provider_id
+          LEFT JOIN LATERAL (
+            SELECT dp2.priority
+            FROM fitness.device_priority dp2
+            WHERE dp2.provider_id = member.provider_id
+              AND member.source_name LIKE dp2.source_name_pattern
+            ORDER BY
+              LENGTH(dp2.source_name_pattern) DESC,
+              dp2.priority ASC,
+              dp2.source_name_pattern ASC
+            LIMIT 1
+          ) dp ON true
           WHERE a.user_id = ${this.#userId}
             AND a.canonical_type = 'strength'
             ${rangeFilter}
+        ),
+        ranked_strength_sets AS (
+          SELECT
+            strength_source_rows.*,
+            ROW_NUMBER() OVER (
+              PARTITION BY
+                group_activity_id,
+                normalized_exercise_name,
+                normalized_equipment,
+                set_type,
+                set_index,
+                weight_kg,
+                reps,
+                duration_seconds
+              ORDER BY
+                (
+                  CASE WHEN rpe IS NOT NULL THEN 1 ELSE 0 END
+                  + CASE WHEN NULLIF(TRIM(notes), '') IS NOT NULL THEN 1 ELSE 0 END
+                  + CASE WHEN distance_meters IS NOT NULL THEN 1 ELSE 0 END
+                ) DESC,
+                source_priority ASC,
+                member_activity_id ASC
+            ) AS dedupe_rank
+          FROM strength_source_rows
+        ),
+        exercise_identity_metadata AS (
+          SELECT DISTINCT ON (
+            group_activity_id,
+            normalized_exercise_name,
+            normalized_equipment
+          )
+            group_activity_id,
+            normalized_exercise_name,
+            normalized_equipment,
+            exercise_name,
+            equipment
+          FROM strength_source_rows
+          ORDER BY
+            group_activity_id,
+            normalized_exercise_name,
+            normalized_equipment,
+            source_priority ASC,
+            member_activity_id ASC
+        ),
+        exercise_muscle_metadata AS (
+          SELECT DISTINCT ON (
+            group_activity_id,
+            normalized_exercise_name,
+            normalized_equipment
+          )
+            group_activity_id,
+            normalized_exercise_name,
+            normalized_equipment,
+            muscle_groups
+          FROM strength_source_rows
+          WHERE muscle_groups IS NOT NULL AND CARDINALITY(muscle_groups) > 0
+          ORDER BY
+            group_activity_id,
+            normalized_exercise_name,
+            normalized_equipment,
+            source_priority ASC,
+            member_activity_id ASC
+        ),
+        exercise_type_metadata AS (
+          SELECT DISTINCT ON (
+            group_activity_id,
+            normalized_exercise_name,
+            normalized_equipment
+          )
+            group_activity_id,
+            normalized_exercise_name,
+            normalized_equipment,
+            exercise_type
+          FROM strength_source_rows
+          WHERE NULLIF(TRIM(exercise_type), '') IS NOT NULL
+          ORDER BY
+            group_activity_id,
+            normalized_exercise_name,
+            normalized_equipment,
+            source_priority ASC,
+            member_activity_id ASC
+        ),
+        deduped_strength_sets AS (
+          SELECT
+            ranked.group_activity_id,
+            ranked.started_at,
+            identity.exercise_name,
+            ranked.normalized_exercise_name,
+            identity.equipment,
+            ranked.normalized_equipment,
+            muscle.muscle_groups,
+            exercise_type.exercise_type,
+            ranked.set_index,
+            ranked.set_type,
+            ranked.weight_kg,
+            ranked.reps,
+            ranked.distance_meters,
+            ranked.duration_seconds,
+            ranked.rpe,
+            ranked.notes
+          FROM ranked_strength_sets ranked
+          JOIN exercise_identity_metadata identity USING (
+            group_activity_id,
+            normalized_exercise_name,
+            normalized_equipment
+          )
+          LEFT JOIN exercise_muscle_metadata muscle USING (
+            group_activity_id,
+            normalized_exercise_name,
+            normalized_equipment
+          )
+          LEFT JOIN exercise_type_metadata exercise_type USING (
+            group_activity_id,
+            normalized_exercise_name,
+            normalized_equipment
+          )
+          WHERE ranked.dedupe_rank = 1
+        )`;
+  }
+
+  /** Weekly tonnage: SUM(weight_kg * reps) grouped by week. */
+  async getVolumeOverTime(days: RangeDays): Promise<VolumeWeek[]> {
+    const rows = await executeWithSchema(
+      this.#db,
+      volumeRowSchema,
+      sql`${this.#dedupedStrengthSets(days)}
+          SELECT
+            date_trunc('week', (started_at AT TIME ZONE ${this.#timezone})::date)::date::text AS week,
+            COALESCE(SUM(weight_kg * reps) FILTER (WHERE set_type = 'working'), 0)::real AS total_volume_kg,
+            COUNT(*) FILTER (WHERE set_type = 'working')::int AS set_count,
+            COUNT(DISTINCT group_activity_id)::int AS workout_count
+          FROM deduped_strength_sets
           GROUP BY 1
           ORDER BY week`,
     );
@@ -319,85 +481,101 @@ export class StrengthRepository {
 
   /** Estimated 1RM using Epley formula, best e1RM per workout per exercise. */
   async getEstimatedOneRepMax(days: RangeDays): Promise<EstimatedOneRepMax[]> {
-    const rangeFilter = ChartRange.fromDays(days).postgresTimestampAfterNow(sql`a.started_at`);
     const rows = await executeWithSchema(
       this.#db,
       oneRepMaxRowSchema,
-      sql`WITH best_per_workout AS (
+      sql`${this.#dedupedStrengthSets(days)},
+          best_per_workout AS (
             SELECT
-              e.name AS exercise_name,
-              (a.started_at AT TIME ZONE ${this.#timezone})::date::text AS workout_date,
-              ss.weight_kg * (1 + ss.reps / 30.0) AS e1rm,
-              ss.weight_kg AS actual_weight,
-              ss.reps AS actual_reps,
+              exercise_name,
+              equipment,
+              normalized_exercise_name,
+              normalized_equipment,
+              (started_at AT TIME ZONE ${this.#timezone})::date::text AS workout_date,
+              weight_kg * (1 + reps / 30.0) AS e1rm,
+              weight_kg AS actual_weight,
+              reps AS actual_reps,
               ROW_NUMBER() OVER (
-                PARTITION BY e.id, a.id
-                ORDER BY ss.weight_kg * (1 + ss.reps / 30.0) DESC
+                PARTITION BY
+                  normalized_exercise_name,
+                  normalized_equipment,
+                  group_activity_id
+                ORDER BY weight_kg * (1 + reps / 30.0) DESC
               ) AS rn
-            FROM fitness.strength_set ss
-            JOIN fitness.v_activity a ON ss.activity_id = ANY(a.member_activity_ids)
-            JOIN fitness.exercise e ON e.id = ss.exercise_id
-          WHERE a.user_id = ${this.#userId}
-            AND a.canonical_type = 'strength'
-            ${rangeFilter}
-            AND ss.set_type = 'working'
-            AND ss.weight_kg > 0
-              AND ss.reps BETWEEN 1 AND 12
+            FROM deduped_strength_sets
+            WHERE set_type = 'working'
+              AND weight_kg > 0
+              AND reps BETWEEN 1 AND 12
           ),
           qualified_exercises AS (
-            SELECT exercise_name
+            SELECT normalized_exercise_name, normalized_equipment
             FROM best_per_workout
             WHERE rn = 1
-            GROUP BY exercise_name
+            GROUP BY normalized_exercise_name, normalized_equipment
             HAVING COUNT(*) >= 3
           )
           SELECT
-            b.exercise_name,
+            MIN(b.exercise_name) OVER (
+              PARTITION BY b.normalized_exercise_name, b.normalized_equipment
+            ) AS exercise_name,
+            MIN(b.equipment) OVER (
+              PARTITION BY b.normalized_exercise_name, b.normalized_equipment
+            ) AS equipment,
             b.workout_date,
             ROUND(b.e1rm::numeric, 1)::real AS estimated_max,
             b.actual_weight,
             b.actual_reps
           FROM best_per_workout b
-          JOIN qualified_exercises q ON q.exercise_name = b.exercise_name
+          JOIN qualified_exercises q
+            ON q.normalized_exercise_name = b.normalized_exercise_name
+            AND q.normalized_equipment = b.normalized_equipment
           WHERE b.rn = 1
-          ORDER BY b.exercise_name, b.workout_date`,
+          ORDER BY b.exercise_name, b.normalized_equipment, b.workout_date`,
     );
 
-    const exerciseMap = new Map<string, OneRepMaxEntryRow[]>();
+    const exerciseMap = new Map<string, Map<string | null, OneRepMaxEntryRow[]>>();
     for (const row of rows) {
-      const entries = exerciseMap.get(row.exercise_name) ?? [];
+      const equipmentMap = exerciseMap.get(row.exercise_name) ?? new Map();
+      const entries = equipmentMap.get(row.equipment) ?? [];
       entries.push({
         date: row.workout_date,
         estimatedMax: row.estimated_max,
         actualWeight: row.actual_weight,
         actualReps: row.actual_reps,
       });
-      exerciseMap.set(row.exercise_name, entries);
+      equipmentMap.set(row.equipment, entries);
+      exerciseMap.set(row.exercise_name, equipmentMap);
     }
 
-    return Array.from(exerciseMap.entries()).map(
-      ([exerciseName, history]) => new EstimatedOneRepMax(exerciseName, history),
-    );
+    return Array.from(exerciseMap.entries())
+      .flatMap(([exerciseName, equipmentMap]) =>
+        Array.from(equipmentMap.entries()).map(([equipment, history]) => ({
+          identity: { exerciseName, equipment },
+          history,
+        })),
+      )
+      .sort((a, b) => {
+        return (
+          a.identity.exerciseName.localeCompare(b.identity.exerciseName) ||
+          (a.identity.equipment ?? "").localeCompare(b.identity.equipment ?? "")
+        );
+      })
+      .map(({ identity, history }) => new EstimatedOneRepMax(identity, history));
   }
 
   /** Weekly sets per muscle group. */
   async getMuscleGroupVolume(days: RangeDays): Promise<MuscleGroupVolume[]> {
-    const rangeFilter = ChartRange.fromDays(days).postgresTimestampAfterNow(sql`a.started_at`);
     const rows = await executeWithSchema(
       this.#db,
       muscleGroupRowSchema,
-      sql`SELECT
+      sql`${this.#dedupedStrengthSets(days)}
+          SELECT
             mg AS muscle_group,
-            date_trunc('week', (a.started_at AT TIME ZONE ${this.#timezone})::date)::date::text AS week,
-            COUNT(ss.id) FILTER (WHERE ss.set_type = 'working')::int AS sets
-          FROM fitness.strength_set ss
-          JOIN fitness.v_activity a ON ss.activity_id = ANY(a.member_activity_ids)
-          JOIN fitness.exercise e ON e.id = ss.exercise_id
-          CROSS JOIN LATERAL unnest(e.muscle_groups) AS mg
-          WHERE a.user_id = ${this.#userId}
-            AND a.canonical_type = 'strength'
-            ${rangeFilter}
-            AND e.muscle_groups IS NOT NULL
+            date_trunc('week', (started_at AT TIME ZONE ${this.#timezone})::date)::date::text AS week,
+            COUNT(*) FILTER (WHERE set_type = 'working')::int AS sets
+          FROM deduped_strength_sets
+          CROSS JOIN LATERAL unnest(muscle_groups) AS mg
+          WHERE muscle_groups IS NOT NULL
           GROUP BY mg, 2
           ORDER BY mg, week`,
     );
@@ -416,45 +594,58 @@ export class StrengthRepository {
 
   /** Weekly volume per exercise with linear regression slope. */
   async getProgressiveOverload(days: RangeDays): Promise<ProgressiveOverload[]> {
-    const rangeFilter = ChartRange.fromDays(days).postgresTimestampAfterNow(sql`a.started_at`);
     const rows = await executeWithSchema(
       this.#db,
       overloadRowSchema,
-      sql`SELECT
-            e.name AS exercise_name,
-            date_trunc('week', (a.started_at AT TIME ZONE ${this.#timezone})::date)::date::text AS week,
-            COALESCE(SUM(ss.weight_kg * ss.reps), 0)::real AS weekly_volume
-          FROM fitness.strength_set ss
-          JOIN fitness.v_activity a ON ss.activity_id = ANY(a.member_activity_ids)
-          JOIN fitness.exercise e ON e.id = ss.exercise_id
-          WHERE a.user_id = ${this.#userId}
-            AND a.canonical_type = 'strength'
-            ${rangeFilter}
-            AND ss.weight_kg > 0
-            AND ss.set_type = 'working'
-          GROUP BY e.name, 2
-          ORDER BY e.name, week`,
+      sql`${this.#dedupedStrengthSets(days)}
+          SELECT
+            MIN(exercise_name) AS exercise_name,
+            MIN(equipment) AS equipment,
+            date_trunc('week', (started_at AT TIME ZONE ${this.#timezone})::date)::date::text AS week,
+            COALESCE(SUM(weight_kg * reps), 0)::real AS weekly_volume
+          FROM deduped_strength_sets
+          WHERE weight_kg > 0
+            AND set_type = 'working'
+          GROUP BY normalized_exercise_name, normalized_equipment, 3
+          ORDER BY MIN(exercise_name), MIN(equipment) NULLS FIRST, week`,
     );
 
-    const exerciseMap = new Map<string, ProgressiveOverloadObservation[]>();
+    const exerciseMap = new Map<string, Map<string | null, ProgressiveOverloadObservation[]>>();
     for (const row of rows) {
-      const observations = exerciseMap.get(row.exercise_name) ?? [];
+      const equipmentMap = exerciseMap.get(row.exercise_name) ?? new Map();
+      const observations = equipmentMap.get(row.equipment) ?? [];
       observations.push({ week: row.week, totalVolumeKg: row.weekly_volume });
-      exerciseMap.set(row.exercise_name, observations);
+      equipmentMap.set(row.equipment, observations);
+      exerciseMap.set(row.exercise_name, equipmentMap);
     }
 
     return Array.from(exerciseMap.entries())
-      .filter(([, observations]) => observations.length >= 2)
-      .map(([exerciseName, observations]) => new ProgressiveOverload(exerciseName, observations));
+      .flatMap(([exerciseName, equipmentMap]) =>
+        Array.from(equipmentMap.entries())
+          .filter(([, observations]) => observations.length >= 2)
+          .map(([equipment, observations]) => ({
+            identity: { exerciseName, equipment },
+            observations,
+          })),
+      )
+      .sort((a, b) => {
+        return (
+          a.identity.exerciseName.localeCompare(b.identity.exerciseName) ||
+          (a.identity.equipment ?? "").localeCompare(b.identity.equipment ?? "")
+        );
+      })
+      .map(({ identity, observations }) => new ProgressiveOverload(identity, observations));
   }
 
-  /** Exercises and sets across an activity group, resolved through any member. */
+  /** Exercises and source-aware deduplicated sets for one resolved activity group. */
   async getExercisesForActivity(activityId: string): Promise<ExerciseWithSets[]> {
     const rows = await executeWithSchema(
       this.#db,
       exerciseSetRowSchema,
       sql`SELECT
-            ss.activity_id,
+            ss.activity_id::text AS member_activity_id,
+            member.provider_id AS member_provider_id,
+            COALESCE(dp.priority, pp.priority, 100) AS source_priority,
             e.name AS exercise_name,
             e.equipment,
             e.muscle_groups,
@@ -470,43 +661,94 @@ export class StrengthRepository {
           FROM fitness.v_activity a
           JOIN fitness.strength_set ss ON ss.activity_id = ANY(a.member_activity_ids)
           JOIN fitness.exercise e ON e.id = ss.exercise_id
-          WHERE ${activityId}::uuid = ANY(a.member_activity_ids)
+          JOIN fitness.activity member ON member.id = ss.activity_id
+          LEFT JOIN fitness.provider_priority pp ON pp.provider_id = member.provider_id
+          LEFT JOIN LATERAL (
+            SELECT dp2.priority
+            FROM fitness.device_priority dp2
+            WHERE dp2.provider_id = member.provider_id
+              AND member.source_name LIKE dp2.source_name_pattern
+            ORDER BY
+              LENGTH(dp2.source_name_pattern) DESC,
+              dp2.priority ASC,
+              dp2.source_name_pattern ASC
+            LIMIT 1
+          ) dp ON true
+          WHERE (
+              a.id = ${activityId}::uuid
+              OR ${activityId}::uuid = ANY(a.member_activity_ids)
+            )
             AND a.user_id = ${this.#userId}
-          ORDER BY ss.activity_id, ss.exercise_index, ss.set_index`,
+          ORDER BY
+            LOWER(REGEXP_REPLACE(TRIM(e.name), '[[:space:]]+', ' ', 'g')),
+            LOWER(REGEXP_REPLACE(TRIM(COALESCE(e.equipment, '')), '[[:space:]]+', ' ', 'g')),
+            COALESCE(dp.priority, pp.priority, 100),
+            ss.activity_id,
+            ss.exercise_index,
+            ss.set_index`,
     );
 
     const exerciseMap = new Map<
       string,
       {
-        activityId: string;
-        exerciseIndex: number;
+        identity: string;
         name: string;
         equipment: string | null;
         muscleGroups: string[] | null;
         exerciseType: string | null;
-        sets: SetDetail[];
+        metadataCompleteness: number;
+        metadataSourcePriority: number;
+        metadataMemberActivityId: string;
+        sets: Map<string, { detail: SetDetail; row: z.infer<typeof exerciseSetRowSchema> }>;
       }
     >();
     for (const row of rows) {
-      const key = `${row.activity_id}:${row.exercise_index}`;
-      let exercise = exerciseMap.get(key);
+      const identity = exerciseIdentity(row.exercise_name, row.equipment);
+      const resolvedMuscleGroups = resolveExerciseMuscleGroups(
+        row.exercise_name,
+        row.muscle_groups,
+      );
+      const resolvedExerciseType = resolveExerciseType(
+        row.exercise_name,
+        row.muscle_groups,
+        row.exercise_type,
+      );
+      const metadataCompleteness =
+        (resolvedMuscleGroups && resolvedMuscleGroups.length > 0 ? 1 : 0) +
+        (resolvedExerciseType ? 1 : 0);
+      let exercise = exerciseMap.get(identity);
       if (!exercise) {
         exercise = {
-          activityId: row.activity_id,
-          exerciseIndex: row.exercise_index,
+          identity,
           name: row.exercise_name,
           equipment: row.equipment,
-          muscleGroups: resolveExerciseMuscleGroups(row.exercise_name, row.muscle_groups),
-          exerciseType: resolveExerciseType(
-            row.exercise_name,
-            row.muscle_groups,
-            row.exercise_type,
-          ),
-          sets: [],
+          muscleGroups: resolvedMuscleGroups,
+          exerciseType: resolvedExerciseType,
+          metadataCompleteness,
+          metadataSourcePriority: row.source_priority,
+          metadataMemberActivityId: row.member_activity_id,
+          sets: new Map(),
         };
-        exerciseMap.set(key, exercise);
+        exerciseMap.set(identity, exercise);
+      } else if (
+        isPreferredSource(
+          metadataCompleteness,
+          row.source_priority,
+          row.member_activity_id,
+          exercise.metadataCompleteness,
+          exercise.metadataSourcePriority,
+          exercise.metadataMemberActivityId,
+        )
+      ) {
+        exercise.name = row.exercise_name;
+        exercise.equipment = row.equipment;
+        exercise.muscleGroups = resolvedMuscleGroups;
+        exercise.exerciseType = resolvedExerciseType;
+        exercise.metadataCompleteness = metadataCompleteness;
+        exercise.metadataSourcePriority = row.source_priority;
+        exercise.metadataMemberActivityId = row.member_activity_id;
       }
-      exercise.sets.push({
+      const detail = {
         setIndex: row.set_index,
         setType: row.set_type,
         weightKg: row.weight_kg,
@@ -514,21 +756,30 @@ export class StrengthRepository {
         durationSeconds: row.duration_seconds,
         rpe: row.rpe,
         notes: row.notes,
-      });
+      };
+      const signature = setSignature(detail);
+      const current = exercise.sets.get(signature);
+      if (!current || isPreferredSet(row, current.row)) {
+        exercise.sets.set(signature, { detail, row });
+      }
     }
 
-    return Array.from(exerciseMap.values()).map(
-      (exercise) =>
-        new ExerciseWithSets(
-          exercise.exerciseIndex,
-          exercise.name,
-          exercise.equipment,
-          exercise.muscleGroups,
-          exercise.exerciseType,
-          exercise.sets,
-          exercise.activityId,
-        ),
-    );
+    return Array.from(exerciseMap.values())
+      .sort((left, right) => compareStrings(left.identity, right.identity))
+      .map(
+        (exercise, exerciseIndex) =>
+          new ExerciseWithSets(
+            exerciseIndex,
+            exercise.name,
+            exercise.equipment,
+            exercise.muscleGroups,
+            exercise.exerciseType,
+            Array.from(exercise.sets.values())
+              .map(({ detail }) => detail)
+              .sort(compareSets),
+            exercise.metadataMemberActivityId,
+          ),
+      );
   }
 
   /** Recent workout summaries. */
@@ -537,15 +788,17 @@ export class StrengthRepository {
     const rows = await executeWithSchema(
       this.#db,
       summaryRowSchema,
-      sql`SELECT
+      sql`${this.#dedupedStrengthSets(days)}
+          SELECT
             (a.started_at AT TIME ZONE ${this.#timezone})::date::text AS date,
             a.name,
-            COUNT(DISTINCT ss.exercise_id) FILTER (WHERE ss.set_type = 'working')::int AS exercise_count,
-            COUNT(ss.id) FILTER (WHERE ss.set_type = 'working')::int AS total_sets,
+            COUNT(DISTINCT (ss.normalized_exercise_name, ss.normalized_equipment))
+              FILTER (WHERE ss.set_type = 'working')::int AS exercise_count,
+            COUNT(*) FILTER (WHERE ss.set_type = 'working')::int AS total_sets,
             COALESCE(SUM(ss.weight_kg * ss.reps) FILTER (WHERE ss.set_type = 'working'), 0)::real AS total_volume_kg,
             ROUND(EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60)::int AS duration_minutes
           FROM fitness.v_activity a
-          LEFT JOIN fitness.strength_set ss ON ss.activity_id = ANY(a.member_activity_ids)
+          LEFT JOIN deduped_strength_sets ss ON ss.group_activity_id = a.id
           WHERE a.user_id = ${this.#userId}
             AND a.canonical_type = 'strength'
             ${rangeFilter}
@@ -566,6 +819,67 @@ export class StrengthRepository {
         }),
     );
   }
+}
+
+type ExerciseSetRow = z.infer<typeof exerciseSetRowSchema>;
+
+function normalizedIdentityPart(value: string | null): string {
+  return (value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function exerciseIdentity(exerciseName: string, equipment: string | null): string {
+  return JSON.stringify([normalizedIdentityPart(exerciseName), normalizedIdentityPart(equipment)]);
+}
+
+function setSignature(set: SetDetail): string {
+  return JSON.stringify([set.setType, set.setIndex, set.weightKg, set.reps, set.durationSeconds]);
+}
+
+function setCompleteness(row: ExerciseSetRow): number {
+  return (row.rpe !== null ? 1 : 0) + (row.notes?.trim() ? 1 : 0);
+}
+
+function isPreferredSet(candidate: ExerciseSetRow, current: ExerciseSetRow): boolean {
+  return isPreferredSource(
+    setCompleteness(candidate),
+    candidate.source_priority,
+    candidate.member_activity_id,
+    setCompleteness(current),
+    current.source_priority,
+    current.member_activity_id,
+  );
+}
+
+function isPreferredSource(
+  candidateCompleteness: number,
+  candidatePriority: number,
+  candidateMemberActivityId: string,
+  currentCompleteness: number,
+  currentPriority: number,
+  currentMemberActivityId: string,
+): boolean {
+  if (candidateCompleteness !== currentCompleteness) {
+    return candidateCompleteness > currentCompleteness;
+  }
+  if (candidatePriority !== currentPriority) return candidatePriority < currentPriority;
+  return compareStrings(candidateMemberActivityId, currentMemberActivityId) < 0;
+}
+
+function compareSets(left: SetDetail, right: SetDetail): number {
+  return (
+    left.setIndex - right.setIndex ||
+    compareStrings(left.setType ?? "", right.setType ?? "") ||
+    (left.weightKg ?? Number.NEGATIVE_INFINITY) - (right.weightKg ?? Number.NEGATIVE_INFINITY) ||
+    (left.reps ?? Number.NEGATIVE_INFINITY) - (right.reps ?? Number.NEGATIVE_INFINITY) ||
+    (left.durationSeconds ?? Number.NEGATIVE_INFINITY) -
+      (right.durationSeconds ?? Number.NEGATIVE_INFINITY)
+  );
+}
+
+function compareStrings(left: string, right: string): number {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
 }
 
 function resolveExerciseMuscleGroups(

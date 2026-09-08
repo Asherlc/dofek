@@ -1,5 +1,6 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { reconcileActivityGroups } from "../db/activity-group-reconciliation.ts";
 import type { Database } from "../db/index.ts";
 import {
   appendProcessingStageEvent,
@@ -20,6 +21,10 @@ const operationId = "10000000-0000-4000-8000-000000000001";
 const userId = "10000000-0000-4000-8000-000000000002";
 const occurredAt = new Date("2026-07-22T18:00:00.000Z");
 const dialect = new PgDialect();
+
+vi.mock("../db/activity-group-reconciliation.ts", () => ({
+  reconcileActivityGroups: vi.fn().mockResolvedValue(undefined),
+}));
 
 function operationRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -98,8 +103,9 @@ function expectedEvent(overrides: Record<string, unknown> = {}) {
 function makeDatabase(responses: unknown[][]) {
   const execute = vi.fn(async () => responses.shift() ?? []);
   const database: Database = Object.assign(Object.create(null), { execute });
-  database.transaction = vi.fn(async (callback) => callback(database));
-  return { database, execute };
+  const transaction: Database = Object.assign(Object.create(null), { execute });
+  database.transaction = vi.fn(async (callback) => callback(transaction));
+  return { database, transaction, execute };
 }
 
 function compiledCall(execute: CallableVitestMock, callIndex: number) {
@@ -109,6 +115,7 @@ function compiledCall(execute: CallableVitestMock, callIndex: number) {
 describe("processing event store", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(reconcileActivityGroups).mockReset().mockResolvedValue(undefined);
   });
 
   it("creates and maps a new processing operation", async () => {
@@ -375,7 +382,8 @@ describe("processing event store", () => {
       source_watermark: "0/16B6C51",
       idempotency_key: "cdc:sync-1:activity",
     });
-    const { database, execute } = makeDatabase([
+    const { database, transaction, execute } = makeDatabase([
+      [{ user_id: userId }],
       [{ source_watermark: "0/16B6C51" }],
       [],
       [commit],
@@ -390,7 +398,16 @@ describe("processing event store", () => {
       idempotencyKey: "sync-1",
     });
 
-    expect(compiledCall(execute, 4).params).toEqual([
+    expect(reconcileActivityGroups).toHaveBeenCalledWith(transaction, userId);
+    expect(compiledCall(execute, 0).params).toEqual([operationId]);
+    expect(compiledCall(execute, 1).sql).toContain("pg_current_wal_lsn()");
+    expect(vi.mocked(reconcileActivityGroups).mock.invocationCallOrder[0]).toBeGreaterThan(
+      execute.mock.invocationCallOrder[0] ?? 0,
+    );
+    expect(vi.mocked(reconcileActivityGroups).mock.invocationCallOrder[0]).toBeLessThan(
+      execute.mock.invocationCallOrder[1] ?? 0,
+    );
+    expect(compiledCall(execute, 5).params).toEqual([
       operationId,
       "activity",
       "dofek_fitness_raw_analytics",
@@ -416,6 +433,65 @@ describe("processing event store", () => {
       }),
     ).rejects.toThrow("Dataset body does not define relational output");
   });
+
+  it("does not publish a watermark, commit, or outbox event when grouping fails", async () => {
+    const error = new Error("Activity grouping failed");
+    vi.mocked(reconcileActivityGroups).mockRejectedValueOnce(error);
+    const { database, execute } = makeDatabase([[{ user_id: userId }]]);
+    await expect(
+      recordRelationalCanonicalCommits(database, {
+        operationId,
+        datasetKeys: ["activity"],
+        idempotencyKey: "failed-grouping",
+      }),
+    ).rejects.toBe(error);
+    expect(execute).toHaveBeenCalledOnce();
+  });
+
+  it("records non-activity relational commits without looking up a user or reconciling groups", async () => {
+    const { database, execute } = makeDatabase([
+      [{ source_watermark: "0/16B6C53" }],
+      [],
+      [
+        eventRow({
+          dataset_key: "nutrition",
+          stage: "canonical_commit",
+          output_path: "relational",
+        }),
+      ],
+      [
+        eventRow({
+          dataset_key: "nutrition",
+          stage: "cdc",
+          output_path: "relational",
+          status: "queued",
+        }),
+      ],
+    ]);
+    await recordRelationalCanonicalCommits(database, {
+      operationId,
+      datasetKeys: ["nutrition"],
+      idempotencyKey: "nutrition-commit",
+    });
+    expect(compiledCall(execute, 0).sql).toContain("pg_current_wal_lsn()");
+    expect(reconcileActivityGroups).not.toHaveBeenCalled();
+  });
+
+  it.each([{ rows: [] }, { rows: [{ user_id: null }] }])(
+    "rejects activity commits without an operation user: %j",
+    async ({ rows }) => {
+      const { database, execute } = makeDatabase([rows]);
+      await expect(
+        recordRelationalCanonicalCommits(database, {
+          operationId,
+          datasetKeys: ["activity"],
+          idempotencyKey: "missing-user",
+        }),
+      ).rejects.toThrow(/user/);
+      expect(execute).toHaveBeenCalledOnce();
+      expect(reconcileActivityGroups).not.toHaveBeenCalled();
+    },
+  );
 
   it("records metric batch evidence for every emitted dataset", async () => {
     const activityCommit = eventRow({

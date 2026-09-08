@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
   assertActivityIntegrityRebuild,
+  clickHouseSourceRowSchema,
   type DerivedSnapshot,
   incompatibleMemberCount,
   queryClickHouseRows,
@@ -424,6 +425,58 @@ describe("UInt64 parsing", () => {
   });
 });
 
+describe("ClickHouse source timestamp parsing", () => {
+  it("interprets unzoned DateTime64 JSON values as UTC and preserves zoned inputs", () => {
+    const unzoned = clickHouseSourceRowSchema.parse({
+      ...sourceRowA,
+      started_at: "2026-09-01 14:55:54.123456",
+      ended_at: "2026-09-01 15:25:54.123456",
+    });
+    const zoned = clickHouseSourceRowSchema.parse({
+      ...sourceRowA,
+      started_at: "2026-09-01T14:55:54.123Z",
+      ended_at: "2026-09-01T15:25:54.123Z",
+    });
+
+    expect(unzoned.started_at?.toISOString()).toBe("2026-09-01T14:55:54.123Z");
+    expect(unzoned.ended_at?.toISOString()).toBe("2026-09-01T15:25:54.123Z");
+    expect(zoned.started_at?.toISOString()).toBe("2026-09-01T14:55:54.123Z");
+    expect(zoned.ended_at?.toISOString()).toBe("2026-09-01T15:25:54.123Z");
+  });
+
+  it("accepts only Date objects, offset ISO timestamps, and the exact ClickHouse shape", () => {
+    for (const [timestamp, expected] of [
+      ["2026-09-01 14:55:54", "2026-09-01T14:55:54.000Z"],
+      ["2026-09-01 14:55:54.12", "2026-09-01T14:55:54.120Z"],
+      ["2026-09-01T16:55:54+02:00", "2026-09-01T14:55:54.000Z"],
+    ] as const) {
+      const parsed = clickHouseSourceRowSchema.parse({ ...sourceRowA, started_at: timestamp });
+      expect(parsed.started_at.toISOString()).toBe(expected);
+    }
+
+    const date = new Date("2026-09-01T14:55:54.123Z");
+    expect(clickHouseSourceRowSchema.parse({ ...sourceRowA, started_at: date }).started_at).toEqual(
+      date,
+    );
+
+    for (const timestamp of [
+      " 2026-09-01 14:55:54",
+      "2026-09-01 14:55:54 UTC",
+      "6-09-01 14:55:54",
+      "abcd-09-01 14:55:54",
+      "2026-9-01 14:55:54",
+      "2026-09-1 14:55:54",
+      "2026-09-01 4:55:54",
+      "2026-09-01 14:5:54",
+      "2026-09-01 14:55:4",
+    ]) {
+      expect(() =>
+        clickHouseSourceRowSchema.parse({ ...sourceRowA, started_at: timestamp }),
+      ).toThrow("started_at");
+    }
+  });
+});
+
 describe("incompatibleMemberCount", () => {
   const dedupedRow = {
     activity_id: activityA,
@@ -729,6 +782,31 @@ describe("waitForPostgresMirror", () => {
     expect(query).toHaveBeenCalledTimes(2);
     expect(query.mock.calls[0]?.[0].query_params).toEqual({ userId, activityIds: [activityA] });
     expect(sleep).toHaveBeenCalledWith(3);
+  });
+
+  it("accepts explicit ClickHouse nulls when optional audit evidence is absent", async () => {
+    const query = vi.fn().mockResolvedValue({
+      json: async () => [
+        {
+          ...mirrored,
+          rejected_provider_timezone: null,
+          rejected_provider_start_utc_offset_minutes: null,
+          rejected_provider_end_utc_offset_minutes: null,
+        },
+      ],
+    });
+    const sleep = vi.fn(async () => undefined);
+    const monotonicNow = vi.fn().mockReturnValueOnce(0).mockReturnValueOnce(10);
+
+    await waitForPostgresMirror({ query }, userId, [repaired], {
+      cdcReadinessTimeoutMs: 10,
+      cdcReadinessPollIntervalMs: 3,
+      monotonicNow,
+      sleep,
+    });
+
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
   });
 
   it.each([

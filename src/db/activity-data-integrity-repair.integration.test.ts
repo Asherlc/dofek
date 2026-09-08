@@ -205,22 +205,22 @@ async function seedPostgres(context: TestContext): Promise<void> {
   `);
   await context.db.execute(sql`
     INSERT INTO fitness.activity (
-      id, provider_id, user_id, external_id, canonical_type, provider_type,
+      id, group_id, provider_id, user_id, external_id, canonical_type, provider_type,
       started_at, ended_at, timezone, start_utc_offset_minutes,
       end_utc_offset_minutes, local_time_source
     ) VALUES
       (
-        ${wahooActivityId}::uuid, 'wahoo', ${TEST_USER_ID}::uuid, 'wahoo-ride',
+        ${wahooActivityId}::uuid, ${wahooActivityId}::uuid, 'wahoo', ${TEST_USER_ID}::uuid, 'wahoo-ride',
         'other', 'workout', '2026-09-01T14:50:00Z', '2026-09-01T15:30:00Z',
         NULL, NULL, NULL, 'unknown'
       ),
       (
-        ${pelotonActivityId}::uuid, 'peloton', ${TEST_USER_ID}::uuid, 'peloton-ride',
+        ${pelotonActivityId}::uuid, ${pelotonActivityId}::uuid, 'peloton', ${TEST_USER_ID}::uuid, 'peloton-ride',
         'cycling', 'cycling', '2026-09-01T14:55:54Z', '2026-09-01T15:25:54Z',
         'Etc/GMT+4', -300, -300, 'provider_timezone'
       ),
       (
-        ${namedZoneActivityId}::uuid, 'wahoo', ${TEST_USER_ID}::uuid, 'named-zone-ride',
+        ${namedZoneActivityId}::uuid, ${pelotonActivityId}::uuid, 'wahoo', ${TEST_USER_ID}::uuid, 'named-zone-ride',
         'cycling', 'cycling', '2026-09-01T15:00:00Z', '2026-09-01T15:30:00Z',
         'America/New_York', -420, -420, 'provider_timezone'
       )
@@ -267,7 +267,8 @@ async function seedProductionDbtFixture(
       deleted_at Nullable(DateTime64(6, 'UTC')),
       _peerdb_is_deleted UInt8,
       _peerdb_synced_at DateTime64(9, 'UTC'),
-      _peerdb_version UInt64
+      _peerdb_version UInt64,
+      group_id UUID
     ) ENGINE = ReplacingMergeTree(_peerdb_version) ORDER BY id`,
     `CREATE TABLE ${database}.provider_priority (
       provider_id String,
@@ -293,14 +294,26 @@ async function seedProductionDbtFixture(
       source_type Nullable(String),
       source_metric_stream_id Nullable(UUID),
       measurement_kind LowCardinality(String),
+      source_activity_id Nullable(UUID),
       refresh_version UInt64,
       is_deleted UInt8,
       refreshed_at DateTime64(9, 'UTC')
     ) ENGINE = ReplacingMergeTree(refresh_version)
       ORDER BY (user_id, channel, recorded_date, recorded_at)`,
     `CREATE TABLE ${database}.metric_stream (
-      user_id UUID,
+      id UUID,
       activity_id Nullable(UUID),
+      user_id UUID,
+      recorded_at DateTime64(9, 'UTC'),
+      provider_id String,
+      channel String,
+      point Point,
+      external_id Nullable(String),
+      device_id Nullable(String),
+      source_type Nullable(String),
+      metadata String,
+      ingested_at DateTime64(9, 'UTC'),
+      version UInt64,
       is_deleted UInt8
     ) ENGINE = ReplacingMergeTree()
       ORDER BY (user_id, activity_id)
@@ -315,12 +328,46 @@ async function seedProductionDbtFixture(
       is_deleted UInt8,
       refreshed_at DateTime64(9, 'UTC')
     ) ENGINE = ReplacingMergeTree(refresh_version) ORDER BY (user_id, activity_id)`,
+    `CREATE TABLE ${database}.body_measurement_sample (
+      user_id UUID,
+      channel String,
+      _peerdb_synced_at DateTime64(9, 'UTC')
+    ) ENGINE = ReplacingMergeTree() ORDER BY user_id`,
+    `CREATE TABLE ${database}.body_measurement (
+      user_id UUID,
+      recorded_at DateTime64(6, 'UTC'),
+      weight_kg Nullable(Float64),
+      is_deleted UInt8
+    ) ENGINE = ReplacingMergeTree() ORDER BY (user_id, recorded_at)`,
+    `CREATE TABLE ${database}.user_profile (
+      id UUID,
+      _peerdb_synced_at DateTime64(9, 'UTC')
+    ) ENGINE = ReplacingMergeTree() ORDER BY id`,
+    `CREATE TABLE ${database}.user_profile_current (
+      id UUID,
+      max_hr Nullable(Int32)
+    ) ENGINE = MergeTree ORDER BY id`,
+    `CREATE TABLE ${database}.resting_heart_rate_sleep_window (
+      user_id UUID,
+      ended_at Nullable(DateTime64(6, 'UTC')),
+      resting_hr Nullable(Int32),
+      is_deleted UInt8,
+      refreshed_at DateTime64(9, 'UTC')
+    ) ENGINE = ReplacingMergeTree() ORDER BY (user_id, ended_at)
+      SETTINGS allow_nullable_key = 1`,
     `INSERT INTO ${database}.deduped_sensor VALUES
       (
         '${TEST_USER_ID}', toDateTime64('2026-09-01 15:10:00', 6, 'UTC'),
         toDate('2026-09-01'), 'heart_rate', 150, 'wahoo', '${wahooActivityId}',
         NULL, 'heart-rate-1', 'activity', '10000000-0000-0000-0000-000000000001',
-        'direct', 1, 0,
+        'direct', '${wahooActivityId}', 1, 0,
+        toDateTime64('2026-09-02 17:00:00', 9, 'UTC')
+      ),
+      (
+        '${TEST_USER_ID}', toDateTime64('2026-09-01 15:15:00', 6, 'UTC'),
+        toDate('2026-09-01'), 'heart_rate', 145, 'peloton', '${pelotonActivityId}',
+        NULL, 'heart-rate-2', 'activity', '10000000-0000-0000-0000-000000000002',
+        'direct', '${pelotonActivityId}', 1, 0,
         toDateTime64('2026-09-02 17:00:00', 9, 'UTC')
       )`,
     `INSERT INTO ${database}.activity VALUES
@@ -329,28 +376,28 @@ async function seedProductionDbtFixture(
         'workout', NULL, toDateTime64('2026-09-01 14:50:00', 6, 'UTC'),
         toDateTime64('2026-09-01 15:30:00', 6, 'UTC'), NULL, 'Wahoo ride', NULL,
         NULL, NULL, NULL, 'unknown', NULL, NULL, NULL, '{}', NULL, NULL, 0,
-        toDateTime64('2026-09-02 17:00:00', 9, 'UTC'), 1
+        toDateTime64('2026-09-02 17:00:00', 9, 'UTC'), 1, '${wahooActivityId}'
       ),
       (
         '${pelotonActivityId}', 'peloton', '${TEST_USER_ID}', 'peloton-ride', 'cycling',
         'cycling', 'indoor', toDateTime64('2026-09-01 14:55:54', 6, 'UTC'),
         toDateTime64('2026-09-01 15:25:54', 6, 'UTC'), NULL, 'Peloton ride', NULL,
         'Etc/GMT+4', -300, -300, 'provider_timezone', NULL, NULL, NULL, '{}', NULL, NULL, 0,
-        toDateTime64('2026-09-02 17:00:00', 9, 'UTC'), 1
+        toDateTime64('2026-09-02 17:00:00', 9, 'UTC'), 1, '${pelotonActivityId}'
       ),
       (
         '${namedZoneActivityId}', 'wahoo', '${TEST_USER_ID}', 'named-zone-ride', 'cycling',
         'cycling', NULL, toDateTime64('2026-09-01 15:00:00', 6, 'UTC'),
         toDateTime64('2026-09-01 15:30:00', 6, 'UTC'), NULL, 'Named zone ride', NULL,
         'America/New_York', -420, -420, 'provider_timezone', NULL, NULL, NULL, '{}', NULL, NULL, 0,
-        toDateTime64('2026-09-02 17:00:00', 9, 'UTC'), 1
+        toDateTime64('2026-09-02 17:00:00', 9, 'UTC'), 1, '${pelotonActivityId}'
       ),
       (
         '${unrelatedActivityId}', 'wahoo', '${TEST_USER_ID}', 'unrelated-ride', 'cycling',
         'cycling', NULL, toDateTime64('2026-08-01 16:00:00', 6, 'UTC'),
         toDateTime64('2026-08-01 17:00:00', 6, 'UTC'), NULL, 'Unrelated ride', NULL,
         'America/New_York', -240, -240, 'provider_timezone', NULL, NULL, NULL, '{}', NULL, NULL, 0,
-        toDateTime64('2026-09-02 17:00:00', 9, 'UTC'), 1
+        toDateTime64('2026-09-02 17:00:00', 9, 'UTC'), 1, '${unrelatedActivityId}'
       )`,
   ];
   for (const statement of statements) await client.command({ query: statement });

@@ -16,6 +16,7 @@ import { ProgressiveOverloadCards } from "./ProgressiveOverloadCards.tsx";
 
 const evidence = {
   exerciseName: "Back Squat",
+  equipment: "BARBELL",
   observations: [
     { week: "2026-01-05", totalVolumeKg: 4_800 },
     { week: "2026-01-19", totalVolumeKg: 5_100 },
@@ -46,6 +47,30 @@ const evidence = {
 } satisfies ProgressiveOverloadRow;
 
 describe("ProgressiveOverloadCards", () => {
+  it("visibly distinguishes same-name equipment variants without changing ordinary labels", () => {
+    render(
+      <ProgressiveOverloadCards
+        exercises={[
+          { ...evidence, exerciseName: "Chest Press", equipment: "FREE-WEIGHT" },
+          { ...evidence, exerciseName: "Chest Press", equipment: "FREE_WEIGHT" },
+          { ...evidence, exerciseName: "Back Squat", equipment: "BARBELL" },
+        ]}
+      />,
+    );
+
+    expect(screen.getAllByText("Chest Press (Free Weight)")).toHaveLength(2);
+    const hyphenatedDiscriminator = screen.getByText("recorded as “FREE-WEIGHT”");
+    const underscoredDiscriminator = screen.getByText("recorded as “FREE_WEIGHT”");
+    expect(hyphenatedDiscriminator).toBeVisible();
+    expect(underscoredDiscriminator).toBeVisible();
+    expect(hyphenatedDiscriminator).toHaveClass("whitespace-normal", "break-words");
+    expect(underscoredDiscriminator).toHaveClass("whitespace-normal", "break-words");
+    expect(hyphenatedDiscriminator).not.toHaveClass("truncate");
+    expect(underscoredDiscriminator).not.toHaveClass("truncate");
+    expect(screen.getByText("Back Squat")).toBeVisible();
+    expect(screen.queryByText("Back Squat (Barbell)")).toBeNull();
+  });
+
   it("renders complete server-authored evidence without positive or negative status styling", () => {
     render(
       <ProgressiveOverloadCards

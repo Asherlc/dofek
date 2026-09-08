@@ -407,7 +407,7 @@ export class ClimbingRepository extends BaseRepository {
             WHERE attempt.climbing_entry_id = ce.id
           ) AS detail ON true
           WHERE a.user_id = ${this.userId}::uuid
-            AND ${activityId}::uuid = ANY(a.member_activity_ids)
+            AND a.id = ${activityId}::uuid
             ${this.timestampAccessPredicate(sql`a.started_at`)}`,
     );
     return rows

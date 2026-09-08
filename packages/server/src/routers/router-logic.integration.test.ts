@@ -1388,6 +1388,7 @@ describe("Router transformation logic", () => {
   // ══════════════════════════════════════════════════════════════
   describe("intervals detect", () => {
     let intervalActivityId: string;
+    let intervalActivityGroupId: string;
 
     beforeAll(async () => {
       // Create an activity with distinct intensity changes for interval detection
@@ -1404,11 +1405,12 @@ describe("Router transformation logic", () => {
             ON CONFLICT DO NOTHING`,
       );
 
-      const activityRows = await testCtx.db.execute(
-        sql`SELECT id FROM fitness.activity WHERE external_id = 'interval-detect-1' AND provider_id = 'test-provider'`,
+      const activityRows = await testCtx.db.execute<{ id: string; group_id: string }>(
+        sql`SELECT id, group_id FROM fitness.activity WHERE external_id = 'interval-detect-1' AND provider_id = 'test-provider'`,
       );
-      const firstRow: { id: string } = activityRows[0];
+      const firstRow = activityRows[0];
       intervalActivityId = firstRow.id;
+      intervalActivityGroupId = firstRow.group_id;
 
       const intervalMetricStreamRows: ClickHouseMetricStreamSeedRow[] = [];
       for (let minute = 0; minute < 40; minute++) {
@@ -1460,7 +1462,7 @@ describe("Router transformation logic", () => {
 
     it("detects intervals from intensity changes", async () => {
       const { status, result } = await query("intervals.detect", {
-        activityId: intervalActivityId,
+        activityId: intervalActivityGroupId,
       });
       expect(status).toBe(200);
       const intervals = result.result.data;

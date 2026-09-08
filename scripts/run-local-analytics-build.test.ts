@@ -41,7 +41,6 @@ describe("runLocalAnalyticsBuild", () => {
         json: async () => [
           {
             scalar_begin: "2025-02-03",
-            location_begin: "2025-04-05",
           },
         ],
       })),
@@ -67,14 +66,14 @@ describe("runLocalAnalyticsBuild", () => {
       "--profiles-dir",
       "analytics",
       "--vars",
-      '{"sensor_scalar_sample_begin":"2025-02-03","deduped_sensor_begin":"2025-02-03","activity_sensor_sample_begin":"2025-02-03","activity_location_sample_begin":"2025-04-05"}',
+      '{"sensor_scalar_sample_begin":"2025-02-03","deduped_sensor_begin":"2025-02-03","activity_sensor_sample_begin":"2025-02-03"}',
     ]);
   });
 
   it("fails when dbt exits unsuccessfully", async () => {
     const clickHouse: AnalyticsMicrobatchQueryClient = {
       query: vi.fn(async () => ({
-        json: async () => [{ scalar_begin: null, location_begin: null }],
+        json: async () => [{ scalar_begin: null }],
       })),
     };
 

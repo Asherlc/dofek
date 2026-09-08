@@ -150,7 +150,7 @@ tombstone_rows AS (
         ON activity_summary.activity_id = existing_hiking_activity.activity_id
         AND activity_summary.user_id = existing_hiking_activity.user_id
     CROSS JOIN refresh_clock
-    WHERE activity_summary.activity_id IS NULL
+    WHERE activity_summary.activity_id IS null
 )
 {% endif %}
 

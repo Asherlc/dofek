@@ -4,6 +4,7 @@ import {
   boolean,
   check,
   date,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -198,10 +199,49 @@ export const climbingAttempt = fitness.table(
 // Cardio / endurance activities
 // ============================================================
 
+export const activityGroup = fitness.table(
+  "activity_group",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .$defaultFn(resolveImplicitUserId)
+      .references(() => userProfile.id),
+    anchorActivityId: uuid("anchor_activity_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("activity_group_user_id_idx").on(table.userId, table.id)],
+);
+
+export const activityGroupAlias = fitness.table(
+  "activity_group_alias",
+  {
+    aliasId: uuid("alias_id").primaryKey(),
+    groupId: uuid("group_id").notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .$defaultFn(resolveImplicitUserId)
+      .references(() => userProfile.id),
+    reason: text("reason").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      name: "activity_group_alias_user_group_fk",
+      columns: [table.userId, table.groupId],
+      foreignColumns: [activityGroup.userId, activityGroup.id],
+    }),
+    index("activity_group_alias_user_group_idx").on(table.userId, table.groupId),
+    check("activity_group_alias_not_self", sql`${table.aliasId} <> ${table.groupId}`),
+    check("activity_group_alias_reason", sql`${table.reason} = 'merge'`),
+  ],
+);
+
 export const activity = fitness.table(
   "activity",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    groupId: uuid("group_id").notNull().defaultRandom(),
     providerId: text("provider_id")
       .notNull()
       .references(() => provider.id),
@@ -243,6 +283,13 @@ export const activity = fitness.table(
       table.externalId,
     ),
     index("activity_user_provider_idx").on(table.userId, table.providerId),
+    index("activity_user_group_idx").on(table.userId, table.groupId),
+    // Migration 0110 defers this FK so the AFTER INSERT trigger can create the group.
+    foreignKey({
+      name: "activity_user_group_fk",
+      columns: [table.userId, table.groupId],
+      foreignColumns: [activityGroup.userId, activityGroup.id],
+    }),
     check(
       "activity_local_time_context_check",
       sql`(

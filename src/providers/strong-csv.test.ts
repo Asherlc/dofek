@@ -392,6 +392,72 @@ describe("importStrongCsv", () => {
     ]);
   });
 
+  it("keeps September 3 machine weights and repetitions in their source columns", async () => {
+    const csv = [
+      "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Distance,Seconds,RPE",
+      '2026-09-03 07:43:53,"Deadlift ",47m,"Deadlift (Barbell)",W,65.0,10.0,0,0.0,',
+      '2026-09-03 07:43:53,"Deadlift ",47m,"Seated Leg Curl (Machine)",1,140.0,11.0,0,0.0,',
+      '2026-09-03 07:43:53,"Deadlift ",47m,"Seated Leg Curl (Machine)",2,140.0,8.0,0,0.0,',
+      '2026-09-03 07:43:53,"Deadlift ",47m,"Seated Leg Curl (Machine)",3,140.0,7.0,0,0.0,',
+      '2026-09-03 07:43:53,"Deadlift ",47m,"Leg Extension (Machine)",1,140.0,8.0,0,0.0,',
+    ].join("\n");
+    const parsedMachineSets = parseStrongCsv(csv)[0]?.sets.slice(1);
+
+    expect(parsedMachineSets).toEqual([
+      expect.objectContaining({ exerciseName: "Seated Leg Curl (Machine)", weight: 140, reps: 11 }),
+      expect.objectContaining({ exerciseName: "Seated Leg Curl (Machine)", weight: 140, reps: 8 }),
+      expect.objectContaining({ exerciseName: "Seated Leg Curl (Machine)", weight: 140, reps: 7 }),
+      expect.objectContaining({ exerciseName: "Leg Extension (Machine)", weight: 140, reps: 8 }),
+    ]);
+
+    const execute = vi.fn().mockResolvedValue([
+      {
+        alias_exercise_id: "00000000-0000-4000-8000-000000000001",
+        exercise_id: "00000000-0000-4000-8000-000000000001",
+        source_linked: true,
+      },
+    ]);
+    const activityValues = vi.fn().mockReturnValue({
+      onConflictDoUpdate: vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([{ id: "activity-1" }]),
+      }),
+    });
+    const strengthSetValues = vi.fn().mockResolvedValue(undefined);
+    const insert = vi
+      .fn()
+      .mockReturnValueOnce({ values: activityValues })
+      .mockReturnValueOnce({ values: strengthSetValues })
+      .mockReturnValueOnce({
+        values: vi.fn().mockReturnValue({
+          onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+        }),
+      });
+    const db = withTransaction({
+      execute,
+      insert,
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([{ id: "exercise-1" }]),
+          }),
+        }),
+      }),
+    });
+
+    await runWithProviderIngestContext({ homeTimezone: "America/Los_Angeles" }, () =>
+      Reflect.apply(importStrongCsv, undefined, [db, csv, "user-1", "lbs", "America/Los_Angeles"]),
+    );
+
+    expect(strengthSetValues).toHaveBeenCalledWith([
+      expect.objectContaining({ exerciseIndex: 0, weightKg: 29.483, reps: 10 }),
+      expect.objectContaining({ exerciseIndex: 1, weightKg: 63.503, reps: 11 }),
+      expect.objectContaining({ exerciseIndex: 1, weightKg: 63.503, reps: 8 }),
+      expect.objectContaining({ exerciseIndex: 1, weightKg: 63.503, reps: 7 }),
+      expect.objectContaining({ exerciseIndex: 2, weightKg: 63.503, reps: 8 }),
+    ]);
+  });
+
   it("does not replace prior sets when the activity upsert returns no row", async () => {
     const deleteRows = vi.fn();
     const db = withTransaction({

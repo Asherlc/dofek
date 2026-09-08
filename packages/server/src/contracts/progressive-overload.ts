@@ -25,6 +25,7 @@ export const progressiveOverloadUncertaintySchema = z.discriminatedUnion("availa
 
 export const progressiveOverloadRowSchema = z.object({
   exerciseName: z.string(),
+  equipment: z.string().nullable(),
   observations: z.array(
     z.object({
       week: z.iso.date(),

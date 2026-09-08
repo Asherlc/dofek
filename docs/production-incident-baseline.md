@@ -25229,6 +25229,103 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Confirm the replacement Metro Bundle job and
   complete PR workflow pass on the fix commit.
 
+## 2026-09-07 — Activity representative changes hid payloads and changed public IDs
+
+- **Status:** Durable source fix and synthetic regression coverage implemented;
+  production deployment and bounded historical refresh remain pending.
+- **Symptoms / user impact:** Representative re-evaluation could hide structured
+  or sensor payloads and change the public activity ID. Previously returned IDs
+  could then resolve silently to a different record, so saved references and
+  ID-keyed fixtures could change meaning without an explicit redirect signal.
+- **Evidence / root cause:** Canonical identity and hydration were coupled to the
+  selected member: provider-priority re-evaluation could change the public ID,
+  and structured/sensor fields were read from that member instead of combined
+  across persisted group membership. A separately observed strength-set column
+  transposition could not be reproduced by current parser and persistence
+  regression fixtures, which preserve weight and repetition columns
+  independently. Attribution to the historical writer or migration is unknown.
+- **Direct fix:** PostgreSQL now owns a persisted stable group identity and
+  explicit member/historical aliases. Representative selection ranks payload,
+  type specificity, provider refinement, then provider priority, while
+  structured and deduplicated sensor/location hydration unions group members.
+  Member or alias resolution exposes `resolved_from`; structured sets retain
+  member provenance and exact mirrors are deduplicated without treating provider-local
+  indexes as group-global identities. Verified catalogue aliases were added for
+  unambiguous exercise names; ambiguous or absent catalogue names remain null.
+- **Validation:** A synthetic no-mock MCP integration fixture uses real
+  PostgreSQL and ClickHouse current schemas to model grouped activities with
+  equal-richness, disjoint structured payloads on two members and sensor data on
+  a third member. It changes only provider priority before reconciliation and
+  refresh, then re-fetches stable/member/alias IDs, parses the response through
+  `activityDetailsOutputSchema`, and preserves both structured payloads, the
+  third-member sensor summary, specific activity classification, and the set of
+  populated fields. An overlapping sample attributed to a member of another
+  group is excluded, so timestamp coincidence cannot satisfy the sensor-union
+  assertion. The executable ClickHouse fixture preserves nullable
+  `source_activity_id`, applies current-member/null-provenance sample mapping,
+  and ranks representatives with source-attributed sensor evidence. During local
+  validation, the first fatal read-model error was `Active activity is missing
+  persisted group identity`; the shared test mirror omitted `group_id`. After
+  adding that required column, the real cross-store visibility suite passed
+  5/5. The calendar unit suite separately failed 26/61 because its mock still
+  recognized raw `fitness.activity` member visibility; aligning the fixture with
+  canonical `fitness.v_activity` group IDs restored 61/61. An earlier local
+  analytics bootstrap failed because the workspace schema lacked `ingest`;
+  running the documented fresh-database setup restored the current schema. A
+  direct Vitest invocation without the repository wrapper also failed fast on
+  missing `TEST_DATABASE_URL`, as designed; the integration wrapper supplied the
+  isolated workspace services.
+- **Remaining risk / follow-up:** Deploy the schema, reconciliation, read-model,
+  repository, and MCP changes together; run a bounded historical reconciliation
+  and dependency-ordered ClickHouse refresh; then verify affected IDs through
+  direct, member, and alias lookups. Inspect raw persisted source sets before
+  deciding whether any provider re-import is warranted. Historical writer
+  attribution remains unknown, and the already tracked repeated tombstone append
+  for unchanged payload-free activity streams remains assigned to the final
+  branch fix pass.
+
+## 2026-09-08 — Broad activity power-curve fixture exhausted local ClickHouse memory
+
+- **Status:** Resolved. Root cause fixed in test infrastructure; focused and
+  whole-branch real-database verification pass from clean workspace state.
+- **Symptoms / user impact:** `pnpm test:changed:all` lost its ClickHouse
+  connection during `router-logic.integration.test.ts`; downstream router tests
+  failed or skipped, ClickHouse restarted twice, and subsequent `docker ps` and
+  `docker inspect` calls hung. This blocks final local whole-branch verification
+  but does not affect a deployed environment.
+- **Evidence / root cause:** The first test fatal was `ECONNRESET: socket hang
+  up`. Docker Desktop's VM log recorded cgroup OOM-kill telemetry at the same
+  timestamps as both ClickHouse restarts, including reaping the ClickHouse
+  process IDs. After the approved Docker restart, a clean unchanged rerun
+  failed loudly in `activity-power-curve-read-model.integration.test.ts` with
+  ClickHouse code 241, `MEMORY_LIMIT_EXCEEDED`; the server reported 1.02 GiB
+  resident memory and an effective 998.22 MiB dynamic hard limit. Query logs
+  identified the fixture's repeated unrelated `v_sleep` rebuild as the first
+  stopped query. The test created one generic activity store, invoked eight
+  generic syncs, and used a seed helper that also invoked the generic sync; each
+  path rebuilt all 29 analytics models even though the test consumes only the
+  power-curve dependency closure. The repeated broad fixture rebuilds retained
+  enough ClickHouse memory that the subsequent power-curve query could not fit.
+  macOS reported 57% memory free, so host memory exhaustion was not observed.
+- **Direct fix:** Added a dedicated power-curve test-store creation and sync
+  path that rebuilds only sensor scalar/deduplication, `v_activity`, deduped
+  activities, activity sensor samples and summaries, and activity summary. The
+  suite now inserts metric samples without triggering the generic broad rebuild,
+  then explicitly runs the narrow sync. No timeout, retry, memory-limit increase,
+  skipped test, production query rewrite, or test-concurrency change was added.
+- **Validation:** The TDD regression failed because the dedicated creator did
+  not exist, then the helper unit suite passed 8/8. From a clean workspace
+  ClickHouse process, the real power-curve integration suite passed 8/8 in
+  14.07 seconds; an independent review reran it 8/8 in 10.84 seconds, passed
+  server typecheck, and found no blocking issues. After removing only this
+  workspace's disposable Compose state, `pnpm test:changed:all` passed 434 test
+  files and 7,779 tests in 459.87 seconds while ClickHouse remained healthy.
+  Migration 0078 separately passes 3/3, and the repaired activity integration
+  slice passes 119/119.
+- **Remaining risk / follow-up:** No local ClickHouse resource change is
+  warranted. Deployment and the bounded historical activity refresh remain the
+  feature-level follow-up.
+
 ## 2026-09-07 — Zepp capture PR failed security, dead-code, and mutation gates
 
 - **Status:** Resolved. The final replacement workflow passed all 113 checks.

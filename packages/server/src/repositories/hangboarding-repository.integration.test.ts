@@ -5,6 +5,7 @@ import { setupTestDatabase, type TestContext } from "../../../../src/db/test-hel
 import { HangboardingRepository } from "./hangboarding-repository.ts";
 
 describe("HangboardingRepository integration", () => {
+  const groupedActivityId = "2fd151b9-75fb-4ff8-98a4-c1881df78561";
   let testContext: TestContext;
   let firstActivityId: string;
   let nonHangboardingActivityId: string;
@@ -128,17 +129,17 @@ describe("HangboardingRepository integration", () => {
 
     const groupedActivities = await testContext.db.execute<{ id: string; external_id: string }>(
       sql`INSERT INTO fitness.activity (
-            provider_id, user_id, external_id, canonical_type, provider_type,
+            group_id, provider_id, user_id, external_id, canonical_type, provider_type,
             started_at, ended_at, name, raw
           ) VALUES
           (
-            'hangboarding-repository-test', ${TEST_USER_ID}, 'hangboard-repository-grouped-hangten',
+            ${groupedActivityId}::uuid, 'hangboarding-repository-test', ${TEST_USER_ID}, 'hangboard-repository-grouped-hangten',
             'hangboard', 'Hang Ten', CURRENT_TIMESTAMP - INTERVAL '40 days',
             CURRENT_TIMESTAMP - INTERVAL '40 days' + INTERVAL '10 minutes', 'Grouped Hang Ten',
             '{"hangTen":{"sessionId":"grouped-session","planName":"Grouped Hang Ten","boardName":"Tension Board"}}'::jsonb
           ),
           (
-            'hangboarding-repository-other', ${TEST_USER_ID}, 'hangboard-repository-grouped-other',
+            ${groupedActivityId}::uuid, 'hangboarding-repository-other', ${TEST_USER_ID}, 'hangboard-repository-grouped-other',
             'hangboard', 'Other Hangboard', CURRENT_TIMESTAMP - INTERVAL '40 days',
             CURRENT_TIMESTAMP - INTERVAL '40 days' + INTERVAL '20 minutes', 'Grouped Other',
             '{"avgHeartRate":200,"maxHeartRate":210}'::jsonb

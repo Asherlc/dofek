@@ -61,24 +61,24 @@ describe("AnalyticalTrainingLoadRepository database semantics", () => {
     `);
     await postgres.db.execute(sql`
       INSERT INTO fitness.activity (
-        id, provider_id, user_id, external_id, canonical_type, provider_type,
+        id, group_id, provider_id, user_id, external_id, canonical_type, provider_type,
         started_at, ended_at, perceived_exertion, raw
       ) VALUES
-        (${cyclingActivityId}::uuid, ${providerId}, ${userId}::uuid, 'ride-primary',
+        (${cyclingActivityId}::uuid, ${cyclingActivityId}::uuid, ${providerId}, ${userId}::uuid, 'ride-primary',
           'cycling', 'cycling', '2026-06-15T15:00:00Z', '2026-06-15T16:00:00Z', 5, '{}'::jsonb),
-        (${duplicateCyclingActivityId}::uuid, ${duplicateProviderId}, ${userId}::uuid,
+        (${duplicateCyclingActivityId}::uuid, ${cyclingActivityId}::uuid, ${duplicateProviderId}, ${userId}::uuid,
           'ride-duplicate', 'cycling', 'cycling', '2026-06-15T15:00:00Z',
           '2026-06-15T16:00:00Z', 5, '{}'::jsonb),
-        (${climbingActivityId}::uuid, ${providerId}, ${userId}::uuid, 'climb',
+        (${climbingActivityId}::uuid, ${climbingActivityId}::uuid, ${providerId}, ${userId}::uuid, 'climb',
           'climbing', 'rock_climbing', '2026-06-15T18:00:00Z',
           '2026-06-15T19:30:00Z', NULL, '{}'::jsonb),
-        (${fingerActivityId}::uuid, ${providerId}, ${userId}::uuid, 'finger',
+        (${fingerActivityId}::uuid, ${fingerActivityId}::uuid, ${providerId}, ${userId}::uuid, 'finger',
           'hangboard', 'strength_training', '2026-06-15T20:00:00Z',
           '2026-06-15T20:15:00Z', NULL, '{}'::jsonb),
-        (${strengthActivityId}::uuid, ${providerId}, ${userId}::uuid, 'strength',
+        (${strengthActivityId}::uuid, ${strengthActivityId}::uuid, ${providerId}, ${userId}::uuid, 'strength',
           'strength', 'strength_training', '2026-06-15T22:00:00Z',
           '2026-06-15T23:00:00Z', NULL, '{}'::jsonb),
-        (${unrelatedActivityId}::uuid, ${providerId}, ${userId}::uuid, 'walk',
+        (${unrelatedActivityId}::uuid, ${unrelatedActivityId}::uuid, ${providerId}, ${userId}::uuid, 'walk',
           'walking', 'walking', '2026-06-16T15:00:00Z',
           '2026-06-16T16:00:00Z', NULL, '{}'::jsonb)
     `);

@@ -10,14 +10,39 @@ describe("activity_vo2max_estimate model", () => {
     expect(currentActivitySql).toMatch(/canonical_type IN \([\s\S]*'running'[\s\S]*\)/);
   });
 
-  it("reads bounded raw activity rows instead of the full deduping activity view", () => {
+  it("publishes stable group ids from deduped activities", () => {
+    const activityGroupStateSql = extractCteSql(modelSql, "activity_group_state");
     const currentActivitySql = extractCteSql(modelSql, "current_activity");
 
-    expect(currentActivitySql).toContain("source('postgres_fitness', 'activity')");
-    expect(currentActivitySql).toMatch(
-      /WHERE _peerdb_is_deleted = 0\s+AND provider_absent_at IS null\s+AND deleted_at IS null/,
-    );
+    expect(activityGroupStateSql).toContain("ref('deduped_activities')");
+    expect(activityGroupStateSql).toContain("member_activity_ids");
+    expect(activityGroupStateSql).toContain("refreshed_at");
+    expect(currentActivitySql).toContain("activity_id");
+    expect(currentActivitySql).toContain("WHERE activity_group_state.is_deleted = 0");
     expect(currentActivitySql).not.toContain("analytics.v_activity");
+  });
+
+  it("dirties prior and current stable groups from explicit repair scope", () => {
+    const scopedDirtyKeysSql = extractCteSql(modelSql, "scoped_activity_dirty_keys");
+
+    expect(scopedDirtyKeysSql).toContain("activity_group_state.group_activity_id");
+    expect(scopedDirtyKeysSql).toContain("hasAny(activity_group_state.member_activity_ids");
+    expect(scopedDirtyKeysSql).toContain("existing_estimate.activity_id");
+    expect(modelSql).toContain("{% if activity_refresh_scoped %}");
+  });
+
+  it("maps changed raw members through persisted group identity", () => {
+    const changedRawActivitySql = extractCteSql(modelSql, "changed_raw_activity");
+    const sourceDirtyKeysSql = extractCteSql(modelSql, "activity_source_dirty_keys");
+
+    expect(changedRawActivitySql).toContain("group_id AS activity_id");
+    expect(changedRawActivitySql).not.toMatch(/^\s*id AS activity_id/m);
+    expect(sourceDirtyKeysSql).toContain(
+      "changed_raw_activity.activity_id = current_activity.activity_id",
+    );
+    expect(sourceDirtyKeysSql).not.toContain(
+      "changed_raw_activity.id = current_activity.activity_id",
+    );
   });
 
   it("emits one deterministic ACSM estimate per activity", () => {

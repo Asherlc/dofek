@@ -714,7 +714,7 @@ describe("ClimbingRepository", () => {
       });
     });
 
-    it("queries entries through deduped activity members", async () => {
+    it("hydrates all members from the already-resolved stable activity group", async () => {
       const { repo, execute } = makeRepository([]);
 
       await repo.getActivityEntries("activity-1");
@@ -726,7 +726,7 @@ describe("ClimbingRepository", () => {
       expect(text).toContain("jsonb_agg");
       expect(text).toContain("ce.raw->>'ascentType'");
       expect(text).toContain("ce.lead");
-      expect(text).toContain("ANY(a.member_activity_ids)");
+      expect(text).toContain("a.id = ");
       expect(text).toContain("a.user_id = ");
       expect(text).toContain("ORDER BY");
     });

@@ -32,19 +32,20 @@ export function registerActivityDetailsTool(server: McpServer, context: DofekMcp
       );
       const activity = await activityRepository.findById(activity_id);
       if (!activity) throw new Error("Activity not found.");
+      const stableGroupId = activity.id;
       const [strengthExercises, climbingEntries, fingerLoading] = await Promise.all([
         new StrengthRepository(
           context.db,
           context.userId,
           context.timezone,
-        ).getExercisesForActivity(activity_id),
+        ).getExercisesForActivity(stableGroupId),
         new ClimbingRepository(context.db, context.userId, context.timezone, {
           kind: "full",
           paid: true,
           reason: "paid_grant",
-        }).getActivityEntries(activity_id),
+        }).getActivityEntries(stableGroupId),
         readFingerLoadingActivity({
-          activityId: activity_id,
+          activityId: stableGroupId,
           database: context.db,
           userId: context.userId,
         }),
