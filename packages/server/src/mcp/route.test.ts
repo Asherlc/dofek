@@ -1222,6 +1222,7 @@ describe("createMcpRouter", () => {
     expect(captureException).toHaveBeenCalledWith(cacheError, {
       tags: { mcp_tool: "log_injury", operation: "cache_invalidation" },
     });
+    expect(toolTestMocks.subjectiveCreateInjury).toHaveBeenCalledTimes(1);
   });
 
   it("rejects injury logging when the body region is unknown", async () => {

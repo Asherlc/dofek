@@ -25741,8 +25741,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   patch behind the SDK 57 compatibility set. Expo documents this command as a
   dependency-version validation check
   ([Expo CLI](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation)).
-- **Direct fix:** Pin those three packages to the current compatible stable
-  patches: 57.0.21, 57.0.17, and 57.0.20, respectively. No retry, timeout,
+- **Direct fix:** Pin those three packages to the compatible stable patches
+  available on September 8, 2026: 57.0.21, 57.0.17, and 57.0.20, respectively.
+  No retry, timeout,
   compatibility exclusion, or CI bypass was added.
 - **Validation / follow-up:** The exact dependency check and both CI-equivalent
   iOS export commands pass locally. Require fresh green CI before merging the
