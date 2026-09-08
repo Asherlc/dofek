@@ -1,8 +1,7 @@
 import { formatDateMedium } from "@dofek/format/format";
 import { formatMeasurementText, type UnitConverter } from "@dofek/format/units";
 import {
-  ambiguousStrengthExerciseNames,
-  strengthExerciseDisplayLabel,
+  strengthExerciseDisplayLabels,
   strengthExerciseIdentityKey,
 } from "@dofek/training/training";
 import type { ProgressiveOverloadRow } from "dofek-server/types";
@@ -72,7 +71,7 @@ export function ProgressiveOverloadCards({
   loading = false,
   units,
 }: ProgressiveOverloadCardsProps) {
-  const ambiguousNames = ambiguousStrengthExerciseNames(exercises);
+  const exerciseLabels = strengthExerciseDisplayLabels(exercises);
   return (
     <View style={styles.section}>
       <Text style={styles.title}>Exercise Volume Trends</Text>
@@ -81,9 +80,9 @@ export function ProgressiveOverloadCards({
         <Text style={styles.empty}>No exercise volume trends in this period</Text>
       ) : null}
       {!loading
-        ? exercises.map((exercise) => {
+        ? exercises.map((exercise, exerciseIndex) => {
             const interval = intervalLabel(exercise, units);
-            const exerciseLabel = strengthExerciseDisplayLabel(exercise, ambiguousNames);
+            const exerciseLabel = exerciseLabels[exerciseIndex] ?? exercise.exerciseName;
             return (
               <View
                 key={strengthExerciseIdentityKey(exercise)}

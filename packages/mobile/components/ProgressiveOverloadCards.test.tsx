@@ -42,18 +42,22 @@ describe("ProgressiveOverloadCards", () => {
     render(
       <ProgressiveOverloadCards
         exercises={[
-          { ...evidence, exerciseName: "Chest Press", equipment: "BARBELL" },
-          { ...evidence, exerciseName: "Chest Press", equipment: "DUMBBELL" },
+          { ...evidence, exerciseName: "Chest Press", equipment: "FREE-WEIGHT" },
+          { ...evidence, exerciseName: "Chest Press", equipment: "FREE_WEIGHT" },
         ]}
         loading={false}
         units={new UnitConverter("metric")}
       />,
     );
 
-    expect(screen.getByText("Chest Press (Barbell)")).toBeTruthy();
-    expect(screen.getByText("Chest Press (Dumbbell)")).toBeTruthy();
-    expect(screen.getByLabelText(/^Chest Press \(Barbell\)\./)).toBeTruthy();
-    expect(screen.getByLabelText(/^Chest Press \(Dumbbell\)\./)).toBeTruthy();
+    expect(screen.getByText("Chest Press (Free Weight) — recorded as “FREE-WEIGHT”")).toBeTruthy();
+    expect(screen.getByText("Chest Press (Free Weight) — recorded as “FREE_WEIGHT”")).toBeTruthy();
+    expect(
+      screen.getByLabelText(/^Chest Press \(Free Weight\) — recorded as “FREE-WEIGHT”\./),
+    ).toBeTruthy();
+    expect(
+      screen.getByLabelText(/^Chest Press \(Free Weight\) — recorded as “FREE_WEIGHT”\./),
+    ).toBeTruthy();
   });
 
   it("renders complete server-authored evidence in one accessible exercise summary", () => {

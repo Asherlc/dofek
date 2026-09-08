@@ -75,28 +75,36 @@ describe("EstimatedMaxChart", () => {
           {
             ...firstExercise,
             exerciseName: "Chest Press",
-            equipment: "BARBELL",
+            equipment: "FREE-WEIGHT",
           },
           {
             ...secondExercise,
             exerciseName: "Chest Press",
-            equipment: "DUMBBELL",
+            equipment: "FREE_WEIGHT",
           },
         ]}
       />,
     );
 
-    const barbell = screen.getByRole("button", { name: "Chart Chest Press (Barbell)" });
-    const dumbbell = screen.getByRole("button", { name: "Chart Chest Press (Dumbbell)" });
-    expect(barbell).toHaveAttribute("aria-pressed", "true");
-    expect(dumbbell).toHaveAttribute("aria-pressed", "false");
-    expect(chartOption().series.at(0)?.name).toBe("Chest Press (Barbell)");
+    const hyphenated = screen.getByRole("button", {
+      name: "Chart Chest Press (Free Weight) — recorded as “FREE-WEIGHT”",
+    });
+    const underscored = screen.getByRole("button", {
+      name: "Chart Chest Press (Free Weight) — recorded as “FREE_WEIGHT”",
+    });
+    expect(hyphenated).toHaveAttribute("aria-pressed", "true");
+    expect(underscored).toHaveAttribute("aria-pressed", "false");
+    expect(chartOption().series.at(0)?.name).toBe(
+      "Chest Press (Free Weight) — recorded as “FREE-WEIGHT”",
+    );
 
-    fireEvent.click(dumbbell);
+    fireEvent.click(underscored);
 
-    expect(barbell).toHaveAttribute("aria-pressed", "false");
-    expect(dumbbell).toHaveAttribute("aria-pressed", "true");
-    expect(chartOption().series.at(0)?.name).toBe("Chest Press (Dumbbell)");
+    expect(hyphenated).toHaveAttribute("aria-pressed", "false");
+    expect(underscored).toHaveAttribute("aria-pressed", "true");
+    expect(chartOption().series.at(0)?.name).toBe(
+      "Chest Press (Free Weight) — recorded as “FREE_WEIGHT”",
+    );
     expect(screen.getByText("5.0 kg")).toBeVisible();
   });
 

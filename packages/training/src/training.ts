@@ -30,8 +30,7 @@ export function strengthExerciseIdentityKey(identity: StrengthExerciseIdentity):
   return JSON.stringify([identity.exerciseName, identity.equipment]);
 }
 
-/** Names that require equipment to distinguish multiple returned series. */
-export function ambiguousStrengthExerciseNames(
+function ambiguousStrengthExerciseNames(
   identities: readonly StrengthExerciseIdentity[],
 ): ReadonlySet<string> {
   const seen = new Set<string>();
@@ -50,17 +49,98 @@ function equipmentDisplayLabel(equipment: string | null): string {
       .toLowerCase()
       .split(/[_\s-]+/)
       .filter(Boolean) ?? [];
-  if (words.length === 0) return "Unspecified equipment";
+  if (words.length === 0) return "Unspecified Equipment";
   return words.map((word) => `${word[0]?.toUpperCase() ?? ""}${word.slice(1)}`).join(" ");
 }
 
-/** Human label that adds equipment only when the exercise name is ambiguous. */
-export function strengthExerciseDisplayLabel(
+function strengthExerciseDisplayLabel(
   identity: StrengthExerciseIdentity,
   namesRequiringEquipment: ReadonlySet<string>,
 ): string {
   if (!namesRequiringEquipment.has(identity.exerciseName)) return identity.exerciseName;
   return `${identity.exerciseName} (${equipmentDisplayLabel(identity.equipment)})`;
+}
+
+function losslessEquipmentDiscriminator(equipment: string | null): string {
+  return equipment === null ? "recorded without equipment" : `recorded as “${equipment}”`;
+}
+
+function indexesByLabel(labels: readonly string[]): ReadonlyMap<string, number[]> {
+  const indexes = new Map<string, number[]>();
+  labels.forEach((label, index) => {
+    indexes.set(label, [...(indexes.get(label) ?? []), index]);
+  });
+  return indexes;
+}
+
+function compareStableText(left: string, right: string): number {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
+}
+
+function compareStrengthExerciseIdentity(
+  left: StrengthExerciseIdentity,
+  right: StrengthExerciseIdentity,
+): number {
+  const nameOrder = compareStableText(left.exerciseName, right.exerciseName);
+  if (nameOrder !== 0) return nameOrder;
+  if (left.equipment === right.equipment) return 0;
+  if (left.equipment === null) return -1;
+  if (right.equipment === null) return 1;
+  return compareStableText(left.equipment, right.equipment);
+}
+
+/**
+ * Allocate concise, deterministic labels for strength identities rendered together.
+ * Readable labels stay unchanged unless they collide; collisions gain the lossless
+ * recorded equipment value, with a stable ordinal only for a second-order collision.
+ */
+export function strengthExerciseDisplayLabels(
+  identities: readonly StrengthExerciseIdentity[],
+): readonly string[] {
+  const ambiguousNames = ambiguousStrengthExerciseNames(identities);
+  const readableLabels = identities.map((identity) =>
+    strengthExerciseDisplayLabel(identity, ambiguousNames),
+  );
+  const readableGroups = indexesByLabel(readableLabels);
+  const discriminatedLabels = readableLabels.map((label, index) => {
+    const matchingIndexes = readableGroups.get(label) ?? [];
+    if (matchingIndexes.length < 2) return label;
+    const identity = identities[index];
+    if (!identity) return label;
+    return `${label} — ${losslessEquipmentDiscriminator(identity.equipment)}`;
+  });
+  const discriminatedGroups = indexesByLabel(discriminatedLabels);
+  const allocatedLabels = [...discriminatedLabels];
+  const usedLabels = new Set(
+    [...discriminatedGroups].filter(([, indexes]) => indexes.length === 1).map(([label]) => label),
+  );
+  const collisionGroups = [...discriminatedGroups]
+    .filter(([, indexes]) => indexes.length > 1)
+    .sort(([left], [right]) => compareStableText(left, right));
+
+  for (const [label, indexes] of collisionGroups) {
+    const sortedIndexes = [...indexes].sort((left, right) => {
+      const leftIdentity = identities[left];
+      const rightIdentity = identities[right];
+      if (!leftIdentity || !rightIdentity) return left - right;
+      return compareStrengthExerciseIdentity(leftIdentity, rightIdentity);
+    });
+    let variant = 1;
+    for (const index of sortedIndexes) {
+      let allocated = `${label} · variant ${variant}`;
+      while (usedLabels.has(allocated)) {
+        variant += 1;
+        allocated = `${label} · variant ${variant}`;
+      }
+      allocatedLabels[index] = allocated;
+      usedLabels.add(allocated);
+      variant += 1;
+    }
+  }
+
+  return allocatedLabels;
 }
 
 // ============================================================

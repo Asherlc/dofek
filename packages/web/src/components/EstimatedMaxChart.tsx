@@ -2,10 +2,9 @@ import { formatDateShort } from "@dofek/format/format";
 import { formatMeasurementText } from "@dofek/format/units";
 import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
 import {
-  ambiguousStrengthExerciseNames,
   isSameStrengthExercise,
   type StrengthExerciseIdentity,
-  strengthExerciseDisplayLabel,
+  strengthExerciseDisplayLabels,
   strengthExerciseIdentityKey,
 } from "@dofek/training/training";
 import type { EstimatedOneRepMaxRow } from "dofek-server/types";
@@ -27,15 +26,13 @@ export function EstimatedMaxChart({ exercises, loading }: EstimatedMaxChartProps
       ? { exerciseName: exercises[0].exerciseName, equipment: exercises[0].equipment }
       : null,
   );
-  const ambiguousNames = ambiguousStrengthExerciseNames(exercises);
+  const exerciseLabels = strengthExerciseDisplayLabels(exercises);
   const selectedExercise =
     exercises.find(
       (exercise) => selectedIdentity && isSameStrengthExercise(exercise, selectedIdentity),
     ) ?? exercises[0];
   const selectedExerciseIndex = selectedExercise ? exercises.indexOf(selectedExercise) : 0;
-  const selectedExerciseLabel = selectedExercise
-    ? strengthExerciseDisplayLabel(selectedExercise, ambiguousNames)
-    : null;
+  const selectedExerciseLabel = exerciseLabels[selectedExerciseIndex] ?? null;
   const series = selectedExercise
     ? [
         {
@@ -79,8 +76,8 @@ export function EstimatedMaxChart({ exercises, loading }: EstimatedMaxChartProps
       {exercises.length > 1 ? (
         <fieldset className="mb-3 flex flex-wrap gap-2">
           <legend className="sr-only">Choose an exercise to chart</legend>
-          {exercises.map((exercise) => {
-            const label = strengthExerciseDisplayLabel(exercise, ambiguousNames);
+          {exercises.map((exercise, exerciseIndex) => {
+            const label = exerciseLabels[exerciseIndex] ?? exercise.exerciseName;
             const isSelected = selectedExercise
               ? isSameStrengthExercise(exercise, selectedExercise)
               : false;

@@ -51,15 +51,15 @@ describe("ProgressiveOverloadCards", () => {
     render(
       <ProgressiveOverloadCards
         exercises={[
-          { ...evidence, exerciseName: "Chest Press", equipment: "BARBELL" },
-          { ...evidence, exerciseName: "Chest Press", equipment: "DUMBBELL" },
+          { ...evidence, exerciseName: "Chest Press", equipment: "FREE-WEIGHT" },
+          { ...evidence, exerciseName: "Chest Press", equipment: "FREE_WEIGHT" },
           { ...evidence, exerciseName: "Back Squat", equipment: "BARBELL" },
         ]}
       />,
     );
 
-    expect(screen.getByText("Chest Press (Barbell)")).toBeVisible();
-    expect(screen.getByText("Chest Press (Dumbbell)")).toBeVisible();
+    expect(screen.getByText("Chest Press (Free Weight) — recorded as “FREE-WEIGHT”")).toBeVisible();
+    expect(screen.getByText("Chest Press (Free Weight) — recorded as “FREE_WEIGHT”")).toBeVisible();
     expect(screen.getByText("Back Squat")).toBeVisible();
     expect(screen.queryByText("Back Squat (Barbell)")).toBeNull();
   });

@@ -18,8 +18,82 @@ import {
   RIDE_WITH_GPS_ACTIVITY_TYPE_MAP,
   STRAVA_ACTIVITY_TYPE_MAP,
   selectRecentDailyLoad,
+  strengthExerciseDisplayLabels,
   WAHOO_WORKOUT_TYPE_MAP,
 } from "./training";
+
+describe("strength exercise display labels", () => {
+  const separatorVariants = [
+    { exerciseName: "Chest Press", equipment: "FREE-WEIGHT" },
+    { exerciseName: "Chest Press", equipment: "FREE_WEIGHT" },
+    { exerciseName: "Chest Press", equipment: "FREE WEIGHT" },
+  ];
+
+  function labelsFor(
+    identities: readonly { exerciseName: string; equipment: string | null }[],
+  ): readonly string[] {
+    return strengthExerciseDisplayLabels(identities);
+  }
+
+  it("keeps separator-distinct equipment identities readable and unique", () => {
+    const labels = labelsFor(separatorVariants);
+
+    expect(labels).toEqual([
+      "Chest Press (Free Weight) — recorded as “FREE-WEIGHT”",
+      "Chest Press (Free Weight) — recorded as “FREE_WEIGHT”",
+      "Chest Press (Free Weight) — recorded as “FREE WEIGHT”",
+    ]);
+    expect(new Set(labels)).toHaveLength(separatorVariants.length);
+  });
+
+  it("allocates the same identity labels after an input permutation", () => {
+    expect(labelsFor([...separatorVariants].reverse())).toEqual([
+      "Chest Press (Free Weight) — recorded as “FREE WEIGHT”",
+      "Chest Press (Free Weight) — recorded as “FREE_WEIGHT”",
+      "Chest Press (Free Weight) — recorded as “FREE-WEIGHT”",
+    ]);
+  });
+
+  it("keeps lossless discriminators from colliding with another readable label", () => {
+    const labels = labelsFor([
+      { exerciseName: "Chest Press", equipment: "FREE-WEIGHT" },
+      { exerciseName: "Chest Press", equipment: "FREE_WEIGHT" },
+      {
+        exerciseName: "Chest Press (Free Weight) — recorded as “FREE-WEIGHT”",
+        equipment: "CABLE",
+      },
+    ]);
+
+    expect(labels).toEqual([
+      "Chest Press (Free Weight) — recorded as “FREE-WEIGHT” · variant 1",
+      "Chest Press (Free Weight) — recorded as “FREE_WEIGHT”",
+      "Chest Press (Free Weight) — recorded as “FREE-WEIGHT” · variant 2",
+    ]);
+    expect(new Set(labels)).toHaveLength(3);
+  });
+
+  it("audibly distinguishes absent equipment from an equivalent recorded label", () => {
+    expect(
+      labelsFor([
+        { exerciseName: "Chest Press", equipment: null },
+        { exerciseName: "Chest Press", equipment: "UNSPECIFIED_EQUIPMENT" },
+      ]),
+    ).toEqual([
+      "Chest Press (Unspecified Equipment) — recorded without equipment",
+      "Chest Press (Unspecified Equipment) — recorded as “UNSPECIFIED_EQUIPMENT”",
+    ]);
+  });
+
+  it("keeps ordinary noncolliding labels concise", () => {
+    expect(
+      labelsFor([
+        { exerciseName: "Chest Press", equipment: "BARBELL" },
+        { exerciseName: "Chest Press", equipment: "DUMBBELL" },
+        { exerciseName: "Back Squat", equipment: "BARBELL" },
+      ]),
+    ).toEqual(["Chest Press (Barbell)", "Chest Press (Dumbbell)", "Back Squat"]);
+  });
+});
 
 // ============================================================
 // Canonical activity types

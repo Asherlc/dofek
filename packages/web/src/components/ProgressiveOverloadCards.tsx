@@ -1,8 +1,7 @@
 import { formatDateMedium } from "@dofek/format/format";
 import { formatMeasurementText, type UnitConverter } from "@dofek/format/units";
 import {
-  ambiguousStrengthExerciseNames,
-  strengthExerciseDisplayLabel,
+  strengthExerciseDisplayLabels,
   strengthExerciseIdentityKey,
 } from "@dofek/training/training";
 import type { ProgressiveOverloadRow } from "dofek-server/types";
@@ -37,7 +36,7 @@ function SparklineChart({ values }: { values: number[] }) {
 
 export function ProgressiveOverloadCards({ exercises, loading }: ProgressiveOverloadCardsProps) {
   const units = useUnitConverter();
-  const ambiguousNames = ambiguousStrengthExerciseNames(exercises);
+  const exerciseLabels = strengthExerciseDisplayLabels(exercises);
 
   if (loading || exercises.length === 0) {
     return (
@@ -53,10 +52,10 @@ export function ProgressiveOverloadCards({ exercises, loading }: ProgressiveOver
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-      {exercises.map((exercise) => (
+      {exercises.map((exercise, exerciseIndex) => (
         <div key={strengthExerciseIdentityKey(exercise)} className="card p-4">
           <div className="text-sm font-medium text-foreground truncate mb-2">
-            {strengthExerciseDisplayLabel(exercise, ambiguousNames)}
+            {exerciseLabels[exerciseIndex] ?? exercise.exerciseName}
           </div>
           <div className="text-xs text-muted mb-2">
             {trendLabel(exercise.trend)}{" "}
