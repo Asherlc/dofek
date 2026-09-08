@@ -10,6 +10,7 @@ import {
   fingerLoadingLateralitySchema,
 } from "../repositories/climbing-training-log-repository.ts";
 import { sourceReferenceSchema } from "./analytical-evidence.ts";
+import { analyticalTrainingLoadOutputSchema } from "./analytical-training-load-output.ts";
 import { cyclingTrainingMetricsOutputSchema } from "./cycling-training-metrics-output.ts";
 
 const nullableNumber = z.number().nullable();
@@ -907,23 +908,25 @@ const supplementSchema = z.object({
 });
 export const supplementsOutputSchema = jsonResult(z.array(supplementSchema));
 
-export const trainingLoadOutputSchema = jsonResult(
-  z.object({
-    range: rangeSchema,
-    rows: z.array(
-      z.object({
-        date: z.string(),
-        daily_load: z.number(),
-        acute_load_7d: z.number(),
-        chronic_load_28d: z.number(),
-        workload_ratio: nullableNumber,
-        coverage: z.object({
-          acute_window_days: z.number().int(),
-          chronic_window_days: z.number().int(),
-        }),
+const trainingLoadResultSchema = z.object({
+  range: rangeSchema,
+  rows: z.array(
+    z.object({
+      date: z.string(),
+      daily_load: z.number(),
+      acute_load_7d: z.number(),
+      chronic_load_28d: z.number(),
+      workload_ratio: nullableNumber,
+      coverage: z.object({
+        acute_window_days: z.number().int(),
+        chronic_window_days: z.number().int(),
       }),
-    ),
-  }),
+    }),
+  ),
+});
+export const trainingLoadOutputSchema = jsonResult(trainingLoadResultSchema);
+export const trainingLoadToolOutputSchema = jsonResult(
+  z.union([trainingLoadResultSchema, analyticalTrainingLoadOutputSchema.shape.result]),
 );
 
 export const mcpOutputSchemas = {
@@ -944,4 +947,5 @@ export const mcpOutputSchemas = {
   sleepSummary: sleepSummaryOutputSchema,
   subjectiveTimeline: subjectiveTimelineOutputSchema,
   thresholdHistory: thresholdHistoryOutputSchema,
+  trainingLoad: trainingLoadToolOutputSchema,
 };

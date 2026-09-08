@@ -804,6 +804,7 @@ describe("createMcpRouter", () => {
     });
     expect(findListedTool(tools, "get_training_load").inputSchema).toMatchObject({
       properties: {
+        detail: { enum: ["analytical"], type: "string" },
         end_date: { format: "date", type: "string" },
         start_date: { format: "date", type: "string" },
       },

@@ -198,6 +198,40 @@ coverage prerequisites are documented in
 [`@dofek/training`](../training/README.md#cycling-workout-metrics). Normalized power follows the
 [TrainingPeaks calculation](https://help.trainingpeaks.com/hc/en-us/articles/204071804-Normalized-Power).
 
+`get_training_load` preserves its original response when `detail` is omitted. With
+`detail: "analytical"`, it returns a complete daily date spine with six independent load channels:
+cycling power TSS, threshold-heart-rate weighted zone-minutes, session-RPE minutes, recorded
+climbing attempts, effective finger-load kg-seconds, and validated strength kg-reps. It never sums
+those units into a total: `total_daily_load.value` is explicitly `null` because cardiovascular,
+climbing, finger/tendon, and strength exposures are not biologically interchangeable.
+
+Power TSS is `elapsed_hours × (normalized_power / effective_FTP)² × 100`; FTP is resolved from the
+effective-dated history for each ride, and absent FTP or normalized power produces `null`, not zero.
+The heart-rate channel sums covered minutes in configured threshold-HR zones multiplied by the
+one-based zone number. Its weighting resembles Edwards-style zone load, but it is deliberately
+named `heart_rate_zone_load` because Dofek uses the athlete's configured threshold-HR boundaries,
+not Edwards' original fixed percentages of maximum HR. Sample spans are capped at ten seconds so
+dropouts are not silently treated as continuous exposure.
+
+Session-RPE load is session duration in minutes multiplied by recorded RPE, following Foster's
+method ([Foster 1998](https://pubmed.ncbi.nlm.nih.gov/9662690/)). Climbing load uses only recorded
+attempt counts; an entry without attempt information is missing rather than a failed attempt or
+zero. Finger load is `(bodyweight_kg + external_load_kg) × hold_seconds × set_count`, preserving
+signed assistance in `external_load_kg`. Strength volume includes non-warmup/non-rest sets only when
+weight is greater than zero and at most 500 kg and reps are 1–100. Excluded sets remain visible in
+coverage and anomaly counts rather than contaminating volume.
+
+Every channel reports source activity IDs/providers, supported versus contributing record counts,
+first observed date, and `available`, `partial`, `unavailable`, or `not_observed` state. Dates before
+source coverage are `null`; established rest/no-exposure days are measured as zero. Rolling values
+are calculated separately per channel: acute load is the complete seven-day sum, chronic load is
+the complete 28-day sum divided by four, and workload ratio is acute divided by chronic. Monotony is
+the seven-day mean divided by population standard deviation, and strain is the seven-day sum times
+monotony, matching the descriptive definitions in Foster's work. Zero variance returns `null`
+rather than infinity. These series expose formulas and evidence for analysis; they do not apply
+"risk zones" or diagnose injury. ACWR has substantial conceptual and causal limitations
+([Impellizzeri et al. 2020](https://pubmed.ncbi.nlm.nih.gov/32502973/)).
+
 
 ## Development
 
