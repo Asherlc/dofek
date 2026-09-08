@@ -1200,6 +1200,15 @@ entity "processing_stage_event" {
   idempotency_key : text
 }
 
+entity "human_food_nutrient_decision" {
+  target_id : uuid
+  identity_id : uuid
+  user_id : uuid
+  nutrient_id : text <<FK>>
+  operation : text
+  amount : real
+}
+
 entity "human_record_change" {
   * id : uuid <<PK>>
   --
@@ -1339,6 +1348,7 @@ user_profile ||--o{ processing_operation
 processing_operation ||--o{ processing_operation_output
 processing_operation ||--o{ processing_queue_outbox
 processing_operation ||--o{ processing_stage_event
+nutrient ||--o{ human_food_nutrient_decision
 user_profile ||--o{ human_record_change
 user_profile ||--o{ human_record_identity
 
