@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  createKafkaMetricStreamEventPublisherForRoute,
   createKafkaMetricStreamEventPublisherFromEnv,
   KafkaMetricStreamEventPublisher,
   type KafkaProducerLike,
@@ -330,23 +331,23 @@ describe("createKafkaMetricStreamEventPublisherFromEnv", () => {
   it("requires Redpanda brokers", async () => {
     await expect(
       createKafkaMetricStreamEventPublisherFromEnv({
-        METRIC_STREAM_TOPIC: "metric-stream-v1",
+        METRIC_STREAM_LIVE_TOPIC: "metric-stream-live-v1",
       }),
     ).rejects.toThrow("REDPANDA_BROKERS is required");
   });
 
-  it("requires a metric stream topic", async () => {
+  it("requires a live metric stream topic", async () => {
     await expect(
       createKafkaMetricStreamEventPublisherFromEnv({
         REDPANDA_BROKERS: "redpanda:9092",
       }),
-    ).rejects.toThrow("METRIC_STREAM_TOPIC is required");
+    ).rejects.toThrow("METRIC_STREAM_LIVE_TOPIC is required");
   });
 
   it("rejects broker lists that only contain separators and whitespace", async () => {
     await expect(
       createKafkaMetricStreamEventPublisherFromEnv({
-        METRIC_STREAM_TOPIC: "metric-stream-v1",
+        METRIC_STREAM_LIVE_TOPIC: "metric-stream-live-v1",
         REDPANDA_BROKERS: " , ",
       }),
     ).rejects.toThrow("REDPANDA_BROKERS must contain at least one broker");
@@ -358,7 +359,7 @@ describe("createKafkaMetricStreamEventPublisherFromEnv", () => {
     kafkaProducerConnect.mockClear();
 
     const publisher = await createKafkaMetricStreamEventPublisherFromEnv({
-      METRIC_STREAM_TOPIC: "metric-stream-v1",
+      METRIC_STREAM_LIVE_TOPIC: "metric-stream-live-v1",
       REDPANDA_BROKERS: " redpanda:9092 , redpanda:9093 ",
     });
 
@@ -369,5 +370,38 @@ describe("createKafkaMetricStreamEventPublisherFromEnv", () => {
     });
     expect(kafkaProducerFactory).toHaveBeenCalledOnce();
     expect(kafkaProducerConnect).toHaveBeenCalledOnce();
+  });
+
+  it("creates independent cached publishers for the configured metric-stream routes", async () => {
+    kafkaProducerConnect.mockClear();
+    kafkaProducerSend.mockClear();
+
+    const env = {
+      METRIC_STREAM_LIVE_TOPIC: "metric-stream-live-v1",
+      METRIC_STREAM_HISTORY_TOPIC: "metric-stream-history-v1",
+      REDPANDA_BROKERS: "redpanda:9092",
+    };
+    const historyPublisher = await createKafkaMetricStreamEventPublisherForRoute("history", env);
+    const repeatedHistoryPublisher = await createKafkaMetricStreamEventPublisherForRoute(
+      "history",
+      env,
+    );
+    const livePublisher = await createKafkaMetricStreamEventPublisherForRoute("live", env);
+
+    expect(repeatedHistoryPublisher).toBe(historyPublisher);
+    expect(livePublisher).not.toBe(historyPublisher);
+    expect(kafkaProducerConnect).toHaveBeenCalledOnce();
+
+    await historyPublisher.publishRows([metricStreamRow], { operationRevision });
+    await livePublisher.publishRows([metricStreamRow], { operationRevision });
+
+    expect(kafkaProducerSend).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ topic: "metric-stream-history-v1" }),
+    );
+    expect(kafkaProducerSend).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ topic: "metric-stream-live-v1" }),
+    );
   });
 });
