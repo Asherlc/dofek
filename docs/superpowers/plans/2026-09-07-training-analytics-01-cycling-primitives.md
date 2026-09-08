@@ -660,3 +660,10 @@ git push
 ## Review Checkpoint
 
 Stop after Task 7. Demonstrate the four acceptance queries for best 5/20/30/60-minute power over both 90 and 180 days against the authorized current dataset, including provenance, W/kg evidence, and missing-data reasons. Record any unavailable source stream or historical refresh requirement before writing or executing the threshold/workout/load plan.
+
+Checkpoint result: the currently deployed Dofek connector does not yet expose
+`get_cycling_power_curve`, so the authorized live dataset cannot be queried
+through this branch's interface. Deployment must include the new MCP tool and
+an explicit historical full refresh of `analytics.activity_power_curve` before
+the 90/180-day acceptance queries can be demonstrated. No live power or FTP
+result was inferred from the older aggregate-only tools.
