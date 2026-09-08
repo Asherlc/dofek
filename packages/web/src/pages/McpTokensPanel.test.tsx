@@ -27,6 +27,7 @@ const listTokensQuery: {
 };
 const createTokenMutateAsync = vi.fn();
 const revokeTokenMutateAsync = vi.fn();
+const updateScopesMutateAsync = vi.fn();
 const invalidateMcp = vi.fn();
 let createTokenMutationPending = false;
 let revokeTokenMutationPending = false;
@@ -60,6 +61,13 @@ vi.mock("../lib/trpc.ts", () => ({
           isPending: revokeTokenMutationPending,
         }),
       },
+      updateScopes: {
+        useMutation: () => ({
+          mutateAsync: updateScopesMutateAsync,
+          error: null,
+          isPending: false,
+        }),
+      },
     },
   },
 }));
@@ -72,6 +80,7 @@ describe("McpTokensPanel", () => {
     listTokensQuery.refetch.mockReset();
     createTokenMutateAsync.mockReset();
     revokeTokenMutateAsync.mockReset();
+    updateScopesMutateAsync.mockReset();
     invalidateMcp.mockReset();
     createTokenMutationPending = false;
     revokeTokenMutationPending = false;
@@ -397,6 +406,46 @@ describe("McpTokensPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Revoke Codex" }));
 
     expect(await screen.findByText("Token has already been revoked")).toBeTruthy();
+  });
+
+  it("edits scopes for an active token", async () => {
+    listTokensQuery.data = [
+      {
+        id: "00000000-0000-0000-0000-000000000001",
+        name: "Codex",
+        scopes: ["health:read"],
+        createdAt: "2026-05-20T12:00:00Z",
+        lastUsedAt: null,
+        expiresAt: null,
+        revokedAt: null,
+      },
+    ];
+    updateScopesMutateAsync.mockResolvedValueOnce({
+      id: "00000000-0000-0000-0000-000000000001",
+      name: "Codex",
+      scopes: ["health:read", "activity:read"],
+      createdAt: "2026-05-20T12:00:00Z",
+      lastUsedAt: null,
+      expiresAt: null,
+      revokedAt: null,
+    });
+
+    render(<McpTokensPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit scopes for Codex" }));
+    const activityScopes = screen.getAllByLabelText("Activity history");
+    const editableActivityScope = activityScopes[activityScopes.length - 1];
+    if (!editableActivityScope) throw new Error("Expected editable activity scope");
+    fireEvent.click(editableActivityScope);
+    fireEvent.click(screen.getByRole("button", { name: "Save scopes for Codex" }));
+
+    await waitFor(() => {
+      expect(updateScopesMutateAsync).toHaveBeenCalledWith({
+        tokenId: "00000000-0000-0000-0000-000000000001",
+        scopes: ["health:read", "activity:read"],
+      });
+    });
+    expect(invalidateMcp).toHaveBeenCalled();
   });
 
   it("shows revoked tokens without active-token actions", () => {

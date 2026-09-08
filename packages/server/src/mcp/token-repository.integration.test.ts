@@ -7,6 +7,7 @@ import {
   createMcpToken,
   listMcpTokens,
   revokeMcpToken,
+  updateMcpTokenScopes,
   validateMcpToken,
 } from "./token-repository.ts";
 
@@ -127,6 +128,26 @@ describe("MCP token repository (integration)", () => {
     });
 
     expect((await validateMcpToken(ctx.db, token))?.scopes).toEqual(["nutrition:read"]);
+  });
+
+  it("updates scopes without changing the bearer token", async () => {
+    const { token, metadata } = await createMcpToken(ctx.db, {
+      userId: testUserId,
+      name: "Editable",
+      scopes: ["health:read"],
+      expiresAt: null,
+    });
+
+    const updated = await updateMcpTokenScopes(ctx.db, testUserId, metadata.id, [
+      "health:read",
+      "activity:read",
+    ]);
+
+    expect(updated?.scopes).toEqual(["health:read", "activity:read"]);
+    expect((await validateMcpToken(ctx.db, token))?.scopes).toEqual([
+      "health:read",
+      "activity:read",
+    ]);
   });
 
   it("rejects tokens after revokeMcpToken", async () => {

@@ -176,6 +176,27 @@ export async function listMcpTokens(
   return rows.map(toMetadata);
 }
 
+export async function updateMcpTokenScopes(
+  db: ExecutableDatabase,
+  userId: string,
+  tokenId: string,
+  scopes: McpScope[],
+): Promise<McpTokenMetadata | null> {
+  const scopesArray = sql`ARRAY[${sql.join(
+    scopes.map((scope) => sql`${scope}`),
+    sql`, `,
+  )}]::text[]`;
+  const rows = await executeWithSchema(
+    db,
+    tokenMetadataRowSchema,
+    sql`UPDATE fitness.mcp_access_token
+        SET scopes = ${scopesArray}
+        WHERE id = ${tokenId}::uuid AND user_id = ${userId} AND revoked_at IS NULL
+        RETURNING id, name, scopes, created_at, last_used_at, expires_at, revoked_at`,
+  );
+  return rows[0] ? toMetadata(rows[0]) : null;
+}
+
 export async function revokeMcpToken(
   db: ExecutableDatabase,
   userId: string,

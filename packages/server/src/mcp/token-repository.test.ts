@@ -6,6 +6,7 @@ import {
   McpAuthError,
   mcpScopeSchema,
   requireMcpScope,
+  updateMcpTokenScopes,
   validateMcpToken,
 } from "./token-repository.ts";
 
@@ -156,6 +157,37 @@ describe("MCP token repository", () => {
     ]);
 
     await expect(validateMcpToken(createMockDb(), "dofek_mcp_expired")).resolves.toBeNull();
+  });
+
+  it("updates scopes for a user-owned token", async () => {
+    mockExecute.mockResolvedValueOnce([
+      {
+        id: "token-id",
+        name: "Codex",
+        scopes: ["health:read", "activity:read"],
+        created_at: "2026-05-20T12:00:00.000Z",
+        last_used_at: null,
+        expires_at: null,
+        revoked_at: null,
+      },
+    ]);
+
+    const updated = await updateMcpTokenScopes(createMockDb(), "user-id", "token-id", [
+      "health:read",
+      "activity:read",
+    ]);
+
+    expect(updated).toEqual({
+      id: "token-id",
+      name: "Codex",
+      scopes: ["health:read", "activity:read"],
+      createdAt: "2026-05-20T12:00:00.000Z",
+      lastUsedAt: null,
+      expiresAt: null,
+      revokedAt: null,
+    });
+    expect(JSON.stringify(mockExecute.mock.calls[0]?.[0])).toContain("UPDATE");
+    expect(JSON.stringify(mockExecute.mock.calls[0]?.[0])).toContain("activity:read");
   });
 
   it("allows required scopes that are present", () => {

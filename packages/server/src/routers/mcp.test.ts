@@ -178,4 +178,40 @@ describe("mcpRouter", () => {
       message: "MCP token not found.",
     });
   });
+
+  it("updates scopes for a user-owned token", async () => {
+    mockExecute.mockResolvedValueOnce([
+      {
+        id: "token-id",
+        name: "Codex",
+        scopes: ["health:read", "activity:read"],
+        created_at: "2026-05-20T12:00:00.000Z",
+        last_used_at: null,
+        expires_at: null,
+        revoked_at: null,
+      },
+    ]);
+    const caller = createCaller(createContext("user-id"));
+
+    const result = await caller.updateScopes({
+      tokenId: "00000000-0000-0000-0000-000000000001",
+      scopes: ["health:read", "activity:read"],
+    });
+
+    expect(result.scopes).toEqual(["health:read", "activity:read"]);
+  });
+
+  it("rejects updating a token that does not belong to the user", async () => {
+    const caller = createCaller(createContext("user-id"));
+
+    await expect(
+      caller.updateScopes({
+        tokenId: "00000000-0000-0000-0000-000000000001",
+        scopes: ["health:read"],
+      }),
+    ).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "MCP token not found.",
+    });
+  });
 });
