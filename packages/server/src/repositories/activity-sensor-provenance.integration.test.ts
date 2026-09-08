@@ -71,10 +71,10 @@ describe("activity sensor provenance", () => {
     `);
     await testContext.db.execute(sql`
       INSERT INTO fitness.activity (
-        id, provider_id, user_id, external_id, canonical_type, provider_type,
+        id, group_id, provider_id, user_id, external_id, canonical_type, provider_type,
         started_at, ended_at, name
       ) VALUES (
-        ${activityId}, 'provenance_wahoo', ${userId}, 'provenance-ride',
+        ${activityId}, ${activityId}, 'provenance_wahoo', ${userId}, 'provenance-ride',
         'cycling', 'cycling', ${startedAt}, ${endedAt}, 'Provenance Ride'
       )
     `);

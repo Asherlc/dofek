@@ -10,13 +10,18 @@ const DEFAULT_CDC_READINESS_POLL_INTERVAL_MS = 2_000;
 const postgresUuidSchema = z
   .string()
   .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, "must be a UUID");
-const clickHouseUtcDateTimeSchema = z.preprocess(
-  (value) =>
-    typeof value === "string" && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(value)
-      ? `${value.replace(" ", "T")}Z`
-      : value,
-  z.union([z.string(), z.date()]).pipe(z.coerce.date()),
-);
+const clickHouseUtcDateTimeSchema = z.union([
+  z.date(),
+  z
+    .string()
+    .transform((value) =>
+      /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(value)
+        ? `${value.replace(" ", "T")}Z`
+        : value,
+    )
+    .pipe(z.iso.datetime({ offset: true }))
+    .transform((value) => new Date(value)),
+]);
 
 export const uint64StringSchema = z
   .union([z.string().regex(/^\d+$/), z.number().int().nonnegative().safe()])

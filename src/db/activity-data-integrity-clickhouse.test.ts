@@ -443,6 +443,38 @@ describe("ClickHouse source timestamp parsing", () => {
     expect(zoned.started_at?.toISOString()).toBe("2026-09-01T14:55:54.123Z");
     expect(zoned.ended_at?.toISOString()).toBe("2026-09-01T15:25:54.123Z");
   });
+
+  it("accepts only Date objects, offset ISO timestamps, and the exact ClickHouse shape", () => {
+    for (const [timestamp, expected] of [
+      ["2026-09-01 14:55:54", "2026-09-01T14:55:54.000Z"],
+      ["2026-09-01 14:55:54.12", "2026-09-01T14:55:54.120Z"],
+      ["2026-09-01T16:55:54+02:00", "2026-09-01T14:55:54.000Z"],
+    ] as const) {
+      const parsed = clickHouseSourceRowSchema.parse({ ...sourceRowA, started_at: timestamp });
+      expect(parsed.started_at.toISOString()).toBe(expected);
+    }
+
+    const date = new Date("2026-09-01T14:55:54.123Z");
+    expect(clickHouseSourceRowSchema.parse({ ...sourceRowA, started_at: date }).started_at).toEqual(
+      date,
+    );
+
+    for (const timestamp of [
+      " 2026-09-01 14:55:54",
+      "2026-09-01 14:55:54 UTC",
+      "6-09-01 14:55:54",
+      "abcd-09-01 14:55:54",
+      "2026-9-01 14:55:54",
+      "2026-09-1 14:55:54",
+      "2026-09-01 4:55:54",
+      "2026-09-01 14:5:54",
+      "2026-09-01 14:55:4",
+    ]) {
+      expect(() =>
+        clickHouseSourceRowSchema.parse({ ...sourceRowA, started_at: timestamp }),
+      ).toThrow("started_at");
+    }
+  });
 });
 
 describe("incompatibleMemberCount", () => {

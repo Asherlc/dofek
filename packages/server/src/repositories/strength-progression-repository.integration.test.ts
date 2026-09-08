@@ -37,23 +37,23 @@ describe("StrengthProgressionRepository database semantics", () => {
     `);
     await context.db.execute(sql`
       INSERT INTO fitness.activity (
-        id, provider_id, user_id, external_id, canonical_type, provider_type,
+        id, group_id, provider_id, user_id, external_id, canonical_type, provider_type,
         started_at, ended_at, name, source_name, raw, timezone,
         start_utc_offset_minutes, end_utc_offset_minutes, local_time_source
       ) VALUES
-        (${priorActivity}::uuid, ${primaryProvider}, ${userId}::uuid, 'prior-session',
+        (${priorActivity}::uuid, ${priorActivity}::uuid, ${primaryProvider}, ${userId}::uuid, 'prior-session',
           'strength', 'strength_training', '2026-04-01T18:00:00Z',
           '2026-04-01T19:00:00Z', 'Earlier bench', 'Strong', '{}'::jsonb,
           'America/Los_Angeles', -420, -420, 'device_timezone'),
-        (${firstActivity}::uuid, ${primaryProvider}, ${userId}::uuid, 'first-session',
+        (${firstActivity}::uuid, ${firstActivity}::uuid, ${primaryProvider}, ${userId}::uuid, 'first-session',
           'strength', 'strength_training', '2026-05-01T18:00:00Z',
           '2026-05-01T19:00:00Z', 'Bench baseline', 'Strong', '{}'::jsonb,
           'America/Los_Angeles', -420, -420, 'device_timezone'),
-        (${mirrorActivity}::uuid, ${mirrorProvider}, ${userId}::uuid, 'first-session-mirror',
+        (${mirrorActivity}::uuid, ${firstActivity}::uuid, ${mirrorProvider}, ${userId}::uuid, 'first-session-mirror',
           'strength', 'weightlifting', '2026-05-01T18:00:00Z',
           '2026-05-01T19:00:00Z', 'Bench baseline mirror', 'WHOOP', '{}'::jsonb,
           'America/Los_Angeles', -420, -420, 'provider_timezone'),
-        (${latestActivity}::uuid, ${primaryProvider}, ${userId}::uuid, 'latest-session',
+        (${latestActivity}::uuid, ${latestActivity}::uuid, ${primaryProvider}, ${userId}::uuid, 'latest-session',
           'strength', 'strength_training', '2026-07-01T18:00:00Z',
           '2026-07-01T19:00:00Z', 'Bench progression', 'Strong', '{}'::jsonb,
           NULL, NULL, NULL, 'unknown')

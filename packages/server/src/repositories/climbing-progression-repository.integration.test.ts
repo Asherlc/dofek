@@ -27,17 +27,17 @@ describe("ClimbingProgressionRepository database semantics", () => {
     `);
     await context.db.execute(sql`
       INSERT INTO fitness.activity (
-        id, provider_id, user_id, external_id, canonical_type, provider_type,
+        id, group_id, provider_id, user_id, external_id, canonical_type, provider_type,
         started_at, ended_at, name, source_name, raw, timezone,
         start_utc_offset_minutes, end_utc_offset_minutes, local_time_source
       ) VALUES
-        (${kayaActivity}::uuid, ${kayaProvider}, ${userId}::uuid, 'kaya-session',
+        (${kayaActivity}::uuid, ${kayaActivity}::uuid, ${kayaProvider}, ${userId}::uuid, 'kaya-session',
           'climbing', 'bouldering', '2026-07-10T18:00:00Z', '2026-07-10T20:00:00Z',
           'Pacific Pipe', 'Kaya', '{}'::jsonb, NULL, NULL, NULL, 'unknown'),
-        (${mirrorActivity}::uuid, ${mirrorProvider}, ${userId}::uuid, 'mirror-session',
+        (${mirrorActivity}::uuid, ${kayaActivity}::uuid, ${mirrorProvider}, ${userId}::uuid, 'mirror-session',
           'climbing', 'bouldering', '2026-07-10T18:00:00Z', '2026-07-10T20:00:00Z',
           'Pacific Pipe mirror', 'Mirror', '{}'::jsonb, NULL, NULL, NULL, 'unknown'),
-        (${offsetActivity}::uuid, ${kayaProvider}, ${userId}::uuid, 'offset-session',
+        (${offsetActivity}::uuid, ${offsetActivity}::uuid, ${kayaProvider}, ${userId}::uuid, 'offset-session',
           'climbing', 'bouldering', '2026-07-12T00:30:00Z', '2026-07-12T01:30:00Z',
           'Travel climbing', 'Kaya', '{}'::jsonb, NULL, -420, -420, 'provider_offset')
     `);

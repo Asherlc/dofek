@@ -12,6 +12,7 @@ import {
   getClickHouseTestClient,
   insertClickHouseMetricStreamRows,
   syncClickHouseTestActivityPowerCurveStore,
+  syncClickHouseTestActivitySensorStore,
 } from "./clickhouse-integration-test-helpers.ts";
 
 const testUserId = "00000000-0000-0000-0000-000000000001";
@@ -685,7 +686,7 @@ describe("activity_power_curve read model", () => {
         new Date(Date.parse(startedAt) + duration * 1000).toISOString(),
       );
     }
-    await seedClickHouseMetricStreamRows(testContext, [
+    await insertClickHouseMetricStreamRows(testContext, [
       ...powerSampleRows(referenceConstantActivityId, referenceConstantStartedAt, constantSamples, {
         providerId: "wahoo",
         deviceId: "elemnt-bolt",

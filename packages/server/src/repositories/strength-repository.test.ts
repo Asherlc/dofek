@@ -241,6 +241,15 @@ describe("StrengthRepository", () => {
     return { repo, execute };
   }
 
+  function permutations<T>(values: readonly T[]): T[][] {
+    if (values.length <= 1) return [Array.from(values)];
+    return values.flatMap((value, index) =>
+      permutations(values.filter((_, candidateIndex) => candidateIndex !== index)).map(
+        (remaining) => [value, ...remaining],
+      ),
+    );
+  }
+
   async function expectFiniteDaysFilter(
     runQuery: (repo: StrengthRepository) => Promise<unknown>,
   ): Promise<void> {
@@ -309,6 +318,14 @@ describe("StrengthRepository", () => {
     it("returns EstimatedOneRepMax instances grouped by exercise", async () => {
       const { repo } = makeRepository([
         {
+          exercise_name: "Squat",
+          equipment: null,
+          workout_date: "2024-01-01",
+          estimated_max: 150,
+          actual_weight: 120,
+          actual_reps: 5,
+        },
+        {
           exercise_name: "Bench Press",
           equipment: null,
           workout_date: "2024-01-01",
@@ -323,14 +340,6 @@ describe("StrengthRepository", () => {
           estimated_max: 105,
           actual_weight: 85,
           actual_reps: 7,
-        },
-        {
-          exercise_name: "Squat",
-          equipment: null,
-          workout_date: "2024-01-01",
-          estimated_max: 150,
-          actual_weight: 120,
-          actual_reps: 5,
         },
       ]);
       const result = await repo.getEstimatedOneRepMax(90);
@@ -401,6 +410,28 @@ describe("StrengthRepository", () => {
           expect.objectContaining({ estimatedMax: 60 }),
           expect.objectContaining({ estimatedMax: 64 }),
         ],
+      ]);
+    });
+
+    it("orders estimated max histories by exercise name and then equipment", async () => {
+      const rows = [
+        { exercise_name: "Zulu", equipment: null, estimated_max: 3 },
+        { exercise_name: "Alpha", equipment: "DUMBBELL", estimated_max: 2 },
+        { exercise_name: "Alpha", equipment: "BARBELL", estimated_max: 1 },
+      ].map((row) => ({
+        ...row,
+        workout_date: "2024-01-01",
+        actual_weight: row.estimated_max,
+        actual_reps: 1,
+      }));
+      const { repo } = makeRepository(rows);
+
+      const result = (await repo.getEstimatedOneRepMax(90)).map((entry) => entry.toDetail());
+
+      expect(result.map(({ exerciseName, equipment }) => [exerciseName, equipment])).toEqual([
+        ["Alpha", "BARBELL"],
+        ["Alpha", "DUMBBELL"],
+        ["Zulu", null],
       ]);
     });
 
@@ -531,6 +562,27 @@ describe("StrengthRepository", () => {
             { totalVolumeKg: 550, week: "2024-01-08" },
           ],
         }),
+      ]);
+    });
+
+    it("orders progressive overload histories by exercise name and then equipment", async () => {
+      const identities = [
+        { exercise_name: "Zulu", equipment: null, weekly_volume: 300 },
+        { exercise_name: "Alpha", equipment: "DUMBBELL", weekly_volume: 200 },
+        { exercise_name: "Alpha", equipment: "BARBELL", weekly_volume: 100 },
+      ];
+      const rows = identities.flatMap((identity) => [
+        { ...identity, week: "2024-01-01" },
+        { ...identity, week: "2024-01-08", weekly_volume: identity.weekly_volume + 10 },
+      ]);
+      const { repo } = makeRepository(rows);
+
+      const result = (await repo.getProgressiveOverload(90)).map((entry) => entry.toDetail());
+
+      expect(result.map(({ exerciseName, equipment }) => [exerciseName, equipment])).toEqual([
+        ["Alpha", "BARBELL"],
+        ["Alpha", "DUMBBELL"],
+        ["Zulu", null],
       ]);
     });
 
@@ -806,6 +858,248 @@ describe("StrengthRepository", () => {
           weightKg: null,
         },
       ]);
+    });
+
+    it("selects the richest deterministic source for equivalent exercises in every row order", async () => {
+      const rows = [
+        {
+          member_activity_id: "z-member",
+          source_priority: 1,
+          exercise_name: " Custom\t Movement ",
+          equipment: " MACHINE ",
+          muscle_groups: null,
+          exercise_type: null,
+          rpe: null,
+          notes: null,
+        },
+        {
+          member_activity_id: "y-member",
+          source_priority: 20,
+          exercise_name: "custom movement",
+          equipment: "machine",
+          muscle_groups: ["LEGS"],
+          exercise_type: null,
+          rpe: 9,
+          notes: "complete y",
+        },
+        {
+          member_activity_id: "x-member",
+          source_priority: 10,
+          exercise_name: "CUSTOM MOVEMENT",
+          equipment: "Machine",
+          muscle_groups: ["QUADRICEPS"],
+          exercise_type: null,
+          rpe: 8,
+          notes: "complete x",
+        },
+        {
+          member_activity_id: "a-member",
+          source_priority: 10,
+          exercise_name: "Custom Movement",
+          equipment: "MACHINE",
+          muscle_groups: ["HAMSTRINGS"],
+          exercise_type: null,
+          rpe: 7,
+          notes: "complete a",
+        },
+      ].map((row) => ({
+        ...row,
+        exercise_index: 0,
+        set_index: 0,
+        set_type: "working",
+        weight_kg: 50,
+        reps: 10,
+        duration_seconds: null,
+      }));
+
+      for (const permutation of permutations(rows)) {
+        const { repo } = makeRepository(permutation);
+        const details = (await repo.getExercisesForActivity("stable-group")).map((exercise) =>
+          exercise.toDetail(),
+        );
+
+        expect(details).toEqual([
+          {
+            activityId: "a-member",
+            exerciseIndex: 0,
+            exerciseName: "Custom Movement",
+            equipment: "MACHINE",
+            muscleGroups: ["HAMSTRINGS"],
+            exerciseType: "STRENGTH",
+            sets: [
+              {
+                setIndex: 0,
+                setType: "working",
+                weightKg: 50,
+                reps: 10,
+                durationSeconds: null,
+                rpe: 7,
+                notes: "complete a",
+              },
+            ],
+          },
+        ]);
+      }
+    });
+
+    it("does not treat whitespace-only set notes as richer payload", async () => {
+      const common = {
+        exercise_name: "Cable Row",
+        equipment: "CABLE",
+        muscle_groups: ["BACK"],
+        exercise_type: "STRENGTH",
+        exercise_index: 0,
+        set_index: 0,
+        set_type: "working",
+        weight_kg: 50,
+        reps: 10,
+        duration_seconds: null,
+        rpe: null,
+      };
+      const { repo } = makeRepository([
+        {
+          ...common,
+          member_activity_id: "blank-note-member",
+          source_priority: 50,
+          notes: "   ",
+        },
+        {
+          ...common,
+          member_activity_id: "preferred-member",
+          source_priority: 1,
+          notes: null,
+        },
+      ]);
+
+      const detail = (await repo.getExercisesForActivity("stable-group"))[0]?.toDetail();
+
+      expect(detail?.activityId).toBe("preferred-member");
+      expect(detail?.sets).toEqual([expect.objectContaining({ notes: null, rpe: null })]);
+    });
+
+    it("prefers muscle-group metadata and RPE independently of provider priority", async () => {
+      const common = {
+        exercise_name: "ZZZ Uncatalogued Movement",
+        equipment: "MACHINE",
+        exercise_type: "STRENGTH",
+        exercise_index: 0,
+        set_index: 0,
+        set_type: "working",
+        weight_kg: 40,
+        reps: 8,
+        duration_seconds: null,
+        notes: null,
+      };
+      const rows = [
+        {
+          ...common,
+          member_activity_id: "priority-only",
+          source_priority: 1,
+          muscle_groups: [],
+          rpe: null,
+        },
+        {
+          ...common,
+          member_activity_id: "richer",
+          source_priority: 50,
+          muscle_groups: ["CHEST"],
+          rpe: 9,
+        },
+      ];
+
+      for (const permutation of permutations(rows)) {
+        const { repo } = makeRepository(permutation);
+        const detail = (await repo.getExercisesForActivity("stable-group"))[0]?.toDetail();
+
+        expect(detail).toEqual(
+          expect.objectContaining({
+            activityId: "richer",
+            muscleGroups: ["CHEST"],
+            sets: [expect.objectContaining({ rpe: 9 })],
+          }),
+        );
+      }
+    });
+
+    it("sorts unioned sets by index, type, weight, reps, and duration with nulls first", async () => {
+      const setValues = [
+        { set_index: 1, set_type: "working", weight_kg: 1, reps: 1, duration_seconds: 1 },
+        { set_index: 0, set_type: "working", weight_kg: 2, reps: 1, duration_seconds: 1 },
+        { set_index: 0, set_type: "working", weight_kg: 1, reps: 2, duration_seconds: 1 },
+        { set_index: 0, set_type: "working", weight_kg: 1, reps: 1, duration_seconds: 1 },
+        { set_index: 0, set_type: "working", weight_kg: 1, reps: 1, duration_seconds: 0 },
+        { set_index: 0, set_type: "working", weight_kg: 1, reps: 1, duration_seconds: null },
+        { set_index: 0, set_type: "working", weight_kg: 1, reps: null, duration_seconds: 1 },
+        { set_index: 0, set_type: "working", weight_kg: null, reps: 1, duration_seconds: 1 },
+        { set_index: 0, set_type: "rest", weight_kg: 1, reps: 1, duration_seconds: 1 },
+        { set_index: 0, set_type: null, weight_kg: 1, reps: 1, duration_seconds: 1 },
+      ];
+      const { repo } = makeRepository(
+        setValues.map((set) => ({
+          member_activity_id: "member-1",
+          source_priority: 1,
+          exercise_name: "Order Test",
+          equipment: null,
+          muscle_groups: null,
+          exercise_type: null,
+          exercise_index: 0,
+          rpe: null,
+          notes: null,
+          ...set,
+        })),
+      );
+
+      const sets = (await repo.getExercisesForActivity("stable-group"))[0]?.toDetail().sets;
+
+      expect(
+        sets?.map(({ setIndex, setType, weightKg, reps, durationSeconds }) => [
+          setIndex,
+          setType,
+          weightKg,
+          reps,
+          durationSeconds,
+        ]),
+      ).toEqual([
+        [0, null, 1, 1, 1],
+        [0, "rest", 1, 1, 1],
+        [0, "working", null, 1, 1],
+        [0, "working", 1, null, 1],
+        [0, "working", 1, 1, null],
+        [0, "working", 1, 1, 0],
+        [0, "working", 1, 1, 1],
+        [0, "working", 1, 2, 1],
+        [0, "working", 2, 1, 1],
+        [1, "working", 1, 1, 1],
+      ]);
+    });
+
+    it("orders ascending positive weight and rep values", async () => {
+      const common = {
+        member_activity_id: "member-1",
+        source_priority: 1,
+        equipment: null,
+        muscle_groups: null,
+        exercise_type: null,
+        exercise_index: 0,
+        set_index: 0,
+        set_type: "working",
+        duration_seconds: null,
+        rpe: null,
+        notes: null,
+      };
+      const { repo } = makeRepository([
+        { ...common, exercise_name: "Reps Order", weight_kg: 1, reps: 1 },
+        { ...common, exercise_name: "Reps Order", weight_kg: 1, reps: 2 },
+        { ...common, exercise_name: "Weight Order", weight_kg: 1, reps: 1 },
+        { ...common, exercise_name: "Weight Order", weight_kg: 2, reps: 1 },
+      ]);
+
+      const details = (await repo.getExercisesForActivity("stable-group")).map((exercise) =>
+        exercise.toDetail(),
+      );
+
+      expect(details[0]?.sets.map(({ reps }) => reps)).toEqual([1, 2]);
+      expect(details[1]?.sets.map(({ weightKg }) => weightKg)).toEqual([1, 2]);
     });
 
     it("uses exercise metadata when stored muscle groups are missing", async () => {
