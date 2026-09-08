@@ -172,6 +172,7 @@ The canonical tool names, schemas, and scope checks are defined in the [MCP tool
 | `get_cycling_performance` | `activity:read` | Returns exact-range per-ride normalized power, intensity factor, standard best efforts, rolling-90-day bests, FTP estimates, elevation, and coverage. |
 | `get_training_load` | `activity:read`; also `nutrition:read` when requested | Returns daily load and rolling windows; analytical detail preserves modality channels and can include aligned nutrition. |
 | `get_recovery_training_series` | Scope depends on selected streams: `health:read`, `activity:read`, and/or `nutrition:read` | Returns a selected, date-aligned recovery, sleep, weight, load, subjective, compact activity-exposure, and nutrition series without causal interpretation. |
+| `compare_performances` | `activity:read` | Compares only explicitly or strongly evidenced equivalent workouts, routes, climbs, strength exercises, or standardized tests with contextual deltas and provenance. |
 | `get_climbing_sessions` | `activity:read` | Returns exact-range climbing sessions with grades, attempts, sends, discipline, wall angle, and explicit unavailable fields. |
 | `get_climbing_progression` | `activity:read` | Returns longitudinal climbing grade, attempt, send-rate, frequency, rolling-exposure, duplicate, and provenance analysis. |
 | `get_finger_loading` | `activity:read` | Returns structured finger-loading protocols, effective load, and total time under tension inside exact date boundaries. |
@@ -301,6 +302,37 @@ channels; other recovery streams remain unfiltered. Stream-specific authorizatio
 mean nutrition-only and subjective-only requests do not require the ClickHouse analytics store.
 The endpoint's interpretation block states that these observations support association analysis but do not establish causality. See the
 [series repository](../packages/server/src/repositories/recovery-training-series-repository.ts).
+
+`compare_performances` requires either a canonical reference activity or an explicit equivalence
+key. Reference activities may derive only a single identity for which Dofek currently has a strong
+contract: a Peloton class ID, one exact climb composite (type, grade system/grade, route, and
+location, and lead/top-rope state when recorded), or one normalized strength exercise ID. Explicit
+Peloton class IDs use the same contracted provider identity. Provider-scoped cycling route names,
+standardized-test activity name/provider type, and exact normalized activity names are caller
+assertions labeled `user_asserted`. When no single strong identity exists, the tool refuses to
+compare. Sport, duration, and effort similarity alone never establish equivalence.
+
+Candidate activities come from canonical `fitness.v_activity`, preventing duplicate provider
+workouts from being counted twice. Cycling power, heart rate, cadence, distance, elevation, and
+sample coverage come from deduplicated `analytics.activity_summary_rows FINAL`; average activity
+temperature is calculated from `analytics.activity_sensor_sample FINAL`. Numeric deltas are
+candidate minus the requested reference or earliest in-range match. Missing values stay null.
+Strength volume and Epley estimates exclude suspicious or conflicting sets. Exact cross-provider climbing
+observations and strength sets are consolidated, while conflicting observations are excluded and
+reported; climbing attempts and outcomes preserve partial/unavailable state and never produce exact
+deltas unless both performances have complete coverage. Strength volume and estimated-1RM values
+likewise report complete/partial/unavailable state, and their deltas require complete coverage in
+both performances. Each performance includes bounded, source-record-level equivalence evidence.
+Provider-reported moving duration is returned with raw
+field/source evidence and remains null when providers conflict. Route context is claimed only for a
+caller-asserted provider-scoped cycling name and provider type; Dofek does not claim an upstream
+route identifier that its normalized ingestion contract does not expose. Fuzzy near matches are
+explicitly not evaluated because similarity does not establish equivalence. Per-performance
+equivalence evidence is capped at 100 records, moving
+duration evidence at 20, and nested climbing source evidence at 20 IDs/providers; total counts and
+truncation flags preserve coverage. Results use reference-bound stable keyset cursors and include
+provider, member activity, timezone, quality, and deduplication provenance. The comparisons are
+descriptive and make no causal claim.
 
 `get_cycling_performance` reads the deduped `cycling_activity` and
 `activity_power_curve` models. Per-ride FTP is 95% of the best observed
