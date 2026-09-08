@@ -232,19 +232,63 @@ providing both bounds:
 When activity grouping or an `activity_sensor_summary_rows`,
 `activity_location_summary_rows`, `activity_summary_rows`, or
 `activity_vo2max_estimate` field changes, existing append-incremental rows are
-not rewritten by the model change alone. First apply migrations 0076 through
-0078 and verify that PostgreSQL group membership has reached ClickHouse CDC.
-If historical scalar provenance was projected before migration 0077, run the
-bounded microbatch replay above in this order:
-`sensor_scalar_sample`, `deduped_sensor`, then `activity_sensor_sample`.
-After that replay, first run an explicit, monitored full refresh of
-`activity_location_sample`, then full-refresh the sensor summary, location
-summary, final activity summary, and VO2 max estimate in dependency order, with
-an `initial_lookback_days` that
-covers every retained activity that should remain in all four tables. dbt
-recommends rebuilding an
-incremental model when its logic changes because historical transformations
-remain in the target table, using `--full-refresh` for the rebuild:
+not rewritten by the model change alone. Use this order and stop when an
+earlier verification fails:
+
+1. From a one-shot container built from the target release, with that
+   environment's `DATABASE_URL` and `CLICKHOUSE_URL` injected, run the standard
+   migration entrypoint:
+
+   ```sh
+   ./entrypoint.sh migrate
+   ```
+
+   It applies pending migrations in registry order. Verify migrations
+   `0076_stable_activity_group_id`, `0077_sensor_source_activity_id`, and
+   `0078_stable_activity_read_views` are present in
+   `analytics.schema_migrations` before continuing. See the standard
+   [`entrypoint.sh`](../entrypoint.sh) and ordered
+   [migration registry](../src/db/clickhouse-migrations/registry.ts).
+
+   ```sql
+   SELECT id
+   FROM analytics.schema_migrations
+   WHERE id IN (
+       '0076_stable_activity_group_id',
+       '0077_sensor_source_activity_id',
+       '0078_stable_activity_read_views'
+   )
+   ORDER BY id;
+   ```
+
+   The query must return exactly those three rows.
+2. Run `pnpm check:clickhouse-cdc`, then query
+   `postgres_fitness.activity FINAL` for the repaired member IDs. Compare every
+   mirrored `id` and `group_id` with the PostgreSQL `fitness.v_activity` result
+   already verified by the repair runbook. Do not start dbt until all expected
+   members are present under the expected persisted group ID.
+
+   ```sql
+   SELECT id, group_id, _peerdb_synced_at
+   FROM postgres_fitness.activity FINAL
+   WHERE user_id = toUUID('<user-uuid>')
+     AND id IN (
+         toUUID('<member-uuid-1>'),
+         toUUID('<member-uuid-2>')
+     )
+     AND _peerdb_is_deleted = 0
+   ORDER BY id;
+   ```
+3. Run the bounded three-model microbatch command above for the affected
+   historical interval. Its dependency order is `sensor_scalar_sample`,
+   `deduped_sensor`, then `activity_sensor_sample`. The replay is required for
+   historical membership changes and for provenance written before migration
+   0077; a normal incremental run processes only recent batches.
+4. Before the full refresh, calculate `required_lookback_days` below. The
+   value must cover every retained activity that should remain in the rebuilt
+   identity, payload, and summary tables. dbt recommends rebuilding an
+   incremental model when its logic changes because historical transformations
+   remain in the target table, using `--full-refresh` for the rebuild:
 <https://docs.getdbt.com/docs/build/incremental-models#how-do-i-rebuild-an-incremental-model>.
 
 Before starting, query the oldest active activity in ClickHouse and use the
@@ -281,16 +325,22 @@ pnpm tsx scripts/with-env.ts -- env \
   uv run --project analytics dbt build \
   --project-dir analytics \
   --profiles-dir analytics \
+  --threads 1 \
   --full-refresh \
   --vars '{"initial_lookback_days": 3650}' \
-  --select activity_sensor_summary_rows activity_location_summary_rows activity_summary_rows activity_vo2max_estimate
+  --select "activity_source_records activity_duplicate_matches activity_duplicate_groups deduped_activities deduped_activity_members activity_location_sample activity_sensor_summary_rows activity_location_summary_rows activity_stream_points activity_summary_rows activity_vo2max_estimate"
 ```
 
 The lookback is a full-refresh retention boundary, not just the scope of the
 semantic change. A full refresh drops rows older than
 `initial_lookback_days`, and later incremental runs will not re-add those
-unchanged activities. The four selected models must all report `PASS` with no
-warnings or errors before the operator treats the rebuild as complete.
+unchanged activities. The eleven selected models must all report `PASS` with
+no warnings or errors before the operator treats the rebuild as complete.
+`activity_sensor_sample` is intentionally absent because it sets
+`full_refresh=false`; the bounded microbatch in step 3 is its historical
+rebuild path. dbt orders the selected identity and membership models before
+their location, stream, summary, and VO2 max consumers through their `ref()`
+dependencies.
 
 The `cycling_activity` modality normalization requires the same explicit
 operator action for existing append-incremental rows. Before the repair, record

@@ -219,6 +219,17 @@ link-check script; direct internal-link validation found the canonical analytics
 heading and the runbook reference to its generated anchor. `rtk git diff
 --check` produced no output.
 
+The follow-up documentation correction made the linked analytics procedure
+executable without duplicating it in the activity repair runbook. The canonical sequence now
+prevents default retention. Selector validation under dbt 1.11.12 and
+dbt-clickhouse 1.10.1 resolved the three-model microbatch selection to
+`sensor_scalar_sample`, `deduped_sensor`, and `activity_sensor_sample`; the
+eleven-model full-refresh selection resolved every named identity, location,
+stream, summary, and VO2 max model; and the existing cycling selector resolved
+`cycling_activity`. Each `dbt ls` command exited zero. The first in-sandbox
+attempt failed before dbt because uv could not read its user cache; the
+identical read-only validation outside that filesystem sandbox passed.
+
 `docs/production-incident-baseline.md` records the generalized symptoms, user impact, captured technical failures, proven representative-coupling causes, implemented code/test repair, local stale-schema evidence, and remaining deployment/historical-refresh risk. Historical attribution of the set-row transposition writer remains explicitly unknown because current parser and persistence fixtures do not reproduce it.
 
 ## Remaining risks
