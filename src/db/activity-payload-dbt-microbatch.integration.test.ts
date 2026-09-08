@@ -31,6 +31,9 @@ const productionSliceRemappedGroupId = "00000000-0000-0000-0000-000000001049";
 const productionRestoreGroupId = "00000000-0000-0000-0000-000000001050";
 const productionRestoreMemberId = "00000000-0000-0000-0000-000000001051";
 const productionRestorePointId = "00000000-0000-0000-0000-000000001052";
+const productionProvenanceGroupId = "00000000-0000-0000-0000-000000001053";
+const productionProvenanceLowerMemberId = "00000000-0000-0000-0000-000000000001";
+const productionProvenanceStorageFirstMemberId = "10000000-0000-0000-0000-000000000000";
 const providerAPointIds = [
   "00000000-0000-0000-0000-000000001040",
   "00000000-0000-0000-0000-000000001041",
@@ -514,6 +517,31 @@ describe("activity payload dbt batch reconciliation", () => {
       "2026-09-08",
     );
     await expectDeletedLocationStream(client, database, productionSliceGroupId);
+    const initialProvenanceState = await getDedupedActivityState(
+      client,
+      database,
+      productionProvenanceGroupId,
+    );
+    expect(initialProvenanceState).toMatchObject({
+      primary_activity_id: productionProvenanceLowerMemberId,
+      notes: "code-unit-lower notes",
+      raw: '{"source":"code-unit-lower"}',
+    });
+    const initialProvenanceHistory = await getDedupedActivityHistory(
+      client,
+      database,
+      productionProvenanceGroupId,
+    );
+    const initialProvenanceStreamVersion = await getLocationStreamVersion(
+      client,
+      database,
+      productionProvenanceGroupId,
+    );
+    const initialProvenanceStreamTransitions = await getStreamTransitionCount(
+      client,
+      database,
+      productionProvenanceGroupId,
+    );
     const initialActivityVersion = await getDedupedActivityVersion(
       client,
       database,
@@ -535,6 +563,7 @@ describe("activity payload dbt batch reconciliation", () => {
       productionSliceGroupId,
     );
 
+    await rebuildEqualPriorityProvenanceInputs(client, database);
     await runDbtBatch(
       database,
       artifactDirectory,
@@ -558,6 +587,18 @@ describe("activity payload dbt batch reconciliation", () => {
     expect(rebuiltActivityVersion).toBe(initialActivityVersion);
     expect(await getDedupedActivityHistory(client, database, productionSliceGroupId)).toEqual(
       initialActivityHistory,
+    );
+    expect(await getDedupedActivityState(client, database, productionProvenanceGroupId)).toEqual(
+      initialProvenanceState,
+    );
+    expect(await getDedupedActivityHistory(client, database, productionProvenanceGroupId)).toEqual(
+      initialProvenanceHistory,
+    );
+    expect(await getLocationStreamVersion(client, database, productionProvenanceGroupId)).toBe(
+      initialProvenanceStreamVersion,
+    );
+    expect(await getStreamTransitionCount(client, database, productionProvenanceGroupId)).toBe(
+      initialProvenanceStreamTransitions,
     );
 
     await changeActivitySourceRecord(client, database, productionSliceProviderBMemberId, {
@@ -860,6 +901,26 @@ async function seedProductionLifecycleSliceFixture(
        'America/Los_Angeles', -420, -420, 'provider_timezone', '{}',
        toDateTime64('2026-09-07 15:00:00', 9, 'UTC'), 10, 1, 0,
        toDateTime64('2026-09-07 15:00:00', 9, 'UTC')
+      ),
+      (
+       '${productionProvenanceStorageFirstMemberId}', '${productionProvenanceGroupId}',
+       'garmin', '${userId}', 'provenance-storage-first', 'cycling', 'cycling', NULL,
+       toDateTime64('2026-09-07 16:00:00', 6, 'UTC'),
+       toDateTime64('2026-09-07 17:00:00', 6, 'UTC'), 'Garmin', 'Equal Ride',
+       'storage-first notes', 'America/Los_Angeles', -420, -420,
+       'provider_timezone', '{"source":"storage-first"}',
+       toDateTime64('2026-09-07 18:00:00', 9, 'UTC'), 30, 1, 0,
+       toDateTime64('2026-09-07 18:00:00', 9, 'UTC')
+      ),
+      (
+       '${productionProvenanceLowerMemberId}', '${productionProvenanceGroupId}',
+       'garmin', '${userId}', 'provenance-code-unit-lower', 'cycling', 'cycling', NULL,
+       toDateTime64('2026-09-07 16:00:00', 6, 'UTC'),
+       toDateTime64('2026-09-07 17:00:00', 6, 'UTC'), 'Garmin', 'Equal Ride',
+       'code-unit-lower notes', 'America/Los_Angeles', -420, -420,
+       'provider_timezone', '{"source":"code-unit-lower"}',
+       toDateTime64('2026-09-07 18:00:00', 9, 'UTC'), 30, 1, 0,
+       toDateTime64('2026-09-07 18:00:00', 9, 'UTC')
       )`,
     `INSERT INTO ${database}.activity_location_sample VALUES (
        '${productionRestoreGroupId}', '${userId}',
@@ -867,6 +928,28 @@ async function seedProductionLifecycleSliceFixture(
        37.8, -122.3, 1, 0, toDateTime64('2026-09-07 15:00:00', 9, 'UTC')
       )`,
   ]);
+}
+
+async function rebuildEqualPriorityProvenanceInputs(
+  client: ClickHouseClient,
+  database: string,
+): Promise<void> {
+  await client.command({
+    query: `INSERT INTO ${database}.activity_source_records
+      SELECT
+        activity_id, group_id, provider_id, user_id, external_id, canonical_type,
+        provider_type, modality, started_at, ended_at, source_name, name, notes,
+        timezone, start_utc_offset_minutes, end_utc_offset_minutes,
+        local_time_source, raw, source_synced_at, priority,
+        refresh_version + 1 AS refresh_version, is_deleted,
+        refreshed_at + INTERVAL 1 SECOND AS refreshed_at
+      FROM ${database}.activity_source_records FINAL
+      WHERE activity_id IN (
+        toUUID('${productionProvenanceLowerMemberId}'),
+        toUUID('${productionProvenanceStorageFirstMemberId}')
+      )
+      ORDER BY toString(activity_id) DESC`,
+  });
 }
 
 async function changeActivitySourceRecord(
@@ -1028,12 +1111,16 @@ async function getDedupedActivityState(
 ): Promise<{
   primary_activity_id: string;
   member_activity_ids: string[];
+  notes: string | null;
+  raw: string | null;
   refresh_version: string;
 }> {
   const result = await client.query({
     query: `SELECT
         toString(primary_activity_id) AS primary_activity_id,
         arrayMap(member_id -> toString(member_id), member_activity_ids) AS member_activity_ids,
+        notes,
+        raw,
         toString(refresh_version) AS refresh_version
       FROM ${database}.deduped_activities FINAL
       WHERE activity_id = toUUID('${activityId}') AND is_deleted = 0`,
@@ -1044,6 +1131,8 @@ async function getDedupedActivityState(
       z.object({
         primary_activity_id: z.string(),
         member_activity_ids: z.array(z.string()),
+        notes: z.string().nullable(),
+        raw: z.string().nullable(),
         refresh_version: z.string(),
       }),
     )

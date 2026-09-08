@@ -228,12 +228,20 @@ merged AS (
         maxIf(coalesce(ranked.ended_at, ranked.started_at + INTERVAL 12 HOUR), ranked.activity_id IS NOT null) AS ended_at,
         any(best.source_name) AS source_name,
         tupleElement(any(tuple(best.name)), 1) AS name,
-        argMinIf(ranked.notes, ranked.priority, ranked.notes IS NOT null) AS notes,
+        argMinIf(
+            ranked.notes,
+            tuple(ranked.priority, toString(ranked.activity_id)),
+            ranked.notes IS NOT null
+        ) AS notes,
         anyIf(best_context.timezone, best_context.local_time_source != 'unknown') AS timezone,
         anyIf(best_context.start_utc_offset_minutes, best_context.local_time_source != 'unknown') AS start_utc_offset_minutes,
         anyIf(best_context.end_utc_offset_minutes, best_context.local_time_source != 'unknown') AS end_utc_offset_minutes,
         any(best_context.local_time_source) AS local_time_source,
-        argMinIf(ranked.raw, ranked.priority, ranked.raw IS NOT null) AS raw,
+        argMinIf(
+            ranked.raw,
+            tuple(ranked.priority, toString(ranked.activity_id)),
+            ranked.raw IS NOT null
+        ) AS raw,
         maxIf(ranked.source_synced_at, ranked.activity_id IS NOT null) AS source_synced_at,
         arraySort(groupUniqArrayIf(ranked.provider_id, ranked.activity_id IS NOT null)) AS source_providers,
         arraySort(
