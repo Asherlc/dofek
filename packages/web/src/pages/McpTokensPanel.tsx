@@ -72,6 +72,14 @@ export function McpTokensPanel() {
   const toggleScope = (scope: McpScope) => {
     setSelectedScopes((current) => {
       const next = new Set(current);
+      if (scope === "nutrition:write" && !next.has(scope)) {
+        next.add("nutrition:read");
+        next.add(scope);
+        return next;
+      }
+      if (scope === "nutrition:read" && next.has("nutrition:write")) {
+        return next;
+      }
       if (next.has(scope)) {
         next.delete(scope);
       } else {
@@ -223,6 +231,9 @@ export function McpTokensPanel() {
                 <input
                   type="checkbox"
                   checked={selectedScopes.has(option.value)}
+                  disabled={
+                    option.value === "nutrition:read" && selectedScopes.has("nutrition:write")
+                  }
                   onChange={() => toggleScope(option.value)}
                   className="h-4 w-4 accent-accent"
                 />
