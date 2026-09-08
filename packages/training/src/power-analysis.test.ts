@@ -4,6 +4,7 @@ import {
   computePowerCurve,
   DURATION_LABELS,
   fitCriticalPower,
+  fitCriticalPowerWithDiagnostics,
   groupByActivity,
   linearRegression,
   STANDARD_DURATIONS,
@@ -93,6 +94,24 @@ describe("fitCriticalPower", () => {
     }
   });
 
+  it("returns null when CP would be exactly zero", () => {
+    expect(fitCriticalPower(powerCurve(0, 15_000, [120, 300, 600]))).toBeNull();
+  });
+
+  it("returns null when anaerobic work capacity would be non-positive", () => {
+    expect(
+      fitCriticalPower([
+        { durationSeconds: 120, bestPower: 200 },
+        { durationSeconds: 300, bestPower: 250 },
+        { durationSeconds: 600, bestPower: 280 },
+      ]),
+    ).toBeNull();
+  });
+
+  it("returns null when anaerobic work capacity would be exactly zero", () => {
+    expect(fitCriticalPower(powerCurve(250, 0, [120, 300, 600]))).toBeNull();
+  });
+
   it("excludes durations under 120s", () => {
     const points = [
       { durationSeconds: 5, bestPower: 800 },
@@ -137,6 +156,43 @@ describe("fitCriticalPower", () => {
     const r2Str = String(model?.r2);
     const decimals = r2Str.split(".")[1]?.length ?? 0;
     expect(decimals).toBeLessThanOrEqual(3);
+  });
+
+  it("returns the fitted observations, predictions, residuals, and RMSE", () => {
+    const points = [
+      { durationSeconds: 120, bestPower: 360 },
+      { durationSeconds: 300, bestPower: 285 },
+      { durationSeconds: 600, bestPower: 258 },
+    ];
+
+    const model = fitCriticalPowerWithDiagnostics(points);
+
+    expect(model).toEqual({
+      cp: 232,
+      wPrime: 15_502,
+      r2: 1,
+      rmse: 1,
+      points: [
+        {
+          durationSeconds: 120,
+          observedPower: 360,
+          predictedPower: 361.5,
+          residualPower: -1.5,
+        },
+        {
+          durationSeconds: 300,
+          observedPower: 285,
+          predictedPower: 284,
+          residualPower: 1,
+        },
+        {
+          durationSeconds: 600,
+          observedPower: 258,
+          predictedPower: 258.2,
+          residualPower: -0.2,
+        },
+      ],
+    });
   });
 
   it("returns null for empty input", () => {

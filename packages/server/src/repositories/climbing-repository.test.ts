@@ -123,6 +123,40 @@ describe("ClimbingActivityEntry", () => {
       wallAngleDegrees: null,
     });
   });
+
+  it("preserves absent aggregate attempt and outcome observations as null", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        id: "00000000-0000-4000-8000-000000000001",
+        climb_type: "boulder",
+        grade_system: "v_scale",
+        grade: "V3",
+        sent: null,
+        attempt_count: null,
+        attempts: [],
+        ascent_type: null,
+        hold_type: null,
+        route_name: null,
+        location_name: null,
+        lead: null,
+        source_name: null,
+        wall_angle_degrees: null,
+      },
+    ]);
+    const repository = new ClimbingRepository(
+      { execute },
+      "00000000-0000-4000-8000-000000000002",
+      "UTC",
+    );
+
+    const [entry] = await repository.getActivityEntries("00000000-0000-4000-8000-000000000003");
+
+    expect(entry?.toDetail()).toMatchObject({
+      attemptCount: null,
+      sent: null,
+      sourceName: null,
+    });
+  });
 });
 
 describe("ClimbingRepository", () => {

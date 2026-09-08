@@ -11,6 +11,7 @@
     lookback=3,
     full_refresh=false,
     concurrent_batches=false,
+    on_schema_change='append_new_columns',
     engine='ReplacingMergeTree(refresh_version)',
     order_by='(user_id, activity_id, recorded_date, recorded_at, source_metric_stream_id)',
     query_settings={
@@ -44,6 +45,10 @@ location_rows AS (
         argMax(user_id, version) AS user_id,
         argMax(recorded_at, version) AS recorded_at,
         argMax(provider_id, version) AS provider_id,
+        argMax(external_id, version) AS source_external_id,
+        argMax(device_id, version) AS device_id,
+        argMax(source_type, version) AS source_type,
+        argMax(metadata, version) AS metadata,
         argMax(point, version) AS point,
         argMax(ingested_at, version) AS ingested_at,
         argMax(is_deleted, version) AS is_deleted
@@ -87,6 +92,16 @@ SELECT
     location_rows.recorded_at AS recorded_at,
     toDate(location_rows.recorded_at) AS recorded_date,
     location_rows.id AS source_metric_stream_id,
+    activity_members.member_activity_id AS member_activity_id,
+    location_rows.provider_id AS provider_id,
+    location_rows.source_external_id AS source_external_id,
+    location_rows.device_id AS device_id,
+    location_rows.source_type AS source_type,
+    multiIf(
+        JSONExtractString(location_rows.metadata, 'measurement_kind') = 'direct', 'direct',
+        JSONExtractString(location_rows.metadata, 'measurement_kind') = 'estimated', 'estimated',
+        'unknown'
+    ) AS measurement_kind,
     toFloat32(if(
         startsWith(location_rows.point_text, '{'),
         JSONExtract(location_rows.point_text, 'coordinates', 'Array(Float64)')[2],

@@ -47,7 +47,10 @@ describe("CyclingPerformanceRepository integration", () => {
     );
     await executeClickHouseTestCommand(
       testContext,
-      `INSERT INTO analytics.activity_power_curve VALUES
+      `INSERT INTO analytics.activity_power_curve (
+        activity_id, user_id, started_at, activity_date, duration_seconds, best_power,
+        is_deleted, refresh_version, refreshed_at
+      ) VALUES
         (toUUID('${activityId}'), toUUID('${userId}'), toDateTime64('2026-08-30 16:00:00', 6, 'UTC'), '2026-08-30', 5, 900, 0, 1, now64(9, 'UTC')),
         (toUUID('${activityId}'), toUUID('${userId}'), toDateTime64('2026-08-30 16:00:00', 6, 'UTC'), '2026-08-30', 60, 500, 0, 1, now64(9, 'UTC')),
         (toUUID('${activityId}'), toUUID('${userId}'), toDateTime64('2026-08-30 16:00:00', 6, 'UTC'), '2026-08-30', 300, 300, 0, 1, now64(9, 'UTC')),

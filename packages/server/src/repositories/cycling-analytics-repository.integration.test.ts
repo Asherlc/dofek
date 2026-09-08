@@ -91,7 +91,10 @@ describe("CyclingAnalyticsRepository ClickHouse serving models", () => {
     );
     await executeClickHouseTestCommand(
       testContext,
-      `INSERT INTO analytics.activity_power_curve VALUES
+      `INSERT INTO analytics.activity_power_curve (
+        activity_id, user_id, started_at, activity_date, duration_seconds, best_power,
+        is_deleted, refresh_version, refreshed_at
+      ) VALUES
         (toUUID('${ACTIVITY_ID}'), toUUID('${TEST_USER_ID}'), now64(6, 'UTC') - INTERVAL 2 DAY, toString(today() - INTERVAL 2 DAY), 300, 400, 0, 1, now64(9, 'UTC')),
         (toUUID('${ACTIVITY_ID}'), toUUID('${TEST_USER_ID}'), now64(6, 'UTC') - INTERVAL 2 DAY, toString(today() - INTERVAL 2 DAY), 1200, 300, 0, 1, now64(9, 'UTC'))`,
     );

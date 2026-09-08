@@ -1,3 +1,4 @@
+import { recordLocalTimeContextSchema } from "@dofek/format/record-local-time";
 import { healthMetricSchema } from "@dofek/mcp-contracts/health-explorer";
 import { CLIMBING_GRADE_SYSTEMS } from "@dofek/training/climbing-grades";
 import { z } from "zod";
@@ -8,6 +9,18 @@ import {
   fingerLoadingGripPositionSchema,
   fingerLoadingLateralitySchema,
 } from "../repositories/climbing-training-log-repository.ts";
+import { sourceReferenceSchema } from "./analytical-evidence.ts";
+import { analyticalTrainingLoadOutputSchema } from "./analytical-training-load-output.ts";
+import { cyclingTrainingMetricsOutputSchema } from "./cycling-training-metrics-output.ts";
+import { fingerLoadingProgressionOutputSchema } from "./finger-loading-progression-output.ts";
+import {
+  foodRecordDetailOutputSchema,
+  foodRecordHistoryOutputSchema,
+  foodRecordMutationOutputSchema,
+  foodRecordSearchOutputSchema,
+} from "./food-record-output.ts";
+import { nutritionSummaryItemSchema } from "./nutrition-summary-output.ts";
+import { strengthProgressionOutputSchema } from "./strength-progression-output.ts";
 
 const nullableNumber = z.number().nullable();
 const nullableString = z.string().nullable();
@@ -221,39 +234,32 @@ export const fingerLoadingOutputSchema = jsonResult(
       rpe: nullableNumber,
       set_count: z.number().int(),
       started_at: z.string(),
-      total_time_under_tension_seconds: z.number(),
+      total_time_under_tension_seconds: nullableNumber,
+      total_time_under_tension_status: z.literal("unavailable"),
+      total_time_under_tension_reason: z.string().min(1),
     }),
   ),
 );
 
-export const nutritionSummaryOutputSchema = jsonResult(
-  z.array(
-    z.object({
-      date: z.string(),
-      total_calories: nullableNumber,
-      protein_g: nullableNumber,
-      carbs_g: nullableNumber,
-      fat_g: nullableNumber,
-      fiber_g: nullableNumber,
-      meal_count: z.number(),
-      resolution_status: z.enum(["available", "source_conflict"]),
-      resolution_message: z.string(),
-      source_provider: nullableString,
-      source_providers: z.array(z.string()),
-      contributing_providers: z.array(z.string()),
-      excluded_providers: z.array(z.string()),
-    }),
-  ),
-);
+export const nutritionSummaryOutputSchema = jsonResult(z.array(nutritionSummaryItemSchema));
 
 export const bodyMetricsOutputSchema = jsonResult(
   z.array(
     z.object({
       date: z.string(),
       weight_kg: nullableNumber,
+      weight_measurement_kind: z.enum(["direct", "unavailable"]),
       body_fat_pct: nullableNumber,
+      body_fat_measurement_kind: z.enum(["unknown", "unavailable"]),
       lean_mass_kg: nullableNumber,
+      lean_mass_measurement_kind: z.enum(["calculated_from_unknown_composition", "unavailable"]),
       bmi: nullableNumber,
+      weight_rolling: z.object({
+        average_7d_kg: nullableNumber,
+        average_28d_kg: nullableNumber,
+        observed_days_7d: z.number().int().nonnegative(),
+        observed_days_28d: z.number().int().nonnegative(),
+      }),
       source_provider_by_metric: z.object({
         weight_kg: nullableString,
         body_fat_pct: nullableString,
@@ -377,6 +383,59 @@ export const activityStreamsOutputSchema = jsonResult(
   }),
 );
 
+const activityTimeseriesStateSchema = z.enum([
+  "measured",
+  "measured_zero",
+  "aggregated",
+  "aggregated_zero",
+  "calculated",
+  "calculated_zero",
+  "interpolated",
+  "missing",
+]);
+const activityTimeseriesValueSchema = z.union([
+  z.number(),
+  z.tuple([z.number(), z.number()]),
+  z.null(),
+]);
+const activityTimeseriesColumnSchema = z.object({
+  values: z.array(activityTimeseriesValueSchema),
+  states: z.array(activityTimeseriesStateSchema),
+  source_indexes: z.array(z.array(z.number().int().nonnegative()).nullable()),
+  unit: z.string(),
+  summary: z.object({
+    min: nullableNumber,
+    max: nullableNumber,
+    average: nullableNumber,
+    observed_samples: z.number().int().nonnegative(),
+    missing_points: z.number().int().nonnegative(),
+    zero_points: z.number().int().nonnegative(),
+    largest_gap_seconds: nullableNumber,
+  }),
+  availability_reason: nullableString,
+});
+export const activityTimeseriesOutputSchema = jsonResult(
+  z.object({
+    activity: z.object({
+      id: z.uuid(),
+      started_at: z.string(),
+      ended_at: nullableString,
+      source_providers: z.array(z.string()),
+      member_activity_ids: z.array(z.uuid()),
+      local_time_context: recordLocalTimeContextSchema,
+    }),
+    resolution: z.object({
+      requested: z.enum(["raw", "1s", "5s", "10s", "30s", "60s"]),
+      effective_seconds: z.number().int().positive().nullable(),
+    }),
+    offsets_seconds: z.array(z.number().nonnegative()),
+    timestamps: z.array(z.string()),
+    streams: z.record(z.string(), activityTimeseriesColumnSchema),
+    sources: z.array(sourceReferenceSchema),
+    next_cursor: nullableString,
+  }),
+);
+
 const climbingAttemptSchema = z.object({
   attemptIndex: z.number().int().positive(),
   failureReason: z.enum(["fell", "pumped", "skin", "technique", "fear"]).nullable(),
@@ -388,14 +447,14 @@ const climbingEntrySchema = z.object({
   discipline: z.enum(["boulder", "lead", "top_rope", "route"]),
   grade: z.string(),
   grade_system: z.enum(CLIMBING_GRADE_SYSTEMS),
-  sent: z.boolean(),
-  attempt_count: z.number().int().positive(),
+  sent: z.boolean().nullable(),
+  attempt_count: z.number().int().positive().nullable(),
   attempts: z.array(climbingAttemptSchema),
   ascent_type: nullableString,
   hold_type: nullableString,
   route_name: nullableString,
   location_name: nullableString,
-  source_name: z.string(),
+  source_name: nullableString,
   wall_angle_degrees: nullableNumber,
 });
 export const climbingSessionsOutputSchema = jsonResult(
@@ -419,17 +478,23 @@ export const climbingSessionsOutputSchema = jsonResult(
           discipline: z.enum(["boulder", "lead", "top_rope", "route"]),
           grade: z.string(),
           grade_system: z.enum(CLIMBING_GRADE_SYSTEMS),
-          attempts: z.number(),
-          sends: z.number(),
+          attempts: nullableNumber,
+          sends: nullableNumber,
         }),
       ),
       send_rate: nullableNumber,
       max_grade_by_discipline: z.object({ boulder: nullableString, route: nullableString }),
       volume: z.object({
         climbs: z.number(),
-        attempts: z.number(),
-        sends: z.number(),
+        attempts: nullableNumber,
+        sends: nullableNumber,
         total_vertical_m: z.null(),
+      }),
+      coverage: z.object({
+        entries: z.number().int().nonnegative(),
+        entries_with_attempts: z.number().int().nonnegative(),
+        entries_with_observed_outcome: z.number().int().nonnegative(),
+        attempt_data: z.enum(["complete", "partial", "unavailable"]),
       }),
     }),
   }),
@@ -535,6 +600,187 @@ export const cyclingPerformanceOutputSchema = jsonResult(
     }),
   }),
 );
+
+const cyclingPowerCurveWeightSourceSchema = z
+  .object({
+    date: z.string(),
+    recorded_at: z.string(),
+    value_kg: z.number().positive(),
+    provider: z.string().min(1),
+    source_record_id: nullableString,
+    measurement_kind: z.literal("direct"),
+  })
+  .strict();
+const cyclingPowerCurveWeightSchema = z.union([
+  z
+    .object({
+      value_kg: z.number().positive(),
+      kind: z.enum(["measured", "interpolated", "nearest"]),
+      method: z.enum(["same_day", "linear_interpolation", "nearest_within_30_days"]),
+      quality: z.enum(["high", "medium", "low"]),
+      distance_days: z.number().nonnegative(),
+      sources: z.array(cyclingPowerCurveWeightSourceSchema).min(1),
+    })
+    .strict(),
+  z.object({ value_kg: z.null(), reason: z.string().min(1) }).strict(),
+]);
+const cyclingPowerCurveEffortSchema = z
+  .object({
+    duration_seconds: z.number().int().positive(),
+    watts: z.number().nonnegative(),
+    watts_per_kg: z.number().nonnegative().nullable(),
+    watts_per_kg_reason: nullableString,
+    weight: cyclingPowerCurveWeightSchema,
+    activity_id: z.uuid(),
+    date: z.string(),
+    started_at: z.string(),
+    start_offset_seconds: z.number().nonnegative().nullable(),
+    canonical_type: z.string(),
+    power_kind: z.enum(["direct", "estimated", "unknown"]),
+    source_providers: z.array(z.string()),
+    source_devices: z.array(z.string()),
+    member_activity_ids: z.array(z.uuid()),
+    quality: z
+      .object({
+        status: z.enum(["high", "moderate", "limited"]),
+        reasons: z.array(z.string()),
+        observed_samples: z.number().int().nonnegative().nullable(),
+        coverage_pct: z.number().min(0).max(100).nullable(),
+        continuity_tolerance_seconds: z.number().positive().nullable(),
+        median_sample_interval_seconds: z.number().positive().nullable(),
+        largest_gap_seconds: z.number().nonnegative().nullable(),
+      })
+      .strict(),
+  })
+  .strict();
+export const cyclingPowerCurveOutputSchema = z
+  .object({
+    result: z
+      .object({
+        start_date: z.string(),
+        end_date: z.string(),
+        durations_seconds: z.array(z.number().int().positive()),
+        bests: z.array(cyclingPowerCurveEffortSchema),
+        activity_curve: z.array(cyclingPowerCurveEffortSchema),
+        next_cursor: nullableString,
+      })
+      .strict(),
+  })
+  .strict();
+
+const thresholdHistoryItemSchema = z
+  .object({
+    id: z.uuid(),
+    evidence_kind: z.enum(["configured", "provider_observation"]),
+    sport: z.string(),
+    threshold_type: z.string(),
+    value: z.number().positive(),
+    unit: z.string(),
+    observed_at: nullableString,
+    effective_at: nullableString,
+    provider: nullableString,
+    provider_record_id: nullableString,
+    value_kind: z.enum(["configured", "provider_recorded", "provider_estimated"]),
+    historical_validity: z.enum(["effective_dated", "observed_from_date"]),
+    raw_evidence_available: z.boolean(),
+    quality: z
+      .object({
+        status: z.enum(["high", "moderate", "limited"]),
+        reason: nullableString,
+      })
+      .strict(),
+  })
+  .strict();
+export const thresholdHistoryOutputSchema = z
+  .object({
+    result: z
+      .object({
+        start_date: z.string(),
+        end_date: z.string(),
+        items: z.array(thresholdHistoryItemSchema),
+        legacy_current: z
+          .object({
+            value: z.number().positive(),
+            unit: z.literal("watt"),
+            source: z.literal("user_profile.ftp"),
+            value_kind: z.literal("configured"),
+            historical_validity: z.literal("unknown"),
+            reason: z.string().min(1),
+          })
+          .strict()
+          .nullable(),
+        next_cursor: nullableString,
+      })
+      .strict(),
+  })
+  .strict();
+
+const cyclingThresholdMethodSchema = z.enum([
+  "best_supported",
+  "recorded_provider",
+  "twenty_minute_95_percent",
+  "sustained_40_to_70_minutes",
+  "critical_power_model",
+]);
+const cyclingThresholdResultMethodSchema = cyclingThresholdMethodSchema.exclude(["best_supported"]);
+const cyclingThresholdEstimateResultSchema = z
+  .object({
+    threshold_watts: z.number().positive(),
+    watts_per_kg: z.number().positive().nullable(),
+    watts_per_kg_reason: nullableString,
+    method: cyclingThresholdResultMethodSchema,
+    classification: z.enum(["configured", "provider_recorded", "estimated"]),
+    confidence: z.enum(["high", "moderate", "limited"]),
+    uncertainty: z
+      .object({
+        watts: z.number().nonnegative().nullable(),
+        kind: z.enum(["not_applicable", "not_quantifiable", "model_rmse"]),
+        reason: nullableString,
+      })
+      .strict(),
+    evidence: z
+      .object({
+        threshold_history: z.array(thresholdHistoryItemSchema),
+        efforts: z.array(cyclingPowerCurveEffortSchema),
+      })
+      .strict(),
+    relevant_activity_ids: z.array(z.uuid()),
+    assumptions: z.array(z.string().min(1)),
+    model: z
+      .object({
+        cp_watts: z.number().positive(),
+        w_prime_joules: z.number(),
+        r2: z.number(),
+        rmse_watts: z.number().nonnegative(),
+        residuals: z.array(
+          z
+            .object({
+              duration_seconds: z.number().int().positive(),
+              observed_watts: z.number().positive(),
+              predicted_watts: z.number(),
+              residual_watts: z.number(),
+            })
+            .strict(),
+        ),
+      })
+      .strict()
+      .nullable(),
+  })
+  .strict();
+export const cyclingThresholdEstimateOutputSchema = z
+  .object({
+    result: z
+      .object({
+        start_date: z.string(),
+        end_date: z.string(),
+        requested_method: cyclingThresholdMethodSchema,
+        result: cyclingThresholdEstimateResultSchema.nullable(),
+        unavailable_reason: nullableString,
+        weight: cyclingPowerCurveWeightSchema,
+      })
+      .strict(),
+  })
+  .strict();
 
 const activityDetailSchema = z.object({
   id: z.string(),
@@ -684,120 +930,40 @@ const supplementSchema = z.object({
 });
 export const supplementsOutputSchema = jsonResult(z.array(supplementSchema));
 
-export const trainingLoadOutputSchema = jsonResult(
-  z.object({
-    range: rangeSchema,
-    rows: z.array(
-      z.object({
-        date: z.string(),
-        daily_load: z.number(),
-        acute_load_7d: z.number(),
-        chronic_load_28d: z.number(),
-        workload_ratio: nullableNumber,
-        coverage: z.object({
-          acute_window_days: z.number().int(),
-          chronic_window_days: z.number().int(),
-        }),
-      }),
-    ),
-  }),
-);
-
-const foodRecordProvenanceOutputSchema = z.object({
-  origin: z.enum(["source", "human"]),
-  change_id: z.uuid().nullable(),
-});
-
-export const foodRecordOutputSchema = z.object({
-  record_id: z.uuid(),
-  source_entry_id: z.uuid(),
-  version: z.uuid().nullable(),
-  deleted: z.boolean(),
-  modifiable: z.boolean(),
-  modification_unavailable_reason: nullableString,
-  date: z.string(),
-  meal: nullableString,
-  food_name: nullableString,
-  food_description: nullableString,
-  category: nullableString,
-  number_of_units: nullableNumber,
-  serving_unit: nullableString,
-  serving_weight_grams: nullableNumber,
-  nutrients: z.record(z.string(), nullableNumber),
-  source_provider: z.string(),
-  provenance: z.record(z.string(), foodRecordProvenanceOutputSchema),
-});
-
-export const foodRecordSearchOutputSchema = jsonResult(
-  z.object({
-    items: z.array(foodRecordOutputSchema),
-    next_cursor: z
-      .object({
-        record_id: z.uuid(),
-      })
-      .nullable(),
-  }),
-);
-
-export const foodRecordDetailOutputSchema = jsonResult(foodRecordOutputSchema.nullable());
-
-const foodRecordFieldDecisionOutputSchema = z.union([
-  z.object({
-    operation: z.literal("set"),
-    value: z.union([z.string(), z.number(), z.boolean(), z.null()]),
-  }),
-  z.object({ operation: z.literal("clear") }),
-]);
-
-const foodRecordHistoryItemOutputSchema = z.object({
-  change_id: z.uuid(),
-  request_id: z.uuid(),
-  version: z.uuid(),
-  predecessor_version: z.uuid().nullable(),
-  kind: z.enum(["create", "update", "clear", "delete", "restore", "undo", "legacy_delete"]),
-  channel: z.enum(["web", "mobile", "mcp", "migration"]),
-  client_id: nullableString,
-  recorded_at: z.string(),
-  effective_at: nullableString,
-  schema_version: z.number().int().positive(),
-  undo_change_id: z.uuid().nullable(),
-  deleted: z.boolean().nullable(),
-  fields: z.record(z.string(), foodRecordFieldDecisionOutputSchema),
-  nutrients: z.record(
-    z.string(),
+const trainingLoadResultSchema = z.object({
+  range: rangeSchema,
+  rows: z.array(
     z.object({
-      operation: z.enum(["set", "clear"]),
-      amount: nullableNumber,
+      date: z.string(),
+      daily_load: z.number(),
+      acute_load_7d: z.number(),
+      chronic_load_28d: z.number(),
+      workload_ratio: nullableNumber,
+      coverage: z.object({
+        acute_window_days: z.number().int(),
+        chronic_window_days: z.number().int(),
+      }),
     }),
   ),
 });
-
-export const foodRecordHistoryOutputSchema = jsonResult(
-  z.object({
-    record_id: z.uuid(),
-    items: z.array(foodRecordHistoryItemOutputSchema),
-    next_cursor: nullableString,
-  }),
-);
-
-export const foodRecordMutationOutputSchema = jsonResult(
-  z.object({
-    operation: z.object({
-      change_id: z.uuid(),
-      resulting_version: z.uuid(),
-      replayed: z.boolean(),
-    }),
-    record: foodRecordOutputSchema,
-  }),
+export const trainingLoadOutputSchema = jsonResult(trainingLoadResultSchema);
+export const trainingLoadToolOutputSchema = jsonResult(
+  z.union([trainingLoadResultSchema, analyticalTrainingLoadOutputSchema.shape.result]),
 );
 
 export const mcpOutputSchemas = {
+  cyclingThresholdEstimate: cyclingThresholdEstimateOutputSchema,
+  cyclingPowerCurve: cyclingPowerCurveOutputSchema,
+  cyclingTrainingMetrics: cyclingTrainingMetricsOutputSchema,
+  activityTimeseries: activityTimeseriesOutputSchema,
   activitySummary: activitySummaryOutputSchema,
   bodyRegions: bodyRegionsOutputSchema,
   bodyMetrics: bodyMetricsOutputSchema,
   dailyHealthSummary: dailyHealthSummaryOutputSchema,
   dataCoverage: dataCoverageOutputSchema,
   fingerLoading: fingerLoadingOutputSchema,
+  fingerLoadingProgression: fingerLoadingProgressionOutputSchema,
+  strengthProgression: strengthProgressionOutputSchema,
   foodRecordDetail: foodRecordDetailOutputSchema,
   foodRecordHistory: foodRecordHistoryOutputSchema,
   foodRecordMutation: foodRecordMutationOutputSchema,
@@ -810,4 +976,6 @@ export const mcpOutputSchemas = {
   searchActivities: searchActivitiesOutputSchema,
   sleepSummary: sleepSummaryOutputSchema,
   subjectiveTimeline: subjectiveTimelineOutputSchema,
+  thresholdHistory: thresholdHistoryOutputSchema,
+  trainingLoad: trainingLoadToolOutputSchema,
 };

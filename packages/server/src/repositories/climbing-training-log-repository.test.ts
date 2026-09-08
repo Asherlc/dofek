@@ -10,6 +10,9 @@ import { collectSqlText } from "./test-helpers.ts";
 
 const fingerLoadingRow = {
   activity_id: "activity-1",
+  entry_activity_id: "source-activity-1",
+  entry_id: "entry-1",
+  entry_provider: "manual",
   bodyweight_kg: 72.5,
   edge_size_mm: 20,
   exercise: "max_hang",
@@ -21,6 +24,15 @@ const fingerLoadingRow = {
   rest_interval_seconds: 180,
   rpe: 8,
   set_count: 5,
+  source_external_ids: [
+    {
+      externalId: "hang-1",
+      memberActivityId: "source-activity-1",
+      providerId: "manual",
+    },
+  ],
+  source_providers: ["manual"],
+  member_activity_ids: ["source-activity-1"],
   started_at: "2026-07-28T17:00:00.000Z",
 };
 
@@ -40,13 +52,50 @@ describe("readFingerLoadingRange", () => {
         userId: "user-1",
       }),
     ).resolves.toEqual([
-      expect.objectContaining({ activityId: "activity-1", effectiveLoadKg: 90 }),
+      expect.objectContaining({
+        activityId: "activity-1",
+        addedWeightKg: 17.5,
+        assistanceKg: 0,
+        effectiveLoadKg: 90,
+        entryId: "entry-1",
+        loadToBodyweightRatio: 90 / 72.5,
+        repetitionsPerSet: null,
+        repetitionsStatus: "not_recorded_by_canonical_schema",
+        sourceActivityId: "source-activity-1",
+        sourceProvider: "manual",
+        sourceProviders: ["manual"],
+      }),
     ]);
 
     const queryText = collectSqlText(execute.mock.calls[0]?.[0]);
     expect(queryText).toContain("FROM fitness.v_activity AS a");
     expect(queryText).toContain("entry.activity_id = ANY(a.member_activity_ids)");
     expect(JSON.stringify(execute.mock.calls[0]?.[0])).toContain("user-1");
+  });
+
+  it("preserves a signed assistance load rather than treating it as added weight", async () => {
+    const execute = vi.fn(
+      async (_query: SQL): Promise<Record<string, unknown>[]> => [
+        { ...fingerLoadingRow, external_load_kg: -20 },
+      ],
+    );
+
+    await expect(
+      readFingerLoadingRange({
+        database: { execute },
+        endDate: "2026-07-29",
+        startDate: "2026-07-01",
+        timezone: "America/Los_Angeles",
+        userId: "user-1",
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        addedWeightKg: 0,
+        assistanceKg: 20,
+        effectiveLoadKg: 52.5,
+        externalLoadKg: -20,
+      }),
+    ]);
   });
 });
 

@@ -12,6 +12,7 @@
     lookback=3,
     full_refresh=false,
     concurrent_batches=false,
+    on_schema_change='append_new_columns',
     engine='ReplacingMergeTree(refresh_version)',
     order_by='(user_id, activity_id, recorded_date, channel, recorded_at)',
     settings={
@@ -72,6 +73,13 @@ activity_samples AS (
         samples.recorded_date AS recorded_date,
         samples.channel AS channel,
         samples.scalar AS scalar,
+        samples.provider_id AS provider_id,
+        samples.member_activity_id AS member_activity_id,
+        samples.device_id AS device_id,
+        samples.source_external_id AS source_external_id,
+        samples.source_type AS source_type,
+        samples.source_metric_stream_id AS source_metric_stream_id,
+        samples.measurement_kind AS measurement_kind,
         samples.is_deleted AS is_deleted,
         greatest(samples.refreshed_at, activity_days.source_synced_at) AS source_refreshed_at
     FROM {{ ref('deduped_sensor') }} AS samples
@@ -89,6 +97,13 @@ SELECT
     recorded_date,
     channel,
     scalar,
+    provider_id,
+    member_activity_id,
+    device_id,
+    source_external_id,
+    source_type,
+    source_metric_stream_id,
+    measurement_kind,
     toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
     is_deleted,
     source_refreshed_at AS refreshed_at

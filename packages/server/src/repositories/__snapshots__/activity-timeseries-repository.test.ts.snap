@@ -1,0 +1,303 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`ActivityTimeseriesRepository > maps GPS and scalar stream names to only their deduped read models 1`] = `
+{
+  "activity": {
+    "endedAt": "2026-09-01T10:00:10.000Z",
+    "id": "00000000-0000-4000-8000-000000000002",
+    "localTimeContext": {
+      "endUtcOffsetMinutes": -420,
+      "source": "provider_timezone",
+      "startUtcOffsetMinutes": -420,
+      "timezone": "America/Los_Angeles",
+    },
+    "memberActivityIds": [
+      "00000000-0000-4000-8000-000000000002",
+      "00000000-0000-4000-8000-000000000003",
+    ],
+    "sourceProviders": [
+      "wahoo",
+      "strava",
+    ],
+    "startedAt": "2026-09-01T10:00:00.000Z",
+  },
+  "nextCursor": null,
+  "offsetsSeconds": [
+    1,
+  ],
+  "resolution": {
+    "effectiveSeconds": null,
+    "requested": "raw",
+  },
+  "sources": [
+    {
+      "activity_id": "00000000-0000-4000-8000-000000000002",
+      "device_id": "KICKR",
+      "measurement_kind": "direct",
+      "member_activity_id": "00000000-0000-4000-8000-000000000003",
+      "provider_id": "wahoo",
+      "source_record_id": "power-stream",
+      "source_type": "fit",
+    },
+  ],
+  "streams": {
+    "distance": {
+      "availabilityReason": null,
+      "sourceIndexes": [
+        null,
+      ],
+      "states": [
+        "missing",
+      ],
+      "summary": {
+        "average": null,
+        "largestGapSeconds": null,
+        "max": null,
+        "min": null,
+        "missingPoints": 1,
+        "observedSamples": 0,
+        "zeroPoints": 0,
+      },
+      "unit": "m",
+      "values": [
+        null,
+      ],
+    },
+    "position": {
+      "availabilityReason": null,
+      "sourceIndexes": [
+        [
+          0,
+        ],
+      ],
+      "states": [
+        "measured",
+      ],
+      "summary": {
+        "average": null,
+        "largestGapSeconds": null,
+        "max": null,
+        "min": null,
+        "missingPoints": 0,
+        "observedSamples": 1,
+        "zeroPoints": 0,
+      },
+      "unit": "degrees",
+      "values": [
+        [
+          -122.1,
+          37.1,
+        ],
+      ],
+    },
+    "temperature": {
+      "availabilityReason": null,
+      "sourceIndexes": [
+        null,
+      ],
+      "states": [
+        "missing",
+      ],
+      "summary": {
+        "average": null,
+        "largestGapSeconds": null,
+        "max": null,
+        "min": null,
+        "missingPoints": 1,
+        "observedSamples": 0,
+        "zeroPoints": 0,
+      },
+      "unit": "°C",
+      "values": [
+        null,
+      ],
+    },
+  },
+  "timestamps": [
+    "2026-09-01T10:00:01.000Z",
+  ],
+}
+`;
+
+exports[`ActivityTimeseriesRepository > paginates synchronized timestamps and deduplicates compact source references 1`] = `
+{
+  "activity": {
+    "endedAt": "2026-09-01T10:00:10.000Z",
+    "id": "00000000-0000-4000-8000-000000000002",
+    "localTimeContext": {
+      "endUtcOffsetMinutes": -420,
+      "source": "provider_timezone",
+      "startUtcOffsetMinutes": -420,
+      "timezone": "America/Los_Angeles",
+    },
+    "memberActivityIds": [
+      "00000000-0000-4000-8000-000000000002",
+      "00000000-0000-4000-8000-000000000003",
+    ],
+    "sourceProviders": [
+      "wahoo",
+      "strava",
+    ],
+    "startedAt": "2026-09-01T10:00:00.000Z",
+  },
+  "nextCursor": "eyJ2ZXJzaW9uIjoxLCJ1c2VySWQiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEiLCJhY3Rpdml0eUlkIjoiMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAyIiwic2hhcGUiOiJ7XCJmaWxsXCI6XCJub25lXCIsXCJyZXNvbHV0aW9uXCI6XCJyYXdcIixcInN0cmVhbXNcIjpbXCJwb3dlclwiXX0iLCJuZXh0UmVjb3JkZWRBdCI6IjIwMjYtMDktMDFUMTA6MDA6MDIuMDAwWiJ9",
+  "offsetsSeconds": [
+    0,
+    1,
+  ],
+  "resolution": {
+    "effectiveSeconds": null,
+    "requested": "raw",
+  },
+  "sources": [
+    {
+      "activity_id": "00000000-0000-4000-8000-000000000002",
+      "device_id": "KICKR",
+      "measurement_kind": "direct",
+      "member_activity_id": "00000000-0000-4000-8000-000000000003",
+      "provider_id": "wahoo",
+      "source_record_id": "power-stream",
+      "source_type": "fit",
+    },
+  ],
+  "streams": {
+    "power": {
+      "availabilityReason": null,
+      "sourceIndexes": [
+        [
+          0,
+        ],
+        [
+          0,
+        ],
+      ],
+      "states": [
+        "measured",
+        "measured",
+      ],
+      "summary": {
+        "average": 105,
+        "largestGapSeconds": 1,
+        "max": 110,
+        "min": 100,
+        "missingPoints": 0,
+        "observedSamples": 2,
+        "zeroPoints": 0,
+      },
+      "unit": "W",
+      "values": [
+        100,
+        110,
+      ],
+    },
+  },
+  "timestamps": [
+    "2026-09-01T10:00:00.000Z",
+    "2026-09-01T10:00:01.000Z",
+  ],
+}
+`;
+
+exports[`ActivityTimeseriesRepository > resolves an alias to its owned canonical activity before querying deduped samples 1`] = `
+{
+  "activity": {
+    "endedAt": "2026-09-01T10:00:10.000Z",
+    "id": "00000000-0000-4000-8000-000000000002",
+    "localTimeContext": {
+      "endUtcOffsetMinutes": -420,
+      "source": "provider_timezone",
+      "startUtcOffsetMinutes": -420,
+      "timezone": "America/Los_Angeles",
+    },
+    "memberActivityIds": [
+      "00000000-0000-4000-8000-000000000002",
+      "00000000-0000-4000-8000-000000000003",
+    ],
+    "sourceProviders": [
+      "wahoo",
+      "strava",
+    ],
+    "startedAt": "2026-09-01T10:00:00.000Z",
+  },
+  "nextCursor": null,
+  "offsetsSeconds": [
+    0,
+    1,
+  ],
+  "resolution": {
+    "effectiveSeconds": null,
+    "requested": "raw",
+  },
+  "sources": [
+    {
+      "activity_id": "00000000-0000-4000-8000-000000000002",
+      "device_id": "KICKR",
+      "measurement_kind": "direct",
+      "member_activity_id": "00000000-0000-4000-8000-000000000003",
+      "provider_id": "wahoo",
+      "source_record_id": "power-stream",
+      "source_type": "fit",
+    },
+  ],
+  "streams": {
+    "heart_rate": {
+      "availabilityReason": null,
+      "sourceIndexes": [
+        null,
+        [
+          0,
+        ],
+      ],
+      "states": [
+        "missing",
+        "measured",
+      ],
+      "summary": {
+        "average": 140,
+        "largestGapSeconds": null,
+        "max": 140,
+        "min": 140,
+        "missingPoints": 1,
+        "observedSamples": 1,
+        "zeroPoints": 0,
+      },
+      "unit": "bpm",
+      "values": [
+        null,
+        140,
+      ],
+    },
+    "power": {
+      "availabilityReason": null,
+      "sourceIndexes": [
+        [
+          0,
+        ],
+        null,
+      ],
+      "states": [
+        "measured_zero",
+        "missing",
+      ],
+      "summary": {
+        "average": 0,
+        "largestGapSeconds": null,
+        "max": 0,
+        "min": 0,
+        "missingPoints": 1,
+        "observedSamples": 1,
+        "zeroPoints": 1,
+      },
+      "unit": "W",
+      "values": [
+        0,
+        null,
+      ],
+    },
+  },
+  "timestamps": [
+    "2026-09-01T10:00:00.000Z",
+    "2026-09-01T10:00:01.000Z",
+  ],
+}
+`;

@@ -43,9 +43,18 @@ type ReconciledBodySourceRow = z.infer<typeof reconciledBodySourceRowSchema>;
 export interface ReconciledBodyDay {
   date: string;
   weightKg: number | null;
+  weightMeasurementKind: "direct" | "unavailable";
   bodyFatPct: number | null;
+  bodyFatMeasurementKind: "unknown" | "unavailable";
   leanMassKg: number | null;
+  leanMassMeasurementKind: "calculated_from_unknown_composition" | "unavailable";
   bmi: number | null;
+  weightRolling: {
+    average7dKg: number | null;
+    average28dKg: number | null;
+    observedDays7d: number;
+    observedDays28d: number;
+  };
   sourceProviderByMetric: {
     weightKg: string | null;
     bodyFatPct: string | null;
@@ -65,10 +74,48 @@ function preferredMetric(
   rows: ReconciledBodySourceRow[],
   metric: "weight_kg" | "body_fat_pct" | "bmi",
 ): { value: number | null; provider: string | null } {
-  const selected = rows.find((row) => row[metric] !== null);
+  const selected = rows.find(
+    (row) =>
+      row[metric] !== null &&
+      (metric !== "weight_kg" || (Number.isFinite(row.weight_kg) && (row.weight_kg ?? 0) > 0)),
+  );
   return selected
     ? { value: selected[metric], provider: selected.provider_id }
     : { value: null, provider: null };
+}
+
+const DAY_MILLISECONDS = 86_400_000;
+
+function dayNumber(date: string): number {
+  return Date.parse(`${date}T00:00:00.000Z`) / DAY_MILLISECONDS;
+}
+
+function rollingWeight(
+  date: string,
+  dailyWeights: ReadonlyArray<{ date: string; weightKg: number | null }>,
+) {
+  const currentDay = dayNumber(date);
+  const observed = (windowDays: number) =>
+    dailyWeights.filter(
+      (row): row is { date: string; weightKg: number } =>
+        row.weightKg !== null &&
+        Number.isFinite(row.weightKg) &&
+        row.weightKg > 0 &&
+        dayNumber(row.date) <= currentDay &&
+        dayNumber(row.date) > currentDay - windowDays,
+    );
+  const sevenDays = observed(7);
+  const twentyEightDays = observed(28);
+  const average = (rows: Array<{ weightKg: number }>) =>
+    rows.length === 0
+      ? null
+      : Math.round((rows.reduce((sum, row) => sum + row.weightKg, 0) / rows.length) * 1000) / 1000;
+  return {
+    average7dKg: average(sevenDays),
+    average28dKg: average(twentyEightDays),
+    observedDays7d: sevenDays.length,
+    observedDays28d: twentyEightDays.length,
+  };
 }
 
 /** A single body measurement record from any provider. */
@@ -320,7 +367,7 @@ export class BodyRepository {
             AND scalar IS NOT NULL
             AND channel IN ('body_weight', 'body_fat_percentage', 'body_mass_index')
             AND toDate(toTimeZone(recorded_at, {timezone:String}))
-              BETWEEN toDate({startDate:String}) AND toDate({endDate:String})
+              BETWEEN addDays(toDate({startDate:String}), -27) AND toDate({endDate:String})
         ),
         source_measurements AS (
           SELECT
@@ -393,7 +440,7 @@ export class BodyRepository {
       rowsByDate.set(row.date, dateRows);
     }
 
-    return [...rowsByDate.entries()].map(([date, dateRows]) => {
+    const reconciled = [...rowsByDate.entries()].map(([date, dateRows]) => {
       dateRows.sort(
         (left, right) =>
           left.body_priority - right.body_priority ||
@@ -407,12 +454,26 @@ export class BodyRepository {
       return {
         date,
         weightKg: weight.value,
+        weightMeasurementKind:
+          weight.value === null ? ("unavailable" as const) : ("direct" as const),
         bodyFatPct: bodyFat.value,
+        bodyFatMeasurementKind:
+          bodyFat.value === null ? ("unavailable" as const) : ("unknown" as const),
         leanMassKg:
           weight.value !== null && bodyFat.value !== null
             ? Math.round(weight.value * (1 - bodyFat.value / 100) * 10) / 10
             : null,
+        leanMassMeasurementKind:
+          weight.value !== null && bodyFat.value !== null
+            ? ("calculated_from_unknown_composition" as const)
+            : ("unavailable" as const),
         bmi: bmi.value,
+        weightRolling: {
+          average7dKg: null,
+          average28dKg: null,
+          observedDays7d: 0,
+          observedDays28d: 0,
+        },
         sourceProviderByMetric: {
           weightKg: weight.provider,
           bodyFatPct: bodyFat.provider,
@@ -428,5 +489,9 @@ export class BodyRepository {
         coverage: { sourceCount: dateRows.length },
       };
     });
+    const weights = reconciled.map(({ date, weightKg }) => ({ date, weightKg }));
+    return reconciled
+      .filter((row) => row.date >= startDate && row.date <= endDate)
+      .map((row) => ({ ...row, weightRolling: rollingWeight(row.date, weights) }));
   }
 }

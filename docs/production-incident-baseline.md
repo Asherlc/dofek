@@ -25730,6 +25730,96 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   The Axiom MCP token remains expired; task-local Swarm logs supplied the fatal
   evidence. No additional resilience knob was introduced.
 
+## 2026-09-07 — Stale workspace Docker resources blocked integration validation
+
+- **Scope / impact:** Local integration-test infrastructure only; no production
+  impact. Compose first failed with `all predefined address pools have been fully
+  subnetted`, then ClickHouse failed with `Cannot reserve 1.00 MiB, not enough
+  space`.
+- **Evidence / root cause:** Twenty-three inactive workspace networks had no
+  attached containers. Docker then reported 25.86 GB of reclaimable stopped
+  container layers while the required ClickHouse insert could not reserve its
+  minimum allocation. Running containers and named volumes belonged to active
+  workspaces and were preserved.
+- **Direct remediation:** Removed only the empty inactive networks, then pruned
+  stopped containers as documented by [Docker's pruning guide](https://docs.docker.com/engine/manage-resources/pruning/).
+  Compose recreated this workspace's network, and the cleanup reclaimed 26.72 GB.
+- **Validation / follow-up:** The unchanged real-ClickHouse provenance fixture
+  subsequently passed. No timeout, retry, storage limit, or test bypass was
+  added. The workspace archive hook should be monitored to ensure it consistently
+  removes stopped containers and empty networks after workspaces are retired.
+
+## 2026-09-08 — Training analytics PR blocked by static and mutation gates
+
+- **Scope / impact:** CI for [PR 2684](https://github.com/Asherlc/dofek/pull/2684)
+  blocked merge; no production impact occurred.
+- **Evidence / root causes:** [Run 34245475097](https://github.com/Asherlc/dofek/actions/runs/34245475097)
+  first failed Expo dependency validation because three Expo packages were one
+  patch behind the SDK's compatibility map. Dependency Cruiser found a cycle
+  between the performance-comparison repository and its context module. CSpell
+  reported 27 occurrences of domain terms and two awkward test descriptions.
+  Mutation shards also reported inadequate behavioral coverage in newly added
+  analytical repositories.
+- **Additional evidence / root causes:**
+  [Run 34258374636](https://github.com/Asherlc/dofek/actions/runs/34258374636)
+  exposed two schema-ordering defects after the static gates passed. The
+  activity sensor integration fixtures still modeled the pre-provenance
+  `deduped_sensor` schema, so dbt failed first with `Identifier
+  'samples.provider_id' cannot be resolved`. A fresh E2E migration ran before
+  dbt had created `analytics.activity_power_curve`, so migration 0077 failed
+  first with `Could not find table: activity_power_curve`. After that was
+  corrected, the fresh E2E dbt build identified a third stale target contract:
+  `sensor_scalar_sample.provider_priority` remained `UInt16` while the current
+  model emits `Int32`, and dbt failed with `New column types:
+  ['provider_priority Int32']`. Before the corrected head could run, `main`
+  merged the food-record MCP work, which had independently claimed Postgres
+  migration numbers 0112/0113 and expanded `tool-output.ts`; the resulting base
+  conflict exposed both duplicate migration identities and Biome's 1,000-line
+  module limit. The first post-merge CI attempt then failed mutation shard 10 at
+  74.35% because critical-power diagnostics were asserted only by type, allowing
+  incorrect prediction, residual, RMSE, and zero-boundary formulas to survive.
+- **Direct fixes:** Align the three Expo packages with the SDK compatibility map;
+  move the shared performance-equivalence contract into a dependency-neutral
+  type module; add the legitimate domain terms to the project dictionary and
+  rephrase the test descriptions. Add exact analytical result and query-contract
+  assertions plus boundary cases for pagination, missing samples, load windows,
+  threshold selection, duplicate consolidation, suspicious strength sets, and
+  bounded provenance. Cover MCP stream selection, scope enforcement, analytics
+  store requirements, dependency construction, default streams, and filter
+  forwarding for the aligned recovery/training endpoint. Bring both executable
+  ClickHouse fixtures up to the current deduplicated sensor provenance schema,
+  and make migration 0077 introspect and alter the dbt-owned read model only
+  when that table already exists. Define both sensor target tables with `Int32`
+  provider priority and add migration 0078 to convert existing targets before
+  dbt runs. Preserve both feature sets by renumbering the unmerged analytics
+  migrations to 0114/0115, combining their MCP registries, and extracting the
+  cohesive food-record output schemas into their own module. Add exact
+  critical-power prediction, residual, RMSE, zero-CP, and zero-W′ assertions.
+- **Validation / follow-up:** Expo dependency validation, Dependency Cruiser,
+  CSpell, root typecheck, the 9,232-test changed unit/mobile suite, and the full
+  local lint gate pass. Focused mutation runs now pass for cycling metrics,
+  performance comparison, climbing progression, finger loading, and
+  performance-comparison modality metrics. The focused ClickHouse join test and
+  the production-dbt-path integrity repair integration suite pass with the
+  current provenance fixture. The migration 0078 real-engine integration test
+  verifies the type conversion and idempotency. After merging the food-record
+  base, the 9,391-test changed
+  unit/mobile suite and 38 focused real-database migration and nutrition tests
+  pass. The focused critical-power mutation run now passes at 91.75% for that
+  module and 78.68% for the aggregate report. The replacement
+  [run 34267627061](https://github.com/Asherlc/dofek/actions/runs/34267627061)
+  completed with 103 successful jobs, four intentional skips, and no failures,
+  including all mutation, integration, E2E, security, and native build gates.
+  `main` then advanced with the injury-logging MCP work before GitHub could
+  merge the PR; after combining that registry and documentation, lint,
+  typecheck, and the 9,395-test changed unit/mobile suite pass locally. A fresh
+  check rollup on that exact head remains the merge gate. One otherwise-passing
+  shard in run 34249990223 failed
+  while finalizing its artifact with GitHub's `403 Forbidden`, so a clean
+  replacement run is required to distinguish transient artifact infrastructure
+  from code failures. The mutation threshold and production-module scope remain
+  unchanged. No timeout, retry, ignored check, or threshold adjustment was added.
+
 ## 2026-09-08 — Expo patch drift blocked MCP injury logging PR validation
 
 - **Scope / impact:** [PR #2685](https://github.com/Asherlc/dofek/pull/2685)
