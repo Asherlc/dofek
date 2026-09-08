@@ -196,7 +196,7 @@ export async function createKafkaMetricStreamEventPublisherFromEnv(
   return createKafkaMetricStreamEventPublisherForRoute("live", env);
 }
 
-export function createKafkaMetricStreamEventPublisherForRoute(
+export async function createKafkaMetricStreamEventPublisherForRoute(
   route: MetricStreamRoute,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<KafkaMetricStreamEventPublisher> {

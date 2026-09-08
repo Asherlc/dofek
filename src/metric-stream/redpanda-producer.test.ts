@@ -327,6 +327,24 @@ describe("KafkaMetricStreamEventPublisher", () => {
   });
 });
 
+describe("getDefaultMetricStreamEventPublisher", () => {
+  it("rejects when the live metric stream topic is absent", async () => {
+    const liveTopic = process.env.METRIC_STREAM_LIVE_TOPIC;
+    delete process.env.METRIC_STREAM_LIVE_TOPIC;
+    try {
+      vi.resetModules();
+      const { getDefaultMetricStreamEventPublisher } = await import("./redpanda-producer.ts");
+
+      await expect(getDefaultMetricStreamEventPublisher()).rejects.toThrow(
+        "METRIC_STREAM_LIVE_TOPIC is required",
+      );
+    } finally {
+      if (liveTopic === undefined) delete process.env.METRIC_STREAM_LIVE_TOPIC;
+      else process.env.METRIC_STREAM_LIVE_TOPIC = liveTopic;
+    }
+  });
+});
+
 describe("createKafkaMetricStreamEventPublisherFromEnv", () => {
   it("requires Redpanda brokers", async () => {
     await expect(
@@ -373,24 +391,28 @@ describe("createKafkaMetricStreamEventPublisherFromEnv", () => {
   });
 
   it("creates independent cached publishers for the configured metric-stream routes", async () => {
+    vi.resetModules();
     kafkaProducerConnect.mockClear();
     kafkaProducerSend.mockClear();
 
+    const { createKafkaMetricStreamEventPublisherForRoute } = await import(
+      "./redpanda-producer.ts"
+    );
     const env = {
       METRIC_STREAM_LIVE_TOPIC: "metric-stream-live-v1",
       METRIC_STREAM_HISTORY_TOPIC: "metric-stream-history-v1",
       REDPANDA_BROKERS: "redpanda:9092",
     };
     const historyPublisher = await createKafkaMetricStreamEventPublisherForRoute("history", env);
+    const livePublisher = await createKafkaMetricStreamEventPublisherForRoute("live", env);
     const repeatedHistoryPublisher = await createKafkaMetricStreamEventPublisherForRoute(
       "history",
       env,
     );
-    const livePublisher = await createKafkaMetricStreamEventPublisherForRoute("live", env);
 
     expect(repeatedHistoryPublisher).toBe(historyPublisher);
     expect(livePublisher).not.toBe(historyPublisher);
-    expect(kafkaProducerConnect).toHaveBeenCalledOnce();
+    expect(kafkaProducerConnect).toHaveBeenCalledTimes(2);
 
     await historyPublisher.publishRows([metricStreamRow], { operationRevision });
     await livePublisher.publishRows([metricStreamRow], { operationRevision });
