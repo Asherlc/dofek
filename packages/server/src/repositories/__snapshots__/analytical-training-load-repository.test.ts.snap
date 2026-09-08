@@ -1566,7 +1566,7 @@ exports[`AnalyticalTrainingLoadRepository > returns a complete date spine with i
 ]
 `;
 
-exports[`AnalyticalTrainingLoadRepository > uses settings effective on the activity date and rejects nonascending HR zones 1`] = `
+exports[`AnalyticalTrainingLoadRepository > uses settings effective on the activity date and rejects HR zones that do not increase 1`] = `
 {
   "definitions": {
     "climbing_attempts": "Recorded attempt counts. Entries with unknown attempts are reported as missing, not failed or zero.",
