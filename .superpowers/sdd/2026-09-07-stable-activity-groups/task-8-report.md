@@ -1,6 +1,6 @@
 # Task 8 report
 
-Status: implemented and verified. Commit and push evidence is recorded after the final verification run.
+Status: implemented, verified, committed as `e044f36`, and pushed to `origin/fix/activity-representative-selection`.
 
 ## Files
 
@@ -59,7 +59,10 @@ Result before production edits: exit 1; 1 failed, 2 skipped. A stable group cont
 - Escalated `rtk pnpm vitest run --project unit packages/server/src/mcp/route.test.ts --retry=0`: exit 0; 67 tests passed.
 - Escalated `rtk pnpm test:integration -- packages/server/src/repositories/strength-repository.integration.test.ts --retry=0`: exit 0; 3 tests passed. The new fixture resolves direct group, both member UUIDs, and a merge alias to byte-for-byte equivalent structured exercises. It also proves the mirrored workout adds exactly 3 working sets, 1 workout, and 1,330 kg rather than 4 sets and 1,830 kg.
 - `rtk pnpm typecheck`: exit 0; `TypeScript: No errors found`.
-- Final Biome and `git diff --check` evidence is recorded with the commit below.
+- `rtk pnpm exec biome check packages/server/src/repositories/strength-repository.ts packages/server/src/repositories/strength-repository.test.ts packages/server/src/repositories/strength-repository.integration.test.ts packages/server/src/repositories/climbing-repository.ts packages/server/src/repositories/climbing-repository.test.ts packages/server/src/routers/activity.test.ts packages/server/src/mcp/route.test.ts`: exit 0; 7 files checked, no fixes applied.
+- `rtk git diff --check`: exit 0.
+- `rtk git commit -m "Union structured activity details across members"`: exit 0; commit `e044f36`.
+- `rtk git push`: exit 0; `201427136..e044f36e8` pushed to `origin/fix/activity-representative-selection`.
 
 ## Cross-repository audit
 
