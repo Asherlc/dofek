@@ -11,6 +11,7 @@ type McpScope =
   | "health:read"
   | "activity:read"
   | "nutrition:read"
+  | "nutrition:write"
   | "providers:read"
   | "sync:write";
 
@@ -18,11 +19,13 @@ const mcpScopeOptions: Array<{ value: McpScope; label: string }> = [
   { value: "health:read", label: "Health summaries" },
   { value: "activity:read", label: "Activity history" },
   { value: "nutrition:read", label: "Nutrition summaries" },
+  { value: "nutrition:write", label: "Modify food records" },
   { value: "providers:read", label: "Provider status" },
   { value: "sync:write", label: "Start sync jobs" },
 ];
 
 const mcpScopeValues = mcpScopeOptions.map((option) => option.value);
+const defaultMcpScopeValues = mcpScopeValues.filter((scope) => scope !== "nutrition:write");
 
 function formatTimestamp(value: Date | string | null): string {
   if (!value) return "Never";
@@ -42,7 +45,7 @@ export function McpTokensPanel() {
   const [name, setName] = useState("Codex");
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [selectedScopes, setSelectedScopes] = useState<Set<McpScope>>(
-    () => new Set(mcpScopeValues),
+    () => new Set(defaultMcpScopeValues),
   );
   const [createdToken, setCreatedToken] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);

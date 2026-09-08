@@ -69,6 +69,30 @@ describe("mcpRouter", () => {
     expect(queryPayload).toContain("health:read");
   });
 
+  it("creates a token with explicitly requested nutrition write access", async () => {
+    mockExecute.mockResolvedValueOnce([
+      {
+        id: "token-id",
+        name: "Food writer",
+        scopes: ["nutrition:read", "nutrition:write"],
+        created_at: "2026-05-20T12:00:00.000Z",
+        last_used_at: null,
+        expires_at: null,
+        revoked_at: null,
+      },
+    ]);
+    const caller = createCaller(createContext("user-id"));
+
+    const result = await caller.createToken({
+      name: "Food writer",
+      scopes: ["nutrition:read", "nutrition:write"],
+      expiresAt: null,
+    });
+
+    expect(result.metadata.scopes).toEqual(["nutrition:read", "nutrition:write"]);
+    expect(JSON.stringify(mockExecute.mock.calls[0]?.[0])).toContain("nutrition:write");
+  });
+
   it("creates expiring tokens with the requested expiration timestamp", async () => {
     mockExecute.mockResolvedValueOnce([
       {
