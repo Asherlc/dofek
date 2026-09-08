@@ -59,18 +59,21 @@ Food identities use:
 
 - `domain`: `nutrition.food`
 - `namespace`: the canonical provider ID
-- `source_key`: the provider's stable external identity
+- `source_key`: `external:<external_id>` when the provider supplies a stable
+  external identity, otherwise `row:<food_entry.id>`
 
 All ingestion paths that participate in modification must supply a stable
 external identity. Dofek-created entries receive a generated external identity
-before insertion. Existing records with a stable `external_id` resolve to the
-same identity lazily and idempotently. Existing records without a stable source
-identity remain readable but return `modifiable: false` with an actionable
-reason; the service must not pretend that a row UUID will survive replacement.
+before insertion. Search lazily and idempotently creates structural identities
+so every returned record has one MCP record ID. Existing records without a
+stable source identity use the row-key form for reading but return
+`modifiable: false` with an actionable reason; the service must not pretend
+that a row UUID will survive replacement.
 
 The effective reader joins a current source row to the identity by user,
-domain, provider namespace, and source key. If a provider replaces the physical
-row while retaining that key, the same human decisions apply to the new row.
+domain, provider namespace, and the prefixed external-key or row-key form. If a
+provider replaces the physical row while retaining its external key, the same
+human decisions apply to the new row.
 PostgreSQL uniqueness constraints remain the final authority for concurrent
 identity creation; see the official documentation for
 [unique constraints](https://www.postgresql.org/docs/current/ddl-constraints.html#DDL-CONSTRAINTS-UNIQUE-CONSTRAINTS).
