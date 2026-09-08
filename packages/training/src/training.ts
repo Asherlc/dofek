@@ -43,14 +43,12 @@ function ambiguousStrengthExerciseNames(
 }
 
 function equipmentDisplayLabel(equipment: string | null): string {
-  const words =
-    equipment
-      ?.trim()
-      .toLowerCase()
-      .split(/[_\s-]+/)
-      .filter(Boolean) ?? [];
-  if (words.length === 0) return "Unspecified Equipment";
-  return words.map((word) => `${word[0]?.toUpperCase() ?? ""}${word.slice(1)}`).join(" ");
+  const normalizedEquipment = equipment?.trim().toLowerCase();
+  if (!normalizedEquipment) return "Unspecified Equipment";
+  return normalizedEquipment
+    .split(/[_\s-]+/)
+    .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
+    .join(" ");
 }
 
 function strengthExerciseDisplayLabel(
@@ -65,30 +63,18 @@ function losslessEquipmentDiscriminator(equipment: string | null): string {
   return equipment === null ? "recorded without equipment" : `recorded as “${equipment}”`;
 }
 
-function indexesByLabel(labels: readonly string[]): ReadonlyMap<string, number[]> {
-  const indexes = new Map<string, number[]>();
-  labels.forEach((label, index) => {
-    indexes.set(label, [...(indexes.get(label) ?? []), index]);
-  });
-  return indexes;
-}
-
-function compareStableText(left: string, right: string): number {
-  if (left < right) return -1;
-  if (left > right) return 1;
-  return 0;
-}
-
-function compareStrengthExerciseIdentity(
-  left: StrengthExerciseIdentity,
-  right: StrengthExerciseIdentity,
-): number {
-  const nameOrder = compareStableText(left.exerciseName, right.exerciseName);
-  if (nameOrder !== 0) return nameOrder;
-  if (left.equipment === right.equipment) return 0;
-  if (left.equipment === null) return -1;
-  if (right.equipment === null) return 1;
-  return compareStableText(left.equipment, right.equipment);
+function groupByLabel<T>(
+  values: readonly T[],
+  labelFor: (value: T) => string,
+): ReadonlyMap<string, T[]> {
+  const groups = new Map<string, T[]>();
+  for (const value of values) {
+    const label = labelFor(value);
+    const group = groups.get(label);
+    if (group) group.push(value);
+    else groups.set(label, [value]);
+  }
+  return groups;
 }
 
 export interface StrengthExerciseDisplayLabel {
@@ -117,58 +103,55 @@ export function strengthExerciseDisplayLabels(
   identities: readonly StrengthExerciseIdentity[],
 ): readonly StrengthExerciseDisplayLabel[] {
   const ambiguousNames = ambiguousStrengthExerciseNames(identities);
-  const readableLabels = identities.map((identity) =>
-    strengthExercisePresentation(strengthExerciseDisplayLabel(identity, ambiguousNames), null),
-  );
-  const readableGroups = indexesByLabel(readableLabels.map(({ label }) => label));
-  const discriminatedLabels = readableLabels.map((presentation, index) => {
-    const matchingIndexes = readableGroups.get(presentation.label) ?? [];
-    if (matchingIndexes.length < 2) return presentation;
-    const identity = identities[index];
-    if (!identity) return presentation;
-    return strengthExercisePresentation(
-      presentation.baseLabel,
-      losslessEquipmentDiscriminator(identity.equipment),
-    );
-  });
-  const discriminatedGroups = indexesByLabel(discriminatedLabels.map(({ label }) => label));
-  const allocatedLabels = [...discriminatedLabels];
-  const usedLabels = new Set(
-    [...discriminatedGroups].filter(([, indexes]) => indexes.length === 1).map(([label]) => label),
-  );
-  const collisionGroups = [...discriminatedGroups]
-    .filter(([, indexes]) => indexes.length > 1)
-    .sort(([left], [right]) => compareStableText(left, right));
-
-  for (const [, indexes] of collisionGroups) {
-    const sortedIndexes = [...indexes].sort((left, right) => {
-      const leftIdentity = identities[left];
-      const rightIdentity = identities[right];
-      if (!leftIdentity || !rightIdentity) return left - right;
-      return compareStrengthExerciseIdentity(leftIdentity, rightIdentity);
-    });
-    let variant = 1;
-    for (const index of sortedIndexes) {
-      const presentation = discriminatedLabels[index];
-      if (!presentation) continue;
-      let discriminator = presentation.discriminator
-        ? `${presentation.discriminator} · variant ${variant}`
-        : `variant ${variant}`;
-      let allocated = strengthExercisePresentation(presentation.baseLabel, discriminator);
-      while (usedLabels.has(allocated.label)) {
-        variant += 1;
-        discriminator = presentation.discriminator
-          ? `${presentation.discriminator} · variant ${variant}`
-          : `variant ${variant}`;
-        allocated = strengthExercisePresentation(presentation.baseLabel, discriminator);
-      }
-      allocatedLabels[index] = allocated;
-      usedLabels.add(allocated.label);
-      variant += 1;
+  const entries = identities.map((identity) => ({
+    identity,
+    presentation: strengthExercisePresentation(
+      strengthExerciseDisplayLabel(identity, ambiguousNames),
+      null,
+    ),
+  }));
+  const readableGroups = groupByLabel(entries, ({ presentation }) => presentation.label);
+  for (const group of readableGroups.values()) {
+    if (group.length < 2) continue;
+    for (const entry of group) {
+      entry.presentation = strengthExercisePresentation(
+        entry.presentation.baseLabel,
+        losslessEquipmentDiscriminator(entry.identity.equipment),
+      );
     }
   }
 
-  return allocatedLabels;
+  const usedLabels = new Set(entries.map(({ presentation }) => presentation.label));
+  const discriminatedGroups = groupByLabel(entries, ({ presentation }) => presentation.label);
+  const collisionGroups = [...discriminatedGroups.values()].filter((group) => group.length > 1);
+
+  for (const group of collisionGroups) {
+    const identityGroups = groupByLabel(group, ({ identity }) => identity.exerciseName);
+    const sortedIdentityGroups = [...identityGroups]
+      .map(([identityKey, identityEntries]) => ({ identityKey, identityEntries }))
+      .sort((left, right) => left.identityKey.localeCompare(right.identityKey));
+    let variant = 1;
+    for (const { identityEntries } of sortedIdentityGroups) {
+      for (const entry of identityEntries) {
+        let discriminator = entry.presentation.discriminator
+          ? `${entry.presentation.discriminator} · variant ${variant}`
+          : `variant ${variant}`;
+        let allocated = strengthExercisePresentation(entry.presentation.baseLabel, discriminator);
+        while (usedLabels.has(allocated.label)) {
+          variant += 1;
+          discriminator = entry.presentation.discriminator
+            ? `${entry.presentation.discriminator} · variant ${variant}`
+            : `variant ${variant}`;
+          allocated = strengthExercisePresentation(entry.presentation.baseLabel, discriminator);
+        }
+        entry.presentation = allocated;
+        usedLabels.add(allocated.label);
+        variant += 1;
+      }
+    }
+  }
+
+  return entries.map(({ presentation }) => presentation);
 }
 
 // ============================================================
@@ -186,7 +169,7 @@ export type CyclingActivityType = (typeof CYCLING_ACTIVITY_TYPES)[number];
 
 /** Check whether an activity type is a cycling variant. */
 export function isCyclingActivity(activityType: string): activityType is CyclingActivityType {
-  return CYCLING_ACTIVITY_TYPES.some((t) => t === activityType);
+  return activityType === "cycling";
 }
 
 /** Cadence unit for display based on activity type. */
