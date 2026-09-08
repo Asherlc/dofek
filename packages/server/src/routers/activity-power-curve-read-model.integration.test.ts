@@ -259,7 +259,7 @@ describe("activity_power_curve read model", () => {
       format: "JSONEachRow",
     });
 
-    await expect(result.json()).resolves.toEqual([{ "count()": 13 }]);
+    await expect(result.json()).resolves.toEqual([{ "count()": 15 }]);
   });
 
   it("uses elapsed timestamp duration instead of sample count for power windows", async () => {

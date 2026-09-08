@@ -42,11 +42,11 @@ describe("activity_power_curve model", () => {
     );
   });
 
-  it("uses the approved standard duration set", () => {
+  it("uses the required duration set while retaining legacy points", () => {
     const durationValuesSql = extractCteSql(modelSql, "duration_values");
 
     expect(durationValuesSql).toContain(
-      "arrayJoin([1, 5, 15, 30, 60, 120, 300, 600, 720, 1200, 1800, 2400, 3600, 5400])",
+      "arrayJoin([1, 5, 15, 30, 60, 120, 180, 300, 420, 600, 720, 1200, 1800, 2400, 3600, 5400, 7200])",
     );
   });
 

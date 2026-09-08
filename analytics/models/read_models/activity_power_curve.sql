@@ -308,7 +308,7 @@ power_sample_endpoints AS MATERIALIZED (
 duration_values AS (
     SELECT duration_seconds
     FROM (
-        SELECT arrayJoin([1, 5, 15, 30, 60, 120, 300, 600, 720, 1200, 1800, 2400, 3600, 5400]) AS duration_seconds
+        SELECT arrayJoin([1, 5, 15, 30, 60, 120, 180, 300, 420, 600, 720, 1200, 1800, 2400, 3600, 5400, 7200]) AS duration_seconds
     )
 ),
 

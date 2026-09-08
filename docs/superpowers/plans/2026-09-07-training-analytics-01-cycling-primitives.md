@@ -462,7 +462,7 @@ Run: `pnpm vitest run --project unit packages/training/src/power-duration-refere
 
 Expected: PASS.
 
-- [x] **Step 5: Strengthen the dbt SQL tests before changing SQL.** Assert the duration array is exactly the approved default list, `scalar >= 0` rather than `scalar > 0`, window energy supports fractional duration endpoints, output includes start offset/coverage/provenance, and no equality join to `addSeconds(start, duration)` remains.
+- [x] **Step 5: Strengthen the dbt SQL tests before changing SQL.** Assert the duration array contains the approved default list plus legacy 3-minute, 7-minute, and 120-minute points, `scalar >= 0` rather than `scalar > 0`, window energy supports fractional duration endpoints, output includes start offset/coverage/provenance, and no equality join to `addSeconds(start, duration)` remains.
 
 - [x] **Step 6: Run dbt SQL tests and witness RED.**
 
@@ -529,7 +529,7 @@ export class CyclingPowerCurveRepository {
 }
 ```
 
-- [ ] **Step 1: Write failing nearby-weight tests.** Cover same-day, 14-day two-sided interpolation, 30-day nearest, earlier tie, measurements outside bounds, zero/negative weights, and consumer BIA composition not being accepted as body weight.
+- [x] **Step 1: Write failing nearby-weight tests.** Cover same-day, 14-day two-sided interpolation, 30-day nearest, earlier tie, measurements outside bounds, zero/negative weights, and consumer BIA composition not being accepted as body weight.
 
 ```ts
 expect(selectNearbyWeight("2026-06-15", [
@@ -537,19 +537,19 @@ expect(selectNearbyWeight("2026-06-15", [
 ])).toMatchObject({ value_kg: 71, method: "interpolated", kind: "interpolated" });
 ```
 
-- [ ] **Step 2: Run the weight tests and witness RED.**
+- [x] **Step 2: Run the weight tests and witness RED.**
 
 Run: `pnpm vitest run --project unit packages/server/src/repositories/nearby-weight.test.ts`
 
 Expected: FAIL because the selector is absent.
 
-- [ ] **Step 3: Implement weight matching and run GREEN.** Preserve every contributing date/provider and return distance days and quality. Never use body-fat or lean-mass channels as weight.
+- [x] **Step 3: Implement weight matching and run GREEN.** Preserve every contributing date/provider and return distance days and quality. Never use body-fat or lean-mass channels as weight.
 
 Run: `pnpm vitest run --project unit packages/server/src/repositories/nearby-weight.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 4: Write failing repository tests.** Assert default/model durations query the materialized table; custom durations use a parameterized bounded `activity_sensor_sample` query; providers and modalities filter canonical activities without multiplying duplicate members; result ordering is duration ascending then watts descending; every record includes offset, source, measurement kind, quality, weight evidence, and W/kg or an explicit reason; and the activity-curve cursor is stable.
+- [x] **Step 4: Write failing repository tests.** Assert default/model durations query the materialized table; custom durations use a parameterized bounded `activity_sensor_sample` query; providers and modalities filter canonical activities without multiplying duplicate members; result ordering is duration ascending then watts descending; every record includes offset, source, measurement kind, quality, weight evidence, and W/kg or an explicit reason; and the activity-curve cursor is stable.
 
 ```ts
 expect(result.bests[0]).toMatchObject({
@@ -562,17 +562,17 @@ expect(result.bests[0]).toMatchObject({
 });
 ```
 
-- [ ] **Step 5: Run repository tests and witness RED.**
+- [x] **Step 5: Run repository tests and witness RED.**
 
 Run: `pnpm vitest run --project unit packages/server/src/repositories/cycling-power-curve-repository.test.ts`
 
 Expected: FAIL because the repository does not exist.
 
-- [ ] **Step 6: Implement model and custom queries.** Use `duration_seconds IN ({durations:Array(UInt32)})` for standard rows. For custom rows, use the same cumulative-energy and gap algorithm as the dbt model inside one authenticated, date-bounded ClickHouse query and return only winning rows. Query weight observations once for `startDate - 30 days` through `endDate + 30 days`, then apply `selectNearbyWeight` per winning effort. Reject more than 32 durations before a query.
+- [x] **Step 6: Implement model and custom queries.** Use `duration_seconds IN ({durations:Array(UInt32)})` for standard rows. For custom rows, use the same cumulative-energy and gap algorithm as the dbt model inside one authenticated, date-bounded ClickHouse query and return only winning rows. Query weight observations once for `startDate - 30 days` through `endDate + 30 days`, then apply `selectNearbyWeight` per winning effort. Reject more than 32 durations before a query.
 
-- [ ] **Step 7: Add executable integration coverage.** Seed a 1 Hz outdoor Wahoo ride, irregular Wahoo samples, five-second Peloton ride, duplicate Strava activity, and weights around the winning date. Assert 5/20/30/60-minute results, arbitrary 7-minute result, W/kg, missing-weight reason, provider filtering, and no duplicate volume/result.
+- [x] **Step 7: Add executable integration coverage.** Seed a 1 Hz outdoor Wahoo ride, irregular Wahoo samples, five-second Peloton ride, duplicate Strava activity, and weights around the winning date. Assert 5/20/30/60-minute results, an arbitrary non-model duration, W/kg, missing-weight reason, provider filtering, and no duplicate volume/result.
 
-- [ ] **Step 8: Run repository suites and witness GREEN.**
+- [x] **Step 8: Run repository suites and witness GREEN.**
 
 Run: `pnpm vitest run --project unit packages/server/src/repositories/nearby-weight.test.ts packages/server/src/repositories/cycling-power-curve-repository.test.ts`
 
@@ -580,7 +580,7 @@ Run: `pnpm test:integration -- packages/server/src/repositories/cycling-power-cu
 
 Expected: PASS.
 
-- [ ] **Step 9: Commit the repository.**
+- [x] **Step 9: Commit the repository.**
 
 ```bash
 git add packages/server/src/repositories/nearby-weight.ts packages/server/src/repositories/nearby-weight.test.ts packages/server/src/repositories/cycling-power-curve-repository.ts packages/server/src/repositories/cycling-power-curve-repository.test.ts packages/server/src/repositories/cycling-power-curve-repository.integration.test.ts
