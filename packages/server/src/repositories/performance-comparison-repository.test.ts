@@ -200,7 +200,7 @@ describe("PerformanceComparisonRepository", () => {
     ).rejects.toThrow("explicit equivalence key");
   });
 
-  it("does not infer a verified workout identity from an uncontracted generic raw field", async () => {
+  it("does not infer a verified workout identity from an unsupported generic raw field", async () => {
     const reference = activityRow({
       source_raw_evidence: [
         {

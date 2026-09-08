@@ -264,7 +264,7 @@ describe("ClimbingProgressionRepository", () => {
     });
   });
 
-  it("calculates date-aligned exposure, partial attempts, grade trends, and ascent hardests", async () => {
+  it("calculates date-aligned exposure, partial attempts, grade trends, and hardest ascents", async () => {
     const rows = [
       { ...baseRow, ascent_type: "Flash", attempt_count: 1 },
       {

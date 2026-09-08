@@ -3,10 +3,8 @@ import { CLIMBING_GRADE_SYSTEMS } from "@dofek/training/climbing-grades";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { dateSchema } from "../lib/date-schema.ts";
-import {
-  PerformanceComparisonRepository,
-  type PerformanceEquivalence,
-} from "../repositories/performance-comparison-repository.ts";
+import { PerformanceComparisonRepository } from "../repositories/performance-comparison-repository.ts";
+import type { PerformanceEquivalence } from "../repositories/performance-comparison-types.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { performanceComparisonOutputSchema } from "./performance-comparison-output.ts";
 import { requireMcpScope } from "./token-repository.ts";

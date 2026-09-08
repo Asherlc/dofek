@@ -25748,3 +25748,24 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   subsequently passed. No timeout, retry, storage limit, or test bypass was
   added. The workspace archive hook should be monitored to ensure it consistently
   removes stopped containers and empty networks after workspaces are retired.
+
+## 2026-09-08 — Training analytics PR blocked by static and mutation gates
+
+- **Scope / impact:** CI for [PR 2684](https://github.com/Asherlc/dofek/pull/2684)
+  blocked merge; no production impact occurred.
+- **Evidence / root causes:** [Run 34245475097](https://github.com/Asherlc/dofek/actions/runs/34245475097)
+  first failed Expo dependency validation because three Expo packages were one
+  patch behind the SDK's compatibility map. Dependency Cruiser found a cycle
+  between the performance-comparison repository and its context module. CSpell
+  reported 27 occurrences of domain terms and two awkward test descriptions.
+  Mutation shards also reported inadequate behavioral coverage in newly added
+  analytical repositories.
+- **Direct fixes:** Align the three Expo packages with the SDK compatibility map;
+  move the shared performance-equivalence contract into a dependency-neutral
+  type module; add the legitimate domain terms to the project dictionary and
+  rephrase the test descriptions.
+- **Validation / follow-up:** Expo dependency validation, Dependency Cruiser,
+  and CSpell pass locally. Merge remains gated on the replacement CI run and its
+  mutation shards. Surviving analytical mutants require focused behavioral tests;
+  the mutation threshold and production-module scope remain unchanged. No timeout,
+  retry, ignored check, or threshold adjustment was added.

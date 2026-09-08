@@ -2,7 +2,7 @@ import type {
   ClimbingComparisonRow,
   StrengthComparisonRow,
 } from "./performance-comparison-modality-metrics.ts";
-import type { PerformanceEquivalence } from "./performance-comparison-repository.ts";
+import type { PerformanceEquivalence } from "./performance-comparison-types.ts";
 
 export const PELOTON_WORKOUT_KEYS = ["pelotonClassId"] as const;
 
