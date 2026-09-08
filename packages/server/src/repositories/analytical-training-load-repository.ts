@@ -3,6 +3,12 @@ import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema } from "../lib/typed-sql.ts";
+import {
+  clickHouseActivityDateIsAuthoritative,
+  clickHouseActivityLocalDate,
+  postgresActivityDateIsAuthoritative,
+  postgresActivityLocalDate,
+} from "./activity-local-date.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { SportSettingsRepository, type SportSettingsRow } from "./sport-settings-repository.ts";
 
@@ -13,6 +19,7 @@ const cyclingActivitySchema = z.object({
   elapsed_seconds: z.coerce.number().nonnegative().nullable(),
   source_providers: z.array(z.string()),
   first_observed_date: z.string().nullable(),
+  date_was_authoritative: z.coerce.boolean().optional().default(false),
 });
 
 const heartRateLoadSchema = z.object({
@@ -23,6 +30,8 @@ const heartRateLoadSchema = z.object({
   activity_ids: z.array(z.string().uuid()),
   source_providers: z.array(z.string()),
   first_observed_date: z.string().nullable(),
+  authoritative_activity_count: z.coerce.number().int().nonnegative().optional().default(0),
+  assumed_activity_count: z.coerce.number().int().nonnegative().optional().default(0),
 });
 
 const postgresLoadSchema = z.object({
@@ -35,18 +44,29 @@ const postgresLoadSchema = z.object({
   session_rpe_activities: z.coerce.number().int().nonnegative(),
   session_rpe_supported_activities: z.coerce.number().int().nonnegative(),
   session_rpe_activity_ids: z.array(z.string().uuid()),
+  session_rpe_authoritative_count: z.coerce.number().int().nonnegative().optional().default(0),
+  session_rpe_assumed_count: z.coerce.number().int().nonnegative().optional().default(0),
   climbing_attempts: z.coerce.number().int().nonnegative().nullable(),
   climbing_entries: z.coerce.number().int().nonnegative(),
   climbing_entries_with_attempts: z.coerce.number().int().nonnegative(),
   climbing_session_minutes: z.coerce.number().nonnegative(),
   climbing_activity_ids: z.array(z.string().uuid()),
+  climbing_activities: z.coerce.number().int().nonnegative().optional(),
+  climbing_authoritative_count: z.coerce.number().int().nonnegative().optional().default(0),
+  climbing_assumed_count: z.coerce.number().int().nonnegative().optional().default(0),
   finger_load_kg_seconds: z.coerce.number().nonnegative().nullable(),
   finger_entries: z.coerce.number().int().nonnegative(),
   finger_activity_ids: z.array(z.string().uuid()),
+  finger_activities: z.coerce.number().int().nonnegative().optional(),
+  finger_authoritative_count: z.coerce.number().int().nonnegative().optional().default(0),
+  finger_assumed_count: z.coerce.number().int().nonnegative().optional().default(0),
   strength_volume_kg_reps: z.coerce.number().nonnegative().nullable(),
   strength_working_sets: z.coerce.number().int().nonnegative(),
   strength_suspicious_sets: z.coerce.number().int().nonnegative(),
   strength_activity_ids: z.array(z.string().uuid()),
+  strength_activities: z.coerce.number().int().nonnegative().optional(),
+  strength_authoritative_count: z.coerce.number().int().nonnegative().optional().default(0),
+  strength_assumed_count: z.coerce.number().int().nonnegative().optional().default(0),
 });
 
 const postgresCoverageSchema = z.object({
@@ -63,11 +83,13 @@ interface BaseChannel {
   status: "available" | "partial" | "unavailable" | "not_observed";
   reason: string | null;
   sourceActivityIds: string[];
+  sourceActivityCount: number;
   sourceProviders: string[];
   contributingRecords: number;
   supportedRecords: number;
   firstObservedDate: string | null;
   context: Record<string, number>;
+  dateAttribution: { authoritativeRecords: number; analysisTimezoneAssumptions: number };
 }
 
 interface ChannelDefinition {
@@ -126,11 +148,13 @@ function emptyChannel(date: string, firstObservedDate: string | null): BaseChann
       status: "unavailable",
       reason: "Source coverage had not begun by this date.",
       sourceActivityIds: [],
+      sourceActivityCount: 0,
       sourceProviders: [],
       contributingRecords: 0,
       supportedRecords: 0,
       firstObservedDate,
       context: {},
+      dateAttribution: { authoritativeRecords: 0, analysisTimezoneAssumptions: 0 },
     };
   }
   return {
@@ -138,19 +162,38 @@ function emptyChannel(date: string, firstObservedDate: string | null): BaseChann
     status: "not_observed",
     reason: "No exposure was observed for this load channel on this date.",
     sourceActivityIds: [],
+    sourceActivityCount: 0,
     sourceProviders: [],
     contributingRecords: 0,
     supportedRecords: 0,
     firstObservedDate,
     context: {},
+    dateAttribution: { authoritativeRecords: 0, analysisTimezoneAssumptions: 0 },
   };
 }
 
 function unavailableChannel(
   reason: string,
-  input: Omit<BaseChannel, "dailyValue" | "status" | "reason">,
+  input: Omit<
+    BaseChannel,
+    "dailyValue" | "status" | "reason" | "dateAttribution" | "sourceActivityCount"
+  > & {
+    dateAttribution?: BaseChannel["dateAttribution"];
+    sourceActivityCount?: number;
+  },
 ): BaseChannel {
-  return { ...input, dailyValue: null, status: "unavailable", reason };
+  return {
+    ...input,
+    sourceActivityIds: input.sourceActivityIds.slice(0, 100),
+    sourceActivityCount: input.sourceActivityCount ?? input.sourceActivityIds.length,
+    dateAttribution: input.dateAttribution ?? {
+      authoritativeRecords: 0,
+      analysisTimezoneAssumptions: 0,
+    },
+    dailyValue: null,
+    status: "unavailable",
+    reason,
+  };
 }
 
 function rollingFor(
@@ -224,17 +267,24 @@ function baseAvailable(input: {
   records: number;
   firstObservedDate: string | null;
   context?: Record<string, number>;
+  dateAttribution?: BaseChannel["dateAttribution"];
+  sourceActivityCount?: number;
 }): BaseChannel {
   return {
     dailyValue: round(input.value),
     status: "available",
     reason: null,
-    sourceActivityIds: input.activityIds,
+    sourceActivityIds: input.activityIds.slice(0, 100),
+    sourceActivityCount: input.sourceActivityCount ?? input.activityIds.length,
     sourceProviders: input.providers,
     contributingRecords: input.records,
     supportedRecords: input.records,
     firstObservedDate: input.firstObservedDate,
     context: input.context ?? {},
+    dateAttribution: input.dateAttribution ?? {
+      authoritativeRecords: 0,
+      analysisTimezoneAssumptions: 0,
+    },
   };
 }
 
@@ -243,20 +293,39 @@ function postgresChannels(
   coverage: z.infer<typeof postgresCoverageSchema> | undefined,
 ) {
   if (!row) return null;
+  const sessionRpeDateAttribution = {
+    authoritativeRecords: row.session_rpe_authoritative_count,
+    analysisTimezoneAssumptions: row.session_rpe_assumed_count,
+  };
+  const climbingDateAttribution = {
+    authoritativeRecords: row.climbing_authoritative_count,
+    analysisTimezoneAssumptions: row.climbing_assumed_count,
+  };
+  const fingerDateAttribution = {
+    authoritativeRecords: row.finger_authoritative_count,
+    analysisTimezoneAssumptions: row.finger_assumed_count,
+  };
+  const strengthDateAttribution = {
+    authoritativeRecords: row.strength_authoritative_count,
+    analysisTimezoneAssumptions: row.strength_assumed_count,
+  };
   const sessionRpe =
     row.session_rpe_load == null
       ? unavailableChannel("No activity has both duration and recorded session RPE.", {
           sourceProviders: row.session_rpe_source_providers,
           sourceActivityIds: row.session_rpe_activity_ids,
+          sourceActivityCount: row.session_rpe_activities,
           contributingRecords: row.session_rpe_activities,
           supportedRecords: 0,
           firstObservedDate: coverage?.first_session_rpe_date ?? null,
           context: { activities: row.session_rpe_activities },
+          dateAttribution: sessionRpeDateAttribution,
         })
       : {
           ...baseAvailable({
             value: row.session_rpe_load,
             activityIds: row.session_rpe_activity_ids,
+            sourceActivityCount: row.session_rpe_activities,
             providers: row.session_rpe_source_providers,
             records: row.session_rpe_supported_activities,
             firstObservedDate: coverage?.first_session_rpe_date ?? null,
@@ -264,6 +333,7 @@ function postgresChannels(
               activities: row.session_rpe_activities,
               activities_with_rpe: row.session_rpe_supported_activities,
             },
+            dateAttribution: sessionRpeDateAttribution,
           }),
           status:
             row.session_rpe_supported_activities === row.session_rpe_activities
@@ -285,6 +355,7 @@ function postgresChannels(
             {
               sourceProviders: row.climbing_source_providers,
               sourceActivityIds: row.climbing_activity_ids,
+              sourceActivityCount: row.climbing_activities ?? row.climbing_activity_ids.length,
               contributingRecords: row.climbing_entries,
               supportedRecords: 0,
               firstObservedDate: climbingFirstObserved,
@@ -293,12 +364,14 @@ function postgresChannels(
                 entries_with_attempt_data: 0,
                 session_minutes: row.climbing_session_minutes,
               },
+              dateAttribution: climbingDateAttribution,
             },
           )
         : {
             ...baseAvailable({
               value: row.climbing_attempts ?? 0,
               activityIds: row.climbing_activity_ids,
+              sourceActivityCount: row.climbing_activities ?? row.climbing_activity_ids.length,
               providers: row.climbing_source_providers,
               records: row.climbing_entries_with_attempts,
               firstObservedDate: climbingFirstObserved,
@@ -307,6 +380,7 @@ function postgresChannels(
                 entries_with_attempt_data: row.climbing_entries_with_attempts,
                 session_minutes: row.climbing_session_minutes,
               },
+              dateAttribution: climbingDateAttribution,
             }),
             status:
               row.climbing_entries_with_attempts === row.climbing_entries
@@ -327,19 +401,23 @@ function postgresChannels(
             {
               sourceProviders: row.finger_source_providers,
               sourceActivityIds: row.finger_activity_ids,
+              sourceActivityCount: row.finger_activities ?? row.finger_activity_ids.length,
               contributingRecords: row.finger_entries,
               supportedRecords: 0,
               firstObservedDate: coverage?.first_finger_date ?? null,
               context: { entries: row.finger_entries },
+              dateAttribution: fingerDateAttribution,
             },
           )
         : baseAvailable({
             value: row.finger_load_kg_seconds,
             activityIds: row.finger_activity_ids,
+            sourceActivityCount: row.finger_activities ?? row.finger_activity_ids.length,
             providers: row.finger_source_providers,
             records: row.finger_entries,
             firstObservedDate: coverage?.first_finger_date ?? null,
             context: { entries: row.finger_entries },
+            dateAttribution: fingerDateAttribution,
           });
   const strength =
     row.strength_working_sets === 0 && row.strength_suspicious_sets === 0
@@ -350,6 +428,7 @@ function postgresChannels(
             {
               sourceProviders: row.strength_source_providers,
               sourceActivityIds: row.strength_activity_ids,
+              sourceActivityCount: row.strength_activities ?? row.strength_activity_ids.length,
               contributingRecords: row.strength_suspicious_sets,
               supportedRecords: 0,
               firstObservedDate: coverage?.first_strength_date ?? null,
@@ -357,12 +436,14 @@ function postgresChannels(
                 working_sets: 0,
                 suspicious_sets_excluded: row.strength_suspicious_sets,
               },
+              dateAttribution: strengthDateAttribution,
             },
           )
         : {
             ...baseAvailable({
               value: row.strength_volume_kg_reps ?? 0,
               activityIds: row.strength_activity_ids,
+              sourceActivityCount: row.strength_activities ?? row.strength_activity_ids.length,
               providers: row.strength_source_providers,
               records: row.strength_working_sets,
               firstObservedDate: coverage?.first_strength_date ?? null,
@@ -370,6 +451,7 @@ function postgresChannels(
                 working_sets: row.strength_working_sets,
                 suspicious_sets_excluded: row.strength_suspicious_sets,
               },
+              dateAttribution: strengthDateAttribution,
             }),
             status:
               row.strength_suspicious_sets === 0 ? ("available" as const) : ("partial" as const),
@@ -421,8 +503,44 @@ export class AnalyticalTrainingLoadRepository {
     this.#timezone = timezone;
   }
 
-  async listRange(startDate: string, endDate: string) {
+  async listRange(
+    startDate: string,
+    endDate: string,
+    filters: { providers: readonly string[]; modalities: readonly string[] } = {
+      providers: [],
+      modalities: [],
+    },
+    datePolicy: "analysis_timezone" | "source_context" = "analysis_timezone",
+  ) {
     const calculationStart = dateShift(startDate, -27);
+    const postgresLocalDate =
+      datePolicy === "source_context"
+        ? postgresActivityLocalDate(sql`activity`, this.#timezone)
+        : sql`(activity.started_at AT TIME ZONE ${this.#timezone})::date`;
+    const clickHouseLocalDate =
+      datePolicy === "source_context"
+        ? clickHouseActivityLocalDate("activity")
+        : "toDate(toTimeZone(activity.started_at, {timezone:String}))";
+    const postgresDateIsAuthoritative =
+      datePolicy === "source_context"
+        ? postgresActivityDateIsAuthoritative(sql`activity`)
+        : sql`false`;
+    const clickHouseDateIsAuthoritative =
+      datePolicy === "source_context" ? clickHouseActivityDateIsAuthoritative("activity") : "false";
+    const providerPredicate =
+      filters.providers.length === 0
+        ? sql`true`
+        : sql`activity.source_providers && ARRAY[${sql.join(
+            filters.providers.map((provider) => sql`${provider}`),
+            sql`, `,
+          )}]::text[]`;
+    const modalityPredicate =
+      filters.modalities.length === 0
+        ? sql`true`
+        : sql`activity.modality::text IN (${sql.join(
+            filters.modalities.map((modality) => sql`${modality}`),
+            sql`, `,
+          )})`;
     const settingsHistory = await new SportSettingsRepository(this.#db, this.#userId).history(
       "cycling",
     );
@@ -433,28 +551,34 @@ export class AnalyticalTrainingLoadRepository {
         WITH all_cycling AS (
           SELECT
             cycling.activity_id,
-            toDate(toTimeZone(cycling.started_at, {timezone:String})) AS date,
+            ${clickHouseLocalDate} AS date,
             cycling.normalized_power,
             cycling.elapsed_seconds,
-            activity.source_providers
+            activity.source_providers,
+            ${clickHouseDateIsAuthoritative} AS date_was_authoritative
           FROM analytics.cycling_activity AS cycling FINAL
           INNER JOIN analytics.deduped_activities AS activity FINAL
             ON activity.activity_id = cycling.activity_id AND activity.user_id = cycling.user_id
           WHERE cycling.user_id = {userId:UUID}
             AND cycling.is_deleted = 0 AND activity.is_deleted = 0
+            AND (empty({providers:Array(String)})
+              OR hasAny(activity.source_providers, {providers:Array(String)}))
+            AND (empty({modalities:Array(String)})
+              OR has({modalities:Array(String)}, activity.modality))
         ),
-        first_observed AS (SELECT min(date) AS date FROM all_cycling)
+        first_observed AS (SELECT minOrNull(date) AS date FROM all_cycling)
         SELECT
           toString(all_cycling.activity_id) AS activity_id,
           toString(all_cycling.date) AS date,
           normalized_power,
           elapsed_seconds,
           source_providers,
-          toString(first_observed.date) AS first_observed_date
+          toString(first_observed.date) AS first_observed_date,
+          date_was_authoritative
         FROM all_cycling CROSS JOIN first_observed
         WHERE all_cycling.date BETWEEN toDate({calculationStart:String}) AND toDate({endDate:String})
         UNION ALL
-        SELECT NULL, NULL, NULL, NULL, [], toString(date)
+        SELECT NULL, NULL, NULL, NULL, [], toString(date), false
         FROM first_observed
         WHERE date IS NOT NULL
         ORDER BY date`,
@@ -463,6 +587,8 @@ export class AnalyticalTrainingLoadRepository {
           timezone: this.#timezone,
           calculationStart,
           endDate,
+          providers: [...filters.providers],
+          modalities: [...filters.modalities],
         },
       ),
       executeWithSchema(
@@ -473,7 +599,8 @@ export class AnalyticalTrainingLoadRepository {
             SELECT
               activity.id,
               activity.source_providers,
-              (activity.started_at AT TIME ZONE ${this.#timezone})::date AS date,
+              ${postgresLocalDate} AS date,
+              ${postgresDateIsAuthoritative} AS date_was_authoritative,
               GREATEST(EXTRACT(EPOCH FROM (activity.ended_at - activity.started_at)) / 60.0, 0)
                 AS duration_minutes,
               activity.perceived_exertion,
@@ -522,7 +649,9 @@ export class AnalyticalTrainingLoadRepository {
               WHERE set.activity_id = ANY(activity.member_activity_ids)
             ) AS strength ON TRUE
             WHERE activity.user_id = ${this.#userId}::uuid
-              AND (activity.started_at AT TIME ZONE ${this.#timezone})::date
+              AND ${providerPredicate}
+              AND ${modalityPredicate}
+              AND ${postgresLocalDate}
                 BETWEEN ${calculationStart}::date AND ${endDate}::date
           ),
           provider_contributions AS (
@@ -563,25 +692,49 @@ export class AnalyticalTrainingLoadRepository {
               AS session_rpe_activities,
             COUNT(*) FILTER (WHERE perceived_exertion IS NOT NULL AND duration_minutes > 0)::int
               AS session_rpe_supported_activities,
-            COALESCE(array_agg(DISTINCT id::text)
-              FILTER (WHERE duration_minutes > 0), ARRAY[]::text[])
+            (COALESCE(array_agg(DISTINCT id::text ORDER BY id::text)
+              FILTER (WHERE duration_minutes > 0), ARRAY[]::text[]))[1:100]
               AS session_rpe_activity_ids,
+            COUNT(DISTINCT id) FILTER (WHERE duration_minutes > 0 AND date_was_authoritative)::int
+              AS session_rpe_authoritative_count,
+            COUNT(DISTINCT id) FILTER (WHERE duration_minutes > 0 AND NOT date_was_authoritative)::int
+              AS session_rpe_assumed_count,
             SUM(attempts)::int AS climbing_attempts,
             SUM(entries)::int AS climbing_entries,
             SUM(entries_with_attempts)::int AS climbing_entries_with_attempts,
             SUM(duration_minutes) FILTER (WHERE entries > 0)::real AS climbing_session_minutes,
-            COALESCE(array_agg(DISTINCT id::text) FILTER (WHERE entries > 0), ARRAY[]::text[])
+            (COALESCE(array_agg(DISTINCT id::text ORDER BY id::text)
+              FILTER (WHERE entries > 0), ARRAY[]::text[]))[1:100]
               AS climbing_activity_ids,
+            COUNT(DISTINCT id) FILTER (WHERE entries > 0)::int AS climbing_activities,
+            COUNT(DISTINCT id) FILTER (WHERE entries > 0 AND date_was_authoritative)::int
+              AS climbing_authoritative_count,
+            COUNT(DISTINCT id) FILTER (WHERE entries > 0 AND NOT date_was_authoritative)::int
+              AS climbing_assumed_count,
             SUM(load_kg_seconds)::real AS finger_load_kg_seconds,
             SUM(finger_entries)::int AS finger_entries,
-            COALESCE(array_agg(DISTINCT id::text) FILTER (WHERE finger_entries > 0), ARRAY[]::text[])
+            (COALESCE(array_agg(DISTINCT id::text ORDER BY id::text)
+              FILTER (WHERE finger_entries > 0), ARRAY[]::text[]))[1:100]
               AS finger_activity_ids,
+            COUNT(DISTINCT id) FILTER (WHERE finger_entries > 0)::int AS finger_activities,
+            COUNT(DISTINCT id) FILTER (WHERE finger_entries > 0 AND date_was_authoritative)::int
+              AS finger_authoritative_count,
+            COUNT(DISTINCT id) FILTER (WHERE finger_entries > 0 AND NOT date_was_authoritative)::int
+              AS finger_assumed_count,
             SUM(volume_kg_reps)::real AS strength_volume_kg_reps,
             SUM(working_sets)::int AS strength_working_sets,
             SUM(suspicious_sets)::int AS strength_suspicious_sets,
-            COALESCE(array_agg(DISTINCT id::text)
-              FILTER (WHERE working_sets > 0 OR suspicious_sets > 0), ARRAY[]::text[])
-              AS strength_activity_ids
+            (COALESCE(array_agg(DISTINCT id::text ORDER BY id::text)
+              FILTER (WHERE working_sets > 0 OR suspicious_sets > 0), ARRAY[]::text[]))[1:100]
+              AS strength_activity_ids,
+            COUNT(DISTINCT id) FILTER (WHERE working_sets > 0 OR suspicious_sets > 0)::int
+              AS strength_activities,
+            COUNT(DISTINCT id) FILTER (
+              WHERE (working_sets > 0 OR suspicious_sets > 0) AND date_was_authoritative
+            )::int AS strength_authoritative_count,
+            COUNT(DISTINCT id) FILTER (
+              WHERE (working_sets > 0 OR suspicious_sets > 0) AND NOT date_was_authoritative
+            )::int AS strength_assumed_count
           FROM activity_contributions
           GROUP BY date
           )
@@ -595,18 +748,29 @@ export class AnalyticalTrainingLoadRepository {
             daily.session_rpe_activities,
             daily.session_rpe_supported_activities,
             daily.session_rpe_activity_ids,
+            daily.session_rpe_authoritative_count,
+            daily.session_rpe_assumed_count,
             daily.climbing_attempts,
             daily.climbing_entries,
             daily.climbing_entries_with_attempts,
             daily.climbing_session_minutes,
             daily.climbing_activity_ids,
+            daily.climbing_activities,
+            daily.climbing_authoritative_count,
+            daily.climbing_assumed_count,
             daily.finger_load_kg_seconds,
             daily.finger_entries,
             daily.finger_activity_ids,
+            daily.finger_activities,
+            daily.finger_authoritative_count,
+            daily.finger_assumed_count,
             daily.strength_volume_kg_reps,
             daily.strength_working_sets,
             daily.strength_suspicious_sets,
-            daily.strength_activity_ids
+            daily.strength_activity_ids,
+            daily.strength_activities,
+            daily.strength_authoritative_count,
+            daily.strength_assumed_count
           FROM daily
           INNER JOIN providers_by_date AS providers ON providers.date = daily.date
           ORDER BY date
@@ -617,26 +781,28 @@ export class AnalyticalTrainingLoadRepository {
         postgresCoverageSchema,
         sql`
           SELECT
-            min((activity.started_at AT TIME ZONE ${this.#timezone})::date)
+            min(${postgresLocalDate})
               FILTER (WHERE activity.perceived_exertion IS NOT NULL
                 AND activity.ended_at > activity.started_at)::text AS first_session_rpe_date,
-            min((activity.started_at AT TIME ZONE ${this.#timezone})::date)
+            min(${postgresLocalDate})
               FILTER (WHERE EXISTS (
                 SELECT 1 FROM fitness.climbing_entry AS entry
                 WHERE entry.activity_id = ANY(activity.member_activity_ids)
               ))::text AS first_climbing_date,
-            min((activity.started_at AT TIME ZONE ${this.#timezone})::date)
+            min(${postgresLocalDate})
               FILTER (WHERE EXISTS (
                 SELECT 1 FROM fitness.finger_loading_entry AS entry
                 WHERE entry.activity_id = ANY(activity.member_activity_ids)
               ))::text AS first_finger_date,
-            min((activity.started_at AT TIME ZONE ${this.#timezone})::date)
+            min(${postgresLocalDate})
               FILTER (WHERE EXISTS (
                 SELECT 1 FROM fitness.strength_set AS strength_set
                 WHERE strength_set.activity_id = ANY(activity.member_activity_ids)
               ))::text AS first_strength_date
           FROM fitness.v_activity AS activity
           WHERE activity.user_id = ${this.#userId}::uuid
+            AND ${providerPredicate}
+            AND ${modalityPredicate}
         `,
       ),
     ]);
@@ -647,7 +813,14 @@ export class AnalyticalTrainingLoadRepository {
     );
     const cyclingFirstObserved =
       cyclingRows.find((row) => row.first_observed_date)?.first_observed_date ?? null;
-    const hrRows = await this.#loadHeartRate(settingsHistory, calculationStart, endDate);
+    const hrRows = await this.#loadHeartRate(
+      settingsHistory,
+      calculationStart,
+      endDate,
+      filters,
+      clickHouseLocalDate,
+      clickHouseDateIsAuthoritative,
+    );
     const heartRateFirstObserved = hrRows[0]?.first_observed_date ?? null;
     const postgresByDate = new Map(postgresRows.map((row) => [row.date, row]));
     const postgresCoverage = postgresCoverageRows[0];
@@ -663,6 +836,11 @@ export class AnalyticalTrainingLoadRepository {
     const allDates = dateSeries(calculationStart, endDate);
     for (const date of allDates) {
       const dateCycling = realCyclingRows.filter((row) => row.date === date);
+      const cyclingDateAttribution = {
+        authoritativeRecords: dateCycling.filter((row) => row.date_was_authoritative).length,
+        analysisTimezoneAssumptions: dateCycling.filter((row) => !row.date_was_authoritative)
+          .length,
+      };
       const supportedCycling = dateCycling.flatMap((row) => {
         const setting = effectiveSetting(settingsHistory, date);
         if (
@@ -686,6 +864,7 @@ export class AnalyticalTrainingLoadRepository {
                 supportedRecords: 0,
                 firstObservedDate: cyclingFirstObserved,
                 context: { activities: dateCycling.length },
+                dateAttribution: cyclingDateAttribution,
               },
             )
           : dateCycling.length > 0
@@ -697,6 +876,7 @@ export class AnalyticalTrainingLoadRepository {
                   records: supportedCycling.length,
                   firstObservedDate: cyclingFirstObserved,
                   context: { activities: dateCycling.length },
+                  dateAttribution: cyclingDateAttribution,
                 }),
                 status:
                   supportedCycling.length === dateCycling.length
@@ -718,10 +898,15 @@ export class AnalyticalTrainingLoadRepository {
           ? baseAvailable({
               value: heartRate.load_points,
               activityIds: heartRate.activity_ids,
+              sourceActivityCount: heartRate.activity_count,
               providers: heartRate.source_providers,
               records: heartRate.activity_count,
               firstObservedDate: heartRate.first_observed_date,
               context: { covered_seconds: heartRate.covered_seconds },
+              dateAttribution: {
+                authoritativeRecords: heartRate.authoritative_activity_count,
+                analysisTimezoneAssumptions: heartRate.assumed_activity_count,
+              },
             })
           : emptyChannel(date, heartRateFirstObserved),
       );
@@ -747,7 +932,12 @@ export class AnalyticalTrainingLoadRepository {
     }
 
     return {
-      range: { start_date: startDate, end_date: endDate, timezone: this.#timezone },
+      range: {
+        start_date: startDate,
+        end_date: endDate,
+        timezone: this.#timezone,
+        date_policy: datePolicy,
+      },
       definitions: definitions(),
       total_daily_load: {
         value: null,
@@ -773,8 +963,15 @@ export class AnalyticalTrainingLoadRepository {
                   contributing_records: channel.contributingRecords,
                   supported_records: channel.supportedRecords,
                   first_observed_date: channel.firstObservedDate,
+                  source_activity_count: channel.sourceActivityCount,
+                  source_activity_ids_truncated:
+                    channel.sourceActivityCount > channel.sourceActivityIds.length,
                 },
                 context: channel.context,
+                date_attribution: {
+                  authoritative_activities: channel.dateAttribution.authoritativeRecords,
+                  analysis_timezone_activities: channel.dateAttribution.analysisTimezoneAssumptions,
+                },
                 rolling: rollingFor(date, channelMaps[key]),
               },
             ];
@@ -788,6 +985,9 @@ export class AnalyticalTrainingLoadRepository {
     settingsHistory: SportSettingsRow[],
     calculationStart: string,
     endDate: string,
+    filters: { providers: readonly string[]; modalities: readonly string[] },
+    clickHouseLocalDate: string,
+    clickHouseDateIsAuthoritative: string,
   ): Promise<z.infer<typeof heartRateLoadSchema>[]> {
     const chronological = [...settingsHistory].sort((left, right) =>
       left.effectiveFrom.localeCompare(right.effectiveFrom),
@@ -818,7 +1018,7 @@ export class AnalyticalTrainingLoadRepository {
           WITH ordered AS (
             SELECT
               sensor.activity_id,
-              toDate(toTimeZone(activity.started_at, {timezone:String})) AS date,
+              ${clickHouseLocalDate} AS date,
               sensor.recorded_at,
               sensor.scalar AS heart_rate,
               leadInFrame(sensor.recorded_at, 1, sensor.recorded_at) OVER (
@@ -826,13 +1026,18 @@ export class AnalyticalTrainingLoadRepository {
                 ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
               ) AS next_recorded_at,
               sensor.provider_id
+              , ${clickHouseDateIsAuthoritative} AS date_was_authoritative
             FROM analytics.activity_sensor_sample AS sensor FINAL
             INNER JOIN analytics.deduped_activities AS activity FINAL
               ON activity.activity_id = sensor.activity_id AND activity.user_id = sensor.user_id
             WHERE sensor.user_id = {userId:UUID}
               AND sensor.channel = 'heart_rate' AND sensor.scalar > 0 AND sensor.is_deleted = 0
               AND activity.is_deleted = 0
-              AND toDate(toTimeZone(activity.started_at, {timezone:String}))
+              AND (empty({providers:Array(String)})
+                OR hasAny(activity.source_providers, {providers:Array(String)}))
+              AND (empty({modalities:Array(String)})
+                OR has({modalities:Array(String)}, activity.modality))
+              AND ${clickHouseLocalDate}
                 BETWEEN toDate({segmentStart:String}) AND toDate({segmentEnd:String})
           ),
           weighted AS (
@@ -848,9 +1053,11 @@ export class AnalyticalTrainingLoadRepository {
               bounded_zone)) / 60.0 AS load_points,
             sum(seconds) AS covered_seconds,
             uniqExact(activity_id) AS activity_count,
-            arraySort(groupUniqArray(toString(activity_id))) AS activity_ids,
+            arraySlice(arraySort(groupUniqArray(toString(activity_id))), 1, 100) AS activity_ids,
             arraySort(groupUniqArrayIf(provider_id, provider_id != '')) AS source_providers,
-            toString(min(date) OVER ()) AS first_observed_date
+            toString(min(date) OVER ()) AS first_observed_date,
+            uniqExactIf(activity_id, date_was_authoritative) AS authoritative_activity_count,
+            uniqExactIf(activity_id, NOT date_was_authoritative) AS assumed_activity_count
           FROM weighted
           GROUP BY date
           ORDER BY date`,
@@ -861,6 +1068,8 @@ export class AnalyticalTrainingLoadRepository {
             segmentEnd,
             thresholdHr: setting.thresholdHr,
             upperPcts,
+            providers: [...filters.providers],
+            modalities: [...filters.modalities],
           },
         ),
       ),

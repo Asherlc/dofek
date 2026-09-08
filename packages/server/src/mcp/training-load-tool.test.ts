@@ -55,8 +55,11 @@ function analyticalResult() {
       contributing_records: 1,
       supported_records: 1,
       first_observed_date: "2026-06-01",
+      source_activity_count: 1,
+      source_activity_ids_truncated: false,
     },
     context: { activities: 1 },
+    date_attribution: { authoritative_activities: 0, analysis_timezone_activities: 1 },
     rolling: {
       acute_7d_sum: null,
       chronic_28d_weekly_equivalent: null,
@@ -69,7 +72,12 @@ function analyticalResult() {
     },
   });
   return {
-    range: { start_date: "2026-06-15", end_date: "2026-06-15", timezone: "UTC" },
+    range: {
+      start_date: "2026-06-15",
+      end_date: "2026-06-15",
+      timezone: "UTC",
+      date_policy: "analysis_timezone" as const,
+    },
     definitions: {
       cycling_power_tss: "Cycling definition",
       heart_rate_zone_load: "HR definition",

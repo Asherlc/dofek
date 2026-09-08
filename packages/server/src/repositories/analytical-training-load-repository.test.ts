@@ -111,6 +111,7 @@ describe("AnalyticalTrainingLoadRepository", () => {
       start_date: "2026-06-28",
       end_date: "2026-06-28",
       timezone: "America/Los_Angeles",
+      date_policy: "analysis_timezone",
     });
     expect(result.total_daily_load).toEqual({
       value: null,
@@ -247,6 +248,80 @@ describe("AnalyticalTrainingLoadRepository", () => {
       daily_value: null,
       status: "unavailable",
       reason: "All 1 strength sets were excluded by validation rules.",
+    });
+  });
+
+  it("applies provider and modality filters to cycling and heart-rate source queries", async () => {
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce([settingsRow()])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          first_session_rpe_date: null,
+          first_climbing_date: null,
+          first_finger_date: null,
+          first_strength_date: null,
+        },
+      ]);
+    const query = vi.fn().mockResolvedValue([]);
+    const repository = new AnalyticalTrainingLoadRepository({ execute }, { query }, userId, "UTC");
+
+    await repository.listRange("2026-06-01", "2026-06-01", {
+      providers: ["peloton"],
+      modalities: ["indoor"],
+    });
+
+    const cyclingCall = query.mock.calls.find((call) =>
+      String(call[1]).includes("analytical-load:cycling"),
+    );
+    const heartRateCall = query.mock.calls.find((call) =>
+      String(call[1]).includes("analytical-load:heart-rate"),
+    );
+    expect(cyclingCall?.[1]).toContain("hasAny(activity.source_providers");
+    expect(cyclingCall?.[2]).toMatchObject({ providers: ["peloton"], modalities: ["indoor"] });
+    expect(heartRateCall?.[1]).toContain("has({modalities:Array(String)}, activity.modality)");
+    expect(heartRateCall?.[2]).toMatchObject({ providers: ["peloton"], modalities: ["indoor"] });
+  });
+
+  it("caps per-channel activity ID evidence while retaining the total count", async () => {
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce([settingsRow()])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          first_session_rpe_date: null,
+          first_climbing_date: null,
+          first_finger_date: null,
+          first_strength_date: null,
+        },
+      ]);
+    const cyclingRows = Array.from({ length: 105 }, (_, index) => ({
+      activity_id: `00000000-0000-4000-9000-${String(index + 1).padStart(12, "0")}`,
+      date: "2026-06-01",
+      normalized_power: 250,
+      elapsed_seconds: 3600,
+      source_providers: ["wahoo"],
+      first_observed_date: "2026-06-01",
+      date_was_authoritative: true,
+    }));
+    const query = vi.fn(async (_schema, queryText: string) =>
+      queryText.includes("analytical-load:cycling") ? cyclingRows : [],
+    );
+
+    const result = await new AnalyticalTrainingLoadRepository(
+      { execute },
+      { query },
+      userId,
+      "UTC",
+    ).listRange("2026-06-01", "2026-06-01", { providers: [], modalities: [] }, "source_context");
+
+    const channel = result.rows[0]?.channels.cycling_power_tss;
+    expect(channel?.source_activity_ids).toHaveLength(100);
+    expect(channel?.coverage).toMatchObject({
+      source_activity_count: 105,
+      source_activity_ids_truncated: true,
     });
   });
 });

@@ -140,15 +140,37 @@ export class DailyMetricsRepository extends BaseRepository {
   ): Promise<HealthTrendRow[]> {
     return this.query(
       healthTrendRowSchema,
-      sql`WITH ${restingHeartRateCte}
-          SELECT dm.*, resting.resting_hr
-          FROM fitness.v_daily_metrics dm
-          LEFT JOIN resting_heart_rate resting ON resting.date = dm.date
-          WHERE dm.user_id = ${this.userId}
-            AND dm.date >= ${startDate}::date
-            AND dm.date <= ${endDate}::date
-            ${this.dateAccessPredicate(sql`dm.date`)}
-          ORDER BY dm.date ASC`,
+      sql`WITH ${restingHeartRateCte},
+          base_dates AS (
+            SELECT date
+            FROM fitness.v_daily_metrics
+            WHERE user_id = ${this.userId}
+            UNION
+            SELECT date FROM resting_heart_rate
+          )
+          SELECT
+            base_dates.date,
+            COALESCE(dm.user_id, ${this.userId}::uuid) AS user_id,
+            dm.hrv,
+            dm.spo2_avg,
+            dm.respiratory_rate_avg,
+            dm.skin_temp_c,
+            dm.steps,
+            dm.distance_km,
+            dm.flights_climbed,
+            dm.exercise_minutes,
+            dm.stand_hours,
+            dm.walking_speed,
+            COALESCE(dm.source_providers, ARRAY[]::text[]) AS source_providers,
+            resting.resting_hr
+          FROM base_dates
+          LEFT JOIN fitness.v_daily_metrics dm
+            ON dm.user_id = ${this.userId} AND dm.date = base_dates.date
+          LEFT JOIN resting_heart_rate resting ON resting.date = base_dates.date
+          WHERE base_dates.date >= ${startDate}::date
+            AND base_dates.date <= ${endDate}::date
+            ${this.dateAccessPredicate(sql`base_dates.date`)}
+          ORDER BY base_dates.date ASC`,
     );
   }
 

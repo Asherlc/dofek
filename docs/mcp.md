@@ -171,6 +171,7 @@ The canonical tool names, schemas, and scope checks are defined in the [MCP tool
 | `get_activity_summary` | `activity:read` | Aggregates activity volume and effort by type, ISO week, modality, or purpose, including unclassified and power coverage. |
 | `get_cycling_performance` | `activity:read` | Returns exact-range per-ride normalized power, intensity factor, standard best efforts, rolling-90-day bests, FTP estimates, elevation, and coverage. |
 | `get_training_load` | `activity:read`; also `nutrition:read` when requested | Returns daily load and rolling windows; analytical detail preserves modality channels and can include aligned nutrition. |
+| `get_recovery_training_series` | Scope depends on selected streams: `health:read`, `activity:read`, and/or `nutrition:read` | Returns a selected, date-aligned recovery, sleep, weight, load, subjective, compact activity-exposure, and nutrition series without causal interpretation. |
 | `get_climbing_sessions` | `activity:read` | Returns exact-range climbing sessions with grades, attempts, sends, discipline, wall angle, and explicit unavailable fields. |
 | `get_climbing_progression` | `activity:read` | Returns longitudinal climbing grade, attempt, send-rate, frequency, rolling-exposure, duplicate, and provenance analysis. |
 | `get_finger_loading` | `activity:read` | Returns structured finger-loading protocols, effective load, and total time under tension inside exact date boundaries. |
@@ -193,7 +194,7 @@ OpenAI likewise treats schemas as user-facing tool metadata and recommends an
 output schema for structured results ([OpenAI: Build an MCP
 server](https://developers.openai.com/plugins/build/mcp-server#define-tools-from-user-goals)).
 
-For the 19 ordinary tools, the declared schema and `structuredContent` use the
+For ordinary tools, the declared schema and `structuredContent` use the
 object-root envelope `{ "result": ... }`. This makes scalar, array, `null`,
 and object natural results valid object-root tool outputs without changing the
 existing pretty-printed JSON text in `content`. For example, an ordinary tool
@@ -264,6 +265,42 @@ fields.
 7-day and 28-day window coverage explicitly. See the
 [daily-strain model](../analytics/models/read_models/daily_strain.sql) and
 [training-load repository](../packages/server/src/repositories/training-load-repository.ts).
+Analytical `get_training_load` preserves its existing analysis-timezone calendar contract and
+labels that choice as `date_policy: "analysis_timezone"`.
+
+`get_recovery_training_series` returns an inclusive local-calendar date spine capped at 366 days.
+Callers select only the needed `health`, `sleep`, `body_weight`, `training_load`, `subjective`,
+`activities`, and `nutrition` streams; nutrition is opt-in. Missing scalar observations remain null
+and carry `missing` status. HRV, respiratory rate, and step provider attribution is explicitly
+labeled as applying to the canonical daily row because the current daily view does not attribute
+every scalar independently. Resting HR is separately labeled as calculated from canonical
+deduplicated samples; its current read model does not expose contributing provider IDs. Sleep
+retains onset/wake timestamps, selected session, stage coverage, providers, named timezone, UTC
+offsets, and local-time source. Body weight distinguishes a direct measurement on that date from
+same-day/interpolated/nearest direct-measurement evidence and includes 7/28-day rolling coverage.
+
+Training load remains six separate modality-specific channels. Each response date also exposes the
+immediately preceding local-calendar day's load channels, calculated by calendar date rather than a
+fixed 24-hour subtraction, so load-to-next-day recovery alignment remains correct across daylight-
+saving transitions. Subjective symptoms and active injuries are aligned by their recorded dates;
+daily fatigue is explicitly unavailable because the canonical subjective schema does not record it.
+Activities are returned as bounded daily aggregates rather than an unpaginated hydrated list. The
+aggregate retains canonical activity IDs/providers and counts dates attributed from authoritative
+named-zone/offset context separately from dates that required the analysis-timezone assumption.
+Activity-ID evidence is capped at 100 IDs per day with the total count and truncation flag returned.
+Duration is zero only on an observed empty day; a missing end or invalid interval makes the daily
+duration null with partial/unavailable status and supported/total counts. Activity exposure and all
+load channels use the same source-resolved start offset before falling back to analysis timezone.
+Each load channel reports authoritative-activity and analysis-timezone-activity counts. The latter
+counts activities intentionally grouped by the configured analysis timezone rather than by
+provider/device-local source context. This source-context policy is explicitly selected by the
+recovery endpoint and does not change the standalone analytical training-load tool's
+analysis-timezone default.
+Optional provider and modality filters apply to both activity exposure and all training-load
+channels; other recovery streams remain unfiltered. Stream-specific authorization and dependencies
+mean nutrition-only and subjective-only requests do not require the ClickHouse analytics store.
+The endpoint's interpretation block states that these observations support association analysis but do not establish causality. See the
+[series repository](../packages/server/src/repositories/recovery-training-series-repository.ts).
 
 `get_cycling_performance` reads the deduped `cycling_activity` and
 `activity_power_curve` models. Per-ride FTP is 95% of the best observed

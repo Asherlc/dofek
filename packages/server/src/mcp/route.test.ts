@@ -878,6 +878,17 @@ describe("createMcpRouter", () => {
       required: ["start_date", "end_date"],
       type: "object",
     });
+    expect(findListedTool(tools, "get_recovery_training_series").inputSchema).toMatchObject({
+      properties: {
+        end_date: { format: "date", type: "string" },
+        modalities: { type: "array" },
+        providers: { type: "array" },
+        start_date: { format: "date", type: "string" },
+        streams: { type: "array" },
+      },
+      required: ["start_date", "end_date"],
+      type: "object",
+    });
     expect(findListedTool(tools, "get_cycling_performance").inputSchema).toMatchObject({
       required: ["start_date", "end_date"],
       type: "object",
@@ -1075,6 +1086,7 @@ describe("createMcpRouter", () => {
       "get_health_trends",
       "get_data_coverage",
       "get_training_load",
+      "get_recovery_training_series",
       "get_cycling_performance",
       "get_cycling_power_curve",
       "get_cycling_training_metrics",
@@ -1131,6 +1143,10 @@ describe("createMcpRouter", () => {
       {
         name: "get_training_load",
         path: ["result", "rows", "[]", "coverage", "chronic_window_days"],
+      },
+      {
+        name: "get_recovery_training_series",
+        path: ["result", "rows", "[]", "health", "hrv", "source_providers"],
       },
       {
         name: "get_cycling_performance",

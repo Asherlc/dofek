@@ -234,6 +234,34 @@ rather than infinity. These series expose formulas and evidence for analysis; th
 "risk zones" or diagnose injury. ACWR has substantial conceptual and causal limitations
 ([Impellizzeri et al. 2020](https://pubmed.ncbi.nlm.nih.gov/32502973/)).
 
+`get_recovery_training_series` provides a compact, selected date spine for recovery-response
+analysis. Available streams are daily HRV/calculated resting HR/respiratory rate/steps, deduplicated sleep and
+stages, reconciled body weight, the six independent analytical load channels, subjective symptoms
+and active injuries, relevant canonical activities, and optional canonical nutrition. Missing values
+remain null with explicit state. Health source attribution is labeled at daily-row scope; sleep,
+weight, load, activity, and nutrition retain their more specific provenance and quality fields.
+Sleep includes onset/wake timestamps. Weight distinguishes direct daily observations from nearby
+measured/interpolated/nearest evidence and includes 7/28-day rolling context. Activity exposure is
+a compact canonical daily aggregate with authoritative-versus-assumed date-attribution counts.
+Daily activity-ID evidence is capped at 100 with explicit total/truncation metadata. Missing or
+invalid activity intervals make duration partial/unavailable rather than zero. Exposure and load
+share one source-offset-first calendar projection with an explicit analysis-timezone fallback.
+
+For each response date, `previous_day_training_load` is selected by the preceding local calendar
+date, not by subtracting 24 hours, which preserves next-day alignment across daylight-saving changes.
+Daily fatigue is returned as unavailable because it is not recorded in the canonical subjective
+schema. Stream selection keeps payloads focused and responses are capped at 366 inclusive days. The
+endpoint exposes aligned observations only and explicitly does not claim causal relationships from
+correlations.
+Provider and modality filters apply to activity exposure and all load channels. Authorization and
+ClickHouse requirements are evaluated from the selected streams, so Postgres-only subjective or
+nutrition requests do not acquire unrelated health/activity dependencies.
+Recovery explicitly selects source-context activity dates and every load channel reports
+authoritative-versus-analysis-timezone activity counts. The latter identifies activities grouped
+by the configured analysis timezone rather than provider/device-local source context. The
+standalone analytical training-load tool retains its prior analysis-timezone date policy and
+labels it in the returned range.
+
 `get_climbing_progression` requires `activity:read` and an inclusive date range. It calculates
 whole-range daily and grade aggregates while cursor-paginating only the detailed sessions, so an
 analyst does not need to fetch every climbing activity individually. Optional provider,

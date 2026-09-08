@@ -14,23 +14,31 @@ const rollingSchema = z
     unavailable_reasons: z.array(z.string()),
   })
   .strict();
-const channelSchema = z
+export const analyticalTrainingLoadChannelSchema = z
   .object({
     daily_value: nullableNumber,
     unit: z.string().min(1),
     value_kind: z.literal("calculated"),
     status: z.enum(["available", "partial", "unavailable", "not_observed"]),
     reason: z.string().nullable(),
-    source_activity_ids: z.array(z.uuid()),
+    source_activity_ids: z.array(z.uuid()).max(100),
     source_providers: z.array(z.string()),
     coverage: z
       .object({
         contributing_records: z.number().int().nonnegative(),
         supported_records: z.number().int().nonnegative(),
         first_observed_date: z.string().nullable(),
+        source_activity_count: z.number().int().nonnegative(),
+        source_activity_ids_truncated: z.boolean(),
       })
       .strict(),
     context: z.record(z.string(), z.number()),
+    date_attribution: z
+      .object({
+        authoritative_activities: z.number().int().nonnegative(),
+        analysis_timezone_activities: z.number().int().nonnegative(),
+      })
+      .strict(),
     rolling: rollingSchema,
   })
   .strict();
@@ -45,6 +53,7 @@ export const analyticalTrainingLoadOutputSchema = z
             start_date: z.string(),
             end_date: z.string(),
             timezone: z.string(),
+            date_policy: z.enum(["analysis_timezone", "source_context"]),
           })
           .strict(),
         definitions: z
@@ -71,12 +80,12 @@ export const analyticalTrainingLoadOutputSchema = z
               date: z.string(),
               channels: z
                 .object({
-                  cycling_power_tss: channelSchema,
-                  heart_rate_zone_load: channelSchema,
-                  session_rpe: channelSchema,
-                  climbing_attempts: channelSchema,
-                  finger_load: channelSchema,
-                  strength_volume: channelSchema,
+                  cycling_power_tss: analyticalTrainingLoadChannelSchema,
+                  heart_rate_zone_load: analyticalTrainingLoadChannelSchema,
+                  session_rpe: analyticalTrainingLoadChannelSchema,
+                  climbing_attempts: analyticalTrainingLoadChannelSchema,
+                  finger_load: analyticalTrainingLoadChannelSchema,
+                  strength_volume: analyticalTrainingLoadChannelSchema,
                 })
                 .strict(),
             })

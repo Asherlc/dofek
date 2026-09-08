@@ -6,6 +6,7 @@ import { createClickHouseClientFromEnv } from "../../../../src/db/clickhouse.ts"
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { AnalyticalTrainingLoadRepository } from "./analytical-training-load-repository.ts";
+import { RecoveryActivityExposureRepository } from "./recovery-activity-exposure-repository.ts";
 
 describe("AnalyticalTrainingLoadRepository database semantics", () => {
   const analyticsDatabase = `analytical_training_load_${randomUUID().replaceAll("-", "")}`;
@@ -89,6 +90,18 @@ describe("AnalyticalTrainingLoadRepository database semantics", () => {
         (${climbingActivityId}::uuid, 'boulder', 'v_scale', 'V6', NULL, NULL)
     `);
     await postgres.db.execute(sql`
+      UPDATE fitness.activity
+      SET
+        modality = 'indoor',
+        started_at = '2026-06-16T00:30:00Z',
+        ended_at = '2026-06-16T01:30:00Z',
+        timezone = NULL,
+        start_utc_offset_minutes = -420,
+        end_utc_offset_minutes = -420,
+        local_time_source = 'provider_offset'
+      WHERE id IN (${cyclingActivityId}::uuid, ${duplicateCyclingActivityId}::uuid)
+    `);
+    await postgres.db.execute(sql`
       INSERT INTO fitness.finger_loading_entry (
         activity_id, exercise, grip_position, external_load_kg, bodyweight_kg,
         laterality, set_count, hold_duration_seconds, rest_interval_seconds
@@ -127,6 +140,11 @@ describe("AnalyticalTrainingLoadRepository database semantics", () => {
         activity_id UUID,
         user_id UUID,
         started_at DateTime64(6, 'UTC'),
+        modality Nullable(String),
+        timezone Nullable(String),
+        start_utc_offset_minutes Nullable(Int16),
+        end_utc_offset_minutes Nullable(Int16),
+        local_time_source String,
         source_providers Array(String),
         refresh_version UInt64,
         is_deleted UInt8
@@ -152,7 +170,7 @@ describe("AnalyticalTrainingLoadRepository database semantics", () => {
         {
           activity_id: cyclingActivityId,
           user_id: userId,
-          started_at: "2026-06-15 15:00:00.000000",
+          started_at: "2026-06-16 00:30:00.000000",
           normalized_power: 250,
           elapsed_seconds: 3600,
           refresh_version: 1,
@@ -167,7 +185,12 @@ describe("AnalyticalTrainingLoadRepository database semantics", () => {
         {
           activity_id: cyclingActivityId,
           user_id: userId,
-          started_at: "2026-06-15 15:00:00.000000",
+          started_at: "2026-06-16 00:30:00.000000",
+          modality: "indoor",
+          timezone: null,
+          start_utc_offset_minutes: -420,
+          end_utc_offset_minutes: -420,
+          local_time_source: "provider_offset",
           source_providers: [providerId, duplicateProviderId],
           refresh_version: 1,
           is_deleted: 0,
@@ -175,7 +198,7 @@ describe("AnalyticalTrainingLoadRepository database semantics", () => {
       ],
       format: "JSONEachRow",
     });
-    const startedAt = Date.parse("2026-06-15T15:00:00.000Z");
+    const startedAt = Date.parse("2026-06-16T00:30:00.000Z");
     await clickhouse.insert({
       table: `${analyticsDatabase}.activity_sensor_sample`,
       values: Array.from({ length: 361 }, (_, index) => ({
@@ -207,7 +230,7 @@ describe("AnalyticalTrainingLoadRepository database semantics", () => {
       store,
       userId,
       "UTC",
-    ).listRange("2026-06-15", "2026-06-15");
+    ).listRange("2026-06-15", "2026-06-15", { providers: [], modalities: [] }, "source_context");
 
     expect(result.total_daily_load.value).toBeNull();
     expect(result.rows).toHaveLength(1);
@@ -241,13 +264,131 @@ describe("AnalyticalTrainingLoadRepository database semantics", () => {
     });
   });
 
-  it("represents established modality coverage as zero on a day with no matching exposure", async () => {
+  it("places near-midnight offset cycling exposure and load on the same canonical date", async () => {
+    const [exposure, load] = await Promise.all([
+      new RecoveryActivityExposureRepository(postgres.db, userId, "UTC").listDailyExposureRange(
+        "2026-06-15",
+        "2026-06-15",
+        { providers: [], modalities: [] },
+      ),
+      new AnalyticalTrainingLoadRepository(postgres.db, store, userId, "UTC").listRange(
+        "2026-06-15",
+        "2026-06-15",
+        { providers: [], modalities: [] },
+        "source_context",
+      ),
+    ]);
+
+    expect(exposure[0]).toMatchObject({
+      date: "2026-06-15",
+      modalities: expect.arrayContaining(["indoor"]),
+      source_providers: expect.arrayContaining([providerId, duplicateProviderId]),
+    });
+    expect(load.rows[0]).toMatchObject({
+      date: "2026-06-15",
+      channels: {
+        cycling_power_tss: {
+          daily_value: 100,
+          date_attribution: { authoritative_activities: 1, analysis_timezone_activities: 0 },
+        },
+        heart_rate_zone_load: {
+          daily_value: 300,
+          date_attribution: { authoritative_activities: 1, analysis_timezone_activities: 0 },
+        },
+        session_rpe: {
+          date_attribution: { authoritative_activities: 1, analysis_timezone_activities: 3 },
+        },
+      },
+    });
+  });
+
+  it("preserves analysis-timezone dating as the standalone repository default", async () => {
     const result = await new AnalyticalTrainingLoadRepository(
       postgres.db,
       store,
       userId,
       "UTC",
     ).listRange("2026-06-16", "2026-06-16");
+
+    expect(result.range).toMatchObject({ timezone: "UTC", date_policy: "analysis_timezone" });
+    expect(result.rows[0]?.channels).toMatchObject({
+      cycling_power_tss: {
+        daily_value: 100,
+        date_attribution: { authoritative_activities: 0, analysis_timezone_activities: 1 },
+      },
+      heart_rate_zone_load: {
+        daily_value: 300,
+        date_attribution: { authoritative_activities: 0, analysis_timezone_activities: 1 },
+      },
+    });
+  });
+
+  it("applies provider and modality filters across both engines and coverage", async () => {
+    const included = await new AnalyticalTrainingLoadRepository(
+      postgres.db,
+      store,
+      userId,
+      "UTC",
+    ).listRange(
+      "2026-06-15",
+      "2026-06-15",
+      {
+        providers: [duplicateProviderId],
+        modalities: ["indoor"],
+      },
+      "source_context",
+    );
+    expect(included.rows[0]?.channels).toMatchObject({
+      cycling_power_tss: { daily_value: 100, status: "available" },
+      heart_rate_zone_load: { daily_value: 300, status: "available" },
+      session_rpe: { daily_value: 300, status: "available" },
+      climbing_attempts: { daily_value: null, status: "unavailable" },
+      finger_load: { daily_value: null, status: "unavailable" },
+      strength_volume: { daily_value: null, status: "unavailable" },
+    });
+
+    const excluded = await new AnalyticalTrainingLoadRepository(
+      postgres.db,
+      store,
+      userId,
+      "UTC",
+    ).listRange(
+      "2026-06-15",
+      "2026-06-15",
+      {
+        providers: [providerId],
+        modalities: ["road"],
+      },
+      "source_context",
+    );
+    expect(Object.values(excluded.rows[0]?.channels ?? {})).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ daily_value: null, status: "unavailable" }),
+      ]),
+    );
+    expect(
+      Object.entries(excluded.rows[0]?.channels ?? {}).map(([key, channel]) => [
+        key,
+        channel.daily_value,
+        channel.status,
+      ]),
+    ).toEqual([
+      ["cycling_power_tss", null, "unavailable"],
+      ["heart_rate_zone_load", null, "unavailable"],
+      ["session_rpe", null, "unavailable"],
+      ["climbing_attempts", null, "unavailable"],
+      ["finger_load", null, "unavailable"],
+      ["strength_volume", null, "unavailable"],
+    ]);
+  });
+
+  it("represents established modality coverage as zero on a day with no matching exposure", async () => {
+    const result = await new AnalyticalTrainingLoadRepository(
+      postgres.db,
+      store,
+      userId,
+      "UTC",
+    ).listRange("2026-06-16", "2026-06-16", { providers: [], modalities: [] }, "source_context");
 
     expect(result.rows[0]?.channels).toMatchObject({
       cycling_power_tss: { daily_value: 0, status: "not_observed" },

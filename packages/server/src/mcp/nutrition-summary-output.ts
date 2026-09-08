@@ -17,28 +17,30 @@ export function assertNutritionSummaryDateRange(startDate: string, endDate: stri
 }
 
 /** Shared daily nutrition wire contract used by standalone and aligned analytical tools. */
-export const nutritionSummaryItemSchema = z.object({
-  date: z.string(),
-  total_calories: nullableNumber,
-  protein_g: nullableNumber,
-  carbs_g: nullableNumber,
-  fat_g: nullableNumber,
-  fiber_g: nullableNumber,
-  meal_count: z.number(),
-  logging_completeness: z.enum([
-    "complete",
-    "explicitly_partial",
-    "unknown_completeness",
-    "no_logging",
-  ]),
-  logging_completeness_reason: z.string().min(1),
-  resolution_status: z.enum(["available", "source_conflict"]),
-  resolution_message: z.string(),
-  source_provider: nullableString,
-  source_providers: z.array(z.string()),
-  contributing_providers: z.array(z.string()),
-  excluded_providers: z.array(z.string()),
-});
+export const nutritionSummaryItemSchema = z
+  .object({
+    date: z.string(),
+    total_calories: nullableNumber,
+    protein_g: nullableNumber,
+    carbs_g: nullableNumber,
+    fat_g: nullableNumber,
+    fiber_g: nullableNumber,
+    meal_count: z.number(),
+    logging_completeness: z.enum([
+      "complete",
+      "explicitly_partial",
+      "unknown_completeness",
+      "no_logging",
+    ]),
+    logging_completeness_reason: z.string().min(1),
+    resolution_status: z.enum(["available", "source_conflict"]),
+    resolution_message: z.string(),
+    source_provider: nullableString,
+    source_providers: z.array(z.string()),
+    contributing_providers: z.array(z.string()),
+    excluded_providers: z.array(z.string()),
+  })
+  .strict();
 
 export function toNutritionSummaryOutput(row: DailyNutritionSummary) {
   return {
