@@ -12,6 +12,7 @@ type McpScope =
   | "health:write"
   | "activity:read"
   | "nutrition:read"
+  | "nutrition:write"
   | "providers:read"
   | "sync:write";
 
@@ -20,12 +21,15 @@ const mcpScopeOptions: Array<{ value: McpScope; label: string }> = [
   { value: "health:write", label: "Log health observations" },
   { value: "activity:read", label: "Activity history" },
   { value: "nutrition:read", label: "Nutrition summaries" },
+  { value: "nutrition:write", label: "Modify food records" },
   { value: "providers:read", label: "Provider status" },
   { value: "sync:write", label: "Start sync jobs" },
 ];
 
 const mcpScopeValues = mcpScopeOptions.map((option) => option.value);
-const defaultMcpScopeValues = mcpScopeValues.filter((scope) => scope !== "health:write");
+const defaultMcpScopeValues = mcpScopeValues.filter(
+  (scope) => scope !== "health:write" && scope !== "nutrition:write",
+);
 
 function formatTimestamp(value: Date | string | null): string {
   if (!value) return "Never";

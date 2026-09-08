@@ -791,6 +791,33 @@ describe("FoodRepository", () => {
       expect(JSON.stringify(execute.mock.calls[1]?.[0])).toContain("external-entry-2");
     });
 
+    it("persists serving unit and serving weight for created itemized facts", async () => {
+      const foodRow = makeFoodEntryRow({
+        serving_unit: "bowl",
+        serving_weight_grams: 80,
+      });
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ id: "entry-1" }])
+        .mockResolvedValueOnce([foodRow]);
+      const repo = new FoodRepository({ execute }, "user-1", "UTC");
+
+      await repo.create({
+        date: "2024-06-15",
+        foodName: "Oats",
+        servingUnit: "bowl",
+        servingWeightGrams: 80,
+        nutrients: {},
+      });
+
+      const insert = JSON.stringify(execute.mock.calls[1]?.[0]);
+      expect(insert).toContain("serving_unit");
+      expect(insert).toContain("serving_weight_grams");
+      expect(insert).toContain("bowl");
+      expect(insert).toContain("80");
+    });
+
     it("inserts junction table rows when nutrients are provided", async () => {
       const foodRow = makeFoodEntryRow();
       const execute = vi

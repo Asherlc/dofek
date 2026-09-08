@@ -43,7 +43,14 @@ describe("MCP token repository (integration)", () => {
     const created = await createMcpToken(ctx.db, {
       userId: testUserId,
       name: "Codex",
-      scopes: ["health:read", "activity:read", "nutrition:read", "providers:read", "sync:write"],
+      scopes: [
+        "health:read",
+        "activity:read",
+        "nutrition:read",
+        "nutrition:write",
+        "providers:read",
+        "sync:write",
+      ],
       expiresAt: null,
     });
 
@@ -51,6 +58,7 @@ describe("MCP token repository (integration)", () => {
       "health:read",
       "activity:read",
       "nutrition:read",
+      "nutrition:write",
       "providers:read",
       "sync:write",
     ]);
@@ -64,6 +72,7 @@ describe("MCP token repository (integration)", () => {
       "health:read",
       "activity:read",
       "nutrition:read",
+      "nutrition:write",
       "providers:read",
       "sync:write",
     ]);
@@ -93,6 +102,31 @@ describe("MCP token repository (integration)", () => {
     expect(validated).not.toBeNull();
     expect(validated?.userId).toBe(testUserId);
     expect(validated?.scopes).toEqual(["health:read", "sync:write"]);
+  });
+
+  it("round-trips an explicitly granted nutrition write scope", async () => {
+    const { token } = await createMcpToken(ctx.db, {
+      userId: testUserId,
+      name: "Food writer",
+      scopes: ["nutrition:read", "nutrition:write"],
+      expiresAt: null,
+    });
+
+    expect((await validateMcpToken(ctx.db, token))?.scopes).toEqual([
+      "nutrition:read",
+      "nutrition:write",
+    ]);
+  });
+
+  it("does not add nutrition write to existing tokens", async () => {
+    const { token } = await createMcpToken(ctx.db, {
+      userId: testUserId,
+      name: "Read only",
+      scopes: ["nutrition:read"],
+      expiresAt: null,
+    });
+
+    expect((await validateMcpToken(ctx.db, token))?.scopes).toEqual(["nutrition:read"]);
   });
 
   it("rejects tokens after revokeMcpToken", async () => {

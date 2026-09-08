@@ -639,6 +639,41 @@ describe("createMcpRouter", () => {
     );
   });
 
+  it("attributes direct MCP tokens with the validated token ID", async () => {
+    authorizeMcpToken();
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: initializeRequest,
+    });
+
+    expect(response.status).toBe(200);
+    expect(vi.mocked(createDofekMcpServer)).toHaveBeenCalledWith(
+      expect.objectContaining({ clientId: "token:token-id" }),
+    );
+  });
+
+  it("attributes OAuth MCP tokens with the validated client ID", async () => {
+    vi.mocked(validateMcpToken).mockResolvedValue({
+      expiresAt: null,
+      oauthClientId: "oauth-client-id",
+      oauthResource: null,
+      scopes: ["nutrition:read"],
+      tokenId: "token-id",
+      userId: "user-id",
+    });
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: initializeRequest,
+    });
+
+    expect(response.status).toBe(200);
+    expect(vi.mocked(createDofekMcpServer)).toHaveBeenCalledWith(
+      expect.objectContaining({ clientId: "oauth:oauth-client-id" }),
+    );
+  });
+
   it("lists Dofek MCP tools for a valid token", async () => {
     authorizeMcpToken();
 
@@ -963,6 +998,31 @@ describe("createMcpRouter", () => {
         path: ["result", "aggregates", "by_muscle_group"],
       },
       { name: "get_supplements", path: ["result", "[]", "meal"] },
+      {
+        name: "search_food_entries",
+        path: ["result", "items", "[]", "provenance"],
+      },
+      { name: "get_food_entry", path: ["result", "source_entry_id"] },
+      {
+        name: "create_food_entry",
+        path: ["result", "operation", "resulting_version"],
+      },
+      {
+        name: "update_food_entry",
+        path: ["result", "record", "modification_unavailable_reason"],
+      },
+      {
+        name: "delete_food_entry",
+        path: ["result", "operation", "replayed"],
+      },
+      {
+        name: "restore_food_entry",
+        path: ["result", "record", "deleted"],
+      },
+      {
+        name: "get_food_entry_history",
+        path: ["result", "items", "[]", "predecessor_version"],
+      },
     ] as const;
 
     expect(tools).toHaveLength(sentinels.length);

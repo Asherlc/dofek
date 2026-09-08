@@ -9,6 +9,7 @@ export const mcpScopeSchema = z.enum([
   "health:write",
   "activity:read",
   "nutrition:read",
+  "nutrition:write",
   "providers:read",
   "sync:write",
 ]);

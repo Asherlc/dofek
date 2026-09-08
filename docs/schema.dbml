@@ -1876,6 +1876,21 @@ table fitness.processing_stage_event {
   }
 }
 
+table fitness.human_food_nutrient_decision {
+  target_id uuid [not null]
+  identity_id uuid [not null]
+  user_id uuid [not null]
+  nutrient_id text [not null]
+  operation text [not null]
+  amount real
+
+  indexes {
+    (target_id, nutrient_id) [pk]
+
+
+  }
+}
+
 table fitness.human_record_change {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   user_id uuid [not null]
@@ -2161,6 +2176,10 @@ ref processing_operation_output_operation_fk: fitness.processing_operation_outpu
 ref processing_queue_outbox_operation_fk: fitness.processing_queue_outbox.operation_id > fitness.processing_operation.id [delete: cascade, update: no action]
 
 ref processing_stage_event_operation_fk: fitness.processing_stage_event.operation_id > fitness.processing_operation.id [delete: cascade, update: no action]
+
+ref human_food_nutrient_decision_nutrient_id_nutrient_id_fk: fitness.human_food_nutrient_decision.nutrient_id > fitness.nutrient.id [delete: no action, update: no action]
+
+ref human_food_nutrient_decision_target_fk: fitness.human_food_nutrient_decision.(target_id, identity_id, user_id) > fitness.human_record_target.(id, identity_id, user_id) [delete: no action, update: no action]
 
 ref human_record_change_user_id_user_profile_id_fk: fitness.human_record_change.user_id > fitness.user_profile.id [delete: no action, update: no action]
 

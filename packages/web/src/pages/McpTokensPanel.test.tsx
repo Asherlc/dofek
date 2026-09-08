@@ -194,6 +194,38 @@ describe("McpTokensPanel", () => {
     });
   });
 
+  it("offers nutrition write access without selecting it by default", () => {
+    render(<McpTokensPanel />);
+
+    expect(screen.getByLabelText("Modify food records")).toHaveProperty("checked", false);
+  });
+
+  it("creates a token with nutrition write access only when selected", async () => {
+    createTokenMutateAsync.mockResolvedValueOnce({
+      token: "dofek_mcp_food_writer",
+      metadata: {},
+    });
+    render(<McpTokensPanel />);
+
+    fireEvent.click(screen.getByLabelText("Modify food records"));
+    fireEvent.click(screen.getByRole("button", { name: "Create Token" }));
+
+    await waitFor(() => {
+      expect(createTokenMutateAsync).toHaveBeenCalledWith({
+        name: "Codex",
+        scopes: [
+          "health:read",
+          "activity:read",
+          "nutrition:read",
+          "nutrition:write",
+          "providers:read",
+          "sync:write",
+        ],
+        expiresAt: null,
+      });
+    });
+  });
+
   it("requires at least one scope before creating a token", () => {
     render(<McpTokensPanel />);
 
@@ -409,6 +441,7 @@ describe("McpTokensPanel", () => {
 
     render(<McpTokensPanel />);
 
+    fireEvent.click(screen.getByLabelText("Modify food records"));
     fireEvent.click(screen.getByRole("button", { name: "Rotate Codex" }));
 
     await waitFor(() => {

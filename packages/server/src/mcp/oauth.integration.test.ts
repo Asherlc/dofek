@@ -20,6 +20,7 @@ const oauthMetadataSchema = z.object({
   issuer: z.string(),
   registration_endpoint: z.string().optional(),
   revocation_endpoint: z.string(),
+  scopes_supported: z.array(z.string()),
   token_endpoint: z.string(),
 });
 const protectedResourceMetadataSchema = z.object({
@@ -115,6 +116,7 @@ describe("MCP OAuth", () => {
       token_endpoint: "https://app.example.test/token",
     });
     expect(authorizationMetadata.registration_endpoint).toBe("https://app.example.test/register");
+    expect(authorizationMetadata.scopes_supported).toContain("nutrition:write");
 
     const resourceMetadata = protectedResourceMetadataSchema.parse(
       await (await fetch(`${baseUrl}/.well-known/oauth-protected-resource/api/mcp`)).json(),
@@ -124,6 +126,7 @@ describe("MCP OAuth", () => {
       resource,
     });
     expect(resourceMetadata.scopes_supported).toContain("health:read");
+    expect(resourceMetadata.scopes_supported).toContain("nutrition:write");
   });
 
   it("issues distinct credentials for each client registration", async () => {
@@ -451,9 +454,33 @@ describe("MCP OAuth", () => {
     expect(body).toContain("Search your activities");
     expect(body).toContain("View your daily health summaries");
     expect(body).not.toContain("Log health observations");
-    expect(body).not.toContain("Log food entries");
+    expect(body).toContain("View your nutrition summaries");
+    expect(body).not.toContain("Modify your food records");
     expect(body).toContain("View your connected data sources");
     expect(body).toContain("Start data synchronization");
+  });
+
+  it("displays nutrition write consent when explicitly requested", async () => {
+    const codeVerifier = randomBytes(32).toString("base64url");
+    const parameters = new URLSearchParams({
+      client_id: registeredClient.client_id,
+      code_challenge: codeChallenge(codeVerifier),
+      code_challenge_method: "S256",
+      redirect_uri: redirectUri,
+      resource,
+      response_type: "code",
+      scope: "nutrition:read nutrition:write",
+      state: "test-state",
+    });
+
+    const response = await fetch(`${baseUrl}/authorize?${parameters}`, {
+      headers: { Cookie: sessionCookie },
+    });
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body).toContain("View your nutrition summaries");
+    expect(body).toContain("Modify your food records");
+    expect(body).toContain('value="nutrition:read nutrition:write"');
   });
 
   it("returns 400 for unsupported scopes", async () => {

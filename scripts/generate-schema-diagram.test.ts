@@ -72,6 +72,20 @@ table fitness.activity {
 
 ref activity_provider_id_fk: fitness.activity.provider_id > fitness.provider.id [delete: no action, update: no action]`;
 
+const COMPOSITE_REF_DBML = `table fitness.human_record_target {
+  id uuid [not null]
+  identity_id uuid [not null]
+  user_id uuid [not null]
+}
+
+table fitness.human_food_nutrient_decision {
+  target_id uuid [not null]
+  identity_id uuid [not null]
+  user_id uuid [not null]
+}
+
+ref human_food_nutrient_decision_target_fk: fitness.human_food_nutrient_decision.(target_id, identity_id, user_id) > fitness.human_record_target.(id, identity_id, user_id) [delete: no action, update: no action]`;
+
 describe("extractTables", () => {
   it("extracts a single table", () => {
     const tables = extractTables(SINGLE_TABLE_DBML);
@@ -211,9 +225,9 @@ describe("parseRefs", () => {
     expect(refs).toHaveLength(1);
     expect(refs[0]).toEqual({
       fromTable: "activity",
-      fromCol: "provider_id",
+      fromCols: ["provider_id"],
       toTable: "provider",
-      toCol: "id",
+      toCols: ["id"],
     });
 
     const activityTable = tables.find((t) => t.name === "activity");
@@ -232,6 +246,29 @@ describe("parseRefs", () => {
       "ref foo: fitness.missing.col > fitness.also_missing.col [delete: no action, update: no action]";
     const refs = parseRefs(dbml, []);
     expect(refs).toHaveLength(1);
+  });
+
+  it("parses composite refs and marks every source column as an FK", () => {
+    const tables = parseTables(COMPOSITE_REF_DBML);
+    const refs = parseRefs(COMPOSITE_REF_DBML, tables);
+
+    expect(refs).toEqual([
+      {
+        fromTable: "human_food_nutrient_decision",
+        fromCols: ["target_id", "identity_id", "user_id"],
+        toTable: "human_record_target",
+        toCols: ["id", "identity_id", "user_id"],
+      },
+    ]);
+    expect(
+      tables
+        .find((table) => table.name === "human_food_nutrient_decision")
+        ?.columns.filter((column) => column.fk)
+        .map((column) => column.name),
+    ).toEqual(["target_id", "identity_id", "user_id"]);
+    expect(buildPlantUml(tables, refs)).toContain(
+      "human_record_target ||--o{ human_food_nutrient_decision",
+    );
   });
 });
 
@@ -252,7 +289,7 @@ describe("buildPlantUml", () => {
       },
     ];
     const refs = [
-      { fromTable: "activity", fromCol: "provider_id", toTable: "provider", toCol: "id" },
+      { fromTable: "activity", fromCols: ["provider_id"], toTable: "provider", toCols: ["id"] },
     ];
 
     const puml = buildPlantUml(tables, refs);

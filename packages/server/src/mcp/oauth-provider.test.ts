@@ -193,6 +193,32 @@ describe("DofekOAuthServerProvider", () => {
       expect(html).toContain("Search your activities");
     });
 
+    it("displays nutrition write consent only when requested", async () => {
+      const client = makeClient();
+      const requested = makeResponse({ mcpOAuthUserId: "user-1" });
+      await provider().authorize(
+        client,
+        makeParams({ scopes: ["nutrition:read", "nutrition:write"] }),
+        requested.response,
+      );
+
+      const requestedHtml = requested.mocks.send.mock.calls[0]?.[0] ?? "";
+      expect(requestedHtml).toContain("View your nutrition summaries");
+      expect(requestedHtml).toContain("Modify your food records");
+      expect(requestedHtml).toContain('value="nutrition:read nutrition:write"');
+
+      const readOnly = makeResponse({ mcpOAuthUserId: "user-1" });
+      await provider().authorize(
+        client,
+        makeParams({ scopes: ["nutrition:read"] }),
+        readOnly.response,
+      );
+
+      expect(readOnly.mocks.send.mock.calls[0]?.[0] ?? "").not.toContain(
+        "Modify your food records",
+      );
+    });
+
     it("omits the state hidden field when no state parameter is present", async () => {
       const client = makeClient();
       const params = makeParams({ scopes: ["health:read"] });
@@ -217,6 +243,7 @@ describe("DofekOAuthServerProvider", () => {
       expect(html).not.toContain("Log health observations");
       expect(html).toContain("Search your activities");
       expect(html).toContain("View your connected data sources");
+      expect(html).not.toContain("Modify your food records");
       expect(html).toContain("Start data synchronization");
       expect(html).toContain(
         'value="health:read activity:read nutrition:read providers:read sync:write"',
@@ -235,6 +262,7 @@ describe("DofekOAuthServerProvider", () => {
         'value="health:read activity:read nutrition:read providers:read sync:write"',
       );
       expect(html).not.toContain("Log health observations");
+      expect(html).not.toContain("Modify your food records");
       expect(html).toContain("Start data synchronization");
     });
 

@@ -5,6 +5,7 @@ import type { McpScope } from "./token-repository.ts";
 export interface DofekMcpContext {
   db: Pick<Database, "execute" | "select" | "transaction">;
   userId: string;
+  clientId: string;
   scopes: McpScope[];
   timezone: string;
   sensorStore?: ActivitySensorStore;
