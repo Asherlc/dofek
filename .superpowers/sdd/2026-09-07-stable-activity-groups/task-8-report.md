@@ -210,3 +210,61 @@ No Task 8 concern remains. The prior broad-suite failures recorded in round 1 ar
 What went well: one same-name/different-equipment fixture reproduced selection, React-key, visible-label, and accessibility failures on both platforms, and behavior-level router tests pinned every deploy boundary. What required investigation: cache versions were distributed across strength, mobile-dashboard, and climbing routers rather than tied to the shared response type. Useful next-time context: when a public domain identity gains a dimension, the design checklist should enumerate client selection state, list keys, labels, accessibility text, and persistent-cache consumers together.
 
 Suggested guidance update for approval: add that identity-and-cache-consumer checklist to `packages/training/README.md` and the stable activity group rollout notes. Reuse `superpowers:receiving-code-review`, `superpowers:test-driven-development`, and `superpowers:verification-before-completion` for similar cross-platform contract reviews; no new skill is needed.
+
+## Review fix round 3
+
+Status: the remaining presentation-identity finding was fixed and verified in implementation commit `972294f243dc939e786ef54bb6c4a65be2dde23b`.
+
+### Files
+
+- `packages/training/src/training.ts`
+- `packages/training/src/training.test.ts`
+- `packages/web/src/components/EstimatedMaxChart.tsx`
+- `packages/web/src/components/EstimatedMaxChart.test.tsx`
+- `packages/web/src/components/ProgressiveOverloadCards.tsx`
+- `packages/web/src/components/ProgressiveOverloadCards.test.tsx`
+- `packages/mobile/components/ProgressiveOverloadCards.tsx`
+- `packages/mobile/components/ProgressiveOverloadCards.test.tsx`
+- This report.
+
+### Fix and invariant
+
+- `@dofek/training/training` now owns one list-aware `strengthExerciseDisplayLabels` allocator. All three public consumers use its output; none carries a per-component collision rule.
+- The allocator first preserves the round-2 concise behavior: a unique exercise name remains the name alone, while an ambiguous name includes readable title-cased equipment.
+- When distinct structured identities collapse to the same readable label, each receives a lossless discriminator containing the recorded raw equipment value, or an explicit absent-equipment phrase. Thus `FREE-WEIGHT`, `FREE_WEIGHT`, and `FREE WEIGHT` remain visibly and accessibly distinct without exposing JSON identity keys.
+- If a discriminator label itself equals another readable label, the remaining collision group receives stable ordinals after deterministic `(exerciseName, equipment)` sorting. Allocation is independent of input order and checks candidate labels already reserved by noncolliding identities. For any finite set of distinct input identities, the returned aligned label list is therefore unique and deterministic.
+- Web estimated-max uses the allocated label for selectors, `aria-label`, and chart-series names while retaining structured selection state and identity keys. Web/mobile progressive-overload use the same allocated labels; mobile accessible summaries include them.
+- The approved cache namespaces remain unchanged: `estimated-max-trend-v2`, `progressive-overload-evidence-v2`, `training-activity-states-v3`, and `climbing-activity-group-v1`.
+
+### Strict RED evidence
+
+Initial command before the allocator implementation:
+
+`rtk pnpm vitest run --project unit --project mobile packages/training/src/training.test.ts packages/web/src/components/EstimatedMaxChart.test.tsx packages/web/src/components/ProgressiveOverloadCards.test.tsx packages/mobile/components/ProgressiveOverloadCards.test.tsx --retry=0`
+
+Result: exit 1; 4 files failed, 5 tests failed and 88 passed. The direct training-domain test received three identical `Chest Press (Free Weight)` labels for the hyphen, underscore, and space identities. Web estimated-max could not find distinct accessible selector names, and both overload components could not find distinct visible/mobile-accessible labels.
+
+The allocator's second-order collision guard was developed in its own RED/GREEN cycle:
+
+`rtk pnpm vitest run --project unit packages/training/src/training.test.ts --retry=0`
+
+Result before the guard: exit 1; 1 failed and 80 passed. A crafted exercise name equal to another identity's lossless discriminator still produced two identical labels. After the deterministic ordinal guard, the command passed 81 tests.
+
+The absent-equipment accessibility case used the same command for a third cycle. RED: exit 1; 1 failed and 81 passed because `Unspecified equipment` and recorded `UNSPECIFIED_EQUIPMENT` differed only by capitalization and received no discriminator. GREEN after using the same readable base and lossless null/string discriminators: 82 tests passed.
+
+### GREEN and final verification
+
+- `rtk pnpm vitest run --project unit --project mobile packages/training/src/training.test.ts packages/web/src/components/EstimatedMaxChart.test.tsx packages/web/src/components/ProgressiveOverloadCards.test.tsx packages/mobile/components/ProgressiveOverloadCards.test.tsx packages/server/src/routers/strength-stress.test.ts packages/server/src/routers/mobile-dashboard.test.ts packages/server/src/routers/climbing.test.ts --retry=0`: exit 0; 7 files, 158 tests passed.
+- `rtk pnpm typecheck`: exit 0; `TypeScript: No errors found`.
+- `rtk pnpm exec biome check packages/training/src/training.ts packages/training/src/training.test.ts packages/web/src/components/EstimatedMaxChart.tsx packages/web/src/components/EstimatedMaxChart.test.tsx packages/web/src/components/ProgressiveOverloadCards.tsx packages/web/src/components/ProgressiveOverloadCards.test.tsx packages/mobile/components/ProgressiveOverloadCards.tsx packages/mobile/components/ProgressiveOverloadCards.test.tsx`: exit 0; 8 files checked, no fixes applied.
+- `rtk git diff --check`: exit 0.
+
+### Compatibility, rollout, and concerns
+
+No server payload, database query, schema, cache namespace, parser, or Task 9 metadata behavior changed. This is a presentation-only refinement over the round-2 structured identity contract, with concise labels preserved whenever the rendered identity set has no presentation collision. No Task 8 concern remains.
+
+### Retrospective
+
+What went well: the reviewer example became a direct domain invariant and identical public-component fixtures proved the fix on both platforms. What required investigation: adding the raw equipment discriminator resolves the ordinary separator collision but is not alone a global uniqueness proof, because an exercise name can equal that resulting label; the second RED cycle drove a deterministic final allocator. Useful next-time context: display-label design should distinguish identity-key injectivity, readable formatting, and collection-level label allocation as separate contracts.
+
+Suggested guidance update for approval: add a shared-domain rule that any selector or repeated card keyed by a structured identity must use a collection-aware, permutation-stable label allocator when readable formatting can be lossy. Reuse `superpowers:receiving-code-review`, `superpowers:test-driven-development`, and `superpowers:verification-before-completion`; no new skill is needed.
