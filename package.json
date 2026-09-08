@@ -281,7 +281,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "@actions/expressions": "0.3.60",
+    "@actions/expressions": "0.3.61",
     "@biomejs/biome": "2.5.10",
     "@opentelemetry/context-async-hooks": "2.10.0",
     "@redocly/cli": "2.39.0",
