@@ -144,13 +144,21 @@ The response includes `token` once. Store it in the MCP client. Dofek stores onl
 
 List existing token metadata with `mcp.listTokens`. Revoke a token with `mcp.revokeToken`.
 
+`nutrition:write` is an explicit opt-in. It is not selected by default when a
+manual token is created, and OAuth's default scope request omits it. Existing
+manual tokens and OAuth grants keep their stored scopes. To add food-record
+write access, create a new manual token with **Modify food records** selected,
+or reauthorize the OAuth client with `nutrition:write` in its requested scopes.
+Granting that scope does not change the other default scopes.
+
 ## Scopes
 
 | Scope | Allows |
 |-------|--------|
 | `health:read` | Read daily health summaries. |
 | `activity:read` | Search activity summaries. |
-| `nutrition:read` | Read daily nutrition summaries. |
+| `nutrition:read` | Read daily nutrition summaries and effective food records. |
+| `nutrition:write` | Create, update, delete, and restore food records; also requires `nutrition:read`. |
 | `providers:read` | List configured providers and connection status. |
 | `sync:write` | Enqueue provider sync jobs. |
 
@@ -174,9 +182,123 @@ The canonical tool names, schemas, and scope checks are defined in the [MCP tool
 | `get_climbing_sessions` | `activity:read` | Returns exact-range climbing sessions with grades, attempts, sends, discipline, wall angle, and explicit unavailable fields. |
 | `get_finger_loading` | `activity:read` | Returns structured finger-loading protocols, effective load, and total time under tension inside exact date boundaries. |
 | `get_nutrition_summary` | `nutrition:read` | Returns daily calorie, macronutrient, fiber, and meal totals. |
+| `search_food_entries` | `nutrition:read` | Searches effective food records by inclusive date range, optional text, and visibility. |
+| `get_food_entry` | `nutrition:read` | Returns one effective food record with its version, modifiability, normalized nutrients, source provider, and provenance. |
+| `create_food_entry` | `nutrition:read` + `nutrition:write` | Creates one itemized Dofek food record. |
+| `update_food_entry` | `nutrition:read` + `nutrition:write` | Appends scalar and normalized nutrient decisions to a food record. |
+| `delete_food_entry` | `nutrition:read` + `nutrition:write` | Appends a deletion tombstone; this is the only food tool advertised as destructive. |
+| `restore_food_entry` | `nutrition:read` + `nutrition:write` | Restores a deleted record while retaining its field and nutrient decisions. |
+| `get_food_entry_history` | `nutrition:read` | Returns the paginated command and decision history for a food record. |
 | `get_body_metrics` | `health:read` | Returns one reconciled body-composition record per local date plus all per-source values. |
 | `list_providers` | `providers:read` | Lists configured providers and status. |
 | `start_provider_sync` | `sync:write` | Enqueues a provider sync job. |
+
+### Food record lifecycle
+
+The seven food-record tools use the exact schemas in
+[`food-record-tools.ts`](../packages/server/src/mcp/food-record-tools.ts). Read
+tools require `nutrition:read`. Every mutation requires both `nutrition:read`
+and the opt-in `nutrition:write` scope.
+
+`search_food_entries` requires `start_date` and `end_date`. Its optional
+case-insensitive text query matches the effective food name, description,
+category, and meal. `visibility` accepts `visible`, `deleted`, or `all` and
+defaults to `visible`; use `deleted` or `all` to find a tombstoned record before
+restoring it. Results sort by immutable `record_id` descending and use a
+`{ record_id }` cursor, default to 50 items, and accept limits from 1 through
+100. The date range filters current effective dates; a provider replacement
+that moves a date within the range cannot move an identity across the cursor.
+The query is defined in the [food record repository](../packages/server/src/repositories/food-record-repository.ts).
+`get_food_entry` returns `null` when the authenticated user does not own the
+requested record.
+
+Each returned food record distinguishes its stable `record_id` from its current
+raw `source_entry_id`. Stable identity is scoped by the authenticated user, the
+`nutrition.food` domain, and the provider namespace. A provider record with a
+non-empty external ID uses `external:<external_id>` and is modifiable even when
+the provider later replaces its raw row. A record without an external ID uses
+`row:<food_entry.id>`: it remains readable but returns `modifiable: false` and
+cannot be updated, deleted, or restored safely. The source-key encoding is an
+internal identity rule; callers use the returned UUID `record_id`.
+
+Reads return effective scalar values, canonical nutrient IDs mapped to numeric
+amounts or explicit `null`, the source provider, and provenance for every
+scalar, visibility, and nutrient value. Provenance identifies `source` or
+`human` origin and the human `change_id` where applicable. Scalar provenance
+keys use the same snake-case names as the wire fields, such as `food_name`
+and `serving_weight_grams`; nutrient keys use `nutrients.<nutrient_id>`
+([transport mapping](../packages/server/src/mcp/food-record-tools.ts)). Provider raw rows
+remain unchanged when a human updates, deletes, or restores a record. Create is
+the exception only in the ordinary sense that it writes a new Dofek itemized
+source row and its normalized nutrient facts once, then records the initial
+ledger operation.
+
+`update_food_entry` separates decisions that override source data from
+decisions that resume following it. Values in `set` override scalar fields;
+fields in `clear` follow the source value again. `nutrient_set` accepts a
+non-negative amount or explicit `null`; `nutrient_clear` resumes following the
+raw nutrient. A field or nutrient cannot appear in both forms, and an update
+must contain at least one decision. `delete_food_entry` hides the effective
+record and removes its contribution from canonical nutrition without deleting
+the raw provider row. `restore_food_entry` makes the same effective record
+visible again. `get_food_entry_history` returns ledger operations and recorded
+field/nutrient decisions, newest first, with opaque pagination cursors. Each
+cursor contains only an immutable change ID, which the query resolves within
+the authenticated account and requested record. PostgreSQL compares the exact
+stored `(recorded_at, change_id)` pair, preserving its
+[microsecond timestamp precision](https://www.postgresql.org/docs/current/datatype-datetime.html)
+and [row comparison ordering](https://www.postgresql.org/docs/current/functions-comparisons.html#ROW-WISE-COMPARISON).
+It does not snapshot historical provider facts.
+
+Human nutrient clears and explicit-null decisions retain provenance, but only
+non-NULL effective amounts count toward legacy nutrition-grain classification
+([effective nutrition views](../drizzle/0113_effective_food_records.sql)).
+HealthKit write-back reads the canonical raw Dofek food rows and normalized
+nutrient facts, so human corrections and tombstones affect effective nutrition
+without changing export values ([export query](../packages/server/src/repositories/food-repository.ts)).
+
+Create requires a UUID `request_id`; update, delete, and restore require UUID
+`record_id` and `request_id` plus nullable UUID `expected_version`. A source
+record with no human changes has `version: null`, so its first mutation must use
+`expected_version: null`. Afterward, callers pass the version returned by the
+latest read or mutation. A stale version produces `CONFLICT` with the current
+version so the caller can read, reconcile, and retry.
+
+Mutation idempotency combines the user-scoped request UUID with a SHA-256
+fingerprint of the validated canonical payload and authenticated MCP client.
+Replaying the identical request performs no second source/ledger write and no
+second nutrition-cache invalidation. Create checks the durable receipt before
+provider setup and performs no provider or connection writes on replay
+([command repository](../packages/server/src/repositories/food-record-repository.ts)).
+It returns the immutable
+`{ change_id, resulting_version, replayed }` operation receipt, with
+`replayed: true`, plus the current effective record. Reusing the UUID for a
+different payload, operation, record, or client produces `CONFLICT`. The MCP
+result intentionally omits the service's internal affected-date bookkeeping.
+
+Food command errors use this stable JSON error contract:
+
+| Code | Meaning and safe details |
+|------|--------------------------|
+| `NOT_FOUND` | The user-owned record does not exist; includes `record_id`. |
+| `PRECONDITION_FAILED` | The source has no stable provider external ID and cannot be modified safely; includes `source_entry_id`. |
+| `CONFLICT` | `expected_version` is stale, a concurrent successor won, or a request UUID was reused; includes `record_id` and nullable `current_version`. Read the record again before retrying. |
+| `INVALID_ARGUMENT` | The command failed schema or decision validation; includes actionable `issues` with field paths and messages. |
+| `ACCOUNT_ERASURE_ACTIVE` | Account deletion is active; wait for it to finish before changing food records. |
+
+Unexpected failures are reported internally as new exceptions with fixed
+operation labels, excluding original messages, causes, SQL, and parameters
+([service](../packages/server/src/services/food-record-service.ts),
+[MCP handler](../packages/server/src/mcp/food-record-tools.ts)). They return the safe
+`INTERNAL_ERROR` code without database or stack details. Missing scopes remain
+tool-level `insufficient_scope` authorization failures.
+
+All food mutations advertise `idempotentHint: true`, `readOnlyHint: false`, and
+`openWorldHint: false`. Create, update, and restore advertise
+`destructiveHint: false`; delete alone advertises `destructiveHint: true`.
+Search, get, and history advertise `readOnlyHint: true` and
+`openWorldHint: false`. These hints follow the official [MCP tool annotation
+contract](https://modelcontextprotocol.io/specification/2025-11-25/server/tools#toolannotations).
 
 ## Output contract
 
@@ -189,7 +311,7 @@ OpenAI likewise treats schemas as user-facing tool metadata and recommends an
 output schema for structured results ([OpenAI: Build an MCP
 server](https://developers.openai.com/plugins/build/mcp-server#define-tools-from-user-goals)).
 
-For the 19 ordinary tools, the declared schema and `structuredContent` use the
+For the 26 ordinary tools, the declared schema and `structuredContent` use the
 object-root envelope `{ "result": ... }`. This makes scalar, array, `null`,
 and object natural results valid object-root tool outputs without changing the
 existing pretty-printed JSON text in `content`. For example, an ordinary tool

@@ -4,6 +4,7 @@ import {
   generateMcpToken,
   hashMcpToken,
   McpAuthError,
+  mcpScopeSchema,
   requireMcpScope,
   validateMcpToken,
 } from "./token-repository.ts";
@@ -34,6 +35,10 @@ describe("MCP token repository", () => {
 
     expect(hash).not.toBe(token);
     expect(hash).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it("accepts the nutrition write scope", () => {
+    expect(mcpScopeSchema.parse("nutrition:write")).toBe("nutrition:write");
   });
 
   it("creates a token and stores only the hash", async () => {
@@ -98,6 +103,27 @@ describe("MCP token repository", () => {
       oauthResource: null,
     });
     expect(mockExecute).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not add nutrition write to an existing read-only token", async () => {
+    const token = "dofek_mcp_read_only";
+    mockExecute
+      .mockResolvedValueOnce([
+        {
+          id: "token-id",
+          user_id: "user-id",
+          scopes: ["nutrition:read"],
+          expires_at: null,
+          oauth_client_id: null,
+          oauth_resource: null,
+          revoked_at: null,
+        },
+      ])
+      .mockResolvedValueOnce([]);
+
+    const result = await validateMcpToken(createMockDb(), token);
+
+    expect(result?.scopes).toEqual(["nutrition:read"]);
   });
 
   it("rejects revoked tokens", async () => {
