@@ -166,7 +166,9 @@ describe("get_recovery_training_series", () => {
       });
 
       if (result.isError)
-        throw new Error(result.content[0]?.type === "text" ? result.content[0].text : "Tool failed");
+        throw new Error(
+          result.content[0]?.type === "text" ? result.content[0].text : "Tool failed",
+        );
       expect(Object.keys(mocks.constructorArgs.mock.calls.at(-1)?.[0] ?? {}).sort()).toEqual([
         "activities",
         "body",
@@ -178,12 +180,10 @@ describe("get_recovery_training_series", () => {
         "weightObservations",
       ]);
       expect(mocks.constructorArgs.mock.calls.at(-1)?.[1]).toBe("America/Los_Angeles");
-      expect(mocks.listRange).toHaveBeenLastCalledWith(
-        "2026-03-08",
-        "2026-03-08",
-        allStreams,
-        { providers: ["wahoo"], modalities: ["road"] },
-      );
+      expect(mocks.listRange).toHaveBeenLastCalledWith("2026-03-08", "2026-03-08", allStreams, {
+        providers: ["wahoo"],
+        modalities: ["road"],
+      });
     } finally {
       await scopedClient.close();
       await scopedServer.close();
