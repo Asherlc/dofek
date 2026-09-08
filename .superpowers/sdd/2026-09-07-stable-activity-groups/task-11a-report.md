@@ -1,9 +1,9 @@
 # Task 11A report
 
-Status: review fix round 1 is implemented, verified, committed, and pushed. The
-production/test/documentation commit is
-`e2878d523c557755212868f33d7629b4874d9b6e` on
-`fix/activity-representative-selection`. The original Task 11A commits remain
+Status: review fixes through round 2 are implemented, verified, committed, and
+pushed on `fix/activity-representative-selection`. Round 2 production/tests are
+`002df313f8ba868f0070df28814ba81f1993b7c9`; round 1 is
+`e2878d523c557755212868f33d7629b4874d9b6e`; the original Task 11A commits are
 `8d8fa2d8f` and `cfced18ef`.
 
 ## Root cause
@@ -20,6 +20,14 @@ wall-clock `refresh_version` for every active group on every incremental build,
 even when all inputs and output content were unchanged. The causal predicate was
 therefore true again and the downstream payload-free group appended another
 tombstone.
+
+Round 2 found a second source of false lifecycle transitions:
+`deduped_activities` selected served `notes` and `raw` with
+`argMinIf(value, priority, value IS NOT null)`. Equal-priority members therefore
+had no total tie-break. ClickHouse UUID storage order is not the code-unit order
+of `toString(UUID)`, so the aggregate could choose provenance from a different
+member than the representative-selection contract and could change after input
+part arrangement or rebuild.
 
 ## Upstream watermark audit
 
@@ -76,6 +84,11 @@ duplicate stored source of truth. Scoped builds use the same comparison and
 suppression inside their affected-group set; unscoped builds compare all current
 groups. The downstream stream model retains its causal restoration predicate.
 
+Served `notes` and `raw` now use
+`tuple(priority, toString(activity_id))` as their `argMinIf` ordering key. This
+preserves the existing lowest-priority, non-null fallback semantics while adding
+the same applicable member-UUID tie-break used by representative selection.
+
 ## Strong RED evidence
 
 Command, before the durable producer fix:
@@ -90,6 +103,20 @@ version, establishing the producer wall clock as the cause of repeated
 downstream tombstone churn. The test did not manually freeze or edit the
 upstream refresh version.
 
+Round 2 reused the same command with an equal-priority, divergent-provenance
+group before the aggregate fix. Result: 1 failed, 2 filtered, duration 6.04
+seconds. Representative selection correctly chose code-unit-lower UUID
+`00000000-0000-0000-0000-000000000001`, while both `notes` and `raw` came from
+UUID `10000000-0000-0000-0000-000000000000`:
+
+- expected `code-unit-lower notes`, received `storage-first notes`;
+- expected `{"source":"code-unit-lower"}`, received
+  `{"source":"storage-first"}`.
+
+The fixture deliberately uses UUIDs whose ClickHouse storage order differs from
+their string code-unit order, so the RED is an executable behavior failure, not
+only a structural SQL assertion.
+
 The earlier Task 1 deferred audit also produced a focused unit RED:
 
 `rtk pnpm vitest run --project unit src/domain/activity-grouping.test.ts src/domain/activity-representative.test.ts --retry=0`
@@ -100,6 +127,32 @@ selected UUID `...00b` instead of code-unit-lower UUID `...00a` for both input
 permutations.
 
 ## GREEN and verification evidence
+
+Round 2 fresh verification:
+
+- Exact focused real-ClickHouse RED command after the fix: 1 passed, 2 skipped
+  only by `-t`, duration 22.40 seconds. The test rebuilds the equal-priority
+  source inputs with unchanged served content, reruns real `deduped_activities`
+  then `activity_stream_points`, and asserts the selected `notes`/`raw`, deduped
+  version, deduped raw row count, deduped transition count, stream version, and
+  stream transition count remain unchanged.
+- Full production lifecycle fixture: 1 file, 3 tests passed in 58.94 seconds.
+- Affected deduped-activities real-ClickHouse suite: 1 file, 17 tests passed in
+  12.68 seconds.
+- Read-model static unit suite: 1 file, 38 tests passed. Vitest printed the
+  existing Oxc/esbuild configuration warning.
+- `rtk pnpm typecheck`: `TypeScript: No errors found`.
+- Targeted Biome: changed TypeScript integration test clean.
+- The first targeted SQLFluff invocation exited 0 but explicitly skipped the
+  20,049-byte model at its 20,000-byte parser guard, so it was not accepted as
+  evidence. A second invocation used an untracked, temporary additional config
+  with `large_file_skip_byte_limit = 0`; dbt compiled the project and SQLFluff
+  completed with exit 0 and no violations. The temporary file was deleted and
+  no repository limit/configuration changed.
+- `rtk git diff --check`: clean before commit.
+- `rtk git push`: `c7c3b1f42..002df313f` pushed to the existing remote branch.
+
+Round 1 verification retained for historical evidence:
 
 - The expanded focused production-slice command passed: 1 passed and 2 tests
   were skipped only because `-t` filters the independent sensor-microbatch and
@@ -134,6 +187,15 @@ The first focused rerun in the restricted sandbox failed before behavior because
 the process could not connect to the workspace ClickHouse endpoint (`EPERM`).
 The same command was rerun with the required local-container permission and
 passed; no product or test-harness workaround was added.
+
+## Nearby aggregate audit
+
+Only the two proven instances changed. The nearby `provider_type` `argMinIf`
+already has a total tuple including canonical specificity, provider refinement,
+priority, and member UUID. There is no served `argMax` in this model. `any` and
+`anyIf` fields consume the single `best` or `best_context` row repeated by later
+joins, so all candidate values are identical. `maxIf(source_synced_at)` is
+deterministic by value. No additional aggregate was changed without evidence.
 
 ## Deferred audit decisions
 
@@ -170,6 +232,8 @@ refinement, provider/device priority, and UUID.
   real ClickHouse.
 - The change adds no schema column, stored hash, retry, sleep, heuristic, feature
   flag, retention change, or client-side behavior.
+- Equal-priority non-null `notes` and `raw` now follow a total provenance order;
+  the existing null-excluding fallback condition is unchanged.
 
 ## Retrospective and feedback loop
 
@@ -182,6 +246,8 @@ What required investigation: the three upstream sources expose several clocks,
 but none covers all membership, display, ranking, sensor, and absence transitions
 without also changing on unrelated rebuild mechanics. Array aggregation order
 also had to become deterministic before direct row equality was trustworthy.
+Round 2 additionally required separating ClickHouse's physical UUID order from
+the explicit string code-unit order used by representative selection.
 
 Useful context next time: every append-incremental lifecycle model should rerun
 its real upstream dependency slice unchanged and assert both logical transition
