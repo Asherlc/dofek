@@ -13,6 +13,7 @@ import { sourceReferenceSchema } from "./analytical-evidence.ts";
 import { analyticalTrainingLoadOutputSchema } from "./analytical-training-load-output.ts";
 import { cyclingTrainingMetricsOutputSchema } from "./cycling-training-metrics-output.ts";
 import { fingerLoadingProgressionOutputSchema } from "./finger-loading-progression-output.ts";
+import { strengthProgressionOutputSchema } from "./strength-progression-output.ts";
 
 const nullableNumber = z.number().nullable();
 const nullableString = z.string().nullable();
@@ -949,6 +950,7 @@ export const mcpOutputSchemas = {
   dataCoverage: dataCoverageOutputSchema,
   fingerLoading: fingerLoadingOutputSchema,
   fingerLoadingProgression: fingerLoadingProgressionOutputSchema,
+  strengthProgression: strengthProgressionOutputSchema,
   healthTrends: healthTrendsOutputSchema,
   nutritionSummary: nutritionSummaryOutputSchema,
   providerSync: providerSyncOutputSchema,

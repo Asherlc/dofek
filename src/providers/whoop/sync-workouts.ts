@@ -393,6 +393,7 @@ export async function syncWhoopStrength(
                   durationSeconds: set.durationSeconds,
                   strapLocation: set.strapLocation,
                   strapLocationLaterality: set.strapLocationLaterality,
+                  raw: set.raw,
                 });
               }
             }
@@ -523,6 +524,7 @@ export async function syncWhoopStrengthForActivity(
         durationSeconds: set.durationSeconds,
         strapLocation: set.strapLocation,
         strapLocationLaterality: set.strapLocationLaterality,
+        raw: set.raw,
       });
     }
   }

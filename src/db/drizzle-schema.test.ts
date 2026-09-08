@@ -2,7 +2,13 @@ import { getTableConfig } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import { drizzleSchema } from "./drizzle-schema.ts";
 import { userSettings } from "./schema/account.ts";
-import { activity, climbingAttempt, climbingEntry, fingerLoadingEntry } from "./schema/activity.ts";
+import {
+  activity,
+  climbingAttempt,
+  climbingEntry,
+  fingerLoadingEntry,
+  strengthSet,
+} from "./schema/activity.ts";
 import { clinicalRecord } from "./schema/clinical.ts";
 import { TEST_USER_ID } from "./schema/core.ts";
 import {
@@ -134,6 +140,16 @@ describe("drizzleSchema", () => {
     expect(config.checks.map((checkBuilder) => checkBuilder.name)).toContain(
       "finger_loading_entry_effective_load_positive",
     );
+  });
+
+  it("retains the original provider record on every normalized strength set", () => {
+    const columns = columnSummaries(strengthSet);
+
+    expect(columns.raw).toMatchObject({
+      columnType: "PgJsonb",
+      hasDefault: true,
+      notNull: true,
+    });
   });
 
   it("defines ordered climbing-attempt detail without requiring imported aggregates", () => {

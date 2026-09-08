@@ -57,6 +57,7 @@ export const strengthSet = fitness.table(
     strapLocationLaterality: text("strap_location_laterality"),
     rpe: real("rpe"),
     notes: text("notes"),
+    raw: jsonb("raw").notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index("strength_set_activity_idx").on(table.activityId)],

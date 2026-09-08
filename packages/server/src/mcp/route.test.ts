@@ -1012,6 +1012,14 @@ describe("createMcpRouter", () => {
       required: ["start_date", "end_date"],
       type: "object",
     });
+    expect(findListedTool(tools, "get_strength_progression").inputSchema).toMatchObject({
+      properties: {
+        exercise_ids: { type: "array" },
+        providers: { type: "array" },
+      },
+      required: ["start_date", "end_date"],
+      type: "object",
+    });
     expect(findListedTool(tools, "get_nutrition_summary").inputSchema).toMatchObject({
       required: ["start_date", "end_date"],
       type: "object",
@@ -1082,6 +1090,7 @@ describe("createMcpRouter", () => {
       "get_climbing_progression",
       "get_climbing_sessions",
       "get_strength_sessions",
+      "get_strength_progression",
       "get_nutrition_summary",
       "get_body_metrics",
       "get_subjective_timeline",
@@ -1197,6 +1206,10 @@ describe("createMcpRouter", () => {
       {
         name: "get_strength_sessions",
         path: ["result", "aggregates", "by_muscle_group"],
+      },
+      {
+        name: "get_strength_progression",
+        path: ["result", "sessions", "[]", "exercises", "[]", "sets", "[]", "original", "records"],
       },
       { name: "get_supplements", path: ["result", "[]", "meal"] },
     ] as const;

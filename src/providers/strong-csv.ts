@@ -613,6 +613,17 @@ export async function importStrongCsv(
             durationSeconds: csvRow.seconds,
             rpe: csvRow.rpe,
             notes: csvRow.notes,
+            raw: {
+              distance: csvRow.distance,
+              exerciseName: csvRow.exerciseName,
+              notes: csvRow.notes,
+              reps: csvRow.reps,
+              rpe: csvRow.rpe,
+              seconds: csvRow.seconds,
+              setOrder: csvRow.setOrder,
+              weight: csvRow.weight,
+              weightUnit: effectiveWeightUnit,
+            },
           });
         }
 

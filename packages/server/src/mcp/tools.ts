@@ -50,6 +50,7 @@ import { registerFingerLoadingProgressionTool } from "./finger-loading-progressi
 import { HealthExplorerService } from "./health-explorer-service.ts";
 import { buildHealthSeries, type HealthTrendRow } from "./health-series-service.ts";
 import { listProviderStatuses } from "./provider-status.ts";
+import { registerStrengthProgressionTool } from "./strength-progression-tool.ts";
 import { registerStrengthSessionsTool } from "./strength-sessions-tool.ts";
 import { registerSupplementsTool } from "./supplements-tool.ts";
 import { registerThresholdHistoryTool } from "./threshold-history-tool.ts";
@@ -510,6 +511,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
   registerActivityDetailsTool(server, context);
   registerClimbingProgressionTool(server, context);
   registerFingerLoadingProgressionTool(server, context);
+  registerStrengthProgressionTool(server, context);
   registerClimbingSessionsTool(server, context);
   registerStrengthSessionsTool(server, context);
   registerSupplementsTool(server, context);

@@ -301,6 +301,32 @@ consecutive-day streak without combining their numeric loads. Each component and
 both channels have coverage. Finger loading remains its own channel and is never summed with or
 treated as biologically interchangeable with climbing, cycling, or generic strength load.
 
+`get_strength_progression` requires `activity:read` and an inclusive date range. Optional provider
+and normalized exercise-ID filters apply to both detail and aggregates. The response returns
+canonical exercise identity, ordered set history, set type, warm-up/working classification, load,
+repetitions, RPE, duration/distance, notes, frequency, daily maximum load and volume, e1RM observations, and PR
+evidence. RIR is `null` with `not_recorded_by_canonical_schema`; it is never inferred from RPE.
+Detailed sessions use a request-bound keyset cursor while exercise summaries cover the complete
+requested range. PR classification is seeded from anomaly-safe history before `start_date`; each
+in-range PR includes the preceding best's value and source evidence rather than treating the first
+returned set as an automatic lifetime record.
+
+Strong and WHOOP imports retain each provider's original per-set JSON alongside normalized values.
+Legacy rows without that evidence report original values as unavailable. Exact normalized set
+matches from distinct members of one canonical activity are consolidated once while all
+source set/activity/provider records remain listed. Conflicting overlapping sets remain visible,
+are flagged, and are excluded from aggregates rather than silently reconciled.
+
+Set volume is `weight_kg × repetitions`. Estimated 1RM uses the named Epley formula
+`weight_kg × (1 + repetitions / 30)`, one of the prediction equations evaluated by
+[LeSuer et al. (1997)](https://doi.org/10.1519/00124278-199711000-00001). Dofek applies it only to
+unflagged working sets of 1–12 repetitions. Warm-ups,
+rests, missing load/repetitions, and suspicious records do not contribute to volume/e1RM/PRs.
+Records with negative values, more than 100 repetitions, load above 500 kg, RPE outside 0–10, or a
+high-repetition/low-load pattern consistent with reversed fields or import corruption remain
+unchanged in detail with quality flags. These bounds are validation policy, not silent corrections
+or claims that a set is physiologically impossible.
+
 
 ## Development
 

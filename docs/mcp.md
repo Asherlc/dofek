@@ -172,7 +172,11 @@ The canonical tool names, schemas, and scope checks are defined in the [MCP tool
 | `get_cycling_performance` | `activity:read` | Returns exact-range per-ride normalized power, intensity factor, standard best efforts, rolling-90-day bests, FTP estimates, elevation, and coverage. |
 | `get_training_load` | `activity:read` | Returns daily load, rolling 7-day acute load, rolling 28-day chronic load, and ACWR with window coverage. |
 | `get_climbing_sessions` | `activity:read` | Returns exact-range climbing sessions with grades, attempts, sends, discipline, wall angle, and explicit unavailable fields. |
+| `get_climbing_progression` | `activity:read` | Returns longitudinal climbing grade, attempt, send-rate, frequency, rolling-exposure, duplicate, and provenance analysis. |
 | `get_finger_loading` | `activity:read` | Returns structured finger-loading protocols, effective load, and total time under tension inside exact date boundaries. |
+| `get_finger_loading_progression` | `activity:read` | Returns longitudinal finger-load detail, explicit-threshold high-intensity days, consecutive exposure, and provenance as a separate load channel. |
+| `get_strength_sessions` | `activity:read` | Returns high-level exact-range strength sessions and aggregates. |
+| `get_strength_progression` | `activity:read` | Returns normalized set history, original provider values, anomaly exclusions, Epley e1RM/PR evidence, volume trends, and frequency. |
 | `get_nutrition_summary` | `nutrition:read` | Returns daily calorie, macronutrient, fiber, and meal totals. |
 | `get_body_metrics` | `health:read` | Returns one reconciled body-composition record per local date plus all per-source values. |
 | `list_providers` | `providers:read` | Lists configured providers and status. |

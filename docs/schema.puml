@@ -284,6 +284,22 @@ entity "finger_loading_entry" {
   created_at : timestamp
 }
 
+entity "provider_threshold_observation" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  provider_id : text <<FK>>
+  provider_record_id : text
+  sport : text
+  threshold_type : text
+  value : real
+  unit : text
+  observed_at : timestamp
+  effective_at : timestamp
+  raw : jsonb
+  created_at : timestamp
+}
+
 entity "sleep_session" {
   * id : uuid <<PK>>
   --
@@ -357,6 +373,7 @@ entity "strength_set" {
   strap_location_laterality : text
   rpe : real
   notes : text
+  raw : jsonb
   created_at : timestamp
 }
 
@@ -1256,6 +1273,8 @@ daily_metric_type ||--o{ daily_metric_value
 provider ||--o{ daily_metrics
 user_profile ||--o{ daily_metrics
 activity ||--o{ finger_loading_entry
+user_profile ||--o{ provider_threshold_observation
+provider ||--o{ provider_threshold_observation
 provider ||--o{ sleep_session
 user_profile ||--o{ sleep_session
 sleep_session ||--o{ sleep_stage
