@@ -267,7 +267,7 @@ describe("AnalyticalTrainingLoadRepository", () => {
     });
   });
 
-  it("uses settings effective on the activity date and rejects nonascending HR zones", async () => {
+  it("uses settings effective on the activity date and rejects HR zones that do not increase", async () => {
     const execute = vi
       .fn()
       .mockResolvedValueOnce([
