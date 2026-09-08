@@ -170,15 +170,15 @@ The canonical tool names, schemas, and scope checks are defined in the [MCP tool
 | `get_activity_streams` | `activity:read` | Returns a capped, downsampled activity sensor stream with caller-selected channels. |
 | `get_activity_summary` | `activity:read` | Aggregates activity volume and effort by type, ISO week, modality, or purpose, including unclassified and power coverage. |
 | `get_cycling_performance` | `activity:read` | Returns exact-range per-ride normalized power, intensity factor, standard best efforts, rolling-90-day bests, FTP estimates, elevation, and coverage. |
-| `get_training_load` | `activity:read` | Returns daily load, rolling 7-day acute load, rolling 28-day chronic load, and ACWR with window coverage. |
+| `get_training_load` | `activity:read`; also `nutrition:read` when requested | Returns daily load and rolling windows; analytical detail preserves modality channels and can include aligned nutrition. |
 | `get_climbing_sessions` | `activity:read` | Returns exact-range climbing sessions with grades, attempts, sends, discipline, wall angle, and explicit unavailable fields. |
 | `get_climbing_progression` | `activity:read` | Returns longitudinal climbing grade, attempt, send-rate, frequency, rolling-exposure, duplicate, and provenance analysis. |
 | `get_finger_loading` | `activity:read` | Returns structured finger-loading protocols, effective load, and total time under tension inside exact date boundaries. |
 | `get_finger_loading_progression` | `activity:read` | Returns longitudinal finger-load detail, explicit-threshold high-intensity days, consecutive exposure, and provenance as a separate load channel. |
 | `get_strength_sessions` | `activity:read` | Returns high-level exact-range strength sessions and aggregates. |
 | `get_strength_progression` | `activity:read` | Returns normalized set history, original provider values, anomaly exclusions, Epley e1RM/PR evidence, volume trends, and frequency. |
-| `get_nutrition_summary` | `nutrition:read` | Returns daily calorie, macronutrient, fiber, and meal totals. |
-| `get_body_metrics` | `health:read` | Returns one reconciled body-composition record per local date plus all per-source values. |
+| `get_nutrition_summary` | `nutrition:read` | Returns a daily date spine of calorie, macronutrient, fiber, and meal totals with source resolution and logging-completeness status. |
+| `get_body_metrics` | `health:read` | Returns reconciled body metrics, value kinds, source values, and 7/28-day rolling weight statistics. |
 | `list_providers` | `providers:read` | Lists configured providers and status. |
 | `start_provider_sync` | `sync:write` | Enqueues a provider sync job. |
 
@@ -234,8 +234,30 @@ It first keeps the latest provider-attributed value for each metric and local
 date, then selects the first non-null value by configured `body_priority`
 (falling back to the general provider priority and then `100`). Its
 `source_provider_by_metric` identifies each winner, while `sources` retains the
-provider-level values and timestamps from provider-attributed raw samples. See the
+provider-level values and timestamps from provider-attributed raw samples. Weight is labeled
+`direct` only when it is finite and positive. Because the canonical body sample does not retain a
+composition measurement method, body-fat percentage is labeled `unknown`; lean mass derived from
+weight and body-fat percentage is labeled `calculated_from_unknown_composition`. DEXA and consumer
+BIA values therefore are not conflated or promoted by provider-name assumptions. Invalid weight
+values remain in `sources` for provenance but cannot win reconciliation or enter a rolling mean. No
+composition value is substituted for body weight. Each returned measurement day includes the arithmetic mean of observed
+daily direct weights in its trailing 7- and 28-calendar-day windows plus the number of observed days
+in each window; gaps are omitted from the mean rather than filled or changed to zero. See the
 [body repository](../packages/server/src/repositories/body-repository.ts).
+
+`get_nutrition_summary` returns every date in the requested range. A date with no records has null
+energy/macros, zero meal count, and `logging_completeness: "no_logging"`. Supplement dose events do
+not count as food logging even when their nutrients are present in the canonical total. A date with food or nutrition records is
+`unknown_completeness`; no connected nutrition source currently supplies an explicit daily complete
+or partial observation. Low energy intake is never used as a completeness heuristic.
+`resolution_status` remains a separate
+description of which overlapping nutrition source was selected, so completeness and source conflict
+are not conflated. See the canonical [food repository](../packages/server/src/repositories/food-repository.ts).
+Dense nutrition responses are bounded to 366 inclusive days; callers split longer histories into
+date chunks. For one aligned response, call `get_training_load` with `detail: "analytical"` and
+`include_nutrition: true`. That path requires both `activity:read` and `nutrition:read` and preserves
+the independent modality load channels alongside the canonical nutrition resolution and completeness
+fields.
 
 `get_training_load` reads the canonical incremental `daily_strain` model. ACWR is
 `null` until the 28-day chronic window is complete; each row reports the current

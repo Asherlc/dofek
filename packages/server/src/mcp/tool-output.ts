@@ -13,6 +13,7 @@ import { sourceReferenceSchema } from "./analytical-evidence.ts";
 import { analyticalTrainingLoadOutputSchema } from "./analytical-training-load-output.ts";
 import { cyclingTrainingMetricsOutputSchema } from "./cycling-training-metrics-output.ts";
 import { fingerLoadingProgressionOutputSchema } from "./finger-loading-progression-output.ts";
+import { nutritionSummaryItemSchema } from "./nutrition-summary-output.ts";
 import { strengthProgressionOutputSchema } from "./strength-progression-output.ts";
 
 const nullableNumber = z.number().nullable();
@@ -234,34 +235,25 @@ export const fingerLoadingOutputSchema = jsonResult(
   ),
 );
 
-export const nutritionSummaryOutputSchema = jsonResult(
-  z.array(
-    z.object({
-      date: z.string(),
-      total_calories: nullableNumber,
-      protein_g: nullableNumber,
-      carbs_g: nullableNumber,
-      fat_g: nullableNumber,
-      fiber_g: nullableNumber,
-      meal_count: z.number(),
-      resolution_status: z.enum(["available", "source_conflict"]),
-      resolution_message: z.string(),
-      source_provider: nullableString,
-      source_providers: z.array(z.string()),
-      contributing_providers: z.array(z.string()),
-      excluded_providers: z.array(z.string()),
-    }),
-  ),
-);
+export const nutritionSummaryOutputSchema = jsonResult(z.array(nutritionSummaryItemSchema));
 
 export const bodyMetricsOutputSchema = jsonResult(
   z.array(
     z.object({
       date: z.string(),
       weight_kg: nullableNumber,
+      weight_measurement_kind: z.enum(["direct", "unavailable"]),
       body_fat_pct: nullableNumber,
+      body_fat_measurement_kind: z.enum(["unknown", "unavailable"]),
       lean_mass_kg: nullableNumber,
+      lean_mass_measurement_kind: z.enum(["calculated_from_unknown_composition", "unavailable"]),
       bmi: nullableNumber,
+      weight_rolling: z.object({
+        average_7d_kg: nullableNumber,
+        average_28d_kg: nullableNumber,
+        observed_days_7d: z.number().int().nonnegative(),
+        observed_days_28d: z.number().int().nonnegative(),
+      }),
       source_provider_by_metric: z.object({
         weight_kg: nullableString,
         body_fat_pct: nullableString,

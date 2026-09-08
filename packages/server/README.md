@@ -327,6 +327,27 @@ high-repetition/low-load pattern consistent with reversed fields or import corru
 unchanged in detail with quality flags. These bounds are validation policy, not silent corrections
 or claims that a set is physiologically impossible.
 
+`get_body_metrics` reconciles weight, body-fat percentage, and BMI independently by configured body
+source priority and retains all provider-attributed observations. A finite positive body weight is
+labeled direct. The current canonical sample does not retain composition measurement method, so
+body-fat values remain `unknown` and derived lean mass is
+`calculated_from_unknown_composition`; DEXA and consumer BIA are not conflated by assumption. Invalid
+weights remain in provenance but cannot win reconciliation or enter rolling calculations. Each returned measurement date includes trailing 7- and 28-calendar-day arithmetic
+means over observed daily direct weights and the observation count for each window. Missing days are
+not interpolated or converted to zero. Cycling W/kg calculations continue to use the shared nearby-
+weight policy: same-day direct weight, bounded 14-day interpolation, or nearest direct weight within
+30 days, with the chosen evidence returned to the caller.
+
+`get_nutrition_summary` returns a complete requested date spine. Logged days are
+`unknown_completeness` because no connected source currently supplies an explicit daily complete or
+partial observation; no-log days are `no_logging`. Energy and macros remain null on no-log days, so a sparse day cannot be mistaken for a
+known deficit and a 150-calorie day is not silently classified as partial. Nutrition source resolution
+is reported independently through the canonical `fitness.v_nutrition_daily` contribution set.
+Supplement-only nutrient totals remain available but do not count as food logging. Dense nutrition
+responses are capped at 366 inclusive days. `get_training_load` with `detail: "analytical"` and
+`include_nutrition: true` returns this canonical nutrition spine beside, rather than collapsed into,
+the modality-specific load channels and requires both read scopes.
+
 
 ## Development
 

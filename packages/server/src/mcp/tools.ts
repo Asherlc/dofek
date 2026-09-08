@@ -49,6 +49,10 @@ import { registerCyclingTrainingMetricsTool } from "./cycling-training-metrics-t
 import { registerFingerLoadingProgressionTool } from "./finger-loading-progression-tool.ts";
 import { HealthExplorerService } from "./health-explorer-service.ts";
 import { buildHealthSeries, type HealthTrendRow } from "./health-series-service.ts";
+import {
+  assertNutritionSummaryDateRange,
+  toNutritionSummaryOutput,
+} from "./nutrition-summary-output.ts";
 import { listProviderStatuses } from "./provider-status.ts";
 import { registerStrengthProgressionTool } from "./strength-progression-tool.ts";
 import { registerStrengthSessionsTool } from "./strength-sessions-tool.ts";
@@ -790,7 +794,8 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     "get_nutrition_summary",
     {
       title: "Get Nutrition Summary",
-      description: "Return daily calorie, macronutrient, fiber, and meal totals for a date range.",
+      description:
+        "Return a complete daily date spine of calorie, macronutrient, fiber, and meal totals with source resolution and conservative logging-completeness status. Missing nutrition stays null.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: {
         start_date: dateSchema,
@@ -802,37 +807,22 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     async ({ start_date, end_date, timezone }) => {
       requireMcpScope(context.scopes, "nutrition:read");
       assertDateRange(start_date, end_date);
+      assertNutritionSummaryDateRange(start_date, end_date);
       const repository = new FoodRepository(
         context.db,
         context.userId,
         timezone ?? context.timezone,
       );
       const rows = await repository.dailyTotalsRange(start_date, end_date);
-      return jsonToolResult(
-        rows.map((row) => ({
-          date: row.date,
-          total_calories: row.calories,
-          protein_g: row.proteinGrams,
-          carbs_g: row.carbsGrams,
-          fat_g: row.fatGrams,
-          fiber_g: row.fiberGrams,
-          meal_count: row.mealCount,
-          resolution_status: row.resolutionStatus,
-          resolution_message: row.resolutionMessage,
-          source_provider:
-            row.contributingProviders.length === 1 ? row.contributingProviders[0] : null,
-          source_providers: row.sourceProviders,
-          contributing_providers: row.contributingProviders,
-          excluded_providers: row.excludedProviders,
-        })),
-      );
+      return jsonToolResult(rows.map(toNutritionSummaryOutput));
     },
   );
   server.registerTool(
     "get_body_metrics",
     {
       title: "Get Body Metrics",
-      description: "Return weight and body-composition measurements for an exact date range.",
+      description:
+        "Return reconciled weight and body-composition measurements, explicit value kinds, source provenance, and 7/28-day rolling weight statistics for an exact date range.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: {
         start_date: dateSchema,
@@ -852,9 +842,18 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         rows.map((row) => ({
           date: row.date,
           weight_kg: row.weightKg,
+          weight_measurement_kind: row.weightMeasurementKind,
           body_fat_pct: row.bodyFatPct,
+          body_fat_measurement_kind: row.bodyFatMeasurementKind,
           lean_mass_kg: row.leanMassKg,
+          lean_mass_measurement_kind: row.leanMassMeasurementKind,
           bmi: row.bmi,
+          weight_rolling: {
+            average_7d_kg: row.weightRolling.average7dKg,
+            average_28d_kg: row.weightRolling.average28dKg,
+            observed_days_7d: row.weightRolling.observedDays7d,
+            observed_days_28d: row.weightRolling.observedDays28d,
+          },
           source_provider_by_metric: {
             weight_kg: row.sourceProviderByMetric.weightKg,
             body_fat_pct: row.sourceProviderByMetric.bodyFatPct,

@@ -872,6 +872,7 @@ describe("createMcpRouter", () => {
       properties: {
         detail: { enum: ["analytical"], type: "string" },
         end_date: { format: "date", type: "string" },
+        include_nutrition: { type: "boolean" },
         start_date: { format: "date", type: "string" },
       },
       required: ["start_date", "end_date"],
@@ -3302,6 +3303,9 @@ describe("createMcpRouter", () => {
         fatGrams: 85,
         fiberGrams: 32,
         mealCount: 4,
+        loggingCompleteness: "unknown_completeness",
+        loggingCompletenessReason:
+          "Nutrition was logged, but no source explicitly reported whether the day was complete.",
         proteinGrams: 165,
         sourceProviders: ["fatsecret"],
         resolutionStatus: "available",
@@ -3326,6 +3330,9 @@ describe("createMcpRouter", () => {
         fat_g: 85,
         fiber_g: 32,
         meal_count: 4,
+        logging_completeness: "unknown_completeness",
+        logging_completeness_reason:
+          "Nutrition was logged, but no source explicitly reported whether the day was complete.",
         protein_g: 165,
         resolution_message: "Totals use the only available nutrition source.",
         resolution_status: "available",
@@ -3348,6 +3355,9 @@ describe("createMcpRouter", () => {
         fatGrams: null,
         fiberGrams: null,
         mealCount: 4,
+        loggingCompleteness: "unknown_completeness",
+        loggingCompletenessReason:
+          "Nutrition was logged, but no source explicitly reported whether the day was complete.",
         proteinGrams: null,
         sourceProviders: ["cronometer", "fatsecret"],
         resolutionStatus: "source_conflict",
@@ -3378,15 +3388,41 @@ describe("createMcpRouter", () => {
     ]);
   });
 
+  it("bounds the dense nutrition date spine", async () => {
+    authorizeMcpToken(["nutrition:read"]);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_nutrition_summary", {
+        end_date: "2026-01-02",
+        start_date: "2025-01-01",
+      }),
+    });
+
+    const parsed = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text));
+    expect(parsed.result.isError).toBe(true);
+    expect(parsed.result.content[0]?.text).toContain("at most 366 inclusive days");
+    expect(toolTestMocks.foodDailyTotalsRange).not.toHaveBeenCalled();
+  });
+
   it("returns body metrics and computes lean mass on the server", async () => {
     authorizeMcpToken();
     toolTestMocks.bodyListReconciledRange.mockResolvedValue([
       {
         date: "2026-05-18",
         weightKg: 80,
+        weightMeasurementKind: "direct",
         bodyFatPct: 20,
+        bodyFatMeasurementKind: "unknown",
         leanMassKg: 64,
+        leanMassMeasurementKind: "calculated_from_unknown_composition",
         bmi: 24.5,
+        weightRolling: {
+          average7dKg: 80,
+          average28dKg: 80,
+          observedDays7d: 1,
+          observedDays28d: 1,
+        },
         sourceProviderByMetric: {
           weightKg: "withings",
           bodyFatPct: "withings",
@@ -3417,8 +3453,10 @@ describe("createMcpRouter", () => {
       {
         bmi: 24.5,
         body_fat_pct: 20,
+        body_fat_measurement_kind: "unknown",
         date: "2026-05-18",
         lean_mass_kg: 64,
+        lean_mass_measurement_kind: "calculated_from_unknown_composition",
         source_provider_by_metric: {
           weight_kg: "withings",
           body_fat_pct: "withings",
@@ -3435,6 +3473,13 @@ describe("createMcpRouter", () => {
         ],
         coverage: { source_count: 1 },
         weight_kg: 80,
+        weight_measurement_kind: "direct",
+        weight_rolling: {
+          average_7d_kg: 80,
+          average_28d_kg: 80,
+          observed_days_7d: 1,
+          observed_days_28d: 1,
+        },
       },
     ]);
   });
@@ -3458,9 +3503,18 @@ describe("createMcpRouter", () => {
       {
         date: "2026-05-18",
         weightKg: 80,
+        weightMeasurementKind: "direct",
         bmi: null,
         bodyFatPct: null,
+        bodyFatMeasurementKind: "unavailable",
         leanMassKg: null,
+        leanMassMeasurementKind: "unavailable",
+        weightRolling: {
+          average7dKg: 80,
+          average28dKg: 80,
+          observedDays7d: 1,
+          observedDays28d: 1,
+        },
         sourceProviderByMetric: {
           weightKg: "withings",
           bodyFatPct: null,

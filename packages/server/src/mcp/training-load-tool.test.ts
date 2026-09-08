@@ -5,7 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { analyticalTrainingLoadOutputSchema } from "./analytical-training-load-output.ts";
 import { trainingLoadOutputSchema } from "./tool-output.ts";
 
-const mocks = vi.hoisted(() => ({ analyticalListRange: vi.fn(), legacyListRange: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  analyticalListRange: vi.fn(),
+  legacyListRange: vi.fn(),
+  nutritionListRange: vi.fn(),
+}));
 
 vi.mock("../repositories/analytical-training-load-repository.ts", () => ({
   AnalyticalTrainingLoadRepository: vi.fn(function vitestConstructor() {
@@ -16,6 +20,12 @@ vi.mock("../repositories/analytical-training-load-repository.ts", () => ({
 vi.mock("../repositories/training-load-repository.ts", () => ({
   TrainingLoadRepository: vi.fn(function vitestConstructor() {
     return { listRange: mocks.legacyListRange };
+  }),
+}));
+
+vi.mock("../repositories/food-repository.ts", () => ({
+  FoodRepository: vi.fn(function vitestConstructor() {
+    return { dailyTotalsRange: mocks.nutritionListRange };
   }),
 }));
 
@@ -98,11 +108,12 @@ describe("get_training_load", () => {
   beforeEach(async () => {
     mocks.legacyListRange.mockReset().mockResolvedValue(legacyRows);
     mocks.analyticalListRange.mockReset().mockResolvedValue(analyticalResult());
+    mocks.nutritionListRange.mockReset().mockResolvedValue([]);
     server = new McpServer({ name: "training-load-test", version: "1.0.0" });
     registerTrainingLoadTool(server, {
       db: { execute: vi.fn(), select: vi.fn(), transaction: vi.fn() },
       userId: "00000000-0000-4000-8000-000000000002",
-      scopes: ["activity:read"],
+      scopes: ["activity:read", "nutrition:read"],
       timezone: "UTC",
       sensorStore: { query: vi.fn() },
     });
@@ -156,5 +167,50 @@ describe("get_training_load", () => {
       climbing_attempts: { unit: "attempts" },
       finger_load: { unit: "kg-seconds" },
     });
+  });
+
+  it("can align canonical nutrition completeness with modality-specific load", async () => {
+    mocks.nutritionListRange.mockResolvedValue([
+      {
+        date: "2026-06-15",
+        calories: 150,
+        proteinGrams: 5,
+        carbsGrams: 20,
+        fatGrams: 4,
+        fiberGrams: 1,
+        mealCount: 1,
+        loggingCompleteness: "unknown_completeness",
+        loggingCompletenessReason:
+          "Nutrition was logged, but no source explicitly reported whether the day was complete.",
+        resolutionStatus: "available",
+        resolutionMessage: "Totals use the only available nutrition source.",
+        sourceProviders: ["cronometer"],
+        contributingProviders: ["cronometer"],
+        excludedProviders: [],
+      },
+    ]);
+
+    const result = await client.callTool({
+      name: "get_training_load",
+      arguments: {
+        start_date: "2026-06-15",
+        end_date: "2026-06-15",
+        detail: "analytical",
+        include_nutrition: true,
+      },
+    });
+
+    if (result.isError)
+      throw new Error(result.content[0]?.type === "text" ? result.content[0].text : "Tool failed");
+    const parsed = analyticalTrainingLoadOutputSchema.parse(result.structuredContent);
+    expect(parsed.result.nutrition).toEqual([
+      expect.objectContaining({
+        date: "2026-06-15",
+        logging_completeness: "unknown_completeness",
+        resolution_status: "available",
+        total_calories: 150,
+      }),
+    ]);
+    expect(mocks.nutritionListRange).toHaveBeenCalledWith("2026-06-15", "2026-06-15");
   });
 });

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { nutritionSummaryItemSchema } from "./nutrition-summary-output.ts";
 
 const nullableNumber = z.number().nullable();
 const rollingSchema = z
@@ -81,6 +82,7 @@ export const analyticalTrainingLoadOutputSchema = z
             })
             .strict(),
         ),
+        nutrition: z.array(nutritionSummaryItemSchema).optional(),
       })
       .strict(),
   })
