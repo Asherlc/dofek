@@ -279,6 +279,43 @@ describe("registerFoodRecordTools", () => {
     ).toBe(true);
   });
 
+  it("applies documented search and history defaults", async () => {
+    const { tool } = setup();
+
+    await tool("search_food_entries").handler({
+      start_date: "2026-09-01",
+      end_date: "2026-09-07",
+    });
+    await tool("get_food_entry_history").handler({ record_id: recordId });
+
+    expect(mocks.search).toHaveBeenCalledWith({
+      startDate: "2026-09-01",
+      endDate: "2026-09-07",
+      query: null,
+      visibility: "visible",
+      cursor: null,
+      limit: 50,
+    });
+    expect(mocks.history).toHaveBeenCalledWith(recordId, null, 50);
+  });
+
+  it("enforces search text and pagination schema boundaries", () => {
+    const { tool } = setup();
+    const search = tool("search_food_entries").inputSchema;
+    const history = tool("get_food_entry_history").inputSchema;
+
+    expect(search.query?.safeParse(" ").success).toBe(false);
+    expect(search.query?.safeParse("oats").success).toBe(true);
+    expect(search.limit?.safeParse(0).success).toBe(false);
+    expect(search.limit?.safeParse(1).success).toBe(true);
+    expect(search.limit?.safeParse(100).success).toBe(true);
+    expect(search.limit?.safeParse(101).success).toBe(false);
+    expect(history.limit?.safeParse(0).success).toBe(false);
+    expect(history.limit?.safeParse(1).success).toBe(true);
+    expect(history.limit?.safeParse(100).success).toBe(true);
+    expect(history.limit?.safeParse(101).success).toBe(false);
+  });
+
   it("rejects an inverted search range before calling the repository", async () => {
     const { tool } = setup();
 
@@ -360,6 +397,13 @@ describe("registerFoodRecordTools", () => {
     ).toBe(true);
   });
 
+  it("returns null when a food record is not found", async () => {
+    const { tool } = setup();
+    mocks.get.mockResolvedValueOnce(null);
+
+    expect(parseResult(await tool("get_food_entry").handler({ record_id: recordId }))).toBeNull();
+  });
+
   it("uses authenticated user and client attribution for mutations", async () => {
     const { context, tool } = setup();
 
@@ -426,6 +470,72 @@ describe("registerFoodRecordTools", () => {
         requestId,
       });
     }
+  });
+
+  it("maps every scalar update field while preserving explicit nulls", async () => {
+    const { tool } = setup();
+
+    await tool("update_food_entry").handler({
+      record_id: recordId,
+      expected_version: version,
+      request_id: requestId,
+      set: {
+        date: "2026-09-08",
+        meal: null,
+        food_name: null,
+        food_description: "Cooked slowly",
+        category: null,
+        number_of_units: null,
+        serving_unit: "bowl",
+        serving_weight_grams: null,
+      },
+      clear: [
+        "date",
+        "food_name",
+        "food_description",
+        "category",
+        "number_of_units",
+        "serving_unit",
+        "serving_weight_grams",
+      ],
+      nutrient_set: {},
+      nutrient_clear: [],
+    });
+
+    expect(mocks.update).toHaveBeenCalledWith({
+      recordId,
+      expectedVersion: version,
+      requestId,
+      set: {
+        date: "2026-09-08",
+        meal: null,
+        foodName: null,
+        foodDescription: "Cooked slowly",
+        category: null,
+        numberOfUnits: null,
+        servingUnit: "bowl",
+        servingWeightGrams: null,
+      },
+      clear: [
+        "date",
+        "foodName",
+        "foodDescription",
+        "category",
+        "numberOfUnits",
+        "servingUnit",
+        "servingWeightGrams",
+      ],
+      nutrientSet: {},
+      nutrientClear: [],
+    });
+  });
+
+  it("enforces nonempty create food names", () => {
+    const { tool } = setup();
+    const foodName = tool("create_food_entry").inputSchema.food_name;
+
+    expect(foodName?.safeParse(" ").success).toBe(false);
+    expect(foodName?.safeParse("Oats").success).toBe(true);
   });
 
   it("returns mutation receipts and records while omitting affected dates", async () => {
@@ -524,6 +634,39 @@ describe("registerFoodRecordTools", () => {
       expect(captureException).not.toHaveBeenCalled();
     },
   );
+
+  it("recursively converts safe error detail keys to snake case", async () => {
+    const { tool } = setup();
+    mocks.update.mockRejectedValueOnce(
+      new FoodRecordError("INVALID_ARGUMENT", "Nested details", {
+        outerField: [{ innerField: "value" }],
+        nullValue: null,
+        scalarList: [1, "two"],
+      }),
+    );
+
+    const result = await tool("update_food_entry").handler({
+      record_id: recordId,
+      expected_version: version,
+      request_id: requestId,
+      set: { food_name: "Porridge" },
+      clear: [],
+      nutrient_set: {},
+      nutrient_clear: [],
+    });
+
+    expect(parseResult(result)).toEqual({
+      error: {
+        code: "INVALID_ARGUMENT",
+        message: "Nested details",
+        details: {
+          outer_field: [{ inner_field: "value" }],
+          null_value: null,
+          scalar_list: [1, "two"],
+        },
+      },
+    });
+  });
 
   it("reports unexpected failures and returns no internal details", async () => {
     const { tool } = setup();
