@@ -471,12 +471,32 @@ describe("processSyncJob", () => {
     ]);
     mockRecordRelationalCanonicalCommits.mockRejectedValueOnce(error);
     await expect(runSyncJob(createMockJob(), mockDb)).rejects.toBe(error);
-    expect(mockCaptureException).toHaveBeenCalledWith(error, expect.any(Object));
+    expect(mockCaptureException).toHaveBeenCalledWith(error, {
+      tags: { phase: "canonical-commit", provider: "test-provider" },
+    });
     expect(mockAppendProcessingStageEvent).not.toHaveBeenCalledWith(
       mockDb,
       expect.objectContaining({ stage: "ingest", status: "succeeded" }),
     );
     expect(mockEnqueueDebouncedPostSyncMaintenance).not.toHaveBeenCalled();
+  });
+
+  it("does not classify later failures as canonical commit failures", async () => {
+    const error = new Error("Output manifest unavailable");
+    mockGetEnabledSyncProviders.mockReturnValue([
+      createMockProvider({ processingDatasetKeys: ["activity"] }),
+    ]);
+    mockGetProcessingOutputManifest.mockRejectedValueOnce(error);
+
+    await expect(runSyncJob(createMockJob(), mockDb)).resolves.toBeUndefined();
+
+    expect(mockCaptureException).toHaveBeenCalledWith(error, {
+      tags: { provider: "test-provider" },
+    });
+    expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({ stage: "ingest", status: "failed" }),
+    );
   });
 
   it("records a retry-stable processing lifecycle and correlates metric batches", async () => {
