@@ -207,7 +207,14 @@ describe("StrengthRepository", () => {
   const dialect = new PgDialect();
 
   function makeRepository(rows: Record<string, unknown>[] = []) {
-    const execute = vi.fn().mockResolvedValue(rows);
+    const execute = vi.fn().mockResolvedValue(
+      rows.map((row) => ({
+        member_activity_id: "member-1",
+        member_provider_id: "provider-1",
+        source_priority: 100,
+        ...row,
+      })),
+    );
     const db = { execute };
     const repo = new StrengthRepository(db, "user-1", "UTC");
     return { repo, execute };
@@ -392,7 +399,7 @@ describe("StrengthRepository", () => {
       expect(result).toEqual([]);
     });
 
-    it("groups flat rows into ExerciseWithSets by exercise_index", async () => {
+    it("groups flat rows into exercises by normalized exercise identity", async () => {
       const { repo } = makeRepository([
         {
           exercise_name: "Bench Press",
@@ -445,6 +452,167 @@ describe("StrengthRepository", () => {
       expect(result[1]?.toDetail().exerciseName).toBe("Front Plank");
       expect(result[1]?.toDetail().sets).toHaveLength(1);
       expect(result[1]?.toDetail().sets[0]?.durationSeconds).toBe(60);
+    });
+
+    it("keeps distinct exercises when different members reuse a provider-local index", async () => {
+      const { repo } = makeRepository([
+        {
+          member_activity_id: "strong-member",
+          source_priority: 20,
+          exercise_name: "Deadlift",
+          equipment: "BARBELL",
+          muscle_groups: ["BACK", "GLUTES", "HAMSTRINGS"],
+          exercise_type: "STRENGTH",
+          exercise_index: 0,
+          set_index: 0,
+          set_type: "working",
+          weight_kg: 100,
+          reps: 5,
+          duration_seconds: null,
+          rpe: null,
+          notes: null,
+        },
+        {
+          member_activity_id: "mirror-member",
+          source_priority: 10,
+          exercise_name: "Bench Press",
+          equipment: "BARBELL",
+          muscle_groups: ["CHEST", "TRICEPS"],
+          exercise_type: "STRENGTH",
+          exercise_index: 0,
+          set_index: 0,
+          set_type: "working",
+          weight_kg: 80,
+          reps: 8,
+          duration_seconds: null,
+          rpe: null,
+          notes: null,
+        },
+      ]);
+
+      const details = (await repo.getExercisesForActivity("stable-group")).map((exercise) =>
+        exercise.toDetail(),
+      );
+
+      expect(details.map((exercise) => exercise.exerciseName)).toEqual(["Bench Press", "Deadlift"]);
+      expect(details.map((exercise) => exercise.exerciseIndex)).toEqual([0, 1]);
+    });
+
+    it("deduplicates mirrored sets by exact signature while retaining disjoint and rest sets", async () => {
+      const { repo } = makeRepository([
+        {
+          member_activity_id: "strong-member",
+          source_priority: 5,
+          exercise_name: "Deadlift",
+          equipment: "BARBELL",
+          muscle_groups: ["BACK"],
+          exercise_type: "STRENGTH",
+          exercise_index: 0,
+          set_index: 0,
+          set_type: "working",
+          weight_kg: 0,
+          reps: 0,
+          duration_seconds: null,
+          rpe: 7,
+          notes: null,
+        },
+        {
+          member_activity_id: "mirror-member",
+          source_priority: 20,
+          exercise_name: " deadlift ",
+          equipment: "barbell",
+          muscle_groups: ["BACK", "GLUTES", "HAMSTRINGS"],
+          exercise_type: "STRENGTH",
+          exercise_index: 0,
+          set_index: 0,
+          set_type: "working",
+          weight_kg: 0,
+          reps: 0,
+          duration_seconds: null,
+          rpe: 8,
+          notes: "Complete mirror",
+        },
+        {
+          member_activity_id: "strong-member",
+          source_priority: 20,
+          exercise_name: "Deadlift",
+          equipment: "BARBELL",
+          muscle_groups: ["BACK"],
+          exercise_type: "STRENGTH",
+          exercise_index: 0,
+          set_index: 1,
+          set_type: "working",
+          weight_kg: 110,
+          reps: 3,
+          duration_seconds: null,
+          rpe: 7,
+          notes: null,
+        },
+        {
+          member_activity_id: "mirror-member",
+          source_priority: 5,
+          exercise_name: "Deadlift",
+          equipment: "BARBELL",
+          muscle_groups: ["BACK"],
+          exercise_type: "STRENGTH",
+          exercise_index: 0,
+          set_index: 1,
+          set_type: "working",
+          weight_kg: 110,
+          reps: 3,
+          duration_seconds: null,
+          rpe: 9,
+          notes: null,
+        },
+        {
+          member_activity_id: "strong-member",
+          source_priority: 5,
+          exercise_name: "Deadlift",
+          equipment: "BARBELL",
+          muscle_groups: ["BACK"],
+          exercise_type: "STRENGTH",
+          exercise_index: 0,
+          set_index: 2,
+          set_type: "rest",
+          weight_kg: null,
+          reps: null,
+          duration_seconds: 0,
+          rpe: null,
+          notes: null,
+        },
+      ]);
+
+      const detail = (await repo.getExercisesForActivity("stable-group"))[0]?.toDetail();
+
+      expect(detail?.sets).toEqual([
+        {
+          durationSeconds: null,
+          notes: "Complete mirror",
+          reps: 0,
+          rpe: 8,
+          setIndex: 0,
+          setType: "working",
+          weightKg: 0,
+        },
+        {
+          durationSeconds: null,
+          notes: null,
+          reps: 3,
+          rpe: 9,
+          setIndex: 1,
+          setType: "working",
+          weightKg: 110,
+        },
+        {
+          durationSeconds: 0,
+          notes: null,
+          reps: null,
+          rpe: null,
+          setIndex: 2,
+          setType: "rest",
+          weightKg: null,
+        },
+      ]);
     });
 
     it("uses exercise metadata when stored muscle groups are missing", async () => {
@@ -575,7 +743,7 @@ describe("StrengthRepository", () => {
 
       const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
       expect(compiledQuery.sql).not.toContain("CURRENT_TIMESTAMP -");
-      expect(compiledQuery.params).toEqual(["UTC", "user-1"]);
+      expect(compiledQuery.params).toEqual(["user-1", "UTC", "user-1"]);
     });
   });
 });

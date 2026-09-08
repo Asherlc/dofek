@@ -3118,7 +3118,7 @@ describe("createMcpRouter", () => {
     expect(toolTestMocks.activityFindById).toHaveBeenCalledWith(activityId);
   });
 
-  it("reports member-id substitution and hydrates detail families by stable group id", async () => {
+  it("hydrates a non-representative Strong member from the stable group", async () => {
     authorizeMcpToken();
     const requestedMemberId = "00000000-0000-4000-8000-000000000011";
     const stableGroupId = "00000000-0000-4000-8000-000000000012";
@@ -3155,6 +3155,28 @@ describe("createMcpRouter", () => {
       timezone: "UTC",
       total_distance: null,
     });
+    toolTestMocks.strengthExercises.mockResolvedValue([
+      {
+        toDetail: () => ({
+          equipment: "BARBELL",
+          exerciseIndex: 0,
+          exerciseName: "Deadlift",
+          exerciseType: "STRENGTH",
+          muscleGroups: ["BACK", "GLUTES", "HAMSTRINGS"],
+          sets: [
+            {
+              durationSeconds: null,
+              notes: null,
+              reps: 5,
+              rpe: 8,
+              setIndex: 0,
+              setType: "working",
+              weightKg: 100,
+            },
+          ],
+        }),
+      },
+    ]);
 
     const response = await request(createTestApp(), {
       authorization: "Bearer good-token",
@@ -3163,6 +3185,7 @@ describe("createMcpRouter", () => {
 
     expect(parseToolCallText(response.text)).toMatchObject({
       activity: { id: stableGroupId, resolved_from: requestedMemberId },
+      strength_exercises: [{ exerciseName: "Deadlift", sets: [{ reps: 5, weightKg: 100 }] }],
     });
     expect(toolTestMocks.strengthExercises).toHaveBeenCalledWith(stableGroupId);
     expect(toolTestMocks.climbingActivityEntries).toHaveBeenCalledWith(stableGroupId);

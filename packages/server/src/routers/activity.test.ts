@@ -6,7 +6,7 @@ import type { ActivityRow } from "../models/activity.ts";
 import { Activity } from "../models/activity.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { PowerRepository } from "../repositories/power-repository.ts";
-import { StrengthRepository } from "../repositories/strength-repository.ts";
+import { ExerciseWithSets, StrengthRepository } from "../repositories/strength-repository.ts";
 import { mapStreamPoint } from "./activity.ts";
 import { createTestCallerFactory, makeTestCaller } from "./test-helpers.ts";
 
@@ -1126,21 +1126,44 @@ describe("activityRouter", () => {
   });
 
   describe("strengthExercises", () => {
-    it("uses the configured sensor store when resolving the activity", async () => {
+    it("hydrates non-representative Strong member requests from the resolved stable group", async () => {
       const getExercisesForActivitySpy = vi
         .spyOn(StrengthRepository.prototype, "getExercisesForActivity")
-        .mockResolvedValue([]);
-      const activityId = "00000000-0000-0000-0000-000000000001";
+        .mockResolvedValue([
+          new ExerciseWithSets(0, "Deadlift", "BARBELL", ["BACK"], "STRENGTH", [
+            {
+              durationSeconds: null,
+              notes: null,
+              reps: 5,
+              rpe: 8,
+              setIndex: 0,
+              setType: "working",
+              weightKg: 100,
+            },
+          ]),
+        ]);
+      const requestedStrongMemberId = "00000000-0000-0000-0000-000000000001";
+      const stableGroupId = "00000000-0000-0000-0000-000000000002";
 
-      const caller = makeResolvedCaller([
-        makeActivityRow({
-          id: activityId,
+      const caller = makeResolvedCaller(
+        [
+          makeActivityRow({
+            id: stableGroupId,
+            resolved_from: requestedStrongMemberId,
+          }),
+        ],
+        undefined,
+        requestedStrongMemberId,
+      );
+      const result = await caller.strengthExercises({ id: requestedStrongMemberId });
+
+      expect(result).toEqual([
+        expect.objectContaining({
+          exerciseName: "Deadlift",
+          sets: [expect.objectContaining({ reps: 5, weightKg: 100 })],
         }),
       ]);
-      const result = await caller.strengthExercises({ id: activityId });
-
-      expect(result).toEqual([]);
-      expect(getExercisesForActivitySpy).toHaveBeenCalledWith(activityId);
+      expect(getExercisesForActivitySpy).toHaveBeenCalledWith(stableGroupId);
       getExercisesForActivitySpy.mockRestore();
     });
   });
