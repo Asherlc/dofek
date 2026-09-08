@@ -11,6 +11,7 @@ import {
   activityDetailsOutputSchema,
   activitySummaryOutputSchema,
   activityTimeseriesOutputSchema,
+  cyclingPowerCurveOutputSchema,
   healthTrendsOutputSchema,
   providersOutputSchema,
   searchActivitiesOutputSchema,
@@ -28,6 +29,7 @@ const toolTestMocks = vi.hoisted(() => {
     bodyListReconciledRange: vi.fn(),
     climbingActivityEntries: vi.fn(),
     cyclingPerformanceListRange: vi.fn(),
+    cyclingPowerCurveListRange: vi.fn(),
     dailyMetricsList: vi.fn(),
     dailyMetricsListRange: vi.fn(),
     dataCoverageList: vi.fn(),
@@ -107,6 +109,12 @@ vi.mock("../repositories/data-coverage-repository.ts", () => ({
 vi.mock("../repositories/cycling-performance-repository.ts", () => ({
   CyclingPerformanceRepository: vi.fn(function vitestConstructor() {
     return { listRange: toolTestMocks.cyclingPerformanceListRange };
+  }),
+}));
+
+vi.mock("../repositories/cycling-power-curve-repository.ts", () => ({
+  CyclingPowerCurveRepository: vi.fn(function vitestConstructor() {
+    return { listRange: toolTestMocks.cyclingPowerCurveListRange };
   }),
 }));
 
@@ -517,6 +525,14 @@ describe("createMcpRouter", () => {
     toolTestMocks.dailyMetricsList.mockResolvedValue([]);
     toolTestMocks.dailyMetricsListRange.mockResolvedValue([]);
     toolTestMocks.dataCoverageList.mockResolvedValue([]);
+    toolTestMocks.cyclingPowerCurveListRange.mockResolvedValue({
+      start_date: "2026-08-01",
+      end_date: "2026-09-01",
+      durations_seconds: [300],
+      bests: [],
+      activity_curve: [],
+      next_cursor: null,
+    });
     toolTestMocks.ensureProvidersRegistered.mockResolvedValue(undefined);
     toolTestMocks.foodDailyTotalsRange.mockResolvedValue([]);
     toolTestMocks.fingerLoadingActivity.mockResolvedValue([]);
@@ -755,6 +771,19 @@ describe("createMcpRouter", () => {
       required: ["start_date", "end_date"],
       type: "object",
     });
+    expect(findListedTool(tools, "get_cycling_power_curve").inputSchema).toMatchObject({
+      properties: {
+        start_date: { format: "date", type: "string" },
+        end_date: { format: "date", type: "string" },
+        durations_seconds: { maxItems: 32, minItems: 1, type: "array" },
+        include_activity_curve: { type: "boolean" },
+        limit: { maximum: 500, minimum: 1, type: "integer" },
+        modalities: { type: "array" },
+        providers: { type: "array" },
+      },
+      required: ["start_date", "end_date"],
+      type: "object",
+    });
     expect(findListedTool(tools, "render_health_explorer").inputSchema).toMatchObject({
       properties: {
         end_date: { format: "date", type: "string" },
@@ -866,6 +895,7 @@ describe("createMcpRouter", () => {
       "get_data_coverage",
       "get_training_load",
       "get_cycling_performance",
+      "get_cycling_power_curve",
       "get_sleep_summary",
       "search_activities",
       "get_activity_details",
@@ -918,6 +948,10 @@ describe("createMcpRouter", () => {
       {
         name: "get_cycling_performance",
         path: ["result", "summary", "elevation_gain", "coverage", "activities_with_elevation"],
+      },
+      {
+        name: "get_cycling_power_curve",
+        path: ["result", "bests", "[]", "quality", "median_sample_interval_seconds"],
       },
       { name: "render_health_explorer", path: ["coverage", "by_metric"] },
       {
@@ -1945,6 +1979,77 @@ describe("createMcpRouter", () => {
       "2026-08-01",
       "2026-09-01",
     );
+  });
+
+  it("returns a compact provenance-rich cycling power curve through MCP transport", async () => {
+    authorizeMcpToken(["activity:read"]);
+    const activityId = "00000000-0000-4000-8000-000000000010";
+    toolTestMocks.cyclingPowerCurveListRange.mockResolvedValue({
+      start_date: "2026-03-01",
+      end_date: "2026-08-28",
+      durations_seconds: [300, 1200],
+      bests: [
+        {
+          duration_seconds: 300,
+          watts: 350,
+          watts_per_kg: null,
+          watts_per_kg_reason: "No directly measured body weight within 30 days of the effort",
+          weight: {
+            value_kg: null,
+            reason: "No directly measured body weight within 30 days of the effort",
+          },
+          activity_id: activityId,
+          date: "2026-08-01",
+          started_at: "2026-08-01T15:00:00.000Z",
+          start_offset_seconds: 30,
+          canonical_type: "cycling",
+          power_kind: "direct",
+          source_providers: ["wahoo"],
+          source_devices: ["elemnt-bolt"],
+          member_activity_ids: [activityId],
+          quality: {
+            status: "high",
+            reasons: [],
+            observed_samples: 301,
+            coverage_pct: 100,
+            continuity_tolerance_seconds: 5,
+            median_sample_interval_seconds: 1,
+            largest_gap_seconds: 1,
+          },
+        },
+      ],
+      activity_curve: [],
+      next_cursor: null,
+    });
+
+    const response = await request(createTestApp(makeMockSensorStore()), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_cycling_power_curve", {
+        start_date: "2026-03-01",
+        end_date: "2026-08-28",
+        durations_seconds: [1200, 300],
+      }),
+    });
+    const parsedResponse = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text));
+    const structured = cyclingPowerCurveOutputSchema.parse(parsedResponse.result.structuredContent);
+
+    expect(structured.result.bests[0]).toMatchObject({
+      activity_id: activityId,
+      source_providers: ["wahoo"],
+      member_activity_ids: [activityId],
+      duration_seconds: 300,
+    });
+    expect(parsedResponse.result.content[0]?.text.length).toBeLessThan(5_000);
+    expect(toolTestMocks.cyclingPowerCurveListRange).toHaveBeenCalledWith({
+      startDate: "2026-03-01",
+      endDate: "2026-08-28",
+      durationsSeconds: [300, 1200],
+      modalities: [],
+      providers: [],
+      includeActivityCurve: false,
+      cursor: null,
+      limit: 100,
+    });
   });
 
   it("distinguishes an out-of-range metric from a metric with no recorded history", async () => {

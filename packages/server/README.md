@@ -117,6 +117,40 @@ display unit and format dates, but they render the supplied direction and summar
 a trend from the observations. The responsive chart selects one exercise at a time so long exercise
 lists stay readable without hiding the time axis.
 
+### MCP activity and cycling analytics
+
+The read-only MCP keeps the existing `get_activity_streams` and
+`get_cycling_performance` contracts and adds two bounded analytical primitives. MCP tools publish
+input and output schemas so clients can validate calls and structured results
+([MCP tools specification](https://modelcontextprotocol.io/specification/2025-06-18/server/tools)).
+
+`get_activity_timeseries` requires `activity:read`. It accepts selected streams, `raw`, `1s`, `5s`,
+`10s`, `30s`, or `60s` resolution, optional linear filling, and a cursor. Raw pages default to 500
+timestamps and every page is capped at 2,000. Values, states, and source indexes are parallel arrays:
+missing values remain `null`, measured zero remains zero, and measured, aggregated, interpolated,
+and missing states are explicit.
+
+`get_cycling_power_curve` also requires `activity:read` and an inclusive `start_date`/`end_date`.
+Optional filters are `durations_seconds`, activity `modalities`, and source `providers`. It accepts at
+most 32 unique durations from 1 through 21,600 seconds. Defaults are 1, 5, 15, 30, 60, 120, 300,
+600, 720, 1,200, 1,800, 2,400, 3,600, and 5,400 seconds. Range bests are always compact;
+per-activity rows are returned only with `include_activity_curve: true` and are cursor-paginated with
+a default page size of 100 and maximum of 500.
+
+Each effort includes its canonical and merged member activity IDs, UTC start, local activity date,
+start offset, power measurement kind, provider/device contributors, sample coverage, median
+resolution, largest gap, and continuity tolerance. W/kg is calculated only from a valid directly
+measured body weight: the
+same local day is preferred, otherwise two measurements within 14 days on both sides are linearly
+interpolated, otherwise the nearest measurement within 30 days is used. The complete weight evidence
+is returned. When no weight qualifies, both W/kg and the weight value are `null` with an explicit
+reason; smart-scale body-composition estimates are not substituted for body weight.
+
+Standard durations read the deduplicated `analytics.activity_power_curve` model. Arbitrary durations
+are calculated in one bounded ClickHouse query over deduplicated activity sensor samples, rather than
+returning raw samples to the model. Formula and historical-refresh details are documented in
+[`analytics/README.md`](../../analytics/README.md#cycling-power-duration-semantics-and-refresh).
+
 
 ## Development
 

@@ -19,6 +19,7 @@ function curveRow(overrides: Record<string, unknown> = {}) {
     power_measurement_kind: "direct",
     source_providers: ["wahoo"],
     source_devices: ["elemnt-bolt"],
+    member_activity_ids: ["00000000-0000-4000-8000-000000000010"],
     ...overrides,
   };
 }
@@ -77,7 +78,7 @@ describe("CyclingPowerCurveRepository", () => {
       startDate: "2026-03-01",
       endDate: "2026-08-28",
       durationsSeconds: [300, 1200, 1800, 3600],
-      modalities: ["cycling", "indoor_cycling"],
+      modalities: ["outdoor", "virtual"],
       providers: ["wahoo"],
       includeActivityCurve: true,
       cursor: null,
@@ -89,6 +90,7 @@ describe("CyclingPowerCurveRepository", () => {
       activity_id: "00000000-0000-4000-8000-000000000010",
       duration_seconds: 1200,
       power_kind: "direct",
+      member_activity_ids: ["00000000-0000-4000-8000-000000000010"],
       start_offset_seconds: 420,
       watts: 300,
       watts_per_kg: 4.225,
@@ -96,6 +98,7 @@ describe("CyclingPowerCurveRepository", () => {
         kind: "interpolated",
         value_kg: 71,
       },
+      quality: { continuity_tolerance_seconds: 5 },
     });
     expect(result.activity_curve).toHaveLength(2);
     expect(result.next_cursor).toEqual(expect.any(String));
@@ -108,6 +111,8 @@ describe("CyclingPowerCurveRepository", () => {
     );
     expect(standardBestCall?.[1]).toContain("INNER JOIN analytics.deduped_activities");
     expect(standardBestCall?.[1]).toContain("hasAny(activity.source_providers");
+    expect(standardBestCall?.[1]).toContain("activity.canonical_type = 'cycling'");
+    expect(standardBestCall?.[1]).toContain("has({modalities:Array(String)}, activity.modality)");
     expect(standardBestCall?.[2]).toMatchObject({
       durations: [300, 1200, 1800, 3600],
       providers: ["wahoo"],
@@ -130,7 +135,7 @@ describe("CyclingPowerCurveRepository", () => {
       startDate: "2026-06-01",
       endDate: "2026-06-30",
       durationsSeconds: [421],
-      modalities: ["cycling"],
+      modalities: ["outdoor"],
       providers: [],
       includeActivityCurve: false,
       cursor: null,
@@ -162,7 +167,7 @@ describe("CyclingPowerCurveRepository", () => {
         startDate: "2026-06-01",
         endDate: "2026-06-30",
         durationsSeconds: Array.from({ length: 33 }, (_, index) => index + 1),
-        modalities: ["cycling"],
+        modalities: ["outdoor"],
         providers: [],
         includeActivityCurve: false,
         cursor: null,

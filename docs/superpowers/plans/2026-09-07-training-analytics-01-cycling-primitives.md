@@ -607,7 +607,7 @@ git push
 - Consumes: `CyclingPowerCurveRepository.listRange` from Task 6.
 - Produces: `get_cycling_power_curve` with exact-range/provider/modality/duration filters, optional activity-curve pagination, and `activity:read` scope.
 
-- [ ] **Step 1: Write the tool test first.** Cover defaults, arbitrary durations, duplicate duration rejection after normalization, start/end validation, maximum duration/count, pagination, missing ClickHouse, scope denial, and strict output parsing.
+- [x] **Step 1: Write the tool test first.** Cover defaults, arbitrary durations, duplicate duration rejection after normalization, start/end validation, maximum duration/count, pagination, missing ClickHouse, scope denial, and strict output parsing.
 
 ```ts
 expect(repository.listRange).toHaveBeenCalledWith(expect.objectContaining({
@@ -617,25 +617,25 @@ expect(repository.listRange).toHaveBeenCalledWith(expect.objectContaining({
 }));
 ```
 
-- [ ] **Step 2: Run the tool test and witness RED.**
+- [x] **Step 2: Run the tool test and witness RED.**
 
 Run: `pnpm vitest run --project unit packages/server/src/mcp/cycling-power-curve-tool.test.ts`
 
 Expected: FAIL because the tool is absent.
 
-- [ ] **Step 3: Implement and register the tool.** Normalize requested duration order, reject duplicates with `durations must be unique`, use `assertDateRange`, require ClickHouse, register the exact output schema, and leave `get_cycling_performance` unchanged.
+- [x] **Step 3: Implement and register the tool.** Normalize requested duration order, reject duplicates with `durations must be unique`, use `assertDateRange`, require ClickHouse, register the exact output schema, and leave `get_cycling_performance` unchanged.
 
-- [ ] **Step 4: Extend transport and resource tests.** Assert both cycling tools appear in `tools/list`; call the new tool through authenticated MCP transport; verify `activity:read` succeeds while `health:read` alone fails; validate compact result size and contribution IDs.
+- [x] **Step 4: Extend transport and resource tests.** Assert both cycling tools appear in `tools/list`; call the new tool through authenticated MCP transport; verify `activity:read` succeeds while `health:read` alone fails; validate compact result size and contribution IDs.
 
-- [ ] **Step 5: Run MCP tests and witness GREEN.**
+- [x] **Step 5: Run MCP tests and witness GREEN.**
 
 Run: `pnpm vitest run --project unit packages/server/src/mcp/cycling-power-curve-tool.test.ts packages/server/src/mcp/route.test.ts packages/server/src/mcp/app-resource.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 6: Document formulas and operator refresh.** In the server README list inputs, defaults, null/reason semantics, and scope for both new tools. In the analytics README document the elapsed-time integration, measured-zero behavior, continuity tolerance, and the explicit bounded full-refresh procedure required for historical `activity_power_curve` rows. Do not put that historical rebuild in deploy/runtime code.
+- [x] **Step 6: Document formulas and operator refresh.** In the server README list inputs, defaults, null/reason semantics, and scope for both new tools. In the analytics README document the elapsed-time integration, measured-zero behavior, continuity tolerance, and the explicit bounded full-refresh procedure required for historical `activity_power_curve` rows. Do not put that historical rebuild in deploy/runtime code.
 
-- [ ] **Step 7: Run the subsystem verification.**
+- [x] **Step 7: Run the subsystem verification.**
 
 Run: `pnpm lint`
 
@@ -647,7 +647,9 @@ Run: `pnpm knip`
 
 Expected: all commands PASS without warnings attributable to this change. If sandbox port restrictions reproduce `unexpected address`, rerun the unchanged test command outside the sandbox and record both results.
 
-- [ ] **Step 8: Review backward compatibility and commit.** Confirm `get_activity_streams` and `get_cycling_performance` snapshots are unchanged; confirm no client computes metrics; inspect `git diff --check` and all source/provenance fields.
+Result: lint, typecheck, Knip, the 2,185-test changed unit/mobile tier, MCP transport, and focused real-ClickHouse repository/migration suites passed. The broad `test:changed:all` run passed 2,532 tests before the shared ClickHouse process restarted during an unrelated heavyweight sleep-model setup; 39 later integration files then failed or skipped on `ECONNRESET`/`ECONNREFUSED`. The isolated power-curve and migration suites passed again after the restart.
+
+- [x] **Step 8: Review backward compatibility and commit.** Confirm `get_activity_streams` and `get_cycling_performance` snapshots are unchanged; confirm no client computes metrics; inspect `git diff --check` and all source/provenance fields.
 
 ```bash
 git add packages/server/src/mcp/cycling-power-curve-tool.ts packages/server/src/mcp/cycling-power-curve-tool.test.ts packages/server/src/mcp/tool-output.ts packages/server/src/mcp/tools.ts packages/server/src/mcp/route.test.ts packages/server/src/mcp/app-resource.ts packages/server/src/mcp/app-resource.test.ts packages/server/README.md analytics/README.md

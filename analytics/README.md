@@ -104,6 +104,65 @@ request.
 metrics, sleep, activity summaries, and bounded activity samples for dashboard,
 recovery, stress, sleep-need, and healthspan routes.
 
+## Cycling power-duration semantics and refresh
+
+`activity_power_curve` computes rolling power against elapsed time, not sample
+count. Samples are treated as a left-continuous step function. For samples
+`(t_i, P_i)`, segment energy is `P_i * (t_(i+1) - t_i)` and a candidate of
+duration `d` is `(E(t + d) - E(t)) / d`. Energy at a fractional endpoint uses
+the containing segment, so irregular samples are time-weighted correctly and
+do not require a sample exactly at `t + d`. Native zero watts contributes zero
+energy; it is never converted to missing. ClickHouse documents the array and
+cumulative-array functions used by the model in its
+[array-functions reference](https://clickhouse.com/docs/sql-reference/functions/array-functions).
+
+For each activity, the median positive sample interval defines the source
+resolution. Durations shorter than that resolution are unavailable. A gap
+larger than `max(5 seconds, 2 * median interval)` marks a discontinuity, and no
+winning window may cross it. Active rows preserve the winning start offset,
+observed sample count, coverage, median interval, largest gap, selected
+providers/devices, and direct/estimated/unknown power evidence. Request-time
+custom durations use the same semantics over bounded
+`analytics.activity_sensor_sample` input.
+
+Because `activity_power_curve` is append-incremental, a formula or
+standard-duration change does not rewrite unchanged historical activities.
+Before rebuilding, record the active row/activity count, oldest activity, and
+duration inventory:
+
+```sql
+SELECT
+    countIf(is_deleted = 0) AS active_curve_rows,
+    uniqExactIf(activity_id, is_deleted = 0) AS active_activities,
+    minIf(started_at, is_deleted = 0) AS oldest_activity,
+    arraySort(groupUniqArrayIf(duration_seconds, is_deleted = 0)) AS durations
+FROM analytics.activity_power_curve FINAL;
+```
+
+Then run a monitored, model-only full refresh from the production analytics
+environment. Do not add this historical operation to deploys, scheduled
+workers, request paths, or test setup:
+
+```sh
+pnpm tsx scripts/with-env.ts -- env \
+  DBT_TARGET=prod \
+  UV_PROJECT_ENVIRONMENT=../.venv-analytics \
+  uv run --project analytics dbt build \
+  --project-dir analytics \
+  --profiles-dir analytics \
+  --threads 1 \
+  --full-refresh \
+  --select activity_power_curve
+```
+
+Repeat the preflight query after success. Verify the retained activity range is
+unchanged unless the maintenance record explains a source-data delta, and
+verify the duration inventory includes `1, 5, 15, 30, 60, 120, 180, 300, 420,
+600, 720, 1200, 1800, 2400, 3600, 5400, 7200` where source resolution and
+activity length support them. dbt recommends a full refresh when incremental
+model logic changes because existing rows retain the old transformation
+([dbt incremental model guidance](https://docs.getdbt.com/docs/build/incremental-models#how-do-i-rebuild-an-incremental-model)).
+
 Production `DBT_SAFE_MODELS` currently selects `sensor_scalar_sample`,
 `deduped_sensor`, `activity_source_records`, `activity_duplicate_matches`,
 `activity_duplicate_groups`, `deduped_activities`, `deduped_activity_members`,

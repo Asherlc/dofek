@@ -8,6 +8,7 @@ import { CyclingPowerCurveRepository } from "./cycling-power-curve-repository.ts
 
 const userId = "00000000-0000-0000-0000-000000000001";
 const canonicalWahooActivityId = randomUUID();
+const stravaMemberActivityId = randomUUID();
 const pelotonActivityId = randomUUID();
 const wahooStartedAt = "2026-06-15 15:00:00.000000";
 const pelotonStartedAt = "2026-06-20 15:00:00.000000";
@@ -38,7 +39,9 @@ describe("CyclingPowerCurveRepository", () => {
         user_id UUID,
         started_at DateTime64(6, 'UTC'),
         canonical_type String,
+        modality Nullable(String),
         source_providers Array(String),
+        member_activity_ids Array(UUID),
         refresh_version UInt64,
         is_deleted UInt8
       ) ENGINE = ReplacingMergeTree(refresh_version)
@@ -98,7 +101,9 @@ describe("CyclingPowerCurveRepository", () => {
           user_id: userId,
           started_at: wahooStartedAt,
           canonical_type: "cycling",
+          modality: "outdoor",
           source_providers: ["wahoo", "strava"],
+          member_activity_ids: [canonicalWahooActivityId, stravaMemberActivityId],
           refresh_version: 1,
           is_deleted: 0,
         },
@@ -107,7 +112,9 @@ describe("CyclingPowerCurveRepository", () => {
           user_id: userId,
           started_at: pelotonStartedAt,
           canonical_type: "cycling",
+          modality: "virtual",
           source_providers: ["peloton"],
+          member_activity_ids: [pelotonActivityId],
           refresh_version: 1,
           is_deleted: 0,
         },
@@ -206,7 +213,7 @@ describe("CyclingPowerCurveRepository", () => {
       startDate: "2026-06-01",
       endDate: "2026-06-30",
       durationsSeconds: [300, 421, 1200, 1800, 3600],
-      modalities: ["cycling"],
+      modalities: ["outdoor"],
       providers: [],
       includeActivityCurve: true,
       cursor: null,
@@ -223,6 +230,7 @@ describe("CyclingPowerCurveRepository", () => {
     expect(result.bests.find((effort) => effort.duration_seconds === 421)).toMatchObject({
       activity_id: canonicalWahooActivityId,
       source_providers: ["wahoo"],
+      member_activity_ids: [canonicalWahooActivityId, stravaMemberActivityId],
       watts: reference?.watts,
       watts_per_kg: 3.571,
     });
@@ -240,7 +248,7 @@ describe("CyclingPowerCurveRepository", () => {
       startDate: "2026-06-01",
       endDate: "2026-06-30",
       durationsSeconds: [1, 421],
-      modalities: ["cycling"],
+      modalities: ["virtual"],
       providers: ["peloton"],
       includeActivityCurve: false,
       cursor: null,

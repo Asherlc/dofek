@@ -56,9 +56,4 @@ export const unavailableMetricSchema = z.object({
   reason: z.string().min(1),
 });
 
-export type EpistemicKind = z.infer<typeof epistemicKindSchema>;
-export type MeasurementKind = z.infer<typeof measurementKindSchema>;
 export type SourceReference = z.infer<typeof sourceReferenceSchema>;
-export type QualityEvidence = z.infer<typeof qualityEvidenceSchema>;
-export type CalculationEvidence = z.infer<typeof calculationEvidenceSchema>;
-export type UnavailableMetric = z.infer<typeof unavailableMetricSchema>;

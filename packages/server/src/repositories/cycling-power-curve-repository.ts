@@ -27,6 +27,7 @@ const curveRowSchema = z.object({
   power_measurement_kind: z.enum(["direct", "estimated", "unknown"]).nullable(),
   source_providers: z.array(z.string()),
   source_devices: z.array(z.string()),
+  member_activity_ids: z.array(z.string().uuid()),
 });
 
 type CurveRow = z.infer<typeof curveRowSchema>;
@@ -46,6 +47,7 @@ const customCurveRowSchema = z.object({
   result_power_measurement_kind: z.enum(["direct", "estimated", "unknown"]).nullable(),
   result_source_providers: z.array(z.string()),
   result_source_devices: z.array(z.string()),
+  result_member_activity_ids: z.array(z.string().uuid()),
 });
 
 function normalizeCustomCurveRow(row: z.infer<typeof customCurveRowSchema>): CurveRow {
@@ -64,6 +66,7 @@ function normalizeCustomCurveRow(row: z.infer<typeof customCurveRowSchema>): Cur
     power_measurement_kind: row.result_power_measurement_kind,
     source_providers: row.result_source_providers,
     source_devices: row.result_source_devices,
+    member_activity_ids: row.result_member_activity_ids,
   };
 }
 
@@ -112,11 +115,13 @@ export interface CyclingPowerCurveEffort {
   power_kind: "direct" | "estimated" | "unknown";
   source_providers: string[];
   source_devices: string[];
+  member_activity_ids: string[];
   quality: {
     status: "high" | "moderate" | "limited";
     reasons: string[];
     observed_samples: number | null;
     coverage_pct: number | null;
+    continuity_tolerance_seconds: number | null;
     median_sample_interval_seconds: number | null;
     largest_gap_seconds: number | null;
   };
@@ -137,7 +142,8 @@ function filterSql(alias: string): string {
     AND ${alias}.is_deleted = 0
     AND toDate(toTimeZone(${alias}.started_at, {timezone:String}))
       BETWEEN toDate({startDate:String}) AND toDate({endDate:String})
-    AND (empty({modalities:Array(String)}) OR has({modalities:Array(String)}, ${alias}.canonical_type))
+    AND ${alias}.canonical_type = 'cycling'
+    AND (empty({modalities:Array(String)}) OR has({modalities:Array(String)}, ${alias}.modality))
     AND (
       empty({providers:Array(String)})
       OR hasAny(${alias}.source_providers, {providers:Array(String)})
@@ -159,7 +165,8 @@ function curveColumns(source: string, activitySource = source): string {
     ${source}.coverage_pct AS coverage_pct,
     ${source}.power_measurement_kind AS power_measurement_kind,
     ${source}.source_providers AS source_providers,
-    ${source}.source_devices AS source_devices`;
+    ${source}.source_devices AS source_devices,
+    ${activitySource}.member_activity_ids AS member_activity_ids`;
 }
 
 function cursorClause(cursor: CurveCursor | null, source: string): string {
@@ -257,10 +264,13 @@ function customSql(mode: "bests" | "page", cursor: CurveCursor | null): string {
       custom_curve.result_coverage_pct,
       custom_curve.result_power_measurement_kind,
       custom_curve.result_source_providers,
-      custom_curve.result_source_devices
+      custom_curve.result_source_devices,
+      custom_curve.result_member_activity_ids
     FROM (
     WITH selected_activities AS MATERIALIZED (
-      SELECT activity_id, user_id, started_at, canonical_type, source_providers
+      SELECT
+        activity_id, user_id, started_at, canonical_type, source_providers,
+        member_activity_ids
       FROM analytics.deduped_activities FINAL
       WHERE ${filterSql("analytics.deduped_activities")}
     ),
@@ -480,8 +490,12 @@ function customSql(mode: "bests" | "page", cursor: CurveCursor | null): string {
       curve_rows.coverage_pct AS result_coverage_pct,
       curve_rows.power_measurement_kind AS result_power_measurement_kind,
       curve_rows.source_providers AS result_source_providers,
-      curve_rows.source_devices AS result_source_devices
+      curve_rows.source_devices AS result_source_devices,
+      result_activity.member_activity_ids AS result_member_activity_ids
     FROM curve_rows
+    INNER JOIN selected_activities AS result_activity
+      ON result_activity.activity_id = curve_rows.evidence_activity_id
+      AND result_activity.user_id = curve_rows.evidence_user_id
     ) AS custom_curve
     WHERE 1 = 1 ${cursorFilter}
     ${suffix}
@@ -563,6 +577,10 @@ function qualityFor(row: CurveRow): CyclingPowerCurveEffort["quality"] {
     reasons,
     observed_samples: row.observed_samples,
     coverage_pct: row.coverage_pct,
+    continuity_tolerance_seconds:
+      row.median_sample_interval_seconds === null
+        ? null
+        : Math.max(5, row.median_sample_interval_seconds * 2),
     median_sample_interval_seconds: row.median_sample_interval_seconds,
     largest_gap_seconds: row.largest_gap_seconds,
   };
@@ -697,6 +715,7 @@ export class CyclingPowerCurveRepository {
         power_kind: row.power_measurement_kind ?? "unknown",
         source_providers: row.source_providers,
         source_devices: row.source_devices,
+        member_activity_ids: row.member_activity_ids,
         quality: qualityFor(row),
       };
     };

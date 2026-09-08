@@ -42,6 +42,7 @@ import { healthExplorerResourceUri, registerDofekAppResources } from "./app-reso
 import { registerClimbingSessionsTool } from "./climbing-sessions-tool.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { registerCyclingPerformanceTool } from "./cycling-performance-tool.ts";
+import { registerCyclingPowerCurveTool } from "./cycling-power-curve-tool.ts";
 import { HealthExplorerService } from "./health-explorer-service.ts";
 import { buildHealthSeries, type HealthTrendRow } from "./health-series-service.ts";
 import { listProviderStatuses } from "./provider-status.ts";
@@ -495,6 +496,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
   );
   registerTrainingLoadTool(server, context);
   registerCyclingPerformanceTool(server, context);
+  registerCyclingPowerCurveTool(server, context);
   registerActivityStreamsTool(server, context);
   registerActivityTimeseriesTool(server, context);
   registerActivityDetailsTool(server, context);
