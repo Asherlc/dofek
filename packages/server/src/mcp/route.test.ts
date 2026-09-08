@@ -3302,6 +3302,23 @@ describe("createMcpRouter", () => {
     });
   });
 
+  it.each([
+    ["missing", "00000000-0000-4000-8000-000000000091"],
+    ["owned by another user", "00000000-0000-4000-8000-000000000092"],
+  ])("returns the same activity-stream error for an activity that is %s", async (_case, id) => {
+    authorizeMcpToken();
+    toolTestMocks.activityGetStream.mockRejectedValueOnce(new Error("Activity not found"));
+
+    const response = await request(createTestApp(makeMockSensorStore()), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_activity_streams", { activity_id: id }),
+    });
+
+    const parsedResponse = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text));
+    expect(parsedResponse.result.isError).toBe(true);
+    expect(parsedResponse.result.content[0]?.text).toBe("Activity not found");
+  });
+
   it("requires the analytics store for activity streams", async () => {
     authorizeMcpToken();
     const response = await request(createTestApp(), {

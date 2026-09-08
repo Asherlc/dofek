@@ -1029,6 +1029,14 @@ describe("ActivityRepository", () => {
       });
       const fallbackQuery = dialect.sqlToQuery(execute.mock.calls[2]?.[0]);
       expect(fallbackQuery.sql).toContain("provider_absent_at IS NOT NULL");
+      expect(fallbackQuery.sql).toContain("a.deleted_at IS NULL");
+      expect(fallbackQuery.sql).toContain("LEFT JOIN fitness.provider_priority");
+      expect(fallbackQuery.sql).toContain("LEFT JOIN LATERAL");
+      expect(fallbackQuery.sql).toContain("a.canonical_type NOT IN");
+      expect(fallbackQuery.sql).toContain("NULLIF(LOWER(TRIM(a.provider_type)), '')");
+      expect(fallbackQuery.sql).toContain("COALESCE(dp.priority, pp.priority, 100)");
+      expect(fallbackQuery.sql).toContain("a.id ASC");
+      expect(fallbackQuery.sql).not.toContain("ORDER BY (a.id =");
     });
 
     it("returns a row without summaries when no sensor store is configured", async () => {
@@ -1223,7 +1231,7 @@ describe("ActivityRepository", () => {
 
   describe("getStream", () => {
     it("fails when no sensor store is configured", async () => {
-      const { repo } = makeRepository([]);
+      const { repo } = makeRepository([{ id: "activity-id" }]);
       await expect(repo.getStream("activity-id", 500)).rejects.toThrow(
         "ClickHouse activity analytics store is required for activity streams",
       );
@@ -1293,12 +1301,14 @@ describe("ActivityRepository", () => {
       expect(windowQuery.params).toEqual(expect.arrayContaining(["stable-group-id"]));
     });
 
-    it("does not query the sensor store when the activity is not visible", async () => {
+    it("throws NOT_FOUND without querying the sensor store when the activity is not visible", async () => {
       const { repo, sensorStore } = makeRepositoryWithSensorStore([]);
 
-      const result = await repo.getStream("activity-id", 500);
+      await expect(repo.getStream("activity-id", 500)).rejects.toMatchObject({
+        code: "NOT_FOUND",
+        message: "Activity not found",
+      });
 
-      expect(result).toEqual([]);
       expect(sensorStore.getStream).not.toHaveBeenCalled();
     });
   });
@@ -1339,7 +1349,7 @@ describe("ActivityRepository", () => {
     });
 
     it("fails when no sensor store is configured", async () => {
-      const { repo } = makeRepository([]);
+      const { repo } = makeRepository([{ id: "activity-id" }]);
       await expect(repo.getHrZones("activity-id")).rejects.toThrow(
         "ClickHouse activity analytics store is required for heart-rate zones",
       );
@@ -1374,6 +1384,17 @@ describe("ActivityRepository", () => {
         memberActivityIds: ["activity-id"],
       });
     });
+
+    it("throws NOT_FOUND without querying the sensor store when the activity is not visible", async () => {
+      const { repo, sensorStore } = makeRepositoryWithSensorStore([]);
+
+      await expect(repo.getHrZones("activity-id")).rejects.toMatchObject({
+        code: "NOT_FOUND",
+        message: "Activity not found",
+      });
+
+      expect(sensorStore.getHeartRateZoneSeconds).not.toHaveBeenCalled();
+    });
   });
 
   describe("getPowerZones", () => {
@@ -1404,7 +1425,7 @@ describe("ActivityRepository", () => {
     });
 
     it("fails when no sensor store is configured", async () => {
-      const { repo } = makeRepository([]);
+      const { repo } = makeRepository([{ id: "activity-id" }]);
       await expect(repo.getPowerZones("activity-id", 250)).rejects.toThrow(
         "ClickHouse activity analytics store is required for power zones",
       );
@@ -1433,6 +1454,17 @@ describe("ActivityRepository", () => {
         },
         275,
       );
+    });
+
+    it("throws NOT_FOUND without querying the sensor store when the activity is not visible", async () => {
+      const { repo, sensorStore } = makeRepositoryWithSensorStore([]);
+
+      await expect(repo.getPowerZones("activity-id", 275)).rejects.toMatchObject({
+        code: "NOT_FOUND",
+        message: "Activity not found",
+      });
+
+      expect(sensorStore.getPowerZoneSeconds).not.toHaveBeenCalled();
     });
   });
 

@@ -1,5 +1,6 @@
 import { localTimeSourceSchema } from "@dofek/format/record-local-time";
 import { mapHrZones, mapPowerZones } from "@dofek/zones/zones";
+import { TRPCError } from "@trpc/server";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
@@ -154,6 +155,10 @@ const activityIdResolutionSchema = z.object({
 });
 
 type ActivityIdResolution = z.infer<typeof activityIdResolutionSchema>;
+
+function activityNotFoundError(): TRPCError {
+  return new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
+}
 
 const powerCurveSampleSchema = z.object({
   activity_id: z.string(),
@@ -609,10 +614,7 @@ export class ActivityRepository extends BaseRepository {
     if (activeRow) {
       return this.#attachResolution(activeRow, resolution);
     }
-    const providerAbsentRow = await this.#findProviderAbsentByGroupId(
-      resolution.resolved_group_id,
-      activityId,
-    );
+    const providerAbsentRow = await this.#findProviderAbsentByGroupId(resolution.resolved_group_id);
     return providerAbsentRow ? this.#attachResolution(providerAbsentRow, resolution) : null;
   }
 
@@ -735,10 +737,7 @@ export class ActivityRepository extends BaseRepository {
     return activity;
   }
 
-  async #findProviderAbsentByGroupId(
-    groupId: string,
-    requestedActivityId: string,
-  ): Promise<ActivityRow | null> {
+  async #findProviderAbsentByGroupId(groupId: string): Promise<ActivityRow | null> {
     const rows = await this.query(
       activityDetailRowSchema,
       sql`SELECT
@@ -799,11 +798,31 @@ export class ActivityRepository extends BaseRepository {
             NULL::integer AS sample_count,
             a.provider_absent_at::text AS provider_absent_at
           FROM fitness.activity a
+          LEFT JOIN fitness.provider_priority pp ON pp.provider_id = a.provider_id
+          LEFT JOIN LATERAL (
+            SELECT dp2.priority
+            FROM fitness.device_priority dp2
+            WHERE dp2.provider_id = a.provider_id
+              AND a.source_name LIKE dp2.source_name_pattern
+            ORDER BY
+              LENGTH(dp2.source_name_pattern) DESC,
+              dp2.priority ASC,
+              dp2.source_name_pattern ASC
+            LIMIT 1
+          ) dp ON true
           WHERE a.group_id = ${groupId}::uuid
             AND a.user_id = ${this.userId}::uuid
             AND a.provider_absent_at IS NOT NULL
+            AND a.deleted_at IS NULL
             ${this.timestampAccessPredicate(sql`a.started_at`)}
-          ORDER BY (a.id = ${requestedActivityId}::uuid) DESC, a.id
+          ORDER BY
+            (a.canonical_type NOT IN ('cardio', 'other')) DESC,
+            COALESCE(
+              NULLIF(LOWER(TRIM(a.provider_type)), '') <> LOWER(a.canonical_type::text),
+              false
+            ) DESC,
+            COALESCE(dp.priority, pp.priority, 100) ASC,
+            a.id ASC
           LIMIT 1`,
     );
     const hydratedRows = await this.#withActivitySummaries(rows);
@@ -874,22 +893,22 @@ export class ActivityRepository extends BaseRepository {
 
   /** Downsampled metric stream for a single activity. */
   async getStream(activityId: string, maxPoints: number): Promise<StreamPoint[]> {
-    const sensorStore = this.#requireSensorStore("activity streams");
     const resolution = await this.#resolveActivityId(activityId);
-    if (!resolution) return [];
+    if (!resolution) throw activityNotFoundError();
+    const sensorStore = this.#requireSensorStore("activity streams");
     const window = await this.#findActivitySensorWindow(resolution.resolved_group_id);
-    if (!window) return [];
+    if (!window) throw activityNotFoundError();
     const rows = await sensorStore.getStream(window, maxPoints);
     return rows.map((row) => new StreamPoint(streamPointRowSchema.parse(row)));
   }
 
   /** HR zone distribution for a single activity using the canonical Karvonen model. */
   async getHrZones(activityId: string): Promise<import("@dofek/zones/zones").ActivityHrZone[]> {
-    const sensorStore = this.#requireSensorStore("heart-rate zones");
     const resolution = await this.#resolveActivityId(activityId);
-    if (!resolution) return mapHrZones([]);
+    if (!resolution) throw activityNotFoundError();
+    const sensorStore = this.#requireSensorStore("heart-rate zones");
     const window = await this.#findActivitySensorWindow(resolution.resolved_group_id);
-    if (!window) return mapHrZones([]);
+    if (!window) throw activityNotFoundError();
     return mapHrZones(await sensorStore.getHeartRateZoneSeconds(window));
   }
 
@@ -898,11 +917,11 @@ export class ActivityRepository extends BaseRepository {
     activityId: string,
     ftp: number,
   ): Promise<import("@dofek/zones/zones").ActivityPowerZone[]> {
-    const sensorStore = this.#requireSensorStore("power zones");
     const resolution = await this.#resolveActivityId(activityId);
-    if (!resolution) return mapPowerZones([]);
+    if (!resolution) throw activityNotFoundError();
+    const sensorStore = this.#requireSensorStore("power zones");
     const window = await this.#findActivitySensorWindow(resolution.resolved_group_id);
-    if (!window) return mapPowerZones([]);
+    if (!window) throw activityNotFoundError();
     return mapPowerZones(await sensorStore.getPowerZoneSeconds(window, ftp));
   }
 

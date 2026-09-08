@@ -11,6 +11,8 @@ const activityId = "22222222-2222-2222-2222-222222222222";
 const liveStreamActivityId = "44444444-4444-4444-4444-444444444444";
 const liveZoneActivityId = "55555555-5555-5555-5555-555555555555";
 const staggeredStreamActivityId = "66666666-6666-6666-6666-666666666666";
+const powerActivityId = "77777777-7777-7777-7777-777777777777";
+const overlappingPowerActivityId = "88888888-8888-8888-8888-888888888888";
 const window = {
   activityId,
   userId,
@@ -32,6 +34,11 @@ const staggeredStreamWindow = {
   ...window,
   activityId: staggeredStreamActivityId,
   memberActivityIds: [staggeredStreamActivityId],
+};
+const powerWindow = {
+  ...window,
+  activityId: powerActivityId,
+  memberActivityIds: [powerActivityId, overlappingPowerActivityId],
 };
 
 describe("ClickHouseActivitySensorStore read-model lifecycle rows", () => {
@@ -222,5 +229,44 @@ describe("ClickHouseActivitySensorStore read-model lifecycle rows", () => {
     );
 
     await expect(sensorStore.getHeartRateZoneSeconds(window)).resolves.toEqual([]);
+  });
+
+  it("does not mix power samples from another same-user activity with an overlapping window", async () => {
+    await executeClickHouseTestCommand(
+      testContext,
+      `
+        INSERT INTO analytics.activity_sensor_sample (
+          activity_id, user_id, recorded_at, recorded_date, channel, scalar,
+          refresh_version, is_deleted, refreshed_at
+        ) VALUES
+        (
+          toUUID('${powerActivityId}'),
+          toUUID('${userId}'),
+          toDateTime64('2026-07-01 12:15:00', 6, 'UTC'),
+          toDate('2026-07-01'),
+          'power',
+          100,
+          1,
+          0,
+          toDateTime64('2026-07-01 12:15:00', 9, 'UTC')
+        ),
+        (
+          toUUID('${overlappingPowerActivityId}'),
+          toUUID('${userId}'),
+          toDateTime64('2026-07-01 12:15:00', 6, 'UTC'),
+          toDate('2026-07-01'),
+          'power',
+          400,
+          1,
+          0,
+          toDateTime64('2026-07-01 12:15:00', 9, 'UTC')
+        )
+      `,
+    );
+
+    const zones = await sensorStore.getPowerZoneSeconds(powerWindow, 200);
+
+    expect(zones.find((zone) => zone.zone === 1)?.seconds).toBe(1);
+    expect(zones.find((zone) => zone.zone === 7)?.seconds).toBe(0);
   });
 });
