@@ -112,7 +112,7 @@ function fieldProvenance(
   operation: "set" | "clear" | null,
   changeId: string | null,
 ): FoodRecordProvenance {
-  return operation === "set" ? { origin: "human", changeId } : { origin: "source", changeId: null };
+  return operation === null ? { origin: "source", changeId: null } : { origin: "human", changeId };
 }
 
 function mapRecord(row: EffectiveFoodRecordRow): EffectiveFoodRecord {
@@ -241,8 +241,8 @@ function effectiveRecordQuery(where: SQL, limit: number | null = null): SQL {
         jsonb_object_agg(
           nutrient.nutrient_id,
           jsonb_build_object(
-            'origin', CASE WHEN nutrient.operation = 'set' THEN 'human' ELSE 'source' END,
-            'changeId', CASE WHEN nutrient.operation = 'set' THEN nutrient.change_id ELSE NULL END
+            'origin', CASE WHEN nutrient.operation IS NULL THEN 'source' ELSE 'human' END,
+            'changeId', CASE WHEN nutrient.operation IS NULL THEN NULL ELSE nutrient.change_id END
           )
         ) AS provenance
       FROM fitness.v_food_entry_effective_nutrient AS nutrient

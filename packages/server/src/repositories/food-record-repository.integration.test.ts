@@ -66,7 +66,7 @@ describe.sequential("FoodRecordRepository with Postgres", () => {
   async function appendChange(input: {
     identityId: string;
     predecessorVersion?: string | null;
-    kind: "update" | "delete" | "restore";
+    kind: "update" | "clear" | "delete" | "restore";
     recordedAt: string;
     fields?: Record<string, unknown>;
     deleted?: boolean | null;
@@ -292,6 +292,52 @@ describe.sequential("FoodRecordRepository with Postgres", () => {
       kind: "update",
       fields: { food_name: { operation: "set", value: "Human Name" } },
       nutrients: { protein: { operation: "set", amount: 15 } },
+    });
+  });
+
+  it("attributes source values restored by scalar and nutrient clears to the clearing change", async () => {
+    const sourceEntryId = await addFood({
+      externalId: `clear-${randomUUID()}`,
+      date: "2026-09-06",
+      foodName: "Clear Provenance Food",
+      description: "Provider description",
+      nutrients: { protein: 8 },
+    });
+    const { identityId } = await repository.resolveStableIdentity(sourceEntryId);
+    const update = await appendChange({
+      identityId,
+      kind: "update",
+      recordedAt: "2026-09-06T12:00:00.000Z",
+      fields: { food_description: { operation: "set", value: "Human description" } },
+      nutrient: { id: "protein", operation: "set", amount: 15 },
+    });
+    const clear = await appendChange({
+      identityId,
+      predecessorVersion: update.version,
+      kind: "clear",
+      recordedAt: "2026-09-06T13:00:00.000Z",
+      fields: { food_description: { operation: "clear" } },
+      nutrient: { id: "protein", operation: "clear", amount: null },
+    });
+
+    await expect(repository.get(identityId)).resolves.toMatchObject({
+      foodDescription: "Provider description",
+      nutrients: { protein: 8 },
+      provenance: {
+        foodDescription: { origin: "human", changeId: clear.changeId },
+        "nutrients.protein": { origin: "human", changeId: clear.changeId },
+      },
+    });
+
+    await expect(repository.history(identityId, null, 1)).resolves.toMatchObject({
+      items: [
+        {
+          changeId: clear.changeId,
+          kind: "clear",
+          fields: { food_description: { operation: "clear" } },
+          nutrients: { protein: { operation: "clear", amount: null } },
+        },
+      ],
     });
   });
 
