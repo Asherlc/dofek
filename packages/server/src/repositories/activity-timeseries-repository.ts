@@ -131,9 +131,13 @@ function buildNativeSamples(
   for (const row of rows) {
     const stream = nativeStream(row.channel);
     if (!stream) continue;
-    const value = stream === "position" ? [row.lng, row.lat] : row.scalar;
-    if (value === null || (Array.isArray(value) && (value[0] === null || value[1] === null))) {
-      continue;
+    let value: number | [number, number];
+    if (stream === "position") {
+      if (row.lng == null || row.lat == null) continue;
+      value = [row.lng, row.lat];
+    } else {
+      if (row.scalar == null) continue;
+      value = row.scalar;
     }
     const source = sourceReference(row, activityId);
     const key = JSON.stringify(source);
@@ -146,7 +150,7 @@ function buildNativeSamples(
     samples.push({
       recordedAt: normalizeTimestamp(row.recorded_at),
       stream,
-      value: Array.isArray(value) ? [value[0], value[1]] : value,
+      value,
       sourceIndex,
     });
   }

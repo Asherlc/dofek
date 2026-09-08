@@ -174,6 +174,30 @@ quantified. Calculated results have `classification: "estimated"` and are never 
 FTP. W/kg uses body-weight evidence selected for the requested range end date under the same nearby-
 weight policy as the power curve.
 
+`get_cycling_training_metrics` requires `activity:read`, an inclusive date range, and the
+ClickHouse analytics store. It returns newest-first pages of at most 25 canonical cycling
+activities and supports modality/provider filters plus a cursor. Each activity is calculated from
+deduplicated power, heart-rate, and cadence samples on the server; raw samples are not copied into
+the MCP response. Standard best-power durations may be selected independently, and the default set
+runs from 1 second through 120 minutes.
+
+The response labels sample-derived values `calculated_from_samples`, reports per-stream observed,
+covered, missing, and measured-zero seconds, and preserves merged activity IDs, providers, devices,
+power measurement kinds, timezone evidence, and a longitudinal-comparison quality assessment.
+Provider aggregate read-model values remain visible separately and do not override the
+sample-derived metrics. Effective-dated `fitness.sport_settings` are resolved independently for
+each activity; intensity factor, power TSS, and power zones remain `null` with an explicit reason
+when no valid contemporaneous FTP exists. Heart-rate zones follow the same rule for threshold HR.
+
+Recorded interval boundaries from any merged member activity take precedence and exact duplicate
+boundaries are consolidated while retaining their member activity IDs. When no recorded boundary
+exists, the server may label work and intervening recovery intervals using the documented Dofek
+heuristic; inferred intervals never receive invented targets or completion scores. Normalized
+power, work, variability index, aerobic efficiency, cardiac drift, TSS, and interval formulas and
+coverage prerequisites are documented in
+[`@dofek/training`](../training/README.md#cycling-workout-metrics). Normalized power follows the
+[TrainingPeaks calculation](https://help.trainingpeaks.com/hc/en-us/articles/204071804-Normalized-Power).
+
 
 ## Development
 

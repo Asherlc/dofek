@@ -32,6 +32,7 @@ const toolTestMocks = vi.hoisted(() => {
     climbingActivityEntries: vi.fn(),
     cyclingPerformanceListRange: vi.fn(),
     cyclingPowerCurveListRange: vi.fn(),
+    cyclingTrainingMetricsListRange: vi.fn(),
     cyclingThresholdEstimate: vi.fn(),
     cyclingThresholdListHistory: vi.fn(),
     dailyMetricsList: vi.fn(),
@@ -119,6 +120,12 @@ vi.mock("../repositories/cycling-performance-repository.ts", () => ({
 vi.mock("../repositories/cycling-power-curve-repository.ts", () => ({
   CyclingPowerCurveRepository: vi.fn(function vitestConstructor() {
     return { listRange: toolTestMocks.cyclingPowerCurveListRange };
+  }),
+}));
+
+vi.mock("../repositories/cycling-training-metrics-repository.ts", () => ({
+  CyclingTrainingMetricsRepository: vi.fn(function vitestConstructor() {
+    return { listRange: toolTestMocks.cyclingTrainingMetricsListRange };
   }),
 }));
 
@@ -820,6 +827,18 @@ describe("createMcpRouter", () => {
       required: ["start_date", "end_date"],
       type: "object",
     });
+    expect(findListedTool(tools, "get_cycling_training_metrics").inputSchema).toMatchObject({
+      properties: {
+        start_date: { format: "date", type: "string" },
+        end_date: { format: "date", type: "string" },
+        best_power_durations_seconds: { maxItems: 17, minItems: 1, type: "array" },
+        limit: { maximum: 25, minimum: 1, type: "integer" },
+        modalities: { type: "array" },
+        providers: { type: "array" },
+      },
+      required: ["start_date", "end_date"],
+      type: "object",
+    });
     expect(findListedTool(tools, "get_threshold_history").inputSchema).toMatchObject({
       properties: {
         start_date: { format: "date", type: "string" },
@@ -962,6 +981,7 @@ describe("createMcpRouter", () => {
       "get_training_load",
       "get_cycling_performance",
       "get_cycling_power_curve",
+      "get_cycling_training_metrics",
       "get_threshold_history",
       "estimate_cycling_threshold",
       "get_sleep_summary",
@@ -1020,6 +1040,10 @@ describe("createMcpRouter", () => {
       {
         name: "get_cycling_power_curve",
         path: ["result", "bests", "[]", "quality", "median_sample_interval_seconds"],
+      },
+      {
+        name: "get_cycling_training_metrics",
+        path: ["result", "activities", "[]", "metrics", "coverage", "power", "missing_seconds"],
       },
       {
         name: "get_threshold_history",

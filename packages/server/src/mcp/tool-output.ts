@@ -10,6 +10,7 @@ import {
   fingerLoadingLateralitySchema,
 } from "../repositories/climbing-training-log-repository.ts";
 import { sourceReferenceSchema } from "./analytical-evidence.ts";
+import { cyclingTrainingMetricsOutputSchema } from "./cycling-training-metrics-output.ts";
 
 const nullableNumber = z.number().nullable();
 const nullableString = z.string().nullable();
@@ -928,6 +929,7 @@ export const trainingLoadOutputSchema = jsonResult(
 export const mcpOutputSchemas = {
   cyclingThresholdEstimate: cyclingThresholdEstimateOutputSchema,
   cyclingPowerCurve: cyclingPowerCurveOutputSchema,
+  cyclingTrainingMetrics: cyclingTrainingMetricsOutputSchema,
   activityTimeseries: activityTimeseriesOutputSchema,
   activitySummary: activitySummaryOutputSchema,
   bodyMetrics: bodyMetricsOutputSchema,
