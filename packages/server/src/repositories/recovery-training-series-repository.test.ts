@@ -72,6 +72,7 @@ describe("RecoveryTrainingSeriesRepository", () => {
       "America/Los_Angeles",
     ).listRange("2026-03-08", "2026-03-09", ["health", "sleep"]);
 
+    expect(result).toMatchSnapshot();
     expect(result.rows).toHaveLength(2);
     expect(result.rows[0]).toMatchObject({
       date: "2026-03-08",
@@ -113,6 +114,7 @@ describe("RecoveryTrainingSeriesRepository", () => {
       "America/Los_Angeles",
     ).listRange("2026-03-09", "2026-03-09", ["training_load"]);
 
+    expect(result).toMatchSnapshot();
     expect(trainingLoad.listRange).toHaveBeenCalledWith(
       "2026-03-08",
       "2026-03-09",
@@ -175,6 +177,7 @@ describe("RecoveryTrainingSeriesRepository", () => {
       ["body_weight"],
     );
 
+    expect(result).toMatchSnapshot();
     expect(result.rows[0]?.body_weight).toMatchObject({
       direct_status: "missing",
       direct_value_kg: null,
@@ -210,6 +213,7 @@ describe("RecoveryTrainingSeriesRepository", () => {
       "UTC",
     ).listRange("2026-06-01", "2026-06-01", ["activities"], filters);
 
+    expect(result).toMatchSnapshot();
     expect(activities.listDailyExposureRange).toHaveBeenCalledWith(
       "2026-06-01",
       "2026-06-01",

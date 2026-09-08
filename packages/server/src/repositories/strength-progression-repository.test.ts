@@ -66,6 +66,97 @@ const input = {
 };
 
 describe("StrengthProgressionRepository", () => {
+  it("computes exact progression, PR, filter, and pagination contracts for valid working sets", async () => {
+    const laterRow = {
+      ...baseRow,
+      activity_id: "00000000-0000-4000-8000-000000000002",
+      activity_started_at: "2026-07-02T18:00:00.000Z",
+      activity_ended_at: "2026-07-02T19:00:00.000Z",
+      session_date: "2026-07-02",
+      member_activity_ids: ["00000000-0000-4000-8000-000000000012"],
+      set_id: "00000000-0000-4000-8000-000000000102",
+      set_activity_id: "00000000-0000-4000-8000-000000000012",
+      weight_kg: 105,
+      raw: { weight: 105, weightUnit: "kg", reps: 5 },
+    };
+    const priorRow = {
+      ...baseRow,
+      activity_id: "00000000-0000-4000-8000-000000000003",
+      activity_started_at: "2026-06-01T18:00:00.000Z",
+      activity_ended_at: "2026-06-01T19:00:00.000Z",
+      session_date: "2026-06-01",
+      member_activity_ids: ["00000000-0000-4000-8000-000000000013"],
+      set_id: "00000000-0000-4000-8000-000000000103",
+      set_activity_id: "00000000-0000-4000-8000-000000000013",
+      weight_kg: 95,
+      raw: { weight: 95, weightUnit: "kg", reps: 5 },
+    };
+    const db = {
+      execute: vi.fn((query: unknown) => {
+        const text = queryText(query);
+        if (text.includes("first_observed_date")) {
+          return Promise.resolve([{ first_observed_date: "2026-06-01" }]);
+        }
+        if (text.includes("strength_progression_prior")) return Promise.resolve([priorRow]);
+        return Promise.resolve([laterRow, baseRow]);
+      }),
+    };
+    const repository = new StrengthProgressionRepository(
+      db,
+      "00000000-0000-4000-8000-000000000004",
+      "America/Los_Angeles",
+    );
+    const firstPage = await repository.listRange({
+      ...input,
+      endDate: "2026-07-02",
+      providers: ["strong"],
+      exerciseIds: [baseRow.exercise_id],
+      limit: 1,
+    });
+    const secondPage = await repository.listRange({
+      ...input,
+      endDate: "2026-07-02",
+      providers: ["strong"],
+      exerciseIds: [baseRow.exercise_id],
+      cursor: firstPage.pagination.next_cursor,
+      limit: 1,
+    });
+
+    expect({ firstPage, secondPage }).toMatchSnapshot();
+    expect(queryText(db.execute.mock.calls[0]?.[0])).toContain("strong");
+    expect(queryText(db.execute.mock.calls[0]?.[0])).toContain(baseRow.exercise_id);
+    expect(firstPage.exercises[0]?.estimated_one_rep_max).toMatchObject({
+      first_kg: 116.67,
+      latest_kg: 122.5,
+      change_kg: 5.83,
+      change_percent: 5,
+    });
+    expect(firstPage.exercises[0]?.prs).toHaveLength(2);
+    expect(firstPage.pagination.next_cursor).not.toBeNull();
+    expect(secondPage.pagination.next_cursor).toBeNull();
+  });
+
+  it("retains and flags a probable reversed-field import without using it in aggregates", async () => {
+    const suspicious = {
+      ...baseRow,
+      weight_kg: 11,
+      reps: 140,
+      raw: { weight: 11, weightUnit: "lb", reps: 140 },
+    };
+    const result = await new StrengthProgressionRepository(
+      executeDb([suspicious]),
+      "00000000-0000-4000-8000-000000000002",
+      "UTC",
+    ).listRange(input);
+
+    expect(result).toMatchSnapshot();
+    expect(result.sessions[0]?.exercises[0]?.sets[0]?.quality_flags).toEqual([
+      "implausible_repetitions",
+      "possible_reversed_fields_or_import_corruption",
+    ]);
+    expect(result.summary.total_volume_kg_reps).toBe(0);
+  });
+
   it("retains but excludes duplicate identities from the same provider", async () => {
     const duplicate = {
       ...baseRow,
@@ -77,6 +168,7 @@ describe("StrengthProgressionRepository", () => {
       "UTC",
     ).listRange(input);
 
+    expect(result).toMatchSnapshot();
     expect(result.coverage).toMatchObject({
       source_sets: 2,
       sets: 2,
@@ -112,6 +204,7 @@ describe("StrengthProgressionRepository", () => {
       "UTC",
     ).listRange(input);
 
+    expect(result).toMatchSnapshot();
     expect(result.coverage).toMatchObject({
       source_sets: 2,
       sets: 1,
@@ -136,6 +229,7 @@ describe("StrengthProgressionRepository", () => {
       "UTC",
     ).listRange(input);
 
+    expect(result).toMatchSnapshot();
     expect(result.coverage).toMatchObject({ sets: 1, merged_exact_duplicate_records: 1 });
     expect(result.summary.total_volume_kg_reps).toBe(500);
   });
@@ -157,6 +251,7 @@ describe("StrengthProgressionRepository", () => {
       "UTC",
     ).listRange(input);
 
+    expect(result).toMatchSnapshot();
     expect(result.coverage).toMatchObject({ sets: 2, flagged_sets: 2 });
     expect(result.summary.total_volume_kg_reps).toBe(0);
   });
@@ -173,6 +268,7 @@ describe("StrengthProgressionRepository", () => {
       "UTC",
     ).listRange(input);
 
+    expect(result).toMatchSnapshot();
     expect(result.coverage).toMatchObject({ sets: 2, flagged_sets: 0 });
     expect(result.summary.total_volume_kg_reps).toBe(1000);
   });
@@ -189,6 +285,7 @@ describe("StrengthProgressionRepository", () => {
       "UTC",
     ).listRange(input);
 
+    expect(result).toMatchSnapshot();
     expect(result.coverage).toMatchObject({ sets: 2, flagged_sets: 2 });
     expect(result.summary.total_volume_kg_reps).toBe(0);
   });
@@ -201,6 +298,7 @@ describe("StrengthProgressionRepository", () => {
       "UTC",
     ).listRange(input);
 
+    expect(result).toMatchSnapshot();
     expect(result.summary).toMatchObject({ valid_working_sets: 0, total_volume_kg_reps: 0 });
     expect(result.sessions[0]?.exercises[0]?.sets[0]).toMatchObject({
       is_working_set: false,
@@ -223,6 +321,7 @@ describe("StrengthProgressionRepository", () => {
       "UTC",
     ).listRange(input);
 
+    expect(result).toMatchSnapshot();
     expect(result.coverage.flagged_sets).toBe(0);
     expect(result.sessions[0]?.exercises[0]?.sets[0]).toMatchObject({
       is_working_set: false,
@@ -251,6 +350,7 @@ describe("StrengthProgressionRepository", () => {
       "UTC",
     ).listRange(input);
 
+    expect(result).toMatchSnapshot();
     expect(result.coverage).toMatchObject({
       possible_duplicate_groups: 1,
       flagged_sets: 2,

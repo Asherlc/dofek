@@ -147,6 +147,7 @@ describe("buildEquivalenceEvidence", () => {
       },
     );
 
+    expect(result).toMatchSnapshot();
     expect(result).toMatchObject({
       count: 1,
       items: [

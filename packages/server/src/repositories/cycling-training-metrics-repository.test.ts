@@ -119,6 +119,7 @@ describe("CyclingTrainingMetricsRepository", () => {
       limit: 10,
     });
 
+    expect(result).toMatchSnapshot();
     expect(result.range).toEqual({
       start_date: "2026-06-01",
       end_date: "2026-06-30",
@@ -251,6 +252,7 @@ describe("CyclingTrainingMetricsRepository", () => {
       limit: 10,
     });
 
+    expect(result).toMatchSnapshot();
     expect(result.activities[0]?.thresholds.ftp).toBeNull();
     expect(result.activities[0]?.metrics.power.intensity_factor).toBeNull();
     expect(result.activities[0]?.metrics.unavailable_reasons).toContainEqual({
@@ -285,6 +287,7 @@ describe("CyclingTrainingMetricsRepository", () => {
       limit: 1,
     });
 
+    expect(result).toMatchSnapshot();
     expect(result.activities.map((activity) => activity.activity_id)).toEqual([activityId]);
     expect(result.next_cursor).toEqual(expect.any(String));
   });

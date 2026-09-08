@@ -19,6 +19,7 @@ describe("synchronizeActivityTimeseries", () => {
       ],
     });
 
+    expect(result).toMatchSnapshot();
     expect(result.timestamps).toEqual([at(0), at(1), at(2)]);
     expect(result.offsetsSeconds).toEqual([0, 1, 2]);
     expect(result.streams.power).toMatchObject({
@@ -47,7 +48,9 @@ describe("synchronizeActivityTimeseries", () => {
       ],
     });
 
+    expect(result).toMatchSnapshot();
     expect(result.timestamps).toEqual([at(0), at(5)]);
+    expect(result).toMatchSnapshot();
     expect(result.streams.power).toMatchObject({
       values: [200, null],
       states: ["aggregated", "missing"],
@@ -90,6 +93,7 @@ describe("synchronizeActivityTimeseries", () => {
       ],
     });
 
+    expect(result).toMatchSnapshot();
     expect(result.streams.distance).toMatchObject({
       values: [20],
       states: ["aggregated"],
@@ -116,6 +120,7 @@ describe("synchronizeActivityTimeseries", () => {
         { recordedAt: at(3), stream: "speed", value: 0, sourceIndex: 0 },
       ],
     });
+    expect(available).toMatchSnapshot();
     expect(available.streams.moving_time).toMatchObject({
       values: [0, 1, 2, 2],
       states: ["calculated_zero", "calculated", "calculated", "calculated"],
@@ -137,6 +142,7 @@ describe("synchronizeActivityTimeseries", () => {
         { recordedAt: at(3), stream: "speed", value: 0, sourceIndex: 0 },
       ],
     });
+    expect(laterPage).toMatchSnapshot();
     expect(laterPage.timestamps).toEqual([at(2), at(3)]);
     expect(laterPage.streams.moving_time?.values).toEqual([2, 2]);
 
@@ -148,6 +154,7 @@ describe("synchronizeActivityTimeseries", () => {
       fill: "none",
       samples: [{ recordedAt: at(0), stream: "power", value: 100, sourceIndex: 0 }],
     });
+    expect(unavailable).toMatchSnapshot();
     expect(unavailable.streams.moving_time).toMatchObject({
       values: [null],
       states: ["missing"],

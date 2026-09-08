@@ -111,6 +111,7 @@ describe("CyclingThresholdEstimator", () => {
       method: "best_supported",
     });
 
+    expect(result).toMatchSnapshot();
     expect(result.result).toMatchObject({
       threshold_watts: 245,
       method: "recorded_provider",
@@ -162,6 +163,7 @@ describe("CyclingThresholdEstimator", () => {
       method: "recorded_provider",
     });
 
+    expect(result).toMatchSnapshot();
     expect(result.result).toMatchObject({
       threshold_watts: 250,
       classification: "provider_recorded",
@@ -185,6 +187,7 @@ describe("CyclingThresholdEstimator", () => {
       method: "twenty_minute_95_percent",
     });
 
+    expect(result).toMatchSnapshot();
     expect(result.result).toMatchObject({
       threshold_watts: 285,
       method: "twenty_minute_95_percent",
@@ -212,6 +215,7 @@ describe("CyclingThresholdEstimator", () => {
       method: "sustained_40_to_70_minutes",
     });
 
+    expect(result).toMatchSnapshot();
     expect(result.result).toMatchObject({
       threshold_watts: 270,
       classification: "estimated",
@@ -241,6 +245,7 @@ describe("CyclingThresholdEstimator", () => {
       method: "critical_power_model",
     });
 
+    expect(result).toMatchSnapshot();
     expect(result.result).toMatchObject({
       classification: "estimated",
       method: "critical_power_model",
@@ -264,6 +269,7 @@ describe("CyclingThresholdEstimator", () => {
       method: "twenty_minute_95_percent",
     });
 
+    expect(result).toMatchSnapshot();
     expect(result).toEqual({
       start_date: baseInput.startDate,
       end_date: baseInput.endDate,

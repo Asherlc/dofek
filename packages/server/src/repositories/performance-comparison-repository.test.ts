@@ -140,6 +140,7 @@ describe("PerformanceComparisonRepository", () => {
       limit: 10,
     });
 
+    expect(result).toMatchSnapshot();
     expect(result.equivalence).toMatchObject({
       basis: "derived_from_reference",
       confidence: "high",
@@ -253,6 +254,7 @@ describe("PerformanceComparisonRepository", () => {
       limit: 10,
     });
 
+    expect(result).toMatchSnapshot();
     expect(result.equivalence).toMatchObject({
       basis: "explicit",
       method: "exact_provider_workout_identity",
@@ -331,6 +333,7 @@ describe("PerformanceComparisonRepository", () => {
         limit: 10,
       });
 
+      expect(result).toMatchSnapshot();
       expect(result.equivalence).toMatchObject({
         basis: "explicit",
         method: expectedMethod,
@@ -378,6 +381,7 @@ describe("PerformanceComparisonRepository", () => {
       cursor: null,
       limit: 1,
     });
+    expect(firstPage).toMatchSnapshot();
     const cursor = firstPage.pagination.next_cursor;
     expect(cursor).not.toBeNull();
 
@@ -406,6 +410,7 @@ describe("PerformanceComparisonRepository", () => {
       cursor,
       limit: 1,
     });
+    expect(nextPage).toMatchSnapshot();
     expect(nextPage.performances.map((item) => item.activity_id)).toEqual([SECOND_ID]);
     const candidateQuery = nextDb.execute.mock.calls
       .map(([query]) => queryText(query))
@@ -520,6 +525,7 @@ describe("PerformanceComparisonRepository", () => {
       limit: 10,
     });
 
+    expect(result).toMatchSnapshot();
     expect(result.equivalence).toMatchObject({ basis: "explicit", confidence: "high" });
     expect(result.performances[1]?.metrics.strength).toMatchObject({
       best_estimated_one_rep_max_kg: expect.closeTo(128.33, 2),
@@ -623,6 +629,7 @@ describe("PerformanceComparisonRepository", () => {
       limit: 10,
     });
 
+    expect(result).toMatchSnapshot();
     expect(result.equivalence).toMatchObject({
       confidence: "high",
       method: "exact_climb_location_route_grade_identity",

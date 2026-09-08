@@ -59,6 +59,7 @@ describe("computeStrengthComparisonMetrics", () => {
       }),
     ]);
 
+    expect(result).toMatchSnapshot();
     expect(result).toMatchObject({
       source_sets: 2,
       sets: 1,
@@ -84,6 +85,7 @@ describe("computeStrengthComparisonMetrics", () => {
       }),
     ]);
 
+    expect(result).toMatchSnapshot();
     expect(result).toMatchObject({
       source_sets: 2,
       sets: 2,
@@ -108,6 +110,7 @@ describe("computeStrengthComparisonMetrics", () => {
       }),
     ]);
 
+    expect(result).toMatchSnapshot();
     expect(result).toMatchObject({ sets: 2, valid_volume_sets: 2, valid_volume_kg_reps: 1000 });
   });
 
@@ -121,6 +124,7 @@ describe("computeStrengthComparisonMetrics", () => {
       }),
     ]);
 
+    expect(result).toMatchSnapshot();
     expect(result).toMatchObject({
       working_sets: 2,
       valid_volume_sets: 1,
@@ -145,6 +149,7 @@ describe("computeClimbingComparisonMetrics", () => {
       }),
     ]);
 
+    expect(result).toMatchSnapshot();
     expect(result).toMatchObject({
       source_entries: 2,
       entries: 1,
@@ -177,6 +182,7 @@ describe("computeClimbingComparisonMetrics", () => {
       }),
     ]);
 
+    expect(result).toMatchSnapshot();
     expect(result).toMatchObject({
       source_entries: 2,
       entries: 0,
@@ -198,6 +204,7 @@ describe("computeClimbingComparisonMetrics", () => {
       }),
     ]);
 
+    expect(result).toMatchSnapshot();
     expect(result).toMatchObject({
       source_entries: 2,
       entries: 0,

@@ -33,6 +33,7 @@ describe("computeCyclingWorkoutMetrics", () => {
       intervals: [],
     });
 
+    expect(result).toMatchSnapshot();
     expect(result.power).toMatchObject({
       averageWatts: 200,
       normalizedWatts: 200,
@@ -72,8 +73,10 @@ describe("computeCyclingWorkoutMetrics", () => {
       intervals: [],
     });
 
+    expect(result).toMatchSnapshot();
     expect(result.power.averageWatts).toBe(180);
     expect(result.power.normalizedWatts).toBe(180);
+    expect(result).toMatchSnapshot();
     expect(result.coverage.power).toMatchObject({
       observedSamples: 120,
       coveredSeconds: 600,
@@ -122,6 +125,7 @@ describe("computeCyclingWorkoutMetrics", () => {
       intervals: [],
     });
 
+    expect(result).toMatchSnapshot();
     expect(result.power).toMatchObject({
       averageWatts: 210,
       normalizedWatts: 210,
@@ -158,6 +162,7 @@ describe("computeCyclingWorkoutMetrics", () => {
       intervals: [],
     });
 
+    expect(result).toMatchSnapshot();
     expect(result.cardiacDrift).toEqual({
       percent: 9.1,
       firstHalfPowerToHeartRate: 1.429,
@@ -190,6 +195,7 @@ describe("computeCyclingWorkoutMetrics", () => {
       ],
     });
 
+    expect(result).toMatchSnapshot();
     expect(result.intervalSource).toBe("recorded");
     expect(result.intervals).toHaveLength(1);
     expect(result.intervals[0]).toMatchObject({
@@ -226,6 +232,7 @@ describe("computeCyclingWorkoutMetrics", () => {
       intervals: [],
     });
 
+    expect(result).toMatchSnapshot();
     expect(result.intervalSource).toBe("inferred");
     expect(result.intervals).toEqual(
       expect.arrayContaining([
@@ -264,6 +271,7 @@ describe("computeCyclingWorkoutMetrics", () => {
       intervals: [],
     });
 
+    expect(result).toMatchSnapshot();
     expect(result.intervalSource).toBe("none");
     expect(result.intervals).toEqual([]);
     expect(result.intervalDetection).toBeNull();

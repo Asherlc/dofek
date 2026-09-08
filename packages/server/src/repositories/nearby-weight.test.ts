@@ -25,6 +25,7 @@ describe("selectNearbyWeight", () => {
       measured("2026-06-15", 71, { recordedAt: "2026-06-15T09:00:00.000Z" }),
     ]);
 
+    expect(result).toMatchSnapshot();
     expect(result).toMatchObject({
       distance_days: 0,
       kind: "measured",
@@ -40,6 +41,7 @@ describe("selectNearbyWeight", () => {
       measured("2026-06-20", 72),
     ]);
 
+    expect(result).toMatchSnapshot();
     expect(result).toMatchObject({
       distance_days: 5,
       kind: "interpolated",
@@ -68,6 +70,7 @@ describe("selectNearbyWeight", () => {
     ]);
 
     if (!("sources" in result)) throw new Error("Expected nearest weight evidence");
+    expect(result).toMatchSnapshot();
     expect(result.sources[0]?.date).toBe("2026-05-26");
   });
 

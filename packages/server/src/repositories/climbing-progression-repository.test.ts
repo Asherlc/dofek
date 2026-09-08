@@ -85,6 +85,7 @@ describe("ClimbingProgressionRepository", () => {
       limit: 100,
     });
 
+    expect(result).toMatchSnapshot();
     expect(result.coverage).toMatchObject({
       entries: 1,
       entries_with_attempts: 0,
@@ -144,6 +145,7 @@ describe("ClimbingProgressionRepository", () => {
       limit: 100,
     });
 
+    expect(result).toMatchSnapshot();
     expect(result.coverage).toMatchObject({
       entries: 1,
       merged_exact_duplicate_records: 1,
@@ -189,6 +191,7 @@ describe("ClimbingProgressionRepository", () => {
       limit: 100,
     });
 
+    expect(result).toMatchSnapshot();
     expect(result.coverage).toMatchObject({
       entries: 2,
       entries_excluded_from_aggregates: 2,
@@ -308,6 +311,7 @@ describe("ClimbingProgressionRepository", () => {
       limit: 1,
     });
 
+    expect(result).toMatchSnapshot();
     expect(result.daily).toEqual([
       expect.objectContaining({ date: "2026-07-09", exposure_status: "unavailable" }),
       expect.objectContaining({
@@ -415,7 +419,9 @@ describe("ClimbingProgressionRepository", () => {
       limit: 100,
     });
 
+    expect(result).toMatchSnapshot();
     expect(result.coverage.first_observed_date).toBe("2026-07-01");
+    expect(result).toMatchSnapshot();
     expect(result.daily).toEqual([
       expect.objectContaining({
         exposure_status: "not_observed",
@@ -504,6 +510,7 @@ describe("ClimbingProgressionRepository", () => {
       limit: 100,
     });
 
+    expect(result).toMatchSnapshot();
     expect(result.grade_distribution[0]).toMatchObject({
       attempts_status: "partial",
       attempts_per_send: null,
@@ -537,6 +544,7 @@ describe("ClimbingProgressionRepository", () => {
       limit: 100,
     });
 
+    expect(result).toMatchSnapshot();
     expect(result.grade_distribution[0]).toMatchObject({
       attempts_status: "complete",
       observed_outcomes: 1,

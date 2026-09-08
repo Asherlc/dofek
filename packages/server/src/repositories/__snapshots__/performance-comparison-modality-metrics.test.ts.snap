@@ -1,0 +1,246 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`computeClimbingComparisonMetrics > excludes conflicting cross-provider observations and marks coverage partial 1`] = `
+{
+  "attempts": null,
+  "attempts_status": "unavailable",
+  "entries": 0,
+  "evidence": [
+    {
+      "attempt_count": 2,
+      "climb_type": "boulder",
+      "grade": "V6",
+      "grade_system": "v_scale",
+      "lead": null,
+      "location_name": "The Gym",
+      "merged_duplicate": false,
+      "route_name": "Blue Arete",
+      "sent": true,
+      "source_activity_count": 1,
+      "source_activity_ids": [
+        "00000000-0000-4000-8000-000000000011",
+      ],
+      "source_entry_count": 1,
+      "source_entry_ids": [
+        "00000000-0000-4000-8000-000000000041",
+      ],
+      "source_evidence_truncated": false,
+      "source_provider_count": 1,
+      "source_providers": [
+        "kaya",
+      ],
+      "status": "excluded_ambiguous",
+    },
+    {
+      "attempt_count": 3,
+      "climb_type": "boulder",
+      "grade": "V6",
+      "grade_system": "v_scale",
+      "lead": null,
+      "location_name": "The Gym",
+      "merged_duplicate": false,
+      "route_name": "Blue Arete",
+      "sent": false,
+      "source_activity_count": 1,
+      "source_activity_ids": [
+        "00000000-0000-4000-8000-000000000012",
+      ],
+      "source_entry_count": 1,
+      "source_entry_ids": [
+        "00000000-0000-4000-8000-000000000042",
+      ],
+      "source_evidence_truncated": false,
+      "source_provider_count": 1,
+      "source_providers": [
+        "strava",
+      ],
+      "status": "excluded_ambiguous",
+    },
+  ],
+  "evidence_count": 2,
+  "evidence_truncated": false,
+  "excluded_ambiguous_entries": 2,
+  "observed_grades": [],
+  "outcomes_status": "unavailable",
+  "sends": null,
+  "source_entries": 2,
+}
+`;
+
+exports[`computeClimbingComparisonMetrics > excludes repeated stable IDs from the same source instead of double counting 1`] = `
+{
+  "attempts": null,
+  "attempts_status": "unavailable",
+  "entries": 0,
+  "evidence": [
+    {
+      "attempt_count": 2,
+      "climb_type": "boulder",
+      "grade": "V6",
+      "grade_system": "v_scale",
+      "lead": null,
+      "location_name": "The Gym",
+      "merged_duplicate": false,
+      "route_name": "Blue Arete",
+      "sent": true,
+      "source_activity_count": 1,
+      "source_activity_ids": [
+        "00000000-0000-4000-8000-000000000011",
+      ],
+      "source_entry_count": 1,
+      "source_entry_ids": [
+        "00000000-0000-4000-8000-000000000041",
+      ],
+      "source_evidence_truncated": false,
+      "source_provider_count": 1,
+      "source_providers": [
+        "kaya",
+      ],
+      "status": "excluded_ambiguous",
+    },
+    {
+      "attempt_count": 2,
+      "climb_type": "boulder",
+      "grade": "V6",
+      "grade_system": "v_scale",
+      "lead": null,
+      "location_name": "The Gym",
+      "merged_duplicate": false,
+      "route_name": "Blue Arete",
+      "sent": true,
+      "source_activity_count": 1,
+      "source_activity_ids": [
+        "00000000-0000-4000-8000-000000000011",
+      ],
+      "source_entry_count": 1,
+      "source_entry_ids": [
+        "00000000-0000-4000-8000-000000000042",
+      ],
+      "source_evidence_truncated": false,
+      "source_provider_count": 1,
+      "source_providers": [
+        "kaya",
+      ],
+      "status": "excluded_ambiguous",
+    },
+  ],
+  "evidence_count": 2,
+  "evidence_truncated": false,
+  "excluded_ambiguous_entries": 2,
+  "observed_grades": [],
+  "outcomes_status": "unavailable",
+  "sends": null,
+  "source_entries": 2,
+}
+`;
+
+exports[`computeClimbingComparisonMetrics > merges an exact climb observation imported through two activities 1`] = `
+{
+  "attempts": 2,
+  "attempts_status": "complete",
+  "entries": 1,
+  "evidence": [
+    {
+      "attempt_count": 2,
+      "climb_type": "boulder",
+      "grade": "V6",
+      "grade_system": "v_scale",
+      "lead": null,
+      "location_name": "The Gym",
+      "merged_duplicate": true,
+      "route_name": "Blue Arete",
+      "sent": true,
+      "source_activity_count": 2,
+      "source_activity_ids": [
+        "00000000-0000-4000-8000-000000000011",
+        "00000000-0000-4000-8000-000000000012",
+      ],
+      "source_entry_count": 2,
+      "source_entry_ids": [
+        "00000000-0000-4000-8000-000000000041",
+        "00000000-0000-4000-8000-000000000042",
+      ],
+      "source_evidence_truncated": false,
+      "source_provider_count": 2,
+      "source_providers": [
+        "kaya",
+        "strava",
+      ],
+      "status": "included",
+    },
+  ],
+  "evidence_count": 1,
+  "evidence_truncated": false,
+  "excluded_ambiguous_entries": 0,
+  "observed_grades": [
+    "v_scale:V6",
+  ],
+  "outcomes_status": "complete",
+  "sends": 1,
+  "source_entries": 2,
+}
+`;
+
+exports[`computeStrengthComparisonMetrics > excludes conflicting cross-provider versions of the same logical set 1`] = `
+{
+  "best_estimated_one_rep_max_kg": null,
+  "estimated_one_rep_max_status": "unavailable",
+  "excluded_sets": 2,
+  "missing_volume_sets": 0,
+  "sets": 2,
+  "source_sets": 2,
+  "suspicious_sets": 2,
+  "valid_volume_kg_reps": null,
+  "valid_volume_sets": 0,
+  "volume_status": "unavailable",
+  "working_sets": 2,
+}
+`;
+
+exports[`computeStrengthComparisonMetrics > labels a subtotal partial when a working set is missing load or reps 1`] = `
+{
+  "best_estimated_one_rep_max_kg": 116.67,
+  "estimated_one_rep_max_status": "partial",
+  "excluded_sets": 1,
+  "missing_volume_sets": 1,
+  "sets": 2,
+  "source_sets": 2,
+  "suspicious_sets": 0,
+  "valid_volume_kg_reps": 500,
+  "valid_volume_sets": 1,
+  "volume_status": "partial",
+  "working_sets": 2,
+}
+`;
+
+exports[`computeStrengthComparisonMetrics > merges exact duplicates from distinct source activities 1`] = `
+{
+  "best_estimated_one_rep_max_kg": 116.67,
+  "estimated_one_rep_max_status": "complete",
+  "excluded_sets": 0,
+  "missing_volume_sets": 0,
+  "sets": 1,
+  "source_sets": 2,
+  "suspicious_sets": 0,
+  "valid_volume_kg_reps": 500,
+  "valid_volume_sets": 1,
+  "volume_status": "complete",
+  "working_sets": 1,
+}
+`;
+
+exports[`computeStrengthComparisonMetrics > preserves repeated sets recorded by one source 1`] = `
+{
+  "best_estimated_one_rep_max_kg": 116.67,
+  "estimated_one_rep_max_status": "complete",
+  "excluded_sets": 0,
+  "missing_volume_sets": 0,
+  "sets": 2,
+  "source_sets": 2,
+  "suspicious_sets": 0,
+  "valid_volume_kg_reps": 1000,
+  "valid_volume_sets": 2,
+  "volume_status": "complete",
+  "working_sets": 2,
+}
+`;

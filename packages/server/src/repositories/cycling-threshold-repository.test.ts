@@ -64,6 +64,7 @@ describe("CyclingThresholdRepository", () => {
       limit: 100,
     });
 
+    expect(result).toMatchSnapshot();
     expect(result.items).toEqual([
       expect.objectContaining({
         id: observedId,

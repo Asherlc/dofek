@@ -95,6 +95,7 @@ describe("FingerLoadingProgressionRepository", () => {
       baseInput,
     );
 
+    expect(result).toMatchSnapshot();
     expect(result.channel).toEqual({
       id: "finger_loading",
       interchangeable_with: [],
@@ -247,6 +248,7 @@ describe("FingerLoadingProgressionRepository", () => {
       "UTC",
     ).listRange(baseInput);
 
+    expect(result).toMatchSnapshot();
     expect(result.sessions[0]?.entries[0]).toMatchObject({
       edge_size_mm: null,
       grip_type: null,
@@ -275,6 +277,7 @@ describe("FingerLoadingProgressionRepository", () => {
       },
     });
 
+    expect(result).toMatchSnapshot();
     expect(result.high_intensity).toMatchObject({
       status: "available",
       matching_entries: 1,
@@ -299,6 +302,7 @@ describe("FingerLoadingProgressionRepository", () => {
       "UTC",
     ).listRange(baseInput);
 
+    expect(result).toMatchSnapshot();
     expect(result.coverage).toMatchObject({ entries: 1, merged_exact_duplicate_records: 1 });
     expect(result.summary).toMatchObject({ entries: 1, effective_load_kg_seconds: null });
     expect(result.sessions[0]?.entries[0]?.provenance).toEqual({
@@ -351,6 +355,7 @@ describe("FingerLoadingProgressionRepository", () => {
       "UTC",
     ).listRange(baseInput);
 
+    expect(result).toMatchSnapshot();
     expect(result.coverage).toMatchObject({
       entries: 2,
       possible_duplicate_groups: 1,
@@ -396,6 +401,7 @@ describe("FingerLoadingProgressionRepository", () => {
       "UTC",
     ).listRange(baseInput);
 
+    expect(result).toMatchSnapshot();
     expect(result.combined_climbing_finger_exposure.daily).toEqual([
       {
         date: "2026-07-10",
@@ -427,6 +433,7 @@ describe("FingerLoadingProgressionRepository", () => {
       "UTC",
     ).listRange(baseInput);
 
+    expect(result).toMatchSnapshot();
     expect(result.combined_climbing_finger_exposure).toMatchObject({
       first_joint_coverage_date: "2026-07-11",
       daily: [

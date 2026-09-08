@@ -108,6 +108,7 @@ describe("ActivityTimeseriesRepository", () => {
       }),
     );
     expect(sensorStore.query.mock.calls[0]?.[1]).not.toContain("ingest.metric_stream");
+    expect(result).toMatchSnapshot();
     expect(result.activity).toEqual({
       id: canonicalId,
       startedAt,
@@ -152,6 +153,7 @@ describe("ActivityTimeseriesRepository", () => {
     expect(query).toContain("FROM analytics.activity_location_sample FINAL");
     expect(query).not.toContain("ingest.metric_stream");
     expect(params).toEqual(expect.objectContaining({ channels: ["distance", "temperature"] }));
+    expect(result).toMatchSnapshot();
     expect(result.streams.position?.values).toEqual([[-122.1, 37.1]]);
   });
 
@@ -171,6 +173,7 @@ describe("ActivityTimeseriesRepository", () => {
       limit: 2,
     });
 
+    expect(result).toMatchSnapshot();
     expect(result.timestamps).toEqual([at(0), at(1)]);
     expect(result.streams.power?.sourceIndexes).toEqual([[0], [0]]);
     expect(result.sources).toHaveLength(1);

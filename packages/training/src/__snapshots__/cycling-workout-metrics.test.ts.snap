@@ -1,0 +1,776 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`computeCyclingWorkoutMetrics > computes cardiac drift from equal elapsed halves when paired coverage is sufficient 1`] = `
+{
+  "aerobicEfficiency": {
+    "pairedSeconds": 2400,
+    "powerToHeartRateRatio": 1.361,
+  },
+  "cadence": {
+    "averageRpm": 90,
+  },
+  "cardiacDrift": {
+    "firstHalfPowerToHeartRate": 1.429,
+    "method": "equal_elapsed_time_halves_power_to_heart_rate",
+    "pairedSeconds": 2400,
+    "percent": 9.1,
+    "secondHalfPowerToHeartRate": 1.299,
+  },
+  "coverage": {
+    "cadence": {
+      "coveragePct": 100,
+      "coveredSeconds": 2400,
+      "largestGapSeconds": 1,
+      "medianSampleIntervalSeconds": 1,
+      "missingSeconds": 0,
+      "observedSamples": 2400,
+      "zeroSeconds": 0,
+    },
+    "heartRate": {
+      "coveragePct": 100,
+      "coveredSeconds": 2400,
+      "largestGapSeconds": 1,
+      "medianSampleIntervalSeconds": 1,
+      "missingSeconds": 0,
+      "observedSamples": 2400,
+      "zeroSeconds": 0,
+    },
+    "power": {
+      "coveragePct": 100,
+      "coveredSeconds": 2400,
+      "largestGapSeconds": 1,
+      "medianSampleIntervalSeconds": 1,
+      "missingSeconds": 0,
+      "observedSamples": 2400,
+      "zeroSeconds": 0,
+    },
+  },
+  "durationSeconds": 2400,
+  "heartRate": {
+    "averageBpm": 147,
+    "maximumBpm": 154,
+  },
+  "heartRateZones": null,
+  "intervalDetection": null,
+  "intervalSource": "none",
+  "intervals": [],
+  "power": {
+    "averageWatts": 200,
+    "intensityFactor": null,
+    "normalizedWatts": 200,
+    "trainingStressScore": null,
+    "variabilityIndex": 1,
+    "workKilojoules": 480,
+  },
+  "powerZones": null,
+  "unavailableReasons": [
+    {
+      "metric": "intensity_factor",
+      "reason": "no valid FTP was effective for this activity",
+    },
+    {
+      "metric": "training_stress_score",
+      "reason": "no valid FTP was effective for this activity",
+    },
+  ],
+}
+`;
+
+exports[`computeCyclingWorkoutMetrics > computes complete one-hertz power, load, zones, and evidence 1`] = `
+{
+  "aerobicEfficiency": {
+    "pairedSeconds": 3600,
+    "powerToHeartRateRatio": 1.429,
+  },
+  "cadence": {
+    "averageRpm": 90,
+  },
+  "cardiacDrift": {
+    "firstHalfPowerToHeartRate": 1.429,
+    "method": "equal_elapsed_time_halves_power_to_heart_rate",
+    "pairedSeconds": 3600,
+    "percent": 0,
+    "secondHalfPowerToHeartRate": 1.429,
+  },
+  "coverage": {
+    "cadence": {
+      "coveragePct": 100,
+      "coveredSeconds": 3600,
+      "largestGapSeconds": 1,
+      "medianSampleIntervalSeconds": 1,
+      "missingSeconds": 0,
+      "observedSamples": 3600,
+      "zeroSeconds": 0,
+    },
+    "heartRate": {
+      "coveragePct": 100,
+      "coveredSeconds": 3600,
+      "largestGapSeconds": 1,
+      "medianSampleIntervalSeconds": 1,
+      "missingSeconds": 0,
+      "observedSamples": 3600,
+      "zeroSeconds": 0,
+    },
+    "power": {
+      "coveragePct": 100,
+      "coveredSeconds": 3600,
+      "largestGapSeconds": 1,
+      "medianSampleIntervalSeconds": 1,
+      "missingSeconds": 0,
+      "observedSamples": 3600,
+      "zeroSeconds": 0,
+    },
+  },
+  "durationSeconds": 3600,
+  "heartRate": {
+    "averageBpm": 140,
+    "maximumBpm": 140,
+  },
+  "heartRateZones": {
+    "threshold": 175,
+    "upperPcts": [
+      0.6,
+      0.7,
+      0.8,
+      0.9,
+    ],
+    "zones": [
+      {
+        "percent": 0,
+        "seconds": 0,
+        "zone": 1,
+      },
+      {
+        "percent": 0,
+        "seconds": 0,
+        "zone": 2,
+      },
+      {
+        "percent": 0,
+        "seconds": 0,
+        "zone": 3,
+      },
+      {
+        "percent": 100,
+        "seconds": 3600,
+        "zone": 4,
+      },
+      {
+        "percent": 0,
+        "seconds": 0,
+        "zone": 5,
+      },
+    ],
+  },
+  "intervalDetection": null,
+  "intervalSource": "none",
+  "intervals": [],
+  "power": {
+    "averageWatts": 200,
+    "intensityFactor": 0.8,
+    "normalizedWatts": 200,
+    "trainingStressScore": 64,
+    "variabilityIndex": 1,
+    "workKilojoules": 720,
+  },
+  "powerZones": {
+    "threshold": 250,
+    "upperPcts": [
+      0.55,
+      0.75,
+      0.9,
+      1.05,
+      1.2,
+      1.5,
+    ],
+    "zones": [
+      {
+        "percent": 0,
+        "seconds": 0,
+        "zone": 1,
+      },
+      {
+        "percent": 0,
+        "seconds": 0,
+        "zone": 2,
+      },
+      {
+        "percent": 100,
+        "seconds": 3600,
+        "zone": 3,
+      },
+      {
+        "percent": 0,
+        "seconds": 0,
+        "zone": 4,
+      },
+      {
+        "percent": 0,
+        "seconds": 0,
+        "zone": 5,
+      },
+      {
+        "percent": 0,
+        "seconds": 0,
+        "zone": 6,
+      },
+      {
+        "percent": 0,
+        "seconds": 0,
+        "zone": 7,
+      },
+    ],
+  },
+  "unavailableReasons": [],
+}
+`;
+
+exports[`computeCyclingWorkoutMetrics > detects sustained work intervals but never invents a target 1`] = `
+{
+  "aerobicEfficiency": {
+    "pairedSeconds": 900,
+    "powerToHeartRateRatio": 1.251,
+  },
+  "cadence": {
+    "averageRpm": null,
+  },
+  "cardiacDrift": {
+    "firstHalfPowerToHeartRate": null,
+    "method": "equal_elapsed_time_halves_power_to_heart_rate",
+    "pairedSeconds": 0,
+    "percent": null,
+    "secondHalfPowerToHeartRate": null,
+  },
+  "coverage": {
+    "cadence": {
+      "coveragePct": 0,
+      "coveredSeconds": 0,
+      "largestGapSeconds": null,
+      "medianSampleIntervalSeconds": null,
+      "missingSeconds": 900,
+      "observedSamples": 0,
+      "zeroSeconds": 0,
+    },
+    "heartRate": {
+      "coveragePct": 100,
+      "coveredSeconds": 900,
+      "largestGapSeconds": 1,
+      "medianSampleIntervalSeconds": 1,
+      "missingSeconds": 0,
+      "observedSamples": 900,
+      "zeroSeconds": 0,
+    },
+    "power": {
+      "coveragePct": 100,
+      "coveredSeconds": 900,
+      "largestGapSeconds": 1,
+      "medianSampleIntervalSeconds": 1,
+      "missingSeconds": 0,
+      "observedSamples": 900,
+      "zeroSeconds": 0,
+    },
+  },
+  "durationSeconds": 900,
+  "heartRate": {
+    "averageBpm": 134.3,
+    "maximumBpm": 160,
+  },
+  "heartRateZones": null,
+  "intervalDetection": {
+    "method": "30_second_average_above_105_percent_ftp",
+    "minimumWorkSeconds": 30,
+    "thresholdWatts": 262.5,
+  },
+  "intervalSource": "inferred",
+  "intervals": [
+    {
+      "averageCadenceRpm": null,
+      "averageHeartRateBpm": 160,
+      "averagePowerWatts": 300,
+      "completionPct": null,
+      "durationSeconds": 120,
+      "endOffsetSeconds": 240,
+      "index": 1,
+      "label": null,
+      "normalizedPowerWatts": 300,
+      "source": "inferred",
+      "startOffsetSeconds": 120,
+      "targetPowerWatts": null,
+      "type": "work",
+    },
+    {
+      "averageCadenceRpm": null,
+      "averageHeartRateBpm": 125,
+      "averagePowerWatts": 120,
+      "completionPct": null,
+      "durationSeconds": 120,
+      "endOffsetSeconds": 360,
+      "index": 2,
+      "label": null,
+      "normalizedPowerWatts": 120,
+      "source": "inferred",
+      "startOffsetSeconds": 240,
+      "targetPowerWatts": null,
+      "type": "recovery",
+    },
+    {
+      "averageCadenceRpm": null,
+      "averageHeartRateBpm": 160,
+      "averagePowerWatts": 300,
+      "completionPct": null,
+      "durationSeconds": 120,
+      "endOffsetSeconds": 480,
+      "index": 3,
+      "label": null,
+      "normalizedPowerWatts": 300,
+      "source": "inferred",
+      "startOffsetSeconds": 360,
+      "targetPowerWatts": null,
+      "type": "work",
+    },
+  ],
+  "power": {
+    "averageWatts": 168,
+    "intensityFactor": 0.864,
+    "normalizedWatts": 216,
+    "trainingStressScore": 18.7,
+    "variabilityIndex": 1.286,
+    "workKilojoules": 151.2,
+  },
+  "powerZones": null,
+  "unavailableReasons": [
+    {
+      "metric": "cadence",
+      "reason": "no cadence samples are available",
+    },
+    {
+      "metric": "cardiac_drift",
+      "reason": "activity is shorter than 20 minutes",
+    },
+  ],
+}
+`;
+
+exports[`computeCyclingWorkoutMetrics > does not call a sub-30-second power spike an interval 1`] = `
+{
+  "aerobicEfficiency": {
+    "pairedSeconds": 0,
+    "powerToHeartRateRatio": null,
+  },
+  "cadence": {
+    "averageRpm": null,
+  },
+  "cardiacDrift": {
+    "firstHalfPowerToHeartRate": null,
+    "method": "equal_elapsed_time_halves_power_to_heart_rate",
+    "pairedSeconds": 0,
+    "percent": null,
+    "secondHalfPowerToHeartRate": null,
+  },
+  "coverage": {
+    "cadence": {
+      "coveragePct": 0,
+      "coveredSeconds": 0,
+      "largestGapSeconds": null,
+      "medianSampleIntervalSeconds": null,
+      "missingSeconds": 300,
+      "observedSamples": 0,
+      "zeroSeconds": 0,
+    },
+    "heartRate": {
+      "coveragePct": 0,
+      "coveredSeconds": 0,
+      "largestGapSeconds": null,
+      "medianSampleIntervalSeconds": null,
+      "missingSeconds": 300,
+      "observedSamples": 0,
+      "zeroSeconds": 0,
+    },
+    "power": {
+      "coveragePct": 100,
+      "coveredSeconds": 300,
+      "largestGapSeconds": 1,
+      "medianSampleIntervalSeconds": 1,
+      "missingSeconds": 0,
+      "observedSamples": 300,
+      "zeroSeconds": 0,
+    },
+  },
+  "durationSeconds": 300,
+  "heartRate": {
+    "averageBpm": null,
+    "maximumBpm": null,
+  },
+  "heartRateZones": null,
+  "intervalDetection": null,
+  "intervalSource": "none",
+  "intervals": [],
+  "power": {
+    "averageWatts": 138.7,
+    "intensityFactor": 0.697,
+    "normalizedWatts": 174.2,
+    "trainingStressScore": 4,
+    "variabilityIndex": 1.256,
+    "workKilojoules": 41.6,
+  },
+  "powerZones": null,
+  "unavailableReasons": [
+    {
+      "metric": "heart_rate",
+      "reason": "no heart-rate samples are available",
+    },
+    {
+      "metric": "cadence",
+      "reason": "no cadence samples are available",
+    },
+    {
+      "metric": "aerobic_efficiency",
+      "reason": "no synchronized power and heart-rate samples are available",
+    },
+    {
+      "metric": "cardiac_drift",
+      "reason": "activity is shorter than 20 minutes",
+    },
+  ],
+}
+`;
+
+exports[`computeCyclingWorkoutMetrics > does not manufacture FTP-dependent metrics or heart-rate metrics 1`] = `
+{
+  "aerobicEfficiency": {
+    "pairedSeconds": 0,
+    "powerToHeartRateRatio": null,
+  },
+  "cadence": {
+    "averageRpm": null,
+  },
+  "cardiacDrift": {
+    "firstHalfPowerToHeartRate": null,
+    "method": "equal_elapsed_time_halves_power_to_heart_rate",
+    "pairedSeconds": 0,
+    "percent": null,
+    "secondHalfPowerToHeartRate": null,
+  },
+  "coverage": {
+    "cadence": {
+      "coveragePct": 0,
+      "coveredSeconds": 0,
+      "largestGapSeconds": null,
+      "medianSampleIntervalSeconds": null,
+      "missingSeconds": 300,
+      "observedSamples": 0,
+      "zeroSeconds": 0,
+    },
+    "heartRate": {
+      "coveragePct": 0,
+      "coveredSeconds": 0,
+      "largestGapSeconds": null,
+      "medianSampleIntervalSeconds": null,
+      "missingSeconds": 300,
+      "observedSamples": 0,
+      "zeroSeconds": 0,
+    },
+    "power": {
+      "coveragePct": 100,
+      "coveredSeconds": 300,
+      "largestGapSeconds": 1,
+      "medianSampleIntervalSeconds": 1,
+      "missingSeconds": 0,
+      "observedSamples": 300,
+      "zeroSeconds": 0,
+    },
+  },
+  "durationSeconds": 300,
+  "heartRate": {
+    "averageBpm": null,
+    "maximumBpm": null,
+  },
+  "heartRateZones": null,
+  "intervalDetection": null,
+  "intervalSource": "none",
+  "intervals": [],
+  "power": {
+    "averageWatts": 210,
+    "intensityFactor": null,
+    "normalizedWatts": 210,
+    "trainingStressScore": null,
+    "variabilityIndex": 1,
+    "workKilojoules": 63,
+  },
+  "powerZones": null,
+  "unavailableReasons": [
+    {
+      "metric": "intensity_factor",
+      "reason": "no valid FTP was effective for this activity",
+    },
+    {
+      "metric": "training_stress_score",
+      "reason": "no valid FTP was effective for this activity",
+    },
+    {
+      "metric": "heart_rate",
+      "reason": "no heart-rate samples are available",
+    },
+    {
+      "metric": "cadence",
+      "reason": "no cadence samples are available",
+    },
+    {
+      "metric": "aerobic_efficiency",
+      "reason": "no synchronized power and heart-rate samples are available",
+    },
+    {
+      "metric": "cardiac_drift",
+      "reason": "activity is shorter than 20 minutes",
+    },
+  ],
+}
+`;
+
+exports[`computeCyclingWorkoutMetrics > supports native five-second sampling without treating resampled seconds as observations 1`] = `
+{
+  "aerobicEfficiency": {
+    "pairedSeconds": 600,
+    "powerToHeartRateRatio": 1.385,
+  },
+  "cadence": {
+    "averageRpm": 85,
+  },
+  "cardiacDrift": {
+    "firstHalfPowerToHeartRate": null,
+    "method": "equal_elapsed_time_halves_power_to_heart_rate",
+    "pairedSeconds": 0,
+    "percent": null,
+    "secondHalfPowerToHeartRate": null,
+  },
+  "coverage": {
+    "cadence": {
+      "coveragePct": 100,
+      "coveredSeconds": 600,
+      "largestGapSeconds": 5,
+      "medianSampleIntervalSeconds": 5,
+      "missingSeconds": 0,
+      "observedSamples": 120,
+      "zeroSeconds": 0,
+    },
+    "heartRate": {
+      "coveragePct": 100,
+      "coveredSeconds": 600,
+      "largestGapSeconds": 5,
+      "medianSampleIntervalSeconds": 5,
+      "missingSeconds": 0,
+      "observedSamples": 120,
+      "zeroSeconds": 0,
+    },
+    "power": {
+      "coveragePct": 100,
+      "coveredSeconds": 600,
+      "largestGapSeconds": 5,
+      "medianSampleIntervalSeconds": 5,
+      "missingSeconds": 0,
+      "observedSamples": 120,
+      "zeroSeconds": 0,
+    },
+  },
+  "durationSeconds": 600,
+  "heartRate": {
+    "averageBpm": 130,
+    "maximumBpm": 130,
+  },
+  "heartRateZones": null,
+  "intervalDetection": null,
+  "intervalSource": "none",
+  "intervals": [],
+  "power": {
+    "averageWatts": 180,
+    "intensityFactor": null,
+    "normalizedWatts": 180,
+    "trainingStressScore": null,
+    "variabilityIndex": 1,
+    "workKilojoules": 108,
+  },
+  "powerZones": null,
+  "unavailableReasons": [
+    {
+      "metric": "intensity_factor",
+      "reason": "no valid FTP was effective for this activity",
+    },
+    {
+      "metric": "training_stress_score",
+      "reason": "no valid FTP was effective for this activity",
+    },
+    {
+      "metric": "cardiac_drift",
+      "reason": "activity is shorter than 20 minutes",
+    },
+  ],
+}
+`;
+
+exports[`computeCyclingWorkoutMetrics > supports native five-second sampling without treating resampled seconds as observations 2`] = `
+{
+  "aerobicEfficiency": {
+    "pairedSeconds": 600,
+    "powerToHeartRateRatio": 1.385,
+  },
+  "cadence": {
+    "averageRpm": 85,
+  },
+  "cardiacDrift": {
+    "firstHalfPowerToHeartRate": null,
+    "method": "equal_elapsed_time_halves_power_to_heart_rate",
+    "pairedSeconds": 0,
+    "percent": null,
+    "secondHalfPowerToHeartRate": null,
+  },
+  "coverage": {
+    "cadence": {
+      "coveragePct": 100,
+      "coveredSeconds": 600,
+      "largestGapSeconds": 5,
+      "medianSampleIntervalSeconds": 5,
+      "missingSeconds": 0,
+      "observedSamples": 120,
+      "zeroSeconds": 0,
+    },
+    "heartRate": {
+      "coveragePct": 100,
+      "coveredSeconds": 600,
+      "largestGapSeconds": 5,
+      "medianSampleIntervalSeconds": 5,
+      "missingSeconds": 0,
+      "observedSamples": 120,
+      "zeroSeconds": 0,
+    },
+    "power": {
+      "coveragePct": 100,
+      "coveredSeconds": 600,
+      "largestGapSeconds": 5,
+      "medianSampleIntervalSeconds": 5,
+      "missingSeconds": 0,
+      "observedSamples": 120,
+      "zeroSeconds": 0,
+    },
+  },
+  "durationSeconds": 600,
+  "heartRate": {
+    "averageBpm": 130,
+    "maximumBpm": 130,
+  },
+  "heartRateZones": null,
+  "intervalDetection": null,
+  "intervalSource": "none",
+  "intervals": [],
+  "power": {
+    "averageWatts": 180,
+    "intensityFactor": null,
+    "normalizedWatts": 180,
+    "trainingStressScore": null,
+    "variabilityIndex": 1,
+    "workKilojoules": 108,
+  },
+  "powerZones": null,
+  "unavailableReasons": [
+    {
+      "metric": "intensity_factor",
+      "reason": "no valid FTP was effective for this activity",
+    },
+    {
+      "metric": "training_stress_score",
+      "reason": "no valid FTP was effective for this activity",
+    },
+    {
+      "metric": "cardiac_drift",
+      "reason": "activity is shorter than 20 minutes",
+    },
+  ],
+}
+`;
+
+exports[`computeCyclingWorkoutMetrics > uses recorded interval boundaries and targets without relabeling them as inferred 1`] = `
+{
+  "aerobicEfficiency": {
+    "pairedSeconds": 360,
+    "powerToHeartRateRatio": 1.235,
+  },
+  "cadence": {
+    "averageRpm": 81.7,
+  },
+  "cardiacDrift": {
+    "firstHalfPowerToHeartRate": null,
+    "method": "equal_elapsed_time_halves_power_to_heart_rate",
+    "pairedSeconds": 0,
+    "percent": null,
+    "secondHalfPowerToHeartRate": null,
+  },
+  "coverage": {
+    "cadence": {
+      "coveragePct": 100,
+      "coveredSeconds": 360,
+      "largestGapSeconds": 1,
+      "medianSampleIntervalSeconds": 1,
+      "missingSeconds": 0,
+      "observedSamples": 360,
+      "zeroSeconds": 0,
+    },
+    "heartRate": {
+      "coveragePct": 100,
+      "coveredSeconds": 360,
+      "largestGapSeconds": 1,
+      "medianSampleIntervalSeconds": 1,
+      "missingSeconds": 0,
+      "observedSamples": 360,
+      "zeroSeconds": 0,
+    },
+    "power": {
+      "coveragePct": 100,
+      "coveredSeconds": 360,
+      "largestGapSeconds": 1,
+      "medianSampleIntervalSeconds": 1,
+      "missingSeconds": 0,
+      "observedSamples": 360,
+      "zeroSeconds": 0,
+    },
+  },
+  "durationSeconds": 360,
+  "heartRate": {
+    "averageBpm": 135,
+    "maximumBpm": 165,
+  },
+  "heartRateZones": null,
+  "intervalDetection": null,
+  "intervalSource": "recorded",
+  "intervals": [
+    {
+      "averageCadenceRpm": 95,
+      "averageHeartRateBpm": 165,
+      "averagePowerWatts": 300,
+      "completionPct": 100,
+      "durationSeconds": 120,
+      "endOffsetSeconds": 180,
+      "index": 1,
+      "label": "2 min at 300 W",
+      "normalizedPowerWatts": 300,
+      "source": "recorded",
+      "startOffsetSeconds": 60,
+      "targetPowerWatts": 300,
+      "type": "work",
+    },
+  ],
+  "power": {
+    "averageWatts": 166.7,
+    "intensityFactor": 0.912,
+    "normalizedWatts": 227.9,
+    "trainingStressScore": 8.3,
+    "variabilityIndex": 1.367,
+    "workKilojoules": 60,
+  },
+  "powerZones": null,
+  "unavailableReasons": [
+    {
+      "metric": "cardiac_drift",
+      "reason": "activity is shorter than 20 minutes",
+    },
+  ],
+}
+`;

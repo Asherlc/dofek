@@ -85,6 +85,7 @@ describe("CyclingPowerCurveRepository", () => {
       limit: 2,
     });
 
+    expect(result).toMatchSnapshot();
     expect(result.bests).toHaveLength(4);
     expect(result.bests[1]).toMatchObject({
       activity_id: "00000000-0000-4000-8000-000000000010",
@@ -142,6 +143,7 @@ describe("CyclingPowerCurveRepository", () => {
       limit: 50,
     });
 
+    expect(result).toMatchSnapshot();
     expect(result.bests[0]).toMatchObject({
       duration_seconds: 421,
       watts: 315,

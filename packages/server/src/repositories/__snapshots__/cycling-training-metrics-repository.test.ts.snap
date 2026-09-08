@@ -1,0 +1,596 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`CyclingTrainingMetricsRepository > computes a paginated activity from canonical streams and historical settings 1`] = `
+{
+  "activities": [
+    {
+      "activity_id": "00000000-0000-4000-8000-000000000010",
+      "best_powers": [
+        {
+          "duration_seconds": 300,
+          "power_kind": "direct",
+          "quality": {
+            "coverage_pct": 100,
+            "largest_gap_seconds": 5,
+            "median_sample_interval_seconds": 5,
+            "observed_samples": 61,
+            "reasons": [],
+            "status": "high",
+          },
+          "start_offset_seconds": 0,
+          "watts": 200,
+        },
+      ],
+      "date": "2026-06-15",
+      "duration_seconds": 3600,
+      "ended_at": "2026-06-15T16:00:00.000Z",
+      "member_activity_ids": [
+        "00000000-0000-4000-8000-000000000010",
+        "00000000-0000-4000-8000-000000000011",
+      ],
+      "metrics": {
+        "aerobic_efficiency": {
+          "paired_seconds": 3600,
+          "power_to_heart_rate_ratio": 1.429,
+        },
+        "cadence": {
+          "average_rpm": 90,
+        },
+        "cardiac_drift": {
+          "first_half_power_to_heart_rate": 1.429,
+          "method": "equal_elapsed_time_halves_power_to_heart_rate",
+          "paired_seconds": 3600,
+          "percent": 0,
+          "second_half_power_to_heart_rate": 1.429,
+        },
+        "coverage": {
+          "cadence": {
+            "coverage_pct": 100,
+            "covered_seconds": 3600,
+            "largest_gap_seconds": 5,
+            "median_sample_interval_seconds": 5,
+            "missing_seconds": 0,
+            "observed_samples": 720,
+            "zero_seconds": 0,
+          },
+          "heart_rate": {
+            "coverage_pct": 100,
+            "covered_seconds": 3600,
+            "largest_gap_seconds": 5,
+            "median_sample_interval_seconds": 5,
+            "missing_seconds": 0,
+            "observed_samples": 720,
+            "zero_seconds": 0,
+          },
+          "power": {
+            "coverage_pct": 100,
+            "covered_seconds": 3600,
+            "largest_gap_seconds": 5,
+            "median_sample_interval_seconds": 5,
+            "missing_seconds": 0,
+            "observed_samples": 720,
+            "zero_seconds": 0,
+          },
+        },
+        "heart_rate": {
+          "average_bpm": 140,
+          "maximum_bpm": 140,
+        },
+        "heart_rate_zones": {
+          "threshold": 175,
+          "upper_pcts": [
+            0.6,
+            0.7,
+            0.8,
+            0.9,
+          ],
+          "zones": [
+            {
+              "percent": 0,
+              "seconds": 0,
+              "zone": 1,
+            },
+            {
+              "percent": 0,
+              "seconds": 0,
+              "zone": 2,
+            },
+            {
+              "percent": 0,
+              "seconds": 0,
+              "zone": 3,
+            },
+            {
+              "percent": 100,
+              "seconds": 3600,
+              "zone": 4,
+            },
+            {
+              "percent": 0,
+              "seconds": 0,
+              "zone": 5,
+            },
+          ],
+        },
+        "interval_detection": null,
+        "interval_source": "recorded",
+        "intervals": [
+          {
+            "average_cadence_rpm": 90,
+            "average_heart_rate_bpm": 140,
+            "average_power_watts": 200,
+            "completion_pct": null,
+            "duration_seconds": 1200,
+            "end_offset_seconds": 1800,
+            "index": 1,
+            "label": "20 minute effort",
+            "normalized_power_watts": 200,
+            "source": "recorded",
+            "source_member_activity_ids": [
+              "00000000-0000-4000-8000-000000000010",
+              "00000000-0000-4000-8000-000000000011",
+            ],
+            "start_offset_seconds": 600,
+            "target_power_watts": null,
+            "type": "work",
+          },
+        ],
+        "power": {
+          "average_watts": 200,
+          "intensity_factor": 0.8,
+          "normalized_watts": 200,
+          "training_stress_score": 64,
+          "variability_index": 1,
+          "work_kilojoules": 720,
+        },
+        "power_zones": {
+          "threshold": 250,
+          "upper_pcts": [
+            0.55,
+            0.75,
+            0.9,
+            1.05,
+            1.2,
+            1.5,
+          ],
+          "zones": [
+            {
+              "percent": 0,
+              "seconds": 0,
+              "zone": 1,
+            },
+            {
+              "percent": 0,
+              "seconds": 0,
+              "zone": 2,
+            },
+            {
+              "percent": 100,
+              "seconds": 3600,
+              "zone": 3,
+            },
+            {
+              "percent": 0,
+              "seconds": 0,
+              "zone": 4,
+            },
+            {
+              "percent": 0,
+              "seconds": 0,
+              "zone": 5,
+            },
+            {
+              "percent": 0,
+              "seconds": 0,
+              "zone": 6,
+            },
+            {
+              "percent": 0,
+              "seconds": 0,
+              "zone": 7,
+            },
+          ],
+        },
+        "unavailable_reasons": [],
+        "value_kind": "calculated_from_samples",
+      },
+      "modality": "indoor",
+      "name": "Power Zone Endurance",
+      "provenance": {
+        "activity_timezone": "America/New_York",
+        "duplicate_merged": true,
+        "power_measurement_kinds": [
+          "direct",
+        ],
+        "sample_source_providers": [
+          "peloton",
+        ],
+        "timezone_assumption_required": false,
+        "timezone_source": "provider_timezone",
+      },
+      "provider_aggregates": {
+        "average_heart_rate_bpm": 140,
+        "average_power_watts": 200,
+        "kind": "calculated_read_model",
+        "maximum_heart_rate_bpm": 155,
+        "normalized_power_watts": 205,
+      },
+      "provider_id": "peloton",
+      "quality": {
+        "reasons": [],
+        "status": "high",
+        "trustworthy_for_longitudinal_comparison": true,
+      },
+      "source_devices": [
+        "Peloton Bike",
+      ],
+      "source_providers": [
+        "apple_health",
+        "peloton",
+      ],
+      "started_at": "2026-06-15T15:00:00.000Z",
+      "thresholds": {
+        "ftp": {
+          "effective_from": "2026-01-01",
+          "kind": "configured",
+          "source_record_id": "00000000-0000-4000-8000-000000000100",
+          "unit": "W",
+          "value": 250,
+        },
+        "threshold_heart_rate": {
+          "effective_from": "2026-01-01",
+          "kind": "configured",
+          "source_record_id": "00000000-0000-4000-8000-000000000100",
+          "unit": "bpm",
+          "value": 175,
+        },
+      },
+    },
+  ],
+  "definitions": {
+    "aerobic_efficiency": "Mean synchronized power divided by mean synchronized heart rate.",
+    "cardiac_drift": "100 × (first-half power:HR - second-half power:HR) / first-half power:HR, using equal elapsed halves.",
+    "intensity_factor": "Normalized power divided by FTP effective on the activity date.",
+    "interval_detection": "Recorded boundaries take precedence; otherwise work requires a 30-second mean at or above 105% of effective FTP.",
+    "normalized_power": "Fourth root of the mean fourth power of complete 30-second rolling average power.",
+    "training_stress_score": "Elapsed hours multiplied by intensity factor squared and 100.",
+    "variability_index": "Normalized power divided by average power.",
+    "work_kilojoules": "Sum of covered one-second power values divided by 1,000.",
+  },
+  "next_cursor": null,
+  "range": {
+    "end_date": "2026-06-30",
+    "start_date": "2026-06-01",
+    "timezone": "America/Los_Angeles",
+  },
+  "requested_best_power_durations_seconds": [
+    300,
+  ],
+}
+`;
+
+exports[`CyclingTrainingMetricsRepository > returns a stable cursor and never double-counts the lookahead activity 1`] = `
+{
+  "activities": [
+    {
+      "activity_id": "00000000-0000-4000-8000-000000000010",
+      "best_powers": [],
+      "date": "2026-06-15",
+      "duration_seconds": 3600,
+      "ended_at": "2026-06-15T16:00:00.000Z",
+      "member_activity_ids": [
+        "00000000-0000-4000-8000-000000000010",
+        "00000000-0000-4000-8000-000000000011",
+      ],
+      "metrics": {
+        "aerobic_efficiency": {
+          "paired_seconds": 0,
+          "power_to_heart_rate_ratio": null,
+        },
+        "cadence": {
+          "average_rpm": null,
+        },
+        "cardiac_drift": {
+          "first_half_power_to_heart_rate": null,
+          "method": "equal_elapsed_time_halves_power_to_heart_rate",
+          "paired_seconds": 0,
+          "percent": null,
+          "second_half_power_to_heart_rate": null,
+        },
+        "coverage": {
+          "cadence": {
+            "coverage_pct": 0,
+            "covered_seconds": 0,
+            "largest_gap_seconds": null,
+            "median_sample_interval_seconds": null,
+            "missing_seconds": 3600,
+            "observed_samples": 0,
+            "zero_seconds": 0,
+          },
+          "heart_rate": {
+            "coverage_pct": 0,
+            "covered_seconds": 0,
+            "largest_gap_seconds": null,
+            "median_sample_interval_seconds": null,
+            "missing_seconds": 3600,
+            "observed_samples": 0,
+            "zero_seconds": 0,
+          },
+          "power": {
+            "coverage_pct": 0,
+            "covered_seconds": 0,
+            "largest_gap_seconds": null,
+            "median_sample_interval_seconds": null,
+            "missing_seconds": 3600,
+            "observed_samples": 0,
+            "zero_seconds": 0,
+          },
+        },
+        "heart_rate": {
+          "average_bpm": null,
+          "maximum_bpm": null,
+        },
+        "heart_rate_zones": null,
+        "interval_detection": null,
+        "interval_source": "none",
+        "intervals": [],
+        "power": {
+          "average_watts": null,
+          "intensity_factor": null,
+          "normalized_watts": null,
+          "training_stress_score": null,
+          "variability_index": null,
+          "work_kilojoules": null,
+        },
+        "power_zones": null,
+        "unavailable_reasons": [
+          {
+            "metric": "normalized_power",
+            "reason": "power coverage is below 90%",
+          },
+          {
+            "metric": "intensity_factor",
+            "reason": "no valid FTP was effective for this activity",
+          },
+          {
+            "metric": "training_stress_score",
+            "reason": "no valid FTP was effective for this activity",
+          },
+          {
+            "metric": "heart_rate",
+            "reason": "no heart-rate samples are available",
+          },
+          {
+            "metric": "cadence",
+            "reason": "no cadence samples are available",
+          },
+          {
+            "metric": "aerobic_efficiency",
+            "reason": "no synchronized power and heart-rate samples are available",
+          },
+          {
+            "metric": "cardiac_drift",
+            "reason": "paired power and heart-rate coverage is below 90% in one or both halves",
+          },
+        ],
+        "value_kind": "calculated_from_samples",
+      },
+      "modality": "indoor",
+      "name": "Power Zone Endurance",
+      "provenance": {
+        "activity_timezone": "America/New_York",
+        "duplicate_merged": true,
+        "power_measurement_kinds": [],
+        "sample_source_providers": [],
+        "timezone_assumption_required": false,
+        "timezone_source": "provider_timezone",
+      },
+      "provider_aggregates": {
+        "average_heart_rate_bpm": 140,
+        "average_power_watts": 200,
+        "kind": "calculated_read_model",
+        "maximum_heart_rate_bpm": 155,
+        "normalized_power_watts": 205,
+      },
+      "provider_id": "peloton",
+      "quality": {
+        "reasons": [
+          "Power coverage is incomplete",
+          "Power measurement provenance is incomplete",
+        ],
+        "status": "limited",
+        "trustworthy_for_longitudinal_comparison": false,
+      },
+      "source_devices": [],
+      "source_providers": [
+        "apple_health",
+        "peloton",
+      ],
+      "started_at": "2026-06-15T15:00:00.000Z",
+      "thresholds": {
+        "ftp": null,
+        "threshold_heart_rate": null,
+      },
+    },
+  ],
+  "definitions": {
+    "aerobic_efficiency": "Mean synchronized power divided by mean synchronized heart rate.",
+    "cardiac_drift": "100 × (first-half power:HR - second-half power:HR) / first-half power:HR, using equal elapsed halves.",
+    "intensity_factor": "Normalized power divided by FTP effective on the activity date.",
+    "interval_detection": "Recorded boundaries take precedence; otherwise work requires a 30-second mean at or above 105% of effective FTP.",
+    "normalized_power": "Fourth root of the mean fourth power of complete 30-second rolling average power.",
+    "training_stress_score": "Elapsed hours multiplied by intensity factor squared and 100.",
+    "variability_index": "Normalized power divided by average power.",
+    "work_kilojoules": "Sum of covered one-second power values divided by 1,000.",
+  },
+  "next_cursor": "eyJ2ZXJzaW9uIjoxLCJ1c2VySWQiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEiLCJzaGFwZSI6Im10WVJaaVp5V3hSTVlrZEhpUXpYVlMiLCJzdGFydGVkQXQiOiIyMDI2LTA2LTE1VDE1OjAwOjAwLjAwMFoiLCJhY3Rpdml0eUlkIjoiMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDEwIn0",
+  "range": {
+    "end_date": "2026-06-30",
+    "start_date": "2026-06-01",
+    "timezone": "UTC",
+  },
+  "requested_best_power_durations_seconds": [],
+}
+`;
+
+exports[`CyclingTrainingMetricsRepository > uses the setting effective on each activity date and explains missing FTP 1`] = `
+{
+  "activities": [
+    {
+      "activity_id": "00000000-0000-4000-8000-000000000012",
+      "best_powers": [],
+      "date": "2025-12-20",
+      "duration_seconds": 300,
+      "ended_at": "2025-12-20T15:05:00.000Z",
+      "member_activity_ids": [
+        "00000000-0000-4000-8000-000000000012",
+      ],
+      "metrics": {
+        "aerobic_efficiency": {
+          "paired_seconds": 0,
+          "power_to_heart_rate_ratio": null,
+        },
+        "cadence": {
+          "average_rpm": null,
+        },
+        "cardiac_drift": {
+          "first_half_power_to_heart_rate": null,
+          "method": "equal_elapsed_time_halves_power_to_heart_rate",
+          "paired_seconds": 0,
+          "percent": null,
+          "second_half_power_to_heart_rate": null,
+        },
+        "coverage": {
+          "cadence": {
+            "coverage_pct": 0,
+            "covered_seconds": 0,
+            "largest_gap_seconds": null,
+            "median_sample_interval_seconds": null,
+            "missing_seconds": 300,
+            "observed_samples": 0,
+            "zero_seconds": 0,
+          },
+          "heart_rate": {
+            "coverage_pct": 0,
+            "covered_seconds": 0,
+            "largest_gap_seconds": null,
+            "median_sample_interval_seconds": null,
+            "missing_seconds": 300,
+            "observed_samples": 0,
+            "zero_seconds": 0,
+          },
+          "power": {
+            "coverage_pct": 100,
+            "covered_seconds": 300,
+            "largest_gap_seconds": 1,
+            "median_sample_interval_seconds": 1,
+            "missing_seconds": 0,
+            "observed_samples": 300,
+            "zero_seconds": 0,
+          },
+        },
+        "heart_rate": {
+          "average_bpm": null,
+          "maximum_bpm": null,
+        },
+        "heart_rate_zones": null,
+        "interval_detection": null,
+        "interval_source": "none",
+        "intervals": [],
+        "power": {
+          "average_watts": 200,
+          "intensity_factor": null,
+          "normalized_watts": 200,
+          "training_stress_score": null,
+          "variability_index": 1,
+          "work_kilojoules": 60,
+        },
+        "power_zones": null,
+        "unavailable_reasons": [
+          {
+            "metric": "intensity_factor",
+            "reason": "no valid FTP was effective for this activity",
+          },
+          {
+            "metric": "training_stress_score",
+            "reason": "no valid FTP was effective for this activity",
+          },
+          {
+            "metric": "heart_rate",
+            "reason": "no heart-rate samples are available",
+          },
+          {
+            "metric": "cadence",
+            "reason": "no cadence samples are available",
+          },
+          {
+            "metric": "aerobic_efficiency",
+            "reason": "no synchronized power and heart-rate samples are available",
+          },
+          {
+            "metric": "cardiac_drift",
+            "reason": "activity is shorter than 20 minutes",
+          },
+        ],
+        "value_kind": "calculated_from_samples",
+      },
+      "modality": "indoor",
+      "name": "Power Zone Endurance",
+      "provenance": {
+        "activity_timezone": "America/New_York",
+        "duplicate_merged": false,
+        "power_measurement_kinds": [
+          "direct",
+        ],
+        "sample_source_providers": [
+          "wahoo",
+        ],
+        "timezone_assumption_required": false,
+        "timezone_source": "provider_timezone",
+      },
+      "provider_aggregates": {
+        "average_heart_rate_bpm": 140,
+        "average_power_watts": 200,
+        "kind": "calculated_read_model",
+        "maximum_heart_rate_bpm": 155,
+        "normalized_power_watts": 205,
+      },
+      "provider_id": "peloton",
+      "quality": {
+        "reasons": [],
+        "status": "high",
+        "trustworthy_for_longitudinal_comparison": true,
+      },
+      "source_devices": [
+        "KICKR",
+      ],
+      "source_providers": [
+        "apple_health",
+        "peloton",
+      ],
+      "started_at": "2025-12-20T15:00:00.000Z",
+      "thresholds": {
+        "ftp": null,
+        "threshold_heart_rate": null,
+      },
+    },
+  ],
+  "definitions": {
+    "aerobic_efficiency": "Mean synchronized power divided by mean synchronized heart rate.",
+    "cardiac_drift": "100 × (first-half power:HR - second-half power:HR) / first-half power:HR, using equal elapsed halves.",
+    "intensity_factor": "Normalized power divided by FTP effective on the activity date.",
+    "interval_detection": "Recorded boundaries take precedence; otherwise work requires a 30-second mean at or above 105% of effective FTP.",
+    "normalized_power": "Fourth root of the mean fourth power of complete 30-second rolling average power.",
+    "training_stress_score": "Elapsed hours multiplied by intensity factor squared and 100.",
+    "variability_index": "Normalized power divided by average power.",
+    "work_kilojoules": "Sum of covered one-second power values divided by 1,000.",
+  },
+  "next_cursor": null,
+  "range": {
+    "end_date": "2025-12-31",
+    "start_date": "2025-12-01",
+    "timezone": "UTC",
+  },
+  "requested_best_power_durations_seconds": [],
+}
+`;

@@ -107,6 +107,7 @@ describe("AnalyticalTrainingLoadRepository", () => {
 
     const result = await repository.listRange("2026-06-28", "2026-06-28");
 
+    expect(result).toMatchSnapshot();
     expect(result.range).toEqual({
       start_date: "2026-06-28",
       end_date: "2026-06-28",
@@ -223,6 +224,7 @@ describe("AnalyticalTrainingLoadRepository", () => {
 
     const result = await repository.listRange("2026-06-14", "2026-06-15");
 
+    expect(result).toMatchSnapshot();
     expect(result.rows[0]?.channels.cycling_power_tss).toMatchObject({
       daily_value: null,
       status: "unavailable",
@@ -317,6 +319,7 @@ describe("AnalyticalTrainingLoadRepository", () => {
       "UTC",
     ).listRange("2026-06-01", "2026-06-01", { providers: [], modalities: [] }, "source_context");
 
+    expect(result).toMatchSnapshot();
     const channel = result.rows[0]?.channels.cycling_power_tss;
     expect(channel?.source_activity_ids).toHaveLength(100);
     expect(channel?.coverage).toMatchObject({
