@@ -206,20 +206,10 @@ from the data automatically:
 
 Historical replay must be an explicit, bounded operator action. Supply both
 `--event-time-start` and `--event-time-end`, select only the required
-microbatch models, and monitor ClickHouse capacity while the run is active:
-
-```sh
-pnpm tsx scripts/with-env.ts -- env \
-  DBT_TARGET=dev \
-  UV_PROJECT_ENVIRONMENT=../.venv-analytics \
-  uv run --project analytics dbt run \
-  --project-dir analytics \
-  --profiles-dir analytics \
-  --threads 1 \
-  --event-time-start "2025-01-01" \
-  --event-time-end "2025-02-01" \
-  --select "sensor_scalar_sample deduped_sensor activity_sensor_sample"
-```
+microbatch models, and monitor ClickHouse capacity while the run is active.
+For stable activity-group repair, use the ordered procedure below: its bounded
+microbatch command intentionally runs only after stable identity and membership
+have been rebuilt.
 
 For a microbatch replay, choose the smallest interval that contains the data
 being repaired and advance long backfills in separately observed windows. This
@@ -279,14 +269,47 @@ earlier verification fails:
      AND _peerdb_is_deleted = 0
    ORDER BY id;
    ```
-3. Run the bounded three-model microbatch command above for the affected
-   historical interval. Its dependency order is `sensor_scalar_sample`,
-   `deduped_sensor`, then `activity_sensor_sample`. The replay is required for
-   historical membership changes and for provenance written before migration
-   0077; a normal incremental run processes only recent batches.
-4. Before the full refresh, calculate `required_lookback_days` below. The
-   value must cover every retained activity that should remain in the rebuilt
-   identity, payload, and summary tables. dbt recommends rebuilding an
+
+3. Rebuild stable identity and membership before any sensor-to-activity
+   association. This selection includes the source and duplicate-evidence
+   inputs needed by `deduped_activities`, followed by its member projection:
+
+   ```sh
+   pnpm tsx scripts/with-env.ts -- env \
+     DBT_TARGET=dev \
+     UV_PROJECT_ENVIRONMENT=../.venv-analytics \
+     uv run --project analytics dbt build \
+     --project-dir analytics \
+     --profiles-dir analytics \
+     --threads 1 \
+     --full-refresh \
+     --select "activity_source_records activity_duplicate_matches activity_duplicate_groups deduped_activities deduped_activity_members"
+   ```
+
+4. Run the bounded sensor microbatch for the affected historical interval:
+
+   ```sh
+   pnpm tsx scripts/with-env.ts -- env \
+     DBT_TARGET=dev \
+     UV_PROJECT_ENVIRONMENT=../.venv-analytics \
+     uv run --project analytics dbt run \
+     --project-dir analytics \
+     --profiles-dir analytics \
+     --threads 1 \
+     --event-time-start "2025-01-01" \
+     --event-time-end "2025-02-01" \
+     --select "sensor_scalar_sample deduped_sensor activity_sensor_sample"
+   ```
+
+   Replace both dates with the smallest interval containing the affected
+   samples. The dependency order is `sensor_scalar_sample`, `deduped_sensor`,
+   then `activity_sensor_sample`. The replay is required for historical
+   membership changes and for provenance written before migration 0077; a
+   normal incremental run processes only recent batches.
+
+5. Before the downstream full refresh, calculate `required_lookback_days`
+   below. The value must cover every retained activity that should remain in
+   the rebuilt identity, payload, and summary tables. dbt recommends rebuilding an
    incremental model when its logic changes because historical transformations
    remain in the target table, using `--full-refresh` for the rebuild:
 <https://docs.getdbt.com/docs/build/incremental-models#how-do-i-rebuild-an-incremental-model>.
@@ -328,19 +351,22 @@ pnpm tsx scripts/with-env.ts -- env \
   --threads 1 \
   --full-refresh \
   --vars '{"initial_lookback_days": 3650}' \
-  --select "activity_source_records activity_duplicate_matches activity_duplicate_groups deduped_activities deduped_activity_members activity_location_sample activity_sensor_summary_rows activity_location_summary_rows activity_stream_points activity_summary_rows activity_vo2max_estimate"
+  --select "deduped_activities deduped_activity_members activity_location_sample activity_sensor_summary_rows activity_location_summary_rows activity_stream_points activity_summary_rows activity_vo2max_estimate"
 ```
 
 The lookback is a full-refresh retention boundary, not just the scope of the
 semantic change. A full refresh drops rows older than
 `initial_lookback_days`, and later incremental runs will not re-add those
-unchanged activities. The eleven selected models must all report `PASS` with
+unchanged activities. The eight selected models must all report `PASS` with
 no warnings or errors before the operator treats the rebuild as complete.
 `activity_sensor_sample` is intentionally absent because it sets
-`full_refresh=false`; the bounded microbatch in step 3 is its historical
-rebuild path. dbt orders the selected identity and membership models before
-their location, stream, summary, and VO2 max consumers through their `ref()`
-dependencies.
+`full_refresh=false`; the bounded microbatch in step 4 is its historical
+rebuild path. `activity_source_records` and the duplicate projections are not
+rebuilt twice. `deduped_activities` and `deduped_activity_members` are
+intentionally refreshed again because representative sensor richness consumes
+the newly replayed `deduped_sensor` provenance. dbt then orders those models
+before their location, stream, summary, and VO2 max consumers through their
+`ref()` dependencies.
 
 The `cycling_activity` modality normalization requires the same explicit
 operator action for existing append-incremental rows. Before the repair, record

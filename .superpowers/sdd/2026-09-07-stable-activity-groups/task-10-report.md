@@ -199,11 +199,11 @@ the changed SQL builders were exercised by the passing real ClickHouse suite.
 2. Verify the regular PostgreSQL `fitness.v_activity` view directly before CDC;
    it is not a relational projection to rebuild.
 3. Follow the anchored canonical analytics procedure: apply ClickHouse
-   migrations 0076 through 0078, verify CDC membership, replay historical
-   provenance with the documented bounded microbatch when required, and run
-   the retention-aware full refresh in dependency order. The documented
-   preflight lookback must be passed explicitly; the default 120-day retention
-   is never acceptable for historical repair.
+   migrations 0076 through 0078, verify CDC membership, rebuild stable
+   identity/member models, replay the bounded historical sensor microbatch,
+   and then full-refresh downstream consumers in dependency order. The
+   documented preflight lookback must be passed explicitly; the default
+   120-day retention is never acceptable for historical repair.
 4. Verify stable/member/alias resolution, structured and sensor union, and
    finalized ClickHouse rows.
 5. Re-import Strong only when the raw stored source or set rows themselves are
@@ -219,16 +219,17 @@ link-check script; direct internal-link validation found the canonical analytics
 heading and the runbook reference to its generated anchor. `rtk git diff
 --check` produced no output.
 
-The follow-up documentation correction made the linked analytics procedure
-executable without duplicating it in the activity repair runbook. The canonical sequence now
-prevents default retention. Selector validation under dbt 1.11.12 and
-dbt-clickhouse 1.10.1 resolved the three-model microbatch selection to
-`sensor_scalar_sample`, `deduped_sensor`, and `activity_sensor_sample`; the
-eleven-model full-refresh selection resolved every named identity, location,
-stream, summary, and VO2 max model; and the existing cycling selector resolved
-`cycling_activity`. Each `dbt ls` command exited zero. The first in-sandbox
-attempt failed before dbt because uv could not read its user cache; the
-identical read-only validation outside that filesystem sandbox passed.
+The canonical analytics procedure now uses three validated stages after
+migrations and CDC: a five-model stable identity/member full refresh, the
+three-model bounded sensor microbatch, and an eight-model retention-aware
+downstream full refresh. `dbt ls` under dbt 1.11.12 and dbt-clickhouse 1.10.1
+resolved every name in all three selectors and each command exited zero.
+JSON dependency output confirmed `activity_sensor_sample` reads
+`deduped_activities` and `deduped_sensor`; the downstream location, stream,
+summary, and VO2 max models read the rebuilt identity/member and sensor
+models. `deduped_activities` and `deduped_activity_members` intentionally run
+again after the sensor replay because representative richness consumes the
+newly replayed sensor provenance; source and duplicate projections do not.
 
 `docs/production-incident-baseline.md` records the generalized symptoms, user impact, captured technical failures, proven representative-coupling causes, implemented code/test repair, local stale-schema evidence, and remaining deployment/historical-refresh risk. Historical attribution of the set-row transposition writer remains explicitly unknown because current parser and persistence fixtures do not reproduce it.
 

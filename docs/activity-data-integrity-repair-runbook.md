@@ -77,11 +77,12 @@ rows are intact, repair derived state in this order:
    follow the canonical
    [microbatch replay and historical full-refresh procedure](../analytics/README.md#microbatch-start-bounds-and-historical-backfills)
    exactly. Apply ClickHouse migrations 0076 through 0078, verify that the
-   reconciled PostgreSQL membership has reached ClickHouse through CDC, and,
-   when the documented provenance condition applies, run the documented
-   bounded microbatch replay in its stated order. Then calculate and record
-   `required_lookback_days` with the documented preflight and run the documented
-   retention-aware full refresh in dependency order. Its command must include
+   reconciled PostgreSQL membership has reached ClickHouse through CDC, rebuild
+   the stable identity/member models with the documented selector, and only
+   then run the bounded sensor microbatch in its stated order. After that
+   replay, calculate and record `required_lookback_days` with the documented
+   preflight and run the downstream retention-aware full refresh in dependency
+   order. Its command must include
    an explicit `initial_lookback_days` that covers the preflight value. Never
    omit that variable or accept the 120-day default; stop before running dbt if
    the preflight value is missing or the proposed command does not cover it.
