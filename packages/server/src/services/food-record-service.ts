@@ -140,14 +140,19 @@ export type FoodRecordErrorCode =
   | "ACCOUNT_ERASURE_ACTIVE";
 
 export class FoodRecordError extends Error {
+  readonly code: FoodRecordErrorCode;
+  readonly details: Record<string, unknown>;
+
   constructor(
-    readonly code: FoodRecordErrorCode,
+    code: FoodRecordErrorCode,
     message: string,
-    readonly details: Record<string, unknown> = {},
+    details: Record<string, unknown> = {},
     options?: ErrorOptions,
   ) {
     super(message, options);
     this.name = "FoodRecordError";
+    this.code = code;
+    this.details = details;
   }
 }
 

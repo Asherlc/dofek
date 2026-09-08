@@ -118,12 +118,14 @@ export type FoodRecordHistoryPage = z.infer<typeof foodRecordHistoryPageSchema>;
 
 export class FoodRecordPreconditionError extends Error {
   readonly code = "PRECONDITION_FAILED";
+  readonly sourceEntryId: string;
 
   constructor(
-    readonly sourceEntryId: string,
+    sourceEntryId: string,
     message = "This food entry has no stable provider external ID and cannot be modified safely.",
   ) {
     super(message);
     this.name = "FoodRecordPreconditionError";
+    this.sourceEntryId = sourceEntryId;
   }
 }

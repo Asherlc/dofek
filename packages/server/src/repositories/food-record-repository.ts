@@ -185,21 +185,29 @@ export interface FoodRecordRepositoryCommands {
 
 export class FoodRecordNotFoundError extends Error {
   readonly code = "NOT_FOUND";
-  constructor(readonly recordId: string) {
+  readonly recordId: string;
+
+  constructor(recordId: string) {
     super("The food record was not found.");
     this.name = "FoodRecordNotFoundError";
+    this.recordId = recordId;
   }
 }
 
 export class FoodRecordConflictError extends Error {
   readonly code = "CONFLICT";
+  readonly recordId: string;
+  readonly currentVersion: string | null;
+
   constructor(
-    readonly recordId: string,
-    readonly currentVersion: string | null,
+    recordId: string,
+    currentVersion: string | null,
     message = "The food record changed. Read it again and retry with the current version.",
   ) {
     super(message);
     this.name = "FoodRecordConflictError";
+    this.recordId = recordId;
+    this.currentVersion = currentVersion;
   }
 }
 
