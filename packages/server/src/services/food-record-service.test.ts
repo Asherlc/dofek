@@ -1,3 +1,4 @@
+import { AccountErasureUserFencedError } from "dofek/db/account-erasure";
 import { captureException } from "dofek/lib/error-reporting";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -225,6 +226,37 @@ describe("FoodRecordService", () => {
     expect(hashes[0]).toBe(hashes[1]);
   });
 
+  it("changes the command hash when mutation content or operation changes", async () => {
+    const hashes: string[] = [];
+    const appendChange = vi.fn(async (input) => {
+      hashes.push(input.requestHash);
+      return head({ kind: input.kind });
+    });
+    const { service } = setup({ appendChange });
+
+    await service.update({
+      recordId,
+      expectedVersion: firstVersion,
+      requestId,
+      set: { meal: "dinner" },
+      clear: [],
+      nutrientSet: {},
+      nutrientClear: [],
+    });
+    await service.update({
+      recordId,
+      expectedVersion: firstVersion,
+      requestId,
+      set: { meal: "lunch" },
+      clear: [],
+      nutrientSet: {},
+      nutrientClear: [],
+    });
+    await service.delete({ recordId, expectedVersion: firstVersion, requestId });
+
+    expect(new Set(hashes).size).toBe(3);
+  });
+
   it("preserves explicit null values while translating clear lists to clear decisions", async () => {
     const { repository, service } = setup();
 
@@ -252,6 +284,33 @@ describe("FoodRecordService", () => {
     );
   });
 
+  it("deduplicates and sorts repeated clear decisions", async () => {
+    const { repository, service } = setup();
+
+    await service.update({
+      recordId,
+      expectedVersion: firstVersion,
+      requestId,
+      set: {},
+      clear: ["meal", "category", "meal"],
+      nutrientSet: {},
+      nutrientClear: ["protein", "calories", "protein"],
+    });
+
+    expect(repository.appendChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fields: {
+          category: { operation: "clear" },
+          meal: { operation: "clear" },
+        },
+        nutrients: {
+          calories: { operation: "clear", amount: null },
+          protein: { operation: "clear", amount: null },
+        },
+      }),
+    );
+  });
+
   it("returns the original receipt and current record for replay without invalidation metadata", async () => {
     const current = record({ version: secondVersion, foodName: "Current result" });
     const { invalidateNutritionCaches, repository, service } = setup({
@@ -271,6 +330,19 @@ describe("FoodRecordService", () => {
     expect(invalidateNutritionCaches).not.toHaveBeenCalled();
   });
 
+  it("returns an empty affected-date list for a replayed create", async () => {
+    const { invalidateNutritionCaches, service } = setup({
+      createSourceAndIdentity: vi.fn(async () =>
+        head({ kind: "create", predecessorVersion: null, replayed: true }),
+      ),
+    });
+
+    await expect(
+      service.create({ requestId, date: "2026-09-07", foodName: "Oats", nutrients: {} }),
+    ).resolves.toMatchObject({ affectedDates: [] });
+    expect(invalidateNutritionCaches).not.toHaveBeenCalled();
+  });
+
   it("returns actionable conflicts for changed request bodies and stale nullable versions", async () => {
     const conflict = new FoodRecordConflictError(recordId, secondVersion, "Request ID was reused");
     const { service } = setup({ appendChange: vi.fn(async () => Promise.reject(conflict)) });
@@ -282,6 +354,63 @@ describe("FoodRecordService", () => {
         details: { recordId, currentVersion: secondVersion },
       }),
     );
+  });
+
+  it.each([
+    [
+      new FoodRecordNotFoundError(recordId),
+      "NOT_FOUND",
+      "The food record was not found.",
+      { recordId },
+    ],
+    [
+      new FoodRecordPreconditionError(sourceEntryId),
+      "PRECONDITION_FAILED",
+      "This food entry has no stable provider external ID and cannot be modified safely.",
+      { sourceEntryId },
+    ],
+    [
+      new FoodRecordConflictError(recordId, secondVersion),
+      "CONFLICT",
+      "The food record changed. Read it again and retry with the current version.",
+      { recordId, currentVersion: secondVersion },
+    ],
+  ] as const)(
+    "preserves exact domain error details for %s",
+    async (cause, code, message, details) => {
+      const { service } = setup({ appendChange: vi.fn(async () => Promise.reject(cause)) });
+      const thrown = await service
+        .delete({ recordId, expectedVersion: firstVersion, requestId })
+        .catch((error: unknown) => error);
+
+      expect(thrown).toBeInstanceOf(FoodRecordError);
+      expect(thrown).toMatchObject({ code, message, details, cause });
+    },
+  );
+
+  it("passes an existing food record error through unchanged", async () => {
+    const original = new FoodRecordError("INVALID_ARGUMENT", "Already mapped", { field: "meal" });
+    const { service } = setup({ appendChange: vi.fn(async () => Promise.reject(original)) });
+
+    await expect(
+      service.delete({ recordId, expectedVersion: firstVersion, requestId }),
+    ).rejects.toBe(original);
+  });
+
+  it("maps an active account-erasure fence to an actionable domain error", async () => {
+    const cause = new AccountErasureUserFencedError();
+    const { service } = setup({ appendChange: vi.fn(async () => Promise.reject(cause)) });
+    const thrown = await service
+      .delete({ recordId, expectedVersion: firstVersion, requestId })
+      .catch((error: unknown) => error);
+
+    expect(thrown).toMatchObject({
+      code: "ACCOUNT_ERASURE_ACTIVE",
+      message:
+        "Account deletion is active. Wait for deletion to complete before changing food records.",
+      details: {},
+      cause,
+    });
   });
 
   it("reports source ownership and row-fallback failures as domain errors", async () => {
@@ -325,6 +454,102 @@ describe("FoodRecordService", () => {
       }),
     ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
     expect(withUserWriteFence).not.toHaveBeenCalled();
+  });
+
+  it("reports field, nutrient, and empty-update validation issues precisely", async () => {
+    const { service, withUserWriteFence } = setup();
+    const invalid = await service
+      .update({
+        recordId,
+        expectedVersion: firstVersion,
+        requestId,
+        set: { meal: "dinner" },
+        clear: ["meal"],
+        nutrientSet: { protein: 12 },
+        nutrientClear: ["protein"],
+      })
+      .catch((error: unknown) => error);
+    expect(invalid).toMatchObject({
+      code: "INVALID_ARGUMENT",
+      message: "The food record command is invalid.",
+      details: {
+        issues: [
+          { path: "clear", message: "meal cannot be both set and cleared" },
+          { path: "nutrientClear", message: "protein cannot be both set and cleared" },
+        ],
+      },
+    });
+
+    const empty = await service
+      .update({
+        recordId,
+        expectedVersion: firstVersion,
+        requestId,
+        set: {},
+        clear: [],
+        nutrientSet: {},
+        nutrientClear: [],
+      })
+      .catch((error: unknown) => error);
+    expect(empty).toMatchObject({
+      details: { issues: [{ path: "", message: "Update must contain at least one decision" }] },
+    });
+    expect(withUserWriteFence).not.toHaveBeenCalled();
+  });
+
+  it("fails explicitly when a created or current food snapshot is missing", async () => {
+    const missingCreate = setup({ get: vi.fn(async () => null) });
+    await expect(
+      missingCreate.service.create({
+        requestId,
+        date: "2026-09-07",
+        foodName: "Oats",
+        nutrients: {},
+      }),
+    ).rejects.toThrow(`Food record snapshot ${recordId}@${secondVersion} was not found`);
+
+    const missingCurrent = setup({ get: vi.fn(async () => null) });
+    await expect(
+      missingCurrent.service.delete({ recordId, expectedVersion: firstVersion, requestId }),
+    ).rejects.toThrow(`Food record snapshot ${recordId}@${secondVersion} was not found`);
+  });
+
+  it("labels a missing source predecessor snapshot explicitly", async () => {
+    const { service } = setup({
+      appendChange: vi.fn(async () => head({ predecessorVersion: null })),
+      getAtVersion: vi.fn(async () => null),
+    });
+
+    await expect(
+      service.update({
+        recordId,
+        expectedVersion: null,
+        requestId,
+        set: { date: "2026-09-08" },
+        clear: [],
+        nutrientSet: {},
+        nutrientClear: [],
+      }),
+    ).rejects.toThrow(`Food record snapshot ${recordId}@source was not found`);
+  });
+
+  it.each([
+    ["delete", true],
+    ["restore", false],
+  ] as const)("writes and invalidates a %s visibility decision", async (kind, deleted) => {
+    const { invalidateNutritionCaches, repository, service } = setup({
+      appendChange: vi.fn(async () => head({ kind })),
+    });
+    const command = { recordId, expectedVersion: firstVersion, requestId };
+
+    const result =
+      kind === "delete" ? await service.delete(command) : await service.restore(command);
+
+    expect(repository.appendChange).toHaveBeenCalledWith(
+      expect.objectContaining({ kind, deleted, fields: {}, nutrients: {} }),
+    );
+    expect(result.affectedDates).toEqual(["2026-09-07"]);
+    expect(invalidateNutritionCaches).toHaveBeenCalledWith(userId);
   });
 
   it("returns sorted old and new dates for a date-moving update", async () => {
