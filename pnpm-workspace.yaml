@@ -43,7 +43,7 @@ audit:
 
 overrides:
   "@expo/dom-webview": 55.0.5
-  "@expo/xcpretty>js-yaml": 4.3.1
+  "@expo/xcpretty>js-yaml": 4.3.2
   "@grpc/grpc-js": 1.14.4
   "@opentelemetry/core": 2.9.0
   "@protobufjs/utf8": 1.1.2

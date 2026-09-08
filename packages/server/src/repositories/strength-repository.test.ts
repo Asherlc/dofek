@@ -1021,7 +1021,7 @@ describe("StrengthRepository", () => {
       }
     });
 
-    it("sorts unioned sets by index, type, weight, reps, and duration with nulls first", async () => {
+    it("sorts merged sets by index, type, weight, reps, and duration with nulls first", async () => {
       const setValues = [
         { set_index: 1, set_type: "working", weight_kg: 1, reps: 1, duration_seconds: 1 },
         { set_index: 0, set_type: "working", weight_kg: 2, reps: 1, duration_seconds: 1 },
