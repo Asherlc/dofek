@@ -25729,3 +25729,21 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   freshness separately; zero consumer lag alone is not an object-age audit.
   The Axiom MCP token remains expired; task-local Swarm logs supplied the fatal
   evidence. No additional resilience knob was introduced.
+
+## 2026-09-08 — Expo patch drift blocked MCP injury logging PR validation
+
+- **Scope / impact:** [PR #2685](https://github.com/Asherlc/dofek/pull/2685)
+  validation only; no production impact. The `Build Mobile / Metro Bundle` job
+  stopped before bundle export.
+- **Evidence / root cause:** [Job 102142563023](https://github.com/Asherlc/dofek/actions/runs/34250146372/job/102142563023)
+  failed at `cd packages/mobile && pnpm expo install --check`. Its first fatal
+  diagnostic reported `expo`, `expo-modules-core`, and `expo-router` were one
+  patch behind the SDK 57 compatibility set. Expo documents this command as a
+  dependency-version validation check
+  ([Expo CLI](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation)).
+- **Direct fix:** Pin those three packages to the current compatible stable
+  patches: 57.0.21, 57.0.17, and 57.0.20, respectively. No retry, timeout,
+  compatibility exclusion, or CI bypass was added.
+- **Validation / follow-up:** The exact dependency check and both CI-equivalent
+  iOS export commands pass locally. Require fresh green CI before merging the
+  PR.
