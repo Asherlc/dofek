@@ -314,7 +314,7 @@ describe("SettingsPage categories", () => {
     render(<SettingsPage />);
 
     expect(screen.getByText("DataSourcesPanel")).toBeTruthy();
-    expect(screen.getByText("Zepp App Pairing")).toBeTruthy();
+    expect(screen.getByText("Pair your Zepp app")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Billing" })).toBeNull();
   });
 

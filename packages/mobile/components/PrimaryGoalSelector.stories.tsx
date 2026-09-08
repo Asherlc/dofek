@@ -13,10 +13,7 @@ function PrimaryGoalSelectorPreview({ initialGoal }: { initialGoal: PrimaryGoal 
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Primary goal</Text>
-      <Text style={styles.subtitle}>
-        Choose the outcome Dofek should optimize toward. You can change this anytime.
-      </Text>
+      <Text style={styles.title}>What would you like to focus on?</Text>
       <View style={styles.optionsContainer}>
         {PRIMARY_GOAL_OPTIONS.map((option) => {
           const isSelected = currentGoal === option.id;
@@ -71,10 +68,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "700",
     color: colors.text,
-  },
-  subtitle: {
-    fontSize: 13,
-    color: colors.textSecondary,
   },
   optionsContainer: {
     gap: 8,

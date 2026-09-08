@@ -121,12 +121,11 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
       <div className="flex items-start justify-between mb-4">
         <div>
           <h3 className="text-muted text-sm font-medium mb-1">
-            {data.epistemicStatus.label} sleep need tonight
+            {data.estimateMetadata.summaryLabel}
           </h3>
           <p className="text-4xl font-bold text-blue-400">
             {`${data.estimateMetadata.valueQualifier} ${formatDurationMinutes(data.totalNeedMinutes)}`}
           </p>
-          <p className="text-subtle text-sm">{data.estimateMetadata.summaryLabel}</p>
         </div>
         <a
           aria-label="View sleep source data"
@@ -159,13 +158,13 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
         </div>
       </div>
 
-      <div className="mb-4 space-y-1 text-xs text-muted">
+      <p className="mb-3 text-xs text-muted">{data.estimateMetadata.limitationLabel}</p>
+      <details className="mb-4 space-y-1 text-xs text-muted">
+        <summary className="cursor-pointer">How this is calculated</summary>
+        <p>{data.estimateMetadata.methodLabel}</p>
         <p>{data.estimateMetadata.basisLabel}</p>
         <p>{data.estimateMetadata.coverageLabel}</p>
-        <p>{data.estimateMetadata.methodLabel}</p>
-        <p>{data.estimateMetadata.uncertaintyLabel}</p>
-        <p>{data.estimateMetadata.limitationLabel}</p>
-      </div>
+      </details>
 
       {/* Recent nights chart */}
       {data.recentNights.length > 0 && (

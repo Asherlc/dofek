@@ -97,7 +97,7 @@ describe("LifeEventsPanel", () => {
     render(<LifeEventsPanel />);
 
     expect(screen.getByTestId("query-state-loading")).toBeDefined();
-    expect(screen.queryByText("No life events yet.")).toBeNull();
+    expect(screen.queryByText("No life events to display.")).toBeNull();
   });
 
   it("shows the empty state after a successful list response with no life events", () => {
@@ -105,7 +105,7 @@ describe("LifeEventsPanel", () => {
 
     render(<LifeEventsPanel />);
 
-    expect(screen.getByText("No life events yet.")).toBeDefined();
+    expect(screen.getByText("No life events to display.")).toBeDefined();
   });
 
   it("renders an initial list failure instead of the empty state", () => {
@@ -121,7 +121,7 @@ describe("LifeEventsPanel", () => {
     render(<LifeEventsPanel />);
 
     expect(screen.getByText("Life events could not be loaded")).toBeDefined();
-    expect(screen.queryByText("No life events yet.")).toBeNull();
+    expect(screen.queryByText("No life events to display.")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Retry life events" }));
     expect(refetch).toHaveBeenCalledOnce();
   });

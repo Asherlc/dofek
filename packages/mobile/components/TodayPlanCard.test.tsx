@@ -9,15 +9,13 @@ const readyPlan: TodayPlanResult = {
   date: "2026-07-26",
   action: {
     id: "strain_target",
-    title: "Train hard today — aim for 16.2 strain",
-    summary: "Recovery is strong (82). Push for a high-strain day to build fitness.",
+    title: "Suggested strain: 16.2",
     zone: "Push",
   },
   supportingFacts: [
     { label: "Recovery", value: "82/100" },
     { label: "Sleep performance", value: "88 (Good)" },
   ],
-  confidence: "high",
   freshness: {
     recoveryDate: "2026-07-26",
     sleepDate: "2026-07-26",
@@ -32,7 +30,6 @@ const insufficientPlan: TodayPlanResult = {
   date: "2026-07-26",
   action: null,
   supportingFacts: [],
-  confidence: "low",
   freshness: {
     recoveryDate: null,
     sleepDate: null,
@@ -45,7 +42,7 @@ const insufficientPlan: TodayPlanResult = {
 const planWithCaveat = {
   ...readyPlan,
   caveats: [
-    "Sleep and recent workload data were unavailable, so this plan uses recovery and the strain target.",
+    "Sleep and recent workload data were unavailable, so this suggestion uses recovery only.",
   ],
 };
 
@@ -54,14 +51,12 @@ describe("TodayPlanCard", () => {
     render(<TodayPlanCard plan={readyPlan} />);
 
     expect(screen.getByText("WHAT MATTERS TODAY")).toBeTruthy();
-    expect(screen.getByText("Train hard today — aim for 16.2 strain")).toBeTruthy();
-    expect(screen.getByText(/Recovery is strong/)).toBeTruthy();
+    expect(screen.getByText("Suggested strain: 16.2")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Why this?" }));
     expect(screen.getByText("Recovery")).toBeTruthy();
     expect(screen.getByText("82/100")).toBeTruthy();
     expect(screen.getByText("Sleep performance")).toBeTruthy();
     expect(screen.getByText("88 (Good)")).toBeTruthy();
-    expect(screen.getByText("High confidence")).toBeTruthy();
     expect(screen.getByText("Suggested")).toBeTruthy();
     expect(screen.getByText(/Recovery data from 2026-07-26/)).toBeTruthy();
     expect(screen.getByText(/Sleep data from 2026-07-26/)).toBeTruthy();
@@ -107,7 +102,7 @@ describe("TodayPlanCard", () => {
   it("keeps cached plan visible with a background refresh error", () => {
     render(<TodayPlanCard plan={readyPlan} error={new Error("Today plan refresh failed")} />);
 
-    expect(screen.getByText("Train hard today — aim for 16.2 strain")).toBeTruthy();
+    expect(screen.getByText("Suggested strain: 16.2")).toBeTruthy();
     expect(screen.getByText("Today plan refresh failed")).toBeTruthy();
   });
 
@@ -116,7 +111,7 @@ describe("TodayPlanCard", () => {
     Reflect.deleteProperty(legacyPlan, "epistemicStatus");
     render(<TodayPlanCard plan={legacyPlan} />);
 
-    expect(screen.getByText("Train hard today — aim for 16.2 strain")).toBeTruthy();
+    expect(screen.getByText("Suggested strain: 16.2")).toBeTruthy();
     expect(screen.queryByText("Suggested")).toBeNull();
   });
 

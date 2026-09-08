@@ -1428,6 +1428,7 @@ describe("createMcpRouter", () => {
       {
         toDetail: () => ({
           equipment: null,
+          activityId: "10000000-0000-4000-8000-000000000001",
           exerciseIndex: 0,
           exerciseName: "Pull-up",
           exerciseType: "strength",
@@ -3040,6 +3041,7 @@ describe("createMcpRouter", () => {
       {
         toDetail: () => ({
           equipment: null,
+          activityId: "10000000-0000-4000-8000-000000000001",
           exerciseIndex: 0,
           exerciseName: "Pull-up",
           exerciseType: "strength",
@@ -3177,6 +3179,7 @@ describe("createMcpRouter", () => {
     toolTestMocks.strengthExercises.mockResolvedValue([
       {
         toDetail: () => ({
+          activityId: requestedMemberId,
           equipment: "BARBELL",
           exerciseIndex: 0,
           exerciseName: "Fixture Movement Gamma",
@@ -3269,6 +3272,7 @@ describe("createMcpRouter", () => {
       },
       strength_exercises: [
         {
+          activityId: requestedMemberId,
           exerciseName: "Fixture Movement Gamma",
           sets: [
             { setIndex: 0, setType: "working", reps: 1, weightKg: 13.579 },

@@ -213,7 +213,11 @@ describe("FileImportZone", () => {
       target: { files: [new File(["zip-data"], "garmin.zip", { type: "application/zip" })] },
     });
 
-    await waitFor(() => expect(screen.getByText("Upload failed")).toBeTruthy());
+    await waitFor(() =>
+      expect(
+        screen.getByText("We couldn't reach the server. Check your connection and try again."),
+      ).toBeTruthy(),
+    );
     expect(mocks.captureException).toHaveBeenCalledWith(
       "connection reset",
       expect.objectContaining({ tags: { uploadId: "pending" } }),

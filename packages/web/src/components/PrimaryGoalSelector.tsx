@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import {
   PRIMARY_GOAL_OPTIONS,
   PRIMARY_GOAL_SETTINGS_KEY,
@@ -37,7 +38,7 @@ export function PrimaryGoalSelector({ showHeading = true }: { showHeading?: bool
       {
         onError: (error) => {
           trpcUtils.settings.get.setData({ key: PRIMARY_GOAL_SETTINGS_KEY }, previousSetting);
-          setWriteError(error.message);
+          setWriteError(userFacingErrorMessage(error));
           captureException(error, { context: "primary-goal-write" });
         },
         onSettled: () => {
@@ -55,16 +56,16 @@ export function PrimaryGoalSelector({ showHeading = true }: { showHeading?: bool
       {showHeading ? (
         <div>
           <h2 id="primary-goal-heading" className="text-sm font-medium text-foreground">
-            Primary goal
+            What would you like to focus on?
           </h2>
-          <p className="text-xs text-subtle mt-0.5">
-            Choose the outcome Dofek should optimize toward. You can change this anytime.
-          </p>
         </div>
       ) : null}
-      {(writeError ?? setting.error?.message) && (
+      {(writeError ?? setting.error) && (
         <p role="alert" className="text-xs text-red-400">
-          {writeError ?? setting.error?.message}
+          {userFacingErrorMessage(
+            writeError ?? setting.error,
+            "Your primary goal could not be saved. Please try again.",
+          )}
         </p>
       )}
       <div className="grid gap-2 sm:grid-cols-2">

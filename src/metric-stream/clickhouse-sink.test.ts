@@ -145,6 +145,8 @@ describe("insertMetricStreamEventsIntoClickHouse", () => {
     expect(row.device_id).toBe("Apple Watch");
     expect(row.activity_id).toBe("20000000-0000-4000-8000-000000000001");
     expect(row.scalar).toBe(72);
+    expect(row.vector).toEqual([1, 2, 3]);
+    expect(row.metadata).toBe('{"source":"test"}');
     expect(row.point).toBe('{"type":"Point","coordinates":[-122.4,37.8]}');
     expect(row.generation).toBe(0);
     expect(row.version).toBe(0);
@@ -176,6 +178,14 @@ describe("insertMetricStreamEventsIntoClickHouse", () => {
     expect(row.activity_id).toBeNull();
     expect(row.scalar).toBeNull();
     expect(row.point).toBeNull();
+    expect(row.vector).toEqual([]);
+    expect(row.metadata).toBe("null");
+  });
+
+  it("maps explicit null vectors and metadata to the current ClickHouse column types", () => {
+    const row = mapMetricStreamEventToClickHouseRow(heartRateEvent);
+    expect(row.vector).toEqual([]);
+    expect(row.metadata).toBe("null");
   });
 });
 
@@ -736,6 +746,38 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     expect(command).toHaveBeenCalledTimes(3);
     expect(firstCommandQuery(command)).toContain("external_id_0");
     expect(firstCommandQuery(command)).toContain("external_id_1");
+  });
+
+  it("leaves a failed delete chunk unacknowledged and stops before replacement rows", async () => {
+    const deletes = Array.from({ length: 101 }, (_, index) =>
+      createCurrentMetricStreamDeletedEvent({
+        userId: heartRateEvent.userId,
+        providerId: heartRateEvent.providerId,
+        externalId: `chunk-failure-${index}`,
+      }),
+    );
+    const acknowledgedIds: string[] = [];
+    let streamWrites = 0;
+    const command = vi.fn(
+      async (options: { query: string; query_params?: Record<string, unknown> }) => {
+        if (options.query.startsWith(`INSERT INTO ${METRIC_STREAM_TABLE} (`)) {
+          streamWrites += 1;
+          if (streamWrites === 2) throw new Error("second chunk rejected");
+        } else {
+          acknowledgedIds.push(String(options.query_params?.event_id));
+        }
+      },
+    );
+    const insert = vi.fn(async () => undefined);
+    const query = makeEmptyGenerationQuery();
+
+    await expect(
+      applyMetricStreamEventsToClickHouse({ command, insert, query }, [...deletes, heartRateEvent]),
+    ).rejects.toThrow("second chunk rejected");
+
+    expect(streamWrites).toBe(2);
+    expect(acknowledgedIds).toEqual(deletes.slice(0, 100).map((event) => event.eventId));
+    expect(insert).not.toHaveBeenCalled();
   });
 
   it("does not batch adjacent current deletes from different revisions", async () => {

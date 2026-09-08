@@ -1,4 +1,5 @@
 import { formatTime } from "@dofek/format/format";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -165,7 +166,7 @@ export function FileImportZone({
           setState({
             phase: "failed",
             progress: 0,
-            message: error instanceof Error ? error.message : "Upload status is unavailable",
+            message: userFacingErrorMessage(error, "Upload status is unavailable"),
           });
           return;
         }
@@ -241,7 +242,7 @@ export function FileImportZone({
         setState({
           phase: "failed",
           progress: 0,
-          message: error instanceof Error ? error.message : "Upload session storage is unavailable",
+          message: userFacingErrorMessage(error, "Upload session storage is unavailable"),
         });
       });
     if (activeImportUploadId && activeImportUploadId !== cancelledUploadIdRef.current) {
@@ -313,7 +314,7 @@ export function FileImportZone({
         setState({
           phase: "failed",
           progress: 0,
-          message: error instanceof Error ? error.message : "Upload failed",
+          message: userFacingErrorMessage(error, "Upload failed"),
         });
       } finally {
         localUploadActiveRef.current = false;
@@ -364,7 +365,7 @@ export function FileImportZone({
         setState({
           phase: "failed",
           progress: 0,
-          message: error instanceof Error ? error.message : "Local upload cleanup failed",
+          message: userFacingErrorMessage(error, "Local upload cleanup failed"),
         });
         return;
       }
@@ -379,7 +380,10 @@ export function FileImportZone({
         progress: 0,
         message:
           cancellationError instanceof Error
-            ? `Unable to cancel import. ${cancellationError.message}`
+            ? userFacingErrorMessage(
+                cancellationError,
+                "The import could not be cancelled. Its status is being refreshed.",
+              )
             : "Unable to cancel import. Import status is being refreshed.",
       });
       void pollUpload(uploadId, pollController.signal);
@@ -390,7 +394,10 @@ export function FileImportZone({
       progress: 0,
       message:
         cancellationError instanceof Error
-          ? `Upload cancelled locally. ${cancellationError.message}`
+          ? userFacingErrorMessage(
+              cancellationError,
+              "The upload was cancelled on this device, but the server could not be reached.",
+            )
           : "Upload cancelled",
     });
   }, [pollUpload, sessionKey, trpcUtils, uploadApi]);
@@ -459,7 +466,14 @@ export function FileImportZone({
           </div>
         ) : (
           <div className="space-y-2">
-            <div className="text-xs text-dim">{state.message ?? description}</div>
+            <div className="text-xs text-dim">
+              {state.phase === "failed"
+                ? userFacingErrorMessage(
+                    state.message,
+                    "The file could not be imported. Check the file and try again.",
+                  )
+                : (state.message ?? description)}
+            </div>
             {importType === "strong-csv" && (
               <label className="inline-flex items-center gap-2 text-xs text-muted">
                 Weight unit

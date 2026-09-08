@@ -15,7 +15,7 @@ const clickHouseUtcDateTimeSchema = z.preprocess(
     typeof value === "string" && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(value)
       ? `${value.replace(" ", "T")}Z`
       : value,
-  z.coerce.date(),
+  z.union([z.string(), z.date()]).pipe(z.coerce.date()),
 );
 
 export const uint64StringSchema = z
@@ -29,7 +29,7 @@ export const clickHouseSourceRowSchema = z
     provider_id: z.string().min(1),
     user_id: postgresUuidSchema,
     canonical_type: z.string().min(1),
-    started_at: clickHouseUtcDateTimeSchema.optional(),
+    started_at: clickHouseUtcDateTimeSchema,
     ended_at: clickHouseUtcDateTimeSchema.nullable().optional(),
     timezone: z.string().nullable(),
     start_utc_offset_minutes: z.coerce.number().int().nullable(),
@@ -134,7 +134,10 @@ export async function queryClickHouseRows<T extends object>(
     query,
     query_params: queryParams,
     format: "JSONEachRow",
-    clickhouse_settings: { output_format_json_quote_64bit_integers: 1 },
+    clickhouse_settings: {
+      output_format_json_quote_64bit_integers: 1,
+      date_time_output_format: "iso",
+    },
   });
   return z.array(schema).parse(await response.json());
 }

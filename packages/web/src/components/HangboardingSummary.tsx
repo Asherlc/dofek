@@ -24,7 +24,13 @@ export function HangboardingSummary({ data, loading }: HangboardingSummaryProps)
   }
 
   if (data == null || data.sessionCount === 0) {
-    return <QueryStatePanel variant="empty" message="No Hangboarding sessions yet." height={220} />;
+    return (
+      <QueryStatePanel
+        variant="empty"
+        message="No Hangboarding sessions to display."
+        height={220}
+      />
+    );
   }
 
   const latestSession = data.latestSession;
@@ -69,7 +75,7 @@ export function HangboardingSummary({ data, loading }: HangboardingSummaryProps)
           option={dailyDurationOption}
           loading={loading && data.daily.length === 0}
           empty={data.daily.length === 0}
-          emptyMessage="No daily Hangboarding duration"
+          emptyMessage="No daily Hangboarding duration to display"
           height={190}
         />
       </div>

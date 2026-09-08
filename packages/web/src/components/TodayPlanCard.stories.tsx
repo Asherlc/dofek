@@ -8,8 +8,7 @@ const readyPlan: TodayPlanResult = {
   date: "2026-07-26",
   action: {
     id: "strain_target",
-    title: "Train hard today — aim for 16.2 strain",
-    summary: "Recovery is strong (82). Push for a high-strain day to build fitness.",
+    title: "Suggested strain: 16.2",
     zone: "Push",
   },
   supportingFacts: [
@@ -17,7 +16,6 @@ const readyPlan: TodayPlanResult = {
     { label: "Sleep performance", value: "88 (Good)" },
   ],
   caveats: [],
-  confidence: "high",
   freshness: {
     recoveryDate: "2026-07-26",
     sleepDate: "2026-07-26",
@@ -31,7 +29,6 @@ const insufficientPlan: TodayPlanResult = {
   date: "2026-07-26",
   action: null,
   supportingFacts: [],
-  confidence: "low",
   freshness: {
     recoveryDate: null,
     sleepDate: null,
@@ -45,15 +42,13 @@ const noChangePlan: TodayPlanResult = {
   ...readyPlan,
   action: {
     id: "strain_target",
-    title: "No change needs attention — aim for 12 strain",
-    summary: "Moderate recovery (60). Aim for a steady training day.",
+    title: "Suggested strain: 12",
     zone: "Maintain",
   },
   supportingFacts: [
     { label: "Recovery", value: "60/100" },
     { label: "Sleep performance", value: "82 (Good)" },
   ],
-  confidence: "moderate",
 };
 
 const meta = {

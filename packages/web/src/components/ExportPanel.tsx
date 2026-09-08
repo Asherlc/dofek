@@ -1,4 +1,5 @@
 import { formatDateMedium } from "@dofek/format/format";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { captureException } from "../lib/telemetry.ts";
 
@@ -102,7 +103,7 @@ export function ExportPanel() {
       setMessage("");
     } catch (error: unknown) {
       captureException(error, { context: "data-export-list" });
-      setMessage(error instanceof Error ? error.message : "Failed to load exports");
+      setMessage(userFacingErrorMessage(error, "Failed to load exports"));
     } finally {
       setLoading(false);
     }
@@ -139,7 +140,7 @@ export function ExportPanel() {
       await refreshExports();
     } catch (error: unknown) {
       captureException(error, { context: "data-export-start" });
-      setMessage(error instanceof Error ? error.message : "Failed to start export");
+      setMessage(userFacingErrorMessage(error, "Failed to start export"));
     } finally {
       setStarting(false);
     }

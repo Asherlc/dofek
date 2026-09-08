@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import {
   BOULDER_GRADE_SYSTEMS,
   type ClimbingGradePreference,
@@ -5,8 +6,8 @@ import {
   ROUTE_GRADE_SYSTEMS,
 } from "@dofek/training/climbing-grades";
 import { ActivityIndicator, Text, TouchableOpacity, View } from "react-native";
-import { styles } from "../app/settings.styles";
 import { colors } from "../theme";
+import { styles } from "./settings.styles";
 
 interface ClimbingGradeSystemSettingsProps {
   errorMessage: string | null;
@@ -28,7 +29,12 @@ export function ClimbingGradeSystemSettings({
         Choose the grade systems used for boulders and routes
       </Text>
       {errorMessage && !preference ? (
-        <Text style={styles.unitErrorText}>{errorMessage}</Text>
+        <Text style={styles.unitErrorText}>
+          {userFacingErrorMessage(
+            errorMessage,
+            "Climbing grade settings could not be loaded. Please try again.",
+          )}
+        </Text>
       ) : null}
       {preference ? null : <ActivityIndicator color={colors.accent} size="small" />}
       {preference ? <Text style={styles.label}>Boulder grades</Text> : null}

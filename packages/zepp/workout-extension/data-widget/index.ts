@@ -1,4 +1,5 @@
 import { getSportData } from "@zos/app-access";
+import { getDeviceInfo } from "@zos/device";
 import {
   pauseDropWristScreenOff,
   resetDropWristScreenOff,
@@ -6,11 +7,16 @@ import {
   setPageBrightTime,
 } from "@zos/display";
 import { Accelerometer, checkSensor, Gyroscope, HeartRate } from "@zos/sensor";
-import { align, createWidget, prop, text_style, widget } from "@zos/ui";
+import { align, createWidget, deleteWidget, prop, text_style, widget } from "@zos/ui";
 import { log as Logger, px } from "@zos/utils";
 import { BasePage } from "@zeppos/zml/base-page";
+import { isConnectionChangedCall } from "../../src/connection-control.ts";
 import { createDisplayLease } from "../../src/display-lease.ts";
 import { createImuCollector } from "../../src/imu-collector.ts";
+import {
+  restoreWatchImuConnection,
+  updateWatchImuConnection,
+} from "../../src/imu-connection-storage.ts";
 import {
   type ImuTransferMonitor,
   monitorImuTransfer,
@@ -20,6 +26,7 @@ import {
   type ImuSegmentResult,
   type ImuSessionController,
 } from "../../src/imu-session-controller.ts";
+import type { ImuConnectionBinding } from "../../src/imu-upload.ts";
 import {
   clearPendingImuTransfer,
   type ImuFileSlot,
@@ -33,6 +40,7 @@ import { confirmImuTransferPersistence } from "../../src/session-control.ts";
 import { getImuTransferFailureReason } from "../../src/session-control.ts";
 import {
   FLUSH_SAMPLE_THRESHOLD,
+  STORAGE_KEYS,
   WORKOUT_IMU_CHUNK_DIRECTORY,
   WORKOUT_IMU_TRANSFER_FILE,
   WORKOUT_SESSION_FILE_A,
@@ -45,7 +53,6 @@ import {
 import {
   collectLiveWorkoutSnapshot,
   findLiveWorkoutExternalId,
-  type LiveWorkoutSnapshot,
 } from "../../src/workout-live.ts";
 import {
   type LiveWorkoutBatch,
@@ -54,6 +61,7 @@ import {
   writeLiveWorkoutBuffer,
 } from "../../src/workout-live-storage.ts";
 import {
+  createWatchImuChunkHandler,
   createWatchImuChunkSync,
   type WatchImuChunkSync,
 } from "../../src/watch-imu-chunk-sync.ts";
@@ -72,7 +80,15 @@ function emptyArray<T>(): T[] {
 DataWidget(
   BasePage({
     state: {
+      connectionRequestId: 0,
+      connectionMessage: nullable<string>(),
+      workoutStatus: "Collecting live workout data",
+      pairingQr: nullable<ReturnType<typeof createWidget>>(),
+      pairingUrl: nullable<string>(),
       intervalId: nullable<ReturnType<typeof setInterval>>(),
+      heartRate: nullable<HeartRate>(),
+      heartRateCallback: nullable<() => void>(),
+      currentHeartRate: 0,
       collecting: false,
       flushing: false,
       pendingBatches: emptyArray<LiveWorkoutBatch>(),
@@ -80,6 +96,7 @@ DataWidget(
       focused: false,
       imuController: nullable<ImuSessionController>(),
       imuChunkSync: nullable<WatchImuChunkSync>(),
+      imuConnection: nullable<ImuConnectionBinding>(),
       activeImuSlot: "A" as ImuFileSlot,
       pendingImuA: nullable<ImuSegmentResult>(),
       pendingImuB: nullable<ImuSegmentResult>(),
@@ -90,6 +107,9 @@ DataWidget(
     },
 
     build() {
+      this.state.imuConnection = restoreWatchImuConnection(settings.settingsStorage, (error) =>
+        this.reportError(error, "restore-workout-imu-connection"),
+      );
       this.state.imuChunkSync = createWatchImuChunkSync(
         WORKOUT_IMU_CHUNK_DIRECTORY,
         (envelope) => this.request({ method: "imu.uploadChunk", params: { envelope } }),
@@ -110,7 +130,7 @@ DataWidget(
       createWidget(widget.TEXT, {
         x: px(20),
         y: px(80),
-        w: px(440),
+        w: getDeviceInfo().width - px(40),
         h: px(60),
         color: 0xffffff,
         text_size: px(34),
@@ -121,8 +141,8 @@ DataWidget(
       this.state.statusWidget = createWidget(widget.TEXT, {
         x: px(20),
         y: px(160),
-        w: px(440),
-        h: px(120),
+        w: getDeviceInfo().width - px(40),
+        h: px(80),
         color: 0x9ca3af,
         text_size: px(26),
         align_h: align.CENTER_H,
@@ -130,9 +150,87 @@ DataWidget(
         text: "Collecting live workout data",
       });
       this.state.focused = true;
+      void this.refreshConnection();
       this.startCollection();
       this.retryImuTransfers();
       this.startImuSegment();
+    },
+
+    setWorkoutStatus(status: string) {
+      this.state.workoutStatus = status;
+      if (this.state.connectionMessage === null) {
+        this.state.statusWidget?.setProperty(prop.TEXT, status);
+      }
+    },
+
+    clearPairing() {
+      if (this.state.pairingQr) deleteWidget(this.state.pairingQr);
+      this.state.pairingQr = null;
+      this.state.pairingUrl = null;
+    },
+
+    async refreshConnection(startPairingIfNeeded = true) {
+      if (!this.state.focused) return;
+      const requestId = ++this.state.connectionRequestId;
+      this.state.connectionMessage = "Checking Dofek connection";
+      this.state.statusWidget?.setProperty(prop.TEXT, this.state.connectionMessage);
+      try {
+        const preferences = await this.request({ method: "imu.getPreferences", params: {} });
+        if (requestId !== this.state.connectionRequestId) return;
+        if (preferences?.hasCredentials === true) {
+          this.clearPairing();
+          this.state.connectionMessage = null;
+          this.setWorkoutStatus(this.state.workoutStatus);
+          return;
+        }
+        let pairing = preferences?.pairing;
+        if (!pairing && startPairingIfNeeded && preferences?.canStartConnection === true) {
+          pairing = await this.request({ method: "dofek.startPairing", params: {} });
+          if (requestId !== this.state.connectionRequestId) return;
+        }
+        const verificationUrl =
+          pairing && typeof pairing === "object" && "verificationUrl" in pairing &&
+          typeof pairing.verificationUrl === "string" ? pairing.verificationUrl : "";
+        const shortCode =
+          pairing && typeof pairing === "object" && "shortCode" in pairing &&
+          typeof pairing.shortCode === "string" ? pairing.shortCode : "";
+        if (verificationUrl && shortCode) {
+          if (this.state.pairingUrl !== verificationUrl) {
+            this.clearPairing();
+            const size = px(120);
+            const qrX = Math.floor((getDeviceInfo().width - size) / 2);
+            const qrY = px(260);
+            this.state.pairingQr = createWidget(widget.QRCODE, {
+              content: verificationUrl,
+              x: qrX,
+              y: qrY,
+              w: size,
+              h: size,
+              bg_x: qrX - px(8),
+              bg_y: qrY - px(8),
+              bg_w: size + px(16),
+              bg_h: size + px(16),
+            });
+            this.state.pairingUrl = verificationUrl;
+          }
+          this.state.connectionMessage = `Scan QR to pair\nCode ${shortCode}`;
+        } else {
+          this.clearPairing();
+          this.state.connectionMessage = "Not paired\nOpen Dofek Workout settings in Zepp";
+        }
+        this.state.statusWidget?.setProperty(prop.TEXT, this.state.connectionMessage);
+      } catch (error) {
+        if (requestId !== this.state.connectionRequestId) return;
+        this.reportError(error, "workout-pairing");
+        this.clearPairing();
+        const reason = error instanceof Error ? error.message : String(error);
+        this.state.connectionMessage = `${reason}\nOpen Zepp settings to pair`;
+        this.state.statusWidget?.setProperty(prop.TEXT, this.state.connectionMessage);
+      }
+    },
+
+    onCall(payload: { method: string; params?: Record<string, unknown> } | null) {
+      if (isConnectionChangedCall(payload)) void this.refreshConnection(false);
     },
 
     reportError(error: unknown, category: string) {
@@ -154,8 +252,10 @@ DataWidget(
       if (this.state.collecting) return;
       this.state.collecting = true;
       try {
-        const heartRate = new HeartRate();
-        const snapshot = await collectLiveWorkoutSnapshot(getSportData, () => heartRate.getLast());
+        const snapshot = await collectLiveWorkoutSnapshot(
+          getSportData,
+          () => this.state.currentHeartRate,
+        );
         const externalId = findLiveWorkoutExternalId(
           snapshot,
           this.state.pendingBatches.map((batch) => batch.externalId),
@@ -174,8 +274,7 @@ DataWidget(
           (count, pendingBatch) => count + pendingBatch.snapshots.length,
           0,
         );
-        this.state.statusWidget?.setProperty(
-          prop.TEXT,
+        this.setWorkoutStatus(
           `Captured ${pendingSampleCount} live sample${pendingSampleCount === 1 ? "" : "s"}`,
         );
         if (pendingSampleCount >= UPLOAD_BATCH_SIZE) {
@@ -216,7 +315,7 @@ DataWidget(
           ).batches;
           writeLiveWorkoutBuffer({ batches: this.state.pendingBatches });
         }
-        this.state.statusWidget?.setProperty(prop.TEXT, "Live workout data synced");
+        this.setWorkoutStatus("Live workout data synced");
       } catch (error: unknown) {
         writeLiveWorkoutBuffer({ batches: this.state.pendingBatches });
         this.reportError(error, "workout-upload");
@@ -227,11 +326,27 @@ DataWidget(
 
     startCollection() {
       if (this.state.intervalId !== null) return;
+      const heartRate = (this.state.heartRate ??= new HeartRate());
+      const callback = () => {
+        if (this.state.heartRateCallback !== callback) return;
+        try {
+          this.state.currentHeartRate = heartRate.getCurrent();
+        } catch (error: unknown) {
+          this.state.currentHeartRate = 0;
+          this.reportError(error, "workout-heart-rate");
+        }
+      };
+      this.state.heartRateCallback = callback;
+      heartRate.onCurrentChange(callback);
       void this.collectSnapshot();
       this.state.intervalId = setInterval(() => void this.collectSnapshot(), SAMPLE_INTERVAL_MS);
     },
 
     stopCollection() {
+      const callback = this.state.heartRateCallback;
+      this.state.heartRateCallback = null;
+      this.state.currentHeartRate = 0;
+      if (callback) this.state.heartRate?.offCurrentChange(callback);
       if (this.state.intervalId !== null) {
         clearInterval(this.state.intervalId);
         this.state.intervalId = null;
@@ -279,14 +394,21 @@ DataWidget(
 
     startImuSegment() {
       if (this.state.imuController?.active) return;
+      const imuConnection = this.state.imuConnection;
+      if (!imuConnection) {
+        this.state.statusWidget?.setProperty(
+          prop.TEXT,
+          "Workout metrics active\nConnect Dofek for motion",
+        );
+        return;
+      }
       const slot: ImuFileSlot | null = !this.state.pendingImuA
         ? "A"
         : !this.state.pendingImuB
           ? "B"
           : null;
       if (!slot) {
-        this.state.statusWidget?.setProperty(
-          prop.TEXT,
+        this.setWorkoutStatus(
           "Workout metrics active\nMotion files waiting to send",
         );
         return;
@@ -310,23 +432,14 @@ DataWidget(
           append: appendSamples,
           finalize: finalizeSessionFile,
         },
-        onChunk: ({ sessionStartMs, hasGyroscope, samples }) => {
-          const installId = ensureInstallId(settings.settingsStorage);
-          const sync = this.state.imuChunkSync;
-          if (!sync) throw new Error("Workout IMU chunk sync is unavailable.");
-          void sync
-            .enqueue(
-            {
-              connectionType: "zepp-workout",
-              installId,
-              segmentId: `${installId}:workout-imu:${sessionStartMs}`,
-              sessionStartMs,
-              hasGyroscope,
-              samples,
-            },
-            )
-            .catch((error: unknown) => this.reportError(error, "workout-imu-chunk"));
-        },
+        onChunk: createWatchImuChunkHandler({
+          connectionType: "zepp-workout",
+          segmentName: "workout-imu",
+          getInstallId: () => ensureInstallId(settings.settingsStorage),
+          getDestination: () => imuConnection,
+          getSync: () => this.state.imuChunkSync,
+          onError: (error) => this.reportError(error, "workout-imu-chunk"),
+        }),
         onError: (error) => {
           this.state.imuController = null;
           this.reportError(error, "workout-imu");
@@ -420,24 +533,37 @@ DataWidget(
       }
     },
 
+    async refreshImuConnection() {
+      const result = await this.request({ method: "imu.getPreferences", params: {} });
+      this.state.imuConnection = updateWatchImuConnection(settings.settingsStorage, result);
+    },
+
     onResume() {
       this.state.focused = true;
+      void this.refreshConnection();
       void this.state.imuChunkSync
         ?.retry()
         .catch((error: unknown) => this.reportError(error, "workout-imu-chunk-retry"));
       this.retryImuTransfers();
       this.startCollection();
-      this.startImuSegment();
+      void this.refreshImuConnection()
+        .catch((error: unknown) => this.reportError(error, "workout-imu-connection"))
+        .finally(() => {
+          if (this.state.focused) this.startImuSegment();
+        });
     },
 
     onPause() {
       this.state.focused = false;
+      this.state.connectionRequestId++;
       this.stopImuSegment();
       this.stopCollection();
     },
 
     onDestroy() {
+      this.clearPairing();
       this.state.focused = false;
+      this.state.connectionRequestId++;
       this.state.imuTransferMonitorA?.cancel();
       this.state.imuTransferMonitorB?.cancel();
       this.state.imuTransferMonitorA = null;

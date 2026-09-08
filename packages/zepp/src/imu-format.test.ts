@@ -110,84 +110,41 @@ describe("patchHeaderSampleCount", () => {
 });
 
 describe("encodeChunk", () => {
-  const accelSample: ImuSample = { tMs: 100, ax: 1.5, ay: -2.5, az: 9.81 };
-  const gyroSample: ImuSample = { ...accelSample, gx: 0.1, gy: -0.2, gz: 0.3 };
-
-  it("encodes sample count in first 2 bytes", () => {
-    const buf = encodeChunk([accelSample, accelSample], false);
-    const view = new DataView(buf);
-    expect(view.getUint16(0, true)).toBe(2);
-  });
-
-  it("leaves 2 reserved bytes after count", () => {
-    const buf = encodeChunk([accelSample], false);
-    const view = new DataView(buf);
-    expect(view.getUint16(2, true)).toBe(0);
-  });
-
-  it("encodes accel-only records at 16 bytes each", () => {
-    const buf = encodeChunk([accelSample], false);
-    expect(buf.byteLength).toBe(4 + 16);
-  });
-
-  it("encodes gyro records at 28 bytes each", () => {
-    const buf = encodeChunk([gyroSample], true);
-    expect(buf.byteLength).toBe(4 + 28);
-  });
-
-  it("encodes fields in order: tMs, ax, ay, az", () => {
-    const buf = encodeChunk([accelSample], false);
-    const view = new DataView(buf);
-    // Record layout: tMs(4) + ax(4) + ay(4) + az(4)
-    const recordOffset = 4;
-    expect(view.getUint32(recordOffset + 0, true)).toBe(100);
-    expect(view.getFloat32(recordOffset + 4, true)).toBe(1.5);
-    expect(view.getFloat32(recordOffset + 8, true)).toBe(-2.5);
-    expect(view.getFloat32(recordOffset + 12, true)).toBeCloseTo(9.81, 4);
-  });
-
-  it("encodes gyroscope fields after accel", () => {
-    const buf = encodeChunk([gyroSample], true);
-    const view = new DataView(buf);
-    // Record layout: tMs(4) + ax(4) + ay(4) + az(4) + gx(4) + gy(4) + gz(4)
-    const recordOffset = 4;
-    expect(view.getUint32(recordOffset + 0, true)).toBe(100);
-    expect(view.getFloat32(recordOffset + 4, true)).toBe(1.5);
-    expect(view.getFloat32(recordOffset + 16, true)).toBeCloseTo(0.1, 4);
-    expect(view.getFloat32(recordOffset + 20, true)).toBeCloseTo(-0.2, 4);
-    expect(view.getFloat32(recordOffset + 24, true)).toBeCloseTo(0.3, 4);
-  });
-
-  it("uses 0 for missing gyro fields when hasGyro is true", () => {
-    const sample: ImuSample = { tMs: 50, ax: 1, ay: 2, az: 3 };
-    const buf = encodeChunk([sample], true);
-    const view = new DataView(buf);
-    const recordOffset = 4;
-    expect(view.getUint32(recordOffset + 0, true)).toBe(50);
-    expect(view.getFloat32(recordOffset + 16, true)).toBe(0);
-    expect(view.getFloat32(recordOffset + 20, true)).toBe(0);
-    expect(view.getFloat32(recordOffset + 24, true)).toBe(0);
-  });
-
-  it("encodes multiple samples", () => {
+  it("encodes independent vectors using tagged twenty-byte records", () => {
     const samples: ImuSample[] = [
-      { tMs: 0, ax: 0, ay: 0, az: 1 },
-      { tMs: 100, ax: 1, ay: 2, az: 3 },
-      { tMs: 200, ax: 4, ay: 5, az: 6 },
+      { tMs: 10, sensor: "accelerometer", x: 1, y: -2, z: 3 },
+      { tMs: 12, sensor: "gyroscope", x: 4, y: 5, z: 6 },
     ];
-    const buf = encodeChunk(samples, false);
-    const view = new DataView(buf);
-    expect(view.getUint16(0, true)).toBe(3);
-    expect(buf.byteLength).toBe(4 + 3 * 16);
-    // Third record (index 2) starts at offset 4 + 2*16
-    expect(view.getUint32(4 + 2 * 16, true)).toBe(200);
+    const chunk = encodeChunk(samples);
+    const view = new DataView(chunk);
+    expect(chunk.byteLength).toBe(44);
+    expect(view.getUint16(0, true)).toBe(2);
+    expect(view.getUint32(4, true)).toBe(10);
+    expect(view.getUint32(8, true)).toBe(0);
+    expect(view.getFloat32(12, true)).toBe(1);
+    expect(view.getFloat32(16, true)).toBe(-2);
+    expect(view.getFloat32(20, true)).toBe(3);
+    expect(view.getUint32(24, true)).toBe(12);
+    expect(view.getUint32(28, true)).toBe(1);
+    expect(view.getFloat32(32, true)).toBe(4);
+    expect(view.getFloat32(36, true)).toBe(5);
+    expect(view.getFloat32(40, true)).toBe(6);
   });
-
-  it("returns buffer with count=0 for empty samples", () => {
-    const buf = encodeChunk([], false);
-    const view = new DataView(buf);
-    expect(view.getUint16(0, true)).toBe(0);
-    expect(buf.byteLength).toBe(4);
+  it("rejects out-of-range timestamps and chunk counts", () => {
+    expect(() => encodeChunk([{ tMs: -1, sensor: "accelerometer", x: 1, y: 2, z: 3 }])).toThrow(
+      "timestamp",
+    );
+    expect(() =>
+      encodeChunk(
+        Array.from({ length: 65536 }, () => ({
+          tMs: 0,
+          sensor: "accelerometer",
+          x: 1,
+          y: 2,
+          z: 3,
+        })),
+      ),
+    ).toThrow("65535");
   });
 });
 
@@ -208,33 +165,5 @@ describe("concatArrayBuffers", () => {
     const buf = new Uint8Array([42]).buffer;
     const merged = concatArrayBuffers([buf]);
     expect(new Uint8Array(merged)).toEqual(new Uint8Array([42]));
-  });
-});
-
-describe("binary roundtrip", () => {
-  it("header → patch → encodeChunk produces a valid stream", () => {
-    const header = createHeader({
-      hasGyro: true,
-      sessionStartMs: 1000,
-      sampleCount: 0,
-      accelFreqMode: 2,
-      gyroFreqMode: 2,
-      observedHzX100: 2600,
-    });
-
-    expect(header.byteLength).toBe(HEADER_SIZE);
-
-    const samples: ImuSample[] = [
-      { tMs: 0, ax: 0.5, ay: -0.5, az: 9.8, gx: 0.01, gy: 0.02, gz: 0.03 },
-      { tMs: 100, ax: 1.0, ay: -1.0, az: 9.7, gx: 0.04, gy: 0.05, gz: 0.06 },
-    ];
-
-    const chunk = encodeChunk(samples, true);
-    expect(chunk.byteLength).toBe(4 + 2 * 28);
-
-    const patched = patchHeaderSampleCount(header, 2, 2600);
-    const parsed = parseHeader(patched);
-    expect(parsed.sampleCount).toBe(2);
-    expect(parsed.observedHzX100).toBe(2600);
   });
 });

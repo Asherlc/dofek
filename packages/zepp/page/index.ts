@@ -52,16 +52,24 @@ import {
 } from "../src/health-service-control.ts";
 import { createImuCollector, FREQ_MODES } from "../src/imu-collector.ts";
 import {
+  applyWatchStartPreferences,
+  restoreWatchImuConnection,
+  updateWatchImuConnection,
+} from "../src/imu-connection-storage.ts";
+import {
   createImuSessionController,
   type ImuSessionController,
 } from "../src/imu-session-controller.ts";
 import * as imuTransfer from "../src/imu-transfer-monitor.ts";
 import {
   type ImuFileSlot,
+  initialImuFileSlot,
   type PendingImuTransfer,
   persistAndApplyPendingImuTransfer,
   readPendingImuTransfers,
 } from "../src/imu-transfer-storage.ts";
+import type { ImuConnectionBinding } from "../src/imu-upload.ts";
+import { getString, isRecord, nullable } from "../src/record-fields.ts";
 import { createRoundLoginLayout } from "../src/round-layout.ts";
 import {
   confirmImuTransferPersistence,
@@ -92,12 +100,11 @@ import {
   STORAGE_KEYS,
 } from "../src/storage-keys.ts";
 import { deliverWatchHealthOutbox } from "../src/watch-health-sync.ts";
-import { createWatchImuChunkSync, type WatchImuChunkSync } from "../src/watch-imu-chunk-sync.ts";
-
-function nullable<T>(): T | null {
-  return null;
-}
-const initialActiveFile = (): ImuFileSlot => "A";
+import {
+  createWatchImuChunkHandler,
+  createWatchImuChunkSync,
+  type WatchImuChunkSync,
+} from "../src/watch-imu-chunk-sync.ts";
 
 BasePage.use(pagePlugin);
 
@@ -178,15 +185,6 @@ function clearPairingQrWidget() {
   resetPairingQrReference();
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function getString(value: Record<string, unknown>, key: string): string {
-  const raw = value[key];
-  return typeof raw === "string" ? raw.trim() : "";
-}
-
 Page(
   BasePage({
     state: {
@@ -201,12 +199,13 @@ Page(
       pendingManualExport: false,
       sampleCount: 0,
       observedHzX100: 0,
-      activeFile: initialActiveFile(),
+      activeFile: initialImuFileSlot(),
       hasCredentials: false,
       canStartConnection: true,
       healthSyncTask: nullable<Promise<void>>(),
       healthOwnership: nullable<Promise<ForegroundHealthOwnership>>(),
       imuChunkSync: nullable<WatchImuChunkSync>(),
+      imuConnection: nullable<ImuConnectionBinding>(),
       dofekEmail: "",
       pairingVerificationUrl: "",
       pairingShortCode: "",
@@ -215,6 +214,9 @@ Page(
 
     onInit() {
       resetPairingQrReference();
+      this.state.imuConnection = restoreWatchImuConnection(settings.settingsStorage, (error) =>
+        captureException(error, { operation: "restore-imu-connection" }),
+      );
       this.state.imuChunkSync = createWatchImuChunkSync(NORMAL_IMU_CHUNK_DIRECTORY, (envelope) =>
         this.request({ method: "imu.uploadChunk", params: { envelope } }),
       );
@@ -332,6 +334,7 @@ Page(
             this.state.freqModeIndex = Number(result?.freqModeIndex ?? 1);
           }
           this.state.hasCredentials = result?.hasCredentials === true;
+          this.state.imuConnection = updateWatchImuConnection(settings.settingsStorage, result);
           this.state.canStartConnection = result?.canStartConnection === true;
           connectionButton?.setProperty(
             prop.TEXT,
@@ -504,6 +507,12 @@ Page(
       if (this.state.logging) {
         return;
       }
+      const imuConnection = this.state.imuConnection;
+      if (!imuConnection) {
+        showToast({ content: "Connect Dofek before recording motion data" });
+        renderHint("Connect Dofek\nbefore recording motion");
+        return;
+      }
 
       const availableSlot: ImuFileSlot | null = !this.state.pendingImuA
         ? "A"
@@ -534,26 +543,18 @@ Page(
           append: appendSamples,
           finalize: finalizeSessionFile,
         },
-        onChunk: ({ sessionStartMs, hasGyroscope, samples }) => {
-          const installId = ensureWatchInstallId();
-          const segmentId = `${installId}:normal-imu:${sessionStartMs}`;
-          const sync = this.state.imuChunkSync;
-          if (!sync) throw new Error("IMU chunk sync is unavailable.");
-          void sync
-            .enqueue({
-              connectionType: "zepp",
-              installId,
-              segmentId,
-              sessionStartMs,
-              hasGyroscope,
-              samples,
-            })
-            .catch((error: unknown) => {
-              captureException(error, { operation: "upload-imu-chunk", segmentId });
-              logger.error("IMU chunk delivery failed %j", error);
-              renderHint("Motion sync pending\nWill retry automatically");
-            });
-        },
+        onChunk: createWatchImuChunkHandler({
+          connectionType: "zepp",
+          segmentName: "normal-imu",
+          getInstallId: ensureWatchInstallId,
+          getDestination: () => imuConnection,
+          getSync: () => this.state.imuChunkSync,
+          onError: (error, segmentId) => {
+            captureException(error, { operation: "upload-imu-chunk", segmentId });
+            logger.error("IMU chunk delivery failed %j", error);
+            renderHint("Motion sync pending\nWill retry automatically");
+          },
+        }),
         onProgress: createSessionProgressHandler({
           updateWatch: (stats) => this.handleRate(stats),
           publishHostStatus: (stats) => this.publishSessionStatus(SESSION_STATE.RECORDING, stats),
@@ -900,7 +901,6 @@ Page(
         logger.error("status publish failed %j", error);
       });
     },
-
     collectAndDeliverHealth() {
       if (this.state.healthSyncTask) return this.state.healthSyncTask;
       const task = (async () => {
@@ -960,7 +960,7 @@ Page(
           failedTransferPending: Boolean(this.state.pendingImuA || this.state.pendingImuB),
           pendingManualExport: this.state.pendingManualExport,
           applyStartPreferences: (params) => {
-            this.state.freqModeIndex = Number(params?.freqModeIndex ?? this.state.freqModeIndex);
+            applyWatchStartPreferences(settings.settingsStorage, this.state, params);
           },
           handleBlockedStart: () => {
             showToast({ content: "Transfer session before starting" });

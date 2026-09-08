@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { operationalStatusColors } from "@dofek/scoring/colors";
 import type { ReactNode } from "react";
 
@@ -14,13 +15,7 @@ interface QueryStatePanelProps {
 }
 
 export function getQueryErrorMessage(error: unknown, fallback = "Failed to load data."): string {
-  if (error instanceof Error && error.message.trim().length > 0) {
-    return error.message;
-  }
-  if (typeof error === "string" && error.trim().length > 0) {
-    return error;
-  }
-  return fallback;
+  return userFacingErrorMessage(error, fallback);
 }
 
 export function QueryStatePanel({
@@ -61,7 +56,9 @@ export function QueryStatePanel({
   }
 
   const resolvedMessage =
-    message ?? (variant === "error" ? getQueryErrorMessage(error) : "No data yet.");
+    variant === "error" && typeof message === "string"
+      ? userFacingErrorMessage(message, getQueryErrorMessage(error))
+      : (message ?? (variant === "error" ? getQueryErrorMessage(error) : "No data to display."));
   const errorTone = operationalStatusColors.danger;
 
   return (

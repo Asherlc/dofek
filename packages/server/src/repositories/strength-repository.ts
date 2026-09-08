@@ -147,6 +147,7 @@ export interface SetDetail {
 
 /** An exercise with all its sets, for the activity detail view. */
 export class ExerciseWithSets {
+  readonly #activityId: string;
   readonly #exerciseIndex: number;
   readonly #exerciseName: string;
   readonly #equipment: string | null;
@@ -161,7 +162,9 @@ export class ExerciseWithSets {
     muscleGroups: string[] | null,
     exerciseType: string | null,
     sets: SetDetail[],
+    activityId: string,
   ) {
+    this.#activityId = activityId;
     this.#exerciseIndex = exerciseIndex;
     this.#exerciseName = exerciseName;
     this.#equipment = equipment;
@@ -172,6 +175,7 @@ export class ExerciseWithSets {
 
   toDetail() {
     return {
+      activityId: this.#activityId,
       exerciseIndex: this.#exerciseIndex,
       exerciseName: this.#exerciseName,
       equipment: this.#equipment,
@@ -670,7 +674,10 @@ export class StrengthRepository {
               dp2.source_name_pattern ASC
             LIMIT 1
           ) dp ON true
-          WHERE a.id = ${activityId}
+          WHERE (
+              a.id = ${activityId}::uuid
+              OR ${activityId}::uuid = ANY(a.member_activity_ids)
+            )
             AND a.user_id = ${this.#userId}
           ORDER BY
             LOWER(REGEXP_REPLACE(TRIM(e.name), '[[:space:]]+', ' ', 'g')),
@@ -770,6 +777,7 @@ export class StrengthRepository {
             Array.from(exercise.sets.values())
               .map(({ detail }) => detail)
               .sort(compareSets),
+            exercise.metadataMemberActivityId,
           ),
       );
   }

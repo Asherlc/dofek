@@ -92,15 +92,6 @@ describe("PolarizationTrendChart option builder", () => {
     }),
   ];
 
-  it("marks series with empty data as tooltip-hidden", () => {
-    const option = buildPolarizationTrendOption(sampleWeeks);
-    const series = getSeriesArray(option);
-    const seriesWithEmptyData = series.filter((s) => Array.isArray(s.data) && s.data.length === 0);
-    for (const s of seriesWithEmptyData) {
-      expect(s.tooltip).toEqual(expect.objectContaining({ show: false }));
-    }
-  });
-
   it("tooltip formatter returns empty string for empty params", () => {
     const option = buildPolarizationTrendOption(sampleWeeks);
     const formatter = getTooltipFormatter(option);

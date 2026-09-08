@@ -67,7 +67,9 @@ export function CorrelationCard({ insight }: CorrelationCardProps) {
       {/* Confounders */}
       {insight.confounders && insight.confounders.length > 0 && (
         <div className="text-[11px] text-amber-700 bg-amber-950/30 border border-amber-900/30 rounded px-2 py-1.5">
-          <p className="font-medium text-amber-600 mb-0.5">Possible confounders:</p>
+          <p className="font-medium text-amber-600 mb-0.5">
+            Other factors that may affect this result:
+          </p>
           <ul className="list-disc list-inside space-y-0.5">
             {insight.confounders.map((c) => (
               <li key={c}>{c}</li>

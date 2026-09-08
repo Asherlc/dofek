@@ -1,4 +1,5 @@
 import { detectUnitSystem, type UnitSystem } from "@dofek/format/units";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
@@ -60,7 +61,7 @@ export function UnitProvider({
             currentUnitSystem.current = previousSystem;
             setUnitSystemState(previousSystem);
             utils.settings.get.setData({ key: SETTINGS_KEY }, previousSetting);
-            setWriteError(error.message);
+            setWriteError(userFacingErrorMessage(error));
             captureException(error, { context: "unit-system-write" });
           },
           onSettled: () => {
@@ -75,12 +76,15 @@ export function UnitProvider({
   return (
     <>
       <UnitContext value={{ unitSystem, setUnitSystem }}>{children}</UnitContext>
-      {(writeError ?? setting.error?.message) && (
+      {(writeError ?? setting.error) && (
         <p
           role="alert"
           className="fixed bottom-4 left-4 z-50 rounded bg-red-950 px-3 py-2 text-sm text-red-200"
         >
-          {writeError ?? setting.error?.message}
+          {userFacingErrorMessage(
+            writeError ?? setting.error,
+            "Your unit preference could not be saved. Please try again.",
+          )}
         </p>
       )}
     </>

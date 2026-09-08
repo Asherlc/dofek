@@ -334,7 +334,7 @@ export function NutritionPage() {
                           ))}
                         </div>
                       ) : (
-                        <div className="px-5 py-4 text-sm text-dim">No entries yet</div>
+                        <div className="px-5 py-4 text-sm text-dim">No entries to display</div>
                       )}
                     </div>
                   )}

@@ -1,10 +1,7 @@
-import type { IncomingHttpHeaders } from "node:http";
-import { IncomingMessage, ServerResponse } from "node:http";
-import { Socket } from "node:net";
-import { Duplex } from "node:stream";
 import { PgDialect } from "drizzle-orm/pg-core";
 import express from "express";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { postJsonInProcess } from "./test-helpers.ts";
 
 const routeMocks = vi.hoisted(() => ({
   captureException: vi.fn<(error: unknown) => void>(),
@@ -100,52 +97,12 @@ function createTestApp(
   return app;
 }
 
-class InProcessSocket extends Duplex {
-  readonly #chunks: Buffer[] = [];
-
-  get responseBody(): string {
-    const rawResponse = Buffer.concat(this.#chunks).toString("utf8");
-    const bodyStart = rawResponse.indexOf("\r\n\r\n");
-    if (bodyStart === -1) {
-      throw new Error("Response body separator was not found");
-    }
-    return rawResponse.slice(bodyStart + 4);
-  }
-
-  override _write(
-    chunk: Buffer | string,
-    encoding: BufferEncoding,
-    callback: (error?: Error | null) => void,
-  ): void {
-    this.#chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding));
-    callback();
-  }
-}
-
-class InProcessRequest extends IncomingMessage {
-  override headers: IncomingHttpHeaders;
-  override method: string;
-  override url: string;
-
-  constructor(socket: Socket, payload: string, headers: IncomingHttpHeaders, url: string) {
-    super(socket);
-    this.headers = headers;
-    this.method = "POST";
-    this.url = url;
-    this.push(payload);
-    this.push(null);
-  }
-
-  override _read(): void {}
-}
-
-async function post(
+function post(
   app: express.Express,
   body: unknown,
   headers: Record<string, string> = {},
   rawBody = false,
-  url = "/api/ingest/zos-health",
-): Promise<{ status: number; body: unknown }> {
+) {
   const transportBody = rawBody
     ? body
     : {
@@ -160,40 +117,7 @@ async function post(
           },
         ],
       };
-  const payload = JSON.stringify(transportBody);
-  const socket = new InProcessSocket();
-  const request = new InProcessRequest(
-    new Socket(),
-    payload,
-    {
-      "content-type": "application/json",
-      "content-length": Buffer.byteLength(payload).toString(),
-      ...headers,
-    },
-    url,
-  );
-
-  const response: ServerResponse = Reflect.construct(ServerResponse, [request]);
-  Reflect.apply(response.assignSocket, response, [socket]);
-
-  return new Promise((resolve, reject) => {
-    response.on("finish", () => {
-      resolve({
-        status: response.statusCode,
-        body: JSON.parse(socket.responseBody),
-      });
-    });
-    response.on("error", reject);
-    request.on("error", reject);
-
-    Reflect.apply(app.handle, app, [
-      request,
-      response,
-      (error: unknown) => {
-        reject(error instanceof Error ? error : new Error("Request was not handled"));
-      },
-    ]);
-  });
+  return postJsonInProcess(app, "/api/ingest/zos-health", transportBody, headers);
 }
 
 describe("createIngestZosHealthRouter", () => {
@@ -993,168 +917,6 @@ describe("createIngestZosHealthRouter", () => {
       ],
     });
     expect(execute).not.toHaveBeenCalled();
-  });
-
-  it("accepts versioned Zepp IMU chunks and writes source-attributed vectors", async () => {
-    const { db } = createMockDatabase();
-    const response = await post(
-      createTestApp(db, { publishRows: vi.fn(async () => []) }),
-      {
-        version: 1,
-        batchId: "segment-1:0:0",
-        source: { connectionType: "zepp-workout", installId: "install-1" },
-        events: [
-          {
-            eventId: "segment-1:0:0",
-            createdAt: "2024-07-03T09:46:40.000Z",
-            payload: {
-              segmentId: "segment-1",
-              sessionStartMs: 1_720_000_000_000,
-              hasGyroscope: true,
-              samples: [
-                { tMs: 0, ax: 1, ay: 2, az: 3, gx: 4, gy: 5, gz: 6 },
-                { tMs: 0, ax: 7, ay: 8, az: 9, gx: 10, gy: 11, gz: 12 },
-              ],
-            },
-          },
-        ],
-      },
-      { authorization: "Bearer token-123" },
-      true,
-      "/api/ingest/zos-imu",
-    );
-
-    expect(response).toEqual({
-      status: 200,
-      body: {
-        status: "ok",
-        acceptedEventIds: ["segment-1:0:0"],
-        rejected: [],
-      },
-    });
-    expect(routeMocks.writeMetricStreamRows).toHaveBeenCalledWith(
-      expect.objectContaining({
-        rows: [
-          expect.objectContaining({
-            channel: "imu",
-            deviceId: "zepp-workout:install-1",
-            externalId: "amazfit-zepp:install-1:segment-1:0:0:0:0",
-            vector: [1, 2, 3, 4, 5, 6],
-          }),
-          expect.objectContaining({
-            externalId: "amazfit-zepp:install-1:segment-1:0:0:0:1",
-            vector: [7, 8, 9, 10, 11, 12],
-          }),
-        ],
-      }),
-    );
-  });
-
-  it("rejects invalid Zepp IMU events and logs their issue paths", async () => {
-    const { db } = createMockDatabase();
-    const response = await post(
-      createTestApp(db),
-      {
-        version: 1,
-        batchId: "segment-invalid:0:0",
-        source: { connectionType: "zepp", installId: "install-1" },
-        events: [
-          {
-            eventId: "segment-invalid:0:0",
-            createdAt: "2024-07-03T09:46:40.000Z",
-            payload: {
-              segmentId: "segment-invalid",
-              sessionStartMs: 1_720_000_000_000,
-              hasGyroscope: false,
-              samples: [],
-            },
-          },
-        ],
-      },
-      { authorization: "Bearer token-123" },
-      true,
-      "/api/ingest/zos-imu",
-    );
-
-    expect(response).toMatchObject({
-      status: 200,
-      body: {
-        status: "ok",
-        acceptedEventIds: [],
-        rejected: [{ eventId: "segment-invalid:0:0", issues: [{ path: "samples" }] }],
-      },
-    });
-    expect(routeMocks.writeMetricStreamRows).not.toHaveBeenCalled();
-    expect(routeMocks.loggerWarn).toHaveBeenCalledWith(
-      '[ingest-zos-imu] Rejected IMU events {"batchId":"segment-invalid:0:0","rejectedEventCount":1,"issuePaths":["samples"]}',
-    );
-  });
-
-  it("persists valid IMU siblings while rejecting only malformed events", async () => {
-    const { db } = createMockDatabase();
-    const response = await post(
-      createTestApp(db, { publishRows: vi.fn(async () => []) }),
-      {
-        version: 1,
-        batchId: "segment-mixed",
-        source: { connectionType: "zepp", installId: "install-1" },
-        events: [
-          {
-            eventId: "segment-valid:0:0",
-            createdAt: "2024-07-03T09:46:40.000Z",
-            payload: {
-              segmentId: "segment-valid",
-              sessionStartMs: 1_720_000_000_000,
-              hasGyroscope: false,
-              samples: [{ tMs: 25, ax: 1, ay: 2, az: 3, gx: 0, gy: 0, gz: 0 }],
-            },
-          },
-          {
-            eventId: "segment-invalid:0:0",
-            createdAt: "2024-07-03T09:46:40.000Z",
-            payload: {
-              segmentId: "segment-invalid",
-              sessionStartMs: 1_720_000_000_000,
-              hasGyroscope: false,
-              samples: [],
-            },
-          },
-        ],
-      },
-      { authorization: "Bearer token-123" },
-      true,
-      "/api/ingest/zos-imu",
-    );
-
-    expect(response.body).toMatchObject({
-      acceptedEventIds: ["segment-valid:0:0"],
-      rejected: [{ eventId: "segment-invalid:0:0" }],
-    });
-    expect(routeMocks.writeMetricStreamRows).toHaveBeenCalledWith(
-      expect.objectContaining({
-        rows: [expect.objectContaining({ recordedAt: "2024-07-03T09:46:40.025Z" })],
-      }),
-    );
-  });
-
-  it("returns 400 for a malformed Zepp IMU envelope", async () => {
-    const { db } = createMockDatabase();
-    const response = await post(
-      createTestApp(db),
-      {
-        version: 1,
-        batchId: "segment-invalid:0:0",
-        source: { connectionType: "zepp", installId: "install-1" },
-        events: [],
-      },
-      { authorization: "Bearer token-123" },
-      true,
-      "/api/ingest/zos-imu",
-    );
-
-    expect(response.status).toBe(400);
-    expect(response.body).toMatchObject({ error: "Invalid envelope" });
-    expect(routeMocks.writeMetricStreamRows).not.toHaveBeenCalled();
   });
 
   it("returns 500 when ingest persistence fails", async () => {

@@ -1,5 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ImuSegmentResult, ImuSessionController } from "./imu-session-controller.ts";
+import { STORAGE_KEYS } from "./storage-keys.ts";
 import type { LiveWorkoutSnapshot } from "./workout-live.ts";
 import type { LiveWorkoutBatch } from "./workout-live-storage.ts";
 
@@ -41,8 +42,13 @@ const moduleMocks = vi.hoisted(() => ({
   request: vi.fn(),
   loggerError: vi.fn(),
   createWidget: vi.fn(),
+  deleteWidget: vi.fn(),
   getSportData: vi.fn(),
   heartRateGetLast: vi.fn(() => 148),
+  heartRateConstruct: vi.fn(),
+  heartRateGetCurrent: vi.fn(() => 162),
+  heartRateOnCurrentChange: vi.fn<(callback: () => void) => void>(),
+  heartRateOffCurrentChange: vi.fn<(callback: () => void) => void>(),
   createImuSessionController: vi.fn(),
   readPendingImuTransfers: vi.fn(),
   savePendingImuTransfer: vi.fn(),
@@ -68,6 +74,12 @@ vi.mock("@zos/sensor", () => ({
   Gyroscope: class {},
   checkSensor: vi.fn(() => true),
   HeartRate: class {
+    constructor() {
+      moduleMocks.heartRateConstruct();
+    }
+    getCurrent = moduleMocks.heartRateGetCurrent;
+    onCurrentChange = moduleMocks.heartRateOnCurrentChange;
+    offCurrentChange = moduleMocks.heartRateOffCurrentChange;
     getLast(): number {
       return moduleMocks.heartRateGetLast();
     }
@@ -82,12 +94,19 @@ vi.mock("@zos/display", () => ({
 vi.mock("@zos/ui", () => ({
   align: { CENTER_H: 1 },
   createWidget: moduleMocks.createWidget,
+  deleteWidget: moduleMocks.deleteWidget,
   prop: { TEXT: 2 },
   text_style: { NONE: 0, WRAP: 1 },
-  widget: { TEXT: 3 },
+  widget: { TEXT: 3, QRCODE: 4 },
 }));
 vi.mock("@zos/utils", () => ({
   HeartRate: class {
+    constructor() {
+      moduleMocks.heartRateConstruct();
+    }
+    getCurrent = moduleMocks.heartRateGetCurrent;
+    onCurrentChange = moduleMocks.heartRateOnCurrentChange;
+    offCurrentChange = moduleMocks.heartRateOffCurrentChange;
     getLast(): number {
       return moduleMocks.heartRateGetLast();
     }
@@ -99,7 +118,7 @@ vi.mock("@zos/utils", () => ({
   prop: { TEXT: 2 },
   px: (value: number) => value,
   text_style: { NONE: 0, WRAP: 1 },
-  widget: { TEXT: 3 },
+  widget: { TEXT: 3, QRCODE: 4 },
   pauseDropWristScreenOff: vi.fn(() => 0),
   resetDropWristScreenOff: vi.fn(() => 0),
   setPageBrightTime: vi.fn(() => 0),
@@ -147,6 +166,7 @@ interface WidgetState {
   statusWidget: WidgetReference | null;
   focused: boolean;
   imuController: ImuSessionController | null;
+  imuConnection: { serverUrl: string; accountId: string } | null;
   activeImuSlot: "A" | "B";
   pendingImuA: ImuSegmentResult | null;
   pendingImuB: ImuSegmentResult | null;
@@ -156,6 +176,10 @@ interface WidgetState {
 
 interface DataWidgetConfiguration {
   state: WidgetState;
+  onCall(
+    this: DataWidgetContext,
+    payload: { method: string; params: Record<string, unknown> },
+  ): void;
   build(this: DataWidgetContext): void;
   collectSnapshot(this: DataWidgetContext): Promise<void>;
   flushSnapshots(this: DataWidgetContext): Promise<void>;
@@ -165,6 +189,7 @@ interface DataWidgetConfiguration {
   stopImuSegment(this: DataWidgetContext): void;
   sendImuSegment(this: DataWidgetContext, result: ImuSegmentResult, slot: "A" | "B"): void;
   retryImuTransfers(this: DataWidgetContext): void;
+  refreshImuConnection(this: DataWidgetContext): Promise<void>;
   reportError(this: DataWidgetContext, error: unknown, category: string): void;
   onResume(this: DataWidgetContext): void;
   onPause(this: DataWidgetContext): void;
@@ -184,6 +209,7 @@ function makeContext(): DataWidgetContext {
   return {
     ...configuration,
     state: {
+      ...configuration.state,
       intervalId: null,
       collecting: false,
       flushing: false,
@@ -191,6 +217,7 @@ function makeContext(): DataWidgetContext {
       statusWidget: null,
       focused: false,
       imuController: null,
+      imuConnection: { serverUrl: "https://dofek.test", accountId: "account-1" },
       activeImuSlot: "A",
       pendingImuA: null,
       pendingImuB: null,
@@ -205,7 +232,12 @@ function makeContext(): DataWidgetContext {
 beforeAll(async () => {
   vi.stubGlobal("settings", {
     settingsStorage: {
-      getItem: vi.fn(() => "install-1"),
+      getItem: vi.fn((key: string) =>
+        key === STORAGE_KEYS.IMU_CONNECTION_BINDING
+          ? JSON.stringify({ serverUrl: "https://dofek.test", accountId: "account-1" })
+          : "install-1",
+      ),
+      removeItem: vi.fn(),
       setItem: vi.fn(),
     },
   });
@@ -229,13 +261,190 @@ beforeEach(() => {
           ),
           rejected: [],
         }
-      : { ok: true },
+      : request.method === "imu.getPreferences"
+        ? {
+            hasCredentials: true,
+            pairing: null,
+            imuConnection: { serverUrl: "https://dofek.test", accountId: "account-1" },
+          }
+        : { ok: true },
   );
   moduleMocks.createImuSessionController.mockImplementation(() => mockController());
   moduleMocks.sendFile.mockReturnValue({ on: vi.fn() });
 });
 
 describe("workout extension data widget", () => {
+  it.each(["onPause", "onDestroy"] as const)(
+    "ignores a delayed pairing response after %s",
+    async (lifecycle) => {
+      const context = makeContext();
+      context.startCollection = vi.fn();
+      context.startImuSegment = vi.fn();
+      let resolvePairing: ((value: unknown) => void) | undefined;
+      moduleMocks.request.mockImplementation(async ({ method }) => {
+        if (method === "imu.getPreferences")
+          return { hasCredentials: false, canStartConnection: true, pairing: null };
+        if (method === "dofek.startPairing")
+          return new Promise((resolve) => {
+            resolvePairing = resolve;
+          });
+        return { ok: true };
+      });
+      context.build();
+      await vi.waitFor(() => expect(resolvePairing).toBeTypeOf("function"));
+      context[lifecycle]();
+      resolvePairing?.({ verificationUrl: "https://dofek.test/pair", shortCode: "ABC234" });
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(moduleMocks.createWidget).not.toHaveBeenCalledWith(4, expect.anything());
+    },
+  );
+
+  it("refreshes pairing when the widget resumes", async () => {
+    const context = makeContext();
+    context.startCollection = vi.fn();
+    context.startImuSegment = vi.fn();
+    moduleMocks.request.mockResolvedValue({
+      hasCredentials: false,
+      pairing: { verificationUrl: "https://dofek.test/pair", shortCode: "ABC234" },
+    });
+    context.onResume();
+    await vi.waitFor(() =>
+      expect(moduleMocks.createWidget).toHaveBeenCalledWith(
+        4,
+        expect.objectContaining({ content: "https://dofek.test/pair" }),
+      ),
+    );
+    expect(moduleMocks.request).toHaveBeenCalledWith({ method: "imu.getPreferences", params: {} });
+    context.onPause();
+  });
+
+  it("reports pairing failures and shows the error from the phone", async () => {
+    const context = makeContext();
+    context.startCollection = vi.fn();
+    context.startImuSegment = vi.fn();
+    moduleMocks.request.mockImplementation(async ({ method }) => {
+      if (method === "imu.getPreferences")
+        return { hasCredentials: false, canStartConnection: true, pairing: null };
+      if (method === "dofek.startPairing") throw new Error("Dofek server is unavailable");
+      return { ok: true };
+    });
+    context.build();
+    await vi.waitFor(() =>
+      expect(context.state.statusWidget?.setProperty).toHaveBeenCalledWith(
+        2,
+        "Dofek server is unavailable\nOpen Zepp settings to pair",
+      ),
+    );
+    expect(moduleMocks.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "telemetry.report",
+        params: expect.objectContaining({ category: "workout-pairing" }),
+      }),
+    );
+  });
+
+  it("ignores old preferences after a newer connection notification", async () => {
+    const context = makeContext();
+    context.startCollection = vi.fn();
+    context.startImuSegment = vi.fn();
+    let resolvePreferences: ((value: unknown) => void) | undefined;
+    moduleMocks.request.mockImplementation(async ({ method }) => {
+      if (method === "imu.getPreferences")
+        return new Promise((resolve) => {
+          resolvePreferences = resolve;
+        });
+      return { ok: true };
+    });
+    context.build();
+    moduleMocks.request.mockResolvedValue({ hasCredentials: true, pairing: null });
+    context.onCall({ method: "dofek.connectionChanged", params: {} });
+    await vi.waitFor(() =>
+      expect(context.state.statusWidget?.setProperty).toHaveBeenLastCalledWith(
+        2,
+        "Collecting live workout data",
+      ),
+    );
+    resolvePreferences?.({
+      hasCredentials: false,
+      pairing: { verificationUrl: "https://dofek.test/pair", shortCode: "ABC234" },
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(moduleMocks.createWidget).not.toHaveBeenCalledWith(4, expect.anything());
+  });
+
+  it("shows a new pairing QR and restores workout status when paired", async () => {
+    const context = makeContext();
+    context.startCollection = vi.fn();
+    context.startImuSegment = vi.fn();
+    const pairing = {
+      verificationUrl: "https://dofek.test/zepp-pairing?code=ABC234",
+      shortCode: "ABC234",
+    };
+    moduleMocks.request.mockImplementation(async ({ method }) => {
+      if (method === "imu.getPreferences")
+        return { hasCredentials: false, canStartConnection: true, pairing: null };
+      if (method === "dofek.startPairing") return pairing;
+      return { ok: true };
+    });
+    context.build();
+    await vi.waitFor(() =>
+      expect(moduleMocks.createWidget).toHaveBeenCalledWith(
+        4,
+        expect.objectContaining({ content: pairing.verificationUrl }),
+      ),
+    );
+    expect(context.state.statusWidget?.setProperty).toHaveBeenCalledWith(
+      2,
+      "Scan QR to pair\nCode ABC234",
+    );
+    const qr = moduleMocks.createWidget.mock.results.at(-1)?.value;
+    moduleMocks.request.mockResolvedValue({ hasCredentials: true, pairing: null });
+    context.onCall({ method: "dofek.connectionChanged", params: {} });
+    await vi.waitFor(() => expect(moduleMocks.deleteWidget).toHaveBeenCalledWith(qr));
+    expect(context.state.statusWidget?.setProperty).toHaveBeenLastCalledWith(
+      2,
+      "Collecting live workout data",
+    );
+  });
+
+  it("reuses an existing challenge and keeps its instructions during collection", async () => {
+    const context = makeContext();
+    context.startCollection = vi.fn();
+    context.startImuSegment = vi.fn();
+    const pairing = {
+      verificationUrl: "https://dofek.test/zepp-pairing?code=ABC234",
+      shortCode: "ABC234",
+    };
+    moduleMocks.request.mockResolvedValue({
+      hasCredentials: false,
+      canStartConnection: false,
+      pairing,
+    });
+    context.build();
+    await vi.waitFor(() =>
+      expect(moduleMocks.createWidget).toHaveBeenCalledWith(
+        4,
+        expect.objectContaining({ content: pairing.verificationUrl }),
+      ),
+    );
+    moduleMocks.collectLiveWorkoutSnapshot.mockResolvedValue({
+      recordedAt: "2024-07-03T09:51:52.000Z",
+      metrics: { duration: 312 },
+    });
+    moduleMocks.findLiveWorkoutExternalId.mockReturnValue("1720000000");
+    await context.collectSnapshot();
+    expect(context.state.statusWidget?.setProperty).toHaveBeenLastCalledWith(
+      2,
+      "Scan QR to pair\nCode ABC234",
+    );
+    expect(moduleMocks.request).not.toHaveBeenCalledWith({
+      method: "dofek.startPairing",
+      params: {},
+    });
+  });
+
   it("restores durable batches, renders status, and starts focused collectors", () => {
     const context = makeContext();
     const batch = { externalId: "1720000000", snapshots: [] };
@@ -262,7 +471,7 @@ describe("workout extension data widget", () => {
       x: 20,
       y: 160,
       w: 440,
-      h: 120,
+      h: 80,
       color: 0x9ca3af,
       text_size: 26,
       align_h: 1,
@@ -462,8 +671,7 @@ describe("workout extension data widget", () => {
       expect.any(Function),
     );
     const heartRateReader = moduleMocks.collectLiveWorkoutSnapshot.mock.calls[0]?.[1];
-    expect(heartRateReader?.()).toBe(148);
-    expect(moduleMocks.heartRateGetLast).toHaveBeenCalledOnce();
+    expect(heartRateReader?.()).toBe(0);
     expect(moduleMocks.findLiveWorkoutExternalId).toHaveBeenCalledWith(snapshot, []);
     expect(moduleMocks.writeLiveWorkoutBuffer).toHaveBeenCalledWith({
       batches: context.state.pendingBatches,
@@ -496,12 +704,13 @@ describe("workout extension data widget", () => {
       "workout-collection",
       expect.any(Error),
     );
-    expect(moduleMocks.request).toHaveBeenCalledWith(
-      expect.objectContaining({
-        method: "telemetry.report",
-        params: expect.objectContaining({ category: "workout-collection" }),
+    expect(moduleMocks.request).toHaveBeenCalledWith({
+      method: "telemetry.report",
+      params: expect.objectContaining({
+        message: "sensor unavailable",
+        category: "workout-collection",
       }),
-    );
+    });
     expect(context.state.collecting).toBe(false);
   });
 
@@ -645,7 +854,7 @@ describe("workout extension data widget", () => {
         snapshots: [{ recordedAt: "2024-07-03T09:51:52.000Z", metrics: {} }],
       },
     ];
-    moduleMocks.request.mockRejectedValue(new Error("offline"));
+    moduleMocks.request.mockRejectedValueOnce(new Error("offline")).mockResolvedValue(undefined);
 
     await context.flushSnapshots.call(context);
 
@@ -656,7 +865,7 @@ describe("workout extension data widget", () => {
     expect(context.state.flushing).toBe(false);
   });
 
-  it("starts, stops, resumes, pauses, and destroys all focused collection", () => {
+  it("starts, stops, resumes, pauses, and destroys all focused collection", async () => {
     vi.useFakeTimers();
     const context = makeContext();
     context.collectSnapshot = vi.fn().mockResolvedValue(undefined);
@@ -679,6 +888,9 @@ describe("workout extension data widget", () => {
     expect(context.flushSnapshots).toHaveBeenCalledOnce();
     expect(context.stopImuSegment).toHaveBeenCalledOnce();
     context.onResume.call(context);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
     expect(context.state.focused).toBe(true);
     expect(context.state.intervalId).not.toBeNull();
     expect(context.startImuSegment).toHaveBeenCalledOnce();
@@ -688,5 +900,90 @@ describe("workout extension data widget", () => {
     context.stopCollection.call(context);
     expect(context.flushSnapshots).toHaveBeenCalledTimes(3);
     vi.useRealTimers();
+  });
+
+  it("reads continuous heart rate only in callbacks and clears it across focus changes", async () => {
+    vi.useFakeTimers();
+    try {
+      const context = makeContext();
+      const collectSnapshot = context.collectSnapshot;
+      context.collectSnapshot = vi.fn().mockResolvedValue(undefined);
+      context.flushSnapshots = vi.fn().mockResolvedValue(undefined);
+      moduleMocks.collectLiveWorkoutSnapshot.mockResolvedValue({ metrics: {} });
+      moduleMocks.findLiveWorkoutExternalId.mockReturnValue(undefined);
+
+      context.startCollection.call(context);
+      context.onResume.call(context);
+      expect(moduleMocks.heartRateConstruct).toHaveBeenCalledOnce();
+      expect(moduleMocks.heartRateOnCurrentChange).toHaveBeenCalledOnce();
+      expect(moduleMocks.heartRateGetCurrent).not.toHaveBeenCalled();
+      const firstCallback = moduleMocks.heartRateOnCurrentChange.mock.calls[0]?.[0];
+      expect(firstCallback).toBeTypeOf("function");
+      firstCallback?.();
+      await collectSnapshot.call(context);
+      const reader = moduleMocks.collectLiveWorkoutSnapshot.mock.calls[0]?.[1];
+      expect(reader()).toBe(162);
+      expect(moduleMocks.heartRateGetCurrent).toHaveBeenCalledOnce();
+
+      context.onPause.call(context);
+      expect(moduleMocks.heartRateOffCurrentChange).toHaveBeenCalledWith(firstCallback);
+      expect(reader()).toBe(0);
+      firstCallback?.();
+      expect(reader()).toBe(0);
+
+      context.onResume.call(context);
+      expect(moduleMocks.heartRateConstruct).toHaveBeenCalledOnce();
+      expect(moduleMocks.heartRateOnCurrentChange).toHaveBeenCalledTimes(2);
+      firstCallback?.();
+      expect(reader()).toBe(0);
+      const resumedCallback = moduleMocks.heartRateOnCurrentChange.mock.calls[1]?.[0];
+      moduleMocks.heartRateGetCurrent.mockReturnValueOnce(175);
+      resumedCallback?.();
+      expect(reader()).toBe(175);
+
+      context.onDestroy.call(context);
+      context.onDestroy.call(context);
+      expect(moduleMocks.heartRateOffCurrentChange).toHaveBeenCalledTimes(2);
+      expect(moduleMocks.heartRateOffCurrentChange).toHaveBeenLastCalledWith(resumedCallback);
+      expect(reader()).toBe(0);
+      expect(moduleMocks.heartRateGetLast).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears the cached heart rate and reports a continuous sensor read failure", async () => {
+    vi.useFakeTimers();
+    try {
+      const context = makeContext();
+      const collectSnapshot = context.collectSnapshot;
+      context.collectSnapshot = vi.fn().mockResolvedValue(undefined);
+      context.flushSnapshots = vi.fn().mockResolvedValue(undefined);
+      moduleMocks.collectLiveWorkoutSnapshot.mockResolvedValue({ metrics: {} });
+      moduleMocks.findLiveWorkoutExternalId.mockReturnValue(undefined);
+      context.startCollection.call(context);
+      const callback = moduleMocks.heartRateOnCurrentChange.mock.calls[0]?.[0];
+      callback?.();
+      await collectSnapshot.call(context);
+      const reader = moduleMocks.collectLiveWorkoutSnapshot.mock.calls[0]?.[1];
+      expect(reader()).toBe(162);
+
+      moduleMocks.heartRateGetCurrent.mockImplementationOnce(() => {
+        throw new Error("heart rate sensor unavailable");
+      });
+      callback?.();
+
+      expect(reader()).toBe(0);
+      expect(moduleMocks.request).toHaveBeenCalledWith({
+        method: "telemetry.report",
+        params: expect.objectContaining({
+          message: "heart rate sensor unavailable",
+          category: "workout-heart-rate",
+        }),
+      });
+      context.onDestroy.call(context);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

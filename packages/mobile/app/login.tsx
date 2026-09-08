@@ -5,6 +5,7 @@ import {
   PASSWORD_MIN_LENGTH,
   PASSWORD_REQUIREMENT_TEXT,
 } from "@dofek/auth/auth";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { groupConfiguredAuthProviders } from "@dofek/providers/auth-provider-grouping";
 import { providerLabel } from "@dofek/providers/providers";
 import * as AppleAuthentication from "expo-apple-authentication";
@@ -77,7 +78,7 @@ export default function LoginScreen() {
       .then(setProviders)
       .catch((err: unknown) => {
         captureException(err, { source: "login-screen-configured-providers" });
-        setError(err instanceof Error ? err.message : "Failed to load providers");
+        setError(userFacingErrorMessage(err, "Failed to load providers"));
       })
       .finally(() => setLoading(false));
   }, [serverUrl]);
@@ -105,7 +106,7 @@ export default function LoginScreen() {
       }
     } catch (err: unknown) {
       captureException(err, { source: "login-screen-handle-login" });
-      setError(err instanceof Error ? err.message : "Login failed");
+      setError(userFacingErrorMessage(err, "Login failed"));
     } finally {
       setLoggingIn(false);
     }
@@ -140,7 +141,7 @@ export default function LoginScreen() {
       }
     } catch (err: unknown) {
       captureException(err, { source: "login-screen-password-auth" });
-      setFormError(err instanceof Error ? err.message : "Authentication failed");
+      setFormError(userFacingErrorMessage(err, "Authentication failed"));
     } finally {
       setLoggingIn(false);
     }
@@ -153,10 +154,15 @@ export default function LoginScreen() {
     setError(null);
     try {
       const result = await requestPasswordReset(serverUrl, email.trim());
-      setError(result.message);
+      setError(
+        userFacingErrorMessage(
+          result.message,
+          "The password reset request could not be sent. Please try again.",
+        ),
+      );
     } catch (err: unknown) {
       captureException(err, { source: "login-screen-password-reset" });
-      setError(err instanceof Error ? err.message : "Password reset failed");
+      setError(userFacingErrorMessage(err, "Password reset failed"));
     } finally {
       setLoggingIn(false);
     }

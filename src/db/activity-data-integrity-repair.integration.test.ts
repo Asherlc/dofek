@@ -6,6 +6,7 @@ import { createClient } from "@clickhouse/client";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
+import { queryClickHouseRows } from "./activity-data-integrity-clickhouse.ts";
 import { runActivityIntegrityDbtBuild } from "./activity-data-integrity-dbt.ts";
 import {
   type ActivityIntegrityClickHouseClient,
@@ -85,12 +86,26 @@ describe("activity data integrity repair", () => {
     await context?.cleanup();
   }, 120_000);
 
+  it("reads ClickHouse UTC timestamps with an explicit zone and preserves fractional seconds", async () => {
+    const rows = await queryClickHouseRows(
+      client,
+      z.object({ started_at: z.string().datetime(), ended_at: z.string().datetime().nullable() }),
+      `SELECT toDateTime64('2026-09-01 23:30:00.123456', 6, 'UTC') AS started_at,
+        CAST(NULL AS Nullable(DateTime64(6, 'UTC'))) AS ended_at`,
+      {},
+    );
+    expect(rows).toEqual([{ started_at: "2026-09-01T23:30:00.123456Z", ended_at: null }]);
+    expect(new Date(rows[0]?.started_at ?? "").toISOString()).toBe("2026-09-01T23:30:00.123Z");
+  });
+
   it("uses the production dbt path to split a legacy Wahoo/Peloton component, preserve its valid B-C edge, and roll back only local time", async () => {
     await seedProductionDbtFixture(client, database);
     configureDbtEnvironment(database);
     await runActivityIntegrityDbtBuild({
       userId: TEST_USER_ID,
       activityIds: [wahooActivityId, pelotonActivityId, namedZoneActivityId, unrelatedActivityId],
+      eventTimeStart: new Date("2026-09-01T00:00:00.000Z"),
+      eventTimeEnd: new Date("2026-09-03T00:00:00.000Z"),
     });
     await seedLegacyFalseComponent(client, database);
     const unrelatedBefore = await taskThreeRowsForActivity(client, database, unrelatedActivityId);
@@ -290,19 +305,9 @@ async function seedProductionDbtFixture(
       ingested_at DateTime64(9, 'UTC'),
       version UInt64,
       is_deleted UInt8
-    ) ENGINE = MergeTree ORDER BY (id, version)`,
-    `CREATE TABLE ${database}.activity_sensor_sample (
-      activity_id UUID,
-      user_id UUID,
-      recorded_at DateTime64(6, 'UTC'),
-      recorded_date Date,
-      channel String,
-      scalar Nullable(Float64),
-      refresh_version UInt64,
-      is_deleted UInt8,
-      refreshed_at DateTime64(9, 'UTC')
-    ) ENGINE = ReplacingMergeTree(refresh_version)
-      ORDER BY (user_id, activity_id, recorded_date, channel, recorded_at)`,
+    ) ENGINE = ReplacingMergeTree()
+      ORDER BY (user_id, activity_id)
+      SETTINGS allow_nullable_key = 1`,
     `CREATE TABLE ${database}.activity_location_summary_rows (
       activity_id UUID,
       user_id UUID,
@@ -344,12 +349,12 @@ async function seedProductionDbtFixture(
       (
         '${TEST_USER_ID}', toDateTime64('2026-09-01 15:10:00', 6, 'UTC'),
         toDate('2026-09-01'), 'heart_rate', 150, 1, 0,
-        now64(9), 'wahoo', '${wahooActivityId}'
+        toDateTime64('2026-09-02 17:00:00', 9, 'UTC'), 'wahoo', '${wahooActivityId}'
       ),
       (
         '${TEST_USER_ID}', toDateTime64('2026-09-01 15:15:00', 6, 'UTC'),
         toDate('2026-09-01'), 'heart_rate', 145, 1, 0,
-        now64(9), 'peloton', '${pelotonActivityId}'
+        toDateTime64('2026-09-02 17:00:00', 9, 'UTC'), 'peloton', '${pelotonActivityId}'
       )`,
     `INSERT INTO ${database}.activity VALUES
       (

@@ -87,6 +87,23 @@ describe("syncHealthKitToServer", () => {
     };
   }
 
+  it("captures unexpected category query failures and propagates the original error", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const error = new Error("Category database read failed");
+    healthKit.queryCategorySamples.mockRejectedValueOnce(error);
+    await expect(
+      syncHealthKitToServer({ trpcClient: client, healthKit, syncRangeDays: 1 }),
+    ).rejects.toBe(error);
+    expect(captureException).toHaveBeenCalledWith(
+      error,
+      expect.objectContaining({
+        source: "health-kit-category-query",
+        typeIdentifier: MENSTRUAL_FLOW_TYPE_IDENTIFIER,
+      }),
+    );
+  });
+
   it("queries all quantity types and pushes to server", async () => {
     const client = createMockClient();
     const healthKit = createMockHealthKit();

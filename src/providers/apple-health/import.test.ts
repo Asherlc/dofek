@@ -829,6 +829,21 @@ describe("importAppleHealthFile", () => {
     expect(spies.insertFn).not.toHaveBeenCalled();
   });
 
+  it("preserves medication records when a replacement includes both valid and invalid rows", async () => {
+    const zipPath = createClinicalZip(tmpDir, "dose-event-partial", [
+      {
+        name: "MedicationDoseEvent-valid.json",
+        content: JSON.stringify({ uuid: "valid", startDate: "2026-09-01T12:00:00Z" }),
+      },
+      { name: "MedicationDoseEvent-invalid.json", content: "{invalid" },
+    ]);
+    const { db, spies } = createRunImportMockDb();
+    const result = await importMedicationDoseEvents(db, "apple_health", zipPath);
+    expect(result.errors).toHaveLength(1);
+    expect(result.inserted).toBe(0);
+    expect(spies.deleteFn).not.toHaveBeenCalled();
+  });
+
   it("reports medication dose parse errors without inserting invalid dose rows", async () => {
     const zipPath = createClinicalZip(tmpDir, "dose-event-invalid-json", [
       {
@@ -1942,7 +1957,35 @@ describe("importClinicalRecords", () => {
     }
   });
 
-  it("deletes existing records before importing", async () => {
+  it("rejects malformed supported FHIR resources before replacing clinical records", async () => {
+    const zipPath = createClinicalZip(tmpDir, "invalid-supported-fhir", [
+      { name: "valid.json", content: JSON.stringify(labObservation) },
+      { name: "invalid.json", content: JSON.stringify({ resourceType: "Observation", id: 1 }) },
+    ]);
+    const xmlPath = createTestXml(tmpDir, "invalid-supported-fhir.xml", []);
+    const { db, spies } = createImportMockDb();
+    const result = await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
+    expect(result.errors).toHaveLength(1);
+    expect(result.inserted).toBe(0);
+    expect(spies.deleteFn).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid clinical dates before replacing clinical records", async () => {
+    const zipPath = createClinicalZip(tmpDir, "invalid-clinical-date", [
+      {
+        name: "invalid.json",
+        content: JSON.stringify({ ...labObservation, effectiveDateTime: "invalid-date" }),
+      },
+    ]);
+    const xmlPath = createTestXml(tmpDir, "invalid-clinical-date.xml", []);
+    const { db, spies } = createImportMockDb();
+    const result = await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
+    expect(result.errors).toHaveLength(1);
+    expect(result.inserted).toBe(0);
+    expect(spies.deleteFn).not.toHaveBeenCalled();
+  });
+
+  it("replaces existing records when the archive is valid and empty", async () => {
     const zipPath = createEmptyZip(tmpDir, "delete-test");
     const xmlPath = createTestXml(tmpDir, "delete-test.xml", []);
     const { db, spies } = createImportMockDb();
@@ -2098,7 +2141,7 @@ describe("importClinicalRecords", () => {
 
     const result = await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
 
-    expect(result.inserted).toBe(2); // Lab observation and diagnostic report
+    expect(result.inserted).toBe(0); // A malformed file rejects the complete replacement.
     expect(result.skipped).toBe(2); // vital + non-FHIR
     expect(result.errors).toHaveLength(1); // broken JSON
   });
@@ -2523,6 +2566,40 @@ describe("importClinicalRecords", () => {
 // ============================================================
 
 describe("readZipEntries", () => {
+  it.each(["entry header", "entry stream"])(
+    "rejects corrupt %s instead of returning an incomplete archive",
+    async (failure) => {
+      const directory = join(tmpdir(), `ah-corrupt-${failure.replaceAll(" ", "-")}-${Date.now()}`);
+      mkdirSync(directory, { recursive: true });
+      try {
+        const zipPath = createClinicalZip(directory, "corrupt", [
+          { name: "record.json", content: JSON.stringify({ data: "repeat".repeat(1000) }) },
+        ]);
+        const data = readFileSync(zipPath);
+        const centralSignature = Buffer.from([0x50, 0x4b, 0x01, 0x02]);
+        let offset = data.indexOf(centralSignature);
+        while (offset >= 0) {
+          const filenameLength = data.readUInt16LE(offset + 28);
+          const filename = data.toString("utf8", offset + 46, offset + 46 + filenameLength);
+          if (filename.endsWith("record.json")) {
+            if (failure === "entry header") {
+              data.writeUInt32LE(0, data.readUInt32LE(offset + 42));
+            } else {
+              data.writeUInt32LE(data.readUInt32LE(offset + 24) + 1, offset + 24);
+            }
+            break;
+          }
+          offset = data.indexOf(centralSignature, offset + 4);
+        }
+        expect(offset).toBeGreaterThanOrEqual(0);
+        writeFileSync(zipPath, data);
+        await expect(readZipEntries(zipPath, (name) => name.endsWith(".json"))).rejects.toThrow();
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
+    },
+  );
+
   let tmpDir: string;
 
   beforeAll(() => {

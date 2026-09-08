@@ -226,14 +226,7 @@ export class CyclingAdvancedRepository {
 
     const currentRampRate = weeks.length > 0 ? (weeks[weeks.length - 1]?.rampRate ?? 0) : 0;
 
-    let recommendation: string;
-    if (Math.abs(currentRampRate) < 5) {
-      recommendation = "Safe: ramp rate is within sustainable range";
-    } else if (Math.abs(currentRampRate) <= 7) {
-      recommendation = "Aggressive: monitor fatigue closely and ensure recovery";
-    } else {
-      recommendation = "Danger: ramp rate is too high, risk of overtraining or injury";
-    }
+    const recommendation = `Weekly training-load change: ${currentRampRate > 0 ? "+" : ""}${currentRampRate} points`;
 
     return { weeks, currentRampRate, recommendation };
   }

@@ -9,6 +9,7 @@ export default defineConfig({
     "./src/db/schema/enums.ts",
     "./src/db/schema/events.ts",
     "./src/db/schema/nutrition.ts",
+    "./src/db/schema/record-modifications.ts",
     "./src/db/schema/reference.ts",
   ],
   out: "./drizzle",

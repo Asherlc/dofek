@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 export interface ProviderStatus {
   status: "pending" | "running" | "done" | "error";
   message?: string;
@@ -74,8 +75,10 @@ export async function pollSyncJob(opts: PollSyncJobOptions): Promise<void> {
     } catch (error: unknown) {
       if (signal?.aborted) return;
       onError?.(error);
-      const message =
-        error instanceof Error ? error.message : "Sync status is temporarily unavailable.";
+      const message = userFacingErrorMessage(
+        error,
+        "Sync status is temporarily unavailable. Please try again.",
+      );
       for (const providerId of providerIds) {
         if (signal?.aborted) return;
         const lastKnownState = lastKnownProviderStates.get(providerId) ?? { status: "syncing" };

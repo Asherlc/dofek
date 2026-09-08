@@ -9,8 +9,10 @@ Read [README.md](./README.md) first, then read the parent
   not merge its manifest, version, or app ID into the parent watch app.
 - `data-widget/` runs inside the system Workout app. Keep it within the Zepp
   Workout Extension lifecycle and API surface.
-- `setting/` stores server/email configuration and emits the one-shot password
-  login command.
+- `setting/` only registers the Workout Extension variant of the shared
+  `../src/settings-page.ts`; shared server/email configuration and one-shot
+  commands belong there. Zepp reruns the Settings `build` lifecycle after
+  Settings Storage changes ([Settings App registration](https://docs.zepp.com/docs/guides/framework/app-settings/register/)).
 - `../app-side/index.ts` performs authentication and owns credentials plus
   connection state.
 - `data-widget/` owns live sample buffering, pending batches, and upload

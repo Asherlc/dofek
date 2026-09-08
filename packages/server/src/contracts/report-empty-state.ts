@@ -3,13 +3,9 @@ import { z } from "zod";
 export type ReportKind = "weekly" | "monthly";
 
 interface ReportEmptyStateBase {
-  message: string;
   minimumObservedDays: 1;
   acceptedDataTypes: readonly ["activity", "sleep", "recovery"];
   requirement: string;
-  previewTitle: string;
-  previewItems: readonly string[];
-  note: string;
 }
 
 export interface WeeklyReportEmptyState extends ReportEmptyStateBase {
@@ -31,13 +27,9 @@ const acceptedDataTypesSchema = z.tuple([
 ]);
 
 const reportEmptyStateBaseSchema = z.object({
-  message: z.string(),
   minimumObservedDays: z.literal(1),
   acceptedDataTypes: acceptedDataTypesSchema,
   requirement: z.string(),
-  previewTitle: z.string(),
-  previewItems: z.array(z.string()),
-  note: z.string(),
 });
 
 export const weeklyReportEmptyStateSchema = reportEmptyStateBaseSchema.extend({
@@ -57,10 +49,8 @@ export function reportEmptyStateSchema(reportKind: ReportKind) {
 }
 
 const sharedEmptyState = {
-  message: "No activity, sleep, or recovery data is available for this report yet.",
   minimumObservedDays: 1,
   acceptedDataTypes: ["activity", "sleep", "recovery"],
-  note: "This preview shows report sections only. No personal values or conclusions are estimated.",
 } as const;
 
 export function createReportEmptyState(reportKind: "weekly"): WeeklyReportEmptyState;
@@ -70,35 +60,18 @@ export function createReportEmptyState(reportKind: ReportKind): ReportEmptyState
     return {
       ...sharedEmptyState,
       reportKind,
-      title: "Your weekly report will appear here",
+      title: "No weekly report for this period.",
       requirement:
-        "At least 1 observed day of activity, sleep, or recovery data is required to create a weekly report.",
-      previewTitle: "When ready, your weekly report will include",
-      previewItems: [
-        "Training time and activity count",
-        "Average nightly sleep",
-        "Average resting heart rate",
-        "Average heart rate variability",
-        "Recent week comparisons",
-      ],
+        "Sync at least one day of activity, sleep, or recovery data from this period to create a report.",
     };
   }
 
   return {
     ...sharedEmptyState,
     reportKind,
-    title: "Your monthly report will appear here",
+    title: "No monthly report for this period.",
     requirement:
-      "At least 1 observed day of activity, sleep, or recovery data is required to create a monthly report.",
-    previewTitle: "When ready, your monthly report will include",
-    previewItems: [
-      "Training time and activity count",
-      "Average daily strain",
-      "Average sleep duration",
-      "Average resting heart rate",
-      "Average heart rate variability",
-      "Month-over-month training and sleep changes",
-    ],
+      "Sync at least one day of activity, sleep, or recovery data from this period to create a report.",
   };
 }
 

@@ -23852,6 +23852,14 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Confirm the fresh Metro bundle and the
   remaining hosted checks pass, then remove no configuration guards.
 
+## 2026-09-06 — Local Zepp validation blocked by Docker network and memory exhaustion
+
+- **Status / impact:** Local validation remains blocked; no production service was changed. Source tests and typechecks passed, both Zepp packages built, and the new raw-vector ClickHouse regression passed in its initial run. Full analytics lint and the complete seven-test sink integration suite could not finish reliably.
+- **Initial command / cause:** `pnpm test:integration -- src/metric-stream/clickhouse-sink.integration.test.ts` failed during Compose startup with `all predefined address pools have been fully subnetted`. Network inspection found `gifted-chicken_default` had no connected containers; removing only that empty network let the current workspace create its own network and start services. Docker requires disconnected containers before [network removal](https://docs.docker.com/reference/cli/docker/network/rm/).
+- **Memory evidence:** During an isolated repeat, live Docker events recorded `oom` at `2026-09-07T05:41:17Z`, followed by exit code `137`. The Docker VM reported 8,216,862,720 bytes of memory and 74 running containers. Post-restart `OOMKilled=false` and reset cgroup counters did not expose the earlier event. Captured memory samples peaked below the 1.5 GiB container cap, so the evidence does not distinguish an unsampled container spike from broader VM memory pressure. Raw local captures: `/tmp/dofek-zepp-sink-events.log` and `/tmp/dofek-zepp-sink-stats.log`.
+- **Effect on checks:** The initial seven-test integration run passed the new Zepp test and two existing tests before a restart caused timeouts and connection resets. `pnpm lint` passed all non-database checks but SQLFluff failed with `RemoteDisconnected` while compiling against ClickHouse. Another isolated run captured the OOM; a final direct run of the full sink suite failed in setup with `socket hang up`.
+- **Mitigation attempted:** Stopped only this workspace's unused Postgres, Redis and Redpanda containers, health-checked the existing ClickHouse container, and reran the same seven-test sink suite directly with the workspace environment. Connection loss persisted. No other running workspace containers, volumes, memory caps, timeouts, retries, test skips or production configuration were changed.
+- **Follow-up:** On 2026-09-07, the user explicitly approved committing and pushing this change so CI can complete the blocked checks. Hosted results remain pending; no test gate was disabled. Restore sufficient local Docker capacity and capture Docker events live during future restarts rather than relying solely on post-restart status.
 ## 2026-09-04 — Local validation found a repeatedly restarting ClickHouse container
 
 - **Status:** Mitigated local-infrastructure issue; all required Zepp integration and repository lint gates completed.
@@ -25317,3 +25325,504 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** No local ClickHouse resource change is
   warranted. Deployment and the bounded historical activity refresh remain the
   feature-level follow-up.
+
+## 2026-09-07 — Zepp capture PR failed security, dead-code, and mutation gates
+
+- **Status:** Resolved. The final replacement workflow passed all 113 checks.
+- **Symptoms / user impact:** PR 2676 was mergeable but blocked by CodeQL,
+  project SAST, and Knip after the Zepp workout-capture merge. No deployed data
+  path was affected.
+- **Evidence / root cause:** The [failed workflow](https://github.com/Asherlc/dofek/actions/runs/34143579342)
+  reported `packages/zepp/tools/decode-imu.ts` as unused. The
+  [SAST job](https://github.com/Asherlc/dofek/actions/runs/34143578822/job/101810660737)
+  first failed on `semgrep.no-console-log-in-production` at decoder lines 18
+  and 25. CodeQL separately annotated both authenticated handlers in
+  `packages/server/src/routes/ingest-zos-imu.ts` with `Missing rate limiting`.
+  The documented decoder was absent from Knip's Zepp entry list, it wrote CLI
+  output through `console.log`, and the new router authenticated requests
+  without an Express rate limiter.
+- **Direct fix:** Registered the decoder as a Knip entry, wrote CLI results
+  through `process.stdout`, and applied a 600-request-per-15-minute limiter to
+  the Zepp IMU router before authentication. Node documents `process.stdout`
+  as the standard output stream ([Node process API](https://nodejs.org/api/process.html#processstdout)),
+  and the limiter uses the project's existing `express-rate-limit` middleware
+  pattern.
+- **Validation:** The exact Knip command passes with the required mobile Sentry
+  configuration present. Zepp lint, server typecheck, and the 31-test IMU route
+  suite pass; the route test verifies request 601 receives HTTP 429 without an
+  additional token lookup. In the first
+  [replacement workflow](https://github.com/Asherlc/dofek/actions/runs/34144454455),
+  CodeQL, SAST, and Knip passed. Its first fatal mutation diagnostics were
+  surviving input-validation and queue-control mutants in the newly added Zepp
+  modules. Focused local Stryker runs now report 100% for companion account
+  handoff, side upload, sync coordinators, and phone IMU drain; 88.0%
+  for the durable phone outbox; 93.2% for the transfer manifest; 94.6% for IMU
+  envelopes; and 82.1% for durable watch upload, all above the enforced 75%
+  threshold. The same workflow's
+  integration shard separately failed after three successful dbt executions:
+  `activity-data-integrity-repair.integration.test.ts` expected two
+  `activity_sensor_summary_rows` and received none, then retries were stopped by
+  its rollback-eligible journal guard. That test and its serving models were
+  unchanged by the Zepp branch.
+- **Direct mutation fix:** Added boundary cases for malformed bindings, token
+  trimming, legacy account receipts, cross-account selection, disconnected
+  queues, acknowledgements, quarantine recovery, retry wiring, and watch chunk
+  handoff. Removed redundant response-ID filters whose downstream durable queue
+  operations already ignore unknown IDs, and made the selected current binding
+  the explicit upload destination. The second replacement run exposed an
+  uncovered initial file-slot helper; its direct behavior test raises the
+  focused transfer-manifest mutation score from the shard's 50% to 93.2%. The
+  next run exposed under-tested validation branches in the IMU envelope shard;
+  direct destination-normalization, versioned sample-limit, gyroscope-marker,
+  and transport-metadata boundary cases raise that file from 72.8% to 94.6%.
+  After the final parser correction, [Stryker shard 12](https://github.com/Asherlc/dofek/actions/runs/34161690449/job/101865225562)
+  scored `record-fields.ts` at 42.86% because its existing `isRecord` and
+  `nullable` branches had no direct coverage. Boundary tests raised the exact
+  local mutation run to 100% with 21 killed mutations and no survivors or
+  uncovered mutations.
+- **Remaining risk / follow-up:** The [final replacement workflow](https://github.com/Asherlc/dofek/actions/runs/34162519280)
+  passed all 113 checks, including every integration and mutation shard. No
+  resilience knob or validation bypass remains.
+## 2026-09-07 — Local Docker capacity blocked modification-system validation
+
+- **Status:** Address-pool exhaustion and local resource pressure resolved.
+  No production changes made.
+- **Symptoms / user impact:** SQL lint and database-backed implementation tests
+  could not run in the `stupid-termite` workspace. All three requested TypeScript
+  checks passed; the Docker-free lint stages passed.
+- **Evidence / root cause:** `pnpm lint` failed in its SQLFluff/dbt stage with
+  `dbt tried to connect to the database and failed` (ClickHouse connection
+  refused). Starting the required dependencies with `pnpm compose:up` then
+  failed while creating `stupid-termite_default`: `all predefined address pools
+  have been fully subnetted`. Read-only Docker inspection found
+  `laughing-dugong_default` and `lucid-mule_default` each had zero attached
+  containers, but their Compose labels identify other workspaces.
+- **Mitigation:** After explicit approval and rechecking zero attached
+  containers, removed only `laughing-dugong_default`. No containers or volumes
+  were removed; its workspace can recreate the network. This allowed creation
+  of `stupid-termite_default` and the required backing services.
+- **Subsequent evidence:** `pnpm compose:up` failed with `application not healthy
+  after 3m0s`; ClickHouse repeatedly restarted. The focused PostgreSQL ledger
+  suite subsequently failed in template setup with `Hook timed out in 120000ms`.
+  Read-only Docker inspection reported 75 running containers, 10 CPUs, and
+  8,216,862,720 bytes of VM memory. `/proc/meminfo` showed only 300,756 kB
+  available; `/proc/loadavg` was `516.73 583.33 447.42`; memory pressure's
+  `full avg10` was 75.08. These measurements establish severe shared-VM
+  resource pressure. The exact cause of the ClickHouse process exits remains
+  unconfirmed; its current cgroup counters reported no OOM kill.
+- **Direct fix / validation:** After the user authorized stopping any other
+  workspace, a later mitigation-time inventory identified 73 Compose containers
+  from other workspaces to stop. This was a new inventory, not the earlier
+  75-container pressure snapshot. The 73 stopped containers were separate from
+  the four current-workspace services and four unrelated k3d containers that
+  remained running (eight running after the stop). Every container and volume
+  was preserved. Available VM memory rose to
+  5,845,320 kB and memory pressure's `full avg10` fell to 0.91. The unchanged
+  ten-test PostgreSQL ledger suite passed in 4.42 seconds, and the local ledger
+  migration applied successfully.
+- **Remaining risk / follow-up:** Other workspaces need their services started
+  when next used. No daemon reconfiguration, timeout increase, validation
+  bypass, or resilience knob was added. Add the verified address-pool recovery
+  and resource-pressure diagnostics to the local testing runbook.
+
+## 2026-09-07 — Historical sensor fixture fell outside the repair build window
+
+- **Status:** Fixed and verified locally; replacement CI verification pending.
+  The initial failure was a documentation-only PR check, not a deployed change.
+- **Evidence:** [Integration shard 3/4, run 34141117493](https://github.com/Asherlc/dofek/actions/runs/34141117493/job/101803595315)
+  failed in `src/db/activity-data-integrity-repair.integration.test.ts:693`:
+  `AssertionError: expected [] to deeply equal` the two expected activity IDs.
+  Source, deduplication, and group assertions had already passed.
+- **Cause:** The fixture seeds `deduped_sensor.refreshed_at` on September 2;
+  `activity_sensor_sample` uses that event time, while the September 7 repair
+  build executed only September 4–7 batches. The repair dbt helper supplies
+  activity scope but no historical sensor-sample start bound. The batches
+  succeeded without reading the fixture, leaving sensor summaries empty.
+  Subsequent retries encountered the first attempt's unresolved repair journal;
+  that is a secondary symptom, not the initial failure.
+- **Local reproduction:** After resource relief, the unchanged command
+  `pnpm test:integration -- src/db/activity-data-integrity-repair.integration.test.ts`
+  reproduced the empty sensor-summary assertion in 25.52 seconds, with the same
+  September 4–7 dbt batches and subsequent repair-journal retry failures.
+- **Impact / follow-up:** PR 2678 is not ready to merge; the author marked it
+  ready for review on September 7. Both production
+  repair and rollback call the helper without historical event-time bounds.
+  The approved fix passes explicit bounds from the earliest affected original,
+  corrected, or expanded source activity through the next UTC day after CDC
+  readiness. Repair and rollback retain their user/activity scope. The original
+  fixture dates and assertions remain intact. dbt documents start and end bounds for
+  [historical microbatch backfills](https://docs.getdbt.com/docs/build/incremental-microbatch#backfills).
+
+## 2026-09-07 — Follow-up validation exposed UTC and migration-lint defects
+
+- **Status:** UTC and migration corrections verified locally; replacement CI
+  verification pending. No production changes or bypasses.
+- **Evidence / cause:** The bounded repair implementation passes the original
+  sensor-summary assertion, but the same real-database command fails rollback
+  with `PostgreSQL CDC mirror did not publish 3 repaired activities within
+  120000ms`. ClickHouse emits `2026-09-01 14:50:00.000000` without a timezone;
+  JavaScript on the Los Angeles workstation interprets it as `21:50Z`, not the
+  intended `14:50Z`. The rollback barrier consequently compares different
+  instants. Requesting ClickHouse's documented
+  [UTC ISO output](https://clickhouse.com/docs/reference/settings/formats/date-time#date_time_output_format)
+  fixes the timestamp comparison without a longer barrier timeout.
+- **UTC and repair validation:** The new real-ClickHouse regression first failed
+  with `Invalid ISO datetime`; requesting `date_time_output_format: 'iso'` then
+  preserved the UTC zone, fractional seconds, and nulls. The complete command
+  `pnpm test:integration -- src/db/activity-data-integrity-repair.integration.test.ts`
+  passed both tests in 21.01 seconds, including repair and rollback with three
+  dbt builds reporting `PASS=8 WARN=0 ERROR=0`. No test retries were needed.
+  The 95 focused unit tests, root/server/web typechecks, and full local lint
+  also passed. Existing CDC readiness polling remains necessary for mirror
+  consistency; no resilience settings were added or increased.
+- **Independent CI failures:** On commit `4d710eb`,
+  [SQLFluff](https://github.com/Asherlc/dofek/actions/runs/34145224514/job/101816174102)
+  rejects formatting and lateral subquery structure in the new migrations;
+  [Squawk](https://github.com/Asherlc/dofek/actions/runs/34145224514/job/101816174227)
+  rejects `schema_version integer` with `prefer-bigint-over-int`; and
+  [cspell](https://github.com/Asherlc/dofek/actions/runs/34145224514/job/101816174075)
+  rejects the reimport fixture label with `Unknown word`. Local migration SQLFluff reproduces its
+  failures. The aggregate lint gate fails because those required checks fail.
+- **Impact / follow-up:** CI remains red. `pnpm lint` does not include these
+  three migration/spelling checks. The approved migration correction uses
+  `bigint` consistently in SQL, Drizzle, and generated diagrams; fixes SQL
+  formatting; and projects owner/identity provenance from the lateral query's
+  terminal select so SQLFluff recognizes its correlation. Recursive history
+  remains scoped, and the fixture label uses ordinary wording.
+- **Query-plan validation:** An intermediate outer projection sourced from the
+  lateral result delayed owner/identity filtering until after global head
+  discovery. The final views select outer provenance directly from the head;
+  scoped `EXPLAIN` shows indexed identity/owner head discovery before per-head
+  recursion. `DISTINCT` keeps the head view structurally read-only. See the
+  [projection migration](../drizzle/0111_human_record_projections.sql) and
+  PostgreSQL's [updatable-view rules](https://www.postgresql.org/docs/current/sql-createview.html#SQL-CREATEVIEW-UPDATABLE-VIEWS).
+- **Migration validation:** Exact SQLFluff, Squawk, migration policy, and full
+  cspell commands passed (Squawk: two files, zero issues; cspell: 2,500 files,
+  zero issues). All 14 ledger/projection tests passed using a fresh migrated
+  PostgreSQL test database, including read-only behavior. Existing workspace
+  database contents were not reset. Full unit/mobile validation passed 17,662
+  tests with 21 existing skips. Push and confirm replacement CI; no retry,
+  timeout, lint suppression, or size-limit change was added.
+
+## 2026-09-07 — Mutation gate lacked coverage for ClickHouse output options
+
+- **Status:** Test correction verified locally; replacement CI verification
+  pending. Production behavior and mutation configuration are unchanged.
+- **Evidence:** [Stryker shard 2](https://github.com/Asherlc/dofek/actions/runs/34154158814/job/101843153325)
+  ran `pnpm exec stryker run stryker.ci.config.json --mutate
+  "src/db/activity-data-integrity-clickhouse.ts:25-25,src/db/activity-data-integrity-clickhouse.ts:130-133"`.
+  First fatal: `Final mutation score 0.00 under breaking threshold 75`.
+  Its surviving object-literal mutation replaces the query's integer-quoting
+  and UTC ISO output options with an empty object.
+- **Cause / impact:** The real-engine regression detects incorrect timestamp
+  output, but the intentionally Docker-free mutation tier excludes integration
+  tests. Unit tests did not assert the production helper's emitted client-query
+  options, so this mutation survived and CI remained red despite ordinary tests
+  passing. SQLFluff, migration lint, and spelling passed on this run.
+- **Direct correction / validation:** The colocated unit test now asserts both
+  output options at the external client boundary. With the exact empty-options
+  mutant it failed (one failed, 33 passed); restoring unchanged production code
+  passed all 34 tests. The exact scoped Stryker command scored 100%, with one
+  killed mutant and zero survivors, timeouts, uncovered mutants, or errors.
+  The real-engine regression remains intact. No collection, threshold, or
+  suppression changes were made. Finish replacement CI verification. Stryker
+  documents the separate
+  [Vitest runner configuration](https://stryker-mutator.io/docs/stryker-js/vitest-runner/).
+
+## 2026-09-07 — Local integration startup exhausted Docker address pools
+
+- **Scope / impact:** Local validation in `humble-dugong` only; no production
+  impact observed. Apple Health replacement regression tests could not start
+  through the normal Compose wrapper.
+- **Evidence / root cause:**
+  `pnpm test:integration -- src/providers/apple-health/import.integration.test.ts -t 'Apple Health archive replacement'`
+  failed before tests with `failed to create network humble-dugong_default: all
+  predefined address pools have been fully subnetted`. Read-only inspection
+  showed all default Docker subnet pools allocated to existing networks.
+- **Operator fix:** Created only the workspace's Compose-labeled
+  `humble-dugong_default` bridge on an inspected, non-overlapping subnet. No
+  other workspace resources or tracked Compose configuration changed. Docker
+  supports [explicit non-overlapping bridge subnets](https://docs.docker.com/reference/cli/docker/network/create/#specify-advanced-options).
+- **Validation:** Compose adopted the network and started the workspace
+  services. The focused PostgreSQL regression run reached assertions and
+  reproduced seven data-preservation failures before the application fix. The
+  normal Vitest reruns then timed out in template setup under high host load. A
+  fresh clone of the normal runner's fully migrated template passed all nine
+  direct PostgreSQL preservation, replacement, and rollback scenarios,
+  including failures in both 501st-record insert batches. The clone was
+  dropped. This direct validation does not imply the normal Vitest suite
+  passed. SQL lint subsequently passed against the workspace ClickHouse
+  service.
+- **Cleanup:** Confirmed all four workspace volumes were created during this
+  validation (2026-09-07T15:41:17Z), then ran
+  `pnpm compose -- down --remove-orphans --volumes`; all four containers, four
+  volumes, and the explicit workspace network were removed successfully. Other
+  workspace resources were untouched.
+- **Follow-up:** Improve workspace archive cleanup so abandoned networks are
+  reclaimed with their owning workspace. No retry, timeout, service-memory, or
+  production configuration changes were introduced.
+
+## 2026-09-07 — Audit PR spell check rejected an encoded contraction
+
+- **Scope / impact:** PR #2680 validation only; no production impact.
+- **Evidence / root cause:** The [Spell Check job](https://github.com/Asherlc/dofek/actions/runs/34153962937/job/101842086975)
+  ran `pnpm exec cspell --no-progress` and reported an unknown word at
+  `AccountDeletionStatusPage.tsx:87:18`. The encoded apostrophe split the
+  contraction in the deletion recovery message into an unrecognized fragment.
+- **Direct fix:** Use “could not” in the matching web and mobile messages.
+  No dictionary exception or check suppression was added.
+- **Validation / follow-up:** The exact spell-check command passed locally
+  across 2,494 files with zero issues; Biome passed for both changed components.
+  The [replacement Spell Check job](https://github.com/Asherlc/dofek/actions/runs/34154423716/job/101843615344)
+  passed on `9457370b2`.
+
+## 2026-09-07 — Analytics error tests missed duplicate reporting mutations
+
+- **Scope / impact:** PR #2680 mutation gate only; no production impact.
+- **Evidence / root cause:** The [Stryker shard 1 job](https://github.com/Asherlc/dofek/actions/runs/34154423716/job/101843746485)
+  ran `pnpm exec stryker run stryker.ci.config.json` against changed `trpc.ts`
+  ranges and failed with `Final mutation score 65.12 under breaking threshold 75`.
+  Fifteen mutations survived: tests did not assert that each analytics failure
+  was reported exactly once and omitted one configuration-message verb form.
+- **Direct fix:** Expand the existing middleware tests to check one diagnostic
+  report per failure and all three supported configuration-message verb forms.
+  Production behavior, mutation thresholds, and exclusions are unchanged.
+- **Validation / follow-up:** All 42 focused middleware tests and Biome pass.
+  The exact mutation ranges pass locally at 83.72 (36 killed, seven survived).
+  Remaining survivors broaden the guard for already sanitized errors; no
+  artificial production branches were added to exercise them. The replacement
+  [mutation shard](https://github.com/Asherlc/dofek/actions/runs/34155414249/job/101846881990)
+  and aggregate mutation gate passed on `19857ce53`.
+
+## 2026-09-07 — Zepp Workout phone Settings rendered blank with a saved QR
+
+- **Status:** Fixed and validated locally; released-package and physical-phone
+  verification pending.
+- **Symptoms / user impact:** The user reported a blank Dofek Workout Settings
+  page in the Zepp phone app, preventing access to its pairing controls.
+- **Evidence / root cause:** Running the bundled Workout Settings entry point
+  with a saved pairing QR URL through the simulator's official
+  [Settings renderer](https://zepp-os.zepp.com/app-settings/v1.0.1/app-settings.global.1767162754628.prod.js)
+  in JSDOM produced an empty page and
+  `TypeError: Cannot read properties of undefined (reading 'get')`.
+  `buildPairingQrImage` used `Reflect.get(globalThis, "Image")`, but that runtime
+  shadows `Reflect` and `globalThis` and injects `Image` as a local binding.
+  The normal app contained the same defect. Existing tests exposed components
+  on Node globals and therefore missed the sandbox restriction.
+- **Direct fix:** Both Settings pages now call the injected `Image` directly,
+  following its [component API](https://docs.zepp.com/docs/reference/app-settings-api/ui/image/).
+  Added regression tests that bundle each page and execute it with lexical
+  component bindings and the restricted globals.
+- **Validation:** Both regression tests reproduced the exact exception before
+  the fix and passed afterward. The official renderer then rendered empty,
+  pairing, and connected fixtures for both packages without errors; pairing
+  fixtures contained the expected QR image and short code.
+- **Remaining risk / follow-up:** Publish updated packages and verify the
+  Workout Settings page on the affected phone. No retries, waits, or fallback
+  behavior were added to application code.
+
+## 2026-09-07 — Zepp Settings mutation coverage blocked PR 2677
+
+- **Status:** Fixed and validated locally; replacement CI run pending.
+- **Symptoms / user impact:** `Test / Stryker (0)` failed and blocked the PR's
+  aggregate Mutation Testing gate before the Zepp pairing and Settings fixes
+  could be reviewed for merge.
+- **Evidence / root cause:** The exact failed command was
+  `pnpm exec stryker run stryker.ci.config.json --mutate "packages/zepp/src/settings-page.ts"`.
+  Its first fatal line was `Final mutation score 42.98 under breaking threshold
+  75`. The new renderer tests verified user actions and visible text but did not
+  assert the complete rendered design contract, so 120 covered visual mutants
+  survived. Stryker marks a mutant as survived when tests still pass after its
+  code change ([Stryker mutation testing](https://stryker-mutator.io/docs/mutation-testing-elements/mutation-testing/)).
+- **Direct fix:** Added compact render-contract snapshots and focused tests for
+  stored-status validation, optional pairing data, whitespace credentials,
+  command toggling, login defaults, sample-rate boundaries, recorder state,
+  transfer progress, and error styling. No mutation threshold or exclusion was
+  changed.
+- **Validation:** The exact mutation command now kills all 256 mutants for
+  `settings-page.ts`, producing a 100.00% mutation score. All 625 Zepp tests,
+  the Zepp typecheck, Zepp lint, and both production package builds also pass.
+- **Remaining risk / follow-up:** Confirm the replacement PR mutation shard and
+  aggregate gate pass on the fix commit.
+
+## 2026-09-07 — Aged activity-repair fixture blocked integration shard 3
+
+- **Status:** Fixed in source; replacement CI validation pending.
+- **Symptoms / user impact:** `Test / Integration Tests (3/4)` failed three
+  consecutive PR 2677 runs and blocked the aggregate test and CI gates even
+  though the PR's Zepp-specific checks passed.
+- **Evidence / root cause:** The exact failing command was
+  `pnpm exec vitest run --project integration --coverage --shard=3/4`. Its first
+  fatal line was `AssertionError: expected [] to deeply equal [ …(2) ]` in
+  `activity-data-integrity-repair.integration.test.ts`. The fixture gave its
+  synthetic sensor row a fixed September 2 `refreshed_at`, while the September
+  7 dbt run processed only September 4–7 for the model's three-day lookback.
+  dbt microbatch models split processing by their configured `event_time` and
+  can reprocess prior batches through `lookback`
+  ([dbt microbatch documentation](https://docs.getdbt.com/docs/build/incremental-microbatch)).
+- **Direct fix:** Preserve the fixture's historical `recorded_at` while setting
+  its synthetic ingestion `refreshed_at` with ClickHouse `now64(9)`, keeping it
+  inside the production model's refresh-time microbatch window. No retry,
+  timeout, model setting, or CI bypass was added.
+- **Validation:** The exact replacement integration shard and aggregate gates
+  are pending CI. The previous exact-head run passed every other test, build,
+  typecheck, lint, mutation, and security check.
+- **Remaining risk / follow-up:** Confirm the replacement integration shard 3,
+  aggregate test gate, and CI gate pass on the fixture-fix commit.
+
+## 2026-09-07 — Historical repair validation after merging current main
+
+- **Status:** PR 2678 passed all CI checks on `73ede0f`; validation of the merge
+  with current main is pending. See the
+  [successful CI run](https://github.com/Asherlc/dofek/actions/runs/34155122228).
+- **Resolution:** Preserve both independently appended incident histories. Keep
+  the activity repair fixture's fixed historical `refreshed_at` timestamp instead
+  of the current-time adjustment from PR 2677: the explicit repair/rollback
+  event-time bounds now exercise that historical case without aging out. The
+  [regression suite](../src/db/activity-data-integrity-repair.integration.test.ts)
+  tests the production rebuild path, not a moving fixture window.
+- **Follow-up:** Revalidate the integrated branch and merge only after its
+  required checks pass. No workflow bypass, timeout change, or production
+  operation is part of this conflict resolution.
+
+## 2026-09-07 — Reconciled concurrent activity-repair CI fixes
+
+- **Symptoms / impact:** PR 2679 advanced main while PR 2678 awaited its merge,
+  producing conflicts in five activity-repair source/test files. No production
+  outage occurred; the merge was blocked. See the
+  [incoming change](https://github.com/Asherlc/dofek/pull/2679).
+- **Cause / resolution:** Both branches changed historical dbt rebuild inputs.
+  Keep one canonical `eventTimeStart`/`eventTimeEnd` contract and explicit CLI
+  bounds; derive the incoming `activity_sensor_sample_begin` variable from that
+  same start. Accept dbt-owned sensor-table creation in the fixture while
+  preserving fixed historical timestamps and repair/rollback assertions. The
+  [command builder](../src/db/activity-data-integrity-dbt.ts) implements the
+  combined contract; dbt documents these controls in its
+  [microbatch guide](https://docs.getdbt.com/docs/build/incremental-microbatch).
+- **Validation:** The command-boundary test first failed because the emitted
+  variables omitted `activity_sensor_sample_begin`; after reconciliation all
+  96 related unit tests and all 16 ledger/repair database tests passed. The
+  real-database regression exercises initial table creation, historical repair,
+  and rollback through the production dbt command. All 17,767 unit/mobile tests
+  passed (21 skipped), along with repository lint and root/server/web
+  typechecks. The exactly-once rebuild assertion was retained after review.
+  No retries, waits, or gate bypasses were added.
+- **Remaining risk / follow-up:** The integrated commit must pass fresh CI before
+  merge. Future conflict reviews should compare semantic changes against both
+  parents, including automatically merged test assertions.
+
+## 2026-09-07 — Removed ramp-rate labels remained in an integration assertion
+
+- **Scope / impact:** PR #2680 merge validation only; no production impact.
+- **Evidence / root cause:** [Integration shard 3](https://github.com/Asherlc/dofek/actions/runs/34156219009/job/101849789772)
+  ran `pnpm exec vitest run --project integration --coverage --shard=3/4`.
+  Its only failing test reported `AssertionError: expected false to be true`
+  at `router-logic.integration.test.ts:1079`. The assertion still required the
+  removed Safe/Aggressive/Danger classifications despite the intended signed
+  weekly load-change observation.
+- **Direct fix:** Update that existing assertion to verify the observation,
+  current value matching the latest week, and the existing empty result text.
+  No application code or test-runner setting changed.
+- **Validation / follow-up:** All 60 focused cycling tests, Biome, and
+  whitespace checks pass. The [replacement integration shard](https://github.com/Asherlc/dofek/actions/runs/34157574211/job/101853064825)
+  passed on `8bbd50730`, as did all other integration shards.
+
+## 2026-09-07 — Settings layout tests used the old Zepp pairing heading
+
+- **Scope / impact:** PR #2680 browser validation only; no production impact.
+- **Evidence / root cause:** The [web E2E job](https://github.com/Asherlc/dofek/actions/runs/34157574211/job/101852832352)
+  failed two settings layout cases with `Expected to find content: 'Zepp App Pairing'`
+  after the heading changed to “Pair your Zepp app.” The remaining 43 browser
+  cases passed. The selector failed before layout measurements completed.
+- **Direct fix:** Update both heading selectors and their diagnostic text.
+  Preserve the existing layout measurements, limits, and request waits.
+- **Validation / follow-up:** Confirm the replacement settings layout cases
+  and full browser job pass before merging.
+
+## 2026-09-07 — Zepp outbox test wording blocked spell check
+
+- **Scope / impact:** PR #2676 validation only; no production impact.
+- **Evidence / root cause:** The [spell-check job](https://github.com/Asherlc/dofek/actions/runs/34164619692/job/101873232778)
+  failed while checking changed text. Its first fatal diagnostic was
+  `packages/zepp/src/phone-imu-sync.test.ts:240:16 - Unknown word (rescan)`.
+  The new performance regression test used a word that was absent from the
+  repository dictionary.
+- **Direct fix:** Rephrased the test title as “scan … again.” No runtime code,
+  dictionary exception, or CI setting changed.
+- **Validation / follow-up:** The focused CSpell command passes locally. Confirm
+  the replacement spell-check job and aggregate CI gate pass before merging.
+## 2026-09-07 — Human-record foundation merge blocked by review conversations
+
+- **Symptoms / impact:** The direct squash merge of [PR 2678](https://github.com/Asherlc/dofek/pull/2678)
+  failed with a base-branch-policy rejection despite green checks on
+  `d222042e21ed1e771fffcd225054f26149808128`. No production impact occurred.
+- **Evidence / cause:** Branch protection required conversation resolution;
+  nine CodeRabbit threads remained unresolved. Review also exposed date
+  coercion accepting null/boolean/numeric activity starts, a missing undo-kind
+  constraint, and expression indexes lost by the DBML generator.
+- **Direct fixes:** Restrict activity-start inputs before date coercion; enforce
+  the undo pair in SQL and Drizzle; generate expression indexes from schema
+  metadata. Add the target lookup index, isolate constraint assertions, validate
+  query results, and clarify read-only projections and Docker authorization.
+  A real Postgres replication-role fixture proves disconnected cycles cannot
+  become readable heads under the existing successor uniqueness constraint.
+- **Validation:** Regression tests failed before the corresponding fixes;
+  all 17,617 unit/mobile tests and 18 ledger/repair database tests now pass
+  (21 unit/mobile skips). Lint, root/server/web typechecks, SQLFluff, Squawk,
+  and spellcheck pass. Independent review found no remaining issues.
+- **Remaining risk / follow-up:** Push the reviewed fixes, reply to and resolve
+  the conversations, and require fresh CI before merging. Inspect conversation
+  status alongside CI early in future merge work. No bypass, retry, or timeout
+  adjustment was added.
+
+## 2026-09-07 — Sensor delivery gate failed at an oversized delete request
+
+- **Status:** Production unresolved; fixes validated locally, release pending.
+  This supersedes the September 3 expectation that the full-refresh queue was
+  simply draining. The post-drain delivery gate was never established.
+- **Symptoms / impact:** Recent activities return null sensor summaries. A
+  bounded check across all members of an affected activity found zero physical
+  rows in `ingest.metric_stream`. Partial older activity coverage does not
+  establish delivery for the later missing activities.
+- **Evidence / root cause:** Production image `sha-609ceb4` repeatedly fails
+  KafkaJS `eachBatch` at partition 0 offset `1557845112`. The first fatal
+  error in the inspected logs is `HTML Form Exception: Too many form fields`.
+  Repeated `rpk group describe` checks leave the committed offset unchanged;
+  the final observed head was `1585932001`, a lag of 28,086,889. The R2 group
+  reached that head. A read-only 600-event sample at the stalled offset consists
+  of v3 deletes with three scope parameters each. The sink combined adjacent
+  same-revision deletes without a request bound; production reports
+  `http_max_fields = 1000`. ClickHouse applies that limit to headers, query
+  parameters, and form data
+  ([ClickHouse source](https://github.com/ClickHouse/ClickHouse/blob/v26.6.1.1193-stable/src/Core/Settings.cpp#L2451-L2453)).
+- **Direct fix:** Bound sequential delete requests to 100 scopes (at most 701
+  query parameters including the revision), preserving per-event acknowledgements
+  and deletion-before-replacement order. No offset seek, replay, server limit,
+  timeout, or retry setting was changed.
+- **Strength hydration:** Live canonical-ID lookup returns exercises and sets
+  while a member-ID lookup returns the same activity with no exercises.
+  The existing set join already spans all members; the activity predicate
+  incorrectly required the representative ID. The shared repository now resolves
+  any member ID while preserving user scoping
+  ([strength repository](../packages/server/src/repositories/strength-repository.ts)).
+  Review also reproduced two member exercises with the same source index being
+  combined. Grouping now retains member activity ID plus exercise index, and
+  web/mobile list keys use that same identity while preserving numeric source
+  indexes ([web activity detail](../packages/web/src/pages/ActivityDetailPage.tsx),
+  [mobile activity detail](../packages/mobile/app/activity/[id].tsx)).
+- **Other checks:** The reported commute examples retain their corrected types
+  and offsets. The Apple outlier already has a mapped canonical type; provider
+  code 52 is deliberately retained and mapped in the
+  [HealthKit schema](../packages/server/src/routers/health-kit-sync-schemas.ts).
+  Its inspected source payload contains no timezone or offset evidence; no
+  inferred offset was written.
+- **Validation:** Both new database regressions first failed with the production
+  symptoms. After the fixes, all 12 tests in the ClickHouse sink and strength
+  repository integration suites pass. Root and server typechecks pass.
+- **Remaining gate:** Release the fixes, confirm the same consumer group reaches
+  head, publish and trace a fresh post-drain message into the raw table, then
+  verify the affected recent activity summaries. A fresh post-drain probe was
+  not published because the consumer has not drained. Verify archive object
+  freshness separately; zero consumer lag alone is not an object-age audit.
+  The Axiom MCP token remains expired; task-local Swarm logs supplied the fatal
+  evidence. No additional resilience knob was introduced.

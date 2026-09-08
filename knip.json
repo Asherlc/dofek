@@ -113,6 +113,7 @@
         "app-side/index.ts",
         "setting/index.ts",
         "app-service/health_service.ts",
+        "tools/decode-imu.ts",
         "tools/zeus.ts",
         "workout-extension/app.ts",
         "workout-extension/build.ts",

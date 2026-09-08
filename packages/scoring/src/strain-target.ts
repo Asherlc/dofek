@@ -42,14 +42,7 @@ export function computeStrainTarget(readinessScore: number): StrainTargetResult 
   );
   const targetStrain = minStrain + fraction * (maxStrain - minStrain);
 
-  let explanation: string;
-  if (zone === "Push") {
-    explanation = `Recovery is strong (${readinessScore}). Push for a high-strain day to build fitness.`;
-  } else if (zone === "Maintain") {
-    explanation = `Moderate recovery (${readinessScore}). Aim for a steady training day.`;
-  } else {
-    explanation = `Recovery is low (${readinessScore}). Keep it light and focus on restoration.`;
-  }
+  const explanation = `Based on a recovery score of ${readinessScore}/100.`;
 
   return {
     targetStrain: Math.round(targetStrain * 10) / 10,

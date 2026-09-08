@@ -2,7 +2,7 @@
 
 Zepp OS mini program that captures raw accelerometer samples and automatically includes gyroscope samples when the watch exposes that sensor. It buffers motion samples to watch-side binary files and exports them to the phone over BLE. It also uploads daily totals and timestamped heart-rate, stress, body-surface-temperature, and blood-oxygen history through the phone-side Side Service. Zepp documents Side Service as the phone-side runtime; this app uses `@zeppos/zml` messaging between the watch app and Side Service, and the Side Service uses Fetch API for Dofek server calls ([Side Service intro](https://docs.zepp.com/docs/guides/framework/side-service/intro/), [Fetch API](https://docs.zepp.com/docs/reference/side-service-api/fetch/), [HeartRate history](https://docs.zepp.com/docs/reference/device-app-api/newAPI/sensor/HeartRate/), [BodyTemperature history](https://docs.zepp.com/docs/reference/device-app-api/newAPI/sensor/BodyTemperature/), [BloodOxygen history](https://docs.zepp.com/docs/reference/device-app-api/newAPI/sensor/BloodOxygen/)).
 
-The normal watch app also pulls completed workout start times and durations through Zepp's official [`Workout.getHistory()`](https://docs.zepp.com/docs/reference/device-app-api/newAPI/sensor/Workout/) API. A separately packaged Workout Extension captures the richer live metrics exposed by [`getSportData()`](https://docs.zepp.com/docs/reference/device-app-api/newAPI/app-access/getSportData/) on API_LEVEL 3.6+ devices.
+The normal watch app also pulls completed workout start times and durations through Zepp's official [`Workout.getHistory()`](https://docs.zepp.com/docs/reference/device-app-api/newAPI/sensor/Workout/) API. A separately packaged Workout Extension captures the richer live metrics exposed by [`getSportData()`](https://docs.zepp.com/docs/reference/device-app-api/newAPI/app-access/getSportData/) on API_LEVEL 3.6+ devices. See the [capability matrix and physical-watch audit](../../docs/zepp-capture-audit.md) for automation limits, cloud-access prerequisites and hardware acceptance checks.
 
 ## Target devices
 
@@ -34,7 +34,7 @@ Configured in `app.json` as screen-width target groups.
 │  • automatic focused motion segments          │
 │  • live system Workout metrics                │
 └───────────────────────┬───────────────────────┘
-                        │ TransferFile (BLE)
+                        │ ZML chunks + TransferFile backups
                         ▼
 ┌──────────────────── Phone ────────────────────┐
 │ Side Service (app-side/index.ts)              │
@@ -61,7 +61,7 @@ High-rate motion capture is deliberately tied to visible, active UI lifecycles. 
 
 ### Why TransferFile instead of BLE messaging?
 
-Bulk IMU logs are megabytes, while BLE messaging is oriented toward bounded payloads and manual framing. **TransferFile** (API 3.0+) provides queued file transfer, progress events, and completion/error states for a redundant binary backup. Each completed file slot is committed to a durable watch manifest with a temporary write and rename before transfer, restored on restart, and retained through failed or canceled transfers until the phone confirms that it registered the received path. During a connected session, the shared collector also commits each small versioned chunk as an independent watch-side record before requesting delivery. It removes that record only after the phone acknowledges persistence and replays pending records after resume or restart. The phone stores chunk payloads as independent Settings records behind a compact queue index, updates only the bounded upload batch during failures, and retains them until the server acknowledges persistence. The binary file remains a local backup rather than depending on an undocumented Side Service file-reading API ([TransferFile](https://docs.zepp.com/docs/reference/device-app-api/newAPI/transfer-file/TransferFile/), [`readdirSync`](https://docs.zepp.com/docs/reference/device-app-api/newAPI/fs/readdirSync/), [`renameSync`](https://docs.zepp.com/docs/reference/device-app-api/newAPI/fs/renameSync/), [Side Service Fetch API](https://docs.zepp.com/docs/v2/reference/side-service-api/fetch/)).
+Bulk IMU logs are megabytes, while BLE messaging is oriented toward bounded payloads and manual framing. **TransferFile** (API 3.0+) provides queued file transfer, progress events, and completion/error states for a redundant binary backup. Each completed file slot is committed to a durable watch manifest with a temporary write and rename before transfer, restored on restart, and retained through failed or canceled transfers until the phone confirms that it registered the received path. During a connected session, the shared collector also commits each small versioned chunk as an independent watch-side record before requesting delivery. Each chunk carries the stable server/account binding resolved when Dofek verifies the connection; bearer tokens are never stored with sensor records. The watch removes a chunk only after the phone acknowledges persistence and replays pending records after resume or restart. The phone stores chunk payloads as independent Settings records behind a compact queue index, updates only the bounded upload batch during failures, and retains them until the server acknowledges persistence. Legacy queues without an account binding require the user to assign them to the currently verified account in Zepp Settings. The binary file remains a local backup rather than depending on an undocumented Side Service file-reading API ([TransferFile](https://docs.zepp.com/docs/reference/device-app-api/newAPI/transfer-file/TransferFile/), [`readdirSync`](https://docs.zepp.com/docs/reference/device-app-api/newAPI/fs/readdirSync/), [`renameSync`](https://docs.zepp.com/docs/reference/device-app-api/newAPI/fs/renameSync/), [Side Service Fetch API](https://docs.zepp.com/docs/v2/reference/side-service-api/fetch/)).
 
 ### Documented platform limits (called out in code)
 
@@ -91,14 +91,19 @@ Each package supports the following ways to connect its phone-side Side Service:
 | Flow | Where it starts | Where it finishes | Notes |
 |---|---|---|---|
 | QR from watch | Watch app | Dedicated Dofek Zepp pairing page | The watch renders a Zepp `QRCODE` widget with the Dofek verification URL. Zepp documents this widget for API_LEVEL 2.0+ ([QRCODE](https://docs.zepp.com/docs/reference/device-app-api/newAPI/ui/widget/QRCODE/)). |
-| QR from Zepp iOS app | The installed package's Zepp Settings page | Dedicated Dofek Zepp pairing page | Tap **Create QR / short code**. The Settings App displays the server-generated QR SVG URL as an image. |
+| QR from Zepp iOS app | The installed package's Zepp Settings page | Dedicated Dofek Zepp pairing page | Tap **Create pairing code**. The Settings App displays the server-generated QR image, short code, and a same-phone **Open Dofek to finish pairing** link. |
 | Short code | Watch or Zepp Settings | Dofek web or mobile Zepp pairing page | Enter the six-character code on the dedicated pairing screen. The server claim endpoint completes the connection for the polling Side Service. |
 | Dofek email/password | Zepp mini program Settings | Zepp Side Service | The Side Service exchanges credentials through Dofek's password-login endpoint. |
 | Dofek email/password | Watch app | Zepp Side Service | The watch asks the Side Service to log in after collecting text with Zepp's system keyboard. `SYSTEM_KEYBOARD` starts at API_LEVEL 4.0, so older watches keep the other pairing flows ([SYSTEM_KEYBOARD](https://docs.zepp.com/docs/reference/device-app-api/newAPI/ui/widget/SYSTEM_KEYBOARD/)). |
 
 Pairing challenges expire after ten minutes. After pairing, the Zepp Settings
 page displays the server-verified connection state and offers **Check
-connection** and **Disconnect Dofek**. Dofek Settings also displays whether
+connection** and **Disconnect**. Both packages use the same Settings layout:
+connection and pairing first, package-specific controls next, delivery status
+next, and server/device details under **Advanced**. Delivery errors remain visible
+while disconnected. Zepp rerenders the page after Settings Storage changes, as described by its
+[Settings App lifecycle](https://docs.zepp.com/docs/guides/framework/app-settings/register/).
+Dofek Settings also displays whether
 **Zepp app** and **Workout extension** are connected and can disconnect either
 package independently. On the normal watch app, the connection button changes
 to **Disconnect Dofek** as soon as pairing completes, so the normal app can also
@@ -183,6 +188,11 @@ Before submitting either package:
    page renders, including input labels and the pairing QR image. Settings Apps
    render only the components documented by Zepp's
    [Settings App UI API](https://docs.zepp.com/docs/reference/app-settings-api/ui/).
+   Call injected components such as `Image` directly. The
+   [Settings renderer](https://zepp-os.zepp.com/app-settings/v1.0.1/app-settings.global.1767162754628.prod.js)
+   supplies them as local bindings and shadows unsupported globals, including
+   `Reflect` and `globalThis`; looking up components through those globals
+   throws during rendering.
 2. Upload three or more device-appropriate images from `store-screenshots/`,
    as Zepp recommends. Each preview must be a 360×360 PNG. Keep the canvas
    outside the round or rounded-rectangular device display transparent, and
@@ -204,33 +214,34 @@ data://export/imu_<ISO-timestamp>.bin
 
 The Settings UI shows the resolved path once transfer completes. Exact host filesystem mapping depends on Zepp App version/OS; use the displayed path from Settings or pull via Zepp developer tooling.
 
-Watch-side source file before export:
+Watch-side recording slots and durable transfer manifests are separate for each package; see [storage paths](src/storage-keys.ts):
 
 ```text
-data://imu/session.bin
+data://imu/normal_a.bin
+data://imu/normal_b.bin
+data://imu/workout_a.bin
+data://imu/workout_b.bin
 ```
 
 ## Binary format
 
 | Section | Size | Contents |
-|---|---|---|---|
+|---|---|---|
 | Header | 32 bytes | magic `IUM1` (LE bytes of `0x314D5549`), version (uint8), flags (uint8), reserved (uint16), session start unix ms (uint64), sample count (uint32), accel freq mode (uint8), gyro freq mode (uint8), measured Hz×100 (uint16), padding |
 | Chunk | 4 + N×record | `uint16 count`, reserved `uint16`, records |
-| Record (accel) | 16 bytes | `uint32 t_ms`, `float32 ax`, `float32 ay`, `float32 az` |
-| Record (+gyro) | 28 bytes | above + `float32 gx`, `float32 gy`, `float32 gz` |
+| Record (version 2) | 20 bytes | `uint32 t_ms`, `uint32 sensor` (0 = accelerometer, 1 = gyroscope), `float32 x`, `float32 y`, `float32 z` |
 
-Units: accelerometer cm/s², gyroscope deg/s (per `@zos/sensor` docs).
+Each accelerometer or gyroscope callback produces its own timestamped vector. Units are accelerometer cm/s² and gyroscope deg/s ([Accelerometer](https://docs.zepp.com/docs/reference/device-app-api/newAPI/sensor/Accelerometer/), [Gyroscope](https://docs.zepp.com/docs/reference/device-app-api/newAPI/sensor/Gyroscope/)). The [decoder](../../src/providers/zos-app/decode.ts) also reads historical version 1 files, whose 16-byte acceleration records optionally append 12 bytes of cached gyroscope data; those files cannot recover independent gyroscope timing.
 
-`t_ms` is milliseconds since logging start (monotonic session clock based on `Date.now()` delta).
+`t_ms` is the callback's `Date.now()` offset from the file header start; rotation rebases offsets to the new file start. This wall clock is not a hardware sensor timestamp or a guaranteed monotonic clock. See [session controller](src/imu-session-controller.ts) and [collector](src/imu-collector.ts).
 
-## Decode with Python
+## Decode to CSV
 
 ```bash
-pip install pandas
-python tools/decode_imu.py /path/to/imu_2025-06-24T12-00-00.bin -o imu.csv
+pnpm tsx tools/decode-imu.ts /path/to/recording.bin -o imu.csv
 ```
 
-The script prints header metadata, row count, and a timestamp-derived Hz estimate.
+The script writes one row per vector with relative time, absolute time, sensor identity and raw axes; see [decoder CLI](tools/decode-imu.ts).
 
 ## Project layout
 
@@ -244,7 +255,7 @@ zepp/
   app-side/index.ts     # phone BLE receiver
   setting/index.ts      # phone controls
   src/                  # library modules (codec, collector, file flush, tests)
-  tools/decode_imu.py
+  tools/decode-imu.ts
 ```
 
 ## Operational notes

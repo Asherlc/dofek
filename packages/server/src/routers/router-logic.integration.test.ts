@@ -1054,10 +1054,10 @@ describe("Router transformation logic", () => {
   });
 
   // ══════════════════════════════════════════════════════════════
-  // Cycling Advanced — ramp rate EWMA + recommendation
+  // Cycling Advanced — ramp rate EWMA + load-change observation
   // ══════════════════════════════════════════════════════════════
   describe("cyclingAdvanced rampRate", () => {
-    it("computes ramp rate with EWMA and provides recommendation", async () => {
+    it("computes ramp rate with EWMA and describes the load change", async () => {
       // Data was already inserted in weeklyReport beforeAll (cycling activities with HR + power)
       const { status, result } = await query("cyclingAdvanced.rampRate", {
         days: 90,
@@ -1070,21 +1070,19 @@ describe("Router transformation logic", () => {
       expect(data.recommendation.length).toBeGreaterThan(0);
       expect(Array.isArray(data.weeks)).toBe(true);
 
-      // Recommendation should be one of the three categories
-      expect(
-        data.recommendation.startsWith("Safe") ||
-          data.recommendation.startsWith("Aggressive") ||
-          data.recommendation.startsWith("Danger") ||
-          data.recommendation === "No data",
-      ).toBe(true);
-
       if (data.weeks.length > 0) {
+        expect(data.recommendation).toMatch(
+          /^Weekly training-load change: [+-]?\d+(?:\.\d+)? points$/,
+        );
+        expect(data.currentRampRate).toBe(data.weeks.at(-1).rampRate);
         for (const week of data.weeks) {
           expect(week.week).toBeTruthy();
           expect(typeof week.ctlStart).toBe("number");
           expect(typeof week.ctlEnd).toBe("number");
           expect(typeof week.rampRate).toBe("number");
         }
+      } else {
+        expect(data.recommendation).toBe("No data");
       }
     });
   });

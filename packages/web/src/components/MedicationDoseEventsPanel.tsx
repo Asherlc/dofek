@@ -17,7 +17,13 @@ export function MedicationDoseEventsPanel() {
 
   const events = z.array(medicationDoseEventSchema).parse(doseEvents.data?.events ?? []);
   if (events.length === 0) {
-    return <QueryStatePanel variant="empty" height={96} message="No medication dose events yet." />;
+    return (
+      <QueryStatePanel
+        variant="empty"
+        height={96}
+        message="No medication dose events to display."
+      />
+    );
   }
 
   return (

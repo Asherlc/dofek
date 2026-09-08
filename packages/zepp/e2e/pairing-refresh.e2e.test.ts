@@ -158,6 +158,32 @@ describe("Zepp pairing refresh", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("reports and clears a corrupt saved IMU binding while returning preferences", async () => {
+    const values = new Map<string, string>([
+      [STORAGE_KEYS.DOFEK_API_TOKEN, "companion-token"],
+      [STORAGE_KEYS.DOFEK_CONNECTION_STATUS, JSON.stringify({ state: "connected" })],
+      [STORAGE_KEYS.IMU_CONNECTION_BINDING, "{"],
+    ]);
+    const settingsStorage = {
+      addListener: vi.fn(),
+      getItem: vi.fn((key: string) => values.get(key) ?? null),
+      removeItem: vi.fn((key: string) => values.delete(key)),
+      setItem: vi.fn((key: string, value: string) => values.set(key, value)),
+    };
+    vi.stubGlobal("settings", { settingsStorage });
+    const side = Object.assign({}, requireSideConfiguration());
+
+    const preferences = await new Promise<unknown>((resolve, reject) => {
+      side.onRequest({ method: "imu.getPreferences", params: {} }, (error, result) => {
+        if (error) reject(error);
+        else resolve(result);
+      });
+    });
+
+    expect(preferences).toMatchObject({ hasCredentials: true, imuConnection: null });
+    expect(settingsStorage.removeItem).toHaveBeenCalledWith(STORAGE_KEYS.IMU_CONNECTION_BINDING);
+  });
+
   it("requires disconnecting before starting another pairing session", async () => {
     const values = new Map([[STORAGE_KEYS.DOFEK_API_TOKEN, "existing-token"]]);
     vi.stubGlobal("settings", {
@@ -276,6 +302,9 @@ describe("Zepp pairing refresh", () => {
             body: { state: "claimed", companionToken: "companion-token" },
           };
         }
+        if (request.url?.endsWith("/api/ingest/zos-imu/connection")) {
+          return { status: 200, body: { accountId: "account-1" } };
+        }
         return { status: 200, body: { ok: true } };
       }),
     );
@@ -312,7 +341,15 @@ describe("Zepp pairing refresh", () => {
     );
     expect(calls).toContainEqual({ method: "dofek.connectionChanged", params: {} });
     expect(values.get(STORAGE_KEYS.DOFEK_API_TOKEN)).toBe("companion-token");
+    expect(JSON.parse(values.get(STORAGE_KEYS.IMU_CONNECTION_BINDING) ?? "null")).toEqual({
+      serverUrl: "https://dofek.fit",
+      accountId: "account-1",
+    });
     expect(watch.state.hasCredentials).toBe(true);
+    expect(watch.state.imuConnection).toEqual({
+      serverUrl: "https://dofek.fit",
+      accountId: "account-1",
+    });
     expect(connectionButton).toBeDefined();
     expect(deletedWidgets).toContain(pairingQr);
   });
@@ -351,6 +388,10 @@ describe("Zepp pairing refresh", () => {
   it("notifies an open watch page when a mismatched credential is cleared", async () => {
     const values = new Map<string, string>([
       [STORAGE_KEYS.DOFEK_API_TOKEN, "wrong-app-token"],
+      [
+        STORAGE_KEYS.IMU_CONNECTION_BINDING,
+        JSON.stringify({ serverUrl: "https://dofek.fit", accountId: "account-1" }),
+      ],
     ]);
     const settingsStorage = {
       addListener: vi.fn(),
@@ -374,6 +415,7 @@ describe("Zepp pairing refresh", () => {
       "Saved credentials belong to a different Zepp app",
     );
     expect(values.has(STORAGE_KEYS.DOFEK_API_TOKEN)).toBe(false);
+    expect(values.has(STORAGE_KEYS.IMU_CONNECTION_BINDING)).toBe(false);
     expect(calls).toContainEqual({ method: "dofek.connectionChanged", params: {} });
   });
 
@@ -626,6 +668,8 @@ describe("Zepp pairing refresh", () => {
 
   it("keeps a binary transfer failure visible after a successful chunk drain", async () => {
     const values = new Map<string, string>();
+    values.set(STORAGE_KEYS.DOFEK_SERVER_URL, "https://dofek.example.test");
+    values.set(STORAGE_KEYS.DOFEK_API_TOKEN, "companion-token");
     vi.stubGlobal("settings", {
       settingsStorage: {
         getItem: vi.fn((key: string) => values.get(key) ?? null),
@@ -646,9 +690,17 @@ describe("Zepp pairing refresh", () => {
     const envelope = createImuChunkEnvelope({
       connectionType: "zepp",
       installId: "install-1",
+      destination: { serverUrl: "https://dofek.example.test", accountId: "account-1" },
       segmentId: "segment-1",
       sessionStartMs: 1_720_000_000_000,
-      samples: [{ tMs: 0, ax: 1, ay: 2, az: 3, gx: 4, gy: 5, gz: 6 }],
+      sampleOffset: 0,
+      accelFreqMode: 1,
+      gyroFreqMode: 1,
+      hasGyroscope: true,
+      samples: [
+        { tMs: 0, sensor: "accelerometer", x: 1, y: 2, z: 3 },
+        { tMs: 0, sensor: "gyroscope", x: 4, y: 5, z: 6 },
+      ],
     });
     await new Promise<void>((resolve, reject) => {
       side.onRequest({ method: "imu.uploadChunk", params: { envelope } }, (error) => {

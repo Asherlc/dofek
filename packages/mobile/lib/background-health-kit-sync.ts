@@ -103,6 +103,22 @@ async function performHealthKitSync(
     return false;
   }
 
+  try {
+    if (
+      onSyncComplete &&
+      (result.errors.length === 0 || result.inserted > 0 || result.deleted > 0)
+    ) {
+      stageTelemetry.start({ operation: "postSyncCallback" });
+      await onSyncComplete();
+      stageTelemetry.complete("completed");
+    }
+  } catch (error) {
+    stageTelemetry.complete("failed");
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn(TAG, `Sync completion callback failed: ${message}`);
+    captureException(error, { source: TAG });
+  }
+
   if (result.errors.length > 0) {
     const actionableErrors = result.errors.filter(
       (message) => !isTransientNetworkErrorMessage(message),
@@ -135,18 +151,6 @@ async function performHealthKitSync(
       inserted: result.inserted,
     },
   );
-  try {
-    if (onSyncComplete) {
-      stageTelemetry.start({ operation: "postSyncCallback" });
-      await onSyncComplete();
-      stageTelemetry.complete("completed");
-    }
-  } catch (error) {
-    stageTelemetry.complete("failed");
-    const message = error instanceof Error ? error.message : String(error);
-    logger.warn(TAG, `Sync completion callback failed: ${message}`);
-    captureException(error, { source: TAG });
-  }
   logger.info(TAG, "Observer processing complete", {
     durationMs: performance.now() - startedAt,
   });

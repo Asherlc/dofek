@@ -5,40 +5,136 @@ import {
 } from "./health-contract.ts";
 import type { ImuSample } from "./types.ts";
 
-export interface ImuChunkPayload {
+interface ImuChunkBase {
   segmentId: string;
   sessionStartMs: number;
   hasGyroscope: boolean;
   samples: ImuSample[];
 }
 
+export type ImuChunkPayload = ImuChunkBase &
+  (
+    | { formatVersion: 1 }
+    | { formatVersion: 2; sampleOffset: number; accelFreqMode: number; gyroFreqMode: number }
+  );
+
+export interface ImuConnectionBinding {
+  serverUrl: string;
+  accountId: string;
+}
+
+export type ImuEnvelope = HealthEnvelopeV1<ImuChunkPayload> & {
+  destination?: ImuConnectionBinding;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isUnsignedInteger(value: unknown, maximum = Number.MAX_SAFE_INTEGER): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= maximum;
+}
+
+export function parseImuConnectionBinding(value: unknown): ImuConnectionBinding {
+  if (
+    !isRecord(value) ||
+    typeof value.serverUrl !== "string" ||
+    !value.serverUrl.trim() ||
+    typeof value.accountId !== "string" ||
+    !value.accountId.trim()
+  ) {
+    throw new Error("IMU connection binding is invalid.");
+  }
+  return {
+    serverUrl: value.serverUrl.replace(/\/+$/, ""),
+    accountId: value.accountId.trim(),
+  };
 }
 
 function parseSample(value: unknown): ImuSample {
   if (
     !isRecord(value) ||
-    !Number.isInteger(value.tMs) ||
-    Number(value.tMs) < 0 ||
-    !Number.isFinite(value.ax) ||
-    !Number.isFinite(value.ay) ||
-    !Number.isFinite(value.az) ||
-    !Number.isFinite(value.gx) ||
-    !Number.isFinite(value.gy) ||
-    !Number.isFinite(value.gz)
+    !isUnsignedInteger(value.tMs, 0xffffffff) ||
+    (value.sensor !== "accelerometer" && value.sensor !== "gyroscope") ||
+    typeof value.x !== "number" ||
+    !Number.isFinite(value.x) ||
+    typeof value.y !== "number" ||
+    !Number.isFinite(value.y) ||
+    typeof value.z !== "number" ||
+    !Number.isFinite(value.z)
+  )
+    throw new Error("IMU envelope is invalid.");
+  return { tMs: value.tMs, sensor: value.sensor, x: value.x, y: value.y, z: value.z };
+}
+
+function parsePayload(value: unknown): ImuChunkPayload {
+  if (
+    !isRecord(value) ||
+    typeof value.segmentId !== "string" ||
+    !value.segmentId.trim() ||
+    !isUnsignedInteger(value.sessionStartMs) ||
+    typeof value.hasGyroscope !== "boolean" ||
+    !Array.isArray(value.samples) ||
+    value.samples.length === 0
+  )
+    throw new Error("IMU envelope is invalid.");
+  let samples: ImuSample[];
+  if (value.formatVersion === undefined) {
+    if (value.samples.length > 100) throw new Error("IMU envelope is invalid.");
+    samples = value.samples.flatMap((sample: unknown) => {
+      if (!isRecord(sample)) throw new Error("IMU envelope is invalid.");
+      const accel = parseSample({
+        tMs: sample.tMs,
+        sensor: "accelerometer",
+        x: sample.ax,
+        y: sample.ay,
+        z: sample.az,
+      });
+      if (!value.hasGyroscope) return [accel];
+      return [
+        accel,
+        parseSample({
+          tMs: sample.tMs,
+          sensor: "gyroscope",
+          x: sample.gx,
+          y: sample.gy,
+          z: sample.gz,
+        }),
+      ];
+    });
+  } else {
+    if (value.formatVersion !== 1 && value.formatVersion !== 2)
+      throw new Error("IMU envelope is invalid.");
+    samples = value.samples.map(parseSample);
+  }
+  if (
+    samples.length > (value.formatVersion === 2 ? 128 : 200) ||
+    (!value.hasGyroscope && samples.some((sample) => sample.sensor === "gyroscope"))
   ) {
     throw new Error("IMU envelope is invalid.");
   }
-  return {
-    tMs: Number(value.tMs),
-    ax: Number(value.ax),
-    ay: Number(value.ay),
-    az: Number(value.az),
-    gx: Number(value.gx),
-    gy: Number(value.gy),
-    gz: Number(value.gz),
+  const common = {
+    segmentId: value.segmentId,
+    sessionStartMs: value.sessionStartMs,
+    hasGyroscope: value.hasGyroscope,
+    samples,
   };
+  if (value.formatVersion === 2) {
+    if (
+      !isUnsignedInteger(value.sampleOffset) ||
+      !isUnsignedInteger(value.accelFreqMode, 255) ||
+      !isUnsignedInteger(value.gyroFreqMode, 255)
+    )
+      throw new Error("IMU envelope is invalid.");
+    return {
+      ...common,
+      formatVersion: 2,
+      sampleOffset: value.sampleOffset,
+      accelFreqMode: value.accelFreqMode,
+      gyroFreqMode: value.gyroFreqMode,
+    };
+  }
+  return { ...common, formatVersion: 1 };
 }
 
 export function createImuChunkEnvelope(input: {
@@ -46,47 +142,32 @@ export function createImuChunkEnvelope(input: {
   installId: string;
   segmentId: string;
   sessionStartMs: number;
-  hasGyroscope?: boolean;
+  hasGyroscope: boolean;
+  sampleOffset: number;
+  accelFreqMode: number;
+  gyroFreqMode: number;
   samples: ImuSample[];
-}): HealthEnvelopeV1<ImuChunkPayload> {
-  if (
-    !input.installId.trim() ||
-    !input.segmentId.trim() ||
-    !Number.isInteger(input.sessionStartMs) ||
-    input.sessionStartMs < 0
-  ) {
-    throw new Error("IMU envelope is invalid.");
-  }
-  const samples = input.samples.map(parseSample);
-  const first = samples[0];
-  const last = samples.at(-1);
-  if (!first || !last) {
-    throw new Error("Cannot create an empty IMU chunk.");
-  }
-  const eventId = `${input.segmentId}:${first.tMs}:${last.tMs}`;
+  destination?: ImuConnectionBinding;
+}): ImuEnvelope {
+  if (!input.installId.trim()) throw new Error("IMU envelope is invalid.");
+  const payload = parsePayload({ ...input, formatVersion: 2 });
+  const last = payload.samples.at(-1);
+  if (!last) throw new Error("Cannot create an empty IMU chunk.");
   const createdAt = new Date(input.sessionStartMs + last.tMs);
-  if (Number.isNaN(createdAt.getTime())) {
-    throw new Error("IMU envelope is invalid.");
-  }
-  return createHealthEnvelope({
+  if (Number.isNaN(createdAt.getTime())) throw new Error("IMU envelope is invalid.");
+  const eventId = `${input.segmentId}:${input.sampleOffset}`;
+  const envelope: ImuEnvelope = createHealthEnvelope({
     batchId: eventId,
     source: { connectionType: input.connectionType, installId: input.installId },
-    events: [
-      {
-        eventId,
-        createdAt: createdAt.toISOString(),
-        payload: {
-          segmentId: input.segmentId,
-          sessionStartMs: input.sessionStartMs,
-          hasGyroscope: input.hasGyroscope ?? true,
-          samples,
-        },
-      },
-    ],
+    events: [{ eventId, createdAt: createdAt.toISOString(), payload }],
   });
+  if (input.destination) {
+    envelope.destination = parseImuConnectionBinding(input.destination);
+  }
+  return envelope;
 }
 
-export function parseImuEnvelope(value: unknown): HealthEnvelopeV1<ImuChunkPayload> {
+export function parseImuEnvelope(value: unknown): ImuEnvelope {
   if (
     !isRecord(value) ||
     value.version !== 1 ||
@@ -98,43 +179,28 @@ export function parseImuEnvelope(value: unknown): HealthEnvelopeV1<ImuChunkPaylo
     !value.source.installId.trim() ||
     !Array.isArray(value.events) ||
     value.events.length === 0
-  ) {
+  )
     throw new Error("IMU envelope is invalid.");
-  }
-
   return {
     version: 1,
     batchId: value.batchId,
-    source: {
-      connectionType: value.source.connectionType,
-      installId: value.source.installId,
-    },
-    events: value.events.map((event) => {
+    source: { connectionType: value.source.connectionType, installId: value.source.installId },
+    ...(value.destination === undefined
+      ? {}
+      : { destination: parseImuConnectionBinding(value.destination) }),
+    events: value.events.map((event: unknown) => {
       if (
         !isRecord(event) ||
         typeof event.eventId !== "string" ||
         !event.eventId.trim() ||
         typeof event.createdAt !== "string" ||
-        !event.createdAt.trim() ||
-        !isRecord(event.payload) ||
-        typeof event.payload.segmentId !== "string" ||
-        !event.payload.segmentId.trim() ||
-        !Number.isInteger(event.payload.sessionStartMs) ||
-        typeof event.payload.hasGyroscope !== "boolean" ||
-        !Array.isArray(event.payload.samples) ||
-        event.payload.samples.length === 0
-      ) {
+        !event.createdAt.trim()
+      )
         throw new Error("IMU envelope is invalid.");
-      }
       return {
         eventId: event.eventId,
         createdAt: event.createdAt,
-        payload: {
-          segmentId: event.payload.segmentId,
-          sessionStartMs: Number(event.payload.sessionStartMs),
-          hasGyroscope: event.payload.hasGyroscope,
-          samples: event.payload.samples.map(parseSample),
-        },
+        payload: parsePayload(event.payload),
       };
     }),
   };

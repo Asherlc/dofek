@@ -2,6 +2,7 @@ import {
   type DeveloperClientInput,
   DeveloperClientInputSchema,
 } from "@dofek/auth/developer-clients";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { type FormEvent, useRef, useState } from "react";
 import type { z } from "zod";
 
@@ -129,7 +130,9 @@ export function DeveloperClientForm({
       {validationIssues.length > 0 ? (
         <div role="alert" className="space-y-1 text-sm text-red-400">
           {validationIssues.map((issue) => (
-            <p key={`${issue.code}-${issue.path.join(".")}-${issue.message}`}>{issue.message}</p>
+            <p key={`${issue.code}-${issue.path.join(".")}-${issue.message}`}>
+              {userFacingErrorMessage(issue.message, "Check this value and try again.")}
+            </p>
           ))}
         </div>
       ) : null}

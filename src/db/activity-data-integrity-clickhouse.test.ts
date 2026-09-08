@@ -5,6 +5,7 @@ import {
   clickHouseSourceRowSchema,
   type DerivedSnapshot,
   incompatibleMemberCount,
+  queryClickHouseRows,
   snapshotDerivedRows,
   snapshotDerivedRowsOrNull,
   sourceRowsMatchPostgres,
@@ -45,6 +46,7 @@ function sourceRow(activityId: string): DerivedSnapshot["sourceRows"][number] {
     provider_id: "wahoo",
     user_id: userId,
     canonical_type: "cycling",
+    started_at: new Date("2026-09-01T14:55:54.000Z"),
     timezone: null,
     start_utc_offset_minutes: -240,
     end_utc_offset_minutes: -240,
@@ -77,7 +79,66 @@ function compatibilitySnapshot(
   };
 }
 
+describe("queryClickHouseRows", () => {
+  it("requests UTC ISO timestamps and quoted 64-bit integers from ClickHouse", async () => {
+    const client = { query: vi.fn(async () => ({ json: async () => [] })) };
+
+    await queryClickHouseRows(
+      client,
+      z.object({ refresh_version: z.string() }),
+      "SELECT refresh_version FROM analytics.activity_source_records WHERE user_id = {userId:UUID}",
+      { userId },
+    );
+
+    expect(client.query).toHaveBeenCalledExactlyOnceWith({
+      query:
+        "SELECT refresh_version FROM analytics.activity_source_records WHERE user_id = {userId:UUID}",
+      query_params: { userId },
+      format: "JSONEachRow",
+      clickhouse_settings: {
+        output_format_json_quote_64bit_integers: 1,
+        date_time_output_format: "iso",
+      },
+    });
+  });
+});
+
 describe("snapshotDerivedRows", () => {
+  it.each([null, false, 0, "", "invalid-date"])(
+    "rejects an invalid activity start (%s) before deriving rebuild bounds",
+    async (started_at) => {
+      const client = {
+        query: vi.fn(async ({ query }: { query: string }) => ({
+          json: async () =>
+            query.startsWith("SELECT source_records.*") ? [{ ...sourceRowA, started_at }] : [],
+        })),
+      };
+      await expect(snapshotDerivedRows(client, userId, [activityA])).rejects.toThrow("started_at");
+    },
+  );
+
+  it("parses an ISO activity start without changing its instant", async () => {
+    const client = {
+      query: vi.fn(async ({ query }: { query: string }) => ({
+        json: async () =>
+          query.startsWith("SELECT source_records.*")
+            ? [{ ...sourceRowA, started_at: "2026-09-01T14:55:54.000Z" }]
+            : [],
+      })),
+    };
+    const snapshot = await snapshotDerivedRows(client, userId, [activityA]);
+    expect(snapshot.sourceRows[0]?.started_at).toEqual(new Date("2026-09-01T14:55:54.000Z"));
+  });
+
+  it("rejects source rows without the activity start required for historical rebuild bounds", async () => {
+    const { started_at: _startedAt, ...incompleteSource } = sourceRowA;
+    const client = {
+      query: vi.fn(async ({ query }: { query: string }) => ({
+        json: async () => (query.startsWith("SELECT source_records.*") ? [incompleteSource] : []),
+      })),
+    };
+    await expect(snapshotDerivedRows(client, userId, [activityA])).rejects.toThrow("started_at");
+  });
   it("returns the complete empty snapshot without querying ClickHouse", async () => {
     const client = { query: vi.fn() };
 

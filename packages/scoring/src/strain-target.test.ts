@@ -120,20 +120,16 @@ describe("computeStrainTarget", () => {
     it("Push zone explanation includes readiness score", () => {
       const result = computeStrainTarget(85);
       expect(result.explanation).toContain("85");
-      expect(result.explanation).toContain("strong");
-      expect(result.explanation).toContain("Push");
     });
 
     it("Maintain zone explanation includes readiness score", () => {
       const result = computeStrainTarget(60);
       expect(result.explanation).toContain("60");
-      expect(result.explanation).toContain("Moderate");
     });
 
     it("Recovery zone explanation includes readiness score", () => {
       const result = computeStrainTarget(30);
       expect(result.explanation).toContain("30");
-      expect(result.explanation).toContain("low");
     });
   });
 

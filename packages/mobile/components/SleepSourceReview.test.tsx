@@ -7,7 +7,7 @@ import { SleepSourceReview } from "./SleepSourceReview";
 const selectedSessionId = "00000000-0000-4000-8000-000000001774";
 
 describe("SleepSourceReview", () => {
-  it("identifies the selected session and exposes overlapping canonical sessions", () => {
+  it("identifies the sleep record used and exposes overlapping records", () => {
     render(
       <SleepSourceReview
         nights={[
@@ -60,7 +60,7 @@ describe("SleepSourceReview", () => {
     expect(screen.getByText(/5h 30m/)).toBeTruthy();
   });
 
-  it("states when the selected session has no canonical conflicts", () => {
+  it("states when the sleep record used has no overlaps", () => {
     render(
       <SleepSourceReview
         nights={[
@@ -85,7 +85,7 @@ describe("SleepSourceReview", () => {
       />,
     );
 
-    expect(screen.getByText("No overlapping sessions")).toBeTruthy();
+    expect(screen.getByText("No overlapping sleep records")).toBeTruthy();
     expect(screen.queryByRole("button")).toBeNull();
   });
 

@@ -10,6 +10,8 @@ import {
   WorkoutSummary,
 } from "./strength-repository.ts";
 
+const testActivityId = "10000000-0000-4000-8000-000000000001";
+
 // ---------------------------------------------------------------------------
 // Domain models
 // ---------------------------------------------------------------------------
@@ -154,8 +156,10 @@ describe("ExerciseWithSets", () => {
           notes: null,
         },
       ],
+      testActivityId,
     );
     const detail = exercise.toDetail();
+    expect(detail.activityId).toBe(testActivityId);
     expect(detail.exerciseName).toBe("Bench Press");
     expect(detail.equipment).toBe("BARBELL");
     expect(detail.muscleGroups).toEqual(["CHEST", "TRICEPS"]);
@@ -173,17 +177,25 @@ describe("ExerciseWithSets", () => {
   });
 
   it("handles timed exercises with duration instead of weight/reps", () => {
-    const exercise = new ExerciseWithSets(0, "Front Plank", "BODY", ["CORE"], "STRENGTH", [
-      {
-        setIndex: 0,
-        setType: "working",
-        weightKg: null,
-        reps: null,
-        durationSeconds: 60,
-        rpe: null,
-        notes: null,
-      },
-    ]);
+    const exercise = new ExerciseWithSets(
+      0,
+      "Front Plank",
+      "BODY",
+      ["CORE"],
+      "STRENGTH",
+      [
+        {
+          setIndex: 0,
+          setType: "working",
+          weightKg: null,
+          reps: null,
+          durationSeconds: 60,
+          rpe: null,
+          notes: null,
+        },
+      ],
+      testActivityId,
+    );
     const detail = exercise.toDetail();
     expect(detail.sets[0]?.weightKg).toBeNull();
     expect(detail.sets[0]?.reps).toBeNull();
@@ -191,7 +203,15 @@ describe("ExerciseWithSets", () => {
   });
 
   it("handles null equipment and muscle groups", () => {
-    const exercise = new ExerciseWithSets(0, "Custom Exercise", null, null, null, []);
+    const exercise = new ExerciseWithSets(
+      0,
+      "Custom Exercise",
+      null,
+      null,
+      null,
+      [],
+      testActivityId,
+    );
     const detail = exercise.toDetail();
     expect(detail.equipment).toBeNull();
     expect(detail.muscleGroups).toBeNull();
@@ -210,7 +230,7 @@ describe("StrengthRepository", () => {
   function makeRepository(rows: Record<string, unknown>[] = []) {
     const execute = vi.fn().mockResolvedValue(
       rows.map((row) => ({
-        member_activity_id: "member-1",
+        member_activity_id: typeof row.activity_id === "string" ? row.activity_id : "member-1",
         member_provider_id: "provider-1",
         source_priority: 100,
         ...row,
@@ -524,6 +544,45 @@ describe("StrengthRepository", () => {
   });
 
   describe("getExercisesForActivity", () => {
+    it("keeps exercises with the same index in different member activities separate", async () => {
+      const otherActivityId = "10000000-0000-4000-8000-000000000002";
+      const { repo } = makeRepository(
+        [
+          { activityId: testActivityId, name: "Bench Press", weight: 80 },
+          { activityId: otherActivityId, name: "Deadlift", weight: 120 },
+        ].map((exercise) => ({
+          activity_id: exercise.activityId,
+          exercise_name: exercise.name,
+          equipment: "BARBELL",
+          muscle_groups: null,
+          exercise_type: "STRENGTH",
+          exercise_index: 7,
+          set_index: 0,
+          set_type: "working",
+          weight_kg: exercise.weight,
+          reps: 5,
+          duration_seconds: null,
+          rpe: null,
+          notes: null,
+        })),
+      );
+      const exercises = await repo.getExercisesForActivity(testActivityId);
+      expect(exercises.map((exercise) => exercise.toDetail())).toEqual([
+        expect.objectContaining({
+          activityId: testActivityId,
+          exerciseIndex: 0,
+          exerciseName: "Bench Press",
+          sets: [expect.objectContaining({ weightKg: 80 })],
+        }),
+        expect.objectContaining({
+          activityId: otherActivityId,
+          exerciseIndex: 1,
+          exerciseName: "Deadlift",
+          sets: [expect.objectContaining({ weightKg: 120 })],
+        }),
+      ]);
+    });
+
     it("returns empty array when no matching strength workout", async () => {
       const { repo } = makeRepository([]);
       const result = await repo.getExercisesForActivity("activity-1");
@@ -533,6 +592,7 @@ describe("StrengthRepository", () => {
     it("groups flat rows into exercises by normalized exercise identity", async () => {
       const { repo } = makeRepository([
         {
+          activity_id: testActivityId,
           exercise_name: "Bench Press",
           equipment: "BARBELL",
           muscle_groups: ["CHEST", "TRICEPS"],
@@ -547,6 +607,7 @@ describe("StrengthRepository", () => {
           notes: null,
         },
         {
+          activity_id: testActivityId,
           exercise_name: "Bench Press",
           equipment: "BARBELL",
           muscle_groups: ["CHEST", "TRICEPS"],
@@ -561,6 +622,7 @@ describe("StrengthRepository", () => {
           notes: null,
         },
         {
+          activity_id: testActivityId,
           exercise_name: "Front Plank",
           equipment: "BODY",
           muscle_groups: ["CORE"],
@@ -749,6 +811,7 @@ describe("StrengthRepository", () => {
     it("uses exercise metadata when stored muscle groups are missing", async () => {
       const { repo } = makeRepository([
         {
+          activity_id: testActivityId,
           exercise_name: "Bulgarian Split Squat",
           equipment: null,
           muscle_groups: null,
@@ -773,6 +836,7 @@ describe("StrengthRepository", () => {
     it("uses exercise metadata when stored muscle groups are only broad back", async () => {
       const { repo } = makeRepository([
         {
+          activity_id: testActivityId,
           exercise_name: "Pull Up",
           equipment: null,
           muscle_groups: ["BACK"],
@@ -796,6 +860,7 @@ describe("StrengthRepository", () => {
     it("treats empty stored muscle groups as missing metadata", async () => {
       const { repo } = makeRepository([
         {
+          activity_id: testActivityId,
           exercise_name: "Bulgarian Split Squat",
           equipment: null,
           muscle_groups: [],
@@ -820,6 +885,7 @@ describe("StrengthRepository", () => {
     it("does not infer strength type from empty stored muscle groups for unknown exercises", async () => {
       const { repo } = makeRepository([
         {
+          activity_id: testActivityId,
           exercise_name: "Custom Movement",
           equipment: null,
           muscle_groups: [],

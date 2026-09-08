@@ -14,6 +14,10 @@ class CorruptImuTransferManifestError extends Error {
 }
 
 export type ImuFileSlot = "A" | "B";
+
+export function initialImuFileSlot(): ImuFileSlot {
+  return "A";
+}
 export type PendingImuTransfer = ImuSegmentResult & { slot: ImuFileSlot };
 
 function isRecord(value: unknown): value is Record<string, unknown> {

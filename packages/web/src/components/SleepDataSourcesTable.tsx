@@ -54,7 +54,7 @@ export function SleepDataSourcesTable({ rows, loading }: SleepDataSourcesTablePr
   }
 
   if (rows.length === 0) {
-    return <p className="text-sm text-dim py-2">No sleep data in this range.</p>;
+    return <p className="text-sm text-dim py-2">No sleep records in this period.</p>;
   }
 
   const newestFirst = [...rows].reverse();
@@ -70,7 +70,7 @@ export function SleepDataSourcesTable({ rows, loading }: SleepDataSourcesTablePr
             <tr className="text-left text-xs text-subtle border-b border-border">
               <th className="pb-2 pr-4 font-medium">Night</th>
               <th className="pb-2 pr-4 font-medium">Duration</th>
-              <th className="pb-2 pr-4 font-medium">Selected session</th>
+              <th className="pb-2 pr-4 font-medium">Sleep record used</th>
               <th className="pb-2 pr-4 font-medium">Stage data</th>
               <th className="pb-2 pr-4 font-medium">Merged sources</th>
               <th className="pb-2 font-medium">Conflicts</th>
@@ -130,7 +130,7 @@ export function SleepDataSourcesTable({ rows, loading }: SleepDataSourcesTablePr
                       <td colSpan={6} className="pb-3 pt-1">
                         <div className="rounded-lg bg-surface-solid p-3 space-y-2">
                           <p className="text-xs font-medium text-muted">
-                            Other canonical sessions that overlap the selected session
+                            Other sleep records covering the same time
                           </p>
                           {row.overlappingSessions.map((session) => {
                             const source = formatSleepProvenance(session);

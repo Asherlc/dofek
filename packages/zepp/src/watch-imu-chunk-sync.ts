@@ -4,17 +4,30 @@ import {
   parseHealthUploadResponse,
   type ZeppConnectionType,
 } from "./health-contract.ts";
-import { createImuChunkEnvelope, parseImuEnvelope } from "./imu-upload.ts";
+import {
+  createImuChunkEnvelope,
+  type ImuConnectionBinding,
+  parseImuEnvelope,
+} from "./imu-upload.ts";
 import type { ImuSample } from "./types.ts";
 
-type ImuChunkInput = {
+export type ImuChunkInput = {
+  destination: ImuConnectionBinding;
   connectionType: ZeppConnectionType;
   installId: string;
   segmentId: string;
   sessionStartMs: number;
   hasGyroscope: boolean;
   samples: ImuSample[];
+  sampleOffset: number;
+  accelFreqMode: number;
+  gyroFreqMode: number;
 };
+
+type ImuChunkData = Omit<
+  ImuChunkInput,
+  "destination" | "connectionType" | "installId" | "segmentId"
+>;
 
 type ImuEnvelope = ReturnType<typeof createImuChunkEnvelope>;
 
@@ -187,5 +200,36 @@ export function createWatchImuChunkSync(
       return retry();
     },
     retry,
+  };
+}
+
+export function createWatchImuChunkHandler(options: {
+  connectionType: ZeppConnectionType;
+  segmentName: string;
+  getInstallId(): string;
+  getDestination(): ImuConnectionBinding | null;
+  getSync(): WatchImuChunkSync | null;
+  onError(error: unknown, segmentId: string): void;
+}): (chunk: ImuChunkData) => void {
+  return (chunk) => {
+    const installId = options.getInstallId();
+    const segmentId = `${installId}:${options.segmentName}:${chunk.sessionStartMs}`;
+    const destination = options.getDestination();
+    if (!destination) throw new Error("Connect Dofek before recording motion data.");
+    const sync = options.getSync();
+    if (!sync) throw new Error("IMU chunk sync is unavailable.");
+    try {
+      void sync
+        .enqueue({
+          ...chunk,
+          destination,
+          connectionType: options.connectionType,
+          installId,
+          segmentId,
+        })
+        .catch((error: unknown) => options.onError(error, segmentId));
+    } catch (error) {
+      options.onError(error, segmentId);
+    }
   };
 }

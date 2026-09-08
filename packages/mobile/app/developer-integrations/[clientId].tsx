@@ -14,8 +14,8 @@ import { DeveloperClientSecretPanel } from "../../components/DeveloperClientSecr
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { useAuth } from "../../lib/auth-context";
 import { createMobileDeveloperClientsApi } from "../../lib/developer-clients";
+import { rootStackScreenOptions } from "../../lib/root-stack-screen-options";
 import { colors, fontSize, fontWeight, radius, spacing } from "../../theme";
-import { rootStackScreenOptions } from "../_layout-options";
 
 const rotateWarning =
   "The existing secret stops working immediately. Save the replacement before closing its one-time panel.";

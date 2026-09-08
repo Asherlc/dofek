@@ -22,6 +22,13 @@ describe("OperationProgressBar", () => {
     expect(screen.getByText("Waiting for deletion worker...")).not.toBeNull();
   });
 
+  it("does not expose technical operation messages", () => {
+    render(<OperationProgressBar message="Failed query: SELECT * FROM users" />);
+
+    expect(screen.getByText("We couldn't complete this request. Please try again.")).not.toBeNull();
+    expect(screen.queryByText(/SELECT/)).toBeNull();
+  });
+
   it("clamps visual progress to the supported range", () => {
     const { rerender } = render(<OperationProgressBar percentage={-5} />);
     expect(screen.getByTestId("operation-progress-fill").getAttribute("style")).toContain("0%");

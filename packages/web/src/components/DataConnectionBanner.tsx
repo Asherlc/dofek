@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { onlineManager, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 
@@ -12,7 +13,7 @@ function getOnlineStatus(): boolean {
 function getErrorMessage(error: unknown): string | null {
   const message = error instanceof Error ? error.message : typeof error === "string" ? error : null;
   const trimmedMessage = message?.trim();
-  return trimmedMessage ? trimmedMessage : null;
+  return trimmedMessage ? userFacingErrorMessage(trimmedMessage) : null;
 }
 
 function useActiveQueryFailureCount(): number {

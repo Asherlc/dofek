@@ -479,4 +479,80 @@ describe("StrengthRepository activity scope", () => {
     expect(volumeAfter - volumeBefore).toBe(100);
     expect(shoulderSetsAfter - shoulderSetsBefore).toBe(1);
   });
+
+  it("hydrates member-owned sets when requested through any activity member", async () => {
+    await testContext.db.transaction(async (db) => {
+      await db.execute(sql`INSERT INTO fitness.provider (id, name, user_id)
+      VALUES ('strength_member_test', 'Strength Member Test', ${TEST_USER_ID})`);
+      const firstRows = await executeWithSchema(
+        db,
+        activityIdentityRowSchema,
+        sql`
+      INSERT INTO fitness.activity (
+        provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at
+      ) VALUES (
+        'strength_scope_test', ${TEST_USER_ID}, 'member-lookup-a', 'strength', 'strength',
+        '2020-01-01T12:00:00Z', '2020-01-01T13:00:00Z'
+      ) RETURNING id, group_id`,
+      );
+      const first = firstRows[0];
+      if (!first) throw new Error("Member activity fixture missing");
+      const memberRows = await executeWithSchema(
+        db,
+        activityIdentityRowSchema,
+        sql`
+      INSERT INTO fitness.activity (
+        group_id, provider_id, user_id, external_id, canonical_type, provider_type,
+        started_at, ended_at
+      ) VALUES (
+        ${first.group_id}::uuid, 'strength_member_test', ${TEST_USER_ID}, 'member-lookup-b',
+        'strength', 'strength', '2020-01-01T12:00:00Z', '2020-01-01T13:00:00Z'
+      ) RETURNING id, group_id`,
+      );
+      const member = memberRows[0];
+      if (!member) throw new Error("Non-representative activity fixture missing");
+      await db.execute(sql`INSERT INTO fitness.strength_set (
+      activity_id, exercise_id, exercise_index, set_index, set_type, weight_kg, reps
+    ) SELECT ${member.id}, id, 0, 0, 'working', 60, 8
+      FROM fitness.exercise WHERE name = 'Scope Test Press'`);
+
+      const repository = new StrengthRepository(db, TEST_USER_ID, "UTC");
+      for (const lookupId of [first.group_id, first.id, member.id]) {
+        const exercises = await repository.getExercisesForActivity(lookupId);
+        expect(exercises.map((exercise) => exercise.toDetail())).toEqual([
+          expect.objectContaining({
+            activityId: member.id,
+            exerciseName: "Scope Test Press",
+            sets: [expect.objectContaining({ weightKg: 60, reps: 8 })],
+          }),
+        ]);
+      }
+      await db.execute(sql`INSERT INTO fitness.strength_set (
+        activity_id, exercise_id, exercise_index, set_index, set_type, weight_kg, reps
+      ) SELECT ${first.id}, id, 0, 0, 'working', 30, 10
+        FROM fitness.exercise WHERE name = ${gapExerciseName}`);
+      for (const lookupId of [first.group_id, first.id, member.id]) {
+        const exercises = await repository.getExercisesForActivity(lookupId);
+        expect(exercises).toHaveLength(2);
+        expect(exercises.map((exercise) => exercise.toDetail())).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              activityId: member.id,
+              exerciseIndex: 1,
+              exerciseName: "Scope Test Press",
+              sets: [expect.objectContaining({ weightKg: 60, reps: 8 })],
+            }),
+            expect.objectContaining({
+              activityId: first.id,
+              exerciseIndex: 0,
+              exerciseName: gapExerciseName,
+              sets: [expect.objectContaining({ weightKg: 30, reps: 10 })],
+            }),
+          ]),
+        );
+      }
+      const otherUser = new StrengthRepository(db, "00000000-0000-4000-8000-000000000002", "UTC");
+      expect(await otherUser.getExercisesForActivity(member.id)).toEqual([]);
+    });
+  });
 });

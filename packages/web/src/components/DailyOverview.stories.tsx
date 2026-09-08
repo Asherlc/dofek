@@ -55,7 +55,7 @@ const mockStrainTargetData = {
   currentStrain: 13.2,
   progressPercent: 88,
   zone: "Push" as const,
-  explanation: "Recovery is strong (78). Push for a high-strain day to build fitness.",
+  explanation: "Based on a recovery score of 78/100.",
   dailyLoad: 120,
   acuteLoad: 95,
   chronicLoad: 80,

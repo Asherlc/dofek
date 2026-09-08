@@ -3,10 +3,10 @@ import { Stack, useLocalSearchParams } from "expo-router";
 import { useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
+import { rootStackScreenOptions } from "../lib/root-stack-screen-options";
 import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
-import { rootStackScreenOptions } from "./_layout-options";
 
 function firstParam(value: string | string[] | undefined): string | undefined {
   if (Array.isArray(value)) return value[0];
@@ -64,6 +64,10 @@ export default function ExperimentsScreen() {
     <>
       <Stack.Screen options={{ ...rootStackScreenOptions, title: "Personal Experiments" }} />
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+        <Text style={styles.intro}>
+          Try a change to your routine and compare the results. A comparison alone cannot prove
+          cause.
+        </Text>
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Start an experiment</Text>
           {prefilledOutcomeMetricId ? (
@@ -83,9 +87,9 @@ export default function ExperimentsScreen() {
             <QueryStatePanel variant="loading" minHeight={72} />
           ) : (
             <View style={styles.form}>
-              <Text style={styles.label}>Hypothesis</Text>
+              <Text style={styles.label}>What do you want to test?</Text>
               <TextInput
-                accessibilityLabel="Hypothesis"
+                accessibilityLabel="What do you want to test?"
                 value={hypothesis}
                 onChangeText={setHypothesis}
                 placeholder="Does a consistent bedtime improve heart rate variability?"
@@ -93,9 +97,9 @@ export default function ExperimentsScreen() {
                 style={styles.input}
               />
 
-              <Text style={styles.label}>Intervention</Text>
+              <Text style={styles.label}>What will you change?</Text>
               <TextInput
-                accessibilityLabel="Intervention"
+                accessibilityLabel="What will you change?"
                 value={intervention}
                 onChangeText={setIntervention}
                 placeholder="Lights out by 10pm on weeknights"
@@ -293,10 +297,10 @@ export default function ExperimentsScreen() {
 }
 
 const adherenceOptions = [
-  { value: "adherent", label: "Adherent" },
-  { value: "partial", label: "Partial" },
-  { value: "not_adherent", label: "Not adherent" },
-  { value: "unknown", label: "Unknown" },
+  { value: "adherent", label: "Yes" },
+  { value: "partial", label: "Partly" },
+  { value: "not_adherent", label: "No" },
+  { value: "unknown", label: "Not sure" },
 ] as const;
 
 type Adherence = (typeof adherenceOptions)[number]["value"];
@@ -353,7 +357,7 @@ function ExperimentLearningCard({ experimentId }: { experimentId: string }) {
       ) : (
         <>
           <View style={styles.checkInForm}>
-            <Text style={styles.label}>Today&apos;s adherence</Text>
+            <Text style={styles.label}>Did you follow the plan today?</Text>
             <View style={styles.chipRow}>
               {adherenceOptions.map((option) => (
                 <Pressable
@@ -373,10 +377,10 @@ function ExperimentLearningCard({ experimentId }: { experimentId: string }) {
               ))}
             </View>
             <TextInput
-              accessibilityLabel="Confounder"
+              accessibilityLabel="Anything else that might affect the result?"
               value={confounder}
               onChangeText={setConfounder}
-              placeholder="Confounder (optional)"
+              placeholder="Anything else that might affect the result? (optional)"
               placeholderTextColor={colors.textTertiary}
               style={styles.input}
             />
@@ -523,6 +527,11 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 100,
     gap: 12,
+  },
+  intro: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 20,
   },
   card: {
     backgroundColor: colors.surface,

@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createImuChunkEnvelope, parseImuEnvelope } from "./imu-upload.ts";
-import { createWatchImuChunkSync, type WatchImuChunkSync } from "./watch-imu-chunk-sync.ts";
+import {
+  createWatchImuChunkHandler,
+  createWatchImuChunkSync,
+  type WatchImuChunkSync,
+} from "./watch-imu-chunk-sync.ts";
 
 const fsMocks = vi.hoisted(() => ({
   mkdirSync: vi.fn<(options: { path: string }) => number>(),
@@ -20,12 +24,16 @@ const fsMocks = vi.hoisted(() => ({
 vi.mock("@zos/fs", () => fsMocks);
 
 const input = {
+  destination: { serverUrl: "https://dofek.test", accountId: "account-1" },
   connectionType: "zepp",
   installId: "install-1",
   segmentId: "segment-1",
   sessionStartMs: 1_720_000_000_000,
   hasGyroscope: true,
-  samples: [{ tMs: 0, ax: 1, ay: 2, az: 3, gx: 4, gy: 5, gz: 6 }],
+  sampleOffset: 0,
+  accelFreqMode: 1,
+  gyroFreqMode: 1,
+  samples: [{ tMs: 0, sensor: "accelerometer", x: 1, y: 2, z: 3 }],
 } satisfies Parameters<WatchImuChunkSync["enqueue"]>[0];
 
 const files = new Map<string, string>();
@@ -87,12 +95,16 @@ describe("watch IMU chunk sync", () => {
     expect(persistedChunkPaths()).toHaveLength(1);
     expect(fsMocks.renameSync).toHaveBeenCalledOnce();
     expect(request).toHaveBeenCalledWith(
-      expect.objectContaining({ batchId: "segment-1:0:0", version: 1 }),
+      expect.objectContaining({
+        batchId: "segment-1:0",
+        version: 1,
+        destination: { serverUrl: "https://dofek.test", accountId: "account-1" },
+      }),
     );
 
     acknowledge?.({
       status: "ok",
-      acceptedEventIds: ["segment-1:0:0"],
+      acceptedEventIds: ["segment-1:0"],
       rejected: [],
     });
     await delivery;
@@ -135,9 +147,9 @@ describe("watch IMU chunk sync", () => {
     if (!sample) throw new Error("Test IMU sample is missing.");
 
     for (const tMs of [0, 100, 200]) {
-      await expect(sync.enqueue({ ...input, samples: [{ ...sample, tMs }] })).rejects.toThrow(
-        "phone unavailable",
-      );
+      await expect(
+        sync.enqueue({ ...input, sampleOffset: tMs, samples: [{ ...sample, tMs }] }),
+      ).rejects.toThrow("phone unavailable");
     }
     expect(persistedChunkPaths()).toHaveLength(3);
     expect(
@@ -160,6 +172,23 @@ describe("watch IMU chunk sync", () => {
     expect(replayRequest).toHaveBeenCalledTimes(3);
     expect(persistedChunkPaths()).toEqual([]);
     expect(files.get("data://imu/chunks/interrupted.tmp")).toBe("incomplete JSON");
+  });
+
+  it("replays a pending chunk with its capture-time account after the active account changes", async () => {
+    await expect(
+      createWatchImuChunkSync("data://imu/chunks", async () => {
+        throw new Error("phone unavailable");
+      }).enqueue(input),
+    ).rejects.toThrow("phone unavailable");
+
+    const request = vi.fn(async (envelope: unknown) => ({
+      status: "ok",
+      acceptedEventIds: parseImuEnvelope(envelope).events.map((event) => event.eventId),
+      rejected: [],
+    }));
+    await createWatchImuChunkSync("data://imu/chunks", request).retry();
+
+    expect(parseImuEnvelope(request.mock.calls[0]?.[0]).destination).toEqual(input.destination);
   });
 
   it("retains a chunk when the phone omits its acknowledgement", async () => {
@@ -185,7 +214,7 @@ describe("watch IMU chunk sync", () => {
     await expect(sync.retry()).resolves.toBeUndefined();
 
     expect(persistedChunkPaths()).toEqual([]);
-    const quarantine = files.get("data://imu/chunks/segment-1%3A0%3A0.rejected") ?? "";
+    const quarantine = files.get("data://imu/chunks/segment-1%3A0.rejected") ?? "";
     expect(quarantine).toContain("Phone repeatedly omitted the IMU chunk acknowledgement.");
   });
 
@@ -249,13 +278,13 @@ describe("watch IMU chunk sync", () => {
     if (!sample) throw new Error("Test IMU sample is missing.");
     await expect(initialSync.enqueue(input)).rejects.toThrow("phone unavailable");
     await expect(
-      initialSync.enqueue({ ...input, samples: [{ ...sample, tMs: 100 }] }),
+      initialSync.enqueue({ ...input, sampleOffset: 1, samples: [{ ...sample, tMs: 100 }] }),
     ).rejects.toThrow("phone unavailable");
 
     const replayRequest = vi.fn(async (envelope: unknown) => {
       const parsed = parseImuEnvelope(envelope);
       const eventId = parsed.events[0]?.eventId ?? "";
-      return eventId === "segment-1:0:0"
+      return eventId === "segment-1:0"
         ? {
             status: "ok",
             acceptedEventIds: [],
@@ -268,6 +297,147 @@ describe("watch IMU chunk sync", () => {
 
     expect(replayRequest).toHaveBeenCalledTimes(2);
     expect(persistedChunkPaths()).toEqual([]);
-    expect(files.has("data://imu/chunks/segment-1%3A0%3A0.rejected")).toBe(true);
+    expect(files.has("data://imu/chunks/segment-1%3A0.rejected")).toBe(true);
+  });
+  it("preserves two equal-timestamp chunks as separate durable vector offsets", async () => {
+    const request = vi.fn(async () => {
+      throw new Error("offline");
+    });
+    const sync = createWatchImuChunkSync("data://imu/chunks", request);
+    await expect(sync.enqueue(input)).rejects.toThrow("offline");
+    await expect(sync.enqueue({ ...input, sampleOffset: 1 })).rejects.toThrow("offline");
+    expect(persistedChunkPaths()).toHaveLength(2);
+  });
+  it("replays historic paired records under their original acknowledgement ID", async () => {
+    directories.add("data://imu/chunks");
+    const legacy = {
+      version: 1,
+      batchId: "old:0:0",
+      source: { connectionType: "zepp", installId: "old" },
+      events: [
+        {
+          eventId: "old:0:0",
+          createdAt: "2024-07-03T09:46:40.000Z",
+          payload: {
+            segmentId: "old",
+            sessionStartMs: 1720000000000,
+            hasGyroscope: true,
+            samples: [{ tMs: 0, ax: 1, ay: 2, az: 3, gx: 4, gy: 5, gz: 6 }],
+          },
+        },
+      ],
+    };
+    files.set("data://imu/chunks/legacy.json", JSON.stringify(legacy));
+    const request = vi.fn(async () => ({
+      status: "ok",
+      acceptedEventIds: ["old:0:0"],
+      rejected: [],
+    }));
+    await createWatchImuChunkSync("data://imu/chunks", request).retry();
+    expect(request).toHaveBeenCalledWith(parseImuEnvelope(legacy));
+    expect(persistedChunkPaths()).toEqual([]);
+  });
+});
+
+describe("watch IMU chunk handler", () => {
+  const chunk = {
+    sessionStartMs: 1_720_000_000_000,
+    hasGyroscope: false,
+    sampleOffset: 4,
+    accelFreqMode: 2,
+    gyroFreqMode: 0,
+    samples: [{ tMs: 4, sensor: "accelerometer" as const, x: 1, y: 2, z: 3 }],
+  };
+
+  it("binds each chunk to the current install, segment, and destination", async () => {
+    const enqueue = vi.fn(async () => undefined);
+    const onError = vi.fn();
+    const handler = createWatchImuChunkHandler({
+      connectionType: "zepp-workout",
+      segmentName: "workout",
+      getInstallId: () => "install-1",
+      getDestination: () => input.destination,
+      getSync: () => ({ enqueue, retry: vi.fn() }),
+      onError,
+    });
+
+    handler(chunk);
+    await Promise.resolve();
+
+    expect(enqueue).toHaveBeenCalledExactlyOnceWith({
+      ...chunk,
+      destination: input.destination,
+      connectionType: "zepp-workout",
+      installId: "install-1",
+      segmentId: "install-1:workout:1720000000000",
+    });
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("reports an asynchronous enqueue failure with its stable segment ID", async () => {
+    const failure = new Error("offline");
+    const onError = vi.fn();
+    const handler = createWatchImuChunkHandler({
+      connectionType: "zepp",
+      segmentName: "app",
+      getInstallId: () => "install-2",
+      getDestination: () => input.destination,
+      getSync: () => ({ enqueue: vi.fn(async () => Promise.reject(failure)), retry: vi.fn() }),
+      onError,
+    });
+
+    handler(chunk);
+    await vi.waitFor(() =>
+      expect(onError).toHaveBeenCalledExactlyOnceWith(failure, "install-2:app:1720000000000"),
+    );
+  });
+
+  it("reports a synchronous durable-write failure with its stable segment ID", () => {
+    const failure = new Error("storage full");
+    const onError = vi.fn();
+    const handler = createWatchImuChunkHandler({
+      connectionType: "zepp",
+      segmentName: "app",
+      getInstallId: () => "install-2",
+      getDestination: () => input.destination,
+      getSync: () => ({
+        enqueue: vi.fn(() => {
+          throw failure;
+        }),
+        retry: vi.fn(),
+      }),
+      onError,
+    });
+
+    expect(() => handler(chunk)).not.toThrow();
+    expect(onError).toHaveBeenCalledExactlyOnceWith(failure, "install-2:app:1720000000000");
+  });
+
+  it("fails before looking up sync when no destination is bound", () => {
+    const getSync = vi.fn();
+    const handler = createWatchImuChunkHandler({
+      connectionType: "zepp",
+      segmentName: "app",
+      getInstallId: () => "install-1",
+      getDestination: () => null,
+      getSync,
+      onError: vi.fn(),
+    });
+
+    expect(() => handler(chunk)).toThrow("Connect Dofek before recording motion data");
+    expect(getSync).not.toHaveBeenCalled();
+  });
+
+  it("fails when the durable chunk sync is unavailable", () => {
+    const handler = createWatchImuChunkHandler({
+      connectionType: "zepp",
+      segmentName: "app",
+      getInstallId: () => "install-1",
+      getDestination: () => input.destination,
+      getSync: () => null,
+      onError: vi.fn(),
+    });
+
+    expect(() => handler(chunk)).toThrow("IMU chunk sync is unavailable");
   });
 });

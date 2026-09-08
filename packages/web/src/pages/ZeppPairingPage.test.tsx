@@ -11,12 +11,6 @@ vi.mock("../components/PageLayout.tsx", () => ({
   ),
 }));
 
-vi.mock("../components/PageSection.tsx", () => ({
-  PageSection: ({ children, title }: { children: ReactNode; title: string }) => (
-    <section aria-label={title}>{children}</section>
-  ),
-}));
-
 vi.mock("../components/ZeppPairingPanel.tsx", () => ({
   ZeppPairingPanel: ({ initialCode }: { initialCode?: string }) => <p>{initialCode}</p>,
 }));
@@ -24,7 +18,6 @@ vi.mock("../components/ZeppPairingPanel.tsx", () => ({
 it("renders the dedicated Zepp pairing surface with the direct-link code", () => {
   render(<ZeppPairingPage initialCode="ABC234" />);
 
-  expect(screen.getByRole("main", { name: "Pair Zepp App" })).toBeTruthy();
-  expect(screen.getByRole("region", { name: "Zepp App Pairing" })).toBeTruthy();
+  expect(screen.getByRole("main", { name: "Pair your Zepp app" })).toBeTruthy();
   expect(screen.getByText("ABC234")).toBeTruthy();
 });

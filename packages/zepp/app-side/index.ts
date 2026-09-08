@@ -9,31 +9,47 @@ import {
   parseHealthUploadResponse,
 } from "../src/health-contract.ts";
 import type { HealthUploadPayload } from "../src/health-upload.ts";
-import { type ImuChunkPayload, parseImuEnvelope } from "../src/imu-upload.ts";
+import {
+  persistImuConnectionBinding,
+  persistVerifiedImuConnection,
+  restoreWatchImuConnection,
+} from "../src/imu-connection-storage.ts";
+import {
+  getImuConnection,
+  ImuUploadFailure,
+  postImuEnvelope as uploadImuEnvelope,
+} from "../src/imu-side-upload.ts";
+import type { ImuChunkPayload, ImuConnectionBinding } from "../src/imu-upload.ts";
 import { LatestOperation } from "../src/latest-operation.ts";
 import { shouldRetryPairingPollFailure } from "../src/pairing-poll.ts";
 import { persistHealthEnvelope } from "../src/phone-health-outbox.ts";
-import { drainPhoneHealthOutbox } from "../src/phone-health-sync.ts";
+import {
+  assignLegacyImuToCurrentAccount,
+  persistReceivedImuEnvelope,
+} from "../src/phone-imu-account.ts";
 import {
   acknowledgeReceivedImuFile,
   parseReceivedImuFile,
   persistReceivedImuFile,
 } from "../src/phone-imu-files.ts";
-import { persistImuEnvelope } from "../src/phone-imu-outbox.ts";
-import { drainPhoneImuOutbox } from "../src/phone-imu-sync.ts";
+import { LegacyImuAccountBindingRequiredError } from "../src/phone-imu-outbox.ts";
+import {
+  createPhoneHealthSyncCoordinator,
+  createPhoneImuSyncCoordinator,
+} from "../src/phone-sync-coordinators.ts";
 import {
   clearBufferedTelemetryEvents,
   flushTelemetryEvents,
   captureException as reportPostHogException,
   restoreBufferedTelemetryEvents,
 } from "../src/posthog-client.ts";
+import { getRawString, getString, isRecord } from "../src/record-fields.ts";
 import {
   createSessionCall,
   getImuTransferFailureReason,
   parseSessionCommand,
 } from "../src/session-control.ts";
 import { DEFAULT_DOFEK_SERVER_URL, FREQ_MODE_LABELS, STORAGE_KEYS } from "../src/storage-keys.ts";
-import { SyncCoordinator } from "../src/sync-coordinator.ts";
 import {
   handleDofekUploadFailure,
   requireSecureDofekServerUrl,
@@ -49,10 +65,6 @@ const SYNC_RETRY_BASE_DELAY_MS = 30_000;
 const MAX_SYNC_RETRY_ATTEMPTS = 3;
 let notifyWatchConnectionChanged: (() => void) | null = null;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function readJson(raw: string | null, fallback: Record<string, unknown>): Record<string, unknown> {
   try {
     const parsed: unknown = raw ? JSON.parse(raw) : fallback;
@@ -63,16 +75,6 @@ function readJson(raw: string | null, fallback: Record<string, unknown>): Record
   } catch {
     return fallback;
   }
-}
-
-function getString(value: Record<string, unknown>, key: string): string {
-  const raw = value[key];
-  return typeof raw === "string" ? raw.trim() : "";
-}
-
-function getRawString(value: Record<string, unknown>, key: string): string {
-  const raw = value[key];
-  return typeof raw === "string" ? raw : "";
 }
 
 function ensureTelemetryInstallId(): string {
@@ -174,7 +176,10 @@ async function postHealthEnvelope(
       summary,
       "Health data upload failed.",
     );
-    if (summary.status === 401) notifyWatchConnectionChanged?.();
+    if (summary.status === 401) {
+      settings.settingsStorage.removeItem(STORAGE_KEYS.IMU_CONNECTION_BINDING);
+      notifyWatchConnectionChanged?.();
+    }
     throw error;
   }
   return parseHealthUploadResponse(summary.body);
@@ -182,76 +187,47 @@ async function postHealthEnvelope(
 
 async function postImuEnvelope(
   envelope: HealthEnvelopeV1<ImuChunkPayload>,
+  binding: ImuConnectionBinding,
 ): Promise<HealthUploadResponse> {
   const apiToken = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN)?.trim();
   if (!apiToken) {
     throw new Error("Connect Dofek from Zepp settings first.");
   }
   const serverUrl = requireStoredServerUrl();
-  const response = await fetch({
-    url: `${serverUrl.replace(/\/$/, "")}/api/ingest/zos-imu`,
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiToken}`,
-    },
-    body: JSON.stringify(envelope),
-  });
-  const summary = summarizeZeppFetchResponse(response);
-  if (!summary.ok) {
+  try {
+    return await uploadImuEnvelope(serverUrl, apiToken, envelope, binding, fetch);
+  } catch (cause) {
+    if (!(cause instanceof ImuUploadFailure)) throw cause;
+    const summary = cause.summary;
     const error = handleDofekUploadFailure(
       settings.settingsStorage,
       summary,
       "IMU data upload failed.",
     );
-    if (summary.status === 401) notifyWatchConnectionChanged?.();
+    if (summary.status === 401) {
+      settings.settingsStorage.removeItem(STORAGE_KEYS.IMU_CONNECTION_BINDING);
+      notifyWatchConnectionChanged?.();
+    }
     throw error;
   }
-  return parseHealthUploadResponse(summary.body);
 }
 
-const healthSyncCoordinator = new SyncCoordinator(
-  async (reasons) => {
-    setHealthSyncStatus({ state: "syncing", reasons });
-    try {
-      const result = await drainPhoneHealthOutbox(settings.settingsStorage, postHealthEnvelope);
-      settings.settingsStorage.setItem(STORAGE_KEYS.LAST_HEALTH_SYNC, String(Date.now()));
-      setHealthSyncStatus({ state: "done", ...result });
-      return true;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Health data upload failed.";
-      reportSideException(error, { category: "health-upload", reasons });
-      setHealthSyncStatus({ state: "error", reason: message });
-      return false;
-    }
-  },
-  {
-    retryBaseDelayMs: SYNC_RETRY_BASE_DELAY_MS,
-    maxRetryAttempts: MAX_SYNC_RETRY_ATTEMPTS,
-    onRetryError: (error) => reportSideException(error, { category: "health-upload-retry" }),
-  },
-);
-
-const imuSyncCoordinator = new SyncCoordinator(
-  async (reasons) => {
-    setImuSyncStatus({ state: "syncing", reasons });
-    try {
-      const result = await drainPhoneImuOutbox(settings.settingsStorage, postImuEnvelope);
-      setImuSyncStatus({ state: "done", ...result });
-      return true;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "IMU data upload failed.";
-      reportSideException(error, { category: "imu-upload", reasons });
-      setImuSyncStatus({ state: "error", reason: message });
-      return false;
-    }
-  },
-  {
-    retryBaseDelayMs: SYNC_RETRY_BASE_DELAY_MS,
-    maxRetryAttempts: MAX_SYNC_RETRY_ATTEMPTS,
-    onRetryError: (error) => reportSideException(error, { category: "imu-upload-retry" }),
-  },
-);
+const coordinatorDependencies = {
+  getStorage: () => settings.settingsStorage,
+  report: reportSideException,
+  retryBaseDelayMs: SYNC_RETRY_BASE_DELAY_MS,
+  maxRetryAttempts: MAX_SYNC_RETRY_ATTEMPTS,
+};
+const healthSyncCoordinator = createPhoneHealthSyncCoordinator({
+  ...coordinatorDependencies,
+  post: postHealthEnvelope,
+  setStatus: setHealthSyncStatus,
+});
+const imuSyncCoordinator = createPhoneImuSyncCoordinator({
+  ...coordinatorDependencies,
+  post: postImuEnvelope,
+  setStatus: setImuSyncStatus,
+});
 
 AppSideService(
   BaseSideService({
@@ -314,6 +290,12 @@ AppSideService(
         connectionState,
         serverUrl,
         pairing: this.getPairingInfo(),
+        imuConnection:
+          connectionState === "connected" && apiToken
+            ? restoreWatchImuConnection(settings.settingsStorage, (error) =>
+                reportSideException(error, { category: "imu-binding-restore" }),
+              )
+            : null,
       };
     },
 
@@ -395,6 +377,23 @@ AppSideService(
           reportSideException(error, { category: "password-login" });
         });
       }
+
+      if (key === STORAGE_KEYS.CMD_ASSIGN_LEGACY_IMU) {
+        try {
+          const assigned = assignLegacyImuToCurrentAccount(settings.settingsStorage);
+          settings.settingsStorage.removeItem(STORAGE_KEYS.CMD_ASSIGN_LEGACY_IMU);
+          setImuSyncStatus({ state: "syncing", assigned });
+          void imuSyncCoordinator.requestDrain("legacy-account-assigned");
+        } catch (error) {
+          reportSideException(error, { category: "imu-legacy-account-assignment" });
+          setImuSyncStatus({
+            state: "error",
+            reason:
+              error instanceof Error ? error.message : "Could not assign retained recordings.",
+            requiresAccountBinding: true,
+          });
+        }
+      }
     },
 
     setConnectionStatus(payload: Record<string, unknown>) {
@@ -434,7 +433,11 @@ AppSideService(
       settings.settingsStorage.setItem(STORAGE_KEYS.PAIRING_ID, pairingId);
       settings.settingsStorage.setItem(STORAGE_KEYS.PAIRING_SHORT_CODE, shortCode);
       settings.settingsStorage.setItem(STORAGE_KEYS.PAIRING_VERIFICATION_URL, verificationUrl);
-      settings.settingsStorage.setItem(STORAGE_KEYS.PAIRING_QR_IMAGE_URL, qrImageUrl);
+      if (qrImageUrl) {
+        settings.settingsStorage.setItem(STORAGE_KEYS.PAIRING_QR_IMAGE_URL, qrImageUrl);
+      } else {
+        settings.settingsStorage.removeItem(STORAGE_KEYS.PAIRING_QR_IMAGE_URL);
+      }
       settings.settingsStorage.setItem(STORAGE_KEYS.PAIRING_EXPIRES_AT, expiresAt);
       this.setConnectionStatus({ state: "pairing", shortCode, verificationUrl });
 
@@ -481,6 +484,12 @@ AppSideService(
       setTimeout(() => {
         this.pollPairing(pairingId, serverUrl, operation).catch((error: unknown) => {
           reportSideException(error, { category: "pairing-poll" });
+          if (connectionOperations.isCurrent(operation) && this.isCurrentPairing(pairingId)) {
+            this.setConnectionStatus({
+              state: "error",
+              reason: error instanceof Error ? error.message : "Dofek pairing failed.",
+            });
+          }
         });
       }, 3000);
     },
@@ -541,7 +550,11 @@ AppSideService(
         if (!companionToken) {
           throw new Error("Dofek pairing completed without connection credentials.");
         }
-        settings.settingsStorage.setItem(STORAGE_KEYS.DOFEK_API_TOKEN, companionToken);
+        const binding = await getImuConnection(serverUrl, companionToken, fetch);
+        if (!connectionOperations.isCurrent(operation) || !this.isCurrentPairing(pairingId)) {
+          return;
+        }
+        persistVerifiedImuConnection(settings.settingsStorage, companionToken, binding);
         this.clearPairingInfo();
         this.setConnectionStatus({
           state: "connected",
@@ -604,7 +617,11 @@ AppSideService(
         }
 
         settings.settingsStorage.setItem(STORAGE_KEYS.DOFEK_EMAIL, email);
-        settings.settingsStorage.setItem(STORAGE_KEYS.DOFEK_API_TOKEN, summary.body.token);
+        const binding = await getImuConnection(serverUrl, summary.body.token, fetch);
+        if (!connectionOperations.isCurrent(operation)) {
+          return;
+        }
+        persistVerifiedImuConnection(settings.settingsStorage, summary.body.token, binding);
         this.clearPairingInfo();
         this.setConnectionStatus({
           state: "connected",
@@ -625,6 +642,7 @@ AppSideService(
       const operation = connectionOperations.begin();
       const apiToken = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN)?.trim();
       if (!apiToken) {
+        settings.settingsStorage.removeItem(STORAGE_KEYS.IMU_CONNECTION_BINDING);
         this.setConnectionStatus({ state: "disconnected" });
         return;
       }
@@ -644,6 +662,7 @@ AppSideService(
         if (!summary.ok) {
           if (summary.status === 401) {
             settings.settingsStorage.removeItem(STORAGE_KEYS.DOFEK_API_TOKEN);
+            settings.settingsStorage.removeItem(STORAGE_KEYS.IMU_CONNECTION_BINDING);
             this.notifyWatchConnectionChanged();
           }
           throw new Error(summary.errorMessage ?? "Dofek connection check failed.");
@@ -653,9 +672,17 @@ AppSideService(
         }
         if (getString(summary.body, "connectionType") !== DOFEK_COMPANION_CONNECTION_TYPE) {
           settings.settingsStorage.removeItem(STORAGE_KEYS.DOFEK_API_TOKEN);
+          settings.settingsStorage.removeItem(STORAGE_KEYS.IMU_CONNECTION_BINDING);
           this.notifyWatchConnectionChanged();
           throw new Error("Saved credentials belong to a different Zepp app. Connect again.");
         }
+        const binding = await getImuConnection(serverUrl, apiToken, fetch);
+        if (!connectionOperations.isCurrent(operation)) return;
+        persistImuConnectionBinding(
+          settings.settingsStorage,
+          STORAGE_KEYS.IMU_CONNECTION_BINDING,
+          binding,
+        );
         this.setConnectionStatus({
           state: "connected",
           connectionType: DOFEK_COMPANION_CONNECTION_TYPE,
@@ -674,6 +701,7 @@ AppSideService(
       const operation = connectionOperations.begin();
       const apiToken = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN)?.trim();
       if (!apiToken) {
+        settings.settingsStorage.removeItem(STORAGE_KEYS.IMU_CONNECTION_BINDING);
         this.clearPairingInfo();
         this.setConnectionStatus({ state: "disconnected" });
         this.notifyWatchConnectionChanged();
@@ -696,6 +724,7 @@ AppSideService(
           throw new Error(summary.errorMessage ?? "Failed to disconnect Dofek.");
         }
         settings.settingsStorage.removeItem(STORAGE_KEYS.DOFEK_API_TOKEN);
+        settings.settingsStorage.removeItem(STORAGE_KEYS.IMU_CONNECTION_BINDING);
         this.clearPairingInfo();
         this.setConnectionStatus({ state: "disconnected" });
         this.notifyWatchConnectionChanged();
@@ -827,7 +856,12 @@ AppSideService(
       const { method, params = {} } = req;
 
       if (method === "imu.getPreferences") {
-        res(null, this.getPreferences());
+        try {
+          res(null, this.getPreferences());
+        } catch (error) {
+          reportSideException(error, { category: "imu-preferences" });
+          res(error, null);
+        }
         return;
       }
 
@@ -942,12 +976,18 @@ AppSideService(
 
       if (method === "imu.uploadChunk") {
         try {
-          const envelope = parseImuEnvelope(params.envelope);
-          const persisted = persistImuEnvelope(settings.settingsStorage, envelope);
+          const persisted = persistReceivedImuEnvelope(settings.settingsStorage, params.envelope);
           res(null, { status: "ok", ...persisted, rejected: [] });
           void imuSyncCoordinator.requestDrain("watch-imu-receipt");
         } catch (error) {
           reportSideException(error, { category: "imu-receipt" });
+          if (error instanceof LegacyImuAccountBindingRequiredError) {
+            setImuSyncStatus({
+              state: "error",
+              reason: error.message,
+              requiresAccountBinding: true,
+            });
+          }
           res(error, null);
         }
         return;
