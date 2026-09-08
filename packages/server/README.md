@@ -232,6 +232,40 @@ rather than infinity. These series expose formulas and evidence for analysis; th
 "risk zones" or diagnose injury. ACWR has substantial conceptual and causal limitations
 ([Impellizzeri et al. 2020](https://pubmed.ncbi.nlm.nih.gov/32502973/)).
 
+`get_climbing_progression` requires `activity:read` and an inclusive date range. It calculates
+whole-range daily and grade aggregates while cursor-paginating only the detailed sessions, so an
+analyst does not need to fetch every climbing activity individually. Optional provider,
+discipline, location, and grade-system filters apply to both aggregates and coverage. The response
+includes session frequency, rest and consecutive days, trailing 7/28-day exposure days, grade
+distribution, observed send rate, attempts per send, hardest send/flash/onsight evidence, and a
+descriptive `volume_below_range_hardest_send` measure. The latter means known attempts on grades
+below the hardest observed send in the requested range; it is not presented as physiological
+intensity. The server reads the preceding 27 days plus the uninterrupted pre-range streak when
+calculating the first returned rolling/streak value; lookback sessions do not leak into requested-
+range grade, volume, coverage, or detail totals.
+
+Climbing attempts and outcomes retain three distinct states: a recorded positive/count value, an
+observed zero at an aggregate level, or missing source information. A climb with null
+`attempt_count` and null `sent` remains null and does not become a failed attempt. Attempt totals
+are labeled `complete`, `partial`, or `unavailable`, and send rate uses only entries with an
+observed outcome as its denominator. The existing `get_climbing_sessions` tool is preserved and
+now uses the same missing-value semantics. Attempts per send is null unless both attempt and outcome
+coverage for that grade are complete. Source grade/system values remain intact, while normalized
+display grades use Dofek's default V Scale for boulders and YDS for routes. `grade_progression`
+returns the hardest observed send for each date and discipline rather than reducing the entire
+range to one value.
+
+Canonical activity groups count as one session. Exact matching entry observations from different
+member activities/providers are consolidated once while retaining every contributing entry,
+activity, and provider ID. Conflicting cross-provider observations with the same climb identity
+remain in session detail, receive a `possible_overlapping_climbing_entries` quality flag, and are
+excluded from aggregates rather than being silently reconciled or double-counted. Each session
+also returns its stored named timezone or UTC offsets. Calendar dates use authoritative provider,
+device, GPS, or home-zone context when available and use the user's analysis timezone only when
+the source context is unknown. The versioned session cursor is bound to the user, exact request
+filters, date range, and normalized-grade preference and uses keyset comparison, so malformed or
+mismatched cursors fail and deletion of the prior cursor row does not lose subsequent sessions.
+
 
 ## Development
 

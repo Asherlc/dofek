@@ -123,15 +123,15 @@ const activityEntryRowSchema = z.object({
   climb_type: climbTypeSchema,
   grade_system: gradeSystemSchema,
   grade: z.string(),
-  sent: z.boolean(),
-  attempt_count: z.coerce.number().int().positive(),
+  sent: z.boolean().nullable(),
+  attempt_count: z.coerce.number().int().positive().nullable(),
   attempts: z.array(climbingAttemptDetailSchema),
   ascent_type: ascentTypeSchema.nullable(),
   hold_type: holdTypeSchema.nullable(),
   route_name: z.string().nullable(),
   location_name: z.string().nullable(),
   lead: z.boolean().nullable().default(null),
-  source_name: z.string(),
+  source_name: z.string().nullable(),
   wall_angle_degrees: z.coerce.number().nullable(),
 });
 type ClimbingActivityEntryDatabaseRow = z.infer<typeof activityEntryRowSchema>;
@@ -141,15 +141,15 @@ export interface ClimbingActivityEntryRow {
   climbType: ClimbingClimbType;
   gradeSystem: ClimbingGradeSystem;
   grade: string;
-  sent: boolean;
-  attemptCount: number;
+  sent: boolean | null;
+  attemptCount: number | null;
   attempts: Array<z.infer<typeof climbingAttemptDetailSchema>>;
   ascentType: ClimbingActivityEntryDatabaseRow["ascent_type"];
   holdType: z.infer<typeof holdTypeSchema> | null;
   routeName: string | null;
   locationName: string | null;
   lead: boolean | null;
-  sourceName: string;
+  sourceName: string | null;
   wallAngleDegrees: number | null;
 }
 
@@ -274,6 +274,7 @@ export class ClimbingRepository extends BaseRepository {
             WHERE attempt.climbing_entry_id = ce.id
           ) AS detail ON true
           WHERE ${this.#activityWindowPredicate(days)}
+            AND CASE WHEN detail.attempt_count > 0 THEN detail.attempt_count ELSE ce.attempt_count END IS NOT NULL
           GROUP BY ce.climb_type, ce.grade_system, ce.grade`,
     );
     const byDisplayGrade = new Map<string, ClimbingVolumeByGradeRow>();
@@ -320,7 +321,9 @@ export class ClimbingRepository extends BaseRepository {
             FROM fitness.climbing_attempt AS attempt
             WHERE attempt.climbing_entry_id = ce.id
           ) AS detail ON true
-          WHERE ${this.#activityWindowPredicate(days)}`,
+          WHERE ${this.#activityWindowPredicate(days)}
+            AND CASE WHEN detail.attempt_count > 0 THEN detail.attempt_count ELSE ce.attempt_count END IS NOT NULL
+            AND CASE WHEN detail.attempt_count > 0 THEN detail.sent ELSE ce.sent END IS NOT NULL`,
     );
     const summaries = new Map<string, ClimbingSessionSummaryRow>();
     for (const row of rows) {

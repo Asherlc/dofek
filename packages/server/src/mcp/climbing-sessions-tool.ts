@@ -104,8 +104,8 @@ export function registerClimbingSessionsTool(server: McpServer, context: DofekMc
           discipline: ClimbingDiscipline;
           grade: string;
           grade_system: string;
-          attempts: number;
-          sends: number;
+          attempts: number | null;
+          sends: number | null;
         }
       >();
       const maxGrade: Record<"boulder" | "route", { grade: string; sort: number } | null> = {
@@ -118,11 +118,15 @@ export function registerClimbingSessionsTool(server: McpServer, context: DofekMc
           discipline: climb.discipline,
           grade: climb.grade,
           grade_system: climb.grade_system,
-          attempts: 0,
-          sends: 0,
+          attempts: null,
+          sends: null,
         };
-        distribution.attempts += climb.attempt_count;
-        if (climb.sent) distribution.sends += 1;
+        if (climb.attempt_count !== null) {
+          distribution.attempts = (distribution.attempts ?? 0) + climb.attempt_count;
+        }
+        if (climb.sent !== null) {
+          distribution.sends = (distribution.sends ?? 0) + (climb.sent ? 1 : 0);
+        }
         gradeDistribution.set(key, distribution);
         if (climb.sent) {
           const climbType = climb.discipline === "boulder" ? "boulder" : "route";
@@ -133,21 +137,38 @@ export function registerClimbingSessionsTool(server: McpServer, context: DofekMc
           }
         }
       }
-      const sends = climbs.filter((climb) => climb.sent).length;
+      const entriesWithAttempts = climbs.filter((climb) => climb.attempt_count !== null);
+      const observedOutcomes = climbs.filter((climb) => climb.sent !== null);
+      const sends = observedOutcomes.filter((climb) => climb.sent === true).length;
+      const attemptData =
+        entriesWithAttempts.length === 0
+          ? "unavailable"
+          : entriesWithAttempts.length === climbs.length
+            ? "complete"
+            : "partial";
       return jsonToolResult({
         sessions,
         aggregates: {
           grade_distribution: [...gradeDistribution.values()],
-          send_rate: climbs.length === 0 ? null : sends / climbs.length,
+          send_rate: observedOutcomes.length === 0 ? null : sends / observedOutcomes.length,
           max_grade_by_discipline: {
             boulder: maxGrade.boulder?.grade ?? null,
             route: maxGrade.route?.grade ?? null,
           },
           volume: {
             climbs: climbs.length,
-            attempts: climbs.reduce((sum, climb) => sum + climb.attempt_count, 0),
-            sends,
+            attempts:
+              entriesWithAttempts.length === 0
+                ? null
+                : entriesWithAttempts.reduce((sum, climb) => sum + (climb.attempt_count ?? 0), 0),
+            sends: observedOutcomes.length === 0 ? null : sends,
             total_vertical_m: null,
+          },
+          coverage: {
+            entries: climbs.length,
+            entries_with_attempts: entriesWithAttempts.length,
+            entries_with_observed_outcome: observedOutcomes.length,
+            attempt_data: attemptData,
           },
         },
       });

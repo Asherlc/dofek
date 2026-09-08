@@ -30,6 +30,7 @@ const toolTestMocks = vi.hoisted(() => {
     activityTimeseriesList: vi.fn(),
     bodyListReconciledRange: vi.fn(),
     climbingActivityEntries: vi.fn(),
+    climbingProgressionListRange: vi.fn(),
     cyclingPerformanceListRange: vi.fn(),
     cyclingPowerCurveListRange: vi.fn(),
     cyclingTrainingMetricsListRange: vi.fn(),
@@ -98,6 +99,12 @@ vi.mock("../repositories/activity-timeseries-repository.ts", () => ({
 vi.mock("../repositories/climbing-repository.ts", () => ({
   ClimbingRepository: vi.fn(function vitestConstructor() {
     return { getActivityEntries: toolTestMocks.climbingActivityEntries };
+  }),
+}));
+
+vi.mock("../repositories/climbing-progression-repository.ts", () => ({
+  ClimbingProgressionRepository: vi.fn(function vitestConstructor() {
+    return { listRange: toolTestMocks.climbingProgressionListRange };
   }),
 }));
 
@@ -922,6 +929,15 @@ describe("createMcpRouter", () => {
       required: ["start_date", "end_date"],
       type: "object",
     });
+    expect(findListedTool(tools, "get_climbing_progression").inputSchema).toMatchObject({
+      properties: {
+        disciplines: { type: "array" },
+        grade_systems: { type: "array" },
+        providers: { type: "array" },
+      },
+      required: ["start_date", "end_date"],
+      type: "object",
+    });
     expect(findListedTool(tools, "get_strength_sessions").inputSchema).toMatchObject({
       required: ["start_date", "end_date"],
       type: "object",
@@ -992,6 +1008,7 @@ describe("createMcpRouter", () => {
       "get_activity_timeseries",
       "get_activity_summary",
       "get_finger_loading",
+      "get_climbing_progression",
       "get_climbing_sessions",
       "get_strength_sessions",
       "get_nutrition_summary",
@@ -1093,6 +1110,10 @@ describe("createMcpRouter", () => {
       {
         name: "get_activity_timeseries",
         path: ["result", "streams", "*", "summary", "observed_samples"],
+      },
+      {
+        name: "get_climbing_progression",
+        path: ["result", "coverage", "entries_with_attempts"],
       },
       {
         name: "get_climbing_sessions",
@@ -1396,6 +1417,12 @@ describe("createMcpRouter", () => {
 
     expect(parseToolCallText(response.text)).toEqual({
       aggregates: {
+        coverage: {
+          attempt_data: "complete",
+          entries: 1,
+          entries_with_attempts: 1,
+          entries_with_observed_outcome: 1,
+        },
         grade_distribution: [
           {
             attempts: 3,
@@ -1428,6 +1455,62 @@ describe("createMcpRouter", () => {
     expect(toolTestMocks.activityListRange).toHaveBeenCalledWith("2026-07-01", "2026-07-10", [
       "climbing",
     ]);
+  });
+
+  it("keeps unrecorded climbing attempts and outcomes distinct from zero and failure", async () => {
+    authorizeMcpToken();
+    toolTestMocks.activityListRange.mockResolvedValue([
+      {
+        avg_hr: null,
+        ended_at: "2026-07-09T20:00:00.000Z",
+        id: "activity-unknown",
+        name: "Imported climbing",
+        started_at: "2026-07-09T19:00:00.000Z",
+      },
+    ]);
+    toolTestMocks.climbingActivityEntries.mockResolvedValue([
+      {
+        toDetail: () => ({
+          ascentType: null,
+          attemptCount: null,
+          attempts: [],
+          climbType: "boulder",
+          grade: "V4",
+          gradeSystem: "v_scale",
+          holdType: null,
+          id: "climb-unknown",
+          lead: null,
+          locationName: null,
+          routeName: null,
+          sent: null,
+          sourceName: null,
+          wallAngleDegrees: null,
+        }),
+      },
+    ]);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_climbing_sessions", {
+        end_date: "2026-07-09",
+        start_date: "2026-07-09",
+      }),
+    });
+
+    expect(parseToolCallText(response.text)).toMatchObject({
+      aggregates: {
+        coverage: {
+          attempt_data: "unavailable",
+          entries: 1,
+          entries_with_attempts: 0,
+          entries_with_observed_outcome: 0,
+        },
+        grade_distribution: [{ attempts: null, sends: null }],
+        send_rate: null,
+        volume: { attempts: null, climbs: 1, sends: null },
+      },
+      sessions: [{ climbs: [{ attempt_count: null, sent: null, source_name: null }] }],
+    });
   });
 
   it("preserves route disciplines and incomplete climbing-session data", async () => {
@@ -1544,6 +1627,12 @@ describe("createMcpRouter", () => {
 
     expect(parseToolCallText(response.text)).toEqual({
       aggregates: {
+        coverage: {
+          attempt_data: "complete",
+          entries: 5,
+          entries_with_attempts: 5,
+          entries_with_observed_outcome: 5,
+        },
         grade_distribution: [
           {
             attempts: 2,
