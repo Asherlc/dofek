@@ -25276,11 +25276,11 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   for unchanged payload-free activity streams remains assigned to the final
   branch fix pass.
 
-## 2026-09-08 — Local ClickHouse verification was OOM-killed and Docker became unresponsive
+## 2026-09-08 — Broad activity power-curve fixture exhausted local ClickHouse memory
 
-- **Status:** Docker Desktop recovered after an approved restart; feature-level
-  focused tests pass, and the final changed integration gate remains to be
-  rerun from clean workspace state.
+- **Status:** Root cause fixed in test infrastructure; focused unit and real
+  ClickHouse/PostgreSQL integration tests pass, and the final changed
+  integration gate remains to be rerun from clean workspace state.
 - **Symptoms / user impact:** `pnpm test:changed:all` lost its ClickHouse
   connection during `router-logic.integration.test.ts`; downstream router tests
   failed or skipped, ClickHouse restarted twice, and subsequent `docker ps` and
@@ -25289,20 +25289,30 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Evidence / root cause:** The first test fatal was `ECONNRESET: socket hang
   up`. Docker Desktop's VM log recorded cgroup OOM-kill telemetry at the same
   timestamps as both ClickHouse restarts, including reaping the ClickHouse
-  process IDs. Persisted ClickHouse query logs showed the heaviest completed
-  query used about 342 MiB, while one-second metrics observed roughly 727 MiB
-  peak cgroup use; those samples did not capture the terminating allocation.
+  process IDs. After the approved Docker restart, a clean unchanged rerun
+  failed loudly in `activity-power-curve-read-model.integration.test.ts` with
+  ClickHouse code 241, `MEMORY_LIMIT_EXCEEDED`; the server reported 1.02 GiB
+  resident memory and an effective 998.22 MiB dynamic hard limit. Query logs
+  identified the fixture's repeated unrelated `v_sleep` rebuild as the first
+  stopped query. The test created one generic activity store, invoked eight
+  generic syncs, and used a seed helper that also invoked the generic sync; each
+  path rebuilt all 29 analytics models even though the test consumes only the
+  power-curve dependency closure. The repeated broad fixture rebuilds retained
+  enough ClickHouse memory that the subsequent power-curve query could not fit.
   macOS reported 57% memory free, so host memory exhaustion was not observed.
-  The Docker API then became unresponsive even though the ClickHouse HTTP port
-  remained reachable. The exact allocation that crossed the 1536 MiB container
-  ceiling is not yet identified.
-- **Mitigation:** The failed test run was stopped after the causal connection
-  loss, then Docker Desktop was restarted with explicit approval because the
-  daemon was unresponsive. No timeout, retry, memory-limit increase, skipped
-  test, or production query rewrite was added. A previous clean isolated run
-  proved migration 0078 passes 3/3, and the repaired activity integration slice
-  passes 119/119.
-- **Remaining risk / follow-up:** Reset only this workspace's Compose state,
-  inspect fresh cgroup/query metrics, and rerun the unchanged final integration
-  gate once. If the OOM recurs, isolate the exact test/query before changing
-  steady-state code or resource limits.
+- **Direct fix:** Added a dedicated power-curve test-store creation and sync
+  path that rebuilds only sensor scalar/deduplication, `v_activity`, deduped
+  activities, activity sensor samples and summaries, and activity summary. The
+  suite now inserts metric samples without triggering the generic broad rebuild,
+  then explicitly runs the narrow sync. No timeout, retry, memory-limit increase,
+  skipped test, production query rewrite, or test-concurrency change was added.
+- **Validation:** The TDD regression failed because the dedicated creator did
+  not exist, then the helper unit suite passed 8/8. From a clean workspace
+  ClickHouse process, the real power-curve integration suite passed 8/8 in
+  14.07 seconds; an independent review reran it 8/8 in 10.84 seconds, passed
+  server typecheck, and found no blocking issues. Migration 0078 separately
+  passes 3/3, and the repaired activity integration slice passes 119/119.
+- **Remaining risk / follow-up:** Rerun the final changed integration gate once
+  from clean workspace state. If it passes, no local ClickHouse resource change
+  is warranted; deployment and the bounded historical activity refresh remain
+  the feature-level follow-up.

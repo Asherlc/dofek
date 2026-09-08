@@ -7,10 +7,10 @@ import { setupTestDatabase, type TestContext } from "../../../../src/db/test-hel
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import {
   type ClickHouseMetricStreamSeedRow,
-  createClickHouseTestActivitySensorStore,
+  createClickHouseTestActivityPowerCurveStore,
   getClickHouseTestClient,
-  seedClickHouseMetricStreamRows,
-  syncClickHouseTestActivitySensorStore,
+  insertClickHouseMetricStreamRows,
+  syncClickHouseTestActivityPowerCurveStore,
 } from "./clickhouse-integration-test-helpers.ts";
 
 const testUserId = "00000000-0000-0000-0000-000000000001";
@@ -127,7 +127,7 @@ describe("activity_power_curve read model", () => {
       VALUES ('test_provider', 'Test Provider', ${testUserId})
       ON CONFLICT DO NOTHING
     `);
-    sensorStore = await createClickHouseTestActivitySensorStore(testContext);
+    sensorStore = await createClickHouseTestActivityPowerCurveStore(testContext);
   });
 
   afterAll(async () => {
@@ -145,7 +145,7 @@ describe("activity_power_curve read model", () => {
       unchangedActivityStartedAt,
       testTimestamp(-3570),
     );
-    await syncClickHouseTestActivitySensorStore(testContext);
+    await syncClickHouseTestActivityPowerCurveStore(testContext);
     await client.command({
       query: `CREATE TABLE ${targetTable} (
         activity_id UUID,
@@ -198,7 +198,7 @@ describe("activity_power_curve read model", () => {
       planActivityStartedAt,
       testTimestamp(21_600),
     );
-    await seedClickHouseMetricStreamRows(
+    await insertClickHouseMetricStreamRows(
       testContext,
       powerSampleRows(
         planActivityId,
@@ -206,7 +206,7 @@ describe("activity_power_curve read model", () => {
         Array.from({ length: 3601 }, (_, offsetSeconds) => ({ offsetSeconds, power: 200 })),
       ),
     );
-    await syncClickHouseTestActivitySensorStore(testContext);
+    await syncClickHouseTestActivityPowerCurveStore(testContext);
     const client = getClickHouseTestClient(testContext);
     const result = await client.query({
       query: `SELECT count()
@@ -237,7 +237,7 @@ describe("activity_power_curve read model", () => {
       gappedActivityStartedAt,
       testTimestamp(3630),
     );
-    await seedClickHouseMetricStreamRows(testContext, [
+    await insertClickHouseMetricStreamRows(testContext, [
       ...powerSampleRows(regularActivityId, regularActivityStartedAt, [
         { offsetSeconds: 0, power: 200 },
         { offsetSeconds: 1, power: 200 },
@@ -255,7 +255,7 @@ describe("activity_power_curve read model", () => {
         { offsetSeconds: 22, power: 500 },
       ]),
     ]);
-    await syncClickHouseTestActivitySensorStore(testContext);
+    await syncClickHouseTestActivityPowerCurveStore(testContext);
 
     const rows = await sensorStore.query(
       readModelRowSchema,
@@ -292,7 +292,7 @@ describe("activity_power_curve read model", () => {
       varyingPowerStartedAt,
       testTimestamp(7206),
     );
-    await seedClickHouseMetricStreamRows(testContext, [
+    await insertClickHouseMetricStreamRows(testContext, [
       ...powerSampleRows(varyingActivityId, varyingPowerStartedAt, [
         { offsetSeconds: 0, power: 100 },
         { offsetSeconds: 1, power: 200 },
@@ -302,7 +302,7 @@ describe("activity_power_curve read model", () => {
         { offsetSeconds: 5, power: 300 },
       ]),
     ]);
-    await syncClickHouseTestActivitySensorStore(testContext);
+    await syncClickHouseTestActivityPowerCurveStore(testContext);
 
     const rows = await sensorStore.query(
       readModelRowSchema,
@@ -339,7 +339,7 @@ describe("activity_power_curve read model", () => {
       duplicateVersionActivityStartedAt,
       testTimestamp(25_206),
     );
-    await seedClickHouseMetricStreamRows(
+    await insertClickHouseMetricStreamRows(
       testContext,
       powerSampleRows(
         duplicateVersionActivityId,
@@ -347,7 +347,7 @@ describe("activity_power_curve read model", () => {
         Array.from({ length: 6 }, (_, offsetSeconds) => ({ offsetSeconds, power: 100 })),
       ),
     );
-    await syncClickHouseTestActivitySensorStore(testContext);
+    await syncClickHouseTestActivityPowerCurveStore(testContext);
     const client = getClickHouseTestClient(testContext);
     await client.command({
       query: `INSERT INTO analytics.activity_sensor_sample
@@ -403,7 +403,7 @@ describe("activity_power_curve read model", () => {
       starvationActivityStartedAt,
       testTimestamp(28_806),
     );
-    await seedClickHouseMetricStreamRows(
+    await insertClickHouseMetricStreamRows(
       testContext,
       powerSampleRows(
         starvationActivityId,
@@ -411,7 +411,7 @@ describe("activity_power_curve read model", () => {
         Array.from({ length: 6 }, (_, offsetSeconds) => ({ offsetSeconds, power: 250 })),
       ),
     );
-    await syncClickHouseTestActivitySensorStore(testContext);
+    await syncClickHouseTestActivityPowerCurveStore(testContext);
     await client.command({
       query: `CREATE TABLE ${targetTable} (
         activity_id UUID,
@@ -508,7 +508,7 @@ describe("activity_power_curve read model", () => {
       finalGapActivityStartedAt,
       testTimestamp(10_820),
     );
-    await seedClickHouseMetricStreamRows(testContext, [
+    await insertClickHouseMetricStreamRows(testContext, [
       ...powerSampleRows(finalGapActivityId, finalGapActivityStartedAt, [
         { offsetSeconds: 0, power: 200 },
         { offsetSeconds: 1, power: 200 },
@@ -516,7 +516,7 @@ describe("activity_power_curve read model", () => {
         { offsetSeconds: 15, power: 200 },
       ]),
     ]);
-    await syncClickHouseTestActivitySensorStore(testContext);
+    await syncClickHouseTestActivityPowerCurveStore(testContext);
 
     const rows = await sensorStore.query(
       readModelRowSchema,
@@ -545,7 +545,7 @@ describe("activity_power_curve read model", () => {
       unalignedActivityStartedAt,
       testTimestamp(14_410),
     );
-    await seedClickHouseMetricStreamRows(testContext, [
+    await insertClickHouseMetricStreamRows(testContext, [
       ...powerSampleRows(unalignedActivityId, unalignedActivityStartedAt, [
         { offsetSeconds: 0, power: 200 },
         { offsetSeconds: 1, power: 200 },
@@ -555,7 +555,7 @@ describe("activity_power_curve read model", () => {
         { offsetSeconds: 5.1, power: 200 },
       ]),
     ]);
-    await syncClickHouseTestActivitySensorStore(testContext);
+    await syncClickHouseTestActivityPowerCurveStore(testContext);
 
     const rows = await sensorStore.query(
       readModelRowSchema,

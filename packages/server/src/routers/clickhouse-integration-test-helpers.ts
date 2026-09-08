@@ -93,6 +93,11 @@ interface RawTableSync {
   tableName: string;
 }
 
+type ClickHouseTestStoreSync = (
+  client: ClickHouseClient,
+  connectionString: string,
+) => Promise<void>;
+
 const handlesByContext = new WeakMap<ClickHouseSyncTestContext, ClickHouseTestHandle>();
 const clickHouseTestSetupSemaphoreDirectory = join(
   tmpdir(),
@@ -505,8 +510,9 @@ async function acquireClickHouseTestSetupSlot(): Promise<() => Promise<void>> {
   }
 }
 
-export async function createClickHouseTestActivitySensorStore(
+async function createClickHouseTestStore(
   testContext: ClickHouseSyncTestContext,
+  syncStore: ClickHouseTestStoreSync,
 ): Promise<ActivitySensorStore> {
   const suffix = randomBytes(6).toString("hex");
   const databases = {
@@ -530,15 +536,27 @@ export async function createClickHouseTestActivitySensorStore(
   const releaseSlot = await acquireClickHouseTestSetupSlot();
   try {
     await bootstrapClickHouseTestSchema(setupClient, testContext.connectionString);
-    await syncClickHouseTestActivitySensorStoreWithClient(
-      setupClient,
-      testContext.connectionString,
-    );
+    await syncStore(setupClient, testContext.connectionString);
   } finally {
     await releaseSlot();
   }
 
   return new ClickHouseActivitySensorStore(client);
+}
+
+export async function createClickHouseTestActivitySensorStore(
+  testContext: ClickHouseSyncTestContext,
+): Promise<ActivitySensorStore> {
+  return createClickHouseTestStore(testContext, syncClickHouseTestActivitySensorStoreWithClient);
+}
+
+export async function createClickHouseTestActivityPowerCurveStore(
+  testContext: ClickHouseSyncTestContext,
+): Promise<ActivitySensorStore> {
+  return createClickHouseTestStore(
+    testContext,
+    syncClickHouseTestActivityPowerCurveStoreWithClient,
+  );
 }
 
 export function getClickHouseTestClient(testContext: ClickHouseSyncTestContext): ClickHouseClient {
@@ -737,6 +755,24 @@ export async function syncClickHouseTestActivitySensorStore(
   }
 }
 
+export async function syncClickHouseTestActivityPowerCurveStore(
+  testContext: ClickHouseSyncTestContext,
+): Promise<void> {
+  const releaseSlot = await acquireClickHouseTestSetupSlot();
+  try {
+    const handle = handlesByContext.get(testContext);
+    if (!handle) {
+      throw new Error("ClickHouse test activity sensor store has not been created");
+    }
+    await syncClickHouseTestActivityPowerCurveStoreWithClient(
+      handle.setupClient,
+      testContext.connectionString,
+    );
+  } finally {
+    await releaseSlot();
+  }
+}
+
 async function syncClickHouseTestActivitySensorStoreWithSlot(
   testContext: ClickHouseSyncTestContext,
 ): Promise<void> {
@@ -755,6 +791,22 @@ async function syncClickHouseTestActivitySensorStoreWithClient(
   client: ClickHouseClient,
   connectionString: string,
 ): Promise<void> {
+  await syncClickHouseRawTablesWithClient(client, connectionString);
+  await rebuildClickHouseSensorAnalyticsWithClient(client);
+}
+
+async function syncClickHouseTestActivityPowerCurveStoreWithClient(
+  client: ClickHouseClient,
+  connectionString: string,
+): Promise<void> {
+  await syncClickHouseRawTablesWithClient(client, connectionString);
+  await rebuildClickHouseActivityPowerCurveDependenciesWithClient(client);
+}
+
+async function syncClickHouseRawTablesWithClient(
+  client: ClickHouseClient,
+  connectionString: string,
+): Promise<void> {
   for (const rawTableSync of rawTableSyncs) {
     await client.command({
       query: `TRUNCATE TABLE postgres_fitness.${rawTableSync.tableName}`,
@@ -763,8 +815,6 @@ async function syncClickHouseTestActivitySensorStoreWithClient(
       query: buildRawTableInsertStatement(connectionString, rawTableSync),
     });
   }
-
-  await rebuildClickHouseSensorAnalyticsWithClient(client);
 }
 
 function formatNullableClickHouseString(value: string | null | undefined): string {
@@ -894,6 +944,26 @@ async function rebuildClickHouseSensorAnalyticsWithClient(client: ClickHouseClie
   await client.command({ query: buildDedupedSensorBackfillSql() });
 
   for (const viewName of analyticsBuildOrder) {
+    await client.command({ query: `REBUILD TEST ANALYTICS TABLE ${viewName}` });
+  }
+}
+
+async function rebuildClickHouseActivityPowerCurveDependenciesWithClient(
+  client: ClickHouseClient,
+): Promise<void> {
+  await client.command({ query: "TRUNCATE TABLE analytics.sensor_scalar_sample" });
+  await client.command({ query: "TRUNCATE TABLE analytics.deduped_sensor" });
+  await client.command({ query: "TRUNCATE TABLE analytics.deduped_activities" });
+  await client.command({ query: buildSensorScalarSampleBackfillSql() });
+  await client.command({ query: buildDedupedSensorBackfillSql() });
+
+  for (const viewName of [
+    "analytics.v_activity",
+    "analytics.deduped_activities",
+    "analytics.activity_sensor_sample",
+    "analytics.activity_sensor_summary_rows",
+    "analytics.activity_summary",
+  ]) {
     await client.command({ query: `REBUILD TEST ANALYTICS TABLE ${viewName}` });
   }
 }
