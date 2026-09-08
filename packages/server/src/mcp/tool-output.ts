@@ -719,7 +719,6 @@ export const foodRecordSearchOutputSchema = jsonResult(
     items: z.array(foodRecordOutputSchema),
     next_cursor: z
       .object({
-        date: z.string(),
         record_id: z.uuid(),
       })
       .nullable(),

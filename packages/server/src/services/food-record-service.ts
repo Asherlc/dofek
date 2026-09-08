@@ -265,7 +265,7 @@ function mapDomainError(error: unknown): never {
       { cause: error },
     );
   }
-  captureException(error);
+  captureException(new Error("FoodRecordService command failed"));
   throw error;
 }
 

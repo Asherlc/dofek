@@ -204,9 +204,13 @@ and the opt-in `nutrition:write` scope.
 case-insensitive text query matches the effective food name, description,
 category, and meal. `visibility` accepts `visible`, `deleted`, or `all` and
 defaults to `visible`; use `deleted` or `all` to find a tombstoned record before
-restoring it. Results use a stable `{ date, record_id }` cursor, default to 50
-items, and accept limits from 1 through 100. `get_food_entry` returns `null`
-when the authenticated user does not own the requested record.
+restoring it. Results sort by immutable `record_id` descending and use a
+`{ record_id }` cursor, default to 50 items, and accept limits from 1 through
+100. The date range filters current effective dates; a provider replacement
+that moves a date within the range cannot move an identity across the cursor.
+The query is defined in the [food record repository](../packages/server/src/repositories/food-record-repository.ts).
+`get_food_entry` returns `null` when the authenticated user does not own the
+requested record.
 
 Each returned food record distinguishes its stable `record_id` from its current
 raw `source_entry_id`. Stable identity is scoped by the authenticated user, the
@@ -220,7 +224,10 @@ internal identity rule; callers use the returned UUID `record_id`.
 Reads return effective scalar values, canonical nutrient IDs mapped to numeric
 amounts or explicit `null`, the source provider, and provenance for every
 scalar, visibility, and nutrient value. Provenance identifies `source` or
-`human` origin and the human `change_id` where applicable. Provider raw rows
+`human` origin and the human `change_id` where applicable. Scalar provenance
+keys use the same snake-case names as the wire fields, such as `food_name`
+and `serving_weight_grams`; nutrient keys use `nutrients.<nutrient_id>`
+([transport mapping](../packages/server/src/mcp/food-record-tools.ts)). Provider raw rows
 remain unchanged when a human updates, deletes, or restores a record. Create is
 the exception only in the ordinary sense that it writes a new Dofek itemized
 source row and its normalized nutrient facts once, then records the initial
@@ -235,8 +242,20 @@ must contain at least one decision. `delete_food_entry` hides the effective
 record and removes its contribution from canonical nutrition without deleting
 the raw provider row. `restore_food_entry` makes the same effective record
 visible again. `get_food_entry_history` returns ledger operations and recorded
-field/nutrient decisions, newest first, with opaque pagination cursors. It does
-not snapshot historical provider facts.
+field/nutrient decisions, newest first, with opaque pagination cursors. Each
+cursor contains only an immutable change ID, which the query resolves within
+the authenticated account and requested record. PostgreSQL compares the exact
+stored `(recorded_at, change_id)` pair, preserving its
+[microsecond timestamp precision](https://www.postgresql.org/docs/current/datatype-datetime.html)
+and [row comparison ordering](https://www.postgresql.org/docs/current/functions-comparisons.html#ROW-WISE-COMPARISON).
+It does not snapshot historical provider facts.
+
+Human nutrient clears and explicit-null decisions retain provenance, but only
+non-NULL effective amounts count toward legacy nutrition-grain classification
+([effective nutrition views](../drizzle/0113_effective_food_records.sql)).
+HealthKit write-back reads the canonical raw Dofek food rows and normalized
+nutrient facts, so human corrections and tombstones affect effective nutrition
+without changing export values ([export query](../packages/server/src/repositories/food-repository.ts)).
 
 Create requires a UUID `request_id`; update, delete, and restore require UUID
 `record_id` and `request_id` plus nullable UUID `expected_version`. A source
@@ -248,7 +267,10 @@ version so the caller can read, reconcile, and retry.
 Mutation idempotency combines the user-scoped request UUID with a SHA-256
 fingerprint of the validated canonical payload and authenticated MCP client.
 Replaying the identical request performs no second source/ledger write and no
-second nutrition-cache invalidation. It returns the immutable
+second nutrition-cache invalidation. Create checks the durable receipt before
+provider setup and performs no provider or connection writes on replay
+([command repository](../packages/server/src/repositories/food-record-repository.ts)).
+It returns the immutable
 `{ change_id, resulting_version, replayed }` operation receipt, with
 `replayed: true`, plus the current effective record. Reusing the UUID for a
 different payload, operation, record, or client produces `CONFLICT`. The MCP
@@ -264,7 +286,10 @@ Food command errors use this stable JSON error contract:
 | `INVALID_ARGUMENT` | The command failed schema or decision validation; includes actionable `issues` with field paths and messages. |
 | `ACCOUNT_ERASURE_ACTIVE` | Account deletion is active; wait for it to finish before changing food records. |
 
-Unexpected failures are reported internally and return the safe
+Unexpected failures are reported internally as new exceptions with fixed
+operation labels, excluding original messages, causes, SQL, and parameters
+([service](../packages/server/src/services/food-record-service.ts),
+[MCP handler](../packages/server/src/mcp/food-record-tools.ts)). They return the safe
 `INTERNAL_ERROR` code without database or stack details. Missing scopes remain
 tool-level `insufficient_scope` authorization failures.
 

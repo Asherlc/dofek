@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { ensureProvider } from "../../../../src/db/tokens.ts";
 import { FoodRecordRepository } from "../repositories/food-record-repository.ts";
+import { FoodRepository } from "../repositories/food-repository.ts";
 import { FoodRecordService } from "./food-record-service.ts";
 
 const userId = "81000000-0000-4000-8000-000000000001";
@@ -185,6 +186,120 @@ describe.sequential("FoodRecordService with Postgres", () => {
         serving_weight_grams: 80,
       },
     ]);
+  });
+
+  it("keeps absent nutrient clears from changing legacy daily aggregate classification", async () => {
+    const date = "2026-07-01";
+    const sourceId = await addProviderFood({ date, nutrients: { calories: 300 } });
+    const proteinSourceId = await addProviderFood({ date, nutrients: { protein: 10 } });
+    await context.db.execute(sql`UPDATE fitness.food_entry SET nutrition_grain = NULL,
+      meal = NULL, food_name = NULL WHERE id IN (${sourceId}, ${proteinSourceId})`);
+    const { identityId } = await new FoodRecordRepository(context.db, userId).resolveStableIdentity(
+      sourceId,
+    );
+    const before = await context.db.execute(sql`SELECT calories, resolution_status
+      FROM fitness.v_nutrition_daily WHERE user_id = ${userId} AND date = ${date}::date`);
+    expect(before).toEqual([{ calories: 300, resolution_status: "available" }]);
+    for (const nutrientSet of [{}, { sodium: null }]) {
+      const current = await new FoodRecordRepository(context.db, userId).get(identityId);
+      await service().update({
+        recordId: identityId,
+        expectedVersion: current?.version ?? null,
+        requestId: randomUUID(),
+        set: {},
+        clear: [],
+        nutrientSet,
+        nutrientClear: Object.keys(nutrientSet).length === 0 ? ["sodium"] : [],
+      });
+      expect(
+        await context.db.execute(sql`SELECT calories, resolution_status
+        FROM fitness.v_nutrition_daily WHERE user_id = ${userId} AND date = ${date}::date`),
+      ).toEqual(before);
+      expect(
+        await context.db.execute(sql`SELECT nutrient_count, effective_grain
+        FROM fitness.v_nutrition_entry_classification WHERE id = ${sourceId}`),
+      ).toEqual([{ nutrient_count: 1, effective_grain: "daily_aggregate" }]);
+    }
+  });
+
+  it("keeps HealthKit write-back on raw facts after effective food corrections", async () => {
+    const date = "2026-07-02";
+    const commands = service();
+    const created = await commands.create({
+      requestId: randomUUID(),
+      date,
+      foodName: "Raw food",
+      nutrients: { calories: 300, protein: 10, carbohydrate: 20, fat: 5 },
+    });
+    const food = new FoodRepository(context.db, userId, "UTC");
+    const rawExport = await food.healthKitWriteBackEntries(date, date);
+    expect(rawExport).toEqual([
+      {
+        id: created.record.sourceEntryId,
+        date,
+        food_name: "Raw food",
+        calories: 300,
+        protein_g: 10,
+        carbs_g: 20,
+        fat_g: 5,
+      },
+    ]);
+    const corrected = await commands.update({
+      recordId: created.record.recordId,
+      expectedVersion: created.record.version,
+      requestId: randomUUID(),
+      set: { foodName: "Corrected food", date: "2026-07-03" },
+      clear: [],
+      nutrientSet: { calories: 450, protein: null, carbohydrate: 30, fat: 8 },
+      nutrientClear: [],
+    });
+    expect(corrected.record).toMatchObject({
+      foodName: "Corrected food",
+      date: "2026-07-03",
+      nutrients: { calories: 450, protein: null, carbohydrate: 30, fat: 8 },
+    });
+    expect(
+      await context.db.execute(sql`SELECT calories FROM fitness.v_nutrition_daily
+      WHERE user_id = ${userId} AND date = '2026-07-03'::date`),
+    ).toEqual([{ calories: 450 }]);
+    expect(await food.healthKitWriteBackEntries(date, date)).toEqual(rawExport);
+    expect(await food.healthKitWriteBackEntries("2026-07-03", "2026-07-03")).toEqual([]);
+    expect(
+      await new FoodRepository(context.db, otherUserId, "UTC").healthKitWriteBackEntries(
+        date,
+        date,
+      ),
+    ).toEqual([]);
+    await commands.delete({
+      recordId: created.record.recordId,
+      expectedVersion: corrected.record.version,
+      requestId: randomUUID(),
+    });
+    expect(await food.healthKitWriteBackEntries(date, date)).toEqual(rawExport);
+  });
+
+  it("replays creates inside a read-only transaction without provider setup or other writes", async () => {
+    const command = {
+      requestId: randomUUID(),
+      date: "2026-07-04",
+      foodName: "Replay food",
+      nutrients: { calories: 200 },
+    };
+    const created = await service().create(command);
+    const replay = await context.db.transaction(async (transaction) => {
+      await transaction.execute(sql`SET TRANSACTION READ ONLY`);
+      return new FoodRecordService({
+        database: transaction,
+        userId,
+        actor: { channel: "mcp", clientId: "token:integration-client" },
+        invalidateNutritionCaches: async () => undefined,
+      }).create(command);
+    });
+    expect(replay).toEqual({
+      operation: { ...created.operation, replayed: true },
+      record: created.record,
+      affectedDates: [],
+    });
   });
 
   it("conflicts on changed request bodies and concurrent writes from one version", async () => {

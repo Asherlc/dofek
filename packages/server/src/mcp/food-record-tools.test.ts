@@ -75,7 +75,12 @@ const domainRecord = {
   nutrients: { calories: 300, protein: 10 },
   sourceProvider: "dofek",
   provenance: {
-    food_name: { origin: "human" as const, changeId },
+    foodName: { origin: "human" as const, changeId },
+    foodDescription: { origin: "source" as const, changeId: null },
+    numberOfUnits: { origin: "source" as const, changeId: null },
+    servingUnit: { origin: "source" as const, changeId: null },
+    servingWeightGrams: { origin: "human" as const, changeId },
+    "nutrients.protein": { origin: "human" as const, changeId },
     meal: { origin: "source" as const, changeId: null },
   },
 };
@@ -99,6 +104,11 @@ const wireRecord = {
   source_provider: "dofek",
   provenance: {
     food_name: { origin: "human", change_id: changeId },
+    food_description: { origin: "source", change_id: null },
+    number_of_units: { origin: "source", change_id: null },
+    serving_unit: { origin: "source", change_id: null },
+    serving_weight_grams: { origin: "human", change_id: changeId },
+    "nutrients.protein": { origin: "human", change_id: changeId },
     meal: { origin: "source", change_id: null },
   },
 };
@@ -240,7 +250,7 @@ describe("registerFoodRecordTools", () => {
     const { tool } = setup();
     mocks.search.mockResolvedValue({
       items: [domainRecord],
-      nextCursor: { date: "2026-09-07", recordId },
+      nextCursor: { recordId },
     });
 
     const result = await tool("search_food_entries").handler({
@@ -248,7 +258,7 @@ describe("registerFoodRecordTools", () => {
       end_date: "2026-09-07",
       query: "oats",
       visibility: "all",
-      cursor: { date: "2026-09-07", record_id: recordId },
+      cursor: { record_id: recordId },
       limit: 20,
     });
 
@@ -257,12 +267,12 @@ describe("registerFoodRecordTools", () => {
       endDate: "2026-09-07",
       query: "oats",
       visibility: "all",
-      cursor: { date: "2026-09-07", recordId },
+      cursor: { recordId },
       limit: 20,
     });
     expect(parseResult(result)).toEqual({
       items: [wireRecord],
-      next_cursor: { date: "2026-09-07", record_id: recordId },
+      next_cursor: { record_id: recordId },
     });
     expect(
       tool("search_food_entries").outputSchema.safeParse(structuredContent(result)).success,
@@ -517,7 +527,12 @@ describe("registerFoodRecordTools", () => {
 
   it("reports unexpected failures and returns no internal details", async () => {
     const { tool } = setup();
-    const internalError = new Error("database password and stack detail");
+    const secret = "private-food-value-8321";
+    const internalError = Object.assign(new Error(`Failed query: ${secret}`), {
+      query: `INSERT ${secret}`,
+      params: [secret],
+      cause: Object.assign(new Error(`Invalid food ${secret}`), { code: "23514" }),
+    });
     mocks.create.mockRejectedValueOnce(internalError);
 
     const result = await tool("create_food_entry").handler({
@@ -527,13 +542,25 @@ describe("registerFoodRecordTools", () => {
       nutrients: {},
     });
 
-    expect(captureException).toHaveBeenCalledWith(internalError);
+    expect(captureException).toHaveBeenCalledOnce();
+    const captured = vi.mocked(captureException).mock.calls;
+    expect(
+      JSON.stringify(captured, (_key, value: unknown) =>
+        value instanceof Error
+          ? Object.fromEntries(
+              Object.getOwnPropertyNames(value).map((key) => [key, Reflect.get(value, key)]),
+            )
+          : value,
+      ),
+    ).not.toContain(secret);
+    expect(captured[0]?.[0]).toBeInstanceOf(Error);
+    expect(captured[0]?.[0]).not.toHaveProperty("cause");
     expect(parseResult(result)).toEqual({
       error: {
         code: "INTERNAL_ERROR",
         message: "The food record request could not be completed.",
       },
     });
-    expect(JSON.stringify(result)).not.toContain("database password");
+    expect(JSON.stringify(result)).not.toContain(secret);
   });
 });

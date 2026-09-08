@@ -211,6 +211,94 @@ describe.sequential("FoodRecordRepository with Postgres", () => {
     expect(new Set([...first.items, ...second.items].map((item) => item.recordId)).size).toBe(3);
   });
 
+  it("paginates stable identities when provider replacements move dates within the range", async () => {
+    const externalBySource = new Map<string, string>();
+    for (const name of ["Moving Alpha", "Moving Beta", "Moving Gamma"]) {
+      const externalId = randomUUID();
+      const sourceId = await addFood({ externalId, date: "2026-08-15", foodName: name });
+      externalBySource.set(sourceId, externalId);
+    }
+    const input = {
+      startDate: "2026-08-01",
+      endDate: "2026-08-31",
+      query: "Moving",
+      visibility: "all" as const,
+      cursor: null,
+      limit: 1,
+    };
+    const all = await repository.search({ ...input, limit: 100 });
+    const first = await repository.search(input);
+    const seen = first.items[0];
+    const unseen = all.items.find((item) => item.recordId !== seen?.recordId);
+    if (!seen || !unseen) throw new Error("Expected seen and unseen records");
+    for (const [item, date] of [
+      [seen, "2026-08-01"],
+      [unseen, "2026-08-31"],
+    ] as const) {
+      await context.db.execute(
+        sql`DELETE FROM fitness.food_entry WHERE id = ${item.sourceEntryId}`,
+      );
+      await addFood({
+        externalId: externalBySource.get(item.sourceEntryId),
+        date,
+        foodName: "Moving replacement",
+      });
+    }
+    const remaining = await repository.search({ ...input, cursor: first.nextCursor, limit: 100 });
+    expect([...first.items, ...remaining.items].map((item) => item.recordId).sort()).toEqual(
+      all.items.map((item) => item.recordId).sort(),
+    );
+    expect(remaining.nextCursor).toBeNull();
+  });
+
+  it("paginates history at exact Postgres microsecond precision and scopes cursor ownership", async () => {
+    const sourceId = await addFood({
+      externalId: randomUUID(),
+      date: "2026-08-20",
+      foodName: "Precise history",
+    });
+    const { identityId } = await repository.resolveStableIdentity(sourceId);
+    const changes: string[] = [];
+    let predecessorVersion: string | null = null;
+    for (const fraction of ["000100", "000200", "000900"]) {
+      const change = await appendChange({
+        identityId,
+        predecessorVersion,
+        kind: "update",
+        recordedAt: `2026-08-20T12:00:00.${fraction}Z`,
+        fields: { food_name: { operation: "set", value: fraction } },
+      });
+      changes.push(change.changeId);
+      predecessorVersion = change.version;
+    }
+    const first = await repository.history(identityId, null, 1);
+    const second = await repository.history(identityId, first.nextCursor, 1);
+    const third = await repository.history(identityId, second.nextCursor, 1);
+    expect([...first.items, ...second.items, ...third.items].map((item) => item.changeId)).toEqual(
+      changes.reverse(),
+    );
+    expect(third.nextCursor).toBeNull();
+
+    const otherSource = await addFood({
+      externalId: randomUUID(),
+      date: "2026-08-20",
+      foodName: "Other history",
+    });
+    const otherIdentity = await repository.resolveStableIdentity(otherSource);
+    await appendChange({
+      identityId: otherIdentity.identityId,
+      kind: "delete",
+      recordedAt: "2026-08-01T00:00:00Z",
+      deleted: true,
+    });
+    await expect(
+      repository.history(otherIdentity.identityId, first.nextCursor, 1),
+    ).resolves.toMatchObject({ items: [], nextCursor: null });
+    await expect(
+      new FoodRecordRepository(context.db, otherUserId).history(identityId, first.nextCursor, 1),
+    ).resolves.toMatchObject({ items: [], nextCursor: null });
+  });
+
   it("returns deleted detail with human provenance and ordered history", async () => {
     const sourceEntryId = await addFood({
       externalId: `history-${randomUUID()}`,

@@ -135,7 +135,7 @@ describe("FoodRecordRepository", () => {
     );
   });
 
-  it("uses the immutable source date and stable record ID for cursor pagination", async () => {
+  it("uses only the stable record ID for cursor pagination", async () => {
     const secondRecordId = "20000000-0000-4000-8000-000000000002";
     const { execute, repository } = makeRepository([
       [],
@@ -147,19 +147,19 @@ describe("FoodRecordRepository", () => {
       endDate: "2026-09-07",
       query: null,
       visibility: "all",
-      cursor: { date: "2026-09-04", recordId: "20000000-0000-4000-8000-000000000099" },
+      cursor: { recordId: "20000000-0000-4000-8000-000000000099" },
       limit: 1,
     });
 
     expect(result).toEqual({
       items: [expectedRecord],
-      nextCursor: { date: "2026-09-02", recordId },
+      nextCursor: { recordId },
     });
     const searchQuery = queryDetails(execute.mock.calls[1]?.[0]);
     expect(searchQuery.sql).toContain("effective.source_date");
     expect(searchQuery.sql).toContain("effective.record_id");
     expect(searchQuery.params).toEqual(
-      expect.arrayContaining(["2026-09-04", "20000000-0000-4000-8000-000000000099", 2]),
+      expect.arrayContaining(["20000000-0000-4000-8000-000000000099", 2]),
     );
   });
 
@@ -272,12 +272,15 @@ describe("FoodRecordRepository", () => {
     ]);
     expect(result.recordId).toBe(recordId);
     expect(result.nextCursor).toEqual(expect.any(String));
+    expect(JSON.parse(Buffer.from(result.nextCursor ?? "", "base64url").toString("utf8"))).toEqual({
+      changeId: firstChangeId,
+    });
 
     const nextPage = makeRepository([[]]);
     await nextPage.repository.history(recordId, result.nextCursor, 1);
     const historyQuery = queryDetails(nextPage.execute.mock.calls[0]?.[0]);
     expect(historyQuery.params).toEqual(
-      expect.arrayContaining([userId, recordId, "2026-09-07T12:00:00.000Z", firstChangeId, 2]),
+      expect.arrayContaining([userId, recordId, firstChangeId, 2]),
     );
   });
 

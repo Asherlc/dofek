@@ -304,6 +304,7 @@ WITH nutrient_counts AS (
     source_entry_id AS food_entry_id,
     COUNT(*)::integer AS nutrient_count
   FROM fitness.v_food_entry_effective_nutrient
+  WHERE amount IS NOT NULL
   GROUP BY source_entry_id
 )
 

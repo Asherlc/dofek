@@ -39,7 +39,6 @@ const editableFieldSchema = z.enum([
   "serving_weight_grams",
 ]);
 const foodRecordCursorSchema = z.object({
-  date: dateSchema,
   record_id: z.uuid(),
 });
 const targetInputSchema = {
@@ -76,7 +75,7 @@ function foodRecordToTransport(record: EffectiveFoodRecord) {
     source_provider: record.sourceProvider,
     provenance: Object.fromEntries(
       Object.entries(record.provenance).map(([field, provenance]) => [
-        field,
+        camelToSnake(field),
         { origin: provenance.origin, change_id: provenance.changeId },
       ]),
     ),
@@ -157,7 +156,7 @@ async function foodToolResult<T>(
         Object.keys(details).length === 0 ? undefined : details,
       );
     }
-    captureException(error);
+    captureException(new Error("MCP food record request failed"));
     return jsonToolError("INTERNAL_ERROR", "The food record request could not be completed.");
   }
 }
@@ -176,7 +175,7 @@ function dateRangeToolError(
     return null;
   } catch (error: unknown) {
     if (error instanceof Error) return jsonToolError("INVALID_ARGUMENT", error.message);
-    captureException(error);
+    captureException(new Error("MCP food record date range validation failed"));
     return jsonToolError("INTERNAL_ERROR", "The food record request could not be completed.");
   }
 }
@@ -253,14 +252,12 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
           endDate: end_date,
           query: query ?? null,
           visibility: visibility ?? "visible",
-          cursor: cursor ? { date: cursor.date, recordId: cursor.record_id } : null,
+          cursor: cursor ? { recordId: cursor.record_id } : null,
           limit: limit ?? 50,
         });
         return {
           items: result.items.map(foodRecordToTransport),
-          next_cursor: result.nextCursor
-            ? { date: result.nextCursor.date, record_id: result.nextCursor.recordId }
-            : null,
+          next_cursor: result.nextCursor ? { record_id: result.nextCursor.recordId } : null,
         };
       });
     },

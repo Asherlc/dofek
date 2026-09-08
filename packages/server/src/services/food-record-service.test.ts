@@ -1,3 +1,4 @@
+import { captureException } from "dofek/lib/error-reporting";
 import { describe, expect, it, vi } from "vitest";
 import {
   FoodRecordConflictError,
@@ -10,6 +11,8 @@ import {
   FoodRecordPreconditionError,
 } from "../repositories/food-record-types.ts";
 import { FoodRecordError, FoodRecordService } from "./food-record-service.ts";
+
+vi.mock("dofek/lib/error-reporting", () => ({ captureException: vi.fn() }));
 
 const userId = "10000000-0000-4000-8000-000000000001";
 const recordId = "20000000-0000-4000-8000-000000000001";
@@ -96,6 +99,39 @@ function setup(overrides: Partial<FoodRecordRepositoryCommands> = {}) {
 }
 
 describe("FoodRecordService", () => {
+  it.each(["create", "delete"] as const)("sanitizes unexpected %s telemetry", async (operation) => {
+    vi.mocked(captureException).mockClear();
+    const secret = "private-food-value-8321";
+    const databaseError = Object.assign(new Error(`Failed query: ${secret}`), {
+      query: `INSERT ${secret}`,
+      params: [secret],
+      cause: Object.assign(new Error(`Invalid food ${secret}`), { code: "23514" }),
+    });
+    const fail = vi.fn(async () => {
+      throw databaseError;
+    });
+    const { service } = setup({ createSourceAndIdentity: fail, appendChange: fail });
+    const command =
+      operation === "create"
+        ? service.create({ requestId, date: "2026-09-07", foodName: secret, nutrients: {} })
+        : service.delete({ requestId, recordId, expectedVersion: firstVersion });
+
+    await expect(command).rejects.toBe(databaseError);
+    expect(captureException).toHaveBeenCalledOnce();
+    const captured = vi.mocked(captureException).mock.calls;
+    expect(
+      JSON.stringify(captured, (_key, value: unknown) =>
+        value instanceof Error
+          ? Object.fromEntries(
+              Object.getOwnPropertyNames(value).map((key) => [key, Reflect.get(value, key)]),
+            )
+          : value,
+      ),
+    ).not.toContain(secret);
+    expect(captured[0]?.[0]).toBeInstanceOf(Error);
+    expect(captured[0]?.[0]).not.toHaveProperty("cause");
+  });
+
   it("creates one itemized record and invalidates its effective date after commit", async () => {
     const created = record({
       version: secondVersion,

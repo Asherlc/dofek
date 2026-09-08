@@ -4,7 +4,6 @@ import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 export const foodRecordVisibilitySchema = z.enum(["visible", "deleted", "all"]);
 
 export const foodRecordCursorSchema = z.object({
-  date: dateStringSchema,
   recordId: z.uuid(),
 });
 

@@ -90,7 +90,6 @@ const historyRowSchema = z.object({
 });
 
 const historyCursorSchema = z.object({
-  recordedAt: timestampStringSchema,
   changeId: z.uuid(),
 });
 
@@ -371,15 +370,13 @@ function effectiveRecordQuery(where: SQL, limit: number | null = null): SQL {
       WHERE nutrient.source_entry_id = effective.source_entry_id
     ) AS nutrients ON TRUE
     WHERE ${where}
-    ORDER BY effective.source_date DESC, effective.record_id DESC
+    ORDER BY effective.record_id DESC
     ${limit === null ? sql`` : sql`LIMIT ${limit}`}
   `;
 }
 
 function encodeHistoryCursor(row: HistoryRow): string {
-  return Buffer.from(
-    JSON.stringify({ recordedAt: row.recorded_at, changeId: row.change_id }),
-  ).toString("base64url");
+  return Buffer.from(JSON.stringify({ changeId: row.change_id })).toString("base64url");
 }
 
 function decodeHistoryCursor(cursor: string) {
@@ -538,6 +535,29 @@ export class FoodRecordRepository {
 
   async createSourceAndIdentity(input: CreateFoodRecordSourceInput): Promise<FoodRecordHead> {
     const requestId = z.uuid().parse(input.requestId);
+    const stored = await this.findRequest(requestId);
+    if (stored) {
+      if (!requestMatches(stored, { ...input, identityId: stored.identityId, kind: "create" })) {
+        throw new FoodRecordConflictError(
+          stored.identityId,
+          await this.#currentVersion(stored.identityId),
+          "Request ID was reused.",
+        );
+      }
+      const record = await this.get(stored.identityId);
+      if (!record) throw new Error("Replayed food record source could not be resolved");
+      return {
+        changeId: stored.changeId,
+        identityId: stored.identityId,
+        sourceEntryId: record.sourceEntryId,
+        version: stored.version,
+        predecessorVersion: stored.predecessorVersion,
+        requestHash: stored.requestHash,
+        kind: stored.kind,
+        actor: stored.actor,
+        replayed: true,
+      };
+    }
     const sourceKey = `external:${input.externalId}`;
     const foodRepository = new FoodRepository(this.#database, this.#userId, "UTC");
     await foodRepository.ensureDofekProvider();
@@ -561,30 +581,6 @@ export class FoodRecordRepository {
     );
     const identityId = identityRows[0]?.identity_id;
     if (!identityId) throw new Error("Created food record identity could not be locked");
-
-    const stored = await this.findRequest(requestId);
-    if (stored) {
-      if (!requestMatches(stored, { ...input, identityId, kind: "create" })) {
-        throw new FoodRecordConflictError(
-          stored.identityId,
-          await this.#currentVersion(stored.identityId),
-          "Request ID was reused.",
-        );
-      }
-      const locked = await this.#lockHead(identityId);
-      if (!locked) throw new Error("Replayed food record source could not be resolved");
-      return {
-        changeId: stored.changeId,
-        identityId,
-        sourceEntryId: locked.source_entry_id,
-        version: stored.version,
-        predecessorVersion: stored.predecessorVersion,
-        requestHash: stored.requestHash,
-        kind: stored.kind,
-        actor: stored.actor,
-        replayed: true,
-      };
-    }
 
     const created = await foodRepository.create({
       externalId: input.externalId,
@@ -749,12 +745,7 @@ export class FoodRecordRepository {
             AND effective.date BETWEEN ${parsed.startDate}::date AND ${parsed.endDate}::date
             AND ${textPredicate(parsed.query)}
             AND ${visibilityPredicate(parsed.visibility)}
-            AND ${
-              cursor === null
-                ? sql`TRUE`
-                : sql`(effective.source_date, effective.record_id) <
-                    (${cursor.date}::date, ${cursor.recordId}::uuid)`
-            }
+            AND ${cursor === null ? sql`TRUE` : sql`effective.record_id < ${cursor.recordId}::uuid`}
           `,
           parsed.limit + 1,
         ),
@@ -765,8 +756,7 @@ export class FoodRecordRepository {
       const last = pageRows.at(-1);
       return {
         items: pageRows.map(mapRecord),
-        nextCursor:
-          hasNextPage && last ? { date: last.source_date, recordId: last.record_id } : null,
+        nextCursor: hasNextPage && last ? { recordId: last.record_id } : null,
       };
     });
   }
@@ -1035,7 +1025,14 @@ export class FoodRecordRepository {
             parsedCursor === null
               ? sql`TRUE`
               : sql`(change.recorded_at, change.id) <
-                  (${parsedCursor.recordedAt}::timestamptz, ${parsedCursor.changeId}::uuid)`
+                  (SELECT cursor_change.recorded_at, cursor_change.id
+                   FROM fitness.human_record_change AS cursor_change
+                   INNER JOIN fitness.human_record_target AS cursor_target
+                     ON cursor_target.user_id = cursor_change.user_id
+                     AND cursor_target.change_id = cursor_change.id
+                   WHERE cursor_change.user_id = ${this.#userId}
+                     AND cursor_change.id = ${parsedCursor.changeId}::uuid
+                     AND cursor_target.identity_id = ${parsedRecordId}::uuid)`
           }
         ORDER BY change.recorded_at DESC, change.id DESC
         LIMIT ${parsedLimit + 1}
