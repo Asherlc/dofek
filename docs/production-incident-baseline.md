@@ -25729,3 +25729,42 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   freshness separately; zero consumer lag alone is not an object-age audit.
   The Axiom MCP token remains expired; task-local Swarm logs supplied the fatal
   evidence. No additional resilience knob was introduced.
+
+## 2026-09-08 — Expo patch drift blocked MCP injury logging PR validation
+
+- **Scope / impact:** [PR #2685](https://github.com/Asherlc/dofek/pull/2685)
+  validation only; no production impact. The `Build Mobile / Metro Bundle` job
+  stopped before bundle export.
+- **Evidence / root cause:** [Job 102142563023](https://github.com/Asherlc/dofek/actions/runs/34250146372/job/102142563023)
+  failed at `cd packages/mobile && pnpm expo install --check`. Its first fatal
+  diagnostic reported `expo`, `expo-modules-core`, and `expo-router` were one
+  patch behind the SDK 57 compatibility set. Expo documents this command as a
+  dependency-version validation check
+  ([Expo CLI](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation)).
+- **Direct fix:** Pin those three packages to the compatible stable patches
+  available on September 8, 2026: 57.0.21, 57.0.17, and 57.0.20, respectively.
+  No retry, timeout,
+  compatibility exclusion, or CI bypass was added.
+- **Validation / follow-up:** The exact dependency check and both CI-equivalent
+  iOS export commands pass locally. Require fresh green CI before merging the
+  PR.
+
+## 2026-09-08 — GitHub artifact finalization blocked passing integration shards
+
+- **Scope / impact:** [PR #2685](https://github.com/Asherlc/dofek/pull/2685)
+  validation only; no production impact. Integration shards
+  [1/4](https://github.com/Asherlc/dofek/actions/runs/34253659222/job/102154840958)
+  and
+  [4/4](https://github.com/Asherlc/dofek/actions/runs/34253659222/job/102154840810)
+  were marked failed after their test commands completed successfully.
+- **Evidence / root cause:** Both shards passed all 51 assigned test files and
+  uploaded their coverage archives. The exact failing step was
+  `actions/upload-artifact`; its first fatal diagnostic was
+  `Failed to FinalizeArtifact: Received non-retryable error: Failed request:
+  (403) Forbidden: Error from intermediary with HTTP status code 403
+  "Forbidden"`. Matching failures after successful uploads in two independent
+  runners isolate the failure to GitHub's artifact-finalization intermediary,
+  not repository tests.
+- **Resolution / validation:** Keep artifact publication as a hard gate with no
+  retry, timeout, or warn-and-continue behavior. Require a fresh workflow run
+  to pass artifact finalization and every aggregate gate before merge.

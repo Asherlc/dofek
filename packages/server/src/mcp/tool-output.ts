@@ -273,6 +273,32 @@ export const bodyMetricsOutputSchema = jsonResult(
   ),
 );
 
+const injuryEventSchema = z.object({
+  id: z.string(),
+  kind: z.enum(["injury", "niggle"]),
+  body_region_id: z.string(),
+  onset_date: z.string(),
+  resolved_date: nullableString,
+  severity: nullableNumber,
+  description: z.string(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+export const bodyRegionsOutputSchema = jsonResult(
+  z.array(
+    z.object({
+      id: z.string(),
+      parent_id: nullableString,
+      label: z.string(),
+      kind: z.string(),
+      sort_order: z.number().int(),
+    }),
+  ),
+);
+
+export const injuryEventOutputSchema = jsonResult(injuryEventSchema);
+
 export const subjectiveTimelineOutputSchema = jsonResult(
   z.object({
     checkIns: z.array(
@@ -289,19 +315,7 @@ export const subjectiveTimelineOutputSchema = jsonResult(
         ),
       }),
     ),
-    injuries: z.array(
-      z.object({
-        id: z.string(),
-        kind: z.enum(["injury", "niggle"]),
-        body_region_id: z.string(),
-        onset_date: z.string(),
-        resolved_date: nullableString,
-        severity: nullableNumber,
-        description: z.string(),
-        created_at: z.string(),
-        updated_at: z.string(),
-      }),
-    ),
+    injuries: z.array(injuryEventSchema),
   }),
 );
 
@@ -779,6 +793,7 @@ export const foodRecordMutationOutputSchema = jsonResult(
 
 export const mcpOutputSchemas = {
   activitySummary: activitySummaryOutputSchema,
+  bodyRegions: bodyRegionsOutputSchema,
   bodyMetrics: bodyMetricsOutputSchema,
   dailyHealthSummary: dailyHealthSummaryOutputSchema,
   dataCoverage: dataCoverageOutputSchema,
@@ -788,6 +803,7 @@ export const mcpOutputSchemas = {
   foodRecordMutation: foodRecordMutationOutputSchema,
   foodRecordSearch: foodRecordSearchOutputSchema,
   healthTrends: healthTrendsOutputSchema,
+  injuryEvent: injuryEventOutputSchema,
   nutritionSummary: nutritionSummaryOutputSchema,
   providerSync: providerSyncOutputSchema,
   providers: providersOutputSchema,
