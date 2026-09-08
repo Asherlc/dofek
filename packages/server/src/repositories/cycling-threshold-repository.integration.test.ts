@@ -78,5 +78,17 @@ describe("CyclingThresholdRepository database semantics", () => {
       historical_validity: "unknown",
     });
     expect(result.next_cursor).toBeNull();
+
+    await expect(
+      new CyclingThresholdRepository(
+        context.db,
+        TEST_USER_ID,
+        "America/Los_Angeles",
+      ).getApplicableConfiguredFtp("2026-07-31"),
+    ).resolves.toMatchObject({
+      value: 245,
+      value_kind: "configured",
+      historical_validity: "effective_dated",
+    });
   });
 });

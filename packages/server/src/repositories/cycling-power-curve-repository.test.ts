@@ -52,7 +52,7 @@ describe("CyclingPowerCurveRepository", () => {
     const query = vi.fn(async (_schema, queryText: string) => {
       if (queryText.includes("power-curve:standard:bests")) return rows;
       if (queryText.includes("power-curve:standard:page")) return rows.slice(0, 3);
-      if (queryText.includes("power-curve:weights")) {
+      if (queryText.includes("nearby-weight:observations")) {
         return [
           {
             date: "2026-06-10",

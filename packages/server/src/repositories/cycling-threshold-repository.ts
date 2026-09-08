@@ -176,6 +176,37 @@ export class CyclingThresholdRepository {
     this.#timezone = timezone;
   }
 
+  /** Latest effective-dated cycling FTP configuration on or before a date. */
+  async getApplicableConfiguredFtp(asOfDate: string): Promise<CyclingThresholdHistoryItem | null> {
+    const rows = await executeWithSchema(
+      this.#db,
+      historyRowSchema,
+      sql`
+        SELECT
+          settings.id,
+          'configured'::text AS evidence_kind,
+          settings.sport,
+          'ftp'::text AS threshold_type,
+          settings.ftp::real AS value,
+          'watt'::text AS unit,
+          settings.effective_from::timestamp AT TIME ZONE ${this.#timezone} AS event_at,
+          settings.created_at AS observed_at,
+          settings.effective_from::timestamp AT TIME ZONE ${this.#timezone} AS effective_at,
+          NULL::text AS provider_id,
+          NULL::text AS provider_record_id,
+          false AS raw_available
+        FROM fitness.sport_settings AS settings
+        WHERE settings.user_id = ${this.#userId}::uuid
+          AND settings.sport = 'cycling'
+          AND settings.ftp IS NOT NULL
+          AND settings.effective_from <= ${asOfDate}::date
+        ORDER BY settings.effective_from DESC, settings.created_at DESC, settings.id ASC
+        LIMIT 1
+      `,
+    );
+    return rows[0] ? toHistoryItem(rows[0]) : null;
+  }
+
   async listHistory(input: CyclingThresholdHistoryInput): Promise<CyclingThresholdHistoryPage> {
     const shape = requestShape(input, this.#timezone);
     const cursor = input.cursor ? decodeCursor(input.cursor, this.#userId, shape) : null;

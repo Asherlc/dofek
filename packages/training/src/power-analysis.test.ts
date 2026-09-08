@@ -4,6 +4,7 @@ import {
   computePowerCurve,
   DURATION_LABELS,
   fitCriticalPower,
+  fitCriticalPowerWithDiagnostics,
   groupByActivity,
   linearRegression,
   STANDARD_DURATIONS,
@@ -93,6 +94,16 @@ describe("fitCriticalPower", () => {
     }
   });
 
+  it("returns null when anaerobic work capacity would be non-positive", () => {
+    expect(
+      fitCriticalPower([
+        { durationSeconds: 120, bestPower: 200 },
+        { durationSeconds: 300, bestPower: 250 },
+        { durationSeconds: 600, bestPower: 280 },
+      ]),
+    ).toBeNull();
+  });
+
   it("excludes durations under 120s", () => {
     const points = [
       { durationSeconds: 5, bestPower: 800 },
@@ -137,6 +148,26 @@ describe("fitCriticalPower", () => {
     const r2Str = String(model?.r2);
     const decimals = r2Str.split(".")[1]?.length ?? 0;
     expect(decimals).toBeLessThanOrEqual(3);
+  });
+
+  it("returns the fitted observations, predictions, residuals, and RMSE", () => {
+    const points = [
+      { durationSeconds: 120, bestPower: 360 },
+      { durationSeconds: 300, bestPower: 285 },
+      { durationSeconds: 600, bestPower: 258 },
+    ];
+
+    const model = fitCriticalPowerWithDiagnostics(points);
+
+    expect(model?.points).toHaveLength(3);
+    expect(model?.points[0]).toEqual({
+      durationSeconds: 120,
+      observedPower: 360,
+      predictedPower: expect.any(Number),
+      residualPower: expect.any(Number),
+    });
+    expect(model?.rmse).toEqual(expect.any(Number));
+    expect(model?.rmse).toBeGreaterThanOrEqual(0);
   });
 
   it("returns null for empty input", () => {

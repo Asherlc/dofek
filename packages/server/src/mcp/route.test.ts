@@ -12,6 +12,7 @@ import {
   activitySummaryOutputSchema,
   activityTimeseriesOutputSchema,
   cyclingPowerCurveOutputSchema,
+  cyclingThresholdEstimateOutputSchema,
   healthTrendsOutputSchema,
   providersOutputSchema,
   searchActivitiesOutputSchema,
@@ -31,6 +32,7 @@ const toolTestMocks = vi.hoisted(() => {
     climbingActivityEntries: vi.fn(),
     cyclingPerformanceListRange: vi.fn(),
     cyclingPowerCurveListRange: vi.fn(),
+    cyclingThresholdEstimate: vi.fn(),
     cyclingThresholdListHistory: vi.fn(),
     dailyMetricsList: vi.fn(),
     dailyMetricsListRange: vi.fn(),
@@ -125,6 +127,17 @@ vi.mock("../repositories/cycling-threshold-repository.ts", () => ({
     return { listHistory: toolTestMocks.cyclingThresholdListHistory };
   }),
 }));
+
+vi.mock("../repositories/cycling-threshold-estimator.ts", async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import("../repositories/cycling-threshold-estimator.ts")>();
+  return {
+    ...original,
+    CyclingThresholdEstimator: vi.fn(function vitestConstructor() {
+      return { estimate: toolTestMocks.cyclingThresholdEstimate };
+    }),
+  };
+});
 
 vi.mock("../repositories/training-load-repository.ts", () => ({
   TrainingLoadRepository: vi.fn(function vitestConstructor() {
@@ -548,6 +561,14 @@ describe("createMcpRouter", () => {
       legacy_current: null,
       next_cursor: null,
     });
+    toolTestMocks.cyclingThresholdEstimate.mockResolvedValue({
+      start_date: "2026-08-01",
+      end_date: "2026-09-01",
+      requested_method: "best_supported",
+      result: null,
+      unavailable_reason: "No supported recorded or power-duration threshold evidence is available",
+      weight: { value_kg: null, reason: "No weight" },
+    });
     toolTestMocks.ensureProvidersRegistered.mockResolvedValue(undefined);
     toolTestMocks.foodDailyTotalsRange.mockResolvedValue([]);
     toolTestMocks.fingerLoadingActivity.mockResolvedValue([]);
@@ -809,6 +830,26 @@ describe("createMcpRouter", () => {
       required: ["start_date", "end_date"],
       type: "object",
     });
+    expect(findListedTool(tools, "estimate_cycling_threshold").inputSchema).toMatchObject({
+      properties: {
+        start_date: { format: "date", type: "string" },
+        end_date: { format: "date", type: "string" },
+        method: {
+          enum: [
+            "best_supported",
+            "recorded_provider",
+            "twenty_minute_95_percent",
+            "sustained_40_to_70_minutes",
+            "critical_power_model",
+          ],
+          type: "string",
+        },
+        modalities: { type: "array" },
+        providers: { type: "array" },
+      },
+      required: ["start_date", "end_date"],
+      type: "object",
+    });
     expect(findListedTool(tools, "render_health_explorer").inputSchema).toMatchObject({
       properties: {
         end_date: { format: "date", type: "string" },
@@ -922,6 +963,7 @@ describe("createMcpRouter", () => {
       "get_cycling_performance",
       "get_cycling_power_curve",
       "get_threshold_history",
+      "estimate_cycling_threshold",
       "get_sleep_summary",
       "search_activities",
       "get_activity_details",
@@ -982,6 +1024,10 @@ describe("createMcpRouter", () => {
       {
         name: "get_threshold_history",
         path: ["result", "items", "[]", "quality", "status"],
+      },
+      {
+        name: "estimate_cycling_threshold",
+        path: ["result", "result", "model", "residuals", "[]", "residual_watts"],
       },
       { name: "render_health_explorer", path: ["coverage", "by_metric"] },
       {
@@ -2134,6 +2180,60 @@ describe("createMcpRouter", () => {
       providers: ["zwift"],
       cursor: null,
       limit: 100,
+    });
+  });
+
+  it("returns a labeled cycling threshold estimate through MCP transport", async () => {
+    authorizeMcpToken(["activity:read"]);
+    toolTestMocks.cyclingThresholdEstimate.mockResolvedValue({
+      start_date: "2026-05-01",
+      end_date: "2026-08-01",
+      requested_method: "twenty_minute_95_percent",
+      result: {
+        threshold_watts: 285,
+        watts_per_kg: null,
+        watts_per_kg_reason: "No weight",
+        method: "twenty_minute_95_percent",
+        classification: "estimated",
+        confidence: "moderate",
+        uncertainty: {
+          watts: null,
+          kind: "not_quantifiable",
+          reason: "A single heuristic has no statistical interval",
+        },
+        evidence: { threshold_history: [], efforts: [] },
+        relevant_activity_ids: [],
+        assumptions: ["This is not measured FTP"],
+        model: null,
+      },
+      unavailable_reason: null,
+      weight: { value_kg: null, reason: "No weight" },
+    });
+
+    const response = await request(createTestApp(makeMockSensorStore()), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("estimate_cycling_threshold", {
+        start_date: "2026-05-01",
+        end_date: "2026-08-01",
+        method: "twenty_minute_95_percent",
+      }),
+    });
+    const parsedResponse = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text));
+    const structured = cyclingThresholdEstimateOutputSchema.parse(
+      parsedResponse.result.structuredContent,
+    );
+
+    expect(structured.result.result).toMatchObject({
+      threshold_watts: 285,
+      classification: "estimated",
+      uncertainty: { kind: "not_quantifiable" },
+    });
+    expect(toolTestMocks.cyclingThresholdEstimate).toHaveBeenCalledWith({
+      startDate: "2026-05-01",
+      endDate: "2026-08-01",
+      method: "twenty_minute_95_percent",
+      providers: [],
+      modalities: [],
     });
   });
 

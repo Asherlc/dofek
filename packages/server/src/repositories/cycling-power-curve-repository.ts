@@ -2,11 +2,11 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import {
-  type DirectWeightObservation,
   selectNearbyWeight,
   type UnavailableWeightEvidence,
   type WeightEvidence,
 } from "./nearby-weight.ts";
+import { loadDirectWeightObservations } from "./nearby-weight-repository.ts";
 
 const MODEL_DURATIONS = new Set([
   1, 5, 15, 30, 60, 120, 180, 300, 420, 600, 720, 1200, 1800, 2400, 3600, 5400, 7200,
@@ -69,14 +69,6 @@ function normalizeCustomCurveRow(row: z.infer<typeof customCurveRowSchema>): Cur
     member_activity_ids: row.result_member_activity_ids,
   };
 }
-
-const weightRowSchema = z.object({
-  date: z.string(),
-  recorded_at: z.string(),
-  weight_kg: z.coerce.number(),
-  provider_id: z.string(),
-  external_id: z.string().nullable(),
-});
 
 const cursorSchema = z.object({
   version: z.literal(1),
@@ -667,35 +659,13 @@ export class CyclingPowerCurveRepository {
       );
     }
 
-    const weights = await this.#store.query(
-      weightRowSchema,
-      `/* power-curve:weights */
-        SELECT
-          toString(toDate(toTimeZone(body.recorded_at, {timezone:String}))) AS date,
-          formatDateTime(body.recorded_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS recorded_at,
-          body.weight_kg,
-          body.provider_id,
-          body.external_id
-        FROM analytics.v_body_measurement AS body
-        WHERE body.user_id = {userId:UUID}
-          AND body.weight_kg IS NOT NULL
-          AND body.weight_kg > 0
-          AND toDate(toTimeZone(body.recorded_at, {timezone:String})) BETWEEN
-            addDays(toDate({startDate:String}), -30)
-            AND addDays(toDate({endDate:String}), 30)
-        ORDER BY body.recorded_at ASC
-        SETTINGS prefer_column_name_to_alias = 1`,
-      params,
+    const weightObservations = await loadDirectWeightObservations(
+      this.#store,
+      this.#userId,
+      this.#timezone,
+      input.startDate,
+      input.endDate,
     );
-    const weightObservations: DirectWeightObservation[] = weights.map((weight) => ({
-      date: weight.date,
-      recordedAt: weight.recorded_at,
-      valueKg: weight.weight_kg,
-      observationType: "body_weight",
-      measurementKind: "direct",
-      provider: weight.provider_id,
-      sourceRecordId: weight.external_id,
-    }));
     const toEffort = (row: CurveRow): CyclingPowerCurveEffort => {
       const weight = selectNearbyWeight(row.activity_date, weightObservations);
       return {

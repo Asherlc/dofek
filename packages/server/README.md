@@ -160,6 +160,20 @@ timestamps. A provider's modeled threshold, such as Zwift zFTP, is labeled `prov
 is never represented as measured FTP. Repeated provider syncs append a new observation only when the
 reported value, unit, or effective timestamp changes.
 
+`estimate_cycling_threshold` requires `activity:read` and the ClickHouse analytics store. Its
+selectable methods are `recorded_provider`, `twenty_minute_95_percent`,
+`sustained_40_to_70_minutes`, `critical_power_model`, and `best_supported`. The 20-minute method is
+explicitly the 95% heuristic described by
+[TrainingPeaks](https://help.trainingpeaks.com/hc/en-us/articles/204071934-How-to-Calculate-Threshold-Values-for-Power-Heart-Rate-or-Pace).
+The critical-power method fits the two-parameter Monod–Scherrer work-time relationship
+([Monod and Scherrer](https://doi.org/10.1080/00140136508930810)) over valid 120–600-second range
+bests. It returns CP, W′, R², power residuals, and residual RMSE. RMSE describes model fit only; it is
+not physiological uncertainty. Every method returns its source efforts and activity IDs,
+assumptions, confidence, and either an explicit uncertainty value or a reason one cannot be
+quantified. Calculated results have `classification: "estimated"` and are never labeled measured
+FTP. W/kg uses body-weight evidence selected for the requested range end date under the same nearby-
+weight policy as the power curve.
+
 
 ## Development
 

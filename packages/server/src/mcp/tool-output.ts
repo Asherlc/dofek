@@ -691,6 +691,73 @@ export const thresholdHistoryOutputSchema = z
   })
   .strict();
 
+const cyclingThresholdMethodSchema = z.enum([
+  "best_supported",
+  "recorded_provider",
+  "twenty_minute_95_percent",
+  "sustained_40_to_70_minutes",
+  "critical_power_model",
+]);
+const cyclingThresholdResultMethodSchema = cyclingThresholdMethodSchema.exclude(["best_supported"]);
+const cyclingThresholdEstimateResultSchema = z
+  .object({
+    threshold_watts: z.number().positive(),
+    watts_per_kg: z.number().positive().nullable(),
+    watts_per_kg_reason: nullableString,
+    method: cyclingThresholdResultMethodSchema,
+    classification: z.enum(["configured", "provider_recorded", "estimated"]),
+    confidence: z.enum(["high", "moderate", "limited"]),
+    uncertainty: z
+      .object({
+        watts: z.number().nonnegative().nullable(),
+        kind: z.enum(["not_applicable", "not_quantifiable", "model_rmse"]),
+        reason: nullableString,
+      })
+      .strict(),
+    evidence: z
+      .object({
+        threshold_history: z.array(thresholdHistoryItemSchema),
+        efforts: z.array(cyclingPowerCurveEffortSchema),
+      })
+      .strict(),
+    relevant_activity_ids: z.array(z.uuid()),
+    assumptions: z.array(z.string().min(1)),
+    model: z
+      .object({
+        cp_watts: z.number().positive(),
+        w_prime_joules: z.number(),
+        r2: z.number(),
+        rmse_watts: z.number().nonnegative(),
+        residuals: z.array(
+          z
+            .object({
+              duration_seconds: z.number().int().positive(),
+              observed_watts: z.number().positive(),
+              predicted_watts: z.number(),
+              residual_watts: z.number(),
+            })
+            .strict(),
+        ),
+      })
+      .strict()
+      .nullable(),
+  })
+  .strict();
+export const cyclingThresholdEstimateOutputSchema = z
+  .object({
+    result: z
+      .object({
+        start_date: z.string(),
+        end_date: z.string(),
+        requested_method: cyclingThresholdMethodSchema,
+        result: cyclingThresholdEstimateResultSchema.nullable(),
+        unavailable_reason: nullableString,
+        weight: cyclingPowerCurveWeightSchema,
+      })
+      .strict(),
+  })
+  .strict();
+
 const activityDetailSchema = z.object({
   id: z.string(),
   canonical_type: z.string(),
@@ -859,6 +926,7 @@ export const trainingLoadOutputSchema = jsonResult(
 );
 
 export const mcpOutputSchemas = {
+  cyclingThresholdEstimate: cyclingThresholdEstimateOutputSchema,
   cyclingPowerCurve: cyclingPowerCurveOutputSchema,
   activityTimeseries: activityTimeseriesOutputSchema,
   activitySummary: activitySummaryOutputSchema,
