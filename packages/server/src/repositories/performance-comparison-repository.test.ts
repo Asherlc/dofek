@@ -255,6 +255,65 @@ describe("PerformanceComparisonRepository", () => {
     ).rejects.toThrow("explicit equivalence key");
   });
 
+  it.each([
+    {
+      label: "climb",
+      row: activityRow({
+        canonical_type: "climbing",
+        source_raw_evidence: [],
+        climb_identities: [
+          {
+            climbType: "boulder",
+            gradeSystem: "v_scale",
+            grade: "v6",
+            routeName: "blue arete",
+            locationName: "the gym",
+            lead: null,
+          },
+        ],
+      }),
+      expectedKind: "climb",
+      expectedMethod: "exact_climb_location_route_grade_identity",
+    },
+    {
+      label: "strength exercise",
+      row: activityRow({
+        canonical_type: "strength",
+        source_raw_evidence: [],
+        exercise_ids: [THIRD_ID],
+      }),
+      expectedKind: "strength_exercise_id",
+      expectedMethod: "exact_normalized_strength_exercise_identity",
+    },
+  ])(
+    "derives a single exact $label identity from the reference",
+    async ({ row, expectedKind, expectedMethod }) => {
+      const result = await new PerformanceComparisonRepository(
+        database(row, [row]),
+        { query: vi.fn().mockResolvedValue([]) },
+        USER_ID,
+        "UTC",
+      ).compare({
+        startDate: "2026-06-01",
+        endDate: "2026-07-31",
+        referenceActivityId: FIRST_ID,
+        equivalence: null,
+        providers: [],
+        modalities: [],
+        cursor: null,
+        limit: 10,
+      });
+
+      expect(result).toMatchSnapshot();
+      expect(result.equivalence).toMatchObject({
+        basis: "derived_from_reference",
+        confidence: "high",
+        method: expectedMethod,
+        key: { kind: expectedKind },
+      });
+    },
+  );
+
   it("accepts an explicit Peloton class identity as high-confidence provider evidence", async () => {
     const row = activityRow();
     const unmatchedEvidence = activityRow({
@@ -370,9 +429,10 @@ describe("PerformanceComparisonRepository", () => {
           },
         ],
       });
+      const db = database(row, [row]);
 
       const result = await new PerformanceComparisonRepository(
-        database(row, [row]),
+        db,
         { query: vi.fn().mockResolvedValue([]) },
         USER_ID,
         "UTC",
@@ -388,6 +448,7 @@ describe("PerformanceComparisonRepository", () => {
       });
 
       expect(result).toMatchSnapshot();
+      expect(db.execute.mock.calls.map(([query]) => queryText(query))).toMatchSnapshot();
       expect(result.equivalence).toMatchObject({
         basis: "explicit",
         method: expectedMethod,

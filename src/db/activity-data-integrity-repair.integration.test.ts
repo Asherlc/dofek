@@ -286,6 +286,13 @@ async function seedProductionDbtFixture(
       recorded_date Date,
       channel String,
       scalar Nullable(Float64),
+      provider_id Nullable(String),
+      member_activity_id Nullable(UUID),
+      device_id Nullable(String),
+      source_external_id Nullable(String),
+      source_type Nullable(String),
+      source_metric_stream_id Nullable(UUID),
+      measurement_kind LowCardinality(String),
       refresh_version UInt64,
       is_deleted UInt8,
       refreshed_at DateTime64(9, 'UTC')
@@ -311,7 +318,9 @@ async function seedProductionDbtFixture(
     `INSERT INTO ${database}.deduped_sensor VALUES
       (
         '${TEST_USER_ID}', toDateTime64('2026-09-01 15:10:00', 6, 'UTC'),
-        toDate('2026-09-01'), 'heart_rate', 150, 1, 0,
+        toDate('2026-09-01'), 'heart_rate', 150, 'wahoo', '${wahooActivityId}',
+        NULL, 'heart-rate-1', 'activity', '10000000-0000-0000-0000-000000000001',
+        'direct', 1, 0,
         toDateTime64('2026-09-02 17:00:00', 9, 'UTC')
       )`,
     `INSERT INTO ${database}.activity VALUES

@@ -432,6 +432,7 @@ describe("FingerLoadingProgressionRepository", () => {
     expect(text).toContain("entry.exercise::text IN");
     expect(JSON.stringify(query)).toContain("manual");
     expect(JSON.stringify(query)).toContain("max_hang");
+    expect(database.execute.mock.calls.map((call) => collectSqlText(call[0]))).toMatchSnapshot();
   });
 
   it("continues combined exposure streaks across climbing-only and finger-loading days", async () => {

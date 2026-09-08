@@ -25760,6 +25760,14 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   reported 27 occurrences of domain terms and two awkward test descriptions.
   Mutation shards also reported inadequate behavioral coverage in newly added
   analytical repositories.
+- **Additional evidence / root causes:**
+  [Run 34258374636](https://github.com/Asherlc/dofek/actions/runs/34258374636)
+  exposed two schema-ordering defects after the static gates passed. The
+  activity sensor integration fixtures still modeled the pre-provenance
+  `deduped_sensor` schema, so dbt failed first with `Identifier
+  'samples.provider_id' cannot be resolved`. A fresh E2E migration ran before
+  dbt had created `analytics.activity_power_curve`, so migration 0077 failed
+  first with `Could not find table: activity_power_curve`.
 - **Direct fixes:** Align the three Expo packages with the SDK compatibility map;
   move the shared performance-equivalence contract into a dependency-neutral
   type module; add the legitimate domain terms to the project dictionary and
@@ -25768,12 +25776,18 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   threshold selection, duplicate consolidation, suspicious strength sets, and
   bounded provenance. Cover MCP stream selection, scope enforcement, analytics
   store requirements, dependency construction, default streams, and filter
-  forwarding for the aligned recovery/training endpoint.
+  forwarding for the aligned recovery/training endpoint. Bring both executable
+  ClickHouse fixtures up to the current deduplicated sensor provenance schema,
+  and make migration 0077 introspect and alter the dbt-owned read model only
+  when that table already exists.
 - **Validation / follow-up:** Expo dependency validation, Dependency Cruiser,
   CSpell, root typecheck, the 9,223-test changed unit/mobile suite, and the full
-  local lint gate pass. Focused mutation runs now pass for cycling metrics and
-  performance-comparison modality metrics; the complete replacement CI run
-  remains the merge gate. One otherwise-passing shard in run 34249990223 failed
+  local lint gate pass. Focused mutation runs now pass for cycling metrics,
+  performance comparison, climbing progression, finger loading, and
+  performance-comparison modality metrics. The focused ClickHouse join test and
+  the production-dbt-path integrity repair integration suite pass with the
+  current provenance fixture. The complete replacement CI run remains the
+  merge gate. One otherwise-passing shard in run 34249990223 failed
   while finalizing its artifact with GitHub's `403 Forbidden`, so a clean
   replacement run is required to distinguish transient artifact infrastructure
   from code failures. The mutation threshold and production-module scope remain

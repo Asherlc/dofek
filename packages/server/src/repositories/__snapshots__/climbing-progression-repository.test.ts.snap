@@ -1,5 +1,13 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`ClimbingProgressionRepository > adds exact range and optional filters to the canonical activity query 1`] = `
+[
+  "[{"value":["SELECT\\n            a.id::text AS activity_id,\\n            a.name AS activity_name,\\n            a.started_at::text AS activity_started_at,\\n            a.ended_at::text AS activity_ended_at,\\n            ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["CASE\\n      WHEN a.local_time_source IN (\\n        'provider_timezone', 'device_timezone', 'user_home_timezone',\\n        'gps_timezone', 'home_zone_fallback'\\n      ) AND a.timezone IS NOT NULL\\n        THEN (a.started_at AT TIME ZONE a.timezone)::date\\n      WHEN a.local_time_source IN ('provider_offset', 'device_offset')\\n        AND a.start_utc_offset_minutes IS NOT NULL\\n        THEN ((a.started_at AT TIME ZONE 'UTC')\\n          + a.start_utc_offset_minutes * INTERVAL '1 minute')::date\\n      ELSE (a.started_at AT TIME ZONE "]},"America/Los_Angeles",{"value":[")::date\\n    END"]}]},{"value":[")::text AS session_date,\\n            a.source_providers,\\n            a.source_external_ids,\\n            a.member_activity_ids,\\n            a.timezone,\\n            a.start_utc_offset_minutes,\\n            a.end_utc_offset_minutes,\\n            a.local_time_source,\\n            ce.id::text AS entry_id,\\n            ce.activity_id::text AS entry_activity_id,\\n            source_activity.provider_id AS entry_provider,\\n            ce.external_id,\\n            ce.climb_type,\\n            ce.grade_system,\\n            ce.grade,\\n            CASE WHEN detail.attempt_count > 0 THEN detail.sent ELSE ce.sent END AS sent,\\n            CASE WHEN detail.attempt_count > 0 THEN detail.attempt_count ELSE ce.attempt_count END AS attempt_count,\\n            COALESCE(detail.attempts, '[]'::jsonb) AS attempts,\\n            ce.raw->>'ascentType' AS ascent_type,\\n            ce.lead,\\n            ce.wall_angle_degrees,\\n            ce.hold_type,\\n            ce.route_name,\\n            ce.location_name,\\n            ce.source_name\\n          FROM fitness.v_activity AS a\\n          LEFT JOIN fitness.climbing_entry AS ce ON ce.activity_id = ANY(a.member_activity_ids)\\n          LEFT JOIN fitness.activity AS source_activity ON source_activity.id = ce.activity_id\\n          LEFT JOIN LATERAL (\\n            SELECT\\n              COUNT(*)::int AS attempt_count,\\n              BOOL_OR(attempt.outcome = 'sent') AS sent,\\n              jsonb_agg(jsonb_build_object(\\n                'attemptIndex', attempt.attempt_index,\\n                'failureReason', attempt.failure_reason,\\n                'notes', attempt.notes,\\n                'outcome', attempt.outcome\\n              ) ORDER BY attempt.attempt_index) AS attempts\\n            FROM fitness.climbing_attempt AS attempt\\n            WHERE attempt.climbing_entry_id = ce.id\\n          ) AS detail ON true\\n          WHERE a.user_id = "]},"00000000-0000-4000-8000-000000000002",{"value":["::uuid\\n            AND a.canonical_type = 'climbing'\\n            AND "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["CASE\\n      WHEN a.local_time_source IN (\\n        'provider_timezone', 'device_timezone', 'user_home_timezone',\\n        'gps_timezone', 'home_zone_fallback'\\n      ) AND a.timezone IS NOT NULL\\n        THEN (a.started_at AT TIME ZONE a.timezone)::date\\n      WHEN a.local_time_source IN ('provider_offset', 'device_offset')\\n        AND a.start_utc_offset_minutes IS NOT NULL\\n        THEN ((a.started_at AT TIME ZONE 'UTC')\\n          + a.start_utc_offset_minutes * INTERVAL '1 minute')::date\\n      ELSE (a.started_at AT TIME ZONE "]},"America/Los_Angeles",{"value":[")::date\\n    END"]}]},{"value":[" BETWEEN "]},"2026-06-04",{"value":["::date AND "]},"2026-07-31",{"value":["::date\\n            AND "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["(\\n            source_activity.provider_id IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"kaya",{"value":[""]}]}]},{"value":[")\\n            OR a.source_providers && ARRAY["]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"kaya",{"value":[""]}]}]},{"value":["]::text[]\\n          )"]}]},{"value":["\\n            AND ("]},false,{"value":[" OR ce.id IS NOT NULL)\\n            AND "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["(\\n            CASE\\n              WHEN ce.climb_type = 'boulder' THEN 'boulder'\\n              WHEN ce.lead = true THEN 'lead'\\n              WHEN ce.lead = false THEN 'top_rope'\\n              ELSE 'route'\\n            END IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"boulder",{"value":[""]}]}]},{"value":[")\\n          )"]}]},{"value":["\\n            AND "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["ce.location_name IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"Pacific Pipe",{"value":[""]}]}]},{"value":[")"]}]},{"value":["\\n            AND "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["ce.grade_system::text IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"v_scale",{"value":[""]}]}]},{"value":[")"]}]},{"value":["\\n          ORDER BY a.started_at DESC, a.id, ce.id"]}]",
+  "[{"value":["SELECT MIN("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["CASE\\n      WHEN a.local_time_source IN (\\n        'provider_timezone', 'device_timezone', 'user_home_timezone',\\n        'gps_timezone', 'home_zone_fallback'\\n      ) AND a.timezone IS NOT NULL\\n        THEN (a.started_at AT TIME ZONE a.timezone)::date\\n      WHEN a.local_time_source IN ('provider_offset', 'device_offset')\\n        AND a.start_utc_offset_minutes IS NOT NULL\\n        THEN ((a.started_at AT TIME ZONE 'UTC')\\n          + a.start_utc_offset_minutes * INTERVAL '1 minute')::date\\n      ELSE (a.started_at AT TIME ZONE "]},"America/Los_Angeles",{"value":[")::date\\n    END"]}]},{"value":[")::text AS first_observed_date\\n          FROM fitness.v_activity AS a\\n          LEFT JOIN fitness.climbing_entry AS ce ON ce.activity_id = ANY(a.member_activity_ids)\\n          LEFT JOIN fitness.activity AS source_activity ON source_activity.id = ce.activity_id\\n          WHERE a.user_id = "]},"00000000-0000-4000-8000-000000000002",{"value":["::uuid\\n            AND a.canonical_type = 'climbing'\\n            AND "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["(\\n            source_activity.provider_id IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"kaya",{"value":[""]}]}]},{"value":[")\\n            OR a.source_providers && ARRAY["]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"kaya",{"value":[""]}]}]},{"value":["]::text[]\\n          )"]}]},{"value":["\\n            AND ("]},false,{"value":[" OR ce.id IS NOT NULL)\\n            AND "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["(\\n            CASE\\n              WHEN ce.climb_type = 'boulder' THEN 'boulder'\\n              WHEN ce.lead = true THEN 'lead'\\n              WHEN ce.lead = false THEN 'top_rope'\\n              ELSE 'route'\\n            END IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"boulder",{"value":[""]}]}]},{"value":[")\\n          )"]}]},{"value":["\\n            AND "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["ce.location_name IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"Pacific Pipe",{"value":[""]}]}]},{"value":[")"]}]},{"value":["\\n            AND "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["ce.grade_system::text IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"v_scale",{"value":[""]}]}]},{"value":[")"]}]},{"value":[""]}]",
+  "[{"value":["WITH climbing_dates AS (\\n            SELECT DISTINCT "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["CASE\\n      WHEN a.local_time_source IN (\\n        'provider_timezone', 'device_timezone', 'user_home_timezone',\\n        'gps_timezone', 'home_zone_fallback'\\n      ) AND a.timezone IS NOT NULL\\n        THEN (a.started_at AT TIME ZONE a.timezone)::date\\n      WHEN a.local_time_source IN ('provider_offset', 'device_offset')\\n        AND a.start_utc_offset_minutes IS NOT NULL\\n        THEN ((a.started_at AT TIME ZONE 'UTC')\\n          + a.start_utc_offset_minutes * INTERVAL '1 minute')::date\\n      ELSE (a.started_at AT TIME ZONE "]},"America/Los_Angeles",{"value":[")::date\\n    END"]}]},{"value":[" AS date\\n            FROM fitness.v_activity AS a\\n            LEFT JOIN fitness.climbing_entry AS ce ON ce.activity_id = ANY(a.member_activity_ids)\\n            LEFT JOIN fitness.activity AS source_activity ON source_activity.id = ce.activity_id\\n            WHERE a.user_id = "]},"00000000-0000-4000-8000-000000000002",{"value":["::uuid\\n              AND a.canonical_type = 'climbing'\\n              AND "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["CASE\\n      WHEN a.local_time_source IN (\\n        'provider_timezone', 'device_timezone', 'user_home_timezone',\\n        'gps_timezone', 'home_zone_fallback'\\n      ) AND a.timezone IS NOT NULL\\n        THEN (a.started_at AT TIME ZONE a.timezone)::date\\n      WHEN a.local_time_source IN ('provider_offset', 'device_offset')\\n        AND a.start_utc_offset_minutes IS NOT NULL\\n        THEN ((a.started_at AT TIME ZONE 'UTC')\\n          + a.start_utc_offset_minutes * INTERVAL '1 minute')::date\\n      ELSE (a.started_at AT TIME ZONE "]},"America/Los_Angeles",{"value":[")::date\\n    END"]}]},{"value":[" < "]},"2026-07-01",{"value":["::date\\n              AND "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["(\\n            source_activity.provider_id IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"kaya",{"value":[""]}]}]},{"value":[")\\n            OR a.source_providers && ARRAY["]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"kaya",{"value":[""]}]}]},{"value":["]::text[]\\n          )"]}]},{"value":["\\n              AND ("]},false,{"value":[" OR ce.id IS NOT NULL)\\n              AND "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["(\\n            CASE\\n              WHEN ce.climb_type = 'boulder' THEN 'boulder'\\n              WHEN ce.lead = true THEN 'lead'\\n              WHEN ce.lead = false THEN 'top_rope'\\n              ELSE 'route'\\n            END IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"boulder",{"value":[""]}]}]},{"value":[")\\n          )"]}]},{"value":["\\n              AND "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["ce.location_name IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"Pacific Pipe",{"value":[""]}]}]},{"value":[")"]}]},{"value":["\\n              AND "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["ce.grade_system::text IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"v_scale",{"value":[""]}]}]},{"value":[")"]}]},{"value":["\\n          ), numbered AS (\\n            SELECT date, ROW_NUMBER() OVER (ORDER BY date DESC) AS position\\n            FROM climbing_dates\\n          )\\n          SELECT COUNT(*)::int AS preceding_consecutive_days\\n          FROM numbered\\n          WHERE date = "]},"2026-07-01",{"value":["::date - position::int"]}]",
+]
+`;
+
 exports[`ClimbingProgressionRepository > calculates date-aligned exposure, partial attempts, grade trends, and hardest ascents 1`] = `
 {
   "below_range_hardest_send": {
@@ -13,7 +21,7 @@ exports[`ClimbingProgressionRepository > calculates date-aligned exposure, parti
     "entries": 3,
     "entries_excluded_from_aggregates": 0,
     "entries_with_attempts": 2,
-    "entries_with_observed_outcome": 2,
+    "entries_with_observed_outcome": 3,
     "first_observed_date": "2026-07-10",
     "merged_exact_duplicate_records": 0,
     "possible_duplicate_groups": 0,
@@ -46,11 +54,11 @@ exports[`ClimbingProgressionRepository > calculates date-aligned exposure, parti
       "exposure_status": "observed",
       "failed_entries": 0,
       "is_rest_day": false,
-      "observed_outcomes": 1,
+      "observed_outcomes": 2,
       "rolling_28d_exposure_days": 1,
       "rolling_7d_exposure_days": 1,
       "send_rate": 1,
-      "sends": 1,
+      "sends": 2,
       "sessions": 1,
     },
     {
@@ -118,15 +126,15 @@ exports[`ClimbingProgressionRepository > calculates date-aligned exposure, parti
       "discipline": "boulder",
       "entries": 1,
       "entries_with_attempts": 0,
-      "failed_entries": null,
+      "failed_entries": 0,
       "grade": "V6",
       "grade_sort_value": 72,
       "grade_system": "v_scale",
       "normalized_grade": "V6",
       "normalized_grade_system": "v_scale",
-      "observed_outcomes": 0,
-      "send_rate": null,
-      "sends": null,
+      "observed_outcomes": 1,
+      "send_rate": 1,
+      "sends": 1,
     },
     {
       "attempts": 5,
@@ -151,11 +159,11 @@ exports[`ClimbingProgressionRepository > calculates date-aligned exposure, parti
       "activity_id": "00000000-0000-4000-8000-000000000001",
       "date": "2026-07-10",
       "discipline": "boulder",
-      "entry_id": "00000000-0000-4000-8000-000000000101",
-      "grade": "V5",
-      "grade_sort_value": 69,
+      "entry_id": "00000000-0000-4000-8000-000000000102",
+      "grade": "V6",
+      "grade_sort_value": 72,
       "grade_system": "v_scale",
-      "normalized_grade": "V5",
+      "normalized_grade": "V6",
       "normalized_grade_system": "v_scale",
       "source_providers": [
         "kaya",
@@ -191,7 +199,20 @@ exports[`ClimbingProgressionRepository > calculates date-aligned exposure, parti
         "kaya",
       ],
     },
-    "onsight": null,
+    "onsight": {
+      "activity_id": "00000000-0000-4000-8000-000000000001",
+      "ascent_type": "Onsight",
+      "date": "2026-07-10",
+      "discipline": "boulder",
+      "entry_id": "00000000-0000-4000-8000-000000000102",
+      "grade": "V6",
+      "grade_system": "v_scale",
+      "normalized_grade": "V6",
+      "normalized_grade_system": "v_scale",
+      "source_providers": [
+        "kaya",
+      ],
+    },
     "send": {
       "activity_id": "00000000-0000-4000-8000-000000000002",
       "ascent_type": "Redpoint",
@@ -881,6 +902,381 @@ exports[`ClimbingProgressionRepository > does not calculate attempts per send fr
 }
 `;
 
+exports[`ClimbingProgressionRepository > does not merge entries that differ by hold type and merges stable same-provider identities 1`] = `
+{
+  "below_range_hardest_send": {
+    "attempts": null,
+    "entries": 0,
+    "metric_name": "volume_below_range_hardest_send",
+    "status": "unavailable",
+  },
+  "coverage": {
+    "attempt_data": "unavailable",
+    "entries": 2,
+    "entries_excluded_from_aggregates": 2,
+    "entries_with_attempts": 0,
+    "entries_with_observed_outcome": 0,
+    "first_observed_date": "2026-07-10",
+    "merged_exact_duplicate_records": 0,
+    "possible_duplicate_groups": 1,
+    "sessions": 1,
+    "timezone_assumed_sessions": 0,
+  },
+  "daily": [
+    {
+      "attempts": null,
+      "attempts_status": "unavailable",
+      "consecutive_climbing_days": 1,
+      "date": "2026-07-10",
+      "entries": 2,
+      "exposure_status": "observed",
+      "failed_entries": null,
+      "is_rest_day": false,
+      "observed_outcomes": 0,
+      "rolling_28d_exposure_days": 1,
+      "rolling_7d_exposure_days": 1,
+      "send_rate": null,
+      "sends": null,
+      "sessions": 1,
+    },
+  ],
+  "definitions": {
+    "attempts": "Attempt totals use detailed attempt rows when present, otherwise the source aggregate; missing source attempts remain null.",
+    "duplicate_handling": "Canonical activity groups count once. Exact matching entries from different member activities/providers are consolidated; conflicting identity matches remain in session detail, are flagged, and are excluded from aggregates.",
+    "rolling_exposure": "Count of calendar days containing at least one canonical climbing session in the trailing 7 or 28 days, inclusive.",
+    "send_rate": "Observed sends divided by entries with an observed sent/failed outcome.",
+    "volume_below_range_hardest_send": "Known attempts on entries graded below the hardest observed send in this requested range; this is a descriptive relative-volume measure, not physiological intensity.",
+  },
+  "grade_distribution": [],
+  "grade_progression": [],
+  "hardest": {
+    "flash": null,
+    "onsight": null,
+    "send": null,
+  },
+  "pagination": {
+    "has_more": false,
+    "limit": 100,
+    "next_cursor": null,
+  },
+  "range": {
+    "end_date": "2026-07-10",
+    "start_date": "2026-07-10",
+    "timezone": "UTC",
+  },
+  "sessions": [
+    {
+      "activity_id": "00000000-0000-4000-8000-000000000001",
+      "climbs": [
+        {
+          "ascent_type": "Redpoint",
+          "attempt_count": 3,
+          "attempts": [],
+          "climb_type": "boulder",
+          "discipline": "boulder",
+          "external_id": "problem-1",
+          "grade": "V5",
+          "grade_system": "v_scale",
+          "hold_type": null,
+          "id": "00000000-0000-4000-8000-000000000101",
+          "lead": null,
+          "location_name": "Pacific Pipe",
+          "normalized_grade": "V5",
+          "normalized_grade_system": "v_scale",
+          "provenance": {
+            "merged_duplicate": false,
+            "source_activity_ids": [
+              "00000000-0000-4000-8000-000000000011",
+            ],
+            "source_entry_ids": [
+              "00000000-0000-4000-8000-000000000101",
+            ],
+            "source_external_entry_ids": [
+              {
+                "external_id": "problem-1",
+                "provider": "kaya",
+              },
+            ],
+            "source_names": [
+              "Kaya",
+            ],
+            "source_providers": [
+              "kaya",
+            ],
+            "value_kind": "measured",
+          },
+          "route_name": "Blue Arete",
+          "sent": true,
+          "wall_angle_degrees": 30,
+        },
+        {
+          "ascent_type": "Redpoint",
+          "attempt_count": 3,
+          "attempts": [],
+          "climb_type": "boulder",
+          "discipline": "boulder",
+          "external_id": "problem-1",
+          "grade": "V6",
+          "grade_system": "v_scale",
+          "hold_type": "crimp",
+          "id": "00000000-0000-4000-8000-000000000102",
+          "lead": null,
+          "location_name": "Pacific Pipe",
+          "normalized_grade": "V6",
+          "normalized_grade_system": "v_scale",
+          "provenance": {
+            "merged_duplicate": false,
+            "source_activity_ids": [
+              "00000000-0000-4000-8000-000000000012",
+            ],
+            "source_entry_ids": [
+              "00000000-0000-4000-8000-000000000102",
+            ],
+            "source_external_entry_ids": [
+              {
+                "external_id": "problem-1",
+                "provider": "kaya",
+              },
+            ],
+            "source_names": [
+              "Kaya",
+            ],
+            "source_providers": [
+              "kaya",
+            ],
+            "value_kind": "measured",
+          },
+          "route_name": "Blue Arete",
+          "sent": true,
+          "wall_angle_degrees": 30,
+        },
+      ],
+      "date": "2026-07-10",
+      "duration_minutes": 120,
+      "member_activity_ids": [
+        "00000000-0000-4000-8000-000000000011",
+      ],
+      "name": "Evening climbing",
+      "quality_flags": [
+        "possible_overlapping_climbing_entries",
+      ],
+      "source_external_ids": [
+        {
+          "externalId": "session-1",
+          "memberActivityId": "00000000-0000-4000-8000-000000000011",
+          "providerId": "kaya",
+          "subsource": "Kaya",
+        },
+      ],
+      "source_providers": [
+        "kaya",
+      ],
+      "started_at": "2026-07-10T18:00:00.000Z",
+      "timezone": {
+        "analysis_timezone": "UTC",
+        "assumed": false,
+        "end_utc_offset_minutes": -420,
+        "local_time_source": "provider_timezone",
+        "start_utc_offset_minutes": -420,
+        "value": "America/Los_Angeles",
+      },
+    },
+  ],
+}
+`;
+
+exports[`ClimbingProgressionRepository > does not merge entries that differ by hold type and merges stable same-provider identities 2`] = `
+{
+  "below_range_hardest_send": {
+    "attempts": null,
+    "entries": 0,
+    "metric_name": "volume_below_range_hardest_send",
+    "status": "unavailable",
+  },
+  "coverage": {
+    "attempt_data": "complete",
+    "entries": 1,
+    "entries_excluded_from_aggregates": 0,
+    "entries_with_attempts": 1,
+    "entries_with_observed_outcome": 1,
+    "first_observed_date": "2026-07-10",
+    "merged_exact_duplicate_records": 1,
+    "possible_duplicate_groups": 0,
+    "sessions": 1,
+    "timezone_assumed_sessions": 0,
+  },
+  "daily": [
+    {
+      "attempts": 3,
+      "attempts_status": "complete",
+      "consecutive_climbing_days": 1,
+      "date": "2026-07-10",
+      "entries": 1,
+      "exposure_status": "observed",
+      "failed_entries": 0,
+      "is_rest_day": false,
+      "observed_outcomes": 1,
+      "rolling_28d_exposure_days": 1,
+      "rolling_7d_exposure_days": 1,
+      "send_rate": 1,
+      "sends": 1,
+      "sessions": 1,
+    },
+  ],
+  "definitions": {
+    "attempts": "Attempt totals use detailed attempt rows when present, otherwise the source aggregate; missing source attempts remain null.",
+    "duplicate_handling": "Canonical activity groups count once. Exact matching entries from different member activities/providers are consolidated; conflicting identity matches remain in session detail, are flagged, and are excluded from aggregates.",
+    "rolling_exposure": "Count of calendar days containing at least one canonical climbing session in the trailing 7 or 28 days, inclusive.",
+    "send_rate": "Observed sends divided by entries with an observed sent/failed outcome.",
+    "volume_below_range_hardest_send": "Known attempts on entries graded below the hardest observed send in this requested range; this is a descriptive relative-volume measure, not physiological intensity.",
+  },
+  "grade_distribution": [
+    {
+      "attempts": 3,
+      "attempts_per_send": 3,
+      "attempts_status": "complete",
+      "discipline": "boulder",
+      "entries": 1,
+      "entries_with_attempts": 1,
+      "failed_entries": 0,
+      "grade": "V5",
+      "grade_sort_value": 69,
+      "grade_system": "v_scale",
+      "normalized_grade": "V5",
+      "normalized_grade_system": "v_scale",
+      "observed_outcomes": 1,
+      "send_rate": 1,
+      "sends": 1,
+    },
+  ],
+  "grade_progression": [
+    {
+      "activity_id": "00000000-0000-4000-8000-000000000001",
+      "date": "2026-07-10",
+      "discipline": "boulder",
+      "entry_id": "00000000-0000-4000-8000-000000000101",
+      "grade": "V5",
+      "grade_sort_value": 69,
+      "grade_system": "v_scale",
+      "normalized_grade": "V5",
+      "normalized_grade_system": "v_scale",
+      "source_providers": [
+        "kaya",
+      ],
+    },
+  ],
+  "hardest": {
+    "flash": null,
+    "onsight": null,
+    "send": {
+      "activity_id": "00000000-0000-4000-8000-000000000001",
+      "ascent_type": "Redpoint",
+      "date": "2026-07-10",
+      "discipline": "boulder",
+      "entry_id": "00000000-0000-4000-8000-000000000101",
+      "grade": "V5",
+      "grade_system": "v_scale",
+      "normalized_grade": "V5",
+      "normalized_grade_system": "v_scale",
+      "source_providers": [
+        "kaya",
+      ],
+    },
+  },
+  "pagination": {
+    "has_more": false,
+    "limit": 100,
+    "next_cursor": null,
+  },
+  "range": {
+    "end_date": "2026-07-10",
+    "start_date": "2026-07-10",
+    "timezone": "UTC",
+  },
+  "sessions": [
+    {
+      "activity_id": "00000000-0000-4000-8000-000000000001",
+      "climbs": [
+        {
+          "ascent_type": "Redpoint",
+          "attempt_count": 3,
+          "attempts": [],
+          "climb_type": "boulder",
+          "discipline": "boulder",
+          "external_id": "problem-1",
+          "grade": "V5",
+          "grade_system": "v_scale",
+          "hold_type": null,
+          "id": "00000000-0000-4000-8000-000000000101",
+          "lead": null,
+          "location_name": "Pacific Pipe",
+          "normalized_grade": "V5",
+          "normalized_grade_system": "v_scale",
+          "provenance": {
+            "merged_duplicate": true,
+            "source_activity_ids": [
+              "00000000-0000-4000-8000-000000000011",
+              "00000000-0000-4000-8000-000000000013",
+            ],
+            "source_entry_ids": [
+              "00000000-0000-4000-8000-000000000101",
+              "00000000-0000-4000-8000-000000000103",
+            ],
+            "source_external_entry_ids": [
+              {
+                "external_id": "problem-1",
+                "provider": "kaya",
+              },
+              {
+                "external_id": "problem-1",
+                "provider": "kaya",
+              },
+            ],
+            "source_names": [
+              "Kaya",
+            ],
+            "source_providers": [
+              "kaya",
+            ],
+            "value_kind": "measured",
+          },
+          "route_name": "Blue Arete",
+          "sent": true,
+          "wall_angle_degrees": 30,
+        },
+      ],
+      "date": "2026-07-10",
+      "duration_minutes": 120,
+      "member_activity_ids": [
+        "00000000-0000-4000-8000-000000000011",
+      ],
+      "name": "Evening climbing",
+      "quality_flags": [],
+      "source_external_ids": [
+        {
+          "externalId": "session-1",
+          "memberActivityId": "00000000-0000-4000-8000-000000000011",
+          "providerId": "kaya",
+          "subsource": "Kaya",
+        },
+      ],
+      "source_providers": [
+        "kaya",
+      ],
+      "started_at": "2026-07-10T18:00:00.000Z",
+      "timezone": {
+        "analysis_timezone": "UTC",
+        "assumed": false,
+        "end_utc_offset_minutes": -420,
+        "local_time_source": "provider_timezone",
+        "start_utc_offset_minutes": -420,
+        "value": "America/Los_Angeles",
+      },
+    },
+  ],
+}
+`;
+
 exports[`ClimbingProgressionRepository > flags identity overlaps with conflicting observations without silently merging them 1`] = `
 {
   "below_range_hardest_send": {
@@ -1279,7 +1675,7 @@ exports[`ClimbingProgressionRepository > preserves unknown attempts and outcomes
     "merged_exact_duplicate_records": 0,
     "possible_duplicate_groups": 0,
     "sessions": 1,
-    "timezone_assumed_sessions": 0,
+    "timezone_assumed_sessions": 1,
   },
   "daily": [
     {
@@ -1393,7 +1789,9 @@ exports[`ClimbingProgressionRepository > preserves unknown attempts and outcomes
         "00000000-0000-4000-8000-000000000011",
       ],
       "name": "Evening climbing",
-      "quality_flags": [],
+      "quality_flags": [
+        "timezone_assumed_from_user_context",
+      ],
       "source_external_ids": [
         {
           "externalId": "session-1",
@@ -1408,6 +1806,192 @@ exports[`ClimbingProgressionRepository > preserves unknown attempts and outcomes
       "started_at": "2026-07-10T18:00:00.000Z",
       "timezone": {
         "analysis_timezone": "America/Los_Angeles",
+        "assumed": true,
+        "end_utc_offset_minutes": -420,
+        "local_time_source": "unknown",
+        "start_utc_offset_minutes": -420,
+        "value": null,
+      },
+    },
+  ],
+}
+`;
+
+exports[`ClimbingProgressionRepository > uses pre-range exposure for the first rolling window and consecutive-day streak 1`] = `
+{
+  "below_range_hardest_send": {
+    "attempts": null,
+    "entries": 0,
+    "metric_name": "volume_below_range_hardest_send",
+    "status": "unavailable",
+  },
+  "coverage": {
+    "attempt_data": "complete",
+    "entries": 1,
+    "entries_excluded_from_aggregates": 0,
+    "entries_with_attempts": 1,
+    "entries_with_observed_outcome": 1,
+    "first_observed_date": "2026-07-08",
+    "merged_exact_duplicate_records": 0,
+    "possible_duplicate_groups": 0,
+    "sessions": 1,
+    "timezone_assumed_sessions": 0,
+  },
+  "daily": [
+    {
+      "attempts": 3,
+      "attempts_status": "complete",
+      "consecutive_climbing_days": 3,
+      "date": "2026-07-10",
+      "entries": 1,
+      "exposure_status": "observed",
+      "failed_entries": 0,
+      "is_rest_day": false,
+      "observed_outcomes": 1,
+      "rolling_28d_exposure_days": 3,
+      "rolling_7d_exposure_days": 3,
+      "send_rate": 1,
+      "sends": 1,
+      "sessions": 1,
+    },
+  ],
+  "definitions": {
+    "attempts": "Attempt totals use detailed attempt rows when present, otherwise the source aggregate; missing source attempts remain null.",
+    "duplicate_handling": "Canonical activity groups count once. Exact matching entries from different member activities/providers are consolidated; conflicting identity matches remain in session detail, are flagged, and are excluded from aggregates.",
+    "rolling_exposure": "Count of calendar days containing at least one canonical climbing session in the trailing 7 or 28 days, inclusive.",
+    "send_rate": "Observed sends divided by entries with an observed sent/failed outcome.",
+    "volume_below_range_hardest_send": "Known attempts on entries graded below the hardest observed send in this requested range; this is a descriptive relative-volume measure, not physiological intensity.",
+  },
+  "grade_distribution": [
+    {
+      "attempts": 3,
+      "attempts_per_send": 3,
+      "attempts_status": "complete",
+      "discipline": "boulder",
+      "entries": 1,
+      "entries_with_attempts": 1,
+      "failed_entries": 0,
+      "grade": "V5",
+      "grade_sort_value": 69,
+      "grade_system": "v_scale",
+      "normalized_grade": "V5",
+      "normalized_grade_system": "v_scale",
+      "observed_outcomes": 1,
+      "send_rate": 1,
+      "sends": 1,
+    },
+  ],
+  "grade_progression": [
+    {
+      "activity_id": "00000000-0000-4000-8000-000000000001",
+      "date": "2026-07-10",
+      "discipline": "boulder",
+      "entry_id": "00000000-0000-4000-8000-000000000101",
+      "grade": "V5",
+      "grade_sort_value": 69,
+      "grade_system": "v_scale",
+      "normalized_grade": "V5",
+      "normalized_grade_system": "v_scale",
+      "source_providers": [
+        "kaya",
+      ],
+    },
+  ],
+  "hardest": {
+    "flash": null,
+    "onsight": null,
+    "send": {
+      "activity_id": "00000000-0000-4000-8000-000000000001",
+      "ascent_type": "Redpoint",
+      "date": "2026-07-10",
+      "discipline": "boulder",
+      "entry_id": "00000000-0000-4000-8000-000000000101",
+      "grade": "V5",
+      "grade_system": "v_scale",
+      "normalized_grade": "V5",
+      "normalized_grade_system": "v_scale",
+      "source_providers": [
+        "kaya",
+      ],
+    },
+  },
+  "pagination": {
+    "has_more": false,
+    "limit": 100,
+    "next_cursor": null,
+  },
+  "range": {
+    "end_date": "2026-07-10",
+    "start_date": "2026-07-10",
+    "timezone": "UTC",
+  },
+  "sessions": [
+    {
+      "activity_id": "00000000-0000-4000-8000-000000000001",
+      "climbs": [
+        {
+          "ascent_type": "Redpoint",
+          "attempt_count": 3,
+          "attempts": [],
+          "climb_type": "boulder",
+          "discipline": "boulder",
+          "external_id": "problem-1",
+          "grade": "V5",
+          "grade_system": "v_scale",
+          "hold_type": null,
+          "id": "00000000-0000-4000-8000-000000000101",
+          "lead": null,
+          "location_name": "Pacific Pipe",
+          "normalized_grade": "V5",
+          "normalized_grade_system": "v_scale",
+          "provenance": {
+            "merged_duplicate": false,
+            "source_activity_ids": [
+              "00000000-0000-4000-8000-000000000011",
+            ],
+            "source_entry_ids": [
+              "00000000-0000-4000-8000-000000000101",
+            ],
+            "source_external_entry_ids": [
+              {
+                "external_id": "problem-1",
+                "provider": "kaya",
+              },
+            ],
+            "source_names": [
+              "Kaya",
+            ],
+            "source_providers": [
+              "kaya",
+            ],
+            "value_kind": "measured",
+          },
+          "route_name": "Blue Arete",
+          "sent": true,
+          "wall_angle_degrees": 30,
+        },
+      ],
+      "date": "2026-07-10",
+      "duration_minutes": 120,
+      "member_activity_ids": [
+        "00000000-0000-4000-8000-000000000011",
+      ],
+      "name": "Evening climbing",
+      "quality_flags": [],
+      "source_external_ids": [
+        {
+          "externalId": "session-1",
+          "memberActivityId": "00000000-0000-4000-8000-000000000011",
+          "providerId": "kaya",
+          "subsource": "Kaya",
+        },
+      ],
+      "source_providers": [
+        "kaya",
+      ],
+      "started_at": "2026-07-10T18:00:00.000Z",
+      "timezone": {
+        "analysis_timezone": "UTC",
         "assumed": false,
         "end_utc_offset_minutes": -420,
         "local_time_source": "provider_timezone",

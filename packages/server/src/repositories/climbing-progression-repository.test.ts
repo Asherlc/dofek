@@ -69,7 +69,15 @@ const baseRow = {
 describe("ClimbingProgressionRepository", () => {
   it("preserves unknown attempts and outcomes rather than treating them as zero or failure", async () => {
     const repository = new ClimbingProgressionRepository(
-      executeDb([{ ...baseRow, attempt_count: null, sent: null }]),
+      executeDb([
+        {
+          ...baseRow,
+          attempt_count: null,
+          sent: null,
+          local_time_source: "unknown",
+          timezone: null,
+        },
+      ]),
       "00000000-0000-4000-8000-000000000002",
       "America/Los_Angeles",
     );
@@ -91,6 +99,7 @@ describe("ClimbingProgressionRepository", () => {
       entries_with_attempts: 0,
       entries_with_observed_outcome: 0,
       attempt_data: "unavailable",
+      timezone_assumed_sessions: 1,
     });
     expect(result.daily[0]).toMatchObject({
       attempts: null,
@@ -236,6 +245,7 @@ describe("ClimbingProgressionRepository", () => {
       cursor: null,
       limit: 100,
     });
+    expect(first).toMatchSnapshot();
     expect(first.coverage).toMatchObject({
       entries: 2,
       merged_exact_duplicate_records: 0,
@@ -264,6 +274,7 @@ describe("ClimbingProgressionRepository", () => {
       cursor: null,
       limit: 100,
     });
+    expect(stableDuplicate).toMatchSnapshot();
     expect(stableDuplicate.coverage).toMatchObject({
       entries: 1,
       merged_exact_duplicate_records: 1,
@@ -281,7 +292,7 @@ describe("ClimbingProgressionRepository", () => {
         route_name: "Red Roof",
         ascent_type: "Onsight",
         attempt_count: null,
-        sent: null,
+        sent: true,
       },
       {
         ...baseRow,
@@ -338,11 +349,11 @@ describe("ClimbingProgressionRepository", () => {
     ]);
     expect(result.hardest).toMatchObject({
       flash: { grade: "V5", normalized_grade: "V5" },
-      onsight: null,
+      onsight: { grade: "V6", normalized_grade: "V6" },
       send: { grade: "V7" },
     });
     expect(result.grade_progression).toEqual([
-      expect.objectContaining({ date: "2026-07-10", grade: "V5" }),
+      expect.objectContaining({ date: "2026-07-10", grade: "V6" }),
       expect.objectContaining({ date: "2026-07-12", grade: "V7" }),
     ]);
     expect(result.below_range_hardest_send).toMatchObject({
@@ -392,6 +403,7 @@ describe("ClimbingProgressionRepository", () => {
     expect(coverageQuery).toContain("kaya");
     expect(coverageQuery).toContain("Pacific Pipe");
     expect(coverageQuery).toContain("v_scale");
+    expect(db.execute.mock.calls.map(([query]) => queryText(query))).toMatchSnapshot();
   });
 
   it("distinguishes a rest-only range after climbing coverage began from unavailable coverage", async () => {
@@ -476,6 +488,7 @@ describe("ClimbingProgressionRepository", () => {
       limit: 100,
     });
 
+    expect(result).toMatchSnapshot();
     expect(result.daily).toEqual([
       expect.objectContaining({
         consecutive_climbing_days: 3,

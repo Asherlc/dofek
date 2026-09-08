@@ -1641,3 +1641,178 @@ exports[`FingerLoadingProgressionRepository > returns a separate finger-load cha
   },
 }
 `;
+
+exports[`FingerLoadingProgressionRepository > uses the activity's recorded offset for local dates and applies provider/protocol filters 1`] = `
+[
+  "SELECT
+            a.id::text AS activity_id,
+            a.name AS activity_name,
+            a.started_at::text AS activity_started_at,
+            a.ended_at::text AS activity_ended_at,
+            (CASE
+      WHEN a.local_time_source IN (
+        'provider_timezone', 'device_timezone', 'user_home_timezone',
+        'gps_timezone', 'home_zone_fallback'
+      ) AND a.timezone IS NOT NULL
+        THEN (a.started_at AT TIME ZONE a.timezone)::date
+      WHEN a.local_time_source IN ('provider_offset', 'device_offset')
+        AND a.start_utc_offset_minutes IS NOT NULL
+        THEN ((a.started_at AT TIME ZONE 'UTC')
+          + a.start_utc_offset_minutes * INTERVAL '1 minute')::date
+      ELSE (a.started_at AT TIME ZONE Europe/Helsinki)::date
+    END)::text AS session_date,
+            a.source_providers,
+            a.source_external_ids,
+            a.member_activity_ids,
+            a.timezone,
+            a.start_utc_offset_minutes,
+            a.end_utc_offset_minutes,
+            a.local_time_source,
+            entry.id::text AS entry_id,
+            entry.activity_id::text AS entry_activity_id,
+            source_activity.provider_id AS entry_provider,
+            entry.exercise,
+            entry.edge_size_mm,
+            entry.grip_position,
+            entry.external_load_kg,
+            entry.bodyweight_kg,
+            entry.laterality,
+            entry.set_count,
+            entry.hold_duration_seconds,
+            entry.rest_interval_seconds,
+            entry.rpe,
+            entry.notes
+          FROM fitness.v_activity AS a
+          JOIN fitness.finger_loading_entry AS entry
+            ON entry.activity_id = ANY(a.member_activity_ids)
+          JOIN fitness.activity AS source_activity ON source_activity.id = entry.activity_id
+          WHERE a.user_id = 00000000-0000-4000-8000-000000000001::uuid
+            AND CASE
+      WHEN a.local_time_source IN (
+        'provider_timezone', 'device_timezone', 'user_home_timezone',
+        'gps_timezone', 'home_zone_fallback'
+      ) AND a.timezone IS NOT NULL
+        THEN (a.started_at AT TIME ZONE a.timezone)::date
+      WHEN a.local_time_source IN ('provider_offset', 'device_offset')
+        AND a.start_utc_offset_minutes IS NOT NULL
+        THEN ((a.started_at AT TIME ZONE 'UTC')
+          + a.start_utc_offset_minutes * INTERVAL '1 minute')::date
+      ELSE (a.started_at AT TIME ZONE Europe/Helsinki)::date
+    END BETWEEN 2026-07-10::date AND 2026-07-11::date
+            AND (
+            source_activity.provider_id IN (manual)
+            OR a.source_providers && ARRAY[manual]::text[]
+          )
+            AND entry.exercise::text IN (max_hang)
+          ORDER BY a.started_at DESC, a.id, entry.created_at DESC, entry.id",
+  "SELECT MIN(CASE
+      WHEN a.local_time_source IN (
+        'provider_timezone', 'device_timezone', 'user_home_timezone',
+        'gps_timezone', 'home_zone_fallback'
+      ) AND a.timezone IS NOT NULL
+        THEN (a.started_at AT TIME ZONE a.timezone)::date
+      WHEN a.local_time_source IN ('provider_offset', 'device_offset')
+        AND a.start_utc_offset_minutes IS NOT NULL
+        THEN ((a.started_at AT TIME ZONE 'UTC')
+          + a.start_utc_offset_minutes * INTERVAL '1 minute')::date
+      ELSE (a.started_at AT TIME ZONE Europe/Helsinki)::date
+    END)::text AS first_observed_date
+          FROM fitness.v_activity AS a
+          JOIN fitness.finger_loading_entry AS entry
+            ON entry.activity_id = ANY(a.member_activity_ids)
+          JOIN fitness.activity AS source_activity ON source_activity.id = entry.activity_id
+          WHERE a.user_id = 00000000-0000-4000-8000-000000000001::uuid
+            AND (
+            source_activity.provider_id IN (manual)
+            OR a.source_providers && ARRAY[manual]::text[]
+          )
+            AND entry.exercise::text IN (max_hang)",
+  "WITH exposure_dates AS (
+            SELECT DISTINCT CASE
+      WHEN a.local_time_source IN (
+        'provider_timezone', 'device_timezone', 'user_home_timezone',
+        'gps_timezone', 'home_zone_fallback'
+      ) AND a.timezone IS NOT NULL
+        THEN (a.started_at AT TIME ZONE a.timezone)::date
+      WHEN a.local_time_source IN ('provider_offset', 'device_offset')
+        AND a.start_utc_offset_minutes IS NOT NULL
+        THEN ((a.started_at AT TIME ZONE 'UTC')
+          + a.start_utc_offset_minutes * INTERVAL '1 minute')::date
+      ELSE (a.started_at AT TIME ZONE Europe/Helsinki)::date
+    END AS date
+            FROM fitness.v_activity AS a
+            JOIN fitness.finger_loading_entry AS entry
+              ON entry.activity_id = ANY(a.member_activity_ids)
+            JOIN fitness.activity AS source_activity ON source_activity.id = entry.activity_id
+            WHERE a.user_id = 00000000-0000-4000-8000-000000000001::uuid
+              AND CASE
+      WHEN a.local_time_source IN (
+        'provider_timezone', 'device_timezone', 'user_home_timezone',
+        'gps_timezone', 'home_zone_fallback'
+      ) AND a.timezone IS NOT NULL
+        THEN (a.started_at AT TIME ZONE a.timezone)::date
+      WHEN a.local_time_source IN ('provider_offset', 'device_offset')
+        AND a.start_utc_offset_minutes IS NOT NULL
+        THEN ((a.started_at AT TIME ZONE 'UTC')
+          + a.start_utc_offset_minutes * INTERVAL '1 minute')::date
+      ELSE (a.started_at AT TIME ZONE Europe/Helsinki)::date
+    END < 2026-07-10::date
+              AND (
+            source_activity.provider_id IN (manual)
+            OR a.source_providers && ARRAY[manual]::text[]
+          )
+              AND entry.exercise::text IN (max_hang)
+          ), numbered AS (
+            SELECT date, ROW_NUMBER() OVER (ORDER BY date DESC) AS position
+            FROM exposure_dates
+          )
+          SELECT COUNT(*)::int AS preceding_consecutive_days
+          FROM numbered
+          WHERE date = 2026-07-10::date - position::int",
+  "SELECT DISTINCT (CASE
+      WHEN a.local_time_source IN (
+        'provider_timezone', 'device_timezone', 'user_home_timezone',
+        'gps_timezone', 'home_zone_fallback'
+      ) AND a.timezone IS NOT NULL
+        THEN (a.started_at AT TIME ZONE a.timezone)::date
+      WHEN a.local_time_source IN ('provider_offset', 'device_offset')
+        AND a.start_utc_offset_minutes IS NOT NULL
+        THEN ((a.started_at AT TIME ZONE 'UTC')
+          + a.start_utc_offset_minutes * INTERVAL '1 minute')::date
+      ELSE (a.started_at AT TIME ZONE Europe/Helsinki)::date
+    END)::text AS climbing_exposure_date
+          FROM fitness.v_activity AS a
+          WHERE a.user_id = 00000000-0000-4000-8000-000000000001::uuid
+            AND a.canonical_type = 'climbing'
+            AND CASE
+      WHEN a.local_time_source IN (
+        'provider_timezone', 'device_timezone', 'user_home_timezone',
+        'gps_timezone', 'home_zone_fallback'
+      ) AND a.timezone IS NOT NULL
+        THEN (a.started_at AT TIME ZONE a.timezone)::date
+      WHEN a.local_time_source IN ('provider_offset', 'device_offset')
+        AND a.start_utc_offset_minutes IS NOT NULL
+        THEN ((a.started_at AT TIME ZONE 'UTC')
+          + a.start_utc_offset_minutes * INTERVAL '1 minute')::date
+      ELSE (a.started_at AT TIME ZONE Europe/Helsinki)::date
+    END BETWEEN 2026-07-10::date AND 2026-07-11::date
+            AND a.source_providers && ARRAY[manual]::text[]
+          ORDER BY climbing_exposure_date",
+  "SELECT MIN(CASE
+      WHEN a.local_time_source IN (
+        'provider_timezone', 'device_timezone', 'user_home_timezone',
+        'gps_timezone', 'home_zone_fallback'
+      ) AND a.timezone IS NOT NULL
+        THEN (a.started_at AT TIME ZONE a.timezone)::date
+      WHEN a.local_time_source IN ('provider_offset', 'device_offset')
+        AND a.start_utc_offset_minutes IS NOT NULL
+        THEN ((a.started_at AT TIME ZONE 'UTC')
+          + a.start_utc_offset_minutes * INTERVAL '1 minute')::date
+      ELSE (a.started_at AT TIME ZONE Europe/Helsinki)::date
+    END)::text AS first_observed_climbing_date
+          FROM fitness.v_activity AS a
+          WHERE a.user_id = 00000000-0000-4000-8000-000000000001::uuid
+            AND a.canonical_type = 'climbing'
+            AND a.source_providers && ARRAY[manual]::text[]",
+]
+`;
