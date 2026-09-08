@@ -644,6 +644,53 @@ export const cyclingPowerCurveOutputSchema = z
   })
   .strict();
 
+const thresholdHistoryItemSchema = z
+  .object({
+    id: z.uuid(),
+    evidence_kind: z.enum(["configured", "provider_observation"]),
+    sport: z.string(),
+    threshold_type: z.string(),
+    value: z.number().positive(),
+    unit: z.string(),
+    observed_at: nullableString,
+    effective_at: nullableString,
+    provider: nullableString,
+    provider_record_id: nullableString,
+    value_kind: z.enum(["configured", "provider_recorded", "provider_estimated"]),
+    historical_validity: z.enum(["effective_dated", "observed_from_date"]),
+    raw_evidence_available: z.boolean(),
+    quality: z
+      .object({
+        status: z.enum(["high", "moderate", "limited"]),
+        reason: nullableString,
+      })
+      .strict(),
+  })
+  .strict();
+export const thresholdHistoryOutputSchema = z
+  .object({
+    result: z
+      .object({
+        start_date: z.string(),
+        end_date: z.string(),
+        items: z.array(thresholdHistoryItemSchema),
+        legacy_current: z
+          .object({
+            value: z.number().positive(),
+            unit: z.literal("watt"),
+            source: z.literal("user_profile.ftp"),
+            value_kind: z.literal("configured"),
+            historical_validity: z.literal("unknown"),
+            reason: z.string().min(1),
+          })
+          .strict()
+          .nullable(),
+        next_cursor: nullableString,
+      })
+      .strict(),
+  })
+  .strict();
+
 const activityDetailSchema = z.object({
   id: z.string(),
   canonical_type: z.string(),
@@ -826,4 +873,5 @@ export const mcpOutputSchemas = {
   searchActivities: searchActivitiesOutputSchema,
   sleepSummary: sleepSummaryOutputSchema,
   subjectiveTimeline: subjectiveTimelineOutputSchema,
+  thresholdHistory: thresholdHistoryOutputSchema,
 };

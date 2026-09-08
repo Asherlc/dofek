@@ -48,6 +48,7 @@ import { buildHealthSeries, type HealthTrendRow } from "./health-series-service.
 import { listProviderStatuses } from "./provider-status.ts";
 import { registerStrengthSessionsTool } from "./strength-sessions-tool.ts";
 import { registerSupplementsTool } from "./supplements-tool.ts";
+import { registerThresholdHistoryTool } from "./threshold-history-tool.ts";
 import { requireMcpScope } from "./token-repository.ts";
 import { mcpOutputSchemas } from "./tool-output.ts";
 import { jsonToolResult } from "./tool-result.ts";
@@ -497,6 +498,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
   registerTrainingLoadTool(server, context);
   registerCyclingPerformanceTool(server, context);
   registerCyclingPowerCurveTool(server, context);
+  registerThresholdHistoryTool(server, context);
   registerActivityStreamsTool(server, context);
   registerActivityTimeseriesTool(server, context);
   registerActivityDetailsTool(server, context);

@@ -15,6 +15,7 @@ import {
   healthTrendsOutputSchema,
   providersOutputSchema,
   searchActivitiesOutputSchema,
+  thresholdHistoryOutputSchema,
 } from "./tool-output.ts";
 import { createDofekMcpServer } from "./tools.ts";
 
@@ -30,6 +31,7 @@ const toolTestMocks = vi.hoisted(() => {
     climbingActivityEntries: vi.fn(),
     cyclingPerformanceListRange: vi.fn(),
     cyclingPowerCurveListRange: vi.fn(),
+    cyclingThresholdListHistory: vi.fn(),
     dailyMetricsList: vi.fn(),
     dailyMetricsListRange: vi.fn(),
     dataCoverageList: vi.fn(),
@@ -115,6 +117,12 @@ vi.mock("../repositories/cycling-performance-repository.ts", () => ({
 vi.mock("../repositories/cycling-power-curve-repository.ts", () => ({
   CyclingPowerCurveRepository: vi.fn(function vitestConstructor() {
     return { listRange: toolTestMocks.cyclingPowerCurveListRange };
+  }),
+}));
+
+vi.mock("../repositories/cycling-threshold-repository.ts", () => ({
+  CyclingThresholdRepository: vi.fn(function vitestConstructor() {
+    return { listHistory: toolTestMocks.cyclingThresholdListHistory };
   }),
 }));
 
@@ -533,6 +541,13 @@ describe("createMcpRouter", () => {
       activity_curve: [],
       next_cursor: null,
     });
+    toolTestMocks.cyclingThresholdListHistory.mockResolvedValue({
+      start_date: "2026-08-01",
+      end_date: "2026-09-01",
+      items: [],
+      legacy_current: null,
+      next_cursor: null,
+    });
     toolTestMocks.ensureProvidersRegistered.mockResolvedValue(undefined);
     toolTestMocks.foodDailyTotalsRange.mockResolvedValue([]);
     toolTestMocks.fingerLoadingActivity.mockResolvedValue([]);
@@ -784,6 +799,16 @@ describe("createMcpRouter", () => {
       required: ["start_date", "end_date"],
       type: "object",
     });
+    expect(findListedTool(tools, "get_threshold_history").inputSchema).toMatchObject({
+      properties: {
+        start_date: { format: "date", type: "string" },
+        end_date: { format: "date", type: "string" },
+        limit: { maximum: 500, minimum: 1, type: "integer" },
+        providers: { type: "array" },
+      },
+      required: ["start_date", "end_date"],
+      type: "object",
+    });
     expect(findListedTool(tools, "render_health_explorer").inputSchema).toMatchObject({
       properties: {
         end_date: { format: "date", type: "string" },
@@ -896,6 +921,7 @@ describe("createMcpRouter", () => {
       "get_training_load",
       "get_cycling_performance",
       "get_cycling_power_curve",
+      "get_threshold_history",
       "get_sleep_summary",
       "search_activities",
       "get_activity_details",
@@ -952,6 +978,10 @@ describe("createMcpRouter", () => {
       {
         name: "get_cycling_power_curve",
         path: ["result", "bests", "[]", "quality", "median_sample_interval_seconds"],
+      },
+      {
+        name: "get_threshold_history",
+        path: ["result", "items", "[]", "quality", "status"],
       },
       { name: "render_health_explorer", path: ["coverage", "by_metric"] },
       {
@@ -2047,6 +2077,61 @@ describe("createMcpRouter", () => {
       modalities: [],
       providers: [],
       includeActivityCurve: false,
+      cursor: null,
+      limit: 100,
+    });
+  });
+
+  it("returns provenance-rich threshold history through MCP transport", async () => {
+    authorizeMcpToken(["activity:read"]);
+    toolTestMocks.cyclingThresholdListHistory.mockResolvedValue({
+      start_date: "2026-05-01",
+      end_date: "2026-08-01",
+      items: [
+        {
+          id: "00000000-0000-4000-8000-000000000102",
+          evidence_kind: "provider_observation",
+          sport: "cycling",
+          threshold_type: "ftp",
+          value: 250,
+          unit: "watt",
+          observed_at: "2026-07-01T12:00:00.000Z",
+          effective_at: null,
+          provider: "zwift",
+          provider_record_id: "profile:12345",
+          value_kind: "provider_recorded",
+          historical_validity: "observed_from_date",
+          raw_evidence_available: true,
+          quality: {
+            status: "moderate",
+            reason: "The provider supplied an observation date but no effective date",
+          },
+        },
+      ],
+      legacy_current: null,
+      next_cursor: null,
+    });
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_threshold_history", {
+        start_date: "2026-05-01",
+        end_date: "2026-08-01",
+        providers: ["zwift"],
+      }),
+    });
+    const parsedResponse = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text));
+    const structured = thresholdHistoryOutputSchema.parse(parsedResponse.result.structuredContent);
+
+    expect(structured.result.items[0]).toMatchObject({
+      provider: "zwift",
+      value: 250,
+      value_kind: "provider_recorded",
+    });
+    expect(toolTestMocks.cyclingThresholdListHistory).toHaveBeenCalledWith({
+      startDate: "2026-05-01",
+      endDate: "2026-08-01",
+      providers: ["zwift"],
       cursor: null,
       limit: 100,
     });

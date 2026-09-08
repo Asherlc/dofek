@@ -120,7 +120,7 @@ lists stay readable without hiding the time axis.
 ### MCP activity and cycling analytics
 
 The read-only MCP keeps the existing `get_activity_streams` and
-`get_cycling_performance` contracts and adds two bounded analytical primitives. MCP tools publish
+`get_cycling_performance` contracts and adds bounded analytical primitives. MCP tools publish
 input and output schemas so clients can validate calls and structured results
 ([MCP tools specification](https://modelcontextprotocol.io/specification/2025-06-18/server/tools)).
 
@@ -150,6 +150,15 @@ Standard durations read the deduplicated `analytics.activity_power_curve` model.
 are calculated in one bounded ClickHouse query over deduplicated activity sensor samples, rather than
 returning raw samples to the model. Formula and historical-refresh details are documented in
 [`analytics/README.md`](../../analytics/README.md#cycling-power-duration-semantics-and-refresh).
+
+`get_threshold_history` requires `activity:read`, an inclusive date range, and optionally provider
+filters plus cursor pagination. It keeps three concepts separate: effective-dated cycling FTP from
+`fitness.sport_settings`, immutable provider observations, and the legacy current
+`user_profile.ftp`. The legacy value has unknown historical validity and is never silently applied
+to an old workout. Provider observations include their provider record ID and observation/effective
+timestamps. A provider's modeled threshold, such as Zwift zFTP, is labeled `provider_estimated` and
+is never represented as measured FTP. Repeated provider syncs append a new observation only when the
+reported value, unit, or effective timestamp changes.
 
 
 ## Development
