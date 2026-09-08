@@ -25775,7 +25775,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   merged the food-record MCP work, which had independently claimed Postgres
   migration numbers 0112/0113 and expanded `tool-output.ts`; the resulting base
   conflict exposed both duplicate migration identities and Biome's 1,000-line
-  module limit.
+  module limit. The first post-merge CI attempt then failed mutation shard 10 at
+  74.35% because critical-power diagnostics were asserted only by type, allowing
+  incorrect prediction, residual, RMSE, and zero-boundary formulas to survive.
 - **Direct fixes:** Align the three Expo packages with the SDK compatibility map;
   move the shared performance-equivalence contract into a dependency-neutral
   type module; add the legitimate domain terms to the project dictionary and
@@ -25791,7 +25793,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   provider priority and add migration 0078 to convert existing targets before
   dbt runs. Preserve both feature sets by renumbering the unmerged analytics
   migrations to 0114/0115, combining their MCP registries, and extracting the
-  cohesive food-record output schemas into their own module.
+  cohesive food-record output schemas into their own module. Add exact
+  critical-power prediction, residual, RMSE, zero-CP, and zero-W′ assertions.
 - **Validation / follow-up:** Expo dependency validation, Dependency Cruiser,
   CSpell, root typecheck, the 9,232-test changed unit/mobile suite, and the full
   local lint gate pass. Focused mutation runs now pass for cycling metrics,
@@ -25802,7 +25805,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   verifies the type conversion and idempotency. The complete replacement CI run
   remains the merge gate. After merging current `main`, the 9,391-test changed
   unit/mobile suite and 38 focused real-database migration and nutrition tests
-  pass. One otherwise-passing shard in run 34249990223 failed
+  pass. The focused critical-power mutation run now passes at 91.75% for that
+  module and 78.68% for the aggregate report. One otherwise-passing shard in
+  run 34249990223 failed
   while finalizing its artifact with GitHub's `403 Forbidden`, so a clean
   replacement run is required to distinguish transient artifact infrastructure
   from code failures. The mutation threshold and production-module scope remain
