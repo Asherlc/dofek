@@ -238,6 +238,22 @@ describe("ActivityTimeseriesRepository", () => {
     expect(sensorStore.query).not.toHaveBeenCalled();
   });
 
+  it("rejects a malformed cursor before querying ClickHouse", async () => {
+    const { repository, sensorStore } = makeRepository([]);
+
+    await expect(
+      repository.list({
+        activityId: canonicalId,
+        streams: ["power"],
+        resolution: "raw",
+        fill: "none",
+        cursor: "not-a-valid-cursor",
+        limit: 500,
+      }),
+    ).rejects.toThrow("Invalid analytical cursor");
+    expect(sensorStore.query).not.toHaveBeenCalled();
+  });
+
   it("rejects inaccessible activity ids without querying ClickHouse", async () => {
     const { activities, repository, sensorStore } = makeRepository([]);
     activities.findById.mockResolvedValueOnce(null);

@@ -10,6 +10,7 @@ import { validateMcpToken } from "./token-repository.ts";
 import {
   activityDetailsOutputSchema,
   activitySummaryOutputSchema,
+  activityTimeseriesOutputSchema,
   healthTrendsOutputSchema,
   providersOutputSchema,
   searchActivitiesOutputSchema,
@@ -23,6 +24,7 @@ const toolTestMocks = vi.hoisted(() => {
     activitySearch: vi.fn(),
     activityFindById: vi.fn(),
     activityGetStream: vi.fn(),
+    activityTimeseriesList: vi.fn(),
     bodyListReconciledRange: vi.fn(),
     climbingActivityEntries: vi.fn(),
     cyclingPerformanceListRange: vi.fn(),
@@ -78,6 +80,12 @@ vi.mock("./token-repository.ts", async (importOriginal) => {
 
 vi.mock("../repositories/activity-repository.ts", () => ({
   ActivityRepository: toolTestMocks.activityRepository,
+}));
+
+vi.mock("../repositories/activity-timeseries-repository.ts", () => ({
+  ActivityTimeseriesRepository: vi.fn(function vitestConstructor() {
+    return { list: toolTestMocks.activityTimeseriesList };
+  }),
 }));
 
 vi.mock("../repositories/climbing-repository.ts", () => ({
@@ -441,6 +449,9 @@ function jsonSchemaAtPath(root: Record<string, unknown>, path: readonly string[]
   for (const segment of path) {
     const next = jsonSchemaVariants(root, current).flatMap((variant) => {
       if (segment === "[]") return isRecord(variant.items) ? [variant.items] : [];
+      if (segment === "*") {
+        return isRecord(variant.additionalProperties) ? [variant.additionalProperties] : [];
+      }
       const properties = variant.properties;
       return isRecord(properties) && isRecord(properties[segment]) ? [properties[segment]] : [];
     })[0];
@@ -480,6 +491,27 @@ describe("createMcpRouter", () => {
     toolTestMocks.activityListRange.mockResolvedValue([]);
     toolTestMocks.activitySearch.mockResolvedValue({ items: [], totalCount: 0 });
     toolTestMocks.activityFindById.mockResolvedValue(null);
+    toolTestMocks.activityTimeseriesList.mockResolvedValue({
+      activity: {
+        id: "00000000-0000-4000-8000-000000000001",
+        startedAt: "2026-08-30T10:00:00.000Z",
+        endedAt: "2026-08-30T11:00:00.000Z",
+        sourceProviders: ["wahoo"],
+        memberActivityIds: ["00000000-0000-4000-8000-000000000001"],
+        localTimeContext: {
+          timezone: "UTC",
+          startUtcOffsetMinutes: 0,
+          endUtcOffsetMinutes: 0,
+          source: "provider_timezone",
+        },
+      },
+      resolution: { requested: "raw", effectiveSeconds: null },
+      offsetsSeconds: [],
+      timestamps: [],
+      streams: {},
+      sources: [],
+      nextCursor: null,
+    });
     toolTestMocks.bodyListReconciledRange.mockResolvedValue([]);
     toolTestMocks.climbingActivityEntries.mockResolvedValue([]);
     toolTestMocks.dailyMetricsList.mockResolvedValue([]);
@@ -801,6 +833,17 @@ describe("createMcpRouter", () => {
       required: ["activity_id"],
       type: "object",
     });
+    expect(findListedTool(tools, "get_activity_timeseries").inputSchema).toMatchObject({
+      properties: {
+        activity_id: { format: "uuid", type: "string" },
+        streams: { type: "array" },
+        resolution: { enum: ["raw", "1s", "5s", "10s", "30s", "60s"] },
+        fill: { enum: ["none", "linear"] },
+        limit: { maximum: 2000, minimum: 1, type: "integer" },
+      },
+      required: ["activity_id", "streams"],
+      type: "object",
+    });
     expect(findListedTool(tools, "list_providers").inputSchema).toMatchObject({
       properties: {},
       type: "object",
@@ -827,6 +870,7 @@ describe("createMcpRouter", () => {
       "search_activities",
       "get_activity_details",
       "get_activity_streams",
+      "get_activity_timeseries",
       "get_activity_summary",
       "get_finger_loading",
       "get_climbing_sessions",
@@ -911,6 +955,10 @@ describe("createMcpRouter", () => {
         path: ["result", "activity", "source_external_ids"],
       },
       { name: "get_activity_streams", path: ["result", "points", "[]", "recorded_at"] },
+      {
+        name: "get_activity_timeseries",
+        path: ["result", "streams", "*", "summary", "observed_samples"],
+      },
       {
         name: "get_climbing_sessions",
         path: ["result", "aggregates", "grade_distribution"],
@@ -3208,6 +3256,91 @@ describe("createMcpRouter", () => {
       ],
     });
     expect(toolTestMocks.activityGetStream).toHaveBeenCalledWith(activityId, 500);
+  });
+
+  it("returns synchronized provenance-rich activity time series", async () => {
+    authorizeMcpToken();
+    const activityId = "00000000-0000-4000-8000-000000000001";
+    toolTestMocks.activityTimeseriesList.mockResolvedValue({
+      activity: {
+        id: activityId,
+        startedAt: "2026-08-30T10:00:00.000Z",
+        endedAt: "2026-08-30T11:00:00.000Z",
+        sourceProviders: ["wahoo"],
+        memberActivityIds: [activityId],
+        localTimeContext: {
+          timezone: "UTC",
+          startUtcOffsetMinutes: 0,
+          endUtcOffsetMinutes: 0,
+          source: "provider_timezone",
+        },
+      },
+      resolution: { requested: "5s", effectiveSeconds: 5 },
+      offsetsSeconds: [0, 5, 10],
+      timestamps: [
+        "2026-08-30T10:00:00.000Z",
+        "2026-08-30T10:00:05.000Z",
+        "2026-08-30T10:00:10.000Z",
+      ],
+      streams: {
+        power: {
+          values: [0, null, 225],
+          states: ["aggregated_zero", "missing", "aggregated"],
+          sourceIndexes: [[0], null, [0]],
+          unit: "W",
+          summary: {
+            min: 0,
+            max: 225,
+            average: 112.5,
+            observedSamples: 2,
+            missingPoints: 1,
+            zeroPoints: 1,
+            largestGapSeconds: 10,
+          },
+          availabilityReason: null,
+        },
+      },
+      sources: [
+        {
+          provider_id: "wahoo",
+          device_id: "KICKR",
+          source_type: "fit",
+          source_record_id: "power-stream",
+          activity_id: activityId,
+          member_activity_id: activityId,
+          measurement_kind: "direct",
+        },
+      ],
+      nextCursor: null,
+    });
+
+    const response = await request(createTestApp(makeMockSensorStore()), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_activity_timeseries", {
+        activity_id: activityId,
+        streams: ["power"],
+        resolution: "5s",
+      }),
+    });
+    const parsedResponse = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text));
+    const structured = activityTimeseriesOutputSchema.parse(
+      parsedResponse.result.structuredContent,
+    );
+
+    expect(structured.result.streams.power?.values).toEqual([0, null, 225]);
+    expect(structured.result.streams.power?.states).toEqual([
+      "aggregated_zero",
+      "missing",
+      "aggregated",
+    ]);
+    expect(toolTestMocks.activityTimeseriesList).toHaveBeenCalledWith({
+      activityId,
+      streams: ["power"],
+      resolution: "5s",
+      fill: "none",
+      cursor: null,
+      limit: 500,
+    });
   });
 
   it("omits every unselected stream channel", async () => {

@@ -37,6 +37,7 @@ import { SyncRepository } from "../repositories/sync-repository.ts";
 import { ensureProvidersRegistered, toJobId } from "../routers/sync-helpers.ts";
 import { registerActivityDetailsTool } from "./activity-details-tool.ts";
 import { registerActivityStreamsTool } from "./activity-streams-tool.ts";
+import { registerActivityTimeseriesTool } from "./activity-timeseries-tool.ts";
 import { healthExplorerResourceUri, registerDofekAppResources } from "./app-resource.ts";
 import { registerClimbingSessionsTool } from "./climbing-sessions-tool.ts";
 import type { DofekMcpContext } from "./context.ts";
@@ -495,6 +496,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
   registerTrainingLoadTool(server, context);
   registerCyclingPerformanceTool(server, context);
   registerActivityStreamsTool(server, context);
+  registerActivityTimeseriesTool(server, context);
   registerActivityDetailsTool(server, context);
   registerClimbingSessionsTool(server, context);
   registerStrengthSessionsTool(server, context);

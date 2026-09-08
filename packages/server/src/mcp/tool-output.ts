@@ -1,3 +1,4 @@
+import { recordLocalTimeContextSchema } from "@dofek/format/record-local-time";
 import { healthMetricSchema } from "@dofek/mcp-contracts/health-explorer";
 import { CLIMBING_GRADE_SYSTEMS } from "@dofek/training/climbing-grades";
 import { z } from "zod";
@@ -8,6 +9,7 @@ import {
   fingerLoadingGripPositionSchema,
   fingerLoadingLateralitySchema,
 } from "../repositories/climbing-training-log-repository.ts";
+import { sourceReferenceSchema } from "./analytical-evidence.ts";
 
 const nullableNumber = z.number().nullable();
 const nullableString = z.string().nullable();
@@ -363,6 +365,59 @@ export const activityStreamsOutputSchema = jsonResult(
   }),
 );
 
+const activityTimeseriesStateSchema = z.enum([
+  "measured",
+  "measured_zero",
+  "aggregated",
+  "aggregated_zero",
+  "calculated",
+  "calculated_zero",
+  "interpolated",
+  "missing",
+]);
+const activityTimeseriesValueSchema = z.union([
+  z.number(),
+  z.tuple([z.number(), z.number()]),
+  z.null(),
+]);
+const activityTimeseriesColumnSchema = z.object({
+  values: z.array(activityTimeseriesValueSchema),
+  states: z.array(activityTimeseriesStateSchema),
+  source_indexes: z.array(z.array(z.number().int().nonnegative()).nullable()),
+  unit: z.string(),
+  summary: z.object({
+    min: nullableNumber,
+    max: nullableNumber,
+    average: nullableNumber,
+    observed_samples: z.number().int().nonnegative(),
+    missing_points: z.number().int().nonnegative(),
+    zero_points: z.number().int().nonnegative(),
+    largest_gap_seconds: nullableNumber,
+  }),
+  availability_reason: nullableString,
+});
+export const activityTimeseriesOutputSchema = jsonResult(
+  z.object({
+    activity: z.object({
+      id: z.uuid(),
+      started_at: z.string(),
+      ended_at: nullableString,
+      source_providers: z.array(z.string()),
+      member_activity_ids: z.array(z.uuid()),
+      local_time_context: recordLocalTimeContextSchema,
+    }),
+    resolution: z.object({
+      requested: z.enum(["raw", "1s", "5s", "10s", "30s", "60s"]),
+      effective_seconds: z.number().int().positive().nullable(),
+    }),
+    offsets_seconds: z.array(z.number().nonnegative()),
+    timestamps: z.array(z.string()),
+    streams: z.record(z.string(), activityTimeseriesColumnSchema),
+    sources: z.array(sourceReferenceSchema),
+    next_cursor: nullableString,
+  }),
+);
+
 const climbingAttemptSchema = z.object({
   attemptIndex: z.number().int().positive(),
   failureReason: z.enum(["fell", "pumped", "skin", "technique", "fear"]).nullable(),
@@ -690,6 +745,7 @@ export const trainingLoadOutputSchema = jsonResult(
 );
 
 export const mcpOutputSchemas = {
+  activityTimeseries: activityTimeseriesOutputSchema,
   activitySummary: activitySummaryOutputSchema,
   bodyMetrics: bodyMetricsOutputSchema,
   dailyHealthSummary: dailyHealthSummaryOutputSchema,

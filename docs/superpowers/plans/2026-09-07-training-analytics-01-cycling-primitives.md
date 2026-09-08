@@ -372,15 +372,13 @@ git push
 - Modify: `packages/server/src/mcp/tool-output.ts`
 - Modify: `packages/server/src/mcp/tools.ts`
 - Modify: `packages/server/src/mcp/route.test.ts`
-- Modify: `packages/server/src/mcp/app-resource.ts`
-- Modify: `packages/server/src/mcp/app-resource.test.ts`
 
 **Interfaces:**
 
 - Consumes: `ActivityTimeseriesRepository.list(request)` from Task 3.
 - Produces the MCP tool `get_activity_timeseries` with input defaults `resolution="raw"`, `fill="none"`, `limit=500` and hard maximum `2_000`.
 
-- [ ] **Step 1: Write the tool test first.** Instantiate an MCP server with a stub repository and assert scope enforcement, ClickHouse precondition, defaults, selected stream pass-through, malformed cursor error text, output schema validation, and preservation of zero/null/state arrays.
+- [x] **Step 1: Write the tool test first.** Instantiate an MCP server with a stub repository and assert scope enforcement, ClickHouse precondition, defaults, selected stream pass-through, malformed cursor error text, output schema validation, and preservation of zero/null/state arrays.
 
 ```ts
 expect(repository.list).toHaveBeenCalledWith({
@@ -394,26 +392,26 @@ expect(repository.list).toHaveBeenCalledWith({
 expect(result.result.streams.power.values).toEqual([0, null, 225]);
 ```
 
-- [ ] **Step 2: Run the tool test and witness RED.**
+- [x] **Step 2: Run the tool test and witness RED.**
 
 Run: `pnpm vitest run --project unit packages/server/src/mcp/activity-timeseries-tool.test.ts`
 
 Expected: FAIL because the tool is not registered.
 
-- [ ] **Step 3: Implement and register the tool.** Define input enums exactly from the design, call `requireMcpScope(context.scopes, "activity:read")`, fail specifically when `context.sensorStore` is absent, and pass the repository result through `jsonToolResult`. Add a strict output schema for every column and evidence object. Do not modify `get_activity_streams`.
+- [x] **Step 3: Implement and register the tool.** Define input enums exactly from the design, call `requireMcpScope(context.scopes, "activity:read")`, fail specifically when `context.sensorStore` is absent, and pass the repository result through `jsonToolResult`. Add a strict output schema for every column and evidence object. Do not modify `get_activity_streams`.
 
-- [ ] **Step 4: Add public-route contract coverage.** Extend `route.test.ts` to call `tools/list`, assert both legacy and new stream tools, call the new tool through MCP transport, and parse the structured result with `activityTimeseriesOutputSchema`. Extend the app resource tool catalog description without rendering or calculating metrics client-side.
+- [x] **Step 4: Add public-route contract coverage.** Extend `route.test.ts` to call `tools/list`, assert both legacy and new stream tools, call the new tool through MCP transport, and parse the structured result with `activityTimeseriesOutputSchema`. The existing app resource has no tool catalog and remains unchanged; tool discovery is owned by MCP `tools/list`.
 
-- [ ] **Step 5: Run MCP suites and witness GREEN.**
+- [x] **Step 5: Run MCP suites and witness GREEN.**
 
 Run: `pnpm vitest run --project unit packages/server/src/mcp/activity-timeseries-tool.test.ts packages/server/src/mcp/route.test.ts packages/server/src/mcp/app-resource.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit the MCP surface.**
+- [x] **Step 6: Commit the MCP surface.**
 
 ```bash
-git add packages/server/src/mcp/activity-timeseries-tool.ts packages/server/src/mcp/activity-timeseries-tool.test.ts packages/server/src/mcp/tool-output.ts packages/server/src/mcp/tools.ts packages/server/src/mcp/route.test.ts packages/server/src/mcp/app-resource.ts packages/server/src/mcp/app-resource.test.ts
+git add packages/server/src/mcp/activity-timeseries-tool.ts packages/server/src/mcp/activity-timeseries-tool.test.ts packages/server/src/mcp/tool-output.ts packages/server/src/mcp/tools.ts packages/server/src/mcp/route.test.ts packages/server/src/repositories/activity-timeseries-repository.test.ts
 git commit -m "feat(mcp): expose activity time series"
 git push
 ```
