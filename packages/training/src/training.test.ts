@@ -32,7 +32,7 @@ describe("strength exercise display labels", () => {
   function labelsFor(
     identities: readonly { exerciseName: string; equipment: string | null }[],
   ): readonly string[] {
-    return strengthExerciseDisplayLabels(identities);
+    return strengthExerciseDisplayLabels(identities).map(({ label }) => label);
   }
 
   it("keeps separator-distinct equipment identities readable and unique", () => {
@@ -67,7 +67,7 @@ describe("strength exercise display labels", () => {
     expect(labels).toEqual([
       "Chest Press (Free Weight) — recorded as “FREE-WEIGHT” · variant 1",
       "Chest Press (Free Weight) — recorded as “FREE_WEIGHT”",
-      "Chest Press (Free Weight) — recorded as “FREE-WEIGHT” · variant 2",
+      "Chest Press (Free Weight) — recorded as “FREE-WEIGHT” — variant 2",
     ]);
     expect(new Set(labels)).toHaveLength(3);
   });

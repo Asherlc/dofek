@@ -32,7 +32,7 @@ export function EstimatedMaxChart({ exercises, loading }: EstimatedMaxChartProps
       (exercise) => selectedIdentity && isSameStrengthExercise(exercise, selectedIdentity),
     ) ?? exercises[0];
   const selectedExerciseIndex = selectedExercise ? exercises.indexOf(selectedExercise) : 0;
-  const selectedExerciseLabel = exerciseLabels[selectedExerciseIndex] ?? null;
+  const selectedExerciseLabel = exerciseLabels[selectedExerciseIndex]?.label ?? null;
   const series = selectedExercise
     ? [
         {
@@ -77,7 +77,7 @@ export function EstimatedMaxChart({ exercises, loading }: EstimatedMaxChartProps
         <fieldset className="mb-3 flex flex-wrap gap-2">
           <legend className="sr-only">Choose an exercise to chart</legend>
           {exercises.map((exercise, exerciseIndex) => {
-            const label = exerciseLabels[exerciseIndex] ?? exercise.exerciseName;
+            const label = exerciseLabels[exerciseIndex]?.label ?? exercise.exerciseName;
             const isSelected = selectedExercise
               ? isSameStrengthExercise(exercise, selectedExercise)
               : false;

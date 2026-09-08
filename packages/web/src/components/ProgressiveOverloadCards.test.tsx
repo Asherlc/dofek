@@ -58,8 +58,15 @@ describe("ProgressiveOverloadCards", () => {
       />,
     );
 
-    expect(screen.getByText("Chest Press (Free Weight) — recorded as “FREE-WEIGHT”")).toBeVisible();
-    expect(screen.getByText("Chest Press (Free Weight) — recorded as “FREE_WEIGHT”")).toBeVisible();
+    expect(screen.getAllByText("Chest Press (Free Weight)")).toHaveLength(2);
+    const hyphenatedDiscriminator = screen.getByText("recorded as “FREE-WEIGHT”");
+    const underscoredDiscriminator = screen.getByText("recorded as “FREE_WEIGHT”");
+    expect(hyphenatedDiscriminator).toBeVisible();
+    expect(underscoredDiscriminator).toBeVisible();
+    expect(hyphenatedDiscriminator).toHaveClass("whitespace-normal", "break-words");
+    expect(underscoredDiscriminator).toHaveClass("whitespace-normal", "break-words");
+    expect(hyphenatedDiscriminator).not.toHaveClass("truncate");
+    expect(underscoredDiscriminator).not.toHaveClass("truncate");
     expect(screen.getByText("Back Squat")).toBeVisible();
     expect(screen.queryByText("Back Squat (Barbell)")).toBeNull();
   });

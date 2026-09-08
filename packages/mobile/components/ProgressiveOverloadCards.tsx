@@ -51,8 +51,7 @@ function accessibilityLabel(
   exerciseLabel: string,
 ): string {
   const interval = intervalLabel(exercise, units);
-  return `${[
-    exerciseLabel,
+  const evidenceLabel = [
     rateLabel(exercise, units),
     `${formatDateMedium(exercise.period.startWeek)} to ${formatDateMedium(exercise.period.endWeek)}`,
     countLabel(exercise),
@@ -63,7 +62,8 @@ function accessibilityLabel(
   ]
     .filter((part): part is string => part !== null)
     .map((part) => part.replace(/\.$/, ""))
-    .join(". ")}.`;
+    .join(". ");
+  return `${exerciseLabel}; ${evidenceLabel}.`;
 }
 
 export function ProgressiveOverloadCards({
@@ -82,7 +82,7 @@ export function ProgressiveOverloadCards({
       {!loading
         ? exercises.map((exercise, exerciseIndex) => {
             const interval = intervalLabel(exercise, units);
-            const exerciseLabel = exerciseLabels[exerciseIndex] ?? exercise.exerciseName;
+            const exerciseLabel = exerciseLabels[exerciseIndex]?.label ?? exercise.exerciseName;
             return (
               <View
                 key={strengthExerciseIdentityKey(exercise)}
