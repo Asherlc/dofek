@@ -25677,3 +25677,50 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   the conversations, and require fresh CI before merging. Inspect conversation
   status alongside CI early in future merge work. No bypass, retry, or timeout
   adjustment was added.
+
+## 2026-09-07 — Sensor delivery gate failed at an oversized delete request
+
+- **Status:** Production unresolved; fixes validated locally, release pending.
+  This supersedes the September 3 expectation that the full-refresh queue was
+  simply draining. The post-drain delivery gate was never established.
+- **Symptoms / impact:** Recent activities return null sensor summaries. A
+  bounded check across all members of an affected activity found zero physical
+  rows in `ingest.metric_stream`. Partial older activity coverage does not
+  establish delivery for the later missing activities.
+- **Evidence / root cause:** Production image `sha-609ceb4` repeatedly fails
+  KafkaJS `eachBatch` at partition 0 offset `1557845112`. The first fatal
+  error in the inspected logs is `HTML Form Exception: Too many form fields`.
+  Repeated `rpk group describe` checks leave the committed offset unchanged;
+  the final observed head was `1585932001`, a lag of 28,086,889. The R2 group
+  reached that head. A read-only 600-event sample at the stalled offset consists
+  of v3 deletes with three scope parameters each. The sink combined adjacent
+  same-revision deletes without a request bound; production reports
+  `http_max_fields = 1000`. ClickHouse applies that limit to headers, query
+  parameters, and form data
+  ([ClickHouse source](https://github.com/ClickHouse/ClickHouse/blob/v26.6.1.1193-stable/src/Core/Settings.cpp#L2451-L2453)).
+- **Direct fix:** Bound sequential delete requests to 100 scopes (at most 701
+  query parameters including the revision), preserving per-event acknowledgements
+  and deletion-before-replacement order. No offset seek, replay, server limit,
+  timeout, or retry setting was changed.
+- **Strength hydration:** Live canonical-ID lookup returns exercises and sets
+  while a member-ID lookup returns the same activity with no exercises.
+  The existing set join already spans all members; the activity predicate
+  incorrectly required the representative ID. The shared repository now resolves
+  any member ID while preserving user scoping
+  ([strength repository](../packages/server/src/repositories/strength-repository.ts)).
+- **Other checks:** The reported commute examples retain their corrected types
+  and offsets. The Apple outlier already has a mapped canonical type; provider
+  code 52 is deliberately retained and mapped in the
+  [HealthKit schema](../packages/server/src/routers/health-kit-sync-schemas.ts).
+  Its inspected source payload contains no timezone or offset evidence; no
+  inferred offset was written.
+- **Validation:** Both new database regressions first failed with the production
+  symptoms. After the fixes, all 12 tests in the ClickHouse sink and strength
+  repository integration suites pass. Root and server typechecks pass.
+- **Remaining gate:** Release the fixes, confirm the same consumer group reaches
+  head, publish and trace a fresh post-drain message into the raw table, then
+  verify the affected recent activity summaries. A fresh post-drain probe was
+  not published because the consumer has not drained. Verify archive object
+  freshness separately; zero consumer lag alone is not an object-age audit.
+  The Axiom MCP token remains expired; task-local Swarm logs supplied the fatal
+  evidence. No additional resilience knob was introduced.

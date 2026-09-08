@@ -29,6 +29,11 @@ const replacementTestEventId = "8b9c0d1e-3f40-415c-9d6e-7f8a9b0c1d23";
 const batchedDeleteTestEventId = "9c0d1e2f-4051-426d-8e7f-8a9b0c1d2e34";
 const batchedDeleteSecondTestEventId = "ad1e2f30-5162-437e-8f90-9b0c1d2e3f45";
 const batchedDeleteUnrelatedTestEventId = "be2f3041-6273-448f-901a-0c1d2e3f4056";
+const longDeleteTestEventIds = [
+  "ce2f3041-6273-448f-901a-0c1d2e3f4056",
+  "de2f3041-6273-448f-901a-0c1d2e3f4056",
+  "ee2f3041-6273-448f-901a-0c1d2e3f4056",
+] as const;
 const operationRevision = "1000000000000000";
 
 const zeppMetricRowsSchema = z.array(
@@ -94,6 +99,7 @@ async function removeTestEvent(client: ClickHouseClient): Promise<void> {
         batchedDeleteTestEventId,
         batchedDeleteSecondTestEventId,
         batchedDeleteUnrelatedTestEventId,
+        ...longDeleteTestEventIds,
       ],
     },
   });
@@ -413,6 +419,69 @@ describe("metric stream ClickHouse sink (integration)", () => {
       format: "JSONEachRow",
     });
     expect(await result.json()).toEqual([{ is_deleted: 0, scalar: 94 }]);
+  });
+
+  it("applies a long delete run within HTTP limits before its replacement rows", async () => {
+    const ids = longDeleteTestEventIds;
+    const scopeIndexes = [0, 100, 349];
+    const rows = ids.map((id, index) =>
+      createCurrentMetricStreamEvent({
+        id,
+        recordedAt: "2026-06-10T14:36:12.000Z",
+        userId: testUserId,
+        providerId: "bounded-delete-test",
+        externalId: `bounded-delete-${scopeIndexes[index]}`,
+        sourceType: "file",
+        channel: "heart_rate",
+        scalar: 94,
+      }),
+    );
+    await insertMetricStreamEventsIntoClickHouse(client, rows);
+    const revision = "1000000000000003";
+    const deletes = Array.from({ length: 350 }, (_, index) =>
+      createCurrentMetricStreamDeletedEvent(
+        {
+          userId: testUserId,
+          providerId: "bounded-delete-test",
+          externalId: `bounded-delete-${index}`,
+        },
+        revision,
+      ),
+    );
+    const replacement = createCurrentMetricStreamEvent(
+      {
+        id: longDeleteTestEventIds[2],
+        recordedAt: "2026-06-10T14:36:12.000Z",
+        userId: testUserId,
+        providerId: "bounded-delete-test",
+        externalId: "bounded-delete-349",
+        sourceType: "file",
+        channel: "heart_rate",
+        scalar: 99,
+      },
+      revision,
+    );
+
+    await applyMetricStreamEventsToClickHouse(client, [...deletes, replacement]);
+
+    const result = await client.query<{ external_id: string; is_deleted: number; scalar: number }>({
+      query: `SELECT external_id, is_deleted, scalar FROM ${METRIC_STREAM_TABLE} FINAL
+        WHERE id IN {ids:Array(UUID)} ORDER BY external_id`,
+      query_params: { ids },
+      format: "JSONEachRow",
+    });
+    expect(await result.json()).toEqual([
+      { external_id: "bounded-delete-0", is_deleted: 1, scalar: 94 },
+      { external_id: "bounded-delete-100", is_deleted: 1, scalar: 94 },
+      { external_id: "bounded-delete-349", is_deleted: 0, scalar: 99 },
+    ]);
+    const acknowledgements = await client.query<{ count: string }>({
+      query: `SELECT count() AS count FROM ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE} FINAL
+        WHERE event_id IN {ids:Array(UUID)}`,
+      query_params: { ids: deletes.map((event) => event.eventId) },
+      format: "JSONEachRow",
+    });
+    expect(Number((await acknowledgements.json())[0]?.count)).toBe(350);
   });
 
   it("acknowledges a deletion event only after applying it", async () => {

@@ -443,7 +443,7 @@ export class StrengthRepository {
       .map(([exerciseName, observations]) => new ProgressiveOverload(exerciseName, observations));
   }
 
-  /** Exercises and sets for a single activity (joins via source_external_ids). */
+  /** Exercises and sets across an activity group, resolved through any member. */
   async getExercisesForActivity(activityId: string): Promise<ExerciseWithSets[]> {
     const rows = await executeWithSchema(
       this.#db,
@@ -464,7 +464,7 @@ export class StrengthRepository {
           FROM fitness.v_activity a
           JOIN fitness.strength_set ss ON ss.activity_id = ANY(a.member_activity_ids)
           JOIN fitness.exercise e ON e.id = ss.exercise_id
-          WHERE a.id = ${activityId}
+          WHERE ${activityId}::uuid = ANY(a.member_activity_ids)
             AND a.user_id = ${this.#userId}
           ORDER BY ss.exercise_index, ss.set_index`,
     );

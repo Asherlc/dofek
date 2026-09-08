@@ -463,6 +463,10 @@ interface MetricStreamDeleteCommand {
   scope: MetricStreamDeleteScope;
 }
 
+// Each scope can add seven HTTP parameters. Keep requests below ClickHouse's
+// default 1,000-field limit, including the revision and client settings.
+const MAX_METRIC_STREAM_DELETE_SCOPES_PER_WRITE = 100;
+
 async function markMetricStreamDeleteCommandsInClickHouse(
   client: Pick<ClickHouseMetricStreamInsertClient, "command">,
   deletes: readonly MetricStreamDeleteCommand[],
@@ -476,6 +480,19 @@ async function markMetricStreamDeleteCommandsInClickHouse(
   const operationRevision = deletes[0]?.operationRevision;
   if (deletes.some((event) => event.operationRevision !== operationRevision)) {
     throw new Error("ClickHouse metric-stream deletion batch requires one operation revision");
+  }
+  if (deletes.length > MAX_METRIC_STREAM_DELETE_SCOPES_PER_WRITE) {
+    for (
+      let offset = 0;
+      offset < deletes.length;
+      offset += MAX_METRIC_STREAM_DELETE_SCOPES_PER_WRITE
+    ) {
+      await markMetricStreamDeleteCommandsInClickHouse(
+        client,
+        deletes.slice(offset, offset + MAX_METRIC_STREAM_DELETE_SCOPES_PER_WRITE),
+      );
+    }
+    return;
   }
   const queryParams: Record<string, unknown> = {};
   const replacementVersionExpression = operationRevision
