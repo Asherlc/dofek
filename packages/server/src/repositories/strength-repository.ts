@@ -8,6 +8,7 @@ import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import {
   ProgressiveOverload,
   type ProgressiveOverloadObservation,
+  type StrengthExerciseIdentity,
 } from "./progressive-overload.ts";
 
 // ---------------------------------------------------------------------------
@@ -58,11 +59,11 @@ export interface EstimatedMaxTrendEvidence {
 
 /** An exercise with estimated 1RM history over time. */
 export class EstimatedOneRepMax {
-  readonly #exerciseName: string;
+  readonly #identity: StrengthExerciseIdentity;
   readonly #history: OneRepMaxEntryRow[];
 
-  constructor(exerciseName: string, history: OneRepMaxEntryRow[]) {
-    this.#exerciseName = exerciseName;
+  constructor(identity: StrengthExerciseIdentity, history: OneRepMaxEntryRow[]) {
+    this.#identity = identity;
     this.#history = history;
   }
 
@@ -103,7 +104,7 @@ export class EstimatedOneRepMax {
 
   toDetail() {
     return {
-      exerciseName: this.#exerciseName,
+      ...this.#identity,
       history: this.#history,
       trend: this.trend,
     };
@@ -223,6 +224,7 @@ const volumeRowSchema = z.object({
 
 const oneRepMaxRowSchema = z.object({
   exercise_name: z.string(),
+  equipment: z.string().nullable(),
   workout_date: dateStringSchema,
   estimated_max: z.coerce.number(),
   actual_weight: z.coerce.number(),
@@ -237,6 +239,7 @@ const muscleGroupRowSchema = z.object({
 
 const overloadRowSchema = z.object({
   exercise_name: z.string(),
+  equipment: z.string().nullable(),
   week: dateStringSchema,
   weekly_volume: z.coerce.number(),
 });
@@ -286,10 +289,12 @@ export class StrengthRepository {
 
   #dedupedStrengthSets(days: RangeDays) {
     const rangeFilter = ChartRange.fromDays(days).postgresTimestampAfterNow(sql`a.started_at`);
-    return sql`WITH ranked_strength_sets AS (
+    return sql`WITH strength_source_rows AS (
           SELECT
             a.id AS group_activity_id,
             a.started_at,
+            member.id AS member_activity_id,
+            COALESCE(dp.priority, pp.priority, 100) AS source_priority,
             e.name AS exercise_name,
             LOWER(REGEXP_REPLACE(TRIM(e.name), '[[:space:]]+', ' ', 'g')) AS normalized_exercise_name,
             e.equipment,
@@ -303,28 +308,7 @@ export class StrengthRepository {
             ss.distance_meters,
             ss.duration_seconds,
             ss.rpe,
-            ss.notes,
-            ROW_NUMBER() OVER (
-              PARTITION BY
-                a.id,
-                LOWER(REGEXP_REPLACE(TRIM(e.name), '[[:space:]]+', ' ', 'g')),
-                LOWER(REGEXP_REPLACE(TRIM(COALESCE(e.equipment, '')), '[[:space:]]+', ' ', 'g')),
-                ss.set_type,
-                ss.set_index,
-                ss.weight_kg,
-                ss.reps,
-                ss.duration_seconds
-              ORDER BY
-                (
-                  CASE WHEN ss.rpe IS NOT NULL THEN 1 ELSE 0 END
-                  + CASE WHEN NULLIF(TRIM(ss.notes), '') IS NOT NULL THEN 1 ELSE 0 END
-                  + CASE WHEN ss.distance_meters IS NOT NULL THEN 1 ELSE 0 END
-                  + CASE WHEN e.muscle_groups IS NOT NULL AND CARDINALITY(e.muscle_groups) > 0 THEN 1 ELSE 0 END
-                  + CASE WHEN e.exercise_type IS NOT NULL THEN 1 ELSE 0 END
-                ) DESC,
-                COALESCE(dp.priority, pp.priority, 100) ASC,
-                member.id ASC
-            ) AS dedupe_rank
+            ss.notes
           FROM fitness.v_activity a
           JOIN fitness.strength_set ss ON ss.activity_id = ANY(a.member_activity_ids)
           JOIN fitness.exercise e ON e.id = ss.exercise_id
@@ -345,8 +329,122 @@ export class StrengthRepository {
             AND a.canonical_type = 'strength'
             ${rangeFilter}
         ),
+        ranked_strength_sets AS (
+          SELECT
+            strength_source_rows.*,
+            ROW_NUMBER() OVER (
+              PARTITION BY
+                group_activity_id,
+                normalized_exercise_name,
+                normalized_equipment,
+                set_type,
+                set_index,
+                weight_kg,
+                reps,
+                duration_seconds
+              ORDER BY
+                (
+                  CASE WHEN rpe IS NOT NULL THEN 1 ELSE 0 END
+                  + CASE WHEN NULLIF(TRIM(notes), '') IS NOT NULL THEN 1 ELSE 0 END
+                  + CASE WHEN distance_meters IS NOT NULL THEN 1 ELSE 0 END
+                ) DESC,
+                source_priority ASC,
+                member_activity_id ASC
+            ) AS dedupe_rank
+          FROM strength_source_rows
+        ),
+        exercise_identity_metadata AS (
+          SELECT DISTINCT ON (
+            group_activity_id,
+            normalized_exercise_name,
+            normalized_equipment
+          )
+            group_activity_id,
+            normalized_exercise_name,
+            normalized_equipment,
+            exercise_name,
+            equipment
+          FROM strength_source_rows
+          ORDER BY
+            group_activity_id,
+            normalized_exercise_name,
+            normalized_equipment,
+            source_priority ASC,
+            member_activity_id ASC
+        ),
+        exercise_muscle_metadata AS (
+          SELECT DISTINCT ON (
+            group_activity_id,
+            normalized_exercise_name,
+            normalized_equipment
+          )
+            group_activity_id,
+            normalized_exercise_name,
+            normalized_equipment,
+            muscle_groups
+          FROM strength_source_rows
+          WHERE muscle_groups IS NOT NULL AND CARDINALITY(muscle_groups) > 0
+          ORDER BY
+            group_activity_id,
+            normalized_exercise_name,
+            normalized_equipment,
+            source_priority ASC,
+            member_activity_id ASC
+        ),
+        exercise_type_metadata AS (
+          SELECT DISTINCT ON (
+            group_activity_id,
+            normalized_exercise_name,
+            normalized_equipment
+          )
+            group_activity_id,
+            normalized_exercise_name,
+            normalized_equipment,
+            exercise_type
+          FROM strength_source_rows
+          WHERE NULLIF(TRIM(exercise_type), '') IS NOT NULL
+          ORDER BY
+            group_activity_id,
+            normalized_exercise_name,
+            normalized_equipment,
+            source_priority ASC,
+            member_activity_id ASC
+        ),
         deduped_strength_sets AS (
-          SELECT * FROM ranked_strength_sets WHERE dedupe_rank = 1
+          SELECT
+            ranked.group_activity_id,
+            ranked.started_at,
+            identity.exercise_name,
+            ranked.normalized_exercise_name,
+            identity.equipment,
+            ranked.normalized_equipment,
+            muscle.muscle_groups,
+            exercise_type.exercise_type,
+            ranked.set_index,
+            ranked.set_type,
+            ranked.weight_kg,
+            ranked.reps,
+            ranked.distance_meters,
+            ranked.duration_seconds,
+            ranked.rpe,
+            ranked.notes
+          FROM ranked_strength_sets ranked
+          JOIN exercise_identity_metadata identity USING (
+            group_activity_id,
+            normalized_exercise_name,
+            normalized_equipment
+          )
+          LEFT JOIN exercise_muscle_metadata muscle USING (
+            group_activity_id,
+            normalized_exercise_name,
+            normalized_equipment
+          )
+          LEFT JOIN exercise_type_metadata exercise_type USING (
+            group_activity_id,
+            normalized_exercise_name,
+            normalized_equipment
+          )
+          WHERE ranked.dedupe_rank = 1
         )`;
   }
 
@@ -386,6 +484,7 @@ export class StrengthRepository {
           best_per_workout AS (
             SELECT
               exercise_name,
+              equipment,
               normalized_exercise_name,
               normalized_equipment,
               (started_at AT TIME ZONE ${this.#timezone})::date::text AS workout_date,
@@ -415,6 +514,9 @@ export class StrengthRepository {
             MIN(b.exercise_name) OVER (
               PARTITION BY b.normalized_exercise_name, b.normalized_equipment
             ) AS exercise_name,
+            MIN(b.equipment) OVER (
+              PARTITION BY b.normalized_exercise_name, b.normalized_equipment
+            ) AS equipment,
             b.workout_date,
             ROUND(b.e1rm::numeric, 1)::real AS estimated_max,
             b.actual_weight,
@@ -424,24 +526,37 @@ export class StrengthRepository {
             ON q.normalized_exercise_name = b.normalized_exercise_name
             AND q.normalized_equipment = b.normalized_equipment
           WHERE b.rn = 1
-          ORDER BY b.exercise_name, b.workout_date`,
+          ORDER BY b.exercise_name, b.normalized_equipment, b.workout_date`,
     );
 
-    const exerciseMap = new Map<string, OneRepMaxEntryRow[]>();
+    const exerciseMap = new Map<string, Map<string | null, OneRepMaxEntryRow[]>>();
     for (const row of rows) {
-      const entries = exerciseMap.get(row.exercise_name) ?? [];
+      const equipmentMap = exerciseMap.get(row.exercise_name) ?? new Map();
+      const entries = equipmentMap.get(row.equipment) ?? [];
       entries.push({
         date: row.workout_date,
         estimatedMax: row.estimated_max,
         actualWeight: row.actual_weight,
         actualReps: row.actual_reps,
       });
-      exerciseMap.set(row.exercise_name, entries);
+      equipmentMap.set(row.equipment, entries);
+      exerciseMap.set(row.exercise_name, equipmentMap);
     }
 
-    return Array.from(exerciseMap.entries()).map(
-      ([exerciseName, history]) => new EstimatedOneRepMax(exerciseName, history),
-    );
+    return Array.from(exerciseMap.entries())
+      .flatMap(([exerciseName, equipmentMap]) =>
+        Array.from(equipmentMap.entries()).map(([equipment, history]) => ({
+          identity: { exerciseName, equipment },
+          history,
+        })),
+      )
+      .sort((a, b) => {
+        return (
+          a.identity.exerciseName.localeCompare(b.identity.exerciseName) ||
+          (a.identity.equipment ?? "").localeCompare(b.identity.equipment ?? "")
+        );
+      })
+      .map(({ identity, history }) => new EstimatedOneRepMax(identity, history));
   }
 
   /** Weekly sets per muscle group. */
@@ -481,25 +596,41 @@ export class StrengthRepository {
       sql`${this.#dedupedStrengthSets(days)}
           SELECT
             MIN(exercise_name) AS exercise_name,
+            MIN(equipment) AS equipment,
             date_trunc('week', (started_at AT TIME ZONE ${this.#timezone})::date)::date::text AS week,
             COALESCE(SUM(weight_kg * reps), 0)::real AS weekly_volume
           FROM deduped_strength_sets
           WHERE weight_kg > 0
             AND set_type = 'working'
-          GROUP BY normalized_exercise_name, normalized_equipment, 2
-          ORDER BY MIN(exercise_name), week`,
+          GROUP BY normalized_exercise_name, normalized_equipment, 3
+          ORDER BY MIN(exercise_name), MIN(equipment) NULLS FIRST, week`,
     );
 
-    const exerciseMap = new Map<string, ProgressiveOverloadObservation[]>();
+    const exerciseMap = new Map<string, Map<string | null, ProgressiveOverloadObservation[]>>();
     for (const row of rows) {
-      const observations = exerciseMap.get(row.exercise_name) ?? [];
+      const equipmentMap = exerciseMap.get(row.exercise_name) ?? new Map();
+      const observations = equipmentMap.get(row.equipment) ?? [];
       observations.push({ week: row.week, totalVolumeKg: row.weekly_volume });
-      exerciseMap.set(row.exercise_name, observations);
+      equipmentMap.set(row.equipment, observations);
+      exerciseMap.set(row.exercise_name, equipmentMap);
     }
 
     return Array.from(exerciseMap.entries())
-      .filter(([, observations]) => observations.length >= 2)
-      .map(([exerciseName, observations]) => new ProgressiveOverload(exerciseName, observations));
+      .flatMap(([exerciseName, equipmentMap]) =>
+        Array.from(equipmentMap.entries())
+          .filter(([, observations]) => observations.length >= 2)
+          .map(([equipment, observations]) => ({
+            identity: { exerciseName, equipment },
+            observations,
+          })),
+      )
+      .sort((a, b) => {
+        return (
+          a.identity.exerciseName.localeCompare(b.identity.exerciseName) ||
+          (a.identity.equipment ?? "").localeCompare(b.identity.equipment ?? "")
+        );
+      })
+      .map(({ identity, observations }) => new ProgressiveOverload(identity, observations));
   }
 
   /** Exercises and source-aware deduplicated sets for one resolved activity group. */

@@ -33,13 +33,14 @@ describe("VolumeWeek", () => {
 
 describe("EstimatedOneRepMax", () => {
   it("describes an increasing first-to-latest estimated max", () => {
-    const entry = new EstimatedOneRepMax("Bench Press", [
+    const entry = new EstimatedOneRepMax({ exerciseName: "Bench Press", equipment: "BARBELL" }, [
       { date: "2024-01-01", estimatedMax: 100, actualWeight: 80, actualReps: 8 },
       { date: "2024-01-15", estimatedMax: 105.2, actualWeight: 85, actualReps: 7 },
     ]);
     const detail = entry.toDetail();
     expect(detail).toEqual({
       exerciseName: "Bench Press",
+      equipment: "BARBELL",
       history: [
         { date: "2024-01-01", estimatedMax: 100, actualWeight: 80, actualReps: 8 },
         { date: "2024-01-15", estimatedMax: 105.2, actualWeight: 85, actualReps: 7 },
@@ -55,7 +56,7 @@ describe("EstimatedOneRepMax", () => {
   });
 
   it("describes a decreasing first-to-latest estimated max", () => {
-    const entry = new EstimatedOneRepMax("Squat", [
+    const entry = new EstimatedOneRepMax({ exerciseName: "Squat", equipment: null }, [
       { date: "2024-01-01", estimatedMax: 150, actualWeight: 120, actualReps: 5 },
       { date: "2024-02-01", estimatedMax: 142.4, actualWeight: 115, actualReps: 5 },
     ]);
@@ -70,7 +71,7 @@ describe("EstimatedOneRepMax", () => {
   });
 
   it("describes an unchanged first-to-latest estimated max", () => {
-    const entry = new EstimatedOneRepMax("Row", [
+    const entry = new EstimatedOneRepMax({ exerciseName: "Row", equipment: null }, [
       { date: "2024-01-01", estimatedMax: 80, actualWeight: 70, actualReps: 4 },
       { date: "2024-02-01", estimatedMax: 80, actualWeight: 70, actualReps: 4 },
     ]);
@@ -85,9 +86,9 @@ describe("EstimatedOneRepMax", () => {
   });
 
   it("rejects an empty history because trend evidence needs date bounds", () => {
-    expect(() => new EstimatedOneRepMax("Row", []).toDetail()).toThrow(
-      "Estimated max history must contain at least one observation.",
-    );
+    expect(() =>
+      new EstimatedOneRepMax({ exerciseName: "Row", equipment: null }, []).toDetail(),
+    ).toThrow("Estimated max history must contain at least one observation.");
   });
 });
 
@@ -289,6 +290,7 @@ describe("StrengthRepository", () => {
       const { repo } = makeRepository([
         {
           exercise_name: "Bench Press",
+          equipment: null,
           workout_date: "2024-01-01",
           estimated_max: 100,
           actual_weight: 80,
@@ -296,6 +298,7 @@ describe("StrengthRepository", () => {
         },
         {
           exercise_name: "Bench Press",
+          equipment: null,
           workout_date: "2024-01-15",
           estimated_max: 105,
           actual_weight: 85,
@@ -303,6 +306,7 @@ describe("StrengthRepository", () => {
         },
         {
           exercise_name: "Squat",
+          equipment: null,
           workout_date: "2024-01-01",
           estimated_max: 150,
           actual_weight: 120,
@@ -316,6 +320,68 @@ describe("StrengthRepository", () => {
       expect(result[0]?.toDetail().history).toHaveLength(2);
       expect(result[1]?.toDetail().exerciseName).toBe("Squat");
       expect(result[1]?.toDetail().history).toHaveLength(1);
+    });
+
+    it("keeps same-name estimated max histories distinct by equipment", async () => {
+      const { repo } = makeRepository([
+        {
+          exercise_name: "Chest Press",
+          equipment: "BARBELL",
+          workout_date: "2024-01-01",
+          estimated_max: 100,
+          actual_weight: 80,
+          actual_reps: 8,
+        },
+        {
+          exercise_name: "Chest Press",
+          equipment: "BARBELL",
+          workout_date: "2024-01-08",
+          estimated_max: 105,
+          actual_weight: 85,
+          actual_reps: 7,
+        },
+        {
+          exercise_name: "Chest Press",
+          equipment: "DUMBBELL",
+          workout_date: "2024-01-01",
+          estimated_max: 60,
+          actual_weight: 48,
+          actual_reps: 8,
+        },
+        {
+          exercise_name: "Chest Press",
+          equipment: "DUMBBELL",
+          workout_date: "2024-01-08",
+          estimated_max: 64,
+          actual_weight: 52,
+          actual_reps: 7,
+        },
+      ]);
+
+      const result = (await repo.getEstimatedOneRepMax(90)).map((exercise) => exercise.toDetail());
+
+      expect(result).toEqual([
+        expect.objectContaining({
+          equipment: "BARBELL",
+          exerciseName: "Chest Press",
+          history: expect.arrayContaining([expect.objectContaining({ estimatedMax: 100 })]),
+        }),
+        expect.objectContaining({
+          equipment: "DUMBBELL",
+          exerciseName: "Chest Press",
+          history: expect.arrayContaining([expect.objectContaining({ estimatedMax: 60 })]),
+        }),
+      ]);
+      expect(result.map((exercise) => exercise.history)).toEqual([
+        [
+          expect.objectContaining({ estimatedMax: 100 }),
+          expect.objectContaining({ estimatedMax: 105 }),
+        ],
+        [
+          expect.objectContaining({ estimatedMax: 60 }),
+          expect.objectContaining({ estimatedMax: 64 }),
+        ],
+      ]);
     });
 
     it("applies finite selected-range lower-bound filters", async () => {
@@ -365,7 +431,7 @@ describe("StrengthRepository", () => {
 
     it("filters out exercises with fewer than 2 weeks", async () => {
       const { repo } = makeRepository([
-        { exercise_name: "Curls", week: "2024-01-08", weekly_volume: 500 },
+        { exercise_name: "Curls", equipment: null, week: "2024-01-08", weekly_volume: 500 },
       ]);
       const result = await repo.getProgressiveOverload(90);
       expect(result).toEqual([]);
@@ -373,14 +439,79 @@ describe("StrengthRepository", () => {
 
     it("returns ProgressiveOverload instances for qualifying exercises", async () => {
       const { repo } = makeRepository([
-        { exercise_name: "Deadlift", week: "2024-01-08", weekly_volume: 1000 },
-        { exercise_name: "Deadlift", week: "2024-01-15", weekly_volume: 1100 },
-        { exercise_name: "Deadlift", week: "2024-01-22", weekly_volume: 1200 },
+        {
+          exercise_name: "Deadlift",
+          equipment: null,
+          week: "2024-01-08",
+          weekly_volume: 1000,
+        },
+        {
+          exercise_name: "Deadlift",
+          equipment: null,
+          week: "2024-01-15",
+          weekly_volume: 1100,
+        },
+        {
+          exercise_name: "Deadlift",
+          equipment: null,
+          week: "2024-01-22",
+          weekly_volume: 1200,
+        },
       ]);
       const result = await repo.getProgressiveOverload(90);
       expect(result).toHaveLength(1);
       expect(result[0]).toBeInstanceOf(ProgressiveOverload);
       expect(result[0]?.toDetail().trend).toBe("increasing");
+    });
+
+    it("keeps same-name progressive overload observations distinct by equipment", async () => {
+      const { repo } = makeRepository([
+        {
+          exercise_name: "Chest Press",
+          equipment: "BARBELL",
+          week: "2024-01-01",
+          weekly_volume: 1000,
+        },
+        {
+          exercise_name: "Chest Press",
+          equipment: "BARBELL",
+          week: "2024-01-08",
+          weekly_volume: 1100,
+        },
+        {
+          exercise_name: "Chest Press",
+          equipment: "DUMBBELL",
+          week: "2024-01-01",
+          weekly_volume: 500,
+        },
+        {
+          exercise_name: "Chest Press",
+          equipment: "DUMBBELL",
+          week: "2024-01-08",
+          weekly_volume: 550,
+        },
+      ]);
+
+      const result = (await repo.getProgressiveOverload(90)).map((exercise) => exercise.toDetail());
+
+      expect(result).toEqual([
+        expect.objectContaining({
+          equipment: "BARBELL",
+          exerciseName: "Chest Press",
+          observations: [
+            { totalVolumeKg: 1000, week: "2024-01-01" },
+            { totalVolumeKg: 1100, week: "2024-01-08" },
+          ],
+        }),
+        expect.objectContaining({
+          equipment: "DUMBBELL",
+          exerciseName: "Chest Press",
+          observations: [
+            { totalVolumeKg: 500, week: "2024-01-01" },
+            { totalVolumeKg: 550, week: "2024-01-08" },
+          ],
+        }),
+      ]);
     });
 
     it("applies finite selected-range lower-bound filters", async () => {

@@ -31,6 +31,7 @@ export interface EstimatedOneRepMaxEntry {
 
 export interface EstimatedOneRepMaxRow {
   exerciseName: string;
+  equipment: string | null;
   history: EstimatedOneRepMaxEntry[];
   trend: EstimatedMaxTrendEvidence;
 }

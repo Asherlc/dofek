@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
 import { loadClimbingGradePreference } from "../climbing-grade-preferences.ts";
+import { ActivityRepository } from "../repositories/activity-repository.ts";
 import {
   type ClimbingActivityEntryRow,
   type ClimbingGradeProgressionRow,
@@ -79,8 +80,18 @@ export const climbingRouter = router({
     .input(z.object({ id: z.guid() }))
     .query(async ({ ctx, input }): Promise<ClimbingActivityEntryRow[]> => {
       return runClimbingQuery(async () => {
+        const activity = await new ActivityRepository(
+          ctx.db,
+          ctx.userId,
+          ctx.timezone,
+          ctx.accessWindow,
+          ctx.sensorStore,
+        ).findById(input.id);
+        if (!activity) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
+        }
         const repository = await createClimbingRepository(ctx);
-        return (await repository.getActivityEntries(input.id)).map((row) => row.toDetail());
+        return (await repository.getActivityEntries(activity.id)).map((row) => row.toDetail());
       });
     }),
 

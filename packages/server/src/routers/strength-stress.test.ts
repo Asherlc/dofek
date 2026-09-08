@@ -72,6 +72,7 @@ describe("strengthRouter", () => {
       const rows = [
         {
           exercise_name: "Bench Press",
+          equipment: null,
           workout_date: "2024-01-15",
           estimated_max: 100,
           actual_weight: 80,
@@ -79,6 +80,7 @@ describe("strengthRouter", () => {
         },
         {
           exercise_name: "Bench Press",
+          equipment: null,
           workout_date: "2024-01-22",
           estimated_max: 105,
           actual_weight: 85,
@@ -86,6 +88,7 @@ describe("strengthRouter", () => {
         },
         {
           exercise_name: "Squat",
+          equipment: null,
           workout_date: "2024-01-15",
           estimated_max: 140,
           actual_weight: 120,
@@ -133,9 +136,24 @@ describe("strengthRouter", () => {
 
     it("computes regression slope and descriptive direction for exercises", async () => {
       const rows = [
-        { exercise_name: "Squat", week: "2024-01-08", weekly_volume: 3000 },
-        { exercise_name: "Squat", week: "2024-01-15", weekly_volume: 3200 },
-        { exercise_name: "Squat", week: "2024-01-22", weekly_volume: 3400 },
+        {
+          exercise_name: "Squat",
+          equipment: null,
+          week: "2024-01-08",
+          weekly_volume: 3000,
+        },
+        {
+          exercise_name: "Squat",
+          equipment: null,
+          week: "2024-01-15",
+          weekly_volume: 3200,
+        },
+        {
+          exercise_name: "Squat",
+          equipment: null,
+          week: "2024-01-22",
+          weekly_volume: 3400,
+        },
       ];
       const caller = makeCaller(rows);
       const result = await caller.progressiveOverload({ days: 90 });
@@ -156,7 +174,9 @@ describe("strengthRouter", () => {
     });
 
     it("filters exercises with fewer than 2 weeks", async () => {
-      const rows = [{ exercise_name: "Curl", week: "2024-01-15", weekly_volume: 500 }];
+      const rows = [
+        { exercise_name: "Curl", equipment: null, week: "2024-01-15", weekly_volume: 500 },
+      ];
       const caller = makeCaller(rows);
       const result = await caller.progressiveOverload({ days: 90 });
       expect(result).toEqual([]);

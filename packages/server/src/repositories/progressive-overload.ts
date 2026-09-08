@@ -6,6 +6,12 @@ import type {
   ProgressiveOverloadUncertainty,
 } from "../contracts/progressive-overload.ts";
 
+/** Canonical public identity for a strength exercise observation series. */
+export interface StrengthExerciseIdentity {
+  exerciseName: string;
+  equipment: string | null;
+}
+
 export interface ProgressiveOverloadObservation {
   week: string;
   totalVolumeKg: number;
@@ -106,11 +112,11 @@ function estimateUncertainty(
 
 /** Dated weekly exercise volume and its evidence-bounded linear trend. */
 export class ProgressiveOverload {
-  readonly #exerciseName: string;
+  readonly #identity: StrengthExerciseIdentity;
   readonly #observations: ProgressiveOverloadObservation[];
 
-  constructor(exerciseName: string, observations: ProgressiveOverloadObservation[]) {
-    this.#exerciseName = exerciseName;
+  constructor(identity: StrengthExerciseIdentity, observations: ProgressiveOverloadObservation[]) {
+    this.#identity = identity;
     this.#observations = observations;
   }
 
@@ -130,7 +136,7 @@ export class ProgressiveOverload {
     const trend = trendForSlope(slopeKgPerWeek);
 
     return {
-      exerciseName: this.#exerciseName,
+      ...this.#identity,
       observations: this.#observations,
       period: {
         startWeek,
