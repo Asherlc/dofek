@@ -70,7 +70,7 @@ export function decodeAnalyticalCursor(
 ): AnalyticalCursorPayload;
 ```
 
-- [ ] **Step 1: Write failing evidence-schema tests.** Assert that every approved epistemic kind parses, `measurement_kind` rejects `"calculated"`, quality coverage accepts `null`, and an unavailable calculation requires a non-empty reason.
+- [x] **Step 1: Write failing evidence-schema tests.** Assert that every approved epistemic kind parses, `measurement_kind` rejects `"calculated"`, quality coverage accepts `null`, and an unavailable calculation requires a non-empty reason.
 
 ```ts
 expect(sourceReferenceSchema.parse({
@@ -85,13 +85,13 @@ expect(sourceReferenceSchema.parse({
 expect(() => unavailableMetricSchema.parse({ value: null, reason: "" })).toThrow();
 ```
 
-- [ ] **Step 2: Run the evidence tests and witness RED.**
+- [x] **Step 2: Run the evidence tests and witness RED.**
 
 Run: `pnpm vitest run --project unit packages/server/src/mcp/analytical-evidence.test.ts`
 
 Expected: FAIL because `analytical-evidence.ts` does not exist.
 
-- [ ] **Step 3: Implement the shared evidence schemas.** Define the exact enums from the design, numeric coverage fields as nullable/non-negative, `reasons` and `assumptions` as arrays, and this reusable unavailable metric union:
+- [x] **Step 3: Implement the shared evidence schemas.** Define the exact enums from the design, numeric coverage fields as nullable/non-negative, `reasons` and `assumptions` as arrays, and this reusable unavailable metric union:
 
 ```ts
 export const unavailableMetricSchema = z.object({
@@ -100,13 +100,13 @@ export const unavailableMetricSchema = z.object({
 });
 ```
 
-- [ ] **Step 4: Run the evidence tests and witness GREEN.**
+- [x] **Step 4: Run the evidence tests and witness GREEN.**
 
 Run: `pnpm vitest run --project unit packages/server/src/mcp/analytical-evidence.test.ts`
 
 Expected: PASS with no warnings.
 
-- [ ] **Step 5: Write failing cursor tests.** Cover round-trip behavior, malformed Base64URL, unsupported version, changed user/activity/shape, invalid timestamp, and extra keys. The production change that makes these tests pass is strict Zod parsing plus expected-field comparison.
+- [x] **Step 5: Write failing cursor tests.** Cover round-trip behavior, malformed Base64URL, unsupported version, changed user/activity/shape, invalid timestamp, and extra keys. The production change that makes these tests pass is strict Zod parsing plus expected-field comparison.
 
 ```ts
 const cursor = encodeAnalyticalCursor({
@@ -123,15 +123,15 @@ expect(() => decodeAnalyticalCursor(cursor, { userId, activityId, shape: "power|
   .toThrow("Cursor does not match this request");
 ```
 
-- [ ] **Step 6: Run cursor tests and witness RED.**
+- [x] **Step 6: Run cursor tests and witness RED.**
 
 Run: `pnpm vitest run --project unit packages/server/src/mcp/analytical-cursor.test.ts`
 
 Expected: FAIL because the cursor module is absent.
 
-- [ ] **Step 7: Implement the cursor codec.** Serialize strict JSON as Base64URL, reject decoded payloads over 2 KiB, parse with `z.object(...).strict()`, compare all expected binding fields, and return the parsed payload. Authentication and repository ownership checks remain mandatory; the cursor is opaque paging state, not authorization.
+- [x] **Step 7: Implement the cursor codec.** Serialize strict JSON as Base64URL, reject decoded payloads over 2 KiB, parse with `z.object(...).strict()`, compare all expected binding fields, and return the parsed payload. Authentication and repository ownership checks remain mandatory; the cursor is opaque paging state, not authorization.
 
-- [ ] **Step 8: Run both focused suites and commit.**
+- [x] **Step 8: Run both focused suites and commit.**
 
 Run: `pnpm vitest run --project unit packages/server/src/mcp/analytical-evidence.test.ts packages/server/src/mcp/analytical-cursor.test.ts`
 
