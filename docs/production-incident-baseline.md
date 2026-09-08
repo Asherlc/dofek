@@ -25766,7 +25766,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   rephrase the test descriptions. Add exact analytical result and query-contract
   assertions plus boundary cases for pagination, missing samples, load windows,
   threshold selection, duplicate consolidation, suspicious strength sets, and
-  bounded provenance.
+  bounded provenance. Cover MCP stream selection, scope enforcement, analytics
+  store requirements, dependency construction, default streams, and filter
+  forwarding for the aligned recovery/training endpoint.
 - **Validation / follow-up:** Expo dependency validation, Dependency Cruiser,
   CSpell, root typecheck, the 9,223-test changed unit/mobile suite, and the full
   local lint gate pass. Focused mutation runs now pass for cycling metrics and

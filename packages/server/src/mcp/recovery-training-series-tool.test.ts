@@ -4,14 +4,15 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { recoveryTrainingSeriesOutputSchema } from "./recovery-training-series-output.ts";
 
-const mocks = vi.hoisted(() => ({ listRange: vi.fn() }));
+const mocks = vi.hoisted(() => ({ constructorArgs: vi.fn(), listRange: vi.fn() }));
 
 vi.mock("../repositories/recovery-training-series-repository.ts", async (importOriginal) => {
   const original =
     await importOriginal<typeof import("../repositories/recovery-training-series-repository.ts")>();
   return {
     ...original,
-    RecoveryTrainingSeriesRepository: vi.fn(function vitestConstructor() {
+    RecoveryTrainingSeriesRepository: vi.fn(function vitestConstructor(...args: unknown[]) {
+      mocks.constructorArgs(...args);
       return { listRange: mocks.listRange };
     }),
   };
@@ -24,6 +25,7 @@ describe("get_recovery_training_series", () => {
   let server: McpServer;
 
   beforeEach(async () => {
+    mocks.constructorArgs.mockReset();
     mocks.listRange.mockReset().mockResolvedValue({
       range: { start_date: "2026-03-08", end_date: "2026-03-09", timezone: "UTC" },
       requested_streams: ["health"],
@@ -107,6 +109,118 @@ describe("get_recovery_training_series", () => {
       providers: [],
       modalities: [],
     });
+    expect(mocks.constructorArgs.mock.calls[0]?.[0]).toEqual({
+      dailyMetrics: expect.any(Object),
+    });
+    expect(mocks.constructorArgs.mock.calls[0]?.[1]).toBe("UTC");
+  });
+
+  it("constructs every requested source and forwards explicit activity filters", async () => {
+    const allStreams = [
+      "health",
+      "sleep",
+      "body_weight",
+      "training_load",
+      "subjective",
+      "activities",
+      "nutrition",
+    ];
+    const scopedServer = new McpServer({ name: "all-series-test", version: "1.0.0" });
+    registerRecoveryTrainingSeriesTool(scopedServer, {
+      db: { execute: vi.fn(), select: vi.fn(), transaction: vi.fn() },
+      userId: "00000000-0000-4000-8000-000000000002",
+      scopes: ["health:read", "activity:read", "nutrition:read"],
+      timezone: "America/Los_Angeles",
+      sensorStore: { query: vi.fn() },
+    });
+    const scopedClient = new Client({ name: "all-series-client", version: "1.0.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await scopedServer.connect(serverTransport);
+    await scopedClient.connect(clientTransport);
+    mocks.listRange.mockResolvedValueOnce({
+      range: {
+        start_date: "2026-03-08",
+        end_date: "2026-03-08",
+        timezone: "America/Los_Angeles",
+      },
+      requested_streams: allStreams,
+      filters: { providers: ["wahoo"], modalities: ["road"] },
+      interpretation: {
+        date_alignment: "Local calendar dates.",
+        causality: "No causal claims.",
+        filter_scope: "Filters apply to activity-derived streams.",
+      },
+      rows: [{ date: "2026-03-08" }],
+    });
+
+    try {
+      const result = await scopedClient.callTool({
+        name: "get_recovery_training_series",
+        arguments: {
+          start_date: "2026-03-08",
+          end_date: "2026-03-08",
+          streams: allStreams,
+          providers: ["wahoo"],
+          modalities: ["road"],
+        },
+      });
+
+      if (result.isError)
+        throw new Error(result.content[0]?.type === "text" ? result.content[0].text : "Tool failed");
+      expect(Object.keys(mocks.constructorArgs.mock.calls.at(-1)?.[0] ?? {}).sort()).toEqual([
+        "activities",
+        "body",
+        "dailyMetrics",
+        "nutrition",
+        "sleep",
+        "subjective",
+        "trainingLoad",
+        "weightObservations",
+      ]);
+      expect(mocks.constructorArgs.mock.calls.at(-1)?.[1]).toBe("America/Los_Angeles");
+      expect(mocks.listRange).toHaveBeenLastCalledWith(
+        "2026-03-08",
+        "2026-03-08",
+        allStreams,
+        { providers: ["wahoo"], modalities: ["road"] },
+      );
+    } finally {
+      await scopedClient.close();
+      await scopedServer.close();
+    }
+  });
+
+  it("uses the six default non-nutrition streams", async () => {
+    const scopedServer = new McpServer({ name: "default-series-test", version: "1.0.0" });
+    registerRecoveryTrainingSeriesTool(scopedServer, {
+      db: { execute: vi.fn(), select: vi.fn(), transaction: vi.fn() },
+      userId: "00000000-0000-4000-8000-000000000002",
+      scopes: ["health:read", "activity:read"],
+      timezone: "UTC",
+      sensorStore: { query: vi.fn() },
+    });
+    const scopedClient = new Client({ name: "default-series-client", version: "1.0.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await scopedServer.connect(serverTransport);
+    await scopedClient.connect(clientTransport);
+
+    try {
+      const result = await scopedClient.callTool({
+        name: "get_recovery_training_series",
+        arguments: { start_date: "2026-03-08", end_date: "2026-03-09" },
+      });
+
+      expect(result.isError).not.toBe(true);
+      expect(mocks.listRange).toHaveBeenLastCalledWith(
+        "2026-03-08",
+        "2026-03-09",
+        ["health", "sleep", "body_weight", "training_load", "subjective", "activities"],
+        { providers: [], modalities: [] },
+      );
+    } finally {
+      await scopedClient.close();
+      await scopedServer.close();
+    }
   });
 
   it("bounds dense responses to 366 days", async () => {
@@ -169,4 +283,42 @@ describe("get_recovery_training_series", () => {
       }
     },
   );
+
+  it.each([
+    { stream: "health" as const, scope: "health:read" as const },
+    { stream: "sleep" as const, scope: "health:read" as const },
+    { stream: "body_weight" as const, scope: "health:read" as const },
+    { stream: "training_load" as const, scope: "activity:read" as const },
+  ])("requires ClickHouse for the $stream stream", async ({ stream, scope }) => {
+    const scopedServer = new McpServer({ name: `${stream}-missing-store`, version: "1.0.0" });
+    registerRecoveryTrainingSeriesTool(scopedServer, {
+      db: { execute: vi.fn(), select: vi.fn(), transaction: vi.fn() },
+      userId: "00000000-0000-4000-8000-000000000002",
+      scopes: [scope],
+      timezone: "UTC",
+    });
+    const scopedClient = new Client({ name: `${stream}-missing-store-client`, version: "1.0.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await scopedServer.connect(serverTransport);
+    await scopedClient.connect(clientTransport);
+
+    try {
+      const result = await scopedClient.callTool({
+        name: "get_recovery_training_series",
+        arguments: {
+          start_date: "2026-03-08",
+          end_date: "2026-03-08",
+          streams: [stream],
+        },
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]).toMatchObject({
+        type: "text",
+        text: expect.stringContaining("requires the ClickHouse analytics store"),
+      });
+    } finally {
+      await scopedClient.close();
+      await scopedServer.close();
+    }
+  });
 });
