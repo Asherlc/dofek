@@ -46,12 +46,17 @@ export function McpTokensPanel() {
   const revokeTokenMutation = trpc.mcp.revokeToken.useMutation({
     meta: locallyReportedErrorMeta,
   });
+  const updateScopesMutation = trpc.mcp.updateScopes.useMutation({
+    meta: locallyReportedErrorMeta,
+  });
   const [name, setName] = useState("Codex");
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [selectedScopes, setSelectedScopes] = useState<Set<McpScope>>(
     () => new Set(defaultMcpScopeValues),
   );
   const [createdToken, setCreatedToken] = useState<string | null>(null);
+  const [editingTokenId, setEditingTokenId] = useState<string | null>(null);
+  const [editingScopes, setEditingScopes] = useState<Set<McpScope>>(() => new Set());
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [mcpEndpoint, setMcpEndpoint] = useState("/api/mcp");
@@ -67,26 +72,57 @@ export function McpTokensPanel() {
   const activeScopeCount = selectedScopes.size;
   const canCreate =
     name.trim().length > 0 && activeScopeCount > 0 && !createTokenMutation.isPending;
-  const tokenMutationPending = createTokenMutation.isPending || revokeTokenMutation.isPending;
+  const tokenMutationPending =
+    createTokenMutation.isPending ||
+    revokeTokenMutation.isPending ||
+    updateScopesMutation.isPending;
+
+  const toggleScopeSet = (current: Set<McpScope>, scope: McpScope): Set<McpScope> => {
+    const next = new Set(current);
+    if (scope === "nutrition:write" && !next.has(scope)) {
+      next.add("nutrition:read");
+      next.add(scope);
+      return next;
+    }
+    if (scope === "nutrition:read" && next.has("nutrition:write")) {
+      return next;
+    }
+    if (next.has(scope)) {
+      next.delete(scope);
+    } else {
+      next.add(scope);
+    }
+    return next;
+  };
 
   const toggleScope = (scope: McpScope) => {
-    setSelectedScopes((current) => {
-      const next = new Set(current);
-      if (scope === "nutrition:write" && !next.has(scope)) {
-        next.add("nutrition:read");
-        next.add(scope);
-        return next;
-      }
-      if (scope === "nutrition:read" && next.has("nutrition:write")) {
-        return next;
-      }
-      if (next.has(scope)) {
-        next.delete(scope);
-      } else {
-        next.add(scope);
-      }
-      return next;
-    });
+    setSelectedScopes((current) => toggleScopeSet(current, scope));
+  };
+
+  const beginEditScopes = (token: NonNullable<typeof tokens.data>[number]) => {
+    setErrorMessage(null);
+    setEditingTokenId(token.id);
+    const nextScopes = new Set(token.scopes);
+    if (nextScopes.has("nutrition:write")) nextScopes.add("nutrition:read");
+    setEditingScopes(nextScopes);
+  };
+
+  const cancelEditScopes = () => {
+    setEditingTokenId(null);
+    setEditingScopes(new Set());
+  };
+
+  const saveScopes = async (tokenId: string) => {
+    setErrorMessage(null);
+    const scopes = mcpScopeValues.filter((scope) => editingScopes.has(scope));
+    try {
+      await updateScopesMutation.mutateAsync({ tokenId, scopes });
+      cancelEditScopes();
+      await trpcUtils.mcp.listTokens.invalidate();
+    } catch (error: unknown) {
+      captureException(error, { context: "update-mcp-token-scopes" });
+      setErrorMessage(userFacingErrorMessage(error, "Failed to update MCP token scopes."));
+    }
   };
 
   const createToken = async () => {
@@ -292,6 +328,8 @@ export function McpTokensPanel() {
           <ul className="space-y-2">
             {(tokens.data ?? []).map((token) => {
               const isRevoked = token.revokedAt !== null;
+              const isExpired = token.expiresAt !== null && new Date(token.expiresAt) <= new Date();
+              const isActive = !isRevoked && !isExpired;
               return (
                 <li
                   key={token.id}
@@ -312,9 +350,65 @@ export function McpTokensPanel() {
                       {formatTimestamp(token.expiresAt)}
                     </p>
                     <p className="mt-1 text-xs text-dim">{token.scopes.join(", ")}</p>
+                    {editingTokenId === token.id ? (
+                      <div className="mt-3 space-y-2">
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {mcpScopeOptions.map((option) => (
+                            <label
+                              key={option.value}
+                              className="flex items-center gap-2 rounded border border-border bg-surface/70 px-3 py-2 text-sm text-foreground"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={editingScopes.has(option.value)}
+                                disabled={
+                                  option.value === "nutrition:read" &&
+                                  editingScopes.has("nutrition:write")
+                                }
+                                onChange={() =>
+                                  setEditingScopes((current) =>
+                                    toggleScopeSet(current, option.value),
+                                  )
+                                }
+                                className="h-4 w-4 accent-accent"
+                              />
+                              <span>{option.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => saveScopes(token.id)}
+                            disabled={tokenMutationPending || editingScopes.size === 0}
+                            aria-label={`Save scopes for ${token.name}`}
+                            className="rounded bg-accent px-3 py-1.5 text-xs font-medium text-on-accent transition-colors hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Save scopes
+                          </button>
+                          <button
+                            type="button"
+                            onClick={cancelEditScopes}
+                            disabled={tokenMutationPending}
+                            className="rounded border border-border-strong px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
-                  {!isRevoked ? (
+                  {isActive ? (
                     <div className="flex flex-wrap gap-2 self-start sm:self-center">
+                      <button
+                        type="button"
+                        onClick={() => beginEditScopes(token)}
+                        disabled={tokenMutationPending}
+                        aria-label={`Edit scopes for ${token.name}`}
+                        className="rounded border border-border-strong px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Edit scopes
+                      </button>
                       <button
                         type="button"
                         onClick={() => rotateToken(token)}

@@ -16,16 +16,6 @@ export const mcpScopeSchema = z.enum([
 
 export type McpScope = z.infer<typeof mcpScopeSchema>;
 
-export interface McpTokenMetadata {
-  id: string;
-  name: string;
-  scopes: McpScope[];
-  createdAt: string;
-  lastUsedAt: string | null;
-  expiresAt: string | null;
-  revokedAt: string | null;
-}
-
 export interface CreateMcpTokenInput {
   userId: string;
   name: string;
@@ -43,6 +33,18 @@ export interface ValidMcpToken {
   oauthClientId: string | null;
   oauthResource: string | null;
 }
+
+export const mcpTokenMetadataSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  scopes: z.array(mcpScopeSchema),
+  createdAt: timestampStringSchema,
+  lastUsedAt: timestampStringSchema.nullable(),
+  expiresAt: timestampStringSchema.nullable(),
+  revokedAt: timestampStringSchema.nullable(),
+});
+
+export type McpTokenMetadata = z.infer<typeof mcpTokenMetadataSchema>;
 
 export class McpAuthError extends Error {
   readonly status: 401 | 403;
@@ -174,6 +176,28 @@ export async function listMcpTokens(
         ORDER BY created_at DESC`,
   );
   return rows.map(toMetadata);
+}
+
+export async function updateMcpTokenScopes(
+  db: ExecutableDatabase,
+  userId: string,
+  tokenId: string,
+  scopes: McpScope[],
+): Promise<McpTokenMetadata | null> {
+  const scopesArray = sql`ARRAY[${sql.join(
+    scopes.map((scope) => sql`${scope}`),
+    sql`, `,
+  )}]::text[]`;
+  const rows = await executeWithSchema(
+    db,
+    tokenMetadataRowSchema,
+    sql`UPDATE fitness.mcp_access_token
+        SET scopes = ${scopesArray}
+        WHERE id = ${tokenId}::uuid AND user_id = ${userId} AND revoked_at IS NULL
+          AND (expires_at IS NULL OR expires_at > NOW())
+        RETURNING id, name, scopes, created_at, last_used_at, expires_at, revoked_at`,
+  );
+  return rows[0] ? toMetadata(rows[0]) : null;
 }
 
 export async function revokeMcpToken(

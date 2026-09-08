@@ -7,6 +7,7 @@ import {
   createMcpToken,
   listMcpTokens,
   revokeMcpToken,
+  updateMcpTokenScopes,
   validateMcpToken,
 } from "./token-repository.ts";
 
@@ -127,6 +128,42 @@ describe("MCP token repository (integration)", () => {
     });
 
     expect((await validateMcpToken(ctx.db, token))?.scopes).toEqual(["nutrition:read"]);
+  });
+
+  it("updates scopes without changing the bearer token", async () => {
+    const { token, metadata } = await createMcpToken(ctx.db, {
+      userId: testUserId,
+      name: "Editable",
+      scopes: ["health:read"],
+      expiresAt: null,
+    });
+
+    const updated = await updateMcpTokenScopes(ctx.db, testUserId, metadata.id, [
+      "health:read",
+      "activity:read",
+    ]);
+
+    expect(updated?.scopes).toEqual(["health:read", "activity:read"]);
+    expect((await validateMcpToken(ctx.db, token))?.scopes).toEqual([
+      "health:read",
+      "activity:read",
+    ]);
+  });
+
+  it("does not update expired tokens", async () => {
+    const { metadata } = await createMcpToken(ctx.db, {
+      userId: testUserId,
+      name: "Expired",
+      scopes: ["health:read"],
+      expiresAt: "2020-01-01T00:00:00.000Z",
+    });
+
+    await expect(
+      updateMcpTokenScopes(ctx.db, testUserId, metadata.id, ["activity:read"]),
+    ).resolves.toBeNull();
+    expect(
+      (await listMcpTokens(ctx.db, testUserId)).find((token) => token.id === metadata.id)?.scopes,
+    ).toEqual(["health:read"]);
   });
 
   it("rejects tokens after revokeMcpToken", async () => {
