@@ -233,6 +233,14 @@ describe("clickHouseMigrations", () => {
       run: expect.any(Function),
     });
     expect(
+      migrations.find((migration) => migration.id === "0078_sensor_provider_priority_type"),
+    ).toMatchObject({
+      statements: [
+        expect.stringContaining("analytics.sensor_scalar_sample"),
+        expect.stringContaining("analytics.deduped_sensor"),
+      ],
+    });
+    expect(
       migrations.find((migration) => migration.id === "0069_canonical_activity_types"),
     ).toMatchObject({
       id: "0069_canonical_activity_types",

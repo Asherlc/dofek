@@ -25767,7 +25767,11 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `deduped_sensor` schema, so dbt failed first with `Identifier
   'samples.provider_id' cannot be resolved`. A fresh E2E migration ran before
   dbt had created `analytics.activity_power_curve`, so migration 0077 failed
-  first with `Could not find table: activity_power_curve`.
+  first with `Could not find table: activity_power_curve`. After that was
+  corrected, the fresh E2E dbt build identified a third stale target contract:
+  `sensor_scalar_sample.provider_priority` remained `UInt16` while the current
+  model emits `Int32`, and dbt failed with `New column types:
+  ['provider_priority Int32']`.
 - **Direct fixes:** Align the three Expo packages with the SDK compatibility map;
   move the shared performance-equivalence contract into a dependency-neutral
   type module; add the legitimate domain terms to the project dictionary and
@@ -25779,15 +25783,18 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   forwarding for the aligned recovery/training endpoint. Bring both executable
   ClickHouse fixtures up to the current deduplicated sensor provenance schema,
   and make migration 0077 introspect and alter the dbt-owned read model only
-  when that table already exists.
+  when that table already exists. Define both sensor target tables with `Int32`
+  provider priority and add migration 0078 to convert existing targets before
+  dbt runs.
 - **Validation / follow-up:** Expo dependency validation, Dependency Cruiser,
-  CSpell, root typecheck, the 9,223-test changed unit/mobile suite, and the full
+  CSpell, root typecheck, the 9,232-test changed unit/mobile suite, and the full
   local lint gate pass. Focused mutation runs now pass for cycling metrics,
   performance comparison, climbing progression, finger loading, and
   performance-comparison modality metrics. The focused ClickHouse join test and
   the production-dbt-path integrity repair integration suite pass with the
-  current provenance fixture. The complete replacement CI run remains the
-  merge gate. One otherwise-passing shard in run 34249990223 failed
+  current provenance fixture. The migration 0078 real-engine integration test
+  verifies the type conversion and idempotency. The complete replacement CI run
+  remains the merge gate. One otherwise-passing shard in run 34249990223 failed
   while finalizing its artifact with GitHub's `403 Forbidden`, so a clean
   replacement run is required to distinguish transient artifact infrastructure
   from code failures. The mutation threshold and production-module scope remain

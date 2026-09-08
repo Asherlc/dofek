@@ -25,6 +25,7 @@ describe("ClickHouse deduped sensor bootstrap", () => {
     expect(sql).toContain("device_id Nullable(String)");
     expect(sql).toContain("source_type Nullable(String)");
     expect(sql).toContain("measurement_kind LowCardinality(String)");
+    expect(sql.match(/provider_priority Int32/g)).toHaveLength(2);
     expect(
       buildSensorScalarSampleBackfillSql().match(/toNullable\(priority\) AS priority/g),
     ).toHaveLength(2);

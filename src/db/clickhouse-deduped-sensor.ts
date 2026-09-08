@@ -119,7 +119,7 @@ function buildSensorScalarSampleTableSql(): string {
   source_type Nullable(String),
   measurement_kind LowCardinality(String),
   scalar Float32,
-  provider_priority UInt16,
+  provider_priority Int32,
   _peerdb_synced_at DateTime64(9),
   _peerdb_is_deleted Int8,
   _peerdb_version Int64
@@ -164,7 +164,7 @@ function buildDedupedSensorTableSql(): string {
   source_type Nullable(String),
   measurement_kind LowCardinality(String),
   source_metric_stream_id Nullable(UUID),
-  provider_priority UInt16,
+  provider_priority Int32,
   refresh_version UInt64,
   is_deleted UInt8,
   refreshed_at DateTime64(9)
