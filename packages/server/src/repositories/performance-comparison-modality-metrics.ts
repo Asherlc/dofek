@@ -184,17 +184,19 @@ export function computeStrengthComparisonMetrics(rows: StrengthComparisonRow[]) 
     if (working) workingSets += 1;
     const missingVolume = working && (row.weight_kg === null || row.reps === null);
     if (missingVolume) missingVolumeSets += 1;
-    const validVolume =
-      flags.length === 0 && working && row.weight_kg !== null && row.reps !== null;
-    if ((working && !validVolume) || (!working && flags.length > 0)) excludedSets += 1;
-    if (validVolume) {
-      volume += row.weight_kg * row.reps;
+    const weightKg = row.weight_kg;
+    const reps = row.reps;
+    let validVolume = false;
+    if (flags.length === 0 && working && weightKg !== null && reps !== null) {
+      validVolume = true;
+      volume += weightKg * reps;
       validVolumeSets += 1;
-      if (row.reps >= 1 && row.reps <= 12 && row.weight_kg > 0) {
-        const estimate = row.weight_kg * (1 + row.reps / 30);
+      if (reps >= 1 && reps <= 12 && weightKg > 0) {
+        const estimate = weightKg * (1 + reps / 30);
         bestE1rm = bestE1rm === null ? estimate : Math.max(bestE1rm, estimate);
       }
     }
+    if ((working && !validVolume) || (!working && flags.length > 0)) excludedSets += 1;
   }
   const volumeStatus =
     validVolumeSets === 0

@@ -214,9 +214,10 @@ function resolveFromReference(row: ActivityRow): ResolvedEquivalence {
   const workout = rawIdentity(row, PELOTON_WORKOUT_KEYS).filter(
     (identity) => identity.provider === "peloton",
   );
-  if (workout.length === 1) {
+  const workoutIdentity = workout.length === 1 ? workout[0] : undefined;
+  if (workoutIdentity) {
     return {
-      key: { kind: "provider_workout_id", ...workout[0] },
+      key: { kind: "provider_workout_id", provider: "peloton", value: workoutIdentity.value },
       basis: "derived_from_reference",
       method: "exact_provider_workout_identity",
       confidence: "high",
