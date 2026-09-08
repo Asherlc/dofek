@@ -811,9 +811,7 @@ export async function runMetricStreamClickHouseSinkFromEnv(
     throw new Error("ClickHouse metric-stream sink requires an insert-capable client");
   }
 
-  const { consumer, quarantine, topic } = createKafkaMetricStreamConsumerFromEnv(
-    "metric-stream-clickhouse-sink",
-  );
+  const { consumer, quarantine, topic } = createKafkaMetricStreamConsumerFromEnv();
   if (!consumer.observeGroupLifecycle) {
     throw new Error("ClickHouse metric-stream sink requires Kafka group lifecycle events");
   }

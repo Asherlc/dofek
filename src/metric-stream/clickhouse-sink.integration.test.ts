@@ -26,6 +26,7 @@ const testEventId = "5e6f7a8b-0c1d-4e2f-8a3b-4c5d6e7f8a90";
 const latestScopeTestEventId = "6f7a8b9c-1d2e-4f3a-9b4c-5d6e7f8a9b01";
 const nullExternalIdTestEventId = "7a8b9c0d-2e3f-404b-8c5d-6e7f8a9b0c12";
 const replacementTestEventId = "8b9c0d1e-3f40-415c-9d6e-7f8a9b0c1d23";
+const crossRouteReplacementTestEventId = "4a9c0d1e-3f40-415c-9d6e-7f8a9b0c1d23";
 const batchedDeleteTestEventId = "9c0d1e2f-4051-426d-8e7f-8a9b0c1d2e34";
 const batchedDeleteSecondTestEventId = "ad1e2f30-5162-437e-8f90-9b0c1d2e3f45";
 const batchedDeleteUnrelatedTestEventId = "be2f3041-6273-448f-901a-0c1d2e3f4056";
@@ -95,6 +96,7 @@ async function removeTestEvent(client: ClickHouseClient): Promise<void> {
         latestScopeTestEventId,
         nullExternalIdTestEventId,
         replacementTestEventId,
+        crossRouteReplacementTestEventId,
         ...zeppSamples.map((event) => event.id),
         batchedDeleteTestEventId,
         batchedDeleteSecondTestEventId,
@@ -419,6 +421,74 @@ describe("metric stream ClickHouse sink (integration)", () => {
       format: "JSONEachRow",
     });
     expect(await result.json()).toEqual([{ is_deleted: 0, scalar: 94 }]);
+  });
+
+  it("keeps the newer live replacement when an older history replacement arrives last", async () => {
+    const row = {
+      id: crossRouteReplacementTestEventId,
+      recordedAt: "2026-06-10T15:36:12.000Z",
+      userId: testUserId,
+      providerId: "cross-route-replacement-test",
+      externalId: "integration-cross-route-replacement",
+      sourceType: "api",
+      channel: "heart_rate",
+    } satisfies Omit<MetricStreamRowInput, "scalar">;
+    const scope = {
+      userId: row.userId,
+      providerId: row.providerId,
+      externalId: row.externalId,
+    };
+    const historyDelete = createCurrentMetricStreamDeletedEvent(scope, "1000000000000001");
+    const liveDelete = createCurrentMetricStreamDeletedEvent(scope, "1000000000000003");
+    const lateHistoryDelete = createCurrentMetricStreamDeletedEvent(scope, "1000000000000002");
+    const historyReplacement = createCurrentMetricStreamEvent(
+      { ...row, scalar: 70 },
+      "1000000000000001",
+    );
+    const liveReplacement = createCurrentMetricStreamEvent(
+      { ...row, scalar: 75 },
+      "1000000000000003",
+    );
+    const lateHistoryReplacement = createCurrentMetricStreamEvent(
+      { ...row, scalar: 72 },
+      "1000000000000002",
+    );
+    const readCurrentRow = async () => {
+      const result = await client.query({
+        query: `SELECT is_deleted, scalar, toString(version) AS version
+          FROM ${METRIC_STREAM_TABLE} FINAL
+          WHERE id = {id:UUID}`,
+        query_params: { id: row.id },
+        format: "JSONEachRow",
+      });
+      return result.json();
+    };
+
+    await applyMetricStreamEventsToClickHouse(client, [historyDelete, historyReplacement]);
+    expect(await readCurrentRow()).toEqual([
+      { is_deleted: 0, scalar: 70, version: "2000000000000003" },
+    ]);
+
+    await applyMetricStreamEventsToClickHouse(client, [liveDelete, liveReplacement]);
+    expect(await readCurrentRow()).toEqual([
+      { is_deleted: 0, scalar: 75, version: "2000000000000007" },
+    ]);
+
+    await applyMetricStreamEventsToClickHouse(client, [lateHistoryDelete, lateHistoryReplacement]);
+    expect(await readCurrentRow()).toEqual([
+      { is_deleted: 0, scalar: 75, version: "2000000000000007" },
+    ]);
+
+    const acknowledgements = await client.query({
+      query: `SELECT toString(count()) AS count
+        FROM ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE} FINAL
+        WHERE event_id IN {ids:Array(UUID)}`,
+      query_params: {
+        ids: [historyDelete.eventId, liveDelete.eventId, lateHistoryDelete.eventId],
+      },
+      format: "JSONEachRow",
+    });
+    expect(await acknowledgements.json()).toEqual([{ count: "3" }]);
   });
 
   it("applies a long delete run within HTTP limits before its replacement rows", async () => {

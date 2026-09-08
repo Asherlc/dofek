@@ -1063,9 +1063,7 @@ describe("runMetricStreamClickHouseSinkFromEnv", () => {
 
     await runMetricStreamClickHouseSinkFromEnv(new MetricStreamConsumerReadiness());
 
-    expect(createKafkaMetricStreamConsumerFromEnv).toHaveBeenCalledWith(
-      "metric-stream-clickhouse-sink",
-    );
+    expect(createKafkaMetricStreamConsumerFromEnv).toHaveBeenCalledWith();
     expect(runMetricStreamEventConsumer).toHaveBeenCalledWith({
       consumer,
       quarantine: expect.any(Object),

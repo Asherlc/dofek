@@ -684,7 +684,8 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
 
   it("requires Redpanda brokers", () => {
     expect(() =>
-      createKafkaMetricStreamConsumerFromEnv("metric-stream-clickhouse-sink", {
+      createKafkaMetricStreamConsumerFromEnv({
+        METRIC_STREAM_CONSUMER_GROUP: "history-sink",
         METRIC_STREAM_TOPIC: "metric-stream-v1",
       }),
     ).toThrow("REDPANDA_BROKERS is required");
@@ -692,7 +693,8 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
 
   it("requires a metric stream topic", () => {
     expect(() =>
-      createKafkaMetricStreamConsumerFromEnv("metric-stream-clickhouse-sink", {
+      createKafkaMetricStreamConsumerFromEnv({
+        METRIC_STREAM_CONSUMER_GROUP: "history-sink",
         REDPANDA_BROKERS: "redpanda:9092",
       }),
     ).toThrow("METRIC_STREAM_TOPIC is required");
@@ -700,21 +702,53 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
 
   it("rejects broker lists that only contain separators and whitespace", () => {
     expect(() =>
-      createKafkaMetricStreamConsumerFromEnv("metric-stream-clickhouse-sink", {
+      createKafkaMetricStreamConsumerFromEnv({
+        METRIC_STREAM_CONSUMER_GROUP: "history-sink",
         METRIC_STREAM_TOPIC: "metric-stream-v1",
         REDPANDA_BROKERS: " , ",
       }),
     ).toThrow("REDPANDA_BROKERS must contain at least one broker");
   });
 
+  it.each([undefined, ""])("requires a consumer group when configured as %s", (groupId) => {
+    expect(() =>
+      createKafkaMetricStreamConsumerFromEnv({
+        METRIC_STREAM_TOPIC: "metric-stream-history-v1",
+        METRIC_STREAM_CONSUMER_GROUP: groupId,
+        REDPANDA_BROKERS: "redpanda:9092",
+      }),
+    ).toThrow("METRIC_STREAM_CONSUMER_GROUP is required");
+    expect(kafkaConstructor).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { topic: "metric-stream-live-v1", groupId: "live-sink" },
+    { topic: "metric-stream-history-v1", groupId: "history-sink" },
+  ])(
+    "uses the configured $groupId identity and $topic subscription",
+    async ({ topic, groupId }) => {
+      const configured = createKafkaMetricStreamConsumerFromEnv({
+        METRIC_STREAM_TOPIC: topic,
+        METRIC_STREAM_CONSUMER_GROUP: groupId,
+        REDPANDA_BROKERS: "redpanda:9092",
+      });
+
+      await runMetricStreamEventConsumer({
+        ...configured,
+        handleEvents: vi.fn(async () => undefined),
+      });
+
+      expect(kafkaConsumerFactory).toHaveBeenCalledWith({ groupId });
+      expect(kafkaConsumerSubscribe).toHaveBeenCalledWith({ topic, fromBeginning: false });
+    },
+  );
+
   it("trims broker lists and adapts KafkaJS consumer methods", async () => {
-    const { consumer, quarantine, topic } = createKafkaMetricStreamConsumerFromEnv(
-      "metric-stream-clickhouse-sink",
-      {
-        METRIC_STREAM_TOPIC: "metric-stream-v1",
-        REDPANDA_BROKERS: " redpanda:9092 , redpanda:9093 ",
-      },
-    );
+    const { consumer, quarantine, topic } = createKafkaMetricStreamConsumerFromEnv({
+      METRIC_STREAM_CONSUMER_GROUP: "metric-stream-clickhouse-sink",
+      METRIC_STREAM_TOPIC: "metric-stream-v1",
+      REDPANDA_BROKERS: " redpanda:9092 , redpanda:9093 ",
+    });
 
     expect(topic).toBe("metric-stream-v1");
     expect(kafkaConstructor).toHaveBeenCalledWith({
@@ -771,7 +805,8 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
   });
 
   it("forwards Kafka group lifecycle events to sink readiness", () => {
-    const { consumer } = createKafkaMetricStreamConsumerFromEnv("metric-stream-clickhouse-sink", {
+    const { consumer } = createKafkaMetricStreamConsumerFromEnv({
+      METRIC_STREAM_CONSUMER_GROUP: "metric-stream-clickhouse-sink",
       METRIC_STREAM_TOPIC: "metric-stream-v1",
       REDPANDA_BROKERS: "redpanda:9092",
     });
