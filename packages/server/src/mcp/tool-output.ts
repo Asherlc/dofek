@@ -431,6 +431,7 @@ const strengthSetSchema = z.object({
   notes: nullableString,
 });
 const strengthExerciseSchema = z.object({
+  activityId: z.uuid(),
   exerciseIndex: z.number().int(),
   exerciseName: z.string(),
   equipment: nullableString,

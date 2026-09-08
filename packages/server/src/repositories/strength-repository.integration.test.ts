@@ -192,6 +192,30 @@ describe("StrengthRepository activity scope", () => {
           }),
         ]);
       }
+      await db.execute(sql`INSERT INTO fitness.strength_set (
+        activity_id, exercise_id, exercise_index, set_index, set_type, weight_kg, reps
+      ) SELECT ${representative.id}, id, 0, 0, 'working', 30, 10
+        FROM fitness.exercise WHERE name = ${gapExerciseName}`);
+      for (const activity of activities) {
+        const exercises = await repository.getExercisesForActivity(activity.id);
+        expect(exercises).toHaveLength(2);
+        expect(exercises.map((exercise) => exercise.toDetail())).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              activityId: member.id,
+              exerciseIndex: 0,
+              exerciseName: "Scope Test Press",
+              sets: [expect.objectContaining({ weightKg: 60, reps: 8 })],
+            }),
+            expect.objectContaining({
+              activityId: representative.id,
+              exerciseIndex: 0,
+              exerciseName: gapExerciseName,
+              sets: [expect.objectContaining({ weightKg: 30, reps: 10 })],
+            }),
+          ]),
+        );
+      }
       const otherUser = new StrengthRepository(db, "00000000-0000-4000-8000-000000000002", "UTC");
       expect(await otherUser.getExercisesForActivity(member.id)).toEqual([]);
     });

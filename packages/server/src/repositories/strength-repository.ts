@@ -146,6 +146,7 @@ export interface SetDetail {
 
 /** An exercise with all its sets, for the activity detail view. */
 export class ExerciseWithSets {
+  readonly #activityId: string;
   readonly #exerciseIndex: number;
   readonly #exerciseName: string;
   readonly #equipment: string | null;
@@ -160,7 +161,9 @@ export class ExerciseWithSets {
     muscleGroups: string[] | null,
     exerciseType: string | null,
     sets: SetDetail[],
+    activityId: string,
   ) {
+    this.#activityId = activityId;
     this.#exerciseIndex = exerciseIndex;
     this.#exerciseName = exerciseName;
     this.#equipment = equipment;
@@ -171,6 +174,7 @@ export class ExerciseWithSets {
 
   toDetail() {
     return {
+      activityId: this.#activityId,
       exerciseIndex: this.#exerciseIndex,
       exerciseName: this.#exerciseName,
       equipment: this.#equipment,
@@ -242,6 +246,7 @@ const overloadRowSchema = z.object({
 });
 
 const exerciseSetRowSchema = z.object({
+  activity_id: z.string().uuid(),
   exercise_name: z.string(),
   equipment: z.string().nullable(),
   muscle_groups: z.array(z.string()).nullable(),
@@ -449,6 +454,7 @@ export class StrengthRepository {
       this.#db,
       exerciseSetRowSchema,
       sql`SELECT
+            ss.activity_id,
             e.name AS exercise_name,
             e.equipment,
             e.muscle_groups,
@@ -466,12 +472,14 @@ export class StrengthRepository {
           JOIN fitness.exercise e ON e.id = ss.exercise_id
           WHERE ${activityId}::uuid = ANY(a.member_activity_ids)
             AND a.user_id = ${this.#userId}
-          ORDER BY ss.exercise_index, ss.set_index`,
+          ORDER BY ss.activity_id, ss.exercise_index, ss.set_index`,
     );
 
     const exerciseMap = new Map<
-      number,
+      string,
       {
+        activityId: string;
+        exerciseIndex: number;
         name: string;
         equipment: string | null;
         muscleGroups: string[] | null;
@@ -480,9 +488,12 @@ export class StrengthRepository {
       }
     >();
     for (const row of rows) {
-      let exercise = exerciseMap.get(row.exercise_index);
+      const key = `${row.activity_id}:${row.exercise_index}`;
+      let exercise = exerciseMap.get(key);
       if (!exercise) {
         exercise = {
+          activityId: row.activity_id,
+          exerciseIndex: row.exercise_index,
           name: row.exercise_name,
           equipment: row.equipment,
           muscleGroups: resolveExerciseMuscleGroups(row.exercise_name, row.muscle_groups),
@@ -493,7 +504,7 @@ export class StrengthRepository {
           ),
           sets: [],
         };
-        exerciseMap.set(row.exercise_index, exercise);
+        exerciseMap.set(key, exercise);
       }
       exercise.sets.push({
         setIndex: row.set_index,
@@ -506,15 +517,16 @@ export class StrengthRepository {
       });
     }
 
-    return Array.from(exerciseMap.entries()).map(
-      ([exerciseIndex, exercise]) =>
+    return Array.from(exerciseMap.values()).map(
+      (exercise) =>
         new ExerciseWithSets(
-          exerciseIndex,
+          exercise.exerciseIndex,
           exercise.name,
           exercise.equipment,
           exercise.muscleGroups,
           exercise.exerciseType,
           exercise.sets,
+          exercise.activityId,
         ),
     );
   }

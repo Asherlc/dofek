@@ -25708,6 +25708,11 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   incorrectly required the representative ID. The shared repository now resolves
   any member ID while preserving user scoping
   ([strength repository](../packages/server/src/repositories/strength-repository.ts)).
+  Review also reproduced two member exercises with the same source index being
+  combined. Grouping now retains member activity ID plus exercise index, and
+  web/mobile list keys use that same identity while preserving numeric source
+  indexes ([web activity detail](../packages/web/src/pages/ActivityDetailPage.tsx),
+  [mobile activity detail](../packages/mobile/app/activity/[id].tsx)).
 - **Other checks:** The reported commute examples retain their corrected types
   and offsets. The Apple outlier already has a mapped canonical type; provider
   code 52 is deliberately retained and mapped in the

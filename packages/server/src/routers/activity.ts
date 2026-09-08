@@ -74,6 +74,7 @@ async function scheduleActivityRecomputeAnalyticsRefresh(
 }
 
 export interface StrengthExerciseDetail {
+  activityId: string;
   exerciseIndex: number;
   exerciseName: string;
   equipment: string | null;

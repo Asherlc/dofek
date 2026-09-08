@@ -464,24 +464,32 @@ describe("metric stream ClickHouse sink (integration)", () => {
 
     await applyMetricStreamEventsToClickHouse(client, [...deletes, replacement]);
 
-    const result = await client.query<{ external_id: string; is_deleted: number; scalar: number }>({
+    const result = await client.query({
       query: `SELECT external_id, is_deleted, scalar FROM ${METRIC_STREAM_TABLE} FINAL
         WHERE id IN {ids:Array(UUID)} ORDER BY external_id`,
       query_params: { ids },
       format: "JSONEachRow",
     });
-    expect(await result.json()).toEqual([
+    const rowsSchema = z.array(
+      z.object({
+        external_id: z.string(),
+        is_deleted: z.number(),
+        scalar: z.number(),
+      }),
+    );
+    expect(rowsSchema.parse(await result.json())).toEqual([
       { external_id: "bounded-delete-0", is_deleted: 1, scalar: 94 },
       { external_id: "bounded-delete-100", is_deleted: 1, scalar: 94 },
       { external_id: "bounded-delete-349", is_deleted: 0, scalar: 99 },
     ]);
-    const acknowledgements = await client.query<{ count: string }>({
+    const acknowledgements = await client.query({
       query: `SELECT count() AS count FROM ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE} FINAL
         WHERE event_id IN {ids:Array(UUID)}`,
       query_params: { ids: deletes.map((event) => event.eventId) },
       format: "JSONEachRow",
     });
-    expect(Number((await acknowledgements.json())[0]?.count)).toBe(350);
+    const countSchema = z.array(z.object({ count: z.coerce.number() }));
+    expect(countSchema.parse(await acknowledgements.json())).toEqual([{ count: 350 }]);
   });
 
   it("acknowledges a deletion event only after applying it", async () => {
