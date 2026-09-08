@@ -157,6 +157,30 @@ describe("McpTokensPanel", () => {
     await waitFor(() => {
       expect(createTokenMutateAsync).toHaveBeenCalledWith({
         name: "Codex",
+        scopes: ["health:read", "activity:read", "nutrition:read", "providers:read", "sync:write"],
+        expiresAt: null,
+      });
+    });
+    expect(await screen.findByDisplayValue("dofek_mcp_created")).toBeTruthy();
+    expect(screen.getByText("Save this token now. It will not be shown again.")).toBeTruthy();
+    expect(invalidateMcp).toHaveBeenCalled();
+  });
+
+  it("requires explicit selection to grant health write access", async () => {
+    createTokenMutateAsync.mockResolvedValueOnce({
+      token: "dofek_mcp_writer",
+      metadata: {},
+    });
+
+    render(<McpTokensPanel />);
+
+    expect(screen.getByLabelText("Log health observations").getAttribute("checked")).toBeNull();
+    fireEvent.click(screen.getByLabelText("Log health observations"));
+    fireEvent.click(screen.getByRole("button", { name: "Create Token" }));
+
+    await waitFor(() => {
+      expect(createTokenMutateAsync).toHaveBeenCalledWith({
+        name: "Codex",
         scopes: [
           "health:read",
           "health:write",
@@ -168,9 +192,6 @@ describe("McpTokensPanel", () => {
         expiresAt: null,
       });
     });
-    expect(await screen.findByDisplayValue("dofek_mcp_created")).toBeTruthy();
-    expect(screen.getByText("Save this token now. It will not be shown again.")).toBeTruthy();
-    expect(invalidateMcp).toHaveBeenCalled();
   });
 
   it("requires at least one scope before creating a token", () => {
@@ -178,7 +199,6 @@ describe("McpTokensPanel", () => {
 
     for (const label of [
       "Health summaries",
-      "Log health observations",
       "Activity history",
       "Nutrition summaries",
       "Provider status",
@@ -232,14 +252,7 @@ describe("McpTokensPanel", () => {
     await waitFor(() => {
       expect(createTokenMutateAsync).toHaveBeenCalledWith({
         name: "Codex",
-        scopes: [
-          "health:read",
-          "health:write",
-          "activity:read",
-          "nutrition:read",
-          "providers:read",
-          "sync:write",
-        ],
+        scopes: ["health:read", "activity:read", "nutrition:read", "providers:read", "sync:write"],
         expiresAt: "2026-06-01T23:59:59.999Z",
       });
     });

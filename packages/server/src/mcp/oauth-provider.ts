@@ -41,6 +41,14 @@ export const MCP_OAUTH_SCOPES = [
   "sync:write",
 ] as const satisfies readonly McpScope[];
 
+const MCP_OAUTH_DEFAULT_SCOPES = [
+  "health:read",
+  "activity:read",
+  "nutrition:read",
+  "providers:read",
+  "sync:write",
+] as const satisfies readonly McpScope[];
+
 const authorizeLocalsSchema = z.object({
   mcpOAuthUserId: z.string(),
   mcpOAuthApproval: z.string().optional(),
@@ -56,7 +64,7 @@ const MCP_SCOPE_LABELS: Record<McpScope, string> = {
 };
 
 function parseScopes(scopes: readonly string[] | undefined): McpScope[] {
-  const requestedScopes = scopes && scopes.length > 0 ? scopes : [...MCP_OAUTH_SCOPES];
+  const requestedScopes = scopes && scopes.length > 0 ? scopes : [...MCP_OAUTH_DEFAULT_SCOPES];
   const parsed = mcpScopeSchema.array().safeParse(requestedScopes);
   if (!parsed.success) {
     throw new InvalidScopeError("One or more requested scopes are not supported");

@@ -155,6 +155,9 @@ List existing token metadata with `mcp.listTokens`. Revoke a token with `mcp.rev
 | `providers:read` | List configured providers and connection status. |
 | `sync:write` | Enqueue provider sync jobs. |
 
+`health:write` is never granted by default. Manual-token users must select it,
+and OAuth clients must request it explicitly.
+
 ## Tools
 
 The canonical tool names, schemas, and scope checks are defined in the [MCP tool implementation](../packages/server/src/mcp/tools.ts).
@@ -193,7 +196,7 @@ OpenAI likewise treats schemas as user-facing tool metadata and recommends an
 output schema for structured results ([OpenAI: Build an MCP
 server](https://developers.openai.com/plugins/build/mcp-server#define-tools-from-user-goals)).
 
-For the 21 ordinary tools, the declared schema and `structuredContent` use the
+For the 19 ordinary tools, the declared schema and `structuredContent` use the
 object-root envelope `{ "result": ... }`. This makes scalar, array, `null`,
 and object natural results valid object-root tool outputs without changing the
 existing pretty-printed JSON text in `content`. For example, an ordinary tool

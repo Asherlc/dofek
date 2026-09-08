@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
 import { invalidateUserQueryDomains } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
 import { dateSchema } from "../lib/date-schema.ts";
 import { injuryKindSchema, SubjectiveRepository } from "../repositories/subjective-repository.ts";
@@ -95,7 +96,13 @@ export function registerSubjectiveTools(server: McpServer, context: DofekMcpCont
           });
         },
       );
-      await invalidateUserQueryDomains(context.userId, ["subjective"]);
+      try {
+        await invalidateUserQueryDomains(context.userId, ["subjective"]);
+      } catch (error) {
+        captureException(error, {
+          tags: { mcp_tool: "log_injury", operation: "cache_invalidation" },
+        });
+      }
       return jsonToolResult(injury);
     },
   );

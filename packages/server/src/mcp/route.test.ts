@@ -1180,6 +1180,50 @@ describe("createMcpRouter", () => {
     ]);
   });
 
+  it("reports cache invalidation failures after returning the committed injury", async () => {
+    authorizeMcpToken(["health:write"]);
+    const cacheError = new Error("cache unavailable");
+    toolTestMocks.subjectiveRegions.mockResolvedValue([
+      {
+        id: "left_knee",
+        kind: "joint",
+        label: "Left knee",
+        parent_id: "left_leg",
+        sort_order: 20,
+      },
+    ]);
+    toolTestMocks.subjectiveCreateInjury.mockResolvedValue({
+      body_region_id: "left_knee",
+      created_at: "2026-09-08T12:00:00.000Z",
+      description: "Sore after trail run",
+      id: "11111111-1111-4111-8111-111111111111",
+      kind: "niggle",
+      onset_date: "2026-09-07",
+      resolved_date: null,
+      severity: null,
+      updated_at: "2026-09-08T12:00:00.000Z",
+    });
+    toolTestMocks.invalidateUserQueryDomains.mockRejectedValueOnce(cacheError);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer write-token",
+      body: createToolCallRequest("log_injury", {
+        body_region_id: "left_knee",
+        description: "Sore after trail run",
+        kind: "niggle",
+        onset_date: "2026-09-07",
+      }),
+    });
+
+    expect(parseToolCallText(response.text)).toMatchObject({
+      body_region_id: "left_knee",
+      description: "Sore after trail run",
+    });
+    expect(captureException).toHaveBeenCalledWith(cacheError, {
+      tags: { mcp_tool: "log_injury", operation: "cache_invalidation" },
+    });
+  });
+
   it("rejects injury logging when the body region is unknown", async () => {
     authorizeMcpToken(["health:write"]);
     toolTestMocks.subjectiveRegions.mockResolvedValue([]);
