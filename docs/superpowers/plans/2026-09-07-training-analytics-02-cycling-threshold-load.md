@@ -25,9 +25,9 @@ Vitest, `@dofek/training` numerical primitives.
 
 - Create: `drizzle/0112_provider_threshold_observation.sql`
 - Modify: `src/db/schema/activity.ts`
-- Modify: `src/db/schema/index.ts`
-- Create: `packages/server/src/repositories/threshold-observation-repository.ts`
-- Create: `packages/server/src/repositories/threshold-observation-repository.test.ts`
+- Create: `src/db/provider-threshold-observation.ts`
+- Create: `src/db/provider-threshold-observation.test.ts`
+- Create: `src/db/provider-threshold-observation.integration.test.ts`
 - Modify: `src/providers/zwift.ts`
 - Modify: `src/providers/zwift.test.ts`
 
