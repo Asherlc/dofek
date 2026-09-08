@@ -25730,6 +25730,29 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   The Axiom MCP token remains expired; task-local Swarm logs supplied the fatal
   evidence. No additional resilience knob was introduced.
 
+## 2026-09-08 — Metric-stream backlog blocks provider processing readiness
+
+- **Status:** Unresolved; approved remediation is in design review.
+- **Symptoms / impact:** Provider connections, including Withings, ingest new
+  data but their processing status remains `Waiting`; the last ready datasets
+  are several days old.
+- **Evidence:** The production `metric-stream-clickhouse-sink` consumer was
+  stable with 44,859,880 messages of lag. Its committed record timestamp was
+  `2026-09-06T15:58:55Z`, versus a topic-head timestamp of
+  `2026-09-08T22:22:38Z`. Withings relational CDC completed, but its
+  metric-stream processing acknowledgements were absent. ClickHouse consumed
+  its configured one CPU core while the host retained capacity.
+- **Root cause:** The legacy one-partition stream serializes a large historical
+  refresh ahead of all new live provider messages. After the September 7
+  oversized-delete fix restored consumer progress, the sink still could not
+  drain the accumulated workload faster than new messages arrived.
+- **Approved remediation:** Retain the ordered legacy drain, route normal and
+  full-history syncs through separate topics and sinks, and raise ClickHouse's
+  sustained CPU allocation to 1.5 cores. Do not skip, reorder, or replay
+  legacy offsets.
+- **Remaining risk:** Until the new live route is deployed and verified, all
+  current provider processing status continues to depend on the legacy backlog.
+
 ## 2026-09-07 — Stale workspace Docker resources blocked integration validation
 
 - **Scope / impact:** Local integration-test infrastructure only; no production
