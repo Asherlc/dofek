@@ -16,16 +16,6 @@ export const mcpScopeSchema = z.enum([
 
 export type McpScope = z.infer<typeof mcpScopeSchema>;
 
-export interface McpTokenMetadata {
-  id: string;
-  name: string;
-  scopes: McpScope[];
-  createdAt: string;
-  lastUsedAt: string | null;
-  expiresAt: string | null;
-  revokedAt: string | null;
-}
-
 export interface CreateMcpTokenInput {
   userId: string;
   name: string;
@@ -43,6 +33,18 @@ export interface ValidMcpToken {
   oauthClientId: string | null;
   oauthResource: string | null;
 }
+
+export const mcpTokenMetadataSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  scopes: z.array(mcpScopeSchema),
+  createdAt: timestampStringSchema,
+  lastUsedAt: timestampStringSchema.nullable(),
+  expiresAt: timestampStringSchema.nullable(),
+  revokedAt: timestampStringSchema.nullable(),
+});
+
+export type McpTokenMetadata = z.infer<typeof mcpTokenMetadataSchema>;
 
 export class McpAuthError extends Error {
   readonly status: 401 | 403;
@@ -192,6 +194,7 @@ export async function updateMcpTokenScopes(
     sql`UPDATE fitness.mcp_access_token
         SET scopes = ${scopesArray}
         WHERE id = ${tokenId}::uuid AND user_id = ${userId} AND revoked_at IS NULL
+          AND (expires_at IS NULL OR expires_at > NOW())
         RETURNING id, name, scopes, created_at, last_used_at, expires_at, revoked_at`,
   );
   return rows[0] ? toMetadata(rows[0]) : null;

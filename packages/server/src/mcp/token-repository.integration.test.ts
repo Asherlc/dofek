@@ -150,6 +150,22 @@ describe("MCP token repository (integration)", () => {
     ]);
   });
 
+  it("does not update expired tokens", async () => {
+    const { metadata } = await createMcpToken(ctx.db, {
+      userId: testUserId,
+      name: "Expired",
+      scopes: ["health:read"],
+      expiresAt: "2020-01-01T00:00:00.000Z",
+    });
+
+    await expect(
+      updateMcpTokenScopes(ctx.db, testUserId, metadata.id, ["activity:read"]),
+    ).resolves.toBeNull();
+    expect(
+      (await listMcpTokens(ctx.db, testUserId)).find((token) => token.id === metadata.id)?.scopes,
+    ).toEqual(["health:read"]);
+  });
+
   it("rejects tokens after revokeMcpToken", async () => {
     const { token, metadata } = await createMcpToken(ctx.db, {
       userId: testUserId,

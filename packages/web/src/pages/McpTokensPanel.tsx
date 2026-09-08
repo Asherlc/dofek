@@ -102,7 +102,9 @@ export function McpTokensPanel() {
   const beginEditScopes = (token: NonNullable<typeof tokens.data>[number]) => {
     setErrorMessage(null);
     setEditingTokenId(token.id);
-    setEditingScopes(new Set(token.scopes));
+    const nextScopes = new Set(token.scopes);
+    if (nextScopes.has("nutrition:write")) nextScopes.add("nutrition:read");
+    setEditingScopes(nextScopes);
   };
 
   const cancelEditScopes = () => {
@@ -326,6 +328,8 @@ export function McpTokensPanel() {
           <ul className="space-y-2">
             {(tokens.data ?? []).map((token) => {
               const isRevoked = token.revokedAt !== null;
+              const isExpired = token.expiresAt !== null && new Date(token.expiresAt) <= new Date();
+              const isActive = !isRevoked && !isExpired;
               return (
                 <li
                   key={token.id}
@@ -394,7 +398,7 @@ export function McpTokensPanel() {
                       </div>
                     ) : null}
                   </div>
-                  {!isRevoked ? (
+                  {isActive ? (
                     <div className="flex flex-wrap gap-2 self-start sm:self-center">
                       <button
                         type="button"

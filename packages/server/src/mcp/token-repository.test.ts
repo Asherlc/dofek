@@ -188,6 +188,9 @@ describe("MCP token repository", () => {
     });
     expect(JSON.stringify(mockExecute.mock.calls[0]?.[0])).toContain("UPDATE");
     expect(JSON.stringify(mockExecute.mock.calls[0]?.[0])).toContain("activity:read");
+    expect(JSON.stringify(mockExecute.mock.calls[0]?.[0])).toContain(
+      "expires_at IS NULL OR expires_at > NOW()",
+    );
   });
 
   it("allows required scopes that are present", () => {
