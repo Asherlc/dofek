@@ -280,12 +280,17 @@ async function seedProductionDbtFixture(
     ) ENGINE = ReplacingMergeTree(refresh_version)
       ORDER BY (user_id, channel, recorded_date, recorded_at)`,
     `CREATE TABLE ${database}.metric_stream (
-      user_id UUID,
+      id UUID,
       activity_id Nullable(UUID),
+      user_id UUID,
+      recorded_at DateTime64(9, 'UTC'),
+      provider_id String,
+      channel String,
+      point Point,
+      ingested_at DateTime64(9, 'UTC'),
+      version UInt64,
       is_deleted UInt8
-    ) ENGINE = ReplacingMergeTree()
-      ORDER BY (user_id, activity_id)
-      SETTINGS allow_nullable_key = 1`,
+    ) ENGINE = MergeTree ORDER BY (id, version)`,
     `CREATE TABLE ${database}.activity_sensor_sample (
       activity_id UUID,
       user_id UUID,
@@ -308,11 +313,43 @@ async function seedProductionDbtFixture(
       is_deleted UInt8,
       refreshed_at DateTime64(9, 'UTC')
     ) ENGINE = ReplacingMergeTree(refresh_version) ORDER BY (user_id, activity_id)`,
+    `CREATE TABLE ${database}.body_measurement_sample (
+      user_id UUID,
+      channel String,
+      _peerdb_synced_at DateTime64(9, 'UTC')
+    ) ENGINE = ReplacingMergeTree() ORDER BY user_id`,
+    `CREATE TABLE ${database}.body_measurement (
+      user_id UUID,
+      recorded_at DateTime64(6, 'UTC'),
+      weight_kg Nullable(Float64),
+      is_deleted UInt8
+    ) ENGINE = ReplacingMergeTree() ORDER BY (user_id, recorded_at)`,
+    `CREATE TABLE ${database}.user_profile (
+      id UUID,
+      _peerdb_synced_at DateTime64(9, 'UTC')
+    ) ENGINE = ReplacingMergeTree() ORDER BY id`,
+    `CREATE TABLE ${database}.user_profile_current (
+      id UUID,
+      max_hr Nullable(Int32)
+    ) ENGINE = MergeTree ORDER BY id`,
+    `CREATE TABLE ${database}.resting_heart_rate_sleep_window (
+      user_id UUID,
+      ended_at Nullable(DateTime64(6, 'UTC')),
+      resting_hr Nullable(Int32),
+      is_deleted UInt8,
+      refreshed_at DateTime64(9, 'UTC')
+    ) ENGINE = ReplacingMergeTree() ORDER BY (user_id, ended_at)
+      SETTINGS allow_nullable_key = 1`,
     `INSERT INTO ${database}.deduped_sensor VALUES
       (
         '${TEST_USER_ID}', toDateTime64('2026-09-01 15:10:00', 6, 'UTC'),
         toDate('2026-09-01'), 'heart_rate', 150, 1, 0,
         now64(9), 'wahoo', '${wahooActivityId}'
+      ),
+      (
+        '${TEST_USER_ID}', toDateTime64('2026-09-01 15:15:00', 6, 'UTC'),
+        toDate('2026-09-01'), 'heart_rate', 145, 1, 0,
+        now64(9), 'peloton', '${pelotonActivityId}'
       )`,
     `INSERT INTO ${database}.activity VALUES
       (

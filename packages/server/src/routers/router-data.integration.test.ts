@@ -34,6 +34,7 @@ describe("Router data coverage", () => {
   let testCtx: TestContext;
   let sessionCookie: string;
   const activityIds: string[] = [];
+  const activityGroupIds: string[] = [];
 
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
@@ -93,7 +94,7 @@ describe("Router data coverage", () => {
       const avgPower = 190 + actIdx * 15;
       const hasAltitude = actIdx < 2; // first 2 activities have altitude for VAM
 
-      const actResult = await testCtx.db.execute<{ id: string }>(
+      const actResult = await testCtx.db.execute<{ id: string; group_id: string }>(
         sql`INSERT INTO fitness.activity (
               provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
             ) VALUES (
@@ -101,16 +102,17 @@ describe("Router data coverage", () => {
               CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day',
               CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day' + ${durationSec}::int * INTERVAL '1 second',
               ${`Training Ride ${actIdx}`}
-            ) RETURNING id`,
+            ) RETURNING id, group_id`,
       );
       const actId = actResult[0]?.id;
 
       if (actId) {
         activityIds.push(actId);
+        activityGroupIds.push(actResult[0].group_id);
         const activityStartedAt = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000);
         if (actIdx === 0) {
           polarizationActivity = {
-            id: actId,
+            id: actResult[0].group_id,
             startedAt: activityStartedAt.toISOString(),
           };
         }
@@ -1185,7 +1187,7 @@ describe("Router data coverage", () => {
         sampleCount: number | null;
       }>("activity.byId", { id: activityIds[0] });
 
-      expect(result.id).toBe(activityIds[0]);
+      expect(result.id).toBe(activityGroupIds[0]);
       expect(result.activityType).toBe("cycling");
       expect(result.startedAt).toBeTruthy();
       // With metric_stream data, summary metrics should be non-null

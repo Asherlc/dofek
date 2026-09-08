@@ -10,6 +10,13 @@ const DEFAULT_CDC_READINESS_POLL_INTERVAL_MS = 2_000;
 const postgresUuidSchema = z
   .string()
   .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, "must be a UUID");
+const clickHouseUtcDateTimeSchema = z.preprocess(
+  (value) =>
+    typeof value === "string" && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(value)
+      ? `${value.replace(" ", "T")}Z`
+      : value,
+  z.coerce.date(),
+);
 
 export const uint64StringSchema = z
   .union([z.string().regex(/^\d+$/), z.number().int().nonnegative().safe()])
@@ -22,8 +29,8 @@ export const clickHouseSourceRowSchema = z
     provider_id: z.string().min(1),
     user_id: postgresUuidSchema,
     canonical_type: z.string().min(1),
-    started_at: z.coerce.date().optional(),
-    ended_at: z.coerce.date().nullable().optional(),
+    started_at: clickHouseUtcDateTimeSchema.optional(),
+    ended_at: clickHouseUtcDateTimeSchema.nullable().optional(),
     timezone: z.string().nullable(),
     start_utc_offset_minutes: z.coerce.number().int().nullable(),
     end_utc_offset_minutes: z.coerce.number().int().nullable(),
@@ -492,11 +499,12 @@ function postgresMirrorRowsMatchRepair(
     repairedRows.every((row) => {
       const source = sourcesById.get(row.id);
       return (
-        source?.rejected_provider_timezone === row.repaired.rejectedProviderTimezone &&
-        source?.rejected_provider_start_utc_offset_minutes ===
-          row.repaired.rejectedProviderStartUtcOffsetMinutes &&
-        source?.rejected_provider_end_utc_offset_minutes ===
-          row.repaired.rejectedProviderEndUtcOffsetMinutes
+        (source?.rejected_provider_timezone ?? null) ===
+          (row.repaired.rejectedProviderTimezone ?? null) &&
+        (source?.rejected_provider_start_utc_offset_minutes ?? null) ===
+          (row.repaired.rejectedProviderStartUtcOffsetMinutes ?? null) &&
+        (source?.rejected_provider_end_utc_offset_minutes ?? null) ===
+          (row.repaired.rejectedProviderEndUtcOffsetMinutes ?? null)
       );
     })
   );

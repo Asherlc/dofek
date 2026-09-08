@@ -106,10 +106,11 @@ async function insertActivity(
 ): Promise<void> {
   await testContext.db.execute(sql`
     INSERT INTO fitness.activity (
-      id, provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
+      id, group_id, provider_id, user_id, external_id, canonical_type, provider_type,
+      started_at, ended_at, name
     ) VALUES (
-      ${activityId}, 'test_provider', ${testUserId}, ${`${name}-${activityId}`}, 'cycling', 'cycling',
-      ${startedAt}, ${endedAt}, ${name}
+      ${activityId}, ${activityId}, 'test_provider', ${testUserId}, ${`${name}-${activityId}`},
+      'cycling', 'cycling', ${startedAt}, ${endedAt}, ${name}
     )
     ON CONFLICT (id) DO NOTHING
   `);

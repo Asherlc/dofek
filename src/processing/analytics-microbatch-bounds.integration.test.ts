@@ -103,9 +103,11 @@ describe("analytics microbatch bounds", () => {
   user_id UUID,
   started_at DateTime64(6, 'UTC'),
   ended_at Nullable(DateTime64(6, 'UTC')),
+  member_activity_ids Array(UUID),
   source_synced_at DateTime64(9, 'UTC'),
   is_deleted UInt8,
-  refresh_version UInt64
+  refresh_version UInt64,
+  refreshed_at DateTime64(9, 'UTC')
 )
 ENGINE = ReplacingMergeTree(refresh_version)
 ORDER BY (user_id, activity_id)`,
