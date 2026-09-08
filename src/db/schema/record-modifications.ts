@@ -6,12 +6,15 @@ import {
   foreignKey,
   index,
   jsonb,
+  primaryKey,
+  real,
   text,
   timestamp,
   unique,
   uuid,
 } from "drizzle-orm/pg-core";
 import { fitness, resolveImplicitUserId } from "./core.ts";
+import { nutrient } from "./nutrition.ts";
 import { userProfile } from "./reference.ts";
 
 export type HumanRecordFieldDecision =
@@ -134,6 +137,37 @@ export const humanRecordTarget = fitness.table(
     check(
       "human_record_target_fields_valid",
       sql`fitness.human_record_fields_valid(${table.fields})`,
+    ),
+  ],
+);
+
+export const humanFoodNutrientDecision = fitness.table(
+  "human_food_nutrient_decision",
+  {
+    targetId: uuid("target_id").notNull(),
+    identityId: uuid("identity_id").notNull(),
+    userId: uuid("user_id").notNull().$defaultFn(resolveImplicitUserId),
+    nutrientId: text("nutrient_id")
+      .notNull()
+      .references(() => nutrient.id),
+    operation: text("operation", { enum: ["set", "clear"] }).notNull(),
+    amount: real("amount"),
+  },
+  (table) => [
+    primaryKey({ columns: [table.targetId, table.nutrientId] }),
+    foreignKey({
+      name: "human_food_nutrient_decision_target_fk",
+      columns: [table.targetId, table.identityId, table.userId],
+      foreignColumns: [
+        humanRecordTarget.id,
+        humanRecordTarget.identityId,
+        humanRecordTarget.userId,
+      ],
+    }),
+    check(
+      "human_food_nutrient_decision_value_valid",
+      sql`(${table.operation} = 'clear' AND ${table.amount} IS NULL)
+          OR (${table.operation} = 'set' AND (${table.amount} IS NULL OR ${table.amount} >= 0))`,
     ),
   ],
 );
