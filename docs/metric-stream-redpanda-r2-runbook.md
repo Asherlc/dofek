@@ -14,10 +14,11 @@ ClickHouse is the analytics serving copy.
 The current archive path is:
 
 ```text
-provider/mobile import
-  -> Redpanda topic metric-stream-v1
-     |-> ClickHouse sink -> ingest.metric_stream
-     `-> Redpanda Connect archive -> Cloudflare R2
+live ingestion -> metric-stream-live-v1    -> live sink + live archive
+history import -> metric-stream-history-v1 -> history sink + history archive
+legacy backlog -> metric-stream-v1         -> legacy sink + legacy archive
+                                             |-> ClickHouse ingest.metric_stream
+                                             `-> Cloudflare R2 archive
 ```
 
 R2 is the long-term archive for metric-stream events, and ClickHouse is the
@@ -30,7 +31,9 @@ tokens, settings, food, and other app state.
 
 ## Canonical Storage Policy
 
-- `metric-stream-v1` is the hot ingest log.
+- Live and historical ingestion use separate topics; the legacy topic remains
+  assigned to its existing consumers. See the [deployment renderer](../scripts/deploy-service-environment.ts)
+  for the required route contract.
 - `dofek-metric-stream-archive` is the long-term replay archive in Cloudflare R2.
 - The R2 metric-stream archive must not have lifecycle deletion rules.
 - Redpanda local retention is a buffering and operations setting, not the
@@ -45,9 +48,20 @@ tokens, settings, food, and other app state.
 | Service | Purpose |
 | --- | --- |
 | `redpanda` | Kafka-compatible hot ingest log. |
-| `metric-stream-clickhouse-sink` | Consumes `metric-stream-v1` and writes non-IMU rows to `ingest.metric_stream`. |
-| `metric-stream-r2-archive` | Redpanda Connect pipeline that writes immutable batches to R2. |
+| `metric-stream-clickhouse-sink` / `metric-stream-r2-archive` | Legacy consumers of `METRIC_STREAM_LEGACY_TOPIC` (`metric-stream-v1`). |
+| `metric-stream-live-clickhouse-sink` / `metric-stream-live-r2-archive` | Live consumers of `METRIC_STREAM_LIVE_TOPIC` (`metric-stream-live-v1`). |
+| `metric-stream-history-clickhouse-sink` / `metric-stream-history-r2-archive` | History consumers of `METRIC_STREAM_HISTORY_TOPIC` (`metric-stream-history-v1`). |
 | `analytics-worker` | Rebuilds dbt-owned ClickHouse analytics read models from ClickHouse source tables. |
+
+Each sink writes non-IMU rows to `ingest.metric_stream`; each archive writes
+topic-qualified batches to the same R2 bucket. Each consumer's group is its
+service name, preserving the legacy groups and giving the new routes independent
+offsets. Redpanda Connect resumes from committed offsets for the configured
+[consumer group](https://docs.redpanda.com/connect/components/inputs/redpanda/#consumer-groups).
+The [stack](../deploy/stack.yml) raises only ClickHouse's CPU limit to `1.5`;
+its memory settings and each consumer's existing resource limits are retained.
+Docker documents this as a maximum CPU allocation, not a reservation:
+[Compose CPU limits](https://docs.docker.com/reference/compose-file/deploy/#cpus).
 
 ## Required Secrets
 
@@ -56,13 +70,25 @@ Store these in Infisical before enabling the services:
 | Secret | Example | Notes |
 | --- | --- | --- |
 | `REDPANDA_BROKERS` | `redpanda:9092` | Comma-separated broker list. |
-| `METRIC_STREAM_TOPIC` | `metric-stream-v1` | Topic for versioned metric-stream events. |
+| `METRIC_STREAM_LEGACY_TOPIC` | `metric-stream-v1` | Existing topic assigned only to legacy consumers. |
+| `METRIC_STREAM_LIVE_TOPIC` | `metric-stream-live-v1` | Live producer/consumer route. |
+| `METRIC_STREAM_HISTORY_TOPIC` | `metric-stream-history-v1` | History producer/consumer route. |
 | `METRIC_STREAM_R2_BUCKET` | `dofek-metric-stream-archive` | Dedicated archive bucket. |
 | `R2_ENDPOINT` | `https://<account-id>.r2.cloudflarestorage.com` | Cloudflare R2 S3-compatible endpoint. |
 | `R2_ACCESS_KEY_ID` | n/a | Existing R2 S3 credential. |
 | `R2_SECRET_ACCESS_KEY` | n/a | Existing R2 S3 credential. |
 
 Missing secrets must fail service startup. Do not use blank defaults.
+
+The production topic contract contains exactly the three explicit route keys.
+Create/verify them in Infisical before deployment. The
+[service renderer](../scripts/deploy-service-environment.ts) fails before
+writing any service files if a required route is missing or blank. Web and worker
+receive the live/history keys; each consumer receives only its designated topic
+as internal `METRIC_STREAM_TOPIC` plus its fixed `METRIC_STREAM_CONSUMER_GROUP`.
+Do not create a generic topic or group in Infisical for these services.
+The shared archive configuration reads both internal values through
+[Redpanda Connect environment interpolation](https://docs.redpanda.com/connect/configuration/interpolation/#environment-variables).
 
 ## R2 Object Layout
 
@@ -103,7 +129,8 @@ row events.
 
 The archive service should use Redpanda Connect with:
 
-- `redpanda` input consuming `metric-stream-v1`.
+- `redpanda` input consuming its designated `METRIC_STREAM_TOPIC` with its own
+  `METRIC_STREAM_CONSUMER_GROUP`.
 - `aws_s3` output targeting Cloudflare R2.
 - `endpoint` set to `R2_ENDPOINT`.
 - `force_path_style_urls: true`.
@@ -117,7 +144,7 @@ documents Cloudflare R2 support through custom endpoint and path-style settings.
 ## Malformed-event quarantine
 
 The ClickHouse consumer creates and enforces a dedicated
-`metric-stream-v1.quarantine.v1` topic before it begins consuming the source
+`<source-topic>.quarantine.v1` topic before it begins consuming the source
 topic. The quarantine is intentionally bounded:
 
 - cleanup policy: `delete`
@@ -167,13 +194,19 @@ Run concrete freshness checks from the production host:
 docker service ps dofek_redpanda --no-trunc
 docker service ps dofek_metric-stream-clickhouse-sink --no-trunc
 docker service ps dofek_metric-stream-r2-archive --no-trunc
+docker service ps dofek_metric-stream-live-clickhouse-sink --no-trunc
+docker service ps dofek_metric-stream-live-r2-archive --no-trunc
+docker service ps dofek_metric-stream-history-clickhouse-sink --no-trunc
+docker service ps dofek_metric-stream-history-r2-archive --no-trunc
 ```
 
 Check Redpanda consumer lag for each durable consumer group:
 
 ```bash
 docker exec "$(docker ps --filter name=dofek_redpanda -q | head -n1)" \
-  rpk group describe metric-stream-clickhouse-sink metric-stream-r2-archive
+  rpk group describe metric-stream-clickhouse-sink metric-stream-r2-archive \
+  metric-stream-live-clickhouse-sink metric-stream-live-r2-archive \
+  metric-stream-history-clickhouse-sink metric-stream-history-r2-archive
 ```
 
 Alert on both absolute lag and lag growth rate. A large shrinking backlog and a
@@ -197,14 +230,15 @@ Check archive service logs for recent R2 write failures:
 
 ```bash
 docker service logs --since 15m dofek_metric-stream-r2-archive
+docker service logs --since 15m dofek_metric-stream-live-r2-archive
+docker service logs --since 15m dofek_metric-stream-history-r2-archive
 ```
 
 The freshness checks must cover:
 
 - Redpanda broker reachability.
-- `metric-stream-clickhouse-sink` consumer lag.
-- `metric-stream-r2-archive` consumer lag.
-- Newest R2 archive object age.
+- Consumer lag for each legacy/live/history ClickHouse sink and archive group.
+- Newest R2 archive object age for each topic with recent traffic.
 - Newest `ingest.metric_stream.recorded_at` in ClickHouse.
 - Newest dbt analytics rows that depend on metric stream, especially
   `analytics.daily_activity_load` and `analytics.daily_strain`.
@@ -226,20 +260,20 @@ the request size instead of increasing that limit
 
 ## Full-refresh visibility window
 
-A full historical refresh currently shares the single ordered metric-stream
-partition with live ingestion. The September 2026 full refresh emitted about
-36.97 million events and delayed live sensor visibility by roughly five hours
-at the observed sink rate. New activities during that interval may temporarily
-show null heart rate or power even though their samples are queued, not lost.
-State this expected delay in the operator confirmation before starting a full
-refresh, and monitor the measured lag rather than assuming a fixed completion
-time.
+Historical refreshes now have their own topic and consumer pair, while the
+legacy pair continues from its existing offsets. This separates the consumer
+queues, but all routes still share ClickHouse and host capacity; verify live
+freshness while history drains using the per-route lag and sink-latency evidence
+above. The [stack](../deploy/stack.yml) and
+[producer routing](../src/metric-stream/redpanda-producer.ts) define these routes.
 
-Do not split or repartition this topic without preserving per-entity ordering:
-a scoped delete must remain before its replacement rows for the same entity.
-Separating bounded historical replay from live ingestion is the preferred
-design direction because it removes this visibility coupling without weakening
-delete-before-replace ordering.
+Keep each scoped delete and its replacement rows on the same route and partition
+key. KafkaJS documents partition keys as the way to preserve message order for
+the same entity: [producing messages](https://kafka.js.org/docs/producing#key).
+Do not reset offsets or move an existing consumer group to a different topic as
+part of the rollout. Deploy through the canonical workflow, which quiesces all
+three ClickHouse sinks until migrations and CDC readiness pass; see the
+[deployment procedure](../deploy/README.md#production-secrets).
 
 Treat R2 archive staleness as a production durability incident. Writers are
 already Redpanda-first; restore the archive before deploying writer changes or

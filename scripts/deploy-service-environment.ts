@@ -11,6 +11,12 @@ const DEPLOY_SERVICE_NAMES = [
   "r2Operations",
   "web",
   "worker",
+  "metricStreamClickhouseSink",
+  "metricStreamLiveClickhouseSink",
+  "metricStreamHistoryClickhouseSink",
+  "metricStreamR2Archive",
+  "metricStreamLiveR2Archive",
+  "metricStreamHistoryR2Archive",
 ] as const;
 
 type DeployServiceName = (typeof DEPLOY_SERVICE_NAMES)[number];
@@ -24,6 +30,12 @@ export const DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES = {
   r2Operations: "r2-operations.env",
   web: "web.env",
   worker: "worker.env",
+  metricStreamClickhouseSink: "metric-stream-clickhouse-sink.env",
+  metricStreamLiveClickhouseSink: "metric-stream-live-clickhouse-sink.env",
+  metricStreamHistoryClickhouseSink: "metric-stream-history-clickhouse-sink.env",
+  metricStreamR2Archive: "metric-stream-r2-archive.env",
+  metricStreamLiveR2Archive: "metric-stream-live-r2-archive.env",
+  metricStreamHistoryR2Archive: "metric-stream-history-r2-archive.env",
 } satisfies Record<DeployServiceName, string>;
 
 const APPLICATION_ENVIRONMENT_KEYS = [
@@ -110,7 +122,19 @@ const APP_STORE_ENVIRONMENT_KEYS = [
   "APP_STORE_ROOT_CERTIFICATES_PEM",
 ] as const;
 
-const METRIC_STREAM_ENVIRONMENT_KEYS = ["METRIC_STREAM_TOPIC", "REDPANDA_BROKERS"] as const;
+const METRIC_STREAM_ENVIRONMENT_KEYS = [
+  "METRIC_STREAM_LIVE_TOPIC",
+  "METRIC_STREAM_HISTORY_TOPIC",
+  "REDPANDA_BROKERS",
+] as const;
+
+const METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS = [
+  "REDPANDA_BROKERS",
+  "METRIC_STREAM_R2_BUCKET",
+  "R2_ENDPOINT",
+  "R2_ACCESS_KEY_ID",
+  "R2_SECRET_ACCESS_KEY",
+] as const;
 
 const CDC_ENVIRONMENT_KEYS = [
   "PEERDB_CDC_CLICKHOUSE_HOST",
@@ -129,6 +153,13 @@ const CDC_ENVIRONMENT_KEYS = [
 interface DeployServiceEnvironmentPolicy {
   allowedKeys: readonly string[];
   requiredKeys: readonly string[];
+  metricStreamConsumer?: {
+    topicKey:
+      | "METRIC_STREAM_LEGACY_TOPIC"
+      | "METRIC_STREAM_LIVE_TOPIC"
+      | "METRIC_STREAM_HISTORY_TOPIC";
+    group: string;
+  };
 }
 
 const COMMON_APPLICATION_REQUIRED_KEYS = [
@@ -144,7 +175,10 @@ const COMMON_APPLICATION_REQUIRED_KEYS = [
   "STRIPE_WEBHOOK_SECRET",
 ] as const;
 
-const DEPLOY_SERVICE_ENVIRONMENT_POLICIES = {
+const DEPLOY_SERVICE_ENVIRONMENT_POLICIES: Record<
+  DeployServiceName,
+  DeployServiceEnvironmentPolicy
+> = {
   analyticsWorker: {
     allowedKeys: ["CLICKHOUSE_PASSWORD", "SENTRY_DSN", "SENTRY_DSN_unencrypted"],
     requiredKeys: ["CLICKHOUSE_PASSWORD"],
@@ -219,7 +253,55 @@ const DEPLOY_SERVICE_ENVIRONMENT_POLICIES = {
       "SENTRY_ORG",
     ],
   },
-} satisfies Record<DeployServiceName, DeployServiceEnvironmentPolicy>;
+  metricStreamClickhouseSink: {
+    allowedKeys: ["REDPANDA_BROKERS"],
+    requiredKeys: ["REDPANDA_BROKERS", "METRIC_STREAM_LEGACY_TOPIC"],
+    metricStreamConsumer: {
+      topicKey: "METRIC_STREAM_LEGACY_TOPIC",
+      group: "metric-stream-clickhouse-sink",
+    },
+  },
+  metricStreamLiveClickhouseSink: {
+    allowedKeys: ["REDPANDA_BROKERS"],
+    requiredKeys: ["REDPANDA_BROKERS", "METRIC_STREAM_LIVE_TOPIC"],
+    metricStreamConsumer: {
+      topicKey: "METRIC_STREAM_LIVE_TOPIC",
+      group: "metric-stream-live-clickhouse-sink",
+    },
+  },
+  metricStreamHistoryClickhouseSink: {
+    allowedKeys: ["REDPANDA_BROKERS"],
+    requiredKeys: ["REDPANDA_BROKERS", "METRIC_STREAM_HISTORY_TOPIC"],
+    metricStreamConsumer: {
+      topicKey: "METRIC_STREAM_HISTORY_TOPIC",
+      group: "metric-stream-history-clickhouse-sink",
+    },
+  },
+  metricStreamR2Archive: {
+    allowedKeys: METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS,
+    requiredKeys: [...METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS, "METRIC_STREAM_LEGACY_TOPIC"],
+    metricStreamConsumer: {
+      topicKey: "METRIC_STREAM_LEGACY_TOPIC",
+      group: "metric-stream-r2-archive",
+    },
+  },
+  metricStreamLiveR2Archive: {
+    allowedKeys: METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS,
+    requiredKeys: [...METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS, "METRIC_STREAM_LIVE_TOPIC"],
+    metricStreamConsumer: {
+      topicKey: "METRIC_STREAM_LIVE_TOPIC",
+      group: "metric-stream-live-r2-archive",
+    },
+  },
+  metricStreamHistoryR2Archive: {
+    allowedKeys: METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS,
+    requiredKeys: [...METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS, "METRIC_STREAM_HISTORY_TOPIC"],
+    metricStreamConsumer: {
+      topicKey: "METRIC_STREAM_HISTORY_TOPIC",
+      group: "metric-stream-history-r2-archive",
+    },
+  },
+};
 
 export interface DeployServiceEnvironmentPaths {
   analyticsWorker: string;
@@ -230,6 +312,12 @@ export interface DeployServiceEnvironmentPaths {
   r2Operations: string;
   web: string;
   worker: string;
+  metricStreamClickhouseSink: string;
+  metricStreamLiveClickhouseSink: string;
+  metricStreamHistoryClickhouseSink: string;
+  metricStreamR2Archive: string;
+  metricStreamLiveR2Archive: string;
+  metricStreamHistoryR2Archive: string;
 }
 
 function readRawAssignments(source: string): ReadonlyMap<string, string> {
@@ -258,6 +346,30 @@ function resolvePaths(outputDirectory: string): DeployServiceEnvironmentPaths {
     r2Operations: join(outputDirectory, DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.r2Operations),
     web: join(outputDirectory, DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.web),
     worker: join(outputDirectory, DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.worker),
+    metricStreamClickhouseSink: join(
+      outputDirectory,
+      DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.metricStreamClickhouseSink,
+    ),
+    metricStreamLiveClickhouseSink: join(
+      outputDirectory,
+      DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.metricStreamLiveClickhouseSink,
+    ),
+    metricStreamHistoryClickhouseSink: join(
+      outputDirectory,
+      DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.metricStreamHistoryClickhouseSink,
+    ),
+    metricStreamR2Archive: join(
+      outputDirectory,
+      DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.metricStreamR2Archive,
+    ),
+    metricStreamLiveR2Archive: join(
+      outputDirectory,
+      DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.metricStreamLiveR2Archive,
+    ),
+    metricStreamHistoryR2Archive: join(
+      outputDirectory,
+      DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.metricStreamHistoryR2Archive,
+    ),
   };
 }
 
@@ -289,6 +401,13 @@ export function renderDeployServiceEnvironmentFiles(
       const assignment = assignments.get(key);
       return assignment === undefined ? [] : [assignment];
     });
+    const consumer = DEPLOY_SERVICE_ENVIRONMENT_POLICIES[serviceName].metricStreamConsumer;
+    if (consumer) {
+      const assignment = assignments.get(consumer.topicKey);
+      if (!assignment) throw new Error(`Missing validated assignment: ${consumer.topicKey}`);
+      lines.push(`METRIC_STREAM_TOPIC${assignment.slice(consumer.topicKey.length)}`);
+      lines.push(`METRIC_STREAM_CONSUMER_GROUP=${consumer.group}`);
+    }
     writeFileSync(paths[serviceName], lines.length === 0 ? "" : `${lines.join("\n")}\n`, {
       mode: 0o600,
     });

@@ -4,7 +4,7 @@ input:
       - ${REDPANDA_BROKERS}
     topics:
       - ${METRIC_STREAM_TOPIC}
-    consumer_group: metric-stream-r2-archive
+    consumer_group: ${METRIC_STREAM_CONSUMER_GROUP}
     # The redpanda input is a batched input: each yielded batch becomes one R2
     # object via the archive processor below. The default max_yield_batch_bytes
     # is 32KB (~90 events), producing tiny objects and ~one PUT per ~90 events,

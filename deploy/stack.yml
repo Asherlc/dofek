@@ -334,7 +334,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "1.00"
+          cpus: "1.5"
           memory: 13G
 
   redpanda:
@@ -370,14 +370,13 @@ services:
         limits:
           memory: 1500M
 
-  metric-stream-clickhouse-sink:
+  metric-stream-clickhouse-sink: &metric-stream-clickhouse-sink
     image: ghcr.io/asherlc/dofek:${IMAGE_TAG:-latest}
     command: ["metric-stream-clickhouse-sink"]
-    environment:
+    env_file: ${METRIC_STREAM_CLICKHOUSE_SINK_ENV_FILE:?METRIC_STREAM_CLICKHOUSE_SINK_ENV_FILE is required}
+    environment: &metric-stream-clickhouse-sink-environment
       NODE_ENV: production
       CLICKHOUSE_URL: http://default:${CLICKHOUSE_PASSWORD_ENCODED:?CLICKHOUSE_PASSWORD_ENCODED is required}@clickhouse:8123
-      REDPANDA_BROKERS: ${REDPANDA_BROKERS:?REDPANDA_BROKERS is required}
-      METRIC_STREAM_TOPIC: ${METRIC_STREAM_TOPIC:?METRIC_STREAM_TOPIC is required}
       OTEL_SERVICE_NAME: dofek-metric-stream-clickhouse-sink
       OTEL_RESOURCE_ATTRIBUTES: deployment.environment=${DEPLOY_ENVIRONMENT:-production}
       OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://collector:4318/v1/traces
@@ -403,18 +402,26 @@ services:
         order: stop-first
         failure_action: rollback
 
-  metric-stream-r2-archive:
+  metric-stream-live-clickhouse-sink:
+    <<: *metric-stream-clickhouse-sink
+    env_file: ${METRIC_STREAM_LIVE_CLICKHOUSE_SINK_ENV_FILE:?METRIC_STREAM_LIVE_CLICKHOUSE_SINK_ENV_FILE is required}
+    environment:
+      <<: *metric-stream-clickhouse-sink-environment
+      OTEL_SERVICE_NAME: dofek-metric-stream-live-clickhouse-sink
+
+  metric-stream-history-clickhouse-sink:
+    <<: *metric-stream-clickhouse-sink
+    env_file: ${METRIC_STREAM_HISTORY_CLICKHOUSE_SINK_ENV_FILE:?METRIC_STREAM_HISTORY_CLICKHOUSE_SINK_ENV_FILE is required}
+    environment:
+      <<: *metric-stream-clickhouse-sink-environment
+      OTEL_SERVICE_NAME: dofek-metric-stream-history-clickhouse-sink
+
+  metric-stream-r2-archive: &metric-stream-r2-archive
     image: docker.redpanda.com/redpandadata/connect:4.99.0
     command: ["run", "/connect/metric-stream-r2-archive.connect.yml"]
-    environment:
-      REDPANDA_BROKERS: ${REDPANDA_BROKERS:?REDPANDA_BROKERS is required}
-      METRIC_STREAM_TOPIC: ${METRIC_STREAM_TOPIC:?METRIC_STREAM_TOPIC is required}
-      METRIC_STREAM_R2_BUCKET: ${METRIC_STREAM_R2_BUCKET:?METRIC_STREAM_R2_BUCKET is required}
-      R2_ENDPOINT: ${R2_ENDPOINT:?R2_ENDPOINT is required}
-      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?R2_ACCESS_KEY_ID is required}
-      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?R2_SECRET_ACCESS_KEY is required}
+    env_file: ${METRIC_STREAM_R2_ARCHIVE_ENV_FILE:?METRIC_STREAM_R2_ARCHIVE_ENV_FILE is required}
     configs:
-      - source: metric_stream_r2_archive_config_v4
+      - source: metric_stream_r2_archive_config_v5
         target: /connect/metric-stream-r2-archive.connect.yml
         mode: 0444
     deploy:
@@ -430,6 +437,14 @@ services:
       update_config:
         order: stop-first
         failure_action: rollback
+
+  metric-stream-live-r2-archive:
+    <<: *metric-stream-r2-archive
+    env_file: ${METRIC_STREAM_LIVE_R2_ARCHIVE_ENV_FILE:?METRIC_STREAM_LIVE_R2_ARCHIVE_ENV_FILE is required}
+
+  metric-stream-history-r2-archive:
+    <<: *metric-stream-r2-archive
+    env_file: ${METRIC_STREAM_HISTORY_R2_ARCHIVE_ENV_FILE:?METRIC_STREAM_HISTORY_R2_ARCHIVE_ENV_FILE is required}
 
   peerdb-catalog:
     image: postgres:18-alpine
@@ -784,5 +799,5 @@ configs:
   # Swarm config objects are immutable: when metric-stream-r2-archive.connect.yml
   # changes, bump this key's version suffix so a new config object is created and
   # the service rolls onto it — same convention as netdata_db_limits_v2.
-  metric_stream_r2_archive_config_v4:
+  metric_stream_r2_archive_config_v5:
     file: ./redpanda/metric-stream-r2-archive.connect.yml

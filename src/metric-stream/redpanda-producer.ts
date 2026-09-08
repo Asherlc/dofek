@@ -179,10 +179,7 @@ export function getDefaultMetricStreamEventPublisher(): Promise<MetricStreamEven
   return createKafkaMetricStreamEventPublisherForRoute("live");
 }
 
-function readRequiredEnvironmentValue(
-  env: NodeJS.ProcessEnv,
-  key: "REDPANDA_BROKERS",
-): string {
+function readRequiredEnvironmentValue(env: NodeJS.ProcessEnv, key: "REDPANDA_BROKERS"): string {
   const value = env[key];
   if (!value) {
     throw new Error(`${key} is required`);

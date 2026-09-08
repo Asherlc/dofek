@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  metricStreamRouteForSyncJob,
-  metricStreamTopicForRoute,
-} from "./routes.ts";
+import { metricStreamRouteForSyncJob, metricStreamTopicForRoute } from "./routes.ts";
 
 describe("metric stream routes", () => {
   it("routes full refreshes to history and other jobs to live", () => {
