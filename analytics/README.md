@@ -125,6 +125,15 @@ providers/devices, and direct/estimated/unknown power evidence. Request-time
 custom durations use the same semantics over bounded
 `analytics.activity_sensor_sample` input.
 
+Per-activity MCP workout metrics intentionally do not add another stored source of truth. The
+server pages canonical rows from `cycling_activity`, resolves identity and timezone evidence from
+`deduped_activities`, and reads only power, heart-rate, and cadence channels for those selected
+activity IDs from `activity_sensor_sample FINAL`. It joins standard-duration evidence from
+`activity_power_curve FINAL` and effective-dated thresholds from Postgres at request time. This
+bounded fan-out keeps native samples out of the LLM payload while preserving missing-time and
+measurement-kind evidence. The duplicate test fixture inserts the same ride through two source
+members and verifies that canonical activity duration and work are calculated once.
+
 Because `activity_power_curve` is append-incremental, a formula or
 standard-duration change does not rewrite unchanged historical activities.
 Before rebuilding, record the active row/activity count, oldest activity, and
