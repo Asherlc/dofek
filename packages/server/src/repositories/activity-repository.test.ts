@@ -1240,6 +1240,31 @@ describe("ActivityRepository", () => {
     });
   });
 
+  describe("findSensorWindow", () => {
+    it("returns the canonical window for a visible member id", async () => {
+      const { repo, execute } = makeRepository([
+        {
+          id: "canonical-id",
+          user_id: "user-1",
+          started_at: "2024-01-15T10:00:00.000Z",
+          ended_at: "2024-01-15T11:00:00.000Z",
+          member_activity_ids: ["canonical-id", "member-id"],
+        },
+      ]);
+
+      await expect(repo.findSensorWindow("member-id")).resolves.toEqual({
+        activityId: "canonical-id",
+        userId: "user-1",
+        startedAt: "2024-01-15T10:00:00.000Z",
+        endedAt: "2024-01-15T11:00:00.000Z",
+        memberActivityIds: ["canonical-id", "member-id"],
+      });
+      const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(compiledQuery.sql).toContain("= ANY(a.member_activity_ids)");
+      expect(compiledQuery.params).toEqual(expect.arrayContaining(["member-id", "user-1"]));
+    });
+  });
+
   describe("getStream", () => {
     it("fails when no sensor store is configured", async () => {
       const { repo } = makeRepository([]);

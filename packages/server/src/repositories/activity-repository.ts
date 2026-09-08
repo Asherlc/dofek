@@ -834,7 +834,7 @@ export class ActivityRepository extends BaseRepository {
   /** Downsampled metric stream for a single activity. */
   async getStream(activityId: string, maxPoints: number): Promise<StreamPoint[]> {
     const sensorStore = this.#requireSensorStore("activity streams");
-    const window = await this.#findActivitySensorWindow(activityId);
+    const window = await this.findSensorWindow(activityId);
     if (!window) return [];
     const rows = await sensorStore.getStream(window, maxPoints);
     return rows.map((row) => new StreamPoint(streamPointRowSchema.parse(row)));
@@ -843,7 +843,7 @@ export class ActivityRepository extends BaseRepository {
   /** HR zone distribution for a single activity using the canonical Karvonen model. */
   async getHrZones(activityId: string): Promise<import("@dofek/zones/zones").ActivityHrZone[]> {
     const sensorStore = this.#requireSensorStore("heart-rate zones");
-    const window = await this.#findActivitySensorWindow(activityId);
+    const window = await this.findSensorWindow(activityId);
     if (!window) return mapHrZones([]);
     return mapHrZones(await sensorStore.getHeartRateZoneSeconds(window));
   }
@@ -854,7 +854,7 @@ export class ActivityRepository extends BaseRepository {
     ftp: number,
   ): Promise<import("@dofek/zones/zones").ActivityPowerZone[]> {
     const sensorStore = this.#requireSensorStore("power zones");
-    const window = await this.#findActivitySensorWindow(activityId);
+    const window = await this.findSensorWindow(activityId);
     if (!window) return mapPowerZones([]);
     return mapPowerZones(await sensorStore.getPowerZoneSeconds(window, ftp));
   }
@@ -866,7 +866,8 @@ export class ActivityRepository extends BaseRepository {
     return this.#sensorStore;
   }
 
-  async #findActivitySensorWindow(activityId: string): Promise<ActivitySensorWindow | null> {
+  /** Resolves any visible member ID to its owned canonical activity sensor window. */
+  async findSensorWindow(activityId: string): Promise<ActivitySensorWindow | null> {
     const rows = await this.query(
       activitySensorWindowRowSchema,
       sql`SELECT
@@ -892,7 +893,7 @@ export class ActivityRepository extends BaseRepository {
   }
 
   async getActivityMemberIds(activityId: string): Promise<string[] | null> {
-    const window = await this.#findActivitySensorWindow(activityId);
+    const window = await this.findSensorWindow(activityId);
     if (!window) return null;
     return window.memberActivityIds;
   }

@@ -276,6 +276,8 @@ git push
 - Create: `packages/server/src/repositories/activity-timeseries-repository.ts`
 - Create: `packages/server/src/repositories/activity-timeseries-repository.test.ts`
 - Modify: `packages/server/src/repositories/activity-repository.ts`
+- Modify: `packages/server/src/repositories/activity-repository.test.ts`
+- Modify: `packages/server/src/repositories/activity-sensor-provenance.integration.test.ts`
 
 **Interfaces:**
 
@@ -302,7 +304,7 @@ export class ActivityTimeseriesRepository {
 }
 ```
 
-- [ ] **Step 1: Write failing pure synchronization tests.** Use native power at `t=0: 0 W`, `t=2: 200 W`, HR at `t=1: 140`, and a missing `t=3` fixed bucket. Assert union timestamps at raw resolution, `measured_zero`, independent missing states, time-weighted fixed-bucket values, bounded linear fill, cumulative distance final-value behavior, and GPS pairs. Name each test after one state transition.
+- [x] **Step 1: Write failing pure synchronization tests.** Use native power at `t=0: 0 W`, `t=2: 200 W`, HR at `t=1: 140`, and a missing `t=3` fixed bucket. Assert union timestamps at raw resolution, `measured_zero`, independent missing states, time-weighted fixed-bucket values, bounded linear fill, cumulative distance final-value behavior, and GPS pairs. Name each test after one state transition.
 
 ```ts
 expect(page.streams.power).toMatchObject({
@@ -311,21 +313,21 @@ expect(page.streams.power).toMatchObject({
 });
 ```
 
-- [ ] **Step 2: Run the pure suite and witness RED.**
+- [x] **Step 2: Run the pure suite and witness RED.**
 
 Run: `pnpm vitest run --project unit packages/server/src/repositories/activity-timeseries.test.ts`
 
 Expected: FAIL because synchronization functions are missing.
 
-- [ ] **Step 3: Implement pure synchronization.** Raw timestamps are the ordered union of native samples. Fixed buckets use elapsed-time weighted means for scalar instantaneous streams, last observed value for cumulative distance, and the latest observed pair for position. Only interpolate internal scalar gaps bounded by observations; never extrapolate. Generate elapsed time from activity start. Generate moving time only from an explicitly supplied moving-time sample or a speed-derived calculation and return an availability reason otherwise.
+- [x] **Step 3: Implement pure synchronization.** Raw timestamps are the ordered union of native samples. Fixed buckets use elapsed-time weighted means for scalar instantaneous streams, last observed value for cumulative distance, and the latest observed pair for position. Only interpolate internal scalar gaps bounded by observations; never extrapolate. Generate elapsed time from activity start. Generate moving time only from an explicitly supplied moving-time sample or a speed-derived calculation and return an availability reason otherwise.
 
-- [ ] **Step 4: Run pure tests and witness GREEN.**
+- [x] **Step 4: Run pure tests and witness GREEN.**
 
 Run: `pnpm vitest run --project unit packages/server/src/repositories/activity-timeseries.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 5: Write failing repository tests.** Assert UUID ownership lookup precedes sensor query; aliases resolve to the canonical activity window; stream names map to metric channels (`position` maps to location, `distance` to distance, `temperature` to temperature); `limit + 1` determines `next_cursor`; source rows deduplicate into a source table and arrays contain source indexes; and mismatched cursors fail before querying ClickHouse.
+- [x] **Step 5: Write failing repository tests.** Assert UUID ownership lookup precedes sensor query; aliases resolve to the canonical activity window; stream names map to metric channels (`position` maps to location, `distance` to distance, `temperature` to temperature); `limit + 1` determines `next_cursor`; source rows deduplicate into a source table and arrays contain source indexes; and mismatched cursors fail before querying ClickHouse.
 
 ```ts
 expect(sensorStore.query).toHaveBeenCalledWith(
@@ -339,24 +341,24 @@ expect(sensorStore.query).toHaveBeenCalledWith(
 );
 ```
 
-- [ ] **Step 6: Run repository tests and witness RED.**
+- [x] **Step 6: Run repository tests and witness RED.**
 
 Run: `pnpm vitest run --project unit packages/server/src/repositories/activity-timeseries-repository.test.ts`
 
 Expected: FAIL because the repository is missing.
 
-- [ ] **Step 7: Implement the repository.** Add public `findSensorWindow` to `ActivityRepository` using the existing ownership-aware private query and update existing callers to use it. Reject inaccessible IDs with `Activity not found or not accessible.` Return activity source providers/member IDs/local time context, requested/effective resolution, columnar arrays, summaries, compact sources, and cursor. Fixed-resolution pages fetch enough native rows to finish the last returned bucket and set the next cursor to the next bucket boundary.
+- [x] **Step 7: Implement the repository.** Add public `findSensorWindow` to `ActivityRepository` using the existing ownership-aware private query and update existing callers to use it. Reject inaccessible IDs with `Activity not found or not accessible.` Return activity source providers/member IDs/local time context, requested/effective resolution, columnar arrays, summaries, compact sources, and cursor. Fixed-resolution pages fetch enough native rows to finish the last returned bucket and set the next cursor to the next bucket boundary. Preserve moving-time continuity across pages by fetching prior speed support without exposing those timestamps as page points.
 
-- [ ] **Step 8: Run repository and existing activity suites.**
+- [x] **Step 8: Run repository, existing activity, and real ClickHouse query suites.**
 
 Run: `pnpm vitest run --project unit packages/server/src/repositories/activity-timeseries-repository.test.ts packages/server/src/repositories/activity-repository.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 9: Commit the domain and repository.**
+- [x] **Step 9: Commit the domain and repository.**
 
 ```bash
-git add packages/server/src/repositories/activity-timeseries.ts packages/server/src/repositories/activity-timeseries.test.ts packages/server/src/repositories/activity-timeseries-repository.ts packages/server/src/repositories/activity-timeseries-repository.test.ts packages/server/src/repositories/activity-repository.ts packages/server/src/repositories/activity-repository.test.ts
+git add packages/server/src/repositories/activity-timeseries.ts packages/server/src/repositories/activity-timeseries.test.ts packages/server/src/repositories/activity-timeseries-repository.ts packages/server/src/repositories/activity-timeseries-repository.test.ts packages/server/src/repositories/activity-repository.ts packages/server/src/repositories/activity-repository.test.ts packages/server/src/repositories/activity-sensor-provenance.integration.test.ts
 git commit -m "feat(server): add synchronized activity time series"
 git push
 ```

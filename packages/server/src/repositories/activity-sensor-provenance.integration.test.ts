@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import type { ActivityRow } from "../models/activity.ts";
 import {
   createClickHouseTestActivitySensorStore,
   insertClickHouseMetricStreamRows,
@@ -10,6 +11,7 @@ import {
   seedClickHouseMetricStreamRows,
 } from "../routers/clickhouse-integration-test-helpers.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import { ActivityTimeseriesRepository } from "./activity-timeseries-repository.ts";
 
 const userId = "00000000-0000-0000-0000-000000000001";
 const activityId = randomUUID();
@@ -223,6 +225,77 @@ describe("activity sensor provenance", () => {
         }),
       ]),
     );
+  });
+
+  it("serves synchronized scalar and GPS rows only from deduped activity models", async () => {
+    const activity: ActivityRow = {
+      id: activityId,
+      canonical_type: "cycling",
+      raw_type: "cycling",
+      modality: "indoor_cycling",
+      started_at: startedAt,
+      ended_at: endedAt,
+      name: "Provenance Ride",
+      notes: null,
+      perceived_exertion: null,
+      provider_id: "provenance_wahoo",
+      timezone: null,
+      start_utc_offset_minutes: null,
+      end_utc_offset_minutes: null,
+      local_time_source: "unknown",
+      subsource: null,
+      source_providers: ["provenance_wahoo", "provenance_peloton"],
+      source_external_ids: null,
+      avg_hr: null,
+      max_hr: null,
+      avg_power: null,
+      max_power: null,
+      avg_speed: null,
+      max_speed: null,
+      avg_cadence: null,
+      total_distance: null,
+      elevation_gain_m: null,
+      elevation_loss_m: null,
+      sample_count: null,
+      provider_absent_at: null,
+    };
+    const repository = new ActivityTimeseriesRepository(
+      {
+        findById: async () => activity,
+        findSensorWindow: async () => ({
+          activityId,
+          userId,
+          startedAt,
+          endedAt,
+          memberActivityIds: [activityId],
+        }),
+      },
+      sensorStore,
+    );
+
+    const page = await repository.list({
+      activityId,
+      streams: ["power", "position"],
+      resolution: "raw",
+      fill: "none",
+      cursor: null,
+      limit: 500,
+    });
+
+    expect(page.timestamps).toEqual([
+      new Date(Date.parse(startedAt) + 1_000).toISOString(),
+      new Date(Date.parse(startedAt) + 2_000).toISOString(),
+    ]);
+    expect(page.streams.power?.values).toEqual([0, null]);
+    expect(page.streams.position?.values).toEqual([
+      [expect.closeTo(-122.1, 4), expect.closeTo(37.1, 4)],
+      [expect.closeTo(-122.2, 4), expect.closeTo(37.2, 4)],
+    ]);
+    expect(page.sources.map((entry) => entry.provider_id)).toEqual([
+      "provenance_wahoo",
+      "provenance_wahoo",
+      "provenance_wahoo",
+    ]);
   });
 
   it("selects the next provider when the preferred sample is tombstoned", async () => {
