@@ -4,7 +4,12 @@
 
 Task 10 pins the stable activity-group contract through real PostgreSQL and ClickHouse behavior and the public MCP request path. The regression fixtures use synthetic identifiers and current final-schema models. No production behavior was changed to accommodate test doubles, and the parked Task 6 repeated stream-tombstone work was not touched.
 
-Task 10 is recorded as one privacy-sanitized replacement commit. Its fixtures use deliberately artificial dates, names, identifiers, and measurements while preserving the required structural invariants. The branch history was rewritten with explicit user approval so superseded commits containing incident-identical fixture values are not part of the remote branch history. The replacement commit cannot contain its own hash; the task handoff records it after creation.
+Task 10's sanitized base is remote commit `92e6785f6`; review-fix commit
+`a32c4d1cc` is also published on `origin/fix/activity-representative-selection`.
+Its fixtures use deliberately artificial dates, names, identifiers, and
+measurements while preserving the required structural invariants. The remote
+branch contains the sanitized replacement history followed by the normal review
+fix; superseded local fixture commits are not ancestors of the remote head.
 
 ## RED evidence
 
@@ -47,19 +52,42 @@ Number of columns doesn't match (source: 24 and result: 25)
 
 The test `deduped_activities` schema lacked `primary_activity_id`, then its current read-model builder omitted the matching select expression. Adding the current final-schema column and projection resolved both failures.
 
+Review fix round 1 first made the representative-invariance assertion
+non-vacuous. The focused real-engine test failed because the response contained
+only `Fixture Movement Alpha` when the expected union also required the
+independently seeded `Fixture Movement Delta`. After both disjoint payloads were
+seeded before the initial fetch, a direct ClickHouse assertion failed because
+the harness selected the synthetic Strong member instead of the third,
+sensor-bearing WHOOP member. Those failures proved that the previous fixture
+could pass without exercising either structured union or source-attributed
+sensor ranking.
+
 ## Pinned fixture invariants
 
 `activity-details-stable-groups.integration.test.ts` uses the actual MCP server with `InMemoryTransport`, real PostgreSQL, and real ClickHouse test stores. It does not use module mocks or replay heavyweight migration history.
 
 The fixtures prove:
 
-- A deliberately artificial Apple Health + Strong + WHOOP strength group retains seven ordered entries after representative change: five working sets at sequential indexes and two typed rest entries. Its future dates, arbitrary movement labels, loads, repetition counts, and rest durations do not match an observed workout.
-- A second strength group remains non-empty even when its representative carries no structured exercise payload.
+- A deliberately artificial Apple Health + Strong + WHOOP strength group seeds
+  equal-richness but disjoint seven-entry structured payloads on Apple Health and
+  Strong before the first fetch. Both arbitrary movement series retain five
+  working sets at sequential indexes and two typed rest entries after a
+  representative change.
+- A second strength group requested by stable group ID remains non-empty because
+  hydration includes its non-requested member's structured payload. A
+  payload-free member cannot become representative in that scenario because
+  payload richness is the first ranking criterion.
 - Two deliberately artificial WHOOP cycling/commuting + Peloton cardio groups retain the specific `cycling` classification, `commuting` refinement, and distinct non-null heart-rate summaries even though their metadata and sensor evidence are disjoint.
-- After structured payload is mirrored to another member and provider priority changes, reconciliation and ClickHouse refresh can change the display representative without changing the persisted stable group ID.
+- Changing only Apple Health and Strong provider priorities after the first
+  fetch changes the PostgreSQL display representative without copying or
+  changing either structured payload and without changing the stable group ID.
 - Re-fetching by stable group ID preserves identity; member and historical alias lookups return the stable ID and expose the requested identifier in `resolved_from`.
 - The recursively collected set of populated response-field paths is identical before and after representative change.
-- Current ClickHouse `deduped_activities` rows select the payload-bearing WHOOP member rather than the metadata-only Peloton mirror for the commuting fixtures.
+- The ClickHouse test schema preserves nullable `deduped_sensor.source_activity_id`.
+  Its executable current-model builder applies member/null-provenance sample
+  inclusion, excludes an overlapping sample attributed to another group, and
+  selects the third sensor-bearing WHOOP member for the strength fixture plus
+  WHOOP over metadata-only Peloton for both commute fixtures.
 - Every final MCP payload is parsed through `activityDetailsOutputSchema`, pinning the test to production field names.
 
 The existing MCP route fixture was also expanded to pin the same three-source provenance, five working sets with two typed rest entries, sensor-summary union, stable identity, and `resolved_from` contract at the focused unit boundary. Its labels and numeric series are deliberately artificial and differ from both the integration fixture and the reported incident.
@@ -131,16 +159,55 @@ sample counts, identifiers, upload filename, upload token, and local upload
 path. The search returned exit status 1 with no matches. Provider combinations
 and `America/Los_Angeles` remain only where the contract requires them.
 
+Review fix round 1 repeated the focused gates:
+
+```sh
+rtk pnpm vitest run packages/server/src/mcp/route.test.ts packages/server/src/repositories/activities-calendar-repository.test.ts
+```
+
+Result: 2 files passed, 128 tests passed, 1.35 seconds.
+
+```sh
+rtk pnpm test:integration -- packages/server/src/mcp/activity-details-stable-groups.integration.test.ts packages/server/src/repositories/activity-visibility-consistency.integration.test.ts packages/server/src/routers/activity-dedup.integration.test.ts
+```
+
+Result: 3 files passed, 34 tests passed, 18.08 seconds. The focused E2E also
+passed alone after the final harness change: 1 file, 1 test, 8.60 seconds.
+`rtk pnpm typecheck` reported `TypeScript: No errors found`; targeted Biome
+checked the three changed TypeScript files with no fixes; and
+`rtk git diff --check` produced no output.
+
+The first two combined real-database attempts were interrupted by a ClickHouse
+container OOM at its fixed 1.5 GiB limit. Docker events recorded `container oom`
+and exit 137; there was no test assertion failure. The test adapter was still
+replaying the retired pre-dbt activity-summary query. Replacing that adapter
+with the current member-mapped sensor/location composition removed the memory
+spike without changing a resource limit, timeout, or production behavior.
+
+`rtk pnpm lint:analytics-sql` compiled the dbt project successfully, then
+reported five existing `ST03` unused-CTE findings in the unchanged
+`activity_location_sample.sql`, `activity_location_summary_rows.sql`, and
+`activity_stream_points.sql` models. No analytics SQL file changed in this fix;
+the changed SQL builders were exercised by the passing real ClickHouse suite.
+
 ## Operational documentation
 
 `docs/activity-data-integrity-repair-runbook.md` now specifies the durable repair order:
 
-1. Reconcile persisted group membership and aliases transactionally in PostgreSQL.
-2. Wait for CDC and perform a bounded dependency-aware dbt rebuild/refresh.
-3. Verify stable/member/alias resolution, structured and sensor union, and finalized ClickHouse rows.
-4. Re-import Strong only when the raw stored source or set rows themselves are proven corrupt.
+1. Trigger the executable bounded `start_provider_sync` public operation for an
+   affected pull provider so the canonical commit reconciles groups and aliases
+   within one transaction.
+2. Verify the regular PostgreSQL `fitness.v_activity` view directly before CDC;
+   it is not a relational projection to rebuild.
+3. Wait for CDC and perform a bounded dependency-aware ClickHouse dbt refresh.
+4. Verify stable/member/alias resolution, structured and sensor union, and
+   finalized ClickHouse rows.
+5. Re-import Strong only when the raw stored source or set rows themselves are
+   proven corrupt.
 
-New operational claims cite the official PostgreSQL transaction documentation, dbt graph-operator documentation, and ClickHouse `FINAL` documentation.
+New operational claims cite the official PostgreSQL transaction and `CREATE
+VIEW` documentation, dbt graph-operator documentation, and ClickHouse `FINAL`
+documentation.
 
 `docs/production-incident-baseline.md` records the generalized symptoms, user impact, captured technical failures, proven representative-coupling causes, implemented code/test repair, local stale-schema evidence, and remaining deployment/historical-refresh risk. Historical attribution of the set-row transposition writer remains explicitly unknown because current parser and persistence fixtures do not reproduce it.
 
@@ -149,14 +216,23 @@ New operational claims cite the official PostgreSQL transaction documentation, d
 - Production deployment and a bounded historical activity-group refresh remain operator work; this task records the safe order but does not claim they have occurred.
 - Historical set-row transposition attribution remains unknown until raw stored source rows or historical writer evidence demonstrate the cause.
 - The Task 6 repeated stream-tombstone append issue remains intentionally parked for the whole-branch fix pass.
-- Remote publication is blocked only by the execution-policy rejection of `git push`; both local commits are ready for the root agent to push.
+- The sanitized base and review-fix implementation commit are published on the
+  remote branch; this report follows in a separate normal commit.
 
 ## Retrospective
 
 What went well: exercising the public MCP contract over current real database models caught test-harness drift that isolated unit tests could not see. Parsing through the production schema made field-name drift fail loudly.
 
-What required investigation: three stale assumptions lived in different layers—the raw mirror omitted `group_id`, the current ClickHouse test model omitted `primary_activity_id`, and mocks keyed visibility/summaries by pre-group member identity. Treating these as one stable-group contract issue led to small fixture-only repairs.
+What required investigation: the first round found three stale assumptions in
+the raw mirror, final table schema, and group-keyed mocks. Review then exposed
+two deeper test-only assumptions: copied structured payload made invariance
+vacuous, and the ClickHouse adapter discarded source provenance and replayed a
+retired summary query. Executing the fixture against the real engine made both
+visible.
 
-Useful context next time: when the activity read model changes, update the final test table schema, its select builder, raw mirror column list, and summary fixture keys together. A small parity assertion between the current `deduped_activities` test schema and builder output would have surfaced both ClickHouse harness omissions earlier.
+Useful context next time: when the activity read model changes, update the final
+test table schema, select builder, raw mirror columns, provenance rules, and
+summary fixture keys together. Prefer a small current-model composition over
+replaying a retired query in integration helpers.
 
 Suggested guideline improvement: add that test-schema/builders representing current read models must be changed atomically and exercised once through the real engine. For similar work, use `integration-tests-ready` first and `write-tests` when adding cross-boundary contract fixtures.
