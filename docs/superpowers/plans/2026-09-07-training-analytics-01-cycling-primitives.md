@@ -151,44 +151,30 @@ git push
 - Modify: `analytics/models/read_models/deduped_sensor.sql`
 - Modify: `analytics/models/read_models/activity_sensor_sample.sql`
 - Modify: `analytics/models/read_models/activity_location_sample.sql`
-- Modify: `analytics/models/read_models/activity_stream_points.sql`
 - Modify: `analytics/models/read_models/read_model_microbatch.sql.test.ts`
+- Modify: `src/db/clickhouse-deduped-sensor.ts`
+- Modify: `src/db/clickhouse-deduped-sensor.test.ts`
+- Create: `src/db/clickhouse-migrations/0076_activity_sensor_provenance.ts`
+- Create: `src/db/clickhouse-migrations/0076_activity_sensor_provenance.test.ts`
+- Create: `src/db/clickhouse-migrations/0076_activity_sensor_provenance.integration.test.ts`
+- Modify: `src/db/clickhouse-migrations/registry.ts`
+- Modify: `src/db/clickhouse-migrations/registry.test.ts`
 - Create: `packages/server/src/repositories/activity-sensor-provenance.integration.test.ts`
-- Modify: `packages/server/src/repositories/clickhouse-activity-sensor-types.ts`
-- Modify: `packages/server/src/repositories/clickhouse-activity-sensor-store.ts`
-- Modify: `packages/server/src/repositories/limited-activity-sensor-store.ts`
+- Modify: `packages/server/src/routers/clickhouse-integration-test-helpers.ts`
+- Modify: `packages/server/src/routers/clickhouse-integration-test-models.ts`
+- Modify: `packages/server/src/routers/clickhouse-integration-test-read-models-a.ts`
 
 **Interfaces:**
 
 - Consumes: `ingest.metric_stream` fields `id`, `activity_id`, `provider_id`, `external_id`, `device_id`, `source_type`, `metadata`, and existing provider/device priorities.
-- Produces these additional `analytics.activity_sensor_sample` columns and query row:
+- Produces these additional `analytics.activity_sensor_sample` columns for Task 3's repository query:
 
-```ts
-export interface NativeActivitySampleRow {
-  recorded_at: string;
-  channel: string;
-  scalar: number;
-  provider_id: string;
-  device_id: string | null;
-  source_type: string | null;
-  source_record_id: string;
-  member_activity_id: string | null;
-  measurement_kind: "direct" | "estimated" | "unknown";
-  scalar: number | null;
-  position: [number, number] | null;
-}
+```text
+provider_id, member_activity_id, device_id, source_external_id, source_type,
+source_metric_stream_id, measurement_kind
 ```
 
-```ts
-getNativeActivitySamples(
-  window: ActivitySensorWindow,
-  channels: readonly string[],
-  afterRecordedAt: string | null,
-  limit: number,
-): Promise<NativeActivitySampleRow[]>;
-```
-
-- [ ] **Step 1: Extend the dbt policy test first.** Assert that staging projects source `activity_id`, `external_id`, `source_type`, and a strict `measurement_kind` extracted from metadata; `deduped_sensor` selects all provenance with the same `argMinIf` ordering used for `scalar`; `activity_sensor_sample` forwards it without joining raw ingest data; and `activity_location_sample` preserves the winning GPS source and member activity. Add `distance` and `temperature` to the staged scalar channel allowlist.
+- [x] **Step 1: Extend the dbt and bootstrap tests first.** Assert that staging projects source `activity_id`, `external_id`, `source_type`, and a strict `measurement_kind` extracted from metadata; `deduped_sensor` selects all provenance with the same `argMinIf` ordering used for `scalar`; `activity_sensor_sample` forwards it without joining raw ingest data; and `activity_location_sample` preserves the winning GPS source and member activity. Add `distance` and `temperature` to the staged scalar channel allowlist. Assert the production bootstrap creates the same columns, and the new schema-only migration adds them to already-existing tables without an `INSERT` or historical backfill.
 
 ```ts
 expect(sensorSql).toContain("argMax(external_id, version) AS external_id");
@@ -198,13 +184,13 @@ expect(activitySampleSql).not.toContain("source('ingest'");
 expect(locationSampleSql).toContain("location_rows.member_activity_id");
 ```
 
-- [ ] **Step 2: Run the dbt policy test and witness RED.**
+- [x] **Step 2: Run the dbt policy test and witness RED.**
 
-Run: `pnpm vitest run --project unit analytics/models/read_models/read_model_microbatch.sql.test.ts`
+Run: `pnpm vitest run --project unit analytics/models/read_models/read_model_microbatch.sql.test.ts src/db/clickhouse-deduped-sensor.test.ts src/db/clickhouse-migrations/0076_activity_sensor_provenance.test.ts src/db/clickhouse-migrations/registry.test.ts`
 
 Expected: FAIL on missing provenance projections.
 
-- [ ] **Step 3: Modify the five dbt models.** Use the existing winner tuple `(provider_priority, provider_id, id)` for every selected scalar provenance column. Normalize measurement kind exactly as follows so absent or unrecognized metadata stays unknown:
+- [x] **Step 3: Modify the four dbt models, bootstrap SQL, and migration.** Use the existing winner tuple `(provider_priority, provider_id, id)` for every selected scalar provenance column. Normalize measurement kind exactly as follows so absent or unrecognized metadata stays unknown:
 
 ```sql
 multiIf(
@@ -214,15 +200,15 @@ multiIf(
 ) AS measurement_kind
 ```
 
-Carry source `activity_id` as `member_activity_id` and the metric-stream UUID as `source_metric_stream_id`; retain provider external ID separately. Apply the same source fields to the already provider-selected location model. Add `on_schema_change='append_new_columns'` to affected incremental configs. Do not copy the full metadata payload into downstream tables.
+Carry source `activity_id` as `member_activity_id` and the metric-stream UUID as `source_metric_stream_id`; retain provider external ID separately. Apply the same source fields to the already provider-selected location model. Add `on_schema_change='append_new_columns'` to affected incremental configs. Keep `clickhouse-deduped-sensor.ts` byte-for-byte equivalent in column meaning to the dbt staging/dedup models. Register migration `0076_activity_sensor_provenance` with `ADD COLUMN IF NOT EXISTS` statements only; historical recomputation remains the explicit operator action documented in Task 7. Do not copy the full metadata payload into downstream tables.
 
-- [ ] **Step 4: Run the dbt policy test and witness GREEN.**
+- [x] **Step 4: Run the dbt policy test and witness GREEN.**
 
-Run: `pnpm vitest run --project unit analytics/models/read_models/read_model_microbatch.sql.test.ts`
+Run: `pnpm vitest run --project unit analytics/models/read_models/read_model_microbatch.sql.test.ts src/db/clickhouse-deduped-sensor.test.ts src/db/clickhouse-migrations/0076_activity_sensor_provenance.test.ts src/db/clickhouse-migrations/registry.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 5: Write an executable ClickHouse integration test.** Seed two providers at the same timestamp and channel with different priorities plus a measured zero from the winning provider. Build the current staging/dedup/activity-sample models in the isolated test database. Assert one row, scalar `0`, and winner provenance from Wahoo. Then tombstone Wahoo and assert the Peloton member becomes the visible source after refresh. Seed overlapping GPS points and assert the location row identifies its provider, device, source record, and member activity.
+- [x] **Step 5: Write executable ClickHouse integration tests.** Seed two providers at the same timestamp and channel with different priorities plus a measured zero from the winning provider. Build the current staging/dedup/activity-sample models in the isolated test database. Assert one row, scalar `0`, and winner provenance from Wahoo. Then tombstone Wahoo and assert the Peloton member becomes the visible source after refresh. Seed overlapping GPS points and assert the location row identifies its provider, device, source record, and member activity. Execute the schema migration twice against minimal real ClickHouse tables and verify its idempotent column types.
 
 ```ts
 expect(rows).toEqual([expect.objectContaining({
@@ -233,13 +219,13 @@ expect(rows).toEqual([expect.objectContaining({
 })]);
 ```
 
-- [ ] **Step 6: Run the integration test and witness RED.**
+- [x] **Step 6: Run the integration test and witness RED.**
 
 Run: `pnpm test:integration -- packages/server/src/repositories/activity-sensor-provenance.integration.test.ts`
 
 Expected: FAIL because the current activity sample model omits provenance.
 
-- [ ] **Step 7: Add the native-sample store method.** Query only `analytics.activity_sensor_sample FINAL`, restrict by authenticated user, canonical activity ID, requested channels, activity timestamps, cursor timestamp, and `is_deleted = 0`; order by `recorded_at, channel`; request `limit + 1` rows to derive pagination. Update the limiter by delegating through its regular limiter.
+- [x] **Step 7: Specify the query contract used by Task 3.** Query only `analytics.activity_sensor_sample FINAL`, restrict by authenticated user, canonical activity ID, requested channels, activity timestamps, cursor timestamp, and `is_deleted = 0`; order by `recorded_at, channel`; request `limit + 1` rows to derive pagination. Use the existing generic `ActivitySensorStore.query` boundary so every current production store and test double retains one canonical query interface.
 
 ```sql
 SELECT recorded_at, channel, scalar, provider_id, device_id, source_type,
@@ -256,12 +242,12 @@ ORDER BY recorded_at, channel
 LIMIT {limit:UInt32}
 ```
 
-Union a shape-compatible query over `analytics.activity_location_sample FINAL`
+Task 3 unions a shape-compatible query over `analytics.activity_location_sample FINAL`
 when `position` is requested. It returns `channel='position'`, null scalar, a
 `(lat, lng)` tuple, and the same source fields. Both branches remain restricted
 to the authenticated canonical activity and its selected deduped samples.
 
-- [ ] **Step 8: Run the integration and store unit suites.**
+- [x] **Step 8: Run the integration and existing sensor-store unit suites.**
 
 Run: `pnpm test:integration -- packages/server/src/repositories/activity-sensor-provenance.integration.test.ts`
 
@@ -269,14 +255,14 @@ Run: `pnpm vitest run --project unit packages/server/src/repositories/clickhouse
 
 Expected: PASS; query assertions prove no raw-ingest read.
 
-- [ ] **Step 9: Validate analytics SQL and commit.**
+- [x] **Step 9: Validate analytics SQL and commit.**
 
 Run: `pnpm lint:analytics-sql`
 
 Expected: PASS.
 
 ```bash
-git add analytics/models/staging/sensor_scalar_sample.sql analytics/models/read_models/deduped_sensor.sql analytics/models/read_models/activity_sensor_sample.sql analytics/models/read_models/activity_location_sample.sql analytics/models/read_models/activity_stream_points.sql analytics/models/read_models/read_model_microbatch.sql.test.ts packages/server/src/repositories/activity-sensor-provenance.integration.test.ts packages/server/src/repositories/clickhouse-activity-sensor-types.ts packages/server/src/repositories/clickhouse-activity-sensor-store.ts packages/server/src/repositories/limited-activity-sensor-store.ts
+git add analytics/models/staging/sensor_scalar_sample.sql analytics/models/read_models/deduped_sensor.sql analytics/models/read_models/activity_sensor_sample.sql analytics/models/read_models/activity_location_sample.sql analytics/models/read_models/read_model_microbatch.sql.test.ts src/db/clickhouse-deduped-sensor.ts src/db/clickhouse-deduped-sensor.test.ts src/db/clickhouse-migrations/0076_activity_sensor_provenance.ts src/db/clickhouse-migrations/0076_activity_sensor_provenance.test.ts src/db/clickhouse-migrations/0076_activity_sensor_provenance.integration.test.ts src/db/clickhouse-migrations/registry.ts src/db/clickhouse-migrations/registry.test.ts packages/server/src/repositories/activity-sensor-provenance.integration.test.ts packages/server/src/routers/clickhouse-integration-test-helpers.ts packages/server/src/routers/clickhouse-integration-test-models.ts packages/server/src/routers/clickhouse-integration-test-read-models-a.ts
 git commit -m "feat(analytics): preserve activity sensor provenance"
 git push
 ```
@@ -293,7 +279,7 @@ git push
 
 **Interfaces:**
 
-- Consumes: `ActivityRepository.findById`, its private ownership-aware sensor window resolution exposed as a new production method `findSensorWindow(activityId)`, and `ActivitySensorStore.getNativeActivitySamples`.
+- Consumes: `ActivityRepository.findById`, its private ownership-aware sensor window resolution exposed as a new production method `findSensorWindow(activityId)`, and `ActivitySensorStore.query`.
 - Produces:
 
 ```ts
@@ -342,11 +328,14 @@ Expected: PASS.
 - [ ] **Step 5: Write failing repository tests.** Assert UUID ownership lookup precedes sensor query; aliases resolve to the canonical activity window; stream names map to metric channels (`position` maps to location, `distance` to distance, `temperature` to temperature); `limit + 1` determines `next_cursor`; source rows deduplicate into a source table and arrays contain source indexes; and mismatched cursors fail before querying ClickHouse.
 
 ```ts
-expect(sensorStore.getNativeActivitySamples).toHaveBeenCalledWith(
-  expect.objectContaining({ activityId: canonicalId, memberActivityIds: [wahooId, stravaId] }),
-  ["heart_rate", "power"],
-  null,
-  1001,
+expect(sensorStore.query).toHaveBeenCalledWith(
+  expect.anything(),
+  expect.stringContaining("FROM analytics.activity_sensor_sample FINAL"),
+  expect.objectContaining({
+    activityId: canonicalId,
+    channels: ["heart_rate", "power"],
+    limit: 1001,
+  }),
 );
 ```
 

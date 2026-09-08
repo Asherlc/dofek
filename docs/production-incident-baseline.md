@@ -25729,3 +25729,22 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   freshness separately; zero consumer lag alone is not an object-age audit.
   The Axiom MCP token remains expired; task-local Swarm logs supplied the fatal
   evidence. No additional resilience knob was introduced.
+
+## 2026-09-07 — Stale workspace Docker resources blocked integration validation
+
+- **Scope / impact:** Local integration-test infrastructure only; no production
+  impact. Compose first failed with `all predefined address pools have been fully
+  subnetted`, then ClickHouse failed with `Cannot reserve 1.00 MiB, not enough
+  space`.
+- **Evidence / root cause:** Twenty-three inactive workspace networks had no
+  attached containers. Docker then reported 25.86 GB of reclaimable stopped
+  container layers while the required ClickHouse insert could not reserve its
+  minimum allocation. Running containers and named volumes belonged to active
+  workspaces and were preserved.
+- **Direct remediation:** Removed only the empty inactive networks, then pruned
+  stopped containers as documented by [Docker's pruning guide](https://docs.docker.com/engine/manage-resources/pruning/).
+  Compose recreated this workspace's network, and the cleanup reclaimed 26.72 GB.
+- **Validation / follow-up:** The unchanged real-ClickHouse provenance fixture
+  subsequently passed. No timeout, retry, storage limit, or test bypass was
+  added. The workspace archive hook should be monitored to ensure it consistently
+  removes stopped containers and empty networks after workspaces are retired.

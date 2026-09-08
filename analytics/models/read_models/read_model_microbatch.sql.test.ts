@@ -387,6 +387,42 @@ describe("production analytics read-model build", () => {
     expect(activityLocationSampleSql).not.toContain("source('postgres_fitness', 'metric_stream')");
   });
 
+  it("carries the selected sensor source through canonical activity samples", () => {
+    const sensorSql = readProjectFile("analytics/models/staging/sensor_scalar_sample.sql");
+    const dedupedSql = readModel("deduped_sensor");
+    const activitySampleSql = readModel("activity_sensor_sample");
+    const locationSampleSql = readModel("activity_location_sample");
+
+    expect(sensorSql).toContain("argMax(activity_id, version) AS member_activity_id");
+    expect(sensorSql).toContain("argMax(external_id, version) AS source_external_id");
+    expect(sensorSql).toContain("argMax(source_type, version) AS source_type");
+    expect(sensorSql).toContain("argMax(metadata, version) AS metadata");
+    expect(sensorSql).toContain("JSONExtractString(metadata, 'measurement_kind')");
+    expect(sensorSql.match(/toNullable\(priority\) AS priority/g)).toHaveLength(2);
+    expect(sensorSql).toContain("'distance'");
+    expect(sensorSql).toContain("'temperature'");
+
+    for (const sourceColumn of [
+      "member_activity_id",
+      "device_id",
+      "source_external_id",
+      "source_type",
+      "measurement_kind",
+    ]) {
+      expect(dedupedSql).toContain(`samples.${sourceColumn}`);
+      expect(activitySampleSql).toContain(`samples.${sourceColumn} AS ${sourceColumn}`);
+    }
+    expect(activitySampleSql).not.toContain("source('ingest'");
+
+    expect(locationSampleSql).toContain("argMax(device_id, version) AS device_id");
+    expect(locationSampleSql).toContain("argMax(external_id, version) AS source_external_id");
+    expect(locationSampleSql).toContain("argMax(source_type, version) AS source_type");
+    expect(locationSampleSql).toContain(
+      "activity_members.member_activity_id AS member_activity_id",
+    );
+    expect(locationSampleSql).toContain("location_rows.provider_id AS provider_id");
+  });
+
   it("materializes activity location membership as a microbatch intermediary", () => {
     expect(existsSync(new URL("./activity_location_sample.sql", import.meta.url))).toBe(true);
     const sql = readModel("activity_location_sample");
