@@ -308,7 +308,7 @@ describe("processAccountErasureRequest", () => {
 
   it("recaptures a pre-route ingest fence before draining consumers", async () => {
     accountErasureDatabaseMocks.loadAccountErasureCheckpoints.mockResolvedValue(
-      new Set(["ingest_fence"]),
+      new Set(["ingest_fence", "consumer_drain"]),
     );
     accountErasureDatabaseMocks.loadAccountErasureCheckpointDetails.mockResolvedValue({
       highWatermarks: [{ low: "10", offset: "20", partition: 0 }],
@@ -332,6 +332,10 @@ describe("processAccountErasureRequest", () => {
 
     expect(runner.runPhase).toHaveBeenCalledWith(
       "ingest_fence",
+      expect.objectContaining({ request: expect.objectContaining({ id: request.id }) }),
+    );
+    expect(runner.runPhase).toHaveBeenCalledWith(
+      "consumer_drain",
       expect.objectContaining({ request: expect.objectContaining({ id: request.id }) }),
     );
     expect(accountErasureDatabaseMocks.markAccountErasurePhaseCompleted).toHaveBeenCalledWith(

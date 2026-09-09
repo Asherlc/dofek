@@ -159,7 +159,10 @@ export async function processAccountErasureRequest(
             request.id,
             "ingest_fence",
           );
-          if (!hasRoutedIngestFence(checkpoint)) completed.delete("ingest_fence");
+          if (!hasRoutedIngestFence(checkpoint)) {
+            completed.delete("ingest_fence");
+            completed.delete("consumer_drain");
+          }
           return completed;
         },
         markCompleted: async (completedRequestId, phase, details) => {
