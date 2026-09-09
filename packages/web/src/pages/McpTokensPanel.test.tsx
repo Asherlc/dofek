@@ -12,6 +12,7 @@ type MockMcpToken = {
   lastUsedAt: string | null;
   expiresAt: string | null;
   revokedAt: string | null;
+  oauthClientId?: string | null;
 };
 
 const listTokensQuery: {
@@ -94,7 +95,13 @@ describe("McpTokensPanel", () => {
   it("shows an empty state when no MCP tokens exist", () => {
     render(<McpTokensPanel />);
 
-    expect(screen.getByText("No MCP tokens yet.")).toBeTruthy();
+    expect(screen.getByText("No personal tokens yet.")).toBeTruthy();
+  });
+
+  it("explains that a blank expiry keeps a personal token from expiring", () => {
+    render(<McpTokensPanel />);
+
+    expect(screen.getByText("Leave blank for no expiration.")).toBeTruthy();
   });
 
   it("shows query loading and error states", () => {
@@ -518,9 +525,70 @@ describe("McpTokensPanel", () => {
 
     render(<McpTokensPanel />);
 
+    expect(screen.getByText("Expired")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Edit scopes for Expired Codex" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Rotate Expired Codex" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Revoke Expired Codex" })).toBeNull();
+  });
+
+  it("separates OAuth connections from personal tokens", () => {
+    listTokensQuery.data = [
+      {
+        id: "00000000-0000-0000-0000-000000000001",
+        name: "Claude OAuth",
+        scopes: ["health:read"],
+        createdAt: "2026-05-20T12:00:00Z",
+        lastUsedAt: "2026-05-20T12:00:00Z",
+        expiresAt: "2020-01-01T00:00:00Z",
+        revokedAt: null,
+        oauthClientId: "https://claude.ai/oauth/client-metadata.json",
+      },
+      {
+        id: "00000000-0000-0000-0000-000000000002",
+        name: "Personal Codex",
+        scopes: ["health:read"],
+        createdAt: "2026-05-20T12:00:00Z",
+        lastUsedAt: null,
+        expiresAt: null,
+        revokedAt: null,
+      },
+    ];
+
+    render(<McpTokensPanel />);
+
+    expect(screen.getByRole("heading", { name: "Connected apps" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Personal tokens" })).toBeTruthy();
+    expect(screen.getByText("Expired")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Revoke access for Claude OAuth" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Edit scopes for Claude OAuth" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Rotate Claude OAuth" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Edit scopes for Personal Codex" })).toBeTruthy();
+  });
+
+  it("revokes OAuth access for the selected connected app", async () => {
+    listTokensQuery.data = [
+      {
+        id: "00000000-0000-0000-0000-000000000001",
+        name: "Claude OAuth",
+        scopes: ["health:read"],
+        createdAt: "2026-05-20T12:00:00Z",
+        lastUsedAt: null,
+        expiresAt: "2020-01-01T00:00:00Z",
+        revokedAt: null,
+        oauthClientId: "https://claude.ai/oauth/client-metadata.json",
+      },
+    ];
+    revokeTokenMutateAsync.mockResolvedValueOnce({});
+
+    render(<McpTokensPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Revoke access for Claude OAuth" }));
+
+    await waitFor(() => {
+      expect(revokeTokenMutateAsync).toHaveBeenCalledWith({
+        tokenId: "00000000-0000-0000-0000-000000000001",
+      });
+    });
   });
 
   it("rotates an active token with the same settings", async () => {

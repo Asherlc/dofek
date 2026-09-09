@@ -62,6 +62,7 @@ describe("mcpRouter", () => {
       lastUsedAt: null,
       expiresAt: null,
       revokedAt: null,
+      oauthClientId: null,
     });
     const queryPayload = JSON.stringify(mockExecute.mock.calls[0]?.[0]);
     expect(queryPayload).toContain("user-id");
@@ -143,6 +144,7 @@ describe("mcpRouter", () => {
         lastUsedAt: "2026-05-20T12:30:00.000Z",
         expiresAt: null,
         revokedAt: null,
+        oauthClientId: null,
       },
     ]);
     expect(JSON.stringify(result)).not.toContain("dofek_mcp_");
