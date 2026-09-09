@@ -49,6 +49,28 @@ const database: Pick<Database, "execute" | "transaction"> = {
   execute,
   transaction,
 };
+const completedAccountErasurePhases = new Set([
+  "ingest_fence",
+  "stripe_erasure",
+  "work_purge",
+  "consumer_drain",
+  "remote_revocation",
+  "processor_erasure",
+  "postgres_erasure",
+  "clickhouse_initial",
+  "archive_initial",
+  "work_verification",
+  "consumer_drain_verification",
+  "stripe_erasure_verification",
+  "remote_revocation_verification",
+  "processor_erasure_verification",
+  "postgres_profile_delete",
+  "peerdb_drain_verification",
+  "clickhouse_verification",
+  "archive_verification",
+  "request_pii_scrub",
+  "retention_verification",
+]);
 
 function phaseRunner(
   implementation: AccountErasurePhaseRunner["runPhase"] = async () => null,
@@ -359,6 +381,58 @@ describe("processAccountErasureRequest", () => {
     );
 
     expect(runner.runPhase).not.toHaveBeenCalledWith("ingest_fence", expect.anything());
+  });
+
+  it("does not recapture a legacy fence after the user identifier is scrubbed", async () => {
+    accountErasureDatabaseMocks.claimAccountErasureRequest.mockResolvedValue({
+      ...request,
+      userId: null,
+    });
+    accountErasureDatabaseMocks.loadAccountErasureCheckpoints.mockResolvedValue(
+      new Set(completedAccountErasurePhases),
+    );
+    accountErasureDatabaseMocks.loadAccountErasureCheckpointDetails.mockResolvedValue({
+      highWatermarks: [{ low: "10", offset: "20", partition: 0 }],
+    });
+    const runner = phaseRunner();
+
+    await expect(
+      processAccountErasureRequest(
+        database,
+        request.id,
+        "worker-1",
+        runner,
+        new Date("2026-08-26T12:00:00.000Z"),
+      ),
+    ).resolves.toEqual({ status: "completed" });
+
+    expect(runner.runPhase).not.toHaveBeenCalled();
+  });
+
+  it("does not recapture a legacy fence after the encrypted snapshot is scrubbed", async () => {
+    accountErasureDatabaseMocks.claimAccountErasureRequest.mockResolvedValue({
+      ...request,
+      encryptedRemoteSnapshot: null,
+    });
+    accountErasureDatabaseMocks.loadAccountErasureCheckpoints.mockResolvedValue(
+      new Set(completedAccountErasurePhases),
+    );
+    accountErasureDatabaseMocks.loadAccountErasureCheckpointDetails.mockResolvedValue({
+      highWatermarks: [{ low: "10", offset: "20", partition: 0 }],
+    });
+    const runner = phaseRunner();
+
+    await expect(
+      processAccountErasureRequest(
+        database,
+        request.id,
+        "worker-1",
+        runner,
+        new Date("2026-08-26T12:00:00.000Z"),
+      ),
+    ).resolves.toEqual({ status: "completed" });
+
+    expect(runner.runPhase).not.toHaveBeenCalled();
   });
 
   it("renews the durable lease while a destructive phase is running", async () => {

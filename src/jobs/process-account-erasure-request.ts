@@ -152,16 +152,14 @@ export async function processAccountErasureRequest(
         },
         loadCompletedPhases: async () => {
           const completed = new Set(await loadAccountErasureCheckpoints(database, request.id));
-          if (
-            completed.has("ingest_fence") &&
-            request.userId !== null &&
-            request.encryptedRemoteSnapshot !== null &&
-            !hasRoutedIngestFence(
-              await loadAccountErasureCheckpointDetails(database, request.id, "ingest_fence"),
-            )
-          ) {
-            completed.delete("ingest_fence");
-          }
+          if (!completed.has("ingest_fence")) return completed;
+          if (request.userId === null || request.encryptedRemoteSnapshot === null) return completed;
+          const checkpoint = await loadAccountErasureCheckpointDetails(
+            database,
+            request.id,
+            "ingest_fence",
+          );
+          if (!hasRoutedIngestFence(checkpoint)) completed.delete("ingest_fence");
           return completed;
         },
         markCompleted: async (completedRequestId, phase, details) => {
