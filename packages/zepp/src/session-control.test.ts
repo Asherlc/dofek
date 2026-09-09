@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   finalizeVisibleSession,
+  finalizeVisibleSessionOnAccessLoss,
   getImuTransferFailureReason,
   startVisibleSession,
 } from "./session-control.ts";
@@ -67,6 +68,26 @@ describe("Zepp session control", () => {
     });
 
     expect(events).toEqual(["cancel", "stop", "transfer"]);
+  });
+
+  it("finalizes recording when the verified account binding is lost", () => {
+    const events: string[] = [];
+
+    finalizeVisibleSessionOnAccessLoss(
+      {
+        hasCredentials: false,
+        hasImuConnection: false,
+        logging: true,
+        transferInProgress: false,
+      },
+      {
+        cancelTransfer: () => events.push("cancel"),
+        stopLogging: () => events.push("stop"),
+        transferStoppedSession: () => events.push("transfer"),
+      },
+    );
+
+    expect(events).toEqual(["stop", "transfer"]);
   });
 
   it.each([

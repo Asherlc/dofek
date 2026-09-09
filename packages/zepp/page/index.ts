@@ -73,6 +73,7 @@ import { createRoundLoginLayout } from "../src/round-layout.ts";
 import {
   confirmImuTransferPersistence,
   finalizeVisibleSession,
+  finalizeVisibleSessionOnAccessLoss,
   getImuTransferFailureReason,
   startVisibleSession,
 } from "../src/session-control.ts";
@@ -298,6 +299,7 @@ Page(
           this.state.hasCredentials = result?.hasCredentials === true;
           this.state.imuConnection = updateWatchImuConnection(settings.settingsStorage, result);
           this.state.canStartConnection = result?.canStartConnection === true;
+          this.finalizeSessionOnAccessLoss();
           connectionButton?.setProperty(
             prop.TEXT,
             this.state.hasCredentials ? "Disconnect Dofek" : "Login on watch",
@@ -672,6 +674,8 @@ Page(
       })
         .then(() => {
           this.state.hasCredentials = false;
+          this.state.imuConnection = null;
+          this.finalizeSessionOnAccessLoss();
           connectionButton?.setProperty(prop.TEXT, "Login on watch");
           clearPairingQrWidget();
           renderHint("Not connected\nCreate code in Zepp settings");
@@ -763,6 +767,26 @@ Page(
       }
 
       this.retryPendingImuTransfer();
+    },
+
+    finalizeSessionOnAccessLoss() {
+      finalizeVisibleSessionOnAccessLoss(
+        {
+          hasCredentials: this.state.hasCredentials,
+          hasImuConnection: this.state.imuConnection !== null,
+          logging: this.state.logging,
+          transferInProgress: Boolean(this.state.transferTask),
+        },
+        {
+          cancelTransfer: () => {
+            this.state.transferMonitor?.cancel();
+            this.state.transferMonitor = null;
+            this.state.transferTask = null;
+          },
+          stopLogging: () => this.stopLogging(),
+          transferStoppedSession: () => this.transferStoppedSession(),
+        },
+      );
     },
 
     handleImuTransferFailure(transfer: PendingImuTransfer, cause: unknown) {

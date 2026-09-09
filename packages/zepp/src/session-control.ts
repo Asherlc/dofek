@@ -40,6 +40,18 @@ export function finalizeVisibleSession(
   actions.transferStoppedSession();
 }
 
+export function finalizeVisibleSessionOnAccessLoss(
+  state: Pick<
+    VisibleSessionState,
+    "hasCredentials" | "hasImuConnection" | "logging" | "transferInProgress"
+  >,
+  actions: VisibleSessionFinalizeActions,
+): void {
+  if (state.logging && (!state.hasCredentials || !state.hasImuConnection)) {
+    finalizeVisibleSession(state, actions);
+  }
+}
+
 export function getImuTransferFailureReason(
   event: Record<string, unknown>,
   fallback: string,
