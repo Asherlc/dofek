@@ -230,7 +230,7 @@ export async function listMcpConnectedApps(
   const items = rows.slice(0, connectedAppsPageSize).map(toMetadata);
   return {
     items,
-    nextCursor: hasNextPage ? (items.at(-1)?.id ?? null) : null,
+    nextCursor: hasNextPage ? items.at(-1)!.id : null,
   };
 }
 
