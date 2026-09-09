@@ -446,7 +446,8 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("'enable_materialized_cte': 1");
     expect(sql).toContain("affected_groups AS MATERIALIZED");
     expect(sql).toContain("changed_location_versions AS MATERIALIZED");
-    expect(sql).toContain("affected_location_versions AS MATERIALIZED");
+    expect(sql).toContain("affected_location_versions AS (");
+    expect(sql).not.toContain("affected_location_versions AS MATERIALIZED");
     expect(sql).toContain("affected_location_rows AS MATERIALIZED");
     expect(sql).toContain("provider_counts AS");
     expect(sql).toContain("existing_location_samples AS MATERIALIZED");

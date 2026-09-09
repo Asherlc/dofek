@@ -85,8 +85,10 @@ operation when the target exists.
 makes that legacy default null-safe because older targets allowed nullable
 `refreshed_at` values. `activity_location_sample` separately materializes the
 new location changes used for dirty-group discovery, then reads complete raw
-tracks only for the affected members. Its model-local
-`enable_materialized_cte` setting prevents those bounded intermediates from
+tracks only for the affected members. The one-use raw-track CTE remains
+streaming so it is aggregated without buffering a second full copy; reused
+bounded key and result CTEs are materialized. Its model-local
+`enable_materialized_cte` setting prevents those reused intermediates from
 being re-evaluated across current-row and tombstone branches; ClickHouse
 introduced this explicit single-evaluation behavior in
 [version 26.3](https://clickhouse.com/blog/clickhouse-release-26-03).
