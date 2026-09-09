@@ -261,8 +261,8 @@ describe("MCP token repository (integration)", () => {
     const refreshStateByAccessTokenId = new Map(
       refreshRows.map((row) => [row.access_token_id, row.revoked_at]),
     );
-    expect(refreshStateByAccessTokenId.get(first.metadata.id)).not.toBeNull();
-    expect(refreshStateByAccessTokenId.get(child.metadata.id)).not.toBeNull();
+    expect(refreshStateByAccessTokenId.get(first.metadata.id)).toEqual(expect.any(String));
+    expect(refreshStateByAccessTokenId.get(child.metadata.id)).toEqual(expect.any(String));
     expect(refreshStateByAccessTokenId.get(unrelated.metadata.id)).toBeNull();
     await expect(validateMcpToken(ctx.db, unrelated.token)).resolves.not.toBeNull();
   });

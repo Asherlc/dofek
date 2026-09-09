@@ -239,12 +239,12 @@ export async function revokeMcpToken(
             UNION
             SELECT access_token_id FROM revoked_refresh_tokens
           )
-          RETURNING token.id
+          RETURNING token.id, token.name, token.scopes, token.created_at, token.last_used_at,
+                    token.expires_at, token.revoked_at, token.oauth_client_id
         )
-        SELECT token.id, token.name, token.scopes, token.created_at, token.last_used_at,
-               token.expires_at, token.revoked_at, token.oauth_client_id
-        FROM fitness.mcp_access_token token
-        WHERE token.id IN (SELECT id FROM target)`,
+        SELECT id, name, scopes, created_at, last_used_at, expires_at, revoked_at, oauth_client_id
+        FROM revoked_access_tokens
+        WHERE id IN (SELECT id FROM target)`,
   );
   return rows[0] ? toMetadata(rows[0]) : null;
 }

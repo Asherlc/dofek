@@ -29,6 +29,7 @@ import { ClimbingGradeSystemSettings } from "../components/ClimbingGradeSystemSe
 import { DataExportSection } from "../components/DataExportSection";
 import { GoalWeightSettingsSection } from "../components/GoalWeightSettingsSection";
 import { McpClientSetupPanel } from "../components/McpClientSetupPanel";
+import { McpConnectedAppsPanel } from "../components/McpConnectedAppsPanel";
 import { MedicationDoseEventsPanel } from "../components/MedicationDoseEventsPanel";
 import { MedicationRemindersPanel } from "../components/MedicationRemindersPanel";
 import { PersonalizationPanel } from "../components/PersonalizationPanel";
@@ -916,6 +917,12 @@ export default function SettingsScreen() {
       {activeCategory === "advanced" ? (
         <View style={styles.section}>
           <McpClientSetupPanel endpoint={`${auth.serverUrl}/api/mcp`} />
+        </View>
+      ) : null}
+
+      {activeCategory === "advanced" ? (
+        <View style={styles.section}>
+          <McpConnectedAppsPanel />
         </View>
       ) : null}
 
