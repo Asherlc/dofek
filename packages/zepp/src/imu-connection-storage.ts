@@ -61,14 +61,3 @@ export function updateWatchImuConnection(
   persistImuConnectionBinding(storage, STORAGE_KEYS.IMU_CONNECTION_BINDING, binding);
   return binding;
 }
-
-export function applyWatchStartPreferences(
-  storage: SettingsStorage,
-  state: { freqModeIndex: number; imuConnection: ImuConnectionBinding | null },
-  preferences: Record<string, unknown> | undefined,
-): void {
-  state.freqModeIndex = Number(preferences?.freqModeIndex ?? state.freqModeIndex);
-  if (preferences && "hasCredentials" in preferences) {
-    state.imuConnection = updateWatchImuConnection(storage, preferences);
-  }
-}

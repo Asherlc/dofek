@@ -52,7 +52,6 @@ import {
 } from "../src/health-service-control.ts";
 import { createImuCollector, FREQ_MODES } from "../src/imu-collector.ts";
 import {
-  applyWatchStartPreferences,
   restoreWatchImuConnection,
   updateWatchImuConnection,
 } from "../src/imu-connection-storage.ts";
@@ -73,13 +72,9 @@ import { getString, isRecord, nullable } from "../src/record-fields.ts";
 import { createRoundLoginLayout } from "../src/round-layout.ts";
 import {
   confirmImuTransferPersistence,
-  createSessionCall,
-  drainManualExportQueue,
+  finalizeVisibleSession,
   getImuTransferFailureReason,
-  getSessionAction,
-  handleSessionCall,
-  SESSION_STATE,
-  type SessionState,
+  startVisibleSession,
 } from "../src/session-control.ts";
 import {
   appendSamples,
@@ -119,13 +114,10 @@ const ROUND_LOGIN_LAYOUT =
 const TITLE_Y = px(IS_COMPACT_SQUARE_DISPLAY ? 24 : 36);
 const TITLE_HEIGHT = px(IS_COMPACT_SQUARE_DISPLAY ? 44 : 52);
 const TITLE_TEXT_SIZE = px(IS_COMPACT_SQUARE_DISPLAY ? 32 : 40);
-const STATUS_Y = px(IS_COMPACT_SQUARE_DISPLAY ? 86 : 106);
-const STATUS_HEIGHT = px(IS_COMPACT_SQUARE_DISPLAY ? 64 : 48);
-const STATUS_TEXT_SIZE = px(IS_COMPACT_SQUARE_DISPLAY ? 22 : 32);
-const SENSOR_INFO_Y = px(IS_COMPACT_SQUARE_DISPLAY ? 156 : 162);
+const SENSOR_INFO_Y = px(IS_COMPACT_SQUARE_DISPLAY ? 86 : 106);
 const SENSOR_INFO_HEIGHT = px(IS_COMPACT_SQUARE_DISPLAY ? 40 : 36);
 const SENSOR_INFO_TEXT_SIZE = px(IS_COMPACT_SQUARE_DISPLAY ? 18 : 20);
-const SAMPLE_Y = px(IS_COMPACT_SQUARE_DISPLAY ? 208 : 214);
+const SAMPLE_Y = px(IS_COMPACT_SQUARE_DISPLAY ? 156 : 162);
 const SAMPLE_HEIGHT = px(IS_COMPACT_SQUARE_DISPLAY ? 72 : 80);
 const SAMPLE_TEXT_SIZE = px(IS_COMPACT_SQUARE_DISPLAY ? 22 : 24);
 const HINT_X = ROUND_LOGIN_LAYOUT?.hint.x ?? CONTENT_INSET;
@@ -141,19 +133,12 @@ const LOGIN_BUTTON_LAYOUT = ROUND_LOGIN_LAYOUT?.button ?? {
   radius: px(10),
 };
 
-let sessionControlButton: ReturnType<typeof createWidget> | null = null;
 let connectionButton: ReturnType<typeof createWidget> | null = null;
 let sensorInfoText: ReturnType<typeof createWidget> | null = null;
 let sampleText: ReturnType<typeof createWidget> | null = null;
 let hintText: ReturnType<typeof createWidget> | null = null;
 let pairingQrContent: string | null = null;
 let pairingQrWidget: ReturnType<typeof createWidget> | null = null;
-
-function renderSessionControl(state: SessionState) {
-  if (sessionControlButton) {
-    sessionControlButton.setProperty(prop.TEXT, getSessionAction(state).label);
-  }
-}
 
 function renderSensorInfo(text: string) {
   if (sensorInfoText) {
@@ -196,7 +181,6 @@ Page(
       transferMonitor: nullable<imuTransfer.ImuTransferMonitor>(),
       pendingImuA: nullable<PendingImuTransfer>(),
       pendingImuB: nullable<PendingImuTransfer>(),
-      pendingManualExport: false,
       sampleCount: 0,
       observedHzX100: 0,
       activeFile: initialImuFileSlot(),
@@ -243,29 +227,6 @@ Page(
         align_h: align.CENTER_H,
         text_style: text_style.NONE,
         text: "Dofek",
-      });
-
-      sessionControlButton = createWidget(widget.BUTTON, {
-        x: CONTENT_INSET,
-        y: STATUS_Y,
-        w: CONTENT_WIDTH,
-        h: STATUS_HEIGHT,
-        color: 0xffffff,
-        text_size: STATUS_TEXT_SIZE,
-        normal_color: 0x1976d2,
-        press_color: 0x64a8f0,
-        radius: px(10),
-        text: getSessionAction(SESSION_STATE.IDLE).label,
-        click_func: () => {
-          const action = getSessionAction(
-            this.state.logging ? SESSION_STATE.RECORDING : SESSION_STATE.IDLE,
-          );
-          this.onCall(
-            createSessionCall(action.command, {
-              freqModeIndex: this.state.freqModeIndex,
-            }),
-          );
-        },
       });
 
       sensorInfoText = createWidget(widget.TEXT, {
@@ -350,8 +311,18 @@ Page(
           ) {
             this.startPairingFromWatch();
           }
-          this.publishSessionStatus(
-            this.state.logging ? SESSION_STATE.RECORDING : SESSION_STATE.IDLE,
+          this.publishSessionStatus(this.state.logging ? "recording" : "idle");
+          startVisibleSession(
+            {
+              hasCredentials: this.state.hasCredentials,
+              hasImuConnection: this.state.imuConnection !== null,
+              logging: this.state.logging,
+            },
+            {
+              startLogging: () => this.startLogging(),
+              stopLogging: () => this.stopLogging(),
+              transferStoppedSession: () => this.transferStoppedSession(),
+            },
           );
         })
         .catch((error) => {
@@ -557,15 +528,14 @@ Page(
         }),
         onProgress: createSessionProgressHandler({
           updateWatch: (stats) => this.handleRate(stats),
-          publishHostStatus: (stats) => this.publishSessionStatus(SESSION_STATE.RECORDING, stats),
+          publishHostStatus: (stats) => this.publishSessionStatus("recording", stats),
         }),
         onError: (error) => {
           captureException(error, { operation: "foreground-imu-session" });
           logger.error("foreground IMU session failed %j", error);
           this.state.logging = false;
           this.state.imuController = null;
-          this.publishSessionStatus(SESSION_STATE.IDLE);
-          renderSessionControl(SESSION_STATE.IDLE);
+          this.publishSessionStatus("idle");
           renderHint("Recorder stopped\nOpen Zepp settings for details");
         },
       });
@@ -593,9 +563,7 @@ Page(
         controller.hasGyroscope ? `Accel · Gyro · ${modeLabel}` : `Accel · ${modeLabel}`,
       );
       renderHint("Foreground recorder\nKeep this screen open");
-      renderSessionControl(SESSION_STATE.RECORDING);
-
-      this.publishSessionStatus(SESSION_STATE.RECORDING);
+      this.publishSessionStatus("recording");
     },
 
     renderPairing(pairing: Record<string, unknown> | null) {
@@ -744,13 +712,12 @@ Page(
       }
       this.state.imuController = null;
       this.writeMetaFile();
-      renderSessionControl(SESSION_STATE.IDLE);
       renderSensorInfo("Session finalized");
       renderSamples(
         `${this.state.sampleCount} samples\n` +
           `${(this.state.observedHzX100 / 100).toFixed(2)} Hz`,
       );
-      this.publishSessionStatus(SESSION_STATE.IDLE);
+      this.publishSessionStatus("idle");
     },
 
     swapAndTransfer() {
@@ -776,7 +743,6 @@ Page(
       const completed = this.state.imuController?.rotate(this.filePathForSlot(nextSlot));
       if (!completed) {
         this.state.logging = false;
-        renderSessionControl(SESSION_STATE.IDLE);
         return;
       }
       const transfer = { ...completed, path: outgoingPath, slot: outgoingSlot };
@@ -787,7 +753,7 @@ Page(
       this.state.sampleCount = 0;
       this.state.observedHzX100 = 0;
 
-      this.publishSessionStatus(SESSION_STATE.RECORDING);
+      this.publishSessionStatus("recording");
       this.writeMetaFile();
     },
 
@@ -855,19 +821,6 @@ Page(
           this.setPendingImu(slot, null);
           this.state.transferTask = null;
           this.retryPendingImuTransfer();
-          drainManualExportQueue(
-            {
-              pendingManualExport: this.state.pendingManualExport,
-              logging: this.state.logging,
-              failedTransferPending: Boolean(this.state.pendingImuA || this.state.pendingImuB),
-            },
-            {
-              clearManualExportQueue: () => {
-                this.state.pendingManualExport = false;
-              },
-              transferStoppedSession: () => this.transferStoppedSession(),
-            },
-          );
         },
         onFailed: (error) => this.handleImuTransferFailure(transfer, error),
       });
@@ -885,7 +838,7 @@ Page(
       );
     },
 
-    publishSessionStatus(state: SessionState, progress?: SessionProgress) {
+    publishSessionStatus(state: "idle" | "recording", progress?: SessionProgress) {
       this.request({
         method: "imu.publishStatus",
         params: {
@@ -953,30 +906,6 @@ Page(
         return;
       }
 
-      if (
-        handleSessionCall(payload, {
-          logging: this.state.logging,
-          transferInProgress: Boolean(this.state.transferTask),
-          failedTransferPending: Boolean(this.state.pendingImuA || this.state.pendingImuB),
-          pendingManualExport: this.state.pendingManualExport,
-          applyStartPreferences: (params) => {
-            applyWatchStartPreferences(settings.settingsStorage, this.state, params);
-          },
-          handleBlockedStart: () => {
-            showToast({ content: "Transfer session before starting" });
-            renderHint("Finish session transfer\nbefore starting");
-          },
-          startLogging: () => this.startLogging(),
-          stopLogging: () => this.stopLogging(),
-          queueManualExport: () => {
-            this.state.pendingManualExport = true;
-          },
-          transferStoppedSession: () => this.transferStoppedSession(),
-        })
-      ) {
-        return;
-      }
-
       const method = payload?.method;
       if (method === "health.collect") {
         void this.collectAndDeliverHealth();
@@ -986,9 +915,14 @@ Page(
     onDestroy() {
       this.state.transferMonitor?.cancel();
       this.state.transferMonitor = null;
-      if (this.state.logging) {
-        this.stopLogging();
-      }
+      finalizeVisibleSession(
+        { logging: this.state.logging },
+        {
+          startLogging: () => this.startLogging(),
+          stopLogging: () => this.stopLogging(),
+          transferStoppedSession: () => this.transferStoppedSession(),
+        },
+      );
       this.state.healthOwnership
         ?.then((ownership) => ownership.release(this.state.healthSyncTask ?? Promise.resolve()))
         .catch((error: unknown) => {

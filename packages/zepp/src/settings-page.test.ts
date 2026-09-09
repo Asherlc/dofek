@@ -231,7 +231,7 @@ for (const app of ["zepp-main", "zepp-workout"] as const) {
   });
 }
 
-it("preserves recorder start/stop, file transfer, and health sync", () => {
+it("describes automatic visible-page recording alongside health sync", () => {
   const { text, buttons, storage } = render("zepp-main", {
     [STORAGE_KEYS.DOFEK_API_TOKEN]: "test-token",
     [STORAGE_KEYS.DOFEK_CONNECTION_STATUS]: JSON.stringify({ state: "connected" }),
@@ -254,11 +254,8 @@ it("preserves recorder start/stop, file transfer, and health sync", () => {
   expect(text).toContain("37%");
   expect(text).toContain("Health service did not start");
   expect(text).toContain("data://session.bin");
-  buttons.find(({ label }) => label === "Stop & transfer")?.onClick();
-  buttons.find(({ label }) => label === "Transfer saved session")?.onClick();
   buttons.find(({ label }) => label === "Sync now")?.onClick();
-  expect(storage.getItem(STORAGE_KEYS.CMD_LOGGING)).toBe("stop");
-  expect(storage.getItem(STORAGE_KEYS.CMD_TRANSFER)).toBe("1");
+  expect(text).toContain("Recording begins automatically while the Dofek watch app is open");
   expect(storage.getItem(STORAGE_KEYS.CMD_SYNC_HEALTH)).toBe("1");
 });
 

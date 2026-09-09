@@ -44,11 +44,7 @@ import {
   restoreBufferedTelemetryEvents,
 } from "../src/posthog-client.ts";
 import { getRawString, getString, isRecord } from "../src/record-fields.ts";
-import {
-  createSessionCall,
-  getImuTransferFailureReason,
-  parseSessionCommand,
-} from "../src/session-control.ts";
+import { getImuTransferFailureReason } from "../src/session-control.ts";
 import { DEFAULT_DOFEK_SERVER_URL, FREQ_MODE_LABELS, STORAGE_KEYS } from "../src/storage-keys.ts";
 import {
   handleDofekUploadFailure,
@@ -336,20 +332,6 @@ AppSideService(
     },
 
     handleSettingsChange(key: string, newValue: unknown) {
-      if (key === STORAGE_KEYS.CMD_LOGGING) {
-        const command = parseSessionCommand(newValue);
-        if (!command) {
-          return;
-        }
-        this.call(createSessionCall(command, this.getPreferences()));
-        settings.settingsStorage.removeItem(STORAGE_KEYS.CMD_LOGGING);
-        return;
-      }
-
-      if (key === STORAGE_KEYS.CMD_TRANSFER) {
-        this.call({ method: "transfer.start", params: {} });
-      }
-
       if (key === STORAGE_KEYS.CMD_SYNC_HEALTH) {
         this.requestHealthCatchup("manual");
       }
