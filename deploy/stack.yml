@@ -570,7 +570,10 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
+          # CDC catch-up over the retained WAL repeatedly exceeded the old 1G
+          # cgroup limit. Keep a bounded 2G budget so 100,000-row batches can
+          # complete without competing with ClickHouse for all host memory.
+          memory: 2G
 
   peerdb:
     image: ghcr.io/peerdb-io/peerdb-server:stable-v0.36.19
