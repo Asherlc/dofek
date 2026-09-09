@@ -26077,5 +26077,12 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   11-minute failure interval, confirm the slot becomes active and retained WAL
   falls, confirm the ClickHouse missing-`group_id` count reaches zero, and
   verify analytics and all 44 pending Withings rows complete. If the slot
-  catches up but mirror rows remain incomplete, investigate PeerDB mapping or
-  perform a controlled resync rather than weakening the analytics guard.
+  remains inactive or retained WAL does not fall after the worker is stable,
+  follow the guarded triage in the
+  [ClickHouse CDC health runbook](./clickhouse-cdc-health-runbook.md#recovery).
+  Do not drop a merely inactive slot: recreate the mirror only after confirming
+  `wal_status = 'lost'`; if the mirror catalog row is already absent, the
+  runbook's exact `active = false` predicate guards removal of the orphaned
+  `peerflow_slot_dofek_fitness_raw_analytics` slot. If CDC catches up but mirror
+  rows remain incomplete, investigate PeerDB mapping or perform that controlled
+  resync rather than weakening the analytics guard.
