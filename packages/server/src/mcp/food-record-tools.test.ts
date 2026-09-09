@@ -696,8 +696,14 @@ describe("registerFoodRecordTools", () => {
           : value,
       ),
     ).not.toContain(secret);
-    expect(captured[0]?.[0]).toBeInstanceOf(Error);
+    expect(captured[0]?.[0]).toMatchObject({
+      name: "FoodRecordUnexpectedError",
+      message: "Food record mcp_tool failed [23514]",
+    });
     expect(captured[0]?.[0]).not.toHaveProperty("cause");
+    expect(captured[0]?.[1]).toEqual({
+      tags: { source: "food-record", operation: "mcp_tool", error_code: "23514" },
+    });
     expect(parseResult(result)).toEqual({
       error: {
         code: "INTERNAL_ERROR",

@@ -137,7 +137,8 @@ export type FoodRecordErrorCode =
   | "PRECONDITION_FAILED"
   | "CONFLICT"
   | "INVALID_ARGUMENT"
-  | "ACCOUNT_ERASURE_ACTIVE";
+  | "ACCOUNT_ERASURE_ACTIVE"
+  | "INTERNAL_ERROR";
 
 export class FoodRecordError extends Error {
   readonly code: FoodRecordErrorCode;
@@ -195,6 +196,11 @@ const fieldNames: Record<string, string> = {
   servingWeightGrams: "serving_weight_grams",
 };
 
+const internalFoodRecordErrorMessage = "The food record request could not be completed.";
+const diagnosticCodePattern = /^[0-9A-Z]{5}$/;
+
+export type FoodRecordOperation = "create" | "update" | "delete" | "restore" | "mcp_tool";
+
 function canonicalValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalValue);
   if (value === null || typeof value !== "object") return value;
@@ -236,7 +242,40 @@ function parseCommand<T>(schema: z.ZodType<T>, input: unknown): T {
   });
 }
 
-function mapDomainError(error: unknown): never {
+function isDiagnosticError(value: unknown): value is { code?: unknown; cause?: unknown } {
+  return typeof value === "object" && value !== null;
+}
+
+function diagnosticCode(error: unknown): string | null {
+  const seen = new Set<object>();
+  let current = error;
+  while (isDiagnosticError(current) && !seen.has(current)) {
+    seen.add(current);
+    if (typeof current.code === "string" && diagnosticCodePattern.test(current.code)) {
+      return current.code;
+    }
+    current = current.cause;
+  }
+  return null;
+}
+
+export function reportUnexpectedFoodRecordError(
+  error: unknown,
+  operation: FoodRecordOperation,
+): void {
+  const code = diagnosticCode(error);
+  const diagnostic = new Error(`Food record ${operation} failed${code ? ` [${code}]` : ""}`);
+  diagnostic.name = "FoodRecordUnexpectedError";
+  captureException(diagnostic, {
+    tags: {
+      source: "food-record",
+      operation,
+      ...(code ? { error_code: code } : {}),
+    },
+  });
+}
+
+function mapDomainError(error: unknown, operation: FoodRecordOperation): never {
   if (error instanceof FoodRecordError) throw error;
   if (error instanceof FoodRecordNotFoundError) {
     throw new FoodRecordError(
@@ -270,8 +309,8 @@ function mapDomainError(error: unknown): never {
       { cause: error },
     );
   }
-  captureException(new Error("FoodRecordService command failed"));
-  throw error;
+  reportUnexpectedFoodRecordError(error, operation);
+  throw new FoodRecordError("INTERNAL_ERROR", internalFoodRecordErrorMessage);
 }
 
 export class FoodRecordService {
@@ -332,7 +371,7 @@ export class FoodRecordService {
       if (!outcome.replayed) await this.#invalidateNutritionCaches(this.#userId);
       return outcome.result;
     } catch (error: unknown) {
-      return mapDomainError(error);
+      return mapDomainError(error, "create");
     }
   }
 
@@ -425,7 +464,7 @@ export class FoodRecordService {
       if (!outcome.replayed) await this.#invalidateNutritionCaches(this.#userId);
       return outcome.result;
     } catch (error: unknown) {
-      return mapDomainError(error);
+      return mapDomainError(error, kind);
     }
   }
 }

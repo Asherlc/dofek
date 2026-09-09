@@ -14,6 +14,7 @@ import {
   FoodRecordError,
   type FoodRecordMutationResult,
   FoodRecordService,
+  reportUnexpectedFoodRecordError,
 } from "../services/food-record-service.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { requireMcpScope } from "./token-repository.ts";
@@ -156,7 +157,7 @@ async function foodToolResult<T>(
         Object.keys(details).length === 0 ? undefined : details,
       );
     }
-    captureException(new Error("MCP food record request failed"));
+    reportUnexpectedFoodRecordError(error, "mcp_tool");
     return jsonToolError("INTERNAL_ERROR", "The food record request could not be completed.");
   }
 }
