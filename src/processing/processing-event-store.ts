@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { reconcileActivityGroups } from "../db/activity-group-reconciliation.ts";
 import type { Database } from "../db/index.ts";
 import { executeWithSchema, type SchemaExecutionDatabase } from "../db/typed-sql.ts";
 import {
@@ -531,6 +532,19 @@ export async function recordRelationalCanonicalCommits(
 ): Promise<void> {
   const parsed = relationalCanonicalCommitsInputSchema.parse(input);
   await database.transaction(async (transaction) => {
+    if (parsed.datasetKeys.includes("activity")) {
+      const operations = await executeWithSchema(
+        transaction,
+        z.object({ user_id: z.uuid().nullable() }),
+        sql`SELECT user_id FROM fitness.processing_operation WHERE id = ${parsed.operationId}::uuid`,
+      );
+      const userId = operations[0]?.user_id;
+      if (!userId)
+        throw new Error(
+          `Activity canonical commit requires a user for processing operation ${parsed.operationId}`,
+        );
+      await reconcileActivityGroups(transaction, userId);
+    }
     const watermarkRows = await executeWithSchema(
       transaction,
       postgresWriteWatermarkRowSchema,

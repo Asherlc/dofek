@@ -311,6 +311,24 @@ describe("Activity", () => {
     expect(activity.toDetail().providerAbsentAt).toBe("2026-03-05T14:30:00.000Z");
   });
 
+  it("exposes the requested id only when it was resolved to a different stable group", () => {
+    const activity = new Activity(
+      {
+        ...fullRow,
+        id: "stable-group-id",
+        resolved_from: "requested-member-id",
+      },
+      mockLookup,
+    );
+
+    expect(activity.resolvedFrom).toBe("requested-member-id");
+    expect(activity.toDetail()).toMatchObject({
+      id: "stable-group-id",
+      resolvedFrom: "requested-member-id",
+    });
+    expect(new Activity(fullRow, mockLookup).toDetail()).not.toHaveProperty("resolvedFrom");
+  });
+
   describe("toDetail", () => {
     it("serializes to ActivityDetail shape", () => {
       const activity = new Activity(fullRow, mockLookup);

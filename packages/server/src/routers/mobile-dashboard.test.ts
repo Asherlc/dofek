@@ -1182,13 +1182,6 @@ describe("mobileDashboard.recovery", () => {
 });
 
 describe("mobileDashboard.training", () => {
-  it("uses a versioned cache key for its progressive-overload contract", () => {
-    expect(cachedQueryOptions).toContainEqual({
-      maxAge: 600_000,
-      keyVersion: "training-activity-states-v2",
-    });
-  });
-
   it("fails loudly when ClickHouse activity analytics are unavailable", async () => {
     const caller = createCaller({
       db: { execute: vi.fn() },
@@ -1278,6 +1271,10 @@ describe("mobileDashboard.training", () => {
         latestSession: null,
         daily: [],
       },
+    });
+    expect(cachedQueryOptions).toContainEqual({
+      maxAge: 600_000,
+      keyVersion: "training-activity-states-v3",
     });
     const timingCall = vi
       .mocked(logger.info)

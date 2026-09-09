@@ -32,10 +32,9 @@ function makeDatabase(rowsOrRowSets: TestDatabaseRow[] | TestDatabaseRow[][] = [
     const compiled = dialect.sqlToQuery(query);
     const normalizedSql = compiled.sql.replace(/\s+/g, " ");
     const isCanonicalVisibilityQuery =
-      normalizedSql.includes("FROM fitness.activity") &&
+      normalizedSql.includes("FROM fitness.v_activity") &&
       normalizedSql.includes("id IN") &&
-      normalizedSql.includes("provider_absent_at IS NULL") &&
-      normalizedSql.includes("deleted_at IS NULL");
+      normalizedSql.includes("WHERE user_id =");
     if (isCanonicalVisibilityQuery) {
       const stringParams = compiled.params.filter(
         (param): param is string => typeof param === "string",
@@ -594,7 +593,7 @@ describe("ActivitiesCalendarRepository", () => {
     expect(database.execute).toHaveBeenCalledTimes(1);
     const sqlObject = database.execute.mock.calls[0]?.[0];
     const compiledQuery = dialect.sqlToQuery(sqlObject);
-    expect(normalizeSql(compiledQuery.sql)).toContain("FROM fitness.activity");
+    expect(normalizeSql(compiledQuery.sql)).toContain("FROM fitness.v_activity");
     expect(sensorStore.query).toHaveBeenCalledTimes(2);
   });
 

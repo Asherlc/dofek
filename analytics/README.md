@@ -21,12 +21,53 @@ The call sites are:
 
 Model dependencies are declared with dbt `ref()` calls. `sensor_scalar_sample`
 stages scalar metric samples, `deduped_sensor` reads `sensor_scalar_sample`, and
-`activity_vo2max_estimate` reads `deduped_sensor` to keep the expensive VO2 max
-activity/sample joins out of web/API requests. `deduped_activities` materializes
-the activity overlap graph once, and `deduped_activity_members` exposes canonical
-activity/member aliases for downstream models. `activity_sensor_sample` and
-`activity_location_sample` are bounded microbatch intermediates over sample
-time. `body_measurement` incrementally rebuilds only users whose body samples
+`activity_vo2max_estimate` reads group-keyed `activity_sensor_sample` to keep the
+expensive VO2 max activity/sample joins out of web/API requests. `deduped_activities` materializes
+persisted PostgreSQL activity groups, and `deduped_activity_members` exposes canonical
+activity/member aliases for downstream models. `activity_duplicate_matches`
+retains overlap evidence for integrity diagnostics; `activity_duplicate_groups`
+projects `activity_source_records.group_id` without deriving identity from those
+edges. The [activity model](models/read_models/deduped_activities.sql) uses the
+group UUID as `activity_id` and the chosen member UUID as `primary_activity_id`.
+Representative selection orders deduped sensor presence, sample count, elevation
+presence, specific canonical type, provider-type refinement, provider priority,
+then member UUID. Samples count toward a member only when the winning sample's
+nullable `source_activity_id` equals that member's UUID and its timestamp lies
+within the inclusive normalized window; overlapping same-provider members do not
+share payload credit. The group's served sample union accepts unlinked ambient
+samples and samples linked to any current member, never only the representative.
+The display name follows the selected representative, including a null name;
+notes and raw provenance retain their existing fallbacks.
+Incremental `deduped_activities` builds compare the complete current group row
+with the latest target state. Target-equivalent rows are not appended and keep
+their lifecycle version; membership, representative, display, ranking, sensor,
+absence, or other served-content transitions append a strictly newer version.
+That version is the causal watermark used by downstream activity payload models,
+while [`ReplacingMergeTree`](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replacingmergetree)
+uses it to retain the latest state for each activity group. Full refreshes still
+emit the complete current state.
+Location payload and
+relational strength sets are not available to this upstream scalar projection.
+Missing persisted membership fails the build. Existing deployments must apply
+[migration 0079](../src/db/clickhouse-migrations/0079_stable_activity_group_id.ts)
+and deliver PostgreSQL membership through CDC before refreshing these models;
+the migration only adds nullable columns, using ClickHouse's
+[ADD COLUMN](https://clickhouse.com/docs/reference/statements/alter/column#add-column)
+without inventing membership for existing rows.
+[Migration 0080](../src/db/clickhouse-migrations/0080_sensor_source_activity_id.ts)
+adds nullable source-activity columns to existing scalar and deduped sensor tables.
+Reprocess the required sensor history through `sensor_scalar_sample` and then
+`deduped_sensor` before rebuilding activity representatives; old projected samples
+remain unlinked until that refresh and must not be credited by provider/time inference.
+The [staging model](models/staging/sensor_scalar_sample.sql) preserves the latest
+nullable link, and the [deduplication model](models/read_models/deduped_sensor.sql)
+keeps it with the winning sample using tuple-valued
+[argMin](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/argmin).
+`activity_sensor_sample` is a bounded microbatch intermediary over source
+refresh time. `activity_location_sample` is an append-incremental current-state
+reconciliation: changed activity, membership, and scoped repair keys identify
+affected stable groups, then provider selection reads each affected group's
+complete current tracks before replacing or tombstoning route points. `body_measurement` incrementally rebuilds only users whose body samples
 or priority inputs changed, and `analytics.v_body_measurement` is a thin
 active-row view over that dbt-owned canonical table. Insert-triggered
 materialized views reduce provider changes to compact `(user_id, provider_id)`
@@ -68,6 +109,24 @@ stage is evaluated once per build instead of being inlined into every aggregate
 branch. ClickHouse introduced materialized CTEs for exactly this shared-result
 reuse and requires `enable_materialized_cte`:
 <https://clickhouse.com/blog/clickhouse-release-26-03>.
+The activity sample, sensor summary, location summary, activity summary, and
+VO2 max models use the persisted activity-group UUID as their lifecycle key.
+Member and alias UUIDs are accepted only as dirty lookup inputs and resolve to
+both the current group and any superseded group row that must be tombstoned.
+Scalar channels are unioned from deduplicated samples across every member;
+location selects one coherent provider track for the group so overlapping
+routes are not combined. Consequently, changing the display representative
+does not change the group's heart rate, GPS, elevation, or other populated
+summary values. `source_activity_id` remains nullable sample provenance used
+to rank payload-bearing representatives and to remove samples whose linked member
+leaves the group. A null source stays eligible as ambient sensor data; a non-null
+source is eligible for every group that currently contains that member.
+
+The TypeScript bootstrap views use the same persisted group identity contract.
+[Migration 0081](../src/db/clickhouse-migrations/0081_stable_activity_read_views.ts)
+recreates pre-dbt activity views so an upgraded deployment cannot retain the
+older dynamic/minimum-member identity behavior. Apply ClickHouse migrations
+before refreshing dbt models.
 The serving-facing `analytics.activity_summary` object is a thin ClickHouse view
 over `analytics.activity_summary_rows FINAL`; the expensive activity/sample
 joins belong in incremental dbt models, not in web/API requests. Complex
@@ -184,19 +243,21 @@ Production `DBT_SAFE_MODELS` currently selects `sensor_scalar_sample`,
 `activity_aerobic_efficiency`, `activity_polarization_zones`,
 `activity_power_curve`, `cycling_activity`, `daily_cycling`, `provider_stats`,
 `daily_activity_load`, `daily_strain`, `healthspan_activity_zone_minutes`,
-and `weekly_healthspan`. Activity sample-time models use dbt's `microbatch`
+and `weekly_healthspan`. Scalar activity sample models use dbt's `microbatch`
 incremental strategy with daily batches and short lookbacks so ClickHouse
 processes bounded windows instead of one large activity/window query. Activity
 stream staging uses the `metric_stream_freshness` source alias and batches by
 `_peerdb_synced_at`; downstream activity sample membership models
-(`activity_sensor_sample` and `activity_location_sample`) use upstream source
-freshness as their microbatch event time so late provider stream syncs and
-late activity dedupe changes can reattach older workout samples outside the
-normal recorded-time lookback. `deduped_activities` and `deduped_activity_members`
+(`activity_sensor_sample`) use upstream source freshness as their microbatch
+event time so late provider stream syncs and late activity dedupe changes can
+reattach older workout samples outside the normal recorded-time lookback.
+Location reconciliation deliberately is not event-time microbatched: its
+provider counts must see complete current tracks for affected groups, and its
+target reconciliation is limited to those groups. `deduped_activities` and `deduped_activity_members`
 materialize canonical activity identity once, but incremental runs only rebuild
-activity windows affected by new raw activity changes; provider/device priority
-changes intentionally rebuild the full activity dedupe graph because they can
-change canonical selection globally. The final resting heart rate, activity
+activity groups affected by scoped member or group IDs; provider/device priority
+changes can change representative selection globally while persisted group IDs
+remain stable. The final resting heart rate, activity
 aggregate, and activity summary models use dirty keys from those intermediates
 and `max_threads=1` to keep the offline aggregate work out of web/API requests.
 `activity_vo2max_estimate` also uses dirty activity/user keys and
@@ -221,20 +282,10 @@ from the data automatically:
 
 Historical replay must be an explicit, bounded operator action. Supply both
 `--event-time-start` and `--event-time-end`, select only the required
-microbatch models, and monitor ClickHouse capacity while the run is active:
-
-```sh
-pnpm tsx scripts/with-env.ts -- env \
-  DBT_TARGET=dev \
-  UV_PROJECT_ENVIRONMENT=../.venv-analytics \
-  uv run --project analytics dbt run \
-  --project-dir analytics \
-  --profiles-dir analytics \
-  --threads 1 \
-  --event-time-start "2025-01-01" \
-  --event-time-end "2025-02-01" \
-  --select "sensor_scalar_sample deduped_sensor activity_sensor_sample activity_location_sample"
-```
+microbatch models, and monitor ClickHouse capacity while the run is active.
+For stable activity-group repair, use the ordered procedure below: its bounded
+microbatch command intentionally runs only after stable identity and membership
+have been rebuilt.
 
 For a microbatch replay, choose the smallest interval that contains the data
 being repaired and advance long backfills in separately observed windows. This
@@ -244,14 +295,99 @@ these flags as the supported historical backfill controls and recommends
 providing both bounds:
 <https://docs.getdbt.com/docs/build/incremental-microbatch#backfills>.
 
-When the semantics of an `activity_sensor_summary_rows` or
-`activity_summary_rows` field change, existing append-incremental rows are not
-rewritten by the model change alone. Run an explicit, monitored rebuild of the
-upstream sensor summary, location summary, and downstream activity summary, in
-dependency order, with an `initial_lookback_days` that covers every retained
-activity that should remain in all three tables. dbt recommends rebuilding an
-incremental model when its logic changes because historical transformations
-remain in the target table, using `--full-refresh` for the rebuild:
+When activity grouping or an `activity_sensor_summary_rows`,
+`activity_location_summary_rows`, `activity_summary_rows`, or
+`activity_vo2max_estimate` field changes, existing append-incremental rows are
+not rewritten by the model change alone. Use this order and stop when an
+earlier verification fails:
+
+1. From a one-shot container built from the target release, with that
+   environment's `DATABASE_URL` and `CLICKHOUSE_URL` injected, run the standard
+   migration entrypoint:
+
+   ```sh
+   ./entrypoint.sh migrate
+   ```
+
+   It applies pending migrations in registry order. Verify migrations
+   `0079_stable_activity_group_id`, `0080_sensor_source_activity_id`, and
+   `0081_stable_activity_read_views` are present in
+   `analytics.schema_migrations` before continuing. See the standard
+   [`entrypoint.sh`](../entrypoint.sh) and ordered
+   [migration registry](../src/db/clickhouse-migrations/registry.ts).
+
+   ```sql
+   SELECT id
+   FROM analytics.schema_migrations
+   WHERE id IN (
+       '0079_stable_activity_group_id',
+       '0080_sensor_source_activity_id',
+       '0081_stable_activity_read_views'
+   )
+   ORDER BY id;
+   ```
+
+   The query must return exactly those three rows.
+2. Run `pnpm check:clickhouse-cdc`, then query
+   `postgres_fitness.activity FINAL` for the repaired member IDs. Compare every
+   mirrored `id` and `group_id` with the PostgreSQL `fitness.v_activity` result
+   already verified by the repair runbook. Do not start dbt until all expected
+   members are present under the expected persisted group ID.
+
+   ```sql
+   SELECT id, group_id, _peerdb_synced_at
+   FROM postgres_fitness.activity FINAL
+   WHERE user_id = toUUID('<user-uuid>')
+     AND id IN (
+         toUUID('<member-uuid-1>'),
+         toUUID('<member-uuid-2>')
+     )
+     AND _peerdb_is_deleted = 0
+   ORDER BY id;
+   ```
+
+3. Rebuild stable identity and membership before any sensor-to-activity
+   association. This selection includes the source and duplicate-evidence
+   inputs needed by `deduped_activities`, followed by its member projection:
+
+   ```sh
+   pnpm tsx scripts/with-env.ts -- env \
+     DBT_TARGET=dev \
+     UV_PROJECT_ENVIRONMENT=../.venv-analytics \
+     uv run --project analytics dbt build \
+     --project-dir analytics \
+     --profiles-dir analytics \
+     --threads 1 \
+     --full-refresh \
+     --select "activity_source_records activity_duplicate_matches activity_duplicate_groups deduped_activities deduped_activity_members"
+   ```
+
+4. Run the bounded sensor microbatch for the affected historical interval:
+
+   ```sh
+   pnpm tsx scripts/with-env.ts -- env \
+     DBT_TARGET=dev \
+     UV_PROJECT_ENVIRONMENT=../.venv-analytics \
+     uv run --project analytics dbt run \
+     --project-dir analytics \
+     --profiles-dir analytics \
+     --threads 1 \
+     --event-time-start "2025-01-01" \
+     --event-time-end "2025-02-01" \
+     --select "sensor_scalar_sample deduped_sensor activity_sensor_sample"
+   ```
+
+   Replace both dates with the smallest interval containing the affected
+   samples. The dependency order is `sensor_scalar_sample`, `deduped_sensor`,
+   then `activity_sensor_sample`. The replay is required for historical
+   membership changes and for provenance written before migration 0077; a
+   normal incremental run processes only recent batches.
+
+5. Before the downstream full refresh, calculate `required_lookback_days`
+   below. The value must cover every retained activity that should remain in
+   the rebuilt identity, payload, and summary tables. dbt recommends rebuilding an
+   incremental model when its logic changes because historical transformations
+   remain in the target table, using `--full-refresh` for the rebuild:
 <https://docs.getdbt.com/docs/build/incremental-models#how-do-i-rebuild-an-incremental-model>.
 
 Before starting, query the oldest active activity in ClickHouse and use the
@@ -288,16 +424,25 @@ pnpm tsx scripts/with-env.ts -- env \
   uv run --project analytics dbt build \
   --project-dir analytics \
   --profiles-dir analytics \
+  --threads 1 \
   --full-refresh \
   --vars '{"initial_lookback_days": 3650}' \
-  --select activity_sensor_summary_rows activity_location_summary_rows activity_summary_rows
+  --select "deduped_activities deduped_activity_members activity_location_sample activity_sensor_summary_rows activity_location_summary_rows activity_stream_points activity_summary_rows activity_vo2max_estimate"
 ```
 
 The lookback is a full-refresh retention boundary, not just the scope of the
 semantic change. A full refresh drops rows older than
 `initial_lookback_days`, and later incremental runs will not re-add those
-unchanged activities. The three selected models must all report `PASS` with no
-warnings or errors before the operator treats the rebuild as complete.
+unchanged activities. The eight selected models must all report `PASS` with
+no warnings or errors before the operator treats the rebuild as complete.
+`activity_sensor_sample` is intentionally absent because it sets
+`full_refresh=false`; the bounded microbatch in step 4 is its historical
+rebuild path. `activity_source_records` and the duplicate projections are not
+rebuilt twice. `deduped_activities` and `deduped_activity_members` are
+intentionally refreshed again because representative sensor richness consumes
+the newly replayed `deduped_sensor` provenance. dbt then orders those models
+before their location, stream, summary, and VO2 max consumers through their
+`ref()` dependencies.
 
 The `cycling_activity` modality normalization requires the same explicit
 operator action for existing append-incremental rows. Before the repair, record

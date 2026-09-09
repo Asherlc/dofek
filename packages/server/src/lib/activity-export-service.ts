@@ -36,7 +36,7 @@ export async function loadActivityExportInput(
 
   let points: ActivityExportInput["points"] = [];
   if (sensorStore) {
-    const stream = await repo.getStream(activityId, ACTIVITY_EXPORT_MAX_STREAM_POINTS);
+    const stream = await repo.getStream(detail.id, ACTIVITY_EXPORT_MAX_STREAM_POINTS);
     points = stream.map((point) => point.toDetail());
   }
 

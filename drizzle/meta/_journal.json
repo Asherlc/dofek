@@ -827,6 +827,20 @@
       "when": 1788912000000,
       "tag": "0115_strength_set_raw",
       "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1788912000001,
+      "tag": "0116_stable_activity_groups",
+      "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
+      "when": 1788912000002,
+      "tag": "0117_v_activity_stable_groups",
+      "breakpoints": true
     }
   ]
 }

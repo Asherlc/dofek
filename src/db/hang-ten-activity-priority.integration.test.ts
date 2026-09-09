@@ -11,6 +11,7 @@ const activityPriorityRowSchema = z.object({
   provider_id: z.string(),
   source_name: z.string().nullable(),
 });
+const activityGroupId = "00000000-0000-4000-8000-000000000021";
 
 describe("Hang Ten activity priority", () => {
   let testCtx: TestContext;
@@ -28,16 +29,16 @@ describe("Hang Ten activity priority", () => {
 
     await testCtx.db.execute(
       sql`INSERT INTO fitness.activity (
-            provider_id, user_id, external_id, canonical_type, provider_type,
+            group_id, provider_id, user_id, external_id, canonical_type, provider_type,
             started_at, ended_at, source_name
           ) VALUES
             (
-              'apple_health', ${TEST_USER_ID}, 'hang-ten-priority', 'hangboard', 'Hang Ten',
+              ${activityGroupId}, 'apple_health', ${TEST_USER_ID}, 'hang-ten-priority', 'hangboard', 'Hang Ten',
               TIMESTAMPTZ '2026-08-20 10:00:00+00',
               TIMESTAMPTZ '2026-08-20 11:00:00+00', 'Hang Ten'
             ),
             (
-              'whoop', ${TEST_USER_ID}, 'whoop-hangboard-priority', 'hangboard', 'Strength',
+              ${activityGroupId}, 'whoop', ${TEST_USER_ID}, 'whoop-hangboard-priority', 'hangboard', 'Strength',
               TIMESTAMPTZ '2026-08-20 10:00:00+00',
               TIMESTAMPTZ '2026-08-20 11:00:00+00', 'WHOOP'
             )`,

@@ -51,6 +51,6 @@ describe("hiking_activity model", () => {
     expect(tombstoneRowsSql).toContain("existing_hiking_activity.activity_id AS activity_id");
     expect(tombstoneRowsSql).toContain("1 AS is_deleted");
     expect(tombstoneRowsSql).toContain("LEFT JOIN activity_summary");
-    expect(tombstoneRowsSql).toContain("WHERE activity_summary.activity_id IS NULL");
+    expect(tombstoneRowsSql).toContain("WHERE activity_summary.activity_id IS null");
   });
 });

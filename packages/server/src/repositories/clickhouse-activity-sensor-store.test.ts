@@ -60,14 +60,18 @@ describe("ClickHouseActivitySensorStore", () => {
       expect.objectContaining({
         format: "JSONEachRow",
         query: expect.stringContaining("analytics.activity_stream_points"),
-        query_params: expect.objectContaining({
-          activityIds: window.memberActivityIds,
+        query_params: {
+          activityId: window.activityId,
           maxPoints: 500,
           userId: window.userId,
-        }),
+          windowEndedAt: window.endedAt,
+          windowStartedAt: window.startedAt,
+        },
       }),
     );
     const queryText = query.mock.calls[0]?.[0]?.query;
+    expect(queryText).toContain("activity_id = {activityId:UUID}");
+    expect(queryText).not.toContain("activity_id IN {activityIds:Array(UUID)}");
     expect(queryText).toContain("ARRAY JOIN points AS point");
     expect(queryText).toContain("AND is_deleted = 0");
     expect(queryText).toContain(
@@ -242,14 +246,20 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(query).toHaveBeenCalledWith(
       expect.objectContaining({
         format: "JSONEachRow",
-        query_params: expect.objectContaining({
-          activityIds: window.memberActivityIds,
+        query_params: {
+          activityId: window.activityId,
           ftp: 275,
-        }),
+          userId: window.userId,
+          windowEndedAt: window.endedAt,
+          windowStartedAt: window.startedAt,
+        },
       }),
     );
     const queryText = query.mock.calls[0]?.[0]?.query;
-    expect(queryText).toContain("analytics.deduped_sensor");
+    expect(queryText).toContain("FROM analytics.activity_sensor_sample FINAL");
+    expect(queryText).toContain("user_id = {userId:UUID}");
+    expect(queryText).toContain("activity_id = {activityId:UUID}");
+    expect(queryText).not.toContain("analytics.deduped_sensor");
     expect(queryText).toContain(
       "recorded_at >= parseDateTime64BestEffort({windowStartedAt:String})",
     );
@@ -282,12 +292,17 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(query).toHaveBeenCalledWith(
       expect.objectContaining({
         format: "JSONEachRow",
-        query_params: expect.objectContaining({
-          activityIds: window.memberActivityIds,
-        }),
+        query_params: {
+          activityId: window.activityId,
+          userId: window.userId,
+          windowEndedAt: window.endedAt,
+          windowStartedAt: window.startedAt,
+        },
       }),
     );
     const queryText = query.mock.calls[0]?.[0]?.query;
+    expect(queryText).toContain("activity_id = {activityId:UUID}");
+    expect(queryText).not.toContain("activity_id IN {activityIds:Array(UUID)}");
     expect(queryText).toContain("analytics.activity_heart_rate_zones");
     expect(queryText).toContain("ARRAY JOIN zones AS zone_tuple");
     expect(queryText).toContain("AND is_deleted = 0");

@@ -1,49 +1,131 @@
-import { buildActivitySummaryReadModelStatements } from "../../../../src/db/clickhouse-metric-stream-bootstrap.ts";
-import {
-  type IsolatedClickHouseDatabases,
-  rewriteClickHouseDatabaseNames,
-} from "./clickhouse-integration-test-models.ts";
+import type { IsolatedClickHouseDatabases } from "./clickhouse-integration-test-models.ts";
 
 export function buildTestDedupedActivitiesSelectSql(
   databases: IsolatedClickHouseDatabases,
 ): string {
-  return `SELECT
-  id AS activity_id,
-  provider_id,
-  user_id,
-  canonical_type,
-  provider_type,
-  modality,
-  started_at,
-  ended_at,
-  source_name,
-  name,
-  notes,
-  timezone,
-  start_utc_offset_minutes,
-  end_utc_offset_minutes,
-  coalesce(nullIf(local_time_source, ''), 'unknown') AS local_time_source,
-  raw,
+  // dbt owns the production model, but isolated integration databases cannot
+  // render its Jinja graph. Keep this executable SELECT contract-equivalent to
+  // the final model's active-member sensor ranking and stable-group projection.
+  return `WITH active_members AS (
+  SELECT
+    activity.id AS activity_id,
+    assumeNotNull(activity.group_id) AS group_id,
+    activity.provider_id AS provider_id,
+    activity.user_id AS user_id,
+    activity.canonical_type AS canonical_type,
+    activity.provider_type AS provider_type,
+    activity.modality AS modality,
+    activity.started_at AS started_at,
+    activity.ended_at AS ended_at,
+    activity.source_name AS source_name,
+    activity.name AS name,
+    coalesce(provider_priority.priority, 100) AS priority
+  FROM ${databases.postgresFitness}.activity AS activity FINAL
+  LEFT JOIN ${databases.postgresFitness}.provider_priority AS provider_priority FINAL
+    ON provider_priority.provider_id = activity.provider_id
+   AND provider_priority._peerdb_is_deleted = 0
+  WHERE activity._peerdb_is_deleted = 0
+    AND activity.deleted_at IS NULL
+    AND activity.provider_absent_at IS NULL
+    AND throwIf(
+      activity.group_id IS NULL
+        OR activity.group_id = toUUID('00000000-0000-0000-0000-000000000000'),
+      'Active activity is missing persisted group identity'
+    ) = 0
+),
+sensor_bearing_members AS (
+  SELECT
+    samples.user_id AS user_id,
+    members.activity_id AS activity_id,
+    count() AS sensor_sample_count,
+    countIf(samples.channel = 'altitude') > 0 AS has_elevation
+  FROM ${databases.analytics}.deduped_sensor AS samples FINAL
+  INNER JOIN active_members AS members
+    ON members.user_id = samples.user_id
+   AND members.activity_id = samples.source_activity_id
+  WHERE samples.is_deleted = 0
+    AND samples.recorded_at >= members.started_at
+    AND samples.recorded_at <= greatest(
+      coalesce(members.ended_at, members.started_at + INTERVAL 12 HOUR),
+      members.started_at
+    )
+  GROUP BY samples.user_id, members.activity_id
+),
+best AS (
+  SELECT *
+  FROM (
+    SELECT
+      members.*,
+      coalesce(sensor_bearing_members.sensor_sample_count, 0) AS sensor_sample_count,
+      coalesce(sensor_bearing_members.has_elevation, 0) AS has_elevation,
+      row_number() OVER (
+        PARTITION BY members.group_id
+        ORDER BY
+          sensor_sample_count > 0 DESC,
+          sensor_sample_count DESC,
+          has_elevation DESC,
+          members.canonical_type IN ('other', 'cardio') ASC,
+          if(
+            trim(BOTH ' ' FROM members.provider_type) != ''
+              AND lowerUTF8(trim(BOTH ' ' FROM members.provider_type))
+                != lowerUTF8(members.canonical_type),
+            0,
+            1
+          ) ASC,
+          members.priority ASC,
+          toString(members.activity_id) ASC
+      ) AS row_number
+    FROM active_members AS members
+    LEFT JOIN sensor_bearing_members
+      ON sensor_bearing_members.user_id = members.user_id
+     AND sensor_bearing_members.activity_id = members.activity_id
+  )
+  WHERE row_number = 1
+)
+SELECT
+  activity.id AS activity_id,
+  best.provider_id AS provider_id,
+  activity.user_id AS user_id,
+  best.activity_id AS primary_activity_id,
+  best.canonical_type AS canonical_type,
+  activity.provider_type AS provider_type,
+  best.modality AS modality,
+  activity.started_at AS started_at,
+  activity.ended_at AS ended_at,
+  best.source_name AS source_name,
+  best.name AS name,
+  activity.notes AS notes,
+  activity.timezone AS timezone,
+  activity.start_utc_offset_minutes AS start_utc_offset_minutes,
+  activity.end_utc_offset_minutes AS end_utc_offset_minutes,
+  coalesce(nullIf(activity.local_time_source, ''), 'unknown') AS local_time_source,
+  activity.raw AS raw,
   now64(9, 'UTC') AS source_synced_at,
-  source_providers,
-  source_external_ids,
-  absent_source_external_ids,
-  member_activity_ids,
+  activity.source_providers AS source_providers,
+  activity.source_external_ids AS source_external_ids,
+  activity.absent_source_external_ids AS absent_source_external_ids,
+  activity.member_activity_ids AS member_activity_ids,
   toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
   toUInt8(0) AS is_deleted,
   now64(9, 'UTC') AS refreshed_at
-FROM ${databases.analytics}.v_activity`;
+FROM ${databases.analytics}.v_activity AS activity
+INNER JOIN best
+  ON best.group_id = activity.id`;
 }
 
 export function buildTestActivitySensorSampleSelectSql(
   databases: IsolatedClickHouseDatabases,
 ): string {
+  // This is the full-refresh inclusion contract from the final dbt model:
+  // source-less samples may hydrate an overlapping group, while attributed
+  // samples may hydrate only a group that currently contains their source.
   return `WITH current_activity AS (
   SELECT
     activity_id,
     user_id,
     started_at,
-    ended_at
+    ended_at,
+    member_activity_ids
   FROM ${databases.analytics}.deduped_activities FINAL
   WHERE is_deleted = 0
 )
@@ -64,11 +146,18 @@ SELECT
   toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
   samples.is_deleted AS is_deleted,
   now64(9) AS refreshed_at
-FROM ${databases.analytics}.deduped_sensor AS samples
+FROM ${databases.analytics}.deduped_sensor AS samples FINAL
 INNER JOIN current_activity
-  ON current_activity.user_id = samples.user_id
+ ON current_activity.user_id = samples.user_id
  AND samples.recorded_at >= current_activity.started_at
- AND samples.recorded_at <= coalesce(current_activity.ended_at, current_activity.started_at + INTERVAL 12 HOUR)`;
+ AND samples.recorded_at <= greatest(
+   coalesce(current_activity.ended_at, current_activity.started_at + INTERVAL 12 HOUR),
+   current_activity.started_at
+ )
+ AND (
+   samples.source_activity_id IS NULL
+   OR has(current_activity.member_activity_ids, assumeNotNull(samples.source_activity_id))
+ )`;
 }
 
 export function buildTestActivityLocationSampleSelectSql(
@@ -404,18 +493,98 @@ WHERE active_sleep.is_nap = false`;
 }
 
 export function buildTestActivitySummarySelectSql(databases: IsolatedClickHouseDatabases): string {
-  const statement = rewriteClickHouseDatabaseNames(
-    buildActivitySummaryReadModelStatements()[0] ?? "",
-    databases,
-  );
-  const viewMatch = statement.match(
-    /^CREATE VIEW IF NOT EXISTS [A-Za-z0-9_]+\.[A-Za-z0-9_]+\nAS\n?([\s\S]*)$/,
-  );
-  const selectSql = viewMatch?.[1]?.trim();
-  if (!selectSql) {
-    throw new Error("Could not parse ClickHouse activity summary test SELECT");
-  }
-  return selectSql;
+  // Production serves the final dbt activity_summary_rows model through a thin
+  // view. The isolated harness builds the same public fields from its current
+  // member-mapped sensor and location tables instead of replaying the retired
+  // pre-dbt time-window summary query.
+  return `WITH sensor_summary AS (
+  SELECT
+    activity_id,
+    user_id,
+    CAST(avgIf(scalar, channel = 'heart_rate'), 'Nullable(Float64)') AS avg_hr,
+    CAST(maxIf(scalar, channel = 'heart_rate'), 'Nullable(Int16)') AS max_hr,
+    CAST(minIf(scalar, channel = 'heart_rate'), 'Nullable(Int16)') AS min_hr,
+    CAST(avgIf(scalar, channel = 'power' AND scalar > 0), 'Nullable(Float64)') AS avg_power,
+    CAST(maxIf(scalar, channel = 'power' AND scalar > 0), 'Nullable(Int16)') AS max_power,
+    CAST(avgIf(scalar, channel = 'speed'), 'Nullable(Float64)') AS avg_speed,
+    CAST(maxIf(scalar, channel = 'speed'), 'Nullable(Float64)') AS max_speed,
+    CAST(avgIf(scalar, channel = 'cadence' AND scalar > 0), 'Nullable(Float64)') AS avg_cadence,
+    CAST(maxIf(scalar, channel = 'altitude') - minIf(scalar, channel = 'altitude'), 'Nullable(Float64)') AS elevation_gain_legacy,
+    CAST(avgIf(scalar, channel = 'left_right_balance'), 'Nullable(Float64)') AS avg_left_balance,
+    CAST(avgIf(scalar, channel = 'left_torque_effectiveness'), 'Nullable(Float64)') AS avg_left_torque_eff,
+    CAST(avgIf(scalar, channel = 'right_torque_effectiveness'), 'Nullable(Float64)') AS avg_right_torque_eff,
+    CAST(avgIf(scalar, channel = 'left_pedal_smoothness'), 'Nullable(Float64)') AS avg_left_pedal_smooth,
+    CAST(avgIf(scalar, channel = 'right_pedal_smoothness'), 'Nullable(Float64)') AS avg_right_pedal_smooth,
+    CAST(avgIf(scalar, channel = 'stance_time'), 'Nullable(Float64)') AS avg_stance_time,
+    CAST(avgIf(scalar, channel = 'vertical_oscillation'), 'Nullable(Float64)') AS avg_vertical_osc,
+    CAST(avgIf(scalar, channel = 'ground_contact_time'), 'Nullable(Float64)') AS avg_ground_contact_time,
+    CAST(avgIf(scalar, channel = 'stride_length'), 'Nullable(Float64)') AS avg_stride_length,
+    count() AS sample_count,
+    countIf(channel = 'heart_rate') AS hr_sample_count,
+    countIf(channel = 'power' AND scalar > 0) AS power_sample_count,
+    min(recorded_at) AS first_sample_at,
+    max(recorded_at) AS last_sample_at
+  FROM ${databases.analytics}.activity_sensor_sample FINAL
+  WHERE is_deleted = 0
+    AND scalar IS NOT NULL
+  GROUP BY activity_id, user_id
+)
+SELECT
+  activity.activity_id AS activity_id,
+  activity.user_id AS user_id,
+  activity.canonical_type AS canonical_type,
+  activity.provider_type AS provider_type,
+  activity.modality AS modality,
+  activity.name AS name,
+  activity.started_at AS started_at,
+  activity.ended_at AS ended_at,
+  sensor_summary.avg_hr AS avg_hr,
+  sensor_summary.max_hr AS max_hr,
+  sensor_summary.min_hr AS min_hr,
+  sensor_summary.avg_power AS avg_power,
+  sensor_summary.max_power AS max_power,
+  if(activity.modality IN ('indoor', 'virtual'), NULL, sensor_summary.avg_speed) AS avg_speed,
+  if(activity.modality IN ('indoor', 'virtual'), NULL, sensor_summary.max_speed) AS max_speed,
+  sensor_summary.avg_cadence AS avg_cadence,
+  sensor_summary.elevation_gain_legacy AS elevation_gain_legacy,
+  if(activity.modality IN ('indoor', 'virtual'), CAST(0, 'Nullable(Float64)'), location.total_distance) AS total_distance,
+  location.centroid_lat AS centroid_lat,
+  location.centroid_lng AS centroid_lng,
+  sensor_summary.avg_left_balance AS avg_left_balance,
+  sensor_summary.avg_left_torque_eff AS avg_left_torque_eff,
+  sensor_summary.avg_right_torque_eff AS avg_right_torque_eff,
+  sensor_summary.avg_left_pedal_smooth AS avg_left_pedal_smooth,
+  sensor_summary.avg_right_pedal_smooth AS avg_right_pedal_smooth,
+  altitude.elevation_gain_m AS elevation_gain_m,
+  altitude.elevation_loss_m AS elevation_loss_m,
+  sensor_summary.avg_stance_time AS avg_stance_time,
+  sensor_summary.avg_vertical_osc AS avg_vertical_osc,
+  sensor_summary.avg_ground_contact_time AS avg_ground_contact_time,
+  sensor_summary.avg_stride_length AS avg_stride_length,
+  coalesce(sensor_summary.sample_count, 0) AS sample_count,
+  coalesce(sensor_summary.hr_sample_count, 0) AS hr_sample_count,
+  coalesce(sensor_summary.power_sample_count, 0) AS power_sample_count,
+  coalesce(sensor_summary.first_sample_at, activity.started_at) AS first_sample_at,
+  coalesce(sensor_summary.last_sample_at, activity.started_at) AS last_sample_at,
+  CAST(NULL, 'Nullable(Float64)') AS best_twenty_minute_power,
+  CAST(NULL, 'Nullable(Float64)') AS normalized_power,
+  CAST(NULL, 'Nullable(Float64)') AS smoothed_avg_power,
+  CAST(NULL, 'Nullable(Float64)') AS climbing_elevation_gain_m,
+  CAST(NULL, 'Nullable(Int32)') AS climbing_seconds,
+  now64(9, 'UTC') AS refreshed_at
+FROM ${databases.analytics}.deduped_activities AS activity FINAL
+LEFT JOIN ${databases.analytics}.activity_sensor_summary_rows AS altitude FINAL
+  ON altitude.activity_id = activity.activity_id
+ AND altitude.user_id = activity.user_id
+ AND altitude.is_deleted = 0
+LEFT JOIN ${databases.analytics}.activity_location_summary_rows AS location FINAL
+  ON location.activity_id = activity.activity_id
+ AND location.user_id = activity.user_id
+ AND location.is_deleted = 0
+LEFT JOIN sensor_summary
+  ON sensor_summary.activity_id = activity.activity_id
+ AND sensor_summary.user_id = activity.user_id
+WHERE activity.is_deleted = 0`;
 }
 
 export function buildTestActivityStreamPointsSelectSql(
@@ -441,8 +610,13 @@ latest_location_samples AS (
   FROM (
     SELECT *
     FROM ${databases.analytics}.activity_location_sample
-    ORDER BY source_metric_stream_id ASC, refresh_version DESC
-    LIMIT 1 BY source_metric_stream_id
+    ORDER BY
+      user_id ASC,
+      activity_id ASC,
+      source_metric_stream_id ASC,
+      refresh_version DESC,
+      is_deleted DESC
+    LIMIT 1 BY user_id, activity_id, source_metric_stream_id
   )
   WHERE is_deleted = 0
 ),

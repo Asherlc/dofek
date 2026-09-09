@@ -248,6 +248,34 @@ function runImportJob(job: MockJob, db: SyncDatabase) {
 }
 describe("processImportJob", () => {
   let tempFilePath: string;
+
+  it("reports and rethrows activity canonical commit failures without declaring import success", async () => {
+    const error = new Error("Activity grouping failed");
+    mockRecordRelationalCanonicalCommits.mockRejectedValueOnce(error);
+    const job = createMockJob({ filePath: tempFilePath });
+    await expect(runImportJob(job, mockDb)).rejects.toBe(error);
+    await expect(access(tempFilePath)).resolves.toBeUndefined();
+    expect(mockCaptureException).toHaveBeenCalledWith(error, {
+      tags: { phase: "canonical-commit" },
+    });
+    expect(mockAppendProcessingStageEvent).not.toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({ stage: "ingest", status: "succeeded" }),
+    );
+    expect(mockEnqueueDebouncedPostSyncMaintenance).not.toHaveBeenCalled();
+    await runImportJob(job, mockDb);
+    await expect(access(tempFilePath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("does not record a canonical commit after post-import logging fails", async () => {
+    const error = new Error("Sync log unavailable");
+    mockLogSync.mockRejectedValueOnce(error);
+    const job = createMockJob({ filePath: tempFilePath });
+
+    await expect(runImportJob(job, mockDb)).rejects.toBe(error);
+
+    expect(mockRecordRelationalCanonicalCommits).not.toHaveBeenCalled();
+  });
   beforeEach(async () => {
     vi.clearAllMocks();
     // By default, call through to the real unlink so existing cleanup tests work

@@ -1,5 +1,8 @@
 import { TRPCError } from "@trpc/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ActivityRow } from "../models/activity.ts";
+import { ActivityRepository } from "../repositories/activity-repository.ts";
+import { ClimbingActivityEntry, ClimbingRepository } from "../repositories/climbing-repository.ts";
 import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
 import type {
   ClimbingActivityEntryRow,
@@ -10,6 +13,7 @@ import type {
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 const { captureException } = vi.hoisted(() => ({ captureException: vi.fn() }));
+const cachedQueryOptions = vi.hoisted((): Array<{ maxAge: number; keyVersion?: string }> => []);
 
 vi.mock("@sentry/node", () => ({ captureException }));
 
@@ -25,7 +29,10 @@ vi.mock("../trpc.ts", async () => {
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
-    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQuery: (options: { maxAge: number; keyVersion?: string }) => {
+      cachedQueryOptions.push(options);
+      return trpc.procedure;
+    },
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -70,12 +77,51 @@ function makeCallerWithResponses(responses: Record<string, unknown>[][]) {
   return { caller, execute };
 }
 
+function makeResolvedActivity(id: string, resolvedFrom?: string): ActivityRow {
+  return {
+    absent_source_external_ids: null,
+    avg_cadence: null,
+    avg_hr: null,
+    avg_power: null,
+    avg_speed: null,
+    canonical_type: "climbing",
+    elevation_gain_m: null,
+    elevation_loss_m: null,
+    ended_at: "2026-09-01T11:00:00.000Z",
+    end_utc_offset_minutes: 0,
+    id,
+    local_time_source: "provider_timezone",
+    max_hr: null,
+    max_power: null,
+    max_speed: null,
+    modality: null,
+    name: "Climbing",
+    notes: null,
+    perceived_exertion: null,
+    provider_absent_at: null,
+    provider_id: "kaya",
+    raw_type: "climbing",
+    resolved_from: resolvedFrom,
+    sample_count: null,
+    source_external_ids: [],
+    source_providers: ["kaya"],
+    start_utc_offset_minutes: 0,
+    started_at: "2026-09-01T10:00:00.000Z",
+    subsource: null,
+    timezone: "UTC",
+    total_distance: null,
+  };
+}
+
 describe("climbingRouter", () => {
   beforeEach(() => {
     captureException.mockClear();
   });
 
   it("returns activity entry rows", async () => {
+    const activityLookup = vi
+      .spyOn(ActivityRepository.prototype, "findById")
+      .mockResolvedValue(makeResolvedActivity("734b5d3e-df2b-4ee0-888e-55ea539d913a"));
     const { caller, execute } = makeCaller([
       {
         id: "entry-1",
@@ -94,28 +140,103 @@ describe("climbingRouter", () => {
       },
     ]);
 
-    const result: ClimbingActivityEntryRow[] = await caller.activityEntries({
-      id: "734b5d3e-df2b-4ee0-888e-55ea539d913a",
-    });
+    try {
+      const result: ClimbingActivityEntryRow[] = await caller.activityEntries({
+        id: "734b5d3e-df2b-4ee0-888e-55ea539d913a",
+      });
 
-    expect(execute).toHaveBeenCalledTimes(2);
-    expect(result).toEqual([
-      {
-        id: "entry-1",
-        climbType: "boulder",
-        gradeSystem: "v_scale",
-        grade: "V4",
-        sent: true,
-        attemptCount: 7,
-        attempts: [],
-        ascentType: "Redpoint",
-        holdType: null,
-        routeName: "Blue Arete",
-        locationName: "Pacific Pipe",
-        sourceName: "Kaya",
-        wallAngleDegrees: null,
-      },
-    ]);
+      expect(execute).toHaveBeenCalledTimes(2);
+      expect(result).toEqual([
+        {
+          id: "entry-1",
+          climbType: "boulder",
+          gradeSystem: "v_scale",
+          grade: "V4",
+          sent: true,
+          attemptCount: 7,
+          attempts: [],
+          ascentType: "Redpoint",
+          holdType: null,
+          routeName: "Blue Arete",
+          locationName: "Pacific Pipe",
+          sourceName: "Kaya",
+          wallAngleDegrees: null,
+        },
+      ]);
+      expect(cachedQueryOptions).toContainEqual({
+        maxAge: 3_600_000,
+        keyVersion: "climbing-activity-group-v1",
+      });
+    } finally {
+      activityLookup.mockRestore();
+    }
+  });
+
+  it.each([
+    ["stable group", "00000000-0000-4000-8000-000000000701", undefined],
+    ["member", "00000000-0000-4000-8000-000000000702", "00000000-0000-4000-8000-000000000702"],
+    ["merge alias", "00000000-0000-4000-8000-000000000703", "00000000-0000-4000-8000-000000000703"],
+  ] as const)(
+    "hydrates %s requests through the resolved stable group",
+    async (_, requestedId, resolvedFrom) => {
+      const stableGroupId = "00000000-0000-4000-8000-000000000701";
+      const activityLookup = vi
+        .spyOn(ActivityRepository.prototype, "findById")
+        .mockResolvedValue(makeResolvedActivity(stableGroupId, resolvedFrom));
+      const climbingLookup = vi
+        .spyOn(ClimbingRepository.prototype, "getActivityEntries")
+        .mockResolvedValue([
+          new ClimbingActivityEntry({
+            ascentType: "Redpoint",
+            attemptCount: 1,
+            attempts: [],
+            climbType: "boulder",
+            grade: "V4",
+            gradeSystem: "v_scale",
+            holdType: null,
+            id: "entry-1",
+            lead: null,
+            locationName: "Pacific Pipe",
+            routeName: "Blue Arete",
+            sent: true,
+            sourceName: "Kaya",
+            wallAngleDegrees: null,
+          }),
+        ]);
+      const { caller } = makeCaller([]);
+
+      try {
+        await expect(caller.activityEntries({ id: requestedId })).resolves.toEqual([
+          expect.objectContaining({ id: "entry-1", routeName: "Blue Arete" }),
+        ]);
+        expect(activityLookup).toHaveBeenCalledWith(requestedId);
+        expect(climbingLookup).toHaveBeenCalledWith(stableGroupId);
+      } finally {
+        activityLookup.mockRestore();
+        climbingLookup.mockRestore();
+      }
+    },
+  );
+
+  it("returns the same NOT_FOUND response for unresolved or cross-user climbing IDs", async () => {
+    const activityLookup = vi
+      .spyOn(ActivityRepository.prototype, "findById")
+      .mockResolvedValue(null);
+    const climbingLookup = vi.spyOn(ClimbingRepository.prototype, "getActivityEntries");
+    const { caller } = makeCaller([]);
+
+    try {
+      await expect(
+        caller.activityEntries({ id: "00000000-0000-4000-8000-000000000704" }),
+      ).rejects.toMatchObject<Partial<TRPCError>>({
+        code: "NOT_FOUND",
+        message: "Activity not found",
+      });
+      expect(climbingLookup).not.toHaveBeenCalled();
+    } finally {
+      activityLookup.mockRestore();
+      climbingLookup.mockRestore();
+    }
   });
 
   it("returns grade progression rows", async () => {

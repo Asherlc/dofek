@@ -154,19 +154,19 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
     idempotencyKey: "worker-running",
   });
   const metricDatasetKeys = processingDatasetKeysForOutputPath(datasetKeys, "metric_stream");
-  const metricStreamPublisher =
-    metricDatasetKeys.length > 0
-      ? new MetricStreamProcessingPublisher(createLazyDefaultMetricStreamEventPublisher(), {
-          operationId: processingOperation.id,
-          datasetKeys: metricDatasetKeys,
-          recordPublishedBatch: (batch) => {
-            const transaction = currentMetricStreamWriteDatabase();
-            return transaction
-              ? recordMetricStreamBatchPublishedInTransaction(transaction, batch)
-              : recordMetricStreamBatchPublished(requireTransactionalDatabase(db), batch);
-          },
-        })
-      : undefined;
+  const metricStreamPublisher = new MetricStreamProcessingPublisher(
+    createLazyDefaultMetricStreamEventPublisher(),
+    {
+      operationId: processingOperation.id,
+      datasetKeys: metricDatasetKeys,
+      recordPublishedBatch: (batch) => {
+        const transaction = currentMetricStreamWriteDatabase();
+        return transaction
+          ? recordMetricStreamBatchPublishedInTransaction(transaction, batch)
+          : recordMetricStreamBatchPublished(requireTransactionalDatabase(db), batch);
+      },
+    },
+  );
   const sinceDate = new Date(since);
   const importStart = Date.now();
   let terminalImportError: UnrecoverableError | null = null;
@@ -408,7 +408,24 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
     importError = error;
   }
 
-  if (shouldCleanUpUploadedFile && !metricStreamPublisher?.hasUnpublishedBatchIntents) {
+  const emittedRelationalDatasetKeys = processingDatasetKeysForOutputPath(
+    datasetKeys,
+    "relational",
+  );
+  if (!importFailed && importedRecordCount > 0) {
+    try {
+      await recordRelationalCanonicalCommits(requireTransactionalDatabase(db), {
+        operationId: processingOperation.id,
+        datasetKeys: emittedRelationalDatasetKeys,
+        idempotencyKey: `worker-relational-commit:${job.id}`,
+      });
+    } catch (error) {
+      captureException(error, { tags: { phase: "canonical-commit" } });
+      throw error;
+    }
+  }
+
+  if (shouldCleanUpUploadedFile && !metricStreamPublisher.hasUnpublishedBatchIntents) {
     const { unlink } = await import("node:fs/promises");
     try {
       await unlink(filePath);
@@ -456,18 +473,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
   }
   if (importSkipped) return;
 
-  const emittedRelationalDatasetKeys = processingDatasetKeysForOutputPath(
-    datasetKeys,
-    "relational",
-  );
-  if (importedRecordCount > 0 && emittedRelationalDatasetKeys.length > 0) {
-    await recordRelationalCanonicalCommits(requireTransactionalDatabase(db), {
-      operationId: processingOperation.id,
-      datasetKeys: emittedRelationalDatasetKeys,
-      idempotencyKey: `worker-relational-commit:${job.id}`,
-    });
-  }
-  if (importedRecordCount === 0 && !metricStreamPublisher?.hasPublishedBatches) {
+  if (importedRecordCount === 0 && !metricStreamPublisher.hasPublishedBatches) {
     for (const datasetKey of datasetKeys) {
       for (const stage of ["analytics", "cache_refresh"] as const) {
         await appendProcessingStageEvent(db, {

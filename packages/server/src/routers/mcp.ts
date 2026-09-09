@@ -4,7 +4,9 @@ import {
   createMcpToken,
   listMcpTokens,
   mcpScopeSchema,
+  mcpTokenMetadataSchema,
   revokeMcpToken,
+  updateMcpTokenScopes,
 } from "../mcp/token-repository.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 
@@ -16,6 +18,11 @@ const createTokenInput = z.object({
 
 const revokeTokenInput = z.object({
   tokenId: z.guid(),
+});
+
+const updateScopesInput = z.object({
+  tokenId: z.guid(),
+  scopes: z.array(mcpScopeSchema).min(1),
 });
 
 export const mcpRouter = router({
@@ -31,6 +38,25 @@ export const mcpRouter = router({
   listTokens: protectedProcedure.query(async ({ ctx }) => {
     return listMcpTokens(ctx.db, ctx.userId);
   }),
+
+  updateScopes: protectedProcedure
+    .input(updateScopesInput)
+    .output(mcpTokenMetadataSchema)
+    .mutation(async ({ ctx, input }) => {
+      const updatedToken = await updateMcpTokenScopes(
+        ctx.db,
+        ctx.userId,
+        input.tokenId,
+        input.scopes,
+      );
+      if (!updatedToken) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "MCP token not found.",
+        });
+      }
+      return updatedToken;
+    }),
 
   revokeToken: protectedProcedure.input(revokeTokenInput).mutation(async ({ ctx, input }) => {
     const revokedToken = await revokeMcpToken(ctx.db, ctx.userId, input.tokenId);

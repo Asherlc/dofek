@@ -1366,6 +1366,12 @@ describe("createMcpRouter", () => {
       .toBeDefined();
     expect
       .soft(
+        jsonSchemaAtPath(activityDetailsSchema, ["result", "activity", "resolved_from"]),
+        "get_activity_details: result.activity.resolved_from",
+      )
+      .toBeDefined();
+    expect
+      .soft(
         jsonSchemaAtPath(activityDetailsSchema, [
           "result",
           "activity",
@@ -4030,7 +4036,183 @@ describe("createMcpRouter", () => {
         },
       },
     });
+    expect(activityDetailsOutputSchema.parse(structuredContent).result.activity).not.toHaveProperty(
+      "resolved_from",
+    );
     expect(toolTestMocks.activityFindById).toHaveBeenCalledWith(activityId);
+  });
+
+  it("hydrates a non-representative Strong member from the stable group", async () => {
+    authorizeMcpToken();
+    const requestedMemberId = "00000000-0000-4000-8000-000000000011";
+    const stableGroupId = "00000000-0000-4000-8000-000000000012";
+    toolTestMocks.activityFindById.mockResolvedValue({
+      absent_source_external_ids: null,
+      avg_cadence: null,
+      avg_hr: 77,
+      avg_power: null,
+      avg_speed: null,
+      canonical_type: "strength",
+      elevation_gain_m: null,
+      elevation_loss_m: null,
+      ended_at: "2099-05-20T11:00:00.000Z",
+      end_utc_offset_minutes: 0,
+      id: stableGroupId,
+      local_time_source: "provider_timezone",
+      max_hr: null,
+      max_power: null,
+      max_speed: null,
+      modality: null,
+      name: "Fixture Session Gamma",
+      notes: null,
+      perceived_exertion: null,
+      provider_absent_at: null,
+      provider_id: "apple_health",
+      raw_type: "strength",
+      resolved_from: requestedMemberId,
+      sample_count: null,
+      source_external_ids: [
+        {
+          providerId: "apple_health",
+          externalId: "synthetic-apple-member",
+          memberActivityId: stableGroupId,
+          subsource: "Strong",
+        },
+        {
+          providerId: "strong-csv",
+          externalId: "synthetic-strong-member",
+          memberActivityId: requestedMemberId,
+          subsource: null,
+        },
+        {
+          providerId: "whoop",
+          externalId: "synthetic-whoop-member",
+          memberActivityId: "00000000-0000-4000-8000-000000000013",
+          subsource: "WHOOP",
+        },
+      ],
+      source_providers: ["apple_health", "strong-csv", "whoop"],
+      start_utc_offset_minutes: 0,
+      started_at: "2099-05-20T10:00:00.000Z",
+      subsource: null,
+      timezone: "UTC",
+      total_distance: null,
+    });
+    toolTestMocks.strengthExercises.mockResolvedValue([
+      {
+        toDetail: () => ({
+          activityId: requestedMemberId,
+          equipment: "BARBELL",
+          exerciseIndex: 0,
+          exerciseName: "Fixture Movement Gamma",
+          exerciseType: "STRENGTH",
+          muscleGroups: ["BACK", "GLUTES", "HAMSTRINGS"],
+          sets: [
+            {
+              durationSeconds: null,
+              notes: null,
+              reps: 1,
+              rpe: null,
+              setIndex: 0,
+              setType: "working",
+              weightKg: 13.579,
+            },
+            {
+              durationSeconds: 41,
+              notes: null,
+              reps: 0,
+              rpe: null,
+              setIndex: 1,
+              setType: "rest",
+              weightKg: 0,
+            },
+            {
+              durationSeconds: null,
+              notes: null,
+              reps: 3,
+              rpe: null,
+              setIndex: 2,
+              setType: "working",
+              weightKg: 24.68,
+            },
+            {
+              durationSeconds: null,
+              notes: null,
+              reps: 5,
+              rpe: null,
+              setIndex: 3,
+              setType: "working",
+              weightKg: 35.791,
+            },
+            {
+              durationSeconds: null,
+              notes: null,
+              reps: 7,
+              rpe: null,
+              setIndex: 4,
+              setType: "working",
+              weightKg: 46.802,
+            },
+            {
+              durationSeconds: 67,
+              notes: null,
+              reps: 0,
+              rpe: null,
+              setIndex: 5,
+              setType: "rest",
+              weightKg: 0,
+            },
+            {
+              durationSeconds: null,
+              notes: null,
+              reps: 9,
+              rpe: null,
+              setIndex: 6,
+              setType: "working",
+              weightKg: 57.913,
+            },
+          ],
+        }),
+      },
+    ]);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_activity_details", { activity_id: requestedMemberId }),
+    });
+
+    const structuredContent = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text)).result
+      .structuredContent;
+    const parsed = activityDetailsOutputSchema.parse(structuredContent).result;
+
+    expect(parsed).toMatchObject({
+      activity: {
+        id: stableGroupId,
+        resolved_from: requestedMemberId,
+        avg_hr: 77,
+        source_providers: ["apple_health", "strong-csv", "whoop"],
+      },
+      strength_exercises: [
+        {
+          activityId: requestedMemberId,
+          exerciseName: "Fixture Movement Gamma",
+          sets: [
+            { setIndex: 0, setType: "working", reps: 1, weightKg: 13.579 },
+            { setIndex: 1, setType: "rest", durationSeconds: 41 },
+            { setIndex: 2, setType: "working", reps: 3, weightKg: 24.68 },
+            { setIndex: 3, setType: "working", reps: 5, weightKg: 35.791 },
+            { setIndex: 4, setType: "working", reps: 7, weightKg: 46.802 },
+            { setIndex: 5, setType: "rest", durationSeconds: 67 },
+            { setIndex: 6, setType: "working", reps: 9, weightKg: 57.913 },
+          ],
+        },
+      ],
+    });
+    expect(toolTestMocks.strengthExercises).toHaveBeenCalledWith(stableGroupId);
+    expect(toolTestMocks.climbingActivityEntries).toHaveBeenCalledWith(stableGroupId);
+    expect(toolTestMocks.fingerLoadingActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ activityId: stableGroupId }),
+    );
   });
 
   it("returns the authenticated user's supplement definitions", async () => {
@@ -4247,6 +4429,23 @@ describe("createMcpRouter", () => {
       channels: ["cadence"],
       points: [{ cadence: 90, recorded_at: "2026-08-30T10:00:00.000Z" }],
     });
+  });
+
+  it.each([
+    ["missing", "00000000-0000-4000-8000-000000000091"],
+    ["owned by another user", "00000000-0000-4000-8000-000000000092"],
+  ])("returns the same activity-stream error for an activity that is %s", async (_case, id) => {
+    authorizeMcpToken();
+    toolTestMocks.activityGetStream.mockRejectedValueOnce(new Error("Activity not found"));
+
+    const response = await request(createTestApp(makeMockSensorStore()), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_activity_streams", { activity_id: id }),
+    });
+
+    const parsedResponse = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text));
+    expect(parsedResponse.result.isError).toBe(true);
+    expect(parsedResponse.result.content[0]?.text).toBe("Activity not found");
   });
 
   it("requires the analytics store for activity streams", async () => {

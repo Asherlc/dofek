@@ -1,48 +1,102 @@
+{% set activity_refresh_scoped = activity_refresh_scope_enabled() %}
+
 {{ config(
     materialized='incremental',
     incremental_strategy='append',
     engine='ReplacingMergeTree(refresh_version)',
     order_by='(user_id, activity_id)',
     query_settings={
-        'max_threads': 1
+        'max_threads': 1,
+        'join_use_nulls': 1
     }
 ) }}
 
-WITH target_state AS (
+WITH sensor_source_versions AS MATERIALIZED (
     SELECT
-        {% if is_incremental() %}
-            fromUnixTimestamp64Nano(toInt64(coalesce(max(refresh_version), 0))) AS last_refreshed_at,
-            count() = 0 AS is_empty
-        FROM {{ this }}
-        {% else %}
-            toDateTime64('1970-01-01 00:00:00', 9, 'UTC') AS last_refreshed_at,
-            true AS is_empty
-        {% endif %}
+        activity_id,
+        user_id,
+        max(refresh_version) AS refresh_version
+    FROM {{ ref('activity_sensor_sample') }}
+    GROUP BY activity_id, user_id
+),
+
+location_source_versions AS MATERIALIZED (
+    SELECT
+        activity_id,
+        user_id,
+        max(refresh_version) AS refresh_version
+    FROM {{ ref('activity_location_sample') }}
+    GROUP BY activity_id, user_id
+),
+
+target_state AS (
+    {% if is_incremental() %}
+    SELECT count() = 0 AS is_empty
+    FROM {{ this }}
+    {% else %}
+    SELECT true AS is_empty
+    {% endif %}
 ),
 
 current_activity AS (
     SELECT
         activity_id,
         user_id,
-        started_at
+        started_at,
+        refresh_version
     FROM {{ ref('deduped_activities') }} FINAL
     WHERE is_deleted = 0
 ),
 
-existing_stream_points AS (
+existing_stream_state AS (
     {% if is_incremental() %}
         SELECT
             activity_id,
-            user_id
-        FROM {{ this }} FINAL
-        WHERE is_deleted = 0
+            user_id,
+            max(refresh_version) AS stream_refresh_version,
+            argMax(is_deleted, tuple(refresh_version, is_deleted)) AS is_deleted
+        FROM {{ this }}
+        GROUP BY activity_id, user_id
     {% else %}
         SELECT
             CAST(null, 'Nullable(UUID)') AS activity_id,
-            CAST(null, 'Nullable(UUID)') AS user_id
+            CAST(null, 'Nullable(UUID)') AS user_id,
+            CAST(null, 'Nullable(UInt64)') AS stream_refresh_version,
+            CAST(null, 'Nullable(UInt8)') AS is_deleted
         WHERE 1 = 0
     {% endif %}
 ),
+
+existing_stream_points AS (
+    SELECT
+        activity_id,
+        user_id
+    FROM existing_stream_state
+    WHERE is_deleted = 0
+),
+
+{% if activity_refresh_scoped %}
+repair_scope_dirty_keys AS (
+    SELECT
+        deduped.activity_id,
+        deduped.user_id
+    FROM {{ ref('deduped_activities') }} AS deduped FINAL
+    WHERE deduped.user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        AND (
+            deduped.activity_id IN {{ activity_refresh_ids() }}
+            OR hasAny(deduped.member_activity_ids, {{ activity_refresh_ids() }})
+        )
+
+    UNION DISTINCT
+
+    SELECT
+        activity_id,
+        user_id
+    FROM existing_stream_state
+    WHERE user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        AND activity_id IN {{ activity_refresh_ids() }}
+),
+{% endif %}
 
 initial_dirty_keys AS (
     SELECT
@@ -53,21 +107,35 @@ initial_dirty_keys AS (
 ),
 
 sample_dirty_keys AS (
-    SELECT DISTINCT
-        activity_id,
-        user_id
-    FROM {{ ref('activity_sensor_sample') }}
+    SELECT
+        sensor_source_versions.activity_id AS activity_id,
+        sensor_source_versions.user_id AS user_id
+    FROM sensor_source_versions
+    LEFT JOIN existing_stream_state
+        ON existing_stream_state.activity_id = sensor_source_versions.activity_id
+        AND existing_stream_state.user_id = sensor_source_versions.user_id
     WHERE NOT (SELECT is_empty FROM target_state)
-        AND refreshed_at > (SELECT last_refreshed_at FROM target_state)
+        AND (
+            existing_stream_state.activity_id IS null
+            OR sensor_source_versions.refresh_version
+                > existing_stream_state.stream_refresh_version
+        )
 ),
 
 location_dirty_keys AS (
-    SELECT DISTINCT
-        activity_id,
-        user_id
-    FROM {{ ref('activity_location_sample') }}
+    SELECT
+        location_source_versions.activity_id AS activity_id,
+        location_source_versions.user_id AS user_id
+    FROM location_source_versions
+    LEFT JOIN existing_stream_state
+        ON existing_stream_state.activity_id = location_source_versions.activity_id
+        AND existing_stream_state.user_id = location_source_versions.user_id
     WHERE NOT (SELECT is_empty FROM target_state)
-        AND refreshed_at > (SELECT last_refreshed_at FROM target_state)
+        AND (
+            existing_stream_state.activity_id IS null
+            OR location_source_versions.refresh_version
+                > existing_stream_state.stream_refresh_version
+        )
 ),
 
 stale_dirty_keys AS (
@@ -86,23 +154,13 @@ restored_dirty_keys AS (
         SELECT
             tombstoned_stream_points.activity_id AS activity_id,
             tombstoned_stream_points.user_id AS user_id
-        FROM (
-            SELECT
-                activity_id,
-                user_id
-            FROM {{ this }} FINAL
-            WHERE is_deleted = 1
-        ) AS tombstoned_stream_points
+        FROM existing_stream_state AS tombstoned_stream_points
         INNER JOIN current_activity
             ON current_activity.activity_id = tombstoned_stream_points.activity_id
             AND current_activity.user_id = tombstoned_stream_points.user_id
-        WHERE EXISTS (
-            SELECT 1
-            FROM {{ this }} AS prior_stream_points FINAL
-            WHERE prior_stream_points.activity_id = tombstoned_stream_points.activity_id
-                AND prior_stream_points.user_id = tombstoned_stream_points.user_id
-                AND prior_stream_points.is_deleted = 0
-        )
+        WHERE tombstoned_stream_points.is_deleted = 1
+            AND current_activity.refresh_version
+                > tombstoned_stream_points.stream_refresh_version
     {% else %}
         SELECT
             CAST(null, 'Nullable(UUID)') AS activity_id,
@@ -116,6 +174,12 @@ dirty_keys AS (
         assumeNotNull(activity_id) AS activity_id,
         assumeNotNull(user_id) AS user_id
     FROM (
+        {% if activity_refresh_scoped %}
+        SELECT
+            activity_id,
+            user_id
+        FROM repair_scope_dirty_keys
+        {% else %}
         SELECT
             activity_id,
             user_id
@@ -140,6 +204,7 @@ dirty_keys AS (
             activity_id,
             user_id
         FROM restored_dirty_keys
+        {% endif %}
     )
     WHERE activity_id IS NOT null
         AND user_id IS NOT null
@@ -215,9 +280,12 @@ latest_location_samples AS (
             FROM active_dirty_keys
         )
         ORDER BY
+            user_id ASC,
+            activity_id ASC,
             source_metric_stream_id ASC,
-            refresh_version DESC
-        LIMIT 1 BY source_metric_stream_id
+            refresh_version DESC,
+            is_deleted DESC
+        LIMIT 1 BY user_id, activity_id, source_metric_stream_id
     )
     WHERE is_deleted = 0
 ),

@@ -154,6 +154,7 @@ const reviewRawTableCopies: readonly ReviewRawTableCopy[] = [
     sourceTable: "activity",
     columns: [
       "id",
+      "group_id",
       "provider_id",
       "user_id",
       "external_id",
@@ -171,6 +172,7 @@ const reviewRawTableCopies: readonly ReviewRawTableCopy[] = [
     ],
     selectExpressions: [
       "id",
+      "group_id",
       "provider_id",
       "user_id",
       "external_id",

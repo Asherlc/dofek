@@ -12,14 +12,190 @@ import {
   GARMIN_ACTIVITY_TYPE_MAP,
   getVerticalAscentActivityTypeGroup,
   isCyclingActivity,
+  isSameStrengthExercise,
   OTHER_ACTIVITY_TYPE,
   OURA_ACTIVITY_TYPE_MAP,
   POLAR_SPORT_MAP,
   RIDE_WITH_GPS_ACTIVITY_TYPE_MAP,
   STRAVA_ACTIVITY_TYPE_MAP,
   selectRecentDailyLoad,
+  strengthExerciseDisplayLabels,
+  strengthExerciseIdentityKey,
   WAHOO_WORKOUT_TYPE_MAP,
 } from "./training";
+
+describe("strength exercise display labels", () => {
+  const separatorVariants = [
+    { exerciseName: "Chest Press", equipment: "FREE-WEIGHT" },
+    { exerciseName: "Chest Press", equipment: "FREE_WEIGHT" },
+    { exerciseName: "Chest Press", equipment: "FREE WEIGHT" },
+  ];
+
+  function labelsFor(
+    identities: readonly { exerciseName: string; equipment: string | null }[],
+  ): readonly string[] {
+    return strengthExerciseDisplayLabels(identities).map(({ label }) => label);
+  }
+
+  function permutations<T>(values: readonly T[]): readonly T[][] {
+    if (values.length === 0) return [[]];
+    return values.flatMap((value, index) =>
+      permutations([...values.slice(0, index), ...values.slice(index + 1)]).map((rest) => [
+        value,
+        ...rest,
+      ]),
+    );
+  }
+
+  it("compares both fields of a structured exercise identity", () => {
+    const identity = { exerciseName: "Chest Press", equipment: "BARBELL" };
+
+    expect(isSameStrengthExercise(identity, { ...identity })).toBe(true);
+    expect(isSameStrengthExercise(identity, { ...identity, exerciseName: "Back Squat" })).toBe(
+      false,
+    );
+    expect(isSameStrengthExercise(identity, { ...identity, equipment: "DUMBBELL" })).toBe(false);
+  });
+
+  it("builds lossless keys from both structured identity fields", () => {
+    expect(strengthExerciseIdentityKey({ exerciseName: "A|B", equipment: null })).toBe(
+      '["A|B",null]',
+    );
+    expect(strengthExerciseIdentityKey({ exerciseName: "A", equipment: "B|null" })).toBe(
+      '["A","B|null"]',
+    );
+  });
+
+  it("keeps separator-distinct equipment identities readable and unique", () => {
+    const labels = labelsFor(separatorVariants);
+
+    expect(labels).toEqual([
+      "Chest Press (Free Weight) — recorded as “FREE-WEIGHT”",
+      "Chest Press (Free Weight) — recorded as “FREE_WEIGHT”",
+      "Chest Press (Free Weight) — recorded as “FREE WEIGHT”",
+    ]);
+    expect(new Set(labels)).toHaveLength(separatorVariants.length);
+  });
+
+  it("allocates the same identity labels after an input permutation", () => {
+    expect(labelsFor([...separatorVariants].reverse())).toEqual([
+      "Chest Press (Free Weight) — recorded as “FREE WEIGHT”",
+      "Chest Press (Free Weight) — recorded as “FREE_WEIGHT”",
+      "Chest Press (Free Weight) — recorded as “FREE-WEIGHT”",
+    ]);
+  });
+
+  it("keeps lossless discriminators from colliding with another readable label", () => {
+    const labels = labelsFor([
+      { exerciseName: "Chest Press", equipment: "FREE-WEIGHT" },
+      { exerciseName: "Chest Press", equipment: "FREE_WEIGHT" },
+      {
+        exerciseName: "Chest Press (Free Weight) — recorded as “FREE-WEIGHT”",
+        equipment: "CABLE",
+      },
+    ]);
+
+    expect(labels).toEqual([
+      "Chest Press (Free Weight) — recorded as “FREE-WEIGHT” · variant 1",
+      "Chest Press (Free Weight) — recorded as “FREE_WEIGHT”",
+      "Chest Press (Free Weight) — recorded as “FREE-WEIGHT” — variant 2",
+    ]);
+    expect(new Set(labels)).toHaveLength(3);
+  });
+
+  it("audibly distinguishes absent equipment from an equivalent recorded label", () => {
+    expect(
+      labelsFor([
+        { exerciseName: "Chest Press", equipment: null },
+        { exerciseName: "Chest Press", equipment: "UNSPECIFIED_EQUIPMENT" },
+      ]),
+    ).toEqual([
+      "Chest Press (Unspecified Equipment) — recorded without equipment",
+      "Chest Press (Unspecified Equipment) — recorded as “UNSPECIFIED_EQUIPMENT”",
+    ]);
+  });
+
+  it("normalizes repeated separators and blank equipment without empty label words", () => {
+    expect(
+      labelsFor([
+        { exerciseName: "Chest Press", equipment: "FREE__--  WEIGHT" },
+        { exerciseName: "Chest Press", equipment: "FREE WEIGHT" },
+        { exerciseName: "Seated Row", equipment: "   " },
+        { exerciseName: "Seated Row", equipment: null },
+      ]),
+    ).toEqual([
+      "Chest Press (Free Weight) — recorded as “FREE__--  WEIGHT”",
+      "Chest Press (Free Weight) — recorded as “FREE WEIGHT”",
+      "Seated Row (Unspecified Equipment) — recorded as “   ”",
+      "Seated Row (Unspecified Equipment) — recorded without equipment",
+    ]);
+  });
+
+  it("allocates second-order collisions deterministically across every input permutation", () => {
+    const identities = [
+      { exerciseName: "Chest Press", equipment: "FREE-WEIGHT" },
+      { exerciseName: "Chest Press", equipment: "FREE_WEIGHT" },
+      {
+        exerciseName: "Chest Press (Free Weight) — recorded as “FREE-WEIGHT”",
+        equipment: "CABLE",
+      },
+      {
+        exerciseName: "Chest Press (Free Weight) — recorded as “FREE-WEIGHT” · variant 1",
+        equipment: "CABLE",
+      },
+    ];
+    const expectedByIdentity = new Map([
+      [
+        strengthExerciseIdentityKey(identities[0]),
+        "Chest Press (Free Weight) — recorded as “FREE-WEIGHT” · variant 2",
+      ],
+      [
+        strengthExerciseIdentityKey(identities[1]),
+        "Chest Press (Free Weight) — recorded as “FREE_WEIGHT”",
+      ],
+      [
+        strengthExerciseIdentityKey(identities[2]),
+        "Chest Press (Free Weight) — recorded as “FREE-WEIGHT” — variant 3",
+      ],
+      [
+        strengthExerciseIdentityKey(identities[3]),
+        "Chest Press (Free Weight) — recorded as “FREE-WEIGHT” · variant 1",
+      ],
+    ]);
+
+    for (const permutation of permutations(identities)) {
+      const actualByIdentity = new Map(
+        strengthExerciseDisplayLabels(permutation).map(({ label }, index) => [
+          strengthExerciseIdentityKey(permutation[index]),
+          label,
+        ]),
+      );
+      expect(actualByIdentity).toEqual(expectedByIdentity);
+    }
+  });
+
+  it("assigns stable variants to repeated identical identities", () => {
+    expect(
+      labelsFor([
+        { exerciseName: "Chest Press", equipment: "BARBELL" },
+        { exerciseName: "Chest Press", equipment: "BARBELL" },
+      ]),
+    ).toEqual([
+      "Chest Press (Barbell) — recorded as “BARBELL” · variant 1",
+      "Chest Press (Barbell) — recorded as “BARBELL” · variant 2",
+    ]);
+  });
+
+  it("keeps ordinary noncolliding labels concise", () => {
+    expect(
+      labelsFor([
+        { exerciseName: "Chest Press", equipment: "BARBELL" },
+        { exerciseName: "Chest Press", equipment: "DUMBBELL" },
+        { exerciseName: "Back Squat", equipment: "BARBELL" },
+      ]),
+    ).toEqual(["Chest Press (Barbell)", "Chest Press (Dumbbell)", "Back Squat"]);
+  });
+});
 
 // ============================================================
 // Canonical activity types

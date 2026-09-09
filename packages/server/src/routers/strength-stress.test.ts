@@ -72,6 +72,7 @@ describe("strengthRouter", () => {
       const rows = [
         {
           exercise_name: "Bench Press",
+          equipment: null,
           workout_date: "2024-01-15",
           estimated_max: 100,
           actual_weight: 80,
@@ -79,6 +80,7 @@ describe("strengthRouter", () => {
         },
         {
           exercise_name: "Bench Press",
+          equipment: null,
           workout_date: "2024-01-22",
           estimated_max: 105,
           actual_weight: 85,
@@ -86,6 +88,7 @@ describe("strengthRouter", () => {
         },
         {
           exercise_name: "Squat",
+          equipment: null,
           workout_date: "2024-01-15",
           estimated_max: 140,
           actual_weight: 120,
@@ -98,6 +101,10 @@ describe("strengthRouter", () => {
       expect(result).toHaveLength(2);
       const bench = result.find((r) => r.exerciseName === "Bench Press");
       expect(bench?.history).toHaveLength(2);
+      expect(cachedQueryOptions).toContainEqual({
+        maxAge: 3_600_000,
+        keyVersion: "estimated-max-trend-v2",
+      });
     });
 
     it("returns empty for no data", async () => {
@@ -124,18 +131,26 @@ describe("strengthRouter", () => {
   });
 
   describe("progressiveOverload", () => {
-    it("uses a versioned cache key for its evidence contract", () => {
-      expect(cachedQueryOptions).toContainEqual({
-        maxAge: 3_600_000,
-        keyVersion: "progressive-overload-evidence-v1",
-      });
-    });
-
     it("computes regression slope and descriptive direction for exercises", async () => {
       const rows = [
-        { exercise_name: "Squat", week: "2024-01-08", weekly_volume: 3000 },
-        { exercise_name: "Squat", week: "2024-01-15", weekly_volume: 3200 },
-        { exercise_name: "Squat", week: "2024-01-22", weekly_volume: 3400 },
+        {
+          exercise_name: "Squat",
+          equipment: null,
+          week: "2024-01-08",
+          weekly_volume: 3000,
+        },
+        {
+          exercise_name: "Squat",
+          equipment: null,
+          week: "2024-01-15",
+          weekly_volume: 3200,
+        },
+        {
+          exercise_name: "Squat",
+          equipment: null,
+          week: "2024-01-22",
+          weekly_volume: 3400,
+        },
       ];
       const caller = makeCaller(rows);
       const result = await caller.progressiveOverload({ days: 90 });
@@ -153,10 +168,16 @@ describe("strengthRouter", () => {
         availability: "unavailable",
         reason: "insufficient_observations",
       });
+      expect(cachedQueryOptions).toContainEqual({
+        maxAge: 3_600_000,
+        keyVersion: "progressive-overload-evidence-v2",
+      });
     });
 
     it("filters exercises with fewer than 2 weeks", async () => {
-      const rows = [{ exercise_name: "Curl", week: "2024-01-15", weekly_volume: 500 }];
+      const rows = [
+        { exercise_name: "Curl", equipment: null, week: "2024-01-15", weekly_volume: 500 },
+      ];
       const caller = makeCaller(rows);
       const result = await caller.progressiveOverload({ days: 90 });
       expect(result).toEqual([]);

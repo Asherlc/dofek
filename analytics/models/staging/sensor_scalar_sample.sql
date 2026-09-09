@@ -46,22 +46,31 @@ WITH metric_stream_versions AS (
 
 metric_stream_rows AS (
     SELECT
-        id,
-        argMax(activity_id, version) AS member_activity_id,
-        argMax(user_id, version) AS user_id,
-        argMax(recorded_at, version) AS recorded_at,
-        argMax(channel, version) AS channel,
-        argMax(provider_id, version) AS provider_id,
-        argMax(external_id, version) AS source_external_id,
-        argMax(device_id, version) AS device_id,
-        argMax(source_type, version) AS source_type,
-        argMax(metadata, version) AS metadata,
-        coalesce(argMax(scalar, version), 0) AS scalar,
-        argMax(ingested_at, version) AS ingested_at,
-        argMax(is_deleted, version) AS is_deleted,
-        max(version) AS source_version
+        metric_stream_versions.id AS id,
+        tupleElement(
+            argMax(tuple(metric_stream_versions.activity_id), metric_stream_versions.version),
+            1
+        ) AS activity_id,
+        argMax(metric_stream_versions.activity_id, metric_stream_versions.version)
+            AS member_activity_id,
+        argMax(metric_stream_versions.user_id, metric_stream_versions.version) AS user_id,
+        argMax(metric_stream_versions.recorded_at, metric_stream_versions.version) AS recorded_at,
+        argMax(metric_stream_versions.channel, metric_stream_versions.version) AS channel,
+        argMax(metric_stream_versions.provider_id, metric_stream_versions.version) AS provider_id,
+        argMax(metric_stream_versions.external_id, metric_stream_versions.version)
+            AS source_external_id,
+        argMax(metric_stream_versions.device_id, metric_stream_versions.version) AS device_id,
+        argMax(metric_stream_versions.source_type, metric_stream_versions.version) AS source_type,
+        argMax(metric_stream_versions.metadata, metric_stream_versions.version) AS metadata,
+        coalesce(
+            argMax(metric_stream_versions.scalar, metric_stream_versions.version),
+            0
+        ) AS scalar,
+        argMax(metric_stream_versions.ingested_at, metric_stream_versions.version) AS ingested_at,
+        argMax(metric_stream_versions.is_deleted, metric_stream_versions.version) AS is_deleted,
+        max(metric_stream_versions.version) AS source_version
     FROM metric_stream_versions
-    GROUP BY id
+    GROUP BY metric_stream_versions.id
 ),
 
 active_sensor_provider_priority AS (
@@ -111,6 +120,7 @@ device_priority_match AS (
 
 SELECT
     metric_stream_rows.id AS id,
+    metric_stream_rows.activity_id AS activity_id,
     metric_stream_rows.member_activity_id AS member_activity_id,
     metric_stream_rows.user_id AS user_id,
     metric_stream_rows.recorded_at AS recorded_at,

@@ -1,4 +1,8 @@
 {
+  "ab wheel": {
+    "primaryMuscleGroups": ["ABDOMINALS"],
+    "secondaryMuscleGroups": ["SHOULDERS"]
+  },
   "bench dip": {
     "primaryMuscleGroups": ["TRICEPS"],
     "secondaryMuscleGroups": ["CHEST", "SHOULDERS"]
@@ -7,21 +11,54 @@
     "primaryMuscleGroups": ["CHEST"],
     "secondaryMuscleGroups": ["TRICEPS", "SHOULDERS"]
   },
+  "bent over row": {
+    "primaryMuscleGroups": ["MIDDLE_BACK"],
+    "secondaryMuscleGroups": ["BICEPS", "LATS", "SHOULDERS"]
+  },
+  "bicep curl": {
+    "primaryMuscleGroups": ["BICEPS"],
+    "secondaryMuscleGroups": ["FOREARMS"]
+  },
+  "bicycle crunch": {
+    "primaryMuscleGroups": ["ABDOMINALS"]
+  },
   "bulgarian split squat": {
     "primaryMuscleGroups": ["QUADRICEPS", "GLUTES"],
     "secondaryMuscleGroups": ["HAMSTRINGS"]
+  },
+  "calf press on leg press": {
+    "primaryMuscleGroups": ["CALVES"]
   },
   "chin up": {
     "primaryMuscleGroups": ["LATS", "UPPER_BACK"],
     "secondaryMuscleGroups": ["BICEPS"]
   },
+  "chest dip": {
+    "primaryMuscleGroups": ["CHEST"],
+    "secondaryMuscleGroups": ["SHOULDERS", "TRICEPS"]
+  },
+  "chest fly": {
+    "primaryMuscleGroups": ["CHEST"]
+  },
+  "crunch": {
+    "primaryMuscleGroups": ["ABDOMINALS"]
+  },
   "deadlift": {
     "primaryMuscleGroups": ["HAMSTRINGS", "GLUTES", "LOWER_BACK"],
     "secondaryMuscleGroups": ["QUADRICEPS", "TRAPS", "FOREARMS"]
   },
+  "flat leg raise": {
+    "primaryMuscleGroups": ["ABDOMINALS"]
+  },
+  "leg extension": {
+    "primaryMuscleGroups": ["QUADRICEPS"]
+  },
   "overhead press": {
     "primaryMuscleGroups": ["SHOULDERS"],
     "secondaryMuscleGroups": ["TRICEPS"]
+  },
+  "prone leg curl": {
+    "primaryMuscleGroups": ["HAMSTRINGS"]
   },
   "pull up": {
     "primaryMuscleGroups": ["LATS", "UPPER_BACK"],
@@ -34,5 +71,20 @@
   "squat": {
     "primaryMuscleGroups": ["QUADRICEPS", "GLUTES"],
     "secondaryMuscleGroups": ["HAMSTRINGS", "LOWER_BACK"]
+  },
+  "standing calf raise": {
+    "primaryMuscleGroups": ["CALVES"]
+  },
+  "strict military press": {
+    "primaryMuscleGroups": ["SHOULDERS"],
+    "secondaryMuscleGroups": ["TRICEPS"]
+  },
+  "triceps dip": {
+    "primaryMuscleGroups": ["TRICEPS"],
+    "secondaryMuscleGroups": ["CHEST", "SHOULDERS"]
+  },
+  "wide pull up": {
+    "primaryMuscleGroups": ["LATS"],
+    "secondaryMuscleGroups": ["BICEPS", "MIDDLE_BACK", "SHOULDERS"]
   }
 }

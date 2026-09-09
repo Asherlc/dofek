@@ -12,6 +12,148 @@ export const OTHER_ACTIVITY_TYPE = "__other__";
 
 export const STRENGTH_ACTIVITY_TYPES = ["strength"] as const;
 
+export interface StrengthExerciseIdentity {
+  exerciseName: string;
+  equipment: string | null;
+}
+
+/** Compare the structured identity used by strength history series. */
+export function isSameStrengthExercise(
+  left: StrengthExerciseIdentity,
+  right: StrengthExerciseIdentity,
+): boolean {
+  return left.exerciseName === right.exerciseName && left.equipment === right.equipment;
+}
+
+/** Collision-safe React/list key for a structured strength exercise identity. */
+export function strengthExerciseIdentityKey(identity: StrengthExerciseIdentity): string {
+  return JSON.stringify([identity.exerciseName, identity.equipment]);
+}
+
+function ambiguousStrengthExerciseNames(
+  identities: readonly StrengthExerciseIdentity[],
+): ReadonlySet<string> {
+  const seen = new Set<string>();
+  const ambiguous = new Set<string>();
+  for (const identity of identities) {
+    if (seen.has(identity.exerciseName)) ambiguous.add(identity.exerciseName);
+    seen.add(identity.exerciseName);
+  }
+  return ambiguous;
+}
+
+function equipmentDisplayLabel(equipment: string | null): string {
+  const normalizedEquipment = equipment?.trim().toLowerCase();
+  if (!normalizedEquipment) return "Unspecified Equipment";
+  return normalizedEquipment
+    .split(/[_\s-]+/)
+    .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
+    .join(" ");
+}
+
+function strengthExerciseDisplayLabel(
+  identity: StrengthExerciseIdentity,
+  namesRequiringEquipment: ReadonlySet<string>,
+): string {
+  if (!namesRequiringEquipment.has(identity.exerciseName)) return identity.exerciseName;
+  return `${identity.exerciseName} (${equipmentDisplayLabel(identity.equipment)})`;
+}
+
+function losslessEquipmentDiscriminator(equipment: string | null): string {
+  return equipment === null ? "recorded without equipment" : `recorded as “${equipment}”`;
+}
+
+function groupByLabel<T>(
+  values: readonly T[],
+  labelFor: (value: T) => string,
+): ReadonlyMap<string, T[]> {
+  const groups = new Map<string, T[]>();
+  for (const value of values) {
+    const label = labelFor(value);
+    const group = groups.get(label);
+    if (group) group.push(value);
+    else groups.set(label, [value]);
+  }
+  return groups;
+}
+
+export interface StrengthExerciseDisplayLabel {
+  baseLabel: string;
+  discriminator: string | null;
+  label: string;
+}
+
+function strengthExercisePresentation(
+  baseLabel: string,
+  discriminator: string | null,
+): StrengthExerciseDisplayLabel {
+  return {
+    baseLabel,
+    discriminator,
+    label: discriminator ? `${baseLabel} — ${discriminator}` : baseLabel,
+  };
+}
+
+/**
+ * Allocate concise, deterministic labels for strength identities rendered together.
+ * Readable labels stay unchanged unless they collide; collisions gain the lossless
+ * recorded equipment value, with a stable ordinal only for a second-order collision.
+ */
+export function strengthExerciseDisplayLabels(
+  identities: readonly StrengthExerciseIdentity[],
+): readonly StrengthExerciseDisplayLabel[] {
+  const ambiguousNames = ambiguousStrengthExerciseNames(identities);
+  const entries = identities.map((identity) => ({
+    identity,
+    presentation: strengthExercisePresentation(
+      strengthExerciseDisplayLabel(identity, ambiguousNames),
+      null,
+    ),
+  }));
+  const readableGroups = groupByLabel(entries, ({ presentation }) => presentation.label);
+  for (const group of readableGroups.values()) {
+    if (group.length < 2) continue;
+    for (const entry of group) {
+      entry.presentation = strengthExercisePresentation(
+        entry.presentation.baseLabel,
+        losslessEquipmentDiscriminator(entry.identity.equipment),
+      );
+    }
+  }
+
+  const usedLabels = new Set(entries.map(({ presentation }) => presentation.label));
+  const discriminatedGroups = groupByLabel(entries, ({ presentation }) => presentation.label);
+  const collisionGroups = [...discriminatedGroups.values()].filter((group) => group.length > 1);
+
+  for (const group of collisionGroups) {
+    const identityGroups = groupByLabel(group, ({ identity }) => identity.exerciseName);
+    const sortedIdentityGroups = [...identityGroups]
+      .map(([identityKey, identityEntries]) => ({ identityKey, identityEntries }))
+      .sort((left, right) => left.identityKey.localeCompare(right.identityKey));
+    let variant = 1;
+    for (const { identityEntries } of sortedIdentityGroups) {
+      for (const entry of identityEntries) {
+        let discriminator = entry.presentation.discriminator
+          ? `${entry.presentation.discriminator} · variant ${variant}`
+          : `variant ${variant}`;
+        let allocated = strengthExercisePresentation(entry.presentation.baseLabel, discriminator);
+        while (usedLabels.has(allocated.label)) {
+          variant += 1;
+          discriminator = entry.presentation.discriminator
+            ? `${entry.presentation.discriminator} · variant ${variant}`
+            : `variant ${variant}`;
+          allocated = strengthExercisePresentation(entry.presentation.baseLabel, discriminator);
+        }
+        entry.presentation = allocated;
+        usedLabels.add(allocated.label);
+        variant += 1;
+      }
+    }
+  }
+
+  return entries.map(({ presentation }) => presentation);
+}
+
 // ============================================================
 // Cycling activity types
 // ============================================================
@@ -27,7 +169,7 @@ export type CyclingActivityType = (typeof CYCLING_ACTIVITY_TYPES)[number];
 
 /** Check whether an activity type is a cycling variant. */
 export function isCyclingActivity(activityType: string): activityType is CyclingActivityType {
-  return CYCLING_ACTIVITY_TYPES.some((t) => t === activityType);
+  return activityType === "cycling";
 }
 
 /** Cadence unit for display based on activity type. */

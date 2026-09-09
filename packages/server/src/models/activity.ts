@@ -23,6 +23,7 @@ export type {
 
 export interface ActivityDetail {
   id: string;
+  resolvedFrom?: string;
   activityType: string;
   rawType: string | null;
   modality: string | null;
@@ -64,6 +65,7 @@ export interface ActivityDetail {
 
 export interface ActivityRow {
   id: string;
+  resolved_from?: string | null;
   canonical_type: string;
   raw_type?: string;
   modality: string | null;
@@ -112,6 +114,10 @@ export class Activity {
 
   get id(): string {
     return String(this.#row.id);
+  }
+
+  get resolvedFrom(): string | null {
+    return this.#row.resolved_from ?? null;
   }
 
   get activityType(): string {
@@ -228,6 +234,7 @@ export class Activity {
     const sourceLinks = this.sourceLinks;
     return {
       id: this.id,
+      ...(this.resolvedFrom ? { resolvedFrom: this.resolvedFrom } : {}),
       activityType: this.activityType,
       rawType: this.rawType,
       modality: this.modality,

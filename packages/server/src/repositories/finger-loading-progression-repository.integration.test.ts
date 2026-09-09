@@ -27,19 +27,19 @@ describe("FingerLoadingProgressionRepository database semantics", () => {
     `);
     await context.db.execute(sql`
       INSERT INTO fitness.activity (
-        id, provider_id, user_id, external_id, canonical_type, provider_type,
+        id, group_id, provider_id, user_id, external_id, canonical_type, provider_type,
         started_at, ended_at, name, source_name, raw, timezone,
         start_utc_offset_minutes, end_utc_offset_minutes, local_time_source
       ) VALUES
-        (${primaryActivity}::uuid, ${primaryProvider}, ${userId}::uuid, 'primary-session',
+        (${primaryActivity}::uuid, ${primaryActivity}::uuid, ${primaryProvider}, ${userId}::uuid, 'primary-session',
           'hangboard', 'strength_training', '2026-07-10T18:00:00Z',
           '2026-07-10T18:30:00Z', 'Max hangs', 'Manual', '{}'::jsonb,
           'America/Los_Angeles', -420, -420, 'provider_timezone'),
-        (${mirrorActivity}::uuid, ${mirrorProvider}, ${userId}::uuid, 'mirror-session',
+        (${mirrorActivity}::uuid, ${primaryActivity}::uuid, ${mirrorProvider}, ${userId}::uuid, 'mirror-session',
           'hangboard', 'strength_training', '2026-07-10T18:00:00Z',
           '2026-07-10T18:30:00Z', 'Max hangs mirror', 'Mirror', '{}'::jsonb,
           'America/Los_Angeles', -420, -420, 'provider_timezone'),
-        (${offsetActivity}::uuid, ${primaryProvider}, ${userId}::uuid, 'offset-session',
+        (${offsetActivity}::uuid, ${offsetActivity}::uuid, ${primaryProvider}, ${userId}::uuid, 'offset-session',
           'hangboard', 'strength_training', '2026-07-12T00:30:00Z',
           '2026-07-12T01:00:00Z', 'Assisted hangs', 'Manual', '{}'::jsonb,
           NULL, -420, -420, 'provider_offset')

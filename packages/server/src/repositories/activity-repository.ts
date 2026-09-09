@@ -1,5 +1,6 @@
 import { localTimeSourceSchema } from "@dofek/format/record-local-time";
 import { mapHrZones, mapPowerZones } from "@dofek/zones/zones";
+import { TRPCError } from "@trpc/server";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
@@ -11,6 +12,7 @@ import {
 } from "../lib/date-window.ts";
 import { osmTilePreview } from "../lib/osm-tile.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
+import { logger } from "../logger.ts";
 import type { ActivityRow } from "../models/activity.ts";
 import { activitySourceSchema } from "../models/activity-source.ts";
 import { activityMeasurementState } from "../services/activity-data-state.ts";
@@ -146,25 +148,16 @@ const activitySummaryReadModelRowSchema = z.object({
   centroid_lng: z.number().nullable().default(null),
 });
 
-const activityMemberSchema = z.object({
-  activity_id: z.string(),
-  canonical_type: z.string(),
-  provider_id: z.string(),
+const activityIdResolutionSchema = z.object({
+  requested_id: z.string(),
+  resolved_group_id: z.string(),
+  resolution_kind: z.enum(["group", "member", "alias"]),
 });
 
-export type ActivityMember = z.infer<typeof activityMemberSchema>;
+type ActivityIdResolution = z.infer<typeof activityIdResolutionSchema>;
 
-export function selectCompatibleActivitySummary<TSummary extends ActivityMember>(
-  row: Pick<ActivityRow, "canonical_type" | "provider_id">,
-  summaries: readonly TSummary[],
-): TSummary | null {
-  return (
-    summaries.find(
-      (member) =>
-        member.canonical_type === row.canonical_type &&
-        (member.canonical_type !== "other" || member.provider_id === row.provider_id),
-    ) ?? null
-  );
+function activityNotFoundError(): TRPCError {
+  return new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
 }
 
 const powerCurveSampleSchema = z.object({
@@ -342,6 +335,7 @@ export function activityRepositoryFor(
 /** Data access for activity queries. */
 export class ActivityRepository extends BaseRepository {
   readonly #sensorStore?: ActivitySensorStore;
+  readonly #activityIdResolutions = new Map<string, ActivityIdResolution | null>();
 
   constructor(
     db: Pick<import("dofek/db").Database, "execute">,
@@ -423,10 +417,7 @@ export class ActivityRepository extends BaseRepository {
     return rows.filter((row) => visibleActivityIds.has(getActivityId(row)));
   }
 
-  /**
-   * Filters rows whose IDs are already canonicalized by the ClickHouse activity
-   * read model without expanding the recursive PostgreSQL visibility view.
-   */
+  /** Filters stable group-keyed ClickHouse rows to currently visible activities. */
   async filterToVisibleCanonicalActivities<T extends { id: string }>(
     rows: readonly T[],
   ): Promise<T[]> {
@@ -442,11 +433,9 @@ export class ActivityRepository extends BaseRepository {
     const visibleRows = await this.query(
       z.object({ id: z.string() }),
       sql`SELECT id::text AS id
-          FROM fitness.activity
+          FROM fitness.v_activity
           WHERE user_id = ${this.userId}::uuid
             AND id IN (${activityIdFilter})
-            AND provider_absent_at IS NULL
-            AND deleted_at IS NULL
             ${this.timestampAccessPredicate(sql`started_at`)}`,
     );
     const visibleActivityIds = new Set(visibleRows.map((row) => row.id));
@@ -616,14 +605,92 @@ export class ActivityRepository extends BaseRepository {
 
   /** Single activity with full detail row. Returns null when not found. */
   async findById(activityId: string): Promise<ActivityRow | null> {
-    const activeRow = await this.#findActiveById(activityId);
-    if (activeRow) {
-      return activeRow;
+    const resolution = await this.#resolveActivityId(activityId);
+    if (!resolution) {
+      return null;
     }
-    return this.#findProviderAbsentById(activityId);
+
+    const activeRow = await this.#findActiveByGroupId(resolution.resolved_group_id);
+    if (activeRow) {
+      return this.#attachResolution(activeRow, resolution);
+    }
+    const providerAbsentRow = await this.#findProviderAbsentByGroupId(resolution.resolved_group_id);
+    return providerAbsentRow ? this.#attachResolution(providerAbsentRow, resolution) : null;
   }
 
-  async #findActiveById(activityId: string): Promise<ActivityRow | null> {
+  async #resolveActivityId(activityId: string): Promise<ActivityIdResolution | null> {
+    if (this.#activityIdResolutions.has(activityId)) {
+      return this.#activityIdResolutions.get(activityId) ?? null;
+    }
+
+    const rows = await this.query(
+      activityIdResolutionSchema,
+      sql`WITH identity_candidates AS (
+            SELECT
+              ${activityId}::uuid AS requested_id,
+              activity_group.id AS resolved_group_id,
+              'group'::text AS resolution_kind,
+              1 AS precedence
+            FROM fitness.activity_group
+            WHERE activity_group.user_id = ${this.userId}::uuid
+              AND activity_group.id = ${activityId}::uuid
+              AND NOT EXISTS (
+                SELECT 1
+                FROM fitness.activity_group_alias retired_group
+                WHERE retired_group.user_id = ${this.userId}::uuid
+                  AND retired_group.alias_id = activity_group.id
+              )
+            UNION ALL
+            SELECT
+              ${activityId}::uuid,
+              activity.group_id,
+              'member'::text,
+              2
+            FROM fitness.activity
+            WHERE activity.user_id = ${this.userId}::uuid
+              AND activity.id = ${activityId}::uuid
+            UNION ALL
+            SELECT
+              ${activityId}::uuid,
+              activity_group_alias.group_id,
+              'alias'::text,
+              3
+            FROM fitness.activity_group_alias
+            WHERE activity_group_alias.user_id = ${this.userId}::uuid
+              AND activity_group_alias.alias_id = ${activityId}::uuid
+          )
+          SELECT
+            requested_id::text AS requested_id,
+            resolved_group_id::text AS resolved_group_id,
+            resolution_kind
+          FROM identity_candidates
+          ORDER BY precedence
+          LIMIT 1`,
+    );
+    const resolution = rows[0] ?? null;
+    this.#activityIdResolutions.set(activityId, resolution);
+    if (resolution) {
+      this.#activityIdResolutions.set(resolution.resolved_group_id, {
+        requested_id: resolution.resolved_group_id,
+        resolved_group_id: resolution.resolved_group_id,
+        resolution_kind: "group",
+      });
+      logger.info("activity.id_resolved", {
+        requestedActivityId: resolution.requested_id,
+        resolvedGroupId: resolution.resolved_group_id,
+        resolutionKind: resolution.resolution_kind,
+      });
+    }
+    return resolution;
+  }
+
+  #attachResolution(row: ActivityRow, resolution: ActivityIdResolution): ActivityRow {
+    return resolution.requested_id === resolution.resolved_group_id
+      ? row
+      : { ...row, resolved_from: resolution.requested_id };
+  }
+
+  async #findActiveByGroupId(groupId: string): Promise<ActivityRow | null> {
     const rows = await this.query(
       activityDetailRowSchema,
       sql`SELECT
@@ -659,7 +726,7 @@ export class ActivityRepository extends BaseRepository {
             NULL::integer AS sample_count,
             NULL::text AS provider_absent_at
           FROM fitness.v_activity a
-          WHERE ${activityId}::uuid = ANY(a.member_activity_ids)
+          WHERE a.id = ${groupId}::uuid
             AND a.user_id = ${this.userId}
             ${this.timestampAccessPredicate(sql`a.started_at`)}`,
     );
@@ -670,11 +737,11 @@ export class ActivityRepository extends BaseRepository {
     return activity;
   }
 
-  async #findProviderAbsentById(activityId: string): Promise<ActivityRow | null> {
+  async #findProviderAbsentByGroupId(groupId: string): Promise<ActivityRow | null> {
     const rows = await this.query(
       activityDetailRowSchema,
       sql`SELECT
-            a.id,
+            ${groupId}::uuid AS id,
             a.canonical_type,
             a.provider_type AS raw_type,
             a.modality::text AS modality,
@@ -731,10 +798,49 @@ export class ActivityRepository extends BaseRepository {
             NULL::integer AS sample_count,
             a.provider_absent_at::text AS provider_absent_at
           FROM fitness.activity a
-          WHERE a.id = ${activityId}::uuid
+          LEFT JOIN fitness.provider_priority pp ON pp.provider_id = a.provider_id
+          LEFT JOIN LATERAL (
+            SELECT dp2.priority
+            FROM fitness.device_priority dp2
+            WHERE dp2.provider_id = a.provider_id
+              AND a.source_name LIKE dp2.source_name_pattern
+            ORDER BY
+              LENGTH(dp2.source_name_pattern) DESC,
+              dp2.priority ASC,
+              dp2.source_name_pattern ASC
+            LIMIT 1
+          ) dp ON true
+          LEFT JOIN LATERAL (
+            SELECT
+              COUNT(*) FILTER (
+                WHERE s.set_type = 'working'
+                  AND (
+                    s.weight_kg IS NOT NULL OR s.reps IS NOT NULL
+                    OR s.duration_seconds IS NOT NULL OR s.distance_meters IS NOT NULL
+                  )
+              ) AS complete_working_set_count,
+              COUNT(*) AS set_count,
+              COUNT(DISTINCT s.exercise_id) AS exercise_count
+            FROM fitness.strength_set s
+            WHERE s.activity_id = a.id
+          ) payload ON true
+          WHERE a.group_id = ${groupId}::uuid
             AND a.user_id = ${this.userId}::uuid
             AND a.provider_absent_at IS NOT NULL
-            ${this.timestampAccessPredicate(sql`a.started_at`)}`,
+            AND a.deleted_at IS NULL
+            ${this.timestampAccessPredicate(sql`a.started_at`)}
+          ORDER BY
+            payload.complete_working_set_count DESC,
+            payload.set_count DESC,
+            payload.exercise_count DESC,
+            (a.canonical_type NOT IN ('cardio', 'other')) DESC,
+            COALESCE(
+              NULLIF(LOWER(TRIM(a.provider_type)), '') <> LOWER(a.canonical_type::text),
+              false
+            ) DESC,
+            COALESCE(dp.priority, pp.priority, 100) ASC,
+            a.id ASC
+          LIMIT 1`,
     );
     const hydratedRows = await this.#withActivitySummaries(rows);
     const firstRow = hydratedRows[0];
@@ -746,8 +852,6 @@ export class ActivityRepository extends BaseRepository {
   async #withActivitySummaries<
     TRow extends {
       id: string;
-      canonical_type: string;
-      provider_id: string;
       member_activity_ids?: string[];
     },
   >(rows: TRow[]): Promise<TRow[]> {
@@ -759,9 +863,7 @@ export class ActivityRepository extends BaseRepository {
       return rows;
     }
 
-    const activityIds = [
-      ...new Set(rows.flatMap((row) => [row.id, ...(row.member_activity_ids ?? [])])),
-    ];
+    const activityIds = [...new Set(rows.map((row) => row.id))];
     const [summaries, routePreviewByActivityId] = await Promise.all([
       sensorStore.getActivitySummaries(activityIds),
       getActivityRoutePreviews(sensorStore, this.userId, activityIds),
@@ -772,33 +874,8 @@ export class ActivityRepository extends BaseRepository {
         activitySummaryReadModelRowSchema.parse(summary),
       ]),
     );
-    if (summaryByActivityId.size === 0) {
-      return rows;
-    }
-    const memberRows = await this.query(
-      activityMemberSchema,
-      sql`SELECT
-            id::text AS activity_id,
-            canonical_type::text AS canonical_type,
-            provider_id
-          FROM fitness.activity
-          WHERE user_id = ${this.userId}::uuid
-            AND id IN (${sql.join(
-              activityIds.map((activityId) => sql`${activityId}::uuid`),
-              sql`, `,
-            )})`,
-    );
-    const memberByActivityId = new Map(memberRows.map((member) => [member.activity_id, member]));
-
     return rows.map((row) => {
-      const summary = selectCompatibleActivitySummary(
-        row,
-        [row.id, ...(row.member_activity_ids ?? [])].flatMap((activityId) => {
-          const summary = summaryByActivityId.get(activityId);
-          const member = memberByActivityId.get(activityId);
-          return summary && member ? [{ ...summary, ...member }] : [];
-        }),
-      );
+      const summary = summaryByActivityId.get(row.id);
       if (!summary) {
         return row;
       }
@@ -835,7 +912,7 @@ export class ActivityRepository extends BaseRepository {
   async getStream(activityId: string, maxPoints: number): Promise<StreamPoint[]> {
     const sensorStore = this.#requireSensorStore("activity streams");
     const window = await this.findSensorWindow(activityId);
-    if (!window) return [];
+    if (!window) throw activityNotFoundError();
     const rows = await sensorStore.getStream(window, maxPoints);
     return rows.map((row) => new StreamPoint(streamPointRowSchema.parse(row)));
   }
@@ -844,7 +921,7 @@ export class ActivityRepository extends BaseRepository {
   async getHrZones(activityId: string): Promise<import("@dofek/zones/zones").ActivityHrZone[]> {
     const sensorStore = this.#requireSensorStore("heart-rate zones");
     const window = await this.findSensorWindow(activityId);
-    if (!window) return mapHrZones([]);
+    if (!window) throw activityNotFoundError();
     return mapHrZones(await sensorStore.getHeartRateZoneSeconds(window));
   }
 
@@ -855,7 +932,7 @@ export class ActivityRepository extends BaseRepository {
   ): Promise<import("@dofek/zones/zones").ActivityPowerZone[]> {
     const sensorStore = this.#requireSensorStore("power zones");
     const window = await this.findSensorWindow(activityId);
-    if (!window) return mapPowerZones([]);
+    if (!window) throw activityNotFoundError();
     return mapPowerZones(await sensorStore.getPowerZoneSeconds(window, ftp));
   }
 
@@ -868,6 +945,8 @@ export class ActivityRepository extends BaseRepository {
 
   /** Resolves any visible member ID to its owned canonical activity sensor window. */
   async findSensorWindow(activityId: string): Promise<ActivitySensorWindow | null> {
+    const resolution = await this.#resolveActivityId(activityId);
+    if (!resolution) return null;
     const rows = await this.query(
       activitySensorWindowRowSchema,
       sql`SELECT
@@ -877,7 +956,7 @@ export class ActivityRepository extends BaseRepository {
             a.ended_at::text AS ended_at,
             a.member_activity_ids
           FROM fitness.v_activity a
-          WHERE ${activityId}::uuid = ANY(a.member_activity_ids)
+          WHERE a.id = ${resolution.resolved_group_id}::uuid
             AND a.user_id = ${this.userId}
             ${this.timestampAccessPredicate(sql`a.started_at`)}`,
     );

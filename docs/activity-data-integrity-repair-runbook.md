@@ -34,6 +34,79 @@ Do not begin another historical repair while a journal row is eligible. Do not
 force a failed CAS or a CDC timeout: preserve the artifact and investigate the
 specific journal phase.
 
+## Stable activity-group refresh order
+
+When activity identity or payload availability is wrong but the raw provider
+rows are intact, repair derived state in this order:
+
+1. Execute a bounded canonical activity replay for one pull provider represented
+   in the affected user's groups. From an authenticated MCP client with
+   `sync:write`, invoke the public operation below and wait for the returned job
+   to succeed:
+
+   ```text
+   start_provider_sync
+   {"providerId":"<provider-id>","sinceDate":"<YYYY-MM-DD>","untilDate":"<YYYY-MM-DD>"}
+   ```
+
+   The activity canonical-commit path calls group reconciliation before it
+   records the relational commit, in the same PostgreSQL transaction; see
+   [`recordRelationalCanonicalCommits`](../src/processing/processing-event-store.ts).
+   Do not derive a replacement group ID from the selected display member or
+   update group rows manually. If no affected pull provider supports a bounded
+   replay, stop: this runbook does not authorize an ad hoc group mutation.
+   PostgreSQL transactions make the membership and alias changes visible as one
+   unit ([PostgreSQL transaction documentation](https://www.postgresql.org/docs/current/tutorial-transactions.html)).
+2. Before waiting for CDC, verify the regular PostgreSQL view directly:
+
+   ```sql
+   SELECT id, primary_activity_id, canonical_type, provider_type,
+          member_activity_ids
+   FROM fitness.v_activity
+   WHERE user_id = '<user-uuid>'::uuid
+     AND started_at >= '<start-utc>'::timestamptz
+     AND started_at < '<end-utc>'::timestamptz
+   ORDER BY started_at, id;
+   ```
+
+   `fitness.v_activity` is a regular view, so it reflects the underlying
+   committed PostgreSQL rows when queried; it is not a projection to rebuild
+   ([PostgreSQL `CREATE VIEW`](https://www.postgresql.org/docs/current/sql-createview.html)).
+   Stop if its group identity, membership, or representative is wrong.
+3. After verifying the regular PostgreSQL `fitness.v_activity` view in step 2,
+   follow the canonical
+   [microbatch replay and historical full-refresh procedure](../analytics/README.md#microbatch-start-bounds-and-historical-backfills)
+   exactly. Apply ClickHouse migrations 0076 through 0078, verify that the
+   reconciled PostgreSQL membership has reached ClickHouse through CDC, rebuild
+   the stable identity/member models with the documented selector, and only
+   then run the bounded sensor microbatch in its stated order. After that
+   replay, calculate and record `required_lookback_days` with the documented
+   preflight and run the downstream retention-aware full refresh in dependency
+   order. Its command must include
+   an explicit `initial_lookback_days` that covers the preflight value. Never
+   omit that variable or accept the 120-day default; stop before running dbt if
+   the preflight value is missing or the proposed command does not cover it.
+   Use dbt graph selection for the bounded dependency closure rather than
+   manually inserting derived rows
+   ([dbt graph operators](https://docs.getdbt.com/reference/node-selection/graph-operators)).
+4. Verify the stable group ID through direct group, member, and historical alias
+   lookups. A member or alias request must return the stable group and expose
+   `resolved_from`. Verify structured sets and deduplicated sensor, GPS, and
+   elevation payloads independently of the selected representative. Use
+   ClickHouse `FINAL` for operator verification of current
+   `ReplacingMergeTree` state
+   ([ClickHouse `FINAL` modifier](https://clickhouse.com/docs/sql-reference/statements/select/from#final-modifier)).
+5. Re-import Strong only when an inspection proves the stored provider source
+   rows or strength-set rows are corrupt. Empty hydrated output, a changed
+   representative, or a stale read model is not evidence that the immutable
+   provider export must be replayed. Preserve the original upload and use the
+   retained-upload procedure below if raw corruption is proven.
+
+Stop if persisted group membership is unresolved, an alias points outside the
+user scope, CDC has not delivered the new membership, or any populated payload
+field disappears after a representative-only change. Do not proceed to a later
+stage to compensate for an earlier-stage failure.
+
 ## Preconditions
 
 1. Confirm `DATABASE_URL` and `CLICKHOUSE_URL` point at the intended

@@ -6,7 +6,7 @@ import type { ActivityRow } from "../models/activity.ts";
 import { Activity } from "../models/activity.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { PowerRepository } from "../repositories/power-repository.ts";
-import { StrengthRepository } from "../repositories/strength-repository.ts";
+import { ExerciseWithSets, StrengthRepository } from "../repositories/strength-repository.ts";
 import { mapStreamPoint } from "./activity.ts";
 import { createTestCallerFactory, makeTestCaller } from "./test-helpers.ts";
 
@@ -138,6 +138,30 @@ function makeCaller(
     userId: "user-1",
     timezone: "UTC",
   })).caller;
+}
+
+function makeResolvedCaller(
+  rows: Record<string, unknown>[],
+  sensorStore: unknown = makeSensorStoreStub(),
+  requestedId = "00000000-0000-0000-0000-000000000001",
+) {
+  const resolvedGroupId = typeof rows[0]?.id === "string" ? rows[0].id : requestedId;
+  return makeTestCaller(
+    createCaller,
+    [
+      rows.length > 0
+        ? [
+            {
+              requested_id: requestedId,
+              resolved_group_id: resolvedGroupId,
+              resolution_kind: requestedId === resolvedGroupId ? "group" : "member",
+            },
+          ]
+        : [],
+      rows,
+    ],
+    (db) => ({ db, sensorStore, userId: "user-1", timezone: "UTC" }),
+  ).caller;
 }
 
 function makeCallerWithoutSensorStore(rows: Record<string, unknown>[] = []) {
@@ -412,7 +436,7 @@ describe("activityRouter", () => {
         elevation_loss_m: 280,
         sample_count: 3600,
       };
-      const caller = makeCaller([row]);
+      const caller = makeResolvedCaller([row]);
       const result = await caller.byId({ id: "00000000-0000-0000-0000-000000000001" });
 
       expect(result.id).toBe("abc-123");
@@ -472,7 +496,7 @@ describe("activityRouter", () => {
         elevation_loss_m: null,
         sample_count: null,
       };
-      const caller = makeCaller([row]);
+      const caller = makeResolvedCaller([row]);
       const result = await caller.byId({ id: "00000000-0000-0000-0000-000000000001" });
 
       expect(result.endedAt).toBeNull();
@@ -514,15 +538,23 @@ describe("activityRouter", () => {
       };
       const caller = createCaller({
         db: {
-          execute: postgresExecute.mockResolvedValueOnce([
-            {
-              id: "00000000-0000-0000-0000-000000000001",
-              user_id: "user-1",
-              started_at: "2024-01-01T10:00:00Z",
-              ended_at: "2024-01-01T11:00:00Z",
-              member_activity_ids: ["00000000-0000-0000-0000-000000000001"],
-            },
-          ]),
+          execute: postgresExecute
+            .mockResolvedValueOnce([
+              {
+                requested_id: "00000000-0000-0000-0000-000000000001",
+                resolved_group_id: "00000000-0000-0000-0000-000000000001",
+                resolution_kind: "group",
+              },
+            ])
+            .mockResolvedValueOnce([
+              {
+                id: "00000000-0000-0000-0000-000000000001",
+                user_id: "user-1",
+                started_at: "2024-01-01T10:00:00Z",
+                ended_at: "2024-01-01T11:00:00Z",
+                member_activity_ids: ["00000000-0000-0000-0000-000000000001"],
+              },
+            ]),
         },
         sensorStore,
         userId: "user-1",
@@ -534,7 +566,7 @@ describe("activityRouter", () => {
       });
 
       expect(result).toHaveLength(1);
-      expect(postgresExecute).toHaveBeenCalledTimes(1);
+      expect(postgresExecute).toHaveBeenCalledTimes(2);
       expect(sensorStore.getStream).toHaveBeenCalledTimes(1);
     });
 
@@ -559,15 +591,24 @@ describe("activityRouter", () => {
       };
       const caller = createCaller({
         db: {
-          execute: vi.fn().mockResolvedValue([
-            {
-              id: "00000000-0000-0000-0000-000000000001",
-              user_id: "user-1",
-              started_at: "2024-01-01T10:00:00Z",
-              ended_at: "2024-01-01T11:00:00Z",
-              member_activity_ids: ["00000000-0000-0000-0000-000000000001"],
-            },
-          ]),
+          execute: vi
+            .fn()
+            .mockResolvedValueOnce([
+              {
+                requested_id: "00000000-0000-0000-0000-000000000001",
+                resolved_group_id: "00000000-0000-0000-0000-000000000001",
+                resolution_kind: "group",
+              },
+            ])
+            .mockResolvedValueOnce([
+              {
+                id: "00000000-0000-0000-0000-000000000001",
+                user_id: "user-1",
+                started_at: "2024-01-01T10:00:00Z",
+                ended_at: "2024-01-01T11:00:00Z",
+                member_activity_ids: ["00000000-0000-0000-0000-000000000001"],
+              },
+            ]),
         },
         sensorStore,
         userId: "user-1",
@@ -603,15 +644,24 @@ describe("activityRouter", () => {
       };
       const caller = createCaller({
         db: {
-          execute: vi.fn().mockResolvedValue([
-            {
-              id: "00000000-0000-0000-0000-000000000001",
-              user_id: "user-1",
-              started_at: "2024-01-01T10:00:00Z",
-              ended_at: "2024-01-01T11:00:00Z",
-              member_activity_ids: ["00000000-0000-0000-0000-000000000001"],
-            },
-          ]),
+          execute: vi
+            .fn()
+            .mockResolvedValueOnce([
+              {
+                requested_id: "00000000-0000-0000-0000-000000000001",
+                resolved_group_id: "00000000-0000-0000-0000-000000000001",
+                resolution_kind: "group",
+              },
+            ])
+            .mockResolvedValueOnce([
+              {
+                id: "00000000-0000-0000-0000-000000000001",
+                user_id: "user-1",
+                started_at: "2024-01-01T10:00:00Z",
+                ended_at: "2024-01-01T11:00:00Z",
+                member_activity_ids: ["00000000-0000-0000-0000-000000000001"],
+              },
+            ]),
         },
         sensorStore,
         userId: "user-1",
@@ -623,6 +673,23 @@ describe("activityRouter", () => {
 
       expect(result[0]?.heartRate).toBeNull();
       expect(result[0]?.power).toBeNull();
+    });
+
+    it.each([
+      ["missing", "00000000-0000-4000-8000-000000000091"],
+      ["owned by another user", "00000000-0000-4000-8000-000000000092"],
+    ])("returns the same NOT_FOUND error for an activity that is %s", async (_case, id) => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        sensorStore: makeSensorStoreStub(),
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.stream({ id })).rejects.toMatchObject({
+        code: "NOT_FOUND",
+        message: "Activity not found",
+      });
     });
   });
 
@@ -866,18 +933,27 @@ describe("activityRouter", () => {
     });
 
     it("enqueues recompute for all grouped member activities and invalidates caches", async () => {
-      const execute = vi.fn().mockResolvedValueOnce([
-        {
-          id: "00000000-0000-0000-0000-000000000001",
-          user_id: "user-1",
-          started_at: "2026-04-01T10:00:00Z",
-          ended_at: "2026-04-01T11:00:00Z",
-          member_activity_ids: [
-            "00000000-0000-0000-0000-000000000001",
-            "00000000-0000-0000-0000-000000000002",
-          ],
-        },
-      ]);
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([
+          {
+            requested_id: "00000000-0000-0000-0000-000000000001",
+            resolved_group_id: "00000000-0000-0000-0000-000000000001",
+            resolution_kind: "group",
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            id: "00000000-0000-0000-0000-000000000001",
+            user_id: "user-1",
+            started_at: "2026-04-01T10:00:00Z",
+            ended_at: "2026-04-01T11:00:00Z",
+            member_activity_ids: [
+              "00000000-0000-0000-0000-000000000001",
+              "00000000-0000-0000-0000-000000000002",
+            ],
+          },
+        ]);
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
@@ -1050,21 +1126,44 @@ describe("activityRouter", () => {
   });
 
   describe("strengthExercises", () => {
-    it("uses the configured sensor store when resolving the activity", async () => {
+    it("hydrates non-representative Strong member requests from the resolved stable group", async () => {
       const getExercisesForActivitySpy = vi
         .spyOn(StrengthRepository.prototype, "getExercisesForActivity")
-        .mockResolvedValue([]);
-      const activityId = "00000000-0000-0000-0000-000000000001";
+        .mockResolvedValue([
+          new ExerciseWithSets(0, "Deadlift", "BARBELL", ["BACK"], "STRENGTH", [
+            {
+              durationSeconds: null,
+              notes: null,
+              reps: 5,
+              rpe: 8,
+              setIndex: 0,
+              setType: "working",
+              weightKg: 100,
+            },
+          ]),
+        ]);
+      const requestedStrongMemberId = "00000000-0000-0000-0000-000000000001";
+      const stableGroupId = "00000000-0000-0000-0000-000000000002";
 
-      const caller = makeCaller([
-        makeActivityRow({
-          id: activityId,
+      const caller = makeResolvedCaller(
+        [
+          makeActivityRow({
+            id: stableGroupId,
+            resolved_from: requestedStrongMemberId,
+          }),
+        ],
+        undefined,
+        requestedStrongMemberId,
+      );
+      const result = await caller.strengthExercises({ id: requestedStrongMemberId });
+
+      expect(result).toEqual([
+        expect.objectContaining({
+          exerciseName: "Deadlift",
+          sets: [expect.objectContaining({ reps: 5, weightKg: 100 })],
         }),
       ]);
-      const result = await caller.strengthExercises({ id: activityId });
-
-      expect(result).toEqual([]);
-      expect(getExercisesForActivitySpy).toHaveBeenCalledWith(activityId);
+      expect(getExercisesForActivitySpy).toHaveBeenCalledWith(stableGroupId);
       getExercisesForActivitySpy.mockRestore();
     });
   });
@@ -1109,7 +1208,7 @@ describe("activityRouter", () => {
       );
     });
 
-    it("stream returns empty when activity is outside limited access window", async () => {
+    it("stream returns NOT_FOUND when activity is outside limited access window", async () => {
       const execute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
         db: { execute },
@@ -1124,8 +1223,9 @@ describe("activityRouter", () => {
           endDateExclusive: "2026-04-17",
         },
       });
-      const result = await caller.stream({ id: "00000000-0000-0000-0000-000000000001" });
-      expect(result).toEqual([]);
+      await expect(
+        caller.stream({ id: "00000000-0000-0000-0000-000000000001" }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND", message: "Activity not found" });
     });
   });
 
@@ -1159,14 +1259,20 @@ describe("activityRouter", () => {
             .fn()
             .mockResolvedValueOnce([
               {
+                requested_id: "00000000-0000-0000-0000-000000000001",
+                resolved_group_id: "00000000-0000-0000-0000-000000000001",
+                resolution_kind: "group",
+              },
+            ])
+            .mockResolvedValueOnce([
+              {
                 id: "00000000-0000-0000-0000-000000000001",
                 user_id: "user-1",
                 started_at: "2024-01-01T10:00:00Z",
                 ended_at: "2024-01-01T11:00:00Z",
                 member_activity_ids: ["00000000-0000-0000-0000-000000000001"],
               },
-            ])
-            .mockResolvedValueOnce([{ max_hr: 190, resting_hr: 60 }]),
+            ]),
         },
         sensorStore,
         userId: "user-1",
@@ -1194,6 +1300,13 @@ describe("activityRouter", () => {
         percent: 17.9,
       });
       expect(result[5]).toMatchObject({ zone: 5, label: "VO2max" });
+      expect(sensorStore.getHeartRateZoneSeconds).toHaveBeenCalledWith({
+        activityId: "00000000-0000-0000-0000-000000000001",
+        userId: "user-1",
+        startedAt: "2024-01-01T10:00:00Z",
+        endedAt: "2024-01-01T11:00:00Z",
+        memberActivityIds: ["00000000-0000-0000-0000-000000000001"],
+      });
     });
 
     it("defaults missing zones to 0 seconds", async () => {
@@ -1210,14 +1323,20 @@ describe("activityRouter", () => {
             .fn()
             .mockResolvedValueOnce([
               {
+                requested_id: "00000000-0000-0000-0000-000000000001",
+                resolved_group_id: "00000000-0000-0000-0000-000000000001",
+                resolution_kind: "group",
+              },
+            ])
+            .mockResolvedValueOnce([
+              {
                 id: "00000000-0000-0000-0000-000000000001",
                 user_id: "user-1",
                 started_at: "2024-01-01T10:00:00Z",
                 ended_at: "2024-01-01T11:00:00Z",
                 member_activity_ids: ["00000000-0000-0000-0000-000000000001"],
               },
-            ])
-            .mockResolvedValueOnce([{ max_hr: 190, resting_hr: 60 }]),
+            ]),
         },
         sensorStore,
         userId: "user-1",
@@ -1231,6 +1350,13 @@ describe("activityRouter", () => {
       expect(result[1]?.seconds).toBe(0);
       expect(result[2]?.seconds).toBe(500);
       expect(result[3]?.seconds).toBe(0);
+      expect(sensorStore.getHeartRateZoneSeconds).toHaveBeenCalledWith({
+        activityId: "00000000-0000-0000-0000-000000000001",
+        userId: "user-1",
+        startedAt: "2024-01-01T10:00:00Z",
+        endedAt: "2024-01-01T11:00:00Z",
+        memberActivityIds: ["00000000-0000-0000-0000-000000000001"],
+      });
     });
   });
 
