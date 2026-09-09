@@ -11,6 +11,7 @@ import { clickHouseMigrations } from "./registry.ts";
 const resultSchema = z.array(
   z.object({
     column_type: z.string(),
+    column_position: z.union([z.number(), z.string()]).transform(Number),
     source_refresh_ns: z.string(),
     refreshed_ns: z.string(),
     reconciled_refresh_ns: z.string(),
@@ -68,6 +69,10 @@ describe("0083_activity_location_source_refresh", () => {
           WHERE database = {database:String}
             AND table = 'activity_location_sample'
             AND name = 'source_refreshed_at') AS column_type,
+        (SELECT position FROM system.columns
+          WHERE database = {database:String}
+            AND table = 'activity_location_sample'
+            AND name = 'source_refreshed_at') AS column_position,
         toString(toUnixTimestamp64Nano(source_refreshed_at)) AS source_refresh_ns,
         toString(toUnixTimestamp64Nano(refreshed_at)) AS refreshed_ns,
         toString(toUnixTimestamp64Nano(greatest(source_refreshed_at, refreshed_at)))
@@ -81,6 +86,7 @@ describe("0083_activity_location_source_refresh", () => {
     expect(rows).toEqual([
       {
         column_type: "DateTime64(9, 'UTC')",
+        column_position: 3,
         source_refresh_ns: "1788957296123456789",
         refreshed_ns: "1788957296123456789",
         reconciled_refresh_ns: "1788957296123456789",
