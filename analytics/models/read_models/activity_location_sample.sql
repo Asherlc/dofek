@@ -8,24 +8,30 @@
     order_by='(user_id, activity_id, recorded_date, recorded_at, source_metric_stream_id)',
     query_settings={
         'max_threads': 1,
-        'join_use_nulls': 1
+        'join_use_nulls': 1,
+        'enable_materialized_cte': 1
     }
 ) }}
 
 WITH
-location_versions AS MATERIALIZED (
-    SELECT *
-    FROM {{ source('ingest', 'metric_stream_freshness') }}
-    WHERE channel = 'location'
-        AND (point IS NOT NULL OR is_deleted = 1)
-),
-
 {% if is_incremental() %}
 target_state AS (
     SELECT
         coalesce(max(refreshed_at), toDateTime64('1970-01-01 00:00:00', 9, 'UTC')) AS last_refreshed_at,
         count() = 0 AS is_empty
     FROM {{ this }}
+),
+
+changed_location_versions AS MATERIALIZED (
+    SELECT
+        location_versions.activity_id,
+        location_versions.user_id
+    FROM {{ source('ingest', 'metric_stream_freshness') }} AS location_versions
+    CROSS JOIN target_state
+    WHERE NOT target_state.is_empty
+        AND location_versions.channel = 'location'
+        AND (location_versions.point IS NOT NULL OR location_versions.is_deleted = 1)
+        AND location_versions.ingested_at > target_state.last_refreshed_at
 ),
 {% endif %}
 
@@ -39,21 +45,11 @@ activity_group_state AS (
     FROM {{ ref('deduped_activities') }} AS deduped FINAL
 ),
 
-activity_members AS (
-    SELECT
-        activity_id,
-        user_id,
-        source_synced_at,
-        member_activity_id
-    FROM {{ ref('deduped_activity_members') }} FINAL
-    WHERE is_deleted = 0
-),
-
 {% if is_incremental() %}
 existing_location_samples AS MATERIALIZED (
     SELECT *
-    FROM {{ this }} FINAL
-    WHERE is_deleted = 0
+    FROM {{ this }} AS existing_samples FINAL
+    WHERE existing_samples.is_deleted = 0
 ),
 {% endif %}
 
@@ -65,7 +61,7 @@ initial_affected_groups AS (
         {% if is_incremental() %}
         CROSS JOIN target_state
         {% endif %}
-    WHERE is_deleted = 0
+    WHERE activity_group_state.is_deleted = 0
         {% if is_incremental() %}
         AND target_state.is_empty
         {% endif %}
@@ -76,15 +72,14 @@ changed_location_groups AS (
     SELECT DISTINCT
         activity_members.activity_id AS activity_id,
         activity_members.user_id AS user_id
-    FROM location_versions
-    INNER JOIN activity_members
+    FROM changed_location_versions AS location_versions
+    INNER JOIN {{ ref('deduped_activity_members') }} AS activity_members FINAL
         ON activity_members.member_activity_id = location_versions.activity_id
         AND activity_members.user_id = location_versions.user_id
-    CROSS JOIN target_state
-    WHERE NOT target_state.is_empty
-        AND location_versions.ingested_at > target_state.last_refreshed_at
+    WHERE activity_members.is_deleted = 0
     {% else %}
-    SELECT CAST(null, 'Nullable(UUID)') AS activity_id,
+    SELECT
+        CAST(null, 'Nullable(UUID)') AS activity_id,
         CAST(null, 'Nullable(UUID)') AS user_id
     WHERE 1 = 0
     {% endif %}
@@ -98,9 +93,10 @@ changed_group_lifecycle AS (
     FROM activity_group_state
     CROSS JOIN target_state
     WHERE NOT target_state.is_empty
-        AND refreshed_at > target_state.last_refreshed_at
+        AND activity_group_state.refreshed_at > target_state.last_refreshed_at
     {% else %}
-    SELECT CAST(null, 'Nullable(UUID)') AS activity_id,
+    SELECT
+        CAST(null, 'Nullable(UUID)') AS activity_id,
         CAST(null, 'Nullable(UUID)') AS user_id
     WHERE 1 = 0
     {% endif %}
@@ -112,10 +108,10 @@ scoped_affected_groups AS (
         activity_group_state.group_activity_id AS activity_id,
         activity_group_state.user_id AS user_id
     FROM activity_group_state
-    WHERE user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+    WHERE activity_group_state.user_id = toUUID('{{ var("activity_refresh_user_id") }}')
         AND (
-            group_activity_id IN {{ activity_refresh_ids() }}
-            OR hasAny(member_activity_ids, {{ activity_refresh_ids() }})
+            activity_group_state.group_activity_id IN {{ activity_refresh_ids() }}
+            OR hasAny(activity_group_state.member_activity_ids, {{ activity_refresh_ids() }})
         )
 
     UNION DISTINCT
@@ -123,11 +119,12 @@ scoped_affected_groups AS (
     SELECT
         activity_members.activity_id AS activity_id,
         activity_members.user_id AS user_id
-    FROM activity_members
-    WHERE user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+    FROM {{ ref('deduped_activity_members') }} AS activity_members FINAL
+    WHERE activity_members.user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        AND activity_members.is_deleted = 0
         AND (
-            activity_id IN {{ activity_refresh_ids() }}
-            OR member_activity_id IN {{ activity_refresh_ids() }}
+            activity_members.activity_id IN {{ activity_refresh_ids() }}
+            OR activity_members.member_activity_id IN {{ activity_refresh_ids() }}
         )
 
     {% if is_incremental() %}
@@ -137,30 +134,36 @@ scoped_affected_groups AS (
         existing_location_samples.activity_id AS activity_id,
         existing_location_samples.user_id AS user_id
     FROM existing_location_samples
-    WHERE user_id = toUUID('{{ var("activity_refresh_user_id") }}')
-        AND activity_id IN {{ activity_refresh_ids() }}
+    WHERE existing_location_samples.user_id
+            = toUUID('{{ var("activity_refresh_user_id") }}')
+        AND existing_location_samples.activity_id IN {{ activity_refresh_ids() }}
     {% endif %}
 ),
 {% endif %}
 
 affected_groups AS MATERIALIZED (
-    SELECT DISTINCT assumeNotNull(activity_id) AS activity_id,
+    SELECT DISTINCT
+        assumeNotNull(activity_id) AS activity_id,
         assumeNotNull(user_id) AS user_id
     FROM (
         {% if activity_refresh_scoped %}
-        SELECT scoped_affected_groups.activity_id AS activity_id,
+        SELECT
+            scoped_affected_groups.activity_id AS activity_id,
             scoped_affected_groups.user_id AS user_id
         FROM scoped_affected_groups
         {% else %}
-        SELECT initial_affected_groups.activity_id AS activity_id,
+        SELECT
+            initial_affected_groups.activity_id AS activity_id,
             initial_affected_groups.user_id AS user_id
         FROM initial_affected_groups
         UNION ALL
-        SELECT changed_location_groups.activity_id AS activity_id,
+        SELECT
+            changed_location_groups.activity_id AS activity_id,
             changed_location_groups.user_id AS user_id
         FROM changed_location_groups
         UNION ALL
-        SELECT changed_group_lifecycle.activity_id AS activity_id,
+        SELECT
+            changed_group_lifecycle.activity_id AS activity_id,
             changed_group_lifecycle.user_id AS user_id
         FROM changed_group_lifecycle
         {% endif %}
@@ -174,14 +177,27 @@ affected_current_members AS MATERIALIZED (
         activity_members.user_id AS user_id,
         activity_members.source_synced_at AS source_synced_at,
         activity_members.member_activity_id AS member_activity_id
-    FROM activity_members
+    FROM {{ ref('deduped_activity_members') }} AS activity_members FINAL
     INNER JOIN activity_group_state
         ON activity_group_state.group_activity_id = activity_members.activity_id
         AND activity_group_state.user_id = activity_members.user_id
     WHERE activity_group_state.is_deleted = 0
+        AND activity_members.is_deleted = 0
         AND (activity_members.user_id, activity_members.activity_id) IN (
             SELECT affected_groups.user_id, affected_groups.activity_id
             FROM affected_groups
+        )
+),
+
+affected_location_versions AS MATERIALIZED (
+    SELECT location_versions.*
+    FROM {{ source('ingest', 'metric_stream_freshness') }} AS location_versions
+    WHERE location_versions.channel = 'location'
+        AND (location_versions.point IS NOT NULL OR location_versions.is_deleted = 1)
+        AND (location_versions.user_id, location_versions.activity_id) IN (
+            SELECT affected_current_members.user_id,
+                affected_current_members.member_activity_id
+            FROM affected_current_members
         )
 ),
 
@@ -201,7 +217,7 @@ affected_location_state AS MATERIALIZED (
         argMax(location_versions.point, location_versions.version) AS point,
         argMax(location_versions.ingested_at, location_versions.version) AS ingested_at,
         argMax(location_versions.is_deleted, location_versions.version) AS is_deleted
-    FROM location_versions
+    FROM affected_location_versions AS location_versions
     INNER JOIN affected_current_members
         ON affected_current_members.member_activity_id = location_versions.activity_id
         AND affected_current_members.user_id = location_versions.user_id

@@ -453,7 +453,7 @@ function renderModel(
     )
     .replaceAll("{{ activity_source_mass_tombstone_min_existing }}", "10")
     .replaceAll("{{ activity_source_mass_tombstone_ratio }}", "0.95")
-    .replace(
+    .replaceAll(
       "{{ source('ingest', 'metric_stream_freshness') }}",
       `${database}.metric_stream_freshness`,
     )

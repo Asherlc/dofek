@@ -443,7 +443,10 @@ describe("production analytics read-model build", () => {
     const sql = readModel("activity_location_sample");
 
     expect(sql).toContain("incremental_strategy='append'");
+    expect(sql).toContain("'enable_materialized_cte': 1");
     expect(sql).toContain("affected_groups AS MATERIALIZED");
+    expect(sql).toContain("changed_location_versions AS MATERIALIZED");
+    expect(sql).toContain("affected_location_versions AS MATERIALIZED");
     expect(sql).toContain("affected_location_rows AS MATERIALIZED");
     expect(sql).toContain("provider_counts AS");
     expect(sql).toContain("existing_location_samples AS MATERIALIZED");
@@ -452,6 +455,9 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("member_activity_id IN {{ activity_refresh_ids() }}");
     expect(sql).not.toContain("source('analytics', 'v_activity_members')");
     expect(sql).toContain("channel = 'location'");
+    expect(sql).toContain(
+      "(location_versions.user_id, location_versions.activity_id) IN",
+    );
     expect(sql).toContain(
       "argMax(location_versions.point, location_versions.version) AS point",
     );
