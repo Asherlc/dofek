@@ -72,6 +72,15 @@ or priority inputs changed, and `analytics.v_body_measurement` is a thin
 active-row view over that dbt-owned canonical table. Insert-triggered
 materialized views reduce provider changes to compact `(user_id, provider_id)`
 arrival markers; `provider_change_watermark` reads only that compact state.
+Existing deployments must apply
+[migration 0083](../src/db/clickhouse-migrations/0083_activity_location_source_refresh.ts)
+before the next incremental `activity_location_sample` build. It adds the
+model's `source_refreshed_at` lifecycle watermark to targets created by the
+older schema and initializes legacy rows from their existing `refreshed_at`
+watermark. The migration is safe when dbt has not created the target yet and
+uses ClickHouse's idempotent
+[`ADD COLUMN IF NOT EXISTS`](https://clickhouse.com/docs/sql-reference/statements/alter/column#add-column)
+operation when the target exists.
 `provider_metric_stream_daily` then recomputes at most 32 dirty
 `(user_id, provider_id, recorded_date)` keys per build from exact latest metric
 state, including replacements, tombstones, resurrection, and late arrivals.
