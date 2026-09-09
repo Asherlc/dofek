@@ -57,7 +57,7 @@ After the user grants `device:os.bg_service`, the normal watch app keeps a conti
 
 There is no gyroscope preference. Each foreground motion session probes the watch once and includes gyroscope samples automatically when available, using the same requested frequency mode as the accelerometer. This maximizes sensor coverage without presenting a control that could silently make otherwise comparable sessions different.
 
-High-rate motion capture is deliberately tied to visible, active UI lifecycles. The normal app records only after **Start session** and keeps its page open; the Workout Extension records automatically only while its widget has focus. Both acquire the same display lease for the active segment, using Zepp's documented wrist-screen-off and page-bright-time controls, then restore the normal display policy when the segment stops ([`pauseDropWristScreenOff`](https://docs.zepp.com/docs/v2/reference/device-app-api/newAPI/display/pauseDropWristScreenOff/), [`resetDropWristScreenOff`](https://docs.zepp.com/docs/v2/reference/device-app-api/newAPI/display/resetDropWristScreenOff/), [`setPageBrightTime`](https://docs.zepp.com/docs/reference/device-app-api/newAPI/display/setPageBrightTime/), [`resetPageBrightTime`](https://docs.zepp.com/docs/reference/device-app-api/newAPI/display/resetPageBrightTime/)). Keeping the display awake and sampling both IMU sensors costs materially more battery than the minute-level App Service; Zepp does not publish a device-independent current-draw figure, so the app records measured callback rate and treats hardware battery testing as the source of truth.
+High-rate motion capture is deliberately tied to visible, active UI lifecycles. The normal app records automatically while its page is open; the Workout Extension records automatically only while its widget has focus. Both acquire the same display lease for the active segment, using Zepp's documented wrist-screen-off and page-bright-time controls, then restore the normal display policy when the segment stops ([`pauseDropWristScreenOff`](https://docs.zepp.com/docs/v2/reference/device-app-api/newAPI/display/pauseDropWristScreenOff/), [`resetDropWristScreenOff`](https://docs.zepp.com/docs/v2/reference/device-app-api/newAPI/display/resetDropWristScreenOff/), [`setPageBrightTime`](https://docs.zepp.com/docs/reference/device-app-api/newAPI/display/setPageBrightTime/), [`resetPageBrightTime`](https://docs.zepp.com/docs/reference/device-app-api/newAPI/display/resetPageBrightTime/)). Keeping the display awake and sampling both IMU sensors costs materially more battery than the minute-level App Service; Zepp does not publish a device-independent current-draw figure, so the app records measured callback rate and treats hardware battery testing as the source of truth.
 
 ### Why TransferFile instead of BLE messaging?
 
@@ -158,8 +158,7 @@ pnpm preview
 pnpm build
 ```
 
-4. Open **Dofek Zepp** on the watch, then tap **Start session** and grant accelerometer + background service permissions when prompted.
-5. Tap **Stop & transfer** to finalize and send the session. The mini program **Settings** page in the Zepp phone app can also start or stop a session while the Dofek watch app is open.
+4. Open **Dofek Zepp** on the watch and grant accelerometer + background service permissions when prompted. Motion recording starts while the page remains open and finalizes for transfer when it closes.
 
 ## Release (Zepp Store)
 

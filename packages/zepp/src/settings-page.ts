@@ -4,7 +4,6 @@ import {
   deriveConnectionActions,
   parseConnectionState,
 } from "./connection-state.ts";
-import { getSessionAction, parseSessionState } from "./session-control.ts";
 import { DEFAULT_DOFEK_SERVER_URL, FREQ_MODE_LABELS, STORAGE_KEYS } from "./storage-keys.ts";
 
 declare function Image(props: Record<string, unknown>): unknown;
@@ -408,20 +407,13 @@ export function createSettingsPage(app: "zepp-main" | "zepp-workout") {
           ]),
         );
       } else {
-        const sessionAction = getSessionAction(parseSessionState(session.state));
         blocks.push(
-          card("Watch recorder", "Record a motion session with the Dofek watch app open.", [
+          card("Watch recorder", "Raw motion recording follows the visible Dofek watch app.", [
             row("Session", session.state === "recording" ? "Recording" : "Ready to record"),
             ...statusMessage(session),
             row("Samples captured", String(session.sampleCount ?? 0)),
-            action(
-              sessionAction.label,
-              () => storage.setItem(STORAGE_KEYS.CMD_LOGGING, sessionAction.command),
-              true,
-            ),
-            action("Transfer saved session", () => toggle(storage, STORAGE_KEYS.CMD_TRANSFER)),
             text(
-              "Keep the watch app open until recording finishes. Gyroscope data is included automatically when supported.",
+              "Recording begins automatically while the Dofek watch app is open and transfers when it closes. Gyroscope data is included automatically when supported.",
               { color: MUTED, fontSize: "12px", marginTop: "14px" },
             ),
           ]),
