@@ -221,7 +221,7 @@ describe("MCP token repository (integration)", () => {
             token_hash, client_id, user_id, access_token_id, scopes, resource, expires_at
           ) VALUES (
             ${hashMcpToken("claude-refresh")}, ${"claude-client"}, ${testUserId},
-            ${first.metadata.id}::uuid, ${["health:read"]}, ${"https://dofek.example/api/mcp"},
+            ${first.metadata.id}::uuid, ARRAY[${"health:read"}]::text[], ${"https://dofek.example/api/mcp"},
             ${new Date(Date.now() + 86_400_000)}
           ) RETURNING id`,
     );
@@ -234,7 +234,7 @@ describe("MCP token repository (integration)", () => {
             scopes, resource, expires_at
           ) VALUES (
             ${hashMcpToken("claude-child-refresh")}, ${"claude-client"}, ${testUserId},
-            ${child.metadata.id}::uuid, ${firstRefreshId}::uuid, ${["health:read"]},
+            ${child.metadata.id}::uuid, ${firstRefreshId}::uuid, ARRAY[${"health:read"}]::text[],
             ${"https://dofek.example/api/mcp"}, ${new Date(Date.now() + 86_400_000)}
           )`,
     );
@@ -244,7 +244,7 @@ describe("MCP token repository (integration)", () => {
             token_hash, client_id, user_id, access_token_id, scopes, resource, expires_at
           ) VALUES (
             ${hashMcpToken("claude-unrelated-refresh")}, ${"claude-client"}, ${testUserId},
-            ${unrelated.metadata.id}::uuid, ${["health:read"]}, ${"https://dofek.example/api/mcp"},
+            ${unrelated.metadata.id}::uuid, ARRAY[${"health:read"}]::text[], ${"https://dofek.example/api/mcp"},
             ${new Date(Date.now() + 86_400_000)}
           )`,
     );
