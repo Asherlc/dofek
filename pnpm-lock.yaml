@@ -239,8 +239,8 @@ importers:
         version: 4.4.3
     devDependencies:
       '@actions/expressions':
-        specifier: 0.3.60
-        version: 0.3.60
+        specifier: 0.3.61
+        version: 0.3.61
       '@biomejs/biome':
         specifier: 2.5.10
         version: 2.5.10
@@ -1195,8 +1195,8 @@ importers:
 
 packages:
 
-  '@actions/expressions@0.3.60':
-    resolution: {integrity: sha512-9Go4zz77GbM6iUkullgo0tN7AHgUNRLkw66C6k3mHEc/QScweRNffjSluS0jcip+ULGkDYzBnyMvY9RjnFjEMA==}
+  '@actions/expressions@0.3.61':
+    resolution: {integrity: sha512-Ig+tXELvTjlqxQAWBQnLNn2dPpNraLMdSnT+vDzDPmJtbNUhIAH/Z9kVT8pZ8UtJi9vUGs8hwHE8JFJmbOnLEA==}
     engines: {node: '>= 20'}
 
   '@adobe/css-tools@4.5.0':
@@ -16776,7 +16776,7 @@ packages:
 
 snapshots:
 
-  '@actions/expressions@0.3.60': {}
+  '@actions/expressions@0.3.61': {}
 
   '@adobe/css-tools@4.5.0': {}
 
