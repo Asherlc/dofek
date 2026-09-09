@@ -46,6 +46,7 @@ const providerBPointIds = [
   "00000000-0000-0000-0000-000000001046",
 ] as const;
 const unrelatedPointId = "00000000-0000-0000-0000-000000001047";
+const untrackedRouteMemberId = "00000000-0000-0000-0000-000000009999";
 
 const sampleRowSchema = z.object({
   activity_id: z.string(),
@@ -59,6 +60,13 @@ const sensorSummarySchema = z.object({
   sample_count: z.coerce.number(),
   is_deleted: z.coerce.number(),
 });
+
+const queryStatsSchema = z.array(
+  z.object({
+    query_duration_ms: z.coerce.number(),
+    read_rows: z.coerce.number(),
+  }),
+);
 
 describe("activity payload dbt batch reconciliation", () => {
   let client: ClickHouseClient;
@@ -498,6 +506,80 @@ describe("activity payload dbt batch reconciliation", () => {
     );
     expect(compiledSql).toContain("affected_groups AS MATERIALIZED");
     expect(compiledSql).not.toContain("where ingested_at >= '2026-09-06 00:00:00'");
+  }, 240_000);
+
+  it("bounds incremental location reconciliation to affected member histories", async () => {
+    await seedLocationFixture(client, database);
+    await insertLocationPoints(client, database, [
+      [
+        providerAPointIds[0],
+        "provider-a",
+        -122.3,
+        37.8,
+        "2026-09-03 10:10:00",
+        "2026-09-03 12:00:00",
+      ],
+    ]);
+    await runDbtBatch(
+      database,
+      artifactDirectory,
+      ["activity_location_sample"],
+      "2026-09-03",
+      "2026-09-04",
+    );
+
+    const unrelatedRowCount = 10_000;
+    await client.command({
+      query: `INSERT INTO ${database}.metric_stream
+        (id, activity_id, user_id, recorded_at, provider_id, channel, point,
+         ingested_at, version, is_deleted)
+        SELECT generateUUIDv4(), toUUID('${untrackedRouteMemberId}'), toUUID('${userId}'),
+          addMilliseconds(toDateTime64('2026-09-02 10:00:00', 9, 'UTC'), number),
+          'provider-z', 'location', tuple(-121.9, 37.4),
+          toDateTime64('2026-09-02 12:00:00', 9, 'UTC'), 1, 0
+        FROM numbers(${unrelatedRowCount})`,
+    });
+    const startedAt = new Date().toISOString();
+    await insertLocationPoints(client, database, [
+      [
+        providerAPointIds[1],
+        "provider-a",
+        -122.29,
+        37.81,
+        "2026-09-03 10:20:00",
+        "2026-09-05 12:00:00",
+      ],
+    ]);
+    await runDbtBatch(
+      database,
+      artifactDirectory,
+      ["activity_location_sample"],
+      "2026-09-05",
+      "2026-09-06",
+    );
+    await client.command({ query: "SYSTEM FLUSH LOGS" });
+
+    const result = await client.query({
+      query: `SELECT read_rows, query_duration_ms
+        FROM system.query_log
+        WHERE type = 'QueryFinish'
+          AND query_kind = 'Insert'
+          AND query_start_time_microseconds >= parseDateTime64BestEffort({startedAt:String})
+          AND position(query, concat('insert into \`', {database:String},
+            '\`.\`activity_location_sample\`')) > 0
+        ORDER BY query_start_time_microseconds DESC
+        LIMIT 1`,
+      query_params: { database, startedAt },
+      format: "JSONEachRow",
+    });
+    const [queryStats] = queryStatsSchema.parse(await result.json());
+
+    expect(queryStats).toBeDefined();
+    expect(queryStats?.read_rows).toBeLessThan(unrelatedRowCount * 4);
+    await expectActiveLocationPointIds(client, database, routeGroupId, [
+      providerAPointIds[0],
+      providerAPointIds[1],
+    ]);
   }, 240_000);
 
   it("does not append payload-free tombstones across an unchanged production dependency slice", async () => {
@@ -1511,7 +1593,8 @@ function createMetricStreamSql(database: string): string {
     ingested_at DateTime64(9, 'UTC'),
     version UInt64,
     is_deleted UInt8
-  ) ENGINE = MergeTree ORDER BY (id, version)`;
+  ) ENGINE = MergeTree ORDER BY (user_id, activity_id, channel, recorded_at, id, version)
+    SETTINGS allow_nullable_key = 1`;
 }
 
 function createActivitySensorSampleSql(database: string): string {

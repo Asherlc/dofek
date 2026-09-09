@@ -26072,9 +26072,10 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 ## 2026-09-09 — PeerDB worker OOM stalled the fitness mirror and Withings processing
 
-- **Status:** The PeerDB OOM and stale activity mirror are resolved. A newly
-  exposed ClickHouse target-schema mismatch blocks the downstream analytics
-  cycle; migration 0083 is pending production rollout.
+- **Status:** The PeerDB OOM, stale activity mirror, and missing ClickHouse
+  target column are resolved. A follow-up query-scope fix is validated locally
+  and pending production rollout after the first repaired analytics cycle
+  exposed a location-model timeout.
 - **Symptoms / user impact:** Withings relational data continued reaching
   Postgres, but 44 processing-outbox rows remained pending and the app reported
   all Withings datasets as waiting. The analytics build stopped at
@@ -26110,9 +26111,30 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   [`ADD COLUMN`](https://clickhouse.com/docs/sql-reference/statements/alter/column#add-column)
   behavior. Its real-engine regression covers an absent dbt target, a legacy
   target row, repeated application, the exact type, and the incremental
-  `greatest(source_refreshed_at, refreshed_at)` expression. After rollout,
-  require a full successful analytics cycle and verify the 54 then-pending
-  Withings outbox rows drain. If the slot later remains inactive or retained
+  `greatest(source_refreshed_at, refreshed_at)` expression. PR
+  [#2703](https://github.com/Asherlc/dofek/pull/2703) deployed migration 0083;
+  the Withings outbox then moved from 54 pending rows to zero pending and 6,703
+  completed rows. The repaired model proceeded for 243.75 seconds before its
+  next first fatal line: `Timeout exceeded: elapsed 243751.371609 ms, maximum:
+  240000 ms`. ClickHouse recorded 1.96 billion rows and 60.60 GiB read with
+  5.46 GiB peak query memory, although the true backlog was 7.57 million new
+  location versions across 1,726 changed groups. The query reused a broad
+  location CTE in dirty-key, current-row, and tombstone branches without
+  enabling ClickHouse's explicit materialized-CTE execution. It also exposed
+  425,910 legacy target rows whose nullable `refreshed_at` made migration
+  0083's non-null default unsafe to read.
+- **Follow-up fix / validation:** Migration 0084 changes the default to
+  `coalesce(refreshed_at, epoch)` without rewriting or discarding historical
+  rows. The location model materializes only new versions for dirty-group
+  discovery and reads complete location history only for affected members,
+  with materialized-CTE execution scoped to that model. A real ClickHouse/dbt
+  controlled regression with 100,000 unrelated location rows reduced the
+  incremental model's reads from 1,800,166 to 67,798 (about 96%) while
+  preserving the affected route. The committed 10,000-row resource-bounded
+  variant reads 10,051 rows, and the full focused migration and activity
+  lifecycle suite passes. No timeout or memory limit was increased. After
+  rollout, require a full successful analytics cycle and confirm the Withings
+  outbox remains at zero pending. If the slot later remains inactive or retained
   WAL does not fall after the worker is stable, follow the guarded triage in the
   [ClickHouse CDC health runbook](./clickhouse-cdc-health-runbook.md#recovery).
   Do not drop a merely inactive slot: recreate the mirror only after confirming

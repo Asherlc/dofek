@@ -81,6 +81,15 @@ watermark. The migration is safe when dbt has not created the target yet and
 uses ClickHouse's idempotent
 [`ADD COLUMN IF NOT EXISTS`](https://clickhouse.com/docs/sql-reference/statements/alter/column#add-column)
 operation when the target exists.
+[Migration 0084](../src/db/clickhouse-migrations/0084_activity_location_source_refresh_default.ts)
+makes that legacy default null-safe because older targets allowed nullable
+`refreshed_at` values. `activity_location_sample` separately materializes the
+new location changes used for dirty-group discovery, then reads complete raw
+tracks only for the affected members. Its model-local
+`enable_materialized_cte` setting prevents those bounded intermediates from
+being re-evaluated across current-row and tombstone branches; ClickHouse
+introduced this explicit single-evaluation behavior in
+[version 26.3](https://clickhouse.com/blog/clickhouse-release-26-03).
 `provider_metric_stream_daily` then recomputes at most 32 dirty
 `(user_id, provider_id, recorded_date)` keys per build from exact latest metric
 state, including replacements, tombstones, resurrection, and late arrivals.
