@@ -239,6 +239,9 @@ vi.mock("../lib/trpc", () => ({
       listTokens: {
         useQuery: () => ({ data: [], error: null, isLoading: false }),
       },
+      listConnectedApps: {
+        useQuery: () => ({ data: { items: [], nextCursor: null }, error: null, isLoading: false }),
+      },
       revokeToken: {
         useMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
       },
