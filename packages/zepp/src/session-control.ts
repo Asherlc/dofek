@@ -47,8 +47,9 @@ export function finalizeVisibleSessionOnAccessLoss(
   >,
   actions: VisibleSessionFinalizeActions,
 ): void {
-  if (state.logging && (!state.hasCredentials || !state.hasImuConnection)) {
-    finalizeVisibleSession(state, actions);
+  if (!state.hasCredentials || !state.hasImuConnection) {
+    if (state.transferInProgress) actions.cancelTransfer();
+    if (state.logging) actions.stopLogging();
   }
 }
 

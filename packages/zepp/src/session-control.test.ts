@@ -23,6 +23,10 @@ describe("Zepp session control", () => {
       { hasCredentials: true, hasImuConnection: true, logging: false, visible: true },
       actions,
     );
+    startVisibleSession(
+      { hasCredentials: true, hasImuConnection: true, logging: true, visible: true },
+      actions,
+    );
 
     expect(startLogging).toHaveBeenCalledOnce();
   });
@@ -57,6 +61,46 @@ describe("Zepp session control", () => {
     expect(events).toEqual(["stop", "transfer"]);
   });
 
+  it("cancels a completed-file transfer when the verified account binding is lost", () => {
+    const events: string[] = [];
+
+    finalizeVisibleSessionOnAccessLoss(
+      {
+        hasCredentials: false,
+        hasImuConnection: false,
+        logging: false,
+        transferInProgress: true,
+      },
+      {
+        cancelTransfer: () => events.push("cancel"),
+        stopLogging: () => events.push("stop"),
+        transferStoppedSession: () => events.push("transfer"),
+      },
+    );
+
+    expect(events).toEqual(["cancel"]);
+  });
+
+  it("keeps recording and transfer state unchanged while access remains valid", () => {
+    const events: string[] = [];
+
+    finalizeVisibleSessionOnAccessLoss(
+      {
+        hasCredentials: true,
+        hasImuConnection: true,
+        logging: true,
+        transferInProgress: true,
+      },
+      {
+        cancelTransfer: () => events.push("cancel"),
+        stopLogging: () => events.push("stop"),
+        transferStoppedSession: () => events.push("transfer"),
+      },
+    );
+
+    expect(events).toEqual([]);
+  });
+
   it("cancels an active transfer before finalizing and draining the closing page", () => {
     const events: string[] = [];
     const state = { logging: true, transferInProgress: true };
@@ -87,7 +131,7 @@ describe("Zepp session control", () => {
       },
     );
 
-    expect(events).toEqual(["stop", "transfer"]);
+    expect(events).toEqual(["stop"]);
   });
 
   it.each([
