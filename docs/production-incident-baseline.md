@@ -25978,3 +25978,25 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Resolution / validation:** Keep artifact publication as a hard gate with no
   retry, timeout, or warn-and-continue behavior. Require a fresh workflow run
   to pass artifact finalization and every aggregate gate before merge.
+
+## 2026-09-09 — Metric-stream routing PR left test contracts incomplete
+
+- **Scope / impact:** [PR #2693](https://github.com/Asherlc/dofek/pull/2693)
+  validation only; no production impact. E2E, integration shard 1/4, and the
+  ClickHouse-sink mutation shard failed.
+- **Evidence / root cause:** The E2E job's `Start e2e server` step first failed
+  with `METRIC_STREAM_LIVE_TOPIC is required`: its Compose service still supplied
+  only the retired generic topic. The integration test's first fatal diagnostic
+  was `quarantineHighWatermarks[0].topic: Invalid input: expected string,
+  received undefined`, because its fixture predated topic-attributed
+  checkpoints. The mutation shard scored 67.21% because the new persisted
+  delete-scope behavior lacked exact payload and version-boundary assertions.
+- **Direct fix:** Supply the three explicit route topics in the E2E service,
+  make the account-erasure checkpoint fixture topic-attributed, and add unit
+  coverage for persisted scope serialization plus newer, equal, invalid, and
+  query-client version paths. No retry, timeout, CI bypass, or threshold change
+  was added.
+- **Validation / follow-up:** The focused unit suite passes (47 tests), the
+  real-database account-erasure integration test passes (2 tests), and the
+  exact mutation target passes at 91.80%, above its 75% enforcement threshold.
+  Require a fresh full PR workflow to pass before merge.

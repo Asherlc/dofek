@@ -695,7 +695,99 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     await applyMetricStreamEventsToClickHouse({ command, insert, query }, [deleteEvent]);
 
     expect(command).toHaveBeenCalledTimes(3);
+    expect(command).toHaveBeenNthCalledWith(1, {
+      query: `INSERT INTO ${METRIC_STREAM_DELETE_SCOPE_TABLE} FORMAT JSONEachRow\n${JSON.stringify({
+        user_id: null,
+        provider_id: null,
+        activity_id: "20000000-0000-4000-8000-000000000001",
+        channel: null,
+        external_id: null,
+        external_id_set: 0,
+        recorded_at_start: null,
+        recorded_at_end: null,
+        operation_revision: operationRevision,
+      })}`,
+      clickhouse_settings: { date_time_input_format: "best_effort" },
+    });
     expect(firstCommandQuery(command)).toContain(`INSERT INTO ${METRIC_STREAM_TABLE}`);
+  });
+
+  it("tombstones an older row when a persisted delete scope is newer", async () => {
+    const command = vi.fn(async () => undefined);
+    const insert = vi.fn(async () => undefined);
+    const query = vi.fn(async (options: { query: string }) => ({
+      json: async () =>
+        options.query.includes(METRIC_STREAM_DELETE_SCOPE_TABLE)
+          ? [{ row_index: 0, version: "1" }]
+          : [],
+    }));
+
+    await applyMetricStreamEventsToClickHouse({ command, insert, query }, [heartRateEvent]);
+
+    expect(query).toHaveBeenCalledWith({
+      query: expect.stringContaining(`FROM ${METRIC_STREAM_DELETE_SCOPE_TABLE} FINAL`),
+      query_params: {
+        row_indexes: [0],
+        row_user_ids: [heartRateEvent.userId],
+        provider_ids: [heartRateEvent.providerId],
+        activity_ids: [null],
+        channels: [heartRateEvent.channel],
+        external_ids: [heartRateEvent.externalId],
+        recorded_ats: [heartRateEvent.recordedAt],
+        versions: ["0"],
+        user_ids: [heartRateEvent.userId],
+      },
+      format: "JSONEachRow",
+    });
+    expect(insert).toHaveBeenNthCalledWith(2, {
+      table: METRIC_STREAM_TABLE,
+      values: [
+        expect.objectContaining({
+          id: heartRateEvent.id,
+          is_deleted: 1,
+          version: "1",
+        }),
+      ],
+      format: "JSONEachRow",
+      clickhouse_settings: { date_time_input_format: "best_effort" },
+    });
+  });
+
+  it("does not tombstone a row whose version equals its persisted delete scope", async () => {
+    const insert = vi.fn(async () => undefined);
+    const query = vi.fn(async (options: { query: string }) => ({
+      json: async () =>
+        options.query.includes(METRIC_STREAM_DELETE_SCOPE_TABLE)
+          ? [{ row_index: 0, version: "0" }]
+          : [],
+    }));
+
+    await applyMetricStreamEventsToClickHouse({ insert, query }, [heartRateEvent]);
+
+    expect(insert).toHaveBeenCalledOnce();
+  });
+
+  it("rejects an invalid persisted delete-scope version", async () => {
+    const query = vi.fn(async (options: { query: string }) => ({
+      json: async () =>
+        options.query.includes(METRIC_STREAM_DELETE_SCOPE_TABLE)
+          ? [{ row_index: 0, version: "invalid-version" }]
+          : [],
+    }));
+
+    await expect(
+      applyMetricStreamEventsToClickHouse({ insert: vi.fn(async () => undefined), query }, [
+        heartRateEvent,
+      ]),
+    ).rejects.toThrow();
+  });
+
+  it("requires a query-capable client to enforce persisted delete scopes", async () => {
+    await expect(
+      applyMetricStreamEventsToClickHouse({ insert: vi.fn(async () => undefined) }, [
+        heartRateEvent,
+      ]),
+    ).rejects.toThrow("ClickHouse metric-stream ingestion requires a query-capable client");
   });
 
   it("batches compatible delete scopes into one stream-table scan", async () => {
