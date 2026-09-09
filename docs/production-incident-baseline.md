@@ -25955,3 +25955,33 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Resolution / validation:** Keep artifact publication as a hard gate with no
   retry, timeout, or warn-and-continue behavior. Require a fresh workflow run
   to pass artifact finalization and every aggregate gate before merge.
+
+## 2026-09-08 — MCP food-record deletion failed before the ledger write
+
+- **Status:** Source fix is validated locally; production rollout and deletion
+  verification are pending.
+- **Symptoms / user impact:** A valid `delete_food_entry` request for a
+  modifiable, root-version food record returned `INTERNAL_ERROR`. No change,
+  tombstone, or idempotency receipt was persisted, so the record remained in
+  visible search results.
+- **Evidence / root cause:** A sanitized read-only production reproduction
+  returned SQLSTATE `22P02`. The exact identity-lock query planned a `BitmapOr`
+  whose primary-key arm cast `substring(source_key FROM 5)` to UUID before the
+  later `source_key LIKE 'row:%'` filter ran. An `external:…` source key thus
+  supplied non-UUID text to that cast. PostgreSQL permits Boolean expression
+  reordering rather than guaranteeing left-to-right evaluation
+  ([expression evaluation rules](https://www.postgresql.org/docs/current/sql-expressions.html#SYNTAX-EXPRESS-EVAL)).
+  The failure occurred before request lookup, change/target insertion, effective
+  readback, commit, or cache invalidation. Production schema and migrations
+  match the deployed source; this was not a migration mismatch.
+- **Direct fix:** Replace both unsafe source lookups (`#lockHead` and
+  `getAtVersion`) with the established canonical full-source-key comparison:
+  external ID when nonblank, otherwise row UUID. Unexpected food-command
+  telemetry now records only a safe operation and SQLSTATE-like code, never raw
+  queries, parameters, source identifiers, or exception causes.
+- **Validation / follow-up:** The real-PostgreSQL regression creates a
+  confirmed Dofek root-version record, asserts the production-like bitmap plan,
+  deletes it with `expected_version: null`, verifies visible-search exclusion,
+  verifies exact-request replay creates one change, restores it, and updates it.
+  Deploy the fix, repeat the original deletion requests, and run a fresh
+  date-scoped visible search before reporting any production records deleted.

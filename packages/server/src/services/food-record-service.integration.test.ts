@@ -1,9 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { ensureProvider } from "../../../../src/db/tokens.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { FoodRecordRepository } from "../repositories/food-record-repository.ts";
+import type { FoodRecordSearchInput } from "../repositories/food-record-types.ts";
 import { FoodRepository } from "../repositories/food-repository.ts";
 import { FoodRecordService } from "./food-record-service.ts";
 
@@ -11,6 +14,8 @@ const userId = "81000000-0000-4000-8000-000000000001";
 const otherUserId = "81000000-0000-4000-8000-000000000002";
 const providerId = "food-command-test";
 const hash = "a".repeat(64);
+const explainPlanRowSchema = z.object({ "QUERY PLAN": z.string() });
+const changeCountRowSchema = z.object({ count: z.coerce.number().int().nonnegative() });
 
 describe.sequential("FoodRecordService with Postgres", () => {
   let context: TestContext;
@@ -49,6 +54,7 @@ describe.sequential("FoodRecordService with Postgres", () => {
       date?: string;
       name?: string;
       nutrients?: Record<string, number>;
+      providerId?: string;
     } = {},
   ) {
     const sourceEntryId = randomUUID();
@@ -58,7 +64,7 @@ describe.sequential("FoodRecordService with Postgres", () => {
         food_name, food_description, category, number_of_units, serving_unit,
         serving_weight_grams, confirmed
       ) VALUES (
-        ${sourceEntryId}, ${input.userId ?? userId}, ${providerId},
+        ${sourceEntryId}, ${input.userId ?? userId}, ${input.providerId ?? providerId},
         ${input.externalId === undefined ? randomUUID() : input.externalId},
         ${input.date ?? "2026-09-07"}::date, 'itemized', 'breakfast',
         ${input.name ?? "Provider oats"}, 'Provider description', 'breads_and_cereals',
@@ -78,6 +84,40 @@ describe.sequential("FoodRecordService with Postgres", () => {
       `);
     }
     return sourceEntryId;
+  }
+
+  async function assertProductionLikeSourceLookupPlan(recordId: string): Promise<void> {
+    const plan = await executeWithSchema(
+      context.db,
+      explainPlanRowSchema,
+      sql`
+        EXPLAIN (COSTS OFF)
+        SELECT identity.id
+        FROM fitness.human_record_identity AS identity
+        INNER JOIN LATERAL (
+          SELECT entry.id
+          FROM fitness.food_entry AS entry
+          WHERE entry.user_id = identity.user_id
+            AND entry.provider_id = identity.namespace
+            AND entry.confirmed = TRUE
+            AND (
+              (identity.source_key LIKE 'external:%'
+                AND entry.external_id = SUBSTRING(identity.source_key FROM 10))
+              OR (identity.source_key LIKE 'row:%'
+                AND entry.id = SUBSTRING(identity.source_key FROM 5)::uuid)
+            )
+          ORDER BY entry.created_at DESC, entry.id DESC
+          LIMIT 1
+        ) AS source ON TRUE
+        WHERE identity.user_id = ${userId}
+          AND identity.id = ${recordId}::uuid
+          AND identity.domain = 'nutrition.food'
+        FOR UPDATE OF identity
+      `,
+    );
+    const planText = plan.map((row) => row["QUERY PLAN"]).join("\n");
+    expect(planText).toContain("BitmapOr");
+    expect(planText).toContain("food_entry_pkey");
   }
 
   it("creates, updates, clears, deletes, restores, replays, and preserves raw rows", async () => {
@@ -186,6 +226,115 @@ describe.sequential("FoodRecordService with Postgres", () => {
         serving_weight_grams: 80,
       },
     ]);
+  });
+
+  it("deletes a root-version external record once and hides it from visible search", async () => {
+    const date = "2026-09-04";
+    const dofekProviderId = "dofek";
+    await new FoodRepository(context.db, userId, "UTC").ensureDofekProvider();
+    const sourceEntryId = await addProviderFood({
+      date,
+      name: "Banana",
+      externalId: `entry:${randomUUID()}`,
+      providerId: dofekProviderId,
+    });
+    const repository = new FoodRecordRepository(context.db, userId);
+    const search = {
+      startDate: date,
+      endDate: date,
+      query: "Banana",
+      visibility: "visible",
+      cursor: null,
+      limit: 100,
+    } satisfies FoodRecordSearchInput;
+    const before = await repository.search(search);
+    const banana = before.items.find((item) => item.sourceEntryId === sourceEntryId);
+
+    expect(before.nextCursor).toBeNull();
+    expect(banana).toMatchObject({
+      sourceEntryId,
+      version: null,
+      deleted: false,
+      modifiable: true,
+      date,
+      foodName: "Banana",
+      sourceProvider: dofekProviderId,
+    });
+    if (!banana) throw new Error("Expected the provider banana in the visible search results");
+
+    await context.db.execute(sql`
+      INSERT INTO fitness.food_entry (
+        id, user_id, provider_id, external_id, date, nutrition_grain, meal,
+        food_name, food_description, category, number_of_units, serving_unit,
+        serving_weight_grams, confirmed
+      )
+      SELECT
+        gen_random_uuid(), ${userId}, ${dofekProviderId},
+        ${`history:${randomUUID()}:`} || sequence::text,
+        ${date}::date, 'itemized', 'breakfast', 'Other food', 'Provider description',
+        'breads_and_cereals', 1, 'bowl', 80, TRUE
+      FROM generate_series(1, 500) AS sequence
+    `);
+    await context.db.execute(sql`ANALYZE fitness.food_entry`);
+    await assertProductionLikeSourceLookupPlan(banana.recordId);
+
+    const command = {
+      recordId: banana.recordId,
+      expectedVersion: null,
+      requestId: randomUUID(),
+    };
+    const deleted = await service().delete(command);
+
+    expect(deleted).toMatchObject({
+      operation: { replayed: false, resultingVersion: expect.any(String) },
+      record: { recordId: banana.recordId, sourceEntryId, deleted: true },
+      affectedDates: [date],
+    });
+    expect((await repository.search(search)).items).not.toContainEqual(
+      expect.objectContaining({ recordId: banana.recordId }),
+    );
+
+    const replay = await service().delete(command);
+    expect(replay).toEqual({
+      operation: { ...deleted.operation, replayed: true },
+      record: deleted.record,
+      affectedDates: [],
+    });
+    expect(
+      await executeWithSchema(
+        context.db,
+        changeCountRowSchema,
+        sql`
+          SELECT COUNT(*)::int AS count
+          FROM fitness.human_record_change
+          WHERE user_id = ${userId} AND request_id = ${command.requestId}::uuid
+        `,
+      ),
+    ).toEqual([{ count: 1 }]);
+
+    const restored = await service().restore({
+      recordId: banana.recordId,
+      expectedVersion: deleted.record.version,
+      requestId: randomUUID(),
+    });
+    expect(restored.record).toMatchObject({ recordId: banana.recordId, deleted: false });
+    expect((await repository.search(search)).items).toContainEqual(
+      expect.objectContaining({ recordId: banana.recordId, deleted: false }),
+    );
+
+    const updated = await service().update({
+      recordId: banana.recordId,
+      expectedVersion: restored.record.version,
+      requestId: randomUUID(),
+      set: { foodName: "Banana, updated" },
+      clear: [],
+      nutrientSet: {},
+      nutrientClear: [],
+    });
+    expect(updated.record).toMatchObject({
+      recordId: banana.recordId,
+      foodName: "Banana, updated",
+    });
   });
 
   it("keeps absent nutrient clears from changing legacy daily aggregate classification", async () => {
