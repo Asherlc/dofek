@@ -146,7 +146,6 @@ describe("production analytics read-model build", () => {
     const normalizedSql = compactWhitespace(sql);
 
     expect(sql).toContain("incremental_strategy='append'");
-    expect(sql).toContain("'enable_materialized_cte': 1");
     expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
     expect(sql).toContain("full_refresh=false");
     expect(sql).toContain("sleep_dirty_key_batch_size");
@@ -444,6 +443,7 @@ describe("production analytics read-model build", () => {
     const sql = readModel("activity_location_sample");
 
     expect(sql).toContain("incremental_strategy='append'");
+    expect(sql).toContain("'enable_materialized_cte': 1");
     expect(sql).toContain("affected_groups AS MATERIALIZED");
     expect(sql).toContain("changed_location_versions AS MATERIALIZED");
     expect(sql).toContain("affected_location_versions AS MATERIALIZED");
