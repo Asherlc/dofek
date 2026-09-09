@@ -194,6 +194,7 @@ Page(
       pairingVerificationUrl: "",
       pairingShortCode: "",
       preferencesRequestId: 0,
+      visible: true,
     },
 
     onInit() {
@@ -317,11 +318,10 @@ Page(
               hasCredentials: this.state.hasCredentials,
               hasImuConnection: this.state.imuConnection !== null,
               logging: this.state.logging,
+              visible: this.state.visible,
             },
             {
               startLogging: () => this.startLogging(),
-              stopLogging: () => this.stopLogging(),
-              transferStoppedSession: () => this.transferStoppedSession(),
             },
           );
         })
@@ -913,12 +913,19 @@ Page(
     },
 
     onDestroy() {
-      this.state.transferMonitor?.cancel();
-      this.state.transferMonitor = null;
+      this.state.visible = false;
+      this.state.preferencesRequestId++;
       finalizeVisibleSession(
-        { logging: this.state.logging },
         {
-          startLogging: () => this.startLogging(),
+          logging: this.state.logging,
+          transferInProgress: Boolean(this.state.transferTask),
+        },
+        {
+          cancelTransfer: () => {
+            this.state.transferMonitor?.cancel();
+            this.state.transferMonitor = null;
+            this.state.transferTask = null;
+          },
           stopLogging: () => this.stopLogging(),
           transferStoppedSession: () => this.transferStoppedSession(),
         },

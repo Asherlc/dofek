@@ -2,10 +2,16 @@ export interface VisibleSessionState {
   hasCredentials: boolean;
   hasImuConnection: boolean;
   logging: boolean;
+  visible: boolean;
+  transferInProgress: boolean;
 }
 
-export interface VisibleSessionActions {
+export interface VisibleSessionStartActions {
   startLogging(): void;
+}
+
+export interface VisibleSessionFinalizeActions {
+  cancelTransfer(): void;
   stopLogging(): void;
   transferStoppedSession(): void;
 }
@@ -17,18 +23,19 @@ export interface ImuTransferConfirmation extends Record<string, unknown> {
 }
 
 export function startVisibleSession(
-  state: VisibleSessionState,
-  actions: VisibleSessionActions,
+  state: Pick<VisibleSessionState, "hasCredentials" | "hasImuConnection" | "logging" | "visible">,
+  actions: VisibleSessionStartActions,
 ): void {
-  if (state.hasCredentials && state.hasImuConnection && !state.logging) {
+  if (state.visible && state.hasCredentials && state.hasImuConnection && !state.logging) {
     actions.startLogging();
   }
 }
 
 export function finalizeVisibleSession(
-  state: Pick<VisibleSessionState, "logging">,
-  actions: VisibleSessionActions,
+  state: Pick<VisibleSessionState, "logging" | "transferInProgress">,
+  actions: VisibleSessionFinalizeActions,
 ): void {
+  if (state.transferInProgress) actions.cancelTransfer();
   if (state.logging) actions.stopLogging();
   actions.transferStoppedSession();
 }
