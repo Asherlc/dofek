@@ -228,9 +228,10 @@ export async function listMcpConnectedApps(
   );
   const hasNextPage = rows.length > connectedAppsPageSize;
   const items = rows.slice(0, connectedAppsPageSize).map(toMetadata);
+  const lastItem = items.at(-1);
   return {
     items,
-    nextCursor: hasNextPage ? items.at(-1)!.id : null,
+    nextCursor: hasNextPage && lastItem ? lastItem.id : null,
   };
 }
 

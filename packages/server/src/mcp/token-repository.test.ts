@@ -174,7 +174,7 @@ describe("MCP token repository", () => {
     expect(page.nextCursor).toBe("oauth-token-19");
     const queryPayload = JSON.stringify(mockExecute.mock.calls[0]?.[0]);
     expect(queryPayload).toContain("oauth_client_id IS NOT NULL");
-    expect(queryPayload).toContain("},21,{\"value\":[\"\"]");
+    expect(queryPayload).toContain('},21,{"value":[""]');
   });
 
   it("does not return a cursor when the connected-app page is full", async () => {
