@@ -288,7 +288,7 @@ describe("runMetricStreamEventConsumer", () => {
     expect(quarantine.connect).toHaveBeenCalledOnce();
     expect(quarantine.write).not.toHaveBeenCalled();
     expect(connect).toHaveBeenCalled();
-    expect(subscribe).toHaveBeenCalledWith({ topic: "metric-stream-v1", fromBeginning: false });
+    expect(subscribe).toHaveBeenCalledWith({ topic: "metric-stream-v1", fromBeginning: true });
     expect(handleEvents).toHaveBeenCalledWith([event], {
       topic: "metric-stream-v1",
       partition: 2,
@@ -739,7 +739,7 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
       });
 
       expect(kafkaConsumerFactory).toHaveBeenCalledWith({ groupId });
-      expect(kafkaConsumerSubscribe).toHaveBeenCalledWith({ topic, fromBeginning: false });
+      expect(kafkaConsumerSubscribe).toHaveBeenCalledWith({ topic, fromBeginning: true });
     },
   );
 

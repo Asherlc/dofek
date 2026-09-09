@@ -37,6 +37,7 @@ const describedTopicConfigSchema = z.object({
 });
 
 export type AccountErasureHighWatermark = z.infer<typeof highWatermarkSchema>;
+export type AccountErasureRouteHighWatermark = AccountErasureHighWatermark & { topic: string };
 
 interface RedpandaOffsetAdmin {
   fetchOffsets(options: { groupId: string; topics: string[] }): Promise<
@@ -216,14 +217,19 @@ export interface AccountErasureRedpandaAdmin {
   admin: RedpandaAdmin;
   close(): Promise<void>;
   connect(): Promise<void>;
-  topic: string;
+  routes: Array<{ topic: string; consumerGroups: readonly string[] }>;
 }
 
 export function createAccountErasureRedpandaAdminFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): AccountErasureRedpandaAdmin {
-  const topic = env.METRIC_STREAM_TOPIC;
-  if (!topic) throw new Error("METRIC_STREAM_TOPIC is required for account erasure");
+  const routes = (["LEGACY", "LIVE", "HISTORY"] as const).map((route) => {
+    const key = `METRIC_STREAM_${route}_TOPIC`;
+    const topic = env[key]?.trim();
+    if (!topic) throw new Error(`${key} is required for account erasure`);
+    const prefix = route === "LEGACY" ? "metric-stream" : `metric-stream-${route.toLowerCase()}`;
+    return { topic, consumerGroups: [`${prefix}-clickhouse-sink`, `${prefix}-r2-archive`] };
+  });
   const brokers = env.REDPANDA_BROKERS?.split(",")
     .map((broker) => broker.trim())
     .filter((broker) => broker.length > 0);
@@ -238,6 +244,6 @@ export function createAccountErasureRedpandaAdminFromEnv(
     admin,
     close: () => admin.disconnect(),
     connect: () => admin.connect(),
-    topic,
+    routes,
   };
 }

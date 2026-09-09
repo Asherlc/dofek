@@ -92,7 +92,8 @@ export async function runMetricStreamEventConsumer(
   const lagSamplesByPartition = new Map<number, { observedAt: number; lag: number }>();
   await options.quarantine.connect();
   await options.consumer.connect();
-  await options.consumer.subscribe({ topic: options.topic, fromBeginning: false });
+  // Existing groups resume committed offsets; first-start groups read all retained records.
+  await options.consumer.subscribe({ topic: options.topic, fromBeginning: true });
   if (options.lifecycleListener && options.consumer.observeGroupLifecycle) {
     options.consumer.observeGroupLifecycle(options.lifecycleListener);
   }

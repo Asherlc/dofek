@@ -129,18 +129,18 @@ services:
       wait
       "
 
-  metric-stream-clickhouse-sink:
+  metric-stream-clickhouse-sink: &metric-stream-clickhouse-sink
     build:
       context: .
       target: server
     profiles: ["metric-stream"]
     restart: unless-stopped
     command: ["metric-stream-clickhouse-sink"]
-    environment:
+    environment: &metric-stream-clickhouse-sink-environment
       NODE_ENV: production
       CLICKHOUSE_URL: http://default:${CLICKHOUSE_PASSWORD:-health}@clickhouse:8123
       REDPANDA_BROKERS: redpanda:9092
-      METRIC_STREAM_TOPIC: ${METRIC_STREAM_TOPIC:-metric-stream-v1}
+      METRIC_STREAM_TOPIC: ${METRIC_STREAM_LEGACY_TOPIC:-metric-stream-v1}
       METRIC_STREAM_CONSUMER_GROUP: metric-stream-clickhouse-sink
     depends_on:
       clickhouse:
@@ -148,14 +148,28 @@ services:
       redpanda:
         condition: service_healthy
 
-  metric-stream-r2-archive:
+  metric-stream-live-clickhouse-sink:
+    <<: *metric-stream-clickhouse-sink
+    environment:
+      <<: *metric-stream-clickhouse-sink-environment
+      METRIC_STREAM_TOPIC: ${METRIC_STREAM_LIVE_TOPIC:-metric-stream-live-v1}
+      METRIC_STREAM_CONSUMER_GROUP: metric-stream-live-clickhouse-sink
+
+  metric-stream-history-clickhouse-sink:
+    <<: *metric-stream-clickhouse-sink
+    environment:
+      <<: *metric-stream-clickhouse-sink-environment
+      METRIC_STREAM_TOPIC: ${METRIC_STREAM_HISTORY_TOPIC:-metric-stream-history-v1}
+      METRIC_STREAM_CONSUMER_GROUP: metric-stream-history-clickhouse-sink
+
+  metric-stream-r2-archive: &metric-stream-r2-archive
     image: docker.redpanda.com/redpandadata/connect:4.99.0
     profiles: ["metric-stream"]
     restart: unless-stopped
     command: ["run", "/connect/metric-stream-r2-archive.connect.yml"]
-    environment:
+    environment: &metric-stream-r2-archive-environment
       REDPANDA_BROKERS: redpanda:9092
-      METRIC_STREAM_TOPIC: ${METRIC_STREAM_TOPIC:-metric-stream-v1}
+      METRIC_STREAM_TOPIC: ${METRIC_STREAM_LEGACY_TOPIC:-metric-stream-v1}
       METRIC_STREAM_CONSUMER_GROUP: metric-stream-r2-archive
       METRIC_STREAM_R2_BUCKET: ${METRIC_STREAM_R2_BUCKET:-dofek-metric-stream-archive}
       R2_ENDPOINT: http://metric-stream-minio:9000
@@ -168,6 +182,20 @@ services:
         condition: service_healthy
       metric-stream-minio:
         condition: service_started
+
+  metric-stream-live-r2-archive:
+    <<: *metric-stream-r2-archive
+    environment:
+      <<: *metric-stream-r2-archive-environment
+      METRIC_STREAM_TOPIC: ${METRIC_STREAM_LIVE_TOPIC:-metric-stream-live-v1}
+      METRIC_STREAM_CONSUMER_GROUP: metric-stream-live-r2-archive
+
+  metric-stream-history-r2-archive:
+    <<: *metric-stream-r2-archive
+    environment:
+      <<: *metric-stream-r2-archive-environment
+      METRIC_STREAM_TOPIC: ${METRIC_STREAM_HISTORY_TOPIC:-metric-stream-history-v1}
+      METRIC_STREAM_CONSUMER_GROUP: metric-stream-history-r2-archive
 
   collector:
     image: otel/opentelemetry-collector-contrib:0.159.0

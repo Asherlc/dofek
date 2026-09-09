@@ -10,6 +10,7 @@ import {
 } from "./clickhouse-sink.ts";
 import {
   ACCOUNT_ERASURE_FENCE_TABLE,
+  METRIC_STREAM_DELETE_SCOPE_TABLE,
   METRIC_STREAM_PROCESSING_ACKNOWLEDGEMENT_TABLE,
   METRIC_STREAM_TABLE,
 } from "./clickhouse-table.ts";
@@ -60,7 +61,16 @@ function createCurrentMetricStreamDeletedEvent(scope: MetricStreamDeleteScopeInp
 }
 
 function firstCommandQuery(command: CallableVitestMock): string {
-  const call = command.mock.calls[0]?.[0];
+  const call = command.mock.calls
+    .map((args: unknown[]) => args[0])
+    .find(
+      (arg: unknown) =>
+        typeof arg === "object" &&
+        arg !== null &&
+        "query" in arg &&
+        typeof arg.query === "string" &&
+        arg.query.startsWith(`INSERT INTO ${METRIC_STREAM_TABLE} (`),
+    );
   if (!call || typeof call !== "object" || !("query" in call) || typeof call.query !== "string") {
     throw new Error("expected command call");
   }
@@ -523,7 +533,8 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     const insert = vi.fn(async () => undefined);
     const query = vi.fn(async (options: { query: string }) => ({
       json: async () =>
-        options.query.includes(ACCOUNT_ERASURE_FENCE_TABLE)
+        options.query.includes(ACCOUNT_ERASURE_FENCE_TABLE) ||
+        options.query.includes(METRIC_STREAM_DELETE_SCOPE_TABLE)
           ? []
           : [
               {
@@ -578,7 +589,8 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     const insert = vi.fn(async () => undefined);
     const query = vi.fn(async (options: { query: string }) => ({
       json: async () =>
-        options.query.includes(ACCOUNT_ERASURE_FENCE_TABLE)
+        options.query.includes(ACCOUNT_ERASURE_FENCE_TABLE) ||
+        options.query.includes(METRIC_STREAM_DELETE_SCOPE_TABLE)
           ? []
           : [
               {
@@ -682,7 +694,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
 
     await applyMetricStreamEventsToClickHouse({ command, insert, query }, [deleteEvent]);
 
-    expect(command).toHaveBeenCalledTimes(2);
+    expect(command).toHaveBeenCalledTimes(3);
     expect(firstCommandQuery(command)).toContain(`INSERT INTO ${METRIC_STREAM_TABLE}`);
   });
 
@@ -701,7 +713,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
 
     await markMetricStreamScopesDeletedInClickHouse({ command }, [firstDelete, secondDelete]);
 
-    expect(command).toHaveBeenCalledTimes(3);
+    expect(command).toHaveBeenCalledTimes(4);
     expect(firstCommandQuery(command)).toContain(
       "candidate_row.external_id = {external_id_0:String}",
     );
@@ -710,7 +722,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     expect(firstCommandQuery(command)).toContain(
       "candidate_row.external_id = {external_id_1:String}",
     );
-    expect(command).toHaveBeenNthCalledWith(1, {
+    expect(command).toHaveBeenNthCalledWith(2, {
       query: expect.stringContaining(`INSERT INTO ${METRIC_STREAM_TABLE}`),
       query_params: {
         external_id_0: "hk:heart-rate-1",
@@ -743,7 +755,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
       [firstDelete, secondDelete],
     );
 
-    expect(command).toHaveBeenCalledTimes(3);
+    expect(command).toHaveBeenCalledTimes(4);
     expect(firstCommandQuery(command)).toContain("external_id_0");
     expect(firstCommandQuery(command)).toContain("external_id_1");
   });
@@ -763,7 +775,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
         if (options.query.startsWith(`INSERT INTO ${METRIC_STREAM_TABLE} (`)) {
           streamWrites += 1;
           if (streamWrites === 2) throw new Error("second chunk rejected");
-        } else {
+        } else if (options.query_params?.event_id) {
           acknowledgedIds.push(String(options.query_params?.event_id));
         }
       },
@@ -797,14 +809,14 @@ describe("applyMetricStreamEventsToClickHouse", () => {
       [firstDelete, secondDelete],
     );
 
-    expect(command).toHaveBeenCalledTimes(4);
-    expect(command).toHaveBeenNthCalledWith(1, {
+    expect(command).toHaveBeenCalledTimes(6);
+    expect(command).toHaveBeenNthCalledWith(2, {
       query: expect.stringContaining(`INSERT INTO ${METRIC_STREAM_TABLE}`),
       query_params: expect.objectContaining({
         replacement_version: "2000000000000000",
       }),
     });
-    expect(command).toHaveBeenNthCalledWith(3, {
+    expect(command).toHaveBeenNthCalledWith(5, {
       query: expect.stringContaining(`INSERT INTO ${METRIC_STREAM_TABLE}`),
       query_params: expect.objectContaining({
         replacement_version: "2000000000000002",
@@ -831,14 +843,14 @@ describe("applyMetricStreamEventsToClickHouse", () => {
       [firstDelete, heartRateEvent, secondDelete],
     );
 
-    expect(command).toHaveBeenCalledTimes(4);
+    expect(command).toHaveBeenCalledTimes(6);
     expect(firstCommandQuery(command)).toContain("{external_id:String}");
     expect(firstCommandQuery(command)).not.toContain("external_id_0");
-    expect(command).toHaveBeenNthCalledWith(3, {
+    expect(command).toHaveBeenNthCalledWith(5, {
       query: expect.stringContaining("{external_id:String}"),
       query_params: expect.any(Object),
     });
-    expect(command).toHaveBeenNthCalledWith(3, {
+    expect(command).toHaveBeenNthCalledWith(5, {
       query: expect.not.stringContaining("external_id_0"),
       query_params: expect.any(Object),
     });
@@ -858,7 +870,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     ]);
 
     expect(applied).toBe(1);
-    expect(command).toHaveBeenNthCalledWith(1, {
+    expect(command).toHaveBeenNthCalledWith(2, {
       query: expect.stringContaining(`INSERT INTO ${METRIC_STREAM_TABLE}`),
       query_params: {
         activity_id: "20000000-0000-4000-8000-000000000001",
@@ -870,7 +882,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
       "candidate_row.activity_id = {activity_id:UUID}",
     );
     expect(String(firstCommandQuery(command))).toContain("latest_row.1 = {activity_id:UUID}");
-    expect(command).toHaveBeenNthCalledWith(2, {
+    expect(command).toHaveBeenNthCalledWith(3, {
       query: expect.stringContaining("ingest.metric_stream_delete_acknowledgement"),
       query_params: { event_id: deleteEvent.eventId },
     });
@@ -914,7 +926,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
       format: "JSONEachRow",
       clickhouse_settings: { date_time_input_format: "best_effort" },
     });
-    expect(command).toHaveBeenCalledTimes(2);
+    expect(command).toHaveBeenCalledTimes(3);
   });
 
   it("renders every supported replacement scope predicate into the tombstone insert", async () => {

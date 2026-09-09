@@ -7,6 +7,7 @@ import {
   ACCOUNT_ERASURE_FENCE_TABLE,
   ACCOUNT_ERASURE_OPERATION_FENCE_TABLE,
   METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE,
+  METRIC_STREAM_DELETE_SCOPE_TABLE,
   METRIC_STREAM_PROCESSING_ACKNOWLEDGEMENT_TABLE,
   METRIC_STREAM_TABLE,
   PROVIDER_DATA_GENERATION_TABLE,
@@ -467,6 +468,77 @@ interface MetricStreamDeleteCommand {
 // default 1,000-field limit, including the revision and client settings.
 const MAX_METRIC_STREAM_DELETE_SCOPES_PER_WRITE = 100;
 
+async function tombstoneRowsWithNewerDeleteScopes(
+  client: ClickHouseMetricStreamInsertClient,
+  events: readonly MetricStreamRowEvent[],
+): Promise<void> {
+  if (events.length === 0) return;
+  if (!client.query)
+    throw new Error("ClickHouse metric-stream ingestion requires a query-capable client");
+  // The row insert precedes this read, and scope persistence precedes the delete
+  // scan. Concurrent sinks therefore cannot both miss an overlapping write.
+  const incomingRows = events.map(mapMetricStreamEventToClickHouseRow);
+  const result = await client.query({
+    query: `SELECT row.row_index AS row_index, toString(max(scope.operation_revision * 2)) AS version
+      FROM (
+        SELECT event.1 AS row_index, event.2 AS user_id, event.3 AS provider_id,
+          event.4 AS activity_id, event.5 AS channel, event.6 AS external_id,
+          parseDateTime64BestEffort(event.7, 6) AS recorded_at, toUInt64(event.8) AS version
+        FROM (SELECT arrayJoin(arrayZip(
+          {row_indexes:Array(UInt16)}, {row_user_ids:Array(UUID)},
+          {provider_ids:Array(String)}, {activity_ids:Array(Nullable(UUID))},
+          {channels:Array(String)}, {external_ids:Array(Nullable(String))},
+          {recorded_ats:Array(String)}, {versions:Array(String)}
+        )) AS event)
+      ) AS row
+      CROSS JOIN (SELECT * FROM ${METRIC_STREAM_DELETE_SCOPE_TABLE} FINAL
+        WHERE user_id IS NULL OR user_id IN {user_ids:Array(UUID)}) AS scope
+      WHERE (scope.user_id IS NULL OR scope.user_id = row.user_id)
+        AND (scope.provider_id IS NULL OR scope.provider_id = row.provider_id)
+        AND (scope.activity_id IS NULL OR scope.activity_id = row.activity_id)
+        AND (scope.channel IS NULL OR scope.channel = row.channel)
+        AND (scope.external_id_set = 0 OR isNotDistinctFrom(scope.external_id, row.external_id))
+        AND (scope.recorded_at_start IS NULL OR row.recorded_at >= scope.recorded_at_start)
+        AND (scope.recorded_at_end IS NULL OR row.recorded_at < scope.recorded_at_end)
+        AND row.version < scope.operation_revision * 2
+      GROUP BY row.row_index`,
+    query_params: {
+      row_indexes: incomingRows.map((_row, index) => index),
+      row_user_ids: incomingRows.map((row) => row.user_id),
+      provider_ids: incomingRows.map((row) => row.provider_id),
+      activity_ids: incomingRows.map((row) => row.activity_id),
+      channels: incomingRows.map((row) => row.channel),
+      external_ids: incomingRows.map((row) => row.external_id),
+      recorded_ats: incomingRows.map((row) => row.recorded_at),
+      versions: incomingRows.map((row) => String(row.version)),
+      user_ids: [...new Set(events.map((event) => event.userId))],
+    },
+    format: "JSONEachRow",
+  });
+  const guards = new Map(
+    z
+      .array(
+        z.object({ row_index: z.number().int().nonnegative(), version: z.string().regex(/^\d+$/) }),
+      )
+      .parse(await result.json())
+      .map((row) => [row.row_index, row.version]),
+  );
+  const rows = incomingRows.flatMap((row, index) => {
+    const version = guards.get(index);
+    return version && BigInt(row.version) < BigInt(version)
+      ? [{ ...row, is_deleted: 1 as const, version }]
+      : [];
+  });
+  if (rows.length > 0) {
+    await client.insert({
+      table: METRIC_STREAM_TABLE,
+      values: rows,
+      format: "JSONEachRow",
+      clickhouse_settings: { date_time_input_format: "best_effort" },
+    });
+  }
+}
+
 async function markMetricStreamDeleteCommandsInClickHouse(
   client: Pick<ClickHouseMetricStreamInsertClient, "command">,
   deletes: readonly MetricStreamDeleteCommand[],
@@ -529,6 +601,24 @@ async function markMetricStreamDeleteCommandsInClickHouse(
   const correlatedLatestPredicates = latestPredicates
     .map((conditions, index) => `(scope_index = ${index} AND ${conditions.join(" AND ")})`)
     .join(" OR ");
+
+  if (operationRevision) {
+    const scopes = deletes.map(({ scope }) => ({
+      user_id: scope.userId ?? null,
+      provider_id: scope.providerId ?? null,
+      activity_id: scope.activityId ?? null,
+      channel: scope.channel ?? null,
+      external_id: scope.externalId ?? null,
+      external_id_set: scope.externalId === undefined ? 0 : 1,
+      recorded_at_start: scope.recordedAtStart ?? null,
+      recorded_at_end: scope.recordedAtEnd ?? null,
+      operation_revision: operationRevision,
+    }));
+    await client.command({
+      query: `INSERT INTO ${METRIC_STREAM_DELETE_SCOPE_TABLE} FORMAT JSONEachRow\n${scopes.map((scope) => JSON.stringify(scope)).join("\n")}`,
+      clickhouse_settings: { date_time_input_format: "best_effort" },
+    });
+  }
 
   await client.command({
     query: `INSERT INTO ${METRIC_STREAM_TABLE} (
@@ -643,6 +733,7 @@ export async function applyMetricStreamEventsToClickHouse(
           replicatedEvents,
         );
         await insertMetricStreamEventsIntoClickHouse(client, accountActiveEvents);
+        await tombstoneRowsWithNewerDeleteScopes(client, accountActiveEvents);
         const currentGenerationEvents = await filterEventsByProviderGeneration(
           client,
           accountActiveEvents,
