@@ -1,6 +1,6 @@
 import { formatDateTime } from "@dofek/format/format";
 import { useState } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import { colors, fontSize, fontWeight, radius, spacing } from "../theme";
@@ -12,30 +12,36 @@ function formatTokenDate(value: string | null): string {
 
 export function McpConnectedAppsPanel() {
   const trpcUtils = trpc.useUtils();
-  const tokens = trpc.mcp.listTokens.useQuery();
+  const [connectedAppCursors, setConnectedAppCursors] = useState<Array<string | undefined>>([
+    undefined,
+  ]);
+  const connectedAppsQuery = trpc.mcp.listConnectedApps.useQuery({
+    cursor: connectedAppCursors.at(-1),
+  });
   const revokeTokenMutation = trpc.mcp.revokeToken.useMutation();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const oauthTokens = (tokens.data ?? []).filter((token) => token.oauthClientId != null);
+  const oauthTokens = connectedAppsQuery.data?.items ?? [];
 
   const revokeAccess = async (tokenId: string): Promise<void> => {
     setErrorMessage(null);
     try {
       await revokeTokenMutation.mutateAsync({ tokenId });
-      await trpcUtils.mcp.listTokens.invalidate();
+      setConnectedAppCursors([undefined]);
+      await trpcUtils.mcp.listConnectedApps.invalidate();
     } catch (error: unknown) {
       captureException(error, { source: "mcp-connected-app-revoke" });
       setErrorMessage(getQueryErrorMessage(error, "Could not revoke access. Try again."));
     }
   };
 
-  if (tokens.isLoading && tokens.data === undefined) {
+  if (connectedAppsQuery.isLoading && connectedAppsQuery.data === undefined) {
     return <QueryStatePanel variant="loading" />;
   }
-  if (tokens.error && tokens.data === undefined) {
+  if (connectedAppsQuery.error && connectedAppsQuery.data === undefined) {
     return (
       <QueryStatePanel
         variant="error"
-        message={getQueryErrorMessage(tokens.error, "Could not load connected apps.")}
+        message={getQueryErrorMessage(connectedAppsQuery.error, "Could not load connected apps.")}
       />
     );
   }
@@ -87,6 +93,40 @@ export function McpConnectedAppsPanel() {
           );
         })}
       </View>
+      {connectedAppCursors.length > 1 || connectedAppsQuery.data?.nextCursor ? (
+        <View style={styles.pagination}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Previous connected apps page"
+            accessibilityState={{ disabled: connectedAppCursors.length === 1 }}
+            disabled={connectedAppCursors.length === 1}
+            onPress={() => setConnectedAppCursors((cursors) => cursors.slice(0, -1))}
+            style={[
+              styles.paginationButton,
+              connectedAppCursors.length === 1 ? styles.paginationButtonDisabled : null,
+            ]}
+          >
+            <Text style={styles.paginationButtonText}>Previous</Text>
+          </Pressable>
+          <Text style={styles.paginationStatus}>Page {connectedAppCursors.length}</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Next connected apps page"
+            accessibilityState={{ disabled: !connectedAppsQuery.data?.nextCursor }}
+            disabled={!connectedAppsQuery.data?.nextCursor}
+            onPress={() => {
+              const nextCursor = connectedAppsQuery.data?.nextCursor;
+              if (nextCursor) setConnectedAppCursors((cursors) => [...cursors, nextCursor]);
+            }}
+            style={[
+              styles.paginationButton,
+              !connectedAppsQuery.data?.nextCursor ? styles.paginationButtonDisabled : null,
+            ]}
+          >
+            <Text style={styles.paginationButtonText}>Next</Text>
+          </Pressable>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -101,6 +141,28 @@ const styles = StyleSheet.create({
     fontWeight: fontWeight.semibold,
   },
   list: { gap: spacing.sm },
+  pagination: {
+    alignItems: "center",
+    borderTopColor: colors.surfaceSecondary,
+    borderTopWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingTop: spacing.sm,
+  },
+  paginationButton: {
+    borderColor: colors.surfaceSecondary,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  paginationButtonDisabled: { opacity: 0.35 },
+  paginationButtonText: {
+    color: colors.textSecondary,
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.semibold,
+  },
+  paginationStatus: { color: colors.textSecondary, fontSize: fontSize.xs },
   meta: { color: colors.textSecondary, fontSize: fontSize.xs },
   panel: {
     backgroundColor: colors.surface,

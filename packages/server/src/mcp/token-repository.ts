@@ -47,6 +47,13 @@ export const mcpTokenMetadataSchema = z.object({
 
 export type McpTokenMetadata = z.infer<typeof mcpTokenMetadataSchema>;
 
+export const mcpTokenPageSchema = z.object({
+  items: z.array(mcpTokenMetadataSchema),
+  nextCursor: z.string().nullable(),
+});
+
+export type McpTokenPage = z.infer<typeof mcpTokenPageSchema>;
+
 export class McpAuthError extends Error {
   readonly status: 401 | 403;
   readonly code: "invalid_token" | "insufficient_scope";
@@ -179,6 +186,52 @@ export async function listMcpTokens(
         ORDER BY created_at DESC`,
   );
   return rows.map(toMetadata);
+}
+
+export async function listMcpPersonalTokens(
+  db: ExecutableDatabase,
+  userId: string,
+): Promise<McpTokenMetadata[]> {
+  const rows = await executeWithSchema(
+    db,
+    tokenMetadataRowSchema,
+    sql`SELECT id, name, scopes, created_at, last_used_at, expires_at, revoked_at, oauth_client_id
+        FROM fitness.mcp_access_token
+        WHERE user_id = ${userId} AND oauth_client_id IS NULL
+        ORDER BY created_at DESC, id DESC`,
+  );
+  return rows.map(toMetadata);
+}
+
+export async function listMcpConnectedApps(
+  db: ExecutableDatabase,
+  userId: string,
+  cursor?: string,
+): Promise<McpTokenPage> {
+  const connectedAppsPageSize = 20;
+  const cursorCondition = cursor
+    ? sql`AND (created_at, id) < (
+          SELECT created_at, id
+          FROM fitness.mcp_access_token
+          WHERE id = ${cursor}::uuid AND user_id = ${userId} AND oauth_client_id IS NOT NULL
+        )`
+    : sql``;
+  const rows = await executeWithSchema(
+    db,
+    tokenMetadataRowSchema,
+    sql`SELECT id, name, scopes, created_at, last_used_at, expires_at, revoked_at, oauth_client_id
+        FROM fitness.mcp_access_token
+        WHERE user_id = ${userId} AND oauth_client_id IS NOT NULL
+          ${cursorCondition}
+        ORDER BY created_at DESC, id DESC
+        LIMIT ${connectedAppsPageSize + 1}`,
+  );
+  const hasNextPage = rows.length > connectedAppsPageSize;
+  const items = rows.slice(0, connectedAppsPageSize).map(toMetadata);
+  return {
+    items,
+    nextCursor: hasNextPage ? (items.at(-1)?.id ?? null) : null,
+  };
 }
 
 export async function updateMcpTokenScopes(
