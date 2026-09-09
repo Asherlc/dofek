@@ -14,6 +14,8 @@ import { providerRequiresStoredTokens } from "../lib/custom-auth-providers.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import { isRetryableInfraError } from "../lib/retryable-infra-error.ts";
 import { logger } from "../logger.ts";
+import { createKafkaMetricStreamEventPublisherForRoute } from "../metric-stream/redpanda-producer.ts";
+import { metricStreamRouteForSyncJob } from "../metric-stream/routes.ts";
 import { currentMetricStreamWriteDatabase } from "../metric-stream/write-fence-context.ts";
 import {
   type ProcessingDatasetKey,
@@ -21,7 +23,7 @@ import {
   processingDatasetKeysForProvider,
 } from "../processing/dataset-contracts.ts";
 import {
-  createLazyDefaultMetricStreamEventPublisher,
+  createLazyMetricStreamEventPublisher,
   MetricStreamProcessingPublisher,
 } from "../processing/metric-stream-processing-publisher.ts";
 import {
@@ -393,16 +395,23 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
     );
     const metricStreamPublisher =
       emittedMetricStreamDatasetKeys.length > 0
-        ? new MetricStreamProcessingPublisher(createLazyDefaultMetricStreamEventPublisher(), {
-            operationId: processingOperation.id,
-            datasetKeys: emittedMetricStreamDatasetKeys,
-            recordPublishedBatch: (batch) => {
-              const transaction = currentMetricStreamWriteDatabase();
-              return transaction
-                ? recordMetricStreamBatchPublishedInTransaction(transaction, batch)
-                : recordMetricStreamBatchPublished(requireTransactionalSyncDatabase(db), batch);
+        ? new MetricStreamProcessingPublisher(
+            createLazyMetricStreamEventPublisher(() =>
+              createKafkaMetricStreamEventPublisherForRoute(
+                metricStreamRouteForSyncJob(job.data.targetRefreshWindow),
+              ),
+            ),
+            {
+              operationId: processingOperation.id,
+              datasetKeys: emittedMetricStreamDatasetKeys,
+              recordPublishedBatch: (batch) => {
+                const transaction = currentMetricStreamWriteDatabase();
+                return transaction
+                  ? recordMetricStreamBatchPublishedInTransaction(transaction, batch)
+                  : recordMetricStreamBatchPublished(requireTransactionalSyncDatabase(db), batch);
+              },
             },
-          })
+          )
         : undefined;
 
     const syncStart = Date.now();

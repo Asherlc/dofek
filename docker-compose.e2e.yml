@@ -189,7 +189,9 @@ services:
       CLICKHOUSE_PASSWORD: health
       REDIS_URL: redis://redis:6379
       REDPANDA_BROKERS: redpanda:9092
-      METRIC_STREAM_TOPIC: metric-stream-v1
+      METRIC_STREAM_LEGACY_TOPIC: metric-stream-v1
+      METRIC_STREAM_LIVE_TOPIC: metric-stream-live-v1
+      METRIC_STREAM_HISTORY_TOPIC: metric-stream-history-v1
       PORT: "3000"
       NODE_ENV: test
       PUBLIC_URL: http://localhost:3100

@@ -126,7 +126,9 @@ describe("processAccountErasureRequest request-to-completion (integration)", () 
         }
         if (phase === "consumer_drain") {
           return {
-            quarantineHighWatermarks: [{ low: "4", offset: "12", partition: 0 }],
+            quarantineHighWatermarks: [
+              { topic: "metric-stream-v1", low: "4", offset: "12", partition: 0 },
+            ],
           };
         }
         if (phase === "peerdb_drain_verification") {

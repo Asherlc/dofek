@@ -109,11 +109,13 @@ const CDC_ENVIRONMENT_KEYS = [
 ] as const;
 
 const WORKER_ONLY_ENVIRONMENT_KEYS = [
+  "METRIC_STREAM_LEGACY_TOPIC",
   "AXIOM_API_TOKEN",
   "AXIOM_LOG_DATASET",
   "AXIOM_ORG_ID",
   "CLICKHOUSE_PASSWORD",
-  "METRIC_STREAM_TOPIC",
+  "METRIC_STREAM_LIVE_TOPIC",
+  "METRIC_STREAM_HISTORY_TOPIC",
   "PEERDB_STAGE_S3_ACCESS_KEY_ID",
   "PEERDB_STAGE_S3_BUCKET",
   "PEERDB_STAGE_S3_ENDPOINT",
@@ -127,7 +129,11 @@ const WORKER_ONLY_ENVIRONMENT_KEYS = [
   "SENTRY_ORG",
 ] as const;
 
-const METRIC_STREAM_ENVIRONMENT_KEYS = ["METRIC_STREAM_TOPIC", "REDPANDA_BROKERS"] as const;
+const METRIC_STREAM_ENVIRONMENT_KEYS = [
+  "METRIC_STREAM_LIVE_TOPIC",
+  "METRIC_STREAM_HISTORY_TOPIC",
+  "REDPANDA_BROKERS",
+] as const;
 
 function makeTemporaryDirectory(): string {
   const directory = mkdtempSync(join(tmpdir(), "dofek-deploy-service-env-"));
@@ -149,6 +155,10 @@ function completeDeployEnvironment(): Record<string, string> {
     ...Object.fromEntries([...runtimeKeys].map((key) => [key, `${key.toLowerCase()}-value`])),
     CLOUDFLARE_API_TOKEN: "cloudflare-control-plane-token",
     OTA_PRIVATE_KEY_B64: "ota-private-key",
+    METRIC_STREAM_LEGACY_TOPIC: "metric-stream-v1",
+    METRIC_STREAM_LIVE_TOPIC: "metric-stream-live-v1",
+    METRIC_STREAM_HISTORY_TOPIC: "metric-stream-history-v1",
+    METRIC_STREAM_R2_BUCKET: "dofek-metric-stream-archive",
   };
 }
 
@@ -165,6 +175,90 @@ afterEach(() => {
 });
 
 describe("renderDeployServiceEnvironmentFiles", () => {
+  it("gives only the migration-phase web artifact the explicit legacy producer topic", () => {
+    const directory = makeTemporaryDirectory();
+    const sourcePath = join(directory, "all.env");
+    writeFileSync(
+      sourcePath,
+      dotenv({
+        ...completeDeployEnvironment(),
+        METRIC_STREAM_TOPIC: "unassigned-topic",
+      }),
+    );
+    const paths = renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services"));
+    const web = parseEnv(readFileSync(paths.web, "utf8"));
+    const migrationWeb = parseEnv(
+      readFileSync(join(directory, "services", "web-pre-migration.env"), "utf8"),
+    );
+
+    expect(migrationWeb).toEqual({ ...web, METRIC_STREAM_TOPIC: "metric-stream-v1" });
+    expect(migrationWeb).toMatchObject({
+      METRIC_STREAM_LIVE_TOPIC: "metric-stream-live-v1",
+      METRIC_STREAM_HISTORY_TOPIC: "metric-stream-history-v1",
+    });
+    expect(web).not.toHaveProperty("METRIC_STREAM_TOPIC");
+    expect(migrationWeb).not.toHaveProperty("METRIC_STREAM_CONSUMER_GROUP");
+  });
+
+  it("renders each durable consumer's designated topic and independent group", () => {
+    const directory = makeTemporaryDirectory();
+    const sourcePath = join(directory, "all.env");
+    writeFileSync(
+      sourcePath,
+      dotenv({
+        ...completeDeployEnvironment(),
+        METRIC_STREAM_TOPIC: "unassigned-topic",
+        METRIC_STREAM_CONSUMER_GROUP: "unassigned-group",
+      }),
+    );
+    renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services"));
+
+    for (const [service, topic] of [
+      ["metric-stream-clickhouse-sink", "metric-stream-v1"],
+      ["metric-stream-live-clickhouse-sink", "metric-stream-live-v1"],
+      ["metric-stream-history-clickhouse-sink", "metric-stream-history-v1"],
+      ["metric-stream-r2-archive", "metric-stream-v1"],
+      ["metric-stream-live-r2-archive", "metric-stream-live-v1"],
+      ["metric-stream-history-r2-archive", "metric-stream-history-v1"],
+    ] as const) {
+      const environment = parseEnv(
+        readFileSync(join(directory, "services", `${service}.env`), "utf8"),
+      );
+      expect(environment).toEqual({
+        REDPANDA_BROKERS: "redpanda_brokers-value",
+        METRIC_STREAM_TOPIC: topic,
+        METRIC_STREAM_CONSUMER_GROUP: service,
+        ...(service.endsWith("r2-archive")
+          ? {
+              METRIC_STREAM_R2_BUCKET: "dofek-metric-stream-archive",
+              R2_ENDPOINT: "r2_endpoint-value",
+              R2_ACCESS_KEY_ID: "r2_access_key_id-value",
+              R2_SECRET_ACCESS_KEY: "r2_secret_access_key-value",
+            }
+          : {}),
+      });
+    }
+  });
+
+  it.each([
+    "METRIC_STREAM_LEGACY_TOPIC",
+    "METRIC_STREAM_LIVE_TOPIC",
+    "METRIC_STREAM_HISTORY_TOPIC",
+    "METRIC_STREAM_R2_BUCKET",
+  ])("rejects a missing %s even when a generic topic is supplied", (key) => {
+    const directory = makeTemporaryDirectory();
+    const sourcePath = join(directory, "all.env");
+    const environment: Record<string, string> = {
+      ...completeDeployEnvironment(),
+      METRIC_STREAM_TOPIC: "wrong-route",
+    };
+    delete environment[key];
+    writeFileSync(sourcePath, dotenv(environment));
+    expect(() =>
+      renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services")),
+    ).toThrow(`missing required keys: ${key}`);
+  });
+
   it("writes least-privilege service files without leaking control-plane secrets", () => {
     const directory = makeTemporaryDirectory();
     const sourcePath = join(directory, "all.env");
@@ -194,6 +288,12 @@ describe("renderDeployServiceEnvironmentFiles", () => {
     expect(worker).not.toHaveProperty("CLOUDFLARE_API_TOKEN");
     expect(worker).not.toHaveProperty("APP_STORE_PRIVATE_KEY");
     expect(worker).not.toHaveProperty("OTA_PRIVATE_KEY_B64");
+    for (const producer of [web, worker]) {
+      expect(producer).toMatchObject({
+        METRIC_STREAM_LIVE_TOPIC: "metric-stream-live-v1",
+        METRIC_STREAM_HISTORY_TOPIC: "metric-stream-history-v1",
+      });
+    }
 
     expect(parseEnv(readFileSync(paths.analyticsWorker, "utf8"))).toEqual({
       CLICKHOUSE_PASSWORD: "clickhouse_password-value",
@@ -279,14 +379,15 @@ describe("renderDeployServiceEnvironmentFiles", () => {
     const directory = makeTemporaryDirectory();
     const sourcePath = join(directory, "all.env");
     const environment = completeDeployEnvironment();
-    delete environment.METRIC_STREAM_TOPIC;
+    delete environment.METRIC_STREAM_LIVE_TOPIC;
+    delete environment.METRIC_STREAM_HISTORY_TOPIC;
     delete environment.REDPANDA_BROKERS;
     writeFileSync(sourcePath, dotenv(environment));
 
     expect(() =>
       renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services")),
     ).toThrow(
-      "web deploy environment is missing required keys: METRIC_STREAM_TOPIC, REDPANDA_BROKERS",
+      "web deploy environment is missing required keys: METRIC_STREAM_LIVE_TOPIC, METRIC_STREAM_HISTORY_TOPIC, REDPANDA_BROKERS",
     );
   });
 
@@ -339,7 +440,14 @@ describe("renderDeployServiceEnvironmentFiles", () => {
       databaseOperations: "database-operations.env",
       r2Operations: "r2-operations.env",
       web: "web.env",
+      webPreMigration: "web-pre-migration.env",
       worker: "worker.env",
+      metricStreamClickhouseSink: "metric-stream-clickhouse-sink.env",
+      metricStreamLiveClickhouseSink: "metric-stream-live-clickhouse-sink.env",
+      metricStreamHistoryClickhouseSink: "metric-stream-history-clickhouse-sink.env",
+      metricStreamR2Archive: "metric-stream-r2-archive.env",
+      metricStreamLiveR2Archive: "metric-stream-live-r2-archive.env",
+      metricStreamHistoryR2Archive: "metric-stream-history-r2-archive.env",
     });
   });
 });

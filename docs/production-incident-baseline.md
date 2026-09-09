@@ -25827,6 +25827,29 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   The Axiom MCP token remains expired; task-local Swarm logs supplied the fatal
   evidence. No additional resilience knob was introduced.
 
+## 2026-09-08 — Metric-stream backlog blocks provider processing readiness
+
+- **Status:** Unresolved; approved remediation is in design review.
+- **Symptoms / impact:** Provider connections, including Withings, ingest new
+  data but their processing status remains `Waiting`; the last ready datasets
+  are several days old.
+- **Evidence:** The production `metric-stream-clickhouse-sink` consumer was
+  stable with 44,859,880 messages of lag. Its committed record timestamp was
+  `2026-09-06T15:58:55Z`, versus a topic-head timestamp of
+  `2026-09-08T22:22:38Z`. Withings relational CDC completed, but its
+  metric-stream processing acknowledgements were absent. ClickHouse consumed
+  its configured one CPU core while the host retained capacity.
+- **Root cause:** The legacy one-partition stream serializes a large historical
+  refresh ahead of all new live provider messages. After the September 7
+  oversized-delete fix restored consumer progress, the sink still could not
+  drain the accumulated workload faster than new messages arrived.
+- **Approved remediation:** Retain the ordered legacy drain, route normal and
+  full-history syncs through separate topics and sinks, and raise ClickHouse's
+  sustained CPU allocation to 1.5 cores. Do not skip, reorder, or replay
+  legacy offsets.
+- **Remaining risk:** Until the new live route is deployed and verified, all
+  current provider processing status continues to depend on the legacy backlog.
+
 ## 2026-09-07 — Stale workspace Docker resources blocked integration validation
 
 - **Scope / impact:** Local integration-test infrastructure only; no production
@@ -25956,6 +25979,28 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   retry, timeout, or warn-and-continue behavior. Require a fresh workflow run
   to pass artifact finalization and every aggregate gate before merge.
 
+## 2026-09-09 — Metric-stream routing PR left test contracts incomplete
+
+- **Scope / impact:** [PR #2693](https://github.com/Asherlc/dofek/pull/2693)
+  validation only; no production impact. E2E, integration shard 1/4, and the
+  ClickHouse-sink mutation shard failed.
+- **Evidence / root cause:** The E2E job's `Start e2e server` step first failed
+  with `METRIC_STREAM_LIVE_TOPIC is required`: its Compose service still supplied
+  only the retired generic topic. The integration test's first fatal diagnostic
+  was `quarantineHighWatermarks[0].topic: Invalid input: expected string,
+  received undefined`, because its fixture predated topic-attributed
+  checkpoints. The mutation shard scored 67.21% because the new persisted
+  delete-scope behavior lacked exact payload and version-boundary assertions.
+- **Direct fix:** Supply the three explicit route topics in the E2E service,
+  make the account-erasure checkpoint fixture topic-attributed, and add unit
+  coverage for persisted scope serialization plus newer, equal, invalid, and
+  query-client version paths. No retry, timeout, CI bypass, or threshold change
+  was added.
+- **Validation / follow-up:** The focused unit suite passes (47 tests), the
+  real-database account-erasure integration test passes (2 tests), and the
+  exact mutation target passes at 91.80%, above its 75% enforcement threshold.
+  Require a fresh full PR workflow to pass before merge.
+
 ## 2026-09-08 — MCP food-record deletion failed before the ledger write
 
 - **Status:** Source fix is validated locally; production rollout and deletion
@@ -25985,3 +26030,22 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   verifies exact-request replay creates one change, restores it, and updates it.
   Deploy the fix, repeat the original deletion requests, and run a fresh
   date-scoped visible search before reporting any production records deleted.
+
+## 2026-09-09 — Metric-stream review fix left CI test fixtures stale
+
+- **Scope / impact:** [PR #2693](https://github.com/Asherlc/dofek/pull/2693)
+  validation only; no production impact. Unit Tests and Stryker shard 10 failed.
+- **Evidence / root cause:** Unit Tests first failed in
+  `.github/workflows/deploy-web-stack.test.ts` with `AssertionError: expected 1
+  to be +0`, then the worker module failed to load with
+  `METRIC_STREAM_LIVE_TOPIC is required`. The review fix added eager worker
+  validation and three R2 archive convergence checks, but their test fixtures
+  still omitted the required topics and archive service observations. The
+  resulting worker import failure made Stryker's related-test dry run report
+  `No tests were executed` for the worker mutation shard.
+- **Direct fix:** Add both explicit topic keys to the worker test environment
+  and model legacy/live/history R2 archive services in the executable workflow
+  harness. No retry, timeout, threshold change, or CI bypass was added.
+- **Validation / follow-up:** The focused harness and worker suite pass (82
+  tests), and the exact CI Stryker target completes its dry run with 67 worker
+  tests. Require a fresh full PR workflow to pass before merge.

@@ -107,12 +107,16 @@ exit 1
 `;
 
 function deployConsumersRunScript(): string {
-  const stepStart = workflowText.indexOf("      - name: Deploy ClickHouse consumer services");
+  return workflowRunScript("Deploy ClickHouse consumer services");
+}
+
+function workflowRunScript(name: string): string {
+  const stepStart = workflowText.indexOf(`      - name: ${name}`);
   const runStart = workflowText.indexOf("        run: |\n", stepStart);
   const stepEnd = workflowText.indexOf("\n      - ", runStart);
 
   if (stepStart === -1 || runStart === -1 || stepEnd === -1) {
-    throw new Error("Could not find the ClickHouse consumer deploy step");
+    throw new Error(`Could not find the workflow step: ${name}`);
   }
 
   return workflowText
@@ -178,6 +182,15 @@ function runDeployConsumers(scenarios: ConsumerScenarios, options: DeployConsume
       join(scenarioDirectory, "dofek_processing-reconciliation"),
       serializeScenario(scenarios.processingReconciliation ?? [STABLE_OBSERVATION]),
     );
+    for (const serviceName of [
+      "dofek_metric-stream-live-clickhouse-sink",
+      "dofek_metric-stream-history-clickhouse-sink",
+      "dofek_metric-stream-r2-archive",
+      "dofek_metric-stream-live-r2-archive",
+      "dofek_metric-stream-history-r2-archive",
+    ]) {
+      writeFileSync(join(scenarioDirectory, serviceName), serializeScenario([STABLE_OBSERVATION]));
+    }
 
     const result = spawnSync(
       "bash",
@@ -238,6 +251,11 @@ function runDeployQuiesced(
       "dofek_worker",
       "dofek_analytics-worker",
       "dofek_metric-stream-clickhouse-sink",
+      "dofek_metric-stream-live-clickhouse-sink",
+      "dofek_metric-stream-history-clickhouse-sink",
+      "dofek_metric-stream-r2-archive",
+      "dofek_metric-stream-live-r2-archive",
+      "dofek_metric-stream-history-r2-archive",
       "dofek_clickhouse",
       "dofek_databasus",
     ]) {
@@ -251,7 +269,7 @@ function runDeployQuiesced(
     const shellScript = [
       "SECONDS=0",
       "simulated_seconds=0",
-      "echo() { builtin echo \"[${simulated_seconds}s] $*\"; }",
+      'echo() { builtin echo "[${simulated_seconds}s] $*"; }',
       "sleep() { SECONDS=$((SECONDS + MOCK_SLEEP_SECONDS)); simulated_seconds=$((simulated_seconds + MOCK_SLEEP_SECONDS)); }",
       deployQuiescedRunScript(),
     ].join("\n");
@@ -283,6 +301,51 @@ const STABLE_OBSERVATION = {
 } satisfies ServiceObservation;
 
 describe("deploy-web-stack workflow contract", () => {
+  it.each([
+    ["Apply dependency stack before migrations", "web-pre-migration.env", "previous"],
+    ["Deploy stack without ClickHouse consumers", "web.env", "test"],
+    ["Deploy ClickHouse consumer services", "web.env", "test"],
+  ])("selects the correct web environment in %s", (step, expectedFile, expectedImage) => {
+    const result = spawnSync(
+      "bash",
+      [
+        "-c",
+        `
+docker() {
+  if [ "$1" = service ] && [ "$2" = inspect ]; then
+    printf '%s\\n' 'ghcr.io/asherlc/dofek:previous'
+    return 0
+  fi
+  return 1
+}
+node() {
+  printf 'selected-web-env=%s image=%s\\n' "$WEB_ENV_FILE" "$IMAGE_TAG"
+  return 23
+}
+timeout() { shift; "$@"; }
+${workflowRunScript(step)}
+`,
+      ],
+      {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          REQUESTED_IMAGE_TAG: "test",
+          IMAGE_TAG: "test",
+          WEB_ENV_FILE: "/synthetic/web.env",
+          WEB_PRE_MIGRATION_ENV_FILE: "/synthetic/web-pre-migration.env",
+          RUNNER_TEMP: "/synthetic",
+          STACK_NAME: "dofek",
+          STACK_FILE_FLAGS: "-c deploy/stack.yml",
+        },
+      },
+    );
+    expect(result.status).toBe(23);
+    expect(result.stdout).toContain(
+      `selected-web-env=/synthetic/${expectedFile} image=${expectedImage}`,
+    );
+  });
+
   it("accepts processing reconciliation quiesced at 0/0 on the requested image", () => {
     const result = runDeployQuiesced(
       [
@@ -351,7 +414,7 @@ describe("deploy-web-stack workflow contract", () => {
     );
     expect(workflowText).toContain("Processing services remain quiesced");
     expect(workflowText).toContain(
-      "analytics-worker, metric-stream-clickhouse-sink, and processing-reconciliation remain at zero replicas.",
+      "analytics-worker, all three metric-stream ClickHouse sinks, and processing-reconciliation remain at zero replicas.",
     );
     expect(workflowText).toContain("rerun the deployment");
   });
@@ -408,22 +471,22 @@ describe("deploy-web-stack workflow contract", () => {
     );
   });
 
-  it.each([
-    "rollback_started",
-    "paused",
-  ])("fails when the service update state is %s", (updateState) => {
-    const result = runDeployConsumers({
-      analyticsWorker: [{ ...STABLE_OBSERVATION, updateState }],
-      metricStreamClickhouseSink: [STABLE_OBSERVATION],
-    });
+  it.each(["rollback_started", "paused"])(
+    "fails when the service update state is %s",
+    (updateState) => {
+      const result = runDeployConsumers({
+        analyticsWorker: [{ ...STABLE_OBSERVATION, updateState }],
+        metricStreamClickhouseSink: [STABLE_OBSERVATION],
+      });
 
-    expect(result.status).toBe(1);
-    expect(result.stdout).toContain(
-      updateState === "paused"
-        ? "dofek_analytics-worker update is paused"
-        : "dofek_analytics-worker did not finish deployment cleanly",
-    );
-  });
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain(
+        updateState === "paused"
+          ? "dofek_analytics-worker update is paused"
+          : "dofek_analytics-worker did not finish deployment cleanly",
+      );
+    },
+  );
 
   it("fails when the service does not converge before the 20-minute deadline", () => {
     const result = runDeployConsumers(

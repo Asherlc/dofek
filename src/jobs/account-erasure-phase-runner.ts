@@ -3,7 +3,7 @@ import type { ArchiveErasureResult } from "../account-erasure/archive-erasure.ts
 import type { PeerDbStagingRetentionResult } from "../account-erasure/peerdb-staging-retention.ts";
 import type { PeerDbStagingBoundary } from "../account-erasure/peerdb-staging-writer-barrier.ts";
 import type { AccountErasureProcessorProgress } from "../account-erasure/processor-erasure.ts";
-import type { AccountErasureHighWatermark } from "../account-erasure/redpanda-drain.ts";
+import type { AccountErasureRouteHighWatermark } from "../account-erasure/redpanda-drain.ts";
 import type {
   ProviderCredentialDisposition,
   StripeAccountErasureResult,
@@ -18,6 +18,7 @@ import type {
 const highWatermarksCheckpointSchema = z.object({
   highWatermarks: z.array(
     z.object({
+      topic: z.string().min(1),
       low: z.string().regex(/^\d+$/),
       offset: z.string().regex(/^\d+$/),
       partition: z.number().int().nonnegative(),
@@ -49,17 +50,21 @@ interface ArchiveSweepOptions {
 }
 
 export interface AccountErasurePhaseRunnerDependencies {
-  assertConsumersDrained(highWatermarks: readonly AccountErasureHighWatermark[]): Promise<void>;
+  assertConsumersDrained(
+    highWatermarks: readonly AccountErasureRouteHighWatermark[],
+  ): Promise<void>;
   assertPeerDbDrained(snapshot: AccountErasureRemoteSnapshot, walLsn: string): Promise<void>;
-  assertQuarantineExpired(highWatermarks: readonly AccountErasureHighWatermark[]): Promise<void>;
-  assertReplayExpired(highWatermarks: readonly AccountErasureHighWatermark[]): Promise<void>;
-  captureHighWatermarks(): Promise<AccountErasureHighWatermark[]>;
+  assertQuarantineExpired(
+    highWatermarks: readonly AccountErasureRouteHighWatermark[],
+  ): Promise<void>;
+  assertReplayExpired(highWatermarks: readonly AccountErasureRouteHighWatermark[]): Promise<void>;
+  captureHighWatermarks(): Promise<AccountErasureRouteHighWatermark[]>;
   capturePeerDbStagingBoundary(input: {
     loadProgress(): Promise<Record<string, unknown> | null>;
     requestId: string;
     saveProgress(progress: Record<string, unknown>): Promise<void>;
   }): Promise<PeerDbStagingBoundary>;
-  captureQuarantineHighWatermarks(): Promise<AccountErasureHighWatermark[]>;
+  captureQuarantineHighWatermarks(): Promise<AccountErasureRouteHighWatermark[]>;
   decryptSnapshot(encryptedSnapshot: string, userId: string): Promise<AccountErasureRemoteSnapshot>;
   eraseArchive(
     snapshot: AccountErasureRemoteSnapshot,
@@ -112,7 +117,7 @@ function requireIdentifyingRequest(
 
 async function loadHighWatermarks(
   execution: AccountErasurePhaseExecution,
-): Promise<AccountErasureHighWatermark[]> {
+): Promise<AccountErasureRouteHighWatermark[]> {
   const checkpoint = highWatermarksCheckpointSchema.parse(
     await execution.loadCheckpointDetails("ingest_fence"),
   );

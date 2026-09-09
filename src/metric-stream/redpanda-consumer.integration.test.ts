@@ -151,6 +151,74 @@ describe("metric-stream durable quarantine", () => {
     await admin.disconnect();
   });
 
+  it.each([false, true])(
+    "consumes pre-start records while preserving committed offsets (committed: %s)",
+    async (hasCommittedOffset) => {
+      const topic = `metric-stream-first-start-${randomUUID()}`;
+      const consumerGroup = `metric-stream-first-start-${randomUUID()}`;
+      createdTopics.push(topic);
+      await admin.createTopics({
+        topics: [{ topic, numPartitions: 1, replicationFactor: 1 }],
+        waitForLeaders: true,
+      });
+      const events = ["A", "B"].map((externalId) =>
+        createMetricStreamEvent(
+          {
+            userId: "00000000-0000-0000-0000-000000000001",
+            providerId: "test",
+            sourceType: "api",
+            channel: "heart_rate",
+            recordedAt: "2026-09-08T12:00:00.000Z",
+            externalId,
+            scalar: 70,
+          },
+          operationRevision,
+        ),
+      );
+      await producer.send({
+        topic,
+        acks: -1,
+        messages: events.map((event) => ({ key: event.id, value: JSON.stringify(event) })),
+      });
+      if (hasCommittedOffset)
+        await admin.setOffsets({
+          groupId: consumerGroup,
+          topic,
+          partitions: [{ partition: 0, offset: "1" }],
+        });
+      const consumer = kafka.consumer({ groupId: consumerGroup });
+      const received: string[] = [];
+      try {
+        await runMetricStreamEventConsumer({
+          consumer: adaptConsumer(consumer),
+          topic,
+          quarantine: {
+            connect: async () => undefined,
+            write: async () => {
+              throw new Error("Unexpected invalid event");
+            },
+          },
+          handleEvents: async (batch) => {
+            for (const event of batch) if ("id" in event) received.push(event.id);
+          },
+        });
+        await vi.waitFor(
+          async () => {
+            const offsets = await admin.fetchOffsets({ groupId: consumerGroup, topics: [topic] });
+            expect(offsets[0]?.partitions[0]?.offset).toBe("2");
+          },
+          { timeout: 15_000 },
+        );
+        expect(received).toEqual(
+          (hasCommittedOffset ? events.slice(1) : events).map((event) => event.id),
+        );
+      } finally {
+        await consumer.stop();
+        await consumer.disconnect();
+      }
+    },
+  );
+
   it("replays a failed quarantine, then durably records full context before commit", async () => {
     const firstAttempt = createDeferred<void>();
     const firstConsumer = kafka.consumer({ groupId });
