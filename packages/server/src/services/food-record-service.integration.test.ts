@@ -1,9 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { ensureProvider } from "../../../../src/db/tokens.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { FoodRecordRepository } from "../repositories/food-record-repository.ts";
+import type { FoodRecordSearchInput } from "../repositories/food-record-types.ts";
 import { FoodRepository } from "../repositories/food-repository.ts";
 import { FoodRecordService } from "./food-record-service.ts";
 
@@ -11,6 +14,8 @@ const userId = "81000000-0000-4000-8000-000000000001";
 const otherUserId = "81000000-0000-4000-8000-000000000002";
 const providerId = "food-command-test";
 const hash = "a".repeat(64);
+const explainPlanRowSchema = z.object({ "QUERY PLAN": z.string() });
+const changeCountRowSchema = z.object({ count: z.coerce.number().int().nonnegative() });
 
 describe.sequential("FoodRecordService with Postgres", () => {
   let context: TestContext;
@@ -82,30 +87,34 @@ describe.sequential("FoodRecordService with Postgres", () => {
   }
 
   async function assertProductionLikeSourceLookupPlan(recordId: string): Promise<void> {
-    const plan = await context.db.execute<{ "QUERY PLAN": string }>(sql`
-      EXPLAIN (COSTS OFF)
-      SELECT identity.id
-      FROM fitness.human_record_identity AS identity
-      INNER JOIN LATERAL (
-        SELECT entry.id
-        FROM fitness.food_entry AS entry
-        WHERE entry.user_id = identity.user_id
-          AND entry.provider_id = identity.namespace
-          AND entry.confirmed = TRUE
-          AND (
-            (identity.source_key LIKE 'external:%'
-              AND entry.external_id = SUBSTRING(identity.source_key FROM 10))
-            OR (identity.source_key LIKE 'row:%'
-              AND entry.id = SUBSTRING(identity.source_key FROM 5)::uuid)
-          )
-        ORDER BY entry.created_at DESC, entry.id DESC
-        LIMIT 1
-      ) AS source ON TRUE
-      WHERE identity.user_id = ${userId}
-        AND identity.id = ${recordId}::uuid
-        AND identity.domain = 'nutrition.food'
-      FOR UPDATE OF identity
-    `);
+    const plan = await executeWithSchema(
+      context.db,
+      explainPlanRowSchema,
+      sql`
+        EXPLAIN (COSTS OFF)
+        SELECT identity.id
+        FROM fitness.human_record_identity AS identity
+        INNER JOIN LATERAL (
+          SELECT entry.id
+          FROM fitness.food_entry AS entry
+          WHERE entry.user_id = identity.user_id
+            AND entry.provider_id = identity.namespace
+            AND entry.confirmed = TRUE
+            AND (
+              (identity.source_key LIKE 'external:%'
+                AND entry.external_id = SUBSTRING(identity.source_key FROM 10))
+              OR (identity.source_key LIKE 'row:%'
+                AND entry.id = SUBSTRING(identity.source_key FROM 5)::uuid)
+            )
+          ORDER BY entry.created_at DESC, entry.id DESC
+          LIMIT 1
+        ) AS source ON TRUE
+        WHERE identity.user_id = ${userId}
+          AND identity.id = ${recordId}::uuid
+          AND identity.domain = 'nutrition.food'
+        FOR UPDATE OF identity
+      `,
+    );
     const planText = plan.map((row) => row["QUERY PLAN"]).join("\n");
     expect(planText).toContain("BitmapOr");
     expect(planText).toContain("food_entry_pkey");
@@ -234,10 +243,10 @@ describe.sequential("FoodRecordService with Postgres", () => {
       startDate: date,
       endDate: date,
       query: "Banana",
-      visibility: "visible" as const,
+      visibility: "visible",
       cursor: null,
       limit: 100,
-    };
+    } satisfies FoodRecordSearchInput;
     const before = await repository.search(search);
     const banana = before.items.find((item) => item.sourceEntryId === sourceEntryId);
 
@@ -292,11 +301,15 @@ describe.sequential("FoodRecordService with Postgres", () => {
       affectedDates: [],
     });
     expect(
-      await context.db.execute(sql`
-        SELECT COUNT(*)::int AS count
-        FROM fitness.human_record_change
-        WHERE user_id = ${userId} AND request_id = ${command.requestId}::uuid
-      `),
+      await executeWithSchema(
+        context.db,
+        changeCountRowSchema,
+        sql`
+          SELECT COUNT(*)::int AS count
+          FROM fitness.human_record_change
+          WHERE user_id = ${userId} AND request_id = ${command.requestId}::uuid
+        `,
+      ),
     ).toEqual([{ count: 1 }]);
 
     const restored = await service().restore({
