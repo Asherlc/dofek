@@ -26049,3 +26049,33 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Validation / follow-up:** The focused harness and worker suite pass (82
   tests), and the exact CI Stryker target completes its dry run with 67 worker
   tests. Require a fresh full PR workflow to pass before merge.
+
+## 2026-09-09 — PeerDB worker OOM stalled the fitness mirror and Withings processing
+
+- **Status:** Direct infrastructure fix is pending CI and production rollout.
+- **Symptoms / user impact:** Withings relational data continued reaching
+  Postgres, but 44 processing-outbox rows remained pending and the app reported
+  all Withings datasets as waiting. The analytics build stopped at
+  `Active activity is missing persisted group_id`.
+- **Evidence / root cause:** Postgres had zero active activities without a
+  persisted `group_id`, while the stale ClickHouse `postgres_fitness.activity`
+  mirror had 3,123. The `peerflow_slot_dofek_fitness_raw_analytics` replication
+  slot remained inactive but retained about 1.8 GiB of recoverable WAL. The
+  `peerdb-flow-worker` Swarm task failed approximately every 11 minutes; its
+  first fatal task result was `task: non-zero exit (137)` under the configured
+  1 GiB memory limit. At diagnosis time the 23 GiB host had 15 GiB available,
+  8 GiB completely free, no swap activity, and zero measured memory pressure.
+- **Direct fix:** Raise the checked-in, bounded flow-worker memory limit to
+  2 GiB. Keep the existing 100,000-row CDC batch size and retained slot so the
+  worker can replay WAL without a destructive resnapshot. Docker documents
+  Swarm memory limits as cgroup-enforced resource ceilings
+  ([Compose deploy resources](https://docs.docker.com/reference/compose-file/deploy/#memory)),
+  and PeerDB documents sizing CDC batches to the worker's available memory
+  ([CDC configuration tuning](https://docs.peerdb.io/metrics/important_cdc_configs)).
+- **Validation / remaining risk:** Validate the merged stack before rollout.
+  After deployment, require the flow-worker to remain stable beyond its former
+  11-minute failure interval, confirm the slot becomes active and retained WAL
+  falls, confirm the ClickHouse missing-`group_id` count reaches zero, and
+  verify analytics and all 44 pending Withings rows complete. If the slot
+  catches up but mirror rows remain incomplete, investigate PeerDB mapping or
+  perform a controlled resync rather than weakening the analytics guard.
