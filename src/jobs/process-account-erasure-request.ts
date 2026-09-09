@@ -52,6 +52,21 @@ export interface AccountErasurePhaseExecution {
   scrubPii(): Promise<void>;
 }
 
+function hasRoutedIngestFence(checkpoint: Record<string, unknown> | null): boolean {
+  const highWatermarks = checkpoint?.highWatermarks;
+  return (
+    Array.isArray(highWatermarks) &&
+    highWatermarks.every(
+      (watermark) =>
+        typeof watermark === "object" &&
+        watermark !== null &&
+        "topic" in watermark &&
+        typeof watermark.topic === "string" &&
+        watermark.topic.length > 0,
+    )
+  );
+}
+
 export interface AccountErasurePhaseRunner {
   runPhase(
     phase: AccountErasurePhase,
@@ -141,7 +156,20 @@ export async function processAccountErasureRequest(
           await heartbeat.stop();
           await completeAccountErasure(database, request.id, leaseOwner, completedAt);
         },
-        loadCompletedPhases: () => loadAccountErasureCheckpoints(database, request.id),
+        loadCompletedPhases: async () => {
+          const completed = new Set(await loadAccountErasureCheckpoints(database, request.id));
+          if (
+            completed.has("ingest_fence") &&
+            request.userId !== null &&
+            request.encryptedRemoteSnapshot !== null &&
+            !hasRoutedIngestFence(
+              await loadAccountErasureCheckpointDetails(database, request.id, "ingest_fence"),
+            )
+          ) {
+            completed.delete("ingest_fence");
+          }
+          return completed;
+        },
         markCompleted: async (completedRequestId, phase, details) => {
           try {
             await markAccountErasurePhaseCompleted(
