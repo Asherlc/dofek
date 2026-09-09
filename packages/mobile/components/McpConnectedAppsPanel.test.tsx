@@ -77,21 +77,9 @@ describe("McpConnectedAppsPanel", () => {
       revokedAt: null,
       oauthClientId: "oauth-client",
     }));
-    const secondPage = [
-      {
-        id: "oauth-token-last",
-        name: "OAuth app last",
-        scopes: ["health:read"],
-        createdAt: "2026-05-19T12:00:00Z",
-        lastUsedAt: null,
-        expiresAt: null,
-        revokedAt: null,
-        oauthClientId: "oauth-client",
-      },
-    ];
     mocks.listConnectedApps.mockImplementation(({ cursor }: { cursor?: string }) => ({
       data: cursor
-        ? { items: secondPage, nextCursor: null }
+        ? { items: [], nextCursor: null }
         : { items: firstPage, nextCursor: "oauth-token-19" },
       error: null,
       isLoading: false,
@@ -101,9 +89,35 @@ describe("McpConnectedAppsPanel", () => {
 
     expect(screen.getByRole("button", { name: "Next connected apps page" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Next connected apps page" }));
-    expect(screen.getByText("OAuth app last")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Previous connected apps page" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Previous connected apps page" }));
     expect(screen.getByText("OAuth app 0")).toBeTruthy();
+  });
+
+  it("shows refetch errors while retaining cached connected apps", () => {
+    mocks.listConnectedApps.mockReturnValue({
+      data: {
+        items: [
+          {
+            id: "oauth-token-id",
+            name: "Claude OAuth",
+            scopes: ["health:read"],
+            createdAt: "2026-05-20T12:00:00Z",
+            lastUsedAt: null,
+            expiresAt: null,
+            revokedAt: null,
+            oauthClientId: "oauth-client",
+          },
+        ],
+        nextCursor: null,
+      },
+      error: new Error("Connected apps request failed"),
+      isLoading: false,
+    });
+
+    render(<McpConnectedAppsPanel />);
+
+    expect(screen.getByText("Claude OAuth")).toBeTruthy();
+    expect(screen.getByText("Connected apps request failed")).toBeTruthy();
   });
 });

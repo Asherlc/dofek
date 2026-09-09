@@ -30,13 +30,38 @@ const connectedApps = [
   },
 ];
 
-function createMockLink(): TRPCLink<AppRouter> {
+type StoryScenario = "default" | "loading" | "error" | "empty" | "paginated";
+
+function createMockLink(scenario: StoryScenario): TRPCLink<AppRouter> {
   return () =>
     ({ op }) => {
       const result: OperationResultObservable<AppRouter, unknown> = {
         subscribe(observer) {
           if (op.path === "mcp.listConnectedApps") {
-            observer.next?.({ result: { data: { items: connectedApps, nextCursor: null } } });
+            if (scenario === "loading") return { unsubscribe: () => {} };
+            if (scenario === "error") {
+              observer.error?.(new Error("Connected apps request failed"));
+              return { unsubscribe: () => {} };
+            }
+            if (scenario === "empty") {
+              observer.next?.({ result: { data: { items: [], nextCursor: null } } });
+            } else if (scenario === "paginated" && op.input?.cursor) {
+              observer.next?.({ result: { data: { items: connectedApps, nextCursor: null } } });
+            } else {
+              const items =
+                scenario === "paginated"
+                  ? Array.from({ length: 20 }, (_, index) => ({
+                      ...connectedApps[0],
+                      id: `oauth-token-${index}`,
+                      name: `OAuth app ${index + 1}`,
+                    }))
+                  : connectedApps;
+              observer.next?.({
+                result: {
+                  data: { items, nextCursor: scenario === "paginated" ? "oauth-token-19" : null },
+                },
+              });
+            }
           } else if (op.path === "mcp.revokeToken") {
             observer.next?.({ result: { data: connectedApps[0] } });
           } else {
@@ -54,9 +79,12 @@ function createMockLink(): TRPCLink<AppRouter> {
     };
 }
 
-function StoryFrame() {
+function StoryFrame({ scenario }: { scenario: StoryScenario }) {
   const queryClient = useMemo(() => new QueryClient(), []);
-  const trpcClient = useMemo(() => trpc.createClient({ links: [createMockLink()] }), []);
+  const trpcClient = useMemo(
+    () => trpc.createClient({ links: [createMockLink(scenario)] }),
+    [scenario],
+  );
 
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
@@ -77,4 +105,8 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const Default: Story = { render: () => <StoryFrame /> };
+export const Default: Story = { render: () => <StoryFrame scenario="default" /> };
+export const Loading: Story = { render: () => <StoryFrame scenario="loading" /> };
+export const ErrorState: Story = { render: () => <StoryFrame scenario="error" /> };
+export const Empty: Story = { render: () => <StoryFrame scenario="empty" /> };
+export const Paginated: Story = { render: () => <StoryFrame scenario="paginated" /> };

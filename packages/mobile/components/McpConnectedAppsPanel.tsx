@@ -45,7 +45,7 @@ export function McpConnectedAppsPanel() {
       />
     );
   }
-  if (oauthTokens.length === 0) return null;
+  if (oauthTokens.length === 0 && connectedAppCursors.length === 1) return null;
 
   return (
     <View style={styles.panel}>
@@ -56,6 +56,11 @@ export function McpConnectedAppsPanel() {
       {errorMessage ? (
         <Text accessibilityRole="alert" style={styles.error}>
           {errorMessage}
+        </Text>
+      ) : null}
+      {connectedAppsQuery.error ? (
+        <Text accessibilityRole="alert" style={styles.error}>
+          {getQueryErrorMessage(connectedAppsQuery.error, "Could not load connected apps.")}
         </Text>
       ) : null}
       <View style={styles.list}>
