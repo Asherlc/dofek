@@ -1,7 +1,5 @@
 # Live and Historical Metric Streams Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Route normal and initial-history metric writes through independent
 Redpanda topics and sinks, while preserving the legacy drain and increasing
 ClickHouse capacity for sustained ingestion.

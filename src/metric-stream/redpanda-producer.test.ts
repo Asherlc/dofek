@@ -425,4 +425,36 @@ describe("createKafkaMetricStreamEventPublisherFromEnv", () => {
       expect.objectContaining({ topic: "metric-stream-live-v1" }),
     );
   });
+
+  it("does not reuse a route publisher for a different resolved Kafka configuration", async () => {
+    vi.resetModules();
+    kafkaConstructor.mockClear();
+    kafkaProducerConnect.mockClear();
+    kafkaProducerSend.mockClear();
+
+    const { createKafkaMetricStreamEventPublisherForRoute } = await import(
+      "./redpanda-producer.ts"
+    );
+    const firstPublisher = await createKafkaMetricStreamEventPublisherForRoute("live", {
+      METRIC_STREAM_LIVE_TOPIC: "metric-stream-live-one",
+      REDPANDA_BROKERS: "redpanda-one:9092",
+    });
+    const secondPublisher = await createKafkaMetricStreamEventPublisherForRoute("live", {
+      METRIC_STREAM_LIVE_TOPIC: "metric-stream-live-two",
+      REDPANDA_BROKERS: "redpanda-two:9092",
+    });
+
+    expect(secondPublisher).not.toBe(firstPublisher);
+    expect(kafkaProducerConnect).toHaveBeenCalledTimes(2);
+
+    await secondPublisher.publishRows([metricStreamRow], { operationRevision });
+
+    expect(kafkaConstructor).toHaveBeenNthCalledWith(2, {
+      brokers: ["redpanda-two:9092"],
+      clientId: "dofek-metric-stream-producer",
+    });
+    expect(kafkaProducerSend).toHaveBeenLastCalledWith(
+      expect.objectContaining({ topic: "metric-stream-live-two" }),
+    );
+  });
 });

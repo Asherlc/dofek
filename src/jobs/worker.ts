@@ -14,6 +14,7 @@ import { createImportUploadStorageFromEnv } from "../file-upload-storage.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import { initProductionSentry } from "../lib/sentry.ts";
 import { jobContext, logger } from "../logger.ts";
+import { validateMetricStreamTopicConfiguration } from "../metric-stream/routes.ts";
 import { getAllProviders } from "../providers/index.ts";
 import { startAccountErasureOutboxDispatcher } from "./account-erasure-outbox.ts";
 import { createAccountErasureRuntime } from "./account-erasure-runtime.ts";
@@ -80,6 +81,7 @@ import { createWorkerReadinessServer } from "./worker-readiness.ts";
 
 const sentryDsn = process.env.SENTRY_DSN || process.env.SENTRY_DSN_unencrypted;
 initProductionSentry(sentryDsn);
+validateMetricStreamTopicConfiguration();
 
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const WORKER_READINESS_HOST = "127.0.0.1";

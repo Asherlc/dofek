@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { metricStreamRouteForSyncJob, metricStreamTopicForRoute } from "./routes.ts";
+import {
+  metricStreamRouteForSyncJob,
+  metricStreamTopicForRoute,
+  validateMetricStreamTopicConfiguration,
+} from "./routes.ts";
 
 describe("metric stream routes", () => {
   it("routes full refreshes to history and other jobs to live", () => {
@@ -25,5 +29,12 @@ describe("metric stream routes", () => {
 
     expect(metricStreamTopicForRoute("live", env)).toBe("metric-stream-live");
     expect(metricStreamTopicForRoute("history", env)).toBe("metric-stream-history");
+  });
+
+  it.each([
+    ["METRIC_STREAM_LIVE_TOPIC", { METRIC_STREAM_HISTORY_TOPIC: "metric-stream-history" }],
+    ["METRIC_STREAM_HISTORY_TOPIC", { METRIC_STREAM_LIVE_TOPIC: "metric-stream-live" }],
+  ])("rejects a missing %s during startup configuration validation", (key, env) => {
+    expect(() => validateMetricStreamTopicConfiguration(env)).toThrow(`${key} is required`);
   });
 });

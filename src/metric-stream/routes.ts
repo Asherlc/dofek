@@ -14,3 +14,8 @@ export function metricStreamTopicForRoute(route: MetricStreamRoute, env = proces
   if (!topic) throw new Error(`${key} is required`);
   return topic;
 }
+
+export function validateMetricStreamTopicConfiguration(env = process.env): void {
+  metricStreamTopicForRoute("live", env);
+  metricStreamTopicForRoute("history", env);
+}

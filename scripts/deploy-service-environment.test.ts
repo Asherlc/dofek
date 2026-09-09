@@ -256,7 +256,7 @@ describe("renderDeployServiceEnvironmentFiles", () => {
     writeFileSync(sourcePath, dotenv(environment));
     expect(() =>
       renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services")),
-    ).toThrow(new RegExp(`missing required keys:.*${key}`));
+    ).toThrow(`missing required keys: ${key}`);
   });
 
   it("writes least-privilege service files without leaking control-plane secrets", () => {

@@ -704,7 +704,7 @@ jobs:
           fi
 
           wait_deadline_seconds=$((SECONDS + 2100))
-          for service in web worker analytics-worker metric-stream-clickhouse-sink metric-stream-live-clickhouse-sink metric-stream-history-clickhouse-sink processing-reconciliation clickhouse databasus; do
+          for service in web worker analytics-worker metric-stream-clickhouse-sink metric-stream-live-clickhouse-sink metric-stream-history-clickhouse-sink metric-stream-r2-archive metric-stream-live-r2-archive metric-stream-history-r2-archive processing-reconciliation clickhouse databasus; do
             service_name="${STACK_NAME}_${service}"
             while true; do
               update_state="$(
@@ -946,7 +946,7 @@ jobs:
 
           wait_deadline_seconds=$((SECONDS + 1200))
           stability_window_seconds=60
-          for service in analytics-worker metric-stream-clickhouse-sink metric-stream-live-clickhouse-sink metric-stream-history-clickhouse-sink processing-reconciliation; do
+          for service in analytics-worker metric-stream-clickhouse-sink metric-stream-live-clickhouse-sink metric-stream-history-clickhouse-sink metric-stream-r2-archive metric-stream-live-r2-archive metric-stream-history-r2-archive processing-reconciliation; do
             service_name="${STACK_NAME}_${service}"
             stable_task_id=""
             stable_since_seconds=0
@@ -973,12 +973,16 @@ jobs:
               )"
               task_id="${task_ids%%$'\n'*}"
               echo "${service_name} image=${image} replicas=${replicas} update_state=${update_state:-none} task_id=${task_id:-none}"
-              expected_image="ghcr.io/asherlc/dofek:${IMAGE_TAG}"
-              if [ "${image%@*}" != "$expected_image" ]; then
-                docker service ps "$service_name" --no-trunc
-                echo "::error::${service_name} is using ${image}, expected ${expected_image}"
-                exit 1
-              fi
+              case "$service" in
+                analytics-worker|metric-stream-clickhouse-sink|metric-stream-live-clickhouse-sink|metric-stream-history-clickhouse-sink|processing-reconciliation)
+                  expected_image="ghcr.io/asherlc/dofek:${IMAGE_TAG}"
+                  if [ "${image%@*}" != "$expected_image" ]; then
+                    docker service ps "$service_name" --no-trunc
+                    echo "::error::${service_name} is using ${image}, expected ${expected_image}"
+                    exit 1
+                  fi
+                  ;;
+              esac
               if [ "$desired_replicas" != "1" ]; then
                 docker service ps "$service_name" --no-trunc
                 echo "::error::${service_name} expected one desired replica after the full deploy, found ${desired_replicas}"

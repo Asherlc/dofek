@@ -43,14 +43,17 @@ ordering for delete, replacement-row, and processing-marker sequences. Kafka
 guarantees ordering within a partition, not across partitions or topics
 ([Kafka documentation](https://kafka.apache.org/documentation/#semantics)).
 Cross-route overlap remains correct because the existing metric-stream write
-path assigns a monotonically increasing operation revision, and ClickHouse
-resolves the newest stored version. The design must test that a newer live
+path allocates every operation revision from the shared
+`fitness.metric_ingest_operation_revision_seq`; the ClickHouse sink writes that
+value as its `ReplacingMergeTree(version)` version. The design must test that a newer live
 replacement remains visible when an older history replacement completes later.
 
 The live, history, and legacy sinks all write the same canonical
-`ingest.metric_stream` table and acknowledgement table. No second copy of raw
-metric data is introduced. Processing reconciliation continues to use the
-existing batch IDs and acknowledgement records without route-specific logic.
+`ingest.metric_stream` table and acknowledgement table. No second ClickHouse
+copy of raw metric data is introduced; the existing topic-qualified R2 archive
+remains the separate durable raw-data copy. Processing reconciliation continues
+to use the existing batch IDs and acknowledgement records without
+route-specific logic.
 
 ## Configuration
 

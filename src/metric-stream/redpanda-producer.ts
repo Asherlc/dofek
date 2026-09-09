@@ -170,10 +170,7 @@ export class KafkaMetricStreamEventPublisher implements MetricStreamEventPublish
   }
 }
 
-const metricStreamPublisherPromises = new Map<
-  MetricStreamRoute,
-  Promise<KafkaMetricStreamEventPublisher>
->();
+const metricStreamPublisherPromises = new Map<string, Promise<KafkaMetricStreamEventPublisher>>();
 
 export function getDefaultMetricStreamEventPublisher(): Promise<MetricStreamEventPublisher> {
   return createKafkaMetricStreamEventPublisherForRoute("live");
@@ -206,7 +203,8 @@ export async function createKafkaMetricStreamEventPublisherForRoute(
     throw new Error("REDPANDA_BROKERS must contain at least one broker");
   }
 
-  let publisherPromise = metricStreamPublisherPromises.get(route);
+  const publisherCacheKey = JSON.stringify([route, topic, brokers]);
+  let publisherPromise = metricStreamPublisherPromises.get(publisherCacheKey);
   if (!publisherPromise) {
     publisherPromise = (async () => {
       const kafka = new Kafka({
@@ -217,7 +215,7 @@ export async function createKafkaMetricStreamEventPublisherForRoute(
       await producer.connect();
       return new KafkaMetricStreamEventPublisher(producer, topic);
     })();
-    metricStreamPublisherPromises.set(route, publisherPromise);
+    metricStreamPublisherPromises.set(publisherCacheKey, publisherPromise);
   }
   return publisherPromise;
 }
