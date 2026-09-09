@@ -189,7 +189,7 @@ affected_current_members AS MATERIALIZED (
         )
 ),
 
-affected_location_versions AS MATERIALIZED (
+affected_location_versions AS (
     SELECT location_versions.*
     FROM {{ source('ingest', 'metric_stream_freshness') }} AS location_versions
     WHERE location_versions.channel = 'location'

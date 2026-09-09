@@ -26070,12 +26070,12 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   tests), and the exact CI Stryker target completes its dry run with 67 worker
   tests. Require a fresh full PR workflow to pass before merge.
 
-## 2026-09-09 — PeerDB worker OOM stalled the fitness mirror and Withings processing
+## 2026-09-09 — PeerDB and analytics memory pressure stalled Withings processing
 
-- **Status:** The PeerDB OOM, stale activity mirror, and missing ClickHouse
-  target column are resolved. A follow-up query-scope fix is validated locally
-  and pending production rollout after the first repaired analytics cycle
-  exposed a location-model timeout.
+- **Status:** The PeerDB OOM, stale activity mirror, missing ClickHouse target
+  column, and initial location-model timeout are resolved. The first scoped
+  query rollout exposed a redundant materialization memory regression; its
+  streaming fix is validated locally and pending production rollout.
 - **Symptoms / user impact:** Withings relational data continued reaching
   Postgres, but 44 processing-outbox rows remained pending and the app reported
   all Withings datasets as waiting. The analytics build stopped at
@@ -26132,9 +26132,23 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   incremental model's reads from 1,800,166 to 67,798 (about 96%) while
   preserving the affected route. The committed 10,000-row resource-bounded
   variant reads 10,051 rows, and the full focused migration and activity
-  lifecycle suite passes. No timeout or memory limit was increased. After
-  rollout, require a full successful analytics cycle and confirm the Withings
-  outbox remains at zero pending. If the slot later remains inactive or retained
+  lifecycle suite passes. PR
+  [#2705](https://github.com/Asherlc/dofek/pull/2705) deployed that change and
+  migration 0084. Production confirmed the migration journal entry, the
+  null-safe default, and successful reads of all 10,699,481 target rows,
+  including 425,910 epoch-defaulted legacy rows. The first post-deploy model
+  run then failed after 30.62 seconds with `memory limit exceeded: would use
+  10.10 GiB`; ClickHouse recorded 374,766,770 rows and 21.03 GiB read with
+  9.20 GiB peak query memory. The bounded scan worked, but the new one-use
+  `affected_location_versions` CTE materialized every selected raw column and
+  buffered an unnecessary second full copy of the affected backlog. Keep the
+  changed-key and reused result CTEs materialized, but stream the one-use raw
+  CTE directly into aggregation. The regression assertion fails on forced raw
+  materialization and the clean real-ClickHouse scan-bound fixture passes in
+  253 ms with 10,049 rows, 510.66 KiB read, and 13.35 MiB peak query memory.
+  No timeout or memory limit was increased. After the streaming fix rolls out,
+  require a full successful analytics cycle and confirm the Withings outbox
+  remains at zero pending. If the slot later remains inactive or retained
   WAL does not fall after the worker is stable, follow the guarded triage in the
   [ClickHouse CDC health runbook](./clickhouse-cdc-health-runbook.md#recovery).
   Do not drop a merely inactive slot: recreate the mirror only after confirming
