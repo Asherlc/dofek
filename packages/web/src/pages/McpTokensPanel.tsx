@@ -39,7 +39,13 @@ function formatTimestamp(value: Date | string | null): string {
 
 export function McpTokensPanel() {
   const trpcUtils = trpc.useUtils();
-  const tokens = trpc.mcp.listTokens.useQuery();
+  const personalTokensQuery = trpc.mcp.listPersonalTokens.useQuery();
+  const [connectedAppCursors, setConnectedAppCursors] = useState<Array<string | undefined>>([
+    undefined,
+  ]);
+  const connectedAppsQuery = trpc.mcp.listConnectedApps.useQuery({
+    cursor: connectedAppCursors.at(-1),
+  });
   const createTokenMutation = trpc.mcp.createToken.useMutation({
     meta: locallyReportedErrorMeta,
   });
@@ -62,8 +68,15 @@ export function McpTokensPanel() {
   const [mcpEndpoint, setMcpEndpoint] = useState("/api/mcp");
   const [isSecureOrigin, setIsSecureOrigin] = useState<boolean | null>(null);
   const tokenForInstall = createdToken ?? "dofek_mcp_your_token";
-  const oauthTokens = (tokens.data ?? []).filter((token) => token.oauthClientId != null);
-  const personalTokens = (tokens.data ?? []).filter((token) => token.oauthClientId == null);
+  const oauthTokens = connectedAppsQuery.data?.items ?? [];
+  const personalTokens = personalTokensQuery.data ?? [];
+
+  const invalidateTokenLists = async () => {
+    await Promise.all([
+      trpcUtils.mcp.listPersonalTokens.invalidate(),
+      trpcUtils.mcp.listConnectedApps.invalidate(),
+    ]);
+  };
 
   useEffect(() => {
     const secure = window.location.protocol === "https:";
@@ -101,7 +114,7 @@ export function McpTokensPanel() {
     setSelectedScopes((current) => toggleScopeSet(current, scope));
   };
 
-  const beginEditScopes = (token: NonNullable<typeof tokens.data>[number]) => {
+  const beginEditScopes = (token: NonNullable<typeof personalTokensQuery.data>[number]) => {
     setErrorMessage(null);
     setEditingTokenId(token.id);
     const nextScopes = new Set(token.scopes);
@@ -120,7 +133,7 @@ export function McpTokensPanel() {
     try {
       await updateScopesMutation.mutateAsync({ tokenId, scopes });
       cancelEditScopes();
-      await trpcUtils.mcp.listTokens.invalidate();
+      await invalidateTokenLists();
     } catch (error: unknown) {
       captureException(error, { context: "update-mcp-token-scopes" });
       setErrorMessage(userFacingErrorMessage(error, "Failed to update MCP token scopes."));
@@ -138,7 +151,7 @@ export function McpTokensPanel() {
         expiresAt: expiresAt ? `${expiresAt}T23:59:59.999Z` : null,
       });
       setCreatedToken(result.token);
-      await trpcUtils.mcp.listTokens.invalidate();
+      await invalidateTokenLists();
     } catch (error: unknown) {
       captureException(error, { context: "create-mcp-token" });
       setErrorMessage(userFacingErrorMessage(error, "Failed to create MCP token."));
@@ -160,14 +173,15 @@ export function McpTokensPanel() {
     setErrorMessage(null);
     try {
       await revokeTokenMutation.mutateAsync({ tokenId });
-      await trpcUtils.mcp.listTokens.invalidate();
+      setConnectedAppCursors([undefined]);
+      await invalidateTokenLists();
     } catch (error: unknown) {
       captureException(error, { context: "revoke-mcp-token" });
       setErrorMessage(userFacingErrorMessage(error, "Failed to revoke MCP token."));
     }
   };
 
-  const rotateToken = async (token: NonNullable<typeof tokens.data>[number]) => {
+  const rotateToken = async (token: NonNullable<typeof personalTokensQuery.data>[number]) => {
     setErrorMessage(null);
     setCopyStatus(null);
     let createdReplacement = false;
@@ -190,16 +204,22 @@ export function McpTokensPanel() {
         setErrorMessage(userFacingErrorMessage(error, "Failed to rotate MCP token."));
       }
     } finally {
-      await trpcUtils.mcp.listTokens.invalidate();
+      await invalidateTokenLists();
     }
   };
 
-  if (tokens.isLoading) {
+  if (personalTokensQuery.isLoading || connectedAppsQuery.isLoading) {
     return <QueryStatePanel variant="loading" message="Loading MCP tokens..." height={96} />;
   }
 
-  if (tokens.error) {
-    return <QueryStatePanel error={tokens.error} contextLabel="MCP tokens" height={96} />;
+  if (personalTokensQuery.error || connectedAppsQuery.error) {
+    return (
+      <QueryStatePanel
+        error={personalTokensQuery.error ?? connectedAppsQuery.error}
+        contextLabel="MCP tokens"
+        height={96}
+      />
+    );
   }
 
   return (
@@ -292,6 +312,32 @@ export function McpTokensPanel() {
               );
             })}
           </ul>
+          {connectedAppCursors.length > 1 || connectedAppsQuery.data?.nextCursor ? (
+            <div className="flex items-center justify-between border-t border-border pt-3">
+              <button
+                type="button"
+                onClick={() => setConnectedAppCursors((cursors) => cursors.slice(0, -1))}
+                disabled={connectedAppCursors.length === 1}
+                aria-label="Previous connected apps page"
+                className="rounded border border-border-strong px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <span className="text-xs text-subtle">Page {connectedAppCursors.length}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  const nextCursor = connectedAppsQuery.data?.nextCursor;
+                  if (nextCursor) setConnectedAppCursors((cursors) => [...cursors, nextCursor]);
+                }}
+                disabled={!connectedAppsQuery.data?.nextCursor}
+                aria-label="Next connected apps page"
+                className="rounded border border-border-strong px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          ) : null}
         </section>
       ) : null}
 

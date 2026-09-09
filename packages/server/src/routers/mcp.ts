@@ -2,9 +2,12 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import {
   createMcpToken,
+  listMcpConnectedApps,
+  listMcpPersonalTokens,
   listMcpTokens,
   mcpScopeSchema,
   mcpTokenMetadataSchema,
+  mcpTokenPageSchema,
   revokeMcpToken,
   updateMcpTokenScopes,
 } from "../mcp/token-repository.ts";
@@ -25,6 +28,10 @@ const updateScopesInput = z.object({
   scopes: z.array(mcpScopeSchema).min(1),
 });
 
+const listConnectedAppsInput = z.object({
+  cursor: z.guid().optional(),
+});
+
 export const mcpRouter = router({
   createToken: protectedProcedure.input(createTokenInput).mutation(async ({ ctx, input }) => {
     return createMcpToken(ctx.db, {
@@ -38,6 +45,19 @@ export const mcpRouter = router({
   listTokens: protectedProcedure.query(async ({ ctx }) => {
     return listMcpTokens(ctx.db, ctx.userId);
   }),
+
+  listPersonalTokens: protectedProcedure
+    .output(z.array(mcpTokenMetadataSchema))
+    .query(async ({ ctx }) => {
+      return listMcpPersonalTokens(ctx.db, ctx.userId);
+    }),
+
+  listConnectedApps: protectedProcedure
+    .input(listConnectedAppsInput)
+    .output(mcpTokenPageSchema)
+    .query(async ({ ctx, input }) => {
+      return listMcpConnectedApps(ctx.db, ctx.userId, input.cursor);
+    }),
 
   updateScopes: protectedProcedure
     .input(updateScopesInput)

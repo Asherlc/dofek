@@ -3,6 +3,8 @@ import {
   createMcpToken,
   generateMcpToken,
   hashMcpToken,
+  listMcpConnectedApps,
+  listMcpPersonalTokens,
   listMcpTokens,
   McpAuthError,
   mcpScopeSchema,
@@ -131,6 +133,68 @@ describe("MCP token repository", () => {
         oauthClientId: "https://claude.ai/oauth/client-metadata.json",
       }),
     ]);
+  });
+
+  it("lists personal tokens without OAuth connections", async () => {
+    mockExecute.mockResolvedValueOnce([
+      {
+        id: "personal-token-id",
+        name: "Codex",
+        scopes: ["health:read"],
+        created_at: "2026-05-20T12:00:00.000Z",
+        last_used_at: null,
+        expires_at: null,
+        revoked_at: null,
+        oauth_client_id: null,
+      },
+    ]);
+
+    await listMcpPersonalTokens(createMockDb(), "user-id");
+
+    expect(JSON.stringify(mockExecute.mock.calls[0]?.[0])).toContain("oauth_client_id IS NULL");
+  });
+
+  it("returns a cursor for the next connected-app page", async () => {
+    mockExecute.mockResolvedValueOnce(
+      Array.from({ length: 21 }, (_, index) => ({
+        id: `oauth-token-${index}`,
+        name: "Claude OAuth",
+        scopes: ["health:read"],
+        created_at: "2026-05-20T12:00:00.000Z",
+        last_used_at: null,
+        expires_at: null,
+        revoked_at: null,
+        oauth_client_id: "claude-client",
+      })),
+    );
+
+    const page = await listMcpConnectedApps(createMockDb(), "user-id", undefined);
+
+    expect(page.items).toHaveLength(20);
+    expect(page.nextCursor).toBe("oauth-token-19");
+    const queryPayload = JSON.stringify(mockExecute.mock.calls[0]?.[0]);
+    expect(queryPayload).toContain("oauth_client_id IS NOT NULL");
+    expect(queryPayload).toContain('},21,{"value":[""]');
+  });
+
+  it("does not return a cursor when the connected-app page is full", async () => {
+    mockExecute.mockResolvedValueOnce(
+      Array.from({ length: 20 }, (_, index) => ({
+        id: `oauth-token-${index}`,
+        name: "Claude OAuth",
+        scopes: ["health:read"],
+        created_at: "2026-05-20T12:00:00.000Z",
+        last_used_at: null,
+        expires_at: null,
+        revoked_at: null,
+        oauth_client_id: "claude-client",
+      })),
+    );
+
+    const page = await listMcpConnectedApps(createMockDb(), "user-id");
+
+    expect(page.items).toHaveLength(20);
+    expect(page.nextCursor).toBeNull();
   });
 
   it("does not add nutrition write to an existing read-only token", async () => {

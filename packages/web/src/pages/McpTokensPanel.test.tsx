@@ -26,6 +26,16 @@ const listTokensQuery: {
   isLoading: false,
   refetch: vi.fn(),
 };
+const connectedAppsQuery: {
+  data: { items: MockMcpToken[]; nextCursor: string | null };
+  error: Error | null;
+  isLoading: boolean;
+} = {
+  data: { items: [], nextCursor: null },
+  error: null,
+  isLoading: false,
+};
+const listConnectedAppsUseQuery = vi.hoisted(() => vi.fn());
 const createTokenMutateAsync = vi.fn();
 const revokeTokenMutateAsync = vi.fn();
 const updateScopesMutateAsync = vi.fn();
@@ -44,10 +54,18 @@ vi.mock("../lib/trpc.ts", () => ({
         listTokens: {
           invalidate: invalidateMcp,
         },
+        listPersonalTokens: {
+          invalidate: invalidateMcp,
+        },
+        listConnectedApps: {
+          invalidate: invalidateMcp,
+        },
       },
     }),
     mcp: {
       listTokens: { useQuery: () => listTokensQuery },
+      listPersonalTokens: { useQuery: () => listTokensQuery },
+      listConnectedApps: { useQuery: listConnectedAppsUseQuery },
       createToken: {
         useMutation: () => ({
           mutateAsync: createTokenMutateAsync,
@@ -79,6 +97,12 @@ describe("McpTokensPanel", () => {
     listTokensQuery.error = null;
     listTokensQuery.isLoading = false;
     listTokensQuery.refetch.mockReset();
+    connectedAppsQuery.data = { items: [], nextCursor: null };
+    connectedAppsQuery.error = null;
+    connectedAppsQuery.isLoading = false;
+    listConnectedAppsUseQuery
+      .mockReset()
+      .mockImplementation((_input: { cursor?: string }) => connectedAppsQuery);
     createTokenMutateAsync.mockReset();
     revokeTokenMutateAsync.mockReset();
     updateScopesMutateAsync.mockReset();
@@ -534,16 +558,6 @@ describe("McpTokensPanel", () => {
   it("separates OAuth connections from personal tokens", () => {
     listTokensQuery.data = [
       {
-        id: "00000000-0000-0000-0000-000000000001",
-        name: "Claude OAuth",
-        scopes: ["health:read"],
-        createdAt: "2026-05-20T12:00:00Z",
-        lastUsedAt: "2026-05-20T12:00:00Z",
-        expiresAt: "2020-01-01T00:00:00Z",
-        revokedAt: null,
-        oauthClientId: "https://claude.ai/oauth/client-metadata.json",
-      },
-      {
         id: "00000000-0000-0000-0000-000000000002",
         name: "Personal Codex",
         scopes: ["health:read"],
@@ -553,6 +567,21 @@ describe("McpTokensPanel", () => {
         revokedAt: null,
       },
     ];
+    connectedAppsQuery.data = {
+      items: [
+        {
+          id: "00000000-0000-0000-0000-000000000001",
+          name: "Claude OAuth",
+          scopes: ["health:read"],
+          createdAt: "2026-05-20T12:00:00Z",
+          lastUsedAt: "2026-05-20T12:00:00Z",
+          expiresAt: "2020-01-01T00:00:00Z",
+          revokedAt: null,
+          oauthClientId: "https://claude.ai/oauth/client-metadata.json",
+        },
+      ],
+      nextCursor: null,
+    };
 
     render(<McpTokensPanel />);
 
@@ -566,18 +595,21 @@ describe("McpTokensPanel", () => {
   });
 
   it("revokes OAuth access for the selected connected app", async () => {
-    listTokensQuery.data = [
-      {
-        id: "00000000-0000-0000-0000-000000000001",
-        name: "Claude OAuth",
-        scopes: ["health:read"],
-        createdAt: "2026-05-20T12:00:00Z",
-        lastUsedAt: null,
-        expiresAt: "2020-01-01T00:00:00Z",
-        revokedAt: null,
-        oauthClientId: "https://claude.ai/oauth/client-metadata.json",
-      },
-    ];
+    connectedAppsQuery.data = {
+      items: [
+        {
+          id: "00000000-0000-0000-0000-000000000001",
+          name: "Claude OAuth",
+          scopes: ["health:read"],
+          createdAt: "2026-05-20T12:00:00Z",
+          lastUsedAt: null,
+          expiresAt: "2020-01-01T00:00:00Z",
+          revokedAt: null,
+          oauthClientId: "https://claude.ai/oauth/client-metadata.json",
+        },
+      ],
+      nextCursor: null,
+    };
     revokeTokenMutateAsync.mockResolvedValueOnce({});
 
     render(<McpTokensPanel />);
@@ -589,6 +621,52 @@ describe("McpTokensPanel", () => {
         tokenId: "00000000-0000-0000-0000-000000000001",
       });
     });
+  });
+
+  it("paginates connected apps with next and previous controls", () => {
+    const firstPageTokens = Array.from({ length: 20 }, (_, index) => ({
+      id: `oauth-token-${index}`,
+      name: `OAuth app ${index}`,
+      scopes: ["health:read"],
+      createdAt: "2026-05-20T12:00:00Z",
+      lastUsedAt: null,
+      expiresAt: null,
+      revokedAt: null,
+      oauthClientId: "oauth-client",
+    }));
+    const secondPageTokens = [
+      {
+        id: "oauth-token-last",
+        name: "OAuth app last",
+        scopes: ["health:read"],
+        createdAt: "2026-05-19T12:00:00Z",
+        lastUsedAt: null,
+        expiresAt: null,
+        revokedAt: null,
+        oauthClientId: "oauth-client",
+      },
+    ];
+    listConnectedAppsUseQuery.mockImplementation(({ cursor }) => ({
+      data: cursor
+        ? { items: secondPageTokens, nextCursor: null }
+        : { items: firstPageTokens, nextCursor: "oauth-token-19" },
+      error: null,
+      isLoading: false,
+    }));
+
+    render(<McpTokensPanel />);
+
+    expect(screen.getByRole("button", { name: "Next connected apps page" })).toBeTruthy();
+    expect(screen.getByText("OAuth app 0")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Next connected apps page" }));
+
+    expect(screen.getByText("OAuth app last")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Previous connected apps page" })).toBeTruthy();
+    expect(listConnectedAppsUseQuery).toHaveBeenLastCalledWith({ cursor: "oauth-token-19" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous connected apps page" }));
+    expect(screen.getByText("OAuth app 0")).toBeTruthy();
+    expect(listConnectedAppsUseQuery).toHaveBeenLastCalledWith({ cursor: undefined });
   });
 
   it("rotates an active token with the same settings", async () => {

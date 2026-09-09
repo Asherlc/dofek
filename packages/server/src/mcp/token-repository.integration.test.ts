@@ -6,6 +6,8 @@ import { executeWithSchema } from "../lib/typed-sql.ts";
 import {
   createMcpToken,
   hashMcpToken,
+  listMcpConnectedApps,
+  listMcpPersonalTokens,
   listMcpTokens,
   revokeMcpToken,
   updateMcpTokenScopes,
@@ -291,5 +293,39 @@ describe("MCP token repository (integration)", () => {
     expect(byName.get("First")?.oauthClientId).toBe("claude-client");
     expect(byName.get("Second")?.scopes).toEqual(["activity:read", "nutrition:read"]);
     expect(byName.get("Second")?.oauthClientId).toBeNull();
+  });
+
+  it("paginates connected apps without returning personal tokens", async () => {
+    for (let index = 0; index < 21; index += 1) {
+      await createMcpToken(ctx.db, {
+        userId: testUserId,
+        name: `OAuth app ${index}`,
+        scopes: ["health:read"],
+        expiresAt: null,
+        oauthClientId: "claude-client",
+        oauthResource: "https://dofek.example/api/mcp",
+      });
+    }
+    await createMcpToken(ctx.db, {
+      userId: testUserId,
+      name: "Personal token",
+      scopes: ["health:read"],
+      expiresAt: null,
+    });
+
+    const firstPage = await listMcpConnectedApps(ctx.db, testUserId);
+    const nextCursor = firstPage.nextCursor;
+    expect(firstPage.items).toHaveLength(20);
+    expect(firstPage.items.every((token) => token.oauthClientId === "claude-client")).toBe(true);
+    expect(nextCursor).toEqual(expect.any(String));
+
+    const secondPage = await listMcpConnectedApps(ctx.db, testUserId, nextCursor ?? undefined);
+    expect(secondPage.items).toHaveLength(1);
+    expect(secondPage.nextCursor).toBeNull();
+    expect(secondPage.items[0]?.name).toMatch(/^OAuth app /);
+
+    const personalTokens = await listMcpPersonalTokens(ctx.db, testUserId);
+    expect(personalTokens).toHaveLength(1);
+    expect(personalTokens[0]?.name).toBe("Personal token");
   });
 });
