@@ -26072,7 +26072,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 ## 2026-09-09 — PeerDB worker OOM stalled the fitness mirror and Withings processing
 
-- **Status:** Direct infrastructure fix is pending CI and production rollout.
+- **Status:** The PeerDB OOM and stale activity mirror are resolved. A newly
+  exposed ClickHouse target-schema mismatch blocks the downstream analytics
+  cycle; migration 0083 is pending production rollout.
 - **Symptoms / user impact:** Withings relational data continued reaching
   Postgres, but 44 processing-outbox rows remained pending and the app reported
   all Withings datasets as waiting. The analytics build stopped at
@@ -26085,20 +26087,33 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   first fatal task result was `task: non-zero exit (137)` under the configured
   1 GiB memory limit. At diagnosis time the 23 GiB host had 15 GiB available,
   8 GiB completely free, no swap activity, and zero measured memory pressure.
-- **Direct fix:** Raise the checked-in, bounded flow-worker memory limit to
-  2 GiB. Keep the existing 100,000-row CDC batch size and retained slot so the
-  worker can replay WAL without a destructive resnapshot. Docker documents
+- **Direct fix:** PR
+  [#2701](https://github.com/Asherlc/dofek/pull/2701) raised the checked-in,
+  bounded flow-worker memory limit to 2 GiB. The existing 100,000-row CDC batch
+  size and retained slot were preserved so the worker could replay WAL without
+  a destructive resnapshot. Docker documents
   Swarm memory limits as cgroup-enforced resource ceilings
   ([Compose deploy resources](https://docs.docker.com/reference/compose-file/deploy/#memory)),
   and PeerDB documents sizing CDC batches to the worker's available memory
   ([CDC configuration tuning](https://docs.peerdb.io/metrics/important_cdc_configs)).
-- **Validation / remaining risk:** Validate the merged stack before rollout.
-  After deployment, require the flow-worker to remain stable beyond its former
-  11-minute failure interval, confirm the slot becomes active and retained WAL
-  falls, confirm the ClickHouse missing-`group_id` count reaches zero, and
-  verify analytics and all 44 pending Withings rows complete. If the slot
-  remains inactive or retained WAL does not fall after the worker is stable,
-  follow the guarded triage in the
+- **Validation / newly exposed blocker:** The deployed worker received the
+  2 GiB limit, used about 1.716 GiB, and remained stable beyond the former
+  11-minute failure interval. The fitness slot became active and `reserved`,
+  retained WAL fell from about 2 GiB to 875 KiB, and active mirrored activity
+  rows missing `group_id` fell from 3,123 to zero. A fresh analytics cycle then
+  passed `activity_source_records` and reached `activity_location_sample`, where
+  ClickHouse failed with `Identifier 'existing_samples.source_refreshed_at'
+  cannot be resolved`; the production target still had `refreshed_at` but not
+  the newer model output column `source_refreshed_at`. Migration 0083 adds that
+  column idempotently and initializes legacy rows from `refreshed_at` using
+  ClickHouse's documented
+  [`ADD COLUMN`](https://clickhouse.com/docs/sql-reference/statements/alter/column#add-column)
+  behavior. Its real-engine regression covers an absent dbt target, a legacy
+  target row, repeated application, the exact type, and the incremental
+  `greatest(source_refreshed_at, refreshed_at)` expression. After rollout,
+  require a full successful analytics cycle and verify the 54 then-pending
+  Withings outbox rows drain. If the slot later remains inactive or retained
+  WAL does not fall after the worker is stable, follow the guarded triage in the
   [ClickHouse CDC health runbook](./clickhouse-cdc-health-runbook.md#recovery).
   Do not drop a merely inactive slot: recreate the mirror only after confirming
   `wal_status = 'lost'`; if the mirror catalog row is already absent, the
