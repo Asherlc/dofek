@@ -1,4 +1,5 @@
 import { Kafka } from "kafkajs";
+import { captureException } from "../lib/error-reporting.ts";
 import {
   createMetricStreamBatchCompletedEvent,
   createMetricStreamBatchPartitionKey,
@@ -216,6 +217,17 @@ export async function createKafkaMetricStreamEventPublisherForRoute(
       return new KafkaMetricStreamEventPublisher(producer, topic);
     })();
     metricStreamPublisherPromises.set(publisherCacheKey, publisherPromise);
+    void publisherPromise.catch((error: unknown) => {
+      if (metricStreamPublisherPromises.get(publisherCacheKey) === publisherPromise) {
+        metricStreamPublisherPromises.delete(publisherCacheKey);
+      }
+      captureException(error, {
+        tags: {
+          metricStreamProducer: "redpanda",
+          metricStreamFailure: "publisher-connect",
+        },
+      });
+    });
   }
   return publisherPromise;
 }

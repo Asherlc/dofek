@@ -23,9 +23,13 @@ const kafkaConstructor = vi.hoisted(() =>
     return { producer: kafkaProducerFactory };
   }),
 );
+const captureException = vi.hoisted(() => vi.fn());
 
 vi.mock("kafkajs", () => ({
   Kafka: kafkaConstructor,
+}));
+vi.mock("../lib/error-reporting.ts", () => ({
+  captureException,
 }));
 
 const metricStreamRow = {
@@ -455,6 +459,38 @@ describe("createKafkaMetricStreamEventPublisherFromEnv", () => {
     });
     expect(kafkaProducerSend).toHaveBeenLastCalledWith(
       expect.objectContaining({ topic: "metric-stream-live-two" }),
+    );
+  });
+
+  it("retries publisher initialization after a connection failure", async () => {
+    vi.resetModules();
+    kafkaProducerConnect.mockClear();
+    captureException.mockClear();
+    kafkaProducerConnect.mockRejectedValueOnce(new Error("Redpanda unavailable"));
+
+    const { createKafkaMetricStreamEventPublisherForRoute } = await import(
+      "./redpanda-producer.ts"
+    );
+    const env = {
+      METRIC_STREAM_LIVE_TOPIC: "metric-stream-live-v1",
+      REDPANDA_BROKERS: "redpanda:9092",
+    };
+
+    await expect(createKafkaMetricStreamEventPublisherForRoute("live", env)).rejects.toThrow(
+      "Redpanda unavailable",
+    );
+    const retriedPublisher = await createKafkaMetricStreamEventPublisherForRoute("live", env);
+    expect(retriedPublisher.publishRows).toBeTypeOf("function");
+
+    expect(kafkaProducerConnect).toHaveBeenCalledTimes(2);
+    expect(captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "Redpanda unavailable" }),
+      expect.objectContaining({
+        tags: {
+          metricStreamProducer: "redpanda",
+          metricStreamFailure: "publisher-connect",
+        },
+      }),
     );
   });
 });
