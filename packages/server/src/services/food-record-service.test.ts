@@ -117,7 +117,11 @@ describe("FoodRecordService", () => {
         ? service.create({ requestId, date: "2026-09-07", foodName: secret, nutrients: {} })
         : service.delete({ requestId, recordId, expectedVersion: firstVersion });
 
-    await expect(command).rejects.toBe(databaseError);
+    await expect(command).rejects.toMatchObject({
+      name: "FoodRecordError",
+      code: "INTERNAL_ERROR",
+      message: "The food record request could not be completed.",
+    });
     expect(captureException).toHaveBeenCalledOnce();
     const captured = vi.mocked(captureException).mock.calls;
     expect(
@@ -129,8 +133,14 @@ describe("FoodRecordService", () => {
           : value,
       ),
     ).not.toContain(secret);
-    expect(captured[0]?.[0]).toBeInstanceOf(Error);
+    expect(captured[0]?.[0]).toMatchObject({
+      name: "FoodRecordUnexpectedError",
+      message: `Food record ${operation} failed [23514]`,
+    });
     expect(captured[0]?.[0]).not.toHaveProperty("cause");
+    expect(captured[0]?.[1]).toEqual({
+      tags: { source: "food-record", operation, error_code: "23514" },
+    });
   });
 
   it("creates one itemized record and invalidates its effective date after commit", async () => {
@@ -497,7 +507,7 @@ describe("FoodRecordService", () => {
     expect(withUserWriteFence).not.toHaveBeenCalled();
   });
 
-  it("fails explicitly when a created or current food snapshot is missing", async () => {
+  it("redacts missing created or current food snapshots", async () => {
     const missingCreate = setup({ get: vi.fn(async () => null) });
     await expect(
       missingCreate.service.create({
@@ -506,15 +516,21 @@ describe("FoodRecordService", () => {
         foodName: "Oats",
         nutrients: {},
       }),
-    ).rejects.toThrow(`Food record snapshot ${recordId}@${secondVersion} was not found`);
+    ).rejects.toMatchObject({
+      code: "INTERNAL_ERROR",
+      message: "The food record request could not be completed.",
+    });
 
     const missingCurrent = setup({ get: vi.fn(async () => null) });
     await expect(
       missingCurrent.service.delete({ recordId, expectedVersion: firstVersion, requestId }),
-    ).rejects.toThrow(`Food record snapshot ${recordId}@${secondVersion} was not found`);
+    ).rejects.toMatchObject({
+      code: "INTERNAL_ERROR",
+      message: "The food record request could not be completed.",
+    });
   });
 
-  it("labels a missing source predecessor snapshot explicitly", async () => {
+  it("redacts a missing source predecessor snapshot", async () => {
     const { service } = setup({
       appendChange: vi.fn(async () => head({ predecessorVersion: null })),
       getAtVersion: vi.fn(async () => null),
@@ -530,7 +546,10 @@ describe("FoodRecordService", () => {
         nutrientSet: {},
         nutrientClear: [],
       }),
-    ).rejects.toThrow(`Food record snapshot ${recordId}@source was not found`);
+    ).rejects.toMatchObject({
+      code: "INTERNAL_ERROR",
+      message: "The food record request could not be completed.",
+    });
   });
 
   it.each([
