@@ -321,6 +321,46 @@ describe("processAccountErasureRequest", () => {
     );
   });
 
+  it("recaptures an empty ingest fence before draining consumers", async () => {
+    accountErasureDatabaseMocks.loadAccountErasureCheckpoints.mockResolvedValue(
+      new Set(["ingest_fence"]),
+    );
+    accountErasureDatabaseMocks.loadAccountErasureCheckpointDetails.mockResolvedValue({
+      highWatermarks: [],
+    });
+    const runner = phaseRunner();
+
+    await processAccountErasureRequest(
+      database,
+      request.id,
+      "worker-1",
+      runner,
+      new Date("2026-08-03T12:00:00.000Z"),
+    );
+
+    expect(runner.runPhase).toHaveBeenCalledWith("ingest_fence", expect.anything());
+  });
+
+  it("does not recapture an ingest fence that already names its route", async () => {
+    accountErasureDatabaseMocks.loadAccountErasureCheckpoints.mockResolvedValue(
+      new Set(["ingest_fence"]),
+    );
+    accountErasureDatabaseMocks.loadAccountErasureCheckpointDetails.mockResolvedValue({
+      highWatermarks: [{ low: "10", offset: "20", partition: 0, topic: "metric-stream-legacy-v1" }],
+    });
+    const runner = phaseRunner();
+
+    await processAccountErasureRequest(
+      database,
+      request.id,
+      "worker-1",
+      runner,
+      new Date("2026-08-03T12:00:00.000Z"),
+    );
+
+    expect(runner.runPhase).not.toHaveBeenCalledWith("ingest_fence", expect.anything());
+  });
+
   it("renews the durable lease while a destructive phase is running", async () => {
     vi.useFakeTimers();
     let finishPhase: () => void = () => {

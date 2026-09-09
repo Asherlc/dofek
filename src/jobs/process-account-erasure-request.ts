@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/node";
+import { z } from "zod";
 import {
   type ClaimedAccountErasureRequest,
   claimAccountErasureRequest,
@@ -52,19 +53,12 @@ export interface AccountErasurePhaseExecution {
   scrubPii(): Promise<void>;
 }
 
+const routedIngestFenceSchema = z.object({
+  highWatermarks: z.array(z.object({ topic: z.string().min(1) })).min(1),
+});
+
 function hasRoutedIngestFence(checkpoint: Record<string, unknown> | null): boolean {
-  const highWatermarks = checkpoint?.highWatermarks;
-  return (
-    Array.isArray(highWatermarks) &&
-    highWatermarks.every(
-      (watermark) =>
-        typeof watermark === "object" &&
-        watermark !== null &&
-        "topic" in watermark &&
-        typeof watermark.topic === "string" &&
-        watermark.topic.length > 0,
-    )
-  );
+  return routedIngestFenceSchema.safeParse(checkpoint).success;
 }
 
 export interface AccountErasurePhaseRunner {
