@@ -62,6 +62,8 @@ export function McpTokensPanel() {
   const [mcpEndpoint, setMcpEndpoint] = useState("/api/mcp");
   const [isSecureOrigin, setIsSecureOrigin] = useState<boolean | null>(null);
   const tokenForInstall = createdToken ?? "dofek_mcp_your_token";
+  const oauthTokens = (tokens.data ?? []).filter((token) => token.oauthClientId != null);
+  const personalTokens = (tokens.data ?? []).filter((token) => token.oauthClientId == null);
 
   useEffect(() => {
     const secure = window.location.protocol === "https:";
@@ -234,6 +236,66 @@ export function McpTokensPanel() {
         </div>
       ) : null}
 
+      {oauthTokens.length > 0 ? (
+        <section className="space-y-3">
+          <div>
+            <h2 className="text-sm font-medium text-foreground">Connected apps</h2>
+            <p className="mt-1 text-sm text-subtle">
+              OAuth clients manage their own access tokens. Revoke access here to disconnect the
+              client.
+            </p>
+          </div>
+          <ul className="space-y-2">
+            {oauthTokens.map((token) => {
+              const isRevoked = token.revokedAt !== null;
+              const isExpired = token.expiresAt !== null && new Date(token.expiresAt) <= new Date();
+              return (
+                <li
+                  key={token.id}
+                  className="flex flex-col gap-3 rounded bg-surface-hover px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-medium text-foreground">{token.name}</p>
+                      {isRevoked ? (
+                        <span className="rounded border border-red-900/40 px-2 py-0.5 text-xs text-red-500">
+                          Revoked
+                        </span>
+                      ) : null}
+                      {isExpired ? (
+                        <span className="rounded border border-amber-900/40 px-2 py-0.5 text-xs text-amber-500">
+                          Expired
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="text-xs text-subtle">
+                      Connected {formatTimestamp(token.createdAt)} · Last used{" "}
+                      {formatTimestamp(token.lastUsedAt)} · Access expires{" "}
+                      {formatTimestamp(token.expiresAt)}
+                    </p>
+                    <p className="mt-1 text-xs text-dim">{token.scopes.join(", ")}</p>
+                  </div>
+                  {!isRevoked ? (
+                    <div className="flex flex-wrap gap-2 self-start sm:self-center">
+                      <button
+                        type="button"
+                        onClick={() => revokeToken(token.id)}
+                        disabled={tokenMutationPending}
+                        aria-label={`Revoke access for ${token.name}`}
+                        className="rounded border border-red-900/40 px-3 py-1.5 text-xs text-red-500 transition-colors hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Revoke access
+                      </button>
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ) : null}
+
+      <h2 className="text-sm font-medium text-foreground">Personal tokens</h2>
       <div className="space-y-3 rounded-md border border-border bg-surface-solid p-3">
         <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_11rem]">
           <label className="space-y-1">
@@ -249,10 +311,12 @@ export function McpTokensPanel() {
             <span className="text-xs font-medium text-subtle">Expires</span>
             <input
               type="date"
+              aria-label="Expires"
               value={expiresAt ?? ""}
               onChange={(event) => setExpiresAt(event.target.value || null)}
               className="w-full rounded border border-border-strong bg-surface px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
             />
+            <span className="block text-xs text-dim">Leave blank for no expiration.</span>
           </label>
         </div>
 
@@ -322,11 +386,11 @@ export function McpTokensPanel() {
       ) : null}
 
       <div className="space-y-2">
-        {(tokens.data ?? []).length === 0 ? (
-          <QueryStatePanel variant="empty" message="No MCP tokens yet." height={96} />
+        {personalTokens.length === 0 ? (
+          <QueryStatePanel variant="empty" message="No personal tokens yet." height={96} />
         ) : (
           <ul className="space-y-2">
-            {(tokens.data ?? []).map((token) => {
+            {personalTokens.map((token) => {
               const isRevoked = token.revokedAt !== null;
               const isExpired = token.expiresAt !== null && new Date(token.expiresAt) <= new Date();
               const isActive = !isRevoked && !isExpired;
@@ -341,6 +405,11 @@ export function McpTokensPanel() {
                       {isRevoked ? (
                         <span className="rounded border border-red-900/40 px-2 py-0.5 text-xs text-red-500">
                           Revoked
+                        </span>
+                      ) : null}
+                      {isExpired ? (
+                        <span className="rounded border border-amber-900/40 px-2 py-0.5 text-xs text-amber-500">
+                          Expired
                         </span>
                       ) : null}
                     </div>

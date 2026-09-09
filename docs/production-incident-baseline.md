@@ -7,6 +7,26 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-09-09 — Local integration validation blocked by Redpanda AIO limit
+
+- **Status:** Unresolved local infrastructure issue; no production impact.
+- **Symptoms / user impact:** The MCP token repository integration test could
+  not start the workspace Compose dependencies, so database-backed validation
+  remains pending.
+- **Evidence / root cause:** The `redpanda` container entered a restart loop.
+  Its first fatal log line was `Could not setup Async I/O: unknown error` and
+  reported that the required `nr_events` exceeded the host
+  `/proc/sys/fs/aio-max-nr` capacity of `65536`.
+- **Fix / mitigation:** Removed only this workspace's Compose containers,
+  network, and named volumes after the failed run. No source or Compose
+  workaround was added.
+- **Validation:** Web and server unit tests, targeted Biome checks, and
+  TypeScript typechecking pass. The integration test has not executed because
+  Compose fails during dependency startup.
+- **Remaining risk / follow-up:** Before relying on the integration result,
+  raise the host AIO limit or use an approved environment with sufficient AIO
+  capacity, then rerun the exact integration command.
+
 ## 2026-09-02 — PR #2648 Dependency Audit found vulnerable `fast-uri`
 
 - **Status:** Fixed in source; the fresh Dependency Audit job passes.
