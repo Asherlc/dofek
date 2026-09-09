@@ -42,6 +42,7 @@ export const mcpTokenMetadataSchema = z.object({
   lastUsedAt: timestampStringSchema.nullable(),
   expiresAt: timestampStringSchema.nullable(),
   revokedAt: timestampStringSchema.nullable(),
+  oauthClientId: z.string().nullable(),
 });
 
 export type McpTokenMetadata = z.infer<typeof mcpTokenMetadataSchema>;
@@ -66,6 +67,7 @@ const tokenMetadataRowSchema = z.object({
   last_used_at: timestampStringSchema.nullable().optional(),
   expires_at: timestampStringSchema.nullable().optional(),
   revoked_at: timestampStringSchema.nullable().optional(),
+  oauth_client_id: z.string().nullable().optional(),
 });
 
 const validTokenRowSchema = z.object({
@@ -89,6 +91,7 @@ function toMetadata(row: z.infer<typeof tokenMetadataRowSchema>): McpTokenMetada
     lastUsedAt: row.last_used_at ?? null,
     expiresAt: row.expires_at ?? null,
     revokedAt: row.revoked_at ?? null,
+    oauthClientId: row.oauth_client_id ?? null,
   };
 }
 
@@ -120,7 +123,7 @@ export async function createMcpToken(
           ${input.userId}, ${input.name}, ${tokenHash}, ${scopesArray}, ${input.expiresAt},
           ${input.oauthClientId ?? null}, ${input.oauthResource ?? null}
         )
-        RETURNING id, name, scopes, created_at, last_used_at, expires_at, revoked_at`,
+        RETURNING id, name, scopes, created_at, last_used_at, expires_at, revoked_at, oauth_client_id`,
   );
   const row = rows[0];
   if (!row) {
@@ -170,7 +173,7 @@ export async function listMcpTokens(
   const rows = await executeWithSchema(
     db,
     tokenMetadataRowSchema,
-    sql`SELECT id, name, scopes, created_at, last_used_at, expires_at, revoked_at
+    sql`SELECT id, name, scopes, created_at, last_used_at, expires_at, revoked_at, oauth_client_id
         FROM fitness.mcp_access_token
         WHERE user_id = ${userId}
         ORDER BY created_at DESC`,
@@ -195,7 +198,7 @@ export async function updateMcpTokenScopes(
         SET scopes = ${scopesArray}
         WHERE id = ${tokenId}::uuid AND user_id = ${userId} AND revoked_at IS NULL
           AND (expires_at IS NULL OR expires_at > NOW())
-        RETURNING id, name, scopes, created_at, last_used_at, expires_at, revoked_at`,
+        RETURNING id, name, scopes, created_at, last_used_at, expires_at, revoked_at, oauth_client_id`,
   );
   return rows[0] ? toMetadata(rows[0]) : null;
 }
@@ -208,10 +211,40 @@ export async function revokeMcpToken(
   const rows = await executeWithSchema(
     db,
     tokenMetadataRowSchema,
-    sql`UPDATE fitness.mcp_access_token
-        SET revoked_at = COALESCE(revoked_at, NOW())
-        WHERE id = ${tokenId}::uuid AND user_id = ${userId}
-        RETURNING id, name, scopes, created_at, last_used_at, expires_at, revoked_at`,
+    sql`WITH RECURSIVE target AS (
+          SELECT id, user_id, oauth_client_id, oauth_resource
+          FROM fitness.mcp_access_token
+          WHERE id = ${tokenId}::uuid AND user_id = ${userId}
+          LIMIT 1
+        ), refresh_token_family AS (
+          SELECT refresh.id, refresh.access_token_id
+          FROM fitness.mcp_oauth_refresh_token refresh
+          JOIN target ON target.id = refresh.access_token_id
+          WHERE target.oauth_client_id IS NOT NULL
+          UNION ALL
+          SELECT child.id, child.access_token_id
+          FROM fitness.mcp_oauth_refresh_token child
+          JOIN refresh_token_family parent
+            ON child.parent_refresh_token_id = parent.id
+        ), revoked_refresh_tokens AS (
+          UPDATE fitness.mcp_oauth_refresh_token refresh
+          SET revoked_at = COALESCE(refresh.revoked_at, NOW())
+          WHERE refresh.id IN (SELECT id FROM refresh_token_family)
+          RETURNING refresh.access_token_id
+        ), revoked_access_tokens AS (
+          UPDATE fitness.mcp_access_token token
+          SET revoked_at = COALESCE(token.revoked_at, NOW())
+          WHERE token.id IN (
+            SELECT id FROM target
+            UNION
+            SELECT access_token_id FROM revoked_refresh_tokens
+          )
+          RETURNING token.id, token.name, token.scopes, token.created_at, token.last_used_at,
+                    token.expires_at, token.revoked_at, token.oauth_client_id
+        )
+        SELECT id, name, scopes, created_at, last_used_at, expires_at, revoked_at, oauth_client_id
+        FROM revoked_access_tokens
+        WHERE id IN (SELECT id FROM target)`,
   );
   return rows[0] ? toMetadata(rows[0]) : null;
 }

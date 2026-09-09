@@ -1,7 +1,5 @@
 export const STORAGE_KEYS = {
   PREF_FREQ_MODE: "pref_freq_mode",
-  CMD_LOGGING: "cmd_logging",
-  CMD_TRANSFER: "cmd_transfer",
   SESSION_STATUS: "session_status",
   LAST_EXPORT_PATH: "last_export_path",
   TRANSFER_PROGRESS: "transfer_progress",
