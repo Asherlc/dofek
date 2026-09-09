@@ -26030,3 +26030,22 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   verifies exact-request replay creates one change, restores it, and updates it.
   Deploy the fix, repeat the original deletion requests, and run a fresh
   date-scoped visible search before reporting any production records deleted.
+
+## 2026-09-09 — Metric-stream review fix left CI test fixtures stale
+
+- **Scope / impact:** [PR #2693](https://github.com/Asherlc/dofek/pull/2693)
+  validation only; no production impact. Unit Tests and Stryker shard 10 failed.
+- **Evidence / root cause:** Unit Tests first failed in
+  `.github/workflows/deploy-web-stack.test.ts` with `AssertionError: expected 1
+  to be +0`, then the worker module failed to load with
+  `METRIC_STREAM_LIVE_TOPIC is required`. The review fix added eager worker
+  validation and three R2 archive convergence checks, but their test fixtures
+  still omitted the required topics and archive service observations. The
+  resulting worker import failure made Stryker's related-test dry run report
+  `No tests were executed` for the worker mutation shard.
+- **Direct fix:** Add both explicit topic keys to the worker test environment
+  and model legacy/live/history R2 archive services in the executable workflow
+  harness. No retry, timeout, threshold change, or CI bypass was added.
+- **Validation / follow-up:** The focused harness and worker suite pass (82
+  tests), and the exact CI Stryker target completes its dry run with 67 worker
+  tests. Require a fresh full PR workflow to pass before merge.

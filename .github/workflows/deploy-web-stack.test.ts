@@ -185,6 +185,9 @@ function runDeployConsumers(scenarios: ConsumerScenarios, options: DeployConsume
     for (const serviceName of [
       "dofek_metric-stream-live-clickhouse-sink",
       "dofek_metric-stream-history-clickhouse-sink",
+      "dofek_metric-stream-r2-archive",
+      "dofek_metric-stream-live-r2-archive",
+      "dofek_metric-stream-history-r2-archive",
     ]) {
       writeFileSync(join(scenarioDirectory, serviceName), serializeScenario([STABLE_OBSERVATION]));
     }
@@ -250,6 +253,9 @@ function runDeployQuiesced(
       "dofek_metric-stream-clickhouse-sink",
       "dofek_metric-stream-live-clickhouse-sink",
       "dofek_metric-stream-history-clickhouse-sink",
+      "dofek_metric-stream-r2-archive",
+      "dofek_metric-stream-live-r2-archive",
+      "dofek_metric-stream-history-r2-archive",
       "dofek_clickhouse",
       "dofek_databasus",
     ]) {

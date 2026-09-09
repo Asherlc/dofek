@@ -16,6 +16,8 @@ const hoisted = vi.hoisted(() => {
   // reached production error tracking.
   vi.stubEnv("DEPLOY_ENVIRONMENT", "prod");
   vi.stubEnv("SENTRY_DSN", "https://test@sentry.io/123");
+  vi.stubEnv("METRIC_STREAM_LIVE_TOPIC", "metric-stream-live-test");
+  vi.stubEnv("METRIC_STREAM_HISTORY_TOPIC", "metric-stream-history-test");
 
   function noOpExit(): never {
     throw new Error("process.exit called unexpectedly in test");
@@ -415,6 +417,8 @@ import "./worker.ts";
 afterAll(() => {
   vi.stubEnv("DEPLOY_ENVIRONMENT", "test");
   vi.stubEnv("SENTRY_DSN", undefined);
+  vi.stubEnv("METRIC_STREAM_LIVE_TOPIC", undefined);
+  vi.stubEnv("METRIC_STREAM_HISTORY_TOPIC", undefined);
 });
 
 describe("worker module", () => {
