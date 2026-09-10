@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   activityGroup,
@@ -18,6 +19,25 @@ async function insertActivityGroupFixture(db: TestContext["db"], id: string, gro
   return group;
 }
 
+async function insertUserFixture(name: string): Promise<string> {
+  const id = randomUUID();
+  await context.db.insert(userProfile).values({ id, name });
+  return id;
+}
+
+async function insertBenchmarkFixture(id: string) {
+  const [benchmark] = await context.db
+    .insert(effortEquivalenceGroup)
+    .values({
+      userId: id,
+      name: "Saturday benchmark",
+      effortKind: "user_defined_benchmark",
+    })
+    .returning();
+  if (!benchmark) throw new Error("Benchmark group insert did not return a row");
+  return benchmark;
+}
+
 describe("effort equivalence groups", () => {
   beforeAll(async () => {
     context = await setupTestDatabase();
@@ -28,32 +48,115 @@ describe("effort equivalence groups", () => {
   });
 
   beforeEach(async () => {
-    userId = randomUUID();
+    userId = await insertUserFixture("Benchmark test user");
     activityGroupId = randomUUID();
-    await context.db.insert(userProfile).values({
-      id: userId,
-      name: "Benchmark test user",
-    });
   });
 
   it("stores a user-defined benchmark against a canonical activity group", async () => {
     const group = await insertActivityGroupFixture(context.db, userId, activityGroupId);
-    const [benchmark] = await context.db
-      .insert(effortEquivalenceGroup)
+    const benchmark = await insertBenchmarkFixture(userId);
+
+    const [member] = await context.db
+      .insert(effortEquivalenceGroupMember)
       .values({
+        groupId: benchmark.id,
         userId,
-        name: "Saturday benchmark",
-        effortKind: "user_defined_benchmark",
+        canonicalActivityId: group.id,
+        inclusionNote: "Saturday hill repeats",
       })
       .returning();
-    if (!benchmark) throw new Error("Benchmark group insert did not return a row");
+    if (!member) throw new Error("Benchmark member insert did not return a row");
 
-    await context.db.insert(effortEquivalenceGroupMember).values({
+    expect(benchmark.id).toMatch(/[0-9a-f-]{36}/);
+    expect(
+      await context.db
+        .select({
+          canonicalActivityId: effortEquivalenceGroupMember.canonicalActivityId,
+          groupId: effortEquivalenceGroupMember.groupId,
+          inclusionNote: effortEquivalenceGroupMember.inclusionNote,
+          userId: effortEquivalenceGroupMember.userId,
+        })
+        .from(effortEquivalenceGroupMember)
+        .where(eq(effortEquivalenceGroupMember.id, member.id)),
+    ).toEqual([
+      {
+        canonicalActivityId: group.id,
+        groupId: benchmark.id,
+        inclusionNote: "Saturday hill repeats",
+        userId,
+      },
+    ]);
+  });
+
+  it("rejects cross-user benchmark and canonical activity memberships", async () => {
+    const otherUserId = await insertUserFixture("Other benchmark test user");
+    const benchmark = await insertBenchmarkFixture(userId);
+    const otherGroup = await insertActivityGroupFixture(context.db, otherUserId, randomUUID());
+
+    await expect(
+      context.db.insert(effortEquivalenceGroupMember).values({
+        groupId: benchmark.id,
+        userId: otherUserId,
+        canonicalActivityId: otherGroup.id,
+      }),
+    ).rejects.toThrow();
+    await expect(
+      context.db.insert(effortEquivalenceGroupMember).values({
+        groupId: benchmark.id,
+        userId,
+        canonicalActivityId: otherGroup.id,
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("rejects memberships with nonexistent benchmark or canonical activity groups", async () => {
+    const group = await insertActivityGroupFixture(context.db, userId, activityGroupId);
+    const benchmark = await insertBenchmarkFixture(userId);
+
+    await expect(
+      context.db.insert(effortEquivalenceGroupMember).values({
+        groupId: randomUUID(),
+        userId,
+        canonicalActivityId: group.id,
+      }),
+    ).rejects.toThrow();
+    await expect(
+      context.db.insert(effortEquivalenceGroupMember).values({
+        groupId: benchmark.id,
+        userId,
+        canonicalActivityId: randomUUID(),
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("rejects unsupported effort kinds", async () => {
+    await expect(
+      context.db.execute(sql`
+        INSERT INTO fitness.effort_equivalence_group (user_id, display_name, effort_kind)
+        VALUES (${userId}, 'Unsupported benchmark', 'provider_route')
+      `),
+    ).rejects.toThrow();
+  });
+
+  it("rejects duplicate benchmark members", async () => {
+    const group = await insertActivityGroupFixture(context.db, userId, activityGroupId);
+    const benchmark = await insertBenchmarkFixture(userId);
+    const member = {
       groupId: benchmark.id,
       userId,
       canonicalActivityId: group.id,
-    });
+    };
 
-    expect(benchmark.id).toMatch(/[0-9a-f-]{36}/);
+    await context.db.insert(effortEquivalenceGroupMember).values(member);
+    await expect(context.db.insert(effortEquivalenceGroupMember).values(member)).rejects.toThrow();
+  });
+
+  it("rejects members missing required references", async () => {
+    await expect(
+      context.db.execute(sql`
+        INSERT INTO fitness.effort_equivalence_group_member (user_id)
+        VALUES (${userId})
+      `),
+    ).rejects.toThrow();
   });
 });
