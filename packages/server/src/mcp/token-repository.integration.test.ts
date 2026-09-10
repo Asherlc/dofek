@@ -269,11 +269,13 @@ describe("MCP token repository (integration)", () => {
           WHERE user_id = ${testUserId}
           ORDER BY access_token_id`,
     );
-    expect(refreshRows).toEqual([
-      { access_token_id: first.metadata.id, scopes: ["health:read", "activity:read"] },
-      { access_token_id: second.metadata.id, scopes: ["health:read", "activity:read"] },
-      { access_token_id: unrelated.metadata.id, scopes: ["health:read"] },
-    ]);
+    expect(refreshRows.sort((a, b) => a.access_token_id.localeCompare(b.access_token_id))).toEqual(
+      [
+        { access_token_id: first.metadata.id, scopes: ["health:read", "activity:read"] },
+        { access_token_id: second.metadata.id, scopes: ["health:read", "activity:read"] },
+        { access_token_id: unrelated.metadata.id, scopes: ["health:read"] },
+      ].sort((a, b) => a.access_token_id.localeCompare(b.access_token_id)),
+    );
   });
 
   it("does not update expired tokens", async () => {

@@ -388,6 +388,20 @@ describe("MCP token repository", () => {
     expect(queryPayload).toContain("activity:read");
   });
 
+  it("returns false when no active credential belongs to a connected app", async () => {
+    mockExecute.mockResolvedValueOnce([]);
+
+    await expect(
+      updateMcpConnectedAppScopes(
+        createMockDb(),
+        "user-id",
+        "missing-client",
+        "https://dofek.example/api/mcp",
+        ["health:read"],
+      ),
+    ).resolves.toBe(false);
+  });
+
   it("allows required scopes that are present", () => {
     expect(() => requireMcpScope(["health:read"], "health:read")).not.toThrow();
   });
