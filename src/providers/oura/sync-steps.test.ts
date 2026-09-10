@@ -116,6 +116,25 @@ describe("Oura optional sync steps", () => {
     );
   });
 
+  it("preserves pagination degradations from each daily-metrics source", async () => {
+    const client = new OuraClient("token", vi.fn());
+    vi.spyOn(client, "getDailyActivity").mockResolvedValue({
+      data: [],
+      next_token: "stalled-cursor",
+    });
+    vi.spyOn(client, "getDailySpO2").mockResolvedValue({ data: [], next_token: null });
+    vi.spyOn(client, "getSleep").mockResolvedValue({ data: [], next_token: null });
+    const syncContext = context(client, "daily-metrics-degradation-user");
+
+    expect(await syncDailyMetricsComposite(syncContext)).toBe(0);
+    expect(syncLogMocks.outcomes[0]?.degradations).toEqual([
+      expect.objectContaining({
+        kind: "pagination_empty_page_with_cursor",
+        stepName: "daily_activity",
+      }),
+    ]);
+  });
+
   it("persists enhanced tags with custom-name, type-code, and unknown fallbacks", async () => {
     const inserted: Array<Record<string, unknown>> = [];
     const db = {
