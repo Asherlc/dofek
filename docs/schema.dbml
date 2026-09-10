@@ -438,6 +438,7 @@ table fitness.webhook_subscription {
 
 table fitness.activity {
   id uuid [pk, not null, default: `gen_random_uuid()`]
+  group_id uuid [not null, default: `gen_random_uuid()`]
   provider_id text [not null]
   user_id uuid [not null]
   external_id text [not null]
@@ -466,6 +467,34 @@ table fitness.activity {
   indexes {
     (user_id, provider_id, external_id) [name: 'activity_provider_external_idx', unique]
     (user_id, provider_id) [name: 'activity_user_provider_idx']
+    (user_id, group_id) [name: 'activity_user_group_idx']
+
+
+
+  }
+}
+
+table fitness.activity_group {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  user_id uuid [not null]
+  anchor_activity_id uuid
+  created_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    (user_id, id) [name: 'activity_group_user_id_idx', unique]
+  }
+}
+
+table fitness.activity_group_alias {
+  alias_id uuid [pk, not null]
+  group_id uuid [not null]
+  user_id uuid [not null]
+  reason text [not null]
+  created_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+
+    (user_id, group_id) [name: 'activity_group_alias_user_group_idx']
 
 
   }
@@ -588,6 +617,37 @@ table fitness.daily_metrics {
 
   indexes {
     (user_id, provider_id) [name: 'daily_metrics_user_provider_idx']
+  }
+}
+
+table fitness.effort_equivalence_group {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  user_id uuid [not null]
+  display_name text [not null]
+  effort_kind text [not null]
+  notes text
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    (user_id, id) [name: 'effort_equivalence_group_user_id_idx', unique]
+
+  }
+}
+
+table fitness.effort_equivalence_group_member {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  group_id uuid [not null]
+  user_id uuid [not null]
+  canonical_activity_id uuid [not null]
+  inclusion_note text
+  created_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+
+
+    (user_id, group_id, canonical_activity_id) [name: 'effort_equivalence_group_member_user_group_activity_idx', unique]
+    (user_id, canonical_activity_id) [name: 'effort_equivalence_group_member_user_activity_idx']
   }
 }
 
@@ -1981,6 +2041,14 @@ ref activity_provider_id_provider_id_fk: fitness.activity.provider_id > fitness.
 
 ref activity_user_id_user_profile_id_fk: fitness.activity.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
+ref activity_user_group_fk: fitness.activity.(user_id, group_id) > fitness.activity_group.(user_id, id) [delete: no action, update: no action]
+
+ref activity_group_user_id_user_profile_id_fk: fitness.activity_group.user_id > fitness.user_profile.id [delete: no action, update: no action]
+
+ref activity_group_alias_user_id_user_profile_id_fk: fitness.activity_group_alias.user_id > fitness.user_profile.id [delete: no action, update: no action]
+
+ref activity_group_alias_user_group_fk: fitness.activity_group_alias.(user_id, group_id) > fitness.activity_group.(user_id, id) [delete: no action, update: no action]
+
 ref activity_interval_activity_id_activity_id_fk: fitness.activity_interval.activity_id > fitness.activity.id [delete: cascade, update: no action]
 
 ref climbing_attempt_climbing_entry_id_climbing_entry_id_fk: fitness.climbing_attempt.climbing_entry_id > fitness.climbing_entry.id [delete: cascade, update: no action]
@@ -1994,6 +2062,14 @@ ref daily_metric_value_metric_type_id_daily_metric_type_id_fk: fitness.daily_met
 ref daily_metrics_provider_id_provider_id_fk: fitness.daily_metrics.provider_id > fitness.provider.id [delete: no action, update: no action]
 
 ref daily_metrics_user_id_user_profile_id_fk: fitness.daily_metrics.user_id > fitness.user_profile.id [delete: no action, update: no action]
+
+ref effort_equivalence_group_user_id_user_profile_id_fk: fitness.effort_equivalence_group.user_id > fitness.user_profile.id [delete: no action, update: no action]
+
+ref effort_equivalence_group_member_user_id_user_profile_id_fk: fitness.effort_equivalence_group_member.user_id > fitness.user_profile.id [delete: no action, update: no action]
+
+ref effort_equivalence_group_member_user_group_fk: fitness.effort_equivalence_group_member.(user_id, group_id) > fitness.effort_equivalence_group.(user_id, id) [delete: no action, update: no action]
+
+ref effort_equivalence_group_member_user_activity_fk: fitness.effort_equivalence_group_member.(user_id, canonical_activity_id) > fitness.activity_group.(user_id, id) [delete: no action, update: no action]
 
 ref finger_loading_entry_activity_id_activity_id_fk: fitness.finger_loading_entry.activity_id > fitness.activity.id [delete: cascade, update: no action]
 

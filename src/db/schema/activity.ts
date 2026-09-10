@@ -213,6 +213,65 @@ export const activityGroup = fitness.table(
   (table) => [uniqueIndex("activity_group_user_id_idx").on(table.userId, table.id)],
 );
 
+export const effortEquivalenceGroup = fitness.table(
+  "effort_equivalence_group",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .$defaultFn(resolveImplicitUserId)
+      .references(() => userProfile.id),
+    name: text("display_name").notNull(),
+    effortKind: text("effort_kind", { enum: ["user_defined_benchmark"] }).notNull(),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("effort_equivalence_group_user_id_idx").on(table.userId, table.id),
+    check(
+      "effort_equivalence_group_effort_kind",
+      sql`${table.effortKind} = 'user_defined_benchmark'`,
+    ),
+  ],
+);
+
+export const effortEquivalenceGroupMember = fitness.table(
+  "effort_equivalence_group_member",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    groupId: uuid("group_id").notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .$defaultFn(resolveImplicitUserId)
+      .references(() => userProfile.id),
+    canonicalActivityId: uuid("canonical_activity_id").notNull(),
+    inclusionNote: text("inclusion_note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      name: "effort_equivalence_group_member_user_group_fk",
+      columns: [table.userId, table.groupId],
+      foreignColumns: [effortEquivalenceGroup.userId, effortEquivalenceGroup.id],
+    }),
+    foreignKey({
+      name: "effort_equivalence_group_member_user_activity_fk",
+      columns: [table.userId, table.canonicalActivityId],
+      foreignColumns: [activityGroup.userId, activityGroup.id],
+    }),
+    uniqueIndex("effort_equivalence_group_member_user_group_activity_idx").on(
+      table.userId,
+      table.groupId,
+      table.canonicalActivityId,
+    ),
+    index("effort_equivalence_group_member_user_activity_idx").on(
+      table.userId,
+      table.canonicalActivityId,
+    ),
+  ],
+);
+
 export const activityGroupAlias = fitness.table(
   "activity_group_alias",
   {
