@@ -990,7 +990,6 @@ describe("createMcpRouter", () => {
         start_date: { format: "date", type: "string" },
         end_date: { format: "date", type: "string" },
         limit: { maximum: 500, minimum: 1, type: "integer" },
-        providers: { type: "array" },
       },
       required: ["start_date", "end_date"],
       type: "object",
@@ -1002,7 +1001,7 @@ describe("createMcpRouter", () => {
         method: {
           enum: [
             "best_supported",
-            "recorded_provider",
+            "configured",
             "twenty_minute_95_percent",
             "sustained_40_to_70_minutes",
             "critical_power_model",
@@ -2665,7 +2664,7 @@ describe("createMcpRouter", () => {
     });
   });
 
-  it("returns provenance-rich threshold history through MCP transport", async () => {
+  it("returns configured threshold history through MCP transport", async () => {
     authorizeMcpToken(["activity:read"]);
     toolTestMocks.cyclingThresholdListHistory.mockResolvedValue({
       start_date: "2026-05-01",
@@ -2673,21 +2672,21 @@ describe("createMcpRouter", () => {
       items: [
         {
           id: "00000000-0000-4000-8000-000000000102",
-          evidence_kind: "provider_observation",
+          evidence_kind: "configured",
           sport: "cycling",
           threshold_type: "ftp",
           value: 250,
           unit: "watt",
           observed_at: "2026-07-01T12:00:00.000Z",
-          effective_at: null,
-          provider: "zwift",
-          provider_record_id: "profile:12345",
-          value_kind: "provider_recorded",
-          historical_validity: "observed_from_date",
-          raw_evidence_available: true,
+          effective_at: "2026-07-01T12:00:00.000Z",
+          provider: null,
+          provider_record_id: null,
+          value_kind: "configured",
+          historical_validity: "effective_dated",
+          raw_evidence_available: false,
           quality: {
-            status: "moderate",
-            reason: "The provider supplied an observation date but no effective date",
+            status: "high",
+            reason: null,
           },
         },
       ],
@@ -2700,21 +2699,18 @@ describe("createMcpRouter", () => {
       body: createToolCallRequest("get_threshold_history", {
         start_date: "2026-05-01",
         end_date: "2026-08-01",
-        providers: ["zwift"],
       }),
     });
     const parsedResponse = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text));
     const structured = thresholdHistoryOutputSchema.parse(parsedResponse.result.structuredContent);
 
     expect(structured.result.items[0]).toMatchObject({
-      provider: "zwift",
       value: 250,
-      value_kind: "provider_recorded",
+      value_kind: "configured",
     });
     expect(toolTestMocks.cyclingThresholdListHistory).toHaveBeenCalledWith({
       startDate: "2026-05-01",
       endDate: "2026-08-01",
-      providers: ["zwift"],
       cursor: null,
       limit: 100,
     });

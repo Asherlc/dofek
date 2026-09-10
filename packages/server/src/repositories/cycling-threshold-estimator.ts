@@ -12,7 +12,7 @@ import type { NearbyWeightRepository } from "./nearby-weight-repository.ts";
 
 export const CYCLING_THRESHOLD_METHODS = [
   "best_supported",
-  "recorded_provider",
+  "configured",
   "twenty_minute_95_percent",
   "sustained_40_to_70_minutes",
   "critical_power_model",
@@ -35,7 +35,7 @@ export interface CyclingThresholdEstimateResult {
   watts_per_kg: number | null;
   watts_per_kg_reason: string | null;
   method: Exclude<CyclingThresholdMethod, "best_supported">;
-  classification: "configured" | "provider_recorded" | "estimated";
+  classification: "configured" | "estimated";
   confidence: "high" | "moderate" | "limited";
   uncertainty: {
     watts: number | null;
@@ -102,7 +102,7 @@ function effortConfidence(efforts: CyclingPowerCurveEffort[]): "moderate" | "lim
     : "limited";
 }
 
-/** Labeled threshold heuristics over canonical power and recorded threshold evidence. */
+/** Labeled threshold heuristics over canonical power and user-configured FTP. */
 export class CyclingThresholdEstimator {
   readonly #dependencies: EstimatorDependencies;
 
@@ -137,10 +137,10 @@ export class CyclingThresholdEstimator {
     const configured = await this.#dependencies.thresholds.getApplicableConfiguredFtp(
       input.endDate,
     );
-    if (configured) return this.#recordedResult(configured, weight);
+    if (configured) return this.#configuredResult(configured, weight);
 
     for (const method of [
-      "recorded_provider",
+      "configured",
       "sustained_40_to_70_minutes",
       "twenty_minute_95_percent",
       "critical_power_model",
@@ -156,55 +156,43 @@ export class CyclingThresholdEstimator {
     input: CyclingThresholdEstimateInput,
     weight: WeightResult,
   ): Promise<CyclingThresholdEstimateResult | null> {
-    if (method === "recorded_provider") return this.#recordedProvider(input, weight);
+    if (method === "configured") return this.#configured(input, weight);
     if (method === "twenty_minute_95_percent") return this.#twentyMinute(input, weight);
     if (method === "sustained_40_to_70_minutes") return this.#sustained(input, weight);
     return this.#criticalPower(input, weight);
   }
 
-  async #recordedProvider(
+  async #configured(
     input: CyclingThresholdEstimateInput,
     weight: WeightResult,
   ): Promise<CyclingThresholdEstimateResult | null> {
-    const history = await this.#dependencies.thresholds.listHistory({
-      startDate: input.startDate,
-      endDate: input.endDate,
-      providers: input.providers,
-      cursor: null,
-      limit: 500,
-    });
-    const explicitProvider = history.items.find(
-      (item) => item.threshold_type === "ftp" && item.value_kind === "provider_recorded",
-    );
-    if (explicitProvider) return this.#recordedResult(explicitProvider, weight);
-    if (input.providers.length > 0) return null;
     const configured = await this.#dependencies.thresholds.getApplicableConfiguredFtp(
       input.endDate,
     );
-    return configured ? this.#recordedResult(configured, weight) : null;
+    return configured ? this.#configuredResult(configured, weight) : null;
   }
 
-  #recordedResult(
+  #configuredResult(
     evidence: CyclingThresholdHistoryItem,
     weight: WeightResult,
   ): CyclingThresholdEstimateResult {
     return {
       threshold_watts: evidence.value,
       ...wattsPerKg(evidence.value, weight),
-      method: "recorded_provider",
-      classification: evidence.value_kind === "configured" ? "configured" : "provider_recorded",
+      method: "configured",
+      classification: "configured",
       confidence: evidence.quality.status,
       uncertainty: {
         watts: null,
         kind: "not_applicable",
-        reason: "This is a configured or provider-recorded value, not a statistical estimate",
+        reason: "This is a configured value, not a statistical estimate",
       },
       evidence: { threshold_history: [evidence], efforts: [] },
       relevant_activity_ids: [],
       assumptions: [
         evidence.historical_validity === "effective_dated"
           ? "The configured FTP is applicable on the range end date"
-          : "The provider supplied an observation date but no physiological test uncertainty",
+          : "The configured FTP has no physiological test uncertainty",
       ],
       model: null,
     };
@@ -344,9 +332,9 @@ export class CyclingThresholdEstimator {
     if (method === "critical_power_model") {
       return "At least three valid 120–600-second power-duration observations are required";
     }
-    if (method === "recorded_provider") {
-      return "No effective-dated configured FTP or explicit provider-recorded FTP is available";
+    if (method === "configured") {
+      return "No effective-dated configured FTP is available";
     }
-    return "No supported recorded or power-duration threshold evidence is available";
+    return "No supported configured or power-duration threshold evidence is available";
   }
 }

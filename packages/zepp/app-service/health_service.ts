@@ -1,4 +1,4 @@
-import { BloodOxygen, BodyTemperature, HeartRate, Stress, Time, Workout } from "@zos/sensor";
+import { BloodOxygen, BodyTemperature, HeartRate, Time, Workout } from "@zos/sensor";
 import { log as Logger } from "@zos/utils";
 import {
   appendBackgroundHealthEvents,
@@ -25,7 +25,6 @@ AppService({
           HeartRate,
           BloodOxygen,
           BodyTemperature,
-          Stress,
           Workout,
         });
         const currentOutbox = readBackgroundHealthOutboxForCollection(installId, (error) =>

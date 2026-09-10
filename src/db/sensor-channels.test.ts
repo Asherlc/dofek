@@ -41,7 +41,6 @@ describe("sensor channel mappings", () => {
       stanceTimeBalance: "stance_time_balance",
       stanceTimePercent: "stance_time_percent",
       stepLength: "step_length",
-      stress: "stress",
       strideLength: "stride_length",
       systolicBp: "systolic_blood_pressure",
       temperature: "temperature",

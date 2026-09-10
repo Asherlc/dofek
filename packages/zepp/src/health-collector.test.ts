@@ -66,17 +66,6 @@ function makeSensors(overrides?: Partial<SensorConstructors>): SensorConstructor
         return Array.from({ length: 288 }, () => 36.5);
       }
     },
-    Stress: class {
-      getToday() {
-        return Array.from({ length: 60 }, () => 30);
-      }
-      getTodayByHour() {
-        return Array.from({ length: 24 }, () => 30);
-      }
-      getLastWeek() {
-        return [35, 32, 28, 33, 30, 29, 31];
-      }
-    },
     Stand: class {
       getCurrent() {
         return 10;
@@ -134,8 +123,6 @@ describe("collectHealthData", () => {
     expect(result.spo2Recent).toHaveLength(12);
     expect(result.bodyTemperatureCurrent).toBe(36.5);
     expect(result.bodyTemperature).toHaveLength(288);
-    expect(result.stress).toHaveLength(60);
-    expect(result.stressWeekly).toEqual([35, 32, 28, 33, 30, 29, 31]);
     expect(result.standHours).toBe(10);
     expect(result.pai).toBe(85);
     expect(result.fatBurning).toBe(30);
@@ -343,7 +330,6 @@ describe("collectHealthData", () => {
         Sleep: ThrowingSensor,
         BloodOxygen: ThrowingSensor,
         BodyTemperature: ThrowingSensor,
-        Stress: ThrowingSensor,
         Stand: ThrowingSensor,
         Pai: ThrowingSensor,
         FatBurning: ThrowingSensor,
@@ -356,7 +342,7 @@ describe("collectHealthData", () => {
     expect(result.steps).toBeUndefined();
     expect(result.sleep).toBeUndefined();
     expect(result.activities).toBeUndefined();
-    expect(captureException).toHaveBeenCalledTimes(11);
+    expect(captureException).toHaveBeenCalledTimes(10);
     expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
       operation: "collect",
       sensor: "HeartRate",
@@ -416,17 +402,6 @@ describe("collectHealthData", () => {
             return [36.5, Number.NaN, Number.POSITIVE_INFINITY, -1000];
           }
         },
-        Stress: class {
-          getToday() {
-            return [30, Number.NaN, -1, 35];
-          }
-          getTodayByHour() {
-            return [25, Number.POSITIVE_INFINITY];
-          }
-          getLastWeek() {
-            return [20, -1, Number.NaN];
-          }
-        },
         Stand: class {
           getCurrent() {
             return -1;
@@ -460,9 +435,6 @@ describe("collectHealthData", () => {
       bloodOxygenHourly: [98, 0, 0, 0],
       spo2Recent: [{ spo2: 97, time: 1_700_000_000 }],
       bodyTemperature: [36.5, -1000, -1000, -1000],
-      stress: [30, 0, 0, 35],
-      stressByHour: [25, 0],
-      stressWeekly: [20, 0, 0],
       activities: [
         {
           externalId: "1720086400",

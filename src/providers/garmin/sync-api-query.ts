@@ -21,8 +21,6 @@ export function garminSyncStepToApiQuery(step: GarminSyncStep): SyncApiQuery | n
       return { path: "connectapi/daily-summary", filters: { date: step.date } };
     case "hrv_summary":
       return { path: "connectapi/hrv", filters: { date: step.date } };
-    case "stress":
-      return { path: "connectapi/stress", filters: { date: step.date } };
     case "heart_rate":
       return { path: "connectapi/heart-rate", filters: { date: step.date } };
   }

@@ -354,52 +354,6 @@ export const sportSettings = fitness.table(
   ],
 );
 
-/** Immutable threshold evidence reported directly by an upstream provider. */
-export const providerThresholdObservation = fitness.table(
-  "provider_threshold_observation",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => userProfile.id, { onDelete: "cascade" }),
-    providerId: text("provider_id")
-      .notNull()
-      .references(() => provider.id, { onDelete: "cascade" }),
-    providerRecordId: text("provider_record_id").notNull(),
-    sport: text("sport").notNull(),
-    thresholdType: text("threshold_type").notNull(),
-    value: real("value").notNull(),
-    unit: text("unit").notNull(),
-    observedAt: timestamp("observed_at", { withTimezone: true }).notNull(),
-    effectiveAt: timestamp("effective_at", { withTimezone: true }),
-    raw: jsonb("raw").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    index("provider_threshold_observation_history_idx").on(
-      table.userId,
-      table.sport,
-      table.thresholdType,
-      table.observedAt.desc(),
-    ),
-    index("provider_threshold_observation_source_idx").on(
-      table.userId,
-      table.providerId,
-      table.providerRecordId,
-      table.thresholdType,
-      table.observedAt.desc(),
-    ),
-    check("provider_threshold_observation_value_positive", sql`${table.value} > 0`),
-    check(
-      "provider_threshold_observation_identity_nonempty",
-      sql`length(btrim(${table.providerRecordId})) > 0
-        AND length(btrim(${table.sport})) > 0
-        AND length(btrim(${table.thresholdType})) > 0
-        AND length(btrim(${table.unit})) > 0`,
-    ),
-  ],
-);
-
 // ============================================================
 // Activity intervals / laps
 // ============================================================
@@ -453,9 +407,6 @@ export const dailyMetrics = fitness.table(
     walkingSteadiness: real("walking_steadiness"), // 0-1
     standHours: integer("stand_hours"),
     skinTempC: real("skin_temp_c"), // celsius (WHOOP)
-    stressHighMinutes: integer("stress_high_minutes"), // minutes of high stress (Oura)
-    recoveryHighMinutes: integer("recovery_high_minutes"), // minutes of high recovery (Oura)
-    resilienceLevel: text("resilience_level"), // e.g. "limited", "adequate", "solid", "strong", "exceptional"
     pushCount: integer("push_count"),
     wheelchairDistanceKm: real("wheelchair_distance_km"),
     uvExposure: real("uv_exposure"),
@@ -528,10 +479,6 @@ export const sleepSession = fitness.table(
     stagingAvailable: boolean("staging_available").notNull().default(false),
     sleepType: text("sleep_type"),
     isNap: boolean("is_nap").notNull().default(false),
-    sleepNeedBaselineMinutes: integer("sleep_need_baseline_minutes"),
-    sleepNeedFromDebtMinutes: integer("sleep_need_from_debt_minutes"),
-    sleepNeedFromStrainMinutes: integer("sleep_need_from_strain_minutes"),
-    sleepNeedFromNapMinutes: integer("sleep_need_from_nap_minutes"),
     sourceName: text("source_name"),
     timezone: text("timezone"),
     startUtcOffsetMinutes: bigint("start_utc_offset_minutes", { mode: "number" }),

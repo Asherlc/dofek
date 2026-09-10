@@ -152,17 +152,13 @@ are calculated in one bounded ClickHouse query over deduplicated activity sensor
 returning raw samples to the model. Formula and historical-refresh details are documented in
 [`analytics/README.md`](../../analytics/README.md#cycling-power-duration-semantics-and-refresh).
 
-`get_threshold_history` requires `activity:read`, an inclusive date range, and optionally provider
-filters plus cursor pagination. It keeps three concepts separate: effective-dated cycling FTP from
-`fitness.sport_settings`, immutable provider observations, and the legacy current
+`get_threshold_history` requires `activity:read`, an inclusive date range, and cursor pagination. It
+returns effective-dated cycling FTP from `fitness.sport_settings` plus the legacy current
 `user_profile.ftp`. The legacy value has unknown historical validity and is never silently applied
-to an old workout. Provider observations include their provider record ID and observation/effective
-timestamps. A provider's modeled threshold, such as Zwift zFTP, is labeled `provider_estimated` and
-is never represented as measured FTP. Repeated provider syncs append a new observation only when the
-reported value, unit, or effective timestamp changes.
+to an old workout.
 
 `estimate_cycling_threshold` requires `activity:read` and the ClickHouse analytics store. Its
-selectable methods are `recorded_provider`, `twenty_minute_95_percent`,
+selectable methods are `configured`, `twenty_minute_95_percent`,
 `sustained_40_to_70_minutes`, `critical_power_model`, and `best_supported`. The 20-minute method is
 explicitly the 95% heuristic described by
 [TrainingPeaks](https://help.trainingpeaks.com/hc/en-us/articles/204071934-How-to-Calculate-Threshold-Values-for-Power-Heart-Rate-or-Pace).

@@ -114,61 +114,14 @@ describe("CyclingThresholdEstimator", () => {
     expect(result).toMatchSnapshot();
     expect(result.result).toMatchObject({
       threshold_watts: 245,
-      method: "recorded_provider",
+      method: "configured",
       classification: "configured",
       confidence: "high",
       watts_per_kg: 3.5,
       evidence: { threshold_history: [configured], efforts: [] },
     });
     expect(deps.powerCurve.listRange).not.toHaveBeenCalled();
-  });
-
-  it("uses explicit provider FTP but never provider-modeled FTP for recorded_provider", async () => {
-    const deps = dependencies();
-    deps.thresholds.listHistory.mockResolvedValue({
-      start_date: baseInput.startDate,
-      end_date: baseInput.endDate,
-      legacy_current: null,
-      next_cursor: null,
-      items: [
-        {
-          ...configured,
-          id: "00000000-0000-4000-8000-000000000102",
-          value: 258,
-          threshold_type: "modeled_ftp",
-          value_kind: "provider_estimated" as const,
-          evidence_kind: "provider_observation" as const,
-          provider: "zwift",
-          provider_record_id: "power-profile:12345",
-          historical_validity: "observed_from_date" as const,
-        },
-        {
-          ...configured,
-          id: "00000000-0000-4000-8000-000000000103",
-          value: 250,
-          threshold_type: "ftp",
-          value_kind: "provider_recorded" as const,
-          evidence_kind: "provider_observation" as const,
-          provider: "zwift",
-          provider_record_id: "profile:12345",
-          historical_validity: "observed_from_date" as const,
-          effective_at: null,
-          quality: { status: "moderate" as const, reason: "No effective date" },
-        },
-      ],
-    });
-
-    const result = await new CyclingThresholdEstimator(deps).estimate({
-      ...baseInput,
-      method: "recorded_provider",
-    });
-
-    expect(result).toMatchSnapshot();
-    expect(result.result).toMatchObject({
-      threshold_watts: 250,
-      classification: "provider_recorded",
-      confidence: "moderate",
-    });
+    expect(deps.thresholds.getApplicableConfiguredFtp).toHaveBeenCalledOnce();
   });
 
   it("labels 95 percent of maximal 20-minute power as an estimate", async () => {
@@ -276,22 +229,8 @@ describe("CyclingThresholdEstimator", () => {
 
     expect(result).toMatchSnapshot();
     expect(result.result?.method).toBe("sustained_40_to_70_minutes");
-    expect(deps.thresholds.listHistory).toHaveBeenCalledOnce();
+    expect(deps.thresholds.listHistory).not.toHaveBeenCalled();
     expect(deps.powerCurve.listRange).toHaveBeenCalledOnce();
-  });
-
-  it("does not substitute configured FTP when a provider-filtered history has no match", async () => {
-    const deps = dependencies();
-    deps.thresholds.getApplicableConfiguredFtp.mockResolvedValue(configured);
-
-    const result = await new CyclingThresholdEstimator(deps).estimate({
-      ...baseInput,
-      providers: ["zwift"],
-      method: "recorded_provider",
-    });
-
-    expect(result.result).toBeNull();
-    expect(deps.thresholds.getApplicableConfiguredFtp).not.toHaveBeenCalled();
   });
 
   it("returns critical-power fit diagnostics without calling CP measured FTP", async () => {
@@ -349,5 +288,27 @@ describe("CyclingThresholdEstimator", () => {
       unavailable_reason: "No valid 20-minute cycling power effort exists in the requested range",
       weight: { value_kg: null, reason: "No weight" },
     });
+  });
+
+  it("reports when configured FTP is unavailable", async () => {
+    const deps = dependencies();
+
+    const result = await new CyclingThresholdEstimator(deps).estimate({
+      ...baseInput,
+      method: "configured",
+    });
+
+    expect(result).toMatchObject({
+      result: null,
+      unavailable_reason: "No effective-dated configured FTP is available",
+    });
+
+    const bestSupported = await new CyclingThresholdEstimator(deps).estimate({
+      ...baseInput,
+      method: "best_supported",
+    });
+    expect(bestSupported.unavailable_reason).toBe(
+      "No supported configured or power-duration threshold evidence is available",
+    );
   });
 });

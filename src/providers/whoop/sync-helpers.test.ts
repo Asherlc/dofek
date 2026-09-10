@@ -482,10 +482,6 @@ describe("WHOOP sync helpers", () => {
             slow_wave_sleep_duration: 6_000_000,
             rem_sleep_duration: 7_200_000,
             in_sleep_efficiency: 0.875,
-            habitual_sleep_need: 28_800_000,
-            debt_post: 600_000,
-            need_from_strain: 900_000,
-            credit_from_naps: 300_000,
           },
           {
             during: "['2026-05-02T04:00:00Z','2026-05-02T05:00:00Z')",
@@ -509,7 +505,6 @@ describe("WHOOP sync helpers", () => {
         externalId: "inline-2026-05-01T04:00:00.000Z-0",
         durationMinutes: 450,
         efficiencyPct: 87.5,
-        sleepNeedBaselineMinutes: 480,
       }),
     );
   });

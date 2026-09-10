@@ -25,9 +25,6 @@ const completeSummary = {
   spo2Recent: [{ spo2: 98, time: 1_720_003_700 }],
   bodyTemperatureCurrent: 36.6,
   bodyTemperature: [36.5, 36.6],
-  stress: [20, 30],
-  stressByHour: [25],
-  stressWeekly: [22],
   standHours: 10,
   pai: 80,
   fatBurning: 30,
@@ -37,7 +34,6 @@ const completeSummary = {
       heartRate: 72,
       bloodOxygenPercent: 98,
       bodyTemperatureCelsius: 36.6,
-      stress: 30,
     },
   ],
 };

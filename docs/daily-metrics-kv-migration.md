@@ -6,8 +6,7 @@
 
 `fitness.daily_metrics` is a wide table with ~20 sparse measurement columns
 (`hrv`, `spo2_avg`, `steps`, `walking_speed`, `walking_step_length`,
-`walking_double_support_pct`, `stress_high_minutes`, `recovery_high_minutes`,
-`resilience_level`, `push_count`, `uv_exposure`, …). Adding a new provider-
+`walking_double_support_pct`, `push_count`, `uv_exposure`, …). Adding a new provider-
 specific metric requires a schema migration, a Drizzle update, and changes to
 every writer and reader path.
 
@@ -55,10 +54,7 @@ the view without breaking callers.
 | Column                      | Decision   | Reason |
 | --------------------------- | ---------- | ------ |
 | `id`, `user_id`, `provider_id`, `date`, `source_name`, `created_at` | **stay native** | Row identity; needed for FKs, indexes, dedup |
-| `hrv`, `spo2_avg`, `respiratory_rate_avg`, `steps`, `distance_km`, `flights_climbed`, `exercise_minutes`, `walking_speed`, `walking_step_length`, `walking_double_support_pct`, `walking_asymmetry_pct`, `walking_steadiness`, `stand_hours`, `skin_temp_c`, `stress_high_minutes`, `recovery_high_minutes`, `push_count`, `wheelchair_distance_km`, `uv_exposure` | **move to KV** | All numeric, all sparse, all read through the view |
-| `resilience_level` (text)   | **decide** | KV `value` column is `real`. Options below. |
-
-### `resilience_level` (text enum) options
+| `hrv`, `spo2_avg`, `respiratory_rate_avg`, `steps`, `distance_km`, `flights_climbed`, `exercise_minutes`, `walking_speed`, `walking_step_length`, `walking_double_support_pct`, `walking_asymmetry_pct`, `walking_steadiness`, `stand_hours`, `skin_temp_c`, `push_count`, `wheelchair_distance_km`, `uv_exposure` | **move to KV** | All numeric, all sparse, all read through the view |
 
 `daily_metric_value.value` is `real notnull`. A text-valued metric doesn't fit.
 Three choices:
@@ -175,7 +171,6 @@ ALTER TABLE fitness.daily_metrics
   DROP COLUMN spo2_avg,
   DROP COLUMN steps,
   -- ...
-  DROP COLUMN resilience_level;
 ```
 
 Then remove the wide columns from `schema.ts` and stop dual-writing in the
@@ -207,8 +202,7 @@ golden-path queries.
    read path with no GROUP BY cost; moving everything to KV maximizes
    extensibility. Recommendation: start with full KV and revisit only if
    benchmarks show regression.
-2. **resilience_level**: drop, numeric-encode, or add `value_text`?
-3. **Backfill window**: backfill in one shot (fast, locks the table briefly)
+2. **Backfill window**: backfill in one shot (fast, locks the table briefly)
    or in batches (slower, no lock)? Production row count is small enough that
    one-shot is fine.
 
