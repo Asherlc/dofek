@@ -289,4 +289,26 @@ describe("CyclingThresholdEstimator", () => {
       weight: { value_kg: null, reason: "No weight" },
     });
   });
+
+  it("reports when configured FTP is unavailable", async () => {
+    const deps = dependencies();
+
+    const result = await new CyclingThresholdEstimator(deps).estimate({
+      ...baseInput,
+      method: "configured",
+    });
+
+    expect(result).toMatchObject({
+      result: null,
+      unavailable_reason: "No effective-dated configured FTP is available",
+    });
+
+    const bestSupported = await new CyclingThresholdEstimator(deps).estimate({
+      ...baseInput,
+      method: "best_supported",
+    });
+    expect(bestSupported.unavailable_reason).toBe(
+      "No supported configured or power-duration threshold evidence is available",
+    );
+  });
 });
