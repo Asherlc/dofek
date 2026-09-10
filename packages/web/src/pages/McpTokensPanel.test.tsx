@@ -15,6 +15,16 @@ type MockMcpToken = {
   oauthClientId?: string | null;
 };
 
+type MockConnectedApp = {
+  oauthClientId: string;
+  oauthResource: string;
+  name: string;
+  scopes: string[];
+  connectedAt: string;
+  lastUsedAt: string | null;
+  isActive: boolean;
+};
+
 const listTokensQuery: {
   data: MockMcpToken[];
   error: Error | null;
@@ -27,7 +37,7 @@ const listTokensQuery: {
   refetch: vi.fn(),
 };
 const connectedAppsQuery: {
-  data: { items: MockMcpToken[]; nextCursor: string | null };
+  data: { items: MockConnectedApp[]; nextCursor: string | null };
   error: Error | null;
   isLoading: boolean;
 } = {
@@ -38,6 +48,7 @@ const connectedAppsQuery: {
 const listConnectedAppsUseQuery = vi.hoisted(() => vi.fn());
 const createTokenMutateAsync = vi.fn();
 const revokeTokenMutateAsync = vi.fn();
+const revokeConnectedAppMutateAsync = vi.fn();
 const updateScopesMutateAsync = vi.fn();
 const invalidateMcp = vi.fn();
 let createTokenMutationPending = false;
@@ -80,6 +91,13 @@ vi.mock("../lib/trpc.ts", () => ({
           isPending: revokeTokenMutationPending,
         }),
       },
+      revokeConnectedApp: {
+        useMutation: () => ({
+          mutateAsync: revokeConnectedAppMutateAsync,
+          error: null,
+          isPending: revokeTokenMutationPending,
+        }),
+      },
       updateScopes: {
         useMutation: () => ({
           mutateAsync: updateScopesMutateAsync,
@@ -105,6 +123,7 @@ describe("McpTokensPanel", () => {
       .mockImplementation((_input: { cursor?: string }) => connectedAppsQuery);
     createTokenMutateAsync.mockReset();
     revokeTokenMutateAsync.mockReset();
+    revokeConnectedAppMutateAsync.mockReset();
     updateScopesMutateAsync.mockReset();
     invalidateMcp.mockReset();
     createTokenMutationPending = false;
@@ -570,14 +589,13 @@ describe("McpTokensPanel", () => {
     connectedAppsQuery.data = {
       items: [
         {
-          id: "00000000-0000-0000-0000-000000000001",
           name: "Claude OAuth",
           scopes: ["health:read"],
-          createdAt: "2026-05-20T12:00:00Z",
+          connectedAt: "2026-05-20T12:00:00Z",
           lastUsedAt: "2026-05-20T12:00:00Z",
-          expiresAt: "2020-01-01T00:00:00Z",
-          revokedAt: null,
           oauthClientId: "https://claude.ai/oauth/client-metadata.json",
+          oauthResource: "https://dofek.example/api/mcp",
+          isActive: true,
         },
       ],
       nextCursor: null,
@@ -587,8 +605,8 @@ describe("McpTokensPanel", () => {
 
     expect(screen.getByRole("heading", { name: "Connected apps" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Personal tokens" })).toBeTruthy();
-    expect(screen.getByText("Expired")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Revoke access for Claude OAuth" })).toBeTruthy();
+    expect(screen.queryByText(/Access expires/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Disconnect Claude OAuth" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Edit scopes for Claude OAuth" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Rotate Claude OAuth" })).toBeNull();
     expect(screen.getByRole("button", { name: "Edit scopes for Personal Codex" })).toBeTruthy();
@@ -598,58 +616,56 @@ describe("McpTokensPanel", () => {
     connectedAppsQuery.data = {
       items: [
         {
-          id: "00000000-0000-0000-0000-000000000001",
           name: "Claude OAuth",
           scopes: ["health:read"],
-          createdAt: "2026-05-20T12:00:00Z",
+          connectedAt: "2026-05-20T12:00:00Z",
           lastUsedAt: null,
-          expiresAt: "2020-01-01T00:00:00Z",
-          revokedAt: null,
           oauthClientId: "https://claude.ai/oauth/client-metadata.json",
+          oauthResource: "https://dofek.example/api/mcp",
+          isActive: true,
         },
       ],
       nextCursor: null,
     };
-    revokeTokenMutateAsync.mockResolvedValueOnce({});
+    revokeConnectedAppMutateAsync.mockResolvedValueOnce({ success: true });
 
     render(<McpTokensPanel />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Revoke access for Claude OAuth" }));
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect Claude OAuth" }));
 
     await waitFor(() => {
-      expect(revokeTokenMutateAsync).toHaveBeenCalledWith({
-        tokenId: "00000000-0000-0000-0000-000000000001",
+      expect(revokeConnectedAppMutateAsync).toHaveBeenCalledWith({
+        oauthClientId: "https://claude.ai/oauth/client-metadata.json",
+        oauthResource: "https://dofek.example/api/mcp",
       });
     });
   });
 
   it("paginates connected apps with next and previous controls", () => {
     const firstPageTokens = Array.from({ length: 20 }, (_, index) => ({
-      id: `oauth-token-${index}`,
       name: `OAuth app ${index}`,
       scopes: ["health:read"],
-      createdAt: "2026-05-20T12:00:00Z",
+      connectedAt: "2026-05-20T12:00:00Z",
       lastUsedAt: null,
-      expiresAt: null,
-      revokedAt: null,
-      oauthClientId: "oauth-client",
+      oauthClientId: `oauth-client-${index}`,
+      oauthResource: "https://dofek.example/api/mcp",
+      isActive: true,
     }));
     const secondPageTokens = [
       {
-        id: "oauth-token-last",
         name: "OAuth app last",
         scopes: ["health:read"],
-        createdAt: "2026-05-19T12:00:00Z",
+        connectedAt: "2026-05-19T12:00:00Z",
         lastUsedAt: null,
-        expiresAt: null,
-        revokedAt: null,
-        oauthClientId: "oauth-client",
+        oauthClientId: "oauth-client-last",
+        oauthResource: "https://dofek.example/api/mcp",
+        isActive: true,
       },
     ];
     listConnectedAppsUseQuery.mockImplementation(({ cursor }) => ({
       data: cursor
         ? { items: secondPageTokens, nextCursor: null }
-        : { items: firstPageTokens, nextCursor: "oauth-token-19" },
+        : { items: firstPageTokens, nextCursor: "oauth-client-19" },
       error: null,
       isLoading: false,
     }));
@@ -662,7 +678,7 @@ describe("McpTokensPanel", () => {
 
     expect(screen.getByText("OAuth app last")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Previous connected apps page" })).toBeTruthy();
-    expect(listConnectedAppsUseQuery).toHaveBeenLastCalledWith({ cursor: "oauth-token-19" });
+    expect(listConnectedAppsUseQuery).toHaveBeenLastCalledWith({ cursor: "oauth-client-19" });
 
     fireEvent.click(screen.getByRole("button", { name: "Previous connected apps page" }));
     expect(screen.getByText("OAuth app 0")).toBeTruthy();

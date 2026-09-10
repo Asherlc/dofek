@@ -245,6 +245,9 @@ vi.mock("../lib/trpc", () => ({
       revokeToken: {
         useMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
       },
+      revokeConnectedApp: {
+        useMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
+      },
     },
     companionPairing: {
       claim: {

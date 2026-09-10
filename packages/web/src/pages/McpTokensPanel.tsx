@@ -52,6 +52,9 @@ export function McpTokensPanel() {
   const revokeTokenMutation = trpc.mcp.revokeToken.useMutation({
     meta: locallyReportedErrorMeta,
   });
+  const revokeConnectedAppMutation = trpc.mcp.revokeConnectedApp.useMutation({
+    meta: locallyReportedErrorMeta,
+  });
   const updateScopesMutation = trpc.mcp.updateScopes.useMutation({
     meta: locallyReportedErrorMeta,
   });
@@ -90,6 +93,7 @@ export function McpTokensPanel() {
   const tokenMutationPending =
     createTokenMutation.isPending ||
     revokeTokenMutation.isPending ||
+    revokeConnectedAppMutation.isPending ||
     updateScopesMutation.isPending;
 
   const toggleScopeSet = (current: Set<McpScope>, scope: McpScope): Set<McpScope> => {
@@ -181,6 +185,18 @@ export function McpTokensPanel() {
     }
   };
 
+  const revokeConnectedApp = async (oauthClientId: string, oauthResource: string) => {
+    setErrorMessage(null);
+    try {
+      await revokeConnectedAppMutation.mutateAsync({ oauthClientId, oauthResource });
+      setConnectedAppCursors([undefined]);
+      await invalidateTokenLists();
+    } catch (error: unknown) {
+      captureException(error, { context: "revoke-mcp-connected-app" });
+      setErrorMessage(userFacingErrorMessage(error, "Failed to disconnect the connected app."));
+    }
+  };
+
   const rotateToken = async (token: NonNullable<typeof personalTokensQuery.data>[number]) => {
     setErrorMessage(null);
     setCopyStatus(null);
@@ -261,50 +277,42 @@ export function McpTokensPanel() {
           <div>
             <h2 className="text-sm font-medium text-foreground">Connected apps</h2>
             <p className="mt-1 text-sm text-subtle">
-              OAuth clients manage their own access tokens. Revoke access here to disconnect the
-              client.
+              Each app is shown once, even when it refreshes its access token. Disconnect it here to
+              revoke all access.
             </p>
           </div>
           <ul className="space-y-2">
-            {oauthTokens.map((token) => {
-              const isRevoked = token.revokedAt !== null;
-              const isExpired = token.expiresAt !== null && new Date(token.expiresAt) <= new Date();
+            {oauthTokens.map((app) => {
               return (
                 <li
-                  key={token.id}
+                  key={`${app.oauthClientId}:${app.oauthResource}`}
                   className="flex flex-col gap-3 rounded bg-surface-hover px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-sm font-medium text-foreground">{token.name}</p>
-                      {isRevoked ? (
+                      <p className="text-sm font-medium text-foreground">{app.name}</p>
+                      {!app.isActive ? (
                         <span className="rounded border border-red-900/40 px-2 py-0.5 text-xs text-red-500">
-                          Revoked
-                        </span>
-                      ) : null}
-                      {isExpired ? (
-                        <span className="rounded border border-amber-900/40 px-2 py-0.5 text-xs text-amber-500">
-                          Expired
+                          Disconnected
                         </span>
                       ) : null}
                     </div>
                     <p className="text-xs text-subtle">
-                      Connected {formatTimestamp(token.createdAt)} · Last used{" "}
-                      {formatTimestamp(token.lastUsedAt)} · Access expires{" "}
-                      {formatTimestamp(token.expiresAt)}
+                      Connected {formatTimestamp(app.connectedAt)} · Last used{" "}
+                      {formatTimestamp(app.lastUsedAt)}
                     </p>
-                    <p className="mt-1 text-xs text-dim">{token.scopes.join(", ")}</p>
+                    <p className="mt-1 text-xs text-dim">{app.scopes.join(", ")}</p>
                   </div>
-                  {!isRevoked ? (
+                  {app.isActive ? (
                     <div className="flex flex-wrap gap-2 self-start sm:self-center">
                       <button
                         type="button"
-                        onClick={() => revokeToken(token.id)}
+                        onClick={() => revokeConnectedApp(app.oauthClientId, app.oauthResource)}
                         disabled={tokenMutationPending}
-                        aria-label={`Revoke access for ${token.name}`}
+                        aria-label={`Disconnect ${app.name}`}
                         className="rounded border border-red-900/40 px-3 py-1.5 text-xs text-red-500 transition-colors hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        Revoke access
+                        Disconnect
                       </button>
                     </div>
                   ) : null}
