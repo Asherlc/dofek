@@ -207,16 +207,21 @@ affected_location_state AS MATERIALIZED (
         affected_current_members.user_id AS user_id,
         max(affected_current_members.source_synced_at) AS source_synced_at,
         location_versions.id AS id,
-        argMax(location_versions.recorded_at, location_versions.version) AS recorded_at,
-        argMax(location_versions.activity_id, location_versions.version) AS member_activity_id,
-        argMax(location_versions.provider_id, location_versions.version) AS provider_id,
-        argMax(location_versions.external_id, location_versions.version) AS source_external_id,
-        argMax(location_versions.device_id, location_versions.version) AS device_id,
-        argMax(location_versions.source_type, location_versions.version) AS source_type,
-        argMax(location_versions.metadata, location_versions.version) AS metadata,
-        argMax(location_versions.point, location_versions.version) AS point,
-        argMax(location_versions.ingested_at, location_versions.version) AS ingested_at,
-        argMax(location_versions.is_deleted, location_versions.version) AS is_deleted
+        argMax(
+            tuple(
+                location_versions.recorded_at,
+                location_versions.activity_id,
+                location_versions.provider_id,
+                location_versions.external_id,
+                location_versions.device_id,
+                location_versions.source_type,
+                location_versions.metadata,
+                location_versions.point,
+                location_versions.ingested_at,
+                location_versions.is_deleted
+            ),
+            location_versions.version
+        ) AS latest_location_version
     FROM affected_location_versions AS location_versions
     INNER JOIN affected_current_members
         ON affected_current_members.member_activity_id = location_versions.activity_id
@@ -229,8 +234,21 @@ affected_location_state AS MATERIALIZED (
 
 affected_location_rows AS MATERIALIZED (
     SELECT
-        *,
-        toString(point) AS point_text
+        activity_id,
+        user_id,
+        source_synced_at,
+        id,
+        latest_location_version.1 AS recorded_at,
+        latest_location_version.2 AS member_activity_id,
+        latest_location_version.3 AS provider_id,
+        latest_location_version.4 AS source_external_id,
+        latest_location_version.5 AS device_id,
+        latest_location_version.6 AS source_type,
+        latest_location_version.7 AS metadata,
+        latest_location_version.8 AS point,
+        latest_location_version.9 AS ingested_at,
+        latest_location_version.10 AS is_deleted,
+        toString(latest_location_version.8) AS point_text
     FROM affected_location_state
 ),
 
