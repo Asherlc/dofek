@@ -444,7 +444,14 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("incremental_strategy='append'");
     expect(sql).toContain("'enable_materialized_cte': 1");
     expect(sql).toContain("affected_groups AS MATERIALIZED");
-    expect(sql).toContain("changed_location_versions AS MATERIALIZED");
+    expect(sql).toContain("existing_group_watermarks AS MATERIALIZED");
+    expect(sql).toContain("candidate_affected_groups AS (");
+    expect(sql).toContain("LIMIT {{ var('activity_location_batch_size', 250) }}");
+    expect(sql).toContain("> existing_group_watermarks.source_refreshed_at");
+    expect(sql).toContain("location_point_state AS MATERIALIZED");
+    expect(sql).toContain("location_group_freshness AS MATERIALIZED");
+    expect(sql).toContain("existing_group_watermarks.live_sample_count > 0");
+    expect(sql).toContain("WHERE live_sample_count > 0");
     expect(sql).toContain("affected_location_versions AS (");
     expect(sql).not.toContain("affected_location_versions AS MATERIALIZED");
     expect(sql).toContain("affected_location_rows AS MATERIALIZED");
@@ -458,7 +465,7 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain(
       "(location_versions.user_id, location_versions.activity_id) IN",
     );
-    expect(sql.match(/argMax\(/g)).toHaveLength(1);
+    expect(sql.match(/argMax\(/g)).toHaveLength(2);
     expect(sql).toContain("argMax(\n            tuple(");
     expect(sql).toContain("location_versions.point");
     expect(sql).not.toContain("argMax(location_versions.point, location_versions.version)");
