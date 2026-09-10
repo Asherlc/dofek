@@ -19,7 +19,7 @@ vi.mock("dofek/file-upload-metrics", () => ({
 vi.mock("@sentry/node", () => ({ captureException: sentry.captureException }));
 
 vi.mock("../trpc.ts", () => {
-  const trpc = initTRPC.context<{ db: unknown; userId: string }>().create();
+  const trpc = initTRPC.context<{ db: unknown; userId: string; timezone?: string }>().create();
   return { protectedProcedure: trpc.procedure, router: trpc.router };
 });
 
@@ -102,8 +102,8 @@ function setup(currentUpload = upload()) {
       _database,
       _userId,
       operation: (database: {
-        execute: ReturnType<typeof vi.fn>;
-        select: ReturnType<typeof vi.fn>;
+        execute: CallableVitestMock;
+        select: CallableVitestMock;
       }) => Promise<unknown>,
     ) => operation(transaction),
   );
@@ -116,6 +116,7 @@ function setup(currentUpload = upload()) {
   )({
     db: {},
     userId: currentUpload.userId,
+    timezone: "America/Los_Angeles",
   });
   return { caller, repository, storage, transaction, withUserWriteFence };
 }
@@ -376,7 +377,7 @@ describe("fileUploadRouter", () => {
     }
   });
 
-  it("uses epoch for full Apple Health imports and defaults Strong weight units", async () => {
+  it("uses epoch for full Apple Health imports and preserves an absent Strong weight unit", async () => {
     const apple = upload({
       importType: "apple-health",
       originalFilename: "export.zip",
@@ -418,7 +419,91 @@ describe("fileUploadRouter", () => {
     });
     expect(strongSetup.repository.create).toHaveBeenCalledWith(
       strongSetup.transaction,
-      expect.objectContaining({ weightUnit: "kg" }),
+      expect.objectContaining({
+        weightUnit: undefined,
+        timezone: "America/Los_Angeles",
+      }),
+    );
+  });
+
+  it("persists an explicit Strong weight unit", async () => {
+    const strong = upload({
+      importType: "strong-csv",
+      originalFilename: "strong.csv",
+      contentType: "text/csv",
+      state: "initiated",
+      r2MultipartUploadId: null,
+    });
+    const { caller, repository, transaction } = setup(strong);
+    repository.find.mockResolvedValueOnce(null);
+
+    await caller.initiate({
+      uploadId: strong.id,
+      importType: "strong-csv",
+      filename: "strong.csv",
+      contentType: "text/csv",
+      sizeBytes: strong.expectedSizeBytes,
+      sha256: strong.expectedSha256,
+      weightUnit: "lbs",
+    });
+
+    expect(repository.create).toHaveBeenCalledWith(
+      transaction,
+      expect.objectContaining({ weightUnit: "lbs" }),
+    );
+  });
+
+  it("accepts a Strong CSV without a filename extension when its content type is CSV", async () => {
+    const strong = upload({
+      importType: "strong-csv",
+      originalFilename: "Strong Export",
+      contentType: "text/csv",
+      state: "initiated",
+      r2MultipartUploadId: null,
+    });
+    const { caller, repository, transaction } = setup(strong);
+    repository.find.mockResolvedValueOnce(null);
+
+    await caller.initiate({
+      uploadId: strong.id,
+      importType: "strong-csv",
+      filename: "Strong Export",
+      contentType: "text/csv",
+      sizeBytes: strong.expectedSizeBytes,
+      sha256: strong.expectedSha256,
+      weightUnit: "lbs",
+    });
+
+    expect(repository.create).toHaveBeenCalledWith(
+      transaction,
+      expect.objectContaining({ originalFilename: "Strong Export", weightUnit: "lbs" }),
+    );
+  });
+
+  it("does not persist a Strong-only weight unit for other import types", async () => {
+    const apple = upload({
+      importType: "apple-health",
+      originalFilename: "export.zip",
+      contentType: "application/zip",
+      state: "initiated",
+      r2MultipartUploadId: null,
+    });
+    const { caller, repository, transaction } = setup(apple);
+    repository.find.mockResolvedValueOnce(null);
+
+    await caller.initiate({
+      uploadId: apple.id,
+      importType: "apple-health",
+      filename: "export.zip",
+      contentType: "application/zip",
+      sizeBytes: apple.expectedSizeBytes,
+      sha256: apple.expectedSha256,
+      weightUnit: "lbs",
+    });
+
+    expect(repository.create).toHaveBeenCalledWith(
+      transaction,
+      expect.objectContaining({ weightUnit: undefined }),
     );
   });
 

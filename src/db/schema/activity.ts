@@ -4,6 +4,7 @@ import {
   boolean,
   check,
   date,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -57,6 +58,7 @@ export const strengthSet = fitness.table(
     strapLocationLaterality: text("strap_location_laterality"),
     rpe: real("rpe"),
     notes: text("notes"),
+    raw: jsonb("raw").notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index("strength_set_activity_idx").on(table.activityId)],
@@ -120,6 +122,7 @@ export const climbingEntry = fitness.table(
     grade: text("grade").notNull(),
     sent: boolean("sent"),
     attemptCount: integer("attempt_count").default(1),
+    lead: boolean("lead"),
     wallAngleDegrees: real("wall_angle_degrees"),
     holdType: climbingHoldTypeEnum("hold_type"),
     routeName: text("route_name"),
@@ -196,10 +199,49 @@ export const climbingAttempt = fitness.table(
 // Cardio / endurance activities
 // ============================================================
 
+export const activityGroup = fitness.table(
+  "activity_group",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .$defaultFn(resolveImplicitUserId)
+      .references(() => userProfile.id),
+    anchorActivityId: uuid("anchor_activity_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("activity_group_user_id_idx").on(table.userId, table.id)],
+);
+
+export const activityGroupAlias = fitness.table(
+  "activity_group_alias",
+  {
+    aliasId: uuid("alias_id").primaryKey(),
+    groupId: uuid("group_id").notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .$defaultFn(resolveImplicitUserId)
+      .references(() => userProfile.id),
+    reason: text("reason").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      name: "activity_group_alias_user_group_fk",
+      columns: [table.userId, table.groupId],
+      foreignColumns: [activityGroup.userId, activityGroup.id],
+    }),
+    index("activity_group_alias_user_group_idx").on(table.userId, table.groupId),
+    check("activity_group_alias_not_self", sql`${table.aliasId} <> ${table.groupId}`),
+    check("activity_group_alias_reason", sql`${table.reason} = 'merge'`),
+  ],
+);
+
 export const activity = fitness.table(
   "activity",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    groupId: uuid("group_id").notNull().defaultRandom(),
     providerId: text("provider_id")
       .notNull()
       .references(() => provider.id),
@@ -221,6 +263,13 @@ export const activity = fitness.table(
     startUtcOffsetMinutes: bigint("start_utc_offset_minutes", { mode: "number" }),
     endUtcOffsetMinutes: bigint("end_utc_offset_minutes", { mode: "number" }),
     localTimeSource: text("local_time_source").notNull().default("unknown"),
+    rejectedProviderTimezone: text("rejected_provider_timezone"),
+    rejectedProviderStartUtcOffsetMinutes: bigint("rejected_provider_start_utc_offset_minutes", {
+      mode: "number",
+    }),
+    rejectedProviderEndUtcOffsetMinutes: bigint("rejected_provider_end_utc_offset_minutes", {
+      mode: "number",
+    }),
     stravaId: text("strava_id"), // Strava activity ID for cross-provider linking
     raw: jsonb("raw"),
     providerAbsentAt: timestamp("provider_absent_at", { withTimezone: true }),
@@ -234,6 +283,13 @@ export const activity = fitness.table(
       table.externalId,
     ),
     index("activity_user_provider_idx").on(table.userId, table.providerId),
+    index("activity_user_group_idx").on(table.userId, table.groupId),
+    // Migration 0110 defers this FK so the AFTER INSERT trigger can create the group.
+    foreignKey({
+      name: "activity_user_group_fk",
+      columns: [table.userId, table.groupId],
+      foreignColumns: [activityGroup.userId, activityGroup.id],
+    }),
     check(
       "activity_local_time_context_check",
       sql`(
@@ -241,7 +297,13 @@ export const activity = fitness.table(
         AND ${table.startUtcOffsetMinutes} IS NULL
         AND ${table.endUtcOffsetMinutes} IS NULL
       ) OR (
-        ${table.localTimeSource} IN ('provider_timezone', 'device_timezone')
+        ${table.localTimeSource} IN (
+          'provider_timezone',
+          'device_timezone',
+          'user_home_timezone',
+          'gps_timezone',
+          'home_zone_fallback'
+        )
         AND NULLIF(btrim(${table.timezone}), '') IS NOT NULL
         AND ${table.startUtcOffsetMinutes} BETWEEN -840 AND 840
         AND (${table.endedAt} IS NULL OR ${table.endUtcOffsetMinutes} BETWEEN -840 AND 840)
@@ -439,7 +501,7 @@ export const sleepSession = fitness.table(
         AND ${table.startUtcOffsetMinutes} IS NULL
         AND ${table.endUtcOffsetMinutes} IS NULL
       ) OR (
-        ${table.localTimeSource} IN ('provider_timezone', 'device_timezone')
+        ${table.localTimeSource} IN ('provider_timezone', 'device_timezone', 'user_home_timezone')
         AND NULLIF(btrim(${table.timezone}), '') IS NOT NULL
         AND ${table.startUtcOffsetMinutes} BETWEEN -840 AND 840
         AND (${table.endedAt} IS NULL OR ${table.endUtcOffsetMinutes} BETWEEN -840 AND 840)

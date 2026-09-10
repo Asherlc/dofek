@@ -84,7 +84,7 @@ export function PersonalExperimentsPage({ search = {} }: { search?: PersonalExpe
   return (
     <PageLayout
       title="Personal Experiments"
-      subtitle="Set up an N-of-1 experiment with a baseline and intervention schedule. Correlation does not prove an intervention works."
+      subtitle="Try a change to your routine and compare the results. A comparison alone cannot prove cause."
     >
       <div className="space-y-6">
         <section className="card p-6 space-y-4">
@@ -120,10 +120,10 @@ export function PersonalExperimentsPage({ search = {} }: { search?: PersonalExpe
             >
               <label className="block">
                 <span className="block text-[10px] text-subtle uppercase tracking-wider mb-1">
-                  Hypothesis
+                  What do you want to test?
                 </span>
                 <input
-                  aria-label="Hypothesis"
+                  aria-label="What do you want to test?"
                   value={hypothesis}
                   onChange={(event) => setHypothesis(event.target.value)}
                   required
@@ -134,10 +134,10 @@ export function PersonalExperimentsPage({ search = {} }: { search?: PersonalExpe
 
               <label className="block">
                 <span className="block text-[10px] text-subtle uppercase tracking-wider mb-1">
-                  Intervention
+                  What will you change?
                 </span>
                 <input
-                  aria-label="Intervention"
+                  aria-label="What will you change?"
                   value={intervention}
                   onChange={(event) => setIntervention(event.target.value)}
                   required
@@ -420,27 +420,27 @@ function ExperimentLearningCard({
         <>
           <div className="rounded border border-border bg-surface-solid p-3 space-y-2">
             <label className="block text-xs text-subtle" htmlFor={`adherence-${experiment.id}`}>
-              Adherence
+              Did you follow the plan today?
             </label>
             <select
               id={`adherence-${experiment.id}`}
-              aria-label="Adherence"
+              aria-label="Did you follow the plan today?"
               value={adherence}
               onChange={(event) => {
                 if (isAdherence(event.target.value)) setAdherence(event.target.value);
               }}
               className="w-full rounded border border-border bg-surface px-2 py-1 text-sm text-foreground"
             >
-              <option value="adherent">Adherent</option>
-              <option value="partial">Partial</option>
-              <option value="not_adherent">Not adherent</option>
-              <option value="unknown">Unknown</option>
+              <option value="adherent">Yes</option>
+              <option value="partial">Partly</option>
+              <option value="not_adherent">No</option>
+              <option value="unknown">Not sure</option>
             </select>
             <input
-              aria-label="Confounder"
+              aria-label="Anything else that might affect the result?"
               value={confounder}
               onChange={(event) => setConfounder(event.target.value)}
-              placeholder="Confounder (optional)"
+              placeholder="Anything else that might affect the result? (optional)"
               className="w-full rounded border border-border bg-surface px-2 py-1 text-sm text-foreground"
             />
             <input

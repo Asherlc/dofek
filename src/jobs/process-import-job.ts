@@ -1,8 +1,9 @@
 import { UnrecoverableError } from "bullmq";
 import { withAccountErasureUserWriteFence } from "../db/account-erasure.ts";
+import { loadUserHomeTimezone } from "../db/home-timezone.ts";
 import type { Database, SyncDatabase } from "../db/index.ts";
+import { runWithProviderUserIngestContext } from "../db/provider-ingest-context.ts";
 import { logSync } from "../db/sync-log.ts";
-import { runWithTokenUser } from "../db/token-user-context.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { invalidateAllUserQueries } from "../lib/cache.ts";
 import { captureException } from "../lib/error-reporting.ts";
@@ -129,7 +130,7 @@ async function logImportCompletion(
 }
 
 export async function processImportJob(job: ImportJob, db: SyncDatabase): Promise<void> {
-  const { filePath, since, userId, importType, weightUnit } = job.data;
+  const { filePath, since, userId, importType, weightUnit, timezone } = job.data;
   const datasetKeys = processingDatasetKeysForImport(importType);
   const processingOperation = await createProcessingOperation(db, {
     userId,
@@ -153,19 +154,19 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
     idempotencyKey: "worker-running",
   });
   const metricDatasetKeys = processingDatasetKeysForOutputPath(datasetKeys, "metric_stream");
-  const metricStreamPublisher =
-    metricDatasetKeys.length > 0
-      ? new MetricStreamProcessingPublisher(createLazyDefaultMetricStreamEventPublisher(), {
-          operationId: processingOperation.id,
-          datasetKeys: metricDatasetKeys,
-          recordPublishedBatch: (batch) => {
-            const transaction = currentMetricStreamWriteDatabase();
-            return transaction
-              ? recordMetricStreamBatchPublishedInTransaction(transaction, batch)
-              : recordMetricStreamBatchPublished(requireTransactionalDatabase(db), batch);
-          },
-        })
-      : undefined;
+  const metricStreamPublisher = new MetricStreamProcessingPublisher(
+    createLazyDefaultMetricStreamEventPublisher(),
+    {
+      operationId: processingOperation.id,
+      datasetKeys: metricDatasetKeys,
+      recordPublishedBatch: (batch) => {
+        const transaction = currentMetricStreamWriteDatabase();
+        return transaction
+          ? recordMetricStreamBatchPublishedInTransaction(transaction, batch)
+          : recordMetricStreamBatchPublished(requireTransactionalDatabase(db), batch);
+      },
+    },
+  );
   const sinceDate = new Date(since);
   const importStart = Date.now();
   let terminalImportError: UnrecoverableError | null = null;
@@ -186,7 +187,8 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
         idempotencyKey: "worker-skipped-account-erasure",
       });
     } else {
-      await runWithTokenUser(userId, async () => {
+      const homeTimezone = await loadUserHomeTimezone(db, userId);
+      await runWithProviderUserIngestContext(userId, { homeTimezone }, async () => {
         if (importType === "apple-health") {
           await reportImportProgress(job, 0, "Starting Apple Health import...");
           const { AppleHealthImportValidationError, importAppleHealthFile } = await import(
@@ -249,7 +251,14 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
           const csvText = await readFile(filePath, "utf-8");
           const { importStrongCsv } = await import("../providers/strong-csv.ts");
           await reportImportProgress(job, 25, "Importing Strong CSV workouts...");
-          const result = await importStrongCsv(db, csvText, userId, weightUnit ?? "kg");
+          let result: Awaited<ReturnType<typeof importStrongCsv>>;
+          try {
+            result = await importStrongCsv(db, csvText, userId, weightUnit, timezone);
+          } catch (error) {
+            if (error instanceof Error && error.name === "StrongCsvValidationError")
+              throw new UnrecoverableError(error.message);
+            throw error;
+          }
           importedRecordCount = result.recordsSynced;
           await reportImportProgress(job, 90, "Strong CSV import complete.");
 
@@ -262,6 +271,11 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
             importStart,
             userId,
           );
+          if (result.errors.length > 0) {
+            terminalImportError = new UnrecoverableError(
+              `Strong CSV import completed with errors after importing ${result.recordsSynced} workouts: ${result.errors.map((error) => error.message).join("; ")}`,
+            );
+          }
         } else if (importType === "cronometer-csv") {
           await reportImportProgress(job, 0, "Starting Cronometer CSV import...");
           const { readFile } = await import("node:fs/promises");
@@ -394,7 +408,24 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
     importError = error;
   }
 
-  if (shouldCleanUpUploadedFile && !metricStreamPublisher?.hasUnpublishedBatchIntents) {
+  const emittedRelationalDatasetKeys = processingDatasetKeysForOutputPath(
+    datasetKeys,
+    "relational",
+  );
+  if (!importFailed && importedRecordCount > 0) {
+    try {
+      await recordRelationalCanonicalCommits(requireTransactionalDatabase(db), {
+        operationId: processingOperation.id,
+        datasetKeys: emittedRelationalDatasetKeys,
+        idempotencyKey: `worker-relational-commit:${job.id}`,
+      });
+    } catch (error) {
+      captureException(error, { tags: { phase: "canonical-commit" } });
+      throw error;
+    }
+  }
+
+  if (shouldCleanUpUploadedFile && !metricStreamPublisher.hasUnpublishedBatchIntents) {
     const { unlink } = await import("node:fs/promises");
     try {
       await unlink(filePath);
@@ -430,22 +461,19 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
       idempotencyKey: "worker-failed",
     });
     await invalidateAllUserQueries(userId);
+    try {
+      captureException(importError, { tags: { phase: "file-import" } });
+    } catch (telemetryError) {
+      throw new AggregateError(
+        [importError, telemetryError],
+        "File import and telemetry reporting both failed",
+      );
+    }
     throw importError;
   }
   if (importSkipped) return;
 
-  const emittedRelationalDatasetKeys = processingDatasetKeysForOutputPath(
-    datasetKeys,
-    "relational",
-  );
-  if (importedRecordCount > 0 && emittedRelationalDatasetKeys.length > 0) {
-    await recordRelationalCanonicalCommits(requireTransactionalDatabase(db), {
-      operationId: processingOperation.id,
-      datasetKeys: emittedRelationalDatasetKeys,
-      idempotencyKey: `worker-relational-commit:${job.id}`,
-    });
-  }
-  if (importedRecordCount === 0 && !metricStreamPublisher?.hasPublishedBatches) {
+  if (importedRecordCount === 0 && !metricStreamPublisher.hasPublishedBatches) {
     for (const datasetKey of datasetKeys) {
       for (const stage of ["analytics", "cache_refresh"] as const) {
         await appendProcessingStageEvent(db, {

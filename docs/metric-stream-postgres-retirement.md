@@ -142,8 +142,8 @@ Done:
    services/adapters) — IMU still flows provider/watch → Redpanda → R2 archive.
    Raw IMU remains queryable from R2 if observability is ever rebuilt
    deliberately (on object-content reads or by adding `imu` to the CH sink).
-3. Left the live on-device WHOOP BLE orientation screen (`imu-visualization`)
-   untouched — it reads the native module, not `metric_stream`.
+3. Kept the native WHOOP BLE sync path, which reads its native module rather
+   than `metric_stream`.
 
 ## P3 — Drop Postgres metric_stream + cleanup
 

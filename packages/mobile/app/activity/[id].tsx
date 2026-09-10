@@ -12,10 +12,16 @@ import {
 } from "@dofek/format/format";
 import { formatRecordLocalTime } from "@dofek/format/record-local-time";
 import type { UnitConverter } from "@dofek/format/units";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { providerSourceLabel } from "@dofek/providers/providers";
 import { getActivityIconInfo } from "@dofek/training/activity-icons";
 import type { MuscleGroupInput } from "@dofek/training/muscle-groups";
-import { cadenceUnit, formatActivityTypeLabel, isCyclingActivity } from "@dofek/training/training";
+import {
+  cadenceUnit,
+  formatActivityTypeLabel,
+  isActivityDetailType,
+  isCyclingActivity,
+} from "@dofek/training/training";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import {
@@ -30,6 +36,16 @@ import {
   View,
 } from "react-native";
 import { ActivityPerceivedExertion } from "../../components/ActivityPerceivedExertion";
+import {
+  AreaChart,
+  CHART_COLORS,
+  chartStyles,
+  LineChart,
+} from "../../components/activity/ActivityDetailCharts";
+import { ActivitySourceDecisionCard } from "../../components/activity/ActivitySourceDecisionCard";
+import { ProviderAbsentBanner } from "../../components/activity/ProviderAbsentBanner";
+import { styles } from "../../components/activity/styles";
+import { HrZonesChart, PowerZonesChart } from "../../components/activity/ZoneDistributionCharts";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { HangboardingDetail } from "../../components/HangboardingDetail";
 import { MuscleGroupBodyDiagram } from "../../components/MuscleGroupBodyDiagram";
@@ -40,23 +56,6 @@ import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { colors } from "../../theme";
-import { AreaChart, CHART_COLORS, chartStyles, LineChart } from "./ActivityDetailCharts";
-import { ActivitySourceDecisionCard } from "./ActivitySourceDecisionCard";
-import { ProviderAbsentBanner } from "./ProviderAbsentBanner";
-import { styles } from "./styles";
-import { HrZonesChart, PowerZonesChart } from "./ZoneDistributionCharts";
-
-function isStrengthActivityType(activityType: string): boolean {
-  return activityType === "strength";
-}
-
-function isClimbingActivityType(activityType: string): boolean {
-  return activityType === "climbing";
-}
-
-function isHangboardingActivityType(activityType: string): boolean {
-  return activityType === "hangboard";
-}
 
 function activityIcon(type: string): string {
   return getActivityIconInfo(type).emoji;
@@ -150,30 +149,32 @@ type StatItem = ActivityMetric | { label: string; value: string };
 function StatsGrid({ stats }: { stats: StatItem[] }) {
   return (
     <View style={statsStyles.grid}>
-      {stats.map((stat) => {
-        const metric = "status" in stat ? stat : null;
-        const unavailableMetric = metric && metric.status !== "available" ? metric : null;
-        const isUnavailable = unavailableMetric !== null;
-        const accessibleLabel = unavailableMetric
-          ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}: ${unavailableMetric.reason}`
-          : undefined;
-        const displayedValue = unavailableMetric?.reason ?? ("value" in stat ? stat.value : null);
-        return (
-          <View
-            key={stat.label}
-            style={statsStyles.card}
-            accessible={isUnavailable}
-            accessibilityLabel={accessibleLabel}
-          >
-            <Text style={statsStyles.label}>
-              {unavailableMetric
-                ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}`
-                : stat.label}
-            </Text>
-            <Text style={statsStyles.value}>{displayedValue}</Text>
-          </View>
-        );
-      })}
+      {stats
+        .filter((stat) => !("status" in stat) || stat.status !== "missing")
+        .map((stat) => {
+          const metric = "status" in stat ? stat : null;
+          const unavailableMetric = metric && metric.status !== "available" ? metric : null;
+          const isUnavailable = unavailableMetric !== null;
+          const accessibleLabel = unavailableMetric
+            ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}: ${unavailableMetric.reason}`
+            : undefined;
+          const displayedValue = unavailableMetric?.reason ?? ("value" in stat ? stat.value : null);
+          return (
+            <View
+              key={stat.label}
+              style={statsStyles.card}
+              accessible={isUnavailable}
+              accessibilityLabel={accessibleLabel}
+            >
+              <Text style={statsStyles.label}>
+                {unavailableMetric
+                  ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}`
+                  : stat.label}
+              </Text>
+              <Text style={statsStyles.value}>{displayedValue}</Text>
+            </View>
+          );
+        })}
     </View>
   );
 }
@@ -209,6 +210,7 @@ const statsStyles = StyleSheet.create({
 // ── Strength Exercise Breakdown ──
 
 interface StrengthExercise {
+  activityId: string;
   exerciseIndex: number;
   exerciseName: string;
   equipment: string | null;
@@ -258,7 +260,10 @@ function ExerciseBreakdown({
         const hasDuration = exercise.sets.some((set) => set.durationSeconds != null);
 
         return (
-          <View key={exercise.exerciseIndex} style={exerciseStyles.exerciseCard}>
+          <View
+            key={`${exercise.activityId}:${exercise.exerciseIndex}`}
+            style={exerciseStyles.exerciseCard}
+          >
             <View style={exerciseStyles.exerciseHeader}>
               <Text style={exerciseStyles.exerciseName}>{exercise.exerciseName}</Text>
               {exercise.equipment && (
@@ -384,8 +389,8 @@ interface ClimbingEntry {
   id: string;
   climbType: "boulder" | "route";
   grade: string;
-  sent: boolean;
-  attemptCount: number;
+  sent: boolean | null;
+  attemptCount: number | null;
   attempts: Array<{
     attemptIndex: number;
     failureReason: "fell" | "pumped" | "skin" | "technique" | "fear" | null;
@@ -396,7 +401,7 @@ interface ClimbingEntry {
   holdType: "crimp" | "sloper" | "pinch" | "pocket" | "jug" | null;
   routeName: string | null;
   locationName: string | null;
-  sourceName: string;
+  sourceName: string | null;
   wallAngleDegrees: number | null;
 }
 
@@ -562,7 +567,7 @@ export default function ActivityDetailScreen() {
       captureException(error);
       Alert.alert(
         "Recompute Failed",
-        error instanceof Error ? error.message : "Unable to recompute activity.",
+        userFacingErrorMessage(error, "Unable to recompute activity."),
       );
     },
   });
@@ -604,19 +609,19 @@ export default function ActivityDetailScreen() {
     },
   );
   const isStrengthActivity =
-    detail.data != null && isStrengthActivityType(detail.data.activityType);
+    detail.data != null && isActivityDetailType(detail.data.activityType, "strength");
   const strengthExercises = trpc.activity.strengthExercises.useQuery(
     { id: id ?? "" },
     { enabled: !!id && isStrengthActivity },
   );
   const isClimbingActivity =
-    detail.data != null && isClimbingActivityType(detail.data.activityType);
+    detail.data != null && isActivityDetailType(detail.data.activityType, "climbing");
   const climbingEntries = trpc.climbing.activityEntries.useQuery(
     { id: id ?? "" },
     { enabled: !!id && isClimbingActivity },
   );
   const isHangboardingActivity =
-    detail.data != null && isHangboardingActivityType(detail.data.activityType);
+    detail.data != null && isActivityDetailType(detail.data.activityType, "hangboard");
   const hangboardDetails = trpc.activity.hangboardDetails.useQuery(
     { id: id ?? "" },
     { enabled: !!id && isHangboardingActivity },
@@ -654,12 +659,24 @@ export default function ActivityDetailScreen() {
   if (detail.error || !detail.data) {
     return (
       <View style={styles.errorContainer}>
-        <Text style={styles.errorText}>{detail.error?.message ?? "Activity not found"}</Text>
+        <Text style={styles.errorText}>
+          {userFacingErrorMessage(
+            detail.error,
+            "This activity could not be found. Return to Activities and try again.",
+          )}
+        </Text>
       </View>
     );
   }
 
   const activity = detail.data;
+  const localStartTime = formatRecordLocalTime(
+    activity.startedAt,
+    activity.localTimeContext,
+    "start",
+    undefined,
+    Intl.DateTimeFormat().resolvedOptions().timeZone,
+  );
   const zones = hrZones.data ?? [];
 
   const hasGps = points.some((p) => p.lat != null && p.lng != null);
@@ -721,10 +738,7 @@ export default function ActivityDetailScreen() {
         });
       } catch (error) {
         captureException(error);
-        Alert.alert(
-          "Export Failed",
-          error instanceof Error ? error.message : "Unable to export activity.",
-        );
+        Alert.alert("Export Failed", userFacingErrorMessage(error, "Unable to export activity."));
       } finally {
         setExportingFormat(null);
       }
@@ -817,9 +831,7 @@ export default function ActivityDetailScreen() {
         <Text style={styles.dateTime}>
           {formatDateLong(activity.startedAt)}
           {" at "}
-          {formatRecordLocalTime(activity.startedAt, activity.localTimeContext, "start") === "--"
-            ? "Local time unavailable"
-            : formatRecordLocalTime(activity.startedAt, activity.localTimeContext, "start")}
+          {localStartTime === "--" ? "Local time unavailable" : localStartTime}
         </Text>
         {(activity.sourceLinks.length > 0 || activity.sourceProviders.length > 0) && (
           <View style={styles.sourceRow}>
@@ -835,7 +847,7 @@ export default function ActivityDetailScreen() {
 
       {/* Stats Grid */}
       {stats.length > 0 && <StatsGrid stats={stats} />}
-      <ActivityPerceivedExertion activityId={id ?? ""} value={activity.perceivedExertion} />
+      <ActivityPerceivedExertion value={activity.perceivedExertion} />
 
       {isHangboardingActivity && (
         <View style={hangboardingStyles.container}>
@@ -858,7 +870,7 @@ export default function ActivityDetailScreen() {
 
       {isClimbingActivity && climbingEntries.error && (
         <View style={climbingStyles.container}>
-          <Text style={styles.errorText}>{climbingEntries.error.message}</Text>
+          <Text style={styles.errorText}>{userFacingErrorMessage(climbingEntries.error)}</Text>
         </View>
       )}
       {(climbingEntries.data?.length ?? 0) > 0 && (
@@ -919,7 +931,14 @@ export default function ActivityDetailScreen() {
             <HrZonesChart
               zones={zones}
               loading={hrZones.isLoading}
-              errorMessage={hrZones.error?.message}
+              errorMessage={
+                hrZones.error
+                  ? userFacingErrorMessage(
+                      hrZones.error,
+                      "Heart rate zones could not be loaded. Please try again.",
+                    )
+                  : undefined
+              }
             />
           )}
 

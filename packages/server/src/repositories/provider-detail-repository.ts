@@ -29,8 +29,7 @@ export const dataTypeEnum = z.enum([
   "healthEvents",
   "metricStream",
   "nutritionDaily",
-  "labPanels",
-  "labResults",
+  "clinicalRecords",
   "journalEntries",
 ]);
 
@@ -71,10 +70,8 @@ export function tableInfo(dataType: DataType): {
         orderColumn: "date",
         idColumn: "date",
       };
-    case "labPanels":
-      return { table: "fitness.lab_panel", orderColumn: "recorded_at", idColumn: "id" };
-    case "labResults":
-      return { table: "fitness.lab_result", orderColumn: "recorded_at", idColumn: "id" };
+    case "clinicalRecords":
+      return { table: "fitness.clinical_record", orderColumn: "downloaded_at", idColumn: "id" };
     case "journalEntries":
       return { table: "fitness.journal_entry", orderColumn: "date", idColumn: "id" };
   }
@@ -196,33 +193,18 @@ function listColumnNames(
         "fiber_g",
         "sugar_g",
       ];
-    case "labPanels":
+    case "clinicalRecords":
       return [
         "id",
         "provider_id",
         "external_id",
-        "name",
-        "loinc_code",
-        "status",
+        "clinical_type",
+        "display_name",
         "source_name",
+        "fhir_version",
+        "downloaded_at",
         "recorded_at",
         "issued_at",
-        "created_at",
-      ];
-    case "labResults":
-      return [
-        "id",
-        "provider_id",
-        "panel_id",
-        "external_id",
-        "test_name",
-        "loinc_code",
-        "value",
-        "value_text",
-        "unit",
-        "status",
-        "recorded_at",
-        "created_at",
       ];
     case "journalEntries":
       return [
@@ -291,10 +273,8 @@ export function getRecordSelectFilterColumns(dataType: DataType): readonly strin
       return ["meal", "source_name"];
     case "healthEvents":
       return ["type", "source_name"];
-    case "labPanels":
-      return ["status", "source_name"];
-    case "labResults":
-      return ["status"];
+    case "clinicalRecords":
+      return ["clinical_type", "source_name", "fhir_version"];
     case "journalEntries":
       return ["question_slug"];
     case "bodyMeasurements":
@@ -337,11 +317,7 @@ export const PROVIDER_DATA_TABLES = [
   "fitness.daily_metrics",
   "fitness.sleep_session",
   "fitness.food_entry",
-  "fitness.lab_result",
-  "fitness.lab_panel",
-  "fitness.medication",
-  "fitness.condition",
-  "fitness.allergy_intolerance",
+  "fitness.clinical_record",
   "fitness.supplement_dose_event",
   "fitness.medication_dose_event",
   "fitness.health_event",
@@ -496,11 +472,8 @@ export class ProviderDetailRepository {
               SELECT 'nutritionDaily'::text
               WHERE EXISTS (SELECT 1 FROM fitness.v_nutrition_provider_daily WHERE user_id = ${this.#userId} AND provider_id = ${providerId})
               UNION ALL
-              SELECT 'labPanels'::text
-              WHERE EXISTS (SELECT 1 FROM fitness.lab_panel WHERE user_id = ${this.#userId} AND provider_id = ${providerId})
-              UNION ALL
-              SELECT 'labResults'::text
-              WHERE EXISTS (SELECT 1 FROM fitness.lab_result WHERE user_id = ${this.#userId} AND provider_id = ${providerId})
+              SELECT 'clinicalRecords'::text
+              WHERE EXISTS (SELECT 1 FROM fitness.clinical_record WHERE user_id = ${this.#userId} AND provider_id = ${providerId})
               UNION ALL
               SELECT 'journalEntries'::text
               WHERE EXISTS (SELECT 1 FROM fitness.journal_entry WHERE user_id = ${this.#userId} AND provider_id = ${providerId})

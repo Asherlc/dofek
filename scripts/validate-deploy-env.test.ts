@@ -9,6 +9,13 @@ function validEnvironment(): Record<string, string> {
         "2026-07": Buffer.alloc(32, 1).toString("base64"),
       },
     }),
+    APP_STORE_APP_ID: "123456789",
+    APP_STORE_BUNDLE_ID: "com.dofek.app",
+    APP_STORE_ISSUER_ID: "app-store-issuer-id",
+    APP_STORE_KEY_ID: "app-store-key-id",
+    APP_STORE_PRIVATE_KEY: "app-store-private-key",
+    APP_STORE_ROOT_CERTIFICATES_PEM: "app-store-root-certificates",
+    APP_STORE_SUBSCRIPTION_PRODUCT_ID: "com.dofek.premium.monthly",
     AXIOM_API_TOKEN: "axiom-token",
     BREVO_API_KEY: "brevo-token",
     CREDENTIAL_ENCRYPTION_KEY_BASE64: Buffer.alloc(32, 3).toString("base64"),
@@ -77,6 +84,21 @@ describe("validateDeployEnvironment", () => {
 
     expect(() => validateDeployEnvironment(environment)).toThrow(
       "Rendered Infisical dotenv is missing required keys: OTA_JWT_SECRET, OTA_PRIVATE_KEY_B64, OTA_PUBLIC_KEY_B64",
+    );
+  });
+
+  it("requires every App Store verification value before deployment", () => {
+    const environment = validEnvironment();
+    delete environment.APP_STORE_ISSUER_ID;
+    delete environment.APP_STORE_KEY_ID;
+    delete environment.APP_STORE_PRIVATE_KEY;
+    delete environment.APP_STORE_APP_ID;
+    delete environment.APP_STORE_BUNDLE_ID;
+    delete environment.APP_STORE_SUBSCRIPTION_PRODUCT_ID;
+    delete environment.APP_STORE_ROOT_CERTIFICATES_PEM;
+
+    expect(() => validateDeployEnvironment(environment)).toThrow(
+      "Rendered Infisical dotenv is missing required keys: APP_STORE_ISSUER_ID, APP_STORE_KEY_ID, APP_STORE_PRIVATE_KEY, APP_STORE_APP_ID, APP_STORE_BUNDLE_ID, APP_STORE_SUBSCRIPTION_PRODUCT_ID, APP_STORE_ROOT_CERTIFICATES_PEM",
     );
   });
 

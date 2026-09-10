@@ -303,6 +303,58 @@ turn the daily model into a warning-only step. dbt's incremental model contract
 keeps the serving transformation bounded and stateful:
 [dbt incremental models](https://docs.getdbt.com/docs/build/incremental-models).
 
+## Activity source-version projection rollout (migration 0073)
+
+Migration `0073_activity_sensor_summary_source_version` registers
+`by_activity_source_refresh_version`, but the deploy migration intentionally
+does not rewrite existing `analytics.activity_sensor_sample` parts. ClickHouse
+requires an explicit
+[`MATERIALIZE PROJECTION`](https://clickhouse.com/docs/reference/statements/alter/projection)
+operation to populate a newly added projection on historical parts.
+
+After the migration and dbt model deploy succeed, run this stop-gated sequence
+from the production ClickHouse client:
+
+```sql
+SELECT
+  countIf(NOT has(projections, 'by_activity_source_refresh_version')) AS missing_projection_parts,
+  count() AS active_parts
+FROM system.parts
+WHERE active
+  AND database = 'analytics'
+  AND table = 'activity_sensor_sample';
+
+ALTER TABLE analytics.activity_sensor_sample
+MATERIALIZE PROJECTION by_activity_source_refresh_version
+SETTINGS mutations_sync = 0;
+
+SELECT
+  mutation_id,
+  command,
+  is_done,
+  parts_to_do,
+  latest_fail_reason
+FROM system.mutations
+WHERE database = 'analytics'
+  AND table = 'activity_sensor_sample'
+  AND command LIKE '%MATERIALIZE PROJECTION by_activity_source_refresh_version%'
+ORDER BY create_time DESC;
+```
+
+`mutations_sync = 0` submits a server-side mutation without waiting for
+completion; the operation continues if the client disconnects. Identify it
+with the `system.mutations` query and treat the latest row as the resume
+checkpoint. Do not submit a duplicate while `is_done = 0`.
+Stop on any non-empty `latest_fail_reason`. If no mutation is running and the
+initial command was never accepted, rerun it once; otherwise resume by
+monitoring the existing mutation.
+
+After `is_done = 1`, rerun the `system.parts` query and require
+`missing_projection_parts = 0`. Then observe one successful analytics-worker
+cycle and verify the stale activity-summary count reaches zero before declaring
+the rollout complete. Do not force the summary refresh before projection
+materialization completes.
+
 ## Local Validation
 
 Start dependencies before integration tests:
@@ -345,7 +397,7 @@ Successful evidence must include:
 - Production health check:
 
 ```bash
-curl -fsS https://dofek.asherlc.com/healthz
+curl -fsS https://dofek.fit/healthz
 ```
 
 Record the incident in `docs/production-incident-baseline.md` with symptoms,

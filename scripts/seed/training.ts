@@ -1,3 +1,4 @@
+import { resolveRecordLocalTimeContext } from "@dofek/format/record-local-time";
 import { SYSTEM_SEEDED_EXERCISE_DEFINITIONS } from "../../src/db/exercise-provenance.ts";
 import { addMinutes, daysBefore, type Sql, timestampAt, USER_ID } from "./helpers.ts";
 
@@ -23,17 +24,25 @@ export async function seedTraining(sql: Sql): Promise<void> {
     const durationMinutes = getDurationMinutes(activityType, daysAgo);
     const startedAt = timestampAt(date, 6 + (daysAgo % 12), daysAgo % 4 === 0 ? 30 : 0);
     const endedAt = addMinutes(startedAt, durationMinutes);
+    const localTimeContext = resolveRecordLocalTimeContext({
+      startedAt: new Date(startedAt),
+      endedAt: new Date(endedAt),
+      timezone: "America/Los_Angeles",
+      source: "provider_timezone",
+    });
     const providerId = activityType === "strength" ? "whoop" : "strava";
     const [{ id: activityId }] = await sql<ActivityRow[]>`
       INSERT INTO fitness.activity (
         provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at,
-        name, notes, perceived_exertion, source_name, timezone
+        name, notes, perceived_exertion, source_name, timezone,
+        start_utc_offset_minutes, end_utc_offset_minutes, local_time_source
       ) VALUES (
         ${providerId}, ${USER_ID}, ${`seed-activity-${daysAgo}`}, ${activityType}, ${activityType},
         ${startedAt}, ${endedAt}, ${activityName(activityType, daysAgo)},
         ${activityNotes(activityType, daysAgo)}, ${perceivedExertion(activityType, daysAgo)},
         ${providerId === "strava" ? "Strava Review Seed" : "WHOOP Strength Review Seed"},
-        'America/Los_Angeles'
+        ${localTimeContext.timezone}, ${localTimeContext.startUtcOffsetMinutes},
+        ${localTimeContext.endUtcOffsetMinutes}, ${localTimeContext.source}
       ) RETURNING id
     `;
 

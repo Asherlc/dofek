@@ -1,5 +1,6 @@
 import { circularMovingBlockBootstrapInterval } from "@dofek/stats/block-bootstrap";
 import { linearRegression } from "@dofek/stats/correlation";
+import type { StrengthExerciseIdentity } from "@dofek/training/training";
 import type {
   ProgressiveOverloadRow,
   ProgressiveOverloadTrend,
@@ -106,11 +107,11 @@ function estimateUncertainty(
 
 /** Dated weekly exercise volume and its evidence-bounded linear trend. */
 export class ProgressiveOverload {
-  readonly #exerciseName: string;
+  readonly #identity: StrengthExerciseIdentity;
   readonly #observations: ProgressiveOverloadObservation[];
 
-  constructor(exerciseName: string, observations: ProgressiveOverloadObservation[]) {
-    this.#exerciseName = exerciseName;
+  constructor(identity: StrengthExerciseIdentity, observations: ProgressiveOverloadObservation[]) {
+    this.#identity = identity;
     this.#observations = observations;
   }
 
@@ -130,7 +131,7 @@ export class ProgressiveOverload {
     const trend = trendForSlope(slopeKgPerWeek);
 
     return {
-      exerciseName: this.#exerciseName,
+      ...this.#identity,
       observations: this.#observations,
       period: {
         startWeek,

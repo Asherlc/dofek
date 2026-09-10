@@ -86,15 +86,6 @@ export function scoreLabel(score: number): string {
   return "Poor";
 }
 
-/** Get a contextual description for a recovery score explaining what it means */
-export function scoreDescription(score: number): string {
-  if (score > SCORE_RECOVERED_THRESHOLD)
-    return "You're well recovered and ready for high-intensity training.";
-  if (score >= SCORE_WARNING_THRESHOLD)
-    return "Your body is at a moderate recovery level. Steady effort is recommended.";
-  return "Recovery is low. Focus on rest and keep today's effort light.";
-}
-
 export interface WeekSummary {
   week: string;
   hours: number;
@@ -167,14 +158,6 @@ export function healthStatusColor(status: "excellent" | "good" | "fair" | "poor"
   if (status === "excellent") return statusColors.positive;
   if (status === "good") return statusColors.info;
   if (status === "fair") return statusColors.warning;
-  return statusColors.danger;
-}
-
-/** Get the color for a ramp rate value (always uses absolute value) */
-export function rampRateColor(rate: number): string {
-  const absRate = Math.abs(rate);
-  if (absRate < 5) return statusColors.positive;
-  if (absRate <= 7) return statusColors.warning;
   return statusColors.danger;
 }
 

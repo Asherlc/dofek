@@ -15,8 +15,9 @@ describe("Activity router", () => {
   let testCtx: TestContext;
   let sessionCookie: string;
   let metricOnlyActivityId: string;
-  let cyclingActivityId: string;
-  let walkingActivityId: string;
+  let metricOnlyActivityGroupId: string;
+  let cyclingActivityGroupId: string;
+  let walkingActivityGroupId: string;
 
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
@@ -36,7 +37,7 @@ describe("Activity router", () => {
           WHERE id = ${TEST_USER_ID}`,
     );
 
-    const insertedActivities = await testCtx.db.execute<{ id: string }>(
+    const insertedActivities = await testCtx.db.execute<{ id: string; group_id: string }>(
       sql`INSERT INTO fitness.activity (
             provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
           ) VALUES (
@@ -48,15 +49,20 @@ describe("Activity router", () => {
             CURRENT_TIMESTAMP - INTERVAL '2 days',
             CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '30 minutes',
             'Metric Stream Only Activity'
-          ) RETURNING id`,
+          ) RETURNING id, group_id`,
     );
     const activityId = insertedActivities[0]?.id;
     if (!activityId) {
       throw new Error("Failed to insert test activity");
     }
     metricOnlyActivityId = activityId;
+    metricOnlyActivityGroupId = insertedActivities[0].group_id;
 
-    const filteredActivities = await testCtx.db.execute<{ id: string; canonical_type: string }>(
+    const filteredActivities = await testCtx.db.execute<{
+      id: string;
+      group_id: string;
+      canonical_type: string;
+    }>(
       sql`INSERT INTO fitness.activity (
             provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
           ) VALUES
@@ -80,7 +86,7 @@ describe("Activity router", () => {
             CURRENT_TIMESTAMP - INTERVAL '12 hours' + INTERVAL '40 minutes',
             'Filtered Walking Activity'
           )
-          RETURNING id, canonical_type`,
+          RETURNING id, group_id, canonical_type`,
     );
     const cyclingActivity = filteredActivities.find(
       (activity) => activity.canonical_type === "cycling",
@@ -91,15 +97,15 @@ describe("Activity router", () => {
     if (!cyclingActivity || !walkingActivity) {
       throw new Error("Failed to insert filtered test activities");
     }
-    cyclingActivityId = cyclingActivity.id;
-    walkingActivityId = walkingActivity.id;
+    cyclingActivityGroupId = cyclingActivity.group_id;
+    walkingActivityGroupId = walkingActivity.group_id;
 
     const sensorStore = makeMockSensorStore();
     sensorStore.getActivitySummaries = async (activityIds) =>
-      activityIds.includes(metricOnlyActivityId)
+      activityIds.includes(metricOnlyActivityGroupId)
         ? [
             {
-              activity_id: metricOnlyActivityId,
+              activity_id: metricOnlyActivityGroupId,
               avg_hr: 152.3333,
               max_hr: 155,
               avg_power: 215,
@@ -115,7 +121,7 @@ describe("Activity router", () => {
           ]
         : [];
     sensorStore.getStream = async (window) =>
-      window.activityId === metricOnlyActivityId
+      window.activityId === metricOnlyActivityGroupId
         ? [
             {
               recorded_at: new Date().toISOString(),
@@ -130,7 +136,7 @@ describe("Activity router", () => {
           ]
         : [];
     sensorStore.getHeartRateZoneSeconds = async (window) =>
-      window.activityId === metricOnlyActivityId
+      window.activityId === metricOnlyActivityGroupId
         ? [
             { zone: 1, seconds: 0 },
             { zone: 2, seconds: 1 },
@@ -202,7 +208,7 @@ describe("Activity router", () => {
         offset: 0,
       });
       const items: Array<{ id: string; avg_hr: number | null }> = result.result?.data?.items ?? [];
-      const insertedActivity = items.find((item) => item.id === metricOnlyActivityId);
+      const insertedActivity = items.find((item) => item.id === metricOnlyActivityGroupId);
       expect(insertedActivity).toBeDefined();
       expect(insertedActivity?.avg_hr).toBeCloseTo(152.3333, 4);
     });
@@ -219,20 +225,19 @@ describe("Activity router", () => {
       expect(result.error).toBeUndefined();
       const items: Array<{ id: string; canonical_type: string }> = result.result?.data?.items ?? [];
       expect(items).toHaveLength(1);
-      expect(items[0]?.id).toBe(cyclingActivityId);
+      expect(items[0]?.id).toBe(cyclingActivityGroupId);
       expect(items[0]?.canonical_type).toBe("cycling");
-      expect(items.some((item) => item.id === metricOnlyActivityId)).toBe(false);
-      expect(items.some((item) => item.id === walkingActivityId)).toBe(false);
+      expect(items.some((item) => item.id === metricOnlyActivityGroupId)).toBe(false);
+      expect(items.some((item) => item.id === walkingActivityGroupId)).toBe(false);
     });
   });
 
   describe("stream", () => {
-    it("returns empty array for non-existent activity", async () => {
+    it("returns NOT_FOUND for a non-existent activity", async () => {
       const result = await query("activity.stream", {
         id: "00000000-0000-0000-0000-000000000099",
       });
-      // Stream returns empty array (no data), not an error
-      expect(result.result?.data).toEqual([]);
+      expect(result.error.data.code).toBe("NOT_FOUND");
     });
 
     it("rejects maxPoints below minimum", async () => {
@@ -371,7 +376,7 @@ describe("Hangboarding activity router integration", () => {
       sql`INSERT INTO fitness.activity_interval (
             activity_id, interval_index, label, interval_type, started_at, ended_at
           ) VALUES (
-            ${activityId}::uuid, 0, 'Step 1: Work', 'work',
+            ${activityId}::uuid, 0, 'Step 1: 19 mm edge', 'work',
             '2026-08-08T14:00:00Z'::timestamptz, '2026-08-08T14:00:07Z'::timestamptz
           )`,
     );
@@ -389,9 +394,12 @@ describe("Hangboarding activity router integration", () => {
     });
     await expect(caller.hangboardDetails({ id: activityId })).resolves.toMatchObject({
       planName: "Repeaters",
-      sessionId: "router-session",
       boardName: "Tension Board",
-      intervals: [expect.objectContaining({ intervalType: "work", durationSeconds: 7 })],
+      summary: expect.objectContaining({
+        workIntervalCount: 1,
+        totalWorkDurationSeconds: 7,
+        exercises: [expect.objectContaining({ label: "19 mm edge" })],
+      }),
     });
     await expect(
       caller.hangboardDetails({ id: "00000000-0000-0000-0000-000000000099" }),

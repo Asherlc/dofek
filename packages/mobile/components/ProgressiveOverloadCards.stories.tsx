@@ -6,6 +6,7 @@ import { ProgressiveOverloadCards } from "./ProgressiveOverloadCards";
 
 const exercise: ProgressiveOverloadRow = {
   exerciseName: "Back Squat",
+  equipment: "BARBELL",
   observations: [
     { week: "2026-01-05", totalVolumeKg: 4_800 },
     { week: "2026-01-19", totalVolumeKg: 5_100 },

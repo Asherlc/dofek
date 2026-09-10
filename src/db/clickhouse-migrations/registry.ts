@@ -68,7 +68,20 @@ import { createMigration as createMigration0068 } from "./0068_provider_metric_s
 import { createMigration as createMigration0069 } from "./0069_canonical_activity_types.ts";
 import { createMigration as createMigration0070 } from "./0070_account_erasure_fence.ts";
 import { createMigration as createMigration0071 } from "./0071_repair_canonical_activity_type_reads.ts";
-import { createMigration as createMigration0072 } from "./0072_remove_provider_derived_metrics.ts";
+import { createMigration as createMigration0072 } from "./0072_canonical_clinical_records.ts";
+import { createMigration as createMigration0073 } from "./0073_activity_sensor_summary_source_version.ts";
+import { createMigration as createMigration0074 } from "./0074_metric_stream_external_id_projection.ts";
+import { createMigration as createMigration0075 } from "./0075_activity_rejected_local_time_context.ts";
+import { createMigration as createMigration0076 } from "./0076_activity_sensor_provenance.ts";
+import { createMigration as createMigration0077 } from "./0077_activity_power_curve_evidence.ts";
+import { createMigration as createMigration0078 } from "./0078_sensor_provider_priority_type.ts";
+import { createMigration as createMigration0079 } from "./0079_stable_activity_group_id.ts";
+import { createMigration as createMigration0080 } from "./0080_sensor_source_activity_id.ts";
+import { createMigration as createMigration0081 } from "./0081_stable_activity_read_views.ts";
+import { createMigration as createMigration0082 } from "./0082_metric_stream_delete_scope.ts";
+import { createMigration as createMigration0083 } from "./0083_activity_location_source_refresh.ts";
+import { createMigration as createMigration0084 } from "./0084_activity_location_source_refresh_default.ts";
+import { createMigration as createMigration0085 } from "./0085_remove_provider_derived_metrics.ts";
 import type { ClickHouseMigration, ClickHouseMigrationFactory } from "./types.ts";
 
 const migrationFactories: ClickHouseMigrationFactory[] = [
@@ -143,6 +156,19 @@ const migrationFactories: ClickHouseMigrationFactory[] = [
   createMigration0070,
   createMigration0071,
   createMigration0072,
+  createMigration0073,
+  createMigration0074,
+  createMigration0075,
+  createMigration0076,
+  createMigration0077,
+  createMigration0078,
+  createMigration0079,
+  createMigration0080,
+  createMigration0081,
+  createMigration0082,
+  createMigration0083,
+  createMigration0084,
+  createMigration0085,
 ];
 
 export function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigration[] {

@@ -20,6 +20,7 @@ export { ProviderRateLimitError, ProviderRequestTimeoutError, ProviderServiceUna
 export interface FetchRateLimitHandlingOptions {
   createRateLimitError: (response: Response, responseBody: string) => Error;
   createServiceUnavailableError?: (response: Response, responseBody: string) => Error;
+  additionalServiceUnavailableStatusCodes?: readonly number[];
 }
 
 export interface RateLimitAwareFetchOptions {
@@ -29,6 +30,7 @@ export interface RateLimitAwareFetchOptions {
   createRateLimitError?: (response: Response, responseBody: string) => Error;
   createServiceUnavailableError?: (response: Response, responseBody: string) => Error;
   adaptiveStore?: AdaptiveRateLimitStore;
+  additionalServiceUnavailableStatusCodes?: readonly number[];
 }
 
 const rateLimitAwareFetches = new WeakSet<typeof globalThis.fetch>();
@@ -57,10 +59,6 @@ export function parseRetryAfterHeader(header: string | null | undefined): number
   if (Number.isNaN(retryAt)) return null;
 
   return Math.max(0, Math.ceil((retryAt - Date.now()) / 1000));
-}
-
-export function isServiceUnavailableStatus(statusCode: number): boolean {
-  return statusCode === 502 || statusCode === 503 || statusCode === 504;
 }
 
 const PROVIDER_CONNECT_FAILURE_CODES = new Set(["ETIMEDOUT", "ECONNRESET", "ENETUNREACH"]);
@@ -94,6 +92,18 @@ export function isProviderConnectFailure(error: unknown): boolean {
   return false;
 }
 
+export function isServiceUnavailableStatus(
+  statusCode: number,
+  additionalStatusCodes: readonly number[] = [],
+): boolean {
+  return (
+    statusCode === 502 ||
+    statusCode === 503 ||
+    statusCode === 504 ||
+    additionalStatusCodes.includes(statusCode)
+  );
+}
+
 export async function fetchWithRateLimitHandling(
   fetchFn: typeof globalThis.fetch,
   input: RequestInfo | URL,
@@ -105,7 +115,9 @@ export async function fetchWithRateLimitHandling(
     const responseBody = await response.text();
     throw options.createRateLimitError(response, responseBody);
   }
-  if (isServiceUnavailableStatus(response.status)) {
+  if (
+    isServiceUnavailableStatus(response.status, options.additionalServiceUnavailableStatusCodes)
+  ) {
     const responseBody = await response.text();
     const createServiceUnavailableError =
       options.createServiceUnavailableError ??
@@ -203,6 +215,7 @@ export function createRateLimitAwareFetch(
                 response,
                 responseBody,
               )),
+          additionalServiceUnavailableStatusCodes: options.additionalServiceUnavailableStatusCodes,
         },
       );
 

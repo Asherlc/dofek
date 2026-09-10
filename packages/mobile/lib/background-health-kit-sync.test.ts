@@ -34,6 +34,7 @@ vi.mock("../modules/health-kit", () => ({
   setObserverSyncInProgress: (...args: unknown[]) => mockSetObserverSyncInProgress(...args),
   teardownBackgroundObservers: (...args: unknown[]) => mockTeardownBackgroundObservers(...args),
   queryDailyStatistics: vi.fn().mockResolvedValue([]),
+  queryCategorySamples: vi.fn().mockResolvedValue([]),
   queryQuantitySamples: vi.fn().mockResolvedValue([]),
   queryWorkouts: vi.fn().mockResolvedValue([]),
   queryWorkoutRoutes: vi.fn().mockResolvedValue([]),
@@ -438,6 +439,38 @@ describe("initBackgroundHealthKitSync", () => {
     vi.useRealTimers();
   });
 
+  it.each(["Route service unavailable", "fetch failed: The request timed out."])(
+    "refreshes queries after partial writes while retaining failed observer acknowledgement: %s",
+    async (message) => {
+      vi.useFakeTimers();
+      try {
+        const client = createMockClient();
+        const refreshQueries = vi.fn();
+        await initBackgroundHealthKitSync(client, refreshQueries);
+        await vi.runAllTimersAsync();
+        refreshQueries.mockClear();
+        vi.mocked(queryDailyStatistics).mockResolvedValueOnce([
+          { date: "2026-03-22", value: 1000 },
+        ]);
+        client.healthKitSync.pushQuantitySamples.mutate.mockResolvedValueOnce({
+          inserted: 1,
+          errors: [message],
+        });
+        const listener = mockAddSampleUpdateListener.mock.calls[0][0];
+        listener({
+          typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+          updateId: "partial-update",
+        });
+        await vi.advanceTimersByTimeAsync(5000);
+        await vi.runAllTimersAsync();
+        expect(refreshQueries).toHaveBeenCalledTimes(1);
+        expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["partial-update"], false);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
   it("marks native observer sync lifecycle while draining deliveries (DOFEK-MOBILE-1C)", async () => {
     const client = createMockClient();
     await initBackgroundHealthKitSync(client);
@@ -554,21 +587,20 @@ describe("initBackgroundHealthKitSync", () => {
     vi.useRealTimers();
   });
 
-  it.each([
-    null,
-    "locked",
-    { code: "OTHER_ERROR" },
-  ])("reports a non-HealthKit database error to Sentry: %j", async (syncError) => {
-    vi.mocked(queryWorkouts).mockRejectedValueOnce(syncError);
+  it.each([null, "locked", { code: "OTHER_ERROR" }])(
+    "reports a non-HealthKit database error to Sentry: %j",
+    async (syncError) => {
+      vi.mocked(queryWorkouts).mockRejectedValueOnce(syncError);
 
-    await initBackgroundHealthKitSync(createMockClient());
+      await initBackgroundHealthKitSync(createMockClient());
 
-    await vi.waitFor(() => {
-      expect(mockCaptureException).toHaveBeenCalledWith(syncError, {
-        source: "bg-healthkit-sync",
+      await vi.waitFor(() => {
+        expect(mockCaptureException).toHaveBeenCalledWith(syncError, {
+          source: "bg-healthkit-sync",
+        });
       });
-    });
-  });
+    },
+  );
 
   it("skips init when HealthKit is not available", async () => {
     mockIsAvailable.mockReturnValueOnce(false);

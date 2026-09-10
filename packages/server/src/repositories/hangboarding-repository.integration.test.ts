@@ -5,6 +5,7 @@ import { setupTestDatabase, type TestContext } from "../../../../src/db/test-hel
 import { HangboardingRepository } from "./hangboarding-repository.ts";
 
 describe("HangboardingRepository integration", () => {
+  const groupedActivityId = "2fd151b9-75fb-4ff8-98a4-c1881df78561";
   let testContext: TestContext;
   let firstActivityId: string;
   let nonHangboardingActivityId: string;
@@ -109,7 +110,7 @@ describe("HangboardingRepository integration", () => {
       sql`INSERT INTO fitness.activity_interval (
             activity_id, interval_index, label, interval_type, started_at, ended_at
           ) VALUES
-          (${firstActivityId}::uuid, 0, 'Step 1: Work', 'work',
+          (${firstActivityId}::uuid, 0, 'Step 1: 19 mm edge', 'work',
             CURRENT_TIMESTAMP - INTERVAL '2 days', CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '7 seconds'),
           (${firstActivityId}::uuid, 1, 'Step 1: Rest', 'rest',
             CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '7 seconds',
@@ -128,19 +129,19 @@ describe("HangboardingRepository integration", () => {
 
     const groupedActivities = await testContext.db.execute<{ id: string; external_id: string }>(
       sql`INSERT INTO fitness.activity (
-            provider_id, user_id, external_id, canonical_type, provider_type,
+            group_id, provider_id, user_id, external_id, canonical_type, provider_type,
             started_at, ended_at, name, raw
           ) VALUES
           (
-            'hangboarding-repository-test', ${TEST_USER_ID}, 'hangboard-repository-grouped-hangten',
+            ${groupedActivityId}::uuid, 'hangboarding-repository-test', ${TEST_USER_ID}, 'hangboard-repository-grouped-hangten',
             'hangboard', 'Hang Ten', CURRENT_TIMESTAMP - INTERVAL '40 days',
             CURRENT_TIMESTAMP - INTERVAL '40 days' + INTERVAL '10 minutes', 'Grouped Hang Ten',
             '{"hangTen":{"sessionId":"grouped-session","planName":"Grouped Hang Ten","boardName":"Tension Board"}}'::jsonb
           ),
           (
-            'hangboarding-repository-other', ${TEST_USER_ID}, 'hangboard-repository-grouped-other',
+            ${groupedActivityId}::uuid, 'hangboarding-repository-other', ${TEST_USER_ID}, 'hangboard-repository-grouped-other',
             'hangboard', 'Other Hangboard', CURRENT_TIMESTAMP - INTERVAL '40 days',
-            CURRENT_TIMESTAMP - INTERVAL '40 days' + INTERVAL '10 minutes', 'Grouped Other',
+            CURRENT_TIMESTAMP - INTERVAL '40 days' + INTERVAL '20 minutes', 'Grouped Other',
             '{"avgHeartRate":200,"maxHeartRate":210}'::jsonb
           )
           RETURNING id::text AS id, external_id`,
@@ -172,18 +173,19 @@ describe("HangboardingRepository integration", () => {
     await testContext?.cleanup();
   });
 
-  it("reads detail metadata and ordered intervals from real Postgres rows", async () => {
+  it("reads a compact finger-loading summary from real Postgres rows", async () => {
     const repository = new HangboardingRepository(testContext.db, TEST_USER_ID, "UTC");
 
     await expect(repository.getDetail(firstActivityId)).resolves.toMatchObject({
       planName: "Repeaters",
-      sessionId: "session-1",
-      boardId: "board-1",
       boardName: "Tension Board",
-      intervals: [
-        expect.objectContaining({ intervalIndex: 0, intervalType: "work", durationSeconds: 7 }),
-        expect.objectContaining({ intervalIndex: 1, intervalType: "rest", durationSeconds: 53 }),
-      ],
+      summary: {
+        durationSeconds: 600,
+        workIntervalCount: 1,
+        totalWorkDurationSeconds: 7,
+        totalRestDurationSeconds: 53,
+        exercises: [{ label: "19 mm edge", workIntervalCount: 1, workDurationSeconds: 7 }],
+      },
     });
   });
 
@@ -217,11 +219,15 @@ describe("HangboardingRepository integration", () => {
 
     await expect(repository.getDetail(noHangTenActivityId)).resolves.toEqual({
       planName: null,
-      sessionId: null,
-      boardId: null,
       boardName: null,
       segmentsError: null,
-      intervals: [],
+      summary: {
+        durationSeconds: 300,
+        workIntervalCount: 0,
+        totalWorkDurationSeconds: null,
+        totalRestDurationSeconds: null,
+        exercises: [],
+      },
     });
   });
 
@@ -260,13 +266,17 @@ describe("HangboardingRepository integration", () => {
     });
   });
 
-  it("uses Hang Ten metadata and intervals when another member is canonical", async () => {
+  it("uses Hang Ten metadata and finger-loading data when another member is canonical", async () => {
     const repository = new HangboardingRepository(testContext.db, TEST_USER_ID, "UTC");
 
     await expect(repository.getDetail(groupedOtherActivityId)).resolves.toMatchObject({
       planName: "Grouped Hang Ten",
       boardName: "Tension Board",
-      intervals: [expect.objectContaining({ label: "Hang Ten Work", durationSeconds: 7 })],
+      summary: expect.objectContaining({
+        durationSeconds: 600,
+        workIntervalCount: 1,
+        exercises: [expect.objectContaining({ label: "Hang Ten Work", workDurationSeconds: 7 })],
+      }),
     });
   });
 

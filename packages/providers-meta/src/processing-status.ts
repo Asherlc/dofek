@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { providerLabel } from "./providers.ts";
 
 export type ProcessingDisplayStatus =
@@ -121,15 +122,16 @@ export function processingStatusMessage(input: {
   status: ProcessingDisplayStatus;
   errorMessage: string | null;
 }): string | null {
+  const failureGuidance = "Try the update again. If it still fails, reconnect the data source.";
   if ((input.status === "failed" || input.status === "blocked") && input.errorMessage) {
-    return input.errorMessage;
+    return userFacingErrorMessage(input.errorMessage, failureGuidance);
   }
   switch (input.status) {
     case "delayed":
       return "Your existing data is still available.";
     case "failed":
     case "blocked":
-      return "Try the update again. If it still fails, reconnect the data source.";
+      return failureGuidance;
     case "partial":
     case "active":
     case "waiting":
@@ -175,16 +177,19 @@ interface ProcessingFailureOperation {
   datasets: readonly string[];
   dismissed: boolean;
   errorMessage: string | null;
+  errorCode?: string | null;
 }
 
 export interface ProcessingFailureGroup {
   operationId: string;
+  providerId: string | null;
   providerLabel: string | null;
   datasetLabels: string[];
   status: "blocked" | "failed";
   failedAt: string | null;
   lastReadyAt: string | null;
   errorMessage: string | null;
+  requiresReconnect: boolean;
   dismissed: boolean;
 }
 
@@ -227,12 +232,16 @@ export function processingFailureGroups(input: {
     return [
       {
         operationId: operation.id,
+        providerId: operation.providerId,
         providerLabel: operation.providerId ? providerLabel(operation.providerId) : null,
         datasetLabels: groupedDatasets.map((dataset) => dataset.label),
         status: operation.status,
         failedAt: latestTimestamp(groupedDatasets.map((dataset) => dataset.lastFailedAt)),
         lastReadyAt: latestTimestamp(groupedDatasets.map((dataset) => dataset.lastReadyAt)),
-        errorMessage: operation.errorMessage,
+        errorMessage: operation.errorMessage
+          ? userFacingErrorMessage(operation.errorMessage, "The update failed. Please try again.")
+          : null,
+        requiresReconnect: operation.errorCode === "provider_auth_failed",
         dismissed: operation.dismissed,
       },
     ];

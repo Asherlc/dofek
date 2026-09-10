@@ -1,0 +1,19 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`buildEquivalenceEvidence > matches a standardized test by normalized provider-scoped name and provider type 1`] = `
+{
+  "count": 1,
+  "items": [
+    {
+      "evidence_type": "standardized_test_name_provider_type",
+      "field": "fitness.activity.name + fitness.activity.provider_type",
+      "provider": "wahoo",
+      "provider_type": " cycling   test ",
+      "source_activity_id": "00000000-0000-4000-8000-000000000011",
+      "source_record_id": null,
+      "value": " 20 MINUTE ftp TEST ",
+    },
+  ],
+  "truncated": false,
+}
+`;

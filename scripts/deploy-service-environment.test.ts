@@ -19,8 +19,7 @@ const APPLICATION_ENVIRONMENT_KEYS = [
   "APPLE_TEAM_ID",
   "BODYSPEC_CLIENT_ID",
   "BODYSPEC_CLIENT_SECRET",
-  "BREVO_SMTP_KEY",
-  "BREVO_SMTP_USER",
+  "BREVO_API_KEY",
   "CONCEPT2_CLIENT_ID",
   "CONCEPT2_CLIENT_SECRET",
   "COROS_CLIENT_ID",
@@ -83,12 +82,16 @@ const APPLICATION_ENVIRONMENT_KEYS = [
   "ZOHO_DESK_REFRESH_TOKEN",
 ] as const;
 
-const WEB_ONLY_ENVIRONMENT_KEYS = [
-  "GEMINI_API_KEY",
-  "MISTRAL_API_KEY",
-  "SLACK_CLIENT_ID",
-  "SLACK_CLIENT_SECRET",
-  "SLACK_SIGNING_SECRET",
+const WEB_ONLY_ENVIRONMENT_KEYS = ["OPENAI_APPS_CHALLENGE_TOKEN"] as const;
+
+const APP_STORE_ENVIRONMENT_KEYS = [
+  "APP_STORE_ISSUER_ID",
+  "APP_STORE_KEY_ID",
+  "APP_STORE_PRIVATE_KEY",
+  "APP_STORE_APP_ID",
+  "APP_STORE_BUNDLE_ID",
+  "APP_STORE_SUBSCRIPTION_PRODUCT_ID",
+  "APP_STORE_ROOT_CERTIFICATES_PEM",
 ] as const;
 
 const CDC_ENVIRONMENT_KEYS = [
@@ -106,11 +109,13 @@ const CDC_ENVIRONMENT_KEYS = [
 ] as const;
 
 const WORKER_ONLY_ENVIRONMENT_KEYS = [
+  "METRIC_STREAM_LEGACY_TOPIC",
   "AXIOM_API_TOKEN",
   "AXIOM_LOG_DATASET",
   "AXIOM_ORG_ID",
-  "BREVO_API_KEY",
-  "METRIC_STREAM_TOPIC",
+  "CLICKHOUSE_PASSWORD",
+  "METRIC_STREAM_LIVE_TOPIC",
+  "METRIC_STREAM_HISTORY_TOPIC",
   "PEERDB_STAGE_S3_ACCESS_KEY_ID",
   "PEERDB_STAGE_S3_BUCKET",
   "PEERDB_STAGE_S3_ENDPOINT",
@@ -124,7 +129,11 @@ const WORKER_ONLY_ENVIRONMENT_KEYS = [
   "SENTRY_ORG",
 ] as const;
 
-const METRIC_STREAM_ENVIRONMENT_KEYS = ["METRIC_STREAM_TOPIC", "REDPANDA_BROKERS"] as const;
+const METRIC_STREAM_ENVIRONMENT_KEYS = [
+  "METRIC_STREAM_LIVE_TOPIC",
+  "METRIC_STREAM_HISTORY_TOPIC",
+  "REDPANDA_BROKERS",
+] as const;
 
 function makeTemporaryDirectory(): string {
   const directory = mkdtempSync(join(tmpdir(), "dofek-deploy-service-env-"));
@@ -135,6 +144,7 @@ function makeTemporaryDirectory(): string {
 function completeDeployEnvironment(): Record<string, string> {
   const runtimeKeys = new Set([
     ...APPLICATION_ENVIRONMENT_KEYS,
+    ...APP_STORE_ENVIRONMENT_KEYS,
     ...WEB_ONLY_ENVIRONMENT_KEYS,
     ...CDC_ENVIRONMENT_KEYS,
     ...WORKER_ONLY_ENVIRONMENT_KEYS,
@@ -145,6 +155,10 @@ function completeDeployEnvironment(): Record<string, string> {
     ...Object.fromEntries([...runtimeKeys].map((key) => [key, `${key.toLowerCase()}-value`])),
     CLOUDFLARE_API_TOKEN: "cloudflare-control-plane-token",
     OTA_PRIVATE_KEY_B64: "ota-private-key",
+    METRIC_STREAM_LEGACY_TOPIC: "metric-stream-v1",
+    METRIC_STREAM_LIVE_TOPIC: "metric-stream-live-v1",
+    METRIC_STREAM_HISTORY_TOPIC: "metric-stream-history-v1",
+    METRIC_STREAM_R2_BUCKET: "dofek-metric-stream-archive",
   };
 }
 
@@ -161,6 +175,90 @@ afterEach(() => {
 });
 
 describe("renderDeployServiceEnvironmentFiles", () => {
+  it("gives only the migration-phase web artifact the explicit legacy producer topic", () => {
+    const directory = makeTemporaryDirectory();
+    const sourcePath = join(directory, "all.env");
+    writeFileSync(
+      sourcePath,
+      dotenv({
+        ...completeDeployEnvironment(),
+        METRIC_STREAM_TOPIC: "unassigned-topic",
+      }),
+    );
+    const paths = renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services"));
+    const web = parseEnv(readFileSync(paths.web, "utf8"));
+    const migrationWeb = parseEnv(
+      readFileSync(join(directory, "services", "web-pre-migration.env"), "utf8"),
+    );
+
+    expect(migrationWeb).toEqual({ ...web, METRIC_STREAM_TOPIC: "metric-stream-v1" });
+    expect(migrationWeb).toMatchObject({
+      METRIC_STREAM_LIVE_TOPIC: "metric-stream-live-v1",
+      METRIC_STREAM_HISTORY_TOPIC: "metric-stream-history-v1",
+    });
+    expect(web).not.toHaveProperty("METRIC_STREAM_TOPIC");
+    expect(migrationWeb).not.toHaveProperty("METRIC_STREAM_CONSUMER_GROUP");
+  });
+
+  it("renders each durable consumer's designated topic and independent group", () => {
+    const directory = makeTemporaryDirectory();
+    const sourcePath = join(directory, "all.env");
+    writeFileSync(
+      sourcePath,
+      dotenv({
+        ...completeDeployEnvironment(),
+        METRIC_STREAM_TOPIC: "unassigned-topic",
+        METRIC_STREAM_CONSUMER_GROUP: "unassigned-group",
+      }),
+    );
+    renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services"));
+
+    for (const [service, topic] of [
+      ["metric-stream-clickhouse-sink", "metric-stream-v1"],
+      ["metric-stream-live-clickhouse-sink", "metric-stream-live-v1"],
+      ["metric-stream-history-clickhouse-sink", "metric-stream-history-v1"],
+      ["metric-stream-r2-archive", "metric-stream-v1"],
+      ["metric-stream-live-r2-archive", "metric-stream-live-v1"],
+      ["metric-stream-history-r2-archive", "metric-stream-history-v1"],
+    ] as const) {
+      const environment = parseEnv(
+        readFileSync(join(directory, "services", `${service}.env`), "utf8"),
+      );
+      expect(environment).toEqual({
+        REDPANDA_BROKERS: "redpanda_brokers-value",
+        METRIC_STREAM_TOPIC: topic,
+        METRIC_STREAM_CONSUMER_GROUP: service,
+        ...(service.endsWith("r2-archive")
+          ? {
+              METRIC_STREAM_R2_BUCKET: "dofek-metric-stream-archive",
+              R2_ENDPOINT: "r2_endpoint-value",
+              R2_ACCESS_KEY_ID: "r2_access_key_id-value",
+              R2_SECRET_ACCESS_KEY: "r2_secret_access_key-value",
+            }
+          : {}),
+      });
+    }
+  });
+
+  it.each([
+    "METRIC_STREAM_LEGACY_TOPIC",
+    "METRIC_STREAM_LIVE_TOPIC",
+    "METRIC_STREAM_HISTORY_TOPIC",
+    "METRIC_STREAM_R2_BUCKET",
+  ])("rejects a missing %s even when a generic topic is supplied", (key) => {
+    const directory = makeTemporaryDirectory();
+    const sourcePath = join(directory, "all.env");
+    const environment: Record<string, string> = {
+      ...completeDeployEnvironment(),
+      METRIC_STREAM_TOPIC: "wrong-route",
+    };
+    delete environment[key];
+    writeFileSync(sourcePath, dotenv(environment));
+    expect(() =>
+      renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services")),
+    ).toThrow(`missing required keys: ${key}`);
+  });
+
   it("writes least-privilege service files without leaking control-plane secrets", () => {
     const directory = makeTemporaryDirectory();
     const sourcePath = join(directory, "all.env");
@@ -173,11 +271,11 @@ describe("renderDeployServiceEnvironmentFiles", () => {
     expect(Object.keys(web).sort()).toEqual(
       [
         ...APPLICATION_ENVIRONMENT_KEYS,
+        ...APP_STORE_ENVIRONMENT_KEYS,
         ...WEB_ONLY_ENVIRONMENT_KEYS,
         ...METRIC_STREAM_ENVIRONMENT_KEYS,
       ].sort(),
     );
-    expect(web).not.toHaveProperty("BREVO_API_KEY");
     expect(web).not.toHaveProperty("CLOUDFLARE_API_TOKEN");
     expect(web).not.toHaveProperty("POSTGRES_PASSWORD");
     expect(web).not.toHaveProperty("POSTHOG_PERSONAL_API_KEY");
@@ -188,9 +286,14 @@ describe("renderDeployServiceEnvironmentFiles", () => {
       [...APPLICATION_ENVIRONMENT_KEYS, ...WORKER_ONLY_ENVIRONMENT_KEYS].sort(),
     );
     expect(worker).not.toHaveProperty("CLOUDFLARE_API_TOKEN");
-    expect(worker).not.toHaveProperty("GEMINI_API_KEY");
+    expect(worker).not.toHaveProperty("APP_STORE_PRIVATE_KEY");
     expect(worker).not.toHaveProperty("OTA_PRIVATE_KEY_B64");
-    expect(worker).not.toHaveProperty("SLACK_CLIENT_SECRET");
+    for (const producer of [web, worker]) {
+      expect(producer).toMatchObject({
+        METRIC_STREAM_LIVE_TOPIC: "metric-stream-live-v1",
+        METRIC_STREAM_HISTORY_TOPIC: "metric-stream-history-v1",
+      });
+    }
 
     expect(parseEnv(readFileSync(paths.analyticsWorker, "utf8"))).toEqual({
       CLICKHOUSE_PASSWORD: "clickhouse_password-value",
@@ -247,6 +350,19 @@ describe("renderDeployServiceEnvironmentFiles", () => {
     ).toThrow("analyticsWorker deploy environment is missing required keys: CLICKHOUSE_PASSWORD");
   });
 
+  it("provides the worker with the ClickHouse password required by dbt jobs", () => {
+    const directory = makeTemporaryDirectory();
+    const sourcePath = join(directory, "all.env");
+    writeFileSync(sourcePath, dotenv(completeDeployEnvironment()));
+
+    const paths = renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services"));
+
+    expect(parseEnv(readFileSync(paths.worker, "utf8"))).toHaveProperty(
+      "CLICKHOUSE_PASSWORD",
+      "clickhouse_password-value",
+    );
+  });
+
   it("fails before worker startup when a worker-only contract is incomplete", () => {
     const directory = makeTemporaryDirectory();
     const sourcePath = join(directory, "all.env");
@@ -263,15 +379,56 @@ describe("renderDeployServiceEnvironmentFiles", () => {
     const directory = makeTemporaryDirectory();
     const sourcePath = join(directory, "all.env");
     const environment = completeDeployEnvironment();
-    delete environment.METRIC_STREAM_TOPIC;
+    delete environment.METRIC_STREAM_LIVE_TOPIC;
+    delete environment.METRIC_STREAM_HISTORY_TOPIC;
     delete environment.REDPANDA_BROKERS;
     writeFileSync(sourcePath, dotenv(environment));
 
     expect(() =>
       renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services")),
     ).toThrow(
-      "web deploy environment is missing required keys: METRIC_STREAM_TOPIC, REDPANDA_BROKERS",
+      "web deploy environment is missing required keys: METRIC_STREAM_LIVE_TOPIC, METRIC_STREAM_HISTORY_TOPIC, REDPANDA_BROKERS",
     );
+  });
+
+  it("fails before web startup when the OpenAI Apps challenge token is missing", () => {
+    const directory = makeTemporaryDirectory();
+    const sourcePath = join(directory, "all.env");
+    const environment = completeDeployEnvironment();
+    delete environment.OPENAI_APPS_CHALLENGE_TOKEN;
+    writeFileSync(sourcePath, dotenv(environment));
+
+    expect(() =>
+      renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services")),
+    ).toThrow("web deploy environment is missing required keys: OPENAI_APPS_CHALLENGE_TOKEN");
+  });
+
+  it("fails before web startup when App Store verification configuration is incomplete", () => {
+    const directory = makeTemporaryDirectory();
+    const sourcePath = join(directory, "all.env");
+    const environment = completeDeployEnvironment();
+    delete environment.APP_STORE_PRIVATE_KEY;
+    delete environment.APP_STORE_ROOT_CERTIFICATES_PEM;
+    writeFileSync(sourcePath, dotenv(environment));
+
+    expect(() =>
+      renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services")),
+    ).toThrow(
+      "web deploy environment is missing required keys: APP_STORE_PRIVATE_KEY, APP_STORE_ROOT_CERTIFICATES_PEM",
+    );
+  });
+
+  it("fails before web startup when transactional email configuration is incomplete", () => {
+    const directory = makeTemporaryDirectory();
+    const sourcePath = join(directory, "all.env");
+    const environment = completeDeployEnvironment();
+    delete environment.BREVO_API_KEY;
+    delete environment.EXPORT_EMAIL_FROM;
+    writeFileSync(sourcePath, dotenv(environment));
+
+    expect(() =>
+      renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services")),
+    ).toThrow("web deploy environment is missing required keys: BREVO_API_KEY, EXPORT_EMAIL_FROM");
   });
 
   it("uses stable file names for stack interpolation", () => {
@@ -283,7 +440,14 @@ describe("renderDeployServiceEnvironmentFiles", () => {
       databaseOperations: "database-operations.env",
       r2Operations: "r2-operations.env",
       web: "web.env",
+      webPreMigration: "web-pre-migration.env",
       worker: "worker.env",
+      metricStreamClickhouseSink: "metric-stream-clickhouse-sink.env",
+      metricStreamLiveClickhouseSink: "metric-stream-live-clickhouse-sink.env",
+      metricStreamHistoryClickhouseSink: "metric-stream-history-clickhouse-sink.env",
+      metricStreamR2Archive: "metric-stream-r2-archive.env",
+      metricStreamLiveR2Archive: "metric-stream-live-r2-archive.env",
+      metricStreamHistoryR2Archive: "metric-stream-history-r2-archive.env",
     });
   });
 });

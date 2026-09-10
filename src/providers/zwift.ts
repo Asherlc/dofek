@@ -10,6 +10,7 @@ import {
 } from "../db/provider-activity-sync.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
+import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { logger } from "../logger.ts";
@@ -209,6 +210,10 @@ export class ZwiftProvider implements SyncProvider {
     let recordsSynced = 0;
 
     await ensureProvider(db, this.id, this.name, ZWIFT_API_BASE);
+    const userId = options?.userId ?? getTokenUserId();
+    if (!userId) {
+      throw new Error("Zwift sync requires a user ID");
+    }
 
     let client: ZwiftClient;
     try {

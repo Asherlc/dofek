@@ -155,7 +155,9 @@ const dotenv = [
   `CLICKHOUSE_URL=http://default:${clickHousePasswordUrlEncoded}@127.0.0.1:${clickHouseHttpPort}`,
   `REDIS_URL=redis://127.0.0.1:${redisPort}`,
   `REDPANDA_BROKERS=127.0.0.1:${redpandaPort}`,
-  `METRIC_STREAM_TOPIC=metric-stream-v1`,
+  `METRIC_STREAM_LEGACY_TOPIC=metric-stream-v1`,
+  `METRIC_STREAM_LIVE_TOPIC=metric-stream-live-v1`,
+  `METRIC_STREAM_HISTORY_TOPIC=metric-stream-history-v1`,
   `METRIC_STREAM_R2_BUCKET=dofek-metric-stream-archive`,
   "",
 ].join("\n");

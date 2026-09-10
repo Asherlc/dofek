@@ -49,6 +49,7 @@ async function doRegisterProviders() {
     ["peloton", () => import("dofek/providers/peloton").then((m) => new m.PelotonProvider())],
     ["fatsecret", () => import("dofek/providers/fatsecret").then((m) => new m.FatSecretProvider())],
     ["whoop", () => import("dofek/providers/whoop").then((m) => new m.WhoopProvider())],
+    ["kaya", () => import("dofek/providers/kaya-sync").then((m) => new m.KayaSyncProvider())],
     [
       "ride-with-gps",
       () => import("dofek/providers/ride-with-gps").then((m) => new m.RideWithGpsProvider()),
@@ -100,6 +101,10 @@ async function doRegisterProviders() {
     ],
     ["wger", () => import("dofek/providers/wger").then((m) => new m.WgerProvider())],
     ["velohero", () => import("dofek/providers/velohero").then((m) => new m.VeloHeroProvider())],
+    [
+      "mountain-project",
+      () => import("dofek/providers/mountain-project").then((m) => new m.MountainProjectProvider()),
+    ],
     [
       "auto-supplements",
       () => import("dofek/providers/auto-supplements").then((m) => new m.AutoSupplementsProvider()),

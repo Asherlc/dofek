@@ -7,6 +7,8 @@ const sensorScalarChannels = [
   "cadence",
   "altitude",
   "grade",
+  "distance",
+  "temperature",
   "left_right_balance",
   "left_torque_effectiveness",
   "right_torque_effectiveness",
@@ -43,12 +45,12 @@ metric_stream_rows AS (
     ${recordedAtRange ? `AND recorded_at >= ${recordedAtRange.lowerBound}\n    AND recorded_at < ${recordedAtRange.upperBound}` : ""}
 ),
 active_sensor_provider_priority AS (
-  SELECT provider_id, channel, priority
+  SELECT provider_id, channel, toNullable(priority) AS priority
   FROM postgres_fitness.sensor_provider_priority FINAL
   WHERE _peerdb_is_deleted = 0
 ),
 active_sensor_device_priority AS (
-  SELECT provider_id, source_name_pattern, channel, priority
+  SELECT provider_id, source_name_pattern, channel, toNullable(priority) AS priority
   FROM postgres_fitness.sensor_device_priority FINAL
   WHERE _peerdb_is_deleted = 0
 ),
@@ -76,12 +78,21 @@ device_priority_match AS (
 )
 SELECT
   metric_stream_rows.id AS id,
+  metric_stream_rows.activity_id AS activity_id,
+  metric_stream_rows.activity_id AS member_activity_id,
   metric_stream_rows.user_id AS user_id,
   metric_stream_rows.recorded_at AS recorded_at,
   toDate(metric_stream_rows.recorded_at) AS recorded_date,
   metric_stream_rows.channel AS channel,
   metric_stream_rows.provider_id AS provider_id,
+  metric_stream_rows.external_id AS source_external_id,
   metric_stream_rows.device_id AS device_id,
+  metric_stream_rows.source_type AS source_type,
+  multiIf(
+    JSONExtractString(metric_stream_rows.metadata, 'measurement_kind') = 'direct', 'direct',
+    JSONExtractString(metric_stream_rows.metadata, 'measurement_kind') = 'estimated', 'estimated',
+    'unknown'
+  ) AS measurement_kind,
   assumeNotNull(metric_stream_rows.scalar) AS scalar,
   coalesce(device_priority_match.priority, active_sensor_provider_priority.priority, 1000) AS provider_priority,
   metric_stream_rows.ingested_at AS _peerdb_synced_at,
@@ -98,14 +109,19 @@ LEFT JOIN device_priority_match
 function buildSensorScalarSampleTableSql(): string {
   return `CREATE TABLE IF NOT EXISTS analytics.sensor_scalar_sample (
   id UUID,
+  activity_id Nullable(UUID),
+  member_activity_id Nullable(UUID),
   user_id UUID,
   recorded_at DateTime64(6, 'UTC'),
   recorded_date Date,
   channel LowCardinality(String),
   provider_id LowCardinality(String),
+  source_external_id Nullable(String),
   device_id Nullable(String),
+  source_type Nullable(String),
+  measurement_kind LowCardinality(String),
   scalar Float32,
-  provider_priority UInt16,
+  provider_priority Int32,
   _peerdb_synced_at DateTime64(9),
   _peerdb_is_deleted Int8,
   _peerdb_version Int64
@@ -117,12 +133,17 @@ ORDER BY (user_id, channel, recorded_date, recorded_at, provider_id, id)`;
 export function buildSensorScalarSampleBackfillSql(recordedAtRange?: RecordedAtRangeSql): string {
   return `INSERT INTO analytics.sensor_scalar_sample (
   id,
+  activity_id,
+  member_activity_id,
   user_id,
   recorded_at,
   recorded_date,
   channel,
   provider_id,
+  source_external_id,
   device_id,
+  source_type,
+  measurement_kind,
   scalar,
   provider_priority,
   _peerdb_synced_at,
@@ -140,8 +161,14 @@ function buildDedupedSensorTableSql(): string {
   channel LowCardinality(String),
   scalar Nullable(Float32),
   provider_id Nullable(String),
+  member_activity_id Nullable(UUID),
+  device_id Nullable(String),
+  source_external_id Nullable(String),
+  source_type Nullable(String),
+  measurement_kind LowCardinality(String),
   source_metric_stream_id Nullable(UUID),
-  provider_priority UInt16,
+  source_activity_id Nullable(UUID),
+  provider_priority Int32,
   refresh_version UInt64,
   is_deleted UInt8,
   refreshed_at DateTime64(9)
@@ -158,7 +185,13 @@ export function buildDedupedSensorRecomputeInsertSql(pendingKeySql: string): str
   channel,
   scalar,
   provider_id,
+  member_activity_id,
+  device_id,
+  source_external_id,
+  source_type,
+  measurement_kind,
   source_metric_stream_id,
+  source_activity_id,
   provider_priority,
   refresh_version,
   is_deleted,
@@ -174,7 +207,13 @@ SELECT
   pending_keys.channel AS channel,
   argMinIf(samples.scalar, (samples.provider_priority, samples.provider_id, samples.id), samples._peerdb_is_deleted = 0) AS scalar,
   argMinIf(samples.provider_id, (samples.provider_priority, samples.provider_id, samples.id), samples._peerdb_is_deleted = 0) AS provider_id,
+  argMinIf(samples.member_activity_id, (samples.provider_priority, samples.provider_id, samples.id), samples._peerdb_is_deleted = 0) AS member_activity_id,
+  argMinIf(samples.device_id, (samples.provider_priority, samples.provider_id, samples.id), samples._peerdb_is_deleted = 0) AS device_id,
+  argMinIf(samples.source_external_id, (samples.provider_priority, samples.provider_id, samples.id), samples._peerdb_is_deleted = 0) AS source_external_id,
+  argMinIf(samples.source_type, (samples.provider_priority, samples.provider_id, samples.id), samples._peerdb_is_deleted = 0) AS source_type,
+  argMinIf(samples.measurement_kind, (samples.provider_priority, samples.provider_id, samples.id), samples._peerdb_is_deleted = 0) AS measurement_kind,
   argMinIf(samples.id, (samples.provider_priority, samples.provider_id, samples.id), samples._peerdb_is_deleted = 0) AS source_metric_stream_id,
+  tupleElement(argMinIf(tuple(samples.activity_id), (samples.provider_priority, samples.provider_id, samples.id), samples._peerdb_is_deleted = 0), 1) AS source_activity_id,
   coalesce(minIf(samples.provider_priority, samples._peerdb_is_deleted = 0), 65535) AS provider_priority,
   toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
   if(countIf(samples._peerdb_is_deleted = 0) = 0, 1, 0) AS is_deleted,

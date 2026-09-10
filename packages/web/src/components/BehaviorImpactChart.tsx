@@ -8,7 +8,7 @@ import { EvidenceDetails } from "./EvidenceDetails.tsx";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 const NO_ASSOCIATION_EVIDENCE_MESSAGE =
-  "No association evidence is available for the current results. Log boolean journal entries (Yes/No) for at least 5 days in each group to describe their association with next-day readiness.";
+  "No association evidence is available for the current results. This comparison needs at least 5 Yes days and 5 No days for the same question, with next-day readiness data.";
 
 function ReadinessAssociationBar({
   label,
@@ -183,7 +183,7 @@ export function BehaviorImpactChart({ days }: { days: TimeRangeDays }) {
         <QueryStatePanel
           contextLabel="Behavior associations"
           variant="empty"
-          message="Not enough journal data yet. Log boolean journal entries (Yes/No) for at least 5 days in each group to describe their association with next-day readiness."
+          message="This comparison needs at least 5 Yes days and 5 No days for the same question, with next-day readiness data."
           height={120}
         />
       </div>
@@ -217,28 +217,27 @@ export function BehaviorImpactChart({ days }: { days: TimeRangeDays }) {
           Association with Next-Day Readiness
         </h3>
         {evidence ? (
-          <EvidenceDetails
-            className="mb-4"
-            textClassName="text-dim"
-            details={[
-              { key: "method", label: "Method", value: evidence.method },
-              {
-                key: "interpretation",
-                label: "Interpretation",
-                value: evidence.interpretation,
-              },
-              {
-                key: "uncertainty",
-                label: "Uncertainty",
-                value: evidence.uncertainty,
-              },
-              {
-                key: "observation-window",
-                label: "Observation window",
-                value: evidence.observationWindow,
-              },
-            ]}
-          />
+          <div className="mb-4">
+            <EvidenceDetails
+              details={[
+                { key: "interpretation", value: evidence.interpretation },
+                { key: "uncertainty", value: evidence.uncertainty },
+              ]}
+            />
+            <details className="mt-2 text-xs text-dim">
+              <summary className="cursor-pointer">Calculation details</summary>
+              <EvidenceDetails
+                details={[
+                  { key: "method", value: evidence.method },
+                  {
+                    key: "observation-window",
+                    label: "Observation window",
+                    value: evidence.observationWindow,
+                  },
+                ]}
+              />
+            </details>
+          </div>
         ) : null}
         <div
           className="mb-1 hidden text-[10px] text-dim sm:grid sm:grid-cols-[10rem_minmax(0,1fr)_6rem] sm:gap-3"

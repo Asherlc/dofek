@@ -15,7 +15,6 @@ const microbatchModels = [
   "sensor_scalar_sample",
   "deduped_sensor",
   "activity_sensor_sample",
-  "activity_location_sample",
 ] as const;
 const batchEventSchema = z.object({
   info: z.object({
@@ -104,9 +103,11 @@ describe("analytics microbatch bounds", () => {
   user_id UUID,
   started_at DateTime64(6, 'UTC'),
   ended_at Nullable(DateTime64(6, 'UTC')),
+  member_activity_ids Array(UUID),
   source_synced_at DateTime64(9, 'UTC'),
   is_deleted UInt8,
-  refresh_version UInt64
+  refresh_version UInt64,
+  refreshed_at DateTime64(9, 'UTC')
 )
 ENGINE = ReplacingMergeTree(refresh_version)
 ORDER BY (user_id, activity_id)`,
@@ -204,7 +205,6 @@ ORDER BY (user_id, member_activity_id)`,
         sensor_scalar_sample: { batchIndex: 1, totalBatches: 1 },
         deduped_sensor: { batchIndex: 1, totalBatches: 1 },
         activity_sensor_sample: { batchIndex: 1, totalBatches: 1 },
-        activity_location_sample: { batchIndex: 1, totalBatches: 1 },
       });
     } finally {
       await Promise.all([

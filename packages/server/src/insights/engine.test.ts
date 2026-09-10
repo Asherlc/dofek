@@ -608,7 +608,7 @@ describe("computeInsights()", () => {
       expect(insight.evidence).toEqual(
         expect.objectContaining({
           label: expect.stringMatching(/^Descriptive /),
-          interpretation: expect.stringContaining("does not establish"),
+          interpretation: expect.stringContaining("does not prove cause"),
           recommendation: expect.stringContaining("not a prescription"),
         }),
       );
@@ -1578,13 +1578,12 @@ describe("classifyActivity()", () => {
     expect(classifyActivity(type)).toBe("strength");
   });
 
-  it.each([
-    "yoga",
-    "stretching",
-    "preparation_and_recovery",
-  ])("classifies %s as flexibility", (type) => {
-    expect(classifyActivity(type)).toBe("flexibility");
-  });
+  it.each(["yoga", "stretching", "preparation_and_recovery"])(
+    "classifies %s as flexibility",
+    (type) => {
+      expect(classifyActivity(type)).toBe("flexibility");
+    },
+  );
 
   it.each(["paddle_boarding", "dance", "unknown", ""])("classifies %s as other", (type) => {
     expect(classifyActivity(type)).toBe("other");

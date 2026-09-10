@@ -86,6 +86,32 @@ See `src/db/sensor-channels.ts` for the full list of channel constants.
 
 ## Tables
 
+### Human record ledger foundation
+
+`human_record_identity` stores stable user-owned source identities;
+`human_record_change` stores commands; `human_record_target` stores their
+append-only predecessor chains. Food identities use the `nutrition.food`
+domain, the source provider ID as their namespace, and either
+`external:<external_id>` or `row:<food_entry.id>` as their source key. External
+identities survive provider row replacement and are modifiable. Row identities
+are readable but deliberately unmodifiable because they have no stable
+provider key. The command check requires
+`undo_change_id` exactly when `kind = 'undo'`; its foreign key also requires the
+referenced command to belong to the same user. The target change lookup index
+supports foreign-key checks during account erasure. See the
+[schema](../src/db/schema/record-modifications.ts),
+[migration](../drizzle/0110_human_record_ledger.sql), and PostgreSQL's
+[constraint documentation](https://www.postgresql.org/docs/current/ddl-constraints.html).
+
+The head, field, and visibility views are read-only projections, not additional
+stored state. `human_food_nutrient_decision` stores append-only, normalized
+per-target nutrient decisions. Its `set` operation accepts a non-negative amount
+or explicit `NULL`; `clear` must have a null amount and resumes following the
+raw source nutrient. `v_human_food_nutrient_decision` walks the current target
+chain and selects the nearest decision for each nutrient. See the [record
+projection definitions](../drizzle/0111_human_record_projections.sql) and
+[food nutrient decision migration](../drizzle/0112_human_food_nutrient_decisions.sql).
+
 ### Reference
 
 | Table | Purpose |
@@ -114,11 +140,11 @@ validation scan's stronger lock during the initial constraint addition:
 | `fitness.activity` | Any timed activity (type, times, raw JSONB summary from provider) |
 | `fitness.activity_interval` | Laps/intervals with time ranges (metrics computed at query time from sensor_sample) |
 | `fitness.sensor_sample` | Time-series sensor data (TimescaleDB hypertable) — all channels at any frequency |
-| `fitness.finger_loading_entry` | Manual finger-loading protocols with raw edge, grip, load, bodyweight, laterality, set, hold, rest, RPE, and note values |
-| `fitness.climbing_entry` | Imported aggregate climbs or manual climb definitions, including grade, wall angle, hold type, route, and location |
-| `fitness.climbing_attempt` | Ordered raw outcomes, failure reasons, and notes for attempts on a manual climb |
+| `fitness.finger_loading_entry` | Finger-loading protocols with raw edge, grip, load, bodyweight, laterality, set, hold, rest, RPE, and note values; existing rows remain read-only in the application |
+| `fitness.climbing_entry` | Imported/provider climbs and retained historical Dofek-created climb definitions, including grade, wall angle, hold type, route, and location |
+| `fitness.climbing_attempt` | Ordered raw outcomes, failure reasons, and notes for attempts on a retained climbing entry |
 
-Manual climbing entries leave the legacy aggregate `sent` and `attempt_count`
+Retained Dofek-created climbing entries leave the legacy aggregate `sent` and `attempt_count`
 columns null. Serving queries derive those values from `climbing_attempt`; imported
 provider rows retain their provider-supplied aggregates. Finger-loading effective
 load is likewise derived as bodyweight plus signed external load and is never
@@ -179,6 +205,10 @@ tables through ClickHouse replication.
 | `fitness.sleep_session` | Sleep sessions with nullable provider-reported measurements and an explicit `staging_available` quality flag; see the [historical repair runbook](sleep-quality-backfill-runbook.md) |
 | `fitness.food_entry` | Raw food items and nutrition samples, including their ingestion grain |
 | `fitness.food_entry_nutrient` | Row-based food-entry nutrient amounts |
+| `fitness.human_food_nutrient_decision` | Append-only normalized nutrient decisions attached to human record targets |
+| `fitness.v_human_food_nutrient_decision` | Nearest effective decision per food identity and nutrient |
+| `fitness.v_food_entry_effective` | Raw food scalar fields overlaid with current human field and visibility decisions |
+| `fitness.v_food_entry_effective_nutrient` | Raw normalized nutrient rows overlaid with current human nutrient decisions and provenance |
 | `fitness.supplement` | Stable per-user supplement schedule identity, ownership, and display order |
 | `fitness.supplement_definition` | Immutable effective-dated supplement definition versions |
 | `fitness.supplement_definition_nutrient` | Canonical row-based nutrient amounts for a definition version |
@@ -223,7 +253,7 @@ documentation.
 `food_entry_nutrient`. Daily totals are derived from those rows instead of
 inserted separately.
 
-**FatSecret**, manual food logging, and Slack meal logging write `itemized`
+**FatSecret** and manual food logging write `itemized`
 entries through the normalized food path. Supplement schedules do not create
 food entries. Their nutrients enter
 `fitness.v_nutrition_canonical_nutrient` only while the current dose-event
@@ -245,6 +275,26 @@ these query-time projections without duplicating raw storage; see
 Provider details, provider statistics, and exports continue to use raw
 `food_entry` / `food_entry_nutrient` data. Aggregate-only rows are excluded from
 editable unnamed food cards, but are not deleted.
+
+Human edits are overlay decisions rather than changes to provider facts.
+`fitness.v_food_entry_effective` applies the current scalar and deletion
+decisions to the latest raw row resolved by stable identity.
+`fitness.v_food_entry_effective_nutrient` takes the union of raw and decided
+canonical nutrient IDs: a numeric `set` replaces the effective amount, `set
+NULL` represents an explicit unknown value, and `clear` follows the current raw
+amount. Both views retain the source entry and provider attribution. They are
+defined in [migration 0113](../drizzle/0113_effective_food_records.sql), using
+PostgreSQL views so the overlay does not duplicate the raw source of truth
+([PostgreSQL `CREATE VIEW`](https://www.postgresql.org/docs/current/sql-createview.html)).
+
+Canonical nutrition applies effective visibility, dates, scalar classification,
+and nutrients before choosing the contributing source set. A deletion therefore
+removes the item from serving totals, a restore contributes it again, and a
+corrected nutrient contributes exactly once under the existing overlap rules.
+`fitness.v_nutrition_provider_daily` remains the raw per-provider projection for
+provenance and inspection. The effective projections do not snapshot historical
+provider facts; the append-only history records commands and decisions, while a
+read resolves them against the current provider row.
 
 The installed-client `supplements.list` and `supplements.save` procedures keep
 their original V1 definition-only success and error shapes. Definition-version

@@ -2,8 +2,14 @@ import { getTableConfig } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import { drizzleSchema } from "./drizzle-schema.ts";
 import { userSettings } from "./schema/account.ts";
-import { activity, climbingAttempt, climbingEntry, fingerLoadingEntry } from "./schema/activity.ts";
-import { labResult } from "./schema/clinical.ts";
+import {
+  activity,
+  climbingAttempt,
+  climbingEntry,
+  fingerLoadingEntry,
+  strengthSet,
+} from "./schema/activity.ts";
+import { clinicalRecord } from "./schema/clinical.ts";
 import { TEST_USER_ID } from "./schema/core.ts";
 import {
   activityModalityEnum,
@@ -75,7 +81,7 @@ describe("drizzleSchema", () => {
       provider,
       activity,
       foodEntry,
-      labResult,
+      clinicalRecord,
       userSettings,
       journalEntry,
     });
@@ -136,6 +142,16 @@ describe("drizzleSchema", () => {
     );
   });
 
+  it("retains the original provider record on every normalized strength set", () => {
+    const columns = columnSummaries(strengthSet);
+
+    expect(columns.raw).toMatchObject({
+      columnType: "PgJsonb",
+      hasDefault: true,
+      notNull: true,
+    });
+  });
+
   it("defines ordered climbing-attempt detail without requiring imported aggregates", () => {
     const climbingConfig = getTableConfig(climbingEntry);
     const climbingColumns = columnSummaries(climbingEntry);
@@ -190,6 +206,7 @@ describe("drizzleSchema", () => {
       "grade",
       "sent",
       "attempt_count",
+      "lead",
       "wall_angle_degrees",
       "hold_type",
       "route_name",
@@ -240,6 +257,11 @@ describe("drizzleSchema", () => {
       attempt_count: {
         columnType: "PgInteger",
         hasDefault: true,
+        notNull: false,
+      },
+      lead: {
+        columnType: "PgBoolean",
+        hasDefault: false,
         notNull: false,
       },
       wall_angle_degrees: {
@@ -328,6 +350,16 @@ describe("drizzleSchema", () => {
     expect(climbingClimbTypeEnum.enumName).toBe("climbing_climb_type");
     expect(climbingClimbTypeEnum.enumValues).toEqual(["boulder", "route"]);
     expect(climbingGradeSystemEnum.enumName).toBe("climbing_grade_system");
-    expect(climbingGradeSystemEnum.enumValues).toEqual(["v_scale", "yds"]);
+    expect(climbingGradeSystemEnum.enumValues).toEqual([
+      "v_scale",
+      "font",
+      "yds",
+      "french",
+      "uiaa",
+      "ewbank",
+      "saxon",
+      "norwegian",
+      "brazilian_crux",
+    ]);
   });
 });

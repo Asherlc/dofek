@@ -39,43 +39,38 @@ vi.mock("./health-status.ts", async (importOriginal) => {
 });
 
 describe("loadMobileRecoveryTab", () => {
-  it("returns body-fat history for the selected range", async () => {
-    const getRecomposition = vi
-      .spyOn(
-        (await import("../repositories/body-analytics-repository.ts")).BodyAnalyticsRepository
-          .prototype,
-        "getRecomposition",
-      )
-      .mockResolvedValue([
+  it("returns body-fat trend and prediction for the selected range", async () => {
+    const result = await runRecoveryTab(loadMobileRecoveryTab, [], {
+      bodyFatTrend: [
         {
           date: "2026-03-10",
-          weightKg: 80,
-          bodyFatPct: 21.4,
-          fatMassKg: 17.12,
-          leanMassKg: 62.88,
-          smoothedFatMass: 17.12,
-          smoothedLeanMass: 62.88,
+          rawBodyFatPct: 21.4,
+          rawBodyFatStatus: { kind: "observed", label: "Observed" },
+          smoothedBodyFatPct: 21.4,
+          smoothedBodyFatStatus: { kind: "estimated", label: "Estimated" },
+          weeklyChange: null,
+          interpolated: false,
         },
         {
           date: "2026-03-20",
-          weightKg: 79,
-          bodyFatPct: 20.9,
-          fatMassKg: 16.511,
-          leanMassKg: 62.489,
-          smoothedFatMass: 16.511,
-          smoothedLeanMass: 62.489,
+          rawBodyFatPct: 20.9,
+          rawBodyFatStatus: { kind: "observed", label: "Observed" },
+          smoothedBodyFatPct: 20.9,
+          smoothedBodyFatStatus: { kind: "estimated", label: "Estimated" },
+          weeklyChange: -0.2,
+          interpolated: false,
         },
-      ]);
+      ],
+      bodyFatPrediction: {
+        ratePerWeek: -0.2,
+        rateConfidence: 0.9,
+        periodDeltas: { days7: -0.2, days14: null, days30: null },
+        projectionLine: [{ date: "2026-03-21", projectedBodyFatPct: 20.9 }],
+      },
+    });
 
-    const result = await runRecoveryTab(loadMobileRecoveryTab, []);
-
-    expect(result.bodyFat).toEqual([
-      { date: "2026-03-10", bodyFatPct: 21.4 },
-      { date: "2026-03-20", bodyFatPct: 20.9 },
-    ]);
-    expect(getRecomposition).toHaveBeenCalledWith(30, "2026-03-28");
-
-    getRecomposition.mockRestore();
+    expect(result.bodyFatTrend.at(-1)).toMatchObject({ smoothedBodyFatPct: 20.9 });
+    expect(result.bodyFatPrediction).toMatchObject({ ratePerWeek: -0.2 });
   });
 
   it("returns server-authored body decision context alongside recovery data", async () => {

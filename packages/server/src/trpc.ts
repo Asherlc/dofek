@@ -5,6 +5,7 @@ import { middlewareMarker } from "@trpc/server/unstable-core-do-not-import";
 import type { Database } from "dofek/db";
 import { queryCache } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
+import { ZodError } from "zod";
 import type { AccountErasureRestoreLedger } from "../../../src/account-erasure/restore-ledger.ts";
 import type { MetricStreamEventPublisher } from "../../../src/metric-stream/redpanda-producer.ts";
 import type { AccessWindow } from "./billing/entitlement.ts";
@@ -49,6 +50,7 @@ const fullAccessWindow: AccessWindow = { kind: "full", paid: true, reason: "paid
 
 const UNEXPECTED_SERVER_ERROR_MESSAGE =
   "We couldn't complete this request. Please try again. If the problem continues, contact support.";
+const INVALID_INPUT_MESSAGE = "Some information is invalid. Check your entries and try again.";
 
 function shouldSanitizeInternalError(error: TRPCError): boolean {
   if (error.code !== "INTERNAL_SERVER_ERROR") return false;
@@ -59,6 +61,11 @@ function shouldSanitizeInternalError(error: TRPCError): boolean {
 
 const trpc = initTRPC.context<Context>().create({
   errorFormatter({ error, shape }) {
+    if (error.code === "BAD_REQUEST" && error.cause instanceof ZodError) {
+      const data = { ...shape.data };
+      delete data.stack;
+      return { ...shape, message: INVALID_INPUT_MESSAGE, data };
+    }
     if (!shouldSanitizeInternalError(error)) return shape;
 
     const data = { ...shape.data };
@@ -88,6 +95,17 @@ function errorCodes(error: unknown): string[] {
   return [...currentCode, ...errorCodes(error.cause)];
 }
 
+function isClickHouseConfigurationError(error: unknown): boolean {
+  return errorMessages(error).some(
+    (message) => /clickhouse/i.test(message) && /\brequires?\b|\brequired\b/i.test(message),
+  );
+}
+
+function analyticsConfigurationMessage(path: string): string {
+  const feature = path.startsWith("running.") ? "Running analytics" : "Analytics";
+  return `${feature} are unavailable because the analytics service is not configured. Contact support.`;
+}
+
 function isClickHouseInfrastructureError(error: unknown): boolean {
   const messages = errorMessages(error).map((message) => message.toLowerCase());
   const codes = new Set(errorCodes(error));
@@ -99,15 +117,16 @@ function isClickHouseInfrastructureError(error: unknown): boolean {
     return true;
   }
 
-  return messages.some(
-    (message) =>
-      message.includes("getaddrinfo enotfound clickhouse") ||
-      (message.includes("connect econnrefused") && message.includes("clickhouse")) ||
-      message.includes("overcommittracker") ||
-      (message.includes("clickhouse") &&
-        (message.includes(" requires ") || message.includes(" required "))) ||
-      (message.includes("clickhouse") && message.includes("memory limit exceeded")) ||
-      (message.includes("clickhouse") && message.includes("timeout")),
+  return (
+    isClickHouseConfigurationError(error) ||
+    messages.some(
+      (message) =>
+        message.includes("getaddrinfo enotfound clickhouse") ||
+        (message.includes("connect econnrefused") && message.includes("clickhouse")) ||
+        message.includes("overcommittracker") ||
+        (message.includes("clickhouse") && message.includes("memory limit exceeded")) ||
+        (message.includes("clickhouse") && message.includes("timeout")),
+    )
   );
 }
 
@@ -129,9 +148,12 @@ const sanitizeInfrastructureErrors = trpc.middleware(async ({ path, next }) => {
     const result = await next();
     if (!result.ok && isClickHouseInfrastructureError(result.error)) {
       reportClickHouseInfrastructureError(result.error, path);
+      const configurationMissing = isClickHouseConfigurationError(result.error);
       throw new TRPCError({
-        code: "SERVICE_UNAVAILABLE",
-        message: ANALYTICS_UNAVAILABLE_MESSAGE,
+        code: configurationMissing ? "PRECONDITION_FAILED" : "SERVICE_UNAVAILABLE",
+        message: configurationMissing
+          ? analyticsConfigurationMessage(path)
+          : ANALYTICS_UNAVAILABLE_MESSAGE,
         cause: result.error,
       });
     }
@@ -139,16 +161,20 @@ const sanitizeInfrastructureErrors = trpc.middleware(async ({ path, next }) => {
   } catch (error) {
     if (
       error instanceof TRPCError &&
-      error.code === "SERVICE_UNAVAILABLE" &&
-      error.message === ANALYTICS_UNAVAILABLE_MESSAGE
+      ((error.code === "SERVICE_UNAVAILABLE" && error.message === ANALYTICS_UNAVAILABLE_MESSAGE) ||
+        (error.code === "PRECONDITION_FAILED" &&
+          error.message === analyticsConfigurationMessage(path)))
     ) {
       throw error;
     }
     if (isClickHouseInfrastructureError(error)) {
       reportClickHouseInfrastructureError(error, path);
+      const configurationMissing = isClickHouseConfigurationError(error);
       throw new TRPCError({
-        code: "SERVICE_UNAVAILABLE",
-        message: ANALYTICS_UNAVAILABLE_MESSAGE,
+        code: configurationMissing ? "PRECONDITION_FAILED" : "SERVICE_UNAVAILABLE",
+        message: configurationMissing
+          ? analyticsConfigurationMessage(path)
+          : ANALYTICS_UNAVAILABLE_MESSAGE,
         cause: error,
       });
     }

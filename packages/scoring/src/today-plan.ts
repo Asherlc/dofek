@@ -1,6 +1,5 @@
 import { type EpistemicStatus, getEpistemicStatus } from "./epistemic-status.ts";
 
-export type TodayPlanConfidence = "high" | "moderate" | "low";
 export type TodayPlanZone = "Push" | "Maintain" | "Recovery";
 export type TodayPlanSleepTier = "Excellent" | "Good" | "Fair" | "Poor";
 
@@ -12,7 +11,6 @@ export interface TodayPlanSupportingFact {
 export interface TodayPlanAction {
   id: "strain_target";
   title: string;
-  summary: string;
   zone: TodayPlanZone;
 }
 
@@ -24,7 +22,6 @@ export interface TodayPlanFreshness {
 export interface TodayPlanStrainTargetInput {
   targetStrain: number;
   zone: TodayPlanZone;
-  explanation: string;
   readinessScore: number;
   workloadRatio: number | null;
 }
@@ -44,10 +41,9 @@ export type TodayPlanResult =
       epistemicStatus: EpistemicStatus;
       date: string;
       action: TodayPlanAction;
-      supportingFacts: [TodayPlanSupportingFact, TodayPlanSupportingFact];
+      supportingFacts: TodayPlanSupportingFact[];
       /** Server-authored limitations that qualify the action's observations. */
       caveats: string[];
-      confidence: TodayPlanConfidence;
       freshness: TodayPlanFreshness;
       missingInputs: string[];
       message?: undefined;
@@ -58,7 +54,6 @@ export type TodayPlanResult =
       date: string;
       action: null;
       supportingFacts: [];
-      confidence: "low";
       freshness: TodayPlanFreshness;
       missingInputs: string[];
       message: string;
@@ -72,28 +67,8 @@ function daysBetween(laterDate: string, earlierDate: string): number {
   );
 }
 
-function resolveConfidence(
-  endDate: string,
-  recoveryDate: string | null,
-  sleepDate: string | null,
-): TodayPlanConfidence {
-  if (recoveryDate == null) return "low";
-  const recoveryAgeDays = daysBetween(endDate, recoveryDate);
-  if (recoveryAgeDays > 1) return "low";
-  if (recoveryAgeDays === 0 && sleepDate != null && daysBetween(endDate, sleepDate) <= 1) {
-    return "high";
-  }
-  return "moderate";
-}
-
-function actionTitle(zone: TodayPlanZone, targetStrain: number): string {
-  if (zone === "Push") return `Train hard today — aim for ${targetStrain} strain`;
-  if (zone === "Recovery") return `Keep training light today — aim for ${targetStrain} strain`;
-  return `No change needs attention — aim for ${targetStrain} strain`;
-}
-
 function secondSupportingFact(input: BuildTodayPlanInput): {
-  fact: TodayPlanSupportingFact;
+  fact: TodayPlanSupportingFact | null;
   missingSleep: boolean;
 } {
   if (input.sleepPerformanceScore != null && input.sleepPerformanceTier != null) {
@@ -117,10 +92,7 @@ function secondSupportingFact(input: BuildTodayPlanInput): {
   }
 
   return {
-    fact: {
-      label: "Strain target",
-      value: String(input.strainTarget?.targetStrain ?? 0),
-    },
+    fact: null,
     missingSleep: true,
   };
 }
@@ -131,17 +103,15 @@ function buildCaveats(input: BuildTodayPlanInput, missingSleep: boolean): string
   if (missingSleep) {
     if (input.strainTarget?.workloadRatio == null) {
       caveats.push(
-        "Sleep and recent workload data were unavailable, so this plan uses recovery and the strain target.",
+        "Sleep and recent workload data were unavailable, so this suggestion uses recovery only.",
       );
     } else {
-      caveats.push(
-        "Sleep performance was unavailable, so this plan uses recovery and recent workload instead.",
-      );
+      caveats.push("Sleep performance was unavailable; recent workload is shown for context.");
     }
   }
 
   if (input.recoveryDate == null) {
-    caveats.push("Recovery data has no date, so confidence is low.");
+    caveats.push("Recovery data has no date; its recency is unknown.");
   } else if (daysBetween(input.endDate, input.recoveryDate) > 0) {
     caveats.push(`Recovery data is from ${input.recoveryDate}, so this plan may be less current.`);
   }
@@ -170,7 +140,6 @@ export function buildTodayPlan(input: BuildTodayPlanInput): TodayPlanResult {
       date: input.endDate,
       action: null,
       supportingFacts: [],
-      confidence: "low",
       freshness,
       missingInputs: ["recovery"],
       message:
@@ -187,8 +156,7 @@ export function buildTodayPlan(input: BuildTodayPlanInput): TodayPlanResult {
     date: input.endDate,
     action: {
       id: "strain_target",
-      title: actionTitle(input.strainTarget.zone, input.strainTarget.targetStrain),
-      summary: input.strainTarget.explanation,
+      title: `Suggested strain: ${input.strainTarget.targetStrain}`,
       zone: input.strainTarget.zone,
     },
     supportingFacts: [
@@ -196,26 +164,12 @@ export function buildTodayPlan(input: BuildTodayPlanInput): TodayPlanResult {
         label: "Recovery",
         value: `${input.strainTarget.readinessScore}/100`,
       },
-      secondFact,
+      ...(secondFact ? [secondFact] : []),
     ],
     caveats: buildCaveats(input, missingSleep),
-    confidence: resolveConfidence(input.endDate, input.recoveryDate, input.sleepDate),
     freshness,
     missingInputs,
   };
-}
-
-const confidenceLabels: Record<TodayPlanConfidence, string> = {
-  high: "High confidence",
-  moderate: "Moderate confidence",
-  low: "Low confidence",
-};
-
-/**
- * Shared confidence wording for web and mobile Today Plan cards.
- */
-export function formatTodayPlanConfidence(confidence: TodayPlanConfidence): string {
-  return confidenceLabels[confidence];
 }
 
 /**

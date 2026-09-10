@@ -93,6 +93,7 @@ export function streamHealthExport(
     let currentWorkoutStats: WorkoutStatistics[] = [];
     let currentRouteLocations: RouteLocation[] = [];
     let insideWorkoutRoute = false;
+    let currentCategory: CategoryRecord | null = null;
 
     // Backpressure: pause the file stream while DB writes are in progress.
     // Max concurrent flushes before we pause.
@@ -191,7 +192,7 @@ export function streamHealthExport(
         } else if (attrs.type?.startsWith("HKCategoryType")) {
           // Category types (MindfulSession, SexualActivity, etc.) -- non-numeric
           const cat = parseCategoryRecord(attrs);
-          if (cat && cat.startDate >= since) addCategory(cat);
+          if (cat && cat.startDate >= since) currentCategory = cat;
         } else {
           const record = parseRecord(attrs);
           if (record && record.startDate >= since) addRecord(record);
@@ -203,6 +204,13 @@ export function streamHealthExport(
           currentWorkout = workout;
           currentWorkoutStats = [];
         }
+      } else if (
+        node.name === "MetadataEntry" &&
+        currentCategory &&
+        attrs.key &&
+        attrs.value !== undefined
+      ) {
+        currentCategory.metadata[attrs.key] = attrs.value;
       } else if (
         node.name === "MetadataEntry" &&
         currentWorkout &&
@@ -234,6 +242,9 @@ export function streamHealthExport(
         currentRouteLocations = [];
       } else if (name === "Workout") {
         flushWorkout();
+      } else if (name === "Record" && currentCategory) {
+        addCategory(currentCategory);
+        currentCategory = null;
       }
     });
 

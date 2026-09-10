@@ -655,36 +655,36 @@ describe("session token storage", () => {
     });
   });
 
-  it.each([
-    "stale-restored-token",
-    "new-login-token",
-  ])("deletes a deferred %s write after cleanup starts", async (token) => {
-    let resolveWrite: (() => void) | undefined;
-    vi.mocked(SecureStore.setItemAsync).mockImplementationOnce(
-      () =>
-        new Promise<void>((resolve) => {
-          resolveWrite = resolve;
-        }),
-    );
-    const save = saveSessionToken(token);
-    await vi.waitFor(() => expect(SecureStore.setItemAsync).toHaveBeenCalledOnce());
+  it.each(["stale-restored-token", "new-login-token"])(
+    "deletes a deferred %s write after cleanup starts",
+    async (token) => {
+      let resolveWrite: (() => void) | undefined;
+      vi.mocked(SecureStore.setItemAsync).mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveWrite = resolve;
+          }),
+      );
+      const save = saveSessionToken(token);
+      await vi.waitFor(() => expect(SecureStore.setItemAsync).toHaveBeenCalledOnce());
 
-    const clear = clearSessionToken();
-    expect(SecureStore.deleteItemAsync).not.toHaveBeenCalled();
+      const clear = clearSessionToken();
+      expect(SecureStore.deleteItemAsync).not.toHaveBeenCalled();
 
-    resolveWrite?.();
-    await save;
-    await clear;
+      resolveWrite?.();
+      await save;
+      await clear;
 
-    const tokenWriteOrder = vi.mocked(SecureStore.setItemAsync).mock.invocationCallOrder[0];
-    const tokenDeleteCall = vi
-      .mocked(SecureStore.deleteItemAsync)
-      .mock.calls.findIndex(([key]) => key === "dofek_session_token");
-    expect(tokenDeleteCall).toBeGreaterThanOrEqual(0);
-    expect(
-      vi.mocked(SecureStore.deleteItemAsync).mock.invocationCallOrder[tokenDeleteCall],
-    ).toBeGreaterThan(tokenWriteOrder ?? 0);
-  });
+      const tokenWriteOrder = vi.mocked(SecureStore.setItemAsync).mock.invocationCallOrder[0];
+      const tokenDeleteCall = vi
+        .mocked(SecureStore.deleteItemAsync)
+        .mock.calls.findIndex(([key]) => key === "dofek_session_token");
+      expect(tokenDeleteCall).toBeGreaterThanOrEqual(0);
+      expect(
+        vi.mocked(SecureStore.deleteItemAsync).mock.invocationCallOrder[tokenDeleteCall],
+      ).toBeGreaterThan(tokenWriteOrder ?? 0);
+    },
+  );
 
   it("getSessionToken reads from the correct key", async () => {
     vi.mocked(SecureStore.getItemAsync).mockResolvedValueOnce("stored-token");

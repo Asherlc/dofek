@@ -5,6 +5,7 @@ import {
   PASSWORD_MIN_LENGTH,
   PASSWORD_REQUIREMENT_TEXT,
 } from "@dofek/auth/auth";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { groupConfiguredAuthProviders } from "@dofek/providers/auth-provider-grouping";
 import { createFileRoute, useSearch } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
@@ -40,7 +41,7 @@ function LoginPage() {
       .then(setProviders)
       .catch((err: unknown) => {
         captureException(err, { operation: "auth.providers" });
-        setError(err instanceof Error ? err.message : "Failed to load providers");
+        setError(userFacingErrorMessage(err, "Failed to load providers"));
       })
       .finally(() => setLoading(false));
   }, []);
@@ -125,7 +126,7 @@ function LoginPage() {
       captureException(err, {
         operation: authMode === "register" ? "auth.register" : "auth.login",
       });
-      setFormError(err instanceof Error ? err.message : "Authentication failed");
+      setFormError(userFacingErrorMessage(err, "Authentication failed"));
     } finally {
       setSubmitting(false);
     }
@@ -137,10 +138,15 @@ function LoginPage() {
     setFormError(null);
     try {
       const result = await requestPasswordReset(email);
-      setFormError(result.message);
+      setFormError(
+        userFacingErrorMessage(
+          result.message,
+          "The password reset request could not be sent. Please try again.",
+        ),
+      );
     } catch (err: unknown) {
       captureException(err, { operation: "auth.password-reset-request" });
-      setFormError(err instanceof Error ? err.message : "Password reset failed");
+      setFormError(userFacingErrorMessage(err, "Password reset failed"));
     } finally {
       setSubmitting(false);
     }

@@ -104,8 +104,7 @@ describe("buildClickHouseBootstrapStatements", () => {
       "daily_metrics",
       "food_entry",
       "health_event",
-      "lab_panel",
-      "lab_result",
+      "clinical_record",
       "journal_entry",
       "provider",
       "provider_priority",
@@ -167,7 +166,7 @@ describe("buildClickHouseBootstrapStatements", () => {
       sql.indexOf("CREATE TABLE IF NOT EXISTS analytics.deduped_sensor"),
       sql.indexOf("CREATE VIEW IF NOT EXISTS analytics.deduped_location"),
     );
-    expect(dedupedSensorDefinition).not.toContain("activity_id");
+    expect(dedupedSensorDefinition).not.toMatch(/^\s*activity_id\s/m);
     expect(sql).toContain("JSONExtract(metric_stream.point, 'coordinates', 'Array(Float64)')");
     expect(sql).toContain("parsed_points.point.2");
     expect(sql).toContain("parsed_points.point.1");
@@ -214,15 +213,13 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("FROM postgres_fitness.provider_connection FINAL");
     expect(sql).toContain("FROM postgres_fitness.food_entry FINAL");
     expect(sql).toContain("FROM postgres_fitness.health_event FINAL");
-    expect(sql).toContain("FROM postgres_fitness.lab_panel FINAL");
-    expect(sql).toContain("FROM postgres_fitness.lab_result FINAL");
+    expect(sql).toContain("FROM postgres_fitness.clinical_record FINAL");
     expect(sql).toContain("FROM postgres_fitness.journal_entry FINAL");
     expect(sql).toContain("uniqExact(date) AS count");
     expect(sql).not.toContain("CAST(0, 'UInt64') AS food_entries");
     expect(sql).not.toContain("CAST(0, 'UInt64') AS health_events");
     expect(sql).not.toContain("CAST(0, 'UInt64') AS nutrition_daily");
-    expect(sql).not.toContain("CAST(0, 'UInt64') AS lab_panels");
-    expect(sql).not.toContain("CAST(0, 'UInt64') AS lab_results");
+    expect(sql).not.toContain("CAST(0, 'UInt64') AS clinical_records");
     expect(sql).not.toContain("CAST(0, 'UInt64') AS journal_entries");
     expect(sql).not.toContain(
       "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.derived_resting_heart_rate",
@@ -234,8 +231,7 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).not.toContain("FROM postgres_fitness_live.v_activity");
     expect(sql).not.toContain("FROM postgres_fitness_live.v_activity_members");
     expect(sql).toContain("WITH RECURSIVE");
-    expect(sql).toContain("connected_components AS");
-    expect(sql).toContain("min(toString(connected_activity_id)) AS group_id");
+    expect(sql).not.toContain("min(toString(connected_activity_id)) AS group_id");
     expect(sql).toContain("min(toString(connected_sleep_id)) AS group_id");
     expect(sql).not.toContain("connected_measurement_id");
     expect(sql).toContain("JOIN analytics.deduped_sensor AS");

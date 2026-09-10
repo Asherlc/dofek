@@ -166,10 +166,8 @@ export const queryCache: CacheStore =
 
 const USER_QUERY_PREFIXES = {
   activity: ["activity.", "calendar."],
-  breathwork: ["breathwork.history"],
   journalEntries: ["journal.entries", "journal.trends", "behaviorImpact."],
   lifeEvents: ["lifeEvents."],
-  menstrualCycle: ["menstrualCycle."],
   personalExperiments: ["personalExperiments."],
   personalization: ["personalization.", "mobileDashboard.", "recovery.", "stress.", "pmc."],
   sportSettings: ["sportSettings."],

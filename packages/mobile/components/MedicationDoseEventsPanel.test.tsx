@@ -83,6 +83,6 @@ describe("MedicationDoseEventsPanel", () => {
     render(<MedicationDoseEventsPanel />);
 
     expect(screen.getByTestId("query-state-empty")).toBeTruthy();
-    expect(screen.getByText("No medication dose events yet.")).toBeTruthy();
+    expect(screen.getByText("No medication dose events to display.")).toBeTruthy();
   });
 });

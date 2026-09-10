@@ -117,27 +117,30 @@ describe("DailyOverview", () => {
       { strainTargetError: new Error("Strain target unavailable") },
     ],
     ["sleep", "Sleep", { sleepError: new Error("Sleep performance unavailable") }],
-  ])("shows the exact %s query failure instead of hiding the summary", (_name, label, errorProps) => {
-    render(
-      <DailyOverview
-        readiness={undefined}
-        workloadRatio={undefined}
-        sleepPerformance={undefined}
-        readinessLoading={false}
-        workloadLoading={false}
-        strainTargetLoading={false}
-        sleepLoading={false}
-        {...errorProps}
-      />,
-    );
+  ])(
+    "shows the exact %s query failure instead of hiding the summary",
+    (_name, label, errorProps) => {
+      render(
+        <DailyOverview
+          readiness={undefined}
+          workloadRatio={undefined}
+          sleepPerformance={undefined}
+          readinessLoading={false}
+          workloadLoading={false}
+          strainTargetLoading={false}
+          sleepLoading={false}
+          {...errorProps}
+        />,
+      );
 
-    expect(screen.getByRole("region", { name: "Daily health summary" })).toBeTruthy();
-    const contextHeading = `${label}: Could not load this section`;
-    const alert = screen.getByRole("heading", { name: contextHeading }).closest('[role="alert"]');
-    expect(alert).not.toBeNull();
-    expect(alert).toHaveTextContent(Object.values(errorProps)[0]?.message ?? "");
-    expect(screen.getByTestId("query-state-error")).toBeTruthy();
-  });
+      expect(screen.getByRole("region", { name: "Daily health summary" })).toBeTruthy();
+      const contextHeading = `${label}: Could not load this section`;
+      const alert = screen.getByRole("heading", { name: contextHeading }).closest('[role="alert"]');
+      expect(alert).not.toBeNull();
+      expect(alert).toHaveTextContent(Object.values(errorProps)[0]?.message ?? "");
+      expect(screen.getByTestId("query-state-error")).toBeTruthy();
+    },
+  );
 
   it("shows all core query failures together", () => {
     render(
@@ -303,7 +306,7 @@ describe("DailyOverview", () => {
     expect(screen.getByText("Night of Sat, Aug 1, 2026 · America/Los_Angeles")).toBeTruthy();
   });
 
-  it("renders contextual descriptions below each score ring", () => {
+  it("renders strain and sleep context below their score rings", () => {
     render(
       <DailyOverview
         readiness={mockReadiness}
@@ -314,8 +317,6 @@ describe("DailyOverview", () => {
         sleepLoading={false}
       />,
     );
-    // Recovery description
-    expect(screen.getByText(/ready for high-intensity/)).toBeTruthy();
     // Strain description (moderate strain = productive)
     expect(screen.getByText(/productive training day/)).toBeTruthy();
     // Sleep description (Good tier)
@@ -494,7 +495,7 @@ describe("DailyOverview", () => {
       currentStrain: 12.5,
       progressPercent: 89,
       zone: "Push" as const,
-      explanation: "Recovery is strong (75). Push for a high-strain day to build fitness.",
+      explanation: "Based on a recovery score of 75/100.",
       dailyLoad: 100,
       acuteLoad: 80,
       chronicLoad: 70,
@@ -548,7 +549,7 @@ describe("DailyOverview", () => {
       currentStrain: 0,
       progressPercent: 0,
       zone: "Maintain" as const,
-      explanation: "Moderate recovery (50). Aim for a steady training day.",
+      explanation: "Based on a recovery score of 50/100.",
       dailyLoad: 0,
       acuteLoad: 133,
       chronicLoad: 33,

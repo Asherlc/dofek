@@ -1,12 +1,6 @@
 import { vi } from "vitest";
-import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 
-export const aiObservabilityMocks = {
-  withAiGenerationContext: vi.fn(
-    async (_context: { userId?: string }, operation: () => Promise<unknown>): Promise<unknown> =>
-      operation(),
-  ),
-};
+import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 
 export function makeMockSensorStore(rows: unknown[] = []): ActivitySensorStore {
   const query = vi.fn().mockResolvedValue(rows);

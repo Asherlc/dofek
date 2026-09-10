@@ -1,4 +1,5 @@
 import { formatRelativeTime } from "@dofek/format/format";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import {
   type ProcessingDisplayStage,
   type ProcessingDisplayStatus,
@@ -9,6 +10,7 @@ import {
   processingStatusMessage,
   processingTarget,
 } from "@dofek/providers/processing-status";
+import { Link } from "@tanstack/react-router";
 import { trpc } from "../lib/trpc.ts";
 import { RecomputeStatusIndicator } from "./RecomputeStatusIndicator.tsx";
 import { SourceProcessingStatusCard } from "./SourceProcessingStatusCard.tsx";
@@ -36,6 +38,7 @@ export interface ProcessingStatusSnapshot {
     datasets: string[];
     dismissed: boolean;
     errorMessage: string | null;
+    errorCode?: string | null;
     timeline: Array<{
       sequence: number;
       stage: ProcessingDisplayStage;
@@ -88,7 +91,10 @@ export function ProcessingStatusWidget({
     return (
       <SourceProcessingStatusCard
         heading="Processing status is unavailable"
-        message={error.message}
+        message={userFacingErrorMessage(
+          error,
+          "Processing status could not be loaded. Please try again.",
+        )}
         progress={null}
         status="failed"
       />
@@ -184,15 +190,26 @@ export function ProcessingStatusWidget({
                     <p className="mt-1 text-red-700">{group.errorMessage}</p>
                   ) : null}
                 </div>
-                <button
-                  type="button"
-                  className="inline-flex shrink-0 items-center justify-center rounded-md border border-border-strong px-2 py-1 text-xs font-semibold text-foreground transition-colors hover:bg-surface-hover disabled:opacity-50"
-                  disabled={dismissMutation.isPending}
-                  aria-label={`Dismiss ${labelPrefix} failure`}
-                  onClick={() => dismissMutation.mutate({ operationId: group.operationId })}
-                >
-                  Dismiss
-                </button>
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  {group.requiresReconnect && group.providerId && group.providerLabel ? (
+                    <Link
+                      className="inline-flex items-center justify-center rounded-md bg-accent px-2 py-1 text-xs font-semibold text-on-accent transition-colors hover:bg-accent/90"
+                      to="/providers/$id"
+                      params={{ id: group.providerId }}
+                    >
+                      Reconnect {group.providerLabel}
+                    </Link>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="inline-flex items-center justify-center rounded-md border border-border-strong px-2 py-1 text-xs font-semibold text-foreground transition-colors hover:bg-surface-hover disabled:opacity-50"
+                    disabled={dismissMutation.isPending}
+                    aria-label={`Dismiss ${labelPrefix} failure`}
+                    onClick={() => dismissMutation.mutate({ operationId: group.operationId })}
+                  >
+                    Dismiss
+                  </button>
+                </div>
               </div>
             </li>
           );
@@ -216,7 +233,10 @@ export function ProcessingStatusWidget({
       {datasetDetails}
       {dismissMutation.error ? (
         <p className="mt-2 text-xs font-medium text-red-700" role="alert">
-          {dismissMutation.error.message}
+          {userFacingErrorMessage(
+            dismissMutation.error,
+            "The processing notice could not be dismissed. Please try again.",
+          )}
         </p>
       ) : null}
     </SourceProcessingStatusCard>

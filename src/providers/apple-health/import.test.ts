@@ -225,8 +225,19 @@ function createImportMockDb(panelRows: { id: string; externalId: string | null }
   const deleteFn = vi.fn().mockReturnValue({ where: deleteWhere });
 
   const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
-  const onConflictDoNothing = vi.fn().mockResolvedValue(undefined);
-  const values = vi.fn().mockReturnValue({ onConflictDoUpdate, onConflictDoNothing });
+  let insertedRowCount = 0;
+  const returning = vi
+    .fn()
+    .mockImplementation(() =>
+      Promise.resolve(
+        Array.from({ length: insertedRowCount }, () => ({ id: "inserted-clinical-record" })),
+      ),
+    );
+  const onConflictDoNothing = vi.fn().mockReturnValue({ returning });
+  const values = vi.fn().mockImplementation((records: unknown) => {
+    insertedRowCount = Array.isArray(records) ? records.length : 1;
+    return { onConflictDoUpdate, onConflictDoNothing };
+  });
   const insertFn = vi.fn().mockReturnValue({ values });
 
   // select().from().where() must be directly awaitable (returns Promise)
@@ -252,6 +263,7 @@ function createImportMockDb(panelRows: { id: string; externalId: string | null }
       values,
       onConflictDoUpdate,
       onConflictDoNothing,
+      returning,
       selectFn,
       selectFrom,
       selectWhere,
@@ -817,6 +829,21 @@ describe("importAppleHealthFile", () => {
     expect(spies.insertFn).not.toHaveBeenCalled();
   });
 
+  it("preserves medication records when a replacement includes both valid and invalid rows", async () => {
+    const zipPath = createClinicalZip(tmpDir, "dose-event-partial", [
+      {
+        name: "MedicationDoseEvent-valid.json",
+        content: JSON.stringify({ uuid: "valid", startDate: "2026-09-01T12:00:00Z" }),
+      },
+      { name: "MedicationDoseEvent-invalid.json", content: "{invalid" },
+    ]);
+    const { db, spies } = createRunImportMockDb();
+    const result = await importMedicationDoseEvents(db, "apple_health", zipPath);
+    expect(result.errors).toHaveLength(1);
+    expect(result.inserted).toBe(0);
+    expect(spies.deleteFn).not.toHaveBeenCalled();
+  });
+
   it("reports medication dose parse errors without inserting invalid dose rows", async () => {
     const zipPath = createClinicalZip(tmpDir, "dose-event-invalid-json", [
       {
@@ -1158,6 +1185,8 @@ describe("runImport (control-flow mutation killers)", () => {
           await handlers.onWorkoutBatch([{ startDate: new Date("2026-03-01T10:00:00Z") }]);
           await handlers.onCategoryBatch([
             {
+              metadata: {},
+              sourceBundle: "com.example.watch",
               type: "category.type",
               value: "mindful",
               sourceName: "Watch",
@@ -1201,6 +1230,88 @@ describe("runImport (control-flow mutation killers)", () => {
         presentExternalIds: new Set(["ah:workout:2026-03-01T10:00:00.000Z"]),
       }),
     );
+  });
+
+  it("preserves category values and derives distinct stable external ids", async () => {
+    vi.resetModules();
+
+    vi.doMock("./db-insertion.ts", () => ({
+      METRIC_STREAM_TYPES: {},
+      BODY_MEASUREMENT_TYPES: new Set<string>(),
+      DAILY_METRIC_TYPES: new Set<string>(),
+      NUTRITION_TYPES: {},
+      ALL_ROUTED_TYPES: new Set<string>(),
+      upsertMetricStreamBatch: vi.fn().mockResolvedValue(0),
+      upsertBodyMeasurementBatch: vi.fn().mockResolvedValue(0),
+      upsertDailyMetricsBatch: vi.fn().mockResolvedValue(0),
+      upsertNutritionBatch: vi.fn().mockResolvedValue(0),
+      upsertHealthEventBatch: vi.fn().mockResolvedValue(0),
+      upsertSleepBatch: vi.fn().mockResolvedValue(0),
+      upsertWorkoutBatch: vi.fn().mockResolvedValue(0),
+      aggregateSpO2ToDailyMetrics: vi.fn().mockResolvedValue(undefined),
+      aggregateSkinTempToDailyMetrics: vi.fn().mockResolvedValue(undefined),
+    }));
+
+    vi.doMock("./streaming.ts", () => ({
+      streamHealthExport: vi.fn(
+        async (
+          _xmlPath: string,
+          _since: Date,
+          handlers: {
+            onCategoryBatch: (records: Array<Record<string, unknown>>) => Promise<void>;
+          },
+        ) => {
+          const shared = {
+            metadata: { HKMetadataKeyMenstrualCycleStart: true },
+            sourceBundle: "com.example.cycle",
+            type: "HKCategoryTypeIdentifierMenstrualFlow",
+            sourceName: "Cycle Source",
+            startDate: new Date("2026-03-01T10:00:00Z"),
+            endDate: new Date("2026-03-01T10:05:00Z"),
+          };
+          await handlers.onCategoryBatch([
+            { ...shared, value: "light" },
+            { ...shared, value: "heavy" },
+          ]);
+          return { recordCount: 0, workoutCount: 0, sleepCount: 0, categoryCount: 2 };
+        },
+      ),
+    }));
+
+    const onConflictDoNothing = vi.fn().mockResolvedValue(undefined);
+    const values = vi.fn().mockReturnValue({ onConflictDoNothing });
+    const db = makeTransactionalTestDatabase<SyncDatabase>({
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      insert: vi.fn().mockReturnValue({ values }),
+      select: vi.fn(),
+      execute: vi.fn().mockResolvedValue([]),
+    });
+    const { runImport: mockedRunImport } = await import("./import.ts");
+
+    const result = await mockedRunImport(
+      db,
+      "apple_health",
+      "/tmp/stream.xml",
+      new Date("2026-03-01T00:00:00Z"),
+    );
+
+    expect(result.recordsSynced).toBe(2);
+    const categoryRows = values.mock.calls
+      .map(([rows]) => rows)
+      .find(
+        (rows) => Array.isArray(rows) && rows[0]?.type === "HKCategoryTypeIdentifierMenstrualFlow",
+      );
+    expect(categoryRows).toEqual([
+      expect.objectContaining({
+        valueText: "light",
+        externalId: expect.stringMatching(/^ah-category:[a-f0-9]{64}$/),
+      }),
+      expect.objectContaining({
+        valueText: "heavy",
+        externalId: expect.stringMatching(/^ah-category:[a-f0-9]{64}$/),
+      }),
+    ]);
+    expect(new Set(categoryRows.map((row: { externalId: string }) => row.externalId)).size).toBe(2);
   });
 
   it("uses the latest workout end timestamp for reconciliation windowEnd", async () => {
@@ -1846,16 +1957,43 @@ describe("importClinicalRecords", () => {
     }
   });
 
-  it("deletes existing records before importing", async () => {
+  it("rejects malformed supported FHIR resources before replacing clinical records", async () => {
+    const zipPath = createClinicalZip(tmpDir, "invalid-supported-fhir", [
+      { name: "valid.json", content: JSON.stringify(labObservation) },
+      { name: "invalid.json", content: JSON.stringify({ resourceType: "Observation", id: 1 }) },
+    ]);
+    const xmlPath = createTestXml(tmpDir, "invalid-supported-fhir.xml", []);
+    const { db, spies } = createImportMockDb();
+    const result = await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
+    expect(result.errors).toHaveLength(1);
+    expect(result.inserted).toBe(0);
+    expect(spies.deleteFn).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid clinical dates before replacing clinical records", async () => {
+    const zipPath = createClinicalZip(tmpDir, "invalid-clinical-date", [
+      {
+        name: "invalid.json",
+        content: JSON.stringify({ ...labObservation, effectiveDateTime: "invalid-date" }),
+      },
+    ]);
+    const xmlPath = createTestXml(tmpDir, "invalid-clinical-date.xml", []);
+    const { db, spies } = createImportMockDb();
+    const result = await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
+    expect(result.errors).toHaveLength(1);
+    expect(result.inserted).toBe(0);
+    expect(spies.deleteFn).not.toHaveBeenCalled();
+  });
+
+  it("replaces existing records when the archive is valid and empty", async () => {
     const zipPath = createEmptyZip(tmpDir, "delete-test");
     const xmlPath = createTestXml(tmpDir, "delete-test.xml", []);
     const { db, spies } = createImportMockDb();
 
     await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
 
-    // Should delete lab_result, lab_panel, medication, condition, allergy_intolerance
-    expect(spies.deleteFn).toHaveBeenCalledTimes(5);
-    expect(spies.deleteWhere).toHaveBeenCalledTimes(5);
+    expect(spies.deleteFn).toHaveBeenCalledTimes(1);
+    expect(spies.deleteWhere).toHaveBeenCalledTimes(1);
   });
 
   it("returns early with zero counts when ZIP has no clinical records", async () => {
@@ -1870,7 +2008,7 @@ describe("importClinicalRecords", () => {
     expect(result.errors).toHaveLength(0);
   });
 
-  it("imports lab observations and links to diagnostic report panels", async () => {
+  it("imports lab observations and reports into canonical FHIR storage", async () => {
     const zipPath = createClinicalZip(tmpDir, "lab-data", [
       { name: "obs-glucose-001.json", content: JSON.stringify(labObservation) },
       { name: "dr-metabolic-001.json", content: JSON.stringify(diagnosticReport) },
@@ -1887,21 +2025,20 @@ describe("importClinicalRecords", () => {
 
     const result = await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
 
-    expect(result.inserted).toBe(1);
+    expect(result.inserted).toBe(2);
     expect(result.skipped).toBe(0);
     expect(result.errors).toHaveLength(0);
 
-    // Should have queried back panel IDs
-    expect(spies.selectFn).toHaveBeenCalled();
-
-    // Verify panel ID was resolved in the lab result
-    const allValuesCalls = spies.values.mock.calls;
-    // Last values() call is the lab result batch
-    const labResultBatch = allValuesCalls[allValuesCalls.length - 1]?.[0];
-    expect(Array.isArray(labResultBatch)).toBe(true);
-    expect(labResultBatch[0].panelId).toBe("panel-uuid-1");
-    expect(labResultBatch[0].externalId).toBe("obs-glucose-001");
-    expect(labResultBatch[0].sourceName).toBe("Quest Diagnostics");
+    expect(spies.selectFn).not.toHaveBeenCalled();
+    const records = spies.values.mock.calls[0]?.[0];
+    const labResult = records.find(
+      (record: { externalId: string }) => record.externalId === "obs-glucose-001",
+    );
+    expect(labResult).toMatchObject({
+      clinicalType: "labResult",
+      displayName: "Glucose",
+      sourceName: "Quest Diagnostics",
+    });
   });
 
   it("skips non-lab observations (vital signs)", async () => {
@@ -2004,7 +2141,7 @@ describe("importClinicalRecords", () => {
 
     const result = await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
 
-    expect(result.inserted).toBe(1); // Only lab observation
+    expect(result.inserted).toBe(0); // A malformed file rejects the complete replacement.
     expect(result.skipped).toBe(2); // vital + non-FHIR
     expect(result.errors).toHaveLength(1); // broken JSON
   });
@@ -2093,7 +2230,8 @@ describe("importClinicalRecords", () => {
     const panelValues = spies.values.mock.calls[0]?.[0];
     expect(Array.isArray(panelValues)).toBe(true);
     expect(panelValues[0].externalId).toBe("dr-metabolic-001");
-    expect(panelValues[0].name).toBe("Metabolic Panel");
+    expect(panelValues[0].displayName).toBe("Metabolic Panel");
+    expect(panelValues[0].clinicalType).toBe("labResult");
     expect(panelValues[0].providerId).toBe("test-provider");
     expect(panelValues[0].sourceName).toBe("Unknown");
   });
@@ -2115,14 +2253,14 @@ describe("importClinicalRecords", () => {
     expect(result.inserted).toBe(1);
     expect(result.errors).toHaveLength(0);
 
-    const allValuesCalls = spies.values.mock.calls;
-    const medicationBatch = allValuesCalls.find(
-      (call) => call[0]?.[0]?.name === "Cephalexin 500 mg Cap",
-    )?.[0];
-    expect(medicationBatch).toBeDefined();
-    expect(medicationBatch[0].rxnormCode).toBe("2231");
-    expect(medicationBatch[0].sourceName).toBe("UCSF Health");
-    expect(medicationBatch[0].prescriberName).toBe("Dr. Smith");
+    const medication = spies.values.mock.calls[0]?.[0]?.[0];
+    expect(medication).toMatchObject({
+      clinicalType: "medication",
+      displayName: "Cephalexin 500 mg Cap",
+      externalId: "med-ceph-001",
+      sourceName: "UCSF Health",
+      fhir: medicationRequest,
+    });
   });
 
   it("imports Condition resources", async () => {
@@ -2139,12 +2277,12 @@ describe("importClinicalRecords", () => {
     expect(result.inserted).toBe(1);
     expect(result.errors).toHaveLength(0);
 
-    const allValuesCalls = spies.values.mock.calls;
-    const conditionBatch = allValuesCalls.find((call) => call[0]?.[0]?.name === "Anxiety")?.[0];
-    expect(conditionBatch).toBeDefined();
-    expect(conditionBatch[0].icd10Code).toBe("F41.9");
-    expect(conditionBatch[0].snomedCode).toBe("48694002");
-    expect(conditionBatch[0].clinicalStatus).toBe("active");
+    expect(spies.values.mock.calls[0]?.[0]?.[0]).toMatchObject({
+      clinicalType: "condition",
+      displayName: "Anxiety",
+      externalId: "cond-anxiety-001",
+      fhir: conditionResource,
+    });
   });
 
   it("imports AllergyIntolerance resources", async () => {
@@ -2164,11 +2302,12 @@ describe("importClinicalRecords", () => {
     expect(result.inserted).toBe(1);
     expect(result.errors).toHaveLength(0);
 
-    const allValuesCalls = spies.values.mock.calls;
-    const allergyBatch = allValuesCalls.find((call) => call[0]?.[0]?.name === "LACTASE")?.[0];
-    expect(allergyBatch).toBeDefined();
-    expect(allergyBatch[0].type).toBe("allergy");
-    expect(allergyBatch[0].rxnormCode).toBe("41397");
+    expect(spies.values.mock.calls[0]?.[0]?.[0]).toMatchObject({
+      clinicalType: "allergy",
+      displayName: "LACTASE",
+      externalId: "allergy-lactase-001",
+      fhir: allergyResource,
+    });
   });
 
   it("imports mixed clinical record types together", async () => {
@@ -2187,8 +2326,8 @@ describe("importClinicalRecords", () => {
 
     const result = await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
 
-    // 1 lab + 1 medication + 1 condition + 1 allergy = 4
-    expect(result.inserted).toBe(4);
+    // One canonical record for each supplied FHIR resource.
+    expect(result.inserted).toBe(5);
     expect(result.errors).toHaveLength(0);
     expect(result.skipped).toBe(0);
   });
@@ -2207,8 +2346,7 @@ describe("importClinicalRecords", () => {
 
     await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
 
-    // insert calls: 1 panel batch + 1 lab batch + 1 medication batch + 1 condition batch + 1 allergy batch = 5
-    expect(spies.insertFn).toHaveBeenCalledTimes(5);
+    expect(spies.insertFn).toHaveBeenCalledTimes(1);
   });
 
   it("returns correct skipped count for non-lab observations in mixed import", async () => {
@@ -2290,20 +2428,13 @@ describe("importClinicalRecords", () => {
     const { db, spies } = createImportMockDb();
     await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
 
-    const allValuesCalls = spies.values.mock.calls;
-    const batch = allValuesCalls.find((call) => call[0]?.[0]?.externalId === "med-ceph-001")?.[0];
-    expect(batch).toBeDefined();
-    expect(batch[0]).toMatchObject({
+    const record = spies.values.mock.calls[0]?.[0]?.[0];
+    expect(record).toMatchObject({
       providerId: "test-provider",
       externalId: "med-ceph-001",
-      name: "Cephalexin 500 mg Cap",
-      status: "stopped",
-      authoredOn: "2024-01-10",
-      dosageText: "Take 1 capsule 2x daily",
-      route: "Oral",
-      form: "Capsule",
-      rxnormCode: "2231",
-      prescriberName: "Dr. Smith",
+      displayName: "Cephalexin 500 mg Cap",
+      clinicalType: "medication",
+      fhir: medicationRequest,
     });
   });
 
@@ -2315,20 +2446,13 @@ describe("importClinicalRecords", () => {
     const { db, spies } = createImportMockDb();
     await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
 
-    const allValuesCalls = spies.values.mock.calls;
-    const batch = allValuesCalls.find(
-      (call) => call[0]?.[0]?.externalId === "cond-anxiety-001",
-    )?.[0];
-    expect(batch).toBeDefined();
-    expect(batch[0]).toMatchObject({
+    const record = spies.values.mock.calls[0]?.[0]?.[0];
+    expect(record).toMatchObject({
       providerId: "test-provider",
       externalId: "cond-anxiety-001",
-      name: "Anxiety",
-      clinicalStatus: "active",
-      verificationStatus: "confirmed",
-      icd10Code: "F41.9",
-      snomedCode: "48694002",
-      onsetDate: "2023-06-02",
+      displayName: "Anxiety",
+      clinicalType: "condition",
+      fhir: conditionResource,
     });
   });
 
@@ -2340,23 +2464,14 @@ describe("importClinicalRecords", () => {
     const { db, spies } = createImportMockDb();
     await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
 
-    const allValuesCalls = spies.values.mock.calls;
-    const batch = allValuesCalls.find(
-      (call) => call[0]?.[0]?.externalId === "allergy-lactase-001",
-    )?.[0];
-    expect(batch).toBeDefined();
-    expect(batch[0]).toMatchObject({
+    const record = spies.values.mock.calls[0]?.[0]?.[0];
+    expect(record).toMatchObject({
       providerId: "test-provider",
       externalId: "allergy-lactase-001",
-      name: "LACTASE",
-      type: "allergy",
-      clinicalStatus: "active",
-      rxnormCode: "41397",
-      onsetDate: "2023-03-27",
+      displayName: "LACTASE",
+      clinicalType: "allergy",
+      fhir: allergyResource,
     });
-    expect(batch[0].reactions).toEqual([
-      { manifestation: "GI distress", description: "GI distress" },
-    ]);
   });
 
   it("resolves source names for clinical record types from XML", async () => {
@@ -2376,21 +2491,19 @@ describe("importClinicalRecords", () => {
     const { db, spies } = createImportMockDb();
     await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
 
-    const allValuesCalls = spies.values.mock.calls;
-    const medBatch = allValuesCalls.find(
-      (call) => call[0]?.[0]?.externalId === "med-ceph-001",
-    )?.[0];
-    expect(medBatch?.[0].sourceName).toBe("Sutter Health");
-
-    const condBatch = allValuesCalls.find(
-      (call) => call[0]?.[0]?.externalId === "cond-anxiety-001",
-    )?.[0];
-    expect(condBatch?.[0].sourceName).toBe("Quest");
-
-    const allergyBatch = allValuesCalls.find(
-      (call) => call[0]?.[0]?.externalId === "allergy-lactase-001",
-    )?.[0];
-    expect(allergyBatch?.[0].sourceName).toBe("UCSF");
+    const records = spies.values.mock.calls[0]?.[0];
+    expect(
+      records.find((record: { clinicalType: string }) => record.clinicalType === "medication")
+        ?.sourceName,
+    ).toBe("Sutter Health");
+    expect(
+      records.find((record: { clinicalType: string }) => record.clinicalType === "condition")
+        ?.sourceName,
+    ).toBe("Quest");
+    expect(
+      records.find((record: { clinicalType: string }) => record.clinicalType === "allergy")
+        ?.sourceName,
+    ).toBe("UCSF");
   });
 
   it("handles MedicationRequest parse errors gracefully", async () => {
@@ -2433,23 +2546,18 @@ describe("importClinicalRecords", () => {
     const result = await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
     expect(result.inserted).toBe(1);
 
-    const allValuesCalls = spies.values.mock.calls;
-    const batch = allValuesCalls.find(
-      (call) => call[0]?.[0]?.externalId === "cond-coding-only",
-    )?.[0];
-    expect(batch?.[0].name).toBe("Back Pain");
+    expect(spies.values.mock.calls[0]?.[0]?.[0].displayName).toBe("Back Pain");
   });
 
-  it("deletes medication, condition, allergy tables on re-import", async () => {
+  it("deletes the provider's canonical clinical records on re-import", async () => {
     const zipPath = createEmptyZip(tmpDir, "delete-clinical");
     const xmlPath = createTestXml(tmpDir, "delete-clinical.xml", []);
     const { db, spies } = createImportMockDb();
 
     await importClinicalRecords(db, "test-provider", zipPath, xmlPath);
 
-    // 5 deletes: labResult, labPanel, medication, condition, allergyIntolerance
-    expect(spies.deleteFn).toHaveBeenCalledTimes(5);
-    expect(spies.deleteWhere).toHaveBeenCalledTimes(5);
+    expect(spies.deleteFn).toHaveBeenCalledTimes(1);
+    expect(spies.deleteWhere).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -2458,6 +2566,40 @@ describe("importClinicalRecords", () => {
 // ============================================================
 
 describe("readZipEntries", () => {
+  it.each(["entry header", "entry stream"])(
+    "rejects corrupt %s instead of returning an incomplete archive",
+    async (failure) => {
+      const directory = join(tmpdir(), `ah-corrupt-${failure.replaceAll(" ", "-")}-${Date.now()}`);
+      mkdirSync(directory, { recursive: true });
+      try {
+        const zipPath = createClinicalZip(directory, "corrupt", [
+          { name: "record.json", content: JSON.stringify({ data: "repeat".repeat(1000) }) },
+        ]);
+        const data = readFileSync(zipPath);
+        const centralSignature = Buffer.from([0x50, 0x4b, 0x01, 0x02]);
+        let offset = data.indexOf(centralSignature);
+        while (offset >= 0) {
+          const filenameLength = data.readUInt16LE(offset + 28);
+          const filename = data.toString("utf8", offset + 46, offset + 46 + filenameLength);
+          if (filename.endsWith("record.json")) {
+            if (failure === "entry header") {
+              data.writeUInt32LE(0, data.readUInt32LE(offset + 42));
+            } else {
+              data.writeUInt32LE(data.readUInt32LE(offset + 24) + 1, offset + 24);
+            }
+            break;
+          }
+          offset = data.indexOf(centralSignature, offset + 4);
+        }
+        expect(offset).toBeGreaterThanOrEqual(0);
+        writeFileSync(zipPath, data);
+        await expect(readZipEntries(zipPath, (name) => name.endsWith(".json"))).rejects.toThrow();
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
+    },
+  );
+
   let tmpDir: string;
 
   beforeAll(() => {

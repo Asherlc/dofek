@@ -54,7 +54,7 @@
         },
         "app-service": {
           "services": [
-            "app-service/imu_service"
+            "app-service/health_service"
           ]
         }
       },
@@ -233,7 +233,7 @@
         },
         "app-service": {
           "services": [
-            "app-service/imu_service"
+            "app-service/health_service"
           ]
         }
       },
@@ -382,7 +382,7 @@
         },
         "app-service": {
           "services": [
-            "app-service/imu_service"
+            "app-service/health_service"
           ]
         }
       },
@@ -429,7 +429,7 @@
         },
         "app-service": {
           "services": [
-            "app-service/imu_service"
+            "app-service/health_service"
           ]
         }
       },
@@ -464,7 +464,7 @@
         },
         "app-service": {
           "services": [
-            "app-service/imu_service"
+            "app-service/health_service"
           ]
         }
       },
@@ -499,7 +499,7 @@
         },
         "app-service": {
           "services": [
-            "app-service/imu_service"
+            "app-service/health_service"
           ]
         }
       },
@@ -528,7 +528,7 @@
         },
         "app-service": {
           "services": [
-            "app-service/imu_service"
+            "app-service/health_service"
           ]
         }
       },
@@ -617,7 +617,7 @@
         },
         "app-service": {
           "services": [
-            "app-service/imu_service"
+            "app-service/health_service"
           ]
         }
       },

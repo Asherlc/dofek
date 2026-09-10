@@ -1,128 +1,82 @@
-import { formatDateYmd } from "@dofek/format/format";
 import { CYCLE_TRACKING_SAFETY_NOTICE, PHASE_DISPLAY } from "@dofek/scoring/menstrual-cycle";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
-import { locallyReportedErrorMeta } from "../lib/query-client.ts";
-import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 
 export const Route = createFileRoute("/cycle")({
   component: CyclePage,
 });
 
-interface PeriodEditDraft {
-  id: string;
-  startDate: string;
-  endDate: string;
-  notes: string;
+function sourceLabel(source: {
+  providerId: string;
+  sourceName: string | null;
+  sourceBundle: string | null;
+}): string {
+  return source.sourceName ?? source.sourceBundle ?? source.providerId;
 }
 
-function CyclePage() {
+export function CyclePage() {
   const currentPhase = trpc.menstrualCycle.currentPhase.useQuery();
-  const periodHistory = trpc.menstrualCycle.history.useQuery({
-    months: 6,
-  });
-
-  const [startDate, setStartDate] = useState(formatDateYmd());
-  const [periodNotes, setPeriodNotes] = useState("");
-  const [editDraft, setEditDraft] = useState<PeriodEditDraft | null>(null);
-  const [deleteConfirmationId, setDeleteConfirmationId] = useState<string | null>(null);
-  const utils = trpc.useUtils();
-  const invalidateCycleData = async () => {
-    await Promise.all([
-      utils.menstrualCycle.currentPhase.invalidate(),
-      utils.menstrualCycle.history.invalidate(),
-    ]);
-  };
-  const logMutation = trpc.menstrualCycle.logPeriod.useMutation({
-    meta: locallyReportedErrorMeta,
-    onSuccess: () => {
-      setPeriodNotes("");
-    },
-    onError: (error) => {
-      captureException(error, { context: "cycle-log-period" });
-    },
-    onSettled: invalidateCycleData,
-  });
-  const updateMutation = trpc.menstrualCycle.updatePeriod.useMutation({
-    meta: locallyReportedErrorMeta,
-    onSuccess: () => {
-      setEditDraft(null);
-    },
-    onError: (error) => {
-      captureException(error, { context: "cycle-update-period" });
-    },
-    onSettled: invalidateCycleData,
-  });
-  const deleteMutation = trpc.menstrualCycle.deletePeriod.useMutation({
-    meta: locallyReportedErrorMeta,
-    onSuccess: () => {
-      setDeleteConfirmationId(null);
-    },
-    onError: (error) => {
-      captureException(error, { context: "cycle-delete-period" });
-    },
-    onSettled: invalidateCycleData,
-  });
+  const history = trpc.menstrualCycle.history.useQuery({ months: 6 });
 
   return (
-    <PageLayout title="Cycle Tracking" subtitle="Menstrual cycle phases and history">
+    <PageLayout title="Cycle Tracking" subtitle="Provider-sourced cycle phases and history">
       <div className="space-y-6">
-        <section aria-label="Cycle data controls" className="card border-accent/30 bg-surface p-6">
-          <h3 className="text-sm font-medium text-muted uppercase tracking-wider mb-3">
-            Privacy & data
-          </h3>
-          <p className="text-sm text-muted">
-            Cycle entries and notes are sensitive health data. Review what is stored here; export
-            all health data or permanently delete all account data from Account settings.
+        <section aria-label="Cycle data source" className="card p-6">
+          <h2 className="text-sm font-medium uppercase tracking-wider text-muted">
+            Read-only data
+          </h2>
+          <p className="mt-2 text-sm text-muted">
+            Cycle records come from connected providers. To correct a date, update it in the source
+            app and sync again.
           </p>
           <nav aria-label="Cycle data actions" className="mt-4 flex flex-wrap gap-2">
-            <a
-              className="rounded border border-border-strong px-3 py-2 text-sm text-foreground hover:bg-surface-hover"
-              href="#period-history"
-            >
-              Review cycle history
-            </a>
             <Link
-              className="rounded border border-border-strong px-3 py-2 text-sm text-foreground hover:bg-surface-hover"
-              search={{ tab: "account" }}
+              className="rounded border border-border-strong px-3 py-2 text-sm text-foreground"
+              search={{ tab: "data-sources" }}
+              to="/settings"
+            >
+              Data sources
+            </Link>
+            <Link
+              className="rounded border border-border-strong px-3 py-2 text-sm text-foreground"
+              search={{ tab: "privacy-export" }}
               to="/settings"
             >
               Export all data
             </Link>
             <Link
-              className="rounded border border-danger px-3 py-2 text-sm text-danger hover:bg-surface-hover"
-              search={{ tab: "account" }}
+              className="rounded border border-border-strong px-3 py-2 text-sm text-foreground"
+              search={{ tab: "privacy-export" }}
               to="/settings"
             >
-              Delete all data
+              Delete account data
             </Link>
           </nav>
         </section>
 
-        <div className="card p-6">
-          <h3 className="text-sm font-medium text-muted uppercase tracking-wider mb-3">
-            Current Phase
-          </h3>
-          {currentPhase.data !== undefined ? (
+        <section aria-labelledby="current-cycle-heading" className="card p-6">
+          <h2
+            className="mb-3 text-sm font-medium uppercase tracking-wider text-muted"
+            id="current-cycle-heading"
+          >
+            Current phase
+          </h2>
+          {currentPhase.data ? (
             currentPhase.data.phase && currentPhase.data.estimate ? (
               <div>
                 <div className="flex items-center gap-4">
                   <div
-                    className="w-16 h-16 rounded-full flex items-center justify-center text-white font-bold text-lg"
+                    className="flex h-16 w-16 items-center justify-center rounded-full text-lg font-bold text-white"
                     style={{ backgroundColor: PHASE_DISPLAY[currentPhase.data.phase].color }}
                   >
+                    <span className="sr-only">Current cycle day </span>
                     {currentPhase.data.dayOfCycle}
                   </div>
                   <div>
-                    <div className="text-lg font-semibold">
-                      {currentPhase.data.estimate.phaseLabel}
-                    </div>
-                    <div className="text-xs text-dim">
-                      {currentPhase.data.estimate.cycleDayLabel}
-                    </div>
+                    <p className="text-lg font-semibold">{currentPhase.data.estimate.phaseLabel}</p>
+                    <p className="text-xs text-dim">{currentPhase.data.estimate.cycleDayLabel}</p>
                   </div>
                 </div>
                 <div className="mt-4 space-y-1 text-sm text-muted">
@@ -133,22 +87,28 @@ function CyclePage() {
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-dim">{currentPhase.data.availability.label}</p>
+              <div className="space-y-2 text-sm text-muted">
+                <p>{currentPhase.data.availability.label}</p>
+                {currentPhase.data.availability.status === "no-history" ? (
+                  <p>
+                    HealthKit cannot reveal whether read access was denied. Review Apple Health
+                    permissions and sync status in Data sources.
+                  </p>
+                ) : null}
+              </div>
             )
           ) : currentPhase.isLoading ? (
-            <QueryStatePanel variant="loading" height={96} />
+            <QueryStatePanel contextLabel="Current cycle phase" height={96} variant="loading" />
           ) : currentPhase.error ? (
-            <QueryStatePanel error={currentPhase.error} height={96} />
-          ) : (
             <QueryStatePanel
-              variant="empty"
-              message="No active cycle detected. Log a period start to begin tracking."
+              contextLabel="Current cycle phase"
+              error={currentPhase.error}
               height={96}
             />
+          ) : (
+            <QueryStatePanel message="No readable provider cycle data yet." height={96} />
           )}
-          {currentPhase.data !== undefined && currentPhase.error ? (
-            <QueryStatePanel error={currentPhase.error} height={72} />
-          ) : null}
+
           <aside
             aria-label="Cycle tracking safety notice"
             className="mt-4 rounded-lg border border-border bg-surface-hover p-3"
@@ -157,234 +117,45 @@ function CyclePage() {
             <p className="text-sm font-medium text-foreground">Tracking limitation</p>
             <p className="mt-1 text-sm text-muted">{CYCLE_TRACKING_SAFETY_NOTICE}</p>
           </aside>
-        </div>
+        </section>
 
-        <div className="card p-6">
-          <h3 className="text-sm font-medium text-muted uppercase tracking-wider mb-3">
-            Log Period Start
-          </h3>
-          <div className="space-y-3">
-            <label className="block space-y-1 text-xs text-muted">
-              Symptoms or context (optional)
-              <input
-                aria-label="Period symptoms or context"
-                className="block w-full rounded border border-border bg-surface px-3 py-2 text-sm text-foreground"
-                onChange={(event) => setPeriodNotes(event.target.value)}
-                type="text"
-                value={periodNotes}
-              />
-            </label>
-            <div className="flex items-center gap-3">
-              <input
-                type="date"
-                aria-label="Period start date"
-                value={startDate}
-                onChange={(event) => setStartDate(event.target.value)}
-                className="bg-surface border border-border rounded px-3 py-2 text-sm text-foreground"
-              />
-              <button
-                type="button"
-                onClick={() => logMutation.mutate({ startDate, notes: periodNotes.trim() || null })}
-                disabled={logMutation.isPending}
-                className="px-4 py-2 bg-accent text-on-accent rounded text-sm font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
-              >
-                {logMutation.isPending ? "Saving..." : logMutation.error ? "Retry" : "Log Period"}
-              </button>
-            </div>
-          </div>
-          {logMutation.error ? (
-            <div className="mt-3">
-              <QueryStatePanel error={logMutation.error} height={72} />
-            </div>
-          ) : null}
-        </div>
-
-        <div className="card p-6" id="period-history">
-          <h3 className="text-sm font-medium text-muted uppercase tracking-wider mb-3">
-            Period History
-          </h3>
-          {periodHistory.data !== undefined ? (
-            periodHistory.data.length > 0 ? (
-              <div className="space-y-2">
-                {[...periodHistory.data].reverse().map((period) => (
-                  <div key={period.id} className="py-3 border-b border-border last:border-0">
-                    {editDraft?.id === period.id ? (
-                      <form
-                        className="space-y-3"
-                        onSubmit={(event) => {
-                          event.preventDefault();
-                          updateMutation.mutate({
-                            id: editDraft.id,
-                            startDate: editDraft.startDate,
-                            endDate: editDraft.endDate || null,
-                            notes: editDraft.notes.trim() || null,
-                          });
-                        }}
-                      >
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <label className="space-y-1 text-xs text-muted">
-                            Start date
-                            <input
-                              aria-label="Corrected period start date"
-                              className="block w-full rounded border border-border bg-surface px-3 py-2 text-sm text-foreground"
-                              onChange={(event) =>
-                                setEditDraft({ ...editDraft, startDate: event.target.value })
-                              }
-                              type="date"
-                              value={editDraft.startDate}
-                            />
-                          </label>
-                          <label className="space-y-1 text-xs text-muted">
-                            End date (optional)
-                            <input
-                              aria-label="Corrected period end date"
-                              className="block w-full rounded border border-border bg-surface px-3 py-2 text-sm text-foreground"
-                              min={editDraft.startDate}
-                              onChange={(event) =>
-                                setEditDraft({ ...editDraft, endDate: event.target.value })
-                              }
-                              type="date"
-                              value={editDraft.endDate}
-                            />
-                          </label>
-                        </div>
-                        <label className="block space-y-1 text-xs text-muted">
-                          Notes (optional)
-                          <input
-                            aria-label="Period notes"
-                            className="block w-full rounded border border-border bg-surface px-3 py-2 text-sm text-foreground"
-                            onChange={(event) =>
-                              setEditDraft({ ...editDraft, notes: event.target.value })
-                            }
-                            type="text"
-                            value={editDraft.notes}
-                          />
-                        </label>
-                        <div className="flex gap-2">
-                          <button
-                            aria-label={
-                              updateMutation.error ? "Retry period changes" : "Save period changes"
-                            }
-                            className="rounded bg-accent px-3 py-2 text-sm font-medium text-on-accent disabled:opacity-50"
-                            disabled={updateMutation.isPending}
-                            type="submit"
-                          >
-                            {updateMutation.isPending
-                              ? "Saving..."
-                              : updateMutation.error
-                                ? "Retry"
-                                : "Save"}
-                          </button>
-                          <button
-                            className="rounded border border-border px-3 py-2 text-sm text-foreground"
-                            onClick={() => {
-                              updateMutation.reset();
-                              setEditDraft(null);
-                            }}
-                            type="button"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                        {updateMutation.error ? (
-                          <QueryStatePanel error={updateMutation.error} height={72} />
-                        ) : null}
-                      </form>
-                    ) : (
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                          <span className="text-sm text-foreground">{period.startDate}</span>
-                          {period.endDate ? (
-                            <span className="ml-1 text-sm text-dim">to {period.endDate}</span>
-                          ) : null}
-                          {period.notes ? (
-                            <p className="mt-1 text-xs text-muted">{period.notes}</p>
-                          ) : null}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {period.durationLabel ? (
-                            <span className="text-xs text-muted">{period.durationLabel}</span>
-                          ) : null}
-                          <button
-                            aria-label={`Edit period starting ${period.startDate}`}
-                            className="rounded border border-border px-2 py-1 text-xs text-foreground"
-                            onClick={() => {
-                              updateMutation.reset();
-                              deleteMutation.reset();
-                              setDeleteConfirmationId(null);
-                              setEditDraft({
-                                id: period.id,
-                                startDate: period.startDate,
-                                endDate: period.endDate ?? "",
-                                notes: period.notes ?? "",
-                              });
-                            }}
-                            type="button"
-                          >
-                            Edit
-                          </button>
-                          {deleteConfirmationId === period.id ? (
-                            <>
-                              <button
-                                aria-label="Confirm delete period"
-                                className="rounded bg-danger px-2 py-1 text-xs text-white disabled:opacity-50"
-                                disabled={deleteMutation.isPending}
-                                onClick={() => deleteMutation.mutate({ id: period.id })}
-                                type="button"
-                              >
-                                {deleteMutation.isPending ? "Deleting..." : "Confirm delete"}
-                              </button>
-                              <button
-                                className="rounded border border-border px-2 py-1 text-xs text-foreground"
-                                onClick={() => {
-                                  deleteMutation.reset();
-                                  setDeleteConfirmationId(null);
-                                }}
-                                type="button"
-                              >
-                                Cancel
-                              </button>
-                            </>
-                          ) : (
-                            <button
-                              aria-label={`Delete period starting ${period.startDate}`}
-                              className="rounded border border-danger px-2 py-1 text-xs text-danger"
-                              onClick={() => {
-                                updateMutation.reset();
-                                deleteMutation.reset();
-                                setEditDraft(null);
-                                setDeleteConfirmationId(period.id);
-                              }}
-                              type="button"
-                            >
-                              Delete
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                    {deleteConfirmationId === period.id && deleteMutation.error ? (
-                      <div className="mt-2">
-                        <QueryStatePanel error={deleteMutation.error} height={72} />
-                      </div>
-                    ) : null}
-                  </div>
+        <section aria-labelledby="cycle-history-heading" className="card p-6" id="cycle-history">
+          <h2
+            className="mb-3 text-sm font-medium uppercase tracking-wider text-muted"
+            id="cycle-history-heading"
+          >
+            Provider cycle starts
+          </h2>
+          {history.data ? (
+            history.data.length > 0 ? (
+              <ul className="divide-y divide-border">
+                {[...history.data].reverse().map((start) => (
+                  <li aria-label={`Cycle start ${start.startDate}`} className="py-3" key={start.id}>
+                    <p className="text-sm font-medium text-foreground">{start.startDate}</p>
+                    <ul className="mt-1 flex flex-wrap gap-2 text-xs text-muted">
+                      {start.sources.map((source) => (
+                        <li
+                          className="rounded-full border border-border px-2 py-1"
+                          key={`${source.providerId}:${source.sourceBundle}:${source.sourceName}`}
+                        >
+                          {sourceLabel(source)}
+                        </li>
+                      ))}
+                    </ul>
+                  </li>
                 ))}
-              </div>
+              </ul>
             ) : (
-              <QueryStatePanel variant="empty" message="No periods logged yet." height={96} />
+              <QueryStatePanel message="No readable provider cycle starts in the past 6 months." />
             )
-          ) : periodHistory.isLoading ? (
-            <QueryStatePanel variant="loading" height={96} />
-          ) : periodHistory.error ? (
-            <QueryStatePanel error={periodHistory.error} height={96} />
+          ) : history.isLoading ? (
+            <QueryStatePanel contextLabel="Cycle history" variant="loading" />
+          ) : history.error ? (
+            <QueryStatePanel contextLabel="Cycle history" error={history.error} />
           ) : (
-            <QueryStatePanel variant="empty" message="No periods logged yet." height={96} />
+            <QueryStatePanel message="No readable provider cycle starts in the past 6 months." />
           )}
-          {periodHistory.data !== undefined && periodHistory.error ? (
-            <QueryStatePanel error={periodHistory.error} height={72} />
-          ) : null}
-        </div>
+        </section>
       </div>
     </PageLayout>
   );

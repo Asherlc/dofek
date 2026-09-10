@@ -1,5 +1,9 @@
 import { formatDateMedium } from "@dofek/format/format";
 import { formatMeasurementText, type UnitConverter } from "@dofek/format/units";
+import {
+  strengthExerciseDisplayLabels,
+  strengthExerciseIdentityKey,
+} from "@dofek/training/training";
 import type { ProgressiveOverloadRow } from "dofek-server/types";
 import { chartColors, dofekAxis, dofekGrid, dofekSeries } from "../lib/chartTheme.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
@@ -32,6 +36,7 @@ function SparklineChart({ values }: { values: number[] }) {
 
 export function ProgressiveOverloadCards({ exercises, loading }: ProgressiveOverloadCardsProps) {
   const units = useUnitConverter();
+  const exerciseLabels = strengthExerciseDisplayLabels(exercises);
 
   if (loading || exercises.length === 0) {
     return (
@@ -47,34 +52,44 @@ export function ProgressiveOverloadCards({ exercises, loading }: ProgressiveOver
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-      {exercises.map((exercise) => (
-        <div key={exercise.exerciseName} className="card p-4">
-          <div className="text-sm font-medium text-foreground truncate mb-2">
-            {exercise.exerciseName}
+      {exercises.map((exercise, exerciseIndex) => {
+        const presentation = exerciseLabels[exerciseIndex];
+        return (
+          <div key={strengthExerciseIdentityKey(exercise)} className="card p-4">
+            <div className="mb-2">
+              <div className="text-sm font-medium text-foreground truncate">
+                {presentation?.baseLabel ?? exercise.exerciseName}
+              </div>
+              {presentation?.discriminator ? (
+                <div className="mt-0.5 text-xs text-muted whitespace-normal break-words">
+                  {presentation.discriminator}
+                </div>
+              ) : null}
+            </div>
+            <div className="text-xs text-muted mb-2">
+              {trendLabel(exercise.trend)}{" "}
+              {formatMeasurementText(units.formatWeight(Math.abs(exercise.slopeKgPerWeek)))}/week
+            </div>
+            <div className="text-xs text-muted mb-1">
+              {formatDateMedium(exercise.period.startWeek)} –{" "}
+              {formatDateMedium(exercise.period.endWeek)}
+            </div>
+            <div className="text-xs text-muted mb-2">
+              {exercise.period.observationCount} recorded weeks across{" "}
+              {exercise.period.elapsedWeekCount} calendar weeks
+            </div>
+            <div className="text-xs text-muted mb-1">{uncertaintyLabel(exercise, units)}</div>
+            <div className="text-xs text-muted mb-2">{exercise.uncertainty.statement}</div>
+            <div className="text-xs text-muted mb-1">{exercise.interpretation}</div>
+            <div className="text-xs text-muted mb-2">{exercise.deloadContext}</div>
+            {exercise.observations.length >= 2 && (
+              <SparklineChart
+                values={exercise.observations.map((observation) => observation.totalVolumeKg)}
+              />
+            )}
           </div>
-          <div className="text-xs text-muted mb-2">
-            {trendLabel(exercise.trend)}{" "}
-            {formatMeasurementText(units.formatWeight(Math.abs(exercise.slopeKgPerWeek)))}/week
-          </div>
-          <div className="text-xs text-muted mb-1">
-            {formatDateMedium(exercise.period.startWeek)} –{" "}
-            {formatDateMedium(exercise.period.endWeek)}
-          </div>
-          <div className="text-xs text-muted mb-2">
-            {exercise.period.observationCount} recorded weeks across{" "}
-            {exercise.period.elapsedWeekCount} calendar weeks
-          </div>
-          <div className="text-xs text-muted mb-1">{uncertaintyLabel(exercise, units)}</div>
-          <div className="text-xs text-muted mb-2">{exercise.uncertainty.statement}</div>
-          <div className="text-xs text-muted mb-1">{exercise.interpretation}</div>
-          <div className="text-xs text-muted mb-2">{exercise.deloadContext}</div>
-          {exercise.observations.length >= 2 && (
-            <SparklineChart
-              values={exercise.observations.map((observation) => observation.totalVolumeKg)}
-            />
-          )}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

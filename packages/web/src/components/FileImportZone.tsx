@@ -1,4 +1,5 @@
 import { formatTime } from "@dofek/format/format";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -12,6 +13,7 @@ import {
 } from "../lib/resumable-file-upload.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
+import { useUnitSystem } from "../lib/unitContext.ts";
 import type { SyncLogEntry, SyncStatus } from "./DataSourcesSyncTypes.ts";
 import { FileImportButton } from "./FileImportButton.tsx";
 import { OperationProgressBar } from "./OperationProgressBar.tsx";
@@ -67,6 +69,12 @@ export function FileImportZone({
   showDetailsLink = true,
   activeImport,
 }: FileImportZoneProps) {
+  const { unitSystem } = useUnitSystem();
+  const [selectedWeightUnitOverride, setSelectedWeightUnitOverride] = useState<"kg" | "lbs" | null>(
+    null,
+  );
+  const selectedWeightUnit =
+    selectedWeightUnitOverride ?? weightUnit ?? (unitSystem === "imperial" ? "lbs" : "kg");
   const [state, setState] = useState<{
     phase: DisplayPhase;
     progress: number;
@@ -74,14 +82,27 @@ export function FileImportZone({
     failedCount?: number;
   }>({ phase: "idle", progress: 0 });
   const [dragOver, setDragOver] = useState(false);
+  const [successfullyCancelledUploadId, setSuccessfullyCancelledUploadId] = useState<string | null>(
+    null,
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const localUploadActiveRef = useRef(false);
+  const uploadInProgressRef = useRef(false);
+  const uploadGenerationRef = useRef(0);
   const currentUploadIdRef = useRef<string | null>(null);
   const cancelledUploadIdRef = useRef<string | null>(null);
+  const pollControllerRef = useRef<AbortController | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stoppedRef = useRef(false);
   const validProviderId = providerId?.length ? providerId : null;
   const sessionKey = providerId ?? importType;
+  const activeImportUploadId = activeImport ? uploadIdFromJobId(activeImport.jobId) : null;
+  const activeImportWasCancelled =
+    activeImportUploadId !== null && activeImportUploadId === successfullyCancelledUploadId;
+  const activeImportInProgress =
+    (activeImport?.status === "queued" || activeImport?.status === "running") &&
+    !activeImportWasCancelled;
   const { mutateAsync: initiateUpload } = trpc.fileUpload.initiate.useMutation({
     meta: locallyReportedErrorMeta,
   });
@@ -145,7 +166,7 @@ export function FileImportZone({
           setState({
             phase: "failed",
             progress: 0,
-            message: error instanceof Error ? error.message : "Upload status is unavailable",
+            message: userFacingErrorMessage(error, "Upload status is unavailable"),
           });
           return;
         }
@@ -186,11 +207,19 @@ export function FileImportZone({
   useEffect(() => {
     const controller = new AbortController();
     const signal = controller.signal;
+    const sessionGeneration = uploadGenerationRef.current;
     stoppedRef.current = false;
     void indexedDbUploadSessionStore
       .get(sessionKey)
       .then((session) => {
-        if (session && !stoppedRef.current && !signal.aborted) {
+        if (
+          session &&
+          sessionGeneration === uploadGenerationRef.current &&
+          !uploadInProgressRef.current &&
+          !activeImportInProgress &&
+          !stoppedRef.current &&
+          !signal.aborted
+        ) {
           currentUploadIdRef.current = session.uploadId;
           setState({
             phase: "cancelled",
@@ -200,30 +229,48 @@ export function FileImportZone({
         }
       })
       .catch((error: unknown) => {
-        if (stoppedRef.current || signal.aborted) return;
+        if (
+          sessionGeneration !== uploadGenerationRef.current ||
+          uploadInProgressRef.current ||
+          activeImportInProgress ||
+          stoppedRef.current ||
+          signal.aborted
+        ) {
+          return;
+        }
         captureException(error, { tags: { uploadId: "pending" } });
         setState({
           phase: "failed",
           progress: 0,
-          message: error instanceof Error ? error.message : "Upload session storage is unavailable",
+          message: userFacingErrorMessage(error, "Upload session storage is unavailable"),
         });
       });
-    const activeUploadId = activeImport ? uploadIdFromJobId(activeImport.jobId) : null;
-    if (activeUploadId && activeUploadId !== cancelledUploadIdRef.current) {
-      void pollUpload(activeUploadId, signal);
+    if (activeImportUploadId && activeImportUploadId !== cancelledUploadIdRef.current) {
+      pollControllerRef.current?.abort();
+      pollControllerRef.current = controller;
+      void pollUpload(activeImportUploadId, signal);
     }
     return () => {
       stoppedRef.current = true;
       controller.abort();
+      pollControllerRef.current?.abort();
+      pollControllerRef.current = null;
       abortControllerRef.current?.abort();
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [activeImport, pollUpload, sessionKey]);
+  }, [activeImportInProgress, activeImportUploadId, pollUpload, sessionKey]);
 
   const uploadFile = useCallback(
     async (file: File) => {
+      if (uploadInProgressRef.current || activeImportInProgress) return;
+      const uploadGeneration = ++uploadGenerationRef.current;
+      uploadInProgressRef.current = true;
+      pollControllerRef.current?.abort();
+      pollControllerRef.current = null;
       const abortController = new AbortController();
       abortControllerRef.current = abortController;
+      localUploadActiveRef.current = true;
+      currentUploadIdRef.current = null;
       stoppedRef.current = false;
       try {
         const completed = await runResumableFileUpload({
@@ -234,7 +281,10 @@ export function FileImportZone({
           sessionStore: indexedDbUploadSessionStore,
           signal: abortController.signal,
           fullSync,
-          weightUnit,
+          weightUnit: importType === "strong-csv" ? selectedWeightUnit : weightUnit,
+          onUploadInitiated: (uploadId) => {
+            currentUploadIdRef.current = uploadId;
+          },
           onProgress: (progress) =>
             setState({
               phase: progress.phase,
@@ -242,9 +292,19 @@ export function FileImportZone({
               message: progress.message,
             }),
         });
+        localUploadActiveRef.current = false;
         currentUploadIdRef.current = completed.uploadId;
+        const pollController = abortController.signal.aborted
+          ? new AbortController()
+          : abortController;
+        if (pollController !== abortController) {
+          stoppedRef.current = false;
+          cancelledUploadIdRef.current = null;
+          abortControllerRef.current = pollController;
+        }
+        pollControllerRef.current = pollController;
         setState({ phase: "processing", progress: 0, message: "Processing import..." });
-        await pollUpload(completed.uploadId, abortController.signal);
+        await pollUpload(completed.uploadId, pollController.signal);
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
           setState({ phase: "cancelled", progress: 0, message: "Upload cancelled" });
@@ -254,28 +314,50 @@ export function FileImportZone({
         setState({
           phase: "failed",
           progress: 0,
-          message: error instanceof Error ? error.message : "Upload failed",
+          message: userFacingErrorMessage(error, "Upload failed"),
         });
       } finally {
-        abortControllerRef.current = null;
+        localUploadActiveRef.current = false;
+        if (uploadGeneration === uploadGenerationRef.current) uploadInProgressRef.current = false;
+        if (abortControllerRef.current === abortController) abortControllerRef.current = null;
       }
     },
-    [fullSync, importType, pollUpload, sessionKey, uploadApi, weightUnit],
+    [
+      activeImportInProgress,
+      fullSync,
+      importType,
+      pollUpload,
+      selectedWeightUnit,
+      sessionKey,
+      uploadApi,
+      weightUnit,
+    ],
   );
 
   const cancelUpload = useCallback(async () => {
+    const localUploadActive = localUploadActiveRef.current;
     abortControllerRef.current?.abort();
+    pollControllerRef.current?.abort();
     stoppedRef.current = true;
     const uploadId = currentUploadIdRef.current;
     cancelledUploadIdRef.current = uploadId;
     let cancellationError: unknown;
-    if (uploadId) {
+    if (!localUploadActive && uploadId) {
       try {
         await uploadApi.abort({ uploadId });
+        setSuccessfullyCancelledUploadId(uploadId);
       } catch (error) {
         cancellationError = error;
         captureException(error, { tags: { uploadId } });
+      } finally {
+        try {
+          await trpcUtils.sync.activeImports.invalidate();
+        } catch (error) {
+          captureException(error, { tags: { uploadId } });
+        }
       }
+    }
+    if (!localUploadActive && uploadId) {
       try {
         await indexedDbUploadSessionStore.delete(sessionKey);
       } catch (error) {
@@ -283,20 +365,42 @@ export function FileImportZone({
         setState({
           phase: "failed",
           progress: 0,
-          message: error instanceof Error ? error.message : "Local upload cleanup failed",
+          message: userFacingErrorMessage(error, "Local upload cleanup failed"),
         });
         return;
       }
+    }
+    if (!localUploadActive && uploadId && cancellationError) {
+      const pollController = new AbortController();
+      stoppedRef.current = false;
+      cancelledUploadIdRef.current = null;
+      pollControllerRef.current = pollController;
+      setState({
+        phase: "processing",
+        progress: 0,
+        message:
+          cancellationError instanceof Error
+            ? userFacingErrorMessage(
+                cancellationError,
+                "The import could not be cancelled. Its status is being refreshed.",
+              )
+            : "Unable to cancel import. Import status is being refreshed.",
+      });
+      void pollUpload(uploadId, pollController.signal);
+      return;
     }
     setState({
       phase: "cancelled",
       progress: 0,
       message:
         cancellationError instanceof Error
-          ? `Upload cancelled locally. ${cancellationError.message}`
+          ? userFacingErrorMessage(
+              cancellationError,
+              "The upload was cancelled on this device, but the server could not be reached.",
+            )
           : "Upload cancelled",
     });
-  }, [sessionKey, uploadApi]);
+  }, [pollUpload, sessionKey, trpcUtils, uploadApi]);
 
   const handleFileSelect = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -362,7 +466,30 @@ export function FileImportZone({
           </div>
         ) : (
           <div className="space-y-2">
-            <div className="text-xs text-dim">{state.message ?? description}</div>
+            <div className="text-xs text-dim">
+              {state.phase === "failed"
+                ? userFacingErrorMessage(
+                    state.message,
+                    "The file could not be imported. Check the file and try again.",
+                  )
+                : (state.message ?? description)}
+            </div>
+            {importType === "strong-csv" && (
+              <label className="inline-flex items-center gap-2 text-xs text-muted">
+                Weight unit
+                <select
+                  aria-label="Weight unit"
+                  value={selectedWeightUnit}
+                  onChange={(event) =>
+                    setSelectedWeightUnitOverride(event.target.value === "lbs" ? "lbs" : "kg")
+                  }
+                  className="rounded-md border border-border bg-surface px-2 py-1.5 text-xs text-foreground"
+                >
+                  <option value="kg">kg</option>
+                  <option value="lbs">lbs</option>
+                </select>
+              </label>
+            )}
             <FileImportButton onClick={() => fileInputRef.current?.click()} />
           </div>
         )}

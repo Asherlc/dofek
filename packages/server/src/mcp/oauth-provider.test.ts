@@ -14,11 +14,7 @@ import type {
 import type { Database } from "dofek/db";
 import { response as expressResponse, type Response } from "express";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  DofekOAuthServerProvider,
-  MCP_OAUTH_SCOPES,
-  oauthAccessTokenName,
-} from "./oauth-provider.ts";
+import { DofekOAuthServerProvider, oauthAccessTokenName } from "./oauth-provider.ts";
 
 const mocks = vi.hoisted(() => ({
   createAuthorizationCode: vi.fn(),
@@ -197,6 +193,32 @@ describe("DofekOAuthServerProvider", () => {
       expect(html).toContain("Search your activities");
     });
 
+    it("displays nutrition write consent only when requested", async () => {
+      const client = makeClient();
+      const requested = makeResponse({ mcpOAuthUserId: "user-1" });
+      await provider().authorize(
+        client,
+        makeParams({ scopes: ["nutrition:read", "nutrition:write"] }),
+        requested.response,
+      );
+
+      const requestedHtml = requested.mocks.send.mock.calls[0]?.[0] ?? "";
+      expect(requestedHtml).toContain("View your nutrition summaries");
+      expect(requestedHtml).toContain("Modify your food records");
+      expect(requestedHtml).toContain('value="nutrition:read nutrition:write"');
+
+      const readOnly = makeResponse({ mcpOAuthUserId: "user-1" });
+      await provider().authorize(
+        client,
+        makeParams({ scopes: ["nutrition:read"] }),
+        readOnly.response,
+      );
+
+      expect(readOnly.mocks.send.mock.calls[0]?.[0] ?? "").not.toContain(
+        "Modify your food records",
+      );
+    });
+
     it("omits the state hidden field when no state parameter is present", async () => {
       const client = makeClient();
       const params = makeParams({ scopes: ["health:read"] });
@@ -218,11 +240,14 @@ describe("DofekOAuthServerProvider", () => {
       const html = responseMocks.send.mock.calls[0]?.[0] ?? "";
       expect(html).toContain("Allow the MCP client to access Dofek?");
       expect(html).toContain("View your daily health summaries");
+      expect(html).not.toContain("Log health observations");
       expect(html).toContain("Search your activities");
-      expect(html).toContain("Log food entries");
       expect(html).toContain("View your connected data sources");
+      expect(html).not.toContain("Modify your food records");
       expect(html).toContain("Start data synchronization");
-      expect(html).toContain(`value="${MCP_OAUTH_SCOPES.join(" ")}"`);
+      expect(html).toContain(
+        'value="health:read activity:read nutrition:read providers:read sync:write"',
+      );
     });
 
     it("treats an empty scopes array as requesting the default scopes", async () => {
@@ -233,8 +258,24 @@ describe("DofekOAuthServerProvider", () => {
       await provider().authorize(client, params, response);
 
       const html = responseMocks.send.mock.calls[0]?.[0] ?? "";
-      expect(html).toContain(`value="${MCP_OAUTH_SCOPES.join(" ")}"`);
+      expect(html).toContain(
+        'value="health:read activity:read nutrition:read providers:read sync:write"',
+      );
+      expect(html).not.toContain("Log health observations");
+      expect(html).not.toContain("Modify your food records");
       expect(html).toContain("Start data synchronization");
+    });
+
+    it("includes health write when the client explicitly requests it", async () => {
+      const client = makeClient();
+      const params = makeParams({ scopes: ["health:read", "health:write"] });
+      const { response, mocks: responseMocks } = makeResponse({ mcpOAuthUserId: "user-1" });
+
+      await provider().authorize(client, params, response);
+
+      const html = responseMocks.send.mock.calls[0]?.[0] ?? "";
+      expect(html).toContain('value="health:read health:write"');
+      expect(html).toContain("Log health observations");
     });
 
     it("HTML-escapes the client name on the consent screen", async () => {

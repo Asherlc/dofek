@@ -208,9 +208,7 @@ export default function TrackingScreen() {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.heading}>
         <Text style={styles.title}>Journal Trends</Text>
-        <Text style={styles.subtitle}>
-          Review exact numeric and Yes/No journal observations over time
-        </Text>
+        <Text style={styles.subtitle}>See how your journal entries change over time</Text>
       </View>
 
       <DaySelector days={days} description={description} onChange={setDays} />
@@ -236,8 +234,8 @@ export default function TrackingScreen() {
           ) : null}
           <QueryStatePanel
             variant="empty"
-            title="No numeric journal data to chart"
-            message="Log a numeric or Yes/No journal value to start reviewing trends."
+            title="No journal trends yet"
+            message="Sync journal entries with numbers or Yes/No answers to see trends."
           />
         </>
       ) : evidence ? (

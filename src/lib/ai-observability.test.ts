@@ -9,7 +9,9 @@ import {
 
 const aiTelemetryMocks = vi.hoisted(() => ({
   registerTelemetry: vi.fn(),
-  OpenTelemetry: vi.fn().mockImplementation(() => ({})),
+  OpenTelemetry: vi.fn(function vitestConstructor() {
+    return {};
+  }),
 }));
 
 vi.mock("ai", () => ({

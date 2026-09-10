@@ -7,13 +7,13 @@ import { SubjectiveTrackingPanel } from "../components/SubjectiveTrackingPanel.t
 export function TrackingPage() {
   return (
     <PageLayout>
-      <PageSection title="Journal" subtitle="Daily behavioral self-reports and trends">
+      <PageSection title="Journal" subtitle="See how your journal entries change over time">
         <JournalPanel />
       </PageSection>
       <PageSection title="Life Events" subtitle="Track changes and see their impact">
         <LifeEventsPanel />
       </PageSection>
-      <PageSection title="Body State" subtitle="Log soreness, stiffness, tenderness, and niggles">
+      <PageSection title="Injuries and Niggles" subtitle="Track injury events and their impact">
         <SubjectiveTrackingPanel />
       </PageSection>
     </PageLayout>

@@ -22,6 +22,20 @@ const cdnAssetPrefix = URL.canParse(normalizedAssetBase)
   ? new URL("assets/", normalizedAssetBase).href
   : null;
 
+// Workbox matches navigation routes against pathname + search, so every
+// server-owned prefix must recognize query-string boundaries too.
+const SERVER_OWNED_NAVIGATION_DENYLIST = [
+  /^\/api(?:[/?]|$)/,
+  /^\/auth(?:[/?]|$)/,
+  /^\/callback(?:[/?]|$)/,
+  /^\/authorize(?:[/?]|$)/,
+  /^\/admin\/queues(?:[/?]|$)/,
+  /^\/\.well-known(?:[/?]|$)/,
+  /^\/(?:healthz|readyz|metrics)(?:[/?]|$)/,
+  /^\/(?:register|token|revoke)(?:[/?]|$)/,
+  /^\/assets(?:[/?]|$)/,
+];
+
 if (process.env.REQUIRE_SENTRY_AUTH_TOKEN === "true" && !process.env.SENTRY_AUTH_TOKEN) {
   throw new Error("SENTRY_AUTH_TOKEN is required when REQUIRE_SENTRY_AUTH_TOKEN is true.");
 }
@@ -102,17 +116,7 @@ export default defineConfig({
       },
       workbox: {
         navigateFallback: "index.html",
-        navigateFallbackDenylist: [
-          /^\/api(?:\/|$)/,
-          /^\/auth(?:\/|$)/,
-          /^\/callback(?:\/|$)/,
-          /^\/authorize(?:\/|$)/,
-          /^\/admin\/queues(?:\/|$)/,
-          /^\/\.well-known(?:\/|$)/,
-          /^\/(?:healthz|readyz|metrics)(?:\/|$)/,
-          /^\/(?:register|token|revoke)(?:\/|$)/,
-          /^\/assets(?:\/|$)/,
-        ],
+        navigateFallbackDenylist: SERVER_OWNED_NAVIGATION_DENYLIST,
         ...(cdnAssetPrefix
           ? {
               modifyURLPrefix: {

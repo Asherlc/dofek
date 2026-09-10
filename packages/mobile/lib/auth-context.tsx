@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import {
   createContext,
   type ReactNode,
@@ -180,7 +181,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       captureException(error, { source: "auth-state-restore" });
       updateUser(null);
-      setBootstrapError(error instanceof Error ? error.message : String(error));
+      setBootstrapError(
+        userFacingErrorMessage(error, "Your session could not be restored. Please sign in again."),
+      );
       startupOutcome = "error";
     } finally {
       finishStartupPhase("authentication", startupOutcome);

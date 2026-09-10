@@ -87,7 +87,7 @@ live_sleep AS (
         sleep.awake_minutes AS awake_minutes,
         sleep.efficiency_pct AS efficiency_pct,
         sleep.staging_available AS staging_available
-    FROM analytics.v_sleep AS sleep
+    FROM {{ source('analytics', 'v_sleep') }} AS sleep
     INNER JOIN changed_users
         ON changed_users.user_id = sleep.user_id
     WHERE sleep.is_nap = false
@@ -247,96 +247,96 @@ rows_to_write AS (
         dirty_dates.user_id AS user_id,
         dirty_dates.date AS date,
         if(
-            selected_sleep.user_id IS NULL,
+            selected_sleep.user_id IS null,
             current_rows.provider_id,
             selected_sleep.provider_id
         ) AS provider_id,
         if(
-            selected_sleep.user_id IS NULL,
+            selected_sleep.user_id IS null,
             current_rows.source_name,
             selected_sleep.source_name
         ) AS source_name,
         if(
-            selected_sleep.user_id IS NULL,
+            selected_sleep.user_id IS null,
             current_rows.source_providers,
             selected_sleep.source_providers
         ) AS source_providers,
         if(
-            selected_sleep.user_id IS NULL,
+            selected_sleep.user_id IS null,
             current_rows.selected_session_id,
             selected_sleep.selected_session_id
         ) AS selected_session_id,
         if(
-            selected_sleep.user_id IS NULL,
+            selected_sleep.user_id IS null,
             current_rows.overlapping_sessions,
             selected_sleep.overlapping_sessions
         ) AS overlapping_sessions,
         if(
-            selected_sleep.user_id IS NULL,
+            selected_sleep.user_id IS null,
             current_rows.timezone,
             selected_sleep.timezone
         ) AS timezone,
         if(
-            selected_sleep.user_id IS NULL,
+            selected_sleep.user_id IS null,
             current_rows.start_utc_offset_minutes,
             selected_sleep.start_utc_offset_minutes
         ) AS start_utc_offset_minutes,
         if(
-            selected_sleep.user_id IS NULL,
+            selected_sleep.user_id IS null,
             current_rows.end_utc_offset_minutes,
             selected_sleep.end_utc_offset_minutes
         ) AS end_utc_offset_minutes,
         if(
-            selected_sleep.user_id IS NULL,
+            selected_sleep.user_id IS null,
             current_rows.local_time_source,
             selected_sleep.local_time_source
         ) AS local_time_source,
         if(
-            selected_sleep.user_id IS NULL,
+            selected_sleep.user_id IS null,
             current_rows.started_at,
             selected_sleep.started_at
         ) AS started_at,
         if(
-            selected_sleep.user_id IS NULL,
+            selected_sleep.user_id IS null,
             current_rows.ended_at,
             selected_sleep.ended_at
         ) AS ended_at,
         if(
-            selected_sleep.user_id IS NULL,
+            selected_sleep.user_id IS null,
             current_rows.duration_minutes,
             selected_sleep.duration_minutes
         ) AS duration_minutes,
         if(
-            selected_sleep.user_id IS NULL,
+            selected_sleep.user_id IS null,
             current_rows.deep_minutes,
             selected_sleep.deep_minutes
         ) AS deep_minutes,
         if(
-            selected_sleep.user_id IS NULL,
+            selected_sleep.user_id IS null,
             current_rows.rem_minutes,
             selected_sleep.rem_minutes
         ) AS rem_minutes,
         if(
-            selected_sleep.user_id IS NULL,
+            selected_sleep.user_id IS null,
             current_rows.light_minutes,
             selected_sleep.light_minutes
         ) AS light_minutes,
         if(
-            selected_sleep.user_id IS NULL,
+            selected_sleep.user_id IS null,
             current_rows.awake_minutes,
             selected_sleep.awake_minutes
         ) AS awake_minutes,
         if(
-            selected_sleep.user_id IS NULL,
+            selected_sleep.user_id IS null,
             current_rows.efficiency_pct,
             selected_sleep.efficiency_pct
         ) AS efficiency_pct,
         if(
-            selected_sleep.user_id IS NULL,
+            selected_sleep.user_id IS null,
             current_rows.staging_available,
             selected_sleep.staging_available
         ) AS staging_available,
-        if(selected_sleep.user_id IS NULL, 1, 0) AS is_deleted
+        if(selected_sleep.user_id IS null, 1, 0) AS is_deleted
     FROM dirty_dates
     LEFT JOIN selected_sleep
         ON selected_sleep.user_id = dirty_dates.user_id

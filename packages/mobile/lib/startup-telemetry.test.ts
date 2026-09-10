@@ -3,9 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => {
   const spans: Array<{
     options: Record<string, unknown>;
-    end: ReturnType<typeof vi.fn>;
-    setAttributes: ReturnType<typeof vi.fn>;
-    setStatus: ReturnType<typeof vi.fn>;
+    end: CallableVitestMock;
+    setAttributes: CallableVitestMock;
+    setStatus: CallableVitestMock;
   }> = [];
   const mockAppLoaded = vi.fn();
   const mockLoggerInfo = vi.fn();

@@ -20,6 +20,18 @@ const schemaDriftCases = [
     "member_activity_ids has type Array(String)",
   ],
   ["group_id", [["group_id", "Array(UUID)"]], "group_id has type Array(UUID)"],
+  ["string group array", [["group_id", "Array(String)"]], "group_id has type Array(String)"],
+  ["numeric group", [["group_id", "UInt64"]], "group_id has type UInt64"],
+  [
+    "source activity string",
+    [["source_activity_id", "String"]],
+    "source_activity_id has type String",
+  ],
+  [
+    "source activity array",
+    [["source_activity_id", "Array(UUID)"]],
+    "source_activity_id has type Array(UUID)",
+  ],
   ["unmapped ownership", [["owner_id", "UUID"]], "owner_id is not mapped"],
   ["strong personal data", [["email", "String"]], "without an ownership relation"],
   [
@@ -33,6 +45,15 @@ const schemaDriftCases = [
 ] satisfies readonly (readonly [string, readonly ColumnDefinition[], string])[];
 
 const stagingSchemaDriftCases = [
+  ["group ownership family changes", [["group_id", "UUID"]], [["group_id", "String"]]],
+  [
+    "staging omits source activity",
+    [["user_id", "UUID"]],
+    [
+      ["user_id", "UUID"],
+      ["source_activity_id", "Nullable(UUID)"],
+    ],
+  ],
   [
     "staging has an extra ownership column",
     [
@@ -139,6 +160,117 @@ function successfulQuery() {
 }
 
 describe("eraseClickHouseAccount", () => {
+  it.each(["UUID", "Nullable(UUID)"])(
+    "erases selected sleep session relations typed %s",
+    async (type) => {
+      const sleepId = "50000000-0000-4000-8000-000000001994";
+      const command = vi.fn<ClickHouseCommandClient["command"]>(async () => undefined);
+      const insert = vi.fn<NonNullable<ClickHouseCommandClient["insert"]>>(async () => undefined);
+      const query = queryReturningTables([
+        managedTable("daily_sleep", [["selected_session_id", type]]),
+      ]);
+      await eraseClickHouseAccount(
+        { command, insert, query },
+        {
+          activityIds: [],
+          operationIds: [],
+          sleepSessionIds: [sleepId],
+          userId,
+        },
+      );
+      const capture = query.mock.calls.find(([options]) =>
+        options.query.includes(" AS sleep_ids"),
+      )?.[0];
+      expect(capture?.query).toContain("`selected_session_id` IN {sleep_ids:Array(UUID)}");
+      expect(capture?.query.replace(/\s+/g, " ")).toContain(
+        "arrayFlatten(groupArray(arrayConcat([ifNull(toString(`selected_session_id`), '')]))) ) ) AS sleep_ids",
+      );
+      expect(capture?.query_params?.sleep_ids).toEqual([sleepId]);
+      const mutation = command.mock.calls.find(([options]) =>
+        options.query.includes("ALTER TABLE `analytics`.`daily_sleep`"),
+      )?.[0];
+      expect(mutation?.query).toContain("SHA256(toString(`selected_session_id`))");
+      expect(mutation?.query_params?.sleep_ids_hashes).toEqual([
+        createHash("sha256").update(sleepId).digest("hex"),
+      ]);
+    },
+  );
+
+  it.each([
+    ["postgres_fitness", "activity", "group_id", "UUID", "activity_ids", "UUID"],
+    ["postgres_fitness", "activity", "group_id", "Nullable(UUID)", "activity_ids", "UUID"],
+    ["analytics", "activity_source_records", "group_id", "Nullable(UUID)", "activity_ids", "UUID"],
+    ["analytics", "deduped_sensor", "source_activity_id", "Nullable(UUID)", "activity_ids", "UUID"],
+    ["analytics", "legacy_groups", "group_id", "String", "string_relation_ids", "String"],
+    ["analytics", "legacy_groups", "group_id", "Nullable(String)", "string_relation_ids", "String"],
+    [
+      "analytics",
+      "legacy_groups",
+      "group_id",
+      "LowCardinality(String)",
+      "string_relation_ids",
+      "String",
+    ],
+  ])(
+    "resolves %s.%s %s %s into %s",
+    async (database, table, column, type, family, parameterType) => {
+      const activityId = "30000000-0000-4000-8000-000000001994";
+      const command = vi.fn<ClickHouseCommandClient["command"]>(async () => undefined);
+      const insert = vi.fn<NonNullable<ClickHouseCommandClient["insert"]>>(async () => undefined);
+      const query = queryReturningTables(
+        [
+          managedTable("ownership_seed", [["user_id", "UUID"]]),
+          managedTable(table, [[column, type]], database),
+          managedTable(
+            `${table}__dbt_new_data_60000000_0000_4000_8000_000000001994`,
+            [[column, type]],
+            database,
+          ),
+        ],
+        [
+          {
+            activity_ids: [activityId],
+            operation_ids: [],
+            record_ids: [],
+            sleep_ids: [],
+            string_relation_ids: ["legacy-group"],
+          },
+        ],
+      );
+
+      await eraseClickHouseAccount(
+        { command, insert, query },
+        {
+          activityIds: [activityId],
+          operationIds: [],
+          sleepSessionIds: [],
+          userId,
+        },
+      );
+
+      const capture = query.mock.calls.find(([options]) =>
+        options.query.includes(`FROM \`${database}\`.\`${table}\``),
+      )?.[0];
+      expect(capture?.query).toContain(`\`${column}\` IN {${family}:Array(${parameterType})}`);
+      expect(capture?.query.replace(/\s+/g, " ")).toContain(
+        `arrayFlatten(groupArray(arrayConcat([ifNull(toString(\`${column}\`), '')]))) ) ) AS ${family}`,
+      );
+      expect(capture?.query_params?.[family]).toEqual(
+        family === "activity_ids" ? [activityId] : ["legacy-group"],
+      );
+      const mutation = command.mock.calls.find(([options]) =>
+        options.query.includes(`ALTER TABLE \`${database}\`.\`${table}\``),
+      )?.[0];
+      expect(mutation?.query).toContain(`SHA256(toString(\`${column}\`))`);
+      expect(mutation?.query).toContain(`{${family}_hashes:Array(String)}`);
+      expect(mutation?.query_params?.[`${family}_hashes`]).toEqual([
+        createHash("sha256")
+          .update(family === "activity_ids" ? activityId : "legacy-group")
+          .digest("hex"),
+      ]);
+    },
+  );
+
   it("uses only the production database allowlist and disables query logging for PII work", async () => {
     const command = vi.fn<ClickHouseCommandClient["command"]>(async () => undefined);
     const insert = vi.fn<NonNullable<ClickHouseCommandClient["insert"]>>(async () => undefined);
@@ -469,75 +601,76 @@ describe("eraseClickHouseAccount", () => {
     );
   });
 
-  it.each(
-    schemaDriftCases,
-  )("rejects schema drift in %s before deleting rows", async (_label, columns, message) => {
-    const command = vi.fn<ClickHouseCommandClient["command"]>(async () => undefined);
-    const insert = vi.fn<NonNullable<ClickHouseCommandClient["insert"]>>(async () => undefined);
-    const query = queryReturningTables([managedTable("schema_drift", columns)]);
+  it.each(schemaDriftCases)(
+    "rejects schema drift in %s before deleting rows",
+    async (_label, columns, message) => {
+      const command = vi.fn<ClickHouseCommandClient["command"]>(async () => undefined);
+      const insert = vi.fn<NonNullable<ClickHouseCommandClient["insert"]>>(async () => undefined);
+      const query = queryReturningTables([managedTable("schema_drift", columns)]);
 
-    await expect(
-      eraseClickHouseAccount(
+      await expect(
+        eraseClickHouseAccount(
+          { command, insert, query },
+          { activityIds: [], operationIds: [], sleepSessionIds: [], userId },
+        ),
+      ).rejects.toThrow(message);
+      expect(command.mock.calls.some(([options]) => options.query.includes("ALTER TABLE"))).toBe(
+        false,
+      );
+    },
+  );
+
+  it.each([ACCOUNT_ERASURE_FENCE_TABLE, ACCOUNT_ERASURE_OPERATION_FENCE_TABLE])(
+    "does not validate the protected %s table as application data",
+    async (tableKey) => {
+      const [database, name] = tableKey.split(".");
+      const command = vi.fn<ClickHouseCommandClient["command"]>(async () => undefined);
+      const insert = vi.fn<NonNullable<ClickHouseCommandClient["insert"]>>(async () => undefined);
+      const query = queryReturningTables([
+        {
+          age_milliseconds: 1_000_000,
+          columns: [["user_id", "String"]],
+          database,
+          engine: "ReplacingMergeTree",
+          name,
+        },
+      ]);
+
+      await expect(
+        eraseClickHouseAccount(
+          { command, insert, query },
+          { activityIds: [], operationIds: [], sleepSessionIds: [], userId },
+        ),
+      ).resolves.toBeUndefined();
+    },
+  );
+
+  it.each([ACCOUNT_ERASURE_FENCE_TABLE, ACCOUNT_ERASURE_OPERATION_FENCE_TABLE])(
+    "does not erase protected %s rows even when they look personal",
+    async (tableKey) => {
+      const [database, name] = tableKey.split(".");
+      const command = vi.fn<ClickHouseCommandClient["command"]>(async () => undefined);
+      const insert = vi.fn<NonNullable<ClickHouseCommandClient["insert"]>>(async () => undefined);
+      const query = queryReturningTables([
+        {
+          age_milliseconds: 1_000_000,
+          columns: [["user_id", "UUID"]],
+          database,
+          engine: "ReplacingMergeTree",
+          name,
+        },
+      ]);
+
+      await eraseClickHouseAccount(
         { command, insert, query },
         { activityIds: [], operationIds: [], sleepSessionIds: [], userId },
-      ),
-    ).rejects.toThrow(message);
-    expect(command.mock.calls.some(([options]) => options.query.includes("ALTER TABLE"))).toBe(
-      false,
-    );
-  });
+      );
 
-  it.each([
-    ACCOUNT_ERASURE_FENCE_TABLE,
-    ACCOUNT_ERASURE_OPERATION_FENCE_TABLE,
-  ])("does not validate the protected %s table as application data", async (tableKey) => {
-    const [database, name] = tableKey.split(".");
-    const command = vi.fn<ClickHouseCommandClient["command"]>(async () => undefined);
-    const insert = vi.fn<NonNullable<ClickHouseCommandClient["insert"]>>(async () => undefined);
-    const query = queryReturningTables([
-      {
-        age_milliseconds: 1_000_000,
-        columns: [["user_id", "String"]],
-        database,
-        engine: "ReplacingMergeTree",
-        name,
-      },
-    ]);
-
-    await expect(
-      eraseClickHouseAccount(
-        { command, insert, query },
-        { activityIds: [], operationIds: [], sleepSessionIds: [], userId },
-      ),
-    ).resolves.toBeUndefined();
-  });
-
-  it.each([
-    ACCOUNT_ERASURE_FENCE_TABLE,
-    ACCOUNT_ERASURE_OPERATION_FENCE_TABLE,
-  ])("does not erase protected %s rows even when they look personal", async (tableKey) => {
-    const [database, name] = tableKey.split(".");
-    const command = vi.fn<ClickHouseCommandClient["command"]>(async () => undefined);
-    const insert = vi.fn<NonNullable<ClickHouseCommandClient["insert"]>>(async () => undefined);
-    const query = queryReturningTables([
-      {
-        age_milliseconds: 1_000_000,
-        columns: [["user_id", "UUID"]],
-        database,
-        engine: "ReplacingMergeTree",
-        name,
-      },
-    ]);
-
-    await eraseClickHouseAccount(
-      { command, insert, query },
-      { activityIds: [], operationIds: [], sleepSessionIds: [], userId },
-    );
-
-    expect(command.mock.calls.some(([options]) => options.query.includes("ALTER TABLE"))).toBe(
-      false,
-    );
-  });
+      expect(command.mock.calls.some(([options]) => options.query.includes("ALTER TABLE"))).toBe(
+        false,
+      );
+    },
+  );
 
   it("skips the schema-verified non-personal heart-rate cutover TinyLog table", async () => {
     const command = vi.fn<ClickHouseCommandClient["command"]>(async () => undefined);
@@ -790,24 +923,25 @@ describe("eraseClickHouseAccount", () => {
     ).rejects.toThrow("active dbt staging table");
   });
 
-  it.each(
-    stagingSchemaDriftCases,
-  )("rejects dbt ownership schema drift when %s", async (_label, stagingColumns, canonicalColumns) => {
-    const command = vi.fn<ClickHouseCommandClient["command"]>(async () => undefined);
-    const insert = vi.fn<NonNullable<ClickHouseCommandClient["insert"]>>(async () => undefined);
-    const stagingName = "daily_sleep__dbt_new_data_60000000_0000_4000_8000_000000001994";
-    const query = queryReturningTables([
-      managedTable("daily_sleep", canonicalColumns),
-      managedTable(stagingName, stagingColumns),
-    ]);
+  it.each(stagingSchemaDriftCases)(
+    "rejects dbt ownership schema drift when %s",
+    async (_label, stagingColumns, canonicalColumns) => {
+      const command = vi.fn<ClickHouseCommandClient["command"]>(async () => undefined);
+      const insert = vi.fn<NonNullable<ClickHouseCommandClient["insert"]>>(async () => undefined);
+      const stagingName = "daily_sleep__dbt_new_data_60000000_0000_4000_8000_000000001994";
+      const query = queryReturningTables([
+        managedTable("daily_sleep", canonicalColumns),
+        managedTable(stagingName, stagingColumns),
+      ]);
 
-    await expect(
-      eraseClickHouseAccount(
-        { command, insert, query },
-        { activityIds: [], operationIds: [], sleepSessionIds: [], userId },
-      ),
-    ).rejects.toThrow("schema mismatch");
-  });
+      await expect(
+        eraseClickHouseAccount(
+          { command, insert, query },
+          { activityIds: [], operationIds: [], sleepSessionIds: [], userId },
+        ),
+      ).rejects.toThrow("schema mismatch");
+    },
+  );
 
   it("rejects active and malformed ownership schemas before mutation", async () => {
     const command = vi.fn<ClickHouseCommandClient["command"]>(async () => undefined);

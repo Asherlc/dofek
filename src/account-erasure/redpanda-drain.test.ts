@@ -34,15 +34,58 @@ describe("account erasure Redpanda drain", () => {
       createAccountErasureRedpandaAdminFromEnv({
         REDPANDA_BROKERS: "redpanda-1:9092",
       }),
-    ).toThrow("METRIC_STREAM_TOPIC is required for account erasure");
+    ).toThrow("METRIC_STREAM_LEGACY_TOPIC is required for account erasure");
   });
 
   it("fails worker startup when Redpanda brokers are missing", () => {
     expect(() =>
       createAccountErasureRedpandaAdminFromEnv({
-        METRIC_STREAM_TOPIC: "metric-stream-v1",
+        METRIC_STREAM_LEGACY_TOPIC: "metric-stream-v1",
+        METRIC_STREAM_LIVE_TOPIC: "metric-stream-live-v1",
+        METRIC_STREAM_HISTORY_TOPIC: "metric-stream-history-v1",
       }),
     ).toThrow("REDPANDA_BROKERS is required for account erasure");
+  });
+
+  it.each([
+    "METRIC_STREAM_LEGACY_TOPIC",
+    "METRIC_STREAM_LIVE_TOPIC",
+    "METRIC_STREAM_HISTORY_TOPIC",
+  ])("requires the explicit %s route", (key) => {
+    const env = {
+      METRIC_STREAM_LEGACY_TOPIC: "legacy",
+      METRIC_STREAM_LIVE_TOPIC: "live",
+      METRIC_STREAM_HISTORY_TOPIC: "history",
+      REDPANDA_BROKERS: "broker:9092",
+      [key]: " ",
+    };
+    expect(() => createAccountErasureRedpandaAdminFromEnv(env)).toThrow(`${key} is required`);
+  });
+
+  it("pairs all explicit topics with their serving and archive consumer groups", () => {
+    const result = createAccountErasureRedpandaAdminFromEnv({
+      METRIC_STREAM_LEGACY_TOPIC: "legacy",
+      METRIC_STREAM_LIVE_TOPIC: "live",
+      METRIC_STREAM_HISTORY_TOPIC: "history",
+      REDPANDA_BROKERS: "broker:9092",
+    });
+    expect(result.routes).toEqual([
+      {
+        topic: "legacy",
+        consumerGroups: ["metric-stream-clickhouse-sink", "metric-stream-r2-archive"],
+      },
+      {
+        topic: "live",
+        consumerGroups: ["metric-stream-live-clickhouse-sink", "metric-stream-live-r2-archive"],
+      },
+      {
+        topic: "history",
+        consumerGroups: [
+          "metric-stream-history-clickhouse-sink",
+          "metric-stream-history-r2-archive",
+        ],
+      },
+    ]);
   });
 
   it("captures each topic partition high watermark in order", async () => {

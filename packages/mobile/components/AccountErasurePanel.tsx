@@ -1,4 +1,5 @@
 import { accountErasureCleanupWasBlocked } from "@dofek/auth/account-erasure";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
@@ -53,7 +54,12 @@ export function AccountErasurePanel() {
       setPreparation(capability);
     } catch (error: unknown) {
       captureException(error, { source: "account-erasure-mobile-prepare" });
-      setLocalError(error instanceof Error ? error.message : String(error));
+      setLocalError(
+        userFacingErrorMessage(
+          error,
+          "Account deletion could not be prepared. Please sign in and try again.",
+        ),
+      );
     }
   }
 
@@ -103,10 +109,10 @@ export function AccountErasurePanel() {
       );
       setLocalError(
         accepted
-          ? `${error instanceof Error ? error.message : String(error)} Account deletion was accepted and your session was closed. Use the saved preparation on the public deletion-status screen to recover.`
+          ? "Account deletion was accepted and your session was closed. Check the account deletion status page for updates."
           : confirmationAttempted
-            ? `${error instanceof Error ? error.message : String(error)} The confirmation response could not be verified. Recover it from the public deletion-status screen; the saved recovery capability contains no account identifier.`
-            : `${error instanceof Error ? error.message : String(error)} No confirmation request was sent. Your account-specific preparation remains saved; sign in to the same account and retry from Settings.`,
+            ? `${userFacingErrorMessage(error, "Account deletion could not be confirmed.")} We could not confirm the outcome. Check the account deletion status page for updates.`
+            : `${userFacingErrorMessage(error, "Account deletion could not be started.")} Account deletion was not started. Sign in and try again from Settings.`,
       );
       if (accepted || confirmationAttempted) {
         router.replace("/account-deletion");
@@ -148,8 +154,7 @@ export function AccountErasurePanel() {
       {preparation ? (
         <View style={styles.finalCard}>
           <Text style={styles.finalText}>
-            Final confirmation: deletion starts immediately, your session ends, and new writes are
-            blocked.
+            Deletion starts immediately and you&apos;ll be signed out. This cannot be undone.
           </Text>
           <TouchableOpacity
             accessibilityRole="button"

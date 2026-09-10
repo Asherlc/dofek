@@ -32,16 +32,16 @@ function mockRequest(
 
 /** Create a mock Express Response that tracks cookie operations */
 function mockResponse(): Response & {
-  cookie: ReturnType<typeof vi.fn>;
-  clearCookie: ReturnType<typeof vi.fn>;
+  cookie: CallableVitestMock;
+  clearCookie: CallableVitestMock;
 } {
   const res = {
     cookie: vi.fn().mockReturnThis(),
     clearCookie: vi.fn().mockReturnThis(),
   } satisfies Partial<Response>;
   const result: Response & {
-    cookie: ReturnType<typeof vi.fn>;
-    clearCookie: ReturnType<typeof vi.fn>;
+    cookie: CallableVitestMock;
+    clearCookie: CallableVitestMock;
   } = Object.assign(Object.create(null), res);
   return result;
 }

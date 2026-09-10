@@ -93,7 +93,7 @@ function normalizeTransaction(transaction: RawTransactionDatabase): TransactionD
 export function createDatabase(connectionString: string): Database {
   const client = new Pool({
     connectionString,
-    max: 5, // conservative for small server
+    max: 10, // must exceed parallel query fan-out in mobile-dashboard endpoints
     idleTimeoutMillis: 300_000, // 5 min — long-running export jobs need connections to survive between queries
     connectionTimeoutMillis: 10_000,
     maxLifetimeSeconds: 600, // 10 min — recycle connections to avoid stale server-side state

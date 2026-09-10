@@ -32,6 +32,14 @@ const baselineContextRowSchema = z.object({
   efficiency_baseline_coverage: z.coerce.number(),
 });
 
+const nullableRecoveryInputRowSchema = z.object({
+  date: z.string(),
+  hrv: z.coerce.number().nullable(),
+  resting_hr: z.coerce.number().nullable(),
+  respiratory_rate: z.coerce.number().nullable(),
+  efficiency_pct: z.coerce.number().nullable(),
+});
+
 describe("daily recovery read-model lifecycle", () => {
   let client: ClickHouseClient | undefined;
   const targetSchema = `analytics_daily_recovery_test_${randomBytes(6).toString("hex")}`;
@@ -109,6 +117,73 @@ describe("daily recovery read-model lifecycle", () => {
         hrv_sd_30d: null,
         hrv_z_score: null,
         hrv_score: 62,
+      },
+    ]);
+  });
+
+  it("converts impossible recovery sentinels to null on the named 2026 dates", async () => {
+    const activeClient = requireClient(client);
+    await seedSentinelFixture(activeClient, targetSchema);
+    await materializeRecoveryInputs(activeClient, targetSchema, false);
+
+    const result = await activeClient.query({
+      query: `SELECT
+          toString(date) AS date,
+          hrv,
+          resting_hr,
+          respiratory_rate,
+          efficiency_pct
+        FROM ${targetSchema}.daily_recovery_inputs FINAL
+        WHERE user_id = {userId:UUID}
+        ORDER BY date`,
+      query_params: { userId: testUserId },
+      format: "JSONEachRow",
+    });
+
+    const rows = z.array(nullableRecoveryInputRowSchema).parse(await result.json<unknown>());
+
+    expect(rows).toEqual([
+      {
+        date: "2026-08-13",
+        hrv: null,
+        resting_hr: null,
+        respiratory_rate: null,
+        efficiency_pct: null,
+      },
+      {
+        date: "2026-08-20",
+        hrv: null,
+        resting_hr: null,
+        respiratory_rate: null,
+        efficiency_pct: null,
+      },
+      {
+        date: "2026-08-21",
+        hrv: null,
+        resting_hr: null,
+        respiratory_rate: null,
+        efficiency_pct: null,
+      },
+      {
+        date: "2026-08-23",
+        hrv: null,
+        resting_hr: null,
+        respiratory_rate: null,
+        efficiency_pct: null,
+      },
+      {
+        date: "2026-08-28",
+        hrv: null,
+        resting_hr: null,
+        respiratory_rate: null,
+        efficiency_pct: null,
+      },
+      {
+        date: "2026-08-30",
+        hrv: null,
+        resting_hr: null,
+        respiratory_rate: null,
+        efficiency_pct: null,
       },
     ]);
   });
@@ -217,7 +292,7 @@ function renderModelSelectSql(
       "{{ ref('resting_heart_rate_sleep_window') }}",
       `${targetSchema}.resting_heart_rate_sleep_window`,
     )
-    .replaceAll("analytics.v_daily_metrics", `${targetSchema}.v_daily_metrics`)
+    .replaceAll("{{ source('analytics', 'v_daily_metrics') }}", `${targetSchema}.v_daily_metrics`)
     .concat("\nSETTINGS join_use_nulls = 1, max_threads = 1");
 }
 
@@ -438,6 +513,29 @@ async function seedBaselineFixture(client: ClickHouseClient, targetSchema: strin
       ('${testUserId}', toDateTime64('2025-12-30 08:00:00', 6, 'UTC'), 480, 52, 0, 1),
       ('${testUserId}', toDateTime64('2025-12-31 08:00:00', 6, 'UTC'), 480, 50, 0, 1),
       ('${testUserId}', toDateTime64('${recoveryDate} 08:00:00', 6, 'UTC'), 480, 48, 0, 1)`,
+  ]);
+}
+
+async function seedSentinelFixture(client: ClickHouseClient, targetSchema: string): Promise<void> {
+  await runStatements(client, [
+    `DROP DATABASE IF EXISTS ${targetSchema} SYNC`,
+    `CREATE DATABASE ${targetSchema}`,
+    createDailyMetricsTableSql(targetSchema),
+    createRestingHeartRateTableSql(targetSchema),
+    createRecoveryInputsTableSql(targetSchema),
+    createRecoveryTableSql(targetSchema),
+    createDailyStrainTableSql(targetSchema),
+    createDailySleepTableSql(targetSchema),
+    `INSERT INTO ${targetSchema}.v_daily_metrics VALUES
+      ('${testUserId}', toDate('2026-08-21'), 0, 0),
+      ('${testUserId}', toDate('2026-08-23'), 0, NULL),
+      ('${testUserId}', toDate('2026-08-30'), 0, NULL)`,
+    `INSERT INTO ${targetSchema}.daily_sleep VALUES
+      ('${testUserId}', toDate('2026-08-13'), 480, NULL, NULL, NULL, NULL, 0, false, 0, 1),
+      ('${testUserId}', toDate('2026-08-20'), 480, NULL, NULL, NULL, NULL, 0, false, 0, 1),
+      ('${testUserId}', toDate('2026-08-28'), 480, NULL, NULL, NULL, NULL, 0, false, 0, 1)`,
+    `INSERT INTO ${targetSchema}.resting_heart_rate_sleep_window VALUES
+      ('${testUserId}', toDateTime64('2026-08-21 08:00:00', 6, 'UTC'), 480, 0, 0, 1)`,
   ]);
 }
 

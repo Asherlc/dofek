@@ -10,7 +10,14 @@ const DEPLOY_SERVICE_NAMES = [
   "databaseOperations",
   "r2Operations",
   "web",
+  "webPreMigration",
   "worker",
+  "metricStreamClickhouseSink",
+  "metricStreamLiveClickhouseSink",
+  "metricStreamHistoryClickhouseSink",
+  "metricStreamR2Archive",
+  "metricStreamLiveR2Archive",
+  "metricStreamHistoryR2Archive",
 ] as const;
 
 type DeployServiceName = (typeof DEPLOY_SERVICE_NAMES)[number];
@@ -23,7 +30,14 @@ export const DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES = {
   databaseOperations: "database-operations.env",
   r2Operations: "r2-operations.env",
   web: "web.env",
+  webPreMigration: "web-pre-migration.env",
   worker: "worker.env",
+  metricStreamClickhouseSink: "metric-stream-clickhouse-sink.env",
+  metricStreamLiveClickhouseSink: "metric-stream-live-clickhouse-sink.env",
+  metricStreamHistoryClickhouseSink: "metric-stream-history-clickhouse-sink.env",
+  metricStreamR2Archive: "metric-stream-r2-archive.env",
+  metricStreamLiveR2Archive: "metric-stream-live-r2-archive.env",
+  metricStreamHistoryR2Archive: "metric-stream-history-r2-archive.env",
 } satisfies Record<DeployServiceName, string>;
 
 const APPLICATION_ENVIRONMENT_KEYS = [
@@ -35,8 +49,7 @@ const APPLICATION_ENVIRONMENT_KEYS = [
   "APPLE_TEAM_ID",
   "BODYSPEC_CLIENT_ID",
   "BODYSPEC_CLIENT_SECRET",
-  "BREVO_SMTP_KEY",
-  "BREVO_SMTP_USER",
+  "BREVO_API_KEY",
   "CONCEPT2_CLIENT_ID",
   "CONCEPT2_CLIENT_SECRET",
   "COROS_CLIENT_ID",
@@ -99,15 +112,31 @@ const APPLICATION_ENVIRONMENT_KEYS = [
   "ZOHO_DESK_REFRESH_TOKEN",
 ] as const;
 
-const WEB_ONLY_ENVIRONMENT_KEYS = [
-  "GEMINI_API_KEY",
-  "MISTRAL_API_KEY",
-  "SLACK_CLIENT_ID",
-  "SLACK_CLIENT_SECRET",
-  "SLACK_SIGNING_SECRET",
+const WEB_ONLY_ENVIRONMENT_KEYS = ["OPENAI_APPS_CHALLENGE_TOKEN"] as const;
+
+const APP_STORE_ENVIRONMENT_KEYS = [
+  "APP_STORE_ISSUER_ID",
+  "APP_STORE_KEY_ID",
+  "APP_STORE_PRIVATE_KEY",
+  "APP_STORE_APP_ID",
+  "APP_STORE_BUNDLE_ID",
+  "APP_STORE_SUBSCRIPTION_PRODUCT_ID",
+  "APP_STORE_ROOT_CERTIFICATES_PEM",
 ] as const;
 
-const METRIC_STREAM_ENVIRONMENT_KEYS = ["METRIC_STREAM_TOPIC", "REDPANDA_BROKERS"] as const;
+const METRIC_STREAM_ENVIRONMENT_KEYS = [
+  "METRIC_STREAM_LIVE_TOPIC",
+  "METRIC_STREAM_HISTORY_TOPIC",
+  "REDPANDA_BROKERS",
+] as const;
+
+const METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS = [
+  "REDPANDA_BROKERS",
+  "METRIC_STREAM_R2_BUCKET",
+  "R2_ENDPOINT",
+  "R2_ACCESS_KEY_ID",
+  "R2_SECRET_ACCESS_KEY",
+] as const;
 
 const CDC_ENVIRONMENT_KEYS = [
   "PEERDB_CDC_CLICKHOUSE_HOST",
@@ -126,11 +155,20 @@ const CDC_ENVIRONMENT_KEYS = [
 interface DeployServiceEnvironmentPolicy {
   allowedKeys: readonly string[];
   requiredKeys: readonly string[];
+  metricStreamRoute?: {
+    topicKey:
+      | "METRIC_STREAM_LEGACY_TOPIC"
+      | "METRIC_STREAM_LIVE_TOPIC"
+      | "METRIC_STREAM_HISTORY_TOPIC";
+    group?: string;
+  };
 }
 
 const COMMON_APPLICATION_REQUIRED_KEYS = [
   "ACCOUNT_ERASURE_LEDGER_KEYRING_JSON",
+  "BREVO_API_KEY",
   "CREDENTIAL_ENCRYPTION_KEY_BASE64",
+  "EXPORT_EMAIL_FROM",
   "R2_ACCESS_KEY_ID",
   "R2_ENDPOINT",
   "R2_SECRET_ACCESS_KEY",
@@ -139,7 +177,25 @@ const COMMON_APPLICATION_REQUIRED_KEYS = [
   "STRIPE_WEBHOOK_SECRET",
 ] as const;
 
-const DEPLOY_SERVICE_ENVIRONMENT_POLICIES = {
+const WEB_ENVIRONMENT_POLICY = {
+  allowedKeys: [
+    ...APPLICATION_ENVIRONMENT_KEYS,
+    ...APP_STORE_ENVIRONMENT_KEYS,
+    ...METRIC_STREAM_ENVIRONMENT_KEYS,
+    ...WEB_ONLY_ENVIRONMENT_KEYS,
+  ],
+  requiredKeys: [
+    ...COMMON_APPLICATION_REQUIRED_KEYS,
+    ...APP_STORE_ENVIRONMENT_KEYS,
+    ...METRIC_STREAM_ENVIRONMENT_KEYS,
+    "OPENAI_APPS_CHALLENGE_TOKEN",
+  ],
+} satisfies DeployServiceEnvironmentPolicy;
+
+const DEPLOY_SERVICE_ENVIRONMENT_POLICIES: Record<
+  DeployServiceName,
+  DeployServiceEnvironmentPolicy
+> = {
   analyticsWorker: {
     allowedKeys: ["CLICKHOUSE_PASSWORD", "SENTRY_DSN", "SENTRY_DSN_unencrypted"],
     requiredKeys: ["CLICKHOUSE_PASSWORD"],
@@ -169,21 +225,20 @@ const DEPLOY_SERVICE_ENVIRONMENT_POLICIES = {
     allowedKeys: ["R2_ACCESS_KEY_ID", "R2_ENDPOINT", "R2_SECRET_ACCESS_KEY"],
     requiredKeys: ["R2_ACCESS_KEY_ID", "R2_ENDPOINT", "R2_SECRET_ACCESS_KEY"],
   },
-  web: {
-    allowedKeys: [
-      ...APPLICATION_ENVIRONMENT_KEYS,
-      ...METRIC_STREAM_ENVIRONMENT_KEYS,
-      ...WEB_ONLY_ENVIRONMENT_KEYS,
-    ],
-    requiredKeys: [...COMMON_APPLICATION_REQUIRED_KEYS, ...METRIC_STREAM_ENVIRONMENT_KEYS],
+  web: WEB_ENVIRONMENT_POLICY,
+  webPreMigration: {
+    ...WEB_ENVIRONMENT_POLICY,
+    requiredKeys: [...WEB_ENVIRONMENT_POLICY.requiredKeys, "METRIC_STREAM_LEGACY_TOPIC"],
+    metricStreamRoute: { topicKey: "METRIC_STREAM_LEGACY_TOPIC" },
   },
   worker: {
     allowedKeys: [
+      "METRIC_STREAM_LEGACY_TOPIC",
       ...APPLICATION_ENVIRONMENT_KEYS,
       "AXIOM_API_TOKEN",
       "AXIOM_LOG_DATASET",
       "AXIOM_ORG_ID",
-      "BREVO_API_KEY",
+      "CLICKHOUSE_PASSWORD",
       ...METRIC_STREAM_ENVIRONMENT_KEYS,
       "PEERDB_STAGE_S3_ACCESS_KEY_ID",
       "PEERDB_STAGE_S3_BUCKET",
@@ -197,9 +252,10 @@ const DEPLOY_SERVICE_ENVIRONMENT_POLICIES = {
       "SENTRY_ORG",
     ],
     requiredKeys: [
+      "METRIC_STREAM_LEGACY_TOPIC",
       ...COMMON_APPLICATION_REQUIRED_KEYS,
       "AXIOM_API_TOKEN",
-      "BREVO_API_KEY",
+      "CLICKHOUSE_PASSWORD",
       ...METRIC_STREAM_ENVIRONMENT_KEYS,
       "POSTGRES_PASSWORD",
       "POSTHOG_PERSONAL_API_KEY",
@@ -208,7 +264,55 @@ const DEPLOY_SERVICE_ENVIRONMENT_POLICIES = {
       "SENTRY_ORG",
     ],
   },
-} satisfies Record<DeployServiceName, DeployServiceEnvironmentPolicy>;
+  metricStreamClickhouseSink: {
+    allowedKeys: ["REDPANDA_BROKERS"],
+    requiredKeys: ["REDPANDA_BROKERS", "METRIC_STREAM_LEGACY_TOPIC"],
+    metricStreamRoute: {
+      topicKey: "METRIC_STREAM_LEGACY_TOPIC",
+      group: "metric-stream-clickhouse-sink",
+    },
+  },
+  metricStreamLiveClickhouseSink: {
+    allowedKeys: ["REDPANDA_BROKERS"],
+    requiredKeys: ["REDPANDA_BROKERS", "METRIC_STREAM_LIVE_TOPIC"],
+    metricStreamRoute: {
+      topicKey: "METRIC_STREAM_LIVE_TOPIC",
+      group: "metric-stream-live-clickhouse-sink",
+    },
+  },
+  metricStreamHistoryClickhouseSink: {
+    allowedKeys: ["REDPANDA_BROKERS"],
+    requiredKeys: ["REDPANDA_BROKERS", "METRIC_STREAM_HISTORY_TOPIC"],
+    metricStreamRoute: {
+      topicKey: "METRIC_STREAM_HISTORY_TOPIC",
+      group: "metric-stream-history-clickhouse-sink",
+    },
+  },
+  metricStreamR2Archive: {
+    allowedKeys: METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS,
+    requiredKeys: [...METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS, "METRIC_STREAM_LEGACY_TOPIC"],
+    metricStreamRoute: {
+      topicKey: "METRIC_STREAM_LEGACY_TOPIC",
+      group: "metric-stream-r2-archive",
+    },
+  },
+  metricStreamLiveR2Archive: {
+    allowedKeys: METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS,
+    requiredKeys: [...METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS, "METRIC_STREAM_LIVE_TOPIC"],
+    metricStreamRoute: {
+      topicKey: "METRIC_STREAM_LIVE_TOPIC",
+      group: "metric-stream-live-r2-archive",
+    },
+  },
+  metricStreamHistoryR2Archive: {
+    allowedKeys: METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS,
+    requiredKeys: [...METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS, "METRIC_STREAM_HISTORY_TOPIC"],
+    metricStreamRoute: {
+      topicKey: "METRIC_STREAM_HISTORY_TOPIC",
+      group: "metric-stream-history-r2-archive",
+    },
+  },
+};
 
 export interface DeployServiceEnvironmentPaths {
   analyticsWorker: string;
@@ -218,7 +322,14 @@ export interface DeployServiceEnvironmentPaths {
   databaseOperations: string;
   r2Operations: string;
   web: string;
+  webPreMigration: string;
   worker: string;
+  metricStreamClickhouseSink: string;
+  metricStreamLiveClickhouseSink: string;
+  metricStreamHistoryClickhouseSink: string;
+  metricStreamR2Archive: string;
+  metricStreamLiveR2Archive: string;
+  metricStreamHistoryR2Archive: string;
 }
 
 function readRawAssignments(source: string): ReadonlyMap<string, string> {
@@ -246,7 +357,32 @@ function resolvePaths(outputDirectory: string): DeployServiceEnvironmentPaths {
     ),
     r2Operations: join(outputDirectory, DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.r2Operations),
     web: join(outputDirectory, DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.web),
+    webPreMigration: join(outputDirectory, DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.webPreMigration),
     worker: join(outputDirectory, DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.worker),
+    metricStreamClickhouseSink: join(
+      outputDirectory,
+      DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.metricStreamClickhouseSink,
+    ),
+    metricStreamLiveClickhouseSink: join(
+      outputDirectory,
+      DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.metricStreamLiveClickhouseSink,
+    ),
+    metricStreamHistoryClickhouseSink: join(
+      outputDirectory,
+      DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.metricStreamHistoryClickhouseSink,
+    ),
+    metricStreamR2Archive: join(
+      outputDirectory,
+      DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.metricStreamR2Archive,
+    ),
+    metricStreamLiveR2Archive: join(
+      outputDirectory,
+      DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.metricStreamLiveR2Archive,
+    ),
+    metricStreamHistoryR2Archive: join(
+      outputDirectory,
+      DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.metricStreamHistoryR2Archive,
+    ),
   };
 }
 
@@ -278,6 +414,13 @@ export function renderDeployServiceEnvironmentFiles(
       const assignment = assignments.get(key);
       return assignment === undefined ? [] : [assignment];
     });
+    const route = DEPLOY_SERVICE_ENVIRONMENT_POLICIES[serviceName].metricStreamRoute;
+    if (route) {
+      const assignment = assignments.get(route.topicKey);
+      if (!assignment) throw new Error(`Missing validated assignment: ${route.topicKey}`);
+      lines.push(`METRIC_STREAM_TOPIC${assignment.slice(route.topicKey.length)}`);
+      if (route.group) lines.push(`METRIC_STREAM_CONSUMER_GROUP=${route.group}`);
+    }
     writeFileSync(paths[serviceName], lines.length === 0 ? "" : `${lines.join("\n")}\n`, {
       mode: 0o600,
     });

@@ -22,8 +22,8 @@ import type { SyncDegradation } from "../sync/sync-degradation.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
-export { mapXertSport, parseXertActivity, signInToXert };
 export type { ParsedXertActivity };
+export { mapXertSport, parseXertActivity, signInToXert };
 
 const XERT_API_BASE = XERT_API_BASE_URL;
 

@@ -31,12 +31,12 @@ export async function handleIdentityLink(req: Request, res: Response): Promise<v
     // Require valid session
     const sessionId = getSessionIdFromRequest(req);
     if (!sessionId) {
-      res.status(401).send("You must be logged in to link an account");
+      res.redirect(`/login?returnTo=${encodeURIComponent(req.originalUrl)}`);
       return;
     }
     const session = await validateSession(getDb(), sessionId);
     if (!session) {
-      res.status(401).send("Session expired — please log in first");
+      res.redirect(`/login?returnTo=${encodeURIComponent(req.originalUrl)}`);
       return;
     }
 

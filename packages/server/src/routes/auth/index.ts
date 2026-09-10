@@ -21,7 +21,6 @@ import {
 import { handleGetAuthProviders } from "./providers-list.ts";
 import { handleGetMe, handleLogout } from "./session.ts";
 import { authRateLimiter, initAuthStores } from "./shared.ts";
-import { handleSlackOAuthStart } from "./slack-oauth.ts";
 
 export function createAuthRouter(database: import("dofek/db").Database): Router {
   initAuthStores(database);
@@ -77,9 +76,6 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
   router.post("/auth/logout", handleLogout);
   router.get("/api/auth/me", handleGetMe);
 
-  // Slack must be registered before the generic :provider route
-  router.get("/auth/provider/slack", authRateLimiter, handleSlackOAuthStart);
-
   // Data provider OAuth routes (login, link, data sync)
   router.get("/auth/login/data/:provider", authRateLimiter, handleDataLoginStart);
   router.get("/auth/link/data/:provider", authRateLimiter, handleDataLinkStart);
@@ -91,7 +87,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
   );
   router.get("/auth/provider/:provider", authRateLimiter, handleDataProviderOAuthStart);
 
-  // OAuth2 callback (shared for all data providers + Slack)
+  // OAuth2 callback shared for all data providers
   router.get("/callback", authRateLimiter, handleOAuth2Callback);
 
   // Complete signup (email collection for providers that don't provide email)

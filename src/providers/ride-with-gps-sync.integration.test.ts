@@ -48,7 +48,7 @@ function fakeTrackPoints(count: number, startTime: number): RideWithGpsApiTrackP
     d: i * 100,
     e: 10 + i * 0.5,
     t: startTime + i * 5,
-    s: 25 + Math.sin(i) * 5,
+    s: 10 + Math.sin(i) * 2,
     h: 140 + (i % 10),
     c: 85 + (i % 5),
     p: 200 + (i % 20),

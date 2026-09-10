@@ -4,7 +4,6 @@ import {
   activityModalityEnum,
   canonicalActivityTypeEnum,
   foodCategoryEnum,
-  labResultStatusEnum,
   mealEnum,
   setTypeEnum,
   sleepStageNameEnum,
@@ -26,17 +25,7 @@ describe("schema enums", () => {
 
   it("defines strength set type values", () => {
     expect(setTypeEnum.enumName).toBe("set_type");
-    expect(setTypeEnum.enumValues).toEqual(["working", "warmup", "dropset", "failure"]);
-  });
-
-  it("defines lab result status values", () => {
-    expect(labResultStatusEnum.enumName).toBe("lab_result_status");
-    expect(labResultStatusEnum.enumValues).toEqual([
-      "final",
-      "preliminary",
-      "corrected",
-      "cancelled",
-    ]);
+    expect(setTypeEnum.enumValues).toEqual(["working", "warmup", "dropset", "failure", "rest"]);
   });
 
   it("defines sleep stage name values", () => {

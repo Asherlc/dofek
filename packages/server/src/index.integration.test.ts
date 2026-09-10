@@ -199,6 +199,14 @@ describe("tRPC API", () => {
       expect(data.name).toBeDefined();
     });
 
+    it("mounts the authenticated developer-client management API", async () => {
+      const res = await fetch(`${baseUrl}/api/developer/clients`, {
+        headers: { Cookie: sessionCookie },
+      });
+      expect(res.status).toBe(200);
+      expect(Array.isArray(await res.json())).toBe(true);
+    });
+
     it("GET /api/auth/me returns 401 without session cookie", async () => {
       const res = await fetch(`${baseUrl}/api/auth/me`);
       expect(res.status).toBe(401);
@@ -283,27 +291,6 @@ describe("tRPC API", () => {
     });
   });
 
-  describe("Slack OAuth", () => {
-    it("GET /auth/provider/slack returns 400 without SLACK_CLIENT_ID", async () => {
-      const originalClientId = process.env.SLACK_CLIENT_ID;
-      delete process.env.SLACK_CLIENT_ID;
-      try {
-        const res = await fetch(`${baseUrl}/auth/provider/slack`, {
-          redirect: "manual",
-        });
-        expect(res.status).toBe(400);
-        const body = await res.text();
-        expect(body).toContain("SLACK_CLIENT_ID");
-      } finally {
-        if (originalClientId === undefined) {
-          delete process.env.SLACK_CLIENT_ID;
-        } else {
-          process.env.SLACK_CLIENT_ID = originalClientId;
-        }
-      }
-    });
-  });
-
   describe("Metrics at /api/metrics", () => {
     it("exposes /api/metrics endpoint (mirrors /metrics)", async () => {
       const res = await fetch(`${baseUrl}/api/metrics`);
@@ -360,15 +347,6 @@ describe("tRPC API", () => {
       expect(res.status).toBe(400);
       const body = await res.text();
       expect(body).toContain("Unknown or expired OAuth 1.0 request token");
-    });
-  });
-
-  describe("Slack OAuth callback", () => {
-    it("GET /callback with state=slack (no random token) returns 400 as unknown state", async () => {
-      const res = await fetch(`${baseUrl}/callback?code=test&state=slack`);
-      expect(res.status).toBe(400);
-      const body = await res.text();
-      expect(body).toContain("Unknown or expired OAuth state");
     });
   });
 

@@ -4,8 +4,10 @@ import * as clinicalSchema from "./schema/clinical.ts";
 import * as coreSchema from "./schema/core.ts";
 import * as enumSchema from "./schema/enums.ts";
 import * as eventSchema from "./schema/events.ts";
+import * as externalSchema from "./schema/external.ts";
 import * as nutritionSchema from "./schema/nutrition.ts";
 import * as processingSchema from "./schema/processing.ts";
+import * as recordModificationsSchema from "./schema/record-modifications.ts";
 import * as referenceSchema from "./schema/reference.ts";
 
 export const drizzleSchema = {
@@ -17,5 +19,7 @@ export const drizzleSchema = {
   ...clinicalSchema,
   ...accountSchema,
   ...eventSchema,
+  ...externalSchema,
   ...processingSchema,
+  ...recordModificationsSchema,
 };

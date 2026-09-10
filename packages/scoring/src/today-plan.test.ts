@@ -1,8 +1,4 @@
-import {
-  buildTodayPlan,
-  formatTodayPlanConfidence,
-  formatTodayPlanFreshness,
-} from "./today-plan.ts";
+import { buildTodayPlan, formatTodayPlanFreshness } from "./today-plan.ts";
 
 describe("buildTodayPlan", () => {
   it("returns insufficient_data when readiness/strain target is missing", () => {
@@ -21,7 +17,6 @@ describe("buildTodayPlan", () => {
       date: "2026-07-26",
       action: null,
       supportingFacts: [],
-      confidence: "low",
       freshness: {
         recoveryDate: null,
         sleepDate: null,
@@ -38,7 +33,6 @@ describe("buildTodayPlan", () => {
       strainTarget: {
         targetStrain: 16.2,
         zone: "Push",
-        explanation: "Recovery is strong (82). Push for a high-strain day to build fitness.",
         readinessScore: 82,
         workloadRatio: 0.95,
       },
@@ -54,15 +48,13 @@ describe("buildTodayPlan", () => {
     expect(plan.epistemicStatus).toEqual({ kind: "suggested", label: "Suggested" });
     expect(plan.action).toEqual({
       id: "strain_target",
-      title: "Train hard today — aim for 16.2 strain",
-      summary: "Recovery is strong (82). Push for a high-strain day to build fitness.",
+      title: "Suggested strain: 16.2",
       zone: "Push",
     });
     expect(plan.supportingFacts).toEqual([
       { label: "Recovery", value: "82/100" },
       { label: "Sleep performance", value: "88 (Good)" },
     ]);
-    expect(plan.confidence).toBe("high");
     expect(plan.freshness).toEqual({
       recoveryDate: "2026-07-26",
       sleepDate: "2026-07-26",
@@ -76,7 +68,6 @@ describe("buildTodayPlan", () => {
       strainTarget: {
         targetStrain: 12,
         zone: "Maintain",
-        explanation: "Moderate recovery (60). Aim for a steady training day.",
         readinessScore: 60,
         workloadRatio: 1.12,
       },
@@ -89,26 +80,24 @@ describe("buildTodayPlan", () => {
     expect(plan.status).toBe("ready");
     if (plan.status !== "ready") return;
 
-    expect(plan.action.title).toBe("No change needs attention — aim for 12 strain");
+    expect(plan.action.title).toBe("Suggested strain: 12");
     expect(plan.action.zone).toBe("Maintain");
     expect(plan.supportingFacts).toEqual([
       { label: "Recovery", value: "60/100" },
       { label: "Recent-to-baseline workload ratio", value: "1.12" },
     ]);
-    expect(plan.confidence).toBe("moderate");
     expect(plan.missingInputs).toEqual(["sleep"]);
     expect(plan.caveats).toEqual([
-      "Sleep performance was unavailable, so this plan uses recovery and recent workload instead.",
+      "Sleep performance was unavailable; recent workload is shown for context.",
     ]);
   });
 
-  it("builds a Recovery-zone action and low confidence when recovery is stale", () => {
+  it("builds a Recovery-zone action with dated observations", () => {
     const plan = buildTodayPlan({
       endDate: "2026-07-26",
       strainTarget: {
         targetStrain: 6.5,
         zone: "Recovery",
-        explanation: "Recovery is low (40). Keep it light and focus on restoration.",
         readinessScore: 40,
         workloadRatio: null,
       },
@@ -121,22 +110,20 @@ describe("buildTodayPlan", () => {
     expect(plan.status).toBe("ready");
     if (plan.status !== "ready") return;
 
-    expect(plan.action.title).toBe("Keep training light today — aim for 6.5 strain");
+    expect(plan.action.title).toBe("Suggested strain: 6.5");
     expect(plan.action.zone).toBe("Recovery");
-    expect(plan.confidence).toBe("low");
     expect(plan.supportingFacts[1]).toEqual({
       label: "Sleep performance",
       value: "55 (Fair)",
     });
   });
 
-  it("falls back to a generic second fact when sleep and workload are both missing", () => {
+  it("shows the available recovery observation when sleep and workload are missing", () => {
     const plan = buildTodayPlan({
       endDate: "2026-07-26",
       strainTarget: {
         targetStrain: 11,
         zone: "Maintain",
-        explanation: "Moderate recovery (55). Aim for a steady training day.",
         readinessScore: 55,
         workloadRatio: null,
       },
@@ -149,24 +136,19 @@ describe("buildTodayPlan", () => {
     expect(plan.status).toBe("ready");
     if (plan.status !== "ready") return;
 
-    expect(plan.supportingFacts).toEqual([
-      { label: "Recovery", value: "55/100" },
-      { label: "Strain target", value: "11" },
-    ]);
+    expect(plan.supportingFacts).toEqual([{ label: "Recovery", value: "55/100" }]);
     expect(plan.missingInputs).toEqual(["sleep"]);
-    expect(plan.confidence).toBe("moderate");
     expect(plan.caveats).toEqual([
-      "Sleep and recent workload data were unavailable, so this plan uses recovery and the strain target.",
+      "Sleep and recent workload data were unavailable, so this suggestion uses recovery only.",
     ]);
   });
 
-  it("reports low confidence when recovery has no date", () => {
+  it("explains unknown recovery recency", () => {
     const plan = buildTodayPlan({
       endDate: "2026-07-26",
       strainTarget: {
         targetStrain: 8,
         zone: "Recovery",
-        explanation: "Recovery is limited (45). Keep training light today.",
         readinessScore: 45,
         workloadRatio: 0.8,
       },
@@ -178,9 +160,7 @@ describe("buildTodayPlan", () => {
 
     expect(plan.status).toBe("ready");
     if (plan.status !== "ready") return;
-
-    expect(plan.confidence).toBe("low");
-    expect(plan.caveats).toEqual(["Recovery data has no date, so confidence is low."]);
+    expect(plan.caveats).toEqual(["Recovery data has no date; its recency is unknown."]);
   });
 
   it("does not mark recovery or sleep data from the plan date as stale", () => {
@@ -189,7 +169,6 @@ describe("buildTodayPlan", () => {
       strainTarget: {
         targetStrain: 14,
         zone: "Push",
-        explanation: "Recovery is strong (80). Push for a high-strain day.",
         readinessScore: 80,
         workloadRatio: 1.1,
       },
@@ -211,7 +190,6 @@ describe("buildTodayPlan", () => {
       strainTarget: {
         targetStrain: 10,
         zone: "Maintain",
-        explanation: "Recovery is balanced (65). Aim for a steady training day.",
         readinessScore: 65,
         workloadRatio: 1,
       },
@@ -233,7 +211,6 @@ describe("buildTodayPlan", () => {
       strainTarget: {
         targetStrain: 12,
         zone: "Maintain",
-        explanation: "Recovery is balanced (65). Aim for a steady training day.",
         readinessScore: 65,
         workloadRatio: 1,
       },
@@ -257,7 +234,6 @@ describe("buildTodayPlan", () => {
       strainTarget: {
         targetStrain: 6.5,
         zone: "Recovery",
-        explanation: "Recovery is low (40). Keep it light and focus on restoration.",
         readinessScore: 40,
         workloadRatio: null,
       },
@@ -269,7 +245,7 @@ describe("buildTodayPlan", () => {
 
     expect(plan).toMatchObject({
       caveats: [
-        "Sleep and recent workload data were unavailable, so this plan uses recovery and the strain target.",
+        "Sleep and recent workload data were unavailable, so this suggestion uses recovery only.",
         "Recovery data is from 2026-07-23, so this plan may be less current.",
       ],
     });
@@ -277,12 +253,6 @@ describe("buildTodayPlan", () => {
 });
 
 describe("Today Plan presentation helpers", () => {
-  it("formats confidence labels for clients", () => {
-    expect(formatTodayPlanConfidence("high")).toBe("High confidence");
-    expect(formatTodayPlanConfidence("moderate")).toBe("Moderate confidence");
-    expect(formatTodayPlanConfidence("low")).toBe("Low confidence");
-  });
-
   it("formats freshness summaries from recovery and sleep dates", () => {
     expect(
       formatTodayPlanFreshness({

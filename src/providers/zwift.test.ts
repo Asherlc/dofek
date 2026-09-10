@@ -115,6 +115,7 @@ const { MockZwiftClient } = vi.hoisted(() => {
     });
     getFitnessData = vi.fn().mockImplementation(async () => MockZwiftClient.fitnessData);
     getPowerCurve = vi.fn().mockImplementation(async () => MockZwiftClient.powerCurve);
+    getProfile = vi.fn().mockImplementation(async () => MockZwiftClient.authenticatedProfile);
     getAuthenticatedProfile = vi.fn().mockImplementation(async () => {
       MockZwiftClient.getAuthenticatedProfileCalls += 1;
       return MockZwiftClient.authenticatedProfile;
@@ -667,30 +668,6 @@ describe("ZwiftProvider.sync() — activity sync", () => {
         presentExternalIds: new Set(Array.from({ length: 19 }, (_, index) => String(index + 1))),
       }),
     );
-  });
-});
-
-describe("ZwiftProvider.sync() — power curve sync", () => {
-  it("skips power curve insert when no zFtp and no vo2Max", async () => {
-    MockZwiftClient.activities = [];
-    MockZwiftClient.powerCurve = {};
-
-    const db = makeMockDb({
-      tokens: {
-        accessToken: "valid-token",
-        refreshToken: "refresh",
-        expiresAt: new Date("2099-01-01"),
-        scopes: "athleteId:12345",
-      },
-    });
-
-    const provider = new ZwiftProvider();
-    const result = await provider.sync(
-      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
-    );
-    expect(result.provider).toBe("zwift");
-    // recordsSynced should be 0 since nothing was synced
-    expect(result.recordsSynced).toBe(0);
   });
 });
 

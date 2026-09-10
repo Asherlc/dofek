@@ -29,9 +29,9 @@ describe("run-migrate main()", () => {
   const originalClickHouseUrl = process.env.CLICKHOUSE_URL;
   const originalArguments = [...process.argv];
   const clickHouseClient: {
-    command: ReturnType<typeof vi.fn>;
-    query: ReturnType<typeof vi.fn>;
-    close?: ReturnType<typeof vi.fn>;
+    command: CallableVitestMock;
+    query: CallableVitestMock;
+    close?: CallableVitestMock;
   } = { command: vi.fn(), query: vi.fn(), close: vi.fn() };
 
   beforeEach(() => {

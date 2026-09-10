@@ -4,9 +4,9 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted<{
-  query: ReturnType<typeof vi.fn>;
+  query: CallableVitestMock;
   queryInputs: Array<{ days: number; endDate: string }>;
-  refetch: ReturnType<typeof vi.fn>;
+  refetch: CallableVitestMock;
 }>(() => ({
   query: vi.fn(),
   queryInputs: [],
@@ -228,9 +228,9 @@ describe("TrackingScreen", () => {
     const { default: TrackingScreen } = await import("../app/tracking");
     render(<TrackingScreen />);
 
-    expect(screen.getByText("No numeric journal data to chart")).toBeTruthy();
+    expect(screen.getByText("No journal trends yet")).toBeTruthy();
     expect(
-      screen.getByText("Log a numeric or Yes/No journal value to start reviewing trends."),
+      screen.getByText("Sync journal entries with numbers or Yes/No answers to see trends."),
     ).toBeTruthy();
   });
 

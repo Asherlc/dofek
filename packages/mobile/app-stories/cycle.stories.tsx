@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { inferRouterClient, OperationResultObservable, TRPCLink } from "@trpc/client";
+import { type OperationResultObservable, TRPCClientError, type TRPCLink } from "@trpc/client";
 import type { AppRouter } from "dofek-server/router";
 import { useMemo } from "react";
 import { View } from "react-native";
@@ -8,150 +8,137 @@ import CycleScreen from "../app/cycle";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
 
-type CurrentPhaseOutput = Awaited<
-  ReturnType<inferRouterClient<AppRouter>["menstrualCycle"]["currentPhase"]["query"]>
->;
+type CycleScenario = "populated" | "no-data" | "conflict" | "error";
 
-const currentPhase = {
+const populatedPhase = {
   phase: "menstrual",
   dayOfCycle: 3,
   cycleLength: 28,
   estimate: {
     basis: "personal-cycle-average",
     completedCycleCount: 3,
-    observedCycleLengthRange: {
-      minimumDays: 27,
-      maximumDays: 29,
-    },
+    observedCycleLengthRange: { minimumDays: 27, maximumDays: 29 },
     phaseLabel: "Estimated Menstrual phase",
     cycleDayLabel: "Day 3 of an estimated 28-day cycle",
-    dayBasisLabel: "Cycle day is counted from the latest recorded period start.",
+    dayBasisLabel: "Cycle day is counted from the latest provider cycle-start record.",
     methodLabel: "Phase and cycle length use the average of 3 completed cycles.",
     uncertaintyLabel: "Recorded cycle lengths ranged from 27 to 29 days.",
     limitationLabel: "No calibrated confidence score or next-period forecast is available.",
   },
-  availability: {
-    status: "estimated",
-    label: "Phase estimate available from recorded cycle history.",
+  latestCycleStart: {
+    id: "cycle-start:2026-08-01",
+    startDate: "2026-08-01",
+    sources: [
+      {
+        providerId: "apple_health",
+        sourceName: "Cycle Source",
+        sourceBundle: "com.example.cycle",
+      },
+    ],
   },
-} satisfies CurrentPhaseOutput;
+  availability: { status: "estimated", label: "Phase estimate available." },
+};
 
-const sparseCurrentPhase = {
-  phase: null,
-  dayOfCycle: null,
-  cycleLength: null,
-  estimate: null,
-  availability: {
-    status: "sparse-history",
-    label:
-      "Not enough recorded history for a phase estimate. At least 3 completed cycles are needed.",
-  },
-} satisfies CurrentPhaseOutput;
-
-const irregularCurrentPhase = {
-  phase: null,
-  dayOfCycle: null,
-  cycleLength: null,
-  estimate: null,
-  availability: {
-    status: "irregular-history",
-    label:
-      "No phase estimate is shown because recorded cycle lengths do not support a regular-cycle model (observed range: 22 to 34 days).",
-  },
-} satisfies CurrentPhaseOutput;
-
-const periodHistory = [
+const history = [
+  populatedPhase.latestCycleStart,
   {
-    id: "11111111-1111-4111-8111-111111111111",
-    startDate: "2026-07-01",
-    endDate: "2026-07-05",
-    durationDays: 5,
-    durationLabel: "5 days",
-    notes: null,
-  },
-  {
-    id: "22222222-2222-4222-8222-222222222222",
-    startDate: "2026-06-03",
-    endDate: "2026-06-07",
-    durationDays: 5,
-    durationLabel: "5 days",
-    notes: null,
+    id: "cycle-start:2026-07-04",
+    startDate: "2026-07-04",
+    sources: [
+      { providerId: "apple_health", sourceName: "Cycle Source", sourceBundle: "com.example.cycle" },
+      { providerId: "garmin", sourceName: null, sourceBundle: "com.garmin.connect" },
+    ],
   },
 ];
 
-function createMockLink(
-  phaseFixture: CurrentPhaseOutput,
-  historyFixture: typeof periodHistory,
-): TRPCLink<AppRouter> {
-  return () =>
-    ({ op }) =>
-      createMockObservable(op.path, phaseFixture, historyFixture);
-}
-
-function createMockObservable(
-  path: string,
-  phaseFixture: CurrentPhaseOutput,
-  historyFixture: typeof periodHistory,
-): OperationResultObservable<AppRouter, unknown> {
-  const result: OperationResultObservable<AppRouter, unknown> = {
-    subscribe(observer) {
-      if (path === "menstrualCycle.currentPhase") {
-        observer.next?.({ result: { data: phaseFixture } });
-      } else if (path === "menstrualCycle.history") {
-        observer.next?.({ result: { data: historyFixture } });
-      } else if (path === "menstrualCycle.logPeriod") {
-        observer.next?.({
-          result: {
-            data: {
-              id: "33333333-3333-4333-8333-333333333333",
-              startDate: "2026-07-27",
-              endDate: null,
-              durationDays: null,
-              durationLabel: null,
-              notes: null,
-            },
-          },
-        });
-      } else if (path === "menstrualCycle.updatePeriod") {
-        observer.next?.({ result: { data: historyFixture[0] } });
-      } else if (path === "menstrualCycle.deletePeriod") {
-        observer.next?.({ result: { data: { deleted: true } } });
-      } else {
-        throw new Error(`Unhandled cycle story tRPC operation: ${path}`);
-      }
-      observer.complete?.();
-      return { unsubscribe() {} };
-    },
-    pipe() {
-      return result;
+function resultFor(path: string, scenario: CycleScenario): unknown {
+  if (path === "menstrualCycle.history") return scenario === "populated" ? history : [];
+  if (path !== "menstrualCycle.currentPhase") return undefined;
+  if (scenario === "populated") return populatedPhase;
+  if (scenario === "conflict") {
+    return {
+      phase: null,
+      dayOfCycle: null,
+      cycleLength: null,
+      estimate: null,
+      latestCycleStart: null,
+      availability: {
+        status: "conflicting-history",
+        label: "Provider cycle-start records conflict: 2026-06-01 and 2026-06-20.",
+      },
+    };
+  }
+  return {
+    phase: null,
+    dayOfCycle: null,
+    cycleLength: null,
+    estimate: null,
+    latestCycleStart: null,
+    availability: {
+      status: "no-history",
+      label: "No cycle starts are available from provider records.",
     },
   };
-  return result;
 }
 
-function CycleStoryFrame({
-  phaseFixture = currentPhase,
-  historyFixture = periodHistory,
-}: {
-  phaseFixture?: CurrentPhaseOutput;
-  historyFixture?: typeof periodHistory;
-}) {
+function createMockLink(scenario: CycleScenario): TRPCLink<AppRouter> {
+  return () =>
+    ({ op }) => {
+      if (scenario === "error") {
+        return createErrorObservable(
+          TRPCClientError.from<AppRouter>(new Error("Cycle provider records are unavailable.")),
+        );
+      }
+      const data = resultFor(op.path, scenario);
+      if (data === undefined) {
+        return createErrorObservable(
+          TRPCClientError.from<AppRouter>(
+            new Error(`Unhandled Storybook tRPC operation: ${op.path}`),
+          ),
+        );
+      }
+      return createDataObservable(data);
+    };
+}
+
+function createDataObservable(data: unknown): OperationResultObservable<AppRouter, unknown> {
+  const observable: OperationResultObservable<AppRouter, unknown> = {
+    subscribe(observer) {
+      observer.next?.({ result: { data } });
+      observer.complete?.();
+      return { unsubscribe: () => {} };
+    },
+    pipe() {
+      return observable;
+    },
+  };
+  return observable;
+}
+
+function createErrorObservable(
+  error: TRPCClientError<AppRouter>,
+): OperationResultObservable<AppRouter, unknown> {
+  const observable: OperationResultObservable<AppRouter, unknown> = {
+    subscribe(observer) {
+      observer.error?.(error);
+      return { unsubscribe: () => {} };
+    },
+    pipe() {
+      return observable;
+    },
+  };
+  return observable;
+}
+
+function CycleStoryFrame({ scenario }: { scenario: CycleScenario }) {
   const queryClient = useMemo(
-    () =>
-      new QueryClient({
-        defaultOptions: {
-          mutations: { retry: false },
-          // Story fixtures are immutable, so background refetches should not replace them.
-          queries: { retry: false, staleTime: Number.POSITIVE_INFINITY },
-        },
-      }),
+    () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
     [],
   );
   const trpcClient = useMemo(
-    () => trpc.createClient({ links: [createMockLink(phaseFixture, historyFixture)] }),
-    [historyFixture, phaseFixture],
+    () => trpc.createClient({ links: [createMockLink(scenario)] }),
+    [scenario],
   );
-
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <QueryClientProvider client={queryClient}>
@@ -164,29 +151,14 @@ function CycleStoryFrame({
 }
 
 const meta = {
-  title: "Pages/CycleTracking",
+  title: "Pages/Cycle",
   component: CycleScreen,
-  parameters: {
-    layout: "fullscreen",
-  },
 } satisfies Meta<typeof CycleScreen>;
 
 export default meta;
-
 type Story = StoryObj<typeof meta>;
 
-export const CurrentPhase: Story = {
-  render: () => <CycleStoryFrame />,
-};
-
-export const SparseHistory: Story = {
-  render: () => <CycleStoryFrame phaseFixture={sparseCurrentPhase} />,
-};
-
-export const IrregularHistory: Story = {
-  render: () => <CycleStoryFrame phaseFixture={irregularCurrentPhase} />,
-};
-
-export const EmptyHistory: Story = {
-  render: () => <CycleStoryFrame historyFixture={[]} phaseFixture={sparseCurrentPhase} />,
-};
+export const Populated: Story = { render: () => <CycleStoryFrame scenario="populated" /> };
+export const NoData: Story = { render: () => <CycleStoryFrame scenario="no-data" /> };
+export const Conflict: Story = { render: () => <CycleStoryFrame scenario="conflict" /> };
+export const QueryError: Story = { render: () => <CycleStoryFrame scenario="error" /> };

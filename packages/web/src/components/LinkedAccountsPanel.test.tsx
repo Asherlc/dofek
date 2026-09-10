@@ -112,7 +112,10 @@ describe("LinkedAccountsPanel", () => {
 
     await renderPanel();
 
-    expect(await screen.findByText(providerError.message)).toBeDefined();
+    expect(
+      await screen.findByText("We couldn't reach the server. Check your connection and try again."),
+    ).toBeDefined();
+    expect(screen.queryByText(providerError.message)).toBeNull();
     expect(screen.getByRole("button", { name: "Retry loading login methods" })).toBeDefined();
     expect(screen.getByText("linked@example.com")).toBeDefined();
     expect(mocks.captureException).toHaveBeenCalledWith(providerError, {

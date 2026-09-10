@@ -142,7 +142,23 @@ vi.mock("../account-erasure/redpanda-drain.ts", () => ({
     admin: { name: "redpanda-admin" },
     close: mocks.closeRedpanda,
     connect: mocks.connectRedpanda,
-    topic: "metric-stream-v1",
+    routes: [
+      {
+        topic: "metric-stream-v1",
+        consumerGroups: ["metric-stream-clickhouse-sink", "metric-stream-r2-archive"],
+      },
+      {
+        topic: "metric-stream-live-v1",
+        consumerGroups: ["metric-stream-live-clickhouse-sink", "metric-stream-live-r2-archive"],
+      },
+      {
+        topic: "metric-stream-history-v1",
+        consumerGroups: [
+          "metric-stream-history-clickhouse-sink",
+          "metric-stream-history-r2-archive",
+        ],
+      },
+    ],
   })),
 }));
 
@@ -197,7 +213,6 @@ const snapshot: AccountErasureRemoteSnapshot = {
   posthogDistinctId: "posthog-distinct-1994",
   processorEmails: [],
   providerConnections: [],
-  slackInstallations: [],
   stripe: null,
   webhooks: [],
 };
@@ -236,11 +251,20 @@ describe("createAccountErasureRuntime", () => {
     };
     const runtime = await createAccountErasureRuntime(database, clickHouseClient, workPurger);
 
+    const topics = ["metric-stream-v1", "metric-stream-live-v1", "metric-stream-history-v1"];
+    const highWatermarks = topics.map((topic) => ({ topic, low: "1", offset: "3", partition: 0 }));
+    const quarantineHighWatermarks = topics.map((topic) => ({
+      topic,
+      low: "4",
+      offset: "12",
+      partition: 0,
+    }));
+
     expect(mocks.ensureProvidersRegistered).toHaveBeenCalledOnce();
     expect(mocks.connectRedpanda).toHaveBeenCalledOnce();
 
     await expect(runtime.phaseRunner.runPhase("ingest_fence", execution())).resolves.toEqual({
-      highWatermarks: [{ low: "1", offset: "3", partition: 0 }],
+      highWatermarks,
     });
     expect(mocks.fenceClickHouse).toHaveBeenCalledWith(
       clickHouseClient,
@@ -250,19 +274,16 @@ describe("createAccountErasureRuntime", () => {
     await expect(
       runtime.phaseRunner.runPhase(
         "consumer_drain",
-        execution(async (phase) =>
-          phase === "ingest_fence"
-            ? { highWatermarks: [{ low: "1", offset: "3", partition: 0 }] }
-            : null,
-        ),
+        execution(async (phase) => (phase === "ingest_fence" ? { highWatermarks } : null)),
       ),
     ).resolves.toEqual({
-      quarantineHighWatermarks: [{ low: "4", offset: "12", partition: 0 }],
+      quarantineHighWatermarks,
     });
     expect(mocks.assertConsumersDrained).toHaveBeenCalledWith(
       { name: "redpanda-admin" },
       "metric-stream-v1",
-      [{ low: "1", offset: "3", partition: 0 }],
+      [{ topic: "metric-stream-v1", low: "1", offset: "3", partition: 0 }],
+      ["metric-stream-clickhouse-sink", "metric-stream-r2-archive"],
     );
     expect(mocks.captureQuarantineHighWatermarks).toHaveBeenCalledWith(
       { name: "redpanda-admin" },
@@ -274,7 +295,7 @@ describe("createAccountErasureRuntime", () => {
         async (phase) =>
           phase === "consumer_drain"
             ? {
-                quarantineHighWatermarks: [{ low: "4", offset: "12", partition: 0 }],
+                quarantineHighWatermarks,
               }
             : phase === "peerdb_drain_verification"
               ? {
@@ -302,12 +323,47 @@ describe("createAccountErasureRuntime", () => {
     expect(mocks.assertQuarantineExpired).toHaveBeenCalledWith(
       { name: "redpanda-admin" },
       "metric-stream-v1",
-      [{ low: "4", offset: "12", partition: 0 }],
+      [{ topic: "metric-stream-v1", low: "4", offset: "12", partition: 0 }],
     );
     expect(mocks.verifyPeerDbStagingRetention).toHaveBeenCalledWith(mocks.peerDbStagingStorage, {
       cutoff: new Date("2026-08-03T12:00:00.000Z"),
       now: expect.any(Date),
     });
+
+    await runtime.phaseRunner.runPhase(
+      "consumer_drain_verification",
+      execution(async (phase) => (phase === "ingest_fence" ? { highWatermarks } : null)),
+    );
+    await expect(
+      runtime.phaseRunner.runPhase(
+        "consumer_drain",
+        execution(async (phase) =>
+          phase === "ingest_fence" ? { highWatermarks: highWatermarks.slice(0, 2) } : null,
+        ),
+      ),
+    ).rejects.toThrow("Account erasure checkpoint is missing topic metric-stream-history-v1");
+    for (const [index, topic] of topics.entries()) {
+      const prefix = ["metric-stream", "metric-stream-live", "metric-stream-history"][index];
+      expect(mocks.captureHighWatermarks).toHaveBeenCalledWith({ name: "redpanda-admin" }, topic);
+      expect(mocks.captureQuarantineHighWatermarks).toHaveBeenCalledWith(
+        { name: "redpanda-admin" },
+        topic,
+      );
+      expect(mocks.assertConsumersDrained).toHaveBeenCalledWith(
+        { name: "redpanda-admin" },
+        topic,
+        [highWatermarks[index]],
+        [`${prefix}-clickhouse-sink`, `${prefix}-r2-archive`],
+      );
+      expect(mocks.assertReplayExpired).toHaveBeenCalledWith({ name: "redpanda-admin" }, topic, [
+        highWatermarks[index],
+      ]);
+      expect(mocks.assertQuarantineExpired).toHaveBeenCalledWith(
+        { name: "redpanda-admin" },
+        topic,
+        [quarantineHighWatermarks[index]],
+      );
+    }
 
     await expect(runtime.phaseRunner.runPhase("clickhouse_initial", execution())).resolves.toEqual({
       verified: false,

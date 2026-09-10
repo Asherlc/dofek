@@ -114,13 +114,20 @@ export function buildBodyMeasurementSampleProjectionMigrationStatements(): strin
 
 function buildActivityReadModelSql(): string {
   return `${standardViewHeader("analytics.v_activity")}
-WITH RECURSIVE
+WITH
 active_activity AS (
   SELECT *
   FROM postgres_fitness.activity FINAL
   WHERE _peerdb_is_deleted = 0
     AND provider_absent_at IS NULL
     AND deleted_at IS NULL
+),
+activity_membership_check AS (
+  SELECT throwIf(
+    countIf(group_id IS NULL OR group_id = toUUID('00000000-0000-0000-0000-000000000000')) > 0,
+    'Active activity is missing persisted group identity'
+  ) AS valid
+  FROM active_activity
 ),
 active_provider_priority AS (
   SELECT *
@@ -152,6 +159,7 @@ device_priority_match AS (
 ranked AS (
   SELECT
     active_activity.id AS id,
+    assumeNotNull(active_activity.group_id) AS group_id,
     active_activity.provider_id AS provider_id,
     active_activity.user_id AS user_id,
     active_activity.external_id AS external_id,
@@ -170,6 +178,7 @@ ranked AS (
     active_activity.raw AS raw,
     coalesce(device_priority_match.priority, active_provider_priority.priority, 100) AS priority
   FROM active_activity
+  CROSS JOIN activity_membership_check
   LEFT JOIN active_provider_priority
     ON active_provider_priority.provider_id = active_activity.provider_id
   LEFT JOIN device_priority_match
@@ -178,6 +187,7 @@ ranked AS (
 tombstoned AS (
   SELECT
     activity.id AS id,
+    assumeNotNull(activity.group_id) AS group_id,
     activity.user_id AS user_id,
     activity.provider_id AS provider_id,
     activity.canonical_type AS canonical_type,
@@ -192,84 +202,12 @@ tombstoned AS (
     AND external_id IS NOT NULL
     AND external_id != ''
 ),
-clusterable AS (
-  SELECT
-    ranked.id AS id,
-    ranked.user_id AS user_id,
-    ranked.provider_id AS provider_id,
-    ranked.canonical_type AS canonical_type,
-    ranked.started_at AS started_at,
-    coalesce(ranked.ended_at, ranked.started_at + INTERVAL 1 HOUR) AS ended_at
+final_groups AS (
+  SELECT id AS activity_id, group_id
   FROM ranked
   UNION ALL
-  SELECT
-    tombstoned.id AS id,
-    tombstoned.user_id AS user_id,
-    tombstoned.provider_id AS provider_id,
-    tombstoned.canonical_type AS canonical_type,
-    tombstoned.started_at AS started_at,
-    coalesce(tombstoned.ended_at, tombstoned.started_at + INTERVAL 1 HOUR) AS ended_at
+  SELECT id AS activity_id, group_id
   FROM tombstoned
-),
-pairs AS (
-  SELECT
-    left_activity.id AS id1,
-    right_activity.id AS id2
-  FROM clusterable AS left_activity
-  INNER JOIN clusterable AS right_activity
-    ON left_activity.user_id = right_activity.user_id
-   AND toString(left_activity.id) < toString(right_activity.id)
-   AND (
-     dateDiff(
-        'second',
-        greatest(left_activity.started_at, right_activity.started_at),
-        least(left_activity.ended_at, right_activity.ended_at)
-      ) / nullIf(dateDiff(
-        'second',
-        least(left_activity.started_at, right_activity.started_at),
-        greatest(left_activity.ended_at, right_activity.ended_at)
-      ), 0) > 0.8
-      OR (
-        left_activity.provider_id != right_activity.provider_id
-        AND left_activity.canonical_type = right_activity.canonical_type
-        AND dateDiff(
-          'second',
-          greatest(left_activity.started_at, right_activity.started_at),
-          least(left_activity.ended_at, right_activity.ended_at)
-        ) / nullIf(least(
-          dateDiff('second', left_activity.started_at, left_activity.ended_at),
-          dateDiff('second', right_activity.started_at, right_activity.ended_at)
-        ), 0) > 0.8
-      )
-    )
-),
-graph_edges AS (
-  SELECT id1 AS from_id, id2 AS to_id
-  FROM pairs
-  UNION ALL
-  SELECT id2 AS from_id, id1 AS to_id
-  FROM pairs
-),
-connected_components AS (
-  SELECT
-    id AS activity_id,
-    id AS connected_activity_id,
-    [toString(id)] AS visited_activity_ids
-  FROM clusterable
-  UNION ALL
-  SELECT
-    connected_components.activity_id AS activity_id,
-    graph_edges.to_id AS connected_activity_id,
-    arrayConcat(connected_components.visited_activity_ids, [toString(graph_edges.to_id)]) AS visited_activity_ids
-  FROM connected_components
-  INNER JOIN graph_edges
-    ON graph_edges.from_id = connected_components.connected_activity_id
-  WHERE NOT has(connected_components.visited_activity_ids, toString(graph_edges.to_id))
-),
-final_groups AS (
-  SELECT activity_id, min(toString(connected_activity_id)) AS group_id
-  FROM connected_components
-  GROUP BY activity_id
 ),
 absent_source_links AS (
   SELECT
@@ -291,10 +229,8 @@ absent_source_links AS (
   GROUP BY final_groups.group_id
 ),
 tombstoned_groups AS (
-  SELECT DISTINCT final_groups.group_id AS group_id
-  FROM final_groups
-  INNER JOIN tombstoned
-    ON tombstoned.id = final_groups.activity_id
+  SELECT DISTINCT group_id
+  FROM tombstoned
 ),
 best AS (
   SELECT *
@@ -313,11 +249,20 @@ best AS (
       ranked.priority AS priority,
       row_number() OVER (
         PARTITION BY final_groups.group_id
-        ORDER BY ranked.priority ASC, toString(ranked.id) ASC
+        ORDER BY
+          multiIf(
+            ranked.canonical_type IN ('cycling', 'running', 'strength', 'walking', 'climbing'), 0,
+            ranked.canonical_type IN ('cardio', 'other'), 2,
+            1
+          ) ASC,
+          if(trimBoth(coalesce(ranked.provider_type, '')) != '', 0, 1) ASC,
+          ranked.priority ASC,
+          toString(ranked.id) ASC
       ) AS row_number
     FROM final_groups
     INNER JOIN ranked
       ON ranked.id = final_groups.activity_id
+    WHERE final_groups.group_id NOT IN (SELECT group_id FROM tombstoned_groups)
   )
   WHERE row_number = 1
 ),
@@ -328,32 +273,87 @@ merged AS (
     any(best.provider_id) AS provider_id,
     any(best.user_id) AS user_id,
     any(best.canonical_type) AS canonical_type,
-    any(best.provider_type) AS provider_type,
+    coalesce(
+      nullIf(argMinIf(
+        lowerUTF8(trimBoth(ranked.provider_type)),
+        tuple(
+          ranked.canonical_type IN ('other', 'cardio'),
+          lowerUTF8(trimBoth(ranked.provider_type))
+            = lowerUTF8(trimBoth(ranked.canonical_type)),
+          ranked.priority,
+          toString(ranked.id)
+        ),
+        ranked.provider_type IS NOT NULL
+        AND trimBoth(ranked.provider_type) != ''
+        AND (
+          ranked.canonical_type = best.canonical_type
+          OR ranked.canonical_type IN ('other', 'cardio')
+          OR best.canonical_type IN ('other', 'cardio')
+        )
+      ), ''),
+      lowerUTF8(trimBoth(any(best.provider_type))),
+      ''
+    ) AS provider_type,
     any(best.modality) AS modality,
-    any(best.started_at) AS started_at,
-    any(best.ended_at) AS ended_at,
+    minIf(ranked.started_at, ranked.id IS NOT NULL) AS started_at,
+    maxIf(
+      coalesce(ranked.ended_at, ranked.started_at + INTERVAL 12 HOUR),
+      ranked.id IS NOT NULL
+    ) AS ended_at,
     any(best.source_name) AS source_name,
     argMinIf(ranked.name, ranked.priority, ranked.name IS NOT NULL) AS name,
     argMinIf(ranked.notes, ranked.priority, ranked.notes IS NOT NULL) AS notes,
-    argMinIf(
-      ranked.timezone,
-      ranked.priority,
-      ranked.local_time_source IN ('provider_timezone', 'device_timezone')
+    tupleElement(
+      argMinIf(
+        tuple(
+          ranked.timezone,
+          ranked.start_utc_offset_minutes,
+          ranked.end_utc_offset_minutes,
+          ranked.local_time_source
+        ),
+        tuple(ranked.priority, toString(ranked.id)),
+        ranked.local_time_source != 'unknown'
+      ),
+      1
     ) AS timezone,
-    argMinIf(
-      ranked.start_utc_offset_minutes,
-      ranked.priority,
-      ranked.local_time_source != 'unknown'
+    tupleElement(
+      argMinIf(
+        tuple(
+          ranked.timezone,
+          ranked.start_utc_offset_minutes,
+          ranked.end_utc_offset_minutes,
+          ranked.local_time_source
+        ),
+        tuple(ranked.priority, toString(ranked.id)),
+        ranked.local_time_source != 'unknown'
+      ),
+      2
     ) AS start_utc_offset_minutes,
-    argMinIf(
-      ranked.end_utc_offset_minutes,
-      ranked.priority,
-      ranked.local_time_source != 'unknown'
+    tupleElement(
+      argMinIf(
+        tuple(
+          ranked.timezone,
+          ranked.start_utc_offset_minutes,
+          ranked.end_utc_offset_minutes,
+          ranked.local_time_source
+        ),
+        tuple(ranked.priority, toString(ranked.id)),
+        ranked.local_time_source != 'unknown'
+      ),
+      3
     ) AS end_utc_offset_minutes,
-    argMinIf(
-      ranked.local_time_source,
-      ranked.priority,
-      ranked.local_time_source != 'unknown'
+    tupleElement(
+      argMinIf(
+        tuple(
+          ranked.timezone,
+          ranked.start_utc_offset_minutes,
+          ranked.end_utc_offset_minutes,
+          ranked.local_time_source
+        ),
+        tuple(ranked.priority, toString(ranked.id)),
+        ranked.local_time_source != 'unknown'
+      ),
+      4
     ) AS local_time_source,
     argMinIf(ranked.raw, ranked.priority, ranked.raw IS NOT NULL) AS raw,
     arraySort(groupUniqArrayIf(ranked.provider_id, ranked.id IS NOT NULL)) AS source_providers,
@@ -364,7 +364,7 @@ merged AS (
       AND ranked.external_id != ''
     ) AS source_external_ids,
     coalesce(any(absent_source_links.absent_source_external_ids), []) AS absent_source_external_ids,
-    groupArray(final_groups.activity_id) AS member_activity_ids
+    groupArrayIf(final_groups.activity_id, ranked.id IS NOT NULL) AS member_activity_ids
   FROM best
   INNER JOIN final_groups
     ON final_groups.group_id = best.group_id
@@ -372,14 +372,13 @@ merged AS (
     ON ranked.id = final_groups.activity_id
   LEFT JOIN absent_source_links
     ON absent_source_links.group_id = best.group_id
-  WHERE best.group_id NOT IN (SELECT group_id FROM tombstoned_groups)
   GROUP BY best.group_id, best.canonical_id
 )
 SELECT
-  id,
+  merged.group_id AS id,
   provider_id,
   user_id,
-  id AS primary_activity_id,
+  merged.id AS primary_activity_id,
   canonical_type,
   provider_type,
   modality,
@@ -761,11 +760,7 @@ providers AS (
   WHERE _peerdb_is_deleted = 0
   UNION DISTINCT
   SELECT DISTINCT user_id, provider_id
-  FROM postgres_fitness.lab_panel FINAL
-  WHERE _peerdb_is_deleted = 0
-  UNION DISTINCT
-  SELECT DISTINCT user_id, provider_id
-  FROM postgres_fitness.lab_result FINAL
+  FROM postgres_fitness.clinical_record FINAL
   WHERE _peerdb_is_deleted = 0
   UNION DISTINCT
   SELECT DISTINCT user_id, provider_id
@@ -831,15 +826,9 @@ nutrition_daily_counts AS (
   WHERE _peerdb_is_deleted = 0
   GROUP BY user_id, provider_id
 ),
-lab_panel_counts AS (
+clinical_record_counts AS (
   SELECT user_id, provider_id, count() AS count
-  FROM postgres_fitness.lab_panel FINAL
-  WHERE _peerdb_is_deleted = 0
-  GROUP BY user_id, provider_id
-),
-lab_result_counts AS (
-  SELECT user_id, provider_id, count() AS count
-  FROM postgres_fitness.lab_result FINAL
+  FROM postgres_fitness.clinical_record FINAL
   WHERE _peerdb_is_deleted = 0
   GROUP BY user_id, provider_id
 ),
@@ -865,8 +854,7 @@ SELECT
   coalesce(health_event_counts.count, 0) AS health_events,
   coalesce(metric_stream_counts.count, 0) AS metric_stream,
   coalesce(nutrition_daily_counts.count, 0) AS nutrition_daily,
-  coalesce(lab_panel_counts.count, 0) AS lab_panels,
-  coalesce(lab_result_counts.count, 0) AS lab_results,
+  coalesce(clinical_record_counts.count, 0) AS clinical_records,
   coalesce(journal_entry_counts.count, 0) AS journal_entries,
   toUInt8(0) AS is_deleted,
   refresh_clock.refresh_version AS refresh_version,
@@ -897,12 +885,9 @@ LEFT JOIN health_event_counts
 LEFT JOIN nutrition_daily_counts
   ON nutrition_daily_counts.user_id = providers.user_id
  AND nutrition_daily_counts.provider_id = providers.provider_id
-LEFT JOIN lab_panel_counts
-  ON lab_panel_counts.user_id = providers.user_id
- AND lab_panel_counts.provider_id = providers.provider_id
-LEFT JOIN lab_result_counts
-  ON lab_result_counts.user_id = providers.user_id
- AND lab_result_counts.provider_id = providers.provider_id
+LEFT JOIN clinical_record_counts
+  ON clinical_record_counts.user_id = providers.user_id
+ AND clinical_record_counts.provider_id = providers.provider_id
 LEFT JOIN journal_entry_counts
   ON journal_entry_counts.user_id = providers.user_id
  AND journal_entry_counts.provider_id = providers.provider_id`;

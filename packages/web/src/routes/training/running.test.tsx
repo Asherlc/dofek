@@ -68,7 +68,17 @@ const mockPaceTrendData = [
   },
 ];
 
-const mockDynamicsData = [
+const mockDynamicsData: Array<{
+  activityId: string;
+  date: string;
+  activityName: string;
+  cadence: number;
+  strideLengthMeters: number | null;
+  stanceTimeMs: number | null;
+  verticalOscillationMm: number | null;
+  paceSecondsPerKm: number;
+  distanceKm: number;
+}> = [
   {
     activityId: "activity-1",
     date: "2026-03-15",
@@ -105,7 +115,7 @@ const mockDynamicsResponse = {
 };
 
 interface QueryResult<Data> {
-  data: Data;
+  data: Data | undefined;
   isLoading: boolean;
   error: Error | null;
 }
@@ -395,5 +405,84 @@ describe("RunningTab", () => {
       });
       expect(paceTrendOption).toBeDefined();
     });
+  });
+
+  it("shows each initial query error instead of an empty chart", async () => {
+    paceCurveQuery = {
+      data: undefined,
+      isLoading: false,
+      error: new Error("Pace curve is unavailable"),
+    };
+    paceTrendQuery = {
+      data: undefined,
+      isLoading: false,
+      error: new Error("Pace trend is unavailable"),
+    };
+    dynamicsQuery = {
+      data: undefined,
+      isLoading: false,
+      error: new Error("Running dynamics are unavailable"),
+    };
+
+    const RunningTab = await importRunningTab();
+    renderWithUnits(<RunningTab />);
+
+    expect(screen.getByText("Pace curve is unavailable")).toBeTruthy();
+    expect(screen.getByText("Pace trend is unavailable")).toBeTruthy();
+    expect(screen.getAllByText("Running dynamics are unavailable")).toHaveLength(2);
+  });
+
+  it("shows explicit empty states when available chart queries return no rows", async () => {
+    paceCurveQuery = {
+      data: { points: [], availability: mockPaceCurveData.availability },
+      isLoading: false,
+      error: null,
+    };
+    paceTrendQuery = {
+      data: { data: [], availability: mockPaceTrendResponse.availability },
+      isLoading: false,
+      error: null,
+    };
+    dynamicsQuery = {
+      data: { data: [], availability: mockDynamicsResponse.availability },
+      isLoading: false,
+      error: null,
+    };
+
+    const RunningTab = await importRunningTab();
+    renderWithUnits(<RunningTab />);
+
+    expect(screen.getByText("No running pace data")).toBeTruthy();
+    expect(screen.getByText("No running data")).toBeTruthy();
+    expect(screen.getByText("No cadence data")).toBeTruthy();
+    expect(screen.getByText("No running dynamics data")).toBeTruthy();
+  });
+
+  it("marks absent optional running dynamics as unavailable", async () => {
+    dynamicsQuery = {
+      data: {
+        data: [
+          {
+            activityId: "activity-1",
+            date: "2026-03-15",
+            activityName: "Morning Run",
+            cadence: 180,
+            paceSecondsPerKm: 300,
+            distanceKm: 10,
+            strideLengthMeters: null,
+            stanceTimeMs: null,
+            verticalOscillationMm: null,
+          },
+        ],
+        availability: mockDynamicsResponse.availability,
+      },
+      isLoading: false,
+      error: null,
+    };
+
+    const RunningTab = await importRunningTab();
+    renderWithUnits(<RunningTab />);
+
+    expect(screen.getAllByText("--")).toHaveLength(3);
   });
 });

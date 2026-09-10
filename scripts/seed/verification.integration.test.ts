@@ -115,8 +115,7 @@ async function insertVerificationPrerequisites(): Promise<void> {
     VALUES (${USER_ID}, 'Review verification fixture')
     ON CONFLICT (id) DO UPDATE
       SET name = EXCLUDED.name
-  `;
-
+    `;
   await sql`
     INSERT INTO fitness.provider (id, name, user_id)
     VALUES
@@ -187,20 +186,28 @@ async function insertVerificationPrerequisites(): Promise<void> {
   `;
 
   await sql`
-    INSERT INTO fitness.lab_result (
-      provider_id,
+    INSERT INTO fitness.clinical_record (
       user_id,
+      provider_id,
       external_id,
-      test_name,
+      clinical_type,
+      display_name,
+      fhir_version,
+      fhir,
+      downloaded_at,
       recorded_at
     )
     SELECT
-      'manual_review',
       ${USER_ID},
+      'manual_review',
       'verification-lab-' || generated_index,
+      'labResult',
       'Verification lab result',
+      'R4',
+      jsonb_build_object('resourceType', 'Observation', 'id', 'verification-lab-' || generated_index),
+      TIMESTAMPTZ '2026-01-01T00:00:00Z' + generated_index * INTERVAL '1 day',
       TIMESTAMPTZ '2026-01-01T00:00:00Z' + generated_index * INTERVAL '1 day'
-    FROM generate_series(1, 8) AS generated_index
+    FROM generate_series(1, 20) AS generated_index
   `;
 
   await sql`
@@ -233,30 +240,5 @@ async function insertVerificationPrerequisites(): Promise<void> {
       'verification-question',
       'yes'
     FROM generate_series(1, 30) AS generated_index
-  `;
-
-  await sql`
-    INSERT INTO fitness.breathwork_session (
-      user_id,
-      technique_id,
-      rounds,
-      duration_seconds,
-      started_at
-    )
-    SELECT
-      ${USER_ID},
-      'verification',
-      1,
-      60,
-      TIMESTAMPTZ '2026-01-01T00:00:00Z' + generated_index * INTERVAL '1 day'
-    FROM generate_series(1, 10) AS generated_index
-  `;
-
-  await sql`
-    INSERT INTO fitness.menstrual_period (user_id, start_date)
-    SELECT
-      ${USER_ID},
-      DATE '2026-01-01' + generated_index * 28
-    FROM generate_series(1, 4) AS generated_index
   `;
 }

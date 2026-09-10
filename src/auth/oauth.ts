@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 
-const DEFAULT_REDIRECT_URI = "https://dofek.asherlc.com/callback";
+const DEFAULT_REDIRECT_URI = "https://dofek.fit/callback";
 
 function isLocalOrPrivateHost(host: string): boolean {
   if (host.includes("localhost")) {

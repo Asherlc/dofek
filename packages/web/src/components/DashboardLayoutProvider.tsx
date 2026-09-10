@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { reorderDashboardSections } from "../lib/dashboardGridPairs.ts";
@@ -95,7 +96,7 @@ export function DashboardLayoutProvider({
           onError: (error) => {
             setLayoutState(previousLayout);
             utils.settings.get.setData({ key: SETTINGS_KEY }, previousSetting);
-            setWriteError(error.message);
+            setWriteError(userFacingErrorMessage(error));
             captureException(error, { context: "dashboard-layout-write" });
           },
           onSettled: () => {
@@ -176,12 +177,15 @@ export function DashboardLayoutProvider({
       >
         {children}
       </DashboardLayoutContext>
-      {(writeError ?? setting.error?.message) && (
+      {(writeError ?? setting.error) && (
         <p
           role="alert"
           className="fixed bottom-4 right-4 z-50 rounded bg-red-950 px-3 py-2 text-sm text-red-200"
         >
-          {writeError ?? setting.error?.message}
+          {userFacingErrorMessage(
+            writeError ?? setting.error,
+            "Your dashboard layout could not be saved. Please try again.",
+          )}
         </p>
       )}
     </>

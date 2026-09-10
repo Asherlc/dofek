@@ -1,6 +1,6 @@
 {
   "name": "@dofek/training",
-  "version": "0.1.5",
+  "version": "0.1.42",
   "description": "Training-science calculations for power, load, performance, and workout planning",
   "type": "module",
   "license": "MIT",
@@ -30,11 +30,16 @@
     "LICENSE"
   ],
   "exports": {
+    "./power-duration-reference": "./src/power-duration-reference.ts",
     "./*": "./src/*.ts"
   },
   "publishConfig": {
     "access": "public",
     "exports": {
+      "./power-duration-reference": {
+        "types": "./dist/power-duration-reference.d.ts",
+        "import": "./dist/power-duration-reference.js"
+      },
       "./*": {
         "types": "./dist/*.d.ts",
         "import": "./dist/*.js"
@@ -43,7 +48,9 @@
   },
   "dependencies": {
     "@dofek/scoring": "workspace:*",
-    "@dofek/zones": "workspace:*"
+    "@dofek/zones": "workspace:*",
+    "@openbeta/sandbag": "0.0.55",
+    "zod": "4.4.3"
   },
   "scripts": {
     "build": "tsc",

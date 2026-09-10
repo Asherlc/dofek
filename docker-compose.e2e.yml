@@ -22,7 +22,7 @@ services:
       retries: 15
 
   clickhouse:
-    image: mirror.gcr.io/clickhouse/clickhouse-server:26.7.1.1315-alpine
+    image: mirror.gcr.io/clickhouse/clickhouse-server:26.8.2.7-alpine
     mem_limit: 2048m
     environment:
       CLICKHOUSE_DB: fitness
@@ -51,7 +51,7 @@ services:
       retries: 15
 
   redpanda:
-    image: mirror.gcr.io/redpandadata/redpanda:v26.2.1
+    image: mirror.gcr.io/redpandadata/redpanda:v26.2.2
     command:
       - redpanda
       - start
@@ -189,12 +189,15 @@ services:
       CLICKHOUSE_PASSWORD: health
       REDIS_URL: redis://redis:6379
       REDPANDA_BROKERS: redpanda:9092
-      METRIC_STREAM_TOPIC: metric-stream-v1
+      METRIC_STREAM_LEGACY_TOPIC: metric-stream-v1
+      METRIC_STREAM_LIVE_TOPIC: metric-stream-live-v1
+      METRIC_STREAM_HISTORY_TOPIC: metric-stream-history-v1
       PORT: "3000"
       NODE_ENV: test
       PUBLIC_URL: http://localhost:3100
       DISABLE_QUERY_CACHE: "true"
       MATERIALIZED_VIEW_REFRESH_TOKEN: e2e-refresh-token
+      OPENAI_APPS_CHALLENGE_TOKEN: e2e-openai-apps-challenge-token
       CREDENTIAL_ENCRYPTION_KEY_BASE64: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
       ACCOUNT_ERASURE_LEDGER_KEYRING_JSON: '{"activeKeyId":"e2e-v1","keys":{"e2e-v1":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}}'
       ACCOUNT_ERASURE_LEDGER_R2_BUCKET: dofek-account-erasure-ledger

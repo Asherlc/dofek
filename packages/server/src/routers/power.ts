@@ -1,4 +1,5 @@
 import type { CriticalPowerModel } from "@dofek/training/power-analysis";
+
 export type { CriticalPowerModel };
 
 import { TRPCError } from "@trpc/server";

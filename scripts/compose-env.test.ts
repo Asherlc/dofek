@@ -46,6 +46,9 @@ describe("compose-env", () => {
       const dotenv = parseDotenv(output);
 
       expect(dotenv.COMPOSE_PROJECT_NAME).toBe(basename(cwd));
+      expect(dotenv.METRIC_STREAM_LEGACY_TOPIC).toBe("metric-stream-v1");
+      expect(dotenv.METRIC_STREAM_LIVE_TOPIC).toBe("metric-stream-live-v1");
+      expect(dotenv.METRIC_STREAM_HISTORY_TOPIC).toBe("metric-stream-history-v1");
       expect(dotenv.COMPOSE_FILE).toBe(join(realpathSync(cwd), "docker-compose.yml"));
       expect(dotenv.POSTGRES_PASSWORD).toBe(postgresFixtureValue);
       expect(dotenv.CLICKHOUSE_PASSWORD).toBe(clickHouseFixtureValue);

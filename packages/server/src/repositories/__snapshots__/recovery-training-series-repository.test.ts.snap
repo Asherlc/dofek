@@ -1,0 +1,430 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`RecoveryTrainingSeriesRepository > aligns selected observations on a dense date spine without changing missing values to zero 1`] = `
+{
+  "filters": {
+    "modalities": [],
+    "providers": [],
+  },
+  "interpretation": {
+    "causality": "The series exposes aligned observations for analysis and does not claim that correlations are causal.",
+    "date_alignment": "Rows use local calendar dates. previous_day_training_load is the immediately preceding calendar day, including across DST transitions.",
+    "filter_scope": "Provider and modality filters apply to activity exposure and every training-load channel; recovery, sleep, body, subjective, and nutrition observations are unfiltered.",
+  },
+  "range": {
+    "end_date": "2026-03-09",
+    "start_date": "2026-03-08",
+    "timezone": "America/Los_Angeles",
+  },
+  "requested_streams": [
+    "health",
+    "sleep",
+  ],
+  "rows": [
+    {
+      "date": "2026-03-08",
+      "health": {
+        "hrv": {
+          "provenance_scope": "daily_row",
+          "source_providers": [
+            "apple_health",
+          ],
+          "status": "observed",
+          "value": 52,
+          "value_kind": "provider_supplied",
+        },
+        "respiratory_rate": {
+          "provenance_scope": "daily_row",
+          "source_providers": [
+            "apple_health",
+          ],
+          "status": "observed",
+          "value": 14,
+          "value_kind": "provider_supplied",
+        },
+        "resting_hr": {
+          "provenance_scope": "deduped_resting_hr_series",
+          "source_providers": [],
+          "status": "observed",
+          "value": 48,
+          "value_kind": "calculated_from_deduped_samples",
+        },
+        "steps": {
+          "provenance_scope": "daily_row",
+          "source_providers": [
+            "apple_health",
+          ],
+          "status": "observed",
+          "value": 8000,
+          "value_kind": "provider_supplied",
+        },
+      },
+      "sleep": {
+        "reason": "No sleep record for this date.",
+        "status": "missing",
+      },
+    },
+    {
+      "date": "2026-03-09",
+      "health": {
+        "hrv": {
+          "provenance_scope": "daily_row",
+          "source_providers": [],
+          "status": "missing",
+          "value": null,
+          "value_kind": "provider_supplied",
+        },
+        "respiratory_rate": {
+          "provenance_scope": "daily_row",
+          "source_providers": [],
+          "status": "missing",
+          "value": null,
+          "value_kind": "provider_supplied",
+        },
+        "resting_hr": {
+          "provenance_scope": "deduped_resting_hr_series",
+          "source_providers": [],
+          "status": "missing",
+          "value": null,
+          "value_kind": "calculated_from_deduped_samples",
+        },
+        "steps": {
+          "provenance_scope": "daily_row",
+          "source_providers": [],
+          "status": "missing",
+          "value": null,
+          "value_kind": "provider_supplied",
+        },
+      },
+      "sleep": {
+        "duration_minutes": 450,
+        "efficiency_pct": 91,
+        "ended_at": "2026-03-09T14:00:00.000Z",
+        "local_time_context": {
+          "end_utc_offset_minutes": -420,
+          "source": "provider_timezone",
+          "start_utc_offset_minutes": -480,
+          "timezone": "America/Los_Angeles",
+        },
+        "missing_fields": [],
+        "selected_session_id": "sleep-1",
+        "source_providers": [
+          "whoop",
+        ],
+        "stages_minutes": {
+          "awake": 30,
+          "deep": 80,
+          "light": 250,
+          "rem": 90,
+        },
+        "staging_available": true,
+        "started_at": "2026-03-09T06:30:00.000Z",
+        "status": "observed",
+      },
+    },
+  ],
+}
+`;
+
+exports[`RecoveryTrainingSeriesRepository > aligns the prior calendar day's load across a DST boundary 1`] = `
+{
+  "filters": {
+    "modalities": [],
+    "providers": [],
+  },
+  "interpretation": {
+    "causality": "The series exposes aligned observations for analysis and does not claim that correlations are causal.",
+    "date_alignment": "Rows use local calendar dates. previous_day_training_load is the immediately preceding calendar day, including across DST transitions.",
+    "filter_scope": "Provider and modality filters apply to activity exposure and every training-load channel; recovery, sleep, body, subjective, and nutrition observations are unfiltered.",
+  },
+  "range": {
+    "end_date": "2026-03-09",
+    "start_date": "2026-03-09",
+    "timezone": "America/Los_Angeles",
+  },
+  "requested_streams": [
+    "training_load",
+  ],
+  "rows": [
+    {
+      "date": "2026-03-09",
+      "previous_day_training_load": {
+        "cycling_power_tss": {
+          "daily_value": 80,
+        },
+      },
+      "training_load": {
+        "cycling_power_tss": {
+          "daily_value": 0,
+        },
+      },
+    },
+  ],
+}
+`;
+
+exports[`RecoveryTrainingSeriesRepository > bounds rolling body-weight windows and excludes future, null, and non-positive values 1`] = `
+{
+  "filters": {
+    "modalities": [],
+    "providers": [],
+  },
+  "interpretation": {
+    "causality": "The series exposes aligned observations for analysis and does not claim that correlations are causal.",
+    "date_alignment": "Rows use local calendar dates. previous_day_training_load is the immediately preceding calendar day, including across DST transitions.",
+    "filter_scope": "Provider and modality filters apply to activity exposure and every training-load channel; recovery, sleep, body, subjective, and nutrition observations are unfiltered.",
+  },
+  "range": {
+    "end_date": "2026-06-15",
+    "start_date": "2026-06-15",
+    "timezone": "UTC",
+  },
+  "requested_streams": [
+    "body_weight",
+  ],
+  "rows": [
+    {
+      "body_weight": {
+        "direct_measurement_kind": "direct",
+        "direct_source_provider": "withings",
+        "direct_status": "observed",
+        "direct_value_kg": 70,
+        "nearby_evidence": {
+          "reason": "No valid positive directly measured body weight is available",
+          "value_kg": null,
+        },
+        "rolling": {
+          "average_28d_kg": 69.75,
+          "average_7d_kg": 71,
+          "observed_days_28d": 4,
+          "observed_days_7d": 2,
+        },
+      },
+      "date": "2026-06-15",
+    },
+  ],
+}
+`;
+
+exports[`RecoveryTrainingSeriesRepository > lists every missing sleep field without substituting zeros 1`] = `
+{
+  "filters": {
+    "modalities": [],
+    "providers": [],
+  },
+  "interpretation": {
+    "causality": "The series exposes aligned observations for analysis and does not claim that correlations are causal.",
+    "date_alignment": "Rows use local calendar dates. previous_day_training_load is the immediately preceding calendar day, including across DST transitions.",
+    "filter_scope": "Provider and modality filters apply to activity exposure and every training-load channel; recovery, sleep, body, subjective, and nutrition observations are unfiltered.",
+  },
+  "range": {
+    "end_date": "2026-06-15",
+    "start_date": "2026-06-15",
+    "timezone": "UTC",
+  },
+  "requested_streams": [
+    "sleep",
+  ],
+  "rows": [
+    {
+      "date": "2026-06-15",
+      "sleep": {
+        "duration_minutes": null,
+        "efficiency_pct": null,
+        "ended_at": null,
+        "local_time_context": {
+          "end_utc_offset_minutes": null,
+          "source": "unknown",
+          "start_utc_offset_minutes": null,
+          "timezone": null,
+        },
+        "missing_fields": [
+          "duration_minutes",
+          "efficiency_pct",
+          "stages_minutes",
+          "ended_at",
+        ],
+        "selected_session_id": "sleep-incomplete",
+        "source_providers": [
+          "whoop",
+        ],
+        "stages_minutes": {
+          "awake": null,
+          "deep": null,
+          "light": null,
+          "rem": null,
+        },
+        "staging_available": false,
+        "started_at": "2026-06-15T07:00:00.000Z",
+        "status": "observed",
+      },
+    },
+  ],
+}
+`;
+
+exports[`RecoveryTrainingSeriesRepository > passes provider and modality filters to compact activity exposure 1`] = `
+{
+  "filters": {
+    "modalities": [
+      "indoor",
+    ],
+    "providers": [
+      "peloton",
+    ],
+  },
+  "interpretation": {
+    "causality": "The series exposes aligned observations for analysis and does not claim that correlations are causal.",
+    "date_alignment": "Rows use local calendar dates. previous_day_training_load is the immediately preceding calendar day, including across DST transitions.",
+    "filter_scope": "Provider and modality filters apply to activity exposure and every training-load channel; recovery, sleep, body, subjective, and nutrition observations are unfiltered.",
+  },
+  "range": {
+    "end_date": "2026-06-01",
+    "start_date": "2026-06-01",
+    "timezone": "UTC",
+  },
+  "requested_streams": [
+    "activities",
+  ],
+  "rows": [
+    {
+      "activity_exposure": {
+        "activity_count": 1,
+        "canonical_types": [
+          "cycling",
+        ],
+        "date_attribution": {
+          "analysis_timezone_assumptions": 0,
+          "authoritative_records": 1,
+        },
+        "duration": {
+          "invalid_interval_activities": 0,
+          "missing_end_activities": 0,
+          "reason": null,
+          "status": "observed",
+          "supported_activities": 1,
+          "total_activities": 1,
+          "value_minutes": 60,
+        },
+        "modalities": [
+          "indoor",
+        ],
+        "source_activity_count": 1,
+        "source_activity_ids": [
+          "activity-1",
+        ],
+        "source_activity_ids_truncated": false,
+        "source_providers": [
+          "peloton",
+        ],
+      },
+      "date": "2026-06-01",
+    },
+  ],
+}
+`;
+
+exports[`RecoveryTrainingSeriesRepository > returns an explicit zero exposure when no matching activities exist 1`] = `
+{
+  "filters": {
+    "modalities": [],
+    "providers": [],
+  },
+  "interpretation": {
+    "causality": "The series exposes aligned observations for analysis and does not claim that correlations are causal.",
+    "date_alignment": "Rows use local calendar dates. previous_day_training_load is the immediately preceding calendar day, including across DST transitions.",
+    "filter_scope": "Provider and modality filters apply to activity exposure and every training-load channel; recovery, sleep, body, subjective, and nutrition observations are unfiltered.",
+  },
+  "range": {
+    "end_date": "2026-06-15",
+    "start_date": "2026-06-15",
+    "timezone": "UTC",
+  },
+  "requested_streams": [
+    "activities",
+  ],
+  "rows": [
+    {
+      "activity_exposure": {
+        "activity_count": 0,
+        "canonical_types": [],
+        "date_attribution": {
+          "analysis_timezone_assumptions": 0,
+          "authoritative_records": 0,
+        },
+        "duration": {
+          "invalid_interval_activities": 0,
+          "missing_end_activities": 0,
+          "reason": null,
+          "status": "observed",
+          "supported_activities": 0,
+          "total_activities": 0,
+          "value_minutes": 0,
+        },
+        "modalities": [],
+        "source_activity_count": 0,
+        "source_activity_ids": [],
+        "source_activity_ids_truncated": false,
+        "source_providers": [],
+      },
+      "date": "2026-06-15",
+    },
+  ],
+}
+`;
+
+exports[`RecoveryTrainingSeriesRepository > returns nearby direct-weight evidence and rolling context on dates without a measurement 1`] = `
+{
+  "filters": {
+    "modalities": [],
+    "providers": [],
+  },
+  "interpretation": {
+    "causality": "The series exposes aligned observations for analysis and does not claim that correlations are causal.",
+    "date_alignment": "Rows use local calendar dates. previous_day_training_load is the immediately preceding calendar day, including across DST transitions.",
+    "filter_scope": "Provider and modality filters apply to activity exposure and every training-load channel; recovery, sleep, body, subjective, and nutrition observations are unfiltered.",
+  },
+  "range": {
+    "end_date": "2026-06-02",
+    "start_date": "2026-06-02",
+    "timezone": "UTC",
+  },
+  "requested_streams": [
+    "body_weight",
+  ],
+  "rows": [
+    {
+      "body_weight": {
+        "direct_measurement_kind": "unavailable",
+        "direct_source_provider": null,
+        "direct_status": "missing",
+        "direct_value_kg": null,
+        "nearby_evidence": {
+          "distance_days": 1,
+          "kind": "nearest",
+          "method": "nearest_within_30_days",
+          "quality": "low",
+          "sources": [
+            {
+              "date": "2026-06-01",
+              "measurement_kind": "direct",
+              "provider": "withings",
+              "recorded_at": "2026-06-01T08:00:00.000Z",
+              "source_record_id": "weight-1",
+              "value_kg": 70,
+            },
+          ],
+          "value_kg": 70,
+        },
+        "rolling": {
+          "average_28d_kg": 70,
+          "average_7d_kg": 70,
+          "observed_days_28d": 1,
+          "observed_days_7d": 1,
+        },
+      },
+      "date": "2026-06-02",
+    },
+  ],
+}
+`;

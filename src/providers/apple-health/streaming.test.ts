@@ -253,6 +253,53 @@ describe("streamHealthExport — sleep filtering", () => {
   });
 });
 
+describe("streamHealthExport — category metadata", () => {
+  it("keeps menstrual cycle-start metadata on its own record", async () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<HealthData locale="en_US">
+  <Record type="HKCategoryTypeIdentifierMenstrualFlow" sourceName="Cycle Source"
+    sourceBundle="com.example.cycle-source" sourceVersion="1" unit="count"
+    creationDate="2026-08-01 08:05:00 -0700"
+    startDate="2026-08-01 08:00:00 -0700"
+    endDate="2026-08-01 08:05:00 -0700"
+    value="HKCategoryValueMenstrualFlowMedium">
+    <MetadataEntry key="HKMenstrualCycleStart" value="1"/>
+    <MetadataEntry key="CycleSource.Note" value="first day"/>
+  </Record>
+  <Record type="HKCategoryTypeIdentifierMenstrualFlow" sourceName="Cycle Source"
+    sourceBundle="com.example.cycle-source" sourceVersion="1" unit="count"
+    creationDate="2026-08-02 08:05:00 -0700"
+    startDate="2026-08-02 08:00:00 -0700"
+    endDate="2026-08-02 08:05:00 -0700"
+    value="HKCategoryValueMenstrualFlowLight">
+    <MetadataEntry key="HKMenstrualCycleStart" value="0"/>
+  </Record>
+</HealthData>`;
+    const path = writeXml("menstrual-flow.xml", xml);
+    const categories: CategoryRecord[] = [];
+
+    await streamHealthExport(path, new Date("2026-01-01"), {
+      onRecordBatch: async () => {},
+      onSleepBatch: async () => {},
+      onWorkoutBatch: async () => {},
+      onCategoryBatch: async (records) => {
+        categories.push(...records);
+      },
+    });
+
+    expect(categories).toHaveLength(2);
+    expect(categories[0]).toMatchObject({
+      sourceName: "Cycle Source",
+      sourceBundle: "com.example.cycle-source",
+      metadata: {
+        HKMenstrualCycleStart: "1",
+        "CycleSource.Note": "first day",
+      },
+    });
+    expect(categories[1]?.metadata).toEqual({ HKMenstrualCycleStart: "0" });
+  });
+});
+
 // ============================================================
 // Workout with route but no stats
 // ============================================================

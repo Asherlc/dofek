@@ -104,7 +104,7 @@ function setMigrationHistory(migrations: TestMigration[]): void {
 
 function makeClient(
   rows: Array<{ content_hash: string | null; created_at: number | string | null; hash: string }>,
-): { client: Client; queryMock: ReturnType<typeof vi.fn> } {
+): { client: Client; queryMock: CallableVitestMock } {
   const client = new Client();
   const queryMock = vi.fn().mockImplementation((query: string) => {
     if (query.includes("SELECT hash, created_at, content_hash")) {
@@ -293,17 +293,18 @@ describe("postgres migrator", () => {
     });
   });
 
-  it.each(
-    approvedLegacyHashes,
-  )("accepts the approved pre-transaction hash for %s", async (tag, legacyHash) => {
-    setMigrationHistory([{ hash: `${tag}-current-hash`, tag, when: 100 }]);
-    const { client } = makeClient([
-      { content_hash: legacyHash, created_at: 90, hash: `${tag}.sql` },
-    ]);
+  it.each(approvedLegacyHashes)(
+    "accepts the approved pre-transaction hash for %s",
+    async (tag, legacyHash) => {
+      setMigrationHistory([{ hash: `${tag}-current-hash`, tag, when: 100 }]);
+      const { client } = makeClient([
+        { content_hash: legacyHash, created_at: 90, hash: `${tag}.sql` },
+      ]);
 
-    await expect(runDrizzleMigrations(client, "/migrations")).resolves.toBeUndefined();
-    expect(mocks.migrate).toHaveBeenCalledOnce();
-  });
+      await expect(runDrizzleMigrations(client, "/migrations")).resolves.toBeUndefined();
+      expect(mocks.migrate).toHaveBeenCalledOnce();
+    },
+  );
 
   it("rejects an unexpected content hash for a legacy filename", async () => {
     setMigrationHistory([{ hash: "actual-current-hash", tag: "0001_first", when: 100 }]);

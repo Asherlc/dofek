@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     "./providers": "./src/providers.ts",
+    "./provider-catalog": "./src/provider-catalog.ts",
     "./provider-stats": "./src/provider-stats.ts",
     "./provider-health": "./src/provider-health.ts",
     "./health-provenance": "./src/health-provenance.ts",
@@ -15,7 +16,8 @@
     "./processing-alerts": "./src/processing-alerts.ts",
     "./processing-status": "./src/processing-status.ts",
     "./sync-actions": "./src/sync-actions.ts",
-    "./auth-provider-grouping": "./src/auth-provider-grouping.ts"
+    "./auth-provider-grouping": "./src/auth-provider-grouping.ts",
+    "./hangboarding": "./src/hangboarding.ts"
   },
   "dependencies": {
     "@dofek/format": "workspace:*"

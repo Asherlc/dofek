@@ -49,7 +49,8 @@ Every public module is imported as `@dofek/training/<subpath>`.
 | Subpath | Purpose |
 | --- | --- |
 | `activity-icons` | Normalize activity names into framework-neutral icon categories |
-| `climbing-grades` | Parse V-scale and Yosemite Decimal System climbing grades |
+| `climbing-grades` | Validate, order, and convert Sandbag-supported boulder and route climbing grades |
+| `cycling-workout-metrics` | Coverage-aware per-activity power, heart-rate, cadence, drift, zone, load, and interval calculations |
 | `derived-cardio` | Cycling and submaximal walking/running VO2 max estimates and validation |
 | `endurance-types` | Endurance and indoor-cycling type guards |
 | `grade-adjusted-pace` | Grade cost factor and adjusted running pace |
@@ -106,6 +107,32 @@ product heuristics.
 - Critical power fits the two-parameter relationship introduced by
   [Monod and Scherrer (1965)](https://doi.org/10.1080/00140136508930810)
   using efforts from 120 through 600 seconds.
+
+### Cycling workout metrics
+
+`computeCyclingWorkoutMetrics` resamples native power, heart-rate, and cadence streams to elapsed
+one-second buckets without filling dropouts. A native observation is held only to the next native
+timestamp when the gap is at most the bounded continuity tolerance; measured zero remains zero and
+missing elapsed seconds remain missing. The result reports native observation counts, covered,
+missing, and zero seconds, median sample interval, and largest gap independently for every stream.
+
+Average power and work use covered power seconds only. Normalized power uses the package's canonical
+30-second rolling/fourth-power calculation and is withheld when any elapsed power second is missing.
+Intensity factor is normalized power divided by the FTP effective for that activity. Power TSS uses
+`duration_hours × intensity_factor² × 100`, following the package's documented power-stress model;
+both values are unavailable rather than manufactured when FTP or normalized power is missing.
+
+Aerobic efficiency is mean synchronized power divided by mean synchronized heart rate. Cardiac drift
+compares that ratio between equal elapsed-time halves as
+`100 × (first_half_ratio - second_half_ratio) / first_half_ratio`; it requires at least 20 minutes
+and 90% paired coverage in each half. This is a descriptive within-workout comparison, not a causal
+or medical conclusion.
+
+Recorded interval boundaries always take precedence. Without recorded intervals, the optional
+detector identifies at least 30 seconds whose 30-second mean is at or above 105% of the activity's
+effective FTP, merges interruptions shorter than 15 seconds, and exposes intervening recoveries.
+That detector is a Dofek heuristic. Inferred intervals never receive invented targets or completion
+scores.
 
 ### Terrain adjustment
 

@@ -12,6 +12,7 @@ import {
 } from "@dofek/format/format";
 import { formatRecordLocalTime } from "@dofek/format/record-local-time";
 import type { UnitConverter } from "@dofek/format/units";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { providerSourceLabel } from "@dofek/providers/providers";
 import { activityMetricColors, statusColors } from "@dofek/scoring/colors";
 import {
@@ -26,6 +27,7 @@ import {
   cadenceAxisLabel,
   cadenceUnit,
   formatActivityTypeLabel,
+  isActivityDetailType,
   isCyclingActivity,
 } from "@dofek/training/training";
 import { Link, useParams } from "@tanstack/react-router";
@@ -93,18 +95,6 @@ function buildAxisPointerEvents(
   };
 }
 
-function isStrengthActivityType(activityType: string): boolean {
-  return activityType === "strength";
-}
-
-function isClimbingActivityType(activityType: string): boolean {
-  return activityType === "climbing";
-}
-
-function isHangboardingActivityType(activityType: string): boolean {
-  return activityType === "hangboard";
-}
-
 export function ActivityDetailPage() {
   const { id } = useParams({ from: "/activity/$id" });
 
@@ -126,19 +116,19 @@ export function ActivityDetailPage() {
     { enabled: isCycling && hasPower, placeholderData: (previousData) => previousData },
   );
   const isStrengthActivity =
-    detail.data != null && isStrengthActivityType(detail.data.activityType);
+    detail.data != null && isActivityDetailType(detail.data.activityType, "strength");
   const strengthExercises = trpc.activity.strengthExercises.useQuery(
     { id },
     { enabled: isStrengthActivity },
   );
   const isClimbingActivity =
-    detail.data != null && isClimbingActivityType(detail.data.activityType);
+    detail.data != null && isActivityDetailType(detail.data.activityType, "climbing");
   const climbingEntries = trpc.climbing.activityEntries.useQuery(
     { id },
     { enabled: isClimbingActivity },
   );
   const isHangboardingActivity =
-    detail.data != null && isHangboardingActivityType(detail.data.activityType);
+    detail.data != null && isActivityDetailType(detail.data.activityType, "hangboard");
   const hangboardDetails = trpc.activity.hangboardDetails.useQuery(
     { id },
     { enabled: isHangboardingActivity },
@@ -221,7 +211,7 @@ export function ActivityDetailPage() {
       ) : null}
 
       <ActivityHeader activity={activity} units={units} />
-      <ActivityPerceivedExertion activityId={id} value={activity.perceivedExertion} />
+      <ActivityPerceivedExertion value={activity.perceivedExertion} />
 
       {detail.error ? <QueryStatePanel error={detail.error} height={72} /> : null}
 
@@ -235,10 +225,7 @@ export function ActivityDetailPage() {
       ) : null}
 
       {hasGps && (
-        <Section
-          title="Route Map"
-          description="This map shows your recorded route, including start and finish locations."
-        >
+        <Section title="Route Map" description="Recorded GPS path with start and finish locations.">
           <RouteMap points={points} onRegisterHoverCallback={mapHoverRef} />
         </Section>
       )}
@@ -246,7 +233,7 @@ export function ActivityDetailPage() {
       {(hasHr || hasPower || hasSpeed || hasCadence) && (
         <Section
           title="Performance"
-          description="This chart overlays heart rate, power, speed, and cadence so you can see how effort changed during the workout."
+          description="Heart rate, power, speed, and cadence aligned over the workout."
         >
           <MetricsChart
             points={points}
@@ -290,7 +277,7 @@ export function ActivityDetailPage() {
           description="The climbs recorded during this session, including grades and send status."
         >
           {climbingEntries.error ? (
-            <p className="text-sm text-red-400">{climbingEntries.error.message}</p>
+            <p className="text-sm text-red-400">{userFacingErrorMessage(climbingEntries.error)}</p>
           ) : (
             <ClimbingEntryBreakdown entries={climbingEntries.data ?? []} />
           )}
@@ -312,10 +299,7 @@ export function ActivityDetailPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {hasAltitude && (
-          <Section
-            title="Elevation Profile"
-            description="This chart shows how your elevation changed over time during the activity."
-          >
+          <Section title="Elevation Profile" description="Elevation over elapsed activity time.">
             <ElevationChart
               points={points}
               loading={stream.isLoading}
@@ -328,7 +312,7 @@ export function ActivityDetailPage() {
         {showHrZones && (
           <Section
             title="Heart Rate Zones"
-            description="This chart shows how much time you spent in each heart rate zone."
+            description="Recorded duration and percentage of activity time in each heart rate zone."
           >
             {hrZones.error && !hrZonesHaveCachedData ? (
               <QueryStatePanel error={hrZones.error} height={250} />
@@ -344,7 +328,7 @@ export function ActivityDetailPage() {
         {isCycling && hasPower && (powerZones.error || powerZones.data != null) && (
           <Section
             title="Power Zones"
-            description="This chart shows how much time you spent in each power zone."
+            description="Recorded duration and percentage of activity time in each power zone."
           >
             {powerZones.error && powerZones.data == null ? (
               <QueryStatePanel error={powerZones.error} height={250} />
@@ -378,6 +362,13 @@ export function ActivityHeader({
           (new Date(activity.endedAt).getTime() - new Date(activity.startedAt).getTime()) / 60000,
         )
       : null;
+  const localStartTime = formatRecordLocalTime(
+    activity.startedAt,
+    activity.localTimeContext,
+    "start",
+    undefined,
+    Intl.DateTimeFormat().resolvedOptions().timeZone,
+  );
 
   const formatDuration = (mins: number) => {
     const hours = Math.floor(mins / 60);
@@ -453,9 +444,7 @@ export function ActivityHeader({
       </div>
       <p className="text-sm text-subtle">
         {formatDateLong(activity.startedAt)} at{" "}
-        {formatRecordLocalTime(activity.startedAt, activity.localTimeContext, "start") === "--"
-          ? "Local time unavailable"
-          : formatRecordLocalTime(activity.startedAt, activity.localTimeContext, "start")}
+        {localStartTime === "--" ? "Local time unavailable" : localStartTime}
       </p>
       {(activity.sourceLinks.length > 0 || activity.sourceProviders.length > 0) && (
         <p className="text-xs text-subtle mb-4">
@@ -465,31 +454,33 @@ export function ActivityHeader({
 
       {stats.length > 0 && (
         <div className="flex flex-wrap gap-4">
-          {stats.map((s) => {
-            const metric = "status" in s ? s : null;
-            const unavailableMetric = metric?.status !== "available" ? metric : null;
-            const displayedValue =
-              "status" in s ? (s.status === "available" ? s.value : s.reason) : s.value;
-            return (
-              <section
-                key={s.label}
-                className="card px-4 py-3"
-                data-state={metric?.status}
-                aria-label={
-                  unavailableMetric
-                    ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}: ${unavailableMetric.reason}`
-                    : undefined
-                }
-              >
-                <div className="text-xs text-subtle mb-0.5">
-                  {unavailableMetric
-                    ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}`
-                    : s.label}
-                </div>
-                <div className="text-lg font-medium tabular-nums">{displayedValue}</div>
-              </section>
-            );
-          })}
+          {stats
+            .filter((stat) => !("status" in stat) || stat.status !== "missing")
+            .map((s) => {
+              const metric = "status" in s ? s : null;
+              const unavailableMetric = metric?.status !== "available" ? metric : null;
+              const displayedValue =
+                "status" in s ? (s.status === "available" ? s.value : s.reason) : s.value;
+              return (
+                <section
+                  key={s.label}
+                  className="card px-4 py-3"
+                  data-state={metric?.status}
+                  aria-label={
+                    unavailableMetric
+                      ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}: ${unavailableMetric.reason}`
+                      : undefined
+                  }
+                >
+                  <div className="text-xs text-subtle mb-0.5">
+                    {unavailableMetric
+                      ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}`
+                      : s.label}
+                  </div>
+                  <div className="text-lg font-medium tabular-nums">{displayedValue}</div>
+                </section>
+              );
+            })}
         </div>
       )}
     </div>
@@ -1035,7 +1026,7 @@ function StrengthExerciseBreakdown({
         const hasRpe = exercise.sets.some((set) => set.rpe != null);
 
         return (
-          <div key={exercise.exerciseIndex}>
+          <div key={`${exercise.activityId}:${exercise.exerciseIndex}`}>
             <div className="flex items-baseline gap-2 mb-2">
               <h3 className="text-sm font-medium text-foreground">{exercise.exerciseName}</h3>
               {exercise.equipment && (

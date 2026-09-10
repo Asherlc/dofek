@@ -458,29 +458,32 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       [{ gyroscopeX: 0.4 }, [0.4, 0, 0]],
       [{ gyroscopeY: 0.5 }, [0, 0.5, 0]],
       [{ gyroscopeZ: 0.6 }, [0, 0, 0.6]],
-    ] as const)("treats a partial gyroscope sample as a 6-axis imu vector", async (overrides, expectedGyroValues) => {
-      const execute = makeExecute();
-      const metricStreamPublisher = makeMetricStreamPublisher();
-      const caller = createCaller({
-        db: makeDatabase(execute),
-        metricStreamPublisher,
-        userId: "user-1",
-      });
+    ] as const)(
+      "treats a partial gyroscope sample as a 6-axis imu vector",
+      async (overrides, expectedGyroValues) => {
+        const execute = makeExecute();
+        const metricStreamPublisher = makeMetricStreamPublisher();
+        const caller = createCaller({
+          db: makeDatabase(execute),
+          metricStreamPublisher,
+          userId: "user-1",
+        });
 
-      await caller.pushSamples({
-        deviceId: "Apple Watch",
-        deviceType: "apple_watch",
-        samples: [makeSample(overrides)],
-      });
+        await caller.pushSamples({
+          deviceId: "Apple Watch",
+          deviceType: "apple_watch",
+          samples: [makeSample(overrides)],
+        });
 
-      const [publishedRow] = getPublishedRows(metricStreamPublisher);
-      expect(publishedRow).toEqual(
-        expect.objectContaining({
-          channel: "imu",
-          vector: [0.012, -0.981, 0.043, ...expectedGyroValues],
-        }),
-      );
-    });
+        const [publishedRow] = getPublishedRows(metricStreamPublisher);
+        expect(publishedRow).toEqual(
+          expect.objectContaining({
+            channel: "imu",
+            vector: [0.012, -0.981, 0.043, ...expectedGyroValues],
+          }),
+        );
+      },
+    );
 
     it("logs the full timestamp range for successful pushes", async () => {
       const execute = makeExecute();

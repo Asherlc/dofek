@@ -10,6 +10,11 @@ import { ActivityRepository } from "./activity-repository.ts";
 import { StrengthRepository } from "./strength-repository.ts";
 
 const idRowSchema = z.object({ id: z.string().uuid() });
+const activityIdentityRowSchema = z.object({
+  group_id: z.string().uuid(),
+  id: z.string().uuid(),
+});
+const primaryMemberRowSchema = z.object({ primary_activity_id: z.string().uuid() });
 
 describe("StrengthRepository activity scope", () => {
   let testContext: TestContext;
@@ -145,5 +150,409 @@ describe("StrengthRepository activity scope", () => {
     expect(detail?.period.elapsedWeekCount).toBe(5);
     expect(detail?.period.startWeek).toBe(detail?.observations[0]?.week);
     expect(detail?.period.endWeek).toBe(detail?.observations[2]?.week);
+  });
+
+  it("preserves same-name exercise histories as distinct equipment identities", async () => {
+    const repository = new StrengthRepository(testContext.db, TEST_USER_ID, "UTC");
+    const exerciseName = "Task 8 Equipment Identity Press";
+    const exercises = await executeWithSchema(
+      testContext.db,
+      z.object({ equipment: z.string(), id: z.string().uuid() }),
+      sql`INSERT INTO fitness.exercise (name, muscle_groups, equipment)
+          VALUES
+            (${exerciseName}, ARRAY['chest']::text[], 'BARBELL'),
+            (${exerciseName}, ARRAY['chest']::text[], 'DUMBBELL')
+          RETURNING id, equipment`,
+    );
+    const barbellId = exercises.find((exercise) => exercise.equipment === "BARBELL")?.id;
+    const dumbbellId = exercises.find((exercise) => exercise.equipment === "DUMBBELL")?.id;
+    if (!barbellId || !dumbbellId) throw new Error("Equipment identity exercises were not created");
+
+    for (const [weekOffset, barbellWeight, dumbbellWeight] of [
+      [4, 80, 40],
+      [3, 85, 42],
+      [2, 90, 44],
+    ] as const) {
+      const activityRows = await executeWithSchema(
+        testContext.db,
+        idRowSchema,
+        sql`INSERT INTO fitness.activity (
+              provider_id, user_id, external_id, canonical_type, provider_type,
+              started_at, ended_at, name, source_name
+            ) VALUES (
+              'strength_scope_test', ${TEST_USER_ID}, ${`equipment-identity-${weekOffset}`},
+              'strength', 'strength_training',
+              date_trunc('week', CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+                - ${weekOffset}::int * INTERVAL '1 week' + INTERVAL '1 day',
+              date_trunc('week', CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+                - ${weekOffset}::int * INTERVAL '1 week' + INTERVAL '1 day 1 hour',
+              ${exerciseName}, 'Strength Scope Test'
+            ) RETURNING id`,
+      );
+      const activityId = activityRows[0]?.id;
+      if (!activityId) throw new Error("Equipment identity activity was not created");
+      await testContext.db.execute(
+        sql`INSERT INTO fitness.strength_set (
+              activity_id, exercise_id, exercise_index, set_index, set_type, weight_kg, reps
+            ) VALUES
+              (${activityId}, ${barbellId}, 0, 0, 'working', ${barbellWeight}, 5),
+              (${activityId}, ${dumbbellId}, 1, 0, 'working', ${dumbbellWeight}, 10)`,
+      );
+    }
+
+    const estimatedMaxes = (await repository.getEstimatedOneRepMax(90))
+      .map((result) => result.toDetail())
+      .filter((result) => result.exerciseName === exerciseName);
+    expect(estimatedMaxes.map(({ equipment }) => equipment)).toEqual(["BARBELL", "DUMBBELL"]);
+    expect(
+      estimatedMaxes.map(({ history }) => history.map(({ actualWeight }) => actualWeight)),
+    ).toEqual([
+      [80, 85, 90],
+      [40, 42, 44],
+    ]);
+
+    const overload = (await repository.getProgressiveOverload(90))
+      .map((result) => result.toDetail())
+      .filter((result) => result.exerciseName === exerciseName);
+    expect(overload.map(({ equipment }) => equipment)).toEqual(["BARBELL", "DUMBBELL"]);
+    expect(overload.map(({ observations }) => observations.length)).toEqual([3, 3]);
+  });
+
+  it("unions member sets without double-counting exact mirrors for every resolved identity", async () => {
+    const activityRepository = new ActivityRepository(testContext.db, TEST_USER_ID, "UTC");
+    const strengthRepository = new StrengthRepository(testContext.db, TEST_USER_ID, "UTC");
+    const volumeBefore = await strengthRepository.getVolumeOverTime(30);
+    const totalBefore = volumeBefore.reduce(
+      (totals, week) => ({
+        setCount: totals.setCount + week.toDetail().setCount,
+        totalVolumeKg: totals.totalVolumeKg + week.toDetail().totalVolumeKg,
+        workoutCount: totals.workoutCount + week.toDetail().workoutCount,
+      }),
+      { setCount: 0, totalVolumeKg: 0, workoutCount: 0 },
+    );
+
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES
+            ('strength_union_strong', 'Strong', ${TEST_USER_ID}),
+            ('strength_union_mirror', 'Strength Mirror', ${TEST_USER_ID})
+          ON CONFLICT (id) DO NOTHING`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.provider_priority (provider_id, priority)
+          VALUES ('strength_union_strong', 20), ('strength_union_mirror', 5)
+          ON CONFLICT (provider_id) DO UPDATE SET priority = EXCLUDED.priority`,
+    );
+    const exercises = await executeWithSchema(
+      testContext.db,
+      z.object({ id: z.string().uuid(), name: z.string() }),
+      sql`INSERT INTO fitness.exercise (name, muscle_groups, equipment)
+          VALUES
+            ('Task 8 Deadlift', ARRAY['back', 'glutes', 'hamstrings']::text[], 'barbell'),
+            ('Task 8 Bench Press', ARRAY['chest', 'triceps']::text[], 'barbell')
+          RETURNING id, name`,
+    );
+    const deadliftId = exercises.find((exercise) => exercise.name === "Task 8 Deadlift")?.id;
+    const benchPressId = exercises.find((exercise) => exercise.name === "Task 8 Bench Press")?.id;
+    if (!deadliftId || !benchPressId) throw new Error("Task 8 exercises were not created");
+
+    const strongRows = await executeWithSchema(
+      testContext.db,
+      activityIdentityRowSchema,
+      sql`INSERT INTO fitness.activity (
+            provider_id, user_id, external_id, canonical_type, provider_type,
+            started_at, ended_at, name, source_name
+          ) VALUES (
+            'strength_union_strong', ${TEST_USER_ID}, 'task-8-strong-member',
+            'strength', 'strength_training', CURRENT_TIMESTAMP - INTERVAL '12 hours',
+            CURRENT_TIMESTAMP - INTERVAL '11 hours', 'Task 8 union workout', 'Strong'
+          ) RETURNING id, group_id`,
+    );
+    const strongMember = strongRows[0];
+    if (!strongMember) throw new Error("Task 8 Strong member was not created");
+    const mirrorRows = await executeWithSchema(
+      testContext.db,
+      activityIdentityRowSchema,
+      sql`INSERT INTO fitness.activity (
+            group_id, provider_id, user_id, external_id, canonical_type, provider_type,
+            started_at, ended_at, name, source_name
+          ) VALUES (
+            ${strongMember.group_id}::uuid, 'strength_union_mirror', ${TEST_USER_ID},
+            'task-8-mirror-member', 'strength', 'strength_training',
+            CURRENT_TIMESTAMP - INTERVAL '12 hours', CURRENT_TIMESTAMP - INTERVAL '11 hours',
+            'Task 8 union workout', 'Strength Mirror'
+          ) RETURNING id, group_id`,
+    );
+    const mirrorMember = mirrorRows[0];
+    if (!mirrorMember) throw new Error("Task 8 mirror member was not created");
+
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.strength_set (
+            activity_id, exercise_id, exercise_index, set_index, set_type,
+            weight_kg, reps, duration_seconds, rpe, notes
+          ) VALUES
+            (${strongMember.id}, ${deadliftId}, 0, 0, 'working', 100, 5, NULL, NULL, NULL),
+            (${strongMember.id}, ${deadliftId}, 0, 1, 'rest', NULL, NULL, 0, NULL, NULL),
+            (${mirrorMember.id}, ${deadliftId}, 0, 0, 'working', 100, 5, NULL, 8, 'Complete mirror'),
+            (${mirrorMember.id}, ${deadliftId}, 0, 2, 'working', 110, 3, NULL, 9, NULL),
+            (${mirrorMember.id}, ${benchPressId}, 0, 0, 'working', 50, 10, NULL, 7, NULL)`,
+    );
+    const historicalAlias = "00000000-0000-4000-8000-000000000808";
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.activity_group_alias (alias_id, group_id, user_id, reason)
+          VALUES (${historicalAlias}::uuid, ${strongMember.group_id}::uuid, ${TEST_USER_ID}, 'merge')`,
+    );
+
+    const primaryRows = await executeWithSchema(
+      testContext.db,
+      primaryMemberRowSchema,
+      sql`SELECT primary_activity_id::text AS primary_activity_id
+          FROM fitness.v_activity
+          WHERE id = ${strongMember.group_id}::uuid`,
+    );
+    expect(primaryRows[0]?.primary_activity_id).toBe(mirrorMember.id);
+
+    const detailsByLookup = await Promise.all(
+      [strongMember.group_id, strongMember.id, mirrorMember.id, historicalAlias].map(
+        async (lookupId) => {
+          const activity = await activityRepository.findById(lookupId);
+          if (!activity) throw new Error(`Task 8 activity lookup failed: ${lookupId}`);
+          return {
+            activity,
+            exercises: (await strengthRepository.getExercisesForActivity(activity.id)).map(
+              (exercise) => exercise.toDetail(),
+            ),
+          };
+        },
+      ),
+    );
+
+    expect(detailsByLookup.map(({ activity }) => activity.id)).toEqual([
+      strongMember.group_id,
+      strongMember.group_id,
+      strongMember.group_id,
+      strongMember.group_id,
+    ]);
+    expect(detailsByLookup[1]?.activity.resolved_from).toBe(strongMember.id);
+    expect(detailsByLookup.map(({ exercises }) => exercises)).toEqual([
+      detailsByLookup[0]?.exercises,
+      detailsByLookup[0]?.exercises,
+      detailsByLookup[0]?.exercises,
+      detailsByLookup[0]?.exercises,
+    ]);
+    expect(detailsByLookup[0]?.exercises.map((exercise) => exercise.exerciseName)).toEqual([
+      "Task 8 Bench Press",
+      "Task 8 Deadlift",
+    ]);
+    expect(detailsByLookup[0]?.exercises[1]?.sets).toEqual([
+      expect.objectContaining({ notes: "Complete mirror", setIndex: 0, weightKg: 100, reps: 5 }),
+      expect.objectContaining({ durationSeconds: 0, setIndex: 1, setType: "rest" }),
+      expect.objectContaining({ setIndex: 2, weightKg: 110, reps: 3 }),
+    ]);
+
+    const summary = (await strengthRepository.getWorkoutSummaries(30)).find(
+      (workout) => workout.toDetail().name === "Task 8 union workout",
+    );
+    expect(summary?.toDetail()).toMatchObject({
+      exerciseCount: 2,
+      totalSets: 3,
+      totalVolumeKg: 1330,
+    });
+    const volumeAfter = await strengthRepository.getVolumeOverTime(30);
+    const totalAfter = volumeAfter.reduce(
+      (totals, week) => ({
+        setCount: totals.setCount + week.toDetail().setCount,
+        totalVolumeKg: totals.totalVolumeKg + week.toDetail().totalVolumeKg,
+        workoutCount: totals.workoutCount + week.toDetail().workoutCount,
+      }),
+      { setCount: 0, totalVolumeKg: 0, workoutCount: 0 },
+    );
+    expect({
+      setCount: totalAfter.setCount - totalBefore.setCount,
+      totalVolumeKg: totalAfter.totalVolumeKg - totalBefore.totalVolumeKg,
+      workoutCount: totalAfter.workoutCount - totalBefore.workoutCount,
+    }).toEqual({ setCount: 3, totalVolumeKg: 1330, workoutCount: 1 });
+  });
+
+  it("deduplicates set ownership while enriching split exercise metadata independently", async () => {
+    const repository = new StrengthRepository(testContext.db, TEST_USER_ID, "UTC");
+    const volumeBefore = (await repository.getVolumeOverTime(30)).reduce(
+      (total, week) => total + week.toDetail().totalVolumeKg,
+      0,
+    );
+    const shoulderSetsBefore =
+      (await repository.getMuscleGroupVolume(30))
+        .find((group) => group.toDetail().muscleGroup === "shoulders")
+        ?.toDetail()
+        .weeklyData.reduce((total, week) => total + week.sets, 0) ?? 0;
+
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES
+            ('strength_split_annotations', 'Annotation Source', ${TEST_USER_ID}),
+            ('strength_split_metadata', 'Metadata Source', ${TEST_USER_ID})
+          ON CONFLICT (id) DO NOTHING`,
+    );
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.provider_priority (provider_id, priority)
+          VALUES ('strength_split_annotations', 20), ('strength_split_metadata', 5)
+          ON CONFLICT (provider_id) DO UPDATE SET priority = EXCLUDED.priority`,
+    );
+    const exercises = await executeWithSchema(
+      testContext.db,
+      z.object({ id: z.string().uuid(), muscle_groups: z.array(z.string()).nullable() }),
+      sql`INSERT INTO fitness.exercise (name, muscle_groups, equipment, exercise_type)
+          VALUES
+            ('Task 8 Metadata Split Press', NULL, NULL, NULL),
+            ('Task 8 Metadata Split Press', ARRAY['shoulders']::text[], NULL, 'STRENGTH')
+          RETURNING id, muscle_groups`,
+    );
+    const annotationExerciseId = exercises.find((exercise) => exercise.muscle_groups === null)?.id;
+    const metadataExerciseId = exercises.find((exercise) => exercise.muscle_groups !== null)?.id;
+    if (!annotationExerciseId || !metadataExerciseId) {
+      throw new Error("Task 8 split-metadata exercises were not created");
+    }
+
+    const annotationActivityRows = await executeWithSchema(
+      testContext.db,
+      activityIdentityRowSchema,
+      sql`INSERT INTO fitness.activity (
+            provider_id, user_id, external_id, canonical_type, provider_type,
+            started_at, ended_at, name, source_name
+          ) VALUES (
+            'strength_split_annotations', ${TEST_USER_ID}, 'task-8-split-annotations',
+            'strength', 'strength_training', CURRENT_TIMESTAMP - INTERVAL '6 hours',
+            CURRENT_TIMESTAMP - INTERVAL '5 hours', 'Task 8 split metadata workout',
+            'Annotation Source'
+          ) RETURNING id, group_id`,
+    );
+    const annotationActivity = annotationActivityRows[0];
+    if (!annotationActivity) throw new Error("Task 8 annotation member was not created");
+    const metadataActivityRows = await executeWithSchema(
+      testContext.db,
+      activityIdentityRowSchema,
+      sql`INSERT INTO fitness.activity (
+            group_id, provider_id, user_id, external_id, canonical_type, provider_type,
+            started_at, ended_at, name, source_name
+          ) VALUES (
+            ${annotationActivity.group_id}::uuid, 'strength_split_metadata', ${TEST_USER_ID},
+            'task-8-split-metadata', 'strength', 'strength_training',
+            CURRENT_TIMESTAMP - INTERVAL '6 hours', CURRENT_TIMESTAMP - INTERVAL '5 hours',
+            'Task 8 split metadata workout', 'Metadata Source'
+          ) RETURNING id, group_id`,
+    );
+    const metadataActivity = metadataActivityRows[0];
+    if (!metadataActivity) throw new Error("Task 8 metadata member was not created");
+
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.strength_set (
+            activity_id, exercise_id, exercise_index, set_index, set_type,
+            weight_kg, reps, distance_meters, rpe, notes
+          ) VALUES
+            (${annotationActivity.id}, ${annotationExerciseId}, 0, 0, 'working',
+              20, 5, 10, 9, 'Richer set annotation'),
+            (${metadataActivity.id}, ${metadataExerciseId}, 0, 0, 'working',
+              20, 5, NULL, NULL, NULL)`,
+    );
+
+    const exercisesForActivity = (
+      await repository.getExercisesForActivity(annotationActivity.group_id)
+    ).map((exercise) => exercise.toDetail());
+    expect(exercisesForActivity).toEqual([
+      expect.objectContaining({
+        exerciseName: "Task 8 Metadata Split Press",
+        exerciseType: "STRENGTH",
+        muscleGroups: ["shoulders"],
+        sets: [expect.objectContaining({ notes: "Richer set annotation", reps: 5, weightKg: 20 })],
+      }),
+    ]);
+
+    const volumeAfter = (await repository.getVolumeOverTime(30)).reduce(
+      (total, week) => total + week.toDetail().totalVolumeKg,
+      0,
+    );
+    const shoulderSetsAfter =
+      (await repository.getMuscleGroupVolume(30))
+        .find((group) => group.toDetail().muscleGroup === "shoulders")
+        ?.toDetail()
+        .weeklyData.reduce((total, week) => total + week.sets, 0) ?? 0;
+    expect(volumeAfter - volumeBefore).toBe(100);
+    expect(shoulderSetsAfter - shoulderSetsBefore).toBe(1);
+  });
+
+  it("hydrates member-owned sets when requested through any activity member", async () => {
+    await testContext.db.transaction(async (db) => {
+      await db.execute(sql`INSERT INTO fitness.provider (id, name, user_id)
+      VALUES ('strength_member_test', 'Strength Member Test', ${TEST_USER_ID})`);
+      const firstRows = await executeWithSchema(
+        db,
+        activityIdentityRowSchema,
+        sql`
+      INSERT INTO fitness.activity (
+        provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at
+      ) VALUES (
+        'strength_scope_test', ${TEST_USER_ID}, 'member-lookup-a', 'strength', 'strength',
+        '2020-01-01T12:00:00Z', '2020-01-01T13:00:00Z'
+      ) RETURNING id, group_id`,
+      );
+      const first = firstRows[0];
+      if (!first) throw new Error("Member activity fixture missing");
+      const memberRows = await executeWithSchema(
+        db,
+        activityIdentityRowSchema,
+        sql`
+      INSERT INTO fitness.activity (
+        group_id, provider_id, user_id, external_id, canonical_type, provider_type,
+        started_at, ended_at
+      ) VALUES (
+        ${first.group_id}::uuid, 'strength_member_test', ${TEST_USER_ID}, 'member-lookup-b',
+        'strength', 'strength', '2020-01-01T12:00:00Z', '2020-01-01T13:00:00Z'
+      ) RETURNING id, group_id`,
+      );
+      const member = memberRows[0];
+      if (!member) throw new Error("Non-representative activity fixture missing");
+      await db.execute(sql`INSERT INTO fitness.strength_set (
+      activity_id, exercise_id, exercise_index, set_index, set_type, weight_kg, reps
+    ) SELECT ${member.id}, id, 0, 0, 'working', 60, 8
+      FROM fitness.exercise WHERE name = 'Scope Test Press'`);
+
+      const repository = new StrengthRepository(db, TEST_USER_ID, "UTC");
+      for (const lookupId of [first.group_id, first.id, member.id]) {
+        const exercises = await repository.getExercisesForActivity(lookupId);
+        expect(exercises.map((exercise) => exercise.toDetail())).toEqual([
+          expect.objectContaining({
+            activityId: member.id,
+            exerciseName: "Scope Test Press",
+            sets: [expect.objectContaining({ weightKg: 60, reps: 8 })],
+          }),
+        ]);
+      }
+      await db.execute(sql`INSERT INTO fitness.strength_set (
+        activity_id, exercise_id, exercise_index, set_index, set_type, weight_kg, reps
+      ) SELECT ${first.id}, id, 0, 0, 'working', 30, 10
+        FROM fitness.exercise WHERE name = ${gapExerciseName}`);
+      for (const lookupId of [first.group_id, first.id, member.id]) {
+        const exercises = await repository.getExercisesForActivity(lookupId);
+        expect(exercises).toHaveLength(2);
+        expect(exercises.map((exercise) => exercise.toDetail())).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              activityId: member.id,
+              exerciseIndex: 1,
+              exerciseName: "Scope Test Press",
+              sets: [expect.objectContaining({ weightKg: 60, reps: 8 })],
+            }),
+            expect.objectContaining({
+              activityId: first.id,
+              exerciseIndex: 0,
+              exerciseName: gapExerciseName,
+              sets: [expect.objectContaining({ weightKg: 30, reps: 10 })],
+            }),
+          ]),
+        );
+      }
+      const otherUser = new StrengthRepository(db, "00000000-0000-4000-8000-000000000002", "UTC");
+      expect(await otherUser.getExercisesForActivity(member.id)).toEqual([]);
+    });
   });
 });

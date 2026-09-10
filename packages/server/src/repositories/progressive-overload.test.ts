@@ -6,13 +6,14 @@ const DELOAD_CONTEXT =
 
 describe("ProgressiveOverload", () => {
   it("fits volume against actual elapsed calendar weeks and reports the observed period", () => {
-    const detail = new ProgressiveOverload("Back Squat", [
+    const detail = new ProgressiveOverload({ exerciseName: "Back Squat", equipment: "BARBELL" }, [
       { week: "2026-01-05", totalVolumeKg: 1_000 },
       { week: "2026-01-19", totalVolumeKg: 1_200 },
       { week: "2026-02-02", totalVolumeKg: 1_400 },
     ]).toDetail();
 
     expect(detail.exerciseName).toBe("Back Squat");
+    expect(detail.equipment).toBe("BARBELL");
     expect(detail.observations).toEqual([
       { week: "2026-01-05", totalVolumeKg: 1_000 },
       { week: "2026-01-19", totalVolumeKg: 1_200 },
@@ -37,8 +38,14 @@ describe("ProgressiveOverload", () => {
       { week: "2026-02-09", totalVolumeKg: 1_520 },
     ];
 
-    const first = new ProgressiveOverload("Deadlift", observations).toDetail().uncertainty;
-    const second = new ProgressiveOverload("Deadlift", observations).toDetail().uncertainty;
+    const first = new ProgressiveOverload(
+      { exerciseName: "Deadlift", equipment: null },
+      observations,
+    ).toDetail().uncertainty;
+    const second = new ProgressiveOverload(
+      { exerciseName: "Deadlift", equipment: null },
+      observations,
+    ).toDetail().uncertainty;
 
     expect(first).toEqual(second);
     expect(first).toMatchObject({
@@ -58,7 +65,7 @@ describe("ProgressiveOverload", () => {
   });
 
   it("reports why uncertainty is unavailable with too few observations", () => {
-    const detail = new ProgressiveOverload("Row", [
+    const detail = new ProgressiveOverload({ exerciseName: "Row", equipment: null }, [
       { week: "2026-01-05", totalVolumeKg: 500 },
       { week: "2026-01-12", totalVolumeKg: 550 },
       { week: "2026-01-19", totalVolumeKg: 525 },
@@ -75,7 +82,7 @@ describe("ProgressiveOverload", () => {
   });
 
   it("does not present a perfect short series as certain", () => {
-    const detail = new ProgressiveOverload("Bench Press", [
+    const detail = new ProgressiveOverload({ exerciseName: "Bench Press", equipment: null }, [
       { week: "2026-01-05", totalVolumeKg: 500 },
       { week: "2026-01-12", totalVolumeKg: 600 },
       { week: "2026-01-19", totalVolumeKg: 700 },
@@ -107,23 +114,21 @@ describe("ProgressiveOverload", () => {
       trend: "stable",
       direction: "was stable",
     },
-  ] as const)("authors neutral $trend interpretation and explicit deload context", ({
-    exerciseName,
-    volumes,
-    trend,
-    direction,
-  }) => {
-    const detail = new ProgressiveOverload(
-      exerciseName,
-      volumes.map((totalVolumeKg, index) => ({
-        week: `2026-01-${String(5 + index * 7).padStart(2, "0")}`,
-        totalVolumeKg,
-      })),
-    ).toDetail();
+  ] as const)(
+    "authors neutral $trend interpretation and explicit deload context",
+    ({ exerciseName, volumes, trend, direction }) => {
+      const detail = new ProgressiveOverload(
+        { exerciseName, equipment: null },
+        volumes.map((totalVolumeKg, index) => ({
+          week: `2026-01-${String(5 + index * 7).padStart(2, "0")}`,
+          totalVolumeKg,
+        })),
+      ).toDetail();
 
-    expect(detail.trend).toBe(trend);
-    expect(detail.interpretation).toContain(`Recorded weekly volume ${direction}`);
-    expect(detail.interpretation).toContain("not inherently good or bad");
-    expect(detail.deloadContext).toBe(DELOAD_CONTEXT);
-  });
+      expect(detail.trend).toBe(trend);
+      expect(detail.interpretation).toContain(`Recorded weekly volume ${direction}`);
+      expect(detail.interpretation).toContain("not inherently good or bad");
+      expect(detail.deloadContext).toBe(DELOAD_CONTEXT);
+    },
+  );
 });

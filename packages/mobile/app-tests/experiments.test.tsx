@@ -145,7 +145,7 @@ vi.mock("../theme", () => ({
   colors: new Proxy({}, { get: () => "#71717a" }),
 }));
 
-vi.mock("../app/_layout-options", () => ({
+vi.mock("../lib/root-stack-screen-options", () => ({
   rootStackScreenOptions: {},
 }));
 
@@ -344,8 +344,8 @@ describe("ExperimentsScreen", () => {
       screen.getByText(/2026-07-10 → 2026-07-10: Missing; no check-in; sources: none reported/),
     ).toBeTruthy();
 
-    fireEvent.click(screen.getByLabelText("Partial"));
-    fireEvent.change(screen.getByLabelText("Confounder"), {
+    fireEvent.click(screen.getByLabelText("Partly"));
+    fireEvent.change(screen.getByLabelText("Anything else that might affect the result?"), {
       target: { value: "Late flight" },
     });
     fireEvent.click(screen.getByLabelText("Record today's check-in"));

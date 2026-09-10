@@ -53,6 +53,15 @@ describe("processing status presentation", () => {
     expect(processingStatusMessage({ status: "active", errorMessage: "Ignore this." })).toBeNull();
   });
 
+  it("replaces technical processing failures with recovery guidance", () => {
+    expect(
+      processingStatusMessage({
+        status: "failed",
+        errorMessage: "TypeError: Cannot read properties of undefined (reading 'status')",
+      }),
+    ).toBe("Try the update again. If it still fails, reconnect the data source.");
+  });
+
   it("names the provider and area when one area is updating", () => {
     const target = processingTarget({
       providerId: "garmin",
@@ -202,6 +211,7 @@ describe("processing status presentation", () => {
           datasets: ["sleep", "activity", "recovery"],
           dismissed: false,
           errorMessage: "Reconnect WHOOP.",
+          errorCode: "provider_auth_failed",
         },
       ],
     });
@@ -209,14 +219,48 @@ describe("processing status presentation", () => {
     expect(groups).toEqual([
       {
         operationId: firstOperationId,
+        providerId: "whoop",
         providerLabel: "WHOOP (Cloud)",
         datasetLabels: ["Activities", "Recovery", "Sleep"],
         status: "failed",
         failedAt: "2026-07-22T16:00:00.000Z",
         lastReadyAt: "2026-07-21T12:00:00.000Z",
         errorMessage: "Reconnect WHOOP.",
+        requiresReconnect: true,
         dismissed: false,
       },
+    ]);
+  });
+
+  it("does not require reconnecting for a retry-only provider failure", () => {
+    const groups = processingFailureGroups({
+      datasets: [
+        {
+          key: "activity",
+          label: "Activities",
+          status: "failed",
+          lastFailedAt: "2026-07-22T14:00:00.000Z",
+          lastReadyAt: null,
+        },
+      ],
+      operations: [
+        {
+          id: firstOperationId,
+          providerId: "zwift",
+          status: "failed",
+          datasets: ["activity"],
+          dismissed: false,
+          errorMessage: "Zwift could not be synced. Try the sync again later.",
+          errorCode: "provider_sync_failed",
+        },
+      ],
+    });
+
+    expect(groups).toEqual([
+      expect.objectContaining({
+        providerId: "zwift",
+        requiresReconnect: false,
+      }),
     ]);
   });
 

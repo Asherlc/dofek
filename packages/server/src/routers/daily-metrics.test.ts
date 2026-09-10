@@ -437,26 +437,26 @@ describe("dailyMetricsRouter", () => {
     it.each([
       { rawStatus: "active" as const, normalizedStatus: "syncing" as const },
       { rawStatus: "failed" as const, normalizedStatus: "sync_error" as const },
-    ])("surfaces a non-ready recovery processing status in resting heart rate baseline progress", async ({
-      rawStatus,
-      normalizedStatus,
-    }) => {
-      processingStatusMock.mockResolvedValueOnce({
-        overallStatus: rawStatus,
-        datasets: [{ key: "recovery", status: rawStatus }],
-      });
+    ])(
+      "surfaces a non-ready recovery processing status in resting heart rate baseline progress",
+      async ({ rawStatus, normalizedStatus }) => {
+        processingStatusMock.mockResolvedValueOnce({
+          overallStatus: rawStatus,
+          datasets: [{ key: "recovery", status: rawStatus }],
+        });
 
-      const result = await makeCaller([makeTrendsRow()]).trends({
-        days: 30,
-        endDate: "2024-01-16",
-      });
+        const result = await makeCaller([makeTrendsRow()]).trends({
+          days: 30,
+          endDate: "2024-01-16",
+        });
 
-      expect(
-        result?.healthStatus.find((status) => status.metric === "resting_heart_rate"),
-      ).toMatchObject({
-        baselineProgress: { blocker: normalizedStatus },
-      });
-    });
+        expect(
+          result?.healthStatus.find((status) => status.metric === "resting_heart_rate"),
+        ).toMatchObject({
+          baselineProgress: { blocker: normalizedStatus },
+        });
+      },
+    );
 
     it("returns canonical recovery baseline context with aggregate trends", async () => {
       const execute = vi.fn().mockResolvedValue([

@@ -7,14 +7,9 @@ export function OnboardingPage() {
   return (
     <PageLayout headerChildren={undefined}>
       <section className="rounded-lg border border-border bg-surface-solid p-5 sm:p-8">
-        <p className="text-sm font-semibold text-accent">First-run setup</p>
-        <h1 className="mt-2 max-w-3xl text-3xl font-bold text-foreground sm:text-4xl">
-          Set up Dofek with your real data
-        </h1>
+        <h1 className="max-w-3xl text-3xl font-bold text-foreground sm:text-4xl">Set up Dofek</h1>
         <p className="mt-4 max-w-2xl text-sm leading-6 text-muted sm:text-base">
-          Dofek is useful after it has data to work with. Start by choosing a primary goal,
-          connecting the sources you already use, then open the dashboard when sync has something to
-          show.
+          Choose a goal and connect your health apps. Your dashboard will update as data syncs.
         </p>
       </section>
 

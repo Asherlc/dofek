@@ -1,9 +1,6 @@
 import { z } from "zod";
 import type { ClickHouseCommandClient } from "../clickhouse.ts";
-import {
-  buildActivitySensorSummaryRowsTableSql,
-  extractClickHouseTableColumnNames,
-} from "../clickhouse-activity-sensor-summary.ts";
+import { extractClickHouseTableColumnNames } from "../clickhouse-activity-sensor-summary.ts";
 import {
   buildActivitySummaryRowsTableSql,
   buildActivitySummaryViewSql,
@@ -21,6 +18,48 @@ const tableCountRowSchema = z.object({
 
 const sensorSummaryTable = "analytics.activity_sensor_summary_rows";
 const activitySummaryTable = "analytics.activity_summary_rows";
+
+function buildActivitySensorSummaryRowsTableSqlV0042(): string {
+  return `CREATE TABLE IF NOT EXISTS analytics.activity_sensor_summary_rows (
+  activity_id UUID,
+  user_id UUID,
+  avg_hr Nullable(Float64),
+  max_hr Nullable(Int16),
+  min_hr Nullable(Int16),
+  avg_power Nullable(Float64),
+  max_power Nullable(Int16),
+  avg_speed Nullable(Float64),
+  max_speed Nullable(Float64),
+  avg_cadence Nullable(Float64),
+  elevation_gain_legacy Nullable(Float64),
+  avg_left_balance Nullable(Float64),
+  avg_left_torque_eff Nullable(Float64),
+  avg_right_torque_eff Nullable(Float64),
+  avg_left_pedal_smooth Nullable(Float64),
+  avg_right_pedal_smooth Nullable(Float64),
+  elevation_gain_m Nullable(Float64),
+  elevation_loss_m Nullable(Float64),
+  avg_stance_time Nullable(Float64),
+  avg_vertical_osc Nullable(Float64),
+  avg_ground_contact_time Nullable(Float64),
+  avg_stride_length Nullable(Float64),
+  sample_count Nullable(UInt64),
+  hr_sample_count Nullable(UInt64),
+  power_sample_count Nullable(UInt64),
+  first_sample_at Nullable(DateTime64(6, 'UTC')),
+  last_sample_at Nullable(DateTime64(6, 'UTC')),
+  best_twenty_minute_power Nullable(Float64),
+  normalized_power Nullable(Float64),
+  smoothed_avg_power Nullable(Float64),
+  climbing_elevation_gain_m Nullable(Float64),
+  climbing_seconds Nullable(Int32),
+  refresh_version UInt64,
+  is_deleted UInt8,
+  refreshed_at DateTime64(9, 'UTC')
+)
+ENGINE = ReplacingMergeTree(refresh_version)
+ORDER BY (user_id, activity_id)`;
+}
 
 async function tableExists(
   client: ClickHouseCommandClient,
@@ -51,7 +90,7 @@ export function createMigration(): ClickHouseMigration {
       "DROP VIEW IF EXISTS analytics.activity_summary",
       `RENAME TABLE ${sensorSummaryTable} TO ${sensorSummaryTable}_old,
                     ${activitySummaryTable} TO ${activitySummaryTable}_old`,
-      buildActivitySensorSummaryRowsTableSql(),
+      buildActivitySensorSummaryRowsTableSqlV0042(),
       buildActivitySummaryRowsTableSql(),
       ...makeCopyStatements(),
       `DROP TABLE IF EXISTS ${sensorSummaryTable}_old`,
@@ -111,12 +150,12 @@ export function createMigration(): ClickHouseMigration {
         await runClickHouseMigrationStatement(client, `RENAME TABLE ${renames.join(", ")}`);
       }
 
-      await runClickHouseMigrationStatement(client, buildActivitySensorSummaryRowsTableSql());
+      await runClickHouseMigrationStatement(client, buildActivitySensorSummaryRowsTableSqlV0042());
       await runClickHouseMigrationStatement(client, buildActivitySummaryRowsTableSql());
 
       if (hasSensorSummary) {
         const sensorColumns = extractClickHouseTableColumnNames(
-          buildActivitySensorSummaryRowsTableSql(),
+          buildActivitySensorSummaryRowsTableSqlV0042(),
         );
         const cols = sensorColumns.join(", ");
         await runClickHouseMigrationStatement(
@@ -150,7 +189,9 @@ export function createMigration(): ClickHouseMigration {
 }
 
 function makeCopyStatements(): string[] {
-  const sensorColumns = extractClickHouseTableColumnNames(buildActivitySensorSummaryRowsTableSql());
+  const sensorColumns = extractClickHouseTableColumnNames(
+    buildActivitySensorSummaryRowsTableSqlV0042(),
+  );
   const summaryColumns = extractClickHouseTableColumnNames(buildActivitySummaryRowsTableSql());
 
   const sensorColumnsList = sensorColumns.join(", ");

@@ -16,19 +16,19 @@ const zeppModules = [
   "@zos/app",
   "@zos/ble",
   "@zos/app-service",
-  "@zeppos/zml",
   "@zeppos/zml/base-page",
   "@zeppos/zml/base-side",
   "@zeppos/zml/base-app",
   "@zeppos/zml/3.0/module/messaging/plugin/page",
   "@zeppos/zml/3.0/module/messaging/plugin/side",
   "@zeppos/zml/3.0/module/messaging/plugin/app",
+  "@zeppos/zml",
 ];
 
-const alias: Record<string, string> = {};
-for (const mod of zeppModules) {
-  alias[mod] = stubPath;
-}
+const alias = zeppModules.map((mod, index) => ({
+  find: mod,
+  replacement: `${stubPath}?module=${index}`,
+}));
 
 export default defineConfig({
   test: {

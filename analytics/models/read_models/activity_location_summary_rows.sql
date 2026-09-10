@@ -4,50 +4,90 @@
     engine='ReplacingMergeTree(refresh_version)',
     order_by='(user_id, activity_id)',
     query_settings={
-        'max_threads': 1
+        'max_threads': 1,
+        'join_use_nulls': 1
     }
 ) }}
 
 {% set initial_lookback_days = var('initial_lookback_days', 120) %}
+{% set activity_refresh_scoped = activity_refresh_scope_enabled() %}
 
 WITH
+location_source_versions AS MATERIALIZED (
+    SELECT
+        activity_id,
+        user_id,
+        max(refresh_version) AS refresh_version
+    FROM {{ ref('activity_location_sample') }}
+    GROUP BY activity_id, user_id
+),
+
 {% if is_incremental() %}
 target_state AS (
-    SELECT
-        coalesce(
-            max(refreshed_at),
-            toDateTime64('1970-01-01 00:00:00', 9, 'UTC')
-        ) AS last_refreshed_at,
-        count() = 0 AS is_empty
+    SELECT count() = 0 AS is_empty
     FROM {{ this }}
 ),
 {% endif %}
 
 current_activity AS (
     SELECT
-        id AS activity_id,
+        activity_id,
         user_id,
         started_at
-    FROM {{ source('postgres_fitness', 'activity') }} FINAL
-    WHERE _peerdb_is_deleted = 0
-        AND provider_absent_at IS null
-        AND deleted_at IS null
+    FROM {{ ref('deduped_activities') }} FINAL
+    WHERE is_deleted = 0
 ),
 
-existing_summary AS (
+existing_summary_state AS (
     {% if is_incremental() %}
         SELECT
             activity_id,
-            user_id
-        FROM {{ this }} FINAL
-        WHERE is_deleted = 0
+            user_id,
+            max(refresh_version) AS summary_refresh_version,
+            argMax(is_deleted, refresh_version) AS is_deleted
+        FROM {{ this }}
+        GROUP BY activity_id, user_id
     {% else %}
         SELECT
             CAST(null, 'Nullable(UUID)') AS activity_id,
-            CAST(null, 'Nullable(UUID)') AS user_id
+            CAST(null, 'Nullable(UUID)') AS user_id,
+            CAST(null, 'Nullable(UInt64)') AS summary_refresh_version,
+            CAST(null, 'Nullable(UInt8)') AS is_deleted
         WHERE 1 = 0
     {% endif %}
 ),
+
+existing_summary AS (
+    SELECT
+        activity_id,
+        user_id,
+        summary_refresh_version
+    FROM existing_summary_state
+    WHERE is_deleted = 0
+),
+
+{% if activity_refresh_scoped %}
+repair_scope_dirty_keys AS (
+    SELECT
+        deduped.activity_id,
+        deduped.user_id
+    FROM {{ ref('deduped_activities') }} AS deduped FINAL
+    WHERE deduped.user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        AND (
+            deduped.activity_id IN {{ activity_refresh_ids() }}
+            OR hasAny(deduped.member_activity_ids, {{ activity_refresh_ids() }})
+        )
+
+    UNION DISTINCT
+
+    SELECT
+        activity_id,
+        user_id
+    FROM existing_summary
+    WHERE user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        AND activity_id IN {{ activity_refresh_ids() }}
+),
+{% endif %}
 
 initial_dirty_keys AS (
     SELECT
@@ -64,17 +104,25 @@ initial_dirty_keys AS (
 ),
 
 location_dirty_keys AS (
+    {% if is_incremental() %}
     SELECT DISTINCT
-        activity_id,
-        user_id
-    FROM {{ ref('activity_location_sample') }}
-    WHERE
-        {% if is_incremental() %}
-            NOT (SELECT is_empty FROM target_state)
-            AND refreshed_at > (SELECT last_refreshed_at FROM target_state)
-        {% else %}
-            1 = 0
-        {% endif %}
+        location_source_versions.activity_id AS activity_id,
+        location_source_versions.user_id AS user_id
+    FROM location_source_versions
+    LEFT JOIN existing_summary_state
+        ON existing_summary_state.activity_id = location_source_versions.activity_id
+        AND existing_summary_state.user_id = location_source_versions.user_id
+    WHERE NOT (SELECT is_empty FROM target_state)
+        AND (
+            existing_summary_state.activity_id IS null
+            OR location_source_versions.refresh_version
+                > existing_summary_state.summary_refresh_version
+        )
+    {% else %}
+    SELECT CAST(null, 'Nullable(UUID)') AS activity_id,
+        CAST(null, 'Nullable(UUID)') AS user_id
+    WHERE 1 = 0
+    {% endif %}
 ),
 
 stale_dirty_keys AS (
@@ -122,6 +170,12 @@ dirty_keys AS (
         activity_id,
         user_id
     FROM (
+        {% if activity_refresh_scoped %}
+        SELECT
+            activity_id,
+            user_id
+        FROM repair_scope_dirty_keys
+        {% else %}
         SELECT
             activity_id,
             user_id
@@ -141,6 +195,7 @@ dirty_keys AS (
             activity_id,
             user_id
         FROM restored_dirty_keys
+        {% endif %}
     )
 ),
 
@@ -163,8 +218,11 @@ current_dirty_keys AS (
         AND current_activity.user_id = active_dirty_keys.user_id
 ),
 
-affected_location_sample_ids AS (
-    SELECT DISTINCT location_samples.source_metric_stream_id AS source_metric_stream_id
+affected_location_sample_keys AS (
+    SELECT DISTINCT
+        location_samples.user_id AS user_id,
+        location_samples.activity_id AS activity_id,
+        location_samples.source_metric_stream_id AS source_metric_stream_id
     FROM {{ ref('activity_location_sample') }} AS location_samples
     INNER JOIN current_dirty_keys
         ON current_dirty_keys.activity_id = location_samples.activity_id
@@ -176,14 +234,17 @@ latest_location_samples AS (
     FROM (
         SELECT *
         FROM {{ ref('activity_location_sample') }}
-        WHERE source_metric_stream_id IN (
-            SELECT source_metric_stream_id
-            FROM affected_location_sample_ids
+        WHERE (user_id, activity_id, source_metric_stream_id) IN (
+            SELECT user_id, activity_id, source_metric_stream_id
+            FROM affected_location_sample_keys
         )
         ORDER BY
+            user_id ASC,
+            activity_id ASC,
             source_metric_stream_id ASC,
-            refresh_version DESC
-        LIMIT 1 BY source_metric_stream_id
+            refresh_version DESC,
+            is_deleted DESC
+        LIMIT 1 BY user_id, activity_id, source_metric_stream_id
     )
     WHERE is_deleted = 0
 ),

@@ -443,7 +443,7 @@ function MicronutrientAdequacySection({
     <View>
       <ChartTitleWithTooltip
         title="Micronutrient Adequacy"
-        description="This chart compares your average micronutrient intake against recommended daily targets."
+        description="Bars show average intake on recorded days as a percentage of the standard Daily Value. Markers may show a separate upper limit."
         textStyle={styles.sectionTitle}
       />
       <Text style={styles.sectionSubtext}>

@@ -128,28 +128,28 @@ describe("ActivityMetricStrip", () => {
     expect(screen.queryByText("Training Stress Score")).toBeNull();
   });
 
-  it.each([
-    "stale",
-    "failed",
-    "processing",
-    "conflicting",
-  ] as const)("renders a distinct %s server-authored state", (status) => {
-    render(
-      <ActivityMetricStrip
-        activity={{
-          location: null,
-          distanceMeters: null,
-          distanceState: { status: "missing", reason: "Distance not recorded" },
-          elevationGainM: null,
-          elevationState: { status: "missing", reason: "Elevation not recorded" },
-          stats: [{ status, label: "Training Stress Score", reason: "Sync the source and retry." }],
-        }}
-        units={units}
-      />,
-    );
+  it.each(["stale", "failed", "processing", "conflicting"] as const)(
+    "renders a distinct %s server-authored state",
+    (status) => {
+      render(
+        <ActivityMetricStrip
+          activity={{
+            location: null,
+            distanceMeters: null,
+            distanceState: { status: "missing", reason: "Distance not recorded" },
+            elevationGainM: null,
+            elevationState: { status: "missing", reason: "Elevation not recorded" },
+            stats: [
+              { status, label: "Training Stress Score", reason: "Sync the source and retry." },
+            ],
+          }}
+          units={units}
+        />,
+      );
 
-    expect(screen.getByText(`Training Stress Score ${status}`)).toBeDefined();
-    expect(screen.getByText("Sync the source and retry.")).toBeDefined();
-    expect(screen.queryByText("—")).toBeNull();
-  });
+      expect(screen.getByText(`Training Stress Score ${status}`)).toBeDefined();
+      expect(screen.getByText("Sync the source and retry.")).toBeDefined();
+      expect(screen.queryByText("—")).toBeNull();
+    },
+  );
 });

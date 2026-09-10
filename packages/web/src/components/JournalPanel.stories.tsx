@@ -85,25 +85,6 @@ const entries = [
   },
 ];
 
-const questions = [
-  {
-    slug: "alcohol",
-    display_name: "Alcohol",
-    category: "substance",
-    data_type: "boolean",
-    unit: null,
-    sort_order: 1,
-  },
-  {
-    slug: "energy",
-    display_name: "Energy",
-    category: "wellness",
-    data_type: "numeric",
-    unit: "/10",
-    sort_order: 2,
-  },
-];
-
 const trendEvidence: JournalTrendEvidence = {
   window: {
     startDate: "2026-07-21",
@@ -170,7 +151,6 @@ function createMockLink(scenario: JournalScenario): TRPCLink<AppRouter> {
     ({ op }) => {
       if (op.path === "journal.entries" && scenario.loading) return createLoadingObservable();
       if (op.path === "journal.entries") return createMockObservable(scenario.entries);
-      if (op.path === "journal.questions") return createMockObservable(questions);
       if (op.path === "journal.trends") {
         return createMockObservable(scenario.trends ?? emptyJournalTrendEvidence);
       }

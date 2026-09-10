@@ -75,6 +75,15 @@ function makeFoodEntryRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function collectSqlValues(value: unknown): unknown[] {
+  if (typeof value !== "object" || value === null) return [value];
+  const queryChunks = Reflect.get(value, "queryChunks");
+  if (Array.isArray(queryChunks)) return queryChunks.flatMap(collectSqlValues);
+  const rawValue = Reflect.get(value, "value");
+  if (Array.isArray(rawValue)) return rawValue.flatMap(collectSqlValues);
+  return rawValue === undefined ? [] : [rawValue];
+}
+
 const availableResolutionRow = {
   resolution_status: "available",
   resolution_message: "Totals use the only available nutrition source.",
@@ -351,12 +360,14 @@ describe("FoodRepository", () => {
       const { repo, execute } = makeRepository([]);
       await repo.list("2024-06-01", "2024-06-30", "lunch");
       expect(execute).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(execute.mock.calls[0]?.[0])).toContain("AND meal =");
     });
 
     it("queries without meal filter when not provided", async () => {
       const { repo, execute } = makeRepository([]);
       await repo.list("2024-06-01", "2024-06-30");
       expect(execute).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(execute.mock.calls[0]?.[0])).not.toContain("AND meal =");
     });
 
     it("returns FoodEntry instances when meal is provided", async () => {
@@ -536,36 +547,36 @@ describe("FoodRepository", () => {
         contributionGrain: null,
         contributionLabel: null,
       },
-    ])("labels $contributionGrain contribution provenance without changing its grain", async ({
-      contributionGrain,
-      contributionLabel,
-    }) => {
-      const { repo } = makeRepository([
-        {
-          ...availableResolutionRow,
-          calories: 1800,
-          protein_g: 90,
-          carbs_g: 220,
-          fat_g: 60,
-          breakfast_calories: 0,
-          lunch_calories: 0,
-          dinner_calories: 0,
-          snack_calories: 0,
-          other_calories: 1800,
-          source_labels: ["Cronometer (via Apple Health)"],
-          contributing_source_labels: ["Cronometer (via Apple Health)"],
-          contribution_grain: contributionGrain,
-          contribution_source_label: "Cronometer (via Apple Health)",
-        },
-      ]);
+    ])(
+      "labels $contributionGrain contribution provenance without changing its grain",
+      async ({ contributionGrain, contributionLabel }) => {
+        const { repo } = makeRepository([
+          {
+            ...availableResolutionRow,
+            calories: 1800,
+            protein_g: 90,
+            carbs_g: 220,
+            fat_g: 60,
+            breakfast_calories: 0,
+            lunch_calories: 0,
+            dinner_calories: 0,
+            snack_calories: 0,
+            other_calories: 1800,
+            source_labels: ["Cronometer (via Apple Health)"],
+            contributing_source_labels: ["Cronometer (via Apple Health)"],
+            contribution_grain: contributionGrain,
+            contribution_source_label: "Cronometer (via Apple Health)",
+          },
+        ]);
 
-      const result = await repo.nutritionByDate("2024-06-15", 2000);
+        const result = await repo.nutritionByDate("2024-06-15", 2000);
 
-      expect(result.resolution).toMatchObject({
-        contributionGrain,
-        contributionLabel,
-      });
-    });
+        expect(result.resolution).toMatchObject({
+          contributionGrain,
+          contributionLabel,
+        });
+      },
+    );
 
     it("caps goal progress and reports calories over the target", async () => {
       const { repo } = makeRepository([
@@ -673,6 +684,9 @@ describe("FoodRepository", () => {
           fat_g: "85",
           fiber_g: "32",
           meal_count: "4",
+          logging_completeness: "unknown_completeness",
+          logging_completeness_reason:
+            "Nutrition was logged, but no source explicitly reported whether the day was complete.",
           source_providers: ["fatsecret"],
         },
       ]);
@@ -692,6 +706,62 @@ describe("FoodRepository", () => {
       expect(result[0]?.resolutionMessage).toBe(availableResolutionRow.resolution_message);
       expect(result[0]?.contributingProviders).toEqual(["dofek"]);
       expect(result[0]?.excludedProviders).toEqual([]);
+      expect(result[0]?.loggingCompleteness).toBe("unknown_completeness");
+      expect(result[0]?.loggingCompletenessReason).toContain("no source explicitly reported");
+    });
+
+    it("returns a no-logging date spine without turning missing nutrition into zero", async () => {
+      const { repo, execute } = makeRepository([
+        {
+          date: "2024-06-16",
+          calories: null,
+          protein_g: null,
+          carbs_g: null,
+          fat_g: null,
+          fiber_g: null,
+          meal_count: 0,
+          logging_completeness: "no_logging",
+          logging_completeness_reason: "No food or nutrition records were logged for this date.",
+          resolution_status: "available",
+          resolution_message: "No nutrition sources contributed records for this date.",
+          source_providers: [],
+          contributing_providers: [],
+          excluded_providers: [],
+          source_labels: [],
+          contributing_source_labels: [],
+          excluded_source_labels: [],
+        },
+      ]);
+
+      const result = await repo.dailyTotalsRange("2024-06-15", "2024-06-16");
+
+      expect(result[0]?.loggingCompleteness).toBe("no_logging");
+      expect(result[0]?.calories).toBeNull();
+      expect(result[0]?.proteinGrams).toBeNull();
+      expect(JSON.stringify(execute.mock.calls[0]?.[0])).toContain("generate_series");
+    });
+
+    it("does not infer logging completeness from a low calorie total", async () => {
+      const { repo } = makeRepository([
+        {
+          ...availableResolutionRow,
+          date: "2024-06-15",
+          calories: 150,
+          protein_g: 5,
+          carbs_g: 20,
+          fat_g: 4,
+          fiber_g: 1,
+          meal_count: 1,
+          logging_completeness: "unknown_completeness",
+          logging_completeness_reason:
+            "Nutrition was logged, but no source explicitly reported whether the day was complete.",
+        },
+      ]);
+
+      const result = await repo.dailyTotalsRange("2024-06-15", "2024-06-15");
+
+      expect(result[0]?.calories).toBe(150);
+      expect(result[0]?.loggingCompleteness).toBe("unknown_completeness");
     });
   });
 
@@ -740,6 +810,71 @@ describe("FoodRepository", () => {
       expect(result.food_name).toBe("Chicken Breast");
       expect(result.nutrients).toEqual({});
       expect(execute).toHaveBeenCalledTimes(3);
+    });
+
+    it("persists an external identifier when provided", async () => {
+      const foodRow = makeFoodEntryRow();
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ id: "entry-1" }])
+        .mockResolvedValueOnce([foodRow]);
+      const repo = new FoodRepository({ execute }, "user-1", "UTC");
+
+      await repo.create({
+        date: "2024-06-15",
+        foodName: "External Food",
+        externalId: "external-entry-1",
+        nutrients: { "vitamin-c": 1 },
+      });
+
+      expect(JSON.stringify(execute.mock.calls[1]?.[0])).toContain("external-entry-1");
+    });
+
+    it("persists an external identifier without nutrients", async () => {
+      const foodRow = makeFoodEntryRow();
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ id: "entry-1" }])
+        .mockResolvedValueOnce([foodRow]);
+      const repo = new FoodRepository({ execute }, "user-1", "UTC");
+
+      await repo.create({
+        date: "2024-06-15",
+        foodName: "External Food",
+        externalId: "external-entry-2",
+        nutrients: {},
+      });
+
+      expect(JSON.stringify(execute.mock.calls[1]?.[0])).toContain("external-entry-2");
+    });
+
+    it("persists serving unit and serving weight for created itemized facts", async () => {
+      const foodRow = makeFoodEntryRow({
+        serving_unit: "bowl",
+        serving_weight_grams: 80,
+      });
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ id: "entry-1" }])
+        .mockResolvedValueOnce([foodRow]);
+      const repo = new FoodRepository({ execute }, "user-1", "UTC");
+
+      await repo.create({
+        date: "2024-06-15",
+        foodName: "Oats",
+        servingUnit: "bowl",
+        servingWeightGrams: 80,
+        nutrients: {},
+      });
+
+      const insert = JSON.stringify(execute.mock.calls[1]?.[0]);
+      expect(insert).toContain("serving_unit");
+      expect(insert).toContain("serving_weight_grams");
+      expect(insert).toContain("bowl");
+      expect(insert).toContain("80");
     });
 
     it("inserts junction table rows when nutrients are provided", async () => {
@@ -1437,8 +1572,13 @@ describe("FoodRepository", () => {
         typeof query === "object" && query !== null ? Reflect.get(query, "queryChunks") : undefined;
       expect(Array.isArray(queryChunks)).toBe(true);
       if (!Array.isArray(queryChunks)) throw new Error("Expected SQL query chunks");
-      expect(queryChunks).toContain("grain");
-      expect(queryChunks).toContain(2);
+      expect(JSON.stringify(queryChunks)).toContain("grain");
+      expect(JSON.stringify(queryChunks)).toContain("2");
+      expect(JSON.stringify(queryChunks)).toContain("lunch");
+      expect(JSON.stringify(queryChunks)).toContain("With milk");
+      const sqlValues = collectSqlValues(query);
+      expect(sqlValues).toContain("grain");
+      expect(sqlValues).toContain(2);
       expect(result).not.toBeNull();
     });
 
@@ -1503,8 +1643,8 @@ describe("FoodRepository", () => {
         typeof query === "object" && query !== null ? Reflect.get(query, "queryChunks") : undefined;
       expect(Array.isArray(queryChunks)).toBe(true);
       if (!Array.isArray(queryChunks)) throw new Error("Expected SQL query chunks");
-      expect(queryChunks).toContain("grain");
-      expect(queryChunks).toContain(2);
+      expect(JSON.stringify(queryChunks)).toContain("grain");
+      expect(JSON.stringify(queryChunks)).toContain("2");
     });
 
     it("passes explicit null for meal when set to null", async () => {

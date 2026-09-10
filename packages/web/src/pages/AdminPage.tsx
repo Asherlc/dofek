@@ -1,7 +1,9 @@
 import { formatDateTime, formatDurationSeconds } from "@dofek/format/format";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { Link } from "@tanstack/react-router";
 import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import { type ReactNode, useMemo, useState } from "react";
+import { DeveloperClientsAdminPanel } from "../components/DeveloperClientsAdminPanel.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { useAuth } from "../lib/auth-context.tsx";
 import { trpc } from "../lib/trpc.ts";
@@ -18,6 +20,7 @@ type Tab =
   | "food"
   | "body"
   | "dailyMetrics"
+  | "developerClients"
   | "tokens";
 
 const TABS: { id: Tab; label: string }[] = [
@@ -33,6 +36,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "dailyMetrics", label: "Daily Metrics" },
   { id: "sessions", label: "Sessions" },
   { id: "tokens", label: "OAuth Tokens" },
+  { id: "developerClients", label: "Developer Clients" },
 ];
 
 export function AdminPage() {
@@ -80,6 +84,7 @@ export function AdminPage() {
       {activeTab === "dailyMetrics" && <DailyMetricsTab />}
       {activeTab === "sessions" && <SessionsTab />}
       {activeTab === "tokens" && <TokensTab />}
+      {activeTab === "developerClients" ? <DeveloperClientsAdminPanel /> : null}
     </PageLayout>
   );
 }
@@ -253,7 +258,7 @@ function OverviewTab() {
   const { data, isLoading, error } = trpc.admin.overview.useQuery();
 
   if (isLoading) return <LoadingState />;
-  if (error) return <ErrorState message={error.message} />;
+  if (error) return <ErrorState message={userFacingErrorMessage(error)} />;
 
   return (
     <div className="space-y-6">
@@ -339,7 +344,7 @@ function UsersTab() {
   );
 
   if (isLoading) return <LoadingState />;
-  if (error) return <ErrorState message={error.message} />;
+  if (error) return <ErrorState message={userFacingErrorMessage(error)} />;
 
   return (
     <div className="space-y-4">
@@ -356,7 +361,7 @@ function SyncHealthTab() {
   const { data, isLoading, error } = trpc.admin.syncHealth.useQuery();
 
   if (isLoading) return <LoadingState />;
-  if (error) return <ErrorState message={error.message} />;
+  if (error) return <ErrorState message={userFacingErrorMessage(error)} />;
 
   const columns: ColumnDef<NonNullable<typeof data>[number], unknown>[] = [
     { accessorKey: "provider_id", header: "Provider" },
@@ -412,7 +417,7 @@ function RateLimitsTab() {
   });
 
   if (isLoading) return <LoadingState />;
-  if (error) return <ErrorState message={error.message} />;
+  if (error) return <ErrorState message={userFacingErrorMessage(error)} />;
 
   const columns: ColumnDef<NonNullable<typeof data>[number], unknown>[] = [
     { accessorKey: "providerId", header: "Provider" },
@@ -560,7 +565,7 @@ function SyncLogsTab() {
   ];
 
   if (isLoading) return <LoadingState />;
-  if (error) return <ErrorState message={error.message} />;
+  if (error) return <ErrorState message={userFacingErrorMessage(error)} />;
 
   return (
     <AdminCard title="Sync Logs">
@@ -621,7 +626,7 @@ function ActivitiesTab() {
   ];
 
   if (isLoading) return <LoadingState />;
-  if (error) return <ErrorState message={error.message} />;
+  if (error) return <ErrorState message={userFacingErrorMessage(error)} />;
 
   return (
     <AdminCard title="Activities">
@@ -661,7 +666,7 @@ function SleepTab() {
   ];
 
   if (isLoading) return <LoadingState />;
-  if (error) return <ErrorState message={error.message} />;
+  if (error) return <ErrorState message={userFacingErrorMessage(error)} />;
 
   return (
     <AdminCard title="Sleep Sessions">
@@ -712,7 +717,7 @@ function FoodTab() {
   ];
 
   if (isLoading) return <LoadingState />;
-  if (error) return <ErrorState message={error.message} />;
+  if (error) return <ErrorState message={userFacingErrorMessage(error)} />;
 
   return (
     <AdminCard title="Food Entries">
@@ -754,7 +759,7 @@ function BodyTab() {
   ];
 
   if (isLoading) return <LoadingState />;
-  if (error) return <ErrorState message={error.message} />;
+  if (error) return <ErrorState message={userFacingErrorMessage(error)} />;
 
   return (
     <AdminCard title="Body Measurements">
@@ -788,7 +793,7 @@ function DailyMetricsTab() {
   ];
 
   if (isLoading) return <LoadingState />;
-  if (error) return <ErrorState message={error.message} />;
+  if (error) return <ErrorState message={userFacingErrorMessage(error)} />;
 
   return (
     <AdminCard title="Daily Metrics">
@@ -862,7 +867,7 @@ function SessionsTab() {
   ];
 
   if (isLoading) return <LoadingState />;
-  if (error) return <ErrorState message={error.message} />;
+  if (error) return <ErrorState message={userFacingErrorMessage(error)} />;
 
   return (
     <AdminCard title="Sessions">
@@ -920,7 +925,7 @@ function TokensTab() {
   ];
 
   if (isLoading) return <LoadingState />;
-  if (error) return <ErrorState message={error.message} />;
+  if (error) return <ErrorState message={userFacingErrorMessage(error)} />;
 
   return (
     <AdminCard title="OAuth Tokens (No Secrets)">

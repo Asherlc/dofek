@@ -32,7 +32,6 @@ const snapshot: AccountErasureRemoteSnapshot = {
   posthogDistinctId: "10000000-0000-4000-8000-000000001994",
   processorEmails: [],
   providerConnections: [],
-  slackInstallations: [],
   stripe: null,
   webhooks: [],
 };
@@ -240,10 +239,6 @@ describe("remote account revocation", () => {
           expiresAt: tokenSet.expiresAt.toISOString(),
         },
       ],
-      slackInstallations: [
-        { botToken: "multi-member", memberCount: 2, slackUserId: "U1", teamId: "T1" },
-        { botToken: "sole-member", memberCount: 1, slackUserId: "U2", teamId: "T2" },
-      ],
       webhooks: [{ providerId: "webhook-provider", subscriptionExternalId: "sub-1" }],
     };
     const fetchFn: typeof globalThis.fetch = async (_input, init) => {
@@ -265,37 +260,5 @@ describe("remote account revocation", () => {
     expect(fallbackRevoke).toHaveBeenCalledOnce();
     expect(remoteMocks.revokeToken).toHaveBeenCalledTimes(2);
     expect(unregisterWebhook).toHaveBeenCalledWith("sub-1");
-  });
-
-  it.each([
-    "account_inactive",
-    "already_revoked",
-    "token_revoked",
-  ])("accepts an idempotent Slack revocation error: %s", async (error) => {
-    const slackSnapshot: AccountErasureRemoteSnapshot = {
-      ...snapshot,
-      slackInstallations: [
-        { botToken: "sole-member", memberCount: 1, slackUserId: "U1", teamId: "T1" },
-      ],
-    };
-    await expect(
-      revokeRemoteAccounts(slackSnapshot, [], async () =>
-        Response.json({ error, ok: false }, { status: 200 }),
-      ),
-    ).resolves.toEqual([]);
-  });
-
-  it("fails closed when a Slack installation is not revoked", async () => {
-    const slackSnapshot: AccountErasureRemoteSnapshot = {
-      ...snapshot,
-      slackInstallations: [
-        { botToken: "sole-member", memberCount: 1, slackUserId: "U1", teamId: "T1" },
-      ],
-    };
-    await expect(
-      revokeRemoteAccounts(slackSnapshot, [], async () =>
-        Response.json({ error: "not_allowed", ok: false }, { status: 200 }),
-      ),
-    ).rejects.toThrow("Slack installation revocation failed: not_allowed");
   });
 });

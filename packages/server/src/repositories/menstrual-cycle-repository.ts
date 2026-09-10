@@ -4,55 +4,35 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 
-// ---------------------------------------------------------------------------
-// Estimate boundaries
-// ---------------------------------------------------------------------------
-
 const MINIMUM_COMPLETED_CYCLES = 3;
 const MINIMUM_REGULAR_CYCLE_DAYS = 21;
 const MAXIMUM_REGULAR_CYCLE_DAYS = 35;
 const MAXIMUM_REGULAR_VARIATION_DAYS = 9;
 
-// ---------------------------------------------------------------------------
-// Zod schemas for raw DB rows
-// ---------------------------------------------------------------------------
-
-const currentPhaseRowSchema = z.object({
-  start_date: dateStringSchema,
-  avg_cycle_length: z.coerce.number().nullable(),
-  completed_cycle_count: z.coerce.number().int().nonnegative(),
-  min_cycle_length: z.coerce.number().int().nullable(),
-  max_cycle_length: z.coerce.number().int().nullable(),
+const cycleEventRowSchema = z.object({
+  local_date: dateStringSchema,
+  provider_id: z.string(),
+  source_name: z.string().nullable(),
+  source_bundle: z.string().nullable(),
 });
 
-const periodHistoryRowSchema = z.object({
-  id: z.string(),
-  start_date: dateStringSchema,
-  end_date: dateStringSchema.nullable(),
-  duration_days: z.coerce.number().int().nullable(),
-  notes: z.string().nullable(),
-});
+export interface CycleSource {
+  providerId: string;
+  sourceName: string | null;
+  sourceBundle: string | null;
+}
 
-const periodMutationRowSchema = z.object({
-  id: z.string(),
-  start_date: dateStringSchema,
-  end_date: dateStringSchema.nullable(),
-  duration_days: z.coerce.number().int().nullable(),
-  notes: z.string().nullable(),
-});
-
-const deletedPeriodRowSchema = z.object({
-  id: z.string(),
-});
-
-// ---------------------------------------------------------------------------
-// Domain types
-// ---------------------------------------------------------------------------
+export interface CycleStart {
+  id: string;
+  startDate: string;
+  sources: CycleSource[];
+}
 
 export type CycleEstimateStatus =
   | "no-history"
   | "sparse-history"
   | "irregular-history"
+  | "conflicting-history"
   | "stale-history"
   | "estimated";
 
@@ -67,7 +47,7 @@ export interface CyclePhaseEstimate {
   observedCycleLengthRange: {
     minimumDays: number;
     maximumDays: number;
-  } | null;
+  };
   phaseLabel: string;
   cycleDayLabel: string;
   dayBasisLabel: string;
@@ -81,322 +61,232 @@ export interface CurrentPhaseResult {
   dayOfCycle: number | null;
   cycleLength: number | null;
   estimate: CyclePhaseEstimate | null;
+  latestCycleStart: CycleStart | null;
   availability: CycleEstimateAvailability;
 }
 
-export interface MenstrualPeriod {
-  id: string;
-  startDate: string;
-  endDate: string | null;
-  durationDays: number | null;
-  durationLabel: string | null;
-  notes: string | null;
+function calendarDate(date: Date, timezone: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const values = new Map(parts.map((part) => [part.type, part.value]));
+  const value = (type: Intl.DateTimeFormatPartTypes) => values.get(type);
+  return `${value("year")}-${value("month")}-${value("day")}`;
 }
 
-export class PeriodStartDateConflictError extends Error {
-  constructor(startDate: string) {
-    super(`A period is already recorded for ${startDate}. Choose a different start date.`);
-    this.name = "PeriodStartDateConflictError";
+function shiftCalendarDate(date: string, amount: number, unit: "day" | "month"): string {
+  const shifted = new Date(`${date}T00:00:00.000Z`);
+  if (unit === "day") {
+    shifted.setUTCDate(shifted.getUTCDate() + amount);
+  } else {
+    const targetMonth = shifted.getUTCFullYear() * 12 + shifted.getUTCMonth() + amount;
+    const targetYear = Math.floor(targetMonth / 12);
+    const monthIndex = ((targetMonth % 12) + 12) % 12;
+    const lastDay = new Date(Date.UTC(targetYear, monthIndex + 1, 0)).getUTCDate();
+    shifted.setUTCFullYear(targetYear, monthIndex, Math.min(shifted.getUTCDate(), lastDay));
   }
+  return shifted.toISOString().slice(0, 10);
 }
 
-function isUniqueViolation(error: unknown): boolean {
-  if (typeof error !== "object" || error === null) return false;
-  if ("code" in error && error.code === "23505") return true;
+function daysBetween(earlier: string, later: string): number {
   return (
-    "cause" in error &&
-    typeof error.cause === "object" &&
-    error.cause !== null &&
-    "code" in error.cause &&
-    error.cause.code === "23505"
+    (Date.parse(`${later}T00:00:00.000Z`) - Date.parse(`${earlier}T00:00:00.000Z`)) / 86_400_000
   );
 }
 
-function formatPeriodDuration(durationDays: number | null): string | null {
-  if (durationDays === null) return null;
-  return `${durationDays} ${durationDays === 1 ? "day" : "days"}`;
+function sourceKey(source: CycleSource): string {
+  return JSON.stringify([source.providerId, source.sourceBundle, source.sourceName]);
 }
 
-function mapPeriod(row: z.infer<typeof periodMutationRowSchema>): MenstrualPeriod {
+function compareSources(left: CycleSource, right: CycleSource): number {
+  return (
+    left.providerId.localeCompare(right.providerId) ||
+    (left.sourceBundle ?? "").localeCompare(right.sourceBundle ?? "") ||
+    (left.sourceName ?? "").localeCompare(right.sourceName ?? "")
+  );
+}
+
+function groupCycleStarts(rows: z.infer<typeof cycleEventRowSchema>[]): CycleStart[] {
+  const grouped = new Map<string, Map<string, CycleSource>>();
+  for (const row of rows) {
+    const source: CycleSource = {
+      providerId: row.provider_id,
+      sourceName: row.source_name,
+      sourceBundle: row.source_bundle,
+    };
+    const sources = grouped.get(row.local_date) ?? new Map<string, CycleSource>();
+    sources.set(sourceKey(source), source);
+    grouped.set(row.local_date, sources);
+  }
+  return [...grouped.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([startDate, sources]) => ({
+      id: `cycle-start:${startDate}`,
+      startDate,
+      sources: [...sources.values()].sort(compareSources),
+    }));
+}
+
+function unavailable(
+  status: Exclude<CycleEstimateStatus, "estimated">,
+  label: string,
+  latestCycleStart: CycleStart | null,
+  cycleLength: number | null = null,
+): CurrentPhaseResult {
   return {
-    id: row.id,
-    startDate: row.start_date,
-    endDate: row.end_date,
-    durationDays: row.duration_days,
-    durationLabel: formatPeriodDuration(row.duration_days),
-    notes: row.notes,
+    phase: null,
+    dayOfCycle: null,
+    cycleLength,
+    estimate: null,
+    latestCycleStart,
+    availability: { status, label },
   };
 }
 
-function buildCyclePhaseEstimate({
-  phase,
-  dayOfCycle,
-  cycleLength,
-  completedCycleCount,
-  minimumCycleLength,
-  maximumCycleLength,
-}: {
+function buildEstimate(input: {
   phase: CyclePhase;
   dayOfCycle: number;
   cycleLength: number;
-  completedCycleCount: number;
-  minimumCycleLength: number;
-  maximumCycleLength: number;
+  intervals: number[];
 }): CyclePhaseEstimate {
-  const methodLabel = `Phase and cycle length use the average of ${completedCycleCount} completed cycles.`;
-  const uncertaintyLabel =
-    minimumCycleLength === maximumCycleLength
-      ? `All ${completedCycleCount} recorded cycles were ${minimumCycleLength} days long.`
-      : `Recorded cycle lengths ranged from ${minimumCycleLength} to ${maximumCycleLength} days.`;
-
+  const minimumDays = Math.min(...input.intervals);
+  const maximumDays = Math.max(...input.intervals);
+  const completedCycleCount = input.intervals.length;
   return {
     basis: "personal-cycle-average",
     completedCycleCount,
-    observedCycleLengthRange: {
-      minimumDays: minimumCycleLength,
-      maximumDays: maximumCycleLength,
-    },
-    phaseLabel: `Estimated ${PHASE_DISPLAY[phase].label} phase`,
-    cycleDayLabel: `Day ${dayOfCycle} of an estimated ${cycleLength}-day cycle`,
-    dayBasisLabel: "Cycle day is counted from the latest recorded period start.",
-    methodLabel,
-    uncertaintyLabel,
+    observedCycleLengthRange: { minimumDays, maximumDays },
+    phaseLabel: `Estimated ${PHASE_DISPLAY[input.phase].label} phase`,
+    cycleDayLabel: `Day ${input.dayOfCycle} of an estimated ${input.cycleLength}-day cycle`,
+    dayBasisLabel: "Cycle day is counted from the latest provider cycle-start record.",
+    methodLabel: `Phase and cycle length use the average of ${completedCycleCount} completed cycles from provider records.`,
+    uncertaintyLabel:
+      minimumDays === maximumDays
+        ? `All ${completedCycleCount} recorded cycles were ${minimumDays} days long.`
+        : `Recorded cycle lengths ranged from ${minimumDays} to ${maximumDays} days.`,
     limitationLabel: "No calibrated confidence score or next-period forecast is available.",
   };
 }
 
-// ---------------------------------------------------------------------------
-// Repository
-// ---------------------------------------------------------------------------
-
-/** Data access for menstrual cycle tracking. */
 export class MenstrualCycleRepository {
   readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
+  readonly #timezone: string;
 
-  constructor(db: Pick<Database, "execute">, userId: string) {
+  constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
     this.#db = db;
     this.#userId = userId;
+    this.#timezone = timezone;
   }
 
-  /** Estimate the current phase and expose the recorded history behind that estimate. */
-  async getCurrentPhase(today?: Date): Promise<CurrentPhaseResult> {
+  async #cycleStarts(rangeStart: string, rangeEnd: string): Promise<CycleStart[]> {
     const rows = await executeWithSchema(
       this.#db,
-      currentPhaseRowSchema,
-      sql`WITH cycles AS (
-            SELECT start_date,
-                   start_date - LAG(start_date) OVER (ORDER BY start_date) AS cycle_days
-            FROM fitness.menstrual_period
-            WHERE user_id = ${this.#userId}
-              AND start_date <= CURRENT_DATE
-          ),
-          cycle_stats AS (
-            SELECT AVG(cycle_days)::numeric AS avg_cycle_length,
-                   COUNT(cycle_days)::int AS completed_cycle_count,
-                   MIN(cycle_days)::int AS min_cycle_length,
-                   MAX(cycle_days)::int AS max_cycle_length
-            FROM cycles
-            WHERE cycle_days IS NOT NULL
-          )
-          SELECT start_date,
-                 cycle_stats.avg_cycle_length,
-                 cycle_stats.completed_cycle_count,
-                 cycle_stats.min_cycle_length,
-                 cycle_stats.max_cycle_length
-          FROM cycles
-          CROSS JOIN cycle_stats
-          ORDER BY start_date DESC
-          LIMIT 1`,
+      cycleEventRowSchema,
+      sql`SELECT
+            (start_date AT TIME ZONE ${this.#timezone})::date AS local_date,
+            provider_id,
+            source_name,
+            source_bundle
+          FROM fitness.health_event
+          WHERE user_id = ${this.#userId}
+            AND type = 'HKCategoryTypeIdentifierMenstrualFlow'
+            AND metadata ->> 'HKMetadataKeyMenstrualCycleStart' = 'true'
+            AND (start_date AT TIME ZONE ${this.#timezone})::date >= ${rangeStart}::date
+            AND (start_date AT TIME ZONE ${this.#timezone})::date < ${rangeEnd}::date
+          ORDER BY local_date ASC, provider_id ASC, source_bundle ASC NULLS FIRST,
+                   source_name ASC NULLS FIRST`,
     );
+    return groupCycleStarts(rows);
+  }
 
-    const latest = rows[0];
-    if (!latest) {
-      return {
-        phase: null,
-        dayOfCycle: null,
-        cycleLength: null,
-        estimate: null,
-        availability: {
-          status: "no-history",
-          label: "No periods logged. Add a period start to begin tracking.",
-        },
-      };
+  async getHistory(months: number, today = new Date()): Promise<CycleStart[]> {
+    const currentDate = calendarDate(today, this.#timezone);
+    const endDate = shiftCalendarDate(currentDate, 1, "day");
+    const startDate = shiftCalendarDate(currentDate, -months, "month");
+    return this.#cycleStarts(startDate, endDate);
+  }
+
+  async getCurrentPhase(today = new Date()): Promise<CurrentPhaseResult> {
+    const currentDate = calendarDate(today, this.#timezone);
+    const starts = await this.#cycleStarts("1970-01-01", shiftCalendarDate(currentDate, 1, "day"));
+    const latestCycleStart = starts.at(-1) ?? null;
+    if (!latestCycleStart) {
+      return unavailable(
+        "no-history",
+        "No cycle starts are available from provider records. Check provider permissions and sync again.",
+        null,
+      );
     }
 
+    const intervals = starts.flatMap((earlier, index) =>
+      starts
+        .slice(index + 1, index + 2)
+        .map((later) => daysBetween(earlier.startDate, later.startDate)),
+    );
+    const conflictingIntervalIndex = intervals.findIndex(
+      (interval) => interval < MINIMUM_REGULAR_CYCLE_DAYS,
+    );
+    if (conflictingIntervalIndex >= 0) {
+      const conflictingDates = starts
+        .slice(conflictingIntervalIndex, conflictingIntervalIndex + 2)
+        .map((start) => start.startDate)
+        .join(" and ");
+      return unavailable(
+        "conflicting-history",
+        `Provider cycle-start records conflict: ${conflictingDates} are fewer than ${MINIMUM_REGULAR_CYCLE_DAYS} days apart. Correct the record in its source and sync again.`,
+        latestCycleStart,
+      );
+    }
+
+    if (intervals.length < MINIMUM_COMPLETED_CYCLES) {
+      return unavailable(
+        "sparse-history",
+        "Not enough provider records for a phase estimate. At least 3 completed cycles are needed.",
+        latestCycleStart,
+      );
+    }
+
+    const minimumDays = Math.min(...intervals);
+    const maximumDays = Math.max(...intervals);
     if (
-      latest.completed_cycle_count < MINIMUM_COMPLETED_CYCLES ||
-      latest.avg_cycle_length === null ||
-      latest.min_cycle_length === null ||
-      latest.max_cycle_length === null
+      maximumDays > MAXIMUM_REGULAR_CYCLE_DAYS ||
+      maximumDays - minimumDays > MAXIMUM_REGULAR_VARIATION_DAYS
     ) {
-      return {
-        phase: null,
-        dayOfCycle: null,
-        cycleLength: null,
-        estimate: null,
-        availability: {
-          status: "sparse-history",
-          label:
-            "Not enough recorded history for a phase estimate. At least 3 completed cycles are needed.",
-        },
-      };
+      return unavailable(
+        "irregular-history",
+        `No phase estimate is shown because provider records do not support a regular-cycle model (observed range: ${minimumDays} to ${maximumDays} days).`,
+        latestCycleStart,
+      );
     }
 
-    const cycleLengthVariation = latest.max_cycle_length - latest.min_cycle_length;
-    const hasIrregularHistory =
-      latest.min_cycle_length < MINIMUM_REGULAR_CYCLE_DAYS ||
-      latest.max_cycle_length > MAXIMUM_REGULAR_CYCLE_DAYS ||
-      cycleLengthVariation > MAXIMUM_REGULAR_VARIATION_DAYS;
-    if (hasIrregularHistory) {
-      return {
-        phase: null,
-        dayOfCycle: null,
-        cycleLength: null,
-        estimate: null,
-        availability: {
-          status: "irregular-history",
-          label: `No phase estimate is shown because recorded cycle lengths do not support a regular-cycle model (observed range: ${latest.min_cycle_length} to ${latest.max_cycle_length} days).`,
-        },
-      };
-    }
-
-    const cycleLength = Math.round(Number(latest.avg_cycle_length));
-
-    const startDate = new Date(latest.start_date);
-    const referenceDate = today ?? new Date();
-    const dayOfCycle =
-      Math.floor((referenceDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-
-    // If we're past the expected cycle length + 7 days, we can't determine the phase
+    const cycleLength = Math.round(
+      intervals.reduce((total, interval) => total + interval, 0) / intervals.length,
+    );
+    const dayOfCycle = daysBetween(latestCycleStart.startDate, currentDate) + 1;
     if (dayOfCycle > cycleLength + 7) {
-      return {
-        phase: null,
-        dayOfCycle: null,
+      return unavailable(
+        "stale-history",
+        "The latest provider cycle-start record is beyond the expected cycle window. Correct the record in its source and sync again.",
+        latestCycleStart,
         cycleLength,
-        estimate: null,
-        availability: {
-          status: "stale-history",
-          label:
-            "The latest period start is beyond the expected cycle window. Correct it or log a newer period start to resume estimates.",
-        },
-      };
+      );
     }
 
     const phase = computePhase(dayOfCycle, cycleLength);
-
     return {
       phase,
       dayOfCycle,
       cycleLength,
-      estimate: buildCyclePhaseEstimate({
-        phase,
-        dayOfCycle,
-        cycleLength,
-        completedCycleCount: latest.completed_cycle_count,
-        minimumCycleLength: latest.min_cycle_length,
-        maximumCycleLength: latest.max_cycle_length,
-      }),
+      estimate: buildEstimate({ phase, dayOfCycle, cycleLength, intervals }),
+      latestCycleStart,
       availability: {
         status: "estimated",
-        label: "Phase estimate available from recorded cycle history.",
+        label: "Phase estimate available from provider cycle-start records.",
       },
     };
-  }
-
-  /** Log a new period start/end (upserts on user+start_date). */
-  async logPeriod(
-    startDate: string,
-    endDate: string | null,
-    notes: string | null,
-  ): Promise<MenstrualPeriod | null> {
-    if (endDate !== null && endDate < startDate) {
-      throw new Error("Period end date cannot be before start date.");
-    }
-
-    const rows = await executeWithSchema(
-      this.#db,
-      periodMutationRowSchema,
-      sql`INSERT INTO fitness.menstrual_period (user_id, start_date, end_date, notes)
-          VALUES (${this.#userId}, ${startDate}::date, ${endDate}::date, ${notes})
-          ON CONFLICT (user_id, start_date) DO UPDATE SET
-            end_date = EXCLUDED.end_date,
-            notes = EXCLUDED.notes
-          RETURNING id, start_date, end_date,
-                    end_date - start_date + 1 AS duration_days,
-                    notes`,
-    );
-
-    const row = rows[0];
-    if (!row) return null;
-
-    return mapPeriod(row);
-  }
-
-  /** Correct an existing period owned by this user. */
-  async updatePeriod(
-    id: string,
-    startDate: string,
-    endDate: string | null,
-    notes: string | null,
-  ): Promise<MenstrualPeriod | null> {
-    if (endDate !== null && endDate < startDate) {
-      throw new Error("Period end date cannot be before start date.");
-    }
-
-    try {
-      const rows = await executeWithSchema(
-        this.#db,
-        periodMutationRowSchema,
-        sql`UPDATE fitness.menstrual_period
-            SET start_date = ${startDate}::date,
-                end_date = ${endDate}::date,
-                notes = ${notes}
-            WHERE id = ${id}::uuid
-              AND user_id = ${this.#userId}
-            RETURNING id, start_date, end_date,
-                      end_date - start_date + 1 AS duration_days,
-                      notes`,
-      );
-
-      const row = rows[0];
-      return row ? mapPeriod(row) : null;
-    } catch (error: unknown) {
-      if (isUniqueViolation(error)) {
-        throw new PeriodStartDateConflictError(startDate);
-      }
-      throw error;
-    }
-  }
-
-  /** Delete an erroneous period owned by this user. */
-  async deletePeriod(id: string): Promise<boolean> {
-    const rows = await executeWithSchema(
-      this.#db,
-      deletedPeriodRowSchema,
-      sql`DELETE FROM fitness.menstrual_period
-          WHERE id = ${id}::uuid
-            AND user_id = ${this.#userId}
-          RETURNING id`,
-    );
-
-    return rows.length > 0;
-  }
-
-  /** Period history for the past N months. */
-  async getHistory(months: number): Promise<MenstrualPeriod[]> {
-    const rows = await executeWithSchema(
-      this.#db,
-      periodHistoryRowSchema,
-      sql`SELECT id, start_date, end_date,
-                 end_date - start_date + 1 AS duration_days,
-                 notes
-          FROM fitness.menstrual_period
-          WHERE user_id = ${this.#userId}
-            AND start_date >= CURRENT_DATE - (${months}::int || ' months')::interval
-          ORDER BY start_date ASC`,
-    );
-
-    return rows.map(mapPeriod);
   }
 }

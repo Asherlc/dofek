@@ -62,7 +62,17 @@ export function formatDurationSeconds(seconds: number): string {
   return formatDurationMinutes(Math.round(seconds / 60));
 }
 
-export function formatClimbingAttemptResult(sent: boolean, attemptCount: number): string {
+export function formatClimbingAttemptResult(
+  sent: boolean | null,
+  attemptCount: number | null,
+): string {
+  if (sent === null && attemptCount === null) return "Outcome not recorded";
+  if (attemptCount === null) {
+    return sent ? "Sent; attempt count not recorded" : "Not sent; attempt count not recorded";
+  }
+  if (sent === null) {
+    return `${attemptCount} ${attemptCount === 1 ? "attempt" : "attempts"}; outcome not recorded`;
+  }
   if (sent) {
     return `Sent in ${attemptCount} ${attemptCount === 1 ? "attempt" : "attempts"}`;
   }

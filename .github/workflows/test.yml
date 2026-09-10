@@ -65,7 +65,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - name: Validate action-pinning regression fixtures
         run: |
           set -euo pipefail
@@ -185,7 +185,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
         with:
           driver-opts: |
             image=mirror.gcr.io/moby/buildkit:buildx-stable-1
@@ -269,22 +269,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.5"
+          cache: false
       - name: Install actionlint
         env:
-          ACTIONLINT_ARCHIVE_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
-          ACTIONLINT_VERSION: 1.7.12
+          GOBIN: "${{ runner.temp }}/bin"
         run: |
           set -euo pipefail
-          archive_name="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
-          archive_path="$RUNNER_TEMP/$archive_name"
-          curl --fail --silent --show-error --location \
-            --output "$archive_path" \
-            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${archive_name}"
-          printf '%s  %s\n' "$ACTIONLINT_ARCHIVE_SHA256" "$archive_path" \
-            | sha256sum --check --strict -
-          tar --extract --gzip --file "$archive_path" actionlint
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
       - name: Run actionlint (without shellcheck)
-        run: ./actionlint -shellcheck=
+        run: |
+          "$RUNNER_TEMP/bin/actionlint" -shellcheck=
 
   lint:
     name: Lint
@@ -294,7 +291,7 @@ jobs:
       contents: read
     services:
       clickhouse:
-        image: mirror.gcr.io/clickhouse/clickhouse-server:26.6.1.1193-alpine@sha256:1904267fde1d8b794c9e5fda1b5a4bffd9b2e5b3d1057d5911161257125956f3
+        image: clickhouse/clickhouse-server:26.6.1.1193-alpine@sha256:1904267fde1d8b794c9e5fda1b5a4bffd9b2e5b3d1057d5911161257125956f3
         env:
           CLICKHOUSE_DB: fitness
           CLICKHOUSE_USER: default
@@ -314,7 +311,7 @@ jobs:
       - name: Setup Node and pnpm
         uses: ./.github/actions/setup-node-pnpm
       - name: Setup uv
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - name: Run lint policies
         run: pnpm lint
         env:
@@ -338,7 +335,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - name: Run yamllint
         run: uv tool run yamllint -c .yamllint.yml --no-warnings .
 
@@ -402,12 +399,15 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - name: Lint new migration SQL
         run: |
+          # Migration 0099 was applied in production before this repository restored its lineage.
+          # Its recorded bytes are immutable and cannot be reformatted for SQLFluff.
           NEW_MIGRATIONS=$(git diff --diff-filter=A --name-only "origin/${BASE_REF}...HEAD" -- \
             'drizzle/*.sql' ':(exclude)drizzle/_history/*.sql' \
             | grep -v '_baseline' \
+            | grep -v '^drizzle/0099_canonical_clinical_records.sql$' \
             || true)
           if [ -z "$NEW_MIGRATIONS" ]; then
             echo "No new migrations to lint"
@@ -520,7 +520,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - name: Install dependencies
         run: uv sync
       - name: Lint
@@ -539,7 +539,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: hadolint/hadolint-action@2332a7b74a6de0dda2e2221d575162eba76ba5e5 # v3.3.0
+      - uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
         with:
           dockerfile: Dockerfile
 
@@ -761,7 +761,7 @@ jobs:
           --health-timeout 5s
           --health-retries 30
       clickhouse:
-        image: mirror.gcr.io/clickhouse/clickhouse-server:26.6.1.1193-alpine
+        image: clickhouse/clickhouse-server:26.6.1.1193-alpine@sha256:1904267fde1d8b794c9e5fda1b5a4bffd9b2e5b3d1057d5911161257125956f3
         env:
           CLICKHOUSE_DB: fitness
           CLICKHOUSE_USER: default
@@ -786,7 +786,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
       - name: Setup uv
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - name: Download FIT decoder binary
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -891,7 +891,6 @@ jobs:
       COMPOSE_PROJECT_NAME: dofek-ci-e2e
     permissions:
       contents: read
-      packages: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -912,25 +911,13 @@ jobs:
           key: cypress-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: cypress-${{ runner.os }}-
       - run: pnpm exec cypress install
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
         with:
           driver-opts: |
             image=mirror.gcr.io/moby/buildkit:buildx-stable-1
           buildkitd-config-inline: |
             [registry."docker.io"]
               mirrors = ["mirror.gcr.io"]
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Compute image name
-        id: image-name
-        env:
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          echo "name=ghcr.io/$(printf '%s' "$REPOSITORY" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
       - name: Build E2E images with cache
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
@@ -941,7 +928,6 @@ jobs:
           build-args: DEPENDENCY_CACHE_BUST=${{ hashFiles('package.json', 'pnpm-lock.yaml', 'Dockerfile') }}
           cache-from: |
             type=gha,scope=e2e
-            type=registry,ref=${{ steps.image-name.outputs.name }}:e2e-buildcache
           cache-to: type=gha,mode=max,scope=e2e
       - name: Start e2e dependencies
         run: docker compose -f docker-compose.e2e.yml up -d --wait --no-build db clickhouse redis account-erasure-minio redpanda
@@ -1232,7 +1218,7 @@ jobs:
           --health-timeout 5s
           --health-retries 15
       clickhouse:
-        image: mirror.gcr.io/clickhouse/clickhouse-server:26.6.1.1193-alpine
+        image: clickhouse/clickhouse-server:26.6.1.1193-alpine@sha256:1904267fde1d8b794c9e5fda1b5a4bffd9b2e5b3d1057d5911161257125956f3
         env:
           CLICKHOUSE_DB: fitness
           CLICKHOUSE_USER: default

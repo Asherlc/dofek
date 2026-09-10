@@ -28,6 +28,7 @@ const protectedResourceMetadataSchema = z.object({
 });
 const authorizationServerMetadataSchema = z.object({
   authorization_endpoint: z.string(),
+  client_id_metadata_document_supported: z.boolean(),
   issuer: z.string(),
   scopes_supported: z.array(z.string()),
 });
@@ -95,13 +96,16 @@ describe("createMcpOAuthRouter", () => {
       for (const scope of MCP_OAUTH_SCOPES) {
         expect(metadata.scopes_supported).toContain(scope);
       }
+      expect(metadata.scopes_supported).toContain("nutrition:write");
     });
 
     it("advertises every supported scope from the authorization-server metadata", async () => {
       app = await mount();
       const response = await fetch(`${app.baseUrl}/.well-known/oauth-authorization-server`);
       const metadata = authorizationServerMetadataSchema.parse(await response.json());
+      expect(metadata.client_id_metadata_document_supported).toBe(true);
       expect(metadata.scopes_supported).toEqual([...MCP_OAUTH_SCOPES]);
+      expect(metadata.scopes_supported).toContain("nutrition:write");
     });
 
     it("publishes the Dofek resource and issuer URLs in the metadata", async () => {
@@ -172,6 +176,28 @@ describe("createMcpOAuthRouter", () => {
   });
 
   describe("rate limiting", () => {
+    it("applies rate limiting to authorization-server metadata when configured with a limit", async () => {
+      app = await mount({ max: 1, windowMs: 60_000 });
+
+      const first = await fetch(`${app.baseUrl}/.well-known/oauth-authorization-server`);
+      const second = await fetch(`${app.baseUrl}/.well-known/oauth-authorization-server`);
+
+      expect(first.status).toBe(200);
+      expect(second.status).toBe(429);
+    });
+
+    it("does not rate limit authorization-server metadata when rate limiting is disabled", async () => {
+      app = await mount(false);
+
+      const responses = await Promise.all(
+        Array.from({ length: 6 }, () =>
+          fetch(`${app.baseUrl}/.well-known/oauth-authorization-server`),
+        ),
+      );
+
+      expect(responses.map((response) => response.status)).toEqual([200, 200, 200, 200, 200, 200]);
+    });
+
     it("applies rate limiting to client registration when configured with a limit", async () => {
       app = await mount({ max: 1, windowMs: 60_000 });
 

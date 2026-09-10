@@ -20,6 +20,7 @@ const PUBLIC_PATHS = new Set([
   "/login",
   "/privacy",
   "/reset-password",
+  "/support",
   "/terms",
 ]);
 

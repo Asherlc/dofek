@@ -456,66 +456,6 @@ describe("Router transformation logic", () => {
       ).toBeUndefined();
     });
 
-    it("refreshes menstrual cycle queries after logging a period", async () => {
-      const today = new Date().toISOString().slice(0, 10);
-      await queryCache.invalidateAll();
-      await testCtx.db.execute(
-        sql`DELETE FROM fitness.menstrual_period WHERE user_id = ${TEST_USER_ID}`,
-      );
-
-      const { result: historyBefore } = await query("menstrualCycle.history", { months: 1 });
-      expect(historyBefore.result.data).toHaveLength(0);
-      const { result: phaseBefore } = await query("menstrualCycle.currentPhase");
-      expect(phaseBefore.result.data.phase).toBeNull();
-      expect(phaseBefore.result.data.estimate).toBeNull();
-
-      const { status } = await mutate("menstrualCycle.logPeriod", {
-        startDate: today,
-        notes: "Cache invalidation",
-      });
-      expect(status).toBe(200);
-
-      const { result: historyAfter } = await query("menstrualCycle.history", { months: 1 });
-      expect(historyAfter.result.data).toHaveLength(1);
-      const { result: phaseAfter } = await query("menstrualCycle.currentPhase");
-      expect(phaseAfter.result.data).toMatchObject({
-        phase: null,
-        estimate: null,
-        availability: {
-          status: "sparse-history",
-          label:
-            "Not enough recorded history for a phase estimate. At least 3 completed cycles are needed.",
-        },
-      });
-    });
-
-    it("refreshes breathwork history after logging a session", async () => {
-      const startedAt = new Date().toISOString();
-      await queryCache.invalidateAll();
-      await testCtx.db.execute(
-        sql`DELETE FROM fitness.breathwork_session
-            WHERE user_id = ${TEST_USER_ID} AND notes = 'Cache invalidation'`,
-      );
-
-      const { result: historyBefore } = await query("breathwork.history", { days: 1 });
-      expect(historyBefore.result.data).toHaveLength(0);
-
-      const { status, result: createdResult } = await mutate("breathwork.logSession", {
-        techniqueId: "box-breathing",
-        rounds: 4,
-        durationSeconds: 64,
-        startedAt,
-        notes: "Cache invalidation",
-      });
-      expect(status).toBe(200);
-      const sessionId = createdResult.result.data.id;
-
-      const { result: historyAfter } = await query("breathwork.history", { days: 1 });
-      expect(
-        historyAfter.result.data.find((session: { id: string }) => session.id === sessionId),
-      ).toBeDefined();
-    });
-
     it("refreshes personalization status after reset", async () => {
       await queryCache.invalidateAll();
       await savePersonalizedParams(testCtx.db, TEST_USER_ID, {
@@ -1114,10 +1054,10 @@ describe("Router transformation logic", () => {
   });
 
   // ══════════════════════════════════════════════════════════════
-  // Cycling Advanced — ramp rate EWMA + recommendation
+  // Cycling Advanced — ramp rate EWMA + load-change observation
   // ══════════════════════════════════════════════════════════════
   describe("cyclingAdvanced rampRate", () => {
-    it("computes ramp rate with EWMA and provides recommendation", async () => {
+    it("computes ramp rate with EWMA and describes the load change", async () => {
       // Data was already inserted in weeklyReport beforeAll (cycling activities with HR + power)
       const { status, result } = await query("cyclingAdvanced.rampRate", {
         days: 90,
@@ -1130,21 +1070,19 @@ describe("Router transformation logic", () => {
       expect(data.recommendation.length).toBeGreaterThan(0);
       expect(Array.isArray(data.weeks)).toBe(true);
 
-      // Recommendation should be one of the three categories
-      expect(
-        data.recommendation.startsWith("Safe") ||
-          data.recommendation.startsWith("Aggressive") ||
-          data.recommendation.startsWith("Danger") ||
-          data.recommendation === "No data",
-      ).toBe(true);
-
       if (data.weeks.length > 0) {
+        expect(data.recommendation).toMatch(
+          /^Weekly training-load change: [+-]?\d+(?:\.\d+)? points$/,
+        );
+        expect(data.currentRampRate).toBe(data.weeks.at(-1).rampRate);
         for (const week of data.weeks) {
           expect(week.week).toBeTruthy();
           expect(typeof week.ctlStart).toBe("number");
           expect(typeof week.ctlEnd).toBe("number");
           expect(typeof week.rampRate).toBe("number");
         }
+      } else {
+        expect(data.recommendation).toBe("No data");
       }
     });
   });
@@ -1450,6 +1388,7 @@ describe("Router transformation logic", () => {
   // ══════════════════════════════════════════════════════════════
   describe("intervals detect", () => {
     let intervalActivityId: string;
+    let intervalActivityGroupId: string;
 
     beforeAll(async () => {
       // Create an activity with distinct intensity changes for interval detection
@@ -1466,11 +1405,12 @@ describe("Router transformation logic", () => {
             ON CONFLICT DO NOTHING`,
       );
 
-      const activityRows = await testCtx.db.execute(
-        sql`SELECT id FROM fitness.activity WHERE external_id = 'interval-detect-1' AND provider_id = 'test-provider'`,
+      const activityRows = await testCtx.db.execute<{ id: string; group_id: string }>(
+        sql`SELECT id, group_id FROM fitness.activity WHERE external_id = 'interval-detect-1' AND provider_id = 'test-provider'`,
       );
-      const firstRow: { id: string } = activityRows[0];
+      const firstRow = activityRows[0];
       intervalActivityId = firstRow.id;
+      intervalActivityGroupId = firstRow.group_id;
 
       const intervalMetricStreamRows: ClickHouseMetricStreamSeedRow[] = [];
       for (let minute = 0; minute < 40; minute++) {
@@ -1522,7 +1462,7 @@ describe("Router transformation logic", () => {
 
     it("detects intervals from intensity changes", async () => {
       const { status, result } = await query("intervals.detect", {
-        activityId: intervalActivityId,
+        activityId: intervalActivityGroupId,
       });
       expect(status).toBe(200);
       const intervals = result.result.data;

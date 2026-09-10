@@ -4,6 +4,13 @@ import { parseEnv } from "node:util";
 import { validateAccountErasureLedgerKeyring } from "../src/account-erasure/identity.ts";
 
 const REQUIRED_DEPLOY_KEYS = [
+  "APP_STORE_ISSUER_ID",
+  "APP_STORE_KEY_ID",
+  "APP_STORE_PRIVATE_KEY",
+  "APP_STORE_APP_ID",
+  "APP_STORE_BUNDLE_ID",
+  "APP_STORE_SUBSCRIPTION_PRODUCT_ID",
+  "APP_STORE_ROOT_CERTIFICATES_PEM",
   "AXIOM_API_TOKEN",
   "BREVO_API_KEY",
   "CREDENTIAL_ENCRYPTION_KEY_BASE64",

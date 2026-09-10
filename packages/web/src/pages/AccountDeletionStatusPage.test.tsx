@@ -281,7 +281,7 @@ describe("AccountDeletionStatusPage", () => {
     });
 
     render(<AccountDeletionStatusPage />);
-    fireEvent.click(screen.getByRole("button", { name: "Recover deletion status" }));
+    fireEvent.click(screen.getByRole("button", { name: "Check deletion status" }));
 
     await waitFor(() =>
       expect(mockConfirm).toHaveBeenCalledWith({ preparationToken: "p".repeat(43) }),
@@ -354,7 +354,7 @@ describe("AccountDeletionStatusPage", () => {
         }),
     );
     const rendered = render(<AccountDeletionStatusPage />);
-    fireEvent.click(screen.getByRole("button", { name: "Recover deletion status" }));
+    fireEvent.click(screen.getByRole("button", { name: "Check deletion status" }));
 
     await waitFor(() => expect(mockPurge).toHaveBeenCalledOnce());
     rendered.unmount();

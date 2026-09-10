@@ -220,28 +220,29 @@ describe("WgerProvider", () => {
     expect(error instanceof Error ? error.cause : undefined).toBeInstanceOf(SyntaxError);
   });
 
-  it.each([
-    400, 401, 403,
-  ])("rejects a user-minted refresh token when Wger returns %s", async (status) => {
-    const setup = new WgerProvider(
-      async () => new Response("sensitive rejection response", { status }),
-    ).authSetup();
-    if (!setup.manualToken) throw new Error("expected manual token authentication");
+  it.each([400, 401, 403])(
+    "rejects a user-minted refresh token when Wger returns %s",
+    async (status) => {
+      const setup = new WgerProvider(
+        async () => new Response("sensitive rejection response", { status }),
+      ).authSetup();
+      if (!setup.manualToken) throw new Error("expected manual token authentication");
 
-    const error = await setup.manualToken
-      .exchangeToken("rejected-refresh")
-      .catch((caught: unknown) => caught);
+      const error = await setup.manualToken
+        .exchangeToken("rejected-refresh")
+        .catch((caught: unknown) => caught);
 
-    expect(error).toBeInstanceOf(ProviderTokenRejectedError);
-    expect(authFailureReasonFromError(error)).toBe("authentication_failed");
-    expect(error).toMatchObject({
-      message:
-        "Wger rejected this token. Create a new JWT refresh token in Wger's API key settings and try again.",
-    });
-    expect(error instanceof Error ? error.message : "").not.toContain(
-      "sensitive rejection response",
-    );
-  });
+      expect(error).toBeInstanceOf(ProviderTokenRejectedError);
+      expect(authFailureReasonFromError(error)).toBe("authentication_failed");
+      expect(error).toMatchObject({
+        message:
+          "Wger rejected this token. Create a new JWT refresh token in Wger's API key settings and try again.",
+      });
+      expect(error instanceof Error ? error.message : "").not.toContain(
+        "sensitive rejection response",
+      );
+    },
+  );
 
   it("reports a safe error when Wger token refresh fails unexpectedly", async () => {
     const setup = new WgerProvider(
@@ -454,37 +455,37 @@ describe("WgerProvider", () => {
     { endpoint: "workoutsession", status: 403 },
     { endpoint: "weightentry", status: 401 },
     { endpoint: "weightentry", status: 403 },
-  ])("marks a $status from the $endpoint data endpoint as requiring authentication", async ({
-    endpoint,
-    status,
-  }) => {
-    const sensitiveBody = "vendor response containing private details";
-    const mockFetch: typeof globalThis.fetch = async (input) => {
-      if (String(input).includes(`/${endpoint}/`)) {
-        return new Response(sensitiveBody, { status });
-      }
-      return Response.json({ count: 0, next: null, previous: null, results: [] });
-    };
-    const { db } = createMockDatabase();
+  ])(
+    "marks a $status from the $endpoint data endpoint as requiring authentication",
+    async ({ endpoint, status }) => {
+      const sensitiveBody = "vendor response containing private details";
+      const mockFetch: typeof globalThis.fetch = async (input) => {
+        if (String(input).includes(`/${endpoint}/`)) {
+          return new Response(sensitiveBody, { status });
+        }
+        return Response.json({ count: 0, next: null, previous: null, results: [] });
+      };
+      const { db } = createMockDatabase();
 
-    const result = await new WgerProvider(mockFetch).sync(
-      new SyncRun({
-        db,
-        window: SyncWindow.fromDateRange({
-          sinceDate: "2026-03-01",
-          untilDate: "2026-03-01",
+      const result = await new WgerProvider(mockFetch).sync(
+        new SyncRun({
+          db,
+          window: SyncWindow.fromDateRange({
+            sinceDate: "2026-03-01",
+            untilDate: "2026-03-01",
+          }),
         }),
-      }),
-    );
+      );
 
-    expect(result.recordsSynced).toBe(0);
-    expect(result.errors).toHaveLength(1);
-    expect(authFailureReasonFromError(result.errors[0]?.cause)).toBe("authentication_failed");
-    expect(result.errors[0]?.message).not.toContain(sensitiveBody);
-    expect(
-      result.errors[0]?.cause instanceof Error ? result.errors[0].cause.message : "",
-    ).not.toContain(sensitiveBody);
-  });
+      expect(result.recordsSynced).toBe(0);
+      expect(result.errors).toHaveLength(1);
+      expect(authFailureReasonFromError(result.errors[0]?.cause)).toBe("authentication_failed");
+      expect(result.errors[0]?.message).not.toContain(sensitiveBody);
+      expect(
+        result.errors[0]?.cause instanceof Error ? result.errors[0].cause.message : "",
+      ).not.toContain(sensitiveBody);
+    },
+  );
 
   it("reports a non-authentication Wger data error", async () => {
     const mockFetch: typeof globalThis.fetch = async (input) => {

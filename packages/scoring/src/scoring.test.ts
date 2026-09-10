@@ -11,7 +11,6 @@ import {
   FORM_ZONE_TRANSITION,
   FormZone,
   healthStatusColor,
-  rampRateColor,
   readinessLevelColor,
   SCORE_RECOVERED_THRESHOLD,
   SCORE_WARNING_THRESHOLD,
@@ -19,7 +18,6 @@ import {
   StrainScore,
   StressScore,
   scoreColor,
-  scoreDescription,
   scoreLabel,
   sleepDebtColor,
   sleepPerformanceColor,
@@ -146,28 +144,6 @@ describe("scoreLabel", () => {
 
   it("returns Poor for low scores", () => {
     expect(scoreLabel(0)).toBe("Poor");
-  });
-});
-
-describe("scoreDescription", () => {
-  it("returns high-recovery context for scores > 70", () => {
-    const desc = scoreDescription(85);
-    expect(desc).toContain("ready");
-  });
-
-  it("returns moderate context for scores 50-70", () => {
-    const desc = scoreDescription(60);
-    expect(desc).toContain("moderate");
-  });
-
-  it("returns low-recovery context for scores < 50", () => {
-    const desc = scoreDescription(30);
-    expect(desc).toContain("rest");
-  });
-
-  it("returns a non-empty string for boundary values", () => {
-    expect(scoreDescription(70).length).toBeGreaterThan(0);
-    expect(scoreDescription(50).length).toBeGreaterThan(0);
   });
 });
 
@@ -325,39 +301,6 @@ describe("trendColor", () => {
 
   it("returns danger for declining", () => {
     expect(trendColor("declining")).toBe(statusColors.danger);
-  });
-});
-
-describe("rampRateColor", () => {
-  it("returns positive for rate 0", () => {
-    expect(rampRateColor(0)).toBe(statusColors.positive);
-  });
-
-  it("returns positive for rate just below 5", () => {
-    expect(rampRateColor(4.99)).toBe(statusColors.positive);
-  });
-
-  it("returns warning at exactly 5", () => {
-    expect(rampRateColor(5)).toBe(statusColors.warning);
-  });
-
-  it("returns warning at exactly 7", () => {
-    expect(rampRateColor(7)).toBe(statusColors.warning);
-  });
-
-  it("returns danger just above 7", () => {
-    expect(rampRateColor(7.01)).toBe(statusColors.danger);
-  });
-
-  it("returns danger for high rates", () => {
-    expect(rampRateColor(15)).toBe(statusColors.danger);
-  });
-
-  it("uses absolute value for negative rates", () => {
-    expect(rampRateColor(-3)).toBe(statusColors.positive);
-    expect(rampRateColor(-5)).toBe(statusColors.warning);
-    expect(rampRateColor(-7)).toBe(statusColors.warning);
-    expect(rampRateColor(-8)).toBe(statusColors.danger);
   });
 });
 

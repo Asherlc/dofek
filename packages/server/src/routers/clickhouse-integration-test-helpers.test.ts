@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { runClickHouseMigrations } from "../../../../src/db/clickhouse-migrations.ts";
 import {
+  createClickHouseTestActivityPowerCurveStore,
   createClickHouseTestActivitySensorStore,
+  syncClickHouseTestActivityPowerCurveStore,
   syncClickHouseTestActivitySensorStore,
 } from "./clickhouse-integration-test-helpers.ts";
 import {
@@ -41,8 +43,7 @@ vi.mock("../../../../src/db/clickhouse-migrations.ts", () => ({
   toUInt64(0) AS health_events,
   toUInt64(0) AS metric_stream,
   toUInt64(0) AS nutrition_daily,
-  toUInt64(0) AS lab_panels,
-  toUInt64(0) AS lab_results,
+  toUInt64(0) AS clinical_records,
   toUInt64(0) AS journal_entries,
   toUInt8(0) AS is_deleted,
   toUInt64(1) AS refresh_version,
@@ -61,6 +62,13 @@ ${selectSql}`,
 
 const mockRunClickHouseMigrations = vi.mocked(runClickHouseMigrations);
 
+function analyticsInsertTargets(): string[] {
+  return clickHouseMocks.command.mock.calls.flatMap(([options]) => {
+    const target = String(options.query).match(/INSERT INTO analytics_test_[^.]+\.([a-z_]+)/)?.[1];
+    return target ? [target] : [];
+  });
+}
+
 describe("clickhouse integration test helpers", () => {
   beforeEach(() => {
     clickHouseMocks.command.mockReset().mockResolvedValue(undefined);
@@ -71,6 +79,46 @@ describe("clickhouse integration test helpers", () => {
       command: clickHouseMocks.command,
       query: clickHouseMocks.query,
     });
+  });
+
+  it("initializes the activity power-curve store with only its analytics dependencies", async () => {
+    const testContext = {
+      addCleanup: vi.fn(),
+      connectionString: "postgres://health:fixture@db:5432/health",
+    };
+
+    await createClickHouseTestActivityPowerCurveStore(testContext);
+
+    expect(analyticsInsertTargets()).toEqual([
+      "sensor_scalar_sample",
+      "deduped_sensor",
+      "v_activity",
+      "deduped_activities",
+      "activity_sensor_sample",
+      "activity_sensor_summary_rows",
+      "activity_summary",
+    ]);
+  });
+
+  it("resyncs the activity power-curve store with only its analytics dependencies", async () => {
+    const testContext = {
+      addCleanup: vi.fn(),
+      connectionString: "postgres://health:fixture@db:5432/health",
+    };
+    await createClickHouseTestActivityPowerCurveStore(testContext);
+    clickHouseMocks.command.mockClear();
+
+    await syncClickHouseTestActivityPowerCurveStore(testContext);
+
+    expect(analyticsInsertTargets()).toEqual([
+      "sensor_scalar_sample",
+      "deduped_sensor",
+      "v_activity",
+      "deduped_activities",
+      "activity_sensor_sample",
+      "activity_sensor_summary_rows",
+      "activity_summary",
+    ]);
   });
 
   it("syncs raw mirrored tables and populates stored test analytics tables", async () => {
@@ -92,6 +140,14 @@ describe("clickhouse integration test helpers", () => {
           command.includes(".metric_stream"),
       ),
     ).toBe(true);
+    const streamPointsSelect = setupCommands.find(
+      (command) => command.includes("INSERT INTO") && command.includes(".activity_stream_points"),
+    );
+    expect(streamPointsSelect).toBeDefined();
+    expect(streamPointsSelect).toContain(
+      "LIMIT 1 BY user_id, activity_id, source_metric_stream_id",
+    );
+    expect(streamPointsSelect).toContain("refresh_version DESC,\n      is_deleted DESC");
     expect(
       setupCommands.some(
         (command) =>
@@ -297,8 +353,8 @@ describe("clickhouse integration test helpers", () => {
       commands.some(
         (command) =>
           command.includes("INSERT INTO postgres_fitness_test_") &&
-          command.includes(".lab_result") &&
-          command.includes("FROM postgresql('db:5432', 'health', 'lab_result'"),
+          command.includes(".clinical_record") &&
+          command.includes("FROM postgresql('db:5432', 'health', 'clinical_record'"),
       ),
     ).toBe(true);
     expect(
@@ -319,7 +375,7 @@ describe("clickhouse integration test helpers", () => {
             command.includes("local_time_source") &&
             (tableName !== "deduped_activities" ||
               command.includes(
-                "coalesce(nullIf(local_time_source, ''), 'unknown') AS local_time_source",
+                "coalesce(nullIf(activity.local_time_source, ''), 'unknown') AS local_time_source",
               )),
         ),
       ).toBe(true);

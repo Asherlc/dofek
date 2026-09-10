@@ -10,7 +10,7 @@ vi.mock("expo-router", () => ({
 vi.mock("../components/PrimaryGoalSelector", () => ({
   PrimaryGoalSelector: () => (
     <>
-      <span>Primary goal</span>
+      <span>What would you like to focus on?</span>
       <button type="button">Race preparation</button>
       <button type="button">Sleep consistency</button>
       <button type="button">Strength progression</button>
@@ -26,11 +26,11 @@ describe("OnboardingScreen", () => {
     mockRouterPush.mockClear();
   });
 
-  it("renders first-run setup actions", () => {
+  it("renders setup actions", () => {
     render(<OnboardingScreen />);
 
-    expect(screen.getByText("Set up Dofek with your real data")).toBeTruthy();
-    expect(screen.getByText("Primary goal")).toBeTruthy();
+    expect(screen.getByText("Set up Dofek")).toBeTruthy();
+    expect(screen.getByText("What would you like to focus on?")).toBeTruthy();
     expect(screen.getByText("Race preparation")).toBeTruthy();
     expect(screen.getByText("Sleep consistency")).toBeTruthy();
     expect(screen.getByText("Strength progression")).toBeTruthy();

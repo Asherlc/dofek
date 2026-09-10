@@ -47,6 +47,11 @@ const meta = {
       id: "strava",
       name: "Strava",
       lastSyncedAt: "2026-05-12T10:00:00.000Z",
+      lastSuccessfulSyncAt: "2026-05-12T10:00:00.000Z",
+      syncFreshness: {
+        status: "current",
+        label: "Sync current",
+      },
       authorized: true,
       description: null,
     },
@@ -56,8 +61,10 @@ const meta = {
     stats: undefined,
     recentLogs: [
       {
+        id: "strava-sync-1",
         syncedAt: "2026-05-12T10:00:00.000Z",
         status: "success",
+        dataType: "activities",
         recordCount: 12,
         durationMs: 1200,
         errorMessage: null,
@@ -87,20 +94,32 @@ export const NoSyncHistory: Story = {
       id: "strava",
       name: "Strava",
       lastSyncedAt: null,
+      lastSuccessfulSyncAt: null,
+      syncFreshness: {
+        status: "unknown",
+        label: "Sync status unknown",
+        description: "No successful sync has been recorded.",
+      },
       authorized: true,
       description: null,
     },
   },
 };
 
-export const StaleProvider: Story = {
-  name: "Stale provider",
+export const OverdueProvider: Story = {
+  name: "Overdue provider",
   tags: ["review-scenario", "review-scenario-stale-provider"],
   args: {
     provider: {
       id: "strava",
       name: "Strava",
-      lastSyncedAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+      lastSyncedAt: "2026-08-12T12:00:00.000Z",
+      lastSuccessfulSyncAt: "2026-08-11T12:00:00.000Z",
+      syncFreshness: {
+        status: "overdue",
+        label: "Sync overdue",
+        description: "The last successful sync is overdue.",
+      },
       authorized: true,
       description: null,
     },
@@ -113,6 +132,8 @@ export const NeedsAuth: Story = {
       id: "oura",
       name: "Oura",
       lastSyncedAt: null,
+      lastSuccessfulSyncAt: null,
+      syncFreshness: null,
       authorized: false,
       description: null,
     },
@@ -127,6 +148,12 @@ export const NeedsReauth: Story = {
       id: "whoop",
       name: "WHOOP",
       lastSyncedAt: "2026-05-10T10:00:00.000Z",
+      lastSuccessfulSyncAt: "2026-05-10T10:00:00.000Z",
+      syncFreshness: {
+        status: "overdue",
+        label: "Sync overdue",
+        description: "The last successful sync is overdue.",
+      },
       authorized: true,
       description: null,
     },

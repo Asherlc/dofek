@@ -1,5 +1,6 @@
 export const INGEST_DATABASE = "ingest";
 export const METRIC_STREAM_TABLE = `${INGEST_DATABASE}.metric_stream`;
+export const METRIC_STREAM_DELETE_SCOPE_TABLE = `${INGEST_DATABASE}.metric_stream_delete_scope`;
 export const METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE = `${INGEST_DATABASE}.metric_stream_delete_acknowledgement`;
 export const METRIC_STREAM_PROCESSING_ACKNOWLEDGEMENT_TABLE = `${INGEST_DATABASE}.metric_stream_processing_acknowledgement`;
 export const PROVIDER_DATA_GENERATION_TABLE = `${INGEST_DATABASE}.provider_data_generation`;
@@ -12,6 +13,7 @@ export const METRIC_STREAM_PROVIDER_LIVE_GENERATION_PROJECTION = "by_provider_li
 export const METRIC_STREAM_PROVIDER_CURRENT_STATE_PROJECTION = "by_provider_current_state";
 export const METRIC_STREAM_PROVIDER_CURRENT_STATE_RECORDED_AT_PROJECTION =
   "by_provider_current_state_recorded_at";
+export const METRIC_STREAM_PROVIDER_EXTERNAL_ID_PROJECTION = "by_provider_external_id";
 export const METRIC_STREAM_PROVIDER_GENERATION_ORDER_BY = "(user_id, provider_id, generation, id)";
 export const METRIC_STREAM_PROVIDER_GENERATION_COVERING_ORDER_BY =
   "(user_id, provider_id, generation, id, version, ingested_at)";
@@ -77,6 +79,28 @@ export function metricStreamProviderCurrentStateRecordedAtProjectionDefinition()
     ORDER BY (user_id, provider_id, recorded_at, id, version, ingested_at)`;
 }
 
+export function metricStreamProviderExternalIdProjectionDefinition(): string {
+  return `SELECT
+      id,
+      activity_id,
+      user_id,
+      recorded_at,
+      channel,
+      provider_id,
+      external_id,
+      device_id,
+      source_type,
+      scalar,
+      vector,
+      point,
+      metadata,
+      ingested_at,
+      is_deleted,
+      version,
+      generation
+    ORDER BY (user_id, provider_id, external_id, id, version, ingested_at)`;
+}
+
 export function buildIngestMetricStreamCreateTableSql(): string {
   return `CREATE TABLE IF NOT EXISTS ${METRIC_STREAM_TABLE} (
   id UUID,
@@ -104,6 +128,9 @@ ${metricStreamIngestMetadataColumnDefinitions},
   ),
   PROJECTION ${METRIC_STREAM_PROVIDER_CURRENT_STATE_RECORDED_AT_PROJECTION} (
     ${metricStreamProviderCurrentStateRecordedAtProjectionDefinition()}
+  ),
+  PROJECTION ${METRIC_STREAM_PROVIDER_EXTERNAL_ID_PROJECTION} (
+    ${metricStreamProviderExternalIdProjectionDefinition()}
   )
 )
 ${metricStreamReplacingMergeTreeEngine()}`;
@@ -116,6 +143,23 @@ export function buildMetricStreamDeleteAcknowledgementTableSql(): string {
 )
 ENGINE = ReplacingMergeTree(applied_at)
 ORDER BY event_id`;
+}
+
+export function buildMetricStreamDeleteScopeTableSql(): string {
+  return `CREATE TABLE IF NOT EXISTS ${METRIC_STREAM_DELETE_SCOPE_TABLE} (
+  user_id Nullable(UUID),
+  provider_id Nullable(String),
+  activity_id Nullable(UUID),
+  channel Nullable(String),
+  external_id Nullable(String),
+  external_id_set UInt8,
+  recorded_at_start Nullable(DateTime64(6, 'UTC')),
+  recorded_at_end Nullable(DateTime64(6, 'UTC')),
+  operation_revision UInt64
+)
+ENGINE = ReplacingMergeTree(operation_revision)
+ORDER BY (user_id, provider_id, activity_id, channel, external_id_set, external_id, recorded_at_start, recorded_at_end)
+SETTINGS allow_nullable_key = 1`;
 }
 
 export function buildMetricStreamProcessingAcknowledgementTableSql(): string {

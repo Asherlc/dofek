@@ -12,7 +12,7 @@ const state = vi.hoisted<{
   observationPages: Record<string, Record<string, unknown>>;
   observationInputs: Array<Record<string, unknown>>;
   observationError: Error | null;
-  routerPush: ReturnType<typeof vi.fn>;
+  routerPush: CallableVitestMock;
   metricsData:
     | Array<{
         id: string;

@@ -91,6 +91,13 @@ const dailyTotalsRowSchema = z.object({
 
 const dailyNutritionSummaryRowSchema = dailyTotalsRowSchema.extend({
   meal_count: z.coerce.number(),
+  logging_completeness: z.enum([
+    "complete",
+    "explicitly_partial",
+    "unknown_completeness",
+    "no_logging",
+  ]),
+  logging_completeness_reason: z.string(),
   source_providers: z.array(z.string()),
 });
 
@@ -252,6 +259,18 @@ export class DailyNutritionSummary {
     return this.#row.meal_count;
   }
 
+  get loggingCompleteness():
+    | "complete"
+    | "explicitly_partial"
+    | "unknown_completeness"
+    | "no_logging" {
+    return this.#row.logging_completeness;
+  }
+
+  get loggingCompletenessReason(): string {
+    return this.#row.logging_completeness_reason;
+  }
+
   get sourceProviders(): string[] {
     return this.#row.source_providers;
   }
@@ -360,12 +379,15 @@ export class FoodSearchResult {
 // ---------------------------------------------------------------------------
 
 export interface CreateFoodEntryInput {
+  externalId?: string | null;
   date: string;
   meal?: string | null;
   foodName: string;
   foodDescription?: string | null;
   category?: string | null;
   numberOfUnits?: number | null;
+  servingUnit?: string | null;
+  servingWeightGrams?: number | null;
   nutrients: Record<string, number>;
   calories?: number | null;
   proteinG?: number | null;
@@ -706,37 +728,66 @@ export class FoodRepository {
     const rows = await executeWithSchema(
       this.#db,
       dailyNutritionSummaryRowSchema,
-      sql`SELECT
-            daily.date,
+      sql`WITH date_spine AS (
+            SELECT generate_series(
+              ${startDate}::date,
+              ${endDate}::date,
+              interval '1 day'
+            )::date AS date
+          ),
+          display_counts AS (
+            SELECT display.date, COUNT(display.id)::int AS meal_count
+            FROM fitness.v_nutrition_display_entry display
+            WHERE display.user_id = ${this.#userId}
+              AND display.confirmed = true
+              AND display.date >= ${startDate}::date
+              AND display.date <= ${endDate}::date
+            GROUP BY display.date
+          ),
+          food_logging AS (
+            SELECT entry.date, COUNT(entry.id)::int AS record_count
+            FROM fitness.food_entry entry
+            WHERE entry.user_id = ${this.#userId}
+              AND entry.confirmed = true
+              AND entry.date >= ${startDate}::date
+              AND entry.date <= ${endDate}::date
+            GROUP BY entry.date
+          )
+          SELECT
+            date_spine.date,
             daily.calories,
             daily.protein_g::numeric(10,1) AS protein_g,
             daily.carbs_g::numeric(10,1) AS carbs_g,
             daily.fat_g::numeric(10,1) AS fat_g,
             daily.fiber_g::numeric(10,1) AS fiber_g,
-            COUNT(display.id)::int AS meal_count,
-            daily.source_providers,
-            daily.resolution_status,
-            daily.resolution_message,
-            daily.contributing_providers,
-            daily.excluded_providers,
-            daily.source_labels,
-            daily.contributing_source_labels,
-            daily.excluded_source_labels
-          FROM fitness.v_nutrition_daily daily
-          LEFT JOIN fitness.v_nutrition_display_entry display
-            ON display.user_id = daily.user_id
-              AND display.date = daily.date
-              AND display.confirmed = true
-          WHERE daily.user_id = ${this.#userId}
-            AND daily.date >= ${startDate}::date
-            AND daily.date <= ${endDate}::date
-          GROUP BY daily.date, daily.user_id, daily.calories, daily.protein_g, daily.carbs_g,
-                   daily.fat_g, daily.fiber_g, daily.source_providers,
-                   daily.resolution_status, daily.resolution_message,
-                   daily.contributing_providers, daily.excluded_providers,
-                   daily.source_labels, daily.contributing_source_labels,
-                   daily.excluded_source_labels
-          ORDER BY daily.date ASC`,
+            COALESCE(display_counts.meal_count, 0)::int AS meal_count,
+            CASE
+              WHEN food_logging.record_count IS NULL THEN 'no_logging'
+              ELSE 'unknown_completeness'
+            END AS logging_completeness,
+            CASE
+              WHEN food_logging.record_count IS NULL THEN 'No food or nutrition records were logged for this date.'
+              ELSE 'Nutrition was logged, but no source explicitly reported whether the day was complete.'
+            END AS logging_completeness_reason,
+            COALESCE(daily.source_providers, ARRAY[]::text[]) AS source_providers,
+            COALESCE(daily.resolution_status, 'available') AS resolution_status,
+            COALESCE(
+              daily.resolution_message,
+              'No nutrition sources contributed records for this date.'
+            ) AS resolution_message,
+            COALESCE(daily.contributing_providers, ARRAY[]::text[]) AS contributing_providers,
+            COALESCE(daily.excluded_providers, ARRAY[]::text[]) AS excluded_providers,
+            COALESCE(daily.source_labels, ARRAY[]::text[]) AS source_labels,
+            COALESCE(daily.contributing_source_labels, ARRAY[]::text[])
+              AS contributing_source_labels,
+            COALESCE(daily.excluded_source_labels, ARRAY[]::text[]) AS excluded_source_labels
+          FROM date_spine
+          LEFT JOIN fitness.v_nutrition_daily daily
+            ON daily.user_id = ${this.#userId}
+              AND daily.date = date_spine.date
+          LEFT JOIN display_counts ON display_counts.date = date_spine.date
+          LEFT JOIN food_logging ON food_logging.date = date_spine.date
+          ORDER BY date_spine.date ASC`,
     );
     return rows.map((row) => new DailyNutritionSummary(row));
   }
@@ -770,14 +821,20 @@ export class FoodRepository {
     return executeWithSchema(
       this.#db,
       healthKitWriteBackFoodEntryRowSchema,
-      sql`SELECT id, date, food_name, calories, protein_g, carbs_g, fat_g
-          FROM fitness.v_food_entry_with_nutrition
-          WHERE user_id = ${this.#userId}
-            AND provider_id = ${DOFEK_PROVIDER_ID}
-            AND confirmed = true
-            AND date >= ${startDate}::date
-            AND date <= ${endDate}::date
-          ORDER BY date ASC, food_name ASC, id ASC`,
+      sql`SELECT entry.id, entry.date, entry.food_name,
+            MAX(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'calories')::integer AS calories,
+            MAX(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'protein') AS protein_g,
+            MAX(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'carbohydrate') AS carbs_g,
+            MAX(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'fat') AS fat_g
+          FROM fitness.food_entry AS entry
+          LEFT JOIN fitness.food_entry_nutrient AS nutrient ON nutrient.food_entry_id = entry.id
+          WHERE entry.user_id = ${this.#userId}
+            AND entry.provider_id = ${DOFEK_PROVIDER_ID}
+            AND entry.confirmed = true
+            AND entry.date >= ${startDate}::date
+            AND entry.date <= ${endDate}::date
+          GROUP BY entry.id
+          ORDER BY entry.date ASC, entry.food_name ASC, entry.id ASC`,
     );
   }
 
@@ -800,20 +857,22 @@ export class FoodRepository {
     const nutrientValueClauses = Object.entries(nutrientValues).map(
       ([nutrientId, amount]) => sql`(${nutrientId}::text, ${amount}::real)`,
     );
+    const foodEntryInsert = sql`INSERT INTO fitness.food_entry (
+      user_id, provider_id, external_id, date, meal, food_name, food_description,
+      category, number_of_units, serving_unit, serving_weight_grams, nutrition_grain
+    ) VALUES (
+      ${this.#userId}, ${DOFEK_PROVIDER_ID}, ${input.externalId ?? null}, ${input.date}::date,
+      ${input.meal ?? null}, ${input.foodName}, ${input.foodDescription ?? null},
+      ${input.category ?? null}, ${input.numberOfUnits ?? null}, ${input.servingUnit ?? null},
+      ${input.servingWeightGrams ?? null}, 'itemized'
+    )`;
 
     const idRows = await executeWithSchema(
       this.#db,
       idRowSchema,
       nutrientValueClauses.length > 0
         ? sql`WITH new_entry AS (
-          INSERT INTO fitness.food_entry (
-            user_id, provider_id, date, meal, food_name, food_description,
-            category, number_of_units, nutrition_grain
-          ) VALUES (
-            ${this.#userId}, ${DOFEK_PROVIDER_ID}, ${input.date}::date,
-            ${input.meal ?? null}, ${input.foodName}, ${input.foodDescription ?? null},
-            ${input.category ?? null}, ${input.numberOfUnits ?? null}, 'itemized'
-          ) RETURNING id
+          ${foodEntryInsert} RETURNING id
         ),
         new_nutrients AS (
           INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
@@ -822,14 +881,7 @@ export class FoodRepository {
           CROSS JOIN (VALUES ${sql.join(nutrientValueClauses, sql`, `)}) AS vals(nutrient_id, amount)
         )
         SELECT id FROM new_entry`
-        : sql`INSERT INTO fitness.food_entry (
-            user_id, provider_id, date, meal, food_name, food_description,
-            category, number_of_units, nutrition_grain
-          ) VALUES (
-            ${this.#userId}, ${DOFEK_PROVIDER_ID}, ${input.date}::date,
-            ${input.meal ?? null}, ${input.foodName}, ${input.foodDescription ?? null},
-            ${input.category ?? null}, ${input.numberOfUnits ?? null}, 'itemized'
-          ) RETURNING id`,
+        : sql`${foodEntryInsert} RETURNING id`,
     );
     const newId = idRows[0]?.id;
     if (!newId) throw new Error("Failed to insert food entry");

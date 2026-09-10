@@ -21,6 +21,7 @@ const canonicalActivityRowSchema = z.object({
   canonicalType: z.string(),
   providerType: z.string(),
 });
+const activityGroupId = "00000000-0000-4000-8000-000000000020";
 
 describe("canonical activity type storage", () => {
   let context: TestContext;
@@ -41,6 +42,7 @@ describe("canonical activity type storage", () => {
 
     await context.db.insert(activity).values([
       {
+        groupId: activityGroupId,
         providerId: "canonical-type-a",
         externalId: "climbing-a",
         canonicalType: "climbing",
@@ -50,6 +52,7 @@ describe("canonical activity type storage", () => {
         endedAt,
       },
       {
+        groupId: activityGroupId,
         providerId: "canonical-type-b",
         externalId: "climbing-b",
         canonicalType: "climbing",

@@ -8,7 +8,7 @@ export async function handleMobileAuthExchange(req: Request, res: Response): Pro
     return;
   }
   const payload = await getMobileAuthExchangeStoreRef().consume(code);
-  if (!payload || payload.kind !== "session") {
+  if (payload?.kind !== "session") {
     res.status(400).json({ error: "Exchange code is invalid or expired" });
     return;
   }

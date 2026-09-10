@@ -1,4 +1,5 @@
 import { accountErasureCleanupWasBlocked } from "@dofek/auth/account-erasure";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
@@ -47,7 +48,12 @@ export function AccountErasurePanel() {
       setPreparation(capability);
     } catch (error: unknown) {
       captureException(error, { source: "account-erasure-prepare" });
-      setLocalError(error instanceof Error ? error.message : String(error));
+      setLocalError(
+        userFacingErrorMessage(
+          error,
+          "Account deletion could not be prepared. Please sign in and try again.",
+        ),
+      );
     }
   }
 
@@ -94,13 +100,13 @@ export function AccountErasurePanel() {
           : new Error("Account erasure confirmation failed."),
         { source: "account-erasure-confirm" },
       );
-      const message = error instanceof Error ? error.message : String(error);
+      const message = userFacingErrorMessage(error, "Account deletion could not be started.");
       setLocalError(
         accepted
-          ? `${message} Account deletion was accepted and your session was closed. Recover the public deletion status from the saved preparation.`
+          ? "Account deletion was accepted and your session was closed. Check the account deletion status page for updates."
           : confirmationAttempted
-            ? `${message} The confirmation response could not be verified. Recover it from the public deletion-status page; the saved recovery capability contains no account identifier.`
-            : `${message} No confirmation request was sent. Your account-specific preparation remains saved; sign in to the same account and retry from Settings.`,
+            ? `${message} We could not confirm the outcome. Check the account deletion status page for updates.`
+            : `${message} Account deletion was not started. Sign in and try again from Settings.`,
       );
       if (accepted || confirmationAttempted) {
         await navigate({ to: "/account-deletion" });
@@ -143,8 +149,7 @@ export function AccountErasurePanel() {
       {preparation ? (
         <div className="space-y-3 rounded border border-red-900/70 bg-red-950/20 p-3">
           <p className="text-xs text-red-200">
-            Final confirmation: deletion will start immediately, your session will end, and new
-            writes will be blocked.
+            Deletion starts immediately and you&apos;ll be signed out. This cannot be undone.
           </p>
           <button
             type="button"

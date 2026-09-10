@@ -93,6 +93,97 @@ describe("TrainingInsightsPanel range plumbing", () => {
     expect(screen.queryByText("No training data in this period")).toBeNull();
   });
 
+  it("shows an initial loading state while both training queries are unresolved", () => {
+    state.trainingVolumeQuery = { data: undefined, isLoading: true, error: null };
+    state.trainingHrZonesQuery = { data: undefined, isLoading: true, error: null };
+
+    render(<TrainingInsightsPanel days={30} />);
+
+    expect(screen.getByText("Loading training data...")).toBeDefined();
+  });
+
+  it("keeps available heart-rate-zone data visible while weekly volume is loading", () => {
+    state.trainingVolumeQuery = { data: undefined, isLoading: true, error: null };
+    state.trainingHrZonesQuery = {
+      data: {
+        maxHr: 190,
+        weeks: [
+          {
+            max_hr: 190,
+            week: "2026-07-20",
+            zone0: 0,
+            zone1: 600,
+            zone2: 1200,
+            zone3: 300,
+            zone4: 200,
+            zone5: 100,
+          },
+        ],
+        intensityDistribution: {
+          model: "karvonen-five-zone",
+          activityScope: "endurance",
+          totalSeconds: 2400,
+          zones: [{ zone: 2, label: "Aerobic", seconds: 1200, percent: 50 }],
+          explanation: "Observed intensity distribution.",
+        },
+      },
+      isLoading: false,
+      error: null,
+    };
+
+    render(<TrainingInsightsPanel days={30} />);
+
+    expect(screen.getByText("Loading weekly volume...")).toBeDefined();
+    expect(screen.getByText("Heart-rate zone distribution")).toBeDefined();
+  });
+
+  it("keeps available weekly volume visible while heart-rate zones are loading", () => {
+    state.trainingVolumeQuery = {
+      data: [{ week: "2026-07-20", canonical_type: "cycling", count: 1, hours: 2 }],
+      isLoading: false,
+      error: null,
+    };
+    state.trainingHrZonesQuery = { data: undefined, isLoading: true, error: null };
+
+    render(<TrainingInsightsPanel days={30} />);
+
+    expect(screen.getByText("Weekly Training Volume")).toBeDefined();
+    expect(screen.getByText("Loading heart-rate zones...")).toBeDefined();
+  });
+
+  it("omits the intensity distribution when the server reports no recorded zone time", () => {
+    state.trainingHrZonesQuery = {
+      data: {
+        maxHr: 190,
+        weeks: [
+          {
+            max_hr: 190,
+            week: "2026-07-20",
+            zone0: 0,
+            zone1: 0,
+            zone2: 0,
+            zone3: 0,
+            zone4: 0,
+            zone5: 0,
+          },
+        ],
+        intensityDistribution: {
+          model: "karvonen-five-zone",
+          activityScope: "endurance",
+          totalSeconds: 0,
+          zones: [],
+          explanation: "No recorded zone time.",
+        },
+      },
+      isLoading: false,
+      error: null,
+    };
+
+    render(<TrainingInsightsPanel days={30} />);
+
+    expect(screen.queryByText("Heart-rate zone distribution")).toBeNull();
+  });
+
   it("keeps cached training data visible with background query failures", () => {
     state.trainingVolumeQuery = {
       data: [{ week: "2026-07-20", canonical_type: "cycling", count: 1, hours: 2 }],

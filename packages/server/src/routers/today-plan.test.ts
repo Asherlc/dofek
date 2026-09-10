@@ -107,6 +107,5 @@ describe("todayPlanRouter.get", () => {
     expect(result.action.zone).toMatch(/Push|Maintain|Recovery/);
     expect(result.supportingFacts).toHaveLength(2);
     expect(result.caveats).toEqual([]);
-    expect(result.confidence).toBe("high");
   });
 });

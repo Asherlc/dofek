@@ -311,8 +311,7 @@ export const DATASET_CONTRACTS = [
           "sleep_session",
           "food_entry",
           "health_event",
-          "lab_panel",
-          "lab_result",
+          "clinical_record",
           "journal_entry",
         ],
         cdcEvidence: [

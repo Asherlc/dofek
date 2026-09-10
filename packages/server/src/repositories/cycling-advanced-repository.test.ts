@@ -347,7 +347,7 @@ describe("CyclingAdvancedRepository", () => {
       expect(params).not.toHaveProperty("loadDays");
     });
 
-    it("returns safe recommendation for low current ramp rate", async () => {
+    it("describes a positive weekly load change", async () => {
       const { repo } = makeRepository([
         { week: "2026-04-20", ctl_start: 12.1, ctl_end: 14.4, ramp_rate: 2.3 },
       ]);
@@ -355,7 +355,7 @@ describe("CyclingAdvancedRepository", () => {
       expect(result.weeks).toHaveLength(1);
       expect(result.currentRampRate).toBeGreaterThan(0);
       expect(result.currentRampRate).toBeLessThan(5);
-      expect(result.recommendation).toBe("Safe: ramp rate is within sustainable range");
+      expect(result.recommendation).toBe("Weekly training-load change: +2.3 points");
       expect(result.weeks[0]?.toDetail()).toEqual({
         week: "2026-04-20",
         ctlStart: 12.1,
@@ -364,26 +364,29 @@ describe("CyclingAdvancedRepository", () => {
       });
     });
 
-    it("returns aggressive recommendation for moderate current ramp rate", async () => {
+    it("describes a moderate positive weekly load change", async () => {
       const { repo } = makeRepository([
         { week: "2026-04-20", ctl_start: 20, ctl_end: 26.2, ramp_rate: 6.2 },
       ]);
       const result = await repo.getRampRate(30);
       expect(result.currentRampRate).toBeGreaterThanOrEqual(5);
       expect(result.currentRampRate).toBeLessThanOrEqual(7);
-      expect(result.recommendation).toBe("Aggressive: monitor fatigue closely and ensure recovery");
+      expect(result.recommendation).toBe("Weekly training-load change: +6.2 points");
     });
 
-    it("returns danger recommendation for high current ramp rate", async () => {
-      const { repo } = makeRepository([
-        { week: "2026-04-20", ctl_start: 20, ctl_end: 28.4, ramp_rate: 8.4 },
-      ]);
-      const result = await repo.getRampRate(30);
-      expect(result.currentRampRate).toBeGreaterThan(7);
-      expect(result.recommendation).toBe(
-        "Danger: ramp rate is too high, risk of overtraining or injury",
-      );
-    });
+    it.each([8.4, -8.4, 0])(
+      "preserves the direction of a %s point weekly change",
+      async (change) => {
+        const { repo } = makeRepository([
+          { week: "2026-04-20", ctl_start: 20, ctl_end: 20 + change, ramp_rate: change },
+        ]);
+        const result = await repo.getRampRate(30);
+        expect(result.currentRampRate).toBe(change);
+        expect(result.recommendation).toBe(
+          `Weekly training-load change: ${change > 0 ? "+" : ""}${change} points`,
+        );
+      },
+    );
   });
 
   describe("getTrainingMonotony", () => {

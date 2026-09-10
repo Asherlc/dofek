@@ -11,8 +11,7 @@ const readyPlan: TodayPlanResult = {
   date: "2026-07-26",
   action: {
     id: "strain_target",
-    title: "Train hard today — aim for 16.2 strain",
-    summary: "Recovery is strong (82). Push for a high-strain day to build fitness.",
+    title: "Suggested strain: 16.2",
     zone: "Push",
   },
   supportingFacts: [
@@ -20,7 +19,6 @@ const readyPlan: TodayPlanResult = {
     { label: "Sleep performance", value: "88 (Good)" },
   ],
   caveats: [],
-  confidence: "high",
   freshness: {
     recoveryDate: "2026-07-26",
     sleepDate: "2026-07-26",
@@ -34,7 +32,6 @@ const insufficientPlan: TodayPlanResult = {
   date: "2026-07-26",
   action: null,
   supportingFacts: [],
-  confidence: "low",
   freshness: {
     recoveryDate: null,
     sleepDate: null,
@@ -47,7 +44,7 @@ const insufficientPlan: TodayPlanResult = {
 const planWithCaveat = {
   ...readyPlan,
   caveats: [
-    "Sleep and recent workload data were unavailable, so this plan uses recovery and the strain target.",
+    "Sleep and recent workload data were unavailable, so this suggestion uses recovery only.",
   ],
 };
 
@@ -56,14 +53,12 @@ describe("TodayPlanCard", () => {
     render(<TodayPlanCard plan={readyPlan} />);
 
     expect(screen.getByText("What matters today")).toBeTruthy();
-    expect(screen.getByText("Train hard today — aim for 16.2 strain")).toBeTruthy();
-    expect(screen.getByText(/Recovery is strong/)).toBeTruthy();
+    expect(screen.getByText("Suggested strain: 16.2")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Why this?" }));
     expect(screen.getByText("Recovery")).toBeTruthy();
     expect(screen.getByText("82/100")).toBeTruthy();
     expect(screen.getByText("Sleep performance")).toBeTruthy();
     expect(screen.getByText("88 (Good)")).toBeTruthy();
-    expect(screen.getByText("High confidence")).toBeTruthy();
     expect(screen.getByText("Suggested")).toBeTruthy();
     expect(screen.getByText(/Recovery data from 2026-07-26/)).toBeTruthy();
   });
@@ -81,7 +76,7 @@ describe("TodayPlanCard", () => {
     expect(screen.getByText("Recovery")).toBeTruthy();
     expect(
       screen.getByText(
-        "Sleep and recent workload data were unavailable, so this plan uses recovery and the strain target.",
+        "Sleep and recent workload data were unavailable, so this suggestion uses recovery only.",
       ),
     ).toBeTruthy();
   });
@@ -123,7 +118,7 @@ describe("TodayPlanCard", () => {
         "Connect a recovery source and wait for today's recovery score before a training plan can be generated.",
       ),
     ).toBeTruthy();
-    expect(screen.queryByText("Train hard today — aim for 16.2 strain")).toBeNull();
+    expect(screen.queryByText("Suggested strain: 16.2")).toBeNull();
     expect(screen.getByText("Unavailable")).toBeTruthy();
   });
 
@@ -142,7 +137,7 @@ describe("TodayPlanCard", () => {
   it("keeps cached plan visible with a background refresh error", () => {
     render(<TodayPlanCard plan={readyPlan} error={new Error("Today plan refresh failed")} />);
 
-    expect(screen.getByText("Train hard today — aim for 16.2 strain")).toBeTruthy();
+    expect(screen.getByText("Suggested strain: 16.2")).toBeTruthy();
     expect(screen.getByText("Today plan refresh failed")).toBeTruthy();
   });
 });

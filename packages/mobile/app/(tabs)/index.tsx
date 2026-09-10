@@ -1,9 +1,8 @@
-import { formatDateYmd, formatDurationMinutes, formatSleepDebtInline } from "@dofek/format/format";
+import { formatDurationMinutes, formatSleepDebtInline } from "@dofek/format/format";
 import { formatSummaryDateContext } from "@dofek/format/summary-date-context";
-import { autoMealType } from "@dofek/nutrition/meal";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { useRouter } from "expo-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import Animated, {
   Easing,
@@ -24,7 +23,6 @@ import { getQueryErrorMessage, QueryStatePanel } from "../../components/QuerySta
 import { SkeletonCircle } from "../../components/Skeleton";
 import { TodayPlanCard } from "../../components/TodayPlanCard";
 import { trpc } from "../../lib/trpc";
-import { useAutoSync } from "../../lib/useAutoSync";
 import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useProviderGuide } from "../../lib/useProviderGuide";
 import { useRefresh } from "../../lib/useRefresh";
@@ -33,6 +31,7 @@ import { colors, duration } from "../../theme";
 
 export default function TodayScreen() {
   const router = useRouter();
+  const [sleepCalculationOpen, setSleepCalculationOpen] = useState(false);
   const providerGuide = useProviderGuide();
   const endDate = useTodayQueryDate();
 
@@ -67,9 +66,6 @@ export default function TodayScreen() {
   const strainResult = dashboardData?.strain;
   const dailyStrain = strainResult?.dailyStrain ?? 0;
 
-  // Auto-sync when data is stale
-  useAutoSync(dashboardData?.latestDate ?? undefined);
-
   // Alerts and sleep guidance from consolidated query
   const sleepNeed = dashboardData?.sleepNeed;
   const isSleepDataMissing = sleepNeed?.availability === "missing_previous_night";
@@ -94,10 +90,6 @@ export default function TodayScreen() {
     },
     invalidate: null,
   });
-
-  function handleLogFood() {
-    router.push(`/food/add?meal=${autoMealType()}&date=${formatDateYmd()}&mode=quickadd`);
-  }
 
   if (isError) {
     return (
@@ -162,7 +154,7 @@ export default function TodayScreen() {
           <Text style={styles.anomalyIcon}>{"\u26A0\uFE0F"}</Text>
           <Text style={styles.anomalyText}>
             {anomalies.anomalies[0]?.metric}: {anomalies.anomalies[0]?.value} (baseline{" "}
-            {anomalies.anomalies[0]?.baselineMean} \u00b1 {anomalies.anomalies[0]?.baselineStddev})
+            {anomalies.anomalies[0]?.baselineMean} ± {anomalies.anomalies[0]?.baselineStddev})
           </Text>
         </View>
       )}
@@ -173,24 +165,12 @@ export default function TodayScreen() {
         </Text>
       ) : null}
 
-      {/* Log food */}
-      <TouchableOpacity
-        style={styles.quickAddButton}
-        onPress={handleLogFood}
-        activeOpacity={0.7}
-        accessibilityRole="button"
-        accessibilityLabel="Log Food"
-      >
-        <Text style={styles.quickAddPlus}>+</Text>
-        <Text style={styles.quickAddLabel}>Log Food</Text>
-      </TouchableOpacity>
-
       {/* Recovery + Strain rings — tappable for navigation */}
       <View style={styles.ringsRow}>
         <View style={styles.ringSection}>
           <ChartTitleWithTooltip
             title="Recovery"
-            description="This ring visualizes your readiness score based on recovery-related signals."
+            description="Readiness is scored from 0 to 100. Tap the ring to open recovery details."
             textStyle={styles.sectionLabel}
           />
           <TouchableOpacity
@@ -208,7 +188,7 @@ export default function TodayScreen() {
             ) : (
               <View style={[styles.emptyRing, { width: 180, height: 180 }]}>
                 <Text style={styles.emptyRingText}>--</Text>
-                <Text style={styles.emptyRingSubtext}>No data yet</Text>
+                <Text style={styles.emptyRingSubtext}>No score available</Text>
               </View>
             )}
           </TouchableOpacity>
@@ -216,7 +196,7 @@ export default function TodayScreen() {
         <View style={styles.ringSection}>
           <ChartTitleWithTooltip
             title="Strain"
-            description="This gauge shows your most recent daily training strain relative to your recent baseline."
+            description="Daily training strain compared with your recent baseline. Tap the gauge to open training details."
             textStyle={styles.sectionLabel}
           />
           <TouchableOpacity
@@ -346,7 +326,6 @@ export default function TodayScreen() {
               <Text style={styles.noDataText}>No sleep data</Text>
             ) : sleepNeed.availability === "available" ? (
               <>
-                <Text style={styles.sleepNeedSubtitle}>{sleepNeed.epistemicStatus.label}</Text>
                 <Text style={styles.sleepNeedTotal}>
                   {`${sleepNeed.estimateMetadata.valueQualifier} ${formatDurationMinutes(sleepNeed.totalNeedMinutes)}`}
                 </Text>
@@ -379,23 +358,29 @@ export default function TodayScreen() {
                     </Text>
                   </View>
                 </View>
-                <View style={styles.sleepNeedMetadata}>
-                  <Text style={styles.sleepNeedMetadataText}>
-                    {sleepNeed.estimateMetadata.basisLabel}
-                  </Text>
-                  <Text style={styles.sleepNeedMetadataText}>
-                    {sleepNeed.estimateMetadata.coverageLabel}
-                  </Text>
-                  <Text style={styles.sleepNeedMetadataText}>
-                    {sleepNeed.estimateMetadata.methodLabel}
-                  </Text>
-                  <Text style={styles.sleepNeedMetadataText}>
-                    {sleepNeed.estimateMetadata.uncertaintyLabel}
-                  </Text>
-                  <Text style={styles.sleepNeedMetadataText}>
-                    {sleepNeed.estimateMetadata.limitationLabel}
-                  </Text>
-                </View>
+                <Text style={styles.sleepNeedMetadataText}>
+                  {sleepNeed.estimateMetadata.limitationLabel}
+                </Text>
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: sleepCalculationOpen }}
+                  onPress={() => setSleepCalculationOpen((open) => !open)}
+                >
+                  <Text style={styles.sleepNeedMetadataText}>How this is calculated</Text>
+                </TouchableOpacity>
+                {sleepCalculationOpen ? (
+                  <View style={styles.sleepNeedMetadata}>
+                    <Text style={styles.sleepNeedMetadataText}>
+                      {sleepNeed.estimateMetadata.methodLabel}
+                    </Text>
+                    <Text style={styles.sleepNeedMetadataText}>
+                      {sleepNeed.estimateMetadata.basisLabel}
+                    </Text>
+                    <Text style={styles.sleepNeedMetadataText}>
+                      {sleepNeed.estimateMetadata.coverageLabel}
+                    </Text>
+                  </View>
+                ) : null}
               </>
             ) : (
               <>

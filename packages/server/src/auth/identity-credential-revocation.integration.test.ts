@@ -48,6 +48,36 @@ describe("identity credential revocation", () => {
     await expect(revokeIdentityCredentials("google", tokens)).resolves.toBeUndefined();
   });
 
+  it("surfaces other Google revocation failures with the provider error", async () => {
+    server.use(
+      http.post("https://oauth2.googleapis.com/revoke", () =>
+        HttpResponse.json({ error: "invalid_request" }, { status: 400 }),
+      ),
+    );
+    const tokens = new OAuth2Tokens({
+      access_token: "google-access",
+      token_type: "Bearer",
+      expires_in: 3600,
+    });
+
+    await expect(revokeIdentityCredentials("google", tokens)).rejects.toThrow(
+      "Google credential revocation failed (400): invalid_request",
+    );
+  });
+
+  it("requires the Apple client ID before attempting credential revocation", async () => {
+    const tokens = new OAuth2Tokens({
+      access_token: "apple-access",
+      token_type: "Bearer",
+      expires_in: 3600,
+      id_token: "apple-id-token",
+    });
+
+    await expect(revokeIdentityCredentials("apple", tokens)).rejects.toThrow(
+      "APPLE_CLIENT_ID is required for Apple credential revocation",
+    );
+  });
+
   it("surfaces a malformed Google revocation response", async () => {
     server.use(
       http.post(

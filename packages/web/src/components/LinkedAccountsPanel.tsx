@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { useCallback, useEffect, useState } from "react";
 import type { ConfiguredProviders } from "../lib/auth.ts";
 import { fetchConfiguredProviders } from "../lib/auth.ts";
@@ -128,7 +129,7 @@ export function LinkedAccountsPanel() {
       ) : null}
 
       {unlinkMutation.error && (
-        <p className="text-xs text-red-400">{unlinkMutation.error.message}</p>
+        <p className="text-xs text-red-400">{userFacingErrorMessage(unlinkMutation.error)}</p>
       )}
     </div>
   );

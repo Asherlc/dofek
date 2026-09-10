@@ -6,6 +6,7 @@ import type { MetricStreamRowInput } from "../../../../src/metric-stream/events.
 import { generateCompanionToken, hashCompanionToken } from "../companion/token-repository.ts";
 
 const { createIngestZosHealthRouter } = await import("./ingest-zos-health.ts");
+const { createIngestZosImuRouter } = await import("./ingest-zos-imu.ts");
 
 const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
 
@@ -18,25 +19,81 @@ function getPort(server: ReturnType<express.Express["listen"]>): number {
 async function post(
   app: express.Express,
   path: string,
-  opts: { headers?: Record<string, string>; body: unknown },
+  opts: { headers?: Record<string, string>; body: unknown; rawBody?: boolean },
 ): Promise<{ status: number; body: string }> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const server = app.listen(0, () => {
       const port = getPort(server);
+      const transportBody = opts.rawBody
+        ? opts.body
+        : {
+            version: 1,
+            batchId: "batch-integration",
+            source: { connectionType: "zepp", installId: "install-integration" },
+            events: [
+              {
+                eventId: "event-integration",
+                createdAt: "2024-07-03T10:48:20.000Z",
+                payload: opts.body,
+              },
+            ],
+          };
       fetch(`http://localhost:${port}${path}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...opts.headers },
-        body: JSON.stringify(opts.body),
+        body: JSON.stringify(transportBody),
       })
         .then(async (res) => {
           resolve({ status: res.status, body: await res.text() });
           server.close();
         })
-        .catch((_error: unknown) => {
-          resolve({ status: 500, body: "fetch error" });
+        .catch((error: unknown) => {
           server.close();
+          reject(error);
         });
     });
+  });
+}
+
+function expectAccepted(response: { status: number; body: string }): void {
+  expect(response.status).toBe(200);
+  expect(JSON.parse(response.body)).toEqual({
+    status: "ok",
+    acceptedEventIds: ["event-integration"],
+    rejected: [],
+  });
+}
+
+function expectRejectedInvalidDailyMetricDates(
+  response: { status: number; body: string },
+  dates: string[],
+): void {
+  expect(response.status).toBe(200);
+  const payload = JSON.parse(response.body);
+  expect(payload).toEqual({
+    status: "ok",
+    acceptedEventIds: [],
+    rejected: [{ eventId: "event-integration", issues: expect.any(Array) }],
+  });
+  expect(payload.rejected[0].issues).toHaveLength(dates.length);
+  expect(payload.rejected[0].issues).toEqual(
+    expect.arrayContaining(
+      dates.map((date) => ({ path: `dailyMetrics.${date}`, message: "Invalid date" })),
+    ),
+  );
+}
+
+function expectRejectedAtPath(response: { status: number; body: string }, path: string): void {
+  expect(response.status).toBe(200);
+  expect(JSON.parse(response.body)).toEqual({
+    status: "ok",
+    acceptedEventIds: [],
+    rejected: [
+      {
+        eventId: "event-integration",
+        issues: [expect.objectContaining({ path })],
+      },
+    ],
   });
 }
 
@@ -57,18 +114,14 @@ describe("POST /api/ingest/zos-health", () => {
     `);
 
     app = express();
-    app.use(
-      "/api/ingest",
-      createIngestZosHealthRouter({
-        db: testCtx.db,
-        metricStreamPublisher: {
-          publishRows: async (rows) => {
-            publishedMetricRows.push(...rows);
-            return [];
-          },
-        },
-      }),
-    );
+    const metricStreamPublisher = {
+      publishRows: async (rows: MetricStreamRowInput[]) => {
+        publishedMetricRows.push(...rows);
+        return [];
+      },
+    };
+    app.use("/api/ingest", createIngestZosHealthRouter({ db: testCtx.db, metricStreamPublisher }));
+    app.use("/api/ingest", createIngestZosImuRouter({ db: testCtx.db, metricStreamPublisher }));
   });
 
   beforeEach(async () => {
@@ -123,26 +176,31 @@ describe("POST /api/ingest/zos-health", () => {
 
   // ── Payload validation tests ──
 
-  it("returns 400 when payload fails schema validation", async () => {
+  it("rejects an event when its payload fails schema validation", async () => {
     const res = await post(app, "/api/ingest/zos-health", {
       headers: { Authorization: `Bearer ${validToken}` },
       body: { dailyMetrics: "not-an-object" },
     });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
     const parsed = JSON.parse(res.body);
-    expect(parsed.error).toBe("Invalid payload");
-    expect(parsed.details).toBeDefined();
+    expect(parsed.acceptedEventIds).toEqual([]);
+    expect(parsed.rejected).toEqual([
+      expect.objectContaining({
+        eventId: "event-integration",
+        issues: [expect.objectContaining({ path: "dailyMetrics" })],
+      }),
+    ]);
   });
 
-  it("returns 400 when payload has no data sections", async () => {
+  it("rejects an event when its payload has no data sections", async () => {
     const res = await post(app, "/api/ingest/zos-health", {
       headers: { Authorization: `Bearer ${validToken}` },
       body: {},
     });
-    expect(res.status).toBe(400);
-    expect(JSON.parse(res.body)).toEqual({
-      error:
-        "At least one of dailyMetrics, sleepSessions, activities, backgroundSamples, liveWorkoutSamples, or watchSummary is required.",
+    expect(res.status).toBe(200);
+    expect(JSON.parse(res.body)).toMatchObject({
+      acceptedEventIds: [],
+      rejected: [{ eventId: "event-integration" }],
     });
   });
 
@@ -164,8 +222,7 @@ describe("POST /api/ingest/zos-health", () => {
         },
       },
     });
-    expect(res.status).toBe(200);
-    expect(JSON.parse(res.body)).toEqual({ status: "ok" });
+    expectAccepted(res);
 
     const rows = await testCtx.db.execute(
       sql`SELECT * FROM fitness.daily_metrics WHERE user_id = ${TEST_USER_ID}`,
@@ -188,14 +245,30 @@ describe("POST /api/ingest/zos-health", () => {
         },
       },
     });
-    expect(res.status).toBe(200);
-    expect(JSON.parse(res.body)).toEqual({ status: "ok" });
+    expectAccepted(res);
 
     const rows = await testCtx.db.execute(
       sql`SELECT steps FROM fitness.daily_metrics WHERE date = '2026-06-25' AND user_id = ${TEST_USER_ID}`,
     );
     expect(rows.length).toBe(1);
     expect(rows[0].steps).toBe(8000);
+  });
+
+  it("keeps canonical rows idempotent when the same event is replayed", async () => {
+    const request = {
+      headers: { Authorization: `Bearer ${validToken}` },
+      body: { dailyMetrics: { "2026-06-24": { steps: 7000 } } },
+    };
+
+    const first = await post(app, "/api/ingest/zos-health", request);
+    const replay = await post(app, "/api/ingest/zos-health", request);
+
+    expectAccepted(first);
+    expectAccepted(replay);
+    const rows = await testCtx.db.execute(
+      sql`SELECT steps FROM fitness.daily_metrics WHERE user_id = ${TEST_USER_ID} AND date = '2026-06-24'`,
+    );
+    expect(rows).toEqual([expect.objectContaining({ steps: 7000 })]);
   });
 
   it("stores daily totals from the raw watch summary", async () => {
@@ -259,7 +332,7 @@ describe("POST /api/ingest/zos-health", () => {
     ]);
   });
 
-  it("skips dailyMetrics with invalid date key", async () => {
+  it("rejects dailyMetrics with an invalid date key", async () => {
     const res = await post(app, "/api/ingest/zos-health", {
       headers: { Authorization: `Bearer ${validToken}` },
       body: {
@@ -268,8 +341,7 @@ describe("POST /api/ingest/zos-health", () => {
         },
       },
     });
-    expect(res.status).toBe(200);
-    expect(JSON.parse(res.body)).toEqual({ status: "ok" });
+    expectRejectedInvalidDailyMetricDates(res, ["not-a-date"]);
   });
 
   // ── Sleep session tests ──
@@ -292,8 +364,7 @@ describe("POST /api/ingest/zos-health", () => {
         ],
       },
     });
-    expect(res.status).toBe(200);
-    expect(JSON.parse(res.body)).toEqual({ status: "ok" });
+    expectAccepted(res);
 
     const sessions = await testCtx.db.execute(
       sql`SELECT * FROM fitness.sleep_session WHERE user_id = ${TEST_USER_ID}`,
@@ -320,7 +391,8 @@ describe("POST /api/ingest/zos-health", () => {
         ],
       },
     });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
+    expect(JSON.parse(res.body)).toMatchObject({ acceptedEventIds: [] });
   });
 
   it("fetches existing sleep session when insert conflicts", async () => {
@@ -360,7 +432,7 @@ describe("POST /api/ingest/zos-health", () => {
       },
     });
     expect(res2.status).toBe(200);
-    expect(JSON.parse(res2.body)).toEqual({ status: "ok" });
+    expectAccepted(res2);
 
     // Exactly one session row
     const sessions = await testCtx.db.execute(
@@ -390,7 +462,8 @@ describe("POST /api/ingest/zos-health", () => {
         ],
       },
     });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
+    expect(JSON.parse(res.body)).toMatchObject({ acceptedEventIds: [] });
   });
 
   // ── Activity tests ──
@@ -410,8 +483,7 @@ describe("POST /api/ingest/zos-health", () => {
         ],
       },
     });
-    expect(res.status).toBe(200);
-    expect(JSON.parse(res.body)).toEqual({ status: "ok" });
+    expectAccepted(res);
 
     const rows = await testCtx.db.execute(
       sql`SELECT * FROM fitness.activity WHERE user_id = ${TEST_USER_ID}`,
@@ -508,6 +580,118 @@ describe("POST /api/ingest/zos-health", () => {
     );
   });
 
+  it("commits complementary daily siblings while rejecting an unresolved live workout event", async () => {
+    const response = await post(app, "/api/ingest/zos-health", {
+      headers: { Authorization: `Bearer ${validToken}` },
+      rawBody: true,
+      body: {
+        version: 1,
+        batchId: "mixed-live-resolution",
+        source: { connectionType: "zepp", installId: "install-integration" },
+        events: [
+          {
+            eventId: "steps-event",
+            createdAt: "2024-07-03T10:48:20.000Z",
+            payload: { dailyMetrics: { "2024-07-03": { steps: 1000 } } },
+          },
+          {
+            eventId: "distance-event",
+            createdAt: "2024-07-03T10:49:20.000Z",
+            payload: { dailyMetrics: { "2024-07-03": { distanceKm: 1.2 } } },
+          },
+          {
+            eventId: "missing-live-event",
+            createdAt: "2024-07-03T10:50:20.000Z",
+            payload: {
+              liveWorkoutSamples: [
+                {
+                  externalId: "missing-activity",
+                  recordedAt: "2024-07-03T10:50:20.000Z",
+                  metrics: { duration: 312 },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(JSON.parse(response.body)).toEqual({
+      status: "ok",
+      acceptedEventIds: ["steps-event", "distance-event"],
+      rejected: [
+        {
+          eventId: "missing-live-event",
+          issues: [
+            {
+              path: "liveWorkoutSamples",
+              message: "Activity missing-activity was not found.",
+            },
+          ],
+        },
+      ],
+    });
+    const rows = await testCtx.db.execute(sql`
+      SELECT steps, distance_km AS "distanceKm"
+      FROM fitness.daily_metrics
+      WHERE user_id = ${TEST_USER_ID} AND date = '2024-07-03'
+    `);
+    expect(rows).toEqual([expect.objectContaining({ steps: 1000, distanceKm: 1.2 })]);
+    expect(publishedMetricRows).toEqual([]);
+  });
+
+  it("commits a Zepp IMU chunk before acknowledging it", async () => {
+    const response = await post(app, "/api/ingest/zos-imu", {
+      headers: { Authorization: `Bearer ${validToken}` },
+      rawBody: true,
+      body: {
+        accountId: TEST_USER_ID,
+        version: 1,
+        batchId: "segment-integration:0",
+        source: { connectionType: "zepp", installId: "install-integration" },
+        events: [
+          {
+            eventId: "segment-integration:0",
+            createdAt: "2024-07-03T10:48:20.040Z",
+            payload: {
+              formatVersion: 2,
+              segmentId: "segment-integration",
+              sessionStartMs: 1_720_000_000_000,
+              hasGyroscope: false,
+              sampleOffset: 0,
+              accelFreqMode: 1,
+              gyroFreqMode: 0,
+              samples: [
+                { tMs: 0, sensor: "accelerometer", x: 1, y: 2, z: 3 },
+                { tMs: 40, sensor: "accelerometer", x: 4, y: 5, z: 6 },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(JSON.parse(response.body)).toEqual({
+      status: "ok",
+      acceptedEventIds: ["segment-integration:0"],
+      rejected: [],
+    });
+    expect(publishedMetricRows).toEqual([
+      expect.objectContaining({
+        channel: "accelerometer",
+        deviceId: "zepp:install-integration",
+        vector: [1, 2, 3],
+      }),
+      expect.objectContaining({
+        channel: "accelerometer",
+        deviceId: "zepp:install-integration",
+        vector: [4, 5, 6],
+      }),
+    ]);
+  });
+
   it("rejects activity with invalid dates at schema validation", async () => {
     const res = await post(app, "/api/ingest/zos-health", {
       headers: { Authorization: `Bearer ${validToken}` },
@@ -522,7 +706,8 @@ describe("POST /api/ingest/zos-health", () => {
         ],
       },
     });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
+    expect(JSON.parse(res.body)).toMatchObject({ acceptedEventIds: [] });
   });
 
   // ── Combined payload tests ──
@@ -551,8 +736,7 @@ describe("POST /api/ingest/zos-health", () => {
         ],
       },
     });
-    expect(res.status).toBe(200);
-    expect(JSON.parse(res.body)).toEqual({ status: "ok" });
+    expectAccepted(res);
   });
 
   // ── Multi-entry tests ──
@@ -568,8 +752,7 @@ describe("POST /api/ingest/zos-health", () => {
         },
       },
     });
-    expect(res.status).toBe(200);
-    expect(JSON.parse(res.body)).toEqual({ status: "ok" });
+    expectAccepted(res);
 
     const rows = await testCtx.db.execute(
       sql`SELECT date, steps FROM fitness.daily_metrics WHERE user_id = ${TEST_USER_ID} ORDER BY date`,
@@ -595,8 +778,7 @@ describe("POST /api/ingest/zos-health", () => {
         ],
       },
     });
-    expect(res.status).toBe(200);
-    expect(JSON.parse(res.body)).toEqual({ status: "ok" });
+    expectAccepted(res);
   });
 
   it("returns 200 with multiple activities", async () => {
@@ -619,8 +801,7 @@ describe("POST /api/ingest/zos-health", () => {
         ],
       },
     });
-    expect(res.status).toBe(200);
-    expect(JSON.parse(res.body)).toEqual({ status: "ok" });
+    expectAccepted(res);
   });
 
   it("processes sleep sessions without stages", async () => {
@@ -637,8 +818,7 @@ describe("POST /api/ingest/zos-health", () => {
         ],
       },
     });
-    expect(res.status).toBe(200);
-    expect(JSON.parse(res.body)).toEqual({ status: "ok" });
+    expectAccepted(res);
   });
 
   it("processes activities without name", async () => {
@@ -655,8 +835,7 @@ describe("POST /api/ingest/zos-health", () => {
         ],
       },
     });
-    expect(res.status).toBe(200);
-    expect(JSON.parse(res.body)).toEqual({ status: "ok" });
+    expectAccepted(res);
   });
 
   // ── Mutation-killing: daily metrics SQL guard ──
@@ -698,7 +877,7 @@ describe("POST /api/ingest/zos-health", () => {
     expect(rows.length).toBe(0);
   });
 
-  it("stores daily metrics only for valid date keys", async () => {
+  it("rejects the event without partially storing valid daily metric keys", async () => {
     const res = await post(app, "/api/ingest/zos-health", {
       headers: { Authorization: `Bearer ${validToken}` },
       body: {
@@ -708,16 +887,15 @@ describe("POST /api/ingest/zos-health", () => {
         },
       },
     });
-    expect(res.status).toBe(200);
+    expectRejectedInvalidDailyMetricDates(res, ["not-a-valid-date"]);
 
     const rows = await testCtx.db.execute(
       sql`SELECT date, steps FROM fitness.daily_metrics WHERE user_id = ${TEST_USER_ID}`,
     );
-    expect(rows.length).toBe(1);
-    expect(rows[0].steps).toBe(9000);
+    expect(rows.length).toBe(0);
   });
 
-  it("stores no daily metrics when all date keys are invalid", async () => {
+  it("rejects the event when all daily metric date keys are invalid", async () => {
     const res = await post(app, "/api/ingest/zos-health", {
       headers: { Authorization: `Bearer ${validToken}` },
       body: {
@@ -727,7 +905,7 @@ describe("POST /api/ingest/zos-health", () => {
         },
       },
     });
-    expect(res.status).toBe(200);
+    expectRejectedInvalidDailyMetricDates(res, ["also-not-a-date", "not-a-date"]);
 
     const rows = await testCtx.db.execute(
       sql`SELECT * FROM fitness.daily_metrics WHERE user_id = ${TEST_USER_ID}`,
@@ -835,11 +1013,9 @@ describe("POST /api/ingest/zos-health", () => {
     expect(rows[0].name).toBe("Sunrise Long Run");
   });
 
-  // ── Mutation-killing: NaN-date defensive guards ──
-  // The ingest schema accepts pathological offsets like "+99:00", but new Date()
-  // rejects them with Invalid Date (NaN from .getTime()). The route warns and skips.
+  // ── Strict ISO 8601 timezone-offset validation ──
 
-  it("skips sleep session whose Zod-valid offset produces an Invalid Date", async () => {
+  it("rejects a sleep session with an out-of-range start offset", async () => {
     const res = await post(app, "/api/ingest/zos-health", {
       headers: { Authorization: `Bearer ${validToken}` },
       body: {
@@ -852,7 +1028,7 @@ describe("POST /api/ingest/zos-health", () => {
         ],
       },
     });
-    expect(res.status).toBe(200);
+    expectRejectedAtPath(res, "sleepSessions.0.startedAt");
 
     // Session was skipped — no sleep_session row stored
     const sessions = await testCtx.db.execute(
@@ -861,7 +1037,7 @@ describe("POST /api/ingest/zos-health", () => {
     expect(sessions.length).toBe(0);
   });
 
-  it("skips sleep session when only one date is NaN", async () => {
+  it("rejects a sleep session with an out-of-range end offset", async () => {
     const res = await post(app, "/api/ingest/zos-health", {
       headers: { Authorization: `Bearer ${validToken}` },
       body: {
@@ -874,7 +1050,7 @@ describe("POST /api/ingest/zos-health", () => {
         ],
       },
     });
-    expect(res.status).toBe(200);
+    expectRejectedAtPath(res, "sleepSessions.0.endedAt");
 
     const sessions = await testCtx.db.execute(
       sql`SELECT * FROM fitness.sleep_session WHERE user_id = ${TEST_USER_ID}`,
@@ -882,7 +1058,7 @@ describe("POST /api/ingest/zos-health", () => {
     expect(sessions.length).toBe(0);
   });
 
-  it("skips sleep stage whose Zod-valid offset produces an Invalid Date", async () => {
+  it("rejects a sleep event with an out-of-range stage start offset", async () => {
     const res = await post(app, "/api/ingest/zos-health", {
       headers: { Authorization: `Bearer ${validToken}` },
       body: {
@@ -902,21 +1078,15 @@ describe("POST /api/ingest/zos-health", () => {
         ],
       },
     });
-    expect(res.status).toBe(200);
+    expectRejectedAtPath(res, "sleepSessions.0.stages.0.startedAt");
 
-    // Session is stored but stage is skipped
     const sessions = await testCtx.db.execute(
       sql`SELECT * FROM fitness.sleep_session WHERE user_id = ${TEST_USER_ID}`,
     );
-    expect(sessions.length).toBe(1);
-
-    const stages = await testCtx.db.execute(
-      sql`SELECT * FROM fitness.sleep_stage WHERE session_id = ${sessions[0].id}`,
-    );
-    expect(stages.length).toBe(0);
+    expect(sessions.length).toBe(0);
   });
 
-  it("skips sleep stage when only one stage date is NaN", async () => {
+  it("rejects a sleep event with an out-of-range stage end offset", async () => {
     const res = await post(app, "/api/ingest/zos-health", {
       headers: { Authorization: `Bearer ${validToken}` },
       body: {
@@ -936,20 +1106,15 @@ describe("POST /api/ingest/zos-health", () => {
         ],
       },
     });
-    expect(res.status).toBe(200);
+    expectRejectedAtPath(res, "sleepSessions.0.stages.0.endedAt");
 
     const sessions = await testCtx.db.execute(
       sql`SELECT * FROM fitness.sleep_session WHERE user_id = ${TEST_USER_ID}`,
     );
-    expect(sessions.length).toBe(1);
-
-    const stages = await testCtx.db.execute(
-      sql`SELECT * FROM fitness.sleep_stage WHERE session_id = ${sessions[0].id}`,
-    );
-    expect(stages.length).toBe(0);
+    expect(sessions.length).toBe(0);
   });
 
-  it("skips activity whose Zod-valid offset produces an Invalid Date", async () => {
+  it("rejects an activity with an out-of-range start offset", async () => {
     const res = await post(app, "/api/ingest/zos-health", {
       headers: { Authorization: `Bearer ${validToken}` },
       body: {
@@ -963,7 +1128,7 @@ describe("POST /api/ingest/zos-health", () => {
         ],
       },
     });
-    expect(res.status).toBe(200);
+    expectRejectedAtPath(res, "activities.0.startedAt");
 
     const rows = await testCtx.db.execute(
       sql`SELECT * FROM fitness.activity WHERE user_id = ${TEST_USER_ID}`,
@@ -971,7 +1136,7 @@ describe("POST /api/ingest/zos-health", () => {
     expect(rows.length).toBe(0);
   });
 
-  it("skips activity when only one activity date is NaN", async () => {
+  it("rejects an activity with an out-of-range end offset", async () => {
     const res = await post(app, "/api/ingest/zos-health", {
       headers: { Authorization: `Bearer ${validToken}` },
       body: {
@@ -985,7 +1150,7 @@ describe("POST /api/ingest/zos-health", () => {
         ],
       },
     });
-    expect(res.status).toBe(200);
+    expectRejectedAtPath(res, "activities.0.endedAt");
 
     const rows = await testCtx.db.execute(
       sql`SELECT * FROM fitness.activity WHERE user_id = ${TEST_USER_ID}`,

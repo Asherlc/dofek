@@ -268,5 +268,7 @@ describe("PersonalizationPanel", () => {
     expect(
       within(card).getByText("Successful fit time unavailable until this model is refit"),
     ).toBeTruthy();
+    expect(within(card).getByText("Update status:")).toBeTruthy();
+    expect(within(card).queryByText("Last successful update:")).toBeNull();
   });
 });

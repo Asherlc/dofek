@@ -22,7 +22,7 @@ import { chart as chartTokens, duration, easing } from "@dofek/scoring/tokens";
 import { escape as escapeHtml } from "html-escaper";
 
 // Re-export for inline use in custom formatters
-export { chartThemeColors, chartColors };
+export { chartColors, chartThemeColors };
 
 // ── Tooltip ──
 

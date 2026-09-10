@@ -1,9 +1,8 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
+import { readModelSql, renderDbtModelSql } from "./read-model-sql-test-helpers.ts";
 
 type ClickHouseClient = ReturnType<typeof createClient>;
 
@@ -110,12 +109,10 @@ async function waitForClickHouse(client: ClickHouseClient): Promise<void> {
 }
 
 function renderActivitySensorSampleSql(targetSchema: string): string {
-  return readFileSync(
-    join(import.meta.dirname, "../../analytics/models/read_models/activity_sensor_sample.sql"),
-    "utf8",
-  )
-    .replace(/\{% set [^\n]+\n/g, "")
-    .replace(/{{ config\([\s\S]*?\) }}\s*/, "")
+  return renderDbtModelSql(readModelSql("activity_sensor_sample.sql"), {
+    isIncremental: false,
+    activityRefreshScoped: false,
+  })
     .replaceAll("{{ ref('deduped_activities') }}", `${targetSchema}.deduped_activities`)
     .replaceAll("{{ ref('deduped_sensor') }}", `${targetSchema}.deduped_sensor`)
     .concat("\nSETTINGS max_threads = 1");
@@ -131,7 +128,9 @@ async function seedFixture(client: ClickHouseClient, targetSchema: string): Prom
       started_at DateTime64(6, 'UTC'),
       ended_at Nullable(DateTime64(6, 'UTC')),
       source_synced_at DateTime64(9, 'UTC'),
-      is_deleted UInt8
+      member_activity_ids Array(UUID),
+      is_deleted UInt8,
+      refreshed_at DateTime64(9, 'UTC')
     )
     ENGINE = ReplacingMergeTree()
     ORDER BY (user_id, activity_id)`,
@@ -143,6 +142,14 @@ async function seedFixture(client: ClickHouseClient, targetSchema: string): Prom
       recorded_date Date,
       channel String,
       scalar Nullable(Float64),
+      provider_id String,
+      member_activity_id Nullable(UUID),
+      device_id Nullable(String),
+      source_external_id Nullable(String),
+      source_type Nullable(String),
+      source_metric_stream_id UUID,
+      measurement_kind String,
+      source_activity_id Nullable(UUID),
       is_deleted UInt8,
       refreshed_at DateTime64(9, 'UTC')
     )
@@ -159,7 +166,9 @@ async function seedFixture(client: ClickHouseClient, targetSchema: string): Prom
       started_at: clickHouseDateTime(startedAt),
       ended_at: clickHouseDateTime(endedAt),
       source_synced_at: clickHouseDateTime(endedAt),
+      member_activity_ids: [activityId(index)],
       is_deleted: 0,
+      refreshed_at: clickHouseDateTime(endedAt),
     };
   });
   activityRows.push(
@@ -169,7 +178,9 @@ async function seedFixture(client: ClickHouseClient, targetSchema: string): Prom
       started_at: "2026-05-01 23:30:00.000",
       ended_at: "2026-05-02 00:30:00.000",
       source_synced_at: "2026-05-02 00:31:00.000",
+      member_activity_ids: [crossMidnightActivityId],
       is_deleted: 0,
+      refreshed_at: "2026-05-02 00:31:00.000",
     },
     {
       activity_id: overlappingActivityId,
@@ -177,7 +188,9 @@ async function seedFixture(client: ClickHouseClient, targetSchema: string): Prom
       started_at: "2026-05-02 00:00:00.000",
       ended_at: "2026-05-02 01:00:00.000",
       source_synced_at: "2026-05-02 01:01:00.000",
+      member_activity_ids: [overlappingActivityId],
       is_deleted: 0,
+      refreshed_at: "2026-05-02 01:01:00.000",
     },
   );
   const sensorRows = Array.from({ length: activityCount }, (_, index) => {
@@ -188,6 +201,14 @@ async function seedFixture(client: ClickHouseClient, targetSchema: string): Prom
       recorded_date: recordedAt.toISOString().slice(0, 10),
       channel: "heart_rate",
       scalar: 100 + index,
+      provider_id: "wahoo",
+      member_activity_id: activityId(index),
+      device_id: "kickr-bike",
+      source_external_id: `sample-${index}`,
+      source_type: "activity",
+      source_metric_stream_id: `10000000-0000-0000-0000-${String(index + 1).padStart(12, "0")}`,
+      measurement_kind: "direct",
+      source_activity_id: null,
       is_deleted: 0,
       refreshed_at: clickHouseDateTime(recordedAt),
     };
@@ -198,6 +219,14 @@ async function seedFixture(client: ClickHouseClient, targetSchema: string): Prom
     recorded_date: "2026-05-02",
     channel: "heart_rate",
     scalar: 150,
+    provider_id: "wahoo",
+    member_activity_id: crossMidnightActivityId,
+    device_id: "tickr",
+    source_external_id: "sample-overlap",
+    source_type: "activity",
+    source_metric_stream_id: "10000000-0000-0000-0000-000000000201",
+    measurement_kind: "direct",
+    source_activity_id: null,
     is_deleted: 0,
     refreshed_at: "2026-05-02 00:16:00.000",
   });

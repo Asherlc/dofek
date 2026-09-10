@@ -8,11 +8,11 @@ struct BleHeartRateDevice {
 
 /// Events emitted by the connection manager to its delegate (the Expo module).
 protocol BleHeartRateConnectionManagerDelegate: AnyObject {
-    /// Called when a device is connected and the measurement characteristic is
-    /// subscribed and ready to deliver notifications.
-    func connectionManagerDidBecomeReady(
+    /// Called whenever one identified peripheral changes lifecycle state.
+    func connectionManager(
         _ manager: BleHeartRateConnectionManager,
-        device: BleHeartRateDevice
+        didChangeState state: BleHeartRateConnectionState,
+        for peripheralId: String
     )
 
     /// Called when the peripheral disconnects.

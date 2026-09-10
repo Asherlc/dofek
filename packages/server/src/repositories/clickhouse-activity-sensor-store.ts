@@ -56,7 +56,7 @@ function maxActivityWindowEndedAt(startedAt: string): string {
 
 function queryParams(window: ActivitySensorWindow, extra: Record<string, unknown>) {
   return {
-    activityIds: [...new Set([window.activityId, ...window.memberActivityIds])],
+    activityId: window.activityId,
     windowStartedAt: window.startedAt,
     windowEndedAt: window.endedAt ?? maxActivityWindowEndedAt(window.startedAt),
     userId: window.userId,
@@ -93,23 +93,6 @@ const heartRateZoneSecondRowSchema = z.object({
   zone: z.coerce.number(),
   seconds: z.coerce.number(),
 });
-
-function dedupedSamplesSql(channelPredicate = "1 = 1"): string {
-  return `
-    WITH deduped_samples AS (
-      SELECT
-        recorded_at,
-        channel,
-        scalar
-      FROM analytics.deduped_sensor
-      WHERE user_id = {userId:UUID}
-        AND recorded_at >= parseDateTime64BestEffort({windowStartedAt:String})
-        AND recorded_at <= parseDateTime64BestEffort({windowEndedAt:String})
-        AND is_deleted = 0
-        AND ${channelPredicate}
-    )
-  `;
-}
 
 export class ClickHouseActivitySensorStore implements ActivitySensorStore {
   readonly #client: ClickHouseActivitySensorClient;
@@ -392,7 +375,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
           FROM analytics.activity_stream_points FINAL
           ARRAY JOIN points AS point
           WHERE user_id = {userId:UUID}
-            AND activity_id IN {activityIds:Array(UUID)}
+            AND activity_id = {activityId:UUID}
             AND is_deleted = 0
             AND point.1 >= parseDateTime64BestEffort({windowStartedAt:String})
             AND point.1 <= parseDateTime64BestEffort({windowEndedAt:String})
@@ -534,7 +517,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
         FROM analytics.activity_heart_rate_zones FINAL
         ARRAY JOIN zones AS zone_tuple
         WHERE user_id = {userId:UUID}
-          AND activity_id IN {activityIds:Array(UUID)}
+          AND activity_id = {activityId:UUID}
           AND is_deleted = 0
         GROUP BY zone_tuple.1
         ORDER BY zone_tuple.1
@@ -552,7 +535,16 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
   ): Promise<PowerZoneSecondRow[]> {
     const result = await this.#client.query<PowerZoneSecondRow>({
       query: `
-        ${dedupedSamplesSql("channel = 'power'")}
+        WITH power_samples AS (
+          SELECT scalar
+          FROM analytics.activity_sensor_sample FINAL
+          WHERE user_id = {userId:UUID}
+            AND activity_id = {activityId:UUID}
+            AND recorded_at >= parseDateTime64BestEffort({windowStartedAt:String})
+            AND recorded_at <= parseDateTime64BestEffort({windowEndedAt:String})
+            AND channel = 'power'
+            AND is_deleted = 0
+        )
         SELECT
           zone,
           countIf(
@@ -568,7 +560,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
             END
           ) AS seconds
         FROM (SELECT number + 1 AS zone FROM numbers(7)) AS zones
-        LEFT JOIN (SELECT scalar FROM deduped_samples) AS power_samples ON true
+        LEFT JOIN power_samples ON true
         GROUP BY zone
         ORDER BY zone
       `,

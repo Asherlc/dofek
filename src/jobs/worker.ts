@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { ProviderServiceUnavailableError } from "@dofek/provider-http/rate-limit";
 import { Job, UnrecoverableError, Worker } from "bullmq";
 import { validateAccountErasureLedgerKeyring } from "../account-erasure/identity.ts";
 import { createEncryptedAccountErasureSnapshot } from "../account-erasure/remote-snapshot.ts";
@@ -13,6 +14,7 @@ import { createImportUploadStorageFromEnv } from "../file-upload-storage.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import { initProductionSentry } from "../lib/sentry.ts";
 import { jobContext, logger } from "../logger.ts";
+import { validateMetricStreamTopicConfiguration } from "../metric-stream/routes.ts";
 import { getAllProviders } from "../providers/index.ts";
 import { startAccountErasureOutboxDispatcher } from "./account-erasure-outbox.ts";
 import { createAccountErasureRuntime } from "./account-erasure-runtime.ts";
@@ -74,11 +76,12 @@ import {
   ZIP_ENTRY_EXTRACT_QUEUE,
   type ZipEntryExtractJobData,
 } from "./queues.ts";
-import { setupScheduledSync } from "./scheduled-sync.ts";
+import { DEFAULT_SCHEDULED_SYNC_INTERVAL_MINUTES, setupScheduledSync } from "./scheduled-sync.ts";
 import { createWorkerReadinessServer } from "./worker-readiness.ts";
 
 const sentryDsn = process.env.SENTRY_DSN || process.env.SENTRY_DSN_unencrypted;
 initProductionSentry(sentryDsn);
+validateMetricStreamTopicConfiguration();
 
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const WORKER_READINESS_HOST = "127.0.0.1";
@@ -102,7 +105,9 @@ let importUploadStorage: ReturnType<typeof createImportUploadStorageFromEnv> | n
 
 const rawSyncIntervalMinutes = process.env.SYNC_INTERVAL_MINUTES;
 const syncIntervalMinutes =
-  rawSyncIntervalMinutes === undefined ? 30 : Number(rawSyncIntervalMinutes);
+  rawSyncIntervalMinutes === undefined
+    ? DEFAULT_SCHEDULED_SYNC_INTERVAL_MINUTES
+    : Number(rawSyncIntervalMinutes);
 try {
   if (!Number.isFinite(syncIntervalMinutes) || syncIntervalMinutes <= 0) {
     throw new Error(
@@ -183,25 +188,20 @@ for (const providerId of getConfiguredProviderIds()) {
 
 logger.info(`[worker] Created ${providerWorkers.size} per-provider sync workers`);
 
-// ── Legacy sync worker (drains old "sync" queue) ──
+// ── Shared sync worker (CLI queue) ──
 
-const legacySyncWorker = new Worker<SyncJobData>(
+const sharedSyncWorker = new Worker<SyncJobData>(
   SYNC_QUEUE,
-  (job) => {
-    logger.warn(
-      `[worker] Processing job from legacy "sync" queue (provider=${job.data.providerId}). ` +
-        "New jobs should use per-provider queues.",
-    );
-    return jobContext.run(job, () =>
+  (job) =>
+    jobContext.run(job, () =>
       runQueuedUserWorkUnlessAccountErasing(
         accountErasureWorkLockPool,
         db,
         job.data.userId,
-        "legacy provider sync",
+        "CLI provider sync",
         () => processSyncJob(job, db),
       ),
-    );
-  },
+    ),
   { autorun: false, connection },
 );
 
@@ -448,7 +448,7 @@ function finishActiveJob(worker: Worker, job: { id?: string | number } | undefin
 
 const allWorkers: Worker[] = [
   ...providerWorkers.values(),
-  legacySyncWorker,
+  sharedSyncWorker,
   importWorker,
   exportWorker,
   fitFileImportWorker,
@@ -549,10 +549,22 @@ for (const worker of allWorkers) {
       worker.name === FIT_FILE_IMPORT_QUEUE && job?.parentKey && err instanceof UnrecoverableError;
     const isAppleHealthImportValidationFailure =
       worker.name === IMPORT_QUEUE && isAppleHealthImportValidationError(err);
-    if (!isFitBatchChildFailure && !isAppleHealthImportValidationFailure) {
+    const isZeppHttp500ServiceUnavailable =
+      err instanceof ProviderServiceUnavailableError &&
+      err.providerId === "amazfit-zepp" &&
+      err.statusCode === 500;
+    if (
+      !isFitBatchChildFailure &&
+      !isAppleHealthImportValidationFailure &&
+      !isZeppHttp500ServiceUnavailable
+    ) {
       captureException(err);
     }
-    logger.error(`[worker] Job failed: ${err.message}`);
+    if (isZeppHttp500ServiceUnavailable) {
+      logger.warn(`[worker] Job retrying after provider service unavailable: ${err.message}`);
+    } else {
+      logger.error(`[worker] Job failed: ${err.message}`);
+    }
     if (job?.id) {
       const message = `BullMQ job failed: queue=${worker.name} jobId=${job.id} cause=${err.message}`;
       void Job.addJobLog(worker, job.id, `[error] ${message}`, 100).catch((logError: unknown) => {

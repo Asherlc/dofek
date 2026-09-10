@@ -7,6 +7,7 @@ import {
   formatNumber,
 } from "@dofek/format/format";
 import { formatMeasurementText } from "@dofek/format/units";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { useState } from "react";
 import { z } from "zod";
 import { locallyReportedErrorMeta } from "../lib/query-client.ts";
@@ -153,7 +154,7 @@ export function LifeEventsPanel() {
       />
 
       {eventList?.length === 0 ? (
-        <p className="text-dim text-sm text-center py-6">No life events yet.</p>
+        <p className="text-dim text-sm text-center py-6">No life events to display.</p>
       ) : null}
 
       {/* Add form */}
@@ -165,7 +166,7 @@ export function LifeEventsPanel() {
             loading={createMutation.isPending}
           />
           {createMutation.error ? (
-            <p className="text-xs text-red-400">{createMutation.error.message}</p>
+            <p className="text-xs text-red-400">{userFacingErrorMessage(createMutation.error)}</p>
           ) : null}
         </>
       )}
@@ -196,7 +197,7 @@ export function LifeEventsPanel() {
               deleting={deleteMutation.isPending}
             />
             {deleteMutation.error ? (
-              <p className="text-xs text-red-400">{deleteMutation.error.message}</p>
+              <p className="text-xs text-red-400">{userFacingErrorMessage(deleteMutation.error)}</p>
             ) : null}
           </>
         );

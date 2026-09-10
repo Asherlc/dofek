@@ -348,28 +348,27 @@ describe("createCompanionTokenHttpRouter", () => {
       operation: "revoke",
       repository: mockRevokeCompanionTokenByToken,
     },
-  ] as const)("records invalid credentials for $operation", async ({
-    method,
-    operation,
-    repository,
-  }) => {
-    repository.mockResolvedValue(null);
-    const { app } = createTestApp();
+  ] as const)(
+    "records invalid credentials for $operation",
+    async ({ method, operation, repository }) => {
+      repository.mockResolvedValue(null);
+      const { app } = createTestApp();
 
-    const response = await requestJson(app, "/api/companion-token/current", {
-      method,
-      headers: { Authorization: "Bearer invalid_companion_token" },
-    });
+      const response = await requestJson(app, "/api/companion-token/current", {
+        method,
+        headers: { Authorization: "Bearer invalid_companion_token" },
+      });
 
-    expect(response).toEqual({
-      status: 401,
-      body: { error: "Invalid or revoked Dofek connection." },
-    });
-    expect(mockOperationCounter.inc).toHaveBeenCalledWith({
-      operation,
-      outcome: "invalid_credentials",
-    });
-  });
+      expect(response).toEqual({
+        status: 401,
+        body: { error: "Invalid or revoked Dofek connection." },
+      });
+      expect(mockOperationCounter.inc).toHaveBeenCalledWith({
+        operation,
+        outcome: "invalid_credentials",
+      });
+    },
+  );
 
   it.each([
     {
@@ -384,26 +383,24 @@ describe("createCompanionTokenHttpRouter", () => {
       repository: mockRevokeCompanionTokenByToken,
       error: "Failed to disconnect Dofek.",
     },
-  ] as const)("records and reports internal $operation errors", async ({
-    method,
-    operation,
-    repository,
-    error,
-  }) => {
-    const databaseError = new Error(`${operation} database failed`);
-    repository.mockRejectedValue(databaseError);
-    const { app } = createTestApp();
+  ] as const)(
+    "records and reports internal $operation errors",
+    async ({ method, operation, repository, error }) => {
+      const databaseError = new Error(`${operation} database failed`);
+      repository.mockRejectedValue(databaseError);
+      const { app } = createTestApp();
 
-    const response = await requestJson(app, "/api/companion-token/current", {
-      method,
-      headers: { Authorization: "Bearer dofek_companion_test" },
-    });
+      const response = await requestJson(app, "/api/companion-token/current", {
+        method,
+        headers: { Authorization: "Bearer dofek_companion_test" },
+      });
 
-    expect(response).toEqual({ status: 500, body: { error } });
-    expect(mockOperationCounter.inc).toHaveBeenCalledWith({
-      operation,
-      outcome: "error",
-    });
-    expect(mockCaptureException).toHaveBeenCalledWith(databaseError);
-  });
+      expect(response).toEqual({ status: 500, body: { error } });
+      expect(mockOperationCounter.inc).toHaveBeenCalledWith({
+        operation,
+        outcome: "error",
+      });
+      expect(mockCaptureException).toHaveBeenCalledWith(databaseError);
+    },
+  );
 });

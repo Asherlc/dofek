@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   isBackgroundHealthKitTransientNetworkError,
   isTransientNetworkErrorMessage,
-  shouldSuppressBackgroundHealthKitTransientNetworkError,
+  shouldSuppressBackgroundTransientNetworkError,
 } from "./health-kit-errors";
 
 describe("health-kit-errors", () => {
@@ -47,39 +47,36 @@ describe("health-kit-errors", () => {
     expect(isBackgroundHealthKitTransientNetworkError(new Error("server error"))).toBe(false);
   });
 
-  it("suppresses transient network errors only for HealthKit sources", () => {
+  it("suppresses transient network errors only for declared background sync sources", () => {
     const connectionLostError = new Error(
       "fetch failed: UnexpectedException: The network connection was lost.",
     );
 
     // Transient network error from a HealthKit source: suppressed from error tracking.
     expect(
-      shouldSuppressBackgroundHealthKitTransientNetworkError(
-        connectionLostError,
-        "bg-healthkit-sync",
-      ),
+      shouldSuppressBackgroundTransientNetworkError(connectionLostError, "bg-healthkit-sync"),
     ).toBe(true);
     expect(
-      shouldSuppressBackgroundHealthKitTransientNetworkError(
+      shouldSuppressBackgroundTransientNetworkError(
         connectionLostError,
         "health-kit-workout-route-push",
       ),
     ).toBe(true);
+    expect(
+      shouldSuppressBackgroundTransientNetworkError(connectionLostError, "bg-accel-sync"),
+    ).toBe(true);
 
     // Transient network error from a non-HealthKit source: still reported.
-    expect(
-      shouldSuppressBackgroundHealthKitTransientNetworkError(connectionLostError, "react-query"),
-    ).toBe(false);
-    expect(
-      shouldSuppressBackgroundHealthKitTransientNetworkError(connectionLostError, undefined),
-    ).toBe(false);
+    expect(shouldSuppressBackgroundTransientNetworkError(connectionLostError, "react-query")).toBe(
+      false,
+    );
+    expect(shouldSuppressBackgroundTransientNetworkError(connectionLostError, undefined)).toBe(
+      false,
+    );
 
     // Non-transient error from a HealthKit source: still reported.
     expect(
-      shouldSuppressBackgroundHealthKitTransientNetworkError(
-        new Error("server error"),
-        "bg-healthkit-sync",
-      ),
+      shouldSuppressBackgroundTransientNetworkError(new Error("server error"), "bg-healthkit-sync"),
     ).toBe(false);
   });
 });

@@ -4,6 +4,7 @@ import { dailyMetrics, sleepSession, sleepStage } from "../../db/schema/activity
 import { getTokenUserId } from "../../db/token-user-context.ts";
 import { planSyncStepIfRequestNotPending } from "../../lib/sync-request-query.ts";
 import { listPendingSyncRequestQueryKeys } from "../../lib/sync-request-queue.ts";
+import { normalizeWhoopDay } from "./cycle-day.ts";
 import { extractSleepIdsFromCycle, resolveWhoopWorkoutExternalId } from "./parsing.ts";
 import { whoopSyncStepToApiQuery } from "./sync-api-query.ts";
 import type { WhoopSyncStep } from "./sync-checkpoint.ts";
@@ -28,6 +29,46 @@ function collectWhoopWorkouts(cycles: WhoopCycle[]): WhoopWorkoutRecord[] {
     workouts.push(...(cycle.workouts ?? cycle.strain?.workouts ?? []));
   }
   return workouts;
+}
+
+function resolveDetailedSyncStart(context: WhoopPersistenceContext): Date | null {
+  if (context.since.getTime() !== 0) {
+    return context.since;
+  }
+
+  let earliestObservedMs = Number.POSITIVE_INFINITY;
+  for (const cycle of context.cycles) {
+    let earliestCycleDayMs = Number.POSITIVE_INFINITY;
+    for (const cycleDay of cycle.days ?? []) {
+      const normalizedCycleDay = normalizeWhoopDay(cycleDay);
+      if (normalizedCycleDay) {
+        earliestCycleDayMs = Math.min(earliestCycleDayMs, Date.parse(normalizedCycleDay));
+      }
+    }
+
+    if (Number.isFinite(earliestCycleDayMs)) {
+      earliestObservedMs = Math.min(earliestObservedMs, earliestCycleDayMs);
+      continue;
+    }
+
+    const recoveryDay = normalizeWhoopDay(cycle.recovery?.created_at);
+    if (recoveryDay) {
+      earliestObservedMs = Math.min(earliestObservedMs, Date.parse(recoveryDay));
+    }
+  }
+
+  if (!Number.isFinite(earliestObservedMs)) {
+    return null;
+  }
+
+  const earliestObserved = new Date(earliestObservedMs);
+  return new Date(
+    Date.UTC(
+      earliestObserved.getUTCFullYear(),
+      earliestObserved.getUTCMonth(),
+      earliestObserved.getUTCDate(),
+    ),
+  );
 }
 
 export async function listWhoopStepDatesNeedingSteps(
@@ -147,8 +188,15 @@ export async function planWhoopApiSteps(
 
   const steps: WhoopSyncStep[] = [];
 
-  for (const date of await listWhoopStepDatesNeedingSteps(context)) {
-    planWhoopStepIfNotQueued(steps, { type: "strain_deep_dive", date }, context, pendingKeys);
+  const detailedSyncStart = resolveDetailedSyncStart(context);
+
+  if (detailedSyncStart) {
+    for (const date of await listWhoopStepDatesNeedingSteps({
+      ...context,
+      since: detailedSyncStart,
+    })) {
+      planWhoopStepIfNotQueued(steps, { type: "strain_deep_dive", date }, context, pendingKeys);
+    }
   }
 
   planWhoopStepIfNotQueued(steps, { type: "developer_workouts" }, context, pendingKeys);
@@ -165,7 +213,10 @@ export async function planWhoopApiSteps(
     planWhoopStepIfNotQueued(steps, { type: "sleep_stages", sleepId }, context, pendingKeys);
   }
 
-  for (const window of listWhoopHeartRateWindows(context.since, context.windowEnd.getTime())) {
+  for (const window of listWhoopHeartRateWindows(
+    detailedSyncStart ?? context.windowEnd,
+    context.windowEnd.getTime(),
+  )) {
     planWhoopStepIfNotQueued(
       steps,
       { type: "heart_rate", start: window.start, end: window.end },

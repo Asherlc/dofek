@@ -68,24 +68,16 @@ describe("MonthlyReportContent", () => {
           decisionSupport: null,
           emptyState: {
             reportKind: "monthly",
-            title: "Server monthly preview title",
-            message: "Server monthly preview message.",
+            title: "Server monthly absence title",
             minimumObservedDays: 1,
             acceptedDataTypes: ["activity", "sleep", "recovery"],
             requirement: "Server monthly coverage requirement.",
-            previewTitle: "Server monthly structure",
-            previewItems: ["Average daily strain", "Month-over-month training and sleep changes"],
-            note: "Server no-estimate note.",
           },
         }}
       />,
     );
 
-    expect(screen.getByText("Server monthly preview title")).toBeTruthy();
-    expect(screen.getByText("Server monthly preview message.")).toBeTruthy();
+    expect(screen.getByText("Server monthly absence title")).toBeTruthy();
     expect(screen.getByText("Server monthly coverage requirement.")).toBeTruthy();
-    expect(screen.getByText("Server monthly structure")).toBeTruthy();
-    expect(screen.getByText("Average daily strain")).toBeTruthy();
-    expect(screen.getByText("Server no-estimate note.")).toBeTruthy();
   });
 });

@@ -21,10 +21,9 @@ vi.mock("../trpc.ts", async () => {
 });
 
 vi.mock("../repositories/settings-repository.ts", () => ({
-  SettingsRepository: vi.fn(() => ({
-    get: mockGet,
-    set: mockSet,
-  })),
+  SettingsRepository: vi.fn(function vitestConstructor() {
+    return { get: mockGet, set: mockSet };
+  }),
 }));
 
 vi.mock("dofek/lib/cache", () => ({

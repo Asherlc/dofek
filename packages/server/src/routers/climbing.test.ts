@@ -1,5 +1,9 @@
 import { TRPCError } from "@trpc/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ActivityRow } from "../models/activity.ts";
+import { ActivityRepository } from "../repositories/activity-repository.ts";
+import { ClimbingActivityEntry, ClimbingRepository } from "../repositories/climbing-repository.ts";
+import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
 import type {
   ClimbingActivityEntryRow,
   ClimbingGradeProgressionRow,
@@ -8,15 +12,10 @@ import type {
 } from "./climbing.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
-const { captureException, ensurePushProvider, invalidateAllUserQueries } = vi.hoisted(() => ({
-  captureException: vi.fn(),
-  ensurePushProvider: vi.fn(),
-  invalidateAllUserQueries: vi.fn(),
-}));
+const { captureException } = vi.hoisted(() => ({ captureException: vi.fn() }));
+const cachedQueryOptions = vi.hoisted((): Array<{ maxAge: number; keyVersion?: string }> => []);
 
 vi.mock("@sentry/node", () => ({ captureException }));
-vi.mock("../repositories/push-provider-repository.ts", () => ({ ensurePushProvider }));
-vi.mock("dofek/lib/cache", () => ({ invalidateAllUserQueries }));
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -30,7 +29,10 @@ vi.mock("../trpc.ts", async () => {
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
-    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQuery: (options: { maxAge: number; keyVersion?: string }) => {
+      cachedQueryOptions.push(options);
+      return trpc.procedure;
+    },
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -75,74 +77,51 @@ function makeCallerWithResponses(responses: Record<string, unknown>[][]) {
   return { caller, execute };
 }
 
-function makeMutationCaller(error: unknown = new Error("database unavailable")) {
-  const execute = vi.fn();
-  const transaction = vi.fn().mockRejectedValue(error);
-  const caller = createCaller({
-    db: { execute, transaction },
-    userId: "user-1",
-    timezone: "America/Los_Angeles",
-  });
-  return { caller, execute, transaction };
-}
-
-function makeSuccessfulMutationCaller(results: Record<string, unknown>[][]) {
-  let resultIndex = 0;
-  const execute = vi.fn(async () => results[resultIndex++] ?? []);
-  const transactionDatabase = { execute };
-  const transaction = vi.fn(
-    async (callback: (database: typeof transactionDatabase) => Promise<unknown>) =>
-      callback(transactionDatabase),
-  );
-  const caller = createCaller({
-    db: { execute, transaction },
-    userId: "user-1",
-    timezone: "America/Los_Angeles",
-  });
-  return { caller, execute, transaction };
-}
-
-function makeClimbingSessionInput({
-  climbType = "boulder",
-  endedAt = null,
-  failureReason = null,
-  gradeSystem = "v_scale",
-  outcome = "sent",
-}: {
-  climbType?: "boulder" | "route";
-  endedAt?: string | null;
-  failureReason?: "fell" | null;
-  gradeSystem?: "v_scale" | "yds";
-  outcome?: "failed" | "sent";
-} = {}) {
+function makeResolvedActivity(id: string, resolvedFrom?: string): ActivityRow {
   return {
-    climbs: [
-      {
-        attempts: [{ failureReason, notes: null, outcome }],
-        climbType,
-        grade: climbType === "boulder" ? "V5" : "5.11a",
-        gradeSystem,
-        holdType: "crimp" as const,
-        routeName: null,
-        wallAngleDegrees: 30,
-      },
-    ],
-    endedAt,
-    locationName: null,
-    startedAt: "2026-07-29T12:00:00.000Z",
+    absent_source_external_ids: null,
+    avg_cadence: null,
+    avg_hr: null,
+    avg_power: null,
+    avg_speed: null,
+    canonical_type: "climbing",
+    elevation_gain_m: null,
+    elevation_loss_m: null,
+    ended_at: "2026-09-01T11:00:00.000Z",
+    end_utc_offset_minutes: 0,
+    id,
+    local_time_source: "provider_timezone",
+    max_hr: null,
+    max_power: null,
+    max_speed: null,
+    modality: null,
+    name: "Climbing",
+    notes: null,
+    perceived_exertion: null,
+    provider_absent_at: null,
+    provider_id: "kaya",
+    raw_type: "climbing",
+    resolved_from: resolvedFrom,
+    sample_count: null,
+    source_external_ids: [],
+    source_providers: ["kaya"],
+    start_utc_offset_minutes: 0,
+    started_at: "2026-09-01T10:00:00.000Z",
+    subsource: null,
+    timezone: "UTC",
+    total_distance: null,
   };
 }
 
 describe("climbingRouter", () => {
   beforeEach(() => {
     captureException.mockClear();
-    ensurePushProvider.mockReset();
-    ensurePushProvider.mockResolvedValue(undefined);
-    invalidateAllUserQueries.mockReset();
-    invalidateAllUserQueries.mockResolvedValue(undefined);
   });
 
   it("returns activity entry rows", async () => {
+    const activityLookup = vi
+      .spyOn(ActivityRepository.prototype, "findById")
+      .mockResolvedValue(makeResolvedActivity("734b5d3e-df2b-4ee0-888e-55ea539d913a"));
     const { caller, execute } = makeCaller([
       {
         id: "entry-1",
@@ -161,28 +140,103 @@ describe("climbingRouter", () => {
       },
     ]);
 
-    const result: ClimbingActivityEntryRow[] = await caller.activityEntries({
-      id: "734b5d3e-df2b-4ee0-888e-55ea539d913a",
-    });
+    try {
+      const result: ClimbingActivityEntryRow[] = await caller.activityEntries({
+        id: "734b5d3e-df2b-4ee0-888e-55ea539d913a",
+      });
 
-    expect(execute).toHaveBeenCalledTimes(1);
-    expect(result).toEqual([
-      {
-        id: "entry-1",
-        climbType: "boulder",
-        gradeSystem: "v_scale",
-        grade: "V4",
-        sent: true,
-        attemptCount: 7,
-        attempts: [],
-        ascentType: "Redpoint",
-        holdType: null,
-        routeName: "Blue Arete",
-        locationName: "Pacific Pipe",
-        sourceName: "Kaya",
-        wallAngleDegrees: null,
-      },
-    ]);
+      expect(execute).toHaveBeenCalledTimes(2);
+      expect(result).toEqual([
+        {
+          id: "entry-1",
+          climbType: "boulder",
+          gradeSystem: "v_scale",
+          grade: "V4",
+          sent: true,
+          attemptCount: 7,
+          attempts: [],
+          ascentType: "Redpoint",
+          holdType: null,
+          routeName: "Blue Arete",
+          locationName: "Pacific Pipe",
+          sourceName: "Kaya",
+          wallAngleDegrees: null,
+        },
+      ]);
+      expect(cachedQueryOptions).toContainEqual({
+        maxAge: 3_600_000,
+        keyVersion: "climbing-activity-group-v1",
+      });
+    } finally {
+      activityLookup.mockRestore();
+    }
+  });
+
+  it.each([
+    ["stable group", "00000000-0000-4000-8000-000000000701", undefined],
+    ["member", "00000000-0000-4000-8000-000000000702", "00000000-0000-4000-8000-000000000702"],
+    ["merge alias", "00000000-0000-4000-8000-000000000703", "00000000-0000-4000-8000-000000000703"],
+  ] as const)(
+    "hydrates %s requests through the resolved stable group",
+    async (_, requestedId, resolvedFrom) => {
+      const stableGroupId = "00000000-0000-4000-8000-000000000701";
+      const activityLookup = vi
+        .spyOn(ActivityRepository.prototype, "findById")
+        .mockResolvedValue(makeResolvedActivity(stableGroupId, resolvedFrom));
+      const climbingLookup = vi
+        .spyOn(ClimbingRepository.prototype, "getActivityEntries")
+        .mockResolvedValue([
+          new ClimbingActivityEntry({
+            ascentType: "Redpoint",
+            attemptCount: 1,
+            attempts: [],
+            climbType: "boulder",
+            grade: "V4",
+            gradeSystem: "v_scale",
+            holdType: null,
+            id: "entry-1",
+            lead: null,
+            locationName: "Pacific Pipe",
+            routeName: "Blue Arete",
+            sent: true,
+            sourceName: "Kaya",
+            wallAngleDegrees: null,
+          }),
+        ]);
+      const { caller } = makeCaller([]);
+
+      try {
+        await expect(caller.activityEntries({ id: requestedId })).resolves.toEqual([
+          expect.objectContaining({ id: "entry-1", routeName: "Blue Arete" }),
+        ]);
+        expect(activityLookup).toHaveBeenCalledWith(requestedId);
+        expect(climbingLookup).toHaveBeenCalledWith(stableGroupId);
+      } finally {
+        activityLookup.mockRestore();
+        climbingLookup.mockRestore();
+      }
+    },
+  );
+
+  it("returns the same NOT_FOUND response for unresolved or cross-user climbing IDs", async () => {
+    const activityLookup = vi
+      .spyOn(ActivityRepository.prototype, "findById")
+      .mockResolvedValue(null);
+    const climbingLookup = vi.spyOn(ClimbingRepository.prototype, "getActivityEntries");
+    const { caller } = makeCaller([]);
+
+    try {
+      await expect(
+        caller.activityEntries({ id: "00000000-0000-4000-8000-000000000704" }),
+      ).rejects.toMatchObject<Partial<TRPCError>>({
+        code: "NOT_FOUND",
+        message: "Activity not found",
+      });
+      expect(climbingLookup).not.toHaveBeenCalled();
+    } finally {
+      activityLookup.mockRestore();
+      climbingLookup.mockRestore();
+    }
   });
 
   it("returns grade progression rows", async () => {
@@ -192,20 +246,19 @@ describe("climbingRouter", () => {
         climb_type: "boulder",
         grade_system: "v_scale",
         grade: "V4",
-        grade_sort_value: 4,
       },
     ]);
 
     const result: ClimbingGradeProgressionRow[] = await caller.gradeProgression({ days: 90 });
 
-    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledTimes(2);
     expect(result).toEqual([
       {
         date: "2026-07-09",
         climbType: "boulder",
         gradeSystem: "v_scale",
         grade: "V4",
-        gradeSortValue: 4,
+        gradeSortValue: 65,
       },
     ]);
   });
@@ -216,7 +269,6 @@ describe("climbingRouter", () => {
         climb_type: "route",
         grade_system: "yds",
         grade: "5.10c",
-        grade_sort_value: 5103,
         attempts: 3,
         sends: 2,
       },
@@ -224,13 +276,13 @@ describe("climbingRouter", () => {
 
     const result: ClimbingVolumeByGradeRow[] = await caller.volumeByGrade({ days: 90 });
 
-    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledTimes(2);
     expect(result).toEqual([
       {
         climbType: "route",
         gradeSystem: "yds",
         grade: "5.10c",
-        gradeSortValue: 5103,
+        gradeSortValue: 64.5,
         attempts: 3,
         sends: 2,
       },
@@ -244,18 +296,17 @@ describe("climbingRouter", () => {
         session_date: "2026-07-09",
         name: "Kaya climbing at Touchstone Pacific Pipe",
         location_name: "Touchstone Pacific Pipe",
-        attempts: 9,
-        sends: 6,
-        hardest_boulder_grade: "V4",
-        hardest_boulder_grade_sort_value: 4,
-        hardest_route_grade: null,
-        hardest_route_grade_sort_value: null,
+        attempt_count: 9,
+        sent: true,
+        climb_type: "boulder",
+        grade_system: "v_scale",
+        grade: "V4",
       },
     ]);
 
     const result: ClimbingSessionSummaryRow[] = await caller.sessionSummary({ days: 90 });
 
-    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledTimes(2);
     expect(result).toEqual([
       {
         activityId: "activity-1",
@@ -263,9 +314,9 @@ describe("climbingRouter", () => {
         name: "Kaya climbing at Touchstone Pacific Pipe",
         locationName: "Touchstone Pacific Pipe",
         attempts: 9,
-        sends: 6,
+        sends: 1,
         hardestBoulderGrade: "V4",
-        hardestBoulderGradeSortValue: 4,
+        hardestBoulderGradeSortValue: 65,
         hardestRouteGrade: null,
         hardestRouteGradeSortValue: null,
       },
@@ -330,13 +381,40 @@ describe("climbingRouter", () => {
     expect(execute).toHaveBeenCalledTimes(2);
   });
 
+  it("rejects malformed hangboarding summary output", async () => {
+    const { caller } = makeCaller();
+    const getSummary = vi
+      .spyOn(HangboardingRepository.prototype, "getSummary")
+      .mockResolvedValueOnce({
+        averageDurationSeconds: null,
+        averageHeartRate: null,
+        daily: [],
+        latestSession: null,
+        peakHeartRate: null,
+        sessionCount: 1,
+        totalDurationSeconds: 600,
+        totalRestDurationSeconds: null,
+        totalWorkDurationSeconds: Number.NaN,
+        workIntervalCount: null,
+      });
+
+    try {
+      await expect(caller.hangboardingSummary({ days: 30 })).rejects.toMatchObject<
+        Partial<TRPCError>
+      >({
+        code: "INTERNAL_SERVER_ERROR",
+      });
+    } finally {
+      getSummary.mockRestore();
+    }
+  });
   it("returns empty arrays when there is no climbing data", async () => {
     const { caller, execute } = makeCaller([]);
 
     await expect(caller.gradeProgression({ days: 90 })).resolves.toEqual([]);
     await expect(caller.volumeByGrade({ days: 90 })).resolves.toEqual([]);
     await expect(caller.sessionSummary({ days: 90 })).resolves.toEqual([]);
-    expect(execute).toHaveBeenCalledTimes(3);
+    expect(execute).toHaveBeenCalledTimes(6);
   });
 
   it("returns a controlled error when climbing data cannot load", async () => {
@@ -371,30 +449,6 @@ describe("climbingRouter", () => {
     });
   });
 
-  it("rejects a finger-loading protocol with a non-positive effective load", async () => {
-    const { caller, execute } = makeCaller();
-
-    await expect(
-      caller.logFingerLoading({
-        bodyweightKg: 70,
-        edgeSizeMm: 20,
-        exercise: "max_hang",
-        externalLoadKg: -70,
-        gripPosition: "half_crimp",
-        holdDurationSeconds: 10,
-        laterality: "both",
-        notes: null,
-        restIntervalSeconds: 180,
-        rpe: 8,
-        setCount: 5,
-        startedAt: "2026-07-29T12:00:00.000Z",
-      }),
-    ).rejects.toMatchObject<Partial<TRPCError>>({
-      code: "BAD_REQUEST",
-    });
-    expect(execute).not.toHaveBeenCalled();
-  });
-
   it("returns finger-loading history from the training-log repository", async () => {
     const { caller, execute } = makeCaller([
       {
@@ -422,243 +476,5 @@ describe("climbingRouter", () => {
       }),
     ]);
     expect(execute).toHaveBeenCalledOnce();
-  });
-
-  it("reports repository failures and returns an actionable finger-loading save error", async () => {
-    const repositoryError = new Error("database unavailable");
-    const { caller } = makeMutationCaller(repositoryError);
-
-    await expect(
-      caller.logFingerLoading({
-        bodyweightKg: 70,
-        edgeSizeMm: 20,
-        exercise: "max_hang",
-        externalLoadKg: 10,
-        gripPosition: "half_crimp",
-        holdDurationSeconds: 10,
-        laterality: "both",
-        notes: null,
-        restIntervalSeconds: 180,
-        rpe: 8,
-        setCount: 5,
-        startedAt: "2026-07-29T12:00:00.000Z",
-      }),
-    ).rejects.toMatchObject<Partial<TRPCError>>({
-      code: "INTERNAL_SERVER_ERROR",
-      message: "Could not save the finger-loading session. Try again.",
-    });
-    expect(captureException).toHaveBeenCalledWith(repositoryError, {
-      tags: { procedure: "climbing.logFingerLoading" },
-    });
-  });
-
-  it("reports repository failures and returns an actionable climbing-session save error", async () => {
-    const repositoryError = new Error("database unavailable");
-    const { caller } = makeMutationCaller(repositoryError);
-
-    await expect(
-      caller.logClimbingSession({
-        climbs: [
-          {
-            attempts: [{ failureReason: null, notes: null, outcome: "sent" }],
-            climbType: "boulder",
-            grade: "V5",
-            gradeSystem: "v_scale",
-            holdType: "crimp",
-            routeName: null,
-            wallAngleDegrees: 30,
-          },
-        ],
-        endedAt: null,
-        locationName: null,
-        startedAt: "2026-07-29T12:00:00.000Z",
-      }),
-    ).rejects.toMatchObject<Partial<TRPCError>>({
-      code: "INTERNAL_SERVER_ERROR",
-      message: "Could not save the climbing session. Try again.",
-    });
-    expect(captureException).toHaveBeenCalledWith(repositoryError, {
-      tags: { procedure: "climbing.logClimbingSession" },
-    });
-  });
-
-  it("preserves semantic tRPC errors from climbing log repositories", async () => {
-    const semanticError = new TRPCError({
-      code: "PRECONDITION_FAILED",
-      message: "Complete setup before logging",
-    });
-    ensurePushProvider.mockRejectedValueOnce(semanticError);
-    const { caller } = makeMutationCaller();
-
-    await expect(
-      caller.logFingerLoading({
-        bodyweightKg: 70,
-        edgeSizeMm: 20,
-        exercise: "max_hang",
-        externalLoadKg: 10,
-        gripPosition: "half_crimp",
-        holdDurationSeconds: 10,
-        laterality: "both",
-        notes: null,
-        restIntervalSeconds: 180,
-        rpe: 8,
-        setCount: 5,
-        startedAt: "2026-07-29T12:00:00.000Z",
-      }),
-    ).rejects.toMatchObject<Partial<TRPCError>>({
-      code: "PRECONDITION_FAILED",
-      message: "Complete setup before logging",
-    });
-    expect(captureException).not.toHaveBeenCalled();
-  });
-
-  it("returns and invalidates after saving a finger-loading session", async () => {
-    const { caller } = makeSuccessfulMutationCaller([
-      [{ id: "activity-1" }],
-      [],
-      [
-        {
-          activity_id: "activity-1",
-          bodyweight_kg: 70,
-          edge_size_mm: 20,
-          exercise: "max_hang",
-          external_load_kg: 10,
-          grip_position: "half_crimp",
-          hold_duration_seconds: 10,
-          laterality: "both",
-          notes: null,
-          rest_interval_seconds: 180,
-          rpe: 8,
-          set_count: 5,
-          started_at: "2026-07-29T12:00:00.000Z",
-        },
-      ],
-    ]);
-
-    await expect(
-      caller.logFingerLoading({
-        bodyweightKg: 70,
-        edgeSizeMm: 20,
-        exercise: "max_hang",
-        externalLoadKg: 10,
-        gripPosition: "half_crimp",
-        holdDurationSeconds: 10,
-        laterality: "both",
-        notes: null,
-        restIntervalSeconds: 180,
-        rpe: 8,
-        setCount: 5,
-        startedAt: "2026-07-29T12:00:00.000Z",
-      }),
-    ).resolves.toMatchObject({
-      activityId: "activity-1",
-      effectiveLoadKg: 80,
-    });
-    expect(invalidateAllUserQueries).toHaveBeenCalledWith("user-1");
-  });
-
-  it("returns and invalidates after saving a climbing session", async () => {
-    const { caller } = makeSuccessfulMutationCaller([
-      [{ id: "activity-1" }],
-      [{ id: "climb-1" }],
-      [],
-    ]);
-
-    await expect(caller.logClimbingSession(makeClimbingSessionInput())).resolves.toEqual({
-      activityId: "activity-1",
-      climbs: [{ attemptCount: 1, id: "climb-1", sent: true }],
-    });
-    expect(invalidateAllUserQueries).toHaveBeenCalledWith("user-1");
-  });
-
-  it("enforces climbing attempt outcome and failure-reason pairs", async () => {
-    const validSent = makeMutationCaller();
-    await expect(
-      validSent.caller.logClimbingSession(
-        makeClimbingSessionInput({ failureReason: null, outcome: "sent" }),
-      ),
-    ).rejects.toMatchObject<Partial<TRPCError>>({ code: "INTERNAL_SERVER_ERROR" });
-
-    const invalidSent = makeMutationCaller();
-    await expect(
-      invalidSent.caller.logClimbingSession(
-        makeClimbingSessionInput({ failureReason: "fell", outcome: "sent" }),
-      ),
-    ).rejects.toMatchObject<Partial<TRPCError>>({
-      code: "BAD_REQUEST",
-      message: expect.stringMatching(
-        /A sent attempt cannot have a failure reason[\s\S]*failureReason/,
-      ),
-    });
-    expect(invalidSent.execute).not.toHaveBeenCalled();
-
-    const validFailure = makeMutationCaller();
-    await expect(
-      validFailure.caller.logClimbingSession(
-        makeClimbingSessionInput({ failureReason: "fell", outcome: "failed" }),
-      ),
-    ).rejects.toMatchObject<Partial<TRPCError>>({ code: "INTERNAL_SERVER_ERROR" });
-
-    const invalidFailure = makeMutationCaller();
-    await expect(
-      invalidFailure.caller.logClimbingSession(
-        makeClimbingSessionInput({ failureReason: null, outcome: "failed" }),
-      ),
-    ).rejects.toMatchObject<Partial<TRPCError>>({
-      code: "BAD_REQUEST",
-      message: expect.stringMatching(
-        /A failed attempt requires a failure reason[\s\S]*failureReason/,
-      ),
-    });
-    expect(invalidFailure.execute).not.toHaveBeenCalled();
-  });
-
-  it("accepts matching climbing grade systems and rejects both mismatches", async () => {
-    const validBoulder = makeMutationCaller();
-    await expect(
-      validBoulder.caller.logClimbingSession(
-        makeClimbingSessionInput({ climbType: "boulder", gradeSystem: "v_scale" }),
-      ),
-    ).rejects.toMatchObject<Partial<TRPCError>>({ code: "INTERNAL_SERVER_ERROR" });
-
-    const validRoute = makeMutationCaller();
-    await expect(
-      validRoute.caller.logClimbingSession(
-        makeClimbingSessionInput({ climbType: "route", gradeSystem: "yds" }),
-      ),
-    ).rejects.toMatchObject<Partial<TRPCError>>({ code: "INTERNAL_SERVER_ERROR" });
-
-    for (const [climbType, gradeSystem] of [
-      ["boulder", "yds"],
-      ["route", "v_scale"],
-    ] as const) {
-      const invalid = makeMutationCaller();
-      await expect(
-        invalid.caller.logClimbingSession(makeClimbingSessionInput({ climbType, gradeSystem })),
-      ).rejects.toMatchObject<Partial<TRPCError>>({
-        code: "BAD_REQUEST",
-        message: expect.stringContaining("Grade system must match the climb type"),
-      });
-      expect(invalid.execute).not.toHaveBeenCalled();
-    }
-  });
-
-  it("accepts null, equal, and later session ends but rejects an earlier end", async () => {
-    for (const endedAt of [null, "2026-07-29T12:00:00.000Z", "2026-07-29T13:00:00.000Z"]) {
-      const valid = makeMutationCaller();
-      await expect(
-        valid.caller.logClimbingSession(makeClimbingSessionInput({ endedAt })),
-      ).rejects.toMatchObject<Partial<TRPCError>>({ code: "INTERNAL_SERVER_ERROR" });
-    }
-
-    const invalid = makeMutationCaller();
-    await expect(
-      invalid.caller.logClimbingSession(
-        makeClimbingSessionInput({ endedAt: "2026-07-29T11:59:59.999Z" }),
-      ),
-    ).rejects.toMatchObject<Partial<TRPCError>>({
-      code: "BAD_REQUEST",
-      message: expect.stringContaining("Session end time cannot be before its start time"),
-    });
   });
 });

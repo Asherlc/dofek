@@ -10,6 +10,7 @@
 ) }}
 
 {% set initial_lookback_days = var('initial_lookback_days', 120) %}
+{% set activity_refresh_scoped = activity_refresh_scope_enabled() %}
 
 WITH current_activity AS (
     SELECT
@@ -35,6 +36,16 @@ activity_members AS (
     WHERE is_deleted = 0
 ),
 
+{% if activity_refresh_scoped %}
+activity_group_state AS (
+    SELECT
+        activity_id,
+        user_id,
+        member_activity_ids
+    FROM {{ ref('deduped_activities') }} FINAL
+),
+{% endif %}
+
 target_state AS (
     SELECT
         coalesce(
@@ -57,7 +68,7 @@ initial_activity_dirty_keys AS (
 
 changed_raw_activity AS (
     SELECT
-        activity.id AS activity_id,
+        activity.group_id AS activity_id,
         activity.user_id,
         activity.started_at,
         coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR) AS ended_at
@@ -74,11 +85,7 @@ activity_source_dirty_keys AS (
     FROM changed_raw_activity
     INNER JOIN current_activity
         ON current_activity.user_id = changed_raw_activity.user_id
-        AND current_activity.started_at <= changed_raw_activity.ended_at
-        AND coalesce(
-            current_activity.ended_at,
-            current_activity.started_at + INTERVAL 12 HOUR
-        ) >= changed_raw_activity.started_at
+        AND current_activity.activity_id = changed_raw_activity.activity_id
 ),
 
 sensor_summary_dirty_keys AS (
@@ -125,6 +132,29 @@ existing_activity_keys AS (
         WHERE 1 = 0
     {% endif %}
 ),
+
+{% if activity_refresh_scoped %}
+repair_scope_dirty_keys AS (
+    SELECT
+        activity_id,
+        user_id
+    FROM activity_group_state
+    WHERE user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        AND (
+            activity_id IN {{ activity_refresh_ids() }}
+            OR hasAny(member_activity_ids, {{ activity_refresh_ids() }})
+        )
+
+    UNION DISTINCT
+
+    SELECT
+        activity_id,
+        user_id
+    FROM existing_activity_keys
+    WHERE user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        AND activity_id IN {{ activity_refresh_ids() }}
+),
+{% endif %}
 
 stale_activity_dirty_keys AS (
     SELECT
@@ -189,6 +219,12 @@ dirty_keys AS (
         activity_id,
         user_id
     FROM (
+        {% if activity_refresh_scoped %}
+        SELECT
+            activity_id,
+            user_id
+        FROM repair_scope_dirty_keys
+        {% else %}
         SELECT
             activity_id,
             user_id
@@ -198,6 +234,7 @@ dirty_keys AS (
             activity_id,
             user_id
         FROM stale_activity_dirty_keys
+        {% endif %}
     )
 ),
 

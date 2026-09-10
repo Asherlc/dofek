@@ -14,7 +14,9 @@ const posthogMocks = vi.hoisted(() => ({
   PostHogSpanProcessor: vi.fn(),
 }));
 
-posthogMocks.PostHogSpanProcessor.mockImplementation(() => posthogMocks.delegate);
+posthogMocks.PostHogSpanProcessor.mockImplementation(function postHogSpanProcessorConstructor() {
+  return posthogMocks.delegate;
+});
 
 vi.mock("@posthog/ai/otel", () => ({
   PostHogSpanProcessor: posthogMocks.PostHogSpanProcessor,

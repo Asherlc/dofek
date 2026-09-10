@@ -218,7 +218,7 @@ function WeeklyVolumeChart({ data }: { data: WeeklyVolumeRow[] }) {
     <div>
       <div className="mb-2 flex items-center gap-2">
         <h3 className="text-xs font-medium text-subtle">Weekly Training Volume</h3>
-        <ChartDescriptionTooltip description="This chart shows how many training hours you completed each week, broken down by activity type." />
+        <ChartDescriptionTooltip description="Recorded training duration per week, split by activity type." />
       </div>
       <DofekChart option={option} height={220} />
     </div>

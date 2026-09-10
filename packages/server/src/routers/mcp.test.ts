@@ -62,11 +62,36 @@ describe("mcpRouter", () => {
       lastUsedAt: null,
       expiresAt: null,
       revokedAt: null,
+      oauthClientId: null,
     });
     const queryPayload = JSON.stringify(mockExecute.mock.calls[0]?.[0]);
     expect(queryPayload).toContain("user-id");
     expect(queryPayload).toContain("Codex");
     expect(queryPayload).toContain("health:read");
+  });
+
+  it("creates a token with explicitly requested nutrition write access", async () => {
+    mockExecute.mockResolvedValueOnce([
+      {
+        id: "token-id",
+        name: "Food writer",
+        scopes: ["nutrition:read", "nutrition:write"],
+        created_at: "2026-05-20T12:00:00.000Z",
+        last_used_at: null,
+        expires_at: null,
+        revoked_at: null,
+      },
+    ]);
+    const caller = createCaller(createContext("user-id"));
+
+    const result = await caller.createToken({
+      name: "Food writer",
+      scopes: ["nutrition:read", "nutrition:write"],
+      expiresAt: null,
+    });
+
+    expect(result.metadata.scopes).toEqual(["nutrition:read", "nutrition:write"]);
+    expect(JSON.stringify(mockExecute.mock.calls[0]?.[0])).toContain("nutrition:write");
   });
 
   it("creates expiring tokens with the requested expiration timestamp", async () => {
@@ -119,10 +144,54 @@ describe("mcpRouter", () => {
         lastUsedAt: "2026-05-20T12:30:00.000Z",
         expiresAt: null,
         revokedAt: null,
+        oauthClientId: null,
       },
     ]);
     expect(JSON.stringify(result)).not.toContain("dofek_mcp_");
     expect(JSON.stringify(result)).not.toContain(hashMcpToken("dofek_mcp_example"));
+  });
+
+  it("lists personal tokens separately from connected apps", async () => {
+    mockExecute.mockResolvedValueOnce([
+      {
+        id: "personal-token-id",
+        name: "Codex",
+        scopes: ["health:read"],
+        created_at: "2026-05-20T12:00:00.000Z",
+        last_used_at: null,
+        expires_at: null,
+        revoked_at: null,
+        oauth_client_id: null,
+      },
+    ]);
+    const caller = createCaller(createContext("user-id"));
+
+    const result = await caller.listPersonalTokens();
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.oauthClientId).toBeNull();
+    expect(JSON.stringify(mockExecute.mock.calls[0]?.[0])).toContain("oauth_client_id IS NULL");
+  });
+
+  it("returns connected apps with a next cursor", async () => {
+    mockExecute.mockResolvedValueOnce(
+      Array.from({ length: 21 }, (_, index) => ({
+        id: `oauth-token-${index}`,
+        name: "Claude OAuth",
+        scopes: ["health:read"],
+        created_at: "2026-05-20T12:00:00.000Z",
+        last_used_at: null,
+        expires_at: null,
+        revoked_at: null,
+        oauth_client_id: "claude-client",
+      })),
+    );
+    const caller = createCaller(createContext("user-id"));
+
+    const result = await caller.listConnectedApps({});
+
+    expect(result.items).toHaveLength(20);
+    expect(result.nextCursor).toBe("oauth-token-19");
   });
 
   it("revokes a user-owned token", async () => {
@@ -149,6 +218,42 @@ describe("mcpRouter", () => {
 
     await expect(
       caller.revokeToken({ tokenId: "00000000-0000-0000-0000-000000000001" }),
+    ).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "MCP token not found.",
+    });
+  });
+
+  it("updates scopes for a user-owned token", async () => {
+    mockExecute.mockResolvedValueOnce([
+      {
+        id: "token-id",
+        name: "Codex",
+        scopes: ["health:read", "activity:read"],
+        created_at: "2026-05-20T12:00:00.000Z",
+        last_used_at: null,
+        expires_at: null,
+        revoked_at: null,
+      },
+    ]);
+    const caller = createCaller(createContext("user-id"));
+
+    const result = await caller.updateScopes({
+      tokenId: "00000000-0000-0000-0000-000000000001",
+      scopes: ["health:read", "activity:read"],
+    });
+
+    expect(result.scopes).toEqual(["health:read", "activity:read"]);
+  });
+
+  it("rejects updating a token that does not belong to the user", async () => {
+    const caller = createCaller(createContext("user-id"));
+
+    await expect(
+      caller.updateScopes({
+        tokenId: "00000000-0000-0000-0000-000000000001",
+        scopes: ["health:read"],
+      }),
     ).rejects.toMatchObject({
       code: "NOT_FOUND",
       message: "MCP token not found.",

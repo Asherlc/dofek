@@ -10,7 +10,7 @@ interface MockQuery {
   isFetching: boolean;
   isLoading: boolean;
   isSuccess: boolean;
-  refetch: ReturnType<typeof vi.fn>;
+  refetch: CallableVitestMock;
 }
 
 const mocks = vi.hoisted(() => ({
@@ -38,10 +38,7 @@ const adaptiveEvidence = {
   },
 } as const;
 
-function queryResult(
-  refetch: ReturnType<typeof vi.fn>,
-  overrides: Partial<MockQuery> = {},
-): MockQuery {
+function queryResult(refetch: CallableVitestMock, overrides: Partial<MockQuery> = {}): MockQuery {
   return {
     data: undefined,
     error: null,

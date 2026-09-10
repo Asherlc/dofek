@@ -13,8 +13,7 @@ const meta = {
     },
   },
   args: {
-    description:
-      "This chart compares your current values with the rolling average for the selected period.",
+    description: "Daily values with the rolling average for the selected period.",
   },
   decorators: [
     (Story) => (

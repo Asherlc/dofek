@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   checkPerUserAuthCompliance,
   isImportOnlyProvider,
-  LEGACY_SERVER_SIDE_USER_AUTH_PROVIDER_IDS,
   requiresPerUserConnect,
 } from "./provider-auth-policy.ts";
 import type { Provider, ProviderAuthSetup } from "./types.ts";
@@ -157,11 +156,5 @@ describe("checkPerUserAuthCompliance", () => {
       }),
     });
     expect(checkPerUserAuthCompliance(provider)).toEqual({ ok: true });
-  });
-});
-
-describe("LEGACY_SERVER_SIDE_USER_AUTH_PROVIDER_IDS", () => {
-  it("has no grandfathered deployment-wide user credentials", () => {
-    expect([...LEGACY_SERVER_SIDE_USER_AUTH_PROVIDER_IDS]).toEqual([]);
   });
 });

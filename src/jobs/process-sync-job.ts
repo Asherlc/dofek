@@ -4,15 +4,18 @@ import {
   ProviderServiceUnavailableError,
 } from "@dofek/provider-http/rate-limit";
 import { withAccountErasureUserWriteFence } from "../db/account-erasure.ts";
+import { loadUserHomeTimezone } from "../db/home-timezone.ts";
 import type { Database, SyncDatabase } from "../db/index.ts";
+import { runWithProviderUserIngestContext } from "../db/provider-ingest-context.ts";
 import { logSync } from "../db/sync-log.ts";
-import { runWithTokenUser } from "../db/token-user-context.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import { invalidateAllUserQueries } from "../lib/cache.ts";
 import { providerRequiresStoredTokens } from "../lib/custom-auth-providers.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import { isRetryableInfraError } from "../lib/retryable-infra-error.ts";
 import { logger } from "../logger.ts";
+import { createKafkaMetricStreamEventPublisherForRoute } from "../metric-stream/redpanda-producer.ts";
+import { metricStreamRouteForSyncJob } from "../metric-stream/routes.ts";
 import { currentMetricStreamWriteDatabase } from "../metric-stream/write-fence-context.ts";
 import {
   type ProcessingDatasetKey,
@@ -20,7 +23,7 @@ import {
   processingDatasetKeysForProvider,
 } from "../processing/dataset-contracts.ts";
 import {
-  createLazyDefaultMetricStreamEventPublisher,
+  createLazyMetricStreamEventPublisher,
   MetricStreamProcessingPublisher,
 } from "../processing/metric-stream-processing-publisher.ts";
 import {
@@ -185,6 +188,22 @@ function firstAuthFailureReason(errors: SyncError[]): ProviderAuthFailureReason 
     .find((authFailureReason) => authFailureReason !== undefined);
 }
 
+function providerSyncFailureEvent(
+  providerName: string,
+  authFailureReason: ProviderAuthFailureReason | undefined,
+): { errorCode: "provider_auth_failed" | "provider_sync_failed"; errorMessage: string } {
+  if (authFailureReason) {
+    return {
+      errorCode: "provider_auth_failed",
+      errorMessage: `${providerName} authorization needs attention. Reconnect ${providerName}, then try again.`,
+    };
+  }
+  return {
+    errorCode: "provider_sync_failed",
+    errorMessage: `${providerName} could not be synced. Try the sync again later.`,
+  };
+}
+
 function isProviderServiceUnavailableError(error: unknown): boolean {
   const visitedErrors = new Set<Error>();
   let currentError = error;
@@ -219,6 +238,14 @@ function isProviderRequestTimeoutError(error: unknown): boolean {
 
 function isProviderTransportError(error: unknown): boolean {
   return isProviderServiceUnavailableError(error) || isProviderRequestTimeoutError(error);
+}
+
+function isZeppHttp500ServiceUnavailable(error: unknown): error is ProviderServiceUnavailableError {
+  return (
+    error instanceof ProviderServiceUnavailableError &&
+    error.providerId === "amazfit-zepp" &&
+    error.statusCode === 500
+  );
 }
 
 function shouldReportProviderError(error: unknown): boolean {
@@ -368,19 +395,27 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
     );
     const metricStreamPublisher =
       emittedMetricStreamDatasetKeys.length > 0
-        ? new MetricStreamProcessingPublisher(createLazyDefaultMetricStreamEventPublisher(), {
-            operationId: processingOperation.id,
-            datasetKeys: emittedMetricStreamDatasetKeys,
-            recordPublishedBatch: (batch) => {
-              const transaction = currentMetricStreamWriteDatabase();
-              return transaction
-                ? recordMetricStreamBatchPublishedInTransaction(transaction, batch)
-                : recordMetricStreamBatchPublished(requireTransactionalSyncDatabase(db), batch);
+        ? new MetricStreamProcessingPublisher(
+            createLazyMetricStreamEventPublisher(() =>
+              createKafkaMetricStreamEventPublisherForRoute(
+                metricStreamRouteForSyncJob(job.data.targetRefreshWindow),
+              ),
+            ),
+            {
+              operationId: processingOperation.id,
+              datasetKeys: emittedMetricStreamDatasetKeys,
+              recordPublishedBatch: (batch) => {
+                const transaction = currentMetricStreamWriteDatabase();
+                return transaction
+                  ? recordMetricStreamBatchPublishedInTransaction(transaction, batch)
+                  : recordMetricStreamBatchPublished(requireTransactionalSyncDatabase(db), batch);
+              },
             },
-          })
+          )
         : undefined;
 
     const syncStart = Date.now();
+    let recordingCanonicalCommit = false;
 
     try {
       if (
@@ -389,7 +424,8 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         return;
       }
       logger.info(`[worker] Starting ${provider.name}...`);
-      const result = await runWithTokenUser(job.data.userId, () =>
+      const homeTimezone = await loadUserHomeTimezone(db, job.data.userId);
+      const result = await runWithProviderUserIngestContext(job.data.userId, { homeTimezone }, () =>
         provider.sync(
           new SyncRun({
             db,
@@ -456,6 +492,8 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
           ? retryableInfraError.cause
           : new Error(retryableInfraError.message);
       }
+      const authFailureReason = firstAuthFailureReason(result.errors);
+      const failureEvent = providerSyncFailureEvent(provider.name, authFailureReason);
       completedCount++;
       const hasErrors = result.errors.length > 0;
       const emittedRelationalDatasetKeys = processingDatasetKeysForOutputPath(
@@ -463,11 +501,13 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         "relational",
       );
       if (result.recordsSynced > 0 && emittedRelationalDatasetKeys.length > 0) {
+        recordingCanonicalCommit = true;
         await recordRelationalCanonicalCommits(requireTransactionalSyncDatabase(db), {
           operationId: processingOperation.id,
           datasetKeys: emittedRelationalDatasetKeys,
           idempotencyKey: `worker-relational-commit:${job.id ?? "unidentified-job"}`,
         });
+        recordingCanonicalCommit = false;
       }
       const outputManifest = await getProcessingOutputManifest(db, processingOperation.id);
       const noOutputDatasetKeys = processingOperation.datasetKeys.filter(
@@ -506,10 +546,8 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         stage: "ingest",
         status: hasErrors ? "failed" : "succeeded",
         progressPercentage: 100,
-        errorCode: hasErrors ? "provider_sync_failed" : undefined,
-        errorMessage: hasErrors
-          ? "Some data could not be synced. Reconnect the data source and try again."
-          : undefined,
+        errorCode: hasErrors ? failureEvent.errorCode : undefined,
+        errorMessage: hasErrors ? failureEvent.errorMessage : undefined,
         idempotencyKey: hasErrors ? "worker-failed" : "worker-succeeded",
       });
 
@@ -520,9 +558,10 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         status: hasErrors ? "error" : "success",
         recordCount: result.recordsSynced,
         errorMessage: hasErrors ? result.errors.map((e) => e.message).join("; ") : undefined,
-        authFailureReason: firstAuthFailureReason(result.errors),
+        authFailureReason,
         durationMs,
         userId: job.data.userId,
+        origin: job.data.origin ?? "unknown",
       });
 
       const status = hasErrors ? "error" : "success";
@@ -537,6 +576,10 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         syncErrorsTotal.add(result.errors.length, { provider: provider.id, data_type: "sync" });
       }
     } catch (err: unknown) {
+      if (recordingCanonicalCommit) {
+        captureException(err, { tags: { provider: provider.id, phase: "canonical-commit" } });
+        throw err;
+      }
       if (err instanceof ProviderRateLimitError) {
         const retryAt = await scheduleRateLimitRetry(db, job, err, since, until);
         const message = `Rate limited; retry scheduled for ${retryAt}`;
@@ -556,12 +599,26 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
           errorMessage: err.message,
           durationMs,
           userId: job.data.userId,
+          origin: job.data.origin ?? "unknown",
         });
 
         syncOperationsTotal.add(1, { provider: provider.id, data_type: "sync", status: "error" });
         syncDuration.record(durationMs, { provider: provider.id, data_type: "sync" });
         syncErrorsTotal.add(1, { provider: provider.id, data_type: "sync" });
         continue;
+      }
+
+      if (isZeppHttp500ServiceUnavailable(err)) {
+        providerStatus[provider.id] = {
+          status: "running",
+          message: "Service unavailable; retrying",
+        };
+        await job.updateProgress({
+          providers: providerStatus,
+          percentage: computePercentage(completedCount, 0, totalProviders),
+        });
+        logger.warn(`[worker] ${provider.name} service unavailable, retrying: ${err.message}`);
+        throw err;
       }
 
       if (isRetryableInfraError(err) && !isProviderTransportError(err)) {
@@ -584,6 +641,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
       completedCount++;
       const message = err instanceof Error ? err.message : String(err);
       const authFailureReason = authFailureReasonFromError(err);
+      const failureEvent = providerSyncFailureEvent(provider.name, authFailureReason);
       if (shouldReportProviderError(err)) {
         captureException(err, { tags: { provider: provider.id } });
       }
@@ -592,8 +650,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         operationId: processingOperation.id,
         stage: "ingest",
         status: "failed",
-        errorCode: "provider_sync_failed",
-        errorMessage: "The data source could not be synced. Reconnect it and try again.",
+        ...failureEvent,
         idempotencyKey: "worker-failed",
       });
       await job.updateProgress({
@@ -610,6 +667,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         authFailureReason,
         durationMs,
         userId: job.data.userId,
+        origin: job.data.origin ?? "unknown",
       });
 
       syncOperationsTotal.add(1, { provider: provider.id, data_type: "sync", status: "error" });

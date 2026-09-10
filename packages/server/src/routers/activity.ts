@@ -7,7 +7,7 @@ import {
   enqueueActivityRecomputeAnalyticsRefresh,
   enqueueActivityRestoreAnalyticsRefresh,
 } from "dofek/jobs/queues";
-import { invalidateUserQueryDomains, queryCache } from "dofek/lib/cache";
+import { queryCache } from "dofek/lib/cache";
 import { getProvider } from "dofek/providers/registry";
 import { z } from "zod";
 import {
@@ -74,6 +74,7 @@ async function scheduleActivityRecomputeAnalyticsRefresh(
 }
 
 export interface StrengthExerciseDetail {
+  activityId: string;
   exerciseIndex: number;
   exerciseName: string;
   equipment: string | null;
@@ -173,18 +174,6 @@ export const activityRouter = router({
       return detail;
     }),
 
-  setPerceivedExertion: protectedProcedure
-    .input(z.object({ id: z.guid(), value: z.number().min(0).max(10).nullable() }))
-    .mutation(async ({ ctx, input }) => {
-      const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
-      const result = await repo.setPerceivedExertion(input.id, input.value);
-      if (!result.found) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
-      }
-      await invalidateUserQueryDomains(ctx.userId, ["activity"]);
-      return { perceivedExertion: result.perceivedExertion };
-    }),
-
   stream: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(
       z.object({
@@ -259,7 +248,7 @@ export const activityRouter = router({
       const { currentEftp } = await powerRepo.getEftpTrend(ChartRange.fromDays(90));
       if (currentEftp == null) return null;
 
-      const zones = await activityRepo.getPowerZones(input.id, currentEftp);
+      const zones = await activityRepo.getPowerZones(activity.id, currentEftp);
       return { zones, ftp: currentEftp };
     }),
 
@@ -278,7 +267,7 @@ export const activityRouter = router({
         throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
       }
       const repo = new StrengthRepository(ctx.db, ctx.userId, ctx.timezone);
-      const exercises = await repo.getExercisesForActivity(input.id);
+      const exercises = await repo.getExercisesForActivity(activity.id);
       return exercises.map((exercise) => exercise.toDetail());
     }),
 

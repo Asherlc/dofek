@@ -5,7 +5,7 @@ import {
 } from "./analytics-microbatch-bounds.ts";
 
 function clickHouseWithRows(
-  rows: readonly { scalar_begin: string | null; location_begin: string | null }[],
+  rows: readonly { scalar_begin: string | null }[],
 ): AnalyticsMicrobatchQueryClient {
   return {
     query: vi.fn(async () => ({
@@ -15,11 +15,10 @@ function clickHouseWithRows(
 }
 
 describe("resolveAnalyticsMicrobatchBounds", () => {
-  it("uses the earliest relevant scalar and location source dates", async () => {
+  it("uses the earliest relevant scalar source date", async () => {
     const clickHouse = clickHouseWithRows([
       {
         scalar_begin: "2025-02-03",
-        location_begin: "2025-04-05",
       },
     ]);
 
@@ -29,7 +28,6 @@ describe("resolveAnalyticsMicrobatchBounds", () => {
       sensor_scalar_sample_begin: "2025-02-03",
       deduped_sensor_begin: "2025-02-03",
       activity_sensor_sample_begin: "2025-02-03",
-      activity_location_sample_begin: "2025-04-05",
     });
 
     expect(clickHouse.query).toHaveBeenCalledOnce();
@@ -43,7 +41,6 @@ describe("resolveAnalyticsMicrobatchBounds", () => {
     const clickHouse = clickHouseWithRows([
       {
         scalar_begin: null,
-        location_begin: null,
       },
     ]);
 
@@ -53,15 +50,13 @@ describe("resolveAnalyticsMicrobatchBounds", () => {
       sensor_scalar_sample_begin: "2026-07-24",
       deduped_sensor_begin: "2026-07-24",
       activity_sensor_sample_begin: "2026-07-24",
-      activity_location_sample_begin: "2026-07-24",
     });
   });
 
-  it("falls back only for the source group that is empty", async () => {
+  it("uses a scalar source date when available", async () => {
     const clickHouse = clickHouseWithRows([
       {
         scalar_begin: "2025-06-07",
-        location_begin: null,
       },
     ]);
 
@@ -71,7 +66,6 @@ describe("resolveAnalyticsMicrobatchBounds", () => {
       sensor_scalar_sample_begin: "2025-06-07",
       deduped_sensor_begin: "2025-06-07",
       activity_sensor_sample_begin: "2025-06-07",
-      activity_location_sample_begin: "2026-07-24",
     });
   });
 });

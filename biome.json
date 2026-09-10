@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.4.6/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.5.10/schema.json",
   "plugins": [
     "./plugins/no-double-cast.grit",
     "./plugins/no-as-type-assertion.grit",
@@ -39,7 +39,7 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true,
+      "preset": "recommended",
       "suspicious": {
         "noExplicitAny": "error",
         "noTsIgnore": "error",
@@ -49,9 +49,7 @@
         "noBarrelFile": "error"
       },
       "style": {
-        "noNonNullAssertion": "error"
-      },
-      "nursery": {
+        "noNonNullAssertion": "error",
         "noExcessiveLinesPerFile": {
           "level": "error",
           "options": {
@@ -98,7 +96,7 @@
       "includes": ["**/*.test.ts", "**/*.test.tsx", "**/*.integration.test.ts"],
       "linter": {
         "rules": {
-          "nursery": {
+          "style": {
             "noExcessiveLinesPerFile": "off"
           }
         }
@@ -108,7 +106,7 @@
       "includes": ["src/db/schema.ts"],
       "linter": {
         "rules": {
-          "nursery": {
+          "style": {
             "noExcessiveLinesPerFile": "off"
           }
         }

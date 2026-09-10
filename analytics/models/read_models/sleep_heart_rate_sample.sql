@@ -14,7 +14,7 @@
 {% set sleep_dirty_key_batch_size = var('sleep_dirty_key_batch_size', 32) %}
 
 WITH
-current_windows AS materialized (
+current_windows AS MATERIALIZED (
     SELECT
         sleep_id,
         user_id,
@@ -27,7 +27,7 @@ current_windows AS materialized (
     FROM {{ ref('sleep_heart_rate_window') }} FINAL
 ),
 
-activity_source AS materialized (
+activity_source AS MATERIALIZED (
     SELECT
         id,
         user_id,
@@ -39,7 +39,7 @@ activity_source AS materialized (
     FROM {{ source('postgres_fitness', 'activity') }} FINAL
 ),
 
-existing_sleep_state AS materialized (
+existing_sleep_state AS MATERIALIZED (
     {% if is_incremental() %}
         SELECT
             user_id,
@@ -100,7 +100,7 @@ stale_sleep_dirty_keys AS (
         AND current_windows.refreshed_at > existing_sleep_state.refreshed_at
 ),
 
-dirty_keys AS materialized (
+dirty_keys AS MATERIALIZED (
     SELECT
         user_id,
         sleep_id
@@ -124,7 +124,7 @@ dirty_keys AS materialized (
     LIMIT {{ sleep_dirty_key_batch_size }}
 ),
 
-active_dirty_sleep AS materialized (
+active_dirty_sleep AS MATERIALIZED (
     SELECT
         current_windows.sleep_id AS sleep_id,
         current_windows.user_id AS user_id,

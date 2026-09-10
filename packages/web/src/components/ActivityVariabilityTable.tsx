@@ -26,9 +26,9 @@ function getEmptyMessage(emptyReason: ActivityVariabilityEmptyReason | null | un
     return "No recent cycling activities long enough to estimate threshold power.";
   }
   if (emptyReason === "no_normalized_power") {
-    return "No cycling activities with enough power samples for variability yet.";
+    return "No cycling activities with enough power samples for variability to display.";
   }
-  return "No cycling activities available.";
+  return "No cycling activities to display.";
 }
 
 export function ActivityVariabilityTable({

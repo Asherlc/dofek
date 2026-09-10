@@ -313,8 +313,6 @@ To get R22 optical data:
 ## Tools
 
 - `packages/ble-probe/` — macOS CLI for interactive BLE probing (Swift, CoreBluetooth)
-- `packages/mobile/modules/ble-probe/` — iOS Expo native module for in-app BLE debugging
-- `packages/mobile/app/ble-probe.tsx` — React Native debug screen with REPL-like UI
 - `scripts/parse-whoop-ble-capture.ts` — PacketLogger `.pklg` capture parser
 
 ## References

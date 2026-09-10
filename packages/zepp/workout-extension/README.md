@@ -2,8 +2,8 @@
 
 Dofek Workout is an independently packaged Zepp OS Workout Extension. It runs
 as a data widget inside the watch's system Workout app, captures live workout
-metrics and heart rate, and sends durable batches to Dofek through the
-phone-side Side Service.
+metrics, heart rate, and focused motion segments, and sends them to Dofek
+through the phone-side Side Service.
 
 Workout Extensions require API_LEVEL 3.6 or newer and an independent app ID,
 store submission, and review. On a physical watch, users add the extension
@@ -19,6 +19,21 @@ While the widget has focus, `data-widget/index.ts` samples every ten seconds:
   count, and downhill distance;
 - current heart rate when available.
 
+It also starts a foreground motion segment immediately on focus. The shared IMU
+controller captures accelerometer samples and automatically adds gyroscope
+samples when the watch exposes that sensor. The extension has no gyroscope
+toggle. It uses the normal app's binary format, chunked file writer, BLE file
+receiver, durable phone upload outbox, and display lease, with its own two
+alternating file slots so a completed segment can transfer while collection
+resumes. Pending slot metadata is persisted before transfer and restored before
+either slot can be reset after a widget restart. Connected sessions also send
+bounded, versioned sample chunks through the same server ingestion path used by
+the normal app; the transferred binary remains registered on the phone as a
+redundant local backup. The display lease uses Zepp's
+documented screen-off controls and is always released when the segment stops
+([`pauseDropWristScreenOff`](https://docs.zepp.com/docs/v2/reference/device-app-api/newAPI/display/pauseDropWristScreenOff/),
+[`resetDropWristScreenOff`](https://docs.zepp.com/docs/v2/reference/device-app-api/newAPI/display/resetDropWristScreenOff/)).
+
 The metric API starts at API_LEVEL 3.6, requires
 `data:user.hd.workout`, and returns JSON strings that the app validates and
 normalizes. See Zepp's
@@ -33,27 +48,39 @@ succeeds, so phone or network failures remain available for retry. Zepp pauses
 registered callbacks and timers when an extension loses focus; the
 `onResume`/`onPause` handlers therefore start and stop collection as described
 in the [official lifecycle](https://docs.zepp.com/docs/guides/workout-extension/quick-start/#life-cycle).
+The same handlers start and finalize motion segments; the extension does not
+and cannot keep high-rate IMU capture active after its widget loses focus.
 
-The build reuses the parent package's `app-side/index.ts` for authentication and
-server requests. That Side Service runs in the Zepp phone app and can
+The build reuses the parent package's `app-side/index.ts` for authentication,
+durable motion/health outboxes, and server requests. That Side Service runs in the Zepp phone app and can
 communicate with both the watch app and a server, as documented in Zepp's
 [Side Service introduction](https://docs.zepp.com/docs/guides/framework/side-service/intro/).
 The Zepp phone Settings App can create a QR/short-code pairing challenge or
 send a password-login request to the Side Service. It shows the server-verified
 connection state and error reason and provides **Check connection** and
-**Disconnect Dofek** actions. The Workout Extension uses its own
+**Disconnect** actions. Its shared Settings layout puts pairing first and links
+directly to the Dofek pairing page on the same phone; Zepp documents this with
+its [Link component](https://docs.zepp.com/docs/reference/app-settings-api/ui/link/).
+The Workout Extension uses its own
 `zepp-workout` connection, independently of the normal Zepp app's `zepp-main`
 connection. Update both packages to the current release before pairing; Dofek
 rejects older ambiguous connection requests so a legacy Workout Extension
 cannot revoke the normal app's credential.
 
+When opened while unpaired, the watch widget automatically creates or reuses a
+pairing challenge and displays a QR code and short code. Scan it with your phone
+to pair; the widget restores workout status when the phone reports a connected
+state. Returning to the widget refreshes its connection state. QR rendering uses
+Zepp’s native [QRCODE widget](https://docs.zepp.com/docs/reference/device-app-api/newAPI/ui/widget/QRCODE/).
+
 ## Pair and enable the extension
 
 1. In the Zepp iOS app, open the installed **Dofek Workout** package's Settings.
-2. Tap **Create QR / short code**, then scan the QR or enter the six-character
-   code in Dofek web/mobile **Settings → Connections**. You can instead enter
-   your Dofek email and password and tap **Log in and connect**.
-3. Confirm that the Zepp Settings page says **Connection: connected**. Use
+2. Tap **Create pairing code**, then tap **Open Dofek to finish pairing**. On a
+   different device, scan the QR or enter the six-character code in Dofek
+   **Settings → Connections**. You can instead enter your Dofek email and
+   password and tap **Log in**.
+3. Confirm that the Zepp Settings page says **Connected**. Use
    **Check connection** to verify the saved credential against Dofek.
 4. On the watch, open the system **Workout** app and choose a workout.
 5. Open that workout's settings, select **Motion Extensions**, and add
@@ -97,8 +124,11 @@ pnpm typecheck
 pnpm lint
 ```
 
-The package suite covers manifest generation, widget lifecycle and uploads,
-Settings App behavior, shared parsing and storage, and Side Service behavior.
+The package suite covers manifest generation, widget lifecycle, focused motion
+segments and transfers, live-metric uploads, Settings App behavior, shared
+parsing and storage, and Side Service behavior. Simulator motion is synthetic,
+so physical sensor availability, measured callback rate, BLE behavior while the
+phone is suspended, and battery draw still require a paired watch.
 
 ## Layout
 

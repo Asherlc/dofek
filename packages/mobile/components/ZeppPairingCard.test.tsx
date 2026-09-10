@@ -1,6 +1,40 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
-import { ZeppPairingCardBody } from "./ZeppPairingCard";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ZeppPairingCard, ZeppPairingCardBody } from "./ZeppPairingCard";
+
+const mocks = vi.hoisted(() => ({
+  claim: vi.fn(),
+  refetch: vi.fn().mockResolvedValue(undefined),
+  revoke: vi.fn(),
+}));
+
+vi.mock("../lib/trpc", () => ({
+  trpc: {
+    companionPairing: {
+      claim: {
+        useMutation: () => ({
+          error: null,
+          isError: false,
+          isPending: false,
+          mutate: mocks.claim,
+        }),
+      },
+    },
+    companionToken: {
+      list: {
+        useQuery: () => ({
+          data: [],
+          error: null,
+          isLoading: false,
+          refetch: mocks.refetch,
+        }),
+      },
+      revoke: {
+        useMutation: () => ({ error: null, mutate: mocks.revoke }),
+      },
+    },
+  },
+}));
 
 const defaultProps = {
   connections: [],
@@ -15,6 +49,22 @@ const defaultProps = {
   onClaimPairing: vi.fn(),
   onDisconnect: vi.fn(),
 };
+
+describe("ZeppPairingCard", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("updates the pairing code when the direct-link code changes", () => {
+    const { rerender } = render(<ZeppPairingCard initialCode="ABC234" />);
+
+    rerender(<ZeppPairingCard initialCode="XYZ789" />);
+
+    expect(screen.getByPlaceholderText("Short code").getAttribute("value")).toBe("XYZ789");
+    fireEvent.click(screen.getByRole("button", { name: "Connect Zepp App" }));
+    expect(mocks.claim).toHaveBeenCalledWith({ code: "XYZ789" });
+  });
+});
 
 describe("ZeppPairingCardBody", () => {
   it("renders loading, error, and empty connection states separately", () => {

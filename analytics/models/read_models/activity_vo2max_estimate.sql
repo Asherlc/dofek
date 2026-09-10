@@ -10,6 +10,7 @@
 ) }}
 
 {% set initial_lookback_days = var('initial_lookback_days', 120) %}
+{% set activity_refresh_scoped = activity_refresh_scope_enabled() %}
 
 WITH target_state AS (
     SELECT
@@ -26,17 +27,28 @@ WITH target_state AS (
         {% endif %}
 ),
 
+activity_group_state AS (
+    SELECT
+        deduped.activity_id AS group_activity_id,
+        deduped.user_id AS user_id,
+        deduped.canonical_type AS canonical_type,
+        deduped.started_at AS started_at,
+        deduped.ended_at AS ended_at,
+        deduped.member_activity_ids AS member_activity_ids,
+        deduped.is_deleted AS is_deleted,
+        deduped.refreshed_at AS refreshed_at
+    FROM {{ ref('deduped_activities') }} AS deduped FINAL
+),
+
 current_activity AS (
     SELECT
-        id AS activity_id,
-        user_id,
-        canonical_type,
-        started_at,
-        ended_at
-    FROM {{ source('postgres_fitness', 'activity') }} FINAL
-    WHERE _peerdb_is_deleted = 0
-        AND provider_absent_at IS null
-        AND deleted_at IS null
+        activity_group_state.group_activity_id AS activity_id,
+        activity_group_state.user_id AS user_id,
+        activity_group_state.canonical_type AS canonical_type,
+        activity_group_state.started_at AS started_at,
+        activity_group_state.ended_at AS ended_at
+    FROM activity_group_state
+    WHERE activity_group_state.is_deleted = 0
         AND canonical_type IN (
             'cycling',
             'running',
@@ -44,6 +56,20 @@ current_activity AS (
             'walking',
             'hiking'
         )
+),
+
+deduped_activity_dirty_keys AS (
+    SELECT
+        activity_group_state.group_activity_id AS activity_id,
+        activity_group_state.user_id AS user_id
+    FROM activity_group_state
+    WHERE
+        {% if is_incremental() %}
+            NOT (SELECT is_empty FROM target_state)
+            AND activity_group_state.refreshed_at > (SELECT last_refreshed_at FROM target_state)
+        {% else %}
+            1 = 0
+        {% endif %}
 ),
 
 recent_current_activity AS (
@@ -71,6 +97,29 @@ existing_estimate AS (
     {% endif %}
 ),
 
+{% if activity_refresh_scoped %}
+scoped_activity_dirty_keys AS (
+    SELECT
+        activity_group_state.group_activity_id AS activity_id,
+        activity_group_state.user_id AS user_id
+    FROM activity_group_state
+    WHERE activity_group_state.user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        AND (
+            activity_group_state.group_activity_id IN {{ activity_refresh_ids() }}
+            OR hasAny(activity_group_state.member_activity_ids, {{ activity_refresh_ids() }})
+        )
+
+    UNION DISTINCT
+
+    SELECT
+        existing_estimate.activity_id,
+        existing_estimate.user_id
+    FROM existing_estimate
+    WHERE existing_estimate.user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        AND existing_estimate.activity_id IN {{ activity_refresh_ids() }}
+),
+{% endif %}
+
 initial_activity_dirty_keys AS (
     SELECT
         activity_id,
@@ -80,7 +129,7 @@ initial_activity_dirty_keys AS (
 ),
 
 changed_raw_activity AS (
-    SELECT id
+    SELECT group_id AS activity_id
     FROM {{ source('postgres_fitness', 'activity') }} FINAL
     WHERE
         {% if is_incremental() %}
@@ -97,7 +146,7 @@ activity_source_dirty_keys AS (
         current_activity.user_id AS user_id
     FROM current_activity
     INNER JOIN changed_raw_activity
-        ON changed_raw_activity.id = current_activity.activity_id
+        ON changed_raw_activity.activity_id = current_activity.activity_id
 ),
 
 sensor_dirty_keys AS (
@@ -117,7 +166,7 @@ sensor_dirty_keys AS (
 
 body_measurement_dirty_users AS (
     SELECT DISTINCT user_id
-    FROM analytics.body_measurement_sample FINAL
+    FROM {{ source('analytics', 'body_measurement_sample') }} FINAL
     WHERE
         {% if is_incremental() %}
             NOT (SELECT is_empty FROM target_state)
@@ -194,6 +243,12 @@ dirty_keys AS (
         activity_id,
         user_id
     FROM (
+        {% if activity_refresh_scoped %}
+        SELECT
+            activity_id,
+            user_id
+        FROM scoped_activity_dirty_keys
+        {% else %}
         SELECT
             activity_id,
             user_id
@@ -228,6 +283,12 @@ dirty_keys AS (
             activity_id,
             user_id
         FROM stale_activity_dirty_keys
+        UNION ALL
+        SELECT
+            activity_id,
+            user_id
+        FROM deduped_activity_dirty_keys
+        {% endif %}
     )
 ),
 
@@ -418,7 +479,7 @@ acsm_estimates AS (
             0
         )) AS vo2max
     FROM acsm_segments
-    INNER JOIN postgres_fitness.user_profile_current AS user_profile
+    INNER JOIN {{ source('postgres_fitness', 'user_profile_current') }} AS user_profile
         ON user_profile.id = acsm_segments.user_id
     LEFT JOIN resting_by_activity AS resting
         ON resting.activity_id = acsm_segments.activity_id

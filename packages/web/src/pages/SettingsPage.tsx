@@ -1,7 +1,9 @@
 import { formatDateMedium, parseValidDate } from "@dofek/format/format";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { AccountErasurePanel } from "../components/AccountErasurePanel.tsx";
+import { ClimbingGradeSystemToggle } from "../components/ClimbingGradeSystemToggle.tsx";
 import { DataSourcesPanel } from "../components/DataSourcesPanel.tsx";
 import { ExportPanel } from "../components/ExportPanel.tsx";
 import { LinkedAccountsPanel } from "../components/LinkedAccountsPanel.tsx";
@@ -12,8 +14,8 @@ import { PageSection } from "../components/PageSection.tsx";
 import { PasswordSettingsPanel } from "../components/PasswordSettingsPanel.tsx";
 import { PersonalizationPanel } from "../components/PersonalizationPanel.tsx";
 import { PrimaryGoalSelector } from "../components/PrimaryGoalSelector.tsx";
-import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel.tsx";
 import { UnitSystemToggle } from "../components/UnitSystemToggle.tsx";
+import { ZeppPairingPanel } from "../components/ZeppPairingPanel.tsx";
 import {
   clearWebBillingCheckoutOperation,
   getOrCreateWebBillingCheckoutOperationId,
@@ -41,9 +43,7 @@ const billingRegionClassName = "min-h-44 sm:min-h-32 lg:min-h-28";
 export function SettingsPage() {
   const search = useSearch({ from: "/settings" });
   const navigate = useNavigate({ from: "/settings" });
-  const requestedCategory: SettingsCategory = search.zeppPair
-    ? "data-sources"
-    : (normalizeSettingsCategory(search.tab) ?? "account");
+  const requestedCategory: SettingsCategory = normalizeSettingsCategory(search.tab) ?? "account";
   const [categorySearch, setCategorySearch] = useState("");
   const normalizedCategorySearch = categorySearch.trim().toLowerCase();
   const visibleCategories = SETTINGS_CATEGORIES.filter(
@@ -56,14 +56,7 @@ export function SettingsPage() {
     visibleCategories[0]?.id ??
     null;
   const { layout, toggleHidden, resetLayout } = useDashboardLayout();
-  const [zeppPairingCode, setZeppPairingCode] = useState("");
   const [checkoutClientError, setCheckoutClientError] = useState<string | null>(null);
-  const zeppConnections = trpc.companionToken.list.useQuery();
-  const revokeZeppConnection = trpc.companionToken.revoke.useMutation({
-    onSuccess: async () => {
-      await zeppConnections.refetch();
-    },
-  });
   const billingStatus = trpc.billing.status.useQuery();
   const checkoutSessionMutation = trpc.billing.createCheckoutSession.useMutation({
     onSuccess: ({ url }, { operationId }) => {
@@ -80,32 +73,6 @@ export function SettingsPage() {
       window.location.assign(url);
     },
   });
-  const zeppPairingMutation = trpc.companionPairing.claim.useMutation({
-    onSuccess: async () => {
-      setZeppPairingCode("");
-      await zeppConnections.refetch();
-    },
-  });
-
-  useEffect(() => {
-    const pairingCode = search.zeppPair;
-    if (pairingCode) {
-      setZeppPairingCode(pairingCode);
-      void navigate({
-        search: (previous) => ({
-          ...previous,
-          tab: "data-sources",
-          zeppPair: undefined,
-        }),
-        replace: true,
-      });
-    }
-  }, [navigate, search.zeppPair]);
-
-  function handleClaimZeppPairing() {
-    zeppPairingMutation.mutate({ code: zeppPairingCode });
-  }
-
   function handleCheckout(): void {
     setCheckoutClientError(null);
     try {
@@ -114,7 +81,7 @@ export function SettingsPage() {
     } catch (error: unknown) {
       captureException(error, { source: "billing-checkout-operation-create" });
       setCheckoutClientError(
-        error instanceof Error ? error.message : "Checkout could not be started in this browser.",
+        userFacingErrorMessage(error, "Checkout could not be started in this browser."),
       );
     }
   }
@@ -186,7 +153,7 @@ export function SettingsPage() {
               </p>
             ) : billingStatus.error ? (
               <p className={`${billingRegionClassName} text-sm text-red-400`}>
-                {billingStatus.error.message}
+                {userFacingErrorMessage(billingStatus.error)}
               </p>
             ) : billingStatus.data ? (
               <div className={`${billingRegionClassName} space-y-3`}>
@@ -196,7 +163,9 @@ export function SettingsPage() {
                         billingStatus.data.access.startDate,
                         billingStatus.data.access.endDateExclusive,
                       )}).`
-                    : "You currently have full access to your data."}
+                    : billingStatus.data.access.reason === "app_store_subscription"
+                      ? "Full access is enabled."
+                      : "You currently have full access to your data."}
                 </p>
                 <div className="space-y-1">
                   {billingStatus.data.access.kind === "limited" ? (
@@ -243,13 +212,17 @@ export function SettingsPage() {
                   )}
                 </div>
                 {checkoutSessionMutation.error ? (
-                  <p className="text-sm text-red-400">{checkoutSessionMutation.error.message}</p>
+                  <p className="text-sm text-red-400">
+                    {userFacingErrorMessage(checkoutSessionMutation.error)}
+                  </p>
                 ) : null}
                 {checkoutClientError ? (
                   <p className="text-sm text-red-400">{checkoutClientError}</p>
                 ) : null}
                 {portalSessionMutation.error ? (
-                  <p className="text-sm text-red-400">{portalSessionMutation.error.message}</p>
+                  <p className="text-sm text-red-400">
+                    {userFacingErrorMessage(portalSessionMutation.error)}
+                  </p>
                 ) : null}
               </div>
             ) : (
@@ -280,94 +253,36 @@ export function SettingsPage() {
         ) : null}
 
         {activeCategory === "data-sources" ? (
-          <PageSection
-            title="Zepp App Pairing"
-            subtitle="Connect the Zepp watch app to this account"
-          >
-            <div className="space-y-3">
-              <div className="space-y-2 rounded border border-border bg-surface-solid p-3">
-                <p className="text-xs font-medium text-foreground">Current connections</p>
-                {zeppConnections.isLoading ? (
-                  <p className="text-xs text-subtle">Checking connections…</p>
-                ) : zeppConnections.error ? (
-                  <p className="text-xs text-red-400">{zeppConnections.error.message}</p>
-                ) : zeppConnections.data?.length ? (
-                  zeppConnections.data.map((connection) => {
-                    const connectionLabel =
-                      connection.connectionType === "zepp-main" ? "Zepp app" : "Workout extension";
-                    return (
-                      <div
-                        key={connection.connectionType}
-                        className="flex items-center justify-between gap-3"
-                      >
-                        <span className="text-xs text-accent">{connectionLabel}: Connected</span>
-                        <button
-                          type="button"
-                          aria-label={`Disconnect ${connectionLabel}`}
-                          className="text-xs text-red-400 hover:text-red-300"
-                          onClick={() =>
-                            revokeZeppConnection.mutate({
-                              connectionType: connection.connectionType,
-                            })
-                          }
-                        >
-                          Disconnect
-                        </button>
-                      </div>
-                    );
-                  })
-                ) : (
-                  <p className="text-xs text-subtle">No Zepp apps connected</p>
-                )}
-                {revokeZeppConnection.error ? (
-                  <p className="text-xs text-red-400">{revokeZeppConnection.error.message}</p>
-                ) : null}
-              </div>
-              <label className="block space-y-1">
-                <span className="text-xs text-subtle">Short code</span>
-                <input
-                  type="text"
-                  value={zeppPairingCode}
-                  onChange={(event) => setZeppPairingCode(event.target.value)}
-                  className="w-full rounded border border-border bg-surface-solid px-3 py-2 text-sm text-foreground"
-                  placeholder="ABC234"
-                  autoCapitalize="characters"
-                />
-              </label>
-              <button
-                type="button"
-                onClick={handleClaimZeppPairing}
-                disabled={zeppPairingMutation.isPending || !zeppPairingCode.trim()}
-                className="rounded bg-accent px-3 py-2 text-sm text-on-accent transition-colors hover:bg-accent/90 disabled:opacity-50"
-              >
-                {zeppPairingMutation.isPending ? "Connecting..." : "Connect Zepp App"}
-              </button>
-              {zeppPairingMutation.isSuccess ? (
-                <p className="text-xs text-accent">
-                  {zeppPairingMutation.data?.connectionType === "zepp-workout"
-                    ? "Workout extension"
-                    : "Zepp app"}{" "}
-                  connected. Return to Zepp to sync.
-                </p>
-              ) : null}
-              {zeppPairingMutation.error ? (
-                <p className="text-xs text-red-400">{zeppPairingMutation.error.message}</p>
-              ) : null}
-            </div>
+          <PageSection title="Pair your Zepp app" subtitle="Enter the code shown in Zepp">
+            <ZeppPairingPanel />
           </PageSection>
         ) : null}
 
         {activeCategory === "advanced" ? (
-          <PageSection title="MCP" subtitle="Connect remote MCP clients and manage access tokens">
+          <PageSection
+            title="Developer integrations"
+            subtitle="Register and manage clients that write data through the external API"
+          >
+            <Link
+              to="/developer-integrations"
+              className="inline-flex rounded border border-border px-3 py-2 text-sm text-foreground transition-colors hover:bg-surface-hover"
+            >
+              Manage developer integrations
+            </Link>
+          </PageSection>
+        ) : null}
+
+        {activeCategory === "advanced" ? (
+          <PageSection
+            title="Model Context Protocol (MCP)"
+            subtitle="Connect remote MCP clients and manage access tokens"
+          >
             <McpTokensPanel />
           </PageSection>
         ) : null}
 
         {activeCategory === "goals-models" ? (
-          <PageSection
-            title="Primary goal"
-            subtitle="Choose the outcome Dofek should optimize toward"
-          >
+          <PageSection title="Primary goal" subtitle="What would you like to focus on?">
             <PrimaryGoalSelector showHeading={false} />
           </PageSection>
         ) : null}
@@ -375,6 +290,15 @@ export function SettingsPage() {
         {activeCategory === "goals-models" ? (
           <PageSection title="Units" subtitle="Choose how measurements are displayed">
             <UnitSystemToggle />
+          </PageSection>
+        ) : null}
+
+        {activeCategory === "goals-models" ? (
+          <PageSection
+            title="Climbing grades"
+            subtitle="Choose the grade systems used for boulders and routes"
+          >
+            <ClimbingGradeSystemToggle />
           </PageSection>
         ) : null}
 
@@ -444,12 +368,6 @@ export function SettingsPage() {
           </PageSection>
         ) : null}
 
-        {activeCategory === "data-sources" ? (
-          <PageSection title="Integrations" subtitle="Connect external services">
-            <SlackIntegrationPanel />
-          </PageSection>
-        ) : null}
-
         {activeCategory === "privacy-export" ? (
           <PageSection title="Data Export" subtitle="Download all your data">
             <ExportPanel />
@@ -457,12 +375,12 @@ export function SettingsPage() {
         ) : null}
 
         {activeCategory === "account" ? (
-          <PageSection title="Help & Support" subtitle="Get help from our team">
+          <PageSection title="Contact support" subtitle="We'll reply by email">
             <Link
               to="/support"
               className="inline-flex items-center gap-2 rounded border border-border-strong px-4 py-2 text-sm text-foreground transition-colors hover:bg-accent/10"
             >
-              Contact Support
+              Send a message
             </Link>
           </PageSection>
         ) : null}
@@ -470,7 +388,7 @@ export function SettingsPage() {
         {activeCategory === "privacy-export" ? (
           <PageSection
             title="Danger Zone"
-            subtitle="Permanently close your account and start durable deletion"
+            subtitle="Permanently close your account and delete your Dofek data"
             card={false}
           >
             <div className="rounded-lg border border-red-900/60 bg-surface-solid p-4 space-y-3">

@@ -1,0 +1,197 @@
+import { AppState, type AppStateStatus } from "react-native";
+import type { BleHeartRateSample } from "../modules/ble-heart-rate";
+import { isAfterDeviceErasureCutoff, loadDeviceErasureCutoff } from "./device-erasure-cutoff";
+import { DeviceSampleGroups } from "./device-sample-groups.ts";
+import { captureException, logger } from "./telemetry";
+
+const LOG_CATEGORY = "ble-heart-rate";
+const UPLOAD_BATCH_SIZE = 500;
+const PERIODIC_DRAIN_INTERVAL_MS = 30_000;
+type BleHeartRateUploadSample = Omit<BleHeartRateSample, "deviceId">;
+
+export interface BleHeartRateSyncDeps {
+  peekBufferedSamples(maxCount?: number): Promise<BleHeartRateSample[]>;
+  confirmSamplesDrain(count: number): void;
+  disconnectAndClearBufferedSamples(): Promise<void>;
+}
+
+export interface BleHeartRateUploadClient {
+  bleHeartRateSync: {
+    pushSamples: {
+      mutate(input: {
+        deviceId: string;
+        samples: BleHeartRateUploadSample[];
+      }): Promise<{ inserted: number }>;
+    };
+  };
+}
+
+let appStateSubscription: { remove(): void } | null = null;
+let periodicDrainTimer: ReturnType<typeof setInterval> | null = null;
+
+interface BleHeartRateSyncSession {
+  uploadClient: BleHeartRateUploadClient;
+  deps: BleHeartRateSyncDeps;
+  activeDrain: Promise<void> | null;
+}
+
+let currentSession: BleHeartRateSyncSession | null = null;
+let lifecycleGeneration = 0;
+let pendingNativeTeardown: Promise<void> = Promise.resolve();
+
+function toUploadSample(sample: BleHeartRateSample): BleHeartRateUploadSample {
+  return {
+    timestamp: sample.timestamp,
+    heartRateBpm: sample.heartRateBpm,
+    rrIntervalsMs: sample.rrIntervalsMs,
+  };
+}
+
+function isCurrentSession(session: BleHeartRateSyncSession): boolean {
+  return currentSession === session;
+}
+
+async function drainBuffer(session: BleHeartRateSyncSession): Promise<void> {
+  const { uploadClient, deps } = session;
+  const deviceErasureCutoff = await loadDeviceErasureCutoff();
+  if (!isCurrentSession(session)) return;
+
+  for (;;) {
+    const samples = await deps.peekBufferedSamples(UPLOAD_BATCH_SIZE);
+    if (!isCurrentSession(session)) return;
+    if (samples.length === 0) return;
+
+    const uploadableSamples =
+      deviceErasureCutoff === null
+        ? samples
+        : samples.filter((sample) =>
+            isAfterDeviceErasureCutoff(sample.timestamp, deviceErasureCutoff),
+          );
+    const groups = new DeviceSampleGroups(null, toUploadSample);
+    for (const sample of uploadableSamples) groups.add(sample);
+
+    for (const [deviceId, deviceSamples] of groups.entries()) {
+      if (!isCurrentSession(session)) return;
+      await uploadClient.bleHeartRateSync.pushSamples.mutate({
+        deviceId,
+        samples: deviceSamples,
+      });
+      if (!isCurrentSession(session)) return;
+    }
+
+    if (!isCurrentSession(session)) return;
+    deps.confirmSamplesDrain(samples.length);
+    logger.info(LOG_CATEGORY, `uploaded ${samples.length} buffered samples`);
+  }
+}
+
+function runSerializedDrain(session: BleHeartRateSyncSession): Promise<void> {
+  if (!isCurrentSession(session)) return Promise.resolve();
+  if (session.activeDrain) return session.activeDrain;
+
+  const trackedDrain = drainBuffer(session).finally(() => {
+    if (session.activeDrain === trackedDrain) session.activeDrain = null;
+  });
+  session.activeDrain = trackedDrain;
+  return trackedDrain;
+}
+
+function stopForegroundTimers(): void {
+  if (periodicDrainTimer) {
+    clearInterval(periodicDrainTimer);
+    periodicDrainTimer = null;
+  }
+}
+
+function startForegroundTimers(session: BleHeartRateSyncSession): void {
+  if (!isCurrentSession(session) || AppState.currentState !== "active") return;
+
+  if (!periodicDrainTimer) {
+    periodicDrainTimer = setInterval(() => {
+      void runSerializedDrain(session).catch((error: unknown) => {
+        captureException(error, { source: "ble-heart-rate-periodic-drain" });
+      });
+    }, PERIODIC_DRAIN_INTERVAL_MS);
+  }
+}
+
+/**
+ * Starts the recorder-independent BLE heart-rate lifecycle for an authenticated
+ * session. Pairing remains user initiated; once connected, native buffering
+ * continues in the background and this service uploads whenever iOS runs JS.
+ */
+export async function initBackgroundBleHeartRateSync(
+  uploadClient: BleHeartRateUploadClient,
+  deps: BleHeartRateSyncDeps,
+): Promise<void> {
+  const generation = ++lifecycleGeneration;
+  const endingSession = detachCurrentSession();
+  await enqueueNativeTeardown(endingSession?.deps ?? deps);
+  if (generation !== lifecycleGeneration) return;
+
+  const session: BleHeartRateSyncSession = { uploadClient, deps, activeDrain: null };
+  currentSession = session;
+
+  appStateSubscription = AppState.addEventListener("change", (nextState: AppStateStatus) => {
+    if (!isCurrentSession(session)) return;
+    if (nextState !== "active") {
+      stopForegroundTimers();
+      return;
+    }
+
+    startForegroundTimers(session);
+    void runSerializedDrain(session).catch((error: unknown) => {
+      captureException(error, { source: "ble-heart-rate-foreground-drain" });
+    });
+  });
+
+  startForegroundTimers(session);
+  if (AppState.currentState === "active") {
+    try {
+      await runSerializedDrain(session);
+    } catch (error: unknown) {
+      captureException(error, { source: "ble-heart-rate-initial-drain" });
+    }
+  }
+}
+
+/** Flush buffered samples during an iOS background-refresh wakeup. */
+export async function syncBleHeartRate(): Promise<void> {
+  const session = currentSession;
+  if (!session) return;
+  try {
+    await runSerializedDrain(session);
+  } catch (error: unknown) {
+    captureException(error, { source: "ble-heart-rate-background-refresh" });
+    throw error;
+  }
+}
+
+function detachCurrentSession(): BleHeartRateSyncSession | null {
+  const endingSession = currentSession;
+  currentSession = null;
+  stopForegroundTimers();
+  appStateSubscription?.remove();
+  appStateSubscription = null;
+  return endingSession;
+}
+
+function enqueueNativeTeardown(deps: BleHeartRateSyncDeps): Promise<void> {
+  const teardown = pendingNativeTeardown.then(() => deps.disconnectAndClearBufferedSamples());
+  pendingNativeTeardown = teardown.then(
+    () => undefined,
+    () => undefined,
+  );
+  return teardown;
+}
+
+/** Stop the authenticated BLE heart-rate lifecycle and fence its native samples. */
+export async function teardownBackgroundBleHeartRateSync(): Promise<void> {
+  lifecycleGeneration += 1;
+  const endingSession = detachCurrentSession();
+  if (!endingSession) {
+    await pendingNativeTeardown;
+    return;
+  }
+  await enqueueNativeTeardown(endingSession.deps);
+}

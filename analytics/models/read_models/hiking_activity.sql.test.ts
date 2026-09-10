@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractCteSql, readModelSql } from "./read-model-sql-test-helpers.ts";
+import { extractCteSql, readModelSql } from "../../../src/db/read-model-sql-test-helpers.ts";
 
 const modelSql = readModelSql("hiking_activity.sql");
 
@@ -51,6 +51,6 @@ describe("hiking_activity model", () => {
     expect(tombstoneRowsSql).toContain("existing_hiking_activity.activity_id AS activity_id");
     expect(tombstoneRowsSql).toContain("1 AS is_deleted");
     expect(tombstoneRowsSql).toContain("LEFT JOIN activity_summary");
-    expect(tombstoneRowsSql).toContain("WHERE activity_summary.activity_id IS NULL");
+    expect(tombstoneRowsSql).toContain("WHERE activity_summary.activity_id IS null");
   });
 });

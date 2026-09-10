@@ -1,0 +1,1323 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`CyclingPowerCurveRepository > reports incomplete and unknown power evidence without claiming a trustworthy best 1`] = `
+{
+  "activity_curve": [],
+  "bests": [
+    {
+      "activity_id": "00000000-0000-4000-8000-000000000010",
+      "canonical_type": "cycling",
+      "date": "2026-06-15",
+      "duration_seconds": 1200,
+      "member_activity_ids": [
+        "00000000-0000-4000-8000-000000000010",
+      ],
+      "power_kind": "unknown",
+      "quality": {
+        "continuity_tolerance_seconds": null,
+        "coverage_pct": 98,
+        "largest_gap_seconds": null,
+        "median_sample_interval_seconds": null,
+        "observed_samples": 1201,
+        "reasons": [
+          "Sample resolution was not recorded for this row",
+          "Largest sample gap was not recorded",
+          "Power measurement method is unknown",
+        ],
+        "status": "limited",
+      },
+      "source_devices": [
+        "elemnt-bolt",
+      ],
+      "source_providers": [
+        "wahoo",
+      ],
+      "start_offset_seconds": 420,
+      "started_at": "2026-06-15T15:00:00.000Z",
+      "watts": 300,
+      "watts_per_kg": null,
+      "watts_per_kg_reason": "No valid positive directly measured body weight is available",
+      "weight": {
+        "reason": "No valid positive directly measured body weight is available",
+        "value_kg": null,
+      },
+    },
+  ],
+  "durations_seconds": [
+    1200,
+  ],
+  "end_date": "2026-06-30",
+  "next_cursor": null,
+  "start_date": "2026-06-01",
+}
+`;
+
+exports[`CyclingPowerCurveRepository > returns range bests and a stable activity-curve page with weight evidence 1`] = `
+{
+  "activity_curve": [
+    {
+      "activity_id": "00000000-0000-4000-8000-000000000010",
+      "canonical_type": "cycling",
+      "date": "2026-06-15",
+      "duration_seconds": 300,
+      "member_activity_ids": [
+        "00000000-0000-4000-8000-000000000010",
+      ],
+      "power_kind": "direct",
+      "quality": {
+        "continuity_tolerance_seconds": 5,
+        "coverage_pct": 100,
+        "largest_gap_seconds": 1,
+        "median_sample_interval_seconds": 1,
+        "observed_samples": 1201,
+        "reasons": [],
+        "status": "high",
+      },
+      "source_devices": [
+        "elemnt-bolt",
+      ],
+      "source_providers": [
+        "wahoo",
+      ],
+      "start_offset_seconds": 60,
+      "started_at": "2026-06-15T15:00:00.000Z",
+      "watts": 360,
+      "watts_per_kg": 5.07,
+      "watts_per_kg_reason": null,
+      "weight": {
+        "distance_days": 5,
+        "kind": "interpolated",
+        "method": "linear_interpolation",
+        "quality": "medium",
+        "sources": [
+          {
+            "date": "2026-06-10",
+            "measurement_kind": "direct",
+            "provider": "withings",
+            "recorded_at": "2026-06-10T08:00:00.000Z",
+            "source_record_id": "weight-before",
+            "value_kg": 70,
+          },
+          {
+            "date": "2026-06-20",
+            "measurement_kind": "direct",
+            "provider": "withings",
+            "recorded_at": "2026-06-20T08:00:00.000Z",
+            "source_record_id": "weight-after",
+            "value_kg": 72,
+          },
+        ],
+        "value_kg": 71,
+      },
+    },
+    {
+      "activity_id": "00000000-0000-4000-8000-000000000010",
+      "canonical_type": "cycling",
+      "date": "2026-06-15",
+      "duration_seconds": 1200,
+      "member_activity_ids": [
+        "00000000-0000-4000-8000-000000000010",
+      ],
+      "power_kind": "direct",
+      "quality": {
+        "continuity_tolerance_seconds": 5,
+        "coverage_pct": 100,
+        "largest_gap_seconds": 1,
+        "median_sample_interval_seconds": 1,
+        "observed_samples": 1201,
+        "reasons": [],
+        "status": "high",
+      },
+      "source_devices": [
+        "elemnt-bolt",
+      ],
+      "source_providers": [
+        "wahoo",
+      ],
+      "start_offset_seconds": 420,
+      "started_at": "2026-06-15T15:00:00.000Z",
+      "watts": 300,
+      "watts_per_kg": 4.225,
+      "watts_per_kg_reason": null,
+      "weight": {
+        "distance_days": 5,
+        "kind": "interpolated",
+        "method": "linear_interpolation",
+        "quality": "medium",
+        "sources": [
+          {
+            "date": "2026-06-10",
+            "measurement_kind": "direct",
+            "provider": "withings",
+            "recorded_at": "2026-06-10T08:00:00.000Z",
+            "source_record_id": "weight-before",
+            "value_kg": 70,
+          },
+          {
+            "date": "2026-06-20",
+            "measurement_kind": "direct",
+            "provider": "withings",
+            "recorded_at": "2026-06-20T08:00:00.000Z",
+            "source_record_id": "weight-after",
+            "value_kg": 72,
+          },
+        ],
+        "value_kg": 71,
+      },
+    },
+    {
+      "activity_id": "00000000-0000-4000-8000-000000000011",
+      "canonical_type": "cycling",
+      "date": "2026-06-20",
+      "duration_seconds": 1800,
+      "member_activity_ids": [
+        "00000000-0000-4000-8000-000000000010",
+      ],
+      "power_kind": "direct",
+      "quality": {
+        "continuity_tolerance_seconds": 5,
+        "coverage_pct": 100,
+        "largest_gap_seconds": 1,
+        "median_sample_interval_seconds": 1,
+        "observed_samples": 1201,
+        "reasons": [],
+        "status": "high",
+      },
+      "source_devices": [
+        "elemnt-bolt",
+      ],
+      "source_providers": [
+        "wahoo",
+      ],
+      "start_offset_seconds": 420,
+      "started_at": "2026-06-20T15:00:00.000Z",
+      "watts": 280,
+      "watts_per_kg": 3.889,
+      "watts_per_kg_reason": null,
+      "weight": {
+        "distance_days": 0,
+        "kind": "measured",
+        "method": "same_day",
+        "quality": "high",
+        "sources": [
+          {
+            "date": "2026-06-20",
+            "measurement_kind": "direct",
+            "provider": "withings",
+            "recorded_at": "2026-06-20T08:00:00.000Z",
+            "source_record_id": "weight-after",
+            "value_kg": 72,
+          },
+        ],
+        "value_kg": 72,
+      },
+    },
+  ],
+  "bests": [
+    {
+      "activity_id": "00000000-0000-4000-8000-000000000010",
+      "canonical_type": "cycling",
+      "date": "2026-06-15",
+      "duration_seconds": 300,
+      "member_activity_ids": [
+        "00000000-0000-4000-8000-000000000010",
+      ],
+      "power_kind": "direct",
+      "quality": {
+        "continuity_tolerance_seconds": 5,
+        "coverage_pct": 100,
+        "largest_gap_seconds": 1,
+        "median_sample_interval_seconds": 1,
+        "observed_samples": 1201,
+        "reasons": [],
+        "status": "high",
+      },
+      "source_devices": [
+        "elemnt-bolt",
+      ],
+      "source_providers": [
+        "wahoo",
+      ],
+      "start_offset_seconds": 60,
+      "started_at": "2026-06-15T15:00:00.000Z",
+      "watts": 360,
+      "watts_per_kg": 5.07,
+      "watts_per_kg_reason": null,
+      "weight": {
+        "distance_days": 5,
+        "kind": "interpolated",
+        "method": "linear_interpolation",
+        "quality": "medium",
+        "sources": [
+          {
+            "date": "2026-06-10",
+            "measurement_kind": "direct",
+            "provider": "withings",
+            "recorded_at": "2026-06-10T08:00:00.000Z",
+            "source_record_id": "weight-before",
+            "value_kg": 70,
+          },
+          {
+            "date": "2026-06-20",
+            "measurement_kind": "direct",
+            "provider": "withings",
+            "recorded_at": "2026-06-20T08:00:00.000Z",
+            "source_record_id": "weight-after",
+            "value_kg": 72,
+          },
+        ],
+        "value_kg": 71,
+      },
+    },
+    {
+      "activity_id": "00000000-0000-4000-8000-000000000010",
+      "canonical_type": "cycling",
+      "date": "2026-06-15",
+      "duration_seconds": 1200,
+      "member_activity_ids": [
+        "00000000-0000-4000-8000-000000000010",
+      ],
+      "power_kind": "direct",
+      "quality": {
+        "continuity_tolerance_seconds": 5,
+        "coverage_pct": 100,
+        "largest_gap_seconds": 1,
+        "median_sample_interval_seconds": 1,
+        "observed_samples": 1201,
+        "reasons": [],
+        "status": "high",
+      },
+      "source_devices": [
+        "elemnt-bolt",
+      ],
+      "source_providers": [
+        "wahoo",
+      ],
+      "start_offset_seconds": 420,
+      "started_at": "2026-06-15T15:00:00.000Z",
+      "watts": 300,
+      "watts_per_kg": 4.225,
+      "watts_per_kg_reason": null,
+      "weight": {
+        "distance_days": 5,
+        "kind": "interpolated",
+        "method": "linear_interpolation",
+        "quality": "medium",
+        "sources": [
+          {
+            "date": "2026-06-10",
+            "measurement_kind": "direct",
+            "provider": "withings",
+            "recorded_at": "2026-06-10T08:00:00.000Z",
+            "source_record_id": "weight-before",
+            "value_kg": 70,
+          },
+          {
+            "date": "2026-06-20",
+            "measurement_kind": "direct",
+            "provider": "withings",
+            "recorded_at": "2026-06-20T08:00:00.000Z",
+            "source_record_id": "weight-after",
+            "value_kg": 72,
+          },
+        ],
+        "value_kg": 71,
+      },
+    },
+    {
+      "activity_id": "00000000-0000-4000-8000-000000000011",
+      "canonical_type": "cycling",
+      "date": "2026-06-20",
+      "duration_seconds": 1800,
+      "member_activity_ids": [
+        "00000000-0000-4000-8000-000000000010",
+      ],
+      "power_kind": "direct",
+      "quality": {
+        "continuity_tolerance_seconds": 5,
+        "coverage_pct": 100,
+        "largest_gap_seconds": 1,
+        "median_sample_interval_seconds": 1,
+        "observed_samples": 1201,
+        "reasons": [],
+        "status": "high",
+      },
+      "source_devices": [
+        "elemnt-bolt",
+      ],
+      "source_providers": [
+        "wahoo",
+      ],
+      "start_offset_seconds": 420,
+      "started_at": "2026-06-20T15:00:00.000Z",
+      "watts": 280,
+      "watts_per_kg": 3.889,
+      "watts_per_kg_reason": null,
+      "weight": {
+        "distance_days": 0,
+        "kind": "measured",
+        "method": "same_day",
+        "quality": "high",
+        "sources": [
+          {
+            "date": "2026-06-20",
+            "measurement_kind": "direct",
+            "provider": "withings",
+            "recorded_at": "2026-06-20T08:00:00.000Z",
+            "source_record_id": "weight-after",
+            "value_kg": 72,
+          },
+        ],
+        "value_kg": 72,
+      },
+    },
+    {
+      "activity_id": "00000000-0000-4000-8000-000000000012",
+      "canonical_type": "cycling",
+      "date": "2026-06-25",
+      "duration_seconds": 3600,
+      "member_activity_ids": [
+        "00000000-0000-4000-8000-000000000010",
+      ],
+      "power_kind": "direct",
+      "quality": {
+        "continuity_tolerance_seconds": 5,
+        "coverage_pct": 100,
+        "largest_gap_seconds": 1,
+        "median_sample_interval_seconds": 1,
+        "observed_samples": 1201,
+        "reasons": [],
+        "status": "high",
+      },
+      "source_devices": [
+        "elemnt-bolt",
+      ],
+      "source_providers": [
+        "wahoo",
+      ],
+      "start_offset_seconds": 420,
+      "started_at": "2026-06-25T15:00:00.000Z",
+      "watts": 250,
+      "watts_per_kg": 3.472,
+      "watts_per_kg_reason": null,
+      "weight": {
+        "distance_days": 5,
+        "kind": "nearest",
+        "method": "nearest_within_30_days",
+        "quality": "low",
+        "sources": [
+          {
+            "date": "2026-06-20",
+            "measurement_kind": "direct",
+            "provider": "withings",
+            "recorded_at": "2026-06-20T08:00:00.000Z",
+            "source_record_id": "weight-after",
+            "value_kg": 72,
+          },
+        ],
+        "value_kg": 72,
+      },
+    },
+  ],
+  "durations_seconds": [
+    300,
+    1200,
+    1800,
+    3600,
+  ],
+  "end_date": "2026-08-28",
+  "next_cursor": "eyJ2ZXJzaW9uIjoxLCJ1c2VySWQiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEiLCJzaGFwZSI6IkJYOERIU0x5VFZ2UDZEcnhFZGtobFYiLCJkdXJhdGlvbiI6MTgwMCwid2F0dHMiOjI4MCwic3RhcnRlZEF0IjoiMjAyNi0wNi0yMFQxNTowMDowMC4wMDBaIiwiYWN0aXZpdHlJZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAxMSJ9",
+  "start_date": "2026-03-01",
+}
+`;
+
+exports[`CyclingPowerCurveRepository > returns range bests and a stable activity-curve page with weight evidence 2`] = `
+[
+  {
+    "parameters": {
+      "durations": [
+        300,
+        1200,
+        1800,
+        3600,
+      ],
+      "endDate": "2026-08-28",
+      "modalities": [
+        "outdoor",
+        "virtual",
+      ],
+      "pageLimit": 4,
+      "providers": [
+        "wahoo",
+      ],
+      "startDate": "2026-03-01",
+      "timezone": "America/Los_Angeles",
+      "userId": "00000000-0000-4000-8000-000000000001",
+    },
+    "queryText": "/* power-curve:standard:bests */
+    SELECT
+    toString(power_curve.activity_id) AS activity_id,
+    toString(toDate(toTimeZone(power_curve.started_at, {timezone:String}))) AS activity_date,
+    formatDateTime(power_curve.started_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS started_at,
+    activity.canonical_type AS canonical_type,
+    power_curve.duration_seconds AS duration_seconds,
+    power_curve.best_power AS best_power,
+    power_curve.start_offset_seconds AS start_offset_seconds,
+    power_curve.observed_samples AS observed_samples,
+    power_curve.median_sample_interval_seconds AS median_sample_interval_seconds,
+    power_curve.largest_gap_seconds AS largest_gap_seconds,
+    power_curve.coverage_pct AS coverage_pct,
+    power_curve.power_measurement_kind AS power_measurement_kind,
+    power_curve.source_providers AS source_providers,
+    power_curve.source_devices AS source_devices,
+    activity.member_activity_ids AS member_activity_ids
+    FROM analytics.activity_power_curve AS power_curve FINAL
+    INNER JOIN analytics.deduped_activities AS activity FINAL
+      ON activity.activity_id = power_curve.activity_id
+      AND activity.user_id = power_curve.user_id
+    WHERE
+    activity.user_id = {userId:UUID}
+    AND activity.is_deleted = 0
+    AND toDate(toTimeZone(activity.started_at, {timezone:String}))
+      BETWEEN toDate({startDate:String}) AND toDate({endDate:String})
+    AND activity.canonical_type = 'cycling'
+    AND (empty({modalities:Array(String)}) OR has({modalities:Array(String)}, activity.modality))
+    AND (
+      empty({providers:Array(String)})
+      OR hasAny(activity.source_providers, {providers:Array(String)})
+    )
+      AND power_curve.is_deleted = 0
+      AND power_curve.duration_seconds IN ({durations:Array(UInt32)})
+
+    QUALIFY row_number() OVER (
+          PARTITION BY power_curve.duration_seconds
+          ORDER BY power_curve.best_power DESC, power_curve.started_at DESC, power_curve.activity_id ASC
+        ) = 1
+        ORDER BY duration_seconds ASC
+    SETTINGS prefer_column_name_to_alias = 1",
+  },
+  {
+    "parameters": {
+      "durations": [
+        300,
+        1200,
+        1800,
+        3600,
+      ],
+      "endDate": "2026-08-28",
+      "modalities": [
+        "outdoor",
+        "virtual",
+      ],
+      "pageLimit": 4,
+      "providers": [
+        "wahoo",
+      ],
+      "startDate": "2026-03-01",
+      "timezone": "America/Los_Angeles",
+      "userId": "00000000-0000-4000-8000-000000000001",
+    },
+    "queryText": "/* power-curve:standard:page */
+    SELECT
+    toString(power_curve.activity_id) AS activity_id,
+    toString(toDate(toTimeZone(power_curve.started_at, {timezone:String}))) AS activity_date,
+    formatDateTime(power_curve.started_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS started_at,
+    activity.canonical_type AS canonical_type,
+    power_curve.duration_seconds AS duration_seconds,
+    power_curve.best_power AS best_power,
+    power_curve.start_offset_seconds AS start_offset_seconds,
+    power_curve.observed_samples AS observed_samples,
+    power_curve.median_sample_interval_seconds AS median_sample_interval_seconds,
+    power_curve.largest_gap_seconds AS largest_gap_seconds,
+    power_curve.coverage_pct AS coverage_pct,
+    power_curve.power_measurement_kind AS power_measurement_kind,
+    power_curve.source_providers AS source_providers,
+    power_curve.source_devices AS source_devices,
+    activity.member_activity_ids AS member_activity_ids
+    FROM analytics.activity_power_curve AS power_curve FINAL
+    INNER JOIN analytics.deduped_activities AS activity FINAL
+      ON activity.activity_id = power_curve.activity_id
+      AND activity.user_id = power_curve.user_id
+    WHERE
+    activity.user_id = {userId:UUID}
+    AND activity.is_deleted = 0
+    AND toDate(toTimeZone(activity.started_at, {timezone:String}))
+      BETWEEN toDate({startDate:String}) AND toDate({endDate:String})
+    AND activity.canonical_type = 'cycling'
+    AND (empty({modalities:Array(String)}) OR has({modalities:Array(String)}, activity.modality))
+    AND (
+      empty({providers:Array(String)})
+      OR hasAny(activity.source_providers, {providers:Array(String)})
+    )
+      AND power_curve.is_deleted = 0
+      AND power_curve.duration_seconds IN ({durations:Array(UInt32)})
+
+    ORDER BY duration_seconds ASC, best_power DESC, started_at DESC, activity_id ASC
+        LIMIT {pageLimit:UInt32}
+    SETTINGS prefer_column_name_to_alias = 1",
+  },
+  {
+    "parameters": {
+      "endDate": "2026-08-28",
+      "startDate": "2026-03-01",
+      "timezone": "America/Los_Angeles",
+      "userId": "00000000-0000-4000-8000-000000000001",
+    },
+    "queryText": "/* nearby-weight:observations */
+      SELECT
+        toString(toDate(toTimeZone(body.recorded_at, {timezone:String}))) AS date,
+        formatDateTime(body.recorded_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS recorded_at,
+        body.weight_kg,
+        body.provider_id,
+        body.external_id
+      FROM analytics.v_body_measurement AS body
+      WHERE body.user_id = {userId:UUID}
+        AND body.weight_kg IS NOT NULL
+        AND body.weight_kg > 0
+        AND toDate(toTimeZone(body.recorded_at, {timezone:String})) BETWEEN
+          addDays(toDate({startDate:String}), -30)
+          AND addDays(toDate({endDate:String}), 30)
+      ORDER BY body.recorded_at ASC
+      SETTINGS prefer_column_name_to_alias = 1",
+  },
+]
+`;
+
+exports[`CyclingPowerCurveRepository > returns range bests and a stable activity-curve page with weight evidence 3`] = `
+{
+  "activity_curve": [
+    {
+      "activity_id": "00000000-0000-4000-8000-000000000010",
+      "canonical_type": "cycling",
+      "date": "2026-06-15",
+      "duration_seconds": 300,
+      "member_activity_ids": [
+        "00000000-0000-4000-8000-000000000010",
+      ],
+      "power_kind": "direct",
+      "quality": {
+        "continuity_tolerance_seconds": 5,
+        "coverage_pct": 100,
+        "largest_gap_seconds": 1,
+        "median_sample_interval_seconds": 1,
+        "observed_samples": 1201,
+        "reasons": [],
+        "status": "high",
+      },
+      "source_devices": [
+        "elemnt-bolt",
+      ],
+      "source_providers": [
+        "wahoo",
+      ],
+      "start_offset_seconds": 60,
+      "started_at": "2026-06-15T15:00:00.000Z",
+      "watts": 360,
+      "watts_per_kg": 5.07,
+      "watts_per_kg_reason": null,
+      "weight": {
+        "distance_days": 5,
+        "kind": "interpolated",
+        "method": "linear_interpolation",
+        "quality": "medium",
+        "sources": [
+          {
+            "date": "2026-06-10",
+            "measurement_kind": "direct",
+            "provider": "withings",
+            "recorded_at": "2026-06-10T08:00:00.000Z",
+            "source_record_id": "weight-before",
+            "value_kg": 70,
+          },
+          {
+            "date": "2026-06-20",
+            "measurement_kind": "direct",
+            "provider": "withings",
+            "recorded_at": "2026-06-20T08:00:00.000Z",
+            "source_record_id": "weight-after",
+            "value_kg": 72,
+          },
+        ],
+        "value_kg": 71,
+      },
+    },
+    {
+      "activity_id": "00000000-0000-4000-8000-000000000010",
+      "canonical_type": "cycling",
+      "date": "2026-06-15",
+      "duration_seconds": 1200,
+      "member_activity_ids": [
+        "00000000-0000-4000-8000-000000000010",
+      ],
+      "power_kind": "direct",
+      "quality": {
+        "continuity_tolerance_seconds": 5,
+        "coverage_pct": 100,
+        "largest_gap_seconds": 1,
+        "median_sample_interval_seconds": 1,
+        "observed_samples": 1201,
+        "reasons": [],
+        "status": "high",
+      },
+      "source_devices": [
+        "elemnt-bolt",
+      ],
+      "source_providers": [
+        "wahoo",
+      ],
+      "start_offset_seconds": 420,
+      "started_at": "2026-06-15T15:00:00.000Z",
+      "watts": 300,
+      "watts_per_kg": 4.225,
+      "watts_per_kg_reason": null,
+      "weight": {
+        "distance_days": 5,
+        "kind": "interpolated",
+        "method": "linear_interpolation",
+        "quality": "medium",
+        "sources": [
+          {
+            "date": "2026-06-10",
+            "measurement_kind": "direct",
+            "provider": "withings",
+            "recorded_at": "2026-06-10T08:00:00.000Z",
+            "source_record_id": "weight-before",
+            "value_kg": 70,
+          },
+          {
+            "date": "2026-06-20",
+            "measurement_kind": "direct",
+            "provider": "withings",
+            "recorded_at": "2026-06-20T08:00:00.000Z",
+            "source_record_id": "weight-after",
+            "value_kg": 72,
+          },
+        ],
+        "value_kg": 71,
+      },
+    },
+    {
+      "activity_id": "00000000-0000-4000-8000-000000000011",
+      "canonical_type": "cycling",
+      "date": "2026-06-20",
+      "duration_seconds": 1800,
+      "member_activity_ids": [
+        "00000000-0000-4000-8000-000000000010",
+      ],
+      "power_kind": "direct",
+      "quality": {
+        "continuity_tolerance_seconds": 5,
+        "coverage_pct": 100,
+        "largest_gap_seconds": 1,
+        "median_sample_interval_seconds": 1,
+        "observed_samples": 1201,
+        "reasons": [],
+        "status": "high",
+      },
+      "source_devices": [
+        "elemnt-bolt",
+      ],
+      "source_providers": [
+        "wahoo",
+      ],
+      "start_offset_seconds": 420,
+      "started_at": "2026-06-20T15:00:00.000Z",
+      "watts": 280,
+      "watts_per_kg": 3.889,
+      "watts_per_kg_reason": null,
+      "weight": {
+        "distance_days": 0,
+        "kind": "measured",
+        "method": "same_day",
+        "quality": "high",
+        "sources": [
+          {
+            "date": "2026-06-20",
+            "measurement_kind": "direct",
+            "provider": "withings",
+            "recorded_at": "2026-06-20T08:00:00.000Z",
+            "source_record_id": "weight-after",
+            "value_kg": 72,
+          },
+        ],
+        "value_kg": 72,
+      },
+    },
+  ],
+  "bests": [
+    {
+      "activity_id": "00000000-0000-4000-8000-000000000010",
+      "canonical_type": "cycling",
+      "date": "2026-06-15",
+      "duration_seconds": 300,
+      "member_activity_ids": [
+        "00000000-0000-4000-8000-000000000010",
+      ],
+      "power_kind": "direct",
+      "quality": {
+        "continuity_tolerance_seconds": 5,
+        "coverage_pct": 100,
+        "largest_gap_seconds": 1,
+        "median_sample_interval_seconds": 1,
+        "observed_samples": 1201,
+        "reasons": [],
+        "status": "high",
+      },
+      "source_devices": [
+        "elemnt-bolt",
+      ],
+      "source_providers": [
+        "wahoo",
+      ],
+      "start_offset_seconds": 60,
+      "started_at": "2026-06-15T15:00:00.000Z",
+      "watts": 360,
+      "watts_per_kg": 5.07,
+      "watts_per_kg_reason": null,
+      "weight": {
+        "distance_days": 5,
+        "kind": "interpolated",
+        "method": "linear_interpolation",
+        "quality": "medium",
+        "sources": [
+          {
+            "date": "2026-06-10",
+            "measurement_kind": "direct",
+            "provider": "withings",
+            "recorded_at": "2026-06-10T08:00:00.000Z",
+            "source_record_id": "weight-before",
+            "value_kg": 70,
+          },
+          {
+            "date": "2026-06-20",
+            "measurement_kind": "direct",
+            "provider": "withings",
+            "recorded_at": "2026-06-20T08:00:00.000Z",
+            "source_record_id": "weight-after",
+            "value_kg": 72,
+          },
+        ],
+        "value_kg": 71,
+      },
+    },
+    {
+      "activity_id": "00000000-0000-4000-8000-000000000010",
+      "canonical_type": "cycling",
+      "date": "2026-06-15",
+      "duration_seconds": 1200,
+      "member_activity_ids": [
+        "00000000-0000-4000-8000-000000000010",
+      ],
+      "power_kind": "direct",
+      "quality": {
+        "continuity_tolerance_seconds": 5,
+        "coverage_pct": 100,
+        "largest_gap_seconds": 1,
+        "median_sample_interval_seconds": 1,
+        "observed_samples": 1201,
+        "reasons": [],
+        "status": "high",
+      },
+      "source_devices": [
+        "elemnt-bolt",
+      ],
+      "source_providers": [
+        "wahoo",
+      ],
+      "start_offset_seconds": 420,
+      "started_at": "2026-06-15T15:00:00.000Z",
+      "watts": 300,
+      "watts_per_kg": 4.225,
+      "watts_per_kg_reason": null,
+      "weight": {
+        "distance_days": 5,
+        "kind": "interpolated",
+        "method": "linear_interpolation",
+        "quality": "medium",
+        "sources": [
+          {
+            "date": "2026-06-10",
+            "measurement_kind": "direct",
+            "provider": "withings",
+            "recorded_at": "2026-06-10T08:00:00.000Z",
+            "source_record_id": "weight-before",
+            "value_kg": 70,
+          },
+          {
+            "date": "2026-06-20",
+            "measurement_kind": "direct",
+            "provider": "withings",
+            "recorded_at": "2026-06-20T08:00:00.000Z",
+            "source_record_id": "weight-after",
+            "value_kg": 72,
+          },
+        ],
+        "value_kg": 71,
+      },
+    },
+    {
+      "activity_id": "00000000-0000-4000-8000-000000000011",
+      "canonical_type": "cycling",
+      "date": "2026-06-20",
+      "duration_seconds": 1800,
+      "member_activity_ids": [
+        "00000000-0000-4000-8000-000000000010",
+      ],
+      "power_kind": "direct",
+      "quality": {
+        "continuity_tolerance_seconds": 5,
+        "coverage_pct": 100,
+        "largest_gap_seconds": 1,
+        "median_sample_interval_seconds": 1,
+        "observed_samples": 1201,
+        "reasons": [],
+        "status": "high",
+      },
+      "source_devices": [
+        "elemnt-bolt",
+      ],
+      "source_providers": [
+        "wahoo",
+      ],
+      "start_offset_seconds": 420,
+      "started_at": "2026-06-20T15:00:00.000Z",
+      "watts": 280,
+      "watts_per_kg": 3.889,
+      "watts_per_kg_reason": null,
+      "weight": {
+        "distance_days": 0,
+        "kind": "measured",
+        "method": "same_day",
+        "quality": "high",
+        "sources": [
+          {
+            "date": "2026-06-20",
+            "measurement_kind": "direct",
+            "provider": "withings",
+            "recorded_at": "2026-06-20T08:00:00.000Z",
+            "source_record_id": "weight-after",
+            "value_kg": 72,
+          },
+        ],
+        "value_kg": 72,
+      },
+    },
+    {
+      "activity_id": "00000000-0000-4000-8000-000000000012",
+      "canonical_type": "cycling",
+      "date": "2026-06-25",
+      "duration_seconds": 3600,
+      "member_activity_ids": [
+        "00000000-0000-4000-8000-000000000010",
+      ],
+      "power_kind": "direct",
+      "quality": {
+        "continuity_tolerance_seconds": 5,
+        "coverage_pct": 100,
+        "largest_gap_seconds": 1,
+        "median_sample_interval_seconds": 1,
+        "observed_samples": 1201,
+        "reasons": [],
+        "status": "high",
+      },
+      "source_devices": [
+        "elemnt-bolt",
+      ],
+      "source_providers": [
+        "wahoo",
+      ],
+      "start_offset_seconds": 420,
+      "started_at": "2026-06-25T15:00:00.000Z",
+      "watts": 250,
+      "watts_per_kg": 3.472,
+      "watts_per_kg_reason": null,
+      "weight": {
+        "distance_days": 5,
+        "kind": "nearest",
+        "method": "nearest_within_30_days",
+        "quality": "low",
+        "sources": [
+          {
+            "date": "2026-06-20",
+            "measurement_kind": "direct",
+            "provider": "withings",
+            "recorded_at": "2026-06-20T08:00:00.000Z",
+            "source_record_id": "weight-after",
+            "value_kg": 72,
+          },
+        ],
+        "value_kg": 72,
+      },
+    },
+  ],
+  "durations_seconds": [
+    300,
+    1200,
+    1800,
+    3600,
+  ],
+  "end_date": "2026-08-28",
+  "next_cursor": "eyJ2ZXJzaW9uIjoxLCJ1c2VySWQiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEiLCJzaGFwZSI6IkJYOERIU0x5VFZ2UDZEcnhFZGtobFYiLCJkdXJhdGlvbiI6MTgwMCwid2F0dHMiOjI4MCwic3RhcnRlZEF0IjoiMjAyNi0wNi0yMFQxNTowMDowMC4wMDBaIiwiYWN0aXZpdHlJZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAxMSJ9",
+  "start_date": "2026-03-01",
+}
+`;
+
+exports[`CyclingPowerCurveRepository > uses a bounded deduped-sample calculation for arbitrary durations 1`] = `
+{
+  "activity_curve": [],
+  "bests": [
+    {
+      "activity_id": "00000000-0000-4000-8000-000000000010",
+      "canonical_type": "cycling",
+      "date": "2026-06-15",
+      "duration_seconds": 421,
+      "member_activity_ids": [
+        "00000000-0000-4000-8000-000000000010",
+      ],
+      "power_kind": "direct",
+      "quality": {
+        "continuity_tolerance_seconds": 5,
+        "coverage_pct": 100,
+        "largest_gap_seconds": 1,
+        "median_sample_interval_seconds": 1,
+        "observed_samples": 1201,
+        "reasons": [],
+        "status": "high",
+      },
+      "source_devices": [
+        "elemnt-bolt",
+      ],
+      "source_providers": [
+        "wahoo",
+      ],
+      "start_offset_seconds": 420,
+      "started_at": "2026-06-15T15:00:00.000Z",
+      "watts": 315,
+      "watts_per_kg": null,
+      "watts_per_kg_reason": "No valid positive directly measured body weight is available",
+      "weight": {
+        "reason": "No valid positive directly measured body weight is available",
+        "value_kg": null,
+      },
+    },
+  ],
+  "durations_seconds": [
+    421,
+  ],
+  "end_date": "2026-06-30",
+  "next_cursor": null,
+  "start_date": "2026-06-01",
+}
+`;
+
+exports[`CyclingPowerCurveRepository > uses a bounded deduped-sample calculation for arbitrary durations 2`] = `
+[
+  {
+    "parameters": {
+      "durations": [
+        421,
+      ],
+      "endDate": "2026-06-30",
+      "modalities": [
+        "outdoor",
+      ],
+      "pageLimit": 51,
+      "providers": [],
+      "startDate": "2026-06-01",
+      "timezone": "UTC",
+      "userId": "00000000-0000-4000-8000-000000000001",
+    },
+    "queryText": "/* power-curve:custom:bests */
+    SELECT
+      custom_curve.result_activity_id,
+      custom_curve.result_activity_date,
+      custom_curve.result_started_at,
+      custom_curve.result_canonical_type,
+      custom_curve.result_duration_seconds,
+      custom_curve.result_best_power,
+      custom_curve.result_start_offset_seconds,
+      custom_curve.result_observed_samples,
+      custom_curve.result_median_sample_interval_seconds,
+      custom_curve.result_largest_gap_seconds,
+      custom_curve.result_coverage_pct,
+      custom_curve.result_power_measurement_kind,
+      custom_curve.result_source_providers,
+      custom_curve.result_source_devices,
+      custom_curve.result_member_activity_ids
+    FROM (
+    WITH selected_activities AS MATERIALIZED (
+      SELECT
+        activity_id, user_id, started_at, canonical_type, source_providers,
+        member_activity_ids
+      FROM analytics.deduped_activities FINAL
+      WHERE
+    analytics.deduped_activities.user_id = {userId:UUID}
+    AND analytics.deduped_activities.is_deleted = 0
+    AND toDate(toTimeZone(analytics.deduped_activities.started_at, {timezone:String}))
+      BETWEEN toDate({startDate:String}) AND toDate({endDate:String})
+    AND analytics.deduped_activities.canonical_type = 'cycling'
+    AND (empty({modalities:Array(String)}) OR has({modalities:Array(String)}, analytics.deduped_activities.modality))
+    AND (
+      empty({providers:Array(String)})
+      OR hasAny(analytics.deduped_activities.source_providers, {providers:Array(String)})
+    )
+    ),
+    power_sample_groups AS (
+      SELECT
+        activity.activity_id,
+        activity.user_id,
+        activity.started_at,
+        activity.canonical_type,
+        arraySort(sample -> sample.1, groupArray((
+          sensor.recorded_at,
+          toFloat64(assumeNotNull(sensor.scalar)),
+          ifNull(sensor.provider_id, ''),
+          ifNull(sensor.device_id, ''),
+          sensor.measurement_kind
+        ))) AS samples
+      FROM selected_activities AS activity
+      INNER JOIN analytics.activity_sensor_sample AS sensor FINAL
+        ON sensor.activity_id = activity.activity_id
+        AND sensor.user_id = activity.user_id
+        AND sensor.channel = 'power'
+        AND sensor.scalar >= 0
+        AND sensor.is_deleted = 0
+      GROUP BY activity.activity_id, activity.user_id, activity.started_at, activity.canonical_type
+    ),
+    power_sample_arrays AS (
+      SELECT
+        activity_id, user_id, started_at, canonical_type,
+        arrayMap(sample -> sample.1, samples) AS recorded_times,
+        arrayMap(sample -> dateDiff('millisecond', started_at, sample.1) / 1000.0, samples) AS recorded_offsets,
+        arrayMap(sample -> sample.2, samples) AS powers,
+        arrayMap(sample -> sample.3, samples) AS providers,
+        arrayMap(sample -> sample.4, samples) AS devices,
+        arrayMap(sample -> sample.5, samples) AS measurement_kinds
+      FROM power_sample_groups
+      WHERE length(samples) > 1
+    ),
+    power_sample_segments AS (
+      SELECT *, arrayMap(
+        sample_index -> recorded_offsets[sample_index + 1] - recorded_offsets[sample_index],
+        arrayEnumerate(arrayPopBack(recorded_offsets))
+      ) AS segment_seconds
+      FROM power_sample_arrays
+    ),
+    power_sample_resolution AS (
+      SELECT *,
+        arraySort(segment_seconds) AS sorted_segment_seconds,
+        (
+          sorted_segment_seconds[intDiv(length(sorted_segment_seconds) + 1, 2)]
+          + sorted_segment_seconds[intDiv(length(sorted_segment_seconds), 2) + 1]
+        ) / 2.0 AS median_sample_interval_seconds
+      FROM power_sample_segments
+      WHERE arrayAll(interval_seconds -> interval_seconds > 0, segment_seconds)
+    ),
+    power_sample_state AS (
+      SELECT *,
+        arrayCumSum(arrayConcat([toFloat64(0)], arrayMap(
+          (power, seconds) -> power * seconds,
+          arrayPopBack(powers), segment_seconds
+        ))) AS cumulative_energy,
+        greatest(5.0, median_sample_interval_seconds * 2.0) AS continuity_tolerance_seconds,
+        arrayCumSum(arrayConcat([toUInt64(0)], arrayMap(
+          seconds -> toUInt64(seconds > continuity_tolerance_seconds), segment_seconds
+        ))) AS cumulative_discontinuities
+      FROM power_sample_resolution
+    ),
+    power_sample_endpoints AS MATERIALIZED (
+      SELECT
+        activity_id, user_id, started_at, canonical_type,
+        sample_index,
+        sample_recorded_at AS recorded_at,
+        sample_recorded_offset AS recorded_offset,
+        previous_power,
+        previous_segment_seconds,
+        endpoint_cumulative_energy AS cumulative_energy,
+        endpoint_cumulative_discontinuities AS cumulative_discontinuities,
+        median_sample_interval_seconds,
+        sample_provider AS provider,
+        sample_device AS device,
+        sample_measurement_kind AS measurement_kind
+      FROM power_sample_state
+      ARRAY JOIN
+        arrayEnumerate(recorded_times) AS sample_index,
+        recorded_times AS sample_recorded_at,
+        recorded_offsets AS sample_recorded_offset,
+        arrayConcat([toFloat64(0)], arrayPopBack(powers)) AS previous_power,
+        arrayConcat([toFloat64(0)], segment_seconds) AS previous_segment_seconds,
+        cumulative_energy AS endpoint_cumulative_energy,
+        cumulative_discontinuities AS endpoint_cumulative_discontinuities,
+        providers AS sample_provider,
+        devices AS sample_device,
+        measurement_kinds AS sample_measurement_kind
+    ),
+    duration_values AS (
+      SELECT arrayJoin({durations:Array(UInt32)}) AS duration_seconds
+    ),
+    duration_windows AS (
+      SELECT
+        start_sample.activity_id AS window_activity_id,
+        start_sample.user_id AS window_user_id,
+        start_sample.started_at AS window_started_at,
+        start_sample.canonical_type AS window_canonical_type,
+        duration_values.duration_seconds AS window_duration_seconds,
+        start_sample.sample_index AS window_start_sample_index,
+        end_sample.sample_index AS window_end_endpoint_index,
+        start_sample.recorded_offset AS window_start_offset_seconds,
+        start_sample.recorded_offset + duration_values.duration_seconds AS window_end_offset_seconds,
+        (
+          end_sample.cumulative_energy
+          - end_sample.previous_power * greatest(
+            0,
+            end_sample.recorded_offset
+              - (start_sample.recorded_offset + duration_values.duration_seconds)
+          )
+          - start_sample.cumulative_energy
+        ) / duration_values.duration_seconds AS window_avg_power,
+        end_sample.cumulative_discontinuities
+          - start_sample.cumulative_discontinuities AS window_discontinuity_count,
+        end_sample.sample_index - start_sample.sample_index
+          + toUInt64(
+            end_sample.recorded_offset
+              = start_sample.recorded_offset + duration_values.duration_seconds
+          ) AS window_observed_samples,
+        start_sample.median_sample_interval_seconds AS window_median_sample_interval_seconds
+      FROM power_sample_endpoints AS start_sample
+      CROSS JOIN duration_values
+      ASOF INNER JOIN power_sample_endpoints AS end_sample
+        ON end_sample.activity_id = start_sample.activity_id
+        AND end_sample.user_id = start_sample.user_id
+        AND end_sample.recorded_at >= addMilliseconds(
+          start_sample.recorded_at, duration_values.duration_seconds * 1000
+        )
+      WHERE duration_values.duration_seconds >= start_sample.median_sample_interval_seconds
+    ),
+    winning_windows AS (
+      SELECT
+        duration_windows.window_activity_id,
+        duration_windows.window_user_id,
+        duration_windows.window_started_at,
+        duration_windows.window_canonical_type,
+        duration_windows.window_duration_seconds,
+        duration_windows.window_start_sample_index,
+        duration_windows.window_end_endpoint_index,
+        duration_windows.window_start_offset_seconds,
+        duration_windows.window_avg_power,
+        duration_windows.window_observed_samples,
+        duration_windows.window_median_sample_interval_seconds
+      FROM duration_windows
+      WHERE duration_windows.window_discontinuity_count = 0
+        AND duration_windows.window_avg_power >= 0
+      QUALIFY row_number() OVER (
+        PARTITION BY duration_windows.window_activity_id, duration_windows.window_user_id,
+          duration_windows.window_duration_seconds
+        ORDER BY duration_windows.window_avg_power DESC,
+          duration_windows.window_start_offset_seconds ASC
+      ) = 1
+    ),
+    winning_evidence AS (
+      SELECT
+        winning.window_activity_id AS evidence_activity_id,
+        winning.window_user_id AS evidence_user_id,
+        any(winning.window_started_at) AS evidence_started_at,
+        any(winning.window_canonical_type) AS evidence_canonical_type,
+        winning.window_duration_seconds AS evidence_duration_seconds,
+        toInt32(round(any(winning.window_avg_power))) AS evidence_best_power,
+        any(winning.window_start_offset_seconds) AS evidence_start_offset_seconds,
+        any(winning.window_observed_samples) AS evidence_observed_samples,
+        any(winning.window_median_sample_interval_seconds) AS evidence_median_sample_interval_seconds,
+        maxIf(
+          sample.previous_segment_seconds,
+          sample.sample_index > winning.window_start_sample_index
+        ) AS evidence_largest_gap_seconds,
+        toFloat64(100) AS coverage_pct,
+        groupArrayIf(
+          sample.measurement_kind,
+          sample.sample_index < winning.window_start_sample_index + winning.window_observed_samples
+        ) AS kinds,
+        arraySort(groupUniqArrayIf(
+          sample.provider,
+          sample.provider != ''
+            AND sample.sample_index < winning.window_start_sample_index + winning.window_observed_samples
+        )) AS source_providers,
+        arraySort(groupUniqArrayIf(
+          sample.device,
+          sample.device != ''
+            AND sample.sample_index < winning.window_start_sample_index + winning.window_observed_samples
+        )) AS source_devices
+      FROM winning_windows AS winning
+      INNER JOIN power_sample_endpoints AS sample
+        ON sample.activity_id = winning.window_activity_id
+        AND sample.user_id = winning.window_user_id
+        AND sample.sample_index >= winning.window_start_sample_index
+        AND sample.sample_index <= winning.window_end_endpoint_index
+      GROUP BY winning.window_activity_id, winning.window_user_id,
+        winning.window_duration_seconds, winning.window_start_sample_index,
+        winning.window_observed_samples
+    ),
+    curve_rows AS (
+      SELECT *, multiIf(
+        arrayExists(kind -> kind = 'estimated', kinds), 'estimated',
+        arrayAll(kind -> kind = 'direct', kinds), 'direct',
+        'unknown'
+      ) AS power_measurement_kind
+      FROM winning_evidence
+    )
+    SELECT
+      toString(curve_rows.evidence_activity_id) AS result_activity_id,
+      toString(toDate(toTimeZone(curve_rows.evidence_started_at, {timezone:String}))) AS result_activity_date,
+      formatDateTime(curve_rows.evidence_started_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS result_started_at,
+      curve_rows.evidence_canonical_type AS result_canonical_type,
+      curve_rows.evidence_duration_seconds AS result_duration_seconds,
+      curve_rows.evidence_best_power AS result_best_power,
+      curve_rows.evidence_start_offset_seconds AS result_start_offset_seconds,
+      curve_rows.evidence_observed_samples AS result_observed_samples,
+      curve_rows.evidence_median_sample_interval_seconds AS result_median_sample_interval_seconds,
+      curve_rows.evidence_largest_gap_seconds AS result_largest_gap_seconds,
+      curve_rows.coverage_pct AS result_coverage_pct,
+      curve_rows.power_measurement_kind AS result_power_measurement_kind,
+      curve_rows.source_providers AS result_source_providers,
+      curve_rows.source_devices AS result_source_devices,
+      result_activity.member_activity_ids AS result_member_activity_ids
+    FROM curve_rows
+    INNER JOIN selected_activities AS result_activity
+      ON result_activity.activity_id = curve_rows.evidence_activity_id
+      AND result_activity.user_id = curve_rows.evidence_user_id
+    ) AS custom_curve
+    WHERE 1 = 1
+    QUALIFY row_number() OVER (
+          PARTITION BY custom_curve.result_duration_seconds
+          ORDER BY custom_curve.result_best_power DESC,
+            custom_curve.result_started_at DESC,
+            custom_curve.result_activity_id ASC
+        ) = 1
+        ORDER BY result_duration_seconds ASC
+    SETTINGS prefer_column_name_to_alias = 1",
+  },
+  {
+    "parameters": {
+      "endDate": "2026-06-30",
+      "startDate": "2026-06-01",
+      "timezone": "UTC",
+      "userId": "00000000-0000-4000-8000-000000000001",
+    },
+    "queryText": "/* nearby-weight:observations */
+      SELECT
+        toString(toDate(toTimeZone(body.recorded_at, {timezone:String}))) AS date,
+        formatDateTime(body.recorded_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS recorded_at,
+        body.weight_kg,
+        body.provider_id,
+        body.external_id
+      FROM analytics.v_body_measurement AS body
+      WHERE body.user_id = {userId:UUID}
+        AND body.weight_kg IS NOT NULL
+        AND body.weight_kg > 0
+        AND toDate(toTimeZone(body.recorded_at, {timezone:String})) BETWEEN
+          addDays(toDate({startDate:String}), -30)
+          AND addDays(toDate({endDate:String}), 30)
+      ORDER BY body.recorded_at ASC
+      SETTINGS prefer_column_name_to_alias = 1",
+  },
+]
+`;

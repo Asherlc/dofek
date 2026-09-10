@@ -89,10 +89,6 @@ vi.mock("../../auth/session.ts", () => ({
   validateSession: (...args: unknown[]) => mockValidateSession(...args),
 }));
 
-vi.mock("./slack-oauth.ts", () => ({
-  handleSlackCallback: vi.fn(),
-}));
-
 vi.mock("dofek/db/tokens", () => ({
   loadTokens: (...args: unknown[]) => mockLoadTokens(...args),
   deleteTokens: (...args: unknown[]) => mockDeleteTokens(...args),

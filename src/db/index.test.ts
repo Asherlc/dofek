@@ -15,7 +15,9 @@ const mockPoolInstance = {
   idleCount: 0,
   waitingCount: 0,
 };
-const mockPool = vi.fn(() => mockPoolInstance);
+const mockPool = vi.fn(function vitestConstructor() {
+  return mockPoolInstance;
+});
 const mockRegisterPostgresPoolMetrics = vi.fn();
 
 vi.mock("@sentry/node", () => ({
@@ -56,7 +58,7 @@ describe("db/index", () => {
 
       expect(mockPool).toHaveBeenCalledWith({
         connectionString: "postgres://localhost:5432/test",
-        max: 5,
+        max: 10,
         idleTimeoutMillis: 300_000,
         connectionTimeoutMillis: 10_000,
         maxLifetimeSeconds: 600,
@@ -128,7 +130,7 @@ describe("db/index", () => {
       expect(mockPool).toHaveBeenCalledWith(
         expect.objectContaining({
           connectionString: "postgres://envhost:5432/envdb",
-          max: 5,
+          max: 10,
         }),
       );
       expect(db).toBe(mockDrizzleReturn);

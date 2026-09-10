@@ -3,12 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 import type { AccountErasureRemoteSnapshot } from "../account-erasure/remote-snapshot.ts";
 
 const mocks = vi.hoisted(() => {
-  const closeByQueue = new Map<string, ReturnType<typeof vi.fn>>();
+  const closeByQueue = new Map<string, CallableVitestMock>();
   const queuesByName = new Map<
     string,
     {
-      close: ReturnType<typeof vi.fn>;
-      getJobs: ReturnType<typeof vi.fn>;
+      close: CallableVitestMock;
+      getJobs: CallableVitestMock;
       name: string;
     }
   >();
@@ -136,7 +136,6 @@ const snapshot: AccountErasureRemoteSnapshot = {
   posthogDistinctId: "posthog-distinct-1994",
   processorEmails: [],
   providerConnections: [],
-  slackInstallations: [],
   stripe: null,
   webhooks: [],
 };
@@ -234,6 +233,30 @@ describe("createAccountErasureWorkPurgerFromEnv", () => {
     await expect(dependencies.queues[0]?.getJobs(["unsupported"], 0, 99, true)).rejects.toThrow(
       "unsupported BullMQ job state: unsupported",
     );
+  });
+
+  it.each([
+    "active",
+    "completed",
+    "delayed",
+    "failed",
+    "paused",
+    "prioritized",
+    "repeat",
+    "wait",
+    "waiting",
+    "waiting-children",
+  ])("passes the supported %s BullMQ state through to the queue", async (state) => {
+    const purger = createAccountErasureWorkPurgerFromEnv();
+    await purger.purge(snapshot);
+    const dependencies = mocks.purgeAccountWork.mock.calls.at(-1)?.[1];
+    if (!dependencies) throw new Error("Work erasure dependencies were not passed");
+    const rawQueue = mocks.queuesByName.get("sync");
+    if (!rawQueue) throw new Error("Legacy sync queue was not created");
+
+    await dependencies.queues[0]?.getJobs([state], 0, 99, true);
+
+    expect(rawQueue.getJobs).toHaveBeenCalledWith([state], 0, 99, true);
   });
 
   it("uses the configured local work directory", async () => {

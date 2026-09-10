@@ -38,7 +38,9 @@ async function readGoalWeightKg(db: Pick<Database, "execute" | "transaction">, u
 }
 
 export type {
+  BodyFatPrediction,
   BodyRecompositionRow,
+  SmoothedBodyFatRow,
   SmoothedWeightRow,
   WeightPrediction,
 } from "../repositories/body-analytics-repository.ts";
@@ -51,6 +53,16 @@ const smoothedWeightOutputSchema = z.object({
   rawWeightStatus: epistemicStatusSchema.nullable(),
   smoothedWeight: z.number(),
   smoothedWeightStatus: epistemicStatusSchema,
+  weeklyChange: z.number().nullable(),
+  interpolated: z.boolean(),
+});
+
+const smoothedBodyFatOutputSchema = z.object({
+  date: z.string(),
+  rawBodyFatPct: z.number().nullable(),
+  rawBodyFatStatus: epistemicStatusSchema.nullable(),
+  smoothedBodyFatPct: z.number(),
+  smoothedBodyFatStatus: epistemicStatusSchema,
   weeklyChange: z.number().nullable(),
   interpolated: z.boolean(),
 });
@@ -85,6 +97,17 @@ const weightPredictionOutputSchema = z.object({
   projectionLine: z.array(z.object({ date: z.string(), projectedWeight: z.number() })),
 });
 
+const bodyFatPredictionOutputSchema = z.object({
+  ratePerWeek: z.number().nullable(),
+  rateConfidence: z.number().nullable(),
+  periodDeltas: z.object({
+    days7: z.number().nullable(),
+    days14: z.number().nullable(),
+    days30: z.number().nullable(),
+  }),
+  projectionLine: z.array(z.object({ date: z.string(), projectedBodyFatPct: z.number() })),
+});
+
 function createBodyAnalyticsRepository(ctx: AuthenticatedContext) {
   return new BodyAnalyticsRepository(
     ctx.db,
@@ -116,13 +139,21 @@ export const bodyAnalyticsRouter = router({
       const goalWeightKg = await readGoalWeightKg(ctx.db, ctx.userId);
       const repo = createBodyAnalyticsRepository(ctx);
       const predictionDays = range.days == null ? null : Math.max(range.days, 90);
-      const [smoothedWeightResult, predictionResult, recompositionResult, decisionContextResult] =
-        await Promise.allSettled([
-          repo.getSmoothedWeight(range.days, input.endDate),
-          repo.getWeightPrediction(predictionDays, input.endDate, goalWeightKg),
-          repo.getRecomposition(range.days, input.endDate),
-          repo.getBodyDecisionContext(input.endDate),
-        ]);
+      const [
+        smoothedWeightResult,
+        predictionResult,
+        recompositionResult,
+        bodyFatTrendResult,
+        bodyFatPredictionResult,
+        decisionContextResult,
+      ] = await Promise.allSettled([
+        repo.getSmoothedWeight(range.days, input.endDate),
+        repo.getWeightPrediction(predictionDays, input.endDate, goalWeightKg),
+        repo.getRecomposition(range.days, input.endDate),
+        repo.getSmoothedBodyFat(range.days, input.endDate),
+        repo.getBodyFatPrediction(predictionDays, input.endDate),
+        repo.getBodyDecisionContext(input.endDate),
+      ]);
 
       if (smoothedWeightResult.status === "rejected") {
         throw smoothedWeightResult.reason;
@@ -139,6 +170,17 @@ export const bodyAnalyticsRouter = router({
           cause: recompositionResult.reason,
         });
       }
+      if (bodyFatTrendResult.status === "rejected") {
+        captureException(bodyFatTrendResult.reason);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Body composition data is temporarily unavailable. Please try again.",
+          cause: bodyFatTrendResult.reason,
+        });
+      }
+      if (bodyFatPredictionResult.status === "rejected") {
+        captureException(bodyFatPredictionResult.reason);
+      }
       if (decisionContextResult.status === "rejected") {
         captureException(decisionContextResult.reason, {
           tags: { procedure: "bodyAnalytics.weightOverview" },
@@ -151,6 +193,9 @@ export const bodyAnalyticsRouter = router({
       return {
         smoothedWeight,
         prediction: predictionResult.status === "fulfilled" ? predictionResult.value : null,
+        bodyFatTrend: bodyFatTrendResult.value,
+        bodyFatPrediction:
+          bodyFatPredictionResult.status === "fulfilled" ? bodyFatPredictionResult.value : null,
         decisionContext:
           decisionContextResult.status === "fulfilled" ? decisionContextResult.value : null,
         recomposition,
@@ -176,6 +221,8 @@ export const bodyAnalyticsRouter = router({
       outputSchema: z.object({
         smoothedWeight: z.array(smoothedWeightOutputSchema),
         prediction: weightPredictionOutputSchema.nullable(),
+        bodyFatTrend: z.array(smoothedBodyFatOutputSchema),
+        bodyFatPrediction: bodyFatPredictionOutputSchema.nullable(),
         decisionContext: bodyDecisionContextOutputSchema.nullable(),
         recomposition: z.array(bodyRecompositionOutputSchema),
         healthStatus: z.array(healthStatusMetricSchema),

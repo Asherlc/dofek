@@ -109,18 +109,16 @@ describe("PeerDB account-erasure proof", () => {
     );
   });
 
-  it.each([
-    "not-a-lsn",
-    "0/",
-    "0/xyz",
-    "xyz/100",
-  ])("rejects an invalid Postgres WAL boundary: %s", async (walLsn) => {
-    const database = {
-      execute: vi.fn(async () => [{ wal_lsn: walLsn }]),
-    };
+  it.each(["not-a-lsn", "0/", "0/xyz", "xyz/100"])(
+    "rejects an invalid Postgres WAL boundary: %s",
+    async (walLsn) => {
+      const database = {
+        execute: vi.fn(async () => [{ wal_lsn: walLsn }]),
+      };
 
-    await expect(captureAccountErasurePostgresWalLsn(database)).rejects.toThrow();
-  });
+      await expect(captureAccountErasurePostgresWalLsn(database)).rejects.toThrow();
+    },
+  );
 
   it.each([
     ["inactive", { active: false }],

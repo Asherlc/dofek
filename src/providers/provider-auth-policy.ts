@@ -2,18 +2,11 @@ import { CUSTOM_AUTH_SYNC_PROVIDER_IDS } from "../lib/custom-auth-providers.ts";
 import { getProviderAuthTypeFromSetup, type Provider, type ProviderAuthSetup } from "./types.ts";
 
 /**
- * No provider may use deployment-wide user credentials. Keep this exported
- * empty set while downstream policy checks migrate away from the legacy name.
- */
-export const LEGACY_SERVER_SIDE_USER_AUTH_PROVIDER_IDS = new Set<string>();
-
-/**
  * Sync providers that read/write user-owned data without an external account.
  */
 export const INTERNAL_SYNC_PROVIDER_IDS = new Set(["auto-supplements"]);
 
 export function requiresPerUserConnect(providerId: string): boolean {
-  if (LEGACY_SERVER_SIDE_USER_AUTH_PROVIDER_IDS.has(providerId)) return false;
   if (INTERNAL_SYNC_PROVIDER_IDS.has(providerId)) return false;
   return true;
 }
@@ -28,7 +21,7 @@ export type PerUserAuthComplianceResult =
 
 /**
  * Validates that a provider follows the per-user authentication policy.
- * Import-only, internal, and legacy providers are exempt.
+ * Import-only and internal providers are exempt.
  */
 export function checkPerUserAuthCompliance(provider: Provider): PerUserAuthComplianceResult {
   if (isImportOnlyProvider(provider)) {

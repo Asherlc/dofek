@@ -7,7 +7,6 @@ import {
 import { useRouter } from "expo-router";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { Card } from "../components/Card";
-import { EmptyStatePreview } from "../components/EmptyStatePreview";
 import { HealthReportShareButton } from "../components/HealthReportShareButton";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
 import { ReportDecisionSynthesis } from "../components/ReportDecisionSynthesis";
@@ -122,7 +121,12 @@ export default function ReportsScreen() {
             </Card>
           </View>
         ) : weeklyReport.data?.emptyState && !weeklyReport.data.current ? (
-          <EmptyStatePreview content={weeklyReport.data.emptyState} />
+          <Card>
+            <Text accessibilityRole="header" style={styles.sectionTitle}>
+              {weeklyReport.data.emptyState.title}
+            </Text>
+            <Text style={styles.subtitle}>{weeklyReport.data.emptyState.requirement}</Text>
+          </Card>
         ) : (
           <QueryStatePanel variant="empty" message="Not enough weekly data to create a report." />
         )}
@@ -200,7 +204,12 @@ export default function ReportsScreen() {
             </Card>
           </View>
         ) : monthlyReport.data?.emptyState && !monthlyReport.data.current ? (
-          <EmptyStatePreview content={monthlyReport.data.emptyState} />
+          <Card>
+            <Text accessibilityRole="header" style={styles.sectionTitle}>
+              {monthlyReport.data.emptyState.title}
+            </Text>
+            <Text style={styles.subtitle}>{monthlyReport.data.emptyState.requirement}</Text>
+          </Card>
         ) : (
           <QueryStatePanel variant="empty" message="Not enough monthly data to create a report." />
         )}
