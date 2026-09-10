@@ -435,6 +435,7 @@ function renderModel(
     activityRefreshScoped: scopedActivityIds != null,
   })
     .replaceAll("{{ initial_lookback_days }}", "365")
+    .replaceAll("{{ var('activity_location_batch_size', 250) }}", "250")
     .replaceAll('{{ var("activity_refresh_user_id") }}', userId)
     .replaceAll(
       "{{ activity_refresh_ids() }}",

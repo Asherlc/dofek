@@ -82,7 +82,11 @@ function renderDbtBooleanBranches(
         ? options.isIncremental
         : frame.condition === "activity_refresh_scoped"
           ? options.activityRefreshScoped
-          : undefined;
+          : frame.condition === "not activity_refresh_scoped"
+            ? options.activityRefreshScoped == null
+              ? undefined
+              : !options.activityRefreshScoped
+            : undefined;
     append(
       enabled == null
         ? `{% if ${frame.condition} %}${frame.enabledSql}${frame.disabledSql ? `{% else %}${frame.disabledSql}` : ""}{% endif %}`

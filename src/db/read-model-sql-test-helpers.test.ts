@@ -155,6 +155,18 @@ SELECT 'unscoped'
     expect(renderedSql).toContain("SELECT 'unscoped'");
   });
 
+  it("renders a negated activity refresh condition", () => {
+    const renderedSql = renderDbtModelSql(
+      "{% if not activity_refresh_scoped %}LIMIT 250{% endif %}",
+      {
+        isIncremental: true,
+        activityRefreshScoped: false,
+      },
+    );
+
+    expect(renderedSql).toBe("LIMIT 250");
+  });
+
   it("renders nested boolean branches without leaving Jinja tokens", () => {
     const nestedModelSql = `
 {% if activity_refresh_scoped %}
