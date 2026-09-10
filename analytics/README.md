@@ -27,7 +27,25 @@ persisted PostgreSQL activity groups, and `deduped_activity_members` exposes can
 activity/member aliases for downstream models. `activity_duplicate_matches`
 retains overlap evidence for integrity diagnostics; `activity_duplicate_groups`
 projects `activity_source_records.group_id` without deriving identity from those
-edges. The [activity model](models/read_models/deduped_activities.sql) uses the
+edges. `activity_effort_identity` projects current evidence at
+`(user_id, source_activity_id, kind, namespace, normalized_value, source_field)`
+grain: it joins every current `activity_source_records` member to
+`deduped_activity_members`, so a representative never hides a contributing
+source's route, workout/template/class, segment, standardized-test, or weak
+name evidence. Its explicit v1 raw-field map is `pelotonClassId`, `templateId`,
+`workoutTemplateId`, and `classId` for provider workouts; `routeId` and
+`courseId` for provider routes; `segmentId` for segments; and
+`standardizedTestId` and `testId` for standardized tests. `external_id` stays
+provider-instance provenance and is never emitted as a reusable identity.
+Names are emitted only as `activity_name` with `weak_similarity`. Evidence is a
+bounded map of the classified raw field/value and source-record identifiers.
+The append-incremental model uses the latest source/member refresh time as its
+source watermark and writes a `ReplacingMergeTree` tombstone when an emitted
+identity disappears or its source is no longer current. This follows dbt's
+[incremental-model lifecycle](https://docs.getdbt.com/docs/build/incremental-models)
+and preserves the structured source evidence consumed by MCP tools under the
+[MCP specification](https://modelcontextprotocol.io/specification/2026-07-28).
+The [activity model](models/read_models/deduped_activities.sql) uses the
 group UUID as `activity_id` and the chosen member UUID as `primary_activity_id`.
 Representative selection orders deduped sensor presence, sample count, elevation
 presence, specific canonical type, provider-type refinement, provider priority,
