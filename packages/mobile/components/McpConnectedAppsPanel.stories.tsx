@@ -9,24 +9,22 @@ import { McpConnectedAppsPanel } from "./McpConnectedAppsPanel";
 
 const connectedApps = [
   {
-    id: "oauth-token-1",
     name: "Claude OAuth",
     scopes: ["health:read"],
-    createdAt: "2026-05-20T12:00:00.000Z",
+    connectedAt: "2026-05-20T12:00:00.000Z",
     lastUsedAt: "2026-05-20T12:30:00.000Z",
-    expiresAt: null,
-    revokedAt: null,
     oauthClientId: "claude-client",
+    oauthResource: "https://dofek.example/api/mcp",
+    isActive: true,
   },
   {
-    id: "oauth-token-2",
     name: "ChatGPT OAuth",
     scopes: ["health:read", "activity:read"],
-    createdAt: "2026-05-19T12:00:00.000Z",
+    connectedAt: "2026-05-19T12:00:00.000Z",
     lastUsedAt: null,
-    expiresAt: "2026-06-01T00:00:00.000Z",
-    revokedAt: null,
     oauthClientId: "chatgpt-client",
+    oauthResource: "https://dofek.example/api/mcp",
+    isActive: true,
   },
 ];
 
@@ -62,8 +60,8 @@ function createMockLink(scenario: StoryScenario): TRPCLink<AppRouter> {
                 },
               });
             }
-          } else if (op.path === "mcp.revokeToken") {
-            observer.next?.({ result: { data: connectedApps[0] } });
+          } else if (op.path === "mcp.revokeConnectedApp") {
+            observer.next?.({ result: { data: { success: true } } });
           } else {
             observer.error?.(new Error(`Unhandled MCP story path: ${op.path}`));
             return { unsubscribe: () => {} };

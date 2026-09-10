@@ -10,6 +10,7 @@ import {
   listMcpConnectedApps,
   listMcpPersonalTokens,
   listMcpTokens,
+  revokeMcpConnectedApp,
   revokeMcpToken,
   updateMcpTokenScopes,
   validateMcpToken,
@@ -338,7 +339,7 @@ describe("MCP token repository (integration)", () => {
         name: `OAuth app ${index}`,
         scopes: ["health:read"],
         expiresAt: null,
-        oauthClientId: "claude-client",
+        oauthClientId: `oauth-client-${index}`,
         oauthResource: "https://dofek.example/api/mcp",
       });
     }
@@ -352,7 +353,9 @@ describe("MCP token repository (integration)", () => {
     const firstPage = await listMcpConnectedApps(ctx.db, testUserId);
     const nextCursor = firstPage.nextCursor;
     expect(firstPage.items).toHaveLength(20);
-    expect(firstPage.items.every((token) => token.oauthClientId === "claude-client")).toBe(true);
+    expect(firstPage.items.every((token) => token.oauthClientId.startsWith("oauth-client-"))).toBe(
+      true,
+    );
     expect(nextCursor).toEqual(expect.any(String));
 
     const secondPage = await listMcpConnectedApps(ctx.db, testUserId, nextCursor ?? undefined);
@@ -363,5 +366,108 @@ describe("MCP token repository (integration)", () => {
     const personalTokens = await listMcpPersonalTokens(ctx.db, testUserId);
     expect(personalTokens).toHaveLength(1);
     expect(personalTokens[0]?.name).toBe("Personal token");
+  });
+
+  it("groups rotated access tokens into one active connected app", async () => {
+    const first = await createMcpToken(ctx.db, {
+      userId: testUserId,
+      name: "Claude OAuth",
+      scopes: ["health:read"],
+      expiresAt: new Date(Date.now() + 60_000),
+      oauthClientId: "claude-client",
+      oauthResource: "https://dofek.example/api/mcp",
+    });
+    const second = await createMcpToken(ctx.db, {
+      userId: testUserId,
+      name: "Claude OAuth",
+      scopes: ["health:read", "activity:read"],
+      expiresAt: new Date(Date.now() + 120_000),
+      oauthClientId: "claude-client",
+      oauthResource: "https://dofek.example/api/mcp",
+    });
+    await ctx.db.execute(
+      sql`UPDATE fitness.mcp_access_token
+          SET created_at = CASE
+            WHEN id = ${first.metadata.id}::uuid THEN '2026-05-20T12:00:00Z'::timestamptz
+            ELSE '2026-05-20T12:01:00Z'::timestamptz
+          END
+          WHERE id IN (${first.metadata.id}::uuid, ${second.metadata.id}::uuid)`,
+    );
+
+    await ctx.db.execute(
+      sql`INSERT INTO fitness.mcp_oauth_refresh_token (
+            token_hash, client_id, user_id, access_token_id, scopes, resource, expires_at
+          ) VALUES
+            (
+              ${hashMcpToken("active-claude-refresh")}, ${"claude-client"}, ${testUserId},
+              ${second.metadata.id}::uuid, ARRAY['health:read', 'activity:read']::text[],
+              ${"https://dofek.example/api/mcp"}, ${new Date(Date.now() + 86_400_000)}
+            ),
+            (
+              ${hashMcpToken("expired-claude-refresh")}, ${"claude-client"}, ${testUserId},
+              ${first.metadata.id}::uuid, ARRAY['health:read']::text[],
+              ${"https://dofek.example/api/mcp"}, ${new Date(Date.now() - 1_000)}
+            )`,
+    );
+
+    const page = await listMcpConnectedApps(ctx.db, testUserId);
+
+    expect(page.items).toEqual([
+      {
+        oauthClientId: "claude-client",
+        oauthResource: "https://dofek.example/api/mcp",
+        name: "Claude OAuth",
+        scopes: ["health:read", "activity:read"],
+        connectedAt: expect.any(String),
+        lastUsedAt: null,
+        isActive: true,
+      },
+    ]);
+    expect(page.nextCursor).toBeNull();
+  });
+
+  it("revokes all access and refresh tokens for a connected app", async () => {
+    const first = await createMcpToken(ctx.db, {
+      userId: testUserId,
+      name: "Claude OAuth",
+      scopes: ["health:read"],
+      expiresAt: null,
+      oauthClientId: "claude-client",
+      oauthResource: "https://dofek.example/api/mcp",
+    });
+    const second = await createMcpToken(ctx.db, {
+      userId: testUserId,
+      name: "Claude OAuth",
+      scopes: ["health:read"],
+      expiresAt: null,
+      oauthClientId: "claude-client",
+      oauthResource: "https://dofek.example/api/mcp",
+    });
+    await ctx.db.execute(
+      sql`INSERT INTO fitness.mcp_oauth_refresh_token (
+            token_hash, client_id, user_id, access_token_id, scopes, resource, expires_at
+          ) VALUES
+            (${hashMcpToken("revoke-refresh-1")}, ${"claude-client"}, ${testUserId},
+             ${first.metadata.id}::uuid, ARRAY['health:read']::text[],
+             ${"https://dofek.example/api/mcp"}, ${new Date(Date.now() + 86_400_000)}),
+            (${hashMcpToken("revoke-refresh-2")}, ${"claude-client"}, ${testUserId},
+             ${second.metadata.id}::uuid, ARRAY['health:read']::text[],
+             ${"https://dofek.example/api/mcp"}, ${new Date(Date.now() + 86_400_000)})`,
+    );
+
+    await expect(
+      revokeMcpConnectedApp(ctx.db, testUserId, "claude-client", "https://dofek.example/api/mcp"),
+    ).resolves.toBe(true);
+
+    const page = await listMcpConnectedApps(ctx.db, testUserId);
+    expect(page.items[0]?.isActive).toBe(false);
+    const refreshRows = await executeWithSchema(
+      ctx.db,
+      refreshTokenStateRowSchema,
+      sql`SELECT access_token_id, revoked_at
+          FROM fitness.mcp_oauth_refresh_token
+          WHERE client_id = ${"claude-client"}`,
+    );
+    expect(refreshRows.every((row) => row.revoked_at !== null)).toBe(true);
   });
 });

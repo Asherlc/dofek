@@ -148,6 +148,9 @@ vi.mock("../lib/trpc.ts", () => ({
       revokeToken: {
         useMutation: () => mockMutation,
       },
+      revokeConnectedApp: {
+        useMutation: () => mockMutation,
+      },
       updateScopes: {
         useMutation: () => mockMutation,
       },

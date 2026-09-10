@@ -5,9 +5,10 @@ import {
   listMcpConnectedApps,
   listMcpPersonalTokens,
   listMcpTokens,
+  mcpConnectedAppPageSchema,
   mcpScopeSchema,
   mcpTokenMetadataSchema,
-  mcpTokenPageSchema,
+  revokeMcpConnectedApp,
   revokeMcpToken,
   updateMcpTokenScopes,
 } from "../mcp/token-repository.ts";
@@ -29,7 +30,12 @@ const updateScopesInput = z.object({
 });
 
 const listConnectedAppsInput = z.object({
-  cursor: z.guid().optional(),
+  cursor: z.string().optional(),
+});
+
+const revokeConnectedAppInput = z.object({
+  oauthClientId: z.string().min(1),
+  oauthResource: z.url(),
 });
 
 export const mcpRouter = router({
@@ -54,9 +60,27 @@ export const mcpRouter = router({
 
   listConnectedApps: protectedProcedure
     .input(listConnectedAppsInput)
-    .output(mcpTokenPageSchema)
+    .output(mcpConnectedAppPageSchema)
     .query(async ({ ctx, input }) => {
       return listMcpConnectedApps(ctx.db, ctx.userId, input.cursor);
+    }),
+
+  revokeConnectedApp: protectedProcedure
+    .input(revokeConnectedAppInput)
+    .mutation(async ({ ctx, input }) => {
+      const revoked = await revokeMcpConnectedApp(
+        ctx.db,
+        ctx.userId,
+        input.oauthClientId,
+        input.oauthResource,
+      );
+      if (!revoked) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Connected app not found.",
+        });
+      }
+      return { success: true };
     }),
 
   updateScopes: protectedProcedure
