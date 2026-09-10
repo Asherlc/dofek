@@ -9,6 +9,7 @@ import {
   McpAuthError,
   mcpScopeSchema,
   requireMcpScope,
+  revokeMcpConnectedApp,
   updateMcpTokenScopes,
   validateMcpToken,
 } from "./token-repository.ts";
@@ -157,21 +158,20 @@ describe("MCP token repository", () => {
   it("returns a cursor for the next connected-app page", async () => {
     mockExecute.mockResolvedValueOnce(
       Array.from({ length: 21 }, (_, index) => ({
-        id: `oauth-token-${index}`,
-        name: "Claude OAuth",
+        oauth_client_id: `oauth-client-${index}`,
+        oauth_resource: "https://dofek.example/api/mcp",
+        name: `OAuth app ${index}`,
         scopes: ["health:read"],
-        created_at: "2026-05-20T12:00:00.000Z",
+        connected_at: "2026-05-20T12:00:00.000Z",
         last_used_at: null,
-        expires_at: null,
-        revoked_at: null,
-        oauth_client_id: "claude-client",
+        is_active: true,
       })),
     );
 
     const page = await listMcpConnectedApps(createMockDb(), "user-id", undefined);
 
     expect(page.items).toHaveLength(20);
-    expect(page.nextCursor).toBe("oauth-token-19");
+    expect(page.nextCursor).toBe("oauth-client-19");
     const queryPayload = JSON.stringify(mockExecute.mock.calls[0]?.[0]);
     expect(queryPayload).toContain("oauth_client_id IS NOT NULL");
     expect(queryPayload).toContain('},21,{"value":[""]');
@@ -180,14 +180,13 @@ describe("MCP token repository", () => {
   it("does not return a cursor when the connected-app page is full", async () => {
     mockExecute.mockResolvedValueOnce(
       Array.from({ length: 20 }, (_, index) => ({
-        id: `oauth-token-${index}`,
-        name: "Claude OAuth",
+        oauth_client_id: `oauth-client-${index}`,
+        oauth_resource: "https://dofek.example/api/mcp",
+        name: `OAuth app ${index}`,
         scopes: ["health:read"],
-        created_at: "2026-05-20T12:00:00.000Z",
+        connected_at: "2026-05-20T12:00:00.000Z",
         last_used_at: null,
-        expires_at: null,
-        revoked_at: null,
-        oauth_client_id: "claude-client",
+        is_active: true,
       })),
     );
 
@@ -195,6 +194,56 @@ describe("MCP token repository", () => {
 
     expect(page.items).toHaveLength(20);
     expect(page.nextCursor).toBeNull();
+  });
+
+  it("returns aggregate connected-app metadata", async () => {
+    mockExecute.mockResolvedValueOnce([
+      {
+        oauth_client_id: "claude-client",
+        oauth_resource: "https://dofek.example/api/mcp",
+        name: "Claude",
+        scopes: ["health:read", "activity:read"],
+        connected_at: "2026-05-20T12:00:00.000Z",
+        last_used_at: "2026-05-20T12:30:00.000Z",
+        is_active: true,
+      },
+    ]);
+
+    const page = await listMcpConnectedApps(createMockDb(), "user-id");
+
+    expect(page).toEqual({
+      items: [
+        {
+          oauthClientId: "claude-client",
+          oauthResource: "https://dofek.example/api/mcp",
+          name: "Claude",
+          scopes: ["health:read", "activity:read"],
+          connectedAt: "2026-05-20T12:00:00.000Z",
+          lastUsedAt: "2026-05-20T12:30:00.000Z",
+          isActive: true,
+        },
+      ],
+      nextCursor: null,
+    });
+  });
+
+  it("revokes every token belonging to a connected app", async () => {
+    mockExecute.mockResolvedValueOnce([{ found: true }]);
+
+    await expect(
+      revokeMcpConnectedApp(
+        createMockDb(),
+        "user-id",
+        "claude-client",
+        "https://dofek.example/api/mcp",
+      ),
+    ).resolves.toBe(true);
+
+    const queryPayload = JSON.stringify(mockExecute.mock.calls[0]?.[0]);
+    expect(queryPayload).toContain("mcp_access_token");
+    expect(queryPayload).toContain("mcp_oauth_refresh_token");
+    expect(queryPayload).toContain("claude-client");
+    expect(queryPayload).toContain("https://dofek.example/api/mcp");
   });
 
   it("does not add nutrition write to an existing read-only token", async () => {

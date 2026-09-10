@@ -18,19 +18,19 @@ export function McpConnectedAppsPanel() {
   const connectedAppsQuery = trpc.mcp.listConnectedApps.useQuery({
     cursor: connectedAppCursors.at(-1),
   });
-  const revokeTokenMutation = trpc.mcp.revokeToken.useMutation();
+  const revokeConnectedAppMutation = trpc.mcp.revokeConnectedApp.useMutation();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const oauthTokens = connectedAppsQuery.data?.items ?? [];
 
-  const revokeAccess = async (tokenId: string): Promise<void> => {
+  const disconnectApp = async (oauthClientId: string, oauthResource: string): Promise<void> => {
     setErrorMessage(null);
     try {
-      await revokeTokenMutation.mutateAsync({ tokenId });
+      await revokeConnectedAppMutation.mutateAsync({ oauthClientId, oauthResource });
       setConnectedAppCursors([undefined]);
       await trpcUtils.mcp.listConnectedApps.invalidate();
     } catch (error: unknown) {
-      captureException(error, { source: "mcp-connected-app-revoke" });
-      setErrorMessage(getQueryErrorMessage(error, "Could not revoke access. Try again."));
+      captureException(error, { source: "mcp-connected-app-disconnect" });
+      setErrorMessage(getQueryErrorMessage(error, "Could not disconnect the app. Try again."));
     }
   };
 
@@ -51,7 +51,8 @@ export function McpConnectedAppsPanel() {
     <View style={styles.panel}>
       <Text style={styles.title}>Connected apps</Text>
       <Text style={styles.description}>
-        OAuth clients manage their own access tokens. Revoke access here to disconnect the client.
+        Each app is shown once, even when it refreshes its access token. Disconnect it here to
+        revoke all access.
       </Text>
       {errorMessage ? (
         <Text accessibilityRole="alert" style={styles.error}>
@@ -64,34 +65,30 @@ export function McpConnectedAppsPanel() {
         </Text>
       ) : null}
       <View style={styles.list}>
-        {oauthTokens.map((token) => {
-          const isRevoked = token.revokedAt !== null;
-          const isExpired = token.expiresAt !== null && new Date(token.expiresAt) <= new Date();
+        {oauthTokens.map((app) => {
           return (
-            <View key={token.id} style={styles.tokenCard}>
+            <View key={`${app.oauthClientId}:${app.oauthResource}`} style={styles.tokenCard}>
               <View style={styles.tokenHeader}>
-                <Text style={styles.tokenName}>{token.name}</Text>
+                <Text style={styles.tokenName}>{app.name}</Text>
                 <View style={styles.badges}>
-                  {isRevoked ? <Text style={styles.revoked}>Revoked</Text> : null}
-                  {isExpired ? <Text style={styles.expired}>Expired</Text> : null}
+                  {!app.isActive ? <Text style={styles.revoked}>Disconnected</Text> : null}
                 </View>
               </View>
               <Text style={styles.meta}>
-                Connected {formatTokenDate(token.createdAt)} · Last used{" "}
-                {formatTokenDate(token.lastUsedAt)}
+                Connected {formatTokenDate(app.connectedAt)} · Last used{" "}
+                {formatTokenDate(app.lastUsedAt)}
               </Text>
-              <Text style={styles.meta}>Access expires {formatTokenDate(token.expiresAt)}</Text>
-              <Text style={styles.scopes}>{token.scopes.join(", ")}</Text>
-              {!isRevoked ? (
+              <Text style={styles.scopes}>{app.scopes.join(", ")}</Text>
+              {app.isActive ? (
                 <TouchableOpacity
                   accessibilityRole="button"
-                  accessibilityLabel={`Revoke access for ${token.name}`}
-                  accessibilityState={{ disabled: revokeTokenMutation.isPending }}
-                  disabled={revokeTokenMutation.isPending}
-                  onPress={() => void revokeAccess(token.id)}
+                  accessibilityLabel={`Disconnect ${app.name}`}
+                  accessibilityState={{ disabled: revokeConnectedAppMutation.isPending }}
+                  disabled={revokeConnectedAppMutation.isPending}
+                  onPress={() => void disconnectApp(app.oauthClientId, app.oauthResource)}
                   style={styles.revokeButton}
                 >
-                  <Text style={styles.revokeButtonText}>Revoke access</Text>
+                  <Text style={styles.revokeButtonText}>Disconnect</Text>
                 </TouchableOpacity>
               ) : null}
             </View>
@@ -140,11 +137,6 @@ const styles = StyleSheet.create({
   badges: { flexDirection: "row", gap: spacing.xs },
   description: { color: colors.textSecondary, fontSize: fontSize.sm },
   error: { color: colors.danger, fontSize: fontSize.sm },
-  expired: {
-    color: colors.warning,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
-  },
   list: { gap: spacing.sm },
   pagination: {
     alignItems: "center",

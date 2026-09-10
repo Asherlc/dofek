@@ -176,14 +176,13 @@ describe("mcpRouter", () => {
   it("returns connected apps with a next cursor", async () => {
     mockExecute.mockResolvedValueOnce(
       Array.from({ length: 21 }, (_, index) => ({
-        id: `oauth-token-${index}`,
-        name: "Claude OAuth",
+        oauth_client_id: `oauth-client-${index}`,
+        oauth_resource: "https://dofek.example/api/mcp",
+        name: `OAuth app ${index}`,
         scopes: ["health:read"],
-        created_at: "2026-05-20T12:00:00.000Z",
+        connected_at: "2026-05-20T12:00:00.000Z",
         last_used_at: null,
-        expires_at: null,
-        revoked_at: null,
-        oauth_client_id: "claude-client",
+        is_active: true,
       })),
     );
     const caller = createCaller(createContext("user-id"));
@@ -191,7 +190,19 @@ describe("mcpRouter", () => {
     const result = await caller.listConnectedApps({});
 
     expect(result.items).toHaveLength(20);
-    expect(result.nextCursor).toBe("oauth-token-19");
+    expect(result.nextCursor).toBe("oauth-client-19");
+  });
+
+  it("revokes a whole connected app by client and resource", async () => {
+    mockExecute.mockResolvedValueOnce([{ found: true }]);
+    const caller = createCaller(createContext("user-id"));
+
+    await expect(
+      caller.revokeConnectedApp({
+        oauthClientId: "claude-client",
+        oauthResource: "https://dofek.example/api/mcp",
+      }),
+    ).resolves.toEqual({ success: true });
   });
 
   it("revokes a user-owned token", async () => {

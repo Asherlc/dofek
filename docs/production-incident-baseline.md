@@ -26219,3 +26219,12 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   dbt renderer now uses prototype-safe condition lookup with a regression for
   an unknown `toString` condition. Deployment and production drain validation
   remain pending.
+- **Local integration validation blocker (2026-09-10):** The connected-app
+  aggregation regression could not start through `pnpm test:integration` because
+  the workspace Redpanda container was unhealthy. Its first fatal log line was
+  `Could not setup Async I/O: ... nr_events 1 exceeds the capacity in
+  /proc/sys/fs/aio-max-nr 65536`; the container repeatedly aborted before the
+  integration test process started. No host sysctl or test retry workaround was
+  applied. Unit, router, and client tests remain runnable; follow-up is to raise
+  the local host AIO limit through the approved workstation setup before rerunning
+  the real-Postgres integration suite.
