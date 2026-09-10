@@ -273,10 +273,24 @@ export async function listMcpConnectedApps(
           SELECT
             access_token.oauth_client_id,
             access_token.oauth_resource,
-            (ARRAY_AGG(access_token.name ORDER BY access_token.created_at DESC, access_token.id DESC))[1]
-              AS name,
-            (ARRAY_AGG(access_token.scopes ORDER BY access_token.created_at DESC, access_token.id DESC))[1]
-              AS scopes,
+            (
+              SELECT latest_access_token.name
+              FROM fitness.mcp_access_token latest_access_token
+              WHERE latest_access_token.user_id = ${userId}
+                AND latest_access_token.oauth_client_id = access_token.oauth_client_id
+                AND latest_access_token.oauth_resource = access_token.oauth_resource
+              ORDER BY latest_access_token.created_at DESC, latest_access_token.id DESC
+              LIMIT 1
+            ) AS name,
+            (
+              SELECT latest_access_token.scopes
+              FROM fitness.mcp_access_token latest_access_token
+              WHERE latest_access_token.user_id = ${userId}
+                AND latest_access_token.oauth_client_id = access_token.oauth_client_id
+                AND latest_access_token.oauth_resource = access_token.oauth_resource
+              ORDER BY latest_access_token.created_at DESC, latest_access_token.id DESC
+              LIMIT 1
+            ) AS scopes,
             MIN(access_token.created_at) AS connected_at,
             MAX(access_token.last_used_at) AS last_used_at,
             EXISTS (
