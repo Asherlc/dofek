@@ -36,16 +36,15 @@ existing_group_watermarks AS MATERIALIZED (
 ),
 {% endif %}
 
-location_point_state AS MATERIALIZED (
+location_group_freshness AS MATERIALIZED (
     SELECT
         activity_members.activity_id AS activity_id,
         activity_members.user_id AS user_id,
-        location_versions.id AS source_metric_stream_id,
         max(location_versions.ingested_at) AS source_refreshed_at,
-        argMax(
-            tuple(location_versions.point, location_versions.is_deleted),
-            location_versions.version
-        ) AS latest_location_version
+        countIf(
+            location_versions.is_deleted = 0
+            AND location_versions.point IS NOT NULL
+        ) AS live_sample_count
     FROM {{ source('ingest', 'metric_stream_freshness') }} AS location_versions
     INNER JOIN {{ ref('deduped_activity_members') }} AS activity_members FINAL
         ON activity_members.member_activity_id = location_versions.activity_id
@@ -57,23 +56,7 @@ location_point_state AS MATERIALIZED (
         AND (location_versions.point IS NOT NULL OR location_versions.is_deleted = 1)
         AND activity_members.is_deleted = 0
         AND activity_group_state.is_deleted = 0
-    GROUP BY
-        activity_members.activity_id,
-        activity_members.user_id,
-        location_versions.id
-),
-
-location_group_freshness AS MATERIALIZED (
-    SELECT
-        activity_id,
-        user_id,
-        max(source_refreshed_at) AS source_refreshed_at,
-        countIf(
-            latest_location_version.2 = 0
-            AND latest_location_version.1 IS NOT NULL
-        ) AS live_sample_count
-    FROM location_point_state
-    GROUP BY activity_id, user_id
+    GROUP BY activity_members.activity_id, activity_members.user_id
 ),
 
 changed_location_groups AS (
@@ -370,6 +353,24 @@ current_location_samples AS MATERIALIZED (
         AND affected_location_rows.point IS NOT NULL
 ),
 
+empty_group_checkpoints AS MATERIALIZED (
+    SELECT
+        affected_group_refresh.activity_id AS activity_id,
+        affected_group_refresh.user_id AS user_id,
+        affected_group_refresh.source_refreshed_at AS source_refreshed_at
+    FROM affected_group_refresh
+    WHERE (affected_group_refresh.user_id, affected_group_refresh.activity_id) NOT IN (
+        SELECT user_id, activity_id
+        FROM current_location_samples
+    )
+    {% if is_incremental() %}
+        AND (affected_group_refresh.user_id, affected_group_refresh.activity_id) NOT IN (
+            SELECT user_id, activity_id
+            FROM existing_location_samples
+        )
+    {% endif %}
+),
+
 {% if is_incremental() %}
 stale_location_samples AS (
     SELECT
@@ -448,3 +449,25 @@ SELECT
     stale_location_samples.stale_source_refreshed_at AS refreshed_at
 FROM stale_location_samples
 {% endif %}
+
+UNION ALL
+
+SELECT
+    empty_group_checkpoints.activity_id AS activity_id,
+    empty_group_checkpoints.user_id AS user_id,
+    toDateTime64('1970-01-01 00:00:00', 9, 'UTC') AS recorded_at,
+    toDate('1970-01-01') AS recorded_date,
+    empty_group_checkpoints.activity_id AS source_metric_stream_id,
+    CAST(null, 'Nullable(UUID)') AS member_activity_id,
+    CAST(null, 'Nullable(String)') AS provider_id,
+    CAST(null, 'Nullable(String)') AS source_external_id,
+    CAST(null, 'Nullable(String)') AS device_id,
+    CAST(null, 'Nullable(String)') AS source_type,
+    'unknown' AS measurement_kind,
+    CAST(null, 'Nullable(Float32)') AS lat,
+    CAST(null, 'Nullable(Float32)') AS lng,
+    toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+    1 AS is_deleted,
+    empty_group_checkpoints.source_refreshed_at AS source_refreshed_at,
+    empty_group_checkpoints.source_refreshed_at AS refreshed_at
+FROM empty_group_checkpoints

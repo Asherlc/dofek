@@ -288,7 +288,14 @@ event time so late provider stream syncs and late activity dedupe changes can
 reattach older workout samples outside the normal recorded-time lookback.
 Location reconciliation deliberately is not event-time microbatched: its
 provider counts must see complete current tracks for affected groups, and its
-target reconciliation is limited to those groups. `deduped_activities` and `deduped_activity_members`
+target reconciliation is limited to those groups. Dirty discovery aggregates
+source freshness at group cardinality before the bounded group selection, and
+point-level latest-version reconstruction runs only for the selected batch.
+Selected groups that resolve to no live points write a deleted checkpoint row
+so their persisted watermark advances without exposing a synthetic live
+sample; see the
+[`activity_location_sample` model](./models/read_models/activity_location_sample.sql).
+`deduped_activities` and `deduped_activity_members`
 materialize canonical activity identity once, but incremental runs only rebuild
 activity groups affected by scoped member or group IDs; provider/device priority
 changes can change representative selection globally while persisted group IDs
