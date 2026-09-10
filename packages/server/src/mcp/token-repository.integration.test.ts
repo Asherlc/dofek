@@ -339,7 +339,7 @@ describe("MCP token repository (integration)", () => {
         name: `OAuth app ${index}`,
         scopes: ["health:read"],
         expiresAt: null,
-        oauthClientId: "claude-client",
+        oauthClientId: `oauth-client-${index}`,
         oauthResource: "https://dofek.example/api/mcp",
       });
     }
@@ -353,7 +353,9 @@ describe("MCP token repository (integration)", () => {
     const firstPage = await listMcpConnectedApps(ctx.db, testUserId);
     const nextCursor = firstPage.nextCursor;
     expect(firstPage.items).toHaveLength(20);
-    expect(firstPage.items.every((token) => token.oauthClientId === "claude-client")).toBe(true);
+    expect(firstPage.items.every((token) => token.oauthClientId.startsWith("oauth-client-"))).toBe(
+      true,
+    );
     expect(nextCursor).toEqual(expect.any(String));
 
     const secondPage = await listMcpConnectedApps(ctx.db, testUserId, nextCursor ?? undefined);
