@@ -364,7 +364,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
   },
   saveButtonText: {
-    color: colors.onAccent,
+    color: colors.textInverse,
     fontSize: fontSize.xs,
     fontWeight: fontWeight.semibold,
   },
