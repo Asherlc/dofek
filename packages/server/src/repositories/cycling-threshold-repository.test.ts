@@ -44,6 +44,8 @@ describe("CyclingThresholdRepository", () => {
         value_kind: "configured",
         historical_validity: "effective_dated",
         provider: null,
+        raw_evidence_available: false,
+        quality: { status: "high", reason: null },
       }),
     ]);
     expect(result.legacy_current).toEqual({
@@ -55,6 +57,23 @@ describe("CyclingThresholdRepository", () => {
       reason:
         "Legacy current FTP has no effective date and is not applied to historical activities",
     });
+  });
+
+  it("omits the legacy current value when no legacy FTP is configured", async () => {
+    const execute = vi.fn().mockResolvedValueOnce([configuredRow]).mockResolvedValueOnce([]);
+
+    const result = await new CyclingThresholdRepository(
+      { execute },
+      "00000000-0000-4000-8000-000000000001",
+      "UTC",
+    ).listHistory({
+      startDate: "2026-05-01",
+      endDate: "2026-08-01",
+      cursor: null,
+      limit: 100,
+    });
+
+    expect(result.legacy_current).toBeNull();
   });
 
   it("binds exact dates, timezone, providers, page size, and an opaque cursor", async () => {
