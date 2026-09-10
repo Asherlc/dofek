@@ -10,6 +10,7 @@ import {
   mcpScopeSchema,
   requireMcpScope,
   revokeMcpConnectedApp,
+  updateMcpConnectedAppScopes,
   updateMcpTokenScopes,
   validateMcpToken,
 } from "./token-repository.ts";
@@ -364,6 +365,41 @@ describe("MCP token repository", () => {
     expect(JSON.stringify(mockExecute.mock.calls[0]?.[0])).toContain(
       "expires_at IS NULL OR expires_at > NOW()",
     );
+  });
+
+  it("updates scopes for every active credential belonging to a connected app", async () => {
+    mockExecute.mockResolvedValueOnce([{ found: true }]);
+
+    await expect(
+      updateMcpConnectedAppScopes(
+        createMockDb(),
+        "user-id",
+        "claude-client",
+        "https://dofek.example/api/mcp",
+        ["health:read", "activity:read"],
+      ),
+    ).resolves.toBe(true);
+
+    const queryPayload = JSON.stringify(mockExecute.mock.calls[0]?.[0]);
+    expect(queryPayload).toContain("UPDATE fitness.mcp_access_token");
+    expect(queryPayload).toContain("UPDATE fitness.mcp_oauth_refresh_token");
+    expect(queryPayload).toContain("claude-client");
+    expect(queryPayload).toContain("https://dofek.example/api/mcp");
+    expect(queryPayload).toContain("activity:read");
+  });
+
+  it("returns false when no active credential belongs to a connected app", async () => {
+    mockExecute.mockResolvedValueOnce([]);
+
+    await expect(
+      updateMcpConnectedAppScopes(
+        createMockDb(),
+        "user-id",
+        "missing-client",
+        "https://dofek.example/api/mcp",
+        ["health:read"],
+      ),
+    ).resolves.toBe(false);
   });
 
   it("allows required scopes that are present", () => {
