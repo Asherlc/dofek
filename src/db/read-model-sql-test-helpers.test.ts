@@ -156,15 +156,22 @@ SELECT 'unscoped'
   });
 
   it("renders a negated activity refresh condition", () => {
-    const renderedSql = renderDbtModelSql(
-      "{% if not activity_refresh_scoped %}LIMIT 250{% endif %}",
-      {
-        isIncremental: true,
-        activityRefreshScoped: false,
-      },
-    );
+    const modelWithNegatedCondition = "{% if not activity_refresh_scoped %}LIMIT 250{% endif %}";
+    const renderedSql = renderDbtModelSql(modelWithNegatedCondition, {
+      isIncremental: true,
+      activityRefreshScoped: false,
+    });
 
     expect(renderedSql).toBe("LIMIT 250");
+    expect(
+      renderDbtModelSql(modelWithNegatedCondition, {
+        isIncremental: true,
+        activityRefreshScoped: true,
+      }),
+    ).toBe("");
+    expect(renderDbtModelSql(modelWithNegatedCondition, { isIncremental: true })).toBe(
+      modelWithNegatedCondition,
+    );
   });
 
   it("renders nested boolean branches without leaving Jinja tokens", () => {
