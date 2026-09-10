@@ -121,6 +121,7 @@ describe("CyclingThresholdEstimator", () => {
       evidence: { threshold_history: [configured], efforts: [] },
     });
     expect(deps.powerCurve.listRange).not.toHaveBeenCalled();
+    expect(deps.thresholds.getApplicableConfiguredFtp).toHaveBeenCalledOnce();
   });
 
   it("labels 95 percent of maximal 20-minute power as an estimate", async () => {
