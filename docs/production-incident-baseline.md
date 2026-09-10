@@ -26272,3 +26272,12 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   thread, or spill limit changed. Production resolution still requires model 18
   below the existing 240-second ceiling, a full 39-model cycle, and a zero
   dirty-group backlog.
+- **PR 2714 CI fixture failure / direct fix (2026-09-10):** Integration shard 3
+  failed because `activity-group-payload-union.integration.test.ts` uses an
+  isolated dbt renderer and schema fixture that did not yet define the new
+  analytics source. The first fatal line was `ClickHouseError: Syntax error:
+  ... {{ source('analytics', 'activity_location_member_change') }}`. The fixture
+  now creates the same freshness table and insert-triggered view and maps the
+  source to its isolated database. The exact four-test suite passes against real
+  ClickHouse in 17.8 seconds; no application behavior or resilience setting was
+  changed for the CI correction.

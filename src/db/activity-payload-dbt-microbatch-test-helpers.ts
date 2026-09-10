@@ -849,7 +849,10 @@ export function createActivityLocationMemberChangeSql(database: string): string 
   ) ENGINE = AggregatingMergeTree ORDER BY (user_id, member_activity_id)`;
 }
 
-export function createActivityLocationMemberChangeViewSql(database: string): string {
+export function createActivityLocationMemberChangeViewSql(
+  database: string,
+  metricStreamTable = "metric_stream",
+): string {
   return `CREATE MATERIALIZED VIEW ${database}.activity_location_member_change_ingest
     TO ${database}.activity_location_member_change AS
     SELECT
@@ -857,7 +860,7 @@ export function createActivityLocationMemberChangeViewSql(database: string): str
       user_id,
       max(ingested_at) AS changed_at,
       max(toUInt8(is_deleted = 0 AND point IS NOT NULL)) AS has_live_sample
-    FROM ${database}.metric_stream
+    FROM ${database}.${metricStreamTable}
     WHERE activity_id IS NOT NULL
       AND channel = 'location'
       AND (point IS NOT NULL OR is_deleted = 1)

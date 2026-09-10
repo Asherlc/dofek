@@ -2,6 +2,10 @@ import { randomBytes } from "node:crypto";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
+import {
+  createActivityLocationMemberChangeSql,
+  createActivityLocationMemberChangeViewSql,
+} from "./activity-payload-dbt-microbatch-test-helpers.ts";
 import { buildActivitySensorSummaryRowsTableSql } from "./clickhouse-activity-sensor-summary.ts";
 import { buildActivitySummaryRowsTableSql } from "./clickhouse-activity-summary.ts";
 import { buildPostgresFitnessActivityRawTableStatement } from "./clickhouse-raw-tables.ts";
@@ -366,6 +370,8 @@ async function seedFixture(
     createDedupedActivityMembersSql(database),
     createDedupedSensorSql(database),
     createMetricStreamSql(database),
+    createActivityLocationMemberChangeSql(database),
+    createActivityLocationMemberChangeViewSql(database, "metric_stream_freshness"),
     createActivitySensorSampleSql(database),
     createActivityLocationSampleSql(database),
     buildActivitySensorSummaryRowsTableSql().replaceAll("analytics.", `${database}.`),
@@ -457,6 +463,10 @@ function renderModel(
     .replaceAll(
       "{{ source('ingest', 'metric_stream_freshness') }}",
       `${database}.metric_stream_freshness`,
+    )
+    .replaceAll(
+      "{{ source('analytics', 'activity_location_member_change') }}",
+      `${database}.activity_location_member_change`,
     )
     .concat("\nSETTINGS join_use_nulls = 1, enable_materialized_cte = 1, max_threads = 1");
 }
