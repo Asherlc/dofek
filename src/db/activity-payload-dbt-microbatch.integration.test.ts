@@ -582,6 +582,53 @@ describe("activity payload dbt batch reconciliation", () => {
     ]);
   }, 240_000);
 
+  it("drains a location backlog across bounded runs without skipping groups", async () => {
+    await seedLocationFixture(client, database);
+    await insertLocationPoints(client, database, [
+      [
+        providerAPointIds[0],
+        "provider-a",
+        -122.3,
+        37.8,
+        "2026-09-03 10:10:00",
+        "2026-09-03 12:00:00",
+      ],
+      [
+        unrelatedPointId,
+        "provider-z",
+        -121.9,
+        37.4,
+        "2026-09-04 10:10:00",
+        "2026-09-04 12:00:00",
+        unrelatedRouteMemberId,
+      ],
+    ]);
+
+    await runDbtBatch(
+      database,
+      artifactDirectory,
+      ["activity_location_sample"],
+      "2026-09-03",
+      "2026-09-05",
+      undefined,
+      1,
+    );
+    await expectActiveLocationPointIds(client, database, routeGroupId, [providerAPointIds[0]]);
+    await expectActiveLocationPointIds(client, database, unrelatedRouteGroupId, []);
+
+    await runDbtBatch(
+      database,
+      artifactDirectory,
+      ["activity_location_sample"],
+      "2026-09-03",
+      "2026-09-05",
+      undefined,
+      1,
+    );
+    await expectActiveLocationPointIds(client, database, routeGroupId, [providerAPointIds[0]]);
+    await expectActiveLocationPointIds(client, database, unrelatedRouteGroupId, [unrelatedPointId]);
+  }, 240_000);
+
   it("does not append payload-free tombstones across an unchanged production dependency slice", async () => {
     await seedProductionLifecycleSliceFixture(client, database);
     await runDbtBatch(
@@ -1437,6 +1484,7 @@ async function runDbtBatch(
   start: string,
   end: string,
   activityIds?: readonly string[],
+  activityLocationBatchSize?: number,
 ): Promise<void> {
   const url = new URL(requireClickHouseUrl());
   const result = await runProcess(
@@ -1464,6 +1512,9 @@ async function runDbtBatch(
       JSON.stringify({
         activity_sensor_sample_begin: start,
         initial_lookback_days: 365,
+        ...(activityLocationBatchSize
+          ? { activity_location_batch_size: activityLocationBatchSize }
+          : {}),
         ...(activityIds
           ? {
               activity_refresh_user_id: userId,

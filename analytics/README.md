@@ -83,15 +83,20 @@ uses ClickHouse's idempotent
 operation when the target exists.
 [Migration 0084](../src/db/clickhouse-migrations/0084_activity_location_source_refresh_default.ts)
 makes that legacy default null-safe because older targets allowed nullable
-`refreshed_at` values. `activity_location_sample` separately materializes the
-new location changes used for dirty-group discovery, then reads complete raw
-tracks only for the affected members. The one-use raw-track CTE remains
-streaming so it is aggregated without buffering a second full copy; reused
-bounded key and result CTEs are materialized. Each raw location version is
-resolved with one tuple-valued `argMax`, keeping all fields from the same
-latest row while maintaining one aggregate state instead of one state per
-field. ClickHouse documents tuple arguments as the way to return associated
-columns from the row selected by
+`refreshed_at` values. `activity_location_sample` compares each stable group's
+latest raw-location and lifecycle timestamps with that group's persisted
+`source_refreshed_at` watermark. Unscoped builds select the 250 oldest dirty
+groups, then read complete raw tracks only for those groups; later builds keep
+selecting dirty groups until the backlog is empty. Explicit activity repair
+scopes retain their caller-supplied bounds. Per-group watermarks make the
+bounded progression safe: completing a newer group cannot hide an older group
+that has not run yet. The one-use raw-track CTE remains streaming so it is
+aggregated without buffering a second full copy; reused bounded key and result
+CTEs are materialized. Each raw location version is resolved with one
+tuple-valued `argMax`, keeping all fields from the same latest row while
+maintaining one aggregate state instead of one state per field. ClickHouse
+documents tuple arguments as the way to return associated columns from the row
+selected by
 [`argMax`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/argmax).
 Its model-local
 `enable_materialized_cte` setting prevents those reused intermediates from

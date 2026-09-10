@@ -26075,7 +26075,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Status:** The PeerDB OOM, stale activity mirror, missing ClickHouse target
   column, queue backlog, and redundant raw materialization are resolved. The
   production location reconciliation still exceeds its query-time budget; a
-  single-state tuple aggregation fix is validated locally and pending rollout.
+  bounded per-group backlog fix is validated locally and pending rollout.
 - **Symptoms / user impact:** Withings relational data continued reaching
   Postgres, but 44 processing-outbox rows remained pending and the app reported
   all Withings datasets as waiting. The analytics build stopped at
@@ -26185,3 +26185,24 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   The static regression first failed with ten states and now requires exactly
   one, while the real ClickHouse affected-member reconciliation fixture passes.
   No timeout, thread, memory, or spill limit was increased.
+- **Tuple rollout and remaining root cause:** PR
+  [#2708](https://github.com/Asherlc/dofek/pull/2708) deployed the tuple-valued
+  aggregation at `cc866249f03fbee5b549e32166bb60e3671c1b8b`. Production memory
+  was lower while the query was running, but the completed exception record
+  still reported 5.56 GiB peak memory after reading 408,793,812 rows / 25.98
+  GiB. Model 18 failed after 240.27 seconds; its first fatal line was `Timeout
+  exceeded: elapsed 240003.402637 ms, maximum: 240000 ms`. The tuple reduced
+  duplicate aggregate state but could not make an unbounded 1,531-group legacy
+  reconciliation fit the deadline. Production contains 23,868,656 qualifying
+  location versions across those groups (95th percentile 43,272, 99th
+  percentile 77,140, maximum 438,450 per member activity).
+- **Bounded backlog fix / validation:** Replace the global target watermark
+  with persisted per-group `source_refreshed_at` comparisons, select the 250
+  oldest dirty groups per unscoped build, and reconstruct complete tracks only
+  for that batch. Explicit activity-repair scopes remain bounded by their
+  caller-supplied IDs. A real ClickHouse regression with a one-group batch
+  proves the first build leaves the second group dirty and the next build
+  processes it without skipping; the full activity payload integration suite
+  passes all five lifecycle, provider-selection, scoped-repair, and batching
+  tests. Static model policy passes all 39 tests. No timeout, thread, memory, or
+  spill limit was increased.
