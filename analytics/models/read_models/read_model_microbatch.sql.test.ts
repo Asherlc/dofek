@@ -449,6 +449,11 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("LIMIT {{ var('activity_location_batch_size', 250) }}");
     expect(sql).toContain("> existing_group_watermarks.source_refreshed_at");
     expect(sql).toContain("location_group_freshness AS MATERIALIZED");
+    expect(sql).toContain("location_member_freshness AS (");
+    expect(sql).toContain("source('analytics', 'activity_location_member_change')");
+    expect(sql.indexOf("location_member_freshness AS (")).toBeLessThan(
+      sql.indexOf("location_group_freshness AS MATERIALIZED"),
+    );
     expect(sql).toContain(
       "GROUP BY activity_members.activity_id, activity_members.user_id",
     );

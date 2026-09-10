@@ -82,6 +82,7 @@ import { createMigration as createMigration0082 } from "./0082_metric_stream_del
 import { createMigration as createMigration0083 } from "./0083_activity_location_source_refresh.ts";
 import { createMigration as createMigration0084 } from "./0084_activity_location_source_refresh_default.ts";
 import { createMigration as createMigration0085 } from "./0085_remove_provider_derived_metrics.ts";
+import { createMigration as createMigration0086 } from "./0086_activity_location_member_change.ts";
 import type { ClickHouseMigration, ClickHouseMigrationFactory } from "./types.ts";
 
 const migrationFactories: ClickHouseMigrationFactory[] = [
@@ -169,6 +170,7 @@ const migrationFactories: ClickHouseMigrationFactory[] = [
   createMigration0083,
   createMigration0084,
   createMigration0085,
+  createMigration0086,
 ];
 
 export function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigration[] {

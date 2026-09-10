@@ -26250,3 +26250,34 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   spill limit; it retains the worker-memory increase applied earlier in the
   incident. Production resolution still requires a successful model 18 run, a
   full 39-model cycle, and a zero dirty-group backlog.
+- **Member-index correction pending rollout (2026-09-10):** PR
+  [#2712](https://github.com/Asherlc/dofek/pull/2712) merged as
+  `4c9d682998ae100afe3a157e27e0223e07cfe38f`, but the first production model 18
+  attempt on that image still timed out after 240.088 seconds. Query
+  `87e9b10d-ec19-4d1d-8e2b-9d8524b741a7` read 23,784,064 rows / 1.11 GiB,
+  peaked at 4.61 GiB, and wrote zero rows. The 250-group cap bounded point
+  reconstruction, but dirty discovery still scanned every raw location version
+  on every cycle. The direct correction is migration 0086: backfill one compact
+  freshness row per `(user_id, member_activity_id)`, then maintain it for new
+  inserts with an incremental materialized view. ClickHouse documents that
+  incremental materialized views run on newly inserted blocks and move repeated
+  aggregation to ingestion time:
+  <https://clickhouse.com/docs/materialized-view/incremental-materialized-view>.
+  The location model now discovers dirty groups from that member-cardinality
+  index and touches raw point history only after selecting its batch. The real
+  ClickHouse regression first read 100,030 rows with 100,000 unrelated points;
+  after the fix it satisfies a strict 50,000-row ceiling. Separate executable
+  migration coverage proves the legacy backfill, new-insert advancement,
+  deleted-only exclusion, and historical-live retention. No timeout, memory,
+  thread, or spill limit changed. Production resolution still requires model 18
+  below the existing 240-second ceiling, a full 39-model cycle, and a zero
+  dirty-group backlog.
+- **PR 2714 CI fixture failure / direct fix (2026-09-10):** Integration shard 3
+  failed because `activity-group-payload-union.integration.test.ts` uses an
+  isolated dbt renderer and schema fixture that did not yet define the new
+  analytics source. The first fatal line was `ClickHouseError: Syntax error:
+  ... {{ source('analytics', 'activity_location_member_change') }}`. The fixture
+  now creates the same freshness table and insert-triggered view and maps the
+  source to its isolated database. The exact four-test suite passes against real
+  ClickHouse in 17.8 seconds; no application behavior or resilience setting was
+  changed for the CI correction.

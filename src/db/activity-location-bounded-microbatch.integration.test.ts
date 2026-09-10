@@ -12,6 +12,7 @@ type ClickHouseClient = ReturnType<typeof createClient>;
 const queryMemorySchema = z.array(
   z.object({
     memory_usage: z.coerce.number(),
+    read_rows: z.coerce.number(),
   }),
 );
 
@@ -202,7 +203,7 @@ describe("bounded activity location dbt reconciliation", () => {
     await client.command({ query: "SYSTEM FLUSH LOGS" });
 
     const result = await client.query({
-      query: `SELECT memory_usage
+      query: `SELECT memory_usage, read_rows
         FROM system.query_log
         WHERE type = 'QueryFinish'
           AND query_kind = 'Insert'
@@ -218,6 +219,7 @@ describe("bounded activity location dbt reconciliation", () => {
 
     expect(queryMemory).toBeDefined();
     expect(queryMemory?.memory_usage).toBeLessThan(50 * 1024 * 1024);
+    expect(queryMemory?.read_rows).toBeLessThan(50_000);
     await activityPayloadTest.expectActiveLocationPointIds(
       client,
       database,

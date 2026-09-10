@@ -297,6 +297,21 @@ describe("clickHouseMigrations", () => {
         expect.stringContaining("group_id AS id"),
       ]),
     });
+    expect(
+      migrations.find((migration) => migration.id === "0086_activity_location_member_change"),
+    ).toMatchObject({
+      id: "0086_activity_location_member_change",
+      statements: expect.arrayContaining([
+        expect.stringContaining(
+          "CREATE TABLE IF NOT EXISTS analytics.activity_location_member_change",
+        ),
+        expect.stringContaining(
+          "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_location_member_change_ingest",
+        ),
+        expect.stringContaining("INSERT INTO analytics.activity_location_member_change"),
+        expect.stringContaining("FROM ingest.metric_stream"),
+      ]),
+    });
   });
 
   it("rejects duplicate migration ids", async () => {

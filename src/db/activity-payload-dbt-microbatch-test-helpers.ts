@@ -75,6 +75,8 @@ export async function seedLocationFixture(
     createDedupedActivitiesSql(database),
     createDedupedActivityMembersSql(database),
     createMetricStreamSql(database),
+    createActivityLocationMemberChangeSql(database),
+    createActivityLocationMemberChangeViewSql(database),
     createActivitySensorSampleSql(database),
     `INSERT INTO ${database}.deduped_activities VALUES
       ('${routeGroupId}', '${userId}', toDateTime64('2026-09-03 10:00:00', 6, 'UTC'),
@@ -836,6 +838,33 @@ export function createMetricStreamSql(database: string): string {
     is_deleted UInt8
   ) ENGINE = MergeTree ORDER BY (user_id, activity_id, channel, recorded_at, id, version)
     SETTINGS allow_nullable_key = 1`;
+}
+
+export function createActivityLocationMemberChangeSql(database: string): string {
+  return `CREATE TABLE ${database}.activity_location_member_change (
+    member_activity_id UUID,
+    user_id UUID,
+    changed_at SimpleAggregateFunction(max, DateTime64(9, 'UTC')),
+    has_live_sample SimpleAggregateFunction(max, UInt8)
+  ) ENGINE = AggregatingMergeTree ORDER BY (user_id, member_activity_id)`;
+}
+
+export function createActivityLocationMemberChangeViewSql(
+  database: string,
+  metricStreamTable = "metric_stream",
+): string {
+  return `CREATE MATERIALIZED VIEW ${database}.activity_location_member_change_ingest
+    TO ${database}.activity_location_member_change AS
+    SELECT
+      assumeNotNull(activity_id) AS member_activity_id,
+      user_id,
+      max(ingested_at) AS changed_at,
+      max(toUInt8(is_deleted = 0 AND point IS NOT NULL)) AS has_live_sample
+    FROM ${database}.${metricStreamTable}
+    WHERE activity_id IS NOT NULL
+      AND channel = 'location'
+      AND (point IS NOT NULL OR is_deleted = 1)
+    GROUP BY user_id, member_activity_id`;
 }
 
 export function createActivitySensorSampleSql(database: string): string {
