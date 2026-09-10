@@ -190,7 +190,14 @@ describe("mcpRouter", () => {
     const result = await caller.listConnectedApps({});
 
     expect(result.items).toHaveLength(20);
-    expect(result.nextCursor).toBe("oauth-client-19");
+    expect(result.nextCursor).toBe(
+      Buffer.from(
+        JSON.stringify({
+          oauthClientId: "oauth-client-19",
+          oauthResource: "https://dofek.example/api/mcp",
+        }),
+      ).toString("base64url"),
+    );
   });
 
   it("revokes a whole connected app by client and resource", async () => {

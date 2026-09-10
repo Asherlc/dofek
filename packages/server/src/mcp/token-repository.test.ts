@@ -171,10 +171,42 @@ describe("MCP token repository", () => {
     const page = await listMcpConnectedApps(createMockDb(), "user-id", undefined);
 
     expect(page.items).toHaveLength(20);
-    expect(page.nextCursor).toBe("oauth-client-19");
+    expect(page.nextCursor).toBe(
+      Buffer.from(
+        JSON.stringify({
+          oauthClientId: "oauth-client-19",
+          oauthResource: "https://dofek.example/api/mcp",
+        }),
+      ).toString("base64url"),
+    );
     const queryPayload = JSON.stringify(mockExecute.mock.calls[0]?.[0]);
     expect(queryPayload).toContain("oauth_client_id IS NOT NULL");
     expect(queryPayload).toContain('},21,{"value":[""]');
+  });
+
+  it("uses both client and resource in the connected-app pagination cursor", async () => {
+    mockExecute.mockResolvedValueOnce(
+      Array.from({ length: 21 }, (_, index) => ({
+        oauth_client_id: "shared-client",
+        oauth_resource: `https://dofek.example/api/mcp/${index}`,
+        name: `OAuth app ${index}`,
+        scopes: ["health:read"],
+        connected_at: "2026-05-20T12:00:00.000Z",
+        last_used_at: null,
+        is_active: true,
+      })),
+    );
+
+    const firstPage = await listMcpConnectedApps(createMockDb(), "user-id");
+    const nextCursor = firstPage.nextCursor;
+    expect(nextCursor).toEqual(expect.any(String));
+
+    mockExecute.mockResolvedValueOnce([]);
+    await listMcpConnectedApps(createMockDb(), "user-id", nextCursor ?? undefined);
+
+    const queryPayload = JSON.stringify(mockExecute.mock.calls[1]?.[0]);
+    expect(queryPayload).toContain("shared-client");
+    expect(queryPayload).toContain("https://dofek.example/api/mcp/19");
   });
 
   it("does not return a cursor when the connected-app page is full", async () => {

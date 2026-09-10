@@ -100,6 +100,11 @@ const connectedAppRowSchema = z.object({
 
 const connectedAppRevokeRowSchema = z.object({ found: z.boolean() });
 
+const connectedAppCursorSchema = z.object({
+  oauthClientId: z.string(),
+  oauthResource: z.string(),
+});
+
 const validTokenRowSchema = z.object({
   id: z.string(),
   user_id: z.string(),
@@ -135,6 +140,19 @@ function toConnectedApp(row: z.infer<typeof connectedAppRowSchema>): McpConnecte
     lastUsedAt: row.last_used_at,
     isActive: row.is_active,
   };
+}
+
+function encodeConnectedAppCursor(app: McpConnectedApp): string {
+  return Buffer.from(
+    JSON.stringify({
+      oauthClientId: app.oauthClientId,
+      oauthResource: app.oauthResource,
+    }),
+  ).toString("base64url");
+}
+
+function decodeConnectedAppCursor(cursor: string): z.infer<typeof connectedAppCursorSchema> {
+  return connectedAppCursorSchema.parse(JSON.parse(Buffer.from(cursor, "base64url").toString()));
 }
 
 export function generateMcpToken(): string {
@@ -244,7 +262,10 @@ export async function listMcpConnectedApps(
   cursor?: string,
 ): Promise<McpConnectedAppPage> {
   const connectedAppsPageSize = 20;
-  const cursorCondition = cursor ? sql`WHERE oauth_client_id < ${cursor}` : sql``;
+  const decodedCursor = cursor ? decodeConnectedAppCursor(cursor) : null;
+  const cursorCondition = decodedCursor
+    ? sql`WHERE (oauth_client_id, oauth_resource) < (${decodedCursor.oauthClientId}, ${decodedCursor.oauthResource})`
+    : sql``;
   const rows = await executeWithSchema(
     db,
     connectedAppRowSchema,
@@ -284,7 +305,7 @@ export async function listMcpConnectedApps(
   const lastItem = items.at(-1);
   return {
     items,
-    nextCursor: hasNextPage && lastItem ? lastItem.oauthClientId : null,
+    nextCursor: hasNextPage && lastItem ? encodeConnectedAppCursor(lastItem) : null,
   };
 }
 
