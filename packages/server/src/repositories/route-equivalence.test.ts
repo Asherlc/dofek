@@ -30,6 +30,7 @@ describe("route equivalence", () => {
   it("accepts a high-confidence forward geometry match", () => {
     expect(evaluateRouteMatch({ left: routePoints, right: routePoints })).toEqual({
       matched: true,
+      strength: "strong_inferred",
       direction: "forward",
       overlap_percentage: 1,
       distance_difference: 0,
@@ -89,6 +90,15 @@ describe("route equivalence", () => {
         left_elevation_profile: [0, 10, 20, 30],
       }),
     ).toEqual(expect.objectContaining({ elevation_similarity: null }));
+  });
+
+  it("does not infer a route from partial geometry", () => {
+    expect(
+      evaluateRouteMatch({
+        left: { points: routePoints, geometry_status: "partial" },
+        right: routePoints,
+      }),
+    ).toBeNull();
   });
 
   it("returns observable rejection reasons for complete but non-equivalent routes", () => {

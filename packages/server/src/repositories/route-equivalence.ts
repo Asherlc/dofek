@@ -354,5 +354,5 @@ export function evaluateRouteMatch(input: RouteMatchInput): RouteMatchEvidence |
   };
   return rejectionReasons.length > 0
     ? { ...evidence, matched: false, rejection_reasons: rejectionReasons }
-    : { ...evidence, matched: true, rejection_reasons: [] };
+    : { ...evidence, matched: true, strength: "strong_inferred", rejection_reasons: [] };
 }

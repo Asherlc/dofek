@@ -132,6 +132,23 @@ maintaining one aggregate state instead of one state per field. ClickHouse
 documents tuple arguments as the way to return associated columns from the row
 selected by
 [`argMax`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/argmax).
+`activity_route_identity` follows `activity_location_sample` at canonical
+cycling-activity grain. It reads only `activity_location_sample FINAL` and
+`activity_effort_identity FINAL`, preserving explicit provider route/course
+claims separately from a deterministic, 64-point coordinate-quantized ordered
+polyline and its reverse fingerprint. Its route distance, time-gap coverage,
+provider/device provenance, and lifecycle watermark refresh only when an
+activity, deduplicated location state, or explicit route evidence changes; a
+route whose live geometry disappears emits a `ReplacingMergeTree` tombstone.
+The location source has no elevation column, so its bounded elevation profile
+is explicitly empty rather than inferred. Geometry is Level B
+`strong_inferred` only when the server matcher accepts overlap at least 90%,
+both endpoints within 250 m, relative distance difference at most 10%, and
+elevation similarity at least 0.85 when both profiles are available. dbt
+documents the incremental rebuild contract in its
+[incremental model guide](https://docs.getdbt.com/docs/build/incremental-models),
+and ClickHouse documents `ReplacingMergeTree` lifecycle replacement in its
+[engine reference](https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree).
 Its model-local
 `enable_materialized_cte` setting prevents those reused intermediates from
 being re-evaluated across current-row and tombstone branches; ClickHouse
@@ -299,7 +316,7 @@ model logic changes because existing rows retain the old transformation
 Production `DBT_SAFE_MODELS` currently selects `sensor_scalar_sample`,
 `deduped_sensor`, `activity_source_records`, `activity_duplicate_matches`,
 `activity_duplicate_groups`, `deduped_activities`, `deduped_activity_members`,
-`activity_effort_identity`,
+`activity_effort_identity`, `activity_route_identity`,
 `provider_metric_stream_daily`, `provider_change_watermark`, `sleep_heart_rate_window`,
 `sleep_heart_rate_sample`, `resting_heart_rate_sleep_window`,
 `daily_sleep`, `daily_recovery_inputs`, `daily_recovery`, `activity_sensor_sample`, `activity_location_sample`,

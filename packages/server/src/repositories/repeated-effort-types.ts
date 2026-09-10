@@ -84,6 +84,7 @@ interface RouteMatchEvidenceBase {
 
 export interface AcceptedRouteMatchEvidence extends RouteMatchEvidenceBase {
   matched: true;
+  strength: "strong_inferred";
   rejection_reasons: readonly [];
 }
 
