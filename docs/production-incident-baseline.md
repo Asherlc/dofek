@@ -26236,7 +26236,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   groups. The real ClickHouse regression with 100,000 points outside a
   one-group batch first exceeded the 50 MiB memory bound at about 65.7 MiB and
   now passes; a separate two-run regression proves a pre-materialization
-  live-then-deleted group advances without hiding the next live group. No
-  timeout, thread, memory, or spill limit was increased. Production resolution
-  still requires a successful model 18 run, a full 39-model cycle, and a zero
-  dirty-group backlog.
+  live-then-deleted group advances without hiding the next live group. This
+  bounded-query follow-up does not increase any timeout, thread, memory, or
+  spill limit; it retains the worker-memory increase applied earlier in the
+  incident. Production resolution still requires a successful model 18 run, a
+  full 39-model cycle, and a zero dirty-group backlog.

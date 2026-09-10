@@ -15,6 +15,12 @@ const queryMemorySchema = z.array(
   }),
 );
 
+const clickHouseTimestampSchema = z.tuple([
+  z.object({
+    started_at: z.string(),
+  }),
+]);
+
 describe("bounded activity location dbt reconciliation", () => {
   let client: ClickHouseClient;
   let artifactDirectory: string;
@@ -176,7 +182,13 @@ describe("bounded activity location dbt reconciliation", () => {
           toDateTime64('2026-09-04 12:00:00', 9, 'UTC'), 1, 0
         FROM numbers(100000)`,
     });
-    const startedAt = new Date().toISOString();
+    const timestampResult = await client.query({
+      query: "SELECT toString(now64(6)) AS started_at",
+      format: "JSONEachRow",
+    });
+    const [{ started_at: startedAt }] = clickHouseTimestampSchema.parse(
+      await timestampResult.json(),
+    );
 
     await activityPayloadTest.runDbtBatch(
       database,
