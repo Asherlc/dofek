@@ -55,6 +55,9 @@ export function McpTokensPanel() {
   const revokeConnectedAppMutation = trpc.mcp.revokeConnectedApp.useMutation({
     meta: locallyReportedErrorMeta,
   });
+  const updateConnectedAppScopesMutation = trpc.mcp.updateConnectedAppScopes.useMutation({
+    meta: locallyReportedErrorMeta,
+  });
   const updateScopesMutation = trpc.mcp.updateScopes.useMutation({
     meta: locallyReportedErrorMeta,
   });
@@ -66,6 +69,10 @@ export function McpTokensPanel() {
   const [createdToken, setCreatedToken] = useState<string | null>(null);
   const [editingTokenId, setEditingTokenId] = useState<string | null>(null);
   const [editingScopes, setEditingScopes] = useState<Set<McpScope>>(() => new Set());
+  const [editingConnectedAppKey, setEditingConnectedAppKey] = useState<string | null>(null);
+  const [editingConnectedAppScopes, setEditingConnectedAppScopes] = useState<Set<McpScope>>(
+    () => new Set(),
+  );
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [mcpEndpoint, setMcpEndpoint] = useState("/api/mcp");
@@ -94,6 +101,7 @@ export function McpTokensPanel() {
     createTokenMutation.isPending ||
     revokeTokenMutation.isPending ||
     revokeConnectedAppMutation.isPending ||
+    updateConnectedAppScopesMutation.isPending ||
     updateScopesMutation.isPending;
 
   const toggleScopeSet = (current: Set<McpScope>, scope: McpScope): Set<McpScope> => {
@@ -131,6 +139,19 @@ export function McpTokensPanel() {
     setEditingScopes(new Set());
   };
 
+  const beginEditConnectedAppScopes = (app: (typeof oauthTokens)[number]) => {
+    setErrorMessage(null);
+    setEditingConnectedAppKey(`${app.oauthClientId}:${app.oauthResource}`);
+    const nextScopes = new Set(app.scopes);
+    if (nextScopes.has("nutrition:write")) nextScopes.add("nutrition:read");
+    setEditingConnectedAppScopes(nextScopes);
+  };
+
+  const cancelEditConnectedAppScopes = () => {
+    setEditingConnectedAppKey(null);
+    setEditingConnectedAppScopes(new Set());
+  };
+
   const saveScopes = async (tokenId: string) => {
     setErrorMessage(null);
     const scopes = mcpScopeValues.filter((scope) => editingScopes.has(scope));
@@ -141,6 +162,23 @@ export function McpTokensPanel() {
     } catch (error: unknown) {
       captureException(error, { context: "update-mcp-token-scopes" });
       setErrorMessage(userFacingErrorMessage(error, "Failed to update MCP token scopes."));
+    }
+  };
+
+  const saveConnectedAppScopes = async (app: (typeof oauthTokens)[number]) => {
+    setErrorMessage(null);
+    const scopes = mcpScopeValues.filter((scope) => editingConnectedAppScopes.has(scope));
+    try {
+      await updateConnectedAppScopesMutation.mutateAsync({
+        oauthClientId: app.oauthClientId,
+        oauthResource: app.oauthResource,
+        scopes,
+      });
+      cancelEditConnectedAppScopes();
+      await invalidateTokenLists();
+    } catch (error: unknown) {
+      captureException(error, { context: "update-mcp-connected-app-scopes" });
+      setErrorMessage(userFacingErrorMessage(error, "Failed to update connected app scopes."));
     }
   };
 
@@ -302,9 +340,65 @@ export function McpTokensPanel() {
                       {formatTimestamp(app.lastUsedAt)}
                     </p>
                     <p className="mt-1 text-xs text-dim">{app.scopes.join(", ")}</p>
+                    {editingConnectedAppKey === `${app.oauthClientId}:${app.oauthResource}` ? (
+                      <div className="mt-3 space-y-2">
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {mcpScopeOptions.map((option) => (
+                            <label
+                              key={option.value}
+                              className="flex items-center gap-2 rounded border border-border bg-surface/70 px-3 py-2 text-sm text-foreground"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={editingConnectedAppScopes.has(option.value)}
+                                disabled={
+                                  option.value === "nutrition:read" &&
+                                  editingConnectedAppScopes.has("nutrition:write")
+                                }
+                                onChange={() =>
+                                  setEditingConnectedAppScopes((current) =>
+                                    toggleScopeSet(current, option.value),
+                                  )
+                                }
+                                className="h-4 w-4 accent-accent"
+                              />
+                              <span>{option.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => saveConnectedAppScopes(app)}
+                            disabled={tokenMutationPending || editingConnectedAppScopes.size === 0}
+                            aria-label={`Save scopes for ${app.name}`}
+                            className="rounded bg-accent px-3 py-1.5 text-xs font-medium text-on-accent transition-colors hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Save scopes
+                          </button>
+                          <button
+                            type="button"
+                            onClick={cancelEditConnectedAppScopes}
+                            disabled={tokenMutationPending}
+                            className="rounded border border-border-strong px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                   {app.isActive ? (
                     <div className="flex flex-wrap gap-2 self-start sm:self-center">
+                      <button
+                        type="button"
+                        onClick={() => beginEditConnectedAppScopes(app)}
+                        disabled={tokenMutationPending}
+                        aria-label={`Edit scopes for ${app.name}`}
+                        className="rounded border border-border-strong px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Edit scopes
+                      </button>
                       <button
                         type="button"
                         onClick={() => revokeConnectedApp(app.oauthClientId, app.oauthResource)}

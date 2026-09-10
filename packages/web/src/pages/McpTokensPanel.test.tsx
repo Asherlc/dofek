@@ -49,6 +49,7 @@ const listConnectedAppsUseQuery = vi.hoisted(() => vi.fn());
 const createTokenMutateAsync = vi.fn();
 const revokeTokenMutateAsync = vi.fn();
 const revokeConnectedAppMutateAsync = vi.fn();
+const updateConnectedAppScopesMutateAsync = vi.fn();
 const updateScopesMutateAsync = vi.fn();
 const invalidateMcp = vi.fn();
 let createTokenMutationPending = false;
@@ -98,6 +99,13 @@ vi.mock("../lib/trpc.ts", () => ({
           isPending: revokeTokenMutationPending,
         }),
       },
+      updateConnectedAppScopes: {
+        useMutation: () => ({
+          mutateAsync: updateConnectedAppScopesMutateAsync,
+          error: null,
+          isPending: false,
+        }),
+      },
       updateScopes: {
         useMutation: () => ({
           mutateAsync: updateScopesMutateAsync,
@@ -124,6 +132,7 @@ describe("McpTokensPanel", () => {
     createTokenMutateAsync.mockReset();
     revokeTokenMutateAsync.mockReset();
     revokeConnectedAppMutateAsync.mockReset();
+    updateConnectedAppScopesMutateAsync.mockReset();
     updateScopesMutateAsync.mockReset();
     invalidateMcp.mockReset();
     createTokenMutationPending = false;
@@ -607,9 +616,45 @@ describe("McpTokensPanel", () => {
     expect(screen.getByRole("heading", { name: "Personal tokens" })).toBeTruthy();
     expect(screen.queryByText(/Access expires/)).toBeNull();
     expect(screen.getByRole("button", { name: "Disconnect Claude OAuth" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Edit scopes for Claude OAuth" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Edit scopes for Claude OAuth" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Rotate Claude OAuth" })).toBeNull();
     expect(screen.getByRole("button", { name: "Edit scopes for Personal Codex" })).toBeTruthy();
+  });
+
+  it("edits scopes for an active OAuth connected app", async () => {
+    connectedAppsQuery.data = {
+      items: [
+        {
+          name: "Claude OAuth",
+          scopes: ["health:read"],
+          connectedAt: "2026-05-20T12:00:00Z",
+          lastUsedAt: null,
+          oauthClientId: "https://claude.ai/oauth/client-metadata.json",
+          oauthResource: "https://dofek.example/api/mcp",
+          isActive: true,
+        },
+      ],
+      nextCursor: null,
+    };
+    updateConnectedAppScopesMutateAsync.mockResolvedValueOnce({ success: true });
+
+    render(<McpTokensPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit scopes for Claude OAuth" }));
+    const activityScopes = screen.getAllByLabelText("Activity history");
+    const editableActivityScope = activityScopes[0];
+    if (!editableActivityScope) throw new Error("Expected editable activity scope");
+    fireEvent.click(editableActivityScope);
+    fireEvent.click(screen.getByRole("button", { name: "Save scopes for Claude OAuth" }));
+
+    await waitFor(() => {
+      expect(updateConnectedAppScopesMutateAsync).toHaveBeenCalledWith({
+        oauthClientId: "https://claude.ai/oauth/client-metadata.json",
+        oauthResource: "https://dofek.example/api/mcp",
+        scopes: ["health:read", "activity:read"],
+      });
+    });
+    expect(invalidateMcp).toHaveBeenCalled();
   });
 
   it("revokes OAuth access for the selected connected app", async () => {

@@ -212,6 +212,35 @@ describe("mcpRouter", () => {
     ).resolves.toEqual({ success: true });
   });
 
+  it("updates scopes for a whole connected app by client and resource", async () => {
+    mockExecute.mockResolvedValueOnce([{ found: true }]);
+    const caller = createCaller(createContext("user-id"));
+
+    await expect(
+      caller.updateConnectedAppScopes({
+        oauthClientId: "claude-client",
+        oauthResource: "https://dofek.example/api/mcp",
+        scopes: ["health:read", "activity:read"],
+      }),
+    ).resolves.toEqual({ success: true });
+  });
+
+  it("rejects updating scopes for a connected app that does not exist", async () => {
+    mockExecute.mockResolvedValueOnce([{ found: false }]);
+    const caller = createCaller(createContext("user-id"));
+
+    await expect(
+      caller.updateConnectedAppScopes({
+        oauthClientId: "missing-client",
+        oauthResource: "https://dofek.example/api/mcp",
+        scopes: ["health:read"],
+      }),
+    ).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "Connected app not found.",
+    });
+  });
+
   it("rejects revoking a connected app that does not exist", async () => {
     mockExecute.mockResolvedValueOnce([{ found: false }]);
     const caller = createCaller(createContext("user-id"));

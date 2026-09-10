@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   invalidate: vi.fn(),
   listConnectedApps: vi.fn(),
   revokeConnectedApp: vi.fn(),
+  updateConnectedAppScopes: vi.fn(),
 }));
 
 vi.mock("../lib/trpc", () => ({
@@ -20,6 +21,9 @@ vi.mock("../lib/trpc", () => ({
       revokeConnectedApp: {
         useMutation: () => ({ mutateAsync: mocks.revokeConnectedApp, isPending: false }),
       },
+      updateConnectedAppScopes: {
+        useMutation: () => ({ mutateAsync: mocks.updateConnectedAppScopes, isPending: false }),
+      },
     },
   },
 }));
@@ -29,6 +33,7 @@ describe("McpConnectedAppsPanel", () => {
     mocks.invalidate.mockReset();
     mocks.listConnectedApps.mockReset();
     mocks.revokeConnectedApp.mockReset().mockResolvedValue({});
+    mocks.updateConnectedAppScopes.mockReset().mockResolvedValue({ success: true });
   });
 
   it("shows OAuth connections and revokes the selected app", async () => {
@@ -93,6 +98,41 @@ describe("McpConnectedAppsPanel", () => {
     expect(screen.getByRole("button", { name: "Previous connected apps page" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Previous connected apps page" }));
     expect(screen.getByText("OAuth app 0")).toBeTruthy();
+  });
+
+  it("edits scopes for an active connected app", async () => {
+    mocks.listConnectedApps.mockReturnValue({
+      data: {
+        items: [
+          {
+            name: "Claude OAuth",
+            scopes: ["health:read"],
+            connectedAt: "2026-05-20T12:00:00Z",
+            lastUsedAt: null,
+            oauthClientId: "claude-client",
+            oauthResource: "https://dofek.example/api/mcp",
+            isActive: true,
+          },
+        ],
+        nextCursor: null,
+      },
+      error: null,
+      isLoading: false,
+    });
+
+    render(<McpConnectedAppsPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit scopes for Claude OAuth" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Activity history" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save scopes for Claude OAuth" }));
+
+    await waitFor(() => {
+      expect(mocks.updateConnectedAppScopes).toHaveBeenCalledWith({
+        oauthClientId: "claude-client",
+        oauthResource: "https://dofek.example/api/mcp",
+        scopes: ["health:read", "activity:read"],
+      });
+    });
   });
 
   it("shows refetch errors while retaining cached connected apps", () => {

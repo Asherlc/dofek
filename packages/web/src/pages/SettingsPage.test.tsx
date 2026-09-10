@@ -154,6 +154,9 @@ vi.mock("../lib/trpc.ts", () => ({
       updateScopes: {
         useMutation: () => mockMutation,
       },
+      updateConnectedAppScopes: {
+        useMutation: () => mockMutation,
+      },
     },
     companionPairing: {
       claim: {
