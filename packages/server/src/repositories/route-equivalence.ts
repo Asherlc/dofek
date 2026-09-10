@@ -3,6 +3,7 @@ import type {
   RouteGeometry,
   RouteMatchEvidence,
   RouteMatchInput,
+  RouteQualityEvidence,
 } from "./repeated-effort-types.ts";
 
 export const ROUTE_MATCH_THRESHOLDS = {
@@ -19,6 +20,7 @@ interface PreparedRoute {
   points: readonly NormalizedRoutePoint[];
   distanceMeters: number;
   elevationProfile: readonly number[] | null;
+  quality: RouteQualityEvidence;
 }
 
 interface OrientationMetrics {
@@ -176,7 +178,7 @@ function prepareRoute(
   distanceOverride: number | null | undefined,
   elevationProfileOverride: readonly number[] | null | undefined,
 ): PreparedRoute | null {
-  const geometry: RouteGeometry = Array.isArray(input) ? { points: input } : input;
+  const geometry: RouteGeometry = "points" in input ? input : { points: input };
   if (geometry.geometry_status !== undefined && geometry.geometry_status !== "available")
     return null;
   if (geometry.points.length < 2 || geometry.points.some((point) => !isFiniteCoordinate(point)))
@@ -188,6 +190,11 @@ function prepareRoute(
     points: geometry.points,
     distanceMeters,
     elevationProfile: profileFromGeometry(geometry, elevationProfileOverride),
+    quality: {
+      geometry_status: geometry.geometry_status ?? null,
+      coverage_pct: geometry.coverage_pct ?? null,
+      largest_gap_seconds: geometry.largest_gap_seconds ?? null,
+    },
   };
 }
 
@@ -338,6 +345,8 @@ export function evaluateRouteMatch(input: RouteMatchInput): RouteMatchEvidence |
     rejectionReasons.push("elevation_similarity_below_threshold");
   }
   const evidence = {
+    left_quality: left.quality,
+    right_quality: right.quality,
     direction: orientation.direction,
     overlap_percentage: overlapPercentage,
     distance_difference: distanceDifference,

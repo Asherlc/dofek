@@ -26301,3 +26301,27 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   becomes unhealthy after its full 20-minute budget. Production drain validation
   remains pending rollout of this watchdog correction; no timeout, retry delay,
   memory limit, or health budget was increased.
+
+## 2026-09-10 — Local ClickHouse restarts interrupted Task 4 route validation
+
+- **Impact:** Local repeated-route integration validation was interrupted; no
+  production impact was observed. The first fatal client error was
+  `Error: socket hang up` (`ECONNRESET`) in the integration command
+  `pnpm exec vitest run --project integration src/db/activity-route-identity-read-model.integration.test.ts packages/server/src/repositories/route-equivalence.integration.test.ts`
+  with `.env.local` loaded.
+- **Evidence:** `docker inspect suave-platypus-clickhouse-1` showed restarts at
+  `2026-09-10T23:43:30Z` and `23:44:29Z`, matching the failed connections;
+  restart count advanced from 18 to 19. The later state reported healthy and
+  `OOMKilled=false`. Server error logs did not identify a fatal cause.
+  Docker's [inspect command](https://docs.docker.com/reference/cli/docker/inspect/)
+  is the source for container state inspection.
+- **Cause/status:** The connection failures coincide with container restarts;
+  the underlying restart cause remains unresolved. The already-known local
+  Redpanda prerequisite also remained in `Restarting (133)`.
+- **Validation/mitigation:** After ClickHouse was healthy, the route-model suite
+  passed 12 tests and the separately rerun server matcher suite passed three.
+  No service configuration, timeout, retry, or resource limit was changed.
+- **Follow-up:** Diagnose the workstation/container restart cause independently
+  before relying on long integration runs. Capture Docker events and resource
+  usage during the restart, following the existing
+  [shared Docker resource runbook](testing.md#shared-docker-vm-resource-pressure).

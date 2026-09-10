@@ -1,3 +1,5 @@
+{% set activity_refresh_scoped = activity_refresh_scope_enabled() %}
+
 {{ config(
     materialized='incremental',
     incremental_strategy='append',
@@ -5,7 +7,8 @@
     order_by='(user_id, activity_id)',
     query_settings={
         'max_threads': 1,
-        'join_use_nulls': 1
+        'join_use_nulls': 1,
+        'enable_materialized_cte': 1
     }
 ) }}
 
@@ -14,12 +17,111 @@ WITH cycling_activity_state AS (
         activity_id,
         user_id,
         canonical_type,
+        member_activity_ids,
         started_at,
         ended_at,
         is_deleted,
         refreshed_at
     FROM {{ ref('deduped_activities') }} FINAL
     WHERE canonical_type = 'cycling'
+    {% if activity_refresh_scoped %}
+        AND user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        AND (
+            activity_id IN {{ activity_refresh_ids() }}
+            OR hasAny(member_activity_ids, {{ activity_refresh_ids() }})
+        )
+    {% endif %}
+),
+
+{% if is_incremental() %}
+existing_route_state AS MATERIALIZED (
+    SELECT
+        activity_id,
+        user_id,
+        max(source_refreshed_at) AS source_refreshed_at,
+        argMax(is_deleted, refresh_version) AS is_deleted
+    FROM {{ this }} FINAL
+    {% if activity_refresh_scoped %}
+    WHERE user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        AND (
+            activity_id IN {{ activity_refresh_ids() }}
+            OR (user_id, activity_id) IN (
+                SELECT user_id, activity_id FROM cycling_activity_state
+            )
+        )
+    {% endif %}
+    GROUP BY activity_id, user_id
+),
+
+{% endif %}
+
+affected_route_keys AS MATERIALIZED (
+    SELECT
+        activities.activity_id AS activity_id,
+        activities.user_id AS user_id
+    FROM cycling_activity_state AS activities
+    {% if is_incremental() %}
+    {% if not activity_refresh_scoped %}
+    LEFT JOIN existing_route_state AS existing_routes
+        ON existing_routes.activity_id = activities.activity_id
+        AND existing_routes.user_id = activities.user_id
+    WHERE existing_routes.activity_id IS null
+        OR existing_routes.is_deleted = 1
+        OR activities.refreshed_at > existing_routes.source_refreshed_at
+
+    UNION DISTINCT
+
+    SELECT
+        locations.activity_id AS activity_id,
+        locations.user_id AS user_id
+    FROM {{ ref('activity_location_sample') }} AS locations FINAL
+    LEFT JOIN existing_route_state AS existing_routes
+        ON existing_routes.activity_id = locations.activity_id
+        AND existing_routes.user_id = locations.user_id
+    WHERE (locations.user_id, locations.activity_id) IN (
+        SELECT user_id, activity_id FROM cycling_activity_state
+    )
+        AND (
+            existing_routes.activity_id IS null
+            OR existing_routes.is_deleted = 1
+            OR greatest(locations.source_refreshed_at, locations.refreshed_at)
+                > existing_routes.source_refreshed_at
+        )
+
+    UNION DISTINCT
+
+    SELECT
+        identities.canonical_activity_id AS activity_id,
+        identities.user_id AS user_id
+    FROM {{ ref('activity_effort_identity') }} AS identities FINAL
+    LEFT JOIN existing_route_state AS existing_routes
+        ON existing_routes.activity_id = identities.canonical_activity_id
+        AND existing_routes.user_id = identities.user_id
+    WHERE identities.kind = 'provider_route'
+        AND (identities.user_id, identities.canonical_activity_id) IN (
+            SELECT user_id, activity_id FROM cycling_activity_state
+        )
+        AND (
+            existing_routes.activity_id IS null
+            OR existing_routes.is_deleted = 1
+            OR identities.source_refreshed_at > existing_routes.source_refreshed_at
+        )
+    {% endif %}
+
+    UNION DISTINCT
+
+    SELECT
+        existing_routes.activity_id AS activity_id,
+        existing_routes.user_id AS user_id
+    FROM existing_route_state AS existing_routes
+    {% if not activity_refresh_scoped %}
+    LEFT JOIN cycling_activity_state AS activities
+        ON activities.activity_id = existing_routes.activity_id
+        AND activities.user_id = existing_routes.user_id
+    WHERE existing_routes.is_deleted = 0
+        AND (activities.activity_id IS null OR activities.is_deleted = 1)
+    {% endif %}
+    {% endif %}
 ),
 
 location_refresh_state AS (
@@ -29,10 +131,107 @@ location_refresh_state AS (
         max(greatest(source_refreshed_at, refreshed_at)) AS source_refreshed_at,
         countIf(is_deleted = 0 AND lat IS NOT null AND lng IS NOT null) AS live_point_count
     FROM {{ ref('activity_location_sample') }} FINAL
+    WHERE (user_id, activity_id) IN (
+        SELECT user_id, activity_id FROM affected_route_keys
+    )
     GROUP BY activity_id, user_id
 ),
 
-current_location_samples AS (
+explicit_route_ids AS (
+    SELECT
+        canonical_activity_id AS activity_id,
+        user_id,
+        arraySort(groupUniqArray(tuple(
+            source_provider,
+            value,
+            source_activity_id,
+            assumeNotNull(source_field)
+        ))) AS explicit_provider_route_ids,
+        max(source_refreshed_at) AS source_refreshed_at
+    FROM {{ ref('activity_effort_identity') }} FINAL
+    WHERE is_deleted = 0
+        AND kind = 'provider_route'
+        AND (user_id, canonical_activity_id) IN (
+            SELECT user_id, activity_id FROM affected_route_keys
+        )
+    GROUP BY canonical_activity_id, user_id
+),
+
+current_route_sources AS (
+    SELECT
+        activities.activity_id AS activity_id,
+        activities.user_id AS user_id,
+        activities.started_at AS started_at,
+        activities.ended_at AS ended_at,
+        coalesce(locations.live_point_count, 0) AS live_point_count,
+        greatest(
+            activities.refreshed_at,
+            coalesce(locations.source_refreshed_at, toDateTime64('1970-01-01 00:00:00', 9, 'UTC')),
+            coalesce(route_ids.source_refreshed_at, toDateTime64('1970-01-01 00:00:00', 9, 'UTC'))
+        ) AS source_refreshed_at
+    FROM cycling_activity_state AS activities
+    LEFT JOIN location_refresh_state AS locations
+        ON locations.activity_id = activities.activity_id
+        AND locations.user_id = activities.user_id
+    LEFT JOIN explicit_route_ids AS route_ids
+        ON route_ids.activity_id = activities.activity_id
+        AND route_ids.user_id = activities.user_id
+    WHERE activities.is_deleted = 0
+        AND (activities.user_id, activities.activity_id) IN (
+            SELECT user_id, activity_id FROM affected_route_keys
+        )
+),
+
+{% if is_incremental() %}
+current_route_keys AS (
+    SELECT
+        sources.activity_id AS activity_id,
+        sources.user_id AS user_id,
+        sources.source_refreshed_at AS source_refreshed_at
+    FROM current_route_sources AS sources
+    LEFT JOIN existing_route_state AS existing_routes
+        ON existing_routes.activity_id = sources.activity_id
+        AND existing_routes.user_id = sources.user_id
+    WHERE sources.live_point_count > 0
+        {% if not activity_refresh_scoped %}
+        AND (
+            existing_routes.activity_id IS null
+            OR existing_routes.is_deleted = 1
+            OR sources.source_refreshed_at > existing_routes.source_refreshed_at
+        )
+        {% endif %}
+),
+
+stale_route_keys AS (
+    SELECT
+        existing_routes.activity_id,
+        existing_routes.user_id,
+        greatest(
+            existing_routes.source_refreshed_at,
+            coalesce(current_routes.source_refreshed_at, now64(9))
+        ) AS source_refreshed_at
+    FROM existing_route_state AS existing_routes
+    LEFT JOIN current_route_sources AS current_routes
+        ON current_routes.activity_id = existing_routes.activity_id
+        AND current_routes.user_id = existing_routes.user_id
+    WHERE existing_routes.is_deleted = 0
+        AND (existing_routes.user_id, existing_routes.activity_id) IN (
+            SELECT user_id, activity_id FROM affected_route_keys
+        )
+        AND (current_routes.activity_id IS null OR current_routes.live_point_count = 0)
+),
+{% else %}
+current_route_keys AS (
+    SELECT
+        sources.activity_id AS activity_id,
+        sources.user_id AS user_id,
+        sources.source_refreshed_at AS source_refreshed_at
+    FROM current_route_sources AS sources
+    WHERE sources.live_point_count > 0
+),
+{% endif %}
+
+current_location_samples AS MATERIALIZED (
     SELECT
         location_samples.activity_id AS activity_id,
         location_samples.user_id AS user_id,
@@ -45,7 +244,10 @@ current_location_samples AS (
     INNER JOIN cycling_activity_state AS activities
         ON activities.activity_id = location_samples.activity_id
         AND activities.user_id = location_samples.user_id
-    WHERE activities.is_deleted = 0
+    WHERE (location_samples.user_id, location_samples.activity_id) IN (
+        SELECT user_id, activity_id FROM current_route_keys
+    )
+        AND activities.is_deleted = 0
         AND location_samples.is_deleted = 0
         AND location_samples.lat IS NOT null
         AND location_samples.lng IS NOT null
@@ -163,99 +365,6 @@ bounded_route_geometry AS (
         source_devices
     FROM route_geometry
 ),
-
-explicit_route_ids AS (
-    SELECT
-        canonical_activity_id AS activity_id,
-        user_id,
-        arraySort(groupUniqArray(tuple(
-            source_provider,
-            value,
-            source_activity_id,
-            assumeNotNull(source_field)
-        ))) AS explicit_provider_route_ids,
-        max(source_refreshed_at) AS source_refreshed_at
-    FROM {{ ref('activity_effort_identity') }} FINAL
-    WHERE is_deleted = 0
-        AND kind = 'provider_route'
-    GROUP BY canonical_activity_id, user_id
-),
-
-current_route_sources AS (
-    SELECT
-        activities.activity_id AS activity_id,
-        activities.user_id AS user_id,
-        activities.started_at AS started_at,
-        activities.ended_at AS ended_at,
-        coalesce(locations.live_point_count, 0) AS live_point_count,
-        greatest(
-            activities.refreshed_at,
-            coalesce(locations.source_refreshed_at, toDateTime64('1970-01-01 00:00:00', 9, 'UTC')),
-            coalesce(route_ids.source_refreshed_at, toDateTime64('1970-01-01 00:00:00', 9, 'UTC'))
-        ) AS source_refreshed_at
-    FROM cycling_activity_state AS activities
-    LEFT JOIN location_refresh_state AS locations
-        ON locations.activity_id = activities.activity_id
-        AND locations.user_id = activities.user_id
-    LEFT JOIN explicit_route_ids AS route_ids
-        ON route_ids.activity_id = activities.activity_id
-        AND route_ids.user_id = activities.user_id
-    WHERE activities.is_deleted = 0
-),
-
-{% if is_incremental() %}
-existing_route_state AS (
-    SELECT
-        activity_id,
-        user_id,
-        max(source_refreshed_at) AS source_refreshed_at,
-        argMax(is_deleted, refresh_version) AS is_deleted
-    FROM {{ this }} FINAL
-    GROUP BY activity_id, user_id
-),
-
-current_route_keys AS (
-    SELECT
-        sources.activity_id AS activity_id,
-        sources.user_id AS user_id,
-        sources.source_refreshed_at AS source_refreshed_at
-    FROM current_route_sources AS sources
-    LEFT JOIN existing_route_state AS existing_routes
-        ON existing_routes.activity_id = sources.activity_id
-        AND existing_routes.user_id = sources.user_id
-    WHERE sources.live_point_count > 0
-        AND (
-            existing_routes.activity_id IS null
-            OR existing_routes.is_deleted = 1
-            OR sources.source_refreshed_at > existing_routes.source_refreshed_at
-        )
-),
-
-stale_route_keys AS (
-    SELECT
-        existing_routes.activity_id,
-        existing_routes.user_id,
-        greatest(
-            existing_routes.source_refreshed_at,
-            coalesce(current_routes.source_refreshed_at, now64(9))
-        ) AS source_refreshed_at
-    FROM existing_route_state AS existing_routes
-    LEFT JOIN current_route_sources AS current_routes
-        ON current_routes.activity_id = existing_routes.activity_id
-        AND current_routes.user_id = existing_routes.user_id
-    WHERE existing_routes.is_deleted = 0
-        AND (current_routes.activity_id IS null OR current_routes.live_point_count = 0)
-),
-{% else %}
-current_route_keys AS (
-    SELECT
-        sources.activity_id AS activity_id,
-        sources.user_id AS user_id,
-        sources.source_refreshed_at AS source_refreshed_at
-    FROM current_route_sources AS sources
-    WHERE sources.live_point_count > 0
-),
-{% endif %}
 
 current_route_rows AS (
     SELECT

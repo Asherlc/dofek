@@ -61,6 +61,16 @@ export interface RouteGeometry {
   distance_meters?: number | null;
   elevation_profile?: readonly number[] | null;
   geometry_status?: "available" | "partial" | "unavailable";
+  /** Percent of observed route time covered by non-gap intervals (0–100). */
+  coverage_pct?: number | null;
+  largest_gap_seconds?: number | null;
+}
+
+/** Stored quality evidence; null means the caller did not supply the observation. */
+export interface RouteQualityEvidence {
+  geometry_status: NonNullable<RouteGeometry["geometry_status"]> | null;
+  coverage_pct: number | null;
+  largest_gap_seconds: number | null;
 }
 
 export interface RouteMatchInput {
@@ -73,6 +83,8 @@ export interface RouteMatchInput {
 }
 
 interface RouteMatchEvidenceBase {
+  left_quality: RouteQualityEvidence;
+  right_quality: RouteQualityEvidence;
   direction: RouteDirection;
   overlap_percentage: number;
   distance_difference: number;

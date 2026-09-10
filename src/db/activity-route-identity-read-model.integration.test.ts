@@ -1,34 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { z } from "zod";
-import { readModelSql, renderDbtModelSql } from "./read-model-sql-test-helpers.ts";
-
-const userId = "00000000-0000-4000-8000-000000000001";
-const activityId = "00000000-0000-4000-8000-000000000101";
-
-const routeIdentitySchema = z.object({
-  canonicalActivityId: z.string().uuid(),
-  explicitProviderRouteIds: z.array(
-    z.object({
-      provider: z.string(),
-      value: z.string(),
-      sourceActivityId: z.string().uuid(),
-      field: z.string(),
-    }),
-  ),
-  routeFingerprint: z.string().nullable(),
-  reverseRouteFingerprint: z.string().nullable(),
-  direction: z.enum(["forward", "reverse", "unknown"]),
-  pointCount: z.coerce.number().int(),
-  routeDistanceMeters: z.coerce.number().nullable(),
-  coveragePct: z.coerce.number().nullable(),
-  largestGapSeconds: z.coerce.number().nullable(),
-  sourceProviders: z.array(z.string()),
-  sourceDevices: z.array(z.string()),
-  geometryStatus: z.enum(["available", "partial", "unavailable"]),
-  isDeleted: z.coerce.number().int(),
-});
+import {
+  activityId,
+  buildModel,
+  memberId,
+  otherUserId,
+  readRouteIdentity,
+  renderModel,
+  secondActivityId,
+  seedRouteIdentityFixture,
+  seedSchema,
+  userId,
+} from "./activity-route-identity-test-helpers.ts";
 
 describe("activity route identity read model", () => {
   const database = `activity_route_identity_${randomUUID().replaceAll("-", "")}`;
@@ -88,7 +72,11 @@ describe("activity route identity read model", () => {
   });
 
   it("materializes direction-preserving and reverse bounded fingerprints", async () => {
-    await seedRouteIdentityFixture(client, database, { provider: "strava", routeId: null, pointCount: 80 });
+    await seedRouteIdentityFixture(client, database, {
+      provider: "strava",
+      routeId: null,
+      pointCount: 80,
+    });
 
     await buildModel(client, database);
 
@@ -128,127 +116,193 @@ describe("activity route identity read model", () => {
       expect.objectContaining({ isDeleted: 1 }),
     );
   });
-});
 
-function renderModel(database: string, incremental: boolean): string {
-  return renderDbtModelSql(readModelSql("activity_route_identity.sql"), { isIncremental: incremental })
-    .replaceAll("{{ ref('deduped_activities') }}", `${database}.deduped_activities`)
-    .replaceAll("{{ ref('activity_location_sample') }}", `${database}.activity_location_sample`)
-    .replaceAll("{{ ref('activity_effort_identity') }}", `${database}.activity_effort_identity`)
-    .replaceAll("{{ this }}", `${database}.activity_route_identity`)
-    .concat("\nSETTINGS join_use_nulls = 1, max_threads = 1");
-}
+  it.each([false, true])(
+    "limits a scoped build to member-resolved canonical keys (incremental=%s)",
+    async (incremental) => {
+      await seedRouteIdentityFixture(client, database, {
+        provider: "ridewithgps",
+        routeId: "rw-42",
+        memberIds: [memberId],
+      });
+      await seedRouteIdentityFixture(client, database, {
+        provider: "strava",
+        routeId: null,
+        activityId: secondActivityId,
+      });
+      await seedRouteIdentityFixture(client, database, {
+        provider: "strava",
+        routeId: null,
+        userId: otherUserId,
+      });
 
-async function buildModel(
-  client: ReturnType<typeof createClient>,
-  database: string,
-  incremental = false,
-): Promise<void> {
-  await client.command({
-    query: `INSERT INTO ${database}.activity_route_identity ${renderModel(database, incremental)}`,
-  });
-}
+      await buildModel(client, database, incremental, [memberId]);
 
-async function readRouteIdentity(
-  client: ReturnType<typeof createClient>,
-  database: string,
-): Promise<z.infer<typeof routeIdentitySchema>> {
-  const result = await client.query({
-    query: `SELECT
-        toString(canonical_activity_id) AS canonicalActivityId,
-        arrayMap(route -> map(
-          'provider', route.1,
-          'value', route.2,
-          'sourceActivityId', toString(route.3),
-          'field', route.4
-        ), explicit_provider_route_ids) AS explicitProviderRouteIds,
-        route_fingerprint AS routeFingerprint,
-        reverse_route_fingerprint AS reverseRouteFingerprint,
-        direction,
-        point_count AS pointCount,
-        route_distance_meters AS routeDistanceMeters,
-        coverage_pct AS coveragePct,
-        largest_gap_seconds AS largestGapSeconds,
-        source_providers AS sourceProviders,
-        source_devices AS sourceDevices,
-        geometry_status AS geometryStatus,
-        is_deleted AS isDeleted
-      FROM ${database}.activity_route_identity FINAL
-      WHERE activity_id = '${activityId}'`,
-    format: "JSONEachRow",
-  });
-  return routeIdentitySchema.parse((await result.json<unknown>())[0]);
-}
+      const result = await client.query({
+        query: `SELECT toString(user_id) AS userId, toString(activity_id) AS activityId FROM ${database}.activity_route_identity FINAL`,
+        format: "JSONEachRow",
+      });
+      expect(await result.json()).toEqual([{ userId, activityId }]);
+    },
+  );
 
-async function seedRouteIdentityFixture(
-  client: ReturnType<typeof createClient>,
-  database: string,
-  input: { provider: string; routeId: string | null; pointCount?: number },
-): Promise<void> {
-  await client.command({
-    query: `INSERT INTO ${database}.deduped_activities
-      (activity_id, user_id, canonical_type, started_at, ended_at, refresh_version, is_deleted, refreshed_at)
-      VALUES ('${activityId}', '${userId}', 'cycling', toDateTime64('2026-09-01 12:00:00', 6, 'UTC'),
-        toDateTime64('2026-09-01 12:15:00', 6, 'UTC'), 1, 0, toDateTime64('2026-09-01 12:00:00', 9, 'UTC'))`,
-  });
-  if (input.routeId !== null) {
-    await client.command({
-      query: `INSERT INTO ${database}.activity_effort_identity
-        (user_id, canonical_activity_id, source_activity_id, source_provider, kind, value, source_field,
-         source_refreshed_at, refresh_version, is_deleted, refreshed_at)
-        VALUES ('${userId}', '${activityId}', '${activityId}', '${input.provider}', 'provider_route',
-          '${input.routeId}', 'routeId', toDateTime64('2026-09-01 12:00:00', 9, 'UTC'), 1, 0,
-          toDateTime64('2026-09-01 12:00:00', 9, 'UTC'))`,
+  it("tombstones scoped prior keys after activity removal without touching another deleted route", async () => {
+    await seedRouteIdentityFixture(client, database, { provider: "ridewithgps", routeId: "rw-42" });
+    await seedRouteIdentityFixture(client, database, {
+      provider: "strava",
+      routeId: null,
+      activityId: secondActivityId,
     });
-  }
-  const points = Array.from({ length: input.pointCount ?? 4 }, (_, index) => {
-    const pointId = `00000000-0000-4000-8000-${String(201 + index).padStart(12, "0")}`;
-    return `('${activityId}', '${userId}',
-      addSeconds(toDateTime64('2026-09-01 12:00:00', 6, 'UTC'), ${index * 10}), '${pointId}',
-      '${input.provider}', 'head-unit', ${37.7749 + index * 0.0001}, ${-122.4194 + index * 0.0001},
-      toDateTime64('2026-09-01 12:00:00', 9, 'UTC'), 1, 0,
-      toDateTime64('2026-09-01 12:00:00', 9, 'UTC'))`;
-  });
-  await client.command({
-    query: `INSERT INTO ${database}.activity_location_sample
-      (activity_id, user_id, recorded_at, source_metric_stream_id, provider_id, device_id, lat, lng,
-       source_refreshed_at, refresh_version, is_deleted, refreshed_at)
-      VALUES ${points.join(",")}`,
-  });
-}
+    await buildModel(client, database);
+    await client.command({ query: `TRUNCATE TABLE ${database}.deduped_activities` });
 
-async function seedSchema(client: ReturnType<typeof createClient>, database: string): Promise<void> {
-  const statements = [
-    `CREATE DATABASE ${database}`,
-    `CREATE TABLE ${database}.deduped_activities (
-      activity_id UUID, user_id UUID, canonical_type String, started_at DateTime64(6, 'UTC'),
-      ended_at Nullable(DateTime64(6, 'UTC')), refresh_version UInt64, is_deleted UInt8,
-      refreshed_at DateTime64(9, 'UTC')
-    ) ENGINE = ReplacingMergeTree(refresh_version) ORDER BY (user_id, activity_id)`,
-    `CREATE TABLE ${database}.activity_location_sample (
-      activity_id UUID, user_id UUID, recorded_at DateTime64(6, 'UTC'), source_metric_stream_id UUID,
-      provider_id String, device_id Nullable(String), lat Nullable(Float64), lng Nullable(Float64),
-      source_refreshed_at DateTime64(9, 'UTC'), refresh_version UInt64, is_deleted UInt8,
-      refreshed_at DateTime64(9, 'UTC')
-    ) ENGINE = ReplacingMergeTree(refresh_version)
-      ORDER BY (user_id, activity_id, recorded_at, source_metric_stream_id)`,
-    `CREATE TABLE ${database}.activity_effort_identity (
-      user_id UUID, canonical_activity_id UUID, source_activity_id UUID, source_provider String,
-      kind String, value String, source_field String, source_refreshed_at DateTime64(9, 'UTC'),
-      refresh_version UInt64, is_deleted UInt8, refreshed_at DateTime64(9, 'UTC')
-    ) ENGINE = ReplacingMergeTree(refresh_version)
-      ORDER BY (user_id, source_activity_id, kind, value, source_field)`,
-    `CREATE TABLE ${database}.activity_route_identity (
-      activity_id UUID, user_id UUID, canonical_activity_id UUID,
-      explicit_provider_route_ids Array(Tuple(provider String, value String, source_activity_id UUID, field String)),
-      route_fingerprint Nullable(String), reverse_route_fingerprint Nullable(String), direction String,
-      points Array(Tuple(lat Float64, lng Float64)), point_count UInt64,
-      route_distance_meters Nullable(Float64), started_at Nullable(DateTime64(6, 'UTC')),
-      ended_at Nullable(DateTime64(6, 'UTC')), elevation_profile Array(Float64), coverage_pct Nullable(Float64),
-      largest_gap_seconds Nullable(Float64), source_providers Array(String), source_devices Array(String),
-      geometry_status String, source_refreshed_at DateTime64(9, 'UTC'), refresh_version UInt64,
-      is_deleted UInt8, refreshed_at DateTime64(9, 'UTC')
-    ) ENGINE = ReplacingMergeTree(refresh_version) ORDER BY (user_id, activity_id)`,
-  ];
-  for (const query of statements) await client.command({ query });
-}
+    await buildModel(client, database, true, [activityId]);
+
+    expect(await readRouteIdentity(client, database)).toMatchObject({
+      isDeleted: 1,
+      geometryStatus: "unavailable",
+    });
+    expect(await readRouteIdentity(client, database, secondActivityId)).toMatchObject({
+      isDeleted: 0,
+      geometryStatus: "available",
+    });
+  });
+
+  it("keeps scoped location reads below the unrelated route history size", async () => {
+    await seedRouteIdentityFixture(client, database, { provider: "ridewithgps", routeId: "rw-42" });
+    await seedRouteIdentityFixture(client, database, {
+      provider: "strava",
+      routeId: null,
+      activityId: secondActivityId,
+    });
+    await client.command({
+      query: `INSERT INTO ${database}.activity_location_sample
+      SELECT toUUID('${secondActivityId}'), toUUID('${userId}'),
+        addSeconds(toDateTime64('2026-09-01 13:00:00', 6, 'UTC'), number), generateUUIDv4(),
+        'strava', 'head-unit', 37.8, -122.4,
+        toDateTime64('2026-09-01 12:00:00', 9, 'UTC'), 1, 0,
+        toDateTime64('2026-09-01 12:00:00', 9, 'UTC')
+      FROM numbers(100000)`,
+    });
+    await client.command({
+      query: `INSERT INTO ${database}.activity_route_identity ${renderModel(database, true, [activityId])}`,
+      clickhouse_settings: { max_rows_to_read: "50000" },
+    });
+    expect(await readRouteIdentity(client, database)).toMatchObject({
+      pointCount: 4,
+      isDeleted: 0,
+    });
+  });
+
+  it("retains the same explicit provider route claim on two distinct canonical activities", async () => {
+    for (const id of [activityId, secondActivityId]) {
+      await seedRouteIdentityFixture(client, database, {
+        provider: "ridewithgps",
+        routeId: "rw-42",
+        activityId: id,
+      });
+    }
+    await buildModel(client, database);
+    for (const id of [activityId, secondActivityId]) {
+      expect(await readRouteIdentity(client, database, id)).toMatchObject({
+        canonicalActivityId: id,
+        explicitProviderRouteIds: [
+          { provider: "ridewithgps", value: "rw-42", sourceActivityId: id, field: "routeId" },
+        ],
+        pointCount: 4,
+        isDeleted: 0,
+      });
+    }
+  });
+
+  it("refreshes only dirty geometry and leaves clean route versions unchanged", async () => {
+    for (const id of [activityId, secondActivityId]) {
+      await seedRouteIdentityFixture(client, database, {
+        provider: "ridewithgps",
+        routeId: "rw-42",
+        activityId: id,
+      });
+    }
+    await buildModel(client, database);
+    await buildModel(client, database, true);
+    const unchanged = await client.query({
+      query: `SELECT count() AS count FROM ${database}.activity_route_identity`,
+      format: "JSONEachRow",
+    });
+    expect(await unchanged.json()).toEqual([{ count: 2 }]);
+    await client.command({
+      query: `INSERT INTO ${database}.activity_location_sample
+      SELECT * REPLACE(lat + 0.01 AS lat, toUInt64(2) AS refresh_version,
+        toDateTime64('2026-09-01 12:10:00', 9, 'UTC') AS source_refreshed_at,
+        toDateTime64('2026-09-01 12:10:00', 9, 'UTC') AS refreshed_at)
+      FROM ${database}.activity_location_sample FINAL WHERE activity_id = '${activityId}'`,
+    });
+    await buildModel(client, database, true);
+    const versions = await client.query({
+      query: `SELECT toString(activity_id) AS activityId, count() AS count FROM ${database}.activity_route_identity GROUP BY activity_id ORDER BY activity_id`,
+      format: "JSONEachRow",
+    });
+    expect(await versions.json()).toEqual([
+      { activityId, count: 2 },
+      { activityId: secondActivityId, count: 1 },
+    ]);
+    expect((await readRouteIdentity(client, database)).points[0]).toEqual({
+      lat: 37.7849,
+      lng: -122.4194,
+    });
+    expect((await readRouteIdentity(client, database, secondActivityId)).points[0]).toEqual({
+      lat: 37.7749,
+      lng: -122.4194,
+    });
+  });
+
+  it.each([
+    { name: "nearby inferred geometry", offset: 0.00001, detour: false, matched: true },
+    { name: "similar endpoints with a different middle", offset: 0, detour: true, matched: false },
+    { name: "different geometry", offset: 1, detour: false, matched: false },
+  ])("materializes independent route evidence for $name", async ({ offset, detour }) => {
+    const points = [
+      { lat: 37.77, lng: -122.42 },
+      { lat: 37.78, lng: -122.42 },
+      { lat: 37.79, lng: -122.42 },
+      { lat: 37.8, lng: -122.42 },
+    ];
+    await seedRouteIdentityFixture(client, database, {
+      provider: "ridewithgps",
+      routeId: "rw-42",
+      points,
+    });
+    await seedRouteIdentityFixture(client, database, {
+      provider: "strava",
+      routeId: null,
+      activityId: secondActivityId,
+      points: points.map((point, index) => ({
+        lat: point.lat + offset,
+        lng: point.lng + (detour && index > 0 && index < 3 ? 0.01 : 0),
+      })),
+      seconds: [0, 10, 20, 120],
+    });
+    await buildModel(client, database);
+    const left = await readRouteIdentity(client, database);
+    const right = await readRouteIdentity(client, database, secondActivityId);
+    expect(left).toMatchObject({
+      canonicalActivityId: activityId,
+      explicitProviderRouteIds: [
+        { provider: "ridewithgps", value: "rw-42", sourceActivityId: activityId, field: "routeId" },
+      ],
+      points,
+      coveragePct: 100,
+      largestGapSeconds: 10,
+      elevationProfile: [],
+    });
+    expect(right).toMatchObject({
+      canonicalActivityId: secondActivityId,
+      explicitProviderRouteIds: [],
+      coveragePct: 100 / 6,
+      largestGapSeconds: 100,
+      sourceProviders: ["strava"],
+      sourceDevices: ["head-unit"],
+    });
+    expect(right.routeFingerprint).not.toBe(left.routeFingerprint);
+  });
+});

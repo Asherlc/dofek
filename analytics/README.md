@@ -140,6 +140,18 @@ polyline and its reverse fingerprint. Its route distance, time-gap coverage,
 provider/device provenance, and lifecycle watermark refresh only when an
 activity, deduplicated location state, or explicit route evidence changes; a
 route whose live geometry disappears emits a `ReplacingMergeTree` tombstone.
+Scoped builds resolve `activity_refresh_user_id` and
+`activity_refresh_activity_ids` (canonical or member IDs) before reading route
+points, and include scoped prior route keys so removed activities can be
+tombstoned. Unscoped incremental builds discover dirty keys from activity,
+location, and identity watermarks before aggregating selected geometry. See the
+[route model](models/read_models/activity_route_identity.sql) and the shared
+[activity scope macros](macros/activity_refresh_scope.sql). The server's
+[route matcher](../packages/server/src/repositories/route-equivalence.ts) returns
+`left_quality` and `right_quality` on both accepted and rejected complete
+comparisons: geometry status, coverage percentage (0–100), and largest gap in
+seconds. Missing quality observations remain null; coverage describes the
+observed location interval, not the entire activity duration.
 The location source has no elevation column, so its bounded elevation profile
 is explicitly empty rather than inferred. Geometry is Level B
 `strong_inferred` only when the server matcher accepts overlap at least 90%,

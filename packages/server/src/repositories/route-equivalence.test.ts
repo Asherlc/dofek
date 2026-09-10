@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { NormalizedRoutePoint } from "./repeated-effort-types.ts";
+import type { NormalizedRoutePoint, RouteGeometry } from "./repeated-effort-types.ts";
 import { evaluateRouteMatch } from "./route-equivalence.ts";
 
 const routePoints: readonly NormalizedRoutePoint[] = [
@@ -39,6 +39,42 @@ describe("route equivalence", () => {
       elevation_similarity: 1,
       confidence: 1,
       rejection_reasons: [],
+      left_quality: { geometry_status: null, coverage_pct: null, largest_gap_seconds: null },
+      right_quality: { geometry_status: null, coverage_pct: null, largest_gap_seconds: null },
+    });
+  });
+
+  it.each([true, false])("preserves both routes' quality for matched=%s", (matched) => {
+    const left: RouteGeometry = {
+      points: routePoints,
+      geometry_status: "available",
+      coverage_pct: 100,
+      largest_gap_seconds: 10,
+    };
+    const right: RouteGeometry = {
+      points: matched
+        ? routePoints
+        : routePoints.map((point) => ({ ...point, lat: point.lat + 1 })),
+      geometry_status: "available",
+      coverage_pct: 60,
+      largest_gap_seconds: 120,
+    };
+    expect(evaluateRouteMatch({ left, right })).toMatchObject({
+      matched,
+      left_quality: { geometry_status: "available", coverage_pct: 100, largest_gap_seconds: 10 },
+      right_quality: { geometry_status: "available", coverage_pct: 60, largest_gap_seconds: 120 },
+    });
+  });
+
+  it("preserves measured zero quality separately from unavailable evidence", () => {
+    expect(
+      evaluateRouteMatch({
+        left: { points: routePoints, coverage_pct: 0, largest_gap_seconds: 0 },
+        right: { points: routePoints, coverage_pct: null, largest_gap_seconds: null },
+      }),
+    ).toMatchObject({
+      left_quality: { geometry_status: null, coverage_pct: 0, largest_gap_seconds: 0 },
+      right_quality: { geometry_status: null, coverage_pct: null, largest_gap_seconds: null },
     });
   });
 
