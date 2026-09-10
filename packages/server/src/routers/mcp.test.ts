@@ -212,6 +212,21 @@ describe("mcpRouter", () => {
     ).resolves.toEqual({ success: true });
   });
 
+  it("rejects revoking a connected app that does not exist", async () => {
+    mockExecute.mockResolvedValueOnce([{ found: false }]);
+    const caller = createCaller(createContext("user-id"));
+
+    await expect(
+      caller.revokeConnectedApp({
+        oauthClientId: "missing-client",
+        oauthResource: "https://dofek.example/api/mcp",
+      }),
+    ).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "Connected app not found.",
+    });
+  });
+
   it("revokes a user-owned token", async () => {
     mockExecute.mockResolvedValueOnce([
       {
