@@ -10,12 +10,12 @@ DELETE FROM fitness.daily_metric_type
 WHERE id IN ('stress_high_minutes', 'recovery_high_minutes');
 
 ALTER TABLE fitness.daily_metrics
-  DROP COLUMN IF EXISTS stress_high_minutes,
-  DROP COLUMN IF EXISTS recovery_high_minutes,
-  DROP COLUMN IF EXISTS resilience_level;
+DROP COLUMN IF EXISTS stress_high_minutes,
+DROP COLUMN IF EXISTS recovery_high_minutes,
+DROP COLUMN IF EXISTS resilience_level;
 
 ALTER TABLE fitness.sleep_session
-  DROP COLUMN IF EXISTS sleep_need_baseline_minutes,
-  DROP COLUMN IF EXISTS sleep_need_from_debt_minutes,
-  DROP COLUMN IF EXISTS sleep_need_from_strain_minutes,
-  DROP COLUMN IF EXISTS sleep_need_from_nap_minutes;
+DROP COLUMN IF EXISTS sleep_need_baseline_minutes,
+DROP COLUMN IF EXISTS sleep_need_from_debt_minutes,
+DROP COLUMN IF EXISTS sleep_need_from_strain_minutes,
+DROP COLUMN IF EXISTS sleep_need_from_nap_minutes;
