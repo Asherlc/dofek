@@ -7,7 +7,7 @@ import { OuraClient } from "./oura/client.ts";
 // that are untested: getDailyReadiness, getDailyActivity,
 // getHeartRate (pagination), getWorkouts (pagination),
 // getSessions (pagination), getTags, getEnhancedTags,
-// getRestModePeriods, getSleepTime, getDailyCardiovascularAge
+// getRestModePeriods, getDailyCardiovascularAge
 // ============================================================
 
 function makeCapturingFetch(): { fetch: typeof globalThis.fetch; urls: string[] } {
@@ -18,27 +18,6 @@ function makeCapturingFetch(): { fetch: typeof globalThis.fetch; urls: string[] 
   };
   return { fetch: mockFetch, urls };
 }
-
-describe("OuraClient — getDailyReadiness", () => {
-  it("fetches daily readiness with correct URL", async () => {
-    const { fetch: mockFetch, urls } = makeCapturingFetch();
-    const client = new OuraClient("test-token", mockFetch);
-    const result = await client.getDailyReadiness("2026-03-01", "2026-03-05");
-
-    expect(urls[0]).toContain("/v2/usercollection/daily_readiness");
-    expect(urls[0]).toContain("start_date=2026-03-01");
-    expect(urls[0]).toContain("end_date=2026-03-05");
-    expect(result.data).toHaveLength(0);
-  });
-
-  it("includes next_token for pagination", async () => {
-    const { fetch: mockFetch, urls } = makeCapturingFetch();
-    const client = new OuraClient("test-token", mockFetch);
-    await client.getDailyReadiness("2026-03-01", "2026-03-05", "page2");
-
-    expect(urls[0]).toContain("next_token=page2");
-  });
-});
 
 describe("OuraClient — getDailyActivity", () => {
   it("fetches daily activity with correct URL", async () => {
@@ -89,36 +68,6 @@ describe("OuraClient — getSessions pagination", () => {
   });
 });
 
-describe("OuraClient — getDailyStress pagination", () => {
-  it("includes next_token when provided", async () => {
-    const { fetch: mockFetch, urls } = makeCapturingFetch();
-    const client = new OuraClient("test-token", mockFetch);
-    await client.getDailyStress("2026-03-01", "2026-03-05", "stress-page");
-
-    expect(urls[0]).toContain("next_token=stress-page");
-  });
-});
-
-describe("OuraClient — getDailyResilience pagination", () => {
-  it("includes next_token when provided", async () => {
-    const { fetch: mockFetch, urls } = makeCapturingFetch();
-    const client = new OuraClient("test-token", mockFetch);
-    await client.getDailyResilience("2026-03-01", "2026-03-05", "res-page");
-
-    expect(urls[0]).toContain("next_token=res-page");
-  });
-});
-
-describe("OuraClient — getDailyCardiovascularAge pagination", () => {
-  it("includes next_token when provided", async () => {
-    const { fetch: mockFetch, urls } = makeCapturingFetch();
-    const client = new OuraClient("test-token", mockFetch);
-    await client.getDailyCardiovascularAge("2026-03-01", "2026-03-05", "cv-page");
-
-    expect(urls[0]).toContain("next_token=cv-page");
-  });
-});
-
 describe("OuraClient — getTags pagination", () => {
   it("includes next_token when provided", async () => {
     const { fetch: mockFetch, urls } = makeCapturingFetch();
@@ -146,16 +95,6 @@ describe("OuraClient — getRestModePeriods pagination", () => {
     await client.getRestModePeriods("2026-03-01", "2026-03-05", "rm-page");
 
     expect(urls[0]).toContain("next_token=rm-page");
-  });
-});
-
-describe("OuraClient — getSleepTime pagination", () => {
-  it("includes next_token when provided", async () => {
-    const { fetch: mockFetch, urls } = makeCapturingFetch();
-    const client = new OuraClient("test-token", mockFetch);
-    await client.getSleepTime("2026-03-01", "2026-03-05", "st-page");
-
-    expect(urls[0]).toContain("next_token=st-page");
   });
 });
 

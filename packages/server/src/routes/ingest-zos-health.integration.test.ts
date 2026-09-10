@@ -159,7 +159,6 @@ describe("POST /api/ingest/zos-health", () => {
             standHours: 12,
             spo2Avg: 97.5,
             skinTempC: 36.5,
-            stressHighMinutes: 30,
             exerciseMinutes: 45,
           },
         },
@@ -177,7 +176,6 @@ describe("POST /api/ingest/zos-health", () => {
     expect(rows[0].stand_hours).toBe(12);
     expect(rows[0].spo2_avg).toBe(97.5);
     expect(rows[0].skin_temp_c).toBe(36.5);
-    expect(rows[0].stress_high_minutes).toBe(30);
     expect(rows[0].exercise_minutes).toBe(45);
   });
 
@@ -795,7 +793,6 @@ describe("POST /api/ingest/zos-health", () => {
             standHours: 7,
             spo2Avg: 96.5,
             skinTempC: 35.4,
-            stressHighMinutes: 22,
             exerciseMinutes: 33,
           },
         },
@@ -812,7 +809,6 @@ describe("POST /api/ingest/zos-health", () => {
     expect(row.stand_hours).toBe(7);
     expect(Number(row.spo2_avg)).toBeCloseTo(96.5);
     expect(Number(row.skin_temp_c)).toBeCloseTo(35.4);
-    expect(row.stress_high_minutes).toBe(22);
     expect(row.exercise_minutes).toBe(33);
   });
 

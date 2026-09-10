@@ -7,7 +7,6 @@ export interface BackgroundHealthSample {
   heartRate?: number;
   bloodOxygenPercent?: number;
   bodyTemperatureCelsius?: number;
-  stress?: number;
 }
 
 export interface BackgroundHealthBuffer {
@@ -20,7 +19,6 @@ interface BackgroundHealthDependencies {
   HeartRate: new () => { getLast(): number };
   BloodOxygen: new () => { getCurrent(): { value: number } };
   BodyTemperature: new () => { getCurrent(): { current: number } };
-  Stress: new () => { getToday(): number[] };
   Workout: new () => { getHistory(): Array<{ startTime: number; duration: number }> };
 }
 
@@ -51,19 +49,6 @@ export function collectBackgroundHealthSample(
   try {
     const bodyTemperatureCelsius = new sensors.BodyTemperature().getCurrent().current;
     if (bodyTemperatureCelsius > 0) sample.bodyTemperatureCelsius = bodyTemperatureCelsius;
-  } catch (error) {
-    sensors.captureException(error);
-  }
-
-  try {
-    const stressReadings = new sensors.Stress().getToday();
-    for (let index = stressReadings.length - 1; index >= 0; index -= 1) {
-      const stress = stressReadings[index];
-      if (stress !== undefined && stress > 0) {
-        sample.stress = stress;
-        break;
-      }
-    }
   } catch (error) {
     sensors.captureException(error);
   }

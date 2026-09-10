@@ -22,7 +22,6 @@ import type {
   DailyIntensityMinutes,
   DailyRespiration,
   DailySpO2,
-  DailyStress,
   EnduranceScore,
   GarminTokens,
   GarminUserProfile,
@@ -474,14 +473,6 @@ export class GarminConnectClient {
     return this.#connectApi(`/wellness-service/wellness/dailyHeartRate/${this.getDisplayName()}`, {
       date,
     });
-  }
-
-  // ============================================================
-  // Stress
-  // ============================================================
-
-  async getDailyStress(date: string): Promise<DailyStress> {
-    return this.#connectApi(`/wellness-service/wellness/dailyStress/${date}`);
   }
 
   // ============================================================

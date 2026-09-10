@@ -22,7 +22,6 @@ function parseSample(value: unknown): BackgroundHealthSample | undefined {
     heartRate: optionalNumber(value.heartRate),
     bloodOxygenPercent: optionalNumber(value.bloodOxygenPercent),
     bodyTemperatureCelsius: optionalNumber(value.bodyTemperatureCelsius),
-    stress: optionalNumber(value.stress),
   };
 }
 
@@ -88,8 +87,7 @@ function samplesMatch(left: BackgroundHealthSample, right: BackgroundHealthSampl
     left.recordedAt === right.recordedAt &&
     left.heartRate === right.heartRate &&
     left.bloodOxygenPercent === right.bloodOxygenPercent &&
-    left.bodyTemperatureCelsius === right.bodyTemperatureCelsius &&
-    left.stress === right.stress
+    left.bodyTemperatureCelsius === right.bodyTemperatureCelsius
   );
 }
 

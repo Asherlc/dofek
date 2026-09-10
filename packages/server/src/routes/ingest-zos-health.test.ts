@@ -257,7 +257,6 @@ describe("createIngestZosHealthRouter", () => {
           fatBurning: 22,
           heartRate: [0, 61, 62],
           bodyTemperature: [35.1, -1000, 35.3],
-          stress: [0, 18, 20],
           spo2Recent: [{ spo2: 98, time: 1_720_001_100 }],
           restingHeartRate: 55,
           stepsTarget: 10_000,
@@ -286,11 +285,6 @@ describe("createIngestZosHealthRouter", () => {
             recordedAt: "2024-07-02T22:10:00.000Z",
             channel: "skin_temperature",
             scalar: 35.3,
-          }),
-          expect.objectContaining({
-            recordedAt: "2024-07-02T22:02:00.000Z",
-            channel: "stress",
-            scalar: 20,
           }),
           expect.objectContaining({
             recordedAt: "2024-07-03T10:05:00.000Z",
@@ -335,7 +329,6 @@ describe("createIngestZosHealthRouter", () => {
             heartRate: 72,
             bloodOxygenPercent: 98,
             bodyTemperatureCelsius: 36.6,
-            stress: 35,
           },
         ],
       },
@@ -355,7 +348,6 @@ describe("createIngestZosHealthRouter", () => {
           heartRate: 72,
           spo2: 0.98,
           temperatureC: 36.6,
-          stress: 35,
         },
       ],
       "api",
@@ -467,7 +459,6 @@ describe("createIngestZosHealthRouter", () => {
             standHours: 11,
             spo2Avg: 97.2,
             skinTempC: 35.9,
-            stressHighMinutes: 21,
             exerciseMinutes: 44,
           },
         },
@@ -518,7 +509,6 @@ describe("createIngestZosHealthRouter", () => {
       11,
       97.2,
       35.9,
-      21,
       44,
     ]);
     expect(routeMocks.executeWithSchema).toHaveBeenCalledOnce();

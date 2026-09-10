@@ -18,7 +18,6 @@ import {
   Sleep,
   Stand,
   Step,
-  Stress,
   Workout,
 } from "@zos/sensor";
 import {
@@ -815,7 +814,6 @@ Page(
           Sleep,
           BloodOxygen,
           BodyTemperature,
-          Stress,
           Stand,
           Pai,
           FatBurning,

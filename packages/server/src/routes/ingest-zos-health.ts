@@ -13,7 +13,6 @@ import {
   SKIN_TEMPERATURE,
   SOURCE_TYPE_API,
   SPO2,
-  STRESS,
 } from "../../../../src/db/sensor-channels.ts";
 import type { MetricStreamRowInput } from "../../../../src/metric-stream/events.ts";
 import {
@@ -34,7 +33,6 @@ const dailyMetricsDataSchema = z.object({
   standHours: z.number().int().optional(),
   spo2Avg: z.number().optional(),
   skinTempC: z.number().optional(),
-  stressHighMinutes: z.number().int().optional(),
   exerciseMinutes: z.number().int().optional(),
 });
 
@@ -79,7 +77,6 @@ const backgroundHealthSampleSchema = z.object({
   heartRate: z.number().positive().optional(),
   bloodOxygenPercent: z.number().positive().max(100).optional(),
   bodyTemperatureCelsius: z.number().optional(),
-  stress: z.number().nonnegative().optional(),
 });
 
 const liveWorkoutSampleSchema = z.object({
@@ -108,7 +105,6 @@ const watchSummarySchema = z.object({
     .optional(),
   bodyTemperatureCurrent: z.number().optional(),
   bodyTemperature: z.array(z.number()).optional(),
-  stress: z.array(z.number()).optional(),
   standHours: z.number().int().nonnegative().optional(),
   pai: z.number().nonnegative().optional(),
   fatBurning: z.number().int().nonnegative().optional(),
@@ -150,9 +146,6 @@ function watchSummaryMetricRows(summary: WatchSummary, userId: string): MetricSt
 
   summary.heartRate?.forEach((value, minute) => {
     if (value > 0) addRow(watchSummaryRecordedAt(summary, minute), HEART_RATE, value);
-  });
-  summary.stress?.forEach((value, minute) => {
-    if (value > 0) addRow(watchSummaryRecordedAt(summary, minute), STRESS, value);
   });
   summary.bodyTemperature?.forEach((value, interval) => {
     if (value > -1000) {
@@ -269,8 +262,8 @@ export function createIngestZosHealthRouter(deps: {
           }
           await deps.db.execute(
             sql`INSERT INTO fitness.daily_metrics
-                (date, provider_id, user_id, steps, distance_km, stand_hours, spo2_avg, skin_temp_c, stress_high_minutes, exercise_minutes, source_name)
-                VALUES (${dateStr}, ${PROVIDER_ID}, ${userId}, ${metrics.steps ?? null}, ${metrics.distanceKm ?? null}, ${metrics.standHours ?? null}, ${metrics.spo2Avg ?? null}, ${metrics.skinTempC ?? null}, ${metrics.stressHighMinutes ?? null}, ${metrics.exerciseMinutes ?? null}, 'zepp-companion')
+                (date, provider_id, user_id, steps, distance_km, stand_hours, spo2_avg, skin_temp_c, exercise_minutes, source_name)
+                VALUES (${dateStr}, ${PROVIDER_ID}, ${userId}, ${metrics.steps ?? null}, ${metrics.distanceKm ?? null}, ${metrics.standHours ?? null}, ${metrics.spo2Avg ?? null}, ${metrics.skinTempC ?? null}, ${metrics.exerciseMinutes ?? null}, 'zepp-companion')
                 ON CONFLICT (user_id, date, provider_id, source_name)
                 WHERE source_name = 'zepp-companion'
                 DO UPDATE SET
@@ -279,7 +272,6 @@ export function createIngestZosHealthRouter(deps: {
                   stand_hours = COALESCE(EXCLUDED.stand_hours, daily_metrics.stand_hours),
                   spo2_avg = COALESCE(EXCLUDED.spo2_avg, daily_metrics.spo2_avg),
                   skin_temp_c = COALESCE(EXCLUDED.skin_temp_c, daily_metrics.skin_temp_c),
-                  stress_high_minutes = COALESCE(EXCLUDED.stress_high_minutes, daily_metrics.stress_high_minutes),
                   exercise_minutes = COALESCE(EXCLUDED.exercise_minutes, daily_metrics.exercise_minutes),
                   source_name = 'zepp-companion'`,
           );
@@ -310,7 +302,6 @@ export function createIngestZosHealthRouter(deps: {
             spo2:
               sample.bloodOxygenPercent === undefined ? undefined : sample.bloodOxygenPercent / 100,
             temperatureC: sample.bodyTemperatureCelsius,
-            stress: sample.stress,
           })),
           SOURCE_TYPE_API,
           undefined,

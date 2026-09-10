@@ -534,21 +534,6 @@ describe("GarminConnectClient API methods", () => {
     expect(heartRateUrl).toContain("date=2024-01-15");
   });
 
-  it("getDailyStress returns stress data", async () => {
-    const stressData = { calendarDate: "2024-01-15", avgStressLevel: 35 };
-
-    const apiFetchFn = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve(stressData),
-    });
-
-    const client = await createAuthenticatedClient(apiFetchFn);
-    const result = await client.getDailyStress("2024-01-15");
-
-    expect(result).toEqual(stressData);
-  });
-
   it("getHrvSummary returns HRV data", async () => {
     const hrvData = { calendarDate: "2024-01-15", lastNightAvg: 45 };
 
@@ -614,8 +599,8 @@ describe("GarminConnectClient API methods", () => {
 
     const client = await createAuthenticatedClient(apiFetchFn);
 
-    await expect(client.getDailyStress("2024-01-15")).rejects.toThrow(GarminApiError);
-    await expect(client.getDailyStress("2024-01-15")).rejects.toThrow("204");
+    await expect(client.getDailyHeartRate("2024-01-15")).rejects.toThrow(GarminApiError);
+    await expect(client.getDailyHeartRate("2024-01-15")).rejects.toThrow("204");
   });
 
   it("getDailySummary returns summary data", async () => {

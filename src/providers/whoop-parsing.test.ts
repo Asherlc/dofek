@@ -278,12 +278,6 @@ describe("parseSleep — invalid timestamps", () => {
           sleep_cycle_count: 4,
           disturbance_count: 2,
         },
-        sleep_needed: {
-          baseline_milli: 27000000,
-          need_from_sleep_debt_milli: 0,
-          need_from_recent_strain_milli: 1800000,
-          need_from_recent_nap_milli: 0,
-        },
         respiratory_rate: 15.5,
         sleep_performance_percentage: 96,
         sleep_consistency_percentage: 85,
@@ -312,11 +306,6 @@ describe("parseInlineSleep — BFF v0 cycle.sleeps format", () => {
       slow_wave_sleep_duration: 5298540,
       rem_sleep_duration: 4852630,
       in_sleep_efficiency: 89.4,
-      sleep_need: 29424206,
-      habitual_sleep_need: 27145502,
-      debt_post: 2330785,
-      need_from_strain: 2278704,
-      credit_from_naps: 0,
       significant: true,
       ...overrides,
     };
@@ -336,10 +325,6 @@ describe("parseInlineSleep — BFF v0 cycle.sleeps format", () => {
     expect(parsed?.efficiencyPct).toBe(89.4);
     expect(parsed?.sleepType).toBe("sleep");
     expect(parsed?.isNap).toBe(false);
-    expect(parsed?.sleepNeedBaselineMinutes).toBe(452); // 27145502 / 60000
-    expect(parsed?.sleepNeedFromDebtMinutes).toBe(39); // 2330785 / 60000
-    expect(parsed?.sleepNeedFromStrainMinutes).toBe(38); // 2278704 / 60000
-    expect(parsed?.sleepNeedFromNapMinutes).toBe(0);
   });
 
   it("returns null for invalid during range", () => {
@@ -380,19 +365,11 @@ describe("parseInlineSleep — BFF v0 cycle.sleeps format", () => {
     const parsed = parseInlineSleep(
       inlineSleep({
         in_sleep_efficiency: undefined,
-        habitual_sleep_need: undefined,
-        debt_post: undefined,
-        need_from_strain: undefined,
-        credit_from_naps: undefined,
       }),
       0,
     );
     expect(parsed).not.toBeNull();
     expect(parsed?.efficiencyPct).toBeUndefined();
-    expect(parsed?.sleepNeedBaselineMinutes).toBeUndefined();
-    expect(parsed?.sleepNeedFromDebtMinutes).toBeUndefined();
-    expect(parsed?.sleepNeedFromStrainMinutes).toBeUndefined();
-    expect(parsed?.sleepNeedFromNapMinutes).toBeUndefined();
   });
 
   it("normalizes fractional in_sleep_efficiency to percentage", () => {
@@ -455,12 +432,6 @@ describe("parseSleep — edge cases", () => {
           sleep_cycle_count: 1,
           disturbance_count: 0,
         },
-        sleep_needed: {
-          baseline_milli: 28800000,
-          need_from_sleep_debt_milli: 0,
-          need_from_recent_strain_milli: 0,
-          need_from_recent_nap_milli: 0,
-        },
         respiratory_rate: 15.0,
         sleep_performance_percentage: 50,
         sleep_consistency_percentage: 70,
@@ -499,12 +470,6 @@ describe("parseSleep — edge cases", () => {
           total_rem_sleep_time_milli: 5400000,
           sleep_cycle_count: 4,
           disturbance_count: 2,
-        },
-        sleep_needed: {
-          baseline_milli: 28800000,
-          need_from_sleep_debt_milli: 0,
-          need_from_recent_strain_milli: 0,
-          need_from_recent_nap_milli: 0,
         },
         respiratory_rate: 16.1,
         sleep_performance_percentage: 92,
@@ -1413,11 +1378,11 @@ describe("parseJournalResponse", () => {
 });
 
 // ============================================================
-// parseSleep — sleep need breakdown
+// parseSleep — scored records
 // ============================================================
 
-describe("parseSleep — sleep need breakdown", () => {
-  it("extracts sleep need components when scored", () => {
+describe("parseSleep — scored records", () => {
+  it("extracts scored sleep stages", () => {
     const record: WhoopSleepRecord = {
       id: 400,
       user_id: 10129,
@@ -1439,12 +1404,6 @@ describe("parseSleep — sleep need breakdown", () => {
           sleep_cycle_count: 4,
           disturbance_count: 2,
         },
-        sleep_needed: {
-          baseline_milli: 28800000, // 480 min
-          need_from_sleep_debt_milli: 1800000, // 30 min
-          need_from_recent_strain_milli: 900000, // 15 min
-          need_from_recent_nap_milli: -600000, // -10 min
-        },
         respiratory_rate: 16.1,
         sleep_performance_percentage: 92,
         sleep_consistency_percentage: 88,
@@ -1454,31 +1413,6 @@ describe("parseSleep — sleep need breakdown", () => {
 
     const parsed = parseSleep(record);
     expect(parsed).not.toBeNull();
-    expect(parsed?.sleepNeedBaselineMinutes).toBe(480);
-    expect(parsed?.sleepNeedFromDebtMinutes).toBe(30);
-    expect(parsed?.sleepNeedFromStrainMinutes).toBe(15);
-    expect(parsed?.sleepNeedFromNapMinutes).toBe(-10);
-  });
-
-  it("returns undefined sleep need when score is missing", () => {
-    const record: WhoopSleepRecord = {
-      id: 401,
-      user_id: 10129,
-      created_at: "2026-03-01T06:00:00Z",
-      updated_at: "2026-03-01T06:30:00Z",
-      start: "2026-02-28T23:00:00Z",
-      end: "2026-03-01T06:30:00Z",
-      timezone_offset: "-05:00",
-      nap: false,
-      score_state: "PENDING",
-    };
-
-    const parsed = parseSleep(record);
-    expect(parsed).not.toBeNull();
-    expect(parsed?.sleepNeedBaselineMinutes).toBeUndefined();
-    expect(parsed?.sleepNeedFromDebtMinutes).toBeUndefined();
-    expect(parsed?.sleepNeedFromStrainMinutes).toBeUndefined();
-    expect(parsed?.sleepNeedFromNapMinutes).toBeUndefined();
   });
 });
 

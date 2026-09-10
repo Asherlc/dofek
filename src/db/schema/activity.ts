@@ -345,9 +345,6 @@ export const dailyMetrics = fitness.table(
     walkingSteadiness: real("walking_steadiness"), // 0-1
     standHours: integer("stand_hours"),
     skinTempC: real("skin_temp_c"), // celsius (WHOOP)
-    stressHighMinutes: integer("stress_high_minutes"), // minutes of high stress (Oura)
-    recoveryHighMinutes: integer("recovery_high_minutes"), // minutes of high recovery (Oura)
-    resilienceLevel: text("resilience_level"), // e.g. "limited", "adequate", "solid", "strong", "exceptional"
     pushCount: integer("push_count"),
     wheelchairDistanceKm: real("wheelchair_distance_km"),
     uvExposure: real("uv_exposure"),
@@ -420,10 +417,6 @@ export const sleepSession = fitness.table(
     stagingAvailable: boolean("staging_available").notNull().default(false),
     sleepType: text("sleep_type"),
     isNap: boolean("is_nap").notNull().default(false),
-    sleepNeedBaselineMinutes: integer("sleep_need_baseline_minutes"),
-    sleepNeedFromDebtMinutes: integer("sleep_need_from_debt_minutes"),
-    sleepNeedFromStrainMinutes: integer("sleep_need_from_strain_minutes"),
-    sleepNeedFromNapMinutes: integer("sleep_need_from_nap_minutes"),
     sourceName: text("source_name"),
     timezone: text("timezone"),
     startUtcOffsetMinutes: bigint("start_utc_offset_minutes", { mode: "number" }),

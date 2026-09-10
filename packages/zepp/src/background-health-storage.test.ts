@@ -67,7 +67,6 @@ describe("parseBackgroundHealthBuffer", () => {
               heartRate: 72,
               bloodOxygenPercent: 98,
               bodyTemperatureCelsius: 36.6,
-              stress: 35,
             },
           ],
           activities: [
@@ -87,7 +86,6 @@ describe("parseBackgroundHealthBuffer", () => {
           heartRate: 72,
           bloodOxygenPercent: 98,
           bodyTemperatureCelsius: 36.6,
-          stress: 35,
         },
       ],
       activities: [

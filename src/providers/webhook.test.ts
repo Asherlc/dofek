@@ -668,8 +668,8 @@ describe("OuraProvider register/unregister", () => {
     const result = await provider.registerWebhook("https://example.com/cb", "verify-tok");
     expect(result.subscriptionId).toBe("oura-sub-1");
     expect(result.expiresAt).toBeInstanceOf(Date);
-    // Should register for all 8 data types
-    expect(mockFetch).toHaveBeenCalledTimes(8);
+    // Should register for all 5 data types
+    expect(mockFetch).toHaveBeenCalledTimes(5);
 
     process.env.OURA_CLIENT_ID = original.OURA_CLIENT_ID;
     process.env.OURA_CLIENT_SECRET = original.OURA_CLIENT_SECRET;

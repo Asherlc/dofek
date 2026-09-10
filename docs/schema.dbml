@@ -566,9 +566,6 @@ table fitness.daily_metrics {
   walking_steadiness real
   stand_hours integer
   skin_temp_c real
-  stress_high_minutes integer
-  recovery_high_minutes integer
-  resilience_level text
   push_count integer
   wheelchair_distance_km real
   uv_exposure real
@@ -624,10 +621,6 @@ table fitness.sleep_session {
   staging_available boolean [not null, default: false]
   sleep_type text
   is_nap boolean [not null, default: false]
-  sleep_need_baseline_minutes integer
-  sleep_need_from_debt_minutes integer
-  sleep_need_from_strain_minutes integer
-  sleep_need_from_nap_minutes integer
   source_name text
   timezone text
   start_utc_offset_minutes bigint

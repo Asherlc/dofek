@@ -56,9 +56,6 @@ export interface HealthDataPayload {
   spo2Recent?: SpO2Reading[];
   bodyTemperatureCurrent?: number;
   bodyTemperature?: number[];
-  stress?: number[];
-  stressByHour?: number[];
-  stressWeekly?: number[];
   standHours?: number;
   pai?: number;
   fatBurning?: number;
@@ -68,7 +65,6 @@ export interface HealthDataPayload {
     heartRate?: number;
     bloodOxygenPercent?: number;
     bodyTemperatureCelsius?: number;
-    stress?: number;
   }>;
 }
 
@@ -99,11 +95,6 @@ export interface SensorConstructors {
     getLastFewHour(hours: number): SpO2Reading[];
   };
   BodyTemperature: new () => { getCurrent(): { current: number }; getToday(): number[] };
-  Stress: new () => {
-    getToday(): number[];
-    getTodayByHour(): number[];
-    getLastWeek(): number[];
-  };
   Stand: new () => { getCurrent(): number };
   Pai: new () => { getCurrent(): number };
   FatBurning: new () => { getCurrent(): number };
@@ -209,15 +200,6 @@ export function collectHealthData(sensors: SensorConstructors): HealthDataPayloa
     payload.bodyTemperature = bodyTemp.getToday();
   } catch {
     // BodyTemperature sensor unavailable
-  }
-
-  try {
-    const stress = new sensors.Stress();
-    payload.stress = stress.getToday();
-    payload.stressByHour = stress.getTodayByHour();
-    payload.stressWeekly = stress.getLastWeek();
-  } catch {
-    // Stress sensor unavailable
   }
 
   try {

@@ -66,17 +66,6 @@ function makeSensors(overrides?: Partial<SensorConstructors>): SensorConstructor
         return Array.from({ length: 288 }, () => 36.5);
       }
     },
-    Stress: class {
-      getToday() {
-        return Array.from({ length: 60 }, () => 30);
-      }
-      getTodayByHour() {
-        return Array.from({ length: 24 }, () => 30);
-      }
-      getLastWeek() {
-        return [35, 32, 28, 33, 30, 29, 31];
-      }
-    },
     Stand: class {
       getCurrent() {
         return 10;
@@ -128,8 +117,6 @@ describe("collectHealthData", () => {
     expect(result.spo2Recent).toHaveLength(12);
     expect(result.bodyTemperatureCurrent).toBe(36.5);
     expect(result.bodyTemperature).toHaveLength(288);
-    expect(result.stress).toHaveLength(60);
-    expect(result.stressWeekly).toEqual([35, 32, 28, 33, 30, 29, 31]);
     expect(result.standHours).toBe(10);
     expect(result.pai).toBe(85);
     expect(result.fatBurning).toBe(30);
@@ -329,7 +316,6 @@ describe("collectHealthData", () => {
         Sleep: ThrowingSensor,
         BloodOxygen: ThrowingSensor,
         BodyTemperature: ThrowingSensor,
-        Stress: ThrowingSensor,
         Stand: ThrowingSensor,
         Pai: ThrowingSensor,
         FatBurning: ThrowingSensor,
