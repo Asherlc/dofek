@@ -26301,3 +26301,18 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   becomes unhealthy after its full 20-minute budget. Production drain validation
   remains pending rollout of this watchdog correction; no timeout, retry delay,
   memory limit, or health budget was increased.
+- **Resolution:** PR [#2716](https://github.com/Asherlc/dofek/pull/2716)
+  deployed the watchdog correction as `sha-934ec66`. The same analytics-worker
+  task remained healthy across the previous false-kill boundary and two complete
+  cycles. The cycles finished in 935.59 and 792.72 seconds with
+  `PASS=39 WARN=0 ERROR=0`; their location batches completed in 167.84 and
+  43.85 seconds, respectively. The complete dirty activity-location group count
+  fell from 620 to 120 and then zero. The current Withings operation records
+  succeeded analytics for activity, sleep, recovery, training, body, and
+  providers; all 6,782 Withings processing outbox rows are completed. Active
+  activities missing `group_id` remain zero. All three PeerDB slots are active
+  with 6.1-7.9 MiB retained WAL, and all six Redpanda consumer groups returned
+  to stable zero lag after the intentional deploy quiesce. The data disk is 70%
+  used with 43 GiB free. The incident is resolved without increasing query
+  timeouts, worker memory, retry delay, or the health budget; `max_threads=1`
+  remains intentional to serialize ClickHouse builds on the single-node host.
