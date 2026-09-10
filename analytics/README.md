@@ -90,7 +90,11 @@ groups, then read complete raw tracks only for those groups; later builds keep
 selecting dirty groups until the backlog is empty. Explicit activity repair
 scopes retain their caller-supplied bounds. Per-group watermarks make the
 bounded progression safe: completing a newer group cannot hide an older group
-that has not run yet. The one-use raw-track CTE remains streaming so it is
+that has not run yet. New groups whose latest raw point versions are all
+deleted are excluded because they have no target state to change; groups with
+existing live target samples remain eligible so a later all-deleted source
+state can write the required tombstones. The one-use raw-track CTE remains
+streaming so it is
 aggregated without buffering a second full copy; reused bounded key and result
 CTEs are materialized. Each raw location version is resolved with one
 tuple-valued `argMax`, keeping all fields from the same latest row while

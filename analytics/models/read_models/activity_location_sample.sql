@@ -29,17 +29,23 @@ existing_group_watermarks AS MATERIALIZED (
     SELECT
         activity_id,
         user_id,
-        max(source_refreshed_at) AS source_refreshed_at
+        max(source_refreshed_at) AS source_refreshed_at,
+        countIf(is_deleted = 0) AS live_sample_count
     FROM {{ this }} FINAL
     GROUP BY activity_id, user_id
 ),
 {% endif %}
 
-location_group_freshness AS MATERIALIZED (
+location_point_state AS MATERIALIZED (
     SELECT
         activity_members.activity_id AS activity_id,
         activity_members.user_id AS user_id,
-        max(location_versions.ingested_at) AS source_refreshed_at
+        location_versions.id AS source_metric_stream_id,
+        max(location_versions.ingested_at) AS source_refreshed_at,
+        argMax(
+            tuple(location_versions.point, location_versions.is_deleted),
+            location_versions.version
+        ) AS latest_location_version
     FROM {{ source('ingest', 'metric_stream_freshness') }} AS location_versions
     INNER JOIN {{ ref('deduped_activity_members') }} AS activity_members FINAL
         ON activity_members.member_activity_id = location_versions.activity_id
@@ -51,7 +57,23 @@ location_group_freshness AS MATERIALIZED (
         AND (location_versions.point IS NOT NULL OR location_versions.is_deleted = 1)
         AND activity_members.is_deleted = 0
         AND activity_group_state.is_deleted = 0
-    GROUP BY activity_members.activity_id, activity_members.user_id
+    GROUP BY
+        activity_members.activity_id,
+        activity_members.user_id,
+        location_versions.id
+),
+
+location_group_freshness AS MATERIALIZED (
+    SELECT
+        activity_id,
+        user_id,
+        max(source_refreshed_at) AS source_refreshed_at,
+        countIf(
+            latest_location_version.2 = 0
+            AND latest_location_version.1 IS NOT NULL
+        ) AS live_sample_count
+    FROM location_point_state
+    GROUP BY activity_id, user_id
 ),
 
 changed_location_groups AS (
@@ -64,15 +86,22 @@ changed_location_groups AS (
     LEFT JOIN existing_group_watermarks
         ON existing_group_watermarks.activity_id = location_group_freshness.activity_id
         AND existing_group_watermarks.user_id = location_group_freshness.user_id
-    WHERE existing_group_watermarks.activity_id IS NULL
+    WHERE (
+        existing_group_watermarks.activity_id IS NULL
         OR location_group_freshness.source_refreshed_at
             > existing_group_watermarks.source_refreshed_at
+    )
+        AND (
+            location_group_freshness.live_sample_count > 0
+            OR existing_group_watermarks.live_sample_count > 0
+        )
     {% else %}
     SELECT
         activity_id,
         user_id,
         source_refreshed_at
     FROM location_group_freshness
+    WHERE live_sample_count > 0
     {% endif %}
 ),
 

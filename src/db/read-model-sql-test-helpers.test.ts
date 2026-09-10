@@ -174,6 +174,14 @@ SELECT 'unscoped'
     );
   });
 
+  it("preserves an unknown condition that matches an object prototype property", () => {
+    const modelSqlWithUnknownCondition = "{% if toString %}SELECT 1{% endif %}";
+
+    expect(renderDbtModelSql(modelSqlWithUnknownCondition, { isIncremental: true })).toBe(
+      modelSqlWithUnknownCondition,
+    );
+  });
+
   it("renders nested boolean branches without leaving Jinja tokens", () => {
     const nestedModelSql = `
 {% if activity_refresh_scoped %}

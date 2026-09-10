@@ -26206,3 +26206,16 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   passes all five lifecycle, provider-selection, scoped-repair, and batching
   tests. Static model policy passes all 39 tests. No timeout, thread, memory, or
   spill limit was increased.
+- **Review hardening pending rollout:** Review of PR
+  [#2710](https://github.com/Asherlc/dofek/pull/2710) found that a never-ingested
+  group containing only deleted location versions had no target watermark and
+  could repeatedly occupy one of the 250 slots. Dirty-group discovery now
+  resolves each point's latest version before admission: a new group must have
+  at least one live point, while a group with existing live target rows remains
+  eligible to emit tombstones. A real ClickHouse/dbt regression puts an older
+  deleted-only group ahead of a live group with a batch size of one and verifies
+  that the live group is processed. The oversized integration test was split
+  into colocated files below the repository's 1,000-line limit, and the local
+  dbt renderer now uses prototype-safe condition lookup with a regression for
+  an unknown `toString` condition. Deployment and production drain validation
+  remain pending.
