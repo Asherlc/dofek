@@ -62,6 +62,8 @@ function createMockLink(scenario: StoryScenario): TRPCLink<AppRouter> {
             }
           } else if (op.path === "mcp.revokeConnectedApp") {
             observer.next?.({ result: { data: { success: true } } });
+          } else if (op.path === "mcp.updateConnectedAppScopes") {
+            observer.next?.({ result: { data: { success: true } } });
           } else {
             observer.error?.(new Error(`Unhandled MCP story path: ${op.path}`));
             return { unsubscribe: () => {} };

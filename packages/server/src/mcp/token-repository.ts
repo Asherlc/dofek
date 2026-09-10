@@ -355,6 +355,48 @@ export async function updateMcpTokenScopes(
   return rows[0] ? toMetadata(rows[0]) : null;
 }
 
+export async function updateMcpConnectedAppScopes(
+  db: ExecutableDatabase,
+  userId: string,
+  oauthClientId: string,
+  oauthResource: string,
+  scopes: McpScope[],
+): Promise<boolean> {
+  const scopesArray = sql`ARRAY[${sql.join(
+    scopes.map((scope) => sql`${scope}`),
+    sql`, `,
+  )}]::text[]`;
+  const rows = await executeWithSchema(
+    db,
+    connectedAppRevokeRowSchema,
+    sql`WITH updated_access_tokens AS (
+          UPDATE fitness.mcp_access_token
+          SET scopes = ${scopesArray}
+          WHERE user_id = ${userId}
+            AND oauth_client_id = ${oauthClientId}
+            AND oauth_resource = ${oauthResource}
+            AND revoked_at IS NULL
+            AND (expires_at IS NULL OR expires_at > NOW())
+          RETURNING id
+        ), updated_refresh_tokens AS (
+          UPDATE fitness.mcp_oauth_refresh_token
+          SET scopes = ${scopesArray}
+          WHERE user_id = ${userId}
+            AND client_id = ${oauthClientId}
+            AND resource = ${oauthResource}
+            AND revoked_at IS NULL
+            AND expires_at > NOW()
+          RETURNING id
+        )
+        SELECT EXISTS (
+          SELECT 1 FROM updated_access_tokens
+          UNION ALL
+          SELECT 1 FROM updated_refresh_tokens
+        ) AS found`,
+  );
+  return rows[0]?.found ?? false;
+}
+
 export async function revokeMcpToken(
   db: ExecutableDatabase,
   userId: string,
