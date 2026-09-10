@@ -85,6 +85,7 @@ interface ActivityEffortIdentityRow {
   canonical_activity_id: string;
   source_activity_id: string;
   source_provider: string;
+  source_external_id: string;
   kind: EffortIdentityKind;
   namespace: string | null;
   value: string;
@@ -378,4 +379,3 @@ The verification run will:
 The result must state when the configured local environment cannot provide a
 complete historical dataset or analytics refresh rather than presenting an
 incomplete sample as the user's full history.
-
