@@ -23,7 +23,6 @@ export const tombstoneOnlyMemberId = "00000000-0000-0000-0000-000000001037";
 export const productionSliceGroupId = "00000000-0000-0000-0000-000000001038";
 export const productionSliceMemberId = "00000000-0000-0000-0000-000000001039";
 export const productionSliceProviderBMemberId = "00000000-0000-0000-0000-000000001048";
-export const productionSliceRemappedGroupId = "00000000-0000-0000-0000-000000001049";
 export const productionRestoreGroupId = "00000000-0000-0000-0000-000000001050";
 export const productionRestoreMemberId = "00000000-0000-0000-0000-000000001051";
 export const productionRestorePointId = "00000000-0000-0000-0000-000000001052";
@@ -42,7 +41,6 @@ export const providerBPointIds = [
   "00000000-0000-0000-0000-000000001046",
 ] as const;
 export const unrelatedPointId = "00000000-0000-0000-0000-000000001047";
-export const untrackedRouteMemberId = "00000000-0000-0000-0000-000000009999";
 
 export const sampleRowSchema = z.object({
   activity_id: z.string(),
@@ -56,13 +54,6 @@ export const sensorSummarySchema = z.object({
   sample_count: z.coerce.number(),
   is_deleted: z.coerce.number(),
 });
-
-export const queryStatsSchema = z.array(
-  z.object({
-    query_duration_ms: z.coerce.number(),
-    read_rows: z.coerce.number(),
-  }),
-);
 
 export type LocationPointFixture = readonly [
   id: string,
