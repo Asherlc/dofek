@@ -135,6 +135,49 @@ describe("AnalyticsWorker", () => {
     await cycle;
   });
 
+  it("gives a running cycle the full health budget after the normal interval", async () => {
+    let now = new Date("2026-07-24T18:00:00.000Z");
+    let finishSecondBuild = () => {};
+    const secondBuildPending = new Promise<void>((resolve) => {
+      finishSecondBuild = resolve;
+    });
+    const runAnalyticsBuild = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockImplementationOnce(() => secondBuildPending);
+    const worker = new AnalyticsWorker(
+      createWorkerOptions({
+        now: () => now,
+        runAnalyticsBuild,
+      }),
+    );
+
+    await expect(worker.runCycle()).resolves.toBe(true);
+    now = new Date("2026-07-24T18:15:00.000Z");
+    const secondCycle = worker.runCycle();
+
+    now = new Date("2026-07-24T18:20:00.001Z");
+    expect(worker.getHealth()).toMatchObject({
+      body: {
+        currentStep: "analytics-build",
+        status: "ok",
+      },
+      statusCode: 200,
+    });
+
+    now = new Date("2026-07-24T18:35:00.001Z");
+    expect(worker.getHealth()).toMatchObject({
+      body: {
+        currentStep: "analytics-build",
+        status: "unhealthy",
+      },
+      statusCode: 503,
+    });
+
+    finishSecondBuild();
+    await secondCycle;
+  });
+
   it("restores health and updates last-success time after a later successful cycle", async () => {
     let now = new Date("2026-07-24T18:48:53.000Z");
     const runAnalyticsBuild = vi

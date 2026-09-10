@@ -26281,3 +26281,23 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   source to its isolated database. The exact four-test suite passes against real
   ClickHouse in 17.8 seconds; no application behavior or resilience setting was
   changed for the CI correction.
+- **Member-index production rollout / worker watchdog correction (2026-09-10):**
+  PR [#2714](https://github.com/Asherlc/dofek/pull/2714) deployed in production
+  on `sha-388a3a8`. Migration 0086 is journaled and its compact member index
+  contains 1,530 unique member rows. The first post-deploy
+  `activity_location_sample` run completed in 50.13 seconds instead of reaching
+  the unchanged 240-second limit, wrote 1,156,163 rows, and peaked at 2.41 GiB;
+  the full cycle finished with `PASS=39 WARN=0 ERROR=0`. The second cycle was
+  then terminated during an earlier model with `task: non-zero exit (137):
+  dockerexec: unhealthy container`. Docker recorded `OOMKilled=false`; the
+  exact health failure was four consecutive `HTTP/1.1 503 Service Unavailable`
+  responses beginning 20 minutes after the previous success. The worker sleeps
+  for 15 minutes after success, so the stale-success clock left an active cycle
+  only five minutes of its intended 20-minute watchdog. The direct correction
+  records the current cycle start and, only while work is active, measures the
+  existing interval-plus-retry health budget from that timestamp. Idle stale
+  success and genuinely overlong active cycles still fail health. The regression
+  reproduces the five-minute false 503 and verifies that an active cycle still
+  becomes unhealthy after its full 20-minute budget. Production drain validation
+  remains pending rollout of this watchdog correction; no timeout, retry delay,
+  memory limit, or health budget was increased.
