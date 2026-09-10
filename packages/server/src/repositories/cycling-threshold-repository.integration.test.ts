@@ -27,7 +27,7 @@ describe("CyclingThresholdRepository database semantics", () => {
     await context.db.execute(sql`
       INSERT INTO fitness.sport_settings (user_id, sport, ftp, effective_from)
       VALUES
-        (${TEST_USER_ID}, 'cycling', 240, '2026-05-01'),
+        (${TEST_USER_ID}, 'cycling', 240, '2026-05-20'),
         (${TEST_USER_ID}, 'cycling', 245, '2026-06-01'),
         (${TEST_USER_ID}, 'running', 300, '2026-06-15')
     `);
