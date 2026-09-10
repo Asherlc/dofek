@@ -448,8 +448,13 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("candidate_affected_groups AS (");
     expect(sql).toContain("LIMIT {{ var('activity_location_batch_size', 250) }}");
     expect(sql).toContain("> existing_group_watermarks.source_refreshed_at");
-    expect(sql).toContain("location_point_state AS MATERIALIZED");
     expect(sql).toContain("location_group_freshness AS MATERIALIZED");
+    expect(sql).toContain(
+      "GROUP BY activity_members.activity_id, activity_members.user_id",
+    );
+    expect(sql.indexOf("affected_groups AS MATERIALIZED")).toBeLessThan(
+      sql.indexOf("affected_location_state AS MATERIALIZED"),
+    );
     expect(sql).toContain("existing_group_watermarks.live_sample_count > 0");
     expect(sql).toContain("WHERE live_sample_count > 0");
     expect(sql).toContain("affected_location_versions AS (");
@@ -465,7 +470,7 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain(
       "(location_versions.user_id, location_versions.activity_id) IN",
     );
-    expect(sql.match(/argMax\(/g)).toHaveLength(2);
+    expect(sql.match(/argMax\(/g)).toHaveLength(1);
     expect(sql).toContain("argMax(\n            tuple(");
     expect(sql).toContain("location_versions.point");
     expect(sql).not.toContain("argMax(location_versions.point, location_versions.version)");
@@ -473,6 +478,7 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("startsWith(affected_location_rows.point_text, '{')");
     expect(sql).toContain("JSONExtract(affected_location_rows.point_text, 'coordinates', 'Array(Float64)')[2]");
     expect(sql).toContain("trim(BOTH '()' FROM affected_location_rows.point_text)");
+    expect(sql).toContain("empty_group_checkpoints AS MATERIALIZED");
   });
 
   it("uses the same null-ended activity window for duplicate matches and merged activities", () => {
