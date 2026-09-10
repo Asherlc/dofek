@@ -6,6 +6,7 @@ import {
   rankEquivalenceStrength,
   sourceActivityInstanceKey,
 } from "./repeated-effort-identity.ts";
+import type { RepeatedEffortKey } from "./repeated-effort-types.ts";
 
 describe("repeated effort identity", () => {
   it("keeps provider workout instances separate from reusable workout identities", () => {
@@ -44,5 +45,15 @@ describe("repeated effort identity", () => {
     expect(compareRepeatedEffortKeys(classKey, sameClassKey)).toBe(0);
     expect(compareRepeatedEffortKeys(classKey, routeKey)).toBeGreaterThan(0);
     expect(compareRepeatedEffortKeys(routeKey, classKey)).toBeLessThan(0);
+  });
+
+  it("preserves a nullable namespace in reusable activity-name keys", () => {
+    const key: RepeatedEffortKey = {
+      kind: "activity_name",
+      namespace: null,
+      value: "FTP Test",
+    };
+
+    expect(identityKey(key)).toBe("activity_name::FTP Test");
   });
 });

@@ -43,7 +43,7 @@ export interface EffortIdentityEvidence {
 /** A reusable identity; it deliberately excludes a provider activity instance ID. */
 export interface RepeatedEffortKey {
   kind: EffortIdentityKind;
-  namespace: string;
+  namespace: string | null;
   value: string;
 }
 
@@ -72,7 +72,7 @@ export interface RouteMatchInput {
   right_elevation_profile?: readonly number[] | null;
 }
 
-export interface RouteMatchEvidence {
+interface RouteMatchEvidenceBase {
   direction: RouteDirection;
   overlap_percentage: number;
   distance_difference: number;
@@ -80,5 +80,16 @@ export interface RouteMatchEvidence {
   end_tolerance_meters: number;
   elevation_similarity: number | null;
   confidence: number;
+}
+
+export interface AcceptedRouteMatchEvidence extends RouteMatchEvidenceBase {
+  matched: true;
+  rejection_reasons: readonly [];
+}
+
+export interface RejectedRouteMatchEvidence extends RouteMatchEvidenceBase {
+  matched: false;
   rejection_reasons: readonly string[];
 }
+
+export type RouteMatchEvidence = AcceptedRouteMatchEvidence | RejectedRouteMatchEvidence;

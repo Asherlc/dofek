@@ -107,17 +107,52 @@ function nearestRouteDistanceMeters(
   return nearest;
 }
 
+function interpolateRoutePoint(
+  start: NormalizedRoutePoint,
+  end: NormalizedRoutePoint,
+  fraction: number,
+): NormalizedRoutePoint {
+  return {
+    lat: start.lat + (end.lat - start.lat) * fraction,
+    lng: start.lng + (end.lng - start.lng) * fraction,
+  };
+}
+
+function coveredRouteLengthMeters(
+  source: readonly NormalizedRoutePoint[],
+  target: readonly NormalizedRoutePoint[],
+): number {
+  let coveredLength = 0;
+  for (let index = 1; index < source.length; index += 1) {
+    const start = source[index - 1];
+    const end = source[index];
+    if (start === undefined || end === undefined) {
+      throw new Error("Route geometry endpoint is missing");
+    }
+    const segmentLength = haversineMeters(start, end);
+    const sampleCount = Math.max(1, Math.ceil(segmentLength / routePointMatchToleranceMeters));
+    let coveredSamples = 0;
+    for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex += 1) {
+      const fraction = (sampleIndex + 0.5) / sampleCount;
+      const samplePoint = interpolateRoutePoint(start, end, fraction);
+      if (nearestRouteDistanceMeters(samplePoint, target) <= routePointMatchToleranceMeters) {
+        coveredSamples += 1;
+      }
+    }
+    coveredLength += segmentLength * (coveredSamples / sampleCount);
+  }
+  return coveredLength;
+}
+
 function routeOverlapPercentage(
   left: readonly NormalizedRoutePoint[],
   right: readonly NormalizedRoutePoint[],
 ): number {
-  const leftCovered = left.filter(
-    (point) => nearestRouteDistanceMeters(point, right) <= routePointMatchToleranceMeters,
-  ).length;
-  const rightCovered = right.filter(
-    (point) => nearestRouteDistanceMeters(point, left) <= routePointMatchToleranceMeters,
-  ).length;
-  return (leftCovered + rightCovered) / (left.length + right.length);
+  const leftLength = routeDistanceMeters(left);
+  const rightLength = routeDistanceMeters(right);
+  const coveredLength =
+    coveredRouteLengthMeters(left, right) + coveredRouteLengthMeters(right, left);
+  return coveredLength / (leftLength + rightLength);
 }
 
 function profileFromGeometry(
@@ -262,7 +297,8 @@ function confidence(
 
 /**
  * Evaluate complete normalized route geometry against fixed repeated-effort thresholds.
- * A null result means the geometry is incomplete or the routes are not equivalent.
+ * A null result means the geometry is incomplete. Complete nonmatches return
+ * rejection evidence so callers can explain why no inferred identity was made.
  */
 export function evaluateRouteMatch(input: RouteMatchInput): RouteMatchEvidence | null {
   const left = prepareRoute(input.left, input.left_distance_meters, input.left_elevation_profile);
@@ -301,9 +337,7 @@ export function evaluateRouteMatch(input: RouteMatchInput): RouteMatchEvidence |
   if (elevation !== null && elevation < ROUTE_MATCH_THRESHOLDS.elevation_similarity) {
     rejectionReasons.push("elevation_similarity_below_threshold");
   }
-  if (rejectionReasons.length > 0) return null;
-
-  return {
+  const evidence = {
     direction: orientation.direction,
     overlap_percentage: overlapPercentage,
     distance_difference: distanceDifference,
@@ -317,6 +351,8 @@ export function evaluateRouteMatch(input: RouteMatchInput): RouteMatchEvidence |
       distanceDifference,
       elevation,
     ),
-    rejection_reasons: [],
   };
+  return rejectionReasons.length > 0
+    ? { ...evidence, matched: false, rejection_reasons: rejectionReasons }
+    : { ...evidence, matched: true, rejection_reasons: [] };
 }

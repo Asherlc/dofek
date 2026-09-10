@@ -19,10 +19,10 @@ export function normalizeIdentityValue(value: string): string {
 /** Build a lossless key for a reusable effort identity. */
 export function identityKey(input: {
   kind: EffortIdentityKind;
-  namespace: string;
+  namespace: string | null;
   value: string;
 }): string {
-  return `${input.kind}:${input.namespace}:${input.value}`;
+  return `${input.kind}:${input.namespace ?? ""}:${input.value}`;
 }
 
 /** Build the provenance-only key for one provider activity instance. */

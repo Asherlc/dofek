@@ -9,9 +9,27 @@ const routePoints: readonly NormalizedRoutePoint[] = [
   { lat: 37.7776, lng: -122.4158, elevation_meters: 20 },
 ];
 
+const shortSharedSection = Array.from({ length: 30 }, (_, index) => ({
+  lat: 0.0001 * index,
+  lng: 0,
+}));
+const leftLongRoute: readonly NormalizedRoutePoint[] = [
+  ...shortSharedSection,
+  { lat: 0.0029, lng: 0.005 },
+  { lat: 0.009, lng: 0.005 },
+  { lat: 0.009, lng: 0 },
+];
+const rightLongRoute: readonly NormalizedRoutePoint[] = [
+  ...shortSharedSection,
+  { lat: 0.0029, lng: -0.005 },
+  { lat: 0.009, lng: -0.005 },
+  { lat: 0.009, lng: 0 },
+];
+
 describe("route equivalence", () => {
   it("accepts a high-confidence forward geometry match", () => {
     expect(evaluateRouteMatch({ left: routePoints, right: routePoints })).toEqual({
+      matched: true,
       direction: "forward",
       overlap_percentage: 1,
       distance_difference: 0,
@@ -42,14 +60,25 @@ describe("route equivalence", () => {
       left: routePoints,
       right: routePoints,
       left_distance_meters: 1_000,
-      right_distance_meters: 1_100,
+      right_distance_meters: 1_111.111111,
       left_elevation_profile: [0, 10, 20, 30],
       right_elevation_profile: [0, 11.5, 18.5, 30],
     });
 
     expect(result).not.toBeNull();
-    expect(result?.distance_difference).toBeCloseTo(0.0909, 3);
+    expect(result?.distance_difference).toBeCloseTo(0.1, 6);
     expect(result?.elevation_similarity).toBeGreaterThanOrEqual(0.85);
+  });
+
+  it("accepts the exact elevation similarity boundary", () => {
+    const result = evaluateRouteMatch({
+      left: routePoints,
+      right: routePoints,
+      left_elevation_profile: [0, 0],
+      right_elevation_profile: [0, 0.3],
+    });
+
+    expect(result?.elevation_similarity).toBeCloseTo(0.85, 10);
   });
 
   it("allows a match when only one elevation profile exists", () => {
@@ -62,7 +91,7 @@ describe("route equivalence", () => {
     ).toEqual(expect.objectContaining({ elevation_similarity: null }));
   });
 
-  it("rejects routes below the overlap or endpoint thresholds", () => {
+  it("returns observable rejection reasons for complete but non-equivalent routes", () => {
     const unrelatedPoints: readonly NormalizedRoutePoint[] = [
       { lat: 37.8, lng: -122.4 },
       { lat: 37.801, lng: -122.399 },
@@ -70,7 +99,31 @@ describe("route equivalence", () => {
       { lat: 37.803, lng: -122.397 },
     ];
 
-    expect(evaluateRouteMatch({ left: routePoints, right: unrelatedPoints })).toBeNull();
+    expect(evaluateRouteMatch({ left: routePoints, right: unrelatedPoints })).toEqual(
+      expect.objectContaining({
+        matched: false,
+        rejection_reasons: expect.arrayContaining([
+          "overlap_below_threshold",
+          "endpoint_tolerance_above_threshold",
+        ]),
+      }),
+    );
+  });
+
+  it("weights overlap by covered route length instead of vertex counts", () => {
+    const result = evaluateRouteMatch({
+      left: leftLongRoute,
+      right: rightLongRoute,
+      left_distance_meters: 2_200,
+      right_distance_meters: 2_200,
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        matched: false,
+        rejection_reasons: expect.arrayContaining(["overlap_below_threshold"]),
+      }),
+    );
   });
 
   it("rejects a route whose elevation similarity is below the threshold", () => {
@@ -81,7 +134,12 @@ describe("route equivalence", () => {
         left_elevation_profile: [0, 0, 0, 0],
         right_elevation_profile: [0, 100, 0, 100],
       }),
-    ).toBeNull();
+    ).toEqual(
+      expect.objectContaining({
+        matched: false,
+        rejection_reasons: expect.arrayContaining(["elevation_similarity_below_threshold"]),
+      }),
+    );
   });
 
   it("returns null for incomplete geometry", () => {
