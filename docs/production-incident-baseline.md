@@ -26219,3 +26219,24 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   dbt renderer now uses prototype-safe condition lookup with a regression for
   an unknown `toString` condition. Deployment and production drain validation
   remain pending.
+- **Bounded rollout and corrected diagnosis:** PR
+  [#2710](https://github.com/Asherlc/dofek/pull/2710) merged as
+  `11a6bb93daa22b1c955ab4362101ffbf584ec021`; production later advanced to
+  `sha-409da0d`, which contains that merge. Two bounded production attempts
+  still failed at the unchanged 240-second query ceiling. ClickHouse recorded
+  21,261,108 and 21,261,018 rows read, 1.05 GiB read, zero rows written, and
+  5.90–5.91 GiB peak memory. The group limit was applied after a materialized
+  point-level `argMax` over every tracked location source ID, so execution was
+  bounded only after the expensive high-cardinality discovery phase.
+- **Follow-up fix pending rollout:** Discover dirty work by aggregating raw
+  source freshness directly at activity-group cardinality, select the bounded
+  group batch, and only then reconstruct the latest point versions for those
+  groups. A selected group whose history resolves to no live points emits one
+  deleted checkpoint row so its watermark advances and it cannot starve later
+  groups. The real ClickHouse regression with 100,000 points outside a
+  one-group batch first exceeded the 50 MiB memory bound at about 65.7 MiB and
+  now passes; a separate two-run regression proves a pre-materialization
+  live-then-deleted group advances without hiding the next live group. No
+  timeout, thread, memory, or spill limit was increased. Production resolution
+  still requires a successful model 18 run, a full 39-model cycle, and a zero
+  dirty-group backlog.
