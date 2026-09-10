@@ -84,17 +84,29 @@ operation when the target exists.
 [Migration 0084](../src/db/clickhouse-migrations/0084_activity_location_source_refresh_default.ts)
 makes that legacy default null-safe because older targets allowed nullable
 `refreshed_at` values. `activity_location_sample` compares each stable group's
-latest raw-location and lifecycle timestamps with that group's persisted
-`source_refreshed_at` watermark. Unscoped builds select the 250 oldest dirty
-groups, then read complete raw tracks only for those groups; later builds keep
-selecting dirty groups until the backlog is empty. Explicit activity repair
-scopes retain their caller-supplied bounds. Per-group watermarks make the
-bounded progression safe: completing a newer group cannot hide an older group
-that has not run yet. New groups whose latest raw point versions are all
-deleted are excluded because they have no target state to change; groups with
-existing live target samples remain eligible so a later all-deleted source
-state can write the required tombstones. The one-use raw-track CTE remains
-streaming so it is
+latest location and lifecycle timestamps with that group's persisted
+`source_refreshed_at` watermark. [Migration
+0086](../src/db/clickhouse-migrations/0086_activity_location_member_change.ts)
+backfills a compact per-member location freshness index once and installs an
+incremental materialized view that advances it for new source inserts. The
+index retains whether a member has ever had a live location sample so a later
+all-deleted history can still emit target tombstones. ClickHouse incremental
+materialized views process inserted blocks as they arrive, shifting recurring
+aggregation from query time to ingestion time:
+<https://clickhouse.com/docs/materialized-view/incremental-materialized-view>.
+Its `AggregatingMergeTree` combines the per-member maximum timestamp and live
+history flag during background merges:
+<https://clickhouse.com/docs/engines/table-engines/mergetree-family/aggregatingmergetree>.
+Unscoped builds join this member-cardinality index to current group membership,
+select the 250 oldest dirty groups, and only then read complete raw tracks for
+those groups; later builds keep selecting dirty groups until the backlog is
+empty. Explicit activity repair scopes retain their caller-supplied bounds.
+Per-group watermarks make the bounded progression safe: completing a newer
+group cannot hide an older group that has not run yet. New groups with no
+historical live point are excluded because they have no target state to change;
+groups with historical live samples remain eligible so a later all-deleted
+source state can write the required tombstones. The one-use raw-track CTE
+remains streaming so it is
 aggregated without buffering a second full copy; reused bounded key and result
 CTEs are materialized. Each raw location version is resolved with one
 tuple-valued `argMax`, keeping all fields from the same latest row while

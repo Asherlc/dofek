@@ -36,25 +36,30 @@ existing_group_watermarks AS MATERIALIZED (
 ),
 {% endif %}
 
+location_member_freshness AS (
+    SELECT
+        member_activity_id,
+        user_id,
+        max(changed_at) AS changed_at,
+        max(has_live_sample) AS has_live_sample
+    FROM {{ source('analytics', 'activity_location_member_change') }}
+    GROUP BY member_activity_id, user_id
+),
+
 location_group_freshness AS MATERIALIZED (
     SELECT
         activity_members.activity_id AS activity_id,
         activity_members.user_id AS user_id,
-        max(location_versions.ingested_at) AS source_refreshed_at,
-        countIf(
-            location_versions.is_deleted = 0
-            AND location_versions.point IS NOT NULL
-        ) AS live_sample_count
-    FROM {{ source('ingest', 'metric_stream_freshness') }} AS location_versions
+        max(location_members.changed_at) AS source_refreshed_at,
+        max(location_members.has_live_sample) AS live_sample_count
+    FROM location_member_freshness AS location_members
     INNER JOIN {{ ref('deduped_activity_members') }} AS activity_members FINAL
-        ON activity_members.member_activity_id = location_versions.activity_id
-        AND activity_members.user_id = location_versions.user_id
+        ON activity_members.member_activity_id = location_members.member_activity_id
+        AND activity_members.user_id = location_members.user_id
     INNER JOIN activity_group_state
         ON activity_group_state.group_activity_id = activity_members.activity_id
         AND activity_group_state.user_id = activity_members.user_id
-    WHERE location_versions.channel = 'location'
-        AND (location_versions.point IS NOT NULL OR location_versions.is_deleted = 1)
-        AND activity_members.is_deleted = 0
+    WHERE activity_members.is_deleted = 0
         AND activity_group_state.is_deleted = 0
     GROUP BY activity_members.activity_id, activity_members.user_id
 ),
