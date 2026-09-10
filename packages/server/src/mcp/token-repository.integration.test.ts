@@ -3,6 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
+import { rotateRefreshToken } from "./oauth-repository.ts";
 import {
   createMcpToken,
   hashMcpToken,
@@ -156,6 +157,41 @@ describe("MCP token repository (integration)", () => {
       "health:read",
       "activity:read",
     ]);
+  });
+
+  it("persists OAuth scope edits through refresh rotation", async () => {
+    const created = await createMcpToken(ctx.db, {
+      userId: testUserId,
+      name: "ChatGPT OAuth",
+      scopes: ["nutrition:read"],
+      expiresAt: null,
+      oauthClientId: "chatgpt-client",
+      oauthResource: "https://dofek.example/api/mcp",
+    });
+
+    await ctx.db.execute(
+      sql`INSERT INTO fitness.mcp_oauth_refresh_token (
+            token_hash, client_id, user_id, access_token_id, scopes, resource, expires_at
+          ) VALUES (
+            ${hashMcpToken("edited-refresh")}, ${"chatgpt-client"}, ${testUserId},
+            ${created.metadata.id}::uuid, ARRAY[${"nutrition:read"}]::text[],
+            ${"https://dofek.example/api/mcp"}, ${new Date(Date.now() + 86_400_000)}
+          )`,
+    );
+
+    await updateMcpTokenScopes(ctx.db, testUserId, created.metadata.id, [
+      "nutrition:read",
+      "nutrition:write",
+    ]);
+
+    const refreshed = await rotateRefreshToken(ctx.db, {
+      clientId: "chatgpt-client",
+      name: "ChatGPT OAuth",
+      refreshToken: "edited-refresh",
+      resource: "https://dofek.example/api/mcp",
+    });
+
+    expect(refreshed?.scopes).toEqual(["nutrition:read", "nutrition:write"]);
   });
 
   it("does not update expired tokens", async () => {
