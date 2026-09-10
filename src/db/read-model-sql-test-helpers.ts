@@ -77,16 +77,13 @@ function renderDbtBooleanBranches(
     }
 
     frames.pop();
-    const enabled =
-      frame.condition === "is_incremental()"
-        ? options.isIncremental
-        : frame.condition === "activity_refresh_scoped"
-          ? options.activityRefreshScoped
-          : frame.condition === "not activity_refresh_scoped"
-            ? options.activityRefreshScoped == null
-              ? undefined
-              : !options.activityRefreshScoped
-            : undefined;
+    const booleanConditions: Record<string, boolean | undefined> = {
+      "is_incremental()": options.isIncremental,
+      activity_refresh_scoped: options.activityRefreshScoped,
+      "not activity_refresh_scoped":
+        options.activityRefreshScoped == null ? undefined : !options.activityRefreshScoped,
+    };
+    const enabled = booleanConditions[frame.condition];
     append(
       enabled == null
         ? `{% if ${frame.condition} %}${frame.enabledSql}${frame.disabledSql ? `{% else %}${frame.disabledSql}` : ""}{% endif %}`
