@@ -87,7 +87,13 @@ makes that legacy default null-safe because older targets allowed nullable
 new location changes used for dirty-group discovery, then reads complete raw
 tracks only for the affected members. The one-use raw-track CTE remains
 streaming so it is aggregated without buffering a second full copy; reused
-bounded key and result CTEs are materialized. Its model-local
+bounded key and result CTEs are materialized. Each raw location version is
+resolved with one tuple-valued `argMax`, keeping all fields from the same
+latest row while maintaining one aggregate state instead of one state per
+field. ClickHouse documents tuple arguments as the way to return associated
+columns from the row selected by
+[`argMax`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/argmax).
+Its model-local
 `enable_materialized_cte` setting prevents those reused intermediates from
 being re-evaluated across current-row and tombstone branches; ClickHouse
 introduced this explicit single-evaluation behavior in

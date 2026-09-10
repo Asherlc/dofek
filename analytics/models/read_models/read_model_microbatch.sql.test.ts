@@ -423,14 +423,13 @@ describe("production analytics read-model build", () => {
     }
     expect(activitySampleSql).not.toContain("source('ingest'");
 
-    expect(locationSampleSql).toContain(
-      "argMax(location_versions.device_id, location_versions.version) AS device_id",
-    );
-    expect(locationSampleSql).toContain(
-      "argMax(location_versions.external_id, location_versions.version) AS source_external_id",
-    );
-    expect(locationSampleSql).toContain(
-      "argMax(location_versions.source_type, location_versions.version) AS source_type",
+    expect(locationSampleSql).toContain("argMax(");
+    expect(locationSampleSql).toContain("tuple(");
+    expect(locationSampleSql).toContain("location_versions.device_id");
+    expect(locationSampleSql).toContain("location_versions.external_id");
+    expect(locationSampleSql).toContain("location_versions.source_type");
+    expect(locationSampleSql).not.toContain(
+      "argMax(location_versions.device_id, location_versions.version)",
     );
     expect(locationSampleSql).toContain(
       "affected_location_rows.member_activity_id AS member_activity_id",
@@ -459,10 +458,11 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain(
       "(location_versions.user_id, location_versions.activity_id) IN",
     );
-    expect(sql).toContain(
-      "argMax(location_versions.point, location_versions.version) AS point",
-    );
-    expect(sql).toContain("toString(point) AS point_text");
+    expect(sql.match(/argMax\(/g)).toHaveLength(1);
+    expect(sql).toContain("argMax(\n            tuple(");
+    expect(sql).toContain("location_versions.point");
+    expect(sql).not.toContain("argMax(location_versions.point, location_versions.version)");
+    expect(sql).toContain("toString(latest_location_version.8) AS point_text");
     expect(sql).toContain("startsWith(affected_location_rows.point_text, '{')");
     expect(sql).toContain("JSONExtract(affected_location_rows.point_text, 'coordinates', 'Array(Float64)')[2]");
     expect(sql).toContain("trim(BOTH '()' FROM affected_location_rows.point_text)");

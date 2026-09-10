@@ -26073,9 +26073,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 ## 2026-09-09 — PeerDB and analytics memory pressure stalled Withings processing
 
 - **Status:** The PeerDB OOM, stale activity mirror, missing ClickHouse target
-  column, and initial location-model timeout are resolved. The first scoped
-  query rollout exposed a redundant materialization memory regression; its
-  streaming fix is validated locally and pending production rollout.
+  column, queue backlog, and redundant raw materialization are resolved. The
+  production location reconciliation still exceeds its query-time budget; a
+  single-state tuple aggregation fix is validated locally and pending rollout.
 - **Symptoms / user impact:** Withings relational data continued reaching
   Postgres, but 44 processing-outbox rows remained pending and the app reported
   all Withings datasets as waiting. The analytics build stopped at
@@ -26157,3 +26157,31 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `peerflow_slot_dofek_fitness_raw_analytics` slot. If CDC catches up but mirror
   rows remain incomplete, investigate PeerDB mapping or perform that controlled
   resync rather than weakening the analytics guard.
+- **Streaming rollout and storage evidence:** PR
+  [#2707](https://github.com/Asherlc/dofek/pull/2707) deployed the one-use raw
+  CTE streaming change at `d5d6dab8da1a9691ddc9fa91839d9586bc33d875`.
+  Production then read about 338 million rows / 18.32 GiB while holding query
+  memory near 5.28 GiB, but model 18 still failed at the unchanged limit with
+  `Timeout exceeded: elapsed 240003.472822 ms, maximum: 240000 ms`. Its prior
+  attempt also exposed a full shared data disk: ClickHouse could not reserve a
+  5.39 GiB aggregation spill with only 5.15 GiB available. The disk contained
+  709 orphan `__dbt_new_data_<invocation_id>` relations totaling 25.60 GiB,
+  matching the dbt-clickhouse failure-path leak tracked in
+  [upstream issue #642](https://github.com/ClickHouse/dbt-clickhouse/issues/642),
+  plus 17 GiB of bounded diagnostic logs. After preserving the fatal query
+  evidence, the operator explicitly approved truncating only `system.text_log`
+  and `system.opentelemetry_span_log` and dropping only stale, UUID-suffixed
+  dbt staging relations with a canonical counterpart and no active query. Disk
+  use fell from 96% to 66%, leaving 48 GiB free. Withings remained at zero
+  pending rows, both legacy Redpanda consumers reported zero lag, active
+  activities missing `group_id` remained zero, and the CDC slot was active and
+  `reserved` with about 4.3 MiB retained WAL.
+- **Next direct fix:** Reconstruct the latest location row with one
+  tuple-valued `argMax` rather than ten independent aggregate states. This
+  preserves row coherence and reduces the aggregation work responsible for the
+  remaining timeout; ClickHouse documents tuple-valued arguments for returning
+  associated columns from the row selected by
+  [`argMax`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/argmax).
+  The static regression first failed with ten states and now requires exactly
+  one, while the real ClickHouse affected-member reconciliation fixture passes.
+  No timeout, thread, memory, or spill limit was increased.
