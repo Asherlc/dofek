@@ -83,18 +83,6 @@ describe("garminSyncStepToApiQuery", () => {
     });
   });
 
-  it("returns stress query given a stress step", () => {
-    expect(
-      garminSyncStepToApiQuery({
-        type: "stress",
-        date: "2026-01-01",
-      }),
-    ).toEqual({
-      path: "connectapi/stress",
-      filters: { date: "2026-01-01" },
-    });
-  });
-
   it("returns heart_rate query given a heart_rate step", () => {
     expect(
       garminSyncStepToApiQuery({

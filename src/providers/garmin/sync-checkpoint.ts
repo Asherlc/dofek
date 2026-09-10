@@ -15,7 +15,6 @@ const garminSyncStepSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("sleep"), date: z.string() }),
   z.object({ type: z.literal("daily_summary"), date: z.string() }),
   z.object({ type: z.literal("hrv_summary"), date: z.string() }),
-  z.object({ type: z.literal("stress"), date: z.string() }),
   z.object({ type: z.literal("heart_rate"), date: z.string() }),
 ]);
 
@@ -68,19 +67,14 @@ export function insertStepsAfterCurrent(
 export function applyRateLimitToCheckpoint(checkpoint: GarminSyncCheckpoint): GarminSyncCheckpoint {
   const currentStep = checkpoint.steps[checkpoint.stepIndex];
   const keepCurrentStep =
-    currentStep != null &&
-    currentStep.type !== "stress" &&
-    currentStep.type !== "heart_rate" &&
-    currentStep.type !== "hrv_summary";
+    currentStep != null && currentStep.type !== "heart_rate" && currentStep.type !== "hrv_summary";
   const head = checkpoint.steps.slice(
     0,
     keepCurrentStep ? checkpoint.stepIndex + 1 : checkpoint.stepIndex,
   );
   const tail = checkpoint.steps
     .slice(checkpoint.stepIndex + 1)
-    .filter(
-      (step) => step.type !== "stress" && step.type !== "heart_rate" && step.type !== "hrv_summary",
-    );
+    .filter((step) => step.type !== "heart_rate" && step.type !== "hrv_summary");
   return {
     ...checkpoint,
     steps: [...head, ...tail],

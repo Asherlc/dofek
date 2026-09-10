@@ -34,6 +34,8 @@ A column is raw if the data originates from a sensor or external system and **ca
 | `daily_metrics.resting_hr` | Derived from low-percentile sleep-window heart-rate samples. Removed in migration 0007. |
 | `daily_metrics.vo2max` | Derived from qualifying activity-level estimates using transparent public equations. Removed in migration 0007. |
 | `daily_metrics.cycling_distance_km` | Derivable from activity distance/routes/sensor streams instead of stored as a duplicate daily total. Removed in migration 0046. |
+| `daily_metrics.stress_high_minutes`, `daily_metrics.recovery_high_minutes`, `daily_metrics.resilience_level` | Provider-derived stress and resilience classifications. Removed in migration 0074. |
+| `sleep_session.sleep_need_*` | Provider-derived sleep-need components. Removed in migration 0074. |
 | `daily_metrics.active_energy_kcal` | Provider/device estimate rather than an observation. Application ingestion and reads are retired; the nullable physical column remains temporarily for deployment compatibility. |
 | `daily_metrics.basal_energy_kcal` | Formula-based provider/device estimate rather than an observation. Application ingestion and reads are retired; the nullable physical column remains temporarily for deployment compatibility. |
 | `dexa_scan.resting_metabolic_rate_kcal` | Formula-based provider estimate rather than an observation. Application ingestion and reads are retired; the nullable physical column remains temporarily for deployment compatibility. |
@@ -56,8 +58,6 @@ The ClickHouse `analytics.activity_summary` read model computes these values fro
 | `exercise_minutes` | Device-determined from sustained HR elevation. Proprietary threshold logic. |
 | `walking_speed`, `walking_step_length`, etc. | Apple Health walking analysis from phone accelerometer + gyroscope during daily walking. Raw IMU data not stored. |
 | `skin_temp_c` | Skin temperature sensor (WHOOP, Oura ring). Raw thermistor data unavailable. |
-| `stress_high_minutes`, `recovery_high_minutes` | Oura's proprietary stress/recovery classification from HRV + motion. |
-| `resilience_level` | Oura's resilience score, proprietary algorithm. |
 
 ### Derived cardio metrics
 

@@ -248,11 +248,21 @@ export async function updateMcpTokenScopes(
   const rows = await executeWithSchema(
     db,
     tokenMetadataRowSchema,
-    sql`UPDATE fitness.mcp_access_token
-        SET scopes = ${scopesArray}
-        WHERE id = ${tokenId}::uuid AND user_id = ${userId} AND revoked_at IS NULL
-          AND (expires_at IS NULL OR expires_at > NOW())
-        RETURNING id, name, scopes, created_at, last_used_at, expires_at, revoked_at, oauth_client_id`,
+    sql`WITH updated_token AS (
+          UPDATE fitness.mcp_access_token
+          SET scopes = ${scopesArray}
+          WHERE id = ${tokenId}::uuid AND user_id = ${userId} AND revoked_at IS NULL
+            AND (expires_at IS NULL OR expires_at > NOW())
+          RETURNING id, name, scopes, created_at, last_used_at, expires_at, revoked_at, oauth_client_id
+        ), updated_refresh_tokens AS (
+          UPDATE fitness.mcp_oauth_refresh_token refresh
+          SET scopes = updated_token.scopes
+          FROM updated_token
+          WHERE refresh.access_token_id = updated_token.id
+            AND refresh.revoked_at IS NULL
+        )
+        SELECT id, name, scopes, created_at, last_used_at, expires_at, revoked_at, oauth_client_id
+        FROM updated_token`,
   );
   return rows[0] ? toMetadata(rows[0]) : null;
 }

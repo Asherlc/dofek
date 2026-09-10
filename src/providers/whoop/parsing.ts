@@ -94,10 +94,6 @@ export interface ParsedSleep {
   efficiencyPct?: number;
   sleepType: "sleep" | "nap";
   isNap: boolean;
-  sleepNeedBaselineMinutes?: number;
-  sleepNeedFromDebtMinutes?: number;
-  sleepNeedFromStrainMinutes?: number;
-  sleepNeedFromNapMinutes?: number;
   respiratoryRateAvg?: number;
 }
 
@@ -145,13 +141,8 @@ export const inlineSleepSchema = z.object({
   slow_wave_sleep_duration: z.number(),
   rem_sleep_duration: z.number(),
   in_sleep_efficiency: z.number().optional(),
-  sleep_need: z.number().optional(),
-  habitual_sleep_need: z.number().optional(),
-  debt_post: z.number().optional(),
-  need_from_strain: z.number().optional(),
-  credit_from_naps: z.number().optional(),
-  significant: z.boolean().optional(),
   respiratory_rate: z.number().optional(),
+  significant: z.boolean().optional(),
 });
 
 export type InlineSleepRecord = z.infer<typeof inlineSleepSchema>;
@@ -217,14 +208,6 @@ export function parseInlineSleep(
     efficiencyPct: normalizeEfficiencyPct(record.in_sleep_efficiency),
     sleepType: record.significant === false ? "nap" : "sleep",
     isNap: record.significant === false,
-    sleepNeedBaselineMinutes:
-      record.habitual_sleep_need != null ? milliToMinutes(record.habitual_sleep_need) : undefined,
-    sleepNeedFromDebtMinutes:
-      record.debt_post != null ? milliToMinutes(record.debt_post) : undefined,
-    sleepNeedFromStrainMinutes:
-      record.need_from_strain != null ? milliToMinutes(record.need_from_strain) : undefined,
-    sleepNeedFromNapMinutes:
-      record.credit_from_naps != null ? milliToMinutes(record.credit_from_naps) : undefined,
     respiratoryRateAvg: record.respiratory_rate,
   };
 }
@@ -251,8 +234,6 @@ export function parseSleep(record: WhoopSleepRecord): ParsedSleep | null {
   const totalSleepMilli = stages
     ? stages.total_in_bed_time_milli - stages.total_awake_time_milli
     : undefined;
-  const sleepNeeded = record.score?.sleep_needed;
-
   return {
     externalId: String(record.id),
     startedAt,
@@ -266,16 +247,6 @@ export function parseSleep(record: WhoopSleepRecord): ParsedSleep | null {
     efficiencyPct: normalizeEfficiencyPct(record.score?.sleep_efficiency_percentage),
     sleepType: record.nap ? "nap" : "sleep",
     isNap: record.nap,
-    sleepNeedBaselineMinutes: sleepNeeded ? milliToMinutes(sleepNeeded.baseline_milli) : undefined,
-    sleepNeedFromDebtMinutes: sleepNeeded
-      ? milliToMinutes(sleepNeeded.need_from_sleep_debt_milli)
-      : undefined,
-    sleepNeedFromStrainMinutes: sleepNeeded
-      ? milliToMinutes(sleepNeeded.need_from_recent_strain_milli)
-      : undefined,
-    sleepNeedFromNapMinutes: sleepNeeded
-      ? milliToMinutes(sleepNeeded.need_from_recent_nap_milli)
-      : undefined,
   };
 }
 

@@ -64,7 +64,7 @@ export interface WhoopSleepNeeded {
 
 export interface WhoopSleepScore {
   stage_summary: WhoopSleepStageSummary;
-  sleep_needed: WhoopSleepNeeded;
+  sleep_needed?: WhoopSleepNeeded;
   respiratory_rate: number;
   sleep_performance_percentage: number;
   sleep_consistency_percentage: number;

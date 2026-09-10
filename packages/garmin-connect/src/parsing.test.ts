@@ -8,7 +8,6 @@ import {
   parseConnectSleepStages,
   parseHeartRateTimeSeries,
   parseHrvSummary,
-  parseStressTimeSeries,
   parseTrainingReadiness,
   parseTrainingStatus,
 } from "./parsing.ts";
@@ -18,7 +17,6 @@ import type {
   ConnectDailySummary,
   ConnectSleepData,
   DailyHeartRate,
-  DailyStress,
   HrvSummary,
   TrainingReadiness,
   TrainingStatus,
@@ -380,39 +378,6 @@ describe("parseHrvSummary", () => {
   it("parses status", () => {
     const parsed = parseHrvSummary(sampleHrv);
     expect(parsed.status).toBe("BALANCED");
-  });
-});
-
-describe("parseStressTimeSeries", () => {
-  const sampleStress: DailyStress = {
-    calendarDate: "2024-01-15",
-    maxStressLevel: 85,
-    avgStressLevel: 35,
-    stressValuesArray: [
-      [1705276800000, 25],
-      [1705276860000, 30],
-      [1705276920000, -1], // rest state, should be filtered
-      [1705276980000, 45],
-      [1705277040000, -2], // activity state, should be filtered
-    ],
-  };
-
-  it("filters out negative stress values (rest/activity states)", () => {
-    const parsed = parseStressTimeSeries(sampleStress);
-    expect(parsed.samples).toHaveLength(3);
-    expect(parsed.samples.every((s) => s.stressLevel >= 0)).toBe(true);
-  });
-
-  it("converts timestamps to Date objects", () => {
-    const parsed = parseStressTimeSeries(sampleStress);
-    expect(parsed.samples[0]?.timestamp).toBeInstanceOf(Date);
-    expect(parsed.samples[0]?.timestamp.getTime()).toBe(1705276800000);
-  });
-
-  it("preserves summary values", () => {
-    const parsed = parseStressTimeSeries(sampleStress);
-    expect(parsed.avgStressLevel).toBe(35);
-    expect(parsed.maxStressLevel).toBe(85);
   });
 });
 

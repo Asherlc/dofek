@@ -22,26 +22,6 @@ export const ouraSleepDocumentSchema = z.object({
 
 export type OuraSleepDocument = z.infer<typeof ouraSleepDocumentSchema>;
 
-export const ouraDailyReadinessSchema = z.object({
-  id: z.string(),
-  day: z.string(),
-  score: z.number().nullable(),
-  temperature_deviation: z.number().nullable(),
-  temperature_trend_deviation: z.number().nullable(),
-  contributors: z.object({
-    resting_heart_rate: z.number().nullable(),
-    hrv_balance: z.number().nullable(),
-    body_temperature: z.number().nullable(),
-    recovery_index: z.number().nullable(),
-    sleep_balance: z.number().nullable(),
-    previous_night: z.number().nullable(),
-    previous_day_activity: z.number().nullable(),
-    activity_balance: z.number().nullable(),
-  }),
-});
-
-export type OuraDailyReadiness = z.infer<typeof ouraDailyReadinessSchema>;
-
 export const ouraDailyActivitySchema = z.object({
   id: z.string(),
   day: z.string(),
@@ -66,15 +46,6 @@ export const ouraDailySpO2Schema = z.object({
 });
 
 export type OuraDailySpO2 = z.infer<typeof ouraDailySpO2Schema>;
-
-export const ouraVO2MaxSchema = z.object({
-  id: z.string(),
-  day: z.string(),
-  timestamp: z.string(),
-  vo2_max: z.number().nullable(),
-});
-
-export type OuraVO2Max = z.infer<typeof ouraVO2MaxSchema>;
 
 export const ouraWorkoutSchema = z.object({
   id: z.string(),
@@ -110,36 +81,6 @@ export const ouraSessionSchema = z.object({
 
 export type OuraSession = z.infer<typeof ouraSessionSchema>;
 
-export const ouraDailyStressSchema = z.object({
-  id: z.string(),
-  day: z.string(),
-  stress_high: z.number().nullable(),
-  recovery_high: z.number().nullable(),
-  day_summary: z.enum(["restored", "normal", "stressful"]).nullable(),
-});
-
-export type OuraDailyStress = z.infer<typeof ouraDailyStressSchema>;
-
-export const ouraDailyResilienceSchema = z.object({
-  id: z.string(),
-  day: z.string(),
-  contributors: z.object({
-    sleep_recovery: z.number(),
-    daytime_recovery: z.number(),
-    stress: z.number(),
-  }),
-  level: z.enum(["limited", "adequate", "solid", "strong", "exceptional"]),
-});
-
-export type OuraDailyResilience = z.infer<typeof ouraDailyResilienceSchema>;
-
-export const ouraDailyCardiovascularAgeSchema = z.object({
-  day: z.string(),
-  vascular_age: z.number().nullable(),
-});
-
-export type OuraDailyCardiovascularAge = z.infer<typeof ouraDailyCardiovascularAgeSchema>;
-
 export const ouraTagSchema = z.object({
   id: z.string(),
   day: z.string(),
@@ -172,39 +113,6 @@ export const ouraRestModePeriodSchema = z.object({
 });
 
 export type OuraRestModePeriod = z.infer<typeof ouraRestModePeriodSchema>;
-
-export const ouraSleepTimeSchema = z.object({
-  id: z.string(),
-  day: z.string(),
-  optimal_bedtime: z
-    .object({
-      day_tz: z.number(),
-      end_offset: z.number(),
-      start_offset: z.number(),
-    })
-    .nullable(),
-  recommendation: z
-    .enum([
-      "improve_efficiency",
-      "earlier_bedtime",
-      "later_bedtime",
-      "earlier_wake_up_time",
-      "later_wake_up_time",
-      "follow_optimal_bedtime",
-    ])
-    .nullable(),
-  status: z
-    .enum([
-      "not_enough_nights",
-      "not_enough_recent_nights",
-      "bad_sleep_quality",
-      "only_recommended_found",
-      "optimal_found",
-    ])
-    .nullable(),
-});
-
-export type OuraSleepTime = z.infer<typeof ouraSleepTimeSchema>;
 
 export function ouraListResponseSchema<T extends z.ZodType>(itemSchema: T) {
   return z.object({

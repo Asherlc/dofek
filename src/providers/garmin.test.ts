@@ -75,7 +75,6 @@ const mocks = vi.hoisted(() => {
     getDailySummary: vi.fn(),
     getHrvSummary: vi.fn(),
     getTrainingStatus: vi.fn(),
-    getDailyStress: vi.fn(),
     getDailyHeartRate: vi.fn(),
     getActivityDetail: vi.fn(),
     getTokens: vi.fn(),
@@ -91,7 +90,6 @@ const mocks = vi.hoisted(() => {
     parseConnectDailySummary: vi.fn(),
     parseHrvSummary: vi.fn(),
     parseTrainingStatus: vi.fn(),
-    parseStressTimeSeries: vi.fn(),
     parseHeartRateTimeSeries: vi.fn(),
     parseActivityDetail: vi.fn(),
     loadTokens: vi.fn(),
@@ -144,7 +142,6 @@ vi.mock("@dofek/garmin-connect/parsing", () => ({
   parseConnectDailySummary: mocks.parseConnectDailySummary,
   parseHrvSummary: mocks.parseHrvSummary,
   parseTrainingStatus: mocks.parseTrainingStatus,
-  parseStressTimeSeries: mocks.parseStressTimeSeries,
   parseHeartRateTimeSeries: mocks.parseHeartRateTimeSeries,
   parseActivityDetail: mocks.parseActivityDetail,
 }));
@@ -716,7 +713,6 @@ describe("GarminProvider.sync()", () => {
     mocks.client.getDailySummary.mockRejectedValue(noDataError);
     mocks.client.getHrvSummary.mockRejectedValue(noDataError);
     mocks.client.getTrainingStatus.mockRejectedValue(noDataError);
-    mocks.client.getDailyStress.mockRejectedValue(noDataError);
     mocks.client.getDailyHeartRate.mockRejectedValue(noDataError);
 
     // Default: withSyncLog calls the function and returns result
@@ -1485,26 +1481,6 @@ describe("GarminProvider.sync()", () => {
     expect(Object.hasOwn(dailyCall[0], "vo2max")).toBe(false);
   });
 
-  it("syncs stress time-series", async () => {
-    mocks.client.getDailyStress.mockResolvedValue({});
-    mocks.parseStressTimeSeries.mockReturnValue({
-      samples: [
-        { timestamp: new Date("2026-03-01T12:00:00Z"), stressLevel: 35 },
-        { timestamp: new Date("2026-03-01T12:05:00Z"), stressLevel: 42 },
-      ],
-    });
-
-    const result = await syncProvider(provider, db, new Date());
-
-    expect(result.recordsSynced).toBe(2);
-
-    const stressCall = publishedMetricStreamBatches
-      .flat()
-      .find((row) => row?.channel === "stress" && row?.scalar === 35);
-    if (!stressCall) throw new Error("expected stress insert");
-    expect(stressCall.providerId).toBe("garmin");
-  });
-
   it("syncs heart rate time-series", async () => {
     mocks.client.getDailyHeartRate.mockResolvedValue({});
     mocks.parseHeartRateTimeSeries.mockReturnValue({
@@ -1569,11 +1545,6 @@ describe("GarminProvider.sync()", () => {
       new GarminApiError("No content available (204)", 204),
     );
 
-    mocks.client.getDailyStress.mockResolvedValue({});
-    mocks.parseStressTimeSeries.mockReturnValue({
-      samples: [{ timestamp: new Date("2026-03-01T14:00:00Z"), stressLevel: 30 }],
-    });
-
     mocks.client.getDailyHeartRate.mockResolvedValue({});
     mocks.parseHeartRateTimeSeries.mockReturnValue({
       samples: [{ timestamp: new Date("2026-03-01T14:05:00Z"), heartRate: 65 }],
@@ -1581,8 +1552,8 @@ describe("GarminProvider.sync()", () => {
 
     const result = await syncProvider(provider, db, syncSince, { until: syncUntil });
 
-    // 1 sleep + 1 daily + 1 stress + 1 heart rate = 4
-    expect(result.recordsSynced).toBe(4);
+    // 1 sleep + 1 daily + 1 heart rate = 3
+    expect(result.recordsSynced).toBe(3);
     expect(result.errors).toHaveLength(0);
     expect(result.provider).toBe("garmin");
     expect(result.duration).toBeGreaterThanOrEqual(0);
@@ -1617,7 +1588,6 @@ describe("GarminProvider.sync()", () => {
     await expect(syncProvider(provider, db, new Date())).rejects.toBe(rateLimitError);
 
     expect(mocks.client.getDailySummary).not.toHaveBeenCalled();
-    expect(mocks.client.getDailyStress).not.toHaveBeenCalled();
     expect(mocks.client.getDailyHeartRate).not.toHaveBeenCalled();
   });
 
@@ -1650,7 +1620,7 @@ describe("GarminProvider.sync()", () => {
 
     await syncProvider(provider, db, new Date("2026-01-01T00:00:00.000Z"), { until });
 
-    expect(mocks.withSyncLog).toHaveBeenCalledTimes(4);
+    expect(mocks.withSyncLog).toHaveBeenCalledTimes(3);
   });
 
   it("ignores sync cursors stored as non-string values", async () => {
@@ -1659,7 +1629,7 @@ describe("GarminProvider.sync()", () => {
 
     await syncProvider(provider, db, new Date("2026-02-15T00:00:00.000Z"), { until });
 
-    expect(mocks.withSyncLog).toHaveBeenCalledTimes(4);
+    expect(mocks.withSyncLog).toHaveBeenCalledTimes(3);
   });
 
   it("ignores sync cursor settings with null or non-object values", async () => {
@@ -1668,7 +1638,7 @@ describe("GarminProvider.sync()", () => {
 
     await syncProvider(provider, db, new Date("2026-02-15T00:00:00.000Z"), { until });
 
-    expect(mocks.withSyncLog).toHaveBeenCalledTimes(4);
+    expect(mocks.withSyncLog).toHaveBeenCalledTimes(3);
   });
 
   it("ignores sync cursors with invalid date strings", async () => {
@@ -1677,7 +1647,7 @@ describe("GarminProvider.sync()", () => {
 
     await syncProvider(provider, db, new Date("2026-02-15T00:00:00.000Z"), { until });
 
-    expect(mocks.withSyncLog).toHaveBeenCalledTimes(4);
+    expect(mocks.withSyncLog).toHaveBeenCalledTimes(3);
   });
 
   it("persists the sync cursor after a completed sync", async () => {
@@ -1731,7 +1701,7 @@ describe("GarminProvider.sync()", () => {
     });
 
     const syncedDataTypes = mocks.withSyncLog.mock.calls.map((call) => call[2]);
-    expect(syncedDataTypes).toEqual(["daily_metrics", "stress", "heart_rate"]);
+    expect(syncedDataTypes).toEqual(["daily_metrics", "heart_rate"]);
     expect(mocks.client.getSleepData).not.toHaveBeenCalled();
     expect(mocks.client.getDailySummary).toHaveBeenCalledWith("2026-04-27");
     expect(checkpointStore.clear).toHaveBeenCalledOnce();
@@ -1837,7 +1807,6 @@ describe("GarminProvider.sync()", () => {
       "getHrvSummary",
       "Daily metrics",
     ],
-    ["stress", { type: "stress", date: "2026-04-27" }, "getDailyStress", "Stress"],
     [
       "heart-rate streams",
       { type: "heart_rate", date: "2026-04-27" },
@@ -1853,7 +1822,6 @@ describe("GarminProvider.sync()", () => {
         | "getSleepData"
         | "getDailySummary"
         | "getHrvSummary"
-        | "getDailyStress"
         | "getDailyHeartRate"
       ),
       string,
@@ -1910,7 +1878,6 @@ describe("GarminProvider.sync()", () => {
     ["sleep", { type: "sleep", date: "2026-04-27" }, "Sleep 2026-04-27"],
     ["daily summaries", { type: "daily_summary", date: "2026-04-27" }, "Daily summary 2026-04-27"],
     ["HRV summaries", { type: "hrv_summary", date: "2026-04-27" }, "HRV 2026-04-27"],
-    ["stress", { type: "stress", date: "2026-04-27" }, "Stress 2026-04-27"],
     ["heart-rate streams", { type: "heart_rate", date: "2026-04-27" }, "Heart rate 2026-04-27"],
   ] satisfies ReadonlyArray<[string, GarminSyncStep, string]>)(
     "reports the %s step in sync progress",
@@ -2008,7 +1975,7 @@ describe("GarminProvider.sync()", () => {
     });
 
     expect(result.continued).toBe(false);
-    expect(mocks.withSyncLog).toHaveBeenCalledTimes(4);
+    expect(mocks.withSyncLog).toHaveBeenCalledTimes(3);
     expect(checkpointStore.clear).toHaveBeenCalledOnce();
   });
 
@@ -2040,7 +2007,6 @@ describe("GarminProvider.sync()", () => {
     expect(result.continued).toBe(true);
     expect(mocks.client.getSleepData).not.toHaveBeenCalled();
     expect(mocks.client.getDailySummary).toHaveBeenCalledWith("2026-04-27");
-    expect(mocks.client.getDailyStress).not.toHaveBeenCalled();
     expect(enqueueSyncContinuation).toHaveBeenCalledWith(
       expect.objectContaining({
         phase: "api",

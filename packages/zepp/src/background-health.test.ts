@@ -28,11 +28,6 @@ describe("collectBackgroundHealthSample", () => {
             return { current: 36.6 };
           }
         },
-        Stress: class {
-          getToday() {
-            return [0, 32, 35];
-          }
-        },
         Workout: class {
           getHistory() {
             return [{ startTime: 1_720_000_000, duration: 3_600 }];
@@ -48,7 +43,6 @@ describe("collectBackgroundHealthSample", () => {
         heartRate: 72,
         bloodOxygenPercent: 98,
         bodyTemperatureCelsius: 36.6,
-        stress: 35,
       },
       activities: [
         {
@@ -85,7 +79,6 @@ describe("collectBackgroundHealthSample", () => {
           HeartRate: ThrowingSensor,
           BloodOxygen: ThrowingSensor,
           BodyTemperature: ThrowingSensor,
-          Stress: ThrowingSensor,
           Workout: ThrowingSensor,
         },
         1_720_003_700_000,
@@ -94,89 +87,8 @@ describe("collectBackgroundHealthSample", () => {
       sample: { recordedAt: "2024-07-03T10:48:20.000Z" },
       activities: [],
     });
-    expect(captureException).toHaveBeenCalledTimes(5);
+    expect(captureException).toHaveBeenCalledTimes(4);
     expect(captureException).toHaveBeenCalledWith(expect.any(Error));
-  });
-
-  it("uses the latest positive stress reading and omits zero-valued readings", () => {
-    const captureException = vi.fn();
-    const result = collectBackgroundHealthSample(
-      {
-        captureException,
-        HeartRate: class {
-          getLast() {
-            return 0;
-          }
-        },
-        BloodOxygen: class {
-          getCurrent() {
-            return { value: 0 };
-          }
-        },
-        BodyTemperature: class {
-          getCurrent() {
-            return { current: 0 };
-          }
-        },
-        Stress: class {
-          getToday() {
-            return [12, 0, 0];
-          }
-        },
-        Workout: class {
-          getHistory() {
-            return [];
-          }
-        },
-      },
-      1_720_003_700_000,
-    );
-
-    expect(result).toEqual({
-      sample: { recordedAt: "2024-07-03T10:48:20.000Z", stress: 12 },
-      activities: [],
-    });
-    expect(captureException).not.toHaveBeenCalled();
-  });
-
-  it("omits non-finite background values before persistence", () => {
-    const captureException = vi.fn();
-    const result = collectBackgroundHealthSample(
-      {
-        captureException,
-        HeartRate: class {
-          getLast() {
-            return Number.POSITIVE_INFINITY;
-          }
-        },
-        BloodOxygen: class {
-          getCurrent() {
-            return { value: 101 };
-          }
-        },
-        BodyTemperature: class {
-          getCurrent() {
-            return { current: Number.NaN };
-          }
-        },
-        Stress: class {
-          getToday() {
-            return [30, Number.POSITIVE_INFINITY];
-          }
-        },
-        Workout: class {
-          getHistory() {
-            return [];
-          }
-        },
-      },
-      1_720_003_700_000,
-    );
-
-    expect(result).toEqual({
-      sample: { recordedAt: "2024-07-03T10:48:20.000Z", stress: 30 },
-      activities: [],
-    });
   });
 });
 

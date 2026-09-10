@@ -121,9 +121,6 @@ export function parseWatchHealthSummary(value: unknown): HealthDataPayload {
     ...(value.bodyTemperature === undefined
       ? {}
       : { bodyTemperature: numberSeries(value.bodyTemperature) }),
-    ...(value.stress === undefined ? {} : { stress: numberSeries(value.stress) }),
-    ...(value.stressByHour === undefined ? {} : { stressByHour: numberSeries(value.stressByHour) }),
-    ...(value.stressWeekly === undefined ? {} : { stressWeekly: numberSeries(value.stressWeekly) }),
     ...(value.standHours === undefined ? {} : { standHours: finiteNumber(value.standHours) }),
     ...(value.pai === undefined ? {} : { pai: finiteNumber(value.pai) }),
     ...(value.fatBurning === undefined ? {} : { fatBurning: finiteNumber(value.fatBurning) }),
@@ -150,7 +147,6 @@ export function parseWatchHealthSummary(value: unknown): HealthDataPayload {
                   ...(sample.bodyTemperatureCelsius === undefined
                     ? {}
                     : { bodyTemperatureCelsius: finiteNumber(sample.bodyTemperatureCelsius) }),
-                  ...(sample.stress === undefined ? {} : { stress: finiteNumber(sample.stress) }),
                 };
               })
             : (() => {

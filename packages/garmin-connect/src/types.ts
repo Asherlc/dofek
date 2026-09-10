@@ -160,30 +160,6 @@ export interface BodyBatteryDay {
 }
 
 // ============================================================
-// Stress
-// ============================================================
-
-export interface StressDataPoint {
-  timestampGMT: string;
-  timestampLocal: string;
-  stressLevel: number;
-}
-
-export interface DailyStress {
-  calendarDate: string;
-  startTimestampGMT?: string;
-  endTimestampGMT?: string;
-  startTimestampLocal?: string;
-  endTimestampLocal?: string;
-  maxStressLevel: number;
-  avgStressLevel: number;
-  stressChartValueOffset?: number;
-  stressChartYAxisOrigin?: number;
-  stressValuesArray?: Array<[number, number]>;
-  bodyBatteryValuesArray?: Array<[number, number]>;
-}
-
-// ============================================================
 // HRV (Heart Rate Variability)
 // ============================================================
 

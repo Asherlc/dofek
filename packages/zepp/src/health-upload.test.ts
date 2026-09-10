@@ -34,7 +34,6 @@ describe("parseHealthUploadPayload", () => {
             heartRate: 72,
             bloodOxygenPercent: 98,
             bodyTemperatureCelsius: 36.5,
-            stress: 20,
           },
         ],
         liveWorkoutSamples: [
@@ -75,7 +74,6 @@ describe("parseHealthUploadPayload", () => {
           heartRate: 72,
           bloodOxygenPercent: 98,
           bodyTemperatureCelsius: 36.5,
-          stress: 20,
         },
       ],
       liveWorkoutSamples: [
@@ -122,7 +120,6 @@ describe("parseHealthUploadPayload", () => {
     { backgroundSamples: [{ recordedAt: "now", heartRate: Number.NaN }] },
     { backgroundSamples: [{ recordedAt: "now", bloodOxygenPercent: "98" }] },
     { backgroundSamples: [{ recordedAt: "now", bodyTemperatureCelsius: null }] },
-    { backgroundSamples: [{ recordedAt: "now", stress: Number.POSITIVE_INFINITY }] },
     { activities: [{ activityType: "other" }] },
     { liveWorkoutSamples: {} },
     { liveWorkoutSamples: [null] },

@@ -21,7 +21,6 @@ export function ouraOAuthConfig(host?: string): OAuthConfig | null {
       "personal",
       "session",
       "spo2",
-      "stress",
       "workout",
       "tag",
     ],

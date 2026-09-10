@@ -6,7 +6,7 @@ import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 
 const historyRowSchema = z.object({
   id: z.string().uuid(),
-  evidence_kind: z.enum(["configured", "provider_observation"]),
+  evidence_kind: z.literal("configured"),
   sport: z.string(),
   threshold_type: z.string(),
   value: z.coerce.number().positive(),
@@ -27,7 +27,7 @@ const cursorSchema = z
     userId: z.string().uuid(),
     shape: z.string(),
     eventAt: timestampStringSchema,
-    evidenceKind: z.enum(["configured", "provider_observation"]),
+    evidenceKind: z.literal("configured"),
     id: z.string().uuid(),
   })
   .strict();
@@ -38,14 +38,13 @@ type HistoryCursor = z.infer<typeof cursorSchema>;
 export interface CyclingThresholdHistoryInput {
   startDate: string;
   endDate: string;
-  providers: string[];
   cursor: string | null;
   limit: number;
 }
 
 export interface CyclingThresholdHistoryItem {
   id: string;
-  evidence_kind: "configured" | "provider_observation";
+  evidence_kind: "configured";
   sport: string;
   threshold_type: string;
   value: number;
@@ -54,9 +53,9 @@ export interface CyclingThresholdHistoryItem {
   effective_at: string | null;
   provider: string | null;
   provider_record_id: string | null;
-  value_kind: "configured" | "provider_recorded" | "provider_estimated";
-  historical_validity: "effective_dated" | "observed_from_date";
-  raw_evidence_available: boolean;
+  value_kind: "configured";
+  historical_validity: "effective_dated";
+  raw_evidence_available: false;
   quality: {
     status: "high" | "moderate" | "limited";
     reason: string | null;
@@ -86,7 +85,6 @@ function requestShape(input: CyclingThresholdHistoryInput, timezone: string): st
       JSON.stringify({
         startDate: input.startDate,
         endDate: input.endDate,
-        providers: [...input.providers].sort(),
         timezone,
       }),
     )
@@ -119,26 +117,6 @@ function encodeCursor(cursor: HistoryCursor): string {
 }
 
 function toHistoryItem(row: HistoryRow): CyclingThresholdHistoryItem {
-  if (row.evidence_kind === "configured") {
-    return {
-      id: row.id,
-      evidence_kind: row.evidence_kind,
-      sport: row.sport,
-      threshold_type: row.threshold_type,
-      value: row.value,
-      unit: row.unit,
-      observed_at: row.observed_at,
-      effective_at: row.effective_at,
-      provider: null,
-      provider_record_id: null,
-      value_kind: "configured",
-      historical_validity: "effective_dated",
-      raw_evidence_available: false,
-      quality: { status: "high", reason: null },
-    };
-  }
-
-  const modeled = row.threshold_type === "modeled_ftp";
   return {
     id: row.id,
     evidence_kind: row.evidence_kind,
@@ -148,23 +126,16 @@ function toHistoryItem(row: HistoryRow): CyclingThresholdHistoryItem {
     unit: row.unit,
     observed_at: row.observed_at,
     effective_at: row.effective_at,
-    provider: row.provider_id,
-    provider_record_id: row.provider_record_id,
-    value_kind: modeled ? "provider_estimated" : "provider_recorded",
-    historical_validity: "observed_from_date",
-    raw_evidence_available: row.raw_available,
-    quality: {
-      status: modeled ? "limited" : row.effective_at === null ? "moderate" : "high",
-      reason: modeled
-        ? "The provider modeled this value; it is not a measured FTP"
-        : row.effective_at === null
-          ? "The provider supplied an observation date but no effective date"
-          : null,
-    },
+    provider: null,
+    provider_record_id: null,
+    value_kind: "configured",
+    historical_validity: "effective_dated",
+    raw_evidence_available: false,
+    quality: { status: "high", reason: null },
   };
 }
 
-/** Effective-dated configuration and immutable provider threshold evidence. */
+/** Effective-dated user threshold configuration. */
 export class CyclingThresholdRepository {
   readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
@@ -210,14 +181,6 @@ export class CyclingThresholdRepository {
   async listHistory(input: CyclingThresholdHistoryInput): Promise<CyclingThresholdHistoryPage> {
     const shape = requestShape(input, this.#timezone);
     const cursor = input.cursor ? decodeCursor(input.cursor, this.#userId, shape) : null;
-    const providerFilter =
-      input.providers.length === 0
-        ? sql``
-        : sql`AND observation.provider_id IN (${sql.join(
-            input.providers.map((provider) => sql`${provider}`),
-            sql`, `,
-          )})`;
-    const configuredFilter = input.providers.length === 0 ? sql`` : sql`AND false`;
     const cursorFilter = cursor
       ? sql`WHERE (
           history.event_at < ${cursor.eventAt}
@@ -256,31 +219,6 @@ export class CyclingThresholdRepository {
             AND settings.sport = 'cycling'
             AND settings.ftp IS NOT NULL
             AND settings.effective_from BETWEEN ${input.startDate}::date AND ${input.endDate}::date
-            ${configuredFilter}
-
-          UNION ALL
-
-          SELECT
-            observation.id,
-            'provider_observation'::text AS evidence_kind,
-            observation.sport,
-            observation.threshold_type,
-            observation.value,
-            observation.unit,
-            COALESCE(observation.effective_at, observation.observed_at) AS event_at,
-            observation.observed_at,
-            observation.effective_at,
-            observation.provider_id,
-            observation.provider_record_id,
-            true AS raw_available
-          FROM fitness.provider_threshold_observation AS observation
-          WHERE observation.user_id = ${this.#userId}::uuid
-            AND observation.sport = 'cycling'
-            AND (
-              COALESCE(observation.effective_at, observation.observed_at)
-              AT TIME ZONE ${this.#timezone}
-            )::date BETWEEN ${input.startDate}::date AND ${input.endDate}::date
-            ${providerFilter}
         )
         SELECT *
         FROM history
@@ -306,24 +244,22 @@ export class CyclingThresholdRepository {
         : null;
 
     let legacyCurrent: LegacyCurrentFtp | null = null;
-    if (input.providers.length === 0) {
-      const legacyRows = await executeWithSchema(
-        this.#db,
-        legacyFtpSchema,
-        sql`SELECT ftp FROM fitness.user_profile WHERE id = ${this.#userId}::uuid`,
-      );
-      const ftp = legacyRows[0]?.ftp ?? null;
-      if (ftp !== null) {
-        legacyCurrent = {
-          value: ftp,
-          unit: "watt",
-          source: "user_profile.ftp",
-          value_kind: "configured",
-          historical_validity: "unknown",
-          reason:
-            "Legacy current FTP has no effective date and is not applied to historical activities",
-        };
-      }
+    const legacyRows = await executeWithSchema(
+      this.#db,
+      legacyFtpSchema,
+      sql`SELECT ftp FROM fitness.user_profile WHERE id = ${this.#userId}::uuid`,
+    );
+    const ftp = legacyRows[0]?.ftp ?? null;
+    if (ftp !== null) {
+      legacyCurrent = {
+        value: ftp,
+        unit: "watt",
+        source: "user_profile.ftp",
+        value_kind: "configured",
+        historical_validity: "unknown",
+        reason:
+          "Legacy current FTP has no effective date and is not applied to historical activities",
+      };
     }
 
     return {
