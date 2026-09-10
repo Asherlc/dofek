@@ -13,7 +13,7 @@ describe("runActivityIntegrityDbtBuild", () => {
     vi.clearAllMocks();
   });
 
-  it("rebuilds sensor membership before sensor and activity summaries", async () => {
+  it("rebuilds identity evidence after canonical membership and before activity summaries", async () => {
     const child = new ChildProcess();
     vi.mocked(spawn).mockReturnValue(child);
 
@@ -27,7 +27,7 @@ describe("runActivityIntegrityDbtBuild", () => {
     const selection = args[args.indexOf("--select") + 1] ?? "";
 
     expect(selection).toContain(
-      "deduped_activity_members activity_sensor_sample activity_location_sample",
+      "deduped_activity_members activity_effort_identity activity_sensor_sample activity_location_sample",
     );
     expect(selection).toContain(
       "activity_sensor_sample activity_location_sample activity_sensor_summary_rows activity_location_summary_rows activity_stream_points activity_summary_rows activity_vo2max_estimate",

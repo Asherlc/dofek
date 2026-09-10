@@ -97,6 +97,48 @@ describe("activity effort identity read model", () => {
     ]);
   });
 
+  it("keeps conflicting route identities live for every source member in one canonical group", async () => {
+    await seedActivitySourceRecords(client, database, [
+      {
+        activityId: stravaActivityId,
+        providerId: "strava",
+        externalId: "instance-1",
+        raw: { routeId: "route-7" },
+      },
+      {
+        activityId: pelotonActivityId,
+        providerId: "peloton",
+        externalId: "instance-2",
+        raw: { routeId: "route-8" },
+      },
+    ]);
+
+    await buildModel(client, database);
+
+    expect(await readIdentityRows(client, database)).toEqual([
+      expect.objectContaining({
+        canonicalActivityId: groupId,
+        sourceActivityId: stravaActivityId,
+        sourceExternalId: "instance-1",
+        kind: "provider_route",
+        namespace: "strava",
+        value: "route-7",
+        sourceField: "routeId",
+        isDeleted: 0,
+      }),
+      expect.objectContaining({
+        canonicalActivityId: groupId,
+        sourceActivityId: pelotonActivityId,
+        sourceExternalId: "instance-2",
+        kind: "provider_route",
+        namespace: "peloton",
+        value: "route-8",
+        sourceField: "routeId",
+        isDeleted: 0,
+      }),
+    ]);
+  });
+
   it("keeps equal source names as weak evidence rather than exact reusable identities", async () => {
     await seedActivitySourceRecords(client, database, [
       { activityId: stravaActivityId, providerId: "strava", externalId: "instance-1", name: "FTP Test" },

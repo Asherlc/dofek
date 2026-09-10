@@ -299,6 +299,7 @@ model logic changes because existing rows retain the old transformation
 Production `DBT_SAFE_MODELS` currently selects `sensor_scalar_sample`,
 `deduped_sensor`, `activity_source_records`, `activity_duplicate_matches`,
 `activity_duplicate_groups`, `deduped_activities`, `deduped_activity_members`,
+`activity_effort_identity`,
 `provider_metric_stream_daily`, `provider_change_watermark`, `sleep_heart_rate_window`,
 `sleep_heart_rate_sample`, `resting_heart_rate_sleep_window`,
 `daily_sleep`, `daily_recovery_inputs`, `daily_recovery`, `activity_sensor_sample`, `activity_location_sample`,
