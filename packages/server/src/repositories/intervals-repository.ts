@@ -127,6 +127,8 @@ export interface ComparableInterval {
   targetResistance: number | null;
   raw: unknown | null;
   completionPct?: number | null;
+  conflicts?: string[];
+  sourceEvidence?: Omit<ComparableInterval, "conflicts" | "sourceEvidence">[];
 }
 
 // ---------------------------------------------------------------------------
@@ -147,27 +149,56 @@ function sourcePrecedence(source: ComparableIntervalSource): number {
  * provenance for duplicate activity groups.
  */
 export function mergeComparableIntervals(intervals: ComparableInterval[]): ComparableInterval[] {
-  const merged = new Map<string, ComparableInterval>();
+  const groups = new Map<string, ComparableInterval[]>();
   for (const interval of intervals) {
     const key = `${interval.startOffsetSeconds}:${interval.endOffsetSeconds}`;
-    const current = merged.get(key);
-    if (!current) {
-      merged.set(key, {
-        ...interval,
-        sourceMemberActivityIds: [...interval.sourceMemberActivityIds],
-      });
-      continue;
-    }
-
-    const preferred =
-      sourcePrecedence(interval.source) > sourcePrecedence(current.source) ? interval : current;
-    const sourceMemberActivityIds = [
-      ...new Set([...current.sourceMemberActivityIds, ...interval.sourceMemberActivityIds]),
-    ].sort();
-    merged.set(key, { ...preferred, sourceMemberActivityIds });
+    const group = groups.get(key) ?? [];
+    group.push(...(interval.sourceEvidence ?? [interval]));
+    groups.set(key, group);
   }
-
-  return [...merged.values()].sort(
+  const merged = [...groups.values()].map((group): ComparableInterval => {
+    group.sort(
+      (a, b) =>
+        sourcePrecedence(b.source) - sourcePrecedence(a.source) ||
+        JSON.stringify(a).localeCompare(JSON.stringify(b)),
+    );
+    const preferred = group[0];
+    if (!preferred) throw new Error("Interval evidence group is empty");
+    const peers = group.filter((item) => item.source === preferred.source);
+    const result: ComparableInterval = {
+      ...preferred,
+      sourceMemberActivityIds: [
+        ...new Set(group.flatMap((item) => item.sourceMemberActivityIds)),
+      ].sort(),
+    };
+    const conflicts: string[] = [];
+    for (const field of [
+      "targetIntensity",
+      "targetZone",
+      "targetCadenceRpm",
+      "targetPowerWatts",
+      "targetResistance",
+    ] as const) {
+      const values = [
+        ...new Set(peers.flatMap((item) => (item[field] === null ? [] : [item[field]]))),
+      ];
+      result[field] = values.length === 1 ? (values[0] ?? null) : null;
+      if (values.length > 1) conflicts.push(field);
+    }
+    for (const field of ["segmentType", "intervalType", "workRecoveryKind"] as const) {
+      if (new Set(peers.flatMap((item) => (item[field] == null ? [] : [item[field]]))).size > 1) {
+        result[field] = null;
+        conflicts.push(field);
+      }
+    }
+    if (conflicts.length) {
+      result.conflicts = conflicts;
+      result.sourceEvidence = group;
+      result.completionPct = null;
+    }
+    return result;
+  });
+  return merged.sort(
     (left, right) =>
       left.startOffsetSeconds - right.startOffsetSeconds ||
       left.endOffsetSeconds - right.endOffsetSeconds ||

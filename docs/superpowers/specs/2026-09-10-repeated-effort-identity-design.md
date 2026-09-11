@@ -210,9 +210,18 @@ heuristic may label work/recovery intervals as inferred, but it cannot invent
 targets or completion scores. Exact duplicate boundaries from merged members
 are consolidated while retaining all source member IDs.
 
-Repeated interval structure is Level B only when the normalized sequence of
-recorded intervals (type, duration tolerance, and target fields) matches. Name
-or duration alone does not establish structured-workout equivalence.
+Recorded-sequence discovery is deferred in this delivery. The final source audit
+found no cycling provider writer supplying the new recorded provenance and target
+fields; the sole explicit `provider_recorded` writer is the non-cycling
+[Hang Ten interval adapter](../../../src/providers/apple-health/hang-ten-intervals.ts).
+Nullable legacy boundaries and detector output cannot defensibly establish a
+recorded cycling protocol. Existing exact provider workout/test identities remain
+available, and comparisons retain normalized interval evidence. A later recorded
+sequence matcher requires a proven cycling source, complete ordered boundaries,
+type/duration/target matching, and conflict rejection; its strength must be
+`strong_inferred`. Names or duration alone never establish protocol equivalence.
+See the [normalized interval reader](../../../packages/server/src/repositories/cycling-effort-metrics.ts)
+and [current discovery kinds](../../../packages/server/src/repositories/repeated-effort-types.ts).
 
 ## MCP tools
 

@@ -106,6 +106,19 @@ affected_route_keys AS MATERIALIZED (
             OR existing_routes.is_deleted = 1
             OR identities.source_refreshed_at > existing_routes.source_refreshed_at
         )
+
+    UNION DISTINCT
+
+    SELECT samples.activity_id AS activity_id, samples.user_id AS user_id
+    FROM {{ ref('activity_sensor_sample') }} AS samples FINAL
+    LEFT JOIN existing_route_state AS existing_routes
+        ON existing_routes.activity_id = samples.activity_id
+        AND existing_routes.user_id = samples.user_id
+    WHERE samples.channel = 'altitude'
+        AND (samples.user_id, samples.activity_id) IN (
+            SELECT user_id, activity_id FROM cycling_activity_state
+        )
+        AND (existing_routes.activity_id IS null OR samples.refreshed_at > existing_routes.source_refreshed_at)
     {% endif %}
 
     UNION DISTINCT
@@ -157,6 +170,18 @@ explicit_route_ids AS (
     GROUP BY canonical_activity_id, user_id
 ),
 
+altitude_state AS (
+    SELECT
+        activity_id,
+        user_id,
+        max(refreshed_at) AS source_refreshed_at,
+        arraySort(groupArrayIf(tuple(recorded_at, assumeNotNull(scalar)), is_deleted = 0 AND scalar IS NOT null)) AS samples
+    FROM {{ ref('activity_sensor_sample') }} FINAL
+    WHERE channel = 'altitude'
+        AND (user_id, activity_id) IN (SELECT user_id, activity_id FROM affected_route_keys)
+    GROUP BY activity_id, user_id
+),
+
 current_route_sources AS (
     SELECT
         activities.activity_id AS activity_id,
@@ -167,9 +192,12 @@ current_route_sources AS (
         greatest(
             activities.refreshed_at,
             coalesce(locations.source_refreshed_at, toDateTime64('1970-01-01 00:00:00', 9, 'UTC')),
+            coalesce(altitude.source_refreshed_at, toDateTime64('1970-01-01 00:00:00', 9, 'UTC')),
             coalesce(route_ids.source_refreshed_at, toDateTime64('1970-01-01 00:00:00', 9, 'UTC'))
         ) AS source_refreshed_at
     FROM cycling_activity_state AS activities
+    LEFT JOIN altitude_state AS altitude
+        ON altitude.activity_id = activities.activity_id AND altitude.user_id = activities.user_id
     LEFT JOIN location_refresh_state AS locations
         ON locations.activity_id = activities.activity_id
         AND locations.user_id = activities.user_id
@@ -251,6 +279,10 @@ current_location_samples AS MATERIALIZED (
         AND location_samples.is_deleted = 0
         AND location_samples.lat IS NOT null
         AND location_samples.lng IS NOT null
+        AND location_samples.lat BETWEEN -90 AND 90
+        AND location_samples.lng BETWEEN -180 AND 180
+        AND location_samples.recorded_at >= activities.started_at
+        AND (activities.ended_at IS null OR location_samples.recorded_at <= activities.ended_at)
 ),
 
 location_intervals AS (
@@ -311,18 +343,20 @@ route_quality AS (
         statistics.user_id AS user_id,
         statistics.largest_gap_seconds AS largest_gap_seconds,
         if(
-            statistics.total_interval_seconds = 0,
+            activities.ended_at IS null OR activities.ended_at <= activities.started_at,
             toNullable(toFloat64(0)),
             toNullable(
                 100 * sumIf(
                     metrics.interval_seconds,
                     metrics.interval_seconds > 0
                     AND metrics.interval_seconds
-                        <= greatest(toFloat64(5), 2 * statistics.median_interval_seconds)
-                ) / statistics.total_interval_seconds
+                        <= least(toFloat64(30), greatest(toFloat64(5), 2 * statistics.median_interval_seconds))
+                ) / dateDiff('second', activities.started_at, activities.ended_at)
             )
         ) AS coverage_pct
     FROM sampling_statistics AS statistics
+    INNER JOIN cycling_activity_state AS activities
+        ON activities.activity_id = statistics.activity_id AND activities.user_id = statistics.user_id
     INNER JOIN location_interval_metrics AS metrics
         ON metrics.activity_id = statistics.activity_id
         AND metrics.user_id = statistics.user_id
@@ -331,7 +365,9 @@ route_quality AS (
         statistics.user_id,
         statistics.largest_gap_seconds,
         statistics.total_interval_seconds,
-        statistics.median_interval_seconds
+        statistics.median_interval_seconds,
+        activities.started_at,
+        activities.ended_at
 ),
 
 route_geometry AS (
@@ -381,6 +417,8 @@ current_route_rows AS (
         sources.source_refreshed_at AS source_refreshed_at,
         coalesce(quality.coverage_pct, toNullable(toFloat64(0))) AS coverage_pct,
         quality.largest_gap_seconds AS largest_gap_seconds,
+        arrayMap(index -> altitude.samples[1 + intDiv(index * (length(altitude.samples) - 1), greatest(1, least(64, length(altitude.samples)) - 1))].2,
+            range(least(64, length(altitude.samples)))) AS elevation_profile,
         toNullable(sum(metrics.distance_meters)) AS route_distance_meters
     FROM current_route_sources AS sources
     INNER JOIN current_route_keys AS route_keys
@@ -392,6 +430,8 @@ current_route_rows AS (
     LEFT JOIN route_quality AS quality
         ON quality.activity_id = sources.activity_id
         AND quality.user_id = sources.user_id
+    LEFT JOIN altitude_state AS altitude
+        ON altitude.activity_id = sources.activity_id AND altitude.user_id = sources.user_id
     LEFT JOIN location_interval_metrics AS metrics
         ON metrics.activity_id = sources.activity_id
         AND metrics.user_id = sources.user_id
@@ -409,7 +449,8 @@ current_route_rows AS (
         geometry.source_providers,
         geometry.source_devices,
         quality.coverage_pct,
-        quality.largest_gap_seconds
+        quality.largest_gap_seconds,
+        altitude.samples
 ),
 
 refresh_clock AS (
@@ -433,12 +474,12 @@ SELECT
     route_distance_meters,
     started_at,
     ended_at,
-    CAST([], 'Array(Float64)') AS elevation_profile,
+    elevation_profile,
     coverage_pct,
     largest_gap_seconds,
     source_providers,
     source_devices,
-    if(length(points) >= 2, 'available', 'partial') AS geometry_status,
+    if(length(points) >= 2 AND coverage_pct >= 90 AND largest_gap_seconds <= 30, 'available', 'partial') AS geometry_status,
     source_refreshed_at,
     refresh_clock.refresh_version AS refresh_version,
     0 AS is_deleted,

@@ -27,6 +27,36 @@ const rightLongRoute: readonly NormalizedRoutePoint[] = [
 ];
 
 describe("route equivalence", () => {
+  it("does not infer equivalence when a serving row lacks recording quality", () => {
+    expect(
+      evaluateRouteMatch({
+        left: {
+          points: routePoints,
+          geometry_status: "available",
+          coverage_pct: null,
+          largest_gap_seconds: null,
+        },
+        right: routePoints,
+      }),
+    ).toBeNull();
+  });
+  it.each([
+    { coverage_pct: 1, largest_gap_seconds: 3600 },
+    { coverage_pct: 100, largest_gap_seconds: 3600 },
+  ])("rejects incomplete recording quality %o", (quality) => {
+    expect(
+      evaluateRouteMatch({
+        left: { points: routePoints, geometry_status: "available", ...quality },
+        right: routePoints,
+      })?.matched,
+    ).not.toBe(true);
+  });
+  it("bounds work for geographically unbounded polylines", () => {
+    const points = Array.from({ length: 65 }, (_, index) => ({ lat: index * 0.0001, lng: 0 }));
+    expect(() => evaluateRouteMatch({ left: points, right: points })).toThrow(
+      "Route matching work limit",
+    );
+  });
   it("accepts a high-confidence forward geometry match", () => {
     expect(evaluateRouteMatch({ left: routePoints, right: routePoints })).toEqual({
       matched: true,
@@ -56,26 +86,23 @@ describe("route equivalence", () => {
         ? routePoints
         : routePoints.map((point) => ({ ...point, lat: point.lat + 1 })),
       geometry_status: "available",
-      coverage_pct: 60,
-      largest_gap_seconds: 120,
+      coverage_pct: 95,
+      largest_gap_seconds: 15,
     };
     expect(evaluateRouteMatch({ left, right })).toMatchObject({
       matched,
       left_quality: { geometry_status: "available", coverage_pct: 100, largest_gap_seconds: 10 },
-      right_quality: { geometry_status: "available", coverage_pct: 60, largest_gap_seconds: 120 },
+      right_quality: { geometry_status: "available", coverage_pct: 95, largest_gap_seconds: 15 },
     });
   });
 
-  it("preserves measured zero quality separately from unavailable evidence", () => {
+  it("rejects measured zero coverage", () => {
     expect(
       evaluateRouteMatch({
         left: { points: routePoints, coverage_pct: 0, largest_gap_seconds: 0 },
         right: { points: routePoints, coverage_pct: null, largest_gap_seconds: null },
       }),
-    ).toMatchObject({
-      left_quality: { geometry_status: null, coverage_pct: 0, largest_gap_seconds: 0 },
-      right_quality: { geometry_status: null, coverage_pct: null, largest_gap_seconds: null },
-    });
+    ).toBeNull();
   });
 
   it("identifies a route recorded in reverse", () => {

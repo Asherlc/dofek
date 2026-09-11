@@ -786,6 +786,13 @@ Expected: the worktree is clean and the branch tracks the pushed remote commit.
 
 ## Plan self-review
 
+Final review scope correction: recorded cycling sequence discovery is deferred
+until a cycling provider supplies defensible recorded interval provenance and
+targets. Task 5 delivers normalization/provenance, not a sequence identity.
+The [design's structured-workout section](../specs/2026-09-10-repeated-effort-identity-design.md#structured-workout-and-interval-identity)
+records the source audit and the prerequisites; no tool may promote legacy or
+inferred intervals to strong recorded-protocol equivalence.
+
 - Identity kinds and instance/template distinction: Tasks 1, 3, 7, and 8.
 - Multi-provider dedup preservation: Tasks 3 and 7.
 - Explicit and inferred route identity/evidence: Tasks 1 and 4.

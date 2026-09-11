@@ -42,6 +42,11 @@ export const repeatedEffortsResultSchema = z.strictObject({
       ),
       identityEvidence: z.array(identityEvidenceSchema),
       strength: z.enum(EQUIVALENCE_STRENGTHS),
+      discoveryScope: z.strictObject({
+        providers: z.array(z.string()),
+        modalities: z.array(z.string()),
+        canonicalTypes: z.array(z.string()),
+      }),
       weakSpecification: weakEffortSpecificationSchema.optional(),
       assumptions: z.array(z.string()),
       qualityFlags: z.array(z.string()),

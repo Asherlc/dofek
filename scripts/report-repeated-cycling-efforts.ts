@@ -199,7 +199,7 @@ export function formatRepeatedCyclingReport(report: Report): string {
     lines.push("No repeated groups observed; this does not prove no historical repeats exist.");
 
   lines.push(
-    "Provider identity coverage (observed repeated groups only, not an upstream capability inventory):",
+    "Provider coverage (repeated-identity evidence and generic cycling source availability; not an upstream capability inventory):",
   );
   const providers = unique([
     ...groups.flatMap((group) => [

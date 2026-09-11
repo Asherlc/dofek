@@ -39,8 +39,10 @@ name evidence. Its explicit v1 raw-field map is `pelotonClassId`, `templateId`,
 provider-instance provenance and is never emitted as a reusable identity.
 Names are emitted only as `activity_name` with `weak_similarity`. Evidence is a
 bounded map of the classified raw field/value and source-record identifiers.
-The append-incremental model uses the latest source/member refresh time as its
-source watermark and writes a `ReplacingMergeTree` tombstone when an emitted
+The append-incremental model uses source/member sync timestamps plus canonical
+membership changes for invalidation; routine upstream `refreshed_at` changes do
+not dirty identity rows. Explicit user/activity refresh scopes include current
+and prior source members. It writes a `ReplacingMergeTree` tombstone when an emitted
 identity disappears or its source is no longer current. This follows dbt's
 [incremental-model lifecycle](https://docs.getdbt.com/docs/build/incremental-models)
 and preserves the structured source evidence consumed by MCP tools under the

@@ -64,7 +64,7 @@ describe("materialized route equivalence", () => {
         lat: point.lat + offset,
         lng: point.lng + (detour && index > 0 && index < 3 ? 0.01 : 0),
       })),
-      seconds: [0, 10, 20, 120],
+      seconds: [0, 10, 20, 30],
     });
     await buildModel(client, database);
     const left = await readRouteIdentity(client, database);
@@ -81,8 +81,8 @@ describe("materialized route equivalence", () => {
       left_quality: { geometry_status: "available", coverage_pct: 100, largest_gap_seconds: 10 },
       right_quality: {
         geometry_status: "available",
-        coverage_pct: 100 / 6,
-        largest_gap_seconds: 100,
+        coverage_pct: 100,
+        largest_gap_seconds: 10,
       },
     });
     if (matched)

@@ -30,7 +30,7 @@ export function registerRepeatedEffortsTool(server: McpServer, context: DofekMcp
         modalities: z.array(z.string().min(1)).max(20).optional(),
         canonical_types: z.array(z.string().min(1)).max(50).optional(),
         limit: z.number().int().min(1).max(100).optional(),
-        cursor: z.string().min(1).max(4096).optional(),
+        cursor: z.string().min(1).max(32768).optional(),
       },
       outputSchema: repeatedEffortsOutputSchema,
     },

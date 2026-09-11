@@ -49,6 +49,29 @@ const repository = () =>
   new PerformanceComparisonIdentity({ execute: vi.fn() }, { query: vi.fn() }, userId);
 
 describe("PerformanceComparisonIdentity", () => {
+  it("uses mutually matching groups and yields during route comparison", async () => {
+    const third = "00000000-0000-4000-8000-000000000030";
+    const routes = [route(first), route(second), route(third)];
+    routes[1] = {
+      ...route(second),
+      points: route(second).points.map(([lat, lng]) => [lat, lng + 0.0008]),
+    };
+    routes[2] = {
+      ...route(third),
+      points: route(third).points.map(([lat, lng]) => [lat, lng - 0.0008]),
+    };
+    let yielded = false;
+    setImmediate(() => {
+      yielded = true;
+    });
+    const matches = await repository().routeMatches(
+      first,
+      routes,
+      [first, second, third].map(activity),
+    );
+    expect(matches.map((item) => item.activityId)).toEqual([first, second]);
+    expect(yielded).toBe(true);
+  });
   it.each([
     { change: {}, matches: true },
     { change: { namespace: null }, matches: false },
@@ -193,13 +216,16 @@ describe("PerformanceComparisonIdentity", () => {
       activityIds: [first],
     });
   });
-  it("retains directional geometry quality and provenance for anchors and fingerprints", () => {
+  it("retains directional geometry quality and provenance for anchors and fingerprints", async () => {
     const routes = [
       route(first),
       { ...route(second), points: [...route(second).points].reverse() },
     ];
     for (const value of [first, "route-fingerprint"]) {
-      const result = repository().routeMatches(value, routes, [activity(first), activity(second)]);
+      const result = await repository().routeMatches(value, routes, [
+        activity(first),
+        activity(second),
+      ]);
       expect(result[1]).toMatchObject({
         activityId: second,
         anchor_activity_id: first,
@@ -217,25 +243,25 @@ describe("PerformanceComparisonIdentity", () => {
       });
     }
   });
-  it("rejects incomplete geometry, different modalities, and unknown anchors", () => {
+  it("rejects incomplete geometry, different modalities, and unknown anchors", async () => {
     const routes = [route(first), { ...route(second), geometry_status: "partial" as const }];
     expect(
-      repository().routeMatches(first, routes, [activity(first), activity(second)]),
+      await repository().routeMatches(first, routes, [activity(first), activity(second)]),
     ).toHaveLength(1);
     expect(
-      repository().routeMatches(
+      await repository().routeMatches(
         first,
         [route(first), route(second)],
         [activity(first), { ...activity(second), modality: "indoor" }],
       ),
     ).toHaveLength(1);
-    expect(() => repository().routeMatches("unknown", routes, [activity(first)])).toThrow(
+    await expect(repository().routeMatches("unknown", routes, [activity(first)])).rejects.toThrow(
       /anchor is unavailable/,
     );
   });
   it.each(["partial", "unavailable"] as const)(
     "retains %s route evidence independently of geometry matching on either side",
-    (status) => {
+    async (status) => {
       for (const incompleteId of [first, second]) {
         const routes = [first, second].map((id) => ({
           ...route(id),
@@ -243,7 +269,7 @@ describe("PerformanceComparisonIdentity", () => {
             ? { geometry_status: status, coverage_pct: 40, largest_gap_seconds: 300 }
             : {}),
         }));
-        const result = repository().routeEvidence(first, routes, [
+        const result = await repository().routeEvidence(first, routes, [
           activity(first),
           activity(second),
         ]);
@@ -260,9 +286,9 @@ describe("PerformanceComparisonIdentity", () => {
           anchor_source_devices: ["edge"],
         });
         expect(
-          repository()
-            .routeMatches(first, routes, [activity(first), activity(second)])
-            .map((row) => row.activityId),
+          (await repository().routeMatches(first, routes, [activity(first), activity(second)])).map(
+            (row) => row.activityId,
+          ),
         ).toEqual(incompleteId === first ? [] : [first]);
       }
     },

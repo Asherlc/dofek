@@ -1,3 +1,4 @@
+import { setImmediate as yieldToEventLoop } from "node:timers/promises";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema, type SqlExecutor } from "../lib/typed-sql.ts";
@@ -16,7 +17,11 @@ import {
   type WeakEffortSpecification,
   weakDurationBucket,
 } from "./repeated-effort-types.ts";
-import { evaluateRouteMatch } from "./route-equivalence.ts";
+import {
+  evaluateRouteMatch,
+  routeGeometry as geometry,
+  groupEquivalentRoutes,
+} from "./route-equivalence.ts";
 
 export const comparisonIdentityRowSchema = z.strictObject({
   canonical_activity_id: z.uuid(),
@@ -53,14 +58,6 @@ type Activity = {
   canonical_type: string;
   modality: string | null;
 };
-const geometry = (route: Route) => ({
-  points: route.points.map(([lat, lng]) => ({ lat, lng })),
-  distance_meters: route.route_distance_meters,
-  elevation_profile: route.elevation_profile,
-  geometry_status: route.geometry_status,
-  coverage_pct: route.coverage_pct,
-  largest_gap_seconds: route.largest_gap_seconds,
-});
 const routeQuality = (route: Route) => ({
   geometry_status: route.geometry_status,
   coverage_pct: route.coverage_pct,
@@ -211,11 +208,24 @@ export class PerformanceComparisonIdentity {
     return rows.filter((r) => activities.some((a) => a.activity_id === r.canonical_activity_id));
   }
 
-  routeMatches(value: string, routes: Route[], activities: Activity[]) {
-    return this.routeEvidence(value, routes, activities).filter((row) => row.geometry?.matched);
+  async routeMatches(value: string, routes: Route[], activities: Activity[]) {
+    const groups = await groupEquivalentRoutes(routes, activities);
+    const anchor = routes.find(
+      (route) => route.canonical_activity_id === value || route.route_fingerprint === value,
+    );
+    const group =
+      groups.find((members) =>
+        members.some((route) => route.canonical_activity_id === anchor?.canonical_activity_id),
+      ) ?? [];
+    const evidence = await this.routeEvidence(value, routes, activities);
+    return evidence.filter(
+      (row) =>
+        row.geometry?.matched &&
+        group.some((route) => route.canonical_activity_id === row.activityId),
+    );
   }
 
-  routeEvidence(value: string, routes: Route[], activities: Activity[]) {
+  async routeEvidence(value: string, routes: Route[], activities: Activity[]) {
     const anchor = routes.find(
       (r) => r.canonical_activity_id === value || r.route_fingerprint === value,
     );
@@ -224,33 +234,34 @@ export class PerformanceComparisonIdentity {
         "Canonical route anchor is unavailable in the selected range; use a discovery anchor activity ID or stored fingerprint.",
       );
     const anchorActivity = activities.find((a) => a.activity_id === anchor.canonical_activity_id);
-    return routes.flatMap((route) => {
+    const evidence = [];
+    for (const route of routes) {
       const activity = activities.find((a) => a.activity_id === route.canonical_activity_id);
       if (
         activity?.canonical_type !== anchorActivity?.canonical_type ||
         activity?.modality !== anchorActivity?.modality
       )
-        return [];
+        continue;
+      await yieldToEventLoop();
       const match = evaluateRouteMatch({ left: geometry(anchor), right: geometry(route) });
-      return [
-        {
-          activityId: route.canonical_activity_id,
-          geometry: match,
-          geometry_unavailable_reason: match
-            ? null
-            : anchor.geometry_status !== "available" || route.geometry_status !== "available"
-              ? `Route geometry comparison requires available geometry; anchor is ${anchor.geometry_status}, candidate is ${route.geometry_status}.`
-              : "Anchor or candidate route geometry has insufficient valid points or a non-positive distance.",
-          quality: routeQuality(route),
-          anchor_quality: routeQuality(anchor),
-          anchor_activity_id: anchor.canonical_activity_id,
-          source_providers: route.source_providers,
-          source_devices: route.source_devices,
-          anchor_source_providers: anchor.source_providers,
-          anchor_source_devices: anchor.source_devices,
-        },
-      ];
-    });
+      evidence.push({
+        activityId: route.canonical_activity_id,
+        geometry: match,
+        geometry_unavailable_reason: match
+          ? null
+          : anchor.geometry_status !== "available" || route.geometry_status !== "available"
+            ? `Route geometry comparison requires available geometry; anchor is ${anchor.geometry_status}, candidate is ${route.geometry_status}.`
+            : "Anchor or candidate route geometry has insufficient coverage, excessive gaps, invalid points or a non-positive distance.",
+        quality: routeQuality(route),
+        anchor_quality: routeQuality(anchor),
+        anchor_activity_id: anchor.canonical_activity_id,
+        source_providers: route.source_providers,
+        source_devices: route.source_devices,
+        anchor_source_providers: anchor.source_providers,
+        anchor_source_devices: anchor.source_devices,
+      });
+    }
+    return evidence;
   }
 
   async benchmark(value: string) {
@@ -263,11 +274,15 @@ export class PerformanceComparisonIdentity {
         inclusion_note: z.string().nullable(),
       }),
       sql`/* performance-comparison:benchmark */
-      SELECT m.canonical_activity_id, g.display_name, g.notes, m.inclusion_note
+      SELECT coalesce(alias.group_id, m.canonical_activity_id) AS canonical_activity_id,
+        g.display_name, g.notes,
+        string_agg(DISTINCT m.inclusion_note, E'\n' ORDER BY m.inclusion_note) AS inclusion_note
       FROM fitness.effort_equivalence_group g
       JOIN fitness.effort_equivalence_group_member m ON m.group_id = g.id AND m.user_id = g.user_id
+      LEFT JOIN fitness.activity_group_alias alias ON alias.alias_id = m.canonical_activity_id AND alias.user_id = m.user_id
       WHERE g.user_id = ${this.#userId}::uuid AND m.user_id = ${this.#userId}::uuid AND g.id = ${value}::uuid
-      ORDER BY m.canonical_activity_id LIMIT 2001`,
+      GROUP BY coalesce(alias.group_id, m.canonical_activity_id), g.id
+      ORDER BY canonical_activity_id LIMIT 2001`,
     );
   }
 }

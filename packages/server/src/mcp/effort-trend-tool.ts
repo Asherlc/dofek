@@ -26,7 +26,7 @@ export function registerEffortTrendTool(server: McpServer, context: DofekMcpCont
       inputSchema: {
         start_date: dateSchema,
         end_date: dateSchema,
-        effort_id: z.string().min(1).optional(),
+        effort_id: z.string().min(1).max(16384).optional(),
         equivalence: performanceComparisonEquivalenceInputSchema.optional(),
       },
       outputSchema: effortTrendOutputSchema,

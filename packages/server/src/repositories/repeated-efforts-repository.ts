@@ -4,6 +4,7 @@ import { z } from "zod";
 import { dateSchema } from "../lib/date-schema.ts";
 import { executeWithSchema, type SqlExecutor, timestampStringSchema } from "../lib/typed-sql.ts";
 import { repeatedEffortsResultSchema } from "../mcp/repeated-efforts-output.ts";
+import { clickHouseActivityLocalDate } from "./activity-local-date.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import {
   EFFORT_IDENTITY_KINDS,
@@ -12,7 +13,11 @@ import {
   type EquivalenceStrength,
   weakDurationBucket,
 } from "./repeated-effort-types.ts";
-import { evaluateRouteMatch } from "./route-equivalence.ts";
+import {
+  evaluateRouteMatch,
+  routeGeometry as geometry,
+  groupEquivalentRoutes,
+} from "./route-equivalence.ts";
 
 const inputSchema = z
   .object({
@@ -21,12 +26,12 @@ const inputSchema = z
     minimumRepetitions: z.number().int().min(2).max(2000).default(2),
     equivalenceStrength: z.enum(["strong", "weak"]).default("strong"),
     effortKind: z.enum(EFFORT_IDENTITY_KINDS).optional(),
-    effortId: z.string().min(1).max(512).optional(),
+    effortId: z.string().min(1).max(16384).optional(),
     providers: z.array(z.string().min(1)).max(50).default([]),
     modalities: z.array(z.string().min(1)).max(20).default([]),
     canonicalTypes: z.array(z.string().min(1)).max(50).default([]),
     limit: z.number().int().min(1).max(100).default(25),
-    cursor: z.string().min(1).max(4096).nullable().default(null),
+    cursor: z.string().min(1).max(32768).nullable().default(null),
   })
   .refine((input) => input.startDate <= input.endDate, "startDate must be on or before endDate");
 
@@ -89,7 +94,6 @@ const routeSchema = z.object({
   source_providers: z.array(z.string()),
   source_devices: z.array(z.string()),
 });
-type Route = z.infer<typeof routeSchema>;
 const benchmarkSchema = z.object({
   group_id: z.uuid(),
   canonical_activity_id: z.uuid(),
@@ -113,16 +117,6 @@ function bounded<T>(rows: T[], maximum: number, kind: string): T[] {
     );
   return rows;
 }
-function geometry(route: Route) {
-  return {
-    points: route.points.map(([lat, lng]) => ({ lat, lng })),
-    distance_meters: route.route_distance_meters,
-    elevation_profile: route.elevation_profile,
-    geometry_status: route.geometry_status,
-    coverage_pct: route.coverage_pct,
-    largest_gap_seconds: route.largest_gap_seconds,
-  };
-}
 
 /** Bounded discovery over serving projections; never reads raw payloads or sensor streams. */
 export class RepeatedEffortsRepository {
@@ -143,7 +137,44 @@ export class RepeatedEffortsRepository {
   }
 
   async find(request: FindRepeatedEffortsInput): Promise<FindRepeatedEffortsOutput> {
-    const input = inputSchema.parse(request);
+    const encodedScope = request.effortId?.split(":")[3];
+    const scope = encodedScope
+      ? z
+          .strictObject({
+            userId: z.uuid(),
+            timezone: z.string(),
+            startDate: dateSchema,
+            endDate: dateSchema,
+            providers: z.array(z.string()),
+            modalities: z.array(z.string()),
+            canonicalTypes: z.array(z.string()),
+          })
+          .parse(JSON.parse(Buffer.from(encodedScope, "base64url").toString("utf8")))
+      : null;
+    if (scope && (scope.userId !== this.#userId || scope.timezone !== this.#timezone))
+      throw new Error("Discovery effort ID does not match this user or analysis timezone.");
+    const input = inputSchema.parse({
+      ...request,
+      ...(scope
+        ? {
+            startDate: scope.startDate,
+            endDate: scope.endDate,
+            providers: scope.providers,
+            modalities: scope.modalities,
+            canonicalTypes: scope.canonicalTypes,
+          }
+        : {}),
+    });
+    const discoveryScope = {
+      userId: this.#userId,
+      timezone: this.#timezone,
+      startDate: input.startDate,
+      endDate: input.endDate,
+      providers: unique(input.providers),
+      modalities: unique(input.modalities),
+      canonicalTypes: unique(input.canonicalTypes),
+    };
+    const scopeToken = Buffer.from(JSON.stringify(discoveryScope)).toString("base64url");
     const shape = digest({
       userId: this.#userId,
       timezone: this.#timezone,
@@ -177,7 +208,7 @@ export class RepeatedEffortsRepository {
       canonical_type, modality, name, member_activity_ids, source_providers
       FROM analytics.deduped_activities AS a FINAL
       WHERE user_id = {userId:UUID} AND is_deleted = 0
-        AND toDate(a.started_at, {timezone:String}) BETWEEN {startDate:Date} AND {endDate:Date}
+        AND ${clickHouseActivityLocalDate("a")} BETWEEN {startDate:Date} AND {endDate:Date}
         AND (a.ended_at IS NULL OR a.ended_at > a.started_at)
         AND (empty({providers:Array(String)}) OR hasAny(source_providers, {providers:Array(String)}))
         AND (empty({modalities:Array(String)}) OR has({modalities:Array(String)}, modality))
@@ -239,15 +270,19 @@ export class RepeatedEffortsRepository {
             this.#db,
             benchmarkSchema,
             sql`
-        SELECT g.id AS group_id, m.canonical_activity_id, g.display_name, g.notes, m.inclusion_note
+        SELECT g.id AS group_id, coalesce(alias.group_id, m.canonical_activity_id) AS canonical_activity_id,
+          g.display_name, g.notes,
+          string_agg(DISTINCT m.inclusion_note, E'\n' ORDER BY m.inclusion_note) AS inclusion_note
         FROM fitness.effort_equivalence_group g
         JOIN fitness.effort_equivalence_group_member m ON m.group_id = g.id AND m.user_id = g.user_id
+        LEFT JOIN fitness.activity_group_alias alias ON alias.alias_id = m.canonical_activity_id AND alias.user_id = m.user_id
         WHERE g.user_id = ${this.#userId} AND m.user_id = ${this.#userId}
-          AND m.canonical_activity_id IN (${sql.join(
+          AND coalesce(alias.group_id, m.canonical_activity_id) IN (${sql.join(
             activityIds.map((id) => sql`${id}::uuid`),
             sql`, `,
           )})
-        ORDER BY g.id, m.canonical_activity_id LIMIT 20001`,
+        GROUP BY g.id, coalesce(alias.group_id, m.canonical_activity_id)
+        ORDER BY g.id, canonical_activity_id LIMIT 20001`,
           )
         : Promise.resolve([]),
     ]);
@@ -265,7 +300,7 @@ export class RepeatedEffortsRepository {
       evidence: Group["identityEvidence"][number],
       weakSpecification?: Group["weakSpecification"],
     ) => {
-      const effortId = `${kind}:${strength}:${digest(key)}`;
+      const effortId = `${kind}:${strength}:${digest(key)}:${scopeToken}`;
       if (input.effortId && effortId !== input.effortId) return;
       let group = groups.get(effortId);
       if (!group) {
@@ -273,6 +308,11 @@ export class RepeatedEffortsRepository {
           effortId,
           kind,
           strength,
+          discoveryScope: {
+            providers: discoveryScope.providers,
+            modalities: discoveryScope.modalities,
+            canonicalTypes: discoveryScope.canonicalTypes,
+          },
           ...(weakSpecification ? { weakSpecification } : {}),
           displayName,
           providers: [],
@@ -405,24 +445,7 @@ export class RepeatedEffortsRepository {
         },
       );
     }
-    const routeGroups: Route[][] = [];
-    for (const route of routes) {
-      if (!activities.has(route.canonical_activity_id) || route.geometry_status !== "available")
-        continue;
-      const matching = routeGroups.find((group) =>
-        group.every((other) => {
-          const left = activities.get(other.canonical_activity_id);
-          const right = activities.get(route.canonical_activity_id);
-          return (
-            left?.canonical_type === right?.canonical_type &&
-            left?.modality === right?.modality &&
-            evaluateRouteMatch({ left: geometry(other), right: geometry(route) })?.matched === true
-          );
-        }),
-      );
-      if (matching) matching.push(route);
-      else routeGroups.push([route]);
-    }
+    const routeGroups = await groupEquivalentRoutes(routes, [...activities.values()]);
     for (const routesInGroup of routeGroups) {
       const anchor = routesInGroup[0];
       if (!anchor || routesInGroup.length < 2) continue;
@@ -536,8 +559,8 @@ export class RepeatedEffortsRepository {
           : null,
       assumptions: [
         nonMaximal,
-        "Date filters use the analysis timezone. Discovery is bounded to 2,000 canonical activities, 250 routes and 20,000 evidence rows per projection; narrow the request if exceeded.",
-        "Only explicitly selected user_defined_benchmark requests return caller assertions. Geometry group IDs are scoped to the selected candidate set and may change when that set changes.",
+        "Date filters use the canonical source-resolved local activity date, falling back to the analysis timezone. Discovery is bounded to 2,000 canonical activities, 250 routes and 20,000 evidence rows per projection; narrow the request if exceeded.",
+        "Only explicitly selected user_defined_benchmark requests return caller assertions. Effort IDs preserve the original date, type, provider and modality scope; membership may change when source evidence changes.",
       ],
     });
   }

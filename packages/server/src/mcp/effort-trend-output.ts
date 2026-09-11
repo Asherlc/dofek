@@ -39,6 +39,10 @@ export const effortTrendResultSchema = z
             .object({
               window_repetitions: z.literal(3),
               observation_count: z.number().int().nonnegative(),
+              metric_observation_counts: z.record(
+                comparableEffortMetricsSchema.keyof(),
+                z.number().int().nonnegative().max(3),
+              ),
               comparable_metrics: comparableEffortMetricsSchema,
               status: z.enum(["available", "insufficient_observations"]),
               reason: z.string().nullable(),

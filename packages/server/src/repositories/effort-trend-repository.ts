@@ -149,7 +149,7 @@ function rollingValues(rows: ComparableMetrics[]): ComparableMetrics {
           .filter((value): value is number => value !== null);
         return [
           metric,
-          observed.length === 0
+          observed.length < 3
             ? null
             : round(observed.reduce((sum, value) => sum + value, 0) / observed.length),
         ];
@@ -224,11 +224,18 @@ export class EffortTrendRepository {
     this.#discovery = discovery;
   }
 
-  async #resolve(input: EffortTrendInput): Promise<PerformanceEquivalence> {
-    if (input.equivalence) return input.equivalence;
+  async #resolve(
+    input: EffortTrendInput,
+  ): Promise<
+    Pick<
+      PerformanceComparisonInput,
+      "equivalence" | "providers" | "modalities" | "discoveryActivityIds"
+    >
+  > {
+    if (input.equivalence) return { equivalence: input.equivalence, providers: [], modalities: [] };
     if (!input.effortId) throw new Error("An effort ID or explicit equivalence is required");
     const direct = directEquivalence(input.effortId);
-    if (direct) return direct;
+    if (direct) return { equivalence: direct, providers: [], modalities: [] };
     if (!this.#discovery)
       throw new Error("A discovery effort ID requires the repeated-effort repository");
     const effortKind = EFFORT_IDENTITY_KINDS.find((kind) => input.effortId?.startsWith(`${kind}:`));
@@ -247,7 +254,13 @@ export class EffortTrendRepository {
       cursor: null,
     });
     const group = result.groups.find((candidate) => candidate.effortId === input.effortId);
-    if (group) return equivalenceFromDiscovery(group);
+    if (group)
+      return {
+        equivalence: equivalenceFromDiscovery(group),
+        providers: group.discoveryScope.providers,
+        modalities: group.discoveryScope.modalities,
+        discoveryActivityIds: group.canonicalActivityIds,
+      };
     throw new Error("The discovery effort ID was not found in the requested date range");
   }
 
@@ -259,9 +272,7 @@ export class EffortTrendRepository {
       startDate: input.startDate,
       endDate: input.endDate,
       referenceActivityId: null,
-      equivalence: await this.#resolve(input),
-      providers: [],
-      modalities: [],
+      ...(await this.#resolve(input)),
       cursor: null,
       limit: 100,
     });
@@ -313,6 +324,12 @@ export class EffortTrendRepository {
           rolling: {
             window_repetitions: 3,
             observation_count: window.length,
+            metric_observation_counts: Object.fromEntries(
+              metrics.map((metric) => [
+                metric,
+                window.filter((row) => row[metric] !== null).length,
+              ]),
+            ),
             comparable_metrics: rollingValues(window),
             status: insufficient ? "insufficient_observations" : "available",
             reason: insufficient
@@ -320,9 +337,20 @@ export class EffortTrendRepository {
               : null,
           },
           quality: performance.quality,
-          evidence: performance.equivalence_evidence.map((evidence) =>
-            effortTrendEvidenceSchema.parse(evidence),
-          ),
+          evidence: [
+            {
+              evidence_type: "comparison_performance",
+              activity_id: performance.activity_id,
+              route: performance.route,
+              metrics: performance.metrics,
+              provenance: performance.provenance,
+              identity: performance.identity,
+              moving_duration: performance.moving_duration,
+            },
+            ...performance.equivalence_evidence.map((evidence) =>
+              effortTrendEvidenceSchema.parse(evidence),
+            ),
+          ],
           assumptions: [...assumptions, ...performance.identity.assumptions],
           caveats: rowCaveats,
         };
@@ -331,7 +359,7 @@ export class EffortTrendRepository {
         deltas:
           "Every numeric delta is current repetition minus the named comparison repetition; null means one or both values are unavailable.",
         rolling:
-          "Rolling values are trailing three-repetition descriptive means. Fewer than three observations are reported as insufficient, not as a trend claim.",
+          "Rolling values are trailing three-repetition descriptive means. Each metric requires three non-null observations; missing values remain null and per-metric observation counts explain availability.",
         best: "Best uses lower elapsed/moving duration and higher power, power-to-heart-rate ratio, distance, elevation, climbing sends, strength volume, and estimated one-rep maximum. Heart rate, cadence, temperature, and climbing attempts are descriptive and unranked.",
       },
       quality: {

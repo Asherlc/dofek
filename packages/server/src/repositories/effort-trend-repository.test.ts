@@ -8,7 +8,7 @@ const THIRD_ID = "00000000-0000-4000-8000-000000000030";
 function performance(
   activityId: string,
   date: string,
-  averagePowerWatts: number,
+  averagePowerWatts: number | null,
   flags: string[] = [],
 ) {
   return {
@@ -56,6 +56,39 @@ function comparisonResult(performances: ReturnType<typeof performance>[]) {
 }
 
 describe("EffortTrendRepository", () => {
+  it("counts non-null rolling observations separately for each metric and retains performance evidence", async () => {
+    const row = {
+      ...performance(FIRST_ID, "2026-01-01", 200),
+      route: { geometry: { overlap_percentage: 0.98 }, source_providers: ["garmin"] },
+      provenance: { source_member_activity_ids: [FIRST_ID] },
+    };
+    const compare = vi
+      .fn()
+      .mockResolvedValue(
+        comparisonResult([
+          row,
+          performance(SECOND_ID, "2026-01-08", null),
+          performance(THIRD_ID, "2026-01-15", null),
+        ]),
+      );
+    const result = await new EffortTrendRepository({ compare }).get({
+      effortId: "provider_workout:zwift:17",
+      startDate: "2026-01-01",
+      endDate: "2026-12-31",
+    });
+    expect(result.repetitions[2]?.rolling).toMatchObject({
+      comparable_metrics: { average_power_watts: null, duration_seconds: 1800 },
+      metric_observation_counts: { average_power_watts: 1, duration_seconds: 3 },
+    });
+    expect(result.repetitions[0]?.evidence).toContainEqual(
+      expect.objectContaining({
+        evidence_type: "comparison_performance",
+        route: row.route,
+        metrics: row.metrics,
+        provenance: row.provenance,
+      }),
+    );
+  });
   it("calculates deltas to first, previous, and best without changing equivalence", async () => {
     const compareMock = vi
       .fn()
@@ -117,6 +150,8 @@ describe("EffortTrendRepository", () => {
           {
             effortId: "provider_workout:exact:opaque-id",
             kind: "provider_workout",
+            discoveryScope: { providers: [], modalities: [], canonicalTypes: ["cycling"] },
+            canonicalActivityIds: [FIRST_ID, SECOND_ID],
             canonicalTypes: ["cycling"],
             identityEvidence: [{ namespace: "zwift", value: "17" }],
           },
@@ -154,6 +189,8 @@ describe("EffortTrendRepository", () => {
         {
           effortId: "activity_name:weak_similarity:opaque-id",
           kind: "activity_name",
+          discoveryScope: { providers: [], modalities: [], canonicalTypes: ["running"] },
+          canonicalActivityIds: [FIRST_ID, SECOND_ID],
           canonicalTypes: ["running"],
           weakSpecification,
           identityEvidence: [{ namespace: "garmin", value: " Tempo " }],

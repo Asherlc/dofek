@@ -68,6 +68,8 @@ const intervalSchema = z
     completion_pct: nullableNumber,
     source_member_activity_ids: z.array(z.uuid()),
     raw: z.unknown().nullable(),
+    conflicts: z.array(z.string()).optional(),
+    source_evidence: z.array(z.record(z.string(), z.unknown())).optional(),
   })
   .strict();
 const bestPowerSchema = z

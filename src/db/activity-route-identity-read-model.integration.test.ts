@@ -32,6 +32,7 @@ describe("activity route identity read model", () => {
       "activity_location_sample",
       "activity_effort_identity",
       "activity_route_identity",
+      "activity_sensor_sample",
     ]) {
       await client.command({ query: `TRUNCATE TABLE ${database}.${table}` });
     }
@@ -40,6 +41,48 @@ describe("activity route identity read model", () => {
   afterAll(async () => {
     await client.command({ query: `DROP DATABASE IF EXISTS ${database} SYNC` });
     await client.close();
+  });
+
+  it("marks a one-percent fragment and a large internal gap as partial", async () => {
+    await seedRouteIdentityFixture(client, database, {
+      provider: "strava",
+      routeId: null,
+      durationSeconds: 3000,
+    });
+    await seedRouteIdentityFixture(client, database, {
+      provider: "strava",
+      routeId: null,
+      activityId: secondActivityId,
+      seconds: [0, 10, 20, 3000],
+    });
+    await buildModel(client, database);
+    expect(await readRouteIdentity(client, database)).toMatchObject({
+      coveragePct: 1,
+      geometryStatus: "partial",
+    });
+    expect(await readRouteIdentity(client, database, secondActivityId)).toMatchObject({
+      largestGapSeconds: 2980,
+      geometryStatus: "partial",
+    });
+  });
+
+  it("retains deduplicated altitude evidence and refreshes a changed profile", async () => {
+    await seedRouteIdentityFixture(client, database, { provider: "strava", routeId: null });
+    await client.command({
+      query: `INSERT INTO ${database}.activity_sensor_sample SELECT toUUID('${activityId}'), toUUID('${userId}'), addSeconds(toDateTime64('2026-09-01 12:00:00', 6, 'UTC'), number * 10), 'altitude', 100 + number * 5, 0, toDateTime64('2026-09-01 12:00:00', 9, 'UTC') FROM numbers(4)`,
+    });
+    await buildModel(client, database);
+    expect(await readRouteIdentity(client, database)).toMatchObject({
+      elevationProfile: [100, 105, 110, 115],
+    });
+    await client.command({ query: `TRUNCATE TABLE ${database}.activity_sensor_sample` });
+    await client.command({
+      query: `INSERT INTO ${database}.activity_sensor_sample SELECT toUUID('${activityId}'), toUUID('${userId}'), addSeconds(toDateTime64('2026-09-01 12:00:00', 6, 'UTC'), number * 10), 'altitude', 200 + number * 5, 0, toDateTime64('2026-09-01 12:30:00', 9, 'UTC') FROM numbers(4)`,
+    });
+    await buildModel(client, database, true);
+    expect(await readRouteIdentity(client, database)).toMatchObject({
+      elevationProfile: [200, 205, 210, 215],
+    });
   });
 
   it("keeps an explicit provider route ID separate from normalized geometry", async () => {

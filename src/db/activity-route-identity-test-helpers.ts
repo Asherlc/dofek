@@ -45,6 +45,7 @@ export function renderModel(
     .replaceAll("{{ ref('deduped_activities') }}", `${database}.deduped_activities`)
     .replaceAll("{{ ref('activity_location_sample') }}", `${database}.activity_location_sample`)
     .replaceAll("{{ ref('activity_effort_identity') }}", `${database}.activity_effort_identity`)
+    .replaceAll("{{ ref('activity_sensor_sample') }}", `${database}.activity_sensor_sample`)
     .replaceAll("{{ this }}", `${database}.activity_route_identity`)
     .replaceAll('{{ var("activity_refresh_user_id") }}', userId)
     .replaceAll(
@@ -111,6 +112,7 @@ export async function seedRouteIdentityFixture(
     memberIds?: string[];
     points?: readonly { lat: number; lng: number }[];
     seconds?: number[];
+    durationSeconds?: number;
   },
 ): Promise<void> {
   const activityId = input.activityId ?? "00000000-0000-4000-8000-000000000101";
@@ -119,7 +121,7 @@ export async function seedRouteIdentityFixture(
     query: `INSERT INTO ${database}.deduped_activities
       (activity_id, user_id, member_activity_ids, canonical_type, started_at, ended_at, refresh_version, is_deleted, refreshed_at)
       VALUES ('${activityId}', '${userId}', [${(input.memberIds ?? [activityId]).map((id) => `'${id}'`).join(",")}], 'cycling', toDateTime64('2026-09-01 12:00:00', 6, 'UTC'),
-        toDateTime64('2026-09-01 12:15:00', 6, 'UTC'), 1, 0, toDateTime64('2026-09-01 12:00:00', 9, 'UTC'))`,
+        addSeconds(toDateTime64('2026-09-01 12:00:00', 6, 'UTC'), ${input.durationSeconds ?? input.seconds?.at(-1) ?? ((input.points?.length ?? input.pointCount ?? 4) - 1) * 10}), 1, 0, toDateTime64('2026-09-01 12:00:00', 9, 'UTC'))`,
   });
   if (input.routeId !== null) {
     await client.command({
@@ -156,6 +158,10 @@ export async function seedSchema(
 ): Promise<void> {
   const statements = [
     `CREATE DATABASE ${database}`,
+    `CREATE TABLE ${database}.activity_sensor_sample (
+      activity_id UUID, user_id UUID, recorded_at DateTime64(6, 'UTC'), channel String,
+      scalar Nullable(Float64), is_deleted UInt8, refreshed_at DateTime64(9, 'UTC')
+    ) ENGINE = ReplacingMergeTree(refreshed_at) ORDER BY (user_id, activity_id, channel, recorded_at)`,
     `CREATE TABLE ${database}.deduped_activities (
       activity_id UUID, user_id UUID, member_activity_ids Array(UUID), canonical_type String, started_at DateTime64(6, 'UTC'),
       ended_at Nullable(DateTime64(6, 'UTC')), refresh_version UInt64, is_deleted UInt8,

@@ -6,12 +6,14 @@ import { createClickHouseClientFromEnv } from "../../../../src/db/clickhouse.ts"
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import { PerformanceComparisonIdentity } from "./performance-comparison-identity.ts";
 import { RepeatedEffortsRepository } from "./repeated-efforts-repository.ts";
 
 describe("RepeatedEffortsRepository database queries", () => {
   const database = `repeated_efforts_${randomUUID().replaceAll("-", "")}`;
   const clickhouse = createClickHouseClientFromEnv();
   const otherUser = randomUUID();
+  const groupId = randomUUID();
   const ids = Array.from({ length: 7 }, () => randomUUID());
   const [first, second, third, deleted, invalid, outside, merged] = ids;
   let postgres: TestContext;
@@ -38,7 +40,7 @@ describe("RepeatedEffortsRepository database queries", () => {
     const tables = [
       [
         "deduped_activities",
-        `activity_id UUID, user_id UUID, started_at DateTime64(6, 'UTC'), ended_at Nullable(DateTime64(6, 'UTC')), canonical_type String, modality Nullable(String), name Nullable(String), member_activity_ids Array(UUID), source_providers Array(String)`,
+        `activity_id UUID, user_id UUID, started_at DateTime64(6, 'UTC'), ended_at Nullable(DateTime64(6, 'UTC')), canonical_type String, modality Nullable(String), name Nullable(String), member_activity_ids Array(UUID), source_providers Array(String), local_time_source String DEFAULT 'unknown', start_utc_offset_minutes Nullable(Int16)`,
         "user_id, activity_id",
       ],
       [
@@ -191,7 +193,6 @@ describe("RepeatedEffortsRepository database queries", () => {
         sql`INSERT INTO fitness.activity_group (id, user_id) VALUES (${activityId}, ${TEST_USER_ID})`,
       );
     }
-    const groupId = randomUUID();
     await postgres.db.execute(
       sql`INSERT INTO fitness.effort_equivalence_group (id, user_id, display_name, effort_kind, notes) VALUES (${groupId}, ${TEST_USER_ID}, 'Steady benchmark', 'user_defined_benchmark', 'Same route')`,
     );
@@ -200,6 +201,19 @@ describe("RepeatedEffortsRepository database queries", () => {
         sql`INSERT INTO fitness.effort_equivalence_group_member (group_id, user_id, canonical_activity_id, inclusion_note) VALUES (${groupId}, ${TEST_USER_ID}, ${activityId}, 'Same protocol')`,
       );
     }
+    const retired = randomUUID();
+    await postgres.db.execute(
+      sql`INSERT INTO fitness.activity_group (id, user_id) VALUES (${retired}, ${TEST_USER_ID})`,
+    );
+    await postgres.db.execute(
+      sql`DELETE FROM fitness.effort_equivalence_group_member WHERE group_id = ${groupId} AND canonical_activity_id = ${second}`,
+    );
+    await postgres.db.execute(
+      sql`INSERT INTO fitness.effort_equivalence_group_member (group_id, user_id, canonical_activity_id, inclusion_note) VALUES (${groupId}, ${TEST_USER_ID}, ${retired}, 'Same protocol')`,
+    );
+    await postgres.db.execute(
+      sql`INSERT INTO fitness.activity_group_alias (alias_id, group_id, user_id, reason) VALUES (${retired}, ${second}, ${TEST_USER_ID}, 'merge')`,
+    );
     await postgres.db.execute(
       sql`INSERT INTO fitness.effort_equivalence_group (user_id, display_name, effort_kind) VALUES (${otherUser}, 'Private benchmark', 'user_defined_benchmark')`,
     );
@@ -296,6 +310,9 @@ describe("RepeatedEffortsRepository database queries", () => {
     });
   });
   it("executes Postgres benchmark memberships against stable canonical groups", async () => {
+    await postgres.db.execute(
+      sql`INSERT INTO fitness.effort_equivalence_group_member (group_id, user_id, canonical_activity_id, inclusion_note) VALUES (${groupId}, ${TEST_USER_ID}, ${second}, 'Same protocol')`,
+    );
     const result = await repository().find({ ...input, effortKind: "user_defined_benchmark" });
     expect(result.groups).toHaveLength(1);
     expect(result.groups[0]).toMatchObject({
@@ -311,6 +328,15 @@ describe("RepeatedEffortsRepository database queries", () => {
     expect((await other.find({ ...input, effortKind: "user_defined_benchmark" })).groups).toEqual(
       [],
     );
+  });
+  it("resolves benchmark aliases and deduplicates memberships for comparison", async () => {
+    const result = await new PerformanceComparisonIdentity(
+      postgres.db,
+      store,
+      TEST_USER_ID,
+    ).benchmark(groupId);
+    expect(result.map((row) => row.canonical_activity_id).sort()).toEqual([first, second].sort());
+    expect(result.every((row) => row.inclusion_note === "Same protocol")).toBe(true);
   });
   it("returns separately labeled weak candidates only on opt-in", async () => {
     expect((await repository().find({ ...input, effortKind: "activity_name" })).groups).toEqual([]);

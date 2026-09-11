@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { EffortTrendRepository } from "./effort-trend-repository.ts";
 import { RepeatedEffortsRepository } from "./repeated-efforts-repository.ts";
 
 const userId = "00000000-0000-4000-8000-000000000001";
@@ -71,6 +72,36 @@ function setup(
 }
 
 describe("RepeatedEffortsRepository.find", () => {
+  it("preserves discovery filters and exact memberships when passed to trend", async () => {
+    const { repository } = setup(
+      [activity(1), activity(2), activity(3, { canonical_type: "running" })],
+      [identity(1), identity(2), identity(3)],
+    );
+    const group = (
+      await repository.find({
+        ...input,
+        providers: ["trainerroad"],
+        modalities: ["indoor"],
+        canonicalTypes: ["cycling"],
+        effortKind: "provider_workout",
+      })
+    ).groups[0];
+    if (!group) throw new Error("Expected discovered group");
+    const compare = vi.fn().mockRejectedValue(new Error("comparison reached"));
+    await expect(
+      new EffortTrendRepository({ compare }, repository).get({
+        ...input,
+        effortId: group.effortId,
+      }),
+    ).rejects.toThrow("comparison reached");
+    expect(compare).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providers: ["trainerroad"],
+        modalities: ["indoor"],
+        discoveryActivityIds: [id(1), id(2)],
+      }),
+    );
+  });
   it("resolves a valid ID beyond 2,000 groups in one bounded discovery pass", async () => {
     const identities = Array.from({ length: 2001 }, (_, index) =>
       [1, 2].map((n) => identity(n, { namespace: `provider-${index}` })),

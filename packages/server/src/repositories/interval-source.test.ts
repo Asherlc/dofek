@@ -31,6 +31,28 @@ function interval(overrides: Partial<ComparableInterval>): ComparableInterval {
 }
 
 describe("activity interval source precedence", () => {
+  it("retains equal-precedence conflicts independently of input order", () => {
+    const left = interval({
+      source: "provider_recorded",
+      sourceProvider: "a",
+      targetPowerWatts: 200,
+    });
+    const right = interval({
+      source: "provider_recorded",
+      sourceProvider: "b",
+      targetPowerWatts: 240,
+    });
+    const forward = mergeComparableIntervals([left, right]);
+    expect(forward).toEqual(mergeComparableIntervals([right, left]));
+    expect(forward[0]).toMatchObject({
+      targetPowerWatts: null,
+      conflicts: ["targetPowerWatts"],
+      sourceEvidence: expect.arrayContaining([
+        expect.objectContaining({ sourceProvider: "a", targetPowerWatts: 200 }),
+        expect.objectContaining({ sourceProvider: "b", targetPowerWatts: 240 }),
+      ]),
+    });
+  });
   it("prefers provider-recorded targets over inferred equal boundaries", () => {
     const result = mergeComparableIntervals([
       interval({ sourceMemberActivityIds: [inferredMemberId] }),

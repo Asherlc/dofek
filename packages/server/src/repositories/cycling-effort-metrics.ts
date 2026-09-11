@@ -529,8 +529,9 @@ export async function loadCyclingEffortMetrics(
       }
     }
     for (const row of extraSamples) {
-      streamEvidence[row.channel] ??= [];
-      streamEvidence[row.channel].push({
+      const evidence = streamEvidence[row.channel] ?? [];
+      streamEvidence[row.channel] = evidence;
+      evidence.push({
         providerId: row.provider_id,
         deviceId: row.device_id,
         measurementKind: row.measurement_kind,

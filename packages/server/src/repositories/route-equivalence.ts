@@ -1,3 +1,4 @@
+import { setImmediate as yieldToEventLoop } from "node:timers/promises";
 import type {
   NormalizedRoutePoint,
   RouteGeometry,
@@ -11,6 +12,8 @@ export const ROUTE_MATCH_THRESHOLDS = {
   endpoint_tolerance_meters: 250,
   distance_difference: 0.1,
   elevation_similarity: 0.85,
+  coverage_pct: 90,
+  largest_gap_seconds: 30,
 } as const;
 
 const routePointMatchToleranceMeters = 100;
@@ -181,6 +184,22 @@ function prepareRoute(
   const geometry: RouteGeometry = "points" in input ? input : { points: input };
   if (geometry.geometry_status !== undefined && geometry.geometry_status !== "available")
     return null;
+  if (
+    geometry.geometry_status === "available" &&
+    (geometry.coverage_pct == null || geometry.largest_gap_seconds == null)
+  )
+    return null;
+  if (
+    (geometry.coverage_pct != null &&
+      geometry.coverage_pct < ROUTE_MATCH_THRESHOLDS.coverage_pct) ||
+    (geometry.largest_gap_seconds != null &&
+      geometry.largest_gap_seconds > ROUTE_MATCH_THRESHOLDS.largest_gap_seconds)
+  )
+    return null;
+  if (geometry.points.length > 64 || (geometry.elevation_profile?.length ?? 0) > 64)
+    throw new Error(
+      "Route matching work limit exceeded: normalized geometry must contain at most 64 points.",
+    );
   if (geometry.points.length < 2 || geometry.points.some((point) => !isFiniteCoordinate(point)))
     return null;
   const distanceMeters =
@@ -316,6 +335,28 @@ export function evaluateRouteMatch(input: RouteMatchInput): RouteMatchEvidence |
   );
   if (left === null || right === null) return null;
 
+  const sampleCount = (points: readonly NormalizedRoutePoint[]) =>
+    points
+      .slice(1)
+      .reduce(
+        (count, point, index) =>
+          count +
+          Math.max(
+            1,
+            Math.ceil(
+              haversineMeters(points[index] ?? point, point) / routePointMatchToleranceMeters,
+            ),
+          ),
+        0,
+      );
+  const work =
+    sampleCount(left.points) * (right.points.length - 1) +
+    sampleCount(right.points) * (left.points.length - 1);
+  if (work > 262_144)
+    throw new Error(
+      "Route matching work limit exceeded: route geometry is too large for a complete serving comparison.",
+    );
+
   const orientation = orientationMetrics(left.points, right.points);
   const overlapPercentage = routeOverlapPercentage(left.points, right.points);
   const distanceDifference =
@@ -364,4 +405,73 @@ export function evaluateRouteMatch(input: RouteMatchInput): RouteMatchEvidence |
   return rejectionReasons.length > 0
     ? { ...evidence, matched: false, rejection_reasons: rejectionReasons }
     : { ...evidence, matched: true, strength: "strong_inferred", rejection_reasons: [] };
+}
+
+interface ServingRoute {
+  canonical_activity_id: string;
+  points: [number, number][];
+  route_distance_meters: number | null;
+  elevation_profile: number[];
+  geometry_status: "available" | "partial" | "unavailable";
+  coverage_pct: number | null;
+  largest_gap_seconds: number | null;
+}
+
+export function routeGeometry(route: ServingRoute): RouteGeometry {
+  return {
+    points: route.points.map(([lat, lng]) => ({ lat, lng })),
+    distance_meters: route.route_distance_meters,
+    elevation_profile: route.elevation_profile,
+    geometry_status: route.geometry_status,
+    coverage_pct: route.coverage_pct,
+    largest_gap_seconds: route.largest_gap_seconds,
+  };
+}
+
+/** Deterministic complete-link groups; each bounded comparison yields to serving I/O. */
+export async function groupEquivalentRoutes<T extends ServingRoute>(
+  routes: T[],
+  activities: readonly { activity_id: string; canonical_type: string; modality: string | null }[],
+): Promise<T[][]> {
+  if (routes.length > 250)
+    throw new Error("Too many route candidates; narrow the date range or filters.");
+  const byId = new Map(activities.map((activity) => [activity.activity_id, activity]));
+  const groups: T[][] = [];
+  for (const route of [...routes].sort((a, b) =>
+    a.canonical_activity_id.localeCompare(b.canonical_activity_id),
+  )) {
+    const activity = byId.get(route.canonical_activity_id);
+    if (!activity) continue;
+    await yieldToEventLoop();
+    if (!evaluateRouteMatch({ left: routeGeometry(route), right: routeGeometry(route) })?.matched)
+      continue;
+    let matching: T[] | undefined;
+    for (const group of groups) {
+      let matches = true;
+      for (const other of group) {
+        const otherActivity = byId.get(other.canonical_activity_id);
+        if (
+          activity.canonical_type !== otherActivity?.canonical_type ||
+          activity.modality !== otherActivity?.modality
+        ) {
+          matches = false;
+          break;
+        }
+        await yieldToEventLoop();
+        if (
+          !evaluateRouteMatch({ left: routeGeometry(other), right: routeGeometry(route) })?.matched
+        ) {
+          matches = false;
+          break;
+        }
+      }
+      if (matches) {
+        matching = group;
+        break;
+      }
+    }
+    if (matching) matching.push(route);
+    else groups.push([route]);
+  }
+  return groups;
 }

@@ -39,7 +39,11 @@ describe("activity effort identity read model", () => {
   }, 120_000);
 
   beforeEach(async () => {
-    for (const table of ["activity_source_records", "deduped_activity_members", "activity_effort_identity"]) {
+    for (const table of [
+      "activity_source_records",
+      "deduped_activity_members",
+      "activity_effort_identity",
+    ]) {
       await client.command({ query: `TRUNCATE TABLE ${database}.${table}` });
     }
   });
@@ -47,6 +51,83 @@ describe("activity effort identity read model", () => {
   afterAll(async () => {
     await client.command({ query: `DROP DATABASE IF EXISTS ${database} SYNC` });
     await client.close();
+  });
+
+  it("does not rewrite identities for routine upstream refreshes", async () => {
+    await seedActivitySourceRecords(client, database, [
+      {
+        activityId: stravaActivityId,
+        providerId: "strava",
+        externalId: "one",
+        raw: { routeId: "r1" },
+      },
+    ]);
+    await buildModel(client, database);
+    for (const table of ["activity_source_records", "deduped_activity_members"]) {
+      await client.command({
+        query: `INSERT INTO ${database}.${table} SELECT * REPLACE(toUInt64(2) AS refresh_version, now64(9) AS refreshed_at) FROM ${database}.${table} FINAL`,
+      });
+    }
+    await buildModel(client, database, true);
+    const result = await client.query({
+      query: `SELECT count() AS count FROM ${database}.activity_effort_identity`,
+      format: "JSONEachRow",
+    });
+    expect(await result.json()).toEqual([{ count: 1 }]);
+  });
+
+  it.each([false, true])(
+    "fences current and prior rows by user and member scope (incremental=%s)",
+    async (incremental) => {
+      await seedActivitySourceRecords(client, database, [
+        {
+          activityId: stravaActivityId,
+          providerId: "strava",
+          externalId: "one",
+          raw: { routeId: "r1" },
+        },
+        {
+          activityId: pelotonActivityId,
+          providerId: "peloton",
+          externalId: "two",
+          raw: { routeId: "r2" },
+        },
+      ]);
+      if (incremental) {
+        await buildModel(client, database);
+        await client.command({ query: `TRUNCATE TABLE ${database}.activity_source_records` });
+      }
+      await client.command({
+        query: `INSERT INTO ${database}.activity_effort_identity ${renderModel(database, incremental, [stravaActivityId])}`,
+      });
+      expect(await readIdentityRows(client, database)).toEqual(
+        incremental
+          ? [
+              expect.objectContaining({ sourceActivityId: stravaActivityId, isDeleted: 1 }),
+              expect.objectContaining({ sourceActivityId: pelotonActivityId, isDeleted: 0 }),
+            ]
+          : [expect.objectContaining({ sourceActivityId: stravaActivityId, isDeleted: 0 })],
+      );
+    },
+  );
+
+  it("moves unchanged identity evidence when canonical membership changes", async () => {
+    await seedActivitySourceRecords(client, database, [
+      {
+        activityId: stravaActivityId,
+        providerId: "strava",
+        externalId: "one",
+        raw: { routeId: "r1" },
+      },
+    ]);
+    await buildModel(client, database);
+    await client.command({
+      query: `INSERT INTO ${database}.deduped_activity_members SELECT * REPLACE(toUUID('${pelotonActivityId}') AS activity_id, toUInt64(2) AS refresh_version) FROM ${database}.deduped_activity_members FINAL`,
+    });
+    await buildModel(client, database, true);
+    expect(await readIdentityRows(client, database)).toEqual([
+      expect.objectContaining({ canonicalActivityId: pelotonActivityId, isDeleted: 0 }),
+    ]);
   });
 
   it("keeps exact identities from every source member of one canonical group", async () => {
@@ -141,8 +222,18 @@ describe("activity effort identity read model", () => {
 
   it("keeps equal source names as weak evidence rather than exact reusable identities", async () => {
     await seedActivitySourceRecords(client, database, [
-      { activityId: stravaActivityId, providerId: "strava", externalId: "instance-1", name: "FTP Test" },
-      { activityId: pelotonActivityId, providerId: "peloton", externalId: "instance-2", name: " FTP  Test " },
+      {
+        activityId: stravaActivityId,
+        providerId: "strava",
+        externalId: "instance-1",
+        name: "FTP Test",
+      },
+      {
+        activityId: pelotonActivityId,
+        providerId: "peloton",
+        externalId: "instance-2",
+        name: " FTP  Test ",
+      },
     ]);
 
     await buildModel(client, database);
@@ -228,13 +319,19 @@ describe("activity effort identity read model", () => {
   });
 });
 
-function renderModel(database: string, incremental: boolean): string {
+function renderModel(database: string, incremental: boolean, scopedIds?: string[]): string {
   return renderDbtModelSql(readModelSql("activity_effort_identity.sql"), {
     isIncremental: incremental,
+    activityRefreshScoped: scopedIds !== undefined,
   })
     .replaceAll("{{ ref('activity_source_records') }}", `${database}.activity_source_records`)
     .replaceAll("{{ ref('deduped_activity_members') }}", `${database}.deduped_activity_members`)
     .replaceAll("{{ this }}", `${database}.activity_effort_identity`)
+    .replaceAll('{{ var("activity_refresh_user_id") }}', userId)
+    .replaceAll(
+      "{{ activity_refresh_ids() }}",
+      `[${(scopedIds ?? []).map((id) => `toUUID('${id}')`).join(",")}]`,
+    )
     .concat("\nSETTINGS join_use_nulls = 1, max_threads = 1");
 }
 
@@ -286,7 +383,8 @@ async function seedActivitySourceRecords(
 ): Promise<void> {
   for (const row of rows) {
     const name = row.name === undefined ? "NULL" : `'${row.name.replaceAll("'", "''")}'`;
-    const raw = row.raw === undefined ? "NULL" : `'${JSON.stringify(row.raw).replaceAll("'", "''")}'`;
+    const raw =
+      row.raw === undefined ? "NULL" : `'${JSON.stringify(row.raw).replaceAll("'", "''")}'`;
     await client.command({
       query: `INSERT INTO ${database}.activity_source_records
         (activity_id, group_id, provider_id, user_id, external_id, canonical_type, name, raw,
@@ -305,7 +403,10 @@ async function seedActivitySourceRecords(
   }
 }
 
-async function seedSchema(client: ReturnType<typeof createClient>, database: string): Promise<void> {
+async function seedSchema(
+  client: ReturnType<typeof createClient>,
+  database: string,
+): Promise<void> {
   const statements = [
     `CREATE DATABASE ${database}`,
     `CREATE TABLE ${database}.activity_source_records (

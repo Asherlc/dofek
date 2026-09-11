@@ -1,3 +1,5 @@
+{% set activity_refresh_scoped = activity_refresh_scope_enabled() %}
+
 {{ config(
     materialized='incremental',
     incremental_strategy='append',
@@ -9,7 +11,25 @@
     }
 ) }}
 
-WITH current_source_members AS (
+WITH
+{% if activity_refresh_scoped %}
+scoped_source_ids AS (
+    SELECT arrayJoin({{ activity_refresh_ids() }}) AS source_activity_id
+    UNION DISTINCT
+    SELECT member_activity_id AS source_activity_id
+    FROM {{ ref('deduped_activity_members') }} FINAL
+    WHERE user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        AND activity_id IN {{ activity_refresh_ids() }}
+    {% if is_incremental() %}
+    UNION DISTINCT
+    SELECT source_activity_id
+    FROM {{ this }} FINAL
+    WHERE user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        AND canonical_activity_id IN {{ activity_refresh_ids() }}
+    {% endif %}
+),
+{% endif %}
+current_source_members AS (
     SELECT
         assumeNotNull(source_records.user_id) AS user_id,
         activity_members.activity_id AS canonical_activity_id,
@@ -21,9 +41,7 @@ WITH current_source_members AS (
         source_records.raw AS raw,
         greatest(
             coalesce(source_records.source_synced_at, toDateTime64('1970-01-01 00:00:00', 9, 'UTC')),
-            source_records.refreshed_at,
-            coalesce(activity_members.source_synced_at, toDateTime64('1970-01-01 00:00:00', 9, 'UTC')),
-            activity_members.refreshed_at
+            coalesce(activity_members.source_synced_at, toDateTime64('1970-01-01 00:00:00', 9, 'UTC'))
         ) AS source_refreshed_at
     FROM {{ ref('activity_source_records') }} AS source_records FINAL
     INNER JOIN {{ ref('deduped_activity_members') }} AS activity_members FINAL
@@ -31,6 +49,10 @@ WITH current_source_members AS (
         AND activity_members.user_id = source_records.user_id
     WHERE source_records.is_deleted = 0
         AND activity_members.is_deleted = 0
+        {% if activity_refresh_scoped %}
+        AND source_records.user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        AND source_records.activity_id IN (SELECT source_activity_id FROM scoped_source_ids)
+        {% endif %}
 ),
 
 {% if is_incremental() %}
@@ -39,8 +61,13 @@ target_source_state AS (
         existing_identities.user_id AS user_id,
         existing_identities.source_activity_id AS source_activity_id,
         max(existing_identities.source_refreshed_at) AS source_refreshed_at,
+        argMax(existing_identities.canonical_activity_id, existing_identities.refresh_version) AS canonical_activity_id,
         countIf(existing_identities.is_deleted = 0) = 0 AS has_no_live_identity
     FROM {{ this }} AS existing_identities FINAL
+    {% if activity_refresh_scoped %}
+    WHERE existing_identities.user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        AND existing_identities.source_activity_id IN (SELECT source_activity_id FROM scoped_source_ids)
+    {% endif %}
     GROUP BY existing_identities.user_id, existing_identities.source_activity_id
 ),
 
@@ -55,7 +82,8 @@ changed_source_keys AS (
         AND target_source_state.source_activity_id = current_sources.source_activity_id
     WHERE target_source_state.source_activity_id IS null
         OR target_source_state.has_no_live_identity
-        OR current_sources.source_refreshed_at > target_source_state.source_refreshed_at
+        OR current_sources.source_refreshed_at != target_source_state.source_refreshed_at
+        OR current_sources.canonical_activity_id != target_source_state.canonical_activity_id
 
     UNION DISTINCT
 
@@ -70,7 +98,8 @@ changed_source_keys AS (
     WHERE existing_source_state.has_no_live_identity = 0
         AND (
             current_sources.source_activity_id IS null
-            OR current_sources.source_refreshed_at > existing_source_state.source_refreshed_at
+            OR current_sources.source_refreshed_at != existing_source_state.source_refreshed_at
+            OR current_sources.canonical_activity_id != existing_source_state.canonical_activity_id
         )
 ),
 {% else %}

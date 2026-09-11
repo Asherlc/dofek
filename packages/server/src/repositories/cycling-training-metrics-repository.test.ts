@@ -92,6 +92,57 @@ function samples() {
 }
 
 describe("CyclingTrainingMetricsRepository", () => {
+  it.each(["provider_recorded", "inferred"] as const)(
+    "preserves clipped %s interval provenance",
+    async (sourceKind) => {
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([
+          {
+            ...unknownIntervalSource,
+            member_activity_id: memberActivityId,
+            interval_index: 1,
+            label: "clipped interval",
+            interval_type: "work",
+            started_at: "2026-06-15T14:59:59.000Z",
+            ended_at: "2026-06-15T16:00:01.000Z",
+            source_kind: sourceKind,
+            source_provider: "training-provider",
+            source_activity_id: memberActivityId,
+            target_power_watts: 240,
+            raw: { evidence: "retained" },
+          },
+        ]);
+      const query = vi.fn(async (_schema, text: string) =>
+        text.includes(":activities") ? [activityRow()] : text.includes(":samples") ? samples() : [],
+      );
+      const result = await new CyclingTrainingMetricsRepository(
+        { execute },
+        { query },
+        userId,
+        "UTC",
+      ).listRange({
+        startDate: "2026-06-01",
+        endDate: "2026-06-30",
+        modalities: [],
+        providers: [],
+        durationsSeconds: [],
+        cursor: null,
+        limit: 10,
+      });
+      expect(result.activities[0]?.metrics.intervals[0]).toMatchObject({
+        source: sourceKind === "inferred" ? "inferred" : "recorded",
+        source_kind: sourceKind,
+        start_offset_seconds: 0,
+        end_offset_seconds: 3600,
+        source_provider: "training-provider",
+        source_member_activity_ids: [memberActivityId],
+        target_power_watts: sourceKind === "inferred" ? null : 240,
+        raw: { evidence: "retained" },
+      });
+    },
+  );
   it("computes a paginated activity from canonical streams and historical settings", async () => {
     const execute = vi
       .fn()

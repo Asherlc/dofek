@@ -4,7 +4,10 @@ import { compactWhitespace } from "./read-model-sql-test-helpers.ts";
 
 describe("activity effort identity dbt model contract", () => {
   it("uses canonical source and member projections with a source identity lifecycle key", () => {
-    const modelUrl = new URL("../../analytics/models/read_models/activity_effort_identity.sql", import.meta.url);
+    const modelUrl = new URL(
+      "../../analytics/models/read_models/activity_effort_identity.sql",
+      import.meta.url,
+    );
     expect(existsSync(modelUrl)).toBe(true);
     const sql = readFileSync(modelUrl, "utf8");
     const normalizedSql = compactWhitespace(sql);

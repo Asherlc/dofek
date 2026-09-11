@@ -15,6 +15,7 @@ function group(kind: Group["kind"], strength: Group["strength"], count: number):
     effortId: `${kind}:${strength}:fixture`,
     kind,
     strength,
+    discoveryScope: { providers: [], modalities: [], canonicalTypes: ["cycling"] },
     displayName: "Fixture effort",
     providers: ["peloton", "garmin"],
     modalities: ["indoor"],

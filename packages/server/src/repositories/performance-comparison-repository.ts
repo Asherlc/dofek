@@ -142,6 +142,7 @@ const cursorSchema = z
 type ActivityRow = z.infer<typeof activityRowSchema>;
 
 export interface PerformanceComparisonInput {
+  discoveryActivityIds?: string[];
   startDate: string;
   endDate: string;
   referenceActivityId: string | null;
@@ -217,7 +218,16 @@ function filterPredicate(input: PerformanceComparisonInput): SQL {
           input.modalities.map((modality) => sql`${modality}`),
           sql`, `,
         )})`;
-  return sql`${providers} AND ${modalities}`;
+  const discoveryMembers =
+    input.discoveryActivityIds === undefined
+      ? sql`true`
+      : input.discoveryActivityIds.length
+        ? sql`a.id IN (${sql.join(
+            input.discoveryActivityIds.map((id) => sql`${id}::uuid`),
+            sql`, `,
+          )})`
+        : sql`false`;
+  return sql`${providers} AND ${modalities} AND ${discoveryMembers} AND (a.ended_at IS NULL OR a.ended_at > a.started_at)`;
 }
 
 function activitySelect(
@@ -336,6 +346,7 @@ function shapeFor(
         baselineActivityId,
         providers: [...input.providers].sort(),
         modalities: [...input.modalities].sort(),
+        discoveryActivityIds: input.discoveryActivityIds,
         timezone,
       }),
     )
@@ -463,7 +474,7 @@ export class PerformanceComparisonRepository {
             : [];
         if (
           routes.length &&
-          identityRepository.routeMatches(reference.activity_id, routes, [reference]).length
+          (await identityRepository.routeMatches(reference.activity_id, routes, [reference])).length
         ) {
           equivalence = {
             ...resolveExplicit({ kind: "canonical_route", value: reference.activity_id }),
@@ -488,7 +499,9 @@ export class PerformanceComparisonRepository {
             activitySelect(
               this.#userId,
               this.#timezone,
-              sql`${range} AND ${filters}`,
+              modelKey?.kind === "canonical_route" && input.discoveryActivityIds
+                ? filters
+                : sql`${range} AND ${filters}`,
               "performance-comparison:scope",
               sql`ORDER BY a.started_at, a.id LIMIT 2001`,
             ),
@@ -521,7 +534,7 @@ export class PerformanceComparisonRepository {
         : [];
     const routeMatches =
       modelKey?.kind === "canonical_route"
-        ? identityRepository.routeMatches(
+        ? await identityRepository.routeMatches(
             modelKey.value,
             await identityRepository.routes(scope),
             scope,
@@ -682,7 +695,11 @@ export class PerformanceComparisonRepository {
       const routes = await identityRepository.routes(metricActivities);
       if (routes.some((route) => route.canonical_activity_id === baseline.activity_id)) {
         routeMatches.push(
-          ...identityRepository.routeEvidence(baseline.activity_id, routes, metricActivities),
+          ...(await identityRepository.routeEvidence(
+            baseline.activity_id,
+            routes,
+            metricActivities,
+          )),
         );
       }
     }
