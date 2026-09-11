@@ -16,6 +16,27 @@ function constantSamples(
 }
 
 describe("computeCyclingWorkoutMetrics", () => {
+  it("averages sequential subsecond observations using their covered durations", () => {
+    const result = computeCyclingWorkoutMetrics({
+      durationSeconds: 60,
+      samples: Array.from({ length: 120 }, (_, index) => ({
+        elapsedSeconds: index / 2,
+        powerWatts: index % 2 ? 300 : 100,
+      })),
+      settings: null,
+      intervals: [],
+    });
+    expect(result.coverage.power).toMatchObject({
+      observedSamples: 120,
+      coveredSeconds: 60,
+      medianSampleIntervalSeconds: 0.5,
+    });
+    expect(result.power).toMatchObject({
+      averageWatts: 200,
+      normalizedWatts: 200,
+      workKilojoules: 12,
+    });
+  });
   it("does not extrapolate sparse native observations across multi-minute dropouts", () => {
     const result = computeCyclingWorkoutMetrics({
       durationSeconds: 1800,

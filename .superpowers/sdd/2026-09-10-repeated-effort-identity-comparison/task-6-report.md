@@ -155,3 +155,142 @@ Review used the repository's existing formulas and
 [TrainingPeaks' NP guidance](https://help.trainingpeaks.com/hc/en-us/articles/204071804-Normalized-Power),
 with design/test/scope review against
 [Google's review dimensions](https://google.github.io/eng-practices/review/reviewer/looking-for.html).
+
+## Fix round 1 — 2026-09-10
+
+All four review findings addressed in the current worktree, without subagents
+or a branch switch.
+
+1. The cleaner and shared resampler retain native fractional elapsed timestamps.
+   Conflict detection now compares simultaneous values only. Resampling integrates
+   the duration of each sequential observation into one-second buckets, preserving
+   native observation count and cadence. A 60-second 2Hz stream alternating 100/300 W
+   produces 120 observations, 200 W average/NP, and 12 kJ.
+2. Every stream retains conflict timestamps as resampling barriers. Earlier samples
+   stop at the barrier; coverage resumes only with another valid observation.
+   A second containing any missing/conflicting fraction remains missing. Work,
+   distance, paired coverage, zones, and NP consume those same masked buckets.
+   Elevation windows cannot bridge conflicts either. Measured zeros remain zeros;
+   exact duplicate observations do not become conflicts. Unaffected streams retain
+   their independent coverage.
+3. Stored inferred intervals are normalized in both the nested workout and the
+   top-level interval result, including `workout.intervalSource`, with null targets
+   and completion. Provenance matching uses the same clipped boundaries as interval
+   calculation, so clipping a 60-second interval to a 30-second effort retains its
+   inferred source and original raw evidence.
+4. Each stream's strict result schema now includes `measurementKinds` and `evidence`
+   tuples represented as `{providerId, deviceId, measurementKind}`. The core SQL
+   query retains channel/provider/device/kind associations; movement/environment
+   evidence is carried from its existing query. Direct, estimated, and unknown
+   remain distinct, including nullable devices. Repeated identical evidence is
+   consolidated without losing the provider/device association.
+
+Added local unavailable reasons for average power, work, VI, average moving speed,
+maximum speed, elevation gain/loss, average/normalized W/kg, and absent valid power
+zone boundaries. Historical FTP selection/freshness and the ordinary-workout
+best-power lower-bound caveat remain covered by the existing tests.
+
+### Regression checkpoints and exact commands
+
+The first RED run preceded production edits:
+
+```text
+rtk pnpm exec vitest run packages/server/src/repositories/cycling-effort-metrics.test.ts packages/training/src/cycling-workout-metrics.test.ts --project unit
+
+Test Files  2 failed (2)
+Tests       6 failed | 18 passed (24)
+```
+
+Failures: 2Hz samples reported 60 conflicts/zero coverage in the bundle and only
+60 native observations in the engine; integer and fractional conflicts incorrectly
+reported 60 covered/zero missing seconds; stored inferred intervals reported
+`recorded`; `average_power` had no unavailable reason.
+
+The database RED run used the actual workspace Postgres and ClickHouse:
+
+```text
+rtk proxy sh -c 'set -a; . ./.env.local; set +a; TEST_DATABASE_URL="$DATABASE_URL" pnpm exec vitest run --project integration packages/server/src/repositories/cycling-training-metrics-repository.integration.test.ts'
+
+Test Files  1 failed (1)
+Tests       1 failed | 1 passed (2)
+```
+
+Failure: the shared bundle lacked per-stream `measurementKinds` and `evidence`.
+The fixture now verifies all six streams, including estimated speed, unknown
+altitude, signed temperature, distinct heart-rate provenance, null cadence device,
+and deduplication of superseded import versions. It validates the produced bundle
+against `cyclingEffortMetricsSchema`.
+
+Additional RED during final review:
+
+```text
+rtk pnpm exec vitest run packages/server/src/repositories/cycling-effort-metrics.test.ts --project unit
+
+normalizes stored inferred intervals in every representation for a 30-second effort
+AssertionError: expected 'recorded' to be 'inferred'
+Test Files  1 failed (1)
+Tests       1 failed | 14 passed (15)
+```
+
+Final focused unit validation:
+
+```text
+rtk pnpm exec vitest run packages/server/src/repositories/cycling-effort-metrics.test.ts packages/server/src/repositories/performance-comparison-repository.test.ts packages/server/src/repositories/cycling-training-metrics-repository.test.ts packages/server/src/mcp/cycling-training-metrics-tool.test.ts packages/server/src/mcp/performance-comparison-tool.test.ts packages/training/src/cycling-workout-metrics.test.ts --project unit
+
+Test Files  6 passed (6)
+Tests       50 passed (50)
+Duration    973ms
+```
+
+Final database validation (same command as the database RED run):
+
+```text
+Test Files  1 passed (1)
+Tests       2 passed (2)
+Duration    16.99s
+```
+
+Three existing SQL snapshots initially failed because the query added the
+`stream_evidence` column. Refreshed with:
+
+```text
+rtk pnpm exec vitest run packages/server/src/repositories/cycling-training-metrics-repository.test.ts --project unit --update
+
+Snapshots   3 updated
+Test Files  1 passed (1)
+Tests       4 passed (4)
+```
+
+Diff review confirms only the SQL snapshots changed; legacy response snapshots
+did not change. Formatting initially flagged a prohibited type assertion and
+assignments inside expressions; both were rewritten without suppressions.
+
+```text
+rtk pnpm exec biome check packages/server/src/repositories/cycling-effort-metrics.ts packages/server/src/repositories/cycling-effort-metrics.test.ts packages/server/src/repositories/cycling-training-metrics-repository.integration.test.ts packages/server/src/repositories/cycling-training-metrics-repository.test.ts packages/server/src/repositories/performance-comparison-repository.test.ts packages/server/src/mcp/performance-comparison-output.ts packages/training/src/cycling-workout-metrics.ts packages/training/src/cycling-workout-metrics.test.ts
+
+Checked 8 files in 104ms. No fixes applied.
+
+rtk pnpm typecheck
+TypeScript: No errors found
+
+rtk git diff --check
+No output; exit 0.
+```
+
+The unit runner still prints its existing esbuild/oxc warning. No HTTP development
+server was started, and no dependencies, environment variables, schema migrations,
+client behavior, or production infrastructure changed. Validation reused healthy
+workspace Postgres/ClickHouse services; unrelated Redpanda was observed restarting
+but is not used by this suite and was not changed.
+
+### Fix-round retrospective
+
+The focused regressions caught timestamp quantization, conflict interpolation, and
+interval clipping independently; real database validation confirmed tuple/null
+semantics and all six provenance channels. Next-time context: preserve native
+timestamps until resampling, preserve invalid spans explicitly, and match evidence
+after the same boundary normalization as calculation. Suggested documentation
+change for approval: add those three review checks to the training README's metric
+contract. TDD, verification-before-completion, and integration-tests-ready remain
+the useful skills for similar fixes. The upstream model still does not expose
+rejected alternatives; this fix preserves that existing limitation explicitly.

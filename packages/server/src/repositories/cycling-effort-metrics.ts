@@ -26,6 +26,12 @@ export interface CyclingEffortSample extends CyclingWorkoutSample {
   temperatureC?: number | null;
 }
 
+type StreamEvidence = {
+  providerId: string | null;
+  deviceId: string | null;
+  measurementKind: "direct" | "estimated" | "unknown";
+};
+
 export interface CyclingEffortContext {
   durationSeconds: number;
   activityDate: string;
@@ -39,6 +45,7 @@ export interface CyclingEffortContext {
   distanceEvidence?: { meters: number; kind: "deduplicated_summary" };
   bestPowers?: z.infer<typeof bestPowerRowSchema>[];
   intervalEvidence?: RecordedIntervalEvidence[];
+  streamEvidence?: Partial<Record<keyof typeof streamFields, StreamEvidence[]>>;
 }
 
 const streamFields = {
@@ -53,7 +60,10 @@ const streamFields = {
 function cleanSamples(samples: CyclingEffortSample[], duration: number) {
   const cleaned = new Map<number, CyclingEffortSample>();
   const counts = Object.fromEntries(
-    Object.keys(streamFields).map((key) => [key, { suspiciousSamples: 0, conflictingSamples: 0 }]),
+    Object.keys(streamFields).map((key) => {
+      const barriers: number[] = [];
+      return [key, { suspiciousSamples: 0, conflictingSamples: 0, barriers }];
+    }),
   );
   for (const [stream, field] of Object.entries(streamFields)) {
     const values = new Map<number, Set<number>>();
@@ -62,7 +72,7 @@ function cleanSamples(samples: CyclingEffortSample[], duration: number) {
     for (const sample of samples) {
       const value = sample[field];
       if (value == null) continue;
-      const offset = Math.floor(sample.elapsedSeconds);
+      const offset = sample.elapsedSeconds;
       // Physical validity only; no athlete-specific performance ceilings.
       if (
         !Number.isFinite(value) ||
@@ -81,6 +91,7 @@ function cleanSamples(samples: CyclingEffortSample[], duration: number) {
     for (const [offset, distinct] of values) {
       if (distinct.size > 1) {
         count.conflictingSamples++;
+        count.barriers.push(offset);
         continue;
       }
       const row = cleaned.get(offset) ?? { elapsedSeconds: offset };
@@ -114,15 +125,54 @@ export function calculateCyclingEffortMetrics(
     samples: clean.samples,
     settings: workoutSettings(settings),
     intervals: context.intervals,
+    streamBarriers: {
+      power: clean.counts.power?.barriers,
+      heartRate: clean.counts.heartRate?.barriers,
+      cadence: clean.counts.cadence?.barriers,
+    },
   });
+  const intervalEvidence = (interval: CyclingWorkoutIntervalInput) =>
+    context.intervalEvidence?.find(
+      (item) =>
+        item.input.index === interval.index &&
+        Math.max(0, Math.floor(item.input.startOffsetSeconds)) === interval.startOffsetSeconds &&
+        Math.min(duration, Math.ceil(item.input.endOffsetSeconds)) === interval.endOffsetSeconds,
+    );
+  // Stored detector output is still inferred, even though it supplies boundaries.
+  workout.intervals = workout.intervals.map((interval) => {
+    const evidence = intervalEvidence(interval);
+    return evidence?.interval.source === "inferred"
+      ? { ...interval, source: "inferred", targetPowerWatts: null, completionPct: null }
+      : interval;
+  });
+  if (
+    workout.intervals.length > 0 &&
+    workout.intervals.every((interval) => interval.source === "inferred")
+  ) {
+    workout.intervalSource = "inferred";
+  }
   const speed = resampleCyclingStream(
     clean.samples,
     duration,
     (sample) => sample.speedMetersPerSecond,
+    0,
+    clean.counts.speed?.barriers,
   );
-  const hr = resampleCyclingStream(clean.samples, duration, (sample) => sample.heartRateBpm);
+  const hr = resampleCyclingStream(
+    clean.samples,
+    duration,
+    (sample) => sample.heartRateBpm,
+    0,
+    clean.counts.heartRate?.barriers,
+  );
   const signedStream = (field: "altitudeMeters" | "temperatureC") => {
-    return resampleCyclingStream(clean.samples, duration, (sample) => sample[field], -Infinity);
+    return resampleCyclingStream(
+      clean.samples,
+      duration,
+      (sample) => sample[field],
+      -Infinity,
+      clean.counts[field === "altitudeMeters" ? "altitude" : "temperature"]?.barriers,
+    );
   };
   const altitude = signedStream("altitudeMeters");
   const temperature = signedStream("temperatureC");
@@ -167,6 +217,12 @@ export function calculateCyclingEffortMetrics(
     if (before?.altitudeMeters == null || after?.altitudeMeters == null) continue;
     const seconds = after.elapsedSeconds - before.elapsedSeconds;
     if (seconds <= 0 || seconds > 10) continue;
+    if (
+      clean.counts.altitude?.barriers.some(
+        (offset) => offset > before.elapsedSeconds && offset < after.elapsedSeconds,
+      )
+    )
+      continue;
     const rise = after.altitudeMeters - before.altitudeMeters;
     elevationPairs++;
     if (rise > 0) {
@@ -187,13 +243,31 @@ export function calculateCyclingEffortMetrics(
   const ageDays = settings
     ? Math.round((Date.parse(context.activityDate) - Date.parse(settings.effectiveFrom)) / 86400000)
     : null;
+  const qualityEvidence = (stream: keyof typeof streamFields) => {
+    const evidence = [
+      ...new Map(
+        (context.streamEvidence?.[stream] ?? []).map((item) => [JSON.stringify(item), item]),
+      ).values(),
+    ];
+    const kinds = evidence.map((item) => item.measurementKind);
+    return {
+      suspiciousSamples: clean.counts[stream]?.suspiciousSamples ?? 0,
+      conflictingSamples: clean.counts[stream]?.conflictingSamples ?? 0,
+      measurementKinds: [
+        ...new Set(
+          kinds.length > 0 ? kinds : stream === "power" ? context.powerMeasurementKinds : [],
+        ),
+      ].sort(),
+      evidence,
+    };
+  };
   const streamQuality = {
-    power: { ...workout.coverage.power, ...clean.counts.power },
-    heartRate: { ...workout.coverage.heartRate, ...clean.counts.heartRate },
-    cadence: { ...workout.coverage.cadence, ...clean.counts.cadence },
-    speed: { ...speed.coverage, ...clean.counts.speed },
-    altitude: { ...altitude.coverage, ...clean.counts.altitude },
-    temperature: { ...temperature.coverage, ...clean.counts.temperature },
+    power: { ...workout.coverage.power, ...qualityEvidence("power") },
+    heartRate: { ...workout.coverage.heartRate, ...qualityEvidence("heartRate") },
+    cadence: { ...workout.coverage.cadence, ...qualityEvidence("cadence") },
+    speed: { ...speed.coverage, ...qualityEvidence("speed") },
+    altitude: { ...altitude.coverage, ...qualityEvidence("altitude") },
+    temperature: { ...temperature.coverage, ...qualityEvidence("temperature") },
   };
   const reasons: string[] = [];
   if (workout.coverage.power.coveragePct < 99) reasons.push("Power coverage is incomplete");
@@ -229,6 +303,39 @@ export function calculateCyclingEffortMetrics(
     unavailable("climb_vertical_speed", "no continuous ascending elevation windows");
   if (temperature.coverage.coveredSeconds === 0)
     unavailable("temperature", "no temperature samples");
+  const averageMovingSpeed =
+    validProviderMoving && movingSeconds != null && movingSeconds > 0 && validSummaryDistance
+      ? summaryDistance / movingSeconds
+      : mean(movingSpeeds);
+  if (workout.power.averageWatts == null) {
+    unavailable("average_power", "no fully covered valid power seconds");
+    unavailable("work", "no fully covered valid power seconds");
+  }
+  if (workout.power.variabilityIndex == null)
+    unavailable("variability_index", "requires normalized power and positive average power");
+  if (averageMovingSpeed == null)
+    unavailable(
+      "average_moving_speed",
+      "no valid distance with positive moving duration or covered positive speed samples",
+    );
+  if (speed.coverage.coveredSeconds === 0)
+    unavailable("maximum_speed", "no fully covered valid speed seconds");
+  if (elevationPairs === 0) {
+    unavailable("elevation_gain", "no continuous valid elevation windows");
+    unavailable("elevation_loss", "no continuous valid elevation windows");
+  }
+  if (weight.value_kg == null || workout.power.averageWatts == null)
+    unavailable(
+      "average_watts_per_kg",
+      weight.value_kg == null ? weight.reason : "average power is unavailable",
+    );
+  if (weight.value_kg == null || workout.power.normalizedWatts == null)
+    unavailable(
+      "normalized_watts_per_kg",
+      weight.value_kg == null ? weight.reason : "normalized power is unavailable",
+    );
+  if (ftp && !workout.powerZones)
+    unavailable("power_zones", "no valid contemporaneous power zone boundaries");
   return {
     workout,
     thresholds: {
@@ -256,10 +363,7 @@ export function calculateCyclingEffortMetrics(
         : distance == null
           ? ("unavailable" as const)
           : ("integrated_covered_speed_samples" as const),
-      averageMovingSpeedMetersPerSecond:
-        validProviderMoving && movingSeconds != null && movingSeconds > 0 && validSummaryDistance
-          ? summaryDistance / movingSeconds
-          : mean(movingSpeeds),
+      averageMovingSpeedMetersPerSecond: averageMovingSpeed,
       maximumSpeedMetersPerSecond:
         speed.coverage.coveredSeconds > 0
           ? Math.max(...speed.values.map((value) => value ?? 0))
@@ -295,11 +399,7 @@ export function calculateCyclingEffortMetrics(
       medianSampleIntervalSeconds: row.median_sample_interval_seconds,
     })),
     intervals: workout.intervals.map((interval) => {
-      const evidence = context.intervalEvidence?.find(
-        (item) =>
-          item.input.startOffsetSeconds === interval.startOffsetSeconds &&
-          item.input.endOffsetSeconds === interval.endOffsetSeconds,
-      );
+      const evidence = intervalEvidence(interval);
       const source =
         evidence?.interval.source ?? (interval.source === "inferred" ? "inferred" : "unknown");
       return {
@@ -423,6 +523,22 @@ export async function loadCyclingEffortMetrics(
       })),
     );
     const intervals = recordedIntervalsForActivity(activity, data.intervalRows);
+    const streamEvidence: CyclingEffortContext["streamEvidence"] = {};
+    for (const row of coreSamples) {
+      for (const [channel, providerId, deviceId, measurementKind] of row.stream_evidence) {
+        const stream = channel === "heart_rate" ? "heartRate" : channel;
+        streamEvidence[stream] ??= [];
+        streamEvidence[stream].push({ providerId, deviceId, measurementKind });
+      }
+    }
+    for (const row of extraSamples) {
+      streamEvidence[row.channel] ??= [];
+      streamEvidence[row.channel].push({
+        providerId: row.provider_id,
+        deviceId: row.device_id,
+        measurementKind: row.measurement_kind,
+      });
+    }
     const distance = distances.find(
       (row) => row.activity_id === activity.activity_id,
     )?.distance_meters;
@@ -436,6 +552,7 @@ export async function loadCyclingEffortMetrics(
         settingsHistory: data.settingsHistory,
         intervals: intervals.map((item) => item.input),
         intervalEvidence: intervals,
+        streamEvidence,
         weightObservations: weights,
         sourceProviders: [
           ...activity.sourceProviders,
@@ -472,6 +589,14 @@ const sampleRowSchema = z.object({
   source_providers: z.array(z.string()),
   source_devices: z.array(z.string()),
   power_measurement_kinds: z.array(z.enum(["direct", "estimated", "unknown"])),
+  stream_evidence: z.array(
+    z.tuple([
+      z.enum(["power", "heart_rate", "cadence"]),
+      z.string().nullable(),
+      z.string().nullable(),
+      z.enum(["direct", "estimated", "unknown"]),
+    ]),
+  ),
 });
 
 const bestPowerRowSchema = z.object({
@@ -634,7 +759,9 @@ export async function loadCyclingEffortData(
               arraySort(groupUniqArrayIf(sensor.provider_id, sensor.provider_id != '')) AS source_providers,
               arraySort(groupUniqArrayIf(sensor.device_id, sensor.device_id != '')) AS source_devices,
               arraySort(groupUniqArrayIf(sensor.measurement_kind,
-                sensor.channel = 'power' AND sensor.measurement_kind != '')) AS power_measurement_kinds
+                sensor.channel = 'power' AND sensor.measurement_kind != '')) AS power_measurement_kinds,
+              arraySort(groupUniqArray(tuple(sensor.channel, sensor.provider_id,
+                sensor.device_id, sensor.measurement_kind))) AS stream_evidence
             FROM analytics.activity_sensor_sample AS sensor FINAL
             INNER JOIN analytics.deduped_activities AS activity FINAL
               ON activity.activity_id = sensor.activity_id AND activity.user_id = sensor.user_id

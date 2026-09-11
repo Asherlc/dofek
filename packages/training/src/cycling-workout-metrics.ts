@@ -45,6 +45,7 @@ export interface CyclingWorkoutMetricsInput {
   samples: CyclingWorkoutSample[];
   settings: CyclingWorkoutSettings | null;
   intervals: CyclingWorkoutIntervalInput[];
+  streamBarriers?: { power?: number[]; heartRate?: number[]; cadence?: number[] };
 }
 
 export interface CyclingWorkoutMetrics {
@@ -137,13 +138,17 @@ export function resampleCyclingStream<T extends CyclingWorkoutSample>(
   durationSeconds: number,
   select: (sample: T) => number | null | undefined,
   minimumValue = 0,
+  barriers: number[] = [],
 ): ResampledStream {
-  const byOffset = new Map<number, number>();
+  const byOffset = new Map<number, number | null>();
   for (const sample of samples) {
     const value = select(sample);
     if (value == null || !Number.isFinite(value) || value < minimumValue) continue;
-    const offset = Math.floor(sample.elapsedSeconds);
+    const offset = sample.elapsedSeconds;
     if (offset >= 0 && offset < durationSeconds) byOffset.set(offset, value);
+  }
+  for (const offset of barriers) {
+    if (offset >= 0 && offset < durationSeconds) byOffset.set(offset, null);
   }
   const points = [...byOffset.entries()]
     .map(([offset, value]) => ({ offset, value }))
@@ -152,21 +157,32 @@ export function resampleCyclingStream<T extends CyclingWorkoutSample>(
   const medianInterval = median(gaps);
   const nativeInterval = Math.min(10, medianInterval ?? 1);
   const continuityTolerance = Math.min(10, Math.max(5, nativeInterval * 2));
-  const values: Array<number | null> = Array.from({ length: durationSeconds }, () => null);
+  const totals = Array.from({ length: durationSeconds }, () => 0);
+  const coveredDurations = Array.from({ length: durationSeconds }, () => 0);
 
   for (let index = 0; index < points.length; index++) {
     const point = points[index];
-    if (!point) continue;
+    if (!point || point.value == null) continue;
     const next = points[index + 1];
     const intervalEnd = next
       ? next.offset - point.offset <= continuityTolerance
         ? next.offset
         : point.offset + nativeInterval
       : point.offset + nativeInterval;
-    for (let second = point.offset; second < Math.min(durationSeconds, intervalEnd); second++) {
-      values[second] = point.value;
+    for (
+      let second = Math.floor(point.offset);
+      second < Math.min(durationSeconds, intervalEnd);
+      second++
+    ) {
+      const covered = Math.min(second + 1, intervalEnd) - Math.max(second, point.offset);
+      totals[second] = (totals[second] ?? 0) + point.value * covered;
+      coveredDurations[second] = (coveredDurations[second] ?? 0) + covered;
     }
   }
+  // A partly invalid/missing bucket is unavailable, including subsecond conflicts.
+  const values = totals.map((total, second) =>
+    (coveredDurations[second] ?? 0) >= 1 - 1e-9 ? total : null,
+  );
 
   const coveredSeconds = values.reduce<number>(
     (count, value) => count + (value == null ? 0 : 1),
@@ -176,7 +192,7 @@ export function resampleCyclingStream<T extends CyclingWorkoutSample>(
   return {
     values,
     coverage: {
-      observedSamples: points.length,
+      observedSamples: points.filter((point) => point.value != null).length,
       coveredSeconds,
       missingSeconds: durationSeconds - coveredSeconds,
       zeroSeconds,
@@ -372,16 +388,22 @@ export function computeCyclingWorkoutMetrics(
     input.samples,
     durationSeconds,
     (sample) => sample.powerWatts,
+    0,
+    input.streamBarriers?.power,
   );
   const heartRate = resampleCyclingStream(
     input.samples,
     durationSeconds,
     (sample) => sample.heartRateBpm,
+    0,
+    input.streamBarriers?.heartRate,
   );
   const cadence = resampleCyclingStream(
     input.samples,
     durationSeconds,
     (sample) => sample.cadenceRpm,
+    0,
+    input.streamBarriers?.cadence,
   );
   const unavailableReasons: CyclingWorkoutMetrics["unavailableReasons"] = [];
   const addUnavailable = (metric: string, reason: string) => {

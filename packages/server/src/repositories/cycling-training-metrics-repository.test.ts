@@ -83,6 +83,11 @@ function samples() {
     source_providers: ["peloton"],
     source_devices: ["Peloton Bike"],
     power_measurement_kinds: ["direct"],
+    stream_evidence: [
+      ["power", "peloton", "Peloton Bike", "direct"],
+      ["heart_rate", "peloton", "Peloton Bike", "direct"],
+      ["cadence", "peloton", "Peloton Bike", "direct"],
+    ],
   }));
 }
 
@@ -303,6 +308,7 @@ describe("CyclingTrainingMetricsRepository", () => {
           source_providers: ["wahoo"],
           source_devices: ["KICKR"],
           power_measurement_kinds: ["direct"],
+          stream_evidence: [["power", "wahoo", "KICKR", "direct"]],
         }));
       }
       return [];
@@ -389,6 +395,10 @@ describe("CyclingTrainingMetricsRepository", () => {
             source_providers: ["virtual"],
             source_devices: ["trainer"],
             power_measurement_kinds: ["estimated", "unknown"],
+            stream_evidence: [
+              ["power", "virtual", "trainer", "estimated"],
+              ["power", "virtual", "trainer", "unknown"],
+            ],
           },
           {
             activity_id: "00000000-0000-4000-8000-000000000099",
@@ -399,6 +409,11 @@ describe("CyclingTrainingMetricsRepository", () => {
             source_providers: ["other"],
             source_devices: ["other"],
             power_measurement_kinds: ["direct"],
+            stream_evidence: [
+              ["power", "other", "other", "direct"],
+              ["heart_rate", "other", "other", "direct"],
+              ["cadence", "other", "other", "direct"],
+            ],
           },
         ];
       }

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { createClickHouseClientFromEnv } from "../../../../src/db/clickhouse.ts";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import { cyclingEffortMetricsSchema } from "../mcp/performance-comparison-output.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { loadCyclingEffortMetrics } from "./cycling-effort-metrics.ts";
 import { CyclingTrainingMetricsRepository } from "./cycling-training-metrics-repository.ts";
@@ -262,7 +263,7 @@ describe("CyclingTrainingMetricsRepository database semantics", () => {
       table: `${analyticsDatabase}.activity_sensor_sample`,
       values: [1, 2].flatMap((version) =>
         Array.from({ length: 600 }, (_, second) =>
-          ["speed", "altitude", "temperature"].map((channel) => ({
+          ["speed", "altitude", "temperature", "heart_rate", "cadence"].map((channel) => ({
             activity_id: activityId,
             user_id: TEST_USER_ID,
             recorded_at: new Date(Date.parse("2026-06-15T15:00:00Z") + second * 1000)
@@ -277,10 +278,15 @@ describe("CyclingTrainingMetricsRepository database semantics", () => {
                   ? 10
                   : channel === "altitude"
                     ? -100 + second / 10
-                    : -5,
-            provider_id: "sensor",
-            device_id: "device",
-            measurement_kind: "direct",
+                    : channel === "heart_rate"
+                      ? 140
+                      : channel === "cadence"
+                        ? 90
+                        : -5,
+            provider_id: channel === "heart_rate" ? "strap" : "sensor",
+            device_id: channel === "cadence" ? null : `${channel}-device`,
+            measurement_kind:
+              channel === "speed" ? "estimated" : channel === "altitude" ? "unknown" : "direct",
             refresh_version: version,
             is_deleted: 0,
           })),
@@ -348,5 +354,40 @@ describe("CyclingTrainingMetricsRepository database semantics", () => {
       streamQuality: { speed: { observedSamples: 600, coveragePct: 100 } },
     });
     expect(result?.metrics.movement.elevationGainMeters).toBeCloseTo(59.9);
+    expect(result?.metrics.streamQuality).toMatchObject({
+      heartRate: {
+        measurementKinds: ["direct"],
+        evidence: [
+          { providerId: "strap", deviceId: "heart_rate-device", measurementKind: "direct" },
+        ],
+      },
+      cadence: {
+        measurementKinds: ["direct"],
+        evidence: [{ providerId: "sensor", deviceId: null, measurementKind: "direct" }],
+      },
+      power: {
+        measurementKinds: ["direct"],
+        evidence: [{ providerId: "wahoo", deviceId: "elemnt-bolt", measurementKind: "direct" }],
+      },
+      speed: {
+        measurementKinds: ["estimated"],
+        evidence: [
+          { providerId: "sensor", deviceId: "speed-device", measurementKind: "estimated" },
+        ],
+      },
+      altitude: {
+        measurementKinds: ["unknown"],
+        evidence: [
+          { providerId: "sensor", deviceId: "altitude-device", measurementKind: "unknown" },
+        ],
+      },
+      temperature: {
+        measurementKinds: ["direct"],
+        evidence: [
+          { providerId: "sensor", deviceId: "temperature-device", measurementKind: "direct" },
+        ],
+      },
+    });
+    expect(cyclingEffortMetricsSchema.safeParse(result?.metrics).success).toBe(true);
   });
 });

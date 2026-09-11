@@ -358,7 +358,9 @@ exports[`CyclingTrainingMetricsRepository > computes a paginated activity from c
               arraySort(groupUniqArrayIf(sensor.provider_id, sensor.provider_id != '')) AS source_providers,
               arraySort(groupUniqArrayIf(sensor.device_id, sensor.device_id != '')) AS source_devices,
               arraySort(groupUniqArrayIf(sensor.measurement_kind,
-                sensor.channel = 'power' AND sensor.measurement_kind != '')) AS power_measurement_kinds
+                sensor.channel = 'power' AND sensor.measurement_kind != '')) AS power_measurement_kinds,
+              arraySort(groupUniqArray(tuple(sensor.channel, sensor.provider_id,
+                sensor.device_id, sensor.measurement_kind))) AS stream_evidence
             FROM analytics.activity_sensor_sample AS sensor FINAL
             INNER JOIN analytics.deduped_activities AS activity FINAL
               ON activity.activity_id = sensor.activity_id AND activity.user_id = sensor.user_id
@@ -886,7 +888,9 @@ exports[`CyclingTrainingMetricsRepository > returns a stable cursor and never do
               arraySort(groupUniqArrayIf(sensor.provider_id, sensor.provider_id != '')) AS source_providers,
               arraySort(groupUniqArrayIf(sensor.device_id, sensor.device_id != '')) AS source_devices,
               arraySort(groupUniqArrayIf(sensor.measurement_kind,
-                sensor.channel = 'power' AND sensor.measurement_kind != '')) AS power_measurement_kinds
+                sensor.channel = 'power' AND sensor.measurement_kind != '')) AS power_measurement_kinds,
+              arraySort(groupUniqArray(tuple(sensor.channel, sensor.provider_id,
+                sensor.device_id, sensor.measurement_kind))) AS stream_evidence
             FROM analytics.activity_sensor_sample AS sensor FINAL
             INNER JOIN analytics.deduped_activities AS activity FINAL
               ON activity.activity_id = sensor.activity_id AND activity.user_id = sensor.user_id
@@ -1299,7 +1303,9 @@ exports[`CyclingTrainingMetricsRepository > uses the setting effective on each a
               arraySort(groupUniqArrayIf(sensor.provider_id, sensor.provider_id != '')) AS source_providers,
               arraySort(groupUniqArrayIf(sensor.device_id, sensor.device_id != '')) AS source_devices,
               arraySort(groupUniqArrayIf(sensor.measurement_kind,
-                sensor.channel = 'power' AND sensor.measurement_kind != '')) AS power_measurement_kinds
+                sensor.channel = 'power' AND sensor.measurement_kind != '')) AS power_measurement_kinds,
+              arraySort(groupUniqArray(tuple(sensor.channel, sensor.provider_id,
+                sensor.device_id, sensor.measurement_kind))) AS stream_evidence
             FROM analytics.activity_sensor_sample AS sensor FINAL
             INNER JOIN analytics.deduped_activities AS activity FINAL
               ON activity.activity_id = sensor.activity_id AND activity.user_id = sensor.user_id

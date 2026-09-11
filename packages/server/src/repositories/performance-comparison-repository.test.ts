@@ -87,6 +87,11 @@ describe("PerformanceComparisonRepository", () => {
           source_providers: ["sensor"],
           source_devices: ["meter"],
           power_measurement_kinds: ["direct"],
+          stream_evidence: [
+            ["power", "sensor", "meter", "direct"],
+            ["heart_rate", "sensor", "meter", "direct"],
+            ["cadence", "sensor", "meter", "direct"],
+          ],
         }));
       return [];
     });

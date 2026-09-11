@@ -16,6 +16,16 @@ const effortStreamQualitySchema = effortCoverageSchema
   .extend({
     suspiciousSamples: z.number(),
     conflictingSamples: z.number(),
+    measurementKinds: z.array(z.enum(["direct", "estimated", "unknown"])),
+    evidence: z.array(
+      z
+        .object({
+          providerId: z.string().nullable(),
+          deviceId: z.string().nullable(),
+          measurementKind: z.enum(["direct", "estimated", "unknown"]),
+        })
+        .strict(),
+    ),
   })
   .strict();
 const effortZonesSchema = z

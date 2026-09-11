@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { calculateCyclingEffortMetrics } from "./cycling-effort-metrics.ts";
+import { cyclingEffortMetricsSchema } from "../mcp/performance-comparison-output.ts";
+import {
+  calculateCyclingEffortMetrics,
+  recordedIntervalsForActivity,
+} from "./cycling-effort-metrics.ts";
 import type { SportSettingsRow } from "./sport-settings-repository.ts";
 
 const settings: SportSettingsRow = {
@@ -48,6 +52,167 @@ const context = {
 };
 
 describe("calculateCyclingEffortMetrics", () => {
+  it("treats sequential 2Hz samples as observations and integrates their native durations", () => {
+    const result = calculateCyclingEffortMetrics(
+      Array.from({ length: 120 }, (_, index) => ({
+        elapsedSeconds: index / 2,
+        powerWatts: index % 2 === 0 ? 100 : 300,
+      })),
+      { ...context, durationSeconds: 60 },
+    );
+    expect(result.streamQuality.power).toMatchObject({
+      conflictingSamples: 0,
+      observedSamples: 120,
+      coveredSeconds: 60,
+      medianSampleIntervalSeconds: 0.5,
+    });
+    expect(result.workout.power).toMatchObject({
+      averageWatts: 200,
+      normalizedWatts: 200,
+      workKilojoules: 12,
+    });
+  });
+
+  it.each([10, 10.5])(
+    "keeps a conflict at %s as a barrier until the next valid observation",
+    (offset) => {
+      const result = calculateCyclingEffortMetrics(
+        [
+          ...Array.from({ length: 30 }, (_, index) => ({
+            elapsedSeconds: index * 2,
+            powerWatts: 200,
+            speedMetersPerSecond: 10,
+            heartRateBpm: 140,
+            cadenceRpm: 90,
+            altitudeMeters: index * 2,
+            temperatureC: -5,
+          })),
+          {
+            elapsedSeconds: offset,
+            powerWatts: 400,
+            speedMetersPerSecond: 20,
+            altitudeMeters: 40,
+            temperatureC: 5,
+          },
+          {
+            elapsedSeconds: offset,
+            powerWatts: 600,
+            speedMetersPerSecond: 30,
+            altitudeMeters: 60,
+            temperatureC: 10,
+          },
+        ],
+        { ...context, durationSeconds: 60 },
+      );
+      for (const stream of ["power", "speed", "altitude", "temperature"] as const) {
+        expect(result.streamQuality[stream]).toMatchObject({
+          conflictingSamples: 1,
+          coveredSeconds: 58,
+          missingSeconds: 2,
+        });
+      }
+      expect(result.workout.power).toMatchObject({
+        averageWatts: 200,
+        normalizedWatts: null,
+        workKilojoules: 11.6,
+      });
+      expect(result.streamQuality.heartRate.coveredSeconds).toBe(60);
+      expect(result.streamQuality.cadence.coveredSeconds).toBe(60);
+      expect(result.movement.distanceMeters).toBe(580);
+      expect(result.movement.elevationGainMeters).toBe(offset === 10 ? 54 : 56);
+    },
+  );
+
+  it("does not recover coverage after a trailing conflict without another valid sample", () => {
+    const result = calculateCyclingEffortMetrics(
+      [
+        { elapsedSeconds: 0, powerWatts: 0 },
+        { elapsedSeconds: 0, powerWatts: 0 },
+        { elapsedSeconds: 2, powerWatts: 100 },
+        { elapsedSeconds: 2, powerWatts: 200 },
+      ],
+      { ...context, durationSeconds: 6 },
+    );
+    expect(result.streamQuality.power).toMatchObject({
+      observedSamples: 1,
+      conflictingSamples: 1,
+      coveredSeconds: 2,
+      missingSeconds: 4,
+      zeroSeconds: 2,
+    });
+    expect(result.workout.power.workKilojoules).toBe(0);
+  });
+
+  it.each([1800, 30])(
+    "normalizes stored inferred intervals in every representation for a %s-second effort",
+    (durationSeconds) => {
+      const evidence = recordedIntervalsForActivity(
+        {
+          activity_id: "activity",
+          member_activity_ids: ["activity"],
+          started_at: "2026-06-15T00:00:00Z",
+        },
+        [
+          {
+            member_activity_id: "activity",
+            interval_index: 1,
+            label: "detected",
+            interval_type: "work",
+            started_at: "2026-06-15T00:00:00Z",
+            ended_at: "2026-06-15T00:01:00Z",
+            source_kind: "inferred",
+            source_provider: "sensor",
+            source_activity_id: "activity",
+            segment_type: "work",
+            target_intensity: 0.9,
+            target_zone: 3,
+            target_cadence_rpm: 90,
+            target_power_watts: 220,
+            target_resistance: 50,
+            work_recovery_kind: "work",
+            raw: { original: "retained" },
+          },
+        ],
+      );
+      const result = calculateCyclingEffortMetrics(samples, {
+        ...context,
+        durationSeconds,
+        intervals: evidence.map((item) => item.input),
+        intervalEvidence: evidence,
+      });
+      expect(result.workout.intervalSource).toBe("inferred");
+      for (const intervals of [result.intervals, result.workout.intervals]) {
+        expect(intervals[0]).toMatchObject({
+          source: "inferred",
+          targetPowerWatts: null,
+          completionPct: null,
+        });
+      }
+      expect(result.intervals[0]?.evidence).toMatchObject({
+        source: "inferred",
+        raw: { original: "retained" },
+        targetZone: null,
+      });
+      expect(cyclingEffortMetricsSchema.safeParse(result).success).toBe(true);
+    },
+  );
+
+  it("explains locally unavailable power, movement, elevation and weight-normalized metrics", () => {
+    const result = calculateCyclingEffortMetrics([], context);
+    for (const metric of [
+      "average_power",
+      "work",
+      "variability_index",
+      "average_moving_speed",
+      "maximum_speed",
+      "elevation_gain",
+      "elevation_loss",
+      "average_watts_per_kg",
+      "normalized_watts_per_kg",
+    ]) {
+      expect(result.unavailableReasons).toContainEqual({ metric, reason: expect.any(String) });
+    }
+  });
   it("shares workout calculations, coverage, zones and valid weight provenance", () => {
     const result = calculateCyclingEffortMetrics(samples, context);
     expect(result.workout).toMatchObject({
