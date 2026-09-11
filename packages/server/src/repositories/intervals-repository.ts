@@ -16,6 +16,17 @@ const intervalMetadataRowSchema = z.object({
   started_at: timestampStringSchema,
   ended_at: timestampStringSchema.nullable(),
   duration_seconds: z.coerce.number().nullable(),
+  source_kind: z.enum(["provider_recorded", "inferred"]).nullable(),
+  source_provider: z.string().nullable(),
+  source_activity_id: z.string().uuid().nullable(),
+  segment_type: z.string().nullable(),
+  target_intensity: z.coerce.number().nullable(),
+  target_zone: z.coerce.number().int().nullable(),
+  target_cadence_rpm: z.coerce.number().nullable(),
+  target_power_watts: z.coerce.number().nullable(),
+  target_resistance: z.coerce.number().nullable(),
+  work_recovery_kind: z.enum(["work", "recovery"]).nullable(),
+  raw: z.unknown().nullable(),
 });
 
 const sensorPointRowSchema = z.object({
@@ -52,6 +63,17 @@ export interface IntervalRow {
   started_at: string;
   ended_at: string | null;
   duration_seconds: number | null;
+  source_kind: "provider_recorded" | "inferred" | null;
+  source_provider: string | null;
+  source_activity_id: string | null;
+  segment_type: string | null;
+  target_intensity: number | null;
+  target_zone: number | null;
+  target_cadence_rpm: number | null;
+  target_power_watts: number | null;
+  target_resistance: number | null;
+  work_recovery_kind: "work" | "recovery" | null;
+  raw: unknown | null;
   avg_heart_rate: number | null;
   max_heart_rate: number | null;
   avg_power: number | null;
@@ -74,6 +96,37 @@ export interface DetectedInterval {
   avgSpeed: number | null;
   maxSpeed: number | null;
   avgCadence: number | null;
+  source: "inferred";
+  targetIntensity: null;
+  targetZone: null;
+  targetCadenceRpm: null;
+  targetPowerWatts: null;
+  targetResistance: null;
+  completionPct: null;
+}
+
+export type ComparableIntervalSource = "provider_recorded" | "inferred" | "unknown";
+
+/** Provider-neutral stored interval evidence normalized to activity-relative boundaries. */
+export interface ComparableInterval {
+  intervalIndex: number;
+  source: ComparableIntervalSource;
+  startOffsetSeconds: number;
+  endOffsetSeconds: number;
+  label: string | null;
+  intervalType?: string | null;
+  segmentType: string | null;
+  workRecoveryKind: "work" | "recovery" | null;
+  sourceProvider: string | null;
+  sourceActivityId: string | null;
+  sourceMemberActivityIds: string[];
+  targetIntensity: number | null;
+  targetZone: number | null;
+  targetCadenceRpm: number | null;
+  targetPowerWatts: number | null;
+  targetResistance: number | null;
+  raw: unknown | null;
+  completionPct?: number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -81,6 +134,70 @@ export interface DetectedInterval {
 // ---------------------------------------------------------------------------
 
 const CHANGE_THRESHOLD = 0.15;
+
+function sourcePrecedence(source: ComparableIntervalSource): number {
+  if (source === "provider_recorded") return 2;
+  if (source === "unknown") return 1;
+  return 0;
+}
+
+/**
+ * Resolves only equal, activity-relative boundaries. The selected interval
+ * retains provider-recorded facts while every contributing member remains in
+ * provenance for duplicate activity groups.
+ */
+export function mergeComparableIntervals(intervals: ComparableInterval[]): ComparableInterval[] {
+  const merged = new Map<string, ComparableInterval>();
+  for (const interval of intervals) {
+    const key = `${interval.startOffsetSeconds}:${interval.endOffsetSeconds}`;
+    const current = merged.get(key);
+    if (!current) {
+      merged.set(key, {
+        ...interval,
+        sourceMemberActivityIds: [...interval.sourceMemberActivityIds],
+      });
+      continue;
+    }
+
+    const preferred =
+      sourcePrecedence(interval.source) > sourcePrecedence(current.source) ? interval : current;
+    const sourceMemberActivityIds = [
+      ...new Set([...current.sourceMemberActivityIds, ...interval.sourceMemberActivityIds]),
+    ].sort();
+    merged.set(key, { ...preferred, sourceMemberActivityIds });
+  }
+
+  return [...merged.values()].sort(
+    (left, right) =>
+      left.startOffsetSeconds - right.startOffsetSeconds ||
+      left.endOffsetSeconds - right.endOffsetSeconds ||
+      left.intervalIndex - right.intervalIndex,
+  );
+}
+
+/** Applies the no-invention rule to results emitted by the existing detector. */
+export function inferIntervalResult<T extends object>(
+  interval: T,
+): T & {
+  source: "inferred";
+  targetIntensity: null;
+  targetZone: null;
+  targetCadenceRpm: null;
+  targetPowerWatts: null;
+  targetResistance: null;
+  completionPct: null;
+} {
+  return {
+    ...interval,
+    source: "inferred",
+    targetIntensity: null,
+    targetZone: null,
+    targetCadenceRpm: null,
+    targetPowerWatts: null,
+    targetResistance: null,
+    completionPct: null,
+  };
+}
 
 export function average(values: (number | null)[]): number | null {
   const valid = values.filter((v): v is number => v != null && v > 0);
@@ -221,7 +338,18 @@ export class IntervalsRepository {
           ai.interval_type,
           ai.started_at,
           ai.ended_at,
-          EXTRACT(EPOCH FROM (ai.ended_at - ai.started_at)) AS duration_seconds
+          EXTRACT(EPOCH FROM (ai.ended_at - ai.started_at)) AS duration_seconds,
+          ai.source_kind,
+          ai.source_provider,
+          ai.source_activity_id,
+          ai.segment_type,
+          ai.target_intensity,
+          ai.target_zone,
+          ai.target_cadence_rpm,
+          ai.target_power_watts,
+          ai.target_resistance,
+          ai.work_recovery_kind,
+          ai.raw
         FROM fitness.activity_interval ai
         WHERE ai.activity_id = ${activityId}::uuid
           AND EXISTS (
@@ -316,6 +444,17 @@ export class IntervalsRepository {
         started_at: interval.started_at,
         ended_at: interval.ended_at,
         duration_seconds: interval.duration_seconds,
+        source_kind: interval.source_kind,
+        source_provider: interval.source_provider,
+        source_activity_id: interval.source_activity_id,
+        segment_type: interval.segment_type,
+        target_intensity: interval.target_intensity,
+        target_zone: interval.target_zone,
+        target_cadence_rpm: interval.target_cadence_rpm,
+        target_power_watts: interval.target_power_watts,
+        target_resistance: interval.target_resistance,
+        work_recovery_kind: interval.work_recovery_kind,
+        raw: interval.raw,
         ...metrics,
       };
     });
@@ -412,9 +551,6 @@ export class IntervalsRepository {
       }
     }
 
-    return segments.map((segment, idx) => ({
-      intervalIndex: idx,
-      ...segment,
-    }));
+    return segments.map((segment, idx) => inferIntervalResult({ intervalIndex: idx, ...segment }));
   }
 }

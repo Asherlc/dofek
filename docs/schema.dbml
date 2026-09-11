@@ -508,10 +508,24 @@ table fitness.activity_interval {
   interval_type text
   started_at "timestamp with time zone" [not null]
   ended_at "timestamp with time zone"
+  source_kind text
+  source_provider text
+  source_activity_id uuid
+  segment_type text
+  target_intensity real
+  target_zone integer
+  target_cadence_rpm real
+  target_power_watts real
+  target_resistance real
+  work_recovery_kind text
+  raw jsonb
   created_at "timestamp with time zone" [not null, default: `now()`]
 
   indexes {
     (activity_id, interval_index) [name: 'activity_interval_activity_idx']
+
+
+
   }
 }
 
@@ -2050,6 +2064,10 @@ ref activity_group_alias_user_id_user_profile_id_fk: fitness.activity_group_alia
 ref activity_group_alias_user_group_fk: fitness.activity_group_alias.(user_id, group_id) > fitness.activity_group.(user_id, id) [delete: no action, update: no action]
 
 ref activity_interval_activity_id_activity_id_fk: fitness.activity_interval.activity_id > fitness.activity.id [delete: cascade, update: no action]
+
+ref activity_interval_source_provider_provider_id_fk: fitness.activity_interval.source_provider > fitness.provider.id [delete: no action, update: no action]
+
+ref activity_interval_source_activity_id_activity_id_fk: fitness.activity_interval.source_activity_id > fitness.activity.id [delete: set null, update: no action]
 
 ref climbing_attempt_climbing_entry_id_climbing_entry_id_fk: fitness.climbing_attempt.climbing_entry_id > fitness.climbing_entry.id [delete: cascade, update: no action]
 

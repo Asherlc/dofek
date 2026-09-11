@@ -4,6 +4,19 @@ import { CyclingTrainingMetricsRepository } from "./cycling-training-metrics-rep
 const userId = "00000000-0000-4000-8000-000000000001";
 const activityId = "00000000-0000-4000-8000-000000000010";
 const memberActivityId = "00000000-0000-4000-8000-000000000011";
+const unknownIntervalSource = {
+  source_kind: null,
+  source_provider: null,
+  source_activity_id: null,
+  segment_type: null,
+  target_intensity: null,
+  target_zone: null,
+  target_cadence_rpm: null,
+  target_power_watts: null,
+  target_resistance: null,
+  work_recovery_kind: null,
+  raw: null,
+};
 
 function queryText(query: unknown): string {
   if (typeof query !== "object" || query === null || !("queryChunks" in query)) {
@@ -86,6 +99,17 @@ describe("CyclingTrainingMetricsRepository", () => {
           interval_type: "work",
           started_at: "2026-06-15T15:10:00.000Z",
           ended_at: "2026-06-15T15:30:00.000Z",
+          source_kind: "provider_recorded",
+          source_provider: "peloton",
+          source_activity_id: memberActivityId,
+          segment_type: "power_zone",
+          target_intensity: 0.96,
+          target_zone: 4,
+          target_cadence_rpm: 95,
+          target_power_watts: 240,
+          target_resistance: 38,
+          work_recovery_kind: "work",
+          raw: { source: "fixture" },
         },
         {
           member_activity_id: activityId,
@@ -94,6 +118,17 @@ describe("CyclingTrainingMetricsRepository", () => {
           interval_type: "work",
           started_at: "2026-06-15T15:10:00.000Z",
           ended_at: "2026-06-15T15:30:00.000Z",
+          source_kind: "inferred",
+          source_provider: null,
+          source_activity_id: null,
+          segment_type: null,
+          target_intensity: null,
+          target_zone: null,
+          target_cadence_rpm: null,
+          target_power_watts: null,
+          target_resistance: null,
+          work_recovery_kind: null,
+          raw: null,
         },
       ]);
     const query = vi.fn(async (_schema, queryText: string) => {
@@ -179,6 +214,17 @@ describe("CyclingTrainingMetricsRepository", () => {
             start_offset_seconds: 600,
             end_offset_seconds: 1800,
             source_member_activity_ids: [activityId, memberActivityId],
+            source_kind: "provider_recorded",
+            source_provider: "peloton",
+            source_activity_id: memberActivityId,
+            segment_type: "power_zone",
+            target_intensity: 0.96,
+            target_zone: 4,
+            target_cadence_rpm: 95,
+            target_power_watts: 240,
+            target_resistance: 38,
+            work_recovery_kind: "work",
+            raw: { source: "fixture" },
           }),
         ],
       },
@@ -301,6 +347,7 @@ describe("CyclingTrainingMetricsRepository", () => {
           interval_type: "recovery",
           started_at: "2026-06-15T15:20:00.000Z",
           ended_at: "2026-06-15T15:25:00.000Z",
+          ...unknownIntervalSource,
         },
         {
           member_activity_id: memberActivityId,
@@ -309,6 +356,7 @@ describe("CyclingTrainingMetricsRepository", () => {
           interval_type: "warm_up",
           started_at: "2026-06-15T15:00:00.000Z",
           ended_at: "2026-06-15T15:10:00.000Z",
+          ...unknownIntervalSource,
         },
         {
           member_activity_id: memberActivityId,
@@ -317,6 +365,7 @@ describe("CyclingTrainingMetricsRepository", () => {
           interval_type: "cooldown",
           started_at: "2026-06-15T15:50:00.000Z",
           ended_at: null,
+          ...unknownIntervalSource,
         },
       ]);
     const query = vi.fn(async (_schema, queryText: string) => {

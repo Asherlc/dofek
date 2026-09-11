@@ -429,9 +429,42 @@ export const activityInterval = fitness.table(
     intervalType: text("interval_type"),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
     endedAt: timestamp("ended_at", { withTimezone: true }),
+    sourceKind: text("source_kind", { enum: ["provider_recorded", "inferred"] }),
+    sourceProvider: text("source_provider").references(() => provider.id),
+    sourceActivityId: uuid("source_activity_id").references(() => activity.id, {
+      onDelete: "set null",
+    }),
+    segmentType: text("segment_type"),
+    targetIntensity: real("target_intensity"),
+    targetZone: integer("target_zone"),
+    targetCadenceRpm: real("target_cadence_rpm"),
+    targetPowerWatts: real("target_power_watts"),
+    targetResistance: real("target_resistance"),
+    workRecoveryKind: text("work_recovery_kind", { enum: ["work", "recovery"] }),
+    raw: jsonb("raw"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index("activity_interval_activity_idx").on(table.activityId, table.intervalIndex)],
+  (table) => [
+    index("activity_interval_activity_idx").on(table.activityId, table.intervalIndex),
+    check(
+      "activity_interval_source_kind",
+      sql`${table.sourceKind} IS NULL OR ${table.sourceKind} IN ('provider_recorded', 'inferred')`,
+    ),
+    check(
+      "activity_interval_inferred_targets",
+      sql`${table.sourceKind} IS DISTINCT FROM 'inferred' OR (
+        ${table.targetIntensity} IS NULL
+        AND ${table.targetZone} IS NULL
+        AND ${table.targetCadenceRpm} IS NULL
+        AND ${table.targetPowerWatts} IS NULL
+        AND ${table.targetResistance} IS NULL
+      )`,
+    ),
+    check(
+      "activity_interval_work_recovery_kind",
+      sql`${table.workRecoveryKind} IS NULL OR ${table.workRecoveryKind} IN ('work', 'recovery')`,
+    ),
+  ],
 );
 
 // ============================================================

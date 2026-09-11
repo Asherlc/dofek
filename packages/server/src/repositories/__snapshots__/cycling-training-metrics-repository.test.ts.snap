@@ -119,20 +119,32 @@ exports[`CyclingTrainingMetricsRepository > computes a paginated activity from c
             "average_cadence_rpm": 90,
             "average_heart_rate_bpm": 140,
             "average_power_watts": 200,
-            "completion_pct": null,
+            "completion_pct": 83.3,
             "duration_seconds": 1200,
             "end_offset_seconds": 1800,
             "index": 1,
             "label": "20 minute effort",
             "normalized_power_watts": 200,
+            "raw": {
+              "source": "fixture",
+            },
+            "segment_type": "power_zone",
             "source": "recorded",
+            "source_activity_id": "00000000-0000-4000-8000-000000000011",
+            "source_kind": "provider_recorded",
             "source_member_activity_ids": [
               "00000000-0000-4000-8000-000000000010",
               "00000000-0000-4000-8000-000000000011",
             ],
+            "source_provider": "peloton",
             "start_offset_seconds": 600,
-            "target_power_watts": null,
+            "target_cadence_rpm": 95,
+            "target_intensity": 0.96,
+            "target_power_watts": 240,
+            "target_resistance": 38,
+            "target_zone": 4,
             "type": "work",
+            "work_recovery_kind": "work",
           },
         ],
         "power": {
@@ -272,7 +284,7 @@ exports[`CyclingTrainingMetricsRepository > computes a paginated activity from c
 exports[`CyclingTrainingMetricsRepository > computes a paginated activity from canonical streams and historical settings 2`] = `
 [
   "[{"value":["\\n        SELECT *\\n        FROM fitness.sport_settings\\n        WHERE user_id = "]},"00000000-0000-4000-8000-000000000001",{"value":["\\n          AND sport = "]},"cycling",{"value":["\\n        ORDER BY effective_from DESC\\n      "]}]",
-  "[{"value":["\\n              SELECT\\n                activity_id::text AS member_activity_id,\\n                interval_index,\\n                label,\\n                interval_type,\\n                started_at,\\n                ended_at\\n              FROM fitness.activity_interval\\n              WHERE activity_id IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"00000000-0000-4000-8000-000000000010",{"value":["::uuid"]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"00000000-0000-4000-8000-000000000011",{"value":["::uuid"]}]}]},{"value":[")\\n              ORDER BY activity_id, interval_index\\n            "]}]",
+  "[{"value":["\\n              SELECT\\n                activity_id::text AS member_activity_id,\\n                interval_index,\\n                label,\\n                interval_type,\\n                started_at,\\n                ended_at,\\n                source_kind,\\n                source_provider,\\n                source_activity_id,\\n                segment_type,\\n                target_intensity,\\n                target_zone,\\n                target_cadence_rpm,\\n                target_power_watts,\\n                target_resistance,\\n                work_recovery_kind,\\n                raw\\n              FROM fitness.activity_interval\\n              WHERE activity_id IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"00000000-0000-4000-8000-000000000010",{"value":["::uuid"]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"00000000-0000-4000-8000-000000000011",{"value":["::uuid"]}]}]},{"value":[")\\n              ORDER BY activity_id, interval_index\\n            "]}]",
 ]
 `;
 
@@ -480,13 +492,23 @@ exports[`CyclingTrainingMetricsRepository > preserves limited estimated-power, t
             "index": 1,
             "label": "Warm up",
             "normalized_power_watts": null,
+            "raw": null,
+            "segment_type": null,
             "source": "recorded",
+            "source_activity_id": null,
+            "source_kind": "unknown",
             "source_member_activity_ids": [
               "00000000-0000-4000-8000-000000000011",
             ],
+            "source_provider": null,
             "start_offset_seconds": 0,
+            "target_cadence_rpm": null,
+            "target_intensity": null,
             "target_power_watts": null,
+            "target_resistance": null,
+            "target_zone": null,
             "type": "warmup",
+            "work_recovery_kind": null,
           },
           {
             "average_cadence_rpm": null,
@@ -498,13 +520,23 @@ exports[`CyclingTrainingMetricsRepository > preserves limited estimated-power, t
             "index": 2,
             "label": "Easy",
             "normalized_power_watts": null,
+            "raw": null,
+            "segment_type": null,
             "source": "recorded",
+            "source_activity_id": null,
+            "source_kind": "unknown",
             "source_member_activity_ids": [
               "00000000-0000-4000-8000-000000000011",
             ],
+            "source_provider": null,
             "start_offset_seconds": 1200,
+            "target_cadence_rpm": null,
+            "target_intensity": null,
             "target_power_watts": null,
+            "target_resistance": null,
+            "target_zone": null,
             "type": "recovery",
+            "work_recovery_kind": null,
           },
         ],
         "power": {
@@ -784,7 +816,7 @@ exports[`CyclingTrainingMetricsRepository > returns a stable cursor and never do
 exports[`CyclingTrainingMetricsRepository > returns a stable cursor and never double-counts the lookahead activity 2`] = `
 [
   "[{"value":["\\n        SELECT *\\n        FROM fitness.sport_settings\\n        WHERE user_id = "]},"00000000-0000-4000-8000-000000000001",{"value":["\\n          AND sport = "]},"cycling",{"value":["\\n        ORDER BY effective_from DESC\\n      "]}]",
-  "[{"value":["\\n              SELECT\\n                activity_id::text AS member_activity_id,\\n                interval_index,\\n                label,\\n                interval_type,\\n                started_at,\\n                ended_at\\n              FROM fitness.activity_interval\\n              WHERE activity_id IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"00000000-0000-4000-8000-000000000010",{"value":["::uuid"]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"00000000-0000-4000-8000-000000000011",{"value":["::uuid"]}]}]},{"value":[")\\n              ORDER BY activity_id, interval_index\\n            "]}]",
+  "[{"value":["\\n              SELECT\\n                activity_id::text AS member_activity_id,\\n                interval_index,\\n                label,\\n                interval_type,\\n                started_at,\\n                ended_at,\\n                source_kind,\\n                source_provider,\\n                source_activity_id,\\n                segment_type,\\n                target_intensity,\\n                target_zone,\\n                target_cadence_rpm,\\n                target_power_watts,\\n                target_resistance,\\n                work_recovery_kind,\\n                raw\\n              FROM fitness.activity_interval\\n              WHERE activity_id IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"00000000-0000-4000-8000-000000000010",{"value":["::uuid"]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"00000000-0000-4000-8000-000000000011",{"value":["::uuid"]}]}]},{"value":[")\\n              ORDER BY activity_id, interval_index\\n            "]}]",
 ]
 `;
 
@@ -1197,7 +1229,7 @@ exports[`CyclingTrainingMetricsRepository > uses the setting effective on each a
 exports[`CyclingTrainingMetricsRepository > uses the setting effective on each activity date and explains missing FTP 2`] = `
 [
   "[{"value":["\\n        SELECT *\\n        FROM fitness.sport_settings\\n        WHERE user_id = "]},"00000000-0000-4000-8000-000000000001",{"value":["\\n          AND sport = "]},"cycling",{"value":["\\n        ORDER BY effective_from DESC\\n      "]}]",
-  "[{"value":["\\n              SELECT\\n                activity_id::text AS member_activity_id,\\n                interval_index,\\n                label,\\n                interval_type,\\n                started_at,\\n                ended_at\\n              FROM fitness.activity_interval\\n              WHERE activity_id IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"00000000-0000-4000-8000-000000000012",{"value":["::uuid"]}]}]},{"value":[")\\n              ORDER BY activity_id, interval_index\\n            "]}]",
+  "[{"value":["\\n              SELECT\\n                activity_id::text AS member_activity_id,\\n                interval_index,\\n                label,\\n                interval_type,\\n                started_at,\\n                ended_at,\\n                source_kind,\\n                source_provider,\\n                source_activity_id,\\n                segment_type,\\n                target_intensity,\\n                target_zone,\\n                target_cadence_rpm,\\n                target_power_watts,\\n                target_resistance,\\n                work_recovery_kind,\\n                raw\\n              FROM fitness.activity_interval\\n              WHERE activity_id IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"00000000-0000-4000-8000-000000000012",{"value":["::uuid"]}]}]},{"value":[")\\n              ORDER BY activity_id, interval_index\\n            "]}]",
 ]
 `;
 

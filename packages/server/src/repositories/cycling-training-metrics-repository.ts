@@ -11,6 +11,11 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import {
+  type ComparableInterval,
+  inferIntervalResult,
+  mergeComparableIntervals,
+} from "./intervals-repository.ts";
 import { SportSettingsRepository, type SportSettingsRow } from "./sport-settings-repository.ts";
 
 const activityRowSchema = z.object({
@@ -64,6 +69,17 @@ const intervalRowSchema = z.object({
   interval_type: z.string().nullable(),
   started_at: timestampStringSchema,
   ended_at: timestampStringSchema.nullable(),
+  source_kind: z.enum(["provider_recorded", "inferred"]).nullable(),
+  source_provider: z.string().nullable(),
+  source_activity_id: z.string().uuid().nullable(),
+  segment_type: z.string().nullable(),
+  target_intensity: z.coerce.number().nullable(),
+  target_zone: z.coerce.number().int().nullable(),
+  target_cadence_rpm: z.coerce.number().nullable(),
+  target_power_watts: z.coerce.number().nullable(),
+  target_resistance: z.coerce.number().nullable(),
+  work_recovery_kind: z.enum(["work", "recovery"]).nullable(),
+  raw: z.unknown().nullable(),
 });
 
 const cursorSchema = z.object({
@@ -95,6 +111,7 @@ export interface CyclingTrainingMetricsInput {
 
 interface RecordedIntervalEvidence {
   input: CyclingWorkoutIntervalInput;
+  interval: ComparableInterval;
   memberActivityIds: string[];
 }
 
@@ -173,37 +190,47 @@ function recordedIntervalsForActivity(
 ): RecordedIntervalEvidence[] {
   const members = new Set(activity.member_activity_ids);
   const startedAt = Date.parse(activity.started_at);
-  const grouped = new Map<string, RecordedIntervalEvidence>();
-  for (const row of rows) {
-    if (!members.has(row.member_activity_id) || row.ended_at == null) continue;
+  const comparable = rows.flatMap((row): ComparableInterval[] => {
+    if (!members.has(row.member_activity_id) || row.ended_at == null) return [];
     const startOffsetSeconds = Math.round((Date.parse(row.started_at) - startedAt) / 1_000);
     const endOffsetSeconds = Math.round((Date.parse(row.ended_at) - startedAt) / 1_000);
-    if (endOffsetSeconds <= startOffsetSeconds) continue;
-    const type = normalizeIntervalType(row.interval_type);
-    const key = `${startOffsetSeconds}:${endOffsetSeconds}:${type}:${row.label ?? ""}`;
-    const existing = grouped.get(key);
-    if (existing) {
-      existing.memberActivityIds.push(row.member_activity_id);
-      existing.memberActivityIds.sort();
-      continue;
-    }
-    grouped.set(key, {
-      input: {
-        index: row.interval_index,
-        type,
-        label: row.label,
-        startOffsetSeconds,
-        endOffsetSeconds,
-        targetPowerWatts: null,
-      },
-      memberActivityIds: [row.member_activity_id],
-    });
-  }
-  return [...grouped.values()].sort(
-    (left, right) =>
-      left.input.startOffsetSeconds - right.input.startOffsetSeconds ||
-      left.input.index - right.input.index,
-  );
+    if (endOffsetSeconds <= startOffsetSeconds) return [];
+    const interval: ComparableInterval = {
+      intervalIndex: row.interval_index,
+      source: row.source_kind ?? "unknown",
+      startOffsetSeconds,
+      endOffsetSeconds,
+      label: row.label,
+      intervalType: row.interval_type,
+      segmentType: row.segment_type,
+      workRecoveryKind: row.work_recovery_kind,
+      sourceProvider: row.source_provider,
+      sourceActivityId: row.source_activity_id,
+      sourceMemberActivityIds: [row.member_activity_id],
+      targetIntensity: row.target_intensity,
+      targetZone: row.target_zone,
+      targetCadenceRpm: row.target_cadence_rpm,
+      targetPowerWatts: row.target_power_watts,
+      targetResistance: row.target_resistance,
+      raw: row.raw,
+    };
+    return [interval.source === "inferred" ? inferIntervalResult(interval) : interval];
+  });
+
+  return mergeComparableIntervals(comparable).map((interval) => ({
+    input: {
+      index: interval.intervalIndex,
+      type: normalizeIntervalType(
+        interval.workRecoveryKind ?? interval.segmentType ?? interval.intervalType ?? null,
+      ),
+      label: interval.label,
+      startOffsetSeconds: interval.startOffsetSeconds,
+      endOffsetSeconds: interval.endOffsetSeconds,
+      targetPowerWatts: interval.targetPowerWatts,
+    },
+    interval,
+    memberActivityIds: interval.sourceMemberActivityIds,
+  }));
 }
 
 function snakeCoverage(coverage: CyclingWorkoutMetrics["coverage"]["power"]) {
@@ -277,9 +304,10 @@ function snakeMetrics(
       const evidence = recordedIntervals.find(
         (candidate) =>
           candidate.input.startOffsetSeconds === interval.startOffsetSeconds &&
-          candidate.input.endOffsetSeconds === interval.endOffsetSeconds &&
-          candidate.input.type === interval.type,
+          candidate.input.endOffsetSeconds === interval.endOffsetSeconds,
       );
+      const sourceKind = evidence?.interval.source ?? "inferred";
+      const inferred = sourceKind === "inferred";
       return {
         index: interval.index,
         type: interval.type,
@@ -292,9 +320,19 @@ function snakeMetrics(
         normalized_power_watts: interval.normalizedPowerWatts,
         average_heart_rate_bpm: interval.averageHeartRateBpm,
         average_cadence_rpm: interval.averageCadenceRpm,
-        target_power_watts: interval.targetPowerWatts,
-        completion_pct: interval.completionPct,
+        source_kind: sourceKind,
+        source_provider: evidence?.interval.sourceProvider ?? null,
+        source_activity_id: evidence?.interval.sourceActivityId ?? null,
+        segment_type: evidence?.interval.segmentType ?? null,
+        target_intensity: inferred ? null : (evidence?.interval.targetIntensity ?? null),
+        target_zone: inferred ? null : (evidence?.interval.targetZone ?? null),
+        target_cadence_rpm: inferred ? null : (evidence?.interval.targetCadenceRpm ?? null),
+        target_power_watts: inferred ? null : interval.targetPowerWatts,
+        target_resistance: inferred ? null : (evidence?.interval.targetResistance ?? null),
+        work_recovery_kind: evidence?.interval.workRecoveryKind ?? null,
+        completion_pct: inferred ? null : interval.completionPct,
         source_member_activity_ids: evidence?.memberActivityIds ?? [],
+        raw: evidence?.interval.raw ?? null,
       };
     }),
     unavailable_reasons: metrics.unavailableReasons.map(({ metric, reason }) => ({
@@ -515,7 +553,18 @@ export class CyclingTrainingMetricsRepository {
                 label,
                 interval_type,
                 started_at,
-                ended_at
+                ended_at,
+                source_kind,
+                source_provider,
+                source_activity_id,
+                segment_type,
+                target_intensity,
+                target_zone,
+                target_cadence_rpm,
+                target_power_watts,
+                target_resistance,
+                work_recovery_kind,
+                raw
               FROM fitness.activity_interval
               WHERE activity_id IN (${memberActivityIdList})
               ORDER BY activity_id, interval_index

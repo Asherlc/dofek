@@ -156,7 +156,24 @@ describe("summarizeSegment", () => {
 // ---------------------------------------------------------------------------
 
 function makeDb(rows: Record<string, unknown>[] = []) {
-  return { execute: vi.fn().mockResolvedValueOnce(rows) };
+  return {
+    execute: vi.fn().mockResolvedValueOnce(
+      rows.map((row) => ({
+        source_kind: null,
+        source_provider: null,
+        source_activity_id: null,
+        segment_type: null,
+        target_intensity: null,
+        target_zone: null,
+        target_cadence_rpm: null,
+        target_power_watts: null,
+        target_resistance: null,
+        work_recovery_kind: null,
+        raw: null,
+        ...row,
+      })),
+    ),
+  };
 }
 
 describe("IntervalsRepository", () => {
