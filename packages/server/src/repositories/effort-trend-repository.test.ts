@@ -139,4 +139,78 @@ describe("EffortTrendRepository", () => {
       }),
     );
   });
+
+  it("preserves the complete weak discovery specification in comparison", async () => {
+    const weakSpecification = {
+      namespace: "garmin",
+      normalizedValue: "tempo",
+      canonicalType: "running",
+      modality: "road",
+      durationBucket: 6,
+    };
+    const compare = vi.fn().mockResolvedValue(comparisonResult([]));
+    const find = vi.fn().mockResolvedValue({
+      groups: [
+        {
+          effortId: "activity_name:weak_similarity:opaque-id",
+          kind: "activity_name",
+          canonicalTypes: ["running"],
+          weakSpecification,
+          identityEvidence: [{ namespace: "garmin", value: " Tempo " }],
+        },
+      ],
+      nextCursor: null,
+    });
+    await new EffortTrendRepository({ compare }, { find }).get({
+      effortId: "activity_name:weak_similarity:opaque-id",
+      startDate: "2026-01-01",
+      endDate: "2026-12-31",
+    });
+    expect(compare).toHaveBeenCalledWith(
+      expect.objectContaining({
+        equivalence: {
+          kind: "activity_name",
+          canonicalType: "running",
+          value: "tempo",
+          asserted: false,
+          weakSpecification,
+        },
+      }),
+    );
+    expect(find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        effortId: "activity_name:weak_similarity:opaque-id",
+        effortKind: "activity_name",
+        limit: 1,
+      }),
+    );
+  });
+
+  it.each([
+    { flags: [] },
+    { flags: ["strength_volume_coverage_partial"] },
+    { flags: ["climbing_attempt_coverage_partial"] },
+  ])(
+    "does not label non-cycling repetitions as having limited cycling samples: $flags",
+    async ({ flags }) => {
+      const row = performance(FIRST_ID, "2026-01-01", 200, flags);
+      const compare = vi.fn().mockResolvedValue({
+        ...comparisonResult([]),
+        performances: [
+          { ...row, metrics: { ...row.metrics, cycling: null, cycling_effort: null } },
+        ],
+      });
+      const result = await new EffortTrendRepository({ compare }).get({
+        equivalence: { kind: "activity_name", canonicalType: "running", value: "Tempo" },
+        startDate: "2026-01-01",
+        endDate: "2026-12-31",
+      });
+      expect(result.repetitions).toHaveLength(1);
+      expect(result.repetitions[0]?.quality.flags).toEqual(flags);
+      expect(result.caveats).not.toContain("Some repetitions have limited sample coverage");
+      expect(result.repetitions[0]?.caveats).not.toContain(
+        "This repetition has limited sample coverage",
+      );
+    },
+  );
 });

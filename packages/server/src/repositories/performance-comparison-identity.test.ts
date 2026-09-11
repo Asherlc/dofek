@@ -49,6 +49,71 @@ const repository = () =>
   new PerformanceComparisonIdentity({ execute: vi.fn() }, { query: vi.fn() }, userId);
 
 describe("PerformanceComparisonIdentity", () => {
+  it.each([
+    { change: {}, matches: true },
+    { change: { namespace: null }, matches: false },
+    { change: { namespace: "other" }, matches: false },
+    { change: { normalized_value: "other" }, matches: false },
+    { change: { kind: "provider_workout" }, matches: false },
+  ] as const)("matches weak recorded identity with $change", ({ change, matches }) => {
+    const row = identity({ kind: "activity_name", normalized_value: "tempo", ...change });
+    const result = repository().matchingWeak(
+      {
+        namespace: "zwift",
+        normalizedValue: "tempo",
+        canonicalType: "cycling",
+        modality: "outdoor",
+        durationBucket: 6,
+      },
+      [row],
+      [
+        {
+          ...activity(first),
+          started_at: "2026-01-01T12:00:00Z",
+          ended_at: "2026-01-01T12:30:00Z",
+        },
+      ],
+    );
+    expect(result).toEqual(matches ? [row] : []);
+  });
+
+  it.each([
+    { seconds: 1799, modality: null, canonical_type: "cycling", matches: false },
+    { seconds: 1800, modality: null, canonical_type: "cycling", matches: true },
+    { seconds: 2099.9, modality: null, canonical_type: "cycling", matches: true },
+    { seconds: 2100, modality: null, canonical_type: "cycling", matches: false },
+    { seconds: null, modality: null, canonical_type: "cycling", matches: false },
+    { seconds: 1800, modality: "outdoor", canonical_type: "cycling", matches: false },
+    { seconds: 1800, modality: null, canonical_type: "running", matches: false },
+  ])(
+    "keeps exact weak duration/type/modality constraints: $seconds/$modality/$canonical_type",
+    ({ seconds, modality, canonical_type, matches }) => {
+      const row = identity({ kind: "activity_name", namespace: null, normalized_value: "tempo" });
+      const result = repository().matchingWeak(
+        {
+          namespace: null,
+          normalizedValue: "tempo",
+          canonicalType: "cycling",
+          modality: null,
+          durationBucket: 6,
+        },
+        [row],
+        [
+          {
+            ...activity(first),
+            canonical_type,
+            modality,
+            started_at: "2026-01-01T12:00:00Z",
+            ended_at:
+              seconds === null
+                ? null
+                : new Date(Date.parse("2026-01-01T12:00:00Z") + seconds * 1000).toISOString(),
+          },
+        ],
+      );
+      expect(result).toEqual(matches ? [row] : []);
+    },
+  );
   it("rejects conflicting exact identities unless a specific namespaced value is selected", () => {
     const rows = [identity(), identity({ value: "Template-B" })];
     expect(() => repository().strongest(rows)).toThrow(/Conflicting exact identities/);

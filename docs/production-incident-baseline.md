@@ -26325,3 +26325,30 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   before relying on long integration runs. Capture Docker events and resource
   usage during the restart, following the existing
   [shared Docker resource runbook](testing.md#shared-docker-vm-resource-pressure).
+
+## 2026-09-10 — Docker disk exhaustion interrupted Task 9 fix validation
+
+- **Impact:** Local integration validation stopped during Postgres template
+  creation/migration. No production change or production impact was observed.
+- **Failing command:** `rtk pnpm test:integration -- packages/server/src/repositories/performance-comparison-repository.integration.test.ts packages/server/src/repositories/repeated-efforts-repository.integration.test.ts --retry 0`.
+  First fatal line: `error: could not create file "base/231181/235293": No space left on device`.
+- **Evidence/cause:** `docker exec suave-platypus-db-1 df -h /home/postgres/pgdata`
+  showed the shared 59 GB Docker filesystem at 100%, initially with 60 MB and
+  later 52 KB free. `docker system df` showed no reclaimable build cache or
+  unused images. Current-workspace Postgres contained abandoned integration
+  template databases, approximately 26 MB each; their originating host PIDs
+  had exited. Disk exhaustion directly prevented database creation; the wider
+  cause of recurring shared Docker growth remains unresolved.
+- **Mitigation:** `rtk docker builder prune -af` reclaimed 0 B. Explicitly
+  dropped 34 inactive test templates from `suave-platypus-db-1` in two batches,
+  after verifying no connections or originating processes for those targets.
+  These are disposable fixtures, recreated by the test setup. Application
+  databases and other workspaces were preserved. The second batch restored
+  885 MB free. PostgreSQL documents database removal and connection restrictions
+  in [`DROP DATABASE`](https://www.postgresql.org/docs/current/sql-dropdatabase.html).
+- **Validation/risk:** The two focused suites passed all 20 tests after the
+  first cleanup, without added sleeps or retries. Disk exhaustion recurred on
+  the next validation attempt. Shared Docker capacity and abandoned-template
+  cleanup remain follow-up work; no runtime timeout, retry, or resource limit
+  was changed. Use the [Docker disk recovery runbook](testing.md#docker-disk-recovery)
+  and verify template ownership/inactivity before future cleanup.

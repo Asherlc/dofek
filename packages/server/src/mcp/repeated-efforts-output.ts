@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   EFFORT_IDENTITY_KINDS,
   EQUIVALENCE_STRENGTHS,
+  weakEffortSpecificationSchema,
 } from "../repositories/repeated-effort-types.ts";
 
 const identityEvidenceSchema = z.strictObject({
@@ -41,6 +42,7 @@ export const repeatedEffortsResultSchema = z.strictObject({
       ),
       identityEvidence: z.array(identityEvidenceSchema),
       strength: z.enum(EQUIVALENCE_STRENGTHS),
+      weakSpecification: weakEffortSpecificationSchema.optional(),
       assumptions: z.array(z.string()),
       qualityFlags: z.array(z.string()),
     }),

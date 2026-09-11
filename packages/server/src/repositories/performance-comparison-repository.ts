@@ -292,6 +292,7 @@ function outputKey(key: PerformanceEquivalence) {
       canonical_type: key.canonicalType,
       value: key.value,
       ...(key.asserted === undefined ? {} : { asserted: key.asserted }),
+      ...(key.weakSpecification ? { weak_specification: key.weakSpecification } : {}),
     };
   }
   if (key.kind === "strength_exercise_id") {
@@ -477,23 +478,27 @@ export class PerformanceComparisonRepository {
     const range = sql`${localDate} BETWEEN ${input.startDate}::date AND ${input.endDate}::date`;
     const filters = filterPredicate(input);
     const modelKey = isIdentityEquivalence(equivalence.key) ? equivalence.key : null;
-    const scope = modelKey
-      ? await executeWithSchema(
-          this.#db,
-          activityRowSchema,
-          activitySelect(
-            this.#userId,
-            this.#timezone,
-            sql`${range} AND ${filters}`,
-            "performance-comparison:scope",
-            sql`ORDER BY a.started_at, a.id LIMIT 2001`,
-          ),
-        )
-      : [];
+    const weakSpecification =
+      equivalence.key.kind === "activity_name" ? equivalence.key.weakSpecification : undefined;
+    const scope =
+      modelKey || weakSpecification
+        ? await executeWithSchema(
+            this.#db,
+            activityRowSchema,
+            activitySelect(
+              this.#userId,
+              this.#timezone,
+              sql`${range} AND ${filters}`,
+              "performance-comparison:scope",
+              sql`ORDER BY a.started_at, a.id LIMIT 2001`,
+            ),
+          )
+        : [];
     if (scope.length > 2000)
       throw new Error("Too many activities; narrow the comparison date range or filters.");
     const scopedIdentities =
-      modelKey && !["canonical_route", "user_defined_benchmark"].includes(modelKey.kind)
+      weakSpecification ||
+      (modelKey && !["canonical_route", "user_defined_benchmark"].includes(modelKey.kind))
         ? await identityRepository.identities(scope)
         : [];
     if (modelKey && !input.equivalence) {
@@ -509,7 +514,11 @@ export class PerformanceComparisonRepository {
         }
       }
     }
-    const identityRows = modelKey ? identityRepository.matching(modelKey, scopedIdentities) : [];
+    const identityRows = weakSpecification
+      ? identityRepository.matchingWeak(weakSpecification, scopedIdentities, scope)
+      : modelKey
+        ? identityRepository.matching(modelKey, scopedIdentities)
+        : [];
     const routeMatches =
       modelKey?.kind === "canonical_route"
         ? identityRepository.routeMatches(
@@ -529,14 +538,15 @@ export class PerformanceComparisonRepository {
       ...routeMatches.map((row) => row.activityId),
       ...benchmarkRows.map((row) => row.canonical_activity_id),
     ]);
-    const identity = modelKey
-      ? matchedIds.length
-        ? sql`a.id IN (${sql.join(
-            matchedIds.map((id) => sql`${id}::uuid`),
-            sql`, `,
-          )})`
-        : sql`false`
-      : equivalencePredicate(equivalence.key);
+    const identity =
+      modelKey || weakSpecification
+        ? matchedIds.length
+          ? sql`a.id IN (${sql.join(
+              matchedIds.map((id) => sql`${id}::uuid`),
+              sql`, `,
+            )})`
+          : sql`false`
+        : equivalencePredicate(equivalence.key);
     const evidenceFor = (activityId?: string) =>
       describeComparisonEvidence(equivalence, identityRows, this.#userId, activityId);
     const {

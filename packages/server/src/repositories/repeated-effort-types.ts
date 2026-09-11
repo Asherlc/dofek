@@ -1,3 +1,15 @@
+import { z } from "zod";
+
+/** Complete key for discovery's weak name/type/modality/five-minute groups. */
+export const weakEffortSpecificationSchema = z.strictObject({
+  namespace: z.string().nullable(),
+  normalizedValue: z.string().min(1),
+  canonicalType: z.string().min(1),
+  modality: z.string().nullable(),
+  durationBucket: z.number().int().nonnegative(),
+});
+export type WeakEffortSpecification = z.infer<typeof weakEffortSpecificationSchema>;
+
 export const EFFORT_IDENTITY_KINDS = [
   "provider_workout",
   "provider_route",

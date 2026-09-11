@@ -1,7 +1,10 @@
 import { z } from "zod";
 import { comparisonIdentityRowSchema } from "../repositories/performance-comparison-identity.ts";
 import { identityEquivalenceSchema } from "../repositories/performance-comparison-types.ts";
-import { EQUIVALENCE_STRENGTHS } from "../repositories/repeated-effort-types.ts";
+import {
+  EQUIVALENCE_STRENGTHS,
+  weakEffortSpecificationSchema,
+} from "../repositories/repeated-effort-types.ts";
 
 const identityBundleSchema = z.strictObject({
   identity: z.strictObject({
@@ -162,6 +165,7 @@ const equivalenceKeySchema = z.union([
       canonical_type: z.string(),
       value: z.string(),
       asserted: z.boolean().optional(),
+      weak_specification: weakEffortSpecificationSchema.optional(),
     })
     .strict(),
 ]);

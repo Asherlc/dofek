@@ -13,6 +13,7 @@ import {
   EFFORT_IDENTITY_KINDS,
   EQUIVALENCE_STRENGTHS,
   type EquivalenceStrength,
+  type WeakEffortSpecification,
 } from "./repeated-effort-types.ts";
 import { evaluateRouteMatch } from "./route-equivalence.ts";
 
@@ -156,6 +157,34 @@ export class PerformanceComparisonIdentity {
     return null;
   }
 
+  matchingWeak(
+    specification: WeakEffortSpecification,
+    rows: ComparisonIdentityRow[],
+    activities: Array<Activity & { started_at: string; ended_at: string | null }>,
+  ): ComparisonIdentityRow[] {
+    const eligibleIds = new Set(
+      activities
+        .filter((activity) => {
+          if (activity.ended_at === null) return false;
+          const elapsed = (Date.parse(activity.ended_at) - Date.parse(activity.started_at)) / 1000;
+          return (
+            activity.canonical_type === specification.canonicalType &&
+            activity.modality === specification.modality &&
+            elapsed > 0 &&
+            Math.floor(elapsed / 300) === specification.durationBucket
+          );
+        })
+        .map((activity) => activity.activity_id),
+    );
+    return rows.filter(
+      (row) =>
+        row.kind === "activity_name" &&
+        row.namespace === specification.namespace &&
+        row.normalized_value === specification.normalizedValue &&
+        eligibleIds.has(row.canonical_activity_id),
+    );
+  }
+
   matching(key: IdentityEquivalence, rows: ComparisonIdentityRow[]) {
     const kind = key.kind === "provider_workout_id" ? "provider_workout" : key.kind;
     const namespace = "provider" in key ? key.provider : "namespace" in key ? key.namespace : null;
@@ -295,10 +324,16 @@ export function resolveExplicit(key: PerformanceEquivalence): ResolvedEquivalenc
     return {
       key,
       basis: "explicit",
-      method: "exact_normalized_activity_name",
+      method: key.weakSpecification
+        ? "discovery_weak_name_type_modality_duration"
+        : "exact_normalized_activity_name",
       confidence: "user_asserted",
       assumptions: [
-        "The caller asserted that activities with this exact normalized name and canonical type are equivalent.",
+        key.weakSpecification
+          ? "Discovery requires the same identity namespace, normalized name, canonical type, modality and five-minute elapsed-duration bucket; this is weak similarity only."
+          : key.asserted === false
+            ? "Normalized name and canonical type are weak similarity only."
+            : "The caller asserted that activities with this exact normalized name and canonical type are equivalent.",
       ],
     };
   }
@@ -355,19 +390,24 @@ export function describeComparisonEvidence(
           : modelKey?.kind === "user_defined_benchmark"
             ? userId
             : equivalence.key.kind === "activity_name"
-              ? equivalence.key.canonicalType
+              ? equivalence.key.weakSpecification
+                ? equivalence.key.weakSpecification.namespace
+                : equivalence.key.canonicalType
               : null;
   const defaultStrength: EquivalenceStrength =
     modelKey?.kind === "canonical_route"
       ? "strong_inferred"
       : modelKey?.kind === "user_defined_benchmark"
         ? "caller_asserted"
-        : equivalence.key.kind === "activity_name" && equivalence.key.asserted === false
+        : equivalence.key.kind === "activity_name" &&
+            (equivalence.key.asserted === false || equivalence.key.weakSpecification)
           ? "weak_similarity"
           : equivalence.confidence === "user_asserted"
             ? "caller_asserted"
             : "exact";
   const strengthFor = (activityId?: string): EquivalenceStrength => {
+    if (equivalence.key.kind === "activity_name" && equivalence.key.weakSpecification)
+      return "weak_similarity";
     const rows = activityId
       ? identityRows.filter((row) => row.canonical_activity_id === activityId)
       : identityRows;

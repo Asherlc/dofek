@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { WeakEffortSpecification } from "./repeated-effort-types.ts";
 export interface ResolvedEquivalence {
   key: PerformanceEquivalence;
   basis: "derived_from_reference" | "explicit";
@@ -47,7 +48,13 @@ export type PerformanceEquivalence =
       lead: boolean | null;
     }
   | { kind: "strength_exercise_id"; exerciseId: string }
-  | { kind: "activity_name"; canonicalType: string; value: string; asserted?: boolean };
+  | {
+      kind: "activity_name";
+      canonicalType: string;
+      value: string;
+      asserted?: boolean;
+      weakSpecification?: WeakEffortSpecification;
+    };
 
 export function isIdentityEquivalence(key: PerformanceEquivalence): key is IdentityEquivalence {
   return key.kind !== "activity_name" && key.kind !== "strength_exercise_id" && "value" in key;

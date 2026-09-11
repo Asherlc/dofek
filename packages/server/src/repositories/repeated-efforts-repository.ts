@@ -20,6 +20,7 @@ const inputSchema = z
     minimumRepetitions: z.number().int().min(2).max(2000).default(2),
     equivalenceStrength: z.enum(["strong", "weak"]).default("strong"),
     effortKind: z.enum(EFFORT_IDENTITY_KINDS).optional(),
+    effortId: z.string().min(1).max(512).optional(),
     providers: z.array(z.string().min(1)).max(50).default([]),
     modalities: z.array(z.string().min(1)).max(20).default([]),
     canonicalTypes: z.array(z.string().min(1)).max(50).default([]),
@@ -261,14 +262,17 @@ export class RepeatedEffortsRepository {
       activity: Activity,
       displayName: string | null,
       evidence: Group["identityEvidence"][number],
+      weakSpecification?: Group["weakSpecification"],
     ) => {
       const effortId = `${kind}:${strength}:${digest(key)}`;
+      if (input.effortId && effortId !== input.effortId) return;
       let group = groups.get(effortId);
       if (!group) {
         group = {
           effortId,
           kind,
           strength,
+          ...(weakSpecification ? { weakSpecification } : {}),
           displayName,
           providers: [],
           modalities: [],
@@ -290,7 +294,7 @@ export class RepeatedEffortsRepository {
         if (strength === "weak_similarity") {
           group.qualityFlags.push("weak_identity");
           group.assumptions.push(
-            "Weak candidates share normalized name, activity type, modality and a five-minute elapsed-duration bucket; this does not prove identical workouts.",
+            "Weak candidates share identity namespace, normalized name, activity type, modality and a five-minute elapsed-duration bucket; this does not prove identical workouts.",
           );
         }
         if (strength === "caller_asserted") {
@@ -350,21 +354,31 @@ export class RepeatedEffortsRepository {
         ? (Date.parse(activity.ended_at) - Date.parse(activity.started_at)) / 1000
         : null;
       if (weak && (elapsed === null || !identity.normalized_value.trim())) continue;
+      const weakSpecification = weak
+        ? {
+            namespace: identity.namespace,
+            normalizedValue: identity.normalized_value,
+            canonicalType: activity.canonical_type,
+            modality: activity.modality,
+            durationBucket: Math.floor((elapsed ?? 0) / 300),
+          }
+        : undefined;
       add(
         identity.kind,
         weak ? "weak_similarity" : identity.strength,
-        weak
+        weakSpecification
           ? [
-              identity.namespace,
-              identity.normalized_value,
-              activity.canonical_type,
-              activity.modality,
-              Math.floor((elapsed ?? 0) / 300),
+              weakSpecification.namespace,
+              weakSpecification.normalizedValue,
+              weakSpecification.canonicalType,
+              weakSpecification.modality,
+              weakSpecification.durationBucket,
             ]
           : [identity.namespace, identity.value],
         activity,
         identity.display_name,
         identityEvidence(identity),
+        weakSpecification,
       );
     }
     for (const benchmark of benchmarks) {

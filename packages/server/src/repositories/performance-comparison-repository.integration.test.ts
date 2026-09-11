@@ -718,6 +718,84 @@ describe("PerformanceComparisonRepository database semantics", () => {
     expect(named.equivalence).toMatchObject({ confidence: "user_asserted" });
   });
 
+  it("preserves weak discovery namespace, modality and exact duration buckets", async () => {
+    const fixtures = [
+      { seconds: 1800, modality: "road", namespace: "garmin" },
+      { seconds: 2099, modality: "road", namespace: "garmin" },
+      { seconds: 2100, modality: "road", namespace: "garmin" },
+      { seconds: 1799, modality: "road", namespace: "garmin" },
+      { seconds: 1800, modality: "trail", namespace: "garmin" },
+      { seconds: 1800, modality: "road", namespace: "other" },
+      { seconds: 1800, modality: null, namespace: "garmin" },
+    ].map((fixture) => ({ ...fixture, id: randomUUID() }));
+    for (const [index, fixture] of fixtures.entries()) {
+      const startedAt = `2026-12-0${index + 1}T12:00:00Z`;
+      await postgres.db.execute(sql`
+        INSERT INTO fitness.activity (id, group_id, provider_id, user_id, external_id,
+          canonical_type, provider_type, modality, started_at, ended_at, name)
+        VALUES (${fixture.id}::uuid, ${fixture.id}::uuid, ${workoutProvider}, ${userId}::uuid,
+          ${fixture.id}, 'running', 'running', ${fixture.modality}, ${startedAt}::timestamptz,
+          ${startedAt}::timestamptz + ${fixture.seconds} * interval '1 second', 'Weak Tempo')
+      `);
+    }
+    await clickhouse.insert({
+      table: `${analyticsDatabase}.activity_effort_identity`,
+      format: "JSONEachRow",
+      values: fixtures.map((fixture) => ({
+        user_id: userId,
+        canonical_activity_id: fixture.id,
+        source_activity_id: fixture.id,
+        source_provider: workoutProvider,
+        source_external_id: fixture.id,
+        kind: "activity_name",
+        namespace: fixture.namespace,
+        value: "Weak Tempo",
+        normalized_value: "weak tempo",
+        display_name: "Weak Tempo",
+        strength: "weak_similarity",
+        method: "normalized_name",
+        source_field: "name",
+        evidence: {},
+        refresh_version: 1,
+        is_deleted: 0,
+      })),
+    });
+    const weakSpecification = {
+      namespace: "garmin",
+      normalizedValue: "weak tempo",
+      canonicalType: "running",
+      modality: "road",
+      durationBucket: 6,
+    };
+    const result = await new PerformanceComparisonRepository(
+      postgres.db,
+      store,
+      userId,
+      "UTC",
+    ).compare({
+      startDate: "2026-12-01",
+      endDate: "2026-12-31",
+      referenceActivityId: null,
+      equivalence: {
+        kind: "activity_name",
+        canonicalType: "running",
+        value: "weak tempo",
+        asserted: false,
+        weakSpecification,
+      },
+      providers: [],
+      modalities: [],
+      cursor: null,
+      limit: 25,
+    });
+    expect(result.performances.map((row) => row.activity_id)).toEqual(
+      fixtures.slice(0, 2).map((row) => row.id),
+    );
+    expect(result.performances.every((row) => !row.quality.comparable)).toBe(true);
+    expect(result.equivalence.key).toMatchObject({ weak_specification: weakSpecification });
+    expect(() => performanceComparisonOutputSchema.parse({ result })).not.toThrow();
+  });
+
   it("matches climb discipline exactly and attributes cross-member conflicts", async () => {
     const result = await new PerformanceComparisonRepository(
       postgres.db,

@@ -21,7 +21,7 @@ export function registerEffortTrendTool(server: McpServer, context: DofekMcpCont
     {
       title: "Get Effort Trend",
       description:
-        "Return chronological repetitions and descriptive deltas for one discovered effort ID or explicit provider-neutral equivalence. Reuses identity-aware performance comparison metrics, quality, and evidence. False-fitness guard: ordinary workout bests are lower-bound observed capability, not maximal capacity; lower observed values do not demonstrate fitness decline. Identity alone does not establish maximal intent or comparable conditions.",
+        "Return chronological repetitions and descriptive deltas for one discovered effort ID or explicit provider-neutral equivalence. Reuses identity-aware performance comparison metrics, quality, and evidence. Level A exact: namespaced recorded identity. Level B strong_inferred: measured route geometry or other strong identity inference. Level C caller_asserted: explicit names or user-defined benchmark membership. Level D weak_similarity: discovery name/type/modality/duration groups or activity_name with asserted=false; these are not comparable efforts. False-fitness guard: ordinary workout bests are lower-bound observed capability, not maximal capacity; lower observed values do not demonstrate fitness decline. Identity alone does not establish maximal intent or comparable conditions.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: {
         start_date: dateSchema,

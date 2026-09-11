@@ -71,6 +71,61 @@ function setup(
 }
 
 describe("RepeatedEffortsRepository.find", () => {
+  it("resolves a valid ID beyond 2,000 groups in one bounded discovery pass", async () => {
+    const identities = Array.from({ length: 2001 }, (_, index) =>
+      [1, 2].map((n) => identity(n, { namespace: `provider-${index}` })),
+    ).flat();
+    const { repository, query } = setup([activity(1), activity(2)], identities);
+    let cursor: string | null = null;
+    let target = "";
+    for (let page = 0; page < 21; page += 1) {
+      const result = await repository.find({
+        ...input,
+        effortKind: "provider_workout",
+        limit: 100,
+        cursor,
+      });
+      cursor = result.nextCursor;
+      target = result.groups.at(-1)?.effortId ?? "";
+    }
+    expect(target).toMatch(/^provider_workout:exact:/);
+    expect(cursor).toBeNull();
+    query.mockClear();
+    const result = await repository.find({
+      ...input,
+      effortKind: "provider_workout",
+      effortId: target,
+      limit: 1,
+    });
+    expect(result.groups.map((group) => group.effortId)).toEqual([target]);
+    expect(result.nextCursor).toBeNull();
+    expect(query).toHaveBeenCalledTimes(3);
+  });
+
+  it("returns every constraint used to identify a weak group", async () => {
+    const { repository } = setup(
+      [activity(1), activity(2)],
+      [1, 2].map((n) =>
+        identity(n, {
+          kind: "activity_name",
+          namespace: null,
+          value: " Tempo ",
+          normalized_value: "tempo",
+          strength: "weak_similarity",
+        }),
+      ),
+    );
+    const result = await repository.find({ ...input, equivalenceStrength: "weak" });
+    expect(result.groups[0]).toMatchObject({
+      weakSpecification: {
+        namespace: null,
+        normalizedValue: "tempo",
+        canonicalType: "cycling",
+        modality: "indoor",
+        durationBucket: 6,
+      },
+    });
+  });
   it("flags conflicting stable identities from merged members without discarding their evidence", async () => {
     const { repository } = setup(
       [activity(1, { member_activity_ids: [id(1), id(11)] }), activity(2)],

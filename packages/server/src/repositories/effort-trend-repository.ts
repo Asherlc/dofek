@@ -9,6 +9,7 @@ import type {
   PerformanceComparisonRepository,
 } from "./performance-comparison-repository.ts";
 import type { PerformanceEquivalence } from "./performance-comparison-types.ts";
+import { EFFORT_IDENTITY_KINDS } from "./repeated-effort-types.ts";
 import type {
   FindRepeatedEffortsInput,
   FindRepeatedEffortsOutput,
@@ -159,9 +160,12 @@ function rollingValues(rows: ComparableMetrics[]): ComparableMetrics {
 
 function hasLimitedSamples(performance: ComparisonPerformance): boolean {
   return (
-    performance.metrics.cycling?.sample_coverage.status !== "available" ||
-    performance.metrics.cycling_effort?.quality.status === "limited" ||
-    performance.quality.flags.some((flag) => flag.includes("limited") || flag.includes("coverage"))
+    performance.metrics.cycling != null &&
+    (performance.metrics.cycling.sample_coverage.status !== "available" ||
+      performance.metrics.cycling_effort?.quality.status === "limited" ||
+      performance.quality.flags.some(
+        (flag) => flag.includes("limited") || flag.includes("coverage"),
+      ))
   );
 }
 
@@ -197,9 +201,15 @@ function equivalenceFromDiscovery(
   if (group.kind === "canonical_route") return { kind: group.kind, value: evidence.value };
   if (group.kind === "user_defined_benchmark") return { kind: group.kind, value: evidence.value };
   if (group.kind === "activity_name") {
-    const canonicalType = group.canonicalTypes[0];
-    if (!canonicalType) throw new Error("The discovery effort has no canonical activity type");
-    return { kind: group.kind, canonicalType, value: evidence.value, asserted: false };
+    const weakSpecification = group.weakSpecification;
+    if (!weakSpecification) throw new Error("The discovery effort has no weak-group specification");
+    return {
+      kind: group.kind,
+      canonicalType: weakSpecification.canonicalType,
+      value: weakSpecification.normalizedValue,
+      asserted: false,
+      weakSpecification,
+    };
   }
   throw new Error("The discovery effort cannot be converted to a comparison equivalence");
 }
@@ -221,24 +231,23 @@ export class EffortTrendRepository {
     if (direct) return direct;
     if (!this.#discovery)
       throw new Error("A discovery effort ID requires the repeated-effort repository");
-    let cursor: string | null = null;
-    for (let page = 0; page < 20; page += 1) {
-      const result = await this.#discovery.find({
-        startDate: input.startDate,
-        endDate: input.endDate,
-        minimumRepetitions: 2,
-        equivalenceStrength: "weak",
-        providers: [],
-        modalities: [],
-        canonicalTypes: [],
-        limit: 100,
-        cursor,
-      });
-      const group = result.groups.find((candidate) => candidate.effortId === input.effortId);
-      if (group) return equivalenceFromDiscovery(group);
-      if (!result.nextCursor) break;
-      cursor = result.nextCursor;
-    }
+    const effortKind = EFFORT_IDENTITY_KINDS.find((kind) => input.effortId?.startsWith(`${kind}:`));
+    if (!effortKind) throw new Error("The discovery effort ID has an unsupported identity kind");
+    const result = await this.#discovery.find({
+      startDate: input.startDate,
+      endDate: input.endDate,
+      minimumRepetitions: 2,
+      equivalenceStrength: "weak",
+      providers: [],
+      modalities: [],
+      canonicalTypes: [],
+      effortKind,
+      effortId: input.effortId,
+      limit: 1,
+      cursor: null,
+    });
+    const group = result.groups.find((candidate) => candidate.effortId === input.effortId);
+    if (group) return equivalenceFromDiscovery(group);
     throw new Error("The discovery effort ID was not found in the requested date range");
   }
 
