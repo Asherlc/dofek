@@ -423,7 +423,8 @@ export class RepeatedEffortsRepository {
           {
             canonicalActivityId: activity.activity_id,
             sourceActivityId: null,
-            provider: route.source_providers.length === 1 ? (route.source_providers[0] ?? null) : null,
+            provider:
+              route.source_providers.length === 1 ? (route.source_providers[0] ?? null) : null,
             externalId: null,
             namespace: "route_geometry_v1",
             value: anchor.canonical_activity_id,

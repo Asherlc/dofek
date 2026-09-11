@@ -155,3 +155,20 @@ Exit 2: unchanged Task 6 errors only:
 ```
 
 The new `repeated-efforts-repository.ts(426,13)` diagnostic is resolved. No other files or behavior were changed for this round.
+
+## Fix round 3 — formatter-only ternary layout
+
+Root cause: the round-2 null-coalescing expression was semantically correct but remained on one line, while the repository's Biome formatter requires the `provider` conditional expression to wrap across lines.
+
+Applied the repository formatter to `packages/server/src/repositories/repeated-efforts-repository.ts`. No behavior or test code changed.
+
+Validation:
+
+```text
+rtk pnpm exec vitest run packages/server/src/repositories/repeated-efforts-repository.test.ts packages/server/src/mcp/repeated-efforts-tool.test.ts packages/server/src/mcp/route.test.ts --project unit
+Test Files 3 passed (3)
+Tests      101 passed (101)
+
+rtk pnpm exec biome check packages/server/src/repositories/repeated-efforts-repository.ts
+Checked 1 file in 25ms. No fixes applied.
+```
