@@ -26410,3 +26410,29 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `relation "fitness.v_activity" does not exist`. The configured local
   database lacks the serving view. It was not migrated, seeded, or pointed at
   production as part of this report task.
+
+## 2026-09-11 — Docker disk exhaustion interrupted route lifecycle validation
+
+- **Impact:** The focused local route-model integration suite could not start
+  its database dependencies. No production service or user data was affected.
+- **Failing command:** `pnpm compose -- --env-file .env.local up -d --wait
+  --wait-timeout 180 db clickhouse redis redpanda`. The first fatal service
+  line was `initdb: error: could not create directory
+  "/home/postgres/pgdata/data/pg_wal": No space left on device`; a subsequent
+  ClickHouse-only start failed while creating `preprocessed_configs` for the
+  same reason.
+- **Evidence / root cause:** ClickHouse reported a 58.37 GiB filesystem with
+  `Available space: 0.00 B`. `docker system df` showed 4.798 GB reclaimable
+  from stopped containers and no build cache. Shared Docker storage exhaustion
+  directly prevented both databases from initializing.
+- **Mitigation:** Removed only this workspace's failed Compose resources,
+  pruned 943.8 MB of unused images, then pruned 4.798 GB held by stopped
+  containers. Other workspaces' running containers and named volumes were
+  preserved. Docker documents these scoped cleanup operations in
+  [`docker image prune`](https://docs.docker.com/reference/cli/docker/image/prune/)
+  and [`docker container prune`](https://docs.docker.com/reference/cli/docker/container/prune/).
+- **Validation / remaining risk:** ClickHouse restarted healthy, and the route
+  read-model plus repository integration suites passed all 20 tests without
+  added retries, sleeps, or timeout changes. Shared Docker storage growth
+  remains an operational risk; follow the existing
+  [Docker disk recovery runbook](testing.md#docker-disk-recovery) when it recurs.

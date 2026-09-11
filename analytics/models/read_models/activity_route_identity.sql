@@ -38,6 +38,10 @@ existing_route_state AS MATERIALIZED (
     SELECT
         activity_id,
         user_id,
+        max(activity_source_refreshed_at) AS activity_source_refreshed_at,
+        max(location_source_refreshed_at) AS location_source_refreshed_at,
+        max(identity_source_refreshed_at) AS identity_source_refreshed_at,
+        max(altitude_source_refreshed_at) AS altitude_source_refreshed_at,
         max(source_refreshed_at) AS source_refreshed_at,
         argMax(is_deleted, refresh_version) AS is_deleted
     FROM {{ this }} FINAL
@@ -67,7 +71,7 @@ affected_route_keys AS MATERIALIZED (
         AND existing_routes.user_id = activities.user_id
     WHERE existing_routes.activity_id IS null
         OR existing_routes.is_deleted = 1
-        OR activities.refreshed_at > existing_routes.source_refreshed_at
+        OR activities.refreshed_at > existing_routes.activity_source_refreshed_at
 
     UNION DISTINCT
 
@@ -85,7 +89,7 @@ affected_route_keys AS MATERIALIZED (
             existing_routes.activity_id IS null
             OR existing_routes.is_deleted = 1
             OR greatest(locations.source_refreshed_at, locations.refreshed_at)
-                > existing_routes.source_refreshed_at
+                > existing_routes.location_source_refreshed_at
         )
 
     UNION DISTINCT
@@ -104,7 +108,8 @@ affected_route_keys AS MATERIALIZED (
         AND (
             existing_routes.activity_id IS null
             OR existing_routes.is_deleted = 1
-            OR identities.source_refreshed_at > existing_routes.source_refreshed_at
+            OR greatest(identities.source_refreshed_at, identities.refreshed_at)
+                > existing_routes.identity_source_refreshed_at
         )
 
     UNION DISTINCT
@@ -118,7 +123,11 @@ affected_route_keys AS MATERIALIZED (
         AND (samples.user_id, samples.activity_id) IN (
             SELECT user_id, activity_id FROM cycling_activity_state
         )
-        AND (existing_routes.activity_id IS null OR samples.refreshed_at > existing_routes.source_refreshed_at)
+        AND (
+            existing_routes.activity_id IS null
+            OR existing_routes.is_deleted = 1
+            OR samples.refreshed_at > existing_routes.altitude_source_refreshed_at
+        )
     {% endif %}
 
     UNION DISTINCT
@@ -137,16 +146,46 @@ affected_route_keys AS MATERIALIZED (
     {% endif %}
 ),
 
+affected_location_samples AS MATERIALIZED (
+    SELECT
+        locations.activity_id AS activity_id,
+        locations.user_id AS user_id,
+        locations.recorded_at AS recorded_at,
+        locations.provider_id AS provider_id,
+        locations.device_id AS device_id,
+        locations.lat AS lat,
+        locations.lng AS lng,
+        locations.source_refreshed_at AS source_refreshed_at,
+        locations.refreshed_at AS refreshed_at,
+        locations.is_deleted AS is_deleted,
+        activities.started_at AS activity_started_at,
+        activities.ended_at AS activity_ended_at,
+        activities.is_deleted AS activity_is_deleted
+    FROM {{ ref('activity_location_sample') }} AS locations FINAL
+    INNER JOIN cycling_activity_state AS activities
+        ON activities.activity_id = locations.activity_id
+        AND activities.user_id = locations.user_id
+    WHERE (locations.user_id, locations.activity_id) IN (
+        SELECT user_id, activity_id FROM affected_route_keys
+    )
+),
+
 location_refresh_state AS (
     SELECT
         activity_id,
         user_id,
         max(greatest(source_refreshed_at, refreshed_at)) AS source_refreshed_at,
-        countIf(is_deleted = 0 AND lat IS NOT null AND lng IS NOT null) AS live_point_count
-    FROM {{ ref('activity_location_sample') }} FINAL
-    WHERE (user_id, activity_id) IN (
-        SELECT user_id, activity_id FROM affected_route_keys
-    )
+        countIf(
+            activity_is_deleted = 0
+            AND is_deleted = 0
+            AND lat IS NOT null
+            AND lng IS NOT null
+            AND lat BETWEEN -90 AND 90
+            AND lng BETWEEN -180 AND 180
+            AND recorded_at >= activity_started_at
+            AND (activity_ended_at IS null OR recorded_at <= activity_ended_at)
+        ) AS usable_point_count
+    FROM affected_location_samples
     GROUP BY activity_id, user_id
 ),
 
@@ -154,16 +193,15 @@ explicit_route_ids AS (
     SELECT
         canonical_activity_id AS activity_id,
         user_id,
-        arraySort(groupUniqArray(tuple(
+        arraySort(groupUniqArrayIf(tuple(
             source_provider,
             value,
             source_activity_id,
             assumeNotNull(source_field)
-        ))) AS explicit_provider_route_ids,
-        max(source_refreshed_at) AS source_refreshed_at
+        ), is_deleted = 0)) AS explicit_provider_route_ids,
+        max(greatest(source_refreshed_at, refreshed_at)) AS source_refreshed_at
     FROM {{ ref('activity_effort_identity') }} FINAL
-    WHERE is_deleted = 0
-        AND kind = 'provider_route'
+    WHERE kind = 'provider_route'
         AND (user_id, canonical_activity_id) IN (
             SELECT user_id, activity_id FROM affected_route_keys
         )
@@ -188,7 +226,20 @@ current_route_sources AS (
         activities.user_id AS user_id,
         activities.started_at AS started_at,
         activities.ended_at AS ended_at,
-        coalesce(locations.live_point_count, 0) AS live_point_count,
+        coalesce(locations.usable_point_count, 0) AS usable_point_count,
+        activities.refreshed_at AS activity_source_refreshed_at,
+        coalesce(
+            locations.source_refreshed_at,
+            toDateTime64('1970-01-01 00:00:00', 9, 'UTC')
+        ) AS location_source_refreshed_at,
+        coalesce(
+            route_ids.source_refreshed_at,
+            toDateTime64('1970-01-01 00:00:00', 9, 'UTC')
+        ) AS identity_source_refreshed_at,
+        coalesce(
+            altitude.source_refreshed_at,
+            toDateTime64('1970-01-01 00:00:00', 9, 'UTC')
+        ) AS altitude_source_refreshed_at,
         greatest(
             activities.refreshed_at,
             coalesce(locations.source_refreshed_at, toDateTime64('1970-01-01 00:00:00', 9, 'UTC')),
@@ -217,23 +268,29 @@ current_route_keys AS (
         sources.user_id AS user_id,
         sources.source_refreshed_at AS source_refreshed_at
     FROM current_route_sources AS sources
-    LEFT JOIN existing_route_state AS existing_routes
-        ON existing_routes.activity_id = sources.activity_id
-        AND existing_routes.user_id = sources.user_id
-    WHERE sources.live_point_count > 0
-        {% if not activity_refresh_scoped %}
-        AND (
-            existing_routes.activity_id IS null
-            OR existing_routes.is_deleted = 1
-            OR sources.source_refreshed_at > existing_routes.source_refreshed_at
-        )
-        {% endif %}
+    WHERE sources.usable_point_count > 0
 ),
 
 stale_route_keys AS (
     SELECT
         existing_routes.activity_id,
         existing_routes.user_id,
+        coalesce(
+            current_routes.activity_source_refreshed_at,
+            existing_routes.activity_source_refreshed_at
+        ) AS activity_source_refreshed_at,
+        coalesce(
+            current_routes.location_source_refreshed_at,
+            existing_routes.location_source_refreshed_at
+        ) AS location_source_refreshed_at,
+        coalesce(
+            current_routes.identity_source_refreshed_at,
+            existing_routes.identity_source_refreshed_at
+        ) AS identity_source_refreshed_at,
+        coalesce(
+            current_routes.altitude_source_refreshed_at,
+            existing_routes.altitude_source_refreshed_at
+        ) AS altitude_source_refreshed_at,
         greatest(
             existing_routes.source_refreshed_at,
             coalesce(current_routes.source_refreshed_at, now64(9))
@@ -246,7 +303,7 @@ stale_route_keys AS (
         AND (existing_routes.user_id, existing_routes.activity_id) IN (
             SELECT user_id, activity_id FROM affected_route_keys
         )
-        AND (current_routes.activity_id IS null OR current_routes.live_point_count = 0)
+        AND (current_routes.activity_id IS null OR current_routes.usable_point_count = 0)
 ),
 {% else %}
 current_route_keys AS (
@@ -255,7 +312,7 @@ current_route_keys AS (
         sources.user_id AS user_id,
         sources.source_refreshed_at AS source_refreshed_at
     FROM current_route_sources AS sources
-    WHERE sources.live_point_count > 0
+    WHERE sources.usable_point_count > 0
 ),
 {% endif %}
 
@@ -268,21 +325,21 @@ current_location_samples AS MATERIALIZED (
         round(assumeNotNull(location_samples.lng), 5) AS lng,
         location_samples.provider_id AS provider_id,
         location_samples.device_id AS device_id
-    FROM {{ ref('activity_location_sample') }} AS location_samples FINAL
-    INNER JOIN cycling_activity_state AS activities
-        ON activities.activity_id = location_samples.activity_id
-        AND activities.user_id = location_samples.user_id
+    FROM affected_location_samples AS location_samples
     WHERE (location_samples.user_id, location_samples.activity_id) IN (
         SELECT user_id, activity_id FROM current_route_keys
     )
-        AND activities.is_deleted = 0
+        AND location_samples.activity_is_deleted = 0
         AND location_samples.is_deleted = 0
         AND location_samples.lat IS NOT null
         AND location_samples.lng IS NOT null
         AND location_samples.lat BETWEEN -90 AND 90
         AND location_samples.lng BETWEEN -180 AND 180
-        AND location_samples.recorded_at >= activities.started_at
-        AND (activities.ended_at IS null OR location_samples.recorded_at <= activities.ended_at)
+        AND location_samples.recorded_at >= location_samples.activity_started_at
+        AND (
+            location_samples.activity_ended_at IS null
+            OR location_samples.recorded_at <= location_samples.activity_ended_at
+        )
 ),
 
 location_intervals AS (
@@ -414,6 +471,10 @@ current_route_rows AS (
         sources.ended_at AS ended_at,
         geometry.source_providers AS source_providers,
         geometry.source_devices AS source_devices,
+        sources.activity_source_refreshed_at AS activity_source_refreshed_at,
+        sources.location_source_refreshed_at AS location_source_refreshed_at,
+        sources.identity_source_refreshed_at AS identity_source_refreshed_at,
+        sources.altitude_source_refreshed_at AS altitude_source_refreshed_at,
         sources.source_refreshed_at AS source_refreshed_at,
         coalesce(quality.coverage_pct, toNullable(toFloat64(0))) AS coverage_pct,
         quality.largest_gap_seconds AS largest_gap_seconds,
@@ -443,6 +504,10 @@ current_route_rows AS (
         sources.user_id,
         sources.started_at,
         sources.ended_at,
+        sources.activity_source_refreshed_at,
+        sources.location_source_refreshed_at,
+        sources.identity_source_refreshed_at,
+        sources.altitude_source_refreshed_at,
         sources.source_refreshed_at,
         route_ids.explicit_provider_route_ids,
         geometry.bounded_ordered_points,
@@ -480,6 +545,10 @@ SELECT
     source_providers,
     source_devices,
     if(length(points) >= 2 AND coverage_pct >= 90 AND largest_gap_seconds <= 30, 'available', 'partial') AS geometry_status,
+    activity_source_refreshed_at,
+    location_source_refreshed_at,
+    identity_source_refreshed_at,
+    altitude_source_refreshed_at,
     source_refreshed_at,
     refresh_clock.refresh_version AS refresh_version,
     0 AS is_deleted,
@@ -509,6 +578,10 @@ SELECT
     existing_routes.source_providers,
     existing_routes.source_devices,
     'unavailable' AS geometry_status,
+    stale_routes.activity_source_refreshed_at,
+    stale_routes.location_source_refreshed_at,
+    stale_routes.identity_source_refreshed_at,
+    stale_routes.altitude_source_refreshed_at,
     stale_routes.source_refreshed_at,
     refresh_clock.refresh_version AS refresh_version,
     1 AS is_deleted,

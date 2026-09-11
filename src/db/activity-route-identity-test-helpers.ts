@@ -188,7 +188,10 @@ export async function seedSchema(
       route_distance_meters Nullable(Float64), started_at Nullable(DateTime64(6, 'UTC')),
       ended_at Nullable(DateTime64(6, 'UTC')), elevation_profile Array(Float64), coverage_pct Nullable(Float64),
       largest_gap_seconds Nullable(Float64), source_providers Array(String), source_devices Array(String),
-      geometry_status String, source_refreshed_at DateTime64(9, 'UTC'), refresh_version UInt64,
+      geometry_status String, activity_source_refreshed_at DateTime64(9, 'UTC'),
+      location_source_refreshed_at DateTime64(9, 'UTC'),
+      identity_source_refreshed_at DateTime64(9, 'UTC'),
+      altitude_source_refreshed_at DateTime64(9, 'UTC'), source_refreshed_at DateTime64(9, 'UTC'), refresh_version UInt64,
       is_deleted UInt8, refreshed_at DateTime64(9, 'UTC')
     ) ENGINE = ReplacingMergeTree(refresh_version) ORDER BY (user_id, activity_id)`,
   ];

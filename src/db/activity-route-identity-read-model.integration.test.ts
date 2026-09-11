@@ -85,6 +85,46 @@ describe("activity route identity read model", () => {
     });
   });
 
+  it("removes deleted altitude evidence even when location data has a newer watermark", async () => {
+    await seedRouteIdentityFixture(client, database, { provider: "strava", routeId: null });
+    await client.command({
+      query: `INSERT INTO ${database}.activity_location_sample
+      SELECT * REPLACE(
+        toUInt64(2) AS refresh_version,
+        toDateTime64('2026-09-01 12:30:00', 9, 'UTC') AS source_refreshed_at,
+        toDateTime64('2026-09-01 12:30:00', 9, 'UTC') AS refreshed_at
+      )
+      FROM ${database}.activity_location_sample FINAL
+      WHERE activity_id = '${activityId}'`,
+    });
+    await client.command({
+      query: `INSERT INTO ${database}.activity_sensor_sample
+      SELECT toUUID('${activityId}'), toUUID('${userId}'),
+        addSeconds(toDateTime64('2026-09-01 12:00:00', 6, 'UTC'), number * 10),
+        'altitude', 100 + number * 5, 0,
+        toDateTime64('2026-09-01 12:00:00', 9, 'UTC')
+      FROM numbers(4)`,
+    });
+    await buildModel(client, database);
+    expect(await readRouteIdentity(client, database)).toMatchObject({
+      elevationProfile: [100, 105, 110, 115],
+    });
+
+    await client.command({
+      query: `INSERT INTO ${database}.activity_sensor_sample
+      SELECT * REPLACE(
+        CAST(NULL, 'Nullable(Float64)') AS scalar,
+        toUInt8(1) AS is_deleted,
+        toDateTime64('2026-09-01 12:10:00', 9, 'UTC') AS refreshed_at
+      )
+      FROM ${database}.activity_sensor_sample FINAL
+      WHERE activity_id = '${activityId}' AND channel = 'altitude'`,
+    });
+    await buildModel(client, database, true);
+
+    expect(await readRouteIdentity(client, database)).toMatchObject({ elevationProfile: [] });
+  });
+
   it("keeps an explicit provider route ID separate from normalized geometry", async () => {
     await seedRouteIdentityFixture(client, database, { provider: "ridewithgps", routeId: "rw-42" });
 
@@ -158,6 +198,63 @@ describe("activity route identity read model", () => {
     expect(await readRouteIdentity(client, database)).toEqual(
       expect.objectContaining({ isDeleted: 1 }),
     );
+  });
+
+  it("tombstones a current route when refreshed coordinates become invalid", async () => {
+    await seedRouteIdentityFixture(client, database, { provider: "strava", routeId: null });
+    await buildModel(client, database);
+
+    await client.command({
+      query: `INSERT INTO ${database}.activity_location_sample
+      SELECT * REPLACE(
+        toNullable(toFloat64(95)) AS lat,
+        toUInt64(2) AS refresh_version,
+        toDateTime64('2026-09-01 12:10:00', 9, 'UTC') AS source_refreshed_at,
+        toDateTime64('2026-09-01 12:10:00', 9, 'UTC') AS refreshed_at
+      )
+      FROM ${database}.activity_location_sample FINAL
+      WHERE activity_id = '${activityId}'`,
+    });
+    await buildModel(client, database, true);
+
+    expect(await readRouteIdentity(client, database)).toMatchObject({
+      geometryStatus: "unavailable",
+      isDeleted: 1,
+    });
+  });
+
+  it("tombstones a current route when refreshed coordinates fall outside the activity window", async () => {
+    await seedRouteIdentityFixture(client, database, { provider: "strava", routeId: null });
+    await buildModel(client, database);
+
+    await client.command({
+      query: `INSERT INTO ${database}.activity_location_sample
+      SELECT * REPLACE(
+        CAST(NULL, 'Nullable(Float64)') AS lat,
+        CAST(NULL, 'Nullable(Float64)') AS lng,
+        toUInt64(2) AS refresh_version,
+        toUInt8(1) AS is_deleted,
+        toDateTime64('2026-09-01 12:10:00', 9, 'UTC') AS source_refreshed_at,
+        toDateTime64('2026-09-01 12:10:00', 9, 'UTC') AS refreshed_at
+      )
+      FROM ${database}.activity_location_sample FINAL
+      WHERE activity_id = '${activityId}'`,
+    });
+    await client.command({
+      query: `INSERT INTO ${database}.activity_location_sample
+      SELECT toUUID('${activityId}'), toUUID('${userId}'),
+        addSeconds(toDateTime64('2026-09-01 13:00:00', 6, 'UTC'), number * 10),
+        generateUUIDv4(), 'strava', 'head-unit', 37.8, -122.4,
+        toDateTime64('2026-09-01 12:10:00', 9, 'UTC'), 2, 0,
+        toDateTime64('2026-09-01 12:10:00', 9, 'UTC')
+      FROM numbers(4)`,
+    });
+    await buildModel(client, database, true);
+
+    expect(await readRouteIdentity(client, database)).toMatchObject({
+      geometryStatus: "unavailable",
+      isDeleted: 1,
+    });
   });
 
   it.each([false, true])(
