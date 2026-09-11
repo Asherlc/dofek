@@ -293,6 +293,18 @@ export function buildPerformanceComparisonRows(input: {
       : legacyEvidence;
     const identityEvidence = input.evidenceFor(row.activity_id);
     const movingDuration = buildMovingDuration(row.source_raw_evidence);
+    const climbingAttemptsComparable =
+      current.climbing?.attempts_status === "complete" &&
+      baselineValues.climbing?.attempts_status === "complete";
+    const climbingOutcomesComparable =
+      current.climbing?.outcomes_status === "complete" &&
+      baselineValues.climbing?.outcomes_status === "complete";
+    const strengthVolumeComparable =
+      current.strength?.volume_status === "complete" &&
+      baselineValues.strength?.volume_status === "complete";
+    const strengthEstimatedMaximumComparable =
+      current.strength?.estimated_one_rep_max_status === "complete" &&
+      baselineValues.strength?.estimated_one_rep_max_status === "complete";
     const flags = [
       `${identityEvidence.strength}_equivalence`,
       ...(routeMatch?.geometry && !routeMatch.geometry.matched ? ["route_geometry_rejected"] : []),
@@ -432,43 +444,23 @@ export function buildPerformanceComparisonRows(input: {
           baselineValues.averageTemperatureC,
         ),
         climbing_attempts: delta(
-          current.climbing?.attempts_status === "complete" &&
-            baselineValues.climbing?.attempts_status === "complete"
-            ? current.climbing.attempts
-            : null,
-          current.climbing?.attempts_status === "complete" &&
-            baselineValues.climbing?.attempts_status === "complete"
-            ? baselineValues.climbing.attempts
-            : null,
+          climbingAttemptsComparable ? current.climbing?.attempts : null,
+          climbingAttemptsComparable ? baselineValues.climbing?.attempts : null,
         ),
         climbing_sends: delta(
-          current.climbing?.outcomes_status === "complete" &&
-            baselineValues.climbing?.outcomes_status === "complete"
-            ? current.climbing.sends
-            : null,
-          current.climbing?.outcomes_status === "complete" &&
-            baselineValues.climbing?.outcomes_status === "complete"
-            ? baselineValues.climbing.sends
-            : null,
+          climbingOutcomesComparable ? current.climbing?.sends : null,
+          climbingOutcomesComparable ? baselineValues.climbing?.sends : null,
         ),
         strength_volume_kg_reps: delta(
-          current.strength?.volume_status === "complete" &&
-            baselineValues.strength?.volume_status === "complete"
-            ? current.strength.valid_volume_kg_reps
-            : null,
-          current.strength?.volume_status === "complete" &&
-            baselineValues.strength?.volume_status === "complete"
-            ? baselineValues.strength.valid_volume_kg_reps
-            : null,
+          strengthVolumeComparable ? current.strength?.valid_volume_kg_reps : null,
+          strengthVolumeComparable ? baselineValues.strength?.valid_volume_kg_reps : null,
         ),
         strength_estimated_one_rep_max_kg: delta(
-          current.strength?.estimated_one_rep_max_status === "complete" &&
-            baselineValues.strength?.estimated_one_rep_max_status === "complete"
-            ? current.strength.best_estimated_one_rep_max_kg
+          strengthEstimatedMaximumComparable
+            ? current.strength?.best_estimated_one_rep_max_kg
             : null,
-          current.strength?.estimated_one_rep_max_status === "complete" &&
-            baselineValues.strength?.estimated_one_rep_max_status === "complete"
-            ? baselineValues.strength.best_estimated_one_rep_max_kg
+          strengthEstimatedMaximumComparable
+            ? baselineValues.strength?.best_estimated_one_rep_max_kg
             : null,
         ),
       },

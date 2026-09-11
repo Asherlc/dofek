@@ -26502,6 +26502,11 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   at 72.16%. Boundary assertions for mixed activity batches, the exact 2,000-row
   limits, 25-record cycling batches, and standard best-power durations raised
   that exact CI command to 75.00% without changing production behavior.
+  A subsequent review fix moved evidence assembly into the complete
+  performance-result module and exposed its full-file score at 70.46%.
+  Failing-first evidence tests, duration/null-boundary tests, complete modality
+  delta tests, and shared two-sided comparability decisions raised that exact
+  target to 80.65%.
   The full Docker integration wrapper remained unavailable
   because of the separately recorded shared-VM AIO exhaustion; no timeout,
   retry, or service setting was changed. A replacement CI run is required
