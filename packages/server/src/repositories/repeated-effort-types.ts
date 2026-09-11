@@ -10,6 +10,16 @@ export const weakEffortSpecificationSchema = z.strictObject({
 });
 export type WeakEffortSpecification = z.infer<typeof weakEffortSpecificationSchema>;
 
+/** Discovery and comparison use whole timestamp seconds for weak-effort duration buckets. */
+export function weakDurationBucket(startedAt: string, endedAt: string): number | null {
+  const startedSeconds = Math.floor(Date.parse(startedAt) / 1_000);
+  const endedSeconds = Math.floor(Date.parse(endedAt) / 1_000);
+  const elapsedSeconds = endedSeconds - startedSeconds;
+  return Number.isFinite(elapsedSeconds) && elapsedSeconds > 0
+    ? Math.floor(elapsedSeconds / 300)
+    : null;
+}
+
 export const EFFORT_IDENTITY_KINDS = [
   "provider_workout",
   "provider_route",

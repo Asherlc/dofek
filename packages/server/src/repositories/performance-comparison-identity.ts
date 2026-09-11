@@ -14,6 +14,7 @@ import {
   EQUIVALENCE_STRENGTHS,
   type EquivalenceStrength,
   type WeakEffortSpecification,
+  weakDurationBucket,
 } from "./repeated-effort-types.ts";
 import { evaluateRouteMatch } from "./route-equivalence.ts";
 
@@ -165,13 +166,13 @@ export class PerformanceComparisonIdentity {
     const eligibleIds = new Set(
       activities
         .filter((activity) => {
-          if (activity.ended_at === null) return false;
-          const elapsed = (Date.parse(activity.ended_at) - Date.parse(activity.started_at)) / 1000;
+          const durationBucket = activity.ended_at
+            ? weakDurationBucket(activity.started_at, activity.ended_at)
+            : null;
           return (
             activity.canonical_type === specification.canonicalType &&
             activity.modality === specification.modality &&
-            elapsed > 0 &&
-            Math.floor(elapsed / 300) === specification.durationBucket
+            durationBucket === specification.durationBucket
           );
         })
         .map((activity) => activity.activity_id),

@@ -10,6 +10,7 @@ import {
   type EffortIdentityKind,
   EQUIVALENCE_STRENGTHS,
   type EquivalenceStrength,
+  weakDurationBucket,
 } from "./repeated-effort-types.ts";
 import { evaluateRouteMatch } from "./route-equivalence.ts";
 
@@ -350,19 +351,20 @@ export class RepeatedEffortsRepository {
       if (weak && input.equivalenceStrength !== "weak") continue;
       if (!weak && !["exact", "strong_inferred"].includes(identity.strength)) continue;
       if (!weak && !identity.namespace) continue;
-      const elapsed = activity.ended_at
-        ? (Date.parse(activity.ended_at) - Date.parse(activity.started_at)) / 1000
+      const durationBucket = activity.ended_at
+        ? weakDurationBucket(activity.started_at, activity.ended_at)
         : null;
-      if (weak && (elapsed === null || !identity.normalized_value.trim())) continue;
-      const weakSpecification = weak
-        ? {
-            namespace: identity.namespace,
-            normalizedValue: identity.normalized_value,
-            canonicalType: activity.canonical_type,
-            modality: activity.modality,
-            durationBucket: Math.floor((elapsed ?? 0) / 300),
-          }
-        : undefined;
+      if (weak && (durationBucket === null || !identity.normalized_value.trim())) continue;
+      const weakSpecification =
+        weak && durationBucket !== null
+          ? {
+              namespace: identity.namespace,
+              normalizedValue: identity.normalized_value,
+              canonicalType: activity.canonical_type,
+              modality: activity.modality,
+              durationBucket,
+            }
+          : undefined;
       add(
         identity.kind,
         weak ? "weak_similarity" : identity.strength,

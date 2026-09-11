@@ -114,6 +114,30 @@ describe("PerformanceComparisonIdentity", () => {
       expect(result).toEqual(matches ? [row] : []);
     },
   );
+  it("matches a discovery second-precision duration bucket at a millisecond boundary", () => {
+    const row = identity({ kind: "activity_name", namespace: null, normalized_value: "tempo" });
+
+    const result = repository().matchingWeak(
+      {
+        namespace: null,
+        normalizedValue: "tempo",
+        canonicalType: "cycling",
+        modality: "outdoor",
+        // Discovery formats timestamps to seconds: 12:00:00 → 12:35:00 is bucket 7.
+        durationBucket: 7,
+      },
+      [row],
+      [
+        {
+          ...activity(first),
+          started_at: "2026-01-01T12:00:00.900Z",
+          ended_at: "2026-01-01T12:35:00.800Z",
+        },
+      ],
+    );
+
+    expect(result).toEqual([row]);
+  });
   it("rejects conflicting exact identities unless a specific namespaced value is selected", () => {
     const rows = [identity(), identity({ value: "Template-B" })];
     expect(() => repository().strongest(rows)).toThrow(/Conflicting exact identities/);
