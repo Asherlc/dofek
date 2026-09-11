@@ -294,3 +294,84 @@ change for approval: add those three review checks to the training README's metr
 contract. TDD, verification-before-completion, and integration-tests-ready remain
 the useful skills for similar fixes. The upstream model still does not expose
 rejected alternatives; this fix preserves that existing limitation explicitly.
+
+## Fix round 2 — 2026-09-10
+
+Status: fixed; focused validation passed; ready for controller re-review.
+
+Root cause: round 1's duration-weighted one-second bucket values became the
+inputs to maximum speed and maximum heart rate, suppressing native subsecond
+peaks. The shared resampler now retains native peaks separately and returns
+`maximumValue` from buckets satisfying the existing full-coverage mask. Both
+maximum consumers use it. Weighted averages, integrated distance/work, zones,
+paired coverage, and conflict barriers retain their existing calculation paths.
+Partly covered/conflicted buckets still cannot contribute peaks. No new
+physiological ceiling, provenance rule, or maximal-effort interpretation was added.
+
+### Regression evidence and exact commands
+
+Extended both existing subsecond tests and added the focused mixed-quality test
+`excludes conflicting, suspicious, and partially covered peaks while retaining native valid peaks`.
+Expected values were calculated by hand. The first run preceded production edits:
+
+```text
+rtk pnpm exec vitest run packages/server/src/repositories/cycling-effort-metrics.test.ts packages/training/src/cycling-workout-metrics.test.ts --project unit
+
+AssertionError: expected { averageBpm: 150, maximumBpm: 150 } to deeply equal { averageBpm: 150, maximumBpm: 180 }
+maximumSpeedMetersPerSecond: expected 20, received 15 (both server regressions)
+Test Files  2 failed (2)
+Tests       3 failed | 24 passed (27)
+Duration    498ms
+```
+
+Same command after implementation:
+
+```text
+Test Files  2 passed (2)
+Tests       27 passed (27)
+Duration    568ms
+```
+
+The 60-second 2Hz fixture now reports maximum speed 20 m/s and maximum HR
+180 bpm while retaining average speed 15 m/s, average HR 150 bpm, distance
+900 m, 60 paired seconds, speed/HR 0.1, 200 W average/NP, and 12 kJ work.
+The mixed-quality fixture retains a valid subsecond peak while excluding larger
+conflicting, out-of-range, nonfinite, and partly covered peaks; it verifies
+independent quality counts, measured zeros, missing seconds, duplicate handling,
+the paired-coverage gate, and strict output-schema validation.
+
+Final contract validation:
+
+```text
+rtk pnpm exec vitest run packages/server/src/repositories/cycling-effort-metrics.test.ts packages/server/src/repositories/performance-comparison-repository.test.ts packages/server/src/repositories/cycling-training-metrics-repository.test.ts packages/server/src/mcp/cycling-training-metrics-tool.test.ts packages/server/src/mcp/performance-comparison-tool.test.ts packages/training/src/cycling-workout-metrics.test.ts --project unit
+
+Test Files  6 passed (6)
+Tests       51 passed (51)
+Duration    1.81s
+
+rtk pnpm typecheck
+TypeScript: No errors found
+
+rtk pnpm exec biome check packages/server/src/repositories/cycling-effort-metrics.ts packages/server/src/repositories/cycling-effort-metrics.test.ts packages/training/src/cycling-workout-metrics.ts packages/training/src/cycling-workout-metrics.test.ts
+Checked 4 files in 57ms. No fixes applied.
+
+rtk git diff --check
+No output; exit 0.
+```
+
+Biome initially requested multiline formatting for one test fixture; corrected
+before the final checks. Vitest retains the existing esbuild/oxc warning. No
+snapshots changed. Database tests were not rerun: this correction only changes
+in-memory calculation, with no query, schema, or loader changes. Existing
+provenance and ordinary-best-power lower-bound/`maximalTest: false` assertions
+pass in the focused suites. No subagents, branch switches, or HTTP servers.
+
+### Fix-round retrospective
+
+TDD reproduced both consumer failures before the fix; the mixed-quality fixture
+checked that restoring peaks did not bypass coverage masking. Investigation
+confirmed that peaks and weighted averages need separate resampling outputs.
+Suggested training README addition for approval: document native maxima versus
+duration-weighted averages, including the shared full-bucket validity requirement.
+Use systematic-debugging, test-driven-development, and
+verification-before-completion for the next similar regression.

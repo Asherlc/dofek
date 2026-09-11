@@ -22,6 +22,7 @@ describe("computeCyclingWorkoutMetrics", () => {
       samples: Array.from({ length: 120 }, (_, index) => ({
         elapsedSeconds: index / 2,
         powerWatts: index % 2 ? 300 : 100,
+        heartRateBpm: index % 2 ? 180 : 120,
       })),
       settings: null,
       intervals: [],
@@ -36,6 +37,7 @@ describe("computeCyclingWorkoutMetrics", () => {
       normalizedWatts: 200,
       workKilojoules: 12,
     });
+    expect(result.heartRate).toEqual({ averageBpm: 150, maximumBpm: 180 });
   });
   it("does not extrapolate sparse native observations across multi-minute dropouts", () => {
     const result = computeCyclingWorkoutMetrics({

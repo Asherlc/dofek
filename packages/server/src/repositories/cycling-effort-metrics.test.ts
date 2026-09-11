@@ -57,6 +57,8 @@ describe("calculateCyclingEffortMetrics", () => {
       Array.from({ length: 120 }, (_, index) => ({
         elapsedSeconds: index / 2,
         powerWatts: index % 2 === 0 ? 100 : 300,
+        speedMetersPerSecond: index % 2 === 0 ? 10 : 20,
+        heartRateBpm: index % 2 === 0 ? 120 : 180,
       })),
       { ...context, durationSeconds: 60 },
     );
@@ -71,6 +73,57 @@ describe("calculateCyclingEffortMetrics", () => {
       normalizedWatts: 200,
       workKilojoules: 12,
     });
+    expect(result.movement).toMatchObject({
+      maximumSpeedMetersPerSecond: 20,
+      averageMovingSpeedMetersPerSecond: 15,
+      distanceMeters: 900,
+      speedHeartRatePairedSeconds: 60,
+      speedToHeartRateRatio: 0.1,
+    });
+    expect(result.workout.heartRate).toEqual({ averageBpm: 150, maximumBpm: 180 });
+  });
+
+  it("excludes conflicting, suspicious, and partially covered peaks while retaining native valid peaks", () => {
+    const result = calculateCyclingEffortMetrics(
+      [
+        { elapsedSeconds: 0, speedMetersPerSecond: 10, heartRateBpm: 120 },
+        { elapsedSeconds: 0.5, speedMetersPerSecond: 20, heartRateBpm: 180 },
+        { elapsedSeconds: 1, speedMetersPerSecond: 30, heartRateBpm: 190 },
+        { elapsedSeconds: 1.5, speedMetersPerSecond: 40, heartRateBpm: 200 },
+        { elapsedSeconds: 1.5, speedMetersPerSecond: 50, heartRateBpm: 210 },
+        { elapsedSeconds: 2, speedMetersPerSecond: 0, heartRateBpm: 0 },
+        { elapsedSeconds: 2.5, speedMetersPerSecond: 0, heartRateBpm: 0 },
+        { elapsedSeconds: 2.5, speedMetersPerSecond: 0, heartRateBpm: 0 },
+        {
+          elapsedSeconds: 3,
+          speedMetersPerSecond: Number.POSITIVE_INFINITY,
+          heartRateBpm: Number.NaN,
+        },
+        { elapsedSeconds: 3.5, speedMetersPerSecond: -1, heartRateBpm: -1 },
+        { elapsedSeconds: -1, speedMetersPerSecond: 60, heartRateBpm: 220 },
+        { elapsedSeconds: 4, speedMetersPerSecond: 60, heartRateBpm: 220 },
+      ],
+      { ...context, durationSeconds: 4 },
+    );
+    expect(result.movement).toMatchObject({
+      maximumSpeedMetersPerSecond: 20,
+      averageMovingSpeedMetersPerSecond: 15,
+      distanceMeters: 15,
+      speedHeartRatePairedSeconds: 1,
+      speedToHeartRateRatio: null,
+    });
+    expect(result.workout.heartRate).toEqual({ averageBpm: 75, maximumBpm: 180 });
+    for (const stream of ["speed", "heartRate"] as const) {
+      expect(result.streamQuality[stream]).toMatchObject({
+        observedSamples: 5,
+        conflictingSamples: 1,
+        suspiciousSamples: 4,
+        coveredSeconds: 2,
+        missingSeconds: 2,
+        zeroSeconds: 1,
+      });
+    }
+    expect(cyclingEffortMetricsSchema.safeParse(result).success).toBe(true);
   });
 
   it.each([10, 10.5])(

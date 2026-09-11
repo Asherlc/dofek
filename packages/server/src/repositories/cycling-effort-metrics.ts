@@ -364,10 +364,7 @@ export function calculateCyclingEffortMetrics(
           ? ("unavailable" as const)
           : ("integrated_covered_speed_samples" as const),
       averageMovingSpeedMetersPerSecond: averageMovingSpeed,
-      maximumSpeedMetersPerSecond:
-        speed.coverage.coveredSeconds > 0
-          ? Math.max(...speed.values.map((value) => value ?? 0))
-          : null,
+      maximumSpeedMetersPerSecond: speed.maximumValue,
       speedToHeartRateRatio: pairedCoverage
         ? (mean(pairedSpeed) ?? 0) / (mean(pairedHr) ?? 1)
         : null,

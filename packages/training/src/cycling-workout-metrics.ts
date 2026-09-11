@@ -104,6 +104,7 @@ export interface CyclingWorkoutMetrics {
 
 interface ResampledStream {
   values: Array<number | null>;
+  maximumValue: number | null;
   coverage: StreamCoverage;
 }
 
@@ -158,6 +159,7 @@ export function resampleCyclingStream<T extends CyclingWorkoutSample>(
   const nativeInterval = Math.min(10, medianInterval ?? 1);
   const continuityTolerance = Math.min(10, Math.max(5, nativeInterval * 2));
   const totals = Array.from({ length: durationSeconds }, () => 0);
+  const peaks = Array.from<number | null>({ length: durationSeconds }).fill(null);
   const coveredDurations = Array.from({ length: durationSeconds }, () => 0);
 
   for (let index = 0; index < points.length; index++) {
@@ -176,6 +178,7 @@ export function resampleCyclingStream<T extends CyclingWorkoutSample>(
     ) {
       const covered = Math.min(second + 1, intervalEnd) - Math.max(second, point.offset);
       totals[second] = (totals[second] ?? 0) + point.value * covered;
+      peaks[second] = Math.max(peaks[second] ?? point.value, point.value);
       coveredDurations[second] = (coveredDurations[second] ?? 0) + covered;
     }
   }
@@ -191,6 +194,11 @@ export function resampleCyclingStream<T extends CyclingWorkoutSample>(
   const zeroSeconds = values.reduce<number>((count, value) => count + (value === 0 ? 1 : 0), 0);
   return {
     values,
+    // Preserve native peaks only in buckets that satisfy the same coverage mask.
+    maximumValue: peaks.reduce<number | null>((maximum, peak, second) => {
+      if (values[second] == null || peak == null) return maximum;
+      return maximum == null ? peak : Math.max(maximum, peak);
+    }, null),
     coverage: {
       observedSamples: points.filter((point) => point.value != null).length,
       coveredSeconds,
@@ -496,10 +504,7 @@ export function computeCyclingWorkoutMetrics(
     },
     heartRate: {
       averageBpm: averageHeartRate == null ? null : round(averageHeartRate),
-      maximumBpm:
-        heartRate.coverage.coveredSeconds === 0
-          ? null
-          : Math.max(...heartRate.values.flatMap((value) => (value == null ? [] : [value]))),
+      maximumBpm: heartRate.maximumValue,
     },
     cadence: { averageRpm: averageCadence == null ? null : round(averageCadence) },
     aerobicEfficiency: {
