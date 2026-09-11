@@ -10,11 +10,12 @@ the [analytics model inventory](../analytics/README.md), and dbt's
 ## Scope and limits
 
 The audit requires one user UUID and a half-open UTC window no longer than 31
-days. It reads active `fitness.activity.raw` records in the requested
-date/provider scope, including records with `NULL` or all-zero `group_id`
-values so invalid group IDs can be reported for diagnostics. It does not fetch
-provider data, mutate raw payloads, update Postgres activity rows, or insert
-directly into `analytics.activity_effort_identity`.
+days. It reads active `fitness.activity.raw` records for the requested user/date
+scope across all providers; each per-record detail reports the provider ID.
+Records with `NULL` or all-zero `group_id` values are included so invalid group
+IDs can be reported for diagnostics. It does not fetch provider data, mutate raw
+payloads, update Postgres activity rows, or insert directly into
+`analytics.activity_effort_identity`.
 
 The v1 map is deliberately the same as
 [`activity_effort_identity`](../analytics/models/read_models/activity_effort_identity.sql):

@@ -26359,3 +26359,17 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   the latest environment validation remains blocked. The connection-reset
   cause was not investigated further under the instruction to finish focused
   fixes; no timeout/retry change or additional suite was run.
+
+## 2026-09-10 — Activity effort audit scope wording corrected
+
+- **Impact:** Documentation-only correction; no production or runtime behavior
+  changed.
+- **Evidence / root cause:** The activity effort identity runbook described the
+  audit as operating in a “requested date/provider scope,” which incorrectly
+  implied that providers were an input filter rather than that all providers
+  are included in the user/date audit.
+- **Direct fix:** The runbook now states that the audit is scoped by user and
+  date, includes all providers, and reports the provider ID on each record
+  detail.
+- **Validation:** `git diff --check` passes. No schema, code, data, or
+  operational setting changed.
