@@ -171,6 +171,59 @@ describe("db-insertion deduplication (integration)", () => {
       expect(intervals.map((interval) => interval.label)).toEqual(["Step 2: Work"]);
     });
 
+    it("persists provider-recorded Hang Ten interval provenance on reimport", async () => {
+      const start = new Date("2026-09-10T14:00:00Z");
+      const workout = hangTenWorkout({
+        startDate: start,
+        endDate: new Date("2026-09-10T14:00:10Z"),
+      });
+
+      await upsertWorkoutBatch(ctx.db, PROVIDER_ID, [workout]);
+      if (!workout.hangTen) throw new Error("Expected Hang Ten metadata");
+      workout.hangTen.activitySegments = [
+        {
+          stepID: "step-2",
+          stepNumber: 2,
+          kind: "work",
+          holdIDs: ["jug-24"],
+          holdType: "jug",
+          durationSeconds: 4,
+        },
+      ];
+
+      await upsertWorkoutBatch(ctx.db, PROVIDER_ID, [workout]);
+
+      const [storedActivity] = await ctx.db
+        .select()
+        .from(schema.activity)
+        .where(eq(schema.activity.externalId, "ah:workout:22222222-2222-4222-8222-222222222222"));
+      expect(storedActivity).toBeDefined();
+      if (!storedActivity) return;
+
+      const intervals = await ctx.db
+        .select()
+        .from(schema.activityInterval)
+        .where(eq(schema.activityInterval.activityId, storedActivity.id));
+
+      expect(intervals).toEqual([
+        expect.objectContaining({
+          sourceKind: "provider_recorded",
+          sourceProvider: PROVIDER_ID,
+          sourceActivityId: storedActivity.id,
+          segmentType: "work",
+          workRecoveryKind: "work",
+          raw: {
+            stepID: "step-2",
+            stepNumber: 2,
+            kind: "work",
+            holdIDs: ["jug-24"],
+            holdType: "jug",
+            durationSeconds: 4,
+          },
+        }),
+      ]);
+    });
+
     it("keeps existing Hang Ten intervals after a malformed reimport", async () => {
       const start = new Date("2026-08-07T15:00:00Z");
       const workout = hangTenWorkout({
