@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { makeMockSensorStore } from "../lib/test-helpers.ts";
-import { average, IntervalsRepository, maxVal, summarizeSegment } from "./intervals-repository.ts";
+import {
+  average,
+  type ComparableInterval,
+  IntervalsRepository,
+  maxVal,
+  mergeComparableIntervals,
+  summarizeSegment,
+} from "./intervals-repository.ts";
 
 // ---------------------------------------------------------------------------
 // Utility function tests
@@ -148,6 +155,129 @@ describe("summarizeSegment", () => {
 
     const result = summarizeSegment(rows, first, last);
     expect(result.maxHeartRate).toBe(156);
+  });
+});
+
+describe("mergeComparableIntervals", () => {
+  function interval(overrides: Partial<ComparableInterval> = {}): ComparableInterval {
+    return {
+      intervalIndex: 0,
+      source: "provider_recorded",
+      startOffsetSeconds: 0,
+      endOffsetSeconds: 60,
+      label: null,
+      intervalType: null,
+      segmentType: null,
+      workRecoveryKind: null,
+      sourceProvider: null,
+      sourceActivityId: null,
+      sourceMemberActivityIds: [],
+      targetIntensity: null,
+      targetZone: null,
+      targetCadenceRpm: null,
+      targetPowerWatts: null,
+      targetResistance: null,
+      raw: null,
+      ...overrides,
+    };
+  }
+
+  it("prefers unknown source evidence over inferred evidence", () => {
+    const result = mergeComparableIntervals([
+      interval({ source: "inferred", targetPowerWatts: 180 }),
+      interval({ source: "unknown", targetPowerWatts: 220 }),
+    ]);
+
+    expect(result).toEqual([expect.objectContaining({ source: "unknown", targetPowerWatts: 220 })]);
+  });
+
+  it("rejects an interval whose flattened source evidence is empty", () => {
+    expect(() => mergeComparableIntervals([interval({ sourceEvidence: [] })])).toThrow(
+      "Interval evidence group is empty",
+    );
+  });
+
+  it("extracts conflicts only from the preferred source and ignores null peer fields", () => {
+    const result = mergeComparableIntervals([
+      interval({
+        sourceProvider: "a",
+        intervalType: "lap",
+        segmentType: "work",
+        workRecoveryKind: "work",
+        targetZone: 4,
+        targetPowerWatts: 250,
+      }),
+      interval({
+        sourceProvider: "b",
+        intervalType: null,
+        segmentType: "recovery",
+        workRecoveryKind: null,
+        targetZone: null,
+        targetPowerWatts: 300,
+      }),
+      interval({
+        source: "inferred",
+        intervalType: "inferred-lap",
+        workRecoveryKind: "recovery",
+        targetZone: 2,
+        targetPowerWatts: 100,
+      }),
+    ]);
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        source: "provider_recorded",
+        intervalType: "lap",
+        segmentType: null,
+        workRecoveryKind: "work",
+        targetZone: 4,
+        targetPowerWatts: null,
+        conflicts: ["targetPowerWatts", "segmentType"],
+      }),
+    ]);
+  });
+
+  it("sorts intervals deterministically by start, then end, then index", () => {
+    const indexTwoEvidence = interval({
+      intervalIndex: 2,
+      startOffsetSeconds: 300,
+      endOffsetSeconds: 360,
+    });
+    const indexOneEvidence = interval({
+      intervalIndex: 1,
+      startOffsetSeconds: 300,
+      endOffsetSeconds: 360,
+    });
+
+    const result = mergeComparableIntervals([
+      interval({ startOffsetSeconds: 30, endOffsetSeconds: 40 }),
+      interval({ startOffsetSeconds: 0, endOffsetSeconds: 200 }),
+      interval({ startOffsetSeconds: 0, endOffsetSeconds: 100 }),
+      interval({
+        startOffsetSeconds: 1,
+        endOffsetSeconds: 2,
+        sourceEvidence: [indexTwoEvidence],
+      }),
+      interval({
+        startOffsetSeconds: 2,
+        endOffsetSeconds: 3,
+        sourceEvidence: [indexOneEvidence],
+      }),
+    ]);
+
+    expect(
+      result.map(({ startOffsetSeconds, endOffsetSeconds, intervalIndex }) => [
+        startOffsetSeconds,
+        endOffsetSeconds,
+        intervalIndex,
+      ]),
+    ).toEqual([
+      [0, 100, 0],
+      [0, 200, 0],
+      [30, 40, 0],
+      [300, 360, 1],
+      [300, 360, 2],
+    ]);
   });
 });
 
