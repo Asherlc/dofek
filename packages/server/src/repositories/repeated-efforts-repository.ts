@@ -84,6 +84,8 @@ const routeSchema = z.object({
   coverage_pct: z.number().nullable(),
   largest_gap_seconds: z.number().nullable(),
   geometry_status: z.enum(["available", "partial", "unavailable"]),
+  source_providers: z.array(z.string()),
+  source_devices: z.array(z.string()),
 });
 type Route = z.infer<typeof routeSchema>;
 const benchmarkSchema = z.object({
@@ -222,7 +224,8 @@ export class RepeatedEffortsRepository {
         ? this.#store.query(
             routeSchema,
             `SELECT canonical_activity_id,
-        points, route_distance_meters, elevation_profile, coverage_pct, largest_gap_seconds, geometry_status
+        points, route_distance_meters, elevation_profile, coverage_pct, largest_gap_seconds, geometry_status,
+        source_providers, source_devices
         FROM analytics.activity_route_identity FINAL
         WHERE user_id = {userId:UUID} AND is_deleted = 0
           AND canonical_activity_id IN {activityIds:Array(UUID)} ORDER BY canonical_activity_id LIMIT 251`,
@@ -420,13 +423,20 @@ export class RepeatedEffortsRepository {
           {
             canonicalActivityId: activity.activity_id,
             sourceActivityId: null,
-            provider: null,
+            provider: route.source_providers.length === 1 ? route.source_providers[0] : null,
             externalId: null,
             namespace: "route_geometry_v1",
             value: anchor.canonical_activity_id,
             method: "route_geometry_v1",
             sourceField: null,
-            evidence: { ...match, anchorCanonicalActivityId: anchor.canonical_activity_id },
+            evidence: {
+              ...match,
+              anchorCanonicalActivityId: anchor.canonical_activity_id,
+              anchorSourceProviders: anchor.source_providers,
+              anchorSourceDevices: anchor.source_devices,
+              sourceProviders: route.source_providers,
+              sourceDevices: route.source_devices,
+            },
           },
         );
       }

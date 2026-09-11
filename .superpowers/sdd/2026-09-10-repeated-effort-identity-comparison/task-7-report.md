@@ -95,3 +95,44 @@ Integration coverage exercises identity/source/route SQL, Postgres benchmark mem
 The test-first grouping fixtures and real-engine checks complemented each other: the database test caught the timezone defect that typed unit rows hid. Reusing existing identity and route interfaces kept provider logic out of discovery. Useful controller context is the distinction between prescribed and observed duration, explicit benchmark selection, candidate-scoped geometry IDs, and baseline failures outside root typecheck coverage.
 
 Proposed documentation refinement for approval: add a server README note that ClickHouse timestamp queries used with JavaScript parsers must return explicit UTC offsets, and add package-specific `tsc -p packages/server/tsconfig.json` to the task validation checklist. No documentation policy changes were made during this task. Use TDD, integration-tests-ready and verification-before-completion for similar discovery repositories; no new skill is needed.
+
+## Fix round 1 — route geometry provenance
+
+Root cause: `RepeatedEffortsRepository` selected and validated the route geometry fields without `source_providers` or `source_devices`, then constructed every `route_geometry_v1` identity observation with `provider: null`; the route projection already provides the omitted fields.
+
+The repository now selects and validates both route provenance arrays. Each geometry observation retains its own `sourceProviders` and `sourceDevices` plus the anchor's corresponding fields in evidence. `provider` is set when that observation has one geometry provider and remains null only when the projection has multiple providers, avoiding a fabricated singular attribution.
+
+The executable regression uses a real isolated ClickHouse database. Its first canonical activity is merged from Garmin and Apple Health, while the route projection reports GPS only from Garmin/Edge 1050. It asserts the merged activity retains Garmin rather than Apple Health as the geometry source, every route member has provider/device evidence, and the anchor preserves its own provenance.
+
+RED command/output:
+
+```text
+rtk proxy sh -c 'set -a; . ./.env.local; set +a; TEST_DATABASE_URL="$DATABASE_URL" pnpm exec vitest run --project integration packages/server/src/repositories/repeated-efforts-repository.integration.test.ts'
+
+Test Files 1 failed (1)
+Tests      1 failed | 5 passed (6)
+First fatal assertion: expected geometry evidence provider "garmin" with sourceProviders/sourceDevices, received provider null and no provenance arrays.
+```
+
+Final validation:
+
+```text
+rtk pnpm exec vitest run packages/server/src/repositories/repeated-efforts-repository.test.ts --project unit
+Test Files 1 passed (1)
+Tests      12 passed (12)
+
+rtk proxy sh -c 'set -a; . ./.env.local; set +a; TEST_DATABASE_URL="$DATABASE_URL" pnpm exec vitest run --project integration packages/server/src/repositories/repeated-efforts-repository.integration.test.ts'
+Test Files 1 passed (1)
+Tests      6 passed (6)
+
+rtk pnpm exec biome check packages/server/src/repositories/repeated-efforts-repository.ts packages/server/src/repositories/repeated-efforts-repository.test.ts packages/server/src/repositories/repeated-efforts-repository.integration.test.ts
+Checked 3 files. No fixes applied.
+
+rtk git diff --check
+No output; exit 0.
+
+rtk pnpm typecheck
+TypeScript: No errors found.
+```
+
+No Task 3 formatting or Task 6 package-typecheck files were changed. The earlier package-specific Task 6 diagnostics remain outside this fix round.

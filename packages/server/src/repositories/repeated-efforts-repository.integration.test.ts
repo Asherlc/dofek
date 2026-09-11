@@ -53,7 +53,7 @@ describe("RepeatedEffortsRepository database queries", () => {
       ],
       [
         "activity_route_identity",
-        `user_id UUID, canonical_activity_id UUID, points Array(Tuple(Float64,Float64)), route_distance_meters Nullable(Float64), elevation_profile Array(Float64), coverage_pct Nullable(Float64), largest_gap_seconds Nullable(Float64), geometry_status String`,
+        `user_id UUID, canonical_activity_id UUID, points Array(Tuple(Float64,Float64)), route_distance_meters Nullable(Float64), elevation_profile Array(Float64), coverage_pct Nullable(Float64), largest_gap_seconds Nullable(Float64), geometry_status String, source_providers Array(String), source_devices Array(String)`,
         "user_id, canonical_activity_id",
       ],
     ];
@@ -176,6 +176,8 @@ describe("RepeatedEffortsRepository database queries", () => {
         coverage_pct: 100,
         largest_gap_seconds: 1,
         geometry_status: "available",
+        source_providers: activityId === first ? ["garmin"] : ["strava"],
+        source_devices: activityId === first ? ["Edge 1050"] : ["iPhone"],
         refresh_version: 1,
         is_deleted: 0,
       })),
@@ -255,12 +257,42 @@ describe("RepeatedEffortsRepository database queries", () => {
       ).groups[0]?.canonicalActivityIds,
     ).toEqual([second, third].sort());
   });
-  it("executes geometry projections and retains inferred evidence", async () => {
+  it("preserves per-member geometry provenance when a merged activity has GPS from one source", async () => {
     const result = await repository().find({ ...input, effortKind: "canonical_route" });
     expect(result.groups[0]).toMatchObject({ strength: "strong_inferred", repetitionCount: 2 });
-    expect(result.groups[0]?.identityEvidence[0]?.evidence).toMatchObject({
-      matched: true,
-      direction: "forward",
+    const evidence = result.groups[0]?.identityEvidence ?? [];
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          canonicalActivityId: first,
+          provider: "garmin",
+          evidence: expect.objectContaining({
+            sourceProviders: ["garmin"],
+            sourceDevices: ["Edge 1050"],
+          }),
+        }),
+      ]),
+    );
+    for (const routeEvidence of evidence) {
+      expect(routeEvidence).toMatchObject({
+        provider: expect.any(String),
+        evidence: expect.objectContaining({
+          matched: true,
+          direction: "forward",
+          sourceProviders: expect.any(Array),
+          sourceDevices: expect.any(Array),
+          anchorSourceProviders: expect.any(Array),
+          anchorSourceDevices: expect.any(Array),
+        }),
+      });
+    }
+    const anchor = evidence.find(
+      (routeEvidence) =>
+        routeEvidence.evidence.anchorCanonicalActivityId === routeEvidence.canonicalActivityId,
+    );
+    expect(anchor?.evidence).toMatchObject({
+      sourceProviders: anchor?.evidence.anchorSourceProviders,
+      sourceDevices: anchor?.evidence.anchorSourceDevices,
     });
   });
   it("executes Postgres benchmark memberships against stable canonical groups", async () => {

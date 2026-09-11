@@ -215,6 +215,8 @@ describe("RepeatedEffortsRepository.find", () => {
       coverage_pct: 100,
       largest_gap_seconds: 1,
       geometry_status: n === 3 ? "partial" : "available",
+      source_providers: ["garmin"],
+      source_devices: ["Edge 1050"],
     }));
     const { repository } = setup([activity(1), activity(2), activity(3)], [], routes);
     const groups = (await repository.find(input)).groups;
@@ -253,6 +255,8 @@ describe("RepeatedEffortsRepository.find", () => {
       coverage_pct: 100,
       largest_gap_seconds: 1,
       geometry_status: "available",
+      source_providers: ["garmin"],
+      source_devices: ["Edge 1050"],
     }));
     const { repository } = setup(
       [
