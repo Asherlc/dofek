@@ -382,8 +382,28 @@ describe("PerformanceComparisonRepository", () => {
     }
   });
 
-  it("rejects over-broad activity and benchmark scopes at their exact limits", async () => {
+  it("accepts 2,000 scoped activities but rejects 2,001", async () => {
     const row = activityRow();
+    const maximumScope = Array.from({ length: 2000 }, (_, index) =>
+      activityRow({ activity_id: indexedActivityId(index + 100) }),
+    );
+    const accepted = await new PerformanceComparisonRepository(
+      database(row, maximumScope),
+      { query: vi.fn().mockResolvedValue([]) },
+      USER_ID,
+      "UTC",
+    ).compare({
+      startDate: "2026-06-01",
+      endDate: "2026-07-31",
+      referenceActivityId: null,
+      equivalence: { kind: "provider_workout", provider: "zwift", value: "template-17" },
+      providers: [],
+      modalities: [],
+      cursor: null,
+      limit: 1,
+    });
+    expect(accepted.performances).toHaveLength(1);
+
     const overBroadScope = Array.from({ length: 2001 }, (_, index) =>
       activityRow({ activity_id: indexedActivityId(index + 100) }),
     );
@@ -404,15 +424,19 @@ describe("PerformanceComparisonRepository", () => {
         limit: 25,
       }),
     ).rejects.toThrow("Too many activities");
+  });
 
+  it("accepts 2,000 benchmark members but rejects 2,001", async () => {
+    const row = activityRow();
     const db = database(row, [row]);
     const original = db.execute.getMockImplementation();
+    let benchmarkMemberCount = 2000;
     db.execute.mockImplementation((query: unknown) => {
       const text = queryText(query);
       if (text.includes("performance-comparison:benchmark")) {
         return Promise.resolve(
-          Array.from({ length: 2001 }, (_, index) => ({
-            canonical_activity_id: indexedActivityId(index + 100),
+          Array.from({ length: benchmarkMemberCount }, (_, index) => ({
+            canonical_activity_id: index === 0 ? FIRST_ID : indexedActivityId(index + 100),
             display_name: "Benchmark",
             notes: null,
             inclusion_note: null,
@@ -422,23 +446,28 @@ describe("PerformanceComparisonRepository", () => {
       if (!original) throw new Error("Missing database fixture");
       return original(query);
     });
-    await expect(
-      new PerformanceComparisonRepository(
-        db,
-        { query: vi.fn().mockResolvedValue([]) },
-        USER_ID,
-        "UTC",
-      ).compare({
-        startDate: "2026-06-01",
-        endDate: "2026-07-31",
-        referenceActivityId: null,
-        equivalence: { kind: "user_defined_benchmark", value: THIRD_ID },
-        providers: [],
-        modalities: [],
-        cursor: null,
-        limit: 25,
-      }),
-    ).rejects.toThrow("Too many benchmark members");
+    const repository = new PerformanceComparisonRepository(
+      db,
+      { query: vi.fn().mockResolvedValue([]) },
+      USER_ID,
+      "UTC",
+    );
+    const input = {
+      startDate: "2026-06-01",
+      endDate: "2026-07-31",
+      referenceActivityId: null,
+      equivalence: { kind: "user_defined_benchmark" as const, value: THIRD_ID },
+      providers: [],
+      modalities: [],
+      cursor: null,
+      limit: 25,
+    };
+    await expect(repository.compare(input)).resolves.toMatchObject({
+      performances: [expect.objectContaining({ activity_id: FIRST_ID })],
+    });
+
+    benchmarkMemberCount = 2001;
+    await expect(repository.compare(input)).rejects.toThrow("Too many benchmark members");
   });
 
   it("distinguishes empty explicit comparisons from filtered-out references", async () => {
@@ -696,17 +725,75 @@ describe("PerformanceComparisonRepository", () => {
     expect(db.execute).toHaveBeenCalledTimes(callsBeforeEmptyRequest);
   });
 
-  it("rejects non-cycling activities from the batch metric entry point", async () => {
-    const row = activityRow({ canonical_type: "running" });
+  it("rejects a mixed cycling and non-cycling batch from the metric entry point", async () => {
+    const cycling = activityRow();
+    const running = activityRow({
+      activity_id: SECOND_ID,
+      canonical_type: "running",
+      member_activity_ids: [SECOND_ID],
+    });
 
     await expect(
       new PerformanceComparisonRepository(
-        database(row, [row]),
+        database(cycling, [cycling, running]),
         { query: vi.fn().mockResolvedValue([]) },
         USER_ID,
         "UTC",
-      ).cyclingEfforts([FIRST_ID], [300]),
+      ).cyclingEfforts([FIRST_ID, SECOND_ID], [300]),
     ).rejects.toThrow("canonical cycling activities");
+  });
+
+  it("batches comparison cycling metrics in groups of 25 with standard durations", async () => {
+    const activities = Array.from({ length: 26 }, (_, index) =>
+      activityRow({
+        activity_id: indexedActivityId(index + 100),
+        member_activity_ids: [indexedActivityId(index + 100)],
+      }),
+    );
+    const sampleBatches: string[][] = [];
+    const requestedDurations: number[][] = [];
+    const query = vi.fn(
+      async (
+        _schema: unknown,
+        text: string,
+        parameters: { activityIds: string[]; durations?: number[] },
+      ) => {
+        if (text.includes("cycling-training-metrics:samples")) {
+          sampleBatches.push(parameters.activityIds);
+        }
+        if (text.includes("cycling-training-metrics:power-curve")) {
+          requestedDurations.push(parameters.durations ?? []);
+        }
+        return [];
+      },
+    );
+
+    const result = await new PerformanceComparisonRepository(
+      database(activities[0] ?? activityRow(), activities),
+      { query },
+      USER_ID,
+      "UTC",
+    ).compare({
+      startDate: "2026-06-01",
+      endDate: "2026-07-31",
+      referenceActivityId: null,
+      equivalence: {
+        kind: "activity_name",
+        canonicalType: "cycling",
+        value: "30 min Power Zone Endurance",
+      },
+      providers: [],
+      modalities: [],
+      cursor: null,
+      limit: 26,
+    });
+
+    expect(result.performances).toHaveLength(26);
+    expect(sampleBatches.map((activityIds) => activityIds.length)).toEqual([25, 1]);
+    expect(requestedDurations).toEqual([
+      [5, 60, 300, 1200],
+      [5, 60, 300, 1200],
+    ]);
   });
 
   it("loads cycling activity references once and skips incomplete durations without hiding valid efforts", async () => {

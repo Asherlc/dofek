@@ -26498,7 +26498,10 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   an orchestration-test gap: CI measured the repository at 65.91%. Direct
   lifecycle assertions for empty and invalid batches, scope limits, reference
   errors, environmental provenance, and missing durations raised the exact
-  repository target to 77.22% without changing production behavior.
+  full-file target to 77.22%, but the replacement CI changed-line range remained
+  at 72.16%. Boundary assertions for mixed activity batches, the exact 2,000-row
+  limits, 25-record cycling batches, and standard best-power durations raised
+  that exact CI command to 75.00% without changing production behavior.
   The full Docker integration wrapper remained unavailable
   because of the separately recorded shared-VM AIO exhaustion; no timeout,
   retry, or service setting was changed. A replacement CI run is required
