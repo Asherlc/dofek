@@ -430,8 +430,6 @@ export function calculateCyclingEffortMetrics(
   };
 }
 
-export type CyclingEffortMetrics = ReturnType<typeof calculateCyclingEffortMetrics>;
-
 export interface CyclingEffortRequest extends CyclingEffortActivity {
   activityDate: string;
   durationSeconds: number;

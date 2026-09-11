@@ -182,7 +182,7 @@ export function resampleCyclingStream<T extends CyclingWorkoutSample>(
       coveredDurations[second] = (coveredDurations[second] ?? 0) + covered;
     }
   }
-  // A partly invalid/missing bucket is unavailable, including subsecond conflicts.
+  // A partly invalid/missing bucket is unavailable, including sub-second conflicts.
   const values = totals.map((total, second) =>
     (coveredDurations[second] ?? 0) >= 1 - 1e-9 ? total : null,
   );

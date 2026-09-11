@@ -1,4 +1,3 @@
-import type { CyclingEffortRequest } from "./cycling-effort-metrics.ts";
 import type {
   ClimbingComparisonRow,
   StrengthComparisonRow,
@@ -17,7 +16,7 @@ export function cyclingEffortRequest(activity: {
   local_date: string;
   source_providers: string[];
   source_raw_evidence: SourceRawPerformanceEvidence[];
-}): CyclingEffortRequest {
+}) {
   const duration =
     activity.ended_at == null
       ? NaN

@@ -360,7 +360,7 @@ export class EffortTrendRepository {
           "Every numeric delta is current repetition minus the named comparison repetition; null means one or both values are unavailable.",
         rolling:
           "Rolling values are trailing three-repetition descriptive means. Each metric requires three non-null observations; missing values remain null and per-metric observation counts explain availability.",
-        best: "Best uses lower elapsed/moving duration and higher power, power-to-heart-rate ratio, distance, elevation, climbing sends, strength volume, and estimated one-rep maximum. Heart rate, cadence, temperature, and climbing attempts are descriptive and unranked.",
+        best: "Best uses lower elapsed/moving duration and higher power, power-to-heart-rate ratio, distance, elevation, climbing sends, strength volume, and estimated one-rep maximum. Heart rate, cadence, temperature, and climbing attempts are descriptive and not ranked.",
       },
       quality: {
         comparable_repetitions: rows.filter((row) => row.quality.comparable).length,

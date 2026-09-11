@@ -357,7 +357,7 @@ describe("PerformanceComparisonRepository", () => {
     expect(result.performances[0]?.quality.flags).toContain("caller_asserted_equivalence");
   });
 
-  it("keeps unasserted names weak and does not declare them comparable", async () => {
+  it("keeps names without caller assertion weak and does not declare them comparable", async () => {
     const row = activityRow({ canonical_type: "running" });
     const result = await new PerformanceComparisonRepository(
       database(row, [row]),

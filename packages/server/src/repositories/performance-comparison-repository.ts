@@ -519,7 +519,7 @@ export class PerformanceComparisonRepository {
         const rows = scopedIdentities.filter(
           (row) => row.canonical_activity_id === activity.activity_id,
         );
-        // Check all evidence of each eligible candidate before discarding nonmatching keys.
+        // Check all evidence of each eligible candidate before discarding keys that do not match.
         if (identityRepository.matching(modelKey, rows).length) {
           identityRepository.strongest(rows);
           // A higher-ranked kind must not mask ambiguity in the comparison identity kind.

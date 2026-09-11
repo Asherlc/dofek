@@ -16,7 +16,7 @@ function constantSamples(
 }
 
 describe("computeCyclingWorkoutMetrics", () => {
-  it("averages sequential subsecond observations using their covered durations", () => {
+  it("averages sequential sub-second observations using their covered durations", () => {
     const result = computeCyclingWorkoutMetrics({
       durationSeconds: 60,
       samples: Array.from({ length: 120 }, (_, index) => ({

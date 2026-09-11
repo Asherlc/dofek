@@ -42,26 +42,6 @@ export const EQUIVALENCE_STRENGTHS = [
 
 export type EquivalenceStrength = (typeof EQUIVALENCE_STRENGTHS)[number];
 
-/** Source-level evidence for a reusable effort identity. */
-export interface EffortIdentityEvidence {
-  user_id: string;
-  canonical_activity_id: string;
-  source_activity_id: string;
-  source_provider: string;
-  source_external_id: string;
-  kind: EffortIdentityKind;
-  namespace: string | null;
-  value: string;
-  normalized_value: string;
-  display_name: string | null;
-  strength: EquivalenceStrength;
-  method: string;
-  source_field: string | null;
-  evidence: Record<string, unknown>;
-  source_refreshed_at: string;
-  is_deleted: 0 | 1;
-}
-
 /** A reusable identity; it deliberately excludes a provider activity instance ID. */
 export interface RepeatedEffortKey {
   kind: EffortIdentityKind;

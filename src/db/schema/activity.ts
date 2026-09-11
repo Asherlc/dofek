@@ -436,7 +436,7 @@ export const activityInterval = fitness.table(
     }),
     segmentType: text("segment_type"),
     targetIntensity: real("target_intensity"),
-    targetZone: integer("target_zone"),
+    targetZone: bigint("target_zone", { mode: "number" }),
     targetCadenceRpm: real("target_cadence_rpm"),
     targetPowerWatts: real("target_power_watts"),
     targetResistance: real("target_resistance"),

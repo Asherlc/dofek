@@ -26451,3 +26451,28 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   added retries, sleeps, or timeout changes. Shared Docker storage growth
   remains an operational risk; follow the existing
   [Docker disk recovery runbook](testing.md#docker-disk-recovery) when it recurs.
+
+## 2026-09-11 — Repeated-effort PR failed pre-merge policy gates
+
+- **Impact:** The first CI run for PR #2718 was blocked before merge. No
+  production service or user data was affected.
+- **Evidence / root cause:** Six independent checks failed: Expo dependency
+  validation found 17 SDK packages one patch behind its expected versions;
+  dependency-cruiser found a cycle between the cycling metric and comparison
+  context modules; Knip found two unused exported types; Squawk rejected an
+  interval migration's integer and immediately validated constraints; SQLFluff
+  found migration indentation errors; and CSpell found six unsupported words.
+  These were branch defects rather than transient CI failures.
+- **Direct fix:** Aligned the Expo package set with `expo install --fix`, removed
+  the cycle and dead exports, changed the unbounded interval zone integer to a
+  bigint, introduced and then validated new constraints with `NOT VALID`, and
+  corrected SQL and prose formatting. Expo documents `expo install --fix` as
+  the supported dependency-alignment command in its
+  [CLI reference](https://docs.expo.dev/more/expo-cli/#install), and PostgreSQL
+  documents deferred constraint validation in
+  [`ALTER TABLE`](https://www.postgresql.org/docs/current/sql-altertable.html).
+- **Validation / remaining risk:** The six previously failing commands pass
+  locally. The affected migrations also passed eight tests against real
+  Postgres. The full Docker integration wrapper remained unavailable because
+  of the separately recorded shared-VM AIO exhaustion; no timeout, retry, or
+  service setting was changed. A replacement CI run is required before merge.

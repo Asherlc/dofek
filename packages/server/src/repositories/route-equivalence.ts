@@ -323,7 +323,7 @@ function confidence(
 
 /**
  * Evaluate complete normalized route geometry against fixed repeated-effort thresholds.
- * A null result means the geometry is incomplete. Complete nonmatches return
+ * A null result means the geometry is incomplete. Complete mismatches return
  * rejection evidence so callers can explain why no inferred identity was made.
  */
 export function evaluateRouteMatch(input: RouteMatchInput): RouteMatchEvidence | null {
