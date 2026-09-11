@@ -1,8 +1,37 @@
+import type { CyclingEffortRequest } from "./cycling-effort-metrics.ts";
 import type {
   ClimbingComparisonRow,
   StrengthComparisonRow,
 } from "./performance-comparison-modality-metrics.ts";
 import type { PerformanceEquivalence } from "./performance-comparison-types.ts";
+
+/** Translate authorized canonical activity evidence to the shared cycling input. */
+export function cyclingEffortRequest(activity: {
+  activity_id: string;
+  member_activity_ids: string[];
+  started_at: string;
+  ended_at: string | null;
+  local_date: string;
+  source_providers: string[];
+  source_raw_evidence: SourceRawPerformanceEvidence[];
+}): CyclingEffortRequest {
+  const duration =
+    activity.ended_at == null
+      ? NaN
+      : (Date.parse(activity.ended_at) - Date.parse(activity.started_at)) / 1000;
+  if (!Number.isFinite(duration) || duration < 0) {
+    throw new Error(`Cycling activity ${activity.activity_id} requires a valid elapsed duration`);
+  }
+  return {
+    activity_id: activity.activity_id,
+    member_activity_ids: activity.member_activity_ids,
+    started_at: activity.started_at,
+    activityDate: activity.local_date,
+    durationSeconds: duration,
+    sourceProviders: activity.source_providers,
+    movingDuration: buildMovingDuration(activity.source_raw_evidence),
+  };
+}
 
 export const PELOTON_WORKOUT_KEYS = ["pelotonClassId"] as const;
 

@@ -132,15 +132,16 @@ function median(values: number[]): number | null {
   return sorted.length % 2 === 0 && lower != null ? (lower + upper) / 2 : upper;
 }
 
-function resampleStream(
-  samples: CyclingWorkoutSample[],
+export function resampleCyclingStream<T extends CyclingWorkoutSample>(
+  samples: T[],
   durationSeconds: number,
-  select: (sample: CyclingWorkoutSample) => number | null | undefined,
+  select: (sample: T) => number | null | undefined,
+  minimumValue = 0,
 ): ResampledStream {
   const byOffset = new Map<number, number>();
   for (const sample of samples) {
     const value = select(sample);
-    if (value == null || !Number.isFinite(value) || value < 0) continue;
+    if (value == null || !Number.isFinite(value) || value < minimumValue) continue;
     const offset = Math.floor(sample.elapsedSeconds);
     if (offset >= 0 && offset < durationSeconds) byOffset.set(offset, value);
   }
@@ -149,7 +150,7 @@ function resampleStream(
     .sort((left, right) => left.offset - right.offset);
   const gaps = points.slice(1).map((point, index) => point.offset - (points[index]?.offset ?? 0));
   const medianInterval = median(gaps);
-  const nativeInterval = medianInterval ?? 1;
+  const nativeInterval = Math.min(10, medianInterval ?? 1);
   const continuityTolerance = Math.min(10, Math.max(5, nativeInterval * 2));
   const values: Array<number | null> = Array.from({ length: durationSeconds }, () => null);
 
@@ -367,9 +368,21 @@ export function computeCyclingWorkoutMetrics(
   input: CyclingWorkoutMetricsInput,
 ): CyclingWorkoutMetrics {
   const durationSeconds = Math.max(0, Math.floor(input.durationSeconds));
-  const power = resampleStream(input.samples, durationSeconds, (sample) => sample.powerWatts);
-  const heartRate = resampleStream(input.samples, durationSeconds, (sample) => sample.heartRateBpm);
-  const cadence = resampleStream(input.samples, durationSeconds, (sample) => sample.cadenceRpm);
+  const power = resampleCyclingStream(
+    input.samples,
+    durationSeconds,
+    (sample) => sample.powerWatts,
+  );
+  const heartRate = resampleCyclingStream(
+    input.samples,
+    durationSeconds,
+    (sample) => sample.heartRateBpm,
+  );
+  const cadence = resampleCyclingStream(
+    input.samples,
+    durationSeconds,
+    (sample) => sample.cadenceRpm,
+  );
   const unavailableReasons: CyclingWorkoutMetrics["unavailableReasons"] = [];
   const addUnavailable = (metric: string, reason: string) => {
     unavailableReasons.push({ metric, reason });

@@ -8,12 +8,14 @@ import {
   postgresActivityLocalDate,
 } from "./activity-local-date.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import { loadCyclingEffortMetrics } from "./cycling-effort-metrics.ts";
 import {
   buildActivitySourceSummary,
   buildEquivalenceEvidence,
   buildMovingDuration,
   buildRouteContext,
   buildSampleSourceSummary,
+  cyclingEffortRequest,
   hasObservedCyclingSensorData,
   PELOTON_WORKOUT_KEYS,
   PERFORMANCE_COMPARISON_SENSOR_QUERY,
@@ -521,6 +523,26 @@ export class PerformanceComparisonRepository {
     const row = rows[0];
     if (!row) throw new Error("Reference activity was not found for this user");
     return row;
+  }
+
+  /** Complete metric contract for the identity-aware comparison pipeline. */
+  async cyclingEfforts(activityIds: string[], durationsSeconds: number[]) {
+    z.array(z.string().uuid())
+      .max(25, "At most 25 cycling activities may be calculated")
+      .parse(activityIds);
+    z.array(z.number().int().positive().max(21600)).max(32).parse(durationsSeconds);
+    const activities = await Promise.all(unique(activityIds).map((id) => this.#reference(id)));
+    if (activities.some((activity) => activity.canonical_type !== "cycling")) {
+      throw new Error("Cycling effort metrics require canonical cycling activities");
+    }
+    return loadCyclingEffortMetrics(
+      this.#db,
+      this.#store,
+      this.#userId,
+      this.#timezone,
+      activities.map(cyclingEffortRequest),
+      durationsSeconds,
+    );
   }
 
   async compare(input: PerformanceComparisonInput) {

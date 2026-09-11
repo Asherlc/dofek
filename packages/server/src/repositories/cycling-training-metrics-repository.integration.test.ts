@@ -6,6 +6,7 @@ import { createClickHouseClientFromEnv } from "../../../../src/db/clickhouse.ts"
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import { loadCyclingEffortMetrics } from "./cycling-effort-metrics.ts";
 import { CyclingTrainingMetricsRepository } from "./cycling-training-metrics-repository.ts";
 
 const activityId = randomUUID();
@@ -48,6 +49,18 @@ describe("CyclingTrainingMetricsRepository database semantics", () => {
     `);
 
     await clickhouse.command({ query: `CREATE DATABASE ${analyticsDatabase}` });
+    await clickhouse.command({
+      query: `CREATE TABLE ${analyticsDatabase}.activity_summary_rows (
+      activity_id UUID, user_id UUID, total_distance Nullable(Float64),
+      refresh_version UInt64, is_deleted UInt8
+    ) ENGINE = ReplacingMergeTree(refresh_version) ORDER BY (user_id, activity_id)`,
+    });
+    await clickhouse.command({
+      query: `CREATE TABLE ${analyticsDatabase}.v_body_measurement (
+      user_id UUID, recorded_at DateTime64(6, 'UTC'), weight_kg Nullable(Float64),
+      provider_id String, external_id Nullable(String)
+    ) ENGINE = MergeTree ORDER BY (user_id, recorded_at)`,
+    });
     await clickhouse.command({
       query: `CREATE TABLE ${analyticsDatabase}.cycling_activity (
         activity_id UUID,
@@ -242,5 +255,98 @@ describe("CyclingTrainingMetricsRepository database semantics", () => {
       provenance: { duplicate_merged: true },
       best_powers: [{ duration_seconds: 300, watts: 150 }],
     });
+  });
+
+  it("loads deduplicated movement, signed environment, distance and nearby weight in the shared bundle", async () => {
+    await clickhouse.insert({
+      table: `${analyticsDatabase}.activity_sensor_sample`,
+      values: [1, 2].flatMap((version) =>
+        Array.from({ length: 600 }, (_, second) =>
+          ["speed", "altitude", "temperature"].map((channel) => ({
+            activity_id: activityId,
+            user_id: TEST_USER_ID,
+            recorded_at: new Date(Date.parse("2026-06-15T15:00:00Z") + second * 1000)
+              .toISOString()
+              .replace("T", " ")
+              .replace("Z", ""),
+            channel,
+            scalar:
+              version === 1
+                ? 999
+                : channel === "speed"
+                  ? 10
+                  : channel === "altitude"
+                    ? -100 + second / 10
+                    : -5,
+            provider_id: "sensor",
+            device_id: "device",
+            measurement_kind: "direct",
+            refresh_version: version,
+            is_deleted: 0,
+          })),
+        ).flat(),
+      ),
+      format: "JSONEachRow",
+    });
+    await clickhouse.insert({
+      table: `${analyticsDatabase}.activity_summary_rows`,
+      values: [
+        {
+          activity_id: activityId,
+          user_id: TEST_USER_ID,
+          total_distance: 6000,
+          refresh_version: 1,
+          is_deleted: 0,
+        },
+      ],
+      format: "JSONEachRow",
+    });
+    await clickhouse.insert({
+      table: `${analyticsDatabase}.v_body_measurement`,
+      values: [
+        {
+          user_id: TEST_USER_ID,
+          recorded_at: "2026-06-15 10:00:00.000000",
+          weight_kg: 75,
+          provider_id: "scale",
+          external_id: "weight",
+        },
+      ],
+      format: "JSONEachRow",
+    });
+    const [result] = await loadCyclingEffortMetrics(
+      postgres.db,
+      store,
+      TEST_USER_ID,
+      "UTC",
+      [
+        {
+          activity_id: activityId,
+          member_activity_ids: [activityId, duplicateMemberId],
+          started_at: "2026-06-15T15:00:00Z",
+          activityDate: "2026-06-15",
+          durationSeconds: 600,
+          sourceProviders: ["sensor"],
+          movingDuration: {
+            seconds: null,
+            status: "not_available",
+            evidence: [],
+            evidence_count: 0,
+            evidence_truncated: false,
+          },
+        },
+      ],
+      [300],
+    );
+    expect(result?.metrics).toMatchObject({
+      workout: { power: { averageWatts: 150, workKilojoules: 90 } },
+      movement: { movingSeconds: 600, distanceMeters: 6000, averageMovingSpeedMetersPerSecond: 10 },
+      environment: { averageTemperatureC: -5 },
+      weight: { value_kg: 75, sources: [{ provider: "scale" }] },
+      averageWattsPerKg: 2,
+      bestPowers: [{ watts: 150, wattsPerKg: 2 }],
+      streamQuality: { speed: { observedSamples: 600, coveragePct: 100 } },
+    });
+    expect(result?.metrics.movement.elevationGainMeters).toBeCloseTo(59.9);
   });
 });

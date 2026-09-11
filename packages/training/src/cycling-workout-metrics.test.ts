@@ -16,6 +16,21 @@ function constantSamples(
 }
 
 describe("computeCyclingWorkoutMetrics", () => {
+  it("does not extrapolate sparse native observations across multi-minute dropouts", () => {
+    const result = computeCyclingWorkoutMetrics({
+      durationSeconds: 1800,
+      samples: [
+        { elapsedSeconds: 0, powerWatts: 200 },
+        { elapsedSeconds: 600, powerWatts: 200 },
+      ],
+      settings: null,
+      intervals: [],
+    });
+    expect(result.coverage.power.coveredSeconds).toBe(20);
+    expect(result.coverage.power.largestGapSeconds).toBe(600);
+    expect(result.power.workKilojoules).toBe(4);
+    expect(result.power.normalizedWatts).toBeNull();
+  });
   it("computes complete one-hertz power, load, zones, and evidence", () => {
     const result = computeCyclingWorkoutMetrics({
       durationSeconds: 3_600,

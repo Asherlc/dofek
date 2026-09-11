@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { cyclingEffortMetricsSchema } from "../mcp/performance-comparison-output.ts";
 import { PerformanceComparisonRepository } from "./performance-comparison-repository.ts";
 
 const USER_ID = "00000000-0000-4000-8000-000000000001";
@@ -64,6 +65,56 @@ function database(reference: Record<string, unknown>, candidates: Record<string,
 }
 
 describe("PerformanceComparisonRepository", () => {
+  it("loads a bounded complete cycling bundle for future comparison without using a current FTP", async () => {
+    const row = activityRow();
+    const db = database(row, [row]);
+    const original = db.execute.getMockImplementation();
+    db.execute.mockImplementation((query: unknown) => {
+      const text = queryText(query);
+      if (text.includes("sport_settings") || text.includes("activity_interval"))
+        return Promise.resolve([]);
+      if (!original) throw new Error("Missing database fixture");
+      return original(query);
+    });
+    const query = vi.fn(async (_schema, text: string) => {
+      if (text.includes("cycling-training-metrics:samples"))
+        return Array.from({ length: 1800 }, (_, i) => ({
+          activity_id: FIRST_ID,
+          elapsed_seconds: i,
+          power: 210,
+          heart_rate: 140,
+          cadence: 90,
+          source_providers: ["sensor"],
+          source_devices: ["meter"],
+          power_measurement_kinds: ["direct"],
+        }));
+      return [];
+    });
+    const repository = new PerformanceComparisonRepository(
+      db,
+      { query },
+      USER_ID,
+      "America/Los_Angeles",
+    );
+    const [effort] = await repository.cyclingEfforts([FIRST_ID], [300]);
+    expect(cyclingEffortMetricsSchema.parse(effort?.metrics)).toEqual(effort?.metrics);
+    expect(effort).toMatchObject({
+      activityId: FIRST_ID,
+      metrics: {
+        workout: { power: { averageWatts: 210, workKilojoules: 378, intensityFactor: null } },
+        thresholds: { ftp: null },
+        provenance: { sourceDevices: ["meter"] },
+      },
+    });
+    await expect(
+      repository.cyclingEfforts(
+        Array.from({ length: 26 }, () => FIRST_ID),
+        [300],
+      ),
+    ).rejects.toThrow(/25/);
+    await expect(repository.cyclingEfforts([], [300])).resolves.toEqual([]);
+  });
+
   it("derives a repeated provider workout identity and compares deduped cycling metrics", async () => {
     const first = activityRow({
       source_raw_evidence: [

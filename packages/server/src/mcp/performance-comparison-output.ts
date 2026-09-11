@@ -1,6 +1,77 @@
 import { z } from "zod";
 
 const nullableNumber = z.number().nullable();
+const effortCoverageSchema = z
+  .object({
+    observedSamples: z.number(),
+    coveredSeconds: z.number(),
+    missingSeconds: z.number(),
+    zeroSeconds: z.number(),
+    coveragePct: z.number(),
+    medianSampleIntervalSeconds: nullableNumber,
+    largestGapSeconds: nullableNumber,
+  })
+  .strict();
+const effortStreamQualitySchema = effortCoverageSchema
+  .extend({
+    suspiciousSamples: z.number(),
+    conflictingSamples: z.number(),
+  })
+  .strict();
+const effortZonesSchema = z
+  .object({
+    threshold: z.number(),
+    upperPcts: z.array(z.number()),
+    zones: z.array(
+      z.object({ zone: z.number(), seconds: z.number(), percent: z.number() }).strict(),
+    ),
+  })
+  .strict()
+  .nullable();
+const effortIntervalSchema = z
+  .object({
+    index: z.number(),
+    type: z.enum(["work", "recovery", "warmup", "cooldown", "other"]),
+    label: z.string().nullable(),
+    source: z.enum(["recorded", "inferred"]),
+    startOffsetSeconds: z.number(),
+    endOffsetSeconds: z.number(),
+    durationSeconds: z.number(),
+    averagePowerWatts: nullableNumber,
+    normalizedPowerWatts: nullableNumber,
+    averageHeartRateBpm: nullableNumber,
+    averageCadenceRpm: nullableNumber,
+    targetPowerWatts: nullableNumber,
+    completionPct: nullableNumber,
+  })
+  .strict();
+const effortUnavailableSchema = z.array(
+  z.object({ metric: z.string(), reason: z.string() }).strict(),
+);
+const effortWeightSchema = z.union([
+  z.object({ value_kg: z.null(), reason: z.string() }).strict(),
+  z
+    .object({
+      value_kg: z.number().positive(),
+      kind: z.enum(["measured", "interpolated", "nearest"]),
+      method: z.enum(["same_day", "linear_interpolation", "nearest_within_30_days"]),
+      quality: z.enum(["high", "medium", "low"]),
+      distance_days: z.number(),
+      sources: z.array(
+        z
+          .object({
+            date: z.string(),
+            recorded_at: z.string(),
+            value_kg: z.number(),
+            provider: z.string(),
+            source_record_id: z.string().nullable(),
+            measurement_kind: z.literal("direct"),
+          })
+          .strict(),
+      ),
+    })
+    .strict(),
+]);
 const sourceExternalIdSchema = z
   .object({
     providerId: z.string(),
@@ -189,6 +260,189 @@ const equivalenceEvidenceSchema = z
     provider_type: z.string().nullable(),
     source_activity_id: z.uuid(),
     source_record_id: z.uuid().nullable(),
+  })
+  .strict();
+
+/** Shared effort contract; Task 8 opts the comparison wire response into this bundle. */
+export const cyclingEffortMetricsSchema = z
+  .object({
+    workout: z
+      .object({
+        durationSeconds: z.number(),
+        power: z
+          .object({
+            averageWatts: nullableNumber,
+            normalizedWatts: nullableNumber,
+            variabilityIndex: nullableNumber,
+            workKilojoules: nullableNumber,
+            intensityFactor: nullableNumber,
+            trainingStressScore: nullableNumber,
+          })
+          .strict(),
+        heartRate: z.object({ averageBpm: nullableNumber, maximumBpm: nullableNumber }).strict(),
+        cadence: z.object({ averageRpm: nullableNumber }).strict(),
+        aerobicEfficiency: z
+          .object({ powerToHeartRateRatio: nullableNumber, pairedSeconds: z.number() })
+          .strict(),
+        cardiacDrift: z
+          .object({
+            percent: nullableNumber,
+            firstHalfPowerToHeartRate: nullableNumber,
+            secondHalfPowerToHeartRate: nullableNumber,
+            pairedSeconds: z.number(),
+            method: z.literal("equal_elapsed_time_halves_power_to_heart_rate"),
+          })
+          .strict(),
+        powerZones: effortZonesSchema,
+        heartRateZones: effortZonesSchema,
+        coverage: z
+          .object({
+            power: effortCoverageSchema,
+            heartRate: effortCoverageSchema,
+            cadence: effortCoverageSchema,
+          })
+          .strict(),
+        intervalSource: z.enum(["recorded", "inferred", "none"]),
+        intervalDetection: z
+          .object({
+            method: z.literal("30_second_average_above_105_percent_ftp"),
+            thresholdWatts: z.number(),
+            minimumWorkSeconds: z.number(),
+          })
+          .strict()
+          .nullable(),
+        intervals: z.array(effortIntervalSchema),
+        unavailableReasons: effortUnavailableSchema,
+      })
+      .strict(),
+    thresholds: z
+      .object({
+        ftp: z
+          .object({
+            value: z.number(),
+            effectiveFrom: z.string(),
+            sourceRecordId: z.string(),
+            kind: z.literal("configured"),
+          })
+          .strict()
+          .nullable(),
+        thresholdHeartRateBpm: nullableNumber,
+        ageDays: nullableNumber,
+        freshness: z.enum(["unavailable", "unverified"]),
+        freshnessReason: z.string(),
+      })
+      .strict(),
+    movement: z
+      .object({
+        elapsedSeconds: z.number(),
+        movingSeconds: nullableNumber,
+        movingDurationKind: z.enum([
+          "provider_reported",
+          "unavailable",
+          "calculated_from_covered_speed_samples",
+        ]),
+        providerMovingDuration: movingDurationSchema.nullable(),
+        distanceMeters: nullableNumber,
+        distanceKind: z.enum([
+          "deduplicated_summary",
+          "unavailable",
+          "integrated_covered_speed_samples",
+        ]),
+        averageMovingSpeedMetersPerSecond: nullableNumber,
+        maximumSpeedMetersPerSecond: nullableNumber,
+        speedToHeartRateRatio: nullableNumber,
+        speedHeartRatePairedSeconds: z.number(),
+        elevationGainMeters: nullableNumber,
+        elevationLossMeters: nullableNumber,
+        climbVerticalSpeedMetersPerHour: nullableNumber,
+        climbDurationSeconds: z.number(),
+        elevationKind: z.literal("continuous_sample_windows"),
+      })
+      .strict(),
+    weight: effortWeightSchema,
+    averageWattsPerKg: nullableNumber,
+    normalizedWattsPerKg: nullableNumber,
+    bestPowers: z.array(
+      z
+        .object({
+          durationSeconds: z.number(),
+          watts: z.number(),
+          wattsPerKg: nullableNumber,
+          startOffsetSeconds: nullableNumber,
+          powerKind: z.enum(["direct", "estimated", "unknown"]),
+          observedSamples: nullableNumber,
+          coveragePct: nullableNumber,
+          largestGapSeconds: nullableNumber,
+          medianSampleIntervalSeconds: nullableNumber,
+        })
+        .strict(),
+    ),
+    intervals: z.array(
+      effortIntervalSchema
+        .extend({
+          source: z.enum(["provider_recorded", "inferred", "unknown"]),
+          evidence: z
+            .object({
+              intervalIndex: z.number(),
+              source: z.enum(["provider_recorded", "inferred", "unknown"]),
+              startOffsetSeconds: z.number(),
+              endOffsetSeconds: z.number(),
+              label: z.string().nullable(),
+              intervalType: z.string().nullable().optional(),
+              segmentType: z.string().nullable(),
+              workRecoveryKind: z.enum(["work", "recovery"]).nullable(),
+              sourceProvider: z.string().nullable(),
+              sourceActivityId: z.string().nullable(),
+              sourceMemberActivityIds: z.array(z.string()),
+              targetIntensity: nullableNumber,
+              targetZone: nullableNumber,
+              targetCadenceRpm: nullableNumber,
+              targetPowerWatts: nullableNumber,
+              targetResistance: nullableNumber,
+              raw: z.unknown().nullable(),
+              completionPct: nullableNumber.optional(),
+            })
+            .strict()
+            .nullable(),
+        })
+        .strict(),
+    ),
+    bestPowerInterpretation: z
+      .object({
+        kind: z.literal("descriptive_observed_maxima"),
+        maximalTest: z.literal(false),
+        caveat: z.string(),
+      })
+      .strict(),
+    environment: z
+      .object({
+        averageTemperatureC: nullableNumber,
+        valueKind: z.literal("calculated_from_samples"),
+      })
+      .strict(),
+    provenance: z
+      .object({
+        sourceProviders: z.array(z.string()),
+        sourceDevices: z.array(z.string()),
+        powerMeasurementKinds: z.array(z.enum(["direct", "estimated", "unknown"])),
+        sensorBoundary: z.literal("analytics.activity_sensor_sample FINAL"),
+        sourceConflicts: z.literal("upstream_conflicts_not_exposed_by_deduplicated_model"),
+      })
+      .strict(),
+    streamQuality: z
+      .object({
+        power: effortStreamQualitySchema,
+        heartRate: effortStreamQualitySchema,
+        cadence: effortStreamQualitySchema,
+        speed: effortStreamQualitySchema,
+        altitude: effortStreamQualitySchema,
+        temperature: effortStreamQualitySchema,
+      })
+      .strict(),
+    quality: z
+      .object({ status: z.enum(["high", "limited"]), reasons: z.array(z.string()) })
+      .strict(),
+    unavailableReasons: effortUnavailableSchema,
   })
   .strict();
 
