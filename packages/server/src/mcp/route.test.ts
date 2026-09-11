@@ -1173,6 +1173,7 @@ describe("createMcpRouter", () => {
       "get_data_coverage",
       "get_training_load",
       "get_recovery_training_series",
+      "find_repeated_efforts",
       "compare_performances",
       "get_cycling_performance",
       "get_cycling_power_curve",
@@ -1214,6 +1215,10 @@ describe("createMcpRouter", () => {
     });
     const tools = toolListResponseSchema.parse(parseJsonRpcEvent(response.text)).result.tools;
     const sentinels = [
+      {
+        name: "find_repeated_efforts",
+        path: ["result", "groups", "[]", "identityEvidence", "[]", "method"],
+      },
       { name: "get_daily_health_summary", path: ["result", "source_providers"] },
       {
         name: "get_health_trends",

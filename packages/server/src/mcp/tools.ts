@@ -56,6 +56,7 @@ import {
 import { registerPerformanceComparisonTool } from "./performance-comparison-tool.ts";
 import { listProviderStatuses } from "./provider-status.ts";
 import { registerRecoveryTrainingSeriesTool } from "./recovery-training-series-tool.ts";
+import { registerRepeatedEffortsTool } from "./repeated-efforts-tool.ts";
 import { registerStrengthProgressionTool } from "./strength-progression-tool.ts";
 import { registerStrengthSessionsTool } from "./strength-sessions-tool.ts";
 import { registerSubjectiveTools } from "./subjective-tools.ts";
@@ -509,6 +510,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
   );
   registerTrainingLoadTool(server, context);
   registerRecoveryTrainingSeriesTool(server, context);
+  registerRepeatedEffortsTool(server, context);
   registerPerformanceComparisonTool(server, context);
   registerCyclingPerformanceTool(server, context);
   registerCyclingPowerCurveTool(server, context);
