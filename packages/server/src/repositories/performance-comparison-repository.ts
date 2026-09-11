@@ -502,7 +502,11 @@ export class PerformanceComparisonRepository {
           (row) => row.canonical_activity_id === activity.activity_id,
         );
         // Check all evidence of each eligible candidate before discarding nonmatching keys.
-        if (identityRepository.matching(modelKey, rows).length) identityRepository.strongest(rows);
+        if (identityRepository.matching(modelKey, rows).length) {
+          identityRepository.strongest(rows);
+          // A higher-ranked kind must not mask ambiguity in the comparison identity kind.
+          identityRepository.strongest(rows.filter((row) => row.kind === modelKey.kind));
+        }
       }
     }
     const identityRows = modelKey ? identityRepository.matching(modelKey, scopedIdentities) : [];

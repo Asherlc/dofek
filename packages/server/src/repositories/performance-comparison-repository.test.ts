@@ -95,11 +95,29 @@ function recordedIdentity(
 
 describe("PerformanceComparisonRepository", () => {
   it.each([
-    { conflict: { value: "template-18" }, error: /Conflicting exact identities/ },
-    { conflict: { namespace: "garmin" }, error: /Ambiguous exact identities/ },
-  ])(
-    "requires explicit selection for candidate identity ambiguity: $conflict",
-    async ({ conflict, error }) => {
+    {
+      kind: "provider_workout",
+      conflict: { value: "template-18" },
+      error: /Conflicting exact identities/,
+    },
+    {
+      kind: "provider_workout",
+      conflict: { namespace: "garmin" },
+      error: /Ambiguous exact identities/,
+    },
+    {
+      kind: "provider_route",
+      conflict: { value: "template-18" },
+      error: /Conflicting exact identities/,
+    },
+    {
+      kind: "provider_route",
+      conflict: { namespace: "garmin" },
+      error: /Ambiguous exact identities/,
+    },
+  ] as const)(
+    "requires explicit selection for candidate $kind ambiguity: $conflict",
+    async ({ kind, conflict, error }) => {
       const reference = activityRow({ canonical_type: "running" });
       const candidate = activityRow({
         activity_id: SECOND_ID,
@@ -107,9 +125,10 @@ describe("PerformanceComparisonRepository", () => {
         member_activity_ids: [SECOND_ID, THIRD_ID],
       });
       const rows = [
-        recordedIdentity(FIRST_ID),
-        recordedIdentity(SECOND_ID),
-        recordedIdentity(SECOND_ID, { source_activity_id: THIRD_ID, ...conflict }),
+        recordedIdentity(FIRST_ID, { kind }),
+        recordedIdentity(SECOND_ID, { kind }),
+        recordedIdentity(SECOND_ID, { kind, source_activity_id: THIRD_ID, ...conflict }),
+        ...(kind === "provider_route" ? [recordedIdentity(SECOND_ID)] : []),
       ];
       const repository = new PerformanceComparisonRepository(
         database(reference, [reference, candidate]),
@@ -134,11 +153,11 @@ describe("PerformanceComparisonRepository", () => {
       await expect(repository.compare(input)).rejects.toThrow(error);
       const result = await repository.compare({
         ...input,
-        equivalence: { kind: "provider_workout", provider: "zwift", value: "template-17" },
+        equivalence: { kind, provider: "zwift", value: "template-17" },
       });
       expect(result.performances[1]).toMatchObject({
         activity_id: SECOND_ID,
-        identity: { strength: "exact", basis: "explicit" },
+        identity: { identity: { kind }, strength: "exact", basis: "explicit" },
         equivalence_evidence_count: 1,
         equivalence_evidence: [
           expect.objectContaining({ value: "template-17", source_activity_id: SECOND_ID }),
