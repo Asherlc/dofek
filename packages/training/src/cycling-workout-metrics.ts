@@ -45,6 +45,7 @@ export interface CyclingWorkoutMetricsInput {
   samples: CyclingWorkoutSample[];
   settings: CyclingWorkoutSettings | null;
   intervals: CyclingWorkoutIntervalInput[];
+  streamBarriers?: { power?: number[]; heartRate?: number[]; cadence?: number[] };
 }
 
 export interface CyclingWorkoutMetrics {
@@ -103,6 +104,7 @@ export interface CyclingWorkoutMetrics {
 
 interface ResampledStream {
   values: Array<number | null>;
+  maximumValue: number | null;
   coverage: StreamCoverage;
 }
 
@@ -132,40 +134,58 @@ function median(values: number[]): number | null {
   return sorted.length % 2 === 0 && lower != null ? (lower + upper) / 2 : upper;
 }
 
-function resampleStream(
-  samples: CyclingWorkoutSample[],
+export function resampleCyclingStream<T extends CyclingWorkoutSample>(
+  samples: T[],
   durationSeconds: number,
-  select: (sample: CyclingWorkoutSample) => number | null | undefined,
+  select: (sample: T) => number | null | undefined,
+  minimumValue = 0,
+  barriers: number[] = [],
 ): ResampledStream {
-  const byOffset = new Map<number, number>();
+  const byOffset = new Map<number, number | null>();
   for (const sample of samples) {
     const value = select(sample);
-    if (value == null || !Number.isFinite(value) || value < 0) continue;
-    const offset = Math.floor(sample.elapsedSeconds);
+    if (value == null || !Number.isFinite(value) || value < minimumValue) continue;
+    const offset = sample.elapsedSeconds;
     if (offset >= 0 && offset < durationSeconds) byOffset.set(offset, value);
+  }
+  for (const offset of barriers) {
+    if (offset >= 0 && offset < durationSeconds) byOffset.set(offset, null);
   }
   const points = [...byOffset.entries()]
     .map(([offset, value]) => ({ offset, value }))
     .sort((left, right) => left.offset - right.offset);
   const gaps = points.slice(1).map((point, index) => point.offset - (points[index]?.offset ?? 0));
   const medianInterval = median(gaps);
-  const nativeInterval = medianInterval ?? 1;
+  const nativeInterval = Math.min(10, medianInterval ?? 1);
   const continuityTolerance = Math.min(10, Math.max(5, nativeInterval * 2));
-  const values: Array<number | null> = Array.from({ length: durationSeconds }, () => null);
+  const totals = Array.from({ length: durationSeconds }, () => 0);
+  const peaks = Array.from<number | null>({ length: durationSeconds }).fill(null);
+  const coveredDurations = Array.from({ length: durationSeconds }, () => 0);
 
   for (let index = 0; index < points.length; index++) {
     const point = points[index];
-    if (!point) continue;
+    if (!point || point.value == null) continue;
     const next = points[index + 1];
     const intervalEnd = next
       ? next.offset - point.offset <= continuityTolerance
         ? next.offset
         : point.offset + nativeInterval
       : point.offset + nativeInterval;
-    for (let second = point.offset; second < Math.min(durationSeconds, intervalEnd); second++) {
-      values[second] = point.value;
+    for (
+      let second = Math.floor(point.offset);
+      second < Math.min(durationSeconds, intervalEnd);
+      second++
+    ) {
+      const covered = Math.min(second + 1, intervalEnd) - Math.max(second, point.offset);
+      totals[second] = (totals[second] ?? 0) + point.value * covered;
+      peaks[second] = Math.max(peaks[second] ?? point.value, point.value);
+      coveredDurations[second] = (coveredDurations[second] ?? 0) + covered;
     }
   }
+  // A partly invalid/missing bucket is unavailable, including sub-second conflicts.
+  const values = totals.map((total, second) =>
+    (coveredDurations[second] ?? 0) >= 1 - 1e-9 ? total : null,
+  );
 
   const coveredSeconds = values.reduce<number>(
     (count, value) => count + (value == null ? 0 : 1),
@@ -174,8 +194,13 @@ function resampleStream(
   const zeroSeconds = values.reduce<number>((count, value) => count + (value === 0 ? 1 : 0), 0);
   return {
     values,
+    // Preserve native peaks only in buckets that satisfy the same coverage mask.
+    maximumValue: peaks.reduce<number | null>((maximum, peak, second) => {
+      if (values[second] == null || peak == null) return maximum;
+      return maximum == null ? peak : Math.max(maximum, peak);
+    }, null),
     coverage: {
-      observedSamples: points.length,
+      observedSamples: points.filter((point) => point.value != null).length,
       coveredSeconds,
       missingSeconds: durationSeconds - coveredSeconds,
       zeroSeconds,
@@ -367,9 +392,27 @@ export function computeCyclingWorkoutMetrics(
   input: CyclingWorkoutMetricsInput,
 ): CyclingWorkoutMetrics {
   const durationSeconds = Math.max(0, Math.floor(input.durationSeconds));
-  const power = resampleStream(input.samples, durationSeconds, (sample) => sample.powerWatts);
-  const heartRate = resampleStream(input.samples, durationSeconds, (sample) => sample.heartRateBpm);
-  const cadence = resampleStream(input.samples, durationSeconds, (sample) => sample.cadenceRpm);
+  const power = resampleCyclingStream(
+    input.samples,
+    durationSeconds,
+    (sample) => sample.powerWatts,
+    0,
+    input.streamBarriers?.power,
+  );
+  const heartRate = resampleCyclingStream(
+    input.samples,
+    durationSeconds,
+    (sample) => sample.heartRateBpm,
+    0,
+    input.streamBarriers?.heartRate,
+  );
+  const cadence = resampleCyclingStream(
+    input.samples,
+    durationSeconds,
+    (sample) => sample.cadenceRpm,
+    0,
+    input.streamBarriers?.cadence,
+  );
   const unavailableReasons: CyclingWorkoutMetrics["unavailableReasons"] = [];
   const addUnavailable = (metric: string, reason: string) => {
     unavailableReasons.push({ metric, reason });
@@ -461,10 +504,7 @@ export function computeCyclingWorkoutMetrics(
     },
     heartRate: {
       averageBpm: averageHeartRate == null ? null : round(averageHeartRate),
-      maximumBpm:
-        heartRate.coverage.coveredSeconds === 0
-          ? null
-          : Math.max(...heartRate.values.flatMap((value) => (value == null ? [] : [value]))),
+      maximumBpm: heartRate.maximumValue,
     },
     cadence: { averageRpm: averageCadence == null ? null : round(averageCadence) },
     aerobicEfficiency: {

@@ -122,9 +122,36 @@ function page() {
               largest_gap_seconds: 1,
             },
           },
-          interval_source: "none" as const,
+          interval_source: "recorded" as const,
           interval_detection: null,
-          intervals: [],
+          intervals: [
+            {
+              index: 1,
+              type: "work" as const,
+              label: "Threshold",
+              source: "recorded" as const,
+              source_kind: "provider_recorded" as const,
+              source_provider: "peloton",
+              source_activity_id: activityId,
+              segment_type: "power_zone",
+              start_offset_seconds: 600,
+              end_offset_seconds: 1200,
+              duration_seconds: 600,
+              average_power_watts: 240,
+              normalized_power_watts: 245,
+              average_heart_rate_bpm: 155,
+              average_cadence_rpm: 95,
+              target_intensity: 0.96,
+              target_zone: 4,
+              target_cadence_rpm: 95,
+              target_power_watts: 240,
+              target_resistance: 38,
+              work_recovery_kind: "work" as const,
+              completion_pct: 100,
+              source_member_activity_ids: [activityId],
+              raw: { source: "fixture" },
+            },
+          ],
           unavailable_reasons: [],
         },
         best_powers: [
@@ -223,6 +250,54 @@ describe("get_cycling_training_metrics", () => {
         unexpected: true,
       }).success,
     ).toBe(false);
+  });
+
+  it("constrains interval type only when work/recovery evidence exists", () => {
+    const result = page();
+    const activity = result.activities[0];
+    const interval = activity?.metrics.intervals[0];
+    if (!activity || !interval) throw new Error("Expected the cycling interval fixture");
+
+    expect(
+      cyclingTrainingMetricsOutputSchema.safeParse({
+        result: {
+          ...result,
+          activities: [
+            {
+              ...activity,
+              metrics: {
+                ...activity.metrics,
+                intervals: [{ ...interval, type: "recovery" as const }],
+              },
+            },
+          ],
+        },
+      }).success,
+    ).toBe(false);
+
+    expect(
+      cyclingTrainingMetricsOutputSchema.safeParse({
+        result: {
+          ...result,
+          activities: [
+            {
+              ...activity,
+              metrics: {
+                ...activity.metrics,
+                intervals: [
+                  {
+                    ...interval,
+                    type: "cooldown" as const,
+                    source_kind: "unknown" as const,
+                    work_recovery_kind: null,
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      }).success,
+    ).toBe(true);
   });
 
   it("passes date, activity, provider, duration, and cursor filters", async () => {

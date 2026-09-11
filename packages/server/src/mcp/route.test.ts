@@ -946,11 +946,21 @@ describe("createMcpRouter", () => {
     expect(findListedTool(tools, "compare_performances").inputSchema).toMatchObject({
       properties: {
         end_date: { format: "date", type: "string" },
-        equivalence: { oneOf: expect.any(Array) },
+        equivalence: { anyOf: expect.any(Array) },
         limit: { maximum: 100, minimum: 1, type: "integer" },
         modalities: { type: "array" },
         providers: { type: "array" },
         reference_activity_id: { format: "uuid", type: "string" },
+        start_date: { format: "date", type: "string" },
+      },
+      required: ["start_date", "end_date"],
+      type: "object",
+    });
+    expect(findListedTool(tools, "get_effort_trend").inputSchema).toMatchObject({
+      properties: {
+        end_date: { format: "date", type: "string" },
+        effort_id: { minLength: 1, type: "string" },
+        equivalence: { anyOf: expect.any(Array) },
         start_date: { format: "date", type: "string" },
       },
       required: ["start_date", "end_date"],
@@ -1173,7 +1183,9 @@ describe("createMcpRouter", () => {
       "get_data_coverage",
       "get_training_load",
       "get_recovery_training_series",
+      "find_repeated_efforts",
       "compare_performances",
+      "get_effort_trend",
       "get_cycling_performance",
       "get_cycling_power_curve",
       "get_cycling_training_metrics",
@@ -1214,6 +1226,10 @@ describe("createMcpRouter", () => {
     });
     const tools = toolListResponseSchema.parse(parseJsonRpcEvent(response.text)).result.tools;
     const sentinels = [
+      {
+        name: "find_repeated_efforts",
+        path: ["result", "groups", "[]", "identityEvidence", "[]", "method"],
+      },
       { name: "get_daily_health_summary", path: ["result", "source_providers"] },
       {
         name: "get_health_trends",
@@ -1240,6 +1256,10 @@ describe("createMcpRouter", () => {
       {
         name: "compare_performances",
         path: ["result", "performances", "[]", "delta_to_baseline", "average_power_watts"],
+      },
+      {
+        name: "get_effort_trend",
+        path: ["result", "repetitions", "[]", "delta_to_best", "average_power_watts"],
       },
       {
         name: "get_cycling_performance",

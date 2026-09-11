@@ -15,6 +15,7 @@ export function hangTenIntervalLabel(segment: HangTenActivitySegment): string {
 export function buildHangTenIntervals(
   activityId: string,
   workout: HealthWorkout,
+  sourceProvider = "apple_health",
 ): (typeof activityInterval.$inferInsert)[] {
   const segments = workout.hangTen?.activitySegments;
   if (!segments || segments.length === 0) return [];
@@ -35,6 +36,12 @@ export function buildHangTenIntervals(
       intervalType: segment.kind,
       startedAt,
       endedAt,
+      sourceKind: "provider_recorded",
+      sourceProvider,
+      sourceActivityId: activityId,
+      segmentType: segment.kind,
+      workRecoveryKind: segment.kind === "rest" ? "recovery" : "work",
+      raw: segment,
     });
     if (endedAt) {
       cursor = endedAt;
@@ -49,11 +56,12 @@ export async function replaceHangTenIntervals(
   db: SyncDatabase,
   activityId: string,
   workout: HealthWorkout,
+  sourceProvider = "apple_health",
 ): Promise<void> {
   const segments = workout.hangTen?.activitySegments;
   if (segments === undefined) return;
 
-  const intervals = buildHangTenIntervals(activityId, workout);
+  const intervals = buildHangTenIntervals(activityId, workout, sourceProvider);
   if (intervals.length === 0) {
     await db.delete(activityInterval).where(eq(activityInterval.activityId, activityId));
     return;
@@ -67,7 +75,13 @@ export async function replaceHangTenIntervals(
         ${interval.label ?? null},
         ${interval.intervalType ?? null},
         ${interval.startedAt},
-        ${interval.endedAt ?? null}
+        ${interval.endedAt ?? null},
+        ${interval.sourceKind},
+        ${interval.sourceProvider},
+        ${interval.sourceActivityId},
+        ${interval.segmentType ?? null},
+        ${interval.workRecoveryKind ?? null},
+        ${JSON.stringify(interval.raw)}::jsonb
       )`,
     ),
     sql`, `,
@@ -78,7 +92,10 @@ export async function replaceHangTenIntervals(
       DELETE FROM ${activityInterval}
       WHERE ${activityInterval.activityId} = ${activityId}
     )
-    INSERT INTO ${activityInterval} (activity_id, interval_index, label, interval_type, started_at, ended_at)
+    INSERT INTO ${activityInterval} (
+      activity_id, interval_index, label, interval_type, started_at, ended_at,
+      source_kind, source_provider, source_activity_id, segment_type, work_recovery_kind, raw
+    )
     VALUES ${replacementValues}
   `);
 }

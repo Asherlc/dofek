@@ -27,7 +27,27 @@ persisted PostgreSQL activity groups, and `deduped_activity_members` exposes can
 activity/member aliases for downstream models. `activity_duplicate_matches`
 retains overlap evidence for integrity diagnostics; `activity_duplicate_groups`
 projects `activity_source_records.group_id` without deriving identity from those
-edges. The [activity model](models/read_models/deduped_activities.sql) uses the
+edges. `activity_effort_identity` projects current evidence at
+`(user_id, source_activity_id, kind, namespace, normalized_value, source_field)`
+grain: it joins every current `activity_source_records` member to
+`deduped_activity_members`, so a representative never hides a contributing
+source's route, workout/template/class, segment, standardized-test, or weak
+name evidence. Its explicit v1 raw-field map is `pelotonClassId`, `templateId`,
+`workoutTemplateId`, and `classId` for provider workouts; `routeId` and
+`courseId` for provider routes; `segmentId` for segments; and
+`standardizedTestId` and `testId` for standardized tests. `external_id` stays
+provider-instance provenance and is never emitted as a reusable identity.
+Names are emitted only as `activity_name` with `weak_similarity`. Evidence is a
+bounded map of the classified raw field/value and source-record identifiers.
+The append-incremental model uses source/member sync timestamps plus canonical
+membership changes for invalidation; routine upstream `refreshed_at` changes do
+not dirty identity rows. Explicit user/activity refresh scopes include current
+and prior source members. It writes a `ReplacingMergeTree` tombstone when an emitted
+identity disappears or its source is no longer current. This follows dbt's
+[incremental-model lifecycle](https://docs.getdbt.com/docs/build/incremental-models)
+and preserves the structured source evidence consumed by MCP tools under the
+[MCP specification](https://modelcontextprotocol.io/specification/2026-07-28).
+The [activity model](models/read_models/deduped_activities.sql) uses the
 group UUID as `activity_id` and the chosen member UUID as `primary_activity_id`.
 Representative selection orders deduped sensor presence, sample count, elevation
 presence, specific canonical type, provider-type refinement, provider priority,
@@ -114,6 +134,36 @@ maintaining one aggregate state instead of one state per field. ClickHouse
 documents tuple arguments as the way to return associated columns from the row
 selected by
 [`argMax`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/argmax).
+`activity_route_identity` follows `activity_location_sample` at canonical
+cycling-activity grain. It reads `deduped_activities FINAL`,
+`activity_location_sample FINAL`, `activity_effort_identity FINAL`, and the
+`altitude` channel of `activity_sensor_sample FINAL`, preserving explicit provider route/course
+claims separately from a deterministic, 64-point coordinate-quantized ordered
+polyline and its reverse fingerprint. Its route distance, time-gap coverage,
+provider/device provenance, and lifecycle watermark refresh only when an
+activity, deduplicated location state, altitude evidence, or explicit route evidence changes; a
+route whose live geometry disappears emits a `ReplacingMergeTree` tombstone.
+Scoped builds resolve `activity_refresh_user_id` and
+`activity_refresh_activity_ids` (canonical or member IDs) before reading route
+points, and include scoped prior route keys so removed activities can be
+tombstoned. Unscoped incremental builds discover dirty keys from activity,
+location, altitude, and identity watermarks before aggregating selected geometry. See the
+[route model](models/read_models/activity_route_identity.sql) and the shared
+[activity scope macros](macros/activity_refresh_scope.sql). The server's
+[route matcher](../packages/server/src/repositories/route-equivalence.ts) returns
+`left_quality` and `right_quality` on both accepted and rejected complete
+comparisons: geometry status, coverage percentage (0–100), and largest gap in
+seconds. Missing quality observations remain null; coverage describes the
+observed location interval, not the entire activity duration.
+The bounded elevation profile is derived from available `altitude` sensor
+samples and remains unavailable when those samples do not exist. Geometry is Level B
+`strong_inferred` only when the server matcher accepts overlap at least 90%,
+both endpoints within 250 m, relative distance difference at most 10%, and
+elevation similarity at least 0.85 when both profiles are available. dbt
+documents the incremental rebuild contract in its
+[incremental model guide](https://docs.getdbt.com/docs/build/incremental-models),
+and ClickHouse documents `ReplacingMergeTree` lifecycle replacement in its
+[engine reference](https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree).
 Its model-local
 `enable_materialized_cte` setting prevents those reused intermediates from
 being re-evaluated across current-row and tombstone branches; ClickHouse
@@ -281,6 +331,7 @@ model logic changes because existing rows retain the old transformation
 Production `DBT_SAFE_MODELS` currently selects `sensor_scalar_sample`,
 `deduped_sensor`, `activity_source_records`, `activity_duplicate_matches`,
 `activity_duplicate_groups`, `deduped_activities`, `deduped_activity_members`,
+`activity_effort_identity`, `activity_route_identity`,
 `provider_metric_stream_daily`, `provider_change_watermark`, `sleep_heart_rate_window`,
 `sleep_heart_rate_sample`, `resting_heart_rate_sleep_window`,
 `daily_sleep`, `daily_recovery_inputs`, `daily_recovery`, `activity_sensor_sample`, `activity_location_sample`,

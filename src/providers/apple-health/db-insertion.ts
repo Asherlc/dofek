@@ -732,7 +732,7 @@ export async function upsertWorkoutBatch(
       if (returned) {
         results.push({ activityId: returned.id, workout });
         if (workout.hangTen) {
-          await replaceHangTenIntervals(transactionDb, returned.id, workout);
+          await replaceHangTenIntervals(transactionDb, returned.id, workout, providerId);
         }
       }
     }

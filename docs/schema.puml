@@ -148,6 +148,7 @@ entity "webhook_subscription" {
 entity "activity" {
   * id : uuid <<PK>>
   --
+  group_id : uuid <<FK>>
   provider_id : text <<FK>>
   user_id : uuid <<FK>>
   external_id : text
@@ -174,6 +175,23 @@ entity "activity" {
   created_at : timestamp
 }
 
+entity "activity_group" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  anchor_activity_id : uuid
+  created_at : timestamp
+}
+
+entity "activity_group_alias" {
+  * alias_id : uuid <<PK>>
+  --
+  group_id : uuid <<FK>>
+  user_id : uuid <<FK>>
+  reason : text
+  created_at : timestamp
+}
+
 entity "activity_interval" {
   * id : uuid <<PK>>
   --
@@ -183,6 +201,17 @@ entity "activity_interval" {
   interval_type : text
   started_at : timestamp
   ended_at : timestamp
+  source_kind : text
+  source_provider : text <<FK>>
+  source_activity_id : uuid <<FK>>
+  segment_type : text
+  target_intensity : real
+  target_zone : bigint
+  target_cadence_rpm : real
+  target_power_watts : real
+  target_resistance : real
+  work_recovery_kind : text
+  raw : jsonb
   created_at : timestamp
 }
 
@@ -260,6 +289,27 @@ entity "daily_metrics" {
   wheelchair_distance_km : real
   uv_exposure : real
   source_name : text
+  created_at : timestamp
+}
+
+entity "effort_equivalence_group" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  display_name : text
+  effort_kind : text
+  notes : text
+  created_at : timestamp
+  updated_at : timestamp
+}
+
+entity "effort_equivalence_group_member" {
+  * id : uuid <<PK>>
+  --
+  group_id : uuid <<FK>>
+  user_id : uuid <<FK>>
+  canonical_activity_id : uuid <<FK>>
+  inclusion_note : text
   created_at : timestamp
 }
 
@@ -1255,6 +1305,12 @@ provider ||--o{ webhook_subscription
 provider_connection ||--o{ webhook_subscription
 provider ||--o{ activity
 user_profile ||--o{ activity
+activity_group ||--o{ activity
+user_profile ||--o{ activity_group
+user_profile ||--o{ activity_group_alias
+activity_group ||--o{ activity_group_alias
+activity ||--o{ activity_interval
+provider ||--o{ activity_interval
 activity ||--o{ activity_interval
 climbing_entry ||--o{ climbing_attempt
 activity ||--o{ climbing_entry
@@ -1262,6 +1318,10 @@ daily_metrics ||--o{ daily_metric_value
 daily_metric_type ||--o{ daily_metric_value
 provider ||--o{ daily_metrics
 user_profile ||--o{ daily_metrics
+user_profile ||--o{ effort_equivalence_group
+user_profile ||--o{ effort_equivalence_group_member
+effort_equivalence_group ||--o{ effort_equivalence_group_member
+activity_group ||--o{ effort_equivalence_group_member
 activity ||--o{ finger_loading_entry
 provider ||--o{ sleep_session
 user_profile ||--o{ sleep_session

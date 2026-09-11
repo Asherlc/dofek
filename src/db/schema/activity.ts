@@ -213,6 +213,68 @@ export const activityGroup = fitness.table(
   (table) => [uniqueIndex("activity_group_user_id_idx").on(table.userId, table.id)],
 );
 
+export const effortEquivalenceGroup = fitness.table(
+  "effort_equivalence_group",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .$defaultFn(resolveImplicitUserId)
+      .references(() => userProfile.id),
+    name: text("display_name").notNull(),
+    effortKind: text("effort_kind", { enum: ["user_defined_benchmark"] }).notNull(),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    uniqueIndex("effort_equivalence_group_user_id_idx").on(table.userId, table.id),
+    check(
+      "effort_equivalence_group_effort_kind",
+      sql`${table.effortKind} = 'user_defined_benchmark'`,
+    ),
+  ],
+);
+
+export const effortEquivalenceGroupMember = fitness.table(
+  "effort_equivalence_group_member",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    groupId: uuid("group_id").notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .$defaultFn(resolveImplicitUserId)
+      .references(() => userProfile.id),
+    canonicalActivityId: uuid("canonical_activity_id").notNull(),
+    inclusionNote: text("inclusion_note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      name: "effort_equivalence_group_member_user_group_fk",
+      columns: [table.userId, table.groupId],
+      foreignColumns: [effortEquivalenceGroup.userId, effortEquivalenceGroup.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "effort_equivalence_group_member_user_activity_fk",
+      columns: [table.userId, table.canonicalActivityId],
+      foreignColumns: [activityGroup.userId, activityGroup.id],
+    }).onDelete("restrict"),
+    uniqueIndex("effort_equivalence_group_member_user_group_activity_idx").on(
+      table.userId,
+      table.groupId,
+      table.canonicalActivityId,
+    ),
+    index("effort_equivalence_group_member_user_activity_idx").on(
+      table.userId,
+      table.canonicalActivityId,
+    ),
+  ],
+);
+
 export const activityGroupAlias = fitness.table(
   "activity_group_alias",
   {
@@ -370,9 +432,42 @@ export const activityInterval = fitness.table(
     intervalType: text("interval_type"),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
     endedAt: timestamp("ended_at", { withTimezone: true }),
+    sourceKind: text("source_kind", { enum: ["provider_recorded", "inferred"] }),
+    sourceProvider: text("source_provider").references(() => provider.id),
+    sourceActivityId: uuid("source_activity_id").references(() => activity.id, {
+      onDelete: "set null",
+    }),
+    segmentType: text("segment_type"),
+    targetIntensity: real("target_intensity"),
+    targetZone: bigint("target_zone", { mode: "number" }),
+    targetCadenceRpm: real("target_cadence_rpm"),
+    targetPowerWatts: real("target_power_watts"),
+    targetResistance: real("target_resistance"),
+    workRecoveryKind: text("work_recovery_kind", { enum: ["work", "recovery"] }),
+    raw: jsonb("raw"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index("activity_interval_activity_idx").on(table.activityId, table.intervalIndex)],
+  (table) => [
+    index("activity_interval_activity_idx").on(table.activityId, table.intervalIndex),
+    check(
+      "activity_interval_source_kind",
+      sql`${table.sourceKind} IS NULL OR ${table.sourceKind} IN ('provider_recorded', 'inferred')`,
+    ),
+    check(
+      "activity_interval_inferred_targets",
+      sql`${table.sourceKind} IS DISTINCT FROM 'inferred' OR (
+        ${table.targetIntensity} IS NULL
+        AND ${table.targetZone} IS NULL
+        AND ${table.targetCadenceRpm} IS NULL
+        AND ${table.targetPowerWatts} IS NULL
+        AND ${table.targetResistance} IS NULL
+      )`,
+    ),
+    check(
+      "activity_interval_work_recovery_kind",
+      sql`${table.workRecoveryKind} IS NULL OR ${table.workRecoveryKind} IN ('work', 'recovery')`,
+    ),
+  ],
 );
 
 // ============================================================

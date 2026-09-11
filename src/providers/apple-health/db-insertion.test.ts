@@ -1645,7 +1645,7 @@ describe("upsertWorkoutBatch", () => {
     );
     expect(intervalReplacements).toHaveLength(2);
     expect(intervalReplacements[0]?.sql).toMatch(
-      /INSERT INTO "fitness"\."activity_interval" \(activity_id, interval_index, label, interval_type, started_at, ended_at\)/,
+      /INSERT INTO "fitness"\."activity_interval" \(\s*activity_id, interval_index, label, interval_type, started_at, ended_at,\s*source_kind, source_provider, source_activity_id, segment_type, work_recovery_kind, raw\s*\)/,
     );
     expect(intervalReplacements.map((replacement) => replacement.params)).toEqual(
       expect.arrayContaining([

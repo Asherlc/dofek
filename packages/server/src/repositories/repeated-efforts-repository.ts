@@ -1,0 +1,603 @@
+import { createHash } from "node:crypto";
+import { sql } from "drizzle-orm";
+import { z } from "zod";
+import { dateSchema } from "../lib/date-schema.ts";
+import { executeWithSchema, type SqlExecutor, timestampStringSchema } from "../lib/typed-sql.ts";
+import { repeatedEffortsResultSchema } from "../mcp/repeated-efforts-output.ts";
+import { clickHouseActivityLocalDate } from "./activity-local-date.ts";
+import type { ActivitySensorStore } from "./activity-repository.ts";
+import {
+  EFFORT_IDENTITY_KINDS,
+  type EffortIdentityKind,
+  EQUIVALENCE_STRENGTHS,
+  type EquivalenceStrength,
+  weakDurationBucket,
+} from "./repeated-effort-types.ts";
+import {
+  evaluateRouteMatch,
+  routeGeometry as geometry,
+  groupEquivalentRoutes,
+} from "./route-equivalence.ts";
+
+const inputSchema = z
+  .object({
+    startDate: dateSchema,
+    endDate: dateSchema,
+    minimumRepetitions: z.number().int().min(2).max(2000).default(2),
+    equivalenceStrength: z.enum(["strong", "weak"]).default("strong"),
+    effortKind: z.enum(EFFORT_IDENTITY_KINDS).optional(),
+    effortId: z.string().min(1).max(16384).optional(),
+    providers: z.array(z.string().min(1)).max(50).default([]),
+    modalities: z.array(z.string().min(1)).max(20).default([]),
+    canonicalTypes: z.array(z.string().min(1)).max(50).default([]),
+    limit: z.number().int().min(1).max(100).default(25),
+    cursor: z.string().min(1).max(32768).nullable().default(null),
+  })
+  .refine((input) => input.startDate <= input.endDate, "startDate must be on or before endDate");
+
+export type FindRepeatedEffortsInput = z.input<typeof inputSchema>;
+export type FindRepeatedEffortsOutput = z.infer<typeof repeatedEffortsResultSchema>;
+type Group = FindRepeatedEffortsOutput["groups"][number];
+const activitySchema = z.object({
+  activity_id: z.uuid(),
+  started_at: timestampStringSchema,
+  ended_at: timestampStringSchema.nullable(),
+  canonical_type: z.string(),
+  modality: z.string().nullable(),
+  name: z.string().nullable(),
+  member_activity_ids: z.array(z.uuid()),
+  source_providers: z.array(z.string()),
+});
+type Activity = z.infer<typeof activitySchema>;
+const identitySchema = z.object({
+  canonical_activity_id: z.uuid(),
+  source_activity_id: z.uuid(),
+  source_provider: z.string(),
+  source_external_id: z.string().nullable(),
+  kind: z.enum(EFFORT_IDENTITY_KINDS),
+  namespace: z.string().nullable(),
+  value: z.string(),
+  normalized_value: z.string(),
+  display_name: z.string().nullable(),
+  strength: z.enum(EQUIVALENCE_STRENGTHS),
+  method: z.string(),
+  source_field: z.string().nullable(),
+  evidence: z.record(z.string(), z.unknown()),
+});
+type Identity = z.infer<typeof identitySchema>;
+function identityEvidence(identity: Identity): Group["identityEvidence"][number] {
+  return {
+    canonicalActivityId: identity.canonical_activity_id,
+    sourceActivityId: identity.source_activity_id,
+    provider: identity.source_provider,
+    externalId: identity.source_external_id,
+    namespace: identity.namespace,
+    value: identity.value,
+    method: identity.method,
+    sourceField: identity.source_field,
+    evidence: identity.evidence,
+  };
+}
+const sourceSchema = z.object({
+  source_activity_id: z.uuid(),
+  provider: z.string(),
+  external_id: z.string().nullable(),
+});
+type Source = z.infer<typeof sourceSchema>;
+const routeSchema = z.object({
+  canonical_activity_id: z.uuid(),
+  points: z.array(z.tuple([z.number(), z.number()])).max(64),
+  route_distance_meters: z.number().nullable(),
+  elevation_profile: z.array(z.number()),
+  coverage_pct: z.number().nullable(),
+  largest_gap_seconds: z.number().nullable(),
+  geometry_status: z.enum(["available", "partial", "unavailable"]),
+  source_providers: z.array(z.string()),
+  source_devices: z.array(z.string()),
+});
+const benchmarkSchema = z.object({
+  group_id: z.uuid(),
+  canonical_activity_id: z.uuid(),
+  display_name: z.string(),
+  notes: z.string().nullable(),
+  inclusion_note: z.string().nullable(),
+});
+const cursorSchema = z.strictObject({
+  version: z.literal(1),
+  shape: z.string(),
+  after: z.string(),
+});
+const discoveryScopeSchema = z.strictObject({
+  userId: z.uuid(),
+  timezone: z.string(),
+  startDate: dateSchema,
+  endDate: dateSchema,
+  providers: z.array(z.string()),
+  modalities: z.array(z.string()),
+  canonicalTypes: z.array(z.string()),
+});
+const effortIdPartsSchema = z.tuple([
+  z.enum(EFFORT_IDENTITY_KINDS),
+  z.enum(EQUIVALENCE_STRENGTHS),
+  z.string().regex(/^[0-9a-f]{64}$/u),
+  z.string().min(1),
+]);
+const nonMaximal =
+  "Repeated efforts are not necessarily maximal tests; identity alone does not establish comparable performance or conditions.";
+const unique = (values: string[]) => [...new Set(values)].sort();
+const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+function decodeBase64Json<T>(token: string, schema: z.ZodType<T>, label: string): T {
+  try {
+    return schema.parse(JSON.parse(Buffer.from(token, "base64url").toString("utf8")));
+  } catch {
+    throw new Error(`Invalid ${label}.`);
+  }
+}
+
+function decodeEffortScope(
+  effortId: string | undefined,
+): z.infer<typeof discoveryScopeSchema> | null {
+  if (effortId === undefined) return null;
+  let encodedScope: string;
+  try {
+    [, , , encodedScope] = effortIdPartsSchema.parse(effortId.split(":"));
+  } catch {
+    throw new Error("Invalid repeated-effort ID.");
+  }
+  return decodeBase64Json(encodedScope, discoveryScopeSchema, "repeated-effort ID");
+}
+
+function bounded<T>(rows: T[], maximum: number, kind: string): T[] {
+  if (rows.length > maximum)
+    throw new Error(
+      `Repeated-effort discovery exceeds ${maximum} ${kind}; narrow the date range or filters.`,
+    );
+  return rows;
+}
+
+/** Bounded discovery over serving projections; never reads raw payloads or sensor streams. */
+export class RepeatedEffortsRepository {
+  readonly #db: SqlExecutor;
+  readonly #store: Pick<ActivitySensorStore, "query">;
+  readonly #userId: string;
+  readonly #timezone: string;
+  constructor(
+    db: SqlExecutor,
+    store: Pick<ActivitySensorStore, "query">,
+    userId: string,
+    timezone: string,
+  ) {
+    this.#db = db;
+    this.#store = store;
+    this.#userId = userId;
+    this.#timezone = timezone;
+  }
+
+  async find(request: FindRepeatedEffortsInput): Promise<FindRepeatedEffortsOutput> {
+    const scope = decodeEffortScope(request.effortId);
+    if (scope && (scope.userId !== this.#userId || scope.timezone !== this.#timezone))
+      throw new Error("Discovery effort ID does not match this user or analysis timezone.");
+    const input = inputSchema.parse({
+      ...request,
+      ...(scope
+        ? {
+            startDate: scope.startDate,
+            endDate: scope.endDate,
+            providers: scope.providers,
+            modalities: scope.modalities,
+            canonicalTypes: scope.canonicalTypes,
+          }
+        : {}),
+    });
+    const discoveryScope = {
+      userId: this.#userId,
+      timezone: this.#timezone,
+      startDate: input.startDate,
+      endDate: input.endDate,
+      providers: unique(input.providers),
+      modalities: unique(input.modalities),
+      canonicalTypes: unique(input.canonicalTypes),
+    };
+    const scopeToken = Buffer.from(JSON.stringify(discoveryScope)).toString("base64url");
+    const shape = digest({
+      userId: this.#userId,
+      timezone: this.#timezone,
+      ...input,
+      providers: unique(input.providers),
+      modalities: unique(input.modalities),
+      canonicalTypes: unique(input.canonicalTypes),
+      cursor: null,
+      limit: null,
+    });
+    const cursor = input.cursor
+      ? decodeBase64Json(input.cursor, cursorSchema, "repeated-effort cursor")
+      : null;
+    if (cursor && cursor.shape !== shape)
+      throw new Error("Repeated-effort cursor does not match this user or request.");
+    const params = {
+      userId: this.#userId,
+      timezone: this.#timezone,
+      startDate: input.startDate,
+      endDate: input.endDate,
+      providers: input.providers,
+      modalities: input.modalities,
+      canonicalTypes: input.canonicalTypes,
+    };
+    const rows = bounded(
+      await this.#store.query(
+        activitySchema,
+        `SELECT activity_id,
+      formatDateTime(a.started_at, '%Y-%m-%dT%H:%i:%SZ', 'UTC') AS started_at,
+      formatDateTime(a.ended_at, '%Y-%m-%dT%H:%i:%SZ', 'UTC') AS ended_at,
+      canonical_type, modality, name, member_activity_ids, source_providers
+      FROM analytics.deduped_activities AS a FINAL
+      WHERE user_id = {userId:UUID} AND is_deleted = 0
+        AND ${clickHouseActivityLocalDate("a")} BETWEEN {startDate:Date} AND {endDate:Date}
+        AND (a.ended_at IS NULL OR a.ended_at > a.started_at)
+        AND (empty({providers:Array(String)}) OR hasAny(source_providers, {providers:Array(String)}))
+        AND (empty({modalities:Array(String)}) OR has({modalities:Array(String)}, modality))
+        AND (empty({canonicalTypes:Array(String)}) OR has({canonicalTypes:Array(String)}, canonical_type))
+      ORDER BY activity_id LIMIT 2001`,
+        params,
+      ),
+      2000,
+      "canonical activities",
+    );
+    const activities = new Map(
+      rows
+        .filter(
+          (row) =>
+            Number.isFinite(Date.parse(row.started_at)) &&
+            (row.ended_at === null || Date.parse(row.ended_at) > Date.parse(row.started_at)) &&
+            (!input.providers.length ||
+              row.source_providers.some((p) => input.providers.includes(p))) &&
+            (!input.modalities.length || input.modalities.includes(row.modality ?? "")) &&
+            (!input.canonicalTypes.length || input.canonicalTypes.includes(row.canonical_type)),
+        )
+        .map((row) => [row.activity_id, row]),
+    );
+    if (!activities.size) return { groups: [], nextCursor: null, assumptions: [nonMaximal] };
+    const activityIds = [...activities.keys()];
+    const memberIds = unique([...activities.values()].flatMap((a) => a.member_activity_ids));
+    const queryParams = { ...params, activityIds, memberIds };
+    const [identities, sources, routes, benchmarks] = await Promise.all([
+      this.#store.query(
+        identitySchema,
+        `SELECT canonical_activity_id, source_activity_id, source_provider,
+        source_external_id, kind, namespace, value, normalized_value, display_name, strength, method, source_field, evidence
+        FROM analytics.activity_effort_identity FINAL
+        WHERE user_id = {userId:UUID} AND is_deleted = 0
+          AND canonical_activity_id IN {activityIds:Array(UUID)}
+        ORDER BY canonical_activity_id, kind, namespace, normalized_value,
+          source_activity_id, source_field
+        LIMIT 20001`,
+        queryParams,
+      ),
+      this.#store.query(
+        sourceSchema,
+        `SELECT activity_id AS source_activity_id, provider_id AS provider, external_id
+        FROM analytics.activity_source_records FINAL
+        WHERE user_id = {userId:UUID} AND is_deleted = 0 AND activity_id IN {memberIds:Array(UUID)} LIMIT 20001`,
+        queryParams,
+      ),
+      !input.effortKind || input.effortKind === "canonical_route"
+        ? this.#store.query(
+            routeSchema,
+            `SELECT canonical_activity_id,
+        points, route_distance_meters, elevation_profile, coverage_pct, largest_gap_seconds, geometry_status,
+        source_providers, source_devices
+        FROM analytics.activity_route_identity FINAL
+        WHERE user_id = {userId:UUID} AND is_deleted = 0
+          AND canonical_activity_id IN {activityIds:Array(UUID)} ORDER BY canonical_activity_id LIMIT 251`,
+            queryParams,
+          )
+        : Promise.resolve([]),
+      input.effortKind === "user_defined_benchmark"
+        ? executeWithSchema(
+            this.#db,
+            benchmarkSchema,
+            sql`
+        SELECT g.id AS group_id, coalesce(alias.group_id, m.canonical_activity_id) AS canonical_activity_id,
+          g.display_name, g.notes,
+          string_agg(DISTINCT m.inclusion_note, E'\n' ORDER BY m.inclusion_note) AS inclusion_note
+        FROM fitness.effort_equivalence_group g
+        JOIN fitness.effort_equivalence_group_member m ON m.group_id = g.id AND m.user_id = g.user_id
+        LEFT JOIN fitness.activity_group_alias alias ON alias.alias_id = m.canonical_activity_id AND alias.user_id = m.user_id
+        WHERE g.user_id = ${this.#userId} AND m.user_id = ${this.#userId}
+          AND coalesce(alias.group_id, m.canonical_activity_id) IN (${sql.join(
+            activityIds.map((id) => sql`${id}::uuid`),
+            sql`, `,
+          )})
+        GROUP BY g.id, coalesce(alias.group_id, m.canonical_activity_id)
+        ORDER BY g.id, canonical_activity_id LIMIT 20001`,
+          )
+        : Promise.resolve([]),
+    ]);
+    bounded(identities, 20000, "identity rows");
+    bounded(sources, 20000, "source rows");
+    bounded(routes, 250, "route candidates");
+    bounded(benchmarks, 20000, "benchmark memberships");
+    const sourcesByActivity = new Map<string, Source[]>();
+    for (const source of sources) {
+      const activitySources = sourcesByActivity.get(source.source_activity_id) ?? [];
+      activitySources.push(source);
+      sourcesByActivity.set(source.source_activity_id, activitySources);
+    }
+    const groups = new Map<string, Group>();
+    const add = (
+      kind: EffortIdentityKind,
+      strength: EquivalenceStrength,
+      key: unknown,
+      activity: Activity,
+      displayName: string | null,
+      evidence: Group["identityEvidence"][number],
+      weakSpecification?: Group["weakSpecification"],
+    ) => {
+      const effortId = `${kind}:${strength}:${digest(key)}:${scopeToken}`;
+      if (input.effortId && effortId !== input.effortId) return;
+      let group = groups.get(effortId);
+      if (!group) {
+        group = {
+          effortId,
+          kind,
+          strength,
+          discoveryScope: {
+            providers: discoveryScope.providers,
+            modalities: discoveryScope.modalities,
+            canonicalTypes: discoveryScope.canonicalTypes,
+          },
+          ...(weakSpecification ? { weakSpecification } : {}),
+          displayName,
+          providers: [],
+          modalities: [],
+          canonicalTypes: [],
+          expectedDurationSeconds: null,
+          repetitionCount: 0,
+          firstOccurrence: activity.started_at,
+          lastOccurrence: activity.started_at,
+          canonicalActivityIds: [],
+          memberActivityIds: [],
+          sourceEvidence: [],
+          identityEvidence: [],
+          assumptions: [
+            nonMaximal,
+            "Expected protocol duration is unavailable in the identity projections; observed elapsed time is not a prescribed duration.",
+          ],
+          qualityFlags: ["expected_duration_unavailable"],
+        };
+        if (strength === "weak_similarity") {
+          group.qualityFlags.push("weak_identity");
+          group.assumptions.push(
+            "Weak candidates share identity namespace, normalized name, activity type, modality and a five-minute elapsed-duration bucket; this does not prove identical workouts.",
+          );
+        }
+        if (strength === "caller_asserted") {
+          group.qualityFlags.push("caller_asserted_equivalence");
+          group.assumptions.push(
+            "Benchmark membership is a user assertion, not independently verified equivalence.",
+          );
+        }
+        if (strength === "strong_inferred") {
+          group.qualityFlags.push("geometry_inferred");
+          group.assumptions.push(
+            "Routes must match every member in the group using route_geometry_v1; direction and quality remain in the evidence. Geometry availability depends on the upstream route projection.",
+          );
+        }
+        groups.set(effortId, group);
+      }
+      group.identityEvidence.push(evidence);
+      if (group.canonicalActivityIds.includes(activity.activity_id)) return;
+      group.canonicalActivityIds.push(activity.activity_id);
+      group.memberActivityIds.push(...activity.member_activity_ids);
+      group.providers.push(...activity.source_providers);
+      if (activity.modality) group.modalities.push(activity.modality);
+      group.canonicalTypes.push(activity.canonical_type);
+      if (activity.member_activity_ids.length > 1) group.qualityFlags.push("merged_sources");
+      const activitySources = activity.member_activity_ids.flatMap(
+        (memberActivityId) => sourcesByActivity.get(memberActivityId) ?? [],
+      );
+      group.sourceEvidence.push(
+        ...activitySources.map((source) => ({
+          canonicalActivityId: activity.activity_id,
+          sourceActivityId: source.source_activity_id,
+          provider: source.provider,
+          externalId: source.external_id,
+        })),
+      );
+      if (
+        activity.member_activity_ids.some(
+          (memberActivityId) => !sourcesByActivity.has(memberActivityId),
+        )
+      )
+        group.qualityFlags.push("source_evidence_incomplete");
+      group.firstOccurrence =
+        group.firstOccurrence < activity.started_at ? group.firstOccurrence : activity.started_at;
+      group.lastOccurrence =
+        group.lastOccurrence > activity.started_at ? group.lastOccurrence : activity.started_at;
+    };
+    for (const identity of identities) {
+      const activity = activities.get(identity.canonical_activity_id);
+      if (
+        !activity?.member_activity_ids.includes(identity.source_activity_id) ||
+        !identity.value.trim() ||
+        (input.effortKind && input.effortKind !== identity.kind)
+      )
+        continue;
+      const weak = identity.kind === "activity_name" || identity.strength === "weak_similarity";
+      if (weak && input.equivalenceStrength !== "weak") continue;
+      if (!weak && !["exact", "strong_inferred"].includes(identity.strength)) continue;
+      if (!weak && !identity.namespace) continue;
+      const durationBucket = activity.ended_at
+        ? weakDurationBucket(activity.started_at, activity.ended_at)
+        : null;
+      if (weak && (durationBucket === null || !identity.normalized_value.trim())) continue;
+      const weakSpecification =
+        weak && durationBucket !== null
+          ? {
+              namespace: identity.namespace,
+              normalizedValue: identity.normalized_value,
+              canonicalType: activity.canonical_type,
+              modality: activity.modality,
+              durationBucket,
+            }
+          : undefined;
+      add(
+        identity.kind,
+        weak ? "weak_similarity" : identity.strength,
+        weakSpecification
+          ? [
+              weakSpecification.namespace,
+              weakSpecification.normalizedValue,
+              weakSpecification.canonicalType,
+              weakSpecification.modality,
+              weakSpecification.durationBucket,
+            ]
+          : [identity.namespace, identity.value],
+        activity,
+        identity.display_name,
+        identityEvidence(identity),
+        weakSpecification,
+      );
+    }
+    for (const benchmark of benchmarks) {
+      const activity = activities.get(benchmark.canonical_activity_id);
+      if (!activity) continue;
+      add(
+        "user_defined_benchmark",
+        "caller_asserted",
+        benchmark.group_id,
+        activity,
+        benchmark.display_name,
+        {
+          canonicalActivityId: activity.activity_id,
+          sourceActivityId: null,
+          provider: null,
+          externalId: null,
+          namespace: this.#userId,
+          value: benchmark.group_id,
+          method: "user_benchmark_membership",
+          sourceField: null,
+          evidence: { notes: benchmark.notes, inclusionNote: benchmark.inclusion_note },
+        },
+      );
+    }
+    const routeGroups = await groupEquivalentRoutes(routes, [...activities.values()]);
+    for (const routesInGroup of routeGroups) {
+      const anchor = routesInGroup[0];
+      if (!anchor || routesInGroup.length < 2) continue;
+      for (const route of routesInGroup) {
+        const activity = activities.get(route.canonical_activity_id);
+        const match = evaluateRouteMatch({ left: geometry(anchor), right: geometry(route) });
+        if (!activity || !match?.matched) continue;
+        add(
+          "canonical_route",
+          "strong_inferred",
+          [anchor.canonical_activity_id, anchor.points],
+          activity,
+          activity.name,
+          {
+            canonicalActivityId: activity.activity_id,
+            sourceActivityId: null,
+            provider:
+              route.source_providers.length === 1 ? (route.source_providers[0] ?? null) : null,
+            externalId: null,
+            namespace: "route_geometry_v1",
+            value: anchor.canonical_activity_id,
+            method: "route_geometry_v1",
+            sourceField: null,
+            evidence: {
+              ...match,
+              anchorCanonicalActivityId: anchor.canonical_activity_id,
+              anchorSourceProviders: anchor.source_providers,
+              anchorSourceDevices: anchor.source_devices,
+              sourceProviders: route.source_providers,
+              sourceDevices: route.source_devices,
+            },
+          },
+        );
+      }
+    }
+    const eligible = [...groups.values()]
+      .map((group) => ({
+        ...group,
+        repetitionCount: group.canonicalActivityIds.length,
+        canonicalActivityIds: unique(group.canonicalActivityIds),
+        memberActivityIds: unique(group.memberActivityIds),
+        providers: unique(group.providers),
+        modalities: unique(group.modalities),
+        canonicalTypes: unique(group.canonicalTypes),
+        qualityFlags: unique(group.qualityFlags),
+        identityEvidence: [
+          ...new Map(group.identityEvidence.map((e) => [JSON.stringify(e), e])).values(),
+        ],
+      }))
+      .filter(
+        (group) =>
+          group.repetitionCount >= input.minimumRepetitions &&
+          (!cursor || group.effortId > cursor.after),
+      )
+      .sort((a, b) => (a.effortId < b.effortId ? -1 : a.effortId > b.effortId ? 1 : 0));
+    const page = eligible.slice(0, input.limit);
+    const identitiesBySource = new Map<string, Identity[]>();
+    for (const identity of identities) {
+      if (
+        !activities
+          .get(identity.canonical_activity_id)
+          ?.member_activity_ids.includes(identity.source_activity_id)
+      )
+        continue;
+      const key = JSON.stringify([
+        identity.canonical_activity_id,
+        identity.kind,
+        identity.namespace,
+        identity.strength,
+      ]);
+      const entries = identitiesBySource.get(key) ?? [];
+      entries.push(identity);
+      identitiesBySource.set(key, entries);
+    }
+    for (const group of page) {
+      const conflicts = group.identityEvidence.flatMap((evidence) => {
+        const key = JSON.stringify([
+          evidence.canonicalActivityId,
+          group.kind,
+          evidence.namespace,
+          group.strength,
+        ]);
+        const entries = identitiesBySource.get(key) ?? [];
+        return new Set(entries.map((entry) => entry.value)).size > 1
+          ? entries.map(identityEvidence)
+          : [];
+      });
+      if (conflicts.length) {
+        group.qualityFlags.push("conflicting_identity_evidence");
+        group.assumptions.push(
+          "Some merged sources disagree on stable identity. Conflicting evidence is retained; review it before treating group members as comparable.",
+        );
+        group.identityEvidence = [
+          ...new Map(
+            [...group.identityEvidence, ...conflicts].map((evidence) => [
+              JSON.stringify(evidence),
+              evidence,
+            ]),
+          ).values(),
+        ];
+      }
+    }
+    const last = page.at(-1);
+    return repeatedEffortsResultSchema.parse({
+      groups: page,
+      nextCursor:
+        eligible.length > input.limit && last
+          ? Buffer.from(JSON.stringify({ version: 1, shape, after: last.effortId })).toString(
+              "base64url",
+            )
+          : null,
+      assumptions: [
+        nonMaximal,
+        "Date filters use the canonical source-resolved local activity date, falling back to the analysis timezone. Discovery is bounded to 2,000 canonical activities, 250 routes and 20,000 evidence rows per projection; narrow the request if exceeded.",
+        "Only explicitly selected user_defined_benchmark requests return caller assertions. Effort IDs preserve the original date, type, provider and modality scope; membership may change when source evidence changes.",
+      ],
+    });
+  }
+}

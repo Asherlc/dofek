@@ -259,29 +259,54 @@ by the configured analysis timezone rather than provider/device-local source con
 standalone analytical training-load tool retains its prior analysis-timezone date policy and
 labels it in the returned range.
 
-`compare_performances` performs server-side, equivalence-constrained longitudinal comparisons. A
-caller supplies a canonical reference activity, a contracted Peloton class ID, a caller-asserted
-provider-scoped cycling route name/provider type, a provider-scoped standardized-test activity
-name/provider type, an exact climb composite, a normalized strength exercise ID, or asserted exact
-activity name. Reference-based matching refuses ambiguous activities rather than falling back to
-sport/duration similarity. Automatic reference derivation is limited to contracted Peloton class
-IDs, exact climb composites including lead/top-rope state when recorded, and a single normalized
-strength exercise. Canonical Postgres activities prevent provider duplicates from being
-counted twice, and cycling metrics come from deduplicated ClickHouse activity summaries. The result
-includes candidate-minus-baseline deltas, sample/missingness coverage, deduplicated activity
-temperature when observed, source-record-level matching evidence, provider-reported moving-duration
-evidence, caller-asserted route context when a provider-scoped cycling name/type key is used,
-timezone and source provenance, anomaly-aware strength values, explicit partial climbing
-observations, and reference-bound keyset pagination.
-Cross-provider duplicate climbing/set records are consolidated; conflicting records are excluded
-and surfaced rather than silently selected. Incomplete climbing observations never produce exact
-attempt/send deltas. Strength volume and estimated-1RM values carry complete/partial/unavailable
-coverage and produce deltas only when both performances are complete. Fuzzy near matches are
-explicitly not evaluated. Exact-name comparisons are labeled as caller assertions, and the tool
-does not claim causality. Evidence arrays have explicit caps, total counts, and truncation flags so
-large canonical duplicate groups remain token-bounded.
-See the [performance comparison repository](src/repositories/performance-comparison-repository.ts)
-and its [modality-specific consolidation](src/repositories/performance-comparison-modality-metrics.ts).
+`compare_performances` requires `activity:read` and performs server-side, equivalence-constrained
+longitudinal comparisons. Supply a canonical `reference_activity_id` or an explicit identity:
+`provider_workout` and `provider_route` accept any provider namespace; `segment`, `climb`, and
+`standardized_test` accept a namespace and value; `canonical_route` accepts a discovery anchor
+activity ID or stored fingerprint; and `user_defined_benchmark` selects an owned benchmark group.
+Normalized `activity_name`, the `provider_workout_id` alias, provider-scoped route/test name and
+type inputs, exact climb composites, and normalized strength exercise IDs remain supported. See
+the [tool input contract](src/mcp/performance-comparison-tool.ts).
+
+Reference derivation prefers exact over strongly inferred recorded identity and can use valid
+cycling route geometry when no recorded identity qualifies. Exact climb composites and a single
+normalized strength exercise remain supported. Conflicting exact values or ambiguous namespaces
+on the reference or eligible candidates require an explicit namespaced value; candidate evidence
+is validated before nonmatching identities are discarded. Canonical selection uses
+`fitness.v_activity`, with user-scoped identity and route evidence fenced by authorized activity
+membership. See the [comparison repository](src/repositories/performance-comparison-repository.ts)
+and [identity resolution](src/repositories/performance-comparison-identity.ts).
+
+Every comparison and performance reports identity kind, namespace, value, strength, basis,
+method, confidence, and assumptions. Level A is exact identity; Level B is strong inference,
+including geometry; Level C is caller assertion, including names and owned benchmark membership;
+Level D is weak similarity (`activity_name.asserted: false`) and has `comparable: false`.
+Route evidence includes direction, overlap, distance/endpoints, elevation similarity, and
+confidence when geometry can be compared. Route `quality` and `anchor_quality`, coverage, gaps,
+and source/device provenance remain available for partial or unavailable geometry, with a
+specific `geometry_unavailable_reason`. Incomplete geometry never establishes a geometric match
+or rejection, and does not downgrade an exact provider-route identity. See the
+[identity evidence implementation](src/repositories/performance-comparison-identity.ts) and
+[strict output schema](src/mcp/performance-comparison-output.ts).
+
+Cycling values and candidate-minus-baseline deltas use the
+[shared cycling effort metrics](src/repositories/cycling-effort-metrics.ts): deduplicated sensor
+samples, historical threshold and weight evidence, intervals, observed best powers, environment
+and movement metrics, stream quality, provenance, and explicit unavailable reasons. A current
+FTP with unknown historical validity never supplies an old activity's threshold. Ordinary workout
+bests are lower-bound observations, not maximal capacity; identity alone does not establish
+maximal intent or justify a fitness-decline conclusion. Segment/climb identity does not imply
+segment-specific sensor boundaries: metrics describe the containing activity. These limitations
+are returned in the [comparison assumptions](src/repositories/performance-comparison-identity.ts).
+
+The result retains provider-reported moving-duration evidence, timezone/source evidence, and
+reference-bound keyset pagination. Cross-provider duplicate climbing/set records are consolidated;
+conflicts are surfaced and excluded from metrics. Incomplete climbing observations never produce
+exact attempt/send deltas, and strength deltas require complete coverage on both sides. Fuzzy near
+matches are not searched and no causal claim is made. Evidence arrays are capped at 100 while
+preserving full counts and truncation flags. See the
+[comparison repository](src/repositories/performance-comparison-repository.ts) and
+[modality-specific consolidation](src/repositories/performance-comparison-modality-metrics.ts).
 
 `get_climbing_progression` requires `activity:read` and an inclusive date range. It calculates
 whole-range daily and grade aggregates while cursor-paginating only the detailed sessions, so an
