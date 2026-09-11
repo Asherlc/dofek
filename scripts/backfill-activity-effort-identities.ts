@@ -59,8 +59,16 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     db = createDatabaseFromEnv();
     const result = await backfillActivityEffortIdentities(db, options);
     console.log(
-      `[activity-effort-identity-backfill] scanned=${result.scanned} inserted=${result.inserted} updated=${result.updated} skipped=${result.skipped} conflicts=${result.conflicts}`,
+      `[activity-effort-identity-backfill] scanned=${result.scanned} inserted=${result.inserted} updated=${result.updated} skipped=${result.skipped} conflicts=${result.conflicts} refresh_ready=${result.refreshReady} details_truncated=${result.detailsTruncated}`,
     );
+    for (const detail of result.details) {
+      console.log(`[activity-effort-identity-backfill] detail=${JSON.stringify(detail)}`);
+    }
+    if (!result.refreshReady) {
+      throw new Error(
+        "Active activity is missing persisted group_id; reconcile PostgreSQL membership before CDC",
+      );
+    }
     if (!options.execute) {
       console.log(
         "[activity-effort-identity-backfill] audit only; review results, then run the documented bounded dbt refresh",

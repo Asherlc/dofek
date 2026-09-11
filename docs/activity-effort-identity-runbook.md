@@ -25,10 +25,17 @@ The v1 map is deliberately the same as
 
 `external_id` and generic payload IDs are provider-instance provenance, not
 reusable effort identities. Unknown fields remain untouched in `raw`. The audit
-counts an activity with no mapped non-empty string as `skipped`; it reports a
-conflict when source members in one canonical group claim different values for
-the same provider, identity kind, and mapped source field. A conflict is
-evidence to surface, never a reason to discard a source payload.
+counts an activity with no mapped non-empty string, including a `NULL` raw
+payload, as `skipped`; its bounded detail output identifies the source field and
+value that could not produce an exact identity. It reports each source claim
+when members in one canonical group provide different values for the same
+provider, identity kind, and mapped source field. A conflict is evidence to
+surface, never a reason to discard a source payload.
+
+The audit also checks the persisted canonical-group prerequisite used by
+`activity_source_records`. A `NULL` or all-zero `group_id` makes
+`refresh_ready=false`; the command reports the affected source and exits before
+an operator can run a dbt refresh that would reject the same record.
 
 ## Audit
 
@@ -41,9 +48,12 @@ pnpm tsx scripts/with-env.ts -- pnpm tsx scripts/backfill-activity-effort-identi
   --end=2026-09-02T00:00:00.000Z
 ```
 
-The result reports `scanned`, `skipped`, and observed `conflicts`. Under this
-read-only design, `inserted` and `updated` are always zero. `--execute` is an
-explicit audit acknowledgement only; it still makes no data writes:
+The result reports `scanned`, `skipped`, observed `conflicts`, and
+`refresh_ready`. It emits structured per-record details for unsupported values,
+canonical-group violations, and conflicting claims, capped at 100 details with
+`details_truncated=true` when more exist. Under this read-only design,
+`inserted` and `updated` are always zero. `--execute` is an explicit audit
+acknowledgement only; it still makes no data writes:
 
 ```bash
 pnpm tsx scripts/with-env.ts -- pnpm tsx scripts/backfill-activity-effort-identities.ts \
@@ -53,10 +63,10 @@ pnpm tsx scripts/with-env.ts -- pnpm tsx scripts/backfill-activity-effort-identi
   --execute
 ```
 
-Stop if conflicts or skips are unexpected. A provider whose retained payload
-does not contain one of these fields remains uncovered; recoverability through
-that provider's network API is a separate provider-specific operation and is
-not part of this procedure.
+Stop if `refresh_ready=false`, conflicts, or skips are unexpected. A provider
+whose retained payload does not contain one of these fields remains uncovered;
+recoverability through that provider's network API is a separate
+provider-specific operation and is not part of this procedure.
 
 ## CDC and dbt materialization
 
