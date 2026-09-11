@@ -463,6 +463,17 @@ truncation flags preserve coverage. Results use reference-bound stable keyset cu
 provider, member activity, timezone, quality, and deduplication provenance. The comparisons are
 descriptive and make no causal claim.
 
+Exact provider workout, route, segment, and standardized-test evidence is
+materialized only by the dbt-owned `analytics.activity_effort_identity` model
+from retained source payloads. The historical audit and scoped refresh procedure
+is documented in the [activity effort identity runbook](activity-effort-identity-runbook.md).
+It never treats a provider activity instance ID, a matching name, or an ordinary
+workout best as proof of equivalence, and it does not make provider network
+requests to fill gaps. MCP clients must report missing identity evidence as a
+coverage limitation rather than infer an exact repeat; the [MCP specification's
+tool guidance](https://modelcontextprotocol.io/specification/2025-06-18/server/tools)
+likewise treats tools as explicit operations rather than hidden background work.
+
 `get_cycling_performance` reads the deduped `cycling_activity` and
 `activity_power_curve` models. Per-ride FTP is 95% of the best observed
 20-minute effort in that ride's trailing 90-day window; intensity factor divides

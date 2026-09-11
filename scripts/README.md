@@ -34,6 +34,13 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   ownership for exercises and provider aliases from historical strength sets,
   in bounded batches, then verifies that no attributable rows were missed.
   - Usage: `DATABASE_URL=... pnpm backfill:exercise-provenance`
+- `backfill-activity-effort-identities.ts`: Read-only, user/window-bounded
+  audit of retained `fitness.activity.raw` payloads for the exact v1 workout,
+  route, segment, and standardized-test fields consumed by the dbt-owned
+  activity-effort identity model. It never fetches a provider or writes an
+  identity row; the separately scoped dbt build remains the sole materializer.
+  - Usage: `pnpm backfill:activity-effort-identities -- --user-id=<uuid> --start=<utc> --end=<utc>`
+  - Procedure: [activity effort identity runbook](../docs/activity-effort-identity-runbook.md)
 - `repair-activity-data-integrity.ts`: Dry-run-first, user/window-bounded repair
   for activity local-time context, Strong naive wall-clock timestamps, and the
   dbt-owned ClickHouse grouping and summary read models. GPS evidence precedes

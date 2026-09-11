@@ -112,6 +112,7 @@ Cross-provider reverse-engineering references:
 | [storage-alerting-and-volume-upgrade.md](storage-alerting-and-volume-upgrade.md) | Storage danger-zone alerts and volume expansion notes for OCI production. |
 | [database-backup-recovery-runbook.md](database-backup-recovery-runbook.md) | Databasus service health, R2 freshness monitoring, and isolated restore verification. |
 | [record-local-time.md](record-local-time.md) | Dry-run and execute the bounded historical activity local-time context backfill. |
+| [activity-effort-identity-runbook.md](activity-effort-identity-runbook.md) | Audit retained raw activity identities and run the scoped ClickHouse/dbt refresh. |
 | [oracle-cutover.md](oracle-cutover.md) | Current Oracle production cutover status and deploy targeting notes. |
 | [sync-checkpoint-retries.md](sync-checkpoint-retries.md) | Durable provider sync retry checkpoints and retryable infrastructure failure scope. |
 | [sentry.md](sentry.md) | Investigating Sentry issues and stack traces from terminal. |
