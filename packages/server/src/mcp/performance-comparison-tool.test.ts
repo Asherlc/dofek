@@ -11,7 +11,10 @@ vi.mock("../repositories/performance-comparison-repository.ts", () => ({
   }),
 }));
 
-import { registerPerformanceComparisonTool } from "./performance-comparison-tool.ts";
+import {
+  registerPerformanceComparisonTool,
+  toRepositoryEquivalence,
+} from "./performance-comparison-tool.ts";
 
 const ACTIVITY_ID = "00000000-0000-4000-8000-000000000010";
 
@@ -186,6 +189,32 @@ describe("compare_performances", () => {
   afterEach(async () => {
     await client.close();
     await server.close();
+  });
+
+  it.each([true, false])("preserves an explicit activity-name assertion of %s", (asserted) => {
+    expect(
+      toRepositoryEquivalence({
+        kind: "activity_name",
+        canonical_type: "cycling",
+        value: "FTP Test",
+        asserted,
+      }),
+    ).toEqual({
+      kind: "activity_name",
+      canonicalType: "cycling",
+      value: "FTP Test",
+      asserted,
+    });
+  });
+
+  it("omits the activity-name assertion when the caller does not send it", () => {
+    const equivalence = toRepositoryEquivalence({
+      kind: "activity_name",
+      canonical_type: "cycling",
+      value: "FTP Test",
+    });
+
+    expect(Object.hasOwn(equivalence, "asserted")).toBe(false);
   });
 
   it("requires a reference or explicit key and forwards bounded filters", async () => {

@@ -26462,17 +26462,22 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   context modules; Knip found two unused exported types; Squawk rejected an
   interval migration's integer and immediately validated constraints; SQLFluff
   found migration indentation errors; and CSpell found six unsupported words.
-  These were branch defects rather than transient CI failures.
+  The replacement run then reported a 60% mutation score for the optional
+  activity-name assertion adapter: three mutants survived and one had no
+  coverage. These were branch defects rather than transient CI failures.
 - **Direct fix:** Aligned the Expo package set with `expo install --fix`, removed
   the cycle and dead exports, changed the unbounded interval zone integer to a
   bigint, introduced and then validated new constraints with `NOT VALID`, and
-  corrected SQL and prose formatting. Expo documents `expo install --fix` as
-  the supported dependency-alignment command in its
+  corrected SQL and prose formatting. Added direct adapter regressions for
+  explicit true/false assertions and an omitted assertion. Expo documents
+  `expo install --fix` as the supported dependency-alignment command in its
   [CLI reference](https://docs.expo.dev/more/expo-cli/#install), and PostgreSQL
   documents deferred constraint validation in
   [`ALTER TABLE`](https://www.postgresql.org/docs/current/sql-altertable.html).
-- **Validation / remaining risk:** The six previously failing commands pass
+- **Validation / remaining risk:** The six original failing commands pass
   locally. The affected migrations also passed eight tests against real
-  Postgres. The full Docker integration wrapper remained unavailable because
-  of the separately recorded shared-VM AIO exhaustion; no timeout, retry, or
-  service setting was changed. A replacement CI run is required before merge.
+  Postgres, and targeted Stryker validation killed all four assertion-adapter
+  mutants for a 100% score. The full Docker integration wrapper remained
+  unavailable because of the separately recorded shared-VM AIO exhaustion; no
+  timeout, retry, or service setting was changed. A replacement CI run is
+  required before merge.
