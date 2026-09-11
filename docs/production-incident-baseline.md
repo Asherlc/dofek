@@ -26373,3 +26373,40 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   detail.
 - **Validation:** `git diff --check` passes. No schema, code, data, or
   operational setting changed.
+
+## 2026-09-10 — Task 11 validation blocked by Docker AIO capacity
+
+- **Impact:** Local `rtk pnpm test:all` could not start Vitest because the
+  workspace Redpanda prerequisite was unhealthy. No production change was
+  made. Full integration/mobile/unit validation remains blocked.
+- **Failing command:** `rtk pnpm test:all`, in its `pnpm compose:up` step.
+  First fatal orchestration line: `container suave-platypus-redpanda-1 is unhealthy`.
+  First causal service error: `Could not setup Async I/O: unknown error. The
+  required nr_events 1 exceeds the capacity in /proc/sys/fs/aio-max-nr 65536`.
+- **Evidence / cause:** `rtk pnpm compose -- logs redpanda --tail 70` showed
+  repeated startup aborts. `rtk docker inspect suave-platypus-redpanda-1
+  --format '{{json .State}}'` showed `restarting`, exit 133, and
+  `OOMKilled=false`. Reading `/proc/sys/fs/aio-nr` and
+  `/proc/sys/fs/aio-max-nr` from `suave-platypus-db-1` returned 65536 for both.
+  The shared Docker VM had exhausted its Linux async-I/O allocation capacity.
+  The kernel documents these counters in its
+  [filesystem sysctl reference](https://docs.kernel.org/admin-guide/sysctl/fs.html#aio-nr-aio-max-nr).
+- **Mitigation / risk:** No settings, limits, retries, sleeps, or other
+  workspaces were changed. The resource owner/allocation lifecycle remains
+  unresolved; coordinate shared-VM capacity recovery before rerunning the
+  unchanged full command. Use the [shared Docker resource runbook](testing.md#shared-docker-vm-resource-pressure).
+  Focused Docker-free checks can validate report behavior but cannot certify
+  the missing integration tier.
+- **Historical verification:** The new CLI's exact brief command stopped on
+  missing explicit `--user-id`. Authenticated MCP reads did return historical
+  source/power coverage, but the deployed catalog lacked the new discovery and
+  trend tools and returned inconsistent broad-range per-ride coverage. See the
+  [actual historical verification record](mcp.md#historical-verification-record--2026-09-10).
+  This is unresolved verification, not evidence of zero historical repeats or
+  a fitness change.
+- **Local repository prerequisite:** A read-only owner lookup for an activity
+  already returned by authenticated MCP failed on `SELECT user_id FROM
+  fitness.v_activity WHERE id = $1::uuid LIMIT 1` with
+  `relation "fitness.v_activity" does not exist`. The configured local
+  database lacks the serving view. It was not migrated, seeded, or pointed at
+  production as part of this report task.

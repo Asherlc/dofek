@@ -185,6 +185,8 @@ The canonical tool names, schemas, and scope checks are defined in the [MCP tool
 | `get_training_load` | `activity:read`; also `nutrition:read` when requested | Returns daily load and rolling windows; analytical detail preserves modality channels and can include aligned nutrition. |
 | `get_recovery_training_series` | Scope depends on selected streams: `health:read`, `activity:read`, and/or `nutrition:read` | Returns a selected, date-aligned recovery, sleep, weight, load, subjective, compact activity-exposure, and nutrition series without causal interpretation. |
 | `compare_performances` | `activity:read` | Compares only explicitly or strongly evidenced equivalent workouts, routes, climbs, strength exercises, or standardized tests with contextual deltas and provenance. |
+| `find_repeated_efforts` | `activity:read` | Discovers repeated exact or strongly inferred identities, with opt-in weak name/duration candidates and canonical/source evidence. |
+| `get_effort_trend` | `activity:read` | Returns chronological repetitions and descriptive deltas for a discovered effort or explicit equivalence, preserving quality and false-fitness caveats. |
 | `get_climbing_sessions` | `activity:read` | Returns exact-range climbing sessions with grades, attempts, sends, discipline, wall angle, and explicit unavailable fields. |
 | `get_climbing_progression` | `activity:read` | Returns longitudinal climbing grade, attempt, send-rate, frequency, rolling-exposure, duplicate, and provenance analysis. |
 | `get_finger_loading` | `activity:read` | Returns structured finger-loading protocols, effective load, and total time under tension inside exact date boundaries. |
@@ -433,13 +435,13 @@ The endpoint's interpretation block states that these observations support assoc
 [series repository](../packages/server/src/repositories/recovery-training-series-repository.ts).
 
 `compare_performances` requires either a canonical reference activity or an explicit equivalence
-key. Reference activities may derive only a single identity for which Dofek currently has a strong
-contract: a Peloton class ID, one exact climb composite (type, grade system/grade, route, and
-location, and lead/top-rope state when recorded), or one normalized strength exercise ID. Explicit
-Peloton class IDs use the same contracted provider identity. Provider-scoped cycling route names,
-standardized-test activity name/provider type, and exact normalized activity names are caller
-assertions labeled `user_asserted`. When no single strong identity exists, the tool refuses to
-compare. Sport, duration, and effort similarity alone never establish equivalence.
+key. Recorded reusable workout, route, segment, climb and test identities retain
+their namespaces; reference resolution rejects ambiguous identity choices.
+Caller assertions and weak name/duration candidates remain explicitly labeled;
+weak candidates are not comparable performances. Sport, duration, and effort
+similarity alone never establish equivalence. See the current
+[identity resolver](../packages/server/src/repositories/performance-comparison-identity.ts)
+and [equivalence inputs](../packages/server/src/mcp/performance-comparison-tool.ts).
 
 Candidate activities come from canonical `fitness.v_activity`, preventing duplicate provider
 workouts from being counted twice. Cycling power, heart rate, cadence, distance, elevation, and
@@ -453,9 +455,11 @@ deltas unless both performances have complete coverage. Strength volume and esti
 likewise report complete/partial/unavailable state, and their deltas require complete coverage in
 both performances. Each performance includes bounded, source-record-level equivalence evidence.
 Provider-reported moving duration is returned with raw
-field/source evidence and remains null when providers conflict. Route context is claimed only for a
-caller-asserted provider-scoped cycling name and provider type; Dofek does not claim an upstream
-route identifier that its normalized ingestion contract does not expose. Fuzzy near matches are
+field/source evidence and remains null when providers conflict. Route context distinguishes
+retained provider route identity, strongly inferred geometry, and caller assertions;
+geometry quality and unavailable reasons remain explicit. See the
+[comparison implementation](../packages/server/src/repositories/performance-comparison-repository.ts).
+Fuzzy near matches are
 explicitly not evaluated because similarity does not establish equivalence. Per-performance
 equivalence evidence is capped at 100 records, moving
 duration evidence at 20, and nested climbing source evidence at 20 IDs/providers; total counts and
@@ -488,6 +492,113 @@ effective load as `bodyweight_kg + external_load_kg` (a negative external load
 represents assistance) and computes total time under tension as hold duration
 times set count. See the [climbing repository](../packages/server/src/repositories/climbing-repository.ts)
 and [finger-loading reader](../packages/server/src/repositories/climbing-training-log-repository.ts).
+
+## Repeated cycling analysis workflow
+
+Use `find_repeated_efforts` with an explicit date range and
+`canonical_types: ["cycling"]`. Start with strong discovery; opt into
+`equivalence_strength: "weak"` only when reporting name/duration candidates.
+Follow `nextCursor` with the same scope before reporting counts or rankings.
+Counts describe canonical repetitions per identity group, not source uploads;
+one ride can belong to multiple groups. The
+[discovery repository](../packages/server/src/repositories/repeated-efforts-repository.ts)
+enforces 2,000 canonical activities and 250 route candidates per request and
+fails when the range must be narrowed. Do not sum independent date windows as
+an all-history group count: repeats can span those windows.
+
+Prioritize exact reusable workouts and standardized tests, then exact or
+high-confidence routes/climbs, then strongly comparable structured efforts,
+then weak name/duration candidates. The current
+[identity kinds](../packages/server/src/repositories/repeated-effort-types.ts)
+have no standalone structured-protocol discovery kind; inspect returned
+interval execution/provenance rather than inventing a protocol match.
+Provider activity instance IDs are provenance, not reusable template IDs.
+
+For several leading groups, pass each returned `effortId` to `get_effort_trend`
+using the same date range. Inspect the underlying `compare_performances`
+evidence: route direction/confidence/gaps, interval origin and targets,
+measurement kinds, devices, sample coverage, missing metrics, and FTP age.
+Preserve `quality`, `assumptions`, `caveats`, nulls and truncation markers in
+the interpretation. Trends retain at most 100 chronological repetitions;
+narrow the range when the returned caveat indicates truncation. See the
+[trend repository](../packages/server/src/repositories/effort-trend-repository.ts)
+and [comparison contract](../packages/server/src/mcp/performance-comparison-output.ts).
+
+Only after identity-aware comparisons, use `get_cycling_performance` for
+generic observed power and coverage. Ordinary workout bests are lower-bound
+observed capability, not maximal capacity. **Lower observed power does not
+demonstrate fitness decline.** Even exact identity does not prove maximal
+intent or comparable conditions; the
+[trend tool's interpretation contract](../packages/server/src/mcp/effort-trend-tool.ts)
+explicitly preserves this false-fitness guard.
+
+Report provider exact support from the provider attached to identity evidence,
+not every provider on a merged activity. Missing exact repeats do not prove a
+provider lacks identity support. Missing retained payload fields, unavailable
+route geometry/sensors, and incomplete ClickHouse/dbt historical refreshes
+remain limitations. The [historical identity runbook](activity-effort-identity-runbook.md)
+describes supported retained fields and the separate scoped refresh; neither
+discovery nor the report fetches provider history or refreshes models.
+
+Operators can generate the same analysis using the
+[TypeScript report command](../scripts/README.md#verification--tooling), which
+retains the full comparison/trend responses and their provenance.
+
+### Historical verification record — 2026-09-10
+
+The exact Task 11 command was attempted with the authenticated environment:
+
+```bash
+rtk pnpm tsx scripts/with-env.ts -- pnpm tsx scripts/report-repeated-cycling-efforts.ts --start=2000-01-01 --end=2099-12-31
+```
+
+Actual result (exit 1):
+
+```text
+[repeated-cycling-report] Historical verification blocked: --user-id is required; use one explicitly authorized user and date range
+```
+
+Infisical environment loading succeeded, but the brief supplied no user UUID.
+The CLI did not query a historical dataset or run comparisons. Rerun with an
+authorized user UUID and the intended timezone.
+
+A read-only lookup of one activity already returned by the authenticated MCP
+was attempted in the configured local database to resolve that user's scope.
+It failed with `relation "fitness.v_activity" does not exist`. Thus the local
+repository environment also lacks a required serving view; it is not ready
+for the report even after a user UUID is supplied.
+
+The authenticated Dofek MCP connection did provide real stored-data evidence
+through `get_cycling_performance`. These are actual server-returned values,
+not formatter fixtures or a successful run of the new report:
+
+| Request / returned evidence | Actual result |
+|---|---|
+| `2000-01-01` through `2099-12-31`, per-ride power coverage | 0 rides; 0 with power |
+| `2019-01-01` through `2026-09-10`, per-ride power coverage | 97 rides; 20 with power (20.6%) |
+| Dates of those 97 returned rides | 2026-06-18 through 2026-09-09 |
+| Indoor availability in the second response | 188 / 203 with power (92.6%); first/last power 2019-10-29 / 2026-09-09 |
+| Outdoor availability in the second response | 5 / 123 with power (4.1%); first/last power 2019-07-20 / 2019-09-13 |
+| Unknown-modality availability in the second response | 89 / 697 with power (12.8%); first/last power 2019-09-25 / 2023-06-26 |
+
+The second response's indoor sources were `apple_health`, `garmin-dump`,
+`peloton`, `ride-with-gps`, `strava`, `whoop`, and `zwift`; outdoor sources
+were `ride-with-gps` and `strava`; unknown-modality sources were `peloton`,
+`ride-with-gps`, and `wahoo`. These establish source presence, **not exact
+identity support**. The tool catalog exposed the older comparison contract
+and did not expose `find_repeated_efforts` or `get_effort_trend`.
+
+Three reference-based comparison requests were submitted against the existing
+MCP surface for observed June/July 2026 Peloton rides, using the 2019–2026
+range. They had not returned when the user requested completion without
+waiting, so waiting was stopped. No longitudinal result or exact identity
+claim is inferred from those attempts.
+
+The inconsistent requested-range/per-ride coverage is unresolved; it prevents
+claiming that this connection verified all historical cycling data. Counts by
+equivalence, exact provider repeats, route repeats, most frequent identities,
+and multi-year repetitions remain unverified. The separate full-test prerequisite
+failure is recorded in the [incident baseline](production-incident-baseline.md#2026-09-10--task-11-validation-blocked-by-docker-aio-capacity).
 
 ## Connect A Header-Capable Client
 
