@@ -23,7 +23,9 @@ describe("compare_performances", () => {
     mocks.compare.mockReset().mockResolvedValue({
       range: { start_date: "2026-06-01", end_date: "2026-07-31", timezone: "UTC" },
       equivalence: {
-        basis: "explicit",
+        identity: { kind: "activity_name", namespace: "cycling", value: "FTP Test" },
+        strength: "caller_asserted",
+        basis: "caller_asserted",
         method: "exact_normalized_activity_name",
         confidence: "user_asserted",
         key: { kind: "activity_name", canonical_type: "cycling", value: "FTP Test" },
@@ -57,6 +59,14 @@ describe("compare_performances", () => {
           canonical_type: "cycling",
           modality: "indoor",
           duration_seconds: 1200,
+          identity: {
+            identity: { kind: "activity_name", namespace: "cycling", value: "FTP Test" },
+            strength: "caller_asserted",
+            basis: "caller_asserted",
+            confidence: "user_asserted",
+            method: "exact_normalized_activity_name",
+            assumptions: [],
+          },
           moving_duration: {
             seconds: null,
             status: "not_available",
@@ -65,6 +75,13 @@ describe("compare_performances", () => {
             evidence_truncated: false,
           },
           route: {
+            geometry: null,
+            geometry_unavailable_reason: "No geometry comparison was performed.",
+            source_providers: [],
+            source_devices: [],
+            anchor_activity_id: null,
+            anchor_source_providers: [],
+            anchor_source_devices: [],
             status: "not_available",
             provider: null,
             activity_name: null,
@@ -100,6 +117,8 @@ describe("compare_performances", () => {
             assumed: false,
           },
           metrics: {
+            cycling_effort: null,
+            cycling_effort_unavailable_reason: "No sample fixture.",
             cycling: null,
             climbing: null,
             strength: null,
@@ -197,6 +216,23 @@ describe("compare_performances", () => {
       cursor: null,
       limit: 10,
     });
+  });
+
+  it.each([
+    { kind: "provider_workout", provider: "zwift", value: "workout-17" },
+    { kind: "provider_route", provider: "garmin", value: "course-17" },
+    { kind: "canonical_route", value: "route-fingerprint" },
+    { kind: "segment", namespace: "strava", value: "segment-17" },
+    { kind: "climb", namespace: "gym", value: "route-17" },
+    { kind: "standardized_test", namespace: "protocol", value: "20-minute" },
+    { kind: "user_defined_benchmark", value: ACTIVITY_ID },
+  ])("accepts provider-neutral $kind evidence", async (equivalence) => {
+    const result = await client.callTool({
+      name: "compare_performances",
+      arguments: { start_date: "2026-06-01", end_date: "2026-07-31", equivalence },
+    });
+    expect(result.isError).toBeFalsy();
+    expect(mocks.compare).toHaveBeenCalledWith(expect.objectContaining({ equivalence }));
   });
 
   it("maps a provider-scoped standardized test name and provider type", async () => {

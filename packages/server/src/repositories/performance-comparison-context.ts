@@ -3,7 +3,10 @@ import type {
   ClimbingComparisonRow,
   StrengthComparisonRow,
 } from "./performance-comparison-modality-metrics.ts";
-import type { PerformanceEquivalence } from "./performance-comparison-types.ts";
+import {
+  isIdentityEquivalence,
+  type PerformanceEquivalence,
+} from "./performance-comparison-types.ts";
 
 /** Translate authorized canonical activity evidence to the shared cycling input. */
 export function cyclingEffortRequest(activity: {
@@ -32,8 +35,6 @@ export function cyclingEffortRequest(activity: {
     movingDuration: buildMovingDuration(activity.source_raw_evidence),
   };
 }
-
-export const PELOTON_WORKOUT_KEYS = ["pelotonClassId"] as const;
 
 export interface SourceRawPerformanceEvidence {
   sourceActivityId: string;
@@ -72,11 +73,6 @@ function normalized(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
 }
 
-function rawKeys(key: PerformanceEquivalence): readonly string[] {
-  if (key.kind === "provider_workout_id") return PELOTON_WORKOUT_KEYS;
-  return [];
-}
-
 /** Return bounded, source-record-level evidence explaining why an activity matched. */
 export function buildEquivalenceEvidence(
   key: PerformanceEquivalence,
@@ -97,31 +93,8 @@ export function buildEquivalenceEvidence(
     source_activity_id: string;
     source_record_id: string | null;
   }> = [];
-  if (key.kind === "provider_workout_id") {
-    for (const source of input.sourceRawEvidence) {
-      if (source.provider !== key.provider || source.raw === null) continue;
-      for (const field of rawKeys(key)) {
-        const value = source.raw[field];
-        const identity =
-          typeof value === "string"
-            ? value.trim()
-            : typeof value === "number" && Number.isFinite(value)
-              ? String(value)
-              : null;
-        if (identity === key.value) {
-          items.push({
-            evidence_type: "provider_raw_field",
-            provider: source.provider,
-            value: identity,
-            field,
-            provider_type: source.providerType,
-            source_activity_id: source.sourceActivityId,
-            source_record_id: null,
-          });
-        }
-      }
-    }
-  } else if (key.kind === "cycling_route" || key.kind === "standardized_test") {
+  if (isIdentityEquivalence(key)) return { items: [], count: 0, truncated: false };
+  if (key.kind === "cycling_route" || key.kind === "standardized_test") {
     for (const source of input.sourceRawEvidence) {
       if (
         source.provider !== key.provider ||

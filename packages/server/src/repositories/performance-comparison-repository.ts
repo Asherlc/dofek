@@ -17,16 +17,25 @@ import {
   buildSampleSourceSummary,
   cyclingEffortRequest,
   hasObservedCyclingSensorData,
-  PELOTON_WORKOUT_KEYS,
   PERFORMANCE_COMPARISON_SENSOR_QUERY,
 } from "./performance-comparison-context.ts";
+import {
+  describeComparisonEvidence,
+  PerformanceComparisonIdentity,
+  resolveExplicit,
+  resolveFromReference,
+} from "./performance-comparison-identity.ts";
 import {
   type ClimbingComparisonRow,
   computeClimbingComparisonMetrics,
   computeStrengthComparisonMetrics,
   type StrengthComparisonRow,
 } from "./performance-comparison-modality-metrics.ts";
-import type { PerformanceEquivalence } from "./performance-comparison-types.ts";
+import {
+  isIdentityEquivalence,
+  type PerformanceEquivalence,
+  type ResolvedEquivalence,
+} from "./performance-comparison-types.ts";
 
 const sourceExternalIdSchema = z.object({
   providerId: z.string(),
@@ -143,14 +152,6 @@ export interface PerformanceComparisonInput {
   limit: number;
 }
 
-interface ResolvedEquivalence {
-  key: PerformanceEquivalence;
-  basis: "derived_from_reference" | "explicit";
-  method: string;
-  confidence: "high" | "user_asserted";
-  assumptions: string[];
-}
-
 function normalized(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
 }
@@ -164,127 +165,9 @@ function round(value: number, digits = 3): number {
   return Math.round(value * scale) / scale;
 }
 
-function rawIdentity(
-  row: ActivityRow,
-  keys: readonly string[],
-): Array<{ provider: string; value: string }> {
-  const identities: Array<{ provider: string; value: string }> = [];
-  for (const evidence of row.source_raw_evidence) {
-    if (!evidence.raw) continue;
-    for (const key of keys) {
-      const value = evidence.raw[key];
-      if (typeof value === "string" && value.trim().length > 0) {
-        identities.push({ provider: evidence.provider, value: value.trim() });
-      }
-    }
-  }
-  return identities.filter(
-    (identity, index, all) =>
-      all.findIndex(
-        (candidate) =>
-          candidate.provider === identity.provider && candidate.value === identity.value,
-      ) === index,
-  );
-}
-
-function resolveFromReference(row: ActivityRow): ResolvedEquivalence {
-  const workout = rawIdentity(row, PELOTON_WORKOUT_KEYS).filter(
-    (identity) => identity.provider === "peloton",
-  );
-  const workoutIdentity = workout.length === 1 ? workout[0] : undefined;
-  if (workoutIdentity) {
-    return {
-      key: { kind: "provider_workout_id", provider: "peloton", value: workoutIdentity.value },
-      basis: "derived_from_reference",
-      method: "exact_provider_workout_identity",
-      confidence: "high",
-      assumptions: [],
-    };
-  }
-  const climbIdentities = row.climb_identities.filter(
-    (identity, index, all) =>
-      all.findIndex((candidate) => JSON.stringify(candidate) === JSON.stringify(identity)) ===
-      index,
-  );
-  if (row.canonical_type === "climbing" && climbIdentities.length === 1) {
-    const identity = climbIdentities[0];
-    if (!identity) throw new Error("Climb identity unexpectedly missing");
-    return {
-      key: { kind: "climb", ...identity },
-      basis: "derived_from_reference",
-      method: "exact_climb_location_route_grade_identity",
-      confidence: "high",
-      assumptions: [],
-    };
-  }
-  const exerciseIds = unique(row.exercise_ids);
-  if (row.canonical_type === "strength" && exerciseIds.length === 1) {
-    const exerciseId = exerciseIds[0];
-    if (!exerciseId) throw new Error("Strength exercise identity unexpectedly missing");
-    return {
-      key: { kind: "strength_exercise_id", exerciseId },
-      basis: "derived_from_reference",
-      method: "exact_normalized_strength_exercise_identity",
-      confidence: "high",
-      assumptions: [],
-    };
-  }
-  throw new Error(
-    "The reference activity has no single defensible equivalence identity; provide an explicit equivalence key instead of comparing unrelated performances.",
-  );
-}
-
-function resolveExplicit(key: PerformanceEquivalence): ResolvedEquivalence {
-  if (key.kind === "activity_name") {
-    return {
-      key,
-      basis: "explicit",
-      method: "exact_normalized_activity_name",
-      confidence: "user_asserted",
-      assumptions: [
-        "The caller asserted that activities with this exact normalized name and canonical type are equivalent.",
-      ],
-    };
-  }
-  if (key.kind === "cycling_route" || key.kind === "standardized_test") {
-    return {
-      key,
-      basis: "explicit",
-      method:
-        key.kind === "cycling_route"
-          ? "caller_asserted_cycling_route_name_provider_type"
-          : "caller_asserted_standardized_test_name_provider_type",
-      confidence: "user_asserted",
-      assumptions: [
-        "The caller asserted that this provider-scoped activity name and provider type denote equivalent performances.",
-      ],
-    };
-  }
-  const method = {
-    provider_workout_id: "exact_provider_workout_identity",
-    climb: "exact_climb_location_route_grade_identity",
-    strength_exercise_id: "exact_normalized_strength_exercise_identity",
-  }[key.kind];
-  return { key, basis: "explicit", method, confidence: "high", assumptions: [] };
-}
-
-function rawKeyPredicate(provider: string | null, value: string, keys: readonly string[]): SQL {
-  const valuePredicates = keys.map((key) => sql`btrim(source_activity.raw->>${key}) = ${value}`);
-  const providerPredicate =
-    provider === null ? sql`true` : sql`source_activity.provider_id = ${provider}`;
-  return sql`EXISTS (
-    SELECT 1
-    FROM fitness.activity AS source_activity
-    WHERE source_activity.id = ANY(a.member_activity_ids)
-      AND ${providerPredicate}
-      AND (${sql.join(valuePredicates, sql` OR `)})
-  )`;
-}
-
 function equivalencePredicate(key: PerformanceEquivalence): SQL {
-  if (key.kind === "provider_workout_id") {
-    return rawKeyPredicate(key.provider, key.value, PELOTON_WORKOUT_KEYS);
-  }
+  if (isIdentityEquivalence(key))
+    throw new Error("Identity-model keys require authorized member selection");
   if (key.kind === "cycling_route" || key.kind === "standardized_test") {
     return sql`EXISTS (
       SELECT 1
@@ -402,8 +285,14 @@ function activitySelect(
 }
 
 function outputKey(key: PerformanceEquivalence) {
+  if (isIdentityEquivalence(key)) return key;
   if (key.kind === "activity_name") {
-    return { kind: key.kind, canonical_type: key.canonicalType, value: key.value };
+    return {
+      kind: key.kind,
+      canonical_type: key.canonicalType,
+      value: key.value,
+      ...(key.asserted === undefined ? {} : { asserted: key.asserted }),
+    };
   }
   if (key.kind === "strength_exercise_id") {
     return { kind: key.kind, exercise_id: key.exerciseId };
@@ -552,17 +441,93 @@ export class PerformanceComparisonRepository {
     const reference = input.referenceActivityId
       ? await this.#reference(input.referenceActivityId)
       : null;
+    const identityRepository = new PerformanceComparisonIdentity(
+      this.#db,
+      this.#store,
+      this.#userId,
+    );
     let equivalence: ResolvedEquivalence;
     if (input.equivalence) {
       equivalence = resolveExplicit(input.equivalence);
     } else {
       if (!reference) throw new Error("A reference activity is required to derive equivalence");
-      equivalence = resolveFromReference(reference);
+      const rows = await identityRepository.identities([reference]);
+      const strongKey = identityRepository.strongest(rows);
+      if (strongKey) {
+        equivalence = { ...resolveExplicit(strongKey), basis: "derived_from_reference" };
+      } else {
+        const routes =
+          reference.canonical_type === "cycling"
+            ? await identityRepository.routes([reference])
+            : [];
+        if (
+          routes.length &&
+          identityRepository.routeMatches(reference.activity_id, routes, [reference]).length
+        ) {
+          equivalence = {
+            ...resolveExplicit({ kind: "canonical_route", value: reference.activity_id }),
+            basis: "derived_from_reference",
+          };
+        } else {
+          equivalence = resolveFromReference(reference);
+        }
+      }
     }
     const localDate = postgresActivityLocalDate(sql`a`, this.#timezone);
     const range = sql`${localDate} BETWEEN ${input.startDate}::date AND ${input.endDate}::date`;
     const filters = filterPredicate(input);
-    const identity = equivalencePredicate(equivalence.key);
+    const modelKey = isIdentityEquivalence(equivalence.key) ? equivalence.key : null;
+    const scope = modelKey
+      ? await executeWithSchema(
+          this.#db,
+          activityRowSchema,
+          activitySelect(
+            this.#userId,
+            this.#timezone,
+            sql`${range} AND ${filters}`,
+            "performance-comparison:scope",
+            sql`ORDER BY a.started_at, a.id LIMIT 2001`,
+          ),
+        )
+      : [];
+    if (scope.length > 2000)
+      throw new Error("Too many activities; narrow the comparison date range or filters.");
+    const identityRows =
+      modelKey && !["canonical_route", "user_defined_benchmark"].includes(modelKey.kind)
+        ? identityRepository.matching(modelKey, await identityRepository.identities(scope))
+        : [];
+    const routeMatches =
+      modelKey?.kind === "canonical_route"
+        ? identityRepository.routeMatches(
+            modelKey.value,
+            await identityRepository.routes(scope),
+            scope,
+          )
+        : [];
+    const benchmarkRows =
+      modelKey?.kind === "user_defined_benchmark"
+        ? await identityRepository.benchmark(modelKey.value)
+        : [];
+    if (benchmarkRows.length > 2000)
+      throw new Error("Too many benchmark members; choose a smaller benchmark.");
+    const matchedIds = unique([
+      ...identityRows.map((row) => row.canonical_activity_id),
+      ...routeMatches.map((row) => row.activityId),
+      ...benchmarkRows.map((row) => row.canonical_activity_id),
+    ]);
+    const identity = modelKey
+      ? matchedIds.length
+        ? sql`a.id IN (${sql.join(
+            matchedIds.map((id) => sql`${id}::uuid`),
+            sql`, `,
+          )})`
+        : sql`false`
+      : equivalencePredicate(equivalence.key);
+    const evidenceFor = (activityId?: string) =>
+      describeComparisonEvidence(equivalence, identityRows, this.#userId, activityId);
+    const {
+      identity: { kind: identityKind, value: identityValue },
+    } = evidenceFor();
     const referenceFilter = input.referenceActivityId
       ? sql`AND a.id = ${input.referenceActivityId}::uuid`
       : sql``;
@@ -634,7 +599,7 @@ export class PerformanceComparisonRepository {
             sql`, `,
           )})
           ${
-            equivalence.key.kind === "climb"
+            equivalence.key.kind === "climb" && !isIdentityEquivalence(equivalence.key)
               ? sql`AND climb.climb_type::text = ${equivalence.key.climbType}
                 AND climb.grade_system::text = ${equivalence.key.gradeSystem}
                 AND lower(regexp_replace(btrim(climb.grade), '\\s+', ' ', 'g')) = ${normalized(equivalence.key.grade)}
@@ -676,15 +641,60 @@ export class PerformanceComparisonRepository {
           }
         ORDER BY a.id, strength.exercise_index, strength.set_index, strength.id`,
     );
-    const sensorRows = await this.#store.query(
-      sensorRowSchema,
-      PERFORMANCE_COMPARISON_SENSOR_QUERY,
-      {
-        userId: this.#userId,
-        activityIds: metricActivityIds,
-      },
-    );
+    const nonCyclingIds = [...pageRows, baseline]
+      .filter((row) => row.canonical_type !== "cycling")
+      .map((row) => row.activity_id);
+    const sensorRows = nonCyclingIds.length
+      ? await this.#store.query(sensorRowSchema, PERFORMANCE_COMPARISON_SENSOR_QUERY, {
+          userId: this.#userId,
+          activityIds: unique(nonCyclingIds),
+        })
+      : [];
 
+    const metricActivities = [
+      ...new Map([...pageRows, baseline].map((row) => [row.activity_id, row])).values(),
+    ];
+    if (modelKey?.kind === "provider_route") {
+      const routes = await identityRepository.routes(metricActivities);
+      if (routes.some((route) => route.canonical_activity_id === baseline.activity_id)) {
+        routeMatches.push(
+          ...identityRepository.routeEvidence(baseline.activity_id, routes, metricActivities),
+        );
+      }
+    }
+    const cyclingActivities = metricActivities.filter(
+      (row) => row.canonical_type === "cycling" && durationSeconds(row) !== null,
+    );
+    const effortRows: Awaited<ReturnType<typeof loadCyclingEffortMetrics>> = [];
+    for (let index = 0; index < cyclingActivities.length; index += 25) {
+      effortRows.push(
+        ...(await loadCyclingEffortMetrics(
+          this.#db,
+          this.#store,
+          this.#userId,
+          this.#timezone,
+          cyclingActivities.slice(index, index + 25).map(cyclingEffortRequest),
+          [5, 60, 300, 1200],
+        )),
+      );
+    }
+    const effortsByActivity = new Map(effortRows.map((row) => [row.activityId, row.metrics]));
+    const observedCycling = (row: ActivityRow) => {
+      const effort = effortsByActivity.get(row.activity_id);
+      return hasObservedCyclingSensorData(
+        row.canonical_type,
+        effort
+          ? {
+              sample_count: Math.max(
+                effort.streamQuality.cadence.observedSamples,
+                effort.streamQuality.speed.observedSamples,
+              ),
+              power_sample_count: effort.streamQuality.power.observedSamples,
+              heart_rate_sample_count: effort.streamQuality.heartRate.observedSamples,
+            }
+          : undefined,
+      );
+    };
     const sensorsByActivity = new Map(sensorRows.map((row) => [row.activity_id, row]));
     const climbsByActivity = new Map<string, ClimbingComparisonRow[]>();
     for (const row of climbingRows) {
@@ -703,40 +713,36 @@ export class PerformanceComparisonRepository {
 
     const values = (row: ActivityRow) => {
       const sensor = sensorsByActivity.get(row.activity_id);
-      const sampleCoverageAvailable =
-        sensor !== undefined &&
-        [sensor.sample_count, sensor.power_sample_count, sensor.heart_rate_sample_count].some(
-          (value) => value !== null,
-        );
+      const effort = effortsByActivity.get(row.activity_id);
       const cycling =
         row.canonical_type !== "cycling"
           ? null
           : {
-              average_power_watts: sensor?.average_power ?? null,
-              normalized_power_watts: sensor?.normalized_power ?? null,
-              average_heart_rate_bpm: sensor?.average_heart_rate ?? null,
-              max_heart_rate_bpm: sensor?.max_heart_rate ?? null,
-              average_cadence_rpm: sensor?.average_cadence ?? null,
+              average_power_watts: effort?.workout.power.averageWatts ?? null,
+              normalized_power_watts: effort?.workout.power.normalizedWatts ?? null,
+              average_heart_rate_bpm: effort?.workout.heartRate.averageBpm ?? null,
+              max_heart_rate_bpm: effort?.workout.heartRate.maximumBpm ?? null,
+              average_cadence_rpm: effort?.workout.cadence.averageRpm ?? null,
               power_to_heart_rate_ratio:
-                sensor?.average_power == null ||
-                sensor.average_heart_rate == null ||
-                sensor.average_heart_rate <= 0
-                  ? null
-                  : round(sensor.average_power / sensor.average_heart_rate),
-              distance_meters: sensor?.distance_meters ?? null,
-              elevation_gain_meters: sensor?.elevation_gain_meters ?? null,
+                effort?.workout.aerobicEfficiency.powerToHeartRateRatio ?? null,
+              distance_meters: effort?.movement.distanceMeters ?? null,
+              elevation_gain_meters: effort?.movement.elevationGainMeters ?? null,
               sample_coverage: {
-                total_samples: sensor?.sample_count ?? null,
-                power_samples: sensor?.power_sample_count ?? null,
-                heart_rate_samples: sensor?.heart_rate_sample_count ?? null,
-                status: sampleCoverageAvailable
-                  ? ("available" as const)
-                  : ("not_available" as const),
+                total_samples: null,
+                total_samples_unavailable_reason:
+                  "Unique timestamp count across channels is unavailable; per-stream sample counts are supplied.",
+                power_samples: effort?.streamQuality.power.observedSamples ?? null,
+                heart_rate_samples: effort?.streamQuality.heartRate.observedSamples ?? null,
+                status: effort !== undefined ? ("available" as const) : ("not_available" as const),
               },
             };
       return {
         duration: durationSeconds(row),
-        averageTemperatureC: sensor?.average_temperature_c ?? null,
+        averageTemperatureC:
+          row.canonical_type === "cycling"
+            ? (effort?.environment.averageTemperatureC ?? null)
+            : (sensor?.average_temperature_c ?? null),
+        effort: effort ?? null,
         cycling,
         climbing: computeClimbingComparisonMetrics(climbsByActivity.get(row.activity_id) ?? []),
         strength: computeStrengthComparisonMetrics(strengthByActivity.get(row.activity_id) ?? []),
@@ -748,19 +754,66 @@ export class PerformanceComparisonRepository {
       const current = values(row);
       const climbingForActivity = climbsByActivity.get(row.activity_id) ?? [];
       const strengthForActivity = strengthByActivity.get(row.activity_id) ?? [];
-      const equivalenceEvidence = buildEquivalenceEvidence(equivalence.key, {
+      const legacyEvidence = buildEquivalenceEvidence(equivalence.key, {
         activityId: row.activity_id,
         activityName: row.activity_name,
         sourceRawEvidence: row.source_raw_evidence,
         climbingRows: climbingForActivity,
         strengthRows: strengthForActivity,
       });
+      const matchingIdentities = identityRows.filter(
+        (identity) => identity.canonical_activity_id === row.activity_id,
+      );
+      const routeMatch = routeMatches.find((match) => match.activityId === row.activity_id);
+      const benchmark = benchmarkRows.find(
+        (member) => member.canonical_activity_id === row.activity_id,
+      );
+      const extraEvidence = matchingIdentities.map((identity) => ({
+        evidence_type: "identity_read_model" as const,
+        provider: identity.source_provider,
+        value: identity.value,
+        field: identity.source_field,
+        provider_type: null,
+        source_activity_id: identity.source_activity_id,
+        source_record_id: null,
+        identity_evidence: identity,
+      }));
+      const assertionEvidence =
+        routeMatch || benchmark
+          ? [
+              {
+                evidence_type: routeMatch
+                  ? ("route_geometry" as const)
+                  : ("user_benchmark_membership" as const),
+                provider: null,
+                value: identityValue,
+                field: null,
+                provider_type: null,
+                source_activity_id: row.activity_id,
+                source_record_id: null,
+                assertion_evidence: benchmark
+                  ? { ...benchmark }
+                  : { anchor_activity_id: routeMatch?.anchor_activity_id },
+              },
+            ]
+          : [];
+      const allEvidence = modelKey
+        ? [...extraEvidence, ...assertionEvidence]
+        : legacyEvidence.items;
+      const equivalenceEvidence = {
+        items: allEvidence.slice(0, 100),
+        count: allEvidence.length,
+        truncated: allEvidence.length > 100,
+      };
+      const identityEvidence = evidenceFor(row.activity_id);
       const movingDuration = buildMovingDuration(row.source_raw_evidence);
       const flags = [
+        `${identityEvidence.strength}_equivalence`,
+        ...(routeMatch && !routeMatch.geometry.matched ? ["route_geometry_rejected"] : []),
+        ...(current.effort?.quality.reasons ?? []),
         ...(current.duration === null ? ["duration_unavailable"] : []),
         ...(row.local_time_source === "unknown" ? ["timezone_assumed_from_analysis_context"] : []),
-        ...(row.canonical_type === "cycling" &&
-        !hasObservedCyclingSensorData(row.canonical_type, sensorsByActivity.get(row.activity_id))
+        ...(row.canonical_type === "cycling" && !observedCycling(row)
           ? ["cycling_sensor_summary_unavailable"]
           : []),
         ...((current.strength?.suspicious_sets ?? 0) > 0
@@ -793,7 +846,29 @@ export class PerformanceComparisonRepository {
         modality: row.modality,
         duration_seconds: current.duration,
         moving_duration: movingDuration,
-        route: buildRouteContext(equivalence.key, row.activity_name),
+        route: {
+          ...buildRouteContext(equivalence.key, row.activity_name),
+          ...(identityKind === "provider_route"
+            ? {
+                status: identityEvidence.strength,
+                provider: identityEvidence.identity.namespace,
+                activity_name: row.activity_name,
+                evidence: "identity_read_model" as const,
+              }
+            : routeMatch
+              ? { status: "strong_inferred" as const, evidence: "route_geometry" as const }
+              : {}),
+          geometry: routeMatch?.geometry ?? null,
+          geometry_unavailable_reason: routeMatch
+            ? null
+            : "No geometry comparison was performed for this identity.",
+          source_providers: routeMatch?.source_providers ?? [],
+          source_devices: routeMatch?.source_devices ?? [],
+          anchor_activity_id: routeMatch?.anchor_activity_id ?? null,
+          anchor_source_providers: routeMatch?.anchor_source_providers ?? [],
+          anchor_source_devices: routeMatch?.anchor_source_devices ?? [],
+        },
+        identity: identityEvidence,
         equivalence_evidence: equivalenceEvidence.items,
         equivalence_evidence_count: equivalenceEvidence.count,
         equivalence_evidence_truncated: equivalenceEvidence.truncated,
@@ -812,6 +887,12 @@ export class PerformanceComparisonRepository {
         },
         metrics: {
           cycling: current.cycling,
+          cycling_effort: current.effort,
+          cycling_effort_unavailable_reason: current.effort
+            ? null
+            : row.canonical_type === "cycling"
+              ? "Valid elapsed duration is required to calculate cycling effort metrics."
+              : "Activity is not cycling.",
           climbing: current.climbing,
           strength: current.strength,
           environment: {
@@ -902,15 +983,27 @@ export class PerformanceComparisonRepository {
               : null,
           ),
         },
-        quality: { comparable: true, flags },
+        quality: { comparable: identityEvidence.strength !== "weak_similarity", flags },
         provenance: {
           value_kind: "mixed" as const,
           activity_deduplication: "fitness.v_activity" as const,
           sensor_deduplication:
             "analytics.activity_summary_rows/activity_sensor_sample FINAL" as const,
           ...buildSampleSourceSummary(
-            sensorsByActivity.get(row.activity_id)?.sample_source_providers ?? [],
-            sensorsByActivity.get(row.activity_id)?.sample_device_ids ?? [],
+            (current.effort
+              ? unique(
+                  Object.values(current.effort.streamQuality).flatMap((stream) =>
+                    stream.evidence.flatMap((evidence) =>
+                      evidence.providerId ? [evidence.providerId] : [],
+                    ),
+                  ),
+                ).sort()
+              : undefined) ??
+              sensorsByActivity.get(row.activity_id)?.sample_source_providers ??
+              [],
+            current.effort?.provenance.sourceDevices ??
+              sensorsByActivity.get(row.activity_id)?.sample_device_ids ??
+              [],
           ),
         },
       };
@@ -919,7 +1012,7 @@ export class PerformanceComparisonRepository {
     const nextRow = hasMore ? pageRows.at(-1) : undefined;
     return {
       range: { start_date: input.startDate, end_date: input.endDate, timezone: this.#timezone },
-      equivalence: { ...equivalence, key: outputKey(equivalence.key) },
+      equivalence: { ...evidenceFor(), key: outputKey(equivalence.key) },
       baseline: {
         activity_id: baseline.activity_id,
         selection: input.referenceActivityId
@@ -934,7 +1027,7 @@ export class PerformanceComparisonRepository {
         normalized_power:
           "Fourth root of the mean fourth power of complete 30-second rolling average power from deduplicated samples.",
         power_to_heart_rate_ratio:
-          "Average power watts divided by average heart-rate bpm; null when either input is unavailable or heart rate is non-positive.",
+          "Paired-sample power to heart-rate ratio from the shared cycling effort calculation; null when coverage is insufficient.",
         deltas:
           "Every numeric delta is candidate minus baseline; null means one or both values are missing.",
         strength_estimated_one_rep_max:
@@ -944,24 +1037,15 @@ export class PerformanceComparisonRepository {
       },
       coverage: {
         canonical_activities: pageRows.length,
-        cycling_metrics_from_deduped_samples: pageRows.filter((row) =>
-          hasObservedCyclingSensorData(row.canonical_type, sensorsByActivity.get(row.activity_id)),
-        ).length,
+        cycling_metrics_from_deduped_samples: pageRows.filter((row) => observedCycling(row)).length,
         environment_metrics_from_deduped_samples: pageRows.filter(
-          (row) => sensorsByActivity.get(row.activity_id)?.average_temperature_c != null,
+          (row) => values(row).averageTemperatureC != null,
         ).length,
         activities_with_missing_duration: pageRows.filter((row) => durationSeconds(row) === null)
           .length,
         timezone_assumed_activities: pageRows.filter((row) => !row.date_was_authoritative).length,
-        performances_with_equivalence_evidence: pageRows.filter(
-          (row) =>
-            buildEquivalenceEvidence(equivalence.key, {
-              activityId: row.activity_id,
-              activityName: row.activity_name,
-              sourceRawEvidence: row.source_raw_evidence,
-              climbingRows: climbsByActivity.get(row.activity_id) ?? [],
-              strengthRows: strengthByActivity.get(row.activity_id) ?? [],
-            }).count > 0,
+        performances_with_equivalence_evidence: performances.filter(
+          (row) => row.equivalence_evidence_count > 0,
         ).length,
         performances_with_moving_duration: pageRows.filter(
           (row) => buildMovingDuration(row.source_raw_evidence).status === "available",

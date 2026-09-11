@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { cyclingEffortMetricsSchema } from "../mcp/performance-comparison-output.ts";
+import {
+  cyclingEffortMetricsSchema,
+  performanceComparisonOutputSchema,
+} from "../mcp/performance-comparison-output.ts";
 import { PerformanceComparisonRepository } from "./performance-comparison-repository.ts";
 
 const USER_ID = "00000000-0000-4000-8000-000000000001";
@@ -53,6 +56,9 @@ function database(reference: Record<string, unknown>, candidates: Record<string,
   return {
     execute: vi.fn((query: unknown) => {
       const text = queryText(query);
+      if (text.includes("performance-comparison:scope")) return Promise.resolve(candidates);
+      if (text.includes("sport_settings") || text.includes("activity_interval"))
+        return Promise.resolve([]);
       if (text.includes("performance-comparison:reference")) return Promise.resolve([reference]);
       if (text.includes("performance-comparison:baseline"))
         return Promise.resolve(candidates.slice(0, 1));
@@ -65,6 +71,122 @@ function database(reference: Record<string, unknown>, candidates: Record<string,
 }
 
 describe("PerformanceComparisonRepository", () => {
+  it.each([
+    ["provider_workout", "exact"],
+    ["provider_route", "exact"],
+    ["segment", "exact"],
+    ["climb", "exact"],
+    ["standardized_test", "exact"],
+  ] as const)(
+    "returns %s identity evidence without promoting its confidence",
+    async (kind, strength) => {
+      const row = activityRow({ canonical_type: "running" });
+      const store = {
+        query: vi.fn(async (_schema, text: string) =>
+          text.includes("activity_effort_identity")
+            ? [
+                {
+                  canonical_activity_id: FIRST_ID,
+                  source_activity_id: FIRST_ID,
+                  source_provider: "zwift",
+                  source_external_id: "instance-1",
+                  kind,
+                  namespace: "zwift",
+                  value: "template-17",
+                  normalized_value: "template-17",
+                  display_name: "Tempo",
+                  strength,
+                  method: "explicit_identity",
+                  source_field: "templateId",
+                  evidence: { rawValue: "template-17" },
+                },
+              ]
+            : [],
+        ),
+      };
+      const result = await new PerformanceComparisonRepository(
+        database(row, [row]),
+        store,
+        USER_ID,
+        "UTC",
+      ).compare({
+        startDate: "2026-06-01",
+        endDate: "2026-07-31",
+        referenceActivityId: FIRST_ID,
+        equivalence: null,
+        providers: [],
+        modalities: [],
+        cursor: null,
+        limit: 25,
+      });
+      expect(result.equivalence).toMatchObject({
+        strength: "exact",
+        basis: "derived_from_reference",
+        identity: { kind, namespace: "zwift", value: "template-17" },
+      });
+      expect(result.performances[0]).toMatchObject({
+        identity: { strength: "exact" },
+        equivalence_evidence: [
+          expect.objectContaining({ provider: "zwift", source_activity_id: FIRST_ID }),
+        ],
+      });
+    },
+  );
+
+  it("labels normalized-name comparisons as caller assertions", async () => {
+    const row = activityRow({ canonical_type: "running" });
+    const result = await new PerformanceComparisonRepository(
+      database(row, [row]),
+      { query: vi.fn().mockResolvedValue([]) },
+      USER_ID,
+      "UTC",
+    ).compare({
+      startDate: "2026-06-01",
+      endDate: "2026-07-31",
+      referenceActivityId: null,
+      equivalence: { kind: "activity_name", canonicalType: "running", value: "Tempo" },
+      providers: [],
+      modalities: [],
+      cursor: null,
+      limit: 25,
+    });
+    expect(result.equivalence).toMatchObject({
+      basis: "caller_asserted",
+      strength: "caller_asserted",
+    });
+    expect(result.performances[0]?.quality.flags).toContain("caller_asserted_equivalence");
+  });
+
+  it("keeps unasserted names weak and does not declare them comparable", async () => {
+    const row = activityRow({ canonical_type: "running" });
+    const result = await new PerformanceComparisonRepository(
+      database(row, [row]),
+      { query: vi.fn().mockResolvedValue([]) },
+      USER_ID,
+      "UTC",
+    ).compare({
+      startDate: "2026-06-01",
+      endDate: "2026-07-31",
+      referenceActivityId: null,
+      equivalence: {
+        kind: "activity_name",
+        canonicalType: "running",
+        value: "Tempo",
+        asserted: false,
+      },
+      providers: [],
+      modalities: [],
+      cursor: null,
+      limit: 25,
+    });
+    expect(result.equivalence).toMatchObject({ strength: "weak_similarity", confidence: "low" });
+    expect(result.performances[0]?.quality).toMatchObject({
+      comparable: false,
+      flags: ["weak_similarity_equivalence"],
+    });
+    expect(performanceComparisonOutputSchema.parse({ result }).result).toEqual(result);
+  });
+
   it("loads a bounded complete cycling bundle for future comparison without using a current FTP", async () => {
     const row = activityRow();
     const db = database(row, [row]);
@@ -120,140 +242,61 @@ describe("PerformanceComparisonRepository", () => {
     await expect(repository.cyclingEfforts([], [300])).resolves.toEqual([]);
   });
 
-  it("derives a repeated provider workout identity and compares deduped cycling metrics", async () => {
-    const first = activityRow({
-      source_raw_evidence: [
-        { sourceActivityId: FIRST_ID, provider: "peloton", raw: null },
-        {
-          sourceActivityId: FIRST_ID,
-          provider: "peloton",
-          raw: {
-            pelotonClassId: "  class-abc  ",
-            classId: "class-abc",
-            workoutId: "   ",
-            rideId: 42,
-            movingTime: 1800,
-          },
-        },
-        {
-          sourceActivityId: FIRST_ID,
-          provider: "wahoo",
-          raw: { pelotonClassId: "class-abc", moving_time: "1800" },
-        },
-      ],
+  it("compares shared sample-derived cycling metrics with explicit unavailable reasons and provenance", async () => {
+    const first = activityRow();
+    const second = activityRow({ activity_id: SECOND_ID, member_activity_ids: [SECOND_ID] });
+    const query = vi.fn(async (_schema, text: string) => {
+      if (text.includes("cycling-training-metrics:samples"))
+        return [FIRST_ID, SECOND_ID].flatMap((id, index) =>
+          Array.from({ length: 1800 }, (_, elapsed_seconds) => ({
+            activity_id: id,
+            elapsed_seconds,
+            power: index === 0 ? 180 : 195,
+            heart_rate: index === 0 ? 145 : 143,
+            cadence: 90,
+            source_providers: ["zwift"],
+            source_devices: ["meter"],
+            power_measurement_kinds: ["direct"],
+            stream_evidence: [
+              ["power", "zwift", "meter", "direct"],
+              ["heart_rate", "zwift", "hr", "direct"],
+            ],
+          })),
+        );
+      return [];
     });
-    const second = activityRow({
-      activity_id: SECOND_ID,
-      started_at: "2026-07-01T17:00:00.000Z",
-      ended_at: "2026-07-01T17:30:00.000Z",
-      local_date: "2026-07-01",
-      source_external_ids: [
-        {
-          providerId: "peloton",
-          externalId: "workout-2",
-          memberActivityId: SECOND_ID,
-        },
-      ],
-      member_activity_ids: [SECOND_ID],
-      source_raw_evidence: [
-        {
-          sourceActivityId: SECOND_ID,
-          provider: "peloton",
-          raw: { pelotonClassId: "class-abc" },
-        },
-      ],
-    });
-    const sensorStore = {
-      query: vi.fn().mockResolvedValue([
-        {
-          activity_id: FIRST_ID,
-          average_power: 180,
-          normalized_power: 185,
-          average_heart_rate: 145,
-          max_heart_rate: 165,
-          average_cadence: 88,
-          distance_meters: 15_000,
-          elevation_gain_meters: 0,
-          average_temperature_c: 20,
-          sample_source_providers: ["peloton"],
-          sample_device_ids: ["bike-1"],
-          sample_count: 360,
-          power_sample_count: 360,
-          heart_rate_sample_count: 360,
-        },
-        {
-          activity_id: SECOND_ID,
-          average_power: 195,
-          normalized_power: 200,
-          average_heart_rate: 143,
-          max_heart_rate: 163,
-          average_cadence: 90,
-          distance_meters: 15_000,
-          elevation_gain_meters: 0,
-          average_temperature_c: 18,
-          sample_source_providers: ["peloton"],
-          sample_device_ids: ["bike-1"],
-          sample_count: 360,
-          power_sample_count: 360,
-          heart_rate_sample_count: 360,
-        },
-      ]),
-    };
-
-    const db = database(first, [first, second]);
     const result = await new PerformanceComparisonRepository(
-      db,
-      sensorStore,
+      database(first, [first, second]),
+      { query },
       USER_ID,
-      "America/Los_Angeles",
+      "UTC",
     ).compare({
       startDate: "2026-06-01",
       endDate: "2026-07-31",
-      referenceActivityId: FIRST_ID,
-      equivalence: null,
+      referenceActivityId: null,
+      equivalence: { kind: "activity_name", canonicalType: "cycling", value: first.activity_name },
       providers: [],
       modalities: [],
       cursor: null,
       limit: 10,
     });
-
-    expect(result).toMatchSnapshot();
-    expect(db.execute.mock.calls.map(([query]) => queryText(query))).toMatchSnapshot();
-    expect(sensorStore.query.mock.calls).toMatchSnapshot();
-    expect(result.equivalence).toMatchObject({
-      basis: "derived_from_reference",
-      confidence: "high",
-      key: { kind: "provider_workout_id", provider: "peloton", value: "class-abc" },
-    });
-    expect(result.baseline.activity_id).toBe(FIRST_ID);
-    expect(result.performances).toHaveLength(2);
+    expect(performanceComparisonOutputSchema.parse({ result }).result).toEqual(result);
+    expect(result.coverage.cycling_metrics_from_deduped_samples).toBe(2);
+    expect(result.performances[1]?.provenance.sample_device_ids).toEqual(["meter"]);
     expect(result.performances[1]).toMatchObject({
-      activity_id: SECOND_ID,
-      equivalence_evidence: [
-        {
-          evidence_type: "provider_raw_field",
-          provider: "peloton",
-          value: "class-abc",
-          source_activity_id: SECOND_ID,
-        },
-      ],
       metrics: {
-        cycling: {
-          average_power_watts: 195,
-          average_heart_rate_bpm: 143,
-          power_to_heart_rate_ratio: expect.closeTo(195 / 143, 3),
+        cycling: { average_power_watts: 195, average_heart_rate_bpm: 143 },
+        cycling_effort: {
+          workout: { power: { averageWatts: 195, intensityFactor: null } },
+          thresholds: { ftp: null },
+          provenance: { sourceDevices: ["meter"] },
+          bestPowerInterpretation: { maximalTest: false },
+          unavailableReasons: expect.arrayContaining([
+            expect.objectContaining({ metric: "intensity_factor" }),
+          ]),
         },
       },
-      delta_to_baseline: {
-        average_power_watts: 15,
-        average_heart_rate_bpm: -2,
-        average_temperature_c: -2,
-      },
-    });
-    expect(result.coverage).toMatchObject({
-      canonical_activities: 2,
-      cycling_metrics_from_deduped_samples: 2,
-      environment_metrics_from_deduped_samples: 2,
+      delta_to_baseline: { average_power_watts: 15, average_heart_rate_bpm: -2 },
     });
   });
 
@@ -261,7 +304,7 @@ describe("PerformanceComparisonRepository", () => {
     const reference = activityRow({ source_raw_evidence: [], activity_name: "Morning Ride" });
     const repository = new PerformanceComparisonRepository(
       database(reference, []),
-      { query: vi.fn() },
+      { query: vi.fn().mockResolvedValue([]) },
       USER_ID,
       "UTC",
     );
@@ -292,7 +335,7 @@ describe("PerformanceComparisonRepository", () => {
     });
     const repository = new PerformanceComparisonRepository(
       database(reference, []),
-      { query: vi.fn() },
+      { query: vi.fn().mockResolvedValue([]) },
       USER_ID,
       "UTC",
     );
@@ -370,21 +413,14 @@ describe("PerformanceComparisonRepository", () => {
     },
   );
 
-  it("accepts an explicit Peloton class identity as high-confidence provider evidence", async () => {
-    const row = activityRow();
-    const unmatchedEvidence = activityRow({
-      activity_id: SECOND_ID,
+  it("retains missing duration and timezone quality with an unavailable cycling bundle", async () => {
+    const row = activityRow({
       ended_at: null,
-      local_date: "2026-07-01",
-      started_at: "2026-07-01T17:00:00.000Z",
-      source_external_ids: null,
-      member_activity_ids: [SECOND_ID],
-      source_raw_evidence: [],
       local_time_source: "unknown",
       date_was_authoritative: false,
     });
     const result = await new PerformanceComparisonRepository(
-      database(row, [row, unmatchedEvidence]),
+      database(row, [row]),
       { query: vi.fn().mockResolvedValue([]) },
       USER_ID,
       "UTC",
@@ -392,43 +428,24 @@ describe("PerformanceComparisonRepository", () => {
       startDate: "2026-06-01",
       endDate: "2026-07-31",
       referenceActivityId: null,
-      equivalence: {
-        kind: "provider_workout_id",
-        provider: "peloton",
-        value: "class-abc",
-      },
+      equivalence: { kind: "activity_name", canonicalType: "cycling", value: row.activity_name },
       providers: [],
       modalities: [],
       cursor: null,
       limit: 10,
     });
-
-    expect(result).toMatchSnapshot();
-    expect(result.equivalence).toMatchObject({
-      basis: "explicit",
-      method: "exact_provider_workout_identity",
-      confidence: "high",
-    });
-    expect(result.performances[0]?.equivalence_evidence_count).toBe(1);
-    expect(result.performances[1]).toMatchObject({
-      activity_id: SECOND_ID,
+    expect(result.performances[0]).toMatchObject({
       duration_seconds: null,
-      equivalence_evidence_count: 0,
+      metrics: {
+        cycling_effort: null,
+        cycling_effort_unavailable_reason: expect.stringContaining("elapsed duration"),
+      },
       quality: {
-        comparable: true,
-        flags: [
+        flags: expect.arrayContaining([
           "duration_unavailable",
           "timezone_assumed_from_analysis_context",
-          "cycling_sensor_summary_unavailable",
-          "equivalence_evidence_unavailable",
-        ],
+        ]),
       },
-    });
-    expect(result.coverage).toMatchObject({
-      activities_with_missing_duration: 1,
-      timezone_assumed_activities: 1,
-      performances_with_equivalence_evidence: 1,
-      performances_with_moving_duration: 0,
     });
   });
 
@@ -506,7 +523,7 @@ describe("PerformanceComparisonRepository", () => {
       expect(result).toMatchSnapshot();
       expect(db.execute.mock.calls.map(([query]) => queryText(query))).toMatchSnapshot();
       expect(result.equivalence).toMatchObject({
-        basis: "explicit",
+        basis: "caller_asserted",
         method: expectedMethod,
         confidence: "user_asserted",
       });
@@ -527,6 +544,7 @@ describe("PerformanceComparisonRepository", () => {
     const second = activityRow({
       activity_id: SECOND_ID,
       started_at: "2026-07-01T17:00:00.000Z",
+      ended_at: "2026-07-01T17:30:00.000Z",
       local_date: "2026-07-01",
       member_activity_ids: [SECOND_ID],
       source_raw_evidence: [
@@ -546,7 +564,11 @@ describe("PerformanceComparisonRepository", () => {
       startDate: "2026-06-01",
       endDate: "2026-07-31",
       referenceActivityId: FIRST_ID,
-      equivalence: null,
+      equivalence: {
+        kind: "activity_name",
+        canonicalType: "cycling",
+        value: "30 min Power Zone Endurance",
+      },
       providers: [],
       modalities: [],
       cursor: null,
@@ -559,6 +581,8 @@ describe("PerformanceComparisonRepository", () => {
     const nextDb = database(first, [second]);
     nextDb.execute.mockImplementation((query: unknown) => {
       const text = queryText(query);
+      if (text.includes("sport_settings") || text.includes("activity_interval"))
+        return Promise.resolve([]);
       if (text.includes("performance-comparison:reference")) return Promise.resolve([first]);
       if (text.includes("performance-comparison:baseline")) return Promise.resolve([first]);
       if (text.includes("performance-comparison:candidates")) return Promise.resolve([second]);
@@ -575,7 +599,11 @@ describe("PerformanceComparisonRepository", () => {
       startDate: "2026-06-01",
       endDate: "2026-07-31",
       referenceActivityId: FIRST_ID,
-      equivalence: null,
+      equivalence: {
+        kind: "activity_name",
+        canonicalType: "cycling",
+        value: "30 min Power Zone Endurance",
+      },
       providers: [],
       modalities: [],
       cursor,
@@ -600,7 +628,11 @@ describe("PerformanceComparisonRepository", () => {
         startDate: "2026-06-01",
         endDate: "2026-07-31",
         referenceActivityId: THIRD_ID,
-        equivalence: null,
+        equivalence: {
+          kind: "activity_name",
+          canonicalType: "cycling",
+          value: "30 min Power Zone Endurance",
+        },
         providers: [],
         modalities: [],
         cursor,

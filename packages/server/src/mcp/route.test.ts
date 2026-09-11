@@ -946,7 +946,7 @@ describe("createMcpRouter", () => {
     expect(findListedTool(tools, "compare_performances").inputSchema).toMatchObject({
       properties: {
         end_date: { format: "date", type: "string" },
-        equivalence: { oneOf: expect.any(Array) },
+        equivalence: { anyOf: expect.any(Array) },
         limit: { maximum: 100, minimum: 1, type: "integer" },
         modalities: { type: "array" },
         providers: { type: "array" },

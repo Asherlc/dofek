@@ -4,21 +4,18 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { dateSchema } from "../lib/date-schema.ts";
 import { PerformanceComparisonRepository } from "../repositories/performance-comparison-repository.ts";
-import type { PerformanceEquivalence } from "../repositories/performance-comparison-types.ts";
+import {
+  identityEquivalenceSchema,
+  type PerformanceEquivalence,
+} from "../repositories/performance-comparison-types.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { performanceComparisonOutputSchema } from "./performance-comparison-output.ts";
 import { requireMcpScope } from "./token-repository.ts";
 import { jsonToolResult } from "./tool-result.ts";
 import { assertDateRange } from "./tool-utils.ts";
 
-const equivalenceSchema = z.discriminatedUnion("kind", [
-  z
-    .object({
-      kind: z.literal("provider_workout_id"),
-      provider: z.literal("peloton"),
-      value: z.string().min(1),
-    })
-    .strict(),
+const equivalenceSchema = z.union([
+  identityEquivalenceSchema,
   z
     .object({
       kind: z.literal("cycling_route"),
@@ -52,6 +49,12 @@ const equivalenceSchema = z.discriminatedUnion("kind", [
       kind: z.literal("activity_name"),
       canonical_type: z.enum(CANONICAL_ACTIVITY_TYPES),
       value: z.string().min(1),
+      asserted: z
+        .boolean()
+        .optional()
+        .describe(
+          "Explicit name equivalence defaults to caller assertion; false returns weak similarity only.",
+        ),
     })
     .strict(),
 ]);
@@ -59,11 +62,17 @@ const equivalenceSchema = z.discriminatedUnion("kind", [
 type ToolEquivalence = z.infer<typeof equivalenceSchema>;
 
 function toRepositoryEquivalence(input: ToolEquivalence): PerformanceEquivalence {
+  if ("value" in input && input.kind !== "activity_name") return input;
   if (input.kind === "strength_exercise_id") {
     return { kind: input.kind, exerciseId: input.exercise_id };
   }
   if (input.kind === "activity_name") {
-    return { kind: input.kind, canonicalType: input.canonical_type, value: input.value };
+    return {
+      kind: input.kind,
+      canonicalType: input.canonical_type,
+      value: input.value,
+      ...(input.asserted === undefined ? {} : { asserted: input.asserted }),
+    };
   }
   if (input.kind === "standardized_test") {
     return {
@@ -105,7 +114,7 @@ export function registerPerformanceComparisonTool(
     {
       title: "Compare Equivalent Performances",
       description:
-        "Compare repeated Peloton classes, caller-asserted provider-scoped cycling routes, climbs, normalized strength exercises, standardized tests, or exact activity names. Requires explicit equivalence evidence and returns contextual metrics, deltas, quality, and provenance without causal claims.",
+        "Compare provider-agnostic repeated workout/template IDs, provider routes, canonical routes, segments/climbs, standardized tests, normalized names, user-defined benchmark groups, and strength exercises. Level A exact: namespaced recorded identity. Level B strong_inferred: measured route geometry (canonical_route value is a discovery anchor activity ID or stored route fingerprint). Level C caller_asserted: explicit names, legacy name/type inputs, or benchmark membership. Level D weak_similarity: activity_name with asserted=false. Reference activities resolve the strongest unambiguous exact/strong evidence. Every comparison includes identity confidence, assumptions, route geometry, shared cycling metrics, quality, and source/member provenance. False-fitness guard: ordinary workout best power is lower-bound observed capability, not maximal capacity; lower observed bests do not demonstrate fitness decline. Only standardized/maximal tests or controlled equivalent efforts with comparable conditions support decline conclusions; identity alone never establishes maximal intent. Missing metrics include unavailable reasons; current FTP never supplies historical thresholds.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: {
         start_date: dateSchema,

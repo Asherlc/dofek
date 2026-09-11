@@ -1,4 +1,39 @@
 import { z } from "zod";
+import { comparisonIdentityRowSchema } from "../repositories/performance-comparison-identity.ts";
+import { identityEquivalenceSchema } from "../repositories/performance-comparison-types.ts";
+import { EQUIVALENCE_STRENGTHS } from "../repositories/repeated-effort-types.ts";
+
+const identityBundleSchema = z.strictObject({
+  identity: z.strictObject({
+    kind: z.string(),
+    namespace: z.string().nullable(),
+    value: z.string(),
+  }),
+  strength: z.enum(EQUIVALENCE_STRENGTHS),
+  basis: z.enum(["derived_from_reference", "explicit", "caller_asserted", "weak_similarity"]),
+  method: z.string(),
+  confidence: z.enum(["high", "inferred", "user_asserted", "low"]),
+  assumptions: z.array(z.string()),
+});
+const routeQualitySchema = z.strictObject({
+  geometry_status: z.enum(["available", "partial", "unavailable"]).nullable(),
+  coverage_pct: z.number().nullable(),
+  largest_gap_seconds: z.number().nullable(),
+});
+const routeGeometrySchema = z.strictObject({
+  matched: z.boolean(),
+  strength: z.literal("strong_inferred").optional(),
+  left_quality: routeQualitySchema,
+  right_quality: routeQualitySchema,
+  direction: z.enum(["forward", "reverse", "unknown"]),
+  overlap_percentage: z.number(),
+  distance_difference: z.number(),
+  start_tolerance_meters: z.number(),
+  end_tolerance_meters: z.number(),
+  elevation_similarity: z.number().nullable(),
+  confidence: z.number(),
+  rejection_reasons: z.array(z.string()),
+});
 
 const nullableNumber = z.number().nullable();
 const effortCoverageSchema = z
@@ -91,14 +126,8 @@ const sourceExternalIdSchema = z
   })
   .strict();
 
-const equivalenceKeySchema = z.discriminatedUnion("kind", [
-  z
-    .object({
-      kind: z.literal("provider_workout_id"),
-      provider: z.literal("peloton"),
-      value: z.string(),
-    })
-    .strict(),
+const equivalenceKeySchema = z.union([
+  identityEquivalenceSchema,
   z
     .object({
       kind: z.literal("cycling_route"),
@@ -132,6 +161,7 @@ const equivalenceKeySchema = z.discriminatedUnion("kind", [
       kind: z.literal("activity_name"),
       canonical_type: z.string(),
       value: z.string(),
+      asserted: z.boolean().optional(),
     })
     .strict(),
 ]);
@@ -149,6 +179,7 @@ const cyclingSchema = z
     sample_coverage: z
       .object({
         total_samples: z.number().int().nonnegative().nullable(),
+        total_samples_unavailable_reason: z.string(),
         power_samples: z.number().int().nonnegative().nullable(),
         heart_rate_samples: z.number().int().nonnegative().nullable(),
         status: z.enum(["available", "not_available"]),
@@ -257,7 +288,9 @@ const movingDurationSchema = z
 const equivalenceEvidenceSchema = z
   .object({
     evidence_type: z.enum([
-      "provider_raw_field",
+      "identity_read_model",
+      "route_geometry",
+      "user_benchmark_membership",
       "cycling_route_name_provider_type",
       "standardized_test_name_provider_type",
       "climbing_entry",
@@ -270,6 +303,8 @@ const equivalenceEvidenceSchema = z
     provider_type: z.string().nullable(),
     source_activity_id: z.uuid(),
     source_record_id: z.uuid().nullable(),
+    identity_evidence: comparisonIdentityRowSchema.optional(),
+    assertion_evidence: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
 
@@ -464,15 +499,7 @@ export const performanceComparisonOutputSchema = z
         range: z
           .object({ start_date: z.string(), end_date: z.string(), timezone: z.string() })
           .strict(),
-        equivalence: z
-          .object({
-            basis: z.enum(["derived_from_reference", "explicit"]),
-            method: z.string(),
-            confidence: z.enum(["high", "user_asserted"]),
-            key: equivalenceKeySchema,
-            assumptions: z.array(z.string()),
-          })
-          .strict(),
+        equivalence: identityBundleSchema.extend({ key: equivalenceKeySchema }).strict(),
         baseline: z
           .object({
             activity_id: z.uuid(),
@@ -512,15 +539,25 @@ export const performanceComparisonOutputSchema = z
               modality: z.string().nullable(),
               duration_seconds: nullableNumber,
               moving_duration: movingDurationSchema,
+              identity: identityBundleSchema,
               route: z
                 .object({
-                  status: z.enum(["caller_asserted", "not_available"]),
+                  status: z.enum([...EQUIVALENCE_STRENGTHS, "not_available"]),
                   provider: z.string().nullable(),
                   activity_name: z.string().nullable(),
                   provider_type: z.string().nullable(),
+                  geometry: routeGeometrySchema.nullable(),
+                  geometry_unavailable_reason: z.string().nullable(),
+                  source_providers: z.array(z.string()),
+                  source_devices: z.array(z.string()),
+                  anchor_activity_id: z.uuid().nullable(),
+                  anchor_source_providers: z.array(z.string()),
+                  anchor_source_devices: z.array(z.string()),
                   evidence: z.enum([
                     "caller_asserted_activity_name_provider_type",
                     "comparison_not_keyed_by_route",
+                    "route_geometry",
+                    "identity_read_model",
                   ]),
                 })
                 .strict(),
@@ -547,6 +584,8 @@ export const performanceComparisonOutputSchema = z
               metrics: z
                 .object({
                   cycling: cyclingSchema.nullable(),
+                  cycling_effort: cyclingEffortMetricsSchema.nullable(),
+                  cycling_effort_unavailable_reason: z.string().nullable(),
                   climbing: climbingSchema.nullable(),
                   strength: strengthSchema.nullable(),
                   environment: z
@@ -559,9 +598,7 @@ export const performanceComparisonOutputSchema = z
                 })
                 .strict(),
               delta_to_baseline: deltaSchema,
-              quality: z
-                .object({ comparable: z.literal(true), flags: z.array(z.string()) })
-                .strict(),
+              quality: z.object({ comparable: z.boolean(), flags: z.array(z.string()) }).strict(),
               provenance: z
                 .object({
                   value_kind: z.literal("mixed"),
