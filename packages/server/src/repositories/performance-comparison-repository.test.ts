@@ -3,6 +3,7 @@ import {
   cyclingEffortMetricsSchema,
   performanceComparisonOutputSchema,
 } from "../mcp/performance-comparison-output.ts";
+import type { ComparisonIdentityRow } from "./performance-comparison-identity.ts";
 import { PerformanceComparisonRepository } from "./performance-comparison-repository.ts";
 
 const USER_ID = "00000000-0000-4000-8000-000000000001";
@@ -70,7 +71,187 @@ function database(reference: Record<string, unknown>, candidates: Record<string,
   };
 }
 
+function recordedIdentity(
+  activityId: string,
+  overrides: Partial<ComparisonIdentityRow> = {},
+): ComparisonIdentityRow {
+  return {
+    canonical_activity_id: activityId,
+    source_activity_id: activityId,
+    source_provider: "zwift",
+    source_external_id: "instance-1",
+    kind: "provider_workout",
+    namespace: "zwift",
+    value: "template-17",
+    normalized_value: "template-17",
+    display_name: "Tempo",
+    strength: "exact",
+    method: "explicit_identity",
+    source_field: "templateId",
+    evidence: {},
+    ...overrides,
+  };
+}
+
 describe("PerformanceComparisonRepository", () => {
+  it.each([
+    { conflict: { value: "template-18" }, error: /Conflicting exact identities/ },
+    { conflict: { namespace: "garmin" }, error: /Ambiguous exact identities/ },
+  ])(
+    "requires explicit selection for candidate identity ambiguity: $conflict",
+    async ({ conflict, error }) => {
+      const reference = activityRow({ canonical_type: "running" });
+      const candidate = activityRow({
+        activity_id: SECOND_ID,
+        canonical_type: "running",
+        member_activity_ids: [SECOND_ID, THIRD_ID],
+      });
+      const rows = [
+        recordedIdentity(FIRST_ID),
+        recordedIdentity(SECOND_ID),
+        recordedIdentity(SECOND_ID, { source_activity_id: THIRD_ID, ...conflict }),
+      ];
+      const repository = new PerformanceComparisonRepository(
+        database(reference, [reference, candidate]),
+        {
+          query: vi.fn(async (_schema, text: string) =>
+            text.includes("activity_effort_identity") ? rows : [],
+          ),
+        },
+        USER_ID,
+        "UTC",
+      );
+      const input = {
+        startDate: "2026-06-01",
+        endDate: "2026-07-31",
+        referenceActivityId: FIRST_ID,
+        equivalence: null,
+        providers: [],
+        modalities: [],
+        cursor: null,
+        limit: 25,
+      };
+      await expect(repository.compare(input)).rejects.toThrow(error);
+      const result = await repository.compare({
+        ...input,
+        equivalence: { kind: "provider_workout", provider: "zwift", value: "template-17" },
+      });
+      expect(result.performances[1]).toMatchObject({
+        activity_id: SECOND_ID,
+        identity: { strength: "exact", basis: "explicit" },
+        equivalence_evidence_count: 1,
+        equivalence_evidence: [
+          expect.objectContaining({ value: "template-17", source_activity_id: SECOND_ID }),
+        ],
+      });
+    },
+  );
+
+  it("preserves partial provider-route quality and provenance without claiming a geometric rejection", async () => {
+    const reference = activityRow();
+    const candidate = activityRow({ activity_id: SECOND_ID, member_activity_ids: [SECOND_ID] });
+    const rows = [
+      recordedIdentity(FIRST_ID, { kind: "provider_route" }),
+      recordedIdentity(SECOND_ID, { kind: "provider_route" }),
+    ];
+    const routes = [FIRST_ID, SECOND_ID].map((id) => ({
+      canonical_activity_id: id,
+      route_fingerprint: null,
+      points: [
+        [37, -122],
+        [37.01, -122],
+      ],
+      route_distance_meters: 1112,
+      elevation_profile: [],
+      coverage_pct: id === FIRST_ID ? 100 : 40,
+      largest_gap_seconds: id === FIRST_ID ? 1 : 300,
+      geometry_status: id === FIRST_ID ? "available" : "partial",
+      source_providers: [id === FIRST_ID ? "garmin" : "wahoo"],
+      source_devices: [id === FIRST_ID ? "edge" : "bolt"],
+    }));
+    const result = await new PerformanceComparisonRepository(
+      database(reference, [reference, candidate]),
+      {
+        query: vi.fn(async (_schema, text: string) =>
+          text.includes("activity_effort_identity")
+            ? rows
+            : text.includes("activity_route_identity")
+              ? routes
+              : [],
+        ),
+      },
+      USER_ID,
+      "UTC",
+    ).compare({
+      startDate: "2026-06-01",
+      endDate: "2026-07-31",
+      referenceActivityId: FIRST_ID,
+      equivalence: null,
+      providers: [],
+      modalities: [],
+      cursor: null,
+      limit: 25,
+    });
+    expect(result.performances[1]?.route).toMatchObject({
+      status: "exact",
+      geometry: null,
+      geometry_unavailable_reason: expect.stringMatching(/partial/),
+      quality: { geometry_status: "partial", coverage_pct: 40, largest_gap_seconds: 300 },
+      anchor_quality: { geometry_status: "available", coverage_pct: 100, largest_gap_seconds: 1 },
+      source_providers: ["wahoo"],
+      source_devices: ["bolt"],
+      anchor_activity_id: FIRST_ID,
+      anchor_source_providers: ["garmin"],
+      anchor_source_devices: ["edge"],
+    });
+    expect(result.performances[1]?.quality.flags).toContain("route_geometry_unavailable");
+    expect(result.performances[1]?.quality.flags).not.toContain("route_geometry_rejected");
+    expect(performanceComparisonOutputSchema.parse({ result }).result).toEqual(result);
+  });
+
+  it.each([99, 100, 101])(
+    "preserves total count and truncation for %i legacy source records",
+    async (count) => {
+      const sources = Array.from({ length: count }, (_, index) => ({
+        sourceActivityId: `00000000-0000-4000-8000-${String(index + 1000).padStart(12, "0")}`,
+        provider: "strava",
+        providerType: "outdoor_ride",
+        sourceActivityName: "Morning ride",
+        raw: {},
+      }));
+      const row = activityRow({
+        member_activity_ids: sources.map((source) => source.sourceActivityId),
+        source_raw_evidence: sources,
+      });
+      const result = await new PerformanceComparisonRepository(
+        database(row, [row]),
+        { query: vi.fn().mockResolvedValue([]) },
+        USER_ID,
+        "UTC",
+      ).compare({
+        startDate: "2026-06-01",
+        endDate: "2026-07-31",
+        referenceActivityId: null,
+        equivalence: {
+          kind: "cycling_route",
+          provider: "strava",
+          activityName: "Morning ride",
+          providerType: "outdoor_ride",
+        },
+        providers: [],
+        modalities: [],
+        cursor: null,
+        limit: 25,
+      });
+      expect(result.performances[0]).toMatchObject({
+        equivalence_evidence_count: count,
+        equivalence_evidence_truncated: count === 101,
+      });
+      expect(result.performances[0]?.equivalence_evidence).toHaveLength(count === 99 ? 99 : 100);
+      expect(performanceComparisonOutputSchema.parse({ result }).result).toEqual(result);
+    },
+  );
+
   it.each([
     ["provider_workout", "exact"],
     ["provider_route", "exact"],

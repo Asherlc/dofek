@@ -59,6 +59,11 @@ const geometry = (route: Route) => ({
   coverage_pct: route.coverage_pct,
   largest_gap_seconds: route.largest_gap_seconds,
 });
+const routeQuality = (route: Route) => ({
+  geometry_status: route.geometry_status,
+  coverage_pct: route.coverage_pct,
+  largest_gap_seconds: route.largest_gap_seconds,
+});
 
 /** Serving identity evidence, fenced by the caller's authorized canonical membership. */
 export class PerformanceComparisonIdentity {
@@ -177,7 +182,7 @@ export class PerformanceComparisonIdentity {
   }
 
   routeMatches(value: string, routes: Route[], activities: Activity[]) {
-    return this.routeEvidence(value, routes, activities).filter((row) => row.geometry.matched);
+    return this.routeEvidence(value, routes, activities).filter((row) => row.geometry?.matched);
   }
 
   routeEvidence(value: string, routes: Route[], activities: Activity[]) {
@@ -197,19 +202,24 @@ export class PerformanceComparisonIdentity {
       )
         return [];
       const match = evaluateRouteMatch({ left: geometry(anchor), right: geometry(route) });
-      return match
-        ? [
-            {
-              activityId: route.canonical_activity_id,
-              geometry: match,
-              anchor_activity_id: anchor.canonical_activity_id,
-              source_providers: route.source_providers,
-              source_devices: route.source_devices,
-              anchor_source_providers: anchor.source_providers,
-              anchor_source_devices: anchor.source_devices,
-            },
-          ]
-        : [];
+      return [
+        {
+          activityId: route.canonical_activity_id,
+          geometry: match,
+          geometry_unavailable_reason: match
+            ? null
+            : anchor.geometry_status !== "available" || route.geometry_status !== "available"
+              ? `Route geometry comparison requires available geometry; anchor is ${anchor.geometry_status}, candidate is ${route.geometry_status}.`
+              : "Anchor or candidate route geometry has insufficient valid points or a non-positive distance.",
+          quality: routeQuality(route),
+          anchor_quality: routeQuality(anchor),
+          anchor_activity_id: anchor.canonical_activity_id,
+          source_providers: route.source_providers,
+          source_devices: route.source_devices,
+          anchor_source_providers: anchor.source_providers,
+          anchor_source_devices: anchor.source_devices,
+        },
+      ];
     });
   }
 

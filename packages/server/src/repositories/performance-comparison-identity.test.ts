@@ -144,4 +144,38 @@ describe("PerformanceComparisonIdentity", () => {
       /anchor is unavailable/,
     );
   });
+  it.each(["partial", "unavailable"] as const)(
+    "retains %s route evidence independently of geometry matching on either side",
+    (status) => {
+      for (const incompleteId of [first, second]) {
+        const routes = [first, second].map((id) => ({
+          ...route(id),
+          ...(id === incompleteId
+            ? { geometry_status: status, coverage_pct: 40, largest_gap_seconds: 300 }
+            : {}),
+        }));
+        const result = repository().routeEvidence(first, routes, [
+          activity(first),
+          activity(second),
+        ]);
+        expect(result[1]).toMatchObject({
+          activityId: second,
+          anchor_activity_id: first,
+          geometry: null,
+          geometry_unavailable_reason: expect.stringContaining(status),
+          quality: { geometry_status: incompleteId === second ? status : "available" },
+          anchor_quality: { geometry_status: incompleteId === first ? status : "available" },
+          source_providers: ["garmin"],
+          source_devices: ["edge"],
+          anchor_source_providers: ["garmin"],
+          anchor_source_devices: ["edge"],
+        });
+        expect(
+          repository()
+            .routeMatches(first, routes, [activity(first), activity(second)])
+            .map((row) => row.activityId),
+        ).toEqual(incompleteId === first ? [] : [first]);
+      }
+    },
+  );
 });

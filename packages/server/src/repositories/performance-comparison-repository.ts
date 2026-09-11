@@ -492,10 +492,20 @@ export class PerformanceComparisonRepository {
       : [];
     if (scope.length > 2000)
       throw new Error("Too many activities; narrow the comparison date range or filters.");
-    const identityRows =
+    const scopedIdentities =
       modelKey && !["canonical_route", "user_defined_benchmark"].includes(modelKey.kind)
-        ? identityRepository.matching(modelKey, await identityRepository.identities(scope))
+        ? await identityRepository.identities(scope)
         : [];
+    if (modelKey && !input.equivalence) {
+      for (const activity of scope) {
+        const rows = scopedIdentities.filter(
+          (row) => row.canonical_activity_id === activity.activity_id,
+        );
+        // Check all evidence of each eligible candidate before discarding nonmatching keys.
+        if (identityRepository.matching(modelKey, rows).length) identityRepository.strongest(rows);
+      }
+    }
+    const identityRows = modelKey ? identityRepository.matching(modelKey, scopedIdentities) : [];
     const routeMatches =
       modelKey?.kind === "canonical_route"
         ? identityRepository.routeMatches(
@@ -779,7 +789,7 @@ export class PerformanceComparisonRepository {
         identity_evidence: identity,
       }));
       const assertionEvidence =
-        routeMatch || benchmark
+        routeMatch?.geometry || benchmark
           ? [
               {
                 evidence_type: routeMatch
@@ -797,19 +807,22 @@ export class PerformanceComparisonRepository {
               },
             ]
           : [];
-      const allEvidence = modelKey
-        ? [...extraEvidence, ...assertionEvidence]
-        : legacyEvidence.items;
-      const equivalenceEvidence = {
-        items: allEvidence.slice(0, 100),
-        count: allEvidence.length,
-        truncated: allEvidence.length > 100,
-      };
+      const allEvidence = [...extraEvidence, ...assertionEvidence];
+      const equivalenceEvidence = modelKey
+        ? {
+            items: allEvidence.slice(0, 100),
+            count: allEvidence.length,
+            truncated: allEvidence.length > 100,
+          }
+        : legacyEvidence;
       const identityEvidence = evidenceFor(row.activity_id);
       const movingDuration = buildMovingDuration(row.source_raw_evidence);
       const flags = [
         `${identityEvidence.strength}_equivalence`,
-        ...(routeMatch && !routeMatch.geometry.matched ? ["route_geometry_rejected"] : []),
+        ...(routeMatch?.geometry && !routeMatch.geometry.matched
+          ? ["route_geometry_rejected"]
+          : []),
+        ...(routeMatch && !routeMatch.geometry ? ["route_geometry_unavailable"] : []),
         ...(current.effort?.quality.reasons ?? []),
         ...(current.duration === null ? ["duration_unavailable"] : []),
         ...(row.local_time_source === "unknown" ? ["timezone_assumed_from_analysis_context"] : []),
@@ -859,8 +872,10 @@ export class PerformanceComparisonRepository {
               ? { status: "strong_inferred" as const, evidence: "route_geometry" as const }
               : {}),
           geometry: routeMatch?.geometry ?? null,
+          quality: routeMatch?.quality ?? null,
+          anchor_quality: routeMatch?.anchor_quality ?? null,
           geometry_unavailable_reason: routeMatch
-            ? null
+            ? routeMatch.geometry_unavailable_reason
             : "No geometry comparison was performed for this identity.",
           source_providers: routeMatch?.source_providers ?? [],
           source_devices: routeMatch?.source_devices ?? [],

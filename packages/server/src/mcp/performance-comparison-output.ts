@@ -547,6 +547,8 @@ export const performanceComparisonOutputSchema = z
                   activity_name: z.string().nullable(),
                   provider_type: z.string().nullable(),
                   geometry: routeGeometrySchema.nullable(),
+                  quality: routeQualitySchema.nullable(),
+                  anchor_quality: routeQualitySchema.nullable(),
                   geometry_unavailable_reason: z.string().nullable(),
                   source_providers: z.array(z.string()),
                   source_devices: z.array(z.string()),

@@ -77,6 +77,8 @@ describe("compare_performances", () => {
           route: {
             geometry: null,
             geometry_unavailable_reason: "No geometry comparison was performed.",
+            quality: null,
+            anchor_quality: null,
             source_providers: [],
             source_devices: [],
             anchor_activity_id: null,
