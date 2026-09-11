@@ -114,6 +114,10 @@ function routeRow(activityId: string) {
   };
 }
 
+function indexedActivityId(index: number): string {
+  return `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
+}
+
 describe("PerformanceComparisonRepository", () => {
   it.each([
     {
@@ -378,6 +382,104 @@ describe("PerformanceComparisonRepository", () => {
     }
   });
 
+  it("rejects over-broad activity and benchmark scopes at their exact limits", async () => {
+    const row = activityRow();
+    const overBroadScope = Array.from({ length: 2001 }, (_, index) =>
+      activityRow({ activity_id: indexedActivityId(index + 100) }),
+    );
+    await expect(
+      new PerformanceComparisonRepository(
+        database(row, overBroadScope),
+        { query: vi.fn().mockResolvedValue([]) },
+        USER_ID,
+        "UTC",
+      ).compare({
+        startDate: "2026-06-01",
+        endDate: "2026-07-31",
+        referenceActivityId: null,
+        equivalence: { kind: "provider_workout", provider: "zwift", value: "template-17" },
+        providers: [],
+        modalities: [],
+        cursor: null,
+        limit: 25,
+      }),
+    ).rejects.toThrow("Too many activities");
+
+    const db = database(row, [row]);
+    const original = db.execute.getMockImplementation();
+    db.execute.mockImplementation((query: unknown) => {
+      const text = queryText(query);
+      if (text.includes("performance-comparison:benchmark")) {
+        return Promise.resolve(
+          Array.from({ length: 2001 }, (_, index) => ({
+            canonical_activity_id: indexedActivityId(index + 100),
+            display_name: "Benchmark",
+            notes: null,
+            inclusion_note: null,
+          })),
+        );
+      }
+      if (!original) throw new Error("Missing database fixture");
+      return original(query);
+    });
+    await expect(
+      new PerformanceComparisonRepository(
+        db,
+        { query: vi.fn().mockResolvedValue([]) },
+        USER_ID,
+        "UTC",
+      ).compare({
+        startDate: "2026-06-01",
+        endDate: "2026-07-31",
+        referenceActivityId: null,
+        equivalence: { kind: "user_defined_benchmark", value: THIRD_ID },
+        providers: [],
+        modalities: [],
+        cursor: null,
+        limit: 25,
+      }),
+    ).rejects.toThrow("Too many benchmark members");
+  });
+
+  it("distinguishes empty explicit comparisons from filtered-out references", async () => {
+    const row = activityRow({ canonical_type: "running" });
+    const noBaselineDatabase = database(row, [row]);
+    const original = noBaselineDatabase.execute.getMockImplementation();
+    noBaselineDatabase.execute.mockImplementation((query: unknown) => {
+      const text = queryText(query);
+      if (text.includes("performance-comparison:baseline")) return Promise.resolve([]);
+      if (!original) throw new Error("Missing database fixture");
+      return original(query);
+    });
+    const explicitInput = {
+      startDate: "2026-06-01",
+      endDate: "2026-07-31",
+      referenceActivityId: null,
+      equivalence: { kind: "activity_name" as const, canonicalType: "running", value: "Tempo" },
+      providers: [],
+      modalities: [],
+      cursor: null,
+      limit: 25,
+    };
+    await expect(
+      new PerformanceComparisonRepository(
+        noBaselineDatabase,
+        { query: vi.fn().mockResolvedValue([]) },
+        USER_ID,
+        "UTC",
+      ).compare(explicitInput),
+    ).rejects.toThrow("No performances match");
+
+    await expect(
+      new PerformanceComparisonRepository(
+        noBaselineDatabase,
+        { query: vi.fn().mockResolvedValue([]) },
+        USER_ID,
+        "UTC",
+      ).compare({ ...explicitInput, referenceActivityId: FIRST_ID }),
+    ).rejects.toThrow("reference activity does not match");
+  });
+
   it.each([99, 100, 101])(
     "preserves total count and truncation for %i legacy source records",
     async (count) => {
@@ -589,7 +691,22 @@ describe("PerformanceComparisonRepository", () => {
         [300],
       ),
     ).rejects.toThrow(/25/);
+    const callsBeforeEmptyRequest = db.execute.mock.calls.length;
     await expect(repository.cyclingEfforts([], [300])).resolves.toEqual([]);
+    expect(db.execute).toHaveBeenCalledTimes(callsBeforeEmptyRequest);
+  });
+
+  it("rejects non-cycling activities from the batch metric entry point", async () => {
+    const row = activityRow({ canonical_type: "running" });
+
+    await expect(
+      new PerformanceComparisonRepository(
+        database(row, [row]),
+        { query: vi.fn().mockResolvedValue([]) },
+        USER_ID,
+        "UTC",
+      ).cyclingEfforts([FIRST_ID], [300]),
+    ).rejects.toThrow("canonical cycling activities");
   });
 
   it("loads cycling activity references once and skips incomplete durations without hiding valid efforts", async () => {
@@ -699,6 +816,19 @@ describe("PerformanceComparisonRepository", () => {
             ],
           })),
         );
+      if (text.includes("cycling-effort:movement-samples")) {
+        return [FIRST_ID, SECOND_ID].flatMap((id, index) =>
+          Array.from({ length: 1800 }, (_, elapsed_seconds) => ({
+            activity_id: id,
+            elapsed_seconds,
+            channel: "temperature",
+            scalar: index === 0 ? 20 : 21,
+            provider_id: "weather-sensor",
+            device_id: "thermometer",
+            measurement_kind: "direct",
+          })),
+        );
+      }
       return [];
     });
     const result = await new PerformanceComparisonRepository(
@@ -718,9 +848,12 @@ describe("PerformanceComparisonRepository", () => {
     });
     expect(performanceComparisonOutputSchema.parse({ result }).result).toEqual(result);
     expect(result.coverage.cycling_metrics_from_deduped_samples).toBe(2);
-    expect(result.coverage.environment_metrics_from_deduped_samples).toBe(0);
-    expect(result.performances[1]?.provenance.sample_device_ids).toEqual(["meter"]);
-    expect(result.performances[1]?.provenance.sample_source_providers).toEqual(["zwift"]);
+    expect(result.coverage.environment_metrics_from_deduped_samples).toBe(2);
+    expect(result.performances[1]?.provenance.sample_device_ids).toEqual(["meter", "thermometer"]);
+    expect(result.performances[1]?.provenance.sample_source_providers).toEqual([
+      "weather-sensor",
+      "zwift",
+    ]);
     expect(result.performances[1]).toMatchObject({
       metrics: {
         cycling: {
@@ -741,13 +874,13 @@ describe("PerformanceComparisonRepository", () => {
         cycling_effort: {
           workout: { power: { averageWatts: 195, intensityFactor: null } },
           thresholds: { ftp: null },
-          provenance: { sourceDevices: ["meter"] },
+          provenance: { sourceDevices: ["meter", "thermometer"] },
           bestPowerInterpretation: { maximalTest: false },
           unavailableReasons: expect.arrayContaining([
             expect.objectContaining({ metric: "intensity_factor" }),
           ]),
         },
-        environment: { average_temperature_c: null, status: "not_available" },
+        environment: { average_temperature_c: 21, status: "available" },
       },
       delta_to_baseline: { average_power_watts: 15, average_heart_rate_bpm: -2 },
     });
@@ -900,6 +1033,7 @@ describe("PerformanceComparisonRepository", () => {
         ]),
       },
     });
+    expect(result.coverage.activities_with_missing_duration).toBe(1);
   });
 
   it.each([

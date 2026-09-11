@@ -26494,6 +26494,11 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   shard reached 75.08%. The final three shards reached 93.16%, 80.33%, and
   82.36%, respectively. A final targeted run after the route-work budget refactor
   measured repeated-effort discovery at 92.86% and route equivalence at 81.78%.
+  Splitting performance comparison into focused production modules then exposed
+  an orchestration-test gap: CI measured the repository at 65.91%. Direct
+  lifecycle assertions for empty and invalid batches, scope limits, reference
+  errors, environmental provenance, and missing durations raised the exact
+  repository target to 77.22% without changing production behavior.
   The full Docker integration wrapper remained unavailable
   because of the separately recorded shared-VM AIO exhaustion; no timeout,
   retry, or service setting was changed. A replacement CI run is required
