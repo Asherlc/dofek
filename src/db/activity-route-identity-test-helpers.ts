@@ -9,12 +9,12 @@ export const memberId = "00000000-0000-4000-8000-000000000103";
 export const otherUserId = "00000000-0000-4000-8000-000000000002";
 
 const routeIdentitySchema = z.object({
-  canonicalActivityId: z.string().uuid(),
+  canonicalActivityId: z.uuid(),
   explicitProviderRouteIds: z.array(
     z.object({
       provider: z.string(),
       value: z.string(),
-      sourceActivityId: z.string().uuid(),
+      sourceActivityId: z.uuid(),
       field: z.string(),
     }),
   ),
@@ -115,12 +115,12 @@ export async function seedRouteIdentityFixture(
     durationSeconds?: number;
   },
 ): Promise<void> {
-  const activityId = input.activityId ?? "00000000-0000-4000-8000-000000000101";
-  const userId = input.userId ?? "00000000-0000-4000-8000-000000000001";
+  const seededActivityId = input.activityId ?? activityId;
+  const seededUserId = input.userId ?? userId;
   await client.command({
     query: `INSERT INTO ${database}.deduped_activities
       (activity_id, user_id, member_activity_ids, canonical_type, started_at, ended_at, refresh_version, is_deleted, refreshed_at)
-      VALUES ('${activityId}', '${userId}', [${(input.memberIds ?? [activityId]).map((id) => `'${id}'`).join(",")}], 'cycling', toDateTime64('2026-09-01 12:00:00', 6, 'UTC'),
+      VALUES ('${seededActivityId}', '${seededUserId}', [${(input.memberIds ?? [seededActivityId]).map((id) => `'${id}'`).join(",")}], 'cycling', toDateTime64('2026-09-01 12:00:00', 6, 'UTC'),
         addSeconds(toDateTime64('2026-09-01 12:00:00', 6, 'UTC'), ${input.durationSeconds ?? input.seconds?.at(-1) ?? ((input.points?.length ?? input.pointCount ?? 4) - 1) * 10}), 1, 0, toDateTime64('2026-09-01 12:00:00', 9, 'UTC'))`,
   });
   if (input.routeId !== null) {
@@ -128,7 +128,7 @@ export async function seedRouteIdentityFixture(
       query: `INSERT INTO ${database}.activity_effort_identity
         (user_id, canonical_activity_id, source_activity_id, source_provider, kind, value, source_field,
          source_refreshed_at, refresh_version, is_deleted, refreshed_at)
-        VALUES ('${userId}', '${activityId}', '${activityId}', '${input.provider}', 'provider_route',
+        VALUES ('${seededUserId}', '${seededActivityId}', '${seededActivityId}', '${input.provider}', 'provider_route',
           '${input.routeId}', 'routeId', toDateTime64('2026-09-01 12:00:00', 9, 'UTC'), 1, 0,
           toDateTime64('2026-09-01 12:00:00', 9, 'UTC'))`,
     });
@@ -137,7 +137,7 @@ export async function seedRouteIdentityFixture(
     { length: input.points?.length ?? input.pointCount ?? 4 },
     (_, index) => {
       const pointId = `00000000-0000-4000-8000-${String(201 + index).padStart(12, "0")}`;
-      return `('${activityId}', '${userId}',
+      return `('${seededActivityId}', '${seededUserId}',
       addSeconds(toDateTime64('2026-09-01 12:00:00', 6, 'UTC'), ${input.seconds?.[index] ?? index * 10}), '${pointId}',
       '${input.provider}', 'head-unit', ${input.points?.[index]?.lat ?? 37.7749 + index * 0.0001}, ${input.points?.[index]?.lng ?? -122.4194 + index * 0.0001},
       toDateTime64('2026-09-01 12:00:00', 9, 'UTC'), 1, 0,

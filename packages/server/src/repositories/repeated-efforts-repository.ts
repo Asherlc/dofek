@@ -83,6 +83,7 @@ const sourceSchema = z.object({
   provider: z.string(),
   external_id: z.string().nullable(),
 });
+type Source = z.infer<typeof sourceSchema>;
 const routeSchema = z.object({
   canonical_activity_id: z.uuid(),
   points: z.array(z.tuple([z.number(), z.number()])).max(64),
@@ -106,10 +107,46 @@ const cursorSchema = z.strictObject({
   shape: z.string(),
   after: z.string(),
 });
+const discoveryScopeSchema = z.strictObject({
+  userId: z.uuid(),
+  timezone: z.string(),
+  startDate: dateSchema,
+  endDate: dateSchema,
+  providers: z.array(z.string()),
+  modalities: z.array(z.string()),
+  canonicalTypes: z.array(z.string()),
+});
+const effortIdPartsSchema = z.tuple([
+  z.enum(EFFORT_IDENTITY_KINDS),
+  z.enum(EQUIVALENCE_STRENGTHS),
+  z.string().regex(/^[0-9a-f]{64}$/u),
+  z.string().min(1),
+]);
 const nonMaximal =
   "Repeated efforts are not necessarily maximal tests; identity alone does not establish comparable performance or conditions.";
 const unique = (values: string[]) => [...new Set(values)].sort();
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+function decodeBase64Json<T>(token: string, schema: z.ZodType<T>, label: string): T {
+  try {
+    return schema.parse(JSON.parse(Buffer.from(token, "base64url").toString("utf8")));
+  } catch {
+    throw new Error(`Invalid ${label}.`);
+  }
+}
+
+function decodeEffortScope(
+  effortId: string | undefined,
+): z.infer<typeof discoveryScopeSchema> | null {
+  if (effortId === undefined) return null;
+  let encodedScope: string;
+  try {
+    [, , , encodedScope] = effortIdPartsSchema.parse(effortId.split(":"));
+  } catch {
+    throw new Error("Invalid repeated-effort ID.");
+  }
+  return decodeBase64Json(encodedScope, discoveryScopeSchema, "repeated-effort ID");
+}
+
 function bounded<T>(rows: T[], maximum: number, kind: string): T[] {
   if (rows.length > maximum)
     throw new Error(
@@ -137,20 +174,7 @@ export class RepeatedEffortsRepository {
   }
 
   async find(request: FindRepeatedEffortsInput): Promise<FindRepeatedEffortsOutput> {
-    const encodedScope = request.effortId?.split(":")[3];
-    const scope = encodedScope
-      ? z
-          .strictObject({
-            userId: z.uuid(),
-            timezone: z.string(),
-            startDate: dateSchema,
-            endDate: dateSchema,
-            providers: z.array(z.string()),
-            modalities: z.array(z.string()),
-            canonicalTypes: z.array(z.string()),
-          })
-          .parse(JSON.parse(Buffer.from(encodedScope, "base64url").toString("utf8")))
-      : null;
+    const scope = decodeEffortScope(request.effortId);
     if (scope && (scope.userId !== this.#userId || scope.timezone !== this.#timezone))
       throw new Error("Discovery effort ID does not match this user or analysis timezone.");
     const input = inputSchema.parse({
@@ -186,7 +210,7 @@ export class RepeatedEffortsRepository {
       limit: null,
     });
     const cursor = input.cursor
-      ? cursorSchema.parse(JSON.parse(Buffer.from(input.cursor, "base64url").toString("utf8")))
+      ? decodeBase64Json(input.cursor, cursorSchema, "repeated-effort cursor")
       : null;
     if (cursor && cursor.shape !== shape)
       throw new Error("Repeated-effort cursor does not match this user or request.");
@@ -243,7 +267,10 @@ export class RepeatedEffortsRepository {
         source_external_id, kind, namespace, value, normalized_value, display_name, strength, method, source_field, evidence
         FROM analytics.activity_effort_identity FINAL
         WHERE user_id = {userId:UUID} AND is_deleted = 0
-          AND canonical_activity_id IN {activityIds:Array(UUID)} LIMIT 20001`,
+          AND canonical_activity_id IN {activityIds:Array(UUID)}
+        ORDER BY canonical_activity_id, kind, namespace, normalized_value,
+          source_activity_id, source_field
+        LIMIT 20001`,
         queryParams,
       ),
       this.#store.query(
@@ -290,6 +317,12 @@ export class RepeatedEffortsRepository {
     bounded(sources, 20000, "source rows");
     bounded(routes, 250, "route candidates");
     bounded(benchmarks, 20000, "benchmark memberships");
+    const sourcesByActivity = new Map<string, Source[]>();
+    for (const source of sources) {
+      const activitySources = sourcesByActivity.get(source.source_activity_id) ?? [];
+      activitySources.push(source);
+      sourcesByActivity.set(source.source_activity_id, activitySources);
+    }
     const groups = new Map<string, Group>();
     const add = (
       kind: EffortIdentityKind,
@@ -360,18 +393,21 @@ export class RepeatedEffortsRepository {
       if (activity.modality) group.modalities.push(activity.modality);
       group.canonicalTypes.push(activity.canonical_type);
       if (activity.member_activity_ids.length > 1) group.qualityFlags.push("merged_sources");
+      const activitySources = activity.member_activity_ids.flatMap(
+        (memberActivityId) => sourcesByActivity.get(memberActivityId) ?? [],
+      );
       group.sourceEvidence.push(
-        ...sources
-          .filter((s) => activity.member_activity_ids.includes(s.source_activity_id))
-          .map((s) => ({
-            canonicalActivityId: activity.activity_id,
-            sourceActivityId: s.source_activity_id,
-            provider: s.provider,
-            externalId: s.external_id,
-          })),
+        ...activitySources.map((source) => ({
+          canonicalActivityId: activity.activity_id,
+          sourceActivityId: source.source_activity_id,
+          provider: source.provider,
+          externalId: source.external_id,
+        })),
       );
       if (
-        activity.member_activity_ids.some((id) => !sources.some((s) => s.source_activity_id === id))
+        activity.member_activity_ids.some(
+          (memberActivityId) => !sourcesByActivity.has(memberActivityId),
+        )
       )
         group.qualityFlags.push("source_evidence_incomplete");
       group.firstOccurrence =

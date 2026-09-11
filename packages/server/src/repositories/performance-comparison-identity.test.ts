@@ -197,6 +197,15 @@ describe("PerformanceComparisonIdentity", () => {
       ]),
     ).toEqual({ kind: "provider_route", provider: "zwift", value: "route" });
   });
+  it("selects equally strong identities in the declared priority order", () => {
+    expect(
+      repository().strongest([
+        identity({ kind: "climb", value: "climb" }),
+        identity({ kind: "provider_route", value: "route" }),
+        identity({ kind: "provider_workout", value: "workout" }),
+      ]),
+    ).toEqual({ kind: "provider_workout", provider: "zwift", value: "workout" });
+  });
   it("fences serving evidence by current canonical membership", async () => {
     const query = vi
       .fn()

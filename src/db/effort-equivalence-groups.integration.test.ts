@@ -159,4 +159,35 @@ describe("effort equivalence groups", () => {
       `),
     ).rejects.toThrow();
   });
+
+  it("cascades benchmark deletion while retaining referenced canonical activities", async () => {
+    const group = await insertActivityGroupFixture(context.db, userId, activityGroupId);
+    const benchmark = await insertBenchmarkFixture(userId);
+    await context.db.insert(effortEquivalenceGroupMember).values({
+      groupId: benchmark.id,
+      userId,
+      canonicalActivityId: group.id,
+    });
+
+    await expect(
+      context.db.delete(activityGroup).where(eq(activityGroup.id, group.id)),
+    ).rejects.toThrow();
+
+    await context.db
+      .delete(effortEquivalenceGroup)
+      .where(eq(effortEquivalenceGroup.id, benchmark.id));
+
+    expect(
+      await context.db
+        .select({ id: effortEquivalenceGroupMember.id })
+        .from(effortEquivalenceGroupMember)
+        .where(eq(effortEquivalenceGroupMember.groupId, benchmark.id)),
+    ).toEqual([]);
+    expect(
+      await context.db
+        .select({ id: activityGroup.id })
+        .from(activityGroup)
+        .where(eq(activityGroup.id, group.id)),
+    ).toEqual([{ id: group.id }]);
+  });
 });

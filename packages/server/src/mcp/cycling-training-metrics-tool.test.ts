@@ -122,7 +122,7 @@ function page() {
               largest_gap_seconds: 1,
             },
           },
-          interval_source: "none" as const,
+          interval_source: "recorded" as const,
           interval_detection: null,
           intervals: [
             {
@@ -250,6 +250,54 @@ describe("get_cycling_training_metrics", () => {
         unexpected: true,
       }).success,
     ).toBe(false);
+  });
+
+  it("constrains interval type only when work/recovery evidence exists", () => {
+    const result = page();
+    const activity = result.activities[0];
+    const interval = activity?.metrics.intervals[0];
+    if (!activity || !interval) throw new Error("Expected the cycling interval fixture");
+
+    expect(
+      cyclingTrainingMetricsOutputSchema.safeParse({
+        result: {
+          ...result,
+          activities: [
+            {
+              ...activity,
+              metrics: {
+                ...activity.metrics,
+                intervals: [{ ...interval, type: "recovery" as const }],
+              },
+            },
+          ],
+        },
+      }).success,
+    ).toBe(false);
+
+    expect(
+      cyclingTrainingMetricsOutputSchema.safeParse({
+        result: {
+          ...result,
+          activities: [
+            {
+              ...activity,
+              metrics: {
+                ...activity.metrics,
+                intervals: [
+                  {
+                    ...interval,
+                    type: "cooldown" as const,
+                    source_kind: "unknown" as const,
+                    work_recovery_kind: null,
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      }).success,
+    ).toBe(true);
   });
 
   it("passes date, activity, provider, duration, and cursor filters", async () => {

@@ -22,10 +22,10 @@ CREATE TABLE fitness.effort_equivalence_group_member (
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT effort_equivalence_group_member_user_group_fk
   FOREIGN KEY (user_id, group_id)
-  REFERENCES fitness.effort_equivalence_group (user_id, id),
+  REFERENCES fitness.effort_equivalence_group (user_id, id) ON DELETE CASCADE,
   CONSTRAINT effort_equivalence_group_member_user_activity_fk
   FOREIGN KEY (user_id, canonical_activity_id)
-  REFERENCES fitness.activity_group (user_id, id)
+  REFERENCES fitness.activity_group (user_id, id) ON DELETE RESTRICT
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX effort_equivalence_group_member_user_group_activity_idx

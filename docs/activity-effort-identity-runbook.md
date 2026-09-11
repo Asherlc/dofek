@@ -51,19 +51,12 @@ pnpm tsx scripts/with-env.ts -- pnpm tsx scripts/backfill-activity-effort-identi
 ```
 
 The result reports `scanned`, `skipped`, observed `conflicts`, and
-`refresh_ready`. It emits structured per-record details for unsupported values,
-canonical-group violations, and conflicting claims, capped at 100 details with
-`details_truncated=true` when more exist. Under this read-only design,
-`inserted` and `updated` are always zero. `--execute` is an explicit audit
-acknowledgement only; it still makes no data writes:
-
-```bash
-pnpm tsx scripts/with-env.ts -- pnpm tsx scripts/backfill-activity-effort-identities.ts \
-  --user-id=<user-uuid> \
-  --start=2026-09-01T00:00:00.000Z \
-  --end=2026-09-02T00:00:00.000Z \
-  --execute
-```
+`refresh_ready`. It emits structured per-record metadata for unsupported
+values, canonical-group violations, and conflicting claims, capped at 100
+details with `details_truncated=true` when more exist. Detail records summarize
+value types and distinct-value counts without logging provider activity IDs or
+raw payload-derived values. The command is audit-only and accepts no write-mode
+flag.
 
 Stop if `refresh_ready=false`, conflicts, or skips are unexpected. A provider
 whose retained payload does not contain one of these fields remains uncovered;

@@ -63,6 +63,13 @@ const routeQuality = (route: Route) => ({
   coverage_pct: route.coverage_pct,
   largest_gap_seconds: route.largest_gap_seconds,
 });
+const STRONG_IDENTITY_PRIORITY: readonly ComparisonIdentityRow["kind"][] = [
+  "provider_workout",
+  "standardized_test",
+  "provider_route",
+  "segment",
+  "climb",
+];
 
 /** Serving identity evidence, fenced by the caller's authorized canonical membership. */
 export class PerformanceComparisonIdentity {
@@ -104,9 +111,7 @@ export class PerformanceComparisonIdentity {
       (r) =>
         r.namespace &&
         ["exact", "strong_inferred"].includes(r.strength) &&
-        ["provider_workout", "standardized_test", "provider_route", "segment", "climb"].includes(
-          r.kind,
-        ),
+        STRONG_IDENTITY_PRIORITY.includes(r.kind),
     );
     // Conflicting source values are never silently resolved by priority.
     for (const row of strong.filter((r) => r.strength === "exact")) {
@@ -123,17 +128,10 @@ export class PerformanceComparisonIdentity {
           "Conflicting exact identities; provide an explicit equivalence key with a specific namespace and value.",
         );
     }
-    const priority = [
-      "provider_workout",
-      "standardized_test",
-      "provider_route",
-      "segment",
-      "climb",
-    ];
     strong.sort(
       (a, b) =>
         rankEquivalenceStrength(b.strength, a.strength) ||
-        priority.indexOf(a.kind) - priority.indexOf(b.kind),
+        STRONG_IDENTITY_PRIORITY.indexOf(a.kind) - STRONG_IDENTITY_PRIORITY.indexOf(b.kind),
     );
     const best = strong[0];
     if (!best?.namespace) return null;

@@ -47,14 +47,14 @@ export function registerRepeatedEffortsTool(server: McpServer, context: DofekMcp
       ).find({
         startDate: input.start_date,
         endDate: input.end_date,
-        minimumRepetitions: input.minimum_repetitions ?? 2,
-        equivalenceStrength: input.equivalence_strength ?? "strong",
+        minimumRepetitions: input.minimum_repetitions,
+        equivalenceStrength: input.equivalence_strength,
         effortKind: input.effort_kind,
-        providers: input.providers ?? [],
-        modalities: input.modalities ?? [],
-        canonicalTypes: input.canonical_types ?? [],
-        limit: input.limit ?? 25,
-        cursor: input.cursor ?? null,
+        providers: input.providers,
+        modalities: input.modalities,
+        canonicalTypes: input.canonical_types,
+        limit: input.limit,
+        cursor: input.cursor,
       });
       return jsonToolResult(repeatedEffortsResultSchema.parse(result));
     },

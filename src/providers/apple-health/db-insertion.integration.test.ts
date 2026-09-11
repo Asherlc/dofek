@@ -21,6 +21,7 @@ import { hangTenWorkout, healthRecord } from "./test-helpers.ts";
 import type { HealthWorkout } from "./workouts.ts";
 
 const PROVIDER_ID = "apple_health";
+const INTERVAL_PROVENANCE_PROVIDER_ID = "healthkit_bridge";
 
 let ctx: TestContext;
 
@@ -28,10 +29,10 @@ describe("db-insertion deduplication (integration)", () => {
   beforeAll(async () => {
     ctx = await setupTestDatabase();
 
-    await ctx.db.insert(schema.provider).values({
-      id: PROVIDER_ID,
-      name: "Apple Health",
-    });
+    await ctx.db.insert(schema.provider).values([
+      { id: PROVIDER_ID, name: "Apple Health" },
+      { id: INTERVAL_PROVENANCE_PROVIDER_ID, name: "HealthKit Bridge" },
+    ]);
   }, 60_000);
 
   afterAll(async () => {
@@ -178,8 +179,9 @@ describe("db-insertion deduplication (integration)", () => {
         endDate: new Date("2026-09-10T14:00:10Z"),
       });
 
-      await upsertWorkoutBatch(ctx.db, PROVIDER_ID, [workout]);
       if (!workout.hangTen) throw new Error("Expected Hang Ten metadata");
+      workout.hangTen.sessionId = "55555555-5555-4555-8555-555555555555";
+      await upsertWorkoutBatch(ctx.db, INTERVAL_PROVENANCE_PROVIDER_ID, [workout]);
       workout.hangTen.activitySegments = [
         {
           stepID: "step-2",
@@ -189,26 +191,34 @@ describe("db-insertion deduplication (integration)", () => {
           holdType: "jug",
           durationSeconds: 4,
         },
+        {
+          stepID: "step-3",
+          stepNumber: 3,
+          kind: "rest",
+          holdIDs: [],
+          durationSeconds: 6,
+        },
       ];
 
-      await upsertWorkoutBatch(ctx.db, PROVIDER_ID, [workout]);
+      await upsertWorkoutBatch(ctx.db, INTERVAL_PROVENANCE_PROVIDER_ID, [workout]);
 
       const [storedActivity] = await ctx.db
         .select()
         .from(schema.activity)
-        .where(eq(schema.activity.externalId, "ah:workout:22222222-2222-4222-8222-222222222222"));
+        .where(eq(schema.activity.externalId, "ah:workout:55555555-5555-4555-8555-555555555555"));
       expect(storedActivity).toBeDefined();
       if (!storedActivity) return;
 
       const intervals = await ctx.db
         .select()
         .from(schema.activityInterval)
-        .where(eq(schema.activityInterval.activityId, storedActivity.id));
+        .where(eq(schema.activityInterval.activityId, storedActivity.id))
+        .orderBy(asc(schema.activityInterval.intervalIndex));
 
       expect(intervals).toEqual([
         expect.objectContaining({
           sourceKind: "provider_recorded",
-          sourceProvider: PROVIDER_ID,
+          sourceProvider: INTERVAL_PROVENANCE_PROVIDER_ID,
           sourceActivityId: storedActivity.id,
           segmentType: "work",
           workRecoveryKind: "work",
@@ -219,6 +229,20 @@ describe("db-insertion deduplication (integration)", () => {
             holdIDs: ["jug-24"],
             holdType: "jug",
             durationSeconds: 4,
+          },
+        }),
+        expect.objectContaining({
+          sourceKind: "provider_recorded",
+          sourceProvider: INTERVAL_PROVENANCE_PROVIDER_ID,
+          sourceActivityId: storedActivity.id,
+          segmentType: "rest",
+          workRecoveryKind: "recovery",
+          raw: {
+            stepID: "step-3",
+            stepNumber: 3,
+            kind: "rest",
+            holdIDs: [],
+            durationSeconds: 6,
           },
         }),
       ]);

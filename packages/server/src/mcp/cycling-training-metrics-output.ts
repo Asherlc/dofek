@@ -71,7 +71,11 @@ const intervalSchema = z
     conflicts: z.array(z.string()).optional(),
     source_evidence: z.array(z.record(z.string(), z.unknown())).optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    ({ type, work_recovery_kind }) => work_recovery_kind === null || type === work_recovery_kind,
+    { error: "work_recovery_kind must agree with type" },
+  );
 const bestPowerSchema = z
   .object({
     duration_seconds: z.number().int().positive(),

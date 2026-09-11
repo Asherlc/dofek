@@ -18,6 +18,7 @@ export const ROUTE_MATCH_THRESHOLDS = {
 
 const routePointMatchToleranceMeters = 100;
 const earthRadiusMeters = 6_371_000;
+const maximumRouteGroupingWork = 4_194_304;
 
 interface PreparedRoute {
   points: readonly NormalizedRoutePoint[];
@@ -158,6 +159,29 @@ function routeOverlapPercentage(
   const coveredLength =
     coveredRouteLengthMeters(left, right) + coveredRouteLengthMeters(right, left);
   return coveredLength / (leftLength + rightLength);
+}
+
+function routeSampleCount(points: readonly NormalizedRoutePoint[]): number {
+  return points
+    .slice(1)
+    .reduce(
+      (count, point, index) =>
+        count +
+        Math.max(
+          1,
+          Math.ceil(
+            haversineMeters(points[index] ?? point, point) / routePointMatchToleranceMeters,
+          ),
+        ),
+      0,
+    );
+}
+
+function routeComparisonWork(
+  left: readonly NormalizedRoutePoint[],
+  right: readonly NormalizedRoutePoint[],
+): number {
+  return routeSampleCount(left) * (right.length - 1) + routeSampleCount(right) * (left.length - 1);
 }
 
 function profileFromGeometry(
@@ -335,23 +359,7 @@ export function evaluateRouteMatch(input: RouteMatchInput): RouteMatchEvidence |
   );
   if (left === null || right === null) return null;
 
-  const sampleCount = (points: readonly NormalizedRoutePoint[]) =>
-    points
-      .slice(1)
-      .reduce(
-        (count, point, index) =>
-          count +
-          Math.max(
-            1,
-            Math.ceil(
-              haversineMeters(points[index] ?? point, point) / routePointMatchToleranceMeters,
-            ),
-          ),
-        0,
-      );
-  const work =
-    sampleCount(left.points) * (right.points.length - 1) +
-    sampleCount(right.points) * (left.points.length - 1);
+  const work = routeComparisonWork(left.points, right.points);
   if (work > 262_144)
     throw new Error(
       "Route matching work limit exceeded: route geometry is too large for a complete serving comparison.",
@@ -437,14 +445,25 @@ export async function groupEquivalentRoutes<T extends ServingRoute>(
     throw new Error("Too many route candidates; narrow the date range or filters.");
   const byId = new Map(activities.map((activity) => [activity.activity_id, activity]));
   const groups: T[][] = [];
+  let sampledSegmentWork = 0;
+  const routesMatch = (left: T, right: T): boolean => {
+    const leftGeometry = routeGeometry(left);
+    const rightGeometry = routeGeometry(right);
+    sampledSegmentWork += routeComparisonWork(leftGeometry.points, rightGeometry.points);
+    if (sampledSegmentWork > maximumRouteGroupingWork) {
+      throw new Error(
+        "Route grouping sampled-segment work limit exceeded: narrow the date range or filters.",
+      );
+    }
+    return Boolean(evaluateRouteMatch({ left: leftGeometry, right: rightGeometry })?.matched);
+  };
   for (const route of [...routes].sort((a, b) =>
     a.canonical_activity_id.localeCompare(b.canonical_activity_id),
   )) {
     const activity = byId.get(route.canonical_activity_id);
     if (!activity) continue;
     await yieldToEventLoop();
-    if (!evaluateRouteMatch({ left: routeGeometry(route), right: routeGeometry(route) })?.matched)
-      continue;
+    if (!routesMatch(route, route)) continue;
     let matching: T[] | undefined;
     for (const group of groups) {
       let matches = true;
@@ -458,9 +477,7 @@ export async function groupEquivalentRoutes<T extends ServingRoute>(
           break;
         }
         await yieldToEventLoop();
-        if (
-          !evaluateRouteMatch({ left: routeGeometry(other), right: routeGeometry(route) })?.matched
-        ) {
+        if (!routesMatch(other, route)) {
           matches = false;
           break;
         }

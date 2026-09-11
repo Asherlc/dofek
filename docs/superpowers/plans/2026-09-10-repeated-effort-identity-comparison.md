@@ -151,7 +151,7 @@ rtk git push
 **Files:**
 - Modify: `src/db/schema/activity.ts` near `activityGroup` and `activityInterval`
 - Modify: `src/db/drizzle-schema.ts` if the schema barrel requires explicit exports
-- Create: `drizzle/0118_effort_equivalence_groups.sql`
+- Create: `drizzle/0119_effort_equivalence_groups.sql`
 - Modify: `drizzle/meta/_journal.json` through `rtk pnpm generate`
 - Modify: `docs/schema.dbml` and `docs/schema.puml` through the schema-diagram script
 - Create: `src/db/effort-equivalence-groups.integration.test.ts`
@@ -205,7 +205,7 @@ Run: `rtk pnpm lint:migrations`
 Expected: the new migration is accepted as schema-only.
 
 ```bash
-rtk git add src/db/schema/activity.ts src/db/drizzle-schema.ts drizzle/0118_effort_equivalence_groups.sql drizzle/meta/_journal.json docs/schema.dbml docs/schema.puml src/db/effort-equivalence-groups.integration.test.ts
+rtk git add src/db/schema/activity.ts src/db/drizzle-schema.ts drizzle/0119_effort_equivalence_groups.sql drizzle/meta/_journal.json docs/schema.dbml docs/schema.puml src/db/effort-equivalence-groups.integration.test.ts
 rtk git commit -m "feat: persist user effort equivalence groups"
 rtk git push
 ```
@@ -337,7 +337,7 @@ rtk git push
 
 **Files:**
 - Modify: `src/db/schema/activity.ts` in `activityInterval`
-- Create: `drizzle/0119_provider_neutral_activity_intervals.sql`
+- Create: `drizzle/0122_provider_neutral_activity_intervals.sql`
 - Modify: `drizzle/meta/_journal.json` through `rtk pnpm generate`
 - Modify: `packages/server/src/repositories/intervals-repository.ts`
 - Modify: `packages/server/src/repositories/cycling-training-metrics-repository.ts`
@@ -390,7 +390,7 @@ Run: `rtk pnpm generate && rtk pnpm exec vitest run packages/server/src/reposito
 Expected: schema generation, source precedence, executable DB constraints, and migration policy pass.
 
 ```bash
-rtk git add src/db/schema/activity.ts drizzle/0119_provider_neutral_activity_intervals.sql drizzle/meta/_journal.json docs/schema.dbml docs/schema.puml packages/server/src/repositories/intervals-repository.ts packages/server/src/repositories/cycling-training-metrics-repository.ts packages/server/src/mcp/cycling-training-metrics-output.ts src/db/activity-intervals.integration.test.ts packages/server/src/repositories/interval-source.test.ts
+rtk git add src/db/schema/activity.ts drizzle/0122_provider_neutral_activity_intervals.sql drizzle/meta/_journal.json docs/schema.dbml docs/schema.puml packages/server/src/repositories/intervals-repository.ts packages/server/src/repositories/cycling-training-metrics-repository.ts packages/server/src/mcp/cycling-training-metrics-output.ts src/db/activity-intervals.integration.test.ts packages/server/src/repositories/interval-source.test.ts
 rtk git commit -m "feat: preserve provider-neutral activity intervals"
 rtk git push
 ```
@@ -664,10 +664,11 @@ rtk git commit -m "feat: add repeated effort trends"
 rtk git push
 ```
 
-### Task 10: Add idempotent historical backfill and operational documentation
+### Task 10: Add an idempotent historical identity audit and operational documentation
 
 **Files:**
 - Create: `src/db/activity-effort-identity-backfill.ts`
+- Create: `src/db/activity-effort-identity-backfill.test.ts`
 - Create: `scripts/backfill-activity-effort-identities.ts`
 - Create: `scripts/backfill-activity-effort-identities.test.ts`
 - Modify: `package.json` with `backfill:activity-effort-identities`
@@ -677,8 +678,8 @@ rtk git push
 - Modify: `docs/mcp.md`
 
 **Interfaces:**
-- `backfillActivityEffortIdentities(db, options): Promise<{ scanned, inserted, updated, skipped, conflicts }>` accepts explicit user/date bounds and a dry-run/execute flag.
-- The script reads stored raw payloads only, upserts by `(user, source activity, kind, namespace, value, source field)`, reports unsupported/conflicting fields, and is safe to rerun.
+- `auditActivityEffortIdentities(db, options): Promise<{ scanned, skipped, conflicts }>` accepts explicit user/date bounds and performs no writes.
+- The script audits stored raw payloads, reports unsupported/conflicting fields without logging raw values, and is safe to rerun. The dbt read model remains the sole identity writer.
 
 - [ ] **Step 1: Write failing parser/idempotency tests.**
 
@@ -686,15 +687,14 @@ rtk git push
 it("extracts stable IDs but not provider activity instance IDs", () => {
   expect(extractActivityEffortIdentities({
     providerId: "peloton",
-    externalId: "instance-1",
     raw: { pelotonClassId: "class-1", id: "instance-1" },
   })).toEqual([expect.objectContaining({ kind: "provider_workout", value: "class-1" })]);
 });
 
-it("does not insert a duplicate when the backfill is rerun", async () => {
-  await backfillActivityEffortIdentities(db, options);
-  await backfillActivityEffortIdentities(db, options);
-  expect(await countIdentityRows(db, userId)).toBe(1);
+it("returns the same audit when rerun", async () => {
+  const first = await auditActivityEffortIdentities(db, options);
+  const second = await auditActivityEffortIdentities(db, options);
+  expect(second).toEqual(first);
 });
 ```
 
@@ -702,15 +702,15 @@ it("does not insert a duplicate when the backfill is rerun", async () => {
 
 Run: `rtk pnpm exec vitest run scripts/backfill-activity-effort-identities.test.ts --project unit`
 
-Expected: FAIL because the extractor/backfill module is absent.
+Expected: FAIL because the extractor/audit module is absent.
 
-- [ ] **Step 3: Implement bounded extraction and idempotent persistence.**
+- [ ] **Step 3: Implement bounded extraction and an idempotent read-only audit.**
 
-Use the same versioned provider-field mapping as the dbt identity model. Fail fast when required bounds are absent or invalid, cap the date window per existing backfill conventions, preserve unknown raw data, and call `captureException` for unexpected script failures.
+Use the same versioned provider-field mapping as the dbt identity model. Fail fast when required bounds are absent or invalid, cap the date window, preserve unknown raw data, redact payload-derived values from logs, and call `captureException` for unexpected script failures. Return aggregate audit counts without writing identity rows; the dbt read model remains the sole writer.
 
 - [ ] **Step 4: Add the script wrapper and runbook.**
 
-Document dry-run and execute commands through `pnpm tsx scripts/with-env.ts --`, required CDC/dbt refresh ordering, provider fields recovered from raw payloads, provider network fetches intentionally excluded, conflict reporting, rollback by deleting only rows created by the backfill key, and route model refresh requirements. Add links to the authoritative MCP/database/analytics docs.
+Document the audit command through `pnpm tsx scripts/with-env.ts --`, required CDC/dbt refresh ordering, provider fields recovered from raw payloads, provider network fetches intentionally excluded, conflict reporting, and route model refresh requirements. Add links to the authoritative MCP/database/analytics docs.
 
 - [ ] **Step 5: Run script tests and policy checks, then commit.**
 
@@ -720,7 +720,7 @@ Expected: parser/idempotency tests and policy checks pass.
 
 ```bash
 rtk git add src/db/activity-effort-identity-backfill.ts scripts/backfill-activity-effort-identities.ts scripts/backfill-activity-effort-identities.test.ts package.json scripts/README.md docs/activity-effort-identity-runbook.md docs/README.md docs/mcp.md
-rtk git commit -m "feat: backfill repeated effort identities"
+rtk git commit -m "feat: audit repeated effort identities"
 rtk git push
 ```
 

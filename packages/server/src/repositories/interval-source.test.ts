@@ -46,7 +46,8 @@ describe("activity interval source precedence", () => {
     expect(forward).toEqual(mergeComparableIntervals([right, left]));
     expect(forward[0]).toMatchObject({
       targetPowerWatts: null,
-      conflicts: ["targetPowerWatts"],
+      completionPct: null,
+      conflicts: ["targetPowerWatts", "completionPct"],
       sourceEvidence: expect.arrayContaining([
         expect.objectContaining({ sourceProvider: "a", targetPowerWatts: 200 }),
         expect.objectContaining({ sourceProvider: "b", targetPowerWatts: 240 }),

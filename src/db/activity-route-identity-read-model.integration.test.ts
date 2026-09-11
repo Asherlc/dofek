@@ -85,6 +85,30 @@ describe("activity route identity read model", () => {
     });
   });
 
+  it("bounds a dense altitude profile before joining route intervals", async () => {
+    await seedRouteIdentityFixture(client, database, {
+      provider: "strava",
+      routeId: null,
+      pointCount: 80,
+    });
+    await client.command({
+      query: `INSERT INTO ${database}.activity_sensor_sample
+      SELECT toUUID('${activityId}'), toUUID('${userId}'),
+        addSeconds(toDateTime64('2026-09-01 12:00:00', 6, 'UTC'), number),
+        'altitude', 100 + number, 0,
+        toDateTime64('2026-09-01 12:00:00', 9, 'UTC')
+      FROM numbers(128)`,
+    });
+
+    await buildModel(client, database);
+
+    const row = await readRouteIdentity(client, database);
+    expect(row.elevationProfile).toHaveLength(64);
+    expect(row.elevationProfile.at(0)).toBe(100);
+    expect(row.elevationProfile.at(-1)).toBe(227);
+    expect(row.routeDistanceMeters).toBeGreaterThan(0);
+  });
+
   it("removes deleted altitude evidence even when location data has a newer watermark", async () => {
     await seedRouteIdentityFixture(client, database, { provider: "strava", routeId: null });
     await client.command({
@@ -397,9 +421,9 @@ describe("activity route identity read model", () => {
   });
 
   it.each([
-    { name: "nearby inferred geometry", offset: 0.00001, detour: false, matched: true },
-    { name: "similar endpoints with a different middle", offset: 0, detour: true, matched: false },
-    { name: "different geometry", offset: 1, detour: false, matched: false },
+    { name: "nearby inferred geometry", offset: 0.00001, detour: false },
+    { name: "similar endpoints with a different middle", offset: 0, detour: true },
+    { name: "different geometry", offset: 1, detour: false },
   ])("materializes independent route evidence for $name", async ({ offset, detour }) => {
     const points = [
       { lat: 37.77, lng: -122.42 },

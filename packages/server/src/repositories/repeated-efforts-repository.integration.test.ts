@@ -310,9 +310,6 @@ describe("RepeatedEffortsRepository database queries", () => {
     });
   });
   it("executes Postgres benchmark memberships against stable canonical groups", async () => {
-    await postgres.db.execute(
-      sql`INSERT INTO fitness.effort_equivalence_group_member (group_id, user_id, canonical_activity_id, inclusion_note) VALUES (${groupId}, ${TEST_USER_ID}, ${second}, 'Same protocol')`,
-    );
     const result = await repository().find({ ...input, effortKind: "user_defined_benchmark" });
     expect(result.groups).toHaveLength(1);
     expect(result.groups[0]).toMatchObject({
@@ -330,6 +327,14 @@ describe("RepeatedEffortsRepository database queries", () => {
     );
   });
   it("resolves benchmark aliases and deduplicates memberships for comparison", async () => {
+    await postgres.db.execute(
+      sql`INSERT INTO fitness.effort_equivalence_group_member (group_id, user_id, canonical_activity_id, inclusion_note) VALUES (${groupId}, ${TEST_USER_ID}, ${second}, 'Same protocol')`,
+    );
+    expect(
+      await postgres.db.execute(
+        sql`SELECT count(*)::int AS count FROM fitness.effort_equivalence_group_member WHERE group_id = ${groupId}`,
+      ),
+    ).toEqual([{ count: 3 }]);
     const result = await new PerformanceComparisonIdentity(
       postgres.db,
       store,

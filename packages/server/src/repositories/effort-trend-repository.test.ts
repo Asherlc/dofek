@@ -376,7 +376,7 @@ describe("EffortTrendRepository", () => {
       endDate: "2026-12-31",
     });
 
-    expect(result.caveats).toContain("Some repetitions have limited sample coverage");
+    expect(result.caveats).toContain("Some repetitions have limited cycling sample coverage");
   });
 
   it("resolves an opaque discovery effort ID before delegating comparison", async () => {
@@ -460,31 +460,45 @@ describe("EffortTrendRepository", () => {
     );
   });
 
-  it.each([
-    { flags: [] },
-    { flags: ["strength_volume_coverage_partial"] },
-    { flags: ["climbing_attempt_coverage_partial"] },
-  ])(
-    "does not label non-cycling repetitions as having limited cycling samples: $flags",
-    async ({ flags }) => {
-      const row = performance(FIRST_ID, "2026-01-01", 200, flags);
+  it("does not label a non-cycling repetition as having limited cycling samples", async () => {
+    const flags: string[] = [];
+    const row = performance(FIRST_ID, "2026-01-01", 200, flags);
+    const compare = vi.fn().mockResolvedValue({
+      ...comparisonResult([]),
+      performances: [{ ...row, metrics: { ...row.metrics, cycling: null, cycling_effort: null } }],
+    });
+    const result = await new EffortTrendRepository({ compare }).get({
+      equivalence: { kind: "activity_name", canonicalType: "running", value: "Tempo" },
+      startDate: "2026-01-01",
+      endDate: "2026-12-31",
+    });
+    expect(result.repetitions).toHaveLength(1);
+    expect(result.repetitions[0]?.quality.flags).toEqual(flags);
+    expect(result.caveats).not.toContain("Some repetitions have limited sample coverage");
+    expect(result.repetitions[0]?.caveats).not.toContain(
+      "This repetition has limited cycling sample coverage",
+    );
+  });
+
+  it.each([["strength_volume_coverage_partial"], ["climbing_attempt_coverage_partial"]])(
+    "surfaces non-cycling coverage quality in flags without a cycling caveat: %s",
+    async (flag) => {
+      const row = performance(FIRST_ID, "2026-01-01", 200, [flag]);
       const compare = vi.fn().mockResolvedValue({
         ...comparisonResult([]),
         performances: [
           { ...row, metrics: { ...row.metrics, cycling: null, cycling_effort: null } },
         ],
       });
+
       const result = await new EffortTrendRepository({ compare }).get({
         equivalence: { kind: "activity_name", canonicalType: "running", value: "Tempo" },
         startDate: "2026-01-01",
         endDate: "2026-12-31",
       });
-      expect(result.repetitions).toHaveLength(1);
-      expect(result.repetitions[0]?.quality.flags).toEqual(flags);
-      expect(result.caveats).not.toContain("Some repetitions have limited sample coverage");
-      expect(result.repetitions[0]?.caveats).not.toContain(
-        "This repetition has limited sample coverage",
-      );
+
+      expect(result.repetitions[0]?.quality.flags).toEqual([flag]);
+      expect(result.caveats).not.toContain("Some repetitions have limited cycling sample coverage");
     },
   );
 
@@ -536,11 +550,11 @@ describe("EffortTrendRepository", () => {
 
     expect(result.caveats).toEqual([
       "Ordinary workout bests are lower-bound observed capability, not maximal capacity.",
-      "Some repetitions have limited sample coverage",
+      "Some repetitions have limited cycling sample coverage",
     ]);
     expect(result.repetitions[0]?.caveats).toEqual([
       "Ordinary workout bests are lower-bound observed capability, not maximal capacity.",
-      "This repetition has limited sample coverage",
+      "This repetition has limited cycling sample coverage",
     ]);
   });
 
@@ -932,7 +946,7 @@ describe("EffortTrendRepository", () => {
     };
     const compare = vi.fn().mockResolvedValue({
       ...comparisonResult([first, second]),
-      pagination: { has_more: true },
+      pagination: { limit: 100, has_more: true, next_cursor: "next-page" },
     });
 
     const result = await new EffortTrendRepository({ compare }).get({

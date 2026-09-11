@@ -36,22 +36,7 @@ export interface EffortTrendInput {
   endDate: string;
 }
 
-const metrics = [
-  "duration_seconds",
-  "moving_duration_seconds",
-  "average_power_watts",
-  "normalized_power_watts",
-  "average_heart_rate_bpm",
-  "average_cadence_rpm",
-  "power_to_heart_rate_ratio",
-  "distance_meters",
-  "elevation_gain_meters",
-  "average_temperature_c",
-  "climbing_attempts",
-  "climbing_sends",
-  "strength_volume_kg_reps",
-  "strength_estimated_one_rep_max_kg",
-] as const satisfies ComparableMetric[];
+const metrics: readonly ComparableMetric[] = comparableEffortMetricsSchema.keyof().options;
 
 const higherIsBetter = new Set<ComparableMetric>([
   "average_power_watts",
@@ -283,7 +268,7 @@ export class EffortTrendRepository {
     const limitedCoverage = rows.some(hasLimitedSamples);
     const caveats = [
       nonMaximalCaveat,
-      ...(limitedCoverage ? ["Some repetitions have limited sample coverage"] : []),
+      ...(limitedCoverage ? ["Some repetitions have limited cycling sample coverage"] : []),
       ...(comparison.pagination?.has_more
         ? [
             "Only the first 100 chronological repetitions are included; narrow the date range for a complete trend.",
@@ -306,7 +291,7 @@ export class EffortTrendRepository {
         const rowCaveats = [
           nonMaximalCaveat,
           ...(hasLimitedSamples(performance)
-            ? ["This repetition has limited sample coverage"]
+            ? ["This repetition has limited cycling sample coverage"]
             : []),
           ...(!performance.quality.comparable
             ? ["This repetition has weak identity evidence and is not comparable."]

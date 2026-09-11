@@ -135,18 +135,19 @@ documents tuple arguments as the way to return associated columns from the row
 selected by
 [`argMax`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/argmax).
 `activity_route_identity` follows `activity_location_sample` at canonical
-cycling-activity grain. It reads only `activity_location_sample FINAL` and
-`activity_effort_identity FINAL`, preserving explicit provider route/course
+cycling-activity grain. It reads `deduped_activities FINAL`,
+`activity_location_sample FINAL`, `activity_effort_identity FINAL`, and the
+`altitude` channel of `activity_sensor_sample FINAL`, preserving explicit provider route/course
 claims separately from a deterministic, 64-point coordinate-quantized ordered
 polyline and its reverse fingerprint. Its route distance, time-gap coverage,
 provider/device provenance, and lifecycle watermark refresh only when an
-activity, deduplicated location state, or explicit route evidence changes; a
+activity, deduplicated location state, altitude evidence, or explicit route evidence changes; a
 route whose live geometry disappears emits a `ReplacingMergeTree` tombstone.
 Scoped builds resolve `activity_refresh_user_id` and
 `activity_refresh_activity_ids` (canonical or member IDs) before reading route
 points, and include scoped prior route keys so removed activities can be
 tombstoned. Unscoped incremental builds discover dirty keys from activity,
-location, and identity watermarks before aggregating selected geometry. See the
+location, altitude, and identity watermarks before aggregating selected geometry. See the
 [route model](models/read_models/activity_route_identity.sql) and the shared
 [activity scope macros](macros/activity_refresh_scope.sql). The server's
 [route matcher](../packages/server/src/repositories/route-equivalence.ts) returns
@@ -154,8 +155,8 @@ location, and identity watermarks before aggregating selected geometry. See the
 comparisons: geometry status, coverage percentage (0–100), and largest gap in
 seconds. Missing quality observations remain null; coverage describes the
 observed location interval, not the entire activity duration.
-The location source has no elevation column, so its bounded elevation profile
-is explicitly empty rather than inferred. Geometry is Level B
+The bounded elevation profile is derived from available `altitude` sensor
+samples and remains unavailable when those samples do not exist. Geometry is Level B
 `strong_inferred` only when the server matcher accepts overlap at least 90%,
 both endpoints within 250 m, relative distance difference at most 10%, and
 elevation similarity at least 0.85 when both profiles are available. dbt

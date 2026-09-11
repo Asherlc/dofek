@@ -58,6 +58,8 @@ function database(reference: Record<string, unknown>, candidates: Record<string,
     execute: vi.fn((query: unknown) => {
       const text = queryText(query);
       if (text.includes("performance-comparison:scope")) return Promise.resolve(candidates);
+      if (text.includes("performance-comparison:cycling-efforts"))
+        return Promise.resolve(candidates);
       if (text.includes("sport_settings") || text.includes("activity_interval"))
         return Promise.resolve([]);
       if (text.includes("performance-comparison:reference")) return Promise.resolve([reference]);
@@ -588,6 +590,92 @@ describe("PerformanceComparisonRepository", () => {
       ),
     ).rejects.toThrow(/25/);
     await expect(repository.cyclingEfforts([], [300])).resolves.toEqual([]);
+  });
+
+  it("loads cycling activity references once and skips incomplete durations without hiding valid efforts", async () => {
+    const complete = activityRow();
+    const incomplete = activityRow({
+      activity_id: SECOND_ID,
+      ended_at: null,
+      member_activity_ids: [SECOND_ID],
+    });
+    let referenceIndex = 0;
+    const execute = vi.fn((query: unknown) => {
+      const text = queryText(query);
+      if (text.includes("performance-comparison:cycling-efforts")) {
+        return Promise.resolve([complete, incomplete]);
+      }
+      if (text.includes("performance-comparison:reference")) {
+        return Promise.resolve([[complete, incomplete][referenceIndex++]]);
+      }
+      if (text.includes("sport_settings") || text.includes("activity_interval")) {
+        return Promise.resolve([]);
+      }
+      throw new Error(`Unexpected query: ${text}`);
+    });
+    const query = vi.fn(async (_schema, text: string) => {
+      if (!text.includes("cycling-training-metrics:samples")) return [];
+      return Array.from({ length: 1800 }, (_, elapsed_seconds) => ({
+        activity_id: FIRST_ID,
+        elapsed_seconds,
+        power: 210,
+        heart_rate: 140,
+        cadence: 90,
+        source_providers: ["sensor"],
+        source_devices: ["meter"],
+        power_measurement_kinds: ["direct"],
+        stream_evidence: [
+          ["power", "sensor", "meter", "direct"],
+          ["heart_rate", "sensor", "meter", "direct"],
+          ["cadence", "sensor", "meter", "direct"],
+        ],
+      }));
+    });
+
+    const result = await new PerformanceComparisonRepository(
+      { execute },
+      { query },
+      USER_ID,
+      "UTC",
+    ).cyclingEfforts([FIRST_ID, SECOND_ID], [300]);
+
+    expect(result.map((effort) => effort.activityId)).toEqual([FIRST_ID]);
+    expect(
+      execute.mock.calls.filter(([query]) =>
+        queryText(query).includes("performance-comparison:cycling-efforts"),
+      ),
+    ).toHaveLength(1);
+    expect(
+      execute.mock.calls.filter(([query]) =>
+        queryText(query).includes("performance-comparison:reference"),
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("rejects a cycling reference batch when any requested activity is unavailable", async () => {
+    const complete = activityRow();
+    let referenceIndex = 0;
+    const execute = vi.fn((query: unknown) => {
+      const text = queryText(query);
+      if (text.includes("performance-comparison:cycling-efforts")) {
+        return Promise.resolve([complete]);
+      }
+      if (text.includes("performance-comparison:reference")) {
+        referenceIndex += 1;
+        return Promise.resolve(referenceIndex === 1 ? [complete] : []);
+      }
+      throw new Error(`Unexpected query: ${text}`);
+    });
+
+    await expect(
+      new PerformanceComparisonRepository(
+        { execute },
+        { query: vi.fn().mockResolvedValue([]) },
+        USER_ID,
+        "UTC",
+      ).cyclingEfforts([FIRST_ID, SECOND_ID], [300]),
+    ).rejects.toThrow("A requested cycling activity was not found for this user");
+    expect(referenceIndex).toBe(0);
   });
 
   it("compares shared sample-derived cycling metrics with explicit unavailable reasons and provenance", async () => {

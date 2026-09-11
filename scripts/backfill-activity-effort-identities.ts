@@ -1,8 +1,10 @@
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import * as Sentry from "@sentry/node";
 import {
-  type ActivityEffortIdentityBackfillOptions,
-  backfillActivityEffortIdentities,
+  type ActivityEffortIdentityAuditOptions,
+  auditActivityEffortIdentities,
 } from "../src/db/activity-effort-identity-backfill.ts";
 import { parsePostgresTimestamp } from "../src/db/clickhouse-migrations/sql.ts";
 import { createDatabaseFromEnv } from "../src/db/index.ts";
@@ -20,14 +22,13 @@ function parseUtcTimestamp(value: string, optionName: string): Date {
   return parsePostgresTimestamp(value, optionName);
 }
 
-export function parseActivityEffortIdentityBackfillOptions(
+export function parseActivityEffortIdentityAuditOptions(
   args: readonly string[],
-): ActivityEffortIdentityBackfillOptions {
+): ActivityEffortIdentityAuditOptions {
   const { values } = parseArgs({
     args,
     options: {
       end: { type: "string" },
-      execute: { default: false, type: "boolean" },
       start: { type: "string" },
       "user-id": { type: "string" },
     },
@@ -43,7 +44,7 @@ export function parseActivityEffortIdentityBackfillOptions(
   if (end.getTime() - start.getTime() > MAXIMUM_WINDOW_MILLISECONDS) {
     throw new Error("Backfill window must not exceed 31 days");
   }
-  return { end, execute: values.execute, start, userId: values["user-id"] };
+  return { end, start, userId: values["user-id"] };
 }
 
 function initializeSentry(): void {
@@ -52,31 +53,33 @@ function initializeSentry(): void {
 }
 
 export async function main(args = process.argv.slice(2)): Promise<void> {
-  const options = parseActivityEffortIdentityBackfillOptions(args);
+  const options = parseActivityEffortIdentityAuditOptions(args);
   initializeSentry();
   let db: ReturnType<typeof createDatabaseFromEnv> | undefined;
   try {
     db = createDatabaseFromEnv();
-    const result = await backfillActivityEffortIdentities(db, options);
+    const result = await auditActivityEffortIdentities(db, options);
     console.log(
-      `[activity-effort-identity-backfill] scanned=${result.scanned} inserted=${result.inserted} updated=${result.updated} skipped=${result.skipped} conflicts=${result.conflicts} refresh_ready=${result.refreshReady} details_truncated=${result.detailsTruncated}`,
+      `[activity-effort-identity-audit] scanned=${result.scanned} skipped=${result.skipped} conflicts=${result.conflicts} refresh_ready=${result.refreshReady} details_truncated=${result.detailsTruncated}`,
     );
     for (const detail of result.details) {
-      console.log(`[activity-effort-identity-backfill] detail=${JSON.stringify(detail)}`);
+      console.log(
+        `[activity-effort-identity-audit] detail=${JSON.stringify({
+          kind: detail.kind,
+          providerId: detail.providerId,
+          sourceField: detail.sourceField,
+          distinctValueCount: detail.distinctValueCount,
+          valueTypes: detail.valueTypes,
+        })}`,
+      );
     }
     if (!result.refreshReady) {
       throw new Error(
         "Active activity is missing persisted group_id; reconcile PostgreSQL membership before CDC",
       );
     }
-    if (!options.execute) {
-      console.log(
-        "[activity-effort-identity-backfill] audit only; review results, then run the documented bounded dbt refresh",
-      );
-      return;
-    }
     console.log(
-      "[activity-effort-identity-backfill] audit complete; this command never writes identity rows—run the documented bounded dbt refresh",
+      "[activity-effort-identity-audit] audit complete; review results, then run the documented bounded dbt refresh",
     );
   } catch (error: unknown) {
     captureException(error);
@@ -89,11 +92,11 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
 
 const isDirectExecution =
   typeof process.argv[1] === "string" &&
-  import.meta.url.endsWith(process.argv[1].replace(/.*\//, ""));
+  import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
 
 if (isDirectExecution) {
   main().catch((error: unknown) => {
-    console.error(`[activity-effort-identity-backfill] ${error}`);
+    console.error(`[activity-effort-identity-audit] ${error}`);
     process.exit(1);
   });
 }

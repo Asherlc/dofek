@@ -225,7 +225,10 @@ export const effortEquivalenceGroup = fitness.table(
     effortKind: text("effort_kind", { enum: ["user_defined_benchmark"] }).notNull(),
     notes: text("notes"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
   },
   (table) => [
     uniqueIndex("effort_equivalence_group_user_id_idx").on(table.userId, table.id),
@@ -254,12 +257,12 @@ export const effortEquivalenceGroupMember = fitness.table(
       name: "effort_equivalence_group_member_user_group_fk",
       columns: [table.userId, table.groupId],
       foreignColumns: [effortEquivalenceGroup.userId, effortEquivalenceGroup.id],
-    }),
+    }).onDelete("cascade"),
     foreignKey({
       name: "effort_equivalence_group_member_user_activity_fk",
       columns: [table.userId, table.canonicalActivityId],
       foreignColumns: [activityGroup.userId, activityGroup.id],
-    }),
+    }).onDelete("restrict"),
     uniqueIndex("effort_equivalence_group_member_user_group_activity_idx").on(
       table.userId,
       table.groupId,

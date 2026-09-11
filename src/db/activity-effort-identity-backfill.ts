@@ -20,39 +20,35 @@ const activityEffortIdentityFieldMapping = [
 ] as const;
 
 const activityRowSchema = z.object({
-  external_id: z.string().nullable(),
-  group_id: z.string().uuid().nullable(),
-  id: z.string().uuid(),
+  group_id: z.uuid().nullable(),
+  id: z.uuid(),
   provider_id: z.string().min(1),
   raw: z.record(z.string(), z.unknown()).nullable(),
 });
 
-export interface ActivityEffortIdentityBackfillOptions {
+export interface ActivityEffortIdentityAuditOptions {
   end: Date;
-  execute: boolean;
   start: Date;
   userId: string;
 }
 
-export interface ActivityEffortIdentityBackfillResult {
+export interface ActivityEffortIdentityAuditResult {
   conflicts: number;
   details: ActivityEffortIdentityAuditDetail[];
   detailsTruncated: boolean;
-  inserted: number;
   refreshReady: boolean;
   scanned: number;
   skipped: number;
-  updated: number;
 }
 
 export interface ActivityEffortIdentityAuditDetail {
   activityId: string;
   canonicalGroupId: string | null;
+  distinctValueCount: number;
   kind: "conflict" | "invalid_group_id" | "unsupported";
   providerId: string;
-  sourceExternalId: string | null;
   sourceField: string;
-  values: unknown[];
+  valueTypes: string[];
 }
 
 export interface ExtractedActivityEffortIdentity {
@@ -67,7 +63,6 @@ export function extractActivityEffortIdentities({
   providerId,
   raw,
 }: {
-  externalId: string | null;
   providerId: string;
   raw: Record<string, unknown> | null;
 }): ExtractedActivityEffortIdentity[] {
@@ -81,8 +76,8 @@ export function extractActivityEffortIdentities({
   });
 }
 
-function validateOptions(options: ActivityEffortIdentityBackfillOptions): void {
-  if (!z.string().uuid().safeParse(options.userId).success) {
+function validateOptions(options: ActivityEffortIdentityAuditOptions): void {
+  if (!z.uuid().safeParse(options.userId).success) {
     throw new Error("userId must be a UUID");
   }
   if (Number.isNaN(options.start.getTime()) || Number.isNaN(options.end.getTime())) {
@@ -109,14 +104,23 @@ function makeDetail(
   sourceField: string,
   values: unknown[],
 ): ActivityEffortIdentityAuditDetail {
+  const valueTypes = [
+    ...new Set(
+      values.map((value) => {
+        if (value === null) return "null";
+        if (Array.isArray(value)) return "array";
+        return typeof value;
+      }),
+    ),
+  ].sort();
   return {
     activityId: row.id,
     canonicalGroupId: row.group_id,
+    distinctValueCount: new Set(values).size,
     kind,
     providerId: row.provider_id,
-    sourceExternalId: row.external_id,
     sourceField,
-    values,
+    valueTypes,
   };
 }
 
@@ -140,7 +144,6 @@ function collectConflicts(rows: ActivityRow[]): {
   const claimsByGroupAndKind = new Map<string, IdentityClaim[]>();
   for (const row of rows) {
     for (const identity of extractActivityEffortIdentities({
-      externalId: row.external_id,
       providerId: row.provider_id,
       raw: row.raw,
     })) {
@@ -171,10 +174,10 @@ function collectConflicts(rows: ActivityRow[]): {
  * refreshes them. It deliberately performs no writes: dbt is the sole writer
  * of analytics.activity_effort_identity.
  */
-export async function backfillActivityEffortIdentities(
+export async function auditActivityEffortIdentities(
   db: Pick<Database, "execute">,
-  options: ActivityEffortIdentityBackfillOptions,
-): Promise<ActivityEffortIdentityBackfillResult> {
+  options: ActivityEffortIdentityAuditOptions,
+): Promise<ActivityEffortIdentityAuditResult> {
   validateOptions(options);
   const rows = await executeWithSchema(
     db,
@@ -183,7 +186,6 @@ export async function backfillActivityEffortIdentities(
       id::text AS id,
       group_id::text AS group_id,
       provider_id,
-      external_id,
       raw
     FROM fitness.activity
     WHERE user_id = ${options.userId}::uuid
@@ -198,7 +200,6 @@ export async function backfillActivityEffortIdentities(
   const skippedRows = rows.filter(
     (row) =>
       extractActivityEffortIdentities({
-        externalId: row.external_id,
         providerId: row.provider_id,
         raw: row.raw,
       }).length === 0,
@@ -216,10 +217,8 @@ export async function backfillActivityEffortIdentities(
     conflicts,
     details: details.slice(0, MAXIMUM_AUDIT_DETAILS),
     detailsTruncated: details.length > MAXIMUM_AUDIT_DETAILS,
-    inserted: 0,
     refreshReady: invalidGroupRows.length === 0,
     scanned: rows.length,
     skipped: skippedRows.length,
-    updated: 0,
   };
 }

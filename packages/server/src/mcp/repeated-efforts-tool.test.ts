@@ -33,9 +33,9 @@ describe("find_repeated_efforts", () => {
       scopes,
     });
     client = new Client({ name: "test", version: "1" });
-    const [a, b] = InMemoryTransport.createLinkedPair();
-    await server.connect(b);
-    await client.connect(a);
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
   });
   afterEach(async () => {
     await client.close();
@@ -45,13 +45,22 @@ describe("find_repeated_efforts", () => {
     name: "find_repeated_efforts",
     arguments: { start_date: "2026-01-01", end_date: "2026-12-31", ...args },
   });
-  it("advertises evidence levels and returns a strict structured result with conservative defaults", async () => {
+  it("advertises evidence levels and lets the repository own conservative defaults", async () => {
     const result = await client.callTool(call());
     expect(result.isError).not.toBe(true);
     expect(repeatedEffortsOutputSchema.parse(result.structuredContent).result.groups).toEqual([]);
-    expect(mocks.find).toHaveBeenCalledWith(
-      expect.objectContaining({ minimumRepetitions: 2, equivalenceStrength: "strong", limit: 25 }),
-    );
+    expect(mocks.find).toHaveBeenCalledWith({
+      startDate: "2026-01-01",
+      endDate: "2026-12-31",
+      minimumRepetitions: undefined,
+      equivalenceStrength: undefined,
+      effortKind: undefined,
+      providers: undefined,
+      modalities: undefined,
+      canonicalTypes: undefined,
+      limit: undefined,
+      cursor: undefined,
+    });
     const listed = await client.listTools();
     expect(listed.tools[0]?.description).toMatch(/Level A.*Level B.*Level C.*Level D/);
     expect(

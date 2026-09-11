@@ -66,15 +66,37 @@ describe("provider-neutral activity interval schema", () => {
     ]);
   });
 
-  it("rejects inferred intervals with invented target values", async () => {
+  it.each([
+    {
+      name: "unsupported source kind",
+      index: 2,
+      columns: "source_kind",
+      values: "'provider_guessed'",
+      constraint: "activity_interval_source_kind",
+    },
+    {
+      name: "inferred interval with an invented target",
+      index: 3,
+      columns: "source_kind, target_power_watts",
+      values: "'inferred', 240",
+      constraint: "activity_interval_inferred_targets",
+    },
+    {
+      name: "unsupported work/recovery kind",
+      index: 4,
+      columns: "work_recovery_kind",
+      values: "'transition'",
+      constraint: "activity_interval_work_recovery_kind",
+    },
+  ])("rejects $name", async ({ index, columns, values, constraint }) => {
     await expect(
       context.db.execute(
         sql.raw(`INSERT INTO fitness.activity_interval (
-          activity_id, interval_index, started_at, ended_at, source_kind, target_power_watts
+          activity_id, interval_index, started_at, ended_at, ${columns}
         ) VALUES (
-          '${activityId}', 2, '2026-09-10T12:05:00Z', '2026-09-10T12:10:00Z', 'inferred', 240
+          '${activityId}', ${index}, '2026-09-10T12:05:00Z', '2026-09-10T12:10:00Z', ${values}
         )`),
       ),
-    ).rejects.toMatchObject({ cause: { code: "23514" } });
+    ).rejects.toMatchObject({ cause: { code: "23514", constraint } });
   });
 });

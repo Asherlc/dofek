@@ -468,9 +468,14 @@ provider, member activity, timezone, quality, and deduplication provenance. The 
 descriptive and make no causal claim.
 
 Exact provider workout, route, segment, and standardized-test evidence is
-materialized only by the dbt-owned `analytics.activity_effort_identity` model
-from retained source payloads. The historical audit and scoped refresh procedure
-is documented in the [activity effort identity runbook](activity-effort-identity-runbook.md).
+materialized by the dbt-owned `analytics.activity_effort_identity` model from
+retained source payloads. Climb evidence instead comes from
+`fitness.climbing_entry`; route claims and geometry are projected by
+`analytics.activity_route_identity`. The historical identity audit and scoped
+refresh procedure is documented in the
+[activity effort identity runbook](activity-effort-identity-runbook.md), while
+route refresh behavior is documented by the
+[analytics read-model contract](../analytics/README.md#activity-read-models).
 It never treats a provider activity instance ID, a matching name, or an ordinary
 workout best as proof of equivalence, and it does not make provider network
 requests to fill gaps. MCP clients must report missing identity evidence as a
@@ -569,28 +574,14 @@ repository environment also lacks a required serving view; it is not ready
 for the report even after a user UUID is supplied.
 
 The authenticated Dofek MCP connection did provide real stored-data evidence
-through `get_cycling_performance`. These are actual server-returned values,
-not formatter fixtures or a successful run of the new report:
-
-| Request / returned evidence | Actual result |
-|---|---|
-| `2000-01-01` through `2099-12-31`, per-ride power coverage | 0 rides; 0 with power |
-| `2019-01-01` through `2026-09-10`, per-ride power coverage | 97 rides; 20 with power (20.6%) |
-| Dates of those 97 returned rides | 2026-06-18 through 2026-09-09 |
-| Indoor availability in the second response | 188 / 203 with power (92.6%); first/last power 2019-10-29 / 2026-09-09 |
-| Outdoor availability in the second response | 5 / 123 with power (4.1%); first/last power 2019-07-20 / 2019-09-13 |
-| Unknown-modality availability in the second response | 89 / 697 with power (12.8%); first/last power 2019-09-25 / 2023-06-26 |
-
-The second response's indoor sources were `apple_health`, `garmin-dump`,
-`peloton`, `ride-with-gps`, `strava`, `whoop`, and `zwift`; outdoor sources
-were `ride-with-gps` and `strava`; unknown-modality sources were `peloton`,
-`ride-with-gps`, and `wahoo`. These establish source presence, **not exact
-identity support**. The tool catalog exposed the older comparison contract
-and did not expose `find_repeated_efforts` or `get_effort_trend`.
+through `get_cycling_performance`, but those personal activity dates, counts,
+coverage values, and provider names are intentionally omitted from this
+repository. They established source presence, **not exact identity support**.
+The tool catalog exposed the older comparison contract and did not expose
+`find_repeated_efforts` or `get_effort_trend`.
 
 Three reference-based comparison requests were submitted against the existing
-MCP surface for observed June/July 2026 Peloton rides, using the 2019–2026
-range. They had not returned when the user requested completion without
+MCP surface for selected observed rides. They had not returned when the user requested completion without
 waiting, so waiting was stopped. No longitudinal result or exact identity
 claim is inferred from those attempts.
 

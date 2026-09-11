@@ -57,18 +57,40 @@ const streamFields = {
   temperature: "temperatureC",
 } as const;
 
+type StreamName = keyof typeof streamFields;
+type StreamQualityCounter = {
+  suspiciousSamples: number;
+  conflictingSamples: number;
+  barriers: number[];
+};
+
+const streamNames = [
+  "power",
+  "heartRate",
+  "cadence",
+  "speed",
+  "altitude",
+  "temperature",
+] satisfies StreamName[];
+
+function emptyStreamQualityCounter(): StreamQualityCounter {
+  return { suspiciousSamples: 0, conflictingSamples: 0, barriers: [] };
+}
+
 function cleanSamples(samples: CyclingEffortSample[], duration: number) {
   const cleaned = new Map<number, CyclingEffortSample>();
-  const counts = Object.fromEntries(
-    Object.keys(streamFields).map((key) => {
-      const barriers: number[] = [];
-      return [key, { suspiciousSamples: 0, conflictingSamples: 0, barriers }];
-    }),
-  );
-  for (const [stream, field] of Object.entries(streamFields)) {
+  const counts: Record<StreamName, StreamQualityCounter> = {
+    power: emptyStreamQualityCounter(),
+    heartRate: emptyStreamQualityCounter(),
+    cadence: emptyStreamQualityCounter(),
+    speed: emptyStreamQualityCounter(),
+    altitude: emptyStreamQualityCounter(),
+    temperature: emptyStreamQualityCounter(),
+  };
+  for (const stream of streamNames) {
+    const field = streamFields[stream];
     const values = new Map<number, Set<number>>();
     const count = counts[stream];
-    if (!count) throw new Error("Missing stream quality counter");
     for (const sample of samples) {
       const value = sample[field];
       if (value == null) continue;
@@ -139,18 +161,17 @@ export function calculateCyclingEffortMetrics(
         Math.min(duration, Math.ceil(item.input.endOffsetSeconds)) === interval.endOffsetSeconds,
     );
   // Stored detector output is still inferred, even though it supplies boundaries.
-  workout.intervals = workout.intervals.map((interval) => {
+  const intervals = workout.intervals.map((interval) => {
     const evidence = intervalEvidence(interval);
     return evidence?.interval.source === "inferred"
-      ? { ...interval, source: "inferred", targetPowerWatts: null, completionPct: null }
+      ? { ...interval, source: "inferred" as const, targetPowerWatts: null, completionPct: null }
       : interval;
   });
-  if (
-    workout.intervals.length > 0 &&
-    workout.intervals.every((interval) => interval.source === "inferred")
-  ) {
-    workout.intervalSource = "inferred";
-  }
+  const intervalSource =
+    intervals.length > 0 && intervals.every((interval) => interval.source === "inferred")
+      ? "inferred"
+      : workout.intervalSource;
+  const adjustedWorkout = { ...workout, intervals, intervalSource };
   const speed = resampleCyclingStream(
     clean.samples,
     duration,
@@ -262,15 +283,15 @@ export function calculateCyclingEffortMetrics(
     };
   };
   const streamQuality = {
-    power: { ...workout.coverage.power, ...qualityEvidence("power") },
-    heartRate: { ...workout.coverage.heartRate, ...qualityEvidence("heartRate") },
-    cadence: { ...workout.coverage.cadence, ...qualityEvidence("cadence") },
+    power: { ...adjustedWorkout.coverage.power, ...qualityEvidence("power") },
+    heartRate: { ...adjustedWorkout.coverage.heartRate, ...qualityEvidence("heartRate") },
+    cadence: { ...adjustedWorkout.coverage.cadence, ...qualityEvidence("cadence") },
     speed: { ...speed.coverage, ...qualityEvidence("speed") },
     altitude: { ...altitude.coverage, ...qualityEvidence("altitude") },
     temperature: { ...temperature.coverage, ...qualityEvidence("temperature") },
   };
   const reasons: string[] = [];
-  if (workout.coverage.power.coveragePct < 99) reasons.push("Power coverage is incomplete");
+  if (adjustedWorkout.coverage.power.coveragePct < 99) reasons.push("Power coverage is incomplete");
   if (
     context.powerMeasurementKinds.length === 0 ||
     context.powerMeasurementKinds.some((kind) => kind !== "direct")
@@ -283,7 +304,7 @@ export function calculateCyclingEffortMetrics(
   if (providerMoving?.status === "conflicting") reasons.push("Provider moving durations conflict");
   if (providerMoving?.seconds != null && !validProviderMoving)
     reasons.push("Provider moving duration exceeds elapsed duration");
-  const unavailableReasons = workout.unavailableReasons.map((item) =>
+  const unavailableReasons = adjustedWorkout.unavailableReasons.map((item) =>
     ftp == null && ["intensity_factor", "training_stress_score"].includes(item.metric)
       ? { ...item, reason: "no contemporaneous FTP" }
       : item,
@@ -291,7 +312,7 @@ export function calculateCyclingEffortMetrics(
   const unavailable = (metric: string, reason: string) =>
     unavailableReasons.push({ metric, reason });
   if (!ftp) unavailable("power_zones", "no contemporaneous FTP");
-  if (!workout.heartRateZones)
+  if (!adjustedWorkout.heartRateZones)
     unavailable("heart_rate_zones", "no contemporaneous threshold HR and valid zone boundaries");
   if (weight.value_kg == null) unavailable("watts_per_kg", weight.reason);
   if (!pairedCoverage)
@@ -307,11 +328,11 @@ export function calculateCyclingEffortMetrics(
     validProviderMoving && movingSeconds != null && movingSeconds > 0 && validSummaryDistance
       ? summaryDistance / movingSeconds
       : mean(movingSpeeds);
-  if (workout.power.averageWatts == null) {
+  if (adjustedWorkout.power.averageWatts == null) {
     unavailable("average_power", "no fully covered valid power seconds");
     unavailable("work", "no fully covered valid power seconds");
   }
-  if (workout.power.variabilityIndex == null)
+  if (adjustedWorkout.power.variabilityIndex == null)
     unavailable("variability_index", "requires normalized power and positive average power");
   if (averageMovingSpeed == null)
     unavailable(
@@ -324,20 +345,20 @@ export function calculateCyclingEffortMetrics(
     unavailable("elevation_gain", "no continuous valid elevation windows");
     unavailable("elevation_loss", "no continuous valid elevation windows");
   }
-  if (weight.value_kg == null || workout.power.averageWatts == null)
+  if (weight.value_kg == null || adjustedWorkout.power.averageWatts == null)
     unavailable(
       "average_watts_per_kg",
       weight.value_kg == null ? weight.reason : "average power is unavailable",
     );
-  if (weight.value_kg == null || workout.power.normalizedWatts == null)
+  if (weight.value_kg == null || adjustedWorkout.power.normalizedWatts == null)
     unavailable(
       "normalized_watts_per_kg",
       weight.value_kg == null ? weight.reason : "normalized power is unavailable",
     );
-  if (ftp && !workout.powerZones)
+  if (ftp && !adjustedWorkout.powerZones)
     unavailable("power_zones", "no valid contemporaneous power zone boundaries");
   return {
-    workout,
+    workout: adjustedWorkout,
     thresholds: {
       ftp,
       thresholdHeartRateBpm: settings?.thresholdHr ?? null,
@@ -377,12 +398,12 @@ export function calculateCyclingEffortMetrics(
     },
     weight,
     averageWattsPerKg:
-      weight.value_kg != null && workout.power.averageWatts != null
-        ? workout.power.averageWatts / weight.value_kg
+      weight.value_kg != null && adjustedWorkout.power.averageWatts != null
+        ? adjustedWorkout.power.averageWatts / weight.value_kg
         : null,
     normalizedWattsPerKg:
-      weight.value_kg != null && workout.power.normalizedWatts != null
-        ? workout.power.normalizedWatts / weight.value_kg
+      weight.value_kg != null && adjustedWorkout.power.normalizedWatts != null
+        ? adjustedWorkout.power.normalizedWatts / weight.value_kg
         : null,
     bestPowers: (context.bestPowers ?? []).map((row) => ({
       durationSeconds: row.duration_seconds,
@@ -395,7 +416,7 @@ export function calculateCyclingEffortMetrics(
       largestGapSeconds: row.largest_gap_seconds,
       medianSampleIntervalSeconds: row.median_sample_interval_seconds,
     })),
-    intervals: workout.intervals.map((interval) => {
+    intervals: adjustedWorkout.intervals.map((interval) => {
       const evidence = intervalEvidence(interval);
       const source =
         evidence?.interval.source ?? (interval.source === "inferred" ? "inferred" : "unknown");

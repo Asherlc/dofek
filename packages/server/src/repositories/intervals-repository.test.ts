@@ -206,6 +206,7 @@ describe("mergeComparableIntervals", () => {
         workRecoveryKind: "work",
         targetZone: 4,
         targetPowerWatts: 250,
+        completionPct: 95,
       }),
       interval({
         sourceProvider: "b",
@@ -214,6 +215,7 @@ describe("mergeComparableIntervals", () => {
         workRecoveryKind: null,
         targetZone: null,
         targetPowerWatts: 300,
+        completionPct: 95,
       }),
       interval({
         source: "inferred",
@@ -232,7 +234,23 @@ describe("mergeComparableIntervals", () => {
         workRecoveryKind: "work",
         targetZone: 4,
         targetPowerWatts: null,
-        conflicts: ["targetPowerWatts", "segmentType"],
+        completionPct: null,
+        conflicts: ["targetPowerWatts", "segmentType", "completionPct"],
+      }),
+    ]);
+  });
+
+  it("preserves completion when only unrelated interval classification conflicts", () => {
+    const result = mergeComparableIntervals([
+      interval({ segmentType: "work", completionPct: 95 }),
+      interval({ segmentType: "recovery", completionPct: 95 }),
+    ]);
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        segmentType: null,
+        completionPct: 95,
+        conflicts: ["segmentType"],
       }),
     ]);
   });

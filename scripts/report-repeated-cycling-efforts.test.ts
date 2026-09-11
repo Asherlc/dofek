@@ -119,9 +119,10 @@ describe("repeated cycling report", () => {
     // Compare the discovery evidence section, independent of summary headings.
     const evidence = text.slice(text.indexOf("Discovery evidence"));
     for (let index = 1; index < ordered.length; index++) {
-      expect(evidence.indexOf(ordered[index - 1] ?? "")).toBeLessThan(
-        evidence.indexOf(ordered[index] ?? ""),
-      );
+      const previous = evidence.indexOf(ordered[index - 1] ?? "missing");
+      const current = evidence.indexOf(ordered[index] ?? "missing");
+      expect(previous).toBeGreaterThanOrEqual(0);
+      expect(current).toBeGreaterThan(previous);
     }
     expect(text.indexOf("Generic observed power")).toBeGreaterThan(
       text.indexOf("Longitudinal comparisons"),

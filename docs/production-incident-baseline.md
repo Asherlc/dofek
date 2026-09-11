@@ -26324,10 +26324,13 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `Error: socket hang up` (`ECONNRESET`) in the integration command
   `pnpm exec vitest run --project integration src/db/activity-route-identity-read-model.integration.test.ts packages/server/src/repositories/route-equivalence.integration.test.ts`
   with `.env.local` loaded.
-- **Evidence:** `docker inspect suave-platypus-clickhouse-1` showed restarts at
-  `2026-09-10T23:43:30Z` and `23:44:29Z`, matching the failed connections;
-  restart count advanced from 18 to 19. The later state reported healthy and
-  `OOMKilled=false`. Server error logs did not identify a fatal cause.
+- **Evidence:** Two contemporaneous `docker inspect
+  suave-platypus-clickhouse-1` observations showed the current container's
+  cumulative restart count advance from 18 to 19; the later observation showed
+  `StartedAt=2026-09-10T23:44:29Z`, healthy state, and `OOMKilled=false`.
+  The exact inspection times were not retained, so the earlier reported
+  `23:43:30Z` value cannot be established as a separate historical restart.
+  Server error logs did not identify a fatal cause.
   Docker's [inspect command](https://docs.docker.com/reference/cli/docker/inspect/)
   is the source for container state inspection.
 - **Cause/status:** The connection failures coincide with container restarts;
@@ -26402,8 +26405,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   repeated startup aborts. `rtk docker inspect suave-platypus-redpanda-1
   --format '{{json .State}}'` showed `restarting`, exit 133, and
   `OOMKilled=false`. Reading `/proc/sys/fs/aio-nr` and
-  `/proc/sys/fs/aio-max-nr` from `suave-platypus-db-1` returned 65536 for both.
-  The shared Docker VM had exhausted its Linux async-I/O allocation capacity.
+  `/proc/sys/fs/aio-max-nr` from `suave-platypus-db-1` returned 65536 for both:
+  the current system-wide AIO allocation had reached the configured maximum,
+  so subsequent AIO setup could fail.
   The kernel documents these counters in its
   [filesystem sysctl reference](https://docs.kernel.org/admin-guide/sysctl/fs.html#aio-nr-aio-max-nr).
 - **Mitigation / risk:** No settings, limits, retries, sleeps, or other
@@ -26440,10 +26444,11 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `Available space: 0.00 B`. `docker system df` showed 4.798 GB reclaimable
   from stopped containers and no build cache. Shared Docker storage exhaustion
   directly prevented both databases from initializing.
-- **Mitigation:** Removed only this workspace's failed Compose resources,
-  pruned 943.8 MB of unused images, then pruned 4.798 GB held by stopped
-  containers. Other workspaces' running containers and named volumes were
-  preserved. Docker documents these scoped cleanup operations in
+- **Mitigation:** Removed only this workspace's failed Compose resources, then
+  ran daemon-wide `docker image prune -af` (943.8 MB) and `docker container
+  prune -f` (4.798 GB), with no filters. Running containers and named volumes
+  were preserved; stopped containers and unused images from other workspaces
+  were not protected by workspace scope. Docker documents these operations in
   [`docker image prune`](https://docs.docker.com/reference/cli/docker/image/prune/)
   and [`docker container prune`](https://docs.docker.com/reference/cli/docker/container/prune/).
 - **Validation / remaining risk:** ClickHouse restarted healthy, and the route
@@ -26467,7 +26472,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   shards covering effort trends, performance comparison, interval merging and
   provenance, cycling resampling, duration mapping, and Apple Health interval
   normalization. These were branch test-coverage defects rather than transient
-  CI failures.
+  CI failures. The definitive replacement run exposed three more under-threshold
+  shards: repeated-effort discovery (68.40%), route equivalence (63.80%), and
+  cycling effort metrics (64.30%).
 - **Direct fix:** Aligned the Expo package set with `expo install --fix`, removed
   the cycle and dead exports, changed the unbounded interval zone integer to a
   bigint, introduced and then validated new constraints with `NOT VALID`, and
@@ -26484,7 +26491,38 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   Postgres. Targeted Stryker validation put every failed shard above the 75%
   breaking threshold: five reached 100%, effort trend reached 98.97%, cycling
   resampling reached 91.87%, and the complete 313-mutant performance-comparison
-  shard reached 75.08%. The full Docker integration wrapper remained unavailable
+  shard reached 75.08%. The final three shards reached 93.16%, 80.33%, and
+  82.36%, respectively. A final targeted run after the route-work budget refactor
+  measured repeated-effort discovery at 92.86% and route equivalence at 81.78%.
+  The full Docker integration wrapper remained unavailable
   because of the separately recorded shared-VM AIO exhaustion; no timeout,
   retry, or service setting was changed. A replacement CI run is required
   before merge.
+
+## 2026-09-11 — Local ClickHouse restart interrupted final route lifecycle validation
+
+- **Impact:** The focused route read-model integration run stopped after 10 of
+  18 route-model tests passed; the three downstream route-equivalence tests
+  were skipped. No production service or user data was affected.
+- **Failing command:** `pnpm exec vitest run --project integration
+  src/db/activity-route-identity-read-model.integration.test.ts
+  packages/server/src/repositories/route-equivalence.integration.test.ts
+  --retry 0`. The first fatal client line was `Error: socket hang up`
+  (`ECONNRESET`).
+- **Evidence / root cause:** The first attempt ended with cumulative
+  `RestartCount=6`, `OOMKilled=false`, and no server fatal line. A second
+  unchanged run executed 11 tests before the same reset; Docker events then
+  recorded an explicit `oom` event at the reset timestamp, followed by exit
+  137 and an automatic restart. The shared Docker VM had 40 running containers,
+  and its separately recorded AIO allocation was already exhausted. The local
+  interruption was shared-VM memory pressure, even though the post-restart
+  current-state `OOMKilled` field was false. Docker documents OOM events in
+  [`docker system events`](https://docs.docker.com/reference/cli/docker/system/events/)
+  and current-state inspection in
+  [`docker inspect`](https://docs.docker.com/reference/cli/docker/inspect/).
+- **Validation / mitigation:** The dense 128-sample altitude-profile regression
+  and ten other route lifecycle cases passed before the second restart. No
+  timeout, retry, memory, health-check, or service setting was changed. Final
+  proof requires the unchanged integration suite in isolated CI; use the
+  [shared Docker resource runbook](testing.md#shared-docker-vm-resource-pressure)
+  before another local long-running attempt.

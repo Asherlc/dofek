@@ -208,16 +208,68 @@ explicit_route_ids AS (
     GROUP BY canonical_activity_id, user_id
 ),
 
-altitude_state AS (
+altitude_refresh_state AS MATERIALIZED (
     SELECT
         activity_id,
         user_id,
-        max(refreshed_at) AS source_refreshed_at,
-        arraySort(groupArrayIf(tuple(recorded_at, assumeNotNull(scalar)), is_deleted = 0 AND scalar IS NOT null)) AS samples
+        max(refreshed_at) AS source_refreshed_at
     FROM {{ ref('activity_sensor_sample') }} FINAL
     WHERE channel = 'altitude'
         AND (user_id, activity_id) IN (SELECT user_id, activity_id FROM affected_route_keys)
     GROUP BY activity_id, user_id
+),
+
+live_altitude_samples AS MATERIALIZED (
+    SELECT
+        activity_id,
+        user_id,
+        recorded_at,
+        assumeNotNull(scalar) AS elevation_meters,
+        min(recorded_at) OVER (PARTITION BY user_id, activity_id) AS first_recorded_at,
+        max(recorded_at) OVER (PARTITION BY user_id, activity_id) AS last_recorded_at
+    FROM {{ ref('activity_sensor_sample') }} FINAL
+    WHERE channel = 'altitude'
+        AND is_deleted = 0
+        AND scalar IS NOT null
+        AND (user_id, activity_id) IN (SELECT user_id, activity_id FROM affected_route_keys)
+),
+
+altitude_profile_points AS MATERIALIZED (
+    SELECT
+        activity_id,
+        user_id,
+        toUInt8(least(
+            63,
+            intDiv(
+                greatest(0, dateDiff('millisecond', first_recorded_at, recorded_at)) * 63,
+                greatest(1, dateDiff('millisecond', first_recorded_at, last_recorded_at))
+            )
+        )) AS profile_index,
+        argMin(elevation_meters, recorded_at) AS elevation_meters
+    FROM live_altitude_samples
+    GROUP BY activity_id, user_id, profile_index
+),
+
+altitude_state AS MATERIALIZED (
+    SELECT
+        refresh.activity_id AS activity_id,
+        refresh.user_id AS user_id,
+        refresh.source_refreshed_at AS source_refreshed_at,
+        arrayMap(
+            point -> point.2,
+            arraySort(groupArrayIf(
+                tuple(
+                    assumeNotNull(points.profile_index),
+                    assumeNotNull(points.elevation_meters)
+                ),
+                points.profile_index IS NOT null
+            ))
+        ) AS elevation_profile
+    FROM altitude_refresh_state AS refresh
+    LEFT JOIN altitude_profile_points AS points
+        ON points.activity_id = refresh.activity_id
+        AND points.user_id = refresh.user_id
+    GROUP BY refresh.activity_id, refresh.user_id, refresh.source_refreshed_at
 ),
 
 current_route_sources AS (
@@ -478,8 +530,10 @@ current_route_rows AS (
         sources.source_refreshed_at AS source_refreshed_at,
         coalesce(quality.coverage_pct, toNullable(toFloat64(0))) AS coverage_pct,
         quality.largest_gap_seconds AS largest_gap_seconds,
-        arrayMap(index -> altitude.samples[1 + intDiv(index * (length(altitude.samples) - 1), greatest(1, least(64, length(altitude.samples)) - 1))].2,
-            range(least(64, length(altitude.samples)))) AS elevation_profile,
+        coalesce(
+            elevation.elevation_profile,
+            CAST([], 'Array(Float64)')
+        ) AS elevation_profile,
         toNullable(sum(metrics.distance_meters)) AS route_distance_meters
     FROM current_route_sources AS sources
     INNER JOIN current_route_keys AS route_keys
@@ -491,8 +545,9 @@ current_route_rows AS (
     LEFT JOIN route_quality AS quality
         ON quality.activity_id = sources.activity_id
         AND quality.user_id = sources.user_id
-    LEFT JOIN altitude_state AS altitude
-        ON altitude.activity_id = sources.activity_id AND altitude.user_id = sources.user_id
+    LEFT JOIN altitude_state AS elevation
+        ON elevation.activity_id = sources.activity_id
+        AND elevation.user_id = sources.user_id
     LEFT JOIN location_interval_metrics AS metrics
         ON metrics.activity_id = sources.activity_id
         AND metrics.user_id = sources.user_id
@@ -515,7 +570,7 @@ current_route_rows AS (
         geometry.source_devices,
         quality.coverage_pct,
         quality.largest_gap_seconds,
-        altitude.samples
+        elevation.elevation_profile
 ),
 
 refresh_clock AS (

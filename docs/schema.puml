@@ -206,7 +206,7 @@ entity "activity_interval" {
   source_activity_id : uuid <<FK>>
   segment_type : text
   target_intensity : real
-  target_zone : integer
+  target_zone : bigint
   target_cadence_rpm : real
   target_power_watts : real
   target_resistance : real

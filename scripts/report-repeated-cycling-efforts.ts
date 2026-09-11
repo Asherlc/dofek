@@ -20,6 +20,7 @@ import { createClickHouseClientFromEnv } from "../src/db/clickhouse.ts";
 import { createDatabaseFromEnv } from "../src/db/index.ts";
 import { userProfile } from "../src/db/schema/reference.ts";
 import { captureException } from "../src/lib/error-reporting.ts";
+import { closeResources } from "./close-resources.ts";
 
 type Group = FindRepeatedEffortsOutput["groups"][number];
 type Comparison = Awaited<ReturnType<PerformanceComparisonRepository["compare"]>>;
@@ -280,7 +281,10 @@ async function main(): Promise<void> {
     });
     console.log(formatRepeatedCyclingReport(report));
   } finally {
-    await Promise.all([db.$client.end(), clickhouse.close?.()]);
+    await closeResources([
+      { name: "Postgres", close: () => db.$client.end() },
+      { name: "ClickHouse", close: () => clickhouse.close?.() },
+    ]);
   }
 }
 

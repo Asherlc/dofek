@@ -192,9 +192,12 @@ export function mergeComparableIntervals(intervals: ComparableInterval[]): Compa
       }
     }
     if (conflicts.length) {
+      if (conflicts.some((field) => field.startsWith("target"))) {
+        result.completionPct = null;
+        conflicts.push("completionPct");
+      }
       result.conflicts = conflicts;
       result.sourceEvidence = group;
-      result.completionPct = null;
     }
     return result;
   });

@@ -7,7 +7,8 @@
     order_by='(user_id, source_activity_id, kind, namespace, normalized_value, source_field)',
     query_settings={
         'max_threads': 1,
-        'join_use_nulls': 1
+        'join_use_nulls': 1,
+        'enable_materialized_cte': 1
     }
 ) }}
 
@@ -29,7 +30,7 @@ scoped_source_ids AS (
     {% endif %}
 ),
 {% endif %}
-current_source_members AS (
+current_source_members AS MATERIALIZED (
     SELECT
         assumeNotNull(source_records.user_id) AS user_id,
         activity_members.activity_id AS canonical_activity_id,
@@ -71,7 +72,7 @@ target_source_state AS (
     GROUP BY existing_identities.user_id, existing_identities.source_activity_id
 ),
 
-changed_source_keys AS (
+changed_source_keys AS MATERIALIZED (
     SELECT
         current_sources.user_id AS user_id,
         current_sources.source_activity_id AS source_activity_id,
@@ -103,7 +104,7 @@ changed_source_keys AS (
         )
 ),
 {% else %}
-changed_source_keys AS (
+changed_source_keys AS MATERIALIZED (
     SELECT
         user_id,
         source_activity_id,

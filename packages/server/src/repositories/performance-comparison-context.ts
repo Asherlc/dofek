@@ -79,7 +79,6 @@ export function buildEquivalenceEvidence(
 ) {
   const items: Array<{
     evidence_type:
-      | "provider_raw_field"
       | "cycling_route_name_provider_type"
       | "standardized_test_name_provider_type"
       | "climbing_entry"

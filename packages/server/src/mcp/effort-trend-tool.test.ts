@@ -51,9 +51,9 @@ describe("get_effort_trend", () => {
       scopes,
     });
     client = new Client({ name: "test", version: "1" });
-    const [a, b] = InMemoryTransport.createLinkedPair();
-    await server.connect(b);
-    await client.connect(a);
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
   });
 
   afterEach(async () => {
