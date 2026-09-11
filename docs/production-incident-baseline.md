@@ -26352,3 +26352,10 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   cleanup remain follow-up work; no runtime timeout, retry, or resource limit
   was changed. Use the [Docker disk recovery runbook](testing.md#docker-disk-recovery)
   and verify template ownership/inactivity before future cleanup.
+- **Final rerun:** Discovery passed six tests, but comparison fixture setup
+  timed out with `Error: Hook timed out in 60000ms` and a ClickHouse insert
+  failed with `Error: socket hang up` / `ECONNRESET`; all 14 comparison tests
+  were skipped. The earlier 20-test pass is preserved as evidence, while
+  the latest environment validation remains blocked. The connection-reset
+  cause was not investigated further under the instruction to finish focused
+  fixes; no timeout/retry change or additional suite was run.
