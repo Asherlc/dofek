@@ -136,3 +136,22 @@ TypeScript: No errors found.
 ```
 
 No Task 3 formatting or Task 6 package-typecheck files were changed. The earlier package-specific Task 6 diagnostics remain outside this fix round.
+
+## Fix round 2 — undefined-safe route provenance access
+
+Root cause: with `noUncheckedIndexedAccess`, the single-element `route.source_providers[0]` access remained typed as `string | undefined`, creating a new server-package typecheck error after the round-1 provenance fix. The access now uses `route.source_providers[0] ?? null`, preserving the existing rule that a singular route provider is reported and an unavailable value is represented as `null`.
+
+Validation:
+
+```text
+rtk pnpm exec vitest run packages/server/src/repositories/repeated-efforts-repository.test.ts packages/server/src/mcp/repeated-efforts-tool.test.ts packages/server/src/mcp/route.test.ts --project unit
+Test Files 3 passed (3)
+Tests      101 passed (101)
+
+rtk pnpm exec tsc --noEmit -p packages/server/tsconfig.json
+Exit 2: unchanged Task 6 errors only:
+  packages/server/src/repositories/cycling-effort-metrics.ts(533,7): TS2532
+  packages/server/src/repositories/cycling-training-metrics-repository.ts(233,47): TS2304
+```
+
+The new `repeated-efforts-repository.ts(426,13)` diagnostic is resolved. No other files or behavior were changed for this round.
