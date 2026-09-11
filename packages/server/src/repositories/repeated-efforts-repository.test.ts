@@ -400,7 +400,12 @@ describe("RepeatedEffortsRepository.find", () => {
 
   it("accepts exactly 2,000 canonical activity candidates", async () => {
     const { repository } = setup(
-      Array.from({ length: 2000 }, () => activity(1)),
+      Array.from({ length: 2000 }, (_, index) =>
+        activity(index + 1, {
+          started_at: "2026-01-01T12:00:00Z",
+          ended_at: "2026-01-01T12:30:00Z",
+        }),
+      ),
       [],
     );
 
@@ -621,11 +626,11 @@ describe("RepeatedEffortsRepository.find", () => {
   });
 
   it("rejects identities missing reusable exact or usable weak evidence", async () => {
-    const identities = [1, 2].flatMap((n) => [
-      identity(n, { value: "   " }),
-      identity(n, { value: "no-namespace", namespace: null }),
-      identity(n, { value: "caller", strength: "caller_asserted" }),
-      identity(n, {
+    const identities = [1, 2].flatMap((activityNumber) => [
+      identity(activityNumber, { value: "   " }),
+      identity(activityNumber, { value: "no-namespace", namespace: null }),
+      identity(activityNumber, { value: "caller", strength: "caller_asserted" }),
+      identity(activityNumber, {
         value: "weak",
         normalized_value: "   ",
         strength: "weak_similarity",
@@ -637,14 +642,14 @@ describe("RepeatedEffortsRepository.find", () => {
   });
 
   it("treats either activity-name kind or weak strength as weak similarity", async () => {
-    const identities = [1, 2].flatMap((n) => [
-      identity(n, {
+    const identities = [1, 2].flatMap((activityNumber) => [
+      identity(activityNumber, {
         kind: "activity_name",
         value: "Tempo",
         normalized_value: "tempo",
         strength: "exact",
       }),
-      identity(n, {
+      identity(activityNumber, {
         value: "weak-provider-workout",
         normalized_value: "tempo",
         strength: "weak_similarity",
@@ -661,8 +666,8 @@ describe("RepeatedEffortsRepository.find", () => {
   it("requires a measured duration for weak similarity", async () => {
     const { repository } = setup(
       [activity(1, { ended_at: null }), activity(2, { ended_at: null })],
-      [1, 2].map((n) =>
-        identity(n, {
+      [1, 2].map((activityNumber) =>
+        identity(activityNumber, {
           kind: "activity_name",
           value: "Tempo",
           normalized_value: "tempo",
@@ -702,9 +707,9 @@ describe("RepeatedEffortsRepository.find", () => {
       [],
       [],
       [
-        ...[1, 2].map((n) => ({
+        ...[1, 2].map((activityNumber) => ({
           group_id: id(50),
-          canonical_activity_id: id(n),
+          canonical_activity_id: id(activityNumber),
           display_name: "Saturday test",
           notes: "Steady effort",
           inclusion_note: "Same protocol",
@@ -732,8 +737,8 @@ describe("RepeatedEffortsRepository.find", () => {
   });
 
   it("keeps distinct route groups separate and labels provider evidence conservatively", async () => {
-    const route = (n: number, latitude: number, sourceProviders: string[]) => ({
-      canonical_activity_id: id(n),
+    const route = (activityNumber: number, latitude: number, sourceProviders: string[]) => ({
+      canonical_activity_id: id(activityNumber),
       points: [
         [latitude, -74],
         [latitude + 0.01, -74],

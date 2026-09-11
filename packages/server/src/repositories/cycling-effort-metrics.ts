@@ -64,14 +64,9 @@ type StreamQualityCounter = {
   barriers: number[];
 };
 
-const streamNames = [
-  "power",
-  "heartRate",
-  "cadence",
-  "speed",
-  "altitude",
-  "temperature",
-] satisfies StreamName[];
+function isStreamName(value: string): value is StreamName {
+  return value in streamFields;
+}
 
 function emptyStreamQualityCounter(): StreamQualityCounter {
   return { suspiciousSamples: 0, conflictingSamples: 0, barriers: [] };
@@ -87,7 +82,7 @@ function cleanSamples(samples: CyclingEffortSample[], duration: number) {
     altitude: emptyStreamQualityCounter(),
     temperature: emptyStreamQualityCounter(),
   };
-  for (const stream of streamNames) {
+  for (const stream of Object.keys(counts).filter(isStreamName)) {
     const field = streamFields[stream];
     const values = new Map<number, Set<number>>();
     const count = counts[stream];

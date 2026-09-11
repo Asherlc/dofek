@@ -29,7 +29,8 @@ The v1 map is deliberately the same as
 reusable effort identities. Unknown fields remain untouched in `raw`. The audit
 counts an activity with no mapped non-empty string, including a `NULL` raw
 payload, as `skipped`; its bounded detail output identifies the source field and
-value that could not produce an exact identity. It reports each source claim
+value type that could not produce an exact identity, plus the distinct-value
+count. It reports each source claim
 when members in one canonical group provide different values for the same
 provider, identity kind, and mapped source field. A conflict is evidence to
 surface, never a reason to discard a source payload.

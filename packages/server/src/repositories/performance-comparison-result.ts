@@ -21,7 +21,7 @@ import {
 import { isIdentityEquivalence, type ResolvedEquivalence } from "./performance-comparison-types.ts";
 
 export const performanceSensorRowSchema = z.object({
-  activity_id: z.string().uuid(),
+  activity_id: z.uuid(),
   average_power: z.coerce.number().nullable(),
   normalized_power: z.coerce.number().nullable(),
   average_heart_rate: z.coerce.number().nullable(),
@@ -38,9 +38,9 @@ export const performanceSensorRowSchema = z.object({
 });
 
 export const performanceClimbingRowSchema = z.object({
-  activity_id: z.string().uuid(),
-  entry_id: z.string().uuid(),
-  entry_activity_id: z.string().uuid(),
+  activity_id: z.uuid(),
+  entry_id: z.uuid(),
+  entry_activity_id: z.uuid(),
   entry_provider: z.string(),
   external_id: z.string().nullable(),
   climb_type: z.string(),
@@ -55,11 +55,11 @@ export const performanceClimbingRowSchema = z.object({
 });
 
 export const performanceStrengthRowSchema = z.object({
-  activity_id: z.string().uuid(),
-  set_id: z.string().uuid(),
-  set_activity_id: z.string().uuid(),
+  activity_id: z.uuid(),
+  set_id: z.uuid(),
+  set_activity_id: z.uuid(),
   set_provider: z.string(),
-  exercise_id: z.string().uuid(),
+  exercise_id: z.uuid(),
   exercise_index: z.coerce.number().int().optional().default(0),
   set_index: z.coerce.number().int().optional().default(0),
   set_type: z.string().nullable(),
@@ -255,25 +255,34 @@ export function buildPerformanceComparisonRows(input: {
       source_record_id: null,
       identity_evidence: identity,
     }));
-    const assertionEvidence =
-      routeMatch?.geometry || benchmark
+    const assertionBase = {
+      provider: null,
+      value: input.identityValue,
+      field: null,
+      provider_type: null,
+      source_activity_id: row.activity_id,
+      source_record_id: null,
+    };
+    const assertionEvidence = [
+      ...(routeMatch?.geometry
         ? [
             {
-              evidence_type: routeMatch
-                ? ("route_geometry" as const)
-                : ("user_benchmark_membership" as const),
-              provider: null,
-              value: input.identityValue,
-              field: null,
-              provider_type: null,
-              source_activity_id: row.activity_id,
-              source_record_id: null,
-              assertion_evidence: benchmark
-                ? { ...benchmark }
-                : { anchor_activity_id: routeMatch?.anchor_activity_id },
+              ...assertionBase,
+              evidence_type: "route_geometry" as const,
+              assertion_evidence: { anchor_activity_id: routeMatch.anchor_activity_id },
             },
           ]
-        : [];
+        : []),
+      ...(benchmark
+        ? [
+            {
+              ...assertionBase,
+              evidence_type: "user_benchmark_membership" as const,
+              assertion_evidence: { ...benchmark },
+            },
+          ]
+        : []),
+    ];
     const allEvidence = [...extraEvidence, ...assertionEvidence];
     const equivalenceEvidence = modelKey
       ? {

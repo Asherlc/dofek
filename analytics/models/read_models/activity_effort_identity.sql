@@ -14,7 +14,7 @@
 
 WITH
 {% if activity_refresh_scoped %}
-scoped_source_ids AS (
+scoped_source_ids AS MATERIALIZED (
     SELECT arrayJoin({{ activity_refresh_ids() }}) AS source_activity_id
     UNION DISTINCT
     SELECT member_activity_id AS source_activity_id
@@ -57,7 +57,7 @@ current_source_members AS MATERIALIZED (
 ),
 
 {% if is_incremental() %}
-target_source_state AS (
+target_source_state AS MATERIALIZED (
     SELECT
         existing_identities.user_id AS user_id,
         existing_identities.source_activity_id AS source_activity_id,
@@ -209,7 +209,7 @@ identity_candidates AS (
     WHERE value != ''
 ),
 
-current_identity_rows AS (
+current_identity_rows AS MATERIALIZED (
     SELECT
         user_id,
         canonical_activity_id,

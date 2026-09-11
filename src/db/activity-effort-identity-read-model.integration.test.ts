@@ -332,7 +332,7 @@ function renderModel(database: string, incremental: boolean, scopedIds?: string[
       "{{ activity_refresh_ids() }}",
       `[${(scopedIds ?? []).map((id) => `toUUID('${id}')`).join(",")}]`,
     )
-    .concat("\nSETTINGS join_use_nulls = 1, max_threads = 1");
+    .concat("\nSETTINGS join_use_nulls = 1, max_threads = 1, enable_materialized_cte = 1");
 }
 
 async function buildModel(

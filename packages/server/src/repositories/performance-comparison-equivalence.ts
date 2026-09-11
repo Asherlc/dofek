@@ -56,10 +56,9 @@ export function indexComparisonIdentities(
 ): Map<string, ComparisonIdentityRow[]> {
   const indexed = new Map<string, ComparisonIdentityRow[]>();
   for (const row of rows) {
-    indexed.set(row.canonical_activity_id, [
-      ...(indexed.get(row.canonical_activity_id) ?? []),
-      row,
-    ]);
+    const existing = indexed.get(row.canonical_activity_id);
+    if (existing) existing.push(row);
+    else indexed.set(row.canonical_activity_id, [row]);
   }
   return indexed;
 }
