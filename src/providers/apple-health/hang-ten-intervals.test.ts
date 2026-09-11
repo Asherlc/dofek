@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
-import { buildHangTenIntervals, hangTenIntervalLabel } from "./hang-ten-intervals.ts";
+import { PgDialect } from "drizzle-orm/pg-core";
+import { describe, expect, it, vi } from "vitest";
+import type { SyncDatabase } from "../../db/index.ts";
+import {
+  buildHangTenIntervals,
+  hangTenIntervalLabel,
+  replaceHangTenIntervals,
+} from "./hang-ten-intervals.ts";
 import { hangTenActivitySegments, hangTenWorkout } from "./test-helpers.ts";
 
 describe("hangTenIntervalLabel", () => {
@@ -28,6 +34,20 @@ describe("hangTenIntervalLabel", () => {
   });
 });
 describe("buildHangTenIntervals", () => {
+  it("maps work and rest segments to their execution semantics", () => {
+    const intervals = buildHangTenIntervals("act-1", hangTenWorkout());
+
+    expect(
+      intervals.map(({ segmentType, workRecoveryKind }) => ({
+        segmentType,
+        workRecoveryKind,
+      })),
+    ).toEqual([
+      { segmentType: "work", workRecoveryKind: "work" },
+      { segmentType: "rest", workRecoveryKind: "recovery" },
+    ]);
+  });
+
   it("keeps later intervals at the last known time after a missing duration", () => {
     const start = new Date("2026-08-07T14:00:00Z");
     const workout = hangTenWorkout({
@@ -87,6 +107,34 @@ describe("buildHangTenIntervals", () => {
         startedAt: new Date("2026-08-07T14:00:10Z"),
         endedAt: undefined,
       }),
+    ]);
+  });
+});
+
+describe("replaceHangTenIntervals", () => {
+  it("persists interval end times and execution semantics", async () => {
+    const execute = vi.fn().mockResolvedValue([]);
+    const db: SyncDatabase = {
+      delete: vi.fn(),
+      execute,
+      insert: vi.fn(),
+      select: vi.fn(),
+    };
+
+    await replaceHangTenIntervals(db, "act-1", hangTenWorkout());
+
+    const query = execute.mock.calls[0]?.[0];
+    if (query === undefined || typeof query === "string") {
+      throw new Error("Expected a Drizzle SQL query");
+    }
+    const { params } = new PgDialect().sqlToQuery(query.getSQL());
+    expect([params[6], params[10], params[11], params[18], params[22], params[23]]).toEqual([
+      new Date("2026-08-07T14:00:07Z"),
+      "work",
+      "work",
+      new Date("2026-08-07T14:00:10Z"),
+      "rest",
+      "recovery",
     ]);
   });
 });

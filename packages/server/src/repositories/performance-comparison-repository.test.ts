@@ -93,6 +93,25 @@ function recordedIdentity(
   };
 }
 
+function routeRow(activityId: string) {
+  return {
+    canonical_activity_id: activityId,
+    route_fingerprint: "route-fingerprint",
+    points: [
+      [37, -122],
+      [37.01, -122],
+      [37.02, -122],
+    ] satisfies [number, number][],
+    route_distance_meters: 2224,
+    elevation_profile: [],
+    coverage_pct: 100,
+    largest_gap_seconds: 1,
+    geometry_status: "available",
+    source_providers: [activityId === FIRST_ID ? "garmin" : "wahoo"],
+    source_devices: [activityId === FIRST_ID ? "edge" : "bolt"],
+  };
+}
+
 describe("PerformanceComparisonRepository", () => {
   it.each([
     {
@@ -226,6 +245,135 @@ describe("PerformanceComparisonRepository", () => {
     expect(result.performances[1]?.quality.flags).toContain("route_geometry_unavailable");
     expect(result.performances[1]?.quality.flags).not.toContain("route_geometry_rejected");
     expect(performanceComparisonOutputSchema.parse({ result }).result).toEqual(result);
+  });
+
+  it("derives a canonical route from reference geometry and preserves matched evidence", async () => {
+    const reference = activityRow({ modality: "outdoor" });
+    const candidate = activityRow({
+      activity_id: SECOND_ID,
+      member_activity_ids: [SECOND_ID],
+      modality: "outdoor",
+    });
+    const db = database(reference, [reference, candidate]);
+    const routes = [routeRow(FIRST_ID), routeRow(SECOND_ID)];
+    const result = await new PerformanceComparisonRepository(
+      db,
+      {
+        query: vi.fn(async (_schema, text: string) =>
+          text.includes("activity_route_identity") ? routes : [],
+        ),
+      },
+      USER_ID,
+      "UTC",
+    ).compare({
+      discoveryActivityIds: [FIRST_ID, SECOND_ID],
+      startDate: "2026-06-01",
+      endDate: "2026-07-31",
+      referenceActivityId: FIRST_ID,
+      equivalence: null,
+      providers: [],
+      modalities: ["outdoor"],
+      cursor: null,
+      limit: 25,
+    });
+
+    expect(result.equivalence).toMatchObject({
+      basis: "derived_from_reference",
+      identity: { kind: "canonical_route", value: FIRST_ID },
+      strength: "strong_inferred",
+    });
+    expect(result.performances.map((performance) => performance.activity_id)).toEqual([
+      FIRST_ID,
+      SECOND_ID,
+    ]);
+    expect(result.performances[1]).toMatchObject({
+      equivalence_evidence_count: 1,
+      equivalence_evidence: [
+        {
+          evidence_type: "route_geometry",
+          assertion_evidence: { anchor_activity_id: FIRST_ID },
+        },
+      ],
+      route: {
+        status: "strong_inferred",
+        geometry: { matched: true, overlap_percentage: 1 },
+        anchor_activity_id: FIRST_ID,
+        source_providers: ["wahoo"],
+        source_devices: ["bolt"],
+      },
+    });
+    const scopeQuery = db.execute.mock.calls
+      .map(([query]) => queryText(query))
+      .find((text) => text.includes("performance-comparison:scope"));
+    expect(scopeQuery).toContain("a.id");
+    expect(scopeQuery).not.toContain("BETWEEN");
+  });
+
+  it("compares user-owned benchmark members with membership evidence", async () => {
+    const reference = activityRow();
+    const candidate = activityRow({ activity_id: SECOND_ID, member_activity_ids: [SECOND_ID] });
+    const db = database(reference, [reference, candidate]);
+    const original = db.execute.getMockImplementation();
+    db.execute.mockImplementation((query: unknown) => {
+      const text = queryText(query);
+      if (text.includes("performance-comparison:benchmark")) {
+        return Promise.resolve([
+          {
+            canonical_activity_id: FIRST_ID,
+            display_name: "Controlled loop",
+            notes: "Same course and protocol",
+            inclusion_note: "Dry conditions",
+          },
+          {
+            canonical_activity_id: SECOND_ID,
+            display_name: "Controlled loop",
+            notes: "Same course and protocol",
+            inclusion_note: "Dry conditions",
+          },
+        ]);
+      }
+      if (!original) throw new Error("Missing database fixture");
+      return original(query);
+    });
+
+    const result = await new PerformanceComparisonRepository(
+      db,
+      { query: vi.fn().mockResolvedValue([]) },
+      USER_ID,
+      "UTC",
+    ).compare({
+      startDate: "2026-06-01",
+      endDate: "2026-07-31",
+      referenceActivityId: null,
+      equivalence: { kind: "user_defined_benchmark", value: THIRD_ID },
+      providers: [],
+      modalities: [],
+      cursor: null,
+      limit: 25,
+    });
+
+    expect(result.equivalence).toMatchObject({
+      basis: "caller_asserted",
+      identity: { kind: "user_defined_benchmark", value: THIRD_ID },
+      strength: "caller_asserted",
+    });
+    expect(result.performances).toHaveLength(2);
+    for (const performance of result.performances) {
+      expect(performance).toMatchObject({
+        equivalence_evidence_count: 1,
+        equivalence_evidence: [
+          {
+            evidence_type: "user_benchmark_membership",
+            assertion_evidence: {
+              display_name: "Controlled loop",
+              notes: "Same course and protocol",
+              inclusion_note: "Dry conditions",
+            },
+          },
+        ],
+        quality: { comparable: true },
+      });
+    }
   });
 
   it.each([99, 100, 101])(
@@ -482,10 +630,26 @@ describe("PerformanceComparisonRepository", () => {
     });
     expect(performanceComparisonOutputSchema.parse({ result }).result).toEqual(result);
     expect(result.coverage.cycling_metrics_from_deduped_samples).toBe(2);
+    expect(result.coverage.environment_metrics_from_deduped_samples).toBe(0);
     expect(result.performances[1]?.provenance.sample_device_ids).toEqual(["meter"]);
+    expect(result.performances[1]?.provenance.sample_source_providers).toEqual(["zwift"]);
     expect(result.performances[1]).toMatchObject({
       metrics: {
-        cycling: { average_power_watts: 195, average_heart_rate_bpm: 143 },
+        cycling: {
+          average_power_watts: 195,
+          normalized_power_watts: 195,
+          average_heart_rate_bpm: 143,
+          max_heart_rate_bpm: 143,
+          average_cadence_rpm: 90,
+          power_to_heart_rate_ratio: expect.closeTo(195 / 143, 3),
+          distance_meters: null,
+          elevation_gain_meters: null,
+          sample_coverage: {
+            power_samples: 1800,
+            heart_rate_samples: 1800,
+            status: "available",
+          },
+        },
         cycling_effort: {
           workout: { power: { averageWatts: 195, intensityFactor: null } },
           thresholds: { ftp: null },
@@ -495,6 +659,7 @@ describe("PerformanceComparisonRepository", () => {
             expect.objectContaining({ metric: "intensity_factor" }),
           ]),
         },
+        environment: { average_temperature_c: null, status: "not_available" },
       },
       delta_to_baseline: { average_power_watts: 15, average_heart_rate_bpm: -2 },
     });

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   type CyclingWorkoutSample,
   computeCyclingWorkoutMetrics,
+  resampleCyclingStream,
 } from "./cycling-workout-metrics.ts";
 
 function constantSamples(
@@ -14,6 +15,168 @@ function constantSamples(
     ...values,
   }));
 }
+
+describe("resampleCyclingStream", () => {
+  const selectPower = (sample: CyclingWorkoutSample) => sample.powerWatts;
+
+  it("returns duration-aligned missing buckets when the stream is empty", () => {
+    const result = resampleCyclingStream([], 3, selectPower);
+
+    expect(result.values).toEqual([null, null, null]);
+    expect(result.maximumValue).toBeNull();
+    expect(result.coverage).toEqual({
+      observedSamples: 0,
+      coveredSeconds: 0,
+      missingSeconds: 3,
+      zeroSeconds: 0,
+      coveragePct: 0,
+      medianSampleIntervalSeconds: null,
+      largestGapSeconds: null,
+    });
+  });
+
+  it("includes offsets at zero while excluding null and out-of-range samples", () => {
+    const result = resampleCyclingStream(
+      [
+        { elapsedSeconds: -1, powerWatts: 999 },
+        { elapsedSeconds: 0, powerWatts: 10 },
+        { elapsedSeconds: 0.5, powerWatts: null },
+        { elapsedSeconds: 1, powerWatts: 20 },
+        { elapsedSeconds: 2, powerWatts: 999 },
+      ],
+      2,
+      selectPower,
+    );
+
+    expect(result.values).toEqual([10, 20]);
+    expect(result.maximumValue).toBe(20);
+    expect(result.coverage.observedSamples).toBe(2);
+  });
+
+  it("preserves the native peak when a lower sample completes the same second", () => {
+    const result = resampleCyclingStream(
+      [
+        { elapsedSeconds: 0, powerWatts: 300 },
+        { elapsedSeconds: 0.5, powerWatts: 100 },
+      ],
+      1,
+      selectPower,
+    );
+
+    expect(result.values).toEqual([200]);
+    expect(result.maximumValue).toBe(300);
+    expect(result.coverage.coveredSeconds).toBe(1);
+  });
+
+  it("treats an in-range barrier as missing and excludes it from observed samples", () => {
+    const result = resampleCyclingStream(
+      [
+        { elapsedSeconds: 0, powerWatts: 100 },
+        { elapsedSeconds: 1, powerWatts: 200 },
+      ],
+      2,
+      selectPower,
+      0,
+      [0],
+    );
+
+    expect(result.values).toEqual([null, 200]);
+    expect(result.maximumValue).toBe(200);
+    expect(result.coverage).toMatchObject({
+      observedSamples: 1,
+      coveredSeconds: 1,
+      missingSeconds: 1,
+    });
+  });
+
+  it("ignores barriers outside the activity boundaries", () => {
+    const result = resampleCyclingStream(
+      [{ elapsedSeconds: 1, powerWatts: 100 }],
+      4,
+      selectPower,
+      0,
+      [-1, 4],
+    );
+
+    expect(result.values).toEqual([null, 100, null, null]);
+    expect(result.coverage).toMatchObject({
+      observedSamples: 1,
+      coveredSeconds: 1,
+      medianSampleIntervalSeconds: null,
+      largestGapSeconds: null,
+    });
+  });
+
+  it("does not report a peak from a partially covered barrier window", () => {
+    const result = resampleCyclingStream(
+      [{ elapsedSeconds: 0, powerWatts: 300 }],
+      1,
+      selectPower,
+      0,
+      [0.5],
+    );
+
+    expect(result.values).toEqual([null]);
+    expect(result.maximumValue).toBeNull();
+    expect(result.coverage).toMatchObject({
+      observedSamples: 1,
+      coveredSeconds: 0,
+      missingSeconds: 1,
+    });
+  });
+
+  it("bridges a gap exactly at the continuity tolerance", () => {
+    const result = resampleCyclingStream(
+      [0, 3, 6, 9, 15].map((elapsedSeconds) => ({ elapsedSeconds, powerWatts: 100 })),
+      18,
+      selectPower,
+    );
+
+    expect(result.values).toEqual(Array.from({ length: 18 }, () => 100));
+    expect(result.coverage).toMatchObject({
+      observedSamples: 5,
+      coveredSeconds: 18,
+      missingSeconds: 0,
+      medianSampleIntervalSeconds: 3,
+      largestGapSeconds: 6,
+    });
+  });
+
+  it("does not bridge a gap beyond the capped continuity tolerance", () => {
+    const result = resampleCyclingStream(
+      [
+        { elapsedSeconds: 0, powerWatts: 100 },
+        { elapsedSeconds: 15, powerWatts: 200 },
+      ],
+      25,
+      selectPower,
+    );
+
+    expect(result.values).toEqual([
+      ...Array.from({ length: 10 }, () => 100),
+      ...Array.from({ length: 5 }, () => null),
+      ...Array.from({ length: 10 }, () => 200),
+    ]);
+    expect(result.coverage).toMatchObject({
+      coveredSeconds: 20,
+      missingSeconds: 5,
+      medianSampleIntervalSeconds: 15,
+      largestGapSeconds: 15,
+    });
+  });
+
+  it("accepts coverage exactly at the full-second floating-point tolerance", () => {
+    const result = resampleCyclingStream(
+      [{ elapsedSeconds: 1e-9, powerWatts: 100 }],
+      1,
+      selectPower,
+    );
+
+    expect(result.values[0]).toBeCloseTo(99.9999999, 8);
+    expect(result.maximumValue).toBe(100);
+    expect(result.coverage.coveredSeconds).toBe(1);
+  });
+});
 
 describe("computeCyclingWorkoutMetrics", () => {
   it("averages sequential sub-second observations using their covered durations", () => {

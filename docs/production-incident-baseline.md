@@ -26462,22 +26462,29 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   context modules; Knip found two unused exported types; Squawk rejected an
   interval migration's integer and immediately validated constraints; SQLFluff
   found migration indentation errors; and CSpell found six unsupported words.
-  The replacement run then reported a 60% mutation score for the optional
-  activity-name assertion adapter: three mutants survived and one had no
-  coverage. These were branch defects rather than transient CI failures.
+  The replacement runs then reported a 60% mutation score for the optional
+  activity-name assertion adapter followed by seven under-threshold mutation
+  shards covering effort trends, performance comparison, interval merging and
+  provenance, cycling resampling, duration mapping, and Apple Health interval
+  normalization. These were branch test-coverage defects rather than transient
+  CI failures.
 - **Direct fix:** Aligned the Expo package set with `expo install --fix`, removed
   the cycle and dead exports, changed the unbounded interval zone integer to a
   bigint, introduced and then validated new constraints with `NOT VALID`, and
-  corrected SQL and prose formatting. Added direct adapter regressions for
-  explicit true/false assertions and an omitted assertion. Expo documents
+  corrected SQL and prose formatting. Added direct behavioral regressions for
+  the changed mutation ranges, including explicit identity branches, benchmark
+  and route evidence, interval conflict/provenance handling, duration and
+  resampling boundaries, and provider interval semantics. Expo documents
   `expo install --fix` as the supported dependency-alignment command in its
   [CLI reference](https://docs.expo.dev/more/expo-cli/#install), and PostgreSQL
   documents deferred constraint validation in
   [`ALTER TABLE`](https://www.postgresql.org/docs/current/sql-altertable.html).
 - **Validation / remaining risk:** The six original failing commands pass
   locally. The affected migrations also passed eight tests against real
-  Postgres, and targeted Stryker validation killed all four assertion-adapter
-  mutants for a 100% score. The full Docker integration wrapper remained
-  unavailable because of the separately recorded shared-VM AIO exhaustion; no
-  timeout, retry, or service setting was changed. A replacement CI run is
-  required before merge.
+  Postgres. Targeted Stryker validation put every failed shard above the 75%
+  breaking threshold: five reached 100%, effort trend reached 98.97%, cycling
+  resampling reached 91.87%, and the complete 313-mutant performance-comparison
+  shard reached 75.08%. The full Docker integration wrapper remained unavailable
+  because of the separately recorded shared-VM AIO exhaustion; no timeout,
+  retry, or service setting was changed. A replacement CI run is required
+  before merge.
