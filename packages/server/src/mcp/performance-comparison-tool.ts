@@ -14,7 +14,7 @@ import { requireMcpScope } from "./token-repository.ts";
 import { jsonToolResult } from "./tool-result.ts";
 import { assertDateRange } from "./tool-utils.ts";
 
-const equivalenceSchema = z.union([
+export const performanceComparisonEquivalenceInputSchema = z.union([
   identityEquivalenceSchema,
   z
     .object({
@@ -59,9 +59,9 @@ const equivalenceSchema = z.union([
     .strict(),
 ]);
 
-type ToolEquivalence = z.infer<typeof equivalenceSchema>;
+type ToolEquivalence = z.infer<typeof performanceComparisonEquivalenceInputSchema>;
 
-function toRepositoryEquivalence(input: ToolEquivalence): PerformanceEquivalence {
+export function toRepositoryEquivalence(input: ToolEquivalence): PerformanceEquivalence {
   if ("value" in input && input.kind !== "activity_name") return input;
   if (input.kind === "strength_exercise_id") {
     return { kind: input.kind, exerciseId: input.exercise_id };
@@ -120,7 +120,7 @@ export function registerPerformanceComparisonTool(
         start_date: dateSchema,
         end_date: dateSchema,
         reference_activity_id: z.uuid().optional(),
-        equivalence: equivalenceSchema.optional(),
+        equivalence: performanceComparisonEquivalenceInputSchema.optional(),
         providers: z.array(z.string().min(1)).max(50).optional(),
         modalities: z.array(z.enum(ACTIVITY_MODALITIES)).max(ACTIVITY_MODALITIES.length).optional(),
         cursor: z.string().min(1).optional(),

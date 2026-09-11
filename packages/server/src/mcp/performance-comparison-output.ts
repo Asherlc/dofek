@@ -491,6 +491,10 @@ export const cyclingEffortMetricsSchema = z
   })
   .strict();
 
+export const performanceComparisonEquivalenceSchema = identityBundleSchema
+  .extend({ key: equivalenceKeySchema })
+  .strict();
+
 /** Strict MCP wire contract for equivalence-constrained longitudinal performance comparisons. */
 export const performanceComparisonOutputSchema = z
   .object({
@@ -499,7 +503,7 @@ export const performanceComparisonOutputSchema = z
         range: z
           .object({ start_date: z.string(), end_date: z.string(), timezone: z.string() })
           .strict(),
-        equivalence: identityBundleSchema.extend({ key: equivalenceKeySchema }).strict(),
+        equivalence: performanceComparisonEquivalenceSchema,
         baseline: z
           .object({
             activity_id: z.uuid(),
