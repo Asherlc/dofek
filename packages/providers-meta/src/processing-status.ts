@@ -135,8 +135,8 @@ export interface ProcessingTargetScope {
  * happen to still be in progress. When exactly one provider is responsible
  * for every non-ready operation, attribute the target to that provider (e.g.
  * "Syncing Peloton") instead of the generic "recompute" framing, which
- * misdescribes an in-progress provider sync as a recompute the user never
- * requested.
+ * incorrectly describes an in-progress provider sync as a recompute the
+ * user never requested.
  */
 export function resolveProcessingTargetScope(input: {
   scopeProviderId: string | null;
