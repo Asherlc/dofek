@@ -26539,3 +26539,59 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   proof requires the unchanged integration suite in isolated CI; use the
   [shared Docker resource runbook](testing.md#shared-docker-vm-resource-pressure)
   before another local long-running attempt.
+
+## 2026-09-12 — Activities page stuck on "Preparing to recompute activities" indefinitely
+
+- **Symptoms / user impact:** A user reported the web Activities page showing
+  a UI error and then getting permanently stuck on "Preparing to recompute
+  activities," with no progress. Any user with a slow or stalled provider
+  sync would see the same generic, misleading message indefinitely.
+- **Evidence:** Read-only production Postgres/Redis/Redpanda inspection (SSH +
+  `psql`/`redis-cli`/`rpk`, all read-only, done with explicit user approval)
+  found: (1) `processing-reconciliation` logs showed `completed 0` on every
+  cycle for the full 20+ hour log window; (2) `fitness.processing_queue_outbox`
+  had an operation from 2026-07-24 still `pending`, with its last real stage
+  event on 2026-07-27 — 47 days of zero progress, still re-checked every 5
+  minutes; (3) a live WHOOP sync for the affected user had been open since
+  00:20 that day (14.5+ hours), driven by ~140 separate BullMQ job executions
+  of WHOOP's per-day/per-sleep step-chain plan, each waiting behind the
+  provider's shared `frequentProvider(1, { max: 1, duration: 1_000 })` queue
+  limiter (`src/jobs/provider-queue-config.ts`); Redpanda consumer lag was 0 on
+  both live topics, ruling out a stuck sink.
+- **Root cause:** `reconcileMetricOutput()` requires every metric batch ever
+  registered for an operation to have a matching ClickHouse acknowledgment
+  before the operation can complete. A long step-chain sync (or one abandoned
+  mid-chain) never satisfies that all-or-nothing check, so the operation never
+  reaches "ready" and `fitness.processing_queue_outbox` polls it forever with
+  no timeout. Separately, `ActivitiesPage`'s processing widget queries
+  `processing.status({ datasets: ["activity"] })` with no `providerId`, so
+  `ProcessingRepository.status()` aggregates every operation touching
+  `activity` — including an unrelated provider's slow sync — and
+  `processingTarget()` had no way to attribute the resulting "waiting" status
+  to a specific provider, always falling back to the generic "recompute"
+  wording even when a real provider sync was the actual cause.
+- **Fix:** `src/processing/processing-reconciler.ts` now marks an operation
+  that has not fully reconciled within `STALE_OPERATION_THRESHOLD_MS` (12
+  hours) as `failed` with an actionable error and dequeues it, instead of
+  polling forever. `packages/providers-meta/src/processing-status.ts` adds
+  `resolveProcessingTargetScope()`, used by both web and mobile
+  `ProcessingStatusWidget`s, which attributes an unscoped query to the single
+  provider responsible when exactly one explains every non-ready operation.
+- **Validation:** New unit coverage in
+  `src/processing/processing-reconciler.test.ts`,
+  `packages/providers-meta/src/processing-status.test.ts`, and both
+  `ProcessingStatusWidget.test.tsx` files; existing
+  `processing-reconciler.integration.test.ts` passed against real Postgres.
+  `pnpm test:changed`, `pnpm lint`, and `tsc --noEmit` (root, server, web,
+  mobile, providers-meta) all pass.
+- **Remaining risk:** The 12-hour threshold is a judgment call — generous
+  enough for the slowest legitimate step-chain sync observed, but unvalidated
+  against real queue-contention peaks. The deeper capacity question (WHOOP's
+  per-user step count vs. its 1 job/sec shared queue limiter, and whether
+  `scheduledSyncLookbackDays: 30` is right for a "frequent" recurring sync) is
+  unresolved and follow-up work.
+- **Follow-up:** Consider a per-provider or per-user WHOOP queue limiter,
+  reviewing `scheduledSyncLookbackDays` for step-chain providers, and alerting
+  on `processing-reconciliation`'s new `abandoned` counter so a real stuck
+  pipeline (as opposed to a merely slow one) pages someone instead of only
+  surfacing in the per-user UI.
