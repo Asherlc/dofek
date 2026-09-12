@@ -106,7 +106,7 @@ describe("WhoopProvider basic properties", () => {
     const provider = new WhoopProvider();
     expect(provider.id).toBe("whoop");
     expect(provider.name).toBe("WHOOP (Cloud)");
-    expect(provider.scheduledSyncLookbackDays).toBe(30);
+    expect(provider.scheduledSyncLookbackDays).toBe(3);
   });
 
   it("validate returns null (always enabled)", async () => {
