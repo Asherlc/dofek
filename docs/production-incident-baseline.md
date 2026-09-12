@@ -26586,12 +26586,27 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   mobile, providers-meta) all pass.
 - **Remaining risk:** The 12-hour threshold is a judgment call — generous
   enough for the slowest legitimate step-chain sync observed, but unvalidated
-  against real queue-contention peaks. The deeper capacity question (WHOOP's
-  per-user step count vs. its 1 job/sec shared queue limiter, and whether
-  `scheduledSyncLookbackDays: 30` is right for a "frequent" recurring sync) is
-  unresolved and follow-up work.
-- **Follow-up:** Consider a per-provider or per-user WHOOP queue limiter,
-  reviewing `scheduledSyncLookbackDays` for step-chain providers, and alerting
-  on `processing-reconciliation`'s new `abandoned` counter so a real stuck
-  pipeline (as opposed to a merely slow one) pages someone instead of only
-  surfacing in the per-user UI.
+  against real queue-contention peaks.
+- **Follow-up investigation (same day):** The deeper capacity question turned
+  out not to be multi-user contention — production has only 2 WHOOP-connected
+  users, and the affected user's adaptive per-request throttle was healthy
+  (`throttleMs` at its 500ms floor, `inferredBudget` at the untouched default,
+  no observed 429s). Direct ClickHouse inspection showed the CDC
+  acknowledgment pipeline was not stuck either: Postgres's
+  `processing_metric_stream_batch` and ClickHouse's
+  `ingest.metric_stream_processing_acknowledgement` matched exactly
+  (11,216/11,216) at the moment of inspection, yet the very next
+  reconciliation cycle still reported no progress, because the operation kept
+  registering new batches faster than a quiet moment could occur. Root cause:
+  `WhoopProvider.scheduledSyncLookbackDays = 30` (added in #1303 solely for
+  developer-workout deletion reconciliation) also widened `heart_rate` and
+  `journal` step planning, which have no "already synced" check (unlike
+  `strain_deep_dive`/`sleep_stages`) — so every periodic scheduled sync
+  re-fetched the full 30-day, 6-second-resolution heart-rate history from
+  scratch. Fixed by shrinking `scheduledSyncLookbackDays` to 3; verified
+  `sync-orchestrator.ts`'s `absenceWindow.withMinimumLookback(30)` keeps the
+  deletion-reconciliation window at 30 days independent of this value. See
+  `src/providers/whoop/provider.ts`.
+- **Follow-up:** Alert on `processing-reconciliation`'s new `abandoned`
+  counter so a genuinely stuck pipeline (as opposed to a merely slow one)
+  pages someone instead of only surfacing in the per-user UI.
