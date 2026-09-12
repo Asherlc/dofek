@@ -178,7 +178,24 @@ describe("ProcessingStatusWidget", () => {
     expect(screen.queryByText("Receiving data")).toBeNull();
   });
 
-  it("names the affected area when processing is not provider-scoped", () => {
+  it("names the affected area when no single provider explains the update", () => {
+    render(
+      <ProcessingStatusWidget
+        data={{
+          ...snapshot,
+          scope: { providerId: null, datasets: ["sleep"] },
+          datasets: [{ ...activityDataset, key: "sleep", label: "Sleep" }],
+          operations: [{ ...operation, providerId: null }],
+        }}
+      />,
+    );
+
+    const progress = screen.getByRole("progressbar", { name: "Recomputing sleep" });
+    expect(progress.getAttribute("accessibilityValue")).not.toBeNull();
+    expect(screen.getByText("Recomputing sleep")).toBeTruthy();
+  });
+
+  it("attributes an unscoped query to the single provider still in progress", () => {
     render(
       <ProcessingStatusWidget
         data={{
@@ -189,9 +206,8 @@ describe("ProcessingStatusWidget", () => {
       />,
     );
 
-    const progress = screen.getByRole("progressbar", { name: "Recomputing sleep" });
-    expect(progress.getAttribute("accessibilityValue")).not.toBeNull();
-    expect(screen.getByText("Recomputing sleep")).toBeTruthy();
+    expect(screen.getByText("Syncing Garmin")).toBeTruthy();
+    expect(screen.queryByText("Recomputing sleep")).toBeNull();
   });
 
   it("surfaces the server error message", () => {

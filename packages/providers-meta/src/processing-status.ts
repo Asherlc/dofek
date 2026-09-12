@@ -118,6 +118,52 @@ export function processingTarget(input: {
   return { action: "recompute", label: formatList(targets) };
 }
 
+export interface ProcessingTargetOperationSummary {
+  providerId: string | null;
+  kind: string;
+  status: ProcessingDisplayStatus;
+}
+
+export interface ProcessingTargetScope {
+  providerId: string | null;
+  operationKind: string | null;
+}
+
+/**
+ * A dataset-scoped status query (no `providerId` in scope) aggregates every
+ * operation touching that dataset, including unrelated provider syncs that
+ * happen to still be in progress. When exactly one provider is responsible
+ * for every non-ready operation, attribute the target to that provider (e.g.
+ * "Syncing Peloton") instead of the generic "recompute" framing, which
+ * misdescribes an in-progress provider sync as a recompute the user never
+ * requested.
+ */
+export function resolveProcessingTargetScope(input: {
+  scopeProviderId: string | null;
+  operations: readonly ProcessingTargetOperationSummary[];
+}): ProcessingTargetScope {
+  if (input.scopeProviderId) {
+    return {
+      providerId: input.scopeProviderId,
+      operationKind: input.operations[0]?.kind ?? null,
+    };
+  }
+
+  const nonReadyOperations = input.operations.filter((operation) => operation.status !== "ready");
+  const distinctProviderIds = new Set(
+    nonReadyOperations
+      .map((operation) => operation.providerId)
+      .filter((providerId): providerId is string => providerId !== null),
+  );
+  if (distinctProviderIds.size === 1) {
+    const [providerId] = distinctProviderIds;
+    const operation = nonReadyOperations.find((candidate) => candidate.providerId === providerId);
+    return { providerId: providerId ?? null, operationKind: operation?.kind ?? null };
+  }
+
+  return { providerId: null, operationKind: input.operations[0]?.kind ?? null };
+}
+
 export function processingStatusMessage(input: {
   status: ProcessingDisplayStatus;
   errorMessage: string | null;
