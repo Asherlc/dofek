@@ -11,6 +11,7 @@ vi.mock("../../../../src/db/provider-data-deletion.ts", async (importOriginal) =
 
 const {
   mockInvalidateByPrefix,
+  mockLogSync,
   mockMetricStreamPublishRows,
   mockPublishedMetricStreamRowBatches,
   mockSentryCaptureException,
@@ -18,11 +19,16 @@ const {
   const mockPublishedMetricStreamRowBatches: unknown[][] = [];
   return {
     mockInvalidateByPrefix: vi.fn().mockResolvedValue(undefined),
+    mockLogSync: vi.fn().mockResolvedValue(undefined),
     mockMetricStreamPublishRows: vi.fn().mockResolvedValue([]),
     mockPublishedMetricStreamRowBatches,
     mockSentryCaptureException: vi.fn(),
   };
 });
+
+vi.mock("dofek/db/sync-log", () => ({
+  logSync: (...args: unknown[]) => mockLogSync(...args),
+}));
 
 const providerActivitySyncMocks = vi.hoisted(() => ({
   reconcile: vi.fn().mockResolvedValue(undefined),
@@ -133,6 +139,7 @@ describe("healthKitSyncRouter", () => {
     vi.mocked(healthKitRecordsTotal.add).mockClear();
     vi.mocked(healthKitPushTotal.add).mockClear();
     mockInvalidateByPrefix.mockClear();
+    mockLogSync.mockClear();
     mockSentryCaptureException.mockClear();
     mockMetricStreamPublishRows.mockReset();
     mockPublishedMetricStreamRowBatches.length = 0;
@@ -143,6 +150,35 @@ describe("healthKitSyncRouter", () => {
       const publishedRows = [...rows];
       mockPublishedMetricStreamRowBatches.push(publishedRows);
       return publishedRows;
+    });
+  });
+
+  describe("recordSync", () => {
+    it("records the completed native sync as provider history", async () => {
+      const caller = createCaller({
+        db: { execute: makeExecute() },
+        userId: "00000000-0000-0000-0000-000000000001",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.recordSync({
+          status: "success",
+          recordCount: 42,
+          durationMs: 1_250,
+          origin: "manual",
+        }),
+      ).resolves.toEqual({ recorded: true });
+
+      expect(mockLogSync).toHaveBeenCalledWith(expect.anything(), {
+        providerId: "apple_health",
+        dataType: "sync",
+        status: "success",
+        recordCount: 42,
+        durationMs: 1_250,
+        origin: "manual",
+        userId: "00000000-0000-0000-0000-000000000001",
+      });
     });
   });
 

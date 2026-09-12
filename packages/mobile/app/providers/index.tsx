@@ -670,6 +670,12 @@ export default function ProvidersScreen() {
     statsMap[s.providerId] = s;
   }
   const logList: SyncLog[] = logs.data ?? [];
+  const appleHealthLogsQuery = trpc.providerDetail.logs.useQuery({
+    providerId: "apple_health",
+    limit: 3,
+    offset: 0,
+    filters: { dataType: "sync" },
+  });
 
   const { refreshing, onRefresh } = useRefresh({
     invalidate: () =>
@@ -688,7 +694,16 @@ export default function ProvidersScreen() {
     (provider) => !hiddenProviderIds.has(provider.id),
   );
   const enabledProviders = visibleProviderList.filter((p) => p.enabled);
-  const appleHealthProvider = appleHealth.model.toProviderCard();
+  const appleHealthProvider = appleHealthLogsQuery.data
+    ? appleHealth.model.toProviderCard({
+        lastSyncAt: appleHealthLogsQuery.data[0]?.syncedAt ?? null,
+        lastSuccessfulSyncAt:
+          appleHealthLogsQuery.data.find((log) => log.status === "success")?.syncedAt ?? null,
+        recentLogs: appleHealthLogsQuery.data,
+      })
+    : appleHealth.model.toProviderCard();
+  const appleHealthHistoryError =
+    appleHealthLogsQuery.error && appleHealthLogsQuery.data === undefined;
   const activeImportRows = activeImports.error ? [] : (activeImports.data ?? []);
   const activeImportByProvider = new Map(
     activeImportRows.map((activeImport) => [activeImport.providerId, activeImport]),
@@ -831,22 +846,35 @@ export default function ProvidersScreen() {
           minHeight={96}
         />
       ) : null}
-      <FileImportProviderCard
-        provider={{
-          ...appleHealthProvider,
-        }}
-        stats={statsMap.apple_health}
-        syncing={healthKitSyncing}
-        importing={appleHealthImportProgress !== undefined}
-        syncProgress={
-          appleHealthImportProgress ??
-          (healthKitSyncing || healthKitProgress ? { message: healthKitProgress } : undefined)
-        }
-        onSync={() => handleHealthKitSync()}
-        onConnect={handleHealthKitConnect}
-        onImportProvider={handleFileImportProvider}
-        onPress={() => router.push("/providers/apple_health")}
-      />
+      <View>
+        <FileImportProviderCard
+          provider={{
+            ...appleHealthProvider,
+          }}
+          stats={statsMap.apple_health}
+          syncing={healthKitSyncing}
+          importing={appleHealthImportProgress !== undefined}
+          syncProgress={
+            appleHealthImportProgress ??
+            (healthKitSyncing || healthKitProgress ? { message: healthKitProgress } : undefined)
+          }
+          onSync={() => handleHealthKitSync()}
+          onConnect={handleHealthKitConnect}
+          onImportProvider={handleFileImportProvider}
+          onPress={() => router.push("/providers/apple_health")}
+        />
+        {appleHealthHistoryError ? (
+          <QueryStatePanel
+            variant="error"
+            title="Could not load Apple Health sync history"
+            message={getQueryErrorMessage(
+              appleHealthLogsQuery.error,
+              "Failed to load Apple Health sync history.",
+            )}
+            minHeight={72}
+          />
+        ) : null}
+      </View>
       {appleHealth.model.shouldShowPermissionBanner() && (
         <TouchableOpacity
           style={styles.permissionBanner}

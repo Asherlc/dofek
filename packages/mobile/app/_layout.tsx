@@ -418,6 +418,9 @@ function AuthGate() {
         },
       },
       healthKitSync: {
+        recordSync: {
+          mutate: (input) => trpcClient.healthKitSync.recordSync.mutate(input),
+        },
         deleteQuantitySamples: {
           mutate: (input) => trpcClient.healthKitSync.deleteQuantitySamples.mutate(input),
         },

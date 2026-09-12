@@ -281,12 +281,14 @@ vi.mock("../../lib/health-kit-sync", () => ({
 
 vi.mock("@dofek/format/format", () => ({
   formatDateYmd: (date?: Date) => (date ?? new Date()).toISOString().slice(0, 10),
+  formatDurationSeconds: (seconds: number) => `${seconds} seconds`,
   formatRelativeTime: (date: string) => `${date} ago`,
 }));
 
 const mockProvidersQuery = vi.fn();
 const mockStatsQuery = vi.fn();
 const mockLogsQuery = vi.fn();
+const mockAppleHealthLogsQuery = vi.fn();
 const mockDataHealthQuery = vi.fn();
 const mockActiveSyncsQuery = vi.fn();
 const mockActiveImportsQuery = vi.fn();
@@ -332,6 +334,9 @@ vi.mock("../../lib/trpc", () => ({
       activeSyncs: { useQuery: (...args: unknown[]) => mockActiveSyncsQuery(...args) },
       activeImports: { useQuery: (...args: unknown[]) => mockActiveImportsQuery(...args) },
     },
+    providerDetail: {
+      logs: { useQuery: (...args: unknown[]) => mockAppleHealthLogsQuery(...args) },
+    },
     fileUpload: {
       initiate: { useMutation: () => ({ mutateAsync: mockInitiateFileUpload }) },
       authorizeParts: { useMutation: () => ({ mutateAsync: mockAuthorizeFileUploadParts }) },
@@ -355,6 +360,7 @@ vi.mock("../../lib/trpc", () => ({
       invalidate: mockInvalidate,
       client: {
         healthKitSync: {
+          recordSync: { mutate: vi.fn().mockResolvedValue({ recorded: true }) },
           deleteQuantitySamples: { mutate: vi.fn().mockResolvedValue({ deleted: 0 }) },
           pushQuantitySamples: { mutate: vi.fn().mockResolvedValue({ inserted: 0, errors: [] }) },
           pushWorkouts: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
@@ -453,6 +459,7 @@ function setupDefaultMocks() {
   });
   mockStatsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
   mockLogsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
+  mockAppleHealthLogsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
   mockDataHealthQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
   mockActiveSyncsQuery.mockReturnValue({ data: [] });
   mockActiveImportsQuery.mockReturnValue({ data: [], error: null });
@@ -1016,6 +1023,7 @@ describe("ProvidersScreen", () => {
     mockProvidersQuery.mockReset();
     mockStatsQuery.mockReset();
     mockLogsQuery.mockReset();
+    mockAppleHealthLogsQuery.mockReset();
     mockDataHealthQuery.mockReset();
     mockActiveSyncsQuery.mockReset();
     mockActiveImportsQuery.mockReset();
@@ -2835,6 +2843,25 @@ describe("ProvidersScreen", () => {
 
     expect(screen.getByTestId("provider-card-apple_health")).toBeTruthy();
     expect(screen.getByText("Apple Health")).toBeTruthy();
+  });
+
+  it("shows an explicit Apple Health sync history error in its card", async () => {
+    mockAppleHealthLogsQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: new Error("Apple Health history failed"),
+    });
+
+    await renderProvidersScreen();
+
+    expect(mockAppleHealthLogsQuery).toHaveBeenCalledWith({
+      providerId: "apple_health",
+      limit: 3,
+      offset: 0,
+      filters: { dataType: "sync" },
+    });
+    expect(screen.getByText("Could not load Apple Health sync history")).toBeTruthy();
+    expect(screen.getByText("Apple Health history failed")).toBeTruthy();
   });
 
   it("shows resumable progress for an in-flight Apple Health import", async () => {
