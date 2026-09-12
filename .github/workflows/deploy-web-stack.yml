@@ -451,7 +451,7 @@ jobs:
           pull_if_missing "ghcr.io/peerdb-io/peerdb-ui:stable-v0.36.19"
           pull_if_missing "temporalio/auto-setup:1.29"
           pull_if_missing "temporalio/admin-tools:1.29"
-          pull_if_missing "minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e"
+          pull_if_missing "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e"
           pull_if_missing "dbeaver/cloudbeaver:26.0.3@sha256:3daa6269a49198363af3f0fcd8af58def9a32fa38152b9ab37854dc80c16a4a4"
           REMOTE
 
