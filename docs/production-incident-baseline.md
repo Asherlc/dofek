@@ -26610,3 +26610,43 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Follow-up:** Alert on `processing-reconciliation`'s new `abandoned`
   counter so a genuinely stuck pipeline (as opposed to a merely slow one)
   pages someone instead of only surfacing in the per-user UI.
+
+## 2026-09-12 — Pinned `docker.io/minio/minio` image archived, breaking CI and exposed in production stack
+
+- **Symptoms:** PR #2720's CI failed across E2E, three of four integration
+  shards, and `docker-compose.e2e.yml`'s `account-erasure-minio` service
+  with `Error response from daemon: pull access denied for minio/minio,
+  repository does not exist or may require 'docker login'`.
+- **User impact:** None yet observed in production — caught before the next
+  deploy needed to (re)schedule `peerdb-minio`. Had this gone unnoticed,
+  the next Swarm task reschedule for that service (node failure, redeploy)
+  would have failed to pull the image.
+- **Root cause:** MinIO Inc. discontinued the open-source MinIO project in
+  February 2026 and archived its GitHub repository on 2026-04-25. Docker
+  Hub distribution of `minio/minio` was removed along with it, so the
+  digest-pinned reference `minio/minio:latest@sha256:14cea493...` used
+  repo-wide started 404ing. The exact same manifest was still confirmed
+  present on quay.io (`quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z`,
+  the same digest and genuinely the newest available non-hotfix release
+  per the quay.io tags API), so this was a registry migration, not a
+  version change.
+- **Fix:** Repointed all 8 references — `docker-compose.yml`,
+  `docker-compose.e2e.yml`, `docker-compose.peerdb.yml`,
+  `deploy/stack.yml`, `.github/workflows/deploy-web-stack.yml`, and three
+  `src/account-erasure/*.integration.test.ts` files — to
+  `quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493...`
+  (identical digest).
+- **Validation:** `docker stack config -c deploy/stack.yml` rendered
+  successfully with the new image (using real Infisical prod secrets plus
+  placeholder values for CI-generated `*_ENV_FILE`/`*_SECRET_NAME`
+  variables that don't exist outside a deploy run). The E2E
+  `account-erasure-minio` service started and reported healthy locally.
+  All three previously-failing account-erasure integration test files
+  (9 tests) passed locally against the new image.
+- **Remaining risk:** MinIO OSS is unmaintained going forward — no more
+  security patches will ship. This pin is a stopgap to keep the existing,
+  already-deployed version reachable, not a long-term decision.
+- **Follow-up:** Decide on a longer-term object-storage strategy for the
+  account-erasure/PeerDB staging use cases (an actively maintained
+  S3-compatible alternative, or a managed service) now that MinIO OSS has
+  no upstream. Not addressed here — out of scope for the CI unblock.
