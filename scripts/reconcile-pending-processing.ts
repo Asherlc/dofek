@@ -21,7 +21,7 @@ export async function main(): Promise<void> {
       clickHouseClient,
     });
     console.log(
-      `[processing-reconciliation] checked ${reconciliation.checked}, completed ${reconciliation.completed}, waiting ${reconciliation.waiting}`,
+      `[processing-reconciliation] checked ${reconciliation.checked}, completed ${reconciliation.completed}, abandoned ${reconciliation.abandoned}, waiting ${reconciliation.waiting}`,
     );
   } catch (error: unknown) {
     exitCode = 1;

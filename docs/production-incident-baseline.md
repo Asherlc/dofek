@@ -26539,3 +26539,114 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   proof requires the unchanged integration suite in isolated CI; use the
   [shared Docker resource runbook](testing.md#shared-docker-vm-resource-pressure)
   before another local long-running attempt.
+
+## 2026-09-12 — Activities page stuck on "Preparing to recompute activities" indefinitely
+
+- **Symptoms / user impact:** A user reported the web Activities page showing
+  a UI error and then getting permanently stuck on "Preparing to recompute
+  activities," with no progress. Any user with a slow or stalled provider
+  sync would see the same generic, misleading message indefinitely.
+- **Evidence:** Read-only production Postgres/Redis/Redpanda inspection (SSH +
+  `psql`/`redis-cli`/`rpk`, all read-only, done with explicit user approval)
+  found: (1) `processing-reconciliation` logs showed `completed 0` on every
+  cycle for the full 20+ hour log window; (2) `fitness.processing_queue_outbox`
+  had an operation from 2026-07-24 still `pending`, with its last real stage
+  event on 2026-07-27 — 47 days of zero progress, still re-checked every 5
+  minutes; (3) a live WHOOP sync for the affected user had been open since
+  00:20 that day (14.5+ hours), driven by ~140 separate BullMQ job executions
+  of WHOOP's per-day/per-sleep step-chain plan, each waiting behind the
+  provider's shared `frequentProvider(1, { max: 1, duration: 1_000 })` queue
+  limiter (`src/jobs/provider-queue-config.ts`); Redpanda consumer lag was 0 on
+  both live topics, ruling out a stuck sink.
+- **Root cause:** `reconcileMetricOutput()` requires every metric batch ever
+  registered for an operation to have a matching ClickHouse acknowledgment
+  before the operation can complete. A long step-chain sync (or one abandoned
+  mid-chain) never satisfies that all-or-nothing check, so the operation never
+  reaches "ready" and `fitness.processing_queue_outbox` polls it forever with
+  no timeout. Separately, `ActivitiesPage`'s processing widget queries
+  `processing.status({ datasets: ["activity"] })` with no `providerId`, so
+  `ProcessingRepository.status()` aggregates every operation touching
+  `activity` — including an unrelated provider's slow sync — and
+  `processingTarget()` had no way to attribute the resulting "waiting" status
+  to a specific provider, always falling back to the generic "recompute"
+  wording even when a real provider sync was the actual cause.
+- **Fix:** `src/processing/processing-reconciler.ts` now marks an operation
+  that has not fully reconciled within `STALE_OPERATION_THRESHOLD_MS` (12
+  hours) as `failed` with an actionable error and dequeues it, instead of
+  polling forever. `packages/providers-meta/src/processing-status.ts` adds
+  `resolveProcessingTargetScope()`, used by both web and mobile
+  `ProcessingStatusWidget`s, which attributes an unscoped query to the single
+  provider responsible when exactly one explains every non-ready operation.
+- **Validation:** New unit coverage in
+  `src/processing/processing-reconciler.test.ts`,
+  `packages/providers-meta/src/processing-status.test.ts`, and both
+  `ProcessingStatusWidget.test.tsx` files; existing
+  `processing-reconciler.integration.test.ts` passed against real Postgres.
+  `pnpm test:changed`, `pnpm lint`, and `tsc --noEmit` (root, server, web,
+  mobile, providers-meta) all pass.
+- **Remaining risk:** The 12-hour threshold is a judgment call — generous
+  enough for the slowest legitimate step-chain sync observed, but unvalidated
+  against real queue-contention peaks.
+- **Follow-up investigation (same day):** The deeper capacity question turned
+  out not to be multi-user contention — production has only 2 WHOOP-connected
+  users, and the affected user's adaptive per-request throttle was healthy
+  (`throttleMs` at its 500ms floor, `inferredBudget` at the untouched default,
+  no observed 429s). Direct ClickHouse inspection showed the CDC
+  acknowledgment pipeline was not stuck either: Postgres's
+  `processing_metric_stream_batch` and ClickHouse's
+  `ingest.metric_stream_processing_acknowledgement` matched exactly
+  (11,216/11,216) at the moment of inspection, yet the very next
+  reconciliation cycle still reported no progress, because the operation kept
+  registering new batches faster than a quiet moment could occur. Root cause:
+  `WhoopProvider.scheduledSyncLookbackDays = 30` (added in #1303 solely for
+  developer-workout deletion reconciliation) also widened `heart_rate` and
+  `journal` step planning, which have no "already synced" check (unlike
+  `strain_deep_dive`/`sleep_stages`) — so every periodic scheduled sync
+  re-fetched the full 30-day, 6-second-resolution heart-rate history from
+  scratch. Fixed by shrinking `scheduledSyncLookbackDays` to 3; verified
+  `sync-orchestrator.ts`'s `absenceWindow.withMinimumLookback(30)` keeps the
+  deletion-reconciliation window at 30 days independent of this value. See
+  `src/providers/whoop/provider.ts`.
+- **Follow-up:** Alert on `processing-reconciliation`'s new `abandoned`
+  counter so a genuinely stuck pipeline (as opposed to a merely slow one)
+  pages someone instead of only surfacing in the per-user UI.
+
+## 2026-09-12 — Pinned `docker.io/minio/minio` image archived, breaking CI and exposed in production stack
+
+- **Symptoms:** PR #2720's CI failed across E2E, three of four integration
+  shards, and `docker-compose.e2e.yml`'s `account-erasure-minio` service
+  with `Error response from daemon: pull access denied for minio/minio,
+  repository does not exist or may require 'docker login'`.
+- **User impact:** None yet observed in production — caught before the next
+  deploy needed to (re)schedule `peerdb-minio`. Had this gone unnoticed,
+  the next Swarm task reschedule for that service (node failure, redeploy)
+  would have failed to pull the image.
+- **Root cause:** MinIO Inc. discontinued the open-source MinIO project in
+  February 2026 and archived its GitHub repository on 2026-04-25. Docker
+  Hub distribution of `minio/minio` was removed along with it, so the
+  digest-pinned reference `minio/minio:latest@sha256:14cea493...` used
+  repo-wide started 404ing. The exact same manifest was still confirmed
+  present on quay.io (`quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z`,
+  the same digest and genuinely the newest available non-hotfix release
+  per the quay.io tags API), so this was a registry migration, not a
+  version change.
+- **Fix:** Repointed all 8 references — `docker-compose.yml`,
+  `docker-compose.e2e.yml`, `docker-compose.peerdb.yml`,
+  `deploy/stack.yml`, `.github/workflows/deploy-web-stack.yml`, and three
+  `src/account-erasure/*.integration.test.ts` files — to
+  `quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493...`
+  (identical digest).
+- **Validation:** `docker stack config -c deploy/stack.yml` rendered
+  successfully with the new image (using real Infisical prod secrets plus
+  placeholder values for CI-generated `*_ENV_FILE`/`*_SECRET_NAME`
+  variables that don't exist outside a deploy run). The E2E
+  `account-erasure-minio` service started and reported healthy locally.
+  All three previously-failing account-erasure integration test files
+  (9 tests) passed locally against the new image.
+- **Remaining risk:** MinIO OSS is unmaintained going forward — no more
+  security patches will ship. This pin is a stopgap to keep the existing,
+  already-deployed version reachable, not a long-term decision.
+- **Follow-up:** Decide on a longer-term object-storage strategy for the
+  account-erasure/PeerDB staging use cases (an actively maintained
+  S3-compatible alternative, or a managed service) now that MinIO OSS has
+  no upstream. Not addressed here — out of scope for the CI unblock.

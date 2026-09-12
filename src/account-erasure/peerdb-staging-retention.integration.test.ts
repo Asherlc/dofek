@@ -23,7 +23,7 @@ import {
 
 const bucket = "peerdbbucket";
 const minioImage =
-  "minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e";
+  "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e";
 const password = "peerdb-integration-secret";
 const username = "peerdb";
 
