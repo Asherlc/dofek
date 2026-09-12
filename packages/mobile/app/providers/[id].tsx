@@ -560,6 +560,7 @@ function ProviderDetailContent({
       providerId,
       limit: 1,
       offset: 0,
+      filters: { dataType: "sync" },
     },
     { enabled: providerId === "apple_health" },
   );
@@ -590,6 +591,8 @@ function ProviderDetailContent({
     providerId === "apple_health"
       ? (appleHealthLogs.data?.[0]?.syncedAt ?? null)
       : displayProvider.lastSyncedAt;
+  const appleHealthHistoryError =
+    providerId === "apple_health" && appleHealthLogs.error && appleHealthLogs.data === undefined;
 
   const { refreshing, onRefresh } = useRefresh({
     invalidate: () =>
@@ -656,6 +659,17 @@ function ProviderDetailContent({
                 {lastSyncedAt && formatRelativeTime(lastSyncedAt) && (
                   <Text style={styles.lastSync}>Last sync: {formatRelativeTime(lastSyncedAt)}</Text>
                 )}
+                {appleHealthHistoryError ? (
+                  <QueryStatePanel
+                    variant="error"
+                    title="Could not load Apple Health sync history"
+                    message={getQueryErrorMessage(
+                      appleHealthLogs.error,
+                      "Failed to load Apple Health sync history.",
+                    )}
+                    minHeight={72}
+                  />
+                ) : null}
               </View>
             )}
           </View>

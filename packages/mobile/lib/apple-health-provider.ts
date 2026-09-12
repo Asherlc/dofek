@@ -16,6 +16,10 @@ import {
 } from "../modules/health-kit";
 import { loadDeviceErasureCutoff } from "./device-erasure-cutoff";
 import {
+  isBackgroundHealthKitTransientNetworkError,
+  isHealthKitDatabaseInaccessible,
+} from "./health-kit-errors";
+import {
   type HealthKitAdapter,
   type SyncOptions,
   type SyncResult,
@@ -216,6 +220,11 @@ export class AppleHealthSyncService {
     try {
       result = await operation();
     } catch (error) {
+      const isExpectedBackgroundFailure =
+        origin === "unknown" && isBackgroundHealthKitTransientNetworkError(error);
+      if (!isHealthKitDatabaseInaccessible(error) && !isExpectedBackgroundFailure) {
+        captureException(error, { source: "apple-health-sync", origin });
+      }
       try {
         await this.#trpcClient.healthKitSync.recordSync.mutate({
           status: "error",
@@ -230,13 +239,17 @@ export class AppleHealthSyncService {
       throw error;
     }
 
-    await this.#trpcClient.healthKitSync.recordSync.mutate({
-      status: result.errors.length > 0 ? "degraded" : "success",
-      recordCount: result.inserted + result.deleted,
-      durationMs: Date.now() - startedAt,
-      ...(result.errors.length > 0 ? { errorMessage: result.errors.join("; ") } : {}),
-      origin,
-    });
+    try {
+      await this.#trpcClient.healthKitSync.recordSync.mutate({
+        status: result.errors.length > 0 ? "degraded" : "success",
+        recordCount: result.inserted + result.deleted,
+        durationMs: Date.now() - startedAt,
+        ...(result.errors.length > 0 ? { errorMessage: result.errors.join("; ") } : {}),
+        origin,
+      });
+    } catch (recordError) {
+      captureException(recordError, { source: "apple-health-sync-log", origin });
+    }
     return result;
   }
 }

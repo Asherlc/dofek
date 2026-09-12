@@ -617,7 +617,32 @@ describe("ProviderDetailScreen", () => {
       const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
       render(<ProviderDetailScreen />);
 
+      expect(mockLogsQuery).toHaveBeenCalledWith(
+        {
+          providerId: "apple_health",
+          limit: 1,
+          offset: 0,
+          filters: { dataType: "sync" },
+        },
+        { enabled: true },
+      );
       expect(screen.getByText("Last sync: 2026-09-12T15:00:00Z ago")).toBeTruthy();
+    });
+
+    it("shows an explicit error when Apple Health sync history fails", async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: "apple_health" });
+      mockProvidersQuery.mockReturnValue({ data: [], isLoading: false });
+      mockLogsQuery.mockReturnValue({
+        data: undefined,
+        isLoading: false,
+        error: new Error("Apple Health history failed"),
+      });
+
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
+      render(<ProviderDetailScreen />);
+
+      expect(screen.getByText("Could not load Apple Health sync history")).toBeTruthy();
+      expect(screen.getByText("Apple Health history failed")).toBeTruthy();
     });
 
     it("explains an expired provider authorization before exposing diagnostics", async () => {

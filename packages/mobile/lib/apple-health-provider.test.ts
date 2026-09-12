@@ -1,5 +1,5 @@
 import { renderHook, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncResult } from "./health-kit-sync";
 
 vi.mock("../modules/health-kit", () => ({
@@ -170,6 +170,10 @@ describe("AppleHealthAuthorizationService", () => {
 });
 
 describe("AppleHealthSyncService", () => {
+  beforeEach(() => {
+    mockCaptureException.mockClear();
+  });
+
   it("records a successful manual sync after HealthKit data is uploaded", async () => {
     const trpcClient = createTrpcClient();
     const syncFunction = vi.fn<AppleHealthSyncFunction>(async () => ({
@@ -193,6 +197,25 @@ describe("AppleHealthSyncService", () => {
     });
   });
 
+  it("returns a successful sync when recording its history fails", async () => {
+    const trpcClient = createTrpcClient();
+    const recordError = new Error("Sync history unavailable");
+    trpcClient.healthKitSync.recordSync.mutate = vi.fn().mockRejectedValue(recordError);
+    const syncResult: SyncResult = { deleted: 0, inserted: 2, errors: [] };
+    const service = new AppleHealthSyncService({
+      trpcClient,
+      loadDeviceErasureCutoff: vi.fn(async () => null),
+      syncFunction: vi.fn<AppleHealthSyncFunction>(async () => syncResult),
+    });
+
+    await expect(service.sync({ syncRangeDays: 7 })).resolves.toEqual(syncResult);
+
+    expect(mockCaptureException).toHaveBeenCalledWith(recordError, {
+      source: "apple-health-sync-log",
+      origin: "manual",
+    });
+  });
+
   it("records a failed manual sync before rethrowing the upload error", async () => {
     const trpcClient = createTrpcClient();
     const syncError = new Error("HealthKit upload failed");
@@ -209,6 +232,10 @@ describe("AppleHealthSyncService", () => {
       recordCount: 0,
       durationMs: expect.any(Number),
       errorMessage: "HealthKit upload failed",
+      origin: "manual",
+    });
+    expect(mockCaptureException).toHaveBeenCalledWith(syncError, {
+      source: "apple-health-sync",
       origin: "manual",
     });
   });
@@ -353,6 +380,39 @@ describe("AppleHealthProviderModel", () => {
         id: "apple_health",
         name: "Apple Health",
         authorized: true,
+      }),
+    );
+  });
+
+  it("includes native sync history in the provider card state", () => {
+    const model = new AppleHealthProviderModel({
+      authorizationState: AppleHealthAuthorizationState.unknown(),
+      authorizationService: new AppleHealthAuthorizationService(createNative()),
+      syncService: new AppleHealthSyncService({ trpcClient: createTrpcClient() }),
+    });
+    const syncLog = {
+      id: "apple-health-sync-1",
+      providerId: "apple_health",
+      dataType: "sync",
+      status: "success",
+      recordCount: 42,
+      durationMs: 1_250,
+      errorMessage: null,
+      authFailureReason: null,
+      syncedAt: "2026-09-12T15:00:00Z",
+    };
+
+    expect(
+      model.toProviderCard({
+        lastSyncAt: syncLog.syncedAt,
+        lastSuccessfulSyncAt: syncLog.syncedAt,
+        recentLogs: [syncLog],
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        lastSyncAt: syncLog.syncedAt,
+        lastSuccessfulSyncAt: syncLog.syncedAt,
+        recentLogs: [syncLog],
       }),
     );
   });
