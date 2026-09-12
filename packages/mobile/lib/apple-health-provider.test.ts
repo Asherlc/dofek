@@ -58,6 +58,9 @@ function createTrpcClient(): AppleHealthTrpcClient {
       },
     },
     healthKitSync: {
+      recordSync: {
+        mutate: vi.fn(async () => ({ recorded: true })),
+      },
       deleteQuantitySamples: {
         mutate: vi.fn(async () => ({ deleted: 0 })),
       },
@@ -167,6 +170,73 @@ describe("AppleHealthAuthorizationService", () => {
 });
 
 describe("AppleHealthSyncService", () => {
+  it("records a successful manual sync after HealthKit data is uploaded", async () => {
+    const trpcClient = createTrpcClient();
+    const syncFunction = vi.fn<AppleHealthSyncFunction>(async () => ({
+      deleted: 3,
+      inserted: 39,
+      errors: [],
+    }));
+    const service = new AppleHealthSyncService({
+      trpcClient,
+      loadDeviceErasureCutoff: vi.fn(async () => null),
+      syncFunction,
+    });
+
+    await service.sync({ syncRangeDays: 7 });
+
+    expect(trpcClient.healthKitSync.recordSync.mutate).toHaveBeenCalledWith({
+      status: "success",
+      recordCount: 42,
+      durationMs: expect.any(Number),
+      origin: "manual",
+    });
+  });
+
+  it("records a failed manual sync before rethrowing the upload error", async () => {
+    const trpcClient = createTrpcClient();
+    const syncError = new Error("HealthKit upload failed");
+    const syncFunction = vi.fn<AppleHealthSyncFunction>().mockRejectedValue(syncError);
+    const service = new AppleHealthSyncService({
+      trpcClient,
+      loadDeviceErasureCutoff: vi.fn(async () => null),
+      syncFunction,
+    });
+
+    await expect(service.sync({ syncRangeDays: 7 })).rejects.toBe(syncError);
+    expect(trpcClient.healthKitSync.recordSync.mutate).toHaveBeenCalledWith({
+      status: "error",
+      recordCount: 0,
+      durationMs: expect.any(Number),
+      errorMessage: "HealthKit upload failed",
+      origin: "manual",
+    });
+  });
+
+  it("records a partial manual sync as degraded with its errors", async () => {
+    const trpcClient = createTrpcClient();
+    const syncFunction = vi.fn<AppleHealthSyncFunction>(async () => ({
+      deleted: 0,
+      inserted: 4,
+      errors: ["Route query failed"],
+    }));
+    const service = new AppleHealthSyncService({
+      trpcClient,
+      loadDeviceErasureCutoff: vi.fn(async () => null),
+      syncFunction,
+    });
+
+    await service.sync({ syncRangeDays: 7 });
+
+    expect(trpcClient.healthKitSync.recordSync.mutate).toHaveBeenCalledWith({
+      status: "degraded",
+      recordCount: 4,
+      durationMs: expect.any(Number),
+      errorMessage: "Route query failed",
+      origin: "manual",
+    });
+  });
+
   it("forwards clinical-record queries through the default native adapter", async () => {
     const records = [
       {

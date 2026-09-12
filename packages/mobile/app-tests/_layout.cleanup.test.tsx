@@ -259,6 +259,7 @@ vi.mock("../app/login", () => ({
 
 mockCreateClient.mockImplementation(() => ({
   healthKitSync: {
+    recordSync: { mutate: vi.fn().mockResolvedValue({ recorded: true }) },
     deleteQuantitySamples: { mutate: vi.fn().mockResolvedValue({ deleted: 0 }) },
     pushQuantitySamples: { mutate: vi.fn() },
     pushWorkouts: { mutate: vi.fn() },

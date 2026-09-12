@@ -281,6 +281,7 @@ vi.mock("../../lib/health-kit-sync", () => ({
 
 vi.mock("@dofek/format/format", () => ({
   formatDateYmd: (date?: Date) => (date ?? new Date()).toISOString().slice(0, 10),
+  formatDurationSeconds: (seconds: number) => `${seconds} seconds`,
   formatRelativeTime: (date: string) => `${date} ago`,
 }));
 
@@ -355,6 +356,7 @@ vi.mock("../../lib/trpc", () => ({
       invalidate: mockInvalidate,
       client: {
         healthKitSync: {
+          recordSync: { mutate: vi.fn().mockResolvedValue({ recorded: true }) },
           deleteQuantitySamples: { mutate: vi.fn().mockResolvedValue({ deleted: 0 }) },
           pushQuantitySamples: { mutate: vi.fn().mockResolvedValue({ inserted: 0, errors: [] }) },
           pushWorkouts: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
@@ -2835,6 +2837,32 @@ describe("ProvidersScreen", () => {
 
     expect(screen.getByTestId("provider-card-apple_health")).toBeTruthy();
     expect(screen.getByText("Apple Health")).toBeTruthy();
+  });
+
+  it("shows the last native Apple Health sync from sync history", async () => {
+    mockLogsQuery.mockReturnValue({
+      data: [
+        {
+          id: "apple-health-sync-1",
+          providerId: "apple_health",
+          dataType: "sync",
+          status: "success",
+          recordCount: 42,
+          durationMs: 1_250,
+          errorMessage: null,
+          authFailureReason: null,
+          syncedAt: "2026-09-12T15:00:00Z",
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    await renderProvidersScreen();
+
+    const appleCard = within(screen.getByTestId("provider-card-apple_health"));
+    expect(appleCard.getByText("Last sync: 2026-09-12T15:00:00Z ago")).toBeTruthy();
+    expect(appleCard.queryByText("Never synced")).toBeNull();
   });
 
   it("shows resumable progress for an in-flight Apple Health import", async () => {

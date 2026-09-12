@@ -45,12 +45,28 @@ export interface AppleHealthProviderCard {
   enabled: boolean;
   authStatus: "connected" | "not_connected";
   authType: "none";
-  lastSyncAt: null;
-  lastSuccessfulSyncAt: null;
+  lastSyncAt: string | null;
+  lastSuccessfulSyncAt: string | null;
   syncFreshness: null;
   importOnly: false;
   pushOnly: false;
-  recentLogs: [];
+  recentLogs: Array<{
+    id: string;
+    providerId: string;
+    dataType: string;
+    status: string;
+    recordCount: number | null;
+    durationMs: number | null;
+    errorMessage: string | null;
+    authFailureReason: string | null;
+    syncedAt: string;
+  }>;
+}
+
+export interface AppleHealthSyncStatus {
+  lastSyncAt: string | null;
+  lastSuccessfulSyncAt: string | null;
+  recentLogs: AppleHealthProviderCard["recentLogs"];
 }
 
 export interface AppleHealthDisplayProvider {
@@ -60,7 +76,7 @@ export interface AppleHealthDisplayProvider {
   authorized: boolean;
   importOnly: false;
   pushOnly: false;
-  lastSyncedAt: null;
+  lastSyncedAt: string | null;
 }
 
 export type AppleHealthTrpcClient = SyncTrpcClient;
@@ -162,14 +178,16 @@ export class AppleHealthSyncService {
     onProgress?: (message: string) => void;
     onStage?: SyncOptions["onStage"];
   }): Promise<SyncResult> {
-    const minimumSampleDate = await this.#loadDeviceErasureCutoff();
-    return this.#syncFunction({
-      trpcClient: this.#trpcClient,
-      healthKit: this.#healthKit,
-      syncRangeDays: options.syncRangeDays,
-      minimumSampleDate,
-      onProgress: options.onProgress,
-      onStage: options.onStage,
+    return this.#runAndRecordSync("manual", async () => {
+      const minimumSampleDate = await this.#loadDeviceErasureCutoff();
+      return this.#syncFunction({
+        trpcClient: this.#trpcClient,
+        healthKit: this.#healthKit,
+        syncRangeDays: options.syncRangeDays,
+        minimumSampleDate,
+        onProgress: options.onProgress,
+        onStage: options.onStage,
+      });
     });
   }
 
@@ -177,14 +195,49 @@ export class AppleHealthSyncService {
     typeIdentifiers: readonly string[];
     onStage?: SyncOptions["onStage"];
   }): Promise<SyncResult> {
-    const minimumSampleDate = await this.#loadDeviceErasureCutoff();
-    return syncHealthKitObserverChanges({
-      trpcClient: this.#trpcClient,
-      healthKit: this.#healthKit,
-      minimumSampleDate,
-      typeIdentifiers: options.typeIdentifiers,
-      onStage: options.onStage,
+    return this.#runAndRecordSync("unknown", async () => {
+      const minimumSampleDate = await this.#loadDeviceErasureCutoff();
+      return syncHealthKitObserverChanges({
+        trpcClient: this.#trpcClient,
+        healthKit: this.#healthKit,
+        minimumSampleDate,
+        typeIdentifiers: options.typeIdentifiers,
+        onStage: options.onStage,
+      });
     });
+  }
+
+  async #runAndRecordSync(
+    origin: "manual" | "unknown",
+    operation: () => Promise<SyncResult>,
+  ): Promise<SyncResult> {
+    const startedAt = Date.now();
+    let result: SyncResult;
+    try {
+      result = await operation();
+    } catch (error) {
+      try {
+        await this.#trpcClient.healthKitSync.recordSync.mutate({
+          status: "error",
+          recordCount: 0,
+          durationMs: Date.now() - startedAt,
+          errorMessage: error instanceof Error ? error.message : String(error),
+          origin,
+        });
+      } catch (recordError) {
+        captureException(recordError, { source: "apple-health-sync-log", origin });
+      }
+      throw error;
+    }
+
+    await this.#trpcClient.healthKitSync.recordSync.mutate({
+      status: result.errors.length > 0 ? "degraded" : "success",
+      recordCount: result.inserted + result.deleted,
+      durationMs: Date.now() - startedAt,
+      ...(result.errors.length > 0 ? { errorMessage: result.errors.join("; ") } : {}),
+      origin,
+    });
+    return result;
   }
 }
 
@@ -203,7 +256,7 @@ export class AppleHealthProviderModel {
     this.#syncService = input.syncService;
   }
 
-  toProviderCard(): AppleHealthProviderCard {
+  toProviderCard(syncStatus?: AppleHealthSyncStatus): AppleHealthProviderCard {
     const connected = this.authorizationState.isConnected();
     return {
       id: "apple_health",
@@ -211,16 +264,16 @@ export class AppleHealthProviderModel {
       enabled: connected,
       authStatus: connected ? "connected" : "not_connected",
       authType: "none",
-      lastSyncAt: null,
-      lastSuccessfulSyncAt: null,
+      lastSyncAt: syncStatus?.lastSyncAt ?? null,
+      lastSuccessfulSyncAt: syncStatus?.lastSuccessfulSyncAt ?? null,
       syncFreshness: null,
       importOnly: false,
       pushOnly: false,
-      recentLogs: [],
+      recentLogs: syncStatus?.recentLogs ?? [],
     };
   }
 
-  toDisplayProvider(): AppleHealthDisplayProvider {
+  toDisplayProvider(input: { lastSyncedAt?: string | null } = {}): AppleHealthDisplayProvider {
     return {
       id: "apple_health",
       name: "Apple Health",
@@ -228,7 +281,7 @@ export class AppleHealthProviderModel {
       authorized: this.authorizationState.isConnected(),
       importOnly: false,
       pushOnly: false,
-      lastSyncedAt: null,
+      lastSyncedAt: input.lastSyncedAt ?? null,
     };
   }
 

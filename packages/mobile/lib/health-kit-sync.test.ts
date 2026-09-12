@@ -20,6 +20,9 @@ describe("syncHealthKitToServer", () => {
         },
       },
       healthKitSync: {
+        recordSync: {
+          mutate: vi.fn().mockResolvedValue({ recorded: true }),
+        },
         pushQuantitySamples: {
           mutate: vi.fn().mockResolvedValue({ inserted: 5, errors: [] }),
         },
@@ -857,6 +860,9 @@ describe("syncHealthKitObserverChanges", () => {
         },
       },
       healthKitSync: {
+        recordSync: {
+          mutate: vi.fn().mockResolvedValue({ recorded: true }),
+        },
         pushQuantitySamples: {
           mutate: vi.fn().mockResolvedValue({ inserted: 1, errors: [] }),
         },

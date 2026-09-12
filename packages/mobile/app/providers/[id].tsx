@@ -555,6 +555,14 @@ function ProviderDetailContent({
 
   const stats = trpc.sync.providerStats.useQuery();
   const processingStatus = useProcessingStatus({ providerId });
+  const appleHealthLogs = trpc.providerDetail.logs.useQuery(
+    {
+      providerId,
+      limit: 1,
+      offset: 0,
+    },
+    { enabled: providerId === "apple_health" },
+  );
   const providerStats = (stats.data ?? []).find(
     (s: { providerId: string }) => s.providerId === providerId,
   );
@@ -578,6 +586,10 @@ function ProviderDetailContent({
     needsReauth: Boolean(provider?.needsReauth),
     requiresAuthorization: displayProvider.authType !== "none",
   });
+  const lastSyncedAt =
+    providerId === "apple_health"
+      ? (appleHealthLogs.data?.[0]?.syncedAt ?? null)
+      : displayProvider.lastSyncedAt;
 
   const { refreshing, onRefresh } = useRefresh({
     invalidate: () =>
@@ -641,12 +653,9 @@ function ProviderDetailContent({
                     {health.authorization.label}
                   </Text>
                 </View>
-                {displayProvider.lastSyncedAt &&
-                  formatRelativeTime(displayProvider.lastSyncedAt) && (
-                    <Text style={styles.lastSync}>
-                      Last sync: {formatRelativeTime(displayProvider.lastSyncedAt)}
-                    </Text>
-                  )}
+                {lastSyncedAt && formatRelativeTime(lastSyncedAt) && (
+                  <Text style={styles.lastSync}>Last sync: {formatRelativeTime(lastSyncedAt)}</Text>
+                )}
               </View>
             )}
           </View>

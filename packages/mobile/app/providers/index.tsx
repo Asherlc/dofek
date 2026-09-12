@@ -670,6 +670,7 @@ export default function ProvidersScreen() {
     statsMap[s.providerId] = s;
   }
   const logList: SyncLog[] = logs.data ?? [];
+  const appleHealthLogs = logList.filter((log) => log.providerId === "apple_health");
 
   const { refreshing, onRefresh } = useRefresh({
     invalidate: () =>
@@ -688,7 +689,11 @@ export default function ProvidersScreen() {
     (provider) => !hiddenProviderIds.has(provider.id),
   );
   const enabledProviders = visibleProviderList.filter((p) => p.enabled);
-  const appleHealthProvider = appleHealth.model.toProviderCard();
+  const appleHealthProvider = appleHealth.model.toProviderCard({
+    lastSyncAt: appleHealthLogs[0]?.syncedAt ?? null,
+    lastSuccessfulSyncAt: appleHealthLogs.find((log) => log.status === "success")?.syncedAt ?? null,
+    recentLogs: appleHealthLogs.slice(0, 3),
+  });
   const activeImportRows = activeImports.error ? [] : (activeImports.data ?? []);
   const activeImportByProvider = new Map(
     activeImportRows.map((activeImport) => [activeImport.providerId, activeImport]),
