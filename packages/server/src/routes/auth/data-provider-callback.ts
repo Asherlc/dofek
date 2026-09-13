@@ -682,7 +682,7 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
       res
         .status(500)
         .send(
-          `${resolvedProviderName ?? "Provider"} webhook registration failed, so the new connection was removed. Please try again.`,
+          `${resolvedProviderName!} webhook registration failed, so the new connection was removed. Please try again.`,
         );
       return;
     }
@@ -690,7 +690,7 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
       res
         .status(500)
         .send(
-          `${resolvedProviderName ?? "Provider"} connected, but webhook registration and connection cleanup both failed. Please contact support before trying again.`,
+          `${resolvedProviderName!} connected, but webhook registration and connection cleanup both failed. Please contact support before trying again.`,
         );
       return;
     }
