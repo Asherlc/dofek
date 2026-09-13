@@ -177,7 +177,7 @@ services:
       RUST_BACKTRACE: "1"
     restart: unless-stopped
     ports:
-      - "127.0.0.1:9900:9900"
+      - "127.0.0.1:${PEERDB_CDC_PORT:-9900}:9900"
     depends_on:
       peerdb-catalog:
         condition: service_healthy

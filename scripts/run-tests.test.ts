@@ -64,4 +64,87 @@ appendFileSync(process.env.COMMAND_LOG_PATH, JSON.stringify(process.argv.slice(2
       rmSync(workspaceDirectory, { force: true, recursive: true });
     }
   });
+
+  it("runs the PeerDB integration project with the full Compose stack and cleans it up", () => {
+    const workspaceDirectory = mkdtempSync(join(tmpdir(), "run-tests-peerdb-test-"));
+    const binaryDirectory = join(workspaceDirectory, "bin");
+    const commandLogPath = join(workspaceDirectory, "pnpm-calls.jsonl");
+    mkdirSync(binaryDirectory);
+    writeFileSync(
+      join(workspaceDirectory, ".env.local"),
+      [
+        "CLICKHOUSE_URL=http://default:health@127.0.0.1:18123",
+        "DATABASE_URL=postgres://health:health@127.0.0.1:15432/health",
+        "REDPANDA_BROKERS=127.0.0.1:19092",
+        "REDIS_URL=redis://127.0.0.1:16379",
+        "POSTGRES_PASSWORD=health",
+        "PEERDB_UI_PORT=13001",
+        "",
+      ].join("\n"),
+    );
+
+    const fakePnpmPath = join(binaryDirectory, "pnpm");
+    writeFileSync(
+      fakePnpmPath,
+      `#!/usr/bin/env node
+const { appendFileSync } = require("node:fs");
+appendFileSync(process.env.COMMAND_LOG_PATH, JSON.stringify(process.argv.slice(2)) + "\\n");
+`,
+    );
+    chmodSync(fakePnpmPath, 0o755);
+
+    try {
+      execFileSync(
+        resolve("node_modules/.bin/tsx"),
+        [resolve("scripts/run-tests.ts"), "peerdb-integration"],
+        {
+          cwd: workspaceDirectory,
+          env: {
+            ...process.env,
+            COMMAND_LOG_PATH: commandLogPath,
+            PATH: `${binaryDirectory}:${process.env.PATH ?? ""}`,
+          },
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
+
+      const commandArguments = commandArgumentsSchema.parse(
+        readFileSync(commandLogPath, "utf8")
+          .trim()
+          .split("\n")
+          .map((line) => JSON.parse(line)),
+      );
+
+      expect(commandArguments).toEqual([
+        ["compose:up"],
+        [
+          "compose",
+          "--",
+          "-f",
+          "docker-compose.yml",
+          "-f",
+          "docker-compose.peerdb.yml",
+          "up",
+          "-d",
+          "--wait",
+          "--wait-timeout",
+          "180",
+        ],
+        ["exec", "vitest", "run", "--project", "peerdb-integration"],
+        [
+          "compose",
+          "--",
+          "-f",
+          "docker-compose.yml",
+          "-f",
+          "docker-compose.peerdb.yml",
+          "down",
+          "--remove-orphans",
+          "--volumes",
+        ],
+      ]);
+    } finally {
+      rmSync(workspaceDirectory, { force: true, recursive: true });
+    }
+  });
 });
