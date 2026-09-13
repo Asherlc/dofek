@@ -1,7 +1,7 @@
 # PeerDB Schema Contract Safety Design
 
 **Date:** 2026-09-13  
-**Status:** Approved design, pending implementation plan
+**Status:** Approved for implementation
 
 ## Problem
 
@@ -65,9 +65,12 @@ entry contains:
 The same contract must drive initial mirror creation, reconciliation of an
 existing mirror through `flowConfigUpdate`, schema-compatibility validation,
 integration fixtures, and operational diagnostics. PeerDB supports column
-exclusions in table mappings and in paused-mirror configuration updates
+exclusions when creating or adding table mappings, but does not support editing
+the exclusions of an existing table mapping in place. A changed exclusion set
+therefore uses the two-phase table remap below
 ([creating mirrors](https://docs.peerdb.io/sql/commands/create-mirror),
-[changing mirror state](https://docs.peerdb.io/peerdb-api/endpoints/change-mirror-state)).
+[changing mirror state](https://docs.peerdb.io/peerdb-api/endpoints/change-mirror-state),
+[editing mirrors](https://docs.peerdb.io/features/edit-mirror)).
 
 The contract is an allowlisted projection expressed as source columns minus
 explicit exclusions. It does not duplicate PostgreSQL types or the complete
@@ -125,13 +128,19 @@ propagation for deployment safety
 1. Quiesce the affected mirror and all dependent reconciliation/analytics
    services through the existing deployment overlay.
 2. Add the source column to the canonical exclusion list.
-3. Update the paused live mirror and read its configuration back until the
-   exclusion is observed.
-4. Run compatibility validation while the destination column still exists.
-5. Apply the ClickHouse column-drop migration.
-6. Resume the mirror and require the causal marker canary to succeed.
-7. Resume dependent services only after the canary succeeds.
-8. Remove the PostgreSQL source column in a separately compatible migration if
+3. Pause the live mirror, remove only the affected table mapping through
+   `removed_tables`, and read the configuration back until the mapping is
+   absent.
+4. In a second update, add the table mapping through `additional_tables` with
+   the canonical exclusions. PeerDB forbids adding and removing the same table
+   in one update, so these are separate verified transitions.
+5. Wait for the table snapshot to finish, the mirror to return to
+   `STATUS_RUNNING`, and the read-back mapping to contain the exact exclusions.
+6. Run compatibility validation while the destination column still exists.
+7. Apply the ClickHouse column-drop migration.
+8. Require the causal marker canary to succeed.
+9. Resume dependent services only after the canary succeeds.
+10. Remove the PostgreSQL source column in a separately compatible migration if
    the canonical source no longer stores it.
 
 No step may warn and continue. If the live mirror cannot be reconciled or read
@@ -210,12 +219,15 @@ accepted as health when normalization is failing.
 The production recovery uses the same steady-state mechanism:
 
 1. Pause `dofek_fitness_raw_analytics`.
-2. Apply the canonical exclusions for the fields removed by migration `0085`.
-3. Read back and verify the live configuration.
-4. Resume the existing mirror without dropping its active, reserved slot.
-5. Require the exact processing marker to arrive in
+2. Remove the `daily_metrics` and `sleep_session` table mappings in one paused
+   update and verify that both are absent.
+3. Add both mappings back in a second update with the canonical exclusions.
+4. Wait for their snapshots to complete and read back the exact exclusions.
+5. Continue using the existing mirror and active, reserved slot; do not recreate
+   either one.
+6. Require the exact processing marker to arrive in
    `postgres_fitness.processing_flow_marker`.
-6. Verify the WAL backlog drains, sleep/activity mirror timestamps advance,
+7. Verify the WAL backlog drains, sleep/activity mirror timestamps advance,
    reconciliation completes, and the user-facing activity and sleep queries
    return current data.
 
@@ -229,7 +241,8 @@ slot and performs a new snapshot, so it carries materially more source load
 Implementation lands in this order:
 
 1. canonical contract and deterministic validator;
-2. failing regression coverage, then corrected exclusions/config generation;
+2. failing regression coverage, then corrected exclusions/config generation
+   and two-phase existing-table remapping;
 3. real PeerDB integration project;
 4. deploy-time readback, compatibility gate, and marker canary;
 5. immediate normalization-error health classification;
