@@ -10,6 +10,7 @@ const routeMocks = vi.hoisted(() => {
     createDofekMcpServer: vi.fn(),
     handleRequest: vi.fn(),
     loggerError: vi.fn(),
+    loggerInfo: vi.fn(),
     loggerWarn: vi.fn(),
     serverClose: vi.fn(),
     serverConnect: vi.fn(),
@@ -48,6 +49,7 @@ vi.mock("@sentry/node", () => ({
 vi.mock("../logger.ts", () => ({
   logger: {
     error: routeMocks.loggerError,
+    info: routeMocks.loggerInfo,
     warn: routeMocks.loggerWarn,
   },
 }));
@@ -162,6 +164,33 @@ describe("createMcpRouter lifecycle handling", () => {
       id: 1,
       method: "initialize",
     });
+  });
+
+  it("records a privacy-safe completion lifecycle for food mutations", async () => {
+    const requestId = "33333333-3333-4333-8333-333333333333";
+    const response = await request({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: {
+        name: "create_food_entry",
+        arguments: { request_id: requestId },
+      },
+    });
+
+    expect(response.status).toBe(204);
+    expect(routeMocks.loggerInfo).toHaveBeenCalledWith("mcp.mutation", {
+      phase: "started",
+      request_id_hash: "f6222a1106eefe4f6b25302a9d963cfaba14bedfefacc2c311967e41c61cffe4",
+      tool_name: "create_food_entry",
+    });
+    expect(routeMocks.loggerInfo).toHaveBeenCalledWith("mcp.mutation", {
+      http_status: 204,
+      phase: "completed",
+      request_id_hash: "f6222a1106eefe4f6b25302a9d963cfaba14bedfefacc2c311967e41c61cffe4",
+      tool_name: "create_food_entry",
+    });
+    expect(JSON.stringify(routeMocks.loggerInfo.mock.calls)).not.toContain(requestId);
   });
 
   it("reports cleanup failures after the response closes", async () => {

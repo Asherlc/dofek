@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   delete: vi.fn(),
   get: vi.fn(),
   history: vi.fn(),
+  loggerInfo: vi.fn(),
   restore: vi.fn(),
   search: vi.fn(),
   serviceConstructor: vi.fn(),
@@ -50,6 +51,10 @@ vi.mock("dofek/lib/error-reporting", async (importOriginal) => {
   const original = await importOriginal<typeof import("dofek/lib/error-reporting")>();
   return { ...original, captureException: vi.fn() };
 });
+
+vi.mock("../logger.ts", () => ({
+  logger: { info: mocks.loggerInfo },
+}));
 
 const recordId = "11111111-1111-4111-8111-111111111111";
 const sourceEntryId = "12111111-1111-4111-8111-111111111111";
@@ -432,6 +437,24 @@ describe("registerFoodRecordTools", () => {
       servingWeightGrams: undefined,
       nutrients: { protein: 10 },
     });
+  });
+
+  it("records an executed food mutation without raw request data", async () => {
+    const { tool } = setup();
+
+    await tool("create_food_entry").handler({
+      request_id: requestId,
+      date: "2026-09-07",
+      food_name: "Oats",
+      nutrients: { protein: 10 },
+    });
+
+    expect(mocks.loggerInfo).toHaveBeenCalledWith("mcp.mutation", {
+      phase: "succeeded",
+      request_id_hash: "f6222a1106eefe4f6b25302a9d963cfaba14bedfefacc2c311967e41c61cffe4",
+      tool_name: "create_food_entry",
+    });
+    expect(JSON.stringify(mocks.loggerInfo.mock.calls)).not.toContain(requestId);
   });
 
   it("maps update, delete, and restore commands to service inputs", async () => {
