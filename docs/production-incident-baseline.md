@@ -26611,6 +26611,35 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   counter so a genuinely stuck pipeline (as opposed to a merely slow one)
   pages someone instead of only surfacing in the per-user UI.
 
+## 2026-09-12 — Sleep and body recompute blocked by route read-model timeout
+
+- **Symptoms:** The dashboard showed Sleep and Body recompute blocked even
+  though their individual model work had completed. The analytics worker
+  repeatedly stopped at `activity_route_identity`.
+- **User impact:** Sleep and body recompute status could not complete, and
+  the analytics cache-warming/build cycle was blocked behind the route model.
+- **Evidence:** ClickHouse `system.query_log` recorded
+  `activity_route_identity` failures after about 240 seconds, reading roughly
+  302 million rows / 14 GB, with exception code 159 (`Timeout exceeded`).
+- **Root cause:** Unscoped route refreshes used full-table `FINAL` scans to
+  find changed location and altitude activity keys, then read altitude samples
+  again to build the selected elevation profiles. The repeated scans exceeded
+  ClickHouse's configured execution-time limit before the downstream
+  recompute could finish.
+- **Fix:** Discover changed route keys from grouped per-activity source
+  watermarks and retain `FINAL` reads only for the selected route geometry and
+  altitude samples. This preserves replacement correctness while bounding the
+  expensive reads to affected activities.
+- **Validation:** A ClickHouse integration regression test inserts 100,000
+  altitude samples and requires an unscoped refresh to remain below a 350,000
+  row-read budget; the focused suite passed locally (19 tests). Deployment validation
+  remains pending at the time of this entry.
+- **Remaining risk:** A genuinely large set of affected activities can still
+  require substantial selected-geometry work, but the full-history discovery
+  scans no longer multiply that cost.
+- **Follow-up:** Monitor the first production analytics build after deploy for
+  `activity_route_identity` duration and exception code 159.
+
 ## 2026-09-12 — Pinned `docker.io/minio/minio` image archived, breaking CI and exposed in production stack
 
 - **Symptoms:** PR #2720's CI failed across E2E, three of four integration
