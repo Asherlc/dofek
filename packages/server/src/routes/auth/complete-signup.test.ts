@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/node";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
@@ -123,5 +124,38 @@ describe("handleCompleteSignup", () => {
     expect(res.send).toHaveBeenCalledWith(
       expect.stringContaining("Restart the provider connection"),
     );
+  });
+
+  it("reports cleanup failure without revoking credentials", async () => {
+    const cleanupError = new Error("cleanup unavailable");
+    state.deleteAuthorization.mockRejectedValueOnce(cleanupError);
+    const res = response();
+
+    await handleCompleteSignup(request(), res);
+
+    expect(state.revoke).not.toHaveBeenCalled();
+    expect(res.send).toHaveBeenCalledWith("Signup failed — please try again");
+    expect(Sentry.captureException).toHaveBeenCalledWith(cleanupError, expect.anything());
+  });
+
+  it("retains the claim when credential revocation fails", async () => {
+    state.revoke.mockRejectedValueOnce(new Error("revocation unavailable"));
+    const res = response();
+
+    await handleCompleteSignup(request(), res);
+
+    expect(state.complete).not.toHaveBeenCalled();
+    expect(res.send).toHaveBeenCalledWith("Signup failed — please try again");
+  });
+
+  it("uses the normal signup response when webhook registration succeeds", async () => {
+    state.registerWebhook.mockResolvedValueOnce(undefined);
+    const res = response();
+
+    await handleCompleteSignup(request(), res);
+
+    expect(state.revoke).not.toHaveBeenCalled();
+    expect(state.complete).toHaveBeenCalledOnce();
+    expect(res.redirect).toHaveBeenCalledWith("/");
   });
 });
