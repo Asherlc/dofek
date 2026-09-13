@@ -56,13 +56,19 @@ const testEnvironment = {
   TEST_DATABASE_URL: localEnvironment.DATABASE_URL,
 };
 const vitestArguments = ["exec", "vitest", "run"];
+const ordinaryTestProjects = ["unit", "mobile", "integration"];
 
 if (mode === "integration") {
   vitestArguments.push("--project", "integration");
 } else if (mode === "peerdb-integration") {
   vitestArguments.push("--project", "peerdb-integration");
-} else if (mode === "changed") {
-  vitestArguments.push("--changed", "origin/main");
+} else {
+  for (const project of ordinaryTestProjects) {
+    vitestArguments.push("--project", project);
+  }
+  if (mode === "changed") {
+    vitestArguments.push("--changed", "origin/main");
+  }
 }
 
 vitestArguments.push(...additionalArguments);
