@@ -9,12 +9,21 @@ import {
 } from "./clickhouse-clinical-cdc.ts";
 import {
   type PeerDbMirrorName,
-  type PeerDbTableMapping,
   peerDbMirrorContracts,
   renderPeerDbTableMappings,
 } from "./peerdb/mirror-contracts.ts";
+import {
+  type PeerDbMirrorApiClient,
+  reconcileExistingPeerDbMirrors,
+} from "./peerdb/mirror-reconciler.ts";
 
 export type { PeerDbTableMapping } from "./peerdb/mirror-contracts.ts";
+export type {
+  PeerDbMirrorApiClient,
+  PeerDbMirrorListItem,
+  PeerDbMirrorStateChangeRequest,
+  PeerDbMirrorStatus,
+} from "./peerdb/mirror-reconciler.ts";
 
 interface PeerDbClient {
   query(queryText: string): Promise<unknown>;
@@ -22,35 +31,6 @@ interface PeerDbClient {
 
 interface SourcePostgresClient {
   query(queryText: string): Promise<unknown>;
-}
-
-interface PeerDbMirrorStatus {
-  currentFlowState: string;
-  tableMappings: readonly PeerDbTableMapping[];
-}
-
-interface PeerDbCdcFlowConfigUpdate {
-  additional_tables: readonly PeerDbTableMapping[];
-}
-
-interface PeerDbMirrorStateChangeRequest {
-  flowJobName: string;
-  requestedFlowState: "STATUS_PAUSED" | "STATUS_RUNNING";
-  flowConfigUpdate?: {
-    cdcFlowConfigUpdate: PeerDbCdcFlowConfigUpdate;
-  };
-}
-
-export interface PeerDbMirrorListItem {
-  destinationType: number | string;
-  isCdc: boolean;
-  name: string;
-}
-
-export interface PeerDbMirrorApiClient {
-  getMirrorStatus(mirrorName: string): Promise<PeerDbMirrorStatus>;
-  listMirrors(): Promise<PeerDbMirrorListItem[]>;
-  changeMirrorState(request: PeerDbMirrorStateChangeRequest): Promise<void>;
 }
 
 export interface PeerDbSqlTemplateValues {
@@ -130,34 +110,6 @@ const peerDbMirrorListResponseSchema = z.object({
     }),
   ),
 });
-const requiredExistingMirrorTableMappings = {
-  dofek_fitness_raw_analytics: [
-    {
-      sourceTableIdentifier: "fitness.provider_connection",
-      destinationTableIdentifier: "provider_connection",
-      exclude: [],
-    },
-    {
-      sourceTableIdentifier: "fitness.processing_flow_marker",
-      destinationTableIdentifier: "processing_flow_marker",
-      exclude: [],
-    },
-  ],
-  dofek_provider_inventory_raw_analytics: [
-    {
-      sourceTableIdentifier: "fitness.clinical_record",
-      destinationTableIdentifier: "clinical_record",
-      exclude: [],
-    },
-    {
-      sourceTableIdentifier: "fitness.processing_flow_marker",
-      destinationTableIdentifier: "processing_flow_marker_provider_inventory",
-      exclude: [],
-    },
-  ],
-} as const satisfies Partial<Record<PeerDbMirrorName, readonly PeerDbTableMapping[]>>;
-const peerDbMirrorStatePollIntervalMs = 1_000;
-const peerDbMirrorStatePollTimeoutMs = 120_000;
 const defaultRawAnalyticsInitialCopyValues: RawAnalyticsInitialCopyValues = {
   dofek_fitness_raw_analytics: true,
   dofek_provider_inventory_raw_analytics: true,
@@ -680,103 +632,6 @@ async function truncateMissingInitialCopyRawAnalyticsDestinations(
   }
 }
 
-function mirrorHasTableMapping(
-  status: PeerDbMirrorStatus,
-  requiredMapping: PeerDbTableMapping,
-): boolean {
-  return status.tableMappings.some(
-    (mapping) =>
-      mapping.sourceTableIdentifier === requiredMapping.sourceTableIdentifier &&
-      mapping.destinationTableIdentifier === requiredMapping.destinationTableIdentifier,
-  );
-}
-
-async function waitForPeerDbMirror(
-  peerDbMirrorApiClient: PeerDbMirrorApiClient,
-  mirrorName: string,
-  description: string,
-  predicate: (status: PeerDbMirrorStatus) => boolean,
-): Promise<PeerDbMirrorStatus> {
-  const deadline = Date.now() + peerDbMirrorStatePollTimeoutMs;
-  while (true) {
-    const status = await peerDbMirrorApiClient.getMirrorStatus(mirrorName);
-    if (predicate(status)) {
-      return status;
-    }
-    if (Date.now() >= deadline) {
-      throw new Error(`Timed out waiting for PeerDB mirror ${mirrorName} to ${description}`);
-    }
-    await new Promise<void>((resolve) => setTimeout(resolve, peerDbMirrorStatePollIntervalMs));
-  }
-}
-
-async function ensureExistingMirrorTableMappings(
-  peerDbMirrorApiClient: PeerDbMirrorApiClient,
-  existingMirrorNames: ReadonlySet<string>,
-): Promise<void> {
-  for (const [mirrorName, requiredMappings] of Object.entries(
-    requiredExistingMirrorTableMappings,
-  )) {
-    if (!existingMirrorNames.has(mirrorName)) {
-      continue;
-    }
-
-    const status = await peerDbMirrorApiClient.getMirrorStatus(mirrorName);
-    const missingMappings = requiredMappings.filter(
-      (requiredMapping) => !mirrorHasTableMapping(status, requiredMapping),
-    );
-    if (missingMappings.length === 0) {
-      continue;
-    }
-    if (status.currentFlowState !== "STATUS_RUNNING") {
-      throw new Error(
-        `PeerDB mirror ${mirrorName} must be running before adding required processing marker mappings; current state is ${status.currentFlowState}`,
-      );
-    }
-
-    await peerDbMirrorApiClient.changeMirrorState({
-      flowJobName: mirrorName,
-      requestedFlowState: "STATUS_PAUSED",
-    });
-    let resumedWithRequiredMappings = false;
-    try {
-      await waitForPeerDbMirror(
-        peerDbMirrorApiClient,
-        mirrorName,
-        "reach STATUS_PAUSED",
-        (currentStatus) => currentStatus.currentFlowState === "STATUS_PAUSED",
-      );
-      await peerDbMirrorApiClient.changeMirrorState({
-        flowJobName: mirrorName,
-        requestedFlowState: "STATUS_RUNNING",
-        flowConfigUpdate: {
-          cdcFlowConfigUpdate: {
-            additional_tables: missingMappings,
-          },
-        },
-      });
-      await waitForPeerDbMirror(
-        peerDbMirrorApiClient,
-        mirrorName,
-        "include required processing marker mappings and resume CDC",
-        (currentStatus) =>
-          currentStatus.currentFlowState === "STATUS_RUNNING" &&
-          missingMappings.every((requiredMapping) =>
-            mirrorHasTableMapping(currentStatus, requiredMapping),
-          ),
-      );
-      resumedWithRequiredMappings = true;
-    } finally {
-      if (!resumedWithRequiredMappings) {
-        await peerDbMirrorApiClient.changeMirrorState({
-          flowJobName: mirrorName,
-          requestedFlowState: "STATUS_RUNNING",
-        });
-      }
-    }
-  }
-}
-
 export async function setupClickHouseCdc(options: SetupClickHouseCdcOptions): Promise<void> {
   await ensureAnalyticsPeerDbColumns(options.clickHouseClient);
   await ensureAnalyticsPublication(options.sourcePostgresClient);
@@ -819,7 +674,11 @@ export async function setupClickHouseCdc(options: SetupClickHouseCdcOptions): Pr
     if (!peerDbMirrorApiClient) {
       throw new Error("PeerDB mirror API client is required to reconcile existing mirror mappings");
     }
-    await ensureExistingMirrorTableMappings(peerDbMirrorApiClient, existingMirrorNames);
+    await reconcileExistingPeerDbMirrors(
+      peerDbMirrorApiClient,
+      existingMirrorNames,
+      peerDbMirrorContracts,
+    );
   }
   await dropObsoleteClinicalRawTables(options.clickHouseClient);
 }

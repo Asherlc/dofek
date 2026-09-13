@@ -201,12 +201,14 @@ Docker Compose, GitHub Actions, Sentry/OpenTelemetry.
   stale `daily_metrics` mapping, require this observable API sequence:
 
   1. pause and wait for `STATUS_PAUSED`;
-  2. send `removed_tables: ["fitness.daily_metrics"]` and keep the mirror
-     paused;
-  3. poll until the mapping is absent;
-  4. send `additional_tables` with the canonical exclusion list and request
+  2. send `removed_tables` with the source and destination identifiers and
+     request `STATUS_RUNNING`, because PeerDB resumes automatically after an
+     edit;
+  3. poll until the mirror is running and the mapping is absent;
+  4. pause again and wait for `STATUS_PAUSED`;
+  5. send `additional_tables` with the canonical exclusion list and request
      `STATUS_RUNNING`;
-  5. poll until the mirror is running and the exact mapping is present.
+  6. poll until the mirror is running and the exact mapping is present.
 
   Also cover multiple changed tables in one remove phase, missing mappings,
   already-canonical mappings, API failure, read-back mismatch, and timeout.

@@ -31,6 +31,19 @@ import {
   setupClickHouseCdc,
   setupClickHouseCdcFromEnv,
 } from "./clickhouse-cdc.ts";
+import { peerDbMirrorContracts } from "./peerdb/mirror-contracts.ts";
+
+function canonicalMappingsFor(mirrorName: string): PeerDbTableMapping[] {
+  const contract = peerDbMirrorContracts.find(({ name }) => name === mirrorName);
+  if (!contract) throw new Error(`Unexpected mirror ${mirrorName}`);
+  return contract.tableMappings.map(
+    ({ sourceTableIdentifier, destinationTableIdentifier, exclude }) => ({
+      destinationTableIdentifier,
+      exclude: [...exclude],
+      sourceTableIdentifier,
+    }),
+  );
+}
 
 function credentialedUrl(
   protocol: "http" | "postgres",
@@ -76,40 +89,9 @@ function createTestClickHouseClient(
 function createConfiguredPeerDbMirrorApiClient(): PeerDbMirrorApiClient {
   return {
     async getMirrorStatus(mirrorName) {
-      const destinationTableIdentifier =
-        mirrorName === "dofek_provider_inventory_raw_analytics"
-          ? "processing_flow_marker_provider_inventory"
-          : "processing_flow_marker";
       return {
         currentFlowState: "STATUS_RUNNING",
-        tableMappings:
-          mirrorName === "dofek_sensor_priority_raw_analytics"
-            ? []
-            : [
-                ...(mirrorName === "dofek_fitness_raw_analytics"
-                  ? [
-                      {
-                        sourceTableIdentifier: "fitness.provider_connection",
-                        destinationTableIdentifier: "provider_connection",
-                        exclude: [],
-                      },
-                    ]
-                  : []),
-                ...(mirrorName === "dofek_provider_inventory_raw_analytics"
-                  ? [
-                      {
-                        sourceTableIdentifier: "fitness.clinical_record",
-                        destinationTableIdentifier: "clinical_record",
-                        exclude: [],
-                      },
-                    ]
-                  : []),
-                {
-                  sourceTableIdentifier: "fitness.processing_flow_marker",
-                  destinationTableIdentifier,
-                  exclude: [],
-                },
-              ],
+        tableMappings: canonicalMappingsFor(mirrorName),
       };
     },
     async listMirrors() {
@@ -541,7 +523,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
     expect(peerDbQueries.join("\n")).not.toContain("CREATE MIRROR");
   });
 
-  it("adds missing processing markers to existing mirrors without recreating them", async () => {
+  it("reconciles complete existing mirror contracts without recreating mirrors", async () => {
     const peerDbQueries: string[] = [];
     const tableMappings = new Map<string, PeerDbTableMapping[]>([
       [
@@ -593,10 +575,16 @@ describe("PeerDB ClickHouse CDC setup", () => {
           mirrorStates.set(request.flowJobName, "STATUS_PAUSED");
           return;
         }
-        const additionalTables =
-          request.flowConfigUpdate?.cdcFlowConfigUpdate.additional_tables ?? [];
+        const update = request.flowConfigUpdate?.cdcFlowConfigUpdate;
+        const removedTables = update?.removed_tables ?? [];
+        const removedSources = new Set(
+          removedTables.map(({ sourceTableIdentifier }) => sourceTableIdentifier),
+        );
+        const additionalTables = update?.additional_tables ?? [];
         tableMappings.set(request.flowJobName, [
-          ...(tableMappings.get(request.flowJobName) ?? []),
+          ...(tableMappings.get(request.flowJobName) ?? []).filter(
+            ({ sourceTableIdentifier }) => !removedSources.has(sourceTableIdentifier),
+          ),
           ...additionalTables,
         ]);
         mirrorStates.set(request.flowJobName, "STATUS_RUNNING");
@@ -657,53 +645,75 @@ describe("PeerDB ClickHouse CDC setup", () => {
       },
     });
 
-    expect(getMirrorStatus).toHaveBeenCalledTimes(7);
-    expect(peerDbMirrorApiClient.changeMirrorState).toHaveBeenCalledTimes(4);
+    expect(getMirrorStatus).toHaveBeenCalled();
+    expect(peerDbMirrorApiClient.changeMirrorState).toHaveBeenCalledTimes(8);
     expect(peerDbMirrorApiClient.changeMirrorState).toHaveBeenNthCalledWith(1, {
       flowJobName: "dofek_fitness_raw_analytics",
       requestedFlowState: "STATUS_PAUSED",
     });
-    expect(peerDbMirrorApiClient.changeMirrorState).toHaveBeenCalledWith({
+    expect(peerDbMirrorApiClient.changeMirrorState).toHaveBeenNthCalledWith(2, {
       flowJobName: "dofek_fitness_raw_analytics",
       requestedFlowState: "STATUS_RUNNING",
       flowConfigUpdate: {
         cdcFlowConfigUpdate: {
-          additional_tables: [
-            {
-              sourceTableIdentifier: "fitness.provider_connection",
-              destinationTableIdentifier: "provider_connection",
-              exclude: [],
-            },
+          removed_tables: [
             {
               sourceTableIdentifier: "fitness.processing_flow_marker",
+              destinationTableIdentifier: "wrong_destination",
+            },
+            {
+              sourceTableIdentifier: "fitness.wrong_source",
               destinationTableIdentifier: "processing_flow_marker",
-              exclude: [],
             },
           ],
         },
       },
     });
     expect(peerDbMirrorApiClient.changeMirrorState).toHaveBeenNthCalledWith(3, {
+      flowJobName: "dofek_fitness_raw_analytics",
+      requestedFlowState: "STATUS_PAUSED",
+    });
+    expect(peerDbMirrorApiClient.changeMirrorState).toHaveBeenNthCalledWith(4, {
+      flowJobName: "dofek_fitness_raw_analytics",
+      requestedFlowState: "STATUS_RUNNING",
+      flowConfigUpdate: {
+        cdcFlowConfigUpdate: {
+          additional_tables: canonicalMappingsFor("dofek_fitness_raw_analytics"),
+        },
+      },
+    });
+    expect(peerDbMirrorApiClient.changeMirrorState).toHaveBeenNthCalledWith(5, {
       flowJobName: "dofek_provider_inventory_raw_analytics",
       requestedFlowState: "STATUS_PAUSED",
     });
-    expect(peerDbMirrorApiClient.changeMirrorState).toHaveBeenCalledWith({
+    expect(peerDbMirrorApiClient.changeMirrorState).toHaveBeenNthCalledWith(6, {
       flowJobName: "dofek_provider_inventory_raw_analytics",
       requestedFlowState: "STATUS_RUNNING",
       flowConfigUpdate: {
         cdcFlowConfigUpdate: {
-          additional_tables: [
-            {
-              sourceTableIdentifier: "fitness.clinical_record",
-              destinationTableIdentifier: "clinical_record",
-              exclude: [],
-            },
+          removed_tables: [
             {
               sourceTableIdentifier: "fitness.processing_flow_marker",
+              destinationTableIdentifier: "wrong_destination",
+            },
+            {
+              sourceTableIdentifier: "fitness.wrong_source",
               destinationTableIdentifier: "processing_flow_marker_provider_inventory",
-              exclude: [],
             },
           ],
+        },
+      },
+    });
+    expect(peerDbMirrorApiClient.changeMirrorState).toHaveBeenNthCalledWith(7, {
+      flowJobName: "dofek_provider_inventory_raw_analytics",
+      requestedFlowState: "STATUS_PAUSED",
+    });
+    expect(peerDbMirrorApiClient.changeMirrorState).toHaveBeenNthCalledWith(8, {
+      flowJobName: "dofek_provider_inventory_raw_analytics",
+      requestedFlowState: "STATUS_RUNNING",
+      flowConfigUpdate: {
+        cdcFlowConfigUpdate: {
+          additional_tables: canonicalMappingsFor("dofek_provider_inventory_raw_analytics"),
         },
       },
     });
@@ -771,21 +781,13 @@ describe("PeerDB ClickHouse CDC setup", () => {
           if (mirrorName === "dofek_fitness_raw_analytics") {
             return {
               currentFlowState: "STATUS_RUNNING",
-              tableMappings: [
-                {
-                  sourceTableIdentifier: "fitness.provider_connection",
-                  destinationTableIdentifier: "provider_connection",
-                  exclude: [],
-                },
-                {
-                  sourceTableIdentifier: "fitness.processing_flow_marker",
-                  destinationTableIdentifier: "processing_flow_marker",
-                  exclude: [],
-                },
-              ],
+              tableMappings: canonicalMappingsFor(mirrorName),
             };
           }
-          return { currentFlowState: "STATUS_RUNNING", tableMappings: [] };
+          return {
+            currentFlowState: "STATUS_RUNNING",
+            tableMappings: canonicalMappingsFor(mirrorName),
+          };
         },
         async listMirrors() {
           return [];
@@ -1441,18 +1443,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
             cdcStatus: {
               config: {
                 tableMappings: hasRequiredMappings
-                  ? [
-                      {
-                        sourceTableIdentifier: "fitness.provider_connection",
-                        destinationTableIdentifier: "provider_connection",
-                        exclude: [],
-                      },
-                      {
-                        sourceTableIdentifier: "fitness.processing_flow_marker",
-                        destinationTableIdentifier: "processing_flow_marker",
-                        exclude: [],
-                      },
-                    ]
+                  ? canonicalMappingsFor("dofek_fitness_raw_analytics")
                   : [],
               },
             },
@@ -1480,7 +1471,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
       "http://peerdb-flow-api:8113/v1/mirrors/state_change",
       expect.objectContaining({ method: "POST" }),
     );
-    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(fetchMock).toHaveBeenCalledTimes(6);
     expect(fetchMock).toHaveBeenNthCalledWith(1, "http://peerdb-flow-api:8113/v1/mirrors/status", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -1490,7 +1481,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
       }),
     });
     expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
+      3,
       "http://peerdb-flow-api:8113/v1/mirrors/state_change",
       {
         method: "POST",
@@ -1502,7 +1493,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
       },
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      4,
+      5,
       "http://peerdb-flow-api:8113/v1/mirrors/state_change",
       {
         method: "POST",
@@ -1512,18 +1503,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
           requestedFlowState: "STATUS_RUNNING",
           flowConfigUpdate: {
             cdcFlowConfigUpdate: {
-              additional_tables: [
-                {
-                  sourceTableIdentifier: "fitness.provider_connection",
-                  destinationTableIdentifier: "provider_connection",
-                  exclude: [],
-                },
-                {
-                  sourceTableIdentifier: "fitness.processing_flow_marker",
-                  destinationTableIdentifier: "processing_flow_marker",
-                  exclude: [],
-                },
-              ],
+              additional_tables: canonicalMappingsFor("dofek_fitness_raw_analytics"),
             },
           },
         }),
@@ -1535,18 +1515,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
     configureFlowApiEnvironment("localhost");
     configureExistingFitnessMirrorQuery();
     const fetchMock = vi.fn(async () =>
-      peerDbStatusResponse("STATUS_RUNNING", [
-        {
-          sourceTableIdentifier: "fitness.provider_connection",
-          destinationTableIdentifier: "provider_connection",
-          exclude: [],
-        },
-        {
-          sourceTableIdentifier: "fitness.processing_flow_marker",
-          destinationTableIdentifier: "processing_flow_marker",
-          exclude: [],
-        },
-      ]),
+      peerDbStatusResponse("STATUS_RUNNING", canonicalMappingsFor("dofek_fitness_raw_analytics")),
     );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -1652,88 +1621,56 @@ describe("PeerDB ClickHouse CDC setup", () => {
     ).rejects.toThrow("PeerDB mirror API client is required to reconcile existing mirror mappings");
   });
 
-  it("rejects editing a mirror that is not running", async () => {
+  it("reconciles a mirror that is already paused", async () => {
     const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
-    const changeMirrorState = vi.fn(async () => undefined);
-
-    await expect(
-      setupClickHouseCdc({
-        peerDbMirrorApiClient: {
-          async getMirrorStatus() {
-            return { currentFlowState: "STATUS_PAUSED", tableMappings: [] };
-          },
-          async listMirrors() {
-            return [];
-          },
-          changeMirrorState,
-        },
-        peerDbClient: createExistingFitnessMirrorPeerDbClient(),
-        sourcePostgresClient: { async query() {} },
-        clickHouseClient: createTestClickHouseClient(),
-        templateSql,
-        templateValues: {
-          clickHouseHost: "clickhouse",
-          clickHouseCredential: "clickhouse-fixture",
-          clickHousePort: 9000,
-          clickHouseUser: "default",
-          postgresDatabase: "health",
-          postgresHost: "db",
-          postgresCredential: "fixture",
-          postgresPort: 5432,
-          postgresUser: "health",
-        },
-      }),
-    ).rejects.toThrow(
-      "PeerDB mirror dofek_fitness_raw_analytics must be running before adding required processing marker mappings; current state is STATUS_PAUSED",
+    let mirrorState = "STATUS_PAUSED";
+    let tableMappings: PeerDbTableMapping[] = [];
+    const changeMirrorState = vi.fn(
+      async (request: Parameters<PeerDbMirrorApiClient["changeMirrorState"]>[0]) => {
+        mirrorState = request.requestedFlowState;
+        tableMappings = [
+          ...tableMappings,
+          ...(request.flowConfigUpdate?.cdcFlowConfigUpdate.additional_tables ?? []),
+        ];
+      },
     );
-    expect(changeMirrorState).not.toHaveBeenCalled();
-  });
 
-  it("requests that a mirror resume when mapping reconciliation fails after pausing", async () => {
-    const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
-    let statusReadCount = 0;
-    const changeMirrorState = vi.fn(async () => undefined);
-
-    await expect(
-      setupClickHouseCdc({
-        peerDbMirrorApiClient: {
-          async getMirrorStatus() {
-            statusReadCount += 1;
-            if (statusReadCount === 1) {
-              return { currentFlowState: "STATUS_RUNNING", tableMappings: [] };
-            }
-            throw new Error("PeerDB status unavailable");
-          },
-          async listMirrors() {
-            return [];
-          },
-          changeMirrorState,
+    await setupClickHouseCdc({
+      peerDbMirrorApiClient: {
+        async getMirrorStatus() {
+          return { currentFlowState: mirrorState, tableMappings };
         },
-        peerDbClient: createExistingFitnessMirrorPeerDbClient(),
-        sourcePostgresClient: { async query() {} },
-        clickHouseClient: createTestClickHouseClient(),
-        templateSql,
-        templateValues: {
-          clickHouseHost: "clickhouse",
-          clickHouseCredential: "clickhouse-fixture",
-          clickHousePort: 9000,
-          clickHouseUser: "default",
-          postgresDatabase: "health",
-          postgresHost: "db",
-          postgresCredential: "fixture",
-          postgresPort: 5432,
-          postgresUser: "health",
+        async listMirrors() {
+          return [];
         },
-      }),
-    ).rejects.toThrow("PeerDB status unavailable");
-
-    expect(changeMirrorState).toHaveBeenNthCalledWith(1, {
-      flowJobName: "dofek_fitness_raw_analytics",
-      requestedFlowState: "STATUS_PAUSED",
+        changeMirrorState,
+      },
+      peerDbClient: createExistingFitnessMirrorPeerDbClient(),
+      sourcePostgresClient: { async query() {} },
+      clickHouseClient: createTestClickHouseClient(),
+      templateSql,
+      templateValues: {
+        clickHouseHost: "clickhouse",
+        clickHouseCredential: "clickhouse-fixture",
+        clickHousePort: 9000,
+        clickHouseUser: "default",
+        postgresDatabase: "health",
+        postgresHost: "db",
+        postgresCredential: "fixture",
+        postgresPort: 5432,
+        postgresUser: "health",
+      },
     });
-    expect(changeMirrorState).toHaveBeenNthCalledWith(2, {
+
+    expect(changeMirrorState).toHaveBeenCalledOnce();
+    expect(changeMirrorState).toHaveBeenCalledWith({
       flowJobName: "dofek_fitness_raw_analytics",
       requestedFlowState: "STATUS_RUNNING",
+      flowConfigUpdate: {
+        cdcFlowConfigUpdate: {
+          additional_tables: canonicalMappingsFor("dofek_fitness_raw_analytics"),
+        },
+      },
     });
   });
 

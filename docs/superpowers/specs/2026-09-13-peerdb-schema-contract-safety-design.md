@@ -129,11 +129,13 @@ propagation for deployment safety
    services through the existing deployment overlay.
 2. Add the source column to the canonical exclusion list.
 3. Pause the live mirror, remove only the affected table mapping through
-   `removed_tables`, and read the configuration back until the mapping is
-   absent.
-4. In a second update, add the table mapping through `additional_tables` with
-   the canonical exclusions. PeerDB forbids adding and removing the same table
-   in one update, so these are separate verified transitions.
+   `removed_tables`, and allow that edit to resume the mirror as required by
+   PeerDB's state-change API.
+4. Read the running configuration back until the mapping is absent, pause the
+   mirror again, then add the table mapping through `additional_tables` with
+   the canonical exclusions. PeerDB resumes after each edit and forbids adding
+   and removing the same table in one update, so these are separate verified
+   pause/edit/resume transitions.
 5. Wait for the table snapshot to finish, the mirror to return to
    `STATUS_RUNNING`, and the read-back mapping to contain the exact exclusions.
 6. Run compatibility validation while the destination column still exists.
@@ -219,9 +221,10 @@ accepted as health when normalization is failing.
 The production recovery uses the same steady-state mechanism:
 
 1. Pause `dofek_fitness_raw_analytics`.
-2. Remove the `daily_metrics` and `sleep_session` table mappings in one paused
-   update and verify that both are absent.
-3. Add both mappings back in a second update with the canonical exclusions.
+2. Remove the `daily_metrics` and `sleep_session` table mappings in one edit,
+   let PeerDB resume, and verify that both are absent.
+3. Pause the mirror again and add both mappings back in a second edit with the
+   canonical exclusions.
 4. Wait for their snapshots to complete and read back the exact exclusions.
 5. Continue using the existing mirror and active, reserved slot; do not recreate
    either one.
