@@ -655,6 +655,12 @@ describe("registerFoodRecordTools", () => {
         },
       });
       expect(captureException).not.toHaveBeenCalled();
+      expect(mocks.loggerInfo).toHaveBeenCalledWith("mcp.mutation", {
+        error_code: code,
+        phase: "rejected",
+        request_id_hash: "f6222a1106eefe4f6b25302a9d963cfaba14bedfefacc2c311967e41c61cffe4",
+        tool_name: "update_food_entry",
+      });
     },
   );
 
@@ -732,6 +738,12 @@ describe("registerFoodRecordTools", () => {
         code: "INTERNAL_ERROR",
         message: "The food record request could not be completed.",
       },
+    });
+    expect(mocks.loggerInfo).toHaveBeenCalledWith("mcp.mutation", {
+      error_code: "INTERNAL_ERROR",
+      phase: "rejected",
+      request_id_hash: "f6222a1106eefe4f6b25302a9d963cfaba14bedfefacc2c311967e41c61cffe4",
+      tool_name: "create_food_entry",
     });
     expect(JSON.stringify(result)).not.toContain(secret);
   });
