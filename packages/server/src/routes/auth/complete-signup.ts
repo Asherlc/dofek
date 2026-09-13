@@ -4,6 +4,7 @@ import {
   AccountErasureIdentityFencedError,
   AccountErasureUserFencedError,
   withAccountErasureUserAndIdentityWriteFence,
+  withAccountErasureUserWriteFence,
 } from "dofek/db/account-erasure";
 import { captureException } from "dofek/lib/error-reporting";
 import type { Request, Response } from "express";
@@ -24,6 +25,7 @@ import {
   getPendingEmailSignupStoreRef,
   getPostLoginRedirect,
   persistProviderConnection,
+  registerProviderWebhook,
 } from "./shared.ts";
 
 const CLAIM_RENEWAL_INTERVAL_MS = 20 * 1000;
@@ -83,6 +85,7 @@ class PendingEmailSignupClaimRenewal {
 export async function handleCompleteSignup(req: Request, res: Response): Promise<void> {
   let pendingClaim: PendingEmailSignupClaim | null = null;
   let pendingClaimRenewal: PendingEmailSignupClaimRenewal | null = null;
+  let webhookFailureConsumedClaim = false;
   try {
     const token = typeof req.body.token === "string" ? req.body.token : undefined;
     const rawEmail = typeof req.body.email === "string" ? req.body.email : "";
@@ -191,6 +194,46 @@ export async function handleCompleteSignup(req: Request, res: Response): Promise
     );
     const { userId, isNewUser, sessionInfo } = result;
     await pendingClaimRenewal.throwIfFailed();
+    try {
+      await registerProviderWebhook({ db, provider, userId });
+    } catch (webhookError: unknown) {
+      try {
+        await withAccountErasureUserWriteFence(db, userId, async (transaction) => {
+          const { deleteProviderAuthorization } = await import("dofek/db/tokens");
+          await deleteProviderAuthorization(transaction, provider.id, userId);
+        });
+      } catch (cleanupError: unknown) {
+        Sentry.captureException(cleanupError, {
+          tags: {
+            context: "pending-email-signup-webhook-cleanup",
+            providerId: provider.id,
+          },
+        });
+        throw new Error(
+          `Webhook registration failed and the persisted connection could not be removed: ${
+            cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
+          }`,
+          { cause: webhookError },
+        );
+      }
+
+      const renewal = pendingClaimRenewal;
+      pendingClaimRenewal = null;
+      const renewalFailure = await renewal.stop();
+      if (renewalFailure) throw renewalFailure;
+      await pendingStore.complete(pendingClaim);
+      pendingClaim = null;
+      webhookFailureConsumedClaim = true;
+
+      const setup = provider.authSetup?.({ host: req.get("host") });
+      await revokeProviderCredentials({
+        oauthConfig: setup?.oauthConfig,
+        providerId: provider.id,
+        revokeExistingTokens: setup?.revokeExistingTokens,
+        tokens: claimedPending.tokens,
+      });
+      throw webhookError;
+    }
 
     if (claimedPending.mobileScheme && isValidMobileScheme(claimedPending.mobileScheme)) {
       const exchangeCode = await getMobileAuthExchangeStoreRef().issue({
@@ -294,6 +337,12 @@ export async function handleCompleteSignup(req: Request, res: Response): Promise
       captureException(err);
       logger.error(`[auth] Completing signup failed: ${err}`);
     }
-    res.status(500).send("Signup failed — please try again");
+    res
+      .status(500)
+      .send(
+        webhookFailureConsumedClaim
+          ? "Webhook registration failed. Restart the provider connection and try again."
+          : "Signup failed — please try again",
+      );
   }
 }

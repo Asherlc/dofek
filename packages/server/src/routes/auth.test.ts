@@ -127,6 +127,7 @@ vi.mock("dofek/providers/registry", () => ({
 }));
 
 vi.mock("dofek/db/tokens", () => ({
+  deleteProviderAuthorization: vi.fn(() => Promise.resolve()),
   ensureProvider: vi.fn(() => Promise.resolve()),
   saveTokens: vi.fn(() => Promise.resolve()),
   loadTokens: vi.fn(() => Promise.resolve(null)),
@@ -173,7 +174,7 @@ import {
   AccountErasureUserFencedError,
   withAccountErasureUserAndIdentityWriteFence,
 } from "dofek/db/account-erasure";
-import { loadTokens } from "dofek/db/tokens";
+import { deleteProviderAuthorization, loadTokens } from "dofek/db/tokens";
 import { queryCache } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
 import { getAllProviders } from "dofek/providers/registry";
@@ -2940,6 +2941,56 @@ describe("createAuthRouter", () => {
       );
     });
 
+    it("consumes a signup claim and directs a new OAuth connection when webhook registration fails", async () => {
+      const events: string[] = [];
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "strava",
+          name: "Strava",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://www.strava.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              revokeUrl: "https://www.strava.com/oauth/deauthorize",
+              scopes: ["read"],
+            },
+            exchangeCode: vi.fn(),
+            revokeExistingTokens: async () => {
+              events.push("revoke");
+            },
+          }),
+        },
+      ]);
+      vi.mocked(findExistingUserId).mockResolvedValueOnce("webhook-failure-user");
+      vi.mocked(resolveOrCreateUser).mockResolvedValueOnce({
+        userId: "webhook-failure-user",
+        isNewUser: true,
+      });
+      vi.mocked(isWebhookProvider).mockReturnValue(true);
+      vi.mocked(registerWebhookForProvider).mockRejectedValueOnce(new Error("validation failed"));
+      vi.mocked(deleteProviderAuthorization).mockImplementationOnce(async () => {
+        events.push("delete");
+      });
+      const { app } = createTestApp();
+      const pendingStore = getPendingEmailSignupStoreRef();
+      const token = await pendingStore.issue(makePendingEmailSignupEntry());
+
+      const response = await request(app, "post", "/auth/complete-signup", {
+        formBody: { token, email: "runner@example.com" },
+      });
+
+      expect(response.status).toBe(500);
+      expect(response.body).toContain("Restart the provider connection");
+      expect(events).toEqual(["delete", "revoke"]);
+      expect(deleteProviderAuthorization).toHaveBeenCalledWith(
+        expect.anything(),
+        "strava",
+        "webhook-failure-user",
+      );
+      await expect(pendingStore.get(token)).resolves.toBeNull();
+    });
+
     it.each([
       {
         error: new AccountErasureIdentityFencedError(
@@ -4490,7 +4541,12 @@ describe("createAuthRouter", () => {
 
       const callbackRes = await request(app, "get", `/callback?code=code&state=${state}`);
       expect(callbackRes.status).toBe(500);
-      expect(callbackRes.body).toContain("Token exchange failed");
+      expect(callbackRes.body).toContain("webhook registration failed");
+      expect(deleteProviderAuthorization).toHaveBeenCalledWith(
+        expect.anything(),
+        "wahoo",
+        "user-1",
+      );
       expect(revokeToken).toHaveBeenCalledTimes(2);
       expect(revokeToken).toHaveBeenNthCalledWith(
         1,

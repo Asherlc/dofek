@@ -26650,3 +26650,35 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   account-erasure/PeerDB staging use cases (an actively maintained
   S3-compatible alternative, or a managed service) now that MinIO OSS has
   no upstream. Not addressed here — out of scope for the CI unblock.
+
+## 2026-09-12 — Strava OAuth callback rolled back after webhook validation failed
+
+- **Symptoms:** Connecting Strava spent about 30 seconds on the callback and
+  ended with “Token exchange failed.” The Data Sources page then continued to
+  show Strava as disconnected.
+- **User impact:** The token exchange succeeded, but the whole connection
+  transaction rolled back when webhook registration failed, leaving no usable
+  Strava connection.
+- **Evidence:** Production `dofek_web` logs recorded the successful Strava
+  token save followed by `Strava webhook registration failed (400)`: Strava's
+  validation GET to `/api/webhooks/strava` received a non-200 response. The
+  callback completed with HTTP 500 after 29,553 ms.
+- **Root cause:** OAuth persistence created the pending webhook-subscription
+  row inside the connection transaction. Strava validates the callback during
+  subscription creation on a separate request, which cannot read that
+  uncommitted row and therefore received 404.
+- **Fix:** Persist the provider connection inside the transaction, commit it,
+  and only then register the webhook. The pending validation record is now
+  visible before Strava requests the callback. The same post-commit sequence
+  applies to pending-email signup completion.
+- **Validation:** The focused data-provider callback unit suite passed (25
+  tests), and TypeScript typecheck passed. The database-backed transaction
+  visibility test could not run locally because Docker was unavailable; the
+  full lint suite also reached its analytics SQL step but could not connect to
+  the absent local ClickHouse service. The broader auth-route suite could not
+  bind its ephemeral HTTP listener in this sandbox (`Server address is not an
+  object`) before its assertions ran.
+- **Remaining risk:** The affected authorization must be started again because
+  the original OAuth code was consumed and its transaction was rolled back.
+- **Follow-up:** After deployment, reconnect Strava and confirm that the
+  callback completes promptly and the provider becomes connected.

@@ -16,6 +16,7 @@ const {
   mockGetSessionIdFromRequest,
   mockValidateSession,
   mockPersistProviderConnection,
+  mockRegisterProviderWebhook,
   mockIssuePendingEmailSignup,
   mockFindExistingUserId,
   mockIdentityWriteFence,
@@ -34,6 +35,7 @@ const {
   mockGetSessionIdFromRequest: vi.fn(),
   mockValidateSession: vi.fn(),
   mockPersistProviderConnection: vi.fn(),
+  mockRegisterProviderWebhook: vi.fn(),
   mockIssuePendingEmailSignup: vi.fn(),
   mockFindExistingUserId: vi.fn(),
   mockIdentityWriteFence: vi.fn(),
@@ -118,6 +120,7 @@ vi.mock("./shared.ts", () => ({
   getOAuth1SecretStoreRef: () => ({ get: vi.fn(), delete: vi.fn() }),
   oauthSuccessHtml: vi.fn(() => "<html>success</html>"),
   persistProviderConnection: (...args: unknown[]) => mockPersistProviderConnection(...args),
+  registerProviderWebhook: (...args: unknown[]) => mockRegisterProviderWebhook(...args),
   sanitizeReturnTo: vi.fn(),
   completeSignupHtml: vi.fn(
     (providerName: string, token: string) => `<html>${providerName}:${token}</html>`,
@@ -313,6 +316,127 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     expect(mockDeleteTokens).not.toHaveBeenCalled();
     expect(mockInvalidateByPrefix).not.toHaveBeenCalled();
     expect(res.send).toHaveBeenCalledWith(expect.stringContaining("success"));
+  });
+
+  it("registers a data-provider webhook after its connection transaction commits", async () => {
+    const events: string[] = [];
+    mockWithUserWriteFence.mockImplementationOnce(
+      async (
+        _database: unknown,
+        _userId: string,
+        operation: (database: typeof mockDb) => Promise<unknown>,
+      ) => {
+        const result = await operation(mockDb);
+        events.push("commit");
+        return result;
+      },
+    );
+    mockGetAllProviders.mockReturnValueOnce([
+      {
+        id: "strava",
+        name: "Strava",
+        authSetup: () => ({
+          oauthConfig: {
+            clientId: "test-id",
+            clientSecret: "test-secret",
+            authorizeUrl: "https://www.strava.com/oauth/authorize",
+            tokenUrl: "https://www.strava.com/oauth/token",
+            redirectUri: "https://dofek.example/callback",
+            scopes: ["read"],
+          },
+          exchangeCode: mockExchangeCode,
+        }),
+      },
+    ]);
+    mockOauthStateStore.get.mockResolvedValueOnce({
+      providerId: "strava",
+      codeVerifier: undefined,
+      intent: "data",
+      linkUserId: undefined,
+      userId: "user-1",
+      returnTo: undefined,
+    });
+    mockLoadTokens.mockResolvedValueOnce(null);
+    mockPersistProviderConnection.mockImplementationOnce(async () => {
+      events.push("persist");
+    });
+    mockRegisterProviderWebhook.mockImplementationOnce(async () => {
+      events.push("register");
+    });
+
+    const { req, res } = createMockReqRes({ code: "auth-code", state: "strava-state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(events).toEqual(["persist", "commit", "register"]);
+    expect(res.send).toHaveBeenCalledWith(expect.stringContaining("success"));
+  });
+
+  it("removes the committed connection before revoking credentials when webhook registration fails", async () => {
+    const events: string[] = [];
+    mockWithUserWriteFence
+      .mockImplementationOnce(
+        async (
+          _database: unknown,
+          _userId: string,
+          operation: (database: typeof mockDb) => Promise<unknown>,
+        ) => {
+          const result = await operation(mockDb);
+          events.push("commit");
+          return result;
+        },
+      )
+      .mockImplementationOnce(
+        async (
+          _database: unknown,
+          _userId: string,
+          operation: (database: typeof mockDb) => Promise<unknown>,
+        ) => operation(mockDb),
+      );
+    mockGetAllProviders.mockReturnValueOnce([
+      {
+        id: "strava",
+        name: "Strava",
+        authSetup: () => ({
+          oauthConfig: {
+            clientId: "test-id",
+            clientSecret: "test-secret",
+            authorizeUrl: "https://www.strava.com/oauth/authorize",
+            tokenUrl: "https://www.strava.com/oauth/token",
+            redirectUri: "https://dofek.example/callback",
+            scopes: ["read"],
+          },
+          exchangeCode: mockExchangeCode,
+          revokeExistingTokens: async () => {
+            events.push("revoke");
+          },
+        }),
+      },
+    ]);
+    mockOauthStateStore.get.mockResolvedValueOnce({
+      providerId: "strava",
+      codeVerifier: undefined,
+      intent: "data",
+      linkUserId: undefined,
+      userId: "user-1",
+      returnTo: undefined,
+    });
+    mockLoadTokens.mockResolvedValueOnce(null);
+    mockPersistProviderConnection.mockImplementationOnce(async () => {
+      events.push("persist");
+    });
+    mockRegisterProviderWebhook.mockImplementationOnce(async () => {
+      events.push("register");
+      throw new Error("webhook validation failed");
+    });
+    mockDeleteProviderAuthorization.mockImplementationOnce(async () => {
+      events.push("delete");
+    });
+
+    const { req, res } = createMockReqRes({ code: "auth-code", state: "strava-state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(events).toEqual(["persist", "commit", "register", "delete", "revoke"]);
+    expect(res.status).toHaveBeenCalledWith(500);
   });
 
   it("deauthorizes and removes stored credentials after Wahoo's exact token-limit error", async () => {
