@@ -1,13 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { Client } from "pg";
+import { z } from "zod";
 import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 import {
   createProcessingOperation,
   recordCanonicalCommit,
 } from "../processing/processing-event-store.ts";
-import { type ClickHouseClient, createClickHouseClientFromEnv } from "./clickhouse.ts";
+import { createClickHouseClientFromEnv } from "./clickhouse.ts";
 import { createPeerDbMirrorApiClientFromEnv } from "./clickhouse-cdc.ts";
 import { runClickHouseMigrations } from "./clickhouse-migrations.ts";
 import { createDatabaseFromEnv, type Database } from "./index.ts";
@@ -25,8 +26,16 @@ import type { PeerDbMirrorApiClient } from "./peerdb/mirror-reconciler.ts";
 
 type PeerDbContractCommand = "prepare" | "finalize" | "verify";
 
+interface PeerDbContractClickHouseClient {
+  query(options: {
+    query: string;
+    format: "JSONEachRow";
+    query_params?: Record<string, unknown>;
+  }): Promise<{ json(): Promise<unknown> }>;
+}
+
 export interface PeerDbContractCommandDependencies {
-  clickHouseClient: ClickHouseClient;
+  clickHouseClient: PeerDbContractClickHouseClient;
   mirrorApiClient: PeerDbMirrorApiClient;
   prepareDestinationSchema(): Promise<void>;
   sourcePostgresClient: {
@@ -37,6 +46,11 @@ export interface PeerDbContractCommandDependencies {
 
 const canaryTimeoutMs = 120_000;
 const canaryPollIntervalMs = 1_000;
+const clickHouseCountSchema = z.union([
+  z.number().int().nonnegative(),
+  z.string().regex(/^\d+$/).transform(Number),
+]);
+const markerCountRowsSchema = z.tuple([z.object({ marker_count: clickHouseCountSchema })]);
 
 function requireArtifactPath(command: "finalize" | "verify", path: string | undefined): string {
   if (!path) throw new Error(`${command} requires an artifact path`);
@@ -67,10 +81,10 @@ export async function writePeerDbDeploymentMarker(
 }
 
 async function hasMarker(
-  clickHouseClient: ClickHouseClient,
+  clickHouseClient: PeerDbContractClickHouseClient,
   marker: PeerDbDeploymentCanary,
 ): Promise<boolean> {
-  const result = await clickHouseClient.query<{ marker_count: number | string }>({
+  const result = await clickHouseClient.query({
     query: `SELECT count() AS marker_count
       FROM ${marker.destinationDatabase}.${marker.destinationTableIdentifier} FINAL
       WHERE operation_id = {operationId:UUID}
@@ -82,8 +96,22 @@ async function hasMarker(
     query_params: marker,
     format: "JSONEachRow",
   });
-  const rows = await result.json();
-  return Number(rows[0]?.marker_count ?? 0) === 1;
+  const [row] = markerCountRowsSchema.parse(await result.json());
+  return row.marker_count === 1;
+}
+
+function assertCompleteDeploymentArtifacts(artifacts: readonly PeerDbDeploymentCanary[]): void {
+  const remainingFlowNames = new Set<string>(
+    peerDbMirrorContracts.map(({ processingMarker }) => processingMarker.flow),
+  );
+  if (artifacts.length !== remainingFlowNames.size) {
+    throw new Error("PeerDB deployment artifact does not match the managed mirror contracts");
+  }
+  for (const artifact of artifacts) {
+    if (!remainingFlowNames.delete(artifact.flowName)) {
+      throw new Error("PeerDB deployment artifact does not match the managed mirror contracts");
+    }
+  }
 }
 
 export async function runClickHouseCdcContractCommand(
@@ -121,6 +149,7 @@ export async function runClickHouseCdcContractCommand(
 
   const path = requireArtifactPath(command, artifactPath);
   const artifacts = peerDbDeploymentArtifactSchema.parse(JSON.parse(await readFile(path, "utf8")));
+  assertCompleteDeploymentArtifacts(artifacts);
   await verifyPeerDbDeployment({
     artifacts,
     hasMarker: (marker) => hasMarker(dependencies.clickHouseClient, marker),

@@ -42,6 +42,25 @@ const clickHouseClient = {
 };
 
 describe("PeerDB deployment contract", () => {
+  it("accepts an empty direct verification set without polling", async () => {
+    const hasMarker = vi.fn(async () => true);
+    const sleep = vi.fn(async () => undefined);
+
+    await expect(
+      verifyPeerDbDeployment({
+        artifacts: [],
+        hasMarker,
+        now: () => 0,
+        sleep,
+        timeoutMs: 2_000,
+        pollIntervalMs: 1_000,
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(hasMarker).not.toHaveBeenCalled();
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
   it("reconciles existing mirrors before validating their schemas", async () => {
     const events: string[] = [];
     const mirrorApiClient = {
@@ -69,6 +88,26 @@ describe("PeerDB deployment contract", () => {
     });
 
     expect(events).toEqual(["list", "status", "validate"]);
+  });
+
+  it("does not reconcile a non-CDC flow that happens to share a managed mirror name", async () => {
+    const mirrorApiClient = {
+      listMirrors: vi.fn(async () => [{ destinationType: 3, isCdc: false, name: "test_mirror" }]),
+      getMirrorStatus: vi.fn(async () => ({
+        currentFlowState: "STATUS_RUNNING",
+        tableMappings: contract.tableMappings,
+      })),
+      changeMirrorState: vi.fn(async () => undefined),
+    };
+
+    await preparePeerDbDeployment({
+      clickHouseClient,
+      contracts: [contract],
+      mirrorApiClient,
+      sourcePostgresClient,
+    });
+
+    expect(mirrorApiClient.getMirrorStatus).not.toHaveBeenCalled();
   });
 
   it("validates then writes one unique canary for each marker-bearing contract", async () => {
@@ -113,10 +152,11 @@ describe("PeerDB deployment contract", () => {
     };
     let now = 0;
 
+    const hasMarker = vi.fn(async () => false);
     await expect(
       verifyPeerDbDeployment({
         artifacts: [marker],
-        hasMarker: vi.fn(async () => false),
+        hasMarker,
         now: () => now,
         sleep: async (milliseconds) => {
           now += milliseconds;
@@ -125,5 +165,123 @@ describe("PeerDB deployment contract", () => {
         pollIntervalMs: 1_000,
       }),
     ).rejects.toThrow("PeerDB deployment canary did not arrive: test_flow");
+    expect(hasMarker).toHaveBeenCalledTimes(2);
+    expect(now).toBe(2_000);
+  });
+
+  it("returns immediately after every exact marker arrives", async () => {
+    const marker = {
+      batchKey: "10000000-0000-4000-8000-000000000002",
+      datasetKey: "activity" as const,
+      destinationDatabase: "destination",
+      destinationTableIdentifier: "processing_flow_marker",
+      flowName: "test_flow",
+      operationId: "10000000-0000-4000-8000-000000000001",
+      sourceWatermark: "10000000-0000-4000-8000-000000000002",
+    };
+    vi.useFakeTimers();
+    const sleep = vi.fn(async () => undefined);
+    const hasMarker = vi.fn(async () => true);
+
+    await expect(
+      verifyPeerDbDeployment({
+        artifacts: [marker, { ...marker, flowName: "second_flow" }],
+        hasMarker,
+        now: () => 0,
+        sleep,
+        timeoutMs: 2_000,
+        pollIntervalMs: 1_000,
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(sleep).not.toHaveBeenCalled();
+    expect(hasMarker).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("bounds a marker probe by the remaining deployment deadline", async () => {
+    const marker = {
+      batchKey: "10000000-0000-4000-8000-000000000002",
+      datasetKey: "activity" as const,
+      destinationDatabase: "destination",
+      destinationTableIdentifier: "processing_flow_marker",
+      flowName: "test_flow",
+      operationId: "10000000-0000-4000-8000-000000000001",
+      sourceWatermark: "10000000-0000-4000-8000-000000000002",
+    };
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const verification = expect(
+      verifyPeerDbDeployment({
+        artifacts: [marker],
+        hasMarker: vi.fn(() => new Promise<boolean>(() => undefined)),
+        now: Date.now,
+        sleep: (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+        timeoutMs: 20,
+        pollIntervalMs: 1_000,
+      }),
+    ).rejects.toThrow("PeerDB deployment canary did not arrive: test_flow");
+
+    await vi.advanceTimersByTimeAsync(20);
+    await verification;
+    expect(Date.now()).toBe(20);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("rejects a marker result that arrives after the deployment deadline", async () => {
+    const marker = {
+      batchKey: "10000000-0000-4000-8000-000000000002",
+      datasetKey: "activity" as const,
+      destinationDatabase: "destination",
+      destinationTableIdentifier: "processing_flow_marker",
+      flowName: "test_flow",
+      operationId: "10000000-0000-4000-8000-000000000001",
+      sourceWatermark: "10000000-0000-4000-8000-000000000002",
+    };
+    let now = 0;
+
+    await expect(
+      verifyPeerDbDeployment({
+        artifacts: [marker],
+        hasMarker: vi.fn(async () => {
+          now = 2_000;
+          return true;
+        }),
+        now: () => now,
+        sleep: async (milliseconds) => {
+          now += milliseconds;
+        },
+        timeoutMs: 2_000,
+        pollIntervalMs: 1_000,
+      }),
+    ).rejects.toThrow("PeerDB deployment canary did not arrive: test_flow");
+  });
+
+  it("sorts missing flow names in timeout diagnostics", async () => {
+    const marker = {
+      batchKey: "10000000-0000-4000-8000-000000000002",
+      datasetKey: "activity" as const,
+      destinationDatabase: "destination",
+      destinationTableIdentifier: "processing_flow_marker",
+      operationId: "10000000-0000-4000-8000-000000000001",
+      sourceWatermark: "10000000-0000-4000-8000-000000000002",
+    };
+    let now = 0;
+
+    await expect(
+      verifyPeerDbDeployment({
+        artifacts: [
+          { ...marker, flowName: "z_flow" },
+          { ...marker, flowName: "a_flow" },
+        ],
+        hasMarker: vi.fn(async () => false),
+        now: () => now,
+        sleep: async (milliseconds) => {
+          now += milliseconds;
+        },
+        timeoutMs: 1,
+        pollIntervalMs: 1,
+      }),
+    ).rejects.toEqual(new Error("PeerDB deployment canary did not arrive: a_flow, z_flow"));
   });
 });

@@ -1,9 +1,6 @@
 # PeerDB Schema Contract Safety Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use
-> `superpowers:subagent-driven-development` (recommended) or
-> `superpowers:executing-plans` to implement this plan task-by-task. Steps use
-> checkbox (`- [ ]`) syntax for tracking.
+Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Prevent a PostgreSQL/PeerDB/ClickHouse schema mismatch from silently
 blocking all later activity and sleep data, recover the current production
@@ -139,10 +136,9 @@ Docker Compose, GitHub Actions, Sentry/OpenTelemetry.
 
   Apply the current PostgreSQL and ClickHouse schemas, load the canonical
   contract, and assert the validator accepts the migration-0085 end state.
-  In an isolated ClickHouse test database, recreate one removed projected
-  column as required by the old contract and assert the old empty-exclusion
-  projection fails with `stress_high_minutes` and the other removed columns in
-  the structured difference.
+  In an isolated ClickHouse test database, recreate every removed projected
+  column required by the old contract and assert the old empty-exclusion
+  projection fails with those columns in the structured difference.
 
 - [ ] **Step 3: Run the focused tests and confirm RED**
 
@@ -251,9 +247,14 @@ Docker Compose, GitHub Actions, Sentry/OpenTelemetry.
 
 **Files:**
 
-- Create: `vitest.peerdb.config.ts`
-- Create: `src/db/peerdb/peerdb-cdc.integration.test.ts`
-- Create: `src/db/peerdb/peerdb-test-helpers.ts`
+- Modify: `vitest.config.ts`
+- Create: `docker-compose.peerdb.yml`
+- Create: `src/db/peerdb/peerdb-cdc.peerdb.integration.test.ts`
+- Create: `src/db/peerdb/test-helpers.ts`
+- Modify: `scripts/compose-command.ts`
+- Modify: `scripts/compose-env.ts`
+- Create: `scripts/compose-project.ts`
+- Create: `scripts/compose-project.test.ts`
 - Modify: `scripts/run-tests.ts`
 - Modify: `scripts/run-tests.test.ts`
 - Modify: `package.json`
@@ -272,7 +273,7 @@ Docker Compose, GitHub Actions, Sentry/OpenTelemetry.
 - [ ] **Step 2: Run runner tests and confirm RED**
 
   ```bash
-  pnpm vitest run --project unit scripts/run-tests.test.ts .github/workflows/test.test.ts
+  pnpm vitest run --project unit scripts/run-tests.test.ts scripts/compose-command.test.ts scripts/compose-env.test.ts scripts/compose-project.test.ts
   ```
 
 - [ ] **Step 3: Implement the explicit test tier**
@@ -294,7 +295,7 @@ Docker Compose, GitHub Actions, Sentry/OpenTelemetry.
 - [ ] **Step 5: Run the PeerDB suite and confirm RED, then GREEN**
 
   ```bash
-  pnpm test:peerdb-integration -- src/db/peerdb/peerdb-cdc.integration.test.ts
+  pnpm test:peerdb-integration -- src/db/peerdb/peerdb-cdc.peerdb.integration.test.ts
   ```
 
   First run before wiring the contract must reproduce the ClickHouse missing
@@ -304,15 +305,15 @@ Docker Compose, GitHub Actions, Sentry/OpenTelemetry.
 - [ ] **Step 6: Run focused checks**
 
   ```bash
-  pnpm vitest run --project unit scripts/run-tests.test.ts .github/workflows/test.test.ts
-  pnpm exec biome check vitest.peerdb.config.ts src/db/peerdb/peerdb-cdc.integration.test.ts src/db/peerdb/peerdb-test-helpers.ts scripts/run-tests.ts scripts/run-tests.test.ts
+  pnpm vitest run --project unit scripts/run-tests.test.ts scripts/compose-command.test.ts scripts/compose-env.test.ts scripts/compose-project.test.ts
+  pnpm exec biome check vitest.config.ts src/db/peerdb/peerdb-cdc.peerdb.integration.test.ts src/db/peerdb/test-helpers.ts scripts/compose-command.ts scripts/compose-env.ts scripts/compose-project.ts scripts/compose-project.test.ts scripts/run-tests.ts scripts/run-tests.test.ts
   pnpm typecheck
   ```
 
 - [ ] **Step 7: Commit and push**
 
   ```bash
-  git add vitest.peerdb.config.ts src/db/peerdb/peerdb-cdc.integration.test.ts src/db/peerdb/peerdb-test-helpers.ts scripts/run-tests.ts scripts/run-tests.test.ts package.json .github/workflows/test.yml docs/testing.md
+  git add vitest.config.ts docker-compose.peerdb.yml src/db/peerdb/peerdb-cdc.peerdb.integration.test.ts src/db/peerdb/test-helpers.ts scripts/compose-command.ts scripts/compose-env.ts scripts/compose-project.ts scripts/compose-project.test.ts scripts/run-tests.ts scripts/run-tests.test.ts package.json .github/workflows/test.yml docs/testing.md
   git commit -m "Exercise PeerDB CDC against real database engines"
   git push
   ```

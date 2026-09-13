@@ -112,13 +112,15 @@ SELECT
     WHERE sync_time IS NOT NULL AND end_time IS NULL
   ) AS oldest_pending_batch_id
 FROM peerdb_stats.cdc_batches
-WHERE flow_name LIKE 'dofek_%'
+WHERE flow_name LIKE 'dofek\_%' ESCAPE '\'
 GROUP BY flow_name
 ORDER BY flow_name;
 ```
 
-An older pending batch plus a greater `latest_synced_batch_id` is a
-normalization stall. Do not accept `flows.status` alone as proof of health.
+Normalization is caught up when `latest_normalized_batch_id` is greater than or
+equal to `oldest_pending_batch_id`. Otherwise, an older pending batch plus a
+greater `latest_synced_batch_id` is a normalization stall. Do not accept
+`flows.status` alone as proof of health.
 
 If `wal_status = 'lost'`, retries and container restarts cannot recover the slot.
 Recreate the affected mirror from a fresh slot and then backfill or resnapshot

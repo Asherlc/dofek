@@ -1,8 +1,14 @@
+import { z } from "zod";
 import type { ClickHouseClient } from "../clickhouse.ts";
 import type { PeerDbMirrorApiClient, PeerDbMirrorStatus } from "../clickhouse-cdc.ts";
 
 const peerDbPollIntervalMs = 1_000;
 const peerDbTestTimeoutMs = 180_000;
+const clickHouseCountSchema = z.union([
+  z.number().int().nonnegative(),
+  z.string().regex(/^\d+$/).transform(Number),
+]);
+const clickHouseCountRowsSchema = z.tuple([z.object({ row_count: clickHouseCountSchema })]);
 
 export async function waitForPeerDbApi(client: PeerDbMirrorApiClient): Promise<void> {
   const deadline = Date.now() + peerDbTestTimeoutMs;
@@ -104,6 +110,6 @@ async function countMatchingRows(
     query_params: queryParams,
     format: "JSONEachRow",
   });
-  const rows = await result.json();
-  return Number(rows[0]?.row_count ?? 0);
+  const [row] = clickHouseCountRowsSchema.parse(await result.json());
+  return row.row_count;
 }

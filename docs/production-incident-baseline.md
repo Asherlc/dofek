@@ -26758,15 +26758,19 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   [resynchronization](https://docs.peerdb.io/features/resync-mirror).
 - **Validation:** Contract rendering, projection validation, two-phase mapping
   reconciliation, deployment ordering and canaries, normalization-stall
-  detection, and the full Docker-free suite (1,272 files; 18,568 tests) pass
+  detection, and the full Docker-free suite (1,275 files; 18,596 tests) pass
   locally. The first real-PeerDB CI attempt stopped before the test because its
   broad Compose wait included the unrelated, unhealthy telemetry collector;
   the runner now starts only the isolated CDC test's required services. Its
   focused tests pass. The rerun exercised every canonical mapping and exact
   flow marker through real Postgres, PeerDB/Temporal, and ClickHouse and passed.
   Targeted mutation testing reports 100% for the mirror contracts and 95.38%
-  for the command runner, with no surviving covered mutants. The complete CI
-  rerun and production recovery remain pending at the time of this entry.
+  for the command runner, with no surviving covered mutants. Review hardening
+  additionally bounds every canary probe by its remaining deadline, rejects
+  incomplete managed-flow artifacts, validates ClickHouse count rows at the
+  database boundary, and brings the deadline verifier to a 100% mutation score.
+  The complete CI rerun and production recovery remain pending at the time of
+  this entry.
 - **Production recovery status / remaining risk:** Unresolved. No mirror, slot,
   or destination table has been replaced or truncated. The blocked WAL remains
   unapplied until the guarded deployment completes; retrying provider sync

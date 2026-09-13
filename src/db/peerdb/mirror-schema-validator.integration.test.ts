@@ -37,12 +37,20 @@ describe("PeerDB mirror schema compatibility", () => {
   });
 
   afterAll(async () => {
-    await clickHouseClient?.command({
-      query: `DROP DATABASE IF EXISTS ${clickHouseDatabase} SYNC`,
-    });
-    await clickHouseClient?.close();
-    await postgresClient?.end();
-    await testContext?.cleanup();
+    const cleanupResults = await Promise.allSettled([
+      clickHouseClient?.command({
+        query: `DROP DATABASE IF EXISTS ${clickHouseDatabase} SYNC`,
+      }),
+      clickHouseClient?.close(),
+      postgresClient?.end(),
+      testContext?.cleanup(),
+    ]);
+    const cleanupErrors = cleanupResults.flatMap((result) =>
+      result.status === "rejected" ? [result.reason] : [],
+    );
+    if (cleanupErrors.length > 0) {
+      throw new AggregateError(cleanupErrors, "PeerDB schema test cleanup failed");
+    }
   });
 
   it("accepts the current PostgreSQL and ClickHouse schemas", async () => {

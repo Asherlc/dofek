@@ -60,6 +60,24 @@ const {
       operationId: "10000000-0000-4000-8000-000000000001",
       sourceWatermark: "10000000-0000-4000-8000-000000000002",
     },
+    {
+      batchKey: "20000000-0000-4000-8000-000000000002",
+      datasetKey: "providers",
+      destinationDatabase: "postgres_fitness",
+      destinationTableIdentifier: "processing_flow_marker_provider_inventory",
+      flowName: "dofek_provider_inventory_raw_analytics",
+      operationId: "20000000-0000-4000-8000-000000000001",
+      sourceWatermark: "20000000-0000-4000-8000-000000000002",
+    },
+    {
+      batchKey: "30000000-0000-4000-8000-000000000002",
+      datasetKey: "activity",
+      destinationDatabase: "postgres_fitness",
+      destinationTableIdentifier: "processing_flow_marker_sensor_priority",
+      flowName: "dofek_sensor_priority_raw_analytics",
+      operationId: "30000000-0000-4000-8000-000000000001",
+      sourceWatermark: "30000000-0000-4000-8000-000000000002",
+    },
   ]),
   verifyPeerDbDeployment: vi.fn(async (_options: VerificationOptions) => undefined),
 }));
@@ -102,7 +120,10 @@ vi.mock("./peerdb/mirror-deployment.ts", async (importOriginal) => ({
 }));
 
 import { peerDbMirrorContracts } from "./peerdb/mirror-contracts.ts";
-import { peerDbDeploymentArtifactSchema } from "./peerdb/mirror-deployment.ts";
+import {
+  type PeerDbDeploymentCanary,
+  peerDbDeploymentArtifactSchema,
+} from "./peerdb/mirror-deployment.ts";
 import {
   type PeerDbContractCommandDependencies,
   runClickHouseCdcContractCli,
@@ -115,8 +136,7 @@ const originalDatabaseUrl = process.env.DATABASE_URL;
 const runtimeClose = runtimeClickHouseClient.close;
 const unusedDependencies = {
   clickHouseClient: {
-    command: vi.fn(async () => undefined),
-    query: vi.fn(async () => ({ json: async () => [] })),
+    query: vi.fn(async () => ({ json: async (): Promise<unknown> => [] })),
   },
   mirrorApiClient: {
     changeMirrorState: vi.fn(async () => undefined),
@@ -132,6 +152,20 @@ const unusedDependencies = {
     sourceWatermark: "10000000-0000-4000-8000-000000000002",
   })),
 } satisfies PeerDbContractCommandDependencies;
+
+function duplicateFirstArtifact(artifacts: PeerDbDeploymentCanary[]): PeerDbDeploymentCanary[] {
+  const first = artifacts[0];
+  if (!first) throw new Error("Expected a deployment artifact fixture");
+  return [...artifacts.slice(0, -1), first];
+}
+
+function replaceFirstArtifactWithUnexpectedFlow(
+  artifacts: PeerDbDeploymentCanary[],
+): PeerDbDeploymentCanary[] {
+  const [first, ...remaining] = artifacts;
+  if (!first) throw new Error("Expected a deployment artifact fixture");
+  return [...remaining, { ...first, flowName: "unexpected_flow" }];
+}
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -295,7 +329,7 @@ describe("run-clickhouse-cdc-contract", () => {
       sourcePostgresClient: unusedDependencies.sourcePostgresClient,
       writeMarker: unusedDependencies.writeMarker,
     });
-    expect(JSON.parse(readFileSync(path, "utf8"))).toHaveLength(1);
+    expect(JSON.parse(readFileSync(path, "utf8"))).toHaveLength(3);
     expect((await import("node:fs/promises")).stat(path)).resolves.toMatchObject({
       mode: 0o100600,
     });
@@ -305,6 +339,23 @@ describe("run-clickhouse-cdc-contract", () => {
     await expect(
       runClickHouseCdcContractCommand("verify", undefined, unusedDependencies),
     ).rejects.toThrow("verify requires an artifact path");
+    expect(verifyPeerDbDeployment).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["missing", (artifacts: PeerDbDeploymentCanary[]) => artifacts.slice(1)],
+    ["duplicate", duplicateFirstArtifact],
+    ["unexpected", replaceFirstArtifactWithUnexpectedFlow],
+  ])("rejects a %s managed-flow artifact set", async (_case, alterArtifacts) => {
+    const directory = mkdtempSync(join(tmpdir(), "peerdb-contract-command-"));
+    temporaryDirectories.push(directory);
+    const path = join(directory, "artifact.json");
+    const artifacts = peerDbDeploymentArtifactSchema.parse(await finalizePeerDbDeployment());
+    writeFileSync(path, JSON.stringify(alterArtifacts(artifacts)));
+
+    await expect(
+      runClickHouseCdcContractCommand("verify", path, unusedDependencies),
+    ).rejects.toThrow("PeerDB deployment artifact does not match the managed mirror contracts");
     expect(verifyPeerDbDeployment).not.toHaveBeenCalled();
   });
 
@@ -321,12 +372,16 @@ describe("run-clickhouse-cdc-contract", () => {
       json: async () => JSON.parse('[{"marker_count":"1"}]'),
     });
     unusedDependencies.clickHouseClient.query.mockResolvedValueOnce({
-      json: async () => JSON.parse("[]"),
+      json: async () => JSON.parse('[{"marker_count":"0"}]'),
+    });
+    unusedDependencies.clickHouseClient.query.mockResolvedValueOnce({
+      json: async () => [{ marker_count: 1 }],
     });
     vi.useFakeTimers();
     verifyPeerDbDeployment.mockImplementationOnce(async (options) => {
       expect(await options.hasMarker(artifact)).toBe(true);
       expect(await options.hasMarker(artifact)).toBe(false);
+      expect(await options.hasMarker(artifact)).toBe(true);
       const sleepPromise = options.sleep(123);
       expect(vi.getTimerCount()).toBe(1);
       await vi.advanceTimersByTimeAsync(123);
@@ -350,5 +405,25 @@ describe("run-clickhouse-cdc-contract", () => {
         now: Date.now,
       }),
     );
+  });
+
+  it("rejects malformed ClickHouse marker counts at the database boundary", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "peerdb-contract-command-"));
+    temporaryDirectories.push(directory);
+    const path = join(directory, "artifact.json");
+    const artifacts = peerDbDeploymentArtifactSchema.parse(await finalizePeerDbDeployment());
+    writeFileSync(path, JSON.stringify(artifacts));
+    unusedDependencies.clickHouseClient.query.mockResolvedValueOnce({
+      json: async () => [{ marker_count: "not-a-number" }],
+    });
+    verifyPeerDbDeployment.mockImplementationOnce(async (options) => {
+      const artifact = artifacts[0];
+      if (!artifact) throw new Error("Expected a deployment artifact fixture");
+      await options.hasMarker(artifact);
+    });
+
+    await expect(
+      runClickHouseCdcContractCommand("verify", path, unusedDependencies),
+    ).rejects.toThrow();
   });
 });

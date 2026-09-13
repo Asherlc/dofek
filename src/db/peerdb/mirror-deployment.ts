@@ -65,6 +65,12 @@ interface VerifyPeerDbDeploymentOptions {
   timeoutMs: number;
 }
 
+function peerDbDeploymentTimeoutError(pending: ReadonlyMap<string, PeerDbDeploymentCanary>): Error {
+  return new Error(
+    `PeerDB deployment canary did not arrive: ${[...pending.keys()].sort().join(", ")}`,
+  );
+}
+
 export async function preparePeerDbDeployment(
   options: PreparePeerDbDeploymentOptions,
 ): Promise<void> {
@@ -111,15 +117,29 @@ export async function verifyPeerDbDeployment(
 ): Promise<void> {
   const pending = new Map(options.artifacts.map((artifact) => [artifact.flowName, artifact]));
   const deadline = options.now() + options.timeoutMs;
-  while (pending.size > 0) {
-    for (const [flowName, artifact] of pending) {
-      if (await options.hasMarker(artifact)) pending.delete(flowName);
-    }
+  for (;;) {
     if (pending.size === 0) return;
-    if (options.now() >= deadline) {
-      throw new Error(
-        `PeerDB deployment canary did not arrive: ${[...pending.keys()].sort().join(", ")}`,
+    for (const [flowName, artifact] of pending) {
+      const remainingTimeoutMs = deadline - options.now();
+      if (remainingTimeoutMs <= 0) break;
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      const timeoutProbe = new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(
+          () => reject(peerDbDeploymentTimeoutError(pending)),
+          remainingTimeoutMs,
+        );
+      });
+      const markerFound = await Promise.race([options.hasMarker(artifact), timeoutProbe]).finally(
+        () => clearTimeout(timeout),
       );
+      if (options.now() >= deadline) throw peerDbDeploymentTimeoutError(pending);
+      if (markerFound) {
+        pending.delete(flowName);
+        if (pending.size === 0) return;
+      }
+    }
+    if (options.now() >= deadline) {
+      throw peerDbDeploymentTimeoutError(pending);
     }
     await options.sleep(options.pollIntervalMs);
   }

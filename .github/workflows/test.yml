@@ -819,7 +819,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
-      - run: pnpm test:peerdb-integration
+      - name: Run PeerDB CDC integration tests
+        run: pnpm test:peerdb-integration
 
   coverage:
     name: Coverage

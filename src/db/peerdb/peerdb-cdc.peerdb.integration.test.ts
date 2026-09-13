@@ -13,7 +13,7 @@ import {
   waitForClickHouseFixture,
   waitForClickHouseRows,
   waitForPeerDbApi,
-} from "./peerdb-test-helpers.ts";
+} from "./test-helpers.ts";
 
 const fixture = {
   activity: "10000000-0000-4000-8000-000000000001",

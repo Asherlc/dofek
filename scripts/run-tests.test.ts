@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -132,7 +132,7 @@ appendFileSync(process.env.COMMAND_LOG_PATH, JSON.stringify(process.argv.slice(2
     }
   });
 
-  it("runs the PeerDB integration project with only its required Compose services and cleans it up", () => {
+  it("preserves a PeerDB Vitest failure after cleaning up only its required Compose services", () => {
     const workspaceDirectory = mkdtempSync(join(tmpdir(), "run-tests-peerdb-test-"));
     const binaryDirectory = join(workspaceDirectory, "bin");
     const commandLogPath = join(workspaceDirectory, "pnpm-calls.jsonl");
@@ -165,13 +165,14 @@ if (process.argv.includes("vitest")) {
     PEERDB_UI_PORT: process.env.PEERDB_UI_PORT,
     POSTGRES_PASSWORD: process.env.POSTGRES_PASSWORD,
   }));
+  process.exit(7);
 }
 `,
     );
     chmodSync(fakePnpmPath, 0o755);
 
     try {
-      execFileSync(
+      const result = spawnSync(
         resolve("node_modules/.bin/tsx"),
         [resolve("scripts/run-tests.ts"), "peerdb-integration"],
         {
@@ -185,6 +186,7 @@ if (process.argv.includes("vitest")) {
           stdio: ["ignore", "pipe", "pipe"],
         },
       );
+      expect(result.status).toBe(7);
 
       const commandArguments = commandArgumentsSchema.parse(
         readFileSync(commandLogPath, "utf8")
