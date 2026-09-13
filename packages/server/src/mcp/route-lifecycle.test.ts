@@ -1,4 +1,4 @@
-import type { Server } from "node:http";
+import type { Server, ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import express from "express";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -164,6 +164,7 @@ describe("createMcpRouter lifecycle handling", () => {
       id: 1,
       method: "initialize",
     });
+    expect(routeMocks.loggerInfo).not.toHaveBeenCalledWith("mcp.mutation", expect.anything());
   });
 
   it("records a privacy-safe completion lifecycle for food mutations", async () => {
@@ -191,6 +192,37 @@ describe("createMcpRouter lifecycle handling", () => {
       tool_name: "create_food_entry",
     });
     expect(JSON.stringify(routeMocks.loggerInfo.mock.calls)).not.toContain(requestId);
+  });
+
+  it("records an aborted lifecycle when a food-mutation client disconnects", async () => {
+    const requestId = "33333333-3333-4333-8333-333333333333";
+    routeMocks.handleRequest.mockImplementation((_request: unknown, response: unknown) => {
+      (response as ServerResponse).destroy();
+      return Promise.resolve();
+    });
+
+    await expect(
+      request({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "create_food_entry",
+          arguments: { request_id: requestId },
+        },
+      }),
+    ).rejects.toThrow();
+
+    expect(routeMocks.loggerInfo).toHaveBeenCalledWith("mcp.mutation", {
+      http_status: 200,
+      phase: "aborted",
+      request_id_hash: "f6222a1106eefe4f6b25302a9d963cfaba14bedfefacc2c311967e41c61cffe4",
+      tool_name: "create_food_entry",
+    });
+    expect(routeMocks.loggerInfo).not.toHaveBeenCalledWith(
+      "mcp.mutation",
+      expect.objectContaining({ phase: "completed" }),
+    );
   });
 
   it("reports cleanup failures after the response closes", async () => {
