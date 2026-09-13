@@ -43,7 +43,10 @@ interface ReconnectFailure {
   providerName: string;
 }
 
-type WebhookRegistrationFailure = "preserved" | "removed";
+type WebhookRegistrationFailure = {
+  kind: "preserved" | "removed";
+  providerName: string;
+};
 
 type DeferredOAuthResponse =
   | { kind: "redirect"; location: string }
@@ -548,9 +551,9 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
             await withAccountErasureUserWriteFence(db, webhookUserId, (transaction) =>
               removeRevokedAuthorization(transaction, providerId, webhookUserId),
             );
-            webhookRegistrationFailure = "removed";
+            webhookRegistrationFailure = { kind: "removed", providerName: provider.name };
           } catch (cleanupError: unknown) {
-            webhookRegistrationFailure = "preserved";
+            webhookRegistrationFailure = { kind: "preserved", providerName: provider.name };
             issuedTokens = null;
             Sentry.captureException(cleanupError, {
               tags: {
@@ -678,19 +681,19 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
       return;
     }
 
-    if (webhookRegistrationFailure === "removed") {
+    if (webhookRegistrationFailure?.kind === "removed") {
       res
         .status(500)
         .send(
-          `${resolvedProviderName!} webhook registration failed, so the new connection was removed. Please try again.`,
+          `${webhookRegistrationFailure.providerName} webhook registration failed, so the new connection was removed. Please try again.`,
         );
       return;
     }
-    if (webhookRegistrationFailure === "preserved") {
+    if (webhookRegistrationFailure?.kind === "preserved") {
       res
         .status(500)
         .send(
-          `${resolvedProviderName!} connected, but webhook registration and connection cleanup both failed. Please contact support before trying again.`,
+          `${webhookRegistrationFailure.providerName} connected, but webhook registration and connection cleanup both failed. Please contact support before trying again.`,
         );
       return;
     }
