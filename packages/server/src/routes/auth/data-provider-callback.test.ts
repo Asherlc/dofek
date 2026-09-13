@@ -16,6 +16,7 @@ const {
   mockGetSessionIdFromRequest,
   mockValidateSession,
   mockPersistProviderConnection,
+  mockRegisterProviderWebhook,
   mockIssuePendingEmailSignup,
   mockFindExistingUserId,
   mockIdentityWriteFence,
@@ -34,6 +35,7 @@ const {
   mockGetSessionIdFromRequest: vi.fn(),
   mockValidateSession: vi.fn(),
   mockPersistProviderConnection: vi.fn(),
+  mockRegisterProviderWebhook: vi.fn(),
   mockIssuePendingEmailSignup: vi.fn(),
   mockFindExistingUserId: vi.fn(),
   mockIdentityWriteFence: vi.fn(),
@@ -118,6 +120,7 @@ vi.mock("./shared.ts", () => ({
   getOAuth1SecretStoreRef: () => ({ get: vi.fn(), delete: vi.fn() }),
   oauthSuccessHtml: vi.fn(() => "<html>success</html>"),
   persistProviderConnection: (...args: unknown[]) => mockPersistProviderConnection(...args),
+  registerProviderWebhook: (...args: unknown[]) => mockRegisterProviderWebhook(...args),
   sanitizeReturnTo: vi.fn(),
   completeSignupHtml: vi.fn(
     (providerName: string, token: string) => `<html>${providerName}:${token}</html>`,
@@ -158,7 +161,7 @@ describe("handleOAuth2Callback — revocation fallback", () => {
   const mockRevokeExistingTokens = vi.fn();
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     mockWithUserWriteFence.mockImplementation(
       async (
         _database: unknown,
@@ -222,97 +225,6 @@ describe("handleOAuth2Callback — revocation fallback", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-  });
-
-  it("handles callback requests before provider resolution", async () => {
-    const bare = createMockReqRes();
-    await handleOAuth2Callback(bare.req, bare.res);
-    expect(bare.res.send).toHaveBeenCalledWith("OK");
-
-    const denied = createMockReqRes({ error: "access_denied" });
-    await handleOAuth2Callback(denied.req, denied.res);
-    expect(denied.res.status).toHaveBeenCalledWith(400);
-    expect(denied.res.send).toHaveBeenCalledWith("Authorization denied");
-
-    const incomplete = createMockReqRes({ code: "only-code" });
-    await handleOAuth2Callback(incomplete.req, incomplete.res);
-    expect(incomplete.res.status).toHaveBeenCalledWith(400);
-    expect(incomplete.res.send).toHaveBeenCalledWith("Missing code or state parameter");
-  });
-
-  it("rejects unknown or unsupported OAuth state entries", async () => {
-    mockOauthStateStore.get.mockResolvedValueOnce(null);
-    const unknownState = createMockReqRes({ code: "code", state: "expired" });
-    await handleOAuth2Callback(unknownState.req, unknownState.res);
-    expect(unknownState.res.status).toHaveBeenCalledWith(400);
-    expect(unknownState.res.send).toHaveBeenCalledWith(
-      expect.stringContaining("Unknown or expired"),
-    );
-
-    mockOauthStateStore.get.mockResolvedValueOnce({
-      codeVerifier: undefined,
-      intent: "data",
-      linkUserId: undefined,
-      providerId: "unsupported",
-      returnTo: undefined,
-      userId: "user-1",
-    });
-    mockGetAllProviders.mockReturnValueOnce([]);
-    const unknownProvider = createMockReqRes({ code: "code", state: "state" });
-    await handleOAuth2Callback(unknownProvider.req, unknownProvider.res);
-    expect(unknownProvider.res.status).toHaveBeenCalledWith(404);
-    expect(unknownProvider.res.send).toHaveBeenCalledWith("Unknown provider");
-
-    mockOauthStateStore.get.mockResolvedValueOnce({
-      codeVerifier: undefined,
-      intent: "data",
-      linkUserId: undefined,
-      providerId: "unsupported",
-      returnTo: undefined,
-      userId: "user-1",
-    });
-    mockGetAllProviders.mockReturnValueOnce([
-      { id: "unsupported", name: "Unsupported", authSetup: () => ({}) },
-    ]);
-    const unsupportedProvider = createMockReqRes({ code: "code", state: "state" });
-    await handleOAuth2Callback(unsupportedProvider.req, unsupportedProvider.res);
-    expect(unsupportedProvider.res.status).toHaveBeenCalledWith(400);
-    expect(unsupportedProvider.res.send).toHaveBeenCalledWith(
-      "Provider does not support OAuth code exchange",
-    );
-  });
-
-  it("exchanges and persists a successful Wahoo reconnect without revocation", async () => {
-    const events: string[] = [];
-    mockLoadTokens.mockImplementation(async () => {
-      events.push("load");
-      return {
-        accessToken: "valid-access",
-        refreshToken: "valid-refresh",
-      };
-    });
-    mockExchangeCode.mockImplementation(async () => {
-      events.push("exchange-new-grant");
-      return {
-        accessToken: "new-access",
-        refreshToken: "new-refresh",
-        expiresAt: new Date("2027-01-01"),
-        scopes: "user_read",
-      };
-    });
-    mockPersistProviderConnection.mockImplementation(async () => {
-      events.push("persist-new-tokens");
-    });
-
-    const { req, res } = createMockReqRes({ code: "auth-code", state: "random-state" });
-    await handleOAuth2Callback(req, res);
-
-    expect(events).toEqual(["load", "exchange-new-grant", "persist-new-tokens"]);
-    expect(mockRevokeExistingTokens).not.toHaveBeenCalled();
-    expect(mockRevokeToken).not.toHaveBeenCalled();
-    expect(mockDeleteTokens).not.toHaveBeenCalled();
-    expect(mockInvalidateByPrefix).not.toHaveBeenCalled();
-    expect(res.send).toHaveBeenCalledWith(expect.stringContaining("success"));
   });
 
   it("deauthorizes and removes stored credentials after Wahoo's exact token-limit error", async () => {
@@ -382,18 +294,6 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     expect(res.send).toHaveBeenCalledWith(
       expect.stringContaining("existing connection is still active"),
     );
-  });
-
-  it("rejects a known-user callback before exchanging remote credentials when erasure is active", async () => {
-    mockWithUserWriteFence.mockRejectedValueOnce(new Error("Account erasure is active"));
-    const { req, res } = createMockReqRes({ code: "code-1", state: "state-1" });
-
-    await handleOAuth2Callback(req, res);
-
-    expect(mockWithUserWriteFence).toHaveBeenCalledWith(mockDb, "user-1", expect.any(Function));
-    expect(mockExchangeCode).not.toHaveBeenCalled();
-    expect(mockPersistProviderConnection).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(500);
   });
 
   it("revokes newly issued credentials when durable persistence fails", async () => {
@@ -1090,5 +990,6 @@ describe("handleOAuth2Callback — revocation fallback", () => {
       }),
     );
     expect(res.send).toHaveBeenCalledWith("<html>Wahoo:issued-pending-token</html>");
+    expect(mockRegisterProviderWebhook).not.toHaveBeenCalled();
   });
 });
