@@ -161,7 +161,7 @@ describe("handleOAuth2Callback — revocation fallback", () => {
   const mockRevokeExistingTokens = vi.fn();
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     mockWithUserWriteFence.mockImplementation(
       async (
         _database: unknown,
