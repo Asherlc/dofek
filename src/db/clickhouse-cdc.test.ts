@@ -1294,6 +1294,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
       "TRUNCATE TABLE IF EXISTS postgres_fitness.processing_flow_marker_provider_inventory",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.sensor_provider_priority",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.sensor_device_priority",
+      "TRUNCATE TABLE IF EXISTS postgres_fitness.processing_flow_marker_sensor_priority",
     ]);
     expect(sourcePostgresQueries).toEqual([]);
     expect(clickHouseQueries).toEqual([]);
