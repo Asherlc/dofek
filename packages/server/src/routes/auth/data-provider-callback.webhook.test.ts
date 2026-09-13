@@ -75,7 +75,7 @@ vi.mock("./shared.ts", () => ({
 import { handleOAuth2Callback } from "./data-provider-callback.ts";
 
 function mockOf<T extends object>(partial: Partial<T>): T {
-  return partial;
+  return Object.assign(Object.create(null), partial);
 }
 function createMockReqRes(query: Record<string, string> = {}) {
   const req = mockOf<Request>({ query, get: vi.fn(() => "dofek.asherlc.com") });
