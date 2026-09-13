@@ -4,28 +4,30 @@ export interface PeerDbTableMapping {
   exclude: readonly string[];
 }
 
-interface PeerDbProcessingMarkerContract {
+export interface PeerDbMirrorTableContract extends PeerDbTableMapping {
+  allowAbsentExcludedSourceColumns?: readonly string[];
+}
+
+export interface PeerDbProcessingMarkerContract {
   destinationTableIdentifier: string;
   flow: string;
 }
 
-interface PeerDbMirrorContract {
-  initialCopyPlaceholder:
-    | "FITNESS_RAW_ANALYTICS_DO_INITIAL_COPY"
-    | "PROVIDER_INVENTORY_RAW_ANALYTICS_DO_INITIAL_COPY"
-    | "SENSOR_PRIORITY_RAW_ANALYTICS_DO_INITIAL_COPY";
-  name:
-    | "dofek_fitness_raw_analytics"
-    | "dofek_provider_inventory_raw_analytics"
-    | "dofek_sensor_priority_raw_analytics";
+export interface PeerDbMirrorContract {
+  destinationDatabase: string;
+  initialCopyPlaceholder: string;
+  name: string;
   processingMarker?: PeerDbProcessingMarkerContract;
-  tableMappings: readonly PeerDbTableMapping[];
+  tableMappingsPlaceholder: string;
+  tableMappings: readonly PeerDbMirrorTableContract[];
 }
 
 export const peerDbMirrorContracts = [
   {
     name: "dofek_fitness_raw_analytics",
+    destinationDatabase: "postgres_fitness",
     initialCopyPlaceholder: "FITNESS_RAW_ANALYTICS_DO_INITIAL_COPY",
+    tableMappingsPlaceholder: "FITNESS_RAW_ANALYTICS_TABLE_MAPPINGS",
     processingMarker: {
       destinationTableIdentifier: "processing_flow_marker",
       flow: "dofek_fitness_raw_analytics",
@@ -45,6 +47,12 @@ export const peerDbMirrorContracts = [
           "sleep_need_from_nap_minutes",
           "sleep_need_from_strain_minutes",
         ],
+        allowAbsentExcludedSourceColumns: [
+          "sleep_need_baseline_minutes",
+          "sleep_need_from_debt_minutes",
+          "sleep_need_from_nap_minutes",
+          "sleep_need_from_strain_minutes",
+        ],
       },
       {
         sourceTableIdentifier: "fitness.sleep_stage",
@@ -54,7 +62,18 @@ export const peerDbMirrorContracts = [
       {
         sourceTableIdentifier: "fitness.daily_metrics",
         destinationTableIdentifier: "daily_metrics",
-        exclude: ["recovery_high_minutes", "resilience_level", "stress_high_minutes"],
+        exclude: [
+          "active_energy_kcal",
+          "basal_energy_kcal",
+          "recovery_high_minutes",
+          "resilience_level",
+          "stress_high_minutes",
+        ],
+        allowAbsentExcludedSourceColumns: [
+          "recovery_high_minutes",
+          "resilience_level",
+          "stress_high_minutes",
+        ],
       },
       {
         sourceTableIdentifier: "fitness.provider",
@@ -90,7 +109,9 @@ export const peerDbMirrorContracts = [
   },
   {
     name: "dofek_provider_inventory_raw_analytics",
+    destinationDatabase: "postgres_fitness",
     initialCopyPlaceholder: "PROVIDER_INVENTORY_RAW_ANALYTICS_DO_INITIAL_COPY",
+    tableMappingsPlaceholder: "PROVIDER_INVENTORY_RAW_ANALYTICS_TABLE_MAPPINGS",
     processingMarker: {
       destinationTableIdentifier: "processing_flow_marker_provider_inventory",
       flow: "dofek_provider_inventory_raw_analytics",
@@ -125,7 +146,9 @@ export const peerDbMirrorContracts = [
   },
   {
     name: "dofek_sensor_priority_raw_analytics",
+    destinationDatabase: "postgres_fitness",
     initialCopyPlaceholder: "SENSOR_PRIORITY_RAW_ANALYTICS_DO_INITIAL_COPY",
+    tableMappingsPlaceholder: "SENSOR_PRIORITY_RAW_ANALYTICS_TABLE_MAPPINGS",
     processingMarker: undefined,
     tableMappings: [
       {

@@ -312,6 +312,16 @@ describe("clickHouseMigrations", () => {
         expect.stringContaining("FROM ingest.metric_stream"),
       ]),
     });
+    expect(
+      migrations.find((migration) => migration.id === "0087_complete_peerdb_raw_schema"),
+    ).toMatchObject({
+      id: "0087_complete_peerdb_raw_schema",
+      statements: expect.arrayContaining([
+        expect.stringContaining("food_entry ADD COLUMN IF NOT EXISTS nutrition_grain"),
+        expect.stringContaining("health_event ADD COLUMN IF NOT EXISTS source_bundle"),
+        expect.stringContaining("health_event ADD COLUMN IF NOT EXISTS metadata"),
+      ]),
+    });
   });
 
   it("rejects duplicate migration ids", async () => {

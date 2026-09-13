@@ -62,6 +62,20 @@ describe("buildPostgresFitnessProviderRawTableStatement", () => {
 });
 
 describe("buildPostgresFitnessRawTableStatements", () => {
+  it("includes all non-excluded canonical food and health-event source fields", () => {
+    const statements = buildPostgresFitnessRawTableStatements();
+    const foodEntry = statements.find((statement) =>
+      statement.includes("postgres_fitness.food_entry"),
+    );
+    const healthEvent = statements.find((statement) =>
+      statement.includes("postgres_fitness.health_event"),
+    );
+
+    expect(foodEntry).toContain("nutrition_grain Nullable(String)");
+    expect(healthEvent).toContain("source_bundle Nullable(String)");
+    expect(healthEvent).toContain("metadata Nullable(String)");
+  });
+
   it("creates the exact processing marker mirror used for relational CDC evidence", () => {
     const markerTable = buildPostgresFitnessRawTableStatements().find((statement) =>
       statement.includes("postgres_fitness.processing_flow_marker"),

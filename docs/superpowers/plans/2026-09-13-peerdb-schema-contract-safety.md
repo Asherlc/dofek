@@ -120,6 +120,12 @@ Docker Compose, GitHub Actions, Sentry/OpenTelemetry.
 - Create: `src/db/peerdb/mirror-schema-validator.test.ts`
 - Create: `src/db/peerdb/mirror-schema-validator.integration.test.ts`
 - Modify: `src/db/clickhouse.ts`
+- Modify: `src/db/clickhouse-raw-tables.ts`
+- Modify: `src/db/clickhouse-raw-tables.test.ts`
+- Create: `src/db/clickhouse-migrations/0087_complete_peerdb_raw_schema.ts`
+- Create: `src/db/clickhouse-migrations/0087_complete_peerdb_raw_schema.test.ts`
+- Modify: `src/db/clickhouse-migrations/registry.ts`
+- Modify: `src/db/clickhouse-migrations/registry.test.ts`
 - Modify: `src/db/README.md`
 
 - [ ] **Step 1: Write failing validator unit tests**
@@ -153,6 +159,14 @@ Docker Compose, GitHub Actions, Sentry/OpenTelemetry.
   separately. Return a structured report and throw one deterministic error
   that contains only mirror, table, and column identifiers.
 
+  The real-engine RED run also exposed pre-existing drift beyond migration
+  0085. Explicitly exclude the retired provider energy estimates, model the
+  seven already-retired source fields as exclusions that may be absent after
+  the source-side contraction, and add `food_entry.nutrition_grain` plus
+  `health_event.source_bundle`/`metadata` to both the ClickHouse bootstrap and
+  an idempotent ClickHouse migration. The validator must then prove the full
+  current contract, not a hand-selected subset.
+
 - [ ] **Step 5: Run focused tests, lint, and typecheck**
 
   ```bash
@@ -165,7 +179,7 @@ Docker Compose, GitHub Actions, Sentry/OpenTelemetry.
 - [ ] **Step 6: Commit and push**
 
   ```bash
-  git add src/db/peerdb/mirror-schema-validator.ts src/db/peerdb/mirror-schema-validator.test.ts src/db/peerdb/mirror-schema-validator.integration.test.ts src/db/clickhouse.ts src/db/README.md
+  git add src/db/peerdb/mirror-schema-validator.ts src/db/peerdb/mirror-schema-validator.test.ts src/db/peerdb/mirror-schema-validator.integration.test.ts src/db/peerdb/mirror-contracts.ts src/db/peerdb/mirror-contracts.test.ts src/db/clickhouse-raw-tables.ts src/db/clickhouse-raw-tables.test.ts src/db/clickhouse-migrations/0087_complete_peerdb_raw_schema.ts src/db/clickhouse-migrations/0087_complete_peerdb_raw_schema.test.ts src/db/clickhouse-migrations/registry.ts src/db/clickhouse-migrations/registry.test.ts src/db/README.md
   git commit -m "Validate PeerDB projections against database schemas"
   git push
   ```
@@ -514,4 +528,3 @@ Docker Compose, GitHub Actions, Sentry/OpenTelemetry.
   Record the deployed commit, validation timestamps, retained-slot evidence,
   user-visible recovery, and any remaining risk. Commit and push the final
   documentation update.
-

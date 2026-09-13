@@ -475,7 +475,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
       "exclude: [sleep_need_baseline_minutes, sleep_need_from_debt_minutes, sleep_need_from_nap_minutes, sleep_need_from_strain_minutes]",
     );
     expect(peerDbQueries[2]).toContain(
-      "exclude: [recovery_high_minutes, resilience_level, stress_high_minutes]",
+      "exclude: [active_energy_kcal, basal_energy_kcal, recovery_high_minutes, resilience_level, stress_high_minutes]",
     );
     expect(peerDbQueries.join("\n")).not.toContain("{{");
     expect(sourcePostgresQueries.join("\n")).toContain("peerdb_raw_analytics_publication");

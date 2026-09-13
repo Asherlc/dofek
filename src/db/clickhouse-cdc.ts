@@ -474,35 +474,26 @@ function buildTemplateReplacements(
   values: PeerDbSqlTemplateValues,
   rawAnalyticsInitialCopyValues: RawAnalyticsInitialCopyValues,
 ): Record<string, string> {
-  return {
+  const replacements: Record<string, string> = {
     CLICKHOUSE_CREDENTIAL: peerDbStringLiteral(values.clickHouseCredential),
     CLICKHOUSE_HOST: peerDbStringLiteral(values.clickHouseHost),
     CLICKHOUSE_PORT: String(values.clickHousePort),
     CLICKHOUSE_USER: peerDbStringLiteral(values.clickHouseUser),
-    FITNESS_RAW_ANALYTICS_DO_INITIAL_COPY: String(
-      rawAnalyticsInitialCopyValues.dofek_fitness_raw_analytics,
-    ),
-    FITNESS_RAW_ANALYTICS_TABLE_MAPPINGS: renderPeerDbTableMappings(
-      peerDbMirrorContracts[0].tableMappings,
-    ),
-    PROVIDER_INVENTORY_RAW_ANALYTICS_DO_INITIAL_COPY: String(
-      rawAnalyticsInitialCopyValues.dofek_provider_inventory_raw_analytics,
-    ),
-    PROVIDER_INVENTORY_RAW_ANALYTICS_TABLE_MAPPINGS: renderPeerDbTableMappings(
-      peerDbMirrorContracts[1].tableMappings,
-    ),
-    SENSOR_PRIORITY_RAW_ANALYTICS_DO_INITIAL_COPY: String(
-      rawAnalyticsInitialCopyValues.dofek_sensor_priority_raw_analytics,
-    ),
-    SENSOR_PRIORITY_RAW_ANALYTICS_TABLE_MAPPINGS: renderPeerDbTableMappings(
-      peerDbMirrorContracts[2].tableMappings,
-    ),
     POSTGRES_CREDENTIAL: peerDbStringLiteral(values.postgresCredential),
     POSTGRES_DATABASE: peerDbStringLiteral(values.postgresDatabase),
     POSTGRES_HOST: peerDbStringLiteral(values.postgresHost),
     POSTGRES_PORT: String(values.postgresPort),
     POSTGRES_USER: peerDbStringLiteral(values.postgresUser),
   };
+  for (const contract of peerDbMirrorContracts) {
+    replacements[contract.initialCopyPlaceholder] = String(
+      rawAnalyticsInitialCopyValues[contract.name],
+    );
+    replacements[contract.tableMappingsPlaceholder] = renderPeerDbTableMappings(
+      contract.tableMappings,
+    );
+  }
+  return replacements;
 }
 
 function renderPeerDbSqlTemplate(

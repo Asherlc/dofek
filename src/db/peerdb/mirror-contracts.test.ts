@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { peerDbMirrorContracts } from "./mirror-contracts.ts";
+import { type PeerDbMirrorTableContract, peerDbMirrorContracts } from "./mirror-contracts.ts";
 
-function mapping(mirrorName: string, sourceTableIdentifier: string) {
+function mapping(mirrorName: string, sourceTableIdentifier: string): PeerDbMirrorTableContract {
   const mirror = peerDbMirrorContracts.find((candidate) => candidate.name === mirrorName);
   if (!mirror) throw new Error(`Missing mirror ${mirrorName}`);
   const tableMapping = mirror.tableMappings.find(
@@ -30,11 +30,26 @@ describe("PeerDB mirror contracts", () => {
 
   it("excludes provider-derived columns removed by ClickHouse migration 0085", () => {
     expect(mapping("dofek_fitness_raw_analytics", "fitness.daily_metrics").exclude).toEqual([
+      "active_energy_kcal",
+      "basal_energy_kcal",
       "recovery_high_minutes",
       "resilience_level",
       "stress_high_minutes",
     ]);
     expect(mapping("dofek_fitness_raw_analytics", "fitness.sleep_session").exclude).toEqual([
+      "sleep_need_baseline_minutes",
+      "sleep_need_from_debt_minutes",
+      "sleep_need_from_nap_minutes",
+      "sleep_need_from_strain_minutes",
+    ]);
+    expect(
+      mapping("dofek_fitness_raw_analytics", "fitness.daily_metrics")
+        .allowAbsentExcludedSourceColumns,
+    ).toEqual(["recovery_high_minutes", "resilience_level", "stress_high_minutes"]);
+    expect(
+      mapping("dofek_fitness_raw_analytics", "fitness.sleep_session")
+        .allowAbsentExcludedSourceColumns,
+    ).toEqual([
       "sleep_need_baseline_minutes",
       "sleep_need_from_debt_minutes",
       "sleep_need_from_nap_minutes",
