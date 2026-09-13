@@ -371,7 +371,7 @@ describe("activity route identity read model", () => {
 
     await client.command({
       query: `INSERT INTO ${database}.activity_route_identity ${renderModel(database, true)}`,
-      clickhouse_settings: { max_rows_to_read: "350000" },
+      clickhouse_settings: { max_rows_to_read: "500000" },
     });
 
     expect(await readRouteIdentity(client, database)).toMatchObject({
