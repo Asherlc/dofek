@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
 import { hostname } from "node:os";
 
 const protocolVersions = new Set(["2025-06-18"]);
@@ -50,6 +50,7 @@ const mcpToolNames = new Set([
 ]);
 
 const expectedFoodTools = new Set(["search_food_entries", "create_food_entry"]);
+const clientCorrelationKey = randomBytes(32);
 
 type McpMethod =
   | "initialize"
@@ -73,9 +74,9 @@ export interface McpToolsListResponseTelemetry {
   tool_schema_valid?: boolean;
 }
 
-/** Creates a stable diagnostic correlation key without retaining client identifiers. */
+/** Creates a replica-lifetime diagnostic correlation key without retaining client identifiers. */
 export function mcpClientCorrelationId(clientId: string): string {
-  return createHash("sha256").update(clientId).digest("hex");
+  return createHmac("sha256", clientCorrelationKey).update(clientId).digest("hex");
 }
 
 /** Deployment metadata is bounded to the image's build SHA and container hostname. */

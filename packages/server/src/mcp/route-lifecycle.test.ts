@@ -296,7 +296,9 @@ describe("createMcpRouter lifecycle handling", () => {
     const response = await request({ jsonrpc: "2.0", id: 1, method: "initialize" });
 
     expect(response).toEqual({ status: 202, text: "accepted" });
-    expect(routeMocks.captureException).toHaveBeenCalledWith(lateError);
+    expect(routeMocks.captureException).toHaveBeenCalledWith(
+      new Error("MCP request failed: transport_error"),
+    );
     expect(routeMocks.loggerError).toHaveBeenCalledWith(
       "mcp.request",
       expect.objectContaining({ error_category: "transport_error", outcome: "exception" }),
