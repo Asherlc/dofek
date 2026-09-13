@@ -7,6 +7,14 @@ import {
   transitionLegacyClinicalMirror,
   waitForCanonicalClinicalMirror,
 } from "./clickhouse-clinical-cdc.ts";
+import {
+  type PeerDbMirrorName,
+  type PeerDbTableMapping,
+  peerDbMirrorContracts,
+  renderPeerDbTableMappings,
+} from "./peerdb/mirror-contracts.ts";
+
+export type { PeerDbTableMapping } from "./peerdb/mirror-contracts.ts";
 
 interface PeerDbClient {
   query(queryText: string): Promise<unknown>;
@@ -14,12 +22,6 @@ interface PeerDbClient {
 
 interface SourcePostgresClient {
   query(queryText: string): Promise<unknown>;
-}
-
-export interface PeerDbTableMapping {
-  sourceTableIdentifier: string;
-  destinationTableIdentifier: string;
-  exclude: readonly string[];
 }
 
 interface PeerDbMirrorStatus {
@@ -63,11 +65,7 @@ export interface PeerDbSqlTemplateValues {
   postgresUser: string;
 }
 
-interface RawAnalyticsInitialCopyValues {
-  dofek_fitness_raw_analytics: boolean;
-  dofek_provider_inventory_raw_analytics: boolean;
-  dofek_sensor_priority_raw_analytics: boolean;
-}
+type RawAnalyticsInitialCopyValues = Record<PeerDbMirrorName, boolean>;
 
 interface SetupClickHouseCdcOptions {
   peerDbMirrorApiClient?: PeerDbMirrorApiClient;
@@ -88,28 +86,15 @@ interface RuntimeConfig {
 
 const analyticsPublicationName = "peerdb_raw_analytics_publication";
 const analyticsSourceTables = [
-  "activity",
-  "sleep_session",
-  "sleep_stage",
-  "daily_metrics",
-  "food_entry",
-  "health_event",
-  "clinical_record",
-  "journal_entry",
-  "provider",
-  "provider_connection",
-  "provider_priority",
-  "device_priority",
-  "sensor_provider_priority",
-  "sensor_device_priority",
-  "processing_flow_marker",
-  "user_profile",
-] as const;
-const rawAnalyticsMirrorNames = [
-  "dofek_fitness_raw_analytics",
-  "dofek_provider_inventory_raw_analytics",
-  "dofek_sensor_priority_raw_analytics",
-] as const;
+  ...new Set(
+    peerDbMirrorContracts.flatMap(({ tableMappings }) =>
+      tableMappings.map(({ sourceTableIdentifier }) =>
+        sourceTableIdentifier.replace(/^fitness\./, ""),
+      ),
+    ),
+  ),
+];
+const rawAnalyticsMirrorNames = peerDbMirrorContracts.map(({ name }) => name);
 const managedMirrorNames = rawAnalyticsMirrorNames;
 const existingManagedMirrorQueryResultSchema = z.object({
   rows: z.array(
@@ -145,30 +130,6 @@ const peerDbMirrorListResponseSchema = z.object({
     }),
   ),
 });
-const rawAnalyticsMirrorTableMappings: Record<
-  (typeof rawAnalyticsMirrorNames)[number],
-  readonly string[]
-> = {
-  dofek_fitness_raw_analytics: [
-    "activity",
-    "sleep_session",
-    "sleep_stage",
-    "daily_metrics",
-    "provider",
-    "provider_connection",
-    "provider_priority",
-    "device_priority",
-    "processing_flow_marker",
-    "user_profile",
-  ],
-  dofek_provider_inventory_raw_analytics: [
-    "food_entry",
-    "health_event",
-    "clinical_record",
-    "journal_entry",
-  ],
-  dofek_sensor_priority_raw_analytics: ["sensor_provider_priority", "sensor_device_priority"],
-};
 const requiredExistingMirrorTableMappings = {
   dofek_fitness_raw_analytics: [
     {
@@ -194,9 +155,7 @@ const requiredExistingMirrorTableMappings = {
       exclude: [],
     },
   ],
-} as const satisfies Partial<
-  Record<(typeof rawAnalyticsMirrorNames)[number], readonly PeerDbTableMapping[]>
->;
+} as const satisfies Partial<Record<PeerDbMirrorName, readonly PeerDbTableMapping[]>>;
 const peerDbMirrorStatePollIntervalMs = 1_000;
 const peerDbMirrorStatePollTimeoutMs = 120_000;
 const defaultRawAnalyticsInitialCopyValues: RawAnalyticsInitialCopyValues = {
@@ -523,11 +482,20 @@ function buildTemplateReplacements(
     FITNESS_RAW_ANALYTICS_DO_INITIAL_COPY: String(
       rawAnalyticsInitialCopyValues.dofek_fitness_raw_analytics,
     ),
+    FITNESS_RAW_ANALYTICS_TABLE_MAPPINGS: renderPeerDbTableMappings(
+      peerDbMirrorContracts[0].tableMappings,
+    ),
     PROVIDER_INVENTORY_RAW_ANALYTICS_DO_INITIAL_COPY: String(
       rawAnalyticsInitialCopyValues.dofek_provider_inventory_raw_analytics,
     ),
+    PROVIDER_INVENTORY_RAW_ANALYTICS_TABLE_MAPPINGS: renderPeerDbTableMappings(
+      peerDbMirrorContracts[1].tableMappings,
+    ),
     SENSOR_PRIORITY_RAW_ANALYTICS_DO_INITIAL_COPY: String(
       rawAnalyticsInitialCopyValues.dofek_sensor_priority_raw_analytics,
+    ),
+    SENSOR_PRIORITY_RAW_ANALYTICS_TABLE_MAPPINGS: renderPeerDbTableMappings(
+      peerDbMirrorContracts[2].tableMappings,
     ),
     POSTGRES_CREDENTIAL: peerDbStringLiteral(values.postgresCredential),
     POSTGRES_DATABASE: peerDbStringLiteral(values.postgresDatabase),
@@ -710,13 +678,13 @@ async function truncateMissingInitialCopyRawAnalyticsDestinations(
   clickHouseClient: ClickHouseCommandClient,
   existingMirrorNames: Set<string>,
 ): Promise<void> {
-  for (const mirrorName of rawAnalyticsMirrorNames) {
-    if (existingMirrorNames.has(mirrorName)) {
+  for (const mirror of peerDbMirrorContracts) {
+    if (existingMirrorNames.has(mirror.name)) {
       continue;
     }
     await truncateRawAnalyticsDestinationTables(
       clickHouseClient,
-      rawAnalyticsMirrorTableMappings[mirrorName],
+      mirror.tableMappings.map(({ destinationTableIdentifier }) => destinationTableIdentifier),
     );
   }
 }

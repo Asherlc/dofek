@@ -471,6 +471,12 @@ describe("PeerDB ClickHouse CDC setup", () => {
     expect(rawMirrorSql).toContain("snapshot_num_rows_per_partition = 100000");
     expect(rawMirrorSql).toContain("snapshot_max_parallel_workers = 1");
     expect(rawMirrorSql).toContain("snapshot_num_tables_in_parallel = 1");
+    expect(peerDbQueries[2]).toContain(
+      "exclude: [sleep_need_baseline_minutes, sleep_need_from_debt_minutes, sleep_need_from_nap_minutes, sleep_need_from_strain_minutes]",
+    );
+    expect(peerDbQueries[2]).toContain(
+      "exclude: [recovery_high_minutes, resilience_level, stress_high_minutes]",
+    );
     expect(peerDbQueries.join("\n")).not.toContain("{{");
     expect(sourcePostgresQueries.join("\n")).toContain("peerdb_raw_analytics_publication");
   });
@@ -1283,6 +1289,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
       "TRUNCATE TABLE IF EXISTS postgres_fitness.health_event",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.clinical_record",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.journal_entry",
+      "TRUNCATE TABLE IF EXISTS postgres_fitness.processing_flow_marker_provider_inventory",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.sensor_provider_priority",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.sensor_device_priority",
     ]);
