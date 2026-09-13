@@ -9,6 +9,7 @@ export interface CdcHealthClickHouseClient {
 }
 
 export interface CdcHealthIssue {
+  kind?: "normalization_stall";
   severity: "warning" | "failure";
   message: string;
 }
@@ -93,6 +94,18 @@ const peerDbMirrorRowsSchema = z.object({
   ),
 });
 
+const peerDbNormalizationRowsSchema = z.object({
+  rows: z.array(
+    z.object({
+      flow_name: z.enum(expectedPeerDbMirrorNames),
+      latest_normalized_batch_id: nullableIntegerLikeSchema,
+      latest_synced_batch_id: nullableIntegerLikeSchema,
+      oldest_pending_batch_id: nullableIntegerLikeSchema,
+      pending_destination_tables: z.array(z.string().regex(/^[a-z][a-z0-9_]*$/)),
+    }),
+  ),
+});
+
 const clickHouseFreshnessRowsSchema = z.array(
   z.object({
     latest_peerdb_synced_at: z.string().nullable(),
@@ -118,6 +131,42 @@ export interface CdcHealthPeerDbMirrorEvidence {
 export interface CdcHealthEvidence {
   peerDbMirrors: CdcHealthPeerDbMirrorEvidence[];
   replicationSlots: CdcHealthReplicationSlotEvidence[];
+}
+
+function buildPeerDbNormalizationQuery(): string {
+  return `
+    WITH batch_progress AS (
+      SELECT
+        flow_name,
+        max(batch_id) FILTER (WHERE sync_time IS NOT NULL) AS latest_synced_batch_id,
+        max(batch_id) FILTER (WHERE end_time IS NOT NULL) AS latest_normalized_batch_id,
+        min(batch_id) FILTER (WHERE sync_time IS NOT NULL AND end_time IS NULL) AS oldest_pending_batch_id
+      FROM peerdb_stats.cdc_batches
+      WHERE flow_name IN (${expectedPeerDbMirrorNames.map((name) => `'${name}'`).join(", ")})
+      GROUP BY flow_name
+    )
+    SELECT
+      progress.flow_name,
+      progress.latest_synced_batch_id,
+      progress.latest_normalized_batch_id,
+      progress.oldest_pending_batch_id,
+      coalesce(
+        array_agg(DISTINCT batch_table.destination_table_name)
+          FILTER (WHERE batch_table.destination_table_name IS NOT NULL),
+        ARRAY[]::text[]
+      ) AS pending_destination_tables
+    FROM batch_progress AS progress
+    LEFT JOIN peerdb_stats.cdc_batch_table AS batch_table
+      ON batch_table.flow_name = progress.flow_name
+      AND batch_table.batch_id >= progress.oldest_pending_batch_id
+      AND batch_table.batch_id <= progress.latest_synced_batch_id
+    GROUP BY
+      progress.flow_name,
+      progress.latest_synced_batch_id,
+      progress.latest_normalized_batch_id,
+      progress.oldest_pending_batch_id
+    ORDER BY progress.flow_name
+  `;
 }
 
 function integerLikeToNumber(value: z.infer<typeof integerLikeSchema>): number {
@@ -211,6 +260,35 @@ function addPeerDbMirrorIssues(
         message: `Missing required PeerDB raw mirror ${expectedMirrorName}`,
       });
     }
+  }
+}
+
+function addPeerDbNormalizationIssues(
+  issues: CdcHealthIssue[],
+  rows: z.infer<typeof peerDbNormalizationRowsSchema>["rows"],
+): void {
+  for (const row of rows) {
+    const latestSyncedBatchId = nullableIntegerLikeToNumber(row.latest_synced_batch_id);
+    const latestNormalizedBatchId = nullableIntegerLikeToNumber(row.latest_normalized_batch_id);
+    const oldestPendingBatchId = nullableIntegerLikeToNumber(row.oldest_pending_batch_id);
+    if (
+      latestSyncedBatchId === null ||
+      oldestPendingBatchId === null ||
+      latestSyncedBatchId <= oldestPendingBatchId ||
+      (latestNormalizedBatchId !== null && latestNormalizedBatchId >= oldestPendingBatchId)
+    ) {
+      continue;
+    }
+    const pendingTables = [...row.pending_destination_tables].sort().join(",");
+    issues.push({
+      kind: "normalization_stall",
+      severity: "failure",
+      message:
+        `PeerDB normalization stalled for ${row.flow_name} tables=[${pendingTables}] ` +
+        "classification=NORMALIZATION_CURSOR_STALLED " +
+        `normalized_batch=${latestNormalizedBatchId ?? 0} synced_batch=${latestSyncedBatchId} ` +
+        `oldest_pending_batch=${oldestPendingBatchId}`,
+    });
   }
 }
 
@@ -383,6 +461,10 @@ export async function checkClickHouseCdcHealth(
   const peerDbMirrorRows = !shouldCheckPeerDbMirrors
     ? []
     : peerDbMirrorRowsSchema.parse(await peerDbClient.query(buildPeerDbMirrorQuery())).rows;
+  const peerDbNormalizationRows = !shouldCheckPeerDbMirrors
+    ? []
+    : peerDbNormalizationRowsSchema.parse(await peerDbClient.query(buildPeerDbNormalizationQuery()))
+        .rows;
 
   const slotQueryResult = await options.postgresClient.query(`
     SELECT
@@ -409,6 +491,7 @@ export async function checkClickHouseCdcHealth(
   const issues: CdcHealthIssue[] = [];
   if (shouldCheckPeerDbMirrors) {
     addPeerDbMirrorIssues(issues, peerDbMirrorRows);
+    addPeerDbNormalizationIssues(issues, peerDbNormalizationRows);
   }
   addSlotIssues(issues, parsedSlotRows, thresholds);
   addMirrorFreshnessIssues(issues, freshnessRows, mirrorFreshnessChecks, now);

@@ -10,6 +10,10 @@ slots and selected active ClickHouse mirrors.
 
 It fails on:
 
+- A PeerDB batch whose normalization cursor remains pending after a newer batch
+  has synced, even when the mirror catalog still says it is running. The check
+  reports only the flow, affected destination table identifiers, batch cursors,
+  and the `NORMALIZATION_CURSOR_STALLED` classification.
 - Any required PeerDB slot with `wal_status = 'lost'`.
 - Any required PeerDB slot with `restart_lsn IS NULL`.
 - Any required PeerDB slot that is inactive.
@@ -48,6 +52,13 @@ failures; Swarm then replaces the failed task. Docker documents both
 [healthcheck status transitions](https://docs.docker.com/reference/dockerfile/#healthcheck)
 and [Swarm task replacement after a failed healthcheck](https://docs.docker.com/engine/swarm/how-swarm-mode-works/services/#tasks-and-scheduling).
 Local runs are still useful when actively triaging an incident.
+
+The normalization signal comes from PeerDB's own catalog: a synced CDC batch
+has `sync_time`, while normalization completion fills `end_time`. Dofek allows
+the newest batch to be in flight, but fails as soon as an older pending batch
+has a newer synced batch behind it. PeerDB's upstream monitoring implementation
+defines these writes and its pending-normalize query in
+[`monitoring.go`](https://github.com/PeerDB-io/peerdb/blob/main/flow/connectors/utils/monitoring/monitoring.go).
 
 Inspect the latest monitor evidence inside the current task:
 
@@ -89,6 +100,25 @@ FROM pg_replication_slots
 WHERE slot_name LIKE 'peerflow_slot_dofek_%'
 ORDER BY slot_name;
 ```
+
+Check persisted normalization progress in the PeerDB catalog:
+
+```sql
+SELECT
+  flow_name,
+  max(batch_id) FILTER (WHERE sync_time IS NOT NULL) AS latest_synced_batch_id,
+  max(batch_id) FILTER (WHERE end_time IS NOT NULL) AS latest_normalized_batch_id,
+  min(batch_id) FILTER (
+    WHERE sync_time IS NOT NULL AND end_time IS NULL
+  ) AS oldest_pending_batch_id
+FROM peerdb_stats.cdc_batches
+WHERE flow_name LIKE 'dofek_%'
+GROUP BY flow_name
+ORDER BY flow_name;
+```
+
+An older pending batch plus a greater `latest_synced_batch_id` is a
+normalization stall. Do not accept `flows.status` alone as proof of health.
 
 If `wal_status = 'lost'`, retries and container restarts cannot recover the slot.
 Recreate the affected mirror from a fresh slot and then backfill or resnapshot

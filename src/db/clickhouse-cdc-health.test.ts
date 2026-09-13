@@ -27,6 +27,14 @@ interface PeerDbMirrorRow {
   workflow_id: string | null;
 }
 
+interface PeerDbNormalizationRow {
+  flow_name: string;
+  latest_normalized_batch_id: number | string | null;
+  latest_synced_batch_id: number | string | null;
+  oldest_pending_batch_id: number | string | null;
+  pending_destination_tables: string[];
+}
+
 class FakePostgresClient implements PostgresQueryClient {
   readonly #rows: readonly SlotRow[];
   queryTexts: string[] = [];
@@ -62,16 +70,33 @@ class FakeClickHouseClient implements CdcHealthClickHouseClient {
 
 class FakePeerDbClient implements PostgresQueryClient {
   readonly #rows: readonly PeerDbMirrorRow[];
+  readonly #normalizationRows: readonly PeerDbNormalizationRow[];
   queryTexts: string[] = [];
 
-  constructor(rows: readonly PeerDbMirrorRow[]) {
+  constructor(
+    rows: readonly PeerDbMirrorRow[],
+    normalizationRows: readonly PeerDbNormalizationRow[] = healthyNormalizationRows(),
+  ) {
     this.#rows = rows;
+    this.#normalizationRows = normalizationRows;
   }
 
   async query(queryText: string): Promise<unknown> {
     this.queryTexts.push(queryText);
-    return { rows: this.#rows };
+    return {
+      rows: queryText.includes("peerdb_stats.cdc_batches") ? this.#normalizationRows : this.#rows,
+    };
   }
+}
+
+function healthyNormalizationRows(): PeerDbNormalizationRow[] {
+  return mirrorNames.map((flowName) => ({
+    flow_name: flowName,
+    latest_normalized_batch_id: "42",
+    latest_synced_batch_id: "42",
+    oldest_pending_batch_id: null,
+    pending_destination_tables: [],
+  }));
 }
 
 const slotNames = [
@@ -204,6 +229,53 @@ describe("checkClickHouseCdcHealth", () => {
       severity: "failure",
       message: "Missing required PeerDB raw mirror dofek_fitness_raw_analytics",
     });
+  });
+
+  it("fails immediately when normalization is behind a newer synced batch", async () => {
+    const peerDbClient = new FakePeerDbClient(healthyPeerDbMirrorRows(), [
+      ...healthyNormalizationRows().slice(1),
+      {
+        flow_name: "dofek_fitness_raw_analytics",
+        latest_normalized_batch_id: "40",
+        latest_synced_batch_id: "43",
+        oldest_pending_batch_id: "41",
+        pending_destination_tables: ["daily_metrics", "sleep_session"],
+      },
+    ]);
+    const report = await checkClickHouseCdcHealth({
+      postgresClient: new FakePostgresClient(healthySlotRows()),
+      peerDbClient,
+      clickHouseClient: new FakeClickHouseClient(healthyFreshnessRows()),
+      now: new Date("2026-06-03T20:00:00.000Z"),
+    });
+
+    expect(report.issues).toContainEqual({
+      kind: "normalization_stall",
+      severity: "failure",
+      message:
+        "PeerDB normalization stalled for dofek_fitness_raw_analytics " +
+        "tables=[daily_metrics,sleep_session] classification=NORMALIZATION_CURSOR_STALLED " +
+        "normalized_batch=40 synced_batch=43 oldest_pending_batch=41",
+    });
+  });
+
+  it("allows one currently normalizing batch without reporting a stall", async () => {
+    const report = await checkClickHouseCdcHealth({
+      postgresClient: new FakePostgresClient(healthySlotRows()),
+      peerDbClient: new FakePeerDbClient(healthyPeerDbMirrorRows(), [
+        {
+          flow_name: "dofek_fitness_raw_analytics",
+          latest_normalized_batch_id: "40",
+          latest_synced_batch_id: "41",
+          oldest_pending_batch_id: "41",
+          pending_destination_tables: ["daily_metrics"],
+        },
+      ]),
+      clickHouseClient: new FakeClickHouseClient(healthyFreshnessRows()),
+      now: new Date("2026-06-03T20:00:00.000Z"),
+    });
+
+    expect(report.issues).toEqual([]);
   });
 
   it("records sanitized PeerDB and Postgres evidence for failed health checks", async () => {
