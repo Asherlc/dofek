@@ -26769,8 +26769,13 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   additionally bounds every canary probe by its remaining deadline, rejects
   incomplete managed-flow artifacts, validates ClickHouse count rows at the
   database boundary, and brings the deadline verifier to a 100% mutation score.
-  The complete CI rerun and production recovery remain pending at the time of
-  this entry.
+  A subsequent E2E run caught ClickHouse error 62 at `ALTER TABLE IF EXISTS`
+  in migration 0087 before Cypress started. The migration now uses supported
+  `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` syntax and intentionally fails if
+  a required mirror table is absent; a real-ClickHouse integration test applies
+  every statement twice and verifies all three destination columns. The
+  complete CI rerun and production recovery remain pending at the time of this
+  entry.
 - **Production recovery status / remaining risk:** Unresolved. No mirror, slot,
   or destination table has been replaced or truncated. The blocked WAL remains
   unapplied until the guarded deployment completes; retrying provider sync

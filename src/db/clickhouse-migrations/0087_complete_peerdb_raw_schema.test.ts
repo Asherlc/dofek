@@ -7,9 +7,9 @@ describe("0087_complete_peerdb_raw_schema", () => {
       id: "0087_complete_peerdb_raw_schema",
       phase: "pre-cdc",
       statements: [
-        "ALTER TABLE IF EXISTS postgres_fitness.food_entry ADD COLUMN IF NOT EXISTS nutrition_grain Nullable(String)",
-        "ALTER TABLE IF EXISTS postgres_fitness.health_event ADD COLUMN IF NOT EXISTS source_bundle Nullable(String)",
-        "ALTER TABLE IF EXISTS postgres_fitness.health_event ADD COLUMN IF NOT EXISTS metadata Nullable(String)",
+        "ALTER TABLE postgres_fitness.food_entry ADD COLUMN IF NOT EXISTS nutrition_grain Nullable(String)",
+        "ALTER TABLE postgres_fitness.health_event ADD COLUMN IF NOT EXISTS source_bundle Nullable(String)",
+        "ALTER TABLE postgres_fitness.health_event ADD COLUMN IF NOT EXISTS metadata Nullable(String)",
       ],
     });
   });
