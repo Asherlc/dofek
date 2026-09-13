@@ -86,7 +86,6 @@ export async function finalizePeerDbDeployment(
   await assertPeerDbMirrorSchemasCompatible(options);
   const canaries: PeerDbDeploymentCanary[] = [];
   for (const contract of options.contracts) {
-    if (!contract.processingMarker) continue;
     const batchKey = options.createId();
     const marker = await options.writeMarker({
       batchKey,

@@ -3,7 +3,6 @@ import { existsSync, realpathSync } from "node:fs";
 import { basename, join } from "node:path";
 
 const workspaceDirectory = realpathSync(process.cwd());
-const composeEnvironmentPath = join(workspaceDirectory, ".env.local");
 const composeFilePath = join(workspaceDirectory, "docker-compose.yml");
 const rawComposeArguments = process.argv.slice(2);
 const unwrappedComposeArguments =
@@ -32,6 +31,10 @@ const composeArguments =
 const baseComposeProjectName = basename(workspaceDirectory);
 const composeProjectName =
   projectSuffix === null ? baseComposeProjectName : `${baseComposeProjectName}-${projectSuffix}`;
+const composeEnvironmentPath = join(
+  workspaceDirectory,
+  projectSuffix === null ? ".env.local" : `.env.${projectSuffix}.local`,
+);
 const dockerArguments = [
   "compose",
   "--project-name",

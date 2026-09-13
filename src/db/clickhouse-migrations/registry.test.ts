@@ -322,6 +322,17 @@ describe("clickHouseMigrations", () => {
         expect.stringContaining("health_event ADD COLUMN IF NOT EXISTS metadata"),
       ]),
     });
+    expect(
+      migrations.find((migration) => migration.id === "0088_sensor_priority_processing_marker"),
+    ).toMatchObject({
+      id: "0088_sensor_priority_processing_marker",
+      phase: "pre-cdc",
+      statements: [
+        expect.stringContaining(
+          "CREATE TABLE IF NOT EXISTS postgres_fitness.processing_flow_marker_sensor_priority",
+        ),
+      ],
+    });
   });
 
   it("rejects duplicate migration ids", async () => {

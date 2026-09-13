@@ -11,6 +11,7 @@ import { peerDbMirrorContracts } from "./mirror-contracts.ts";
 import {
   waitForCanonicalMirror,
   waitForClickHouseFixture,
+  waitForClickHouseRows,
   waitForPeerDbApi,
 } from "./peerdb-test-helpers.ts";
 
@@ -20,6 +21,14 @@ const fixture = {
   sleepSession: "10000000-0000-4000-8000-000000000003",
   operation: "10000000-0000-4000-8000-000000000004",
   user: "10000000-0000-4000-8000-000000000005",
+  sleepStage: "10000000-0000-4000-8000-000000000006",
+  foodEntry: "10000000-0000-4000-8000-000000000007",
+  healthEvent: "10000000-0000-4000-8000-000000000008",
+  clinicalRecord: "10000000-0000-4000-8000-000000000009",
+  journalEntry: "10000000-0000-4000-8000-000000000010",
+  provider: "peerdb-contract-test",
+  markerBatch: "10000000-0000-4000-8000-000000000011",
+  markerWatermark: "10000000-0000-4000-8000-000000000012",
 } as const;
 
 describe("PeerDB CDC production contract", () => {
@@ -56,7 +65,18 @@ describe("PeerDB CDC production contract", () => {
       INSERT INTO fitness.user_profile (id, name)
       VALUES ('${fixture.user}', 'PeerDB contract test');
       INSERT INTO fitness.provider (id, name)
-      VALUES ('peerdb-contract-test', 'PeerDB contract test');
+      VALUES ('${fixture.provider}', 'PeerDB contract test');
+      INSERT INTO fitness.provider_connection (user_id, provider_id)
+      VALUES ('${fixture.user}', '${fixture.provider}');
+      INSERT INTO fitness.provider_priority (provider_id, priority)
+      VALUES ('${fixture.provider}', 10);
+      INSERT INTO fitness.device_priority (provider_id, source_name_pattern, priority)
+      VALUES ('${fixture.provider}', 'PeerDB Test Device', 10);
+      INSERT INTO fitness.sensor_provider_priority (provider_id, channel, priority)
+      VALUES ('${fixture.provider}', 'heart_rate', 10);
+      INSERT INTO fitness.sensor_device_priority (
+        provider_id, source_name_pattern, channel, priority
+      ) VALUES ('${fixture.provider}', 'PeerDB Test Device', 'heart_rate', 10);
       INSERT INTO fitness.activity (
         id, provider_id, user_id, external_id, canonical_type, provider_type, started_at
       ) VALUES (
@@ -78,13 +98,58 @@ describe("PeerDB CDC production contract", () => {
         '${fixture.sleepSession}', 'peerdb-contract-test', '${fixture.user}', 'sleep-1',
         '2026-09-13T04:00:00Z', '2026-09-13T12:00:00Z', 480, 20, 0, 15
       );
+      INSERT INTO fitness.sleep_stage (id, session_id, stage, started_at, ended_at)
+      VALUES (
+        '${fixture.sleepStage}', '${fixture.sleepSession}', 'light',
+        '2026-09-13T04:00:00Z', '2026-09-13T04:30:00Z'
+      );
+      INSERT INTO fitness.food_entry (id, provider_id, user_id, date, food_name)
+      VALUES (
+        '${fixture.foodEntry}', '${fixture.provider}', '${fixture.user}',
+        '2026-09-13', 'PeerDB contract food'
+      );
+      INSERT INTO fitness.health_event (
+        id, provider_id, user_id, external_id, type, value, start_date
+      ) VALUES (
+        '${fixture.healthEvent}', '${fixture.provider}', '${fixture.user}',
+        'health-1', 'peerdb.contract', 1, '2026-09-13T12:00:00Z'
+      );
+      INSERT INTO fitness.clinical_record (
+        id, user_id, provider_id, external_id, clinical_type, display_name,
+        fhir_version, fhir, downloaded_at
+      ) VALUES (
+        '${fixture.clinicalRecord}', '${fixture.user}', '${fixture.provider}', 'clinical-1',
+        'Observation', 'PeerDB contract record', 'R4', '{}'::jsonb, '2026-09-13T12:00:00Z'
+      );
+      INSERT INTO fitness.journal_question (slug, display_name, category, data_type)
+      VALUES ('peerdb-contract', 'PeerDB contract', 'test', 'numeric')
+      ON CONFLICT (slug) DO NOTHING;
+      INSERT INTO fitness.journal_entry (
+        id, date, provider_id, user_id, question_slug, answer_numeric
+      ) VALUES (
+        '${fixture.journalEntry}', '2026-09-13', '${fixture.provider}', '${fixture.user}',
+        'peerdb-contract', 1
+      );
       INSERT INTO fitness.processing_operation (id, user_id, kind, dataset_keys)
-      VALUES ('${fixture.operation}', '${fixture.user}', 'analytics_build', ARRAY['activity', 'sleep']);
+      VALUES (
+        '${fixture.operation}', '${fixture.user}', 'analytics_build',
+        ARRAY['activity', 'providers']
+      );
       INSERT INTO fitness.processing_flow_marker (
         operation_id, dataset_key, flow_name, batch_key, source_watermark
       ) VALUES
-        ('${fixture.operation}', 'activity', 'dofek_fitness_raw_analytics', 'activity', 'fixture-activity'),
-        ('${fixture.operation}', 'sleep', 'dofek_fitness_raw_analytics', 'sleep', 'fixture-sleep');
+        (
+          '${fixture.operation}', 'activity', 'dofek_fitness_raw_analytics',
+          '${fixture.markerBatch}', '${fixture.markerWatermark}'
+        ),
+        (
+          '${fixture.operation}', 'providers', 'dofek_provider_inventory_raw_analytics',
+          '${fixture.markerBatch}', '${fixture.markerWatermark}'
+        ),
+        (
+          '${fixture.operation}', 'activity', 'dofek_sensor_priority_raw_analytics',
+          '${fixture.markerBatch}', '${fixture.markerWatermark}'
+        );
     `);
 
     const peerDbApiClient = createPeerDbMirrorApiClientFromEnv();
@@ -118,13 +183,108 @@ describe("PeerDB CDC production contract", () => {
   });
 
   it("reports the live mirror mapping as the exact production contract", async () => {
-    const contract = peerDbMirrorContracts[0];
-    const status = await waitForCanonicalMirror(
-      createPeerDbMirrorApiClientFromEnv(),
-      contract.name,
-      contract.tableMappings,
+    const client = createPeerDbMirrorApiClientFromEnv();
+    const statuses = await Promise.all(
+      peerDbMirrorContracts.map((contract) =>
+        waitForCanonicalMirror(client, contract.name, contract.tableMappings),
+      ),
     );
 
-    expect(status.currentFlowState).toBe("STATUS_RUNNING");
+    expect(statuses.map(({ currentFlowState }) => currentFlowState)).toEqual(
+      peerDbMirrorContracts.map(() => "STATUS_RUNNING"),
+    );
+  });
+
+  it("replicates a fixture through every managed mapping and its exact causal marker", async () => {
+    await waitForClickHouseRows(clickHouseClient, [
+      { table: "activity", predicate: "id = {id:UUID}", queryParams: { id: fixture.activity } },
+      {
+        table: "sleep_session",
+        predicate: "id = {id:UUID}",
+        queryParams: { id: fixture.sleepSession },
+      },
+      {
+        table: "sleep_stage",
+        predicate: "id = {id:UUID}",
+        queryParams: { id: fixture.sleepStage },
+      },
+      {
+        table: "daily_metrics",
+        predicate: "id = {id:UUID}",
+        queryParams: { id: fixture.dailyMetrics },
+      },
+      {
+        table: "provider",
+        predicate: "id = {provider:String}",
+        queryParams: { provider: fixture.provider },
+      },
+      {
+        table: "provider_connection",
+        predicate: "user_id = {user:UUID} AND provider_id = {provider:String}",
+        queryParams: { provider: fixture.provider, user: fixture.user },
+      },
+      {
+        table: "provider_priority",
+        predicate: "provider_id = {provider:String}",
+        queryParams: { provider: fixture.provider },
+      },
+      {
+        table: "device_priority",
+        predicate: "provider_id = {provider:String} AND source_name_pattern = {sourceName:String}",
+        queryParams: { provider: fixture.provider, sourceName: "PeerDB Test Device" },
+      },
+      {
+        table: "user_profile",
+        predicate: "id = {id:UUID}",
+        queryParams: { id: fixture.user },
+      },
+      {
+        table: "food_entry",
+        predicate: "id = {id:UUID}",
+        queryParams: { id: fixture.foodEntry },
+      },
+      {
+        table: "health_event",
+        predicate: "id = {id:UUID}",
+        queryParams: { id: fixture.healthEvent },
+      },
+      {
+        table: "clinical_record",
+        predicate: "id = {id:UUID}",
+        queryParams: { id: fixture.clinicalRecord },
+      },
+      {
+        table: "journal_entry",
+        predicate: "id = {id:UUID}",
+        queryParams: { id: fixture.journalEntry },
+      },
+      {
+        table: "sensor_provider_priority",
+        predicate: "provider_id = {provider:String} AND channel = {channel:String}",
+        queryParams: { channel: "heart_rate", provider: fixture.provider },
+      },
+      {
+        table: "sensor_device_priority",
+        predicate:
+          "provider_id = {provider:String} AND source_name_pattern = {sourceName:String} AND channel = {channel:String}",
+        queryParams: {
+          channel: "heart_rate",
+          provider: fixture.provider,
+          sourceName: "PeerDB Test Device",
+        },
+      },
+      ...peerDbMirrorContracts.map(({ processingMarker }) => ({
+        table: processingMarker.destinationTableIdentifier,
+        predicate:
+          "operation_id = {operation:UUID} AND dataset_key = {dataset:String} AND flow_name = {flow:String} AND batch_key = {batch:String} AND source_watermark = {watermark:String}",
+        queryParams: {
+          batch: fixture.markerBatch,
+          dataset: processingMarker.datasetKey,
+          flow: processingMarker.flow,
+          operation: fixture.operation,
+          watermark: fixture.markerWatermark,
+        },
+      })),
+    ]);
   });
 });

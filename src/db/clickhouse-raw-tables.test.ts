@@ -94,5 +94,11 @@ describe("buildPostgresFitnessRawTableStatements", () => {
     );
     expect(providerInventoryMarkerTable).toContain("operation_id UUID");
     expect(providerInventoryMarkerTable).toContain("flow_name String");
+
+    const sensorPriorityMarkerTable = buildPostgresFitnessRawTableStatements().find((statement) =>
+      statement.includes("postgres_fitness.processing_flow_marker_sensor_priority"),
+    );
+    expect(sensorPriorityMarkerTable).toContain("operation_id UUID");
+    expect(sensorPriorityMarkerTable).toContain("flow_name String");
   });
 });

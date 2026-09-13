@@ -320,6 +320,13 @@ describe("deploy-web-stack workflow contract", () => {
     );
   });
 
+  it.each(["Finalize PeerDB CDC contract", "Verify PeerDB CDC causal markers"])(
+    "runs %s as the named-volume owner",
+    (step) => {
+      expect(workflowRunScript(step)).toContain("--user 0:0");
+    },
+  );
+
   it.each([
     ["Apply dependency stack before migrations", "web-pre-migration.env", "previous"],
     ["Deploy stack without ClickHouse consumers", "web.env", "test"],

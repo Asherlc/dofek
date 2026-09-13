@@ -138,13 +138,15 @@ appendFileSync(process.env.COMMAND_LOG_PATH, JSON.stringify(process.argv.slice(2
     const commandLogPath = join(workspaceDirectory, "pnpm-calls.jsonl");
     mkdirSync(binaryDirectory);
     writeFileSync(
-      join(workspaceDirectory, ".env.local"),
+      join(workspaceDirectory, ".env.peerdb-integration.local"),
       [
         "CLICKHOUSE_URL=http://default:health@127.0.0.1:18123",
         "DATABASE_URL=postgres://health:health@127.0.0.1:15432/health",
         "REDPANDA_BROKERS=127.0.0.1:19092",
         "REDIS_URL=redis://127.0.0.1:16379",
         "POSTGRES_PASSWORD=health",
+        "PEERDB_CDC_HOST=127.0.0.1",
+        "PEERDB_CDC_PORT=13000",
         "PEERDB_UI_PORT=13001",
         "",
       ].join("\n"),
@@ -156,6 +158,14 @@ appendFileSync(process.env.COMMAND_LOG_PATH, JSON.stringify(process.argv.slice(2
       `#!/usr/bin/env node
 const { appendFileSync } = require("node:fs");
 appendFileSync(process.env.COMMAND_LOG_PATH, JSON.stringify(process.argv.slice(2)) + "\\n");
+if (process.argv.includes("vitest")) {
+  appendFileSync(process.env.ENVIRONMENT_LOG_PATH, JSON.stringify({
+    PEERDB_CDC_HOST: process.env.PEERDB_CDC_HOST,
+    PEERDB_CDC_PORT: process.env.PEERDB_CDC_PORT,
+    PEERDB_UI_PORT: process.env.PEERDB_UI_PORT,
+    POSTGRES_PASSWORD: process.env.POSTGRES_PASSWORD,
+  }));
+}
 `,
     );
     chmodSync(fakePnpmPath, 0o755);
@@ -169,6 +179,7 @@ appendFileSync(process.env.COMMAND_LOG_PATH, JSON.stringify(process.argv.slice(2
           env: {
             ...process.env,
             COMMAND_LOG_PATH: commandLogPath,
+            ENVIRONMENT_LOG_PATH: join(workspaceDirectory, "vitest-env.json"),
             PATH: `${binaryDirectory}:${process.env.PATH ?? ""}`,
           },
           stdio: ["ignore", "pipe", "pipe"],
@@ -183,10 +194,12 @@ appendFileSync(process.env.COMMAND_LOG_PATH, JSON.stringify(process.argv.slice(2
       );
 
       expect(commandArguments).toEqual([
-        ["compose:up"],
+        ["compose:env", "--write", "--project-suffix", "peerdb-integration"],
         [
           "compose",
           "--",
+          "--project-suffix",
+          "peerdb-integration",
           "-f",
           "docker-compose.yml",
           "-f",
@@ -201,6 +214,8 @@ appendFileSync(process.env.COMMAND_LOG_PATH, JSON.stringify(process.argv.slice(2
         [
           "compose",
           "--",
+          "--project-suffix",
+          "peerdb-integration",
           "-f",
           "docker-compose.yml",
           "-f",
@@ -210,6 +225,14 @@ appendFileSync(process.env.COMMAND_LOG_PATH, JSON.stringify(process.argv.slice(2
           "--volumes",
         ],
       ]);
+      expect(JSON.parse(readFileSync(join(workspaceDirectory, "vitest-env.json"), "utf8"))).toEqual(
+        {
+          PEERDB_CDC_HOST: "127.0.0.1",
+          PEERDB_CDC_PORT: "13000",
+          PEERDB_UI_PORT: "13001",
+          POSTGRES_PASSWORD: "health",
+        },
+      );
     } finally {
       rmSync(workspaceDirectory, { force: true, recursive: true });
     }

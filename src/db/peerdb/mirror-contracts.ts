@@ -18,7 +18,7 @@ export interface PeerDbMirrorContract {
   destinationDatabase: string;
   initialCopyPlaceholder: string;
   name: string;
-  processingMarker?: PeerDbProcessingMarkerContract;
+  processingMarker: PeerDbProcessingMarkerContract;
   tableMappingsPlaceholder: string;
   tableMappings: readonly PeerDbMirrorTableContract[];
 }
@@ -152,7 +152,11 @@ export const peerDbMirrorContracts = [
     destinationDatabase: "postgres_fitness",
     initialCopyPlaceholder: "SENSOR_PRIORITY_RAW_ANALYTICS_DO_INITIAL_COPY",
     tableMappingsPlaceholder: "SENSOR_PRIORITY_RAW_ANALYTICS_TABLE_MAPPINGS",
-    processingMarker: undefined,
+    processingMarker: {
+      datasetKey: "activity",
+      destinationTableIdentifier: "processing_flow_marker_sensor_priority",
+      flow: "dofek_sensor_priority_raw_analytics",
+    },
     tableMappings: [
       {
         sourceTableIdentifier: "fitness.sensor_provider_priority",
@@ -162,6 +166,11 @@ export const peerDbMirrorContracts = [
       {
         sourceTableIdentifier: "fitness.sensor_device_priority",
         destinationTableIdentifier: "sensor_device_priority",
+        exclude: [],
+      },
+      {
+        sourceTableIdentifier: "fitness.processing_flow_marker",
+        destinationTableIdentifier: "processing_flow_marker_sensor_priority",
         exclude: [],
       },
     ],

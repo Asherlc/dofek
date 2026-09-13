@@ -21,7 +21,11 @@ const contract = [
     destinationDatabase: "postgres_fitness",
     initialCopyPlaceholder: "TEST_INITIAL_COPY",
     name: "test_mirror",
-    processingMarker: undefined,
+    processingMarker: {
+      datasetKey: "activity",
+      destinationTableIdentifier: "processing_flow_marker",
+      flow: "test_mirror",
+    },
     tableMappingsPlaceholder: "TEST_TABLE_MAPPINGS",
     tableMappings: [canonicalMapping],
   },

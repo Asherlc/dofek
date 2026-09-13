@@ -57,6 +57,29 @@ export async function waitForClickHouseFixture(
   throw new Error("Timed out waiting for the PeerDB CDC fixture in ClickHouse");
 }
 
+export interface ClickHouseFixtureRow {
+  predicate: string;
+  queryParams: Record<string, unknown>;
+  table: string;
+}
+
+export async function waitForClickHouseRows(
+  client: ClickHouseClient,
+  expectedRows: readonly ClickHouseFixtureRow[],
+): Promise<void> {
+  const deadline = Date.now() + peerDbTestTimeoutMs;
+  while (Date.now() < deadline) {
+    const counts = await Promise.all(
+      expectedRows.map(({ predicate, queryParams, table }) =>
+        countMatchingRows(client, table, predicate, queryParams),
+      ),
+    );
+    if (counts.every((count) => count === 1)) return;
+    await new Promise((resolve) => setTimeout(resolve, peerDbPollIntervalMs));
+  }
+  throw new Error("Timed out waiting for every managed PeerDB table fixture in ClickHouse");
+}
+
 function normalizeMapping(mapping: PeerDbMirrorStatus["tableMappings"][number]): string {
   return [
     mapping.sourceTableIdentifier,
@@ -66,9 +89,19 @@ function normalizeMapping(mapping: PeerDbMirrorStatus["tableMappings"][number]):
 }
 
 async function countRows(client: ClickHouseClient, table: string, id: string): Promise<number> {
+  return countMatchingRows(client, table, "id = {id:UUID}", { id });
+}
+
+async function countMatchingRows(
+  client: ClickHouseClient,
+  table: string,
+  predicate: string,
+  queryParams: Record<string, unknown>,
+): Promise<number> {
+  if (!/^[a-z_]+$/.test(table)) throw new Error(`Invalid ClickHouse table identifier: ${table}`);
   const result = await client.query<{ row_count: number | string }>({
-    query: `SELECT count() AS row_count FROM postgres_fitness.${table} FINAL WHERE id = {id:UUID}`,
-    query_params: { id },
+    query: `SELECT count() AS row_count FROM postgres_fitness.${table} FINAL WHERE ${predicate}`,
+    query_params: queryParams,
     format: "JSONEachRow",
   });
   const rows = await result.json();

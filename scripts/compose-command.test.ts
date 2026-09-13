@@ -32,6 +32,7 @@ function captureInvocation(composeArguments: string[]): CapturedInvocation {
   const dockerLogPath = join(workspaceDirectory, "docker-call.json");
   mkdirSync(binaryDirectory);
   writeFileSync(join(workspaceDirectory, ".env.local"), "POSTGRES_PORT=15432\n");
+  writeFileSync(join(workspaceDirectory, ".env.e2e.local"), "POSTGRES_PORT=25432\n");
   writeFileSync(join(workspaceDirectory, "docker-compose.yml"), "services: {}\n");
   writeFileSync(join(workspaceDirectory, "docker-compose.e2e.yml"), "services: {}\n");
 
@@ -116,7 +117,7 @@ describe("compose-command", () => {
       "--project-directory",
       physicalWorkspaceDirectory,
       "--env-file",
-      join(physicalWorkspaceDirectory, ".env.local"),
+      join(physicalWorkspaceDirectory, ".env.e2e.local"),
       "-f",
       "docker-compose.e2e.yml",
       "ps",

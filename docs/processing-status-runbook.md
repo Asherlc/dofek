@@ -78,7 +78,7 @@ manually out of order.
    with the same consumers still quiesced. Run the checked-in CDC setup for any
    mirror that does not exist yet.
 4. Run `peerdb-cdc-contract finalize`. It validates the post-migration schema
-   again and writes one unique processing marker for each marker-bearing mirror.
+   again and writes one unique processing marker for every managed mirror.
    The owner-only deploy artifact records the exact operation, dataset, flow,
    batch, and source watermark expected at the destination.
 5. Run `peerdb-cdc-contract verify`. It succeeds only when every exact marker

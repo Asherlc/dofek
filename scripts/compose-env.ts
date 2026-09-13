@@ -4,9 +4,20 @@ import { createServer } from "node:net";
 import { basename, join } from "node:path";
 
 const workspaceDirectory = realpathSync(process.cwd());
-const composeEnvironmentPath = join(workspaceDirectory, ".env.local");
 const composeFilePath = join(workspaceDirectory, "docker-compose.yml");
-const composeProjectName = basename(workspaceDirectory);
+const projectSuffixFlag = "--project-suffix";
+const projectSuffixIndex = process.argv.indexOf(projectSuffixFlag);
+const projectSuffix = projectSuffixIndex === -1 ? null : process.argv[projectSuffixIndex + 1];
+if (projectSuffixIndex !== -1 && (!projectSuffix || !/^[a-z0-9][a-z0-9_-]*$/.test(projectSuffix))) {
+  throw new Error("--project-suffix requires a lowercase alphanumeric Compose name suffix");
+}
+const baseComposeProjectName = basename(workspaceDirectory);
+const composeProjectName =
+  projectSuffix === null ? baseComposeProjectName : `${baseComposeProjectName}-${projectSuffix}`;
+const composeEnvironmentPath = join(
+  workspaceDirectory,
+  projectSuffix === null ? ".env.local" : `.env.${projectSuffix}.local`,
+);
 
 interface ComposeServicePort {
   service: string;

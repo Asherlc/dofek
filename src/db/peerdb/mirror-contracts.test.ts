@@ -77,7 +77,14 @@ describe("PeerDB mirror contracts", () => {
           flow: "dofek_provider_inventory_raw_analytics",
         },
       ],
-      ["dofek_sensor_priority_raw_analytics", undefined],
+      [
+        "dofek_sensor_priority_raw_analytics",
+        {
+          datasetKey: "activity",
+          destinationTableIdentifier: "processing_flow_marker_sensor_priority",
+          flow: "dofek_sensor_priority_raw_analytics",
+        },
+      ],
     ]);
   });
 });

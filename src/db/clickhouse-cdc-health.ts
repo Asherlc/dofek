@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { peerDbMirrorContracts } from "./peerdb/mirror-contracts.ts";
 
 export interface PostgresQueryClient {
   query(queryText: string): Promise<unknown>;
@@ -41,17 +42,10 @@ interface CheckClickHouseCdcHealthOptions {
   mirrorFreshnessChecks?: readonly MirrorFreshnessCheck[];
 }
 
-export const EXPECTED_PEERDB_REPLICATION_SLOT_NAMES = [
-  "peerflow_slot_dofek_fitness_raw_analytics",
-  "peerflow_slot_dofek_provider_inventory_raw_analytics",
-  "peerflow_slot_dofek_sensor_priority_raw_analytics",
-] as const;
-
-const expectedPeerDbMirrorNames = [
-  "dofek_fitness_raw_analytics",
-  "dofek_provider_inventory_raw_analytics",
-  "dofek_sensor_priority_raw_analytics",
-] as const;
+const expectedPeerDbMirrorNames = peerDbMirrorContracts.map(({ name }) => name);
+export const EXPECTED_PEERDB_REPLICATION_SLOT_NAMES = expectedPeerDbMirrorNames.map(
+  (name) => `peerflow_slot_${name}`,
+);
 
 const defaultThresholds: CdcHealthThresholds = {
   retainedWalWarningBytes: 16 * 1024 * 1024 * 1024,

@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 
@@ -9,6 +9,12 @@ const testEnvironmentSchema = z.object({
   DATABASE_URL: z.string().min(1),
   REDPANDA_BROKERS: z.string().min(1),
   REDIS_URL: z.string().min(1),
+});
+const peerDbTestEnvironmentSchema = testEnvironmentSchema.extend({
+  PEERDB_CDC_HOST: z.string().min(1),
+  PEERDB_CDC_PORT: z.string().min(1),
+  PEERDB_UI_PORT: z.string().min(1),
+  POSTGRES_PASSWORD: z.string().min(1),
 });
 
 function runCommand(
@@ -44,12 +50,23 @@ const mode = testModeSchema.parse(modeValue);
 const additionalArguments =
   rawAdditionalArguments[0] === "--" ? rawAdditionalArguments.slice(1) : rawAdditionalArguments;
 
-const composeExitCode = runCommand("pnpm", ["compose:up"]);
+const peerDbProjectSuffix = "peerdb-integration";
+const isPeerDbIntegration = mode === "peerdb-integration";
+const composeExitCode = runCommand(
+  "pnpm",
+  isPeerDbIntegration
+    ? ["compose:env", "--write", "--project-suffix", peerDbProjectSuffix]
+    : ["compose:up"],
+);
 if (composeExitCode !== 0) process.exit(composeExitCode);
 
-const localEnvironment = testEnvironmentSchema.parse(
-  readDotenvFile(join(process.cwd(), ".env.local")),
+const testEnvironmentPath = join(
+  process.cwd(),
+  isPeerDbIntegration ? `.env.${peerDbProjectSuffix}.local` : ".env.local",
 );
+const localEnvironment = (
+  isPeerDbIntegration ? peerDbTestEnvironmentSchema : testEnvironmentSchema
+).parse(readDotenvFile(testEnvironmentPath));
 const testEnvironment = {
   ...process.env,
   ...localEnvironment,
@@ -76,13 +93,15 @@ vitestArguments.push(...additionalArguments);
 const peerDbComposeArguments = [
   "compose",
   "--",
+  "--project-suffix",
+  peerDbProjectSuffix,
   "-f",
   "docker-compose.yml",
   "-f",
   "docker-compose.peerdb.yml",
 ];
 
-if (mode !== "peerdb-integration") {
+if (!isPeerDbIntegration) {
   process.exit(runCommand("pnpm", vitestArguments, testEnvironment));
 }
 
@@ -107,5 +126,6 @@ try {
     "--volumes",
   ]);
   if (exitCode === 0 && cleanupExitCode !== 0) exitCode = cleanupExitCode;
+  rmSync(testEnvironmentPath, { force: true });
 }
 process.exit(exitCode);

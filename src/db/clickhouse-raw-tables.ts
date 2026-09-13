@@ -281,6 +281,17 @@ ${replacingMergeTreeTable("(operation_id, dataset_key, flow_name, batch_key, id)
 ${peerDbMetadataColumnDefinitions}
 )
 ${replacingMergeTreeTable("(operation_id, dataset_key, flow_name, batch_key, id)")}`,
+    `CREATE TABLE IF NOT EXISTS postgres_fitness.processing_flow_marker_sensor_priority (
+  id UUID,
+  operation_id UUID,
+  dataset_key String,
+  flow_name String,
+  batch_key String,
+  source_watermark String,
+  created_at DateTime64(6, 'UTC'),
+${peerDbMetadataColumnDefinitions}
+)
+${replacingMergeTreeTable("(operation_id, dataset_key, flow_name, batch_key, id)")}`,
     `CREATE TABLE IF NOT EXISTS postgres_fitness.user_profile (
   id UUID,
   name String,
