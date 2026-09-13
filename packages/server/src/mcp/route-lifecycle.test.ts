@@ -1,4 +1,4 @@
-import type { Server, ServerResponse } from "node:http";
+import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import express from "express";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -40,6 +40,18 @@ function sendResponse(response: unknown, code: number, body?: string): void {
     throw new Error("Expected Express response");
   }
   response.status(code).end(body);
+}
+
+function destroyResponse(response: unknown): void {
+  if (
+    typeof response !== "object" ||
+    response === null ||
+    !("destroy" in response) ||
+    typeof response.destroy !== "function"
+  ) {
+    throw new Error("Expected a destroyable HTTP response");
+  }
+  response.destroy();
 }
 
 vi.mock("@sentry/node", () => ({
@@ -197,7 +209,7 @@ describe("createMcpRouter lifecycle handling", () => {
   it("records an aborted lifecycle when a food-mutation client disconnects", async () => {
     const requestId = "33333333-3333-4333-8333-333333333333";
     routeMocks.handleRequest.mockImplementation((_request: unknown, response: unknown) => {
-      (response as ServerResponse).destroy();
+      destroyResponse(response);
       return Promise.resolve();
     });
 
