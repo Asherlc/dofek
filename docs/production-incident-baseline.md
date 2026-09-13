@@ -26631,8 +26631,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   altitude samples. This preserves replacement correctness while bounding the
   expensive reads to affected activities.
 - **Validation:** A ClickHouse integration regression test inserts 100,000
-  altitude samples and requires an unscoped refresh to remain below a 250,000
-  row-read budget; the focused suite passed (19 tests). Deployment validation
+  altitude samples and requires an unscoped refresh to remain below a 350,000
+  row-read budget; the focused suite passed locally (19 tests). Deployment validation
   remains pending at the time of this entry.
 - **Remaining risk:** A genuinely large set of affected activities can still
   require substantial selected-geometry work, but the full-history discovery
