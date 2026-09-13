@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   createAuthorizationCode: vi.fn(),
   exchangeAuthorizationCode: vi.fn(),
   getAuthorizationCodeChallenge: vi.fn(),
+  loggerInfo: vi.fn(),
   revokeOAuthToken: vi.fn(),
   rotateRefreshToken: vi.fn(),
   validateMcpToken: vi.fn(),
@@ -32,6 +33,8 @@ vi.mock("./oauth-repository.ts", () => ({
   revokeOAuthToken: mocks.revokeOAuthToken,
   rotateRefreshToken: mocks.rotateRefreshToken,
 }));
+
+vi.mock("../logger.ts", () => ({ logger: { info: mocks.loggerInfo } }));
 
 vi.mock("./token-repository.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./token-repository.ts")>();
@@ -444,6 +447,11 @@ describe("DofekOAuthServerProvider", () => {
         scope: "health:read activity:read",
         token_type: "bearer",
       });
+      const telemetry = JSON.stringify(mocks.loggerInfo.mock.calls);
+      expect(telemetry).not.toContain(client.client_id);
+      expect(telemetry).not.toContain("refresh-token");
+      expect(telemetry).not.toContain("at-2");
+      expect(telemetry).not.toContain("rt-2");
     });
 
     it("rejects a mismatched PKCE code_verifier", async () => {

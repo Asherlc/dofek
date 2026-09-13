@@ -235,6 +235,10 @@ describe("createMcpRouter lifecycle handling", () => {
       "mcp.mutation",
       expect.objectContaining({ phase: "completed" }),
     );
+    await vi.waitFor(() => {
+      expect(routeMocks.transportClose).toHaveBeenCalledTimes(1);
+      expect(routeMocks.serverClose).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("reports cleanup failures after the response closes", async () => {
@@ -245,16 +249,22 @@ describe("createMcpRouter lifecycle handling", () => {
 
     const response = await request({ jsonrpc: "2.0", id: 1, method: "initialize" });
     await vi.waitFor(() => {
-      expect(routeMocks.captureException).toHaveBeenCalledWith(transportError);
-      expect(routeMocks.captureException).toHaveBeenCalledWith(serverError);
+      expect(routeMocks.captureException).toHaveBeenCalledWith(
+        new Error("MCP transport cleanup failed"),
+      );
+      expect(routeMocks.captureException).toHaveBeenCalledWith(
+        new Error("MCP server cleanup failed"),
+      );
     });
 
     expect(response.status).toBe(204);
     expect(routeMocks.loggerWarn).toHaveBeenCalledWith(
-      `[mcp] Failed to close transport: ${transportError}`,
+      "mcp.request",
+      expect.objectContaining({ cleanup_target: "transport", outcome: "cleanup_failed" }),
     );
     expect(routeMocks.loggerWarn).toHaveBeenCalledWith(
-      `[mcp] Failed to close server: ${serverError}`,
+      "mcp.request",
+      expect.objectContaining({ cleanup_target: "server", outcome: "cleanup_failed" }),
     );
   });
 
@@ -270,11 +280,14 @@ describe("createMcpRouter lifecycle handling", () => {
       id: null,
       jsonrpc: "2.0",
     });
-    expect(routeMocks.captureException).toHaveBeenCalledWith(connectError);
+    expect(routeMocks.captureException).toHaveBeenCalledWith(
+      new Error("MCP request failed: transport_error"),
+    );
   });
 
   it("does not write a JSON-RPC error after headers have already been sent", async () => {
-    const lateError = new Error("late failure");
+    const secret = "private request content";
+    const lateError = new Error(secret);
     routeMocks.handleRequest.mockImplementation((_request: unknown, response: unknown) => {
       sendResponse(response, 202, "accepted");
       throw lateError;
@@ -285,7 +298,9 @@ describe("createMcpRouter lifecycle handling", () => {
     expect(response).toEqual({ status: 202, text: "accepted" });
     expect(routeMocks.captureException).toHaveBeenCalledWith(lateError);
     expect(routeMocks.loggerError).toHaveBeenCalledWith(
-      "[mcp] Request failed: Error: late failure",
+      "mcp.request",
+      expect.objectContaining({ error_category: "transport_error", outcome: "exception" }),
     );
+    expect(JSON.stringify(routeMocks.loggerError.mock.calls)).not.toContain(secret);
   });
 });
