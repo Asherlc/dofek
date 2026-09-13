@@ -573,6 +573,38 @@ jobs:
               -c deploy/stack.migration-quiesce.yml \
               --with-registry-auth --detach=true "$STACK_NAME"
 
+      - name: Wait for pre-migration web convergence
+        run: |
+          deadline=$((SECONDS + 300))
+          while true; do
+            update_state="$(
+              docker service inspect "${STACK_NAME}_web" \
+                --format '{{if .UpdateStatus}}{{.UpdateStatus.State}}{{end}}'
+            )"
+            replicas="$(
+              docker service ls --filter "name=${STACK_NAME}_web" --format '{{.Replicas}}'
+            )"
+            echo "${STACK_NAME}_web replicas=${replicas} update_state=${update_state:-none}"
+            case "$update_state" in
+              rollback_*|paused)
+                docker service ps "${STACK_NAME}_web" --no-trunc
+                echo "::error::${STACK_NAME}_web did not finish the pre-migration deployment; update_state=${update_state}"
+                exit 1
+                ;;
+            esac
+            if [ "$replicas" = "2/2" ] && {
+              [ -z "$update_state" ] || [ "$update_state" = "completed" ]
+            }; then
+              break
+            fi
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              docker service ps "${STACK_NAME}_web" --no-trunc
+              echo "::error::${STACK_NAME}_web did not converge before migrations"
+              exit 1
+            fi
+            sleep 5
+          done
+
       - name: Wait for Postgres writable
         run: |
           for attempt in $(seq 1 36); do

@@ -399,6 +399,26 @@ ${workflowRunScript(step)}
     );
   });
 
+  it("waits for the pre-migration web update before running migrations", () => {
+    const dependencyStep = workflowText.indexOf(
+      "      - name: Apply dependency stack before migrations",
+    );
+    const convergenceStep = workflowText.indexOf(
+      "      - name: Wait for pre-migration web convergence",
+    );
+    const migrationStep = workflowText.indexOf("      - name: Run migrations");
+
+    expect(dependencyStep).toBeGreaterThanOrEqual(0);
+    expect(convergenceStep).toBeGreaterThan(dependencyStep);
+    expect(migrationStep).toBeGreaterThan(convergenceStep);
+    expect(workflowText.slice(convergenceStep, migrationStep)).toContain(
+      '"${STACK_NAME}_web"',
+    );
+    expect(workflowText.slice(convergenceStep, migrationStep)).toContain(
+      "UpdateStatus.State",
+    );
+  });
+
   it("keeps ClickHouse consumers quiesced when CDC configuration fails", () => {
     expect(workflowText).toContain(
       `      - name: Deploy ClickHouse consumer services

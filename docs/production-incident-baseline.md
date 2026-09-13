@@ -26744,3 +26744,26 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Current status / remaining risk:** The durable fix is pending deployment,
   followed by CDC and analytics catch-up. Retrying provider sync cannot repair
   the destination-schema mismatch before that deployment.
+
+## 2026-09-13 — Recovery deploy left activity processors quiesced
+
+- **Symptoms / user impact:** The scheduled sync worker, reconciliation worker,
+  and ClickHouse consumers remained at `0/0` after the recovery deployment
+  failed, preventing newly synced activities from reaching serving read models.
+- **Evidence:** The first deployment attempt stopped at the PeerDB contract
+  check while `dofek_fitness_raw_analytics` was `STATUS_SNAPSHOT`; it later
+  completed and reported `STATUS_RUNNING` with the canonical mapping. A rerun
+  passed that check and migrations but failed its `Deploy stack without
+  ClickHouse consumers` step with `failed to update service dofek_web: ...
+  update out of sequence`. There was no concurrent Deploy Web workflow run.
+- **Root cause:** The workflow applied a pre-migration stack update to the web
+  service and then applied a second stack update before Swarm had finished the
+  first one. Swarm rejected the overlapping service update.
+- **Fix:** Require the pre-migration web service to converge at `2/2` with a
+  completed update before migrations and the subsequent stack update begin.
+- **Validation:** The focused deployment-workflow suite passes (16 tests).
+  Production recovery and activity visibility verification remain pending the
+  corrected workflow deployment.
+- **Remaining risk / follow-up:** The convergence gate fails explicitly if web
+  cannot become healthy; after rollout, verify workers resume, CDC catches up,
+  and a current activity appears in the Activities UI.
