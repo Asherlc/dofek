@@ -439,6 +439,48 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     expect(res.status).toHaveBeenCalledWith(500);
   });
 
+  it("preserves the connection when webhook-failure cleanup fails", async () => {
+    mockGetAllProviders.mockReturnValueOnce([
+      {
+        id: "strava",
+        name: "Strava",
+        authSetup: () => ({
+          oauthConfig: {
+            clientId: "test-id",
+            clientSecret: "test-secret",
+            authorizeUrl: "https://www.strava.com/oauth/authorize",
+            tokenUrl: "https://www.strava.com/oauth/token",
+            redirectUri: "https://dofek.example/callback",
+            scopes: ["read"],
+          },
+          exchangeCode: mockExchangeCode,
+        }),
+      },
+    ]);
+    mockOauthStateStore.get.mockResolvedValueOnce({
+      providerId: "strava",
+      codeVerifier: undefined,
+      intent: "data",
+      linkUserId: undefined,
+      userId: "user-1",
+      returnTo: undefined,
+    });
+    mockWithUserWriteFence
+      .mockImplementationOnce(async (_db, _userId, operation) => operation(mockDb))
+      .mockRejectedValueOnce(new Error("connection cleanup unavailable"));
+    mockPersistProviderConnection.mockResolvedValueOnce(undefined);
+    mockRegisterProviderWebhook.mockRejectedValueOnce(new Error("webhook validation failed"));
+
+    const { req, res } = createMockReqRes({ code: "auth-code", state: "strava-state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.send).toHaveBeenCalledWith(
+      expect.stringContaining("webhook registration and connection cleanup both failed"),
+    );
+    expect(mockRevokeToken).not.toHaveBeenCalled();
+  });
+
   it("deauthorizes and removes stored credentials after Wahoo's exact token-limit error", async () => {
     const events: string[] = [];
     mockLoadTokens.mockResolvedValue({
@@ -1214,5 +1256,6 @@ describe("handleOAuth2Callback — revocation fallback", () => {
       }),
     );
     expect(res.send).toHaveBeenCalledWith("<html>Wahoo:issued-pending-token</html>");
+    expect(mockRegisterProviderWebhook).not.toHaveBeenCalled();
   });
 });
