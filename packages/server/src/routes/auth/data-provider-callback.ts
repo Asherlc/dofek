@@ -540,12 +540,13 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
       }
       await removeRevokedAuthorizationDurably();
       if (connectedUserId) {
+        const webhookUserId = connectedUserId;
         try {
-          await registerProviderWebhook({ db, provider, userId: connectedUserId });
+          await registerProviderWebhook({ db, provider, userId: webhookUserId });
         } catch (webhookError: unknown) {
           try {
-            await withAccountErasureUserWriteFence(db, connectedUserId, (transaction) =>
-              removeRevokedAuthorization(transaction, providerId, connectedUserId),
+            await withAccountErasureUserWriteFence(db, webhookUserId, (transaction) =>
+              removeRevokedAuthorization(transaction, providerId, webhookUserId),
             );
             webhookRegistrationFailure = "removed";
           } catch (cleanupError: unknown) {
@@ -556,7 +557,7 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
                 source: "data-provider-oauth",
                 operation: "remove-webhook-registration-failure",
               },
-              extra: { providerId, userId: connectedUserId },
+              extra: { providerId, userId: webhookUserId },
             });
           }
           throw webhookError;
