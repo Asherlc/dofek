@@ -221,9 +221,6 @@ export async function handleCompleteSignup(req: Request, res: Response): Promise
       pendingClaimRenewal = null;
       const renewalFailure = await renewal.stop();
       if (renewalFailure) throw renewalFailure;
-      await pendingStore.complete(pendingClaim);
-      pendingClaim = null;
-      webhookFailureConsumedClaim = true;
 
       const setup = provider.authSetup?.({ host: req.get("host") });
       await revokeProviderCredentials({
@@ -232,6 +229,9 @@ export async function handleCompleteSignup(req: Request, res: Response): Promise
         revokeExistingTokens: setup?.revokeExistingTokens,
         tokens: claimedPending.tokens,
       });
+      await pendingStore.complete(pendingClaim);
+      pendingClaim = null;
+      webhookFailureConsumedClaim = true;
       throw webhookError;
     }
 
