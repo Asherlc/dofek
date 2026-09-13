@@ -53,7 +53,9 @@ describe("mcpRequestTelemetry", () => {
     const clientId = "https://client.example/metadata.json";
     const correlationId = mcpClientCorrelationId(clientId);
 
-    expect(correlationId).toHaveLength(64);
+    expect(correlationId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
     expect(correlationId).toBe(mcpClientCorrelationId(clientId));
     expect(correlationId).not.toContain(clientId);
   });
