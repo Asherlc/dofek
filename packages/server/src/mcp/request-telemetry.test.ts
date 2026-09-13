@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   mcpClientCorrelationId,
   mcpRequestTelemetry,
+  mcpRuntimeTelemetry,
   mcpToolsListResponseTelemetry,
   mcpTransportErrorCategory,
 } from "./request-telemetry.ts";
@@ -49,6 +50,19 @@ describe("mcpRequestTelemetry", () => {
     );
   });
 
+  it("separates every recognized transport rejection category", () => {
+    expect(mcpTransportErrorCategory(new Error("Parse error: Invalid JSON-RPC payload"))).toBe(
+      "invalid_jsonrpc",
+    );
+    expect(mcpTransportErrorCategory(new Error("Parse error: Invalid JSON payload"))).toBe(
+      "invalid_json",
+    );
+    expect(mcpTransportErrorCategory(new Error("Unsupported Media Type: text/plain"))).toBe(
+      "unsupported_media_type",
+    );
+    expect(mcpTransportErrorCategory(new Error("unrecognized"))).toBe("transport_error");
+  });
+
   it("creates a stable opaque correlation key for a client", () => {
     const clientId = "https://client.example/metadata.json";
     const correlationId = mcpClientCorrelationId(clientId);
@@ -58,6 +72,17 @@ describe("mcpRequestTelemetry", () => {
     );
     expect(correlationId).toBe(mcpClientCorrelationId(clientId));
     expect(correlationId).not.toContain(clientId);
+    expect(mcpClientCorrelationId("another-client")).not.toBe(correlationId);
+  });
+
+  it("reports only validated build revisions", () => {
+    const original = process.env.SENTRY_RELEASE;
+    process.env.SENTRY_RELEASE = "1a2b3c4";
+    expect(mcpRuntimeTelemetry()).toMatchObject({ build_revision: "1a2b3c4" });
+    process.env.SENTRY_RELEASE = "not-a-sha";
+    expect(mcpRuntimeTelemetry()).toMatchObject({ build_revision: "unknown" });
+    if (original === undefined) delete process.env.SENTRY_RELEASE;
+    else process.env.SENTRY_RELEASE = original;
   });
 });
 
@@ -94,5 +119,20 @@ describe("mcpToolsListResponseTelemetry", () => {
     expect(mcpToolsListResponseTelemetry({ result: { tools: "not-an-array" } })).toEqual({
       jsonrpc_outcome: "invalid",
     });
+  });
+
+  it("reports missing expected tools, invalid schemas, and an exhausted page", () => {
+    const telemetry = mcpToolsListResponseTelemetry({
+      result: { tools: [{ inputSchema: null, name: "create_food_entry" }] },
+    });
+
+    expect(telemetry).toMatchObject({
+      jsonrpc_outcome: "result",
+      tools_count: 1,
+      expected_food_tools_present: false,
+      has_next_page: false,
+      tool_schema_valid: false,
+    });
+    expect(mcpToolsListResponseTelemetry(null)).toEqual({ jsonrpc_outcome: "invalid" });
   });
 });
