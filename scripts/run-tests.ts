@@ -100,6 +100,14 @@ const peerDbComposeArguments = [
   "-f",
   "docker-compose.peerdb.yml",
 ];
+const peerDbRequiredServices = [
+  "db",
+  "clickhouse",
+  "peerdb",
+  "peerdb-ui",
+  "peerdb-flow-worker",
+  "peerdb-flow-snapshot-worker",
+] as const;
 
 if (!isPeerDbIntegration) {
   process.exit(runCommand("pnpm", vitestArguments, testEnvironment));
@@ -114,6 +122,7 @@ try {
     "--wait",
     "--wait-timeout",
     "180",
+    ...peerDbRequiredServices,
   ]);
   if (exitCode === 0) {
     exitCode = runCommand("pnpm", vitestArguments, testEnvironment);

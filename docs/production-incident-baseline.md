@@ -26759,8 +26759,12 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Validation:** Contract rendering, projection validation, two-phase mapping
   reconciliation, deployment ordering and canaries, normalization-stall
   detection, and the full Docker-free suite (1,272 files; 18,568 tests) pass
-  locally. The required real-PeerDB CI job and production recovery remain
-  pending at the time of this entry.
+  locally. The first real-PeerDB CI attempt stopped before the test because its
+  broad Compose wait included the unrelated, unhealthy telemetry collector;
+  the runner now starts only the isolated CDC test's required services. Its
+  focused tests pass, and the command runner's targeted mutation score is
+  95.38% with no surviving covered mutants. The rerun and production recovery
+  remain pending at the time of this entry.
 - **Production recovery status / remaining risk:** Unresolved. No mirror, slot,
   or destination table has been replaced or truncated. The blocked WAL remains
   unapplied until the guarded deployment completes; retrying provider sync

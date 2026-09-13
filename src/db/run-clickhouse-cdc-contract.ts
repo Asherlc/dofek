@@ -43,7 +43,7 @@ function requireArtifactPath(command: "finalize" | "verify", path: string | unde
   return path;
 }
 
-async function writeMarker(
+export async function writePeerDbDeploymentMarker(
   database: Database,
   marker: { batchKey: string; datasetKey: "activity" | "providers"; flowName: string },
 ) {
@@ -131,7 +131,7 @@ export async function runClickHouseCdcContractCommand(
   });
 }
 
-async function main(): Promise<void> {
+export async function runClickHouseCdcContractCli(): Promise<void> {
   const command = process.argv[2];
   if (command !== "prepare" && command !== "finalize" && command !== "verify") {
     throw new Error("Expected PeerDB CDC contract command: prepare, finalize, or verify");
@@ -150,7 +150,7 @@ async function main(): Promise<void> {
         await runClickHouseMigrations(clickHouseClient, databaseUrl, { phase: "pre-cdc" });
       },
       sourcePostgresClient,
-      writeMarker: (marker) => writeMarker(database, marker),
+      writeMarker: (marker) => writePeerDbDeploymentMarker(database, marker),
     });
   } finally {
     await sourcePostgresClient.end();
@@ -163,7 +163,7 @@ const isDirectRun =
   import.meta.url.endsWith(process.argv[1].replace(/.*\//, ""));
 
 if (isDirectRun) {
-  main()
+  runClickHouseCdcContractCli()
     .then(() => process.exit(0))
     .catch((error) => {
       captureException(error);

@@ -132,7 +132,7 @@ appendFileSync(process.env.COMMAND_LOG_PATH, JSON.stringify(process.argv.slice(2
     }
   });
 
-  it("runs the PeerDB integration project with the full Compose stack and cleans it up", () => {
+  it("runs the PeerDB integration project with only its required Compose services and cleans it up", () => {
     const workspaceDirectory = mkdtempSync(join(tmpdir(), "run-tests-peerdb-test-"));
     const binaryDirectory = join(workspaceDirectory, "bin");
     const commandLogPath = join(workspaceDirectory, "pnpm-calls.jsonl");
@@ -209,6 +209,12 @@ if (process.argv.includes("vitest")) {
           "--wait",
           "--wait-timeout",
           "180",
+          "db",
+          "clickhouse",
+          "peerdb",
+          "peerdb-ui",
+          "peerdb-flow-worker",
+          "peerdb-flow-snapshot-worker",
         ],
         ["exec", "vitest", "run", "--project", "peerdb-integration"],
         [
