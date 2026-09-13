@@ -5,6 +5,7 @@ import { captureException } from "dofek/lib/error-reporting";
 import express, { Router } from "express";
 import { logger } from "../logger.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
+import { foodMutationTelemetryFromRequest, logFoodMutation } from "./mutation-telemetry.ts";
 import { getMcpResourceUrl } from "./oauth-config.ts";
 import { validateMcpToken } from "./token-repository.ts";
 import { createDofekMcpServer } from "./tools.ts";
@@ -57,6 +58,19 @@ export function createMcpRouter(options: CreateMcpRouterOptions): Router {
   const router = Router();
 
   router.post("/", requireBearerTokenHeader, express.json(), async (request, response) => {
+    const telemetry = foodMutationTelemetryFromRequest(request.body);
+    if (telemetry) {
+      logFoodMutation(telemetry, "started");
+      let responseFinished = false;
+      response.on("finish", () => {
+        responseFinished = true;
+        logFoodMutation(telemetry, "completed", { httpStatus: response.statusCode });
+      });
+      response.on("close", () => {
+        if (!responseFinished)
+          logFoodMutation(telemetry, "aborted", { httpStatus: response.statusCode });
+      });
+    }
     const token = response.locals.mcpBearerToken;
     if (typeof token !== "string") {
       sendUnauthorized(response);
