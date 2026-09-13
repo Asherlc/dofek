@@ -239,7 +239,7 @@ describe("checkClickHouseCdcHealth", () => {
         latest_normalized_batch_id: "40",
         latest_synced_batch_id: "43",
         oldest_pending_batch_id: "41",
-        pending_destination_tables: ["daily_metrics", "sleep_session"],
+        pending_destination_tables: ["sleep_session", "daily_metrics"],
       },
     ]);
     const report = await checkClickHouseCdcHealth({
@@ -256,6 +256,36 @@ describe("checkClickHouseCdcHealth", () => {
         "PeerDB normalization stalled for dofek_fitness_raw_analytics " +
         "tables=[daily_metrics,sleep_session] classification=NORMALIZATION_CURSOR_STALLED " +
         "normalized_batch=40 synced_batch=43 oldest_pending_batch=41",
+    });
+    expect(peerDbClient.queryTexts[1]).toContain(
+      "WHERE flow_name IN ('dofek_fitness_raw_analytics', " +
+        "'dofek_provider_inventory_raw_analytics', 'dofek_sensor_priority_raw_analytics')",
+    );
+  });
+
+  it("fails when no batch has normalized before multiple synced batches are pending", async () => {
+    const report = await checkClickHouseCdcHealth({
+      postgresClient: new FakePostgresClient(healthySlotRows()),
+      peerDbClient: new FakePeerDbClient(healthyPeerDbMirrorRows(), [
+        {
+          flow_name: "dofek_fitness_raw_analytics",
+          latest_normalized_batch_id: null,
+          latest_synced_batch_id: "43",
+          oldest_pending_batch_id: "41",
+          pending_destination_tables: ["d"],
+        },
+      ]),
+      clickHouseClient: new FakeClickHouseClient(healthyFreshnessRows()),
+      now: new Date("2026-06-03T20:00:00.000Z"),
+    });
+
+    expect(report.issues).toContainEqual({
+      kind: "normalization_stall",
+      severity: "failure",
+      message:
+        "PeerDB normalization stalled for dofek_fitness_raw_analytics " +
+        "tables=[d] classification=NORMALIZATION_CURSOR_STALLED " +
+        "normalized_batch=0 synced_batch=43 oldest_pending_batch=41",
     });
   });
 
@@ -277,6 +307,74 @@ describe("checkClickHouseCdcHealth", () => {
 
     expect(report.issues).toEqual([]);
   });
+
+  it.each([
+    {
+      name: "no synced batch",
+      latestNormalized: null,
+      latestSynced: null,
+      oldestPending: "41",
+    },
+    {
+      name: "no pending batch",
+      latestNormalized: null,
+      latestSynced: "1",
+      oldestPending: null,
+    },
+    {
+      name: "normalization reached the oldest pending batch",
+      latestNormalized: "41",
+      latestSynced: "43",
+      oldestPending: "41",
+    },
+    {
+      name: "normalization passed the oldest pending batch",
+      latestNormalized: "42",
+      latestSynced: "43",
+      oldestPending: "41",
+    },
+  ])(
+    "does not report a stall when $name",
+    async ({ latestNormalized, latestSynced, oldestPending }) => {
+      const report = await checkClickHouseCdcHealth({
+        postgresClient: new FakePostgresClient(healthySlotRows()),
+        peerDbClient: new FakePeerDbClient(healthyPeerDbMirrorRows(), [
+          {
+            flow_name: "dofek_fitness_raw_analytics",
+            latest_normalized_batch_id: latestNormalized,
+            latest_synced_batch_id: latestSynced,
+            oldest_pending_batch_id: oldestPending,
+            pending_destination_tables: [],
+          },
+        ]),
+        clickHouseClient: new FakeClickHouseClient(healthyFreshnessRows()),
+        now: new Date("2026-06-03T20:00:00.000Z"),
+      });
+
+      expect(report.issues).toEqual([]);
+    },
+  );
+
+  it.each(["_daily_metrics", "Daily_metrics", "daily-metrics", "daily_metrics!"])(
+    "rejects unsafe pending destination table name %s",
+    async (tableName) => {
+      await expect(
+        checkClickHouseCdcHealth({
+          postgresClient: new FakePostgresClient(healthySlotRows()),
+          peerDbClient: new FakePeerDbClient(healthyPeerDbMirrorRows(), [
+            {
+              flow_name: "dofek_fitness_raw_analytics",
+              latest_normalized_batch_id: "40",
+              latest_synced_batch_id: "43",
+              oldest_pending_batch_id: "41",
+              pending_destination_tables: [tableName],
+            },
+          ]),
+          clickHouseClient: new FakeClickHouseClient(healthyFreshnessRows()),
+        }),
+      ).rejects.toThrow();
+    },
+  );
 
   it("records sanitized PeerDB and Postgres evidence for failed health checks", async () => {
     const report = await checkClickHouseCdcHealth({

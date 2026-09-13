@@ -88,18 +88,6 @@ const peerDbMirrorRowsSchema = z.object({
   ),
 });
 
-const peerDbNormalizationRowsSchema = z.object({
-  rows: z.array(
-    z.object({
-      flow_name: z.enum(expectedPeerDbMirrorNames),
-      latest_normalized_batch_id: nullableIntegerLikeSchema,
-      latest_synced_batch_id: nullableIntegerLikeSchema,
-      oldest_pending_batch_id: nullableIntegerLikeSchema,
-      pending_destination_tables: z.array(z.string().regex(/^[a-z][a-z0-9_]*$/)),
-    }),
-  ),
-});
-
 const clickHouseFreshnessRowsSchema = z.array(
   z.object({
     latest_peerdb_synced_at: z.string().nullable(),
@@ -161,6 +149,22 @@ function buildPeerDbNormalizationQuery(): string {
       progress.oldest_pending_batch_id
     ORDER BY progress.flow_name
   `;
+}
+
+function parsePeerDbNormalizationRows(result: unknown) {
+  return z
+    .object({
+      rows: z.array(
+        z.object({
+          flow_name: z.enum(expectedPeerDbMirrorNames),
+          latest_normalized_batch_id: nullableIntegerLikeSchema,
+          latest_synced_batch_id: nullableIntegerLikeSchema,
+          oldest_pending_batch_id: nullableIntegerLikeSchema,
+          pending_destination_tables: z.array(z.string().regex(/^[a-z][a-z0-9_]*$/)),
+        }),
+      ),
+    })
+    .parse(result).rows;
 }
 
 function integerLikeToNumber(value: z.infer<typeof integerLikeSchema>): number {
@@ -259,17 +263,18 @@ function addPeerDbMirrorIssues(
 
 function addPeerDbNormalizationIssues(
   issues: CdcHealthIssue[],
-  rows: z.infer<typeof peerDbNormalizationRowsSchema>["rows"],
+  rows: ReturnType<typeof parsePeerDbNormalizationRows>,
 ): void {
   for (const row of rows) {
-    const latestSyncedBatchId = nullableIntegerLikeToNumber(row.latest_synced_batch_id);
+    const latestSyncedBatchId =
+      nullableIntegerLikeToNumber(row.latest_synced_batch_id) ?? Number.NEGATIVE_INFINITY;
     const latestNormalizedBatchId = nullableIntegerLikeToNumber(row.latest_normalized_batch_id);
+    const normalizedCursor = latestNormalizedBatchId ?? Number.NEGATIVE_INFINITY;
     const oldestPendingBatchId = nullableIntegerLikeToNumber(row.oldest_pending_batch_id);
     if (
-      latestSyncedBatchId === null ||
       oldestPendingBatchId === null ||
       latestSyncedBatchId <= oldestPendingBatchId ||
-      (latestNormalizedBatchId !== null && latestNormalizedBatchId >= oldestPendingBatchId)
+      normalizedCursor >= oldestPendingBatchId
     ) {
       continue;
     }
@@ -457,8 +462,7 @@ export async function checkClickHouseCdcHealth(
     : peerDbMirrorRowsSchema.parse(await peerDbClient.query(buildPeerDbMirrorQuery())).rows;
   const peerDbNormalizationRows = !shouldCheckPeerDbMirrors
     ? []
-    : peerDbNormalizationRowsSchema.parse(await peerDbClient.query(buildPeerDbNormalizationQuery()))
-        .rows;
+    : parsePeerDbNormalizationRows(await peerDbClient.query(buildPeerDbNormalizationQuery()));
 
   const slotQueryResult = await options.postgresClient.query(`
     SELECT
@@ -485,8 +489,8 @@ export async function checkClickHouseCdcHealth(
   const issues: CdcHealthIssue[] = [];
   if (shouldCheckPeerDbMirrors) {
     addPeerDbMirrorIssues(issues, peerDbMirrorRows);
-    addPeerDbNormalizationIssues(issues, peerDbNormalizationRows);
   }
+  addPeerDbNormalizationIssues(issues, peerDbNormalizationRows);
   addSlotIssues(issues, parsedSlotRows, thresholds);
   addMirrorFreshnessIssues(issues, freshnessRows, mirrorFreshnessChecks, now);
 
