@@ -26711,3 +26711,36 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   the original OAuth code was consumed and its transaction was rolled back.
 - **Follow-up:** After deployment, reconnect Strava and confirm that the
   callback completes promptly and the provider becomes connected.
+
+## 2026-09-13 — Recent activities absent after fitness CDC schema drift
+
+- **Symptoms / user impact:** The September 11 Peloton workout existed in
+  Postgres but did not appear on the Activities page. The page reported that
+  provider-summary recomputation had failed because reconciliation exceeded
+  its expected window.
+- **Evidence:** Production was running `sha-86202ce`. The Peloton sync completed
+  every 30 minutes and its three September 11 source rows were active in
+  Postgres `fitness.activity`; all three canonical groups were visible through
+  `fitness.v_activity`. The Activities page reads ClickHouse
+  `analytics.deduped_activities`, where none of those three group IDs existed.
+  Postgres held 3,238 activity rows through September 11, while
+  `postgres_fitness.activity` held 3,214 and stopped at September 9; its latest
+  `_peerdb_synced_at` was September 10. The fitness replication slot was active,
+  reserved, and only 29 kB behind, ruling out a lost slot.
+- **First fatal line / root cause:** PeerDB normalization failed with ClickHouse
+  error 16: `No such column stress_high_minutes in table
+  postgres_fitness.daily_metrics`. The intended Postgres cleanup had been stored
+  in the unjournaled `drizzle/0074_remove_provider_derived_metrics.sql`, whose
+  filename collided with the journaled `0074_climbing_grade_systems` migration.
+  Its ClickHouse counterpart,
+  `0085_remove_provider_derived_metrics`, did run and removed the destination
+  columns. PeerDB therefore consumes current WAL but cannot normalize the
+  fitness batch because the source still emits columns that the destination no
+  longer has; activity changes behind the failed batch never reach the serving
+  read models.
+- **Fix / mitigation:** Reissue the cleanup as the journaled forward migration
+  `0123_remove_provider_derived_metrics` and make Postgres migration startup fail
+  when any SQL migration is absent from the Drizzle journal.
+- **Current status / remaining risk:** The durable fix is pending deployment,
+  followed by CDC and analytics catch-up. Retrying provider sync cannot repair
+  the destination-schema mismatch before that deployment.

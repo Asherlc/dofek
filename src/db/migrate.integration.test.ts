@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "pg";
@@ -261,6 +261,7 @@ describe("runMigrations", () => {
       file: "0002_missing_history_pending.sql",
       when: nextMigrationTimestamp++,
     };
+    unlinkSync(join(tmpDir, appliedMigration.file));
     writeTestMigrationFiles(tmpDir, [pendingMigration]);
 
     await expect(runMigrations(ctx.connectionString, tmpDir)).rejects.toThrow(
