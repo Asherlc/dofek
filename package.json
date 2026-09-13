@@ -185,6 +185,7 @@
     "test:changed": "vitest run --changed origin/main --project unit --project mobile",
     "test:changed:all": "tsx scripts/run-tests.ts changed",
     "test:integration": "tsx scripts/run-tests.ts integration",
+    "test:peerdb-integration": "tsx scripts/run-tests.ts peerdb-integration",
     "test:unit": "vitest run --project unit",
     "test:watch": "vitest --watch --project unit --project mobile",
     "test:coverage": "vitest run --project unit --project mobile --coverage",

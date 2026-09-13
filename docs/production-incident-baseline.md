@@ -26712,12 +26712,13 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Follow-up:** After deployment, reconnect Strava and confirm that the
   callback completes promptly and the provider becomes connected.
 
-## 2026-09-13 — Recent activities absent after fitness CDC schema drift
+## 2026-09-13 — PeerDB schema drift stalled health-data CDC
 
-- **Symptoms / user impact:** The September 11 Peloton workout existed in
-  Postgres but did not appear on the Activities page. The page reported that
-  provider-summary recomputation had failed because reconciliation exceeded
-  its expected window.
+- **Symptoms / user impact:** Sleep and Body recompute exceeded its reconciliation
+  window, and recent activities—including September 11 Peloton workouts that
+  existed in Postgres—were absent from web and mobile. New activity, sleep,
+  body, provider, and processing-marker rows queued behind the failed batch did
+  not reach ClickHouse or its serving read models.
 - **Evidence:** Production was running `sha-86202ce`. The Peloton sync completed
   every 30 minutes and its three September 11 source rows were active in
   Postgres `fitness.activity`; all three canonical groups were visible through
@@ -26726,7 +26727,10 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   Postgres held 3,238 activity rows through September 11, while
   `postgres_fitness.activity` held 3,214 and stopped at September 9; its latest
   `_peerdb_synced_at` was September 10. The fitness replication slot was active,
-  reserved, and only 29 kB behind, ruling out a lost slot.
+  reserved, and only 29 kB behind, ruling out a lost slot. PeerDB's first fatal
+  normalization line was `No such column stress_high_minutes in table
+  postgres_fitness.daily_metrics`, while the mirror still appeared running and
+  its persisted normalization cursor stopped advancing.
 - **First fatal line / root cause:** PeerDB normalization failed with ClickHouse
   error 16: `No such column stress_high_minutes in table
   postgres_fitness.daily_metrics`. The intended Postgres cleanup had been stored
@@ -26737,10 +26741,47 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   columns. PeerDB therefore consumes current WAL but cannot normalize the
   fitness batch because the source still emits columns that the destination no
   longer has; activity changes behind the failed batch never reach the serving
-  read models.
-- **Fix / mitigation:** Reissue the cleanup as the journaled forward migration
-  `0123_remove_provider_derived_metrics` and make Postgres migration startup fail
-  when any SQL migration is absent from the Drizzle journal.
-- **Current status / remaining risk:** The durable fix is pending deployment,
-  followed by CDC and analytics catch-up. Retrying provider sync cannot repair
-  the destination-schema mismatch before that deployment.
+  read models. Independently maintained live PeerDB mappings still projected
+  the source columns, and the previous integration suites did not run the real
+  PeerDB normalization path, so they could not detect this projection drift.
+- **Fix / mitigation:** The cleanup is reissued as journaled forward migration
+  `0123_remove_provider_derived_metrics`, and Postgres migration startup now
+  fails if any SQL migration is absent from the Drizzle journal. A typed
+  canonical mirror contract additionally drives setup SQL, in-place live
+  mapping reconciliation, catalog validation, health diagnostics, and one exact
+  deployment canary per managed flow. Deployments now quiesce consumers, apply
+  additive pre-CDC schema, reconcile and validate the live mappings, migrate,
+  and require all causal markers in ClickHouse before resuming consumers. A
+  required isolated CI tier runs the full contract against real PeerDB. PeerDB
+  documents [mirror editing](https://docs.peerdb.io/features/edit-mirror),
+  [schema changes](https://docs.peerdb.io/features/schema-changes), and
+  [resynchronization](https://docs.peerdb.io/features/resync-mirror).
+- **Validation:** Contract rendering, projection validation, two-phase mapping
+  reconciliation, deployment ordering and canaries, normalization-stall
+  detection, and the full Docker-free suite (1,275 files; 18,596 tests) pass
+  locally. The first real-PeerDB CI attempt stopped before the test because its
+  broad Compose wait included the unrelated, unhealthy telemetry collector;
+  the runner now starts only the isolated CDC test's required services. Its
+  focused tests pass. The rerun exercised every canonical mapping and exact
+  flow marker through real Postgres, PeerDB/Temporal, and ClickHouse and passed.
+  Targeted mutation testing reports 100% for the mirror contracts and 95.38%
+  for the command runner, with no surviving covered mutants. Review hardening
+  additionally bounds every canary probe by its remaining deadline, rejects
+  incomplete managed-flow artifacts, validates ClickHouse count rows at the
+  database boundary, and brings the deadline verifier to a 100% mutation score.
+  A subsequent E2E run caught ClickHouse error 62 at `ALTER TABLE IF EXISTS`
+  in migration 0087 before Cypress started. The migration now uses supported
+  `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` syntax and intentionally fails if
+  a required mirror table is absent; a real-ClickHouse integration test applies
+  every statement twice and verifies all three destination columns. The
+  complete CI rerun and production recovery remain pending at the time of this
+  entry.
+- **Production recovery status / remaining risk:** Unresolved. No mirror, slot,
+  or destination table has been replaced or truncated. The blocked WAL remains
+  unapplied until the guarded deployment completes; retrying provider sync
+  cannot repair the destination mismatch. Recovery must preserve the existing
+  active slot, then confirm exact-marker arrival, advancing cursors, WAL drain,
+  successful recompute, and current web/mobile activity, sleep, and body data.
+- **Follow-up:** Observe production routing for the new
+  `NORMALIZATION_CURSOR_STALLED` health classification and record the deployed
+  commit plus the recovery evidence above.

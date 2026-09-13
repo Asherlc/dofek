@@ -312,6 +312,27 @@ describe("clickHouseMigrations", () => {
         expect.stringContaining("FROM ingest.metric_stream"),
       ]),
     });
+    expect(
+      migrations.find((migration) => migration.id === "0087_complete_peerdb_raw_schema"),
+    ).toMatchObject({
+      id: "0087_complete_peerdb_raw_schema",
+      statements: expect.arrayContaining([
+        expect.stringContaining("food_entry ADD COLUMN IF NOT EXISTS nutrition_grain"),
+        expect.stringContaining("health_event ADD COLUMN IF NOT EXISTS source_bundle"),
+        expect.stringContaining("health_event ADD COLUMN IF NOT EXISTS metadata"),
+      ]),
+    });
+    expect(
+      migrations.find((migration) => migration.id === "0088_sensor_priority_processing_marker"),
+    ).toMatchObject({
+      id: "0088_sensor_priority_processing_marker",
+      phase: "pre-cdc",
+      statements: [
+        expect.stringContaining(
+          "CREATE TABLE IF NOT EXISTS postgres_fitness.processing_flow_marker_sensor_priority",
+        ),
+      ],
+    });
   });
 
   it("rejects duplicate migration ids", async () => {
