@@ -162,10 +162,13 @@ If direct SSH fails with `Permission denied`, verify you are using the matching 
   - `ghcr.io/asherlc/dofek-ml:<tag>` (local ML tooling; not deployed to the stack)
 - `docker stack deploy` is the only production rollout command for web deploys. It updates `web` and `worker` together from `deploy/stack.yml`.
 - Swarm rollback is **image rollback only**. It does not roll back database schema changes that were already applied.
-- Migrations run after the non-pruning pre-migration stack apply and before the
-  pruning rollout of the requested app image. Every production schema change
-  must therefore remain compatible with both the old and new app versions
-  during rollout.
+- Migrations run after the non-pruning pre-migration stack apply and after the
+  live PeerDB mappings have been reconciled and checked against the still-old
+  destination schema. After migration and CDC setup, deployment validates the
+  final schema and requires exact processing markers to cross every
+  marker-bearing mirror before restoring ClickHouse consumers. PeerDB documents
+  its pause/edit/resume behavior in the [mirror editing guide](https://docs.peerdb.io/features/edit-mirror)
+  and its state-change API in the [state-change reference](https://docs.peerdb.io/peerdb-api/endpoints/change-mirror-state).
 
 ### Production Secrets
 
@@ -215,11 +218,13 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
               -> sweep expired backups
               -> validate host bind sources
               -> non-pruning stack apply with analytics-worker, all metric-stream ClickHouse sinks, and processing-reconciliation quiesced
-              -> wait for Postgres and ClickHouse
+              -> wait for Postgres, ClickHouse, and PeerDB
+              -> reconcile live PeerDB mappings; validate the old destination schema
               -> migrate requested image on <stack>_default
               -> prune deploy requested image with analytics-worker, all metric-stream ClickHouse sinks, and processing-reconciliation quiesced
               -> wait for app convergence and Postgres; run cutover
               -> wait for ClickHouse, PeerDB, and Temporal; configure CDC
+              -> validate the final schema; write and observe exact causal markers
               -> final deploy restores analytics-worker, all metric-stream ClickHouse sinks, and processing-reconciliation
               -> verify backup freshness and record Sentry release
 ```

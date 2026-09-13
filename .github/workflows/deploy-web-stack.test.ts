@@ -301,6 +301,25 @@ const STABLE_OBSERVATION = {
 } satisfies ServiceObservation;
 
 describe("deploy-web-stack workflow contract", () => {
+  it("keeps PeerDB contract gates around migrations and before consumer restoration", () => {
+    const orderedSteps = [
+      "Wait for PeerDB before migrations",
+      "Prepare PeerDB CDC contract",
+      "Run migrations",
+      "Configure ClickHouse CDC",
+      "Finalize PeerDB CDC contract",
+      "Verify PeerDB CDC causal markers",
+      "Deploy ClickHouse consumer services",
+    ];
+    const positions = orderedSteps.map((name) => workflowText.indexOf(`      - name: ${name}`));
+
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect(positions).toEqual([...positions].sort((left, right) => left - right));
+    expect(workflowText).toContain(
+      "steps.verify_peerdb_cdc_contract.conclusion == 'success'",
+    );
+  });
+
   it.each([
     ["Apply dependency stack before migrations", "web-pre-migration.env", "previous"],
     ["Deploy stack without ClickHouse consumers", "web.env", "test"],

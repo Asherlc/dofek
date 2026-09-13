@@ -64,6 +64,7 @@ describe("PeerDB mirror contracts", () => {
       [
         "dofek_fitness_raw_analytics",
         {
+          datasetKey: "activity",
           destinationTableIdentifier: "processing_flow_marker",
           flow: "dofek_fitness_raw_analytics",
         },
@@ -71,6 +72,7 @@ describe("PeerDB mirror contracts", () => {
       [
         "dofek_provider_inventory_raw_analytics",
         {
+          datasetKey: "providers",
           destinationTableIdentifier: "processing_flow_marker_provider_inventory",
           flow: "dofek_provider_inventory_raw_analytics",
         },

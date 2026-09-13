@@ -9,6 +9,7 @@ export interface PeerDbMirrorTableContract extends PeerDbTableMapping {
 }
 
 export interface PeerDbProcessingMarkerContract {
+  datasetKey: "activity" | "providers";
   destinationTableIdentifier: string;
   flow: string;
 }
@@ -29,6 +30,7 @@ export const peerDbMirrorContracts = [
     initialCopyPlaceholder: "FITNESS_RAW_ANALYTICS_DO_INITIAL_COPY",
     tableMappingsPlaceholder: "FITNESS_RAW_ANALYTICS_TABLE_MAPPINGS",
     processingMarker: {
+      datasetKey: "activity",
       destinationTableIdentifier: "processing_flow_marker",
       flow: "dofek_fitness_raw_analytics",
     },
@@ -113,6 +115,7 @@ export const peerDbMirrorContracts = [
     initialCopyPlaceholder: "PROVIDER_INVENTORY_RAW_ANALYTICS_DO_INITIAL_COPY",
     tableMappingsPlaceholder: "PROVIDER_INVENTORY_RAW_ANALYTICS_TABLE_MAPPINGS",
     processingMarker: {
+      datasetKey: "providers",
       destinationTableIdentifier: "processing_flow_marker_provider_inventory",
       flow: "dofek_provider_inventory_raw_analytics",
     },
