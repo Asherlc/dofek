@@ -26762,9 +26762,11 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   locally. The first real-PeerDB CI attempt stopped before the test because its
   broad Compose wait included the unrelated, unhealthy telemetry collector;
   the runner now starts only the isolated CDC test's required services. Its
-  focused tests pass, and the command runner's targeted mutation score is
-  95.38% with no surviving covered mutants. The rerun and production recovery
-  remain pending at the time of this entry.
+  focused tests pass. The rerun exercised every canonical mapping and exact
+  flow marker through real Postgres, PeerDB/Temporal, and ClickHouse and passed.
+  Targeted mutation testing reports 100% for the mirror contracts and 95.38%
+  for the command runner, with no surviving covered mutants. The complete CI
+  rerun and production recovery remain pending at the time of this entry.
 - **Production recovery status / remaining risk:** Unresolved. No mirror, slot,
   or destination table has been replaced or truncated. The blocked WAL remains
   unapplied until the guarded deployment completes; retrying provider sync

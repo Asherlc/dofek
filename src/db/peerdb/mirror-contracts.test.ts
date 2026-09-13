@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { type PeerDbMirrorTableContract, peerDbMirrorContracts } from "./mirror-contracts.ts";
+import {
+  type PeerDbMirrorTableContract,
+  peerDbMirrorContracts,
+  renderPeerDbTableMappings,
+} from "./mirror-contracts.ts";
 
 function mapping(mirrorName: string, sourceTableIdentifier: string): PeerDbMirrorTableContract {
   const mirror = peerDbMirrorContracts.find((candidate) => candidate.name === mirrorName);
@@ -86,5 +90,17 @@ describe("PeerDB mirror contracts", () => {
         },
       ],
     ]);
+  });
+
+  it("omits the exclude field when a table mapping has no excluded columns", () => {
+    expect(
+      renderPeerDbTableMappings([
+        {
+          sourceTableIdentifier: "fitness.activity",
+          destinationTableIdentifier: "activity",
+          exclude: [],
+        },
+      ]),
+    ).toBe("  {\n    from: fitness.activity,\n    to: activity\n  }");
   });
 });
