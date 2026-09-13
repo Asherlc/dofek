@@ -83,6 +83,17 @@ function readMigrationHistory(migrationsFolder: string): MigrationHistoryEntry[]
     JSON.parse(readFileSync(join(migrationsFolder, "meta/_journal.json"), "utf8")),
   );
 
+  const registeredMigrationFiles = new Set(journal.entries.map((entry) => `${entry.tag}.sql`));
+  const unregisteredMigrationFile = readdirSync(migrationsFolder)
+    .filter((file) => file.endsWith(".sql"))
+    .sort()
+    .find((file) => !registeredMigrationFiles.has(file));
+  if (unregisteredMigrationFile) {
+    throw new Error(
+      `SQL migration is not registered in the Drizzle journal: ${unregisteredMigrationFile}`,
+    );
+  }
+
   let previousEntry: { tag: string; when: number } | undefined;
   for (const entry of journal.entries) {
     if (previousEntry && entry.when <= previousEntry.when) {

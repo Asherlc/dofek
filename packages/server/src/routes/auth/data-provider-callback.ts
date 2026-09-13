@@ -35,12 +35,18 @@ import {
   getPostLoginRedirect,
   oauthSuccessHtml,
   persistProviderConnection,
+  registerProviderWebhook,
 } from "./shared.ts";
 
 interface ReconnectFailure {
   kind: "preserved" | "removed";
   providerName: string;
 }
+
+type WebhookRegistrationFailure = {
+  kind: "preserved" | "removed";
+  providerName: string;
+};
 
 type DeferredOAuthResponse =
   | { kind: "redirect"; location: string }
@@ -105,6 +111,7 @@ function sendDeferredOAuthResponse(res: Response, response: DeferredOAuthRespons
 export async function handleOAuth2Callback(req: Request, res: Response): Promise<void> {
   let resolvedProviderName: string | undefined;
   let reconnectFailure: ReconnectFailure | undefined;
+  let webhookRegistrationFailure: WebhookRegistrationFailure | undefined;
   let revokedAuthorizationNeedsDurableRemoval = false;
   try {
     const code = typeof req.query.code === "string" ? req.query.code : undefined;
@@ -243,6 +250,7 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
     }
 
     let issuedTokens: TokenSet | null = null;
+    let connectedUserId: string | undefined;
     const completeOAuthConnection = async (
       operationDb: ProviderAuthorizationOperationDatabase,
       identityLockTransaction?: TransactionDatabase,
@@ -253,6 +261,18 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
         const { loadTokens } = await import("dofek/db/tokens");
         existingTokens = await loadTokens(operationDb, providerId, stateUserId);
       }
+
+      const persistConnection = async (userId: string): Promise<void> => {
+        await persistProviderConnection({
+          db: operationDb,
+          provider,
+          providerName: provider.name,
+          apiBaseUrl: setup.apiBaseUrl,
+          tokens,
+          userId,
+        });
+        connectedUserId = userId;
+      };
 
       if (existingTokens && setup.reconnectStrategy === "revoke-then-replace") {
         if (!setup.revokeExistingTokens) {
@@ -350,14 +370,7 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
                     `Data-provider identity resolution changed from ${targetUserId} to ${resolution.userId}`,
                   );
                 }
-                await persistProviderConnection({
-                  db: transaction,
-                  provider,
-                  providerName: provider.name,
-                  apiBaseUrl: setup.apiBaseUrl,
-                  tokens,
-                  userId: resolution.userId,
-                });
+                await persistConnection(resolution.userId);
                 return {
                   ...resolution,
                   sessionInfo: await createSession(transaction, resolution.userId),
@@ -433,14 +446,7 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
             externalIdentities,
           );
           await resolveOrCreateUser(operationDb, providerId, identity, linkUserId);
-          await persistProviderConnection({
-            db: operationDb,
-            provider,
-            providerName: provider.name,
-            apiBaseUrl: setup.apiBaseUrl,
-            tokens,
-            userId: linkUserId,
-          });
+          await persistConnection(linkUserId);
           revokedAuthorizationNeedsDurableRemoval = false;
           logger.info(`[auth] Linked ${providerId} to user ${linkUserId}`);
           return {
@@ -476,24 +482,10 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
           Sentry.captureException(identityErr);
           logger.warn(`[auth] Failed to extract identity from ${providerId}: ${identityErr}`);
         }
-        await persistProviderConnection({
-          db: operationDb,
-          provider,
-          providerName: provider.name,
-          apiBaseUrl: setup.apiBaseUrl,
-          tokens,
-          userId: stateUserId,
-        });
+        await persistConnection(stateUserId);
         revokedAuthorizationNeedsDurableRemoval = false;
       } else {
-        await persistProviderConnection({
-          db: operationDb,
-          provider,
-          providerName: provider.name,
-          apiBaseUrl: setup.apiBaseUrl,
-          tokens,
-          userId: stateUserId,
-        });
+        await persistConnection(stateUserId);
         revokedAuthorizationNeedsDurableRemoval = false;
       }
 
@@ -550,6 +542,30 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
         throw completion.error;
       }
       await removeRevokedAuthorizationDurably();
+      if (connectedUserId) {
+        const webhookUserId = connectedUserId;
+        try {
+          await registerProviderWebhook({ db, provider, userId: webhookUserId });
+        } catch (webhookError: unknown) {
+          try {
+            await withAccountErasureUserWriteFence(db, webhookUserId, (transaction) =>
+              removeRevokedAuthorization(transaction, providerId, webhookUserId),
+            );
+            webhookRegistrationFailure = { kind: "removed", providerName: provider.name };
+          } catch (cleanupError: unknown) {
+            webhookRegistrationFailure = { kind: "preserved", providerName: provider.name };
+            issuedTokens = null;
+            Sentry.captureException(cleanupError, {
+              tags: {
+                source: "data-provider-oauth",
+                operation: "remove-webhook-registration-failure",
+              },
+              extra: { providerId, userId: webhookUserId },
+            });
+          }
+          throw webhookError;
+        }
+      }
       sendDeferredOAuthResponse(res, completion.response);
     } catch (callbackError: unknown) {
       if (revokedAuthorizationNeedsDurableRemoval) {
@@ -661,6 +677,23 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
         .status(400)
         .send(
           `The previous ${reconnectFailure.providerName} authorization was removed before the new authorization could be completed. Please connect ${reconnectFailure.providerName} again.`,
+        );
+      return;
+    }
+
+    if (webhookRegistrationFailure?.kind === "removed") {
+      res
+        .status(500)
+        .send(
+          `${webhookRegistrationFailure.providerName} webhook registration failed, so the new connection was removed. Please try again.`,
+        );
+      return;
+    }
+    if (webhookRegistrationFailure?.kind === "preserved") {
+      res
+        .status(500)
+        .send(
+          `${webhookRegistrationFailure.providerName} connected, but webhook registration and connection cleanup both failed. Please contact support before trying again.`,
         );
       return;
     }

@@ -167,6 +167,18 @@ describe("postgres migrator", () => {
     );
   });
 
+  it("rejects SQL migration files missing from the journal", () => {
+    mocks.readdirSync.mockReturnValue([
+      "0001_create_table.sql",
+      "0002_unregistered.sql",
+      "README.md",
+    ]);
+
+    expect(() => readBaselineMigration("/migrations")).toThrow(
+      "SQL migration is not registered in the Drizzle journal: 0002_unregistered.sql",
+    );
+  });
+
   it("rejects migration journals whose timestamps are not strictly increasing", async () => {
     setMigrationHistory([
       { hash: "first-current-hash", tag: "0001_first", when: 202 },
@@ -270,7 +282,9 @@ describe("postgres migrator", () => {
     const archivedSql = "DROP VIEW fitness.v_activity;";
     const archivedHash = createHash("sha256").update(archivedSql).digest("hex");
     mocks.existsSync.mockReturnValue(true);
-    mocks.readdirSync.mockReturnValue(["0000_archived.sql", "README.md"]);
+    mocks.readdirSync.mockImplementation((path: string) =>
+      path === "/migrations/_history" ? ["0000_archived.sql", "README.md"] : [],
+    );
     mocks.readFileSync.mockImplementation((path: string) =>
       path.endsWith("0000_archived.sql")
         ? archivedSql

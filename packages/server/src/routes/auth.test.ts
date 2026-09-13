@@ -127,6 +127,7 @@ vi.mock("dofek/providers/registry", () => ({
 }));
 
 vi.mock("dofek/db/tokens", () => ({
+  deleteProviderAuthorization: vi.fn(() => Promise.resolve()),
   ensureProvider: vi.fn(() => Promise.resolve()),
   saveTokens: vi.fn(() => Promise.resolve()),
   loadTokens: vi.fn(() => Promise.resolve(null)),
@@ -173,7 +174,7 @@ import {
   AccountErasureUserFencedError,
   withAccountErasureUserAndIdentityWriteFence,
 } from "dofek/db/account-erasure";
-import { loadTokens } from "dofek/db/tokens";
+import { deleteProviderAuthorization, loadTokens } from "dofek/db/tokens";
 import { queryCache } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
 import { getAllProviders } from "dofek/providers/registry";
@@ -4490,7 +4491,12 @@ describe("createAuthRouter", () => {
 
       const callbackRes = await request(app, "get", `/callback?code=code&state=${state}`);
       expect(callbackRes.status).toBe(500);
-      expect(callbackRes.body).toContain("Token exchange failed");
+      expect(callbackRes.body).toContain("webhook registration failed");
+      expect(deleteProviderAuthorization).toHaveBeenCalledWith(
+        expect.anything(),
+        "wahoo",
+        "user-1",
+      );
       expect(revokeToken).toHaveBeenCalledTimes(2);
       expect(revokeToken).toHaveBeenNthCalledWith(
         1,

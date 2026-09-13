@@ -26680,54 +26680,93 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   S3-compatible alternative, or a managed service) now that MinIO OSS has
   no upstream. Not addressed here — out of scope for the CI unblock.
 
-## 2026-09-13 — PeerDB schema mismatch stalled relational CDC
+## 2026-09-12 — Strava OAuth callback rolled back after webhook validation failed
 
-- **Symptoms:** Sleep and Body recompute reported that reconciliation had not
-  finished within the expected window, with the last successful update about
-  13 hours old. Current activities were also absent from web and mobile reads.
-- **User impact:** New relational activity, sleep, body, provider, and processing
-  marker rows queued behind the failed normalization batch did not reach
-  ClickHouse. Exact-marker reconciliation therefore could not complete, and
-  dependent analytics/read models remained stale.
-- **Evidence:** The first fatal PeerDB normalization line was
-  `No such column stress_high_minutes in table postgres_fitness.daily_metrics`.
-  The mirror catalog still reported the flow as running, while the PostgreSQL
-  logical replication slot remained active/reserved and PeerDB's persisted CDC
-  batch state stopped normalizing. The failure occurred before later activity,
-  sleep, and marker changes could be applied.
-- **Root cause:** ClickHouse migration 0085 removed retired columns from
-  `postgres_fitness.daily_metrics` and `postgres_fitness.sleep_session`, but the
-  independently maintained live PeerDB mappings still projected those source
-  columns. PeerDB accepted later WAL batches, then repeatedly failed the older
-  batch during ClickHouse normalization. Existing integration tests exercised
-  PostgreSQL and ClickHouse schemas without a real PeerDB flow, so they could
-  not detect projection drift or normalization behavior.
-- **Fix:** A typed canonical mirror contract now drives setup SQL, existing
-  mirror reconciliation, catalog validation, deployment canaries, health
-  diagnostics, and the real-PeerDB CI tier. Existing mappings are repaired in
-  place with a verified remove/add sequence, preserving the mirror and healthy
-  replication slot. Deployments quiesce consumers, run additive pre-CDC schema
-  expansion, reconcile and validate, migrate, then require exact per-flow
-  causal markers in ClickHouse before consumers resume. CDC health now fails
-  on an older pending normalization batch as soon as a newer batch has synced,
-  while allowing one latest batch to be in flight. PeerDB documents
-  [mirror editing](https://docs.peerdb.io/features/edit-mirror),
+- **Symptoms:** Connecting Strava spent about 30 seconds on the callback and
+  ended with “Token exchange failed.” The Data Sources page then continued to
+  show Strava as disconnected.
+- **User impact:** The token exchange succeeded, but the whole connection
+  transaction rolled back when webhook registration failed, leaving no usable
+  Strava connection.
+- **Evidence:** Production `dofek_web` logs recorded the successful Strava
+  token save followed by `Strava webhook registration failed (400)`: Strava's
+  validation GET to `/api/webhooks/strava` received a non-200 response. The
+  callback completed with HTTP 500 after 29,553 ms.
+- **Root cause:** OAuth persistence created the pending webhook-subscription
+  row inside the connection transaction. Strava validates the callback during
+  subscription creation on a separate request, which cannot read that
+  uncommitted row and therefore received 404.
+- **Fix:** Persist the provider connection inside the transaction, commit it,
+  and only then register the webhook. The pending validation record is now
+  visible before Strava requests the callback. The same post-commit sequence
+  applies to pending-email signup completion.
+- **Validation:** The focused data-provider callback unit suite passed (25
+  tests), and TypeScript typecheck passed. The database-backed transaction
+  visibility test could not run locally because Docker was unavailable; the
+  full lint suite also reached its analytics SQL step but could not connect to
+  the absent local ClickHouse service. The broader auth-route suite could not
+  bind its ephemeral HTTP listener in this sandbox (`Server address is not an
+  object`) before its assertions ran.
+- **Remaining risk:** The affected authorization must be started again because
+  the original OAuth code was consumed and its transaction was rolled back.
+- **Follow-up:** After deployment, reconnect Strava and confirm that the
+  callback completes promptly and the provider becomes connected.
+
+## 2026-09-13 — PeerDB schema drift stalled health-data CDC
+
+- **Symptoms / user impact:** Sleep and Body recompute exceeded its reconciliation
+  window, and recent activities—including September 11 Peloton workouts that
+  existed in Postgres—were absent from web and mobile. New activity, sleep,
+  body, provider, and processing-marker rows queued behind the failed batch did
+  not reach ClickHouse or its serving read models.
+- **Evidence:** Production was running `sha-86202ce`. The Peloton sync completed
+  every 30 minutes and its three September 11 source rows were active in
+  Postgres `fitness.activity`; all three canonical groups were visible through
+  `fitness.v_activity`. The Activities page reads ClickHouse
+  `analytics.deduped_activities`, where none of those three group IDs existed.
+  Postgres held 3,238 activity rows through September 11, while
+  `postgres_fitness.activity` held 3,214 and stopped at September 9; its latest
+  `_peerdb_synced_at` was September 10. The fitness replication slot was active,
+  reserved, and only 29 kB behind, ruling out a lost slot. PeerDB's first fatal
+  normalization line was `No such column stress_high_minutes in table
+  postgres_fitness.daily_metrics`, while the mirror still appeared running and
+  its persisted normalization cursor stopped advancing.
+- **First fatal line / root cause:** PeerDB normalization failed with ClickHouse
+  error 16: `No such column stress_high_minutes in table
+  postgres_fitness.daily_metrics`. The intended Postgres cleanup had been stored
+  in the unjournaled `drizzle/0074_remove_provider_derived_metrics.sql`, whose
+  filename collided with the journaled `0074_climbing_grade_systems` migration.
+  Its ClickHouse counterpart,
+  `0085_remove_provider_derived_metrics`, did run and removed the destination
+  columns. PeerDB therefore consumes current WAL but cannot normalize the
+  fitness batch because the source still emits columns that the destination no
+  longer has; activity changes behind the failed batch never reach the serving
+  read models. Independently maintained live PeerDB mappings still projected
+  the source columns, and the previous integration suites did not run the real
+  PeerDB normalization path, so they could not detect this projection drift.
+- **Fix / mitigation:** The cleanup is reissued as journaled forward migration
+  `0123_remove_provider_derived_metrics`, and Postgres migration startup now
+  fails if any SQL migration is absent from the Drizzle journal. A typed
+  canonical mirror contract additionally drives setup SQL, in-place live
+  mapping reconciliation, catalog validation, health diagnostics, and one exact
+  deployment canary per managed flow. Deployments now quiesce consumers, apply
+  additive pre-CDC schema, reconcile and validate the live mappings, migrate,
+  and require all causal markers in ClickHouse before resuming consumers. A
+  required isolated CI tier runs the full contract against real PeerDB. PeerDB
+  documents [mirror editing](https://docs.peerdb.io/features/edit-mirror),
   [schema changes](https://docs.peerdb.io/features/schema-changes), and
   [resynchronization](https://docs.peerdb.io/features/resync-mirror).
-- **Validation:** Contract rendering, projection validation, two-phase
-  reconciliation, deployment ordering/canaries, and normalization-stall unit
-  tests pass locally. PostgreSQL/ClickHouse schema integration coverage passes.
-  A required CI job now runs the full canonical flow against real PeerDB. The
-  fresh full local validation and production recovery are pending at the time
-  of this entry.
-- **Production recovery status:** Unresolved. No mirror, slot, or destination
-  table has been replaced or truncated. Recovery must use the normal deployment
-  workflow and retain the existing active slot.
-- **Remaining risk:** Until the guarded deployment completes, the blocked WAL
-  remains unapplied and user-facing data remains stale. After recovery, the
-  real-PeerDB CI gate and exact deployment canary cover mapping/schema changes;
-  operational alert routing for the new `NORMALIZATION_CURSOR_STALLED`
-  classification must still be observed in production.
-- **Follow-up:** After deployment, record the deployed commit, exact-marker
-  arrival, advancing normalization/sync cursors, retained-WAL drain, successful
-  recompute, and current web/mobile activity, sleep, and body results.
+- **Validation:** Contract rendering, projection validation, two-phase mapping
+  reconciliation, deployment ordering and canaries, normalization-stall
+  detection, and the full Docker-free suite (1,272 files; 18,568 tests) pass
+  locally. The required real-PeerDB CI job and production recovery remain
+  pending at the time of this entry.
+- **Production recovery status / remaining risk:** Unresolved. No mirror, slot,
+  or destination table has been replaced or truncated. The blocked WAL remains
+  unapplied until the guarded deployment completes; retrying provider sync
+  cannot repair the destination mismatch. Recovery must preserve the existing
+  active slot, then confirm exact-marker arrival, advancing cursors, WAL drain,
+  successful recompute, and current web/mobile activity, sleep, and body data.
+- **Follow-up:** Observe production routing for the new
+  `NORMALIZATION_CURSOR_STALLED` health classification and record the deployed
+  commit plus the recovery evidence above.
