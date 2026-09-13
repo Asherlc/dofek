@@ -8,7 +8,8 @@
     query_settings={
         'max_threads': 1,
         'join_use_nulls': 1,
-        'enable_materialized_cte': 1
+        'enable_materialized_cte': 1,
+        'preferred_optimize_projection_name': 'by_activity_source_refresh_version'
     }
 ) }}
 
@@ -31,6 +32,25 @@ WITH cycling_activity_state AS (
             OR hasAny(member_activity_ids, {{ activity_refresh_ids() }})
         )
     {% endif %}
+),
+
+location_source_versions AS MATERIALIZED (
+    SELECT
+        activity_id,
+        user_id,
+        max(greatest(source_refreshed_at, refreshed_at)) AS source_refreshed_at
+    FROM {{ ref('activity_location_sample') }}
+    GROUP BY activity_id, user_id
+),
+
+altitude_source_versions AS MATERIALIZED (
+    SELECT
+        activity_id,
+        user_id,
+        max(refreshed_at) AS source_refreshed_at
+    FROM {{ ref('activity_sensor_sample') }}
+    WHERE channel = 'altitude'
+    GROUP BY activity_id, user_id
 ),
 
 {% if is_incremental() %}
@@ -78,7 +98,7 @@ affected_route_keys AS MATERIALIZED (
     SELECT
         locations.activity_id AS activity_id,
         locations.user_id AS user_id
-    FROM {{ ref('activity_location_sample') }} AS locations FINAL
+    FROM location_source_versions AS locations
     LEFT JOIN existing_route_state AS existing_routes
         ON existing_routes.activity_id = locations.activity_id
         AND existing_routes.user_id = locations.user_id
@@ -88,8 +108,7 @@ affected_route_keys AS MATERIALIZED (
         AND (
             existing_routes.activity_id IS null
             OR existing_routes.is_deleted = 1
-            OR greatest(locations.source_refreshed_at, locations.refreshed_at)
-                > existing_routes.location_source_refreshed_at
+            OR locations.source_refreshed_at > existing_routes.location_source_refreshed_at
         )
 
     UNION DISTINCT
@@ -115,18 +134,17 @@ affected_route_keys AS MATERIALIZED (
     UNION DISTINCT
 
     SELECT samples.activity_id AS activity_id, samples.user_id AS user_id
-    FROM {{ ref('activity_sensor_sample') }} AS samples FINAL
+    FROM altitude_source_versions AS samples
     LEFT JOIN existing_route_state AS existing_routes
         ON existing_routes.activity_id = samples.activity_id
         AND existing_routes.user_id = samples.user_id
-    WHERE samples.channel = 'altitude'
-        AND (samples.user_id, samples.activity_id) IN (
+    WHERE (samples.user_id, samples.activity_id) IN (
             SELECT user_id, activity_id FROM cycling_activity_state
         )
         AND (
             existing_routes.activity_id IS null
             OR existing_routes.is_deleted = 1
-            OR samples.refreshed_at > existing_routes.altitude_source_refreshed_at
+            OR samples.source_refreshed_at > existing_routes.altitude_source_refreshed_at
         )
     {% endif %}
 
@@ -208,18 +226,7 @@ explicit_route_ids AS (
     GROUP BY canonical_activity_id, user_id
 ),
 
-altitude_refresh_state AS MATERIALIZED (
-    SELECT
-        activity_id,
-        user_id,
-        max(refreshed_at) AS source_refreshed_at
-    FROM {{ ref('activity_sensor_sample') }} FINAL
-    WHERE channel = 'altitude'
-        AND (user_id, activity_id) IN (SELECT user_id, activity_id FROM affected_route_keys)
-    GROUP BY activity_id, user_id
-),
-
-live_altitude_samples AS MATERIALIZED (
+live_altitude_samples AS (
     SELECT
         activity_id,
         user_id,
@@ -265,7 +272,10 @@ altitude_state AS MATERIALIZED (
                 points.profile_index IS NOT null
             ))
         ) AS elevation_profile
-    FROM altitude_refresh_state AS refresh
+    FROM altitude_source_versions AS refresh
+    INNER JOIN affected_route_keys AS keys
+        ON keys.activity_id = refresh.activity_id
+        AND keys.user_id = refresh.user_id
     LEFT JOIN altitude_profile_points AS points
         ON points.activity_id = refresh.activity_id
         AND points.user_id = refresh.user_id

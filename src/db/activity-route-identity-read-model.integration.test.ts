@@ -358,6 +358,28 @@ describe("activity route identity read model", () => {
     });
   });
 
+  it("reuses selected altitude samples during an unscoped route refresh", async () => {
+    await seedRouteIdentityFixture(client, database, { provider: "ridewithgps", routeId: "rw-42" });
+    await buildModel(client, database);
+    await client.command({
+      query: `INSERT INTO ${database}.activity_sensor_sample
+      SELECT toUUID('${activityId}'), toUUID('${userId}'),
+        addSeconds(toDateTime64('2026-09-01 12:00:00', 6, 'UTC'), number),
+        'altitude', 100 + number, 0, toDateTime64('2026-09-01 12:10:00', 9, 'UTC')
+      FROM numbers(100000)`,
+    });
+
+    await client.command({
+      query: `INSERT INTO ${database}.activity_route_identity ${renderModel(database, true)}`,
+      clickhouse_settings: { max_rows_to_read: "250000" },
+    });
+
+    expect(await readRouteIdentity(client, database)).toMatchObject({
+      isDeleted: 0,
+      elevationProfile: expect.arrayContaining([100, 100099]),
+    });
+  });
+
   it("retains the same explicit provider route claim on two distinct canonical activities", async () => {
     for (const id of [activityId, secondActivityId]) {
       await seedRouteIdentityFixture(client, database, {

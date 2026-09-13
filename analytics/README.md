@@ -135,9 +135,9 @@ documents tuple arguments as the way to return associated columns from the row
 selected by
 [`argMax`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/argmax).
 `activity_route_identity` follows `activity_location_sample` at canonical
-cycling-activity grain. It reads `deduped_activities FINAL`,
-`activity_location_sample FINAL`, `activity_effort_identity FINAL`, and the
-`altitude` channel of `activity_sensor_sample FINAL`, preserving explicit provider route/course
+cycling-activity grain. It reads `deduped_activities FINAL`, selected
+`activity_location_sample FINAL` rows, `activity_effort_identity FINAL`, and
+selected `altitude` rows from `activity_sensor_sample FINAL`, preserving explicit provider route/course
 claims separately from a deterministic, 64-point coordinate-quantized ordered
 polyline and its reverse fingerprint. Its route distance, time-gap coverage,
 provider/device provenance, and lifecycle watermark refresh only when an
@@ -147,7 +147,8 @@ Scoped builds resolve `activity_refresh_user_id` and
 `activity_refresh_activity_ids` (canonical or member IDs) before reading route
 points, and include scoped prior route keys so removed activities can be
 tombstoned. Unscoped incremental builds discover dirty keys from activity,
-location, altitude, and identity watermarks before aggregating selected geometry. See the
+location, altitude, and identity watermarks through per-activity source
+versions, then use `FINAL` only for the selected geometry. See the
 [route model](models/read_models/activity_route_identity.sql) and the shared
 [activity scope macros](macros/activity_refresh_scope.sql). The server's
 [route matcher](../packages/server/src/repositories/route-equivalence.ts) returns
