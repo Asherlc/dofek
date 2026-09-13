@@ -101,16 +101,23 @@ async function hasMarker(
 }
 
 function assertCompleteDeploymentArtifacts(artifacts: readonly PeerDbDeploymentCanary[]): void {
-  const remainingFlowNames = new Set<string>(
-    peerDbMirrorContracts.map(({ processingMarker }) => processingMarker.flow),
+  const remainingContracts = new Map<string, (typeof peerDbMirrorContracts)[number]>(
+    peerDbMirrorContracts.map((contract) => [contract.processingMarker.flow, contract]),
   );
-  if (artifacts.length !== remainingFlowNames.size) {
+  if (artifacts.length !== remainingContracts.size) {
     throw new Error("PeerDB deployment artifact does not match the managed mirror contracts");
   }
   for (const artifact of artifacts) {
-    if (!remainingFlowNames.delete(artifact.flowName)) {
+    const contract = remainingContracts.get(artifact.flowName);
+    if (
+      !contract ||
+      artifact.datasetKey !== contract.processingMarker.datasetKey ||
+      artifact.destinationDatabase !== contract.destinationDatabase ||
+      artifact.destinationTableIdentifier !== contract.processingMarker.destinationTableIdentifier
+    ) {
       throw new Error("PeerDB deployment artifact does not match the managed mirror contracts");
     }
+    remainingContracts.delete(artifact.flowName);
   }
 }
 

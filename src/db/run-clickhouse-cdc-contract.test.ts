@@ -167,6 +167,19 @@ function replaceFirstArtifactWithUnexpectedFlow(
   return [...remaining, { ...first, flowName: "unexpected_flow" }];
 }
 
+type ArtifactRoutingOverride = Partial<
+  Pick<PeerDbDeploymentCanary, "datasetKey" | "destinationDatabase" | "destinationTableIdentifier">
+>;
+
+function replaceFirstArtifactRouting(
+  artifacts: PeerDbDeploymentCanary[],
+  override: ArtifactRoutingOverride,
+): PeerDbDeploymentCanary[] {
+  const [first, ...remaining] = artifacts;
+  if (!first) throw new Error("Expected a deployment artifact fixture");
+  return [{ ...first, ...override }, ...remaining];
+}
+
 afterEach(() => {
   vi.clearAllMocks();
   vi.restoreAllMocks();
@@ -352,6 +365,23 @@ describe("run-clickhouse-cdc-contract", () => {
     const path = join(directory, "artifact.json");
     const artifacts = peerDbDeploymentArtifactSchema.parse(await finalizePeerDbDeployment());
     writeFileSync(path, JSON.stringify(alterArtifacts(artifacts)));
+
+    await expect(
+      runClickHouseCdcContractCommand("verify", path, unusedDependencies),
+    ).rejects.toThrow("PeerDB deployment artifact does not match the managed mirror contracts");
+    expect(verifyPeerDbDeployment).not.toHaveBeenCalled();
+  });
+
+  it.each<[string, ArtifactRoutingOverride]>([
+    ["dataset key", { datasetKey: "providers" }],
+    ["destination database", { destinationDatabase: "other_database" }],
+    ["destination table", { destinationTableIdentifier: "other_marker" }],
+  ])("rejects an artifact with a mismatched %s", async (_case, override) => {
+    const directory = mkdtempSync(join(tmpdir(), "peerdb-contract-command-"));
+    temporaryDirectories.push(directory);
+    const path = join(directory, "artifact.json");
+    const artifacts = peerDbDeploymentArtifactSchema.parse(await finalizePeerDbDeployment());
+    writeFileSync(path, JSON.stringify(replaceFirstArtifactRouting(artifacts, override)));
 
     await expect(
       runClickHouseCdcContractCommand("verify", path, unusedDependencies),
