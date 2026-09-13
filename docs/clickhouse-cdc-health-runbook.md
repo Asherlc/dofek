@@ -144,18 +144,22 @@ ingestion.
    | PeerDB mirror | Postgres source tables | ClickHouse destination tables |
    | --- | --- | --- |
    | `dofek_fitness_raw_analytics` | `fitness.activity`, `fitness.sleep_session`, `fitness.sleep_stage`, `fitness.daily_metrics`, `fitness.provider`, `fitness.provider_connection`, `fitness.provider_priority`, `fitness.device_priority`, `fitness.processing_flow_marker`, `fitness.user_profile` | `postgres_fitness.activity`, `postgres_fitness.sleep_session`, `postgres_fitness.sleep_stage`, `postgres_fitness.daily_metrics`, `postgres_fitness.provider`, `postgres_fitness.provider_connection`, `postgres_fitness.provider_priority`, `postgres_fitness.device_priority`, `postgres_fitness.processing_flow_marker`, `postgres_fitness.user_profile` |
-   | `dofek_provider_inventory_raw_analytics` | `fitness.food_entry`, `fitness.health_event`, `fitness.lab_panel`, `fitness.lab_result`, `fitness.journal_entry`, `fitness.processing_flow_marker` | `postgres_fitness.food_entry`, `postgres_fitness.health_event`, `postgres_fitness.lab_panel`, `postgres_fitness.lab_result`, `postgres_fitness.journal_entry`, `postgres_fitness.processing_flow_marker_provider_inventory` |
+   | `dofek_provider_inventory_raw_analytics` | `fitness.food_entry`, `fitness.health_event`, `fitness.clinical_record`, `fitness.journal_entry`, `fitness.processing_flow_marker` | `postgres_fitness.food_entry`, `postgres_fitness.health_event`, `postgres_fitness.clinical_record`, `postgres_fitness.journal_entry`, `postgres_fitness.processing_flow_marker_provider_inventory` |
    | `dofek_sensor_priority_raw_analytics` | `fitness.sensor_provider_priority`, `fitness.sensor_device_priority` | `postgres_fitness.sensor_provider_priority`, `postgres_fitness.sensor_device_priority` |
 
-   This mapping matches `src/db/peerdb/metric-stream-cdc.sql` and
-   `src/db/clickhouse-cdc.ts`.
-2. Drop the affected PeerDB mirror through PeerDB SQL:
-
-   ```sql
-   DROP MIRROR dofek_fitness_raw_analytics;
-   ```
-
-3. If PeerDB no longer has a catalog row but Postgres still has the lost inactive
+   The source of truth is `src/db/peerdb/mirror-contracts.ts`; setup SQL,
+   deployment reconciliation, validation, and tests are rendered from it.
+2. If the mirror and replication slot still exist, preserve both. Run the
+   canonical production deployment, which pauses the mirror, removes each
+   stale mapping, verifies its absence, adds the exact canonical mapping,
+   verifies equality, validates both database schemas, and proves an exact
+   causal marker before resuming consumers. PeerDB documents the supported
+   [mirror-edit workflow](https://docs.peerdb.io/features/edit-mirror) and
+   [state-change API](https://docs.peerdb.io/peerdb-api/endpoints/change-mirror-state).
+3. Only when `wal_status = 'lost'`, or the mirror/slot has been proven
+   unrecoverable, follow PeerDB's
+   [resync procedure](https://docs.peerdb.io/features/resync-mirror). If PeerDB
+   no longer has a catalog row but Postgres still has the lost inactive
    slot for the affected raw-table mirror, drop the orphaned slot directly in
    Postgres:
 
@@ -169,9 +173,10 @@ ingestion.
    );
    ```
 
-4. Truncate only destination tables that will be safely resnapshotted by the
-   recreated mirror.
-5. Re-run CDC setup through the canonical production deploy workflow. The
+4. In a lost-slot resync only, truncate only destination tables that will be
+   safely resnapshotted by the recreated mirror. Never truncate destinations
+   while repairing an intact mirror's mapping contract.
+5. Run CDC recovery through the canonical production deploy workflow. The
    immutable tag passed to `--ref` must point to the validated image's exact
    `SENTRY_RELEASE` commit; the workflow runs the setup image inside the Swarm
    network with production PeerDB, Postgres, and ClickHouse endpoints:
@@ -217,8 +222,10 @@ ingestion.
      --reason "recover lost Postgres replication slot"
    ```
 
-7. Inspect the next `cdc-health` report, verify the recreated mirror's row
-   freshness, and confirm the user-facing read model.
+7. Inspect the next `cdc-health` report. Verify that the exact deployment
+   marker arrived, normalization and sync cursors advance, retained WAL drains,
+   affected raw-table freshness advances, and the user-facing read models have
+   recomputed.
 
 ## Follow-Up
 

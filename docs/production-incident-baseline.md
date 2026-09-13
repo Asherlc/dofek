@@ -26679,3 +26679,55 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   account-erasure/PeerDB staging use cases (an actively maintained
   S3-compatible alternative, or a managed service) now that MinIO OSS has
   no upstream. Not addressed here — out of scope for the CI unblock.
+
+## 2026-09-13 — PeerDB schema mismatch stalled relational CDC
+
+- **Symptoms:** Sleep and Body recompute reported that reconciliation had not
+  finished within the expected window, with the last successful update about
+  13 hours old. Current activities were also absent from web and mobile reads.
+- **User impact:** New relational activity, sleep, body, provider, and processing
+  marker rows queued behind the failed normalization batch did not reach
+  ClickHouse. Exact-marker reconciliation therefore could not complete, and
+  dependent analytics/read models remained stale.
+- **Evidence:** The first fatal PeerDB normalization line was
+  `No such column stress_high_minutes in table postgres_fitness.daily_metrics`.
+  The mirror catalog still reported the flow as running, while the PostgreSQL
+  logical replication slot remained active/reserved and PeerDB's persisted CDC
+  batch state stopped normalizing. The failure occurred before later activity,
+  sleep, and marker changes could be applied.
+- **Root cause:** ClickHouse migration 0085 removed retired columns from
+  `postgres_fitness.daily_metrics` and `postgres_fitness.sleep_session`, but the
+  independently maintained live PeerDB mappings still projected those source
+  columns. PeerDB accepted later WAL batches, then repeatedly failed the older
+  batch during ClickHouse normalization. Existing integration tests exercised
+  PostgreSQL and ClickHouse schemas without a real PeerDB flow, so they could
+  not detect projection drift or normalization behavior.
+- **Fix:** A typed canonical mirror contract now drives setup SQL, existing
+  mirror reconciliation, catalog validation, deployment canaries, health
+  diagnostics, and the real-PeerDB CI tier. Existing mappings are repaired in
+  place with a verified remove/add sequence, preserving the mirror and healthy
+  replication slot. Deployments quiesce consumers, run additive pre-CDC schema
+  expansion, reconcile and validate, migrate, then require exact per-flow
+  causal markers in ClickHouse before consumers resume. CDC health now fails
+  on an older pending normalization batch as soon as a newer batch has synced,
+  while allowing one latest batch to be in flight. PeerDB documents
+  [mirror editing](https://docs.peerdb.io/features/edit-mirror),
+  [schema changes](https://docs.peerdb.io/features/schema-changes), and
+  [resynchronization](https://docs.peerdb.io/features/resync-mirror).
+- **Validation:** Contract rendering, projection validation, two-phase
+  reconciliation, deployment ordering/canaries, and normalization-stall unit
+  tests pass locally. PostgreSQL/ClickHouse schema integration coverage passes.
+  A required CI job now runs the full canonical flow against real PeerDB. The
+  fresh full local validation and production recovery are pending at the time
+  of this entry.
+- **Production recovery status:** Unresolved. No mirror, slot, or destination
+  table has been replaced or truncated. Recovery must use the normal deployment
+  workflow and retain the existing active slot.
+- **Remaining risk:** Until the guarded deployment completes, the blocked WAL
+  remains unapplied and user-facing data remains stale. After recovery, the
+  real-PeerDB CI gate and exact deployment canary cover mapping/schema changes;
+  operational alert routing for the new `NORMALIZATION_CURSOR_STALLED`
+  classification must still be observed in production.
+- **Follow-up:** After deployment, record the deployed commit, exact-marker
+  arrival, advancing normalization/sync cursors, retained-WAL drain, successful
+  recompute, and current web/mobile activity, sleep, and body results.

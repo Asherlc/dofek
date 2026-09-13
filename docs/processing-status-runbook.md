@@ -66,35 +66,46 @@ cache warmer may reuse the same facts without duplicating lifecycle state.
 Use the normal production deployment workflow; do not deploy these pieces
 manually out of order.
 
-1. Quiesce `analytics-worker`, `metric-stream-clickhouse-sink`, and
-   `processing-reconciliation` with the existing deploy overlay.
-2. Run the one-shot `migrate` entrypoint. It applies Postgres migration
-   `0056_processing_status.sql` and ClickHouse migration
-   `0051_metric_stream_processing_acknowledgement` plus
-   `0052_processing_flow_markers` before new application code starts.
-3. Deploy the new web and worker image while `analytics-worker`,
+1. Deploy the dependency stack while `analytics-worker`,
    `metric-stream-clickhouse-sink`, and `processing-reconciliation` remain
-   quiesced.
-4. Run the checked-in PeerDB setup. For an existing mirror, setup inspects its
-   mappings through the PeerDB API. If a required marker is absent, setup pauses
-   that mirror, adds the table through `flowConfigUpdate`, and waits for the
-   mirror to return to `STATUS_RUNNING`; it never drops or recreates the mirror.
-   PeerDB requires a mirror to be paused before editing, snapshots the new table,
-   pauses existing-table CDC during that snapshot, and resumes afterward
-   ([editing a CDC mirror](https://docs.peerdb.io/features/edit-mirror),
-   [change-mirror-state API](https://docs.peerdb.io/peerdb-api/endpoints/change-mirror-state)).
-   The required mappings are:
+   quiesced, then wait for Postgres, ClickHouse, and the PeerDB Flow API.
+2. Run `peerdb-cdc-contract prepare`. This applies only registered additive
+   `pre-cdc` ClickHouse migrations, reconciles every live mapping to the typed
+   contract, reads the mapping back, and validates the resulting PostgreSQL to
+   ClickHouse projection. An existing mirror is edited in place; it and its
+   logical replication slot are not replaced.
+3. Run the normal database migrations and deploy the requested immutable image
+   with the same consumers still quiesced. Run the checked-in CDC setup for any
+   mirror that does not exist yet.
+4. Run `peerdb-cdc-contract finalize`. It validates the post-migration schema
+   again and writes one unique processing marker for each marker-bearing mirror.
+   The owner-only deploy artifact records the exact operation, dataset, flow,
+   batch, and source watermark expected at the destination.
+5. Run `peerdb-cdc-contract verify`. It succeeds only when every exact marker
+   is visible in the ClickHouse destination assigned to that mirror. A stale
+   row, an unrelated maximum timestamp, or another flow's marker cannot satisfy
+   the gate.
+6. Restore the full stack, including ClickHouse consumers, only after prepare,
+   migrations, finalize, and verify all succeed. The temporary marker artifact
+   is removed on success or failure.
 
-   - `dofek_fitness_raw_analytics`:
-     `fitness.processing_flow_marker -> processing_flow_marker`
-   - `dofek_provider_inventory_raw_analytics`:
-     `fitness.processing_flow_marker -> processing_flow_marker_provider_inventory`
+PeerDB requires a mirror to be paused before editing and automatically resumes
+it after a table-mapping update. The reconciler therefore uses two separately
+verified transitions for a changed table: remove the stale mapping, read back
+its absence, then add the canonical mapping and read back exact equality. A
+failure leaves the mirror paused for diagnosis instead of resuming an
+unverified projection. See PeerDB's official documentation for
+[creating mirrors](https://docs.peerdb.io/sql/commands/create-mirror),
+[editing mirrors](https://docs.peerdb.io/features/edit-mirror), the
+[state-change API](https://docs.peerdb.io/peerdb-api/endpoints/change-mirror-state),
+[schema changes](https://docs.peerdb.io/features/schema-changes), and the
+[resync procedure](https://docs.peerdb.io/features/resync-mirror).
 
-   A setup failure is fatal. If it occurs after pause, inspect the error and the
-   mirror state before resuming the deployment; do not drop the mirror as a
-   shortcut.
-5. Restore `analytics-worker`, `metric-stream-clickhouse-sink`, and
-   `processing-reconciliation` only after migration and PeerDB setup pass.
+The canonical mappings, exclusions, marker destinations, initial-copy policy,
+and managed mirror names live in `src/db/peerdb/mirror-contracts.ts`. Do not
+maintain a second mapping list in deployment code or documentation. A contract
+or schema failure is fatal. Inspect the reported mirror/table/column difference
+and paused mirror state; do not recreate a healthy mirror as a shortcut.
 
 The schema is additive and remains compatible with the old app during the
 rolling update. Image rollback does not remove the new database tables.

@@ -94,7 +94,7 @@ Cross-provider reverse-engineering references:
 | [performance/loading-baseline-2026-07-18.md](performance/loading-baseline-2026-07-18.md) | Current Axiom-backed loading taxonomy and backend evidence gate. |
 | [performance/loading-monitors.md](performance/loading-monitors.md) | Loading-performance monitor definitions and investigation links. |
 | [clickhouse-read-model-deploy-runbook.md](clickhouse-read-model-deploy-runbook.md) | Deploy failures around ClickHouse CDC, analytics read models, and hot fitness views. |
-| [clickhouse-cdc-health-runbook.md](clickhouse-cdc-health-runbook.md) | Preventing, diagnosing, and recovering lost PeerDB CDC slots. |
+| [clickhouse-cdc-health-runbook.md](clickhouse-cdc-health-runbook.md) | Preventing, diagnosing, and recovering PeerDB mapping, normalization, freshness, WAL, and lost-slot failures. |
 | [clickhouse-body-measurement-staleness-runbook.md](clickhouse-body-measurement-staleness-runbook.md) | Diagnosing body measurements across the Redpanda sink and ClickHouse analytics layers. |
 | [sleep-quality-backfill-runbook.md](sleep-quality-backfill-runbook.md) | Conservatively repairing historical sleep stage availability and sentinel-zero fields in bounded windows. |
 | [activity-data-integrity-repair-runbook.md](activity-data-integrity-repair-runbook.md) | Auditable repair and monotonic rollback for contradictory activity local time and false derived groups. |
