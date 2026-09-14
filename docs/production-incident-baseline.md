@@ -19,13 +19,14 @@ them, and the durability work they suggest.
   the `toLowerCase` TypeError. The webhook route detached
   `syncWebhookEvent` before calling it, so Strava's `this.id` access failed.
   Authentication and Strong-import validation paths intentionally surfaced
-  actionable user-input errors but reported them as unexpected exceptions.
+  actionable user-input errors but reported them as unexpected exceptions. A
+  web React Query mutation reporter also captured invalid Zepp pairing codes.
   BullMQ's Redis adapter exposes custom commands through `defineCommand` and
   `runCommand` ([Redis client interface](https://raw.githubusercontent.com/taskforcesh/bullmq/v5.79.2/src/interfaces/redis-client.ts)).
 - **Direct fix:** Replaced the Redis call with an atomic Lua GET-and-DEL custom
   command, preserved the provider receiver for webhook dispatch, and added
-  shared classifiers so expected authentication and Strong import-validation
-  failures remain terminal/user-visible without entering error tracking.
+  shared classifiers so expected authentication, import-validation, and Zepp
+  pairing failures remain terminal/user-visible without entering error tracking.
   Unexpected failures remain reportable. No runtime behavior was changed for
   transient, provider, or infrastructure failures.
 - **Validation:** Targeted regression suites, web/mobile/server/auth

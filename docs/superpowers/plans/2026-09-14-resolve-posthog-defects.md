@@ -63,7 +63,7 @@
 
 ## Task 5: Final verification and handoff
 
-- [ ] Run the repository lint, relevant unit suites, and required TypeScript checks without ad-hoc waits or disabled gates.
+- [x] Run the repository lint, relevant unit suites, and required TypeScript checks without ad-hoc waits or disabled gates. Source/policy lint, the Docker-free aggregate tests, affected suites, and root typecheck passed; analytics SQL lint was blocked only because ClickHouse was unavailable on `127.0.0.1:8123`.
 - [x] Review the diff for unrelated changes, secrets, silent catches, and stale comments.
 - [x] Append the production-incident baseline entry if the PostHog work represents an operational debugging session, including root cause, fix, validation, and remaining held risk.
-- [ ] Commit the completed implementation, push the branch, and report commit/remote status plus the short retrospective and documentation/skill improvement proposals.
+- [x] Commit the completed implementation, push the branch, and report commit/remote status plus the short retrospective and documentation/skill improvement proposals.
