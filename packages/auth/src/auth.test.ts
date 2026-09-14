@@ -165,4 +165,14 @@ describe("isExpectedUserInputError", () => {
   it("reads error-like response objects", () => {
     expect(isExpectedUserInputError({ message: "Invalid email or password" })).toBe(true);
   });
+
+  it.each([
+    ["a trimmed string", "  Invalid email or password  ", true],
+    ["a non-matching string", "Credentials service unavailable", false],
+    ["an object without a message", { reason: "invalid credentials" }, false],
+    ["an object with a non-string message", { message: 401 }, false],
+    ["null", null, false],
+  ])("classifies %s without assuming an Error instance", (_description, error, expected) => {
+    expect(isExpectedUserInputError(error)).toBe(expected);
+  });
 });

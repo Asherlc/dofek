@@ -102,9 +102,24 @@ describe("RedisMobileAuthExchangeStore", () => {
   it.each([
     ["null", null],
     ["an object without Redis commands", {}],
+    ["an object missing set", { defineCommand: vi.fn(), runCommand: vi.fn() }],
+    ["an object missing defineCommand", { set: vi.fn(), runCommand: vi.fn() }],
+    ["an object missing runCommand", { set: vi.fn(), defineCommand: vi.fn() }],
     [
       "an object with non-function Redis commands",
       { set: true, defineCommand: true, runCommand: true },
+    ],
+    [
+      "an object with only set implemented",
+      { set: vi.fn(), defineCommand: true, runCommand: true },
+    ],
+    [
+      "an object with only defineCommand implemented",
+      { set: true, defineCommand: vi.fn(), runCommand: true },
+    ],
+    [
+      "an object with only runCommand implemented",
+      { set: true, defineCommand: true, runCommand: vi.fn() },
     ],
   ])("rejects a Redis client that is %s", async (_description, invalidRedisClient) => {
     vi.resetModules();

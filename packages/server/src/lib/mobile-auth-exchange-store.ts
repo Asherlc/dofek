@@ -37,7 +37,6 @@ interface RedisCommandClient {
 
 function isRedisCommandClient(value: unknown): value is RedisCommandClient {
   if (typeof value !== "object" || value === null) return false;
-  if (!("set" in value) || !("defineCommand" in value) || !("runCommand" in value)) return false;
   return (
     typeof value.set === "function" &&
     typeof value.defineCommand === "function" &&
