@@ -86,7 +86,7 @@ describe("activity-read-model-build", () => {
     await countActivePeerDbActivities(client, ["id-1", "id-2"]);
 
     expect(query).toHaveBeenCalledWith({
-      query: expect.stringContaining("deleted_at IS NULL"),
+      query: expect.stringContaining("coalesce(deleted_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')"),
       format: "JSONEachRow",
       query_params: { activityIds: ["id-1", "id-2"] },
     });
@@ -131,7 +131,7 @@ describe("activity-read-model-build", () => {
     await countProviderAbsentPeerDbActivities(client, ["id-1", "id-2"]);
 
     expect(query).toHaveBeenCalledWith({
-      query: expect.stringContaining("provider_absent_at IS NOT NULL"),
+      query: expect.stringContaining("coalesce(provider_absent_at, toDateTime64(0, 6, 'UTC')) != toDateTime64(0, 6, 'UTC')"),
       format: "JSONEachRow",
       query_params: { activityIds: ["id-1", "id-2"] },
     });
