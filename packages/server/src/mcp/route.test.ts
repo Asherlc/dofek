@@ -849,6 +849,29 @@ describe("createMcpRouter", () => {
     expect(response.text).toContain("start_provider_sync");
   });
 
+  it("keeps nutrition tools discoverable in a fresh cycle after a successful request", async () => {
+    authorizeMcpToken(["nutrition:read", "nutrition:write"]);
+    const app = createTestApp();
+    const authorization = "Bearer good-token";
+
+    expect((await request(app, { authorization, body: initializeRequest })).status).toBe(200);
+    const firstList = await request(app, {
+      authorization,
+      body: { id: 2, jsonrpc: "2.0", method: "tools/list" },
+    });
+    expect(firstList.status).toBe(200);
+    expect(firstList.text).toContain("search_food_entries");
+
+    expect((await request(app, { authorization, body: initializeRequest })).status).toBe(200);
+    const freshList = await request(app, {
+      authorization,
+      body: { id: 3, jsonrpc: "2.0", method: "tools/list" },
+    });
+    expect(freshList.status).toBe(200);
+    expect(freshList.text).toContain("search_food_entries");
+    expect(freshList.text).toContain("create_food_entry");
+  });
+
   it("describes MCP tool input schemas for clients", async () => {
     authorizeMcpToken();
 

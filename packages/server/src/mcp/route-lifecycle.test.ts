@@ -4,6 +4,9 @@ import express from "express";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMcpRouter } from "./route.ts";
 
+let transportErrorHandler: ((error: Error) => void) | undefined;
+let transportSend: ((message: unknown, options?: unknown) => Promise<void>) | undefined;
+
 const routeMocks = vi.hoisted(() => {
   const mocks = {
     captureException: vi.fn(),
@@ -87,6 +90,18 @@ vi.mock("@modelcontextprotocol/sdk/server/streamableHttp.js", () => ({
     handleRequest(request: unknown, response: unknown, body: unknown): Promise<void> {
       return routeMocks.handleRequest(request, response, body);
     }
+
+    get send(): (message: unknown, options?: unknown) => Promise<void> {
+      return () => Promise.resolve();
+    }
+
+    set send(handler: (message: unknown, options?: unknown) => Promise<void>) {
+      transportSend = handler;
+    }
+
+    set onerror(handler: (error: Error) => void) {
+      transportErrorHandler = handler;
+    }
   },
 }));
 
@@ -98,7 +113,10 @@ function getPort(server: Server): number {
   throw new Error("Server address is not an object");
 }
 
-async function request(body: unknown): Promise<{ status: number; text: string }> {
+async function request(
+  body: unknown,
+  authorization: string | null = "Bearer good-token",
+): Promise<{ status: number; text: string }> {
   const app = express();
   app.use(
     "/api/mcp",
@@ -106,14 +124,13 @@ async function request(body: unknown): Promise<{ status: number; text: string }>
       db: { execute: vi.fn(), select: vi.fn(), transaction: vi.fn() },
     }),
   );
-
   return new Promise((resolve, reject) => {
     const server = app.listen(0, () => {
       fetch(`http://localhost:${getPort(server)}/api/mcp`, {
         method: "POST",
         headers: {
           Accept: "application/json, text/event-stream",
-          Authorization: "Bearer good-token",
+          ...(authorization !== null ? { Authorization: authorization } : {}),
           "Content-Type": "application/json",
         },
         body: JSON.stringify(body),
@@ -133,6 +150,8 @@ async function request(body: unknown): Promise<{ status: number; text: string }>
 describe("createMcpRouter lifecycle handling", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    transportErrorHandler = undefined;
+    transportSend = undefined;
     routeMocks.validateMcpToken.mockResolvedValue({
       expiresAt: null,
       oauthClientId: null,
@@ -177,6 +196,63 @@ describe("createMcpRouter lifecycle handling", () => {
       method: "initialize",
     });
     expect(routeMocks.loggerInfo).not.toHaveBeenCalledWith("mcp.mutation", expect.anything());
+    expect(routeMocks.loggerInfo).toHaveBeenCalledWith(
+      "mcp.authentication",
+      expect.objectContaining({
+        auth_outcome: "accepted",
+        client_kind: "personal_token",
+        mcp_method: "initialize",
+        scope_set: "health:read",
+      }),
+    );
+    expect(routeMocks.loggerInfo).toHaveBeenCalledWith(
+      "mcp.request",
+      expect.objectContaining({
+        http_status: 204,
+        mcp_method: "initialize",
+        outcome: "completed",
+        duration_ms: expect.any(Number),
+      }),
+    );
+    expect(routeMocks.loggerInfo).not.toHaveBeenCalledWith(
+      "mcp.request",
+      expect.objectContaining({ outcome: "aborted" }),
+    );
+    expect(
+      routeMocks.loggerInfo.mock.calls.some(
+        ([event, payload]) =>
+          event === "mcp.request" && isRecord(payload) && payload.duration_ms > 1_000,
+      ),
+    ).toBe(false);
+  });
+
+  it("records a bounded diagnostic when the bearer header is absent", async () => {
+    const response = await request({ jsonrpc: "2.0", id: 1, method: "initialize" }, null);
+
+    expect(response.status).toBe(401);
+    expect(routeMocks.loggerInfo).toHaveBeenCalledWith(
+      "mcp.authentication",
+      expect.objectContaining({ auth_outcome: "missing_bearer", http_status: 401 }),
+    );
+  });
+
+  it("records a bounded diagnostic when token validation rejects the request", async () => {
+    routeMocks.validateMcpToken.mockResolvedValueOnce(null);
+    const response = await request({ jsonrpc: "2.0", id: 1, method: "initialize" });
+
+    expect(response.status).toBe(401);
+    expect(routeMocks.loggerInfo).toHaveBeenCalledWith(
+      "mcp.authentication",
+      expect.objectContaining({
+        auth_outcome: "invalid_token",
+        http_status: 401,
+        mcp_method: "initialize",
+      }),
+    );
+    expect(routeMocks.loggerInfo).toHaveBeenCalledWith(
+      "mcp.request",
+      expect.objectContaining({ http_status: 401, outcome: "http_rejected" }),
+    );
   });
 
   it("records a privacy-safe completion lifecycle for food mutations", async () => {
@@ -204,6 +280,184 @@ describe("createMcpRouter lifecycle handling", () => {
       tool_name: "create_food_entry",
     });
     expect(JSON.stringify(routeMocks.loggerInfo.mock.calls)).not.toContain(requestId);
+  });
+
+  it("classifies a completed HTTP 400 as a transport or protocol rejection", async () => {
+    routeMocks.handleRequest.mockImplementation((_request: unknown, response: unknown) => {
+      sendResponse(response, 400, "rejected");
+      return Promise.resolve();
+    });
+
+    const response = await request({ jsonrpc: "2.0", id: 1, method: "initialize" });
+
+    expect(response).toEqual({ status: 400, text: "rejected" });
+    expect(routeMocks.loggerInfo).toHaveBeenCalledWith(
+      "mcp.request",
+      expect.objectContaining({
+        http_status: 400,
+        mcp_method: "initialize",
+        outcome: "transport_or_protocol_rejected",
+      }),
+    );
+  });
+
+  it("classifies a completed HTTP 401 as an HTTP rejection", async () => {
+    routeMocks.handleRequest.mockImplementation((_request: unknown, response: unknown) => {
+      sendResponse(response, 401, "rejected");
+      return Promise.resolve();
+    });
+
+    const response = await request({ jsonrpc: "2.0", id: 1, method: "initialize" });
+
+    expect(response).toEqual({ status: 401, text: "rejected" });
+    expect(routeMocks.loggerInfo).toHaveBeenCalledWith(
+      "mcp.request",
+      expect.objectContaining({ http_status: 401, outcome: "http_rejected" }),
+    );
+  });
+
+  it("classifies non-400 HTTP failures and preserves sorted OAuth scope telemetry", async () => {
+    routeMocks.validateMcpToken.mockResolvedValueOnce({
+      expiresAt: null,
+      oauthClientId: "oauth-client",
+      oauthResource: null,
+      scopes: ["nutrition:write", "nutrition:read"],
+      tokenId: "token-id",
+      userId: "user-id",
+    });
+    routeMocks.handleRequest.mockImplementation((_request: unknown, response: unknown) => {
+      sendResponse(response, 500, "failed");
+      return Promise.resolve();
+    });
+
+    const response = await request({ jsonrpc: "2.0", id: 1, method: "initialize" });
+
+    expect(response.status).toBe(500);
+    expect(routeMocks.loggerInfo).toHaveBeenCalledWith(
+      "mcp.authentication",
+      expect.objectContaining({
+        client_kind: "oauth",
+        scope_set: "nutrition:read,nutrition:write",
+      }),
+    );
+    expect(routeMocks.loggerInfo).toHaveBeenCalledWith(
+      "mcp.request",
+      expect.objectContaining({ http_status: 500, outcome: "http_rejected" }),
+    );
+  });
+
+  it("correlates OAuth clients independently of their token IDs", async () => {
+    routeMocks.validateMcpToken.mockResolvedValueOnce({
+      expiresAt: null,
+      oauthClientId: "oauth-client-a",
+      oauthResource: null,
+      scopes: ["health:read"],
+      tokenId: "shared-token-id",
+      userId: "user-id",
+    });
+    await request({ jsonrpc: "2.0", id: 1, method: "initialize" });
+
+    routeMocks.validateMcpToken.mockResolvedValueOnce({
+      expiresAt: null,
+      oauthClientId: "oauth-client-b",
+      oauthResource: null,
+      scopes: ["health:read"],
+      tokenId: "shared-token-id",
+      userId: "user-id",
+    });
+    await request({ jsonrpc: "2.0", id: 2, method: "initialize" });
+
+    const clientCorrelations = routeMocks.loggerInfo.mock.calls
+      .filter(([event]) => event === "mcp.authentication")
+      .map(([, payload]) => (isRecord(payload) ? payload.client_id_hash : undefined))
+      .filter((value): value is string => typeof value === "string");
+    expect(new Set(clientCorrelations).size).toBe(2);
+  });
+
+  it("records an aborted request without a food mutation", async () => {
+    routeMocks.handleRequest.mockImplementation((_request: unknown, response: unknown) => {
+      destroyResponse(response);
+      return Promise.resolve();
+    });
+
+    await expect(request({ jsonrpc: "2.0", id: 1, method: "initialize" })).rejects.toThrow();
+
+    expect(routeMocks.loggerInfo).toHaveBeenCalledWith(
+      "mcp.request",
+      expect.objectContaining({ http_status: 200, mcp_method: "initialize", outcome: "aborted" }),
+    );
+    expect(
+      routeMocks.loggerInfo.mock.calls.some(
+        ([event, payload]) =>
+          event === "mcp.request" && isRecord(payload) && payload.duration_ms > 1_000,
+      ),
+    ).toBe(false);
+  });
+
+  it("records SDK transport errors without retaining their text", async () => {
+    const secret = "client supplied transport detail";
+    routeMocks.handleRequest.mockImplementation((_request: unknown, response: unknown) => {
+      transportErrorHandler?.(new Error(`Unsupported Media Type: ${secret}`));
+      sendResponse(response, 204);
+      return Promise.resolve();
+    });
+
+    await request({ jsonrpc: "2.0", id: 1, method: "initialize" });
+
+    expect(routeMocks.loggerInfo).toHaveBeenCalledWith(
+      "mcp.request",
+      expect.objectContaining({
+        error_category: "unsupported_media_type",
+        outcome: "transport_error",
+      }),
+    );
+    expect(JSON.stringify(routeMocks.loggerInfo.mock.calls)).not.toContain(secret);
+  });
+
+  it("records a valid tools/list transport result", async () => {
+    routeMocks.handleRequest.mockImplementation((_request: unknown, response: unknown) => {
+      void transportSend?.({
+        jsonrpc: "2.0",
+        result: {
+          tools: [
+            { inputSchema: {}, name: "create_food_entry" },
+            { inputSchema: {}, name: "search_food_entries" },
+          ],
+        },
+      });
+      sendResponse(response, 200);
+      return Promise.resolve();
+    });
+
+    const response = await request({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+
+    expect(response.status).toBe(200);
+    expect(routeMocks.loggerInfo).toHaveBeenCalledWith(
+      "mcp.tools_list",
+      expect.objectContaining({
+        expected_food_tools_present: true,
+        has_next_page: false,
+        jsonrpc_outcome: "result",
+        tool_schema_valid: true,
+        tools_count: 2,
+      }),
+    );
+  });
+
+  it("does not classify initialize responses as tools/list results", async () => {
+    routeMocks.handleRequest.mockImplementation((_request: unknown, response: unknown) => {
+      void transportSend?.({
+        jsonrpc: "2.0",
+        result: { tools: [] },
+      });
+      sendResponse(response, 200);
+      return Promise.resolve();
+    });
+
+    const response = await request({ jsonrpc: "2.0", id: 1, method: "initialize" });
+
+    expect(response.status).toBe(200);
+    expect(routeMocks.loggerInfo).not.toHaveBeenCalledWith("mcp.tools_list", expect.anything());
   });
 
   it("records an aborted lifecycle when a food-mutation client disconnects", async () => {
@@ -235,6 +489,14 @@ describe("createMcpRouter lifecycle handling", () => {
       "mcp.mutation",
       expect.objectContaining({ phase: "completed" }),
     );
+    expect(routeMocks.loggerInfo).toHaveBeenCalledWith(
+      "mcp.request",
+      expect.objectContaining({ mcp_method: "tools/call", outcome: "aborted" }),
+    );
+    await vi.waitFor(() => {
+      expect(routeMocks.transportClose).toHaveBeenCalledTimes(1);
+      expect(routeMocks.serverClose).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("reports cleanup failures after the response closes", async () => {
@@ -245,16 +507,22 @@ describe("createMcpRouter lifecycle handling", () => {
 
     const response = await request({ jsonrpc: "2.0", id: 1, method: "initialize" });
     await vi.waitFor(() => {
-      expect(routeMocks.captureException).toHaveBeenCalledWith(transportError);
-      expect(routeMocks.captureException).toHaveBeenCalledWith(serverError);
+      expect(routeMocks.captureException).toHaveBeenCalledWith(
+        new Error("MCP transport cleanup failed"),
+      );
+      expect(routeMocks.captureException).toHaveBeenCalledWith(
+        new Error("MCP server cleanup failed"),
+      );
     });
 
     expect(response.status).toBe(204);
     expect(routeMocks.loggerWarn).toHaveBeenCalledWith(
-      `[mcp] Failed to close transport: ${transportError}`,
+      "mcp.request",
+      expect.objectContaining({ cleanup_target: "transport", outcome: "cleanup_failed" }),
     );
     expect(routeMocks.loggerWarn).toHaveBeenCalledWith(
-      `[mcp] Failed to close server: ${serverError}`,
+      "mcp.request",
+      expect.objectContaining({ cleanup_target: "server", outcome: "cleanup_failed" }),
     );
   });
 
@@ -270,11 +538,14 @@ describe("createMcpRouter lifecycle handling", () => {
       id: null,
       jsonrpc: "2.0",
     });
-    expect(routeMocks.captureException).toHaveBeenCalledWith(connectError);
+    expect(routeMocks.captureException).toHaveBeenCalledWith(
+      new Error("MCP request failed: transport_error"),
+    );
   });
 
   it("does not write a JSON-RPC error after headers have already been sent", async () => {
-    const lateError = new Error("late failure");
+    const secret = "private request content";
+    const lateError = new Error(secret);
     routeMocks.handleRequest.mockImplementation((_request: unknown, response: unknown) => {
       sendResponse(response, 202, "accepted");
       throw lateError;
@@ -283,9 +554,13 @@ describe("createMcpRouter lifecycle handling", () => {
     const response = await request({ jsonrpc: "2.0", id: 1, method: "initialize" });
 
     expect(response).toEqual({ status: 202, text: "accepted" });
-    expect(routeMocks.captureException).toHaveBeenCalledWith(lateError);
-    expect(routeMocks.loggerError).toHaveBeenCalledWith(
-      "[mcp] Request failed: Error: late failure",
+    expect(routeMocks.captureException).toHaveBeenCalledWith(
+      new Error("MCP request failed: transport_error"),
     );
+    expect(routeMocks.loggerError).toHaveBeenCalledWith(
+      "mcp.request",
+      expect.objectContaining({ error_category: "transport_error", outcome: "exception" }),
+    );
+    expect(JSON.stringify(routeMocks.loggerError.mock.calls)).not.toContain(secret);
   });
 });

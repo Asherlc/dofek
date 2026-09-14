@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   createAuthorizationCode: vi.fn(),
   exchangeAuthorizationCode: vi.fn(),
   getAuthorizationCodeChallenge: vi.fn(),
+  loggerInfo: vi.fn(),
   revokeOAuthToken: vi.fn(),
   rotateRefreshToken: vi.fn(),
   validateMcpToken: vi.fn(),
@@ -32,6 +33,8 @@ vi.mock("./oauth-repository.ts", () => ({
   revokeOAuthToken: mocks.revokeOAuthToken,
   rotateRefreshToken: mocks.rotateRefreshToken,
 }));
+
+vi.mock("../logger.ts", () => ({ logger: { info: mocks.loggerInfo } }));
 
 vi.mock("./token-repository.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./token-repository.ts")>();
@@ -416,9 +419,9 @@ describe("DofekOAuthServerProvider", () => {
       const exchangeRedirectUri = "https://claude.ai/api/mcp/auth_callback/alt";
       mocks.getAuthorizationCodeChallenge.mockResolvedValue(s256(verifier));
       mocks.exchangeAuthorizationCode.mockResolvedValue({
-        accessToken: "at",
+        accessToken: "authorization-code-access-token",
         accessTokenExpiresInSeconds: 3600,
-        refreshToken: "rt",
+        refreshToken: "authorization-code-refresh-token",
         scopes: ["health:read", "activity:read"],
       });
 
@@ -438,12 +441,25 @@ describe("DofekOAuthServerProvider", () => {
         resource: resource.href,
       });
       expect(tokens).toEqual({
-        access_token: "at",
+        access_token: "authorization-code-access-token",
         expires_in: 3600,
-        refresh_token: "rt",
+        refresh_token: "authorization-code-refresh-token",
         scope: "health:read activity:read",
         token_type: "bearer",
       });
+      expect(mocks.loggerInfo).toHaveBeenCalledWith(
+        "mcp.oauth_token",
+        expect.objectContaining({
+          grant_type: "authorization_code",
+          outcome: "accepted",
+          scope_set: "activity:read,health:read",
+        }),
+      );
+      const telemetry = JSON.stringify(mocks.loggerInfo.mock.calls);
+      expect(telemetry).not.toContain(client.client_id);
+      expect(telemetry).not.toContain("refresh-token");
+      expect(telemetry).not.toContain(tokens.access_token);
+      expect(telemetry).not.toContain(tokens.refresh_token);
     });
 
     it("rejects a mismatched PKCE code_verifier", async () => {
@@ -566,6 +582,14 @@ describe("DofekOAuthServerProvider", () => {
         scope: "health:read activity:read",
         token_type: "bearer",
       });
+      expect(mocks.loggerInfo).toHaveBeenCalledWith(
+        "mcp.oauth_token",
+        expect.objectContaining({
+          grant_type: "refresh_token",
+          outcome: "accepted",
+          scope_set: "activity:read,health:read",
+        }),
+      );
     });
 
     it("throws InvalidScopeError when requesting unsupported scopes", async () => {
@@ -579,6 +603,10 @@ describe("DofekOAuthServerProvider", () => {
       await expect(
         provider().exchangeRefreshToken(makeClient(), "refresh-token", undefined, resource),
       ).rejects.toThrow("Invalid, expired, or reused refresh token");
+      expect(mocks.loggerInfo).toHaveBeenCalledWith(
+        "mcp.oauth_token",
+        expect.objectContaining({ grant_type: "refresh_token", outcome: "rejected" }),
+      );
     });
   });
 
