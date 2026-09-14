@@ -84,4 +84,21 @@ describe("shared email", () => {
       }),
     ).rejects.toThrow("Brevo email request failed with status 400");
   });
+
+  it("includes the Brevo response body so a rejected credential is diagnosable", async () => {
+    setEmailEnv();
+    server.use(
+      http.post(BREVO_EMAIL_URL, () =>
+        HttpResponse.json({ code: "unauthorized", message: "Key not found" }, { status: 401 }),
+      ),
+    );
+
+    await expect(
+      sendPlainTextEmail({
+        subject: "Subject",
+        text: "Body",
+        toEmail: "user@example.com",
+      }),
+    ).rejects.toThrow(/status 401.*Key not found/s);
+  });
 });
