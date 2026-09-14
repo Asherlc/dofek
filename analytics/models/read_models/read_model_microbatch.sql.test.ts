@@ -396,18 +396,17 @@ describe("production analytics read-model build", () => {
     const activitySampleSql = readModel("activity_sensor_sample");
     const locationSampleSql = readModel("activity_location_sample");
 
-    expect(sensorSql).toContain(
-      "argMax(metric_stream_versions.activity_id, metric_stream_versions.version)",
+    const latestRowsMatch = sensorSql.match(
+      /metric_stream_latest AS \((?<body>[\s\S]*?)\),\n\nmetric_stream_rows AS/,
     );
-    expect(sensorSql).toContain(
-      "argMax(metric_stream_versions.external_id, metric_stream_versions.version)",
-    );
-    expect(sensorSql).toContain(
-      "argMax(metric_stream_versions.source_type, metric_stream_versions.version) AS source_type",
-    );
-    expect(sensorSql).toContain(
-      "argMax(metric_stream_versions.metadata, metric_stream_versions.version) AS metadata",
-    );
+    expect(latestRowsMatch).not.toBeNull();
+    expect(latestRowsMatch?.groups?.body.match(/argMax\(/g)).toHaveLength(1);
+    expect(latestRowsMatch?.groups?.body).toContain("argMax(\n            tuple(");
+
+    expect(sensorSql).toContain("tupleElement(metric_stream_latest.latest, 1) AS activity_id");
+    expect(sensorSql).toContain("tupleElement(metric_stream_latest.latest, 6) AS source_external_id");
+    expect(sensorSql).toContain("tupleElement(metric_stream_latest.latest, 8) AS source_type");
+    expect(sensorSql).toContain("tupleElement(metric_stream_latest.latest, 9) AS metadata");
     expect(sensorSql).toContain("JSONExtractString(metadata, 'measurement_kind')");
     expect(sensorSql.match(/toNullable\(priority\) AS priority/g)).toHaveLength(2);
     expect(sensorSql).toContain("'distance'");
