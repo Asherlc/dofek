@@ -7,29 +7,6 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
-## 2026-09-14 — MCP tool surface unavailable after a successful food save
-
-- **Status:** Service healthy; unresolved external conversation-runtime issue.
-- **Symptoms / user impact:** A food save completed, but the following turn
-  reported that Dofek was no longer available, so the assistant could not
-  confirm or perform the requested follow-up save.
-- **Evidence:** Production `dofek_web` logs at 18:39:36Z recorded the full
-  `mcp.mutation` lifecycle for the food write — started, succeeded, and
-  completed — and the request returned HTTP 200 in 184 ms. A controlled
-  follow-up at 18:47:54Z created an additional banana and showed the same
-  successful lifecycle and HTTP 200 response in 167 ms. The food record was
-  present through the MCP search tool. The affected next turn instead lacked
-  the Dofek tool surface entirely.
-- **Root cause:** The application completed and returned the mutation result;
-  tool availability was lost in the conversation runtime after the request had
-  completed. This boundary is outside the Dofek server and cannot be repaired
-  by retrying or changing the food-record endpoint.
-- **Fix / mitigation:** No server behavior changed. MCP mutation lifecycle
-  telemetry now distinguishes an unfinished server request from a completed
-  response whose client-side tool surface later disappears.
-- **Remaining risk / follow-up:** Escalate the conversation-runtime tool
-  availability defect with the recorded timestamps and MCP response evidence.
-
 ## 2026-09-09 — Local integration validation blocked by Redpanda AIO limit
 
 - **Status:** Unresolved local infrastructure issue; no production impact.
