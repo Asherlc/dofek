@@ -5,6 +5,7 @@ import { createClickHouseClientFromEnv } from "../clickhouse.ts";
 import { createMigration } from "./0092_sensor_scalar_sample_refresh_projection.ts";
 
 const materializedProjectionSchema = z.array(z.object({ rows: z.number(), bytes: z.number() }));
+const projectionSchema = z.array(z.object({ name: z.string(), sorting_key: z.array(z.string()) }));
 const explainSchema = z.array(z.object({ explain: z.string() }));
 
 describe("0092_sensor_scalar_sample_refresh_projection", () => {
@@ -57,7 +58,7 @@ describe("0092_sensor_scalar_sample_refresh_projection", () => {
       query_params: { database },
       format: "JSONEachRow",
     });
-    expect(await projectionResult.json()).toEqual([
+    expect(projectionSchema.parse(await projectionResult.json())).toEqual([
       {
         name: "by_peerdb_synced_at",
         sorting_key: ["_peerdb_synced_at"],
