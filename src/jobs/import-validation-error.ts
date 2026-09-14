@@ -1,7 +1,10 @@
+import {
+  APPLE_HEALTH_IMPORT_VALIDATION_ERROR_NAME,
+  STRONG_CSV_IMPORT_VALIDATION_ERROR_NAME,
+} from "@dofek/format/user-facing-error";
 import { UnrecoverableError } from "bullmq";
 
-export const APPLE_HEALTH_IMPORT_VALIDATION_ERROR_NAME = "AppleHealthImportValidationError";
-export const STRONG_CSV_IMPORT_VALIDATION_ERROR_NAME = "StrongCsvValidationError";
+export { APPLE_HEALTH_IMPORT_VALIDATION_ERROR_NAME, STRONG_CSV_IMPORT_VALIDATION_ERROR_NAME };
 
 export function createAppleHealthImportValidationError(message: string): UnrecoverableError {
   const error = new UnrecoverableError(message);
