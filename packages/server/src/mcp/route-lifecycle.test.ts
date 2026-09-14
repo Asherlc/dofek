@@ -115,7 +115,7 @@ function getPort(server: Server): number {
 
 async function request(
   body: unknown,
-  authorization = "Bearer good-token",
+  authorization: string | null = "Bearer good-token",
 ): Promise<{ status: number; text: string }> {
   const app = express();
   app.use(
@@ -130,7 +130,7 @@ async function request(
         method: "POST",
         headers: {
           Accept: "application/json, text/event-stream",
-          ...(authorization ? { Authorization: authorization } : {}),
+          ...(authorization !== null ? { Authorization: authorization } : {}),
           "Content-Type": "application/json",
         },
         body: JSON.stringify(body),
@@ -227,7 +227,7 @@ describe("createMcpRouter lifecycle handling", () => {
   });
 
   it("records a bounded diagnostic when the bearer header is absent", async () => {
-    const response = await request({ jsonrpc: "2.0", id: 1, method: "initialize" }, "");
+    const response = await request({ jsonrpc: "2.0", id: 1, method: "initialize" }, null);
 
     expect(response.status).toBe(401);
     expect(routeMocks.loggerInfo).toHaveBeenCalledWith(

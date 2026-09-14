@@ -217,6 +217,7 @@ export function createMcpRouter(options: CreateMcpRouterOptions): Router {
 
     try {
       await mcpServer.connect(mcpTransport);
+      if (responseClosed) return;
       await mcpTransport.handleRequest(request, response, request.body);
     } catch (error: unknown) {
       const errorCategory = mcpTransportErrorCategory(error);

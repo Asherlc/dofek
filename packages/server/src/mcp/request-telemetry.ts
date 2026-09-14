@@ -1,7 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import { hostname } from "node:os";
+import { SUPPORTED_PROTOCOL_VERSIONS } from "@modelcontextprotocol/sdk/types.js";
+import { z } from "zod";
 
-const protocolVersions = new Set(["2025-06-18"]);
+const protocolVersions = new Set(SUPPORTED_PROTOCOL_VERSIONS);
+const maxClientCorrelationIds = 1_024;
 
 const mcpMethods = new Set(["initialize", "notifications/initialized", "tools/list", "tools/call"]);
 
@@ -52,6 +55,34 @@ const mcpToolNames = new Set([
 const expectedFoodTools = new Set(["search_food_entries", "create_food_entry"]);
 const clientCorrelationIds = new Map<string, string>();
 
+const mcpRequestSchema = z
+  .object({
+    method: z.string().optional(),
+    params: z.record(z.string(), z.unknown()).optional(),
+  })
+  .loose();
+
+const mcpToolsListResponseSchema = z
+  .object({
+    error: z.record(z.string(), z.unknown()).optional(),
+    result: z
+      .object({
+        nextCursor: z.string().optional(),
+        tools: z.array(z.unknown()),
+      })
+      .loose()
+      .optional(),
+  })
+  .loose();
+
+const mcpToolSchema = z
+  .object({
+    inputSchema: z.record(z.string(), z.unknown()),
+    name: z.string(),
+    outputSchema: z.record(z.string(), z.unknown()).optional(),
+  })
+  .loose();
+
 type McpMethod =
   | "initialize"
   | "notifications/initialized"
@@ -61,7 +92,7 @@ type McpMethod =
 
 export interface McpRequestTelemetry {
   mcp_method: McpMethod;
-  protocol_version: "2025-06-18" | "unknown";
+  protocol_version: string;
   tool_name?: string;
 }
 
@@ -78,6 +109,10 @@ export interface McpToolsListResponseTelemetry {
 export function mcpClientCorrelationId(clientId: string): string {
   let correlationId = clientCorrelationIds.get(clientId);
   if (!correlationId) {
+    if (clientCorrelationIds.size >= maxClientCorrelationIds) {
+      const oldestClientId = clientCorrelationIds.keys().next().value;
+      if (typeof oldestClientId === "string") clientCorrelationIds.delete(oldestClientId);
+    }
     correlationId = randomUUID();
     clientCorrelationIds.set(clientId, correlationId);
   }
@@ -110,42 +145,24 @@ function canonicalJson(value: unknown): string {
 
 /** Summarizes a tools/list JSON-RPC response without retaining tool descriptions or schemas. */
 export function mcpToolsListResponseTelemetry(message: unknown): McpToolsListResponseTelemetry {
-  if (!isRecord(message)) return { jsonrpc_outcome: "invalid" };
-  if (isRecord(message.error)) return { jsonrpc_outcome: "error" };
-  if (!isRecord(message.result)) return { jsonrpc_outcome: "invalid" };
+  const parsed = mcpToolsListResponseSchema.safeParse(message);
+  if (!parsed.success) return { jsonrpc_outcome: "invalid" };
+  if (parsed.data.error) return { jsonrpc_outcome: "error" };
+  if (!parsed.data.result) return { jsonrpc_outcome: "invalid" };
 
-  const tools = message.result.tools;
-  if (!Array.isArray(tools)) return { jsonrpc_outcome: "invalid" };
-  const toolNames = tools.flatMap((tool) =>
-    isRecord(tool) && typeof tool.name === "string" ? [tool.name] : [],
-  );
-  const toolSchemaValid = tools.every(
-    (tool) =>
-      isRecord(tool) &&
-      typeof tool.name === "string" &&
-      isRecord(tool.inputSchema) &&
-      (tool.outputSchema === undefined || isRecord(tool.outputSchema)),
-  );
+  const { tools } = parsed.data.result;
+  const parsedTools = tools.map((tool) => mcpToolSchema.safeParse(tool));
+  const toolNames = parsedTools.flatMap((tool) => (tool.success ? [tool.data.name] : []));
+  const toolSchemaValid = parsedTools.every((tool) => tool.success);
   const fingerprint = createHash("sha256")
-    .update(
-      canonicalJson(
-        tools.map((tool) => {
-          if (!isRecord(tool)) return null;
-          return {
-            inputSchema: tool.inputSchema,
-            name: tool.name,
-            outputSchema: tool.outputSchema,
-          };
-        }),
-      ),
-    )
+    .update(canonicalJson(parsedTools.map((tool) => (tool.success ? tool.data : null))))
     .digest("hex");
 
   return {
     jsonrpc_outcome: "result",
     tools_count: tools.length,
     expected_food_tools_present: [...expectedFoodTools].every((name) => toolNames.includes(name)),
-    has_next_page: typeof message.result.nextCursor === "string",
+    has_next_page: typeof parsed.data.result.nextCursor === "string",
     tool_definition_fingerprint: fingerprint,
     tool_schema_valid: toolSchemaValid,
   };
@@ -160,13 +177,21 @@ export function mcpRequestTelemetry(
   body: unknown,
   protocolVersion: string | undefined,
 ): McpRequestTelemetry {
-  const method = isRecord(body) && isMcpMethod(body.method) ? body.method : "unknown";
+  const parsed = mcpRequestSchema.safeParse(body);
+  const request = parsed.success ? parsed.data : undefined;
+  const method = request && isMcpMethod(request.method) ? request.method : "unknown";
+  const requestedProtocolVersion =
+    method === "initialize" && typeof request?.params?.protocolVersion === "string"
+      ? request.params.protocolVersion
+      : protocolVersion;
   const telemetry: McpRequestTelemetry = {
     mcp_method: method,
     protocol_version:
-      protocolVersion && protocolVersions.has(protocolVersion) ? "2025-06-18" : "unknown",
+      requestedProtocolVersion && protocolVersions.has(requestedProtocolVersion)
+        ? requestedProtocolVersion
+        : "unknown",
   };
-  const toolName = isRecord(body) && isRecord(body.params) ? body.params.name : undefined;
+  const toolName = request?.params?.name;
   if (method === "tools/call" && typeof toolName === "string" && mcpToolNames.has(toolName)) {
     telemetry.tool_name = toolName;
   }
@@ -186,6 +211,7 @@ export function mcpTransportErrorCategory(
   if (message.startsWith("Parse error: Invalid JSON-RPC")) return "invalid_jsonrpc";
   if (message.startsWith("Parse error: Invalid JSON")) return "invalid_json";
   if (message.startsWith("Unsupported Media Type")) return "unsupported_media_type";
-  if (message.startsWith("Unsupported Protocol Version")) return "unsupported_protocol_version";
+  if (/^(?:Bad Request: )?Unsupported protocol version/i.test(message))
+    return "unsupported_protocol_version";
   return "transport_error";
 }

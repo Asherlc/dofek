@@ -419,9 +419,9 @@ describe("DofekOAuthServerProvider", () => {
       const exchangeRedirectUri = "https://claude.ai/api/mcp/auth_callback/alt";
       mocks.getAuthorizationCodeChallenge.mockResolvedValue(s256(verifier));
       mocks.exchangeAuthorizationCode.mockResolvedValue({
-        accessToken: "at",
+        accessToken: "authorization-code-access-token",
         accessTokenExpiresInSeconds: 3600,
-        refreshToken: "rt",
+        refreshToken: "authorization-code-refresh-token",
         scopes: ["health:read", "activity:read"],
       });
 
@@ -441,9 +441,9 @@ describe("DofekOAuthServerProvider", () => {
         resource: resource.href,
       });
       expect(tokens).toEqual({
-        access_token: "at",
+        access_token: "authorization-code-access-token",
         expires_in: 3600,
-        refresh_token: "rt",
+        refresh_token: "authorization-code-refresh-token",
         scope: "health:read activity:read",
         token_type: "bearer",
       });
@@ -458,8 +458,8 @@ describe("DofekOAuthServerProvider", () => {
       const telemetry = JSON.stringify(mocks.loggerInfo.mock.calls);
       expect(telemetry).not.toContain(client.client_id);
       expect(telemetry).not.toContain("refresh-token");
-      expect(telemetry).not.toContain("at-2");
-      expect(telemetry).not.toContain("rt-2");
+      expect(telemetry).not.toContain(tokens.access_token);
+      expect(telemetry).not.toContain(tokens.refresh_token);
     });
 
     it("rejects a mismatched PKCE code_verifier", async () => {

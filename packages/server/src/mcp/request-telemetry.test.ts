@@ -42,7 +42,7 @@ describe("mcpRequestTelemetry", () => {
   });
 
   it("categorizes transport errors without retaining their text", () => {
-    const error = new Error("Unsupported Protocol Version: customer-provided-value");
+    const error = new Error("Bad Request: Unsupported protocol version: customer-provided-value");
 
     expect(mcpTransportErrorCategory(error)).toBe("unsupported_protocol_version");
     expect(JSON.stringify({ category: mcpTransportErrorCategory(error) })).not.toContain(
@@ -75,14 +75,35 @@ describe("mcpRequestTelemetry", () => {
     expect(mcpClientCorrelationId("another-client")).not.toBe(correlationId);
   });
 
+  it("evicts the oldest client correlation after the bounded limit", () => {
+    const firstCorrelation = mcpClientCorrelationId("bounded-client-0");
+    for (let index = 1; index <= 1_024; index += 1) {
+      mcpClientCorrelationId(`bounded-client-${index}`);
+    }
+
+    expect(mcpClientCorrelationId("bounded-client-0")).not.toBe(firstCorrelation);
+  });
+
   it("reports only validated build revisions", () => {
     const original = process.env.SENTRY_RELEASE;
-    process.env.SENTRY_RELEASE = "1a2b3c4";
-    expect(mcpRuntimeTelemetry()).toMatchObject({ build_revision: "1a2b3c4" });
-    process.env.SENTRY_RELEASE = "not-a-sha";
-    expect(mcpRuntimeTelemetry()).toMatchObject({ build_revision: "unknown" });
-    if (original === undefined) delete process.env.SENTRY_RELEASE;
-    else process.env.SENTRY_RELEASE = original;
+    try {
+      process.env.SENTRY_RELEASE = "1a2b3c4";
+      expect(mcpRuntimeTelemetry()).toMatchObject({ build_revision: "1a2b3c4" });
+      process.env.SENTRY_RELEASE = "not-a-sha";
+      expect(mcpRuntimeTelemetry()).toMatchObject({ build_revision: "unknown" });
+    } finally {
+      if (original === undefined) delete process.env.SENTRY_RELEASE;
+      else process.env.SENTRY_RELEASE = original;
+    }
+  });
+
+  it("uses the initialize body protocol version when the header is absent", () => {
+    expect(
+      mcpRequestTelemetry(
+        { method: "initialize", params: { protocolVersion: "2025-03-26" } },
+        undefined,
+      ),
+    ).toMatchObject({ protocol_version: "2025-03-26" });
   });
 });
 
