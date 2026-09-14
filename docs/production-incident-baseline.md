@@ -7,6 +7,28 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-09-14 — Insights endpoint failed on stale ClickHouse view
+
+- **Status:** Source remediation prepared; production rollout verification is
+  pending.
+- **Symptoms / user impact:** Dashboard requests to `insights.compute` returned
+  a tRPC internal-server error, preventing insight cards from loading.
+- **Evidence / root cause:** At 2026-09-14T17:20:37Z, the production web log
+  recorded ClickHouse error code 47: `Identifier
+  'active_daily_metrics.active_energy_kcal' cannot be resolved`. The deployed
+  `analytics.v_daily_metrics` definition still selected that field after the
+  raw `postgres_fitness.daily_metrics` mirror no longer contained it. A
+  ClickHouse view stores its defining query, so source-column removal requires
+  recreating dependent views ([ClickHouse CREATE VIEW](https://clickhouse.com/docs/sql-reference/statements/create/view)).
+- **Direct fix:** Added migration `0093_refresh_daily_metrics_view`, which
+  replaces `analytics.v_daily_metrics` from the current canonical definition.
+- **Validation:** An isolated ClickHouse integration test creates the legacy
+  column and view, drops the column, applies the migration, and successfully
+  queries the refreshed view.
+- **Remaining risk / follow-up:** Deploy the migration and repeat the affected
+  authenticated `insights.compute` request; confirm no additional stale views
+  reference removed source columns.
+
 ## 2026-09-14 — PostHog error inventory triage and owned-defect fixes
 
 - **Status:** Repository fixes committed; deployment verification is pending.

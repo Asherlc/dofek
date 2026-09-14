@@ -725,6 +725,10 @@ FROM ranked
 GROUP BY date, user_id`;
 }
 
+export function buildDailyMetricsReadModelRefreshStatements(): string[] {
+  return ["DROP VIEW IF EXISTS analytics.v_daily_metrics", buildDailyMetricsReadModelSql()];
+}
+
 function buildProviderStatsReadModelSql(): string {
   return `${standardViewHeader("analytics.provider_stats")}
 WITH
