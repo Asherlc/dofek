@@ -291,7 +291,7 @@ export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouter
               if (syncWebhookEvent) {
                 try {
                   const result = await runWithTokenUser(user_id, () =>
-                    syncWebhookEvent(transaction, event, { userId: user_id }),
+                    syncWebhookEvent.call(provider, transaction, event, { userId: user_id }),
                   );
                   logger.info(
                     `[webhook] ${providerName}: synced ${result.recordsSynced} records for ${event.eventType} ${event.objectType} (${result.duration}ms)`,

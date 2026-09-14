@@ -398,7 +398,7 @@ describe("Login route", () => {
     });
   });
 
-  it("reports password sign-in failures without credentials", async () => {
+  it("does not report invalid password credentials", async () => {
     const error = new Error("Invalid email or password");
     const password = "sign-in-password-secret";
     mockUseSearch.mockReturnValue({ providerGuide: undefined, returnTo: undefined });
@@ -413,9 +413,7 @@ describe("Login route", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sign in with email" }));
 
     await waitFor(() => expect(screen.getByText(error.message)).toBeTruthy());
-    expect(mockCaptureException).toHaveBeenCalledWith(error, {
-      operation: "auth.login",
-    });
+    expect(mockCaptureException).not.toHaveBeenCalled();
     expect(JSON.stringify(mockCaptureException.mock.calls)).not.toContain(password);
   });
 
@@ -468,5 +466,24 @@ describe("Login route", () => {
       operation: "auth.password-reset-request",
     });
     expect(JSON.stringify(mockCaptureException.mock.calls)).not.toContain(email);
+  });
+
+  it("does not report invalid password-reset input", async () => {
+    const error = new Error("Invalid password reset request");
+    mockUseSearch.mockReturnValue({ providerGuide: undefined, returnTo: undefined });
+    mockFetchConfiguredProviders.mockResolvedValue({ identity: [], data: [], password: true });
+    mockRequestPasswordReset.mockRejectedValue(error);
+
+    renderLoginPage();
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Forgot password?" })).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Forgot password?" }));
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "invalid@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send reset link" }));
+
+    await waitFor(() => expect(screen.getByText(error.message)).toBeTruthy());
+    expect(mockCaptureException).not.toHaveBeenCalled();
   });
 });

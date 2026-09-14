@@ -7,6 +7,37 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-09-14 — PostHog error inventory triage and owned-defect fixes
+
+- **Status:** Repository fixes committed; deployment verification is pending.
+- **Symptoms / user impact:** PostHog reported mobile-auth exchange failures,
+  targeted Strava webhook failures, and expected invalid-login/import failures.
+  It also contained historical BLE/provider-stats issues plus transient network,
+  provider, ClickHouse, Redis, and database failures.
+- **Evidence / root cause:** The mobile-auth stack reached BullMQ's Redis
+  adapter with an unsupported `sendCommand(command: string[])` shape, producing
+  the `toLowerCase` TypeError. The webhook route detached
+  `syncWebhookEvent` before calling it, so Strava's `this.id` access failed.
+  Authentication and Strong-import validation paths intentionally surfaced
+  actionable user-input errors but reported them as unexpected exceptions.
+  BullMQ's Redis adapter exposes custom commands through `defineCommand` and
+  `runCommand` ([Redis client interface](https://raw.githubusercontent.com/taskforcesh/bullmq/v5.79.2/src/interfaces/redis-client.ts)).
+- **Direct fix:** Replaced the Redis call with an atomic Lua GET-and-DEL custom
+  command, preserved the provider receiver for webhook dispatch, and added
+  shared classifiers so expected authentication and Strong import-validation
+  failures remain terminal/user-visible without entering error tracking.
+  Unexpected failures remain reportable. No runtime behavior was changed for
+  transient, provider, or infrastructure failures.
+- **Validation:** Targeted regression suites, web/mobile/server/auth
+  typechecks, and the full webhook route suite pass. PostHog accepted eight
+  `resolved` updates and suppressed the remaining current inventory as the
+  requested hold state.
+- **Remaining risk / follow-up:** Release the source fixes, then confirm new
+  mobile-auth and Strava webhook events stop and expected user-input events no
+  longer enter PostHog. Held issues remain operationally unresolved and should
+  be re-opened for investigation when their underlying external condition is
+  actionable.
+
 ## 2026-09-09 — Local integration validation blocked by Redpanda AIO limit
 
 - **Status:** Unresolved local infrastructure issue; no production impact.

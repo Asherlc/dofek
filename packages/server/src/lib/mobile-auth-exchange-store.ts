@@ -8,6 +8,14 @@ import { z } from "zod";
 
 const MOBILE_AUTH_CODE_TTL_MS = 60 * 1000;
 const MOBILE_AUTH_CODE_PREFIX = "mobile-auth-exchange:";
+const MOBILE_AUTH_GET_AND_DELETE_COMMAND = "dofekMobileAuthExchangeGetAndDelete";
+const MOBILE_AUTH_GET_AND_DELETE_LUA = `
+local value = redis.call("GET", KEYS[1])
+if value then
+  redis.call("DEL", KEYS[1])
+end
+return value
+`;
 
 const mobileAuthExchangePayloadSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("session"), sessionId: z.string(), isNewUser: z.boolean() }),
@@ -23,13 +31,18 @@ interface RedisClient {
 
 interface RedisCommandClient {
   set(key: string, value: string, options: { PX: number }): Promise<string | null>;
-  sendCommand(command: string[]): Promise<string | null>;
+  defineCommand(name: string, definition: { numberOfKeys: number; lua: string }): void;
+  runCommand(name: string, args: string[]): Promise<string | null>;
 }
 
 function isRedisCommandClient(value: unknown): value is RedisCommandClient {
   if (typeof value !== "object" || value === null) return false;
-  if (!("set" in value) || !("sendCommand" in value)) return false;
-  return typeof value.set === "function" && typeof value.sendCommand === "function";
+  if (!("set" in value) || !("defineCommand" in value) || !("runCommand" in value)) return false;
+  return (
+    typeof value.set === "function" &&
+    typeof value.defineCommand === "function" &&
+    typeof value.runCommand === "function"
+  );
 }
 
 async function getSharedRedisClient(): Promise<RedisClient> {
@@ -44,9 +57,13 @@ async function getSharedRedisClient(): Promise<RedisClient> {
   if (!isRedisCommandClient(redisClient)) {
     throw new Error("Redis client does not support mobile auth exchange commands");
   }
+  redisClient.defineCommand(MOBILE_AUTH_GET_AND_DELETE_COMMAND, {
+    numberOfKeys: 1,
+    lua: MOBILE_AUTH_GET_AND_DELETE_LUA,
+  });
   return {
     set: async (key, value, options) => redisClient.set(key, value, options),
-    getAndDelete: async (key) => redisClient.sendCommand(["GETDEL", key]),
+    getAndDelete: async (key) => redisClient.runCommand(MOBILE_AUTH_GET_AND_DELETE_COMMAND, [key]),
   };
 }
 

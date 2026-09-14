@@ -1,3 +1,4 @@
+import { isExpectedImportInputError } from "@dofek/format/user-facing-error";
 import {
   type FileUploadApi,
   runMobileResumableFileUpload,
@@ -235,7 +236,9 @@ export async function importSharedFile(
       await sleep(1000);
     }
   } catch (error: unknown) {
-    captureException(error, { source: "share-import-import-shared-file", fileUri: args.fileUri });
+    if (!isExpectedImportInputError(error)) {
+      captureException(error, { source: "share-import-import-shared-file", fileUri: args.fileUri });
+    }
     const message = error instanceof Error ? error.message : "Import failed";
     args.onProgress?.({ status: "error", progress: 0, message, providerId: args.providerId });
     throw error;

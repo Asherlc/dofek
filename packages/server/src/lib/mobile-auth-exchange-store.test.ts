@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const redisClient = vi.hoisted(() => ({
   set: vi.fn(),
-  sendCommand: vi.fn(),
+  defineCommand: vi.fn(),
+  runCommand: vi.fn(),
 }));
 const redisConnectionConstructor = vi.hoisted(() => vi.fn());
 const mockCaptureException = vi.hoisted(() => vi.fn());
@@ -55,7 +56,7 @@ describe("InMemoryMobileAuthExchangeStore", () => {
 describe("RedisMobileAuthExchangeStore", () => {
   it("stores and atomically consumes a session payload", async () => {
     const payload = { kind: "session" as const, sessionId: "session-1", isNewUser: true };
-    redisClient.sendCommand.mockResolvedValueOnce(JSON.stringify(payload));
+    redisClient.runCommand.mockResolvedValueOnce(JSON.stringify(payload));
     const store = new RedisMobileAuthExchangeStore();
 
     const code = await store.issue(payload);
@@ -67,8 +68,11 @@ describe("RedisMobileAuthExchangeStore", () => {
       JSON.stringify(payload),
       { PX: 60_000 },
     );
-    expect(redisClient.sendCommand).toHaveBeenCalledWith([
-      "GETDEL",
+    expect(redisClient.defineCommand).toHaveBeenCalledWith(
+      "dofekMobileAuthExchangeGetAndDelete",
+      expect.objectContaining({ numberOfKeys: 1, lua: expect.stringContaining("GET") }),
+    );
+    expect(redisClient.runCommand).toHaveBeenCalledWith("dofekMobileAuthExchangeGetAndDelete", [
       expect.stringMatching(/^mobile-auth-exchange:[a-f0-9]{64}$/),
     ]);
     expect(redisConnectionConstructor).toHaveBeenCalledWith(undefined, {
@@ -98,7 +102,10 @@ describe("RedisMobileAuthExchangeStore", () => {
   it.each([
     ["null", null],
     ["an object without Redis commands", {}],
-    ["an object with non-function Redis commands", { set: true, sendCommand: true }],
+    [
+      "an object with non-function Redis commands",
+      { set: true, defineCommand: true, runCommand: true },
+    ],
   ])("rejects a Redis client that is %s", async (_description, invalidRedisClient) => {
     vi.resetModules();
     vi.doMock("bullmq", () => ({

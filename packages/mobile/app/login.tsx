@@ -1,6 +1,7 @@
 import {
   getEmailValidationError,
   getNewPasswordValidationError,
+  isExpectedUserInputError,
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
   PASSWORD_REQUIREMENT_TEXT,
@@ -140,7 +141,9 @@ export default function LoginScreen() {
         router.replace("/onboarding");
       }
     } catch (err: unknown) {
-      captureException(err, { source: "login-screen-password-auth" });
+      if (!isExpectedUserInputError(err)) {
+        captureException(err, { source: "login-screen-password-auth" });
+      }
       setFormError(userFacingErrorMessage(err, "Authentication failed"));
     } finally {
       setLoggingIn(false);
@@ -161,7 +164,9 @@ export default function LoginScreen() {
         ),
       );
     } catch (err: unknown) {
-      captureException(err, { source: "login-screen-password-reset" });
+      if (!isExpectedUserInputError(err)) {
+        captureException(err, { source: "login-screen-password-reset" });
+      }
       setError(userFacingErrorMessage(err, "Password reset failed"));
     } finally {
       setLoggingIn(false);

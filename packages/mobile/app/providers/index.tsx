@@ -1,4 +1,7 @@
-import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
+import {
+  isExpectedImportInputError,
+  userFacingErrorMessage,
+} from "@dofek/format/user-facing-error";
 import { groupProviderEntries, providerFamily } from "@dofek/providers/provider-catalog";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { ROUTINE_SYNC_DAYS } from "@dofek/providers/sync-actions";
@@ -393,7 +396,9 @@ export default function ProvidersScreen() {
         );
         if (result) trpcUtils.invalidate();
       } catch (error: unknown) {
-        captureException(error, { context: "share-import", fileUri, providerId });
+        if (!isExpectedImportInputError(error)) {
+          captureException(error, { context: "share-import", fileUri, providerId });
+        }
         setSharedImportState({
           status: "error",
           progress: 0,
