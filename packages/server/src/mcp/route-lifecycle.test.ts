@@ -16,6 +16,7 @@ const routeMocks = vi.hoisted(() => {
     serverConnect: vi.fn(),
     transportClose: vi.fn(),
     transportConstructor: vi.fn(),
+    transportInstance: undefined as unknown,
     validateMcpToken: vi.fn(),
   };
   return mocks;
@@ -76,8 +77,11 @@ vi.mock("./tools.ts", () => ({
 
 vi.mock("@modelcontextprotocol/sdk/server/streamableHttp.js", () => ({
   StreamableHTTPServerTransport: class MockStreamableHttpServerTransport {
+    onerror?: (error: Error) => void;
+
     constructor(options: unknown) {
       routeMocks.transportConstructor(options);
+      routeMocks.transportInstance = this;
     }
 
     close(): Promise<void> {
@@ -86,6 +90,10 @@ vi.mock("@modelcontextprotocol/sdk/server/streamableHttp.js", () => ({
 
     handleRequest(request: unknown, response: unknown, body: unknown): Promise<void> {
       return routeMocks.handleRequest(request, response, body);
+    }
+
+    send(): Promise<void> {
+      return Promise.resolve();
     }
   },
 }));
@@ -308,6 +316,27 @@ describe("createMcpRouter lifecycle handling", () => {
       "mcp.request",
       expect.objectContaining({ http_status: 200, mcp_method: "initialize", outcome: "aborted" }),
     );
+  });
+
+  it("records SDK transport errors without retaining their text", async () => {
+    const secret = "client supplied transport detail";
+    routeMocks.handleRequest.mockImplementation((_request: unknown, response: unknown) => {
+      const transport = routeMocks.transportInstance as { onerror?: (error: Error) => void };
+      transport.onerror?.(new Error(`Unsupported Media Type: ${secret}`));
+      sendResponse(response, 204);
+      return Promise.resolve();
+    });
+
+    await request({ jsonrpc: "2.0", id: 1, method: "initialize" });
+
+    expect(routeMocks.loggerInfo).toHaveBeenCalledWith(
+      "mcp.request",
+      expect.objectContaining({
+        error_category: "unsupported_media_type",
+        outcome: "transport_error",
+      }),
+    );
+    expect(JSON.stringify(routeMocks.loggerInfo.mock.calls)).not.toContain(secret);
   });
 
   it("records an aborted lifecycle when a food-mutation client disconnects", async () => {
