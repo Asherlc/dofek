@@ -116,7 +116,7 @@ export function createMcpRouter(options: CreateMcpRouterOptions): Router {
         outcome:
           response.statusCode === 400
             ? "transport_or_protocol_rejected"
-            : response.statusCode >= 400
+            : response.statusCode >= 401
               ? "http_rejected"
               : "completed",
       });

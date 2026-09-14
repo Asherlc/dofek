@@ -249,6 +249,10 @@ describe("createMcpRouter lifecycle handling", () => {
         mcp_method: "initialize",
       }),
     );
+    expect(routeMocks.loggerInfo).toHaveBeenCalledWith(
+      "mcp.request",
+      expect.objectContaining({ http_status: 401, outcome: "http_rejected" }),
+    );
   });
 
   it("records a privacy-safe completion lifecycle for food mutations", async () => {
