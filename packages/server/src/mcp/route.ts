@@ -87,7 +87,7 @@ export function createMcpRouter(options: CreateMcpRouterOptions): Router {
     const closeResources = () => {
       if (resourcesClosed || !transport || !server) return;
       resourcesClosed = true;
-      transport?.close().catch((error: unknown) => {
+      transport.close().catch((error: unknown) => {
         captureException(new Error("MCP transport cleanup failed"));
         logger.warn("mcp.request", {
           ...requestTelemetry,
@@ -96,7 +96,7 @@ export function createMcpRouter(options: CreateMcpRouterOptions): Router {
           outcome: "cleanup_failed",
         });
       });
-      server?.close().catch((error: unknown) => {
+      server.close().catch((error: unknown) => {
         captureException(new Error("MCP server cleanup failed"));
         logger.warn("mcp.request", {
           ...requestTelemetry,

@@ -124,7 +124,6 @@ async function request(
       db: { execute: vi.fn(), select: vi.fn(), transaction: vi.fn() },
     }),
   );
-
   return new Promise((resolve, reject) => {
     const server = app.listen(0, () => {
       fetch(`http://localhost:${getPort(server)}/api/mcp`, {
@@ -208,8 +207,23 @@ describe("createMcpRouter lifecycle handling", () => {
     );
     expect(routeMocks.loggerInfo).toHaveBeenCalledWith(
       "mcp.request",
-      expect.objectContaining({ http_status: 204, mcp_method: "initialize", outcome: "completed" }),
+      expect.objectContaining({
+        http_status: 204,
+        mcp_method: "initialize",
+        outcome: "completed",
+        duration_ms: expect.any(Number),
+      }),
     );
+    expect(routeMocks.loggerInfo).not.toHaveBeenCalledWith(
+      "mcp.request",
+      expect.objectContaining({ outcome: "aborted" }),
+    );
+    expect(
+      routeMocks.loggerInfo.mock.calls.some(
+        ([event, payload]) =>
+          event === "mcp.request" && isRecord(payload) && payload.duration_ms > 1_000,
+      ),
+    ).toBe(false);
   });
 
   it("records a bounded diagnostic when the bearer header is absent", async () => {
@@ -325,6 +339,12 @@ describe("createMcpRouter lifecycle handling", () => {
       "mcp.request",
       expect.objectContaining({ http_status: 200, mcp_method: "initialize", outcome: "aborted" }),
     );
+    expect(
+      routeMocks.loggerInfo.mock.calls.some(
+        ([event, payload]) =>
+          event === "mcp.request" && isRecord(payload) && payload.duration_ms > 1_000,
+      ),
+    ).toBe(false);
   });
 
   it("records SDK transport errors without retaining their text", async () => {
@@ -375,6 +395,22 @@ describe("createMcpRouter lifecycle handling", () => {
         tools_count: 2,
       }),
     );
+  });
+
+  it("does not classify initialize responses as tools/list results", async () => {
+    routeMocks.handleRequest.mockImplementation((_request: unknown, response: unknown) => {
+      void transportSend?.({
+        jsonrpc: "2.0",
+        result: { tools: [] },
+      });
+      sendResponse(response, 200);
+      return Promise.resolve();
+    });
+
+    const response = await request({ jsonrpc: "2.0", id: 1, method: "initialize" });
+
+    expect(response.status).toBe(200);
+    expect(routeMocks.loggerInfo).not.toHaveBeenCalledWith("mcp.tools_list", expect.anything());
   });
 
   it("records an aborted lifecycle when a food-mutation client disconnects", async () => {
