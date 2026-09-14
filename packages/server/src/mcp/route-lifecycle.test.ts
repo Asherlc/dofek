@@ -285,7 +285,10 @@ describe("createMcpRouter lifecycle handling", () => {
     expect(response.status).toBe(500);
     expect(routeMocks.loggerInfo).toHaveBeenCalledWith(
       "mcp.authentication",
-      expect.objectContaining({ client_kind: "oauth", scope_set: "nutrition:read,nutrition:write" }),
+      expect.objectContaining({
+        client_kind: "oauth",
+        scope_set: "nutrition:read,nutrition:write",
+      }),
     );
     expect(routeMocks.loggerInfo).toHaveBeenCalledWith(
       "mcp.request",
