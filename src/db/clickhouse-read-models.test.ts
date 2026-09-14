@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildActivityReadModelRefreshStatements,
   buildDailyMetricsReadModelRefreshStatements,
+  buildProviderStatsCreateReadModelStatements,
 } from "./clickhouse-read-models.ts";
 
 describe("buildActivityReadModelRefreshStatements", () => {
@@ -42,6 +43,14 @@ describe("buildDailyMetricsReadModelRefreshStatements", () => {
     expect(buildDailyMetricsReadModelRefreshStatements()).toEqual([
       "DROP VIEW IF EXISTS analytics.v_daily_metrics",
       expect.stringContaining("CREATE VIEW IF NOT EXISTS analytics.v_daily_metrics"),
+    ]);
+  });
+});
+
+describe("buildProviderStatsCreateReadModelStatements", () => {
+  it("creates the provider stats read model", () => {
+    expect(buildProviderStatsCreateReadModelStatements()).toEqual([
+      expect.stringContaining("CREATE VIEW IF NOT EXISTS analytics.provider_stats"),
     ]);
   });
 });
