@@ -7,6 +7,8 @@ export function createMigration(): ClickHouseMigration {
       `ALTER TABLE analytics.sensor_scalar_sample
         MODIFY SETTING deduplicate_merge_projection_mode = 'rebuild'`,
       `ALTER TABLE analytics.sensor_scalar_sample
+        MODIFY SETTING lightweight_mutation_projection_mode = 'rebuild'`,
+      `ALTER TABLE analytics.sensor_scalar_sample
         ADD PROJECTION IF NOT EXISTS by_peerdb_synced_at (
           SELECT *
           ORDER BY _peerdb_synced_at

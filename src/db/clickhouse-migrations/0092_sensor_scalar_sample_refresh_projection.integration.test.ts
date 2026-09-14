@@ -78,6 +78,12 @@ describe("0092_sensor_scalar_sample_refresh_projection", () => {
     expect(materialized).toEqual([{ rows: 1000000, bytes: expect.any(Number) }]);
     expect(materialized[0]?.bytes).toBeGreaterThan(0);
 
+    await client.command({
+      query: `DELETE FROM ${database}.sensor_scalar_sample
+        WHERE id = 1
+        SETTINGS mutations_sync = 2`,
+    });
+
     const explainResult = await client.query({
       query: `EXPLAIN indexes = 1
         SELECT user_id, argMax(scalar, id)
