@@ -117,6 +117,7 @@ describe("MCP OAuth", () => {
     });
     expect(authorizationMetadata.registration_endpoint).toBe("https://app.example.test/register");
     expect(authorizationMetadata.scopes_supported).toContain("nutrition:write");
+    expect(authorizationMetadata.scopes_supported).toContain("offline_access");
 
     const resourceMetadata = protectedResourceMetadataSchema.parse(
       await (await fetch(`${baseUrl}/.well-known/oauth-protected-resource/api/mcp`)).json(),
@@ -331,7 +332,10 @@ describe("MCP OAuth", () => {
     expect(body.error).toBe("invalid_grant");
   });
 
-  function authorizationParameters(codeVerifier: string): URLSearchParams {
+  function authorizationParameters(
+    codeVerifier: string,
+    scope = "health:read activity:read",
+  ): URLSearchParams {
     return new URLSearchParams({
       client_id: registeredClient.client_id,
       code_challenge: codeChallenge(codeVerifier),
@@ -339,7 +343,7 @@ describe("MCP OAuth", () => {
       redirect_uri: redirectUri,
       resource,
       response_type: "code",
-      scope: "health:read activity:read",
+      scope,
       state: "state-value",
     });
   }
@@ -406,8 +410,9 @@ describe("MCP OAuth", () => {
 
   async function completeAuthorization(
     codeVerifier: string,
+    scope?: string,
   ): Promise<z.infer<typeof tokenResponseSchema>> {
-    const parameters = authorizationParameters(codeVerifier);
+    const parameters = authorizationParameters(codeVerifier, scope);
     parameters.set("approval", "approve");
     const response = await fetch(`${baseUrl}/authorize`, {
       body: parameters,
@@ -481,6 +486,15 @@ describe("MCP OAuth", () => {
     expect(body).toContain("View your nutrition summaries");
     expect(body).toContain("Modify your food records");
     expect(body).toContain('value="nutrition:read nutrition:write"');
+  });
+
+  it("accepts offline_access without granting it as a Dofek permission", async () => {
+    const codeVerifier = randomBytes(32).toString("base64url");
+
+    const tokens = await completeAuthorization(codeVerifier, "health:read offline_access");
+
+    expect(tokens.scope).toBe("health:read");
+    expect((await rawRefreshResponse(tokens.refresh_token)).status).toBe(200);
   });
 
   it("returns 400 for unsupported scopes", async () => {

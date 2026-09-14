@@ -42,6 +42,14 @@ export const MCP_OAUTH_SCOPES = [
   "sync:write",
 ] as const satisfies readonly McpScope[];
 
+/** OAuth scope that permits clients to retain a refresh token without granting Dofek data access. */
+export const MCP_OAUTH_OFFLINE_ACCESS_SCOPE = "offline_access";
+
+export const MCP_OAUTH_SUPPORTED_SCOPES = [
+  ...MCP_OAUTH_SCOPES,
+  MCP_OAUTH_OFFLINE_ACCESS_SCOPE,
+] as const;
+
 const MCP_OAUTH_DEFAULT_SCOPES = [
   "health:read",
   "activity:read",
@@ -67,7 +75,10 @@ const MCP_SCOPE_LABELS: Record<McpScope, string> = {
 
 function parseScopes(scopes: readonly string[] | undefined): McpScope[] {
   const requestedScopes = scopes && scopes.length > 0 ? scopes : [...MCP_OAUTH_DEFAULT_SCOPES];
-  const parsed = mcpScopeSchema.array().safeParse(requestedScopes);
+  const resourceScopes = requestedScopes.filter(
+    (scope) => scope !== MCP_OAUTH_OFFLINE_ACCESS_SCOPE,
+  );
+  const parsed = mcpScopeSchema.array().safeParse(resourceScopes);
   if (!parsed.success) {
     throw new InvalidScopeError("One or more requested scopes are not supported");
   }
