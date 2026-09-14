@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildActivityReadModelRefreshStatements } from "./clickhouse-read-models.ts";
+import {
+  buildActivityReadModelRefreshStatements,
+  buildProviderStatsCreateReadModelStatements,
+} from "./clickhouse-read-models.ts";
 
 describe("buildActivityReadModelRefreshStatements", () => {
   it("drops and recreates the activity read model views", () => {
@@ -31,5 +34,13 @@ describe("buildActivityReadModelRefreshStatements", () => {
     );
     expect(activitySql).not.toContain("argMinIf( ranked.timezone, ranked.priority");
     expect(statements[3]).toContain("arrayJoin(member_activity_ids)");
+  });
+});
+
+describe("buildProviderStatsCreateReadModelStatements", () => {
+  it("creates the provider stats read model", () => {
+    expect(buildProviderStatsCreateReadModelStatements()).toEqual([
+      expect.stringContaining("CREATE VIEW IF NOT EXISTS analytics.provider_stats"),
+    ]);
   });
 });
