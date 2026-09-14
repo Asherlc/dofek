@@ -447,6 +447,14 @@ describe("DofekOAuthServerProvider", () => {
         scope: "health:read activity:read",
         token_type: "bearer",
       });
+      expect(mocks.loggerInfo).toHaveBeenCalledWith(
+        "mcp.oauth_token",
+        expect.objectContaining({
+          grant_type: "authorization_code",
+          outcome: "accepted",
+          scope_set: "activity:read,health:read",
+        }),
+      );
       const telemetry = JSON.stringify(mocks.loggerInfo.mock.calls);
       expect(telemetry).not.toContain(client.client_id);
       expect(telemetry).not.toContain("refresh-token");
@@ -574,6 +582,14 @@ describe("DofekOAuthServerProvider", () => {
         scope: "health:read activity:read",
         token_type: "bearer",
       });
+      expect(mocks.loggerInfo).toHaveBeenCalledWith(
+        "mcp.oauth_token",
+        expect.objectContaining({
+          grant_type: "refresh_token",
+          outcome: "accepted",
+          scope_set: "activity:read,health:read",
+        }),
+      );
     });
 
     it("throws InvalidScopeError when requesting unsupported scopes", async () => {
@@ -587,6 +603,10 @@ describe("DofekOAuthServerProvider", () => {
       await expect(
         provider().exchangeRefreshToken(makeClient(), "refresh-token", undefined, resource),
       ).rejects.toThrow("Invalid, expired, or reused refresh token");
+      expect(mocks.loggerInfo).toHaveBeenCalledWith(
+        "mcp.oauth_token",
+        expect.objectContaining({ grant_type: "refresh_token", outcome: "rejected" }),
+      );
     });
   });
 

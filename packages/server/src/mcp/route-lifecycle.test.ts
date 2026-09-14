@@ -177,6 +177,19 @@ describe("createMcpRouter lifecycle handling", () => {
       method: "initialize",
     });
     expect(routeMocks.loggerInfo).not.toHaveBeenCalledWith("mcp.mutation", expect.anything());
+    expect(routeMocks.loggerInfo).toHaveBeenCalledWith(
+      "mcp.authentication",
+      expect.objectContaining({
+        auth_outcome: "accepted",
+        client_kind: "personal_token",
+        mcp_method: "initialize",
+        scope_set: "health:read",
+      }),
+    );
+    expect(routeMocks.loggerInfo).toHaveBeenCalledWith(
+      "mcp.request",
+      expect.objectContaining({ http_status: 204, mcp_method: "initialize", outcome: "completed" }),
+    );
   });
 
   it("records a privacy-safe completion lifecycle for food mutations", async () => {
@@ -234,6 +247,10 @@ describe("createMcpRouter lifecycle handling", () => {
     expect(routeMocks.loggerInfo).not.toHaveBeenCalledWith(
       "mcp.mutation",
       expect.objectContaining({ phase: "completed" }),
+    );
+    expect(routeMocks.loggerInfo).toHaveBeenCalledWith(
+      "mcp.request",
+      expect.objectContaining({ mcp_method: "tools/call", outcome: "aborted" }),
     );
     await vi.waitFor(() => {
       expect(routeMocks.transportClose).toHaveBeenCalledTimes(1);
