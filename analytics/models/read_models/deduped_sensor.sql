@@ -19,24 +19,11 @@
     }
 ) }}
 
-WITH samples AS (
-    SELECT *
-    FROM {{ ref('sensor_scalar_sample') }}
-),
-
-batch_keys AS (
-    SELECT DISTINCT
-        user_id,
-        channel,
-        recorded_at
-    FROM samples
-)
-
 SELECT
-    batch_keys.user_id AS user_id,
-    batch_keys.recorded_at AS recorded_at,
-    toDate(batch_keys.recorded_at) AS recorded_date,
-    batch_keys.channel AS channel,
+    samples.user_id AS user_id,
+    samples.recorded_at AS recorded_at,
+    toDate(samples.recorded_at) AS recorded_date,
+    samples.channel AS channel,
     argMinIf(
         samples.scalar,
         (samples.provider_priority, samples.provider_id, samples.id),
@@ -90,9 +77,5 @@ SELECT
     toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
     if(countIf(samples._peerdb_is_deleted = 0) = 0, 1, 0) AS is_deleted,
     source_refreshed_at AS refreshed_at
-FROM batch_keys
-LEFT JOIN samples
-    ON samples.user_id = batch_keys.user_id
-    AND samples.channel = batch_keys.channel
-    AND samples.recorded_at = batch_keys.recorded_at
-GROUP BY batch_keys.user_id, batch_keys.channel, batch_keys.recorded_at
+FROM {{ ref('sensor_scalar_sample') }} AS samples
+GROUP BY samples.user_id, samples.channel, samples.recorded_at
