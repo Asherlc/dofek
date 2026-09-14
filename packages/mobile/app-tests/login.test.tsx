@@ -342,7 +342,11 @@ describe("LoginScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sign in with email" }));
 
     await waitFor(() => expect(screen.getByText(error.message)).toBeTruthy());
-    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockCaptureException).toHaveBeenCalledWith(
+      error,
+      { source: "login-screen-password-auth" },
+      { reportToErrorTracking: false },
+    );
   });
 
   it("shows empty state when no providers configured", async () => {
@@ -759,6 +763,10 @@ describe("LoginScreen", () => {
     fireEvent.click(screen.getByText("Send reset link"));
 
     await waitFor(() => expect(screen.getByText(error.message)).toBeTruthy());
-    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockCaptureException).toHaveBeenCalledWith(
+      error,
+      { source: "login-screen-password-reset" },
+      { reportToErrorTracking: false },
+    );
   });
 });

@@ -2269,7 +2269,11 @@ describe("ProvidersScreen", () => {
     await renderProvidersScreen();
 
     await waitFor(() => expect(screen.getByText("Strong export is invalid")).toBeTruthy());
-    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockCaptureException).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({ context: "share-import" }),
+      { reportToErrorTracking: false },
+    );
   });
 
   it("selects and imports a Garmin dump ZIP from the Garmin card", async () => {

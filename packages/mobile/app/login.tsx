@@ -141,9 +141,11 @@ export default function LoginScreen() {
         router.replace("/onboarding");
       }
     } catch (err: unknown) {
-      if (!isExpectedUserInputError(err)) {
-        captureException(err, { source: "login-screen-password-auth" });
-      }
+      captureException(
+        err,
+        { source: "login-screen-password-auth" },
+        { reportToErrorTracking: !isExpectedUserInputError(err) },
+      );
       setFormError(userFacingErrorMessage(err, "Authentication failed"));
     } finally {
       setLoggingIn(false);
@@ -164,9 +166,11 @@ export default function LoginScreen() {
         ),
       );
     } catch (err: unknown) {
-      if (!isExpectedUserInputError(err)) {
-        captureException(err, { source: "login-screen-password-reset" });
-      }
+      captureException(
+        err,
+        { source: "login-screen-password-reset" },
+        { reportToErrorTracking: !isExpectedUserInputError(err) },
+      );
       setError(userFacingErrorMessage(err, "Password reset failed"));
     } finally {
       setLoggingIn(false);

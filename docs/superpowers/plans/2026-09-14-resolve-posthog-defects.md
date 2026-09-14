@@ -1,6 +1,6 @@
 # Resolve PostHog-Owned Defects Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+Steps use checkbox (`- [ ]`) syntax for tracking. Execute each task in order, keeping the regression test and implementation changes together.
 
 **Goal:** Fix repository-owned PostHog defects and stop expected user-input failures from entering error tracking while holding transient, provider, and infrastructure failures.
 
@@ -44,7 +44,7 @@
 
 ## Task 3: Exclude expected user-input failures from error reporting
 
-**Files:** `packages/auth/src/auth.ts`, `packages/auth/src/auth.test.ts`, `packages/format/src/user-facing-error.ts`, `packages/format/src/user-facing-error.test.ts`, `packages/web/src/lib/query-client.ts`, `packages/web/src/lib/query-client.test.ts`, `packages/web/src/routes/login.tsx`, `packages/web/src/routes/-login.test.tsx`, `packages/web/src/routes/reset-password.tsx`, `packages/web/src/routes/-reset-password.test.tsx`, `packages/mobile/app/login.tsx`, `packages/mobile/app-tests/login.test.tsx`, `src/jobs/import-validation-error.ts`, `src/jobs/process-import-job.ts`, `src/jobs/process-import-job.test.ts`, `src/jobs/worker.ts`, `src/jobs/worker.test.ts`
+**Files:** `packages/auth/src/auth.ts`, `packages/auth/src/auth.test.ts`, `packages/format/src/user-facing-error.ts`, `packages/format/src/user-facing-error.test.ts`, `packages/web/src/lib/query-client.ts`, `packages/web/src/lib/query-client.test.ts`, `packages/web/src/routes/login.tsx`, `packages/web/src/routes/-login.test.tsx`, `packages/web/src/routes/reset-password.tsx`, `packages/web/src/routes/-reset-password.test.tsx`, `packages/mobile/app/login.tsx`, `packages/mobile/app-tests/login.test.tsx`, `packages/mobile/app/providers/index.tsx`, `packages/mobile/app-tests/providers/index.test.tsx`, `packages/mobile/lib/share-import.ts`, `packages/mobile/lib/share-import.test.ts`, `src/jobs/import-validation-error.ts`, `src/jobs/process-import-job.ts`, `src/jobs/process-import-job.test.ts`, `src/jobs/worker.ts`, `src/jobs/worker.test.ts`
 
 - [x] Add failing auth-domain tests for the exact server-authored invalid-credential and invalid-reset messages, including a nearby unexpected error that must remain reportable.
 - [x] Add failing web and mobile login tests proving invalid credentials are shown to the user without `captureException`, while service failures still call it.
@@ -63,7 +63,7 @@
 
 ## Task 5: Final verification and handoff
 
-- [x] Run the repository lint, relevant unit suites, and required TypeScript checks without ad-hoc waits or disabled gates. Source/policy lint, the Docker-free aggregate tests, affected suites, and root typecheck passed; analytics SQL lint was blocked only because ClickHouse was unavailable on `127.0.0.1:8123`.
+- [x] Run the repository lint, relevant unit suites, and required TypeScript checks without ad-hoc waits or disabled gates. Source/policy lint, analytics SQL lint with ClickHouse available, the Docker-free aggregate tests, affected suites, and root typecheck passed. An earlier lint attempt was blocked because ClickHouse was unavailable on `127.0.0.1:8123`; the complete lint command was rerun successfully.
 - [x] Review the diff for unrelated changes, secrets, silent catches, and stale comments.
 - [x] Append the production-incident baseline entry if the PostHog work represents an operational debugging session, including root cause, fix, validation, and remaining held risk.
 - [x] Commit the completed implementation, push the branch, and report commit/remote status plus the short retrospective and documentation/skill improvement proposals.

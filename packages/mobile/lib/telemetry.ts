@@ -201,7 +201,15 @@ function sanitizePostHogProperties(
   return properties;
 }
 
-export function captureException(error: unknown, context: Record<string, unknown> = {}) {
+export type CaptureExceptionOptions = {
+  reportToErrorTracking?: boolean;
+};
+
+export function captureException(
+  error: unknown,
+  context: Record<string, unknown> = {},
+  options: CaptureExceptionOptions = {},
+) {
   const hasExplicitRoute = typeof context.route === "string";
   const explicitRoute =
     typeof context.route === "string" ? normalizeTelemetryRoute(context.route) : undefined;
@@ -216,7 +224,9 @@ export function captureException(error: unknown, context: Record<string, unknown
   // — otherwise the PostHog capture path silently mints error-tracking issues for
   // errors Sentry drops. Logs and breadcrumbs below still record the failure for
   // observability.
-  const captureToErrorTracking = !shouldSuppressBackgroundTransientNetworkError(error, source);
+  const captureToErrorTracking =
+    options.reportToErrorTracking !== false &&
+    !shouldSuppressBackgroundTransientNetworkError(error, source);
   if (captureToErrorTracking) {
     Sentry.captureException(error, {
       ...(source ? { tags: { source } } : {}),

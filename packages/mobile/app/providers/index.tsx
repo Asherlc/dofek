@@ -396,9 +396,11 @@ export default function ProvidersScreen() {
         );
         if (result) trpcUtils.invalidate();
       } catch (error: unknown) {
-        if (!isExpectedImportInputError(error)) {
-          captureException(error, { context: "share-import", fileUri, providerId });
-        }
+        captureException(
+          error,
+          { context: "share-import", fileUri, providerId },
+          { reportToErrorTracking: !isExpectedImportInputError(error) },
+        );
         setSharedImportState({
           status: "error",
           progress: 0,
