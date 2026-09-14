@@ -247,6 +247,39 @@ describe("createMcpRouter lifecycle handling", () => {
     expect(JSON.stringify(routeMocks.loggerInfo.mock.calls)).not.toContain(requestId);
   });
 
+  it("classifies a completed HTTP 400 as a transport or protocol rejection", async () => {
+    routeMocks.handleRequest.mockImplementation((_request: unknown, response: unknown) => {
+      sendResponse(response, 400, "rejected");
+      return Promise.resolve();
+    });
+
+    const response = await request({ jsonrpc: "2.0", id: 1, method: "initialize" });
+
+    expect(response).toEqual({ status: 400, text: "rejected" });
+    expect(routeMocks.loggerInfo).toHaveBeenCalledWith(
+      "mcp.request",
+      expect.objectContaining({
+        http_status: 400,
+        mcp_method: "initialize",
+        outcome: "transport_or_protocol_rejected",
+      }),
+    );
+  });
+
+  it("records an aborted request without a food mutation", async () => {
+    routeMocks.handleRequest.mockImplementation((_request: unknown, response: unknown) => {
+      destroyResponse(response);
+      return Promise.resolve();
+    });
+
+    await expect(request({ jsonrpc: "2.0", id: 1, method: "initialize" })).rejects.toThrow();
+
+    expect(routeMocks.loggerInfo).toHaveBeenCalledWith(
+      "mcp.request",
+      expect.objectContaining({ http_status: 200, mcp_method: "initialize", outcome: "aborted" }),
+    );
+  });
+
   it("records an aborted lifecycle when a food-mutation client disconnects", async () => {
     const requestId = "33333333-3333-4333-8333-333333333333";
     routeMocks.handleRequest.mockImplementation((_request: unknown, response: unknown) => {
