@@ -175,7 +175,13 @@ export async function persistProviderConnection(params: {
   logger.info(
     `[auth] ${params.provider.id} tokens saved for user ${params.userId}. Expires: ${params.tokens.expiresAt.toISOString()}`,
   );
+}
 
+export async function registerProviderWebhook(params: {
+  db: import("dofek/db").Database;
+  provider: import("dofek/providers/types").Provider;
+  userId: string;
+}): Promise<void> {
   const { isWebhookProvider } = await import("dofek/providers/types");
   if (isWebhookProvider(params.provider)) {
     const { registerWebhookForProvider } = await import("../webhooks.ts");

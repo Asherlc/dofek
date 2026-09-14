@@ -30,7 +30,7 @@ import { startDataExportOutboxDispatcher } from "./data-export-outbox.ts";
 import { startFileUploadOutboxDispatcher } from "./file-upload-outbox.ts";
 import { startFileUploadReconciler } from "./file-upload-reconciliation.ts";
 import { createGarminImportProgressCoordinator } from "./garmin-import-progress.ts";
-import { isAppleHealthImportValidationError } from "./import-validation-error.ts";
+import { isImportValidationError } from "./import-validation-error.ts";
 import { processActivityDeleteAnalyticsJob } from "./process-activity-delete-analytics-job.ts";
 import { processExportJob } from "./process-export-job.ts";
 import { processFileUploadImportJob } from "./process-file-upload-import-job.ts";
@@ -547,17 +547,12 @@ for (const worker of allWorkers) {
     // rely on the batch/parent job to report grouped error causes once.
     const isFitBatchChildFailure =
       worker.name === FIT_FILE_IMPORT_QUEUE && job?.parentKey && err instanceof UnrecoverableError;
-    const isAppleHealthImportValidationFailure =
-      worker.name === IMPORT_QUEUE && isAppleHealthImportValidationError(err);
+    const isImportValidationFailure = worker.name === IMPORT_QUEUE && isImportValidationError(err);
     const isZeppHttp500ServiceUnavailable =
       err instanceof ProviderServiceUnavailableError &&
       err.providerId === "amazfit-zepp" &&
       err.statusCode === 500;
-    if (
-      !isFitBatchChildFailure &&
-      !isAppleHealthImportValidationFailure &&
-      !isZeppHttp500ServiceUnavailable
-    ) {
+    if (!isFitBatchChildFailure && !isImportValidationFailure && !isZeppHttp500ServiceUnavailable) {
       captureException(err);
     }
     if (isZeppHttp500ServiceUnavailable) {

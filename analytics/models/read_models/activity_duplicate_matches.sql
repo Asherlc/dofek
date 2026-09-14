@@ -32,8 +32,8 @@ tombstoned_records AS (
         coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR) AS ended_at
     FROM {{ source('postgres_fitness', 'activity') }} AS activity FINAL
     WHERE activity._peerdb_is_deleted = 0
-        AND activity.provider_absent_at IS NOT null
-        AND activity.deleted_at IS null
+        AND coalesce(activity.provider_absent_at, toDateTime64(0, 6, 'UTC')) != toDateTime64(0, 6, 'UTC')
+        AND coalesce(activity.deleted_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')
 ),
 
 active_duplicate_matches AS (

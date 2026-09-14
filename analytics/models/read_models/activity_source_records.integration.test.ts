@@ -74,6 +74,17 @@ describe("activity source membership projection", () => {
     expect(await result.json()).toEqual([{ memberId, groupId }]);
   });
 
+  it("treats PeerDB epoch lifecycle timestamps as current", async () => {
+    await client.command({ query: `ALTER TABLE ${database}.activity UPDATE
+      provider_absent_at = toDateTime64(0, 6, 'UTC'),
+      deleted_at = toDateTime64(0, 6, 'UTC')
+      WHERE 1 SETTINGS mutations_sync = 2` });
+    await client.command({ query: `INSERT INTO ${database}.activity_source_records ${render(memberId)}` });
+    const result = await client.query({ query: `SELECT toString(activity_id) AS memberId, toString(group_id) AS groupId
+      FROM ${database}.activity_source_records FINAL WHERE is_deleted = 0`, format: "JSONEachRow" });
+    expect(await result.json()).toEqual([{ memberId, groupId }]);
+  });
+
   it("tombstones the removed member when refreshing its group UUID", async () => {
     await client.command({ query: `INSERT INTO ${database}.activity_source_records ${render(memberId)}` });
     await client.command({ query: `TRUNCATE TABLE ${database}.activity` });

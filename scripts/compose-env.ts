@@ -1,12 +1,15 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
-import { basename, join } from "node:path";
+import { join } from "node:path";
+import { resolveComposeProjectIdentity } from "./compose-project.ts";
 
 const workspaceDirectory = realpathSync(process.cwd());
-const composeEnvironmentPath = join(workspaceDirectory, ".env.local");
 const composeFilePath = join(workspaceDirectory, "docker-compose.yml");
-const composeProjectName = basename(workspaceDirectory);
+const { composeEnvironmentPath, composeProjectName } = resolveComposeProjectIdentity(
+  workspaceDirectory,
+  process.argv.slice(2),
+);
 
 interface ComposeServicePort {
   service: string;
@@ -140,6 +143,18 @@ const redpandaPort = await resolvePort({
   service: "redpanda",
   privatePort: "19092",
 });
+const peerDbCdcPort = await resolvePort({
+  env: existingEnv,
+  key: "PEERDB_CDC_PORT",
+  service: "peerdb",
+  privatePort: "9900",
+});
+const peerDbUiPort = await resolvePort({
+  env: existingEnv,
+  key: "PEERDB_UI_PORT",
+  service: "peerdb-ui",
+  privatePort: "3000",
+});
 
 const dotenv = [
   `COMPOSE_PROJECT_NAME=${dotenvEscape(composeProjectName)}`,
@@ -151,6 +166,9 @@ const dotenv = [
   `CLICKHOUSE_NATIVE_PORT=${clickHouseNativePort}`,
   `REDIS_PORT=${redisPort}`,
   `REDPANDA_PORT=${redpandaPort}`,
+  `PEERDB_CDC_HOST=127.0.0.1`,
+  `PEERDB_CDC_PORT=${peerDbCdcPort}`,
+  `PEERDB_UI_PORT=${peerDbUiPort}`,
   `DATABASE_URL=postgres://health:${postgresPasswordUrlEncoded}@127.0.0.1:${databasePort}/health`,
   `CLICKHOUSE_URL=http://default:${clickHousePasswordUrlEncoded}@127.0.0.1:${clickHouseHttpPort}`,
   `REDIS_URL=redis://127.0.0.1:${redisPort}`,

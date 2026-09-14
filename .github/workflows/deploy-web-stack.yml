@@ -573,6 +573,38 @@ jobs:
               -c deploy/stack.migration-quiesce.yml \
               --with-registry-auth --detach=true "$STACK_NAME"
 
+      - name: Wait for pre-migration web convergence
+        run: |
+          deadline=$((SECONDS + 300))
+          while true; do
+            update_state="$(
+              docker service inspect "${STACK_NAME}_web" \
+                --format '{{if .UpdateStatus}}{{.UpdateStatus.State}}{{end}}'
+            )"
+            replicas="$(
+              docker service ls --filter "name=${STACK_NAME}_web" --format '{{.Replicas}}'
+            )"
+            echo "${STACK_NAME}_web replicas=${replicas} update_state=${update_state:-none}"
+            case "$update_state" in
+              rollback_*|paused)
+                docker service ps "${STACK_NAME}_web" --no-trunc
+                echo "::error::${STACK_NAME}_web did not finish the pre-migration deployment; update_state=${update_state}"
+                exit 1
+                ;;
+            esac
+            if [ "$replicas" = "2/2" ] && {
+              [ -z "$update_state" ] || [ "$update_state" = "completed" ]
+            }; then
+              break
+            fi
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              docker service ps "${STACK_NAME}_web" --no-trunc
+              echo "::error::${STACK_NAME}_web did not converge before migrations"
+              exit 1
+            fi
+            sleep 5
+          done
+
       - name: Wait for Postgres writable
         run: |
           for attempt in $(seq 1 36); do
@@ -612,6 +644,50 @@ jobs:
             echo "ClickHouse readiness attempt ${attempt}/36: retrying in 5s..."
             sleep 5
           done
+
+      - name: Wait for PeerDB before migrations
+        run: |
+          for attempt in $(seq 1 36); do
+            peerdb_output=$(timeout 15s docker run --rm --network "${STACK_NAME}_default" \
+              --env-file "$DATABASE_OPERATIONS_ENV_FILE" \
+              postgres:18-alpine sh -euc \
+              "PGPASSWORD=\"\$POSTGRES_PASSWORD\" \
+              psql --host=peerdb --port=9900 --username=peerdb --dbname=peerdb --no-align --tuples-only --quiet \
+              --command \"SELECT 1;\"" 2>&1 || true)
+            peerdb_state="$(printf '%s\n' "$peerdb_output" | tail -n 1 | tr -d '[:space:]')"
+            flow_api_output=$(timeout 15s docker run --rm --network "${STACK_NAME}_default" \
+              postgres:18-alpine sh -euc \
+              "wget -qO- http://peerdb-flow-api:8113/v1/mirrors/list" 2>&1 || true)
+            if [ "$peerdb_state" = "1" ] && printf '%s' "$flow_api_output" | grep -q 'mirrors'; then
+              echo "PeerDB SQL and Flow API are reachable before migrations."
+              break
+            fi
+            if [ "$attempt" -eq 36 ]; then
+              echo "::error::PeerDB did not become reachable before migrations within 180s"
+              printf '%s\n' "$peerdb_output"
+              exit 1
+            fi
+            echo "PeerDB pre-migration readiness attempt ${attempt}/36: retrying in 5s..."
+            sleep 5
+          done
+
+      - name: Create PeerDB CDC canary artifact volume
+        run: |
+          canary_volume="${STACK_NAME}_peerdb_cdc_canary_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
+          docker volume create --label "com.dofek.stack=${STACK_NAME}" "$canary_volume" >/dev/null
+          echo "PEERDB_CDC_CANARY_VOLUME=$canary_volume" >> "$GITHUB_ENV"
+
+      - name: Prepare PeerDB CDC contract
+        id: prepare_peerdb_cdc_contract
+        env:
+          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+        run: |
+          docker run --rm --network "${STACK_NAME}_default" \
+            --env-file "$CDC_OPERATIONS_ENV_FILE" \
+            --env "CLICKHOUSE_PASSWORD_ENCODED=$CLICKHOUSE_PASSWORD_ENCODED" \
+            --entrypoint sh \
+            "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
+            -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec ./entrypoint.sh peerdb-cdc-contract prepare'
 
       - name: Run migrations
         env:
@@ -927,9 +1003,37 @@ jobs:
             "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
              -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec node --experimental-strip-types --enable-source-maps --disable-warning=ExperimentalWarning --import ./src/opentelemetry-hook.mjs --import ./src/instrumentation.ts src/db/setup-clickhouse-cdc.ts'
 
+      - name: Finalize PeerDB CDC contract
+        id: finalize_peerdb_cdc_contract
+        env:
+          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+        run: |
+          docker run --rm --network "${STACK_NAME}_default" \
+            --user 0:0 \
+            --env-file "$CDC_OPERATIONS_ENV_FILE" \
+            --env "CLICKHOUSE_PASSWORD_ENCODED=$CLICKHOUSE_PASSWORD_ENCODED" \
+            --mount "type=volume,source=${PEERDB_CDC_CANARY_VOLUME},target=/run/dofek-peerdb-cdc" \
+            --entrypoint sh \
+            "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
+            -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec ./entrypoint.sh peerdb-cdc-contract finalize /run/dofek-peerdb-cdc/artifact.json'
+
+      - name: Verify PeerDB CDC causal markers
+        id: verify_peerdb_cdc_contract
+        env:
+          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+        run: |
+          docker run --rm --network "${STACK_NAME}_default" \
+            --user 0:0 \
+            --env-file "$CDC_OPERATIONS_ENV_FILE" \
+            --env "CLICKHOUSE_PASSWORD_ENCODED=$CLICKHOUSE_PASSWORD_ENCODED" \
+            --mount "type=volume,source=${PEERDB_CDC_CANARY_VOLUME},target=/run/dofek-peerdb-cdc,readonly" \
+            --entrypoint sh \
+            "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
+            -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec ./entrypoint.sh peerdb-cdc-contract verify /run/dofek-peerdb-cdc/artifact.json'
+
       - name: Deploy ClickHouse consumer services
         id: deploy_stack_full
-        if: success() && steps.deploy_stack_quiesced.conclusion == 'success' && steps.configure_clickhouse_cdc.conclusion == 'success'
+        if: success() && steps.deploy_stack_quiesced.conclusion == 'success' && steps.configure_clickhouse_cdc.conclusion == 'success' && steps.verify_peerdb_cdc_contract.conclusion == 'success'
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
         run: |
@@ -1100,6 +1204,10 @@ jobs:
       - name: Report Docker disk usage post-prune
         if: ${{ steps.deploy_stack_full.outcome == 'success' }}
         run: docker system df
+
+      - name: Remove PeerDB CDC canary artifact volume
+        if: always() && env.PEERDB_CDC_CANARY_VOLUME != ''
+        run: docker volume rm -f "$PEERDB_CDC_CANARY_VOLUME"
 
       - uses: ./.github/actions/append-dispatcher-run-summary
         if: always()

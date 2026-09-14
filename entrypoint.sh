@@ -48,6 +48,10 @@ case "${1:-sync}" in
   migrate)
     exec $NODE src/db/run-migrate.ts
     ;;
+  peerdb-cdc-contract)
+    shift
+    exec $NODE src/db/run-clickhouse-cdc-contract.ts "$@"
+    ;;
   provider-connection-cutover)
     exec $NODE scripts/backfill-provider-connections.ts
     ;;
@@ -102,7 +106,7 @@ case "${1:-sync}" in
     exec $NODE scripts/seed-review-clickhouse.ts
     ;;
   *)
-    echo "Unknown mode: $1 (expected 'web', 'sync', 'worker', 'migrate', 'provider-connection-cutover', 'analytics', 'analytics-e2e', 'analytics-worker', 'cdc-health', 'processing-reconciliation', 'metric-stream-clickhouse-sink', 'seed', or 'review-seed-clickhouse')" >&2
+    echo "Unknown mode: $1 (expected 'web', 'sync', 'worker', 'migrate', 'peerdb-cdc-contract', 'provider-connection-cutover', 'analytics', 'analytics-e2e', 'analytics-worker', 'cdc-health', 'processing-reconciliation', 'metric-stream-clickhouse-sink', 'seed', or 'review-seed-clickhouse')" >&2
     exit 1
     ;;
 esac

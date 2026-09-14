@@ -34,8 +34,8 @@ active_activity AS (
     FROM {{ source('postgres_fitness', 'activity') }} FINAL
     WHERE
         _peerdb_is_deleted = 0
-        AND provider_absent_at IS NULL
-        AND deleted_at IS NULL
+        AND coalesce(provider_absent_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')
+        AND coalesce(deleted_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')
         AND throwIf(
             group_id IS NULL OR group_id = toUUID('00000000-0000-0000-0000-000000000000'),
             'Active activity is missing persisted group_id; reconcile PostgreSQL membership before CDC'

@@ -364,6 +364,37 @@ describe("ios telemetry", () => {
     );
   });
 
+  it("keeps expected input failures in local telemetry without reporting them", async () => {
+    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+    process.env.EXPO_PUBLIC_OTEL_ENDPOINT = "https://api.axiom.co/v1/logs";
+
+    const mod = await import("./telemetry");
+    mod.initTelemetry();
+
+    const error = new Error("Invalid email or password");
+    mod.captureException(
+      error,
+      { source: "login-screen-password-auth" },
+      { reportToErrorTracking: false },
+    );
+
+    expect(mocks.mockCaptureException).not.toHaveBeenCalled();
+    expect(posthogMocks.captureException).not.toHaveBeenCalled();
+    expect(mocks.mockAddBreadcrumb).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: "exception",
+        message: error.message,
+        level: "error",
+      }),
+    );
+    expect(mocks.mockEmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severityText: "ERROR",
+        body: `[exception] ${error.message}`,
+      }),
+    );
+  });
+
   it("still reports transient network errors from non-HealthKit sources", async () => {
     process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
 

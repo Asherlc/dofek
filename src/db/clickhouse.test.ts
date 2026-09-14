@@ -119,6 +119,10 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("CREATE DATABASE IF NOT EXISTS postgres_fitness");
     expect(sql).toContain("CREATE DATABASE IF NOT EXISTS ingest");
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS ingest.metric_stream");
+    const metricStreamDefinition = sql.slice(
+      sql.indexOf("CREATE TABLE IF NOT EXISTS ingest.metric_stream"),
+      sql.indexOf("CREATE TABLE IF NOT EXISTS ingest.metric_stream_delete_acknowledgement"),
+    );
     expect(sql).toContain("PROJECTION by_provider_current_state");
     expect(sql).toContain("vector Array(Float32)");
     expect(sql).toContain("ingested_at DateTime64(9) DEFAULT now()");
@@ -131,7 +135,7 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("metadata String");
     expect(sql).not.toContain("latitude Nullable");
     expect(sql).not.toContain("longitude Nullable");
-    expect(sql).not.toContain("metadata Nullable");
+    expect(metricStreamDefinition).not.toContain("metadata Nullable");
     for (const rawDependencyTable of rawDependencyTables) {
       expect(sql).toContain(`CREATE TABLE IF NOT EXISTS postgres_fitness.${rawDependencyTable}`);
     }

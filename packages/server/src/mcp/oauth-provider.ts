@@ -18,8 +18,10 @@ import type {
   OAuthTokens,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 import type { Database } from "dofek/db";
+import { captureException } from "dofek/lib/error-reporting";
 import type { Response } from "express";
 import { z } from "zod";
+import { logger } from "../logger.ts";
 import { McpOAuthClientMetadataResolver } from "./oauth-client-metadata.ts";
 import { McpOAuthClientResolver } from "./oauth-client-resolver.ts";
 import { McpOAuthClientsStore } from "./oauth-client-store.ts";
@@ -30,6 +32,7 @@ import {
   revokeOAuthToken,
   rotateRefreshToken,
 } from "./oauth-repository.ts";
+import { mcpClientCorrelationId } from "./request-telemetry.ts";
 import { type McpScope, mcpScopeSchema, validateMcpToken } from "./token-repository.ts";
 
 export const MCP_OAUTH_SCOPES = [
@@ -95,6 +98,20 @@ const HTML_ESCAPE_REPLACEMENTS: Record<string, string> = {
 
 function escapeHtml(value: string): string {
   return value.replace(/[&"'<>]/g, (char) => HTML_ESCAPE_REPLACEMENTS[char] ?? char);
+}
+
+function oauthTokenOutcome(
+  grantType: "authorization_code" | "refresh_token",
+  clientId: string,
+  outcome: "accepted" | "rejected",
+  scopes?: readonly McpScope[],
+): void {
+  logger.info("mcp.oauth_token", {
+    client_id_hash: mcpClientCorrelationId(clientId),
+    grant_type: grantType,
+    outcome,
+    ...(scopes ? { scope_set: [...scopes].sort().join(",") } : {}),
+  });
 }
 
 function hiddenInput(name: string, value: string | undefined): string {
@@ -242,41 +259,50 @@ export class DofekOAuthServerProvider implements OAuthServerProvider {
     redirectUri?: string,
     resource?: URL,
   ): Promise<OAuthTokens> {
-    const resolvedRedirectUri = redirectUri ?? client.redirect_uris[0];
-    if (!resolvedRedirectUri || resource?.href !== this.#resource.href) {
-      throw new InvalidGrantError("Authorization code parameters do not match");
-    }
-
-    if (codeVerifier) {
-      const storedChallenge = await getAuthorizationCodeChallenge(
-        this.#db,
-        client.client_id,
-        authorizationCode,
-      );
-      if (!storedChallenge) {
-        throw new InvalidGrantError("Invalid or expired authorization code");
+    try {
+      const resolvedRedirectUri = redirectUri ?? client.redirect_uris[0];
+      if (!resolvedRedirectUri || resource?.href !== this.#resource.href) {
+        throw new InvalidGrantError("Authorization code parameters do not match");
       }
-      const computedChallenge = createHash("sha256").update(codeVerifier).digest("base64url");
-      if (computedChallenge !== storedChallenge) {
-        throw new InvalidGrantError("PKCE code_verifier does not match challenge");
-      }
-    }
 
-    const tokens = await exchangeAuthorizationCode(this.#db, {
-      clientId: client.client_id,
-      code: authorizationCode,
-      name: oauthAccessTokenName(client),
-      redirectUri: resolvedRedirectUri,
-      resource: this.#resource.href,
-    });
-    if (!tokens) throw new InvalidGrantError("Invalid or expired authorization code");
-    return {
-      access_token: tokens.accessToken,
-      expires_in: tokens.accessTokenExpiresInSeconds,
-      refresh_token: tokens.refreshToken,
-      scope: tokens.scopes.join(" "),
-      token_type: "bearer",
-    };
+      if (codeVerifier) {
+        const storedChallenge = await getAuthorizationCodeChallenge(
+          this.#db,
+          client.client_id,
+          authorizationCode,
+        );
+        if (!storedChallenge) {
+          throw new InvalidGrantError("Invalid or expired authorization code");
+        }
+        const computedChallenge = createHash("sha256").update(codeVerifier).digest("base64url");
+        if (computedChallenge !== storedChallenge) {
+          throw new InvalidGrantError("PKCE code_verifier does not match challenge");
+        }
+      }
+
+      const tokens = await exchangeAuthorizationCode(this.#db, {
+        clientId: client.client_id,
+        code: authorizationCode,
+        name: oauthAccessTokenName(client),
+        redirectUri: resolvedRedirectUri,
+        resource: this.#resource.href,
+      });
+      if (!tokens) throw new InvalidGrantError("Invalid or expired authorization code");
+      oauthTokenOutcome("authorization_code", client.client_id, "accepted", tokens.scopes);
+      return {
+        access_token: tokens.accessToken,
+        expires_in: tokens.accessTokenExpiresInSeconds,
+        refresh_token: tokens.refreshToken,
+        scope: tokens.scopes.join(" "),
+        token_type: "bearer",
+      };
+    } catch (error: unknown) {
+      if (!(error instanceof InvalidGrantError || error instanceof InvalidScopeError)) {
+        captureException(error);
+      }
+      oauthTokenOutcome("authorization_code", client.client_id, "rejected");
+      throw error;
+    }
   }
 
   async exchangeRefreshToken(
@@ -285,25 +311,34 @@ export class DofekOAuthServerProvider implements OAuthServerProvider {
     requestedScopes?: string[],
     resource?: URL,
   ): Promise<OAuthTokens> {
-    if (resource?.href !== this.#resource.href) {
-      throw new InvalidGrantError("Refresh token resource does not match");
+    try {
+      if (resource?.href !== this.#resource.href) {
+        throw new InvalidGrantError("Refresh token resource does not match");
+      }
+      const scopes = requestedScopes ? parseScopes(requestedScopes) : undefined;
+      const tokens = await rotateRefreshToken(this.#db, {
+        clientId: client.client_id,
+        name: oauthAccessTokenName(client),
+        refreshToken,
+        requestedScopes: scopes,
+        resource: this.#resource.href,
+      });
+      if (!tokens) throw new InvalidGrantError("Invalid, expired, or reused refresh token");
+      oauthTokenOutcome("refresh_token", client.client_id, "accepted", tokens.scopes);
+      return {
+        access_token: tokens.accessToken,
+        expires_in: tokens.accessTokenExpiresInSeconds,
+        refresh_token: tokens.refreshToken,
+        scope: tokens.scopes.join(" "),
+        token_type: "bearer",
+      };
+    } catch (error: unknown) {
+      if (!(error instanceof InvalidGrantError || error instanceof InvalidScopeError)) {
+        captureException(error);
+      }
+      oauthTokenOutcome("refresh_token", client.client_id, "rejected");
+      throw error;
     }
-    const scopes = requestedScopes ? parseScopes(requestedScopes) : undefined;
-    const tokens = await rotateRefreshToken(this.#db, {
-      clientId: client.client_id,
-      name: oauthAccessTokenName(client),
-      refreshToken,
-      requestedScopes: scopes,
-      resource: this.#resource.href,
-    });
-    if (!tokens) throw new InvalidGrantError("Invalid, expired, or reused refresh token");
-    return {
-      access_token: tokens.accessToken,
-      expires_in: tokens.accessTokenExpiresInSeconds,
-      refresh_token: tokens.refreshToken,
-      scope: tokens.scopes.join(" "),
-      token_type: "bearer",
-    };
   }
 
   async verifyAccessToken(token: string): Promise<AuthInfo> {

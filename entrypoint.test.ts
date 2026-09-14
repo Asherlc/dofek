@@ -219,6 +219,16 @@ describe("entrypoint provider connection cutover mode", () => {
   });
 });
 
+describe("entrypoint PeerDB CDC contract mode", () => {
+  it("forwards the deployment phase and artifact path to the fail-closed command", () => {
+    const entrypoint = readFileSync(new URL("./entrypoint.sh", import.meta.url), "utf8");
+
+    expect(entrypoint).toContain(`peerdb-cdc-contract)
+    shift
+    exec $NODE src/db/run-clickhouse-cdc-contract.ts "$@"`);
+  });
+});
+
 function createRuntimeHarness(): {
   commandDirectory: string;
   eventPath: string;

@@ -1,3 +1,4 @@
+import { isExpectedUserInputError } from "@dofek/format/user-facing-error";
 import { MutationCache, QueryCache, QueryClient } from "@tanstack/react-query";
 import { captureException } from "./telemetry.ts";
 
@@ -24,6 +25,7 @@ export function createAppQueryClient() {
         if (isReportedLocally(query.meta)) {
           return;
         }
+        if (isExpectedUserInputError(error)) return;
         captureException(error, {
           source: "react-query-query",
           operation: operationFromKey(query.queryKey),
@@ -36,6 +38,7 @@ export function createAppQueryClient() {
         if (isReportedLocally(mutation.meta)) {
           return;
         }
+        if (isExpectedUserInputError(error)) return;
         captureException(error, {
           source: "react-query-mutation",
           operation: operationFromKey(mutation.options.mutationKey),

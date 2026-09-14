@@ -1,6 +1,9 @@
 import { ProviderServiceUnavailableError } from "@dofek/provider-http/rate-limit";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { APPLE_HEALTH_IMPORT_VALIDATION_ERROR_NAME } from "./import-validation-error.ts";
+import {
+  APPLE_HEALTH_IMPORT_VALIDATION_ERROR_NAME,
+  STRONG_CSV_IMPORT_VALIDATION_ERROR_NAME,
+} from "./import-validation-error.ts";
 
 // All mock dependencies live inside vi.hoisted() so they are guaranteed to exist
 // before vi.mock() factories resolve and before the static import of worker.ts.
@@ -1102,6 +1105,18 @@ describe("worker module", () => {
     );
     error.name = APPLE_HEALTH_IMPORT_VALIDATION_ERROR_NAME;
     getWorkerFailedHandler("import-queue")({ id: "apple-health-import-1" }, error);
+
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+  });
+
+  it("suppresses Sentry for invalid Strong CSV imports", async () => {
+    const Sentry = await import("@sentry/node");
+    const { UnrecoverableError } = await import("bullmq");
+    vi.mocked(Sentry.captureException).mockClear();
+
+    const error = new UnrecoverableError("Strong CSV must declare one consistent weight unit");
+    error.name = STRONG_CSV_IMPORT_VALIDATION_ERROR_NAME;
+    getWorkerFailedHandler("import-queue")({ id: "strong-import-1" }, error);
 
     expect(Sentry.captureException).not.toHaveBeenCalled();
   });

@@ -7,6 +7,38 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-09-14 — PostHog error inventory triage and owned-defect fixes
+
+- **Status:** Repository fixes committed; deployment verification is pending.
+- **Symptoms / user impact:** PostHog reported mobile-auth exchange failures,
+  targeted Strava webhook failures, and expected invalid-login/import failures.
+  It also contained historical BLE/provider-stats issues plus transient network,
+  provider, ClickHouse, Redis, and database failures.
+- **Evidence / root cause:** The mobile-auth stack reached BullMQ's Redis
+  adapter with an unsupported `sendCommand(command: string[])` shape, producing
+  the `toLowerCase` TypeError. The webhook route detached
+  `syncWebhookEvent` before calling it, so Strava's `this.id` access failed.
+  Authentication and Strong-import validation paths intentionally surfaced
+  actionable user-input errors but reported them as unexpected exceptions. A
+  web React Query mutation reporter also captured invalid Zepp pairing codes.
+  BullMQ's Redis adapter exposes custom commands through `defineCommand` and
+  `runCommand` ([Redis client interface](https://raw.githubusercontent.com/taskforcesh/bullmq/v5.79.2/src/interfaces/redis-client.ts)).
+- **Direct fix:** Replaced the Redis call with an atomic Lua GET-and-DEL custom
+  command, preserved the provider receiver for webhook dispatch, and added
+  shared classifiers so expected authentication, import-validation, and Zepp
+  pairing failures remain terminal/user-visible without entering error tracking.
+  Unexpected failures remain reportable. No runtime behavior was changed for
+  transient, provider, or infrastructure failures.
+- **Validation:** Targeted regression suites, web/mobile/server/auth
+  typechecks, and the full webhook route suite pass. PostHog accepted eight
+  `resolved` updates and suppressed the remaining current inventory as the
+  requested hold state.
+- **Remaining risk / follow-up:** Release the source fixes, then confirm new
+  mobile-auth and Strava webhook events stop and expected user-input events no
+  longer enter PostHog. Held issues remain operationally unresolved and should
+  be re-opened for investigation when their underlying external condition is
+  actionable.
+
 ## 2026-09-09 — Local integration validation blocked by Redpanda AIO limit
 
 - **Status:** Unresolved local infrastructure issue; no production impact.
@@ -26611,6 +26643,35 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   counter so a genuinely stuck pipeline (as opposed to a merely slow one)
   pages someone instead of only surfacing in the per-user UI.
 
+## 2026-09-12 — Sleep and body recompute blocked by route read-model timeout
+
+- **Symptoms:** The dashboard showed Sleep and Body recompute blocked even
+  though their individual model work had completed. The analytics worker
+  repeatedly stopped at `activity_route_identity`.
+- **User impact:** Sleep and body recompute status could not complete, and
+  the analytics cache-warming/build cycle was blocked behind the route model.
+- **Evidence:** ClickHouse `system.query_log` recorded
+  `activity_route_identity` failures after about 240 seconds, reading roughly
+  302 million rows / 14 GB, with exception code 159 (`Timeout exceeded`).
+- **Root cause:** Unscoped route refreshes used full-table `FINAL` scans to
+  find changed location and altitude activity keys, then read altitude samples
+  again to build the selected elevation profiles. The repeated scans exceeded
+  ClickHouse's configured execution-time limit before the downstream
+  recompute could finish.
+- **Fix:** Discover changed route keys from grouped per-activity source
+  watermarks and retain `FINAL` reads only for the selected route geometry and
+  altitude samples. This preserves replacement correctness while bounding the
+  expensive reads to affected activities.
+- **Validation:** A ClickHouse integration regression test inserts 100,000
+  altitude samples and requires an unscoped refresh to remain below a 350,000
+  row-read budget; the focused suite passed locally (19 tests). Deployment validation
+  remains pending at the time of this entry.
+- **Remaining risk:** A genuinely large set of affected activities can still
+  require substantial selected-geometry work, but the full-history discovery
+  scans no longer multiply that cost.
+- **Follow-up:** Monitor the first production analytics build after deploy for
+  `activity_route_identity` duration and exception code 159.
+
 ## 2026-09-12 — Pinned `docker.io/minio/minio` image archived, breaking CI and exposed in production stack
 
 - **Symptoms:** PR #2720's CI failed across E2E, three of four integration
@@ -26650,3 +26711,160 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   account-erasure/PeerDB staging use cases (an actively maintained
   S3-compatible alternative, or a managed service) now that MinIO OSS has
   no upstream. Not addressed here — out of scope for the CI unblock.
+
+## 2026-09-12 — Strava OAuth callback rolled back after webhook validation failed
+
+- **Symptoms:** Connecting Strava spent about 30 seconds on the callback and
+  ended with “Token exchange failed.” The Data Sources page then continued to
+  show Strava as disconnected.
+- **User impact:** The token exchange succeeded, but the whole connection
+  transaction rolled back when webhook registration failed, leaving no usable
+  Strava connection.
+- **Evidence:** Production `dofek_web` logs recorded the successful Strava
+  token save followed by `Strava webhook registration failed (400)`: Strava's
+  validation GET to `/api/webhooks/strava` received a non-200 response. The
+  callback completed with HTTP 500 after 29,553 ms.
+- **Root cause:** OAuth persistence created the pending webhook-subscription
+  row inside the connection transaction. Strava validates the callback during
+  subscription creation on a separate request, which cannot read that
+  uncommitted row and therefore received 404.
+- **Fix:** Persist the provider connection inside the transaction, commit it,
+  and only then register the webhook. The pending validation record is now
+  visible before Strava requests the callback. The same post-commit sequence
+  applies to pending-email signup completion.
+- **Validation:** The focused data-provider callback unit suite passed (25
+  tests), and TypeScript typecheck passed. The database-backed transaction
+  visibility test could not run locally because Docker was unavailable; the
+  full lint suite also reached its analytics SQL step but could not connect to
+  the absent local ClickHouse service. The broader auth-route suite could not
+  bind its ephemeral HTTP listener in this sandbox (`Server address is not an
+  object`) before its assertions ran.
+- **Remaining risk:** The affected authorization must be started again because
+  the original OAuth code was consumed and its transaction was rolled back.
+- **Follow-up:** After deployment, reconnect Strava and confirm that the
+  callback completes promptly and the provider becomes connected.
+
+## 2026-09-13 — PeerDB schema drift stalled health-data CDC
+
+- **Symptoms / user impact:** Sleep and Body recompute exceeded its reconciliation
+  window, and recent activities—including September 11 Peloton workouts that
+  existed in Postgres—were absent from web and mobile. New activity, sleep,
+  body, provider, and processing-marker rows queued behind the failed batch did
+  not reach ClickHouse or its serving read models.
+- **Evidence:** Production was running `sha-86202ce`. The Peloton sync completed
+  every 30 minutes and its three September 11 source rows were active in
+  Postgres `fitness.activity`; all three canonical groups were visible through
+  `fitness.v_activity`. The Activities page reads ClickHouse
+  `analytics.deduped_activities`, where none of those three group IDs existed.
+  Postgres held 3,238 activity rows through September 11, while
+  `postgres_fitness.activity` held 3,214 and stopped at September 9; its latest
+  `_peerdb_synced_at` was September 10. The fitness replication slot was active,
+  reserved, and only 29 kB behind, ruling out a lost slot. PeerDB's first fatal
+  normalization line was `No such column stress_high_minutes in table
+  postgres_fitness.daily_metrics`, while the mirror still appeared running and
+  its persisted normalization cursor stopped advancing.
+- **First fatal line / root cause:** PeerDB normalization failed with ClickHouse
+  error 16: `No such column stress_high_minutes in table
+  postgres_fitness.daily_metrics`. The intended Postgres cleanup had been stored
+  in the unjournaled `drizzle/0074_remove_provider_derived_metrics.sql`, whose
+  filename collided with the journaled `0074_climbing_grade_systems` migration.
+  Its ClickHouse counterpart,
+  `0085_remove_provider_derived_metrics`, did run and removed the destination
+  columns. PeerDB therefore consumes current WAL but cannot normalize the
+  fitness batch because the source still emits columns that the destination no
+  longer has; activity changes behind the failed batch never reach the serving
+  read models. Independently maintained live PeerDB mappings still projected
+  the source columns, and the previous integration suites did not run the real
+  PeerDB normalization path, so they could not detect this projection drift.
+- **Fix / mitigation:** The cleanup is reissued as journaled forward migration
+  `0123_remove_provider_derived_metrics`, and Postgres migration startup now
+  fails if any SQL migration is absent from the Drizzle journal. A typed
+  canonical mirror contract additionally drives setup SQL, in-place live
+  mapping reconciliation, catalog validation, health diagnostics, and one exact
+  deployment canary per managed flow. Deployments now quiesce consumers, apply
+  additive pre-CDC schema, reconcile and validate the live mappings, migrate,
+  and require all causal markers in ClickHouse before resuming consumers. A
+  required isolated CI tier runs the full contract against real PeerDB. PeerDB
+  documents [mirror editing](https://docs.peerdb.io/features/edit-mirror),
+  [schema changes](https://docs.peerdb.io/features/schema-changes), and
+  [resynchronization](https://docs.peerdb.io/features/resync-mirror).
+- **Validation:** Contract rendering, projection validation, two-phase mapping
+  reconciliation, deployment ordering and canaries, normalization-stall
+  detection, and the full Docker-free suite (1,275 files; 18,596 tests) pass
+  locally. The first real-PeerDB CI attempt stopped before the test because its
+  broad Compose wait included the unrelated, unhealthy telemetry collector;
+  the runner now starts only the isolated CDC test's required services. Its
+  focused tests pass. The rerun exercised every canonical mapping and exact
+  flow marker through real Postgres, PeerDB/Temporal, and ClickHouse and passed.
+  Targeted mutation testing reports 100% for the mirror contracts and 95.38%
+  for the command runner, with no surviving covered mutants. Review hardening
+  additionally bounds every canary probe by its remaining deadline, rejects
+  incomplete managed-flow artifacts, validates ClickHouse count rows at the
+  database boundary, and brings the deadline verifier to a 100% mutation score.
+  A subsequent E2E run caught ClickHouse error 62 at `ALTER TABLE IF EXISTS`
+  in migration 0087 before Cypress started. The migration now uses supported
+  `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` syntax and intentionally fails if
+  a required mirror table is absent; a real-ClickHouse integration test applies
+  every statement twice and verifies all three destination columns. The
+  complete CI rerun and production recovery remain pending at the time of this
+  entry.
+- **Production recovery status / remaining risk:** Unresolved. No mirror, slot,
+  or destination table has been replaced or truncated. The blocked WAL remains
+  unapplied until the guarded deployment completes; retrying provider sync
+  cannot repair the destination mismatch. Recovery must preserve the existing
+  active slot, then confirm exact-marker arrival, advancing cursors, WAL drain,
+  successful recompute, and current web/mobile activity, sleep, and body data.
+- **Follow-up:** Observe production routing for the new
+  `NORMALIZATION_CURSOR_STALLED` health classification and record the deployed
+  commit plus the recovery evidence above.
+
+## 2026-09-13 — Recovery deploy left activity processors quiesced
+
+- **Symptoms / user impact:** The scheduled sync worker, reconciliation worker,
+  and ClickHouse consumers remained at `0/0` after the recovery deployment
+  failed, preventing newly synced activities from reaching serving read models.
+- **Evidence:** The first deployment attempt stopped at the PeerDB contract
+  check while `dofek_fitness_raw_analytics` was `STATUS_SNAPSHOT`; it later
+  completed and reported `STATUS_RUNNING` with the canonical mapping. A rerun
+  passed that check and migrations but failed its `Deploy stack without
+  ClickHouse consumers` step with `failed to update service dofek_web: ...
+  update out of sequence`. There was no concurrent Deploy Web workflow run.
+- **Root cause:** The workflow applied a pre-migration stack update to the web
+  service and then applied a second stack update before Swarm had finished the
+  first one. Swarm rejected the overlapping service update.
+- **Fix:** Require the pre-migration web service to converge at `2/2` with a
+  completed update before migrations and the subsequent stack update begin.
+- **Validation:** The focused deployment-workflow suite passes (16 tests).
+  Production recovery and activity visibility verification remain pending the
+  corrected workflow deployment.
+- **Remaining risk / follow-up:** The convergence gate fails explicitly if web
+  cannot become healthy; after rollout, verify workers resume, CDC catches up,
+  and a current activity appears in the Activities UI.
+
+## 2026-09-13 — Activity mirror lifecycle nullability blocked analytics rebuild
+
+- **Symptoms / user impact:** Activities after Sep 9 remained absent from the
+  UI even after the PostgreSQL-to-ClickHouse activity mirror had caught up.
+- **Evidence:** Canonical Postgres had 3,627 rows with `provider_absent_at IS
+  NULL` and 3,648 with `deleted_at IS NULL`. The resynced
+  `postgres_fitness.activity` mirror instead had non-nullable `DateTime64`
+  columns and represented active nulls as `1970-01-01`. Consequently,
+  `activity_source_records` selected zero current rows with its lifecycle-null
+  predicates and refused to tombstone its 3,137 existing records. Before that
+  guard ran, the analytics worker also failed because ClickHouse had only
+  1.7 GiB temporary-disk space available while the model required 5.8 GiB.
+- **Root cause:** The live activity mirror drifted from the checked-in canonical
+  ClickHouse schema, which defines both lifecycle timestamps as nullable; its
+  zero-timestamp substitutions changed the meaning of the active-activity
+  predicate after mirror resynchronization.
+- **Fix / mitigation:** Cleared only ClickHouse diagnostic system logs to restore
+  14 GiB workspace, preserving metric-stream data and its R2 archive. Added
+  migration `0089_activity_lifecycle_nullable`, which changes both raw mirror
+  columns to `Nullable(DateTime64(6, 'UTC'))`; ClickHouse documents
+  [`MODIFY COLUMN`](https://clickhouse.com/docs/sql-reference/statements/alter/column#modify-column)
+  for this schema operation. A real-ClickHouse integration test starts from the
+  faulty non-nullable schema and verifies the corrected types.
+- **Validation / remaining risk:** The new integration test, neighboring raw
+  schema migration test, formatting check, and TypeScript check pass. Production
+  deployment, one controlled mirror resync to restore canonical nulls, successful
+  analytics rebuild, and direct UI freshness verification remain pending.
