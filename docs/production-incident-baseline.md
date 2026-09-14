@@ -20,7 +20,7 @@ them, and the durability work they suggest.
   raw `postgres_fitness.daily_metrics` mirror no longer contained it. A
   ClickHouse view stores its defining query, so source-column removal requires
   recreating dependent views ([ClickHouse CREATE VIEW](https://clickhouse.com/docs/sql-reference/statements/create/view)).
-- **Direct fix:** Added migration `0092_refresh_daily_metrics_view`, which
+- **Direct fix:** Added migration `0093_refresh_daily_metrics_view`, which
   replaces `analytics.v_daily_metrics` from the current canonical definition.
 - **Validation:** An isolated ClickHouse integration test creates the legacy
   column and view, drops the column, applies the migration, and successfully
