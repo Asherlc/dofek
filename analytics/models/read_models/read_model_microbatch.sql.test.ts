@@ -251,8 +251,8 @@ describe("production analytics read-model build", () => {
     expect(sourceRecordsSql).toContain("device_priority_match AS");
     expect(sourceRecordsSql).toContain("current_source_records AS");
     expect(sourceRecordsSql).toContain("active_activity.group_id AS group_id");
-    expect(sourceRecordsSql).toContain("provider_absent_at IS NULL");
-    expect(sourceRecordsSql).toContain("deleted_at IS NULL");
+    expect(sourceRecordsSql).toContain("coalesce(provider_absent_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')");
+    expect(sourceRecordsSql).toContain("coalesce(deleted_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')");
     expect(sourceRecordsSql).toContain("length(active_device_priority.source_name_pattern) DESC");
     expect(sourceRecordsSql).toContain("active_device_priority.priority ASC");
     expect(sourceRecordsSql).toContain("active_device_priority.source_name_pattern ASC");

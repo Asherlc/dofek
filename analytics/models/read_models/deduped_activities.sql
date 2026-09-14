@@ -37,8 +37,8 @@ final_groups AS (
         group_id
     FROM {{ source('postgres_fitness', 'activity') }} FINAL
     WHERE _peerdb_is_deleted = 0
-        AND deleted_at IS null
-        AND provider_absent_at IS NOT null
+        AND coalesce(deleted_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')
+        AND coalesce(provider_absent_at, toDateTime64(0, 6, 'UTC')) != toDateTime64(0, 6, 'UTC')
         {% if activity_refresh_scoped %}
         AND user_id = toUUID('{{ var("activity_refresh_user_id") }}')
         {% endif %}
@@ -77,8 +77,8 @@ absent_group_members AS (
     FROM final_groups
     INNER JOIN {{ source('postgres_fitness', 'activity') }} AS absent FINAL
         ON absent.id = final_groups.activity_id
-        AND absent.deleted_at IS null
-        AND absent.provider_absent_at IS NOT null
+        AND coalesce(absent.deleted_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')
+        AND coalesce(absent.provider_absent_at, toDateTime64(0, 6, 'UTC')) != toDateTime64(0, 6, 'UTC')
         AND absent.external_id IS NOT null
         AND absent.external_id != ''
         AND absent._peerdb_is_deleted = 0
