@@ -301,6 +301,21 @@ describe("createMcpRouter lifecycle handling", () => {
     );
   });
 
+  it("classifies a completed HTTP 401 as an HTTP rejection", async () => {
+    routeMocks.handleRequest.mockImplementation((_request: unknown, response: unknown) => {
+      sendResponse(response, 401, "rejected");
+      return Promise.resolve();
+    });
+
+    const response = await request({ jsonrpc: "2.0", id: 1, method: "initialize" });
+
+    expect(response).toEqual({ status: 401, text: "rejected" });
+    expect(routeMocks.loggerInfo).toHaveBeenCalledWith(
+      "mcp.request",
+      expect.objectContaining({ http_status: 401, outcome: "http_rejected" }),
+    );
+  });
+
   it("classifies non-400 HTTP failures and preserves sorted OAuth scope telemetry", async () => {
     routeMocks.validateMcpToken.mockResolvedValueOnce({
       expiresAt: null,
