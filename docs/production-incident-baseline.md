@@ -26808,3 +26808,31 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** The convergence gate fails explicitly if web
   cannot become healthy; after rollout, verify workers resume, CDC catches up,
   and a current activity appears in the Activities UI.
+
+## 2026-09-13 — Activity mirror lifecycle nullability blocked analytics rebuild
+
+- **Symptoms / user impact:** Activities after Sep 9 remained absent from the
+  UI even after the PostgreSQL-to-ClickHouse activity mirror had caught up.
+- **Evidence:** Canonical Postgres had 3,627 rows with `provider_absent_at IS
+  NULL` and 3,648 with `deleted_at IS NULL`. The resynced
+  `postgres_fitness.activity` mirror instead had non-nullable `DateTime64`
+  columns and represented active nulls as `1970-01-01`. Consequently,
+  `activity_source_records` selected zero current rows with its lifecycle-null
+  predicates and refused to tombstone its 3,137 existing records. Before that
+  guard ran, the analytics worker also failed because ClickHouse had only
+  1.7 GiB temporary-disk space available while the model required 5.8 GiB.
+- **Root cause:** The live activity mirror drifted from the checked-in canonical
+  ClickHouse schema, which defines both lifecycle timestamps as nullable; its
+  zero-timestamp substitutions changed the meaning of the active-activity
+  predicate after mirror resynchronization.
+- **Fix / mitigation:** Cleared only ClickHouse diagnostic system logs to restore
+  14 GiB workspace, preserving metric-stream data and its R2 archive. Added
+  migration `0089_activity_lifecycle_nullable`, which changes both raw mirror
+  columns to `Nullable(DateTime64(6, 'UTC'))`; ClickHouse documents
+  [`MODIFY COLUMN`](https://clickhouse.com/docs/sql-reference/statements/alter/column#modify-column)
+  for this schema operation. A real-ClickHouse integration test starts from the
+  faulty non-nullable schema and verifies the corrected types.
+- **Validation / remaining risk:** The new integration test, neighboring raw
+  schema migration test, formatting check, and TypeScript check pass. Production
+  deployment, one controlled mirror resync to restore canonical nulls, successful
+  analytics rebuild, and direct UI freshness verification remain pending.
