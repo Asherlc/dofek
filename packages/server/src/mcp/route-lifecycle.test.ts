@@ -98,7 +98,10 @@ function getPort(server: Server): number {
   throw new Error("Server address is not an object");
 }
 
-async function request(body: unknown): Promise<{ status: number; text: string }> {
+async function request(
+  body: unknown,
+  authorization = "Bearer good-token",
+): Promise<{ status: number; text: string }> {
   const app = express();
   app.use(
     "/api/mcp",
@@ -113,7 +116,7 @@ async function request(body: unknown): Promise<{ status: number; text: string }>
         method: "POST",
         headers: {
           Accept: "application/json, text/event-stream",
-          Authorization: "Bearer good-token",
+          ...(authorization ? { Authorization: authorization } : {}),
           "Content-Type": "application/json",
         },
         body: JSON.stringify(body),
@@ -189,6 +192,31 @@ describe("createMcpRouter lifecycle handling", () => {
     expect(routeMocks.loggerInfo).toHaveBeenCalledWith(
       "mcp.request",
       expect.objectContaining({ http_status: 204, mcp_method: "initialize", outcome: "completed" }),
+    );
+  });
+
+  it("records a bounded diagnostic when the bearer header is absent", async () => {
+    const response = await request({ jsonrpc: "2.0", id: 1, method: "initialize" }, "");
+
+    expect(response.status).toBe(401);
+    expect(routeMocks.loggerInfo).toHaveBeenCalledWith(
+      "mcp.authentication",
+      expect.objectContaining({ auth_outcome: "missing_bearer", http_status: 401 }),
+    );
+  });
+
+  it("records a bounded diagnostic when token validation rejects the request", async () => {
+    routeMocks.validateMcpToken.mockResolvedValueOnce(null);
+    const response = await request({ jsonrpc: "2.0", id: 1, method: "initialize" });
+
+    expect(response.status).toBe(401);
+    expect(routeMocks.loggerInfo).toHaveBeenCalledWith(
+      "mcp.authentication",
+      expect.objectContaining({
+        auth_outcome: "invalid_token",
+        http_status: 401,
+        mcp_method: "initialize",
+      }),
     );
   });
 
