@@ -91,6 +91,10 @@ describe("mcpRequestTelemetry", () => {
       expect(mcpRuntimeTelemetry()).toMatchObject({ build_revision: "1a2b3c4" });
       process.env.SENTRY_RELEASE = "not-a-sha";
       expect(mcpRuntimeTelemetry()).toMatchObject({ build_revision: "unknown" });
+      process.env.SENTRY_RELEASE = "prefix-1a2b3c4";
+      expect(mcpRuntimeTelemetry()).toMatchObject({ build_revision: "unknown" });
+      process.env.SENTRY_RELEASE = "1a2b3c4-suffix";
+      expect(mcpRuntimeTelemetry()).toMatchObject({ build_revision: "unknown" });
     } finally {
       if (original === undefined) delete process.env.SENTRY_RELEASE;
       else process.env.SENTRY_RELEASE = original;
