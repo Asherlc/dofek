@@ -350,6 +350,26 @@ describe("DofekOAuthServerProvider", () => {
       expect(target).toContain("state=state-value");
     });
 
+    it("keeps offline_access out of the stored Dofek permission grant", async () => {
+      const client = makeClient();
+      const { response } = makeResponse({
+        mcpOAuthApproval: "approve",
+        mcpOAuthUserId: "user-1",
+      });
+      mocks.createAuthorizationCode.mockResolvedValue("dofek_mcp_code_xyz");
+
+      await provider().authorize(
+        client,
+        makeParams({ scopes: ["health:read", "offline_access"] }),
+        response,
+      );
+
+      expect(mocks.createAuthorizationCode).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ scopes: ["health:read"] }),
+      );
+    });
+
     it("omits state from the approval redirect when no state was provided", async () => {
       const client = makeClient();
       const params = makeParams();
