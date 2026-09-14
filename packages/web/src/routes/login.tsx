@@ -1,6 +1,7 @@
 import {
   getEmailValidationError,
   getNewPasswordValidationError,
+  isExpectedUserInputError,
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
   PASSWORD_REQUIREMENT_TEXT,
@@ -123,9 +124,11 @@ function LoginPage() {
           : await loginWithPassword({ email, password, returnTo });
       window.location.href = result.redirect;
     } catch (err: unknown) {
-      captureException(err, {
-        operation: authMode === "register" ? "auth.register" : "auth.login",
-      });
+      if (!isExpectedUserInputError(err)) {
+        captureException(err, {
+          operation: authMode === "register" ? "auth.register" : "auth.login",
+        });
+      }
       setFormError(userFacingErrorMessage(err, "Authentication failed"));
     } finally {
       setSubmitting(false);
@@ -145,7 +148,9 @@ function LoginPage() {
         ),
       );
     } catch (err: unknown) {
-      captureException(err, { operation: "auth.password-reset-request" });
+      if (!isExpectedUserInputError(err)) {
+        captureException(err, { operation: "auth.password-reset-request" });
+      }
       setFormError(userFacingErrorMessage(err, "Password reset failed"));
     } finally {
       setSubmitting(false);

@@ -1,5 +1,40 @@
 import { describe, expect, it } from "vitest";
-import { userFacingErrorMessage } from "./user-facing-error.ts";
+import {
+  isExpectedImportInputError,
+  isExpectedUserInputError,
+  userFacingErrorMessage,
+} from "./user-facing-error.ts";
+
+describe("isExpectedUserInputError", () => {
+  it("classifies invalid Zepp pairing codes as expected input", () => {
+    expect(
+      isExpectedUserInputError(new Error("Enter a valid six-character Zepp pairing code.")),
+    ).toBe(true);
+  });
+
+  it("retains unexpected failures as reportable", () => {
+    expect(isExpectedUserInputError(new Error("Pairing store unavailable"))).toBe(false);
+  });
+});
+
+describe("isExpectedImportInputError", () => {
+  it.each([
+    "Strong CSV has no Weight Unit declaration; choose kg or lbs before importing",
+    "Strong CSV import completed with errors after importing 5 workouts",
+    "Strong export is invalid",
+    "Apple Health ZIP must contain export.xml; upload the original Apple Health export archive",
+    "Choose kg or lbs before importing a Strong export",
+    "Unsupported shared file type",
+    "Upload cancelled",
+    "Upload expired",
+  ])("classifies expected import input failure: %s", (message) => {
+    expect(isExpectedImportInputError(new Error(message))).toBe(true);
+  });
+
+  it("does not classify infrastructure failures as import input", () => {
+    expect(isExpectedImportInputError(new Error("R2 unavailable"))).toBe(false);
+  });
+});
 
 describe("userFacingErrorMessage", () => {
   it("preserves an actionable message authored for the user", () => {

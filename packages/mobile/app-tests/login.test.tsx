@@ -325,6 +325,30 @@ describe("LoginScreen", () => {
     });
   });
 
+  it("does not report invalid password credentials", async () => {
+    const error = new Error("Invalid email or password");
+    mockFetchConfiguredProviders.mockResolvedValue({ identity: [], data: [], password: true });
+    mockLoginWithPassword.mockRejectedValue(error);
+
+    render(<LoginScreen />);
+
+    await waitFor(() => expect(screen.getByPlaceholderText("Email")).toBeTruthy());
+    fireEvent.change(screen.getByPlaceholderText("Email"), {
+      target: { value: "user@example.com" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Password"), {
+      target: { value: "wrong-password" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in with email" }));
+
+    await waitFor(() => expect(screen.getByText(error.message)).toBeTruthy());
+    expect(mockCaptureException).toHaveBeenCalledWith(
+      error,
+      { source: "login-screen-password-auth" },
+      { reportToErrorTracking: false },
+    );
+  });
+
   it("shows empty state when no providers configured", async () => {
     mockFetchConfiguredProviders.mockResolvedValue({
       identity: [],
@@ -722,6 +746,27 @@ describe("LoginScreen", () => {
         "https://test.example.com",
         "user@example.com",
       ),
+    );
+  });
+
+  it("does not report invalid password-reset input", async () => {
+    const error = new Error("Invalid password reset request");
+    mockFetchConfiguredProviders.mockResolvedValue({ identity: [], data: [], password: true });
+    mockRequestPasswordReset.mockRejectedValue(error);
+
+    render(<LoginScreen />);
+
+    fireEvent.click(await screen.findByText("Forgot password?"));
+    fireEvent.change(screen.getByPlaceholderText("Email"), {
+      target: { value: "invalid@example.com" },
+    });
+    fireEvent.click(screen.getByText("Send reset link"));
+
+    await waitFor(() => expect(screen.getByText(error.message)).toBeTruthy());
+    expect(mockCaptureException).toHaveBeenCalledWith(
+      error,
+      { source: "login-screen-password-reset" },
+      { reportToErrorTracking: false },
     );
   });
 });
