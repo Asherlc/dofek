@@ -266,6 +266,33 @@ describe("createMcpRouter lifecycle handling", () => {
     );
   });
 
+  it("classifies non-400 HTTP failures and preserves sorted OAuth scope telemetry", async () => {
+    routeMocks.validateMcpToken.mockResolvedValueOnce({
+      expiresAt: null,
+      oauthClientId: "oauth-client",
+      oauthResource: null,
+      scopes: ["nutrition:write", "nutrition:read"],
+      tokenId: "token-id",
+      userId: "user-id",
+    });
+    routeMocks.handleRequest.mockImplementation((_request: unknown, response: unknown) => {
+      sendResponse(response, 500, "failed");
+      return Promise.resolve();
+    });
+
+    const response = await request({ jsonrpc: "2.0", id: 1, method: "initialize" });
+
+    expect(response.status).toBe(500);
+    expect(routeMocks.loggerInfo).toHaveBeenCalledWith(
+      "mcp.authentication",
+      expect.objectContaining({ client_kind: "oauth", scope_set: "nutrition:read,nutrition:write" }),
+    );
+    expect(routeMocks.loggerInfo).toHaveBeenCalledWith(
+      "mcp.request",
+      expect.objectContaining({ http_status: 500, outcome: "http_rejected" }),
+    );
+  });
+
   it("records an aborted request without a food mutation", async () => {
     routeMocks.handleRequest.mockImplementation((_request: unknown, response: unknown) => {
       destroyResponse(response);
