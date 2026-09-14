@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMcpRouter } from "./route.ts";
 
 let transportErrorHandler: ((error: Error) => void) | undefined;
+let transportSend: ((message: unknown, options?: unknown) => Promise<void>) | undefined;
 
 const routeMocks = vi.hoisted(() => {
   const mocks = {
@@ -90,8 +91,12 @@ vi.mock("@modelcontextprotocol/sdk/server/streamableHttp.js", () => ({
       return routeMocks.handleRequest(request, response, body);
     }
 
-    send(): Promise<void> {
-      return Promise.resolve();
+    get send(): (message: unknown, options?: unknown) => Promise<void> {
+      return () => Promise.resolve();
+    }
+
+    set send(handler: (message: unknown, options?: unknown) => Promise<void>) {
+      transportSend = handler;
     }
 
     set onerror(handler: (error: Error) => void) {
@@ -147,6 +152,7 @@ describe("createMcpRouter lifecycle handling", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     transportErrorHandler = undefined;
+    transportSend = undefined;
     routeMocks.validateMcpToken.mockResolvedValue({
       expiresAt: null,
       oauthClientId: null,
@@ -339,6 +345,36 @@ describe("createMcpRouter lifecycle handling", () => {
       }),
     );
     expect(JSON.stringify(routeMocks.loggerInfo.mock.calls)).not.toContain(secret);
+  });
+
+  it("records a valid tools/list transport result", async () => {
+    routeMocks.handleRequest.mockImplementation((_request: unknown, response: unknown) => {
+      void transportSend?.({
+        jsonrpc: "2.0",
+        result: {
+          tools: [
+            { inputSchema: {}, name: "create_food_entry" },
+            { inputSchema: {}, name: "search_food_entries" },
+          ],
+        },
+      });
+      sendResponse(response, 200);
+      return Promise.resolve();
+    });
+
+    const response = await request({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+
+    expect(response.status).toBe(200);
+    expect(routeMocks.loggerInfo).toHaveBeenCalledWith(
+      "mcp.tools_list",
+      expect.objectContaining({
+        expected_food_tools_present: true,
+        has_next_page: false,
+        jsonrpc_outcome: "result",
+        tool_schema_valid: true,
+        tools_count: 2,
+      }),
+    );
   });
 
   it("records an aborted lifecycle when a food-mutation client disconnects", async () => {
