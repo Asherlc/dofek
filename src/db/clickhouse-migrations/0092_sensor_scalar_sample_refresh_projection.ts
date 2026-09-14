@@ -5,6 +5,8 @@ export function createMigration(): ClickHouseMigration {
     id: "0092_sensor_scalar_sample_refresh_projection",
     statements: [
       `ALTER TABLE analytics.sensor_scalar_sample
+        MODIFY SETTING deduplicate_merge_projection_mode = 'rebuild'`,
+      `ALTER TABLE analytics.sensor_scalar_sample
         ADD PROJECTION IF NOT EXISTS by_peerdb_synced_at (
           SELECT *
           ORDER BY _peerdb_synced_at

@@ -24,8 +24,9 @@ describe("0092_sensor_scalar_sample_refresh_projection", () => {
         id UInt64,
         user_id UInt64,
         scalar Float64,
+        version UInt64,
         _peerdb_synced_at DateTime64(3, 'UTC')
-      ) ENGINE = MergeTree ORDER BY (user_id, id)`,
+      ) ENGINE = ReplacingMergeTree(version) ORDER BY (user_id, id)`,
     });
     await client.command({
       query: `INSERT INTO ${database}.sensor_scalar_sample
@@ -33,6 +34,7 @@ describe("0092_sensor_scalar_sample_refresh_projection", () => {
           number,
           number % 1000,
           toFloat64(number),
+          number,
           if(
             number % 100 = 0,
             toDateTime64('2026-09-13 12:00:00', 3, 'UTC'),
