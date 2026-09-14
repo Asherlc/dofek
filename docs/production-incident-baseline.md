@@ -26868,3 +26868,23 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   schema migration test, formatting check, and TypeScript check pass. Production
   deployment, one controlled mirror resync to restore canonical nulls, successful
   analytics rebuild, and direct UI freshness verification remain pending.
+
+## 2026-09-14 — ChatGPT lost Dofek MCP availability after initial authorization
+
+- **Symptoms / user impact:** Dofek could be used once in ChatGPT, then became
+  unavailable in later messages while other connected tools remained available.
+- **Evidence:** Dofek OAuth discovery omitted `offline_access`, although its
+  token endpoint issued and rotated refresh tokens. ChatGPT documents that MCP
+  apps need advertised `offline_access` (or an equivalent) and refresh-token
+  support to retain access after initial authorization.
+  [Developer mode and MCP apps in ChatGPT](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt)
+- **Root cause:** The OAuth server rejected `offline_access` as an unsupported
+  Dofek permission and omitted it from discovery metadata, preventing ChatGPT
+  from establishing a refresh-capable session.
+- **Fix:** Advertise and accept `offline_access` as an OAuth-only scope while
+  excluding it from Dofek data permissions, stored grants, and consent UI.
+- **Validation / remaining risk:** OAuth route unit tests, real-database OAuth
+  integration tests, the complete local unit/mobile suite, and PR CI pass
+  except for a queued native iOS build at the time of this entry. After deploy,
+  reconnect Dofek once in ChatGPT and verify it remains callable in a later
+  message after the original access token would otherwise expire.
