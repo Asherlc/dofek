@@ -4,6 +4,8 @@ import express from "express";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMcpRouter } from "./route.ts";
 
+let transportErrorHandler: ((error: Error) => void) | undefined;
+
 const routeMocks = vi.hoisted(() => {
   const mocks = {
     captureException: vi.fn(),
@@ -16,7 +18,6 @@ const routeMocks = vi.hoisted(() => {
     serverConnect: vi.fn(),
     transportClose: vi.fn(),
     transportConstructor: vi.fn(),
-    transportInstance: undefined as unknown,
     validateMcpToken: vi.fn(),
   };
   return mocks;
@@ -77,11 +78,8 @@ vi.mock("./tools.ts", () => ({
 
 vi.mock("@modelcontextprotocol/sdk/server/streamableHttp.js", () => ({
   StreamableHTTPServerTransport: class MockStreamableHttpServerTransport {
-    onerror?: (error: Error) => void;
-
     constructor(options: unknown) {
       routeMocks.transportConstructor(options);
-      routeMocks.transportInstance = this;
     }
 
     close(): Promise<void> {
@@ -94,6 +92,10 @@ vi.mock("@modelcontextprotocol/sdk/server/streamableHttp.js", () => ({
 
     send(): Promise<void> {
       return Promise.resolve();
+    }
+
+    set onerror(handler: (error: Error) => void) {
+      transportErrorHandler = handler;
     }
   },
 }));
@@ -144,6 +146,7 @@ async function request(
 describe("createMcpRouter lifecycle handling", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    transportErrorHandler = undefined;
     routeMocks.validateMcpToken.mockResolvedValue({
       expiresAt: null,
       oauthClientId: null,
@@ -321,8 +324,7 @@ describe("createMcpRouter lifecycle handling", () => {
   it("records SDK transport errors without retaining their text", async () => {
     const secret = "client supplied transport detail";
     routeMocks.handleRequest.mockImplementation((_request: unknown, response: unknown) => {
-      const transport = routeMocks.transportInstance as { onerror?: (error: Error) => void };
-      transport.onerror?.(new Error(`Unsupported Media Type: ${secret}`));
+      transportErrorHandler?.(new Error(`Unsupported Media Type: ${secret}`));
       sendResponse(response, 204);
       return Promise.resolve();
     });
