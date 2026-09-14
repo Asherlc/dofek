@@ -2,9 +2,9 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createClickHouseClientFromEnv } from "../clickhouse.ts";
 import { buildPostgresFitnessRawTableStatements } from "../clickhouse-raw-tables.ts";
-import { createMigration } from "./0091_refresh_daily_metrics_view.ts";
+import { createMigration } from "./0092_refresh_daily_metrics_view.ts";
 
-describe("0091_refresh_daily_metrics_view migration", () => {
+describe("0092_refresh_daily_metrics_view migration", () => {
   const database = `refresh_daily_metrics_view_${randomUUID().replaceAll("-", "")}`;
   const client = createClickHouseClientFromEnv();
 
