@@ -327,6 +327,34 @@ describe("createMcpRouter lifecycle handling", () => {
     );
   });
 
+  it("correlates OAuth clients independently of their token IDs", async () => {
+    routeMocks.validateMcpToken.mockResolvedValueOnce({
+      expiresAt: null,
+      oauthClientId: "oauth-client-a",
+      oauthResource: null,
+      scopes: ["health:read"],
+      tokenId: "shared-token-id",
+      userId: "user-id",
+    });
+    await request({ jsonrpc: "2.0", id: 1, method: "initialize" });
+
+    routeMocks.validateMcpToken.mockResolvedValueOnce({
+      expiresAt: null,
+      oauthClientId: "oauth-client-b",
+      oauthResource: null,
+      scopes: ["health:read"],
+      tokenId: "shared-token-id",
+      userId: "user-id",
+    });
+    await request({ jsonrpc: "2.0", id: 2, method: "initialize" });
+
+    const clientCorrelations = routeMocks.loggerInfo.mock.calls
+      .filter(([event]) => event === "mcp.authentication")
+      .map(([, payload]) => (isRecord(payload) ? payload.client_id_hash : undefined))
+      .filter((value): value is string => typeof value === "string");
+    expect(new Set(clientCorrelations).size).toBe(2);
+  });
+
   it("records an aborted request without a food mutation", async () => {
     routeMocks.handleRequest.mockImplementation((_request: unknown, response: unknown) => {
       destroyResponse(response);
