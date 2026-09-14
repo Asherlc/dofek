@@ -37,15 +37,10 @@ interface RedisCommandClient {
 
 function isRedisCommandClient(value: unknown): value is RedisCommandClient {
   if (typeof value !== "object" || value === null) return false;
-  const candidate = value as {
-    set?: unknown;
-    defineCommand?: unknown;
-    runCommand?: unknown;
-  };
   return (
-    typeof candidate.set === "function" &&
-    typeof candidate.defineCommand === "function" &&
-    typeof candidate.runCommand === "function"
+    typeof Reflect.get(value, "set") === "function" &&
+    typeof Reflect.get(value, "defineCommand") === "function" &&
+    typeof Reflect.get(value, "runCommand") === "function"
   );
 }
 
