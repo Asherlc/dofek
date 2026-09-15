@@ -26958,10 +26958,10 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   217.25 and 169.95 seconds at about 2 GiB, but
   `activity_sensor_summary_rows` then failed with code 159 at 240.009 seconds
   after reading 127,971,218 rows / 12.39 GB. The projection was selected and
-  contained only 56,737 rows, proving source-version discovery was no longer
-  the expensive stage. Production had 666 dirty activities for one user (56
-  missing and 610 changed) with 6,664,351 prior logical samples; processing all
-  of them in one latest-sample aggregation exceeded the fixed query deadline.
+  contained 56,737 rows, while the full build read 127,971,218 rows. Production
+  had 666 dirty activities for one user (56 missing and 610 changed) with
+  6,664,351 prior logical samples; processing all of them in one latest-sample
+  aggregation exceeded the fixed query deadline.
 - **Root cause:** `activity_sensor_sample` materialized a global activity
   membership state and rejoined it during each historical microbatch, causing
   the initial OOM. Once that was corrected, the accumulated dirty-summary
@@ -26972,9 +26972,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   query-level `FINAL`, applies a one-day microbatch lookback, and removes the
   global membership materialization/rejoin. The follow-up orders dirty summary
   keys by their oldest source refresh version and processes at most 100 per
-  unscoped cycle; explicit scoped repairs bypass the limit. This follows dbt's
-  incremental-model contract of transforming the rows selected by an
-  incremental filter:
+  unscoped incremental cycle; explicit scoped repairs and full refreshes bypass
+  the limit. This follows dbt's incremental-model contract of transforming the
+  rows selected by an incremental filter:
   <https://docs.getdbt.com/docs/build/incremental-models>. The required
   `by_activity_source_refresh_version` projection was materialized separately
   on historical parts as prescribed by ClickHouse:
