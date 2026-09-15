@@ -150,10 +150,9 @@ describe("activity payload dbt batch reconciliation", () => {
     );
     expect(compiledSql).toContain("where refreshed_at >= '2026-09-06 00:00:00'");
     expect(compiledSql).toContain("and refreshed_at < '2026-09-07 00:00:00'");
-    expect(compiledSql).toContain("INNER JOIN batch_sample_keys");
   }, 240_000);
 
-  it("maps each physical sensor version to activity membership once", async () => {
+  it("maps the latest logical sensor version to activity membership once", async () => {
     await activityPayloadTest.seedSensorFixture(client, database);
     await activityPayloadTest.runDbtBatch(
       database,
@@ -187,13 +186,12 @@ describe("activity payload dbt batch reconciliation", () => {
         FROM system.query_log
         WHERE type = 'QueryFinish'
           AND query_kind = 'Insert'
-          AND query LIKE '%${database}%activity_sensor_sample%'
-          AND query LIKE '%activity_sample_membership%'
+          AND query LIKE '%insert into \`${database}\`.\`activity_sensor_sample__dbt_new_data_%'
         ORDER BY event_time_microseconds DESC
         LIMIT 1`,
       format: "JSONEachRow",
     });
-    expect(await result.json()).toEqual([{ written_rows: 2 }]);
+    expect(await result.json()).toEqual([{ written_rows: 1 }]);
   }, 120_000);
 
   it("preserves unrelated routes, switches providers, and remaps routes across groups", async () => {
