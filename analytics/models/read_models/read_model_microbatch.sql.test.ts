@@ -349,6 +349,8 @@ describe("production analytics read-model build", () => {
     );
     expect(sql).toContain("event_time='refreshed_at'");
     expect(sql).toContain("lookback=3");
+    expect(sql).toContain("'enable_materialized_cte': 1");
+    expect(sql).toContain("activity_samples AS MATERIALIZED (");
     expect(sql).toContain("ref('deduped_sensor')");
     expect(sql).toContain("ref('deduped_activities')");
     expect(sql).toContain("activity_days AS");
