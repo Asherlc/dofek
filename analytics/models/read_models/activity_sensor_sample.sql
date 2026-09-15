@@ -98,12 +98,13 @@ activity_days AS (
 ),
 
 activity_sample_membership AS MATERIALIZED (
-    SELECT
+    SELECT DISTINCT
         activity_days.activity_id AS activity_id,
         samples.user_id AS user_id,
         samples.recorded_at AS recorded_at,
         samples.recorded_date AS recorded_date,
         samples.channel AS channel,
+        samples.refresh_version AS sample_refresh_version,
         activity_days.source_synced_at AS source_synced_at
     FROM batch_samples AS samples
     INNER JOIN activity_days
@@ -140,6 +141,7 @@ activity_samples AS (
         ON membership.user_id = samples.user_id
         AND membership.recorded_at = samples.recorded_at
         AND membership.channel = samples.channel
+        AND membership.sample_refresh_version = samples.refresh_version
 ),
 
 {% if is_incremental() %}

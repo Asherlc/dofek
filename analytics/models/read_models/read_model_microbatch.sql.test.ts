@@ -356,6 +356,11 @@ describe("production analytics read-model build", () => {
     expect(normalizedSql).toContain(
       "FROM batch_samples AS samples INNER JOIN activity_sample_membership AS membership",
     );
+    expect(sql).toContain("samples.refresh_version AS sample_refresh_version");
+    expect(sql).toContain(
+      "membership.sample_refresh_version = samples.refresh_version",
+    );
+    expect(normalizedSql).toContain("SELECT DISTINCT activity_days.activity_id AS activity_id");
     expect(normalizedSql).toContain(
       "LEFT JOIN activity_sample_membership AS membership",
     );

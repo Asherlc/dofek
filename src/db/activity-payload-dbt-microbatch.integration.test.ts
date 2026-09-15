@@ -153,6 +153,49 @@ describe("activity payload dbt batch reconciliation", () => {
     expect(compiledSql).toContain("INNER JOIN batch_sample_keys");
   }, 240_000);
 
+  it("maps each physical sensor version to activity membership once", async () => {
+    await activityPayloadTest.seedSensorFixture(client, database);
+    await activityPayloadTest.runDbtBatch(
+      database,
+      artifactDirectory,
+      ["activity_sensor_sample"],
+      "2026-09-04",
+      "2026-09-05",
+    );
+    await client.command({ query: `SYSTEM STOP MERGES ${database}.deduped_sensor` });
+    await client.command({
+      query: `INSERT INTO ${database}.deduped_sensor
+        (user_id, recorded_at, recorded_date, channel, scalar, source_activity_id,
+         refresh_version, is_deleted, refreshed_at) VALUES
+        ('${userId}', toDateTime64('2026-09-04 10:30:00', 9, 'UTC'),
+         toDate('2026-09-04'), 'heart_rate', 100,
+         '${activityPayloadTest.movedMemberId}', 2, 0,
+         toDateTime64('2026-09-04 13:00:00', 9, 'UTC'))`,
+    });
+
+    await activityPayloadTest.runDbtBatch(
+      database,
+      artifactDirectory,
+      ["activity_sensor_sample"],
+      "2026-09-04",
+      "2026-09-05",
+    );
+
+    await client.command({ query: "SYSTEM FLUSH LOGS" });
+    const result = await client.query({
+      query: `SELECT written_rows
+        FROM system.query_log
+        WHERE type = 'QueryFinish'
+          AND query_kind = 'Insert'
+          AND query LIKE '%${database}%activity_sensor_sample%'
+          AND query LIKE '%activity_sample_membership%'
+        ORDER BY event_time_microseconds DESC
+        LIMIT 1`,
+      format: "JSONEachRow",
+    });
+    expect(await result.json()).toEqual([{ written_rows: 2 }]);
+  }, 120_000);
+
   it("preserves unrelated routes, switches providers, and remaps routes across groups", async () => {
     await activityPayloadTest.seedLocationFixture(client, database);
 
