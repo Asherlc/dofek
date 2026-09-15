@@ -1,7 +1,5 @@
 # Activity Sensor Replay Recovery Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Restore healthy recurring activity analytics and repair the September 13 activity-sensor batch without increasing production resource or health budgets.
 
 **Architecture:** Resolve `ReplacingMergeTree` inputs to logical current state, stream active associations directly through the bounded activity-day join, and derive stale tombstones by negating the same membership predicate. Keep routine work to the previous and current ingestion-freshness days; run September 13 once through dbt's explicit bounded backfill interface.

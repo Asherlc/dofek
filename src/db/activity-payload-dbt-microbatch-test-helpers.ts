@@ -611,12 +611,9 @@ export async function seedSensorFixture(client: ClickHouseClient, database: stri
   ]);
 }
 
-export async function moveMemberAndReplaySensor(
-  client: ClickHouseClient,
-  database: string,
-): Promise<void> {
-  await runStatements(client, [
-    `INSERT INTO ${database}.deduped_activities VALUES
+export async function moveMember(client: ClickHouseClient, database: string): Promise<void> {
+  await client.command({
+    query: `INSERT INTO ${database}.deduped_activities VALUES
       ('${oldGroupId}', '${userId}', toDateTime64('2026-09-04 10:00:00', 6, 'UTC'),
        toDateTime64('2026-09-04 11:00:00', 6, 'UTC'),
        toDateTime64('2026-09-06 12:00:00', 9, 'UTC'),
@@ -627,13 +624,26 @@ export async function moveMemberAndReplaySensor(
        toDateTime64('2026-09-06 12:00:00', 9, 'UTC'),
        ['${movedMemberId}'], 2, 0,
        toDateTime64('2026-09-06 12:00:00', 9, 'UTC'))`,
-    `INSERT INTO ${database}.deduped_sensor
+  });
+}
+
+export async function replayMovedSensor(client: ClickHouseClient, database: string): Promise<void> {
+  await client.command({
+    query: `INSERT INTO ${database}.deduped_sensor
       (user_id, recorded_at, recorded_date, channel, scalar, source_activity_id,
        refresh_version, is_deleted, refreshed_at) VALUES
       ('${userId}', toDateTime64('2026-09-04 10:30:00', 9, 'UTC'), toDate('2026-09-04'),
        'heart_rate', 100, '${movedMemberId}', 2, 0,
        toDateTime64('2026-09-06 12:00:00', 9, 'UTC'))`,
-  ]);
+  });
+}
+
+export async function moveMemberAndReplaySensor(
+  client: ClickHouseClient,
+  database: string,
+): Promise<void> {
+  await moveMember(client, database);
+  await replayMovedSensor(client, database);
 }
 
 export async function expectSensorState(

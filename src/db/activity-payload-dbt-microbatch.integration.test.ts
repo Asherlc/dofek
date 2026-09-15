@@ -152,6 +152,41 @@ describe("activity payload dbt batch reconciliation", () => {
     expect(compiledSql).toContain("and refreshed_at < '2026-09-07 00:00:00'");
   }, 240_000);
 
+  it("reconciles a group-only membership change during the scoped historical replay", async () => {
+    await activityPayloadTest.seedSensorFixture(client, database);
+    await activityPayloadTest.runDbtBatch(
+      database,
+      artifactDirectory,
+      ["activity_sensor_sample", "activity_sensor_summary_rows"],
+      "2026-09-04",
+      "2026-09-05",
+    );
+
+    await activityPayloadTest.moveMember(client, database);
+    await activityPayloadTest.runDbtBatch(
+      database,
+      artifactDirectory,
+      ["activity_sensor_sample", "activity_sensor_summary_rows"],
+      "2026-09-04",
+      "2026-09-07",
+      [oldGroupId, activityPayloadTest.movedMemberId],
+    );
+
+    await activityPayloadTest.expectSensorState(
+      client,
+      database,
+      [
+        { activity_id: oldGroupId, scalar: 100, is_deleted: 1 },
+        { activity_id: newGroupId, scalar: 100, is_deleted: 0 },
+      ],
+      [
+        { activity_id: oldGroupId, avg_hr: null, sample_count: 0, is_deleted: 1 },
+        { activity_id: newGroupId, avg_hr: 100, sample_count: 1, is_deleted: 0 },
+        { activity_id: unrelatedGroupId, avg_hr: null, sample_count: 0, is_deleted: 1 },
+      ],
+    );
+  }, 240_000);
+
   it("maps the latest logical sensor version to activity membership once", async () => {
     await activityPayloadTest.seedSensorFixture(client, database);
     await activityPayloadTest.runDbtBatch(
