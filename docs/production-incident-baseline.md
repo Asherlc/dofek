@@ -26862,7 +26862,6 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** The convergence gate fails explicitly if web
   cannot become healthy; after rollout, verify workers resume, CDC catches up,
   and a current activity appears in the Activities UI.
-
 ## 2026-09-13 — Activity mirror lifecycle nullability blocked analytics rebuild
 
 - **Symptoms / user impact:** Activities after Sep 9 remained absent from the
