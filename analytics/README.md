@@ -343,13 +343,20 @@ Production `DBT_SAFE_MODELS` currently selects `sensor_scalar_sample`,
 `activity_power_curve`, `cycling_activity`, `daily_cycling`, `provider_stats`,
 `daily_activity_load`, `daily_strain`, `healthspan_activity_zone_minutes`,
 and `weekly_healthspan`. Scalar activity sample models use dbt's `microbatch`
-incremental strategy with daily batches and short lookbacks so ClickHouse
-processes bounded windows instead of one large activity/window query. Activity
+incremental strategy with daily batches and a one-batch lookback, so routine
+cycles process the previous and current freshness days instead of repeatedly
+replaying older historical refreshes. Activity
 stream staging uses the `metric_stream_freshness` source alias and batches by
 `_peerdb_synced_at`; downstream activity sample membership models
 (`activity_sensor_sample`) use upstream source freshness as their microbatch
 event time so late provider stream syncs and late activity dedupe changes can
 reattach older workout samples outside the normal recorded-time lookback.
+Newly ingested historical measurements carry current ingestion freshness and
+therefore enter a current batch; corrections that retain older freshness require
+the explicit bounded backfill procedure below. dbt defines `lookback` as the
+number of prior microbatches to reprocess and provides explicit event-time bounds
+for historical repair:
+<https://docs.getdbt.com/docs/build/incremental-microbatch#backfills>.
 Location reconciliation deliberately is not event-time microbatched: its
 provider counts must see complete current tracks for affected groups, and its
 target reconciliation is limited to those groups. Dirty discovery aggregates
@@ -389,6 +396,8 @@ from the data automatically:
 Historical replay must be an explicit, bounded operator action. Supply both
 `--event-time-start` and `--event-time-end`, select only the required
 microbatch models, and monitor ClickHouse capacity while the run is active.
+Routine scalar sensor cycles intentionally cover only the previous and current
+freshness days; do not expand their configured lookback to perform a repair.
 For stable activity-group repair, use the ordered procedure below: its bounded
 microbatch command intentionally runs only after stable identity and membership
 have been rebuilt.

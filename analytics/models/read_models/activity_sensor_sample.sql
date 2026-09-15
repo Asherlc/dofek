@@ -9,7 +9,7 @@
     event_time='refreshed_at',
     begin=activity_sensor_sample_begin,
     batch_size='day',
-    lookback=3,
+    lookback=1,
     full_refresh=false,
     concurrent_batches=false,
     on_schema_change='append_new_columns',

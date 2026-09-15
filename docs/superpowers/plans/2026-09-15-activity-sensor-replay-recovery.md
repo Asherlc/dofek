@@ -245,7 +245,7 @@ Run:
 rtk pnpm lint:analytics-sql
 rtk pnpm lint:analytics-policy
 rtk pnpm vitest run --project unit analytics/models/read_models/read_model_microbatch.sql.test.ts
-rtk bash -lc 'set -a; . ./.env.local; set +a; UV_PROJECT_ENVIRONMENT=.venv-analytics uv run --project analytics dbt parse --project-dir analytics --profiles-dir analytics --target dev'
+rtk bash -lc 'set -a; . ./.env.local; set +a; UV_PROJECT_ENVIRONMENT=../.venv-analytics uv run --project analytics dbt parse --project-dir analytics --profiles-dir analytics --target dev'
 ```
 
 Expected: all commands exit zero with no parsing or policy errors.
