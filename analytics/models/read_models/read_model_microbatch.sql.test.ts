@@ -350,7 +350,20 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("event_time='refreshed_at'");
     expect(sql).toContain("lookback=3");
     expect(sql).toContain("'enable_materialized_cte': 1");
-    expect(sql).toContain("activity_samples AS MATERIALIZED (");
+    expect(sql).toContain("activity_sample_membership AS MATERIALIZED (");
+    expect(sql).toContain("activity_samples AS (");
+    expect(sql).not.toContain("activity_samples AS MATERIALIZED (");
+    expect(normalizedSql).toContain(
+      "FROM batch_samples AS samples INNER JOIN activity_sample_membership AS membership",
+    );
+    expect(sql).toContain("samples.refresh_version AS sample_refresh_version");
+    expect(sql).toContain(
+      "membership.sample_refresh_version = samples.refresh_version",
+    );
+    expect(normalizedSql).toContain("SELECT DISTINCT activity_days.activity_id AS activity_id");
+    expect(normalizedSql).toContain(
+      "LEFT JOIN activity_sample_membership AS membership",
+    );
     expect(sql).toContain("ref('deduped_sensor')");
     expect(sql).toContain("ref('deduped_activities')");
     expect(sql).toContain("activity_days AS");
@@ -452,7 +465,7 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("affected_groups AS MATERIALIZED");
     expect(sql).toContain("existing_group_watermarks AS MATERIALIZED");
     expect(sql).toContain("candidate_affected_groups AS (");
-    expect(sql).toContain("LIMIT {{ var('activity_location_batch_size', 250) }}");
+    expect(sql).toContain("LIMIT {{ var('activity_location_batch_size', 100) }}");
     expect(sql).toContain("> existing_group_watermarks.source_refreshed_at");
     expect(sql).toContain("location_group_freshness AS MATERIALIZED");
     expect(sql).toContain("location_member_freshness AS (");
@@ -528,7 +541,7 @@ describe("production analytics read-model build", () => {
     expect(dedupedSensorSql).toContain("max(samples._peerdb_synced_at) AS source_refreshed_at");
     expect(dedupedSensorSql).toContain("source_refreshed_at AS refreshed_at");
     expect(activitySensorSampleSql).toContain(
-      "greatest(samples.refreshed_at, activity_days.source_synced_at) AS source_refreshed_at",
+      "greatest(samples.refreshed_at, membership.source_synced_at) AS source_refreshed_at",
     );
     expect(activitySensorSampleSql).toContain("source_refreshed_at AS refreshed_at");
     expect(activityLocationSampleSql).toContain("affected_group_refresh.source_refreshed_at");

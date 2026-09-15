@@ -20,6 +20,8 @@ const crossMidnightActivityId = "00000000-0000-0000-0000-000000000201";
 const overlappingActivityId = "00000000-0000-0000-0000-000000000202";
 const activityCount = 100;
 const expectedMatchCount = activityCount + 2;
+// Each match passes through the activity-window join and the version-identity payload join.
+const expectedJoinResultCount = expectedMatchCount * 2;
 
 describe("activity_sensor_sample read model", () => {
   let client: ClickHouseClient | undefined;
@@ -75,7 +77,7 @@ describe("activity_sensor_sample read model", () => {
     const profileRows = z.tuple([queryProfileRowSchema]).parse(await profileResult.json());
 
     expect(profileRows).toHaveLength(1);
-    expect(Number(profileRows[0].joinResultRows)).toBe(expectedMatchCount);
+    expect(Number(profileRows[0].joinResultRows)).toBe(expectedJoinResultCount);
   }, 120_000);
 });
 
@@ -150,6 +152,7 @@ async function seedFixture(client: ClickHouseClient, targetSchema: string): Prom
       source_metric_stream_id UUID,
       measurement_kind String,
       source_activity_id Nullable(UUID),
+      refresh_version UInt64,
       is_deleted UInt8,
       refreshed_at DateTime64(9, 'UTC')
     )
@@ -209,6 +212,7 @@ async function seedFixture(client: ClickHouseClient, targetSchema: string): Prom
       source_metric_stream_id: `10000000-0000-0000-0000-${String(index + 1).padStart(12, "0")}`,
       measurement_kind: "direct",
       source_activity_id: null,
+      refresh_version: index + 1,
       is_deleted: 0,
       refreshed_at: clickHouseDateTime(recordedAt),
     };
@@ -227,6 +231,7 @@ async function seedFixture(client: ClickHouseClient, targetSchema: string): Prom
     source_metric_stream_id: "10000000-0000-0000-0000-000000000201",
     measurement_kind: "direct",
     source_activity_id: null,
+    refresh_version: activityCount + 1,
     is_deleted: 0,
     refreshed_at: "2026-05-02 00:16:00.000",
   });
