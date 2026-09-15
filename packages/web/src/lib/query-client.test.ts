@@ -171,6 +171,21 @@ describe("createAppQueryClient", () => {
     expect(JSON.stringify(mockCaptureException.mock.calls)).not.toContain(secret);
   });
 
+  it("does not report expected Zepp pairing input errors", async () => {
+    const queryClient = createAppQueryClient();
+    const mutationError = new Error("Enter a valid six-character Zepp pairing code.");
+    const mutation = queryClient.getMutationCache().build(queryClient, {
+      mutationKey: [["companionPairing", "claim"]],
+      mutationFn: async () => {
+        throw mutationError;
+      },
+    });
+
+    await expect(mutation.execute({ code: "bad" })).rejects.toThrow(mutationError);
+
+    expect(mockCaptureException).not.toHaveBeenCalled();
+  });
+
   it.each([
     {
       name: "a missing mutation key",

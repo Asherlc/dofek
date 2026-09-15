@@ -258,5 +258,6 @@ describe("importSharedFile", () => {
         { file, fileUploadApi: api, createUploadId: () => uploadId, sleep: async () => {} },
       ),
     ).rejects.toThrow("Strong export is invalid");
+    expect(mockCaptureException).not.toHaveBeenCalled();
   });
 });

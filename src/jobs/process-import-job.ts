@@ -26,7 +26,11 @@ import {
 } from "../processing/processing-event-store.ts";
 import type { KayaImportDatabase } from "../providers/kaya/import.ts";
 import { accountErasureAllowsQueuedUserWork } from "./account-erasure-work-guard.ts";
-import { createAppleHealthImportValidationError } from "./import-validation-error.ts";
+import {
+  createAppleHealthImportValidationError,
+  createStrongCsvImportValidationError,
+  isImportValidationError,
+} from "./import-validation-error.ts";
 import type { LocalImportJobData } from "./local-import-job-data.ts";
 import type { GarminDumpImportJob } from "./process-garmin-dump-import-job.ts";
 
@@ -256,7 +260,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
             result = await importStrongCsv(db, csvText, userId, weightUnit, timezone);
           } catch (error) {
             if (error instanceof Error && error.name === "StrongCsvValidationError")
-              throw new UnrecoverableError(error.message);
+              throw createStrongCsvImportValidationError(error.message);
             throw error;
           }
           importedRecordCount = result.recordsSynced;
@@ -272,7 +276,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
             userId,
           );
           if (result.errors.length > 0) {
-            terminalImportError = new UnrecoverableError(
+            terminalImportError = createStrongCsvImportValidationError(
               `Strong CSV import completed with errors after importing ${result.recordsSynced} workouts: ${result.errors.map((error) => error.message).join("; ")}`,
             );
           }
@@ -462,7 +466,9 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
     });
     await invalidateAllUserQueries(userId);
     try {
-      captureException(importError, { tags: { phase: "file-import" } });
+      if (!isImportValidationError(importError)) {
+        captureException(importError, { tags: { phase: "file-import" } });
+      }
     } catch (telemetryError) {
       throw new AggregateError(
         [importError, telemetryError],

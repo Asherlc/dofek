@@ -7,6 +7,60 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-09-14 — Insights endpoint failed on stale ClickHouse view
+
+- **Status:** Source remediation prepared; production rollout verification is
+  pending.
+- **Symptoms / user impact:** Dashboard requests to `insights.compute` returned
+  a tRPC internal-server error, preventing insight cards from loading.
+- **Evidence / root cause:** At 2026-09-14T17:20:37Z, the production web log
+  recorded ClickHouse error code 47: `Identifier
+  'active_daily_metrics.active_energy_kcal' cannot be resolved`. The deployed
+  `analytics.v_daily_metrics` definition still selected that field after the
+  raw `postgres_fitness.daily_metrics` mirror no longer contained it. A
+  ClickHouse view stores its defining query, so source-column removal requires
+  recreating dependent views ([ClickHouse CREATE VIEW](https://clickhouse.com/docs/sql-reference/statements/create/view)).
+- **Direct fix:** Added migration `0093_refresh_daily_metrics_view`, which
+  replaces `analytics.v_daily_metrics` from the current canonical definition.
+- **Validation:** An isolated ClickHouse integration test creates the legacy
+  column and view, drops the column, applies the migration, and successfully
+  queries the refreshed view.
+- **Remaining risk / follow-up:** Deploy the migration and repeat the affected
+  authenticated `insights.compute` request; confirm no additional stale views
+  reference removed source columns.
+
+## 2026-09-14 — PostHog error inventory triage and owned-defect fixes
+
+- **Status:** Repository fixes committed; deployment verification is pending.
+- **Symptoms / user impact:** PostHog reported mobile-auth exchange failures,
+  targeted Strava webhook failures, and expected invalid-login/import failures.
+  It also contained historical BLE/provider-stats issues plus transient network,
+  provider, ClickHouse, Redis, and database failures.
+- **Evidence / root cause:** The mobile-auth stack reached BullMQ's Redis
+  adapter with an unsupported `sendCommand(command: string[])` shape, producing
+  the `toLowerCase` TypeError. The webhook route detached
+  `syncWebhookEvent` before calling it, so Strava's `this.id` access failed.
+  Authentication and Strong-import validation paths intentionally surfaced
+  actionable user-input errors but reported them as unexpected exceptions. A
+  web React Query mutation reporter also captured invalid Zepp pairing codes.
+  BullMQ's Redis adapter exposes custom commands through `defineCommand` and
+  `runCommand` ([Redis client interface](https://raw.githubusercontent.com/taskforcesh/bullmq/v5.79.2/src/interfaces/redis-client.ts)).
+- **Direct fix:** Replaced the Redis call with an atomic Lua GET-and-DEL custom
+  command, preserved the provider receiver for webhook dispatch, and added
+  shared classifiers so expected authentication, import-validation, and Zepp
+  pairing failures remain terminal/user-visible without entering error tracking.
+  Unexpected failures remain reportable. No runtime behavior was changed for
+  transient, provider, or infrastructure failures.
+- **Validation:** Targeted regression suites, web/mobile/server/auth
+  typechecks, and the full webhook route suite pass. PostHog accepted eight
+  `resolved` updates and suppressed the remaining current inventory as the
+  requested hold state.
+- **Remaining risk / follow-up:** Release the source fixes, then confirm new
+  mobile-auth and Strava webhook events stop and expected user-input events no
+  longer enter PostHog. Held issues remain operationally unresolved and should
+  be re-opened for investigation when their underlying external condition is
+  actionable.
+
 ## 2026-09-09 — Local integration validation blocked by Redpanda AIO limit
 
 - **Status:** Unresolved local infrastructure issue; no production impact.
@@ -26840,3 +26894,23 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   PeerDB's wire representation. The focused integration test, 80 affected unit
   tests, SQL lint, and TypeScript check pass. Production deployment, successful
   analytics rebuild, and direct UI freshness verification remain pending.
+
+## 2026-09-14 — ChatGPT lost Dofek MCP availability after initial authorization
+
+- **Symptoms / user impact:** Dofek could be used once in ChatGPT, then became
+  unavailable in later messages while other connected tools remained available.
+- **Evidence:** Dofek OAuth discovery omitted `offline_access`, although its
+  token endpoint issued and rotated refresh tokens. ChatGPT documents that MCP
+  apps need advertised `offline_access` (or an equivalent) and refresh-token
+  support to retain access after initial authorization.
+  [Developer mode and MCP apps in ChatGPT](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt)
+- **Root cause:** The OAuth server rejected `offline_access` as an unsupported
+  Dofek permission and omitted it from discovery metadata, preventing ChatGPT
+  from establishing a refresh-capable session.
+- **Fix:** Advertise and accept `offline_access` as an OAuth-only scope while
+  excluding it from Dofek data permissions, stored grants, and consent UI.
+- **Validation / remaining risk:** OAuth route unit tests, real-database OAuth
+  integration tests, the complete local unit/mobile suite, and PR CI pass
+  except for a queued native iOS build at the time of this entry. After deploy,
+  reconnect Dofek once in ChatGPT and verify it remains callable in a later
+  message after the original access token would otherwise expire.

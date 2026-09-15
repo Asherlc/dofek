@@ -2257,6 +2257,25 @@ describe("ProvidersScreen", () => {
     expect(screen.getByText("Sign in before importing a file")).toBeTruthy();
   });
 
+  it("does not report invalid Strong import input", async () => {
+    const { captureException } = await import("../../lib/telemetry");
+    const mockCaptureException = vi.mocked(captureException);
+    mockCaptureException.mockClear();
+    mockUseLocalSearchParams.mockReturnValue({
+      sharedFile: "file:///tmp/Strong%20Export.csv",
+    });
+    mockImportSharedFile.mockRejectedValueOnce(new Error("Strong export is invalid"));
+
+    await renderProvidersScreen();
+
+    await waitFor(() => expect(screen.getByText("Strong export is invalid")).toBeTruthy());
+    expect(mockCaptureException).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({ context: "share-import" }),
+      { reportToErrorTracking: false },
+    );
+  });
+
   it("selects and imports a Garmin dump ZIP from the Garmin card", async () => {
     mockProvidersQuery.mockReturnValue({
       data: [

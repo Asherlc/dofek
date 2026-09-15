@@ -19,6 +19,30 @@ function errorText(error: unknown): string | null {
   return trimmed ? trimmed : null;
 }
 
+/** Returns true for expected failures caused by an invalid or cancelled import. */
+export function isExpectedImportInputError(error: unknown): boolean {
+  const message = errorText(error)?.toLowerCase();
+  if (!message) return false;
+  return (
+    message.startsWith("strong csv ") ||
+    message.startsWith("strong export is invalid") ||
+    message.startsWith("apple health zip must contain export.xml") ||
+    message.startsWith("choose kg or lbs before importing") ||
+    message === "unsupported shared file type" ||
+    message === "upload cancelled" ||
+    message === "upload expired"
+  );
+}
+
+/** Returns true for known form/input failures that are safe to show without reporting. */
+export function isExpectedUserInputError(error: unknown): boolean {
+  const message = errorText(error)?.toLowerCase();
+  return (
+    isExpectedImportInputError(error) ||
+    message === "enter a valid six-character zepp pairing code."
+  );
+}
+
 function includesAny(value: string, candidates: readonly string[]): boolean {
   return candidates.some((candidate) => value.includes(candidate));
 }
