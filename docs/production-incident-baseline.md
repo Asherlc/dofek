@@ -26986,3 +26986,73 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   Production remains unresolved until the follow-up deploy completes, the
   dirty count reaches zero across successful recurring cycles, the Sep 13
   bounded replay completes, and current activities are verified in the UI.
+## 2026-09-15 — Dofek remained absent from ChatGPT after a successful food write
+
+- **Symptoms / user impact:** In one ChatGPT conversation, a read-only food
+  search and a coffee `create_food_entry` call succeeded. On the next message,
+  ChatGPT reported that Dofek's logging tool was unavailable and did not issue
+  the requested Sprite Zero call. Dofek remained absent from that chat's
+  exposed tool registry. A separate controlled conversation subsequently
+  completed four consecutive read-only Dofek calls.
+- **Observed production evidence:** The successful mutation reached Dofek and
+  completed. For the immediately following failed turn, the deployed MCP/OAuth
+  telemetry recorded no matching `/api/mcp`, `/token`, `mcp.request`, or
+  `tools/list` request while the logging pipeline continued to receive other
+  events. The earlier `offline_access` correction was already deployed when
+  this recurred, so it was a real OAuth defect but not a complete resolution.
+  This classifies the interaction as no observable request reaching Dofek; it
+  does not establish that the preceding write caused the omission.
+- **Repository reproduction:** A new isolated-database integration regression
+  uses the installed MCP SDK over real Express HTTP to authenticate, initialize,
+  list tools, call `create_food_entry`, close the client, initialize a fresh
+  client with the same valid credential, list tools again, and read the record
+  through `search_food_entries`. Both lists are unpaginated, advertise the
+  expected food tools and output contracts, and the write/read responses pass
+  their schemas. The test passes, rejecting a generic server-side claim that a
+  successful write poisons the next MCP discovery cycle.
+- **Independent defect and targeted change:** The checked-in ChatGPT app
+  submission described 23 tools while the live MCP server registers 41. It
+  still included obsolete `log_food` and omitted all seven current food-record
+  tools, including `create_food_entry` and `search_food_entries`. The submission
+  inventory and safety annotations now match the runtime catalog. OpenAI's
+  tool guidance requires accurate tool definitions and annotations:
+  <https://developers.openai.com/plugins/plan/tools>. This metadata drift is
+  concrete but is not proven to be the disappearance's root cause because the
+  live ChatGPT integration had already invoked a tool missing from the file.
+- **Validation:**
+  `pnpm test:integration -- packages/server/src/mcp/sdk-write-rediscovery.integration.test.ts`
+  passes one test file and one test. Biome and TypeScript checks pass for the
+  change. No production food data, authentication behavior, transport mode,
+  token lifetime, refresh protection, permissions, or session behavior changed.
+- **Root cause / remaining risk:** The user-visible disappearance remains
+  unresolved. The strongest evidence for this occurrence is omission in
+  ChatGPT's tool-exposure layer before a request reached Dofek. The corrected
+  submission has not yet been published, and repository merge/deployment does
+  not itself prove that ChatGPT has accepted the new catalog. After explicitly
+  approved publication, repeat one successful write followed by a fresh
+  read-only discovery in the same conversation and correlate both turns with
+  production telemetry. If the second turn still produces no Dofek request,
+  escalate with the transcript, UTC timestamps, correlation evidence, and the
+  confirmed 41-tool submission inventory.
+
+## 2026-09-15 — Expo compatibility metadata blocked PR CI
+
+- **Symptoms / impact:** PR #2748's `Build Mobile / Metro Bundle` job stopped
+  before bundling at `Verify dependencies match Expo SDK`. This blocked merge;
+  no production or user-facing failure occurred.
+- **Evidence / first fatal output:** `pnpm expo install --check` reported
+  `Found outdated dependencies` for `expo` 57.0.22,
+  `expo-build-properties` 57.0.17, `expo-notifications` 57.0.18, and
+  `expo-sharing` 57.0.19. Expo's current compatibility map required 57.0.23,
+  57.0.19, 57.0.19, and 57.0.20 respectively.
+- **Root cause:** Expo published compatible SDK 57 patch releases after the
+  repository lockfile was last updated, and the required compatibility check
+  correctly rejected the stale pins. Expo documents dependency validation via
+  `expo install --check` in its
+  [CLI reference](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation).
+- **Fix / validation:** Updated exactly those four direct dependencies and the
+  resulting lockfile/release-age allowlist entries. The same online
+  `pnpm expo install --check` command then reported `Dependencies are up to
+  date`; dependency policy, TypeScript, and all 1,463 mobile tests pass.
+- **Remaining risk / follow-up:** The PR CI rerun remains pending; no retry,
+  timeout, skipped validation, or dependency-check exception was added.
