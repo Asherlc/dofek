@@ -97,9 +97,30 @@ activity_days AS (
     FROM current_activity
 ),
 
-activity_samples AS MATERIALIZED (
+activity_sample_membership AS MATERIALIZED (
     SELECT
         activity_days.activity_id AS activity_id,
+        samples.user_id AS user_id,
+        samples.recorded_at AS recorded_at,
+        samples.recorded_date AS recorded_date,
+        samples.channel AS channel,
+        activity_days.source_synced_at AS source_synced_at
+    FROM batch_samples AS samples
+    INNER JOIN activity_days
+        ON activity_days.user_id = samples.user_id
+        AND activity_days.recorded_date = samples.recorded_date
+        AND samples.recorded_at >= activity_days.started_at
+        AND samples.recorded_at <= activity_days.effective_ended_at
+        AND (
+            samples.source_activity_id IS null
+            OR has(activity_days.member_activity_ids, assumeNotNull(samples.source_activity_id))
+        )
+    WHERE samples.is_deleted = 0
+),
+
+activity_samples AS (
+    SELECT
+        membership.activity_id AS activity_id,
         samples.user_id AS user_id,
         samples.recorded_at AS recorded_at,
         samples.recorded_date AS recorded_date,
@@ -113,18 +134,12 @@ activity_samples AS MATERIALIZED (
         samples.source_metric_stream_id AS source_metric_stream_id,
         samples.measurement_kind AS measurement_kind,
         samples.is_deleted AS is_deleted,
-        greatest(samples.refreshed_at, activity_days.source_synced_at) AS source_refreshed_at
+        greatest(samples.refreshed_at, membership.source_synced_at) AS source_refreshed_at
     FROM batch_samples AS samples
-    INNER JOIN activity_days
-        ON activity_days.user_id = samples.user_id
-        AND activity_days.recorded_date = samples.recorded_date
-        AND samples.recorded_at >= activity_days.started_at
-        AND samples.recorded_at <= activity_days.effective_ended_at
-        AND (
-            samples.source_activity_id IS null
-            OR has(activity_days.member_activity_ids, assumeNotNull(samples.source_activity_id))
-        )
-    WHERE samples.is_deleted = 0
+    INNER JOIN activity_sample_membership AS membership
+        ON membership.user_id = samples.user_id
+        AND membership.recorded_at = samples.recorded_at
+        AND membership.channel = samples.channel
 ),
 
 {% if is_incremental() %}
@@ -161,12 +176,12 @@ stale_activity_samples AS (
     INNER JOIN activity_group_state
         ON activity_group_state.group_activity_id = existing_samples.activity_id
         AND activity_group_state.user_id = existing_samples.user_id
-    LEFT JOIN activity_samples
-        ON activity_samples.activity_id = existing_samples.activity_id
-        AND activity_samples.user_id = existing_samples.user_id
-        AND activity_samples.recorded_at = existing_samples.recorded_at
-        AND activity_samples.channel = existing_samples.channel
-    WHERE activity_samples.activity_id IS null
+    LEFT JOIN activity_sample_membership AS membership
+        ON membership.activity_id = existing_samples.activity_id
+        AND membership.user_id = existing_samples.user_id
+        AND membership.recorded_at = existing_samples.recorded_at
+        AND membership.channel = existing_samples.channel
+    WHERE membership.activity_id IS null
 )
 {% endif %}
 

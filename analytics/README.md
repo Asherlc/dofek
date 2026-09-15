@@ -118,7 +118,7 @@ Its `AggregatingMergeTree` combines the per-member maximum timestamp and live
 history flag during background merges:
 <https://clickhouse.com/docs/engines/table-engines/mergetree-family/aggregatingmergetree>.
 Unscoped builds join this member-cardinality index to current group membership,
-select the 250 oldest dirty groups, and only then read complete raw tracks for
+select the 100 oldest dirty groups, and only then read complete raw tracks for
 those groups; later builds keep selecting dirty groups until the backlog is
 empty. Explicit activity repair scopes retain their caller-supplied bounds.
 Per-group watermarks make the bounded progression safe: completing a newer

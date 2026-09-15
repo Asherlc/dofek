@@ -183,7 +183,7 @@ affected_groups AS MATERIALIZED (
     GROUP BY activity_id, user_id
     ORDER BY min(source_refreshed_at), user_id, activity_id
     {% if not activity_refresh_scoped %}
-    LIMIT {{ var('activity_location_batch_size', 250) }}
+    LIMIT {{ var('activity_location_batch_size', 100) }}
     {% endif %}
 ),
 
