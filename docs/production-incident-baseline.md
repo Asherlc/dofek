@@ -26992,3 +26992,25 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   production telemetry. If the second turn still produces no Dofek request,
   escalate with the transcript, UTC timestamps, correlation evidence, and the
   confirmed 41-tool submission inventory.
+
+## 2026-09-15 — Expo compatibility metadata blocked PR CI
+
+- **Symptoms / impact:** PR #2748's `Build Mobile / Metro Bundle` job stopped
+  before bundling at `Verify dependencies match Expo SDK`. This blocked merge;
+  no production or user-facing failure occurred.
+- **Evidence / first fatal output:** `pnpm expo install --check` reported
+  `Found outdated dependencies` for `expo` 57.0.22,
+  `expo-build-properties` 57.0.17, `expo-notifications` 57.0.18, and
+  `expo-sharing` 57.0.19. Expo's current compatibility map required 57.0.23,
+  57.0.19, 57.0.19, and 57.0.20 respectively.
+- **Root cause:** Expo published compatible SDK 57 patch releases after the
+  repository lockfile was last updated, and the required compatibility check
+  correctly rejected the stale pins. Expo documents dependency validation via
+  `expo install --check` in its
+  [CLI reference](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation).
+- **Fix / validation:** Updated exactly those four direct dependencies and the
+  resulting lockfile/release-age allowlist entries. The same online
+  `pnpm expo install --check` command then reported `Dependencies are up to
+  date`; dependency policy, TypeScript, and all 1,463 mobile tests pass.
+- **Remaining risk / follow-up:** The PR CI rerun remains pending; no retry,
+  timeout, skipped validation, or dependency-check exception was added.
