@@ -7,6 +7,33 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-09-15 — MCP tools absent from an existing ChatGPT conversation
+
+- **Status:** Unresolved; server instrumentation is deployed, but the ChatGPT
+  tool-registry decision is not observable from Dofek.
+- **Symptoms / user impact:** Dofek tools were available, then disappeared on a
+  later chat turn after successful read/write calls; direct discovery reported
+  no tool under the requested paths.
+- **Evidence / root cause:** Production telemetry recorded three HTTP 400
+  requests classified as `unsupported_protocol_version` (02:50:48.928Z on
+  build `a8e56ff`, 13:30:05.184Z and 13:34:34.196Z on build `d39e005c`) with
+  unknown method/version. The 13:34 rejection was followed on a separate trace
+  by accepted initialize and a valid tools/list result (41 tools, food tools
+  present, valid schema, no next page) at 13:34:36.316Z. The current deployed
+  build `f426e6a` has authenticated successful tool calls but no observed
+  tools/list request in the checked window, so the reported omission cannot be
+  attributed to a server response yet.
+- **Fix / mitigation:** Boundary telemetry now records sanitized method,
+  protocol, authentication, scope, JSON-RPC outcome, tool-list fingerprint and
+  lifecycle status. No speculative protocol or session workaround was added.
+- **Validation:** Local regression tests and CI passed for the instrumentation;
+  deployed events are visible in PostHog. Production still needs correlation
+  with a fresh disappearance timestamp to classify the boundary failure.
+- **Remaining risk / follow-up:** If no Dofek request is logged at the exact
+  disappearance time, the omission occurs before the service. If a valid
+  tools/list result is logged for that interaction, escalate to the platform
+  with its trace and sanitized result evidence.
+
 ## 2026-09-14 — Insights endpoint failed on stale ClickHouse view
 
 - **Status:** Source remediation prepared; production rollout verification is
