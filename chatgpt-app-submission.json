@@ -8,8 +8,241 @@
     "category": "LIFESTYLE"
   },
   "tools": {
+    "compare_performances": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Retrieves server-computed comparisons of recorded activities.",
+        "open_world_justification": "Does not write to public internet state or third-party systems.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform irreversible actions."
+      }
+    },
+    "create_food_entry": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "justifications": {
+        "read_only_justification": "Creates a private food entry in the user's Dofek account.",
+        "open_world_justification": "Only changes the user's private Dofek data and does not publish externally.",
+        "destructive_justification": "Creates an entry but does not delete, overwrite, revoke access, or perform irreversible actions."
+      }
+    },
+    "delete_food_entry": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "justifications": {
+        "read_only_justification": "Appends a deletion tombstone to a private food entry.",
+        "open_world_justification": "Only changes the user's private Dofek data and does not publish externally.",
+        "destructive_justification": "Marks the selected food entry deleted."
+      }
+    },
+    "estimate_cycling_threshold": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Computes a cycling threshold estimate from recorded activities.",
+        "open_world_justification": "Does not write to public internet state or third-party systems.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform irreversible actions."
+      }
+    },
+    "find_repeated_efforts": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Finds repeated efforts in recorded activity streams.",
+        "open_world_justification": "Does not write to public internet state or third-party systems.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform irreversible actions."
+      }
+    },
+    "get_activity_timeseries": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Retrieves server-computed activity time-series data.",
+        "open_world_justification": "Does not write to public internet state or third-party systems.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform irreversible actions."
+      }
+    },
+    "get_climbing_progression": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Retrieves server-computed climbing progression analytics.",
+        "open_world_justification": "Does not write to public internet state or third-party systems.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform irreversible actions."
+      }
+    },
+    "get_cycling_power_curve": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Retrieves server-computed cycling power-curve analytics.",
+        "open_world_justification": "Does not write to public internet state or third-party systems.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform irreversible actions."
+      }
+    },
+    "get_cycling_training_metrics": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Retrieves server-computed cycling training metrics.",
+        "open_world_justification": "Does not write to public internet state or third-party systems.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform irreversible actions."
+      }
+    },
+    "get_effort_trend": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Retrieves server-computed effort trends from recorded activities.",
+        "open_world_justification": "Does not write to public internet state or third-party systems.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform irreversible actions."
+      }
+    },
+    "get_finger_loading_progression": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Retrieves server-computed finger-loading progression.",
+        "open_world_justification": "Does not write to public internet state or third-party systems.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform irreversible actions."
+      }
+    },
+    "get_food_entry_history": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Retrieves food-record operations and provenance.",
+        "open_world_justification": "Does not write to public internet state or third-party systems.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform irreversible actions."
+      }
+    },
+    "get_food_entry": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Retrieves one private food record with provenance.",
+        "open_world_justification": "Does not write to public internet state or third-party systems.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform irreversible actions."
+      }
+    },
+    "get_recovery_training_series": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Retrieves server-computed recovery and training series.",
+        "open_world_justification": "Does not write to public internet state or third-party systems.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform irreversible actions."
+      }
+    },
+    "get_strength_progression": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Retrieves server-computed strength progression analytics.",
+        "open_world_justification": "Does not write to public internet state or third-party systems.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform irreversible actions."
+      }
+    },
+    "get_threshold_history": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Retrieves recorded cycling threshold history.",
+        "open_world_justification": "Does not write to public internet state or third-party systems.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform irreversible actions."
+      }
+    },
+    "restore_food_entry": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "justifications": {
+        "read_only_justification": "Restores a private deleted food entry.",
+        "open_world_justification": "Only changes the user's private Dofek data and does not publish externally.",
+        "destructive_justification": "Restores an entry without deleting, overwriting, or performing irreversible actions."
+      }
+    },
+    "search_food_entries": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Searches the user's effective private food records.",
+        "open_world_justification": "Does not write to public internet state or third-party systems.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform irreversible actions."
+      }
+    },
+    "update_food_entry": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "justifications": {
+        "read_only_justification": "Updates a private food entry with validated decisions.",
+        "open_world_justification": "Only changes the user's private Dofek data and does not publish externally.",
+        "destructive_justification": "Updates an entry without deleting, revoking access, or performing irreversible actions."
+      }
+    },
     "get_daily_health_summary": {
-      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
       "justifications": {
         "read_only_justification": "Only retrieves server-computed health metrics for one day.",
         "open_world_justification": "Does not write to public internet state or third-party systems.",
@@ -17,7 +250,11 @@
       }
     },
     "get_health_trends": {
-      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
       "justifications": {
         "read_only_justification": "Only retrieves server-computed daily or weekly health trends for a date range.",
         "open_world_justification": "Does not write to public internet state or third-party systems.",
@@ -25,7 +262,11 @@
       }
     },
     "get_data_coverage": {
-      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
       "justifications": {
         "read_only_justification": "Only retrieves observed date coverage and source providers for health metrics.",
         "open_world_justification": "Does not write to public internet state or third-party systems.",
@@ -33,7 +274,11 @@
       }
     },
     "render_health_explorer": {
-      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
       "justifications": {
         "read_only_justification": "Only prepares a server-computed interactive health visualization for the requested range.",
         "open_world_justification": "Does not write to public internet state or third-party systems.",
@@ -41,7 +286,11 @@
       }
     },
     "get_sleep_summary": {
-      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
       "justifications": {
         "read_only_justification": "Only retrieves nightly sleep duration, efficiency, stages, and timing.",
         "open_world_justification": "Does not write to public internet state or third-party systems.",
@@ -49,7 +298,11 @@
       }
     },
     "search_activities": {
-      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
       "justifications": {
         "read_only_justification": "Only searches the authenticated user's activity records.",
         "open_world_justification": "Does not write to public internet state or third-party systems.",
@@ -57,7 +310,11 @@
       }
     },
     "get_activity_summary": {
-      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
       "justifications": {
         "read_only_justification": "Only aggregates existing activity records over a requested date range.",
         "open_world_justification": "Does not write to public internet state or third-party systems.",
@@ -65,7 +322,11 @@
       }
     },
     "get_cycling_performance": {
-      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
       "justifications": {
         "read_only_justification": "Only retrieves server-computed cycling performance analytics.",
         "open_world_justification": "Does not write to public internet state or third-party systems.",
@@ -73,7 +334,11 @@
       }
     },
     "get_strength_sessions": {
-      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
       "justifications": {
         "read_only_justification": "Only retrieves recorded strength sessions and server-computed volume load.",
         "open_world_justification": "Does not write to public internet state or third-party systems.",
@@ -81,7 +346,11 @@
       }
     },
     "get_training_load": {
-      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
       "justifications": {
         "read_only_justification": "Only retrieves server-computed training-load analytics.",
         "open_world_justification": "Does not write to public internet state or third-party systems.",
@@ -89,7 +358,11 @@
       }
     },
     "get_activity_streams": {
-      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
       "justifications": {
         "read_only_justification": "Only retrieves capped deduplicated activity sensor streams.",
         "open_world_justification": "Does not write to public internet state or third-party systems.",
@@ -97,7 +370,11 @@
       }
     },
     "get_activity_details": {
-      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
       "justifications": {
         "read_only_justification": "Only retrieves structured details for one recorded activity.",
         "open_world_justification": "Does not write to public internet state or third-party systems.",
@@ -105,7 +382,11 @@
       }
     },
     "get_climbing_sessions": {
-      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
       "justifications": {
         "read_only_justification": "Only retrieves recorded climbing sessions and aggregates.",
         "open_world_justification": "Does not write to public internet state or third-party systems.",
@@ -113,7 +394,11 @@
       }
     },
     "get_supplements": {
-      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
       "justifications": {
         "read_only_justification": "Only retrieves the user's current supplement definitions.",
         "open_world_justification": "Does not write to public internet state or third-party systems.",
@@ -121,7 +406,11 @@
       }
     },
     "get_finger_loading": {
-      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
       "justifications": {
         "read_only_justification": "Only retrieves recorded finger-loading protocols and computed load values.",
         "open_world_justification": "Does not write to public internet state or third-party systems.",
@@ -129,7 +418,11 @@
       }
     },
     "get_nutrition_summary": {
-      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
       "justifications": {
         "read_only_justification": "Only retrieves daily nutrition totals and source information for a date range.",
         "open_world_justification": "Does not write to public internet state or third-party systems.",
@@ -137,7 +430,11 @@
       }
     },
     "get_body_metrics": {
-      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
       "justifications": {
         "read_only_justification": "Only retrieves weight and body-composition measurements for a date range.",
         "open_world_justification": "Does not write to public internet state or third-party systems.",
@@ -145,7 +442,11 @@
       }
     },
     "get_subjective_timeline": {
-      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
       "justifications": {
         "read_only_justification": "Only retrieves the user's recorded check-ins, symptoms, and injury events.",
         "open_world_justification": "Does not write to public internet state or third-party systems.",
@@ -153,7 +454,11 @@
       }
     },
     "list_body_regions": {
-      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
       "justifications": {
         "read_only_justification": "Only retrieves canonical body-region IDs and labels used for private subjective health records.",
         "open_world_justification": "Does not write to public internet state or third-party systems.",
@@ -161,23 +466,23 @@
       }
     },
     "log_injury": {
-      "annotations": { "readOnlyHint": false, "openWorldHint": false, "destructiveHint": false },
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
       "justifications": {
         "read_only_justification": "Creates a private injury or niggle event in the user's Dofek account.",
         "open_world_justification": "Only changes the user's private Dofek data and does not publish externally.",
         "destructive_justification": "Creates an event but does not delete, overwrite, revoke access, or perform irreversible actions."
       }
     },
-    "log_food": {
-      "annotations": { "readOnlyHint": false, "openWorldHint": false, "destructiveHint": false },
-      "justifications": {
-        "read_only_justification": "Creates a private food entry in the user's Dofek account.",
-        "open_world_justification": "Only changes the user's private Dofek data and does not publish externally.",
-        "destructive_justification": "Creates an entry but does not delete, overwrite, revoke access, or perform irreversible actions."
-      }
-    },
     "list_providers": {
-      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
       "justifications": {
         "read_only_justification": "Only lists configured providers, connection status, and last-sync information.",
         "open_world_justification": "Does not write to public internet state or third-party systems.",
@@ -185,7 +490,11 @@
       }
     },
     "start_provider_sync": {
-      "annotations": { "readOnlyHint": false, "openWorldHint": false, "destructiveHint": false },
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
       "justifications": {
         "read_only_justification": "Queues a user-scoped provider synchronization job and returns its status.",
         "open_world_justification": "Only starts a bounded private synchronization job and does not publish public state.",
