@@ -9,7 +9,7 @@
     event_time='refreshed_at',
     begin=activity_sensor_sample_begin,
     batch_size='day',
-    lookback=3,
+    lookback=1,
     full_refresh=false,
     concurrent_batches=false,
     on_schema_change='append_new_columns',
@@ -26,21 +26,13 @@
     query_settings={
         'max_threads': 1,
         'join_use_nulls': 1,
-        'enable_materialized_cte': 1
+        'final': 1
     }
 ) }}
 
-WITH batch_samples AS MATERIALIZED (
+WITH batch_samples AS (
     SELECT *
     FROM {{ ref('deduped_sensor') }}
-),
-
-batch_sample_keys AS MATERIALIZED (
-    SELECT DISTINCT
-        user_id,
-        channel,
-        recorded_at
-    FROM batch_samples
 ),
 
 activity_group_state AS (
@@ -97,31 +89,9 @@ activity_days AS (
     FROM current_activity
 ),
 
-activity_sample_membership AS MATERIALIZED (
-    SELECT DISTINCT
-        activity_days.activity_id AS activity_id,
-        samples.user_id AS user_id,
-        samples.recorded_at AS recorded_at,
-        samples.recorded_date AS recorded_date,
-        samples.channel AS channel,
-        samples.refresh_version AS sample_refresh_version,
-        activity_days.source_synced_at AS source_synced_at
-    FROM batch_samples AS samples
-    INNER JOIN activity_days
-        ON activity_days.user_id = samples.user_id
-        AND activity_days.recorded_date = samples.recorded_date
-        AND samples.recorded_at >= activity_days.started_at
-        AND samples.recorded_at <= activity_days.effective_ended_at
-        AND (
-            samples.source_activity_id IS null
-            OR has(activity_days.member_activity_ids, assumeNotNull(samples.source_activity_id))
-        )
-    WHERE samples.is_deleted = 0
-),
-
 activity_samples AS (
     SELECT
-        membership.activity_id AS activity_id,
+        activity_days.activity_id AS activity_id,
         samples.user_id AS user_id,
         samples.recorded_at AS recorded_at,
         samples.recorded_date AS recorded_date,
@@ -135,29 +105,21 @@ activity_samples AS (
         samples.source_metric_stream_id AS source_metric_stream_id,
         samples.measurement_kind AS measurement_kind,
         samples.is_deleted AS is_deleted,
-        greatest(samples.refreshed_at, membership.source_synced_at) AS source_refreshed_at
+        greatest(samples.refreshed_at, activity_days.source_synced_at) AS source_refreshed_at
     FROM batch_samples AS samples
-    INNER JOIN activity_sample_membership AS membership
-        ON membership.user_id = samples.user_id
-        AND membership.recorded_at = samples.recorded_at
-        AND membership.channel = samples.channel
-        AND membership.sample_refresh_version = samples.refresh_version
+    INNER JOIN activity_days
+        ON activity_days.user_id = samples.user_id
+        AND activity_days.recorded_date = samples.recorded_date
+        AND samples.recorded_at >= activity_days.started_at
+        AND samples.recorded_at <= activity_days.effective_ended_at
+        AND (
+            samples.source_activity_id IS null
+            OR has(activity_days.member_activity_ids, assumeNotNull(samples.source_activity_id))
+        )
+    WHERE samples.is_deleted = 0
 ),
 
 {% if is_incremental() %}
-existing_activity_samples AS (
-    SELECT existing_samples.*
-    FROM {{ this }} AS existing_samples FINAL
-    INNER JOIN batch_sample_keys
-        ON batch_sample_keys.user_id = existing_samples.user_id
-        AND batch_sample_keys.channel = existing_samples.channel
-        AND batch_sample_keys.recorded_at = existing_samples.recorded_at
-    INNER JOIN activity_group_state
-        ON activity_group_state.group_activity_id = existing_samples.activity_id
-        AND activity_group_state.user_id = existing_samples.user_id
-    WHERE existing_samples.is_deleted = 0
-),
-
 stale_activity_samples AS (
     SELECT
         existing_samples.activity_id AS stale_activity_id,
@@ -174,16 +136,28 @@ stale_activity_samples AS (
         existing_samples.source_metric_stream_id AS stale_source_metric_stream_id,
         existing_samples.measurement_kind AS stale_measurement_kind,
         greatest(existing_samples.refreshed_at, activity_group_state.refreshed_at) AS stale_refreshed_at
-    FROM existing_activity_samples AS existing_samples
+    FROM {{ this }} AS existing_samples
+    INNER ANY JOIN batch_samples AS samples
+        ON samples.user_id = existing_samples.user_id
+        AND samples.channel = existing_samples.channel
+        AND samples.recorded_at = existing_samples.recorded_at
     INNER JOIN activity_group_state
         ON activity_group_state.group_activity_id = existing_samples.activity_id
         AND activity_group_state.user_id = existing_samples.user_id
-    LEFT JOIN activity_sample_membership AS membership
-        ON membership.activity_id = existing_samples.activity_id
-        AND membership.user_id = existing_samples.user_id
-        AND membership.recorded_at = existing_samples.recorded_at
-        AND membership.channel = existing_samples.channel
-    WHERE membership.activity_id IS null
+    WHERE existing_samples.is_deleted = 0
+      AND (
+          samples.is_deleted = 1
+          OR activity_group_state.is_deleted = 1
+          OR samples.recorded_at < activity_group_state.started_at
+          OR samples.recorded_at > activity_group_state.effective_ended_at
+          OR (
+              samples.source_activity_id IS NOT null
+              AND NOT has(
+                  activity_group_state.member_activity_ids,
+                  assumeNotNull(samples.source_activity_id)
+              )
+          )
+      )
 )
 {% endif %}
 
