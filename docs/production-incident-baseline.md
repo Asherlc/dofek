@@ -26875,10 +26875,10 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   predicates and refused to tombstone its 3,137 existing records. Before that
   guard ran, the analytics worker also failed because ClickHouse had only
   1.7 GiB temporary-disk space available while the model required 5.8 GiB.
-- **Root cause:** The live activity mirror drifted from the checked-in canonical
-  ClickHouse schema, which defines both lifecycle timestamps as nullable; its
-  zero-timestamp substitutions changed the meaning of the active-activity
-  predicate after mirror resynchronization.
+- **Root cause:** PeerDB writes absent nullable lifecycle values into ClickHouse
+  as the epoch (`1970-01-01`) even after the destination columns were corrected
+  to `Nullable(DateTime64(6, 'UTC'))`. The SQL read models interpreted only SQL
+  `NULL` as current, so they selected zero active activities.
 - **Fix / mitigation:** Cleared only ClickHouse diagnostic system logs to restore
   14 GiB workspace, preserving metric-stream data and its R2 archive. Added
   migration `0089_activity_lifecycle_nullable`, which changes both raw mirror
@@ -26886,9 +26886,13 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   [`MODIFY COLUMN`](https://clickhouse.com/docs/sql-reference/statements/alter/column#modify-column)
   for this schema operation. A real-ClickHouse integration test starts from the
   faulty non-nullable schema and verifies the corrected types.
-- **Validation / remaining risk:** The new integration test, neighboring raw
-  schema migration test, formatting check, and TypeScript check pass. Production
-  deployment, one controlled mirror resync to restore canonical nulls, successful
+- **Validation / remaining risk:** Migration 0089 deployed and a controlled
+  resync completed atomically, but the mirror still contained epoch lifecycle
+  values and zero active rows under the former predicates. The recovery changes
+  every ClickHouse-facing activity lifecycle predicate to treat both `NULL` and
+  the epoch as current, and adds a real-ClickHouse regression test that seeds
+  PeerDB's wire representation. The focused integration test, 80 affected unit
+  tests, SQL lint, and TypeScript check pass. Production deployment, successful
   analytics rebuild, and direct UI freshness verification remain pending.
 
 ## 2026-09-14 — ChatGPT lost Dofek MCP availability after initial authorization

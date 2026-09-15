@@ -15,9 +15,10 @@ describe("clickHouseMigrations", () => {
     expect(migrations.at(0)?.id).toBe("0001_clickhouse_analytics_schema_cleanup");
     const migrationIds = migrations.map((migration) => migration.id);
     expect(new Set(migrationIds).size).toBe(migrationIds.length);
-    expect(migrationIds.slice(-2)).toEqual([
+    expect(migrationIds.slice(-3)).toEqual([
       "0092_sensor_scalar_sample_refresh_projection",
       "0093_refresh_daily_metrics_view",
+      "0094_sensor_scalar_sample_lightweight_refresh_projection",
     ]);
     const migrationNumbers = migrationIds.map((migrationId) => Number(migrationId.slice(0, 4)));
     expect(migrationNumbers).toEqual(
