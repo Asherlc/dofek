@@ -1,7 +1,9 @@
 # Activity Sensor Replay Recovery Design
 
-**Date:** 2026-09-15  
-**Status:** Approved incident-recovery direction; implementation pending  
+**Date:** 2026-09-15
+
+**Status:** Approved and implemented; production validation pending
+
 **Scope:** ClickHouse/dbt activity sensor pipeline and bounded production recovery
 
 ## Incident and root cause
