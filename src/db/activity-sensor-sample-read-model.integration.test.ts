@@ -20,8 +20,7 @@ const crossMidnightActivityId = "00000000-0000-0000-0000-000000000201";
 const overlappingActivityId = "00000000-0000-0000-0000-000000000202";
 const activityCount = 100;
 const expectedMatchCount = activityCount + 2;
-// Each match passes through the activity-window join and the version-identity payload join.
-const expectedJoinResultCount = expectedMatchCount * 2;
+const expectedJoinResultCount = expectedMatchCount;
 
 describe("activity_sensor_sample read model", () => {
   let client: ClickHouseClient | undefined;

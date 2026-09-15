@@ -8,7 +8,7 @@
     event_time='_peerdb_synced_at',
     begin=sensor_scalar_sample_begin,
     batch_size='day',
-    lookback=3,
+    lookback=1,
     full_refresh=false,
     concurrent_batches=false,
     on_schema_change='append_new_columns',
