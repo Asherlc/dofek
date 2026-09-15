@@ -412,6 +412,9 @@ describe("production analytics read-model build", () => {
     expect(sensorSql).toContain("'distance'");
     expect(sensorSql).toContain("'temperature'");
 
+    expect(dedupedSql.match(/argMinIf\(/g)).toHaveLength(1);
+    expect(dedupedSql).toContain("argMinIf(\n            tuple(");
+
     for (const sourceColumn of [
       "member_activity_id",
       "device_id",
