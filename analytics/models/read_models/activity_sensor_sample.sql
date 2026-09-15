@@ -25,7 +25,8 @@
     }],
     query_settings={
         'max_threads': 1,
-        'join_use_nulls': 1
+        'join_use_nulls': 1,
+        'enable_materialized_cte': 1
     }
 ) }}
 
@@ -96,7 +97,7 @@ activity_days AS (
     FROM current_activity
 ),
 
-activity_samples AS (
+activity_samples AS MATERIALIZED (
     SELECT
         activity_days.activity_id AS activity_id,
         samples.user_id AS user_id,
