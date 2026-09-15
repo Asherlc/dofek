@@ -26944,6 +26944,48 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   reconnect Dofek once in ChatGPT and verify it remains callable in a later
   message after the original access token would otherwise expire.
 
+## 2026-09-15 — Activity analytics stalled after Sep 9
+
+- **Status:** The direct ingestion fix is deployed; the bounded summary fix is
+  validated locally and pending production deployment.
+- **Symptoms / user impact:** Activities after Sep 9 were ingested upstream but
+  did not reach the activity serving models, so they were absent from the web
+  and mobile UI.
+- **Evidence:** The pre-fix Sep 13 `activity_sensor_sample` batch exhausted
+  ClickHouse memory: three materialized-membership variants reached 5.8–9.1
+  GiB before code 241, while the direct logical-state query remained at 3.5
+  GiB. After PR #2747 deployed, the Sep 14 and Sep 15 batches completed in
+  217.25 and 169.95 seconds at about 2 GiB, but
+  `activity_sensor_summary_rows` then failed with code 159 at 240.009 seconds
+  after reading 127,971,218 rows / 12.39 GB. The projection was selected and
+  contained 56,737 rows, while the full build read 127,971,218 rows. Production
+  had 666 dirty activities for one user (56 missing and 610 changed) with
+  6,664,351 prior logical samples; processing all of them in one latest-sample
+  aggregation exceeded the fixed query deadline.
+- **Root cause:** `activity_sensor_sample` materialized a global activity
+  membership state and rejoined it during each historical microbatch, causing
+  the initial OOM. Once that was corrected, the accumulated dirty-summary
+  backlog exposed a second unbounded step: `activity_sensor_summary_rows`
+  selected every dirty activity in a single build instead of limiting the
+  amount of incremental work per cycle.
+- **Fix / mitigation:** PR #2747 reads logical activity state directly with
+  query-level `FINAL`, applies a one-day microbatch lookback, and removes the
+  global membership materialization/rejoin. The follow-up orders dirty summary
+  keys by their oldest source refresh version and processes at most 100 per
+  unscoped incremental cycle; explicit scoped repairs and full refreshes bypass
+  the limit. This follows dbt's incremental-model contract of transforming the
+  rows selected by an incremental filter:
+  <https://docs.getdbt.com/docs/build/incremental-models>. The required
+  `by_activity_source_refresh_version` projection was materialized separately
+  on historical parts as prescribed by ClickHouse:
+  <https://clickhouse.com/docs/reference/statements/alter/projection>.
+- **Validation / remaining risk:** The new real-ClickHouse regression sets the
+  batch size to one and proves two successive builds drain two dirty activities
+  in oldest-first order; both integration suites that render the model pass
+  (7 tests), as do 49 focused unit tests, dbt parse, and analytics SQL lint.
+  Production remains unresolved until the follow-up deploy completes, the
+  dirty count reaches zero across successful recurring cycles, the Sep 13
+  bounded replay completes, and current activities are verified in the UI.
 ## 2026-09-15 — Dofek remained absent from ChatGPT after a successful food write
 
 - **Symptoms / user impact:** In one ChatGPT conversation, a read-only food

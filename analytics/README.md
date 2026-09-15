@@ -207,6 +207,13 @@ stage is evaluated once per build instead of being inlined into every aggregate
 branch. ClickHouse introduced materialized CTEs for exactly this shared-result
 reuse and requires `enable_materialized_cte`:
 <https://clickhouse.com/blog/clickhouse-release-26-03>.
+Unscoped incremental builds process at most 100 dirty activities per cycle,
+ordered by the oldest source refresh version first. This bounds catch-up work
+while ensuring older backlog cannot be starved by newly refreshed activities;
+explicitly scoped repair builds and full refreshes remain complete and bypass
+the limit. dbt incremental models are designed to transform only the rows
+selected by their incremental filter:
+<https://docs.getdbt.com/docs/build/incremental-models>.
 The activity sample, sensor summary, location summary, activity summary, and
 VO2 max models use the persisted activity-group UUID as their lifecycle key.
 Member and alias UUIDs are accepted only as dirty lookup inputs and resolve to

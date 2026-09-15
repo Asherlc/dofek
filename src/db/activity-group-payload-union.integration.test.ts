@@ -442,6 +442,7 @@ function renderModel(
   })
     .replaceAll("{{ initial_lookback_days }}", "365")
     .replaceAll("{{ var('activity_location_batch_size', 100) }}", "100")
+    .replaceAll("{{ var('activity_sensor_summary_batch_size', 100) }}", "100")
     .replaceAll('{{ var("activity_refresh_user_id") }}', userId)
     .replaceAll(
       "{{ activity_refresh_ids() }}",

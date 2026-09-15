@@ -26,6 +26,13 @@ const elevationRowsSchema = z.array(
     elevation_loss_m: z.number().nullable(),
   }),
 );
+const activitySummaryStateRowsSchema = z.array(
+  z.object({
+    activity_id: z.string(),
+    avg_power: z.number().nullable(),
+    is_deleted: z.number(),
+  }),
+);
 
 describe("activity_sensor_summary_rows historical dirty keys", () => {
   let client: ClickHouseClient | undefined;
@@ -126,6 +133,41 @@ ${renderActivitySensorSummaryRowsSelectSql(targetSchema)}`,
       { elevation_gain_m: null, elevation_loss_m: null },
     ]);
   }, 180_000);
+
+  it("drains dirty activities across oldest-first bounded builds", async () => {
+    const activeClient = requireClient(client);
+    await seedHistoricalBackfillFixture(activeClient, targetSchema);
+    const boundedModelSql = renderActivitySensorSummaryRowsSelectSql(targetSchema, 1);
+
+    await activeClient.command({
+      query: `INSERT INTO ${targetSchema}.activity_sensor_summary_rows\n${boundedModelSql}`,
+    });
+
+    expect(await readActivitySummaryState(activeClient, targetSchema)).toEqual([
+      {
+        activity_id: historicalActivityId,
+        avg_power: 210,
+        is_deleted: 0,
+      },
+    ]);
+
+    await activeClient.command({
+      query: `INSERT INTO ${targetSchema}.activity_sensor_summary_rows\n${boundedModelSql}`,
+    });
+
+    expect(await readActivitySummaryState(activeClient, targetSchema)).toEqual([
+      {
+        activity_id: historicalActivityId,
+        avg_power: 210,
+        is_deleted: 0,
+      },
+      {
+        activity_id: singleAltitudeActivityId,
+        avg_power: null,
+        is_deleted: 0,
+      },
+    ]);
+  }, 180_000);
 });
 
 function requireClickHouseUrl(): string {
@@ -157,17 +199,42 @@ async function waitForClickHouse(client: ClickHouseClient): Promise<void> {
   throw lastError instanceof Error ? lastError : new Error("ClickHouse did not become ready");
 }
 
-function renderActivitySensorSummaryRowsSelectSql(targetSchema: string): string {
+function renderActivitySensorSummaryRowsSelectSql(
+  targetSchema: string,
+  activitySensorSummaryBatchSize = 100,
+): string {
   return renderDbtModelSql(readModelSql("activity_sensor_summary_rows.sql"), {
     isIncremental: true,
     activityRefreshScoped: false,
   })
     .replaceAll("{{ initial_lookback_days }}", "120")
+    .replaceAll(
+      "{{ var('activity_sensor_summary_batch_size', 100) }}",
+      String(activitySensorSummaryBatchSize),
+    )
     .replaceAll("{{ this }}", `${targetSchema}.activity_sensor_summary_rows`)
     .replaceAll("{{ ref('activity_sensor_sample') }}", `${targetSchema}.activity_sensor_sample`)
     .replaceAll("{{ ref('deduped_activities') }}", `${targetSchema}.source_activity`)
     .replaceAll("{{ source('postgres_fitness', 'activity') }}", `${targetSchema}.source_activity`)
     .concat("\nSETTINGS join_use_nulls = 1, enable_materialized_cte = 1");
+}
+
+async function readActivitySummaryState(
+  client: ClickHouseClient,
+  targetSchema: string,
+): Promise<z.infer<typeof activitySummaryStateRowsSchema>> {
+  const result = await client.query({
+    query: `SELECT
+        toString(activity_id) AS activity_id,
+        avg_power,
+        is_deleted
+      FROM ${targetSchema}.activity_sensor_summary_rows FINAL
+      WHERE activity_id IN ('${historicalActivityId}', '${singleAltitudeActivityId}')
+        AND is_deleted = 0
+      ORDER BY activity_id`,
+    format: "JSONEachRow",
+  });
+  return activitySummaryStateRowsSchema.parse(await result.json<unknown>());
 }
 
 async function seedHistoricalBackfillFixture(
@@ -247,7 +314,7 @@ function insertHistoricalPowerSamplesSql(targetSchema: string): string {
 
 function insertSingleAltitudeSampleSql(targetSchema: string): string {
   return `INSERT INTO ${targetSchema}.activity_sensor_sample VALUES
-  ('${singleAltitudeActivityId}', '${testUserId}', toDateTime64('2026-07-06 01:00:00', 6, 'UTC'), toDate('2026-07-06'), 'altitude', 15.0, 100, 0, toDateTime64('2026-07-10 05:31:41', 9, 'UTC'))`;
+  ('${singleAltitudeActivityId}', '${testUserId}', toDateTime64('2026-07-06 01:00:00', 6, 'UTC'), toDate('2026-07-06'), 'altitude', 15.0, 200, 0, toDateTime64('2026-07-10 05:31:41', 9, 'UTC'))`;
 }
 
 function insertDeletedPowerSampleSql(targetSchema: string): string {
