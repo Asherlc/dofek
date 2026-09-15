@@ -28,11 +28,13 @@ them, and the durability work they suggest.
   lifecycle status. No speculative protocol or session workaround was added.
 - **Validation:** Local regression tests and CI passed for the instrumentation;
   deployed events are visible in PostHog. Production still needs correlation
-  with a fresh disappearance timestamp to classify the boundary failure.
+  with a fresh disappearance timestamp and confirmation that telemetry delivery
+  covered that window to classify the boundary failure.
 - **Remaining risk / follow-up:** If no Dofek request is logged at the exact
-  disappearance time, the omission occurs before the service. If a valid
-  tools/list result is logged for that interaction, escalate to the platform
-  with its trace and sanitized result evidence.
+  disappearance time and telemetry coverage and delivery are confirmed, the
+  omission occurred before the service. Otherwise, absence is inconclusive. If
+  a valid tools/list result is logged for that interaction, escalate to the
+  platform with its trace and sanitized result evidence.
 
 ## 2026-09-14 — Insights endpoint failed on stale ClickHouse view
 
