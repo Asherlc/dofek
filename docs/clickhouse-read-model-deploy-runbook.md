@@ -394,11 +394,14 @@ read, ~8 MiB peak memory, with projection
 
 The value is a bounded freshness backlog, not an error count: it is the number
 of activities whose sensor samples were refreshed since their last summary
-write. It stays small (tens) and drains within the next normal cycle because
-each unscoped summary cycle processes the 100 oldest dirty keys. Since the
-production dbt build passes only date microbatch bounds, the effective cap is
-the model default of 100; a value that exceeds the cap and does not fall across
-cycles indicates a regression, not normal churn.
+write. It normally stays small (tens) because each unscoped summary cycle
+processes the 100 oldest dirty keys and drains them within that cycle.
+
+Do not treat 100 as a queue-depth ceiling. The `LIMIT 100` bounds the keys one
+cycle selects, not the keys that can be dirty; arrivals between cycles can push
+the count above 100 without indicating a regression. Judge health by trend and
+by the age of the oldest dirty key: a backlog that keeps growing across cycles,
+or an oldest dirty key that keeps aging, indicates a regression.
 
 ## Local Validation
 
