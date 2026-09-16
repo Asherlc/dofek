@@ -34,6 +34,12 @@ const activitySummaryStateRowsSchema = z.array(
     is_deleted: z.number(),
   }),
 );
+const staleActivitySummaryStateRowsSchema = z.array(
+  z.object({
+    activity_id: z.string(),
+    is_deleted: z.number(),
+  }),
+);
 
 describe("activity_sensor_summary_rows historical dirty keys", () => {
   let client: ClickHouseClient | undefined;
@@ -188,7 +194,7 @@ ${renderActivitySensorSummaryRowsSelectSql(targetSchema)}`,
       format: "JSONEachRow",
     });
 
-    expect(await staleState.json<{ activity_id: string; is_deleted: number }>()).toEqual([
+    expect(staleActivitySummaryStateRowsSchema.parse(await staleState.json<unknown>())).toEqual([
       {
         activity_id: staleActivityId,
         is_deleted: 1,
