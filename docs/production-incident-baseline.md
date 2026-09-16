@@ -27056,3 +27056,28 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   date`; dependency policy, TypeScript, and all 1,463 mobile tests pass.
 - **Remaining risk / follow-up:** The PR CI rerun remains pending; no retry,
   timeout, skipped validation, or dependency-check exception was added.
+
+## 2026-09-15 — MCP OAuth refresh silently downgraded food-write access
+
+- **Symptoms / user impact:** ChatGPT had successfully used food-write access
+  earlier in the day, then later exposed only read-only food tools after an
+  access-token refresh.
+- **Evidence / root cause:** MCP access tokens expire after one hour. The
+  refresh implementation used a client-supplied `scope` subset as the new
+  token's complete scope, so ChatGPT's default scope list could silently drop
+  `nutrition:write`. OAuth defines an omitted refresh scope as the originally
+  granted scope and permits a client to send a requested scope:
+  <https://www.rfc-editor.org/rfc/rfc6749#section-6>.
+- **Direct fix:** Refresh now rejects scopes outside the stored grant but
+  preserves the complete stored grant when a client requests a narrower
+  subset. Dofek's connected-app scope editor remains the authority for
+  changing the stored grant.
+- **Validation:** The new real-database regression failed before the fix with
+  `nutrition:write` missing, then passed with the focused integration suite at
+  16/16. Adjacent OAuth unit tests passed 60/60, TypeScript reported no errors,
+  and repository lint passed.
+- **Remaining risk / follow-up:** Production telemetry available through the
+  rotated service logs did not expose enough fields to correlate this specific
+  user's refresh. After deployment, confirm an accepted refresh retains the
+  full scope set and repeat a food write after the one-hour access-token
+  boundary.
