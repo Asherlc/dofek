@@ -7,6 +7,37 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-09-16 — ClickHouse CDC health check queried a dropped PeerDB stats table
+
+- **Status:** Fixed in code; deployment pending. Production normalization was
+  healthy throughout, so no data was at risk.
+- **Symptoms / user impact:** `dofek_cdc-health` reported
+  [DOFEK-SERVER-68](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-68)
+  296 times starting 2026-09-16T00:48Z with `error: error getting schema: db
+  error` at `checkClickHouseCdcHealth`'s PeerDB normalization query. No user
+  impact; every flow's normalization cursor was caught up while the check
+  failed.
+- **Evidence / root cause:** The exact query run against the production
+  `peerdb-catalog` Postgres returned `relation "peerdb_stats.cdc_batch_table"
+  does not exist`. PeerDB migration `V47__drop_cdc_batch_table.sql` drops that
+  table and replaces it with `peerdb_stats.cdc_table_aggregate_counts`
+  ([PeerDB migration](https://github.com/PeerDB-io/peerdb/blob/main/nexus/catalog/migrations/V47__drop_cdc_batch_table.sql)).
+  The normalization query added in #2725 joined the removed table. The Rust
+  `peer-postgres` catalog proxy surfaced only the opaque `error getting schema:
+  db error` because it reports the failure of `prepare_typed` without the
+  underlying Postgres message
+  ([peer-postgres](https://github.com/PeerDB-io/peerdb/blob/main/nexus/peer-postgres/src/lib.rs)).
+- **Direct fix:** `buildPeerDbNormalizationQuery` now joins
+  `peerdb_stats.cdc_table_aggregate_counts` on `latest_batch_id` within the
+  pending-batch range instead of the dropped `cdc_batch_table`.
+- **Validation:** A real-Postgres integration test seeds the live
+  `peerdb_stats` tables, runs `checkClickHouseCdcHealth`, and asserts the
+  cursor-stall issue with its destination tables; it fails against a query that
+  references `cdc_batch_table`. Unit tests, lint, and typecheck pass.
+- **Remaining risk / follow-up:** Deploy the fix and confirm `DOFEK-SERVER-68`
+  stays resolved. The catalog proxy hides Postgres errors as `db error`, so
+  future catalog-query failures need the same direct-catalog reproduction.
+
 ## 2026-09-15 — MCP tools absent from an existing ChatGPT conversation
 
 - **Status:** Unresolved; server instrumentation is deployed, but the ChatGPT
