@@ -27081,3 +27081,53 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   user's refresh. After deployment, confirm an accepted refresh retains the
   full scope set and repeat a food write after the one-hour access-token
   boundary.
+
+## 2026-09-16 — Sep 9 activity analytics recovery evidence
+
+- **Status / user impact:** The production serving path is healthy again.
+  Activities ingested after Sep 9 now appear in the ClickHouse-backed activity
+  summary used by the web and mobile clients.
+- **Root cause:** Recovery was blocked by two unbounded ClickHouse workloads:
+  `activity_sensor_sample` rebuilt global activity membership during each
+  historical microbatch, and `activity_sensor_summary_rows` attempted to
+  rebuild every dirty activity in one incremental cycle; stale summary rows
+  also needed explicit tombstones.
+- **Direct fix:** [PR #2747](https://github.com/Asherlc/dofek/pull/2747)
+  reads logical activity state directly with query-level `FINAL` and keeps
+  historical work in bounded microbatches. [PR #2749](https://github.com/Asherlc/dofek/pull/2749)
+  orders dirty keys and limits each unscoped summary cycle to 100 activities.
+  [PR #2758](https://github.com/Asherlc/dofek/pull/2758) emits tombstones for
+  stale summary rows. These changes are deployed in image `sha-16c97c7` by
+  [deployment run 35036897900](https://github.com/Asherlc/dofek/actions/runs/35036897900).
+- **Recovery evidence:** The approved one-batch Sep 13
+  `activity_sensor_sample` replay completed successfully (9,655,695 rows,
+  270.01 seconds). Subsequent normal worker cycles completed all 41 models;
+  the latest cycle finished at 2026-09-16 17:00:29 UTC with
+  `PASS=41 WARN=0 ERROR=0`, recorded five datasets with zero failures, and
+  refreshed the cache step without an error. The worker readiness endpoint at
+  17:00:39 UTC reported `status=ok`, `lastFailure=null`, and the matching
+  successful-cycle timestamp.
+- **Serving verification:** The authenticated activity-summary serving call
+  for 2026-09-10 through 2026-09-16 returned 18 activities: 7 in ISO week
+  2026-W37 and 11 in 2026-W38. This is the API path consumed by web and mobile;
+  a visual browser audit was unavailable because this environment had no
+  browser runtime.
+- **Observed transient failure:** Two consecutive `activity_power_curve`
+  builds failed at 2026-09-16 14:06 and 14:22 UTC with ClickHouse exception
+  241 while `arrayMap` allocated a large recorded-time array. Later cycles
+  completed the same model successfully. No timeout, memory, or resource limit
+  was increased; this remains a separately monitored capacity risk rather than
+  a reason to weaken the recovery fix.
+- **Queue evidence / remaining risk:** The exact dirty-key count was 839 after
+  the first successful 100-row batch and 466 before the final successful-cycle
+  series. Later summary writes stayed below the 100-row cap, and repeated
+  cycles completed without an analytics error. A fresh exact dirty-key
+  aggregation was intentionally not run because the same diagnostic had been
+  rejected for its potential to recreate production memory pressure; therefore
+  current logs prove bounded successful draining but do not independently prove
+  an exact queue count of zero. Keep the existing worker/readiness monitoring
+  until low-cost queue-depth telemetry can establish that invariant.
+- **Resilience rationale:** The 100-activity unscoped batch cap is the smallest
+  durable guard that keeps one incremental cycle inside the fixed single-node
+  ClickHouse budget; scoped repairs and full refreshes retain their explicit
+  operator-controlled behavior.
