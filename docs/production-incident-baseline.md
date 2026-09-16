@@ -27149,15 +27149,28 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   completed the same model successfully. No timeout, memory, or resource limit
   was increased; this remains a separately monitored capacity risk rather than
   a reason to weaken the recovery fix.
-- **Queue evidence / remaining risk:** The exact dirty-key count was 839 after
-  the first successful 100-row batch and 466 before the final successful-cycle
-  series. Later summary writes stayed below the 100-row cap, and repeated
-  cycles completed without an analytics error. A fresh exact dirty-key
-  aggregation was intentionally not run because the same diagnostic had been
-  rejected for its potential to recreate production memory pressure; therefore
-  current logs prove bounded successful draining but do not independently prove
-  an exact queue count of zero. Keep the existing worker/readiness monitoring
-  until low-cost queue-depth telemetry can establish that invariant.
+- **Queue evidence:** The exact dirty-key count was 839 after the first
+  successful 100-row batch and 466 before the final successful-cycle series.
+  Summary writes then fell below the 100-row cap. Because each unscoped cycle
+  selects the 100 oldest dirty keys, four consecutive 15-row writes
+  independently show the whole dirty set was 15, not a capped backlog.
+- **Queue verification (2026-09-16):** A projection-backed read-only count
+  closed the earlier verification gap. The production dbt build passes only
+  date microbatch bounds, so `activity_sensor_summary_batch_size` is the model
+  default of 100, and [PR #2749](https://github.com/Asherlc/dofek/pull/2749)
+  applies it only to unscoped cycles.
+  The exact dirty-key count was 19 at 2026-09-16 19:05 UTC, measured at ~200 ms,
+  ~6.5 million rows read, and ~8 MiB peak memory using the
+  `by_activity_source_refresh_version` projection. The residual count is normal
+  freshness churn: `activity_sensor_sample` uses a one-day microbatch lookback
+  on source `refreshed_at`, so each cycle rebuilds samples for activities with
+  recently ingested raw data and the summary recomputes them in the same cycle.
+  The earlier rejection was caused by a `MATERIALIZED` CTE forcing a full-table
+  materialization; the sanctioned query is documented in
+  [`docs/clickhouse-read-model-deploy-runbook.md`](./clickhouse-read-model-deploy-runbook.md).
+- **Remaining risk:** Worker/readiness monitoring can stop now that the queue is
+  bounded and independently measured. The `activity_power_curve` memory
+  oscillation above remains a separately monitored capacity risk.
 - **Resilience rationale:** The 100-activity unscoped batch cap is the smallest
   durable guard that keeps one incremental cycle inside the fixed single-node
   ClickHouse budget; scoped repairs and full refreshes retain their explicit
