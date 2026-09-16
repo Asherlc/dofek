@@ -266,6 +266,16 @@ active_dirty_keys AS (
     FROM dirty_keys
 ),
 
+current_dirty_keys AS (
+    SELECT
+        active_dirty_keys.activity_id AS activity_id,
+        active_dirty_keys.user_id AS user_id
+    FROM active_dirty_keys
+    INNER JOIN current_activity
+        ON current_activity.activity_id = active_dirty_keys.activity_id
+        AND current_activity.user_id = active_dirty_keys.user_id
+),
+
 latest_sensor_samples AS MATERIALIZED (
     SELECT *
     FROM (
@@ -275,7 +285,7 @@ latest_sensor_samples AS MATERIALIZED (
             SELECT
                 user_id,
                 activity_id
-            FROM active_dirty_keys
+            FROM current_dirty_keys
         )
         ORDER BY
             user_id ASC,
