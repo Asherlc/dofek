@@ -64,11 +64,6 @@ const nullableIntegerLikeSchema = z.union([
 ]);
 const integerLikeSchema = z.union([z.number().int().nonnegative(), numericStringSchema]);
 const nullableStringLikeSchema = z.union([z.string(), z.number(), z.date(), z.null()]);
-const pendingDestinationTableNameSchema = z.string().regex(/^[a-z][a-z0-9_]*$/);
-const pendingDestinationTablesSchema = z
-  .union([z.string(), z.null()])
-  .transform((value) => (value === null ? [] : value.split(",")))
-  .pipe(z.array(pendingDestinationTableNameSchema));
 
 const postgresReplicationSlotRowsSchema = z.object({
   rows: z.array(
@@ -162,7 +157,10 @@ function parsePeerDbNormalizationRows(result: unknown) {
           latest_normalized_batch_id: nullableIntegerLikeSchema,
           latest_synced_batch_id: nullableIntegerLikeSchema,
           oldest_pending_batch_id: nullableIntegerLikeSchema,
-          pending_destination_tables: pendingDestinationTablesSchema,
+          pending_destination_tables: z
+            .union([z.string(), z.null()])
+            .transform((value) => (value === null ? [] : value.split(",")))
+            .pipe(z.array(z.string().regex(/^[a-z][a-z0-9_]*$/))),
         }),
       ),
     })

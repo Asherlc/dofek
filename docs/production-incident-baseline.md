@@ -39,7 +39,11 @@ them, and the durability work they suggest.
   regression test asserts the projection stays scalar (`string_agg`, never
   `array_agg`). The real-Postgres integration test still reports the expected
   cursor stall with `tables=[activity,sleep_session]`. Biome and `tsc --noEmit`
-  pass.
+  pass. The parsing schema is built inside `parsePeerDbNormalizationRows` (as the
+  function already did) rather than at module scope; a module-level schema is a
+  Stryker static mutant that PR mutation CI (`ignoreStatic: true` with per-test
+  coverage) reports as surviving because it cannot attribute the module-load
+  execution to the covering test. Stryker on the changed lines now scores 100%.
 - **Remaining risk / follow-up:** Deploy the fix and confirm `DOFEK-SERVER-6A`
   stays resolved. The underlying gap is an upstream PeerDB proxy limitation
   (unsupported `TEXT_ARRAY`); if the catalog query later needs array output,
