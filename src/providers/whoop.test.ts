@@ -181,7 +181,7 @@ function makeChainableMock(resolvedValue: unknown = []) {
 // in sync-checkpoint.ts) replay the same cycles and the sync processes a
 // workout more than once.
 function filterCyclesByRequestedRange(cycles: unknown[], url: string): unknown[] {
-  const params = new URL(url).searchParams;
+  const params = new URL(url, "https://api.prod.whoop.com").searchParams;
   const startIso = params.get("startTime");
   const endIso = params.get("endTime");
   if (!startIso || !endIso) return cycles;
