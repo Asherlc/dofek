@@ -64,6 +64,11 @@ const nullableIntegerLikeSchema = z.union([
 ]);
 const integerLikeSchema = z.union([z.number().int().nonnegative(), numericStringSchema]);
 const nullableStringLikeSchema = z.union([z.string(), z.number(), z.date(), z.null()]);
+const pendingDestinationTableNameSchema = z.string().regex(/^[a-z][a-z0-9_]*$/);
+const pendingDestinationTablesSchema = z
+  .union([z.string(), z.null()])
+  .transform((value) => (value === null ? [] : value.split(",")))
+  .pipe(z.array(pendingDestinationTableNameSchema));
 
 const postgresReplicationSlotRowsSchema = z.object({
   rows: z.array(
@@ -132,11 +137,8 @@ function buildPeerDbNormalizationQuery(): string {
       progress.latest_synced_batch_id,
       progress.latest_normalized_batch_id,
       progress.oldest_pending_batch_id,
-      coalesce(
-        array_agg(DISTINCT aggregate_counts.destination_table_name)
-          FILTER (WHERE aggregate_counts.destination_table_name IS NOT NULL),
-        ARRAY[]::text[]
-      ) AS pending_destination_tables
+      string_agg(DISTINCT aggregate_counts.destination_table_name, ',')
+        AS pending_destination_tables
     FROM batch_progress AS progress
     LEFT JOIN peerdb_stats.cdc_table_aggregate_counts AS aggregate_counts
       ON aggregate_counts.flow_name = progress.flow_name
@@ -160,7 +162,7 @@ function parsePeerDbNormalizationRows(result: unknown) {
           latest_normalized_batch_id: nullableIntegerLikeSchema,
           latest_synced_batch_id: nullableIntegerLikeSchema,
           oldest_pending_batch_id: nullableIntegerLikeSchema,
-          pending_destination_tables: z.array(z.string().regex(/^[a-z][a-z0-9_]*$/)),
+          pending_destination_tables: pendingDestinationTablesSchema,
         }),
       ),
     })
