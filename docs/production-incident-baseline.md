@@ -7,6 +7,47 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-09-17 — WHOOP BLE connect handshake timed out during background refresh
+
+- **Status:** Fixed in code; deployment pending.
+- **Symptoms / user impact:** Sentry issue
+  [DOFEK-MOBILE-1M](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-1M)
+  reported `Error: TIMEOUT: undefined reason (at ExpoModulesCore/Promise.swift:65)`
+  from telemetry source `whoop-ble-background-refresh` — one event for one user.
+  Buffered WHOOP inertial samples were not uploaded on that refresh.
+- **Evidence / root cause:** `TIMEOUT` is the native
+  `WhoopBleConnectionError.timeout` rejection code
+  (`packages/mobile/modules/whoop-ble/ios/WhoopBleConnectionState.swift`)
+  surfaced by the Expo bridge from the 10-second connect-handshake deadline in
+  `WhoopBleConnectionManager.startHandshakeTimeout`. The `undefined reason`
+  text is not the real message: Expo's base `Exception.reason` defaults to that
+  literal string and `reject(code, message)` never overrides it, so Sentry
+  renders `debugDescription`
+  ([Expo `Exception.swift`](https://github.com/expo/expo/blob/sdk-57/packages/expo-modules-core/ios/Core/Exceptions/Exception.swift)).
+  `syncWhoopBle` treated the expected environmental timeout as a hard failure —
+  it reported the exception and rethrew before draining, so the refresh failed
+  and buffered samples stayed behind.
+- **Direct fix:** In the background refresh path, an expected connect-handshake
+  timeout is now logged as a warning and a Sentry breadcrumb, buffered IMU and
+  realtime samples are still drained and uploaded without a live strap
+  connection, and the refresh no longer fails. Every other connect error still
+  reports to Sentry and fails the refresh; foreground sync behavior is
+  unchanged.
+- **Validation:** Failing regression tests first reproduced the timeout
+  reporting and skipped upload; after the fix the timeout case drains and
+  uploads without a `whoop-ble-background-refresh` exception while a
+  `NOT_FOUND` connect error still reports and rejects. The focused
+  `packages/mobile/lib/background-whoop-ble-sync.test.ts` suite passes 50/50,
+  Biome reports no findings, and the mobile typecheck passes.
+- **Remaining risk / follow-up:** The Simulator cannot exercise Bluetooth
+  hardware
+  ([Expo simulator limitations](https://docs.expo.dev/workflow/ios-simulator/#limitations)),
+  so validate on a physical device that a background refresh with the strap
+  asleep uploads buffered samples without a new `DOFEK-MOBILE-1M` event. If
+  timeouts recur, inspect the native connect logs to confirm the strap was
+  genuinely unreachable rather than the handshake stalling on a race with
+  `retryConnection`.
+
 ## 2026-09-16 — ClickHouse CDC health check queried a dropped PeerDB stats table
 
 - **Status:** Fixed in code; deployment pending. Production normalization was
