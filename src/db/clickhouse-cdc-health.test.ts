@@ -263,6 +263,21 @@ describe("checkClickHouseCdcHealth", () => {
     );
   });
 
+  it("reads pending destination tables from the live PeerDB aggregate counts table", async () => {
+    const peerDbClient = new FakePeerDbClient(healthyPeerDbMirrorRows());
+
+    await checkClickHouseCdcHealth({
+      postgresClient: new FakePostgresClient(healthySlotRows()),
+      peerDbClient,
+      clickHouseClient: new FakeClickHouseClient(healthyFreshnessRows()),
+      now: new Date("2026-06-03T20:00:00.000Z"),
+    });
+
+    const normalizationQuery = peerDbClient.queryTexts[1];
+    expect(normalizationQuery).toContain("peerdb_stats.cdc_table_aggregate_counts");
+    expect(normalizationQuery).not.toContain("cdc_batch_table");
+  });
+
   it("fails when no batch has normalized before multiple synced batches are pending", async () => {
     const report = await checkClickHouseCdcHealth({
       postgresClient: new FakePostgresClient(healthySlotRows()),
