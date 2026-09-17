@@ -27216,3 +27216,30 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   durable guard that keeps one incremental cycle inside the fixed single-node
   ClickHouse budget; scoped repairs and full refreshes retain their explicit
   operator-controlled behavior.
+
+## 2026-09-17 — Main CI block after the activity analytics recovery
+
+- **Status / impact:** The `activity_power_curve` memory fix
+  ([PR #2764](https://github.com/Asherlc/dofek/pull/2764)) merged, but the
+  post-merge deploy's `Deploy Web Production` job was skipped because main CI
+  was red, so production stayed on the previous image.
+- **Root cause (blocking failure):** `src/providers/whoop.test.ts` strength-sync
+  tests failed with `expected [ …(2) ] to have a length of 1 but got 2`. The
+  failure appeared exactly at 2026-09-17 00:00 UTC with no WHOOP source change
+  in the merge range. `sync-orchestrator.ts` fetches cycles in
+  `WHOOP_CYCLE_WINDOW_MS` (200 day) chunks between `window.since` and
+  `window.until`; the test's open-ended window (`SyncWindow.fromSince`) reached
+  exactly 200 days at midnight, adding a second chunk, and the
+  `cycles/details` mock ignored the requested `startTime`/`endTime`, so it
+  replayed the same workout in both chunks and the exercise was resolved twice.
+- **Direct fix:** Made the mock honour the requested range, matching the real
+  endpoint. [PR #2765](https://github.com/Asherlc/dofek/pull/2765).
+- **Independent failure:** The same segment also hit the known iOS `actool`
+  `Distill failed` runner flake on the generated `SplashScreenLegacy` image (see
+  the 2026-09-01 entry); the same commit passed iOS at PR time.
+- **Evidence:** [failed iOS job](https://github.com/Asherlc/dofek/actions/runs/35163283960/job/105018892708);
+  [WHOOP unit failures](https://github.com/Asherlc/dofek/actions/runs/35164932824).
+  The WHOOP test fails on the pre-fix tree and passes with the mock range fix
+  (`pnpm test:unit` 17216 passed / 20 skipped).
+- **Remaining risk / follow-up:** Confirm the next main CI run is green and the
+  deploy resumes; the iOS `Distill failed` flake remains runner-environmental.
