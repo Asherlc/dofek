@@ -7,6 +7,49 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-09-17 — ClickHouse CDC health check crashed on a PeerDB catalog proxy array column
+
+- **Status:** Fixed in code; deployment pending. Production normalization was
+  healthy throughout, so no data was at risk.
+- **Symptoms / user impact:** `dofek_cdc-health` reported
+  [DOFEK-SERVER-6A](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6A)
+  nine times from 2026-09-17T02:14Z with a `ZodError` from
+  `parsePeerDbNormalizationRows`: `Invalid input: expected array, received null`
+  for `rows[*].pending_destination_tables`. No user impact.
+- **Evidence / root cause:** The normalization query projected
+  `pending_destination_tables` with `array_agg(...)`, so the column type was
+  Postgres `text[]` (OID 1009). The check connects to PeerDB's
+  `peer-postgres` catalog proxy, whose row serializer
+  (`nexus/peer-postgres/src/stream.rs::values_from_row`) has explicit arms for
+  `VARCHAR_ARRAY`/`BPCHAR_ARRAY` but not `TEXT_ARRAY`; that type falls through
+  to the default branch, where `try_get::<Option<String>>` fails and the proxy
+  emits `Value::Null`
+  ([peer-postgres](https://github.com/PeerDB-io/peerdb/blob/main/nexus/peer-postgres/src/stream.rs)).
+  The direct-Postgres integration test could not catch this because real
+  Postgres returns the array correctly; only the proxy nulls it. The failure was
+  newly exposed by #2763, which pointed the query at the live
+  `peerdb_stats.cdc_table_aggregate_counts` table — before that the query errored
+  on the dropped `cdc_batch_table` (see the 2026-09-16 entry).
+- **Direct fix:** `buildPeerDbNormalizationQuery` now projects the pending tables
+  as a scalar `string_agg(DISTINCT ..., ',')` text column, and
+  `parsePeerDbNormalizationRows` splits and validates the names (null → `[]`) so
+  the health check no longer depends on the proxy serializing `text[]`.
+- **Validation:** New unit tests failed first against the old query/schema (12
+  failures, including the array `ZodError`) and pass after the change; a
+  regression test asserts the projection stays scalar (`string_agg`, never
+  `array_agg`). The real-Postgres integration test still reports the expected
+  cursor stall with `tables=[activity,sleep_session]`. Biome and `tsc --noEmit`
+  pass. The parsing schema is built inside `parsePeerDbNormalizationRows` (as the
+  function already did) rather than at module scope; a module-level schema is a
+  Stryker static mutant that PR mutation CI (`ignoreStatic: true` with per-test
+  coverage) reports as surviving because it cannot attribute the module-load
+  execution to the covering test. Stryker on the changed lines now scores 100%.
+- **Remaining risk / follow-up:** Deploy the fix and confirm `DOFEK-SERVER-6A`
+  stays resolved. The underlying gap is an upstream PeerDB proxy limitation
+  (unsupported `TEXT_ARRAY`); if the catalog query later needs array output,
+  prefer a scalar/JSON projection or file it upstream rather than relying on
+  array serialization.
+
 ## 2026-09-17 — WHOOP BLE connect handshake timed out during background refresh
 
 - **Status:** Fixed in code; deployment pending.

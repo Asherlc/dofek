@@ -32,7 +32,7 @@ interface PeerDbNormalizationRow {
   latest_normalized_batch_id: number | string | null;
   latest_synced_batch_id: number | string | null;
   oldest_pending_batch_id: number | string | null;
-  pending_destination_tables: string[];
+  pending_destination_tables: string | null;
 }
 
 class FakePostgresClient implements PostgresQueryClient {
@@ -95,7 +95,7 @@ function healthyNormalizationRows(): PeerDbNormalizationRow[] {
     latest_normalized_batch_id: "42",
     latest_synced_batch_id: "42",
     oldest_pending_batch_id: null,
-    pending_destination_tables: [],
+    pending_destination_tables: null,
   }));
 }
 
@@ -239,7 +239,7 @@ describe("checkClickHouseCdcHealth", () => {
         latest_normalized_batch_id: "40",
         latest_synced_batch_id: "43",
         oldest_pending_batch_id: "41",
-        pending_destination_tables: ["sleep_session", "daily_metrics"],
+        pending_destination_tables: "sleep_session,daily_metrics",
       },
     ]);
     const report = await checkClickHouseCdcHealth({
@@ -278,6 +278,21 @@ describe("checkClickHouseCdcHealth", () => {
     expect(normalizationQuery).not.toContain("cdc_batch_table");
   });
 
+  it("projects pending destination tables as scalar text the catalog proxy can serialize", async () => {
+    const peerDbClient = new FakePeerDbClient(healthyPeerDbMirrorRows());
+
+    await checkClickHouseCdcHealth({
+      postgresClient: new FakePostgresClient(healthySlotRows()),
+      peerDbClient,
+      clickHouseClient: new FakeClickHouseClient(healthyFreshnessRows()),
+      now: new Date("2026-06-03T20:00:00.000Z"),
+    });
+
+    const normalizationQuery = peerDbClient.queryTexts[1];
+    expect(normalizationQuery).toContain("string_agg");
+    expect(normalizationQuery).not.toContain("array_agg");
+  });
+
   it("fails when no batch has normalized before multiple synced batches are pending", async () => {
     const report = await checkClickHouseCdcHealth({
       postgresClient: new FakePostgresClient(healthySlotRows()),
@@ -287,7 +302,7 @@ describe("checkClickHouseCdcHealth", () => {
           latest_normalized_batch_id: null,
           latest_synced_batch_id: "43",
           oldest_pending_batch_id: "41",
-          pending_destination_tables: ["d"],
+          pending_destination_tables: "d",
         },
       ]),
       clickHouseClient: new FakeClickHouseClient(healthyFreshnessRows()),
@@ -313,7 +328,7 @@ describe("checkClickHouseCdcHealth", () => {
           latest_normalized_batch_id: "40",
           latest_synced_batch_id: "41",
           oldest_pending_batch_id: "41",
-          pending_destination_tables: ["daily_metrics"],
+          pending_destination_tables: "daily_metrics",
         },
       ]),
       clickHouseClient: new FakeClickHouseClient(healthyFreshnessRows()),
@@ -321,6 +336,32 @@ describe("checkClickHouseCdcHealth", () => {
     });
 
     expect(report.issues).toEqual([]);
+  });
+
+  it("reports a stall with an empty table list when the catalog returns no pending tables", async () => {
+    const report = await checkClickHouseCdcHealth({
+      postgresClient: new FakePostgresClient(healthySlotRows()),
+      peerDbClient: new FakePeerDbClient(healthyPeerDbMirrorRows(), [
+        {
+          flow_name: "dofek_fitness_raw_analytics",
+          latest_normalized_batch_id: "40",
+          latest_synced_batch_id: "43",
+          oldest_pending_batch_id: "41",
+          pending_destination_tables: null,
+        },
+      ]),
+      clickHouseClient: new FakeClickHouseClient(healthyFreshnessRows()),
+      now: new Date("2026-06-03T20:00:00.000Z"),
+    });
+
+    expect(report.issues).toContainEqual({
+      kind: "normalization_stall",
+      severity: "failure",
+      message:
+        "PeerDB normalization stalled for dofek_fitness_raw_analytics " +
+        "tables=[] classification=NORMALIZATION_CURSOR_STALLED " +
+        "normalized_batch=40 synced_batch=43 oldest_pending_batch=41",
+    });
   });
 
   it.each([
@@ -359,7 +400,7 @@ describe("checkClickHouseCdcHealth", () => {
             latest_normalized_batch_id: latestNormalized,
             latest_synced_batch_id: latestSynced,
             oldest_pending_batch_id: oldestPending,
-            pending_destination_tables: [],
+            pending_destination_tables: null,
           },
         ]),
         clickHouseClient: new FakeClickHouseClient(healthyFreshnessRows()),
@@ -382,7 +423,7 @@ describe("checkClickHouseCdcHealth", () => {
               latest_normalized_batch_id: "40",
               latest_synced_batch_id: "43",
               oldest_pending_batch_id: "41",
-              pending_destination_tables: [tableName],
+              pending_destination_tables: tableName,
             },
           ]),
           clickHouseClient: new FakeClickHouseClient(healthyFreshnessRows()),
