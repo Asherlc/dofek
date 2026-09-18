@@ -508,11 +508,29 @@ const isDirectRun =
   import.meta.url.endsWith(process.argv[1].replace(/.*\//, ""));
 if (isDirectRun) {
   process.on("unhandledRejection", onUnhandledRejection);
+
+  // main() does real async startup work (DB/ClickHouse/queue connections) before
+  // the server exists, so register signal handling up front instead of only
+  // after main() resolves — otherwise a SIGTERM during that window is missed and
+  // the container can start accepting traffic after already being told to stop.
+  let shutdown: ((signal: NodeJS.Signals) => void) | null = null;
+  let pendingShutdownSignal: NodeJS.Signals | null = null;
+  const handleShutdownSignal = (signal: NodeJS.Signals) => {
+    if (shutdown) {
+      shutdown(signal);
+      return;
+    }
+    pendingShutdownSignal = signal;
+  };
+  process.on("SIGTERM", () => handleShutdownSignal("SIGTERM"));
+  process.on("SIGINT", () => handleShutdownSignal("SIGINT"));
+
   main()
     .then(({ server, markShuttingDown }) => {
-      const shutdown = createGracefulShutdownHandler({ server, markShuttingDown });
-      process.on("SIGTERM", () => shutdown("SIGTERM"));
-      process.on("SIGINT", () => shutdown("SIGINT"));
+      shutdown = createGracefulShutdownHandler({ server, markShuttingDown });
+      if (pendingShutdownSignal) {
+        shutdown(pendingShutdownSignal);
+      }
     })
     .catch((err: unknown) => {
       logger.error(`[web] Failed to start: ${err}`);

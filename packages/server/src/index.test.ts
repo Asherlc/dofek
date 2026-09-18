@@ -660,6 +660,38 @@ describe("main", () => {
     }
   });
 
+  it("wires markShuttingDown through to /healthz", async () => {
+    vi.stubEnv("DATABASE_URL", "postgres://health:health@db:5432/health");
+    vi.stubEnv("CLICKHOUSE_URL", "http://default:health@clickhouse:8123");
+    mockGetDefaultMetricStreamEventPublisher.mockResolvedValue({ publishRows: vi.fn() });
+
+    let capturedApp: express.Express | undefined;
+    const listen = vi.spyOn(express.application, "listen").mockImplementation(function mockListen(
+      this: express.Express,
+    ) {
+      capturedApp = this;
+      return new http.Server();
+    });
+
+    try {
+      const result = await main();
+      expect(result.server).toBeDefined();
+      listen.mockRestore();
+      if (!capturedApp) throw new Error("createApp's Express app was not captured");
+
+      const beforeShutdown = await request(capturedApp, "GET", "/healthz");
+      expect(beforeShutdown.status).toBe(200);
+
+      result.markShuttingDown();
+
+      const afterShutdown = await request(capturedApp, "GET", "/healthz");
+      expect(afterShutdown.status).toBe(503);
+    } finally {
+      listen.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("passes the request timezone to access-window resolution", async () => {
     const { createDatabaseFromEnv } = await import("dofek/db");
     const fakeDb = createDatabaseFromEnv();
@@ -809,6 +841,33 @@ describe("createGracefulShutdownHandler", () => {
     onExit.mockClear();
     await vi.advanceTimersByTimeAsync(2000);
     expect(onExit).not.toHaveBeenCalled();
+  });
+
+  it("defaults to process.exit when no onExit override is given", async () => {
+    const processExit = vi.spyOn(process, "exit").mockImplementation(() => undefined);
+    let closeCallback: ((err?: Error) => void) | undefined;
+    const server = {
+      close: vi.fn((callback: (err?: Error) => void) => {
+        closeCallback = callback;
+      }),
+    };
+
+    try {
+      const shutdown = createGracefulShutdownHandler({
+        server,
+        markShuttingDown: vi.fn(),
+        drainDelayMs: 0,
+        forceExitAfterMs: 1000,
+      });
+      shutdown("SIGTERM");
+
+      await vi.advanceTimersByTimeAsync(0);
+      closeCallback?.();
+
+      expect(processExit).toHaveBeenCalledWith(0);
+    } finally {
+      processExit.mockRestore();
+    }
   });
 
   it("force-exits if the server never finishes closing within the drain window", async () => {
