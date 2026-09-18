@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import type http from "node:http";
 import { extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { constants as zlibConstants } from "node:zlib";
@@ -90,6 +91,60 @@ export function onUnhandledRejection(reason: unknown): void {
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
 const WEB_DIST_PATH = fileURLToPath(new URL("../../web/dist", import.meta.url));
 
+// A rolling Swarm deploy stops the old `web` container while Traefik may still be
+// routing new requests to it. Traefik's own loadbalancer healthcheck (not the
+// container healthcheck at /readyz) is what decides whether it keeps sending
+// traffic here, so on SIGTERM we fail /healthz immediately, wait long enough for
+// Traefik to notice (a few of its 5s healthcheck intervals) and stop routing, then
+// stop accepting new connections and let in-flight requests finish.
+const SHUTDOWN_HEALTHCHECK_DRAIN_MS = 10_000;
+const SHUTDOWN_FORCE_EXIT_AFTER_MS = 20_000;
+
+export interface GracefulShutdownOptions {
+  server: { close: (callback: (err?: Error) => void) => unknown };
+  markShuttingDown: () => void;
+  drainDelayMs?: number;
+  forceExitAfterMs?: number;
+  onExit?: (code: number) => void;
+}
+
+/** Builds a SIGTERM/SIGINT handler that drains in-flight requests before exiting. */
+export function createGracefulShutdownHandler(
+  options: GracefulShutdownOptions,
+): (signal: NodeJS.Signals) => void {
+  const drainDelayMs = options.drainDelayMs ?? SHUTDOWN_HEALTHCHECK_DRAIN_MS;
+  const forceExitAfterMs = options.forceExitAfterMs ?? SHUTDOWN_FORCE_EXIT_AFTER_MS;
+  const exit = options.onExit ?? ((code: number) => process.exit(code));
+  let shuttingDown = false;
+
+  return (signal: NodeJS.Signals) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    options.markShuttingDown();
+    logger.info(`[server] Received ${signal}, draining before shutdown`);
+
+    const forceExitTimer = setTimeout(() => {
+      logger.error("[server] Graceful shutdown timed out, forcing exit");
+      exit(1);
+    }, drainDelayMs + forceExitAfterMs);
+    forceExitTimer.unref();
+
+    const closeTimer = setTimeout(() => {
+      options.server.close((err) => {
+        clearTimeout(forceExitTimer);
+        if (err) {
+          logger.error(`[server] Error while closing server: ${err.message}`);
+          exit(1);
+          return;
+        }
+        logger.info("[server] Shutdown complete");
+        exit(0);
+      });
+    }, drainDelayMs);
+    closeTimer.unref();
+  };
+}
+
 function getSingleHeaderValue(value: string | string[] | undefined): string | undefined {
   if (typeof value === "string") {
     return value;
@@ -106,6 +161,8 @@ export interface CreateAppOptions {
   metricStreamPublisher?: MetricStreamEventPublisher;
   mcpAuthRateLimit?: McpAuthRateLimitOptions;
   openAiAppsChallengeToken?: string;
+  /** Reports true once a SIGTERM/SIGINT drain has started, so /healthz can fail fast. */
+  isShuttingDown?: () => boolean;
 }
 
 export function createApp(
@@ -127,7 +184,13 @@ export function createApp(
   const limitedSensorStore = new LimitedActivitySensorStore(sensorStore);
 
   // ── Health check (before ALL middleware and other routes) ──
+  // Traefik's loadbalancer healthcheck polls this to decide whether to keep
+  // routing traffic here — it must fail as soon as a graceful shutdown starts.
   app.get("/healthz", (_req, res) => {
+    if (options.isShuttingDown?.()) {
+      res.status(503).json({ status: "shutting_down" });
+      return;
+    }
     res.json({ status: "ok" });
   });
 
@@ -384,8 +447,13 @@ function setupRoutes(
   }
 }
 
+export interface MainResult {
+  server: http.Server;
+  markShuttingDown: () => void;
+}
+
 /** Validate env, create app, and start listening. */
-export async function main() {
+export async function main(): Promise<MainResult> {
   initSentry();
   const openAiAppsChallengeToken = process.env.OPENAI_APPS_CHALLENGE_TOKEN?.trim();
   if (!openAiAppsChallengeToken) {
@@ -413,16 +481,25 @@ export async function main() {
   const clickHouseClient = createClickHouseClientFromEnv();
   await bootstrapClickHouseFromEnv(clickHouseClient);
   const sensorStore = new ClickHouseActivitySensorStore(clickHouseClient);
+  let shuttingDown = false;
   const app = createApp(db, sensorStore, {
     accountErasureRestoreLedger,
     metricStreamPublisher,
     openAiAppsChallengeToken,
+    isShuttingDown: () => shuttingDown,
   });
 
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     logger.info(`[server] API running at http://localhost:${PORT}`);
     logger.info(`[server] tRPC at http://localhost:${PORT}/api/trpc`);
   });
+
+  return {
+    server,
+    markShuttingDown: () => {
+      shuttingDown = true;
+    },
+  };
 }
 
 // Only start server when run directly (not imported for testing)
@@ -431,11 +508,17 @@ const isDirectRun =
   import.meta.url.endsWith(process.argv[1].replace(/.*\//, ""));
 if (isDirectRun) {
   process.on("unhandledRejection", onUnhandledRejection);
-  main().catch((err: unknown) => {
-    logger.error(`[web] Failed to start: ${err}`);
-    captureException(err, {
-      tags: { serverStartupStep: "main" },
+  main()
+    .then(({ server, markShuttingDown }) => {
+      const shutdown = createGracefulShutdownHandler({ server, markShuttingDown });
+      process.on("SIGTERM", () => shutdown("SIGTERM"));
+      process.on("SIGINT", () => shutdown("SIGINT"));
+    })
+    .catch((err: unknown) => {
+      logger.error(`[web] Failed to start: ${err}`);
+      captureException(err, {
+        tags: { serverStartupStep: "main" },
+      });
+      process.exit(1);
     });
-    process.exit(1);
-  });
 }

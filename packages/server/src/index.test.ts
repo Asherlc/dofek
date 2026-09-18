@@ -210,7 +210,7 @@ import { getAccessWindowForUser } from "./billing/access-window-repository.ts";
 import { BillingProfileNotFoundError } from "./repositories/billing-repository.ts";
 import { makeMockSensorStore } from "./routers/test-helpers.ts";
 
-const { createApp, main } = await import("./index.ts");
+const { createApp, main, createGracefulShutdownHandler } = await import("./index.ts");
 
 function request(
   app: express.Express,
@@ -267,6 +267,30 @@ describe("createApp", () => {
     const app = createApp(fakeDb, makeMockSensorStore());
     const res = await request(app, "GET", "/api/nonexistent");
     expect(res.status).toBe(404);
+  });
+
+  it("reports healthy at /healthz when not shutting down", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    const fakeDb = createDatabaseFromEnv();
+    const app = createApp(fakeDb, makeMockSensorStore());
+
+    const res = await request(app, "GET", "/healthz");
+
+    expect(res.status).toBe(200);
+    expect(JSON.parse(res.body)).toEqual({ status: "ok" });
+  });
+
+  it("fails /healthz once a graceful shutdown has started", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    const fakeDb = createDatabaseFromEnv();
+    const app = createApp(fakeDb, makeMockSensorStore(), {
+      isShuttingDown: () => true,
+    });
+
+    const res = await request(app, "GET", "/healthz");
+
+    expect(res.status).toBe(503);
+    expect(JSON.parse(res.body)).toEqual({ status: "shutting_down" });
   });
 
   it("rejects a whitespace-only OpenAI Apps challenge token", async () => {
@@ -741,5 +765,107 @@ describe("main", () => {
           layer.handle === externalRouter,
       ),
     ).toBe(true);
+  });
+});
+
+describe("createGracefulShutdownHandler", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("marks shutting down immediately, then drains before closing and exiting cleanly", async () => {
+    const markShuttingDown = vi.fn();
+    const onExit = vi.fn();
+    let closeCallback: ((err?: Error) => void) | undefined;
+    const server = {
+      close: vi.fn((callback: (err?: Error) => void) => {
+        closeCallback = callback;
+      }),
+    };
+
+    const shutdown = createGracefulShutdownHandler({
+      server,
+      markShuttingDown,
+      drainDelayMs: 1000,
+      forceExitAfterMs: 2000,
+      onExit,
+    });
+    shutdown("SIGTERM");
+
+    expect(markShuttingDown).toHaveBeenCalledOnce();
+    expect(server.close).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(server.close).toHaveBeenCalledOnce();
+    expect(onExit).not.toHaveBeenCalled();
+
+    closeCallback?.();
+    expect(onExit).toHaveBeenCalledWith(0);
+
+    onExit.mockClear();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(onExit).not.toHaveBeenCalled();
+  });
+
+  it("force-exits if the server never finishes closing within the drain window", async () => {
+    const onExit = vi.fn();
+    const server = { close: vi.fn() };
+
+    const shutdown = createGracefulShutdownHandler({
+      server,
+      markShuttingDown: vi.fn(),
+      drainDelayMs: 1000,
+      forceExitAfterMs: 2000,
+      onExit,
+    });
+    shutdown("SIGTERM");
+
+    await vi.advanceTimersByTimeAsync(3000);
+
+    expect(onExit).toHaveBeenCalledWith(1);
+  });
+
+  it("exits with a failure code when closing the server errors", async () => {
+    const onExit = vi.fn();
+    let closeCallback: ((err?: Error) => void) | undefined;
+    const server = {
+      close: vi.fn((callback: (err?: Error) => void) => {
+        closeCallback = callback;
+      }),
+    };
+
+    const shutdown = createGracefulShutdownHandler({
+      server,
+      markShuttingDown: vi.fn(),
+      drainDelayMs: 0,
+      forceExitAfterMs: 1000,
+      onExit,
+    });
+    shutdown("SIGTERM");
+
+    await vi.advanceTimersByTimeAsync(0);
+    closeCallback?.(new Error("close failed"));
+
+    expect(onExit).toHaveBeenCalledWith(1);
+  });
+
+  it("ignores a second signal once a shutdown is already in progress", () => {
+    const markShuttingDown = vi.fn();
+    const server = { close: vi.fn() };
+
+    const shutdown = createGracefulShutdownHandler({
+      server,
+      markShuttingDown,
+      drainDelayMs: 1000,
+      forceExitAfterMs: 1000,
+    });
+    shutdown("SIGTERM");
+    shutdown("SIGINT");
+
+    expect(markShuttingDown).toHaveBeenCalledOnce();
   });
 });
