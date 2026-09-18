@@ -210,7 +210,9 @@ import { getAccessWindowForUser } from "./billing/access-window-repository.ts";
 import { BillingProfileNotFoundError } from "./repositories/billing-repository.ts";
 import { makeMockSensorStore } from "./routers/test-helpers.ts";
 
-const { createApp, main, createGracefulShutdownHandler } = await import("./index.ts");
+const { createApp, main, createGracefulShutdownHandler, createStartupShutdownGate } = await import(
+  "./index.ts"
+);
 
 function request(
   app: express.Express,
@@ -924,6 +926,68 @@ describe("createGracefulShutdownHandler", () => {
     });
     shutdown("SIGTERM");
     shutdown("SIGINT");
+
+    expect(markShuttingDown).toHaveBeenCalledOnce();
+  });
+});
+
+describe("createStartupShutdownGate", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("buffers a signal received before the server is ready, then drains once it is", async () => {
+    const markShuttingDown = vi.fn();
+    const server = { close: vi.fn() };
+    const gate = createStartupShutdownGate();
+
+    gate.handleSignal("SIGTERM");
+    expect(markShuttingDown).not.toHaveBeenCalled();
+    expect(server.close).not.toHaveBeenCalled();
+
+    gate.onReady({ server, markShuttingDown });
+    expect(markShuttingDown).toHaveBeenCalledOnce();
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(server.close).toHaveBeenCalledOnce();
+  });
+
+  it("does nothing extra when no signal arrived before the server became ready", () => {
+    const markShuttingDown = vi.fn();
+    const server = { close: vi.fn() };
+    const gate = createStartupShutdownGate();
+
+    gate.onReady({ server, markShuttingDown });
+
+    expect(markShuttingDown).not.toHaveBeenCalled();
+    expect(server.close).not.toHaveBeenCalled();
+  });
+
+  it("drains immediately for a signal received after the server is ready", async () => {
+    const markShuttingDown = vi.fn();
+    const server = { close: vi.fn() };
+    const gate = createStartupShutdownGate();
+
+    gate.onReady({ server, markShuttingDown });
+    gate.handleSignal("SIGTERM");
+
+    expect(markShuttingDown).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(server.close).toHaveBeenCalledOnce();
+  });
+
+  it("ignores a second signal once already shutting down", () => {
+    const markShuttingDown = vi.fn();
+    const server = { close: vi.fn() };
+    const gate = createStartupShutdownGate();
+
+    gate.onReady({ server, markShuttingDown });
+    gate.handleSignal("SIGTERM");
+    gate.handleSignal("SIGINT");
 
     expect(markShuttingDown).toHaveBeenCalledOnce();
   });

@@ -502,6 +502,44 @@ export async function main(): Promise<MainResult> {
   };
 }
 
+export interface StartupShutdownGate {
+  /** Call on SIGTERM/SIGINT: drains immediately once ready, otherwise remembers the signal. */
+  handleSignal: (signal: NodeJS.Signals) => void;
+  /** Call once main() resolves: starts draining right away if a signal already arrived. */
+  onReady: (result: {
+    server: GracefulShutdownOptions["server"];
+    markShuttingDown: () => void;
+  }) => void;
+}
+
+/**
+ * main() does real async startup work (DB/ClickHouse/queue connections) before the
+ * server exists. Registering SIGTERM/SIGINT only after main() resolves would miss a
+ * signal received during that window, letting the container start accepting traffic
+ * after already being told to stop — so a signal that arrives first is buffered here
+ * and drained the moment the server is ready instead.
+ */
+export function createStartupShutdownGate(): StartupShutdownGate {
+  let shutdown: ((signal: NodeJS.Signals) => void) | null = null;
+  let pendingSignal: NodeJS.Signals | null = null;
+
+  return {
+    handleSignal: (signal) => {
+      if (shutdown) {
+        shutdown(signal);
+        return;
+      }
+      pendingSignal = signal;
+    },
+    onReady: ({ server, markShuttingDown }) => {
+      shutdown = createGracefulShutdownHandler({ server, markShuttingDown });
+      if (pendingSignal) {
+        shutdown(pendingSignal);
+      }
+    },
+  };
+}
+
 // Only start server when run directly (not imported for testing)
 const isDirectRun =
   typeof process.argv[1] === "string" &&
@@ -509,29 +547,12 @@ const isDirectRun =
 if (isDirectRun) {
   process.on("unhandledRejection", onUnhandledRejection);
 
-  // main() does real async startup work (DB/ClickHouse/queue connections) before
-  // the server exists, so register signal handling up front instead of only
-  // after main() resolves — otherwise a SIGTERM during that window is missed and
-  // the container can start accepting traffic after already being told to stop.
-  let shutdown: ((signal: NodeJS.Signals) => void) | null = null;
-  let pendingShutdownSignal: NodeJS.Signals | null = null;
-  const handleShutdownSignal = (signal: NodeJS.Signals) => {
-    if (shutdown) {
-      shutdown(signal);
-      return;
-    }
-    pendingShutdownSignal = signal;
-  };
-  process.on("SIGTERM", () => handleShutdownSignal("SIGTERM"));
-  process.on("SIGINT", () => handleShutdownSignal("SIGINT"));
+  const shutdownGate = createStartupShutdownGate();
+  process.on("SIGTERM", () => shutdownGate.handleSignal("SIGTERM"));
+  process.on("SIGINT", () => shutdownGate.handleSignal("SIGINT"));
 
   main()
-    .then(({ server, markShuttingDown }) => {
-      shutdown = createGracefulShutdownHandler({ server, markShuttingDown });
-      if (pendingShutdownSignal) {
-        shutdown(pendingShutdownSignal);
-      }
-    })
+    .then(shutdownGate.onReady)
     .catch((err: unknown) => {
       logger.error(`[web] Failed to start: ${err}`);
       captureException(err, {
