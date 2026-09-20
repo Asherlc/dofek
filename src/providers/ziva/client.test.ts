@@ -1,8 +1,13 @@
-import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import {
+  ProviderRateLimitError,
+  ProviderRequestTimeoutError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ZivaMcpAuthenticationError,
   ZivaMcpClient,
+  ZivaMcpInvalidDateError,
   ZivaMcpMalformedResponseError,
   ZivaMcpTimeoutError,
   ZivaMcpToolError,
@@ -125,6 +130,21 @@ describe("ZivaMcpClient", () => {
       { name: "get_meals_for_date", arguments: { start_date: EXPECTED_DATE } },
     ]);
   });
+
+  it.each(["not-a-date", "2000-02-30", "2000-1-2"])(
+    "rejects invalid requested date %s before sending a tool call",
+    async (date) => {
+      const harness = createFakeZivaMcpHarness();
+      const request = withClient(harness, (client) => client.getMealsForDate(date));
+
+      await expect(request).rejects.toBeInstanceOf(ZivaMcpInvalidDateError);
+      await expect(request).rejects.toMatchObject({
+        name: "ZivaMcpInvalidDateError",
+        message: "Ziva diary date must be a valid YYYY-MM-DD calendar date.",
+      });
+      expect(harness.toolCalls).toHaveLength(0);
+    },
+  );
 
   it("returns a runtime-validated structured meal payload", async () => {
     const harness = createFakeZivaMcpHarness({
@@ -253,6 +273,40 @@ describe("ZivaMcpClient", () => {
     expect(harness.transportClosed).toBe(true);
   });
 
+  it.each([
+    ["optional", undefined],
+    ["required", ["start_date"]],
+  ])("accepts the observed meal tool when start_date is %s", async (_case, required) => {
+    const mealTool = structuredClone(VERIFIED_ZIVA_MEAL_TOOL);
+    if (required) mealTool.inputSchema.required = required;
+    const harness = createFakeZivaMcpHarness({ toolPages: [[mealTool]] });
+
+    await withClient(harness, (client) => client.getMealsForDate(EXPECTED_DATE));
+
+    expect(harness.toolCalls).toEqual([
+      { name: "get_meals_for_date", arguments: { start_date: EXPECTED_DATE } },
+    ]);
+  });
+
+  it.each([
+    ["end_date", ["end_date"]],
+    ["an unknown property", ["diary_owner"]],
+    ["start_date plus end_date", ["start_date", "end_date"]],
+  ])("rejects a meal tool requiring %s", async (_case, required) => {
+    const mealTool = structuredClone(VERIFIED_ZIVA_MEAL_TOOL);
+    mealTool.inputSchema.required = required;
+    const harness = createFakeZivaMcpHarness({ toolPages: [[mealTool]] });
+
+    const connection = await ZivaMcpClient.connect({
+      accessToken: ACCESS_TOKEN,
+      fetchFn: harness.fetch,
+    }).catch((error: unknown) => error);
+    if (connection instanceof ZivaMcpClient) await connection.close();
+
+    expect(connection).toBeInstanceOf(ZivaMcpToolError);
+    expect(harness.transportClosed).toBe(true);
+  });
+
   it("classifies HTTP 401 without exposing the response body", async () => {
     const privateBody = "private-token-from-server";
     const harness = createFakeZivaMcpHarness({
@@ -269,26 +323,100 @@ describe("ZivaMcpClient", () => {
     expect(telemetryMocks.captureException).not.toHaveBeenCalled();
   });
 
-  it("preserves the repository rate-limit error without adding a retry", async () => {
+  it("preserves typed rate-limit metadata without exposing the response body", async () => {
+    const privateBody = "private rate-limit response body";
     const harness = createFakeZivaMcpHarness({
       httpErrors: {
         "tools/call": {
           status: 429,
-          body: "rate limited",
+          body: privateBody,
           headers: { "Retry-After": "17" },
         },
       },
     });
 
-    const promise = withClient(harness, (client) => client.getMealsForDate(EXPECTED_DATE));
-    await expect(promise).rejects.toMatchObject({
+    const error = await withClient(harness, (client) =>
+      client.getMealsForDate(EXPECTED_DATE),
+    ).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ProviderRateLimitError);
+    expect(error).toMatchObject({
       name: "ProviderRateLimitError",
       providerId: "ziva",
       statusCode: 429,
       retryAfterSeconds: 17,
+      scope: "provider",
+      userId: null,
+      responseBody: "",
     });
-    await expect(promise).rejects.toBeInstanceOf(ProviderRateLimitError);
+    expect(String(error)).not.toContain(privateBody);
+    expect(JSON.stringify(error)).not.toContain(privateBody);
+    expect(telemetryMocks.captureException).not.toHaveBeenCalled();
     expect(harness.toolCalls).toHaveLength(0);
+  });
+
+  it("preserves typed service-unavailable metadata without exposing the response body", async () => {
+    const privateBody = "private service response body";
+    const harness = createFakeZivaMcpHarness({
+      httpErrors: {
+        "tools/call": {
+          status: 503,
+          body: privateBody,
+          headers: { "Retry-After": "23" },
+        },
+      },
+    });
+
+    const error = await withClient(harness, (client) =>
+      client.getMealsForDate(EXPECTED_DATE),
+    ).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ProviderServiceUnavailableError);
+    expect(error).toMatchObject({
+      name: "ProviderServiceUnavailableError",
+      providerId: "ziva",
+      statusCode: 503,
+      retryAfterSeconds: 23,
+      scope: "provider",
+      userId: null,
+      responseBody: "",
+    });
+    expect(String(error)).not.toContain(privateBody);
+    expect(JSON.stringify(error)).not.toContain(privateBody);
+    expect(telemetryMocks.captureException).not.toHaveBeenCalled();
+    expect(harness.toolCalls).toHaveLength(0);
+  });
+
+  it("preserves typed provider timeout metadata without retaining its private cause", async () => {
+    const privateMarker = "private provider timeout cause";
+    const upstreamError = new ProviderRequestTimeoutError({
+      cause: new Error(privateMarker),
+      providerId: "ziva",
+      scope: "provider",
+      timeoutMs: 120_000,
+      userId: null,
+    });
+    const harness = createFakeZivaMcpHarness({
+      thrownErrors: { "tools/call": upstreamError },
+    });
+
+    const error = await withClient(harness, (client) =>
+      client.getMealsForDate(EXPECTED_DATE),
+    ).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ProviderRequestTimeoutError);
+    expect(error).not.toBe(upstreamError);
+    expect(error).toMatchObject({
+      name: "ProviderRequestTimeoutError",
+      code: "ETIMEDOUT",
+      providerId: "ziva",
+      scope: "provider",
+      timeoutMs: 120_000,
+      userId: null,
+      cause: undefined,
+    });
+    expect(String(error)).not.toContain(privateMarker);
+    expect(telemetryMocks.captureException).not.toHaveBeenCalled();
   });
 
   it("treats an HTTP-success MCP isError result as a redacted tool failure", async () => {
@@ -348,6 +476,73 @@ describe("ZivaMcpClient", () => {
       await vi.advanceTimersByTimeAsync(30_001);
       await rejection;
       expect(harness.cancellationNotifications).toBe(1);
+    } finally {
+      await client.close();
+      expect(harness.transportClosed).toBe(true);
+    }
+  });
+
+  it("aborts the whole connect handshake while initialized notification is pending", async () => {
+    const harness = createFakeZivaMcpHarness({
+      delayedMethods: { "notifications/initialized": Number.POSITIVE_INFINITY },
+    });
+    const controller = new AbortController();
+    const reason = new DOMException("caller stopped connection", "AbortError");
+    const connect = ZivaMcpClient.connect({
+      accessToken: ACCESS_TOKEN,
+      fetchFn: harness.fetch,
+      signal: controller.signal,
+    });
+    const observed = connect.catch((error: unknown) => error);
+
+    await vi.waitFor(() => expect(harness.jsonRpcMethods).toContain("notifications/initialized"));
+    controller.abort(reason);
+    const pending = Symbol("pending connect");
+    const outcome = await Promise.race([
+      observed,
+      new Promise<typeof pending>((resolve) => setTimeout(() => resolve(pending), 100)),
+    ]);
+
+    expect(outcome).toBe(reason);
+    expect(harness.transportClosed).toBe(true);
+  });
+
+  it("times out the whole connect handshake while initialized notification is pending", async () => {
+    vi.useFakeTimers();
+    const harness = createFakeZivaMcpHarness({
+      delayedMethods: { "notifications/initialized": 60_000 },
+    });
+    const connect = ZivaMcpClient.connect({
+      accessToken: ACCESS_TOKEN,
+      fetchFn: harness.fetch,
+    });
+    const observed = connect.catch((error: unknown) => error);
+
+    await vi.waitFor(() => expect(harness.jsonRpcMethods).toContain("notifications/initialized"));
+    await vi.advanceTimersByTimeAsync(30_001);
+    const pending = Symbol("pending connect");
+    const outcome = await Promise.race([observed, Promise.resolve(pending)]);
+
+    expect(outcome).toBeInstanceOf(ZivaMcpTimeoutError);
+    expect(harness.transportClosed).toBe(true);
+  });
+
+  it("clears connect cancellation and deadline hooks after a successful handshake", async () => {
+    vi.useFakeTimers();
+    const harness = createFakeZivaMcpHarness();
+    const controller = new AbortController();
+    const client = await ZivaMcpClient.connect({
+      accessToken: ACCESS_TOKEN,
+      fetchFn: harness.fetch,
+      signal: controller.signal,
+    });
+
+    try {
+      controller.abort(new DOMException("late caller cancellation", "AbortError"));
+      await vi.advanceTimersByTimeAsync(30_001);
+
+      await expect(client.getMealsForDate(EXPECTED_DATE)).resolves.toEqual({ meals: [] });
+      expect(harness.transportClosed).toBe(false);
     } finally {
       await client.close();
       expect(harness.transportClosed).toBe(true);

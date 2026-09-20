@@ -40,6 +40,13 @@ export class ZivaMcpMalformedResponseError extends Error {
   }
 }
 
+export class ZivaMcpInvalidDateError extends Error {
+  constructor() {
+    super("Ziva diary date must be a valid YYYY-MM-DD calendar date.");
+    this.name = "ZivaMcpInvalidDateError";
+  }
+}
+
 export class ZivaMcpTimeoutError extends Error {
   readonly timeoutMs = MCP_OPERATION_TIMEOUT_MS;
 
@@ -81,7 +88,7 @@ function schemaAllowsString(value: unknown): boolean {
 
 function isCompatibleMealTool(tool: {
   name: string;
-  inputSchema: { properties?: Record<string, object> };
+  inputSchema: { properties?: Record<string, object>; required?: string[] };
   annotations?: {
     readOnlyHint?: boolean;
     destructiveHint?: boolean;
@@ -89,10 +96,12 @@ function isCompatibleMealTool(tool: {
   };
 }): boolean {
   const properties = tool.inputSchema.properties;
+  const required = tool.inputSchema.required ?? [];
   return (
     tool.name === ZIVA_MEAL_TOOL &&
     schemaAllowsString(properties?.start_date) &&
     schemaAllowsString(properties?.end_date) &&
+    (required.length === 0 || (required.length === 1 && required[0] === "start_date")) &&
     tool.annotations?.readOnlyHint === true &&
     tool.annotations.destructiveHint === false &&
     tool.annotations.openWorldHint === false
@@ -117,6 +126,39 @@ function isCallToolResult(value: unknown): value is CallToolResult {
   return isRecord(value) && Array.isArray(value.content);
 }
 
+function sanitizedProviderHttpError(
+  error: ProviderRateLimitError | ProviderRequestTimeoutError | ProviderServiceUnavailableError,
+): ProviderRateLimitError | ProviderRequestTimeoutError | ProviderServiceUnavailableError {
+  if (error instanceof ProviderRateLimitError) {
+    return new ProviderRateLimitError({
+      message: "Ziva rate limit exceeded.",
+      providerId: error.providerId,
+      statusCode: error.statusCode,
+      responseBody: "",
+      scope: error.scope,
+      userId: error.userId,
+      retryAfterSeconds: error.retryAfterSeconds,
+    });
+  }
+  if (error instanceof ProviderServiceUnavailableError) {
+    return new ProviderServiceUnavailableError({
+      message: "Ziva service is temporarily unavailable.",
+      providerId: error.providerId,
+      statusCode: error.statusCode,
+      responseBody: "",
+      scope: error.scope,
+      userId: error.userId,
+      retryAfterSeconds: error.retryAfterSeconds,
+    });
+  }
+  return new ProviderRequestTimeoutError({
+    providerId: error.providerId,
+    scope: error.scope,
+    timeoutMs: error.timeoutMs,
+    userId: error.userId,
+  });
+}
+
 function throwClassifiedRequestError(
   error: unknown,
   signal: AbortSignal | undefined,
@@ -130,7 +172,7 @@ function throwClassifiedRequestError(
     error instanceof ProviderRequestTimeoutError ||
     error instanceof ProviderServiceUnavailableError
   ) {
-    throw error;
+    throw sanitizedProviderHttpError(error);
   }
   if (
     error instanceof ZivaMcpAuthenticationError ||
@@ -193,6 +235,58 @@ function parseTextPayload(text: string, expectedDate: string): ZivaMealPayload {
   return parsePayload(value, expectedDate);
 }
 
+function validateRequestedDate(date: string): void {
+  try {
+    parseZivaMealPayload({ meals: [] }, { expectedDate: date });
+  } catch {
+    throw new ZivaMcpInvalidDateError();
+  }
+}
+
+interface ConnectLifecycle {
+  readonly aborted: Promise<never>;
+  readonly signal: AbortSignal;
+  dispose(): void;
+}
+
+function createConnectLifecycle(callerSignal: AbortSignal | undefined): ConnectLifecycle {
+  const controller = new AbortController();
+  let removeAbortRejection: () => void = () => undefined;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    const rejectWithReason = () => {
+      reject(
+        controller.signal.reason ?? new DOMException("The connection was aborted", "AbortError"),
+      );
+    };
+    controller.signal.addEventListener("abort", rejectWithReason, { once: true });
+    removeAbortRejection = () => controller.signal.removeEventListener("abort", rejectWithReason);
+  });
+  const timeout = setTimeout(
+    () => controller.abort(new ZivaMcpTimeoutError()),
+    MCP_OPERATION_TIMEOUT_MS,
+  );
+  const abortFromCaller = () =>
+    controller.abort(
+      callerSignal?.reason ?? new DOMException("The operation was aborted", "AbortError"),
+    );
+
+  if (callerSignal?.aborted) {
+    abortFromCaller();
+  } else {
+    callerSignal?.addEventListener("abort", abortFromCaller, { once: true });
+  }
+
+  return {
+    aborted,
+    signal: controller.signal,
+    dispose() {
+      clearTimeout(timeout);
+      callerSignal?.removeEventListener("abort", abortFromCaller);
+      removeAbortRejection();
+    },
+  };
+}
+
 export class ZivaMcpClient {
   readonly #client: Client;
 
@@ -214,13 +308,17 @@ export class ZivaMcpClient {
     });
     const sdkClient = new Client({ name: "dofek-ziva", version: "0.1.0" }, { capabilities: {} });
     const client = new ZivaMcpClient(sdkClient);
+    const lifecycle = createConnectLifecycle(options.signal);
 
     try {
-      await sdkClient.connect(transport, {
-        timeout: MCP_OPERATION_TIMEOUT_MS,
-        signal: options.signal,
-      });
-      await client.#verifyMealTool(options.signal);
+      const connect = (async () => {
+        await sdkClient.connect(transport, {
+          timeout: MCP_OPERATION_TIMEOUT_MS,
+          signal: lifecycle.signal,
+        });
+        await client.#verifyMealTool(lifecycle.signal);
+      })();
+      await Promise.race([connect, lifecycle.aborted]);
       return client;
     } catch (error) {
       try {
@@ -234,6 +332,8 @@ export class ZivaMcpClient {
         });
       }
       throwClassifiedRequestError(error, options.signal, "connect");
+    } finally {
+      lifecycle.dispose();
     }
   }
 
@@ -275,6 +375,7 @@ export class ZivaMcpClient {
     date: string,
     options: ZivaMcpRequestOptions = {},
   ): Promise<ZivaMealPayload> {
+    validateRequestedDate(date);
     let result: unknown;
     try {
       result = await this.#client.callTool(
