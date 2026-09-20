@@ -9,6 +9,7 @@ const nonBlankStringSchema = z.string().refine((value) => value.trim().length > 
 });
 const nonnegativeFiniteNumberSchema = z.number().finite().nonnegative();
 const diaryDateSchema = z.iso.date();
+const sourceTimestampSchema = z.iso.datetime({ offset: true, local: true });
 const zonedTimestampSchema = z.iso.datetime({ offset: true });
 
 const zivaMealItemSchema = z
@@ -39,7 +40,7 @@ const zivaMealSchema = z
     itemCount: z.number().int().nonnegative(),
     mealType: nonBlankStringSchema,
     mealTime: nonBlankStringSchema.nullable(),
-    createdAt: nonBlankStringSchema,
+    createdAt: sourceTimestampSchema,
   })
   .passthrough()
   .superRefine((meal, context) => {

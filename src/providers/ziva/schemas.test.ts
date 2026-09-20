@@ -161,6 +161,21 @@ describe("parseZivaMealPayload", () => {
       }),
     ).toThrow();
   });
+
+  it.each([
+    ["an impossible calendar date", "2000-02-30T03:04:05Z"],
+    ["an impossible clock time", "2000-01-02T25:04:05Z"],
+    ["an invalid timezone offset", "2000-01-02T03:04:05+25:00"],
+    ["a date without a time", "2000-01-02"],
+    ["arbitrary text", "created sometime"],
+  ])("rejects createdAt containing %s", (_case, createdAt) => {
+    expect(() =>
+      parsePayload({
+        ...observedMealFixture,
+        meals: [{ ...BASE_MEAL, createdAt }],
+      }),
+    ).toThrow();
+  });
 });
 
 describe("normalizeZivaMeal", () => {
