@@ -201,6 +201,18 @@ activity timestamp bounds. This preserves overlapping and cross-midnight
 activity membership without generating cross-day sample/activity candidates;
 ClickHouse recommends reducing the volume entering a join:
 <https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse#joins>.
+Incremental stale-row reconciliation reads only target rows whose
+`(user_id, channel, recorded_at)` keys appear in the current microbatch, then
+selects the current `ReplacingMergeTree` version with
+`ORDER BY refresh_version DESC LIMIT 1 BY ...` instead of applying query-wide
+`SETTINGS final=1`. The microbatch `deduped_sensor` input uses the same
+`LIMIT 1 BY` pattern because dbt wraps that `ref()` in a filtered subquery where
+table-level `FINAL` is unsupported. That keeps logical current-state correctness
+while avoiding a full-table `FINAL` scan of the multi-tens-of-millions-row target
+on every day batch. ClickHouse documents that `FINAL` forces query-time
+replacement and that `LIMIT BY` keeps the first rows per key after ordering:
+<https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree>,
+<https://clickhouse.com/docs/sql-reference/statements/select/limit-by>.
 `activity_sensor_summary_rows` enables ClickHouse materialized CTE execution
 for its reused dirty-key, latest-sample, and cumulative-power stages so each
 stage is evaluated once per build instead of being inlined into every aggregate

@@ -2,7 +2,9 @@
 
 **Date:** 2026-09-15
 
-**Status:** Approved and implemented; production validation pending
+**Status:** Approved; query-wide `final=1` refined on 2026-09-20 after
+production timeout evidence (Sentry 7743140686). Deployment of the key-scoped
+`LIMIT 1 BY` reconciliation pending.
 
 **Scope:** ClickHouse/dbt activity sensor pipeline and bounded production recovery
 
@@ -61,27 +63,35 @@ physical versions remain ([ClickHouse guidance](https://clickhouse.com/resources
 
 `activity_sensor_sample` will operate on logical current state:
 
-1. Enable ClickHouse's query-level `final` setting for the model. This resolves one
-   current row per `ReplacingMergeTree` sorting key for `deduped_sensor`,
-   `deduped_activities`, and the existing target without relying on asynchronous merges.
+1. Do **not** enable query-wide `SETTINGS final=1`; that forces a full-table
+   `FINAL` scan of the multi-tens-of-millions-row `activity_sensor_sample` target
+   on every day batch and leaves too little headroom under the 240-second
+   ClickHouse ceiling when CPU is contended. Resolve logical current state for
+   the microbatch `deduped_sensor` rows with
+   `ORDER BY refresh_version DESC LIMIT 1 BY` on the sensor sorting key (dbt
+   microbatch wraps `ref()` in a filtered subquery, so table-level `FINAL` is
+   not supported on that expression). Keep `deduped_activities FINAL` for group
+   membership.
 2. Stream the filtered `deduped_sensor` batch directly into the activity-day join.
    `activity_days` remains the bounded `(user_id, recorded_date)` join input, followed by
    the existing inclusive activity timestamp and member-provenance predicates.
 3. Remove `batch_sample_keys`, `activity_sample_membership`, their `DISTINCT` operators,
    and `enable_materialized_cte`. Once the source and activity tables are read as logical
    current state, those intermediates do not provide additional correctness.
-4. For incremental reconciliation, stream current target rows and use an `INNER ANY JOIN`
-   to the logically unique batch source key `(user_id, channel, recorded_at)`. Emit a
+4. For incremental reconciliation, restrict existing target rows to batch keys
+   `(user_id, channel, recorded_at)`, resolve the current version with
+   `ORDER BY refresh_version DESC LIMIT 1 BY` on the target sorting key, then use
+   an `INNER ANY JOIN` to the logically unique batch source key. Emit a
    tombstone when the latest source is deleted, the activity group is deleted, the sample
    falls outside the current activity window, or its non-null source activity is no longer
    a member of the group.
 
 The `ANY` join is exact here because `deduped_sensor`'s logical grain and
 `ReplacingMergeTree` sorting key are `(user_id, channel, recorded_date, recorded_at)`,
-where `recorded_date` is derived from `recorded_at`. `FINAL` therefore presents at most one
-source row for each join key. An ambient sample with null `source_activity_id` remains
-eligible for every overlapping current group; a linked sample remains eligible only for
-groups containing that member.
+where `recorded_date` is derived from `recorded_at`. The batch `LIMIT 1 BY`
+therefore presents at most one source row for each join key. An ambient sample with null
+`source_activity_id` remains eligible for every overlapping current group; a linked sample
+remains eligible only for groups containing that member.
 
 ## Freshness lookback design
 
