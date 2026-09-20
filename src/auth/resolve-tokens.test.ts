@@ -113,13 +113,78 @@ describe("resolveOAuthTokens", () => {
       getOAuthConfig: () => fakeConfig,
     });
 
-    expect(result).toBe(refreshedTokens);
+    const resolvedTokens = { ...refreshedTokens, providerAccountId: undefined };
+    expect(result).toEqual(resolvedTokens);
     expect(mockRefreshAccessToken).toHaveBeenCalledWith(
       fakeConfig,
       "refresh-token",
       globalThis.fetch,
     );
-    expect(mockSaveTokens).toHaveBeenCalledWith(fakeDb, "fitbit", refreshedTokens);
+    expect(mockSaveTokens).toHaveBeenCalledWith(fakeDb, "fitbit", resolvedTokens);
+  });
+
+  it("preserves the stored provider account identity when refresh omits it", async () => {
+    const expiredTokens: TokenSet = {
+      accessToken: "old-token",
+      refreshToken: "refresh-token",
+      expiresAt: pastDate(),
+      providerAccountId: "account-a",
+      scopes: null,
+    };
+    const refreshedTokens: TokenSet = {
+      accessToken: "new-token",
+      refreshToken: "new-refresh",
+      expiresAt: futureDate(),
+      scopes: null,
+    };
+    mockLoadTokens.mockResolvedValue(expiredTokens);
+    mockRefreshAccessToken.mockResolvedValue(refreshedTokens);
+    mockSaveTokens.mockResolvedValue(undefined);
+
+    const result = await resolveOAuthTokens({
+      db: fakeDb,
+      providerId: "ziva",
+      providerName: "Ziva",
+      getOAuthConfig: () => fakeConfig,
+    });
+
+    const resolvedTokens = { ...refreshedTokens, providerAccountId: "account-a" };
+    expect(result).toEqual(resolvedTokens);
+    expect(mockSaveTokens).toHaveBeenCalledWith(fakeDb, "ziva", resolvedTokens);
+  });
+
+  it("validates refreshed tokens before persistence and does not save rejected tokens", async () => {
+    const expiredTokens: TokenSet = {
+      accessToken: "old-token",
+      refreshToken: "refresh-token",
+      expiresAt: pastDate(),
+      providerAccountId: "account-a",
+      scopes: null,
+    };
+    const refreshedTokens: TokenSet = {
+      accessToken: "new-token",
+      refreshToken: "new-refresh",
+      expiresAt: futureDate(),
+      providerAccountId: "account-b",
+      scopes: null,
+    };
+    const validationError = new Error("Refreshed account identity changed");
+    const validateRefreshedTokens = vi.fn().mockRejectedValue(validationError);
+    mockLoadTokens.mockResolvedValue(expiredTokens);
+    mockRefreshAccessToken.mockResolvedValue(refreshedTokens);
+
+    await expect(
+      resolveOAuthTokens({
+        db: fakeDb,
+        providerId: "ziva",
+        providerName: "Ziva",
+        getOAuthConfig: () => fakeConfig,
+        validateRefreshedTokens,
+      }),
+    ).rejects.toBe(validationError);
+
+    expect(validateRefreshedTokens).toHaveBeenCalledWith(expiredTokens, refreshedTokens);
+    expect(mockSaveTokens).not.toHaveBeenCalled();
   });
 
   it("throws when oauth config is unavailable", async () => {

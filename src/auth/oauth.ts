@@ -74,6 +74,8 @@ export interface OAuthConfig {
   usePkce?: boolean;
   /** Auth0 audience parameter */
   audience?: string;
+  /** OAuth 2.0 resource indicator identifying the target protected resource. */
+  resource?: string;
   /** How to send client credentials to the token endpoint.
    *  "body" (default): client_id/client_secret as form params
    *  "basic": HTTP Basic Auth header (base64-encoded client_id:client_secret) */
@@ -117,9 +119,14 @@ export function buildAuthorizationUrl(
   url.searchParams.set("client_id", config.clientId);
   url.searchParams.set("redirect_uri", config.redirectUri);
   url.searchParams.set("response_type", "code");
-  url.searchParams.set("scope", config.scopes.join(config.scopeSeparator ?? " "));
+  if (config.scopes.length > 0) {
+    url.searchParams.set("scope", config.scopes.join(config.scopeSeparator ?? " "));
+  }
   if (config.audience) {
     url.searchParams.set("audience", config.audience);
+  }
+  if (config.resource) {
+    url.searchParams.set("resource", config.resource);
   }
   if (pkce) {
     url.searchParams.set("code_challenge", pkce.codeChallenge);
@@ -167,6 +174,7 @@ export async function exchangeCodeForTokens(
     params.client_id = config.clientId;
     if (config.clientSecret) params.client_secret = config.clientSecret;
   }
+  if (config.resource) params.resource = config.resource;
   if (pkce) params.code_verifier = pkce.codeVerifier;
 
   const body = new URLSearchParams(params);
@@ -207,6 +215,7 @@ export async function refreshAccessToken(
     params.client_id = config.clientId;
     if (config.clientSecret) params.client_secret = config.clientSecret;
   }
+  if (config.resource) params.resource = config.resource;
 
   const body = new URLSearchParams(params);
   const headers: Record<string, string> = {

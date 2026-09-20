@@ -25,6 +25,10 @@ export async function resolveOAuthTokens(options: {
   getOAuthConfig: () => OAuthConfig | null | undefined;
   fetchFn?: FetchFn;
   forceRefresh?: boolean;
+  validateRefreshedTokens?: (
+    currentTokens: TokenSet,
+    refreshedTokens: TokenSet,
+  ) => void | Promise<void>;
 }): Promise<TokenSet> {
   const {
     db,
@@ -33,6 +37,7 @@ export async function resolveOAuthTokens(options: {
     getOAuthConfig,
     fetchFn = globalThis.fetch,
     forceRefresh = false,
+    validateRefreshedTokens,
   } = options;
 
   const tokens = await loadTokens(db, providerId);
@@ -58,8 +63,13 @@ export async function resolveOAuthTokens(options: {
 
   try {
     const refreshed = await refreshAccessToken(config, tokens.refreshToken, fetchFn);
-    await saveTokens(db, providerId, refreshed);
-    return refreshed;
+    await validateRefreshedTokens?.(tokens, refreshed);
+    const resolvedTokens: TokenSet = {
+      ...refreshed,
+      providerAccountId: refreshed.providerAccountId ?? tokens.providerAccountId,
+    };
+    await saveTokens(db, providerId, resolvedTokens);
+    return resolvedTokens;
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     // When the authorization server returns invalid_grant, the refresh token
