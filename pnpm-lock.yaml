@@ -135,6 +135,9 @@ importers:
       '@garmin/fitsdk':
         specifier: 21.208.0
         version: 21.208.0
+      '@modelcontextprotocol/sdk':
+        specifier: 1.30.0
+        version: 1.30.0(supports-color@11.0.0)(zod@4.4.3)
       '@opentelemetry/api':
         specifier: 1.9.1
         version: 1.9.1
