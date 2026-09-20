@@ -244,6 +244,7 @@ export const foodEntry = fitness.table(
     numberOfUnits: real("number_of_units"),
     loggedAt: timestamp("logged_at", { withTimezone: true }),
     sourceName: text("source_name"),
+    sourceAccountKey: text("source_account_key"),
     startedAt: timestamp("started_at", { withTimezone: true }),
     endedAt: timestamp("ended_at", { withTimezone: true }),
     barcode: text("barcode"),

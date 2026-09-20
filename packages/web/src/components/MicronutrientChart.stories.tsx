@@ -16,9 +16,9 @@ const data: MicronutrientSafetyReviewRow[] = [
     },
     sourceBreakdown: [
       {
-        providerId: "manual",
-        sourceLabel: "Manual",
-        intakeType: "itemized_food",
+        providerId: "ziva",
+        sourceLabel: "Ziva",
+        intakeType: "meal_aggregate",
         dailyAverageContribution: 20,
         daysTracked: 28,
       },

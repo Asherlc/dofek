@@ -19,9 +19,9 @@ describe("nutrition analytics source breakdown with Postgres", () => {
       sql`SELECT CURRENT_DATE::text AS date`,
     );
     if (!today) throw new Error("Postgres did not return CURRENT_DATE");
-    dates = Array.from({ length: 4 }, (_, index) => {
+    dates = Array.from({ length: 5 }, (_, index) => {
       const date = new Date(`${today.date}T12:00:00.000Z`);
-      date.setUTCDate(date.getUTCDate() - (3 - index));
+      date.setUTCDate(date.getUTCDate() - (4 - index));
       return date.toISOString().slice(0, 10);
     });
 
@@ -34,6 +34,7 @@ describe("nutrition analytics source breakdown with Postgres", () => {
       VALUES
         ('nutrition-2136-manual', 'Manual Food'),
         ('nutrition-2136-cronometer', 'Cronometer'),
+        ('nutrition-2136-meals', 'Meal Source'),
         ('nutrition-2136-other-itemized', 'Other Itemized Source'),
         ('nutrition-2136-supplements', 'Dofek Supplements')
       ON CONFLICT (id) DO NOTHING
@@ -85,6 +86,15 @@ describe("nutrition analytics source breakdown with Postgres", () => {
       foodName: "Other dinner",
       vitaminC: 60,
     });
+    for (const vitaminC of [30, 50]) {
+      await addFoodEntry({
+        date: dates[4] ?? "",
+        providerId: "nutrition-2136-meals",
+        grain: "meal_aggregate",
+        foodName: "Meal",
+        vitaminC,
+      });
+    }
   });
 
   afterAll(async () => {
@@ -94,7 +104,7 @@ describe("nutrition analytics source breakdown with Postgres", () => {
   async function addFoodEntry(input: {
     date: string;
     providerId: string;
-    grain: "itemized" | "daily_aggregate";
+    grain: "itemized" | "meal_aggregate" | "daily_aggregate";
     foodName: string | null;
     vitaminC: number;
   }): Promise<void> {
@@ -178,32 +188,39 @@ describe("nutrition analytics source breakdown with Postgres", () => {
 
     expect(vitaminC?.toDetail()).toMatchObject({
       intake: {
-        totalDailyAverage: 53.3,
-        foodDailyAverage: 30,
-        providerDailyTotalAverage: 20,
-        supplementDailyAverage: 3.3,
-        daysTracked: 3,
+        totalDailyAverage: 60,
+        foodDailyAverage: 42.5,
+        providerDailyTotalAverage: 15,
+        supplementDailyAverage: 2.5,
+        daysTracked: 4,
       },
       sourceBreakdown: [
         {
           providerId: "nutrition-2136-manual",
           sourceLabel: "Manual Food",
           intakeType: "itemized_food",
-          dailyAverageContribution: 30,
+          dailyAverageContribution: 22.5,
           daysTracked: 2,
+        },
+        {
+          providerId: "nutrition-2136-meals",
+          sourceLabel: "Meal Source",
+          intakeType: "meal_aggregate",
+          dailyAverageContribution: 20,
+          daysTracked: 1,
         },
         {
           providerId: "nutrition-2136-cronometer",
           sourceLabel: "Cronometer",
           intakeType: "provider_daily_total",
-          dailyAverageContribution: 20,
+          dailyAverageContribution: 15,
           daysTracked: 1,
         },
         {
           providerId: "nutrition-2136-supplements",
           sourceLabel: "nutrition-2136-supplements",
           intakeType: "supplement",
-          dailyAverageContribution: 3.3,
+          dailyAverageContribution: 2.5,
           daysTracked: 1,
         },
       ],
@@ -215,18 +232,24 @@ describe("nutrition analytics source breakdown with Postgres", () => {
 
     await expect(repository.getMicronutrientDataQuality(30)).resolves.toEqual({
       selectedWindowDays: 30,
-      daysWithData: 4,
-      usableDays: 3,
+      daysWithData: 5,
+      usableDays: 4,
       overlapDays: 2,
       conflictDays: 1,
-      completenessPercent: 10,
+      completenessPercent: 13.3,
       sourceLabels: [
         "Cronometer",
         "Manual Food",
+        "Meal Source",
         "Other Itemized Source",
         "nutrition-2136-supplements",
       ],
-      contributingSourceLabels: ["Cronometer", "Manual Food", "nutrition-2136-supplements"],
+      contributingSourceLabels: [
+        "Cronometer",
+        "Manual Food",
+        "Meal Source",
+        "nutrition-2136-supplements",
+      ],
       excludedSourceLabels: ["Cronometer", "Manual Food", "Other Itemized Source"],
     });
   });

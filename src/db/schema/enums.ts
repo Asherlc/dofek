@@ -9,6 +9,7 @@ export const mealEnum = fitness.enum("meal", ["breakfast", "lunch", "dinner", "s
 
 export const nutritionEntryGrainEnum = fitness.enum("nutrition_entry_grain", [
   "itemized",
+  "meal_aggregate",
   "daily_aggregate",
 ]);
 

@@ -119,7 +119,9 @@ const selectedDateNutritionTotalsRowSchema = z.object({
   source_labels: z.array(z.string()),
   contributing_source_labels: z.array(z.string()),
   excluded_source_labels: z.array(z.string()),
-  contribution_grain: z.enum(["itemized", "daily_aggregate", "ambiguous"]).nullable(),
+  contribution_grain: z
+    .enum(["itemized", "meal_aggregate", "daily_aggregate", "ambiguous"])
+    .nullable(),
   contribution_source_label: z.string().nullable(),
 });
 
@@ -338,9 +340,11 @@ function nutritionSourceResolution(
       ? `${row.contribution_source_label} ${
           row.contribution_grain === "daily_aggregate"
             ? "daily total"
-            : row.contribution_grain === "itemized"
-              ? "itemized entries"
-              : "nutrition data"
+            : row.contribution_grain === "meal_aggregate"
+              ? "meal totals"
+              : row.contribution_grain === "itemized"
+                ? "itemized entries"
+                : "nutrition data"
         }`
       : null;
   return {

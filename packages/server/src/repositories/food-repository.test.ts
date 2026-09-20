@@ -504,6 +504,34 @@ describe("FoodRepository", () => {
       });
     });
 
+    it("labels meal totals from server-owned provenance", async () => {
+      const { repo } = makeRepository([
+        {
+          ...availableResolutionRow,
+          calories: 500,
+          protein_g: 30,
+          carbs_g: 50,
+          fat_g: 20,
+          breakfast_calories: 0,
+          lunch_calories: 500,
+          dinner_calories: 0,
+          snack_calories: 0,
+          other_calories: 0,
+          source_providers: ["ziva"],
+          contributing_providers: ["ziva"],
+          source_labels: ["Ziva"],
+          contributing_source_labels: ["Ziva"],
+          contribution_grain: "meal_aggregate",
+          contribution_source_label: "Ziva",
+        },
+      ]);
+      const result = await repo.nutritionByDate("2024-06-15", 2000);
+      expect(result.resolution).toMatchObject({
+        contributionGrain: "meal_aggregate",
+        contributionLabel: "Ziva meal totals",
+      });
+    });
+
     it("labels a provider daily aggregate from server-owned provenance", async () => {
       const { repo } = makeRepository([
         {

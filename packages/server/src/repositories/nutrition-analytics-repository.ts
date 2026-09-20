@@ -113,7 +113,11 @@ export interface MicronutrientSafetyReviewData {
   readonly sourceBreakdown: NutritionSourceContribution[];
 }
 
-export type NutritionIntakeType = "itemized_food" | "provider_daily_total" | "supplement";
+export type NutritionIntakeType =
+  | "itemized_food"
+  | "meal_aggregate"
+  | "provider_daily_total"
+  | "supplement";
 
 export interface NutritionSourceContribution {
   readonly providerId: string;
@@ -661,7 +665,12 @@ export class NutritionAnalyticsRepository extends BaseRepository {
           z.object({
             providerId: z.string(),
             sourceLabel: z.string(),
-            intakeType: z.enum(["itemized_food", "provider_daily_total", "supplement"]),
+            intakeType: z.enum([
+              "itemized_food",
+              "meal_aggregate",
+              "provider_daily_total",
+              "supplement",
+            ]),
             dailyAverageContribution: z.coerce.number(),
             daysTracked: z.coerce.number(),
           }),
@@ -676,6 +685,7 @@ export class NutritionAnalyticsRepository extends BaseRepository {
               CASE
                 WHEN fen.supplement_dose_event_id IS NOT NULL THEN 'supplement'
                 WHEN classification.effective_grain = 'itemized' THEN 'itemized_food'
+                WHEN classification.effective_grain = 'meal_aggregate' THEN 'meal_aggregate'
                 ELSE 'provider_daily_total'
               END AS intake_type,
               COALESCE(
@@ -701,7 +711,7 @@ export class NutritionAnalyticsRepository extends BaseRepository {
               SUM(contribution.amount) AS total_amount,
               COALESCE(
                 SUM(contribution.amount)
-                  FILTER (WHERE contribution.intake_type = 'itemized_food'),
+                  FILTER (WHERE contribution.intake_type IN ('itemized_food', 'meal_aggregate')),
                 0
               ) AS food_amount,
               COALESCE(

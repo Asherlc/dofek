@@ -686,6 +686,34 @@ describe("NutritionAnalyticsRepository", () => {
   });
 
   describe("getMicronutrientSafetyReview", () => {
+    it("preserves meal aggregate provenance in its source breakdown", async () => {
+      const { repo } = makeRepository([
+        {
+          nutrient_id: "vitamin_c",
+          nutrient: "Vitamin C",
+          unit: "mg",
+          avg_total_intake: 40,
+          avg_food_intake: 40,
+          avg_provider_daily_total_intake: 0,
+          avg_supplement_intake: 0,
+          days_tracked: 1,
+          source_breakdown: [
+            {
+              providerId: "ziva",
+              sourceLabel: "Ziva",
+              intakeType: "meal_aggregate",
+              dailyAverageContribution: 40,
+              daysTracked: 1,
+            },
+          ],
+        },
+      ]);
+      const result = await repo.getMicronutrientSafetyReview(30);
+      expect(result[0]?.toDetail()).toMatchObject({
+        intake: { foodDailyAverage: 40, providerDailyTotalAverage: 0 },
+        sourceBreakdown: [{ intakeType: "meal_aggregate", dailyAverageContribution: 40 }],
+      });
+    });
     it("separates itemized food, provider daily totals, and supplements by source", async () => {
       const { repo } = makeRepository([
         {
