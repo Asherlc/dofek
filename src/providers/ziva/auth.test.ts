@@ -182,7 +182,7 @@ describe("Ziva OAuth token identity", () => {
     await exchangeCode("authorization-code", "pkce-verifier");
 
     for (const logSpy of logSpies) {
-      expect(logSpy.mock.calls.flat().join(" ")).not.toContain(accessToken);
+      expect(logSpy).not.toHaveBeenCalled();
     }
   });
 
@@ -196,9 +196,31 @@ describe("Ziva OAuth token identity", () => {
     ).not.toThrow();
   });
 
+  it("accepts matching refreshed token-response account identity", () => {
+    const refreshed = tokens(
+      jwt({ iss: ZIVA_ISSUER, aud: ZIVA_RESOURCE, sub: "stable-ziva-subject" }),
+      "stable-ziva-subject",
+    );
+
+    expect(() =>
+      validateZivaRefreshedIdentity(tokens("old-token", "stable-ziva-subject"), refreshed),
+    ).not.toThrow();
+  });
+
   it("rejects a refreshed token for a different account subject", () => {
     const refreshed = tokens(
       jwt({ iss: ZIVA_ISSUER, aud: ZIVA_RESOURCE, sub: "changed-ziva-subject" }),
+    );
+
+    expect(() =>
+      validateZivaRefreshedIdentity(tokens("old-token", "stable-ziva-subject"), refreshed),
+    ).toThrow(ProviderAuthorizationFailedError);
+  });
+
+  it("rejects conflicting refreshed token-response account identity", () => {
+    const refreshed = tokens(
+      jwt({ iss: ZIVA_ISSUER, aud: ZIVA_RESOURCE, sub: "stable-ziva-subject" }),
+      "changed-ziva-subject",
     );
 
     expect(() =>

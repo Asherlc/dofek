@@ -69,7 +69,12 @@ export function validateZivaRefreshedIdentity(
 ): void {
   const storedSubject = z.string().trim().min(1).safeParse(currentTokens.providerAccountId);
   const refreshedSubject = zivaSubjectFromAccessToken(refreshedTokens.accessToken);
-  if (!storedSubject.success || refreshedSubject !== storedSubject.data) {
+  if (
+    !storedSubject.success ||
+    refreshedSubject !== storedSubject.data ||
+    (refreshedTokens.providerAccountId !== undefined &&
+      refreshedTokens.providerAccountId !== storedSubject.data)
+  ) {
     throw new ProviderAuthorizationFailedError("Ziva");
   }
 }
