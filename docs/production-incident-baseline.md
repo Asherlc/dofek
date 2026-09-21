@@ -7,6 +7,47 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-09-20 — activity_sensor_sample day batch timed out under CPU contention
+
+- **Status:** Fixed in code; deployment pending.
+- **Symptoms / user impact:** Analytics worker failed
+  [Sentry 7743140686](https://east-bay-software.sentry.io/issues/7743140686/)
+  with `activity_sensor_sample: PARTIAL SUCCESS (1/2)`. Downstream activity
+  summary, training-load, and related models skipped for that cycle. The next
+  cycle recovered without intervention.
+- **Evidence:** Swarm `dofek_analytics-worker` logs at `2026-09-20T00:04:28Z`
+  showed ClickHouse `Code: 159 TIMEOUT_EXCEEDED` after 240015 ms on day batch
+  `2026-09-19`. `system.query_log` recorded 158M rows / 18.75 GiB read, 2.26 GiB
+  memory, and **128.9 s CPU wait** with `SETTINGS max_threads=1, final=1`.
+  Healthy inserts of the same model completed in ~117–124 s reading ~167M rows /
+  ~20 GiB while writing only ~1.5–2k rows, with ~3–7 s CPU wait. The day batch
+  itself contained only ~37k `deduped_sensor` rows; the dominant cost was
+  query-wide `FINAL` against `analytics.activity_sensor_sample` (~77M physical
+  rows). A production read-only prototype of key-scoped current-version
+  selection (`WHERE (user_id, channel, recorded_at) IN (...)` plus
+  `ORDER BY refresh_version DESC LIMIT 1 BY ...`) returned the same 1146 keys as
+  `FINAL` in ~5.3 s / 773 MiB instead of ~138 s for `FINAL` on the same key set.
+- **Root cause:** [#2747](https://github.com/Asherlc/dofek/pull/2747) correctly
+  abandoned high-cardinality membership materialization after OOM, but its
+  query-wide `SETTINGS final=1` made every microbatch FINAL-scan the full target
+  table. With only ~90 s of headroom under the 240 s ceiling, concurrent
+  ClickHouse CPU load tipped the batch into timeout. `max_threads=1` remains the
+  intentional offline-build policy and was not the primary defect.
+- **Fix / mitigation:** Remove query-wide `final=1`. Resolve the microbatch
+  `deduped_sensor` input and key-scoped target rows with
+  `ORDER BY refresh_version DESC LIMIT 1 BY` (dbt microbatch wraps `ref()` in a
+  subquery where table-level `FINAL` is unsupported). Keep
+  `deduped_activities FINAL` for group membership. Restrict stale reconciliation
+  to batch keys. No timeout, memory, retry, or thread-limit increase.
+- **Validation:** Unit SQL shape coverage; real ClickHouse integration covering
+  membership move tombstones, newer-version selection over unmerged duplicates,
+  and a scan bound that unrelated users' target rows are not fully read.
+- **Remaining risk / follow-up:** Production still has a single dominant user
+  owning essentially all target rows, so user-prefix pruning alone is weak;
+  the durable win is avoiding `FINAL` merge CPU. After deploy, confirm two
+  consecutive analytics cycles complete `activity_sensor_sample` well under
+  240 s and that stale membership/tombstone behavior remains correct.
+
 ## 2026-09-17 — ClickHouse CDC health check crashed on a PeerDB catalog proxy array column
 
 - **Status:** Fixed in code; deployment pending. Production normalization was
