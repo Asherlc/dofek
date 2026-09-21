@@ -68,6 +68,11 @@ services:
       ACCOUNT_ERASURE_LEDGER_R2_BUCKET: dofek-account-erasure-ledger
     volumes:
       - job_files:/app/job-files
+    # Must exceed the server's graceful-shutdown budget (10s to let Traefik's
+    # loadbalancer healthcheck notice /healthz failing + 20s to drain in-flight
+    # requests, see SHUTDOWN_HEALTHCHECK_DRAIN_MS / SHUTDOWN_FORCE_EXIT_AFTER_MS
+    # in packages/server/src/index.ts) so Swarm doesn't SIGKILL mid-drain.
+    stop_grace_period: 45s
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3000/readyz | grep -q ok"]
       interval: 5s

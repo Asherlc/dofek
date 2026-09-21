@@ -355,6 +355,54 @@ cycle and verify the stale activity-summary count reaches zero before declaring
 the rollout complete. Do not force the summary refresh before projection
 materialization completes.
 
+## Activity sensor summary queue-depth check
+
+Use this read-only check to confirm the `activity_sensor_summary_rows`
+dirty-key backlog has drained. It reports the activities whose sensor samples
+are newer than their stored summary, which is the model's `changed_sample`
+dirty set.
+
+```sql
+SELECT count() AS dirty_keys
+FROM (
+    SELECT s.activity_id AS activity_id, s.user_id AS user_id
+    FROM (
+        SELECT activity_id, user_id, max(refresh_version) AS source_refresh_version
+        FROM analytics.activity_sensor_sample
+        GROUP BY activity_id, user_id
+    ) AS s
+    INNER JOIN (
+        SELECT activity_id, user_id
+        FROM analytics.deduped_activities
+        GROUP BY activity_id, user_id
+    ) AS c ON c.activity_id = s.activity_id AND c.user_id = s.user_id
+    LEFT JOIN (
+        SELECT activity_id, user_id, argMax(source_refresh_version, refresh_version) AS sv
+        FROM analytics.activity_sensor_summary_rows
+        GROUP BY activity_id, user_id
+    ) AS e ON e.activity_id = s.activity_id AND e.user_id = s.user_id
+    WHERE e.activity_id IS null OR s.source_refresh_version > e.sv
+);
+```
+
+Do **not** wrap the inner aggregation in a `MATERIALIZED` CTE. The sample
+subquery is served by the `by_activity_source_refresh_version` projection;
+`MATERIALIZED` forces full-table materialization and is what makes this check
+expensive. Verified production cost on 2026-09-16: ~200 ms, ~6.5 million rows
+read, ~8 MiB peak memory, with projection
+`analytics.activity_sensor_sample.by_activity_source_refresh_version` in use.
+
+The value is a bounded freshness backlog, not an error count: it is the number
+of activities whose sensor samples were refreshed since their last summary
+write. It normally stays small (tens) because each unscoped summary cycle
+processes the 100 oldest dirty keys and drains them within that cycle.
+
+Do not treat 100 as a queue-depth ceiling. The `LIMIT 100` bounds the keys one
+cycle selects, not the keys that can be dirty; arrivals between cycles can push
+the count above 100 without indicating a regression. Judge health by trend and
+by the age of the oldest dirty key: a backlog that keeps growing across cycles,
+or an oldest dirty key that keeps aging, indicates a regression.
+
 ## Local Validation
 
 Start dependencies before integration tests:

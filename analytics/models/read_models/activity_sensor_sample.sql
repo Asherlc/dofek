@@ -25,14 +25,15 @@
     }],
     query_settings={
         'max_threads': 1,
-        'join_use_nulls': 1,
-        'final': 1
+        'join_use_nulls': 1
     }
 ) }}
 
 WITH batch_samples AS (
     SELECT *
     FROM {{ ref('deduped_sensor') }}
+    ORDER BY refresh_version DESC
+    LIMIT 1 BY user_id, channel, recorded_date, recorded_at
 ),
 
 activity_group_state AS (
@@ -120,6 +121,26 @@ activity_samples AS (
 ),
 
 {% if is_incremental() %}
+existing_activity_samples AS (
+    SELECT
+        existing_samples.*
+    FROM {{ this }} AS existing_samples
+    WHERE (existing_samples.user_id, existing_samples.channel, existing_samples.recorded_at) IN (
+        SELECT
+            batch_samples.user_id,
+            batch_samples.channel,
+            batch_samples.recorded_at
+        FROM batch_samples
+    )
+    ORDER BY existing_samples.refresh_version DESC
+    LIMIT 1 BY
+        existing_samples.user_id,
+        existing_samples.activity_id,
+        existing_samples.recorded_date,
+        existing_samples.channel,
+        existing_samples.recorded_at
+),
+
 stale_activity_samples AS (
     SELECT
         existing_samples.activity_id AS stale_activity_id,
@@ -136,7 +157,7 @@ stale_activity_samples AS (
         existing_samples.source_metric_stream_id AS stale_source_metric_stream_id,
         existing_samples.measurement_kind AS stale_measurement_kind,
         greatest(existing_samples.refreshed_at, activity_group_state.refreshed_at) AS stale_refreshed_at
-    FROM {{ this }} AS existing_samples
+    FROM existing_activity_samples AS existing_samples
     INNER ANY JOIN batch_samples AS samples
         ON samples.user_id = existing_samples.user_id
         AND samples.channel = existing_samples.channel

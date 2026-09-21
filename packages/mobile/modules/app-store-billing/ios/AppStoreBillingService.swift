@@ -200,7 +200,14 @@ final class AppStoreBillingService: @unchecked Sendable {
     }
 
     func finishTransaction(transactionID: UInt64) async throws {
-        try await store.finishTransaction(transactionID: transactionID)
+        do {
+            try await store.finishTransaction(transactionID: transactionID)
+        } catch {
+            if case AppStoreBillingError.transactionNotFound = error {
+                return
+            }
+            throw error
+        }
     }
 
     private func export(

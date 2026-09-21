@@ -348,13 +348,23 @@ describe("production analytics read-model build", () => {
       "'query': 'SELECT activity_id, user_id, max(refresh_version) AS source_refresh_version GROUP BY activity_id, user_id'",
     );
     expect(sql).toContain("event_time='refreshed_at'");
-    expect(sql).toContain("'final': 1");
+    expect(sql).not.toContain("'final': 1");
+    expect(normalizedSql).toContain(
+      "FROM {{ ref('deduped_sensor') }} ORDER BY refresh_version DESC LIMIT 1 BY user_id, channel, recorded_date, recorded_at",
+    );
+    expect(sql).toContain("existing_activity_samples AS (");
+    expect(normalizedSql).toContain(
+      "(existing_samples.user_id, existing_samples.channel, existing_samples.recorded_at) IN",
+    );
+    expect(normalizedSql).toContain(
+      "ORDER BY existing_samples.refresh_version DESC LIMIT 1 BY existing_samples.user_id, existing_samples.activity_id, existing_samples.recorded_date, existing_samples.channel, existing_samples.recorded_at",
+    );
     expect(sql).toContain("activity_samples AS (");
     expect(normalizedSql).toContain(
       "FROM batch_samples AS samples INNER JOIN activity_days",
     );
     expect(normalizedSql).toContain(
-      "FROM {{ this }} AS existing_samples INNER ANY JOIN batch_samples AS samples",
+      "FROM existing_activity_samples AS existing_samples INNER ANY JOIN batch_samples AS samples",
     );
     expect(normalizedSql).toContain("samples.is_deleted = 1");
     expect(normalizedSql).toContain("activity_group_state.is_deleted = 1");

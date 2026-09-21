@@ -9,6 +9,7 @@ const historicalActivityId = "00000000-0000-0000-0000-000000000901";
 const unrelatedActivityId = "00000000-0000-0000-0000-000000000902";
 const tombstonedActivityId = "00000000-0000-0000-0000-000000000903";
 const singleAltitudeActivityId = "00000000-0000-0000-0000-000000000904";
+const staleActivityId = "00000000-0000-0000-0000-000000000905";
 const testUserId = "00000000-0000-0000-0000-000000000001";
 
 type ClickHouseClient = ReturnType<typeof createClient>;
@@ -30,6 +31,12 @@ const activitySummaryStateRowsSchema = z.array(
   z.object({
     activity_id: z.string(),
     avg_power: z.number().nullable(),
+    is_deleted: z.number(),
+  }),
+);
+const staleActivitySummaryStateRowsSchema = z.array(
+  z.object({
+    activity_id: z.string(),
     is_deleted: z.number(),
   }),
 );
@@ -168,6 +175,44 @@ ${renderActivitySensorSummaryRowsSelectSql(targetSchema)}`,
       },
     ]);
   }, 180_000);
+
+  it("tombstones stale summaries with retained samples so bounded builds keep draining", async () => {
+    const activeClient = requireClient(client);
+    await seedStaleSummaryFixture(activeClient, targetSchema);
+    const boundedModelSql = renderActivitySensorSummaryRowsSelectSql(targetSchema, 1);
+
+    await activeClient.command({
+      query: `INSERT INTO ${targetSchema}.activity_sensor_summary_rows\n${boundedModelSql}`,
+    });
+
+    const staleState = await activeClient.query({
+      query: `SELECT
+          toString(activity_id) AS activity_id,
+          is_deleted
+        FROM ${targetSchema}.activity_sensor_summary_rows FINAL
+        WHERE activity_id = '${staleActivityId}'`,
+      format: "JSONEachRow",
+    });
+
+    expect(staleActivitySummaryStateRowsSchema.parse(await staleState.json<unknown>())).toEqual([
+      {
+        activity_id: staleActivityId,
+        is_deleted: 1,
+      },
+    ]);
+
+    await activeClient.command({
+      query: `INSERT INTO ${targetSchema}.activity_sensor_summary_rows\n${boundedModelSql}`,
+    });
+
+    expect(await readActivitySummaryState(activeClient, targetSchema)).toEqual([
+      {
+        activity_id: historicalActivityId,
+        avg_power: 210,
+        is_deleted: 0,
+      },
+    ]);
+  }, 180_000);
 });
 
 function requireClickHouseUrl(): string {
@@ -254,6 +299,44 @@ async function seedHistoricalBackfillFixture(
     insertExistingHistoricalSummarySql(targetSchema),
     insertUnrelatedFreshSummarySql(targetSchema),
     insertExistingTombstoneSql(targetSchema),
+  ]);
+}
+
+async function seedStaleSummaryFixture(
+  client: ClickHouseClient,
+  targetSchema: string,
+): Promise<void> {
+  await runStatements(client, [
+    `DROP DATABASE IF EXISTS ${targetSchema} SYNC`,
+    `CREATE DATABASE ${targetSchema}`,
+    createSourceActivityTableSql(targetSchema),
+    createActivitySensorSampleTableSql(targetSchema),
+    buildActivitySensorSummaryRowsTableSql().replaceAll("analytics.", `${targetSchema}.`),
+    `INSERT INTO ${targetSchema}.source_activity VALUES
+    ('${historicalActivityId}', '${testUserId}', toDateTime64('2019-07-16 14:56:37', 6, 'UTC'), 0)`,
+    insertHistoricalPowerSamplesSql(targetSchema),
+    insertExistingHistoricalSummarySql(targetSchema),
+    `INSERT INTO ${targetSchema}.activity_sensor_sample VALUES
+    ('${staleActivityId}', '${testUserId}', toDateTime64('2020-01-01 12:00:00', 6, 'UTC'), toDate('2020-01-01'), 'power', 180.0, 50, 0, toDateTime64('2026-07-10 05:31:41', 9, 'UTC'))`,
+    `INSERT INTO ${targetSchema}.activity_sensor_summary_rows (
+      activity_id,
+      user_id,
+      avg_power,
+      power_sample_count,
+      source_refresh_version,
+      refresh_version,
+      is_deleted,
+      refreshed_at
+    ) VALUES (
+      '${staleActivityId}',
+      '${testUserId}',
+      180.0,
+      1,
+      50,
+      150,
+      0,
+      toDateTime64('2026-07-10 05:00:00', 9, 'UTC')
+    )`,
   ]);
 }
 
