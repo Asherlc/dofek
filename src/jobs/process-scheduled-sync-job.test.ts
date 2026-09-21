@@ -154,6 +154,7 @@ describe("processScheduledSyncJob", () => {
       {
         userId: "user-1",
         providerId: "strava",
+        requestedAtIso: expect.any(String),
         sinceDays: 1,
         origin: "scheduled",
       },
@@ -166,6 +167,7 @@ describe("processScheduledSyncJob", () => {
       {
         userId: "user-2",
         providerId: "wahoo",
+        requestedAtIso: expect.any(String),
         sinceDays: 1,
         origin: "scheduled",
       },
@@ -178,11 +180,18 @@ describe("processScheduledSyncJob", () => {
       {
         userId: "user-3",
         providerId: "whoop",
+        requestedAtIso: expect.any(String),
         sinceDays: 30,
         origin: "scheduled",
       },
       expect.objectContaining({ attempts: 288 }),
     );
+
+    const requestAnchors = [stravaQueue, wahooQueue, whoopQueue].map(
+      (queue) => queue.add.mock.calls[0]?.[1].requestedAtIso,
+    );
+    expect(new Set(requestAnchors)).toHaveLength(1);
+    expect(new Date(requestAnchors[0]).toISOString()).toBe(requestAnchors[0]);
 
     // CSV provider queue should not be created
     expect(providerQueues.has("strong-csv")).toBe(false);

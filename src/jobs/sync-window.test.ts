@@ -163,6 +163,30 @@ describe("sync job window adapter", () => {
     expect(window.until.toISOString()).toBe("2026-06-17T23:59:59.999Z");
   });
 
+  it("syncWindowFromJobData anchors relative windows to the persisted request time", () => {
+    const window = syncWindowFromJobData({
+      userId: "user-1",
+      requestedAtIso: "2026-06-18T15:00:00.000Z",
+      sinceDays: 7,
+    });
+
+    expect(window.since.toISOString()).toBe("2026-06-11T00:00:00.000Z");
+    expect(window.until.toISOString()).toBe("2026-06-18T23:59:59.999Z");
+  });
+
+  it("syncWindowFromJobData rejects an invalid persisted request time", () => {
+    expect(() =>
+      syncWindowFromJobData(
+        {
+          userId: "user-1",
+          requestedAtIso: "not-a-date",
+          sinceDays: 7,
+        },
+        now,
+      ),
+    ).toThrow("Invalid sync job requestedAtIso: not-a-date");
+  });
+
   it("syncWindowFromJobData reuses persisted open-ended since timestamps", () => {
     const window = syncWindowFromJobData(
       {
@@ -200,11 +224,30 @@ describe("sync job window adapter", () => {
 
   it("syncWindowToJobData round-trips trigger input fields", () => {
     const window = syncWindowFromTriggerInput({ sinceDays: 7, now });
-    expect(syncWindowToJobData(window, 7)).toEqual({
+    expect(syncWindowToJobData(window, { sinceDays: 7 })).toEqual({
       sinceDays: 7,
       sinceIso: "2026-06-11T00:00:00.000Z",
       untilIso: "2026-06-18T23:59:59.999Z",
       targetRefreshWindow: { type: "days", days: 7 },
+    });
+  });
+
+  it("syncWindowToJobData keeps a day lookback with an explicit end as a fixed range", () => {
+    const window = syncWindowFromTriggerInput({
+      sinceDays: 7,
+      untilDate: "2026-06-17",
+      now,
+    });
+
+    expect(syncWindowToJobData(window, { sinceDays: 7, untilDate: "2026-06-17" })).toEqual({
+      sinceDays: 7,
+      sinceIso: "2026-06-10T00:00:00.000Z",
+      untilIso: "2026-06-17T23:59:59.999Z",
+      targetRefreshWindow: {
+        type: "range",
+        sinceIso: "2026-06-10T00:00:00.000Z",
+        untilIso: "2026-06-17T23:59:59.999Z",
+      },
     });
   });
 

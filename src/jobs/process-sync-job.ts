@@ -50,7 +50,7 @@ import { accountErasureAllowsQueuedUserWork } from "./account-erasure-work-guard
 import { enqueueSyncJob, scheduleDelayedSyncJob } from "./enqueue-sync-job.ts";
 import { providerRateLimitCooldownStore } from "./provider-rate-limit-cooldown.ts";
 import type { SyncJobData } from "./queues.ts";
-import { syncWindowFromJobData } from "./sync-job-window.ts";
+import { syncRequestedAtFromJobData, syncWindowFromJobData } from "./sync-job-window.ts";
 
 /**
  * Compute overall job percentage from completed providers + within-provider progress.
@@ -258,13 +258,16 @@ async function scheduleRateLimitRetry(
   error: ProviderRateLimitError,
   since: Date,
   until: Date,
+  signal?: AbortSignal,
 ): Promise<string> {
   const cooldown = await providerRateLimitCooldownStore.record(error, job.data.userId);
+  signal?.throwIfAborted();
   return withAccountErasureUserWriteFence(
     requireTransactionalSyncDatabase(db),
     job.data.userId,
-    async () =>
-      scheduleDelayedSyncJob(
+    async () => {
+      signal?.throwIfAborted();
+      const retryAt = await scheduleDelayedSyncJob(
         {
           ...job.data,
           providerId: error.providerId,
@@ -272,13 +275,35 @@ async function scheduleRateLimitRetry(
           untilIso: until.toISOString(),
         },
         cooldown,
-      ),
+      );
+      signal?.throwIfAborted();
+      return retryAt;
+    },
   );
 }
 
-export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<void> {
+export async function processSyncJob(
+  job: SyncJob,
+  db: SyncDatabase,
+  signal?: AbortSignal,
+): Promise<void> {
+  signal?.throwIfAborted();
+  const startedAt = new Date();
+  const relativeWindow =
+    job.data.targetRefreshWindow?.type === "days" ||
+    (job.data.targetRefreshWindow === undefined && job.data.sinceDays !== undefined);
+  if (
+    (job.data.origin === "scheduled" || relativeWindow) &&
+    job.data.requestedAtIso === undefined
+  ) {
+    const nextData = { ...job.data, requestedAtIso: startedAt.toISOString() };
+    await job.updateData(nextData);
+    job.data = nextData;
+    signal?.throwIfAborted();
+  }
+  const requestedAt = syncRequestedAtFromJobData(job.data, startedAt);
   const { providerId } = job.data;
-  const syncWindow = syncWindowFromJobData(job.data);
+  const syncWindow = syncWindowFromJobData(job.data, requestedAt);
   const since = syncWindow.since;
   const until = syncWindow.until;
 
@@ -317,6 +342,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
   let syncRunContinued = false;
 
   for (const provider of providers) {
+    signal?.throwIfAborted();
     providerStatus[provider.id] = { status: "running" };
     await job.updateProgress({
       providers: providerStatus,
@@ -348,8 +374,9 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
       const retryAt = await withAccountErasureUserWriteFence(
         requireTransactionalSyncDatabase(db),
         job.data.userId,
-        async () =>
-          scheduleDelayedSyncJob(
+        async () => {
+          signal?.throwIfAborted();
+          const scheduledRetryAt = await scheduleDelayedSyncJob(
             {
               ...job.data,
               providerId: provider.id,
@@ -357,8 +384,12 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
               untilIso: until.toISOString(),
             },
             activeCooldown,
-          ),
+          );
+          signal?.throwIfAborted();
+          return scheduledRetryAt;
+        },
       );
+      signal?.throwIfAborted();
       completedCount++;
       providerStatus[provider.id] = {
         status: "running",
@@ -430,6 +461,10 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
           new SyncRun({
             db,
             window: syncWindow,
+            signal,
+            origin: job.data.origin ?? "unknown",
+            requestedAt,
+            relativeWindow,
             onProgress: (percentage, message) => {
               providerStatus[provider.id] = { status: "running", message };
               job.updateProgress({
@@ -441,10 +476,12 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
             metricStreamPublisher,
             checkpoint: createCheckpointStore(job),
             enqueueSyncContinuation: async (checkpoint) => {
+              signal?.throwIfAborted();
               await withAccountErasureUserWriteFence(
                 requireTransactionalSyncDatabase(db),
                 job.data.userId,
                 async () => {
+                  signal?.throwIfAborted();
                   await enqueueSyncJob(provider.id, {
                     ...job.data,
                     providerId: provider.id,
@@ -458,6 +495,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
           }),
         ),
       );
+      signal?.throwIfAborted();
       if (result.recordsSynced > 0) {
         if (
           !(await accountErasureAllowsQueuedUserWork(
@@ -576,12 +614,13 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         syncErrorsTotal.add(result.errors.length, { provider: provider.id, data_type: "sync" });
       }
     } catch (err: unknown) {
+      signal?.throwIfAborted();
       if (recordingCanonicalCommit) {
         captureException(err, { tags: { provider: provider.id, phase: "canonical-commit" } });
         throw err;
       }
       if (err instanceof ProviderRateLimitError) {
-        const retryAt = await scheduleRateLimitRetry(db, job, err, since, until);
+        const retryAt = await scheduleRateLimitRetry(db, job, err, since, until, signal);
         const message = `Rate limited; retry scheduled for ${retryAt}`;
         completedCount++;
         providerStatus[provider.id] = { status: "running", message };
@@ -680,24 +719,31 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
     return;
   }
 
+  signal?.throwIfAborted();
   try {
     const { enqueueDebouncedPostSyncMaintenance } = await import("./queues.ts");
     await enqueueDebouncedPostSyncMaintenance();
   } catch (err) {
+    signal?.throwIfAborted();
     logger.error(`[worker] Failed to enqueue global post-sync maintenance: ${err}`);
     captureException(err, { tags: { phase: "post-sync-global-maintenance-enqueue" } });
   }
 
+  signal?.throwIfAborted();
   try {
     const { enqueueDebouncedUserRefit } = await import("./queues.ts");
     await withAccountErasureUserWriteFence(
       requireTransactionalSyncDatabase(db),
       job.data.userId,
       async () => {
+        signal?.throwIfAborted();
         await enqueueDebouncedUserRefit(job.data.userId);
+        signal?.throwIfAborted();
       },
     );
+    signal?.throwIfAborted();
   } catch (err) {
+    signal?.throwIfAborted();
     logger.error(`[worker] Failed to enqueue user refit: ${err}`);
     captureException(err, { tags: { phase: "post-sync-user-refit-enqueue" } });
   }

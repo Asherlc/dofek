@@ -158,7 +158,7 @@ describe("full sync BullMQ lifecycle deduplication", () => {
     expect(await queue.getWaitingCount()).toBe(2);
   });
 
-  it("keeps a Ziva date-chunk continuation distinct from its pending parent", async () => {
+  it("deduplicates Ziva date chunks by their complete window and source account", async () => {
     vi.resetModules();
     const [
       { registerSyncRequestQueryResolver },
@@ -185,10 +185,21 @@ describe("full sync BullMQ lifecycle deduplication", () => {
       (name, data, options) => queue.add(name, data, options),
       (jobId) => queue.getJob(jobId),
     );
+    const differentEndWindow = await enqueueWithFreshResolverRegistry(
+      "ziva",
+      {
+        ...baseJobData,
+        untilIso: "2026-10-01T23:59:59.999Z",
+      },
+      {},
+      (name, data, options) => queue.add(name, data, options),
+      (jobId) => queue.getJob(jobId),
+    );
     const continuationJobData: SyncJobData = {
       ...baseJobData,
       checkpoint: {
         version: 1,
+        sourceAccountKey: "opaque-source-account-key",
         nextDate: "2026-09-15",
         endDate: "2026-09-30",
         recordsSynced: 14,
@@ -201,6 +212,22 @@ describe("full sync BullMQ lifecycle deduplication", () => {
       (name, data, options) => queue.add(name, data, options),
       (jobId) => queue.getJob(jobId),
     );
+    const differentAccountContinuation = await enqueueWithFreshResolverRegistry(
+      "ziva",
+      {
+        ...continuationJobData,
+        checkpoint: {
+          version: 1,
+          sourceAccountKey: "different-opaque-source-account-key",
+          nextDate: "2026-09-15",
+          endDate: "2026-09-30",
+          recordsSynced: 14,
+        },
+      },
+      {},
+      (name, data, options) => queue.add(name, data, options),
+      (jobId) => queue.getJob(jobId),
+    );
     const duplicateContinuation = await enqueueWithFreshResolverRegistry(
       "ziva",
       continuationJobData,
@@ -209,9 +236,11 @@ describe("full sync BullMQ lifecycle deduplication", () => {
       (jobId) => queue.getJob(jobId),
     );
 
+    expect(differentEndWindow?.id).not.toBe(initial?.id);
     expect(continuation?.id).not.toBe(initial?.id);
+    expect(differentAccountContinuation?.id).not.toBe(continuation?.id);
     expect(duplicateContinuation?.id).toBe(continuation?.id);
     expect(duplicateContinuation?.alreadyQueued).toBe(true);
-    expect(await queue.getWaitingCount()).toBe(2);
+    expect(await queue.getWaitingCount()).toBe(4);
   });
 });

@@ -333,6 +333,90 @@ describe.sequential("ZivaProvider.sync (PostgreSQL + MCP protocol)", () => {
     expect(resolution).toEqual([{ calories: null, resolution_status: "source_conflict" }]);
   });
 
+  it("restarts the requested window when the Ziva account changes between continuations", async () => {
+    const connected = await createConnectedUser("continuation-account-a");
+    const accountBTokens = tokensFor("continuation-account-b");
+    const startDate = "2026-09-01";
+    const endDate = "2026-09-15";
+    const dates = [
+      startDate,
+      "2026-09-02",
+      "2026-09-03",
+      "2026-09-04",
+      "2026-09-05",
+      "2026-09-06",
+      "2026-09-07",
+      "2026-09-08",
+      "2026-09-09",
+      "2026-09-10",
+      "2026-09-11",
+      "2026-09-12",
+      "2026-09-13",
+      "2026-09-14",
+      endDate,
+    ];
+    const harness = createZivaMswHarness(({ date }) => callResult([meal(date, `meal-${date}`)]));
+    server.use(harness.handler);
+    const provider = new ZivaProvider();
+    const checkpoint = new MemoryCheckpointStore();
+
+    const accountAResult = await sync({
+      provider,
+      userId: connected.userId,
+      sinceDate: startDate,
+      untilDate: endDate,
+      checkpoint,
+    });
+    expect(accountAResult).toMatchObject({ recordsSynced: 14, errors: [], continued: true });
+    expect(checkpoint.value).toEqual(
+      expect.objectContaining({ sourceAccountKey: expect.any(String) }),
+    );
+    expect(JSON.stringify(checkpoint.value)).not.toContain("continuation-account-a");
+    const accountACheckpoint = checkpoint.value;
+
+    await connectProviderWithTokens(context.db, ZIVA_PROVIDER, accountBTokens, connected.userId);
+    const accountBFirstResult = await sync({
+      provider,
+      userId: connected.userId,
+      sinceDate: startDate,
+      untilDate: endDate,
+      checkpoint,
+    });
+    expect(accountBFirstResult).toMatchObject({
+      recordsSynced: 14,
+      errors: [],
+      continued: true,
+    });
+    expect(checkpoint.value).not.toEqual(accountACheckpoint);
+    expect(JSON.stringify(checkpoint.value)).not.toContain("continuation-account-b");
+
+    const accountBFinalResult = await sync({
+      provider,
+      userId: connected.userId,
+      sinceDate: startDate,
+      untilDate: endDate,
+      checkpoint,
+    });
+    expect(accountBFinalResult).toMatchObject({
+      recordsSynced: 15,
+      errors: [],
+      continued: false,
+    });
+
+    const accountBRequestedDates = harness.requests
+      .filter(
+        (request) =>
+          request.method === "tools/call" &&
+          request.bearer === `Bearer ${accountBTokens.accessToken}`,
+      )
+      .map((request) => request.date);
+    expect(accountBRequestedDates).toEqual(dates);
+
+    const rows = await entriesFor(connected.userId);
+    expect(rows).toHaveLength(29);
+    expect(new Set(rows.map((row) => row.sourceAccountKey))).toHaveLength(2);
+  });
+
   it("retains prior data on an empty success and checkpoints the following malformed date", async () => {
     const { userId } = await createConnectedUser("empty-subject");
     let phase: "seed" | "empty-then-malformed" = "seed";
@@ -364,6 +448,7 @@ describe.sequential("ZivaProvider.sync (PostgreSQL + MCP protocol)", () => {
     expect(await entriesFor(userId)).toHaveLength(1);
     expect(checkpoint.value).toEqual({
       version: 1,
+      sourceAccountKey: expect.any(String),
       nextDate: SECOND_DATE,
       endDate: SECOND_DATE,
       recordsSynced: 0,
@@ -397,6 +482,7 @@ describe.sequential("ZivaProvider.sync (PostgreSQL + MCP protocol)", () => {
     expect(partial.errors[0]?.cause).toBeInstanceOf(ZivaMcpMalformedResponseError);
     expect(checkpoint.value).toEqual({
       version: 1,
+      sourceAccountKey: expect.any(String),
       nextDate: SECOND_DATE,
       endDate: SECOND_DATE,
       recordsSynced: 1,

@@ -27,12 +27,13 @@ export const DEFAULT_PROVIDER_THROTTLE_MS: Readonly<Record<string, number>> = {
 export const STEP_CHAIN_SYNC_PROVIDERS: ReadonlySet<string> = new Set(["garmin", "whoop", "ziva"]);
 
 /**
- * Typical HTTP calls per step-chain sync job (auth refresh, bootstrap, one data call).
+ * Typical HTTP calls per step-chain sync job (auth refresh, bootstrap, and bounded data calls).
  * Used to align BullMQ job pacing with HTTP-level adaptive budgets.
  */
 export const DEFAULT_HTTP_REQUESTS_PER_SYNC_JOB: Readonly<Record<string, number>> = {
   garmin: 2,
   whoop: 3,
+  ziva: 17,
 };
 
 /** Seed inferred budgets for step-chain providers before the first 429 observation. */

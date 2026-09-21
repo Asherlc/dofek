@@ -144,8 +144,13 @@ zero-macro, and multi-item resilience without claiming those shapes were seen.
 
 ## Sync and storage behavior
 
-- Initial sync is bounded to 730 literal calendar dates. Work is divided into
-  at most 14 single-date calls per continuation job.
+- Initial sync is bounded to 730 calendar dates ending on the user's current
+  home-calendar date. Relative recent-window syncs, whether scheduled or
+  requested from Data Sources, overlap the prior and current local diary dates
+  and retain their original request instant across retries, so a delayed retry
+  cannot drift to a later local date. Dofek uses UTC only when no valid home
+  timezone is configured. Work is divided into at most 14 single-date calls per
+  continuation job.
 - Explicit backfills keep their literal inclusive `YYYY-MM-DD` bounds. Dofek
   does not shift diary dates through UTC or a home timezone.
 - A response must match its requested date, use unique non-empty meal IDs, and
@@ -153,12 +158,30 @@ zero-macro, and multi-item resilience without claiming those shapes were seen.
   any record is written or its checkpoint advances.
 - The stable account namespace plus meal ID drives the source key. Re-reading
   an edited meal updates the same raw record and exact four-macro set.
+- Continuation checkpoints carry the opaque source-account key, never Ziva's
+  raw account subject. If reconnect changes accounts mid-window, Dofek restarts
+  that requested window instead of skipping the new account's earlier dates.
 - Existing Dofek edit and hide overlays survive a source re-sync. Connecting a
   different Ziva account cannot overwrite the former account's records; an
   overlapping day becomes a source conflict rather than an unsafe sum.
 - A successful empty date advances that date's checkpoint but does not hide or
   delete a previously imported meal. The read lacks the completeness and
   deletion evidence needed to infer source absence.
+- Once queue cancellation is observed, Dofek aborts MCP setup or the active
+  date read, closes that run's client, and prevents later dates, nutrition
+  writes, checkpoint advancement, continuations, and post-sync jobs. An
+  already-running database transaction or queue operation may finish first;
+  committed records remain safely idempotent on retry.
+
+## End-to-end verification status
+
+The 2026-09-20 authenticated verification called Ziva's MCP service directly
+and read the user's one logged meal and one item without writing either system.
+It did not exercise Dofek's deployed Data Sources callback, stored-token path,
+normal sync job, or canonical nutrition readback because no normally connected
+Dofek user UUID with an unexpired Ziva authorization was available. Meal edits,
+date moves, account changes, and nutrient replacement are therefore verified by
+deterministic local protocol/database tests, not by changing the live diary.
 
 ## Read-only smoke command
 

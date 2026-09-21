@@ -10,8 +10,10 @@ export type SyncWindowTriggerInput = {
 
 export type SyncJobWindowFields = Pick<
   SyncJobData,
-  "sinceDays" | "sinceIso" | "untilIso" | "targetRefreshWindow"
+  "requestedAtIso" | "sinceDays" | "sinceIso" | "untilIso" | "targetRefreshWindow"
 >;
+
+export type SyncJobWindowSource = Pick<SyncWindowTriggerInput, "sinceDays" | "untilDate">;
 
 export function syncWindowFromTriggerInput(input: SyncWindowTriggerInput): SyncWindow {
   if (input.sinceDate && input.untilDate) {
@@ -32,7 +34,28 @@ export function syncWindowFromTriggerInput(input: SyncWindowTriggerInput): SyncW
   return SyncWindow.full(input.now);
 }
 
-export function syncWindowFromJobData(data: SyncJobData, now = SyncWindow.now()): SyncWindow {
+export function syncJobDataFromTriggerInput(input: SyncWindowTriggerInput): SyncJobWindowFields {
+  const requestedAt = input.now ?? SyncWindow.now();
+  const window = syncWindowFromTriggerInput({ ...input, now: requestedAt });
+  const fields = syncWindowToJobData(window, input);
+  if (fields.targetRefreshWindow?.type !== "days") return fields;
+  return { ...fields, requestedAtIso: requestedAt.toISOString() };
+}
+
+export function syncRequestedAtFromJobData(data: SyncJobData, fallback = SyncWindow.now()): Date {
+  if (data.requestedAtIso === undefined) return fallback;
+  const requestedAt = new Date(data.requestedAtIso);
+  if (Number.isNaN(requestedAt.getTime())) {
+    throw new Error(`Invalid sync job requestedAtIso: ${data.requestedAtIso}`);
+  }
+  return requestedAt;
+}
+
+export function syncWindowFromJobData(
+  data: SyncJobData,
+  fallbackNow = SyncWindow.now(),
+): SyncWindow {
+  const now = syncRequestedAtFromJobData(data, fallbackNow);
   if (data.sinceIso && data.untilIso) {
     const window = SyncWindow.fromIsoRange({ sinceIso: data.sinceIso, untilIso: data.untilIso });
     return data.targetRefreshWindow?.type === "full" ? SyncWindow.full(window.until) : window;
@@ -51,20 +74,25 @@ export function syncWindowFromJobData(data: SyncJobData, now = SyncWindow.now())
   return syncWindowFromTriggerInput({ sinceDays: data.sinceDays, now });
 }
 
-export function syncWindowToJobData(window: SyncWindow, sinceDays?: number): SyncJobWindowFields {
+export function syncWindowToJobData(
+  window: SyncWindow,
+  source: SyncJobWindowSource = {},
+): SyncJobWindowFields {
+  const { sinceDays, untilDate } = source;
   return {
     sinceDays,
     sinceIso: window.sinceIso,
     untilIso: window.untilIso,
-    targetRefreshWindow: targetRefreshWindowFor(window, sinceDays),
+    targetRefreshWindow: targetRefreshWindowFor(window, sinceDays, untilDate !== undefined),
   };
 }
 
 function targetRefreshWindowFor(
   window: SyncWindow,
   sinceDays?: number,
+  hasFixedEnd = false,
 ): SyncJobData["targetRefreshWindow"] {
-  if (sinceDays != null) {
+  if (sinceDays != null && !hasFixedEnd) {
     return { type: "days", days: sinceDays };
   }
   if (window.kind === "full") {

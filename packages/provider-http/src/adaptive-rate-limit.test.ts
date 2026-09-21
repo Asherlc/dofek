@@ -431,9 +431,9 @@ describe("createInitialAdaptiveState", () => {
     expect(state.inferredBudget).toBe(40);
   });
 
-  it("classifies Ziva as a one-request step chain without inventing a quota", () => {
+  it("budgets Ziva's bounded MCP handshake and date chunk without inventing a quota", () => {
     expect(isStepChainSyncProvider("ziva")).toBe(true);
-    expect(httpRequestsPerSyncJob("ziva")).toBe(1);
+    expect(httpRequestsPerSyncJob("ziva")).toBe(17);
     expect(defaultInferredBudget("ziva")).toBeNull();
     expect(createInitialAdaptiveState("ziva", "provider", null).inferredBudget).toBeNull();
   });

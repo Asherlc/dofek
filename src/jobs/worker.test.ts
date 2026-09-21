@@ -1305,6 +1305,7 @@ describe("worker module", () => {
     jobData: Record<string, unknown>,
     token?: string,
     jobOverrides?: Record<string, unknown>,
+    signal?: AbortSignal,
   ): Promise<void> {
     const { Worker } = await import("bullmq");
     const call = vi.mocked(Worker).mock.calls.find((workerCall) => workerCall[0] === queueName);
@@ -1313,25 +1314,54 @@ describe("worker module", () => {
       throw new Error(`No processor function found for queue "${queueName}"`);
     }
     const mockJob = { data: jobData, id: "test-job-1", ...jobOverrides };
-    await Reflect.apply(processor, undefined, [mockJob, token]);
+    await Reflect.apply(processor, undefined, [mockJob, token, signal]);
   }
 
-  it("per-provider sync processor delegates to processSyncJob", async () => {
-    const { processSyncJob } = await import("./process-sync-job.ts");
-    vi.mocked(processSyncJob).mockClear();
+  async function processorArity(queueName: string): Promise<number> {
+    const { Worker } = await import("bullmq");
+    const call = vi.mocked(Worker).mock.calls.find((workerCall) => workerCall[0] === queueName);
+    const processor = call?.[1];
+    if (typeof processor !== "function") {
+      throw new Error(`No processor function found for queue "${queueName}"`);
+    }
+    return processor.length;
+  }
 
-    await invokeProcessor("sync-strava", { providerId: "strava", userId: "user-1" });
-
-    expect(processSyncJob).toHaveBeenCalled();
+  it("registers sync processors with BullMQ's cancellation-signal arity", async () => {
+    expect(await processorArity("sync-strava")).toBeGreaterThanOrEqual(3);
+    expect(await processorArity("sync-queue")).toBeGreaterThanOrEqual(3);
   });
 
-  it("shared sync processor delegates to processSyncJob", async () => {
+  it("per-provider sync processor delegates to processSyncJob with cancellation", async () => {
     const { processSyncJob } = await import("./process-sync-job.ts");
     vi.mocked(processSyncJob).mockClear();
+    const signal = new AbortController().signal;
 
-    await invokeProcessor("sync-queue", { providerId: "wahoo", userId: "user-1" });
+    await invokeProcessor(
+      "sync-strava",
+      { providerId: "strava", userId: "user-1" },
+      undefined,
+      undefined,
+      signal,
+    );
 
-    expect(processSyncJob).toHaveBeenCalled();
+    expect(processSyncJob).toHaveBeenCalledWith(expect.any(Object), mockDatabase, signal);
+  });
+
+  it("shared sync processor delegates to processSyncJob with cancellation", async () => {
+    const { processSyncJob } = await import("./process-sync-job.ts");
+    vi.mocked(processSyncJob).mockClear();
+    const signal = new AbortController().signal;
+
+    await invokeProcessor(
+      "sync-queue",
+      { providerId: "wahoo", userId: "user-1" },
+      undefined,
+      undefined,
+      signal,
+    );
+
+    expect(processSyncJob).toHaveBeenCalledWith(expect.any(Object), mockDatabase, signal);
   });
 
   it("import processor delegates to processFileUploadImportJob", async () => {

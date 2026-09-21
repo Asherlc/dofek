@@ -2,9 +2,17 @@ import { describe, expect, it } from "vitest";
 import { SyncWindow } from "../sync-window.ts";
 import {
   advanceZivaSyncCheckpoint,
-  planZivaSyncChunk,
+  planZivaSyncChunk as planZivaSyncChunkForAccount,
   type ZivaSyncCheckpoint,
 } from "./sync-plan.ts";
+
+const SOURCE_ACCOUNT_KEY = "opaque-source-account-key";
+
+function planZivaSyncChunk(window: SyncWindow, rawCheckpoint: unknown, calendarEndDate?: string) {
+  return planZivaSyncChunkForAccount(window, rawCheckpoint, SOURCE_ACCOUNT_KEY, {
+    calendarEndDate,
+  });
+}
 
 describe("planZivaSyncChunk", () => {
   it("keeps a same-day calendar window literal in a western home timezone", () => {
@@ -19,6 +27,7 @@ describe("planZivaSyncChunk", () => {
       expect(planZivaSyncChunk(window, null)).toEqual({
         checkpoint: {
           version: 1,
+          sourceAccountKey: SOURCE_ACCOUNT_KEY,
           nextDate: "2026-09-20",
           endDate: "2026-09-20",
           recordsSynced: 0,
@@ -47,6 +56,28 @@ describe("planZivaSyncChunk", () => {
     ]);
   });
 
+  it("anchors a scheduled lookback to the western home-calendar date", () => {
+    const window = SyncWindow.lastDays(1, {
+      now: new Date("2026-09-21T06:30:00.000Z"),
+    });
+
+    expect(planZivaSyncChunk(window, null, "2026-09-20").dates).toEqual([
+      "2026-09-19",
+      "2026-09-20",
+    ]);
+  });
+
+  it("anchors a scheduled lookback to the eastern home-calendar date", () => {
+    const window = SyncWindow.lastDays(1, {
+      now: new Date("2026-09-20T15:30:00.000Z"),
+    });
+
+    expect(planZivaSyncChunk(window, null, "2026-09-21").dates).toEqual([
+      "2026-09-20",
+      "2026-09-21",
+    ]);
+  });
+
   it("keeps an explicit epoch-start backfill bounded", () => {
     const window = SyncWindow.fromDateRange({
       sinceDate: "1970-01-01",
@@ -56,6 +87,7 @@ describe("planZivaSyncChunk", () => {
     expect(planZivaSyncChunk(window, null)).toEqual({
       checkpoint: {
         version: 1,
+        sourceAccountKey: SOURCE_ACCOUNT_KEY,
         nextDate: "1970-01-01",
         endDate: "1970-01-05",
         recordsSynced: 0,
@@ -108,6 +140,7 @@ describe("planZivaSyncChunk", () => {
 
     expect(chunk.checkpoint).toEqual({
       version: 1,
+      sourceAccountKey: SOURCE_ACCOUNT_KEY,
       nextDate: "2024-09-21",
       endDate: "2026-09-20",
       recordsSynced: 0,
@@ -128,6 +161,25 @@ describe("planZivaSyncChunk", () => {
       "2024-10-03",
       "2024-10-04",
     ]);
+  });
+
+  it("anchors a full-history window to the home-calendar date", () => {
+    const window = SyncWindow.full(new Date("2026-09-21T06:30:00.000Z"));
+
+    const chunk = planZivaSyncChunk(window, null, "2026-09-20");
+
+    expect(chunk.checkpoint).toMatchObject({
+      nextDate: "2024-09-21",
+      endDate: "2026-09-20",
+    });
+  });
+
+  it("rejects an invalid home-calendar end date", () => {
+    const window = SyncWindow.lastDays(1, {
+      now: new Date("2026-09-20T15:30:00.000Z"),
+    });
+
+    expect(() => planZivaSyncChunk(window, null, "")).toThrow();
   });
 
   it("plans all 14 dates when the inclusive range is exactly one chunk", () => {
@@ -169,6 +221,7 @@ describe("planZivaSyncChunk", () => {
 
     expect(checkpoint).toEqual({
       version: 1,
+      sourceAccountKey: SOURCE_ACCOUNT_KEY,
       nextDate: "2026-01-15",
       endDate: "2026-01-15",
       recordsSynced: 0,
@@ -222,6 +275,7 @@ describe("planZivaSyncChunk", () => {
     });
     const checkpoint = Object.freeze({
       version: 1 as const,
+      sourceAccountKey: SOURCE_ACCOUNT_KEY,
       nextDate: "2026-04-03",
       endDate: "2026-04-05",
       recordsSynced: 7,
@@ -232,6 +286,7 @@ describe("planZivaSyncChunk", () => {
     expect(chunk).toEqual({
       checkpoint: {
         version: 1,
+        sourceAccountKey: SOURCE_ACCOUNT_KEY,
         nextDate: "2026-04-03",
         endDate: "2026-04-05",
         recordsSynced: 7,
@@ -240,9 +295,36 @@ describe("planZivaSyncChunk", () => {
     });
     expect(checkpoint).toEqual({
       version: 1,
+      sourceAccountKey: SOURCE_ACCOUNT_KEY,
       nextDate: "2026-04-03",
       endDate: "2026-04-05",
       recordsSynced: 7,
+    });
+  });
+
+  it("restarts the requested window when the checkpoint belongs to another account", () => {
+    const window = SyncWindow.fromDateRange({
+      sinceDate: "2026-04-01",
+      untilDate: "2026-04-05",
+    });
+
+    expect(
+      planZivaSyncChunk(window, {
+        version: 1,
+        sourceAccountKey: "another-opaque-account-key",
+        nextDate: "2026-04-03",
+        endDate: "2026-04-05",
+        recordsSynced: 7,
+      }),
+    ).toEqual({
+      checkpoint: {
+        version: 1,
+        sourceAccountKey: SOURCE_ACCOUNT_KEY,
+        nextDate: "2026-04-01",
+        endDate: "2026-04-05",
+        recordsSynced: 0,
+      },
+      dates: ["2026-04-01", "2026-04-02", "2026-04-03", "2026-04-04", "2026-04-05"],
     });
   });
 
@@ -253,6 +335,7 @@ describe("planZivaSyncChunk", () => {
     });
     const checkpoint = Object.freeze({
       version: 1 as const,
+      sourceAccountKey: SOURCE_ACCOUNT_KEY,
       nextDate: "2026-04-02",
       endDate: "2026-04-03",
       recordsSynced: 5,
@@ -274,6 +357,7 @@ describe("planZivaSyncChunk", () => {
       "an unknown field",
       {
         version: 1,
+        sourceAccountKey: SOURCE_ACCOUNT_KEY,
         nextDate: "2026-04-01",
         endDate: "2026-04-03",
         recordsSynced: 0,
@@ -282,23 +366,53 @@ describe("planZivaSyncChunk", () => {
     ],
     [
       "a future version",
-      { version: 2, nextDate: "2026-04-01", endDate: "2026-04-03", recordsSynced: 0 },
+      {
+        version: 2,
+        sourceAccountKey: SOURCE_ACCOUNT_KEY,
+        nextDate: "2026-04-01",
+        endDate: "2026-04-03",
+        recordsSynced: 0,
+      },
     ],
     [
       "an invalid next date",
-      { version: 1, nextDate: "2026-02-30", endDate: "2026-04-03", recordsSynced: 0 },
+      {
+        version: 1,
+        sourceAccountKey: SOURCE_ACCOUNT_KEY,
+        nextDate: "2026-02-30",
+        endDate: "2026-04-03",
+        recordsSynced: 0,
+      },
     ],
     [
       "an invalid end date",
-      { version: 1, nextDate: "2026-04-01", endDate: "2026-02-30", recordsSynced: 0 },
+      {
+        version: 1,
+        sourceAccountKey: SOURCE_ACCOUNT_KEY,
+        nextDate: "2026-04-01",
+        endDate: "2026-02-30",
+        recordsSynced: 0,
+      },
     ],
     [
       "a fractional count",
-      { version: 1, nextDate: "2026-04-01", endDate: "2026-04-03", recordsSynced: 1.5 },
+      {
+        version: 1,
+        sourceAccountKey: SOURCE_ACCOUNT_KEY,
+        nextDate: "2026-04-01",
+        endDate: "2026-04-03",
+        recordsSynced: 1.5,
+      },
     ],
     [
       "a negative count",
-      { version: 1, nextDate: "2026-04-01", endDate: "2026-04-03", recordsSynced: -1 },
+      {
+        version: 1,
+        sourceAccountKey: SOURCE_ACCOUNT_KEY,
+        nextDate: "2026-04-01",
+        endDate: "2026-04-03",
+        recordsSynced: -1,
+      },
     ],
   ])("rejects %s instead of silently starting over", (_label, rawCheckpoint) => {
     const window = SyncWindow.fromDateRange({
@@ -318,6 +432,7 @@ describe("planZivaSyncChunk", () => {
     expect(() =>
       planZivaSyncChunk(window, {
         version: 1,
+        sourceAccountKey: SOURCE_ACCOUNT_KEY,
         nextDate: "2026-04-02",
         endDate: "2026-04-04",
         recordsSynced: 4,
@@ -337,6 +452,7 @@ describe("planZivaSyncChunk", () => {
     expect(() =>
       planZivaSyncChunk(window, {
         version: 1,
+        sourceAccountKey: SOURCE_ACCOUNT_KEY,
         nextDate,
         endDate: "2026-04-03",
         recordsSynced: 4,
@@ -349,6 +465,7 @@ describe("advanceZivaSyncCheckpoint", () => {
   it("returns the next in-range date with the new cumulative count", () => {
     const checkpoint = Object.freeze<ZivaSyncCheckpoint>({
       version: 1,
+      sourceAccountKey: SOURCE_ACCOUNT_KEY,
       nextDate: "2026-04-02",
       endDate: "2026-04-04",
       recordsSynced: 5,
@@ -356,12 +473,14 @@ describe("advanceZivaSyncCheckpoint", () => {
 
     expect(advanceZivaSyncCheckpoint(checkpoint, "2026-04-02", 8)).toEqual({
       version: 1,
+      sourceAccountKey: SOURCE_ACCOUNT_KEY,
       nextDate: "2026-04-03",
       endDate: "2026-04-04",
       recordsSynced: 8,
     });
     expect(checkpoint).toEqual({
       version: 1,
+      sourceAccountKey: SOURCE_ACCOUNT_KEY,
       nextDate: "2026-04-02",
       endDate: "2026-04-04",
       recordsSynced: 5,
@@ -371,6 +490,7 @@ describe("advanceZivaSyncCheckpoint", () => {
   it("advances an empty day without increasing the cumulative count", () => {
     const checkpoint: ZivaSyncCheckpoint = {
       version: 1,
+      sourceAccountKey: SOURCE_ACCOUNT_KEY,
       nextDate: "2026-04-02",
       endDate: "2026-04-04",
       recordsSynced: 5,
@@ -378,6 +498,7 @@ describe("advanceZivaSyncCheckpoint", () => {
 
     expect(advanceZivaSyncCheckpoint(checkpoint, "2026-04-02", 5)).toEqual({
       version: 1,
+      sourceAccountKey: SOURCE_ACCOUNT_KEY,
       nextDate: "2026-04-03",
       endDate: "2026-04-04",
       recordsSynced: 5,
@@ -387,6 +508,7 @@ describe("advanceZivaSyncCheckpoint", () => {
   it("returns null after the final date instead of an out-of-range sentinel", () => {
     const checkpoint: ZivaSyncCheckpoint = {
       version: 1,
+      sourceAccountKey: SOURCE_ACCOUNT_KEY,
       nextDate: "2026-04-04",
       endDate: "2026-04-04",
       recordsSynced: 8,
@@ -398,6 +520,7 @@ describe("advanceZivaSyncCheckpoint", () => {
   it("rejects completion for a date other than the pending date", () => {
     const checkpoint: ZivaSyncCheckpoint = {
       version: 1,
+      sourceAccountKey: SOURCE_ACCOUNT_KEY,
       nextDate: "2026-04-02",
       endDate: "2026-04-04",
       recordsSynced: 5,
@@ -413,6 +536,7 @@ describe("advanceZivaSyncCheckpoint", () => {
   ])("rejects a %s cumulative record count", (_description, cumulativeRecordsSynced) => {
     const checkpoint: ZivaSyncCheckpoint = {
       version: 1,
+      sourceAccountKey: SOURCE_ACCOUNT_KEY,
       nextDate: "2026-04-02",
       endDate: "2026-04-04",
       recordsSynced: 5,
@@ -426,6 +550,7 @@ describe("advanceZivaSyncCheckpoint", () => {
   it("rejects an invalid persisted checkpoint before advancing it", () => {
     const checkpoint: ZivaSyncCheckpoint = {
       version: 1,
+      sourceAccountKey: SOURCE_ACCOUNT_KEY,
       nextDate: "2026-04-05",
       endDate: "2026-04-04",
       recordsSynced: 5,

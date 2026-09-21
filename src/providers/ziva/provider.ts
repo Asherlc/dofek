@@ -1,3 +1,4 @@
+import { formatDateYmdInTimeZone } from "@dofek/format/format";
 import {
   ProviderRateLimitError,
   ProviderRequestTimeoutError,
@@ -6,6 +7,7 @@ import {
 import type { TokenSet } from "../../auth/oauth.ts";
 import { resolveOAuthTokens } from "../../auth/resolve-tokens.ts";
 import type { Database, SyncDatabase } from "../../db/index.ts";
+import { getProviderIngestContext } from "../../db/provider-ingest-context.ts";
 import { deleteTokens, deriveProviderAccountKey } from "../../db/tokens.ts";
 import { captureException } from "../../lib/error-reporting.ts";
 import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
@@ -110,6 +112,18 @@ function closeFailure(error: unknown): ZivaMcpTransportError {
   return sanitizedError;
 }
 
+function calendarEndDateForRun(run: SyncRun): string | undefined {
+  const timezone = getProviderIngestContext()?.homeTimezone ?? "UTC";
+  if (run.window.kind === "full") {
+    return formatDateYmdInTimeZone(run.window.until, timezone);
+  }
+  if (!run.options.relativeWindow) return undefined;
+  if (!run.options.requestedAt) {
+    throw new Error("Relative Ziva sync requires a fixed request time");
+  }
+  return formatDateYmdInTimeZone(run.options.requestedAt, timezone);
+}
+
 export class ZivaProvider implements SyncProvider {
   readonly id = "ziva";
   readonly name = "Ziva";
@@ -160,14 +174,17 @@ export class ZivaProvider implements SyncProvider {
   }
 
   async sync(run: SyncRun): Promise<SyncResult> {
+    const signal = run.options.signal;
+    signal?.throwIfAborted();
     const startedAt = Date.now();
     const userId = requireUserId(run);
     const db = requireTransactionalDatabase(run.db);
     const checkpointStore = requireCheckpoint(run);
     const enqueueContinuation = requireContinuationEnqueue(run);
-    const chunk = planZivaSyncChunk(run.window, await checkpointStore.load());
-    let checkpoint: ZivaSyncCheckpoint | null = chunk.checkpoint;
-    let recordsSynced = chunk.checkpoint.recordsSynced;
+    const rawCheckpoint = await checkpointStore.load();
+    signal?.throwIfAborted();
+    let checkpoint: ZivaSyncCheckpoint | null = null;
+    let recordsSynced = 0;
     let tokens: TokenSet | null = null;
     let client: ZivaMcpClient | null = null;
     let refreshAttempted = false;
@@ -201,9 +218,11 @@ export class ZivaProvider implements SyncProvider {
           client ??= await ZivaMcpClient.connect({
             accessToken: tokens?.accessToken ?? "",
             fetchFn: this.#fetchFn,
+            signal,
           });
-          return await client.getMealsForDate(date);
+          return await client.getMealsForDate(date, { signal });
         } catch (error: unknown) {
+          signal?.throwIfAborted();
           if (!(error instanceof ZivaMcpAuthenticationError)) throw error;
 
           await closeActiveClient();
@@ -219,6 +238,7 @@ export class ZivaProvider implements SyncProvider {
       try {
         tokens = await this.#resolveValidatedTokens(db, false, markRefreshAttempted);
       } catch (error: unknown) {
+        signal?.throwIfAborted();
         if (!isTerminalProviderError(error)) throw error;
         terminalFailure = { error };
       }
@@ -228,11 +248,18 @@ export class ZivaProvider implements SyncProvider {
         const accountSubject = tokens.providerAccountId?.trim();
         if (!accountSubject) throw new Error("Ziva resolved credentials have no account identity");
         const sourceAccountKey = deriveProviderAccountKey(this.id, accountSubject, userId);
+        signal?.throwIfAborted();
+        const chunk = planZivaSyncChunk(run.window, rawCheckpoint, sourceAccountKey, {
+          calendarEndDate: calendarEndDateForRun(run),
+        });
+        checkpoint = chunk.checkpoint;
+        recordsSynced = chunk.checkpoint.recordsSynced;
         for (const [index, date] of chunk.dates.entries()) {
           let payload: Awaited<ReturnType<ZivaMcpClient["getMealsForDate"]>>;
           try {
             payload = await mealsForDate(date);
           } catch (error: unknown) {
+            signal?.throwIfAborted();
             if (error instanceof ProviderRateLimitError || !isTerminalProviderError(error)) {
               throw error;
             }
@@ -243,7 +270,9 @@ export class ZivaProvider implements SyncProvider {
           const normalizedMeals = payload.meals.map((meal) =>
             normalizeZivaMeal(meal, { sourceAccountKey }),
           );
+          signal?.throwIfAborted();
           const committed = await upsertZivaMealsForDate(db, userId, normalizedMeals);
+          signal?.throwIfAborted();
           recordsSynced += committed;
           if (!checkpoint) throw new Error("Ziva checkpoint completed before its final date");
           checkpoint = advanceZivaSyncCheckpoint(checkpoint, date, recordsSynced);
@@ -258,6 +287,8 @@ export class ZivaProvider implements SyncProvider {
     } finally {
       await closeActiveClient();
     }
+
+    signal?.throwIfAborted();
 
     if (terminalFailure) {
       return {
@@ -280,6 +311,7 @@ export class ZivaProvider implements SyncProvider {
     }
 
     if (checkpoint) {
+      signal?.throwIfAborted();
       await enqueueContinuation(checkpoint);
       return {
         provider: this.id,
