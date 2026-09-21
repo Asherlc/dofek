@@ -582,6 +582,35 @@ describe("ZivaProvider", () => {
     expect(mockDeleteTokens).not.toHaveBeenCalled();
   });
 
+  it("does not refresh again when an expiry-refreshed bearer receives a 401", async () => {
+    const expired = tokenSet("subject-a", {
+      expiresAt: new Date(Date.now() - 1_000),
+    });
+    const refreshedAccessToken = jwt("subject-a", { jti: "expiry-refresh" });
+    const rejected = authenticationFailureHarness("tools/call");
+    const routed = routeFetch({
+      mcpByBearer: new Map([[`Bearer ${refreshedAccessToken}`, rejected.fetch]]),
+      tokenResponse: () =>
+        Response.json({
+          access_token: refreshedAccessToken,
+          refresh_token: "rotated-refresh",
+          expires_in: 3600,
+        }),
+    });
+    mockLoadTokens.mockResolvedValue(expired);
+
+    const result = await new ZivaProvider(routed.fetch).sync(
+      syncRun({ sinceDate: FIRST_DATE, untilDate: FIRST_DATE }),
+    );
+
+    expect(result).toMatchObject({ recordsSynced: 0, continued: false });
+    expect(result.errors[0]?.cause).toBeInstanceOf(RefreshTokenRevokedError);
+    expect(routed.tokenRequests).toHaveLength(1);
+    expect(mockSaveTokens).toHaveBeenCalledTimes(1);
+    expect(mockDeleteTokens).toHaveBeenCalledTimes(1);
+    expect(rejected.transportClosed).toBe(true);
+  });
+
   it("deletes an expired credential without a refresh token and returns revoked", async () => {
     mockLoadTokens.mockResolvedValue(
       tokenSet("subject-a", {

@@ -128,7 +128,11 @@ export class ZivaProvider implements SyncProvider {
     return createZivaAuthSetup(options, this.#fetchFn);
   }
 
-  async #resolveValidatedTokens(db: SyncDatabase, forceRefresh: boolean): Promise<TokenSet> {
+  async #resolveValidatedTokens(
+    db: SyncDatabase,
+    forceRefresh: boolean,
+    onRefresh: () => void,
+  ): Promise<TokenSet> {
     try {
       const tokens = await resolveOAuthTokens({
         db,
@@ -137,7 +141,10 @@ export class ZivaProvider implements SyncProvider {
         getOAuthConfig: () => this.authSetup()?.oauthConfig,
         fetchFn: this.#fetchFn,
         forceRefresh,
-        validateRefreshedTokens: validateZivaRefreshedIdentity,
+        validateRefreshedTokens: (currentTokens, refreshedTokens) => {
+          onRefresh();
+          validateZivaRefreshedIdentity(currentTokens, refreshedTokens);
+        },
       });
       const storedSubject = tokens.providerAccountId?.trim();
       if (!storedSubject || zivaSubjectFromAccessToken(tokens.accessToken) !== storedSubject) {
@@ -166,6 +173,9 @@ export class ZivaProvider implements SyncProvider {
     let refreshAttempted = false;
     let terminalFailure: { error: unknown; date?: string } | null = null;
     let observedCloseFailure: ZivaMcpTransportError | null = null;
+    const markRefreshAttempted = () => {
+      refreshAttempted = true;
+    };
 
     const closeActiveClient = async (): Promise<void> => {
       const activeClient = client;
@@ -200,14 +210,14 @@ export class ZivaProvider implements SyncProvider {
           if (refreshAttempted) await revokeRejectedCredentials(error);
           refreshAttempted = true;
           if (!tokens?.refreshToken) await revokeRejectedCredentials(error);
-          tokens = await this.#resolveValidatedTokens(db, true);
+          tokens = await this.#resolveValidatedTokens(db, true, markRefreshAttempted);
         }
       }
     };
 
     try {
       try {
-        tokens = await this.#resolveValidatedTokens(db, false);
+        tokens = await this.#resolveValidatedTokens(db, false, markRefreshAttempted);
       } catch (error: unknown) {
         if (!isTerminalProviderError(error)) throw error;
         terminalFailure = { error };
