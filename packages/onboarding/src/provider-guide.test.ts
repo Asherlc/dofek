@@ -60,6 +60,12 @@ describe("PROVIDER_GUIDE_CATEGORIES", () => {
     expect(bodyComposition?.providerIds).toContain("bodyspec");
   });
 
+  it("offers every supported nutrition source, including Ziva", () => {
+    const nutrition = PROVIDER_GUIDE_CATEGORIES.find((category) => category.title === "Nutrition");
+
+    expect(nutrition?.providerIds).toEqual(["cronometer-csv", "fatsecret", "ziva"]);
+  });
+
   it("has no duplicate category titles", () => {
     const titles = PROVIDER_GUIDE_CATEGORIES.map((category) => category.title);
     expect(new Set(titles).size).toBe(titles.length);

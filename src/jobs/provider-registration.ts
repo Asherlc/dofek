@@ -19,6 +19,7 @@ async function doRegisterProviders() {
       "fatsecret",
       () => import("../providers/fatsecret/provider.ts").then((m) => new m.FatSecretProvider()),
     ],
+    ["ziva", () => import("../providers/ziva/provider.ts").then((m) => new m.ZivaProvider())],
     ["whoop", () => import("../providers/whoop/provider.ts").then((m) => new m.WhoopProvider())],
     ["kaya", () => import("../providers/kaya-sync.ts").then((m) => new m.KayaSyncProvider())],
     [

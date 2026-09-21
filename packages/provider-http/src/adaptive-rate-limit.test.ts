@@ -9,8 +9,11 @@ import {
   blendObservedCooldown,
   createInitialAdaptiveState,
   decreaseThrottleMs,
+  defaultInferredBudget,
   defaultThrottleMs,
+  httpRequestsPerSyncJob,
   increaseThrottleMs,
+  isStepChainSyncProvider,
   learnInferredBudget,
   parseAdaptiveRateState,
   parseStravaRateLimitHeaders,
@@ -426,6 +429,13 @@ describe("createInitialAdaptiveState", () => {
   it("seeds step-chain providers with a default inferred budget", () => {
     const state = createInitialAdaptiveState("whoop", "provider", null);
     expect(state.inferredBudget).toBe(40);
+  });
+
+  it("classifies Ziva as a one-request step chain without inventing a quota", () => {
+    expect(isStepChainSyncProvider("ziva")).toBe(true);
+    expect(httpRequestsPerSyncJob("ziva")).toBe(1);
+    expect(defaultInferredBudget("ziva")).toBeNull();
+    expect(createInitialAdaptiveState("ziva", "provider", null).inferredBudget).toBeNull();
   });
 });
 

@@ -66,6 +66,12 @@ describe("getProviderQueueConfig", () => {
     expect(config.concurrency).toBe(1);
     expect(config.limiter).toEqual({ max: 1, duration: 1_000 });
   });
+
+  it("serializes Ziva sync jobs without an inferred rate limiter", () => {
+    const config = getProviderQueueConfig("ziva");
+
+    expect(config).toStrictEqual({ concurrency: 1, syncTier: "frequent" });
+  });
 });
 
 describe("config values are reasonable", () => {
@@ -98,12 +104,13 @@ describe("config values are reasonable", () => {
 describe("getConfiguredProviderIds", () => {
   it("returns all known provider IDs", () => {
     const ids = getConfiguredProviderIds();
-    expect(ids.length).toBeGreaterThan(20);
+    expect(ids).toHaveLength(25);
     expect(ids).toContain("strava");
     expect(ids).toContain("garmin");
     expect(ids).toContain("whoop");
     expect(ids).toContain("fatsecret");
     expect(ids).toContain("bodyspec");
+    expect(ids).toContain("ziva");
     expect(ids).toContain(new CyclingAnalyticsProvider().id);
   });
 

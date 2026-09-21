@@ -67,7 +67,7 @@ vi.mock("../providers/index.ts", () => ({
     if (providerId === "strong-csv") return { id: providerId, importOnly: true as const };
     if (providerId === "whoop") return { id: providerId, scheduledSyncLookbackDays: 30 };
     if (providerId === "unknown-provider") return undefined;
-    if (["strava", "wahoo", "garmin"].includes(providerId)) {
+    if (["strava", "wahoo", "garmin", "ziva"].includes(providerId)) {
       return { id: providerId, authSetup: () => ({}) };
     }
     return { id: providerId };
@@ -390,6 +390,40 @@ describe("processScheduledSyncJob", () => {
       "[scheduled-sync] Enqueued 0 sync jobs for 1 users (1 skipped due to in-flight sync)",
     );
   });
+
+  it.each([
+    ["active", "getActive"],
+    ["waiting", "getWaiting"],
+  ] as const)(
+    "does not enqueue a scheduled Ziva root while a %s continuation is in flight",
+    async (_state, queueMethod) => {
+      const zivaQueue = getMockQueue("ziva");
+      zivaQueue[queueMethod] = vi.fn().mockResolvedValue([
+        {
+          data: {
+            userId: "user-1",
+            providerId: "ziva",
+            checkpoint: {
+              version: 1,
+              nextDate: "2026-09-15",
+              endDate: "2026-09-30",
+              recordsSynced: 14,
+            },
+          },
+        },
+      ]);
+      const db = createScheduledSyncDatabase([
+        { user_id: "user-1", provider_id: "ziva", has_tokens: true },
+      ]);
+
+      await processScheduledSyncJob(createScheduledSyncJob(), db);
+
+      expect(zivaQueue.add).not.toHaveBeenCalled();
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        "[scheduled-sync] Skipping ziva for user-1: 1 sync job(s) already queued",
+      );
+    },
+  );
 
   it("does not inspect in-flight jobs for providers without step chains", async () => {
     const stravaQueue = getMockQueue("strava");

@@ -24,7 +24,7 @@ export const DEFAULT_PROVIDER_THROTTLE_MS: Readonly<Record<string, number>> = {
 };
 
 /** Providers that run one BullMQ job per sync step (not one job per full sync). */
-export const STEP_CHAIN_SYNC_PROVIDERS: ReadonlySet<string> = new Set(["garmin", "whoop"]);
+export const STEP_CHAIN_SYNC_PROVIDERS: ReadonlySet<string> = new Set(["garmin", "whoop", "ziva"]);
 
 /**
  * Typical HTTP calls per step-chain sync job (auth refresh, bootstrap, one data call).

@@ -13,7 +13,7 @@ Shared first-run and goal metadata for web and mobile.
 ## Implementation Details
 
 ### Categories
-Providers are grouped into `PROVIDER_GUIDE_CATEGORIES`. Each category includes a title, description, and an array of `providerIds`. For example, "Nutrition" includes `cronometer-csv` and `fatsecret`.
+Providers are grouped into `PROVIDER_GUIDE_CATEGORIES`. Each category includes a title, description, and an array of `providerIds`. For example, "Nutrition" includes `cronometer-csv`, `fatsecret`, and `ziva`, whose nutrition tools are documented in the official [Ziva MCP documentation](https://ziva.fit/mcp-docs).
 
 ### Display Logic
 The `shouldShowProviderGuide` function determines if the guide should be shown. It returns `true` only if the user has zero connected providers and has not previously dismissed the guide.

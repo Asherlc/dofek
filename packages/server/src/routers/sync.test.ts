@@ -110,7 +110,7 @@ vi.mock("../trpc.ts", async () => {
 });
 
 vi.mock("dofek/jobs/provider-queue-config", () => ({
-  getConfiguredProviderIds: vi.fn(() => ["strava", "garmin", "whoop"]),
+  getConfiguredProviderIds: vi.fn(() => ["strava", "garmin", "whoop", "ziva"]),
 }));
 
 vi.mock("dofek/jobs/queues", () => ({
@@ -195,6 +195,7 @@ vi.mock("dofek/providers/wahoo/provider", () => ({ WahooProvider: vi.fn() }));
 vi.mock("dofek/providers/withings", () => ({ WithingsProvider: vi.fn() }));
 vi.mock("dofek/providers/peloton", () => ({ PelotonProvider: vi.fn() }));
 vi.mock("dofek/providers/fatsecret", () => ({ FatSecretProvider: vi.fn() }));
+vi.mock("dofek/providers/ziva", () => ({ ZivaProvider: vi.fn() }));
 vi.mock("dofek/providers/whoop", () => ({ WhoopProvider: vi.fn() }));
 vi.mock("dofek/providers/ride-with-gps", () => ({ RideWithGpsProvider: vi.fn() }));
 vi.mock("dofek/providers/strong-csv", () => ({ StrongCsvProvider: vi.fn() }));
@@ -1683,6 +1684,14 @@ describe("syncRouter", () => {
           failed: 0,
         },
         {
+          queueName: "sync-ziva",
+          providerId: "ziva",
+          waiting: 0,
+          active: 0,
+          delayed: 0,
+          failed: 0,
+        },
+        {
           queueName: "import",
           waiting: 7,
           active: 1,
@@ -1693,7 +1702,14 @@ describe("syncRouter", () => {
       expect(mockGetProviderSyncQueue).toHaveBeenCalledWith("strava");
       expect(mockGetProviderSyncQueue).toHaveBeenCalledWith("garmin");
       expect(mockGetProviderSyncQueue).toHaveBeenCalledWith("whoop");
+      expect(mockGetProviderSyncQueue).toHaveBeenCalledWith("ziva");
       expect(mockGetJobCounts).toHaveBeenCalledWith("strava", [
+        "waiting",
+        "active",
+        "delayed",
+        "failed",
+      ]);
+      expect(mockGetJobCounts).toHaveBeenCalledWith("ziva", [
         "waiting",
         "active",
         "delayed",

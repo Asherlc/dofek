@@ -157,4 +157,61 @@ describe("full sync BullMQ lifecycle deduplication", () => {
     expect(continuation?.id).not.toBe(initial.id);
     expect(await queue.getWaitingCount()).toBe(2);
   });
+
+  it("keeps a Ziva date-chunk continuation distinct from its pending parent", async () => {
+    vi.resetModules();
+    const [
+      { registerSyncRequestQueryResolver },
+      { resolveZivaSyncRequestQuery },
+      { enqueueSyncJobWithRequestDedup: enqueueWithFreshResolverRegistry },
+    ] = await Promise.all([
+      import("../lib/sync-request-query.ts"),
+      import("../providers/ziva/sync-request-query.ts"),
+      import("./sync-request-job.ts"),
+    ]);
+    registerSyncRequestQueryResolver("ziva", resolveZivaSyncRequestQuery);
+
+    const { queue } = createQueue("ziva-checkpoint");
+    const baseJobData: SyncJobData = {
+      userId: "user-1",
+      providerId: "ziva",
+      sinceIso: "2026-09-01T00:00:00.000Z",
+      untilIso: "2026-09-30T23:59:59.999Z",
+    };
+    const initial = await enqueueWithFreshResolverRegistry(
+      "ziva",
+      baseJobData,
+      {},
+      (name, data, options) => queue.add(name, data, options),
+      (jobId) => queue.getJob(jobId),
+    );
+    const continuationJobData: SyncJobData = {
+      ...baseJobData,
+      checkpoint: {
+        version: 1,
+        nextDate: "2026-09-15",
+        endDate: "2026-09-30",
+        recordsSynced: 14,
+      },
+    };
+    const continuation = await enqueueWithFreshResolverRegistry(
+      "ziva",
+      continuationJobData,
+      {},
+      (name, data, options) => queue.add(name, data, options),
+      (jobId) => queue.getJob(jobId),
+    );
+    const duplicateContinuation = await enqueueWithFreshResolverRegistry(
+      "ziva",
+      continuationJobData,
+      {},
+      (name, data, options) => queue.add(name, data, options),
+      (jobId) => queue.getJob(jobId),
+    );
+
+    expect(continuation?.id).not.toBe(initial?.id);
+    expect(duplicateContinuation?.id).toBe(continuation?.id);
+    expect(duplicateContinuation?.alreadyQueued).toBe(true);
+    expect(await queue.getWaitingCount()).toBe(2);
+  });
 });

@@ -115,6 +115,7 @@ describe("dataset contracts", () => {
     expect(datasetsForProvider("cronometer", ["nutrition"]).map(({ key }) => key)).toEqual([
       "nutrition",
     ]);
+    expect(datasetsForProvider("ziva", ["nutrition"]).map(({ key }) => key)).toEqual(["nutrition"]);
     expect(datasetsForProvider("kaya", ["nutrition"])).toEqual([]);
   });
 
@@ -132,6 +133,7 @@ describe("dataset contracts", () => {
       declaredDatasetKeys,
     );
     expect(processingDatasetKeysForProvider("bodyspec", [])).toEqual(["body", "providers"]);
+    expect(processingDatasetKeysForProvider("ziva")).toEqual(["nutrition", "providers"]);
   });
 
   it("maps imports to bounded scopes and selects only emitted output paths", () => {
