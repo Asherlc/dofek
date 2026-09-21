@@ -70,6 +70,7 @@ overrides:
   image-size: "file:vendor/image-size"
   "picomatch@>=4.0.0 <4.0.4": 4.0.4
   postcss: 8.5.23
+  "posthog-js>fflate": 0.4.9
   protobufjs: 8.7.1
   qs: 6.16.0
   react: 19.2.3

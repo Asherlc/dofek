@@ -34,6 +34,7 @@ overrides:
   image-size: file:vendor/image-size
   picomatch@>=4.0.0 <4.0.4: 4.0.4
   postcss: 8.5.23
+  posthog-js>fflate: 0.4.9
   protobufjs: 8.7.1
   qs: 6.16.0
   react: 19.2.3
@@ -11303,8 +11304,8 @@ packages:
   fetch-nodeshim@0.4.10:
     resolution: {integrity: sha512-m6I8ALe4L4XpdETy7MJZWs6L1IVMbjs99bwbpIKphxX+0CTns4IKDWJY0LWfr4YsFjfg+z1TjzTMU8lKl8rG0w==}
 
-  fflate@0.4.8:
-    resolution: {integrity: sha512-FJqqoDBR00Mdj9ppamLa/Y7vxm+PRmNWA67N846RvsoYVMKB4q3y/de5PA7gUmRMYK/8CMz2GDZQmCRN1wBcWA==}
+  fflate@0.4.9:
+    resolution: {integrity: sha512-zdxgIEddhfsyCaWpJ2SdXEP8ZMrKJ6+5jl4OupODcywU0IhRk6gdXuVGcPICyfx2H97hVK7xmJtRLPjkxAX8Vw==}
 
   figures@1.7.0:
     resolution: {integrity: sha512-UxKlfCRuCBxSXU4C6t9scbDyWZ4VlaFFdojKtzJuSkuOBQ5CNFum+zZXFwHjo+CxBC1t6zlYPgHIgFjL8ggoEQ==}
@@ -28766,7 +28767,7 @@ snapshots:
 
   fetch-nodeshim@0.4.10: {}
 
-  fflate@0.4.8: {}
+  fflate@0.4.9: {}
 
   figures@1.7.0:
     dependencies:
@@ -32229,7 +32230,7 @@ snapshots:
       '@posthog/types': 1.374.2
       core-js: 3.49.0
       dompurify: 3.4.14
-      fflate: 0.4.8
+      fflate: 0.4.9
       preact: 10.29.2
       query-selector-shadow-dom: 1.0.1
       web-vitals: 5.2.0
