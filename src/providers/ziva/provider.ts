@@ -90,12 +90,20 @@ function isTerminalProviderError(error: unknown): boolean {
   );
 }
 
+function abortReason(signal: AbortSignal | undefined, fallback?: unknown): unknown {
+  if (isAbortError(fallback)) return fallback;
+  if (signal?.reason !== undefined) return signal.reason;
+  return new DOMException("The operation was aborted", "AbortError");
+}
+
 function terminalSyncError(error: unknown, date?: string): SyncError {
-  const message = isAbortError(error)
-    ? "Ziva sync was cancelled."
-    : error instanceof Error
-      ? error.message
-      : "Ziva sync failed.";
+  if (isAbortError(error)) {
+    return {
+      message: "Ziva sync was cancelled.",
+      cause: error,
+    };
+  }
+  const message = error instanceof Error ? error.message : "Ziva sync failed.";
   return {
     message: date ? `Date ${date}: ${message}` : message,
     cause: error,
@@ -236,98 +244,124 @@ export class ZivaProvider implements SyncProvider {
 
     try {
       try {
-        tokens = await this.#resolveValidatedTokens(db, false, markRefreshAttempted);
-      } catch (error: unknown) {
-        signal?.throwIfAborted();
-        if (!isTerminalProviderError(error)) throw error;
-        terminalFailure = { error };
-      }
-
-      if (!terminalFailure) {
-        if (!tokens) throw new Error("Ziva token resolution completed without credentials");
-        const accountSubject = tokens.providerAccountId?.trim();
-        if (!accountSubject) throw new Error("Ziva resolved credentials have no account identity");
-        const sourceAccountKey = deriveProviderAccountKey(this.id, accountSubject, userId);
-        signal?.throwIfAborted();
-        const chunk = planZivaSyncChunk(run.window, rawCheckpoint, sourceAccountKey, {
-          calendarEndDate: calendarEndDateForRun(run),
-        });
-        checkpoint = chunk.checkpoint;
-        recordsSynced = chunk.checkpoint.recordsSynced;
-        for (const [index, date] of chunk.dates.entries()) {
-          let payload: Awaited<ReturnType<ZivaMcpClient["getMealsForDate"]>>;
-          try {
-            payload = await mealsForDate(date);
-          } catch (error: unknown) {
-            signal?.throwIfAborted();
-            if (error instanceof ProviderRateLimitError || !isTerminalProviderError(error)) {
-              throw error;
-            }
-            terminalFailure = { error, date };
-            break;
+        try {
+          tokens = await this.#resolveValidatedTokens(db, false, markRefreshAttempted);
+        } catch (error: unknown) {
+          if (isAbortError(error) || signal?.aborted) {
+            terminalFailure = { error: abortReason(signal, error) };
+          } else if (!isTerminalProviderError(error)) {
+            throw error;
+          } else {
+            terminalFailure = { error };
           }
-
-          const normalizedMeals = payload.meals.map((meal) =>
-            normalizeZivaMeal(meal, { sourceAccountKey }),
-          );
-          signal?.throwIfAborted();
-          const committed = await upsertZivaMealsForDate(db, userId, normalizedMeals);
-          signal?.throwIfAborted();
-          recordsSynced += committed;
-          if (!checkpoint) throw new Error("Ziva checkpoint completed before its final date");
-          checkpoint = advanceZivaSyncCheckpoint(checkpoint, date, recordsSynced);
-          if (checkpoint) await checkpointStore.save(checkpoint);
-          else await checkpointStore.clear();
-          run.options.onProgress?.(
-            ((index + 1) / chunk.dates.length) * 100,
-            `Synced Ziva diary date ${date}`,
-          );
         }
+
+        if (!terminalFailure) {
+          if (!tokens) throw new Error("Ziva token resolution completed without credentials");
+          const accountSubject = tokens.providerAccountId?.trim();
+          if (!accountSubject)
+            throw new Error("Ziva resolved credentials have no account identity");
+          const sourceAccountKey = deriveProviderAccountKey(this.id, accountSubject, userId);
+          signal?.throwIfAborted();
+          const chunk = planZivaSyncChunk(run.window, rawCheckpoint, sourceAccountKey, {
+            calendarEndDate: calendarEndDateForRun(run),
+          });
+          checkpoint = chunk.checkpoint;
+          recordsSynced = chunk.checkpoint.recordsSynced;
+          for (const [index, date] of chunk.dates.entries()) {
+            if (signal?.aborted) {
+              terminalFailure = { error: abortReason(signal) };
+              break;
+            }
+            let payload: Awaited<ReturnType<ZivaMcpClient["getMealsForDate"]>>;
+            try {
+              payload = await mealsForDate(date);
+            } catch (error: unknown) {
+              if (isAbortError(error) || signal?.aborted) {
+                terminalFailure = { error: abortReason(signal, error) };
+                break;
+              }
+              if (error instanceof ProviderRateLimitError || !isTerminalProviderError(error)) {
+                throw error;
+              }
+              terminalFailure = { error, date };
+              break;
+            }
+
+            const normalizedMeals = payload.meals.map((meal) =>
+              normalizeZivaMeal(meal, { sourceAccountKey }),
+            );
+            signal?.throwIfAborted();
+            const committed = await upsertZivaMealsForDate(db, userId, normalizedMeals);
+            recordsSynced += committed;
+            if (!checkpoint) throw new Error("Ziva checkpoint completed before its final date");
+            checkpoint = advanceZivaSyncCheckpoint(checkpoint, date, recordsSynced);
+            if (checkpoint) await checkpointStore.save(checkpoint);
+            else await checkpointStore.clear();
+            run.options.onProgress?.(
+              ((index + 1) / chunk.dates.length) * 100,
+              `Synced Ziva diary date ${date}`,
+            );
+            if (signal?.aborted) {
+              terminalFailure = { error: abortReason(signal) };
+              break;
+            }
+          }
+        }
+      } finally {
+        await closeActiveClient();
       }
-    } finally {
-      await closeActiveClient();
-    }
 
-    signal?.throwIfAborted();
+      if (terminalFailure) {
+        return {
+          provider: this.id,
+          recordsSynced,
+          errors: [terminalSyncError(terminalFailure.error, terminalFailure.date)],
+          duration: Date.now() - startedAt,
+          continued: false,
+        };
+      }
 
-    if (terminalFailure) {
-      return {
-        provider: this.id,
-        recordsSynced,
-        errors: [terminalSyncError(terminalFailure.error, terminalFailure.date)],
-        duration: Date.now() - startedAt,
-        continued: false,
-      };
-    }
+      if (observedCloseFailure) {
+        return {
+          provider: this.id,
+          recordsSynced,
+          errors: [terminalSyncError(observedCloseFailure)],
+          duration: Date.now() - startedAt,
+          continued: false,
+        };
+      }
 
-    if (observedCloseFailure) {
-      return {
-        provider: this.id,
-        recordsSynced,
-        errors: [terminalSyncError(observedCloseFailure)],
-        duration: Date.now() - startedAt,
-        continued: false,
-      };
-    }
+      if (checkpoint) {
+        signal?.throwIfAborted();
+        await enqueueContinuation(checkpoint);
+        return {
+          provider: this.id,
+          recordsSynced,
+          errors: [],
+          duration: Date.now() - startedAt,
+          continued: true,
+        };
+      }
 
-    if (checkpoint) {
-      signal?.throwIfAborted();
-      await enqueueContinuation(checkpoint);
       return {
         provider: this.id,
         recordsSynced,
         errors: [],
         duration: Date.now() - startedAt,
-        continued: true,
+        continued: false,
       };
+    } catch (error: unknown) {
+      if (isAbortError(error)) {
+        return {
+          provider: this.id,
+          recordsSynced,
+          errors: [terminalSyncError(error)],
+          duration: Date.now() - startedAt,
+          continued: false,
+        };
+      }
+      throw error;
     }
-
-    return {
-      provider: this.id,
-      recordsSynced,
-      errors: [],
-      duration: Date.now() - startedAt,
-      continued: false,
-    };
   }
 }

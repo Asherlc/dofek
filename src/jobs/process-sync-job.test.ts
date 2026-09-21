@@ -463,7 +463,7 @@ describe("processSyncJob", () => {
     expect(mockEnqueueDebouncedUserRefit).not.toHaveBeenCalled();
   });
 
-  it("rethrows cancellation returned through a provider result and skips post-sync work", async () => {
+  it("logs a cancel SyncResult with no commits and skips post-sync maintenance", async () => {
     const controller = new AbortController();
     const reason = new DOMException("queue cancelled during sync", "AbortError");
     const provider = createMockProvider({
@@ -479,10 +479,43 @@ describe("processSyncJob", () => {
     });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
 
-    await expect(runSyncJob(createMockJob(), mockDb, controller.signal)).rejects.toBe(reason);
+    await runSyncJob(createMockJob(), mockDb, controller.signal);
 
-    expect(mockLogSync).not.toHaveBeenCalled();
+    expect(mockInvalidateAllUserQueries).not.toHaveBeenCalled();
+    expect(mockLogSync).toHaveBeenCalledOnce();
     expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockEnqueueDebouncedPostSyncMaintenance).not.toHaveBeenCalled();
+    expect(mockEnqueueDebouncedUserRefit).not.toHaveBeenCalled();
+  });
+
+  it("invalidates and logs when a cancel SyncResult includes committed records", async () => {
+    const controller = new AbortController();
+    const reason = new DOMException("queue cancelled after commits", "AbortError");
+    const provider = createMockProvider({
+      sync: vi.fn(async () => {
+        controller.abort(reason);
+        return {
+          provider: "test-provider",
+          recordsSynced: 3,
+          errors: [{ message: "Sync cancelled", cause: reason }],
+          duration: 1,
+        };
+      }),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob(), mockDb, controller.signal);
+
+    expect(mockInvalidateAllUserQueries).toHaveBeenCalledOnce();
+    expect(mockInvalidateAllUserQueries).toHaveBeenCalledWith("user-1");
+    expect(mockLogSync).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        providerId: "test-provider",
+        errorMessage: "Sync cancelled",
+        recordCount: 3,
+      }),
+    );
     expect(mockEnqueueDebouncedPostSyncMaintenance).not.toHaveBeenCalled();
     expect(mockEnqueueDebouncedUserRefit).not.toHaveBeenCalled();
   });

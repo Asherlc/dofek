@@ -249,6 +249,7 @@ function isZeppHttp500ServiceUnavailable(error: unknown): error is ProviderServi
 }
 
 function shouldReportProviderError(error: unknown): boolean {
+  if (error instanceof Error && error.name === "AbortError") return false;
   return !isProviderTransportError(error) && !authFailureReasonFromError(error);
 }
 
@@ -495,7 +496,6 @@ export async function processSyncJob(
           }),
         ),
       );
-      signal?.throwIfAborted();
       if (result.recordsSynced > 0) {
         if (
           !(await accountErasureAllowsQueuedUserWork(
@@ -719,7 +719,15 @@ export async function processSyncJob(
     return;
   }
 
-  signal?.throwIfAborted();
+  if (signal?.aborted) {
+    // A provider SyncResult (including cancel-with-commits) already logged and
+    // invalidated above. Skip post-sync without failing the job. Pre-provider
+    // cancellation still rejects via throwIfAborted when nothing completed.
+    if (completedCount > 0) {
+      return;
+    }
+    signal.throwIfAborted();
+  }
   try {
     const { enqueueDebouncedPostSyncMaintenance } = await import("./queues.ts");
     await enqueueDebouncedPostSyncMaintenance();

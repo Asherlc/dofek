@@ -488,12 +488,51 @@ describe("ZivaProvider", () => {
     await vi.waitFor(() => expect(harness.jsonRpcMethods).toContain("tools/call"));
     controller.abort(reason);
 
-    await expect(request).rejects.toBe(reason);
+    const result = await request;
+    expect(result).toMatchObject({
+      provider: "ziva",
+      recordsSynced: 0,
+      continued: false,
+    });
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toBe("Ziva sync was cancelled.");
+    expect(result.errors[0]?.cause).toBe(reason);
     expect(mockUpsertZivaMealsForDate).not.toHaveBeenCalled();
     expect(checkpoint.saved).toEqual([]);
     expect(checkpoint.clearCount).toBe(0);
     expect(harness.toolCalls).toEqual([]);
     expect(harness.transportClosed).toBe(true);
+  });
+
+  it("returns cumulative committed count when cancelled after a date write", async () => {
+    const protocol = successfulDateHarness();
+    const checkpoint = new MemoryCheckpointStore();
+    const controller = new AbortController();
+    const reason = new DOMException("queue cancelled after first date", "AbortError");
+
+    const result = await new ZivaProvider(protocol.fetch).sync(
+      syncRun({
+        sinceDate: FIRST_DATE,
+        untilDate: SECOND_DATE,
+        checkpoint,
+        signal: controller.signal,
+        onProgress: () => {
+          controller.abort(reason);
+        },
+      }),
+    );
+
+    expect(result).toMatchObject({
+      provider: "ziva",
+      recordsSynced: 1,
+      continued: false,
+    });
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toBe("Ziva sync was cancelled.");
+    expect(result.errors[0]?.cause).toBe(reason);
+    expect(mockUpsertZivaMealsForDate).toHaveBeenCalledTimes(1);
+    expect(checkpoint.saved).toHaveLength(1);
+    expect(protocol.requestedDates).toEqual([FIRST_DATE]);
   });
 
   it("continues a 15-date window with one durable enqueue and cumulative counts", async () => {
