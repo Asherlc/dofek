@@ -270,6 +270,7 @@
     "archiver": "8.0.0",
     "bullmq": "6.3.4",
     "drizzle-orm": "0.45.2",
+    "ioredis": "5.10.1",
     "kafkajs": "2.2.4",
     "pg": "8.16.0",
     "postgres": "3.4.8",

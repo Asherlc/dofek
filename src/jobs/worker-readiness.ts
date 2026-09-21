@@ -7,12 +7,17 @@ interface WorkerReadinessClient {
   llen(key: string): Promise<unknown>;
 }
 
+interface WorkerReadinessBackend {
+  toKey(type: string): string;
+  waitUntilReady(): Promise<void>;
+  readonly client: Promise<WorkerReadinessClient>;
+}
+
 interface ReadinessWorker {
   readonly name: string;
-  readonly client: Promise<WorkerReadinessClient>;
   isRunning(): boolean;
-  toKey(type: string): string;
-  waitUntilReady(): Promise<{ status: string }>;
+  waitUntilReady(): Promise<void>;
+  getBackend(): WorkerReadinessBackend;
 }
 
 class WorkerReadinessError extends Error {
@@ -40,15 +45,28 @@ const WORKER_READINESS_TIMEOUT_MS = 2_500;
 const CONNECTION_STATUS_RETRIES = 3;
 const CONNECTION_STATUS_RETRY_DELAY_MS = 200;
 
-async function waitForReadyStatus(
+async function waitUntilSettled(label: string, settle: () => Promise<void>): Promise<void> {
+  for (let attempt = 0; attempt < CONNECTION_STATUS_RETRIES; attempt++) {
+    try {
+      await settle();
+      return;
+    } catch {
+      if (attempt >= CONNECTION_STATUS_RETRIES - 1) break;
+      await new Promise((resolve) => setTimeout(resolve, CONNECTION_STATUS_RETRY_DELAY_MS));
+    }
+  }
+  throw new WorkerReadinessError(label);
+}
+
+async function waitForReadyClient(
   label: string,
-  getStatus: () => Promise<{ status: string }>,
-): Promise<void> {
+  getClient: () => Promise<WorkerReadinessClient>,
+): Promise<WorkerReadinessClient> {
   let lastError: unknown;
   for (let attempt = 0; attempt < CONNECTION_STATUS_RETRIES; attempt++) {
     try {
-      const connection = await getStatus();
-      if (connection.status === "ready") return;
+      const connection = await getClient();
+      if (connection.status === "ready") return connection;
       lastError = new WorkerReadinessError(label);
     } catch (error) {
       lastError = error;
@@ -69,12 +87,14 @@ async function checkWorkerReadiness(workers: readonly ReadinessWorker[]): Promis
 
   await Promise.all(
     workers.map(async (worker) => {
-      await waitForReadyStatus(`blocking connection (${worker.name})`, () =>
-        worker.waitUntilReady(),
+      const backend = worker.getBackend();
+      await waitUntilSettled(`blocking connection (${worker.name})`, () => worker.waitUntilReady());
+      await waitUntilSettled(`backend connection (${worker.name})`, () => backend.waitUntilReady());
+      const client = await waitForReadyClient(
+        `command connection (${worker.name})`,
+        () => backend.client,
       );
-      await waitForReadyStatus(`command connection (${worker.name})`, () => worker.client);
-      const client = await worker.client;
-      await client.llen(worker.toKey("wait"));
+      await client.llen(backend.toKey("wait"));
     }),
   );
 }
