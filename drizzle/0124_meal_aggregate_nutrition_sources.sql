@@ -1,6 +1,6 @@
 ALTER TABLE fitness.food_entry ADD COLUMN source_account_key text;
 --> statement-breakpoint
-ALTER TYPE fitness.nutrition_entry_grain ADD VALUE 'meal_aggregate' BEFORE 'daily_aggregate';
+ALTER TYPE fitness.nutrition_entry_grain ADD VALUE IF NOT EXISTS 'meal_aggregate' BEFORE 'daily_aggregate';
 --> statement-breakpoint
 
 CREATE OR REPLACE VIEW fitness.v_food_entry_effective AS
