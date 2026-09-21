@@ -134,6 +134,7 @@
     "dev": "tsx scripts/with-env.ts -- tsx src/index.ts",
     "sync": "tsx scripts/with-env.ts -- tsx src/index.ts sync",
     "auth": "tsx scripts/with-env.ts -- tsx src/index.ts auth",
+    "smoke:ziva": "tsx scripts/with-env.ts -- tsx scripts/ziva-smoke.ts",
     "compose": "tsx scripts/compose-command.ts",
     "compose:env": "tsx scripts/compose-env.ts",
     "compose:up": "tsx scripts/compose-env.ts --up",
