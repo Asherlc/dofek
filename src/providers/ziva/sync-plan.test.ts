@@ -47,6 +47,23 @@ describe("planZivaSyncChunk", () => {
     ]);
   });
 
+  it("keeps an explicit epoch-start backfill bounded", () => {
+    const window = SyncWindow.fromDateRange({
+      sinceDate: "1970-01-01",
+      untilDate: "1970-01-05",
+    });
+
+    expect(planZivaSyncChunk(window, null)).toEqual({
+      checkpoint: {
+        version: 1,
+        nextDate: "1970-01-01",
+        endDate: "1970-01-05",
+        recordsSynced: 0,
+      },
+      dates: ["1970-01-01", "1970-01-02", "1970-01-03", "1970-01-04", "1970-01-05"],
+    });
+  });
+
   it("includes leap day in date-only arithmetic", () => {
     const window = SyncWindow.fromDateRange({
       sinceDate: "2024-02-28",

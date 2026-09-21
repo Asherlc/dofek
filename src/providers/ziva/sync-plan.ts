@@ -34,7 +34,7 @@ function addUtcCalendarDays(date: string, days: number): string {
 function boundsForWindow(window: SyncWindow): { startDate: string; endDate: string } {
   const endDate = dateSchema.parse(window.until.toISOString().slice(0, 10));
   const startDate =
-    window.since.getTime() === 0
+    window.kind === "full"
       ? addUtcCalendarDays(endDate, -(ZIVA_INITIAL_HISTORY_DAYS - 1))
       : dateSchema.parse(window.since.toISOString().slice(0, 10));
   return { startDate, endDate };

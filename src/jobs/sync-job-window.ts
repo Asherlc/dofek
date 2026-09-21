@@ -34,7 +34,8 @@ export function syncWindowFromTriggerInput(input: SyncWindowTriggerInput): SyncW
 
 export function syncWindowFromJobData(data: SyncJobData, now = SyncWindow.now()): SyncWindow {
   if (data.sinceIso && data.untilIso) {
-    return SyncWindow.fromIsoRange({ sinceIso: data.sinceIso, untilIso: data.untilIso });
+    const window = SyncWindow.fromIsoRange({ sinceIso: data.sinceIso, untilIso: data.untilIso });
+    return data.targetRefreshWindow?.type === "full" ? SyncWindow.full(window.until) : window;
   }
   if (data.sinceIso) {
     const since = new Date(data.sinceIso);
@@ -62,7 +63,7 @@ function targetRefreshWindowFor(
   if (sinceDays != null) {
     return { type: "days", days: sinceDays };
   }
-  if (window.since.getTime() === 0) {
+  if (window.kind === "full") {
     return { type: "full" };
   }
   return {
