@@ -217,9 +217,39 @@ describe("ZivaMcpClient", () => {
       },
     });
 
+    const error = await withClient(harness, (client) =>
+      client.getMealsForDate(EXPECTED_DATE),
+    ).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ZivaMcpMalformedResponseError);
+    expect(telemetryMocks.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "ZivaMcpMalformedResponseError",
+        message: "Ziva returned an invalid diary response.",
+      }),
+      {
+        tags: { provider: "ziva", mcpPhase: "parse_payload" },
+        extra: { reason: "encoding_mismatch" },
+      },
+    );
+    expect(JSON.stringify(telemetryMocks.captureException.mock.calls)).not.toContain(
+      "Different meal",
+    );
+  });
+
+  it("reports a missing structured or JSON payload as a sanitized malformed response", async () => {
+    const harness = createFakeZivaMcpHarness({ callResult: { content: [] } });
+
     await expect(
       withClient(harness, (client) => client.getMealsForDate(EXPECTED_DATE)),
     ).rejects.toBeInstanceOf(ZivaMcpMalformedResponseError);
+    expect(telemetryMocks.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "ZivaMcpMalformedResponseError" }),
+      {
+        tags: { provider: "ziva", mcpPhase: "parse_payload" },
+        extra: { reason: "missing_payload" },
+      },
+    );
   });
 
   it("rejects prose instead of inferring meal records from it", async () => {
@@ -238,6 +268,52 @@ describe("ZivaMcpClient", () => {
     expect(error).not.toHaveProperty("cause");
     expect(String(error)).not.toContain(privateProse);
     expect(harness.toolCalls).toHaveLength(1);
+    expect(telemetryMocks.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "ZivaMcpMalformedResponseError",
+        message: "Ziva returned an invalid diary response.",
+      }),
+      {
+        tags: { provider: "ziva", mcpPhase: "parse_payload" },
+        extra: { reason: "json" },
+      },
+    );
+    expect(telemetryMocks.captureException.mock.calls[0]?.[0]).not.toHaveProperty("cause");
+    expect(JSON.stringify(telemetryMocks.captureException.mock.calls)).not.toContain(privateProse);
+  });
+
+  it("reports schema-invalid meal payloads without retaining private payload data", async () => {
+    const privateFood = "private malformed meal description";
+    const harness = createFakeZivaMcpHarness({
+      callResult: structuredResult({
+        ...observedMealFixture,
+        meals: [
+          {
+            ...observedMealFixture.meals[0],
+            description: privateFood,
+            macros: { calories: 321 },
+          },
+        ],
+      }),
+    });
+
+    const error = await withClient(harness, (client) =>
+      client.getMealsForDate(EXPECTED_DATE),
+    ).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ZivaMcpMalformedResponseError);
+    expect(telemetryMocks.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "ZivaMcpMalformedResponseError",
+        message: "Ziva returned an invalid diary response.",
+      }),
+      {
+        tags: { provider: "ziva", mcpPhase: "parse_payload" },
+        extra: { reason: "schema" },
+      },
+    );
+    expect(telemetryMocks.captureException.mock.calls[0]?.[0]).not.toHaveProperty("cause");
+    expect(JSON.stringify(telemetryMocks.captureException.mock.calls)).not.toContain(privateFood);
   });
 
   it.each([
@@ -434,13 +510,14 @@ describe("ZivaMcpClient", () => {
   });
 
   it.each([
-    ["malformed MCP content", { content: "not-an-array" }],
+    ["malformed MCP content", { content: "not-an-array" }, "schema"],
     [
       "a malformed meal",
       structuredResult({
         ...observedMealFixture,
         meals: [{ ...observedMealFixture.meals[0], macros: { calories: 321 } }],
       }),
+      "schema",
     ],
     [
       "multiple JSON text candidates",
@@ -450,14 +527,22 @@ describe("ZivaMcpClient", () => {
           { type: "text", text: "{}" },
         ],
       },
+      "multiple_text_payloads",
     ],
-    ["an experimental task-shaped result", { toolResult: { meals: [] } }],
-  ])("rejects %s as a malformed response", async (_case, callResult) => {
+    ["an experimental task-shaped result", { toolResult: { meals: [] } }, "missing_payload"],
+  ] as const)("rejects %s as a malformed response", async (_case, callResult, reason) => {
     const harness = createFakeZivaMcpHarness({ callResult });
 
     await expect(
       withClient(harness, (client) => client.getMealsForDate(EXPECTED_DATE)),
     ).rejects.toBeInstanceOf(ZivaMcpMalformedResponseError);
+    expect(telemetryMocks.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "ZivaMcpMalformedResponseError" }),
+      {
+        tags: { provider: "ziva", mcpPhase: "parse_payload" },
+        extra: { reason },
+      },
+    );
   });
 
   it("enforces the bounded SDK request timeout and closes the pending transport", async () => {

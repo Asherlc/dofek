@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHmac } from "node:crypto";
 import { z } from "zod";
 
 type MealType = "breakfast" | "lunch" | "dinner" | "snack" | "other";
@@ -128,13 +128,11 @@ function parseLoggedAt(createdAt: string): Date | null {
 
 export function normalizeZivaMeal(
   meal: ZivaMealPayload["meals"][number],
-  identity: { userId: string; accountSubject: string },
+  identity: { sourceAccountKey: string },
 ): NormalizedZivaMeal {
-  const sourceAccountKey = createHash("sha256")
-    .update(`ziva\0${identity.userId}\0${identity.accountSubject}`)
-    .digest("hex");
-  const externalId = `meal:${createHash("sha256")
-    .update(`${sourceAccountKey}\0${meal.mealId}`)
+  const sourceAccountKey = identity.sourceAccountKey;
+  const externalId = `meal:${createHmac("sha256", sourceAccountKey)
+    .update(`ziva-meal\0${meal.mealId}`)
     .digest("hex")}`;
   const singletonItem = meal.items.length === 1 ? meal.items[0] : undefined;
 

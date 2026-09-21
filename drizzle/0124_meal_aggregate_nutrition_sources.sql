@@ -182,7 +182,7 @@ SELECT
     WHEN
       NULLIF(BTRIM(food.source_name), '') IS NOT NULL
       AND LOWER(BTRIM(food.source_name)) <> LOWER(provider.name)
-      THEN food.provider_id || ':' || BTRIM(food.source_name)
+      THEN food.provider_id || ':source-name:' || BTRIM(food.source_name)
     ELSE food.provider_id || ':provider'
   END AS source_key,
   CASE
@@ -305,7 +305,7 @@ decisions AS (
       WHEN
         grouped.itemized_source_count = 0
         AND grouped.meal_aggregate_source_count = 0
-          AND grouped.aggregate_source_count = 0
+        AND grouped.aggregate_source_count = 0
         AND grouped.ambiguous_source_count = 1
         AND grouped.ambiguous_entry_count = 1
         THEN 'ambiguous'

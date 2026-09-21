@@ -218,16 +218,16 @@ Add nullable `sourceAccountKey: text("source_account_key")` to `foodEntry` and `
 3. `CREATE OR REPLACE` `v_food_entry_effective`, preserving every current output column in order and appending `source.source_account_key` at the end;
 4. `CREATE OR REPLACE` `v_nutrition_entry_classification` with unchanged public columns but choose `source_key` in this order:
 
-```sql
-CASE
-  WHEN NULLIF(BTRIM(food.source_account_key), '') IS NOT NULL
-    THEN food.provider_id || ':account:' || BTRIM(food.source_account_key)
-  WHEN NULLIF(BTRIM(food.source_name), '') IS NOT NULL
-    AND LOWER(BTRIM(food.source_name)) <> LOWER(provider.name)
-    THEN food.provider_id || ':' || BTRIM(food.source_name)
-  ELSE food.provider_id || ':provider'
-END
-```
+   ```sql
+   CASE
+     WHEN NULLIF(BTRIM(food.source_account_key), '') IS NOT NULL
+       THEN food.provider_id || ':account:' || BTRIM(food.source_account_key)
+     WHEN NULLIF(BTRIM(food.source_name), '') IS NOT NULL
+       AND LOWER(BTRIM(food.source_name)) <> LOWER(provider.name)
+       THEN food.provider_id || ':source-name:' || BTRIM(food.source_name)
+     ELSE food.provider_id || ':provider'
+   END
+   ```
 
 5. `CREATE OR REPLACE` the complete current `v_nutrition_daily_resolution` definition with unchanged output columns, adding meal-aggregate source counts/keys and exact priority `itemized` → `meal_aggregate` → `daily_aggregate` → singleton `ambiguous`;
 6. `CREATE OR REPLACE` the complete current `v_nutrition_display_entry` definition with unchanged output columns and a provider-neutral filter that includes both `itemized` and `meal_aggregate`, while continuing to exclude `daily_aggregate` and `ambiguous` records.
@@ -349,7 +349,7 @@ rtk git push
 
 **Interfaces:**
 - Consumes: the sanitized authenticated result documented in the spec.
-- Produces: `parseZivaMealPayload(value, { expectedDate }): ZivaMealPayload` and `normalizeZivaMeal(meal, { userId, accountSubject }): NormalizedZivaMeal`.
+- Produces: `parseZivaMealPayload(value, { expectedDate }): ZivaMealPayload` and `normalizeZivaMeal(meal, { sourceAccountKey }): NormalizedZivaMeal`.
 
 The normalized shape is:
 
@@ -416,7 +416,7 @@ the only imported nutrient source. Clearly synthetic `perServingMacros` and
 rows or scaling inputs; a response that contains only either unsupported basis
 and omits the complete observed whole-meal macro set is rejected.
 
-Assert identity derivation is stable for the same `(Dofek user, Ziva subject, mealId)`, differs for a second Dofek user or second Ziva subject with the same `mealId`, and stores neither the raw subject nor raw meal ID in `externalId`/`sourceAccountKey`.
+Assert the credential data-access layer derives a stable account namespace for the same `(Dofek user, provider, Ziva subject)`, differs for a second user, provider, or subject, and exposes neither the raw subject nor raw meal ID in `externalId`/`sourceAccountKey`.
 
 - [ ] **Step 4: Run tests and observe module-not-found failure**
 
@@ -426,14 +426,11 @@ rtk pnpm vitest run --project unit src/providers/ziva/schemas.test.ts
 
 - [ ] **Step 5: Implement strict observed schemas and normalization**
 
-Use `.passthrough()` at provider objects so unknown fields survive in `raw`, but validate every consumed field. Parse the complete response first, then reject duplicate meal IDs or any meal date other than the caller's validated expected date before returning it. Require each verified macro field to be a finite nonnegative number and emit all four rows, preserving exact zero. Account-scope identity with separate deterministic digests:
+Use `.passthrough()` at provider objects so unknown fields survive in `raw`, but validate every consumed field. Parse the complete response first, then reject duplicate meal IDs or any meal date other than the caller's validated expected date before returning it. Require each verified macro field to be a finite nonnegative number and emit all four rows, preserving exact zero. The credential data-access layer derives a secret-keyed, tenant-scoped `sourceAccountKey`; normalization uses it to derive the meal ID without receiving the raw account subject:
 
 ```ts
-const sourceAccountKey = createHash("sha256")
-  .update(`ziva\0${userId}\0${accountSubject}`)
-  .digest("hex");
-const externalId = `meal:${createHash("sha256")
-  .update(`${sourceAccountKey}\0${meal.mealId}`)
+const externalId = `meal:${createHmac("sha256", sourceAccountKey)
+  .update(`ziva-meal\0${meal.mealId}`)
   .digest("hex")}`;
 ```
 

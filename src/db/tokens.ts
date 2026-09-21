@@ -2,6 +2,7 @@ import { and, eq, type SQLWrapper, sql } from "drizzle-orm";
 import type { TokenSet } from "../auth/oauth.ts";
 import {
   decryptCredentialValue,
+  deriveCredentialIdentifier,
   encryptCredentialValue,
 } from "../security/credential-encryption.ts";
 import type { SyncDatabase } from "./index.ts";
@@ -32,6 +33,22 @@ function oauthTokenContext(
     columnName,
     scopeId: `${scopedUserId}:${providerId}`,
   };
+}
+
+export function deriveProviderAccountKey(
+  providerId: string,
+  providerAccountId: string,
+  userId?: string,
+): string {
+  const scopedUserId = resolveUserId(userId);
+  const normalizedProviderAccountId = providerAccountId.trim();
+  if (!normalizedProviderAccountId) {
+    throw new Error("OAuth provider account ID must not be empty");
+  }
+  return deriveCredentialIdentifier(
+    normalizedProviderAccountId,
+    oauthTokenContext(scopedUserId, providerId, "provider_account_id"),
+  );
 }
 
 interface ProviderEnsureDatabase {

@@ -107,11 +107,11 @@ from entering the later remote-revocation phase with an impossible contract.
 
 The verified access-token `sub` is the provider account subject. Dofek validates
 the observed issuer and audience, stores `sub` as the encrypted
-`providerAccountId`, and namespaces source record keys with an opaque
-deterministic digest of it. Reconnecting one Dofek user to a different Ziva
-account therefore cannot overwrite records from the former account. Account
-identity is never shared across users or stored in raw external IDs as an email
-address.
+`providerAccountId`, and has the credential data-access layer namespace source
+record keys with a secret-keyed deterministic identifier derived from it.
+Reconnecting one Dofek user to a different Ziva account therefore cannot
+overwrite records from the former account. Account identity is never shared
+across users or stored in raw external IDs as an email address.
 
 ## MCP client boundary
 

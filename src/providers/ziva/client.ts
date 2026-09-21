@@ -159,6 +159,23 @@ function sanitizedProviderHttpError(
   });
 }
 
+type MalformedResponseReason =
+  | "encoding_mismatch"
+  | "json"
+  | "mcp_result"
+  | "missing_payload"
+  | "multiple_text_payloads"
+  | "schema";
+
+function malformedResponse(reason: MalformedResponseReason): ZivaMcpMalformedResponseError {
+  const sanitizedError = new ZivaMcpMalformedResponseError();
+  captureException(sanitizedError, {
+    tags: { provider: "ziva", mcpPhase: "parse_payload" },
+    extra: { reason },
+  });
+  return sanitizedError;
+}
+
 function throwClassifiedRequestError(
   error: unknown,
   signal: AbortSignal | undefined,
@@ -206,7 +223,7 @@ function throwClassifiedRequestError(
     throw sanitizedError;
   }
   if (isZodValidationError(error)) {
-    throw new ZivaMcpMalformedResponseError();
+    throw malformedResponse("schema");
   }
 
   const sanitizedError = new ZivaMcpTransportError();
@@ -221,7 +238,7 @@ function parsePayload(value: unknown, expectedDate: string): ZivaMealPayload {
   try {
     return parseZivaMealPayload(value, { expectedDate });
   } catch {
-    throw new ZivaMcpMalformedResponseError();
+    throw malformedResponse("schema");
   }
 }
 
@@ -230,7 +247,7 @@ function parseTextPayload(text: string, expectedDate: string): ZivaMealPayload {
   try {
     value = JSON.parse(text);
   } catch {
-    throw new ZivaMcpMalformedResponseError();
+    throw malformedResponse("json");
   }
   return parsePayload(value, expectedDate);
 }
@@ -388,7 +405,7 @@ export class ZivaMcpClient {
     }
 
     if (!isCallToolResult(result)) {
-      throw new ZivaMcpMalformedResponseError();
+      throw malformedResponse("mcp_result");
     }
     if (result.isError === true) {
       throw new ZivaMcpToolError();
@@ -399,7 +416,7 @@ export class ZivaMcpClient {
         content.type === "text",
     );
     if (textBlocks.length > 1) {
-      throw new ZivaMcpMalformedResponseError();
+      throw malformedResponse("multiple_text_payloads");
     }
 
     const structuredPayload =
@@ -411,13 +428,13 @@ export class ZivaMcpClient {
 
     if (structuredPayload && textPayload) {
       if (!isDeepStrictEqual(structuredPayload, textPayload)) {
-        throw new ZivaMcpMalformedResponseError();
+        throw malformedResponse("encoding_mismatch");
       }
       return structuredPayload;
     }
     if (structuredPayload) return structuredPayload;
     if (textPayload) return textPayload;
-    throw new ZivaMcpMalformedResponseError();
+    throw malformedResponse("missing_payload");
   }
 
   async close(): Promise<void> {

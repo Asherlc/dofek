@@ -174,6 +174,22 @@ describe("sync job window adapter", () => {
 
     expect(window.since.toISOString()).toBe("2026-06-10T00:00:00.000Z");
     expect(window.until).toEqual(now);
+    expect(window.kind).toBe("bounded");
+  });
+
+  it("syncWindowFromJobData preserves full kind for an open-ended persisted window", () => {
+    const window = syncWindowFromJobData(
+      {
+        userId: "user-1",
+        sinceIso: "1970-01-01T00:00:00.000Z",
+        targetRefreshWindow: { type: "full" },
+      },
+      now,
+    );
+
+    expect(window.since.toISOString()).toBe("1970-01-01T00:00:00.000Z");
+    expect(window.until).toEqual(now);
+    expect(window.kind).toBe("full");
   });
 
   it("syncWindowFromJobData rejects invalid persisted since timestamps", () => {

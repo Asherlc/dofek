@@ -21,6 +21,7 @@ import { createFakeZivaMcpHarness, type FakeZivaMcpHarness } from "./test-helper
 
 vi.mock("../../db/tokens.ts", () => ({
   deleteTokens: vi.fn(),
+  deriveProviderAccountKey: vi.fn(),
   loadTokens: vi.fn(),
   saveTokens: vi.fn(),
 }));
@@ -33,11 +34,14 @@ vi.mock("../../lib/error-reporting.ts", () => ({
   captureException: vi.fn(),
 }));
 
-const { deleteTokens, loadTokens, saveTokens } = await import("../../db/tokens.ts");
+const { deleteTokens, deriveProviderAccountKey, loadTokens, saveTokens } = await import(
+  "../../db/tokens.ts"
+);
 const { captureException } = await import("../../lib/error-reporting.ts");
 const { upsertZivaMealsForDate } = await import("./nutrition-writer.ts");
 
 const mockDeleteTokens = vi.mocked(deleteTokens);
+const mockDeriveProviderAccountKey = vi.mocked(deriveProviderAccountKey);
 const mockLoadTokens = vi.mocked(loadTokens);
 const mockSaveTokens = vi.mocked(saveTokens);
 const mockCaptureException = vi.mocked(captureException);
@@ -281,6 +285,9 @@ describe("ZivaProvider", () => {
     mockLoadTokens.mockResolvedValue(tokenSet());
     mockSaveTokens.mockResolvedValue(undefined);
     mockDeleteTokens.mockResolvedValue(undefined);
+    mockDeriveProviderAccountKey.mockImplementation(
+      (_providerId, accountSubject, userId) => `${userId}:${accountSubject}`,
+    );
     mockUpsertZivaMealsForDate.mockImplementation(async (_db, _userId, meals) => meals.length);
   });
 
@@ -896,5 +903,9 @@ describe("ZivaProvider", () => {
     expect(secondProtocol.harness.bearerHeaders).not.toContain(`Bearer ${firstTokens.accessToken}`);
     expect(firstProtocol.harness.jsonRpcMethods[0]).toBe("initialize");
     expect(secondProtocol.harness.jsonRpcMethods[0]).toBe("initialize");
+    expect(mockDeriveProviderAccountKey).toHaveBeenCalledWith("ziva", "subject-a", "user-a");
+    expect(mockDeriveProviderAccountKey).toHaveBeenCalledWith("ziva", "subject-b", "user-b");
+    const [firstWrite, secondWrite] = mockUpsertZivaMealsForDate.mock.calls;
+    expect(firstWrite?.[2][0]?.sourceAccountKey).not.toBe(secondWrite?.[2][0]?.sourceAccountKey);
   });
 });

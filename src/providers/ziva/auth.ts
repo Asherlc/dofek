@@ -15,7 +15,9 @@ const zivaAccessTokenClaimsSchema = z.object({
   iss: z.literal(ZIVA_ISSUER),
   aud: z.union([
     z.literal(ZIVA_RESOURCE),
-    z.array(z.string()).refine((audience) => audience.includes(ZIVA_RESOURCE)),
+    z
+      .array(z.string())
+      .refine((audience) => audience.some((candidate) => candidate === ZIVA_RESOURCE)),
   ]),
   sub: z.string().trim().min(1),
 });

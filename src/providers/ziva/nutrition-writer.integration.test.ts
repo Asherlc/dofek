@@ -308,7 +308,7 @@ describe.sequential("upsertZivaMealsForDate", () => {
     const parseNormalizeAndWrite = async () => {
       const parsed = parseZivaMealPayload(payload, { expectedDate: TEST_DATE });
       const normalized = parsed.meals.map((meal) =>
-        normalizeZivaMeal(meal, { userId, accountSubject: "subject-a" }),
+        normalizeZivaMeal(meal, { sourceAccountKey: "opaque-account-key-a" }),
       );
       return upsertZivaMealsForDate(context.db, userId, normalized);
     };

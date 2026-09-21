@@ -42,7 +42,11 @@ export function syncWindowFromJobData(data: SyncJobData, now = SyncWindow.now())
     if (Number.isNaN(since.getTime())) {
       throw new Error(`Invalid sync job sinceIso: ${data.sinceIso}`);
     }
-    return new SyncWindow({ since: since, until: now });
+    return new SyncWindow({
+      since,
+      until: now,
+      kind: data.targetRefreshWindow?.type === "full" ? "full" : "bounded",
+    });
   }
   return syncWindowFromTriggerInput({ sinceDays: data.sinceDays, now });
 }

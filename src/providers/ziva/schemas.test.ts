@@ -21,9 +21,8 @@ function firstParsedMeal(value: unknown = observedMealFixture) {
 
 function normalizeFirstMeal(
   value: unknown = observedMealFixture,
-  identity: { userId: string; accountSubject: string } = {
-    userId: "user-alpha",
-    accountSubject: "subject-alpha",
+  identity: { sourceAccountKey: string } = {
+    sourceAccountKey: "opaque-account-key-a",
   },
 ) {
   return normalizeZivaMeal(firstParsedMeal(value), identity);
@@ -337,8 +336,7 @@ describe("normalizeZivaMeal", () => {
   it("treats daily targets and instructions as inert top-level metadata", () => {
     const payload = parsePayload();
     const normalized = normalizeZivaMeal(payload.meals[0] ?? BASE_MEAL, {
-      userId: "user-alpha",
-      accountSubject: "subject-alpha",
+      sourceAccountKey: "opaque-account-key-a",
     });
 
     expect(payload).toHaveProperty("dailyTargets");
@@ -388,39 +386,34 @@ describe("normalizeZivaMeal", () => {
     },
   );
 
-  it("derives exact stable tenant/account/meal digests without exposing raw identifiers", () => {
+  it("derives a stable meal digest within the supplied opaque account namespace", () => {
     const first = normalizeFirstMeal();
     const repeated = normalizeFirstMeal();
     const secondUser = normalizeFirstMeal(observedMealFixture, {
-      userId: "user-beta",
-      accountSubject: "subject-alpha",
+      sourceAccountKey: "opaque-account-key-b",
     });
     const secondAccount = normalizeFirstMeal(observedMealFixture, {
-      userId: "user-alpha",
-      accountSubject: "subject-beta",
+      sourceAccountKey: "opaque-account-key-c",
     });
 
-    expect(first.sourceAccountKey).toBe(
-      "8db0d5bc1cbf4da8a5240b19759f521aab47e48ee40d001848947f1ecb9f91a6",
-    );
+    expect(first.sourceAccountKey).toBe("opaque-account-key-a");
     expect(first.externalId).toBe(
-      "meal:e928b8d793993fff487acfc1730df73f09e1a31499f8b174a2aeb88f40612b65",
+      "meal:b1a6117a00cbfa7a82c84bf678847a73eb58c4944bf0d5e5c9d934de13c33651",
     );
     expect(repeated).toMatchObject({
       sourceAccountKey: first.sourceAccountKey,
       externalId: first.externalId,
     });
     expect(secondUser).toMatchObject({
-      sourceAccountKey: "c44b961f5c476b949fe8fc308dec1b578aa6f7f10b8762c2a5260a39056361e0",
-      externalId: "meal:59b018bdc2287c04881600d2fe6d1b59f02a32690ab9be4475ca8c51dc96193b",
+      sourceAccountKey: "opaque-account-key-b",
+      externalId: "meal:390eba6f910576161e2135f81278d2b223a5bf1b529dc8014754fd7cf143c1c1",
     });
     expect(secondAccount).toMatchObject({
-      sourceAccountKey: "5867d106b11ca96dc4304dfc554fd57888dbe697bac46625855c611be6ec7ed1",
-      externalId: "meal:b8c49fff437ede1001b2a1664522bda2caa0a83f870af004f762a320e3c1395c",
+      sourceAccountKey: "opaque-account-key-c",
+      externalId: "meal:9784eed929b9c3cebcc8e4747c85eecbcf6a177ecb66fe5c8ba6bf9692980042",
     });
     expect(secondUser.externalId).not.toBe(first.externalId);
     expect(secondAccount.externalId).not.toBe(first.externalId);
-    expect(first.sourceAccountKey).not.toContain("subject-alpha");
     expect(first.externalId).not.toContain("meal_sanitized_001");
   });
 });

@@ -155,6 +155,22 @@ describe("Ziva OAuth token identity", () => {
       "the wrong audience",
       jwt({ iss: ZIVA_ISSUER, aud: "https://other.example/resource", sub: "stable-ziva-subject" }),
     ],
+    [
+      "an audience with the resource only as a substring",
+      jwt({
+        iss: ZIVA_ISSUER,
+        aud: [`https://attacker.example/${ZIVA_RESOURCE}`],
+        sub: "stable-ziva-subject",
+      }),
+    ],
+    [
+      "an audience with a deceptive resource prefix",
+      jwt({
+        iss: ZIVA_ISSUER,
+        aud: [`${ZIVA_RESOURCE}.attacker.example`],
+        sub: "stable-ziva-subject",
+      }),
+    ],
     ["a blank subject", jwt({ iss: ZIVA_ISSUER, aud: ZIVA_RESOURCE, sub: "   " })],
     ["a missing subject", jwt({ iss: ZIVA_ISSUER, aud: ZIVA_RESOURCE })],
   ])("rejects %s returned by the fixed token endpoint", async (_case, accessToken) => {

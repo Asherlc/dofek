@@ -6,7 +6,7 @@ import {
 import type { TokenSet } from "../../auth/oauth.ts";
 import { resolveOAuthTokens } from "../../auth/resolve-tokens.ts";
 import type { Database, SyncDatabase } from "../../db/index.ts";
-import { deleteTokens } from "../../db/tokens.ts";
+import { deleteTokens, deriveProviderAccountKey } from "../../db/tokens.ts";
 import { captureException } from "../../lib/error-reporting.ts";
 import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import {
@@ -225,6 +225,9 @@ export class ZivaProvider implements SyncProvider {
 
       if (!terminalFailure) {
         if (!tokens) throw new Error("Ziva token resolution completed without credentials");
+        const accountSubject = tokens.providerAccountId?.trim();
+        if (!accountSubject) throw new Error("Ziva resolved credentials have no account identity");
+        const sourceAccountKey = deriveProviderAccountKey(this.id, accountSubject, userId);
         for (const [index, date] of chunk.dates.entries()) {
           let payload: Awaited<ReturnType<ZivaMcpClient["getMealsForDate"]>>;
           try {
@@ -237,11 +240,8 @@ export class ZivaProvider implements SyncProvider {
             break;
           }
 
-          const accountSubject = tokens?.providerAccountId;
-          if (!accountSubject)
-            throw new Error("Ziva resolved credentials have no account identity");
           const normalizedMeals = payload.meals.map((meal) =>
-            normalizeZivaMeal(meal, { userId, accountSubject }),
+            normalizeZivaMeal(meal, { sourceAccountKey }),
           );
           const committed = await upsertZivaMealsForDate(db, userId, normalizedMeals);
           recordsSynced += committed;
