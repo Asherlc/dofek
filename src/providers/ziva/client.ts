@@ -306,6 +306,7 @@ function createConnectLifecycle(callerSignal: AbortSignal | undefined): ConnectL
 
 export class ZivaMcpClient {
   readonly #client: Client;
+  readonly #activeCallSignals = new Set<AbortSignal>();
 
   constructor(client: Client) {
     this.#client = client;
@@ -318,13 +319,18 @@ export class ZivaMcpClient {
 
     const lifecycle = createConnectLifecycle(options.signal);
     const rateLimitFetch = createProviderRateLimitFetch("ziva", options.fetchFn);
+    const sdkClient = new Client({ name: "dofek-ziva", version: "0.1.0" }, { capabilities: {} });
+    const client = new ZivaMcpClient(sdkClient);
     const fetchWithConnectAbort: typeof globalThis.fetch = (input, init) => {
-      const requestSignal = init?.signal;
-      const signal =
-        requestSignal == null
-          ? lifecycle.signal
-          : AbortSignal.any([lifecycle.signal, requestSignal]);
-      return rateLimitFetch(input, { ...init, signal });
+      const signals: AbortSignal[] = [lifecycle.signal];
+      if (init?.signal != null) signals.push(init.signal);
+      for (const callSignal of client.#activeCallSignals) {
+        signals.push(callSignal);
+      }
+      return rateLimitFetch(input, {
+        ...init,
+        signal: signals.length === 1 ? signals[0] : AbortSignal.any(signals),
+      });
     };
     const transport = new StreamableHTTPClientTransport(ZIVA_MCP_ENDPOINT, {
       fetch: fetchWithConnectAbort,
@@ -332,8 +338,6 @@ export class ZivaMcpClient {
         headers: { Authorization: `Bearer ${options.accessToken}` },
       },
     });
-    const sdkClient = new Client({ name: "dofek-ziva", version: "0.1.0" }, { capabilities: {} });
-    const client = new ZivaMcpClient(sdkClient);
 
     try {
       const connect = (async () => {
@@ -401,15 +405,19 @@ export class ZivaMcpClient {
     options: ZivaMcpRequestOptions = {},
   ): Promise<ZivaMealPayload> {
     validateRequestedDate(date);
+    const callSignal = options.signal;
+    if (callSignal) this.#activeCallSignals.add(callSignal);
     let result: unknown;
     try {
       result = await this.#client.callTool(
         { name: ZIVA_MEAL_TOOL, arguments: { start_date: date } },
         undefined,
-        { timeout: MCP_OPERATION_TIMEOUT_MS, signal: options.signal },
+        { timeout: MCP_OPERATION_TIMEOUT_MS, signal: callSignal },
       );
     } catch (error) {
-      throwClassifiedRequestError(error, options.signal, "call_tool");
+      throwClassifiedRequestError(error, callSignal, "call_tool");
+    } finally {
+      if (callSignal) this.#activeCallSignals.delete(callSignal);
     }
 
     if (!isCallToolResult(result)) {

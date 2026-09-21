@@ -501,7 +501,7 @@ describe("ZivaProvider", () => {
     expect(checkpoint.saved).toEqual([]);
     expect(checkpoint.clearCount).toBe(0);
     expect(harness.toolCalls).toEqual([]);
-    expect(harness.transportClosed).toBe(true);
+    await vi.waitFor(() => expect(harness.transportClosed).toBe(true));
   });
 
   it("returns cumulative committed count when cancelled after a date write", async () => {
