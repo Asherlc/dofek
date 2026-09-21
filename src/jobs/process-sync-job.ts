@@ -614,11 +614,11 @@ export async function processSyncJob(
         syncErrorsTotal.add(result.errors.length, { provider: provider.id, data_type: "sync" });
       }
     } catch (err: unknown) {
-      signal?.throwIfAborted();
       if (recordingCanonicalCommit) {
         captureException(err, { tags: { provider: provider.id, phase: "canonical-commit" } });
         throw err;
       }
+      signal?.throwIfAborted();
       if (err instanceof ProviderRateLimitError) {
         const retryAt = await scheduleRateLimitRetry(db, job, err, since, until, signal);
         const message = `Rate limited; retry scheduled for ${retryAt}`;

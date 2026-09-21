@@ -670,6 +670,24 @@ describe("processSyncJob", () => {
     expect(mockEnqueueDebouncedPostSyncMaintenance).not.toHaveBeenCalled();
   });
 
+  it("reports abort during relational canonical commit as a canonical-commit failure", async () => {
+    const controller = new AbortController();
+    const reason = new DOMException("queue cancelled during canonical commit", "AbortError");
+    mockGetEnabledSyncProviders.mockReturnValue([
+      createMockProvider({ processingDatasetKeys: ["activity"] }),
+    ]);
+    mockRecordRelationalCanonicalCommits.mockImplementationOnce(async () => {
+      controller.abort(reason);
+      throw reason;
+    });
+
+    await expect(runSyncJob(createMockJob(), mockDb, controller.signal)).rejects.toBe(reason);
+    expect(mockCaptureException).toHaveBeenCalledWith(reason, {
+      tags: { phase: "canonical-commit", provider: "test-provider" },
+    });
+    expect(mockEnqueueDebouncedPostSyncMaintenance).not.toHaveBeenCalled();
+  });
+
   it("does not classify later failures as canonical commit failures", async () => {
     const error = new Error("Output manifest unavailable");
     mockGetEnabledSyncProviders.mockReturnValue([

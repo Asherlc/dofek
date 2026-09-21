@@ -1496,8 +1496,11 @@ describe("syncRouter", () => {
         timezone: "UTC",
       });
 
-      await caller.triggerSync({ providerId: "wahoo", sinceDays: 7 });
-      vi.useRealTimers();
+      try {
+        await caller.triggerSync({ providerId: "wahoo", sinceDays: 7 });
+      } finally {
+        vi.useRealTimers();
+      }
 
       expect(mockAdd).toHaveBeenCalledWith(
         "sync",
