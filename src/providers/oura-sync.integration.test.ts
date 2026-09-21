@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { activity, dailyMetrics, sleepSession } from "../db/schema/activity.ts";
+import { activity, sleepSession } from "../db/schema/activity.ts";
 import { healthEvent } from "../db/schema/clinical.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
@@ -10,19 +10,13 @@ import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { OuraProvider } from "./oura/provider.ts";
 import type {
   OuraDailyActivity,
-  OuraDailyCardiovascularAge,
-  OuraDailyReadiness,
-  OuraDailyResilience,
   OuraDailySpO2,
-  OuraDailyStress,
   OuraEnhancedTag,
   OuraHeartRate,
   OuraRestModePeriod,
   OuraSession,
   OuraSleepDocument,
-  OuraSleepTime,
   OuraTag,
-  OuraVO2Max,
   OuraWorkout,
 } from "./oura/schemas.ts";
 import { SyncRun } from "./sync-run.ts";
@@ -61,15 +55,6 @@ function fakeSpO2(): OuraDailySpO2 {
   };
 }
 
-function fakeVO2Max(): OuraVO2Max {
-  return {
-    id: "vo2max-001",
-    day: "2026-03-01",
-    timestamp: "2026-03-01T08:00:00",
-    vo2_max: 42.5,
-  };
-}
-
 function fakeWorkout(): OuraWorkout {
   return {
     id: "workout-001",
@@ -102,29 +87,6 @@ function fakeSession(): OuraSession {
     type: "meditation",
     mood: "good",
   };
-}
-
-function fakeDailyStress(): OuraDailyStress {
-  return {
-    id: "stress-001",
-    day: "2026-03-01",
-    stress_high: 3600,
-    recovery_high: 7200,
-    day_summary: "normal",
-  };
-}
-
-function fakeDailyResilience(): OuraDailyResilience {
-  return {
-    id: "resilience-001",
-    day: "2026-03-01",
-    contributors: { sleep_recovery: 80, daytime_recovery: 75, stress: 70 },
-    level: "solid",
-  };
-}
-
-function fakeCardiovascularAge(): OuraDailyCardiovascularAge {
-  return { day: "2026-03-01", vascular_age: 35 };
 }
 
 function fakeTag(): OuraTag {
@@ -160,90 +122,15 @@ function fakeRestMode(): OuraRestModePeriod {
   };
 }
 
-function fakeSleepTime(): OuraSleepTime {
-  return {
-    id: "sleeptime-001",
-    day: "2026-03-01",
-    optimal_bedtime: { day_tz: -28800, end_offset: 82800, start_offset: 79200 },
-    recommendation: "follow_optimal_bedtime",
-    status: "optimal_found",
-  };
-}
-
-function fakeReadiness(): OuraDailyReadiness {
-  return {
-    id: "readiness-001",
-    day: "2026-03-01",
-    score: 82,
-    temperature_deviation: -0.15,
-    temperature_trend_deviation: 0.05,
-    contributors: {
-      resting_heart_rate: 85,
-      hrv_balance: 78,
-      body_temperature: 90,
-      recovery_index: 72,
-      sleep_balance: 80,
-      previous_night: 88,
-      previous_day_activity: 75,
-      activity_balance: 82,
-    },
-  };
-}
-
-function fakeOuraActivity(): OuraDailyActivity {
-  return {
-    id: "activity-001",
-    day: "2026-03-01",
-    steps: 9500,
-    active_calories: 450,
-    equivalent_walking_distance: 8200,
-    high_activity_time: 2700,
-    medium_activity_time: 1800,
-    low_activity_time: 7200,
-    resting_time: 50400,
-    sedentary_time: 28800,
-    total_calories: 2300,
-  };
-}
-
-function fakeStress(): OuraDailyStress {
-  return {
-    id: "stress-dm-001",
-    day: "2026-03-01",
-    stress_high: 5400, // 90 min
-    recovery_high: 10800, // 180 min
-    day_summary: "restored",
-  };
-}
-
-function fakeResilience(): OuraDailyResilience {
-  return {
-    id: "resilience-dm-001",
-    day: "2026-03-01",
-    level: "solid",
-    contributors: {
-      sleep_recovery: 85,
-      daytime_recovery: 72,
-      stress: 68,
-    },
-  };
-}
-
 interface MockFetchOptions {
   sleepDocs?: OuraSleepDocument[];
   spo2Docs?: OuraDailySpO2[];
-  vo2MaxDocs?: OuraVO2Max[];
   workoutDocs?: OuraWorkout[];
   heartRateDocs?: OuraHeartRate[];
   sessionDocs?: OuraSession[];
-  stressDocs?: OuraDailyStress[];
-  resilienceDocs?: OuraDailyResilience[];
-  cvAgeDocs?: OuraDailyCardiovascularAge[];
   tagDocs?: OuraTag[];
   enhancedTagDocs?: OuraEnhancedTag[];
   restModeDocs?: OuraRestModePeriod[];
-  sleepTimeDocs?: OuraSleepTime[];
-  readinessDocs?: OuraDailyReadiness[];
   activityDocs?: OuraDailyActivity[];
 }
 
@@ -261,23 +148,14 @@ function ouraHandlers(opts?: MockFetchOptions) {
     }),
 
     // Order matters: more specific paths before less specific ones
-    http.get("https://api.ouraring.com/v2/usercollection/sleep_time", () => {
-      return HttpResponse.json({ data: options.sleepTimeDocs ?? [], next_token: null });
-    }),
     http.get("https://api.ouraring.com/v2/usercollection/sleep", () => {
       return HttpResponse.json({ data: options.sleepDocs ?? [], next_token: null });
-    }),
-    http.get("https://api.ouraring.com/v2/usercollection/daily_readiness", () => {
-      return HttpResponse.json({ data: options.readinessDocs ?? [], next_token: null });
     }),
     http.get("https://api.ouraring.com/v2/usercollection/daily_activity", () => {
       return HttpResponse.json({ data: options.activityDocs ?? [], next_token: null });
     }),
     http.get("https://api.ouraring.com/v2/usercollection/daily_spo2", () => {
       return HttpResponse.json({ data: options.spo2Docs ?? [], next_token: null });
-    }),
-    http.get("https://api.ouraring.com/v2/usercollection/vO2_max", () => {
-      return HttpResponse.json({ data: options.vo2MaxDocs ?? [], next_token: null });
     }),
     http.get("https://api.ouraring.com/v2/usercollection/workout", () => {
       return HttpResponse.json({ data: options.workoutDocs ?? [], next_token: null });
@@ -287,15 +165,6 @@ function ouraHandlers(opts?: MockFetchOptions) {
     }),
     http.get("https://api.ouraring.com/v2/usercollection/session", () => {
       return HttpResponse.json({ data: options.sessionDocs ?? [], next_token: null });
-    }),
-    http.get("https://api.ouraring.com/v2/usercollection/daily_stress", () => {
-      return HttpResponse.json({ data: options.stressDocs ?? [], next_token: null });
-    }),
-    http.get("https://api.ouraring.com/v2/usercollection/daily_resilience", () => {
-      return HttpResponse.json({ data: options.resilienceDocs ?? [], next_token: null });
-    }),
-    http.get("https://api.ouraring.com/v2/usercollection/daily_cardiovascular_age", () => {
-      return HttpResponse.json({ data: options.cvAgeDocs ?? [], next_token: null });
     }),
     http.get("https://api.ouraring.com/v2/usercollection/enhanced_tag", () => {
       return HttpResponse.json({ data: options.enhancedTagDocs ?? [], next_token: null });
@@ -353,17 +222,12 @@ describe("OuraProvider.sync() (integration)", () => {
           fakeSleepDoc({ id: "sleep-nap-001", type: "rest", total_sleep_duration: 1500 }),
         ],
         spo2Docs: [fakeSpO2()],
-        vo2MaxDocs: [fakeVO2Max()],
         workoutDocs: [fakeWorkout()],
         heartRateDocs: [fakeHeartRate()],
         sessionDocs: [fakeSession()],
-        stressDocs: [fakeDailyStress()],
-        resilienceDocs: [fakeDailyResilience()],
-        cvAgeDocs: [fakeCardiovascularAge()],
         tagDocs: [fakeTag()],
         enhancedTagDocs: [fakeEnhancedTag()],
         restModeDocs: [fakeRestMode()],
-        sleepTimeDocs: [fakeSleepTime()],
       }),
     );
 
@@ -417,19 +281,6 @@ describe("OuraProvider.sync() (integration)", () => {
       .from(healthEvent)
       .where(eq(healthEvent.providerId, "oura"));
 
-    const stressEvent = eventRows.find((e) => e.type === "oura_daily_stress");
-    expect(stressEvent).toBeDefined();
-    expect(stressEvent?.value).toBe(3600);
-    expect(stressEvent?.valueText).toBe("normal");
-
-    const resilienceEvent = eventRows.find((e) => e.type === "oura_daily_resilience");
-    expect(resilienceEvent).toBeDefined();
-    expect(resilienceEvent?.valueText).toBe("solid");
-
-    const cvAgeEvent = eventRows.find((e) => e.type === "oura_cardiovascular_age");
-    expect(cvAgeEvent).toBeDefined();
-    expect(cvAgeEvent?.value).toBe(35);
-
     const tagEvent = eventRows.find((e) => e.type === "oura_tag");
     expect(tagEvent).toBeDefined();
     expect(tagEvent?.valueText).toContain("tag_generic_stress");
@@ -440,52 +291,6 @@ describe("OuraProvider.sync() (integration)", () => {
 
     const restModeEvent = eventRows.find((e) => e.type === "oura_rest_mode");
     expect(restModeEvent).toBeDefined();
-
-    const sleepTimeEvent = eventRows.find((e) => e.type === "oura_sleep_time");
-    expect(sleepTimeEvent).toBeDefined();
-    expect(sleepTimeEvent?.valueText).toBe("follow_optimal_bedtime");
-  });
-
-  it("syncs stress and resilience data into daily metrics", async () => {
-    await saveTokens(ctx.db, "oura", {
-      accessToken: "valid-token",
-      refreshToken: "valid-refresh",
-      expiresAt: new Date("2027-01-01T00:00:00Z"),
-      scopes: "daily heartrate personal session spo2 workout",
-    });
-
-    const since = new Date("2026-03-01T00:00:00Z");
-
-    server.use(
-      ...ouraHandlers({
-        readinessDocs: [fakeReadiness()],
-        activityDocs: [fakeOuraActivity()],
-        stressDocs: [fakeStress()],
-        resilienceDocs: [fakeResilience()],
-      }),
-    );
-
-    const provider = new OuraProvider();
-    const result = await provider.sync(
-      new SyncRun({
-        db: ctx.db,
-        window: SyncWindow.fromSince({ since: since }),
-        metricStreamPublisher: metricStreamCapture.publisher,
-      }),
-    );
-
-    expect(result.errors).toHaveLength(0);
-
-    const dailyRows = await ctx.db
-      .select()
-      .from(dailyMetrics)
-      .where(eq(dailyMetrics.providerId, "oura"));
-
-    const daily = dailyRows.find((r) => r.date === "2026-03-01");
-    if (!daily) throw new Error("expected daily metrics for 2026-03-01");
-    expect(daily.stressHighMinutes).toBe(90);
-    expect(daily.recoveryHighMinutes).toBe(180);
-    expect(daily.resilienceLevel).toBe("solid");
   });
 
   it("upserts on re-sync (no duplicates)", async () => {
@@ -502,7 +307,6 @@ describe("OuraProvider.sync() (integration)", () => {
       ...ouraHandlers({
         sleepDocs: [fakeSleepDoc({ id: "sleep-001" })],
         workoutDocs: [fakeWorkout()],
-        stressDocs: [fakeDailyStress()],
       }),
     );
 
@@ -594,11 +398,6 @@ function ouraErrorHandlers(opts: { sleepError?: boolean }) {
         expires_in: 86400,
         token_type: "Bearer",
       });
-    }),
-
-    // Sleep time (must come before sleep)
-    http.get("https://api.ouraring.com/v2/usercollection/sleep_time", () => {
-      return HttpResponse.json({ data: [], next_token: null });
     }),
 
     // Sleep — error or empty

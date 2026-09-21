@@ -5,6 +5,7 @@ import {
   extractClickHouseTableColumnNames,
   extractDbtFinalSelectColumnNames,
 } from "../../../src/db/clickhouse-activity-sensor-summary.ts";
+import { renderDbtModelSql } from "../../../src/db/read-model-sql-test-helpers.ts";
 
 const modelSql = readFileSync(
   new URL("./activity_sensor_summary_rows.sql", import.meta.url),
@@ -70,6 +71,43 @@ describe("activity_sensor_summary_rows model", () => {
     expect(changedKeysSql).toContain(
       "current_activity.user_id = sample_source_versions.user_id",
     );
+  });
+
+  it("processes unscoped dirty activities in oldest-first bounded batches", () => {
+    const dirtyKeysSql = modelSql.match(
+      /dirty_keys AS MATERIALIZED \([\s\S]*?\n\),\n\nactive_dirty_keys AS/,
+    )?.[0];
+
+    expect(dirtyKeysSql).toContain("GROUP BY activity_id, user_id");
+    expect(dirtyKeysSql).toContain(
+      "ORDER BY min(source_refresh_version), user_id, activity_id",
+    );
+    expect(dirtyKeysSql).toContain(
+      `{% if is_incremental() %}
+    {% if not activity_refresh_scoped %}
+    LIMIT {{ var('activity_sensor_summary_batch_size', 100) }}
+    {% endif %}
+    {% endif %}`,
+    );
+
+    const incrementalUnscopedSql = renderDbtModelSql(modelSql, {
+      isIncremental: true,
+      activityRefreshScoped: false,
+    });
+    const incrementalScopedSql = renderDbtModelSql(modelSql, {
+      isIncremental: true,
+      activityRefreshScoped: true,
+    });
+    const fullRefreshSql = renderDbtModelSql(modelSql, {
+      isIncremental: false,
+      activityRefreshScoped: false,
+    });
+
+    expect(incrementalUnscopedSql).toContain(
+      "LIMIT {{ var('activity_sensor_summary_batch_size', 100) }}",
+    );
+    expect(incrementalScopedSql).not.toContain("activity_sensor_summary_batch_size");
+    expect(fullRefreshSql).not.toContain("activity_sensor_summary_batch_size");
   });
 
   describe("best_twenty_minute_power_per_activity window-sample-count clamp", () => {

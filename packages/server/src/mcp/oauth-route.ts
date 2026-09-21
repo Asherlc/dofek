@@ -12,7 +12,7 @@ import { z } from "zod";
 import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
 import { getMcpIssuerUrl, getMcpResourceUrl } from "./oauth-config.ts";
-import { DofekOAuthServerProvider, MCP_OAUTH_SCOPES } from "./oauth-provider.ts";
+import { DofekOAuthServerProvider, MCP_OAUTH_SUPPORTED_SCOPES } from "./oauth-provider.ts";
 
 export type McpAuthRateLimitOptions = Partial<RateLimitOptions> | false;
 
@@ -41,7 +41,7 @@ export function createMcpOAuthRouter(
     provider,
     resourceName: "Dofek",
     resourceServerUrl: resourceUrl,
-    scopesSupported: [...MCP_OAUTH_SCOPES],
+    scopesSupported: [...MCP_OAUTH_SUPPORTED_SCOPES],
   };
 
   router.use(

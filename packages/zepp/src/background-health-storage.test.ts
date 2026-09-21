@@ -27,7 +27,6 @@ const sample = {
   heartRate: 72,
   bloodOxygenPercent: 98,
   bodyTemperatureCelsius: 36.6,
-  stress: 35,
 };
 const activity = {
   externalId: "1720000000",
@@ -164,7 +163,6 @@ describe("background health outbox storage", () => {
     ["heartRate", "72"],
     ["bloodOxygenPercent", Number.NaN],
     ["bodyTemperatureCelsius", null],
-    ["stress", Number.POSITIVE_INFINITY],
   ])("rejects malformed optional legacy reading %s", (field, value) => {
     expect(() =>
       parseBackgroundHealthOutbox(

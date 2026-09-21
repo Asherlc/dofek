@@ -1,4 +1,5 @@
 import { TRPCError } from "@trpc/server";
+import { logSync } from "dofek/db/sync-log";
 import { ensureProvider as ensureProviderConnection } from "dofek/db/tokens";
 import { invalidateAllUserQueries } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
@@ -63,6 +64,32 @@ function categorize(
 // ── Router ──
 
 export const healthKitSyncRouter = router({
+  recordSync: protectedProcedure
+    .input(
+      z.object({
+        status: z.enum(["success", "degraded", "error"]),
+        recordCount: z.number().int().nonnegative(),
+        durationMs: z.number().int().nonnegative(),
+        errorMessage: z.string().min(1).optional(),
+        origin: z.enum(["manual", "unknown"]),
+      }),
+    )
+    .output(z.object({ recorded: z.literal(true) }))
+    .mutation(async ({ ctx, input }) => {
+      await ensureProvider(ctx.db, ctx.userId);
+      await logSync(ctx.db, {
+        providerId: PROVIDER_ID,
+        dataType: "sync",
+        status: input.status,
+        recordCount: input.recordCount,
+        durationMs: input.durationMs,
+        errorMessage: input.errorMessage,
+        origin: input.origin,
+        userId: ctx.userId,
+      });
+      return { recorded: true } as const;
+    }),
+
   deleteQuantitySamples: protectedProcedure
     .input(
       z.object({

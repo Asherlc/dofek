@@ -21,6 +21,7 @@ import { hangTenWorkout, healthRecord } from "./test-helpers.ts";
 import type { HealthWorkout } from "./workouts.ts";
 
 const PROVIDER_ID = "apple_health";
+const INTERVAL_PROVENANCE_PROVIDER_ID = "healthkit_bridge";
 
 let ctx: TestContext;
 
@@ -28,10 +29,10 @@ describe("db-insertion deduplication (integration)", () => {
   beforeAll(async () => {
     ctx = await setupTestDatabase();
 
-    await ctx.db.insert(schema.provider).values({
-      id: PROVIDER_ID,
-      name: "Apple Health",
-    });
+    await ctx.db.insert(schema.provider).values([
+      { id: PROVIDER_ID, name: "Apple Health" },
+      { id: INTERVAL_PROVENANCE_PROVIDER_ID, name: "HealthKit Bridge" },
+    ]);
   }, 60_000);
 
   afterAll(async () => {
@@ -169,6 +170,82 @@ describe("db-insertion deduplication (integration)", () => {
 
       expect(intervals).toHaveLength(1);
       expect(intervals.map((interval) => interval.label)).toEqual(["Step 2: Work"]);
+    });
+
+    it("persists provider-recorded Hang Ten interval provenance on reimport", async () => {
+      const start = new Date("2026-09-10T14:00:00Z");
+      const workout = hangTenWorkout({
+        startDate: start,
+        endDate: new Date("2026-09-10T14:00:10Z"),
+      });
+
+      if (!workout.hangTen) throw new Error("Expected Hang Ten metadata");
+      workout.hangTen.sessionId = "55555555-5555-4555-8555-555555555555";
+      await upsertWorkoutBatch(ctx.db, INTERVAL_PROVENANCE_PROVIDER_ID, [workout]);
+      workout.hangTen.activitySegments = [
+        {
+          stepID: "step-2",
+          stepNumber: 2,
+          kind: "work",
+          holdIDs: ["jug-24"],
+          holdType: "jug",
+          durationSeconds: 4,
+        },
+        {
+          stepID: "step-3",
+          stepNumber: 3,
+          kind: "rest",
+          holdIDs: [],
+          durationSeconds: 6,
+        },
+      ];
+
+      await upsertWorkoutBatch(ctx.db, INTERVAL_PROVENANCE_PROVIDER_ID, [workout]);
+
+      const [storedActivity] = await ctx.db
+        .select()
+        .from(schema.activity)
+        .where(eq(schema.activity.externalId, "ah:workout:55555555-5555-4555-8555-555555555555"));
+      expect(storedActivity).toBeDefined();
+      if (!storedActivity) return;
+
+      const intervals = await ctx.db
+        .select()
+        .from(schema.activityInterval)
+        .where(eq(schema.activityInterval.activityId, storedActivity.id))
+        .orderBy(asc(schema.activityInterval.intervalIndex));
+
+      expect(intervals).toEqual([
+        expect.objectContaining({
+          sourceKind: "provider_recorded",
+          sourceProvider: INTERVAL_PROVENANCE_PROVIDER_ID,
+          sourceActivityId: storedActivity.id,
+          segmentType: "work",
+          workRecoveryKind: "work",
+          raw: {
+            stepID: "step-2",
+            stepNumber: 2,
+            kind: "work",
+            holdIDs: ["jug-24"],
+            holdType: "jug",
+            durationSeconds: 4,
+          },
+        }),
+        expect.objectContaining({
+          sourceKind: "provider_recorded",
+          sourceProvider: INTERVAL_PROVENANCE_PROVIDER_ID,
+          sourceActivityId: storedActivity.id,
+          segmentType: "rest",
+          workRecoveryKind: "recovery",
+          raw: {
+            stepID: "step-3",
+            stepNumber: 3,
+            kind: "rest",
+            holdIDs: [],
+            durationSeconds: 6,
+          },
+        }),
+      ]);
     });
 
     it("keeps existing Hang Ten intervals after a malformed reimport", async () => {

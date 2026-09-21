@@ -44,13 +44,11 @@ function parseBackgroundSample(value: unknown): BackgroundHealthSample {
   const heartRate = optionalFiniteNumber(value.heartRate);
   const bloodOxygenPercent = optionalFiniteNumber(value.bloodOxygenPercent);
   const bodyTemperatureCelsius = optionalFiniteNumber(value.bodyTemperatureCelsius);
-  const stress = optionalFiniteNumber(value.stress);
   return {
     recordedAt: nonBlankString(value.recordedAt),
     ...(heartRate === undefined ? {} : { heartRate }),
     ...(bloodOxygenPercent === undefined ? {} : { bloodOxygenPercent }),
     ...(bodyTemperatureCelsius === undefined ? {} : { bodyTemperatureCelsius }),
-    ...(stress === undefined ? {} : { stress }),
   };
 }
 

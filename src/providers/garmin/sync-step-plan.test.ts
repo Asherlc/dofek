@@ -118,12 +118,10 @@ describe("Garmin sync step planning", () => {
       { type: "sleep", date: "2026-03-01" },
       { type: "daily_summary", date: "2026-03-01" },
       { type: "hrv_summary", date: "2026-03-01" },
-      { type: "stress", date: "2026-03-01" },
       { type: "heart_rate", date: "2026-03-01" },
       { type: "sleep", date: "2026-03-02" },
       { type: "daily_summary", date: "2026-03-02" },
       { type: "hrv_summary", date: "2026-03-02" },
-      { type: "stress", date: "2026-03-02" },
       { type: "heart_rate", date: "2026-03-02" },
     ]);
   });
@@ -232,9 +230,7 @@ describe("Garmin sync step planning", () => {
 
     await expect(planGarminSyncSteps(context)).resolves.toEqual(
       expect.arrayContaining([
-        { type: "stress", date: "2026-03-01" },
         { type: "heart_rate", date: "2026-03-01" },
-        { type: "stress", date: "2026-03-02" },
         { type: "heart_rate", date: "2026-03-02" },
       ]),
     );
@@ -251,54 +247,11 @@ describe("Garmin sync step planning", () => {
 
     await expect(planGarminSyncSteps(context)).resolves.toEqual(
       expect.arrayContaining([
-        { type: "stress", date: "2026-03-01" },
         { type: "heart_rate", date: "2026-03-01" },
-        { type: "stress", date: "2026-03-02" },
         { type: "heart_rate", date: "2026-03-02" },
       ]),
     );
     expect(clickHouseMocks.createClickHouseClientFromEnv).not.toHaveBeenCalled();
-  });
-
-  it("skips stress steps already present in ClickHouse", async () => {
-    process.env.CLICKHOUSE_URL = "http://default:health@127.0.0.1:8123";
-    const db = makeDb([
-      {
-        date: "2026-03-01",
-        startedAt: new Date("2026-03-01T23:00:00.000Z"),
-        endedAt: new Date("2026-03-02T07:00:00.000Z"),
-      },
-    ]);
-    clickHouseMocks.query.mockImplementation(
-      async (args: { query_params?: { channel?: string } }) => ({
-        json: async () =>
-          args.query_params?.channel === "stress"
-            ? [{ date: "2026-03-01" }, { date: "2026-03-02" }]
-            : [],
-      }),
-    );
-    const context = makeContext({ db: db.db, userId: "options-user" });
-
-    await expect(planGarminSyncSteps(context)).resolves.toEqual([
-      { type: "activities_list", offset: 0 },
-      { type: "heart_rate", date: "2026-03-01" },
-      { type: "daily_summary", date: "2026-03-02" },
-      { type: "hrv_summary", date: "2026-03-02" },
-      { type: "heart_rate", date: "2026-03-02" },
-    ]);
-    expect(clickHouseMocks.query).toHaveBeenCalledWith(
-      expect.objectContaining({
-        format: "JSONEachRow",
-        query_params: {
-          userId: "options-user",
-          providerId: "garmin",
-          channel: "stress",
-          rangeStart: "2026-03-01T00:00:00.000Z",
-          rangeEnd: "2026-03-03T00:00:00.000Z",
-        },
-      }),
-    );
-    expect(clickHouseMocks.close).toHaveBeenCalledTimes(2);
   });
 
   it("closes ClickHouse clients and surfaces metric-stream query failures", async () => {
@@ -311,7 +264,7 @@ describe("Garmin sync step planning", () => {
     expect(clickHouseMocks.close).toHaveBeenCalled();
     expect(sentryMocks.captureException).toHaveBeenCalledWith(queryError, {
       tags: { provider: "garmin", operation: "metric_stream_date_query" },
-      extra: { channel: "stress", providerId: "garmin" },
+      extra: { channel: "heart_rate", providerId: "garmin" },
     });
   });
 

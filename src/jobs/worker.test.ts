@@ -1,6 +1,9 @@
 import { ProviderServiceUnavailableError } from "@dofek/provider-http/rate-limit";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { APPLE_HEALTH_IMPORT_VALIDATION_ERROR_NAME } from "./import-validation-error.ts";
+import {
+  APPLE_HEALTH_IMPORT_VALIDATION_ERROR_NAME,
+  STRONG_CSV_IMPORT_VALIDATION_ERROR_NAME,
+} from "./import-validation-error.ts";
 
 // All mock dependencies live inside vi.hoisted() so they are guaranteed to exist
 // before vi.mock() factories resolve and before the static import of worker.ts.
@@ -16,6 +19,8 @@ const hoisted = vi.hoisted(() => {
   // reached production error tracking.
   vi.stubEnv("DEPLOY_ENVIRONMENT", "prod");
   vi.stubEnv("SENTRY_DSN", "https://test@sentry.io/123");
+  vi.stubEnv("METRIC_STREAM_LIVE_TOPIC", "metric-stream-live-test");
+  vi.stubEnv("METRIC_STREAM_HISTORY_TOPIC", "metric-stream-history-test");
 
   function noOpExit(): never {
     throw new Error("process.exit called unexpectedly in test");
@@ -415,6 +420,8 @@ import "./worker.ts";
 afterAll(() => {
   vi.stubEnv("DEPLOY_ENVIRONMENT", "test");
   vi.stubEnv("SENTRY_DSN", undefined);
+  vi.stubEnv("METRIC_STREAM_LIVE_TOPIC", undefined);
+  vi.stubEnv("METRIC_STREAM_HISTORY_TOPIC", undefined);
 });
 
 describe("worker module", () => {
@@ -1098,6 +1105,18 @@ describe("worker module", () => {
     );
     error.name = APPLE_HEALTH_IMPORT_VALIDATION_ERROR_NAME;
     getWorkerFailedHandler("import-queue")({ id: "apple-health-import-1" }, error);
+
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+  });
+
+  it("suppresses Sentry for invalid Strong CSV imports", async () => {
+    const Sentry = await import("@sentry/node");
+    const { UnrecoverableError } = await import("bullmq");
+    vi.mocked(Sentry.captureException).mockClear();
+
+    const error = new UnrecoverableError("Strong CSV must declare one consistent weight unit");
+    error.name = STRONG_CSV_IMPORT_VALIDATION_ERROR_NAME;
+    getWorkerFailedHandler("import-queue")({ id: "strong-import-1" }, error);
 
     expect(Sentry.captureException).not.toHaveBeenCalled();
   });

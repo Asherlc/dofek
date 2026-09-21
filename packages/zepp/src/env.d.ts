@@ -89,12 +89,6 @@ declare module "@zos/sensor" {
     getToday(): number[];
   }
 
-  export class Stress {
-    getToday(): number[];
-    getTodayByHour(): number[];
-    getLastWeek(): number[];
-  }
-
   export class Stand {
     getCurrent(): number;
   }

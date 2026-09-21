@@ -34,6 +34,13 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   ownership for exercises and provider aliases from historical strength sets,
   in bounded batches, then verifies that no attributable rows were missed.
   - Usage: `DATABASE_URL=... pnpm backfill:exercise-provenance`
+- `backfill-activity-effort-identities.ts`: Read-only, user/window-bounded
+  audit of retained `fitness.activity.raw` payloads for the exact v1 workout,
+  route, segment, and standardized-test fields consumed by the dbt-owned
+  activity-effort identity model. It never fetches a provider or writes an
+  identity row; the separately scoped dbt build remains the sole materializer.
+  - Usage: `pnpm backfill:activity-effort-identities -- --user-id=<uuid> --start=<utc> --end=<utc>`
+  - Procedure: [activity effort identity runbook](../docs/activity-effort-identity-runbook.md)
 - `repair-activity-data-integrity.ts`: Dry-run-first, user/window-bounded repair
   for activity local-time context, Strong naive wall-clock timestamps, and the
   dbt-owned ClickHouse grouping and summary read models. GPS evidence precedes
@@ -87,6 +94,47 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   - Usage: `./scripts/make-admin.sh user@example.com`
 
 ## Verification & Tooling
+
+- `report-repeated-cycling-efforts.ts`: Read-only historical cycling report
+  using the same user-bound discovery, comparison, trend, and cycling-performance
+  repositories as MCP. It makes no provider network requests and computes no
+  cycling metrics. See the [implementation](./report-repeated-cycling-efforts.ts)
+  and [analysis workflow](../docs/mcp.md#repeated-cycling-analysis-workflow).
+  - Usage: `pnpm tsx scripts/with-env.ts -- pnpm tsx scripts/report-repeated-cycling-efforts.ts --user-id=<authorized-user-uuid> --start=2000-01-01 --end=2099-12-31 --timezone=America/Los_Angeles`
+  - This is privileged repository tooling: database credentials loaded by
+    `with-env.ts` authenticate the operator. Supply one authorized stored user;
+    the script never chooses an account automatically. Remote clients use
+    MCP's token-scoped tools. Dates are inclusive in `--timezone` (default
+    `UTC`); `.env.local` overrides Infisical connection settings.
+  - Output includes counts for every kind/strength, exact provider-defined
+    repeats, route/climb repeats, ten most frequent groups, multi-year groups,
+    observed provider identity support, and up to five longitudinal comparisons.
+    Repetitions count canonical activity memberships within each group;
+    memberships across groups overlap. Multi-year means first/last occurrences
+    lie in different UTC years, not continuous coverage.
+  - Selection order is exact workouts/tests, exact or strongly inferred
+    routes/climbs, other strongly inferred identities, then weak name/duration
+    candidates. There is no standalone structured-protocol discovery kind;
+    comparisons retain returned interval evidence. Generic power follows all
+    identity-aware results and is descriptive only.
+  - Discovery pages are exhausted before counting/ranking. Limits remain 2,000
+    activities and 250 route candidates; exceeding them fails and requires a
+    narrower scope. Trends include at most 100 repetitions and preserve
+    pagination, caveats, null metrics, quality flags, and full comparison
+    provenance. Evidence includes private names, activity IDs and possibly route
+    details; keep generated reports private.
+  - Missing configuration, user scope, or analytics prerequisites fails with a
+    nonzero exit. Empty results and fewer than three usable longitudinal
+    examples are explicitly incomplete; zero matches do not prove absence of
+    repeats. Freshness/completeness is not certified. Provider support means
+    observed evidence in repeated groups, not an exhaustive upstream capability
+    inventory. Historical recovery follows the
+    [identity runbook](../docs/activity-effort-identity-runbook.md).
+  - Ordinary workout bests are lower-bound observed capability, not maximal
+    capacity. Lower observed power does not demonstrate fitness decline.
+    Identity alone does not establish maximal intent, comparable equipment,
+    conditions, pacing, coverage, or FTP validity; see the
+    [trend contract](../packages/server/src/mcp/effort-trend-tool.ts).
 
 - `compose-command.ts`: Canonical local Docker Compose wrapper.
   - Pins the project name, project directory, default compose file, and child `PWD` to the physical workspace before forwarding arguments to Docker Compose.

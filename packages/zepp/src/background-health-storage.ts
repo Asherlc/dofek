@@ -42,7 +42,6 @@ function parseSample(value: unknown): BackgroundHealthSample {
     heartRate: optionalFiniteNumber(value.heartRate),
     bloodOxygenPercent: optionalFiniteNumber(value.bloodOxygenPercent),
     bodyTemperatureCelsius: optionalFiniteNumber(value.bodyTemperatureCelsius),
-    stress: optionalFiniteNumber(value.stress),
   };
 }
 

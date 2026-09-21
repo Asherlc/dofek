@@ -114,4 +114,19 @@ describe("runClickHouseMigrations", () => {
 
     expect(run).toHaveBeenCalledWith(client, "postgres://test");
   });
+
+  it("runs only pre-CDC additive migrations when preparing mirror compatibility", async () => {
+    mockClickHouseMigrations.mockReturnValue([
+      { id: "0001_main", statements: ["MAIN"] },
+      { id: "0002_expand", phase: "pre-cdc", statements: ["EXPAND"] },
+    ]);
+    const client = makeClient();
+
+    await expect(
+      runClickHouseMigrations(client, "postgres://test", { phase: "pre-cdc" }),
+    ).resolves.toBe(1);
+
+    expect(mockRunClickHouseMigrationStatement).toHaveBeenCalledOnce();
+    expect(mockRunClickHouseMigrationStatement).toHaveBeenCalledWith(client, "EXPAND");
+  });
 });

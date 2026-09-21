@@ -4,6 +4,7 @@ sources:
   - name: analytics
     schema: "{{ env_var('DBT_ANALYTICS_SOURCE_SCHEMA', 'analytics') }}"
     tables:
+      - name: activity_location_member_change
       - name: body_measurement_sample
       - name: heart_rate_day_change
       - name: metric_stream_day_change

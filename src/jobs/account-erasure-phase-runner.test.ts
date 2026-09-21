@@ -56,10 +56,12 @@ function dependencies(): AccountErasurePhaseRunnerDependencies {
     assertPeerDbDrained: vi.fn().mockResolvedValue(undefined),
     assertQuarantineExpired: vi.fn().mockResolvedValue(undefined),
     assertReplayExpired: vi.fn().mockResolvedValue(undefined),
-    captureHighWatermarks: vi.fn().mockResolvedValue([{ low: "10", offset: "20", partition: 0 }]),
+    captureHighWatermarks: vi
+      .fn()
+      .mockResolvedValue([{ topic: "metric-stream-v1", low: "10", offset: "20", partition: 0 }]),
     captureQuarantineHighWatermarks: vi
       .fn()
-      .mockResolvedValue([{ low: "4", offset: "12", partition: 0 }]),
+      .mockResolvedValue([{ topic: "metric-stream-v1", low: "4", offset: "12", partition: 0 }]),
     capturePeerDbStagingBoundary: vi.fn().mockResolvedValue(peerDbStagingBoundary),
     decryptSnapshot: vi.fn().mockResolvedValue(snapshot),
     eraseArchive: vi
@@ -120,22 +122,24 @@ describe("createAccountErasurePhaseRunner", () => {
     const runner = createAccountErasurePhaseRunner(deps);
     const run = execution({
       loadCheckpointDetails: vi.fn().mockResolvedValue({
-        highWatermarks: [{ low: "10", offset: "20", partition: 0 }],
+        highWatermarks: [{ topic: "metric-stream-v1", low: "10", offset: "20", partition: 0 }],
       }),
     });
 
     await expect(runner.runPhase("ingest_fence", run)).resolves.toEqual({
-      highWatermarks: [{ low: "10", offset: "20", partition: 0 }],
+      highWatermarks: [{ topic: "metric-stream-v1", low: "10", offset: "20", partition: 0 }],
     });
     await expect(runner.runPhase("consumer_drain", run)).resolves.toEqual({
-      quarantineHighWatermarks: [{ low: "4", offset: "12", partition: 0 }],
+      quarantineHighWatermarks: [
+        { topic: "metric-stream-v1", low: "4", offset: "12", partition: 0 },
+      ],
     });
 
     expect(deps.fenceIngest).toHaveBeenCalledWith(snapshot);
     expect(deps.fenceIngest).toHaveBeenCalledBefore(vi.mocked(deps.captureHighWatermarks));
     expect(run.loadCheckpointDetails).toHaveBeenCalledWith("ingest_fence");
     expect(deps.assertConsumersDrained).toHaveBeenCalledWith([
-      { low: "10", offset: "20", partition: 0 },
+      { topic: "metric-stream-v1", low: "10", offset: "20", partition: 0 },
     ]);
     expect(deps.assertConsumersDrained).toHaveBeenCalledBefore(
       vi.mocked(deps.captureQuarantineHighWatermarks),
@@ -383,7 +387,9 @@ describe("createAccountErasurePhaseRunner", () => {
       loadCheckpointDetails: vi.fn(async (phase) =>
         phase === "consumer_drain"
           ? {
-              quarantineHighWatermarks: [{ low: "4", offset: "12", partition: 0 }],
+              quarantineHighWatermarks: [
+                { topic: "metric-stream-v1", low: "4", offset: "12", partition: 0 },
+              ],
             }
           : phase === "peerdb_drain_verification"
             ? { stagingBoundary: peerDbStagingBoundary, verified: true }
@@ -414,7 +420,7 @@ describe("createAccountErasurePhaseRunner", () => {
       "peerdb_drain_verification",
     );
     expect(deps.assertQuarantineExpired).toHaveBeenCalledWith([
-      { low: "4", offset: "12", partition: 0 },
+      { topic: "metric-stream-v1", low: "4", offset: "12", partition: 0 },
     ]);
     expect(deps.verifyBackupRetention).toHaveBeenCalledWith({
       now: new Date("2026-08-26T12:00:00.000Z"),
@@ -456,7 +462,9 @@ describe("createAccountErasurePhaseRunner", () => {
           loadCheckpointDetails: vi.fn(async (phase) =>
             phase === "consumer_drain"
               ? {
-                  quarantineHighWatermarks: [{ low: "4", offset: "12", partition: 0 }],
+                  quarantineHighWatermarks: [
+                    { topic: "metric-stream-v1", low: "4", offset: "12", partition: 0 },
+                  ],
                 }
               : null,
           ),
@@ -494,7 +502,7 @@ describe("createAccountErasurePhaseRunner", () => {
     const deps = dependencies();
     const runner = createAccountErasurePhaseRunner(deps);
     const ingestCheckpoint = {
-      highWatermarks: [{ low: "10", offset: "20", partition: 0 }],
+      highWatermarks: [{ topic: "metric-stream-v1", low: "10", offset: "20", partition: 0 }],
     };
 
     await expect(runner.runPhase("work_purge", execution())).resolves.toEqual({ verified: false });

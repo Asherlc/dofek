@@ -63,7 +63,8 @@ existing_summary_state AS (
 existing_summary AS (
     SELECT
         activity_id,
-        user_id
+        user_id,
+        source_refresh_version
     FROM existing_summary_state
     WHERE is_deleted = 0
 ),
@@ -72,7 +73,8 @@ existing_summary AS (
 repair_scope_dirty_keys AS (
     SELECT
         deduped.activity_id,
-        deduped.user_id
+        deduped.user_id,
+        toUInt64(0) AS source_refresh_version
     FROM {{ ref('deduped_activities') }} AS deduped FINAL
     WHERE deduped.user_id = toUUID('{{ var("activity_refresh_user_id") }}')
         AND (
@@ -84,7 +86,8 @@ repair_scope_dirty_keys AS (
 
     SELECT
         activity_id,
-        user_id
+        user_id,
+        source_refresh_version
     FROM existing_summary_state
     WHERE user_id = toUUID('{{ var("activity_refresh_user_id") }}')
         AND activity_id IN {{ activity_refresh_ids() }}
@@ -94,7 +97,8 @@ repair_scope_dirty_keys AS (
 initial_dirty_keys AS (
     SELECT
         activity_id,
-        user_id
+        user_id,
+        toUInt64(0) AS source_refresh_version
     FROM current_activity
     WHERE
         {% if is_incremental() %}
@@ -109,7 +113,8 @@ changed_sample_dirty_keys AS (
     {% if is_incremental() %}
         SELECT DISTINCT
             sample_source_versions.activity_id AS activity_id,
-            sample_source_versions.user_id AS user_id
+            sample_source_versions.user_id AS user_id,
+            sample_source_versions.source_refresh_version AS source_refresh_version
         FROM sample_source_versions
         INNER JOIN current_activity
             ON current_activity.activity_id = sample_source_versions.activity_id
@@ -127,7 +132,8 @@ changed_sample_dirty_keys AS (
     {% else %}
         SELECT
             CAST(null, 'Nullable(UUID)') AS activity_id,
-            CAST(null, 'Nullable(UUID)') AS user_id
+            CAST(null, 'Nullable(UUID)') AS user_id,
+            CAST(null, 'Nullable(UInt64)') AS source_refresh_version
         WHERE 1 = 0
     {% endif %}
 ),
@@ -136,7 +142,8 @@ missing_summary_dirty_keys AS (
     {% if is_incremental() %}
         SELECT DISTINCT
             sample_source_versions.activity_id AS activity_id,
-            sample_source_versions.user_id AS user_id
+            sample_source_versions.user_id AS user_id,
+            sample_source_versions.source_refresh_version AS source_refresh_version
         FROM sample_source_versions
         INNER JOIN current_activity
             ON current_activity.activity_id = sample_source_versions.activity_id
@@ -148,7 +155,8 @@ missing_summary_dirty_keys AS (
     {% else %}
         SELECT
             CAST(null, 'Nullable(UUID)') AS activity_id,
-            CAST(null, 'Nullable(UUID)') AS user_id
+            CAST(null, 'Nullable(UUID)') AS user_id,
+            CAST(null, 'Nullable(UInt64)') AS source_refresh_version
         WHERE 1 = 0
     {% endif %}
 ),
@@ -156,7 +164,8 @@ missing_summary_dirty_keys AS (
 stale_dirty_keys AS (
     SELECT
         existing_summary.activity_id AS activity_id,
-        existing_summary.user_id AS user_id
+        existing_summary.user_id AS user_id,
+        existing_summary.source_refresh_version AS source_refresh_version
     FROM existing_summary
     LEFT JOIN current_activity
         ON current_activity.activity_id = existing_summary.activity_id
@@ -167,11 +176,13 @@ restored_dirty_keys AS (
     {% if is_incremental() %}
         SELECT
             tombstoned_summary.activity_id AS activity_id,
-            tombstoned_summary.user_id AS user_id
+            tombstoned_summary.user_id AS user_id,
+            tombstoned_summary.source_refresh_version AS source_refresh_version
         FROM (
             SELECT
                 activity_id,
-                user_id
+                user_id,
+                source_refresh_version
             FROM {{ this }} FINAL
             WHERE is_deleted = 1
         ) AS tombstoned_summary
@@ -188,50 +199,64 @@ restored_dirty_keys AS (
     {% else %}
         SELECT
             CAST(null, 'Nullable(UUID)') AS activity_id,
-            CAST(null, 'Nullable(UUID)') AS user_id
+            CAST(null, 'Nullable(UUID)') AS user_id,
+            CAST(null, 'Nullable(UInt64)') AS source_refresh_version
         WHERE 1 = 0
     {% endif %}
 ),
 
 dirty_keys AS MATERIALIZED (
-    SELECT DISTINCT
+    SELECT
         assumeNotNull(activity_id) AS activity_id,
         assumeNotNull(user_id) AS user_id
     FROM (
         {% if activity_refresh_scoped %}
         SELECT
             activity_id,
-            user_id
+            user_id,
+            source_refresh_version
         FROM repair_scope_dirty_keys
         {% else %}
         SELECT
             activity_id,
-            user_id
+            user_id,
+            source_refresh_version
         FROM initial_dirty_keys
         UNION ALL
         SELECT
             activity_id,
-            user_id
+            user_id,
+            source_refresh_version
         FROM changed_sample_dirty_keys
         UNION ALL
         SELECT
             activity_id,
-            user_id
+            user_id,
+            source_refresh_version
         FROM missing_summary_dirty_keys
         UNION ALL
         SELECT
             activity_id,
-            user_id
+            user_id,
+            source_refresh_version
         FROM stale_dirty_keys
         UNION ALL
         SELECT
             activity_id,
-            user_id
+            user_id,
+            source_refresh_version
         FROM restored_dirty_keys
         {% endif %}
     )
     WHERE activity_id IS NOT null
         AND user_id IS NOT null
+    GROUP BY activity_id, user_id
+    ORDER BY min(source_refresh_version), user_id, activity_id
+    {% if is_incremental() %}
+    {% if not activity_refresh_scoped %}
+    LIMIT {{ var('activity_sensor_summary_batch_size', 100) }}
+    {% endif %}
+    {% endif %}
 ),
 
 active_dirty_keys AS (
@@ -239,6 +264,16 @@ active_dirty_keys AS (
         activity_id,
         user_id
     FROM dirty_keys
+),
+
+current_dirty_keys AS (
+    SELECT
+        active_dirty_keys.activity_id AS activity_id,
+        active_dirty_keys.user_id AS user_id
+    FROM active_dirty_keys
+    INNER JOIN current_activity
+        ON current_activity.activity_id = active_dirty_keys.activity_id
+        AND current_activity.user_id = active_dirty_keys.user_id
 ),
 
 latest_sensor_samples AS MATERIALIZED (
@@ -250,7 +285,7 @@ latest_sensor_samples AS MATERIALIZED (
             SELECT
                 user_id,
                 activity_id
-            FROM active_dirty_keys
+            FROM current_dirty_keys
         )
         ORDER BY
             user_id ASC,

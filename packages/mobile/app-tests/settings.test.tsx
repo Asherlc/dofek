@@ -235,6 +235,23 @@ vi.mock("../lib/trpc", () => ({
     billing: {
       status: { useQuery: () => ({ data: mockBillingStatus, isLoading: false }) },
     },
+    mcp: {
+      listTokens: {
+        useQuery: () => ({ data: [], error: null, isLoading: false }),
+      },
+      listConnectedApps: {
+        useQuery: () => ({ data: { items: [], nextCursor: null }, error: null, isLoading: false }),
+      },
+      revokeToken: {
+        useMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
+      },
+      revokeConnectedApp: {
+        useMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
+      },
+      updateConnectedAppScopes: {
+        useMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
+      },
+    },
     companionPairing: {
       claim: {
         useMutation: (options: ZeppPairingMutationOptions) => {

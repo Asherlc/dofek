@@ -14,6 +14,7 @@
     "description": "Captures rich live workout data and syncs it to Dofek."
   },
   "permissions": [
+    "data:os.device.info",
     "data:user.hd.workout",
     "data:user.hd.heart_rate"
   ],

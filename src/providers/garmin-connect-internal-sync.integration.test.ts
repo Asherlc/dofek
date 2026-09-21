@@ -142,20 +142,6 @@ function fakeTrainingStatus() {
   };
 }
 
-function fakeStressData(date: string) {
-  return {
-    calendarDate: date,
-    avgStressLevel: 35,
-    maxStressLevel: 78,
-    stressValuesArray: [
-      [1772074800000, 25],
-      [1772078400000, 42],
-      [1772082000000, -1], // rest state, should be filtered
-      [1772085600000, 55],
-    ] satisfies Array<[number, number]>,
-  };
-}
-
 function fakeHeartRateData(date: string) {
   return {
     userProfilePK: 1,
@@ -203,7 +189,6 @@ interface ConnectMockOptions {
   activities?: ReturnType<typeof fakeConnectActivity>[];
   sleepDates?: string[];
   dailyDates?: string[];
-  stressDates?: string[];
   heartRateDates?: string[];
   activityDetailError?: boolean;
   sleepError?: boolean;
@@ -328,22 +313,6 @@ function createConnectMockFetch(opts: ConnectMockOptions = {}): typeof globalThi
       return Response.json(fakeTrainingStatus());
     }
 
-    // Stress
-    if (urlStr.includes("/wellness-service/wellness/dailyStress/")) {
-      const dateMatch = urlStr.match(/dailyStress\/(\d{4}-\d{2}-\d{2})/);
-      const date = dateMatch?.[1] ?? "2026-03-01";
-      if (opts.stressDates?.includes(date)) {
-        return Response.json(fakeStressData(date));
-      }
-      // No stress data
-      return Response.json({
-        calendarDate: date,
-        avgStressLevel: 0,
-        maxStressLevel: 0,
-        stressValuesArray: [],
-      });
-    }
-
     // Heart rate
     if (urlStr.includes("/wellness-service/wellness/dailyHeartRate/")) {
       const dateMatch = urlStr.match(/date=(\d{4}-\d{2}-\d{2})/);
@@ -418,7 +387,6 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
       createConnectMockFetch({
         activities,
         sleepDates: [],
-        stressDates: [],
         heartRateDates: [],
       }),
     );
@@ -470,7 +438,6 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
       createConnectMockFetch({
         activities: [],
         sleepDates: ["2026-03-01"],
-        stressDates: [],
         heartRateDates: [],
       }),
     );
@@ -514,7 +481,6 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
         activities: [],
         sleepDates: [],
         dailyDates: ["2026-03-01"],
-        stressDates: [],
         heartRateDates: [],
       }),
     );
@@ -554,7 +520,6 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
       createConnectMockFetch({
         activities: [],
         sleepDates: [],
-        stressDates: [],
         heartRateDates: [],
         hrvError: true,
         trainingStatusError: true,
@@ -584,37 +549,6 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
     expect(march1.hrv).toBeNull();
   });
 
-  it("syncs stress time-series into Redpanda metric stream events", async () => {
-    await saveTokens(ctx.db, "garmin", makeInternalTokenSet());
-
-    // Clear sync cursor so date range starts from `since`
-    await ctx.db.delete(userSettings).where(eq(userSettings.key, "garmin_sync_cursor"));
-
-    const provider = new GarminProvider(
-      createConnectMockFetch({
-        activities: [],
-        sleepDates: [],
-        stressDates: ["2026-03-01"],
-        heartRateDates: [],
-      }),
-    );
-
-    const since = new Date("2026-03-01T00:00:00Z");
-    await provider.sync(
-      new SyncRun({
-        db: ctx.db,
-        window: SyncWindow.fromSince({ since: since }),
-        metricStreamPublisher: metricStreamCapture.publisher,
-      }),
-    );
-
-    const stressMetrics = metricStreamCapture.publishedMetricStreamRows;
-
-    // fakeStressData has 4 entries, but -1 is filtered → 3 valid stress samples
-    const stressSamples = stressMetrics.filter((sample) => sample.channel === "stress");
-    expect(stressSamples.length).toBeGreaterThanOrEqual(3);
-  });
-
   it("syncs heart rate time-series into Redpanda metric stream events", async () => {
     await saveTokens(ctx.db, "garmin", makeInternalTokenSet());
     await ctx.db.delete(userSettings).where(eq(userSettings.key, "garmin_sync_cursor"));
@@ -623,7 +557,6 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
       createConnectMockFetch({
         activities: [],
         sleepDates: [],
-        stressDates: [],
         heartRateDates: ["2026-03-01"],
       }),
     );
@@ -654,7 +587,6 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
       createConnectMockFetch({
         activities: [],
         sleepDates: [],
-        stressDates: [],
         heartRateDates: [],
       }),
     );
@@ -691,7 +623,6 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
       createConnectMockFetch({
         activities: [],
         sleepDates: [],
-        stressDates: [],
         heartRateDates: [],
       }),
     );
@@ -759,7 +690,6 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
         activities: [fakeConnectActivity({ activityId: 60001 })],
         activityDetailError: true,
         sleepDates: [],
-        stressDates: [],
         heartRateDates: [],
       }),
     );
@@ -795,7 +725,6 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
       createConnectMockFetch({
         activities: [],
         sleepDates: [],
-        stressDates: [],
         heartRateDates: [],
         dailySummaryPrivacyProtected: true,
       }),

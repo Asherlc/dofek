@@ -99,8 +99,10 @@ describe("production analytics read-model build", () => {
       "activity_duplicate_groups",
       "deduped_activities",
       "deduped_activity_members",
+      "activity_effort_identity",
       "activity_sensor_sample",
       "activity_location_sample",
+      "activity_route_identity",
       "activity_sensor_summary_rows",
       "activity_location_summary_rows",
       "activity_stream_points",
@@ -249,8 +251,8 @@ describe("production analytics read-model build", () => {
     expect(sourceRecordsSql).toContain("device_priority_match AS");
     expect(sourceRecordsSql).toContain("current_source_records AS");
     expect(sourceRecordsSql).toContain("active_activity.group_id AS group_id");
-    expect(sourceRecordsSql).toContain("provider_absent_at IS NULL");
-    expect(sourceRecordsSql).toContain("deleted_at IS NULL");
+    expect(sourceRecordsSql).toContain("coalesce(provider_absent_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')");
+    expect(sourceRecordsSql).toContain("coalesce(deleted_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')");
     expect(sourceRecordsSql).toContain("length(active_device_priority.source_name_pattern) DESC");
     expect(sourceRecordsSql).toContain("active_device_priority.priority ASC");
     expect(sourceRecordsSql).toContain("active_device_priority.source_name_pattern ASC");
@@ -331,7 +333,7 @@ describe("production analytics read-model build", () => {
     expect(normalizedSql).toContain("WHERE existing_members.is_deleted = 0");
   });
 
-  it("materializes activity sensor membership as a microbatch intermediary", () => {
+  it("reconciles logical current-state activity sensor samples", () => {
     expect(existsSync(new URL("./activity_sensor_sample.sql", import.meta.url))).toBe(true);
     const sql = readModel("activity_sensor_sample");
     const normalizedSql = compactWhitespace(sql);
@@ -346,7 +348,33 @@ describe("production analytics read-model build", () => {
       "'query': 'SELECT activity_id, user_id, max(refresh_version) AS source_refresh_version GROUP BY activity_id, user_id'",
     );
     expect(sql).toContain("event_time='refreshed_at'");
-    expect(sql).toContain("lookback=3");
+    expect(sql).not.toContain("'final': 1");
+    expect(normalizedSql).toContain(
+      "FROM {{ ref('deduped_sensor') }} ORDER BY refresh_version DESC LIMIT 1 BY user_id, channel, recorded_date, recorded_at",
+    );
+    expect(sql).toContain("existing_activity_samples AS (");
+    expect(normalizedSql).toContain(
+      "(existing_samples.user_id, existing_samples.channel, existing_samples.recorded_at) IN",
+    );
+    expect(normalizedSql).toContain(
+      "ORDER BY existing_samples.refresh_version DESC LIMIT 1 BY existing_samples.user_id, existing_samples.activity_id, existing_samples.recorded_date, existing_samples.channel, existing_samples.recorded_at",
+    );
+    expect(sql).toContain("activity_samples AS (");
+    expect(normalizedSql).toContain(
+      "FROM batch_samples AS samples INNER JOIN activity_days",
+    );
+    expect(normalizedSql).toContain(
+      "FROM existing_activity_samples AS existing_samples INNER ANY JOIN batch_samples AS samples",
+    );
+    expect(normalizedSql).toContain("samples.is_deleted = 1");
+    expect(normalizedSql).toContain("activity_group_state.is_deleted = 1");
+    expect(normalizedSql).toContain(
+      "samples.recorded_at < activity_group_state.started_at",
+    );
+    expect(normalizedSql).toContain(
+      "samples.recorded_at > activity_group_state.effective_ended_at",
+    );
+    expect(normalizedSql).toContain("NOT has( activity_group_state.member_activity_ids");
     expect(sql).toContain("ref('deduped_sensor')");
     expect(sql).toContain("ref('deduped_activities')");
     expect(sql).toContain("activity_days AS");
@@ -394,22 +422,24 @@ describe("production analytics read-model build", () => {
     const activitySampleSql = readModel("activity_sensor_sample");
     const locationSampleSql = readModel("activity_location_sample");
 
-    expect(sensorSql).toContain(
-      "argMax(metric_stream_versions.activity_id, metric_stream_versions.version)",
+    const latestRowsMatch = sensorSql.match(
+      /metric_stream_latest AS \((?<body>[\s\S]*?)\),\n\nmetric_stream_rows AS/,
     );
-    expect(sensorSql).toContain(
-      "argMax(metric_stream_versions.external_id, metric_stream_versions.version)",
-    );
-    expect(sensorSql).toContain(
-      "argMax(metric_stream_versions.source_type, metric_stream_versions.version) AS source_type",
-    );
-    expect(sensorSql).toContain(
-      "argMax(metric_stream_versions.metadata, metric_stream_versions.version) AS metadata",
-    );
+    expect(latestRowsMatch).not.toBeNull();
+    expect(latestRowsMatch?.groups?.body.match(/argMax\(/g)).toHaveLength(1);
+    expect(latestRowsMatch?.groups?.body).toContain("argMax(\n            tuple(");
+
+    expect(sensorSql).toContain("tupleElement(metric_stream_latest.latest, 1) AS activity_id");
+    expect(sensorSql).toContain("tupleElement(metric_stream_latest.latest, 6) AS source_external_id");
+    expect(sensorSql).toContain("tupleElement(metric_stream_latest.latest, 8) AS source_type");
+    expect(sensorSql).toContain("tupleElement(metric_stream_latest.latest, 9) AS metadata");
     expect(sensorSql).toContain("JSONExtractString(metadata, 'measurement_kind')");
     expect(sensorSql.match(/toNullable\(priority\) AS priority/g)).toHaveLength(2);
     expect(sensorSql).toContain("'distance'");
     expect(sensorSql).toContain("'temperature'");
+
+    expect(dedupedSql.match(/argMinIf\(/g)).toHaveLength(1);
+    expect(dedupedSql).toContain("argMinIf(\n            tuple(");
 
     for (const sourceColumn of [
       "member_activity_id",
@@ -423,14 +453,13 @@ describe("production analytics read-model build", () => {
     }
     expect(activitySampleSql).not.toContain("source('ingest'");
 
-    expect(locationSampleSql).toContain(
-      "argMax(location_versions.device_id, location_versions.version) AS device_id",
-    );
-    expect(locationSampleSql).toContain(
-      "argMax(location_versions.external_id, location_versions.version) AS source_external_id",
-    );
-    expect(locationSampleSql).toContain(
-      "argMax(location_versions.source_type, location_versions.version) AS source_type",
+    expect(locationSampleSql).toContain("argMax(");
+    expect(locationSampleSql).toContain("tuple(");
+    expect(locationSampleSql).toContain("location_versions.device_id");
+    expect(locationSampleSql).toContain("location_versions.external_id");
+    expect(locationSampleSql).toContain("location_versions.source_type");
+    expect(locationSampleSql).not.toContain(
+      "argMax(location_versions.device_id, location_versions.version)",
     );
     expect(locationSampleSql).toContain(
       "affected_location_rows.member_activity_id AS member_activity_id",
@@ -443,7 +472,28 @@ describe("production analytics read-model build", () => {
     const sql = readModel("activity_location_sample");
 
     expect(sql).toContain("incremental_strategy='append'");
+    expect(sql).toContain("'enable_materialized_cte': 1");
     expect(sql).toContain("affected_groups AS MATERIALIZED");
+    expect(sql).toContain("existing_group_watermarks AS MATERIALIZED");
+    expect(sql).toContain("candidate_affected_groups AS (");
+    expect(sql).toContain("LIMIT {{ var('activity_location_batch_size', 100) }}");
+    expect(sql).toContain("> existing_group_watermarks.source_refreshed_at");
+    expect(sql).toContain("location_group_freshness AS MATERIALIZED");
+    expect(sql).toContain("location_member_freshness AS (");
+    expect(sql).toContain("source('analytics', 'activity_location_member_change')");
+    expect(sql.indexOf("location_member_freshness AS (")).toBeLessThan(
+      sql.indexOf("location_group_freshness AS MATERIALIZED"),
+    );
+    expect(sql).toContain(
+      "GROUP BY activity_members.activity_id, activity_members.user_id",
+    );
+    expect(sql.indexOf("affected_groups AS MATERIALIZED")).toBeLessThan(
+      sql.indexOf("affected_location_state AS MATERIALIZED"),
+    );
+    expect(sql).toContain("existing_group_watermarks.live_sample_count > 0");
+    expect(sql).toContain("WHERE live_sample_count > 0");
+    expect(sql).toContain("affected_location_versions AS (");
+    expect(sql).not.toContain("affected_location_versions AS MATERIALIZED");
     expect(sql).toContain("affected_location_rows AS MATERIALIZED");
     expect(sql).toContain("provider_counts AS");
     expect(sql).toContain("existing_location_samples AS MATERIALIZED");
@@ -453,12 +503,17 @@ describe("production analytics read-model build", () => {
     expect(sql).not.toContain("source('analytics', 'v_activity_members')");
     expect(sql).toContain("channel = 'location'");
     expect(sql).toContain(
-      "argMax(location_versions.point, location_versions.version) AS point",
+      "(location_versions.user_id, location_versions.activity_id) IN",
     );
-    expect(sql).toContain("toString(point) AS point_text");
+    expect(sql.match(/argMax\(/g)).toHaveLength(1);
+    expect(sql).toContain("argMax(\n            tuple(");
+    expect(sql).toContain("location_versions.point");
+    expect(sql).not.toContain("argMax(location_versions.point, location_versions.version)");
+    expect(sql).toContain("toString(latest_location_version.8) AS point_text");
     expect(sql).toContain("startsWith(affected_location_rows.point_text, '{')");
     expect(sql).toContain("JSONExtract(affected_location_rows.point_text, 'coordinates', 'Array(Float64)')[2]");
     expect(sql).toContain("trim(BOTH '()' FROM affected_location_rows.point_text)");
+    expect(sql).toContain("empty_group_checkpoints AS MATERIALIZED");
   });
 
   it("uses the same null-ended activity window for duplicate matches and merged activities", () => {

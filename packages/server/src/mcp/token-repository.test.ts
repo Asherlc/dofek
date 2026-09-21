@@ -3,9 +3,14 @@ import {
   createMcpToken,
   generateMcpToken,
   hashMcpToken,
+  listMcpConnectedApps,
+  listMcpPersonalTokens,
+  listMcpTokens,
   McpAuthError,
   mcpScopeSchema,
   requireMcpScope,
+  revokeMcpConnectedApp,
+  updateMcpConnectedAppScopes,
   updateMcpTokenScopes,
   validateMcpToken,
 } from "./token-repository.ts";
@@ -71,6 +76,7 @@ describe("MCP token repository", () => {
       lastUsedAt: null,
       expiresAt: null,
       revokedAt: null,
+      oauthClientId: null,
     });
     const queryPayload = JSON.stringify(mockExecute.mock.calls[0]?.[0]);
     expect(queryPayload).not.toContain(created.token);
@@ -104,6 +110,173 @@ describe("MCP token repository", () => {
       oauthResource: null,
     });
     expect(mockExecute).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns the OAuth client identifier when listing tokens", async () => {
+    mockExecute.mockResolvedValueOnce([
+      {
+        id: "oauth-token-id",
+        name: "Claude OAuth",
+        scopes: ["health:read"],
+        created_at: "2026-05-20T12:00:00.000Z",
+        last_used_at: null,
+        expires_at: "2026-05-20T13:00:00.000Z",
+        revoked_at: null,
+        oauth_client_id: "https://claude.ai/oauth/client-metadata.json",
+      },
+    ]);
+
+    const tokens = await listMcpTokens(createMockDb(), "user-id");
+
+    expect(tokens).toEqual([
+      expect.objectContaining({
+        id: "oauth-token-id",
+        name: "Claude OAuth",
+        oauthClientId: "https://claude.ai/oauth/client-metadata.json",
+      }),
+    ]);
+  });
+
+  it("lists personal tokens without OAuth connections", async () => {
+    mockExecute.mockResolvedValueOnce([
+      {
+        id: "personal-token-id",
+        name: "Codex",
+        scopes: ["health:read"],
+        created_at: "2026-05-20T12:00:00.000Z",
+        last_used_at: null,
+        expires_at: null,
+        revoked_at: null,
+        oauth_client_id: null,
+      },
+    ]);
+
+    await listMcpPersonalTokens(createMockDb(), "user-id");
+
+    expect(JSON.stringify(mockExecute.mock.calls[0]?.[0])).toContain("oauth_client_id IS NULL");
+  });
+
+  it("returns a cursor for the next connected-app page", async () => {
+    mockExecute.mockResolvedValueOnce(
+      Array.from({ length: 21 }, (_, index) => ({
+        oauth_client_id: `oauth-client-${index}`,
+        oauth_resource: "https://dofek.example/api/mcp",
+        name: `OAuth app ${index}`,
+        scopes: ["health:read"],
+        connected_at: "2026-05-20T12:00:00.000Z",
+        last_used_at: null,
+        is_active: true,
+      })),
+    );
+
+    const page = await listMcpConnectedApps(createMockDb(), "user-id", undefined);
+
+    expect(page.items).toHaveLength(20);
+    expect(page.nextCursor).toBe(
+      Buffer.from(
+        JSON.stringify({
+          oauthClientId: "oauth-client-19",
+          oauthResource: "https://dofek.example/api/mcp",
+        }),
+      ).toString("base64url"),
+    );
+    const queryPayload = JSON.stringify(mockExecute.mock.calls[0]?.[0]);
+    expect(queryPayload).toContain("oauth_client_id IS NOT NULL");
+    expect(queryPayload).toContain('},21,{"value":[""]');
+  });
+
+  it("uses both client and resource in the connected-app pagination cursor", async () => {
+    mockExecute.mockResolvedValueOnce(
+      Array.from({ length: 21 }, (_, index) => ({
+        oauth_client_id: "shared-client",
+        oauth_resource: `https://dofek.example/api/mcp/${index}`,
+        name: `OAuth app ${index}`,
+        scopes: ["health:read"],
+        connected_at: "2026-05-20T12:00:00.000Z",
+        last_used_at: null,
+        is_active: true,
+      })),
+    );
+
+    const firstPage = await listMcpConnectedApps(createMockDb(), "user-id");
+    const nextCursor = firstPage.nextCursor;
+    expect(nextCursor).toEqual(expect.any(String));
+
+    mockExecute.mockResolvedValueOnce([]);
+    await listMcpConnectedApps(createMockDb(), "user-id", nextCursor ?? undefined);
+
+    const queryPayload = JSON.stringify(mockExecute.mock.calls[1]?.[0]);
+    expect(queryPayload).toContain("shared-client");
+    expect(queryPayload).toContain("https://dofek.example/api/mcp/19");
+  });
+
+  it("does not return a cursor when the connected-app page is full", async () => {
+    mockExecute.mockResolvedValueOnce(
+      Array.from({ length: 20 }, (_, index) => ({
+        oauth_client_id: `oauth-client-${index}`,
+        oauth_resource: "https://dofek.example/api/mcp",
+        name: `OAuth app ${index}`,
+        scopes: ["health:read"],
+        connected_at: "2026-05-20T12:00:00.000Z",
+        last_used_at: null,
+        is_active: true,
+      })),
+    );
+
+    const page = await listMcpConnectedApps(createMockDb(), "user-id");
+
+    expect(page.items).toHaveLength(20);
+    expect(page.nextCursor).toBeNull();
+  });
+
+  it("returns aggregate connected-app metadata", async () => {
+    mockExecute.mockResolvedValueOnce([
+      {
+        oauth_client_id: "claude-client",
+        oauth_resource: "https://dofek.example/api/mcp",
+        name: "Claude",
+        scopes: ["health:read", "activity:read"],
+        connected_at: "2026-05-20T12:00:00.000Z",
+        last_used_at: "2026-05-20T12:30:00.000Z",
+        is_active: true,
+      },
+    ]);
+
+    const page = await listMcpConnectedApps(createMockDb(), "user-id");
+
+    expect(page).toEqual({
+      items: [
+        {
+          oauthClientId: "claude-client",
+          oauthResource: "https://dofek.example/api/mcp",
+          name: "Claude",
+          scopes: ["health:read", "activity:read"],
+          connectedAt: "2026-05-20T12:00:00.000Z",
+          lastUsedAt: "2026-05-20T12:30:00.000Z",
+          isActive: true,
+        },
+      ],
+      nextCursor: null,
+    });
+  });
+
+  it("revokes every token belonging to a connected app", async () => {
+    mockExecute.mockResolvedValueOnce([{ found: true }]);
+
+    await expect(
+      revokeMcpConnectedApp(
+        createMockDb(),
+        "user-id",
+        "claude-client",
+        "https://dofek.example/api/mcp",
+      ),
+    ).resolves.toBe(true);
+
+    const queryPayload = JSON.stringify(mockExecute.mock.calls[0]?.[0]);
+    expect(queryPayload).toContain("mcp_access_token");
+    expect(queryPayload).toContain("mcp_oauth_refresh_token");
+    expect(queryPayload).toContain("claude-client");
+    expect(queryPayload).toContain("https://dofek.example/api/mcp");
   });
 
   it("does not add nutrition write to an existing read-only token", async () => {
@@ -185,12 +358,48 @@ describe("MCP token repository", () => {
       lastUsedAt: null,
       expiresAt: null,
       revokedAt: null,
+      oauthClientId: null,
     });
     expect(JSON.stringify(mockExecute.mock.calls[0]?.[0])).toContain("UPDATE");
     expect(JSON.stringify(mockExecute.mock.calls[0]?.[0])).toContain("activity:read");
     expect(JSON.stringify(mockExecute.mock.calls[0]?.[0])).toContain(
       "expires_at IS NULL OR expires_at > NOW()",
     );
+  });
+
+  it("updates scopes for every active credential belonging to a connected app", async () => {
+    mockExecute.mockResolvedValueOnce([{ found: true }]);
+
+    await expect(
+      updateMcpConnectedAppScopes(
+        createMockDb(),
+        "user-id",
+        "claude-client",
+        "https://dofek.example/api/mcp",
+        ["health:read", "activity:read"],
+      ),
+    ).resolves.toBe(true);
+
+    const queryPayload = JSON.stringify(mockExecute.mock.calls[0]?.[0]);
+    expect(queryPayload).toContain("UPDATE fitness.mcp_access_token");
+    expect(queryPayload).toContain("UPDATE fitness.mcp_oauth_refresh_token");
+    expect(queryPayload).toContain("claude-client");
+    expect(queryPayload).toContain("https://dofek.example/api/mcp");
+    expect(queryPayload).toContain("activity:read");
+  });
+
+  it("returns false when no active credential belongs to a connected app", async () => {
+    mockExecute.mockResolvedValueOnce([]);
+
+    await expect(
+      updateMcpConnectedAppScopes(
+        createMockDb(),
+        "user-id",
+        "missing-client",
+        "https://dofek.example/api/mcp",
+        ["health:read"],
+      ),
+    ).resolves.toBe(false);
   });
 
   it("allows required scopes that are present", () => {

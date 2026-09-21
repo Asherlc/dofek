@@ -62,6 +62,7 @@ describe("mcpRouter", () => {
       lastUsedAt: null,
       expiresAt: null,
       revokedAt: null,
+      oauthClientId: null,
     });
     const queryPayload = JSON.stringify(mockExecute.mock.calls[0]?.[0]);
     expect(queryPayload).toContain("user-id");
@@ -143,10 +144,116 @@ describe("mcpRouter", () => {
         lastUsedAt: "2026-05-20T12:30:00.000Z",
         expiresAt: null,
         revokedAt: null,
+        oauthClientId: null,
       },
     ]);
     expect(JSON.stringify(result)).not.toContain("dofek_mcp_");
     expect(JSON.stringify(result)).not.toContain(hashMcpToken("dofek_mcp_example"));
+  });
+
+  it("lists personal tokens separately from connected apps", async () => {
+    mockExecute.mockResolvedValueOnce([
+      {
+        id: "personal-token-id",
+        name: "Codex",
+        scopes: ["health:read"],
+        created_at: "2026-05-20T12:00:00.000Z",
+        last_used_at: null,
+        expires_at: null,
+        revoked_at: null,
+        oauth_client_id: null,
+      },
+    ]);
+    const caller = createCaller(createContext("user-id"));
+
+    const result = await caller.listPersonalTokens();
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.oauthClientId).toBeNull();
+    expect(JSON.stringify(mockExecute.mock.calls[0]?.[0])).toContain("oauth_client_id IS NULL");
+  });
+
+  it("returns connected apps with a next cursor", async () => {
+    mockExecute.mockResolvedValueOnce(
+      Array.from({ length: 21 }, (_, index) => ({
+        oauth_client_id: `oauth-client-${index}`,
+        oauth_resource: "https://dofek.example/api/mcp",
+        name: `OAuth app ${index}`,
+        scopes: ["health:read"],
+        connected_at: "2026-05-20T12:00:00.000Z",
+        last_used_at: null,
+        is_active: true,
+      })),
+    );
+    const caller = createCaller(createContext("user-id"));
+
+    const result = await caller.listConnectedApps({});
+
+    expect(result.items).toHaveLength(20);
+    expect(result.nextCursor).toBe(
+      Buffer.from(
+        JSON.stringify({
+          oauthClientId: "oauth-client-19",
+          oauthResource: "https://dofek.example/api/mcp",
+        }),
+      ).toString("base64url"),
+    );
+  });
+
+  it("revokes a whole connected app by client and resource", async () => {
+    mockExecute.mockResolvedValueOnce([{ found: true }]);
+    const caller = createCaller(createContext("user-id"));
+
+    await expect(
+      caller.revokeConnectedApp({
+        oauthClientId: "claude-client",
+        oauthResource: "https://dofek.example/api/mcp",
+      }),
+    ).resolves.toEqual({ success: true });
+  });
+
+  it("updates scopes for a whole connected app by client and resource", async () => {
+    mockExecute.mockResolvedValueOnce([{ found: true }]);
+    const caller = createCaller(createContext("user-id"));
+
+    await expect(
+      caller.updateConnectedAppScopes({
+        oauthClientId: "claude-client",
+        oauthResource: "https://dofek.example/api/mcp",
+        scopes: ["health:read", "activity:read"],
+      }),
+    ).resolves.toEqual({ success: true });
+  });
+
+  it("rejects updating scopes for a connected app that does not exist", async () => {
+    mockExecute.mockResolvedValueOnce([{ found: false }]);
+    const caller = createCaller(createContext("user-id"));
+
+    await expect(
+      caller.updateConnectedAppScopes({
+        oauthClientId: "missing-client",
+        oauthResource: "https://dofek.example/api/mcp",
+        scopes: ["health:read"],
+      }),
+    ).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "Connected app not found.",
+    });
+  });
+
+  it("rejects revoking a connected app that does not exist", async () => {
+    mockExecute.mockResolvedValueOnce([{ found: false }]);
+    const caller = createCaller(createContext("user-id"));
+
+    await expect(
+      caller.revokeConnectedApp({
+        oauthClientId: "missing-client",
+        oauthResource: "https://dofek.example/api/mcp",
+      }),
+    ).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "Connected app not found.",
+    });
   });
 
   it("revokes a user-owned token", async () => {

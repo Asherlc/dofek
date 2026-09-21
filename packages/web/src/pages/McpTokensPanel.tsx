@@ -39,11 +39,23 @@ function formatTimestamp(value: Date | string | null): string {
 
 export function McpTokensPanel() {
   const trpcUtils = trpc.useUtils();
-  const tokens = trpc.mcp.listTokens.useQuery();
+  const personalTokensQuery = trpc.mcp.listPersonalTokens.useQuery();
+  const [connectedAppCursors, setConnectedAppCursors] = useState<Array<string | undefined>>([
+    undefined,
+  ]);
+  const connectedAppsQuery = trpc.mcp.listConnectedApps.useQuery({
+    cursor: connectedAppCursors.at(-1),
+  });
   const createTokenMutation = trpc.mcp.createToken.useMutation({
     meta: locallyReportedErrorMeta,
   });
   const revokeTokenMutation = trpc.mcp.revokeToken.useMutation({
+    meta: locallyReportedErrorMeta,
+  });
+  const revokeConnectedAppMutation = trpc.mcp.revokeConnectedApp.useMutation({
+    meta: locallyReportedErrorMeta,
+  });
+  const updateConnectedAppScopesMutation = trpc.mcp.updateConnectedAppScopes.useMutation({
     meta: locallyReportedErrorMeta,
   });
   const updateScopesMutation = trpc.mcp.updateScopes.useMutation({
@@ -57,11 +69,24 @@ export function McpTokensPanel() {
   const [createdToken, setCreatedToken] = useState<string | null>(null);
   const [editingTokenId, setEditingTokenId] = useState<string | null>(null);
   const [editingScopes, setEditingScopes] = useState<Set<McpScope>>(() => new Set());
+  const [editingConnectedAppKey, setEditingConnectedAppKey] = useState<string | null>(null);
+  const [editingConnectedAppScopes, setEditingConnectedAppScopes] = useState<Set<McpScope>>(
+    () => new Set(),
+  );
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [mcpEndpoint, setMcpEndpoint] = useState("/api/mcp");
   const [isSecureOrigin, setIsSecureOrigin] = useState<boolean | null>(null);
   const tokenForInstall = createdToken ?? "dofek_mcp_your_token";
+  const oauthTokens = connectedAppsQuery.data?.items ?? [];
+  const personalTokens = personalTokensQuery.data ?? [];
+
+  const invalidateTokenLists = async () => {
+    await Promise.all([
+      trpcUtils.mcp.listPersonalTokens.invalidate(),
+      trpcUtils.mcp.listConnectedApps.invalidate(),
+    ]);
+  };
 
   useEffect(() => {
     const secure = window.location.protocol === "https:";
@@ -75,6 +100,8 @@ export function McpTokensPanel() {
   const tokenMutationPending =
     createTokenMutation.isPending ||
     revokeTokenMutation.isPending ||
+    revokeConnectedAppMutation.isPending ||
+    updateConnectedAppScopesMutation.isPending ||
     updateScopesMutation.isPending;
 
   const toggleScopeSet = (current: Set<McpScope>, scope: McpScope): Set<McpScope> => {
@@ -99,7 +126,7 @@ export function McpTokensPanel() {
     setSelectedScopes((current) => toggleScopeSet(current, scope));
   };
 
-  const beginEditScopes = (token: NonNullable<typeof tokens.data>[number]) => {
+  const beginEditScopes = (token: NonNullable<typeof personalTokensQuery.data>[number]) => {
     setErrorMessage(null);
     setEditingTokenId(token.id);
     const nextScopes = new Set(token.scopes);
@@ -112,16 +139,46 @@ export function McpTokensPanel() {
     setEditingScopes(new Set());
   };
 
+  const beginEditConnectedAppScopes = (app: (typeof oauthTokens)[number]) => {
+    setErrorMessage(null);
+    setEditingConnectedAppKey(`${app.oauthClientId}:${app.oauthResource}`);
+    const nextScopes = new Set(app.scopes);
+    if (nextScopes.has("nutrition:write")) nextScopes.add("nutrition:read");
+    setEditingConnectedAppScopes(nextScopes);
+  };
+
+  const cancelEditConnectedAppScopes = () => {
+    setEditingConnectedAppKey(null);
+    setEditingConnectedAppScopes(new Set());
+  };
+
   const saveScopes = async (tokenId: string) => {
     setErrorMessage(null);
     const scopes = mcpScopeValues.filter((scope) => editingScopes.has(scope));
     try {
       await updateScopesMutation.mutateAsync({ tokenId, scopes });
       cancelEditScopes();
-      await trpcUtils.mcp.listTokens.invalidate();
+      await invalidateTokenLists();
     } catch (error: unknown) {
       captureException(error, { context: "update-mcp-token-scopes" });
       setErrorMessage(userFacingErrorMessage(error, "Failed to update MCP token scopes."));
+    }
+  };
+
+  const saveConnectedAppScopes = async (app: (typeof oauthTokens)[number]) => {
+    setErrorMessage(null);
+    const scopes = mcpScopeValues.filter((scope) => editingConnectedAppScopes.has(scope));
+    try {
+      await updateConnectedAppScopesMutation.mutateAsync({
+        oauthClientId: app.oauthClientId,
+        oauthResource: app.oauthResource,
+        scopes,
+      });
+      cancelEditConnectedAppScopes();
+      await invalidateTokenLists();
+    } catch (error: unknown) {
+      captureException(error, { context: "update-mcp-connected-app-scopes" });
+      setErrorMessage(userFacingErrorMessage(error, "Failed to update connected app scopes."));
     }
   };
 
@@ -136,7 +193,7 @@ export function McpTokensPanel() {
         expiresAt: expiresAt ? `${expiresAt}T23:59:59.999Z` : null,
       });
       setCreatedToken(result.token);
-      await trpcUtils.mcp.listTokens.invalidate();
+      await invalidateTokenLists();
     } catch (error: unknown) {
       captureException(error, { context: "create-mcp-token" });
       setErrorMessage(userFacingErrorMessage(error, "Failed to create MCP token."));
@@ -158,14 +215,27 @@ export function McpTokensPanel() {
     setErrorMessage(null);
     try {
       await revokeTokenMutation.mutateAsync({ tokenId });
-      await trpcUtils.mcp.listTokens.invalidate();
+      setConnectedAppCursors([undefined]);
+      await invalidateTokenLists();
     } catch (error: unknown) {
       captureException(error, { context: "revoke-mcp-token" });
       setErrorMessage(userFacingErrorMessage(error, "Failed to revoke MCP token."));
     }
   };
 
-  const rotateToken = async (token: NonNullable<typeof tokens.data>[number]) => {
+  const revokeConnectedApp = async (oauthClientId: string, oauthResource: string) => {
+    setErrorMessage(null);
+    try {
+      await revokeConnectedAppMutation.mutateAsync({ oauthClientId, oauthResource });
+      setConnectedAppCursors([undefined]);
+      await invalidateTokenLists();
+    } catch (error: unknown) {
+      captureException(error, { context: "revoke-mcp-connected-app" });
+      setErrorMessage(userFacingErrorMessage(error, "Failed to disconnect the connected app."));
+    }
+  };
+
+  const rotateToken = async (token: NonNullable<typeof personalTokensQuery.data>[number]) => {
     setErrorMessage(null);
     setCopyStatus(null);
     let createdReplacement = false;
@@ -188,16 +258,22 @@ export function McpTokensPanel() {
         setErrorMessage(userFacingErrorMessage(error, "Failed to rotate MCP token."));
       }
     } finally {
-      await trpcUtils.mcp.listTokens.invalidate();
+      await invalidateTokenLists();
     }
   };
 
-  if (tokens.isLoading) {
+  if (personalTokensQuery.isLoading || connectedAppsQuery.isLoading) {
     return <QueryStatePanel variant="loading" message="Loading MCP tokens..." height={96} />;
   }
 
-  if (tokens.error) {
-    return <QueryStatePanel error={tokens.error} contextLabel="MCP tokens" height={96} />;
+  if (personalTokensQuery.error || connectedAppsQuery.error) {
+    return (
+      <QueryStatePanel
+        error={personalTokensQuery.error ?? connectedAppsQuery.error}
+        contextLabel="MCP tokens"
+        height={96}
+      />
+    );
   }
 
   return (
@@ -234,6 +310,140 @@ export function McpTokensPanel() {
         </div>
       ) : null}
 
+      {oauthTokens.length > 0 ? (
+        <section className="space-y-3">
+          <div>
+            <h2 className="text-sm font-medium text-foreground">Connected apps</h2>
+            <p className="mt-1 text-sm text-subtle">
+              Each app is shown once, even when it refreshes its access token. Disconnect it here to
+              revoke all access.
+            </p>
+          </div>
+          <ul className="space-y-2">
+            {oauthTokens.map((app) => {
+              return (
+                <li
+                  key={`${app.oauthClientId}:${app.oauthResource}`}
+                  className="flex flex-col gap-3 rounded bg-surface-hover px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-medium text-foreground">{app.name}</p>
+                      {!app.isActive ? (
+                        <span className="rounded border border-red-900/40 px-2 py-0.5 text-xs text-red-500">
+                          Disconnected
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="text-xs text-subtle">
+                      Connected {formatTimestamp(app.connectedAt)} · Last used{" "}
+                      {formatTimestamp(app.lastUsedAt)}
+                    </p>
+                    <p className="mt-1 text-xs text-dim">{app.scopes.join(", ")}</p>
+                    {editingConnectedAppKey === `${app.oauthClientId}:${app.oauthResource}` ? (
+                      <div className="mt-3 space-y-2">
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {mcpScopeOptions.map((option) => (
+                            <label
+                              key={option.value}
+                              className="flex items-center gap-2 rounded border border-border bg-surface/70 px-3 py-2 text-sm text-foreground"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={editingConnectedAppScopes.has(option.value)}
+                                disabled={
+                                  option.value === "nutrition:read" &&
+                                  editingConnectedAppScopes.has("nutrition:write")
+                                }
+                                onChange={() =>
+                                  setEditingConnectedAppScopes((current) =>
+                                    toggleScopeSet(current, option.value),
+                                  )
+                                }
+                                className="h-4 w-4 accent-accent"
+                              />
+                              <span>{option.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => saveConnectedAppScopes(app)}
+                            disabled={tokenMutationPending || editingConnectedAppScopes.size === 0}
+                            aria-label={`Save scopes for ${app.name}`}
+                            className="rounded bg-accent px-3 py-1.5 text-xs font-medium text-on-accent transition-colors hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Save scopes
+                          </button>
+                          <button
+                            type="button"
+                            onClick={cancelEditConnectedAppScopes}
+                            disabled={tokenMutationPending}
+                            className="rounded border border-border-strong px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                  {app.isActive ? (
+                    <div className="flex flex-wrap gap-2 self-start sm:self-center">
+                      <button
+                        type="button"
+                        onClick={() => beginEditConnectedAppScopes(app)}
+                        disabled={tokenMutationPending}
+                        aria-label={`Edit scopes for ${app.name}`}
+                        className="rounded border border-border-strong px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Edit scopes
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => revokeConnectedApp(app.oauthClientId, app.oauthResource)}
+                        disabled={tokenMutationPending}
+                        aria-label={`Disconnect ${app.name}`}
+                        className="rounded border border-red-900/40 px-3 py-1.5 text-xs text-red-500 transition-colors hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Disconnect
+                      </button>
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+          {connectedAppCursors.length > 1 || connectedAppsQuery.data?.nextCursor ? (
+            <div className="flex items-center justify-between border-t border-border pt-3">
+              <button
+                type="button"
+                onClick={() => setConnectedAppCursors((cursors) => cursors.slice(0, -1))}
+                disabled={connectedAppCursors.length === 1}
+                aria-label="Previous connected apps page"
+                className="rounded border border-border-strong px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <span className="text-xs text-subtle">Page {connectedAppCursors.length}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  const nextCursor = connectedAppsQuery.data?.nextCursor;
+                  if (nextCursor) setConnectedAppCursors((cursors) => [...cursors, nextCursor]);
+                }}
+                disabled={!connectedAppsQuery.data?.nextCursor}
+                aria-label="Next connected apps page"
+                className="rounded border border-border-strong px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
+      <h2 className="text-sm font-medium text-foreground">Personal tokens</h2>
       <div className="space-y-3 rounded-md border border-border bg-surface-solid p-3">
         <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_11rem]">
           <label className="space-y-1">
@@ -249,10 +459,12 @@ export function McpTokensPanel() {
             <span className="text-xs font-medium text-subtle">Expires</span>
             <input
               type="date"
+              aria-label="Expires"
               value={expiresAt ?? ""}
               onChange={(event) => setExpiresAt(event.target.value || null)}
               className="w-full rounded border border-border-strong bg-surface px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
             />
+            <span className="block text-xs text-dim">Leave blank for no expiration.</span>
           </label>
         </div>
 
@@ -322,11 +534,11 @@ export function McpTokensPanel() {
       ) : null}
 
       <div className="space-y-2">
-        {(tokens.data ?? []).length === 0 ? (
-          <QueryStatePanel variant="empty" message="No MCP tokens yet." height={96} />
+        {personalTokens.length === 0 ? (
+          <QueryStatePanel variant="empty" message="No personal tokens yet." height={96} />
         ) : (
           <ul className="space-y-2">
-            {(tokens.data ?? []).map((token) => {
+            {personalTokens.map((token) => {
               const isRevoked = token.revokedAt !== null;
               const isExpired = token.expiresAt !== null && new Date(token.expiresAt) <= new Date();
               const isActive = !isRevoked && !isExpired;
@@ -341,6 +553,11 @@ export function McpTokensPanel() {
                       {isRevoked ? (
                         <span className="rounded border border-red-900/40 px-2 py-0.5 text-xs text-red-500">
                           Revoked
+                        </span>
+                      ) : null}
+                      {isExpired ? (
+                        <span className="rounded border border-amber-900/40 px-2 py-0.5 text-xs text-amber-500">
+                          Expired
                         </span>
                       ) : null}
                     </div>

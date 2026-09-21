@@ -15,6 +15,11 @@ describe("clickHouseMigrations", () => {
     expect(migrations.at(0)?.id).toBe("0001_clickhouse_analytics_schema_cleanup");
     const migrationIds = migrations.map((migration) => migration.id);
     expect(new Set(migrationIds).size).toBe(migrationIds.length);
+    expect(migrationIds.slice(-3)).toEqual([
+      "0092_sensor_scalar_sample_refresh_projection",
+      "0093_refresh_daily_metrics_view",
+      "0094_sensor_scalar_sample_lightweight_refresh_projection",
+    ]);
     const migrationNumbers = migrationIds.map((migrationId) => Number(migrationId.slice(0, 4)));
     expect(migrationNumbers).toEqual(
       [...migrationNumbers].sort(
@@ -296,6 +301,42 @@ describe("clickHouseMigrations", () => {
         "DROP VIEW IF EXISTS analytics.v_activity",
         expect.stringContaining("group_id AS id"),
       ]),
+    });
+    expect(
+      migrations.find((migration) => migration.id === "0086_activity_location_member_change"),
+    ).toMatchObject({
+      id: "0086_activity_location_member_change",
+      statements: expect.arrayContaining([
+        expect.stringContaining(
+          "CREATE TABLE IF NOT EXISTS analytics.activity_location_member_change",
+        ),
+        expect.stringContaining(
+          "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_location_member_change_ingest",
+        ),
+        expect.stringContaining("INSERT INTO analytics.activity_location_member_change"),
+        expect.stringContaining("FROM ingest.metric_stream"),
+      ]),
+    });
+    expect(
+      migrations.find((migration) => migration.id === "0087_complete_peerdb_raw_schema"),
+    ).toMatchObject({
+      id: "0087_complete_peerdb_raw_schema",
+      statements: expect.arrayContaining([
+        expect.stringContaining("food_entry ADD COLUMN IF NOT EXISTS nutrition_grain"),
+        expect.stringContaining("health_event ADD COLUMN IF NOT EXISTS source_bundle"),
+        expect.stringContaining("health_event ADD COLUMN IF NOT EXISTS metadata"),
+      ]),
+    });
+    expect(
+      migrations.find((migration) => migration.id === "0088_sensor_priority_processing_marker"),
+    ).toMatchObject({
+      id: "0088_sensor_priority_processing_marker",
+      phase: "pre-cdc",
+      statements: [
+        expect.stringContaining(
+          "CREATE TABLE IF NOT EXISTS postgres_fitness.processing_flow_marker_sensor_priority",
+        ),
+      ],
     });
   });
 

@@ -1,13 +1,16 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { UnrecoverableError, WaitingChildrenError } from "bullmq";
+import { WaitingChildrenError } from "bullmq";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
 import { getProviderIngestContext } from "../db/provider-ingest-context.ts";
 import { createMetricStreamEvent, type MetricStreamRowInput } from "../metric-stream/events.ts";
 import type { MetricStreamPublishOptions } from "../metric-stream/redpanda-producer.ts";
 import type { KayaImportDatabase } from "../providers/kaya/import.ts";
-import { APPLE_HEALTH_IMPORT_VALIDATION_ERROR_NAME } from "./import-validation-error.ts";
+import {
+  APPLE_HEALTH_IMPORT_VALIDATION_ERROR_NAME,
+  STRONG_CSV_IMPORT_VALIDATION_ERROR_NAME,
+} from "./import-validation-error.ts";
 import type { LocalImportJobData as ImportJobData } from "./local-import-job-data.ts";
 
 const mockCaptureException = vi.fn();
@@ -761,10 +764,8 @@ describe("processImportJob", () => {
 
       await expect(
         runImportJob(createMockJob({ filePath: tempFilePath, importType: "strong-csv" }), mockDb),
-      ).rejects.toEqual(expect.objectContaining({ name: "UnrecoverableError" }));
-      expect(mockCaptureException).toHaveBeenCalledWith(expect.any(UnrecoverableError), {
-        tags: { phase: "file-import" },
-      });
+      ).rejects.toEqual(expect.objectContaining({ name: STRONG_CSV_IMPORT_VALIDATION_ERROR_NAME }));
+      expect(mockCaptureException).not.toHaveBeenCalled();
     });
     it("does not misclassify unrelated Strong import errors as terminal validation failures", async () => {
       await writeFile(tempFilePath, "csv data");
@@ -803,7 +804,8 @@ describe("processImportJob", () => {
 
       await expect(
         runImportJob(createMockJob({ filePath: tempFilePath, importType: "strong-csv" }), mockDb),
-      ).rejects.toEqual(expect.objectContaining({ name: "UnrecoverableError" }));
+      ).rejects.toEqual(expect.objectContaining({ name: STRONG_CSV_IMPORT_VALIDATION_ERROR_NAME }));
+      expect(mockCaptureException).not.toHaveBeenCalled();
       expect(mockLogSync).toHaveBeenCalledWith(
         mockDb,
         expect.objectContaining({
@@ -1685,7 +1687,7 @@ describe("processImportJob", () => {
       await writeFile(tempFilePath, "bad csv");
       const job = createMockJob({ filePath: tempFilePath, importType: "strong-csv" });
       await expect(runImportJob(job, mockDb)).rejects.toEqual(
-        expect.objectContaining({ name: "UnrecoverableError" }),
+        expect.objectContaining({ name: STRONG_CSV_IMPORT_VALIDATION_ERROR_NAME }),
       );
       expect(mockLogSync).toHaveBeenCalledWith(
         mockDb,

@@ -11,7 +11,6 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
   ouraDailyActivitySchema,
-  ouraDailyReadinessSchema,
   ouraHeartRateSchema,
   ouraSleepDocumentSchema,
   ouraWorkoutSchema,
@@ -123,16 +122,6 @@ describe.skipIf(!hasOura)("Oura API contract", () => {
       accessToken,
     );
     assertSchema(ouraPageSchema(ouraSleepDocumentSchema), data, "Oura sleep");
-  });
-
-  it("daily_readiness endpoint matches schema", async () => {
-    const today = new Date().toISOString().split("T")[0];
-    const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().split("T")[0];
-    const data = await fetchJson(
-      `https://api.ouraring.com/v2/usercollection/daily_readiness?start_date=${weekAgo}&end_date=${today}`,
-      accessToken,
-    );
-    assertSchema(ouraPageSchema(ouraDailyReadinessSchema), data, "Oura daily_readiness");
   });
 
   it("daily_activity endpoint matches schema", async () => {

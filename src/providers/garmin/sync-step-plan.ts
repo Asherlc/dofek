@@ -3,7 +3,7 @@ import { z } from "zod";
 import { createClickHouseClientFromEnv } from "../../db/clickhouse.ts";
 import type { SyncDatabase } from "../../db/index.ts";
 import { dailyMetrics, sleepSession } from "../../db/schema/activity.ts";
-import { HEART_RATE, STRESS } from "../../db/sensor-channels.ts";
+import { HEART_RATE } from "../../db/sensor-channels.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
 import { captureException } from "../../lib/error-reporting.ts";
 import { planSyncStepIfRequestNotPending } from "../../lib/sync-request-query.ts";
@@ -131,7 +131,7 @@ export async function listGarminDatesNeedingHrvSteps(
 
 async function listGarminDatesWithMetricStreamChannel(
   context: GarminSyncPlanContext,
-  channel: typeof STRESS | typeof HEART_RATE,
+  channel: typeof HEART_RATE,
 ): Promise<Set<string>> {
   if (!process.env.CLICKHOUSE_URL) {
     return new Set();
@@ -192,14 +192,12 @@ export async function planGarminSyncSteps(
     pendingKeys,
   );
 
-  const [sleepDates, dailySummaryDates, hrvDates, stressSyncedDates, heartRateSyncedDates] =
-    await Promise.all([
-      listGarminDatesNeedingSleepSteps(context),
-      listGarminDatesNeedingDailySummarySteps(context),
-      listGarminDatesNeedingHrvSteps(context),
-      listGarminDatesWithMetricStreamChannel(context, STRESS),
-      listGarminDatesWithMetricStreamChannel(context, HEART_RATE),
-    ]);
+  const [sleepDates, dailySummaryDates, hrvDates, heartRateSyncedDates] = await Promise.all([
+    listGarminDatesNeedingSleepSteps(context),
+    listGarminDatesNeedingDailySummarySteps(context),
+    listGarminDatesNeedingHrvSteps(context),
+    listGarminDatesWithMetricStreamChannel(context, HEART_RATE),
+  ]);
 
   const sleepDateSet = new Set(sleepDates);
   const dailySummaryDateSet = new Set(dailySummaryDates);
@@ -226,14 +224,6 @@ export async function planGarminSyncSteps(
       planSyncStepIfRequestNotPending(
         steps,
         { type: "hrv_summary", date },
-        garminSyncStepToApiQuery,
-        pendingKeys,
-      );
-    }
-    if (!stressSyncedDates.has(date)) {
-      planSyncStepIfRequestNotPending(
-        steps,
-        { type: "stress", date },
         garminSyncStepToApiQuery,
         pendingKeys,
       );

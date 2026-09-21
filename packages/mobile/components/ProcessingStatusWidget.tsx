@@ -9,6 +9,7 @@ import {
   processingHeading,
   processingStatusMessage,
   processingTarget,
+  resolveProcessingTargetScope,
 } from "@dofek/providers/processing-status";
 import { useRouter } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -99,10 +100,14 @@ export function ProcessingStatusWidget({
   }
 
   const progress = processingAggregateProgress(data.datasets);
+  const targetScope = resolveProcessingTargetScope({
+    scopeProviderId: data.scope.providerId,
+    operations: data.operations,
+  });
   const target = processingTarget({
-    providerId: data.scope.providerId,
+    providerId: targetScope.providerId,
     datasets: data.datasets,
-    operationKind: data.operations[0]?.kind,
+    operationKind: targetScope.operationKind,
   });
   const problemDatasets = data.datasets.filter(
     (dataset) => dataset.status === "failed" || dataset.status === "blocked",

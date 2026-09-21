@@ -9,7 +9,6 @@ import type {
   ConnectDailySummary,
   ConnectSleepData,
   DailyHeartRate,
-  DailyStress,
   HrvSummary,
   TrainingReadiness,
   TrainingStatus,
@@ -139,13 +138,6 @@ export interface ParsedHrvSummary {
   baselineLow: number | undefined;
   baselineBalancedLow: number | undefined;
   baselineBalancedUpper: number | undefined;
-}
-
-export interface ParsedStressTimeSeries {
-  date: string;
-  avgStressLevel: number;
-  maxStressLevel: number;
-  samples: Array<{ timestamp: Date; stressLevel: number }>;
 }
 
 export interface ParsedHeartRateTimeSeries {
@@ -327,29 +319,6 @@ export function parseHrvSummary(hrv: HrvSummary): ParsedHrvSummary {
     baselineLow: hrv.baseline?.lowUpper,
     baselineBalancedLow: hrv.baseline?.balancedLow,
     baselineBalancedUpper: hrv.baseline?.balancedUpper,
-  };
-}
-
-export function parseStressTimeSeries(stress: DailyStress): ParsedStressTimeSeries {
-  const samples: Array<{ timestamp: Date; stressLevel: number }> = [];
-
-  if (stress.stressValuesArray) {
-    for (const [timestampMs, level] of stress.stressValuesArray) {
-      // Garmin uses -1, -2, -3 for non-stress states (rest, activity, uncategorized)
-      if (level !== undefined && level >= 0) {
-        samples.push({
-          timestamp: new Date(timestampMs ?? 0),
-          stressLevel: level,
-        });
-      }
-    }
-  }
-
-  return {
-    date: stress.calendarDate,
-    avgStressLevel: stress.avgStressLevel,
-    maxStressLevel: stress.maxStressLevel,
-    samples,
   };
 }
 

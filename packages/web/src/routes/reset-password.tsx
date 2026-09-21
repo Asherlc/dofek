@@ -1,5 +1,6 @@
 import {
   getNewPasswordValidationError,
+  isExpectedUserInputError,
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
   PASSWORD_REQUIREMENT_TEXT,
@@ -35,7 +36,9 @@ function PasswordResetForm({ token }: { token: string }) {
       await confirmPasswordReset(token, password);
       setSuccess(true);
     } catch (err: unknown) {
-      captureException(err, { operation: "auth.password-reset-confirm" });
+      if (!isExpectedUserInputError(err)) {
+        captureException(err, { operation: "auth.password-reset-confirm" });
+      }
       setError(userFacingErrorMessage(err, "Password reset failed"));
     } finally {
       setSubmitting(false);

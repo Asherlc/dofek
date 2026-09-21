@@ -105,8 +105,19 @@ export async function createAccountErasureRuntime(
       userId: snapshot.localIdentifiers.userId,
     });
     const dependencies: AccountErasurePhaseRunnerDependencies = {
-      assertConsumersDrained: (highWatermarks) =>
-        assertAccountErasureConsumersDrained(redpanda.admin, redpanda.topic, highWatermarks),
+      assertConsumersDrained: async (highWatermarks) => {
+        for (const route of redpanda.routes) {
+          const captured = highWatermarks.filter((entry) => entry.topic === route.topic);
+          if (captured.length === 0)
+            throw new Error(`Account erasure checkpoint is missing topic ${route.topic}`);
+          await assertAccountErasureConsumersDrained(
+            redpanda.admin,
+            route.topic,
+            captured,
+            route.consumerGroups,
+          );
+        }
+      },
       assertPeerDbDrained: (snapshot, walLsn) =>
         assertPeerDbAccountErasureDrained(
           database,
@@ -114,16 +125,44 @@ export async function createAccountErasureRuntime(
           walLsn,
           identifiers(snapshot),
         ),
-      assertQuarantineExpired: (highWatermarks) =>
-        assertAccountErasureQuarantineExpired(redpanda.admin, redpanda.topic, highWatermarks),
-      assertReplayExpired: (highWatermarks) =>
-        assertAccountErasureReplayExpired(redpanda.admin, redpanda.topic, highWatermarks),
-      captureHighWatermarks: () =>
-        captureAccountErasureHighWatermarks(redpanda.admin, redpanda.topic),
+      assertQuarantineExpired: async (highWatermarks) => {
+        for (const route of redpanda.routes) {
+          const captured = highWatermarks.filter((entry) => entry.topic === route.topic);
+          if (captured.length === 0)
+            throw new Error(`Account erasure checkpoint is missing topic ${route.topic}`);
+          await assertAccountErasureQuarantineExpired(redpanda.admin, route.topic, captured);
+        }
+      },
+      assertReplayExpired: async (highWatermarks) => {
+        for (const route of redpanda.routes) {
+          const captured = highWatermarks.filter((entry) => entry.topic === route.topic);
+          if (captured.length === 0)
+            throw new Error(`Account erasure checkpoint is missing topic ${route.topic}`);
+          await assertAccountErasureReplayExpired(redpanda.admin, route.topic, captured);
+        }
+      },
+      captureHighWatermarks: async () =>
+        (
+          await Promise.all(
+            redpanda.routes.map(async ({ topic }) =>
+              (
+                await captureAccountErasureHighWatermarks(redpanda.admin, topic)
+              ).map((entry) => ({ ...entry, topic })),
+            ),
+          )
+        ).flat(),
       capturePeerDbStagingBoundary: (input) =>
         capturePeerDbStagingBoundary(database, peerDbMirrorApi, peerDbStaging.storage, input),
-      captureQuarantineHighWatermarks: () =>
-        captureAccountErasureQuarantineHighWatermarks(redpanda.admin, redpanda.topic),
+      captureQuarantineHighWatermarks: async () =>
+        (
+          await Promise.all(
+            redpanda.routes.map(async ({ topic }) =>
+              (
+                await captureAccountErasureQuarantineHighWatermarks(redpanda.admin, topic)
+              ).map((entry) => ({ ...entry, topic })),
+            ),
+          )
+        ).flat(),
       decryptSnapshot: decryptAccountErasureSnapshot,
       eraseArchive: (snapshot, options) =>
         eraseMetricStreamArchive(

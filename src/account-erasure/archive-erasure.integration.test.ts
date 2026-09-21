@@ -13,7 +13,7 @@ const bucket = "metric-archive";
 const deletingUserId = "10000000-0000-4000-8000-000000001994";
 const otherUserId = "20000000-0000-4000-8000-000000001994";
 const minioImage =
-  "minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e";
+  "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e";
 const password = "archive-erasure-integration-secret";
 const username = "archive-erasure";
 

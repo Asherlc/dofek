@@ -15,6 +15,7 @@ Use an explicit integration command when database behavior is under test:
 ```bash
 pnpm test:integration
 pnpm test:integration -- src/db/db.integration.test.ts
+pnpm test:peerdb-integration
 pnpm test:all
 pnpm test:changed:all
 pnpm test:coverage:all
@@ -32,8 +33,19 @@ immediately when the Postgres URL is absent; it never creates an unbounded
 generic Testcontainers instance. Within a Vitest process it creates one
 migrated template database and clones an isolated database for each test file.
 
-The Vitest projects remain separate in CI: unit, mobile, and four integration
-shards are invoked explicitly. Stryker uses the Docker-free mutation config and
+`pnpm test:peerdb-integration` is the end-to-end CDC contract tier. It adds the
+pinned PeerDB/Temporal stack from `docker-compose.peerdb.yml`, runs only
+`*.peerdb.integration.test.ts`, and removes the current workspace's disposable
+containers and volumes when it finishes. The suite builds the current
+ClickHouse raw schema directly, creates mirrors from the checked-in production
+contract, and proves that Postgres rows normalize through PeerDB while excluded
+source columns remain absent from ClickHouse. This tier intentionally does not
+replay heavyweight historical ClickHouse backfills. PeerDB documents table
+mapping column exclusions in its
+[CREATE MIRROR reference](https://docs.peerdb.io/sql/commands/create-mirror).
+
+The Vitest projects remain separate in CI: unit, mobile, four database integration
+shards, and the PeerDB CDC integration tier are invoked explicitly. Stryker uses the Docker-free mutation config and
 must not collect `*.integration.test.ts` files. CI mutation discovery therefore
 only sends changed TypeScript files with a colocated `.test.ts` or `.test.tsx`
 unit suite to Stryker; integration-only implementations are covered by the

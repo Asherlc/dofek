@@ -73,7 +73,7 @@ services:
       start_period: 5s
 
   account-erasure-minio:
-    image: minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     environment:
       MINIO_ROOT_USER: accounterasure
       MINIO_ROOT_PASSWORD: account-erasure-e2e-secret
@@ -189,7 +189,9 @@ services:
       CLICKHOUSE_PASSWORD: health
       REDIS_URL: redis://redis:6379
       REDPANDA_BROKERS: redpanda:9092
-      METRIC_STREAM_TOPIC: metric-stream-v1
+      METRIC_STREAM_LEGACY_TOPIC: metric-stream-v1
+      METRIC_STREAM_LIVE_TOPIC: metric-stream-live-v1
+      METRIC_STREAM_HISTORY_TOPIC: metric-stream-history-v1
       PORT: "3000"
       NODE_ENV: test
       PUBLIC_URL: http://localhost:3100

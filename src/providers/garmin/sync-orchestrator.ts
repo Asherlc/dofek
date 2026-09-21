@@ -11,7 +11,6 @@ import {
   parseConnectSleepStages,
   parseHeartRateTimeSeries,
   parseHrvSummary,
-  parseStressTimeSeries,
 } from "@dofek/garmin-connect/parsing";
 import type { GarminTokens } from "@dofek/garmin-connect/types";
 import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
@@ -116,8 +115,6 @@ function syncErrorLabelForStep(step: GarminSyncStep): string {
       return "Daily metrics";
     case "sleep":
       return "Sleep";
-    case "stress":
-      return "Stress";
     case "heart_rate":
       return "Heart rate";
   }
@@ -137,8 +134,6 @@ function describeStep(step: GarminSyncStep): string {
       return `Daily summary ${step.date}`;
     case "hrv_summary":
       return `HRV ${step.date}`;
-    case "stress":
-      return `Stress ${step.date}`;
     case "heart_rate":
       return `Heart rate ${step.date}`;
   }
@@ -524,30 +519,6 @@ async function runHrvSummaryStep(
   }
 }
 
-async function runStressStep(
-  db: SyncDatabase,
-  client: GarminConnectClient,
-  providerId: string,
-  date: string,
-  metricStreamPublisher: SyncOptions["metricStreamPublisher"],
-): Promise<number> {
-  let raw: Awaited<ReturnType<GarminConnectClient["getDailyStress"]>>;
-  try {
-    raw = await client.getDailyStress(date);
-  } catch (error) {
-    if (isNoDataError(error)) return 0;
-    throw error;
-  }
-  const parsed = parseStressTimeSeries(raw);
-  const stressRows = parsed.samples.map((sample) => ({
-    recordedAt: sample.timestamp,
-    providerId,
-    stress: sample.stressLevel,
-  }));
-  await writeMetricStreamBatch(db, stressRows, SOURCE_TYPE_API, undefined, metricStreamPublisher);
-  return stressRows.length;
-}
-
 async function runHeartRateStep(
   db: SyncDatabase,
   client: GarminConnectClient,
@@ -690,24 +661,6 @@ async function runGarminSyncStep(
         tracker.throwIfErrors();
         break;
       }
-      case "stress":
-        recordsSynced += await withSyncLog(
-          run.db,
-          "garmin",
-          "stress",
-          async () => {
-            const count = await runStressStep(
-              run.db,
-              client,
-              "garmin",
-              step.date,
-              run.options.metricStreamPublisher,
-            );
-            return { recordCount: count, result: count };
-          },
-          userId,
-        );
-        break;
       case "heart_rate":
         recordsSynced += await withSyncLog(
           run.db,

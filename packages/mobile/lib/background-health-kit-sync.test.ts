@@ -72,6 +72,9 @@ import {
 function createMockClient() {
   return {
     healthKitSync: {
+      recordSync: {
+        mutate: vi.fn().mockResolvedValue({ recorded: true }),
+      },
       pushQuantitySamples: {
         mutate: vi.fn().mockResolvedValue({ inserted: 0, errors: [] }),
       },
@@ -143,6 +146,21 @@ describe("initBackgroundHealthKitSync", () => {
 
     await vi.waitFor(() => {
       expect(client.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("records the background catch-up sync in provider history", async () => {
+    const client = createMockClient();
+    await initBackgroundHealthKitSync(client);
+
+    await vi.waitFor(() => {
+      expect(client.healthKitSync.recordSync.mutate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: "success",
+          origin: "unknown",
+          recordCount: 0,
+        }),
+      );
     });
   });
 

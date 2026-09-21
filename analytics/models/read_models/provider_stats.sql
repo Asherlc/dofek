@@ -173,8 +173,8 @@ current_providers AS (
         provider_id
     FROM {{ source('postgres_fitness', 'activity') }} FINAL
     WHERE _peerdb_is_deleted = 0
-        AND provider_absent_at IS null
-        AND deleted_at IS null
+        AND coalesce(provider_absent_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')
+        AND coalesce(deleted_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')
         AND (user_id, provider_id) IN (
             SELECT
                 user_id,
@@ -308,8 +308,8 @@ activity_counts AS (
         count() AS count
     FROM {{ source('postgres_fitness', 'activity') }} FINAL
     WHERE _peerdb_is_deleted = 0
-        AND provider_absent_at IS null
-        AND deleted_at IS null
+        AND coalesce(provider_absent_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')
+        AND coalesce(deleted_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')
         AND (user_id, provider_id) IN (
             SELECT
                 user_id,

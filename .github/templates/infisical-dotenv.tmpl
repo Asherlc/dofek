@@ -1,5 +1,8 @@
 {{/* Custom dotenv rendering for Docker Swarm env_file: Infisical's built-in dotenv
 adds single quotes around values, and Docker keeps those quotes literally. */}}
+{{/* Export the explicit METRIC_STREAM_LEGACY_TOPIC, METRIC_STREAM_LIVE_TOPIC,
+and METRIC_STREAM_HISTORY_TOPIC keys unchanged. The service renderer validates
+them and derives each consumer's internal METRIC_STREAM_TOPIC and group. */}}
 {{$secrets := secret "54712f56-98a9-4531-9e97-0b588d2e5a88" "__INFISICAL_ENV__" "/"}}
 {{- range $secret := $secrets }}
 {{ $secret.Key }}={{ if and $secret.IsMultilineEncodingEnabled (contains "\n" $secret.Value) }}{{ replace "\n" "\\n" $secret.Value }}{{ else }}{{ $secret.Value }}{{ end }}

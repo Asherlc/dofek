@@ -38,7 +38,7 @@ services:
       start_period: 60s
 
   peerdb-temporal-admin-tools:
-    image: temporalio/admin-tools:1.31
+    image: temporalio/admin-tools:1.32
     environment:
       TEMPORAL_ADDRESS: peerdb-temporal:7233
       TEMPORAL_CLI_ADDRESS: peerdb-temporal:7233
@@ -47,7 +47,7 @@ services:
   # Registers the MirrorName search attribute that PeerDB workflows require.
   # Runs once after Temporal is healthy, then exits.
   peerdb-temporal-init:
-    image: temporalio/admin-tools:1.31
+    image: temporalio/admin-tools:1.32
     environment:
       TEMPORAL_ADDRESS: peerdb-temporal:7233
       TEMPORAL_CLI_ADDRESS: peerdb-temporal:7233
@@ -82,7 +82,7 @@ services:
         fi
 
   peerdb-minio:
-    image: minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     environment:
       MINIO_ROOT_USER: peerdb
       # MinIO requires a root password of at least 8 characters; do not reuse
@@ -114,7 +114,7 @@ services:
       "
 
   peerdb-flow-api:
-    image: ghcr.io/peerdb-io/flow-api:stable-v0.37.5
+    image: ghcr.io/peerdb-io/flow-api:stable-v0.37.7
     environment: &peerdb-flow-environment
       PEERDB_CATALOG_HOST: peerdb-catalog
       PEERDB_CATALOG_PORT: "5432"
@@ -147,7 +147,7 @@ services:
         condition: service_started
 
   peerdb-flow-snapshot-worker:
-    image: ghcr.io/peerdb-io/flow-snapshot-worker:stable-v0.37.5
+    image: ghcr.io/peerdb-io/flow-snapshot-worker:stable-v0.37.7
     environment: *peerdb-flow-environment
     restart: unless-stopped
     depends_on:
@@ -163,7 +163,7 @@ services:
         condition: service_started
 
   peerdb:
-    image: ghcr.io/peerdb-io/peerdb-server:stable-v0.37.5
+    image: ghcr.io/peerdb-io/peerdb-server:stable-v0.37.7
     stop_signal: SIGINT
     environment:
       PEERDB_CATALOG_HOST: peerdb-catalog
@@ -177,7 +177,7 @@ services:
       RUST_BACKTRACE: "1"
     restart: unless-stopped
     ports:
-      - "127.0.0.1:9900:9900"
+      - "127.0.0.1:${PEERDB_CDC_PORT:-9900}:9900"
     depends_on:
       peerdb-catalog:
         condition: service_healthy
@@ -185,7 +185,7 @@ services:
         condition: service_started
 
   peerdb-ui:
-    image: ghcr.io/peerdb-io/peerdb-ui:stable-v0.37.5
+    image: ghcr.io/peerdb-io/peerdb-ui:stable-v0.37.7
     environment:
       PEERDB_CATALOG_HOST: peerdb-catalog
       PEERDB_CATALOG_PORT: "5432"

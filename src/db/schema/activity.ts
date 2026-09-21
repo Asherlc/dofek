@@ -213,6 +213,68 @@ export const activityGroup = fitness.table(
   (table) => [uniqueIndex("activity_group_user_id_idx").on(table.userId, table.id)],
 );
 
+export const effortEquivalenceGroup = fitness.table(
+  "effort_equivalence_group",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .$defaultFn(resolveImplicitUserId)
+      .references(() => userProfile.id),
+    name: text("display_name").notNull(),
+    effortKind: text("effort_kind", { enum: ["user_defined_benchmark"] }).notNull(),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    uniqueIndex("effort_equivalence_group_user_id_idx").on(table.userId, table.id),
+    check(
+      "effort_equivalence_group_effort_kind",
+      sql`${table.effortKind} = 'user_defined_benchmark'`,
+    ),
+  ],
+);
+
+export const effortEquivalenceGroupMember = fitness.table(
+  "effort_equivalence_group_member",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    groupId: uuid("group_id").notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .$defaultFn(resolveImplicitUserId)
+      .references(() => userProfile.id),
+    canonicalActivityId: uuid("canonical_activity_id").notNull(),
+    inclusionNote: text("inclusion_note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      name: "effort_equivalence_group_member_user_group_fk",
+      columns: [table.userId, table.groupId],
+      foreignColumns: [effortEquivalenceGroup.userId, effortEquivalenceGroup.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "effort_equivalence_group_member_user_activity_fk",
+      columns: [table.userId, table.canonicalActivityId],
+      foreignColumns: [activityGroup.userId, activityGroup.id],
+    }).onDelete("restrict"),
+    uniqueIndex("effort_equivalence_group_member_user_group_activity_idx").on(
+      table.userId,
+      table.groupId,
+      table.canonicalActivityId,
+    ),
+    index("effort_equivalence_group_member_user_activity_idx").on(
+      table.userId,
+      table.canonicalActivityId,
+    ),
+  ],
+);
+
 export const activityGroupAlias = fitness.table(
   "activity_group_alias",
   {
@@ -354,52 +416,6 @@ export const sportSettings = fitness.table(
   ],
 );
 
-/** Immutable threshold evidence reported directly by an upstream provider. */
-export const providerThresholdObservation = fitness.table(
-  "provider_threshold_observation",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => userProfile.id, { onDelete: "cascade" }),
-    providerId: text("provider_id")
-      .notNull()
-      .references(() => provider.id, { onDelete: "cascade" }),
-    providerRecordId: text("provider_record_id").notNull(),
-    sport: text("sport").notNull(),
-    thresholdType: text("threshold_type").notNull(),
-    value: real("value").notNull(),
-    unit: text("unit").notNull(),
-    observedAt: timestamp("observed_at", { withTimezone: true }).notNull(),
-    effectiveAt: timestamp("effective_at", { withTimezone: true }),
-    raw: jsonb("raw").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    index("provider_threshold_observation_history_idx").on(
-      table.userId,
-      table.sport,
-      table.thresholdType,
-      table.observedAt.desc(),
-    ),
-    index("provider_threshold_observation_source_idx").on(
-      table.userId,
-      table.providerId,
-      table.providerRecordId,
-      table.thresholdType,
-      table.observedAt.desc(),
-    ),
-    check("provider_threshold_observation_value_positive", sql`${table.value} > 0`),
-    check(
-      "provider_threshold_observation_identity_nonempty",
-      sql`length(btrim(${table.providerRecordId})) > 0
-        AND length(btrim(${table.sport})) > 0
-        AND length(btrim(${table.thresholdType})) > 0
-        AND length(btrim(${table.unit})) > 0`,
-    ),
-  ],
-);
-
 // ============================================================
 // Activity intervals / laps
 // ============================================================
@@ -416,9 +432,42 @@ export const activityInterval = fitness.table(
     intervalType: text("interval_type"),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
     endedAt: timestamp("ended_at", { withTimezone: true }),
+    sourceKind: text("source_kind", { enum: ["provider_recorded", "inferred"] }),
+    sourceProvider: text("source_provider").references(() => provider.id),
+    sourceActivityId: uuid("source_activity_id").references(() => activity.id, {
+      onDelete: "set null",
+    }),
+    segmentType: text("segment_type"),
+    targetIntensity: real("target_intensity"),
+    targetZone: bigint("target_zone", { mode: "number" }),
+    targetCadenceRpm: real("target_cadence_rpm"),
+    targetPowerWatts: real("target_power_watts"),
+    targetResistance: real("target_resistance"),
+    workRecoveryKind: text("work_recovery_kind", { enum: ["work", "recovery"] }),
+    raw: jsonb("raw"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index("activity_interval_activity_idx").on(table.activityId, table.intervalIndex)],
+  (table) => [
+    index("activity_interval_activity_idx").on(table.activityId, table.intervalIndex),
+    check(
+      "activity_interval_source_kind",
+      sql`${table.sourceKind} IS NULL OR ${table.sourceKind} IN ('provider_recorded', 'inferred')`,
+    ),
+    check(
+      "activity_interval_inferred_targets",
+      sql`${table.sourceKind} IS DISTINCT FROM 'inferred' OR (
+        ${table.targetIntensity} IS NULL
+        AND ${table.targetZone} IS NULL
+        AND ${table.targetCadenceRpm} IS NULL
+        AND ${table.targetPowerWatts} IS NULL
+        AND ${table.targetResistance} IS NULL
+      )`,
+    ),
+    check(
+      "activity_interval_work_recovery_kind",
+      sql`${table.workRecoveryKind} IS NULL OR ${table.workRecoveryKind} IN ('work', 'recovery')`,
+    ),
+  ],
 );
 
 // ============================================================
@@ -453,9 +502,6 @@ export const dailyMetrics = fitness.table(
     walkingSteadiness: real("walking_steadiness"), // 0-1
     standHours: integer("stand_hours"),
     skinTempC: real("skin_temp_c"), // celsius (WHOOP)
-    stressHighMinutes: integer("stress_high_minutes"), // minutes of high stress (Oura)
-    recoveryHighMinutes: integer("recovery_high_minutes"), // minutes of high recovery (Oura)
-    resilienceLevel: text("resilience_level"), // e.g. "limited", "adequate", "solid", "strong", "exceptional"
     pushCount: integer("push_count"),
     wheelchairDistanceKm: real("wheelchair_distance_km"),
     uvExposure: real("uv_exposure"),
@@ -528,10 +574,6 @@ export const sleepSession = fitness.table(
     stagingAvailable: boolean("staging_available").notNull().default(false),
     sleepType: text("sleep_type"),
     isNap: boolean("is_nap").notNull().default(false),
-    sleepNeedBaselineMinutes: integer("sleep_need_baseline_minutes"),
-    sleepNeedFromDebtMinutes: integer("sleep_need_from_debt_minutes"),
-    sleepNeedFromStrainMinutes: integer("sleep_need_from_strain_minutes"),
-    sleepNeedFromNapMinutes: integer("sleep_need_from_nap_minutes"),
     sourceName: text("source_name"),
     timezone: text("timezone"),
     startUtcOffsetMinutes: bigint("start_utc_offset_minutes", { mode: "number" }),

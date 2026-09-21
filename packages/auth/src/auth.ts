@@ -46,6 +46,27 @@ export function getNewPasswordValidationError(password: string): string | null {
   return null;
 }
 
+const EXPECTED_USER_INPUT_ERROR_MESSAGES = new Set([
+  "invalid email or password",
+  "invalid password reset request",
+  "invalid password reset details",
+]);
+
+function errorMessage(error: unknown): string | null {
+  if (error instanceof Error) return error.message.trim() || null;
+  if (typeof error === "string") return error.trim() || null;
+  if (typeof error === "object" && error !== null && "message" in error) {
+    return typeof error.message === "string" ? error.message.trim() || null : null;
+  }
+  return null;
+}
+
+/** Returns true for server responses caused by credentials or reset-form input. */
+export function isExpectedUserInputError(error: unknown): boolean {
+  const message = errorMessage(error)?.toLowerCase();
+  return message !== undefined && EXPECTED_USER_INPUT_ERROR_MESSAGES.has(message);
+}
+
 export const PasswordRegisterRequestSchema = z.object({
   email: EmailAddressSchema,
   password: z.string(),

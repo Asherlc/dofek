@@ -14,7 +14,7 @@ import { cyclingThresholdEstimateOutputSchema } from "./tool-output.ts";
 import { jsonToolResult } from "./tool-result.ts";
 import { assertDateRange } from "./tool-utils.ts";
 
-/** Register explicitly labeled recorded and modeled cycling threshold methods. */
+/** Register explicitly labeled configured and modeled cycling threshold methods. */
 export function registerCyclingThresholdEstimateTool(
   server: McpServer,
   context: DofekMcpContext,
@@ -24,7 +24,7 @@ export function registerCyclingThresholdEstimateTool(
     {
       title: "Estimate Cycling Threshold",
       description:
-        "Return the best-supported or selected cycling threshold method with uncertainty, assumptions, source efforts, activity IDs, provider evidence, and nearby body-weight provenance. Calculated values are never labeled measured FTP.",
+        "Return the best-supported or selected cycling threshold method with uncertainty, assumptions, source efforts, activity IDs, and nearby body-weight provenance. Calculated values are never labeled measured FTP.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: {
         start_date: dateSchema,

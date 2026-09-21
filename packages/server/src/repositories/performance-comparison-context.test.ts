@@ -1,10 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildActivitySourceSummary,
   buildEquivalenceEvidence,
   buildMovingDuration,
   buildRouteContext,
   buildSampleSourceSummary,
+  cyclingEffortRequest,
   hasObservedCyclingSensorData,
   type SourceRawPerformanceEvidence,
 } from "./performance-comparison-context.ts";
@@ -25,6 +26,50 @@ function source(
     sourceActivityId,
   };
 }
+
+describe("cyclingEffortRequest", () => {
+  const activity = {
+    activity_id: ACTIVITY_ID,
+    member_activity_ids: [ACTIVITY_ID],
+    started_at: "2026-01-01T12:00:00.000Z",
+    ended_at: "2026-01-01T12:30:00.000Z",
+    local_date: "2026-01-01",
+    source_providers: ["strava"],
+    source_raw_evidence: [],
+  };
+
+  it("derives elapsed seconds from valid activity timestamps", () => {
+    expect(cyclingEffortRequest(activity)).toMatchObject({ durationSeconds: 1800 });
+  });
+
+  it("rejects a missing end timestamp before parsing timestamps", () => {
+    const parse = vi.spyOn(Date, "parse").mockImplementation(() => {
+      throw new Error("timestamp parsing should not run");
+    });
+    try {
+      expect(() => cyclingEffortRequest({ ...activity, ended_at: null })).toThrow(
+        `Cycling activity ${ACTIVITY_ID} requires a valid elapsed duration`,
+      );
+    } finally {
+      parse.mockRestore();
+    }
+  });
+
+  it.each([
+    ["a non-finite timestamp", { started_at: "not-a-timestamp" }],
+    ["a negative duration", { ended_at: "2026-01-01T11:59:59.000Z" }],
+  ])("rejects %s", (_case, timestamps) => {
+    expect(() => cyclingEffortRequest({ ...activity, ...timestamps })).toThrow(
+      `Cycling activity ${ACTIVITY_ID} requires a valid elapsed duration`,
+    );
+  });
+
+  it("accepts a zero-second elapsed duration", () => {
+    expect(cyclingEffortRequest({ ...activity, ended_at: activity.started_at })).toMatchObject({
+      durationSeconds: 0,
+    });
+  });
+});
 
 describe("buildMovingDuration", () => {
   it("returns a provider-reported duration with source evidence", () => {
@@ -87,6 +132,21 @@ describe("hasObservedCyclingSensorData", () => {
 });
 
 describe("buildEquivalenceEvidence", () => {
+  it("returns an empty evidence summary for exact identity without source evidence", () => {
+    expect(
+      buildEquivalenceEvidence(
+        { kind: "provider_workout", provider: "wahoo", value: "workout-template-1" },
+        {
+          activityId: ACTIVITY_ID,
+          activityName: null,
+          sourceRawEvidence: [],
+          climbingRows: [],
+          strengthRows: [],
+        },
+      ),
+    ).toEqual({ items: [], count: 0, truncated: false });
+  });
+
   it("returns only exact provider-scoped cycling route name and type evidence", () => {
     const result = buildEquivalenceEvidence(
       {

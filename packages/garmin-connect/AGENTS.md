@@ -16,4 +16,3 @@
 ## Implementation Details
 - **User-Agents**: Uses `com.garmin.android.apps.connectmobile` for SSO and `GCM-iOS-5.19.1.2` for API calls.
 - **Sleep REM Correction**: Garmin's `sleepLevels` often mark REM as "light" (activity level 1). `parseConnectSleepStages` uses the dedicated `remSleepData` array to override these segments.
-- **Stress Samples**: Garmin uses negative values (-1, -2, -3) for periods where stress cannot be calculated (e.g., during activity). These are filtered out in `parseStressTimeSeries`.

@@ -5,14 +5,17 @@ import { z } from "zod";
 import { createClickHouseClientFromEnv } from "../../../../src/db/clickhouse.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { performanceComparisonOutputSchema } from "../mcp/performance-comparison-output.ts";
-import type { ActivitySensorStore } from "./activity-repository.ts";
 import { PerformanceComparisonRepository } from "./performance-comparison-repository.ts";
+import {
+  createPerformanceComparisonServingTablesForTest,
+  createScopedActivitySensorStoreForTest,
+} from "./test-helpers.ts";
 
 describe("PerformanceComparisonRepository database semantics", () => {
   const analyticsDatabase = `performance_comparison_${randomUUID().replaceAll("-", "")}`;
   const clickhouse = createClickHouseClientFromEnv();
   const userId = randomUUID();
-  const pelotonProvider = "peloton";
+  const workoutProvider = "zwift";
   const mirrorProvider = `performance-mirror-${randomUUID()}`;
   const firstSourceId = randomUUID();
   const mirrorSourceId = randomUUID();
@@ -30,20 +33,7 @@ describe("PerformanceComparisonRepository database semantics", () => {
   let firstCanonicalId: string;
   let secondCanonicalId: string;
   let zeroSampleCanonicalId: string;
-  const store: Pick<ActivitySensorStore, "query"> = {
-    async query<TSchema extends z.ZodType>(
-      schema: TSchema,
-      query: string,
-      params?: Record<string, unknown>,
-    ): Promise<z.infer<TSchema>[]> {
-      const result = await clickhouse.query({
-        query: query.replaceAll("analytics.", `${analyticsDatabase}.`),
-        query_params: params,
-        format: "JSONEachRow",
-      });
-      return z.array(schema).parse(await result.json());
-    },
-  };
+  const store = createScopedActivitySensorStoreForTest(clickhouse, analyticsDatabase);
 
   beforeAll(async () => {
     postgres = await setupTestDatabase();
@@ -54,7 +44,7 @@ describe("PerformanceComparisonRepository database semantics", () => {
     await postgres.db.execute(sql`
       INSERT INTO fitness.provider (id, name, user_id)
       VALUES
-        (${pelotonProvider}, 'Peloton comparison fixture', ${userId}::uuid),
+        (${workoutProvider}, 'Peloton comparison fixture', ${userId}::uuid),
         (${mirrorProvider}, 'Mirror comparison fixture', ${userId}::uuid)
     `);
     await postgres.db.execute(sql`
@@ -63,7 +53,7 @@ describe("PerformanceComparisonRepository database semantics", () => {
         started_at, ended_at, name, raw, timezone,
         start_utc_offset_minutes, end_utc_offset_minutes, local_time_source
       ) VALUES
-        (${firstSourceId}::uuid, ${firstSourceId}::uuid, ${pelotonProvider}, ${userId}::uuid, 'peloton-first',
+        (${firstSourceId}::uuid, ${firstSourceId}::uuid, ${workoutProvider}, ${userId}::uuid, 'peloton-first',
           'cycling', 'cycling', 'indoor', '2026-06-01T17:00:00Z', '2026-06-01T17:30:00Z',
           '30 min Power Zone', '{"pelotonClassId":"class-abc","moving_time":1740}'::jsonb,
           'America/Los_Angeles', -420, -420, 'provider_timezone'),
@@ -71,7 +61,7 @@ describe("PerformanceComparisonRepository database semantics", () => {
           'cycling', 'cycling', 'indoor', '2026-06-01T17:00:00Z', '2026-06-01T17:30:00Z',
           '30 min Power Zone mirror', '{}'::jsonb,
           'America/Los_Angeles', -420, -420, 'device_timezone'),
-        (${secondSourceId}::uuid, ${secondSourceId}::uuid, ${pelotonProvider}, ${userId}::uuid, 'peloton-second',
+        (${secondSourceId}::uuid, ${secondSourceId}::uuid, ${workoutProvider}, ${userId}::uuid, 'peloton-second',
           'cycling', 'cycling', 'indoor', '2026-07-01T17:00:00Z', '2026-07-01T17:30:00Z',
           '30 min Power Zone', '{"pelotonClassId":"class-abc","moving_time":1720}'::jsonb,
           'America/Los_Angeles', -420, -420, 'provider_timezone')
@@ -82,23 +72,23 @@ describe("PerformanceComparisonRepository database semantics", () => {
         started_at, ended_at, name, raw, timezone,
         start_utc_offset_minutes, end_utc_offset_minutes, local_time_source
       ) VALUES
-        (${routeActivityIds[0]}::uuid, ${routeActivityIds[0]}::uuid, ${pelotonProvider}, ${userId}::uuid, 'route-first',
+        (${routeActivityIds[0]}::uuid, ${routeActivityIds[0]}::uuid, ${workoutProvider}, ${userId}::uuid, 'route-first',
           'cycling', 'virtual_ride', 'indoor', '2026-08-01T17:00:00Z',
           '2026-08-01T18:00:00Z', 'Coastal loop', '{}'::jsonb,
           'America/Los_Angeles', -420, -420, 'provider_timezone'),
-        (${routeActivityIds[1]}::uuid, ${routeActivityIds[1]}::uuid, ${pelotonProvider}, ${userId}::uuid, 'route-second',
+        (${routeActivityIds[1]}::uuid, ${routeActivityIds[1]}::uuid, ${workoutProvider}, ${userId}::uuid, 'route-second',
           'cycling', 'virtual_ride', 'indoor', '2026-08-08T17:00:00Z',
           '2026-08-08T18:00:00Z', ' coastal   LOOP ', '{}'::jsonb,
           'America/Los_Angeles', -420, -420, 'provider_timezone'),
-        (${testActivityIds[0]}::uuid, ${testActivityIds[0]}::uuid, ${pelotonProvider}, ${userId}::uuid, 'test-first',
+        (${testActivityIds[0]}::uuid, ${testActivityIds[0]}::uuid, ${workoutProvider}, ${userId}::uuid, 'test-first',
           'cycling', 'cycling_test', 'indoor', '2026-08-10T17:00:00Z',
           '2026-08-10T17:20:00Z', '20 Minute FTP Test', '{}'::jsonb,
           'America/Los_Angeles', -420, -420, 'provider_timezone'),
-        (${testActivityIds[1]}::uuid, ${testActivityIds[1]}::uuid, ${pelotonProvider}, ${userId}::uuid, 'test-second',
+        (${testActivityIds[1]}::uuid, ${testActivityIds[1]}::uuid, ${workoutProvider}, ${userId}::uuid, 'test-second',
           'cycling', 'cycling_test', 'indoor', '2026-08-17T17:00:00Z',
           '2026-08-17T17:20:00Z', ' 20 minute   ftp test ', '{}'::jsonb,
           'America/Los_Angeles', -420, -420, 'provider_timezone'),
-        (${namedActivityIds[0]}::uuid, ${namedActivityIds[0]}::uuid, ${pelotonProvider}, ${userId}::uuid, 'named-first',
+        (${namedActivityIds[0]}::uuid, ${namedActivityIds[0]}::uuid, ${workoutProvider}, ${userId}::uuid, 'named-first',
           'running', 'running', 'road', '2026-08-20T17:00:00Z',
           '2026-08-20T17:30:00Z', 'Park Benchmark', '{}'::jsonb,
           'America/Los_Angeles', -420, -420, 'provider_timezone'),
@@ -106,7 +96,7 @@ describe("PerformanceComparisonRepository database semantics", () => {
           'running', 'running', 'road', '2026-08-27T17:00:00Z',
           '2026-08-27T17:29:00Z', ' park   benchmark ', '{}'::jsonb,
           'America/Los_Angeles', -420, -420, 'provider_timezone'),
-        (${climbBaselineIds[0]}::uuid, ${climbBaselineIds[0]}::uuid, ${pelotonProvider}, ${userId}::uuid, 'climb-base-a',
+        (${climbBaselineIds[0]}::uuid, ${climbBaselineIds[0]}::uuid, ${workoutProvider}, ${userId}::uuid, 'climb-base-a',
           'climbing', 'rock_climbing', 'indoor', '2026-09-01T17:00:00Z',
           '2026-09-01T18:00:00Z', 'Route session', '{}'::jsonb,
           'America/Los_Angeles', -420, -420, 'provider_timezone'),
@@ -114,7 +104,7 @@ describe("PerformanceComparisonRepository database semantics", () => {
           'climbing', 'rock_climbing', 'indoor', '2026-09-01T17:00:00Z',
           '2026-09-01T18:00:00Z', 'Route session mirror', '{}'::jsonb,
           'America/Los_Angeles', -420, -420, 'provider_timezone'),
-        (${climbLatestIds[0]}::uuid, ${climbLatestIds[0]}::uuid, ${pelotonProvider}, ${userId}::uuid, 'climb-latest-a',
+        (${climbLatestIds[0]}::uuid, ${climbLatestIds[0]}::uuid, ${workoutProvider}, ${userId}::uuid, 'climb-latest-a',
           'climbing', 'rock_climbing', 'indoor', '2026-09-08T17:00:00Z',
           '2026-09-08T18:00:00Z', 'Route session', '{}'::jsonb,
           'America/Los_Angeles', -420, -420, 'provider_timezone'),
@@ -122,11 +112,11 @@ describe("PerformanceComparisonRepository database semantics", () => {
           'climbing', 'rock_climbing', 'indoor', '2026-09-08T17:00:00Z',
           '2026-09-08T18:00:00Z', 'Route session mirror', '{}'::jsonb,
           'America/Los_Angeles', -420, -420, 'provider_timezone'),
-        (${climbLeadId}::uuid, ${climbLeadId}::uuid, ${pelotonProvider}, ${userId}::uuid, 'climb-lead',
+        (${climbLeadId}::uuid, ${climbLeadId}::uuid, ${workoutProvider}, ${userId}::uuid, 'climb-lead',
           'climbing', 'rock_climbing', 'indoor', '2026-09-15T17:00:00Z',
           '2026-09-15T18:00:00Z', 'Lead route session', '{}'::jsonb,
           'America/Los_Angeles', -420, -420, 'provider_timezone'),
-        (${strengthBaselineIds[0]}::uuid, ${strengthBaselineIds[0]}::uuid, ${pelotonProvider}, ${userId}::uuid, 'strength-base-a',
+        (${strengthBaselineIds[0]}::uuid, ${strengthBaselineIds[0]}::uuid, ${workoutProvider}, ${userId}::uuid, 'strength-base-a',
           'strength', 'strength_training', 'indoor', '2026-09-20T17:00:00Z',
           '2026-09-20T18:00:00Z', 'Bench baseline', '{}'::jsonb,
           'America/Los_Angeles', -420, -420, 'provider_timezone'),
@@ -134,7 +124,7 @@ describe("PerformanceComparisonRepository database semantics", () => {
           'strength', 'strength_training', 'indoor', '2026-09-20T17:00:00Z',
           '2026-09-20T18:00:00Z', 'Bench baseline mirror', '{}'::jsonb,
           'America/Los_Angeles', -420, -420, 'provider_timezone'),
-        (${strengthLatestIds[0]}::uuid, ${strengthLatestIds[0]}::uuid, ${pelotonProvider}, ${userId}::uuid, 'strength-latest-a',
+        (${strengthLatestIds[0]}::uuid, ${strengthLatestIds[0]}::uuid, ${workoutProvider}, ${userId}::uuid, 'strength-latest-a',
           'strength', 'strength_training', 'indoor', '2026-09-27T17:00:00Z',
           '2026-09-27T18:00:00Z', 'Bench latest', '{}'::jsonb,
           'America/Los_Angeles', -420, -420, 'provider_timezone'),
@@ -183,7 +173,7 @@ describe("PerformanceComparisonRepository database semantics", () => {
     firstCanonicalId = String(canonicalRows[0]?.id);
     secondCanonicalId = String(canonicalRows[1]?.id);
     expect(canonicalRows[0]?.source_providers).toEqual(
-      expect.arrayContaining([pelotonProvider, mirrorProvider]),
+      expect.arrayContaining([workoutProvider, mirrorProvider]),
     );
     const zeroSampleRows = await postgres.db.execute(sql`
       SELECT id::text AS id
@@ -219,6 +209,7 @@ describe("PerformanceComparisonRepository database semantics", () => {
         user_id UUID,
         recorded_at DateTime64(6, 'UTC'),
         channel LowCardinality(String),
+        measurement_kind String DEFAULT 'direct',
         scalar Nullable(Float64),
         provider_id Nullable(String),
         device_id Nullable(String),
@@ -226,6 +217,125 @@ describe("PerformanceComparisonRepository database semantics", () => {
         is_deleted UInt8
       ) ENGINE = ReplacingMergeTree(refresh_version)
       ORDER BY (user_id, activity_id, channel, recorded_at)`,
+    });
+    await createPerformanceComparisonServingTablesForTest(clickhouse, analyticsDatabase);
+    const canonical = z
+      .array(z.object({ id: z.string(), started_at: z.coerce.date(), ended_at: z.coerce.date() }))
+      .parse(
+        await postgres.db.execute(
+          sql`SELECT id, started_at, ended_at FROM fitness.v_activity WHERE user_id = ${userId}::uuid`,
+        ),
+      );
+    await clickhouse.insert({
+      table: `${analyticsDatabase}.deduped_activities`,
+      format: "JSONEachRow",
+      values: canonical.map((row) => ({
+        activity_id: row.id,
+        user_id: userId,
+        started_at: row.started_at.toISOString().replace("T", " ").replace("Z", ""),
+        ended_at: row.ended_at.toISOString().replace("T", " ").replace("Z", ""),
+        refresh_version: 1,
+        is_deleted: 0,
+      })),
+    });
+    const identityRows = [firstCanonicalId, secondCanonicalId].flatMap((id, index) =>
+      ["provider_workout", "provider_route", "segment", "climb", "standardized_test"].map(
+        (kind) => ({
+          user_id: userId,
+          canonical_activity_id: id,
+          source_activity_id: index === 0 ? firstSourceId : secondSourceId,
+          source_provider: workoutProvider,
+          source_external_id: `instance-${index}`,
+          kind,
+          namespace: workoutProvider,
+          value: "class-abc",
+          normalized_value: "class-abc",
+          display_name: "Protocol",
+          strength: "exact",
+          method: "exact_explicit_raw_identity_v1",
+          source_field: "templateId",
+          evidence: { rawValue: "class-abc" },
+          refresh_version: 1,
+          is_deleted: 0,
+        }),
+      ),
+    );
+    await clickhouse.insert({
+      table: `${analyticsDatabase}.activity_effort_identity`,
+      format: "JSONEachRow",
+      values: [
+        ...identityRows,
+        {
+          ...identityRows[0],
+          value: "deleted",
+          normalized_value: "deleted",
+          refresh_version: 1,
+        },
+        {
+          ...identityRows[0],
+          value: "deleted",
+          normalized_value: "deleted",
+          refresh_version: 2,
+          is_deleted: 1,
+        },
+        { ...identityRows[0], user_id: randomUUID(), value: "other-user" },
+      ],
+    });
+    await clickhouse.insert({
+      table: `${analyticsDatabase}.activity_route_identity`,
+      format: "JSONEachRow",
+      values: [firstCanonicalId, secondCanonicalId].map((id) => ({
+        user_id: userId,
+        canonical_activity_id: id,
+        route_fingerprint: "route-fingerprint",
+        points: [
+          [37, -122],
+          [37.01, -122],
+          [37.02, -122],
+        ],
+        route_distance_meters: 2224,
+        elevation_profile: [],
+        coverage_pct: 100,
+        largest_gap_seconds: 1,
+        geometry_status: "available",
+        source_providers: [workoutProvider],
+        source_devices: ["gps"],
+        refresh_version: 1,
+        is_deleted: 0,
+      })),
+    });
+    await clickhouse.insert({
+      table: `${analyticsDatabase}.activity_sensor_sample`,
+      format: "JSONEachRow",
+      values: [firstCanonicalId, secondCanonicalId].flatMap((id, index) => {
+        const date = index === 0 ? "2026-06-01T17:00:00Z" : "2026-07-01T17:00:00Z";
+        return Array.from({ length: 1800 }, (_, offset) =>
+          ["power", "heart_rate", "cadence"].map((channel) => ({
+            activity_id: id,
+            user_id: userId,
+            recorded_at: new Date(Date.parse(date) + offset * 1000)
+              .toISOString()
+              .replace("T", " ")
+              .replace("Z", ""),
+            channel,
+            scalar:
+              channel === "power"
+                ? index === 0
+                  ? 180
+                  : 195
+                : channel === "heart_rate"
+                  ? index === 0
+                    ? 145
+                    : 143
+                  : 90,
+            provider_id: workoutProvider,
+            device_id: "bike-1",
+            measurement_kind: "direct",
+            refresh_version: 1,
+            is_deleted: 0,
+          })),
+        ).flat();
+      }),
     });
     await clickhouse.insert({
       table: `${analyticsDatabase}.activity_summary_rows`,
@@ -290,7 +400,7 @@ describe("PerformanceComparisonRepository database semantics", () => {
           recorded_at: "2026-06-01 17:05:00.000000",
           channel: "temperature",
           scalar: 20,
-          provider_id: pelotonProvider,
+          provider_id: workoutProvider,
           device_id: "bike-1",
           refresh_version: 1,
           is_deleted: 0,
@@ -301,7 +411,7 @@ describe("PerformanceComparisonRepository database semantics", () => {
           recorded_at: "2026-07-01 17:05:00.000000",
           channel: "temperature",
           scalar: 18,
-          provider_id: pelotonProvider,
+          provider_id: workoutProvider,
           device_id: "bike-1",
           refresh_version: 1,
           is_deleted: 0,
@@ -317,6 +427,124 @@ describe("PerformanceComparisonRepository database semantics", () => {
     await postgres?.cleanup();
   });
 
+  it.each(["provider_workout", "provider_route", "segment", "climb", "standardized_test"] as const)(
+    "executes namespaced %s identity selection",
+    async (kind) => {
+      const equivalence =
+        kind === "provider_workout" || kind === "provider_route"
+          ? { kind, provider: workoutProvider, value: "class-abc" }
+          : { kind, namespace: workoutProvider, value: "class-abc" };
+      const result = await new PerformanceComparisonRepository(
+        postgres.db,
+        store,
+        userId,
+        "UTC",
+      ).compare({
+        startDate: "2026-06-01",
+        endDate: "2026-07-31",
+        referenceActivityId: null,
+        equivalence,
+        providers: [],
+        modalities: [],
+        cursor: null,
+        limit: 25,
+      });
+      expect(result.performances.map((row) => row.activity_id)).toEqual([
+        firstCanonicalId,
+        secondCanonicalId,
+      ]);
+      expect(result.equivalence).toMatchObject({
+        strength: "exact",
+        identity: { kind, namespace: "zwift" },
+      });
+      expect(performanceComparisonOutputSchema.parse({ result }).result).toEqual(result);
+      if (kind === "provider_route") {
+        expect(result.performances[1]?.route).toMatchObject({
+          status: "exact",
+          provider: "zwift",
+          geometry: { overlap_percentage: 1 },
+        });
+      }
+    },
+  );
+
+  it("executes canonical geometry inference and retains overlap, direction, and provenance", async () => {
+    const result = await new PerformanceComparisonRepository(
+      postgres.db,
+      store,
+      userId,
+      "UTC",
+    ).compare({
+      startDate: "2026-06-01",
+      endDate: "2026-07-31",
+      referenceActivityId: null,
+      equivalence: { kind: "canonical_route", value: "route-fingerprint" },
+      providers: [],
+      modalities: [],
+      cursor: null,
+      limit: 25,
+    });
+    expect(result.equivalence).toMatchObject({
+      strength: "strong_inferred",
+      confidence: "inferred",
+    });
+    expect(result.performances[1]?.route).toMatchObject({
+      geometry: { overlap_percentage: 1, direction: "forward" },
+      source_devices: ["gps"],
+    });
+    expect(performanceComparisonOutputSchema.parse({ result }).result).toEqual(result);
+  });
+
+  it("compares only owned benchmark members and labels membership as caller assertion", async () => {
+    const groupId = randomUUID();
+    await postgres.db.execute(sql`INSERT INTO fitness.effort_equivalence_group (id, user_id, display_name, effort_kind, notes)
+      VALUES (${groupId}::uuid, ${userId}::uuid, 'Benchmark', 'user_defined_benchmark', 'Controlled loop')`);
+    for (const id of [firstCanonicalId, secondCanonicalId]) {
+      await postgres.db.execute(sql`INSERT INTO fitness.effort_equivalence_group_member (group_id, user_id, canonical_activity_id, inclusion_note)
+        VALUES (${groupId}::uuid, ${userId}::uuid, ${id}::uuid, 'Same protocol')`);
+    }
+    const repository = new PerformanceComparisonRepository(postgres.db, store, userId, "UTC");
+    const input = {
+      startDate: "2026-06-01",
+      endDate: "2026-07-31",
+      referenceActivityId: null,
+      equivalence: { kind: "user_defined_benchmark" as const, value: groupId },
+      providers: [],
+      modalities: [],
+      cursor: null,
+      limit: 25,
+    };
+    const result = await repository.compare(input);
+    expect(result.performances).toHaveLength(2);
+    expect(result.equivalence).toMatchObject({
+      basis: "caller_asserted",
+      strength: "caller_asserted",
+      confidence: "user_asserted",
+    });
+    expect(result.performances[0]?.equivalence_evidence[0]).toMatchObject({
+      assertion_evidence: { notes: "Controlled loop", inclusion_note: "Same protocol" },
+    });
+    expect(performanceComparisonOutputSchema.parse({ result }).result).toEqual(result);
+    await expect(
+      new PerformanceComparisonRepository(postgres.db, store, randomUUID(), "UTC").compare(input),
+    ).rejects.toThrow("No performances match");
+  });
+
+  it.each(["deleted", "other-user"])("does not match %s identity rows", async (value) => {
+    await expect(
+      new PerformanceComparisonRepository(postgres.db, store, userId, "UTC").compare({
+        startDate: "2026-06-01",
+        endDate: "2026-07-31",
+        referenceActivityId: null,
+        equivalence: { kind: "provider_workout", provider: workoutProvider, value },
+        providers: [],
+        modalities: [],
+        cursor: null,
+        limit: 25,
+      }),
+    ).rejects.toThrow("No performances match");
+  });
+
   it("compares repeated workouts once after canonical deduplication", async () => {
     const result = await new PerformanceComparisonRepository(
       postgres.db,
@@ -329,10 +557,10 @@ describe("PerformanceComparisonRepository database semantics", () => {
       referenceActivityId: firstCanonicalId,
       equivalence: {
         kind: "provider_workout_id",
-        provider: pelotonProvider,
+        provider: workoutProvider,
         value: "class-abc",
       },
-      providers: [pelotonProvider],
+      providers: [workoutProvider],
       modalities: ["indoor"],
       cursor: null,
       limit: 25,
@@ -342,7 +570,7 @@ describe("PerformanceComparisonRepository database semantics", () => {
     expect(result.performances).toHaveLength(2);
     expect(result.baseline.activity_id).toBe(firstCanonicalId);
     expect(result.performances[0]?.source_providers).toEqual(
-      expect.arrayContaining([pelotonProvider, mirrorProvider]),
+      expect.arrayContaining([workoutProvider, mirrorProvider]),
     );
     expect(result.performances[1]).toMatchObject({
       activity_id: secondCanonicalId,
@@ -353,14 +581,14 @@ describe("PerformanceComparisonRepository database semantics", () => {
         moving_duration_seconds: -20,
       },
       provenance: {
-        sample_source_providers: [pelotonProvider],
+        sample_source_providers: [workoutProvider],
         sample_device_ids: ["bike-1"],
       },
     });
     expect(result.performances[0]?.moving_duration).toMatchObject({
       seconds: 1740,
       status: "available",
-      evidence: [{ provider: pelotonProvider, source_activity_id: firstSourceId }],
+      evidence: [{ provider: workoutProvider, source_activity_id: firstSourceId }],
     });
     expect(result.coverage.canonical_activities).toBe(2);
   });
@@ -373,7 +601,7 @@ describe("PerformanceComparisonRepository database semantics", () => {
       referenceActivityId: null,
       equivalence: {
         kind: "cycling_route",
-        provider: pelotonProvider,
+        provider: workoutProvider,
         activityName: "Coastal loop",
         providerType: "virtual_ride",
       },
@@ -391,9 +619,9 @@ describe("PerformanceComparisonRepository database semantics", () => {
         cycling: {
           sample_coverage: {
             total_samples: null,
-            power_samples: null,
-            heart_rate_samples: null,
-            status: "not_available",
+            power_samples: 0,
+            heart_rate_samples: 0,
+            status: "available",
           },
         },
       },
@@ -401,14 +629,14 @@ describe("PerformanceComparisonRepository database semantics", () => {
     expect(route.performances[0]).toMatchObject({
       route: {
         status: "caller_asserted",
-        provider: pelotonProvider,
+        provider: workoutProvider,
         activity_name: "Coastal loop",
         provider_type: "virtual_ride",
       },
       equivalence_evidence: [
         {
           evidence_type: "cycling_route_name_provider_type",
-          provider: pelotonProvider,
+          provider: workoutProvider,
           provider_type: "virtual_ride",
         },
       ],
@@ -420,7 +648,7 @@ describe("PerformanceComparisonRepository database semantics", () => {
       referenceActivityId: null,
       equivalence: {
         kind: "standardized_test",
-        provider: pelotonProvider,
+        provider: workoutProvider,
         activityName: "20 minute FTP test",
         providerType: "cycling_test",
       },
@@ -436,7 +664,7 @@ describe("PerformanceComparisonRepository database semantics", () => {
     expect(standardizedTest.performances[1]?.equivalence_evidence).toEqual([
       expect.objectContaining({
         evidence_type: "standardized_test_name_provider_type",
-        provider: pelotonProvider,
+        provider: workoutProvider,
         provider_type: "cycling_test",
       }),
     ]);
@@ -458,6 +686,84 @@ describe("PerformanceComparisonRepository database semantics", () => {
     expect(() => performanceComparisonOutputSchema.parse({ result: named })).not.toThrow();
     expect(named.performances).toHaveLength(2);
     expect(named.equivalence).toMatchObject({ confidence: "user_asserted" });
+  });
+
+  it("preserves weak discovery namespace, modality and exact duration buckets", async () => {
+    const fixtures = [
+      { seconds: 1800, modality: "road", namespace: "garmin" },
+      { seconds: 2099, modality: "road", namespace: "garmin" },
+      { seconds: 2100, modality: "road", namespace: "garmin" },
+      { seconds: 1799, modality: "road", namespace: "garmin" },
+      { seconds: 1800, modality: "trail", namespace: "garmin" },
+      { seconds: 1800, modality: "road", namespace: "other" },
+      { seconds: 1800, modality: null, namespace: "garmin" },
+    ].map((fixture) => ({ ...fixture, id: randomUUID() }));
+    for (const [index, fixture] of fixtures.entries()) {
+      const startedAt = `2026-12-0${index + 1}T12:00:00Z`;
+      await postgres.db.execute(sql`
+        INSERT INTO fitness.activity (id, group_id, provider_id, user_id, external_id,
+          canonical_type, provider_type, modality, started_at, ended_at, name)
+        VALUES (${fixture.id}::uuid, ${fixture.id}::uuid, ${workoutProvider}, ${userId}::uuid,
+          ${fixture.id}, 'running', 'running', ${fixture.modality}, ${startedAt}::timestamptz,
+          ${startedAt}::timestamptz + ${fixture.seconds} * interval '1 second', 'Weak Tempo')
+      `);
+    }
+    await clickhouse.insert({
+      table: `${analyticsDatabase}.activity_effort_identity`,
+      format: "JSONEachRow",
+      values: fixtures.map((fixture) => ({
+        user_id: userId,
+        canonical_activity_id: fixture.id,
+        source_activity_id: fixture.id,
+        source_provider: workoutProvider,
+        source_external_id: fixture.id,
+        kind: "activity_name",
+        namespace: fixture.namespace,
+        value: "Weak Tempo",
+        normalized_value: "weak tempo",
+        display_name: "Weak Tempo",
+        strength: "weak_similarity",
+        method: "normalized_name",
+        source_field: "name",
+        evidence: {},
+        refresh_version: 1,
+        is_deleted: 0,
+      })),
+    });
+    const weakSpecification = {
+      namespace: "garmin",
+      normalizedValue: "weak tempo",
+      canonicalType: "running",
+      modality: "road",
+      durationBucket: 6,
+    };
+    const result = await new PerformanceComparisonRepository(
+      postgres.db,
+      store,
+      userId,
+      "UTC",
+    ).compare({
+      startDate: "2026-12-01",
+      endDate: "2026-12-31",
+      referenceActivityId: null,
+      equivalence: {
+        kind: "activity_name",
+        canonicalType: "running",
+        value: "weak tempo",
+        asserted: false,
+        weakSpecification,
+      },
+      providers: [],
+      modalities: [],
+      cursor: null,
+      limit: 25,
+    });
+    expect(result.performances.map((row) => row.activity_id)).toEqual(
+      fixtures.slice(0, 2).map((row) => row.id),
+    );
+    expect(result.performances.every((row) => !row.quality.comparable)).toBe(true);
+    expect(result.equivalence.key).toMatchObject({ weak_specification: weakSpecification });
+    expect(() => performanceComparisonOutputSchema.parse({ result })).not.toThrow();
   });
 
   it("matches climb discipline exactly and attributes cross-member conflicts", async () => {

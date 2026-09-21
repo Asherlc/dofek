@@ -66,10 +66,6 @@ export async function syncWhoopSleepSessions(context: WhoopPersistenceContext): 
                   efficiencyPct: parsed.efficiencyPct,
                   sleepType: parsed.sleepType,
                   isNap: parsed.isNap,
-                  sleepNeedBaselineMinutes: parsed.sleepNeedBaselineMinutes,
-                  sleepNeedFromDebtMinutes: parsed.sleepNeedFromDebtMinutes,
-                  sleepNeedFromStrainMinutes: parsed.sleepNeedFromStrainMinutes,
-                  sleepNeedFromNapMinutes: parsed.sleepNeedFromNapMinutes,
                 })
                 .onConflictDoUpdate({
                   target: [sleepSession.userId, sleepSession.providerId, sleepSession.externalId],
@@ -85,10 +81,6 @@ export async function syncWhoopSleepSessions(context: WhoopPersistenceContext): 
                     efficiencyPct: parsed.efficiencyPct,
                     sleepType: parsed.sleepType,
                     isNap: parsed.isNap,
-                    sleepNeedBaselineMinutes: parsed.sleepNeedBaselineMinutes,
-                    sleepNeedFromDebtMinutes: parsed.sleepNeedFromDebtMinutes,
-                    sleepNeedFromStrainMinutes: parsed.sleepNeedFromStrainMinutes,
-                    sleepNeedFromNapMinutes: parsed.sleepNeedFromNapMinutes,
                   },
                 });
               if (!parsed.isNap && parsed.respiratoryRateAvg != null) {

@@ -587,84 +587,16 @@ exports[`CyclingThresholdEstimator > returns effective-dated configuration first
         },
       ],
     },
-    "method": "recorded_provider",
+    "method": "configured",
     "model": null,
     "relevant_activity_ids": [],
     "threshold_watts": 245,
     "uncertainty": {
       "kind": "not_applicable",
-      "reason": "This is a configured or provider-recorded value, not a statistical estimate",
+      "reason": "This is a configured value, not a statistical estimate",
       "watts": null,
     },
     "watts_per_kg": 3.5,
-    "watts_per_kg_reason": null,
-  },
-  "start_date": "2026-05-01",
-  "unavailable_reason": null,
-  "weight": {
-    "distance_days": 0,
-    "kind": "measured",
-    "method": "same_day",
-    "quality": "high",
-    "sources": [
-      {
-        "date": "2026-08-01",
-        "measurement_kind": "direct",
-        "provider": "withings",
-        "recorded_at": "2026-08-01T08:00:00.000Z",
-        "source_record_id": "weight-1",
-        "value_kg": 70,
-      },
-    ],
-    "value_kg": 70,
-  },
-}
-`;
-
-exports[`CyclingThresholdEstimator > uses explicit provider FTP but never provider-modeled FTP for recorded_provider 1`] = `
-{
-  "end_date": "2026-08-01",
-  "requested_method": "recorded_provider",
-  "result": {
-    "assumptions": [
-      "The provider supplied an observation date but no physiological test uncertainty",
-    ],
-    "classification": "provider_recorded",
-    "confidence": "moderate",
-    "evidence": {
-      "efforts": [],
-      "threshold_history": [
-        {
-          "effective_at": null,
-          "evidence_kind": "provider_observation",
-          "historical_validity": "observed_from_date",
-          "id": "00000000-0000-4000-8000-000000000103",
-          "observed_at": "2026-05-28T16:00:00.000Z",
-          "provider": "zwift",
-          "provider_record_id": "profile:12345",
-          "quality": {
-            "reason": "No effective date",
-            "status": "moderate",
-          },
-          "raw_evidence_available": false,
-          "sport": "cycling",
-          "threshold_type": "ftp",
-          "unit": "watt",
-          "value": 250,
-          "value_kind": "provider_recorded",
-        },
-      ],
-    },
-    "method": "recorded_provider",
-    "model": null,
-    "relevant_activity_ids": [],
-    "threshold_watts": 250,
-    "uncertainty": {
-      "kind": "not_applicable",
-      "reason": "This is a configured or provider-recorded value, not a statistical estimate",
-      "watts": null,
-    },
-    "watts_per_kg": 3.571,
     "watts_per_kg_reason": null,
   },
   "start_date": "2026-05-01",

@@ -207,6 +207,15 @@ export interface SyncTrpcClient {
     };
   };
   healthKitSync: {
+    recordSync: {
+      mutate(input: {
+        status: "success" | "degraded" | "error";
+        recordCount: number;
+        durationMs: number;
+        errorMessage?: string;
+        origin: "manual" | "unknown";
+      }): Promise<{ recorded: true }>;
+    };
     pushQuantitySamples: {
       mutate(input: {
         samples: HealthKitSample[];

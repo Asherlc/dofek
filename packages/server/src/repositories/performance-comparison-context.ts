@@ -2,9 +2,38 @@ import type {
   ClimbingComparisonRow,
   StrengthComparisonRow,
 } from "./performance-comparison-modality-metrics.ts";
-import type { PerformanceEquivalence } from "./performance-comparison-types.ts";
+import {
+  isIdentityEquivalence,
+  type PerformanceEquivalence,
+} from "./performance-comparison-types.ts";
 
-export const PELOTON_WORKOUT_KEYS = ["pelotonClassId"] as const;
+/** Translate authorized canonical activity evidence to the shared cycling input. */
+export function cyclingEffortRequest(activity: {
+  activity_id: string;
+  member_activity_ids: string[];
+  started_at: string;
+  ended_at: string | null;
+  local_date: string;
+  source_providers: string[];
+  source_raw_evidence: SourceRawPerformanceEvidence[];
+}) {
+  const duration =
+    activity.ended_at == null
+      ? NaN
+      : (Date.parse(activity.ended_at) - Date.parse(activity.started_at)) / 1000;
+  if (!Number.isFinite(duration) || duration < 0) {
+    throw new Error(`Cycling activity ${activity.activity_id} requires a valid elapsed duration`);
+  }
+  return {
+    activity_id: activity.activity_id,
+    member_activity_ids: activity.member_activity_ids,
+    started_at: activity.started_at,
+    activityDate: activity.local_date,
+    durationSeconds: duration,
+    sourceProviders: activity.source_providers,
+    movingDuration: buildMovingDuration(activity.source_raw_evidence),
+  };
+}
 
 export interface SourceRawPerformanceEvidence {
   sourceActivityId: string;
@@ -43,11 +72,6 @@ function normalized(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
 }
 
-function rawKeys(key: PerformanceEquivalence): readonly string[] {
-  if (key.kind === "provider_workout_id") return PELOTON_WORKOUT_KEYS;
-  return [];
-}
-
 /** Return bounded, source-record-level evidence explaining why an activity matched. */
 export function buildEquivalenceEvidence(
   key: PerformanceEquivalence,
@@ -55,7 +79,6 @@ export function buildEquivalenceEvidence(
 ) {
   const items: Array<{
     evidence_type:
-      | "provider_raw_field"
       | "cycling_route_name_provider_type"
       | "standardized_test_name_provider_type"
       | "climbing_entry"
@@ -68,31 +91,8 @@ export function buildEquivalenceEvidence(
     source_activity_id: string;
     source_record_id: string | null;
   }> = [];
-  if (key.kind === "provider_workout_id") {
-    for (const source of input.sourceRawEvidence) {
-      if (source.provider !== key.provider || source.raw === null) continue;
-      for (const field of rawKeys(key)) {
-        const value = source.raw[field];
-        const identity =
-          typeof value === "string"
-            ? value.trim()
-            : typeof value === "number" && Number.isFinite(value)
-              ? String(value)
-              : null;
-        if (identity === key.value) {
-          items.push({
-            evidence_type: "provider_raw_field",
-            provider: source.provider,
-            value: identity,
-            field,
-            provider_type: source.providerType,
-            source_activity_id: source.sourceActivityId,
-            source_record_id: null,
-          });
-        }
-      }
-    }
-  } else if (key.kind === "cycling_route" || key.kind === "standardized_test") {
+  if (isIdentityEquivalence(key)) return { items: [], count: 0, truncated: false };
+  if (key.kind === "cycling_route" || key.kind === "standardized_test") {
     for (const source of input.sourceRawEvidence) {
       if (
         source.provider !== key.provider ||

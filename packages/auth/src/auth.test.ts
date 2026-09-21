@@ -5,6 +5,7 @@ import {
   getEmailValidationError,
   getNewPasswordValidationError,
   IDENTITY_PROVIDER_NAMES,
+  isExpectedUserInputError,
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
   PASSWORD_REQUIREMENT_TEXT,
@@ -145,5 +146,33 @@ describe("getNewPasswordValidationError", () => {
     expect(getNewPasswordValidationError("a".repeat(PASSWORD_MAX_LENGTH + 1))).toBe(
       "Use no more than 128 characters.",
     );
+  });
+});
+
+describe("isExpectedUserInputError", () => {
+  it.each([
+    "Invalid email or password",
+    "Invalid password reset request",
+    "Invalid password reset details",
+  ])("classifies server validation message %s", (message) => {
+    expect(isExpectedUserInputError(new Error(message))).toBe(true);
+  });
+
+  it("does not classify service failures as user input", () => {
+    expect(isExpectedUserInputError(new Error("Password reset service unavailable"))).toBe(false);
+  });
+
+  it("reads error-like response objects", () => {
+    expect(isExpectedUserInputError({ message: "Invalid email or password" })).toBe(true);
+  });
+
+  it.each([
+    ["a trimmed string", "  Invalid email or password  ", true],
+    ["a non-matching string", "Credentials service unavailable", false],
+    ["an object without a message", { reason: "invalid credentials" }, false],
+    ["an object with a non-string message", { message: 401 }, false],
+    ["null", null, false],
+  ])("classifies %s without assuming an Error instance", (_description, error, expected) => {
+    expect(isExpectedUserInputError(error)).toBe(expected);
   });
 });

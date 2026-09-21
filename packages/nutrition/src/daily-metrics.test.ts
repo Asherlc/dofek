@@ -119,7 +119,6 @@ describe("legacyFieldsToDailyMetrics", () => {
       restingHr: 58,
       hrv: null,
       sourceName: "Apple Watch",
-      resilienceLevel: "solid",
     });
     expect(result).toEqual({});
   });

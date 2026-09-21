@@ -92,7 +92,8 @@ export async function runMetricStreamEventConsumer(
   const lagSamplesByPartition = new Map<number, { observedAt: number; lag: number }>();
   await options.quarantine.connect();
   await options.consumer.connect();
-  await options.consumer.subscribe({ topic: options.topic, fromBeginning: false });
+  // Existing groups resume committed offsets; first-start groups read all retained records.
+  await options.consumer.subscribe({ topic: options.topic, fromBeginning: true });
   if (options.lifecycleListener && options.consumer.observeGroupLifecycle) {
     options.consumer.observeGroupLifecycle(options.lifecycleListener);
   }
@@ -205,7 +206,7 @@ export async function runMetricStreamEventConsumer(
 
 function readRequiredEnvironmentValue(
   env: NodeJS.ProcessEnv,
-  key: "METRIC_STREAM_TOPIC" | "REDPANDA_BROKERS",
+  key: "METRIC_STREAM_TOPIC" | "METRIC_STREAM_CONSUMER_GROUP" | "REDPANDA_BROKERS",
 ): string {
   const value = env[key];
   if (!value) {
@@ -214,15 +215,13 @@ function readRequiredEnvironmentValue(
   return value;
 }
 
-export function createKafkaMetricStreamConsumerFromEnv(
-  groupId: string,
-  env: NodeJS.ProcessEnv = process.env,
-): {
+export function createKafkaMetricStreamConsumerFromEnv(env: NodeJS.ProcessEnv = process.env): {
   consumer: MetricStreamConsumerLike;
   quarantine: MetricStreamQuarantineWriter;
   topic: string;
 } {
   const topic = readRequiredEnvironmentValue(env, "METRIC_STREAM_TOPIC");
+  const groupId = readRequiredEnvironmentValue(env, "METRIC_STREAM_CONSUMER_GROUP");
   const brokers = readRequiredEnvironmentValue(env, "REDPANDA_BROKERS")
     .split(",")
     .map((broker) => broker.trim())

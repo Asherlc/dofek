@@ -48,6 +48,10 @@ const intervalSchema = z
     type: z.enum(["work", "recovery", "warmup", "cooldown", "other"]),
     label: nullableString,
     source: z.enum(["recorded", "inferred"]),
+    source_kind: z.enum(["provider_recorded", "inferred", "unknown"]),
+    source_provider: nullableString,
+    source_activity_id: z.uuid().nullable(),
+    segment_type: nullableString,
     start_offset_seconds: z.number().int().nonnegative(),
     end_offset_seconds: z.number().int().nonnegative(),
     duration_seconds: z.number().int().nonnegative(),
@@ -55,11 +59,23 @@ const intervalSchema = z
     normalized_power_watts: nullableNumber,
     average_heart_rate_bpm: nullableNumber,
     average_cadence_rpm: nullableNumber,
+    target_intensity: nullableNumber,
+    target_zone: z.number().int().nullable(),
+    target_cadence_rpm: nullableNumber,
     target_power_watts: nullableNumber,
+    target_resistance: nullableNumber,
+    work_recovery_kind: z.enum(["work", "recovery"]).nullable(),
     completion_pct: nullableNumber,
     source_member_activity_ids: z.array(z.uuid()),
+    raw: z.unknown().nullable(),
+    conflicts: z.array(z.string()).optional(),
+    source_evidence: z.array(z.record(z.string(), z.unknown())).optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    ({ type, work_recovery_kind }) => work_recovery_kind === null || type === work_recovery_kind,
+    { error: "work_recovery_kind must agree with type" },
+  );
 const bestPowerSchema = z
   .object({
     duration_seconds: z.number().int().positive(),

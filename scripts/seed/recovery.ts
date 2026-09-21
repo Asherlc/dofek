@@ -21,29 +21,26 @@ async function seedDailyMetrics(sql: Sql, random: SeedRandom, today: Date): Prom
     const date = daysBefore(today, daysAgo);
     const hardBlock = daysAgo >= 24 && daysAgo <= 38;
     const badSleepWeek = daysAgo >= 9 && daysAgo <= 15;
-    const highStressDay = daysAgo === 12;
     const heartRateVariability = 72 - Math.round(daysAgo / 18) - (badSleepWeek ? 16 : 0);
     const steps = hardBlock ? random.int(11_000, 16_000) : random.int(6_000, 12_500);
 
     await sql`
       INSERT INTO fitness.daily_metrics (
         date, provider_id, user_id, hrv, spo2_avg,
-        respiratory_rate_avg, skin_temp_c, stress_high_minutes, recovery_high_minutes,
+        respiratory_rate_avg, skin_temp_c,
         steps, distance_km,
         flights_climbed, exercise_minutes, walking_speed, walking_step_length,
         walking_double_support_pct, walking_asymmetry_pct, walking_steadiness,
-        stand_hours, resilience_level, source_name
+        stand_hours, source_name
       ) VALUES (
         ${date}, 'whoop', ${USER_ID}, ${Math.max(28, heartRateVariability + random.int(-4, 4))},
         ${random.float(95.4, 99.1, 1)},
         ${random.float(13.2, 16.8, 1)}, ${random.float(35.8, 36.9, 1)},
-        ${highStressDay ? 180 : random.int(20, 85)}, ${highStressDay ? 20 : random.int(70, 180)},
         ${steps}, ${random.float(4.2, 11.5, 1)},
         ${random.int(3, 24)}, ${hardBlock ? random.int(55, 125) : random.int(22, 70)},
         ${random.float(1.15, 1.55, 2)}, ${random.float(68, 86, 1)},
         ${random.float(18, 27, 1)}, ${random.float(0, 2.5, 1)},
-        ${random.float(0.72, 0.98, 2)}, ${random.int(9, 14)},
-        ${highStressDay ? "limited" : hardBlock ? "solid" : "strong"}, 'WHOOP Review Seed'
+        ${random.float(0.72, 0.98, 2)}, ${random.int(9, 14)}, 'WHOOP Review Seed'
       ) ON CONFLICT DO NOTHING
     `;
 
@@ -82,14 +79,12 @@ async function seedSleep(sql: Sql, random: SeedRandom, today: Date): Promise<voi
       INSERT INTO fitness.sleep_session (
         provider_id, user_id, external_id, started_at, ended_at, duration_minutes,
         deep_minutes, rem_minutes, light_minutes, awake_minutes, efficiency_pct,
-        staging_available, sleep_type, sleep_need_baseline_minutes, sleep_need_from_debt_minutes,
-        sleep_need_from_strain_minutes, sleep_need_from_nap_minutes, source_name
+        staging_available, sleep_type, source_name
       ) VALUES (
         'whoop', ${USER_ID}, ${`seed-whoop-sleep-${daysAgo}`}, ${startedAt}, ${endedAt},
         ${durationMinutes}, ${deepMinutes}, ${remMinutes}, ${lightMinutes}, ${awakeMinutes},
         ${Math.round(((durationMinutes - awakeMinutes) / durationMinutes) * 1000) / 10},
-        true, 'sleep', 480, ${badSleepWeek ? 45 : 10}, ${daysAgo % 5 === 0 ? 35 : 12}, 0,
-        'WHOOP Review Seed'
+        true, 'sleep', 'WHOOP Review Seed'
       ) RETURNING id
     `;
 

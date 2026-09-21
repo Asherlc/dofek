@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  applyWatchStartPreferences,
   persistVerifiedImuConnection,
   restoreWatchImuConnection,
   updateWatchImuConnection,
@@ -57,29 +56,5 @@ describe("IMU connection storage", () => {
 
     expect(onError).toHaveBeenCalledOnce();
     expect(storage.removeItem).toHaveBeenCalledWith(STORAGE_KEYS.IMU_CONNECTION_BINDING);
-  });
-
-  it("applies a phone start command without clearing a watch-only cached binding", () => {
-    const storage = createSettingsStorage();
-    const state = {
-      freqModeIndex: 1,
-      imuConnection: { serverUrl: "https://old.test", accountId: "old-account" },
-    };
-
-    applyWatchStartPreferences(storage, state, { freqModeIndex: 2 });
-    expect(state).toEqual({
-      freqModeIndex: 2,
-      imuConnection: { serverUrl: "https://old.test", accountId: "old-account" },
-    });
-
-    applyWatchStartPreferences(storage, state, {
-      freqModeIndex: 0,
-      hasCredentials: true,
-      imuConnection: binding,
-    });
-    expect(state).toEqual({
-      freqModeIndex: 0,
-      imuConnection: { serverUrl: "https://dofek.test", accountId: "account-1" },
-    });
   });
 });

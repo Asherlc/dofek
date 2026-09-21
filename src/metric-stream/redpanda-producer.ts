@@ -1,4 +1,5 @@
 import { Kafka } from "kafkajs";
+import { captureException } from "../lib/error-reporting.ts";
 import {
   createMetricStreamBatchCompletedEvent,
   createMetricStreamBatchPartitionKey,
@@ -10,6 +11,7 @@ import {
   type MetricStreamProcessingContext,
   type MetricStreamRowInput,
 } from "./events.ts";
+import { type MetricStreamRoute, metricStreamTopicForRoute } from "./routes.ts";
 
 export interface KafkaProducerMessage {
   key: string;
@@ -169,17 +171,13 @@ export class KafkaMetricStreamEventPublisher implements MetricStreamEventPublish
   }
 }
 
-let defaultMetricStreamPublisherPromise: Promise<MetricStreamEventPublisher> | undefined;
+const metricStreamPublisherPromises = new Map<string, Promise<KafkaMetricStreamEventPublisher>>();
 
 export function getDefaultMetricStreamEventPublisher(): Promise<MetricStreamEventPublisher> {
-  defaultMetricStreamPublisherPromise ??= createKafkaMetricStreamEventPublisherFromEnv();
-  return defaultMetricStreamPublisherPromise;
+  return createKafkaMetricStreamEventPublisherForRoute("live");
 }
 
-function readRequiredEnvironmentValue(
-  env: NodeJS.ProcessEnv,
-  key: "METRIC_STREAM_TOPIC" | "REDPANDA_BROKERS",
-): string {
+function readRequiredEnvironmentValue(env: NodeJS.ProcessEnv, key: "REDPANDA_BROKERS"): string {
   const value = env[key];
   if (!value) {
     throw new Error(`${key} is required`);
@@ -190,7 +188,14 @@ function readRequiredEnvironmentValue(
 export async function createKafkaMetricStreamEventPublisherFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<KafkaMetricStreamEventPublisher> {
-  const topic = readRequiredEnvironmentValue(env, "METRIC_STREAM_TOPIC");
+  return createKafkaMetricStreamEventPublisherForRoute("live", env);
+}
+
+export async function createKafkaMetricStreamEventPublisherForRoute(
+  route: MetricStreamRoute,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<KafkaMetricStreamEventPublisher> {
+  const topic = metricStreamTopicForRoute(route, env);
   const brokers = readRequiredEnvironmentValue(env, "REDPANDA_BROKERS")
     .split(",")
     .map((broker) => broker.trim())
@@ -199,12 +204,30 @@ export async function createKafkaMetricStreamEventPublisherFromEnv(
     throw new Error("REDPANDA_BROKERS must contain at least one broker");
   }
 
-  const kafka = new Kafka({
-    brokers,
-    clientId: "dofek-metric-stream-producer",
-  });
-
-  const producer = kafka.producer();
-  await producer.connect();
-  return new KafkaMetricStreamEventPublisher(producer, topic);
+  const publisherCacheKey = JSON.stringify([route, topic, brokers]);
+  let publisherPromise = metricStreamPublisherPromises.get(publisherCacheKey);
+  if (!publisherPromise) {
+    publisherPromise = (async () => {
+      const kafka = new Kafka({
+        brokers,
+        clientId: "dofek-metric-stream-producer",
+      });
+      const producer = kafka.producer();
+      await producer.connect();
+      return new KafkaMetricStreamEventPublisher(producer, topic);
+    })();
+    metricStreamPublisherPromises.set(publisherCacheKey, publisherPromise);
+    void publisherPromise.catch((error: unknown) => {
+      if (metricStreamPublisherPromises.get(publisherCacheKey) === publisherPromise) {
+        metricStreamPublisherPromises.delete(publisherCacheKey);
+      }
+      captureException(error, {
+        tags: {
+          metricStreamProducer: "redpanda",
+          metricStreamFailure: "publisher-connect",
+        },
+      });
+    });
+  }
+  return publisherPromise;
 }

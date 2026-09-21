@@ -1,17 +1,18 @@
 import { createHash } from "node:crypto";
-import {
-  type CyclingWorkoutIntervalInput,
-  type CyclingWorkoutMetrics,
-  type CyclingWorkoutSample,
-  type CyclingWorkoutSettings,
-  computeCyclingWorkoutMetrics,
+import type {
+  CyclingWorkoutMetrics,
+  CyclingWorkoutSample,
 } from "@dofek/training/cycling-workout-metrics";
 import type { Database } from "dofek/db";
-import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
-import { SportSettingsRepository, type SportSettingsRow } from "./sport-settings-repository.ts";
+import {
+  calculateCyclingEffortMetrics,
+  effectiveSettings,
+  loadCyclingEffortData,
+  recordedIntervalsForActivity,
+} from "./cycling-effort-metrics.ts";
+import type { SportSettingsRow } from "./sport-settings-repository.ts";
 
 const activityRowSchema = z.object({
   activity_id: z.string().uuid(),
@@ -34,38 +35,6 @@ const activityRowSchema = z.object({
 
 type ActivityRow = z.infer<typeof activityRowSchema>;
 
-const sampleRowSchema = z.object({
-  activity_id: z.string().uuid(),
-  elapsed_seconds: z.coerce.number().nonnegative(),
-  power: z.coerce.number().nonnegative().nullable(),
-  heart_rate: z.coerce.number().nonnegative().nullable(),
-  cadence: z.coerce.number().nonnegative().nullable(),
-  source_providers: z.array(z.string()),
-  source_devices: z.array(z.string()),
-  power_measurement_kinds: z.array(z.enum(["direct", "estimated", "unknown"])),
-});
-
-const bestPowerRowSchema = z.object({
-  activity_id: z.string().uuid(),
-  duration_seconds: z.coerce.number().int().positive(),
-  best_power: z.coerce.number().nonnegative(),
-  start_offset_seconds: z.coerce.number().nonnegative().nullable(),
-  observed_samples: z.coerce.number().int().nonnegative().nullable(),
-  coverage_pct: z.coerce.number().min(0).max(100).nullable(),
-  largest_gap_seconds: z.coerce.number().nonnegative().nullable(),
-  median_sample_interval_seconds: z.coerce.number().positive().nullable(),
-  power_measurement_kind: z.enum(["direct", "estimated", "unknown"]).nullable(),
-});
-
-const intervalRowSchema = z.object({
-  member_activity_id: z.string().uuid(),
-  interval_index: z.coerce.number().int(),
-  label: z.string().nullable(),
-  interval_type: z.string().nullable(),
-  started_at: timestampStringSchema,
-  ended_at: timestampStringSchema.nullable(),
-});
-
 const cursorSchema = z.object({
   version: z.literal(1),
   userId: z.string().uuid(),
@@ -76,13 +45,6 @@ const cursorSchema = z.object({
 
 type Cursor = z.infer<typeof cursorSchema>;
 
-const zonePctsSchema = z
-  .array(z.number().positive())
-  .min(1)
-  .refine((values) =>
-    values.every((value, index) => index === 0 || value > (values[index - 1] ?? 0)),
-  );
-
 export interface CyclingTrainingMetricsInput {
   startDate: string;
   endDate: string;
@@ -91,11 +53,6 @@ export interface CyclingTrainingMetricsInput {
   durationsSeconds: number[];
   cursor: string | null;
   limit: number;
-}
-
-interface RecordedIntervalEvidence {
-  input: CyclingWorkoutIntervalInput;
-  memberActivityIds: string[];
 }
 
 function cursorShape(input: CyclingTrainingMetricsInput): string {
@@ -137,75 +94,6 @@ function encodeCursor(row: ActivityRow, userId: string, shape: string): string {
   ).toString("base64url");
 }
 
-function parseZonePcts(value: unknown): number[] | null {
-  const parsed = zonePctsSchema.safeParse(value);
-  return parsed.success ? parsed.data : null;
-}
-
-function effectiveSettings(
-  history: SportSettingsRow[],
-  activityDate: string,
-): SportSettingsRow | null {
-  return history.find((row) => row.effectiveFrom <= activityDate) ?? null;
-}
-
-function workoutSettings(row: SportSettingsRow | null): CyclingWorkoutSettings | null {
-  if (!row) return null;
-  return {
-    ftpWatts: row.ftp,
-    thresholdHeartRateBpm: row.thresholdHr,
-    powerZoneUpperPcts: parseZonePcts(row.powerZonePcts),
-    heartRateZoneUpperPcts: parseZonePcts(row.hrZonePcts),
-  };
-}
-
-function normalizeIntervalType(value: string | null): CyclingWorkoutIntervalInput["type"] {
-  const normalized = value?.trim().toLowerCase();
-  if (normalized === "work" || normalized === "recovery") return normalized;
-  if (normalized === "warmup" || normalized === "warm_up") return "warmup";
-  if (normalized === "cooldown" || normalized === "cool_down") return "cooldown";
-  return "other";
-}
-
-function recordedIntervalsForActivity(
-  activity: ActivityRow,
-  rows: z.infer<typeof intervalRowSchema>[],
-): RecordedIntervalEvidence[] {
-  const members = new Set(activity.member_activity_ids);
-  const startedAt = Date.parse(activity.started_at);
-  const grouped = new Map<string, RecordedIntervalEvidence>();
-  for (const row of rows) {
-    if (!members.has(row.member_activity_id) || row.ended_at == null) continue;
-    const startOffsetSeconds = Math.round((Date.parse(row.started_at) - startedAt) / 1_000);
-    const endOffsetSeconds = Math.round((Date.parse(row.ended_at) - startedAt) / 1_000);
-    if (endOffsetSeconds <= startOffsetSeconds) continue;
-    const type = normalizeIntervalType(row.interval_type);
-    const key = `${startOffsetSeconds}:${endOffsetSeconds}:${type}:${row.label ?? ""}`;
-    const existing = grouped.get(key);
-    if (existing) {
-      existing.memberActivityIds.push(row.member_activity_id);
-      existing.memberActivityIds.sort();
-      continue;
-    }
-    grouped.set(key, {
-      input: {
-        index: row.interval_index,
-        type,
-        label: row.label,
-        startOffsetSeconds,
-        endOffsetSeconds,
-        targetPowerWatts: null,
-      },
-      memberActivityIds: [row.member_activity_id],
-    });
-  }
-  return [...grouped.values()].sort(
-    (left, right) =>
-      left.input.startOffsetSeconds - right.input.startOffsetSeconds ||
-      left.input.index - right.input.index,
-  );
-}
-
 function snakeCoverage(coverage: CyclingWorkoutMetrics["coverage"]["power"]) {
   return {
     observed_samples: coverage.observedSamples,
@@ -229,7 +117,7 @@ function snakeZones(zones: CyclingWorkoutMetrics["powerZones"]) {
 
 function snakeMetrics(
   metrics: CyclingWorkoutMetrics,
-  recordedIntervals: RecordedIntervalEvidence[],
+  normalizedIntervals: ReturnType<typeof calculateCyclingEffortMetrics>["intervals"],
 ) {
   return {
     value_kind: "calculated_from_samples" as const,
@@ -274,12 +162,15 @@ function snakeMetrics(
             minimum_work_seconds: metrics.intervalDetection.minimumWorkSeconds,
           },
     intervals: metrics.intervals.map((interval) => {
-      const evidence = recordedIntervals.find(
+      const normalized = normalizedIntervals.find(
         (candidate) =>
-          candidate.input.startOffsetSeconds === interval.startOffsetSeconds &&
-          candidate.input.endOffsetSeconds === interval.endOffsetSeconds &&
-          candidate.input.type === interval.type,
+          candidate.index === interval.index &&
+          candidate.startOffsetSeconds === interval.startOffsetSeconds &&
+          candidate.endOffsetSeconds === interval.endOffsetSeconds,
       );
+      const evidence = normalized?.evidence;
+      const sourceKind = normalized?.source ?? "unknown";
+      const inferred = sourceKind === "inferred";
       return {
         index: interval.index,
         type: interval.type,
@@ -292,9 +183,22 @@ function snakeMetrics(
         normalized_power_watts: interval.normalizedPowerWatts,
         average_heart_rate_bpm: interval.averageHeartRateBpm,
         average_cadence_rpm: interval.averageCadenceRpm,
-        target_power_watts: interval.targetPowerWatts,
-        completion_pct: interval.completionPct,
-        source_member_activity_ids: evidence?.memberActivityIds ?? [],
+        source_kind: sourceKind,
+        source_provider: evidence?.sourceProvider ?? null,
+        source_activity_id: evidence?.sourceActivityId ?? null,
+        segment_type: evidence?.segmentType ?? null,
+        target_intensity: inferred ? null : (evidence?.targetIntensity ?? null),
+        target_zone: inferred ? null : (evidence?.targetZone ?? null),
+        target_cadence_rpm: inferred ? null : (evidence?.targetCadenceRpm ?? null),
+        target_power_watts: inferred ? null : interval.targetPowerWatts,
+        target_resistance: inferred ? null : (evidence?.targetResistance ?? null),
+        work_recovery_kind: evidence?.workRecoveryKind ?? null,
+        completion_pct: inferred ? null : interval.completionPct,
+        source_member_activity_ids: evidence?.sourceMemberActivityIds ?? [],
+        raw: evidence?.raw ?? null,
+        ...(evidence?.conflicts
+          ? { conflicts: evidence.conflicts, source_evidence: evidence.sourceEvidence }
+          : {}),
       };
     }),
     unavailable_reasons: metrics.unavailableReasons.map(({ metric, reason }) => ({
@@ -330,7 +234,9 @@ function thresholdEvidence(settings: SportSettingsRow | null) {
   };
 }
 
-function bestPowerQuality(row: z.infer<typeof bestPowerRowSchema>) {
+function bestPowerQuality(
+  row: Awaited<ReturnType<typeof loadCyclingEffortData>>["bestPowerRows"][number],
+) {
   const reasons: string[] = [];
   if (row.coverage_pct == null || row.coverage_pct < 99)
     reasons.push("Power-window coverage is incomplete");
@@ -442,86 +348,14 @@ export class CyclingTrainingMetricsRepository {
     );
     const pageRows = activityRows.slice(0, input.limit);
     const hasMore = activityRows.length > input.limit;
-    const activityIds = pageRows.map((row) => row.activity_id);
-    const memberActivityIds = [...new Set(pageRows.flatMap((row) => row.member_activity_ids))];
-    const memberActivityIdList = sql.join(
-      memberActivityIds.map((memberActivityId) => sql`${memberActivityId}::uuid`),
-      sql`, `,
-    );
-
-    const [sampleRows, bestPowerRows, settingsHistory, intervalRows] = await Promise.all([
-      activityIds.length === 0
-        ? []
-        : this.#store.query(
-            sampleRowSchema,
-            `/* cycling-training-metrics:samples */
-            SELECT
-              toString(sensor.activity_id) AS activity_id,
-              dateDiff('millisecond', activity.started_at, sensor.recorded_at) / 1000 AS elapsed_seconds,
-              if(countIf(sensor.channel = 'power') = 0, NULL,
-                maxIf(sensor.scalar, sensor.channel = 'power')) AS power,
-              if(countIf(sensor.channel = 'heart_rate') = 0, NULL,
-                maxIf(sensor.scalar, sensor.channel = 'heart_rate')) AS heart_rate,
-              if(countIf(sensor.channel = 'cadence') = 0, NULL,
-                maxIf(sensor.scalar, sensor.channel = 'cadence')) AS cadence,
-              arraySort(groupUniqArrayIf(sensor.provider_id, sensor.provider_id != '')) AS source_providers,
-              arraySort(groupUniqArrayIf(sensor.device_id, sensor.device_id != '')) AS source_devices,
-              arraySort(groupUniqArrayIf(sensor.measurement_kind,
-                sensor.channel = 'power' AND sensor.measurement_kind != '')) AS power_measurement_kinds
-            FROM analytics.activity_sensor_sample AS sensor FINAL
-            INNER JOIN analytics.deduped_activities AS activity FINAL
-              ON activity.activity_id = sensor.activity_id AND activity.user_id = sensor.user_id
-            WHERE sensor.user_id = {userId:UUID}
-              AND sensor.activity_id IN ({activityIds:Array(UUID)})
-              AND sensor.channel IN ('power', 'heart_rate', 'cadence')
-              AND sensor.is_deleted = 0
-            GROUP BY sensor.activity_id, activity.started_at, sensor.recorded_at
-            ORDER BY sensor.activity_id, sensor.recorded_at`,
-            { userId: this.#userId, activityIds },
-          ),
-      activityIds.length === 0 || input.durationsSeconds.length === 0
-        ? []
-        : this.#store.query(
-            bestPowerRowSchema,
-            `/* cycling-training-metrics:power-curve */
-            SELECT
-              toString(curve.activity_id) AS activity_id,
-              curve.duration_seconds AS duration_seconds,
-              curve.best_power AS best_power,
-              curve.start_offset_seconds AS start_offset_seconds,
-              curve.observed_samples AS observed_samples,
-              curve.coverage_pct AS coverage_pct,
-              curve.largest_gap_seconds AS largest_gap_seconds,
-              curve.median_sample_interval_seconds AS median_sample_interval_seconds,
-              curve.power_measurement_kind AS power_measurement_kind
-            FROM analytics.activity_power_curve AS curve FINAL
-            WHERE curve.user_id = {userId:UUID}
-              AND curve.activity_id IN ({activityIds:Array(UUID)})
-              AND curve.duration_seconds IN ({durations:Array(UInt32)})
-              AND curve.is_deleted = 0
-            ORDER BY curve.activity_id, curve.duration_seconds`,
-            { userId: this.#userId, activityIds, durations: input.durationsSeconds },
-          ),
-      new SportSettingsRepository(this.#db, this.#userId).history("cycling"),
-      memberActivityIds.length === 0
-        ? []
-        : executeWithSchema(
-            this.#db,
-            intervalRowSchema,
-            sql`
-              SELECT
-                activity_id::text AS member_activity_id,
-                interval_index,
-                label,
-                interval_type,
-                started_at,
-                ended_at
-              FROM fitness.activity_interval
-              WHERE activity_id IN (${memberActivityIdList})
-              ORDER BY activity_id, interval_index
-            `,
-          ),
-    ]);
+    const { sampleRows, bestPowerRows, settingsHistory, intervalRows } =
+      await loadCyclingEffortData(
+        this.#db,
+        this.#store,
+        this.#userId,
+        pageRows,
+        input.durationsSeconds,
+      );
 
     const activities = pageRows.map((activity) => {
       const activitySamples = sampleRows.filter((row) => row.activity_id === activity.activity_id);
@@ -533,12 +367,20 @@ export class CyclingTrainingMetricsRepository {
       }));
       const settings = effectiveSettings(settingsHistory, activity.activity_date);
       const recordedIntervals = recordedIntervalsForActivity(activity, intervalRows);
-      const metrics = computeCyclingWorkoutMetrics({
-        durationSeconds: activity.elapsed_seconds,
+      const { workout: metrics, intervals: normalizedIntervals } = calculateCyclingEffortMetrics(
         samples,
-        settings: workoutSettings(settings),
-        intervals: recordedIntervals.map((interval) => interval.input),
-      });
+        {
+          durationSeconds: activity.elapsed_seconds,
+          activityDate: activity.activity_date,
+          settingsHistory,
+          intervals: recordedIntervals.map((interval) => interval.input),
+          intervalEvidence: recordedIntervals,
+          weightObservations: [],
+          powerMeasurementKinds: activitySamples.flatMap((row) => row.power_measurement_kinds),
+          sourceProviders: activity.source_providers,
+          sourceDevices: activitySamples.flatMap((row) => row.source_devices),
+        },
+      );
       const sourceDevices = [
         ...new Set(activitySamples.flatMap((row) => row.source_devices)),
       ].sort();
@@ -575,7 +417,7 @@ export class CyclingTrainingMetricsRepository {
         source_devices: sourceDevices,
         member_activity_ids: activity.member_activity_ids,
         thresholds: thresholdEvidence(settings),
-        metrics: snakeMetrics(metrics, recordedIntervals),
+        metrics: snakeMetrics(metrics, normalizedIntervals),
         best_powers: bestPowerRows
           .filter((row) => row.activity_id === activity.activity_id)
           .map((row) => ({

@@ -75,12 +75,10 @@ describe("planGarminSyncSteps", () => {
       { type: "sleep", date: "2026-03-01" },
       { type: "daily_summary", date: "2026-03-01" },
       { type: "hrv_summary", date: "2026-03-01" },
-      { type: "stress", date: "2026-03-01" },
       { type: "heart_rate", date: "2026-03-01" },
       { type: "sleep", date: "2026-03-02" },
       { type: "daily_summary", date: "2026-03-02" },
       { type: "hrv_summary", date: "2026-03-02" },
-      { type: "stress", date: "2026-03-02" },
       { type: "heart_rate", date: "2026-03-02" },
     ]);
   });
@@ -95,7 +93,6 @@ const sampleCheckpoint: GarminSyncCheckpoint = {
     { type: "sleep", date: "2026-03-01" },
     { type: "daily_summary", date: "2026-03-01" },
     { type: "hrv_summary", date: "2026-03-01" },
-    { type: "stress", date: "2026-03-01" },
     { type: "heart_rate", date: "2026-03-01" },
   ],
   stepIndex: 0,
@@ -143,7 +140,6 @@ describe("insertStepsAfterCurrent", () => {
       "sleep",
       "daily_summary",
       "hrv_summary",
-      "stress",
       "heart_rate",
     ]);
   });
@@ -181,7 +177,7 @@ describe("parseGarminSyncCheckpoint", () => {
 });
 
 describe("applyRateLimitToCheckpoint", () => {
-  it("drops remaining stress, heart rate, and HRV steps after a rate limit", () => {
+  it("drops remaining heart rate and HRV steps after a rate limit", () => {
     const checkpoint = applyRateLimitToCheckpoint({
       ...sampleCheckpoint,
       stepIndex: 0,
@@ -194,7 +190,7 @@ describe("applyRateLimitToCheckpoint", () => {
     ]);
   });
 
-  it("does not keep stress, heart rate, or HRV as the current step after a rate limit", () => {
+  it("does not keep heart rate or HRV as the current step after a rate limit", () => {
     const checkpoint = applyRateLimitToCheckpoint({
       ...sampleCheckpoint,
       stepIndex: 4,
@@ -215,7 +211,6 @@ describe("applyRateLimitToCheckpoint", () => {
         { type: "activities_list", offset: 0 },
         { type: "activity_reconcile" },
         { type: "sleep", date: "2026-03-01" },
-        { type: "stress", date: "2026-03-01" },
         { type: "heart_rate", date: "2026-03-01" },
       ],
       stepIndex: 1,

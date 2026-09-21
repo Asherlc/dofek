@@ -27,7 +27,27 @@ persisted PostgreSQL activity groups, and `deduped_activity_members` exposes can
 activity/member aliases for downstream models. `activity_duplicate_matches`
 retains overlap evidence for integrity diagnostics; `activity_duplicate_groups`
 projects `activity_source_records.group_id` without deriving identity from those
-edges. The [activity model](models/read_models/deduped_activities.sql) uses the
+edges. `activity_effort_identity` projects current evidence at
+`(user_id, source_activity_id, kind, namespace, normalized_value, source_field)`
+grain: it joins every current `activity_source_records` member to
+`deduped_activity_members`, so a representative never hides a contributing
+source's route, workout/template/class, segment, standardized-test, or weak
+name evidence. Its explicit v1 raw-field map is `pelotonClassId`, `templateId`,
+`workoutTemplateId`, and `classId` for provider workouts; `routeId` and
+`courseId` for provider routes; `segmentId` for segments; and
+`standardizedTestId` and `testId` for standardized tests. `external_id` stays
+provider-instance provenance and is never emitted as a reusable identity.
+Names are emitted only as `activity_name` with `weak_similarity`. Evidence is a
+bounded map of the classified raw field/value and source-record identifiers.
+The append-incremental model uses source/member sync timestamps plus canonical
+membership changes for invalidation; routine upstream `refreshed_at` changes do
+not dirty identity rows. Explicit user/activity refresh scopes include current
+and prior source members. It writes a `ReplacingMergeTree` tombstone when an emitted
+identity disappears or its source is no longer current. This follows dbt's
+[incremental-model lifecycle](https://docs.getdbt.com/docs/build/incremental-models)
+and preserves the structured source evidence consumed by MCP tools under the
+[MCP specification](https://modelcontextprotocol.io/specification/2026-07-28).
+The [activity model](models/read_models/deduped_activities.sql) uses the
 group UUID as `activity_id` and the chosen member UUID as `primary_activity_id`.
 Representative selection orders deduped sensor presence, sample count, elevation
 presence, specific canonical type, provider-type refinement, provider priority,
@@ -72,6 +92,84 @@ or priority inputs changed, and `analytics.v_body_measurement` is a thin
 active-row view over that dbt-owned canonical table. Insert-triggered
 materialized views reduce provider changes to compact `(user_id, provider_id)`
 arrival markers; `provider_change_watermark` reads only that compact state.
+Existing deployments must apply
+[migration 0083](../src/db/clickhouse-migrations/0083_activity_location_source_refresh.ts)
+before the next incremental `activity_location_sample` build. It adds the
+model's `source_refreshed_at` lifecycle watermark to targets created by the
+older schema and initializes legacy rows from their existing `refreshed_at`
+watermark. The migration is safe when dbt has not created the target yet and
+uses ClickHouse's idempotent
+[`ADD COLUMN IF NOT EXISTS`](https://clickhouse.com/docs/sql-reference/statements/alter/column#add-column)
+operation when the target exists.
+[Migration 0084](../src/db/clickhouse-migrations/0084_activity_location_source_refresh_default.ts)
+makes that legacy default null-safe because older targets allowed nullable
+`refreshed_at` values. `activity_location_sample` compares each stable group's
+latest location and lifecycle timestamps with that group's persisted
+`source_refreshed_at` watermark. [Migration
+0086](../src/db/clickhouse-migrations/0086_activity_location_member_change.ts)
+backfills a compact per-member location freshness index once and installs an
+incremental materialized view that advances it for new source inserts. The
+index retains whether a member has ever had a live location sample so a later
+all-deleted history can still emit target tombstones. ClickHouse incremental
+materialized views process inserted blocks as they arrive, shifting recurring
+aggregation from query time to ingestion time:
+<https://clickhouse.com/docs/materialized-view/incremental-materialized-view>.
+Its `AggregatingMergeTree` combines the per-member maximum timestamp and live
+history flag during background merges:
+<https://clickhouse.com/docs/engines/table-engines/mergetree-family/aggregatingmergetree>.
+Unscoped builds join this member-cardinality index to current group membership,
+select the 100 oldest dirty groups, and only then read complete raw tracks for
+those groups; later builds keep selecting dirty groups until the backlog is
+empty. Explicit activity repair scopes retain their caller-supplied bounds.
+Per-group watermarks make the bounded progression safe: completing a newer
+group cannot hide an older group that has not run yet. New groups with no
+historical live point are excluded because they have no target state to change;
+groups with historical live samples remain eligible so a later all-deleted
+source state can write the required tombstones. The one-use raw-track CTE
+remains streaming so it is
+aggregated without buffering a second full copy; reused bounded key and result
+CTEs are materialized. Each raw location version is resolved with one
+tuple-valued `argMax`, keeping all fields from the same latest row while
+maintaining one aggregate state instead of one state per field. ClickHouse
+documents tuple arguments as the way to return associated columns from the row
+selected by
+[`argMax`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/argmax).
+`activity_route_identity` follows `activity_location_sample` at canonical
+cycling-activity grain. It reads `deduped_activities FINAL`, selected
+`activity_location_sample FINAL` rows, `activity_effort_identity FINAL`, and
+selected `altitude` rows from `activity_sensor_sample FINAL`, preserving explicit provider route/course
+claims separately from a deterministic, 64-point coordinate-quantized ordered
+polyline and its reverse fingerprint. Its route distance, time-gap coverage,
+provider/device provenance, and lifecycle watermark refresh only when an
+activity, deduplicated location state, altitude evidence, or explicit route evidence changes; a
+route whose live geometry disappears emits a `ReplacingMergeTree` tombstone.
+Scoped builds resolve `activity_refresh_user_id` and
+`activity_refresh_activity_ids` (canonical or member IDs) before reading route
+points, and include scoped prior route keys so removed activities can be
+tombstoned. Unscoped incremental builds discover dirty keys from activity,
+location, altitude, and identity watermarks through per-activity source
+versions, then use `FINAL` only for the selected geometry. See the
+[route model](models/read_models/activity_route_identity.sql) and the shared
+[activity scope macros](macros/activity_refresh_scope.sql). The server's
+[route matcher](../packages/server/src/repositories/route-equivalence.ts) returns
+`left_quality` and `right_quality` on both accepted and rejected complete
+comparisons: geometry status, coverage percentage (0–100), and largest gap in
+seconds. Missing quality observations remain null; coverage describes the
+observed location interval, not the entire activity duration.
+The bounded elevation profile is derived from available `altitude` sensor
+samples and remains unavailable when those samples do not exist. Geometry is Level B
+`strong_inferred` only when the server matcher accepts overlap at least 90%,
+both endpoints within 250 m, relative distance difference at most 10%, and
+elevation similarity at least 0.85 when both profiles are available. dbt
+documents the incremental rebuild contract in its
+[incremental model guide](https://docs.getdbt.com/docs/build/incremental-models),
+and ClickHouse documents `ReplacingMergeTree` lifecycle replacement in its
+[engine reference](https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree).
+Its model-local
+`enable_materialized_cte` setting prevents those reused intermediates from
+being re-evaluated across current-row and tombstone branches; ClickHouse
+introduced this explicit single-evaluation behavior in
+[version 26.3](https://clickhouse.com/blog/clickhouse-release-26-03).
 `provider_metric_stream_daily` then recomputes at most 32 dirty
 `(user_id, provider_id, recorded_date)` keys per build from exact latest metric
 state, including replacements, tombstones, resurrection, and late arrivals.
@@ -103,12 +201,31 @@ activity timestamp bounds. This preserves overlapping and cross-midnight
 activity membership without generating cross-day sample/activity candidates;
 ClickHouse recommends reducing the volume entering a join:
 <https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse#joins>.
+Incremental stale-row reconciliation reads only target rows whose
+`(user_id, channel, recorded_at)` keys appear in the current microbatch, then
+selects the current `ReplacingMergeTree` version with
+`ORDER BY refresh_version DESC LIMIT 1 BY ...` instead of applying query-wide
+`SETTINGS final=1`. The microbatch `deduped_sensor` input uses the same
+`LIMIT 1 BY` pattern because dbt wraps that `ref()` in a filtered subquery where
+table-level `FINAL` is unsupported. That keeps logical current-state correctness
+while avoiding a full-table `FINAL` scan of the multi-tens-of-millions-row target
+on every day batch. ClickHouse documents that `FINAL` forces query-time
+replacement and that `LIMIT BY` keeps the first rows per key after ordering:
+<https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree>,
+<https://clickhouse.com/docs/sql-reference/statements/select/limit-by>.
 `activity_sensor_summary_rows` enables ClickHouse materialized CTE execution
 for its reused dirty-key, latest-sample, and cumulative-power stages so each
 stage is evaluated once per build instead of being inlined into every aggregate
 branch. ClickHouse introduced materialized CTEs for exactly this shared-result
 reuse and requires `enable_materialized_cte`:
 <https://clickhouse.com/blog/clickhouse-release-26-03>.
+Unscoped incremental builds process at most 100 dirty activities per cycle,
+ordered by the oldest source refresh version first. This bounds catch-up work
+while ensuring older backlog cannot be starved by newly refreshed activities;
+explicitly scoped repair builds and full refreshes remain complete and bypass
+the limit. dbt incremental models are designed to transform only the rows
+selected by their incremental filter:
+<https://docs.getdbt.com/docs/build/incremental-models>.
 The activity sample, sensor summary, location summary, activity summary, and
 VO2 max models use the persisted activity-group UUID as their lifecycle key.
 Member and alias UUIDs are accepted only as dirty lookup inputs and resolve to
@@ -234,6 +351,7 @@ model logic changes because existing rows retain the old transformation
 Production `DBT_SAFE_MODELS` currently selects `sensor_scalar_sample`,
 `deduped_sensor`, `activity_source_records`, `activity_duplicate_matches`,
 `activity_duplicate_groups`, `deduped_activities`, `deduped_activity_members`,
+`activity_effort_identity`, `activity_route_identity`,
 `provider_metric_stream_daily`, `provider_change_watermark`, `sleep_heart_rate_window`,
 `sleep_heart_rate_sample`, `resting_heart_rate_sleep_window`,
 `daily_sleep`, `daily_recovery_inputs`, `daily_recovery`, `activity_sensor_sample`, `activity_location_sample`,
@@ -244,16 +362,30 @@ Production `DBT_SAFE_MODELS` currently selects `sensor_scalar_sample`,
 `activity_power_curve`, `cycling_activity`, `daily_cycling`, `provider_stats`,
 `daily_activity_load`, `daily_strain`, `healthspan_activity_zone_minutes`,
 and `weekly_healthspan`. Scalar activity sample models use dbt's `microbatch`
-incremental strategy with daily batches and short lookbacks so ClickHouse
-processes bounded windows instead of one large activity/window query. Activity
+incremental strategy with daily batches and a one-batch lookback, so routine
+cycles process the previous and current freshness days instead of repeatedly
+replaying older historical refreshes. Activity
 stream staging uses the `metric_stream_freshness` source alias and batches by
 `_peerdb_synced_at`; downstream activity sample membership models
 (`activity_sensor_sample`) use upstream source freshness as their microbatch
 event time so late provider stream syncs and late activity dedupe changes can
 reattach older workout samples outside the normal recorded-time lookback.
+Newly ingested historical measurements carry current ingestion freshness and
+therefore enter a current batch; corrections that retain older freshness require
+the explicit bounded backfill procedure below. dbt defines `lookback` as the
+number of prior microbatches to reprocess and provides explicit event-time bounds
+for historical repair:
+<https://docs.getdbt.com/docs/build/incremental-microbatch#backfills>.
 Location reconciliation deliberately is not event-time microbatched: its
 provider counts must see complete current tracks for affected groups, and its
-target reconciliation is limited to those groups. `deduped_activities` and `deduped_activity_members`
+target reconciliation is limited to those groups. Dirty discovery aggregates
+source freshness at group cardinality before the bounded group selection, and
+point-level latest-version reconstruction runs only for the selected batch.
+Selected groups that resolve to no live points write a deleted checkpoint row
+so their persisted watermark advances without exposing a synthetic live
+sample; see the
+[`activity_location_sample` model](./models/read_models/activity_location_sample.sql).
+`deduped_activities` and `deduped_activity_members`
 materialize canonical activity identity once, but incremental runs only rebuild
 activity groups affected by scoped member or group IDs; provider/device priority
 changes can change representative selection globally while persisted group IDs
@@ -283,6 +415,8 @@ from the data automatically:
 Historical replay must be an explicit, bounded operator action. Supply both
 `--event-time-start` and `--event-time-end`, select only the required
 microbatch models, and monitor ClickHouse capacity while the run is active.
+Routine scalar sensor cycles intentionally cover only the previous and current
+freshness days; do not expand their configured lookback to perform a repair.
 For stable activity-group repair, use the ordered procedure below: its bounded
 microbatch command intentionally runs only after stable identity and membership
 have been rebuilt.

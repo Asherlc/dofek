@@ -119,8 +119,8 @@ active_activity AS (
   SELECT *
   FROM postgres_fitness.activity FINAL
   WHERE _peerdb_is_deleted = 0
-    AND provider_absent_at IS NULL
-    AND deleted_at IS NULL
+    AND coalesce(provider_absent_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')
+    AND coalesce(deleted_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')
 ),
 activity_membership_check AS (
   SELECT throwIf(
@@ -197,8 +197,8 @@ tombstoned AS (
     activity.provider_absent_at AS provider_absent_at
   FROM postgres_fitness.activity FINAL
   WHERE _peerdb_is_deleted = 0
-    AND provider_absent_at IS NOT NULL
-    AND deleted_at IS NULL
+    AND coalesce(provider_absent_at, toDateTime64(0, 6, 'UTC')) != toDateTime64(0, 6, 'UTC')
+    AND coalesce(deleted_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')
     AND external_id IS NOT NULL
     AND external_id != ''
 ),
@@ -725,6 +725,10 @@ FROM ranked
 GROUP BY date, user_id`;
 }
 
+export function buildDailyMetricsReadModelRefreshStatements(): string[] {
+  return ["DROP VIEW IF EXISTS analytics.v_daily_metrics", buildDailyMetricsReadModelSql()];
+}
+
 function buildProviderStatsReadModelSql(): string {
   return `${standardViewHeader("analytics.provider_stats")}
 WITH
@@ -736,8 +740,8 @@ providers AS (
   SELECT DISTINCT user_id, provider_id
   FROM postgres_fitness.activity FINAL
   WHERE _peerdb_is_deleted = 0
-    AND provider_absent_at IS NULL
-    AND deleted_at IS NULL
+    AND coalesce(provider_absent_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')
+    AND coalesce(deleted_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')
   UNION DISTINCT
   SELECT DISTINCT user_id, provider_id
   FROM postgres_fitness.daily_metrics FINAL
@@ -771,8 +775,8 @@ activity_counts AS (
   SELECT user_id, provider_id, count() AS count
   FROM postgres_fitness.activity FINAL
   WHERE _peerdb_is_deleted = 0
-    AND provider_absent_at IS NULL
-    AND deleted_at IS NULL
+    AND coalesce(provider_absent_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')
+    AND coalesce(deleted_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')
   GROUP BY user_id, provider_id
 ),
 daily_metric_counts AS (

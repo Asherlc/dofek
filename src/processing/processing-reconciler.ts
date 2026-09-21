@@ -64,7 +64,10 @@ export interface ProcessingEvidenceDecision {
 
 const datasetKeySchema = z.enum(PROCESSING_DATASET_KEYS);
 const outputPathSchema = z.enum(PROCESSING_OUTPUT_PATHS);
-const pendingOperationRowSchema = z.object({ operation_id: z.uuid() });
+const pendingOperationRowSchema = z.object({
+  operation_id: z.uuid(),
+  operation_created_at: z.coerce.date(),
+});
 const outputRowSchema = z.object({
   dataset_key: datasetKeySchema,
   output_path: outputPathSchema,
@@ -106,8 +109,19 @@ export interface ReconcilePendingProcessingOperationsInput {
 export interface ProcessingReconciliationResult {
   checked: number;
   completed: number;
+  abandoned: number;
   waiting: number;
 }
+
+/**
+ * An operation open longer than this without fully reconciling is declared
+ * stalled rather than left "waiting" forever. Generous enough to cover the
+ * slowest legitimate step-chain provider syncs (e.g. WHOOP's per-day/per-sleep
+ * step plan draining behind a shared, rate-limited queue), but bounded so a
+ * lost or abandoned sync surfaces as an actionable failure instead of eternal
+ * silence in the UI.
+ */
+export const STALE_OPERATION_THRESHOLD_MS = 12 * 60 * 60 * 1_000;
 
 export function createProcessingReconciliationDatabaseFromEnv(): SchemaExecutionDatabase {
   return createDatabaseFromEnv();
@@ -350,6 +364,33 @@ async function persistEvidenceDecision(
   });
 }
 
+async function abandonStalledOperation(
+  database: SchemaExecutionDatabase,
+  operationId: string,
+  staleDecisions: readonly ProcessingEvidenceDecision[],
+): Promise<void> {
+  for (const decision of staleDecisions) {
+    await appendProcessingStageEvent(database, {
+      operationId,
+      stage: "cdc",
+      status: "failed",
+      datasetKey: decision.datasetKey,
+      outputPath: decision.outputPath,
+      sourceWatermark: decision.sourceWatermark,
+      errorCode: "processing_stalled",
+      errorMessage:
+        "This update did not finish reconciling within the expected window. Try the update again.",
+      message: "Stored data never became available for analysis",
+      idempotencyKey: `stalled:${decision.datasetKey}:${decision.outputPath}`,
+    });
+  }
+  await database.execute(sql`UPDATE fitness.processing_queue_outbox
+      SET status = 'completed', dispatched_at = coalesce(dispatched_at, now())
+      WHERE operation_id = ${operationId}::uuid
+        AND queue_name = 'processing-reconcile'
+        AND status IN ('pending', 'dispatched', 'failed')`);
+}
+
 export async function reconcilePendingProcessingOperations({
   database,
   clickHouseClient,
@@ -359,16 +400,19 @@ export async function reconcilePendingProcessingOperations({
   const pendingOperations = await executeWithSchema(
     database,
     pendingOperationRowSchema,
-    sql`SELECT operation_id
-        FROM fitness.processing_queue_outbox
-        WHERE queue_name = 'processing-reconcile'
-          AND status IN ('pending', 'dispatched', 'failed')
-        GROUP BY operation_id
-        ORDER BY min(created_at), operation_id
+    sql`SELECT outbox.operation_id AS operation_id, operation.created_at AS operation_created_at
+        FROM fitness.processing_queue_outbox outbox
+        JOIN fitness.processing_operation operation ON operation.id = outbox.operation_id
+        WHERE outbox.queue_name = 'processing-reconcile'
+          AND outbox.status IN ('pending', 'dispatched', 'failed')
+        GROUP BY outbox.operation_id, operation.created_at
+        ORDER BY min(outbox.created_at), outbox.operation_id
         LIMIT ${parsedLimit}`,
   );
 
   let completed = 0;
+  let abandoned = 0;
+  const now = Date.now();
   for (const pendingOperation of pendingOperations) {
     const reconciliationInput = await loadReconciliationInput(
       database,
@@ -376,6 +420,20 @@ export async function reconcilePendingProcessingOperations({
       pendingOperation.operation_id,
     );
     const decisions = reconcileProcessingEvidence(reconciliationInput);
+    const allSucceeded =
+      decisions.length > 0 && decisions.every((decision) => decision.status === "succeeded");
+
+    if (!allSucceeded) {
+      const isStale =
+        now - pendingOperation.operation_created_at.getTime() > STALE_OPERATION_THRESHOLD_MS;
+      if (isStale) {
+        const staleDecisions = decisions.filter((decision) => decision.status !== "succeeded");
+        await abandonStalledOperation(database, pendingOperation.operation_id, staleDecisions);
+        abandoned += 1;
+        continue;
+      }
+    }
+
     for (const decision of decisions) {
       await persistEvidenceDecision(database, decision, pendingOperation.operation_id);
     }
@@ -400,7 +458,7 @@ export async function reconcilePendingProcessingOperations({
       }
     }
 
-    if (decisions.length > 0 && decisions.every((decision) => decision.status === "succeeded")) {
+    if (allSucceeded) {
       await database.execute(sql`UPDATE fitness.processing_queue_outbox
           SET status = 'completed', dispatched_at = coalesce(dispatched_at, now())
           WHERE operation_id = ${pendingOperation.operation_id}::uuid
@@ -413,6 +471,7 @@ export async function reconcilePendingProcessingOperations({
   return {
     checked: pendingOperations.length,
     completed,
-    waiting: pendingOperations.length - completed,
+    abandoned,
+    waiting: pendingOperations.length - completed - abandoned,
   };
 }

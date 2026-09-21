@@ -243,33 +243,6 @@ const AUDIO: DailyMetricTypeDefinition[] = [
   },
 ];
 
-// ── Stress / resilience ─────────────────────────────────────────────────────
-
-const STRESS: DailyMetricTypeDefinition[] = [
-  {
-    id: "stress_high_minutes",
-    displayName: "High Stress Minutes",
-    unit: "min",
-    category: "stress",
-    priorityCategory: "recovery",
-    sortOrder: 500,
-    isInteger: true,
-    legacyFieldName: "stressHighMinutes",
-    legacyColumnName: "stress_high_minutes",
-  },
-  {
-    id: "recovery_high_minutes",
-    displayName: "High Recovery Minutes",
-    unit: "min",
-    category: "stress",
-    priorityCategory: "recovery",
-    sortOrder: 501,
-    isInteger: true,
-    legacyFieldName: "recoveryHighMinutes",
-    legacyColumnName: "recovery_high_minutes",
-  },
-];
-
 // ── Exported catalog ────────────────────────────────────────────────────────
 
 /** Complete catalog of all daily metric types, sorted by category then sortOrder. */
@@ -278,7 +251,6 @@ export const DAILY_METRIC_TYPES: readonly DailyMetricTypeDefinition[] = [
   ...ACTIVITY,
   ...GAIT,
   ...AUDIO,
-  ...STRESS,
 ] as const;
 
 // ── Lookup indexes (built once at import time) ──────────────────────────────

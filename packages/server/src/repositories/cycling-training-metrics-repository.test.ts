@@ -1,9 +1,33 @@
 import { describe, expect, it, vi } from "vitest";
+import { calculateCyclingEffortMetrics } from "./cycling-effort-metrics.ts";
 import { CyclingTrainingMetricsRepository } from "./cycling-training-metrics-repository.ts";
+
+vi.mock("./cycling-effort-metrics.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./cycling-effort-metrics.ts")>();
+  return {
+    ...actual,
+    calculateCyclingEffortMetrics: vi.fn(actual.calculateCyclingEffortMetrics),
+  };
+});
+
+const calculateCyclingEffortMetricsMock = vi.mocked(calculateCyclingEffortMetrics);
 
 const userId = "00000000-0000-4000-8000-000000000001";
 const activityId = "00000000-0000-4000-8000-000000000010";
 const memberActivityId = "00000000-0000-4000-8000-000000000011";
+const unknownIntervalSource = {
+  source_kind: null,
+  source_provider: null,
+  source_activity_id: null,
+  segment_type: null,
+  target_intensity: null,
+  target_zone: null,
+  target_cadence_rpm: null,
+  target_power_watts: null,
+  target_resistance: null,
+  work_recovery_kind: null,
+  raw: null,
+};
 
 function queryText(query: unknown): string {
   if (typeof query !== "object" || query === null || !("queryChunks" in query)) {
@@ -70,10 +94,325 @@ function samples() {
     source_providers: ["peloton"],
     source_devices: ["Peloton Bike"],
     power_measurement_kinds: ["direct"],
+    stream_evidence: [
+      ["power", "peloton", "Peloton Bike", "direct"],
+      ["heart_rate", "peloton", "Peloton Bike", "direct"],
+      ["cadence", "peloton", "Peloton Bike", "direct"],
+    ],
   }));
 }
 
 describe("CyclingTrainingMetricsRepository", () => {
+  it("matches interval evidence by index and both clipped boundaries", async () => {
+    const actual = await vi.importActual<typeof import("./cycling-effort-metrics.ts")>(
+      "./cycling-effort-metrics.ts",
+    );
+    const intervalInputs = [
+      {
+        index: 1,
+        type: "work" as const,
+        label: "A",
+        startOffsetSeconds: 0,
+        endOffsetSeconds: 20,
+        targetPowerWatts: 225,
+      },
+      {
+        index: 1,
+        type: "work" as const,
+        label: "B",
+        startOffsetSeconds: 0,
+        endOffsetSeconds: 30,
+        targetPowerWatts: 230,
+      },
+      {
+        index: 1,
+        type: "work" as const,
+        label: "C",
+        startOffsetSeconds: 10,
+        endOffsetSeconds: 30,
+        targetPowerWatts: 235,
+      },
+    ];
+    const intervalEvidence = intervalInputs.map((input, index) => ({
+      input,
+      interval: {
+        intervalIndex: input.index,
+        source: "provider_recorded" as const,
+        startOffsetSeconds: input.startOffsetSeconds,
+        endOffsetSeconds: input.endOffsetSeconds,
+        label: input.label,
+        intervalType: input.type,
+        segmentType: `segment-${input.label}`,
+        workRecoveryKind: "work" as const,
+        sourceProvider: `provider-${input.label.toLowerCase()}`,
+        sourceActivityId: memberActivityId,
+        sourceMemberActivityIds: [memberActivityId],
+        targetIntensity: 0.9 + index / 100,
+        targetZone: 3 + index,
+        targetCadenceRpm: 90 + index,
+        targetPowerWatts: input.targetPowerWatts,
+        targetResistance: 35 + index,
+        raw: { interval: input.label },
+        completionPct: 95 - index,
+        ...(index === 0
+          ? {
+              conflicts: ["targetPowerWatts"],
+              sourceEvidence: [],
+            }
+          : {}),
+      },
+      memberActivityIds: [memberActivityId],
+    }));
+    const calculated = actual.calculateCyclingEffortMetrics([], {
+      durationSeconds: 60,
+      activityDate: "2026-06-15",
+      settingsHistory: [],
+      intervals: intervalInputs,
+      intervalEvidence,
+      weightObservations: [],
+      powerMeasurementKinds: [],
+      sourceProviders: [],
+      sourceDevices: [],
+    });
+    const first = calculated.intervals[0];
+    const third = calculated.intervals[2];
+    if (!first || !third) throw new Error("Expected three calculated intervals");
+    calculateCyclingEffortMetricsMock.mockReturnValueOnce({
+      workout: calculated.workout,
+      intervals: [
+        {
+          ...first,
+          index: 2,
+          evidence: first.evidence
+            ? { ...first.evidence, sourceProvider: "wrong-index-provider" }
+            : null,
+        },
+        ...calculated.intervals.slice(0, 2),
+        { ...third, source: "inferred" },
+      ],
+    });
+    const execute = vi.fn().mockResolvedValue([]);
+    const query = vi.fn(async (_schema, text: string) =>
+      text.includes("cycling-training-metrics:activities") ? [activityRow()] : [],
+    );
+
+    const result = await new CyclingTrainingMetricsRepository(
+      { execute },
+      { query },
+      userId,
+      "UTC",
+    ).listRange({
+      startDate: "2026-06-01",
+      endDate: "2026-06-30",
+      modalities: [],
+      providers: [],
+      durationsSeconds: [],
+      cursor: null,
+      limit: 10,
+    });
+
+    const intervals = result.activities[0]?.metrics.intervals;
+    expect(intervals?.map((interval) => interval.source_provider)).toEqual([
+      "provider-a",
+      "provider-b",
+      "provider-c",
+    ]);
+    expect(intervals?.[0]).toMatchObject({
+      source_kind: "provider_recorded",
+      source_activity_id: memberActivityId,
+      segment_type: "segment-A",
+      target_intensity: 0.9,
+      target_zone: 3,
+      target_cadence_rpm: 90,
+      target_power_watts: 225,
+      target_resistance: 35,
+      work_recovery_kind: "work",
+      completion_pct: null,
+      source_member_activity_ids: [memberActivityId],
+      raw: { interval: "A" },
+      conflicts: ["targetPowerWatts"],
+      source_evidence: [],
+    });
+    expect(intervals?.[2]).toMatchObject({
+      source_kind: "inferred",
+      target_intensity: null,
+      target_zone: null,
+      target_cadence_rpm: null,
+      target_power_watts: null,
+      target_resistance: null,
+      completion_pct: null,
+    });
+  });
+
+  it("returns explicit unknown and nullable evidence when no normalized interval matches", async () => {
+    const actual = await vi.importActual<typeof import("./cycling-effort-metrics.ts")>(
+      "./cycling-effort-metrics.ts",
+    );
+    const calculated = actual.calculateCyclingEffortMetrics([], {
+      durationSeconds: 60,
+      activityDate: "2026-06-15",
+      settingsHistory: [],
+      intervals: [
+        {
+          index: 1,
+          type: "work",
+          label: "Unmatched",
+          startOffsetSeconds: 0,
+          endOffsetSeconds: 30,
+          targetPowerWatts: 220,
+        },
+      ],
+      weightObservations: [],
+      powerMeasurementKinds: [],
+      sourceProviders: [],
+      sourceDevices: [],
+    });
+    calculateCyclingEffortMetricsMock.mockReturnValueOnce({
+      workout: calculated.workout,
+      intervals: [],
+    });
+    const execute = vi.fn().mockResolvedValue([]);
+    const query = vi.fn(async (_schema, text: string) =>
+      text.includes("cycling-training-metrics:activities") ? [activityRow()] : [],
+    );
+
+    const result = await new CyclingTrainingMetricsRepository(
+      { execute },
+      { query },
+      userId,
+      "UTC",
+    ).listRange({
+      startDate: "2026-06-01",
+      endDate: "2026-06-30",
+      modalities: [],
+      providers: [],
+      durationsSeconds: [],
+      cursor: null,
+      limit: 10,
+    });
+
+    expect(result.activities[0]?.metrics.intervals[0]).toEqual({
+      index: 1,
+      type: "work",
+      label: "Unmatched",
+      source: "recorded",
+      start_offset_seconds: 0,
+      end_offset_seconds: 30,
+      duration_seconds: 30,
+      average_power_watts: null,
+      normalized_power_watts: null,
+      average_heart_rate_bpm: null,
+      average_cadence_rpm: null,
+      source_kind: "unknown",
+      source_provider: null,
+      source_activity_id: null,
+      segment_type: null,
+      target_intensity: null,
+      target_zone: null,
+      target_cadence_rpm: null,
+      target_power_watts: 220,
+      target_resistance: null,
+      work_recovery_kind: null,
+      completion_pct: null,
+      source_member_activity_ids: [],
+      raw: null,
+    });
+  });
+
+  it("passes complete provider and sensor provenance to effort calculation", async () => {
+    calculateCyclingEffortMetricsMock.mockClear();
+    const execute = vi.fn().mockResolvedValue([]);
+    const query = vi.fn(async (_schema, text: string) => {
+      if (text.includes("cycling-training-metrics:activities")) {
+        return [activityRow({ source_providers: ["garmin", "apple_health", "garmin"] })];
+      }
+      if (text.includes("cycling-training-metrics:samples")) {
+        return [
+          {
+            ...samples()[0],
+            source_devices: ["trainer", "watch"],
+            power_measurement_kinds: ["direct", "estimated"],
+          },
+          {
+            ...samples()[1],
+            source_devices: ["bike"],
+            power_measurement_kinds: ["unknown"],
+          },
+        ];
+      }
+      return [];
+    });
+
+    await new CyclingTrainingMetricsRepository({ execute }, { query }, userId, "UTC").listRange({
+      startDate: "2026-06-01",
+      endDate: "2026-06-30",
+      modalities: [],
+      providers: [],
+      durationsSeconds: [],
+      cursor: null,
+      limit: 10,
+    });
+
+    expect(calculateCyclingEffortMetricsMock).toHaveBeenCalledOnce();
+    expect(calculateCyclingEffortMetricsMock.mock.calls[0]?.[1]).toMatchObject({
+      weightObservations: [],
+      powerMeasurementKinds: ["direct", "estimated", "unknown"],
+      sourceProviders: ["garmin", "apple_health", "garmin"],
+      sourceDevices: ["trainer", "watch", "bike"],
+    });
+  });
+
+  it.each(["provider_recorded", "inferred"] as const)(
+    "preserves clipped %s interval provenance",
+    async (sourceKind) => {
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([
+          {
+            ...unknownIntervalSource,
+            member_activity_id: memberActivityId,
+            interval_index: 1,
+            label: "clipped interval",
+            interval_type: "work",
+            started_at: "2026-06-15T14:59:59.000Z",
+            ended_at: "2026-06-15T16:00:01.000Z",
+            source_kind: sourceKind,
+            source_provider: "training-provider",
+            source_activity_id: memberActivityId,
+            target_power_watts: 240,
+            raw: { evidence: "retained" },
+          },
+        ]);
+      const query = vi.fn(async (_schema, text: string) =>
+        text.includes(":activities") ? [activityRow()] : text.includes(":samples") ? samples() : [],
+      );
+      const result = await new CyclingTrainingMetricsRepository(
+        { execute },
+        { query },
+        userId,
+        "UTC",
+      ).listRange({
+        startDate: "2026-06-01",
+        endDate: "2026-06-30",
+        modalities: [],
+        providers: [],
+        durationsSeconds: [],
+        cursor: null,
+        limit: 10,
+      });
+      expect(result.activities[0]?.metrics.intervals[0]).toMatchObject({
+        source: sourceKind === "inferred" ? "inferred" : "recorded",
+        source_kind: sourceKind,
+        start_offset_seconds: 0,
+        end_offset_seconds: 3600,
+        source_provider: "training-provider",
+        source_member_activity_ids: [memberActivityId],
+        target_power_watts: sourceKind === "inferred" ? null : 240,
+        raw: { evidence: "retained" },
+      });
+    },
+  );
   it("computes a paginated activity from canonical streams and historical settings", async () => {
     const execute = vi
       .fn()
@@ -86,6 +425,17 @@ describe("CyclingTrainingMetricsRepository", () => {
           interval_type: "work",
           started_at: "2026-06-15T15:10:00.000Z",
           ended_at: "2026-06-15T15:30:00.000Z",
+          source_kind: "provider_recorded",
+          source_provider: "peloton",
+          source_activity_id: memberActivityId,
+          segment_type: "power_zone",
+          target_intensity: 0.96,
+          target_zone: 4,
+          target_cadence_rpm: 95,
+          target_power_watts: 240,
+          target_resistance: 38,
+          work_recovery_kind: "work",
+          raw: { source: "fixture" },
         },
         {
           member_activity_id: activityId,
@@ -94,6 +444,17 @@ describe("CyclingTrainingMetricsRepository", () => {
           interval_type: "work",
           started_at: "2026-06-15T15:10:00.000Z",
           ended_at: "2026-06-15T15:30:00.000Z",
+          source_kind: "inferred",
+          source_provider: null,
+          source_activity_id: null,
+          segment_type: null,
+          target_intensity: null,
+          target_zone: null,
+          target_cadence_rpm: null,
+          target_power_watts: null,
+          target_resistance: null,
+          work_recovery_kind: null,
+          raw: null,
         },
       ]);
     const query = vi.fn(async (_schema, queryText: string) => {
@@ -179,6 +540,17 @@ describe("CyclingTrainingMetricsRepository", () => {
             start_offset_seconds: 600,
             end_offset_seconds: 1800,
             source_member_activity_ids: [activityId, memberActivityId],
+            source_kind: "provider_recorded",
+            source_provider: "peloton",
+            source_activity_id: memberActivityId,
+            segment_type: "power_zone",
+            target_intensity: 0.96,
+            target_zone: 4,
+            target_cadence_rpm: 95,
+            target_power_watts: 240,
+            target_resistance: 38,
+            work_recovery_kind: "work",
+            raw: { source: "fixture" },
           }),
         ],
       },
@@ -257,6 +629,7 @@ describe("CyclingTrainingMetricsRepository", () => {
           source_providers: ["wahoo"],
           source_devices: ["KICKR"],
           power_measurement_kinds: ["direct"],
+          stream_evidence: [["power", "wahoo", "KICKR", "direct"]],
         }));
       }
       return [];
@@ -301,6 +674,7 @@ describe("CyclingTrainingMetricsRepository", () => {
           interval_type: "recovery",
           started_at: "2026-06-15T15:20:00.000Z",
           ended_at: "2026-06-15T15:25:00.000Z",
+          ...unknownIntervalSource,
         },
         {
           member_activity_id: memberActivityId,
@@ -309,6 +683,7 @@ describe("CyclingTrainingMetricsRepository", () => {
           interval_type: "warm_up",
           started_at: "2026-06-15T15:00:00.000Z",
           ended_at: "2026-06-15T15:10:00.000Z",
+          ...unknownIntervalSource,
         },
         {
           member_activity_id: memberActivityId,
@@ -317,6 +692,7 @@ describe("CyclingTrainingMetricsRepository", () => {
           interval_type: "cooldown",
           started_at: "2026-06-15T15:50:00.000Z",
           ended_at: null,
+          ...unknownIntervalSource,
         },
       ]);
     const query = vi.fn(async (_schema, queryText: string) => {
@@ -340,6 +716,10 @@ describe("CyclingTrainingMetricsRepository", () => {
             source_providers: ["virtual"],
             source_devices: ["trainer"],
             power_measurement_kinds: ["estimated", "unknown"],
+            stream_evidence: [
+              ["power", "virtual", "trainer", "estimated"],
+              ["power", "virtual", "trainer", "unknown"],
+            ],
           },
           {
             activity_id: "00000000-0000-4000-8000-000000000099",
@@ -350,6 +730,11 @@ describe("CyclingTrainingMetricsRepository", () => {
             source_providers: ["other"],
             source_devices: ["other"],
             power_measurement_kinds: ["direct"],
+            stream_evidence: [
+              ["power", "other", "other", "direct"],
+              ["heart_rate", "other", "other", "direct"],
+              ["cadence", "other", "other", "direct"],
+            ],
           },
         ];
       }

@@ -87,6 +87,25 @@ describe("Reset password route", () => {
     expect(JSON.stringify(mockCaptureException.mock.calls)).not.toContain(password);
   });
 
+  it("does not report invalid reset details as an unexpected failure", async () => {
+    mockUseSearch.mockReturnValue({ token: "reset-token" });
+    mockConfirmPasswordReset.mockRejectedValue(new Error("Invalid password reset details"));
+    if (!captured.component) throw new Error("Reset password route component not captured");
+    const ResetPasswordPage = captured.component;
+
+    render(<ResetPasswordPage />);
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "new-password123" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm password"), {
+      target: { value: "new-password123" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Reset password" }));
+
+    await waitFor(() => expect(screen.getByText("Invalid password reset details")).toBeTruthy());
+    expect(mockCaptureException).not.toHaveBeenCalled();
+  });
+
   it("shows requirements, reveal controls, password-manager semantics, and Caps Lock status", () => {
     mockUseSearch.mockReturnValue({ token: "reset-token" });
     if (!captured.component) throw new Error("Reset password route component not captured");

@@ -38,6 +38,7 @@ function errorMessage(error: unknown): string {
 }
 
 export class AnalyticsWorker {
+  #currentCycleStartedAt: Date | null = null;
   #currentStep: AnalyticsRefreshStep | null = null;
   #lastCycleSucceeded: boolean | null = null;
   #lastFailure: AnalyticsFailure | null = null;
@@ -52,12 +53,14 @@ export class AnalyticsWorker {
 
   async runCycle(): Promise<boolean> {
     try {
+      this.#currentCycleStartedAt = this.#options.now();
       this.#currentStep = "analytics-build";
       await this.#options.runAnalyticsBuild();
       this.#currentStep = "query-cache-warm";
       await this.#options.warmQueryCache();
       this.#lastSuccessfulAt = this.#options.now();
       this.#lastCycleSucceeded = true;
+      this.#currentCycleStartedAt = null;
       this.#currentStep = null;
       return true;
     } catch (error: unknown) {
@@ -68,6 +71,7 @@ export class AnalyticsWorker {
         step,
       };
       this.#lastCycleSucceeded = false;
+      this.#currentCycleStartedAt = null;
       this.#currentStep = null;
       this.#options.reportFailure(error, { analyticsRefreshStep: step });
       return false;
@@ -93,10 +97,11 @@ export class AnalyticsWorker {
       const startupAge = this.#options.now().getTime() - this.#startedAt.getTime();
       status = this.#lastFailure || startupAge > initialSuccessBudget ? "unhealthy" : "starting";
     } else {
-      const maximumSuccessAge =
+      const maximumHealthAge =
         this.#options.intervalMilliseconds + this.#options.retryDelayMilliseconds;
-      const successAge = this.#options.now().getTime() - this.#lastSuccessfulAt.getTime();
-      if (successAge > maximumSuccessAge) {
+      const healthReference = this.#currentCycleStartedAt ?? this.#lastSuccessfulAt;
+      const successAge = this.#options.now().getTime() - healthReference.getTime();
+      if (successAge > maximumHealthAge) {
         status = "unhealthy";
       } else if (this.#lastCycleSucceeded === false) {
         status = "degraded";

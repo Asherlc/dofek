@@ -280,8 +280,8 @@ current_windows AS (
         AND overlapping_activity.started_at <= samples.recorded_at
         AND overlapping_activity.ended_at >= samples.recorded_at
         AND overlapping_activity._peerdb_is_deleted = 0
-        AND overlapping_activity.provider_absent_at IS NULL
-        AND overlapping_activity.deleted_at IS NULL
+        AND coalesce(overlapping_activity.provider_absent_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')
+        AND coalesce(overlapping_activity.deleted_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')
     GROUP BY
         active_dirty_sleep.sleep_id,
         active_dirty_sleep.user_id,

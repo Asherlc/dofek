@@ -141,10 +141,12 @@ export class MetricStreamProcessingPublisher implements MetricStreamEventPublish
   }
 }
 
-export function createLazyDefaultMetricStreamEventPublisher(): MetricStreamEventPublisher {
+export function createLazyMetricStreamEventPublisher(
+  createPublisher: () => Promise<MetricStreamEventPublisher>,
+): MetricStreamEventPublisher {
   let delegatePromise: Promise<MetricStreamEventPublisher> | undefined;
   const delegate = () => {
-    delegatePromise ??= getDefaultMetricStreamEventPublisher();
+    delegatePromise ??= createPublisher();
     return delegatePromise;
   };
   return {
@@ -157,4 +159,8 @@ export function createLazyDefaultMetricStreamEventPublisher(): MetricStreamEvent
       return publisher.replaceRows(scope, rows, operationRevision, processing);
     },
   };
+}
+
+export function createLazyDefaultMetricStreamEventPublisher(): MetricStreamEventPublisher {
+  return createLazyMetricStreamEventPublisher(getDefaultMetricStreamEventPublisher);
 }

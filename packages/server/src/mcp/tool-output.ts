@@ -671,7 +671,7 @@ export const cyclingPowerCurveOutputSchema = z
 const thresholdHistoryItemSchema = z
   .object({
     id: z.uuid(),
-    evidence_kind: z.enum(["configured", "provider_observation"]),
+    evidence_kind: z.literal("configured"),
     sport: z.string(),
     threshold_type: z.string(),
     value: z.number().positive(),
@@ -680,8 +680,8 @@ const thresholdHistoryItemSchema = z
     effective_at: nullableString,
     provider: nullableString,
     provider_record_id: nullableString,
-    value_kind: z.enum(["configured", "provider_recorded", "provider_estimated"]),
-    historical_validity: z.enum(["effective_dated", "observed_from_date"]),
+    value_kind: z.literal("configured"),
+    historical_validity: z.literal("effective_dated"),
     raw_evidence_available: z.boolean(),
     quality: z
       .object({
@@ -717,7 +717,7 @@ export const thresholdHistoryOutputSchema = z
 
 const cyclingThresholdMethodSchema = z.enum([
   "best_supported",
-  "recorded_provider",
+  "configured",
   "twenty_minute_95_percent",
   "sustained_40_to_70_minutes",
   "critical_power_model",
@@ -729,7 +729,7 @@ const cyclingThresholdEstimateResultSchema = z
     watts_per_kg: z.number().positive().nullable(),
     watts_per_kg_reason: nullableString,
     method: cyclingThresholdResultMethodSchema,
-    classification: z.enum(["configured", "provider_recorded", "estimated"]),
+    classification: z.enum(["configured", "estimated"]),
     confidence: z.enum(["high", "moderate", "limited"]),
     uncertainty: z
       .object({

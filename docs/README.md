@@ -94,7 +94,7 @@ Cross-provider reverse-engineering references:
 | [performance/loading-baseline-2026-07-18.md](performance/loading-baseline-2026-07-18.md) | Current Axiom-backed loading taxonomy and backend evidence gate. |
 | [performance/loading-monitors.md](performance/loading-monitors.md) | Loading-performance monitor definitions and investigation links. |
 | [clickhouse-read-model-deploy-runbook.md](clickhouse-read-model-deploy-runbook.md) | Deploy failures around ClickHouse CDC, analytics read models, and hot fitness views. |
-| [clickhouse-cdc-health-runbook.md](clickhouse-cdc-health-runbook.md) | Preventing, diagnosing, and recovering lost PeerDB CDC slots. |
+| [clickhouse-cdc-health-runbook.md](clickhouse-cdc-health-runbook.md) | Preventing, diagnosing, and recovering PeerDB mapping, normalization, freshness, WAL, and lost-slot failures. |
 | [clickhouse-body-measurement-staleness-runbook.md](clickhouse-body-measurement-staleness-runbook.md) | Diagnosing body measurements across the Redpanda sink and ClickHouse analytics layers. |
 | [sleep-quality-backfill-runbook.md](sleep-quality-backfill-runbook.md) | Conservatively repairing historical sleep stage availability and sentinel-zero fields in bounded windows. |
 | [activity-data-integrity-repair-runbook.md](activity-data-integrity-repair-runbook.md) | Auditable repair and monotonic rollback for contradictory activity local time and false derived groups. |
@@ -112,6 +112,7 @@ Cross-provider reverse-engineering references:
 | [storage-alerting-and-volume-upgrade.md](storage-alerting-and-volume-upgrade.md) | Storage danger-zone alerts and volume expansion notes for OCI production. |
 | [database-backup-recovery-runbook.md](database-backup-recovery-runbook.md) | Databasus service health, R2 freshness monitoring, and isolated restore verification. |
 | [record-local-time.md](record-local-time.md) | Dry-run and execute the bounded historical activity local-time context backfill. |
+| [activity-effort-identity-runbook.md](activity-effort-identity-runbook.md) | Audit retained raw activity identities and run the scoped ClickHouse/dbt refresh. |
 | [oracle-cutover.md](oracle-cutover.md) | Current Oracle production cutover status and deploy targeting notes. |
 | [sync-checkpoint-retries.md](sync-checkpoint-retries.md) | Durable provider sync retry checkpoints and retryable infrastructure failure scope. |
 | [sentry.md](sentry.md) | Investigating Sentry issues and stack traces from terminal. |

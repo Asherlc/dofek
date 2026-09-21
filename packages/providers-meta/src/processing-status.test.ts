@@ -7,6 +7,7 @@ import {
   processingPollInterval,
   processingStatusMessage,
   processingTarget,
+  resolveProcessingTargetScope,
 } from "./processing-status.ts";
 
 describe("processing status presentation", () => {
@@ -411,5 +412,56 @@ describe("processing status presentation", () => {
     ["cancelled", "Cancelled"],
   ] as const)("labels a %s dataset for display", (status, label) => {
     expect(processingDatasetStatusLabel(status)).toBe(label);
+  });
+});
+
+describe("resolveProcessingTargetScope", () => {
+  it("attributes an unscoped query to the single provider still in progress", () => {
+    expect(
+      resolveProcessingTargetScope({
+        scopeProviderId: null,
+        operations: [
+          { providerId: "whoop", kind: "provider_sync", status: "ready" },
+          { providerId: "peloton", kind: "provider_sync", status: "active" },
+        ],
+      }),
+    ).toEqual({ providerId: "peloton", operationKind: "provider_sync" });
+  });
+
+  it("falls back to the generic recompute target when multiple providers are in progress", () => {
+    expect(
+      resolveProcessingTargetScope({
+        scopeProviderId: null,
+        operations: [
+          { providerId: "whoop", kind: "provider_sync", status: "active" },
+          { providerId: "peloton", kind: "provider_sync", status: "waiting" },
+        ],
+      }),
+    ).toEqual({ providerId: null, operationKind: "provider_sync" });
+  });
+
+  it("falls back to the generic recompute target when no operation has a provider", () => {
+    expect(
+      resolveProcessingTargetScope({
+        scopeProviderId: null,
+        operations: [{ providerId: null, kind: "analytics_build", status: "active" }],
+      }),
+    ).toEqual({ providerId: null, operationKind: "analytics_build" });
+  });
+
+  it("preserves an explicit provider scope without inspecting operations", () => {
+    expect(
+      resolveProcessingTargetScope({
+        scopeProviderId: "garmin",
+        operations: [{ providerId: "whoop", kind: "provider_sync", status: "active" }],
+      }),
+    ).toEqual({ providerId: "garmin", operationKind: "provider_sync" });
+  });
+
+  it("returns a null target when there are no operations at all", () => {
+    expect(resolveProcessingTargetScope({ scopeProviderId: null, operations: [] })).toEqual({
+      providerId: null,
+      operationKind: null,
+    });
   });
 });

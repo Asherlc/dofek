@@ -100,18 +100,6 @@ export const BodyTemperature = class BodyTemperature {
   }
 };
 
-export const Stress = class Stress {
-  getToday() {
-    return [];
-  }
-  getTodayByHour() {
-    return [];
-  }
-  getLastWeek() {
-    return [];
-  }
-};
-
 export const Stand = class Stand {
   getCurrent() {
     return 0;

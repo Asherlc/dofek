@@ -1,6 +1,5 @@
 import { vi } from "vitest";
 import { createImuChunkEnvelope as createChunk } from "./imu-upload.ts";
-import type { SessionCallHandlers } from "./session-control.ts";
 
 export function createImuChunkEnvelope(
   input: Omit<
@@ -32,24 +31,6 @@ export function deferred() {
       if (!resolvePromise) throw new Error("Deferred promise was not initialized");
       resolvePromise();
     },
-  };
-}
-
-export function makeSessionCallHandlers(
-  overrides: Partial<SessionCallHandlers> = {},
-): SessionCallHandlers {
-  return {
-    logging: false,
-    transferInProgress: false,
-    failedTransferPending: false,
-    pendingManualExport: false,
-    applyStartPreferences: vi.fn(),
-    handleBlockedStart: vi.fn(),
-    startLogging: vi.fn(),
-    stopLogging: vi.fn(),
-    queueManualExport: vi.fn(),
-    transferStoppedSession: vi.fn(),
-    ...overrides,
   };
 }
 

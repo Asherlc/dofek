@@ -8,15 +8,7 @@ import {
   resolveProviderActivityType,
 } from "@dofek/training/activity-types";
 import { createActivityTypeMapper, OURA_ACTIVITY_TYPE_MAP } from "@dofek/training/training";
-import type {
-  OuraDailyActivity,
-  OuraDailyReadiness,
-  OuraDailyResilience,
-  OuraDailySpO2,
-  OuraDailyStress,
-  OuraSleepDocument,
-  OuraVO2Max,
-} from "./schemas.ts";
+import type { OuraDailyActivity, OuraDailySpO2, OuraSleepDocument } from "./schemas.ts";
 
 export interface ParsedOuraSleep {
   externalId: string;
@@ -39,13 +31,7 @@ export interface ParsedOuraDailyMetrics {
   steps?: number;
   hrv?: number;
   restingHr?: number;
-  exerciseMinutes?: number;
-  skinTempC?: number;
   spo2Avg?: number;
-  vo2max?: number;
-  stressHighMinutes?: number;
-  recoveryHighMinutes?: number;
-  resilienceLevel?: string;
 }
 
 export function parseOuraRecordLocalTimeContext(startTimestamp: string, endTimestamp: string) {
@@ -98,45 +84,19 @@ export function parseOuraSleep(sleep: OuraSleepDocument): ParsedOuraSleep {
 }
 
 export function parseOuraDailyMetrics(
-  readiness: OuraDailyReadiness | null,
   activity: OuraDailyActivity | null,
   spo2: OuraDailySpO2 | null,
-  vo2max: OuraVO2Max | null,
-  stress: OuraDailyStress | null,
-  resilience: OuraDailyResilience | null,
   sleep: OuraSleepDocument | null,
 ): ParsedOuraDailyMetrics {
-  const day =
-    readiness?.day ??
-    activity?.day ??
-    spo2?.day ??
-    vo2max?.day ??
-    stress?.day ??
-    resilience?.day ??
-    "";
-
-  let exerciseMinutes: number | undefined;
-  if (activity) {
-    exerciseMinutes = Math.round(
-      (activity.high_activity_time + activity.medium_activity_time) / 60,
-    );
-  }
-
   return {
-    date: day,
+    date: activity?.day ?? spo2?.day ?? sleep?.day ?? "",
     steps: activity?.steps,
     // HRV and resting HR come from the actual sleep measurements, not from
     // readiness contributor scores. contributors.hrv_balance is a 0-100 score
     // indicating how HRV contributes to readiness — not the HRV value itself.
     hrv: sleep?.average_hrv ?? undefined,
     restingHr: sleep?.lowest_heart_rate ?? undefined,
-    exerciseMinutes,
-    skinTempC: readiness?.temperature_deviation ?? undefined,
     spo2Avg: spo2?.spo2_percentage?.average ?? undefined,
-    vo2max: vo2max?.vo2_max ?? undefined,
-    stressHighMinutes: secondsToMinutes(stress?.stress_high ?? null),
-    recoveryHighMinutes: secondsToMinutes(stress?.recovery_high ?? null),
-    resilienceLevel: resilience?.level ?? undefined,
   };
 }
 

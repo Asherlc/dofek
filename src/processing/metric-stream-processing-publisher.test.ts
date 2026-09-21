@@ -6,6 +6,7 @@ import {
 } from "../metric-stream/redpanda-producer.ts";
 import {
   createLazyDefaultMetricStreamEventPublisher,
+  createLazyMetricStreamEventPublisher,
   MetricStreamProcessingPublisher,
 } from "./metric-stream-processing-publisher.ts";
 
@@ -255,5 +256,21 @@ describe("createLazyDefaultMetricStreamEventPublisher", () => {
         operationRevision,
       ),
     ).rejects.toThrow("Metric stream publisher does not support scoped replacement");
+  });
+});
+
+describe("createLazyMetricStreamEventPublisher", () => {
+  it("defers route-specific publisher creation and reuses its delegate", async () => {
+    const publishRows = vi.fn(async () => []);
+    const createRoutePublisher = vi.fn(async () => ({ publishRows }));
+    const publisher = createLazyMetricStreamEventPublisher(createRoutePublisher);
+
+    expect(createRoutePublisher).not.toHaveBeenCalled();
+
+    await publisher.publishRows([], { operationRevision });
+    await publisher.publishRows([], { operationRevision });
+
+    expect(createRoutePublisher).toHaveBeenCalledTimes(1);
+    expect(publishRows).toHaveBeenCalledTimes(2);
   });
 });

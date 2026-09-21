@@ -7,8 +7,8 @@ const modelSql = readFileSync(new URL("./provider_stats.sql", import.meta.url), 
 describe("provider_stats model", () => {
   it("counts only active activities", () => {
     expect(modelSql).toContain("source('postgres_fitness', 'activity') }} FINAL");
-    expect(modelSql).toContain("provider_absent_at IS null");
-    expect(modelSql).toContain("deleted_at IS null");
+    expect(modelSql).toContain("coalesce(provider_absent_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')");
+    expect(modelSql).toContain("coalesce(deleted_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')");
   });
 
   it("uses the canonical clinical record source and count", () => {

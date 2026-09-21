@@ -66,7 +66,7 @@ Activities and files:
 Daily health:
 
 - `getDailySummary`, `getSleepData`, `getDailyHeartRate`,
-  `getDailyStress`, `getBodyBatteryDaily`, `getBodyBatteryEvents`,
+  `getBodyBatteryDaily`, `getBodyBatteryEvents`,
   `getHrvSummary`, `getDailyRespiration`, `getDailySpO2`,
   `getDailyIntensityMinutes`, `getDailySteps`, and `getFloors`
 
@@ -80,7 +80,7 @@ Supported deep imports:
 - `@dofek/garmin-connect/client` — client, throttle guidance constant, and
   Garmin-specific error classes.
 - `@dofek/garmin-connect/parsing` — normalized activity, sleep, daily metric,
-  training, HRV, stress, heart-rate, and activity-stream parsers.
+  training, HRV, heart-rate, and activity-stream parsers.
 - `@dofek/garmin-connect/sports` — sport mapping table and mapper.
 - `@dofek/garmin-connect/types` — raw API and token interfaces.
 - `@dofek/garmin-connect/oauth1` — low-level OAuth 1.0 header construction.
@@ -159,7 +159,7 @@ await new Promise((resolve) => setTimeout(resolve, GARMIN_CONNECT_THROTTLE_MS));
 Activity durations and sleep durations use different upstream units; the
 exported parsers apply the conversions expected by the currently observed
 responses. Sleep-stage parsing overlays the dedicated REM series on Garmin's
-sleep-level series, and stress parsing omits negative sentinel values.
+sleep-level series.
 
 ## Project
 

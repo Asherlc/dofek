@@ -51,6 +51,7 @@ describe("reconcile-pending-processing", () => {
     mockedReconcilePendingProcessingOperations.mockResolvedValue({
       checked: 2,
       completed: 1,
+      abandoned: 0,
       waiting: 1,
     });
   });
@@ -74,7 +75,7 @@ describe("reconcile-pending-processing", () => {
       database: reconciliationDatabase,
     });
     expect(consoleLog).toHaveBeenCalledWith(
-      "[processing-reconciliation] checked 2, completed 1, waiting 1",
+      "[processing-reconciliation] checked 2, completed 1, abandoned 0, waiting 1",
     );
     expect(clickHouseClient.close).toHaveBeenCalledOnce();
     expect(process.exit).toHaveBeenCalledWith(0);

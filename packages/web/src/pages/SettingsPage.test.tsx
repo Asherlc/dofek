@@ -136,13 +136,25 @@ vi.mock("../lib/trpc.ts", () => ({
       listTokens: {
         useQuery: () => ({ data: [], error: null, isLoading: false }),
       },
+      listPersonalTokens: {
+        useQuery: () => ({ data: [], error: null, isLoading: false }),
+      },
+      listConnectedApps: {
+        useQuery: () => ({ data: { items: [], nextCursor: null }, error: null, isLoading: false }),
+      },
       createToken: {
         useMutation: () => mockMutation,
       },
       revokeToken: {
         useMutation: () => mockMutation,
       },
+      revokeConnectedApp: {
+        useMutation: () => mockMutation,
+      },
       updateScopes: {
+        useMutation: () => mockMutation,
+      },
+      updateConnectedAppScopes: {
         useMutation: () => mockMutation,
       },
     },

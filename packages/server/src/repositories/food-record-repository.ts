@@ -489,12 +489,11 @@ export class FoodRecordRepository {
           WHERE entry.user_id = identity.user_id
             AND entry.provider_id = identity.namespace
             AND entry.confirmed = TRUE
-            AND (
-              (identity.source_key LIKE 'external:%'
-                AND entry.external_id = SUBSTRING(identity.source_key FROM 10))
-              OR (identity.source_key LIKE 'row:%'
-                AND entry.id = SUBSTRING(identity.source_key FROM 5)::uuid)
-            )
+            AND identity.source_key = CASE
+              WHEN NULLIF(BTRIM(entry.external_id), '') IS NOT NULL
+                THEN 'external:' || entry.external_id
+              ELSE 'row:' || entry.id::text
+            END
           ORDER BY entry.created_at DESC, entry.id DESC
           LIMIT 1
         ) AS source ON TRUE
@@ -826,12 +825,11 @@ export class FoodRecordRepository {
             WHERE food.user_id = identity.user_id
               AND food.provider_id = identity.namespace
               AND food.confirmed = TRUE
-              AND (
-                (identity.source_key LIKE 'external:%'
-                  AND food.external_id = SUBSTRING(identity.source_key FROM 10))
-                OR (identity.source_key LIKE 'row:%'
-                  AND food.id = SUBSTRING(identity.source_key FROM 5)::uuid)
-              )
+              AND identity.source_key = CASE
+                WHEN NULLIF(BTRIM(food.external_id), '') IS NOT NULL
+                  THEN 'external:' || food.external_id
+                ELSE 'row:' || food.id::text
+              END
             ORDER BY food.created_at DESC, food.id DESC
             LIMIT 1
           ) AS entry ON TRUE

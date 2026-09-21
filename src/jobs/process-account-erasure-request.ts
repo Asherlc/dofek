@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/node";
+import { z } from "zod";
 import {
   type ClaimedAccountErasureRequest,
   claimAccountErasureRequest,
@@ -50,6 +51,14 @@ export interface AccountErasurePhaseExecution {
   loadProgress(): Promise<Record<string, unknown> | null>;
   saveProgress(details: Record<string, unknown>): Promise<void>;
   scrubPii(): Promise<void>;
+}
+
+const routedIngestFenceSchema = z.object({
+  highWatermarks: z.array(z.object({ topic: z.string().min(1) })).min(1),
+});
+
+function hasRoutedIngestFence(checkpoint: Record<string, unknown> | null): boolean {
+  return routedIngestFenceSchema.safeParse(checkpoint).success;
 }
 
 export interface AccountErasurePhaseRunner {
@@ -141,7 +150,21 @@ export async function processAccountErasureRequest(
           await heartbeat.stop();
           await completeAccountErasure(database, request.id, leaseOwner, completedAt);
         },
-        loadCompletedPhases: () => loadAccountErasureCheckpoints(database, request.id),
+        loadCompletedPhases: async () => {
+          const completed = new Set(await loadAccountErasureCheckpoints(database, request.id));
+          if (!completed.has("ingest_fence")) return completed;
+          if (request.userId === null || request.encryptedRemoteSnapshot === null) return completed;
+          const checkpoint = await loadAccountErasureCheckpointDetails(
+            database,
+            request.id,
+            "ingest_fence",
+          );
+          if (!hasRoutedIngestFence(checkpoint)) {
+            completed.delete("ingest_fence");
+            completed.delete("consumer_drain");
+          }
+          return completed;
+        },
         markCompleted: async (completedRequestId, phase, details) => {
           try {
             await markAccountErasurePhaseCompleted(

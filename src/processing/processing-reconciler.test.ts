@@ -27,9 +27,12 @@ import {
   type ReconcileProcessingEvidenceInput,
   reconcilePendingProcessingOperations,
   reconcileProcessingEvidence,
+  STALE_OPERATION_THRESHOLD_MS,
 } from "./processing-reconciler.ts";
 
 const operationId = "30000000-0000-4000-8000-000000000001";
+const recentOperationCreatedAt = new Date();
+const staleOperationCreatedAt = new Date(Date.now() - STALE_OPERATION_THRESHOLD_MS - 60_000);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -251,7 +254,9 @@ describe("reconcilePendingProcessingOperations", () => {
 
   function arrangeStoredExpectations() {
     mockExecuteWithSchema
-      .mockResolvedValueOnce([{ operation_id: operationId }])
+      .mockResolvedValueOnce([
+        { operation_id: operationId, operation_created_at: recentOperationCreatedAt },
+      ])
       .mockResolvedValueOnce([
         { dataset_key: "activity", output_path: "metric_stream" },
         { dataset_key: "activity", output_path: "relational" },
@@ -284,7 +289,7 @@ describe("reconcilePendingProcessingOperations", () => {
         clickHouseClient: { query },
         limit: 25,
       }),
-    ).resolves.toEqual({ checked: 1, completed: 1, waiting: 0 });
+    ).resolves.toEqual({ checked: 1, completed: 1, abandoned: 0, waiting: 0 });
 
     expect(query).toHaveBeenNthCalledWith(1, {
       query: expect.stringContaining("postgres_fitness.processing_flow_marker"),
@@ -343,7 +348,9 @@ describe("reconcilePendingProcessingOperations", () => {
 
   it("queues distinct analytics events when datasets share a serving watermark", async () => {
     mockExecuteWithSchema
-      .mockResolvedValueOnce([{ operation_id: operationId }])
+      .mockResolvedValueOnce([
+        { operation_id: operationId, operation_created_at: recentOperationCreatedAt },
+      ])
       .mockResolvedValueOnce([
         { dataset_key: "activity", output_path: "relational" },
         { dataset_key: "hiking", output_path: "relational" },
@@ -407,7 +414,7 @@ describe("reconcilePendingProcessingOperations", () => {
         database: reconciliationDatabase,
         clickHouseClient: { query: clickHouseQueryWithEvidence(false) },
       }),
-    ).resolves.toEqual({ checked: 1, completed: 0, waiting: 1 });
+    ).resolves.toEqual({ checked: 1, completed: 0, abandoned: 0, waiting: 1 });
 
     expect(mockAppendProcessingStageEvent).toHaveBeenCalledTimes(2);
     expect(mockAppendProcessingStageEvent).toHaveBeenNthCalledWith(
@@ -420,6 +427,45 @@ describe("reconcilePendingProcessingOperations", () => {
       }),
     );
     expect(reconciliationDatabase.execute).not.toHaveBeenCalled();
+  });
+
+  it("abandons an operation that has not reconciled within the staleness threshold", async () => {
+    mockExecuteWithSchema
+      .mockResolvedValueOnce([
+        { operation_id: operationId, operation_created_at: staleOperationCreatedAt },
+      ])
+      .mockResolvedValueOnce([{ dataset_key: "activity", output_path: "metric_stream" }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          batch_id: "metric-batch-1",
+          dataset_keys: ["activity"],
+          expected_event_count: 12,
+        },
+      ]);
+    const reconciliationDatabase = database();
+    const query = clickHouseQueryWithEvidence(false);
+
+    await expect(
+      reconcilePendingProcessingOperations({
+        database: reconciliationDatabase,
+        clickHouseClient: { query },
+      }),
+    ).resolves.toEqual({ checked: 1, completed: 0, abandoned: 1, waiting: 0 });
+
+    expect(mockAppendProcessingStageEvent).toHaveBeenCalledExactlyOnceWith(
+      reconciliationDatabase,
+      expect.objectContaining({
+        operationId,
+        stage: "cdc",
+        status: "failed",
+        datasetKey: "activity",
+        outputPath: "metric_stream",
+        errorCode: "processing_stalled",
+        idempotencyKey: "stalled:activity:metric_stream",
+      }),
+    );
+    expect(reconciliationDatabase.execute).toHaveBeenCalledOnce();
   });
 
   it.each([0, 1_001, 1.5])("rejects an invalid reconciliation limit of %s", async (limit) => {

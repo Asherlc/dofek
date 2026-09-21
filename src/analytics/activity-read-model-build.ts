@@ -51,8 +51,8 @@ export async function countActivePeerDbActivities(
       FROM postgres_fitness.activity FINAL
       WHERE toString(id) IN {activityIds:Array(String)}
         AND _peerdb_is_deleted = 0
-        AND provider_absent_at IS NULL
-        AND deleted_at IS NULL`,
+        AND coalesce(provider_absent_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')
+        AND coalesce(deleted_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')`,
     format: "JSONEachRow",
     query_params: { activityIds },
   });
@@ -71,7 +71,7 @@ export async function countProviderAbsentPeerDbActivities(
       FROM postgres_fitness.activity FINAL
       WHERE toString(id) IN {activityIds:Array(String)}
         AND _peerdb_is_deleted = 0
-        AND provider_absent_at IS NOT NULL`,
+        AND coalesce(provider_absent_at, toDateTime64(0, 6, 'UTC')) != toDateTime64(0, 6, 'UTC')`,
     format: "JSONEachRow",
     query_params: { activityIds },
   });

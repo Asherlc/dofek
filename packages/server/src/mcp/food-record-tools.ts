@@ -14,8 +14,10 @@ import {
   FoodRecordError,
   type FoodRecordMutationResult,
   FoodRecordService,
+  reportUnexpectedFoodRecordError,
 } from "../services/food-record-service.ts";
 import type { DofekMcpContext } from "./context.ts";
+import { foodMutationTelemetryForTool, logFoodMutation } from "./mutation-telemetry.ts";
 import { requireMcpScope } from "./token-repository.ts";
 import { mcpOutputSchemas } from "./tool-output.ts";
 import { jsonToolError, jsonToolResult } from "./tool-result.ts";
@@ -144,11 +146,15 @@ function safeDetailsToTransport(value: Record<string, unknown>): Record<string, 
 
 async function foodToolResult<T>(
   operation: () => Promise<T>,
+  telemetry?: ReturnType<typeof foodMutationTelemetryForTool>,
 ): Promise<ReturnType<typeof jsonToolResult> | ReturnType<typeof jsonToolError>> {
   try {
-    return jsonToolResult(await operation());
+    const result = jsonToolResult(await operation());
+    if (telemetry) logFoodMutation(telemetry, "succeeded");
+    return result;
   } catch (error: unknown) {
     if (error instanceof FoodRecordError) {
+      if (telemetry) logFoodMutation(telemetry, "rejected", { errorCode: error.code });
       const details = safeDetailsToTransport(error.details);
       return jsonToolError(
         error.code,
@@ -156,7 +162,8 @@ async function foodToolResult<T>(
         Object.keys(details).length === 0 ? undefined : details,
       );
     }
-    captureException(new Error("MCP food record request failed"));
+    if (telemetry) logFoodMutation(telemetry, "rejected", { errorCode: "INTERNAL_ERROR" });
+    reportUnexpectedFoodRecordError(error, "mcp_tool");
     return jsonToolError("INTERNAL_ERROR", "The food record request could not be completed.");
   }
 }
@@ -314,21 +321,23 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
       nutrients,
     }) => {
       requireMutationScopes(context);
-      return foodToolResult(async () =>
-        mutationToTransport(
-          await service.create({
-            requestId: request_id,
-            date,
-            meal,
-            foodName: food_name,
-            foodDescription: food_description,
-            category,
-            numberOfUnits: number_of_units,
-            servingUnit: serving_unit,
-            servingWeightGrams: serving_weight_grams,
-            nutrients,
-          }),
-        ),
+      return foodToolResult(
+        async () =>
+          mutationToTransport(
+            await service.create({
+              requestId: request_id,
+              date,
+              meal,
+              foodName: food_name,
+              foodDescription: food_description,
+              category,
+              numberOfUnits: number_of_units,
+              servingUnit: serving_unit,
+              servingWeightGrams: serving_weight_grams,
+              nutrients,
+            }),
+          ),
+        foodMutationTelemetryForTool("create_food_entry", request_id),
       );
     },
   );
@@ -367,18 +376,20 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
       nutrient_clear,
     }) => {
       requireMutationScopes(context);
-      return foodToolResult(async () =>
-        mutationToTransport(
-          await service.update({
-            recordId: record_id,
-            expectedVersion: expected_version,
-            requestId: request_id,
-            set: scalarSetToDomain(set),
-            clear: clear.map(editableFieldToDomain),
-            nutrientSet: nutrient_set,
-            nutrientClear: nutrient_clear,
-          }),
-        ),
+      return foodToolResult(
+        async () =>
+          mutationToTransport(
+            await service.update({
+              recordId: record_id,
+              expectedVersion: expected_version,
+              requestId: request_id,
+              set: scalarSetToDomain(set),
+              clear: clear.map(editableFieldToDomain),
+              nutrientSet: nutrient_set,
+              nutrientClear: nutrient_clear,
+            }),
+          ),
+        foodMutationTelemetryForTool("update_food_entry", request_id),
       );
     },
   );
@@ -407,14 +418,16 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
       },
       async ({ record_id, expected_version, request_id }) => {
         requireMutationScopes(context);
-        return foodToolResult(async () =>
-          mutationToTransport(
-            await operation({
-              recordId: record_id,
-              expectedVersion: expected_version,
-              requestId: request_id,
-            }),
-          ),
+        return foodToolResult(
+          async () =>
+            mutationToTransport(
+              await operation({
+                recordId: record_id,
+                expectedVersion: expected_version,
+                requestId: request_id,
+              }),
+            ),
+          foodMutationTelemetryForTool(name, request_id),
         );
       },
     );
