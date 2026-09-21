@@ -240,7 +240,6 @@ describe("createAccountErasureWorkPurgerFromEnv", () => {
     "completed",
     "delayed",
     "failed",
-    "paused",
     "prioritized",
     "repeat",
     "wait",
