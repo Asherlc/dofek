@@ -27327,3 +27327,19 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   (`pnpm test:unit` 17216 passed / 20 skipped).
 - **Remaining risk / follow-up:** Confirm the next main CI run is green and the
   deploy resumes; the iOS `Distill failed` flake remains runner-environmental.
+
+## 2026-09-20 — PR integration shard Redpanda port collision
+
+- **Symptoms / impact:** Integration shard 3 for the Ziva provider PR failed
+  before checkout or test execution, blocking the PR check without affecting
+  production or application data.
+- **Evidence / root cause:** The Redpanda service container reported
+  `posix_listen failed` with `Address already in use` while starting, followed
+  by `Failure during startup`; the runner could not initialize the required
+  service. See the [failed integration job](https://github.com/Asherlc/dofek/actions/runs/35565067037/job/106225634647).
+- **Direct fix / validation:** No application change, retry, timeout, or
+  warn-and-continue behavior was added. A replacement CI run on a fresh runner
+  will validate the same integration shard after the next pushed commit.
+- **Remaining risk / follow-up:** The replacement run is pending. If the same
+  bind collision repeats on a fresh runner, investigate hosted-runner service
+  isolation before changing repository behavior.

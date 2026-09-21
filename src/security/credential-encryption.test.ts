@@ -40,6 +40,36 @@ describe("credential encryption", () => {
     expect(isEncryptedCredentialValue(plaintext)).toBe(false);
   });
 
+  it("uses provider-credentials when the key name is not configured", async () => {
+    const context = {
+      tableName: "fitness.oauth_token",
+      columnName: "access_token",
+      scopeId: "default-key-name",
+    };
+    vi.stubEnv("CREDENTIAL_ENCRYPTION_KEY_NAME", undefined);
+    vi.stubEnv("CREDENTIAL_ENCRYPTION_KEY_NAMESPACE", "default-key-name-test");
+
+    const encrypted = await encryptCredentialValue("secret-access-token", context);
+
+    vi.stubEnv("CREDENTIAL_ENCRYPTION_KEY_NAME", "provider-credentials");
+    await expect(decryptCredentialValue(encrypted, context)).resolves.toBe("secret-access-token");
+  });
+
+  it("uses dofek when the key namespace is not configured", async () => {
+    const context = {
+      tableName: "fitness.oauth_token",
+      columnName: "access_token",
+      scopeId: "default-key-namespace",
+    };
+    vi.stubEnv("CREDENTIAL_ENCRYPTION_KEY_NAME", "default-key-namespace-test");
+    vi.stubEnv("CREDENTIAL_ENCRYPTION_KEY_NAMESPACE", undefined);
+
+    const encrypted = await encryptCredentialValue("secret-access-token", context);
+
+    vi.stubEnv("CREDENTIAL_ENCRYPTION_KEY_NAMESPACE", "dofek");
+    await expect(decryptCredentialValue(encrypted, context)).resolves.toBe("secret-access-token");
+  });
+
   it("derives a stable secret-keyed identifier bound to its storage context", () => {
     vi.stubEnv("CREDENTIAL_ENCRYPTION_KEY_BASE64", Buffer.alloc(32, 7).toString("base64"));
     const context = {
