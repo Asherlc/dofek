@@ -578,17 +578,11 @@ describe("ZivaMcpClient", () => {
       fetchFn: harness.fetch,
       signal: controller.signal,
     });
-    const observed = connect.catch((error: unknown) => error);
 
     await vi.waitFor(() => expect(harness.jsonRpcMethods).toContain("notifications/initialized"));
     controller.abort(reason);
-    const pending = Symbol("pending connect");
-    const outcome = await Promise.race([
-      observed,
-      new Promise<typeof pending>((resolve) => setTimeout(() => resolve(pending), 100)),
-    ]);
 
-    expect(outcome).toBe(reason);
+    await expect(connect).rejects.toBe(reason);
     await vi.waitFor(() => expect(harness.transportClosed).toBe(true));
   });
 

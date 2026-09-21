@@ -183,7 +183,12 @@ export function createFakeZivaMcpHarness(options: FakeZivaMcpOptions = {}): Fake
 
     const configuredDelay = options.delayedMethods?.[message.method];
     if (configuredDelay !== undefined) {
-      await waitForConfiguredDelay(configuredDelay, request.signal);
+      try {
+        await waitForConfiguredDelay(configuredDelay, request.signal);
+      } catch (error: unknown) {
+        transportClosed = true;
+        throw error;
+      }
     }
 
     const configuredThrownError = options.thrownErrors?.[message.method];

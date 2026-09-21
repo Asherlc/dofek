@@ -316,16 +316,24 @@ export class ZivaMcpClient {
       throw new ZivaMcpAuthenticationError();
     }
 
+    const lifecycle = createConnectLifecycle(options.signal);
     const rateLimitFetch = createProviderRateLimitFetch("ziva", options.fetchFn);
+    const fetchWithConnectAbort: typeof globalThis.fetch = (input, init) => {
+      const requestSignal = init?.signal;
+      const signal =
+        requestSignal === undefined
+          ? lifecycle.signal
+          : AbortSignal.any([lifecycle.signal, requestSignal]);
+      return rateLimitFetch(input, { ...init, signal });
+    };
     const transport = new StreamableHTTPClientTransport(ZIVA_MCP_ENDPOINT, {
-      fetch: rateLimitFetch,
+      fetch: fetchWithConnectAbort,
       requestInit: {
         headers: { Authorization: `Bearer ${options.accessToken}` },
       },
     });
     const sdkClient = new Client({ name: "dofek-ziva", version: "0.1.0" }, { capabilities: {} });
     const client = new ZivaMcpClient(sdkClient);
-    const lifecycle = createConnectLifecycle(options.signal);
 
     try {
       const connect = (async () => {

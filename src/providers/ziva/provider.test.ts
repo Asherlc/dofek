@@ -471,7 +471,7 @@ describe("ZivaProvider", () => {
   it("cancels an in-flight MCP read without writing or advancing", async () => {
     const harness = createFakeZivaMcpHarness({
       callResult: { content: [], structuredContent: { meals: [meal(FIRST_DATE)] } },
-      delayedMethods: { "tools/call": 100 },
+      delayedMethods: { "tools/call": Number.POSITIVE_INFINITY },
     });
     const checkpoint = new MemoryCheckpointStore();
     const controller = new AbortController();
