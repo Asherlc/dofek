@@ -339,6 +339,7 @@ describe.sequential("upsertZivaMealsForDate", () => {
     });
     const invalidNew = makeMeal({
       externalId: "meal:rollback-new",
+      date: "2026-09-22",
       nutrients: [
         { nutrientId: "calories", amount: 100 },
         { nutrientId: "calories", amount: 101 },
