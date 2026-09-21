@@ -53,12 +53,20 @@ export async function resolveOAuthTokens(options: {
 
   logger.info(`[${providerId}] Access token expired, refreshing...`);
 
+  if (!tokens.refreshToken) {
+    logger.warn(
+      `[${providerId}] No refresh token is available, deleting stored tokens. ` +
+        `User must re-authorize ${providerName}.`,
+    );
+    await deleteTokens(db, providerId);
+    const revokedError = new RefreshTokenRevokedError(providerName);
+    revokedError.message = `No refresh token for ${providerName}. ${revokedError.message}`;
+    throw revokedError;
+  }
+
   const config = getOAuthConfig();
   if (!config) {
     throw new Error(`OAuth config required to refresh ${providerName} tokens`);
-  }
-  if (!tokens.refreshToken) {
-    throw new Error(`No refresh token for ${providerName}`);
   }
 
   try {

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { RefreshTokenRevokedError } from "../providers/auth-errors.ts";
 import type { OAuthConfig, TokenSet } from "./oauth.ts";
 import { resolveOAuthTokens } from "./resolve-tokens.ts";
 
@@ -153,6 +154,48 @@ describe("resolveOAuthTokens", () => {
     expect(mockSaveTokens).toHaveBeenCalledWith(fakeDb, "ziva", resolvedTokens);
   });
 
+  it("force-refreshes unexpired tokens and validates rotated credentials before saving", async () => {
+    const unexpiredTokens: TokenSet = {
+      accessToken: "current-token",
+      refreshToken: "current-refresh",
+      expiresAt: futureDate(),
+      providerAccountId: "account-a",
+      scopes: null,
+    };
+    const refreshedTokens: TokenSet = {
+      accessToken: "rotated-token",
+      refreshToken: "rotated-refresh",
+      expiresAt: futureDate(7200_000),
+      scopes: null,
+    };
+    const validateRefreshedTokens = vi.fn();
+    mockLoadTokens.mockResolvedValue(unexpiredTokens);
+    mockRefreshAccessToken.mockResolvedValue(refreshedTokens);
+    mockSaveTokens.mockResolvedValue(undefined);
+
+    const result = await resolveOAuthTokens({
+      db: fakeDb,
+      providerId: "ziva",
+      providerName: "Ziva",
+      getOAuthConfig: () => fakeConfig,
+      forceRefresh: true,
+      validateRefreshedTokens,
+    });
+
+    const resolvedTokens = { ...refreshedTokens, providerAccountId: "account-a" };
+    expect(mockRefreshAccessToken).toHaveBeenCalledWith(
+      fakeConfig,
+      "current-refresh",
+      globalThis.fetch,
+    );
+    expect(validateRefreshedTokens).toHaveBeenCalledWith(unexpiredTokens, refreshedTokens);
+    expect(mockSaveTokens).toHaveBeenCalledWith(fakeDb, "ziva", resolvedTokens);
+    expect(validateRefreshedTokens.mock.invocationCallOrder[0]).toBeLessThan(
+      mockSaveTokens.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
+    expect(result).toEqual(resolvedTokens);
+  });
+
   it("validates refreshed tokens before persistence and does not save rejected tokens", async () => {
     const expiredTokens: TokenSet = {
       accessToken: "old-token",
@@ -205,13 +248,37 @@ describe("resolveOAuthTokens", () => {
     ).rejects.toThrow("OAuth config required to refresh Wahoo tokens");
   });
 
-  it("throws when no refresh token is available", async () => {
+  it("deletes an expired credential without a refresh token and throws reconnect", async () => {
     mockLoadTokens.mockResolvedValue({
       accessToken: "old",
       refreshToken: null,
       expiresAt: pastDate(),
       scopes: null,
     });
+    mockDeleteTokens.mockResolvedValue(undefined);
+
+    const resolution = resolveOAuthTokens({
+      db: fakeDb,
+      providerId: "polar",
+      providerName: "Polar",
+      getOAuthConfig: () => fakeConfig,
+    });
+
+    await expect(resolution).rejects.toBeInstanceOf(RefreshTokenRevokedError);
+    expect(mockDeleteTokens).toHaveBeenCalledWith(fakeDb, "polar");
+    expect(mockRefreshAccessToken).not.toHaveBeenCalled();
+    expect(mockSaveTokens).not.toHaveBeenCalled();
+  });
+
+  it("lets missing-refresh credential deletion failure escape", async () => {
+    const deletionFailure = new Error("token database unavailable");
+    mockLoadTokens.mockResolvedValue({
+      accessToken: "old",
+      refreshToken: null,
+      expiresAt: pastDate(),
+      scopes: null,
+    });
+    mockDeleteTokens.mockRejectedValue(deletionFailure);
 
     await expect(
       resolveOAuthTokens({
@@ -220,7 +287,7 @@ describe("resolveOAuthTokens", () => {
         providerName: "Polar",
         getOAuthConfig: () => fakeConfig,
       }),
-    ).rejects.toThrow("No refresh token for Polar");
+    ).rejects.toBe(deletionFailure);
   });
 
   it("deletes tokens and throws on invalid_grant", async () => {
