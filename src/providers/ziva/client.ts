@@ -321,7 +321,7 @@ export class ZivaMcpClient {
     const fetchWithConnectAbort: typeof globalThis.fetch = (input, init) => {
       const requestSignal = init?.signal;
       const signal =
-        requestSignal === undefined
+        requestSignal == null
           ? lifecycle.signal
           : AbortSignal.any([lifecycle.signal, requestSignal]);
       return rateLimitFetch(input, { ...init, signal });
