@@ -18,6 +18,10 @@ describe("activity_power_curve model", () => {
     const existingActivityStateSql = extractCteSql(modelSql, "existing_activity_state");
     const dirtyKeysSql = extractCteSql(modelSql, "source_dirty_activity_keys");
     const powerSampleGroupsSql = extractCteSql(modelSql, "power_sample_groups");
+    const activityPowerSamplesSql = extractCteSql(modelSql, "activity_power_samples");
+    const activityPowerSamplesPrewhere = activityPowerSamplesSql
+      .split("\n")
+      .find((line) => line.includes("PREWHERE"));
 
     expect(currentPowerActivitySql).toContain("current_activity.power_sample_count > 1");
     expect(currentPowerActivitySql).toContain(
@@ -35,11 +39,17 @@ describe("activity_power_curve model", () => {
     );
     expect(modelSql).toContain("activity_keys AS MATERIALIZED (");
     expect(modelSql).toContain("LIMIT {{ power_curve_dirty_key_batch_size }}");
-    expect(powerSampleGroupsSql).toContain("WHERE (sensor.user_id, sensor.activity_id) IN (");
-    expect(powerSampleGroupsSql).toContain("FROM activity_bounds");
-    expect(powerSampleGroupsSql).toContain(
-      "INNER JOIN {{ ref('activity_sensor_sample') }} AS sensor FINAL",
-    );
+    // The channel filter must run before FINAL so the dedup state stays scoped
+    // to power rows; is_deleted must stay after FINAL so a deleted latest
+    // version cannot resurrect an older non-deleted one.
+    expect(activityPowerSamplesSql).toContain("{{ ref('activity_sensor_sample') }} FINAL");
+    expect(activityPowerSamplesPrewhere).toContain("channel = 'power'");
+    expect(activityPowerSamplesPrewhere).not.toContain("is_deleted");
+    expect(activityPowerSamplesSql).toContain("WHERE is_deleted = 0");
+    expect(activityPowerSamplesSql).toContain("scalar >= 0");
+    expect(activityPowerSamplesSql).toContain("(user_id, activity_id) IN (");
+    expect(activityPowerSamplesSql).toContain("FROM activity_bounds");
+    expect(powerSampleGroupsSql).toContain("INNER JOIN activity_power_samples AS sensor");
   });
 
   it("uses the required duration set while retaining legacy points", () => {
@@ -51,10 +61,21 @@ describe("activity_power_curve model", () => {
   });
 
   it("preserves measured zero power samples", () => {
-    const powerSampleGroupsSql = extractCteSql(modelSql, "power_sample_groups");
+    const activityPowerSamplesSql = extractCteSql(modelSql, "activity_power_samples");
 
-    expect(powerSampleGroupsSql).toContain("sensor.scalar >= 0");
-    expect(powerSampleGroupsSql).not.toContain("sensor.scalar > 0");
+    expect(activityPowerSamplesSql).toContain("scalar >= 0");
+    expect(activityPowerSamplesSql).not.toContain("scalar > 0");
+  });
+
+  it("computes segment durations without correlated array indexing", () => {
+    // Indexing a closed-over array from inside arrayMap (recorded_times[i])
+    // makes ClickHouse replicate the whole array per element, which is O(N^2)
+    // and allocated multiple GiB for a single large power activity.
+    const powerSampleSegmentsSql = extractCteSql(modelSql, "power_sample_segments");
+
+    expect(powerSampleSegmentsSql).toContain("arrayPopBack(recorded_times)");
+    expect(powerSampleSegmentsSql).toContain("arrayPopFront(recorded_times)");
+    expect(powerSampleSegmentsSql).not.toContain("recorded_times[");
   });
 
   it("integrates elapsed-time windows at fractional endpoints", () => {

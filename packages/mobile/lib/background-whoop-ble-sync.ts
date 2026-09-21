@@ -248,8 +248,10 @@ function startPeriodicDrainTimer(
  *
  * Exported so that the background refresh handler can call this directly
  * (every ~15-30 min) without waiting for the user to open the app.
- * Errors are reported to telemetry and rethrown so the native background task
- * can record an unsuccessful refresh.
+ * Other errors are reported to telemetry and rethrown so the native background
+ * task can record an unsuccessful refresh; an expected connect-handshake timeout
+ * is logged as a breadcrumb, still drains buffered samples, and does not fail the
+ * refresh.
  */
 export async function syncWhoopBle(
   trpcClient: InertialMeasurementUnitUploadClient,
@@ -261,10 +263,36 @@ export async function syncWhoopBle(
     await syncOnForeground(trpcClient, whoopDeps, realtimeClient);
     logger.info(LOG_CATEGORY, "background refresh — sync complete");
   } catch (error: unknown) {
+    // A strap that is asleep, out of range, or busy with the WHOOP app can make the
+    // connect handshake time out. That is an expected environmental condition for a
+    // background refresh, and the buffered samples can still be uploaded without a
+    // live strap connection — so drain anyway instead of failing the whole refresh.
+    if (isWhoopBleConnectionTimeout(error)) {
+      logger.warn(
+        LOG_CATEGORY,
+        "background refresh — connect timed out, uploading buffered samples without a strap",
+      );
+      Sentry.addBreadcrumb({
+        category: "whoop-ble",
+        message: "Background refresh connect timed out",
+        level: "warning",
+      });
+      await drainBuffer(trpcClient, whoopDeps, realtimeClient);
+      return;
+    }
     logger.error(LOG_CATEGORY, `background refresh sync error: ${error}`);
     captureException(error, { source: "whoop-ble-background-refresh" });
     throw error;
   }
+}
+
+/**
+ * Expo rejects a native promise with a JavaScript `Error` carrying the native error
+ * `code`. The WHOOP connect handshake rejects with `TIMEOUT` when the strap does not
+ * become ready before the connection deadline.
+ */
+function isWhoopBleConnectionTimeout(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "TIMEOUT";
 }
 
 async function syncOnForeground(

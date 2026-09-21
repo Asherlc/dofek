@@ -144,6 +144,27 @@ final class AppStoreBillingServiceTests: XCTestCase {
         XCTAssertEqual(store.finishedTransactionIDs, [71])
     }
 
+    func testFinishTransactionTreatsAlreadyFinishedTransactionAsSuccess() async throws {
+        let store = FakeStoreKit(finishTransactionError: .transactionNotFound(71))
+        let service = AppStoreBillingService(store: store)
+
+        try await service.finishTransaction(transactionID: 71)
+
+        XCTAssertEqual(store.finishedTransactionIDs, [])
+    }
+
+    func testFinishTransactionPropagatesUnexpectedStoreErrors() async {
+        let store = FakeStoreKit(finishTransactionError: .unverifiedTransaction)
+        let service = AppStoreBillingService(store: store)
+
+        do {
+            try await service.finishTransaction(transactionID: 71)
+            XCTFail("Expected the store error to propagate")
+        } catch {
+            XCTAssertEqual(error as? AppStoreBillingError, .unverifiedTransaction)
+        }
+    }
+
     private func makeTransaction(
         transactionID: UInt64,
         productID: String? = nil,
@@ -190,6 +211,7 @@ private final class FakeStoreKit: AppStoreKitProviding, @unchecked Sendable {
     private let currentEntitlementResults: [AppStoreKitVerificationResult]
     private let updateStream: AsyncStream<AppStoreKitVerificationResult>
     private let updateContinuation: AsyncStream<AppStoreKitVerificationResult>.Continuation
+    private let finishTransactionError: AppStoreBillingError?
 
     private(set) var purchaseRequests: [PurchaseRequest] = []
     private(set) var finishedTransactionIDs: [UInt64] = []
@@ -198,11 +220,13 @@ private final class FakeStoreKit: AppStoreKitProviding, @unchecked Sendable {
     init(
         product: AppStoreProductInfo? = nil,
         purchaseResult: AppStoreKitPurchaseResult = .cancelled,
-        currentEntitlements: [AppStoreKitVerificationResult] = []
+        currentEntitlements: [AppStoreKitVerificationResult] = [],
+        finishTransactionError: AppStoreBillingError? = nil
     ) {
         self.product = product
         self.purchaseResult = purchaseResult
         self.currentEntitlementResults = currentEntitlements
+        self.finishTransactionError = finishTransactionError
         var continuation: AsyncStream<AppStoreKitVerificationResult>.Continuation!
         self.updateStream = AsyncStream { continuation = $0 }
         self.updateContinuation = continuation
@@ -235,6 +259,9 @@ private final class FakeStoreKit: AppStoreKitProviding, @unchecked Sendable {
     }
 
     func finishTransaction(transactionID: UInt64) async throws {
+        if let finishTransactionError {
+            throw finishTransactionError
+        }
         finishedTransactionIDs.append(transactionID)
     }
 

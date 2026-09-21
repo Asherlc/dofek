@@ -132,16 +132,13 @@ function buildPeerDbNormalizationQuery(): string {
       progress.latest_synced_batch_id,
       progress.latest_normalized_batch_id,
       progress.oldest_pending_batch_id,
-      coalesce(
-        array_agg(DISTINCT batch_table.destination_table_name)
-          FILTER (WHERE batch_table.destination_table_name IS NOT NULL),
-        ARRAY[]::text[]
-      ) AS pending_destination_tables
+      string_agg(DISTINCT aggregate_counts.destination_table_name, ',')
+        AS pending_destination_tables
     FROM batch_progress AS progress
-    LEFT JOIN peerdb_stats.cdc_batch_table AS batch_table
-      ON batch_table.flow_name = progress.flow_name
-      AND batch_table.batch_id >= progress.oldest_pending_batch_id
-      AND batch_table.batch_id <= progress.latest_synced_batch_id
+    LEFT JOIN peerdb_stats.cdc_table_aggregate_counts AS aggregate_counts
+      ON aggregate_counts.flow_name = progress.flow_name
+      AND aggregate_counts.latest_batch_id >= progress.oldest_pending_batch_id
+      AND aggregate_counts.latest_batch_id <= progress.latest_synced_batch_id
     GROUP BY
       progress.flow_name,
       progress.latest_synced_batch_id,
@@ -160,7 +157,10 @@ function parsePeerDbNormalizationRows(result: unknown) {
           latest_normalized_batch_id: nullableIntegerLikeSchema,
           latest_synced_batch_id: nullableIntegerLikeSchema,
           oldest_pending_batch_id: nullableIntegerLikeSchema,
-          pending_destination_tables: z.array(z.string().regex(/^[a-z][a-z0-9_]*$/)),
+          pending_destination_tables: z
+            .union([z.string(), z.null()])
+            .transform((value) => (value === null ? [] : value.split(",")))
+            .pipe(z.array(z.string().regex(/^[a-z][a-z0-9_]*$/))),
         }),
       ),
     })

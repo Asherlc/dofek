@@ -136,6 +136,27 @@ existing_duration_rows AS (
 ),
 {% endif %}
 
+activity_power_samples AS (
+    SELECT
+        activity_id,
+        user_id,
+        recorded_at,
+        scalar,
+        provider_id,
+        device_id,
+        measurement_kind
+    FROM {{ ref('activity_sensor_sample') }} FINAL
+    PREWHERE channel = 'power'
+    WHERE is_deleted = 0
+        AND scalar >= 0
+        AND (user_id, activity_id) IN (
+            SELECT
+                user_id,
+                activity_id
+            FROM activity_bounds
+        )
+),
+
 power_sample_groups AS (
     SELECT
         am.activity_id AS activity_id,
@@ -150,20 +171,11 @@ power_sample_groups AS (
                 ifNull(sensor.device_id, ''),
                 sensor.measurement_kind
             ))
-    ) AS samples
+        ) AS samples
     FROM activity_bounds AS am
-    INNER JOIN {{ ref('activity_sensor_sample') }} AS sensor FINAL
+    INNER JOIN activity_power_samples AS sensor
         ON sensor.activity_id = am.activity_id
         AND sensor.user_id = am.user_id
-        AND sensor.channel = 'power'
-        AND sensor.scalar >= 0
-        AND sensor.is_deleted = 0
-    WHERE (sensor.user_id, sensor.activity_id) IN (
-        SELECT
-            user_id,
-            activity_id
-        FROM activity_bounds
-    )
     GROUP BY
         am.activity_id,
         am.user_id,
@@ -199,12 +211,13 @@ power_sample_segments AS (
         devices,
         measurement_kinds,
         arrayMap(
-            sample_index -> dateDiff(
+            (start_recorded_at, end_recorded_at) -> dateDiff(
                 'millisecond',
-                recorded_times[sample_index],
-                recorded_times[sample_index + 1]
+                start_recorded_at,
+                end_recorded_at
             ) / 1000.0,
-            arrayEnumerate(arrayPopBack(recorded_times))
+            arrayPopBack(recorded_times),
+            arrayPopFront(recorded_times)
         ) AS segment_seconds
     FROM power_sample_arrays
     WHERE length(recorded_times) > 1

@@ -929,6 +929,56 @@ describe("syncWhoopBle", () => {
     });
   });
 
+  it("uploads buffered samples and does not report when the connect handshake times out", async () => {
+    const { captureException } = await import("./telemetry");
+    vi.mocked(captureException).mockClear();
+    const samples = [
+      {
+        timestamp: "2026-03-25T08:00:00.000Z",
+        x: 100,
+        y: -200,
+        z: 300,
+        gyroscopeX: 10,
+        gyroscopeY: -20,
+        gyroscopeZ: 30,
+      },
+    ];
+    vi.mocked(whoopDeps.peekBufferedSamples).mockResolvedValueOnce(samples);
+    vi.mocked(whoopDeps.connect).mockRejectedValue(
+      Object.assign(new Error("TIMEOUT: undefined reason"), { code: "TIMEOUT" }),
+    );
+
+    await expect(syncWhoopBle(trpcClient, whoopDeps)).resolves.toBeUndefined();
+
+    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith({
+      deviceId: "WHOOP Strap",
+      deviceType: "whoop",
+      samples: expect.arrayContaining([
+        expect.objectContaining({ timestamp: "2026-03-25T08:00:00.000Z" }),
+      ]),
+    });
+    expect(captureException).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ source: "whoop-ble-background-refresh" }),
+    );
+  });
+
+  it("still reports and rejects non-timeout connect errors", async () => {
+    const { captureException } = await import("./telemetry");
+    vi.mocked(captureException).mockClear();
+    const deviceNotFoundError = Object.assign(new Error("Peripheral not found"), {
+      code: "NOT_FOUND",
+    });
+    vi.mocked(whoopDeps.connect).mockRejectedValue(deviceNotFoundError);
+
+    await expect(syncWhoopBle(trpcClient, whoopDeps)).rejects.toBe(deviceNotFoundError);
+
+    expect(captureException).toHaveBeenCalledWith(deviceNotFoundError, {
+      source: "whoop-ble-background-refresh",
+    });
+    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).not.toHaveBeenCalled();
+  });
+
   it("rejects on errors so the native background task can report failure", async () => {
     const error = new Error("BLE error");
     vi.mocked(whoopDeps.connect).mockRejectedValue(error);

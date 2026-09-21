@@ -200,6 +200,37 @@ describe("MCP token repository (integration)", () => {
     expect(refreshed?.scopes).toEqual(["nutrition:read", "nutrition:write"]);
   });
 
+  it("preserves a granted write scope when refresh requests the default read scopes", async () => {
+    const created = await createMcpToken(ctx.db, {
+      userId: testUserId,
+      name: "ChatGPT OAuth",
+      scopes: ["nutrition:read", "nutrition:write"],
+      expiresAt: null,
+      oauthClientId: "chatgpt-client-default-scope",
+      oauthResource: "https://dofek.example/api/mcp",
+    });
+
+    await ctx.db.execute(
+      sql`INSERT INTO fitness.mcp_oauth_refresh_token (
+            token_hash, client_id, user_id, access_token_id, scopes, resource, expires_at
+          ) VALUES (
+            ${hashMcpToken("default-scope-refresh")}, ${"chatgpt-client-default-scope"}, ${testUserId},
+            ${created.metadata.id}::uuid, ARRAY[${"nutrition:read"}, ${"nutrition:write"}]::text[],
+            ${"https://dofek.example/api/mcp"}, ${new Date(Date.now() + 86_400_000)}
+          )`,
+    );
+
+    const refreshed = await rotateRefreshToken(ctx.db, {
+      clientId: "chatgpt-client-default-scope",
+      name: "ChatGPT OAuth",
+      refreshToken: "default-scope-refresh",
+      requestedScopes: ["nutrition:read"],
+      resource: "https://dofek.example/api/mcp",
+    });
+
+    expect(refreshed?.scopes).toEqual(["nutrition:read", "nutrition:write"]);
+  });
+
   it("updates active OAuth access and refresh credentials for a connected app", async () => {
     const first = await createMcpToken(ctx.db, {
       userId: testUserId,
