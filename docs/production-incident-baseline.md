@@ -7,6 +7,31 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-09-20 — Infisical GitHub secret sync exceeded repository limit
+
+- **Status:** Fixed. The sync now succeeds and preserves both Ziva secrets.
+- **Symptoms / user impact:** `dofek-github-sync` failed while syncing the
+  production root to the `Asherlc/dofek` repository because GitHub permits at
+  most 100 repository secrets ([GitHub secret limits](https://docs.github.com/en/actions/reference/security/secrets#limits-for-secrets)).
+- **Evidence / root cause:** Infisical had 101 root secrets and GitHub had 99.
+  Nineteen shared secrets had no active repository references; the two Ziva
+  secrets were intentionally retained. The sync used overwrite-destination,
+  so its successful reconciliation also removed `CODECOV_TOKEN`, which existed
+  only in GitHub while CI still referenced it. Infisical GitHub syncs source
+  secrets from a configured path and support overwrite behavior
+  ([Infisical GitHub sync](https://infisical.com/docs/integrations/secret-syncs/github)).
+- **Direct fix:** Deleted the 19 unreferenced shared production keys and their
+  stale GitHub copies, leaving 82 source and destination secrets with both
+  Ziva keys present. Replaced the two Codecov token references with Codecov
+  OIDC uploads and granted those jobs `id-token: write`.
+- **Validation:** Infisical root count 82; GitHub repository count 82; zero
+  missing or extra names; both Ziva keys present; all remaining direct workflow
+  secrets present; `actionlint` and `git diff --check` pass.
+- **Remaining risk / follow-up:** The sync still mirrors all 82 referenced
+  production keys to GitHub. The repository is under GitHub's limit, but a
+  future least-privilege migration could move remaining direct workflow
+  consumers to Infisical OIDC and retire this repository-level sync.
+
 ## 2026-09-20 — activity_sensor_sample day batch timed out under CPU contention
 
 - **Status:** Fixed in code; deployment pending.
