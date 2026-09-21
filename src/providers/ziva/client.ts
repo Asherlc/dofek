@@ -290,7 +290,7 @@ function createConnectLifecycle(callerSignal: AbortSignal | undefined): ConnectL
   if (callerSignal?.aborted) {
     abortFromCaller();
   } else {
-    callerSignal?.addEventListener("abort", abortFromCaller, { once: true });
+    callerSignal?.addEventListener("abort", abortFromCaller);
   }
 
   return {

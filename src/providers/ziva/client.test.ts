@@ -589,7 +589,22 @@ describe("ZivaMcpClient", () => {
     ]);
 
     expect(outcome).toBe(reason);
-    expect(harness.transportClosed).toBe(true);
+    await vi.waitFor(() => expect(harness.transportClosed).toBe(true));
+  });
+
+  it("preserves a caller cancellation that happened before connection starts", async () => {
+    const harness = createFakeZivaMcpHarness();
+    const controller = new AbortController();
+    const reason = new DOMException("caller already stopped connection", "AbortError");
+    controller.abort(reason);
+
+    await expect(
+      ZivaMcpClient.connect({
+        accessToken: ACCESS_TOKEN,
+        fetchFn: harness.fetch,
+        signal: controller.signal,
+      }),
+    ).rejects.toBe(reason);
   });
 
   it("times out the whole connect handshake while initialized notification is pending", async () => {

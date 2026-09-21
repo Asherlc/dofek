@@ -70,8 +70,8 @@ deployment's exact normal public Dofek callback before registration. The
 registered URI and Dofek's configured callback must match exactly. Store the
 returned client ID and secret as `ZIVA_CLIENT_ID` and `ZIVA_CLIENT_SECRET` in
 the deployment's secret manager. Dofek's deployment allowlist supplies them to
-the web service, which handles OAuth callbacks, and the worker, which syncs;
-unrelated services do not receive them.
+the web service, which handles OAuth callbacks, the web pre-migration task,
+and the worker, which syncs; unrelated services do not receive them.
 
 ## Connect, reconnect, and disconnect
 
@@ -169,12 +169,12 @@ whose stored Ziva access token is still unexpired:
 pnpm smoke:ziva -- --user-id "$DOFEK_ZIVA_SMOKE_USER_ID" --date 2026-09-20
 ```
 
-The command parses both arguments before opening resources, decrypts that
-user's stored token read-only, verifies the JWT issuer/audience/subject and
-exact stored account identity, then uses the production MCP client for exactly
-one date. It fails instead of refreshing an expired token. It never saves or
-deletes credentials, writes nutrition, touches checkpoints or queues, or uses
-the Redis-backed adaptive-rate store.
+The smoke entrypoint parses both arguments before opening database or MCP
+resources, decrypts that user's stored token read-only, verifies the JWT
+issuer/audience/subject and exact stored account identity, then uses the
+production MCP client for exactly one date. It fails instead of refreshing an
+expired token. It never saves or deletes credentials, writes nutrition,
+touches checkpoints or queues, or uses the Redis-backed adaptive-rate store.
 
 Output is one redacted JSON object containing only tool availability, meal
 count, allowlisted field/macro-key availability, and booleans for meal ID, item
