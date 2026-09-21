@@ -7,7 +7,6 @@ const JOB_STATES = [
   "completed",
   "delayed",
   "failed",
-  "paused",
   "prioritized",
   "wait",
   "waiting",
