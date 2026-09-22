@@ -43,7 +43,7 @@
     "@stdlib/stats-ranks": "0.2.3",
     "@trpc/server": "11.18.0",
     "arctic": "3.7.0",
-    "compression": "1.8.1",
+    "compression": "1.8.2",
     "cookie-parser": "1.4.7",
     "dofek": "workspace:*",
     "entities": "6.0.1",
