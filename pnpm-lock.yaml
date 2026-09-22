@@ -1048,8 +1048,8 @@ importers:
         specifier: 5.3.0
         version: 5.3.0(encoding@0.1.13)(rollup@4.62.2)(supports-color@11.0.0)
       '@storybook/addon-a11y':
-        specifier: 10.5.10
-        version: 10.5.10(storybook@10.5.10)
+        specifier: 10.6.0
+        version: 10.6.0(storybook@10.5.10)
       '@storybook/react-vite':
         specifier: 10.5.10
         version: 10.5.10(@types/react-dom@19.2.3)(@types/react@19.2.18)(esbuild@0.28.1)(react-dom@19.2.3)(react@19.2.3)(rollup@4.62.2)(storybook@10.5.10)(supports-color@11.0.0)(typescript@6.0.3)(vite@8.0.16)
@@ -8051,10 +8051,10 @@ packages:
     engines: {node: '>=0.10.0', npm: '>2.7.0'}
     os: [aix, darwin, freebsd, linux, macos, openbsd, sunos, win32, windows]
 
-  '@storybook/addon-a11y@10.5.10':
-    resolution: {integrity: sha512-RpRQV5xUbrl6hCiNrd5FSMIo6pnRZ0VZxWvEW/ASLcreGkKUW5jl2AeLCe5YROE2i80s/dU+6VPzOYKrwWNFbQ==}
+  '@storybook/addon-a11y@10.6.0':
+    resolution: {integrity: sha512-Z/CZor/F8H74/+IoeLroEQXQoVxvmjVtUgATJ95KPBolHxMaHLXLsYU0wosIiiORxmfRCnpen5pQl1n4+pBWQw==}
     peerDependencies:
-      storybook: ^10.5.10
+      storybook: ^10.6.0
 
   '@storybook/addon-ondevice-actions@10.5.4':
     resolution: {integrity: sha512-lR/0Th1JvTjBHUb5a7L7MHe238MsljNrENMxgNXXYNJ3sfqH4npZlz7bL9WPJfzgPmUUpwjjV9ICuPI2qJNe8A==}
@@ -9250,8 +9250,8 @@ packages:
   aws4@1.13.2:
     resolution: {integrity: sha512-lHe62zvbTB5eEABUVi/AwVh0ZKY9rMMDhmm+eeyuuUQbQ3+J+fONVQOZyj+DdrvD4BY33uYniyRJ4UJIaSKAfw==}
 
-  axe-core@4.11.4:
-    resolution: {integrity: sha512-KunSNx+TVpkAw/6ULfhnx+HWRecjqZGTOyquAoWHYLRSdK1tB5Ihce1ZW+UY3fj33bYAFWPu7W/GRSmmrCGuxA==}
+  axe-core@4.13.0:
+    resolution: {integrity: sha512-UzGt8zg7Ny8djbYMhxl2zuEevVa7r2gJjYY5Lwr1xM7+XU2nd6CkIWFTVcCIbAP63vSz71NaVyyuSk9lHKcy0A==}
     engines: {node: '>=4'}
 
   axios@1.18.1:
@@ -18293,7 +18293,7 @@ snapshots:
       redis-info: 3.1.0
       valibot: 1.5.0(typescript@6.0.3)
     optionalDependencies:
-      bullmq: 6.3.4(ioredis@5.10.1)(pg@8.16.0)
+      bullmq: 6.3.4(ioredis@6.0.0)(pg@8.16.0)
     transitivePeerDependencies:
       - typescript
 
@@ -24991,10 +24991,10 @@ snapshots:
       '@stdlib/utils-constructor-name': 0.2.3
       '@stdlib/utils-global': 0.2.3
 
-  '@storybook/addon-a11y@10.5.10(storybook@10.5.10)':
+  '@storybook/addon-a11y@10.6.0(storybook@10.5.10)':
     dependencies:
       '@storybook/global': 5.0.0
-      axe-core: 4.11.4
+      axe-core: 4.13.0
       storybook: 10.5.10(@types/react@19.2.18)(prettier@3.9.5)(react-dom@19.2.3)(react@19.2.3)
 
   '@storybook/addon-ondevice-actions@10.5.4(react-native@0.86.3)(react@19.2.3)(storybook@10.5.10)':
@@ -26407,7 +26407,7 @@ snapshots:
 
   aws4@1.13.2: {}
 
-  axe-core@4.11.4: {}
+  axe-core@4.13.0: {}
 
   axios@1.18.1(debug@4.4.3)(supports-color@11.0.0):
     dependencies:
