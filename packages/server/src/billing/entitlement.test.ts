@@ -214,15 +214,15 @@ describe("resolveAccessWindow", () => {
       timezone: "America/Los_Angeles",
       paidGrantReason: null,
       stripeSubscriptionStatus: null,
-      now: new Date("2026-03-08T07:30:00.000Z"),
+      now: new Date("2026-03-09T12:00:00.000Z"),
     });
 
     expect(result).toEqual({
       kind: "limited",
       paid: false,
       reason: "free_recent_week",
-      startDate: "2026-03-01",
-      endDateExclusive: "2026-03-08",
+      startDate: "2026-03-03",
+      endDateExclusive: "2026-03-10",
     });
   });
 

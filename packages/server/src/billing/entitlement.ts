@@ -105,8 +105,10 @@ export function resolveAccessWindow(input: ResolveAccessWindowInput): AccessWind
   // user's timezone. userCreatedAt is retained on the input for signature
   // compatibility but no longer anchors the window.
   const today = formatDateYmdInTimeZone(input.now ?? new Date(), input.timezone);
+  // An unknown timezone throws RangeError from inside formatDateYmdInTimeZone,
+  // so "--" here means only an unparseable `now` value.
   if (today === "--") {
-    throw new RangeError(`Invalid timezone for limited access: ${input.timezone}`);
+    throw new RangeError(`Invalid current timestamp for limited access`);
   }
 
   return {
