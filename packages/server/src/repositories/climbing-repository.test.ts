@@ -328,7 +328,7 @@ describe("ClimbingRepository", () => {
       const repo = new ClimbingRepository(executeDb(execute), "user-1", "UTC", {
         kind: "limited",
         paid: false,
-        reason: "free_signup_week",
+        reason: "free_recent_week",
         startDate: "2026-07-01",
         endDateExclusive: "2026-07-08",
       });

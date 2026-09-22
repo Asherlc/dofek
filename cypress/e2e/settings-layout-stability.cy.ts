@@ -319,7 +319,7 @@ describe("Settings layout stability", () => {
     });
 
     cy.wait("@billingStatus");
-    cy.contains("main", /full access|signup week/i).should("exist");
+    cy.contains("main", /full access|most recent 7 days/i).should("exist");
     cy.window().then((win) => waitForStableLayout(win, true));
 
     cy.contains("main section h3", "Billing").then(($heading) => {

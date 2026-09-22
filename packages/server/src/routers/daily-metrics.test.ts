@@ -790,7 +790,7 @@ describe("dailyMetricsRouter", () => {
         accessWindow: {
           kind: "limited",
           paid: false,
-          reason: "free_signup_week",
+          reason: "free_recent_week",
           startDate: "2026-04-10",
           endDateExclusive: "2026-04-17",
         },

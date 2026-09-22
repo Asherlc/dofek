@@ -127,7 +127,7 @@ const limitedUserDetail: AdminUserDetail = {
   access: {
     kind: "limited",
     paid: false,
-    reason: "free_signup_week",
+    reason: "free_recent_week",
     startDate: "2026-04-20",
     endDateExclusive: "2026-04-27",
   },

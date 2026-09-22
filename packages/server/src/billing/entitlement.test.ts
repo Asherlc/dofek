@@ -136,71 +136,93 @@ describe("resolveAccessWindow", () => {
     ).toBe("limited");
   });
 
-  it("limits unpaid users to signup day through signup day plus six", () => {
+  it("limits unpaid users to the most recent 7 calendar days including today", () => {
     const result = resolveAccessWindow({
       userCreatedAt: "2026-04-10T18:30:00.000Z",
       timezone: "UTC",
       paidGrantReason: null,
       stripeSubscriptionStatus: "canceled",
+      now: new Date("2026-09-22T12:00:00.000Z"),
     });
 
     expect(result).toEqual({
       kind: "limited",
       paid: false,
-      reason: "free_signup_week",
-      startDate: "2026-04-10",
-      endDateExclusive: "2026-04-17",
+      reason: "free_recent_week",
+      startDate: "2026-09-16",
+      endDateExclusive: "2026-09-23",
     });
   });
 
-  it("starts the signup week on the local date west of UTC", () => {
+  it("ignores account age when computing the recent window", () => {
     const result = resolveAccessWindow({
-      userCreatedAt: "2026-07-21T01:30:00.000Z",
+      userCreatedAt: "2026-09-20T18:30:00.000Z",
+      timezone: "UTC",
+      paidGrantReason: null,
+      stripeSubscriptionStatus: null,
+      now: new Date("2026-09-22T12:00:00.000Z"),
+    });
+
+    expect(result).toEqual({
+      kind: "limited",
+      paid: false,
+      reason: "free_recent_week",
+      startDate: "2026-09-16",
+      endDateExclusive: "2026-09-23",
+    });
+  });
+
+  it("ends the recent week on the local date west of UTC", () => {
+    const result = resolveAccessWindow({
+      userCreatedAt: "2026-04-10T18:30:00.000Z",
       timezone: "America/Los_Angeles",
       paidGrantReason: null,
       stripeSubscriptionStatus: null,
+      now: new Date("2026-07-21T01:30:00.000Z"),
     });
 
     expect(result).toEqual({
       kind: "limited",
       paid: false,
-      reason: "free_signup_week",
-      startDate: "2026-07-20",
-      endDateExclusive: "2026-07-27",
+      reason: "free_recent_week",
+      startDate: "2026-07-14",
+      endDateExclusive: "2026-07-21",
     });
   });
 
-  it("starts the signup week on the local date east of UTC", () => {
+  it("ends the recent week on the local date east of UTC", () => {
     const result = resolveAccessWindow({
-      userCreatedAt: "2026-07-20T15:30:00.000Z",
+      userCreatedAt: "2026-04-10T18:30:00.000Z",
       timezone: "Asia/Tokyo",
       paidGrantReason: null,
       stripeSubscriptionStatus: null,
+      now: new Date("2026-07-20T15:30:00.000Z"),
     });
 
     expect(result).toEqual({
       kind: "limited",
       paid: false,
-      reason: "free_signup_week",
-      startDate: "2026-07-21",
-      endDateExclusive: "2026-07-28",
+      reason: "free_recent_week",
+      startDate: "2026-07-15",
+      endDateExclusive: "2026-07-22",
     });
   });
 
-  it("advances seven local dates across daylight-saving transitions", () => {
+  it("spans seven local dates across daylight-saving transitions", () => {
     const result = resolveAccessWindow({
-      userCreatedAt: "2026-03-08T07:30:00.000Z",
+      userCreatedAt: "2026-04-10T18:30:00.000Z",
       timezone: "America/Los_Angeles",
       paidGrantReason: null,
       stripeSubscriptionStatus: null,
+      now: new Date("2026-03-08T07:30:00.000Z"),
     });
 
     expect(result).toEqual({
       kind: "limited",
       paid: false,
-      reason: "free_signup_week",
-      startDate: "2026-03-07",
-      endDateExclusive: "2026-03-14",
+      reason: "free_recent_week",
+      startDate: "2026-03-01",
+      endDateExclusive: "2026-03-08",
     });
   });
 
@@ -213,16 +235,5 @@ describe("resolveAccessWindow", () => {
         stripeSubscriptionStatus: null,
       }),
     ).toThrow(RangeError);
-  });
-
-  it("rejects invalid signup timestamps for limited access", () => {
-    expect(() =>
-      resolveAccessWindow({
-        userCreatedAt: "not-a-timestamp",
-        timezone: "UTC",
-        paidGrantReason: null,
-        stripeSubscriptionStatus: null,
-      }),
-    ).toThrow("Invalid user creation timestamp: not-a-timestamp");
   });
 });

@@ -115,7 +115,7 @@ describe("TrainingRepository", () => {
       const accessWindow: AccessWindow = {
         kind: "limited",
         paid: false,
-        reason: "free_signup_week",
+        reason: "free_recent_week",
         startDate: "2024-01-01T00:00:00Z",
         endDateExclusive: "2024-01-08T00:00:00Z",
       };
@@ -521,7 +521,7 @@ describe("TrainingRepository", () => {
       const accessWindow: AccessWindow = {
         kind: "limited",
         paid: false,
-        reason: "free_signup_week",
+        reason: "free_recent_week",
         startDate: "2024-01-01T00:00:00Z",
         endDateExclusive: "2024-01-08T00:00:00Z",
       };

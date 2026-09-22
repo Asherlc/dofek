@@ -167,7 +167,7 @@ function normalizeSettingsCategory(value: unknown): SettingsCategory | undefined
   return typeof value === "string" ? LEGACY_SETTINGS_CATEGORY_MAP[value] : undefined;
 }
 
-function formatDateRangeForSignupWeek(startDate: string, endDateExclusive: string): string {
+function formatDateRangeForRecentWeek(startDate: string, endDateExclusive: string): string {
   const endInclusive = new Date(`${endDateExclusive}T12:00:00.000Z`);
   endInclusive.setUTCDate(endInclusive.getUTCDate() - 1);
   const startValue = formatDateMedium(startDate);
@@ -758,7 +758,7 @@ export default function SettingsScreen() {
               <>
                 <Text style={styles.billingStatusText}>
                   {billingStatus.data.access.kind === "limited"
-                    ? `Access limited to your signup week (${formatDateRangeForSignupWeek(
+                    ? `Access limited to your most recent 7 days (${formatDateRangeForRecentWeek(
                         billingStatus.data.access.startDate,
                         billingStatus.data.access.endDateExclusive,
                       )}).`

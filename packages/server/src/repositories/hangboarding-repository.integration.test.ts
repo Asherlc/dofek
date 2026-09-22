@@ -237,7 +237,7 @@ describe("HangboardingRepository integration", () => {
     const repository = new HangboardingRepository(testContext.db, TEST_USER_ID, "UTC", {
       kind: "limited",
       paid: false,
-      reason: "free_signup_week",
+      reason: "free_recent_week",
       startDate: nullDataDate,
       endDateExclusive: nextDate.toISOString().slice(0, 10),
     });

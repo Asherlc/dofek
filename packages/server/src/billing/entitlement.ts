@@ -42,7 +42,7 @@ export type AccessWindow =
   | {
       kind: "limited";
       paid: false;
-      reason: "free_signup_week";
+      reason: "free_recent_week";
       startDate: string;
       endDateExclusive: string;
     };
@@ -101,16 +101,19 @@ export function resolveAccessWindow(input: ResolveAccessWindowInput): AccessWind
     return { kind: "full", paid: true, reason: "app_store_subscription" };
   }
 
-  const startDate = formatDateYmdInTimeZone(input.userCreatedAt, input.timezone);
-  if (startDate === "--") {
-    throw new RangeError(`Invalid user creation timestamp: ${input.userCreatedAt}`);
+  // Free tier covers the most recent 7 calendar days (inclusive of today) in the
+  // user's timezone. userCreatedAt is retained on the input for signature
+  // compatibility but no longer anchors the window.
+  const today = formatDateYmdInTimeZone(input.now ?? new Date(), input.timezone);
+  if (today === "--") {
+    throw new RangeError(`Invalid timezone for limited access: ${input.timezone}`);
   }
 
   return {
     kind: "limited",
     paid: false,
-    reason: "free_signup_week",
-    startDate,
-    endDateExclusive: addCalendarDays(startDate, 7),
+    reason: "free_recent_week",
+    startDate: addCalendarDays(today, -6),
+    endDateExclusive: addCalendarDays(today, 1),
   };
 }
