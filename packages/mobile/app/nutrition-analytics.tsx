@@ -492,8 +492,7 @@ function MicronutrientAdequacySection({
             </View>
             <View style={styles.nutrientSourceDetails}>
               <Text style={styles.nutrientSourceText}>
-                Itemized food: {formatNutritionNumber(nutrient.intake.foodDailyAverage)}{" "}
-                {nutrient.unit}/day
+                Food: {formatNutritionNumber(nutrient.intake.foodDailyAverage)} {nutrient.unit}/day
               </Text>
               <Text style={styles.nutrientSourceText}>
                 Provider daily totals:{" "}
@@ -527,9 +526,11 @@ function MicronutrientAdequacySection({
 }
 
 function intakeTypeLabel(
-  intakeType: "itemized_food" | "provider_daily_total" | "supplement",
+  intakeType: "itemized_food" | "meal_aggregate" | "provider_daily_total" | "supplement",
 ): string {
   switch (intakeType) {
+    case "meal_aggregate":
+      return "Meal total";
     case "itemized_food":
       return "Itemized food";
     case "provider_daily_total":

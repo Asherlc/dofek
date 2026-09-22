@@ -110,7 +110,7 @@ vi.mock("../trpc.ts", async () => {
 });
 
 vi.mock("dofek/jobs/provider-queue-config", () => ({
-  getConfiguredProviderIds: vi.fn(() => ["strava", "garmin", "whoop"]),
+  getConfiguredProviderIds: vi.fn(() => ["strava", "garmin", "whoop", "ziva"]),
 }));
 
 vi.mock("dofek/jobs/queues", () => ({
@@ -195,6 +195,7 @@ vi.mock("dofek/providers/wahoo/provider", () => ({ WahooProvider: vi.fn() }));
 vi.mock("dofek/providers/withings", () => ({ WithingsProvider: vi.fn() }));
 vi.mock("dofek/providers/peloton", () => ({ PelotonProvider: vi.fn() }));
 vi.mock("dofek/providers/fatsecret", () => ({ FatSecretProvider: vi.fn() }));
+vi.mock("dofek/providers/ziva", () => ({ ZivaProvider: vi.fn() }));
 vi.mock("dofek/providers/whoop", () => ({ WhoopProvider: vi.fn() }));
 vi.mock("dofek/providers/ride-with-gps", () => ({ RideWithGpsProvider: vi.fn() }));
 vi.mock("dofek/providers/strong-csv", () => ({ StrongCsvProvider: vi.fn() }));
@@ -1457,8 +1458,11 @@ describe("syncRouter", () => {
         timezone: "UTC",
       });
 
-      await caller.triggerSync({ providerId: "wahoo", sinceDays: 7 });
-      vi.useRealTimers();
+      try {
+        await caller.triggerSync({ providerId: "wahoo", sinceDays: 7 });
+      } finally {
+        vi.useRealTimers();
+      }
 
       expect(mockAdd).toHaveBeenCalledWith(
         "sync",
@@ -1476,6 +1480,37 @@ describe("syncRouter", () => {
         }),
       );
       expect(mockAdd.mock.calls[0]?.[2]).not.toHaveProperty("deduplication");
+    });
+
+    it("uses one request instant when enqueue crosses a calendar boundary", async () => {
+      vi.setSystemTime(new Date("2026-04-28T23:59:59.999Z"));
+      mockGetActiveProviderCooldown.mockImplementationOnce(async () => {
+        vi.setSystemTime(new Date("2026-04-29T00:00:00.001Z"));
+        return null;
+      });
+      mockGetAllProviders.mockReturnValue([{ id: "wahoo", name: "Wahoo", validate: () => null }]);
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      try {
+        await caller.triggerSync({ providerId: "wahoo", sinceDays: 7 });
+      } finally {
+        vi.useRealTimers();
+      }
+
+      expect(mockAdd).toHaveBeenCalledWith(
+        "sync",
+        expect.objectContaining({
+          requestedAtIso: "2026-04-28T23:59:59.999Z",
+          sinceIso: "2026-04-21T00:00:00.000Z",
+          untilIso: "2026-04-28T23:59:59.999Z",
+        }),
+        expect.anything(),
+      );
     });
 
     it("uses one sync window for every job in a sync-all fan-out", async () => {
@@ -1683,6 +1718,14 @@ describe("syncRouter", () => {
           failed: 0,
         },
         {
+          queueName: "sync-ziva",
+          providerId: "ziva",
+          waiting: 0,
+          active: 0,
+          delayed: 0,
+          failed: 0,
+        },
+        {
           queueName: "import",
           waiting: 7,
           active: 1,
@@ -1693,7 +1736,14 @@ describe("syncRouter", () => {
       expect(mockGetProviderSyncQueue).toHaveBeenCalledWith("strava");
       expect(mockGetProviderSyncQueue).toHaveBeenCalledWith("garmin");
       expect(mockGetProviderSyncQueue).toHaveBeenCalledWith("whoop");
+      expect(mockGetProviderSyncQueue).toHaveBeenCalledWith("ziva");
       expect(mockGetJobCounts).toHaveBeenCalledWith("strava", [
+        "waiting",
+        "active",
+        "delayed",
+        "failed",
+      ]);
+      expect(mockGetJobCounts).toHaveBeenCalledWith("ziva", [
         "waiting",
         "active",
         "delayed",

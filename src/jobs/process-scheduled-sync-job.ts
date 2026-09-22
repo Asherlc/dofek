@@ -48,6 +48,7 @@ const scheduledSyncConnectionRowSchema = z.object({
 });
 
 export async function processScheduledSyncJob(job: ScheduledSyncJob, db: ScheduledSyncDatabase) {
+  const requestedAtIso = new Date().toISOString();
   await updateScheduledSyncProgress(job, 0, "Starting scheduled sync dispatch...");
   // Ensure provider registry is populated so provider metadata (type, auth) is available.
   const { ensureProvidersRegistered } = await import("./provider-registration.ts");
@@ -148,6 +149,7 @@ export async function processScheduledSyncJob(job: ScheduledSyncJob, db: Schedul
           const jobData = {
             userId,
             providerId,
+            requestedAtIso,
             sinceDays: provider.scheduledSyncLookbackDays ?? 1,
             origin: "scheduled",
           } satisfies SyncJobData;

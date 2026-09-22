@@ -72,6 +72,7 @@ describe("buildPostgresFitnessRawTableStatements", () => {
     );
 
     expect(foodEntry).toContain("nutrition_grain Nullable(String)");
+    expect(foodEntry).toContain("source_account_key Nullable(String)");
     expect(healthEvent).toContain("source_bundle Nullable(String)");
     expect(healthEvent).toContain("metadata Nullable(String)");
   });

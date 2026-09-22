@@ -61,13 +61,20 @@ describe("MicronutrientChart", () => {
           nutrient: '<img src=x onerror="alert(1)">',
           unit: '<svg onload="alert(1)">',
           intake: {
-            totalDailyAverage: 5,
-            foodDailyAverage: 5,
-            providerDailyTotalAverage: 0,
-            supplementDailyAverage: 0,
+            totalDailyAverage: 14,
+            foodDailyAverage: 9,
+            providerDailyTotalAverage: 2,
+            supplementDailyAverage: 3,
             daysTracked: 7,
           },
           sourceBreakdown: [
+            {
+              providerId: "ziva",
+              sourceLabel: "Ziva",
+              intakeType: "meal_aggregate",
+              dailyAverageContribution: 4,
+              daysTracked: 7,
+            },
             {
               providerId: "unsafe",
               sourceLabel: '<img src=x onerror="alert(2)">',
@@ -91,9 +98,9 @@ describe("MicronutrientChart", () => {
             },
           ],
           adequacy: {
-            status: "below_daily_value",
-            percentDailyValue: 50,
-            message: "Below the FDA Daily Value.",
+            status: "at_or_above_daily_value",
+            percentDailyValue: 140,
+            message: "Meets or exceeds the FDA Daily Value.",
             reference: {
               type: "daily_value",
               amount: 10,
@@ -127,6 +134,7 @@ describe("MicronutrientChart", () => {
     expect(html).toContain("&lt;svg onload=&quot;alert(1)&quot;&gt;");
     expect(html).toContain("&lt;img src=x onerror=&quot;alert(2)&quot;&gt;");
     expect(html).toContain("Imported daily total · Provider daily total: 2");
+    expect(html).toContain("Ziva · Meal total: 4");
     expect(html).toContain("Vitamin C tablet · Supplement: 3");
     expect(html).not.toContain("<img ");
     expect(html).not.toContain("<svg ");
@@ -192,7 +200,7 @@ describe("MicronutrientChart", () => {
       "67% of U.S. Food and Drug Administration (FDA) Daily Value (adequacy reference, not a safety rating)",
     );
     expect(html).toContain("average over 7 recorded days");
-    expect(html).toContain("Itemized food: 12 mg/day");
+    expect(html).toContain("Food: 12 mg/day");
     expect(html).toContain("Provider daily totals: 0 mg/day");
     expect(html).toContain("Manual · Itemized food: 12 mg/day");
     expect(chartElement.props.option.series?.[0]?.markLine?.label?.formatter).toBe(

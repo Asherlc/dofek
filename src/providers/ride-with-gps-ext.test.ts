@@ -61,6 +61,7 @@ beforeEach(() => {
 });
 
 vi.mock("../db/tokens.ts", () => ({
+  deleteTokens: vi.fn(),
   loadTokens: vi.fn(),
   saveTokens: vi.fn(),
   ensureProvider: vi.fn(),

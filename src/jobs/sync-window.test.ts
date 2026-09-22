@@ -51,8 +51,20 @@ describe("SyncWindow", () => {
   it("full spans epoch through now", () => {
     const window = SyncWindow.full(now);
 
+    expect(window.kind).toBe("full");
     expect(window.since.toISOString()).toBe("1970-01-01T00:00:00.000Z");
     expect(window.until).toEqual(now);
+  });
+
+  it("keeps an explicit epoch-start range bounded", () => {
+    const window = SyncWindow.fromDateRange({
+      sinceDate: "1970-01-01",
+      untilDate: "1970-01-05",
+    });
+
+    expect(window.kind).toBe("bounded");
+    expect(window.since.toISOString()).toBe("1970-01-01T00:00:00.000Z");
+    expect(window.until.toISOString()).toBe("1970-01-05T23:59:59.999Z");
   });
 
   it("fromSince defaults until to now", () => {
@@ -86,6 +98,17 @@ describe("SyncWindow", () => {
 
     expect(window.since.toISOString()).toBe("2026-05-18T00:00:00.000Z");
     expect(window.until.toISOString()).toBe("2026-06-17T23:59:59.999Z");
+  });
+
+  it("withMinimumLookback preserves full and bounded semantics", () => {
+    const fullWindow = SyncWindow.full(now).withMinimumLookback(30);
+    const boundedWindow = SyncWindow.fromDateRange({
+      sinceDate: "2026-06-15",
+      untilDate: "2026-06-17",
+    }).withMinimumLookback(30);
+
+    expect(fullWindow.kind).toBe("full");
+    expect(boundedWindow.kind).toBe("bounded");
   });
 });
 
@@ -140,6 +163,30 @@ describe("sync job window adapter", () => {
     expect(window.until.toISOString()).toBe("2026-06-17T23:59:59.999Z");
   });
 
+  it("syncWindowFromJobData anchors relative windows to the persisted request time", () => {
+    const window = syncWindowFromJobData({
+      userId: "user-1",
+      requestedAtIso: "2026-06-18T15:00:00.000Z",
+      sinceDays: 7,
+    });
+
+    expect(window.since.toISOString()).toBe("2026-06-11T00:00:00.000Z");
+    expect(window.until.toISOString()).toBe("2026-06-18T23:59:59.999Z");
+  });
+
+  it("syncWindowFromJobData rejects an invalid persisted request time", () => {
+    expect(() =>
+      syncWindowFromJobData(
+        {
+          userId: "user-1",
+          requestedAtIso: "not-a-date",
+          sinceDays: 7,
+        },
+        now,
+      ),
+    ).toThrow("Invalid sync job requestedAtIso: not-a-date");
+  });
+
   it("syncWindowFromJobData reuses persisted open-ended since timestamps", () => {
     const window = syncWindowFromJobData(
       {
@@ -151,6 +198,22 @@ describe("sync job window adapter", () => {
 
     expect(window.since.toISOString()).toBe("2026-06-10T00:00:00.000Z");
     expect(window.until).toEqual(now);
+    expect(window.kind).toBe("bounded");
+  });
+
+  it("syncWindowFromJobData preserves full kind for an open-ended persisted window", () => {
+    const window = syncWindowFromJobData(
+      {
+        userId: "user-1",
+        sinceIso: "1970-01-01T00:00:00.000Z",
+        targetRefreshWindow: { type: "full" },
+      },
+      now,
+    );
+
+    expect(window.since.toISOString()).toBe("1970-01-01T00:00:00.000Z");
+    expect(window.until).toEqual(now);
+    expect(window.kind).toBe("full");
   });
 
   it("syncWindowFromJobData rejects invalid persisted since timestamps", () => {
@@ -161,7 +224,7 @@ describe("sync job window adapter", () => {
 
   it("syncWindowToJobData round-trips trigger input fields", () => {
     const window = syncWindowFromTriggerInput({ sinceDays: 7, now });
-    expect(syncWindowToJobData(window, 7)).toEqual({
+    expect(syncWindowToJobData(window, { sinceDays: 7 })).toEqual({
       sinceDays: 7,
       sinceIso: "2026-06-11T00:00:00.000Z",
       untilIso: "2026-06-18T23:59:59.999Z",
@@ -169,14 +232,36 @@ describe("sync job window adapter", () => {
     });
   });
 
+  it("syncWindowToJobData keeps a day lookback with an explicit end as a fixed range", () => {
+    const window = syncWindowFromTriggerInput({
+      sinceDays: 7,
+      untilDate: "2026-06-17",
+      now,
+    });
+
+    expect(syncWindowToJobData(window, { sinceDays: 7, untilDate: "2026-06-17" })).toEqual({
+      sinceDays: 7,
+      sinceIso: "2026-06-10T00:00:00.000Z",
+      untilIso: "2026-06-17T23:59:59.999Z",
+      targetRefreshWindow: {
+        type: "range",
+        sinceIso: "2026-06-10T00:00:00.000Z",
+        untilIso: "2026-06-17T23:59:59.999Z",
+      },
+    });
+  });
+
   it("syncWindowToJobData encodes full windows", () => {
     const window = SyncWindow.full(now);
-    expect(syncWindowToJobData(window)).toEqual({
+    const jobData = syncWindowToJobData(window);
+
+    expect(jobData).toEqual({
       sinceDays: undefined,
       sinceIso: "1970-01-01T00:00:00.000Z",
       untilIso: "2026-06-18T15:00:00.000Z",
       targetRefreshWindow: { type: "full" },
     });
+    expect(syncWindowFromJobData({ userId: "user-1", ...jobData }).kind).toBe("full");
   });
 
   it("syncWindowToJobData encodes custom ranges", () => {
@@ -191,5 +276,23 @@ describe("sync job window adapter", () => {
         untilIso: "2026-06-17T23:59:59.999Z",
       },
     });
+  });
+
+  it("round-trips an explicit epoch-start range as bounded", () => {
+    const window = SyncWindow.fromDateRange({
+      sinceDate: "1970-01-01",
+      untilDate: "1970-01-05",
+    });
+    const jobData = syncWindowToJobData(window);
+
+    expect(jobData.targetRefreshWindow).toEqual({
+      type: "range",
+      sinceIso: "1970-01-01T00:00:00.000Z",
+      untilIso: "1970-01-05T23:59:59.999Z",
+    });
+    const restoredWindow = syncWindowFromJobData({ userId: "user-1", ...jobData });
+    expect(restoredWindow.kind).toBe("bounded");
+    expect(restoredWindow.sinceIso).toBe("1970-01-01T00:00:00.000Z");
+    expect(restoredWindow.untilIso).toBe("1970-01-05T23:59:59.999Z");
   });
 });

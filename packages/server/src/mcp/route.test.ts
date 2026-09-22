@@ -4729,8 +4729,13 @@ describe("createMcpRouter", () => {
   });
 
   it("enqueues provider sync jobs for configured providers", async () => {
+    vi.setSystemTime(new Date("2026-09-03T23:59:59.999Z"));
     authorizeMcpToken();
     const enqueueSpy = vi.spyOn(enqueueSyncJobModule, "enqueueSyncJob");
+    toolTestMocks.getProviderRateLimitCooldown.mockImplementation(async () => {
+      vi.setSystemTime(new Date("2026-09-04T00:00:00.001Z"));
+      return null;
+    });
     toolTestMocks.getAllProviders.mockReturnValue([
       {
         id: "strava",
@@ -4740,13 +4745,18 @@ describe("createMcpRouter", () => {
       { id: "wahoo", name: "Wahoo", validate: () => null },
     ]);
 
-    const response = await request(createTestApp(), {
-      authorization: "Bearer good-token",
-      body: createToolCallRequest("start_provider_sync", {
-        providerId: "wahoo",
-        sinceDays: 7,
-      }),
-    });
+    let response: Awaited<ReturnType<typeof request>>;
+    try {
+      response = await request(createTestApp(), {
+        authorization: "Bearer good-token",
+        body: createToolCallRequest("start_provider_sync", {
+          providerId: "wahoo",
+          sinceDays: 7,
+        }),
+      });
+    } finally {
+      vi.useRealTimers();
+    }
 
     expect(enqueueSpy).toHaveBeenCalledWith(
       "wahoo",
@@ -4768,10 +4778,11 @@ describe("createMcpRouter", () => {
       {
         origin: "manual",
         providerId: "wahoo",
+        requestedAtIso: "2026-09-03T23:59:59.999Z",
         sinceDays: 7,
-        sinceIso: expect.any(String),
+        sinceIso: "2026-08-27T00:00:00.000Z",
         targetRefreshWindow: { days: 7, type: "days" },
-        untilIso: expect.any(String),
+        untilIso: "2026-09-03T23:59:59.999Z",
         userId: "user-id",
       },
       expect.objectContaining({ attempts: expect.any(Number) }),

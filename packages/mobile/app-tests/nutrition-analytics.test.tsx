@@ -138,10 +138,17 @@ describe("NutritionAnalyticsScreen", () => {
               },
               sourceBreakdown: [
                 {
+                  providerId: "ziva",
+                  sourceLabel: "Ziva",
+                  intakeType: "meal_aggregate",
+                  dailyAverageContribution: 4,
+                  daysTracked: 7,
+                },
+                {
                   providerId: "manual",
                   sourceLabel: "Manual",
                   intakeType: "itemized_food",
-                  dailyAverageContribution: 12,
+                  dailyAverageContribution: 8,
                   daysTracked: 7,
                 },
               ],
@@ -186,6 +193,12 @@ describe("NutritionAnalyticsScreen", () => {
     );
   });
 
+  it("labels meal aggregate nutrient sources as meal totals", async () => {
+    const { default: NutritionAnalyticsScreen } = await import("../app/nutrition-analytics");
+    render(<NutritionAnalyticsScreen />);
+    expect(await screen.findByText(/Ziva · Meal total · 4 mg\/day/)).toBeTruthy();
+  });
+
   it("expands health acronyms in titles, guidance, and empty states", async () => {
     const { default: NutritionAnalyticsScreen } = await import("../app/nutrition-analytics");
 
@@ -207,8 +220,8 @@ describe("NutritionAnalyticsScreen", () => {
     expect(
       screen.getByText("28 of 90 selected days are usable (31.1% completeness)."),
     ).toBeTruthy();
-    expect(screen.getByText("Itemized food: 12 mg/day")).toBeTruthy();
-    expect(screen.getByText("Manual · Itemized food · 12 mg/day · 7 days")).toBeTruthy();
+    expect(screen.getByText("Food: 12 mg/day")).toBeTruthy();
+    expect(screen.getByText("Manual · Itemized food · 8 mg/day · 7 days")).toBeTruthy();
   });
 
   it("shows target and upper-limit context separately with source and averaging context", async () => {

@@ -25,6 +25,10 @@ export async function resolveOAuthTokens(options: {
   getOAuthConfig: () => OAuthConfig | null | undefined;
   fetchFn?: FetchFn;
   forceRefresh?: boolean;
+  validateRefreshedTokens?: (
+    currentTokens: TokenSet,
+    refreshedTokens: TokenSet,
+  ) => void | Promise<void>;
 }): Promise<TokenSet> {
   const {
     db,
@@ -33,6 +37,7 @@ export async function resolveOAuthTokens(options: {
     getOAuthConfig,
     fetchFn = globalThis.fetch,
     forceRefresh = false,
+    validateRefreshedTokens,
   } = options;
 
   const tokens = await loadTokens(db, providerId);
@@ -48,18 +53,31 @@ export async function resolveOAuthTokens(options: {
 
   logger.info(`[${providerId}] Access token expired, refreshing...`);
 
+  if (!tokens.refreshToken) {
+    logger.warn(
+      `[${providerId}] No refresh token is available, deleting stored tokens. ` +
+        `User must re-authorize ${providerName}.`,
+    );
+    await deleteTokens(db, providerId);
+    const revokedError = new RefreshTokenRevokedError(providerName);
+    revokedError.message = `No refresh token for ${providerName}. ${revokedError.message}`;
+    throw revokedError;
+  }
+
   const config = getOAuthConfig();
   if (!config) {
     throw new Error(`OAuth config required to refresh ${providerName} tokens`);
   }
-  if (!tokens.refreshToken) {
-    throw new Error(`No refresh token for ${providerName}`);
-  }
 
   try {
     const refreshed = await refreshAccessToken(config, tokens.refreshToken, fetchFn);
-    await saveTokens(db, providerId, refreshed);
-    return refreshed;
+    await validateRefreshedTokens?.(tokens, refreshed);
+    const resolvedTokens: TokenSet = {
+      ...refreshed,
+      providerAccountId: refreshed.providerAccountId ?? tokens.providerAccountId,
+    };
+    await saveTokens(db, providerId, resolvedTokens);
+    return resolvedTokens;
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     // When the authorization server returns invalid_grant, the refresh token

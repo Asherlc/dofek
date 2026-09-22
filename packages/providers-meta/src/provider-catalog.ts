@@ -89,6 +89,7 @@ export const PROVIDER_CATALOG: Readonly<Record<string, ProviderCatalogEntry>> = 
   decathlon: { label: "Decathlon", logo: { type: "png" } },
   "eight-sleep": { label: "Eight Sleep", logo: { type: "svg" } },
   fatsecret: { label: "fatsecret", logo: { type: "png" } },
+  ziva: { label: "Ziva" },
   mapmyfitness: { label: "MapMyFitness", logo: { type: "png" } },
   ultrahuman: { label: "Ultrahuman", logo: { type: "png" } },
   "amazfit-zepp": { label: "Amazfit/Zepp", family: zeppCloud, brandColor: "#00B588" },
