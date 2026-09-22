@@ -306,7 +306,6 @@
     "dependency-cruiser": "17.3.10",
     "drizzle-dbml-generator": "0.10.0",
     "drizzle-kit": "0.31.10",
-    "fast-uri": "3.1.8",
     "jsdom": "29.0.0",
     "knip": "6.23.0",
     "lerna": "9.0.7",
