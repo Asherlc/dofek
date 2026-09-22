@@ -345,6 +345,33 @@ describe("resolveOAuthTokens", () => {
     expect(mockSaveTokens).not.toHaveBeenCalled();
   });
 
+  it("deletes tokens and throws on Strava invalid refresh token error", async () => {
+    mockLoadTokens.mockResolvedValue({
+      accessToken: "old",
+      refreshToken: "dead-refresh",
+      expiresAt: pastDate(),
+      scopes: null,
+    });
+    mockRefreshAccessToken.mockRejectedValue(
+      new Error(
+        'Token refresh failed (400): {"message":"Bad Request","errors":[{"resource":"RefreshToken","field":"refresh_token","code":"invalid"}]}',
+      ),
+    );
+    mockDeleteTokens.mockResolvedValue(undefined);
+
+    await expect(
+      resolveOAuthTokens({
+        db: fakeDb,
+        providerId: "strava",
+        providerName: "Strava",
+        getOAuthConfig: () => fakeConfig,
+      }),
+    ).rejects.toThrow("Strava refresh token was revoked or expired.");
+
+    expect(mockDeleteTokens).toHaveBeenCalledWith(fakeDb, "strava");
+    expect(mockSaveTokens).not.toHaveBeenCalled();
+  });
+
   it("re-throws non-revocation refresh errors", async () => {
     mockLoadTokens.mockResolvedValue({
       accessToken: "old",
