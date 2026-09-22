@@ -1,0 +1,34 @@
+{
+  "meals": [
+    {
+      "mealId": "meal_sanitized_001",
+      "description": "Sanitized meal",
+      "mealDate": "2000-01-02",
+      "items": [
+        {
+          "food": "Sanitized food",
+          "portion": "Sanitized portion",
+          "gramWeight": null,
+          "quantity": 1
+        }
+      ],
+      "macros": {
+        "protein": 12,
+        "fat": 15,
+        "carbs": 34,
+        "calories": 321
+      },
+      "itemCount": 1,
+      "mealType": "snack",
+      "mealTime": null,
+      "createdAt": "2000-01-02T03:04:05Z"
+    }
+  ],
+  "dailyTargets": {
+    "protein": 50,
+    "fat": 78,
+    "carbs": 275,
+    "calories": 2000
+  },
+  "instructions": "Sanitized and ignored"
+}

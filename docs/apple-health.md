@@ -121,9 +121,12 @@ values with units and sample timestamps/source metadata:
 [`HKSourceRevision`](https://developer.apple.com/documentation/healthkit/hksourcerevision).
 Raw per-provider totals remain available through
 `fitness.v_nutrition_provider_daily`; application totals use
-`fitness.v_nutrition_daily`, which excludes an overlapping aggregate when one
-clear itemized source exists and reports other ambiguous overlaps instead of
-summing them.
+`fitness.v_nutrition_daily`, which prefers itemized sources, then meal-aggregate
+sources, then daily-aggregate sources. Multiple sources at the selected tier
+or mixed ambiguous legacy data conflict instead of being summed. Itemized and
+meal-aggregate records appear once in editable meal cards; Apple Health daily
+aggregates remain totals-only. The provider-neutral rules are defined in
+[migration 0124](../drizzle/0124_meal_aggregate_nutrition_sources.sql).
 
 ## Workout Source Attribution
 

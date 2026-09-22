@@ -44,7 +44,7 @@ export const PROVIDER_GUIDE_CATEGORIES: ProviderGuideCategory[] = [
   {
     title: "Nutrition",
     description: "Log meals, track macros, and monitor calorie intake",
-    providerIds: ["cronometer-csv", "fatsecret"],
+    providerIds: ["cronometer-csv", "fatsecret", "ziva"],
   },
   {
     title: "Body Composition",

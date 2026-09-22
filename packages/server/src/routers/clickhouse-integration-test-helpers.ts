@@ -209,6 +209,7 @@ const rawTableSyncs: RawTableSync[] = [
       "number_of_units",
       "logged_at",
       "source_name",
+      "source_account_key",
       "started_at",
       "ended_at",
       "barcode",

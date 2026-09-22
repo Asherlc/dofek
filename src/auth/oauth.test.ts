@@ -65,6 +65,22 @@ describe("OAuth", () => {
       expect(parsed.searchParams.get("redirect_uri")).toBe("http://localhost:9876/callback");
       expect(parsed.searchParams.get("response_type")).toBe("code");
       expect(parsed.searchParams.get("scope")).toBe("user_read workouts_read");
+      expect(parsed.searchParams.has("resource")).toBe(false);
+    });
+
+    it("includes the resource indicator when configured", () => {
+      const url = buildAuthorizationUrl({
+        ...config,
+        resource: "https://connect.ziva.fit/mcp",
+      });
+
+      expect(new URL(url).searchParams.get("resource")).toBe("https://connect.ziva.fit/mcp");
+    });
+
+    it("omits scope when the configured scope list is empty", () => {
+      const url = buildAuthorizationUrl({ ...config, scopes: [] });
+
+      expect(new URL(url).searchParams.has("scope")).toBe(false);
     });
   });
 
@@ -102,10 +118,27 @@ describe("OAuth", () => {
       expect(body.get("client_id")).toBe("test-client-id");
       expect(body.get("client_secret")).toBe("test-client-secret");
       expect(body.get("redirect_uri")).toBe("http://localhost:9876/callback");
+      expect(body.has("resource")).toBe(false);
 
       expect(result.accessToken).toBe("access-123");
       expect(result.refreshToken).toBe("refresh-456");
       expect(result.scopes).toBe("user_read workouts_read");
+    });
+
+    it("sends the resource indicator when exchanging an authorization code", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ access_token: "access", refresh_token: "refresh" }),
+      });
+
+      await exchangeCodeForTokens(
+        { ...config, resource: "https://connect.ziva.fit/mcp" },
+        "auth-code",
+        mockFetch,
+      );
+
+      const body = new URLSearchParams(mockFetch.mock.calls[0]?.[1]?.body);
+      expect(body.get("resource")).toBe("https://connect.ziva.fit/mcp");
     });
 
     it("throws on failed token exchange", async () => {
@@ -143,9 +176,26 @@ describe("OAuth", () => {
       const body = new URLSearchParams(options?.body);
       expect(body.get("grant_type")).toBe("refresh_token");
       expect(body.get("refresh_token")).toBe("old-refresh-token");
+      expect(body.has("resource")).toBe(false);
 
       expect(result.accessToken).toBe("new-access-123");
       expect(result.refreshToken).toBe("new-refresh-456");
+    });
+
+    it("sends the resource indicator when refreshing an access token", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ access_token: "access", refresh_token: "refresh" }),
+      });
+
+      await refreshAccessToken(
+        { ...config, resource: "https://connect.ziva.fit/mcp" },
+        "old-refresh-token",
+        mockFetch,
+      );
+
+      const body = new URLSearchParams(mockFetch.mock.calls[0]?.[1]?.body);
+      expect(body.get("resource")).toBe("https://connect.ziva.fit/mcp");
     });
 
     it("throws on failed refresh", async () => {

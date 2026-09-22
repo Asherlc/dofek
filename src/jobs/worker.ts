@@ -166,14 +166,14 @@ for (const providerId of getConfiguredProviderIds()) {
   const config = getProviderQueueConfig(providerId);
   const worker = new Worker<SyncJobData>(
     providerSyncQueueName(providerId),
-    (job) =>
+    (job, _token, signal) =>
       jobContext.run(job, () =>
         runQueuedUserWorkUnlessAccountErasing(
           accountErasureWorkLockPool,
           db,
           job.data.userId,
           "provider sync",
-          () => processSyncJob(job, db),
+          () => processSyncJob(job, db, signal),
         ),
       ),
     {
@@ -192,14 +192,14 @@ logger.info(`[worker] Created ${providerWorkers.size} per-provider sync workers`
 
 const sharedSyncWorker = new Worker<SyncJobData>(
   SYNC_QUEUE,
-  (job) =>
+  (job, _token, signal) =>
     jobContext.run(job, () =>
       runQueuedUserWorkUnlessAccountErasing(
         accountErasureWorkLockPool,
         db,
         job.data.userId,
         "CLI provider sync",
-        () => processSyncJob(job, db),
+        () => processSyncJob(job, db, signal),
       ),
     ),
   { autorun: false, connection },

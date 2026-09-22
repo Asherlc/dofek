@@ -44,10 +44,13 @@ const mockCreateSyncQueue = vi.fn(() => ({
   add: mockAdd,
   close: mockQueueClose,
 }));
-const capturedWorkerCallbacks = new Map<string, (job: unknown) => Promise<unknown>>();
+const capturedWorkerCallbacks = new Map<
+  string,
+  (job: unknown, token?: string, signal?: AbortSignal) => Promise<unknown>
+>();
 const MockWorker = vi.fn(function vitestConstructor(
   name: string,
-  callback: (job: unknown) => Promise<unknown>,
+  callback: (job: unknown, token?: string, signal?: AbortSignal) => Promise<unknown>,
 ) {
   capturedWorkerCallbacks.set(name, callback);
   return { close: mockWorkerClose };
@@ -243,9 +246,11 @@ describe("handleSyncCommand", () => {
     // Verify the callback calls processSyncJob by invoking the captured callback
     const capturedWorkerCallback = capturedWorkerCallbacks.get("sync");
     expect(capturedWorkerCallback).toBeDefined();
+    expect(capturedWorkerCallback).toHaveLength(3);
     const fakeJob = { data: { userId: "test-user" }, id: "123" };
-    await capturedWorkerCallback?.(fakeJob);
-    expect(mockProcessSyncJob).toHaveBeenCalledWith(fakeJob, expect.any(Object));
+    const signal = new AbortController().signal;
+    await capturedWorkerCallback?.(fakeJob, undefined, signal);
+    expect(mockProcessSyncJob).toHaveBeenCalledWith(fakeJob, expect.any(Object), signal);
   });
 
   it("runs a temporary FIT import worker for provider sync child jobs", async () => {

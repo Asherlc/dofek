@@ -421,6 +421,7 @@ entity "food_entry" {
   number_of_units : real
   logged_at : timestamp
   source_name : text
+  source_account_key : text
   started_at : timestamp
   ended_at : timestamp
   barcode : text

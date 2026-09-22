@@ -74,6 +74,8 @@ const APPLICATION_ENVIRONMENT_KEYS = [
   "XERT_CLIENT_ID",
   "XERT_CLIENT_SECRET",
   "ZEPP_API_BASE_URL",
+  "ZIVA_CLIENT_ID",
+  "ZIVA_CLIENT_SECRET",
   "ZOHO_DESK_CLIENT_ID",
   "ZOHO_DESK_CLIENT_SECRET",
   "ZOHO_DESK_DATA_CENTER",
@@ -323,6 +325,28 @@ describe("renderDeployServiceEnvironmentFiles", () => {
 
     for (const path of Object.values(paths)) {
       expect(statSync(path).mode & 0o777).toBe(0o600);
+    }
+  });
+
+  it("routes Ziva app credentials only to application services", () => {
+    const directory = makeTemporaryDirectory();
+    const sourcePath = join(directory, "all.env");
+    writeFileSync(sourcePath, dotenv(completeDeployEnvironment()));
+
+    const paths = renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services"));
+    const applicationArtifacts = [paths.web, paths.webPreMigration, paths.worker];
+    for (const artifact of applicationArtifacts) {
+      expect(parseEnv(readFileSync(artifact, "utf8"))).toMatchObject({
+        ZIVA_CLIENT_ID: "ziva_client_id-value",
+        ZIVA_CLIENT_SECRET: "ziva_client_secret-value",
+      });
+    }
+
+    for (const [service, artifact] of Object.entries(paths)) {
+      if (["web", "webPreMigration", "worker"].includes(service)) continue;
+      const environment = parseEnv(readFileSync(artifact, "utf8"));
+      expect(environment, `${service} environment`).not.toHaveProperty("ZIVA_CLIENT_ID");
+      expect(environment, `${service} environment`).not.toHaveProperty("ZIVA_CLIENT_SECRET");
     }
   });
 

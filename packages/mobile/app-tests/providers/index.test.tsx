@@ -1101,6 +1101,30 @@ describe("ProvidersScreen", () => {
     });
   });
 
+  it("renders Ziva through the generic provider card", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id: "ziva",
+          name: "Ziva",
+          authType: "oauth",
+          authorized: false,
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: false,
+          lastSyncedAt: null,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    await renderProvidersScreen();
+
+    expect(screen.getByTestId("provider-card-ziva")).toBeTruthy();
+    expect(screen.getByText("Ziva")).toBeTruthy();
+  });
+
   it("groups Garmin connection methods and shows the selected method", async () => {
     mockProvidersQuery.mockReturnValue({
       data: [

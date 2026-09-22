@@ -218,7 +218,7 @@ tables through ClickHouse replication.
 | `fitness.v_nutrition_daily_resolution` | Per-user/date canonical contribution decision and selected/excluded source provenance |
 | `fitness.v_nutrition_canonical_nutrient` | Nutrient rows from the resolved contribution set |
 | `fitness.v_nutrition_daily` | Canonical daily totals; overlapping ambiguous sources produce explicit unavailable rows |
-| `fitness.v_nutrition_display_entry` | Itemized entries shown as editable food cards; aggregate samples remain raw provider data |
+| `fitness.v_nutrition_display_entry` | Itemized entries and meal aggregates shown once as editable food cards; daily aggregates and ambiguous samples remain totals-only provider data |
 | `fitness.lab_result` | Clinical lab results (from Apple Health / FHIR) |
 | `fitness.health_event` | Generic health events catch-all |
 | `fitness.journal_entry` | Daily behavioral self-reports (WHOOP journal, etc.) |
@@ -234,11 +234,19 @@ by [migration 0061](../drizzle/0061_supplement_dose_events.sql).
 
 `fitness.food_entry` plus `fitness.food_entry_nutrient` is the raw source of truth
 for nutrition. `food_entry.nutrition_grain` records whether a writer supplied
-itemized foods or a daily aggregate. Existing rows remain nullable and are
+itemized foods, meal aggregates, or daily aggregates. Existing rows remain nullable and are
 classified conservatively from their stored shape rather than rewritten.
 Providers that have itemized foods store named food entries. Providers that
 only have nutrient samples store unnamed food entries with timestamps/source
 metadata and nutrient rows.
+
+Meal aggregates retain one raw meal record and its nutrient totals, even when
+the provider payload contains display-only item descriptions. Those items do
+not create nutrient-bearing food rows. Nullable `food_entry.source_account_key`
+identifies the upstream account for source resolution; nonblank account keys
+take precedence over source names and never become display labels. See the
+[canonical schema](../src/db/schema/nutrition.ts) and
+[migration 0124](../drizzle/0124_meal_aggregate_nutrition_sources.sql).
 
 **Apple Health** provides numerical `HKQuantitySample` records with units,
 timestamps, and source revision metadata. Dofek's nutrition import has no
@@ -263,18 +271,19 @@ than rewriting history, following PostgreSQL's documented
 [constraint semantics](https://www.postgresql.org/docs/current/ddl-constraints.html).
 
 Serving code reads `fitness.v_nutrition_daily` and
-`fitness.v_nutrition_canonical_nutrient`. A single itemized source is selected
-over overlapping aggregate sources. A single aggregate source is usable by
-itself. Multiple independently itemized sources, multiple aggregate sources
-without an itemized source, or mixed ambiguous legacy rows return
+`fitness.v_nutrition_canonical_nutrient`. Selection prefers itemized sources,
+then meal-aggregate sources, then daily-aggregate sources. Multiple sources at
+the selected tier or mixed ambiguous legacy rows return
 `source_conflict` with null totals and selected/excluded provenance rather than
 silently double-counting or choosing by row order. PostgreSQL views provide
 these query-time projections without duplicating raw storage; see
 [PostgreSQL `CREATE VIEW`](https://www.postgresql.org/docs/current/sql-createview.html).
 
 Provider details, provider statistics, and exports continue to use raw
-`food_entry` / `food_entry_nutrient` data. Aggregate-only rows are excluded from
-editable unnamed food cards, but are not deleted.
+`food_entry` / `food_entry_nutrient` data. Itemized and meal-aggregate rows each
+appear once in editable food cards and meal counts. Daily-aggregate and
+ambiguous rows are excluded from those cards, but are not deleted; see
+[the display-view migration](../drizzle/0124_meal_aggregate_nutrition_sources.sql).
 
 Human edits are overlay decisions rather than changes to provider facts.
 `fitness.v_food_entry_effective` applies the current scalar and deletion

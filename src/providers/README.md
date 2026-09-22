@@ -1,5 +1,7 @@
 # Providers
 
+<!-- cspell:ignore Ziva -->
+
 This directory contains implementations for various data providers (fitness trackers, smart scales, nutrition apps).
 
 ## Core Concepts
@@ -20,7 +22,7 @@ This directory contains implementations for various data providers (fitness trac
 
 ## Supported Providers
 
-- **API/credential/OAuth sync providers**: Amazfit/Zepp, BodySpec, Concept2, Cycling Analytics, Eight Sleep, FatSecret, Garmin, Mountain Project, Oura, Peloton, Polar, Ride with GPS, Strava, TrainerRoad, Ultrahuman, VeloHero, Wahoo, Wger, WHOOP, Withings, Xert, Zwift.
+- **API/credential/OAuth sync providers**: Amazfit/Zepp, BodySpec, Concept2, Cycling Analytics, Eight Sleep, FatSecret, Garmin, Mountain Project, Oura, Peloton, Polar, Ride with GPS, Strava, TrainerRoad, Ultrahuman, VeloHero, Wahoo, Wger, WHOOP, Withings, Xert, Ziva, Zwift.
 - **Internal schedule providers**: Auto-Supplements materializes bounded,
   user-scoped supplement dose occurrences. It never writes food entries or
   infers that a planned dose was taken.
@@ -43,6 +45,17 @@ worker registries:
   ([MapMyFitness developer portal](https://developer.mapmyfitness.com/)).
 - Decathlon requires an approved application registration before issuing client credentials
   ([Decathlon login authorization guide](https://login-doc.decathlon.com/authorization.html)).
+
+## Ziva
+
+Ziva is a per-user OAuth nutrition provider backed by its documented stateless
+MCP endpoint. Dofek imports saved meals read-only as account-scoped meal totals
+and never calls Ziva's meal-write or delete tools. Authentication, the verified
+read contract, supported and unavailable fields, connection lifecycle, and the
+operator smoke command are documented in the
+[Ziva provider guide](../../docs/ziva.md). See Ziva's
+[official MCP reference](https://ziva.fit/mcp-docs) for the public endpoint and
+tool catalog.
 
 ## Amazfit/Zepp
 

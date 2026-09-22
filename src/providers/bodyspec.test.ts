@@ -23,6 +23,7 @@ import { SyncWindow } from "./sync-window.ts";
 // ============================================================
 
 vi.mock("../db/tokens.ts", () => ({
+  deleteTokens: vi.fn(),
   ensureProvider: vi.fn(),
   loadTokens: vi.fn(),
   saveTokens: vi.fn(),

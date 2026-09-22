@@ -15,6 +15,17 @@ export type EnqueueSyncJobOptions = {
   singleFlightFullSync?: boolean;
 };
 
+function withRelativeRequestAnchor(jobData: SyncJobData): SyncJobData {
+  if (
+    jobData.requestedAtIso !== undefined ||
+    (jobData.targetRefreshWindow?.type !== "days" &&
+      (jobData.targetRefreshWindow !== undefined || jobData.sinceDays === undefined))
+  ) {
+    return jobData;
+  }
+  return { ...jobData, requestedAtIso: new Date().toISOString() };
+}
+
 function initialFullSyncDeduplicationId(
   providerId: string,
   jobData: SyncJobData,
@@ -52,12 +63,13 @@ export async function enqueueSyncJob(
   if (cooldown && options?.skipWhenRateLimited) {
     return null;
   }
+  const anchoredJobData = withRelativeRequestAnchor(jobData);
   const jobOptions = await syncJobOptionsWithRateLimitCooldown(providerId, jobData.userId);
-  const deduplicationId = initialFullSyncDeduplicationId(providerId, jobData, options);
+  const deduplicationId = initialFullSyncDeduplicationId(providerId, anchoredJobData, options);
   const queue = getProviderSyncQueue(providerId);
   return enqueueSyncJobWithRequestDedup(
     providerId,
-    jobData,
+    anchoredJobData,
     deduplicationId ? { ...jobOptions, deduplication: { id: deduplicationId } } : jobOptions,
     (name, data, opts) => queue.add(name, data, opts),
     (jobId) => queue.getJob(jobId),
@@ -69,10 +81,11 @@ export async function scheduleDelayedSyncJob(
   cooldown: ProviderRateLimitCooldown,
 ): Promise<string> {
   const providerId = jobData.providerId ?? cooldown.providerId;
+  const anchoredJobData = withRelativeRequestAnchor({ ...jobData, providerId });
   const queue = getProviderSyncQueue(providerId);
   await enqueueSyncJobWithRequestDedup(
     providerId,
-    { ...jobData, providerId },
+    anchoredJobData,
     {
       ...SYNC_JOB_RETRY_OPTIONS,
       delay: providerRateLimitDelayMs(cooldown),

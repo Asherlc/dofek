@@ -75,6 +75,9 @@ vi.mock("dofek/providers/peloton", () => ({ PelotonProvider: mockProviderConstru
 vi.mock("dofek/providers/fatsecret", () => ({
   FatSecretProvider: mockProviderConstructor("fatsecret"),
 }));
+vi.mock("dofek/providers/ziva", () => ({
+  ZivaProvider: mockProviderConstructor("ziva"),
+}));
 vi.mock("dofek/providers/whoop", () => ({ WhoopProvider: mockProviderConstructor("whoop") }));
 vi.mock("dofek/providers/ride-with-gps", () => ({
   RideWithGpsProvider: mockProviderConstructor("ride-with-gps"),
@@ -179,8 +182,9 @@ describe("ensureProvidersRegistered failure path", () => {
     const registeredIds = mockRegisterProvider.mock.calls.map(
       ([provider]: [{ id: string }]) => provider.id,
     );
+    expect(registeredIds).toHaveLength(31);
     expect(registeredIds).toEqual(
-      expect.arrayContaining(["bodyspec", "cycling_analytics", "ultrahuman", "wger"]),
+      expect.arrayContaining(["bodyspec", "cycling_analytics", "ultrahuman", "wger", "ziva"]),
     );
     expect(registeredIds).not.toEqual(
       expect.arrayContaining(["fitbit", "suunto", "coros", "komoot", "decathlon", "mapmyfitness"]),

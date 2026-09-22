@@ -13,7 +13,7 @@ import {
   providerSyncQueueName,
   type SyncJobData,
 } from "dofek/jobs/queues";
-import { syncWindowFromTriggerInput, syncWindowToJobData } from "dofek/jobs/sync-window";
+import { syncJobDataFromTriggerInput } from "dofek/jobs/sync-window";
 import { invalidateAllUserQueries } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
 import { ProviderModel, providerTokenAuthSchema } from "dofek/providers/provider-model";
@@ -716,7 +716,7 @@ function createTriggerSyncProcedure() {
             throw new Error("No configured providers available for sync");
         }
 
-        const syncWindow = syncWindowFromTriggerInput({
+        const syncJobWindow = syncJobDataFromTriggerInput({
           sinceDays: input.sinceDays,
           sinceDate: input.sinceDate,
           untilDate: input.untilDate,
@@ -731,7 +731,7 @@ function createTriggerSyncProcedure() {
                   providerId,
                   userId: ctx.userId,
                   origin: "manual",
-                  ...syncWindowToJobData(syncWindow, input.sinceDays),
+                  ...syncJobWindow,
                 },
                 { skipWhenRateLimited: true, singleFlightFullSync: true },
               );

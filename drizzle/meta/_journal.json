@@ -869,6 +869,13 @@
       "when": 1789308687000,
       "tag": "0123_remove_provider_derived_metrics",
       "breakpoints": true
+    },
+    {
+      "idx": 124,
+      "version": "7",
+      "when": 1789941600000,
+      "tag": "0124_meal_aggregate_nutrition_sources",
+      "breakpoints": true
     }
   ]
 }

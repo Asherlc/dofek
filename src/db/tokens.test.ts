@@ -10,10 +10,32 @@ import {
   connectProviderWithTokens,
   deleteProviderAuthorization,
   deleteTokens,
+  deriveProviderAccountKey,
   ensureProvider,
   loadTokens,
   saveTokens,
 } from "./tokens.ts";
+
+describe("deriveProviderAccountKey", () => {
+  it("creates a stable opaque namespace scoped to user, provider, and account", () => {
+    const first = deriveProviderAccountKey("ziva", "account-a", TEST_USER_ID);
+
+    expect(deriveProviderAccountKey("ziva", "account-a", TEST_USER_ID)).toBe(first);
+    expect(deriveProviderAccountKey("ziva", "account-b", TEST_USER_ID)).not.toBe(first);
+    expect(
+      deriveProviderAccountKey("ziva", "account-a", "11111111-1111-4111-8111-111111111111"),
+    ).not.toBe(first);
+    expect(deriveProviderAccountKey("other", "account-a", TEST_USER_ID)).not.toBe(first);
+    expect(first).toMatch(/^[a-f0-9]{64}$/);
+    expect(first).not.toContain("account-a");
+  });
+
+  it("rejects a blank provider account identity", () => {
+    expect(() => deriveProviderAccountKey("ziva", "   ", TEST_USER_ID)).toThrow(
+      "OAuth provider account ID must not be empty",
+    );
+  });
+});
 
 describe("ensureProvider", () => {
   let mock: ReturnType<typeof createMockDatabase>;

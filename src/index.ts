@@ -75,13 +75,13 @@ export async function handleSyncCommand(args: string[]): Promise<number> {
   // Process the job inline with a temporary worker
   const worker = new Worker<SyncJobData>(
     SYNC_QUEUE,
-    (job) =>
+    (job, _token, signal) =>
       runQueuedUserWorkUnlessAccountErasing(
         accountErasureWorkLockPool,
         db,
         job.data.userId,
         "CLI provider sync",
-        () => processSyncJob(job, db),
+        () => processSyncJob(job, db, signal),
       ),
     {
       connection,

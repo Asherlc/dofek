@@ -422,6 +422,33 @@ describe("DataSourcesPanel", () => {
     expect(screen.getByTestId("provider-card-garmin")).toBeTruthy();
   });
 
+  it("renders Ziva through the generic sync provider card", () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id: "ziva",
+          name: "Ziva",
+          authorized: false,
+          authType: "oauth",
+          importOnly: false,
+          pushOnly: false,
+          needsReauth: false,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    render(<DataSourcesPanel />);
+
+    expect(screen.getByTestId("provider-card-ziva")).toBeTruthy();
+    expect(mockSyncProviderCard).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: expect.objectContaining({ id: "ziva", name: "Ziva" }),
+      }),
+    );
+  });
+
   it("shows active processing progress above provider cards", () => {
     mockDataHealthQuery.mockReturnValue({
       data: {

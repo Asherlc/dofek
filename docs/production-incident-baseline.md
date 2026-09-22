@@ -27352,3 +27352,40 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   (`pnpm test:unit` 17216 passed / 20 skipped).
 - **Remaining risk / follow-up:** Confirm the next main CI run is green and the
   deploy resumes; the iOS `Distill failed` flake remains runner-environmental.
+
+## 2026-09-20 — PR integration shard Redpanda port collision
+
+- **Symptoms / impact:** Integration shard 3 for the Ziva provider PR failed
+  before checkout or test execution, blocking the PR check without affecting
+  production or application data.
+- **Evidence / root cause:** The Redpanda service container reported
+  `posix_listen failed` with `Address already in use` while starting, followed
+  by `Failure during startup`; the runner could not initialize the required
+  service. See the [failed integration job](https://github.com/Asherlc/dofek/actions/runs/35565067037/job/106225634647).
+- **Direct fix / validation:** No application change, retry, timeout, or
+  warn-and-continue behavior was added. A replacement CI run on a fresh runner
+  will validate the same integration shard after the next pushed commit.
+- **Remaining risk / follow-up:** The replacement run is pending. If the same
+  bind collision repeats on a fresh runner, investigate hosted-runner service
+  isolation before changing repository behavior.
+
+## 2026-09-20 — Ziva Stryker baseline cancellation-observation race
+
+- **Symptoms / impact:** Stryker shard 0 failed its initial test run before
+  mutation execution, blocking the Ziva provider PR without affecting
+  production. The failing test expected the pending MCP transport to be
+  observably closed immediately after caller cancellation.
+- **Evidence / root cause:** The failure was
+  `expected false to be true` in the Ziva connect-handshake abort test in the
+  [failed Stryker job](https://github.com/Asherlc/dofek/actions/runs/35566019954/job/106228340826).
+  Under Stryker instrumentation, Node's cloned `Request.signal` published the
+  SDK transport-abort event one event-loop turn after the already-awaited
+  connection rejection. The test incorrectly assumed same-turn signal
+  observation; the production close path was still awaited.
+- **Direct fix / validation:** The assertion now waits for the asynchronous
+  transport-close observable, a pre-aborted caller-signal regression covers
+  the other lifecycle boundary, and the redundant one-shot listener option was
+  removed. The Ziva client suite passes 42/42, and the exact Stryker lifecycle
+  slice passes its 289-test dry run and kills all 6 mutants for a 100% score.
+- **Remaining risk / follow-up:** The replacement hosted CI run is pending. No
+  production retry, timeout, or warn-and-continue behavior was added.

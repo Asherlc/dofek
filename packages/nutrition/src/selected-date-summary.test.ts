@@ -131,6 +131,21 @@ describe("selectedDateNutritionSummarySchema", () => {
 });
 
 describe("nutritionSourceResolutionSchema", () => {
+  it("parses server-authored meal totals without treating them as itemized food", () => {
+    const resolution = {
+      status: "available",
+      message: "Totals use the only available nutrition source.",
+      sourceProviders: ["ziva"],
+      contributingProviders: ["ziva"],
+      excludedProviders: [],
+      sourceLabels: ["Ziva"],
+      contributingSourceLabels: ["Ziva"],
+      excludedSourceLabels: [],
+      contributionGrain: "meal_aggregate",
+      contributionLabel: "Ziva meal totals",
+    };
+    expect(nutritionSourceResolutionSchema.parse(resolution)).toEqual(resolution);
+  });
   it("parses an explicit source conflict with server-owned provenance", () => {
     const resolution = {
       status: "source_conflict",

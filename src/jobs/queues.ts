@@ -15,6 +15,8 @@ export interface SyncJobData {
   /** Absent only on jobs enqueued before origin tracking; those logs remain unknown. */
   origin?: Exclude<SyncLogOrigin, "unknown">;
   providerId?: string;
+  /** Stable instant when a scheduled request was created, preserved across retries. */
+  requestedAtIso?: string;
   sinceDays?: number;
   sinceIso?: string;
   untilIso?: string;

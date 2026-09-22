@@ -22,6 +22,7 @@ const missingAuthTokenUserId = "80000000-0000-4000-8000-000000001995";
 const localOnlyUserId = "90000000-0000-4000-8000-000000001995";
 const legacyWithingsUserId = "a0000000-0000-4000-8000-000000001995";
 const withingsUserId = "b0000000-0000-4000-8000-000000001995";
+const zivaUserId = "c0000000-0000-4000-8000-000000001995";
 const storedAccountRowSchema = z.object({
   provider_account_id: z.string().min(1),
 });
@@ -75,7 +76,8 @@ describe("account-erasure remote snapshot persistence (integration)", () => {
             (${missingAuthTokenUserId}::uuid, 'Missing Auth Token Snapshot User'),
             (${localOnlyUserId}::uuid, 'Local-only Snapshot User'),
             (${legacyWithingsUserId}::uuid, 'Legacy Withings Snapshot User'),
-            (${withingsUserId}::uuid, 'Withings Snapshot User')`,
+            (${withingsUserId}::uuid, 'Withings Snapshot User'),
+            (${zivaUserId}::uuid, 'Ziva Snapshot User')`,
     );
     await ensureProvider(
       context.db,
@@ -142,6 +144,7 @@ describe("account-erasure remote snapshot persistence (integration)", () => {
       "https://api.decathlon.net",
       decathlonUserId,
     );
+    await ensureProvider(context.db, "ziva", "Ziva", "https://connect.ziva.fit/mcp", zivaUserId);
     await saveTokens(
       context.db,
       "polar",
@@ -377,6 +380,16 @@ describe("account-erasure remote snapshot persistence (integration)", () => {
       ),
     ).rejects.toThrow(
       "Manually unlink Dofek from your Decathlon account (contact Decathlon support if no unlink control is available), then disconnect Decathlon in Dofek before deleting your account.",
+    );
+  });
+
+  it("blocks Ziva before registry lookup because remote revocation is not advertised", async () => {
+    await expect(
+      context.db.transaction((transaction) =>
+        createEncryptedAccountErasureSnapshot(transaction, zivaUserId, providers),
+      ),
+    ).rejects.toThrow(
+      "Disconnect Ziva in Dofek before deleting your account because Ziva does not advertise remote token revocation.",
     );
   });
 

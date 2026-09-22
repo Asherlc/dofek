@@ -1,6 +1,6 @@
 # Documentation
 
-<!-- cspell:ignore dbml rollups -->
+<!-- cspell:ignore alltrails dbml rollups ziva -->
 
 Human-facing architecture notes, provider research, operational runbooks, and
 historical records for Dofek.
@@ -74,6 +74,7 @@ the exact section.
 | TrainerRoad | [trainerroad.md](trainerroad.md) | Cookie auth, workouts, and parsing details. |
 | Wahoo | [wahoo.md](wahoo.md) | OAuth and workout ingestion notes. |
 | Withings | [withings.md](withings.md) | Sleep/body sync and webhook details. |
+| Ziva | [ziva.md](ziva.md) | OAuth/MCP contract, meal aggregates, sync behavior, and operations. |
 | Zwift | [zwift.md](zwift.md) | Keycloak auth and activity details. |
 
 Cross-provider reverse-engineering references:
