@@ -35,8 +35,10 @@ them, and the durability work they suggest.
   worker readiness/flow/job-state code for bullmq 6 and declare `ioredis` as
   the Redis peer; rebase sharp; close the Expo-incompatible and superseded
   CodeQL PRs. After sibling merges, re-resolve `#2757` lockfile conflicts.
-- **Validation:** Merged `#2697`, `#2690`, `#2755`, `#2757` with green CI Gate;
-  closed `#2637`, `#2566`, `#2569`; open Dependabot count is 0.
+- **Validation:** The referenced PRs were merged on their respective branches
+  with green CI Gate; closed `#2637`, `#2566`, `#2569`; open Dependabot count is
+  0. The checked-in dependencies and source remain on the pre-migration versions
+  (bullmq 5.79.2, `@bull-board/*` 8.1.2) pending a consolidated bump to main.
 - **Remaining risk / follow-up:** Dependabot still opens solo bumps for tightly
   coupled packages (`@bull-board/*`, `@aws-sdk/*`) and Expo-managed mobile
   majors. Consider grouping those ecosystems in `.github/dependabot.yml` and
