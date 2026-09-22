@@ -304,6 +304,9 @@ importers:
       drizzle-kit:
         specifier: 0.31.10
         version: 0.31.10
+      fast-uri:
+        specifier: 3.1.8
+        version: 3.1.8
       jsdom:
         specifier: 29.0.0
         version: 29.0.0
@@ -11264,6 +11267,9 @@ packages:
 
   fast-uri@3.1.7:
     resolution: {integrity: sha512-dOvZVzjdZdz7phd9v6jCbwxrBW3fK6n8Rc0CtdmM4bumzMnxywBYhuph6J819RRw/ku+rLbelwfMunktuzVVHg==}
+
+  fast-uri@3.1.8:
+    resolution: {integrity: sha512-GZMtZUTNRpOVIECoXwLNZS5xUGE+mVNbTB8h/7Rwh2TFWcBQiPzTgyZi05BF9UMZKkLJv8XBRJTlU7zg8+ZfMg==}
 
   fast-wrap-ansi@0.2.2:
     resolution: {integrity: sha512-7F2Fl+TjRSenLqlU3UjSH0iyqopqoZIu7eZVpEirP2g1GtWa2G/ecEmBdgz31+Mxr+ELclgg6sokpSFIQiZ02Q==}
@@ -28712,6 +28718,8 @@ snapshots:
       fast-string-truncated-width: 3.0.3
 
   fast-uri@3.1.7: {}
+
+  fast-uri@3.1.8: {}
 
   fast-wrap-ansi@0.2.2:
     dependencies:
