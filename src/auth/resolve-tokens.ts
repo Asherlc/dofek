@@ -83,11 +83,13 @@ export async function resolveOAuthTokens(options: {
     // When the authorization server returns invalid_grant, the refresh token
     // has been revoked or expired. Delete the stored tokens so the sync
     // scheduler stops retrying every cycle — the user must re-authorize.
-    // Strava returns {"errors":[{"code":"invalid"}]} instead of invalid_grant.
+    // Strava returns {"resource":"RefreshToken","field":"refresh_token","code":"invalid"}
+    // instead of invalid_grant — require both markers to avoid matching
+    // unrelated "code":"invalid" errors from other providers.
     if (
       message.includes("invalid_grant") ||
       message.includes("Too many unrevoked") ||
-      message.includes('"code":"invalid"')
+      (message.includes("RefreshToken") && message.includes('"code":"invalid"'))
     ) {
       logger.warn(
         `[${providerId}] Refresh token revoked, deleting stored tokens. ` +
