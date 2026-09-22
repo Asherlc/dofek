@@ -20,6 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
       - uses: ./.github/actions/setup-node-pnpm
       - uses: ./.github/actions/load-infisical-secrets
         with:
@@ -50,6 +52,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
           fetch-depth: 0
       - uses: ./.github/actions/setup-node-pnpm
       - uses: ./.github/actions/load-infisical-secrets
@@ -124,6 +127,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
           persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
       - uses: ./.github/actions/load-infisical-secrets
@@ -205,6 +209,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
       - name: Validate podspec deployment targets
         run: |
           APP_TARGET=$(python3 -c "import json; print(json.load(open('packages/mobile/app.json'))['expo']['ios']['deploymentTarget'])")
