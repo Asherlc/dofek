@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { isDeepStrictEqual } from "node:util";
 import {
   ProviderRateLimitError,
@@ -13,6 +14,9 @@ import { type CallToolResult, ErrorCode, McpError } from "@modelcontextprotocol/
 import { captureException } from "../../lib/error-reporting.ts";
 import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import { parseZivaMealPayload, type ZivaMealPayload } from "./schemas.ts";
+
+/** Binds the in-flight meal-call AbortSignal to transport fetch (SDK ignores call options.signal). */
+const activeMealCallSignal = new AsyncLocalStorage<AbortSignal>();
 
 const ZIVA_MCP_ENDPOINT = new URL("https://connect.ziva.fit/mcp");
 const ZIVA_MEAL_TOOL = "get_meals_for_date";
@@ -306,7 +310,6 @@ function createConnectLifecycle(callerSignal: AbortSignal | undefined): ConnectL
 
 export class ZivaMcpClient {
   readonly #client: Client;
-  readonly #activeCallSignals = new Set<AbortSignal>();
 
   constructor(client: Client) {
     this.#client = client;
@@ -324,9 +327,8 @@ export class ZivaMcpClient {
     const fetchWithConnectAbort: typeof globalThis.fetch = (input, init) => {
       const signals: AbortSignal[] = [lifecycle.signal];
       if (init?.signal != null) signals.push(init.signal);
-      for (const callSignal of client.#activeCallSignals) {
-        signals.push(callSignal);
-      }
+      const mealCallSignal = activeMealCallSignal.getStore();
+      if (mealCallSignal) signals.push(mealCallSignal);
       return rateLimitFetch(input, {
         ...init,
         signal: signals.length === 1 ? signals[0] : AbortSignal.any(signals),
@@ -406,51 +408,52 @@ export class ZivaMcpClient {
   ): Promise<ZivaMealPayload> {
     validateRequestedDate(date);
     const callSignal = options.signal;
-    if (callSignal) this.#activeCallSignals.add(callSignal);
-    let result: unknown;
-    try {
-      result = await this.#client.callTool(
-        { name: ZIVA_MEAL_TOOL, arguments: { start_date: date } },
-        undefined,
-        { timeout: MCP_OPERATION_TIMEOUT_MS, signal: callSignal },
-      );
-    } catch (error) {
-      throwClassifiedRequestError(error, callSignal, "call_tool");
-    } finally {
-      if (callSignal) this.#activeCallSignals.delete(callSignal);
-    }
-
-    if (!isCallToolResult(result)) {
-      throw malformedResponse("mcp_result");
-    }
-    if (result.isError === true) {
-      throw new ZivaMcpToolError();
-    }
-
-    const textBlocks = result.content.filter(
-      (content): content is Extract<CallToolResult["content"][number], { type: "text" }> =>
-        content.type === "text",
-    );
-    if (textBlocks.length > 1) {
-      throw malformedResponse("multiple_text_payloads");
-    }
-
-    const structuredPayload =
-      result.structuredContent === undefined
-        ? undefined
-        : parsePayload(result.structuredContent, date);
-    const textPayload =
-      textBlocks[0] === undefined ? undefined : parseTextPayload(textBlocks[0].text, date);
-
-    if (structuredPayload && textPayload) {
-      if (!isDeepStrictEqual(structuredPayload, textPayload)) {
-        throw malformedResponse("encoding_mismatch");
+    const readMeals = async (): Promise<ZivaMealPayload> => {
+      let result: unknown;
+      try {
+        result = await this.#client.callTool(
+          { name: ZIVA_MEAL_TOOL, arguments: { start_date: date } },
+          undefined,
+          { timeout: MCP_OPERATION_TIMEOUT_MS, signal: callSignal },
+        );
+      } catch (error) {
+        throwClassifiedRequestError(error, callSignal, "call_tool");
       }
-      return structuredPayload;
-    }
-    if (structuredPayload) return structuredPayload;
-    if (textPayload) return textPayload;
-    throw malformedResponse("missing_payload");
+
+      if (!isCallToolResult(result)) {
+        throw malformedResponse("mcp_result");
+      }
+      if (result.isError === true) {
+        throw new ZivaMcpToolError();
+      }
+
+      const textBlocks = result.content.filter(
+        (content): content is Extract<CallToolResult["content"][number], { type: "text" }> =>
+          content.type === "text",
+      );
+      if (textBlocks.length > 1) {
+        throw malformedResponse("multiple_text_payloads");
+      }
+
+      const structuredPayload =
+        result.structuredContent === undefined
+          ? undefined
+          : parsePayload(result.structuredContent, date);
+      const textPayload =
+        textBlocks[0] === undefined ? undefined : parseTextPayload(textBlocks[0].text, date);
+
+      if (structuredPayload && textPayload) {
+        if (!isDeepStrictEqual(structuredPayload, textPayload)) {
+          throw malformedResponse("encoding_mismatch");
+        }
+        return structuredPayload;
+      }
+      if (structuredPayload) return structuredPayload;
+      if (textPayload) return textPayload;
+      throw malformedResponse("missing_payload");
+    };
+
+    return callSignal ? activeMealCallSignal.run(callSignal, readMeals) : readMeals();
   }
 
   async close(): Promise<void> {

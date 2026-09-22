@@ -661,6 +661,26 @@ describe("ZivaMcpClient", () => {
     expect(harness.cancellationNotifications).toBe(1);
   });
 
+  it("does not abort a concurrent meal read when a different call signal cancels", async () => {
+    const harness = createFakeZivaMcpHarness({
+      delayedMethods: { "tools/call": 150 },
+    });
+    const firstController = new AbortController();
+    const secondController = new AbortController();
+    const firstReason = new DOMException("first caller cancelled", "AbortError");
+
+    await withClient(harness, async (client) => {
+      const first = client.getMealsForDate(EXPECTED_DATE, { signal: firstController.signal });
+      const second = client.getMealsForDate("2000-01-03", { signal: secondController.signal });
+      await vi.waitFor(() =>
+        expect(harness.jsonRpcMethods.filter((method) => method === "tools/call")).toHaveLength(2),
+      );
+      firstController.abort(firstReason);
+      await expect(first).rejects.toBe(firstReason);
+      await expect(second).resolves.toEqual({ meals: [] });
+    });
+  });
+
   it("redacts other HTTP response bodies from transport errors", async () => {
     const privateBody = "private-diary-response-body";
     const harness = createFakeZivaMcpHarness({
