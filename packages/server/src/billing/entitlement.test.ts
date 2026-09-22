@@ -226,6 +226,18 @@ describe("resolveAccessWindow", () => {
     });
   });
 
+  it("rejects an invalid current timestamp for limited access", () => {
+    expect(() =>
+      resolveAccessWindow({
+        userCreatedAt: "2026-04-10T18:30:00.000Z",
+        timezone: "UTC",
+        paidGrantReason: null,
+        stripeSubscriptionStatus: null,
+        now: new Date(Number.NaN),
+      }),
+    ).toThrow(RangeError);
+  });
+
   it("rejects invalid timezones for limited access", () => {
     expect(() =>
       resolveAccessWindow({
