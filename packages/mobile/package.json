@@ -40,7 +40,7 @@
     "@dofek/stats": "workspace:*",
     "@dofek/training": "workspace:*",
     "@dofek/zones": "workspace:*",
-    "@expo/metro-runtime": "57.0.16",
+    "@expo/metro-runtime": "58.0.2",
     "@expo/vector-icons": "15.1.1",
     "@formatjs/intl-getcanonicallocales": "3.2.11",
     "@formatjs/intl-locale": "5.3.10",
