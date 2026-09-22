@@ -16,9 +16,9 @@ describe("clickHouseMigrations", () => {
     const migrationIds = migrations.map((migration) => migration.id);
     expect(new Set(migrationIds).size).toBe(migrationIds.length);
     expect(migrationIds.slice(-3)).toEqual([
-      "0093_refresh_daily_metrics_view",
       "0094_sensor_scalar_sample_lightweight_refresh_projection",
       "0095_food_entry_source_account_key",
+      "0096_fix_daily_metrics_null_coercion",
     ]);
     const migrationNumbers = migrationIds.map((migrationId) => Number(migrationId.slice(0, 4)));
     expect(migrationNumbers).toEqual(
