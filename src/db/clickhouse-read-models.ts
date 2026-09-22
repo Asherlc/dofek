@@ -681,9 +681,9 @@ ranked AS (
     active_daily_metrics.date AS date,
     active_daily_metrics.provider_id AS provider_id,
     active_daily_metrics.user_id AS user_id,
-    active_daily_metrics.hrv AS hrv,
-    active_daily_metrics.spo2_avg AS spo2_avg,
-    active_daily_metrics.respiratory_rate_avg AS respiratory_rate_avg,
+    nullIf(active_daily_metrics.hrv, 0) AS hrv,
+    nullIf(active_daily_metrics.spo2_avg, 0) AS spo2_avg,
+    nullIf(active_daily_metrics.respiratory_rate_avg, 0) AS respiratory_rate_avg,
     active_daily_metrics.steps AS steps,
     active_daily_metrics.distance_km AS distance_km,
     active_daily_metrics.flights_climbed AS flights_climbed,
@@ -694,7 +694,7 @@ ranked AS (
     active_daily_metrics.walking_asymmetry_pct AS walking_asymmetry_pct,
     active_daily_metrics.walking_steadiness AS walking_steadiness,
     active_daily_metrics.stand_hours AS stand_hours,
-    active_daily_metrics.skin_temp_c AS skin_temp_c,
+    nullIf(active_daily_metrics.skin_temp_c, 0) AS skin_temp_c,
     coalesce(device_priority_match.recovery_priority, active_provider_priority.recovery_priority, device_priority_match.priority, active_provider_priority.priority, 100) AS recovery_priority,
     coalesce(device_priority_match.daily_activity_priority, active_provider_priority.daily_activity_priority, device_priority_match.priority, active_provider_priority.priority, 100) AS activity_priority
   FROM active_daily_metrics
