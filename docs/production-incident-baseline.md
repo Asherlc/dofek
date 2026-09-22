@@ -7,6 +7,43 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-09-21 — Open Dependabot PRs blocked by companion skew and majors
+
+- **Status:** Resolved. Four package bumps merged; three obsolete/incompatible
+  PRs closed. A fresh Dependabot search reports zero open PRs.
+- **Symptoms / user impact:** Seven open Dependabot PRs blocked merge. No
+  production impact; dependency backlog and CI noise only.
+- **Evidence / root cause:**
+  - [#2757](https://github.com/Asherlc/dofek/pull/2757) bumped only
+    `@bull-board/api` to 9.x while `@bull-board/express` stayed on 8.x
+    (`ExpressAdapter` vs `IServerAdapter` typecheck failure).
+  - [#2755](https://github.com/Asherlc/dofek/pull/2755) bumped only
+    `@aws-sdk/s3-request-presigner` while `@aws-sdk/client-s3` lagged
+    (`S3Client` not assignable to `getSignedUrl` client type).
+  - [#2697](https://github.com/Asherlc/dofek/pull/2697) bullmq 5→6 removed
+    `FlowChildJob` / `paused` job state and Redis internals on `Worker`
+    (`waitUntilReady` → `void`, readiness via `getBackend()`).
+  - [#2690](https://github.com/Asherlc/dofek/pull/2690) sharp patch needed a
+    rebase onto main after a stale iOS asset-catalog distill failure.
+  - [#2637](https://github.com/Asherlc/dofek/pull/2637)
+    `react-native-gesture-handler` 3.x failed `pnpm expo install --check`
+    (Expo SDK 57 expects `~2.32.0`); same class as prior [#2460](https://github.com/Asherlc/dofek/pull/2460).
+  - [#2566](https://github.com/Asherlc/dofek/pull/2566) /
+    [#2569](https://github.com/Asherlc/dofek/pull/2569) CodeQL 4.37.7→4.37.8
+    conflicted because main already pinned 4.37.9.
+- **Direct fix:** Align companion packages on the Dependabot branches; migrate
+  worker readiness/flow/job-state code for bullmq 6 and declare `ioredis` as
+  the Redis peer; rebase sharp; close the Expo-incompatible and superseded
+  CodeQL PRs. After sibling merges, re-resolve `#2757` lockfile conflicts.
+- **Validation:** Merged `#2697`, `#2690`, `#2755`, `#2757` with green CI Gate;
+  closed `#2637`, `#2566`, `#2569`; open Dependabot count is 0.
+- **Remaining risk / follow-up:** Dependabot still opens solo bumps for tightly
+  coupled packages (`@bull-board/*`, `@aws-sdk/*`) and Expo-managed mobile
+  majors. Consider grouping those ecosystems in `.github/dependabot.yml` and
+  ignoring `react-native-gesture-handler` majors until Expo supports them
+  ([Dependabot grouping](https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file#groups);
+  [Expo dependency validation](https://docs.expo.dev/more/expo-cli/#dependency-validation)).
+
 ## 2026-09-20 — Infisical GitHub secret sync exceeded repository limit
 
 - **Status:** Fixed. The sync now succeeds and preserves both Ziva secrets.
