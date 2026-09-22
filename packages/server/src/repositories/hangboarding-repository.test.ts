@@ -104,7 +104,7 @@ describe("HangboardingRepository", () => {
     const accessWindow = {
       kind: "limited",
       paid: false,
-      reason: "free_signup_week",
+      reason: "free_recent_week",
       startDate: "2026-08-01",
       endDateExclusive: "2026-08-08",
     } as const;

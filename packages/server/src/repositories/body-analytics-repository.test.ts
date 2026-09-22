@@ -338,7 +338,7 @@ describe("BodyAnalyticsRepository", () => {
       const accessWindow = {
         kind: "limited" as const,
         paid: false,
-        reason: "free_signup_week" as const,
+        reason: "free_recent_week" as const,
         startDate: "2026-04-10",
         endDateExclusive: "2026-04-17",
       };
@@ -683,7 +683,7 @@ describe("BodyAnalyticsRepository", () => {
       const accessWindow = {
         kind: "limited",
         paid: false,
-        reason: "free_signup_week",
+        reason: "free_recent_week",
         startDate: "2026-01-01",
         endDateExclusive: "2026-02-01",
       } as const;

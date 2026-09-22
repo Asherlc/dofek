@@ -28,7 +28,7 @@ const BOUNDARY_USER_ID = "60606060-6060-4060-8060-606060606060";
 const ACCESS_WINDOW: AccessWindow = {
   kind: "limited",
   paid: false,
-  reason: "free_signup_week",
+  reason: "free_recent_week",
   startDate: "2026-03-10",
   endDateExclusive: "2026-03-17",
 };

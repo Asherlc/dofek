@@ -367,42 +367,48 @@ describe("adminRouter", () => {
     });
 
     it("returns unpaid access and null Stripe links when billing is absent", async () => {
-      const execute = vi.fn();
-      execute.mockResolvedValueOnce([
-        {
-          id: "00000000-0000-0000-0000-000000000001",
-          name: "Test",
-          email: "test@test.com",
-          birth_date: null,
-          is_admin: false,
-          created_at: "2026-07-21T01:30:00.000Z",
-          updated_at: "2026-07-21T01:30:00.000Z",
-        },
-      ]);
-      execute.mockResolvedValueOnce([]);
-      execute.mockResolvedValueOnce([]);
-      execute.mockResolvedValueOnce([]);
-      execute.mockResolvedValueOnce([]);
-      execute.mockResolvedValueOnce([]);
-      const caller = makeCaller(execute, vi.fn().mockResolvedValue([]), "America/Los_Angeles");
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-09-22T12:00:00.000Z"));
+      try {
+        const execute = vi.fn();
+        execute.mockResolvedValueOnce([
+          {
+            id: "00000000-0000-0000-0000-000000000001",
+            name: "Test",
+            email: "test@test.com",
+            birth_date: null,
+            is_admin: false,
+            created_at: "2026-07-21T01:30:00.000Z",
+            updated_at: "2026-07-21T01:30:00.000Z",
+          },
+        ]);
+        execute.mockResolvedValueOnce([]);
+        execute.mockResolvedValueOnce([]);
+        execute.mockResolvedValueOnce([]);
+        execute.mockResolvedValueOnce([]);
+        execute.mockResolvedValueOnce([]);
+        const caller = makeCaller(execute, vi.fn().mockResolvedValue([]), "America/Los_Angeles");
 
-      const result = await caller.userDetail({
-        userId: "00000000-0000-0000-0000-000000000001",
-      });
+        const result = await caller.userDetail({
+          userId: "00000000-0000-0000-0000-000000000001",
+        });
 
-      expect(result.flags.providerGuideDismissed).toBe(false);
-      expect(result.billing).toBeNull();
-      expect(result.access).toEqual({
-        kind: "limited",
-        paid: false,
-        reason: "free_signup_week",
-        startDate: "2026-07-20",
-        endDateExclusive: "2026-07-27",
-      });
-      expect(result.stripeLinks).toEqual({
-        customer: null,
-        subscription: null,
-      });
+        expect(result.flags.providerGuideDismissed).toBe(false);
+        expect(result.billing).toBeNull();
+        expect(result.access).toEqual({
+          kind: "limited",
+          paid: false,
+          reason: "free_recent_week",
+          startDate: "2026-09-16",
+          endDateExclusive: "2026-09-23",
+        });
+        expect(result.stripeLinks).toEqual({
+          customer: null,
+          subscription: null,
+        });
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("derives App Store access when Stripe and paid grants are absent", async () => {

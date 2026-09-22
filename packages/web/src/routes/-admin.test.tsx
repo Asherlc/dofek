@@ -53,7 +53,7 @@ vi.mock("../lib/trpc.ts", () => ({
             access: {
               kind: "limited",
               paid: false,
-              reason: "free_signup_week",
+              reason: "free_recent_week",
               startDate: "2024-01-01",
               endDateExclusive: "2024-01-08",
             },

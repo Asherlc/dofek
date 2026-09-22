@@ -124,40 +124,46 @@ describe("billingRouter", () => {
     );
   });
 
-  it("returns limited signup-week status for unpaid users", async () => {
-    stripeMocks.executeWithSchema.mockResolvedValue([
-      {
-        id: "user-1",
-        created_at: "2026-07-21T01:30:00.000Z",
-        paid_grant_reason: null,
-        stripe_subscription_status: null,
-        stripe_customer_id: null,
-        app_store_product_id: null,
-        app_store_subscription_status: null,
-        app_store_expires_at: null,
-        app_store_revocation_at: null,
-      },
-    ]);
-    const caller = createCaller({
-      db: database(),
-      userId: "user-1",
-      timezone: "America/Los_Angeles",
-    });
+  it("returns limited recent-week status for unpaid users", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-22T12:00:00.000Z"));
+    try {
+      stripeMocks.executeWithSchema.mockResolvedValue([
+        {
+          id: "user-1",
+          created_at: "2026-07-21T01:30:00.000Z",
+          paid_grant_reason: null,
+          stripe_subscription_status: null,
+          stripe_customer_id: null,
+          app_store_product_id: null,
+          app_store_subscription_status: null,
+          app_store_expires_at: null,
+          app_store_revocation_at: null,
+        },
+      ]);
+      const caller = createCaller({
+        db: database(),
+        userId: "user-1",
+        timezone: "America/Los_Angeles",
+      });
 
-    await expect(caller.status()).resolves.toEqual({
-      hasFullAccess: false,
-      access: {
-        kind: "limited",
-        paid: false,
-        reason: "free_signup_week",
-        startDate: "2026-07-20",
-        endDateExclusive: "2026-07-27",
-      },
-      stripeSubscriptionStatus: null,
-      canManageBilling: false,
-      appStoreSubscriptionStatus: null,
-      canManageAppStoreSubscription: false,
-    });
+      await expect(caller.status()).resolves.toEqual({
+        hasFullAccess: false,
+        access: {
+          kind: "limited",
+          paid: false,
+          reason: "free_recent_week",
+          startDate: "2026-09-16",
+          endDateExclusive: "2026-09-23",
+        },
+        stripeSubscriptionStatus: null,
+        canManageBilling: false,
+        appStoreSubscriptionStatus: null,
+        canManageAppStoreSubscription: false,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("reports a missing authenticated profile", async () => {

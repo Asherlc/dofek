@@ -27,7 +27,7 @@ const accessWindowSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("limited"),
     paid: z.literal(false),
-    reason: z.literal("free_signup_week"),
+    reason: z.literal("free_recent_week"),
     startDate: z.string(),
     endDateExclusive: z.string(),
   }),

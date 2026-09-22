@@ -561,7 +561,7 @@ describe("DataQualityRepository", () => {
     const overview = await makeRepository({
       kind: "limited",
       paid: false,
-      reason: "free_signup_week",
+      reason: "free_recent_week",
       startDate: "2026-06-20",
       endDateExclusive: "2026-07-30",
     }).overview("2026-07-22");
@@ -595,7 +595,7 @@ describe("DataQualityRepository", () => {
     const overview = await makeRepository({
       kind: "limited",
       paid: false,
-      reason: "free_signup_week",
+      reason: "free_recent_week",
       startDate: "2026-06-20",
       endDateExclusive: "2026-07-20",
     }).overview("2026-07-22");
@@ -739,7 +739,7 @@ describe("DataQualityRepository", () => {
     const overview = await makeRepository({
       kind: "limited",
       paid: false,
-      reason: "free_signup_week",
+      reason: "free_recent_week",
       startDate: "2026-07-19",
       endDateExclusive: "2026-07-23",
     }).overview("2026-07-22");

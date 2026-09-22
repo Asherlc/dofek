@@ -122,7 +122,7 @@ describe("fetchBodyDecisionMeasurements", () => {
     await fetchBodyDecisionMeasurements(store, "user-1", "UTC", "2026-07-25", {
       kind: "limited",
       paid: false,
-      reason: "free_signup_week",
+      reason: "free_recent_week",
       startDate: "2026-07-20",
       endDateExclusive: "2026-07-27",
     });

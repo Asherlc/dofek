@@ -199,7 +199,7 @@ describe("adaptive TDEE evidence", () => {
     const calendar = buildAdaptiveTdeeCalendar([], 5, "2026-07-10", {
       kind: "limited",
       paid: false,
-      reason: "free_signup_week",
+      reason: "free_recent_week",
       startDate: "2026-07-08",
       endDateExclusive: "2026-07-10",
     });
@@ -237,7 +237,7 @@ describe("adaptive TDEE evidence", () => {
     const calendar = buildAdaptiveTdeeCalendar([], 3, "2026-07-10", {
       kind: "limited",
       paid: false,
-      reason: "free_signup_week",
+      reason: "free_recent_week",
       startDate: "2026-06-01",
       endDateExclusive: "2026-06-08",
     });
