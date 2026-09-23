@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "resolutions": {
+    "ioredis": "6.0.0"
+  },
   "exports": {
     "./test-helpers": "./src/test-helpers.ts",
     "./export": "./src/export.ts",
@@ -253,7 +256,7 @@
     "@opentelemetry/auto-instrumentations-node": "0.79.0",
     "@opentelemetry/core": "2.9.0",
     "@opentelemetry/exporter-logs-otlp-http": "0.221.0",
-    "@opentelemetry/exporter-metrics-otlp-proto": "0.221.0",
+    "@opentelemetry/exporter-metrics-otlp-proto": "0.222.0",
     "@opentelemetry/exporter-trace-otlp-http": "0.221.0",
     "@opentelemetry/exporter-trace-otlp-proto": "0.221.0",
     "@opentelemetry/instrumentation": "0.221.0",

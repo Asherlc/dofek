@@ -44,6 +44,13 @@ export async function sendPlainTextEmail(input: PlainTextEmailInput): Promise<vo
   });
 
   if (!response.ok) {
-    throw new Error(`Brevo email request failed with status ${response.status}`);
+    const status = `Brevo email request failed with status ${response.status}`;
+    let body = "";
+    try {
+      body = (await response.text()).trim();
+    } catch {
+      throw new Error(status);
+    }
+    throw new Error(body.length > 0 ? `${status}: ${body}` : status);
   }
 }

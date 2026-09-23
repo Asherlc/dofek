@@ -1,3 +1,4 @@
+import { AUTH_INPUT_ERROR_MESSAGES } from "@dofek/auth/auth";
 import type { Database } from "dofek/db";
 import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
 import { sql } from "drizzle-orm";
@@ -8,14 +9,14 @@ import { revokePasswordChangeAuthenticationMaterial } from "./password-change.ts
 
 export class DuplicateEmailError extends Error {
   constructor() {
-    super("Unable to create an account with these details");
+    super(AUTH_INPUT_ERROR_MESSAGES.duplicateAccount);
     this.name = "DuplicateEmailError";
   }
 }
 
 export class InvalidCredentialsError extends Error {
   constructor() {
-    super("Invalid email or password");
+    super(AUTH_INPUT_ERROR_MESSAGES.invalidCredentials);
     this.name = "InvalidCredentialsError";
   }
 }
