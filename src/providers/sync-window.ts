@@ -1,16 +1,25 @@
+export type SyncWindowKind = "bounded" | "full";
+
 export type SyncWindowBounds = {
   since: Date;
   until: Date;
+  kind?: SyncWindowKind;
 };
 
 export class SyncWindow {
   readonly #since: Date;
   readonly #until: Date;
+  readonly #kind: SyncWindowKind;
 
-  constructor({ since, until }: SyncWindowBounds) {
+  constructor({ since, until, kind = "bounded" }: SyncWindowBounds) {
     SyncWindow.#validate(since, until);
     this.#since = new Date(since.getTime());
     this.#until = new Date(until.getTime());
+    this.#kind = kind;
+  }
+
+  get kind(): SyncWindowKind {
+    return this.#kind;
   }
 
   get since(): Date {
@@ -36,7 +45,7 @@ export class SyncWindow {
       SyncWindow.#dateWindowStartString(untilYmd, days),
     );
     const since = this.#since.getTime() < minimumStart.getTime() ? this.#since : minimumStart;
-    return new SyncWindow({ since, until: this.#until });
+    return new SyncWindow({ since, until: this.#until, kind: this.#kind });
   }
 
   static now(): Date {
@@ -44,7 +53,7 @@ export class SyncWindow {
   }
 
   static full(now = SyncWindow.now()): SyncWindow {
-    return new SyncWindow({ since: new Date(0), until: now });
+    return new SyncWindow({ since: new Date(0), until: now, kind: "full" });
   }
 
   static lastDays(days: number, options?: { untilDate?: string; now?: Date }): SyncWindow {

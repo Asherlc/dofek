@@ -9,6 +9,7 @@ vi.mock("../lib/sync-request-query.ts", async (importOriginal) => ({
 
 const mockGarminResolver = vi.fn();
 const mockWhoopResolver = vi.fn();
+const mockZivaResolver = vi.fn();
 
 vi.mock("../providers/garmin/sync-request-query.ts", () => ({
   resolveGarminSyncRequestQuery: mockGarminResolver,
@@ -16,6 +17,10 @@ vi.mock("../providers/garmin/sync-request-query.ts", () => ({
 
 vi.mock("../providers/whoop/sync-request-query.ts", () => ({
   resolveWhoopSyncRequestQuery: mockWhoopResolver,
+}));
+
+vi.mock("../providers/ziva/sync-request-query.ts", () => ({
+  resolveZivaSyncRequestQuery: mockZivaResolver,
 }));
 
 describe("registerProviderSyncRequestResolver", () => {
@@ -41,6 +46,16 @@ describe("registerProviderSyncRequestResolver", () => {
     await registerProviderSyncRequestResolver({ id: "whoop" });
 
     expect(registerSpy).toHaveBeenCalledWith("whoop", mockWhoopResolver);
+  });
+
+  it("registers the Ziva resolver for the Ziva provider", async () => {
+    const { registerProviderSyncRequestResolver } = await import(
+      "./sync-request-query-registration.ts"
+    );
+
+    await registerProviderSyncRequestResolver({ id: "ziva" });
+
+    expect(registerSpy).toHaveBeenCalledWith("ziva", mockZivaResolver);
   });
 
   it("does nothing for providers without a custom resolver", async () => {

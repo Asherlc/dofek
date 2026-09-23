@@ -333,7 +333,7 @@ describe("production analytics read-model build", () => {
     expect(normalizedSql).toContain("WHERE existing_members.is_deleted = 0");
   });
 
-  it("materializes activity sensor membership as a microbatch intermediary", () => {
+  it("reconciles logical current-state activity sensor samples", () => {
     expect(existsSync(new URL("./activity_sensor_sample.sql", import.meta.url))).toBe(true);
     const sql = readModel("activity_sensor_sample");
     const normalizedSql = compactWhitespace(sql);
@@ -348,7 +348,33 @@ describe("production analytics read-model build", () => {
       "'query': 'SELECT activity_id, user_id, max(refresh_version) AS source_refresh_version GROUP BY activity_id, user_id'",
     );
     expect(sql).toContain("event_time='refreshed_at'");
-    expect(sql).toContain("lookback=3");
+    expect(sql).not.toContain("'final': 1");
+    expect(normalizedSql).toContain(
+      "FROM {{ ref('deduped_sensor') }} ORDER BY refresh_version DESC LIMIT 1 BY user_id, channel, recorded_date, recorded_at",
+    );
+    expect(sql).toContain("existing_activity_samples AS (");
+    expect(normalizedSql).toContain(
+      "(existing_samples.user_id, existing_samples.channel, existing_samples.recorded_at) IN",
+    );
+    expect(normalizedSql).toContain(
+      "ORDER BY existing_samples.refresh_version DESC LIMIT 1 BY existing_samples.user_id, existing_samples.activity_id, existing_samples.recorded_date, existing_samples.channel, existing_samples.recorded_at",
+    );
+    expect(sql).toContain("activity_samples AS (");
+    expect(normalizedSql).toContain(
+      "FROM batch_samples AS samples INNER JOIN activity_days",
+    );
+    expect(normalizedSql).toContain(
+      "FROM existing_activity_samples AS existing_samples INNER ANY JOIN batch_samples AS samples",
+    );
+    expect(normalizedSql).toContain("samples.is_deleted = 1");
+    expect(normalizedSql).toContain("activity_group_state.is_deleted = 1");
+    expect(normalizedSql).toContain(
+      "samples.recorded_at < activity_group_state.started_at",
+    );
+    expect(normalizedSql).toContain(
+      "samples.recorded_at > activity_group_state.effective_ended_at",
+    );
+    expect(normalizedSql).toContain("NOT has( activity_group_state.member_activity_ids");
     expect(sql).toContain("ref('deduped_sensor')");
     expect(sql).toContain("ref('deduped_activities')");
     expect(sql).toContain("activity_days AS");
@@ -396,22 +422,24 @@ describe("production analytics read-model build", () => {
     const activitySampleSql = readModel("activity_sensor_sample");
     const locationSampleSql = readModel("activity_location_sample");
 
-    expect(sensorSql).toContain(
-      "argMax(metric_stream_versions.activity_id, metric_stream_versions.version)",
+    const latestRowsMatch = sensorSql.match(
+      /metric_stream_latest AS \((?<body>[\s\S]*?)\),\n\nmetric_stream_rows AS/,
     );
-    expect(sensorSql).toContain(
-      "argMax(metric_stream_versions.external_id, metric_stream_versions.version)",
-    );
-    expect(sensorSql).toContain(
-      "argMax(metric_stream_versions.source_type, metric_stream_versions.version) AS source_type",
-    );
-    expect(sensorSql).toContain(
-      "argMax(metric_stream_versions.metadata, metric_stream_versions.version) AS metadata",
-    );
+    expect(latestRowsMatch).not.toBeNull();
+    expect(latestRowsMatch?.groups?.body.match(/argMax\(/g)).toHaveLength(1);
+    expect(latestRowsMatch?.groups?.body).toContain("argMax(\n            tuple(");
+
+    expect(sensorSql).toContain("tupleElement(metric_stream_latest.latest, 1) AS activity_id");
+    expect(sensorSql).toContain("tupleElement(metric_stream_latest.latest, 6) AS source_external_id");
+    expect(sensorSql).toContain("tupleElement(metric_stream_latest.latest, 8) AS source_type");
+    expect(sensorSql).toContain("tupleElement(metric_stream_latest.latest, 9) AS metadata");
     expect(sensorSql).toContain("JSONExtractString(metadata, 'measurement_kind')");
     expect(sensorSql.match(/toNullable\(priority\) AS priority/g)).toHaveLength(2);
     expect(sensorSql).toContain("'distance'");
     expect(sensorSql).toContain("'temperature'");
+
+    expect(dedupedSql.match(/argMinIf\(/g)).toHaveLength(1);
+    expect(dedupedSql).toContain("argMinIf(\n            tuple(");
 
     for (const sourceColumn of [
       "member_activity_id",
@@ -448,7 +476,7 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("affected_groups AS MATERIALIZED");
     expect(sql).toContain("existing_group_watermarks AS MATERIALIZED");
     expect(sql).toContain("candidate_affected_groups AS (");
-    expect(sql).toContain("LIMIT {{ var('activity_location_batch_size', 250) }}");
+    expect(sql).toContain("LIMIT {{ var('activity_location_batch_size', 100) }}");
     expect(sql).toContain("> existing_group_watermarks.source_refreshed_at");
     expect(sql).toContain("location_group_freshness AS MATERIALIZED");
     expect(sql).toContain("location_member_freshness AS (");

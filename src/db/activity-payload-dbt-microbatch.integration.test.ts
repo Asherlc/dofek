@@ -150,8 +150,84 @@ describe("activity payload dbt batch reconciliation", () => {
     );
     expect(compiledSql).toContain("where refreshed_at >= '2026-09-06 00:00:00'");
     expect(compiledSql).toContain("and refreshed_at < '2026-09-07 00:00:00'");
-    expect(compiledSql).toContain("INNER JOIN batch_sample_keys");
   }, 240_000);
+
+  it("reconciles a group-only membership change during the scoped historical replay", async () => {
+    await activityPayloadTest.seedSensorFixture(client, database);
+    await activityPayloadTest.runDbtBatch(
+      database,
+      artifactDirectory,
+      ["activity_sensor_sample", "activity_sensor_summary_rows"],
+      "2026-09-04",
+      "2026-09-05",
+    );
+
+    await activityPayloadTest.moveMember(client, database);
+    await activityPayloadTest.runDbtBatch(
+      database,
+      artifactDirectory,
+      ["activity_sensor_sample", "activity_sensor_summary_rows"],
+      "2026-09-04",
+      "2026-09-07",
+      [oldGroupId, activityPayloadTest.movedMemberId],
+    );
+
+    await activityPayloadTest.expectSensorState(
+      client,
+      database,
+      [
+        { activity_id: oldGroupId, scalar: 100, is_deleted: 1 },
+        { activity_id: newGroupId, scalar: 100, is_deleted: 0 },
+      ],
+      [
+        { activity_id: oldGroupId, avg_hr: null, sample_count: 0, is_deleted: 1 },
+        { activity_id: newGroupId, avg_hr: 100, sample_count: 1, is_deleted: 0 },
+        { activity_id: unrelatedGroupId, avg_hr: null, sample_count: 0, is_deleted: 1 },
+      ],
+    );
+  }, 240_000);
+
+  it("maps the latest logical sensor version to activity membership once", async () => {
+    await activityPayloadTest.seedSensorFixture(client, database);
+    await activityPayloadTest.runDbtBatch(
+      database,
+      artifactDirectory,
+      ["activity_sensor_sample"],
+      "2026-09-04",
+      "2026-09-05",
+    );
+    await client.command({ query: `SYSTEM STOP MERGES ${database}.deduped_sensor` });
+    await client.command({
+      query: `INSERT INTO ${database}.deduped_sensor
+        (user_id, recorded_at, recorded_date, channel, scalar, source_activity_id,
+         refresh_version, is_deleted, refreshed_at) VALUES
+        ('${userId}', toDateTime64('2026-09-04 10:30:00', 9, 'UTC'),
+         toDate('2026-09-04'), 'heart_rate', 100,
+         '${activityPayloadTest.movedMemberId}', 2, 0,
+         toDateTime64('2026-09-04 13:00:00', 9, 'UTC'))`,
+    });
+
+    await activityPayloadTest.runDbtBatch(
+      database,
+      artifactDirectory,
+      ["activity_sensor_sample"],
+      "2026-09-04",
+      "2026-09-05",
+    );
+
+    await client.command({ query: "SYSTEM FLUSH LOGS" });
+    const result = await client.query({
+      query: `SELECT written_rows
+        FROM system.query_log
+        WHERE type = 'QueryFinish'
+          AND query_kind = 'Insert'
+          AND query LIKE '%insert into \`${database}\`.\`activity_sensor_sample__dbt_new_data_%'
+        ORDER BY event_time_microseconds DESC
+        LIMIT 1`,
+      format: "JSONEachRow",
+    });
+    expect(await result.json()).toEqual([{ written_rows: 1 }]);
+  }, 120_000);
 
   it("preserves unrelated routes, switches providers, and remaps routes across groups", async () => {
     await activityPayloadTest.seedLocationFixture(client, database);

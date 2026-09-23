@@ -402,14 +402,14 @@ async function seedFixture(
       ('${groupId}', '${userId}', toDateTime64('2026-09-03 14:00:00', 6, 'UTC'), toDateTime64('2026-09-03 15:00:00', 6, 'UTC'), toDateTime64('2026-09-03 16:00:00', 9, 'UTC'), '${routeId}', 1, 0, toDateTime64('2026-09-03 16:00:00', 9, 'UTC'))`,
     `INSERT INTO ${database}.deduped_sensor
       (user_id, recorded_at, recorded_date, channel, scalar, source_activity_id,
-       is_deleted, refreshed_at) VALUES
-      ('${userId}', toDateTime64('2026-09-03 14:10:00', 9, 'UTC'), toDate('2026-09-03'), 'heart_rate', 100, '${heartRateOwner}', 0, toDateTime64('2026-09-03 16:01:00', 9, 'UTC')),
-      ('${userId}', toDateTime64('2026-09-03 14:20:00', 9, 'UTC'), toDate('2026-09-03'), 'heart_rate', 120, '${heartRateOwner}', 0, toDateTime64('2026-09-03 16:01:00', 9, 'UTC')),
-      ('${userId}', toDateTime64('2026-09-03 14:30:00', 9, 'UTC'), toDate('2026-09-03'), 'altitude', 10, '${altitudeOwner}', 0, toDateTime64('2026-09-03 16:01:00', 9, 'UTC')),
-      ('${userId}', toDateTime64('2026-09-03 14:31:00', 9, 'UTC'), toDate('2026-09-03'), 'altitude', 20, '${altitudeOwner}', 0, toDateTime64('2026-09-03 16:01:00', 9, 'UTC')),
-      ('${userId}', toDateTime64('2026-09-03 14:32:00', 9, 'UTC'), toDate('2026-09-03'), 'altitude', 15, '${altitudeOwner}', 0, toDateTime64('2026-09-03 16:01:00', 9, 'UTC')),
-      ('${userId}', toDateTime64('2026-09-03 14:33:00', 9, 'UTC'), toDate('2026-09-03'), 'altitude', 15, '${altitudeOwner}', 0, toDateTime64('2026-09-03 16:01:00', 9, 'UTC')),
-      ('${userId}', toDateTime64('2026-09-03 14:40:00', 9, 'UTC'), toDate('2026-09-03'), 'heart_rate', 110, NULL, 0, toDateTime64('2026-09-03 16:01:00', 9, 'UTC'))`,
+       refresh_version, is_deleted, refreshed_at) VALUES
+      ('${userId}', toDateTime64('2026-09-03 14:10:00', 9, 'UTC'), toDate('2026-09-03'), 'heart_rate', 100, '${heartRateOwner}', 1, 0, toDateTime64('2026-09-03 16:01:00', 9, 'UTC')),
+      ('${userId}', toDateTime64('2026-09-03 14:20:00', 9, 'UTC'), toDate('2026-09-03'), 'heart_rate', 120, '${heartRateOwner}', 2, 0, toDateTime64('2026-09-03 16:01:00', 9, 'UTC')),
+      ('${userId}', toDateTime64('2026-09-03 14:30:00', 9, 'UTC'), toDate('2026-09-03'), 'altitude', 10, '${altitudeOwner}', 3, 0, toDateTime64('2026-09-03 16:01:00', 9, 'UTC')),
+      ('${userId}', toDateTime64('2026-09-03 14:31:00', 9, 'UTC'), toDate('2026-09-03'), 'altitude', 20, '${altitudeOwner}', 4, 0, toDateTime64('2026-09-03 16:01:00', 9, 'UTC')),
+      ('${userId}', toDateTime64('2026-09-03 14:32:00', 9, 'UTC'), toDate('2026-09-03'), 'altitude', 15, '${altitudeOwner}', 5, 0, toDateTime64('2026-09-03 16:01:00', 9, 'UTC')),
+      ('${userId}', toDateTime64('2026-09-03 14:33:00', 9, 'UTC'), toDate('2026-09-03'), 'altitude', 15, '${altitudeOwner}', 6, 0, toDateTime64('2026-09-03 16:01:00', 9, 'UTC')),
+      ('${userId}', toDateTime64('2026-09-03 14:40:00', 9, 'UTC'), toDate('2026-09-03'), 'heart_rate', 110, NULL, 7, 0, toDateTime64('2026-09-03 16:01:00', 9, 'UTC'))`,
     `INSERT INTO ${database}.metric_stream_freshness
       (id, activity_id, user_id, recorded_at, provider_id, channel, point,
        ingested_at, version, is_deleted) VALUES
@@ -441,7 +441,8 @@ function renderModel(
     activityRefreshScoped: scopedActivityIds != null,
   })
     .replaceAll("{{ initial_lookback_days }}", "365")
-    .replaceAll("{{ var('activity_location_batch_size', 250) }}", "250")
+    .replaceAll("{{ var('activity_location_batch_size', 100) }}", "100")
+    .replaceAll("{{ var('activity_sensor_summary_batch_size', 100) }}", "100")
     .replaceAll('{{ var("activity_refresh_user_id") }}', userId)
     .replaceAll(
       "{{ activity_refresh_ids() }}",
@@ -534,8 +535,8 @@ function createDedupedSensorSql(database: string): string {
     scalar Nullable(Float64), provider_id Nullable(String), member_activity_id Nullable(UUID),
     device_id Nullable(String), source_external_id Nullable(String), source_type Nullable(String),
     measurement_kind LowCardinality(String), source_metric_stream_id Nullable(UUID),
-    source_activity_id Nullable(UUID), provider_priority Int32, is_deleted UInt8,
-    refreshed_at DateTime64(9, 'UTC')) ENGINE = ReplacingMergeTree
+    source_activity_id Nullable(UUID), provider_priority Int32, refresh_version UInt64,
+    is_deleted UInt8, refreshed_at DateTime64(9, 'UTC')) ENGINE = ReplacingMergeTree(refresh_version)
     ORDER BY (user_id, recorded_date, channel, recorded_at)`;
 }
 

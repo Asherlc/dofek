@@ -210,6 +210,7 @@ enum meal {
 
 enum nutrition_entry_grain {
   itemized
+  meal_aggregate
   daily_aggregate
 }
 
@@ -797,6 +798,7 @@ table fitness.food_entry {
   number_of_units real
   logged_at "timestamp with time zone"
   source_name text
+  source_account_key text
   started_at "timestamp with time zone"
   ended_at "timestamp with time zone"
   barcode text

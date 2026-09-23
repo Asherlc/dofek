@@ -10,8 +10,7 @@
     "./report-empty-state": "./src/contracts/report-empty-state.ts",
     "./health-report-share-expiry": "./src/health-report-share-expiry.ts",
     "./mobile-dashboard-contracts": "./src/contracts/mobile-dashboard-contracts.ts",
-    "./sleep-need-contract": "./src/contracts/sleep-need-contract.ts",
-    "./report-empty-state": "./src/contracts/report-empty-state.ts"
+    "./sleep-need-contract": "./src/contracts/sleep-need-contract.ts"
   },
   "scripts": {
     "dev": "tsx ../../scripts/with-env.ts -- tsx src/index.ts",
@@ -19,6 +18,8 @@
   },
   "dependencies": {
     "@apple/app-store-server-library": "3.1.0",
+    "@bull-board/api": "9.10.1",
+    "@bull-board/express": "9.10.1",
     "@dofek/auth": "workspace:*",
     "@dofek/filter-columns": "workspace:*",
     "@dofek/format": "workspace:*",
@@ -42,10 +43,10 @@
     "@stdlib/stats-ranks": "0.2.3",
     "@trpc/server": "11.18.0",
     "arctic": "3.7.0",
-    "compression": "1.8.1",
+    "compression": "1.8.2",
     "cookie-parser": "1.4.7",
     "dofek": "workspace:*",
-    "entities": "6.0.1",
+    "entities": "8.1.0",
     "express": "5.2.1",
     "express-rate-limit": "8.6.1",
     "ipaddr.js": "2.5.0",

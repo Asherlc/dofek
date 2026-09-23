@@ -35,7 +35,6 @@ function parseJobType(state: string): JobType {
     case "completed":
     case "delayed":
     case "failed":
-    case "paused":
     case "prioritized":
     case "repeat":
     case "wait":

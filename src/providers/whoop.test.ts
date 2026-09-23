@@ -176,6 +176,28 @@ function makeChainableMock(resolvedValue: unknown = []) {
 }
 
 // Helper to make a WhoopClient-shaped mock via fetch
+// The real cycles endpoint filters by the requested startTime/endTime. The
+// mock must do the same, otherwise chunked fetches (see WHOOP_CYCLE_WINDOW_MS
+// in sync-checkpoint.ts) replay the same cycles and the sync processes a
+// workout more than once.
+function filterCyclesByRequestedRange(cycles: unknown[], url: string): unknown[] {
+  const params = new URL(url, "https://api.prod.whoop.com").searchParams;
+  const startIso = params.get("startTime");
+  const endIso = params.get("endTime");
+  if (!startIso || !endIso) return cycles;
+  const start = new Date(startIso).getTime();
+  const end = new Date(endIso).getTime();
+  if (Number.isNaN(start) || Number.isNaN(end)) return cycles;
+  return cycles.filter((cycle) => {
+    if (!isRecord(cycle) || !Array.isArray(cycle.days) || cycle.days.length === 0) return true;
+    return cycle.days.some((day) => {
+      if (typeof day !== "string") return true;
+      const dayMs = new Date(`${day}T00:00:00.000Z`).getTime();
+      return Number.isNaN(dayMs) || (dayMs >= start && dayMs < end);
+    });
+  });
+}
+
 function makeSyncMockFetch(options: {
   cycles?: unknown[];
   sleepData?: unknown;
@@ -199,7 +221,6 @@ function makeSyncMockFetch(options: {
   }>;
 }) {
   let developerWorkoutPageIndex = 0;
-  let cyclesCallCount = 0;
   const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL, _init?: RequestInit) => {
     const url = input.toString();
 
@@ -229,12 +250,9 @@ function makeSyncMockFetch(options: {
       if (options.cyclesError) {
         return Promise.resolve(new Response("Server error", { status: 500 }));
       }
-      // Only return cycles on the first call to avoid duplicate cycles in checkpoint
-      cyclesCallCount += 1;
-      if (cyclesCallCount === 1) {
-        return Promise.resolve(Response.json(options.cycles ?? []));
-      }
-      return Promise.resolve(Response.json([]));
+      return Promise.resolve(
+        Response.json(filterCyclesByRequestedRange(options.cycles ?? [], url)),
+      );
     }
 
     // Strain deep dive (daily steps)

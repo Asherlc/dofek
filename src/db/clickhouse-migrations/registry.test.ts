@@ -15,6 +15,11 @@ describe("clickHouseMigrations", () => {
     expect(migrations.at(0)?.id).toBe("0001_clickhouse_analytics_schema_cleanup");
     const migrationIds = migrations.map((migration) => migration.id);
     expect(new Set(migrationIds).size).toBe(migrationIds.length);
+    expect(migrationIds.slice(-3)).toEqual([
+      "0094_sensor_scalar_sample_lightweight_refresh_projection",
+      "0095_food_entry_source_account_key",
+      "0096_fix_daily_metrics_null_coercion",
+    ]);
     const migrationNumbers = migrationIds.map((migrationId) => Number(migrationId.slice(0, 4)));
     expect(migrationNumbers).toEqual(
       [...migrationNumbers].sort(
@@ -331,6 +336,15 @@ describe("clickHouseMigrations", () => {
         expect.stringContaining(
           "CREATE TABLE IF NOT EXISTS postgres_fitness.processing_flow_marker_sensor_priority",
         ),
+      ],
+    });
+    expect(
+      migrations.find((migration) => migration.id === "0095_food_entry_source_account_key"),
+    ).toMatchObject({
+      id: "0095_food_entry_source_account_key",
+      phase: "pre-cdc",
+      statements: [
+        "ALTER TABLE postgres_fitness.food_entry ADD COLUMN IF NOT EXISTS source_account_key Nullable(String)",
       ],
     });
   });

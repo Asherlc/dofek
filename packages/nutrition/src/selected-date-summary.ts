@@ -57,7 +57,9 @@ export const nutritionSourceResolutionSchema = z.object({
   sourceLabels: z.array(z.string()),
   contributingSourceLabels: z.array(z.string()),
   excludedSourceLabels: z.array(z.string()),
-  contributionGrain: z.enum(["itemized", "daily_aggregate", "ambiguous"]).nullable(),
+  contributionGrain: z
+    .enum(["itemized", "meal_aggregate", "daily_aggregate", "ambiguous"])
+    .nullable(),
   contributionLabel: z.string().min(1).nullable(),
 });
 

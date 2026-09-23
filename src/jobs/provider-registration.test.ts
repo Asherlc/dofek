@@ -12,6 +12,7 @@ const mockProviders = {
   withings: { id: "withings" },
   peloton: { id: "peloton" },
   fatsecret: { id: "fatsecret" },
+  ziva: { id: "ziva" },
   whoop: { id: "whoop" },
   kaya: { id: "kaya" },
   "ride-with-gps": { id: "ride-with-gps" },
@@ -57,6 +58,9 @@ vi.mock("../providers/peloton.ts", () => ({
 }));
 vi.mock("../providers/fatsecret/provider.ts", () => ({
   FatSecretProvider: mockProviderConstructor(mockProviders.fatsecret),
+}));
+vi.mock("../providers/ziva/provider.ts", () => ({
+  ZivaProvider: mockProviderConstructor(mockProviders.ziva),
 }));
 vi.mock("../providers/whoop/provider.ts", () => ({
   WhoopProvider: mockProviderConstructor(mockProviders.whoop),
@@ -155,6 +159,7 @@ describe("provider-registration", () => {
     await ensureProvidersRegistered();
 
     expect(mockRegisterProvider).toHaveBeenCalledTimes(PROVIDER_COUNT);
+    expect(mockRegisterProvider).toHaveBeenCalledWith(mockProviders.ziva);
   });
 
   it("only registers once (memoization)", async () => {

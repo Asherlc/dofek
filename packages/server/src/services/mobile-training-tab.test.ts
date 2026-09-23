@@ -535,7 +535,7 @@ describe("loadMobileTrainingTab", () => {
     const accessWindow = {
       kind: "limited" as const,
       paid: false as const,
-      reason: "free_signup_week" as const,
+      reason: "free_recent_week" as const,
       startDate: "2026-03-10",
       endDateExclusive: "2026-03-20",
     };

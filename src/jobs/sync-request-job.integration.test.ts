@@ -157,4 +157,90 @@ describe("full sync BullMQ lifecycle deduplication", () => {
     expect(continuation?.id).not.toBe(initial.id);
     expect(await queue.getWaitingCount()).toBe(2);
   });
+
+  it("deduplicates Ziva date chunks by their complete window and source account", async () => {
+    vi.resetModules();
+    const [
+      { registerSyncRequestQueryResolver },
+      { resolveZivaSyncRequestQuery },
+      { enqueueSyncJobWithRequestDedup: enqueueWithFreshResolverRegistry },
+    ] = await Promise.all([
+      import("../lib/sync-request-query.ts"),
+      import("../providers/ziva/sync-request-query.ts"),
+      import("./sync-request-job.ts"),
+    ]);
+    registerSyncRequestQueryResolver("ziva", resolveZivaSyncRequestQuery);
+
+    const { queue } = createQueue("ziva-checkpoint");
+    const baseJobData: SyncJobData = {
+      userId: "user-1",
+      providerId: "ziva",
+      sinceIso: "2026-09-01T00:00:00.000Z",
+      untilIso: "2026-09-30T23:59:59.999Z",
+    };
+    const initial = await enqueueWithFreshResolverRegistry(
+      "ziva",
+      baseJobData,
+      {},
+      (name, data, options) => queue.add(name, data, options),
+      (jobId) => queue.getJob(jobId),
+    );
+    const differentEndWindow = await enqueueWithFreshResolverRegistry(
+      "ziva",
+      {
+        ...baseJobData,
+        untilIso: "2026-10-01T23:59:59.999Z",
+      },
+      {},
+      (name, data, options) => queue.add(name, data, options),
+      (jobId) => queue.getJob(jobId),
+    );
+    const continuationJobData: SyncJobData = {
+      ...baseJobData,
+      checkpoint: {
+        version: 1,
+        sourceAccountKey: "opaque-source-account-key",
+        nextDate: "2026-09-15",
+        endDate: "2026-09-30",
+        recordsSynced: 14,
+      },
+    };
+    const continuation = await enqueueWithFreshResolverRegistry(
+      "ziva",
+      continuationJobData,
+      {},
+      (name, data, options) => queue.add(name, data, options),
+      (jobId) => queue.getJob(jobId),
+    );
+    const differentAccountContinuation = await enqueueWithFreshResolverRegistry(
+      "ziva",
+      {
+        ...continuationJobData,
+        checkpoint: {
+          version: 1,
+          sourceAccountKey: "different-opaque-source-account-key",
+          nextDate: "2026-09-15",
+          endDate: "2026-09-30",
+          recordsSynced: 14,
+        },
+      },
+      {},
+      (name, data, options) => queue.add(name, data, options),
+      (jobId) => queue.getJob(jobId),
+    );
+    const duplicateContinuation = await enqueueWithFreshResolverRegistry(
+      "ziva",
+      continuationJobData,
+      {},
+      (name, data, options) => queue.add(name, data, options),
+      (jobId) => queue.getJob(jobId),
+    );
+
+    expect(differentEndWindow?.id).not.toBe(initial?.id);
+    expect(continuation?.id).not.toBe(initial?.id);
+    expect(differentAccountContinuation?.id).not.toBe(continuation?.id);
+    expect(duplicateContinuation?.id).toBe(continuation?.id);
+    expect(duplicateContinuation?.alreadyQueued).toBe(true);
+    expect(await queue.getWaitingCount()).toBe(4);
+  });
 });

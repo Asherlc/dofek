@@ -202,8 +202,11 @@ export async function rotateRefreshToken(
   const existingToken = refreshRows[0];
   if (!existingToken || existingToken.resource !== input.resource) return null;
 
-  const scopes = input.requestedScopes ?? existingToken.scopes;
-  if (scopes.some((scope) => !existingToken.scopes.includes(scope))) return null;
+  if (input.requestedScopes?.some((scope) => !existingToken.scopes.includes(scope))) return null;
+  // Scope edits are managed on the stored grant. Preserve that grant when a
+  // client sends a narrower refresh request so token refresh cannot silently
+  // remove permissions the user already approved.
+  const scopes = existingToken.scopes;
 
   const accessToken = generateMcpToken();
   const nextRefreshToken = generateRefreshToken();

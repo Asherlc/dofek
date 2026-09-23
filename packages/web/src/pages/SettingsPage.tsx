@@ -30,7 +30,7 @@ import {
   type SettingsCategory,
 } from "./settingsCategories.ts";
 
-function getSignupWeekLabel(startDate: string, endDateExclusive: string): string {
+function getRecentWeekLabel(startDate: string, endDateExclusive: string): string {
   const endInclusive = parseValidDate(`${endDateExclusive}T12:00:00.000Z`);
   if (!endInclusive) return `${formatDateMedium(startDate)} to --`;
   endInclusive.setUTCDate(endInclusive.getUTCDate() - 1);
@@ -159,7 +159,7 @@ export function SettingsPage() {
               <div className={`${billingRegionClassName} space-y-3`}>
                 <p className="text-sm text-subtle">
                   {billingStatus.data.access.kind === "limited"
-                    ? `Your access is limited to your signup week (${getSignupWeekLabel(
+                    ? `Your access is limited to your most recent 7 days (${getRecentWeekLabel(
                         billingStatus.data.access.startDate,
                         billingStatus.data.access.endDateExclusive,
                       )}).`
@@ -170,8 +170,7 @@ export function SettingsPage() {
                 <div className="space-y-1">
                   {billingStatus.data.access.kind === "limited" ? (
                     <p className="text-xs text-muted">
-                      New data is available only for this first 7 calendar days after account
-                      creation.
+                      New data is available only for the most recent 7 calendar days.
                     </p>
                   ) : billingStatus.data.access.reason === "stripe_subscription" &&
                     billingStatus.data.stripeSubscriptionStatus ? (

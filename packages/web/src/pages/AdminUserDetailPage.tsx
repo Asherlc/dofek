@@ -43,7 +43,7 @@ type AdminUserAccess =
   | {
       kind: "limited";
       paid: false;
-      reason: "free_signup_week";
+      reason: "free_recent_week";
       startDate: string;
       endDateExclusive: string;
     };

@@ -188,6 +188,11 @@ async function loadProviderConnections(
           "Manually unlink Dofek from your Decathlon account (contact Decathlon support if no unlink control is available), then disconnect Decathlon in Dofek before deleting your account.",
         );
       }
+      if (connection.provider_id === "ziva") {
+        throw new ProviderRevocationPrerequisiteError(
+          "Disconnect Ziva in Dofek before deleting your account because Ziva does not advertise remote token revocation.",
+        );
+      }
       const provider = providersById.get(connection.provider_id);
       if (!provider) {
         throw new ProviderRevocationPrerequisiteError(

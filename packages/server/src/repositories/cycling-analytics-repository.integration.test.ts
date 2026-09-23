@@ -233,7 +233,7 @@ describe("CyclingAnalyticsRepository ClickHouse serving models", () => {
       {
         kind: "limited",
         paid: false,
-        reason: "free_signup_week",
+        reason: "free_recent_week",
         startDate: new Date(Date.now() - 30 * 86_400_000).toISOString(),
         endDateExclusive: new Date(Date.now() + 86_400_000).toISOString(),
       },

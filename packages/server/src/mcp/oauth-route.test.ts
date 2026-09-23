@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
-import { MCP_OAUTH_SCOPES } from "./oauth-provider.ts";
+import { MCP_OAUTH_SCOPES, MCP_OAUTH_SUPPORTED_SCOPES } from "./oauth-provider.ts";
 import {
   approvalFromBody,
   createMcpOAuthRouter,
@@ -104,7 +104,7 @@ describe("createMcpOAuthRouter", () => {
       const response = await fetch(`${app.baseUrl}/.well-known/oauth-authorization-server`);
       const metadata = authorizationServerMetadataSchema.parse(await response.json());
       expect(metadata.client_id_metadata_document_supported).toBe(true);
-      expect(metadata.scopes_supported).toEqual([...MCP_OAUTH_SCOPES]);
+      expect(metadata.scopes_supported).toEqual([...MCP_OAUTH_SUPPORTED_SCOPES]);
       expect(metadata.scopes_supported).toContain("nutrition:write");
     });
 

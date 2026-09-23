@@ -10,7 +10,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
 import { enqueueSyncJob } from "dofek/jobs/enqueue-sync-job";
 import { providerSyncQueueName } from "dofek/jobs/queues";
-import { syncWindowFromTriggerInput, syncWindowToJobData } from "dofek/jobs/sync-window";
+import { syncJobDataFromTriggerInput } from "dofek/jobs/sync-window";
 import { providerRequiresStoredTokens } from "dofek/lib/custom-auth-providers";
 import { captureException } from "dofek/lib/error-reporting";
 import { getAllProviders } from "dofek/providers/registry";
@@ -941,7 +941,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         }
       }
       validateSyncWindowTriggerInput({ sinceDays, sinceDate, untilDate });
-      const syncWindow = syncWindowFromTriggerInput({
+      const syncJobWindow = syncJobDataFromTriggerInput({
         sinceDays,
         sinceDate,
         untilDate,
@@ -953,7 +953,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
             providerId,
             userId: context.userId,
             origin: "manual",
-            ...syncWindowToJobData(syncWindow, sinceDays),
+            ...syncJobWindow,
           },
           { skipWhenRateLimited: true },
         ),

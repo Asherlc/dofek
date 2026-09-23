@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockGetActive = vi.fn();
 const mockProviderQueueAdd = vi.fn().mockResolvedValue({ id: "job-1" });
@@ -33,13 +33,45 @@ describe("enqueueSyncJob", () => {
     mockProviderQueueAdd.mockResolvedValue({ id: "job-1" });
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("enqueues immediately when no cooldown is active", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-21T06:30:00.000Z"));
     await enqueueSyncJob("garmin", { userId: "user-1", providerId: "garmin", sinceDays: 1 });
 
     expect(mockProviderQueueAdd).toHaveBeenCalledWith(
       "sync",
-      { userId: "user-1", providerId: "garmin", sinceDays: 1 },
+      {
+        userId: "user-1",
+        providerId: "garmin",
+        requestedAtIso: "2026-09-21T06:30:00.000Z",
+        sinceDays: 1,
+      },
       expect.objectContaining({ attempts: 288 }),
+    );
+  });
+
+  it("does not synthesize a request anchor for a fixed historical range", async () => {
+    await enqueueSyncJob("garmin", {
+      userId: "user-1",
+      providerId: "garmin",
+      sinceDays: 7,
+      sinceIso: "2026-06-11T00:00:00.000Z",
+      untilIso: "2026-06-17T23:59:59.999Z",
+      targetRefreshWindow: {
+        type: "range",
+        sinceIso: "2026-06-11T00:00:00.000Z",
+        untilIso: "2026-06-17T23:59:59.999Z",
+      },
+    });
+
+    expect(mockProviderQueueAdd).toHaveBeenCalledWith(
+      "sync",
+      expect.not.objectContaining({ requestedAtIso: expect.anything() }),
+      expect.any(Object),
     );
   });
 
@@ -114,7 +146,12 @@ describe("enqueueSyncJob", () => {
 
     expect(mockProviderQueueAdd).toHaveBeenCalledWith(
       "sync",
-      { userId: "user-1", providerId: "garmin", sinceDays: 1 },
+      {
+        userId: "user-1",
+        providerId: "garmin",
+        requestedAtIso: expect.any(String),
+        sinceDays: 1,
+      },
       expect.objectContaining({
         attempts: 288,
         delay: 600_000,

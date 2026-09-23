@@ -1,7 +1,16 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getAccessWindowForUser } from "./access-window-repository.ts";
 
 describe("getAccessWindowForUser", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-22T12:00:00.000Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("derives limited access from user profile and billing state", async () => {
     const db = {
       execute: vi.fn(async () => [
@@ -21,9 +30,9 @@ describe("getAccessWindowForUser", () => {
     await expect(getAccessWindowForUser(db, "user-1", "America/Los_Angeles")).resolves.toEqual({
       kind: "limited",
       paid: false,
-      reason: "free_signup_week",
-      startDate: "2026-07-20",
-      endDateExclusive: "2026-07-27",
+      reason: "free_recent_week",
+      startDate: "2026-09-16",
+      endDateExclusive: "2026-09-23",
     });
   });
 
@@ -69,9 +78,9 @@ describe("getAccessWindowForUser", () => {
     await expect(getAccessWindowForUser(db, "user-1", "UTC")).resolves.toEqual({
       kind: "limited",
       paid: false,
-      reason: "free_signup_week",
-      startDate: "2026-07-21",
-      endDateExclusive: "2026-07-28",
+      reason: "free_recent_week",
+      startDate: "2026-09-16",
+      endDateExclusive: "2026-09-23",
     });
   });
 
@@ -94,9 +103,9 @@ describe("getAccessWindowForUser", () => {
     await expect(getAccessWindowForUser(db, "user-1", "UTC")).resolves.toEqual({
       kind: "limited",
       paid: false,
-      reason: "free_signup_week",
-      startDate: "2026-07-21",
-      endDateExclusive: "2026-07-28",
+      reason: "free_recent_week",
+      startDate: "2026-09-16",
+      endDateExclusive: "2026-09-23",
     });
   });
 

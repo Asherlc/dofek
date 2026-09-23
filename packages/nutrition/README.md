@@ -15,7 +15,13 @@ Available days also expose a server-authored `contributionGrain` and
 the source path when one exists, such as `Cronometer (via Apple Health) daily
 total`. Web and mobile show this metadata as an informational resolution panel
 and preserve the server's exact resolution message and excluded-source labels.
-Provider daily aggregates remain excluded from editable meal cards.
+Source selection prefers itemized entries, then meal aggregates, then daily
+aggregates. Multiple sources at the selected tier conflict. Account-scoped
+providers use the generic `food_entry.source_account_key` for source identity;
+it is not part of the display label. Itemized entries and meal aggregates each
+appear once in editable meal cards, including edit and hide overlays. Provider
+daily aggregates and ambiguous entries remain excluded from those cards. The
+query contract is defined in [migration 0124](../../drizzle/0124_meal_aggregate_nutrition_sources.sql).
 
 The `food.byDate` v1 procedure retains its installed-client contract of
 `{ entries, summary }` with a non-null summary and fails with an actionable
@@ -45,8 +51,9 @@ source labels. Completeness is the percentage of selected calendar days with an
 available canonical contribution set; the All-history range has no invented
 calendar denominator and therefore returns a null percentage.
 
-Each nutrient separates itemized food, provider daily totals, and explicitly
-taken supplements. Per-source rows report each provider/source's contribution
+Each nutrient separates itemized food, meal totals, provider daily totals, and
+explicitly taken supplements. `foodDailyAverage` includes itemized food and
+meal totals; `providerDailyTotalAverage` remains separate. Per-source rows report each provider/source's contribution
 to the nutrient's average over all recorded days for that nutrient. Contributions
 and the total use the same denominator, but independently rounded presentation
 values can differ by the displayed precision. These values are query-time

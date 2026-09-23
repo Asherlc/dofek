@@ -35,10 +35,15 @@ infisical secrets set --env=prod \
   CREDENTIAL_ENCRYPTION_KEY_NAME='provider-credentials'
 ```
 
-Never print or commit the generated key. Do not rotate the key, namespace, or
-name without a migration that decrypts every existing value with the old
-keyring and re-encrypts it with the new one; changing configuration alone makes
-existing ciphertext unreadable.
+Never print or commit the generated key. The same master key also derives
+secret-keyed provider-account namespaces with HKDF-SHA256, following
+[RFC 5869](https://www.rfc-editor.org/rfc/rfc5869). Do not change the key,
+namespace, or name without a migration that decrypts every existing value with
+the old keyring and re-encrypts it with the new one. Changing keyring
+configuration alone makes existing ciphertext unreadable. Rotating the master
+key additionally requires rederiving persisted `food_entry.source_account_key`
+and dependent Ziva `external_id` values; otherwise later syncs would use a new
+source identity.
 
 ## Storage Contract
 
@@ -58,6 +63,11 @@ Only repository and data-access code may call `encryptCredentialValue()` or
 plaintext domain values returned by repositories; they must not decrypt
 database values directly.
 
+Repository code may call `deriveCredentialIdentifier()` when a stable,
+context-bound account namespace must be persisted without exposing the source
+account identifier. The derivation binds the storage table, column, and scope;
+provider logic receives only the opaque result.
+
 ## Validation
 
 Run:
@@ -67,4 +77,4 @@ pnpm exec vitest run src/security/credential-encryption.test.ts --project unit
 ```
 
 Tests cover round trips, encryption-context binding, plaintext compatibility,
-missing configuration, and invalid key length.
+stable identifier derivation, missing configuration, and invalid key length.

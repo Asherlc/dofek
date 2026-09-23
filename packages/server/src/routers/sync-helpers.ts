@@ -48,6 +48,7 @@ async function doRegisterProviders() {
     ["withings", () => import("dofek/providers/withings").then((m) => new m.WithingsProvider())],
     ["peloton", () => import("dofek/providers/peloton").then((m) => new m.PelotonProvider())],
     ["fatsecret", () => import("dofek/providers/fatsecret").then((m) => new m.FatSecretProvider())],
+    ["ziva", () => import("dofek/providers/ziva").then((m) => new m.ZivaProvider())],
     ["whoop", () => import("dofek/providers/whoop").then((m) => new m.WhoopProvider())],
     ["kaya", () => import("dofek/providers/kaya-sync").then((m) => new m.KayaSyncProvider())],
     [

@@ -323,6 +323,14 @@ describe("clickhouse integration test helpers", () => {
     expect(
       commands.some(
         (command) =>
+          command.includes("INSERT INTO postgres_fitness_test_") &&
+          command.includes(".food_entry") &&
+          command.includes("source_account_key"),
+      ),
+    ).toBe(true);
+    expect(
+      commands.some(
+        (command) =>
           command.includes("TRUNCATE TABLE postgres_fitness_test_") &&
           command.endsWith(".journal_entry"),
       ),

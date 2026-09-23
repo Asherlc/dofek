@@ -85,7 +85,7 @@ const defaultBillingStatus = {
   access: {
     kind: "limited",
     paid: false,
-    reason: "free_signup_week",
+    reason: "free_recent_week",
     startDate: "2026-04-01",
     endDateExclusive: "2026-04-08",
   } as const,
@@ -839,13 +839,13 @@ describe("SettingsScreen billing", () => {
     mockSearchParams = { tab: "billing" };
   });
 
-  it("renders signup-week limited access notice", async () => {
+  it("renders recent-week limited access notice", async () => {
     const { default: SettingsScreen } = await import("../app/settings");
 
     render(<SettingsScreen />);
 
     expect(screen.getAllByText("Billing").length).toBeGreaterThan(1);
-    expect(screen.getByText(/Access limited to your signup week/)).toBeTruthy();
+    expect(screen.getByText(/Access limited to your most recent 7 days/)).toBeTruthy();
     expect(screen.getByText("Subscribe for Premium/month")).toBeTruthy();
     expect(screen.getByText("Restore Purchases")).toBeTruthy();
   });

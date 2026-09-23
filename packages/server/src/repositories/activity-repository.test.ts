@@ -200,7 +200,7 @@ describe("ActivityRepository", () => {
       const repo = new ActivityRepository({ execute }, "user-1", "UTC", {
         kind: "limited",
         paid: false,
-        reason: "free_signup_week",
+        reason: "free_recent_week",
         startDate: "2026-03-10",
         endDateExclusive: "2026-03-17",
       });
@@ -230,7 +230,7 @@ describe("ActivityRepository", () => {
       const repo = new ActivityRepository({ execute }, "user-1", "America/Los_Angeles", {
         kind: "limited",
         paid: false,
-        reason: "free_signup_week",
+        reason: "free_recent_week",
         startDate: "2026-03-10",
         endDateExclusive: "2026-03-17",
       });

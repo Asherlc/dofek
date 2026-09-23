@@ -83,11 +83,13 @@ describe("canonical nutrition contribution set", () => {
     userId?: string;
     providerId: string;
     date: string;
-    grain?: "itemized" | "daily_aggregate" | null;
+    grain?: "itemized" | "meal_aggregate" | "daily_aggregate" | null;
     foodName?: string | null;
     meal?: "breakfast" | "lunch" | "dinner" | "snack" | "other" | null;
     confirmed?: boolean;
     sourceName?: string | null;
+    sourceAccountKey?: string | null;
+    raw?: Record<string, unknown>;
     externalId?: string | null;
     nutrients: Record<string, number>;
   }): Promise<string> {
@@ -95,7 +97,7 @@ describe("canonical nutrition contribution set", () => {
     await context.db.execute(sql`
       INSERT INTO fitness.food_entry (
         id, user_id, provider_id, external_id, date, nutrition_grain, food_name, meal, source_name,
-        confirmed
+        confirmed, source_account_key, raw
       )
       VALUES (
         ${id},
@@ -107,7 +109,9 @@ describe("canonical nutrition contribution set", () => {
         ${input.foodName ?? null},
         ${input.meal ?? null}::fitness.meal,
         ${input.sourceName ?? null},
-        ${input.confirmed ?? true}
+        ${input.confirmed ?? true},
+        ${input.sourceAccountKey ?? null},
+        ${input.raw === undefined ? null : JSON.stringify(input.raw)}::jsonb
       )
     `);
     const nutrientRows = Object.entries(input.nutrients).map(
@@ -165,6 +169,147 @@ describe("canonical nutrition contribution set", () => {
       `,
     );
   }
+
+  it("combines two meals from one account even when its display name changes", async () => {
+    const date = "2026-02-01";
+    for (const [sourceName, calories] of [
+      ["First name", 400],
+      ["New name", 600],
+    ] as const) {
+      await addEntry({
+        providerId: "nutrition-aggregate",
+        date,
+        grain: "meal_aggregate",
+        sourceAccountKey: " account-a ",
+        sourceName,
+        nutrients: { calories, protein: 20 },
+      });
+    }
+    expect(await fetchAggregateRows(date)).toEqual([
+      expect.objectContaining({
+        calories: 1000,
+        protein_g: 40,
+        resolution_status: "available",
+        contribution_grain: "meal_aggregate",
+      }),
+    ]);
+  });
+
+  it.each([
+    { date: "2026-02-02", detailedGrain: "itemized", expected: 100 },
+    { date: "2026-02-03", detailedGrain: "meal_aggregate", expected: 500 },
+  ] as const)(
+    "selects the most detailed source on $date",
+    async ({ date, detailedGrain, expected }) => {
+      await addEntry({
+        providerId: "nutrition-aggregate",
+        date,
+        grain: "meal_aggregate",
+        sourceAccountKey: "a",
+        nutrients: { calories: 500, protein: 20 },
+      });
+      await addEntry({
+        providerId: "nutrition-other",
+        date,
+        grain: "daily_aggregate",
+        nutrients: { calories: 2000, protein: 100 },
+      });
+      if (detailedGrain === "itemized") {
+        await addEntry({
+          providerId: "nutrition-itemized",
+          date,
+          grain: "itemized",
+          nutrients: { calories: 100, protein: 10 },
+        });
+      }
+      expect(await fetchAggregateRows(date)).toEqual([
+        expect.objectContaining({
+          calories: expected,
+          resolution_status: "available",
+          contribution_grain: detailedGrain,
+        }),
+      ]);
+      const result = await new FoodRepository(context.db, TEST_USER_ID, "UTC").nutritionByDate(
+        date,
+        2000,
+      );
+      expect(result.resolution.message).toBe(
+        "Totals use the most detailed available source; overlapping less detailed sources are preserved but excluded.",
+      );
+    },
+  );
+
+  it.each([
+    { date: "2026-02-04", secondGrain: "meal_aggregate" },
+    { date: "2026-02-05", secondGrain: null },
+  ] as const)(
+    "rejects overlapping meal accounts or ambiguous data on $date",
+    async ({ date, secondGrain }) => {
+      await addEntry({
+        providerId: "nutrition-aggregate",
+        date,
+        grain: "meal_aggregate",
+        sourceAccountKey: "a",
+        nutrients: { calories: 500, protein: 20 },
+      });
+      await addEntry({
+        providerId: "nutrition-aggregate",
+        date,
+        grain: secondGrain,
+        sourceAccountKey: "b",
+        nutrients: { calories: 600, protein: 30 },
+      });
+      const result = await new FoodRepository(context.db, TEST_USER_ID, "UTC").nutritionByDate(
+        date,
+        2000,
+      );
+      expect(result.summary).toBeNull();
+      expect(result.resolution).toMatchObject({
+        status: "source_conflict",
+        contributionGrain: null,
+      });
+    },
+  );
+
+  it("displays one stable meal record with raw items and applies edit and hide overlays", async () => {
+    const date = "2026-02-06";
+    const providerId = "nutrition-aggregate";
+    const externalId = crypto.randomUUID();
+    const id = await addEntry({
+      providerId,
+      externalId,
+      date,
+      grain: "meal_aggregate",
+      sourceAccountKey: "a",
+      foodName: "Lunch",
+      meal: "lunch",
+      raw: { items: [{ name: "Rice" }, { name: "Beans" }] },
+      nutrients: { calories: 500, protein: 20 },
+    });
+    const identityId = await createFoodIdentity(providerId, externalId);
+    const repo = new FoodRepository(context.db, TEST_USER_ID, "UTC");
+    expect(
+      await executeWithSchema(
+        context.db,
+        idRowSchema,
+        sql`SELECT id FROM fitness.v_nutrition_display_entry WHERE id = ${id}`,
+      ),
+    ).toEqual([{ id }]);
+    expect(await repo.byDate(date)).toHaveLength(1);
+    expect((await repo.dailyTotalsRange(date, date))[0]?.mealCount).toBe(1);
+    const corrected = await appendFoodDecision({
+      identityId,
+      protein: { operation: "set", amount: 30 },
+    });
+    expect((await repo.byDate(date))[0]?.toDetail()).toMatchObject({ protein_g: 30 });
+    expect(await fetchAggregateRows(date)).toEqual([
+      expect.objectContaining({ calories: 500, protein_g: 30 }),
+    ]);
+    await appendFoodDecision({ identityId, predecessorId: corrected, deleted: true });
+    expect(await repo.byDate(date)).toEqual([]);
+    expect((await repo.dailyTotalsRange(date, date))[0]?.mealCount).toBe(0);
+    expect(await fetchAggregateRows(date)).toEqual([]);
+  });
 
   it("uses one itemized source and excludes an overlapping aggregate without deleting provenance", async () => {
     const date = "2026-01-01";

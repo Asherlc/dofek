@@ -7,6 +7,238 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-09-20 — Infisical GitHub secret sync exceeded repository limit
+
+- **Status:** Fixed. The sync now succeeds and preserves both Ziva secrets.
+- **Symptoms / user impact:** `dofek-github-sync` failed while syncing the
+  production root to the `Asherlc/dofek` repository because GitHub permits at
+  most 100 repository secrets ([GitHub secret limits](https://docs.github.com/en/actions/reference/security/secrets#limits-for-secrets)).
+- **Evidence / root cause:** Infisical had 101 root secrets and GitHub had 99.
+  Nineteen shared secrets had no active repository references; the two Ziva
+  secrets were intentionally retained. The sync used overwrite-destination,
+  so its successful reconciliation also removed `CODECOV_TOKEN`, which existed
+  only in GitHub while CI still referenced it. Infisical GitHub syncs source
+  secrets from a configured path and support overwrite behavior
+  ([Infisical GitHub sync](https://infisical.com/docs/integrations/secret-syncs/github)).
+- **Direct fix:** Deleted the 19 unreferenced shared production keys and their
+  stale GitHub copies, leaving 82 source and destination secrets with both
+  Ziva keys present. Replaced the two Codecov token references with Codecov
+  OIDC uploads and granted those jobs `id-token: write`.
+- **Validation:** Infisical root count 82; GitHub repository count 82; zero
+  missing or extra names; both Ziva keys present; all remaining direct workflow
+  secrets present; `actionlint` and `git diff --check` pass.
+- **Remaining risk / follow-up:** The sync still mirrors all 82 referenced
+  production keys to GitHub. The repository is under GitHub's limit, but a
+  future least-privilege migration could move remaining direct workflow
+  consumers to Infisical OIDC and retire this repository-level sync.
+
+## 2026-09-20 — activity_sensor_sample day batch timed out under CPU contention
+
+- **Status:** Fixed in code; deployment pending.
+- **Symptoms / user impact:** Analytics worker failed
+  [Sentry 7743140686](https://east-bay-software.sentry.io/issues/7743140686/)
+  with `activity_sensor_sample: PARTIAL SUCCESS (1/2)`. Downstream activity
+  summary, training-load, and related models skipped for that cycle. The next
+  cycle recovered without intervention.
+- **Evidence:** Swarm `dofek_analytics-worker` logs at `2026-09-20T00:04:28Z`
+  showed ClickHouse `Code: 159 TIMEOUT_EXCEEDED` after 240015 ms on day batch
+  `2026-09-19`. `system.query_log` recorded 158M rows / 18.75 GiB read, 2.26 GiB
+  memory, and **128.9 s CPU wait** with `SETTINGS max_threads=1, final=1`.
+  Healthy inserts of the same model completed in ~117–124 s reading ~167M rows /
+  ~20 GiB while writing only ~1.5–2k rows, with ~3–7 s CPU wait. The day batch
+  itself contained only ~37k `deduped_sensor` rows; the dominant cost was
+  query-wide `FINAL` against `analytics.activity_sensor_sample` (~77M physical
+  rows). A production read-only prototype of key-scoped current-version
+  selection (`WHERE (user_id, channel, recorded_at) IN (...)` plus
+  `ORDER BY refresh_version DESC LIMIT 1 BY ...`) returned the same 1146 keys as
+  `FINAL` in ~5.3 s / 773 MiB instead of ~138 s for `FINAL` on the same key set.
+- **Root cause:** [#2747](https://github.com/Asherlc/dofek/pull/2747) correctly
+  abandoned high-cardinality membership materialization after OOM, but its
+  query-wide `SETTINGS final=1` made every microbatch FINAL-scan the full target
+  table. With only ~90 s of headroom under the 240 s ceiling, concurrent
+  ClickHouse CPU load tipped the batch into timeout. `max_threads=1` remains the
+  intentional offline-build policy and was not the primary defect.
+- **Fix / mitigation:** Remove query-wide `final=1`. Resolve the microbatch
+  `deduped_sensor` input and key-scoped target rows with
+  `ORDER BY refresh_version DESC LIMIT 1 BY` (dbt microbatch wraps `ref()` in a
+  subquery where table-level `FINAL` is unsupported). Keep
+  `deduped_activities FINAL` for group membership. Restrict stale reconciliation
+  to batch keys. No timeout, memory, retry, or thread-limit increase.
+- **Validation:** Unit SQL shape coverage; real ClickHouse integration covering
+  membership move tombstones, newer-version selection over unmerged duplicates,
+  and a scan bound that unrelated users' target rows are not fully read.
+- **Remaining risk / follow-up:** Production still has a single dominant user
+  owning essentially all target rows, so user-prefix pruning alone is weak;
+  the durable win is avoiding `FINAL` merge CPU. After deploy, confirm two
+  consecutive analytics cycles complete `activity_sensor_sample` well under
+  240 s and that stale membership/tombstone behavior remains correct.
+
+## 2026-09-17 — ClickHouse CDC health check crashed on a PeerDB catalog proxy array column
+
+- **Status:** Fixed in code; deployment pending. Production normalization was
+  healthy throughout, so no data was at risk.
+- **Symptoms / user impact:** `dofek_cdc-health` reported
+  [DOFEK-SERVER-6A](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6A)
+  nine times from 2026-09-17T02:14Z with a `ZodError` from
+  `parsePeerDbNormalizationRows`: `Invalid input: expected array, received null`
+  for `rows[*].pending_destination_tables`. No user impact.
+- **Evidence / root cause:** The normalization query projected
+  `pending_destination_tables` with `array_agg(...)`, so the column type was
+  Postgres `text[]` (OID 1009). The check connects to PeerDB's
+  `peer-postgres` catalog proxy, whose row serializer
+  (`nexus/peer-postgres/src/stream.rs::values_from_row`) has explicit arms for
+  `VARCHAR_ARRAY`/`BPCHAR_ARRAY` but not `TEXT_ARRAY`; that type falls through
+  to the default branch, where `try_get::<Option<String>>` fails and the proxy
+  emits `Value::Null`
+  ([peer-postgres](https://github.com/PeerDB-io/peerdb/blob/main/nexus/peer-postgres/src/stream.rs)).
+  The direct-Postgres integration test could not catch this because real
+  Postgres returns the array correctly; only the proxy nulls it. The failure was
+  newly exposed by #2763, which pointed the query at the live
+  `peerdb_stats.cdc_table_aggregate_counts` table — before that the query errored
+  on the dropped `cdc_batch_table` (see the 2026-09-16 entry).
+- **Direct fix:** `buildPeerDbNormalizationQuery` now projects the pending tables
+  as a scalar `string_agg(DISTINCT ..., ',')` text column, and
+  `parsePeerDbNormalizationRows` splits and validates the names (null → `[]`) so
+  the health check no longer depends on the proxy serializing `text[]`.
+- **Validation:** New unit tests failed first against the old query/schema (12
+  failures, including the array `ZodError`) and pass after the change; a
+  regression test asserts the projection stays scalar (`string_agg`, never
+  `array_agg`). The real-Postgres integration test still reports the expected
+  cursor stall with `tables=[activity,sleep_session]`. Biome and `tsc --noEmit`
+  pass. The parsing schema is built inside `parsePeerDbNormalizationRows` (as the
+  function already did) rather than at module scope; a module-level schema is a
+  Stryker static mutant that PR mutation CI (`ignoreStatic: true` with per-test
+  coverage) reports as surviving because it cannot attribute the module-load
+  execution to the covering test. Stryker on the changed lines now scores 100%.
+- **Remaining risk / follow-up:** Deploy the fix and confirm `DOFEK-SERVER-6A`
+  stays resolved. The underlying gap is an upstream PeerDB proxy limitation
+  (unsupported `TEXT_ARRAY`); if the catalog query later needs array output,
+  prefer a scalar/JSON projection or file it upstream rather than relying on
+  array serialization.
+
+## 2026-09-17 — WHOOP BLE connect handshake timed out during background refresh
+
+- **Status:** Fixed in code; deployment pending.
+- **Symptoms / user impact:** Sentry issue
+  [DOFEK-MOBILE-1M](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-1M)
+  reported `Error: TIMEOUT: undefined reason (at ExpoModulesCore/Promise.swift:65)`
+  from telemetry source `whoop-ble-background-refresh` — one event for one user.
+  Buffered WHOOP inertial samples were not uploaded on that refresh.
+- **Evidence / root cause:** `TIMEOUT` is the native
+  `WhoopBleConnectionError.timeout` rejection code
+  (`packages/mobile/modules/whoop-ble/ios/WhoopBleConnectionState.swift`)
+  surfaced by the Expo bridge from the 10-second connect-handshake deadline in
+  `WhoopBleConnectionManager.startHandshakeTimeout`. The `undefined reason`
+  text is not the real message: Expo's base `Exception.reason` defaults to that
+  literal string and `reject(code, message)` never overrides it, so Sentry
+  renders `debugDescription`
+  ([Expo `Exception.swift`](https://github.com/expo/expo/blob/sdk-57/packages/expo-modules-core/ios/Core/Exceptions/Exception.swift)).
+  `syncWhoopBle` treated the expected environmental timeout as a hard failure —
+  it reported the exception and rethrew before draining, so the refresh failed
+  and buffered samples stayed behind.
+- **Direct fix:** In the background refresh path, an expected connect-handshake
+  timeout is now logged as a warning and a Sentry breadcrumb, buffered IMU and
+  realtime samples are still drained and uploaded without a live strap
+  connection, and the refresh no longer fails. Every other connect error still
+  reports to Sentry and fails the refresh; foreground sync behavior is
+  unchanged.
+- **Validation:** Failing regression tests first reproduced the timeout
+  reporting and skipped upload; after the fix the timeout case drains and
+  uploads without a `whoop-ble-background-refresh` exception while a
+  `NOT_FOUND` connect error still reports and rejects. The focused
+  `packages/mobile/lib/background-whoop-ble-sync.test.ts` suite passes 50/50,
+  Biome reports no findings, and the mobile typecheck passes.
+- **Remaining risk / follow-up:** The Simulator cannot exercise Bluetooth
+  hardware
+  ([Expo simulator limitations](https://docs.expo.dev/workflow/ios-simulator/#limitations)),
+  so validate on a physical device that a background refresh with the strap
+  asleep uploads buffered samples without a new `DOFEK-MOBILE-1M` event. If
+  timeouts recur, inspect the native connect logs to confirm the strap was
+  genuinely unreachable rather than the handshake stalling on a race with
+  `retryConnection`.
+
+## 2026-09-16 — ClickHouse CDC health check queried a dropped PeerDB stats table
+
+- **Status:** Fixed in code; deployment pending. Production normalization was
+  healthy throughout, so no data was at risk.
+- **Symptoms / user impact:** `dofek_cdc-health` reported
+  [DOFEK-SERVER-68](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-68)
+  296 times starting 2026-09-16T00:48Z with `error: error getting schema: db
+  error` at `checkClickHouseCdcHealth`'s PeerDB normalization query. No user
+  impact; every flow's normalization cursor was caught up while the check
+  failed.
+- **Evidence / root cause:** The exact query run against the production
+  `peerdb-catalog` Postgres returned `relation "peerdb_stats.cdc_batch_table"
+  does not exist`. PeerDB migration `V47__drop_cdc_batch_table.sql` drops that
+  table and replaces it with `peerdb_stats.cdc_table_aggregate_counts`
+  ([PeerDB migration](https://github.com/PeerDB-io/peerdb/blob/main/nexus/catalog/migrations/V47__drop_cdc_batch_table.sql)).
+  The normalization query added in #2725 joined the removed table. The Rust
+  `peer-postgres` catalog proxy surfaced only the opaque `error getting schema:
+  db error` because it reports the failure of `prepare_typed` without the
+  underlying Postgres message
+  ([peer-postgres](https://github.com/PeerDB-io/peerdb/blob/main/nexus/peer-postgres/src/lib.rs)).
+- **Direct fix:** `buildPeerDbNormalizationQuery` now joins
+  `peerdb_stats.cdc_table_aggregate_counts` on `latest_batch_id` within the
+  pending-batch range instead of the dropped `cdc_batch_table`.
+- **Validation:** A real-Postgres integration test seeds the live
+  `peerdb_stats` tables, runs `checkClickHouseCdcHealth`, and asserts the
+  cursor-stall issue with its destination tables; it fails against a query that
+  references `cdc_batch_table`. Unit tests, lint, and typecheck pass.
+- **Remaining risk / follow-up:** Deploy the fix and confirm `DOFEK-SERVER-68`
+  stays resolved. The catalog proxy hides Postgres errors as `db error`, so
+  future catalog-query failures need the same direct-catalog reproduction.
+
+## 2026-09-15 — MCP tools absent from an existing ChatGPT conversation
+
+- **Status:** Unresolved; server instrumentation is deployed, but the ChatGPT
+  tool-registry decision is not observable from Dofek.
+- **Symptoms / user impact:** Dofek tools were available, then disappeared on a
+  later chat turn after successful read/write calls; direct discovery reported
+  no tool under the requested paths.
+- **Evidence / root cause:** Production telemetry recorded three HTTP 400
+  requests classified as `unsupported_protocol_version` (02:50:48.928Z on
+  build `a8e56ff`, 13:30:05.184Z and 13:34:34.196Z on build `d39e005c`) with
+  unknown method/version. The 13:34 rejection was followed on a separate trace
+  by accepted initialize and a valid tools/list result (41 tools, food tools
+  present, valid schema, no next page) at 13:34:36.316Z. The current deployed
+  build `f426e6a` has authenticated successful tool calls but no observed
+  tools/list request in the checked window, so the reported omission cannot be
+  attributed to a server response yet.
+- **Fix / mitigation:** Boundary telemetry now records sanitized method,
+  protocol, authentication, scope, JSON-RPC outcome, tool-list fingerprint and
+  lifecycle status. No speculative protocol or session workaround was added.
+- **Validation:** Local regression tests and CI passed for the instrumentation;
+  deployed events are visible in PostHog. Production still needs correlation
+  with a fresh disappearance timestamp and confirmation that telemetry delivery
+  covered that window to classify the boundary failure.
+- **Remaining risk / follow-up:** If no Dofek request is logged at the exact
+  disappearance time and telemetry coverage and delivery are confirmed, the
+  omission occurred before the service. Otherwise, absence is inconclusive. If
+  a valid tools/list result is logged for that interaction, escalate to the
+  platform with its trace and sanitized result evidence.
+
+## 2026-09-14 — Insights endpoint failed on stale ClickHouse view
+
+- **Status:** Source remediation prepared; production rollout verification is
+  pending.
+- **Symptoms / user impact:** Dashboard requests to `insights.compute` returned
+  a tRPC internal-server error, preventing insight cards from loading.
+- **Evidence / root cause:** At 2026-09-14T17:20:37Z, the production web log
+  recorded ClickHouse error code 47: `Identifier
+  'active_daily_metrics.active_energy_kcal' cannot be resolved`. The deployed
+  `analytics.v_daily_metrics` definition still selected that field after the
+  raw `postgres_fitness.daily_metrics` mirror no longer contained it. A
+  ClickHouse view stores its defining query, so source-column removal requires
+  recreating dependent views ([ClickHouse CREATE VIEW](https://clickhouse.com/docs/sql-reference/statements/create/view)).
+- **Direct fix:** Added migration `0093_refresh_daily_metrics_view`, which
+  replaces `analytics.v_daily_metrics` from the current canonical definition.
+- **Validation:** An isolated ClickHouse integration test creates the legacy
+  column and view, drops the column, applies the migration, and successfully
+  queries the refreshed view.
+- **Remaining risk / follow-up:** Deploy the migration and repeat the affected
+  authenticated `insights.compute` request; confirm no additional stale views
+  reference removed source columns.
+
 ## 2026-09-14 — PostHog error inventory triage and owned-defect fixes
 
 - **Status:** Repository fixes committed; deployment verification is pending.
@@ -26853,10 +27085,10 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   predicates and refused to tombstone its 3,137 existing records. Before that
   guard ran, the analytics worker also failed because ClickHouse had only
   1.7 GiB temporary-disk space available while the model required 5.8 GiB.
-- **Root cause:** The live activity mirror drifted from the checked-in canonical
-  ClickHouse schema, which defines both lifecycle timestamps as nullable; its
-  zero-timestamp substitutions changed the meaning of the active-activity
-  predicate after mirror resynchronization.
+- **Root cause:** PeerDB writes absent nullable lifecycle values into ClickHouse
+  as the epoch (`1970-01-01`) even after the destination columns were corrected
+  to `Nullable(DateTime64(6, 'UTC'))`. The SQL read models interpreted only SQL
+  `NULL` as current, so they selected zero active activities.
 - **Fix / mitigation:** Cleared only ClickHouse diagnostic system logs to restore
   14 GiB workspace, preserving metric-stream data and its R2 archive. Added
   migration `0089_activity_lifecycle_nullable`, which changes both raw mirror
@@ -26864,7 +27096,296 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   [`MODIFY COLUMN`](https://clickhouse.com/docs/sql-reference/statements/alter/column#modify-column)
   for this schema operation. A real-ClickHouse integration test starts from the
   faulty non-nullable schema and verifies the corrected types.
-- **Validation / remaining risk:** The new integration test, neighboring raw
-  schema migration test, formatting check, and TypeScript check pass. Production
-  deployment, one controlled mirror resync to restore canonical nulls, successful
+- **Validation / remaining risk:** Migration 0089 deployed and a controlled
+  resync completed atomically, but the mirror still contained epoch lifecycle
+  values and zero active rows under the former predicates. The recovery changes
+  every ClickHouse-facing activity lifecycle predicate to treat both `NULL` and
+  the epoch as current, and adds a real-ClickHouse regression test that seeds
+  PeerDB's wire representation. The focused integration test, 80 affected unit
+  tests, SQL lint, and TypeScript check pass. Production deployment, successful
   analytics rebuild, and direct UI freshness verification remain pending.
+
+## 2026-09-14 — ChatGPT lost Dofek MCP availability after initial authorization
+
+- **Symptoms / user impact:** Dofek could be used once in ChatGPT, then became
+  unavailable in later messages while other connected tools remained available.
+- **Evidence:** Dofek OAuth discovery omitted `offline_access`, although its
+  token endpoint issued and rotated refresh tokens. ChatGPT documents that MCP
+  apps need advertised `offline_access` (or an equivalent) and refresh-token
+  support to retain access after initial authorization.
+  [Developer mode and MCP apps in ChatGPT](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt)
+- **Root cause:** The OAuth server rejected `offline_access` as an unsupported
+  Dofek permission and omitted it from discovery metadata, preventing ChatGPT
+  from establishing a refresh-capable session.
+- **Fix:** Advertise and accept `offline_access` as an OAuth-only scope while
+  excluding it from Dofek data permissions, stored grants, and consent UI.
+- **Validation / remaining risk:** OAuth route unit tests, real-database OAuth
+  integration tests, the complete local unit/mobile suite, and PR CI pass
+  except for a queued native iOS build at the time of this entry. After deploy,
+  reconnect Dofek once in ChatGPT and verify it remains callable in a later
+  message after the original access token would otherwise expire.
+
+## 2026-09-15 — Activity analytics stalled after Sep 9
+
+- **Status:** The direct ingestion fix is deployed; the bounded summary fix is
+  validated locally and pending production deployment.
+- **Symptoms / user impact:** Activities after Sep 9 were ingested upstream but
+  did not reach the activity serving models, so they were absent from the web
+  and mobile UI.
+- **Evidence:** The pre-fix Sep 13 `activity_sensor_sample` batch exhausted
+  ClickHouse memory: three materialized-membership variants reached 5.8–9.1
+  GiB before code 241, while the direct logical-state query remained at 3.5
+  GiB. After PR #2747 deployed, the Sep 14 and Sep 15 batches completed in
+  217.25 and 169.95 seconds at about 2 GiB, but
+  `activity_sensor_summary_rows` then failed with code 159 at 240.009 seconds
+  after reading 127,971,218 rows / 12.39 GB. The projection was selected and
+  contained 56,737 rows, while the full build read 127,971,218 rows. Production
+  had 666 dirty activities for one user (56 missing and 610 changed) with
+  6,664,351 prior logical samples; processing all of them in one latest-sample
+  aggregation exceeded the fixed query deadline.
+- **Root cause:** `activity_sensor_sample` materialized a global activity
+  membership state and rejoined it during each historical microbatch, causing
+  the initial OOM. Once that was corrected, the accumulated dirty-summary
+  backlog exposed a second unbounded step: `activity_sensor_summary_rows`
+  selected every dirty activity in a single build instead of limiting the
+  amount of incremental work per cycle.
+- **Fix / mitigation:** PR #2747 reads logical activity state directly with
+  query-level `FINAL`, applies a one-day microbatch lookback, and removes the
+  global membership materialization/rejoin. The follow-up orders dirty summary
+  keys by their oldest source refresh version and processes at most 100 per
+  unscoped incremental cycle; explicit scoped repairs and full refreshes bypass
+  the limit. This follows dbt's incremental-model contract of transforming the
+  rows selected by an incremental filter:
+  <https://docs.getdbt.com/docs/build/incremental-models>. The required
+  `by_activity_source_refresh_version` projection was materialized separately
+  on historical parts as prescribed by ClickHouse:
+  <https://clickhouse.com/docs/reference/statements/alter/projection>.
+- **Validation / remaining risk:** The new real-ClickHouse regression sets the
+  batch size to one and proves two successive builds drain two dirty activities
+  in oldest-first order; both integration suites that render the model pass
+  (7 tests), as do 49 focused unit tests, dbt parse, and analytics SQL lint.
+  Production remains unresolved until the follow-up deploy completes, the
+  dirty count reaches zero across successful recurring cycles, the Sep 13
+  bounded replay completes, and current activities are verified in the UI.
+## 2026-09-15 — Dofek remained absent from ChatGPT after a successful food write
+
+- **Symptoms / user impact:** In one ChatGPT conversation, a read-only food
+  search and a coffee `create_food_entry` call succeeded. On the next message,
+  ChatGPT reported that Dofek's logging tool was unavailable and did not issue
+  the requested Sprite Zero call. Dofek remained absent from that chat's
+  exposed tool registry. A separate controlled conversation subsequently
+  completed four consecutive read-only Dofek calls.
+- **Observed production evidence:** The successful mutation reached Dofek and
+  completed. For the immediately following failed turn, the deployed MCP/OAuth
+  telemetry recorded no matching `/api/mcp`, `/token`, `mcp.request`, or
+  `tools/list` request while the logging pipeline continued to receive other
+  events. The earlier `offline_access` correction was already deployed when
+  this recurred, so it was a real OAuth defect but not a complete resolution.
+  This classifies the interaction as no observable request reaching Dofek; it
+  does not establish that the preceding write caused the omission.
+- **Repository reproduction:** A new isolated-database integration regression
+  uses the installed MCP SDK over real Express HTTP to authenticate, initialize,
+  list tools, call `create_food_entry`, close the client, initialize a fresh
+  client with the same valid credential, list tools again, and read the record
+  through `search_food_entries`. Both lists are unpaginated, advertise the
+  expected food tools and output contracts, and the write/read responses pass
+  their schemas. The test passes, rejecting a generic server-side claim that a
+  successful write poisons the next MCP discovery cycle.
+- **Independent defect and targeted change:** The checked-in ChatGPT app
+  submission described 23 tools while the live MCP server registers 41. It
+  still included obsolete `log_food` and omitted all seven current food-record
+  tools, including `create_food_entry` and `search_food_entries`. The submission
+  inventory and safety annotations now match the runtime catalog. OpenAI's
+  tool guidance requires accurate tool definitions and annotations:
+  <https://developers.openai.com/plugins/plan/tools>. This metadata drift is
+  concrete but is not proven to be the disappearance's root cause because the
+  live ChatGPT integration had already invoked a tool missing from the file.
+- **Validation:**
+  `pnpm test:integration -- packages/server/src/mcp/sdk-write-rediscovery.integration.test.ts`
+  passes one test file and one test. Biome and TypeScript checks pass for the
+  change. No production food data, authentication behavior, transport mode,
+  token lifetime, refresh protection, permissions, or session behavior changed.
+- **Root cause / remaining risk:** The user-visible disappearance remains
+  unresolved. The strongest evidence for this occurrence is omission in
+  ChatGPT's tool-exposure layer before a request reached Dofek. The corrected
+  submission has not yet been published, and repository merge/deployment does
+  not itself prove that ChatGPT has accepted the new catalog. After explicitly
+  approved publication, repeat one successful write followed by a fresh
+  read-only discovery in the same conversation and correlate both turns with
+  production telemetry. If the second turn still produces no Dofek request,
+  escalate with the transcript, UTC timestamps, correlation evidence, and the
+  confirmed 41-tool submission inventory.
+
+## 2026-09-15 — Expo compatibility metadata blocked PR CI
+
+- **Symptoms / impact:** PR #2748's `Build Mobile / Metro Bundle` job stopped
+  before bundling at `Verify dependencies match Expo SDK`. This blocked merge;
+  no production or user-facing failure occurred.
+- **Evidence / first fatal output:** `pnpm expo install --check` reported
+  `Found outdated dependencies` for `expo` 57.0.22,
+  `expo-build-properties` 57.0.17, `expo-notifications` 57.0.18, and
+  `expo-sharing` 57.0.19. Expo's current compatibility map required 57.0.23,
+  57.0.19, 57.0.19, and 57.0.20 respectively.
+- **Root cause:** Expo published compatible SDK 57 patch releases after the
+  repository lockfile was last updated, and the required compatibility check
+  correctly rejected the stale pins. Expo documents dependency validation via
+  `expo install --check` in its
+  [CLI reference](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation).
+- **Fix / validation:** Updated exactly those four direct dependencies and the
+  resulting lockfile/release-age allowlist entries. The same online
+  `pnpm expo install --check` command then reported `Dependencies are up to
+  date`; dependency policy, TypeScript, and all 1,463 mobile tests pass.
+- **Remaining risk / follow-up:** The PR CI rerun remains pending; no retry,
+  timeout, skipped validation, or dependency-check exception was added.
+
+## 2026-09-15 — MCP OAuth refresh silently downgraded food-write access
+
+- **Symptoms / user impact:** ChatGPT had successfully used food-write access
+  earlier in the day, then later exposed only read-only food tools after an
+  access-token refresh.
+- **Evidence / root cause:** MCP access tokens expire after one hour. The
+  refresh implementation used a client-supplied `scope` subset as the new
+  token's complete scope, so ChatGPT's default scope list could silently drop
+  `nutrition:write`. OAuth defines an omitted refresh scope as the originally
+  granted scope and permits a client to send a requested scope:
+  <https://www.rfc-editor.org/rfc/rfc6749#section-6>.
+- **Direct fix:** Refresh now rejects scopes outside the stored grant but
+  preserves the complete stored grant when a client requests a narrower
+  subset. Dofek's connected-app scope editor remains the authority for
+  changing the stored grant.
+- **Validation:** The new real-database regression failed before the fix with
+  `nutrition:write` missing, then passed with the focused integration suite at
+  16/16. Adjacent OAuth unit tests passed 60/60, TypeScript reported no errors,
+  and repository lint passed.
+- **Remaining risk / follow-up:** Production telemetry available through the
+  rotated service logs did not expose enough fields to correlate this specific
+  user's refresh. After deployment, confirm an accepted refresh retains the
+  full scope set and repeat a food write after the one-hour access-token
+  boundary.
+
+## 2026-09-16 — Sep 9 activity analytics recovery evidence
+
+- **Status / user impact:** The production serving path is healthy again.
+  Activities ingested after Sep 9 now appear in the ClickHouse-backed activity
+  summary used by the web and mobile clients.
+- **Root cause:** Recovery was blocked by two unbounded ClickHouse workloads:
+  `activity_sensor_sample` rebuilt global activity membership during each
+  historical microbatch, and `activity_sensor_summary_rows` attempted to
+  rebuild every dirty activity in one incremental cycle; stale summary rows
+  also needed explicit tombstones.
+- **Direct fix:** [PR #2747](https://github.com/Asherlc/dofek/pull/2747)
+  reads logical activity state directly with query-level `FINAL` and keeps
+  historical work in bounded microbatches. [PR #2749](https://github.com/Asherlc/dofek/pull/2749)
+  orders dirty keys and limits each unscoped summary cycle to 100 activities.
+  [PR #2758](https://github.com/Asherlc/dofek/pull/2758) emits tombstones for
+  stale summary rows. These changes are deployed in image `sha-16c97c7` by
+  [deployment run 35036897900](https://github.com/Asherlc/dofek/actions/runs/35036897900).
+- **Recovery evidence:** The approved one-batch Sep 13
+  `activity_sensor_sample` replay completed successfully (9,655,695 rows,
+  270.01 seconds). Subsequent normal worker cycles completed all 41 models;
+  the latest cycle finished at 2026-09-16 17:00:29 UTC with
+  `PASS=41 WARN=0 ERROR=0`, recorded five datasets with zero failures, and
+  refreshed the cache step without an error. The worker readiness endpoint at
+  17:00:39 UTC reported `status=ok`, `lastFailure=null`, and the matching
+  successful-cycle timestamp.
+- **Serving verification:** The authenticated activity-summary serving call
+  for 2026-09-10 through 2026-09-16 returned 18 activities: 7 in ISO week
+  2026-W37 and 11 in 2026-W38. This is the API path consumed by web and mobile;
+  a visual browser audit was unavailable because this environment had no
+  browser runtime.
+- **Observed transient failure:** Two consecutive `activity_power_curve`
+  builds failed at 2026-09-16 14:06 and 14:22 UTC with ClickHouse exception
+  241 while `arrayMap` allocated a large recorded-time array. Later cycles
+  completed the same model successfully. No timeout, memory, or resource limit
+  was increased; this remains a separately monitored capacity risk rather than
+  a reason to weaken the recovery fix.
+- **Queue evidence:** The exact dirty-key count was 839 after the first
+  successful 100-row batch and 466 before the final successful-cycle series.
+  Summary writes then fell below the 100-row cap. Because each unscoped cycle
+  selects the 100 oldest dirty keys, four consecutive 15-row writes
+  independently show the whole dirty set was 15, not a capped backlog.
+- **Queue verification (2026-09-16):** A projection-backed read-only count
+  closed the earlier verification gap. The production dbt build passes only
+  date microbatch bounds, so `activity_sensor_summary_batch_size` is the model
+  default of 100, and [PR #2749](https://github.com/Asherlc/dofek/pull/2749)
+  applies it only to unscoped cycles.
+  The exact dirty-key count was 19 at 2026-09-16 19:05 UTC, measured at ~200 ms,
+  ~6.5 million rows read, and ~8 MiB peak memory using the
+  `by_activity_source_refresh_version` projection. The residual count is normal
+  freshness churn: `activity_sensor_sample` uses a one-day microbatch lookback
+  on source `refreshed_at`, so each cycle rebuilds samples for activities with
+  recently ingested raw data and the summary recomputes them in the same cycle.
+  The earlier rejection was caused by a `MATERIALIZED` CTE forcing a full-table
+  materialization; the sanctioned query is documented in
+  [`docs/clickhouse-read-model-deploy-runbook.md`](./clickhouse-read-model-deploy-runbook.md).
+- **Remaining risk:** Worker/readiness monitoring can stop now that the queue is
+  bounded and independently measured. The `activity_power_curve` memory
+  oscillation above remains a separately monitored capacity risk.
+- **Resilience rationale:** The 100-activity unscoped batch cap is the smallest
+  durable guard that keeps one incremental cycle inside the fixed single-node
+  ClickHouse budget; scoped repairs and full refreshes retain their explicit
+  operator-controlled behavior.
+
+## 2026-09-17 — Main CI block after the activity analytics recovery
+
+- **Status / impact:** The `activity_power_curve` memory fix
+  ([PR #2764](https://github.com/Asherlc/dofek/pull/2764)) merged, but the
+  post-merge deploy's `Deploy Web Production` job was skipped because main CI
+  was red, so production stayed on the previous image.
+- **Root cause (blocking failure):** `src/providers/whoop.test.ts` strength-sync
+  tests failed with `expected [ …(2) ] to have a length of 1 but got 2`. The
+  failure appeared exactly at 2026-09-17 00:00 UTC with no WHOOP source change
+  in the merge range. `sync-orchestrator.ts` fetches cycles in
+  `WHOOP_CYCLE_WINDOW_MS` (200 day) chunks between `window.since` and
+  `window.until`; the test's open-ended window (`SyncWindow.fromSince`) reached
+  exactly 200 days at midnight, adding a second chunk, and the
+  `cycles/details` mock ignored the requested `startTime`/`endTime`, so it
+  replayed the same workout in both chunks and the exercise was resolved twice.
+- **Direct fix:** Made the mock honour the requested range, matching the real
+  endpoint. [PR #2765](https://github.com/Asherlc/dofek/pull/2765).
+- **Independent failure:** The same segment also hit the known iOS `actool`
+  `Distill failed` runner flake on the generated `SplashScreenLegacy` image (see
+  the 2026-09-01 entry); the same commit passed iOS at PR time.
+- **Evidence:** [failed iOS job](https://github.com/Asherlc/dofek/actions/runs/35163283960/job/105018892708);
+  [WHOOP unit failures](https://github.com/Asherlc/dofek/actions/runs/35164932824).
+  The WHOOP test fails on the pre-fix tree and passes with the mock range fix
+  (`pnpm test:unit` 17216 passed / 20 skipped).
+- **Remaining risk / follow-up:** Confirm the next main CI run is green and the
+  deploy resumes; the iOS `Distill failed` flake remains runner-environmental.
+
+## 2026-09-20 — PR integration shard Redpanda port collision
+
+- **Symptoms / impact:** Integration shard 3 for the Ziva provider PR failed
+  before checkout or test execution, blocking the PR check without affecting
+  production or application data.
+- **Evidence / root cause:** The Redpanda service container reported
+  `posix_listen failed` with `Address already in use` while starting, followed
+  by `Failure during startup`; the runner could not initialize the required
+  service. See the [failed integration job](https://github.com/Asherlc/dofek/actions/runs/35565067037/job/106225634647).
+- **Direct fix / validation:** No application change, retry, timeout, or
+  warn-and-continue behavior was added. A replacement CI run on a fresh runner
+  will validate the same integration shard after the next pushed commit.
+- **Remaining risk / follow-up:** The replacement run is pending. If the same
+  bind collision repeats on a fresh runner, investigate hosted-runner service
+  isolation before changing repository behavior.
+
+## 2026-09-20 — Ziva Stryker baseline cancellation-observation race
+
+- **Symptoms / impact:** Stryker shard 0 failed its initial test run before
+  mutation execution, blocking the Ziva provider PR without affecting
+  production. The failing test expected the pending MCP transport to be
+  observably closed immediately after caller cancellation.
+- **Evidence / root cause:** The failure was
+  `expected false to be true` in the Ziva connect-handshake abort test in the
+  [failed Stryker job](https://github.com/Asherlc/dofek/actions/runs/35566019954/job/106228340826).
+  Under Stryker instrumentation, Node's cloned `Request.signal` published the
+  SDK transport-abort event one event-loop turn after the already-awaited
+  connection rejection. The test incorrectly assumed same-turn signal
+  observation; the production close path was still awaited.
+- **Direct fix / validation:** The assertion now waits for the asynchronous
+  transport-close observable, a pre-aborted caller-signal regression covers
+  the other lifecycle boundary, and the redundant one-shot listener option was
+  removed. The Ziva client suite passes 42/42, and the exact Stryker lifecycle
+  slice passes its 289-test dry run and kills all 6 mutants for a 100% score.
+- **Remaining risk / follow-up:** The replacement hosted CI run is pending. No
+  production retry, timeout, or warn-and-continue behavior was added.

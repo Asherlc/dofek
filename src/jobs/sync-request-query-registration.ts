@@ -12,6 +12,10 @@ export async function registerProviderSyncRequestResolver(provider: { id: string
       resolver = (await import("../providers/whoop/sync-request-query.ts"))
         .resolveWhoopSyncRequestQuery;
       break;
+    case "ziva":
+      resolver = (await import("../providers/ziva/sync-request-query.ts"))
+        .resolveZivaSyncRequestQuery;
+      break;
   }
   if (resolver) {
     registerSyncRequestQueryResolver(provider.id, resolver);

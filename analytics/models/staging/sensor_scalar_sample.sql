@@ -8,7 +8,7 @@
     event_time='_peerdb_synced_at',
     begin=sensor_scalar_sample_begin,
     batch_size='day',
-    lookback=3,
+    lookback=1,
     full_refresh=false,
     concurrent_batches=false,
     on_schema_change='append_new_columns',
@@ -44,33 +44,49 @@ WITH metric_stream_versions AS (
         )
 ),
 
-metric_stream_rows AS (
+metric_stream_latest AS (
     SELECT
-        metric_stream_versions.id AS id,
-        tupleElement(
-            argMax(tuple(metric_stream_versions.activity_id), metric_stream_versions.version),
-            1
-        ) AS activity_id,
-        argMax(metric_stream_versions.activity_id, metric_stream_versions.version)
-            AS member_activity_id,
-        argMax(metric_stream_versions.user_id, metric_stream_versions.version) AS user_id,
-        argMax(metric_stream_versions.recorded_at, metric_stream_versions.version) AS recorded_at,
-        argMax(metric_stream_versions.channel, metric_stream_versions.version) AS channel,
-        argMax(metric_stream_versions.provider_id, metric_stream_versions.version) AS provider_id,
-        argMax(metric_stream_versions.external_id, metric_stream_versions.version)
-            AS source_external_id,
-        argMax(metric_stream_versions.device_id, metric_stream_versions.version) AS device_id,
-        argMax(metric_stream_versions.source_type, metric_stream_versions.version) AS source_type,
-        argMax(metric_stream_versions.metadata, metric_stream_versions.version) AS metadata,
-        coalesce(
-            argMax(metric_stream_versions.scalar, metric_stream_versions.version),
-            0
-        ) AS scalar,
-        argMax(metric_stream_versions.ingested_at, metric_stream_versions.version) AS ingested_at,
-        argMax(metric_stream_versions.is_deleted, metric_stream_versions.version) AS is_deleted,
-        max(metric_stream_versions.version) AS source_version
+        metric_stream_versions.id,
+        argMax(
+            tuple(
+                metric_stream_versions.activity_id,
+                metric_stream_versions.user_id,
+                metric_stream_versions.recorded_at,
+                metric_stream_versions.channel,
+                metric_stream_versions.provider_id,
+                metric_stream_versions.external_id,
+                metric_stream_versions.device_id,
+                metric_stream_versions.source_type,
+                metric_stream_versions.metadata,
+                metric_stream_versions.scalar,
+                metric_stream_versions.ingested_at,
+                metric_stream_versions.is_deleted,
+                metric_stream_versions.version
+            ),
+            metric_stream_versions.version
+        ) AS latest
     FROM metric_stream_versions
     GROUP BY metric_stream_versions.id
+),
+
+metric_stream_rows AS (
+    SELECT
+        metric_stream_latest.id AS id,
+        tupleElement(metric_stream_latest.latest, 1) AS activity_id,
+        tupleElement(metric_stream_latest.latest, 1) AS member_activity_id,
+        tupleElement(metric_stream_latest.latest, 2) AS user_id,
+        tupleElement(metric_stream_latest.latest, 3) AS recorded_at,
+        tupleElement(metric_stream_latest.latest, 4) AS channel,
+        tupleElement(metric_stream_latest.latest, 5) AS provider_id,
+        tupleElement(metric_stream_latest.latest, 6) AS source_external_id,
+        tupleElement(metric_stream_latest.latest, 7) AS device_id,
+        tupleElement(metric_stream_latest.latest, 8) AS source_type,
+        tupleElement(metric_stream_latest.latest, 9) AS metadata,
+        coalesce(tupleElement(metric_stream_latest.latest, 10), 0) AS scalar,
+        tupleElement(metric_stream_latest.latest, 11) AS ingested_at,
+        tupleElement(metric_stream_latest.latest, 12) AS is_deleted,
+        tupleElement(metric_stream_latest.latest, 13) AS source_version
+    FROM metric_stream_latest
 ),
 
 active_sensor_provider_priority AS (

@@ -26,6 +26,7 @@ describe("PROVIDER_LABELS", () => {
     expect(PROVIDER_LABELS["cronometer-csv"]).toBe("Cronometer");
     expect(PROVIDER_LABELS["fit-file"]).toBe("FIT File");
     expect(PROVIDER_LABELS.fatsecret).toBe("fatsecret");
+    expect(PROVIDER_LABELS.ziva).toBe("Ziva");
     expect(PROVIDER_LABELS.apple_health).toBe("Apple Health");
     expect(PROVIDER_LABELS.manual_review).toBe("Manual review");
   });
@@ -44,6 +45,7 @@ describe("providerLabel", () => {
     expect(providerLabel("strava")).toBe("Strava");
     expect(providerLabel("eight-sleep")).toBe("Eight Sleep");
     expect(providerLabel("apple_health")).toBe("Apple Health");
+    expect(providerLabel("ziva")).toBe("Ziva");
   });
 
   it("falls back to the raw ID for unknown providers", () => {
@@ -174,6 +176,15 @@ describe("providerLogoType", () => {
     expect(providerLogoType("velohero")).toBeNull();
     expect(providerLogoType("ble_heart_rate")).toBeNull();
     expect(providerLogoType("unknown")).toBeNull();
+    expect(providerLogoType("ziva")).toBeNull();
+  });
+});
+
+describe("Ziva catalog metadata", () => {
+  it("uses the generic provider presentation without guessed branding", () => {
+    expect(BRAND_COLORS.ziva).toBeUndefined();
+    expect(SVG_LOGOS.has("ziva")).toBe(false);
+    expect(PNG_LOGOS.has("ziva")).toBe(false);
   });
 });
 

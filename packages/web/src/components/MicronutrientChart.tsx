@@ -218,15 +218,17 @@ export function MicronutrientChart({ data, loading, selectedWindowDays }: Micron
             const intakeType =
               source.intakeType === "itemized_food"
                 ? "Itemized food"
-                : source.intakeType === "provider_daily_total"
-                  ? "Provider daily total"
-                  : "Supplement";
+                : source.intakeType === "meal_aggregate"
+                  ? "Meal total"
+                  : source.intakeType === "provider_daily_total"
+                    ? "Provider daily total"
+                    : "Supplement";
             return `${sourceLabel} · ${intakeType}: ${source.dailyAverageContribution} ${unit}/day`;
           })
           .join("<br/>");
         return `<b>${nutrient}</b><br/>
           ${row.intake.totalDailyAverage} ${unit} / ${adequacy.reference.amount} ${unit}<br/>
-          Itemized food: ${row.intake.foodDailyAverage} ${unit}/day<br/>
+          Food: ${row.intake.foodDailyAverage} ${unit}/day<br/>
           Provider daily totals: ${row.intake.providerDailyTotalAverage} ${unit}/day<br/>
           Supplements: ${row.intake.supplementDailyAverage} ${unit}/day<br/>
           ${sourceBreakdown ? `<br/><b>Sources</b><br/>${sourceBreakdown}<br/>` : ""}

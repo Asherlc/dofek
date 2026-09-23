@@ -17,9 +17,12 @@ vi.mock("../logger.ts", () => ({
 interface TestWorker {
   name: string;
   isRunning(): boolean;
-  client: Promise<{ status: string; llen(key: string): Promise<number> }>;
-  toKey(type: string): string;
-  waitUntilReady(): Promise<{ status: string }>;
+  waitUntilReady(): Promise<void>;
+  getBackend(): {
+    toKey(type: string): string;
+    waitUntilReady(): Promise<void>;
+    client: Promise<{ status: string; llen(key: string): Promise<number> }>;
+  };
 }
 
 const openServers: ReturnType<typeof createWorkerReadinessServer>[] = [];
@@ -48,7 +51,8 @@ function makeWorker(
   name: string,
   options: {
     running?: boolean;
-    blockingStatus?: string;
+    blockingReady?: boolean | (() => Promise<void>);
+    backendReady?: boolean | (() => Promise<void>);
     commandStatus?: string;
     listLength?: (key: string) => Promise<number>;
   } = {},
@@ -57,14 +61,27 @@ function makeWorker(
     status: options.commandStatus ?? "ready",
     llen: (key: string) => options.listLength?.(key) ?? Promise.resolve(0),
   };
+  const resolveReady = (
+    ready: boolean | (() => Promise<void>) | undefined,
+    defaultReady: boolean,
+  ): Promise<void> => {
+    if (typeof ready === "function") return ready();
+    if ((ready ?? defaultReady) === false) {
+      return Promise.reject(new Error("connection is not ready"));
+    }
+    return Promise.resolve();
+  };
   return {
     name,
     isRunning: () => options.running ?? true,
-    get client() {
-      return Promise.resolve(commandClient);
-    },
-    toKey: (type) => `bull:${name}:${type}`,
-    waitUntilReady: () => Promise.resolve({ status: options.blockingStatus ?? "ready" }),
+    waitUntilReady: () => resolveReady(options.blockingReady, true),
+    getBackend: () => ({
+      toKey: (type) => `bull:${name}:${type}`,
+      waitUntilReady: () => resolveReady(options.backendReady, true),
+      get client() {
+        return Promise.resolve(commandClient);
+      },
+    }),
   };
 }
 
@@ -89,8 +106,8 @@ describe("createWorkerReadinessServer", () => {
     const secondListLength = vi.fn(() => Promise.resolve(1));
     const firstWorker = makeWorker("sync", { listLength: firstListLength });
     const secondWorker = makeWorker("import", { listLength: secondListLength });
-    const firstCommand = vi.spyOn(await firstWorker.client, "llen");
-    const secondCommand = vi.spyOn(await secondWorker.client, "llen");
+    const firstCommand = vi.spyOn(await firstWorker.getBackend().client, "llen");
+    const secondCommand = vi.spyOn(await secondWorker.getBackend().client, "llen");
 
     const response = await requestReadiness([firstWorker, secondWorker]);
 
@@ -151,7 +168,7 @@ describe("createWorkerReadinessServer", () => {
     const listLength = vi.fn(() => Promise.resolve(0));
 
     const response = await requestReadiness([
-      makeWorker("sync", { blockingStatus: "wait", listLength }),
+      makeWorker("sync", { blockingReady: false, listLength }),
     ]);
 
     expect(response.status).toBe(503);
@@ -179,21 +196,15 @@ describe("createWorkerReadinessServer", () => {
 
   it("succeeds when blocking connection becomes ready after retries", async () => {
     let callCount = 0;
-    const worker: TestWorker = {
-      name: "sync",
-      isRunning: () => true,
-      get client() {
-        return Promise.resolve({
-          status: "ready",
-          llen: () => Promise.resolve(0),
-        });
-      },
-      toKey: (type) => `bull:sync:${type}`,
-      waitUntilReady: () => {
+    const worker = makeWorker("sync", {
+      blockingReady: () => {
         callCount++;
-        return Promise.resolve({ status: callCount < 3 ? "reconnecting" : "ready" });
+        if (callCount < 3) {
+          return Promise.reject(new Error("blocking connection is not ready"));
+        }
+        return Promise.resolve();
       },
-    };
+    });
 
     const response = await requestReadiness([worker]);
 
@@ -204,21 +215,12 @@ describe("createWorkerReadinessServer", () => {
   it("retries exactly CONNECTION_STATUS_RETRIES times and applies correct delays", async () => {
     const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
     let callCount = 0;
-    const worker: TestWorker = {
-      name: "sync",
-      isRunning: () => true,
-      get client() {
-        return Promise.resolve({
-          status: "ready",
-          llen: () => Promise.resolve(0),
-        });
-      },
-      toKey: (type) => `bull:sync:${type}`,
-      waitUntilReady: () => {
+    const worker = makeWorker("sync", {
+      blockingReady: () => {
         callCount++;
-        return Promise.resolve({ status: "reconnecting" });
+        return Promise.reject(new Error("blocking connection is not ready"));
       },
-    };
+    });
 
     const response = await requestReadiness([worker]);
 
@@ -231,24 +233,15 @@ describe("createWorkerReadinessServer", () => {
   it("retries when getStatus throws an error", async () => {
     const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
     let callCount = 0;
-    const worker: TestWorker = {
-      name: "sync",
-      isRunning: () => true,
-      get client() {
-        return Promise.resolve({
-          status: "ready",
-          llen: () => Promise.resolve(0),
-        });
-      },
-      toKey: (type) => `bull:sync:${type}`,
-      waitUntilReady: () => {
+    const worker = makeWorker("sync", {
+      blockingReady: () => {
         callCount++;
         if (callCount < 3) {
           return Promise.reject(new Error("blocking connection is not ready"));
         }
-        return Promise.resolve({ status: "ready" });
+        return Promise.resolve();
       },
-    };
+    });
 
     const response = await requestReadiness([worker]);
 

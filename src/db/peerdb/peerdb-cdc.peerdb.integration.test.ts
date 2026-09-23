@@ -29,6 +29,7 @@ const fixture = {
   provider: "peerdb-contract-test",
   markerBatch: "10000000-0000-4000-8000-000000000011",
   markerWatermark: "10000000-0000-4000-8000-000000000012",
+  sourceAccountKey: "peerdb-contract-source-account",
 } as const;
 
 describe("PeerDB CDC production contract", () => {
@@ -103,10 +104,12 @@ describe("PeerDB CDC production contract", () => {
         '${fixture.sleepStage}', '${fixture.sleepSession}', 'light',
         '2026-09-13T04:00:00Z', '2026-09-13T04:30:00Z'
       );
-      INSERT INTO fitness.food_entry (id, provider_id, user_id, date, food_name)
+      INSERT INTO fitness.food_entry (
+        id, provider_id, user_id, date, food_name, source_account_key
+      )
       VALUES (
         '${fixture.foodEntry}', '${fixture.provider}', '${fixture.user}',
-        '2026-09-13', 'PeerDB contract food'
+        '2026-09-13', 'PeerDB contract food', '${fixture.sourceAccountKey}'
       );
       INSERT INTO fitness.health_event (
         id, provider_id, user_id, external_id, type, value, start_date
@@ -240,8 +243,8 @@ describe("PeerDB CDC production contract", () => {
       },
       {
         table: "food_entry",
-        predicate: "id = {id:UUID}",
-        queryParams: { id: fixture.foodEntry },
+        predicate: "id = {id:UUID} AND source_account_key = {sourceAccountKey:String}",
+        queryParams: { id: fixture.foodEntry, sourceAccountKey: fixture.sourceAccountKey },
       },
       {
         table: "health_event",

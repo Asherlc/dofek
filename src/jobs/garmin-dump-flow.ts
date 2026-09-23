@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { FlowChildJob } from "bullmq";
+import type { FlowJobNode } from "bullmq";
 import type { GarminFitJobEntry, PreparedGarminDumpImport } from "../providers/garmin-dump.ts";
 import {
   FIT_FILE_IMPORT_BATCH_QUEUE,
@@ -29,11 +29,11 @@ function stableFitJobHash(preparedImport: PreparedGarminDumpImport, entryPath: s
 function fitFileImportFlowChild(
   preparedImport: PreparedGarminDumpImport,
   fitJobEntry: GarminFitJobEntry,
-): FlowChildJob {
+): FlowJobNode {
   const { data, entry } = fitJobEntry;
   const jobHash = stableFitJobHash(preparedImport, entry.path);
   let fitImportData: FitFileImportJobData = data;
-  let children: FlowChildJob[] | undefined;
+  let children: FlowJobNode[] | undefined;
   if (entry.filePath === undefined) {
     children = [
       {
