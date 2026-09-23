@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FileUpload } from "../db/file-upload.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import type { ImportUploadStorage } from "../file-upload-storage.ts";
+import { createAppleHealthImportValidationError } from "./import-validation-error.ts";
 import type { ImportJobData } from "./queues.ts";
 
 const mocks = vi.hoisted(() => ({
@@ -361,6 +362,23 @@ describe("processFileUploadImportJob", () => {
       import_type: "strong-csv",
     });
     expect(existsSync(join(jobFilesDirectory, `file-upload-${uploadId}`))).toBe(false);
+  });
+
+  it("records a validation rejection under its specific error name", async () => {
+    mocks.processImport.mockRejectedValue(
+      createAppleHealthImportValidationError("Apple Health ZIP must contain export.xml"),
+    );
+
+    await expect(processFileUploadImportJob(job(), database, storageWithBody())).rejects.toThrow(
+      "Apple Health ZIP must contain export.xml",
+    );
+
+    expect(mocks.fail).toHaveBeenCalledWith(
+      database,
+      uploadId,
+      "AppleHealthImportValidationError",
+      "Apple Health ZIP must contain export.xml",
+    );
   });
 
   it("returns without reading R2 for an already completed upload", async () => {

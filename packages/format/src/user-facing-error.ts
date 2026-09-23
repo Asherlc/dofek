@@ -19,8 +19,27 @@ function errorText(error: unknown): string | null {
   return trimmed ? trimmed : null;
 }
 
+/**
+ * Canonical error names the server assigns when an import file fails validation.
+ * The client receives the name through the failed upload's error code, so these
+ * values are the contract shared with the server import jobs.
+ */
+export const APPLE_HEALTH_IMPORT_VALIDATION_ERROR_NAME = "AppleHealthImportValidationError";
+export const STRONG_CSV_IMPORT_VALIDATION_ERROR_NAME = "StrongCsvValidationError";
+
+const importValidationErrorNames = new Set<string>([
+  APPLE_HEALTH_IMPORT_VALIDATION_ERROR_NAME,
+  STRONG_CSV_IMPORT_VALIDATION_ERROR_NAME,
+]);
+
+/** Returns true when an error name marks a rejected import file. */
+export function isImportValidationErrorName(name: string | null | undefined): boolean {
+  return name != null && importValidationErrorNames.has(name);
+}
+
 /** Returns true for expected failures caused by an invalid or cancelled import. */
 export function isExpectedImportInputError(error: unknown): boolean {
+  if (error instanceof Error && isImportValidationErrorName(error.name)) return true;
   const message = errorText(error)?.toLowerCase();
   if (!message) return false;
   return (

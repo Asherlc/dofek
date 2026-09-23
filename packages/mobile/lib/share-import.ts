@@ -222,7 +222,11 @@ export async function importSharedFile(
         return { providerId, jobId: completed.importJobId };
       }
       if (upload.state === "failed") {
-        throw new Error(upload.errorMessage ?? "Import failed");
+        const failure = new Error(upload.errorMessage ?? "Import failed");
+        // Preserve the server error name so each rejection kind keeps its own
+        // error-tracking fingerprint instead of collapsing into one.
+        if (upload.errorCode) failure.name = upload.errorCode;
+        throw failure;
       }
       if (upload.state === "aborted" || upload.state === "expired") {
         throw new Error(upload.state === "expired" ? "Upload expired" : "Upload cancelled");
