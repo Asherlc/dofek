@@ -101,4 +101,25 @@ describe("shared email", () => {
       }),
     ).rejects.toThrow(/status 401.*Key not found/s);
   });
+
+  it("falls back to status-only error when Brevo body read fails", async () => {
+    setEmailEnv();
+    // Use a custom fetch mock to simulate body read failure
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: () => Promise.reject(new Error("Body read failed")),
+    });
+
+    await expect(
+      sendPlainTextEmail({
+        subject: "Subject",
+        text: "Body",
+        toEmail: "user@example.com",
+      }),
+    ).rejects.toThrow("Brevo email request failed with status 500");
+
+    globalThis.fetch = originalFetch;
+  });
 });
