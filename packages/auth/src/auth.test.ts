@@ -152,6 +152,7 @@ describe("getNewPasswordValidationError", () => {
 describe("isExpectedUserInputError", () => {
   it.each([
     "Invalid email or password",
+    "Unable to create an account with these details",
     "Invalid password reset request",
     "Invalid password reset details",
   ])("classifies server validation message %s", (message) => {

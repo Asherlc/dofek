@@ -144,6 +144,7 @@ function serializeUpload(upload: FileUpload) {
     partCount: Math.ceil(upload.expectedSizeBytes / upload.partSizeBytes),
     progressPercent: upload.progressPercent,
     importJobId: upload.importJobId,
+    errorCode: upload.errorCode,
     errorMessage: upload.errorMessage,
     expiresAt: upload.expiresAt.toISOString(),
   };
@@ -273,6 +274,7 @@ const serializedUploadSchema = z.object({
   partCount: z.number().int().positive(),
   progressPercent: z.number().int().min(0).max(100),
   importJobId: z.string().min(1).nullable(),
+  errorCode: z.string().nullable(),
   errorMessage: z.string().nullable(),
   expiresAt: z.string().datetime(),
 });
