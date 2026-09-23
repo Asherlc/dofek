@@ -20,6 +20,7 @@ import {
 } from "../file-upload-metrics.ts";
 import type { ImportUploadStorage } from "../file-upload-storage.ts";
 import { accountErasureAllowsQueuedUserWork } from "./account-erasure-work-guard.ts";
+import { isImportValidationError } from "./import-validation-error.ts";
 import type { LocalImportJobData } from "./local-import-job-data.ts";
 import { processImportJob } from "./process-import-job.ts";
 import type { ImportJobData } from "./queues.ts";
@@ -192,7 +193,10 @@ export async function processFileUploadImportJob(
       throw error;
     }
     if (error instanceof UnrecoverableError) {
-      await failFileUploadProcessing(database, upload.id, "IMPORT_REJECTED", error.message);
+      // Carry the specific validation error name so the client can group each
+      // rejection kind on its own fingerprint and suppress it by name.
+      const errorCode = isImportValidationError(error) ? error.name : "IMPORT_REJECTED";
+      await failFileUploadProcessing(database, upload.id, errorCode, error.message);
       fileUploadLifecycleTotal.add(1, { state: "failed", import_type: upload.importType });
     }
     throw error;

@@ -1,6 +1,6 @@
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { sendPlainTextEmail } from "./email.ts";
 import { failOnUnhandledExternalRequest } from "./test/msw.ts";
 
@@ -83,5 +83,43 @@ describe("shared email", () => {
         toEmail: "user@example.com",
       }),
     ).rejects.toThrow("Brevo email request failed with status 400");
+  });
+
+  it("includes the Brevo response body so a rejected credential is diagnosable", async () => {
+    setEmailEnv();
+    server.use(
+      http.post(BREVO_EMAIL_URL, () =>
+        HttpResponse.json({ code: "unauthorized", message: "Key not found" }, { status: 401 }),
+      ),
+    );
+
+    await expect(
+      sendPlainTextEmail({
+        subject: "Subject",
+        text: "Body",
+        toEmail: "user@example.com",
+      }),
+    ).rejects.toThrow(/status 401.*Key not found/s);
+  });
+
+  it("falls back to status-only error when Brevo body read fails", async () => {
+    setEmailEnv();
+    // Use a custom fetch mock to simulate body read failure
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: () => Promise.reject(new Error("Body read failed")),
+    });
+
+    await expect(
+      sendPlainTextEmail({
+        subject: "Subject",
+        text: "Body",
+        toEmail: "user@example.com",
+      }),
+    ).rejects.toThrow("Brevo email request failed with status 500");
+
+    globalThis.fetch = originalFetch;
   });
 });
