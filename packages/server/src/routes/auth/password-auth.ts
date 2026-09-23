@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  AUTH_INPUT_ERROR_MESSAGES,
   PasswordLoginRequestSchema,
   PasswordRegisterRequestSchema,
   PasswordResetConfirmSchema,
@@ -162,7 +163,7 @@ export async function handlePasswordResetRequest(req: Request, res: Response): P
   try {
     const parsed = PasswordResetRequestSchema.safeParse(req.body);
     if (!parsed.success) {
-      sendAuthError(res, 400, "Invalid password reset request");
+      sendAuthError(res, 400, AUTH_INPUT_ERROR_MESSAGES.invalidPasswordResetRequest);
       return;
     }
     await createPasswordResetToken(getDb(), parsed.data.email);
@@ -178,7 +179,7 @@ export async function handlePasswordResetConfirm(req: Request, res: Response): P
   try {
     const parsed = PasswordResetConfirmSchema.safeParse(req.body);
     if (!parsed.success) {
-      sendAuthError(res, 400, "Invalid password reset details");
+      sendAuthError(res, 400, AUTH_INPUT_ERROR_MESSAGES.invalidPasswordResetDetails);
       return;
     }
     await resetPasswordWithToken(getDb(), parsed.data.token, parsed.data.password);
