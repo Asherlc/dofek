@@ -260,4 +260,50 @@ describe("importSharedFile", () => {
     ).rejects.toThrow("Strong export is invalid");
     expect(mockCaptureException).not.toHaveBeenCalled();
   });
+
+  it("carries the server error name and suppresses a validation rejection", async () => {
+    const file: UploadableMobileFile & { readHeader(maxBytes: number): Promise<string> } = {
+      uri: "file:///tmp/export.zip",
+      name: "export.zip",
+      type: "application/zip",
+      size: 10,
+      readHeader: async () => "",
+      sha256: async () => "b".repeat(64),
+      uploadPart: async () => ({ status: 200, headers: { etag: "part-etag" } }),
+    };
+    const uploadId = "5f3d6f2a-1c2b-4d3e-9a1b-2c3d4e5f6a7b";
+    const api: FileUploadApi = {
+      initiate: async () => ({ uploadId, partSizeBytes: 16 * 1024 * 1024 }),
+      authorizeParts: async () => ({
+        parts: [
+          {
+            partNumber: 1,
+            url: "https://r2.example/part-1",
+            expiresAt: "2026-08-27T20:00:00.000Z",
+          },
+        ],
+      }),
+      complete: async () => ({ uploadId, importJobId: `file-import-${uploadId}` }),
+      resume: vi
+        .fn()
+        .mockResolvedValueOnce({ upload: { uploadId, state: "uploading" }, parts: [] })
+        .mockResolvedValueOnce({
+          upload: {
+            uploadId,
+            state: "failed",
+            errorCode: "AppleHealthImportValidationError",
+            errorMessage: "Apple Health ZIP must contain export.xml",
+          },
+          parts: [],
+        }),
+    };
+
+    await expect(
+      importSharedFile(
+        { fileUri: file.uri, providerId: "apple-health" },
+        { file, fileUploadApi: api, createUploadId: () => uploadId, sleep: async () => {} },
+      ),
+    ).rejects.toMatchObject({ name: "AppleHealthImportValidationError" });
+    expect(mockCaptureException).not.toHaveBeenCalled();
+  });
 });
