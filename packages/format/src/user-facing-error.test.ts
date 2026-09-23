@@ -31,8 +31,20 @@ describe("isExpectedImportInputError", () => {
     expect(isExpectedImportInputError(new Error(message))).toBe(true);
   });
 
+  it("classifies a validation error by name even when the message changes", () => {
+    const error = new Error("A reworded rejection message the allowlist has never seen");
+    error.name = "AppleHealthImportValidationError";
+    expect(isExpectedImportInputError(error)).toBe(true);
+  });
+
   it("does not classify infrastructure failures as import input", () => {
     expect(isExpectedImportInputError(new Error("R2 unavailable"))).toBe(false);
+  });
+
+  it("does not classify a generic rejected upload as import input", () => {
+    const error = new Error("Invalid import contents");
+    error.name = "IMPORT_REJECTED";
+    expect(isExpectedImportInputError(error)).toBe(false);
   });
 });
 
