@@ -839,8 +839,8 @@ importers:
         specifier: workspace:*
         version: link:../..
       entities:
-        specifier: 6.0.1
-        version: 6.0.1
+        specifier: 8.1.0
+        version: 8.1.0
       express:
         specifier: 5.2.1
         version: 5.2.1(supports-color@11.0.0)
@@ -10719,6 +10719,10 @@ packages:
     resolution: {integrity: sha512-aN97NXWF6AWBTahfVOIrB/NShkzi5H7F9r1s9mD3cDj4Ko5f2qhhVoYMibXF7GlLveb/D2ioWay8lxI97Ven3g==}
     engines: {node: '>=0.12'}
 
+  entities@8.1.0:
+    resolution: {integrity: sha512-kxL7msIffSuh9aaFAMD7rxAIuTRMAHMeBtgHW2yUdWw732ZNh4MehkF2gdjvtdmikkaIP9bFDDJOPlsvm7avrA==}
+    engines: {node: '>=20.19.0'}
+
   env-paths@2.2.1:
     resolution: {integrity: sha512-+h1lkLKhZMTYjog1VEpJNG7NZJWcuc2DDk/qsqSTRRCOXiLjeQ1d1/udrUGhqMxUgAlwKNZ0cf2uqan5GLuS2A==}
     engines: {node: '>=6'}
@@ -18293,7 +18297,7 @@ snapshots:
       redis-info: 3.1.0
       valibot: 1.5.0(typescript@6.0.3)
     optionalDependencies:
-      bullmq: 6.3.4(ioredis@5.10.1)(pg@8.16.0)
+      bullmq: 6.3.4(ioredis@6.0.0)(pg@8.16.0)
     transitivePeerDependencies:
       - typescript
 
@@ -27994,6 +27998,8 @@ snapshots:
   entities@4.5.0: {}
 
   entities@6.0.1: {}
+
+  entities@8.1.0: {}
 
   env-paths@2.2.1: {}
 
