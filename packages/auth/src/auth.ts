@@ -49,8 +49,9 @@ export function getNewPasswordValidationError(password: string): string | null {
 /**
  * User-facing auth error messages that reflect expected input problems (wrong
  * credentials, a duplicate account, a malformed reset request) rather than bugs.
- * The server throws these strings and clients skip error-tracking capture for
- * them, so both sides read from this one source to keep the two in sync.
+ * The server throws or returns these strings, as appropriate, and clients skip
+ * error-tracking capture for them, so both sides read from this one source to
+ * keep the two in sync.
  */
 export const AUTH_INPUT_ERROR_MESSAGES = {
   invalidCredentials: "Invalid email or password",

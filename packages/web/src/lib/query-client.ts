@@ -1,4 +1,5 @@
-import { isExpectedUserInputError } from "@dofek/format/user-facing-error";
+import { isExpectedUserInputError as isExpectedAuthInputError } from "@dofek/auth/auth";
+import { isExpectedUserInputError as isExpectedFormatInputError } from "@dofek/format/user-facing-error";
 import { MutationCache, QueryCache, QueryClient } from "@tanstack/react-query";
 import { captureException } from "./telemetry.ts";
 
@@ -16,6 +17,10 @@ function operationFromKey(key: readonly unknown[] | undefined): string {
     return "unknown";
   }
   return path.join(".");
+}
+
+function isExpectedUserInputError(error: unknown): boolean {
+  return isExpectedAuthInputError(error) || isExpectedFormatInputError(error);
 }
 
 export function createAppQueryClient() {
