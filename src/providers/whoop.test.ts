@@ -199,6 +199,7 @@ function makeSyncMockFetch(options: {
   }>;
 }) {
   let developerWorkoutPageIndex = 0;
+  let cyclesCallCount = 0;
   const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL, _init?: RequestInit) => {
     const url = input.toString();
 
@@ -228,7 +229,12 @@ function makeSyncMockFetch(options: {
       if (options.cyclesError) {
         return Promise.resolve(new Response("Server error", { status: 500 }));
       }
-      return Promise.resolve(Response.json(options.cycles ?? []));
+      // Only return cycles on the first call to avoid duplicate cycles in checkpoint
+      cyclesCallCount += 1;
+      if (cyclesCallCount === 1) {
+        return Promise.resolve(Response.json(options.cycles ?? []));
+      }
+      return Promise.resolve(Response.json([]));
     }
 
     // Strain deep dive (daily steps)
