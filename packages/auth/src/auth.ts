@@ -46,11 +46,22 @@ export function getNewPasswordValidationError(password: string): string | null {
   return null;
 }
 
-const EXPECTED_USER_INPUT_ERROR_MESSAGES = new Set([
-  "invalid email or password",
-  "invalid password reset request",
-  "invalid password reset details",
-]);
+/**
+ * User-facing auth error messages that reflect expected input problems (wrong
+ * credentials, a duplicate account, a malformed reset request) rather than bugs.
+ * The server throws these strings and clients skip error-tracking capture for
+ * them, so both sides read from this one source to keep the two in sync.
+ */
+export const AUTH_INPUT_ERROR_MESSAGES = {
+  invalidCredentials: "Invalid email or password",
+  duplicateAccount: "Unable to create an account with these details",
+  invalidPasswordResetRequest: "Invalid password reset request",
+  invalidPasswordResetDetails: "Invalid password reset details",
+} as const;
+
+const EXPECTED_USER_INPUT_ERROR_MESSAGES = new Set(
+  Object.values(AUTH_INPUT_ERROR_MESSAGES).map((message) => message.toLowerCase()),
+);
 
 function errorMessage(error: unknown): string | null {
   if (error instanceof Error) return error.message.trim() || null;
