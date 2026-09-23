@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "resolutions": {
+    "ioredis": "6.0.0"
+  },
   "exports": {
     "./test-helpers": "./src/test-helpers.ts",
     "./export": "./src/export.ts",
