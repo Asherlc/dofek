@@ -29,6 +29,7 @@ export interface FileUploadApi {
       uploadId: string;
       state: string;
       progressPercent?: number;
+      errorCode?: string | null;
       errorMessage?: string | null;
     };
     parts: Array<{ partNumber: number; etag: string; sizeBytes: number }>;
