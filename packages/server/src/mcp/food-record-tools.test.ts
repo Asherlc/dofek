@@ -10,8 +10,10 @@ const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   delete: vi.fn(),
   get: vi.fn(),
+  getCalorieGoalContext: vi.fn(),
   history: vi.fn(),
   loggerInfo: vi.fn(),
+  nutritionByDate: vi.fn(),
   restore: vi.fn(),
   search: vi.fn(),
   serviceConstructor: vi.fn(),
@@ -27,6 +29,26 @@ vi.mock("../repositories/food-record-repository.ts", async (importOriginal) => {
     FoodRecordRepository: vi.fn(function repositoryConstructor(...args: unknown[]) {
       mocks.repositoryConstructor(...args);
       return { get: mocks.get, history: mocks.history, search: mocks.search };
+    }),
+  };
+});
+
+vi.mock("../repositories/food-repository.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../repositories/food-repository.ts")>();
+  return {
+    ...original,
+    FoodRepository: vi.fn(function foodRepositoryConstructor() {
+      return { nutritionByDate: mocks.nutritionByDate };
+    }),
+  };
+});
+
+vi.mock("../repositories/settings-repository.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../repositories/settings-repository.ts")>();
+  return {
+    ...original,
+    SettingsRepository: vi.fn(function settingsRepositoryConstructor() {
+      return { getCalorieGoalContext: mocks.getCalorieGoalContext };
     }),
   };
 });
@@ -118,11 +140,32 @@ const wireRecord = {
   },
 };
 
+const daySummary = {
+  date: "2026-09-07",
+  total_calories: 1450,
+  protein_g: 98,
+  carbs_g: 120,
+  fat_g: 55,
+  calorie_goal: {
+    target: 2200,
+    remaining: 750,
+    over: 0,
+    progress_percentage: 65.9,
+    type: "configured" as const,
+  },
+  macros: {
+    protein: { grams: 98, energy_share_percentage: 28 },
+    carbs: { grams: 120, energy_share_percentage: 34 },
+    fat: { grams: 55, energy_share_percentage: 38 },
+  },
+};
+
 type ToolHandler = (input: Record<string, unknown>) => Promise<unknown>;
 interface RegisteredTool {
   annotations: Record<string, boolean>;
   inputSchema: Record<string, z.ZodType>;
   outputSchema: z.ZodType;
+  meta: unknown;
   handler: ToolHandler;
 }
 
@@ -156,6 +199,7 @@ function registeredToolFromCall(call: unknown): [string, RegisteredTool] {
       annotations: config.annotations,
       inputSchema: config.inputSchema,
       outputSchema: config.outputSchema,
+      meta: config._meta,
       handler,
     },
   ];
@@ -198,6 +242,31 @@ beforeEach(() => {
   mocks.search.mockResolvedValue({ items: [domainRecord], nextCursor: null });
   mocks.get.mockResolvedValue(domainRecord);
   mocks.history.mockResolvedValue({ recordId, items: [], nextCursor: null });
+  mocks.getCalorieGoalContext.mockResolvedValue({ target: 2200, type: "configured" });
+  mocks.nutritionByDate.mockResolvedValue({
+    summary: {
+      calories: 1450,
+      mealCalories: {
+        breakfast: 400,
+        lunch: 500,
+        dinner: 450,
+        snack: 100,
+        other: 0,
+      },
+      calorieGoal: {
+        target: 2200,
+        remaining: 750,
+        over: 0,
+        progressPercentage: 65.9,
+      },
+      macros: {
+        protein: { grams: 98, calories: 392, energySharePercentage: 28 },
+        carbs: { grams: 120, calories: 480, energySharePercentage: 34 },
+        fat: { grams: 55, calories: 495, energySharePercentage: 38 },
+      },
+    },
+    resolution: { status: "available" },
+  });
   for (const mutation of [mocks.create, mocks.update, mocks.delete, mocks.restore]) {
     mutation.mockResolvedValue({
       operation: { changeId, resultingVersion: version, replayed: false },
@@ -249,6 +318,16 @@ describe("registerFoodRecordTools", () => {
       "nutrient_clear",
     ]);
     expect(Object.keys(tool("create_food_entry").inputSchema)).not.toContain("client_id");
+    for (const name of [
+      "create_food_entry",
+      "update_food_entry",
+      "delete_food_entry",
+      "restore_food_entry",
+    ]) {
+      expect(tool(name).meta).toEqual({
+        ui: { resourceUri: "ui://dofek/day-nutrition.html" },
+      });
+    }
   });
 
   it("maps search input, records, provenance, and cursors to snake case", async () => {
@@ -561,7 +640,7 @@ describe("registerFoodRecordTools", () => {
     expect(foodName?.safeParse("Oats").success).toBe(true);
   });
 
-  it("returns mutation receipts and records while omitting affected dates", async () => {
+  it("returns mutation receipts, records, day summary, and UI metadata", async () => {
     const { tool } = setup();
 
     const result = await tool("delete_food_entry").handler({
@@ -577,9 +656,34 @@ describe("registerFoodRecordTools", () => {
         replayed: false,
       },
       record: wireRecord,
+      day_summary: daySummary,
     });
+    expect(result).toMatchObject({
+      _meta: { ui: { resourceUri: "ui://dofek/day-nutrition.html" } },
+    });
+    expect(mocks.nutritionByDate).toHaveBeenCalledWith("2026-09-07", 2200);
     expect(
       tool("delete_food_entry").outputSchema.safeParse(structuredContent(result)).success,
+    ).toBe(true);
+  });
+
+  it("returns a null day summary when nutrition sources conflict", async () => {
+    const { tool } = setup();
+    mocks.nutritionByDate.mockResolvedValueOnce({
+      summary: null,
+      resolution: { status: "source_conflict" },
+    });
+
+    const result = await tool("create_food_entry").handler({
+      request_id: requestId,
+      date: "2026-09-07",
+      food_name: "Oats",
+      nutrients: { protein: 10 },
+    });
+
+    expect(parseResult(result)).toMatchObject({ day_summary: null });
+    expect(
+      tool("create_food_entry").outputSchema.safeParse(structuredContent(result)).success,
     ).toBe(true);
   });
 

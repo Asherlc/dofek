@@ -1374,7 +1374,7 @@ describe("createMcpRouter", () => {
       { name: "get_food_entry", path: ["result", "source_entry_id"] },
       {
         name: "create_food_entry",
-        path: ["result", "operation", "resulting_version"],
+        path: ["result", "day_summary"],
       },
       {
         name: "update_food_entry",

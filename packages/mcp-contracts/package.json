@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     "./client-setup": "./src/client-setup.ts",
+    "./day-nutrition": "./src/day-nutrition.ts",
     "./health-explorer": "./src/health-explorer.ts"
   },
   "dependencies": {
