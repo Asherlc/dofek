@@ -511,7 +511,6 @@ services:
       MINIO_ROOT_USER: peerdb
       MINIO_ROOT_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME: peerdbbucket
-      PEERDB_STAGE_LIFECYCLE_CONFIG: '{"Rules":[{"Expiration":{"Days":1},"Filter":{"Prefix":""},"ID":"peerdb-transient-stage-retention","Status":"Enabled","AbortIncompleteMultipartUpload":{"DaysAfterInitiation":1}}]}'
     volumes:
       - /mnt/dofek-data/peerdb-minio:/data
     entrypoint: >
@@ -529,12 +528,6 @@ services:
       done;
       printf 's3.bucket.create -name %s\n' \"$$PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME\" |
         weed shell -master=localhost:9333;
-      apk add --no-cache aws-cli >/dev/null;
-      export AWS_ACCESS_KEY_ID=\"$$MINIO_ROOT_USER\";
-      export AWS_SECRET_ACCESS_KEY=\"$$MINIO_ROOT_PASSWORD\";
-      export AWS_DEFAULT_REGION=us-east-1;
-      printf '%s\n' \"$$PEERDB_STAGE_LIFECYCLE_CONFIG\" > /tmp/peerdb-lifecycle.json;
-      aws --endpoint-url=http://127.0.0.1:9000 s3api put-bucket-lifecycle-configuration --bucket \"$$PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME\" --lifecycle-configuration file:///tmp/peerdb-lifecycle.json;
       touch /tmp/peerdb-minio-ready;
       wait
       "
@@ -548,6 +541,36 @@ services:
       resources:
         limits:
           memory: 512M
+
+  peerdb-minio-lifecycle:
+    image: amazon/aws-cli:2.37.1@sha256:b0dd5a4d216a1786863541a201baa7b7b4c5032bec9c6e72c38d01cafd7e8db8
+    environment:
+      AWS_ACCESS_KEY_ID: peerdb
+      AWS_SECRET_ACCESS_KEY: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      AWS_DEFAULT_REGION: us-east-1
+      PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME: peerdbbucket
+      PEERDB_STAGE_LIFECYCLE_CONFIG: '{"Rules":[{"Expiration":{"Days":1},"Filter":{"Prefix":""},"ID":"peerdb-transient-stage-retention","Status":"Enabled","AbortIncompleteMultipartUpload":{"DaysAfterInitiation":1}}]}'
+    entrypoint: >
+      /bin/sh -euc "
+      attempts=0;
+      until aws --endpoint-url=http://peerdb-minio:9000 s3api head-bucket --bucket \"$$PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME\" >/dev/null 2>&1; do
+        attempts=$$((attempts + 1));
+        if [ $$attempts -ge 60 ]; then
+          echo peerdb-minio bucket was not ready for lifecycle setup >&2;
+          exit 1;
+        fi;
+        sleep 2;
+      done;
+      printf '%s\n' \"$$PEERDB_STAGE_LIFECYCLE_CONFIG\" > /tmp/peerdb-lifecycle.json;
+      aws --endpoint-url=http://peerdb-minio:9000 s3api put-bucket-lifecycle-configuration --bucket \"$$PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME\" --lifecycle-configuration file:///tmp/peerdb-lifecycle.json
+      "
+    deploy:
+      restart_policy:
+        condition: on-failure
+        max_attempts: 10
+      resources:
+        limits:
+          memory: 128M
 
   peerdb-flow-api:
     image: ghcr.io/peerdb-io/flow-api:stable-v0.36.19

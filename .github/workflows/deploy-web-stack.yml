@@ -452,6 +452,7 @@ jobs:
           pull_if_missing "temporalio/auto-setup:1.29"
           pull_if_missing "temporalio/admin-tools:1.29"
           pull_if_missing "chrislusf/seaweedfs:4.47@sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882"
+          pull_if_missing "amazon/aws-cli:2.37.1@sha256:b0dd5a4d216a1786863541a201baa7b7b4c5032bec9c6e72c38d01cafd7e8db8"
           pull_if_missing "dbeaver/cloudbeaver:26.0.3@sha256:3daa6269a49198363af3f0fcd8af58def9a32fa38152b9ab37854dc80c16a4a4"
           REMOTE
 
