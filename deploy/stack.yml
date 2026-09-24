@@ -548,22 +548,26 @@ services:
       AWS_ACCESS_KEY_ID: peerdb
       AWS_SECRET_ACCESS_KEY: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       AWS_DEFAULT_REGION: us-east-1
+      AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+      AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
       PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME: peerdbbucket
-      PEERDB_STAGE_LIFECYCLE_CONFIG: '{"Rules":[{"Expiration":{"Days":1},"Filter":{"Prefix":""},"ID":"peerdb-transient-stage-retention","Status":"Enabled","AbortIncompleteMultipartUpload":{"DaysAfterInitiation":1}}]}'
-    entrypoint: >
-      /bin/sh -euc "
-      attempts=0;
-      until aws --endpoint-url=http://peerdb-minio:9000 s3api head-bucket --bucket \"$$PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME\" >/dev/null 2>&1; do
-        attempts=$$((attempts + 1));
-        if [ $$attempts -ge 60 ]; then
-          echo peerdb-minio bucket was not ready for lifecycle setup >&2;
-          exit 1;
-        fi;
-        sleep 2;
-      done;
-      printf '%s\n' \"$$PEERDB_STAGE_LIFECYCLE_CONFIG\" > /tmp/peerdb-lifecycle.json;
-      aws --endpoint-url=http://peerdb-minio:9000 s3api put-bucket-lifecycle-configuration --bucket \"$$PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME\" --lifecycle-configuration file:///tmp/peerdb-lifecycle.json
-      "
+    entrypoint:
+      - /bin/sh
+      - -euc
+      - |
+        cat > /tmp/peerdb-lifecycle.json <<'EOF'
+        {"Rules":[{"Expiration":{"Days":1},"Filter":{"Prefix":""},"ID":"peerdb-transient-stage-retention","Status":"Enabled","AbortIncompleteMultipartUpload":{"DaysAfterInitiation":1}}]}
+        EOF
+        attempts=0
+        until aws --endpoint-url=http://peerdb-minio:9000 s3api head-bucket --bucket "$$PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME" >/dev/null 2>&1; do
+          attempts=$$((attempts + 1))
+          if [ $$attempts -ge 60 ]; then
+            echo peerdb-minio bucket was not ready for lifecycle setup >&2
+            exit 1
+          fi
+          sleep 2
+        done
+        aws --endpoint-url=http://peerdb-minio:9000 s3api put-bucket-lifecycle-configuration --bucket "$$PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME" --lifecycle-configuration file:///tmp/peerdb-lifecycle.json
     deploy:
       restart_policy:
         condition: on-failure
