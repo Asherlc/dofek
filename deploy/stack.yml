@@ -518,9 +518,9 @@ services:
       printf '%s\n' \"{\\\"identities\\\":[{\\\"name\\\":\\\"$$MINIO_ROOT_USER\\\",\\\"credentials\\\":[{\\\"accessKey\\\":\\\"$$MINIO_ROOT_USER\\\",\\\"secretKey\\\":\\\"$$MINIO_ROOT_PASSWORD\\\"}],\\\"actions\\\":[\\\"Admin\\\",\\\"Read\\\",\\\"Write\\\",\\\"List\\\",\\\"Tagging\\\"]}]}\" > /tmp/s3.json;
       weed server -ip=peerdb-minio -dir=/data -s3 -s3.port=9000 -s3.ip.bind=0.0.0.0 -s3.config=/tmp/s3.json -s3.port.iceberg=0 -s3.port.lance=0 -master.volumeSizeLimitMB=1024 -master.telemetry=false &
       attempts=0;
-      until wget -q -S -O /dev/null http://127.0.0.1:9000/ 2>&1 | grep -q 'HTTP/'; do
+      until wget -q -O /dev/null http://127.0.0.1:9333/cluster/status && wget -q -O /dev/null http://127.0.0.1:8888/; do
         attempts=$$((attempts + 1));
-        if [ $$attempts -ge 60 ]; then
+        if [ $$attempts -ge 90 ]; then
           echo peerdb-minio did not become ready in time >&2;
           exit 1;
         fi;
