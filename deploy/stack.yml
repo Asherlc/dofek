@@ -503,6 +503,10 @@ services:
 
   peerdb-minio:
     # SeaweedFS S3 API stand-in; service hostname kept for PeerDB endpoint URLs.
+    # Bind master/filer/volume to loopback, not to `peerdb-minio`: Swarm only
+    # publishes a service name once it has a running task, so binding to the
+    # service's own name deadlocks the first start (the task cannot resolve
+    # itself and never becomes a task). The S3 API still binds 0.0.0.0:9000.
     # https://github.com/seaweedfs/seaweedfs/releases/tag/4.47
     image: chrislusf/seaweedfs:4.47@sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882
     environment:
@@ -518,7 +522,7 @@ services:
       - -euc
       - |
         printf '%s\n' "{\"identities\":[{\"name\":\"$$MINIO_ROOT_USER\",\"credentials\":[{\"accessKey\":\"$$MINIO_ROOT_USER\",\"secretKey\":\"$$MINIO_ROOT_PASSWORD\"}],\"actions\":[\"Admin\",\"Read\",\"Write\",\"List\",\"Tagging\"]}]}" > /tmp/s3.json
-        weed server -ip=peerdb-minio -dir=/data -s3 -s3.port=9000 -s3.ip.bind=0.0.0.0 -s3.config=/tmp/s3.json -s3.port.iceberg=0 -s3.port.lance=0 -master.volumeSizeLimitMB=1024 -master.telemetry=false &
+        weed server -ip=127.0.0.1 -dir=/data -s3 -s3.port=9000 -s3.ip.bind=0.0.0.0 -s3.config=/tmp/s3.json -s3.port.iceberg=0 -s3.port.lance=0 -master.volumeSizeLimitMB=1024 -master.telemetry=false &
         weed_pid=$$!
         attempts=0
         until wget -q -O /dev/null http://127.0.0.1:9333/cluster/status && wget -q -O /dev/null http://127.0.0.1:8888/; do
