@@ -103,43 +103,37 @@ export const MobileFirstViewport: Story = {
     docs: {
       description: {
         story:
-          "Keeps the concrete recovery outcome visible within a fixed 390 × 667 first-viewport frame.",
+          "Keeps brand, headline, and the neural data-flow hero visible within a fixed 390 × 667 first-viewport frame.",
       },
     },
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
 
-    await expect(canvas.getByText("Example recovery picture")).toBeVisible();
-    await expect(canvas.getByText("74%")).toBeVisible();
-    await expect(canvas.getByText("Near baseline")).toBeVisible();
+    await expect(
+      canvas.getByRole("heading", { name: /your health data, in one place/i }),
+    ).toBeVisible();
+    await expect(canvas.getByText("Sleep")).toBeVisible();
+    await expect(canvas.getByText("Get started")).toBeVisible();
   },
 };
 
-export const IllustrativeDecisionPreview: Story = {
-  name: "Illustrative decision preview",
+export const NeuralHero: Story = {
+  name: "Neural data-flow hero",
   parameters: {
     docs: {
       description: {
         story:
-          "Shows the landing-page relationship as an illustrative sample without an unsupported statistical result, sample size, or confidence interval.",
+          "Full-bleed hero with source signals flowing into a central Dofek core and insights flowing out.",
       },
     },
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
 
-    await expect(canvas.getByText("Illustrative relationship")).toBeVisible();
-    await expect(canvas.getByText("Illustrative sample")).toBeVisible();
-    await expect(canvas.getByText("No measured correlation")).toBeVisible();
-    await expect(
-      canvas.getByText("No sample size or confidence interval is shown for this illustration."),
-    ).toBeVisible();
-    await expect(
-      canvas.getByRole("img", {
-        name: "Illustrative scatter plot for demonstration only. X-axis: Sleep consistency (%). Y-axis: Heart rate variability (ms).",
-      }),
-    ).toBeVisible();
+    await expect(canvas.getByText("Heart rate")).toBeVisible();
+    await expect(canvas.getByText("Correlations")).toBeVisible();
+    await expect(canvas.getByText("History")).toBeVisible();
   },
 };
 
