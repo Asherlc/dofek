@@ -115,23 +115,38 @@ services:
       - metric_stream_minio_data:/data
     ports:
       - "127.0.0.1:${METRIC_STREAM_MINIO_PORT:-0}:9000"
-    entrypoint: >
-      /bin/sh -euc "
-      printf '%s\n' \"{\\\"identities\\\":[{\\\"name\\\":\\\"$$MINIO_ROOT_USER\\\",\\\"credentials\\\":[{\\\"accessKey\\\":\\\"$$MINIO_ROOT_USER\\\",\\\"secretKey\\\":\\\"$$MINIO_ROOT_PASSWORD\\\"}],\\\"actions\\\":[\\\"Admin\\\",\\\"Read\\\",\\\"Write\\\",\\\"List\\\",\\\"Tagging\\\"]}]}\" > /tmp/s3.json;
-      weed server -ip=metric-stream-minio -dir=/data -s3 -s3.port=9000 -s3.ip.bind=0.0.0.0 -s3.config=/tmp/s3.json -s3.port.iceberg=0 -s3.port.lance=0 -master.volumeSizeLimitMB=1024 -master.telemetry=false &
-      attempts=0;
-      until wget -q -O /dev/null http://127.0.0.1:9333/cluster/status && wget -q -O /dev/null http://127.0.0.1:8888/; do
-        attempts=$$((attempts + 1));
-        if [ $$attempts -ge 90 ]; then
-          echo metric-stream-minio did not become ready in time >&2;
-          exit 1;
-        fi;
-        sleep 1;
-      done;
-      printf 's3.bucket.create -name %s\n' \"$$METRIC_STREAM_R2_BUCKET\" |
-        weed shell -master=localhost:9333;
-      wait
-      "
+    entrypoint:
+      - /bin/sh
+      - -euc
+      - |
+        printf '%s\n' "{\"identities\":[{\"name\":\"$$MINIO_ROOT_USER\",\"credentials\":[{\"accessKey\":\"$$MINIO_ROOT_USER\",\"secretKey\":\"$$MINIO_ROOT_PASSWORD\"}],\"actions\":[\"Admin\",\"Read\",\"Write\",\"List\",\"Tagging\"]}]}" > /tmp/s3.json
+        weed server -ip=metric-stream-minio -dir=/data -s3 -s3.port=9000 -s3.ip.bind=0.0.0.0 -s3.config=/tmp/s3.json -s3.port.iceberg=0 -s3.port.lance=0 -master.volumeSizeLimitMB=1024 -master.telemetry=false &
+        weed_pid=$$!
+        attempts=0
+        until wget -q -O /dev/null http://127.0.0.1:9333/cluster/status && wget -q -O /dev/null http://127.0.0.1:8888/; do
+          attempts=$$((attempts + 1))
+          if [ $$attempts -ge 90 ]; then
+            echo metric-stream-minio master/filer did not become ready in time >&2
+            kill $$weed_pid 2>/dev/null || true
+            exit 1
+          fi
+          if ! kill -0 $$weed_pid 2>/dev/null; then
+            echo metric-stream-minio weed server exited before ready >&2
+            exit 1
+          fi
+          sleep 1
+        done
+        attempts=0
+        until printf 's3.bucket.create -name %s\n' "$$METRIC_STREAM_R2_BUCKET" | weed shell -master=localhost:9333; do
+          attempts=$$((attempts + 1))
+          if [ $$attempts -ge 30 ]; then
+            echo metric-stream-minio bucket create failed >&2
+            kill $$weed_pid 2>/dev/null || true
+            exit 1
+          fi
+          sleep 1
+        done
+        wait
 
   metric-stream-clickhouse-sink: &metric-stream-clickhouse-sink
     build:
