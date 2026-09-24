@@ -4,6 +4,24 @@ description: Build the Zepp ZAB package with the local Zeus CLI dependency
 runs:
   using: composite
   steps:
+    # Zeus fetches https://upload-cdn.zepp.com/.../devices.json on every cold
+    # runner ("Updating devices, waiting ..."). Seed the CLI cache so CI builds
+    # do not depend on that CDN being reachable.
+    # https://docs.zepp.com/docs/guides/tools/cli/
+    - name: Seed Zeus device cache
+      shell: bash
+      run: |
+        zeus_version="$(node -p "require('./packages/zepp/package.json').devDependencies['@zeppos/zeus-cli']")"
+        cache_version="$(node -p "require('./packages/zepp/ci/zeus_devices.json').version")"
+        if [ "$zeus_version" != "$cache_version" ]; then
+          echo "::error::packages/zepp/ci/zeus_devices.json version ($cache_version) must match @zeppos/zeus-cli ($zeus_version). Refresh the cache after upgrading Zeus."
+          exit 1
+        fi
+        mkdir -p "$HOME/.zepp"
+        cp packages/zepp/ci/zeus_devices.json "$HOME/.zepp/.zeus_devices"
+        # clearDevicesCache() only wipes devices when this version file is missing
+        # or older than the installed @zeppos/zeus-cli package version.
+        printf '%s\n' "$zeus_version" > "$HOME/.zepp/.zeus_version"
     - name: Build ZAB package
       shell: bash
       working-directory: packages/zepp

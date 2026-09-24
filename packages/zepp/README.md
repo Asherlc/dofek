@@ -132,6 +132,8 @@ pnpm install
 
 The package scripts invoke the local `@zeppos/zeus-cli` dependency through `tools/zeus.ts`; no global Zeus install is required.
 
+CI seeds Zeus's `~/.zepp/.zeus_devices` cache from [`ci/zeus_devices.json`](./ci/zeus_devices.json) so builds do not depend on the Amazfit/Zepp device CDN ([Zeus CLI](https://docs.zepp.com/docs/guides/tools/cli/)). After upgrading `@zeppos/zeus-cli`, refresh that file (`version` must match the new CLI) by running a successful local `pnpm build` and copying `~/.zepp/.zeus_devices`.
+
 ### Simulator
 
 ```bash
