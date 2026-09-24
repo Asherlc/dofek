@@ -31,10 +31,7 @@ describe("PeerDB staging retention against SeaweedFS S3", () => {
   let container: StartedTestContainer | undefined;
 
   beforeAll(async () => {
-    container = await createSeaweedFsS3Container({
-      accessKeyId: username,
-      secretAccessKey: password,
-    }).start();
+    container = await createSeaweedFsS3Container().start();
     client = new S3Client({
       credentials: {
         accessKeyId: username,

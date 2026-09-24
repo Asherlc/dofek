@@ -516,9 +516,10 @@ services:
       - /mnt/dofek-data/peerdb-minio:/data
     entrypoint: >
       /bin/sh -euc "
-      weed server -ip=peerdb-minio -dir=/data -s3 -s3.port=9000 -s3.ip.bind=0.0.0.0 -master.volumeSizeLimitMB=1024 -master.telemetry=false &
+      printf '%s\n' \"{\\\"identities\\\":[{\\\"name\\\":\\\"$$MINIO_ROOT_USER\\\",\\\"credentials\\\":[{\\\"accessKey\\\":\\\"$$MINIO_ROOT_USER\\\",\\\"secretKey\\\":\\\"$$MINIO_ROOT_PASSWORD\\\"}],\\\"actions\\\":[\\\"Admin\\\",\\\"Read\\\",\\\"Write\\\",\\\"List\\\",\\\"Tagging\\\"]}]}\" > /tmp/s3.json;
+      weed server -ip=peerdb-minio -dir=/data -s3 -s3.port=9000 -s3.ip.bind=0.0.0.0 -s3.config=/tmp/s3.json -s3.port.iceberg=0 -s3.port.lance=0 -master.volumeSizeLimitMB=1024 -master.telemetry=false &
       attempts=0;
-      until wget -q -O /dev/null http://127.0.0.1:9000/; do
+      until wget -q -S -O /dev/null http://127.0.0.1:9000/ 2>&1 | grep -q 'HTTP/'; do
         attempts=$$((attempts + 1));
         if [ $$attempts -ge 60 ]; then
           echo peerdb-minio did not become ready in time >&2;
@@ -526,8 +527,6 @@ services:
         fi;
         sleep 1;
       done;
-      printf 's3.configure -access_key=%s -secret_key=%s -user=%s -actions=Admin,Read,Write,List,Tagging -apply\n' \"$$MINIO_ROOT_USER\" \"$$MINIO_ROOT_PASSWORD\" \"$$MINIO_ROOT_USER\" |
-        weed shell -master=localhost:9333;
       printf 's3.bucket.create -name %s\n' \"$$PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME\" |
         weed shell -master=localhost:9333;
       apk add --no-cache aws-cli >/dev/null;
@@ -536,8 +535,15 @@ services:
       export AWS_DEFAULT_REGION=us-east-1;
       printf '%s\n' \"$$PEERDB_STAGE_LIFECYCLE_CONFIG\" > /tmp/peerdb-lifecycle.json;
       aws --endpoint-url=http://127.0.0.1:9000 s3api put-bucket-lifecycle-configuration --bucket \"$$PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME\" --lifecycle-configuration file:///tmp/peerdb-lifecycle.json;
+      touch /tmp/peerdb-minio-ready;
       wait
       "
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/peerdb-minio-ready"]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+      start_period: 5s
     deploy:
       resources:
         limits:

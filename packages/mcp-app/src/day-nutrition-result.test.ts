@@ -35,7 +35,25 @@ describe("parseDayNutritionResult", () => {
     });
   });
 
-  it("rejects malformed tool content", () => {
+  it("rejects non-object structured content", () => {
+    expect(parseDayNutritionResult(null)).toEqual({ status: "invalid" });
+    expect(parseDayNutritionResult("x")).toEqual({ status: "invalid" });
+    expect(parseDayNutritionResult(1)).toEqual({ status: "invalid" });
+  });
+
+  it("rejects payloads without a result object", () => {
     expect(parseDayNutritionResult({})).toEqual({ status: "invalid" });
+    expect(parseDayNutritionResult({ result: null })).toEqual({ status: "invalid" });
+    expect(parseDayNutritionResult({ result: "x" })).toEqual({ status: "invalid" });
+  });
+
+  it("rejects result objects without day_summary", () => {
+    expect(parseDayNutritionResult({ result: {} })).toEqual({ status: "invalid" });
+  });
+
+  it("rejects day_summary values that fail schema validation", () => {
+    expect(parseDayNutritionResult({ result: { day_summary: { date: "bad" } } })).toEqual({
+      status: "invalid",
+    });
   });
 });

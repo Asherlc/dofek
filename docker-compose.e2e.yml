@@ -86,9 +86,10 @@ services:
           - dofek-account-erasure-ledger.account-erasure-minio
     entrypoint: >
       /bin/sh -euc "
-      weed server -ip=account-erasure-minio -dir=/data -s3 -s3.port=9000 -s3.ip.bind=0.0.0.0 -master.volumeSizeLimitMB=1024 -master.telemetry=false &
+      printf '%s\n' \"{\\\"identities\\\":[{\\\"name\\\":\\\"$$MINIO_ROOT_USER\\\",\\\"credentials\\\":[{\\\"accessKey\\\":\\\"$$MINIO_ROOT_USER\\\",\\\"secretKey\\\":\\\"$$MINIO_ROOT_PASSWORD\\\"}],\\\"actions\\\":[\\\"Admin\\\",\\\"Read\\\",\\\"Write\\\",\\\"List\\\",\\\"Tagging\\\"]}]}\" > /tmp/s3.json;
+      weed server -ip=account-erasure-minio -dir=/data -s3 -s3.port=9000 -s3.ip.bind=0.0.0.0 -s3.config=/tmp/s3.json -s3.port.iceberg=0 -s3.port.lance=0 -master.volumeSizeLimitMB=1024 -master.telemetry=false &
       attempts=0;
-      until wget -q -O /dev/null http://127.0.0.1:9000/; do
+      until wget -q -S -O /dev/null http://127.0.0.1:9000/ 2>&1 | grep -q 'HTTP/'; do
         attempts=$$((attempts + 1));
         if [ $$attempts -ge 60 ]; then
           echo account-erasure-minio did not become ready in time >&2;
@@ -96,17 +97,17 @@ services:
         fi;
         sleep 1;
       done;
-      printf 's3.configure -access_key=%s -secret_key=%s -user=%s -actions=Admin,Read,Write,List,Tagging -apply\n' \"$$MINIO_ROOT_USER\" \"$$MINIO_ROOT_PASSWORD\" \"$$MINIO_ROOT_USER\" |
-        weed shell -master=localhost:9333;
       printf 's3.bucket.create -name %s\n' \"$$ACCOUNT_ERASURE_LEDGER_R2_BUCKET\" |
         weed shell -master=localhost:9333;
+      touch /tmp/account-erasure-minio-ready;
       wait
       "
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9000/ || exit 1"]
+      test: ["CMD-SHELL", "test -f /tmp/account-erasure-minio-ready"]
       interval: 2s
       timeout: 5s
-      retries: 15
+      retries: 60
+      start_period: 5s
 
   migrate:
     image: e2e-server
