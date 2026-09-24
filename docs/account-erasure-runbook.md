@@ -109,7 +109,7 @@ production Infisical environment; never commit values to this repository.
 | Remote processors | `BREVO_API_KEY`, `POSTHOG_PERSONAL_API_KEY`, `POSTHOG_PROJECT_ID`, `ZOHO_DESK_CLIENT_ID`, `ZOHO_DESK_CLIENT_SECRET`, `ZOHO_DESK_REFRESH_TOKEN`, `ZOHO_DESK_ORG_ID`, `ZOHO_DESK_DEPARTMENT_ID`; optional `POSTHOG_API_HOST`, `ZOHO_DESK_DATA_CENTER` |
 | Retention proof | `AXIOM_API_TOKEN`, `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`; optional `AXIOM_LOG_DATASET`, `AXIOM_ORG_ID`, `SENTRY_API_HOST` |
 | Stripe and archive cleanup | Existing Stripe credentials, `DB_BACKUPS_R2_BUCKET`, `METRIC_STREAM_R2_BUCKET`, and the R2 credentials above |
-| Replay and CDC proof | `REDPANDA_BROKERS`, `METRIC_STREAM_TOPIC`, ClickHouse credentials, and the PeerDB/MinIO stack configuration |
+| Replay and CDC proof | `REDPANDA_BROKERS`, `METRIC_STREAM_TOPIC`, ClickHouse credentials, and the PeerDB/SeaweedFS staging stack configuration |
 
 Credential requirements:
 
@@ -174,19 +174,18 @@ Before a production rollout:
    incomplete multipart uploads after one day.
 3. Confirm `account-erasure-staging/` in the metric archive expires after one
    day.
-4. Confirm the unversioned PeerDB MinIO `peerdbbucket` has the enabled
-   `peerdb-transient-stage-retention` one-day rule with an empty prefix and no
-   `And`, tag, object-size, or legacy-prefix restriction. That lifecycle rule
-   expires completed objects. Confirm the MinIO server separately has
-   `MINIO_API_STALE_UPLOADS_EXPIRY=24h` and
-   `MINIO_API_STALE_UPLOADS_CLEANUP_INTERVAL=15m` for incomplete multipart
-   uploads; MinIO documents that server-wide stale-upload cleanup as distinct
-   from bucket lifecycle actions. Dofek lists both objects and multipart uploads
+4. Confirm the unversioned PeerDB staging bucket `peerdbbucket` (SeaweedFS S3
+   API on `peerdb-minio`) has the enabled
+   `peerdb-transient-stage-retention` one-day rule with an empty prefix, no
+   `And`, tag, object-size, or legacy-prefix restriction, and
+   `AbortIncompleteMultipartUpload.DaysAfterInitiation=1` for incomplete
+   multipart uploads. That lifecycle rule expires completed objects and aborts
+   stale multipart uploads; Dofek lists both objects and multipart uploads
    before verification. S3 documents that an empty filter applies globally and
    that every other filter form narrows the matching objects:
    [S3 lifecycle filters](https://docs.aws.amazon.com/AmazonS3/latest/API/API_LifecycleRuleFilter.html),
-   [MinIO lifecycle rules](https://min.io/docs/minio/linux/reference/minio-mc/mc-ilm-rule-add.html),
-   [MinIO stale multipart-upload settings](https://docs.min.io/aistor/reference/aistor-server/settings/core/#stale-multipart-upload-expiry).
+   [AbortIncompleteMultipartUpload](https://docs.aws.amazon.com/AmazonS3/latest/API/API_AbortIncompleteMultipartUpload.html),
+   [SeaweedFS S3 API](https://github.com/seaweedfs/seaweedfs/wiki/Amazon-S3-API).
 5. Run the deploy environment validator and refuse rollout if any prerequisite
    is empty or inaccessible.
 6. Confirm the web and worker startup gates can read and reconcile the R2
@@ -265,7 +264,7 @@ incident channels.
 | `remote_revocation` / verification | Provider-specific disposition and first HTTP failure | Correct the provider credential or endpoint. Keep the encrypted snapshot until verification succeeds. |
 | `processor_erasure` / verification | Brevo process status, PostHog deletion status, and Zoho ticket deletion result | Restore processor API access and retry. Never discard a credential merely to advance the phase. |
 | `postgres_erasure` / `postgres_profile_delete` | PostgreSQL transaction error and exhaustive ownership assertion | Repair the schema/query cause and retry. Never issue broad ad-hoc deletes or clear `user_id` manually. |
-| `peerdb_drain_verification` | Captured WAL LSN, PeerDB mirror position, MinIO lifecycle/versioning/object/upload checks | Restore CDC or staging retention, then let the proof rerun. Follow the CDC health runbook for slot or mirror failures. |
+| `peerdb_drain_verification` | Captured WAL LSN, PeerDB mirror position, SeaweedFS S3 lifecycle/versioning/object/upload checks | Restore CDC or staging retention, then let the proof rerun. Follow the CDC health runbook for slot or mirror failures. |
 | `clickhouse_initial` / verification | Mutation status, failed part/reason, and attributable-row counts across the managed table allowlist | Fix the mutation/schema issue and wait for physical deletion. Do not treat an accepted mutation as completed. |
 | `archive_initial` / verification | R2 object key, conditional-write result, and persisted last-key progress | Resolve R2 access or concurrent-write conflicts and resume. The verifier performs another full sweep from the beginning. |
 | `request_pii_scrub` | Database transaction failure and remaining ownership assertion | Repair the direct cause. Do not manually remove the encrypted snapshot before all preceding verification completes. |
@@ -478,7 +477,7 @@ Also validate:
   ClickHouse;
 - Redpanda high-watermark capture, consumer drain, and seven-day replay
   waiting;
-- real MinIO lifecycle, object, and multipart-upload inspection;
+- real SeaweedFS S3 lifecycle, object, and multipart-upload inspection;
 - R2 archive conditional rewrite and backup sweep pagination;
 - web and iOS cold restart, status-capability recovery, local purge, background
   cutoff, native module cleanup, and watch cleanup;

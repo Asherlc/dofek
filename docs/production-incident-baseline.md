@@ -27389,3 +27389,13 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   slice passes its 289-test dry run and kills all 6 mutants for a 100% score.
 - **Remaining risk / follow-up:** The replacement hosted CI run is pending. No
   production retry, timeout, or warn-and-continue behavior was added.
+
+## 2026-09-24 — Quay MinIO unauthorized; PeerDB/CI S3 stand-in moved to SeaweedFS
+
+- **Symptoms:** PR CI failed pulling `quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z` with unauthorized/denied responses, blocking PeerDB-backed integration shards and E2E `account-erasure-minio`.
+- **User impact:** None in production yet; next Swarm reschedule of `peerdb-minio` would have failed the same pull.
+- **Root cause:** Quay distribution of the archived MinIO OSS image became unauthorized for anonymous CI/deploy pulls. MinIO Inc. had already discontinued the open-source project; the prior quay.io stopgap is no longer reliably pullable.
+- **Fix:** Replaced all local/CI/production S3 stand-ins with digest-pinned SeaweedFS `chrislusf/seaweedfs:4.47@sha256:ce9e796f…` (S3 API on `:9000`). Kept service hostnames (`peerdb-minio`, `metric-stream-minio`, `account-erasure-minio`). Entrypoints configure an Admin S3 identity from the existing `MINIO_ROOT_*` credential env vars, create the bucket via `weed shell`, and apply the PeerDB one-day lifecycle (including `AbortIncompleteMultipartUpload`) via AWS CLI. Integration tests use a shared SeaweedFS GenericContainer helper.
+- **Validation:** Local `docker compose -f docker-compose.peerdb.yml` recreate: ListBuckets/PutObject/GetBucketLifecycle succeeded with path-style clients. Compose config for peerdb/e2e parses. Full CI validation pending on the next push.
+- **Remaining risk:** Production volume `/mnt/dofek-data/peerdb-minio` still holds MinIO on-disk layout; first SeaweedFS start on that path needs a clean directory (or wipe) because the formats are incompatible. Coordinate wipe with PeerDB staging drain before the next web-stack deploy.
+- **Follow-up:** Confirm CI green on #2802; wipe or migrate the production PeerDB staging volume before deploying `deploy/stack.yml`.

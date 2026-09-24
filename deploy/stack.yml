@@ -502,31 +502,40 @@ services:
           memory: 64M
 
   peerdb-minio:
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    # SeaweedFS S3 API stand-in; service hostname kept for PeerDB endpoint URLs.
+    # https://github.com/seaweedfs/seaweedfs/releases/tag/4.47
+    image: chrislusf/seaweedfs:4.47@sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882
     environment:
+      # Credential names retained for PeerDB client env wiring; SeaweedFS accepts
+      # these as S3 access/secret keys for path-style clients.
       MINIO_ROOT_USER: peerdb
       MINIO_ROOT_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
-      MINIO_API_STALE_UPLOADS_EXPIRY: 24h
-      MINIO_API_STALE_UPLOADS_CLEANUP_INTERVAL: 15m
       PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME: peerdbbucket
-      PEERDB_STAGE_LIFECYCLE_CONFIG: '{"Rules":[{"Expiration":{"Days":1},"Filter":{"Prefix":""},"ID":"peerdb-transient-stage-retention","Status":"Enabled"}]}'
+      PEERDB_STAGE_LIFECYCLE_CONFIG: '{"Rules":[{"Expiration":{"Days":1},"Filter":{"Prefix":""},"ID":"peerdb-transient-stage-retention","Status":"Enabled","AbortIncompleteMultipartUpload":{"DaysAfterInitiation":1}}]}'
     volumes:
       - /mnt/dofek-data/peerdb-minio:/data
     entrypoint: >
       /bin/sh -euc "
-      minio server /data --console-address=:36987 &
+      weed server -ip=peerdb-minio -dir=/data -s3 -s3.port=9000 -s3.ip.bind=0.0.0.0 -master.volumeSizeLimitMB=1024 -master.telemetry=false &
       attempts=0;
-      until mc alias set peerdb-minio http://peerdb-minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD; do
+      until wget -q -O /dev/null http://127.0.0.1:9000/; do
         attempts=$$((attempts + 1));
-        if [ $$attempts -ge 30 ]; then
+        if [ $$attempts -ge 60 ]; then
           echo peerdb-minio did not become ready in time >&2;
           exit 1;
         fi;
         sleep 1;
       done;
-      mc mb --ignore-existing peerdb-minio/$$PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME;
-      printf '%s\n' "$$PEERDB_STAGE_LIFECYCLE_CONFIG" |
-        mc ilm rule import peerdb-minio/$$PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME;
+      printf 's3.configure -access_key=%s -secret_key=%s -user=%s -actions=Admin,Read,Write,List,Tagging -apply\n' \"$$MINIO_ROOT_USER\" \"$$MINIO_ROOT_PASSWORD\" \"$$MINIO_ROOT_USER\" |
+        weed shell -master=localhost:9333;
+      printf 's3.bucket.create -name %s\n' \"$$PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME\" |
+        weed shell -master=localhost:9333;
+      apk add --no-cache aws-cli >/dev/null;
+      export AWS_ACCESS_KEY_ID=\"$$MINIO_ROOT_USER\";
+      export AWS_SECRET_ACCESS_KEY=\"$$MINIO_ROOT_PASSWORD\";
+      export AWS_DEFAULT_REGION=us-east-1;
+      printf '%s\n' \"$$PEERDB_STAGE_LIFECYCLE_CONFIG\" > /tmp/peerdb-lifecycle.json;
+      aws --endpoint-url=http://127.0.0.1:9000 s3api put-bucket-lifecycle-configuration --bucket \"$$PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME\" --lifecycle-configuration file:///tmp/peerdb-lifecycle.json;
       wait
       "
     deploy:

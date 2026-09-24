@@ -73,11 +73,12 @@ services:
       start_period: 5s
 
   account-erasure-minio:
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    # SeaweedFS S3 API stand-in; service hostname kept for R2_ENDPOINT wiring.
+    # https://github.com/seaweedfs/seaweedfs/releases/tag/4.47
+    image: chrislusf/seaweedfs:4.47@sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882
     environment:
       MINIO_ROOT_USER: accounterasure
       MINIO_ROOT_PASSWORD: account-erasure-e2e-secret
-      MINIO_DOMAIN: account-erasure-minio
       ACCOUNT_ERASURE_LEDGER_R2_BUCKET: dofek-account-erasure-ledger
     networks:
       default:
@@ -85,21 +86,24 @@ services:
           - dofek-account-erasure-ledger.account-erasure-minio
     entrypoint: >
       /bin/sh -euc "
-      minio server /data --console-address=:36987 &
+      weed server -ip=account-erasure-minio -dir=/data -s3 -s3.port=9000 -s3.ip.bind=0.0.0.0 -master.volumeSizeLimitMB=1024 -master.telemetry=false &
       attempts=0;
-      until mc alias set account-erasure-minio http://account-erasure-minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD; do
+      until wget -q -O /dev/null http://127.0.0.1:9000/; do
         attempts=$$((attempts + 1));
-        if [ $$attempts -ge 30 ]; then
+        if [ $$attempts -ge 60 ]; then
           echo account-erasure-minio did not become ready in time >&2;
           exit 1;
         fi;
         sleep 1;
       done;
-      mc mb --ignore-existing account-erasure-minio/$$ACCOUNT_ERASURE_LEDGER_R2_BUCKET;
+      printf 's3.configure -access_key=%s -secret_key=%s -user=%s -actions=Admin,Read,Write,List,Tagging -apply\n' \"$$MINIO_ROOT_USER\" \"$$MINIO_ROOT_PASSWORD\" \"$$MINIO_ROOT_USER\" |
+        weed shell -master=localhost:9333;
+      printf 's3.bucket.create -name %s\n' \"$$ACCOUNT_ERASURE_LEDGER_R2_BUCKET\" |
+        weed shell -master=localhost:9333;
       wait
       "
     healthcheck:
-      test: ["CMD", "mc", "ready", "account-erasure-minio"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9000/ || exit 1"]
       interval: 2s
       timeout: 5s
       retries: 15

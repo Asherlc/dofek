@@ -6,7 +6,7 @@ import {
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
-import { GenericContainer, Wait } from "testcontainers";
+import type { StartedTestContainer } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   type DatabaseBackupStorage,
@@ -14,9 +14,8 @@ import {
   verifyAccountErasureBackupRetention,
 } from "./backup-retention.ts";
 import { R2DatabaseBackupStorage } from "./database-backup-storage.ts";
+import { createSeaweedFsS3Container } from "./test-helpers.ts";
 
-const minioImage =
-  "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e";
 const password = "backup-retention-integration-secret";
 const username = "backup-retention";
 const requestedAt = new Date("2026-07-01T00:00:00.000Z");
@@ -24,21 +23,16 @@ const scrubbedAt = new Date("2026-07-08T00:00:00.000Z");
 const beforeScrub = "Health-20260707-235959-10000000-0000-4000-8000-000000001994";
 const afterScrub = "Health-20260720-000001-30000000-0000-4000-8000-000000001994";
 
-describe("R2 database backup retention against MinIO", () => {
+describe("R2 database backup retention against SeaweedFS S3", () => {
   let bucketSequence = 0;
   let client: S3Client;
-  let container: Awaited<ReturnType<GenericContainer["start"]>> | undefined;
+  let container: StartedTestContainer | undefined;
 
   beforeAll(async () => {
-    container = await new GenericContainer(minioImage)
-      .withCommand(["server", "/data"])
-      .withEnvironment({
-        MINIO_ROOT_PASSWORD: password,
-        MINIO_ROOT_USER: username,
-      })
-      .withExposedPorts(9000)
-      .withWaitStrategy(Wait.forLogMessage(/API:/))
-      .start();
+    container = await createSeaweedFsS3Container({
+      accessKeyId: username,
+      secretAccessKey: password,
+    }).start();
     client = new S3Client({
       credentials: {
         accessKeyId: username,

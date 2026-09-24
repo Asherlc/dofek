@@ -9,7 +9,7 @@ import {
   S3Client,
   UploadPartCommand,
 } from "@aws-sdk/client-s3";
-import { GenericContainer, Wait } from "testcontainers";
+import type { StartedTestContainer } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   type PeerDbStagingStorage,
@@ -20,29 +20,21 @@ import {
   capturePeerDbStagingBoundary,
   type PeerDbStagingBarrierDatabase,
 } from "./peerdb-staging-writer-barrier.ts";
+import { createSeaweedFsS3Container } from "./test-helpers.ts";
 
 const bucket = "peerdbbucket";
-const minioImage =
-  "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e";
 const password = "peerdb-integration-secret";
 const username = "peerdb";
 
-describe("PeerDB staging retention against MinIO", () => {
+describe("PeerDB staging retention against SeaweedFS S3", () => {
   let client: S3Client;
-  let container: Awaited<ReturnType<GenericContainer["start"]>> | undefined;
+  let container: StartedTestContainer | undefined;
 
   beforeAll(async () => {
-    container = await new GenericContainer(minioImage)
-      .withCommand(["server", "/data"])
-      .withEnvironment({
-        MINIO_API_STALE_UPLOADS_CLEANUP_INTERVAL: "15m",
-        MINIO_API_STALE_UPLOADS_EXPIRY: "24h",
-        MINIO_ROOT_PASSWORD: password,
-        MINIO_ROOT_USER: username,
-      })
-      .withExposedPorts(9000)
-      .withWaitStrategy(Wait.forLogMessage(/API:/))
-      .start();
+    container = await createSeaweedFsS3Container({
+      accessKeyId: username,
+      secretAccessKey: password,
+    }).start();
     client = new S3Client({
       credentials: {
         accessKeyId: username,
@@ -59,6 +51,7 @@ describe("PeerDB staging retention against MinIO", () => {
         LifecycleConfiguration: {
           Rules: [
             {
+              AbortIncompleteMultipartUpload: { DaysAfterInitiation: 1 },
               Expiration: { Days: 1 },
               Filter: { Prefix: "" },
               ID: "peerdb-transient-stage-retention",
