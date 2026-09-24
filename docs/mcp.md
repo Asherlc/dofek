@@ -196,10 +196,10 @@ The canonical tool names, schemas, and scope checks are defined in the [MCP tool
 | `get_nutrition_summary` | `nutrition:read` | Returns a daily date spine of calorie, macronutrient, fiber, and meal totals with source resolution and logging-completeness status. |
 | `search_food_entries` | `nutrition:read` | Searches effective food records by inclusive date range, optional text, and visibility. |
 | `get_food_entry` | `nutrition:read` | Returns one effective food record with its version, modifiability, normalized nutrients, source provider, and provenance. |
-| `create_food_entry` | `nutrition:read` + `nutrition:write` | Creates one itemized Dofek food record. |
-| `update_food_entry` | `nutrition:read` + `nutrition:write` | Appends scalar and normalized nutrient decisions to a food record. |
-| `delete_food_entry` | `nutrition:read` + `nutrition:write` | Appends a deletion tombstone; this is the only food tool advertised as destructive. |
-| `restore_food_entry` | `nutrition:read` + `nutrition:write` | Restores a deleted record while retaining its field and nutrient decisions. |
+| `create_food_entry` | `nutrition:read` + `nutrition:write` | Creates one itemized Dofek food record and returns that day's calorie/macro preview. |
+| `update_food_entry` | `nutrition:read` + `nutrition:write` | Appends scalar and normalized nutrient decisions to a food record and returns that day's calorie/macro preview. |
+| `delete_food_entry` | `nutrition:read` + `nutrition:write` | Appends a deletion tombstone; this is the only food tool advertised as destructive. Returns that day's calorie/macro preview. |
+| `restore_food_entry` | `nutrition:read` + `nutrition:write` | Restores a deleted record while retaining its field and nutrient decisions. Returns that day's calorie/macro preview. |
 | `get_food_entry_history` | `nutrition:read` | Returns the paginated command and decision history for a food record. |
 | `get_body_metrics` | `health:read` | Returns reconciled body metrics, value kinds, source values, and 7/28-day rolling weight statistics. |
 | `get_subjective_timeline` | `health:read` | Returns recorded check-ins, symptoms, and injury events for an exact date range. |
@@ -290,6 +290,14 @@ It returns the immutable
 `replayed: true`, plus the current effective record. Reusing the UUID for a
 different payload, operation, record, or client produces `CONFLICT`. The MCP
 result intentionally omits the service's internal affected-date bookkeeping.
+
+Successful create, update, delete, and restore responses also include a compact
+`day_summary` for the record's effective date: total calories, protein/carbs/fat
+grams, energy-share percentages, and the user's calorie target with
+remaining/over/progress. `day_summary` is `null` when that date has a nutrition
+source conflict. MCP Apps clients that support UI resources render the Day
+Nutrition widget at `ui://dofek/day-nutrition.html`; other clients still receive
+the same JSON preview in the tool result.
 
 Food command errors use this stable JSON error contract:
 

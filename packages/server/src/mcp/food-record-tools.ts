@@ -1,3 +1,4 @@
+import type { DayNutritionPreview } from "@dofek/mcp-contracts/day-nutrition";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { NUTRIENT_FIELD_BY_ID } from "dofek/db/nutrient-columns";
 import { foodCategoryEnum, mealEnum } from "dofek/db/schema/enums";
@@ -10,13 +11,17 @@ import type {
   FoodRecordHistoryItem,
   FoodRecordHistoryPage,
 } from "../repositories/food-record-types.ts";
+import { FoodRepository } from "../repositories/food-repository.ts";
+import { SettingsRepository } from "../repositories/settings-repository.ts";
 import {
   FoodRecordError,
   type FoodRecordMutationResult,
   FoodRecordService,
   reportUnexpectedFoodRecordError,
 } from "../services/food-record-service.ts";
+import { dayNutritionResourceUri } from "./app-resource.ts";
 import type { DofekMcpContext } from "./context.ts";
+import { toDayNutritionPreview } from "./day-nutrition-output.ts";
 import { foodMutationTelemetryForTool, logFoodMutation } from "./mutation-telemetry.ts";
 import { requireMcpScope } from "./token-repository.ts";
 import { mcpOutputSchemas } from "./tool-output.ts";
@@ -56,6 +61,7 @@ const mutationAnnotations = {
   destructiveHint: false,
   idempotentHint: true,
 } as const;
+const mutationUiMeta = { ui: { resourceUri: dayNutritionResourceUri } } as const;
 
 function foodRecordToTransport(record: EffectiveFoodRecord) {
   return {
@@ -111,7 +117,10 @@ function historyToTransport(page: FoodRecordHistoryPage) {
   };
 }
 
-function mutationToTransport(result: FoodRecordMutationResult) {
+function mutationToTransport(
+  result: FoodRecordMutationResult,
+  daySummary: DayNutritionPreview | null,
+) {
   return {
     operation: {
       change_id: result.operation.changeId,
@@ -119,6 +128,7 @@ function mutationToTransport(result: FoodRecordMutationResult) {
       replayed: result.operation.replayed,
     },
     record: foodRecordToTransport(result.record),
+    day_summary: daySummary,
   };
 }
 
@@ -166,6 +176,15 @@ async function foodToolResult<T>(
     reportUnexpectedFoodRecordError(error, "mcp_tool");
     return jsonToolError("INTERNAL_ERROR", "The food record request could not be completed.");
   }
+}
+
+async function mutationToolResult(
+  operation: () => Promise<ReturnType<typeof mutationToTransport>>,
+  telemetry?: ReturnType<typeof foodMutationTelemetryForTool>,
+) {
+  const result = await foodToolResult(operation, telemetry);
+  if ("isError" in result && result.isError) return result;
+  return { ...result, _meta: mutationUiMeta };
 }
 
 function requireMutationScopes(context: DofekMcpContext): void {
@@ -223,6 +242,25 @@ function editableFieldToDomain(field: z.infer<typeof editableFieldSchema>) {
     serving_weight_grams: "servingWeightGrams",
   } as const;
   return fieldNames[field];
+}
+
+async function loadDaySummary(
+  context: DofekMcpContext,
+  date: string,
+): Promise<DayNutritionPreview | null> {
+  const settingsRepository = new SettingsRepository(context.db, context.userId);
+  const foodRepository = new FoodRepository(context.db, context.userId, context.timezone);
+  const calorieGoal = await settingsRepository.getCalorieGoalContext();
+  const { summary } = await foodRepository.nutritionByDate(date, calorieGoal.target);
+  return summary === null ? null : toDayNutritionPreview(date, summary, calorieGoal.type);
+}
+
+async function mutateWithDaySummary(
+  context: DofekMcpContext,
+  mutate: () => Promise<FoodRecordMutationResult>,
+): Promise<ReturnType<typeof mutationToTransport>> {
+  const result = await mutate();
+  return mutationToTransport(result, await loadDaySummary(context, result.record.date));
 }
 
 export function registerFoodRecordTools(server: McpServer, context: DofekMcpContext): void {
@@ -292,7 +330,8 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
     "create_food_entry",
     {
       title: "Create Food Entry",
-      description: "Create one itemized Dofek food record.",
+      description:
+        "Create one itemized Dofek food record and return that day's calorie and macro preview.",
       annotations: mutationAnnotations,
       inputSchema: {
         request_id: z.uuid(),
@@ -307,6 +346,7 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
         nutrients: z.record(nutrientIdSchema, nutrientAmountSchema),
       },
       outputSchema: mcpOutputSchemas.foodRecordMutation,
+      _meta: mutationUiMeta,
     },
     async ({
       request_id,
@@ -321,10 +361,10 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
       nutrients,
     }) => {
       requireMutationScopes(context);
-      return foodToolResult(
+      return mutationToolResult(
         async () =>
-          mutationToTransport(
-            await service.create({
+          mutateWithDaySummary(context, () =>
+            service.create({
               requestId: request_id,
               date,
               meal,
@@ -346,7 +386,8 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
     "update_food_entry",
     {
       title: "Update Food Entry",
-      description: "Append validated scalar and nutrient decisions to a food record.",
+      description:
+        "Append validated scalar and nutrient decisions to a food record and return that day's calorie and macro preview.",
       annotations: mutationAnnotations,
       inputSchema: {
         ...targetInputSchema,
@@ -365,6 +406,7 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
         nutrient_clear: z.array(nutrientIdSchema),
       },
       outputSchema: mcpOutputSchemas.foodRecordMutation,
+      _meta: mutationUiMeta,
     },
     async ({
       record_id,
@@ -376,10 +418,10 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
       nutrient_clear,
     }) => {
       requireMutationScopes(context);
-      return foodToolResult(
+      return mutationToolResult(
         async () =>
-          mutationToTransport(
-            await service.update({
+          mutateWithDaySummary(context, () =>
+            service.update({
               recordId: record_id,
               expectedVersion: expected_version,
               requestId: request_id,
@@ -415,13 +457,14 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
         },
         inputSchema: targetInputSchema,
         outputSchema: mcpOutputSchemas.foodRecordMutation,
+        _meta: mutationUiMeta,
       },
       async ({ record_id, expected_version, request_id }) => {
         requireMutationScopes(context);
-        return foodToolResult(
+        return mutationToolResult(
           async () =>
-            mutationToTransport(
-              await operation({
+            mutateWithDaySummary(context, () =>
+              operation({
                 recordId: record_id,
                 expectedVersion: expected_version,
                 requestId: request_id,
@@ -436,13 +479,13 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
   registerTargetMutation(
     "delete_food_entry",
     "Delete Food Entry",
-    "Append a deletion tombstone to a food record.",
+    "Append a deletion tombstone to a food record and return that day's calorie and macro preview.",
     (input) => service.delete(input),
   );
   registerTargetMutation(
     "restore_food_entry",
     "Restore Food Entry",
-    "Restore a deleted food record while retaining its field decisions.",
+    "Restore a deleted food record while retaining its field decisions and return that day's calorie and macro preview.",
     (input) => service.restore(input),
   );
 

@@ -5,15 +5,14 @@ import {
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
-import { GenericContainer, Wait } from "testcontainers";
+import type { StartedTestContainer } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eraseMetricStreamArchive, R2MetricStreamArchiveStorage } from "./archive-erasure.ts";
+import { createSeaweedFsS3Container } from "./test-helpers.ts";
 
 const bucket = "metric-archive";
 const deletingUserId = "10000000-0000-4000-8000-000000001994";
 const otherUserId = "20000000-0000-4000-8000-000000001994";
-const minioImage =
-  "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e";
 const password = "archive-erasure-integration-secret";
 const username = "archive-erasure";
 
@@ -31,20 +30,12 @@ function metricEvent(userId: string, id: string): Record<string, unknown> {
   };
 }
 
-describe("R2 archive erasure against MinIO", () => {
+describe("R2 archive erasure against SeaweedFS S3", () => {
   let client: S3Client;
-  let container: Awaited<ReturnType<GenericContainer["start"]>> | undefined;
+  let container: StartedTestContainer | undefined;
 
   beforeAll(async () => {
-    container = await new GenericContainer(minioImage)
-      .withCommand(["server", "/data"])
-      .withEnvironment({
-        MINIO_ROOT_PASSWORD: password,
-        MINIO_ROOT_USER: username,
-      })
-      .withExposedPorts(9000)
-      .withWaitStrategy(Wait.forLogMessage(/API:/))
-      .start();
+    container = await createSeaweedFsS3Container().start();
     client = new S3Client({
       credentials: {
         accessKeyId: username,

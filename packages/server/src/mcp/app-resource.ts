@@ -4,6 +4,7 @@ import { RESOURCE_MIME_TYPE, registerAppResource } from "@modelcontextprotocol/e
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 export const healthExplorerResourceUri = "ui://dofek/health-explorer.html";
+export const dayNutritionResourceUri = "ui://dofek/day-nutrition.html";
 
 const resourceMeta = {
   ui: {
@@ -28,6 +29,26 @@ export function registerDofekAppResources(server: Pick<McpServer, "registerResou
       contents: [
         {
           uri: healthExplorerResourceUri,
+          mimeType: RESOURCE_MIME_TYPE,
+          text: await readFile(resolve(process.cwd(), "packages/mcp-app/dist/index.html"), "utf8"),
+          _meta: resourceMeta,
+        },
+      ],
+    }),
+  );
+  registerAppResource(
+    server,
+    "Dofek Day Nutrition",
+    dayNutritionResourceUri,
+    {
+      description: "Compact calorie and macro preview after food logging.",
+      mimeType: RESOURCE_MIME_TYPE,
+      _meta: resourceMeta,
+    },
+    async () => ({
+      contents: [
+        {
+          uri: dayNutritionResourceUri,
           mimeType: RESOURCE_MIME_TYPE,
           text: await readFile(resolve(process.cwd(), "packages/mcp-app/dist/index.html"), "utf8"),
           _meta: resourceMeta,

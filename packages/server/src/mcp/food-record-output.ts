@@ -1,3 +1,4 @@
+import { dayNutritionPreviewSchema } from "@dofek/mcp-contracts/day-nutrition";
 import { z } from "zod";
 
 const nullableNumber = z.number().nullable();
@@ -89,5 +90,6 @@ export const foodRecordMutationOutputSchema = jsonResult(
       replayed: z.boolean(),
     }),
     record: foodRecordOutputSchema,
+    day_summary: dayNutritionPreviewSchema.nullable(),
   }),
 );
