@@ -1,21 +1,7 @@
-import {
-  formatDateMedium,
-  formatDateShort,
-  formatHRVMeasurement,
-  formatPercent,
-  formatSpO2Measurement,
-  shiftDateYmd,
-} from "@dofek/format/format";
-import { formatMeasurementText } from "@dofek/format/units";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
-import { activityMetricColors } from "@dofek/scoring/colors";
 import { Link } from "@tanstack/react-router";
-import {
-  LandingPreviewLineChart,
-  LandingPreviewScatterPlot,
-} from "../components/LandingPreviewCharts.tsx";
+import { NeuralDataFlow } from "../components/NeuralDataFlow.tsx";
 import { trpc } from "../lib/trpc.ts";
-import { useUnitConverter } from "../lib/unitContext.ts";
 
 const FEATURED_PROVIDERS = [
   { id: "apple_health", label: "Apple Health", ext: "png" },
@@ -51,29 +37,19 @@ type FeaturedProvider = (typeof FEATURED_PROVIDERS)[number];
 
 const HERO_PROOF_POINTS = ["Connect sources", "Compare trends", "Keep history"] as const;
 const GET_STARTED_SEARCH = { returnTo: "/onboarding" };
-const DEMO_PREVIEW = {
-  endDate: "2026-05-27",
-  rangeDays: 30,
-  trendDays: 7,
-} as const;
-const DEMO_DATE_FORMAT_OPTIONS = { timeZone: "UTC" } as const;
-const DEMO_PREVIEW_START_DATE = shiftDateYmd(DEMO_PREVIEW.endDate, -(DEMO_PREVIEW.rangeDays - 1));
-const DEMO_TREND_START_DATE = shiftDateYmd(DEMO_PREVIEW.endDate, -(DEMO_PREVIEW.trendDays - 1));
-const DEMO_END_DATE_LABEL = formatDateMedium(DEMO_PREVIEW.endDate, DEMO_DATE_FORMAT_OPTIONS);
-const DEMO_RANGE_LABEL = `${formatDateShort(DEMO_PREVIEW_START_DATE, DEMO_DATE_FORMAT_OPTIONS)}–${DEMO_END_DATE_LABEL}`;
-const DEMO_TREND_RANGE_LABEL = `${formatDateShort(DEMO_TREND_START_DATE, DEMO_DATE_FORMAT_OPTIONS)} to ${DEMO_END_DATE_LABEL}`;
+const ANALYSIS_EXAMPLE_RANGE_DAYS = 30;
 
 const ANALYSIS_CARDS = [
   {
     title: "Late dinners show up next to less consistent sleep",
     detail: "Compare meal times with sleep without switching apps.",
     value: "r = -0.58",
-    tone: `${DEMO_PREVIEW.rangeDays}-day correlation`,
+    tone: `${ANALYSIS_EXAMPLE_RANGE_DAYS}-day correlation`,
   },
   {
     title: "Training load vs sleep",
     detail: "See hard weeks beside sleep, recovery, and resting heart rate.",
-    value: `${DEMO_PREVIEW.rangeDays} days`,
+    value: `${ANALYSIS_EXAMPLE_RANGE_DAYS} days`,
     tone: "Window",
   },
   {
@@ -211,17 +187,20 @@ function LandingNav() {
 
 function HeroSection() {
   return (
-    <section className="overflow-hidden border-b border-border bg-surface-solid">
-      <div className="mx-auto grid min-h-0 max-w-7xl items-center gap-5 px-4 py-6 sm:gap-8 sm:px-6 sm:py-10 lg:min-h-[615px] lg:grid-cols-[0.85fr_1.15fr] lg:py-12">
-        <div className="max-w-2xl lg:col-start-1 lg:row-start-1">
-          <div className="mb-4 hidden items-center gap-3 rounded-full border border-border-strong px-4 py-2 text-sm font-medium text-accent sm:inline-flex sm:mb-7">
-            <span>Sources</span>
-            <span className="h-1 w-1 rounded-full bg-accent-secondary" />
-            <span>Trends</span>
-            <span className="h-1 w-1 rounded-full bg-accent-secondary" />
-            <span>History</span>
-          </div>
-          <h1 className="font-serif text-4xl font-semibold leading-[1.03] tracking-normal text-foreground sm:text-6xl lg:text-[4.35rem]">
+    <section className="relative overflow-hidden border-b border-border bg-surface-solid">
+      <div
+        className="pointer-events-none absolute inset-0 opacity-80 sm:opacity-90"
+        aria-hidden="true"
+      >
+        <div className="absolute inset-0 max-sm:scale-110 max-sm:opacity-70 lg:left-[18%] lg:right-[-8%]">
+          <NeuralDataFlow />
+        </div>
+      </div>
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-surface-solid via-surface-solid/85 to-surface-solid/35 sm:via-surface-solid/60 sm:to-surface-solid/10 lg:bg-gradient-to-r lg:from-surface-solid lg:via-surface-solid/75 lg:to-transparent" />
+      <div className="relative z-10 mx-auto flex min-h-[70vh] max-w-7xl flex-col justify-end px-4 pb-10 pt-16 sm:min-h-[615px] sm:justify-center sm:px-6 sm:pb-16 sm:pt-20">
+        <div className="max-w-2xl">
+          <p className="text-sm font-semibold tracking-[0.18em] text-accent uppercase">Dofek</p>
+          <h1 className="mt-3 font-serif text-4xl font-semibold leading-[1.03] tracking-normal text-foreground sm:text-6xl lg:text-[4.35rem]">
             Your health data, in one place.
           </h1>
           <p className="mt-4 max-w-xl text-base leading-7 text-muted sm:mt-6 sm:text-lg sm:leading-8">
@@ -237,241 +216,17 @@ function HeroSection() {
               Get started
             </Link>
           </div>
-        </div>
-        <div id="demo" className="scroll-mt-24 lg:col-start-2 lg:row-span-2 lg:row-start-1">
-          <DashboardPreview />
-        </div>
-        <div className="flex flex-col gap-3 text-sm text-muted sm:flex-row sm:gap-6 lg:col-start-1 lg:row-start-2 lg:mt-8">
-          {HERO_PROOF_POINTS.map((point) => (
-            <div key={point} className="flex items-center gap-2">
-              <CheckCircleIcon />
-              <span>{point}</span>
-            </div>
-          ))}
+          <div className="mt-6 flex flex-col gap-3 text-sm text-muted sm:mt-8 sm:flex-row sm:gap-6">
+            {HERO_PROOF_POINTS.map((point) => (
+              <div key={point} className="flex items-center gap-2">
+                <CheckCircleIcon />
+                <span>{point}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </section>
-  );
-}
-
-function DashboardPreview() {
-  return (
-    <div className="rounded-2xl border border-border-strong bg-surface-solid shadow-2xl shadow-accent/10">
-      <div className="grid grid-cols-[144px_1fr] overflow-hidden rounded-2xl max-[760px]:grid-cols-1">
-        <aside className="border-r border-border bg-surface p-4 max-[760px]:hidden">
-          <div className="mb-5 flex items-center gap-2">
-            <img src="/icon.svg" alt="" width={22} height={22} className="rounded-md" />
-            <span className="text-sm font-semibold text-foreground">Dofek</span>
-          </div>
-          {["Overview", "Training", "Activities", "Sleep", "Nutrition", "Body"].map(
-            (item, index) => (
-              <div
-                key={item}
-                className={`mb-1 rounded-md px-3 py-2 text-xs ${
-                  index === 0 ? "bg-accent/10 font-semibold text-foreground" : "text-subtle"
-                }`}
-              >
-                {item}
-              </div>
-            ),
-          )}
-        </aside>
-        <div className="p-4">
-          <DailySummaryPreview />
-          <OverviewPreview />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function OverviewPreview() {
-  return (
-    <div className="border-t border-border pt-3.5">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div>
-          <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-accent-secondary">
-            Illustrative example
-          </div>
-          <div className="text-sm font-semibold text-foreground">Overview</div>
-          <div className="text-xs text-subtle">{DEMO_RANGE_LABEL}</div>
-        </div>
-        <div className="rounded-md border border-border bg-surface-solid px-3 py-1 text-xs text-muted">
-          {DEMO_PREVIEW.rangeDays} days
-        </div>
-      </div>
-      <div className="grid gap-x-4 divide-y divide-border sm:grid-cols-2 sm:divide-y-0">
-        <CorrelationPanel />
-        <TrendPanel />
-        <div className="sm:col-span-2">
-          <HealthMonitorPreview />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DailySummaryPreview() {
-  const rings = [
-    {
-      label: "Recovery",
-      value: formatPercent(0.74),
-      caption: "Near baseline",
-      tone: "var(--color-accent)",
-    },
-    { label: "Strain", value: "8.6", caption: "Moderate", tone: "var(--color-muted)" },
-    {
-      label: "Sleep",
-      value: "7h 42m",
-      caption: `${formatPercent(0.96)} of need`,
-      tone: "var(--color-accent)",
-    },
-  ] as const;
-
-  return (
-    <div className="mb-3 pb-3">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-muted">
-            Daily summary
-          </div>
-          <div className="mt-1 text-sm font-semibold text-foreground">Example recovery picture</div>
-        </div>
-        <div className="text-right text-xs text-subtle">{DEMO_END_DATE_LABEL} · Example data</div>
-      </div>
-      <div className="mt-5 flex flex-wrap items-start justify-center gap-6">
-        {rings.map((ring) => (
-          <div key={ring.label} className="flex w-24 flex-col items-center text-center">
-            <div
-              className="grid h-20 w-20 place-items-center rounded-full border-[7px] bg-surface"
-              style={{ borderColor: "var(--color-border-strong)", color: ring.tone }}
-            >
-              <div>
-                <div className="font-mono text-xl font-bold leading-none">{ring.value}</div>
-                <div className="mt-1 text-[9px] font-bold uppercase tracking-widest">
-                  {ring.label}
-                </div>
-              </div>
-            </div>
-            <div className="mt-2 text-[11px] font-medium text-subtle">{ring.caption}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function CorrelationPanel() {
-  const units = useUnitConverter();
-  const hrvMeasurement = formatHRVMeasurement(68);
-  const hrvUnit = hrvMeasurement.parts.find((part) => part.type === "unit")?.value;
-  if (hrvUnit == null) {
-    throw new Error("Heart rate variability formatter did not provide a unit");
-  }
-  const sleepConsistencyAxis = `Sleep consistency (${units.percentageLabel})`;
-  const heartRateVariabilityAxis = `Heart rate variability (${hrvUnit})`;
-
-  return (
-    <div className="min-w-0 py-3">
-      <div className="text-xs font-semibold uppercase tracking-[0.08em] text-muted">
-        Illustrative relationship
-      </div>
-      <div className="mt-1 text-sm text-muted">Sleep consistency + Heart Rate Variability</div>
-      <div className="mt-3 grid grid-cols-[0.55fr_1fr] items-end gap-3">
-        <div>
-          <div className="mt-1 text-xl font-bold text-accent">Example points</div>
-        </div>
-        <LandingPreviewScatterPlot
-          accessibleName={`Illustrative scatter plot for demonstration only. X-axis: ${sleepConsistencyAxis}. Y-axis: ${heartRateVariabilityAxis}.`}
-          xAxisLabel={sleepConsistencyAxis}
-          xTickLabels={["70", "100"]}
-          yAxisLabel={heartRateVariabilityAxis}
-          yTickLabels={["45", "85"]}
-        />
-      </div>
-      <div className="mt-3 space-y-1 border-t border-border pt-2 text-[10px] leading-4 text-subtle">
-        <p>Example source types: sleep + heart rate variability</p>
-        <p>Illustrative data only. Association does not establish causation.</p>
-      </div>
-    </div>
-  );
-}
-
-function TrendPanel() {
-  const units = useUnitConverter();
-  const averageHeartRate = units.formatHeartRate(52);
-  const heartRateUnit = averageHeartRate.parts.find((part) => part.type === "unit")?.value;
-  if (heartRateUnit == null) {
-    throw new Error("Heart rate formatter did not provide a unit");
-  }
-  const heartRateAxis = `Resting heart rate (${heartRateUnit})`;
-
-  return (
-    <div className="min-w-0 py-3">
-      <div className="text-xs font-semibold uppercase tracking-[0.08em] text-muted">
-        Recent trend
-      </div>
-      <div className="mt-1 text-sm text-muted">Resting heart rate</div>
-      <div className="mt-3 grid grid-cols-[0.45fr_1fr] items-end gap-3">
-        <div>
-          <div className="text-3xl font-bold" style={{ color: activityMetricColors.heartRate }}>
-            {formatMeasurementText(averageHeartRate)}
-          </div>
-          <div className="text-xs text-subtle">average</div>
-          <div className="mt-1 text-xs font-medium text-accent-secondary">
-            +{formatMeasurementText(units.formatHeartRate(3))} vs prior {DEMO_PREVIEW.trendDays}{" "}
-            days
-          </div>
-          <div className="text-xs text-subtle">
-            {DEMO_PREVIEW.trendDays} of {DEMO_PREVIEW.trendDays} nights
-          </div>
-        </div>
-        <LandingPreviewLineChart
-          accessibleName={`Example resting heart rate trend. X-axis: ${DEMO_TREND_RANGE_LABEL}. Y-axis: ${heartRateAxis}.`}
-          color={activityMetricColors.heartRate}
-          endLabel={formatDateShort(DEMO_PREVIEW.endDate, DEMO_DATE_FORMAT_OPTIONS)}
-          startLabel={formatDateShort(DEMO_TREND_START_DATE, DEMO_DATE_FORMAT_OPTIONS)}
-          yAxisLabel={heartRateAxis}
-          yTickLabels={["48", "56"]}
-        />
-      </div>
-      <div className="mt-3 space-y-1 border-t border-border pt-2 text-[10px] leading-4 text-subtle">
-        <p>Example source: Oura</p>
-      </div>
-    </div>
-  );
-}
-
-function HealthMonitorPreview() {
-  const units = useUnitConverter();
-  const metrics = [
-    { label: "Heart Rate Variability", value: formatHRVMeasurement(68).text },
-    { label: "Resting Heart Rate", value: formatMeasurementText(units.formatHeartRate(52)) },
-    { label: "Blood Oxygen", value: formatSpO2Measurement(98).text },
-    { label: "Steps", value: "7,640" },
-    { label: "Respiratory Rate", value: "14 breaths/min" },
-    { label: "Skin Temperature", value: units.formatTemperature(36.2).text },
-  ] as const;
-
-  return (
-    <div className="min-w-0 py-3">
-      <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">
-        Health monitor
-      </div>
-      <div className="mt-3 grid gap-x-5 sm:grid-cols-2">
-        {metrics.map((metric) => (
-          <div key={metric.label} className="flex items-baseline justify-between gap-3 py-1.5">
-            <div className="truncate text-[10px] font-semibold uppercase tracking-[0.08em] text-muted">
-              {metric.label}
-            </div>
-            <div className="text-sm font-bold text-foreground">{metric.value}</div>
-          </div>
-        ))}
-      </div>
-      <div className="mt-2 border-t border-border pt-2 text-[10px] text-subtle">
-        Example data · 27 of {DEMO_PREVIEW.rangeDays} days · Oura + Apple Health
-      </div>
-    </div>
   );
 }
 

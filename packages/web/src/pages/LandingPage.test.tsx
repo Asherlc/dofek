@@ -2,7 +2,6 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { UnitContext } from "../lib/unitContext.ts";
 import { LandingPage, LandingPageView } from "./LandingPage.tsx";
 
 interface MockUsableProvidersQuery {
@@ -163,113 +162,25 @@ describe("LandingPage", () => {
     expect(signInLink).not.toHaveClass("hidden");
   });
 
-  it("shows concrete analysis examples in the product preview", () => {
+  it("shows a neural data-flow hero with brand-first copy", () => {
     render(<LandingPage />);
 
-    expect(screen.getByText("Illustrative example")).toBeTruthy();
-    expect(screen.getByText("Daily summary")).toBeTruthy();
-    expect(screen.getByText("Example recovery picture")).toBeTruthy();
-    expect(screen.getByText("May 27, 2026 · Example data")).toBeTruthy();
-    expect(screen.getByText("74%")).toBeTruthy();
-    expect(screen.getByText("Near baseline")).toBeTruthy();
-    expect(screen.getByText("7h 42m")).toBeTruthy();
-    expect(screen.getByText("96% of need")).toBeTruthy();
-    expect(screen.getByText("Health monitor")).toBeTruthy();
-    expect(screen.getByText("Illustrative relationship")).toBeTruthy();
-    expect(screen.getByText("Recent trend")).toBeTruthy();
-    expect(screen.queryByText("Compare sources")).toBeNull();
-    expect(screen.queryByText("Connected source coverage")).toBeNull();
+    expect(screen.getByRole("heading", { name: /your health data, in one place/i })).toBeTruthy();
+    expect(screen.getAllByText("Dofek").length).toBeGreaterThan(0);
+    expect(screen.getByText("Sleep")).toBeTruthy();
+    expect(screen.getByText("Trends")).toBeTruthy();
+    expect(screen.getByText("Connect sources")).toBeTruthy();
+  });
+
+  it("shows concrete analysis examples in the inspection section", () => {
+    render(<LandingPage />);
+
     expect(screen.getByText(/late dinners show up next to less consistent sleep/i)).toBeTruthy();
     expect(screen.getAllByText(/training load vs sleep/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/resting heart rate is up/i)).toBeTruthy();
     expect(screen.getAllByText(/web and iPhone/i).length).toBeGreaterThan(0);
     expect(screen.queryByText(/export confidence/i)).toBeNull();
     expect(screen.queryByText("No data")).toBeNull();
-
-    const dailySummary = screen.getByText("Daily summary");
-    const overviewRange = screen.getByText("Apr 28–May 27, 2026");
-    expect(
-      dailySummary.compareDocumentPosition(overviewRange) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-  });
-
-  it("labels the fixed-date preview as an illustrative example", () => {
-    render(<LandingPage />);
-
-    expect(screen.getByText("Example recovery picture")).toBeTruthy();
-    expect(screen.queryByText("Today's recovery picture")).toBeNull();
-  });
-
-  it("places the concrete recovery preview before mobile proof points", () => {
-    render(<LandingPage />);
-
-    const dailySummary = screen.getByText("Example recovery picture");
-    const proofPoint = screen.getByText("Connect sources");
-
-    expect(
-      dailySummary.compareDocumentPosition(proofPoint) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-  });
-
-  it("labels the relationship preview as illustrative rather than a measured result", () => {
-    render(<LandingPage />);
-
-    expect(screen.getByText("Illustrative relationship")).toBeTruthy();
-    expect(screen.getByText("Example points")).toBeTruthy();
-    expect(
-      screen.getByText("Illustrative data only. Association does not establish causation."),
-    ).toBeTruthy();
-
-    expect(screen.getByText("+3 bpm vs prior 7 days")).toBeTruthy();
-    expect(screen.getByText("7 of 7 nights")).toBeTruthy();
-    expect(screen.getByText("Example source: Oura")).toBeTruthy();
-  });
-
-  it("gives preview charts accessible names, axes, units, and time context", () => {
-    render(<LandingPage />);
-
-    expect(
-      screen.getByRole("img", {
-        name: "Illustrative scatter plot for demonstration only. X-axis: Sleep consistency (%). Y-axis: Heart rate variability (ms).",
-      }),
-    ).toBeTruthy();
-    expect(
-      screen.getByRole("img", {
-        name: "Example resting heart rate trend. X-axis: May 21 to May 27, 2026. Y-axis: Resting heart rate (bpm).",
-      }),
-    ).toBeTruthy();
-
-    expect(screen.getByText("Sleep consistency (%)")).toBeTruthy();
-    expect(screen.getByText("Heart rate variability (ms)")).toBeTruthy();
-    expect(screen.getByText("Resting heart rate (bpm)")).toBeTruthy();
-    expect(screen.getByText("May 21")).toBeTruthy();
-    expect(screen.getByText("May 27")).toBeTruthy();
-  });
-
-  it("formats preview units through the unit system", () => {
-    render(<LandingPage />);
-
-    expect(screen.getAllByText("52 bpm")).toHaveLength(2);
-    expect(screen.getByText("average")).toBeTruthy();
-    expect(screen.queryByText("bpm average")).toBeNull();
-    expect(screen.getByText("68 ms")).toBeTruthy();
-    expect(screen.getByText("98%")).toBeTruthy();
-    expect(screen.getByText("Respiratory Rate")).toBeTruthy();
-    expect(screen.getByText("14 breaths/min")).toBeTruthy();
-    expect(screen.getByText("36.2°C")).toBeTruthy();
-    expect(screen.queryByText("beats/min average")).toBeNull();
-    expect(screen.queryByText("36.2 Celsius")).toBeNull();
-  });
-
-  it("uses imperial preview temperature when the unit context is imperial", () => {
-    render(
-      <UnitContext.Provider value={{ unitSystem: "imperial", setUnitSystem: () => {} }}>
-        <LandingPageView usableProviders={[]} />
-      </UnitContext.Provider>,
-    );
-
-    expect(screen.getByText("97.2°F")).toBeTruthy();
-    expect(screen.queryByText("36.2°C")).toBeNull();
   });
 
   it("shows the iPhone app with direct WHOOP strap capture", () => {

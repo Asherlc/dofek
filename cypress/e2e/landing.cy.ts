@@ -31,13 +31,13 @@ describe("Landing page mobile hero", () => {
     stubPublicLandingRequests();
   });
 
-  it("shows the concrete recovery outcome in the first viewport", () => {
+  it("shows brand, headline, and neural flow in the first viewport", () => {
     cy.viewport(390, 667);
     cy.visit("/");
     cy.wait("@usableProviders");
 
-    expectWithinFirstViewport("Example recovery picture");
-    expectWithinFirstViewport("74%");
-    expectWithinFirstViewport("Near baseline");
+    expectWithinFirstViewport("Dofek");
+    expectWithinFirstViewport("Your health data, in one place.");
+    expectWithinFirstViewport("Get started");
   });
 });
