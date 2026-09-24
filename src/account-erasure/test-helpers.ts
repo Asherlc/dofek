@@ -1,4 +1,4 @@
-import { GenericContainer, type StartedTestContainer, Wait } from "testcontainers";
+import { GenericContainer, Wait } from "testcontainers";
 
 /** Digest-pinned SeaweedFS release used as the S3-compatible stand-in for local/CI. */
 export const seaweedFsS3Image =
@@ -25,5 +25,3 @@ export function createSeaweedFsS3Container(): GenericContainer {
     .withExposedPorts(9000)
     .withWaitStrategy(Wait.forLogMessage(/Start Seaweed S3 API Server/));
 }
-
-export type { StartedTestContainer };
