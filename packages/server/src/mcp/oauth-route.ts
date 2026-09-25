@@ -13,6 +13,18 @@ import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
 import { getMcpIssuerUrl, getMcpResourceUrl } from "./oauth-config.ts";
 import { DofekOAuthServerProvider, MCP_OAUTH_SUPPORTED_SCOPES } from "./oauth-provider.ts";
+import { McpOAuthClientsStore } from "./oauth-client-store.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
+import { sql } from "drizzle-orm";
+import {
+  type OAuthClientInformationFull,
+  OAuthClientInformationFullSchema,
+  OAuthClientMetadataSchema,
+} from "@modelcontextprotocol/sdk/shared/auth.js";
+import {
+  decryptCredentialValue,
+  encryptCredentialValue,
+} from "dofek/security/credential-encryption";
 
 export type McpAuthRateLimitOptions = Partial<RateLimitOptions> | false;
 
@@ -73,6 +85,55 @@ export function createMcpOAuthRouter(
       ...createOAuthMetadata(oauthRouterOptions),
       client_id_metadata_document_supported: true,
     });
+  });
+
+  // CIMD endpoint for locally registered clients
+  const oauthClientStore = new McpOAuthClientsStore(db);
+  const oauthClientRowSchema = z.object({
+    client_id: z.string(),
+    client_secret: z.string().nullable(),
+    client_metadata: OAuthClientMetadataSchema,
+    client_id_issued_at: z.coerce.number().nullable(),
+    client_secret_expires_at: z.coerce.number().nullable(),
+  });
+  function clientSecretContext(clientId: string) {
+    return {
+      columnName: "client_secret",
+      scopeId: clientId,
+      tableName: "fitness.mcp_oauth_client",
+    };
+  }
+  router.get("/.well-known/oauth-client/:clientId", metadataRateLimit, async (request, response) => {
+    const clientId = Array.isArray(request.params.clientId) ? request.params.clientId[0] : request.params.clientId;
+    if (!clientId) {
+      response.status(400).json({ error: "Missing clientId" });
+      return;
+    }
+    const rows = await executeWithSchema(
+      db,
+      oauthClientRowSchema,
+      sql`SELECT client_id, client_secret, client_metadata, client_id_issued_at,
+                 client_secret_expires_at
+          FROM fitness.mcp_oauth_client
+          WHERE client_id = ${clientId}
+          LIMIT 1`,
+    );
+    const row = rows[0];
+    if (!row) {
+      response.status(404).json({ error: "Client not found" });
+      return;
+    }
+    const clientSecret = row.client_secret
+      ? await decryptCredentialValue(row.client_secret, clientSecretContext(clientId))
+      : undefined;
+    const client: OAuthClientInformationFull = OAuthClientInformationFullSchema.parse({
+      ...row.client_metadata,
+      client_id: row.client_id,
+      client_id_issued_at: row.client_id_issued_at ?? undefined,
+      client_secret: clientSecret,
+      client_secret_expires_at: row.client_secret_expires_at ?? undefined,
+    });
+    response.json(client);
   });
 
   router.use(
