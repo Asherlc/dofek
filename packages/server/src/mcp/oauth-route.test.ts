@@ -1,11 +1,8 @@
-// biome-ignore lint/correctness/noUnusedImports: used in vi.mock callbacks
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import express from "express";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { getSessionIdFromRequest } from "../auth/cookies.ts";
-import { validateSession } from "../auth/session.ts";
 import { mockGetClient } from "./oauth-client-store.ts";
 import { MCP_OAUTH_SCOPES, MCP_OAUTH_SUPPORTED_SCOPES } from "./oauth-provider.ts";
 import {
@@ -13,6 +10,14 @@ import {
   createMcpOAuthRouter,
   mcpAuthorizeUrlencodedOptions,
 } from "./oauth-route.ts";
+
+vi.mock("../auth/cookies.ts", () => ({
+  getSessionIdFromRequest: vi.fn(),
+}));
+
+vi.mock("../auth/session.ts", () => ({
+  validateSession: vi.fn(),
+}));
 
 vi.mock("./oauth-client-store.ts", () => {
   const mockGetClient = vi.fn();
@@ -24,13 +29,8 @@ vi.mock("./oauth-client-store.ts", () => {
   return { McpOAuthClientsStore: MockMcpOAuthClientsStore, mockGetClient };
 });
 
-vi.mock("../auth/cookies.ts", () => ({
-  getSessionIdFromRequest: vi.fn(),
-}));
-
-vi.mock("../auth/session.ts", () => ({
-  validateSession: vi.fn(),
-}));
+import { getSessionIdFromRequest } from "../auth/cookies.ts";
+import { validateSession } from "../auth/session.ts";
 
 const protectedResourceMetadataSchema = z.object({
   authorization_servers: z.array(z.string()),
