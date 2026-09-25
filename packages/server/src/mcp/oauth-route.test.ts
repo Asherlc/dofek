@@ -181,13 +181,13 @@ describe("createMcpOAuthRouter", () => {
       expect(body.client_secret_expires_at).toBe(1234567890);
     });
 
-    it("returns 404 when clientId parameter is missing", async () => {
+    it("returns 400 when clientId parameter is missing", async () => {
       app = await mount();
 
-      // Express will handle missing param as 404 since route requires a clientId param
       const response = await fetch(`${app.baseUrl}/.well-known/oauth-client/`);
 
-      expect(response.status).toBe(404);
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: "Missing clientId" });
     });
   });
 

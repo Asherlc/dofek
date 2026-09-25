@@ -78,17 +78,17 @@ export function createMcpOAuthRouter(
 
   // CIMD endpoint for locally registered clients
   const oauthClientStore = new McpOAuthClientsStore(db);
+  router.get("/.well-known/oauth-client", metadataRateLimit, async (_request, response) => {
+    response.status(400).json({ error: "Missing clientId" });
+  });
   router.get(
     "/.well-known/oauth-client/:clientId",
     metadataRateLimit,
     async (request, response) => {
-      const clientId = Array.isArray(request.params.clientId)
+      const rawClientId = Array.isArray(request.params.clientId)
         ? request.params.clientId[0]
         : request.params.clientId;
-      if (!clientId) {
-        response.status(400).json({ error: "Missing clientId" });
-        return;
-      }
+      const clientId: string = rawClientId ?? "";
       const client = await oauthClientStore.getClient(clientId);
       if (!client) {
         response.status(404).json({ error: "Client not found" });
