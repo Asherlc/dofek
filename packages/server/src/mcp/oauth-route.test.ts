@@ -1,17 +1,28 @@
+// biome-ignore lint/correctness/noUnusedImports: used in vi.mock callbacks
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import type { Database } from "dofek/db";
 import express from "express";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
+import { mockGetClient } from "./oauth-client-store.ts";
 import { MCP_OAUTH_SCOPES, MCP_OAUTH_SUPPORTED_SCOPES } from "./oauth-provider.ts";
 import {
   approvalFromBody,
   createMcpOAuthRouter,
   mcpAuthorizeUrlencodedOptions,
 } from "./oauth-route.ts";
+
+vi.mock("./oauth-client-store.ts", () => {
+  const mockGetClient = vi.fn();
+  class MockMcpOAuthClientsStore {
+    constructor() {
+      this.getClient = mockGetClient;
+    }
+  }
+  return { McpOAuthClientsStore: MockMcpOAuthClientsStore, mockGetClient };
+});
 
 vi.mock("../auth/cookies.ts", () => ({
   getSessionIdFromRequest: vi.fn(),
@@ -71,6 +82,7 @@ describe("createMcpOAuthRouter", () => {
   beforeEach(() => {
     vi.mocked(getSessionIdFromRequest).mockReset();
     vi.mocked(validateSession).mockReset();
+    mockGetClient.mockReset();
   });
 
   afterEach(async () => {
@@ -123,6 +135,59 @@ describe("createMcpOAuthRouter", () => {
       expect(protectedResource.authorization_servers).toEqual(["https://app.example.test/"]);
       expect(authorizationServer.issuer).toBe("https://app.example.test/");
       expect(authorizationServer.authorization_endpoint).toBe("https://app.example.test/authorize");
+    });
+  });
+
+  describe("CIMD endpoint for locally registered clients", () => {
+    beforeEach(() => {
+      mockGetClient.mockReset();
+    });
+
+    it("returns 404 when client is not found", async () => {
+      mockGetClient.mockResolvedValue(undefined);
+      app = await mount(false);
+
+      const response = await fetch(`${app.baseUrl}/.well-known/oauth-client/test-client`);
+
+      expect(response.status).toBe(404);
+      expect(await response.json()).toEqual({ error: "Client not found" });
+    });
+
+    it("returns public client metadata without client_secret", async () => {
+      const mockClient = {
+        client_id: "test-client",
+        client_name: "Test Client",
+        redirect_uris: ["https://example.com/callback"],
+        grant_types: ["authorization_code"],
+        response_types: ["code"],
+        scope: "health:read",
+        token_endpoint_auth_method: "none",
+        client_secret: "should-not-appear",
+        client_id_issued_at: 1234567890,
+        client_secret_expires_at: 1234567890,
+      };
+      mockGetClient.mockResolvedValue(mockClient);
+      app = await mount(false);
+
+      const response = await fetch(`${app.baseUrl}/.well-known/oauth-client/test-client`);
+
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body.client_id).toBe("test-client");
+      expect(body.client_name).toBe("Test Client");
+      expect(body.redirect_uris).toEqual(["https://example.com/callback"]);
+      expect(body.client_secret).toBeUndefined();
+      expect(body.client_id_issued_at).toBe(1234567890);
+      expect(body.client_secret_expires_at).toBe(1234567890);
+    });
+
+    it("returns 404 when clientId parameter is missing", async () => {
+      app = await mount();
+
+      // Express will handle missing param as 404 since route requires a clientId param
+      const response = await fetch(`${app.baseUrl}/.well-known/oauth-client/`);
+
+      expect(response.status).toBe(404);
     });
   });
 

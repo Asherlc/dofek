@@ -11,14 +11,9 @@ import {
 import { z } from "zod";
 import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
+import { McpOAuthClientsStore } from "./oauth-client-store.ts";
 import { getMcpIssuerUrl, getMcpResourceUrl } from "./oauth-config.ts";
 import { DofekOAuthServerProvider, MCP_OAUTH_SUPPORTED_SCOPES } from "./oauth-provider.ts";
-import { McpOAuthClientsStore } from "./oauth-client-store.ts";
-import {
-  type OAuthClientInformationFull,
-  OAuthClientMetadataSchema,
-} from "@modelcontextprotocol/sdk/shared/auth.js";
-import { decryptCredentialValue } from "dofek/security/credential-encryption";
 
 export type McpAuthRateLimitOptions = Partial<RateLimitOptions> | false;
 
@@ -83,21 +78,27 @@ export function createMcpOAuthRouter(
 
   // CIMD endpoint for locally registered clients
   const oauthClientStore = new McpOAuthClientsStore(db);
-  router.get("/.well-known/oauth-client/:clientId", metadataRateLimit, async (request, response) => {
-    const clientId = Array.isArray(request.params.clientId) ? request.params.clientId[0] : request.params.clientId;
-    if (!clientId) {
-      response.status(400).json({ error: "Missing clientId" });
-      return;
-    }
-    const client = await oauthClientStore.getClient(clientId);
-    if (!client) {
-      response.status(404).json({ error: "Client not found" });
-      return;
-    }
-    // CIMD metadata documents must never expose client_secret (RFC 7591 / CIMD spec)
-    const { client_secret: _omittedSecret, ...publicClientInfo } = client;
-    response.json(publicClientInfo);
-  });
+  router.get(
+    "/.well-known/oauth-client/:clientId",
+    metadataRateLimit,
+    async (request, response) => {
+      const clientId = Array.isArray(request.params.clientId)
+        ? request.params.clientId[0]
+        : request.params.clientId;
+      if (!clientId) {
+        response.status(400).json({ error: "Missing clientId" });
+        return;
+      }
+      const client = await oauthClientStore.getClient(clientId);
+      if (!client) {
+        response.status(404).json({ error: "Client not found" });
+        return;
+      }
+      // CIMD metadata documents must never expose client_secret (RFC 7591 / CIMD spec)
+      const { client_secret: _omittedSecret, ...publicClientInfo } = client;
+      response.json(publicClientInfo);
+    },
+  );
 
   router.use(
     mcpAuthRouter({
