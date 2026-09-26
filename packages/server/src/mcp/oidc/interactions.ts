@@ -65,7 +65,7 @@ export async function interactionUrl(ctx: unknown, interaction: { uid: string })
   return new URL(`/interaction/${interaction.uid}`, base).href;
 }
 
-function escapeHtml(value: string): string {
+export function escapeHtml(value: string): string {
   return value.replace(/[&"'<>]/g, (char) => {
     switch (char) {
       case "&":

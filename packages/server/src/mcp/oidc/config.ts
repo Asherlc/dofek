@@ -4,7 +4,7 @@ import { getMcpIssuerUrl, getMcpResourceUrl } from "../oauth-config.ts";
 import { MCP_OAUTH_OFFLINE_ACCESS_SCOPE, MCP_OAUTH_SCOPES } from "../oauth-provider.ts";
 import { findAccount } from "./account.ts";
 import { createMcpOidcAdapter } from "./adapter.ts";
-import { interactionUrl } from "./interactions.ts";
+import { escapeHtml, interactionUrl } from "./interactions.ts";
 
 /**
  * oidc-provider-backed OAuth 2.1 authorization server for Dofek's MCP endpoint.
@@ -123,7 +123,8 @@ export function createOidcProvider(
 
     renderError(ctx: { type: string; body: string }, _out: unknown, error: { message: string }) {
       ctx.type = "html";
-      ctx.body = `<!doctype html><html><head><title>Authorization error</title></head><body><h1>Authorization error</h1><p>${error.message}</p></body></html>`;
+      const message = escapeHtml(error.message);
+      ctx.body = `<!doctype html><html><head><title>Authorization error</title></head><body><h1>Authorization error</h1><p>${message}</p></body></html>`;
     },
   });
 
