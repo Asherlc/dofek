@@ -1,4 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
 import { invalidateUserQueryDomains } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";

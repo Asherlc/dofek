@@ -1,4 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { dateSchema } from "../lib/date-schema.ts";
 import { EffortTrendRepository } from "../repositories/effort-trend-repository.ts";

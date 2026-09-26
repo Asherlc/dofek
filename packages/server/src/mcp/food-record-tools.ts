@@ -1,5 +1,5 @@
 import type { DayNutritionPreview } from "@dofek/mcp-contracts/day-nutrition";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { NUTRIENT_FIELD_BY_ID } from "dofek/db/nutrient-columns";
 import { foodCategoryEnum, mealEnum } from "dofek/db/schema/enums";
 import { captureException } from "dofek/lib/error-reporting";
