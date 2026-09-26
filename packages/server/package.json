@@ -35,6 +35,7 @@
     "@dofek/training": "workspace:*",
     "@dofek/whoop": "workspace:*",
     "@dofek/zones": "workspace:*",
+    "@modelcontextprotocol/client": "2.1.0",
     "@modelcontextprotocol/core": "2.1.0",
     "@modelcontextprotocol/ext-apps": "2.0.3",
     "@modelcontextprotocol/node": "2.1.0",
