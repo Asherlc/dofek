@@ -8,8 +8,8 @@ import { mockGetClient } from "./oauth-client-store.ts";
 import { MCP_OAUTH_SCOPES } from "./oauth-provider.ts";
 import { createMcpOAuthRouter } from "./oauth-route.ts";
 
-vi.mock("./oidc/config.ts", () => ({
-  createOidcProvider: vi.fn(() => ({
+const oidcMocks = vi.hoisted(() => ({
+  create: vi.fn(() => ({
     provider: {
       callback: () => (_req: unknown, res: { statusCode: number; end: () => void }) => {
         res.statusCode = 404;
@@ -17,6 +17,10 @@ vi.mock("./oidc/config.ts", () => ({
       },
     },
   })),
+}));
+
+vi.mock("./oidc/config.ts", () => ({
+  createOidcProvider: oidcMocks.create,
 }));
 
 vi.mock("./oidc/interactions.ts", () => ({
@@ -79,6 +83,7 @@ describe("createMcpOAuthRouter", () => {
 
   beforeEach(() => {
     mockGetClient.mockReset();
+    oidcMocks.create.mockClear();
   });
 
   afterEach(async () => {
@@ -86,6 +91,42 @@ describe("createMcpOAuthRouter", () => {
   });
 
   describe("interaction cookie key", () => {
+    it("derives a local key from the issuer outside production", () => {
+      const previousNodeEnv = process.env.NODE_ENV;
+      const previousKey = process.env.MCP_OIDC_COOKIE_KEY;
+      process.env.NODE_ENV = "test";
+      delete process.env.MCP_OIDC_COOKIE_KEY;
+      try {
+        createMcpOAuthRouter(mockDb());
+
+        expect(oidcMocks.create).toHaveBeenCalledWith(expect.anything(), {
+          cookiesKeys: ["https://app.example.test/"],
+        });
+      } finally {
+        process.env.NODE_ENV = previousNodeEnv;
+        if (previousKey === undefined) delete process.env.MCP_OIDC_COOKIE_KEY;
+        else process.env.MCP_OIDC_COOKIE_KEY = previousKey;
+      }
+    });
+
+    it("uses a trimmed configured key", () => {
+      const previousNodeEnv = process.env.NODE_ENV;
+      const previousKey = process.env.MCP_OIDC_COOKIE_KEY;
+      process.env.NODE_ENV = "test";
+      process.env.MCP_OIDC_COOKIE_KEY = "  durable-test-key  ";
+      try {
+        createMcpOAuthRouter(mockDb());
+
+        expect(oidcMocks.create).toHaveBeenCalledWith(expect.anything(), {
+          cookiesKeys: ["durable-test-key"],
+        });
+      } finally {
+        process.env.NODE_ENV = previousNodeEnv;
+        if (previousKey === undefined) delete process.env.MCP_OIDC_COOKIE_KEY;
+        else process.env.MCP_OIDC_COOKIE_KEY = previousKey;
+      }
+    });
+
     it("hard-fails in production when MCP_OIDC_COOKIE_KEY is not set", () => {
       const previousNodeEnv = process.env.NODE_ENV;
       const previousKey = process.env.MCP_OIDC_COOKIE_KEY;
@@ -183,6 +224,16 @@ describe("createMcpOAuthRouter", () => {
 
       const first = await fetch(`${app.baseUrl}/register`, { method: "POST" });
       const second = await fetch(`${app.baseUrl}/register`, { method: "POST" });
+
+      expect(first.status).toBe(404);
+      expect(second.status).toBe(429);
+    });
+
+    it("rate limits nested authorization-server paths", async () => {
+      app = await mount({ max: 1, windowMs: 60_000 });
+
+      const first = await fetch(`${app.baseUrl}/authorize/nested`, { method: "POST" });
+      const second = await fetch(`${app.baseUrl}/authorize/nested`, { method: "POST" });
 
       expect(first.status).toBe(404);
       expect(second.status).toBe(429);

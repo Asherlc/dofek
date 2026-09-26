@@ -2,10 +2,13 @@ import type { AddressInfo } from "node:net";
 import { healthExplorerSnapshotSchema } from "@dofek/mcp-contracts/health-explorer";
 import { captureException } from "dofek/lib/error-reporting";
 import express from "express";
+import type { Options as RateLimitOptions } from "express-rate-limit";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { makeMockSensorStore } from "../routers/test-helpers.ts";
 import { verifyMcpAccessToken } from "./access-token-verifier.ts";
+import { getMcpIssuerUrl, getMcpResourceUrl } from "./oauth-config.ts";
+import { mcpClientCorrelationId } from "./request-telemetry.ts";
 import { createMcpRouter } from "./route.ts";
 import {
   activityDetailsOutputSchema,
@@ -19,6 +22,9 @@ import {
   thresholdHistoryOutputSchema,
 } from "./tool-output.ts";
 import { createDofekMcpServer } from "./tools.ts";
+
+const routeLoggerMocks = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }));
+vi.mock("../logger.ts", () => ({ logger: routeLoggerMocks }));
 
 const toolTestMocks = vi.hoisted(() => {
   const mocks = {
@@ -336,11 +342,30 @@ async function request(
   });
 }
 
+async function requestMany(app: express.Express, count: number): Promise<number[]> {
+  const server = app.listen(0);
+  try {
+    const port = getPort(server);
+    const statuses: number[] = [];
+    for (let index = 0; index < count; index += 1) {
+      const response = await fetch(`http://127.0.0.1:${port}/api/mcp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(initializeRequest),
+      });
+      statuses.push(response.status);
+    }
+    return statuses;
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+}
+
 function createTestApp(
   sensorStore = undefined,
-  rateLimit:
-    | { limit: number; windowMs: number; standardHeaders: false; legacyHeaders: false }
-    | false = false,
+  rateLimit: Partial<RateLimitOptions> | false = false,
 ) {
   const app = express();
   app.use(
@@ -724,6 +749,28 @@ describe("createMcpRouter", () => {
     expect(verifyMcpAccessToken).not.toHaveBeenCalled();
   });
 
+  it("honors disabled rate limiting beyond the default request limit", async () => {
+    const statuses = await requestMany(createTestApp(), 301);
+
+    expect(statuses).toHaveLength(301);
+    expect(new Set(statuses)).toEqual(new Set([401]));
+  });
+
+  it("uses the configured default rate-limit window", async () => {
+    const app = createTestApp(undefined, {
+      limit: 1,
+      standardHeaders: false,
+      legacyHeaders: false,
+    });
+
+    const first = await request(app, { body: initializeRequest });
+    await new Promise((resolve) => setTimeout(resolve, 1_200));
+    const second = await request(app, { body: initializeRequest });
+
+    expect(first.status).toBe(401);
+    expect(second.status).toBe(429);
+  });
+
   it("returns 401 without validating non-bearer authorization", async () => {
     const response = await request(createTestApp(), {
       authorization: "Token good-token",
@@ -762,14 +809,24 @@ describe("createMcpRouter", () => {
   });
 
   it("returns 401 when the bearer token is invalid", async () => {
-    const response = await request(createTestApp(), {
+    const database = { execute: vi.fn(), select: vi.fn(), transaction: vi.fn() };
+    const app = express();
+    app.use("/api/mcp", createMcpRouter({ db: database, rateLimit: false }));
+    const response = await request(app, {
       authorization: "Bearer bad-token",
       body: initializeRequest,
     });
 
     expect(response.status).toBe(401);
     expect(response.headers.get("www-authenticate")).toContain("resource_metadata=");
-    expect(verifyMcpAccessToken).toHaveBeenCalledWith("bad-token", expect.anything());
+    expect(verifyMcpAccessToken).toHaveBeenCalledWith(
+      "bad-token",
+      expect.objectContaining({
+        db: database,
+        issuer: getMcpIssuerUrl().href,
+        resourceUrl: getMcpResourceUrl().href,
+      }),
+    );
   });
 
   it("returns JSON-RPC method errors for unsupported HTTP methods", async () => {
@@ -829,6 +886,13 @@ describe("createMcpRouter", () => {
     expect(vi.mocked(createDofekMcpServer)).toHaveBeenCalledWith(
       expect.objectContaining({ clientId: "token:token-id" }),
     );
+    expect(routeLoggerMocks.info).toHaveBeenCalledWith(
+      "mcp.authentication",
+      expect.objectContaining({
+        client_id_hash: mcpClientCorrelationId("token-id"),
+        client_kind: "personal_token",
+      }),
+    );
   });
 
   it("attributes OAuth MCP tokens with the validated client ID", async () => {
@@ -848,6 +912,13 @@ describe("createMcpRouter", () => {
     expect(response.status).toBe(200);
     expect(vi.mocked(createDofekMcpServer)).toHaveBeenCalledWith(
       expect.objectContaining({ clientId: "oauth:oauth-client-id" }),
+    );
+    expect(routeLoggerMocks.info).toHaveBeenCalledWith(
+      "mcp.authentication",
+      expect.objectContaining({
+        client_id_hash: mcpClientCorrelationId("oauth-client-id"),
+        client_kind: "oauth",
+      }),
     );
   });
 

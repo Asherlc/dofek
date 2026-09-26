@@ -103,10 +103,10 @@ export async function verifyJwtAccessToken(
       return null;
     }
 
-    const expiresAt =
-      typeof payload.exp === "number" && Number.isFinite(payload.exp)
-        ? new Date(payload.exp * 1000).toISOString()
-        : null;
+    if (typeof payload.exp !== "number" || !Number.isFinite(payload.exp)) return null;
+    const expiration = new Date(payload.exp * 1000);
+    if (!Number.isFinite(expiration.getTime())) return null;
+    const expiresAt = expiration.toISOString();
 
     return {
       kind: "oauth",

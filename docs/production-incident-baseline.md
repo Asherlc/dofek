@@ -7,6 +7,27 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-09-26 — MCP migration PR CI failures
+
+- **Status:** Fixed in code; CI rerun pending.
+- **Symptoms / impact:** PR #2808 failed integration shards, Stryker mutation
+  shards, and the Codecov patch gate. No production impact.
+- **Evidence / root cause:** Integration shard 2 failed because the migration
+  runner invoked the legacy MCP OAuth client backfill against a test database
+  where `fitness.mcp_oauth_client` was absent. Stryker identified uncovered
+  branches and assertions that did not distinguish the mutated behavior in the
+  MCP auth routing, JWT verifier, and migration logging paths.
+- **Direct fix:** The backfill now checks for the legacy table before querying
+  it. Focused tests exercise the affected migration logging, auth routing,
+  verifier, OAuth route, and token-scope behaviors. OAuth JWT verification also
+  rejects tokens missing the required expiration claim ([RFC 9068, §2.2](https://www.rfc-editor.org/rfc/rfc9068.html#section-2.2)).
+- **Validation:** Integration shard 2 passed locally (64 files / 390 tests)
+  with the CI shard coverage-threshold setting; focused unit suites, typecheck,
+  Biome, and targeted mutation runs pass. Final remote CI validation is pending.
+- **Remaining risk / follow-up:** Confirm the full PR check suite passes on the
+  pushed revision; investigate any remaining failures from fresh logs rather
+  than changing thresholds or suppressing checks.
+
 ## 2026-09-20 — Infisical GitHub secret sync exceeded repository limit
 
 - **Status:** Fixed. The sync now succeeds and preserves both Ziva secrets.

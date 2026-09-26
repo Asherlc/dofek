@@ -11,6 +11,10 @@ const legacyClientSchema = z.object({
   client_secret_expires_at: z.coerce.number().nullable(),
 });
 
+const legacyClientTableSchema = z.object({
+  exists: z.boolean(),
+});
+
 const PAGE_SIZE = 100;
 
 /**
@@ -23,6 +27,13 @@ const PAGE_SIZE = 100;
 export async function backfillMcpOauthClients(database: {
   execute: (query: SQL) => Promise<unknown>;
 }): Promise<number> {
+  const legacyClientTable = await executeWithSchema(
+    database,
+    legacyClientTableSchema,
+    sql`SELECT to_regclass('fitness.mcp_oauth_client') IS NOT NULL AS exists`,
+  );
+  if (legacyClientTable[0]?.exists !== true) return 0;
+
   let afterClientId: string | null = null;
   let migrated = 0;
 

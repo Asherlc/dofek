@@ -259,6 +259,9 @@ describe("MCP token repository", () => {
       ],
       nextCursor: null,
     });
+    const queryPayload = JSON.stringify(mockExecute.mock.calls[0]?.[0]);
+    expect(queryPayload).toContain("health:read");
+    expect(queryPayload).toContain("nutrition:write");
   });
 
   it("revokes every token belonging to a connected app", async () => {
