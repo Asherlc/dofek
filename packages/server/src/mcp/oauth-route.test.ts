@@ -4,7 +4,7 @@ import express from "express";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { mockGetClient } from "./oauth-client-store.ts";
-import { MCP_OAUTH_SCOPES, MCP_OAUTH_SUPPORTED_SCOPES } from "./oauth-provider.ts";
+import { MCP_OAUTH_SCOPES } from "./oauth-provider.ts";
 import {
   approvalFromBody,
   createMcpOAuthRouter,
@@ -35,13 +35,6 @@ import { validateSession } from "../auth/session.ts";
 const protectedResourceMetadataSchema = z.object({
   authorization_servers: z.array(z.string()),
   resource: z.string(),
-  scopes_supported: z.array(z.string()),
-});
-const authorizationServerMetadataSchema = z.object({
-  authorization_endpoint: z.string(),
-  authorization_response_iss_parameter_supported: z.boolean(),
-  client_id_metadata_document_supported: z.boolean(),
-  issuer: z.string(),
   scopes_supported: z.array(z.string()),
 });
 
@@ -112,31 +105,13 @@ describe("createMcpOAuthRouter", () => {
       expect(metadata.scopes_supported).toContain("nutrition:write");
     });
 
-    it("advertises every supported scope from the authorization-server metadata", async () => {
+    it("publishes the Dofek resource and issuer URLs in the protected-resource metadata", async () => {
       app = await mount();
-      const response = await fetch(`${app.baseUrl}/.well-known/oauth-authorization-server`);
-      const metadata = authorizationServerMetadataSchema.parse(await response.json());
-      expect(metadata.client_id_metadata_document_supported).toBe(true);
-      expect(metadata.authorization_response_iss_parameter_supported).toBe(true);
-      expect(metadata.scopes_supported).toEqual([...MCP_OAUTH_SUPPORTED_SCOPES]);
-      expect(metadata.scopes_supported).toContain("nutrition:write");
-    });
+      const response = await fetch(`${app.baseUrl}/.well-known/oauth-protected-resource/api/mcp`);
+      const metadata = protectedResourceMetadataSchema.parse(await response.json());
 
-    it("publishes the Dofek resource and issuer URLs in the metadata", async () => {
-      app = await mount();
-      const [protectedResource, authorizationServer] = await Promise.all([
-        fetch(`${app.baseUrl}/.well-known/oauth-protected-resource/api/mcp`).then(
-          async (response) => protectedResourceMetadataSchema.parse(await response.json()),
-        ),
-        fetch(`${app.baseUrl}/.well-known/oauth-authorization-server`).then(async (response) =>
-          authorizationServerMetadataSchema.parse(await response.json()),
-        ),
-      ]);
-
-      expect(protectedResource.resource).toBe("https://app.example.test/api/mcp");
-      expect(protectedResource.authorization_servers).toEqual(["https://app.example.test/"]);
-      expect(authorizationServer.issuer).toBe("https://app.example.test/");
-      expect(authorizationServer.authorization_endpoint).toBe("https://app.example.test/authorize");
+      expect(metadata.resource).toBe("https://app.example.test/api/mcp");
+      expect(metadata.authorization_servers).toEqual(["https://app.example.test/"]);
     });
   });
 
@@ -243,62 +218,26 @@ describe("createMcpOAuthRouter", () => {
   });
 
   describe("rate limiting", () => {
-    it("applies rate limiting to authorization-server metadata when configured with a limit", async () => {
+    it("applies rate limiting to protected-resource metadata when configured with a limit", async () => {
       app = await mount({ max: 1, windowMs: 60_000 });
 
-      const first = await fetch(`${app.baseUrl}/.well-known/oauth-authorization-server`);
-      const second = await fetch(`${app.baseUrl}/.well-known/oauth-authorization-server`);
+      const first = await fetch(`${app.baseUrl}/.well-known/oauth-protected-resource/api/mcp`);
+      const second = await fetch(`${app.baseUrl}/.well-known/oauth-protected-resource/api/mcp`);
 
       expect(first.status).toBe(200);
       expect(second.status).toBe(429);
     });
 
-    it("does not rate limit authorization-server metadata when rate limiting is disabled", async () => {
+    it("does not rate limit protected-resource metadata when rate limiting is disabled", async () => {
       app = await mount(false);
 
       const responses = await Promise.all(
         Array.from({ length: 6 }, () =>
-          fetch(`${app.baseUrl}/.well-known/oauth-authorization-server`),
+          fetch(`${app.baseUrl}/.well-known/oauth-protected-resource/api/mcp`),
         ),
       );
 
       expect(responses.map((response) => response.status)).toEqual([200, 200, 200, 200, 200, 200]);
-    });
-
-    it("applies rate limiting to client registration when configured with a limit", async () => {
-      app = await mount({ max: 1, windowMs: 60_000 });
-
-      const first = await fetch(`${app.baseUrl}/register`, {
-        body: JSON.stringify({}),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      });
-      const second = await fetch(`${app.baseUrl}/register`, {
-        body: JSON.stringify({}),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      });
-
-      expect(first.status).toBe(400);
-      expect(second.status).toBe(429);
-    });
-
-    it("does not rate limit client registration when rate limiting is disabled", async () => {
-      app = await mount(false);
-
-      const first = await fetch(`${app.baseUrl}/register`, {
-        body: JSON.stringify({}),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      });
-      const second = await fetch(`${app.baseUrl}/register`, {
-        body: JSON.stringify({}),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      });
-
-      expect(first.status).toBe(400);
-      expect(second.status).toBe(400);
     });
   });
 });

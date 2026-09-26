@@ -7,14 +7,10 @@ import {
 import { z } from "zod";
 import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
-import { authorizationHandler } from "./oauth-authorize-handler.ts";
 import { McpOAuthClientsStore } from "./oauth-client-store.ts";
 import { getMcpIssuerUrl, getMcpResourceUrl } from "./oauth-config.ts";
-import { createOAuthMetadata, createProtectedResourceMetadata } from "./oauth-metadata.ts";
-import { DofekOAuthServerProvider, MCP_OAUTH_SUPPORTED_SCOPES } from "./oauth-provider.ts";
-import { clientRegistrationHandler } from "./oauth-register.ts";
-import { revocationHandler } from "./oauth-revoke.ts";
-import { tokenHandler } from "./oauth-token-handler.ts";
+import { createProtectedResourceMetadata } from "./oauth-metadata.ts";
+import { MCP_OAUTH_SUPPORTED_SCOPES } from "./oauth-provider.ts";
 
 export type McpAuthRateLimitOptions = Partial<RateLimitOptions> | false;
 
@@ -37,7 +33,6 @@ export function createMcpOAuthRouter(
   const router = Router();
   const issuerUrl = getMcpIssuerUrl();
   const resourceUrl = getMcpResourceUrl();
-  const provider = new DofekOAuthServerProvider(db, resourceUrl);
   const scopesSupported = [...MCP_OAUTH_SUPPORTED_SCOPES];
 
   router.use(
@@ -64,16 +59,9 @@ export function createMcpOAuthRouter(
     skip: rateLimit === false ? () => true : rateLimit?.skip,
   });
 
-  const oauthMetadata = createOAuthMetadata({
-    provider,
-    issuerUrl,
-    scopesSupported,
-  });
-
-  router.get("/.well-known/oauth-authorization-server", metadataRateLimit, (_request, response) => {
-    response.json(oauthMetadata);
-  });
-
+  // Dofek owns the RFC 9728 Protected Resource Metadata (the resource-server
+  // role). The authorization-server metadata and endpoints are served by the
+  // dedicated oidc-provider authorization server.
   const protectedResourceMetadata = createProtectedResourceMetadata({
     resourceServerUrl: resourceUrl,
     issuer: issuerUrl.href,
@@ -88,7 +76,7 @@ export function createMcpOAuthRouter(
     },
   );
 
-  // CIMD endpoint for locally registered clients
+  // CIMD endpoint for locally registered clients.
   const oauthClientStore = new McpOAuthClientsStore(db);
   router.get("/.well-known/oauth-client", metadataRateLimit, async (_request, response) => {
     response.status(400).json({ error: "Missing clientId" });
@@ -106,22 +94,11 @@ export function createMcpOAuthRouter(
         response.status(404).json({ error: "Client not found" });
         return;
       }
-      // CIMD metadata documents must never expose client_secret (RFC 7591 / CIMD spec)
+      // CIMD metadata documents must never expose client_secret (RFC 7591 / CIMD spec).
       const { client_secret: _omittedSecret, ...publicClientInfo } = client;
       response.json(publicClientInfo);
     },
   );
 
-  router.use("/authorize", authorizationHandler({ provider, issuerUrl, rateLimit: rateLimit }));
-  router.use("/token", tokenHandler({ provider, rateLimit: rateLimit }));
-  if (oauthMetadata.registration_endpoint) {
-    router.use(
-      "/register",
-      clientRegistrationHandler({ clientsStore: provider.clientsStore, rateLimit: rateLimit }),
-    );
-  }
-  if (oauthMetadata.revocation_endpoint) {
-    router.use("/revoke", revocationHandler({ provider, rateLimit: rateLimit }));
-  }
   return router;
 }
