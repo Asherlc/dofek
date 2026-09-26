@@ -27408,3 +27408,31 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Root cause:** The SeaweedFS entrypoint bound the master to its own Swarm service name (`weed server -ip=peerdb-minio`). Swarm only publishes a service name once it has a running task, so the first task could not resolve its own name, exited non-zero, and never became a running task — a permanent deadlock. Compose/testcontainers resolve the service name immediately, so the SeaweedFS migration's local validation missed it.
 - **Fix:** `deploy/stack.yml` now binds master/filer/volume to `-ip=127.0.0.1`; the S3 API still binds `0.0.0.0:9000` for PeerDB and the lifecycle sidecar. Reproduced both sides locally (`-ip=peerdb-minio` exited 255 with the DNS error; `-ip=127.0.0.1` stayed healthy and returned S3 `ListBuckets` 200).
 - **Remaining risk / follow-up:** Production `/mnt/dofek-data/peerdb-minio` still holds the MinIO on-disk layout (2.2 MB transient staging). Wipe it as an operator action with PeerDB drained or paused (or while `peerdb-minio` is stopped), then confirm the slot returns to active and the mirror catches up after deploy.
+
+## 2026-09-26 — Mountain Project activity missing from the activity list
+
+- **Status:** Unresolved; no repair or replay performed.
+- **Symptoms / user impact:** The user could not see today's Mountain Project
+  activity in the app. The activity list is served from ClickHouse read models.
+- **Evidence:** Production `fitness.sync_log` showed successful Mountain
+  Project syncs at 20:30 UTC and earlier, with two climbing entries on the
+  latest run and no sync error. PostgreSQL contained two active
+  `mountain-project` activity sessions dated 2026-09-26. The ClickHouse
+  `postgres_fitness.activity` mirror and `analytics.deduped_activities` each
+  contained only one active Mountain Project session for that date. The
+  five-minute CDC health check passed and reported three healthy slots and one
+  mirror; that bounded check did not prove delivery of this particular row.
+  See the [ClickHouse CDC health runbook](./clickhouse-cdc-health-runbook.md)
+  and PeerDB's [Postgres-to-ClickHouse CDC overview](https://docs.peerdb.io/mirror/cdc-pg-clickhouse).
+- **Root cause:** Unknown. Provider fetch and Postgres persistence succeeded,
+  but one source activity was absent from the ClickHouse mirror at inspection.
+- **Fix / mitigation:** None. No replay, mirror reset, or data mutation was
+  performed without evidence identifying the failure point.
+- **Validation:** Read-only comparison confirmed two active Postgres sessions
+  versus one ClickHouse mirror/read-model session. CDC monitor state remained
+  healthy during inspection.
+- **Remaining risk / follow-up:** One of today's Mountain Project activities
+  may remain missing from the app. Trace the absent source row through PeerDB's
+  batch/normalization state and exact mirror marker before choosing a repair;
+  then verify the activity appears in `analytics.deduped_activities` and the
+  authenticated calendar query.
