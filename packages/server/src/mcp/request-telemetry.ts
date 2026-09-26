@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { hostname } from "node:os";
-import { SUPPORTED_PROTOCOL_VERSIONS } from "@modelcontextprotocol/sdk/types.js";
+import { SUPPORTED_PROTOCOL_VERSIONS } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
 const protocolVersions = new Set(SUPPORTED_PROTOCOL_VERSIONS);

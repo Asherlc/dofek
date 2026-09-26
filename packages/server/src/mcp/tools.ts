@@ -6,7 +6,7 @@ import {
   healthExplorerSnapshotSchema,
   healthMetricSchema,
 } from "@dofek/mcp-contracts/health-explorer";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
 import { enqueueSyncJob } from "dofek/jobs/enqueue-sync-job";
 import { providerSyncQueueName } from "dofek/jobs/queues";

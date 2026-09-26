@@ -1,5 +1,5 @@
 import { ACTIVITY_MODALITIES } from "@dofek/training/activity-types";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { dateSchema } from "../lib/date-schema.ts";
 import { AnalyticalTrainingLoadRepository } from "../repositories/analytical-training-load-repository.ts";

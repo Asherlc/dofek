@@ -876,6 +876,20 @@
       "when": 1789941600000,
       "tag": "0124_meal_aggregate_nutrition_sources",
       "breakpoints": true
+    },
+    {
+      "idx": 125,
+      "version": "7",
+      "when": 1790300000000,
+      "tag": "0125_mcp_oidc_provider",
+      "breakpoints": true
+    },
+    {
+      "idx": 126,
+      "version": "7",
+      "when": 1790300100000,
+      "tag": "0126_mcp_oidc_adapter_user_ownership",
+      "breakpoints": true
     }
   ]
 }

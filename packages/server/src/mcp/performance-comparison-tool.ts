@@ -1,6 +1,6 @@
 import { ACTIVITY_MODALITIES, CANONICAL_ACTIVITY_TYPES } from "@dofek/training/activity-types";
 import { CLIMBING_GRADE_SYSTEMS } from "@dofek/training/climbing-grades";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { dateSchema } from "../lib/date-schema.ts";
 import { PerformanceComparisonRepository } from "../repositories/performance-comparison-repository.ts";

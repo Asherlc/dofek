@@ -17,7 +17,7 @@ The endpoint uses Streamable HTTP and supports two authentication paths:
 - OAuth 2.1 authorization code with PKCE for remote MCP clients (Claude, ChatGPT, and any other client that supports OAuth auto-discovery).
 - Manually created MCP bearer tokens for clients or deployments configured with a static `Authorization` header.
 
-Remote MCP authorization uses OAuth 2.1 discovery, protected-resource metadata ([RFC 9728](https://www.rfc-editor.org/rfc/rfc9728)), exact redirect URI matching, short-lived access tokens, rotating refresh tokens, and per-tool scopes as required by the [MCP authorization specification](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization).
+Remote MCP authorization uses an [oidc-provider](https://github.com/panva/node-oidc-provider)-backed OAuth 2.1 authorization server with OAuth discovery, protected-resource metadata ([RFC 9728](https://www.rfc-editor.org/rfc/rfc9728)), exact redirect URI matching, short-lived JWT access tokens, rotating refresh tokens, and per-tool scopes as required by the [MCP authorization specification](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization). The authorization server emits RFC 8414 discovery (including the authorization-server `iss`, `registration_endpoint` for [DCR](https://www.rfc-editor.org/rfc/rfc7591), and `client_id_metadata_document_supported` for [CIMD](https://modelcontextprotocol.io/seps/991-enable-url-based-client-registration-using-oauth-c)), echoes the issuer into authorization responses ([RFC 9207](https://www.rfc-editor.org/rfc/rfc9207)), and honours [RFC 8707](https://www.rfc-editor.org/rfc/rfc8707) resource indicators. Access tokens are signed JWTs whose signature, `iss`, `aud`, and `exp` are verified against oidc-provider's JWKS; personal (manually created) bearer tokens remain unchanged.
 
 ## Connect With OAuth
 
@@ -31,7 +31,7 @@ In Claude, select **Use Anthropic’s hosted client metadata**. Claude then uses
 
 ### CIMD token authentication negotiation
 
-Dofek supports the public-client `none` token endpoint authentication method for CIMD. When a client metadata document includes `token_endpoint_auth_methods_supported`, Dofek selects `none` from that list and uses it even if the legacy singular `token_endpoint_auth_method` names another method. A document whose plural list excludes `none` is rejected. When the plural field is absent, Dofek preserves the legacy behavior: a missing singular field or `none` is accepted, while another singular method is rejected.
+CIMD client metadata is resolved by oidc-provider's `clientIdMetadataDocument` feature, which advertises `client_id_metadata_document_supported` in discovery metadata and fetches the URL-hosted document at the client ID. Clients must publish only public HTTPS metadata hosts and declare at least one supported token endpoint authentication method.
 
 ChatGPT’s CIMD transition publishes the plural method list as capabilities and retains the singular field only as a legacy preference; it instructs authorization servers to select a method from the supported intersection. [OpenAI client registration guidance](https://developers.openai.com/plugins/build/auth/#client-registration) The applicable IETF CIMD draft defines URL-hosted client metadata, its exact client ID match, and how a client can declare `private_key_jwt` with a published JWKS when an authorization server supports that method. [IETF Client ID Metadata Document §4 and §8.2](https://datatracker.ietf.org/doc/draft-ietf-oauth-client-id-metadata-document/)
 

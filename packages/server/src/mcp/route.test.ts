@@ -5,8 +5,8 @@ import express from "express";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { makeMockSensorStore } from "../routers/test-helpers.ts";
+import { verifyMcpAccessToken } from "./access-token-verifier.ts";
 import { createMcpRouter } from "./route.ts";
-import { validateMcpToken } from "./token-repository.ts";
 import {
   activityDetailsOutputSchema,
   activitySummaryOutputSchema,
@@ -86,11 +86,11 @@ const toolTestMocks = vi.hoisted(() => {
   };
 });
 
-vi.mock("./token-repository.ts", async (importOriginal) => {
-  const original = await importOriginal<typeof import("./token-repository.ts")>();
+vi.mock("./access-token-verifier.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./access-token-verifier.ts")>();
   return {
     ...original,
-    validateMcpToken: vi.fn(),
+    verifyMcpAccessToken: vi.fn(),
   };
 });
 
@@ -406,10 +406,9 @@ function parseToolCallText(responseText: string): unknown {
 }
 
 function authorizeMcpToken(scopes: readonly (typeof mcpScopes)[number][] = mcpScopes): void {
-  vi.mocked(validateMcpToken).mockResolvedValue({
+  vi.mocked(verifyMcpAccessToken).mockResolvedValue({
+    kind: "personal_token",
     expiresAt: null,
-    oauthClientId: null,
-    oauthResource: null,
     scopes: [...scopes],
     tokenId: "token-id",
     userId: "user-id",
@@ -553,7 +552,7 @@ const initializeRequest = {
 describe("createMcpRouter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(validateMcpToken).mockResolvedValue(null);
+    vi.mocked(verifyMcpAccessToken).mockResolvedValue(null);
     toolTestMocks.activityList.mockResolvedValue({ items: [], totalCount: 0 });
     toolTestMocks.activityListRange.mockResolvedValue([]);
     toolTestMocks.activitySearch.mockResolvedValue({ items: [], totalCount: 0 });
@@ -700,7 +699,7 @@ describe("createMcpRouter", () => {
       id: null,
       jsonrpc: "2.0",
     });
-    expect(validateMcpToken).not.toHaveBeenCalled();
+    expect(verifyMcpAccessToken).not.toHaveBeenCalled();
   });
 
   it("returns 401 without validating non-bearer authorization", async () => {
@@ -715,7 +714,7 @@ describe("createMcpRouter", () => {
       id: null,
       jsonrpc: "2.0",
     });
-    expect(validateMcpToken).not.toHaveBeenCalled();
+    expect(verifyMcpAccessToken).not.toHaveBeenCalled();
   });
 
   it("returns 401 without validating an empty bearer token", async () => {
@@ -730,7 +729,7 @@ describe("createMcpRouter", () => {
       id: null,
       jsonrpc: "2.0",
     });
-    expect(validateMcpToken).not.toHaveBeenCalled();
+    expect(verifyMcpAccessToken).not.toHaveBeenCalled();
   });
 
   it("returns 401 before parsing JSON when Authorization is missing", async () => {
@@ -748,7 +747,7 @@ describe("createMcpRouter", () => {
 
     expect(response.status).toBe(401);
     expect(response.headers.get("www-authenticate")).toContain("resource_metadata=");
-    expect(validateMcpToken).toHaveBeenCalledWith(expect.anything(), "bad-token");
+    expect(verifyMcpAccessToken).toHaveBeenCalledWith("bad-token", expect.anything());
   });
 
   it("returns JSON-RPC method errors for unsupported HTTP methods", async () => {
@@ -811,12 +810,11 @@ describe("createMcpRouter", () => {
   });
 
   it("attributes OAuth MCP tokens with the validated client ID", async () => {
-    vi.mocked(validateMcpToken).mockResolvedValue({
+    vi.mocked(verifyMcpAccessToken).mockResolvedValue({
+      kind: "oauth",
       expiresAt: null,
-      oauthClientId: "oauth-client-id",
-      oauthResource: null,
+      clientId: "oauth-client-id",
       scopes: ["nutrition:read"],
-      tokenId: "token-id",
       userId: "user-id",
     });
 

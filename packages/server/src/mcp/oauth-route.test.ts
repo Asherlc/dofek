@@ -1,22 +1,23 @@
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import type { Database } from "dofek/db";
 import express from "express";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { mockGetClient } from "./oauth-client-store.ts";
-import { MCP_OAUTH_SCOPES, MCP_OAUTH_SUPPORTED_SCOPES } from "./oauth-provider.ts";
-import {
-  approvalFromBody,
-  createMcpOAuthRouter,
-  mcpAuthorizeUrlencodedOptions,
-} from "./oauth-route.ts";
+import { MCP_OAUTH_SCOPES } from "./oauth-provider.ts";
+import { createMcpOAuthRouter } from "./oauth-route.ts";
 
-vi.mock("../auth/cookies.ts", () => ({
-  getSessionIdFromRequest: vi.fn(),
+vi.mock("./oidc/config.ts", () => ({
+  createOidcProvider: vi.fn(() => ({
+    provider: {
+      callback: () => (_req: unknown, _res: unknown, next: () => void) => next(),
+    },
+  })),
 }));
 
-vi.mock("../auth/session.ts", () => ({
-  validateSession: vi.fn(),
+vi.mock("./oidc/interactions.ts", () => ({
+  createInteractionHandler: () => (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
 
 vi.mock("./oauth-client-store.ts", () => {
@@ -29,18 +30,9 @@ vi.mock("./oauth-client-store.ts", () => {
   return { McpOAuthClientsStore: MockMcpOAuthClientsStore, mockGetClient };
 });
 
-import { getSessionIdFromRequest } from "../auth/cookies.ts";
-import { validateSession } from "../auth/session.ts";
-
 const protectedResourceMetadataSchema = z.object({
   authorization_servers: z.array(z.string()),
   resource: z.string(),
-  scopes_supported: z.array(z.string()),
-});
-const authorizationServerMetadataSchema = z.object({
-  authorization_endpoint: z.string(),
-  client_id_metadata_document_supported: z.boolean(),
-  issuer: z.string(),
   scopes_supported: z.array(z.string()),
 });
 
@@ -63,7 +55,7 @@ function getPort(server: Server): number {
 
 function mount(rateLimit: false | Record<string, unknown> = false): Promise<MountedApp> {
   const app = express();
-  app.use(createMcpOAuthRouter(mockDb(), rateLimit));
+  app.use(createMcpOAuthRouter(mockDb(), rateLimit, ["test-key"]));
   return new Promise((resolve, reject) => {
     const server = app.listen(0, () => {
       resolve({
@@ -80,8 +72,6 @@ describe("createMcpOAuthRouter", () => {
   let app: MountedApp;
 
   beforeEach(() => {
-    vi.mocked(getSessionIdFromRequest).mockReset();
-    vi.mocked(validateSession).mockReset();
     mockGetClient.mockReset();
   });
 
@@ -89,18 +79,28 @@ describe("createMcpOAuthRouter", () => {
     await app?.close();
   });
 
-  it("parses authorize form bodies without qs extended parsing", () => {
-    expect(mcpAuthorizeUrlencodedOptions).toEqual({ extended: false });
+  describe("interaction cookie key", () => {
+    it("hard-fails in production when MCP_OIDC_COOKIE_KEY is not set", () => {
+      const previousNodeEnv = process.env.NODE_ENV;
+      const previousKey = process.env.MCP_OIDC_COOKIE_KEY;
+      process.env.NODE_ENV = "production";
+      delete process.env.MCP_OIDC_COOKIE_KEY;
+      try {
+        expect(() => createMcpOAuthRouter(mockDb())).toThrow(
+          "MCP_OIDC_COOKIE_KEY environment variable is required in production",
+        );
+      } finally {
+        process.env.NODE_ENV = previousNodeEnv;
+        if (previousKey === undefined) {
+          delete process.env.MCP_OIDC_COOKIE_KEY;
+        } else {
+          process.env.MCP_OIDC_COOKIE_KEY = previousKey;
+        }
+      }
+    });
   });
 
-  it("reads a string approval value from the authorize form body", () => {
-    expect(approvalFromBody({ approval: "approve" })).toBe("approve");
-    expect(approvalFromBody({ approval: "deny" })).toBe("deny");
-    expect(approvalFromBody({})).toBeUndefined();
-    expect(approvalFromBody({ approval: 1 })).toBeUndefined();
-  });
-
-  describe("OAuth discovery metadata", () => {
+  describe("OAuth protected-resource metadata", () => {
     it("advertises every supported scope from the protected-resource metadata", async () => {
       app = await mount();
       const response = await fetch(`${app.baseUrl}/.well-known/oauth-protected-resource/api/mcp`);
@@ -111,38 +111,17 @@ describe("createMcpOAuthRouter", () => {
       expect(metadata.scopes_supported).toContain("nutrition:write");
     });
 
-    it("advertises every supported scope from the authorization-server metadata", async () => {
+    it("publishes the Dofek resource and issuer URLs in the protected-resource metadata", async () => {
       app = await mount();
-      const response = await fetch(`${app.baseUrl}/.well-known/oauth-authorization-server`);
-      const metadata = authorizationServerMetadataSchema.parse(await response.json());
-      expect(metadata.client_id_metadata_document_supported).toBe(true);
-      expect(metadata.scopes_supported).toEqual([...MCP_OAUTH_SUPPORTED_SCOPES]);
-      expect(metadata.scopes_supported).toContain("nutrition:write");
-    });
+      const response = await fetch(`${app.baseUrl}/.well-known/oauth-protected-resource/api/mcp`);
+      const metadata = protectedResourceMetadataSchema.parse(await response.json());
 
-    it("publishes the Dofek resource and issuer URLs in the metadata", async () => {
-      app = await mount();
-      const [protectedResource, authorizationServer] = await Promise.all([
-        fetch(`${app.baseUrl}/.well-known/oauth-protected-resource/api/mcp`).then(
-          async (response) => protectedResourceMetadataSchema.parse(await response.json()),
-        ),
-        fetch(`${app.baseUrl}/.well-known/oauth-authorization-server`).then(async (response) =>
-          authorizationServerMetadataSchema.parse(await response.json()),
-        ),
-      ]);
-
-      expect(protectedResource.resource).toBe("https://app.example.test/api/mcp");
-      expect(protectedResource.authorization_servers).toEqual(["https://app.example.test/"]);
-      expect(authorizationServer.issuer).toBe("https://app.example.test/");
-      expect(authorizationServer.authorization_endpoint).toBe("https://app.example.test/authorize");
+      expect(metadata.resource).toBe("https://app.example.test/api/mcp");
+      expect(metadata.authorization_servers).toEqual(["https://app.example.test/"]);
     });
   });
 
   describe("CIMD endpoint for locally registered clients", () => {
-    beforeEach(() => {
-      mockGetClient.mockReset();
-    });
-
     it("returns 404 when client is not found", async () => {
       mockGetClient.mockResolvedValue(undefined);
       app = await mount(false);
@@ -191,112 +170,27 @@ describe("createMcpOAuthRouter", () => {
     });
   });
 
-  describe("authorize middleware", () => {
-    it("redirects unauthenticated users to login with the original returnTo URL", async () => {
-      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
-      app = await mount();
-
-      const response = await fetch(`${app.baseUrl}/authorize?client_id=test`, {
-        redirect: "manual",
-      });
-
-      expect(response.status).toBe(302);
-      const location = response.headers.get("location") ?? "";
-      expect(location).toContain("/login?");
-      expect(location).toContain("returnTo=");
-      expect(decodeURIComponent(location)).toContain("/authorize?client_id=test");
-    });
-
-    it("sets CSP frame-ancestors and X-Frame-Options headers before requiring a session", async () => {
-      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
-      app = await mount();
-
-      const response = await fetch(`${app.baseUrl}/authorize`, { redirect: "manual" });
-
-      expect(response.headers.get("content-security-policy")).toBe("frame-ancestors 'none'");
-      expect(response.headers.get("x-frame-options")).toBe("DENY");
-    });
-
-    it("propagates approval from the urlencoded body for authenticated sessions", async () => {
-      vi.mocked(getSessionIdFromRequest).mockReturnValue("session-1");
-      vi.mocked(validateSession).mockResolvedValue({
-        sessionId: "session-1",
-        userId: "user-1",
-      });
-      app = await mount();
-
-      // Unknown client_id fails after the authorize middleware has accepted the session.
-      const response = await fetch(`${app.baseUrl}/authorize`, {
-        body: "approval=deny&client_id=missing",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        method: "POST",
-        redirect: "manual",
-      });
-
-      expect(validateSession).toHaveBeenCalledWith(expect.anything(), "session-1");
-      // Middleware ran (not a login redirect) and the auth router rejected the unknown client.
-      expect(response.status).not.toBe(302);
-      expect(response.url).not.toContain("/login");
-    });
-  });
-
   describe("rate limiting", () => {
-    it("applies rate limiting to authorization-server metadata when configured with a limit", async () => {
+    it("applies rate limiting to protected-resource metadata when configured with a limit", async () => {
       app = await mount({ max: 1, windowMs: 60_000 });
 
-      const first = await fetch(`${app.baseUrl}/.well-known/oauth-authorization-server`);
-      const second = await fetch(`${app.baseUrl}/.well-known/oauth-authorization-server`);
+      const first = await fetch(`${app.baseUrl}/.well-known/oauth-protected-resource/api/mcp`);
+      const second = await fetch(`${app.baseUrl}/.well-known/oauth-protected-resource/api/mcp`);
 
       expect(first.status).toBe(200);
       expect(second.status).toBe(429);
     });
 
-    it("does not rate limit authorization-server metadata when rate limiting is disabled", async () => {
+    it("does not rate limit protected-resource metadata when rate limiting is disabled", async () => {
       app = await mount(false);
 
       const responses = await Promise.all(
         Array.from({ length: 6 }, () =>
-          fetch(`${app.baseUrl}/.well-known/oauth-authorization-server`),
+          fetch(`${app.baseUrl}/.well-known/oauth-protected-resource/api/mcp`),
         ),
       );
 
       expect(responses.map((response) => response.status)).toEqual([200, 200, 200, 200, 200, 200]);
-    });
-
-    it("applies rate limiting to client registration when configured with a limit", async () => {
-      app = await mount({ max: 1, windowMs: 60_000 });
-
-      const first = await fetch(`${app.baseUrl}/register`, {
-        body: JSON.stringify({}),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      });
-      const second = await fetch(`${app.baseUrl}/register`, {
-        body: JSON.stringify({}),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      });
-
-      expect(first.status).toBe(400);
-      expect(second.status).toBe(429);
-    });
-
-    it("does not rate limit client registration when rate limiting is disabled", async () => {
-      app = await mount(false);
-
-      const first = await fetch(`${app.baseUrl}/register`, {
-        body: JSON.stringify({}),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      });
-      const second = await fetch(`${app.baseUrl}/register`, {
-        body: JSON.stringify({}),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      });
-
-      expect(first.status).toBe(400);
-      expect(second.status).toBe(400);
     });
   });
 });
