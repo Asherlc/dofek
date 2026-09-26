@@ -27411,7 +27411,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 ## 2026-09-26 — Mountain Project activity missing from the activity list
 
-- **Status:** Unresolved; no repair or replay performed.
+- **Status:** Server fix implemented on the current branch; production deployment and database integration validation remain pending. No repair or replay performed.
 - **Symptoms / user impact:** The user could not see today's Mountain Project
   activity in the app. The activity list is served from ClickHouse read models.
 - **Evidence:** Production `fitness.sync_log` showed successful Mountain
@@ -27430,14 +27430,16 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   the previous calendar day, so it does not appear under “today.” PostgreSQL
   documents the timestamp conversion used by `AT TIME ZONE` in its
   [date/time functions](https://www.postgresql.org/docs/current/functions-datetime.html).
-- **Fix / mitigation:** None yet; implementation direction needs review because
-  the canonical activity model stores timestamps while this source provides a
-  date without a time or timezone.
+- **Fix / mitigation:** The server activity list, overview, access filtering,
+  and heatmap now treat Mountain Project's UTC midnight as the exported
+  calendar date. Other providers retain the existing timezone conversion.
 - **Validation:** Read-only comparison confirmed one Postgres session with two
   entries, matching one ClickHouse mirror/read-model session. The stored start
   is `2026-09-26 00:00:00+00`; projecting it to `America/Los_Angeles` yields
   `2026-09-25`, while the Mountain Project export date is `2026-09-26`.
-- **Remaining risk / follow-up:** The activity is present but grouped under the
-  previous local day in Pacific time. Agree on a durable representation for
-  date-only provider activity, implement it, and verify the authenticated
-  calendar query groups it on the export date.
+- **Remaining risk / follow-up:** Production still shows the previous local day
+  until this branch is deployed. Unit and type checks passed. Database
+  integration validation was blocked before Vitest by Docker address-pool
+  exhaustion; automatic approval review rejected removal of an unattached
+  network. Run the focused integration test when this workspace can create its
+  Compose network, then verify the authenticated production calendar response.

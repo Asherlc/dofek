@@ -34,7 +34,7 @@ function makeDatabase(rowsOrRowSets: TestDatabaseRow[] | TestDatabaseRow[][] = [
     const isCanonicalVisibilityQuery =
       normalizedSql.includes("FROM fitness.v_activity") &&
       normalizedSql.includes("id IN") &&
-      normalizedSql.includes("WHERE user_id =");
+      normalizedSql.includes("user_id =");
     if (isCanonicalVisibilityQuery) {
       const stringParams = compiled.params.filter(
         (param): param is string => typeof param === "string",
@@ -44,8 +44,8 @@ function makeDatabase(rowsOrRowSets: TestDatabaseRow[] | TestDatabaseRow[][] = [
     }
     const isVisibleActivityRangeQuery =
       normalizedSql.includes("FROM fitness.v_activity") &&
-      normalizedSql.includes("WHERE user_id =") &&
-      normalizedSql.includes("started_at >=");
+      normalizedSql.includes("user_id =") &&
+      normalizedSql.includes("started_at");
     if (isVisibleActivityRangeQuery) {
       return [{ id: "activity-1" }];
     }
@@ -225,6 +225,7 @@ describe("ActivitiesCalendarRepository", () => {
       }),
     );
     const listQuery = String(vi.mocked(sensorStore.query).mock.calls[0]?.[1]);
+    expect(listQuery.match(/activity\.provider_id = 'mountain-project'/g)).toHaveLength(2);
     expect(normalizeSql(listQuery)).toMatch(
       /greatest\(\s*activity\.refreshed_at,\s*coalesce\(asum\.refreshed_at, activity\.refreshed_at\)\s*\)/,
     );
@@ -628,6 +629,12 @@ describe("ActivitiesCalendarRepository", () => {
       endDate: "2026-03-20",
       activityType: "running",
     });
+    expect(String(vi.mocked(sensorStore.query).mock.calls[0]?.[1])).toContain(
+      "activity.provider_id = 'mountain-project'",
+    );
+    expect(String(vi.mocked(sensorStore.query).mock.calls[1]?.[1])).toContain(
+      "activity.provider_id = 'mountain-project'",
+    );
 
     expect(result).toMatchObject({
       activityCount: 1,
@@ -1717,6 +1724,8 @@ describe("ActivitiesCalendarRepository", () => {
       endDate: "2026-03-20",
       includeProviderAbsent: true,
     });
+    const hiddenQuery = String(vi.mocked(sensorStore.query).mock.calls[2]?.[1]);
+    expect(hiddenQuery.match(/activity\.provider_id = 'mountain-project'/g)).toHaveLength(2);
 
     expect(result).toEqual([
       {

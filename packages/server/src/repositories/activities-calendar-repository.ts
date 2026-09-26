@@ -28,6 +28,7 @@ import {
   buildActivityListSource,
 } from "../models/activity-source-decision.ts";
 import { activityMeasurementState } from "../services/activity-data-state.ts";
+import { clickHouseActivityCalendarDate } from "./activity-local-date.ts";
 import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repository.ts";
 import { getActivityRoutePreviews } from "./activity-route-preview.ts";
 
@@ -230,6 +231,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     const windowStart = dateWindowStartString(input.endDate, days);
     const activityTypeFilter = activityTypeFilterSql(input);
     const queryParams = activitySummaryQueryParams(this.userId, this.timezone, windowStart, input);
+    const activityDate = clickHouseActivityCalendarDate("activity");
 
     const [activityRows, baselineRows] = await Promise.all([
       this.#sensorStore.query(
@@ -262,7 +264,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
                 coalesce(asum.refreshed_at, activity.refreshed_at)
               )
             ) AS last_processed_at,
-            toString(toDate(toTimeZone(activity.started_at, {timezone:String}))) AS local_date
+            toString(${activityDate}) AS local_date
           FROM analytics.deduped_activities AS activity FINAL
           LEFT JOIN analytics.activity_summary asum
             ON asum.user_id = activity.user_id
@@ -270,7 +272,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
           WHERE activity.user_id = {userId:UUID}
             AND activity.is_deleted = 0
             AND activity.ended_at IS NOT NULL
-            AND toDate(toTimeZone(activity.started_at, {timezone:String})) >= toDate({windowStart:String})
+            AND ${activityDate} >= toDate({windowStart:String})
             ${activityTypeFilter}
           ORDER BY activity.started_at DESC`,
         queryParams,
@@ -371,6 +373,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     const days = input.weeks * 7;
     const windowStart = dateWindowStartString(input.endDate, days);
     const activityTypeFilter = activityTypeFilterSql(input);
+    const activityDate = clickHouseActivityCalendarDate("activity");
     const queryParams = {
       ...activitySummaryQueryParams(this.userId, this.timezone, windowStart, input),
       ...this.#clickhouseTimestampAccessParams(),
@@ -399,14 +402,14 @@ export class ActivitiesCalendarRepository extends BaseRepository {
           NULL AS centroid_lat,
           NULL AS centroid_lng,
           NULL AS last_processed_at,
-          toString(toDate(toTimeZone(activity.started_at, {timezone:String}))) AS local_date,
+          toString(${activityDate}) AS local_date,
           toString(activity.provider_absent_at) AS provider_absent_at
         FROM postgres_fitness.activity AS activity FINAL
         WHERE activity.user_id = {userId:UUID}
           AND activity._peerdb_is_deleted = 0
           AND activity.provider_absent_at IS NOT NULL
           AND activity.ended_at IS NOT NULL
-          AND toDate(toTimeZone(activity.started_at, {timezone:String})) >= toDate({windowStart:String})
+          AND ${activityDate} >= toDate({windowStart:String})
           ${activityTypeFilter}
           ${this.#clickhouseTimestampAccessClause()}
         ORDER BY activity.started_at DESC`,
@@ -507,9 +510,10 @@ export class ActivitiesCalendarRepository extends BaseRepository {
 
   #clickhouseTimestampAccessClause(): string {
     if (this.accessWindow.kind === "full") return "";
+    const activityDate = clickHouseActivityCalendarDate("activity");
     return `
-          AND toDate(toTimeZone(activity.started_at, {timezone:String})) >= toDate({accessStartDate:String})
-          AND toDate(toTimeZone(activity.started_at, {timezone:String})) < toDate({accessEndDateExclusive:String})`;
+          AND ${activityDate} >= toDate({accessStartDate:String})
+          AND ${activityDate} < toDate({accessEndDateExclusive:String})`;
   }
 
   #clickhouseTimestampAccessParams(): Record<string, string> {
@@ -521,6 +525,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
   }
 
   async getActivityOverview(input: WeekListInput): Promise<ActivityOverview> {
+    const activityDate = clickHouseActivityCalendarDate("activity");
     const days = input.weeks * 7;
     const currentWindowStart = dateWindowStartString(input.endDate, days - 1);
     const previousWindowStart = dateWindowStartString(input.endDate, days * 2 - 1);
@@ -575,7 +580,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     const [overviewRows, activityTypeRows] = await Promise.all([
       this.#sensorStore.query(
         overviewRowSchema,
-        `WITH toDate(toTimeZone(activity.started_at, {timezone:String})) AS activity_date
+        `WITH ${activityDate} AS activity_date
           SELECT
             countIf(
               activity_date >= toDate({currentWindowStart:String})
@@ -656,7 +661,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
       ),
       this.#sensorStore.query(
         activityTypeRowSchema,
-        `WITH toDate(toTimeZone(activity.started_at, {timezone:String})) AS activity_date
+        `WITH ${activityDate} AS activity_date
           SELECT DISTINCT
             activity.canonical_type AS canonical_type
           FROM analytics.deduped_activities AS activity FINAL

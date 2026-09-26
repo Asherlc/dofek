@@ -16,6 +16,7 @@ import { logger } from "../logger.ts";
 import type { ActivityRow } from "../models/activity.ts";
 import { activitySourceSchema } from "../models/activity-source.ts";
 import { activityMeasurementState } from "../services/activity-data-state.ts";
+import { postgresActivityCalendarDate } from "./activity-local-date.ts";
 import { getActivityRoutePreviews } from "./activity-route-preview.ts";
 
 // ---------------------------------------------------------------------------
@@ -387,18 +388,19 @@ export class ActivityRepository extends BaseRepository {
     localStartDate: string,
     localEndDateExclusive?: string,
   ): Promise<string[]> {
+    const activityDate = postgresActivityCalendarDate(sql`a`, this.timezone);
     const endDatePredicate = localEndDateExclusive
-      ? sql`AND started_at < (${localEndDateExclusive}::date AT TIME ZONE ${this.timezone})`
+      ? sql`AND ${activityDate} < ${localEndDateExclusive}::date`
       : sql``;
     const rows = await this.query(
       z.object({ id: z.string() }),
-      sql`SELECT id::text AS id
-          FROM fitness.v_activity
-          WHERE user_id = ${this.userId}::uuid
-            AND started_at >= (${localStartDate}::date AT TIME ZONE ${this.timezone})
+      sql`SELECT a.id::text AS id
+          FROM fitness.v_activity a
+          WHERE a.user_id = ${this.userId}::uuid
+            AND ${activityDate} >= ${localStartDate}::date
             ${endDatePredicate}
-            ${this.timestampAccessPredicate(sql`started_at`)}
-          ORDER BY started_at DESC`,
+            ${this.dateAccessPredicate(activityDate)}
+          ORDER BY a.started_at DESC`,
     );
     return rows.map((row) => row.id);
   }
@@ -432,11 +434,11 @@ export class ActivityRepository extends BaseRepository {
     );
     const visibleRows = await this.query(
       z.object({ id: z.string() }),
-      sql`SELECT id::text AS id
-          FROM fitness.v_activity
-          WHERE user_id = ${this.userId}::uuid
-            AND id IN (${activityIdFilter})
-            ${this.timestampAccessPredicate(sql`started_at`)}`,
+      sql`SELECT a.id::text AS id
+          FROM fitness.v_activity a
+          WHERE a.user_id = ${this.userId}::uuid
+            AND a.id IN (${activityIdFilter})
+            ${this.dateAccessPredicate(postgresActivityCalendarDate(sql`a`, this.timezone))}`,
     );
     const visibleActivityIds = new Set(visibleRows.map((row) => row.id));
     return rows.filter((row) => visibleActivityIds.has(row.id));

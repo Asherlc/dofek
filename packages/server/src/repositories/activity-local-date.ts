@@ -41,6 +41,24 @@ export function clickHouseActivityLocalDate(activityAlias: string): string {
   ))`;
 }
 
+/** Mountain Project exports a calendar date without a time; its stored midnight UTC is only a carrier. */
+export function postgresActivityCalendarDate(activityAlias: SQL, analysisTimezone: string): SQL {
+  return sql`CASE
+    WHEN ${activityAlias}.provider_id = 'mountain-project'
+      THEN (${activityAlias}.started_at AT TIME ZONE 'UTC')::date
+    ELSE (${activityAlias}.started_at AT TIME ZONE ${analysisTimezone})::date
+  END`;
+}
+
+export function clickHouseActivityCalendarDate(activityAlias: string): string {
+  if (!/^[a-z_][a-z0-9_]*$/i.test(activityAlias)) throw new Error("Invalid SQL alias");
+  return `if(
+    ${activityAlias}.provider_id = 'mountain-project',
+    toDate(toTimeZone(${activityAlias}.started_at, 'UTC')),
+    toDate(toTimeZone(${activityAlias}.started_at, {timezone:String}))
+  )`;
+}
+
 export function postgresActivityDateIsAuthoritative(activityAlias: SQL): SQL {
   return sql`${activityAlias}.local_time_source IN (${sql.join(
     AUTHORITATIVE_LOCAL_TIME_SOURCES.map((source) => sql`${source}`),
