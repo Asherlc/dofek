@@ -66,7 +66,7 @@ const authorizeLocalsSchema = z.object({
   mcpOAuthApproval: z.string().optional(),
 });
 
-const MCP_SCOPE_LABELS: Record<McpScope, string> = {
+export const MCP_SCOPE_LABELS: Record<McpScope, string> = {
   "activity:read": "Search your activities",
   "health:read": "View your daily health summaries",
   "health:write": "Log health observations",
