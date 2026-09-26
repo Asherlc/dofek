@@ -27416,23 +27416,28 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   activity in the app. The activity list is served from ClickHouse read models.
 - **Evidence:** Production `fitness.sync_log` showed successful Mountain
   Project syncs at 20:30 UTC and earlier, with two climbing entries on the
-  latest run and no sync error. PostgreSQL contained two active
-  `mountain-project` activity sessions dated 2026-09-26. The ClickHouse
-  `postgres_fitness.activity` mirror and `analytics.deduped_activities` each
-  contained only one active Mountain Project session for that date. The
-  five-minute CDC health check passed and reported three healthy slots and one
-  mirror; that bounded check did not prove delivery of this particular row.
-  See the [ClickHouse CDC health runbook](./clickhouse-cdc-health-runbook.md)
-  and PeerDB's [Postgres-to-ClickHouse CDC overview](https://docs.peerdb.io/mirror/cdc-pg-clickhouse).
-- **Root cause:** Unknown. Provider fetch and Postgres persistence succeeded,
-  but one source activity was absent from the ClickHouse mirror at inspection.
-- **Fix / mitigation:** None. No replay, mirror reset, or data mutation was
-  performed without evidence identifying the failure point.
-- **Validation:** Read-only comparison confirmed two active Postgres sessions
-  versus one ClickHouse mirror/read-model session. CDC monitor state remained
-  healthy during inspection.
-- **Remaining risk / follow-up:** One of today's Mountain Project activities
-  may remain missing from the app. Trace the absent source row through PeerDB's
-  batch/normalization state and exact mirror marker before choosing a repair;
-  then verify the activity appears in `analytics.deduped_activities` and the
-  authenticated calendar query.
+  latest run and no sync error. PostgreSQL contains one active
+  `mountain-project` activity session with two climbing entries dated
+  2026-09-26. The ClickHouse `postgres_fitness.activity` mirror and
+  `analytics.deduped_activities` both contain that session. The parser turns
+  the export's date-only value into midnight UTC, while the activity calendar
+  assigns days after converting the timestamp to the user's timezone; midnight
+  UTC is September 25 in America/Los_Angeles. The relevant behavior is in
+  [the provider parser](../src/providers/mountain-project.ts) and
+  [calendar query](../packages/server/src/repositories/activities-calendar-repository.ts).
+- **Root cause:** A Mountain Project calendar date is modeled as an instant at
+  midnight UTC. Converting that instant to Pacific time places the activity on
+  the previous calendar day, so it does not appear under “today.” PostgreSQL
+  documents the timestamp conversion used by `AT TIME ZONE` in its
+  [date/time functions](https://www.postgresql.org/docs/current/functions-datetime.html).
+- **Fix / mitigation:** None yet; implementation direction needs review because
+  the canonical activity model stores timestamps while this source provides a
+  date without a time or timezone.
+- **Validation:** Read-only comparison confirmed one Postgres session with two
+  entries, matching one ClickHouse mirror/read-model session. The stored start
+  is `2026-09-26 00:00:00+00`; projecting it to `America/Los_Angeles` yields
+  `2026-09-25`, while the Mountain Project export date is `2026-09-26`.
+- **Remaining risk / follow-up:** The activity is present but grouped under the
+  previous local day in Pacific time. Agree on a durable representation for
+  date-only provider activity, implement it, and verify the authenticated
+  calendar query groups it on the export date.
