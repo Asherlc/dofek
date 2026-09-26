@@ -27408,3 +27408,11 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Root cause:** The SeaweedFS entrypoint bound the master to its own Swarm service name (`weed server -ip=peerdb-minio`). Swarm only publishes a service name once it has a running task, so the first task could not resolve its own name, exited non-zero, and never became a running task — a permanent deadlock. Compose/testcontainers resolve the service name immediately, so the SeaweedFS migration's local validation missed it.
 - **Fix:** `deploy/stack.yml` now binds master/filer/volume to `-ip=127.0.0.1`; the S3 API still binds `0.0.0.0:9000` for PeerDB and the lifecycle sidecar. Reproduced both sides locally (`-ip=peerdb-minio` exited 255 with the DNS error; `-ip=127.0.0.1` stayed healthy and returned S3 `ListBuckets` 200).
 - **Remaining risk / follow-up:** Production `/mnt/dofek-data/peerdb-minio` still holds the MinIO on-disk layout (2.2 MB transient staging). Wipe it as an operator action with PeerDB drained or paused (or while `peerdb-minio` is stopped), then confirm the slot returns to active and the mirror catches up after deploy.
+
+## 2026-09-25 — ChatGPT MCP Apps "Couldn't create MCP app" connect failure
+
+- **Symptoms:** A user attempting to connect a ChatGPT MCP App to Dofek got "Couldn't create MCP app" and the connection never completed.
+- **Evidence:** The client's OAuth discovery request (`/.well-known/oauth-authorization-server`) returned 200, but no subsequent `/authorize` request was observed.
+- **Root cause:** The hand-rolled Dofek authorization server served discovery without a matching issuer echo and without `authorization_response_iss_parameter_supported`, so clients that require RFC 9207 issuer confirmation (including ChatGPT MCP Apps) refused to proceed from discovery to `/authorize`.
+- **Fix:** Replaced the hand-rolled OAuth authorization server with oidc-provider (native `iss` echoing, RFC 8414 discovery, DCR, CIMD, and RFC 8707 resource indicators) and migrated the MCP stack to the v2 `@modelcontextprotocol/{core,server,node,client,ext-apps}` packages.
+- **Remaining risk / follow-up:** Set a durable `MCP_OIDC_COOKIE_KEY` in Infisical (production currently derives oidc-provider interaction cookie keys from the public issuer URL); harden `renderError` HTML-escaping in `oidc/config.ts`.
