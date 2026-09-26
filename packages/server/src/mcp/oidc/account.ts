@@ -1,4 +1,10 @@
 import type { Database } from "dofek/db";
+import { sql } from "drizzle-orm";
+import { z } from "zod";
+import { executeWithSchema } from "../../lib/typed-sql.ts";
+
+const accountRowSchema = z.object({ id: z.string().uuid() });
+const accountIdSchema = z.string().uuid();
 
 /**
  * Dofek session/account bridge for oidc-provider.
@@ -17,19 +23,25 @@ export interface DofekOidcAccount {
 }
 
 /**
- * Resolve a Dofek `userId` into an oidc-provider account. The `_db` argument is
- * accepted for interface symmetry and future claims loading, but the Dofek
- * account requires no persistence lookups today: the `userId` is already the
- * session-derived identity and is returned verbatim as `accountId`.
+ * Resolve a Dofek `userId` into an oidc-provider account only while the user
+ * still exists. This also prevents stale session rows from creating grants
+ * after account deletion has begun.
  */
-export function findAccount(
-  _db: Pick<Database, "execute">,
+export async function findAccount(
+  db: Pick<Database, "execute">,
   _ctx: unknown,
   userId: string,
-): DofekOidcAccount | undefined {
-  if (typeof userId !== "string" || userId.length === 0) return undefined;
+): Promise<DofekOidcAccount | undefined> {
+  const accountId = accountIdSchema.safeParse(userId);
+  if (!accountId.success) return undefined;
+  const rows = await executeWithSchema(
+    db,
+    accountRowSchema,
+    sql`SELECT id FROM fitness.user_profile WHERE id = ${accountId.data}::uuid LIMIT 1`,
+  );
+  if (!rows[0]) return undefined;
   return {
-    accountId: userId,
+    accountId: accountId.data,
     claims: async () => ({}),
   };
 }

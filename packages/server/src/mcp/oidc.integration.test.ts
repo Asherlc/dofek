@@ -3,9 +3,11 @@ import { sql } from "drizzle-orm";
 import type express from "express";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
+import { backfillMcpOauthClients } from "../../../../scripts/backfill-mcp-oauth-clients.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createApp } from "../index.ts";
 import { makeMockSensorStore } from "../routers/test-helpers.ts";
+import { createMcpOidcAdapter } from "./oidc/adapter.ts";
 
 /**
  * oidc-provider authorization server integration tests.
@@ -78,6 +80,40 @@ describe("MCP oidc-provider authorization server", () => {
     expect(metadata.client_id_metadata_document_supported).toBe(true);
     expect(metadata.scopes_supported).toContain("health:read");
     expect(metadata.scopes_supported).toContain("offline_access");
+  });
+
+  it("imports existing registered OAuth clients idempotently", async () => {
+    const clientId = "legacy-client-migration-test";
+    await context.db.execute(
+      sql`INSERT INTO fitness.mcp_oauth_client (
+            client_id, client_secret, client_metadata, client_id_issued_at,
+            client_secret_expires_at
+          ) VALUES (
+            ${clientId}, NULL,
+            ${JSON.stringify({ redirect_uris: [redirectUri], token_endpoint_auth_method: "none" })}::jsonb,
+            1, NULL
+          )`,
+    );
+
+    try {
+      expect(await backfillMcpOauthClients(context.db)).toBe(1);
+      expect(await backfillMcpOauthClients(context.db)).toBe(0);
+      await expect(
+        createMcpOidcAdapter(context.db)("Client").find(clientId),
+      ).resolves.toMatchObject({
+        client_id: clientId,
+        client_id_issued_at: 1,
+        redirect_uris: [redirectUri],
+        token_endpoint_auth_method: "none",
+      });
+    } finally {
+      await context.db.execute(
+        sql`DELETE FROM fitness.mcp_oauth_client WHERE client_id = ${clientId}`,
+      );
+      await context.db.execute(
+        sql`DELETE FROM fitness.mcp_oidc_adapter WHERE model = 'Client' AND id = ${clientId}`,
+      );
+    }
   });
 
   it("registers a client via RFC 7591 dynamic client registration", async () => {

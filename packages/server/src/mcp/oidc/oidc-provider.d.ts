@@ -29,6 +29,7 @@ declare module "oidc-provider" {
 
   interface Grant {
     addResourceScope(resource: string, scope: string): void;
+    addOIDCScope(scope: string): void;
     save(expiresIn?: number): Promise<string>;
   }
 
@@ -75,6 +76,8 @@ declare module "oidc-provider" {
       userinfo?: ConfigurableFeature;
     };
     adapter?: (model: string) => Adapter;
+    ttl?: Record<string, number>;
+    rotateRefreshToken?: (ctx: unknown, token: unknown) => boolean;
     findAccount?: (
       ctx: unknown,
       accountId: string,

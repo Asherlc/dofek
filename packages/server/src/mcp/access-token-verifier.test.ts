@@ -1,5 +1,9 @@
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const { captureException } = vi.hoisted(() => ({ captureException: vi.fn() }));
+vi.mock("dofek/lib/error-reporting", () => ({ captureException }));
+
 import {
   isPersonalAccessToken,
   PERSONAL_TOKEN_PREFIX,
@@ -15,12 +19,14 @@ describe("isPersonalAccessToken", () => {
   });
 
   it("does not recognize JWT-shaped tokens as personal", () => {
-    expect(isPersonalAccessToken("eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ1In0.sig")).toBe(false);
+    expect(isPersonalAccessToken("header.payload.signature")).toBe(false);
     expect(isPersonalAccessToken("not-a-dofek-token")).toBe(false);
   });
 });
 
 describe("verifyJwtAccessToken", () => {
+  beforeEach(() => captureException.mockReset());
+
   async function makeSignedJwt(claims: Record<string, unknown>, key: CryptoKey): Promise<string> {
     return new SignJWT(claims)
       .setProtectedHeader({ alg: "ES256" })
@@ -50,6 +56,7 @@ describe("verifyJwtAccessToken", () => {
       sub: "user-id-123",
       client_id: "oauth-client",
       scope: "health:read activity:read",
+      jti: "access-token-id",
     });
 
     const principal = await verifyJwtAccessToken(
@@ -60,6 +67,7 @@ describe("verifyJwtAccessToken", () => {
 
     expect(principal).toEqual({
       kind: "oauth",
+      tokenId: "access-token-id",
       userId: "user-id-123",
       clientId: "oauth-client",
       scopes: ["health:read", "activity:read"],
@@ -76,6 +84,7 @@ describe("verifyJwtAccessToken", () => {
       sub: "user-id",
       client_id: "oauth-client",
       scope: "health:read",
+      jti: "access-token-id",
     })
       .setProtectedHeader({ alg: "ES256" })
       .setIssuer(ISSUER)
@@ -97,6 +106,7 @@ describe("verifyJwtAccessToken", () => {
       sub: "user-id",
       client_id: "oauth-client",
       scope: "health:read",
+      jti: "access-token-id",
     })
       .setProtectedHeader({ alg: "ES256" })
       .setIssuer(ISSUER)
@@ -135,5 +145,26 @@ describe("verifyJwtAccessToken", () => {
     await expect(
       verifyJwtAccessToken(token, { issuer: ISSUER, resourceUrl: RESOURCE }, getKey),
     ).resolves.toBeNull();
+  });
+
+  it("reports and propagates remote JWKS fetch failures", async () => {
+    const keys = await localKeySet();
+    const token = await keys.sign({
+      sub: "user-id",
+      client_id: "oauth-client",
+      scope: "health:read",
+      jti: "access-token-id",
+    });
+    const failure = new TypeError("JWKS fetch failed");
+
+    await expect(
+      verifyJwtAccessToken(token, { issuer: ISSUER, resourceUrl: RESOURCE }, async () => {
+        throw failure;
+      }),
+    ).rejects.toBe(failure);
+    expect(captureException).toHaveBeenCalledWith(
+      failure,
+      expect.objectContaining({ tags: { source: "mcp-jwks-verification" } }),
+    );
   });
 });

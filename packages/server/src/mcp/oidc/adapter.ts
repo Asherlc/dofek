@@ -1,4 +1,9 @@
+import { createHash } from "node:crypto";
 import type { Database } from "dofek/db";
+import {
+  decryptCredentialValue,
+  encryptCredentialValue,
+} from "dofek/security/credential-encryption";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema } from "../../lib/typed-sql.ts";
@@ -39,19 +44,85 @@ type ExecutableDatabase = Pick<Database, "execute">;
 const adapterUserIdSchema = z.string().uuid();
 
 /**
- * Derives the `user_id` ownership column from an oidc-provider `uid`.
- * The adapter's `uid` carries the Dofek account id (a uuid string) for
- * user-attributable artifacts (Session, Grant, tokens); client metadata
- * and other shared artifacts have no `uid`. Only valid uuids map to
- * `user_id` so account erasure can attribute and delete a user's rows
- * while leaving shared rows untouched.
+ * Derives the `user_id` ownership column from an artifact's `accountId`.
+ * Client metadata and other shared artifacts have no account id. Only valid
+ * UUIDs map to `user_id` so account erasure can attribute and delete a user's
+ * rows while leaving shared rows untouched.
  */
-export function resolveAdapterUserId(uid: unknown): string | null {
-  if (typeof uid !== "string") return null;
-  return adapterUserIdSchema.safeParse(uid).success ? uid : null;
+export function resolveAdapterUserId(accountId: unknown): string | null {
+  const result = adapterUserIdSchema.safeParse(accountId);
+  return result.success ? result.data : null;
+}
+
+/**
+ * Derives the `expires_at` column for an adapter upsert. A numeric
+ * `expiresIn` (seconds, as oidc-provider supplies) becomes an absolute
+ * timestamp; anything else means the artifact does not expire.
+ */
+export function resolveExpiresAt(expiresIn?: number): Date | null {
+  if (typeof expiresIn !== "number") return null;
+  return new Date(Date.now() + expiresIn * 1000);
 }
 
 const nowEpoch = (): number => Math.floor(Date.now() / 1000);
+const protectedIdModels = new Set([
+  "AccessToken",
+  "AuthorizationCode",
+  "DeviceCode",
+  "RefreshToken",
+  "Session",
+]);
+
+function storedId(model: string, id: string): string {
+  return protectedIdModels.has(model) ? createHash("sha256").update(id).digest("hex") : id;
+}
+
+function clientSecretContext(clientId: string) {
+  return {
+    columnName: "client_secret",
+    scopeId: clientId,
+    tableName: "fitness.mcp_oidc_adapter",
+  };
+}
+
+function legacyClientSecretContext(clientId: string) {
+  return {
+    columnName: "client_secret",
+    scopeId: clientId,
+    tableName: "fitness.mcp_oauth_client",
+  };
+}
+
+async function protectPayload(model: string, payload: AdapterPayload, id: string) {
+  if (model !== "Client" || typeof payload.client_secret !== "string") return payload;
+  const { dofekLegacyEncryptedClientSecret: _legacyMarker, ...clientPayload } = payload;
+  return {
+    ...clientPayload,
+    client_secret: await encryptCredentialValue(payload.client_secret, clientSecretContext(id)),
+  };
+}
+
+async function restorePayload(model: string, payload: AdapterPayload) {
+  if (model !== "Client" || typeof payload.client_secret !== "string") return payload;
+  const clientId = typeof payload.client_id === "string" ? payload.client_id : "";
+  if (payload.dofekLegacyEncryptedClientSecret === true) {
+    const { dofekLegacyEncryptedClientSecret: _legacyMarker, ...clientPayload } = payload;
+    return {
+      ...clientPayload,
+      client_secret: await decryptCredentialValue(
+        payload.client_secret,
+        legacyClientSecretContext(clientId),
+      ),
+    };
+  }
+  return {
+    ...payload,
+    client_secret: await decryptCredentialValue(
+      payload.client_secret,
+      clientSecretContext(clientId),
+    ),
+  };
+}
 
 function isExpired(expiresAt: string | Date | null | undefined): boolean {
   if (expiresAt === null || expiresAt === undefined) return false;
@@ -69,13 +140,13 @@ export class McpOidcAdapter {
   }
 
   async upsert(id: string, payload: AdapterPayload, expiresIn?: number): Promise<void> {
-    const expiresAt =
-      typeof expiresIn === "number" ? new Date(Date.now() + expiresIn * 1000) : null;
-    const userId = resolveAdapterUserId(payload.uid);
+    const expiresAt = resolveExpiresAt(expiresIn);
+    const storedPayload = await protectPayload(this.model, payload, id);
+    const userId = resolveAdapterUserId(payload.accountId);
     await this.#db.execute(
       sql`INSERT INTO fitness.mcp_oidc_adapter (model, id, payload, uid, user_id, user_code, grant_id, expires_at)
           VALUES (
-            ${this.model}, ${id}, ${payload},
+            ${this.model}, ${storedId(this.model, id)}, ${storedPayload},
             ${payload.uid ?? null}, ${userId}, ${payload.userCode ?? null}, ${payload.grantId ?? null},
             ${expiresAt}
           )
@@ -108,7 +179,7 @@ export class McpOidcAdapter {
     let query: ReturnType<typeof sql>;
     if (column === "id") {
       query = sql`SELECT payload, expires_at FROM fitness.mcp_oidc_adapter
-                  WHERE model = ${this.model} AND id = ${value} LIMIT 1`;
+                  WHERE model = ${this.model} AND id = ${storedId(this.model, value)} LIMIT 1`;
     } else if (column === "uid") {
       query = sql`SELECT payload, expires_at FROM fitness.mcp_oidc_adapter
                   WHERE model = ${this.model} AND uid = ${value} LIMIT 1`;
@@ -119,18 +190,20 @@ export class McpOidcAdapter {
     const rows = await executeWithSchema(this.#db, adapterRowSchema, query);
     const row = rows[0];
     if (!row || isExpired(row.expires_at)) return undefined;
-    return row.payload;
+    return restorePayload(this.model, row.payload);
   }
 
   async consume(id: string): Promise<void> {
-    const existing = await this.find(id);
-    if (!existing) return;
-    await this.upsert(id, { ...existing, consumed: nowEpoch() });
+    await this.#db.execute(
+      sql`UPDATE fitness.mcp_oidc_adapter
+          SET payload = jsonb_set(payload, '{consumed}', to_jsonb(${nowEpoch()}::bigint))
+          WHERE model = ${this.model} AND id = ${storedId(this.model, id)}`,
+    );
   }
 
   async destroy(id: string): Promise<void> {
     await this.#db.execute(
-      sql`DELETE FROM fitness.mcp_oidc_adapter WHERE model = ${this.model} AND id = ${id}`,
+      sql`DELETE FROM fitness.mcp_oidc_adapter WHERE model = ${this.model} AND id = ${storedId(this.model, id)}`,
     );
   }
 

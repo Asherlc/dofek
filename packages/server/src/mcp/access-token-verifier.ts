@@ -1,5 +1,10 @@
+import { createHash } from "node:crypto";
 import type { Database } from "dofek/db";
-import { createRemoteJWKSet, type JWTVerifyGetKey, jwtVerify } from "jose";
+import { captureException } from "dofek/lib/error-reporting";
+import { sql } from "drizzle-orm";
+import { createRemoteJWKSet, type JWTVerifyGetKey, errors as joseErrors, jwtVerify } from "jose";
+import { z } from "zod";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { type McpScope, mcpScopeSchema, validateMcpToken } from "./token-repository.ts";
 
 /**
@@ -24,6 +29,7 @@ export const PERSONAL_TOKEN_PREFIX = "dofek_mcp_";
 export type VerifiedMcpPrincipal =
   | {
       kind: "oauth";
+      tokenId: string;
       userId: string;
       clientId: string;
       scopes: McpScope[];
@@ -52,6 +58,19 @@ export interface JwtAccessTokenVerifierOptions {
   jwksUri?: string;
 }
 
+const expectedJwtRejectionErrors = [
+  joseErrors.JWTClaimValidationFailed,
+  joseErrors.JWTExpired,
+  joseErrors.JWTInvalid,
+  joseErrors.JWSInvalid,
+  joseErrors.JWKSNoMatchingKey,
+  joseErrors.JWSSignatureVerificationFailed,
+];
+
+function isExpectedJwtRejection(error: unknown): boolean {
+  return expectedJwtRejectionErrors.some((ErrorType) => error instanceof ErrorType);
+}
+
 /**
  * Verify an oidc-provider JWT access token. The `getKey` resolver is injected
  * so unit tests can substitute a local key set; production resolves
@@ -71,7 +90,8 @@ export async function verifyJwtAccessToken(
 
     const userId = typeof payload.sub === "string" ? payload.sub : null;
     const clientId = typeof payload.client_id === "string" ? payload.client_id : null;
-    if (!userId || !clientId) {
+    const tokenId = typeof payload.jti === "string" ? payload.jti : null;
+    if (!userId || !clientId || !tokenId) {
       return null;
     }
 
@@ -88,13 +108,16 @@ export async function verifyJwtAccessToken(
 
     return {
       kind: "oauth",
+      tokenId,
       userId,
       clientId,
       scopes: parsedScopes.data,
       expiresAt,
     };
-  } catch {
-    return null;
+  } catch (error) {
+    if (isExpectedJwtRejection(error)) return null;
+    captureException(error, { tags: { source: "mcp-jwks-verification" } });
+    throw error;
   }
 }
 
@@ -140,5 +163,17 @@ export async function verifyMcpAccessToken(
   }
 
   const jwksUri = options.jwksUri ?? `${options.issuer.replace(/\/+$/, "")}/jwks`;
-  return verifyJwtAccessToken(token, options, getSharedJwtGetKey(jwksUri));
+  const principal = await verifyJwtAccessToken(token, options, getSharedJwtGetKey(jwksUri));
+  if (!principal) return null;
+
+  const tokenIdHash = createHash("sha256").update(principal.tokenId).digest("hex");
+  const rows = await executeWithSchema(
+    options.db,
+    z.object({ found: z.boolean() }),
+    sql`SELECT EXISTS (
+          SELECT 1 FROM fitness.mcp_oidc_adapter
+          WHERE model = 'AccessToken' AND id = ${tokenIdHash} AND expires_at > NOW()
+        ) AS found`,
+  );
+  return rows[0]?.found ? principal : null;
 }

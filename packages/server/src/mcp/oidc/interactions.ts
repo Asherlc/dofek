@@ -1,4 +1,5 @@
 import type { Database } from "dofek/db";
+import { captureException } from "dofek/lib/error-reporting";
 import type { Request, Response } from "express";
 import type { Provider } from "oidc-provider";
 import { z } from "zod";
@@ -86,15 +87,17 @@ function requestedScopes(interaction: InteractionDetails): string[] {
   const resourceMissing = Object.values(
     interaction.prompt.details.missingResourceScopes ?? {},
   ).flat();
-  if (resourceMissing.length > 0) return resourceMissing;
   const missingOidc = interaction.prompt.details.missingOIDCScope;
-  if ((missingOidc?.length ?? 0) > 0) return missingOidc ?? [];
-  return (interaction.params.scope ?? "")
-    .split(" ")
-    .filter((scope) => scope.length > 0 && scope !== MCP_OAUTH_OFFLINE_ACCESS_SCOPE);
+  const missingScopes = [...resourceMissing, ...(missingOidc ?? [])];
+  const requested =
+    missingScopes.length > 0 ? missingScopes : (interaction.params.scope ?? "").split(" ");
+  return [...new Set(requested.filter((scope) => scope.length > 0))];
 }
 
 function scopeLabel(scope: string): string {
+  if (scope === MCP_OAUTH_OFFLINE_ACCESS_SCOPE) {
+    return "Continue access with refresh tokens when you are offline";
+  }
   for (const [known, label] of Object.entries(MCP_SCOPE_LABELS)) {
     if (known === scope) return label;
   }
@@ -148,7 +151,10 @@ export function createInteractionHandler(
     try {
       const raw = await provider.interactionDetails(request, response);
       interaction = interactionDetailsSchema.parse(raw);
-    } catch {
+    } catch (error) {
+      if (!(error instanceof Error && error.name === "SessionNotFound")) {
+        captureException(error, { tags: { source: "mcp-oidc-interaction-details" } });
+      }
       response.status(400).send("Interaction not found");
       return;
     }
@@ -200,8 +206,10 @@ export function createInteractionHandler(
       for (const [resource, scopes] of Object.entries(
         interaction.prompt.details.missingResourceScopes ?? {},
       )) {
-        grant.addResourceScope(resource, scopes.join(" "));
+        if (scopes.length > 0) grant.addResourceScope(resource, scopes.join(" "));
       }
+      const missingOidc = interaction.prompt.details.missingOIDCScope ?? [];
+      if (missingOidc.length > 0) grant.addOIDCScope(missingOidc.join(" "));
       const grantId = await grant.save();
       await provider.interactionFinished(
         request,

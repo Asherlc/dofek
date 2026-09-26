@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 import { z } from "zod";
+import { backfillMcpOauthClients } from "../../scripts/backfill-mcp-oauth-clients.ts";
 import {
   assertPostgresAccountErasureCoverage,
   refreshPostgresAccountErasureWriteFences,
@@ -84,6 +85,11 @@ export async function runMigrations(databaseUrl: string, migrationsDir?: string)
     const count = (await getMigrationCount(client)) - countBeforeMigrate;
 
     const database = drizzle(client);
+    const migratedMcpClients = await backfillMcpOauthClients(database);
+    if (migratedMcpClients > 0) {
+      logger.info(`[migrate] Imported ${migratedMcpClients} legacy MCP OAuth client(s)`);
+    }
+
     const coverageHookRows = await executeWithSchema(
       database,
       accountErasureCoverageHookRowSchema,

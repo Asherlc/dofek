@@ -181,7 +181,8 @@ describe("MCP token repository", () => {
       ).toString("base64url"),
     );
     const queryPayload = JSON.stringify(mockExecute.mock.calls[0]?.[0]);
-    expect(queryPayload).toContain("oauth_client_id IS NOT NULL");
+    expect(queryPayload).toContain("FROM fitness.mcp_oidc_adapter grant_payload");
+    expect(queryPayload).toContain("jsonb_each_text");
     expect(queryPayload).toContain('},21,{"value":[""]');
   });
 
@@ -273,8 +274,8 @@ describe("MCP token repository", () => {
     ).resolves.toBe(true);
 
     const queryPayload = JSON.stringify(mockExecute.mock.calls[0]?.[0]);
-    expect(queryPayload).toContain("mcp_access_token");
-    expect(queryPayload).toContain("mcp_oauth_refresh_token");
+    expect(queryPayload).toContain("model IN ('AccessToken', 'RefreshToken', 'AuthorizationCode')");
+    expect(queryPayload).toContain("fitness.mcp_oidc_adapter");
     expect(queryPayload).toContain("claude-client");
     expect(queryPayload).toContain("https://dofek.example/api/mcp");
   });
@@ -381,8 +382,9 @@ describe("MCP token repository", () => {
     ).resolves.toBe(true);
 
     const queryPayload = JSON.stringify(mockExecute.mock.calls[0]?.[0]);
-    expect(queryPayload).toContain("UPDATE fitness.mcp_access_token");
-    expect(queryPayload).toContain("UPDATE fitness.mcp_oauth_refresh_token");
+    expect(queryPayload).toContain("UPDATE fitness.mcp_oidc_adapter");
+    expect(queryPayload).toContain("jsonb_set");
+    expect(queryPayload).toContain("deleted_access_tokens");
     expect(queryPayload).toContain("claude-client");
     expect(queryPayload).toContain("https://dofek.example/api/mcp");
     expect(queryPayload).toContain("activity:read");

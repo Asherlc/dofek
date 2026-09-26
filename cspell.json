@@ -327,6 +327,7 @@
     "downmigration",
     "pkce",
     "backchannel",
+    "panva",
     "ciba",
     "totp",
     "tombstoned",

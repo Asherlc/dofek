@@ -1,25 +1,25 @@
 # Migrate Dofek MCP Server to v2 SDK + oidc-provider Authorization Server
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> Track implementation with the checkbox steps below. This plan is self-contained and can be followed without a specific agent workflow.
 
-**Goal:** Move the Dofek MCP server off `@modelcontextprotocol/sdk@1.30.0` onto the v2 package ecosystem, replace the hand-rolled OAuth authorization server with `oidc-provider` (panva) as a dedicated IdP, and thereby obtain RFC 9207 issuer identification (`iss`) — the capability ChatGPT's MCP Apps "Connect" flow requires before it advances from OAuth discovery to `/authorize`.
+**Goal:** Move the Dofek MCP server off `@modelcontextprotocol/sdk@1.30.0` onto the v2 package ecosystem, replace the hand-rolled OAuth authorization server with `oidc-provider` (panva) as a dedicated IdP, and thereby obtain RFC 9207 issuer identification (`iss`) — a plausible interoperability improvement for the observed ChatGPT MCP Apps "Connect" stall, though production logs did not establish that it was the sole cause ([OpenAI authentication guidance](https://developers.openai.com/plugins/build/auth); [RFC 9207](https://www.rfc-editor.org/rfc/rfc9207)).
 
-**Architecture:** v2 split the MCP stack and **removed** the OAuth authorization-server router from the main `server` package (v2 expects a dedicated IdP). Rather than reimplement the AS (or use the deprecated `server-legacy`), adopt **`oidc-provider`** — a battle-tested OAuth 2.1/OIDC server that natively implements PKCE, DCR (RFC 7591), resource indicators (RFC 8707), issuer identification (RFC 9207), CIMD (draft-02), and refresh-token rotation. Dofek keeps (a) the v2 `@modelcontextprotocol/server`+`node` layer for the MCP protocol/tools/transport, (b) the RFC 9728 protected-resource metadata (resource-server role), and (c) its Postgres persistence + session/account/consent integrations, now mapped onto `oidc-provider`'s adapter/`findAccount`/interactions surface.
+**Architecture:** v2 split the MCP stack and **removed** the OAuth authorization-server router from the main `server` package (v2 expects a dedicated IdP). Rather than reimplement the AS (or use the deprecated `server-legacy`), adopt **`oidc-provider`** — an OAuth 2.1/OIDC server whose documented features include client metadata validation, token lifetime configuration, and refresh-token rotation ([client configuration](https://oidc-provider.dev/configuration/client/); [token configuration](https://oidc-provider.dev/configuration/tokens/)). Dofek also relies on its implementation of PKCE, DCR (RFC 7591), resource indicators (RFC 8707), issuer identification (RFC 9207), and CIMD (draft-02), covered by the linked specifications and OpenAI guidance below. Dofek keeps (a) the v2 `@modelcontextprotocol/server`+`node` layer for the MCP protocol/tools/transport, (b) the RFC 9728 protected-resource metadata (resource-server role), and (c) its Postgres persistence + session/account/consent integrations, now mapped onto `oidc-provider`'s adapter/`findAccount`/interactions surface.
 
 **Tech Stack:** TypeScript, Express 5, `@modelcontextprotocol/core@2.1.0`, `@modelcontextprotocol/server@2.1.0`, `@modelcontextprotocol/node@2.1.0`, `@modelcontextprotocol/ext-apps@2.0.3`, `oidc-provider@9.12.2`, Zod 4, Drizzle ORM, Vitest. **Do NOT** adopt `@modelcontextprotocol/server-legacy`; **remove** `@modelcontextprotocol/sdk`.
 
 ---
 
-## Evidence and root cause (verified; do not re-derive)
+## Evidence and working diagnosis
 
 1. `GET /.well-known/oauth-protected-resource/api/mcp` → 200 (correct `authorization_servers`).
 2. `GET /.well-known/oauth-authorization-server` → 200, **missing `authorization_response_iss_parameter_supported`**.
-3. Production `dofek_web` logs: ChatGPT fetches both discovery docs (200) then **never issues `/authorize`** — aborts client-side during client-identification (CIMD) before consent, surfacing "Couldn't create MCP app. Try again."
+3. Production `dofek_web` logs showed successful discovery requests and no subsequent `/authorize` request during the observed attempts. This establishes where the flow stopped at the server, but does not by itself prove why the client stopped. OpenAI documents that issuer identification changes which callback URL ChatGPT uses and that advertised `iss` support must be emitted on success and error responses ([OpenAI authentication guidance](https://developers.openai.com/plugins/build/auth)).
 4. ChatGPT CIMD (`https://chatgpt.com/oauth/client.json`) → `token_endpoint_auth_methods_supported: ["none","private_key_jwt"]`.
-5. `server-legacy@2.1.0` is **deprecated** ("frozen copy … for migration purposes only … Will not receive new features").
-6. `oidc-provider@9.12.2` (updated 2026-09-05) natively supports DCR (RFC 7591), resource indicators (RFC 8707), **issuer identification (RFC 9207)**, and **CIMD draft-02** — every AS capability Dofek currently hand-rolls.
+5. The v2 SDK migration avoids the legacy authorization-server package; the choice is recorded here as a dependency decision rather than an upstream support claim.
+6. Dofek adopts oidc-provider for the authorization-server implementation. Its documented client and token configuration is linked in the architecture section; protocol behavior is defined by [RFC 7591](https://www.rfc-editor.org/rfc/rfc7591), [RFC 8707](https://www.rfc-editor.org/rfc/rfc8707), [RFC 9207](https://www.rfc-editor.org/rfc/rfc9207), and the [IETF CIMD draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-client-id-metadata-document/).
 
-**Root cause:** ChatGPT reads Dofek's AS metadata, finds no issuer-identification support, selects the callback-ID redirect path, and aborts before `/authorize`.
+**Working diagnosis:** Missing issuer-identification support was a plausible interoperability issue because OpenAI documents distinct callback behavior for servers with and without RFC 9207 support. The logs did not identify ChatGPT's internal rejection reason. The implementation therefore adopted oidc-provider's complete RFC 9207 support rather than asserting that this was the sole cause.
 
 ---
 
@@ -90,7 +90,7 @@ Configure `oidc-provider` with Dofek's issuer, scopes, features, and persistence
   - `features`: enable `registration` (e.g. `{ enabled: true, initialAccessToken: false }`), `resourceIndicators` (`{ enabled: true, defaultResource: ... , getResourceServerInfo }`), `dPoP`, `ciba`/`deviceFlow` off.
   - `scopes`: the Dofek MCP scopes (`health:read`, `health:write`, `activity:read`, `nutrition:read`, `nutrition:write`, `providers:read`, `sync:write`, `offline_access`) preserving `MCP_OAUTH_SUPPORTED_SCOPES`.
   - `clientBasedCORS`, `ttl`, `cookies`, `renderError`, `routes`.
-- [ ] **Step 2: Implement the `adapter`** against Postgres (Dofek's `fitness.mcp_*` tables or new oidc-specific tables) — returning stable, expirable records for Client, AuthorizationCode, AccessToken, RefreshToken, Session.
+- [ ] **Step 2: Implement the `adapter`** against Postgres (Dofek's `fitness.mcp_*` tables or new oidc-specific tables) — returning stable records for Client, AuthorizationCode, AccessToken, RefreshToken, and Session with their expiry data.
 - [ ] **Step 3: Implement `findAccount`** resolving Dofek's session cookie → `accountId`/claims (reuse `getSessionIdFromRequest`/`validateSession`).
 - [ ] **Step 4: Register the CIMD client as a `client_id` document** so ChatGPT's `https://chatgpt.com/oauth/client.json` resolves: Dofek already resolves CIMD via `oauth-client-metadata.ts`; adapt that resolver to oidc-provider's `extraClientMetadata`/`findById` or `client_id` URL handling.
 - [ ] **Step 5: Mount the provider** at the AS paths (replacing the deleted hand-rolled handlers) in `oauth-route.ts`, behind the existing session gate.
@@ -155,5 +155,5 @@ git commit -m "feat(mcp): serve OAuth authorization server via oidc-provider"
 - **CIMD** is the second risk; oidc-provider supports CIMD draft-02 — confirm ChatGPT's `private_key_jwt`-preferring CIMD intersects (`none`/`private_key_jwt`) correctly.
 - **PRM stays Dofek-owned** (resource-server role); only `authorization_servers` points at oidc-provider.
 - **`MCP_OIDC_COOKIE_KEY`** (new) must be added to Infisical before deploy — see `oidc/config.ts`.
-- **Dead code cleanup:** `oauth-provider.ts` (`DofekOAuthServerProvider`) and `oauth-metadata.ts` (`createOAuthMetadata`) are now unwired; delete them + their unit tests in Task 5 once the resource-server no longer imports them.
+- **Dead code cleanup:** `oauth-provider.ts` (`DofekOAuthServerProvider`) and `oauth-metadata.ts` (`createOAuthMetadata`) are no longer imported by the active authorization flow; delete them + their unit tests in Task 5 once the resource-server no longer imports them.
 - **`renderError`** in `oidc/config.ts` interpolates `error.message` unescaped — fix to HTML-escape before merge.

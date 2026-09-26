@@ -98,6 +98,12 @@ export function createOidcProvider(
 
     adapter: createMcpOidcAdapter(db),
 
+    ttl: {
+      RefreshToken: 30 * 24 * 60 * 60,
+      Grant: 30 * 24 * 60 * 60,
+    },
+    rotateRefreshToken: () => true,
+
     findAccount(ctx, accountId) {
       return findAccount(db, ctx, accountId);
     },

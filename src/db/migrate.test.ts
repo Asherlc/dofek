@@ -80,7 +80,10 @@ describe("runMigrations", () => {
       folderMillis: 1_773_118_304_010,
       hash: "baseline-content-hash",
     });
-    accountErasureCoverageMocks.database.execute.mockResolvedValue([{ installed: false }]);
+    accountErasureCoverageMocks.database.execute
+      .mockReset()
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([{ installed: false }]);
     mockDatabaseState();
   });
 
@@ -193,7 +196,10 @@ describe("runMigrations", () => {
       }
       return Promise.resolve({ rows: [] });
     });
-    accountErasureCoverageMocks.database.execute.mockResolvedValue([{ installed: true }]);
+    accountErasureCoverageMocks.database.execute
+      .mockReset()
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([{ installed: true }]);
 
     await runMigrations("postgres://localhost/test", "/tmp/migrations");
 

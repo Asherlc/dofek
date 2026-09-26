@@ -11,13 +11,19 @@ import { createMcpOAuthRouter } from "./oauth-route.ts";
 vi.mock("./oidc/config.ts", () => ({
   createOidcProvider: vi.fn(() => ({
     provider: {
-      callback: () => (_req: unknown, _res: unknown, next: () => void) => next(),
+      callback: () => (_req: unknown, res: { statusCode: number; end: () => void }) => {
+        res.statusCode = 404;
+        res.end();
+      },
     },
   })),
 }));
 
 vi.mock("./oidc/interactions.ts", () => ({
-  createInteractionHandler: () => (_req: unknown, _res: unknown, next: () => void) => next(),
+  createInteractionHandler: () => (_req: unknown, res: { statusCode: number; end: () => void }) => {
+    res.statusCode = 200;
+    res.end();
+  },
 }));
 
 vi.mock("./oauth-client-store.ts", () => {
@@ -167,6 +173,28 @@ describe("createMcpOAuthRouter", () => {
 
       expect(response.status).toBe(400);
       expect(await response.json()).toEqual({ error: "Missing clientId" });
+    });
+  });
+
+  describe("OIDC route protections", () => {
+    it("rate limits authorization-server requests", async () => {
+      app = await mount({ max: 1, windowMs: 60_000 });
+
+      const first = await fetch(`${app.baseUrl}/register`, { method: "POST" });
+      const second = await fetch(`${app.baseUrl}/register`, { method: "POST" });
+
+      expect(first.status).toBe(404);
+      expect(second.status).toBe(429);
+    });
+
+    it("prevents the consent page from being framed", async () => {
+      app = await mount();
+
+      const response = await fetch(`${app.baseUrl}/interaction/test-uid`);
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
+      expect(response.headers.get("x-frame-options")).toBe("DENY");
     });
   });
 

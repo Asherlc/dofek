@@ -84,12 +84,16 @@ export function createMcpOAuthRouter(
   // authorization-server paths and pass every other request through to the
   // Dofek-owned routes below.
   const oidcCallback = provider.callback();
+  const oidcRateLimit = createRateLimiter({
+    ...rateLimit,
+    skip: rateLimit === false ? () => true : rateLimit?.skip,
+  });
   router.use((request, response, next) => {
     if (!isOidcRoute(request.path)) {
       next();
       return;
     }
-    oidcCallback(request, response);
+    oidcRateLimit(request, response, () => oidcCallback(request, response));
   });
 
   // Dofek-owned consent/login interaction page, gated on the Dofek session
@@ -97,6 +101,11 @@ export function createMcpOAuthRouter(
   // `approval=…` with an application/x-www-form-urlencoded body.
   router.use(
     "/interaction/:uid",
+    (_request, response, next) => {
+      response.append("Content-Security-Policy", "frame-ancestors 'none'");
+      response.set("X-Frame-Options", "DENY");
+      next();
+    },
     express.urlencoded({ extended: false }),
     createInteractionHandler(db, provider),
   );

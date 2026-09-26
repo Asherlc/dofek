@@ -2,9 +2,9 @@ ALTER TABLE fitness.mcp_oidc_adapter
 ADD COLUMN user_id uuid;
 --> statement-breakpoint
 UPDATE fitness.mcp_oidc_adapter
-SET user_id = uid::uuid
+SET user_id = (payload ->> 'accountId')::uuid
 WHERE
-  uid ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+  payload ->> 'accountId' ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
   AND user_id IS NULL;
 --> statement-breakpoint
 ALTER TABLE fitness.mcp_oidc_adapter
