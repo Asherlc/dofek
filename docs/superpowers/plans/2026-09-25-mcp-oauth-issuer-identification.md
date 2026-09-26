@@ -123,10 +123,14 @@ git commit -m "feat(mcp): serve OAuth authorization server via oidc-provider"
 
 **Files:**
 - Modify: `packages/server/src/mcp/route.ts`
+- Modify: `packages/server/src/mcp/oidc/config.ts` (token format)
 
-- [ ] **Step 1:** Replace `StreamableHTTPServerTransport` with `@modelcontextprotocol/node` transport.
-- [ ] **Step 2:** Replace hand-rolled bearer validation with `verifyBearerToken`/`requireBearerAuth` from `@modelcontextprotocol/server`, verifying tokens issued by the oidc-provider issuer for the MCP resource (audience/`resource`).
-- [ ] **Step 3:** Keep the 401 `WWW-Authenticate: Bearer resource_metadata=...` challenge + telemetry; run route tests; commit.
+**Decision (confirmed): JWT access tokens + JWKS verification.** Cleanest, stateless, standards-aligned: oidc-provider signs `accessTokenFormat: "jwt"`; the resource server verifies signature+`exp`+`aud`+scopes against oidc-provider's `/jwks`. No per-request introspection or dual token-store coupling. Manual "personal tokens" keep Dofek's own opaque `validateMcpToken` path.
+
+- [ ] **Step 1:** In `oidc/config.ts` `getResourceServerInfo`, return `accessTokenFormat: "jwt"` (instead of `"opaque"`), keeping `audience: resourceUrl` + 1h TTL.
+- [ ] **Step 2:** Replace `StreamableHTTPServerTransport` with `@modelcontextprotocol/node` transport.
+- [ ] **Step 3:** Replace hand-rolled bearer validation with `verifyBearerToken` from `@modelcontextprotocol/server`, whose verifier parses the JWT, checks `aud === resourceUrl`, `exp`, required scopes, and signature against oidc-provider's `/jwks` (cached, rotating). Keep the Dofek-native personal-token path via `validateMcpToken` for `oauth_client_id IS NULL` tokens.
+- [ ] **Step 4:** Keep the 401 `WWW-Authenticate: Bearer resource_metadata=...` challenge + telemetry; run route tests; commit.
 
 ---
 
@@ -150,3 +154,6 @@ git commit -m "feat(mcp): serve OAuth authorization server via oidc-provider"
 - **Persistence adapter** is the riskiest integration; prefer new oidc-owned tables unless Dofek's existing `fitness.mcp_*` schema maps cleanly (a migration may be needed).
 - **CIMD** is the second risk; oidc-provider supports CIMD draft-02 — confirm ChatGPT's `private_key_jwt`-preferring CIMD intersects (`none`/`private_key_jwt`) correctly.
 - **PRM stays Dofek-owned** (resource-server role); only `authorization_servers` points at oidc-provider.
+- **`MCP_OIDC_COOKIE_KEY`** (new) must be added to Infisical before deploy — see `oidc/config.ts`.
+- **Dead code cleanup:** `oauth-provider.ts` (`DofekOAuthServerProvider`) and `oauth-metadata.ts` (`createOAuthMetadata`) are now unwired; delete them + their unit tests in Task 5 once the resource-server no longer imports them.
+- **`renderError`** in `oidc/config.ts` interpolates `error.message` unescaped — fix to HTML-escape before merge.
