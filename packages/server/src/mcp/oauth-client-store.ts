@@ -1,10 +1,9 @@
-import type { OAuthRegisteredClientsStore } from "@modelcontextprotocol/sdk/server/auth/clients.js";
-import { InvalidClientMetadataError } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import {
-  type OAuthClientInformationFull,
   OAuthClientInformationFullSchema,
   OAuthClientMetadataSchema,
-} from "@modelcontextprotocol/sdk/shared/auth.js";
+} from "@modelcontextprotocol/core";
+import type { OAuthClientInformationFull } from "@modelcontextprotocol/server";
+import { OAuthError, OAuthErrorCode } from "@modelcontextprotocol/server";
 import type { Database } from "dofek/db";
 import {
   decryptCredentialValue,
@@ -16,6 +15,17 @@ import { executeWithSchema } from "../lib/typed-sql.ts";
 
 /** Loopback hosts allowed to use http:// redirect URIs (OAuth 2.1 / RFC 8252). */
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+
+/**
+ * Dofek-local replacement for the removed v1 SDK `InvalidClientMetadataError`.
+ * The v2 SDK exposes no equivalent class; registration metadata is instead
+ * rejected by oidc-provider and this error is raised by the local client store.
+ */
+export class InvalidClientMetadataError extends OAuthError {
+  constructor(message: string) {
+    super(OAuthErrorCode.InvalidClientMetadata, message);
+  }
+}
 
 const oauthClientRowSchema = z.object({
   client_id: z.string(),
@@ -63,7 +73,7 @@ function validateRedirectUris(redirectUris: readonly string[]): void {
   }
 }
 
-export class McpOAuthClientsStore implements OAuthRegisteredClientsStore {
+export class McpOAuthClientsStore {
   readonly #db: Pick<Database, "execute">;
 
   constructor(db: Pick<Database, "execute">) {

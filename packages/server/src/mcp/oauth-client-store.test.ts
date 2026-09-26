@@ -1,8 +1,11 @@
 import { randomBytes } from "node:crypto";
-import { InvalidClientMetadataError } from "@modelcontextprotocol/sdk/server/auth/errors.js";
-import type { OAuthClientInformationFull } from "@modelcontextprotocol/sdk/shared/auth.js";
+import type { OAuthClientInformationFull } from "@modelcontextprotocol/server";
 import { describe, expect, it, vi } from "vitest";
-import { isAllowedMcpOAuthRedirectUri, McpOAuthClientsStore } from "./oauth-client-store.ts";
+import {
+  InvalidClientMetadataError,
+  isAllowedMcpOAuthRedirectUri,
+  McpOAuthClientsStore,
+} from "./oauth-client-store.ts";
 
 function makeMockDb() {
   return {
