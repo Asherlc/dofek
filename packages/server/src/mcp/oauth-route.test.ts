@@ -79,6 +79,27 @@ describe("createMcpOAuthRouter", () => {
     await app?.close();
   });
 
+  describe("interaction cookie key", () => {
+    it("hard-fails in production when MCP_OIDC_COOKIE_KEY is not set", () => {
+      const previousNodeEnv = process.env.NODE_ENV;
+      const previousKey = process.env.MCP_OIDC_COOKIE_KEY;
+      process.env.NODE_ENV = "production";
+      delete process.env.MCP_OIDC_COOKIE_KEY;
+      try {
+        expect(() => createMcpOAuthRouter(mockDb())).toThrow(
+          "MCP_OIDC_COOKIE_KEY environment variable is required in production",
+        );
+      } finally {
+        process.env.NODE_ENV = previousNodeEnv;
+        if (previousKey === undefined) {
+          delete process.env.MCP_OIDC_COOKIE_KEY;
+        } else {
+          process.env.MCP_OIDC_COOKIE_KEY = previousKey;
+        }
+      }
+    });
+  });
+
   describe("OAuth protected-resource metadata", () => {
     it("advertises every supported scope from the protected-resource metadata", async () => {
       app = await mount();

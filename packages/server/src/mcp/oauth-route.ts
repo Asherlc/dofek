@@ -41,14 +41,22 @@ function isOidcRoute(pathname: string): boolean {
 /**
  * Keys used to sign oidc-provider's short-lived interaction cookies.
  *
- * In production set `MCP_OIDC_COOKIE_KEY` to a durable secret (see Infisical);
- * falling back to the public issuer URL as a signing key is only acceptable
- * for ephemeral local/test instances where authorization requests are
- * short-lived anyway.
+ * In production the key MUST come from `MCP_OIDC_COOKIE_KEY` (Infisical); a
+ * missing key is a fatal misconfiguration and we hard-fail rather than sign
+ * interaction cookies with a public, guessable value. Local/test instances may
+ * derive an ephemeral key from the issuer URL so unit tests and `pnpm dev`
+ * work without provisioning a secret.
  */
-const defaultCookiesKeys = (): string[] => [
-  process.env.MCP_OIDC_COOKIE_KEY ?? getMcpIssuerUrl().href,
-];
+function resolveCookiesKeys(): string[] {
+  const configured = process.env.MCP_OIDC_COOKIE_KEY;
+  if (configured && configured.trim().length > 0) {
+    return [configured.trim()];
+  }
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("MCP_OIDC_COOKIE_KEY environment variable is required in production");
+  }
+  return [getMcpIssuerUrl().href];
+}
 
 /**
  * OAuth 2.1 authorization server + protected resource metadata router.
@@ -62,7 +70,7 @@ const defaultCookiesKeys = (): string[] => [
 export function createMcpOAuthRouter(
   db: Pick<Database, "execute">,
   rateLimit?: McpAuthRateLimitOptions,
-  cookiesKeys: string[] = defaultCookiesKeys(),
+  cookiesKeys: string[] = resolveCookiesKeys(),
 ): Router {
   const router = Router();
   const issuerUrl = getMcpIssuerUrl();
