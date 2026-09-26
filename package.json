@@ -31,6 +31,7 @@
     "./db/schema/enums": "./src/db/schema/enums.ts",
     "./db/schema/events": "./src/db/schema/events.ts",
     "./db/schema/nutrition": "./src/db/schema/nutrition.ts",
+    "./db/schema/mcp": "./src/db/schema/mcp.ts",
     "./db/schema/reference": "./src/db/schema/reference.ts",
     "./processing/dataset-contracts": "./src/processing/dataset-contracts.ts",
     "./processing/processing-event-store": "./src/processing/processing-event-store.ts",

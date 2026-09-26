@@ -62,6 +62,32 @@ describe("MCP OIDC interaction handler", () => {
     expect(captureException).not.toHaveBeenCalled();
   });
 
+  it("attaches requested MCP scopes to the default resource when no resource scopes are listed", async () => {
+    const provider = new Provider(issuer, { features: { devInteractions: { enabled: false } } });
+    const addResourceScope = vi.spyOn(provider.Grant.prototype, "addResourceScope");
+    vi.spyOn(provider, "interactionDetails").mockResolvedValue({
+      uid: "interaction-uid",
+      prompt: { name: "consent", details: {} },
+      params: { client_id: "mcp-client", scope: "health:read offline_access" },
+    });
+    vi.spyOn(provider, "interactionFinished").mockImplementation(async (_request, response) => {
+      response.end();
+    });
+    vi.spyOn(provider.Grant.prototype, "save").mockResolvedValue("grant-id");
+    await mount(provider);
+
+    await fetch(`${baseUrl}/interaction/interaction-uid`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: "approval=approve",
+    });
+
+    expect(addResourceScope).toHaveBeenCalledWith(
+      "https://app.example.test/api/mcp",
+      "health:read",
+    );
+  });
+
   it("reports unexpected interaction lookup failures", async () => {
     const provider = new Provider(issuer, { features: { devInteractions: { enabled: false } } });
     const failure = new Error("adapter lookup failed");

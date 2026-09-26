@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { sql } from "drizzle-orm";
 import type express from "express";
@@ -6,6 +7,7 @@ import { z } from "zod";
 import { backfillMcpOauthClients } from "../../../../src/db/backfill-mcp-oauth-clients.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createApp } from "../index.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { makeMockSensorStore } from "../routers/test-helpers.ts";
 import { createMcpOidcAdapter } from "./oidc/adapter.ts";
 
@@ -133,5 +135,43 @@ describe("MCP oidc-provider authorization server", () => {
     expect(typeof client.client_id).toBe("string");
     expect(client.client_id.length).toBeGreaterThan(0);
     expect(client.redirect_uris).toContain(redirectUri);
+  });
+
+  it("defaults authorization requests without resource to Dofek's MCP resource", async () => {
+    const registration = await fetch(`${baseUrl}/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        client_name: "MCP Default Resource Client",
+        redirect_uris: [redirectUri],
+        grant_types: ["authorization_code", "refresh_token"],
+        response_types: ["code"],
+        token_endpoint_auth_method: "none",
+      }),
+    });
+    const client = registrationSchema.parse(await registration.json());
+    const verifier = "integration-pkce-verifier";
+    const challenge = createHash("sha256").update(verifier).digest("base64url");
+    const authorizeUrl = new URL("/authorize", baseUrl);
+    authorizeUrl.search = new URLSearchParams({
+      client_id: client.client_id,
+      redirect_uri: redirectUri,
+      response_type: "code",
+      scope: "health:read",
+      state: "default-resource-state",
+      code_challenge: challenge,
+      code_challenge_method: "S256",
+    }).toString();
+
+    const response = await fetch(authorizeUrl, { redirect: "manual" });
+    expect(response.status).toBe(303);
+    const interactions = await executeWithSchema(
+      context.db,
+      z.object({ payload: z.record(z.string(), z.unknown()) }),
+      sql`SELECT payload FROM fitness.mcp_oidc_adapter WHERE model = 'Interaction' LIMIT 1`,
+    );
+    expect(interactions[0]?.payload).toMatchObject({
+      params: { resource: "https://app.example.test/api/mcp" },
+    });
   });
 });

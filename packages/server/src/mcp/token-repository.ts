@@ -3,6 +3,7 @@ import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
+import { getMcpResourceUrl } from "./oauth-config.ts";
 
 export const mcpScopeSchema = z.enum([
   "health:read",
@@ -297,7 +298,11 @@ export async function listMcpConnectedApps(
             grant_payload.payload->>'clientId' AS oauth_client_id,
             resource.resource_uri AS oauth_resource,
             COALESCE(client_payload.payload->>'client_name', grant_payload.payload->>'clientId') AS name,
-            ARRAY_AGG(DISTINCT granted_scope.value ORDER BY granted_scope.value) AS scopes,
+            COALESCE(
+              ARRAY_AGG(DISTINCT granted_scope.value ORDER BY granted_scope.value)
+                FILTER (WHERE granted_scope.value IS NOT NULL),
+              ARRAY[]::text[]
+            ) AS scopes,
             MIN(grant_payload.created_at) AS connected_at,
             MAX(grant_payload.last_used_at) AS last_used_at,
             BOOL_OR(grant_payload.expires_at > NOW() AND EXISTS (
@@ -308,9 +313,22 @@ export async function listMcpConnectedApps(
             )) AS is_active
           FROM fitness.mcp_oidc_adapter grant_payload
           CROSS JOIN LATERAL jsonb_each_text(
-            COALESCE(grant_payload.payload->'resources', '{}'::jsonb)
+            COALESCE(
+              NULLIF(grant_payload.payload->'resources', '{}'::jsonb),
+              jsonb_build_object(
+                ${getMcpResourceUrl().href}::text,
+                COALESCE(grant_payload.payload->>'scope', '')
+              )
+            )
           ) AS resource(resource_uri, scope)
-          CROSS JOIN LATERAL unnest(string_to_array(resource.scope, ' ')) AS granted_scope(value)
+          LEFT JOIN LATERAL unnest(
+            string_to_array(NULLIF(resource.scope, ''), ' ')
+          ) AS granted_scope(value) ON granted_scope.value IN (
+            ${sql.join(
+              mcpScopeSchema.options.map((scope) => sql`${scope}`),
+              sql`, `,
+            )}
+          )
           LEFT JOIN fitness.mcp_oidc_adapter client_payload
             ON client_payload.model = 'Client'
             AND client_payload.id = grant_payload.payload->>'clientId'
@@ -381,24 +399,26 @@ export async function updateMcpConnectedAppScopes(
           UPDATE fitness.mcp_oidc_adapter
           SET payload = jsonb_set(
             payload,
-            ARRAY['resources', ${oauthResource}],
-            to_jsonb(${scopeText}::text),
-            false
+            '{resources}',
+            COALESCE(payload->'resources', '{}'::jsonb)
+              || jsonb_build_object(${oauthResource}::text, ${scopeText}::text),
+            true
           )
           WHERE model = 'Grant'
             AND user_id = ${userId}::uuid
             AND payload->>'clientId' = ${oauthClientId}
-            AND payload->'resources' ? ${oauthResource}
+            AND (
+              COALESCE(payload->'resources', '{}'::jsonb) = '{}'::jsonb
+              OR payload->'resources' ? ${oauthResource}
+            )
             AND expires_at > NOW()
           RETURNING id
         ), deleted_access_tokens AS (
+          -- Existing access tokens no longer validate after a scope reduction.
+          -- Keep refresh tokens: oidc-provider intersects their scopes with the
+          -- updated Grant when it issues the client's next access token.
           DELETE FROM fitness.mcp_oidc_adapter
           WHERE model = 'AccessToken'
-            AND grant_id IN (SELECT id FROM updated_grants)
-          RETURNING id
-        ), deleted_refresh_tokens AS (
-          DELETE FROM fitness.mcp_oidc_adapter
-          WHERE model = 'RefreshToken'
             AND grant_id IN (SELECT id FROM updated_grants)
           RETURNING id
         )

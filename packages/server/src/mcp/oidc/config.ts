@@ -72,6 +72,9 @@ export function createOidcProvider(
       },
       resourceIndicators: {
         enabled: true,
+        async defaultResource(): Promise<string> {
+          return resourceUrl;
+        },
         async getResourceServerInfo(
           _ctx: unknown,
           resourceIndicator: string,

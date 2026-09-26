@@ -110,6 +110,7 @@ describe("createMcpOAuthRouter", () => {
     it("advertises every supported scope from the protected-resource metadata", async () => {
       app = await mount();
       const response = await fetch(`${app.baseUrl}/.well-known/oauth-protected-resource/api/mcp`);
+      expect(response.headers.get("access-control-allow-origin")).toBe("*");
       const metadata = protectedResourceMetadataSchema.parse(await response.json());
       for (const scope of MCP_OAUTH_SCOPES) {
         expect(metadata.scopes_supported).toContain(scope);

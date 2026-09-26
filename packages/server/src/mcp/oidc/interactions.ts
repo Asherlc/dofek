@@ -5,8 +5,12 @@ import type { Provider } from "oidc-provider";
 import { z } from "zod";
 import { getSessionIdFromRequest } from "../../auth/cookies.ts";
 import { validateSession } from "../../auth/session.ts";
-import { getMcpIssuerUrl } from "../oauth-config.ts";
-import { MCP_OAUTH_OFFLINE_ACCESS_SCOPE, MCP_SCOPE_LABELS } from "../oauth-provider.ts";
+import { getMcpIssuerUrl, getMcpResourceUrl } from "../oauth-config.ts";
+import {
+  MCP_OAUTH_OFFLINE_ACCESS_SCOPE,
+  MCP_OAUTH_SCOPES,
+  MCP_SCOPE_LABELS,
+} from "../oauth-provider.ts";
 
 /**
  * Dofek-owned OAuth consent interaction for oidc-provider.
@@ -203,10 +207,17 @@ export function createInteractionHandler(
         interaction.grantId !== undefined
           ? ((await provider.Grant.find(interaction.grantId)) ?? new provider.Grant(grantOptions))
           : new provider.Grant(grantOptions);
-      for (const [resource, scopes] of Object.entries(
-        interaction.prompt.details.missingResourceScopes ?? {},
-      )) {
+      const missingResourceScopes = interaction.prompt.details.missingResourceScopes ?? {};
+      for (const [resource, scopes] of Object.entries(missingResourceScopes)) {
         if (scopes.length > 0) grant.addResourceScope(resource, scopes.join(" "));
+      }
+      if (Object.keys(missingResourceScopes).length === 0 && interaction.params.scope) {
+        const requestedResourceScopes = interaction.params.scope
+          .split(" ")
+          .filter((scope) => MCP_OAUTH_SCOPES.some((supportedScope) => supportedScope === scope));
+        if (requestedResourceScopes.length > 0) {
+          grant.addResourceScope(getMcpResourceUrl().href, requestedResourceScopes.join(" "));
+        }
       }
       const missingOidc = interaction.prompt.details.missingOIDCScope ?? [];
       if (missingOidc.length > 0) grant.addOIDCScope(missingOidc.join(" "));

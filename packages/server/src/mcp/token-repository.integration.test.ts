@@ -263,7 +263,7 @@ describe("MCP token repository (integration)", () => {
       z.object({ count: z.number() }),
       sql`SELECT COUNT(*)::int AS count FROM fitness.mcp_oidc_adapter WHERE model = 'RefreshToken'`,
     );
-    expect(remainingRefreshTokens[0]?.count).toBe(0);
+    expect(remainingRefreshTokens[0]?.count).toBe(1);
 
     await expect(revokeMcpConnectedApp(ctx.db, testUserId, clientId, resource)).resolves.toBe(true);
     const remainingGrantArtifacts = await executeWithSchema(
@@ -282,5 +282,35 @@ describe("MCP token repository (integration)", () => {
       expiresAt: null,
     });
     expect(await listMcpPersonalTokens(ctx.db, testUserId)).toHaveLength(1);
+  });
+
+  it("lists legacy OIDC grants with absent or empty resource maps", async () => {
+    const expiresAt = new Date(Date.now() + 86_400_000);
+    await ctx.db.execute(sql`INSERT INTO fitness.mcp_oidc_adapter (model, id, payload, user_id, expires_at)
+      VALUES
+        ('Grant', 'grant-no-resources', ${JSON.stringify({ accountId: testUserId, clientId: "legacy-no-resource", scope: "health:read offline_access" })}::jsonb, ${testUserId}::uuid, ${expiresAt}),
+        ('Grant', 'grant-empty-resources', ${JSON.stringify({ accountId: testUserId, clientId: "legacy-empty-resource", resources: {} })}::jsonb, ${testUserId}::uuid, ${expiresAt})`);
+
+    const apps = await listMcpConnectedApps(ctx.db, testUserId);
+    expect(apps.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ oauthClientId: "legacy-no-resource", scopes: ["health:read"] }),
+        expect.objectContaining({ oauthClientId: "legacy-empty-resource", scopes: [] }),
+      ]),
+    );
+    await expect(
+      updateMcpConnectedAppScopes(
+        ctx.db,
+        testUserId,
+        "legacy-no-resource",
+        "https://app.example.test/api/mcp",
+        ["activity:read"],
+      ),
+    ).resolves.toBe(true);
+    expect((await listMcpConnectedApps(ctx.db, testUserId)).items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ oauthClientId: "legacy-no-resource", scopes: ["activity:read"] }),
+      ]),
+    );
   });
 });

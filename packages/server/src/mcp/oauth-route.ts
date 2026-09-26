@@ -127,6 +127,7 @@ export function createMcpOAuthRouter(
     "/.well-known/oauth-protected-resource/api/mcp",
     metadataRateLimit,
     (_request, response) => {
+      response.set("Access-Control-Allow-Origin", "*");
       response.json(protectedResourceMetadata);
     },
   );

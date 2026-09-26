@@ -498,6 +498,19 @@ entity "supplement_dose_event" {
   created_at : timestamp
 }
 
+entity "mcp_oidc_adapter" {
+  model : text
+  id : text
+  payload : jsonb
+  uid : text
+  user_code : text
+  grant_id : text
+  expires_at : timestamp
+  created_at : timestamp
+  user_id : uuid <<FK>>
+  last_used_at : timestamp
+}
+
 entity "clinical_record" {
   * id : uuid <<PK>>
   --
@@ -1344,6 +1357,7 @@ provider ||--o{ supplement_dose_event
 supplement ||--o{ supplement_dose_event
 supplement_definition ||--o{ supplement_dose_event
 supplement_dose_event ||--o{ supplement_dose_event
+user_profile ||--o{ mcp_oidc_adapter
 user_profile ||--o{ clinical_record
 provider ||--o{ clinical_record
 provider ||--o{ health_event

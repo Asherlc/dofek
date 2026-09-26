@@ -368,7 +368,7 @@ describe("MCP token repository", () => {
     );
   });
 
-  it("updates scopes for every active credential belonging to a connected app", async () => {
+  it("updates the grant and invalidates access tokens without revoking refresh credentials", async () => {
     mockExecute.mockResolvedValueOnce([{ found: true }]);
 
     await expect(
@@ -385,6 +385,7 @@ describe("MCP token repository", () => {
     expect(queryPayload).toContain("UPDATE fitness.mcp_oidc_adapter");
     expect(queryPayload).toContain("jsonb_set");
     expect(queryPayload).toContain("deleted_access_tokens");
+    expect(queryPayload).not.toContain("deleted_refresh_tokens");
     expect(queryPayload).toContain("claude-client");
     expect(queryPayload).toContain("https://dofek.example/api/mcp");
     expect(queryPayload).toContain("activity:read");

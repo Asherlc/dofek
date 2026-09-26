@@ -5,6 +5,7 @@ import * as coreSchema from "./schema/core.ts";
 import * as enumSchema from "./schema/enums.ts";
 import * as eventSchema from "./schema/events.ts";
 import * as externalSchema from "./schema/external.ts";
+import * as mcpSchema from "./schema/mcp.ts";
 import * as nutritionSchema from "./schema/nutrition.ts";
 import * as processingSchema from "./schema/processing.ts";
 import * as recordModificationsSchema from "./schema/record-modifications.ts";
@@ -16,6 +17,7 @@ export const drizzleSchema = {
   ...referenceSchema,
   ...activitySchema,
   ...nutritionSchema,
+  ...mcpSchema,
   ...clinicalSchema,
   ...accountSchema,
   ...eventSchema,
