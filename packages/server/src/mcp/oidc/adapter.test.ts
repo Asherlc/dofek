@@ -1,6 +1,6 @@
 import type { Database } from "dofek/db";
 import { describe, expect, it, vi } from "vitest";
-import { createMcpOidcAdapter, McpOidcAdapter } from "./adapter.ts";
+import { createMcpOidcAdapter, McpOidcAdapter, resolveAdapterUserId } from "./adapter.ts";
 
 function mockDb(): Pick<Database, "execute"> {
   return { execute: vi.fn() };
@@ -44,5 +44,23 @@ describe("McpOidcAdapter", () => {
     const adapter = new McpOidcAdapter(db, "AccessToken");
     await adapter.revokeByGrantId("grant-1");
     expect(db.execute).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("resolveAdapterUserId", () => {
+  it("maps a uuid uid to user_id for account-erasure ownership", () => {
+    expect(resolveAdapterUserId("123e4567-e89b-12d3-a456-426614174000")).toBe(
+      "123e4567-e89b-12d3-a456-426614174000",
+    );
+  });
+
+  it("returns null when uid is missing so shared artifacts stay unowned", () => {
+    expect(resolveAdapterUserId(undefined)).toBeNull();
+    expect(resolveAdapterUserId(null)).toBeNull();
+  });
+
+  it("returns null for non-uuid uids so invalid values never attribute", () => {
+    expect(resolveAdapterUserId("not-a-uuid")).toBeNull();
+    expect(resolveAdapterUserId(123)).toBeNull();
   });
 });

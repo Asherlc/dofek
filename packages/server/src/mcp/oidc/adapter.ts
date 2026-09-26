@@ -36,6 +36,21 @@ const adapterRowSchema = z.object({
 
 type ExecutableDatabase = Pick<Database, "execute">;
 
+const adapterUserIdSchema = z.string().uuid();
+
+/**
+ * Derives the `user_id` ownership column from an oidc-provider `uid`.
+ * The adapter's `uid` carries the Dofek account id (a uuid string) for
+ * user-attributable artifacts (Session, Grant, tokens); client metadata
+ * and other shared artifacts have no `uid`. Only valid uuids map to
+ * `user_id` so account erasure can attribute and delete a user's rows
+ * while leaving shared rows untouched.
+ */
+export function resolveAdapterUserId(uid: unknown): string | null {
+  if (typeof uid !== "string") return null;
+  return adapterUserIdSchema.safeParse(uid).success ? uid : null;
+}
+
 const nowEpoch = (): number => Math.floor(Date.now() / 1000);
 
 function isExpired(expiresAt: string | Date | null | undefined): boolean {
@@ -56,16 +71,18 @@ export class McpOidcAdapter {
   async upsert(id: string, payload: AdapterPayload, expiresIn?: number): Promise<void> {
     const expiresAt =
       typeof expiresIn === "number" ? new Date(Date.now() + expiresIn * 1000) : null;
+    const userId = resolveAdapterUserId(payload.uid);
     await this.#db.execute(
-      sql`INSERT INTO fitness.mcp_oidc_adapter (model, id, payload, uid, user_code, grant_id, expires_at)
+      sql`INSERT INTO fitness.mcp_oidc_adapter (model, id, payload, uid, user_id, user_code, grant_id, expires_at)
           VALUES (
             ${this.model}, ${id}, ${payload},
-            ${payload.uid ?? null}, ${payload.userCode ?? null}, ${payload.grantId ?? null},
+            ${payload.uid ?? null}, ${userId}, ${payload.userCode ?? null}, ${payload.grantId ?? null},
             ${expiresAt}
           )
           ON CONFLICT (model, id) DO UPDATE
           SET payload = EXCLUDED.payload,
               uid = EXCLUDED.uid,
+              user_id = EXCLUDED.user_id,
               user_code = EXCLUDED.user_code,
               grant_id = EXCLUDED.grant_id,
               expires_at = EXCLUDED.expires_at`,
