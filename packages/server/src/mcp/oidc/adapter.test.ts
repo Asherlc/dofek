@@ -59,7 +59,7 @@ describe("resolveAdapterUserId", () => {
     expect(resolveAdapterUserId(null)).toBeNull();
   });
 
-  it("returns null for non-uuid uids so invalid values never attribute", () => {
+  it("returns null for non-uuid values so invalid values never attribute", () => {
     expect(resolveAdapterUserId("not-a-uuid")).toBeNull();
     expect(resolveAdapterUserId(123)).toBeNull();
   });
