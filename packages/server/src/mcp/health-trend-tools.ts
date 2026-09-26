@@ -235,7 +235,7 @@ export function registerHealthTrendTools(server: McpServer, context: DofekMcpCon
         end_date,
         metrics: metrics ?? healthMetricSchema.options,
         granularity: granularity ?? "daily",
-        timezone,
+        timezone: requestedTimezone,
       };
       return jsonToolResult(
         await healthTrendsResponse(
