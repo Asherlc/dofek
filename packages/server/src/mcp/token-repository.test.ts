@@ -7,6 +7,7 @@ import {
   listMcpPersonalTokens,
   listMcpTokens,
   McpAuthError,
+  markMcpConnectedAppUsed,
   mcpScopeSchema,
   requireMcpScope,
   revokeMcpConnectedApp,
@@ -282,6 +283,27 @@ describe("MCP token repository", () => {
     expect(queryPayload).toContain("claude-client");
     expect(queryPayload).toContain("https://dofek.example/api/mcp");
   });
+
+  it("marks a connected app grant as used for a live access token", async () => {
+    mockExecute.mockResolvedValueOnce([{ found: true }]);
+
+    await expect(markMcpConnectedAppUsed(createMockDb(), "token-id-hash")).resolves.toBe(true);
+
+    const queryPayload = JSON.stringify(mockExecute.mock.calls[0]?.[0]);
+    expect(queryPayload).toContain("AccessToken");
+    expect(queryPayload).toContain("Grant");
+    expect(queryPayload).toContain("token-id-hash");
+    expect(queryPayload).toContain("last_used_at = NOW()");
+  });
+
+  it.each([[[]], [[{ found: false }]]])(
+    "returns false when the access token has no active grant",
+    async (rows) => {
+      mockExecute.mockResolvedValueOnce(rows);
+
+      await expect(markMcpConnectedAppUsed(createMockDb(), "token-id-hash")).resolves.toBe(false);
+    },
+  );
 
   it("does not add nutrition write to an existing read-only token", async () => {
     const token = "dofek_mcp_read_only";

@@ -19,8 +19,9 @@ them, and the durability work they suggest.
   MCP auth routing, JWT verifier, and migration logging paths.
 - **Direct fix:** The backfill now checks for the legacy table before querying
   it. Focused tests exercise the affected migration logging, auth routing,
-  verifier, OAuth route, and token-scope behaviors. OAuth JWT verification also
-  rejects tokens missing the required expiration claim ([RFC 9068, §2.2](https://www.rfc-editor.org/rfc/rfc9068.html#section-2.2)).
+  verifier, OAuth route, token-scope, connected-app activity, and consent/login
+  interaction behaviors. OAuth JWT verification also rejects tokens missing
+  the required expiration claim ([RFC 9068, §2.2](https://www.rfc-editor.org/rfc/rfc9068.html#section-2.2)).
 - **Validation:** Integration shard 2 passed locally (64 files / 390 tests)
   with the CI shard coverage-threshold setting; focused unit suites, typecheck,
   Biome, and targeted mutation runs pass. Final remote CI validation is pending.
