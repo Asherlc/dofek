@@ -5,6 +5,7 @@ const { captureException } = vi.hoisted(() => ({ captureException: vi.fn() }));
 vi.mock("dofek/lib/error-reporting", () => ({ captureException }));
 
 import {
+  getSharedJwtGetKey,
   isPersonalAccessToken,
   PERSONAL_TOKEN_PREFIX,
   verifyJwtAccessToken,
@@ -21,6 +22,17 @@ describe("isPersonalAccessToken", () => {
   it("does not recognize JWT-shaped tokens as personal", () => {
     expect(isPersonalAccessToken("header.payload.signature")).toBe(false);
     expect(isPersonalAccessToken("not-a-dofek-token")).toBe(false);
+  });
+});
+
+describe("getSharedJwtGetKey", () => {
+  it("caches a remote key resolver per JWKS URI", () => {
+    const first = getSharedJwtGetKey("https://issuer-one.example.test/jwks");
+    const sameIssuer = getSharedJwtGetKey("https://issuer-one.example.test/jwks");
+    const second = getSharedJwtGetKey("https://issuer-two.example.test/jwks");
+
+    expect(sameIssuer).toBe(first);
+    expect(second).not.toBe(first);
   });
 });
 

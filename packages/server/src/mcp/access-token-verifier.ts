@@ -121,17 +121,18 @@ export async function verifyJwtAccessToken(
   }
 }
 
-let sharedJwtGetKey: JWTVerifyGetKey | null = null;
+const sharedJwtGetKeys = new Map<string, JWTVerifyGetKey>();
 
 /**
  * Lazily-created, process-lifetime key resolver for oidc-provider's JWKS. The
  * remote JWKS is cached and rotated automatically by `createRemoteJWKSet`.
  */
 export function getSharedJwtGetKey(jwksUri: string): JWTVerifyGetKey {
-  if (!sharedJwtGetKey) {
-    sharedJwtGetKey = createRemoteJWKSet(new URL(jwksUri));
-  }
-  return sharedJwtGetKey;
+  const existing = sharedJwtGetKeys.get(jwksUri);
+  if (existing) return existing;
+  const getKey = createRemoteJWKSet(new URL(jwksUri));
+  sharedJwtGetKeys.set(jwksUri, getKey);
+  return getKey;
 }
 
 export interface VerifyMcpAccessTokenOptions extends JwtAccessTokenVerifierOptions {
