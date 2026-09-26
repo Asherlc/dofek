@@ -1,7 +1,3 @@
-import {
-  createOAuthMetadata,
-  mcpAuthRouter,
-} from "@modelcontextprotocol/sdk/server/auth/router.js";
 import type { Database } from "dofek/db";
 import express, { Router } from "express";
 import {
@@ -11,9 +7,14 @@ import {
 import { z } from "zod";
 import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
+import { authorizationHandler } from "./oauth-authorize-handler.ts";
 import { McpOAuthClientsStore } from "./oauth-client-store.ts";
 import { getMcpIssuerUrl, getMcpResourceUrl } from "./oauth-config.ts";
+import { createOAuthMetadata, createProtectedResourceMetadata } from "./oauth-metadata.ts";
 import { DofekOAuthServerProvider, MCP_OAUTH_SUPPORTED_SCOPES } from "./oauth-provider.ts";
+import { clientRegistrationHandler } from "./oauth-register.ts";
+import { revocationHandler } from "./oauth-revoke.ts";
+import { tokenHandler } from "./oauth-token-handler.ts";
 
 export type McpAuthRateLimitOptions = Partial<RateLimitOptions> | false;
 
@@ -37,13 +38,7 @@ export function createMcpOAuthRouter(
   const issuerUrl = getMcpIssuerUrl();
   const resourceUrl = getMcpResourceUrl();
   const provider = new DofekOAuthServerProvider(db, resourceUrl);
-  const oauthRouterOptions = {
-    issuerUrl,
-    provider,
-    resourceName: "Dofek",
-    resourceServerUrl: resourceUrl,
-    scopesSupported: [...MCP_OAUTH_SUPPORTED_SCOPES],
-  };
+  const scopesSupported = [...MCP_OAUTH_SUPPORTED_SCOPES];
 
   router.use(
     "/authorize",
@@ -64,17 +59,34 @@ export function createMcpOAuthRouter(
     },
   );
 
-  const rateLimitOptions = { rateLimit };
   const metadataRateLimit = createRateLimiter({
     ...rateLimit,
     skip: rateLimit === false ? () => true : rateLimit?.skip,
   });
-  router.get("/.well-known/oauth-authorization-server", metadataRateLimit, (_request, response) => {
-    response.json({
-      ...createOAuthMetadata(oauthRouterOptions),
-      client_id_metadata_document_supported: true,
-    });
+
+  const oauthMetadata = createOAuthMetadata({
+    provider,
+    issuerUrl,
+    scopesSupported,
   });
+
+  router.get("/.well-known/oauth-authorization-server", metadataRateLimit, (_request, response) => {
+    response.json(oauthMetadata);
+  });
+
+  const protectedResourceMetadata = createProtectedResourceMetadata({
+    resourceServerUrl: resourceUrl,
+    issuer: issuerUrl.href,
+    scopesSupported,
+    resourceName: "Dofek",
+  });
+  router.get(
+    "/.well-known/oauth-protected-resource/api/mcp",
+    metadataRateLimit,
+    (_request, response) => {
+      response.json(protectedResourceMetadata);
+    },
+  );
 
   // CIMD endpoint for locally registered clients
   const oauthClientStore = new McpOAuthClientsStore(db);
@@ -100,14 +112,16 @@ export function createMcpOAuthRouter(
     },
   );
 
-  router.use(
-    mcpAuthRouter({
-      ...oauthRouterOptions,
-      authorizationOptions: rateLimitOptions,
-      clientRegistrationOptions: rateLimitOptions,
-      revocationOptions: rateLimitOptions,
-      tokenOptions: rateLimitOptions,
-    }),
-  );
+  router.use("/authorize", authorizationHandler({ provider, issuerUrl, rateLimit: rateLimit }));
+  router.use("/token", tokenHandler({ provider, rateLimit: rateLimit }));
+  if (oauthMetadata.registration_endpoint) {
+    router.use(
+      "/register",
+      clientRegistrationHandler({ clientsStore: provider.clientsStore, rateLimit: rateLimit }),
+    );
+  }
+  if (oauthMetadata.revocation_endpoint) {
+    router.use("/revoke", revocationHandler({ provider, rateLimit: rateLimit }));
+  }
   return router;
 }
