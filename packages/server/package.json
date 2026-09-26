@@ -40,7 +40,6 @@
     "@modelcontextprotocol/ext-apps": "2.0.3",
     "@modelcontextprotocol/node": "2.1.0",
     "@modelcontextprotocol/server": "2.1.0",
-    "oidc-provider": "9.12.2",
     "@opentelemetry/api": "1.9.1",
     "@sentry/node": "10.45.0",
     "@stdlib/stats-pcorrtest": "0.2.3",
@@ -53,8 +52,8 @@
     "entities": "8.1.0",
     "express": "5.2.1",
     "express-rate-limit": "8.6.1",
-    "ipaddr.js": "2.5.0",
     "jose": "6.2.12",
+    "oidc-provider": "9.12.2",
     "qrcode": "1.5.4",
     "simple-statistics": "7.10.2",
     "zod": "4.4.3"
