@@ -87,7 +87,7 @@ export function createOidcProvider(
           return {
             audience: resourceUrl,
             scope: MCP_OAUTH_SCOPES.join(" "),
-            accessTokenFormat: "opaque",
+            accessTokenFormat: "jwt",
             accessTokenTTL: 60 * 60,
           };
         },

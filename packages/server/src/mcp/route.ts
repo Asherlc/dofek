@@ -1,12 +1,13 @@
-import { getOAuthProtectedResourceMetadataUrl } from "@modelcontextprotocol/sdk/server/auth/router.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
+import { getOAuthProtectedResourceMetadataUrl } from "@modelcontextprotocol/server";
 import type { Database } from "dofek/db";
 import { captureException } from "dofek/lib/error-reporting";
 import express, { Router } from "express";
 import { logger } from "../logger.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
+import { verifyMcpAccessToken } from "./access-token-verifier.ts";
 import { foodMutationTelemetryFromRequest, logFoodMutation } from "./mutation-telemetry.ts";
-import { getMcpResourceUrl } from "./oauth-config.ts";
+import { getMcpIssuerUrl, getMcpResourceUrl } from "./oauth-config.ts";
 import {
   mcpClientCorrelationId,
   mcpRequestTelemetry,
@@ -14,7 +15,6 @@ import {
   mcpToolsListResponseTelemetry,
   mcpTransportErrorCategory,
 } from "./request-telemetry.ts";
-import { validateMcpToken } from "./token-repository.ts";
 import { createDofekMcpServer } from "./tools.ts";
 
 export interface CreateMcpRouterOptions {
@@ -82,7 +82,7 @@ export function createMcpRouter(options: CreateMcpRouterOptions): Router {
     let responseFinished = false;
     let responseClosed = false;
     let resourcesClosed = false;
-    let transport: StreamableHTTPServerTransport | undefined;
+    let transport: NodeStreamableHTTPServerTransport | undefined;
     let server: ReturnType<typeof createDofekMcpServer> | undefined;
     const closeResources = () => {
       if (resourcesClosed || !transport || !server) return;
@@ -153,8 +153,12 @@ export function createMcpRouter(options: CreateMcpRouterOptions): Router {
       return;
     }
 
-    const validatedToken = await validateMcpToken(options.db, token);
-    if (!validatedToken) {
+    const verifiedPrincipal = await verifyMcpAccessToken(token, {
+      db: options.db,
+      issuer: getMcpIssuerUrl().href,
+      resourceUrl: getMcpResourceUrl().href,
+    });
+    if (!verifiedPrincipal) {
       logger.info("mcp.authentication", {
         auth_outcome: "invalid_token",
         http_status: 401,
@@ -165,29 +169,31 @@ export function createMcpRouter(options: CreateMcpRouterOptions): Router {
       return;
     }
 
+    const clientId =
+      verifiedPrincipal.kind === "oauth"
+        ? `oauth:${verifiedPrincipal.clientId}`
+        : `token:${verifiedPrincipal.tokenId}`;
     logger.info("mcp.authentication", {
       auth_outcome: "accepted",
-      client_kind: validatedToken.oauthClientId ? "oauth" : "personal_token",
+      client_kind: verifiedPrincipal.kind,
       client_id_hash: mcpClientCorrelationId(
-        validatedToken.oauthClientId ?? validatedToken.tokenId,
+        verifiedPrincipal.kind === "oauth" ? verifiedPrincipal.clientId : verifiedPrincipal.tokenId,
       ),
-      scope_set: [...validatedToken.scopes].sort().join(","),
+      scope_set: [...verifiedPrincipal.scopes].sort().join(","),
       ...requestTelemetry,
       ...runtimeTelemetry,
     });
 
     const mcpServer = createDofekMcpServer({
       db: options.db,
-      userId: validatedToken.userId,
-      clientId: validatedToken.oauthClientId
-        ? `oauth:${validatedToken.oauthClientId}`
-        : `token:${validatedToken.tokenId}`,
-      scopes: validatedToken.scopes,
+      userId: verifiedPrincipal.userId,
+      clientId,
+      scopes: verifiedPrincipal.scopes,
       timezone: getSingleHeaderValue(request.headers["x-timezone"]) ?? "UTC",
       sensorStore: options.sensorStore,
     });
     server = mcpServer;
-    const mcpTransport = new StreamableHTTPServerTransport({
+    const mcpTransport = new NodeStreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
     });
     if (requestTelemetry.mcp_method === "tools/list") {
