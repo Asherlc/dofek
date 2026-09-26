@@ -3,12 +3,12 @@ import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 import { z } from "zod";
-import { backfillMcpOauthClients } from "../../scripts/backfill-mcp-oauth-clients.ts";
 import {
   assertPostgresAccountErasureCoverage,
   refreshPostgresAccountErasureWriteFences,
 } from "../account-erasure/postgres-erasure.ts";
 import { logger } from "../logger.ts";
+import { backfillMcpOauthClients } from "./backfill-mcp-oauth-clients.ts";
 import { readBaselineMigration, runDrizzleMigrations } from "./postgres-migrator.ts";
 import { executeWithSchema } from "./typed-sql.ts";
 

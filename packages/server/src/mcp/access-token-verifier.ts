@@ -1,11 +1,13 @@
 import { createHash } from "node:crypto";
 import type { Database } from "dofek/db";
 import { captureException } from "dofek/lib/error-reporting";
-import { sql } from "drizzle-orm";
 import { createRemoteJWKSet, type JWTVerifyGetKey, errors as joseErrors, jwtVerify } from "jose";
-import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
-import { type McpScope, mcpScopeSchema, validateMcpToken } from "./token-repository.ts";
+import {
+  type McpScope,
+  markMcpConnectedAppUsed,
+  mcpScopeSchema,
+  validateMcpToken,
+} from "./token-repository.ts";
 
 /**
  * Dofek MCP access tokens come in two flavours that must both keep working:
@@ -168,13 +170,6 @@ export async function verifyMcpAccessToken(
   if (!principal) return null;
 
   const tokenIdHash = createHash("sha256").update(principal.tokenId).digest("hex");
-  const rows = await executeWithSchema(
-    options.db,
-    z.object({ found: z.boolean() }),
-    sql`SELECT EXISTS (
-          SELECT 1 FROM fitness.mcp_oidc_adapter
-          WHERE model = 'AccessToken' AND id = ${tokenIdHash} AND expires_at > NOW()
-        ) AS found`,
-  );
-  return rows[0]?.found ? principal : null;
+  const tokenIsActive = await markMcpConnectedAppUsed(options.db, tokenIdHash);
+  return tokenIsActive ? principal : null;
 }

@@ -256,6 +256,29 @@ export async function listMcpPersonalTokens(
   return rows.map(toMetadata);
 }
 
+export async function markMcpConnectedAppUsed(
+  db: ExecutableDatabase,
+  accessTokenIdHash: string,
+): Promise<boolean> {
+  const rows = await executeWithSchema(
+    db,
+    connectedAppRevokeRowSchema,
+    sql`WITH updated_grants AS (
+          UPDATE fitness.mcp_oidc_adapter grant_payload
+          SET last_used_at = NOW()
+          FROM fitness.mcp_oidc_adapter access_token
+          WHERE access_token.model = 'AccessToken'
+            AND access_token.id = ${accessTokenIdHash}
+            AND access_token.expires_at > NOW()
+            AND grant_payload.model = 'Grant'
+            AND grant_payload.id = access_token.grant_id
+          RETURNING grant_payload.id
+        )
+        SELECT EXISTS (SELECT 1 FROM updated_grants) AS found`,
+  );
+  return rows[0]?.found ?? false;
+}
+
 export async function listMcpConnectedApps(
   db: ExecutableDatabase,
   userId: string,
@@ -276,7 +299,7 @@ export async function listMcpConnectedApps(
             COALESCE(client_payload.payload->>'client_name', grant_payload.payload->>'clientId') AS name,
             ARRAY_AGG(DISTINCT granted_scope.value ORDER BY granted_scope.value) AS scopes,
             MIN(grant_payload.created_at) AS connected_at,
-            NULL::timestamptz AS last_used_at,
+            MAX(grant_payload.last_used_at) AS last_used_at,
             BOOL_OR(grant_payload.expires_at > NOW() AND EXISTS (
               SELECT 1 FROM fitness.mcp_oidc_adapter refresh
               WHERE refresh.model = 'RefreshToken'
@@ -371,6 +394,11 @@ export async function updateMcpConnectedAppScopes(
         ), deleted_access_tokens AS (
           DELETE FROM fitness.mcp_oidc_adapter
           WHERE model = 'AccessToken'
+            AND grant_id IN (SELECT id FROM updated_grants)
+          RETURNING id
+        ), deleted_refresh_tokens AS (
+          DELETE FROM fitness.mcp_oidc_adapter
+          WHERE model = 'RefreshToken'
             AND grant_id IN (SELECT id FROM updated_grants)
           RETURNING id
         )

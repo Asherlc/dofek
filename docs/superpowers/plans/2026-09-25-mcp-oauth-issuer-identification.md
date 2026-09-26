@@ -155,5 +155,5 @@ git commit -m "feat(mcp): serve OAuth authorization server via oidc-provider"
 - **CIMD** is the second risk; oidc-provider supports CIMD draft-02 — confirm ChatGPT's `private_key_jwt`-preferring CIMD intersects (`none`/`private_key_jwt`) correctly.
 - **PRM stays Dofek-owned** (resource-server role); only `authorization_servers` points at oidc-provider.
 - **`MCP_OIDC_COOKIE_KEY`** (new) must be added to Infisical before deploy — see `oidc/config.ts`.
-- **Dead code cleanup:** `oauth-provider.ts` (`DofekOAuthServerProvider`) and `oauth-metadata.ts` (`createOAuthMetadata`) are no longer imported by the active authorization flow; delete them + their unit tests in Task 5 once the resource-server no longer imports them.
+- **Dead code cleanup:** remove the obsolete `oauth-provider.ts` authorization-server implementation and its tests. Preserve `oauth-metadata.ts`, which builds Dofek's RFC 9728 protected-resource metadata and remains part of the resource-server flow.
 - **`renderError`** in `oidc/config.ts` interpolates `error.message` unescaped — fix to HTML-escape before merge.

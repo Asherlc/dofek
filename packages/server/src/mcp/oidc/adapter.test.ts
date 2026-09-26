@@ -151,9 +151,9 @@ describe("McpOidcAdapter upsert", () => {
   it("leaves user_id null for non-uuid account identifiers", async () => {
     const db = mockDb();
     const adapter = new McpOidcAdapter(db, "Session");
-    await adapter.upsert("session-id", { uid: "not-a-uuid" });
+    await adapter.upsert("session-id", { accountId: "not-a-uuid" });
     const params = executedParams();
-    expect(params[3]).toBe("not-a-uuid");
+    expect(params[3]).toBeNull();
     expect(params[4]).toBeNull();
   });
 });

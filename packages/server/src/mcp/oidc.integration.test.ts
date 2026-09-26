@@ -3,7 +3,7 @@ import { sql } from "drizzle-orm";
 import type express from "express";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { backfillMcpOauthClients } from "../../../../scripts/backfill-mcp-oauth-clients.ts";
+import { backfillMcpOauthClients } from "../../../../src/db/backfill-mcp-oauth-clients.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createApp } from "../index.ts";
 import { makeMockSensorStore } from "../routers/test-helpers.ts";

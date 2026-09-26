@@ -336,12 +336,18 @@ async function request(
   });
 }
 
-function createTestApp(sensorStore = undefined) {
+function createTestApp(
+  sensorStore = undefined,
+  rateLimit:
+    | { limit: number; windowMs: number; standardHeaders: false; legacyHeaders: false }
+    | false = false,
+) {
   const app = express();
   app.use(
     "/api/mcp",
     createMcpRouter({
       db: { execute: vi.fn(), select: vi.fn(), transaction: vi.fn() },
+      rateLimit,
       sensorStore,
     }),
   );
@@ -699,6 +705,22 @@ describe("createMcpRouter", () => {
       id: null,
       jsonrpc: "2.0",
     });
+    expect(verifyMcpAccessToken).not.toHaveBeenCalled();
+  });
+
+  it("rate limits repeated requests before bearer authorization", async () => {
+    const app = createTestApp(undefined, {
+      limit: 1,
+      windowMs: 60_000,
+      standardHeaders: false,
+      legacyHeaders: false,
+    });
+
+    const first = await request(app, { body: initializeRequest });
+    const second = await request(app, { body: initializeRequest });
+
+    expect(first.status).toBe(401);
+    expect(second.status).toBe(429);
     expect(verifyMcpAccessToken).not.toHaveBeenCalled();
   });
 

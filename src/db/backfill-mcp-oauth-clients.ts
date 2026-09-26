@@ -1,7 +1,7 @@
-import type { Database } from "dofek/db";
+import type { SQL } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema } from "../src/db/typed-sql.ts";
+import { executeWithSchema } from "./typed-sql.ts";
 
 const legacyClientSchema = z.object({
   client_id: z.string(),
@@ -20,14 +20,14 @@ const PAGE_SIZE = 100;
  * have been imported. Legacy encrypted secrets keep their original encryption
  * context marker until the OIDC adapter reads and decrypts them.
  */
-export async function backfillMcpOauthClients(
-  database: Pick<Database, "execute">,
-): Promise<number> {
+export async function backfillMcpOauthClients(database: {
+  execute: (query: SQL) => Promise<unknown>;
+}): Promise<number> {
   let afterClientId: string | null = null;
   let migrated = 0;
 
   while (true) {
-    const clients = await executeWithSchema(
+    const clients: z.infer<typeof legacyClientSchema>[] = await executeWithSchema(
       database,
       legacyClientSchema,
       sql`SELECT client.client_id, client.client_secret, client.client_metadata,

@@ -9,6 +9,7 @@ import {
   listMcpConnectedApps,
   listMcpPersonalTokens,
   listMcpTokens,
+  markMcpConnectedAppUsed,
   revokeMcpConnectedApp,
   revokeMcpToken,
   updateMcpConnectedAppScopes,
@@ -241,17 +242,28 @@ describe("MCP token repository (integration)", () => {
       },
     ]);
 
+    await expect(markMcpConnectedAppUsed(ctx.db, accessTokenId)).resolves.toBe(true);
+    const lastUsedAt = (await listMcpConnectedApps(ctx.db, testUserId)).items[0]?.lastUsedAt;
+    expect(lastUsedAt).toEqual(expect.any(String));
+
     await expect(
       updateMcpConnectedAppScopes(ctx.db, testUserId, clientId, resource, ["health:read"]),
     ).resolves.toBe(true);
     const afterUpdate = await listMcpConnectedApps(ctx.db, testUserId);
     expect(afterUpdate.items[0]?.scopes).toEqual(["health:read"]);
+    expect(afterUpdate.items[0]?.lastUsedAt).toBe(lastUsedAt);
     const remainingAccessTokens = await executeWithSchema(
       ctx.db,
       z.object({ count: z.number() }),
       sql`SELECT COUNT(*)::int AS count FROM fitness.mcp_oidc_adapter WHERE model = 'AccessToken'`,
     );
     expect(remainingAccessTokens[0]?.count).toBe(0);
+    const remainingRefreshTokens = await executeWithSchema(
+      ctx.db,
+      z.object({ count: z.number() }),
+      sql`SELECT COUNT(*)::int AS count FROM fitness.mcp_oidc_adapter WHERE model = 'RefreshToken'`,
+    );
+    expect(remainingRefreshTokens[0]?.count).toBe(0);
 
     await expect(revokeMcpConnectedApp(ctx.db, testUserId, clientId, resource)).resolves.toBe(true);
     const remainingGrantArtifacts = await executeWithSchema(

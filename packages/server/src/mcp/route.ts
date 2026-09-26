@@ -3,11 +3,13 @@ import { getOAuthProtectedResourceMetadataUrl } from "@modelcontextprotocol/serv
 import type { Database } from "dofek/db";
 import { captureException } from "dofek/lib/error-reporting";
 import express, { Router } from "express";
+import { rateLimit as createRateLimiter } from "express-rate-limit";
 import { logger } from "../logger.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { verifyMcpAccessToken } from "./access-token-verifier.ts";
 import { foodMutationTelemetryFromRequest, logFoodMutation } from "./mutation-telemetry.ts";
 import { getMcpIssuerUrl, getMcpResourceUrl } from "./oauth-config.ts";
+import type { McpAuthRateLimitOptions } from "./oauth-route.ts";
 import {
   mcpClientCorrelationId,
   mcpRequestTelemetry,
@@ -19,6 +21,7 @@ import { createDofekMcpServer } from "./tools.ts";
 
 export interface CreateMcpRouterOptions {
   db: Pick<Database, "execute" | "select" | "transaction">;
+  rateLimit?: McpAuthRateLimitOptions;
   sensorStore?: ActivitySensorStore;
 }
 
@@ -71,6 +74,13 @@ function getSingleHeaderValue(value: string | string[] | undefined): string | un
 
 export function createMcpRouter(options: CreateMcpRouterOptions): Router {
   const router = Router();
+  const mcpRateLimit = createRateLimiter({
+    limit: 300,
+    windowMs: 15 * 60 * 1000,
+    ...options.rateLimit,
+    skip: options.rateLimit === false ? () => true : options.rateLimit?.skip,
+  });
+  router.use(mcpRateLimit);
 
   router.post("/", requireBearerTokenHeader, express.json(), async (request, response) => {
     const requestTelemetry = mcpRequestTelemetry(
