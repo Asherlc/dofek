@@ -135,10 +135,8 @@ describe("ClimbingRepository PostgreSQL summaries", () => {
         started_at, ended_at, local_time_source, timezone
       ) VALUES (
         'climbing-summary-test', ${TEST_USER_ID}, 'summary-boundary', 'climbing', 'climbing',
-        (((NOW() AT TIME ZONE ${timezone})::date - 30)::timestamp
-          + (NOW() AT TIME ZONE ${timezone})::time + INTERVAL '1 minute') AT TIME ZONE ${timezone},
-        (((NOW() AT TIME ZONE ${timezone})::date - 30)::timestamp
-          + (NOW() AT TIME ZONE ${timezone})::time + INTERVAL '2 minutes') AT TIME ZONE ${timezone},
+        (((NOW() AT TIME ZONE ${timezone})::date - 30)::timestamp + INTERVAL '12 hours') AT TIME ZONE ${timezone},
+        (((NOW() AT TIME ZONE ${timezone})::date - 30)::timestamp + INTERVAL '13 hours') AT TIME ZONE ${timezone},
         'unknown', NULL
       ) RETURNING id::text AS id, group_id::text AS group_id`,
     );
