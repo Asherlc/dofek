@@ -65,6 +65,50 @@ describe("MountainProjectTickRepository", () => {
     expect(compiled.params).toContain("2026-01-01");
   });
 
+  it("maps matching tick rows to the API suggestion shape", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        id: "tick-1",
+        climb_type: "route",
+        grade_system: "yds",
+        grade: "5.10a",
+        sent: true,
+        attempt_count: 2,
+        lead: false,
+        route_name: "The Corner",
+        location_name: "Test Crag",
+      },
+    ]);
+    vi.spyOn(ActivityRepository.prototype, "findById").mockResolvedValue(activity());
+    const repository = new MountainProjectTickRepository({ execute }, "user-1");
+
+    await expect(repository.getSuggestions("canonical-group-id")).resolves.toEqual([
+      {
+        id: "tick-1",
+        climbType: "route",
+        gradeSystem: "yds",
+        grade: "5.10a",
+        sent: true,
+        attemptCount: 2,
+        lead: false,
+        routeName: "The Corner",
+        locationName: "Test Crag",
+      },
+    ]);
+  });
+
+  it.each([
+    ["missing activity", null, "NOT_FOUND"],
+    ["non-climbing activity", activity({ canonical_type: "running" }), "PRECONDITION_FAILED"],
+  ] as const)("rejects suggestions for a %s", async (_label, foundActivity, code) => {
+    const execute = vi.fn();
+    vi.spyOn(ActivityRepository.prototype, "findById").mockResolvedValue(foundActivity);
+    const repository = new MountainProjectTickRepository({ execute }, "user-1");
+
+    await expect(repository.getSuggestions("activity-id")).rejects.toMatchObject({ code });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
   it("uses the activity's Los Angeles displayed date across UTC midnight", async () => {
     const execute = vi.fn().mockResolvedValue([]);
     vi.spyOn(ActivityRepository.prototype, "findById").mockResolvedValue(activity());
@@ -126,5 +170,30 @@ describe("MountainProjectTickRepository", () => {
     expect(sql).toContain("RETURNING");
     expect(sql).toContain("AND activity_id IS NULL");
     expect(sql).toContain("AND provider_absent_at IS NULL");
+  });
+
+  it.each([
+    ["missing activity", null, "NOT_FOUND"],
+    ["non-climbing activity", activity({ canonical_type: "running" }), "PRECONDITION_FAILED"],
+  ] as const)("rejects attaching a tick to a %s", async (_label, foundActivity, code) => {
+    const execute = vi.fn();
+    vi.spyOn(ActivityRepository.prototype, "findById").mockResolvedValue(foundActivity);
+    const repository = new MountainProjectTickRepository({ execute }, "user-1");
+
+    await expect(
+      repository.attachTick({ tickId: "tick-id", activityId: "activity-id" }),
+    ).rejects.toMatchObject({ code });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("attaches a tick when the conditional update returns it", async () => {
+    const execute = vi.fn().mockResolvedValue([{ id: "tick-id" }]);
+    vi.spyOn(ActivityRepository.prototype, "findById").mockResolvedValue(activity());
+    const repository = new MountainProjectTickRepository({ execute }, "user-1");
+
+    await expect(
+      repository.attachTick({ tickId: "tick-id", activityId: "canonical-group-id" }),
+    ).resolves.toBeUndefined();
+    expect(execute).toHaveBeenCalledOnce();
   });
 });

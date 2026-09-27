@@ -43,16 +43,16 @@ describe("ClimbingProgressionRepository database semantics", () => {
     `);
     await context.db.execute(sql`
       INSERT INTO fitness.climbing_entry (
-        activity_id, external_id, climb_type, grade_system, grade, sent,
+        user_id, provider_id, activity_id, external_id, climb_type, grade_system, grade, sent,
         attempt_count, wall_angle_degrees, route_name, location_name, source_name, raw
       ) VALUES
-        (${kayaActivity}::uuid, 'kaya-blue', 'boulder', 'v_scale', 'V5', true,
+        (${userId}::uuid, ${kayaProvider}, ${kayaActivity}::uuid, 'kaya-blue', 'boulder', 'v_scale', 'V5', true,
           3, 30, 'Blue Arete', 'Pacific Pipe', 'Kaya', '{"ascentType":"Redpoint"}'::jsonb),
-        (${mirrorActivity}::uuid, 'mirror-blue', 'boulder', 'v_scale', 'V5', true,
+        (${userId}::uuid, ${mirrorProvider}, ${mirrorActivity}::uuid, 'mirror-blue', 'boulder', 'v_scale', 'V5', true,
           3, 30, 'Blue Arete', 'Pacific Pipe', 'Mirror', '{"ascentType":"Redpoint"}'::jsonb),
-        (${kayaActivity}::uuid, 'kaya-red', 'boulder', 'v_scale', 'V6', NULL,
+        (${userId}::uuid, ${kayaProvider}, ${kayaActivity}::uuid, 'kaya-red', 'boulder', 'v_scale', 'V6', NULL,
           NULL, 20, 'Red Roof', 'Pacific Pipe', 'Kaya', '{}'::jsonb),
-        (${offsetActivity}::uuid, 'offset-green', 'boulder', 'v_scale', 'V3', true,
+        (${userId}::uuid, ${kayaProvider}, ${offsetActivity}::uuid, 'offset-green', 'boulder', 'v_scale', 'V3', true,
           1, 10, 'Green Slab', 'Travel Gym', 'Kaya', '{"ascentType":"Flash"}'::jsonb)
     `);
   });

@@ -17,6 +17,8 @@ const MP_TICK_ABSENT = "30000000-0000-4000-8000-000000000002";
 const NON_MP_TICK = "30000000-0000-4000-8000-000000000003";
 const migrationFile = "0128_unattached_mountain_project_ticks.sql";
 const migrationPath = join(import.meta.dirname, "../../drizzle", migrationFile);
+const validationMigrationFile = "0129_validate_unattached_mountain_project_ticks.sql";
+const validationMigrationPath = join(import.meta.dirname, "../../drizzle", validationMigrationFile);
 
 describe("Mountain Project tick migration", () => {
   let admin: Client;
@@ -103,8 +105,18 @@ describe("Mountain Project tick migration", () => {
         journal.entries.find(({ tag }) => tag === migrationFile.replace(/\.sql$/, ""))?.when ??
         1_790_000_000_000,
     });
+    expect(existsSync(validationMigrationPath), "constraint validation migration must exist").toBe(
+      true,
+    );
+    historicalMigrations.push({
+      content: readFileSync(validationMigrationPath, "utf8"),
+      file: validationMigrationFile,
+      when:
+        journal.entries.find(({ tag }) => tag === validationMigrationFile.replace(/\.sql$/, ""))
+          ?.when ?? 1_790_000_000_001,
+    });
     writeTestMigrationFiles(migrationDirectory, historicalMigrations);
-    expect(await runMigrations(connectionString, migrationDirectory)).toBe(1);
+    expect(await runMigrations(connectionString, migrationDirectory)).toBe(2);
 
     const ticks = await client.query(`SELECT id, user_id, provider_id, activity_id,
       unattached_date::text, provider_absent_at, raw

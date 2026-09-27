@@ -1,4 +1,7 @@
+import { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { climbingEntry } from "../db/schema/activity.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
 
@@ -47,11 +50,14 @@ function makeDb() {
   };
 }
 
-function makeRun(db: ReturnType<typeof makeDb>["db"]): SyncRun {
+function makeRun(
+  db: ReturnType<typeof makeDb>["db"],
+  userId: string | null = "00000000-0000-0000-0000-000000000001",
+): SyncRun {
   return new SyncRun({
     db,
     window: SyncWindow.full(new Date("2026-08-11T00:00:00.000Z")),
-    userId: "00000000-0000-0000-0000-000000000001",
+    userId: userId ?? undefined,
   });
 }
 
@@ -69,6 +75,24 @@ afterEach(() => {
 });
 
 describe("MountainProjectProvider", () => {
+  it("returns an actionable error without persisting when no user context is available", async () => {
+    const { db } = makeDb();
+    const provider = new MountainProjectProvider(vi.fn());
+
+    const result = await provider.sync(makeRun(db, null));
+
+    expect(result).toMatchObject({
+      provider: "mountain-project",
+      recordsSynced: 0,
+      errors: [
+        expect.objectContaining({ message: "Mountain Project sync requires a user context." }),
+      ],
+    });
+    expect(mocks.ensureProvider).not.toHaveBeenCalled();
+    expect(db.insert).not.toHaveBeenCalled();
+    expect(db.execute).not.toHaveBeenCalled();
+  });
+
   it("uses a profile URL manual-token connection without OAuth credentials", async () => {
     const provider = new MountainProjectProvider(async () => new Response(exportCsv([])));
     const setup = provider.authSetup();
@@ -138,6 +162,21 @@ describe("MountainProjectProvider", () => {
         expect.objectContaining({ sent: null, attemptCount: null, grade: "5.10b" }),
       ]),
     );
+    expect(db.execute).toHaveBeenCalledOnce();
+    const reconciliationQuery = db.execute.mock.calls[0]?.[0];
+    if (!(reconciliationQuery instanceof SQL)) throw new Error("Expected reconciliation SQL");
+    const reconciliation = new PgDialect().sqlToQuery(reconciliationQuery);
+    expect(reconciliation.params).toContain(values[0]?.externalId);
+  });
+
+  it("does not reconcile prior ticks from an empty export", async () => {
+    const { db } = makeDb();
+    const provider = new MountainProjectProvider(async () => new Response(exportCsv([])));
+
+    const result = await provider.sync(makeRun(db));
+
+    expect(result).toMatchObject({ recordsSynced: 0, errors: [] });
+    expect(db.execute).not.toHaveBeenCalled();
   });
 
   it("assigns unique stable external IDs to repeated same-day laps", async () => {
@@ -234,7 +273,7 @@ describe("MountainProjectProvider", () => {
     expect(db.insert).toHaveBeenCalled();
     expect(conflictUpdates).toHaveBeenCalledWith(
       expect.objectContaining({
-        target: expect.any(Array),
+        target: [climbingEntry.userId, climbingEntry.providerId, climbingEntry.externalId],
         set: expect.objectContaining({ providerAbsentAt: null, raw: expect.any(Object) }),
       }),
     );
@@ -314,6 +353,7 @@ describe("MountainProjectProvider", () => {
   });
 
   it("reports and captures persistence failures without reconciling an incomplete write", async () => {
+    const now = vi.spyOn(Date, "now").mockReturnValueOnce(1_000).mockReturnValueOnce(1_100);
     const { db, insert } = makeDb();
     insert.mockReturnValueOnce({
       values: vi.fn().mockReturnValue({
@@ -331,10 +371,15 @@ describe("MountainProjectProvider", () => {
 
     const result = await provider.sync(makeRun(db));
 
-    expect(result).toMatchObject({
-      recordsSynced: 0,
-      errors: [expect.objectContaining({ message: "database offline" })],
-    });
+    try {
+      expect(result).toMatchObject({
+        recordsSynced: 0,
+        errors: [expect.objectContaining({ message: "database offline" })],
+      });
+      expect(result.duration).toBe(100);
+    } finally {
+      now.mockRestore();
+    }
     expect(mocks.captureException).toHaveBeenCalledWith(
       expect.objectContaining({ message: "database offline" }),
       { tags: { provider: "mountain-project", phase: "climbing_activity" } },
