@@ -433,7 +433,7 @@ describe("renderDeployServiceEnvironmentFiles", () => {
     ).toThrow("web deploy environment is missing required keys: OPENAI_APPS_CHALLENGE_TOKEN");
   });
 
-  it.each([undefined, ""]) (
+  it.each([undefined, ""])(
     "fails before web startup when the MCP OIDC cookie key is missing or blank (%s)",
     (value) => {
       const directory = makeTemporaryDirectory();
@@ -443,9 +443,9 @@ describe("renderDeployServiceEnvironmentFiles", () => {
       else environment.MCP_OIDC_COOKIE_KEY = value;
       writeFileSync(sourcePath, dotenv(environment));
 
-      expect(() => renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services"))).toThrow(
-        "web deploy environment is missing required keys: MCP_OIDC_COOKIE_KEY",
-      );
+      expect(() =>
+        renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services")),
+      ).toThrow("web deploy environment is missing required keys: MCP_OIDC_COOKIE_KEY");
     },
   );
 

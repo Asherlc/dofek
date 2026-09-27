@@ -52,21 +52,18 @@ describe("validateDeployEnvironment", () => {
     );
   });
 
-  it.each([undefined, "   "]) (
-    "requires a nonblank MCP OIDC cookie key (%s)",
-    (value) => {
-      const environment: Record<string, string | undefined> = {
-        ...validEnvironment(),
-        MCP_OIDC_COOKIE_KEY: value,
-      };
+  it.each([undefined, "   "])("requires a nonblank MCP OIDC cookie key (%s)", (value) => {
+    const environment: Record<string, string | undefined> = {
+      ...validEnvironment(),
+      MCP_OIDC_COOKIE_KEY: value,
+    };
 
-      expect(() => validateDeployEnvironment(environment)).toThrow(
-        value === undefined
-          ? "Rendered Infisical dotenv is missing required keys: MCP_OIDC_COOKIE_KEY"
-          : "Rendered Infisical dotenv is missing required keys: MCP_OIDC_COOKIE_KEY (empty)",
-      );
-    },
-  );
+    expect(() => validateDeployEnvironment(environment)).toThrow(
+      value === undefined
+        ? "Rendered Infisical dotenv is missing required keys: MCP_OIDC_COOKIE_KEY"
+        : "Rendered Infisical dotenv is missing required keys: MCP_OIDC_COOKIE_KEY (empty)",
+    );
+  });
 
   it("requires the processor erasure and retention credentials", () => {
     const environment = validEnvironment();
