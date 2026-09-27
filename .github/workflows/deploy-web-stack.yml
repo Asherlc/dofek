@@ -818,9 +818,18 @@ jobs:
                   }
                 }
               }; then
+                if [ "$replicas" != "${desired_replicas}/${desired_replicas}" ]; then
+                  if [ "$SECONDS" -ge "$wait_deadline_seconds" ]; then
+                    docker service ps "$service_name" --no-trunc
+                    echo "::error::${service_name} did not regain its desired replicas after rollback"
+                    exit 124
+                  fi
+                  echo "${service_name} rollback is complete; waiting for the rolled-back web replicas to converge"
+                  sleep 10
+                  continue
+                fi
                 docker service ps "$service_name" --no-trunc
                 echo "web_convergence_failed=true" >> "$GITHUB_OUTPUT"
-                echo "web_rollback_image=$image" >> "$GITHUB_OUTPUT"
                 echo "::warning::${service_name} reached a terminal rollback or reverted image; continuing through database and CDC safety gates before failing this deployment"
                 break
               fi
@@ -1062,23 +1071,28 @@ jobs:
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
           WEB_CONVERGENCE_FAILED: ${{ steps.deploy_stack_quiesced.outputs.web_convergence_failed }}
-          WEB_ROLLBACK_IMAGE: ${{ steps.deploy_stack_quiesced.outputs.web_rollback_image }}
         run: |
           stack_file_flags=()
           read -r -a stack_file_flags <<< "$STACK_FILE_FLAGS"
           if [ "$WEB_CONVERGENCE_FAILED" = "true" ]; then
-            if [ -z "$WEB_ROLLBACK_IMAGE" ]; then
-              echo "::error::Web rollback was deferred without a captured rollback image"
-              exit 1
-            fi
-            web_rollback_override="$RUNNER_TEMP/web-rollback-image.yml"
-            printf 'services:\n  web:\n    image: "%s"\n' "$WEB_ROLLBACK_IMAGE" > "$web_rollback_override"
-            stack_file_flags+=(-c "$web_rollback_override")
+            web_excluded_stack_config="$RUNNER_TEMP/stack-without-web.yml"
             node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
-              docker stack config "${stack_file_flags[@]}" >/dev/null
+              docker stack config "${stack_file_flags[@]}" \
+              | node --input-type=module -e '
+                import { parse, stringify } from "yaml";
+                let input = "";
+                for await (const chunk of process.stdin) input += chunk;
+                const config = parse(input);
+                if (!config.services?.web) throw new Error("Resolved stack config is missing services.web");
+                delete config.services.web;
+                process.stdout.write(stringify(config));
+              ' > "$web_excluded_stack_config"
+            stack_file_flags=(-c "$web_excluded_stack_config")
+          else
+            stack_file_flags+=(--prune)
           fi
           set +e
-          timeout 20m node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack deploy "${stack_file_flags[@]}" --with-registry-auth --prune --detach=true "$STACK_NAME"
+          timeout 20m node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack deploy "${stack_file_flags[@]}" --with-registry-auth --detach=true "$STACK_NAME"
           status=$?
           set -e
           if [ "$status" -eq 124 ]; then
@@ -1228,6 +1242,9 @@ jobs:
         if: failure() && steps.deploy_stack_quiesced.conclusion == 'success' && steps.deploy_stack_full.conclusion == 'skipped'
         run: |
           message="analytics-worker, all three metric-stream ClickHouse sinks, and processing-reconciliation remain quiesced because a post-quiesce prerequisite failed. Resolve the failed readiness or CDC setup step, then rerun the deployment."
+          if [ "${{ steps.deploy_stack_quiesced.outputs.web_convergence_failed }}" = "true" ]; then
+            message="$message The web service rolled back or reverted to its previous image; its prior Swarm configuration remains in place."
+          fi
           echo "::error::$message"
           {
             echo "### Processing services remain quiesced"
