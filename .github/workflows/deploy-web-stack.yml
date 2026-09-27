@@ -1077,7 +1077,7 @@ jobs:
           if [ "$WEB_CONVERGENCE_FAILED" = "true" ]; then
             web_excluded_stack_config="$RUNNER_TEMP/stack-without-web.yml"
             node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
-              docker stack config "${stack_file_flags[@]}" \
+              docker stack config --skip-interpolation "${stack_file_flags[@]}" \
               | node --input-type=module -e '
                 import { parse, stringify } from "yaml";
                 let input = "";

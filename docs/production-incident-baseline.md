@@ -27449,6 +27449,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   replicas with no update in progress. Their service task lists were empty.
   `dofek_worker` remained `1/1`; its logs showed body post-sync read-model
   refreshes completing at 2026-09-27 15:17 UTC and repeatedly around 15:30 UTC.
+  The inspection used [`docker service inspect`](https://docs.docker.com/reference/cli/docker/service/inspect/),
+  [`docker service ps`](https://docs.docker.com/reference/cli/docker/service/ps/),
+  and [`docker service logs`](https://docs.docker.com/reference/cli/docker/service/logs/).
 - **Root cause:** The analytics worker and processing reconciler were
   configured with zero desired replicas, so no scheduled analytics or
   reconciliation cycle could progress. Why they were left at zero is unknown.

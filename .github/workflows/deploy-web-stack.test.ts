@@ -696,6 +696,7 @@ ${workflowRunScript(step)}
     expect(result.status).toBe(0);
     expect(result.stackDeployArgs).not.toContain("--prune");
     expect(workflowText).toContain("delete config.services.web");
+    expect(workflowText).toContain("docker stack config --skip-interpolation");
   });
 
   it("does not add the web rollback override to a normal full-stack deploy", () => {
