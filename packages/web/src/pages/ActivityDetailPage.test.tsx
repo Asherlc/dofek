@@ -43,8 +43,9 @@ vi.mock("@tanstack/react-router", () => ({
   ),
 }));
 
-const mockActivity: ActivityDetail = {
+const mockActivity: ActivityDetail & { displayedDate?: string } = {
   id: "test-123",
+  displayedDate: "2026-03-18",
   notes: null,
   perceivedExertion: null,
   maxSpeed: null,
@@ -187,6 +188,7 @@ const mockTickSuggestionsUseQuery = vi.fn((_input?: unknown, _options?: { enable
 const mockAttachTickMutate = vi.fn();
 const mockClimbingEntriesInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockTickSuggestionsInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockClimbingSessionSummaryInvalidate = vi.fn().mockResolvedValue(undefined);
 
 interface MockHrZone {
   zone: number;
@@ -323,6 +325,7 @@ vi.mock("../lib/trpc.ts", () => ({
       climbing: {
         activityEntries: { invalidate: mockClimbingEntriesInvalidate },
         unattachedMountainProjectTicks: { invalidate: mockTickSuggestionsInvalidate },
+        sessionSummary: { invalidate: mockClimbingSessionSummaryInvalidate },
       },
     }),
   },
@@ -370,6 +373,7 @@ afterEach(() => {
   mockAttachTickMutate.mockClear();
   mockClimbingEntriesInvalidate.mockClear();
   mockTickSuggestionsInvalidate.mockClear();
+  mockClimbingSessionSummaryInvalidate.mockClear();
   mockStrengthExercisesUseQuery.mockReset();
   mockStrengthExercisesUseQuery.mockReturnValue({
     data: [],
@@ -701,6 +705,28 @@ describe("ActivityDetailPage", () => {
 
     expect(screen.getByRole("heading", { name: "running" })).toBeDefined();
     expect(screen.queryByText(/^Source:/)).toBeNull();
+  });
+
+  it("renders the server-provided calendar date at a UTC boundary", async () => {
+    const ActivityHeader = await importActivityHeader();
+    renderWithUnits(
+      <ActivityHeader
+        activity={{
+          ...mockActivity,
+          startedAt: "2026-03-18T00:30:00.000Z",
+          displayedDate: "2026-03-18",
+          localTimeContext: {
+            timezone: null,
+            startUtcOffsetMinutes: 120,
+            endUtcOffsetMinutes: 120,
+            source: "provider_offset",
+          },
+        }}
+        units={new UnitConverter("metric")}
+      />,
+    );
+
+    expect(screen.getByText(/Wed, Mar 18, 2026 at/)).toBeDefined();
   });
 
   it("omits duration for an activity that has not ended", async () => {
@@ -1717,6 +1743,7 @@ describe("ActivityDetailPage", () => {
       await waitFor(() => {
         expect(mockClimbingEntriesInvalidate).toHaveBeenCalledWith({ id: "test-123" });
         expect(mockTickSuggestionsInvalidate).toHaveBeenCalledWith({ activityId: "test-123" });
+        expect(mockClimbingSessionSummaryInvalidate).toHaveBeenCalledWith();
       });
       expect(mockActivityByIdInvalidate).not.toHaveBeenCalled();
       expect(mockActivityStreamInvalidate).not.toHaveBeenCalled();

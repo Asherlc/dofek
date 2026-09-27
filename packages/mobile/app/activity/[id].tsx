@@ -647,6 +647,7 @@ export default function ActivityDetailScreen() {
     onSuccess: async (_result, input) => {
       await Promise.all([
         trpcUtils.climbing.activityEntries.invalidate({ id: input.activityId }),
+        trpcUtils.climbing.sessionSummary.invalidate(),
         trpcUtils.climbing.unattachedMountainProjectTicks.invalidate({
           activityId: input.activityId,
         }),
@@ -885,7 +886,7 @@ export default function ActivityDetailScreen() {
           </View>
         </View>
         <Text style={styles.dateTime}>
-          {formatDateLong(activity.startedAt)}
+          {formatDateLong(activity.displayedDate, { timeZone: "UTC" })}
           {" at "}
           {localStartTime === "--" ? "Local time unavailable" : localStartTime}
         </Text>

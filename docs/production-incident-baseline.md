@@ -27411,7 +27411,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 ## 2026-09-26 — Mountain Project activity missing from the activity list
 
-- **Status:** Server fix implemented on the current branch; production deployment and database integration validation remain pending. No repair or replay performed.
+- **Status:** Server fix implemented and focused PostgreSQL integration validation passed; production deployment and authenticated production calendar verification remain pending. No repair or replay performed.
 - **Symptoms / user impact:** The user could not see today's Mountain Project
   activity in the app. The activity list is served from ClickHouse read models.
 - **Evidence:** Production `fitness.sync_log` showed successful Mountain
@@ -27436,10 +27436,11 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Validation:** Read-only comparison confirmed one Postgres session with two
   entries, matching one ClickHouse mirror/read-model session. The stored start
   is `2026-09-26 00:00:00+00`; projecting it to `America/Los_Angeles` yields
-  `2026-09-25`, while the Mountain Project export date is `2026-09-26`.
+  `2026-09-25`, while the Mountain Project export date is `2026-09-26`. The
+  earlier integration attempt was blocked before Vitest by Docker address-pool
+  exhaustion, and automatic approval review rejected removal of an unattached
+  network. A successful workspace integration run then passed 10/10 tests via
+  `pnpm test:integration -- packages/server/src/repositories/climbing-repository.integration.test.ts packages/server/src/routers/climbing.integration.test.ts src/providers/mountain-project-sync.integration.test.ts`, covering [PostgreSQL climbing summaries](../packages/server/src/repositories/climbing-repository.integration.test.ts), [activity detail and tick matching routes](../packages/server/src/routers/climbing.integration.test.ts), and [Mountain Project export reconciliation](../src/providers/mountain-project-sync.integration.test.ts). Focused unit/mobile suites passed 251/251 tests, and `pnpm typecheck` passed.
 - **Remaining risk / follow-up:** Production still shows the previous local day
-  until this branch is deployed. Unit and type checks passed. Database
-  integration validation was blocked before Vitest by Docker address-pool
-  exhaustion; automatic approval review rejected removal of an unattached
-  network. Run the focused integration test when this workspace can create its
-  Compose network, then verify the authenticated production calendar response.
+  until this branch is deployed. Verify the authenticated production calendar
+  response after deployment.

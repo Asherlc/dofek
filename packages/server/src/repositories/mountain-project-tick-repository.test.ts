@@ -11,6 +11,7 @@ function activity(overrides: Partial<ActivityRow> = {}): ActivityRow {
     canonical_type: "climbing",
     modality: null,
     started_at: "2026-01-02T00:30:00.000Z",
+    displayed_date: "2026-01-01",
     ended_at: null,
     name: "Climbing",
     notes: null,
@@ -79,6 +80,28 @@ describe("MountainProjectTickRepository", () => {
     if (!(statement instanceof SQL)) throw new Error("Expected suggestion SQL");
     const query = new PgDialect().sqlToQuery(statement);
     expect(query.params).toContain("2026-01-01");
+  });
+
+  it("uses the server-resolved displayed date when an authoritative source offset applies", async () => {
+    const execute = vi.fn().mockResolvedValue([]);
+    vi.spyOn(ActivityRepository.prototype, "findById").mockResolvedValue(
+      activity({
+        start_utc_offset_minutes: 120,
+        local_time_source: "provider_offset",
+        displayed_date: "2026-01-02",
+      }),
+    );
+    const repository = new MountainProjectTickRepository(
+      { execute },
+      "user-1",
+      "America/Los_Angeles",
+    );
+
+    await repository.getSuggestions("canonical-group-id");
+
+    const statement = execute.mock.calls[0]?.[0];
+    if (!(statement instanceof SQL)) throw new Error("Expected suggestion SQL");
+    expect(new PgDialect().sqlToQuery(statement).params).toContain("2026-01-02");
   });
 
   it("updates one eligible tick conditionally and reports a concurrent attachment conflict", async () => {

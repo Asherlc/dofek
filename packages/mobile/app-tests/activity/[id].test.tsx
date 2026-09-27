@@ -251,6 +251,7 @@ const mockTickSuggestionsQuery = vi.fn((_input?: unknown, _options?: unknown) =>
 const mockAttachTickMutate = vi.fn();
 const mockClimbingEntriesInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockTickSuggestionsInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockClimbingSessionSummaryInvalidate = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
@@ -321,6 +322,7 @@ vi.mock("../../lib/trpc", () => ({
       climbing: {
         activityEntries: { invalidate: mockClimbingEntriesInvalidate },
         unattachedMountainProjectTicks: { invalidate: mockTickSuggestionsInvalidate },
+        sessionSummary: { invalidate: mockClimbingSessionSummaryInvalidate },
       },
     }),
   },
@@ -329,6 +331,7 @@ vi.mock("../../lib/trpc", () => ({
 const baseCyclingActivity = {
   id: "00000000-0000-0000-0000-000000000001",
   activityType: "cycling",
+  displayedDate: "2026-04-14",
   startedAt: "2026-04-14T10:00:00.000Z",
   endedAt: "2026-04-14T11:00:00.000Z",
   localTimeContext: {
@@ -410,6 +413,7 @@ beforeEach(() => {
   mockAttachTickMutate.mockClear();
   mockClimbingEntriesInvalidate.mockClear();
   mockTickSuggestionsInvalidate.mockClear();
+  mockClimbingSessionSummaryInvalidate.mockClear();
   mockHangboardDetailsQuery.mockClear();
   mockRecomputeMutate.mockClear();
   mockRecomputeShouldFail.mockReset();
@@ -435,6 +439,30 @@ beforeEach(() => {
 });
 
 describe("ActivityDetailScreen", () => {
+  it("renders the server-provided calendar date at a UTC boundary", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: {
+        ...baseCyclingActivity,
+        activityType: "climbing",
+        startedAt: "2026-03-18T00:30:00.000Z",
+        displayedDate: "2026-03-18",
+        localTimeContext: {
+          timezone: null,
+          startUtcOffsetMinutes: 120,
+          endUtcOffsetMinutes: 120,
+          source: "provider_offset",
+        },
+      },
+      isLoading: false,
+      error: null,
+    });
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+
+    render(React.createElement(ActivityDetailScreen));
+
+    expect(screen.getByText(/2026-03-18 at/)).toBeTruthy();
+  });
+
   it("renders server tick suggestions and attaches only the selected tick", async () => {
     mockByIdQuery.mockReturnValue({
       data: { ...baseCyclingActivity, activityType: "climbing", name: "Morning Rock Climb" },
@@ -488,6 +516,7 @@ describe("ActivityDetailScreen", () => {
       expect(mockTickSuggestionsInvalidate).toHaveBeenCalledWith({
         activityId: baseCyclingActivity.id,
       });
+      expect(mockClimbingSessionSummaryInvalidate).toHaveBeenCalledWith();
     });
     expect(mockActivityByIdInvalidate).not.toHaveBeenCalled();
   });

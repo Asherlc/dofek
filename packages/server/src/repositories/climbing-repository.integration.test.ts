@@ -7,9 +7,15 @@ import { executeWithSchema } from "../lib/typed-sql.ts";
 import { ClimbingRepository } from "./climbing-repository.ts";
 
 const ATTACHED_ID = "b0000000-0000-4000-8000-000000000001";
+const ABSENT_ATTACHED_ID = "b0000000-0000-4000-8000-000000000004";
 const UNATTACHED_ID = "b0000000-0000-4000-8000-000000000002";
 const ABSENT_ID = "b0000000-0000-4000-8000-000000000003";
 const activityIdSchema = z.object({ id: z.string(), group_id: z.string() });
+const entryStateSchema = z.object({
+  activity_id: z.string().nullable(),
+  provider_absent_at: z.string().nullable(),
+  raw: z.record(z.string(), z.unknown()),
+});
 
 describe("ClimbingRepository PostgreSQL summaries", () => {
   let context: TestContext;
@@ -44,11 +50,15 @@ describe("ClimbingRepository PostgreSQL summaries", () => {
     ) VALUES
       (${ATTACHED_ID}, ${TEST_USER_ID}, 'climbing-summary-test', ${activityMemberId}, NULL,
        'attached-send', 'boulder', 'v_scale', 'V3', TRUE, 2, NULL, '{}'::jsonb),
+      (${ABSENT_ATTACHED_ID}, ${TEST_USER_ID}, 'mountain-project', ${activityMemberId}, NULL,
+       'absent-attached-send', 'boulder', 'v_scale', 'V8', TRUE, 5, NOW(), '{"retained":true}'::jsonb),
       (${UNATTACHED_ID}, ${TEST_USER_ID}, 'mountain-project', NULL,
-       (NOW() AT TIME ZONE 'America/Los_Angeles')::date - 2,
+       (SELECT (started_at AT TIME ZONE 'America/Los_Angeles')::date
+        FROM fitness.activity WHERE id = ${activityMemberId}::uuid),
        'unattached-send', 'boulder', 'v_scale', 'V4', TRUE, 3, NULL, '{}'::jsonb),
       (${ABSENT_ID}, ${TEST_USER_ID}, 'mountain-project', NULL,
-       (NOW() AT TIME ZONE 'America/Los_Angeles')::date - 2,
+       (SELECT (started_at AT TIME ZONE 'America/Los_Angeles')::date
+        FROM fitness.activity WHERE id = ${activityMemberId}::uuid),
        'absent-send', 'boulder', 'v_scale', 'V8', TRUE, 5, NOW(), '{}'::jsonb)`);
   }, 60_000);
 
@@ -56,7 +66,7 @@ describe("ClimbingRepository PostgreSQL summaries", () => {
     await context?.cleanup();
   });
 
-  it("includes active unattached ticks in grade and volume summaries, but keeps sessions and details activity-based", async () => {
+  it("excludes absent attached ticks from active reads and restores them when the provider returns", async () => {
     const repository = new ClimbingRepository(context.db, TEST_USER_ID, "America/Los_Angeles");
 
     const progression = await repository.getGradeProgression(30);
@@ -75,5 +85,38 @@ describe("ClimbingRepository PostgreSQL summaries", () => {
     expect(sessions[0]?.toDetail()).toMatchObject({ attempts: 2, sends: 1 });
     const details = await repository.getActivityEntries(activityId);
     expect(details.map((row) => row.toDetail().id)).toEqual([ATTACHED_ID]);
+
+    const retainedRows = await executeWithSchema(
+      context.db,
+      entryStateSchema,
+      sql`SELECT activity_id::text AS activity_id, provider_absent_at::text AS provider_absent_at, raw
+          FROM fitness.climbing_entry WHERE id = ${ABSENT_ATTACHED_ID}::uuid`,
+    );
+    expect(retainedRows).toEqual([
+      expect.objectContaining({
+        activity_id: activityMemberId,
+        provider_absent_at: expect.any(String),
+        raw: { retained: true },
+      }),
+    ]);
+
+    await context.db.execute(sql`UPDATE fitness.climbing_entry
+      SET provider_absent_at = NULL WHERE id = ${ABSENT_ATTACHED_ID}::uuid`);
+
+    expect((await repository.getGradeProgression(30)).map((row) => row.toDetail())).toEqual([
+      expect.objectContaining({ climbType: "boulder", grade: "V8" }),
+    ]);
+    expect((await repository.getVolumeByGrade(30)).map((row) => row.toDetail())).toEqual([
+      expect.objectContaining({ grade: "V3", attempts: 2, sends: 1 }),
+      expect.objectContaining({ grade: "V4", attempts: 3, sends: 1 }),
+      expect.objectContaining({ grade: "V8", attempts: 5, sends: 1 }),
+    ]);
+    expect((await repository.getSessionSummaries(30))[0]?.toDetail()).toMatchObject({
+      attempts: 7,
+      sends: 2,
+    });
+    expect(
+      (await repository.getActivityEntries(activityId)).map((row) => row.toDetail().id),
+    ).toEqual([ABSENT_ATTACHED_ID, ATTACHED_ID]);
   });
 });

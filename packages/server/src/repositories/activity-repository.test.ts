@@ -106,6 +106,8 @@ describe("ActivityRepository", () => {
             end_utc_offset_minutes: null,
             local_time_source: "unknown",
             perceived_exertion: null,
+            displayed_date:
+              typeof row.displayed_date === "string" ? row.displayed_date : "2026-01-01",
             ...row,
           }
         : row,
@@ -985,6 +987,7 @@ describe("ActivityRepository", () => {
             canonical_type: "running",
             raw_type: "running",
             started_at: "2024-01-15T10:00:00.000Z",
+            displayed_date: "2024-01-15",
             ended_at: "2024-01-15T10:45:00.000Z",
             timezone: null,
             start_utc_offset_minutes: null,

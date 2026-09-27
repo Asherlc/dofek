@@ -1,13 +1,16 @@
+import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
+import { activityRouter } from "./activity.ts";
 import { climbingRouter } from "./climbing.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 const createCaller = createTestCallerFactory(climbingRouter);
+const createActivityCaller = createTestCallerFactory(activityRouter);
 const activityIdRowSchema = z.object({
   id: z.string(),
   external_id: z.string(),
@@ -16,6 +19,7 @@ const hangboardingActivityIdRowSchema = activityIdRowSchema.extend({
   started_at: z.string(),
 });
 const idOnlySchema = z.object({ id: z.string() });
+const activityIdentitySchema = z.object({ id: z.string(), group_id: z.string() });
 
 describe("Hangboarding climbing router integration", () => {
   let testContext: TestContext;
@@ -476,6 +480,49 @@ describe("climbing router integration", () => {
     await expect(
       caller.unattachedMountainProjectTicks({ activityId: visibleClimbingActivityId }),
     ).resolves.toEqual([]);
+  });
+
+  it("returns the same canonical displayed date in activity detail and tick matching across UTC midnight", async () => {
+    const suffix = randomUUID();
+    await testContext.db.execute(sql`INSERT INTO fitness.provider (id, name)
+      VALUES ('tick-date-boundary-provider', 'Tick Date Boundary'),
+             ('mountain-project', 'Mountain Project')
+      ON CONFLICT (id) DO NOTHING`);
+    const activities = await executeWithSchema(
+      testContext.db,
+      activityIdentitySchema,
+      sql`INSERT INTO fitness.activity (
+        provider_id, user_id, external_id, canonical_type, provider_type, started_at,
+        local_time_source
+      ) VALUES (
+        'tick-date-boundary-provider', ${TEST_USER_ID}, ${`tick-date-boundary-activity-${suffix}`},
+        'climbing', 'climbing', '2026-01-02T00:30:00Z', 'unknown'
+      ) RETURNING id::text AS id, group_id::text AS group_id`,
+    );
+    const activity = activities[0];
+    if (!activity) throw new Error("Failed to seed UTC-boundary climbing activity");
+    const tickRows = await executeWithSchema(
+      testContext.db,
+      idOnlySchema,
+      sql`INSERT INTO fitness.climbing_entry (
+        user_id, provider_id, activity_id, unattached_date, external_id,
+        climb_type, grade_system, grade, sent, attempt_count, raw
+      ) VALUES (
+        ${TEST_USER_ID}, 'mountain-project', NULL, '2026-01-01', ${`tick-date-boundary-${suffix}`},
+        'boulder', 'v_scale', 'V4', TRUE, 1, '{}'::jsonb
+      ) RETURNING id::text AS id`,
+    );
+    const tick = tickRows[0];
+    if (!tick) throw new Error("Failed to seed UTC-boundary Mountain Project tick");
+
+    const context = { db: testContext.db, userId: TEST_USER_ID, timezone: "America/Los_Angeles" };
+    const detail = await createActivityCaller(context).byId({ id: activity.group_id });
+    const suggestions = await createCaller(context).unattachedMountainProjectTicks({
+      activityId: activity.group_id,
+    });
+
+    expect(detail.displayedDate).toBe("2026-01-01");
+    expect(suggestions.map((suggestion) => suggestion.id)).toContain(tick.id);
   });
 
   it("cascades climbing entries when an activity is deleted", async () => {

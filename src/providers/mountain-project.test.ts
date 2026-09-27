@@ -263,6 +263,30 @@ describe("MountainProjectProvider", () => {
     expect(db.execute).not.toHaveBeenCalled();
   });
 
+  it.each([
+    [
+      "a partially invalid export",
+      '2026-02-30,"Invalid Date",5.7,,https://www.mountainproject.com/route/1/invalid,1,"Colorado > Boulder",2.4,-1,Lead,Redpoint,Trad,,,1800',
+    ],
+    [
+      "an export with an unsupported tick",
+      '2026-08-10,"Ice Route",WI4,,https://www.mountainproject.com/route/2/ice,1,"Colorado > Boulder",2.4,-1,Lead,Onsight,Ice,,,0',
+    ],
+  ])("does not reconcile absent IDs from %s", async (_case, skippedRow) => {
+    const validRow =
+      '2026-08-10,"West Overhang",5.7,,https://www.mountainproject.com/route/105751342/west-overhang,1,"Colorado > Boulder",2.4,-1,Lead,Redpoint,Trad,,,1800';
+    const { db } = makeDb();
+    const provider = new MountainProjectProvider(
+      async () => new Response(exportCsv([validRow, skippedRow])),
+    );
+
+    const result = await provider.sync(makeRun(db));
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(db.execute).not.toHaveBeenCalled();
+  });
+
   it("does not reconcile when the public export request fails", async () => {
     const { db } = makeDb();
     const provider = new MountainProjectProvider(

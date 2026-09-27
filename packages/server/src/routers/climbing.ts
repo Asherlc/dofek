@@ -143,6 +143,7 @@ export const climbingRouter = router({
         ).attachTick(input);
         await Promise.all([
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.activityEntries:`),
+          queryCache.invalidateByPrefix(`${ctx.userId}:climbing.sessionSummary:`),
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.unattachedMountainProjectTicks:`),
         ]);
         return { attached: true as const };

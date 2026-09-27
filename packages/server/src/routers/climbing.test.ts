@@ -87,6 +87,7 @@ function makeResolvedActivity(id: string, resolvedFrom?: string): ActivityRow {
     avg_power: null,
     avg_speed: null,
     canonical_type: "climbing",
+    displayed_date: "2026-09-01",
     elevation_gain_m: null,
     elevation_loss_m: null,
     ended_at: "2026-09-01T11:00:00.000Z",
@@ -211,7 +212,7 @@ describe("climbingRouter", () => {
     ]);
   });
 
-  it("attaches a single tick and invalidates activity entry and suggestion caches", async () => {
+  it("attaches a single tick and invalidates affected climbing caches", async () => {
     invalidateByPrefix.mockClear();
     vi.spyOn(ActivityRepository.prototype, "findById").mockResolvedValue(
       makeResolvedActivity("734b5d3e-df2b-4ee0-888e-55ea539d913a"),
@@ -228,6 +229,7 @@ describe("climbingRouter", () => {
     expect(invalidateByPrefix).toHaveBeenCalledWith(
       "user-1:climbing.unattachedMountainProjectTicks:",
     );
+    expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:climbing.sessionSummary:");
   });
 
   it.each([

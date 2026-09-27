@@ -194,7 +194,11 @@ export class MountainProjectProvider implements SyncProvider {
               });
             count++;
           }
-          if (presentExternalIds.length > 0) {
+          if (
+            presentExternalIds.length > 0 &&
+            parsed.errors.length === 0 &&
+            parsed.unsupportedGradeCount === 0
+          ) {
             const presentIdsSql = sql.join(
               presentExternalIds.map((externalId) => sql`${externalId}`),
               sql`, `,

@@ -57,6 +57,7 @@ import { useUnitConverter } from "../lib/unitContext.ts";
 import { ClimbingEntryBreakdown } from "./activity-detail/components/ClimbingEntryBreakdown.tsx";
 import { DeleteActivityButton } from "./activity-detail/components/DeleteActivityButton.tsx";
 import { RecomputeActivityButton } from "./activity-detail/components/RecomputeActivityButton.tsx";
+import { UnattachedMountainProjectTicks } from "./activity-detail/components/UnattachedMountainProjectTicks.tsx";
 import { ProviderAbsentBanner } from "./ProviderAbsentBanner.tsx";
 
 const CHART_COLORS = {
@@ -139,6 +140,7 @@ export function ActivityDetailPage() {
     onSuccess: async (_result, input) => {
       await Promise.all([
         trpcUtils.climbing.activityEntries.invalidate({ id: input.activityId }),
+        trpcUtils.climbing.sessionSummary.invalidate(),
         trpcUtils.climbing.unattachedMountainProjectTicks.invalidate({
           activityId: input.activityId,
         }),
@@ -321,68 +323,13 @@ export function ActivityDetailPage() {
       )}
 
       {isClimbingActivity && (
-        <Section
-          title="Unattached Mountain Project ticks"
-          description="Ticks recorded for this day that can be attached to this climbing activity."
-        >
-          {tickSuggestions.error ? (
-            <p className="text-sm text-red-400">{userFacingErrorMessage(tickSuggestions.error)}</p>
-          ) : tickSuggestions.isLoading && !tickSuggestions.data ? (
-            <p className="text-sm text-muted">Loading Mountain Project ticks...</p>
-          ) : (tickSuggestions.data?.length ?? 0) === 0 ? (
-            <p className="text-sm text-muted">No unattached Mountain Project ticks for this day.</p>
-          ) : (
-            <div className="space-y-3">
-              {tickSuggestions.data?.map((tick) => {
-                const state = tickAttachState[tick.id];
-                const result =
-                  tick.sent === true
-                    ? "Sent"
-                    : tick.sent === false
-                      ? "Attempted"
-                      : "Status unknown";
-                return (
-                  <div
-                    key={tick.id}
-                    className="flex items-center justify-between gap-3 rounded-md border border-border p-3"
-                  >
-                    <div>
-                      <p className="font-medium">
-                        {tick.routeName ?? (tick.climbType === "boulder" ? "Boulder" : "Route")}
-                      </p>
-                      <p className="text-sm text-muted">
-                        {[
-                          tick.grade,
-                          result,
-                          tick.attemptCount === null
-                            ? null
-                            : `${tick.attemptCount} ${tick.attemptCount === 1 ? "attempt" : "attempts"}`,
-                          tick.locationName,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </p>
-                      {state?.error ? (
-                        <p role="alert" className="text-sm text-red-400">
-                          {state.error}
-                        </p>
-                      ) : null}
-                    </div>
-                    <button
-                      type="button"
-                      className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
-                      aria-label="Attach to this activity"
-                      disabled={state?.pending}
-                      onClick={() => handleAttachTick(tick.id)}
-                    >
-                      {state?.pending ? "Attaching..." : "Attach"}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </Section>
+        <UnattachedMountainProjectTicks
+          suggestions={tickSuggestions.data}
+          error={tickSuggestions.error}
+          isLoading={tickSuggestions.isLoading}
+          state={tickAttachState}
+          onAttach={handleAttachTick}
+        />
       )}
 
       {isHangboardingActivity && (
@@ -544,7 +491,7 @@ export function ActivityHeader({
         </span>
       </div>
       <p className="text-sm text-subtle">
-        {formatDateLong(activity.startedAt)} at{" "}
+        {formatDateLong(activity.displayedDate, { timeZone: "UTC" })} at{" "}
         {localStartTime === "--" ? "Local time unavailable" : localStartTime}
       </p>
       {(activity.sourceLinks.length > 0 || activity.sourceProviders.length > 0) && (

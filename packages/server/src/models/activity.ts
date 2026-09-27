@@ -23,6 +23,7 @@ export type {
 
 export interface ActivityDetail {
   id: string;
+  displayedDate: string;
   resolvedFrom?: string;
   activityType: string;
   rawType: string | null;
@@ -65,6 +66,7 @@ export interface ActivityDetail {
 
 export interface ActivityRow {
   id: string;
+  displayed_date: string;
   resolved_from?: string | null;
   canonical_type: string;
   raw_type?: string;
@@ -134,6 +136,10 @@ export class Activity {
 
   get startedAt(): string {
     return String(this.#row.started_at);
+  }
+
+  get displayedDate(): string {
+    return this.#row.displayed_date;
   }
 
   get endedAt(): string | null {
@@ -234,6 +240,7 @@ export class Activity {
     const sourceLinks = this.sourceLinks;
     return {
       id: this.id,
+      displayedDate: this.displayedDate,
       ...(this.resolvedFrom ? { resolvedFrom: this.resolvedFrom } : {}),
       activityType: this.activityType,
       rawType: this.rawType,

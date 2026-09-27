@@ -142,6 +142,28 @@ describe("MountainProjectProvider.sync() (integration)", () => {
       .from(activity)
       .where(and(eq(activity.providerId, "mountain-project"), eq(activity.userId, userId)));
     expect(activities).toHaveLength(1);
+
+    const validRow = fixtureCsv.split("\n").find((line) => line.includes("West Overhang"));
+    if (!validRow) throw new Error("Expected a valid Mountain Project fixture row");
+    currentExport = [
+      fixtureCsv.split("\n")[0],
+      validRow,
+      '2026-02-30,"Invalid Date",5.7,,https://www.mountainproject.com/route/1/invalid,1,"Colorado > Boulder",2.4,-1,Lead,Redpoint,Trad,,,1800',
+    ].join("\n");
+    await expect(run()).resolves.toMatchObject({ recordsSynced: 1, errors: [expect.any(Object)] });
+    entries = await ctx.db.select().from(climbingEntry);
+    expect(entries).toHaveLength(3);
+    expect(entries.every((entry) => entry.providerAbsentAt === null)).toBe(true);
+
+    currentExport = [
+      fixtureCsv.split("\n")[0],
+      validRow,
+      '2026-08-10,"Ice Route",WI4,,https://www.mountainproject.com/route/2/ice,1,"Colorado > Boulder",2.4,-1,Lead,Onsight,Ice,,,0',
+    ].join("\n");
+    await expect(run()).resolves.toMatchObject({ recordsSynced: 1, errors: [expect.any(Object)] });
+    entries = await ctx.db.select().from(climbingEntry);
+    expect(entries).toHaveLength(3);
+    expect(entries.every((entry) => entry.providerAbsentAt === null)).toBe(true);
   });
 
   it("does not retire existing ticks after an empty or failed export", async () => {

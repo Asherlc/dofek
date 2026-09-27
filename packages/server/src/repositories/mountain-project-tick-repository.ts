@@ -33,45 +33,6 @@ export type MountainProjectTickSuggestion = {
 
 const updateSchema = z.object({ id: z.string() });
 
-const AUTHORITATIVE_ACTIVITY_DATE_SOURCES = new Set([
-  "provider_timezone",
-  "device_timezone",
-  "user_home_timezone",
-  "gps_timezone",
-  "home_zone_fallback",
-  "provider_offset",
-  "device_offset",
-]);
-
-function activityDate(
-  activity: Awaited<ReturnType<ActivityRepository["findById"]>>,
-  timezone: string,
-) {
-  if (!activity) return null;
-  const start = new Date(activity.started_at);
-  if (
-    activity.start_utc_offset_minutes !== null &&
-    activity.start_utc_offset_minutes !== undefined &&
-    AUTHORITATIVE_ACTIVITY_DATE_SOURCES.has(activity.local_time_source)
-  ) {
-    return new Date(start.getTime() + activity.start_utc_offset_minutes * 60_000)
-      .toISOString()
-      .slice(0, 10);
-  }
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(start);
-  const value = (type: Intl.DateTimeFormatPartTypes) =>
-    parts.find((part) => part.type === type)?.value;
-  const year = value("year");
-  const month = value("month");
-  const day = value("day");
-  return year && month && day ? `${year}-${month}-${day}` : null;
-}
-
 export class MountainProjectTickRepository extends BaseRepository {
   constructor(
     db: Pick<Database, "execute">,
@@ -98,8 +59,7 @@ export class MountainProjectTickRepository extends BaseRepository {
         message: "Mountain Project ticks can only be matched to a climbing activity.",
       });
     }
-    const displayedDate = activityDate(activity, this.timezone);
-    if (!displayedDate) return [];
+    const displayedDate = activity.displayed_date;
 
     const rows = await this.query(
       suggestionSchema,
@@ -143,13 +103,7 @@ export class MountainProjectTickRepository extends BaseRepository {
         message: "Choose a climbing activity to attach this tick.",
       });
     }
-    const displayedDate = activityDate(activity, this.timezone);
-    if (!displayedDate) {
-      throw new TRPCError({
-        code: "PRECONDITION_FAILED",
-        message: "This activity does not have a usable displayed date. Refresh it and try again.",
-      });
-    }
+    const displayedDate = activity.displayed_date;
     const localDate = postgresActivityLocalDate(sql`member`, this.timezone);
     const updated = await this.query(
       updateSchema,

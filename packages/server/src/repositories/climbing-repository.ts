@@ -229,7 +229,9 @@ export class ClimbingRepository extends BaseRepository {
               ce.id, ce.activity_id, ce.climb_type, ce.grade_system, ce.grade,
               ce.sent, ce.attempt_count
             FROM fitness.v_activity AS a
-            JOIN fitness.climbing_entry AS ce ON ce.activity_id = ANY(a.member_activity_ids)
+            JOIN fitness.climbing_entry AS ce
+              ON ce.activity_id = ANY(a.member_activity_ids)
+             AND ce.provider_absent_at IS NULL
             WHERE ${this.#activityWindowPredicate(days)}
             UNION ALL
             SELECT
@@ -284,7 +286,9 @@ export class ClimbingRepository extends BaseRepository {
               ce.id, ce.activity_id, ce.climb_type, ce.grade_system, ce.grade,
               ce.sent, ce.attempt_count
             FROM fitness.v_activity AS a
-            JOIN fitness.climbing_entry AS ce ON ce.activity_id = ANY(a.member_activity_ids)
+            JOIN fitness.climbing_entry AS ce
+              ON ce.activity_id = ANY(a.member_activity_ids)
+             AND ce.provider_absent_at IS NULL
             WHERE ${this.#activityWindowPredicate(days)}
             UNION ALL
             SELECT
@@ -351,7 +355,9 @@ export class ClimbingRepository extends BaseRepository {
             ce.grade_system,
             ce.grade
           FROM fitness.v_activity AS a
-          JOIN fitness.climbing_entry AS ce ON ce.activity_id = ANY(a.member_activity_ids)
+          JOIN fitness.climbing_entry AS ce
+            ON ce.activity_id = ANY(a.member_activity_ids)
+           AND ce.provider_absent_at IS NULL
           LEFT JOIN LATERAL (
             SELECT COUNT(*)::int AS attempt_count, BOOL_OR(attempt.outcome = 'sent') AS sent
             FROM fitness.climbing_attempt AS attempt
@@ -428,7 +434,9 @@ export class ClimbingRepository extends BaseRepository {
             ce.source_name,
             ce.wall_angle_degrees
           FROM fitness.v_activity AS a
-          JOIN fitness.climbing_entry AS ce ON ce.activity_id = ANY(a.member_activity_ids)
+          JOIN fitness.climbing_entry AS ce
+            ON ce.activity_id = ANY(a.member_activity_ids)
+           AND ce.provider_absent_at IS NULL
           LEFT JOIN LATERAL (
             SELECT
               COUNT(*)::int AS attempt_count,
