@@ -106,6 +106,8 @@ describe("ActivityRepository", () => {
             end_utc_offset_minutes: null,
             local_time_source: "unknown",
             perceived_exertion: null,
+            displayed_date:
+              typeof row.displayed_date === "string" ? row.displayed_date : "2026-01-01",
             ...row,
           }
         : row,
@@ -238,22 +240,14 @@ describe("ActivityRepository", () => {
       await expect(repo.listVisibleActivityIdsSince("2026-02-01")).resolves.toEqual(["activity-1"]);
 
       const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
-      expect(compiledQuery.sql).toContain("started_at >= ($2::date AT TIME ZONE $3)");
-      expect(compiledQuery.sql).toContain(
-        "started_at >= (CAST($4::date AS timestamp without time zone) AT TIME ZONE $5)",
+      expect(compiledQuery.sql.match(/a\.provider_id = 'mountain-project'/g)).toHaveLength(3);
+      expect(compiledQuery.sql).toContain("END >= $10::date");
+      expect(compiledQuery.sql).toContain("END >= $19::date");
+      expect(compiledQuery.sql).toContain("END < $28::date");
+      expect(compiledQuery.sql).toContain("a.start_utc_offset_minutes IS NOT NULL");
+      expect(compiledQuery.params).toEqual(
+        expect.arrayContaining(["user-1", "2026-02-01", "2026-03-10", "2026-03-17"]),
       );
-      expect(compiledQuery.sql).toContain(
-        "started_at < (CAST($6::date AS timestamp without time zone) AT TIME ZONE $7)",
-      );
-      expect(compiledQuery.params).toEqual([
-        "user-1",
-        "2026-02-01",
-        "America/Los_Angeles",
-        "2026-03-10",
-        "America/Los_Angeles",
-        "2026-03-17",
-        "America/Los_Angeles",
-      ]);
     });
 
     it("listVisibleActivityIdsInRange applies an exclusive local-date end", async () => {
@@ -265,15 +259,13 @@ describe("ActivityRepository", () => {
       );
 
       const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
-      expect(compiledQuery.sql).toContain("started_at >= ($2::date AT TIME ZONE $3)");
-      expect(compiledQuery.sql).toContain("started_at < ($4::date AT TIME ZONE $5)");
-      expect(compiledQuery.params).toEqual([
-        "user-1",
-        "2026-02-01",
-        "America/Los_Angeles",
-        "2026-03-01",
-        "America/Los_Angeles",
-      ]);
+      expect(compiledQuery.sql.match(/a\.provider_id = 'mountain-project'/g)).toHaveLength(2);
+      expect(compiledQuery.sql).toContain("END >= $10::date");
+      expect(compiledQuery.sql).toContain("END < $19::date");
+      expect(compiledQuery.sql).toContain("a.start_utc_offset_minutes IS NOT NULL");
+      expect(compiledQuery.params).toEqual(
+        expect.arrayContaining(["user-1", "2026-02-01", "2026-03-01"]),
+      );
     });
 
     it("countVisibleInWindow counts rows in v_activity", async () => {
@@ -987,6 +979,7 @@ describe("ActivityRepository", () => {
             canonical_type: "running",
             raw_type: "running",
             started_at: "2024-01-15T10:00:00.000Z",
+            displayed_date: "2024-01-15",
             ended_at: "2024-01-15T10:45:00.000Z",
             timezone: null,
             start_utc_offset_minutes: null,

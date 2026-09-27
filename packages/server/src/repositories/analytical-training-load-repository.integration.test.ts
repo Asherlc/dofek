@@ -84,10 +84,10 @@ describe("AnalyticalTrainingLoadRepository database semantics", () => {
     `);
     await postgres.db.execute(sql`
       INSERT INTO fitness.climbing_entry (
-        activity_id, climb_type, grade_system, grade, sent, attempt_count
+        user_id, provider_id, activity_id, climb_type, grade_system, grade, sent, attempt_count
       ) VALUES
-        (${climbingActivityId}::uuid, 'boulder', 'v_scale', 'V5', true, 3),
-        (${climbingActivityId}::uuid, 'boulder', 'v_scale', 'V6', NULL, NULL)
+        (${userId}::uuid, ${providerId}, ${climbingActivityId}::uuid, 'boulder', 'v_scale', 'V5', true, 3),
+        (${userId}::uuid, ${providerId}, ${climbingActivityId}::uuid, 'boulder', 'v_scale', 'V6', NULL, NULL)
     `);
     await postgres.db.execute(sql`
       UPDATE fitness.activity

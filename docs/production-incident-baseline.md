@@ -27431,6 +27431,41 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Fix:** `deploy/stack.yml` now binds master/filer/volume to `-ip=127.0.0.1`; the S3 API still binds `0.0.0.0:9000` for PeerDB and the lifecycle sidecar. Reproduced both sides locally (`-ip=peerdb-minio` exited 255 with the DNS error; `-ip=127.0.0.1` stayed healthy and returned S3 `ListBuckets` 200).
 - **Remaining risk / follow-up:** Production `/mnt/dofek-data/peerdb-minio` still holds the MinIO on-disk layout (2.2 MB transient staging). Wipe it as an operator action with PeerDB drained or paused (or while `peerdb-minio` is stopped), then confirm the slot returns to active and the mirror catches up after deploy.
 
+## 2026-09-26 — Mountain Project activity missing from the activity list
+
+- **Status:** Server fix implemented and focused PostgreSQL integration validation passed; production deployment and authenticated production calendar verification remain pending. No repair or replay performed.
+- **Symptoms / user impact:** The user could not see today's Mountain Project
+  activity in the app. The activity list is served from ClickHouse read models.
+- **Evidence:** Production `fitness.sync_log` showed successful Mountain
+  Project syncs at 20:30 UTC and earlier, with two climbing entries on the
+  latest run and no sync error. PostgreSQL contains one active
+  `mountain-project` activity session with two climbing entries dated
+  2026-09-26. The ClickHouse `postgres_fitness.activity` mirror and
+  `analytics.deduped_activities` both contain that session. The parser turns
+  the export's date-only value into midnight UTC, while the activity calendar
+  assigns days after converting the timestamp to the user's timezone; midnight
+  UTC is September 25 in America/Los_Angeles. The relevant behavior is in
+  [the provider parser](../src/providers/mountain-project.ts) and
+  [calendar query](../packages/server/src/repositories/activities-calendar-repository.ts).
+- **Root cause:** A Mountain Project calendar date is modeled as an instant at
+  midnight UTC. Converting that instant to Pacific time places the activity on
+  the previous calendar day, so it does not appear under “today.” PostgreSQL
+  documents the timestamp conversion used by `AT TIME ZONE` in its
+  [date/time functions](https://www.postgresql.org/docs/current/functions-datetime.html).
+- **Fix / mitigation:** The server activity list, overview, access filtering,
+  and heatmap now treat Mountain Project's UTC midnight as the exported
+  calendar date. Other providers retain the existing timezone conversion.
+- **Validation:** Read-only comparison confirmed one Postgres session with two
+  entries, matching one ClickHouse mirror/read-model session. The stored start
+  is `2026-09-26 00:00:00+00`; projecting it to `America/Los_Angeles` yields
+  `2026-09-25`, while the Mountain Project export date is `2026-09-26`. The
+  earlier integration attempt was blocked before Vitest by Docker address-pool
+  exhaustion, and automatic approval review rejected removal of an unattached
+  network. A successful workspace integration run then passed 10/10 tests via
+  `pnpm test:integration -- packages/server/src/repositories/climbing-repository.integration.test.ts packages/server/src/routers/climbing.integration.test.ts src/providers/mountain-project-sync.integration.test.ts`, covering [PostgreSQL climbing summaries](../packages/server/src/repositories/climbing-repository.integration.test.ts), [activity detail and tick matching routes](../packages/server/src/routers/climbing.integration.test.ts), and [Mountain Project export reconciliation](../src/providers/mountain-project-sync.integration.test.ts). Focused unit/mobile suites passed 251/251 tests, and `pnpm typecheck` passed.
+- **Remaining risk / follow-up:** Production still shows the previous local day
+  until this branch is deployed. Verify the authenticated production calendar
+  response after deployment.
 ## 2026-09-25 — ChatGPT MCP Apps "Couldn't create MCP app" connect failure
 
 - **Symptoms:** A user attempting to connect a ChatGPT MCP App to Dofek got "Couldn't create MCP app" and the connection never completed.

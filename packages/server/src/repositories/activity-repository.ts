@@ -16,7 +16,9 @@ import { logger } from "../logger.ts";
 import type { ActivityRow } from "../models/activity.ts";
 import { activitySourceSchema } from "../models/activity-source.ts";
 import { activityMeasurementState } from "../services/activity-data-state.ts";
+import { postgresActivityCalendarDate } from "./activity-local-date.ts";
 import { getActivityRoutePreviews } from "./activity-route-preview.ts";
+import { ActivityVisibilityRepository } from "./activity-visibility-repository.ts";
 
 // ---------------------------------------------------------------------------
 // Zod schemas for raw DB rows
@@ -70,6 +72,7 @@ const activityListColumns = sql`
 
 const activityDetailRowSchema = z.object({
   id: z.string(),
+  displayed_date: dateStringSchema,
   canonical_type: z.string(),
   raw_type: z.string(),
   modality: z.string().nullable().optional().default(null),
@@ -312,16 +315,6 @@ export interface CountVisibleInWindowInput {
   accessWindow?: AccessWindow;
 }
 
-function readActivityId(row: unknown): string {
-  if (typeof row === "object" && row !== null && "id" in row) {
-    const { id } = row;
-    if (typeof id === "string") {
-      return id;
-    }
-  }
-  throw new Error("Activity row is missing a string id");
-}
-
 /** Factory for repositories that need activity visibility helpers without a sensor store. */
 export function activityRepositoryFor(
   db: Pick<import("dofek/db").Database, "execute">,
@@ -335,6 +328,7 @@ export function activityRepositoryFor(
 /** Data access for activity queries. */
 export class ActivityRepository extends BaseRepository {
   readonly #sensorStore?: ActivitySensorStore;
+  readonly #visibilityRepository: ActivityVisibilityRepository;
   readonly #activityIdResolutions = new Map<string, ActivityIdResolution | null>();
 
   constructor(
@@ -346,33 +340,22 @@ export class ActivityRepository extends BaseRepository {
   ) {
     super(db, userId, timezone, accessWindow);
     this.#sensorStore = sensorStore;
+    this.#visibilityRepository = new ActivityVisibilityRepository(
+      db,
+      userId,
+      timezone,
+      accessWindow,
+    );
   }
 
   /** Returns activity IDs currently visible in fitness.v_activity. */
   async resolveVisibleActivityIds(activityIds: readonly string[]): Promise<Set<string>> {
-    const uniqueActivityIds = [...new Set(activityIds)];
-    if (uniqueActivityIds.length === 0) {
-      return new Set();
-    }
-
-    const activityIdFilter = sql.join(
-      uniqueActivityIds.map((activityId) => sql`${activityId}::uuid`),
-      sql`, `,
-    );
-    const rows = await this.query(
-      z.object({ id: z.string() }),
-      sql`SELECT id::text AS id
-          FROM fitness.v_activity
-          WHERE user_id = ${this.userId}::uuid
-            AND id IN (${activityIdFilter})
-            ${this.timestampAccessPredicate(sql`started_at`)}`,
-    );
-    return new Set(rows.map((row) => row.id));
+    return this.#visibilityRepository.resolveVisibleActivityIds(activityIds);
   }
 
   /** Returns visible canonical activity IDs since an inclusive local calendar date. */
   async listVisibleActivityIdsSince(localDate: string): Promise<string[]> {
-    return this.#listVisibleActivityIdsInRange(localDate);
+    return this.#visibilityRepository.listVisibleActivityIdsSince(localDate);
   }
 
   /** Returns visible canonical activity IDs in a half-open local calendar range. */
@@ -380,27 +363,10 @@ export class ActivityRepository extends BaseRepository {
     localStartDate: string,
     localEndDateExclusive: string,
   ): Promise<string[]> {
-    return this.#listVisibleActivityIdsInRange(localStartDate, localEndDateExclusive);
-  }
-
-  async #listVisibleActivityIdsInRange(
-    localStartDate: string,
-    localEndDateExclusive?: string,
-  ): Promise<string[]> {
-    const endDatePredicate = localEndDateExclusive
-      ? sql`AND started_at < (${localEndDateExclusive}::date AT TIME ZONE ${this.timezone})`
-      : sql``;
-    const rows = await this.query(
-      z.object({ id: z.string() }),
-      sql`SELECT id::text AS id
-          FROM fitness.v_activity
-          WHERE user_id = ${this.userId}::uuid
-            AND started_at >= (${localStartDate}::date AT TIME ZONE ${this.timezone})
-            ${endDatePredicate}
-            ${this.timestampAccessPredicate(sql`started_at`)}
-          ORDER BY started_at DESC`,
+    return this.#visibilityRepository.listVisibleActivityIdsInRange(
+      localStartDate,
+      localEndDateExclusive,
     );
-    return rows.map((row) => row.id);
   }
 
   /** Drops rows whose ids are not currently visible in fitness.v_activity. */
@@ -411,35 +377,16 @@ export class ActivityRepository extends BaseRepository {
   ): Promise<T[]>;
   async filterToVisibleActivities<T>(
     rows: readonly T[],
-    getActivityId: (row: T) => string = readActivityId,
+    getActivityId?: (row: T) => string,
   ): Promise<T[]> {
-    const visibleActivityIds = await this.resolveVisibleActivityIds(rows.map(getActivityId));
-    return rows.filter((row) => visibleActivityIds.has(getActivityId(row)));
+    return this.#visibilityRepository.filterToVisibleActivities(rows, getActivityId);
   }
 
   /** Filters stable group-keyed ClickHouse rows to currently visible activities. */
   async filterToVisibleCanonicalActivities<T extends { id: string }>(
     rows: readonly T[],
   ): Promise<T[]> {
-    const uniqueActivityIds = [...new Set(rows.map(readActivityId))];
-    if (uniqueActivityIds.length === 0) {
-      return [];
-    }
-
-    const activityIdFilter = sql.join(
-      uniqueActivityIds.map((activityId) => sql`${activityId}::uuid`),
-      sql`, `,
-    );
-    const visibleRows = await this.query(
-      z.object({ id: z.string() }),
-      sql`SELECT id::text AS id
-          FROM fitness.v_activity
-          WHERE user_id = ${this.userId}::uuid
-            AND id IN (${activityIdFilter})
-            ${this.timestampAccessPredicate(sql`started_at`)}`,
-    );
-    const visibleActivityIds = new Set(visibleRows.map((row) => row.id));
-    return rows.filter((row) => visibleActivityIds.has(row.id));
+    return this.#visibilityRepository.filterToVisibleCanonicalActivities(rows);
   }
 
   /** Counts visible activities in fitness.v_activity for the requested window. */
@@ -695,6 +642,7 @@ export class ActivityRepository extends BaseRepository {
       activityDetailRowSchema,
       sql`SELECT
             a.id,
+            (${postgresActivityCalendarDate(sql`a`, this.timezone)})::text AS displayed_date,
             a.canonical_type,
             a.provider_type AS raw_type,
             a.modality::text AS modality,
@@ -742,6 +690,7 @@ export class ActivityRepository extends BaseRepository {
       activityDetailRowSchema,
       sql`SELECT
             ${groupId}::uuid AS id,
+            (${postgresActivityCalendarDate(sql`a`, this.timezone)})::text AS displayed_date,
             a.canonical_type,
             a.provider_type AS raw_type,
             a.modality::text AS modality,

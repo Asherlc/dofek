@@ -234,6 +234,7 @@ describe("activity sensor provenance", () => {
       raw_type: "cycling",
       modality: "indoor_cycling",
       started_at: startedAt,
+      displayed_date: "2026-03-01",
       ended_at: endedAt,
       name: "Provenance Ride",
       notes: null,

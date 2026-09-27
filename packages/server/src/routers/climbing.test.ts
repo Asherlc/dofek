@@ -13,9 +13,11 @@ import type {
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 const { captureException } = vi.hoisted(() => ({ captureException: vi.fn() }));
+const { invalidateByPrefix } = vi.hoisted(() => ({ invalidateByPrefix: vi.fn() }));
 const cachedQueryOptions = vi.hoisted((): Array<{ maxAge: number; keyVersion?: string }> => []);
 
 vi.mock("@sentry/node", () => ({ captureException }));
+vi.mock("dofek/lib/cache", () => ({ queryCache: { invalidateByPrefix } }));
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -85,6 +87,7 @@ function makeResolvedActivity(id: string, resolvedFrom?: string): ActivityRow {
     avg_power: null,
     avg_speed: null,
     canonical_type: "climbing",
+    displayed_date: "2026-09-01",
     elevation_gain_m: null,
     elevation_loss_m: null,
     ended_at: "2026-09-01T11:00:00.000Z",
@@ -170,6 +173,65 @@ describe("climbingRouter", () => {
     } finally {
       activityLookup.mockRestore();
     }
+  });
+
+  it("serves user-scoped Mountain Project suggestions for the resolved activity", async () => {
+    vi.spyOn(ActivityRepository.prototype, "findById").mockResolvedValue(
+      makeResolvedActivity("734b5d3e-df2b-4ee0-888e-55ea539d913a"),
+    );
+    const { caller } = makeCaller([
+      {
+        id: "734b5d3e-df2b-4ee0-888e-55ea539d913b",
+        climb_type: "boulder",
+        grade_system: "v_scale",
+        grade: "V4",
+        sent: true,
+        attempt_count: 1,
+        lead: null,
+        route_name: "Pinch",
+        location_name: "The Gym",
+      },
+    ]);
+
+    await expect(
+      caller.unattachedMountainProjectTicks({
+        activityId: "734b5d3e-df2b-4ee0-888e-55ea539d913a",
+      }),
+    ).resolves.toEqual([
+      {
+        id: "734b5d3e-df2b-4ee0-888e-55ea539d913b",
+        climbType: "boulder",
+        gradeSystem: "v_scale",
+        grade: "V4",
+        sent: true,
+        attemptCount: 1,
+        lead: null,
+        routeName: "Pinch",
+        locationName: "The Gym",
+      },
+    ]);
+  });
+
+  it("attaches a single tick and invalidates affected climbing caches", async () => {
+    invalidateByPrefix.mockClear();
+    vi.spyOn(ActivityRepository.prototype, "findById").mockResolvedValue(
+      makeResolvedActivity("734b5d3e-df2b-4ee0-888e-55ea539d913a"),
+    );
+    const { caller } = makeCaller([{ id: "734b5d3e-df2b-4ee0-888e-55ea539d913b" }]);
+
+    await expect(
+      caller.attachMountainProjectTick({
+        activityId: "734b5d3e-df2b-4ee0-888e-55ea539d913a",
+        tickId: "734b5d3e-df2b-4ee0-888e-55ea539d913b",
+      }),
+    ).resolves.toEqual({ attached: true });
+    expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:climbing.activityEntries:");
+    expect(invalidateByPrefix).toHaveBeenCalledWith(
+      "user-1:climbing.unattachedMountainProjectTicks:",
+    );
+    expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:climbing.sessionSummary:");
+    expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:climbing.gradeProgression:");
+    expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:climbing.volumeByGrade:");
   });
 
   it.each([

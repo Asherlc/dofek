@@ -141,7 +141,7 @@ validation scan's stronger lock during the initial constraint addition:
 | `fitness.activity_interval` | Laps/intervals with time ranges (metrics computed at query time from sensor_sample) |
 | `fitness.sensor_sample` | Time-series sensor data (TimescaleDB hypertable) — all channels at any frequency |
 | `fitness.finger_loading_entry` | Finger-loading protocols with raw edge, grip, load, bodyweight, laterality, set, hold, rest, RPE, and note values; existing rows remain read-only in the application |
-| `fitness.climbing_entry` | Imported/provider climbs and retained historical Dofek-created climb definitions, including grade, wall angle, hold type, route, and location |
+| `fitness.climbing_entry` | Provider climbs and retained Dofek-created climb definitions, including grade, wall angle, hold type, route, and location; Mountain Project ticks can remain standalone until attached to an activity |
 | `fitness.climbing_attempt` | Ordered raw outcomes, failure reasons, and notes for attempts on a retained climbing entry |
 
 Retained Dofek-created climbing entries leave the legacy aggregate `sent` and `attempt_count`
@@ -151,6 +151,18 @@ load is likewise derived as bodyweight plus signed external load and is never
 stored separately. Database constraints keep each outcome/failure-reason pair
 consistent using PostgreSQL check constraints
 ([PostgreSQL `CREATE TABLE`](https://www.postgresql.org/docs/current/sql-createtable.html)).
+
+Mountain Project ticks use the same `fitness.climbing_entry` table as other
+climbs. Each tick has an owner and provider identity. While unattached, it has
+no activity association and stores the export's date in `unattached_date`;
+attaching it clears that date, and its associated activity supplies its day.
+The server suggests only active unattached ticks whose exported day exactly
+matches the climbing activity's displayed calendar date in the user's
+timezone. Attachment is always an explicit per-tick action. Unattached ticks
+remain in climb and grade summaries, while activity and session summaries
+continue to represent actual activities. See the
+[Mountain Project provider guide](mountain-project.md) and the
+[unattached ticks design spec](superpowers/specs/2026-09-26-unattached-mountain-project-ticks-design.md).
 
 ### Subjective Inputs
 
@@ -315,7 +327,11 @@ contract bump is required because the persisted V1 payload did not change.
 
 ## Deduplication
 
-All provider-sourced tables have a `(provider_id, external_id)` unique index. Syncs use upsert to avoid duplicates.
+Provider-sourced tables use unique external-ID indexes as appropriate for each
+source's identity scope. Climbing entries retain per-activity external-ID
+uniqueness for existing providers and use user-wide uniqueness for Mountain
+Project ticks; see [`climbing_entry` indexes](../src/db/schema/activity.ts).
+Syncs use upsert to avoid duplicates.
 
 Every metric-stream ingestion path must publish Redpanda events with a stable `external_id`. Provider-supplied IDs are preferred; when the source does not expose a sample ID, ingestion derives a deterministic ID from provider, activity/source, channel, and timestamp. Metric stream events use `(user_id, provider_id, external_id, channel, recorded_at)` as the logical idempotency key so failed syncs can be retried without duplicating raw samples in ClickHouse.
 

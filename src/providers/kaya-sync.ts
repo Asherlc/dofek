@@ -201,6 +201,8 @@ export class KayaSyncProvider implements SyncProvider {
               }
               return [
                 {
+                  userId,
+                  providerId: this.id,
                   activityId: row.id,
                   externalId: ascent.id,
                   climbType: boulder ? ("boulder" as const) : ("route" as const),

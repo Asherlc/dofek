@@ -320,10 +320,23 @@ describe("ClimbingRepository", () => {
       expect(text).toContain("detail.attempt_count > 0");
       expect(text).toContain("BOOL_OR(attempt.outcome = 'sent')");
       expect(text).toContain("ELSE ce.sent");
-      expect(text).toContain("NOW() - ");
+      expect(text).toContain("NOW() AT TIME ZONE");
+      expect(text).toContain("::date - ");
     });
 
-    it("applies limited entitlement access windows to activity timestamps", async () => {
+    it("includes active standalone ticks by the user's calendar date", async () => {
+      const { repo, execute } = makeRepository([]);
+
+      await repo.getGradeProgression(30);
+
+      const text = queryText(execute.mock.calls[0]?.[0]);
+      expect(text).toContain("ce.activity_id IS NULL");
+      expect(text).toContain("ce.unattached_date");
+      expect(text).toContain("ce.provider_absent_at IS NULL");
+      expect(text).toContain("AT TIME ZONE");
+    });
+
+    it("applies limited entitlement access windows to activity calendar dates", async () => {
       const execute = vi.fn().mockResolvedValue([]);
       const repo = new ClimbingRepository(executeDb(execute), "user-1", "UTC", {
         kind: "limited",
@@ -336,7 +349,8 @@ describe("ClimbingRepository", () => {
       await repo.getGradeProgression(30);
 
       const text = queryText(execute.mock.calls[0]?.[0]);
-      expect(text).toContain("a.started_at");
+      expect(text).toContain("local_time_source");
+      expect(text).toContain("AT TIME ZONE");
       expect(text).toContain("2026-07-01");
       expect(text).toContain("2026-07-08");
     });
@@ -488,6 +502,18 @@ describe("ClimbingRepository", () => {
       expect(text).toContain("ELSE ce.sent");
       expect(text).toContain("GROUP BY ce.climb_type, ce.grade_system, ce.grade");
     });
+
+    it("includes active standalone ticks by the user's calendar date", async () => {
+      const { repo, execute } = makeRepository([]);
+
+      await repo.getVolumeByGrade(30);
+
+      const text = queryText(execute.mock.calls[0]?.[0]);
+      expect(text).toContain("ce.activity_id IS NULL");
+      expect(text).toContain("ce.unattached_date");
+      expect(text).toContain("ce.provider_absent_at IS NULL");
+      expect(text).toContain("AT TIME ZONE");
+    });
   });
 
   describe("getSessionSummaries", () => {
@@ -565,6 +591,7 @@ describe("ClimbingRepository", () => {
       expect(text).toContain("a.canonical_type = 'climbing'");
       expect(text).toContain("attempt_count");
       expect(text).toContain("ce.grade_system");
+      expect(text).not.toContain("unattached_date");
     });
 
     it("keeps a non-null location from a later entry in the same activity", async () => {
@@ -871,6 +898,16 @@ describe("ClimbingRepository", () => {
         "entry-b",
         "entry-c",
       ]);
+    });
+
+    it("keeps detail tied to the selected activity's attached entries", async () => {
+      const { repo, execute } = makeRepository([]);
+
+      await repo.getActivityEntries("activity-1");
+
+      const text = queryText(execute.mock.calls[0]?.[0]);
+      expect(text).toContain("ce.activity_id = ANY(a.member_activity_ids)");
+      expect(text).not.toContain("unattached_date");
     });
   });
 });

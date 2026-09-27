@@ -17,6 +17,7 @@ const activity: ActivityRow = {
   raw_type: "cycling",
   modality: "indoor_cycling",
   started_at: startedAt,
+  displayed_date: "2026-09-01",
   ended_at: at(10),
   name: "Intervals",
   notes: null,

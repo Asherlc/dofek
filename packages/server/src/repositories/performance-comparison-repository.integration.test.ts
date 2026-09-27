@@ -135,18 +135,18 @@ describe("PerformanceComparisonRepository database semantics", () => {
     `);
     await postgres.db.execute(sql`
       INSERT INTO fitness.climbing_entry (
-        activity_id, external_id, climb_type, grade_system, grade, sent, attempt_count,
+        user_id, provider_id, activity_id, external_id, climb_type, grade_system, grade, sent, attempt_count,
         lead, wall_angle_degrees, route_name, location_name
       ) VALUES
-        (${climbBaselineIds[0]}::uuid, 'route-base-a', 'route', 'yds', '5.11a', true, 2,
+        (${userId}::uuid, ${workoutProvider}, ${climbBaselineIds[0]}::uuid, 'route-base-a', 'route', 'yds', '5.11a', true, 2,
           false, 10, 'Red Corner', 'Test Gym'),
-        (${climbBaselineIds[1]}::uuid, 'route-base-b', 'route', 'yds', '5.11a', true, 2,
+        (${userId}::uuid, ${mirrorProvider}, ${climbBaselineIds[1]}::uuid, 'route-base-b', 'route', 'yds', '5.11a', true, 2,
           false, 10, 'Red Corner', 'Test Gym'),
-        (${climbLatestIds[0]}::uuid, 'route-latest-a', 'route', 'yds', '5.11a', true, 1,
+        (${userId}::uuid, ${workoutProvider}, ${climbLatestIds[0]}::uuid, 'route-latest-a', 'route', 'yds', '5.11a', true, 1,
           false, 10, 'Red Corner', 'Test Gym'),
-        (${climbLatestIds[1]}::uuid, 'route-latest-b', 'route', 'yds', '5.11a', false, 3,
+        (${userId}::uuid, ${mirrorProvider}, ${climbLatestIds[1]}::uuid, 'route-latest-b', 'route', 'yds', '5.11a', false, 3,
           false, 10, 'Red Corner', 'Test Gym'),
-        (${climbLeadId}::uuid, 'route-lead', 'route', 'yds', '5.11a', true, 1,
+        (${userId}::uuid, ${workoutProvider}, ${climbLeadId}::uuid, 'route-lead', 'route', 'yds', '5.11a', true, 1,
           true, 10, 'Red Corner', 'Test Gym')
     `);
     await postgres.db.execute(sql`

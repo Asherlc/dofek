@@ -1,4 +1,5 @@
 import { TRPCError } from "@trpc/server";
+import { queryCache } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
 import { loadClimbingGradePreference } from "../climbing-grade-preferences.ts";
@@ -12,9 +13,27 @@ import {
 } from "../repositories/climbing-repository.ts";
 import { ClimbingTrainingLogRepository } from "../repositories/climbing-training-log-repository.ts";
 import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
-import { type AuthenticatedContext, CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+import { MountainProjectTickRepository } from "../repositories/mountain-project-tick-repository.ts";
+import {
+  type AuthenticatedContext,
+  CacheTTL,
+  cachedProtectedQuery,
+  protectedProcedure,
+  router,
+} from "../trpc.ts";
 
 const daysInputSchema = z.object({ days: z.number().int().min(1).max(365).default(90) });
+const mountainProjectTickSuggestionSchema = z.object({
+  id: z.guid(),
+  climbType: z.enum(["boulder", "route"]),
+  gradeSystem: z.string(),
+  grade: z.string(),
+  sent: z.boolean().nullable(),
+  attemptCount: z.number().int().nullable(),
+  lead: z.boolean().nullable(),
+  routeName: z.string().nullable(),
+  locationName: z.string().nullable(),
+});
 const hangboardingSummarySchema = z.object({
   sessionCount: z.number().int().nonnegative(),
   totalDurationSeconds: z.number().nonnegative(),
@@ -97,6 +116,41 @@ export const climbingRouter = router({
         return (await repository.getActivityEntries(activity.id)).map((row) => row.toDetail());
       });
     }),
+
+  unattachedMountainProjectTicks: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
+    .input(z.object({ activityId: z.guid() }))
+    .output(z.array(mountainProjectTickSuggestionSchema))
+    .query(async ({ ctx, input }) =>
+      runClimbingQuery(() =>
+        new MountainProjectTickRepository(
+          ctx.db,
+          ctx.userId,
+          ctx.timezone,
+          ctx.accessWindow,
+        ).getSuggestions(input.activityId),
+      ),
+    ),
+
+  attachMountainProjectTick: protectedProcedure
+    .input(z.object({ activityId: z.guid(), tickId: z.guid() }))
+    .mutation(async ({ ctx, input }) =>
+      runClimbingQuery(async () => {
+        await new MountainProjectTickRepository(
+          ctx.db,
+          ctx.userId,
+          ctx.timezone,
+          ctx.accessWindow,
+        ).attachTick(input);
+        await Promise.all([
+          queryCache.invalidateByPrefix(`${ctx.userId}:climbing.activityEntries:`),
+          queryCache.invalidateByPrefix(`${ctx.userId}:climbing.sessionSummary:`),
+          queryCache.invalidateByPrefix(`${ctx.userId}:climbing.gradeProgression:`),
+          queryCache.invalidateByPrefix(`${ctx.userId}:climbing.volumeByGrade:`),
+          queryCache.invalidateByPrefix(`${ctx.userId}:climbing.unattachedMountainProjectTicks:`),
+        ]);
+        return { attached: true as const };
+      }),
+    ),
 
   gradeProgression: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(daysInputSchema)

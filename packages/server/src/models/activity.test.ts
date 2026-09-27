@@ -33,7 +33,9 @@ const fullRow: ActivityRow = {
   id: "abc-123",
   canonical_type: "cycling",
   raw_type: "road_cycling",
+  modality: null,
   started_at: "2026-03-01T10:00:00+00:00",
+  displayed_date: "2026-03-01",
   ended_at: "2026-03-01T11:30:00+00:00",
   timezone: null,
   start_utc_offset_minutes: null,
@@ -64,6 +66,14 @@ const fullRow: ActivityRow = {
 };
 
 describe("Activity", () => {
+  it("serializes the server-resolved displayed calendar date", () => {
+    const row: ActivityRow = { ...fullRow, displayed_date: "2026-03-01" };
+
+    expect(new Activity(row, mockLookup).toDetail()).toMatchObject({
+      displayedDate: "2026-03-01",
+    });
+  });
+
   it("exposes all scalar fields as getters", () => {
     const activity = new Activity(fullRow, mockLookup);
 
@@ -336,8 +346,10 @@ describe("Activity", () => {
 
       expect(detail).toEqual({
         id: "abc-123",
+        displayedDate: "2026-03-01",
         activityType: "cycling",
         rawType: "road_cycling",
+        modality: null,
         startedAt: "2026-03-01T10:00:00+00:00",
         endedAt: "2026-03-01T11:30:00+00:00",
         localTimeContext: {

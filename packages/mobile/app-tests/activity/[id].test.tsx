@@ -243,6 +243,17 @@ const mockActivityHangboardDetailsInvalidate = vi.fn().mockResolvedValue(undefin
 const mockActivityListInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockCalendarWeekListInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockCalendarActivityOverviewInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockTickSuggestionsQuery = vi.fn((_input?: unknown, _options?: unknown) => ({
+  data: [],
+  error: null,
+  isLoading: false,
+}));
+const mockAttachTickMutate = vi.fn();
+const mockClimbingEntriesInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockTickSuggestionsInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockClimbingSessionSummaryInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockClimbingGradeProgressionInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockClimbingVolumeByGradeInvalidate = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
@@ -273,6 +284,28 @@ vi.mock("../../lib/trpc", () => ({
     },
     climbing: {
       activityEntries: { useQuery: (...args: unknown[]) => mockClimbingEntriesQuery(...args) },
+      unattachedMountainProjectTicks: {
+        useQuery: (...args: unknown[]) => mockTickSuggestionsQuery(...args),
+      },
+      attachMountainProjectTick: {
+        useMutation: (options?: {
+          onSuccess?: (
+            result: { attached: true },
+            input: { activityId: string; tickId: string },
+          ) => Promise<void> | void;
+          onError?: (error: Error, input: { activityId: string; tickId: string }) => void;
+        }) => ({
+          mutate: (
+            input: { activityId: string; tickId: string },
+            callbacks?: { onSuccess?: () => void; onError?: (error: Error) => void },
+          ) => {
+            mockAttachTickMutate(input);
+            void options?.onSuccess?.({ attached: true }, input);
+            callbacks?.onSuccess?.();
+          },
+          isPending: false,
+        }),
+      },
     },
     useUtils: () => ({
       activity: {
@@ -288,6 +321,13 @@ vi.mock("../../lib/trpc", () => ({
         weekList: { invalidate: mockCalendarWeekListInvalidate },
         activityOverview: { invalidate: mockCalendarActivityOverviewInvalidate },
       },
+      climbing: {
+        activityEntries: { invalidate: mockClimbingEntriesInvalidate },
+        unattachedMountainProjectTicks: { invalidate: mockTickSuggestionsInvalidate },
+        sessionSummary: { invalidate: mockClimbingSessionSummaryInvalidate },
+        gradeProgression: { invalidate: mockClimbingGradeProgressionInvalidate },
+        volumeByGrade: { invalidate: mockClimbingVolumeByGradeInvalidate },
+      },
     }),
   },
 }));
@@ -295,6 +335,7 @@ vi.mock("../../lib/trpc", () => ({
 const baseCyclingActivity = {
   id: "00000000-0000-0000-0000-000000000001",
   activityType: "cycling",
+  displayedDate: "2026-04-14",
   startedAt: "2026-04-14T10:00:00.000Z",
   endedAt: "2026-04-14T11:00:00.000Z",
   localTimeContext: {
@@ -371,6 +412,14 @@ beforeEach(() => {
   mockPowerZonesQuery.mockClear();
   mockStrengthExercisesQuery.mockClear();
   mockClimbingEntriesQuery.mockClear();
+  mockTickSuggestionsQuery.mockReset();
+  mockTickSuggestionsQuery.mockReturnValue({ data: [], error: null, isLoading: false });
+  mockAttachTickMutate.mockClear();
+  mockClimbingEntriesInvalidate.mockClear();
+  mockTickSuggestionsInvalidate.mockClear();
+  mockClimbingSessionSummaryInvalidate.mockClear();
+  mockClimbingGradeProgressionInvalidate.mockClear();
+  mockClimbingVolumeByGradeInvalidate.mockClear();
   mockHangboardDetailsQuery.mockClear();
   mockRecomputeMutate.mockClear();
   mockRecomputeShouldFail.mockReset();
@@ -396,6 +445,123 @@ beforeEach(() => {
 });
 
 describe("ActivityDetailScreen", () => {
+  it("renders the server-provided calendar date at a UTC boundary", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: {
+        ...baseCyclingActivity,
+        activityType: "climbing",
+        startedAt: "2026-03-18T00:30:00.000Z",
+        displayedDate: "2026-03-18",
+        localTimeContext: {
+          timezone: null,
+          startUtcOffsetMinutes: 120,
+          endUtcOffsetMinutes: 120,
+          source: "provider_offset",
+        },
+      },
+      isLoading: false,
+      error: null,
+    });
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+
+    render(React.createElement(ActivityDetailScreen));
+
+    expect(screen.getByText(/2026-03-18 at/)).toBeTruthy();
+  });
+
+  it("renders server tick suggestions and attaches only the selected tick", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: { ...baseCyclingActivity, activityType: "climbing", name: "Morning Rock Climb" },
+      isLoading: false,
+      error: null,
+    });
+    mockTickSuggestionsQuery.mockReturnValue({
+      data: [
+        {
+          id: "tick-1",
+          climbType: "boulder",
+          gradeSystem: "v_scale",
+          grade: "V4",
+          sent: true,
+          attemptCount: 2,
+          lead: null,
+          routeName: "Blue Circuit",
+          locationName: "Pacific Pipe",
+        },
+        {
+          id: "tick-2",
+          climbType: "route",
+          gradeSystem: "yds",
+          grade: "5.10a",
+          sent: false,
+          attemptCount: 1,
+          lead: true,
+          routeName: "Project",
+          locationName: "Pacific Pipe",
+        },
+      ],
+      error: null,
+      isLoading: false,
+    });
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+    render(React.createElement(ActivityDetailScreen));
+    expect(getQueryEnabledFlag(mockTickSuggestionsQuery.mock.calls[0]?.[1])).toBe(true);
+    expect(screen.getByText("Unattached Mountain Project ticks")).toBeTruthy();
+    expect(screen.getByText("Blue Circuit")).toBeTruthy();
+    const controls = screen.getAllByRole("button", { name: "Attach to this activity" });
+    expect(controls).toHaveLength(2);
+    const secondControl = controls.at(1);
+    if (!secondControl) throw new Error("Expected a second attach control");
+    fireEvent.click(secondControl);
+    expect(mockAttachTickMutate).toHaveBeenCalledWith({
+      activityId: baseCyclingActivity.id,
+      tickId: "tick-2",
+    });
+    await waitFor(() => {
+      expect(mockClimbingEntriesInvalidate).toHaveBeenCalledWith({ id: baseCyclingActivity.id });
+      expect(mockTickSuggestionsInvalidate).toHaveBeenCalledWith({
+        activityId: baseCyclingActivity.id,
+      });
+      expect(mockClimbingSessionSummaryInvalidate).toHaveBeenCalledWith();
+      expect(mockClimbingGradeProgressionInvalidate).toHaveBeenCalledWith();
+      expect(mockClimbingVolumeByGradeInvalidate).toHaveBeenCalledWith();
+    });
+    expect(mockActivityByIdInvalidate).not.toHaveBeenCalled();
+  });
+
+  it("shows loading, actionable error, and empty tick suggestion states", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: { ...baseCyclingActivity, activityType: "climbing" },
+      isLoading: false,
+      error: null,
+    });
+    mockTickSuggestionsQuery.mockReturnValue({ data: undefined, error: null, isLoading: true });
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+    const view = render(React.createElement(ActivityDetailScreen));
+    expect(view.container.querySelector('[testid="query-state-loading"]')).toBeTruthy();
+    view.unmount();
+    mockTickSuggestionsQuery.mockReturnValue({
+      data: undefined,
+      error: new Error("Tick service unavailable"),
+      isLoading: false,
+    });
+    const { default: ErrorScreen } = await import("../../app/activity/[id]");
+    render(React.createElement(ErrorScreen));
+    expect(screen.getByText("Tick service unavailable")).toBeTruthy();
+  });
+
+  it("shows no suggestions when the server returns no same-day ticks", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: { ...baseCyclingActivity, activityType: "climbing" },
+      isLoading: false,
+      error: null,
+    });
+    mockTickSuggestionsQuery.mockReturnValue({ data: [], error: null, isLoading: false });
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+    render(React.createElement(ActivityDetailScreen));
+    expect(screen.getByText("No unattached Mountain Project ticks for this day.")).toBeTruthy();
+  });
+
   it("recomputes the activity and invalidates detail caches", async () => {
     let finishByIdInvalidation: () => void = () => {};
     const byIdInvalidation = new Promise<void>((resolve) => {

@@ -49,6 +49,7 @@ import { HrZonesChart, PowerZonesChart } from "../../components/activity/ZoneDis
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { HangboardingDetail } from "../../components/HangboardingDetail";
 import { MuscleGroupBodyDiagram } from "../../components/MuscleGroupBodyDiagram";
+import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { RouteMap } from "../../components/RouteMap";
 import { type ActivityExportFormat, downloadActivityExport } from "../../lib/activity-export";
 import { useAuth } from "../../lib/auth-context";
@@ -466,6 +467,22 @@ const climbingStyles = StyleSheet.create({
     padding: 16,
     gap: 12,
   },
+  sectionTitle: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  attachButton: {
+    backgroundColor: colors.accent,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  attachButtonText: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "600",
+  },
   entryRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -620,6 +637,45 @@ export default function ActivityDetailScreen() {
     { id: id ?? "" },
     { enabled: !!id && isClimbingActivity },
   );
+  const tickSuggestions = trpc.climbing.unattachedMountainProjectTicks.useQuery(
+    { activityId: id },
+    { enabled: !!id && isClimbingActivity },
+  );
+  const [tickAttachState, setTickAttachState] = useState<
+    Record<string, { pending: boolean; error: string | null }>
+  >({});
+  const attachTick = trpc.climbing.attachMountainProjectTick.useMutation({
+    onSuccess: async (_result, input) => {
+      await Promise.all([
+        trpcUtils.climbing.activityEntries.invalidate({ id: input.activityId }),
+        trpcUtils.climbing.sessionSummary.invalidate(),
+        trpcUtils.climbing.gradeProgression.invalidate(),
+        trpcUtils.climbing.volumeByGrade.invalidate(),
+        trpcUtils.climbing.unattachedMountainProjectTicks.invalidate({
+          activityId: input.activityId,
+        }),
+      ]);
+    },
+  });
+  const handleAttachTick = (tickId: string) => {
+    if (!id) return;
+    setTickAttachState((current) => ({ ...current, [tickId]: { pending: true, error: null } }));
+    attachTick.mutate(
+      { activityId: id, tickId },
+      {
+        onSuccess: () =>
+          setTickAttachState((current) => ({
+            ...current,
+            [tickId]: { pending: false, error: null },
+          })),
+        onError: (error) =>
+          setTickAttachState((current) => ({
+            ...current,
+            [tickId]: { pending: false, error: userFacingErrorMessage(error) },
+          })),
+      },
+    );
+  };
   const isHangboardingActivity =
     detail.data != null && isActivityDetailType(detail.data.activityType, "hangboard");
   const hangboardDetails = trpc.activity.hangboardDetails.useQuery(
@@ -829,7 +885,7 @@ export default function ActivityDetailScreen() {
           </View>
         </View>
         <Text style={styles.dateTime}>
-          {formatDateLong(activity.startedAt)}
+          {formatDateLong(activity.displayedDate, { timeZone: "UTC" })}
           {" at "}
           {localStartTime === "--" ? "Local time unavailable" : localStartTime}
         </Text>
@@ -875,6 +931,65 @@ export default function ActivityDetailScreen() {
       )}
       {(climbingEntries.data?.length ?? 0) > 0 && (
         <ClimbingEntryBreakdown entries={climbingEntries.data ?? []} />
+      )}
+      {isClimbingActivity && (
+        <View style={climbingStyles.container}>
+          <Text style={climbingStyles.sectionTitle}>Unattached Mountain Project ticks</Text>
+          {tickSuggestions.error ? (
+            <QueryStatePanel
+              variant="error"
+              message={getQueryErrorMessage(tickSuggestions.error)}
+              onRetry={() => void tickSuggestions.refetch()}
+              retrying={tickSuggestions.isFetching}
+            />
+          ) : tickSuggestions.isLoading && !tickSuggestions.data ? (
+            <QueryStatePanel variant="loading" />
+          ) : (tickSuggestions.data?.length ?? 0) === 0 ? (
+            <QueryStatePanel
+              variant="empty"
+              message="No unattached Mountain Project ticks for this day."
+            />
+          ) : (
+            tickSuggestions.data?.map((tick) => {
+              const state = tickAttachState[tick.id];
+              const result =
+                tick.sent === true ? "Sent" : tick.sent === false ? "Attempted" : "Status unknown";
+              return (
+                <View key={tick.id} style={climbingStyles.entryRow}>
+                  <View style={climbingStyles.entryDetails}>
+                    <Text style={climbingStyles.routeName}>
+                      {tick.routeName ?? (tick.climbType === "boulder" ? "Boulder" : "Route")}
+                    </Text>
+                    <Text style={climbingStyles.locationName}>
+                      {[
+                        tick.grade,
+                        result,
+                        tick.attemptCount === null
+                          ? null
+                          : `${tick.attemptCount} ${tick.attemptCount === 1 ? "attempt" : "attempts"}`,
+                        tick.locationName,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </Text>
+                    {state?.error ? <Text style={styles.errorText}>{state.error}</Text> : null}
+                  </View>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Attach to this activity"
+                    disabled={state?.pending}
+                    style={climbingStyles.attachButton}
+                    onPress={() => handleAttachTick(tick.id)}
+                  >
+                    <Text style={climbingStyles.attachButtonText}>
+                      {state?.pending ? "Attaching..." : "Attach"}
+                    </Text>
+                  </Pressable>
+                </View>
+              );
+            })
+          )}
+        </View>
       )}
 
       {/* Time-series charts (load progressively) */}
