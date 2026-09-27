@@ -5,12 +5,15 @@ import {
   ProviderRequestTimeoutError,
   ProviderServiceUnavailableError,
 } from "@dofek/provider-http/rate-limit";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import {
+  type CallToolResult,
+  Client,
+  ProtocolError,
+  SdkError,
+  SdkErrorCode,
+  SdkHttpError,
   StreamableHTTPClientTransport,
-  StreamableHTTPError,
-} from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { type CallToolResult, ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
+} from "@modelcontextprotocol/client";
 import { captureException } from "../../lib/error-reporting.ts";
 import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import { parseZivaMealPayload, type ZivaMealPayload } from "./schemas.ts";
@@ -22,6 +25,14 @@ const ZIVA_MCP_ENDPOINT = new URL("https://connect.ziva.fit/mcp");
 const ZIVA_MEAL_TOOL = "get_meals_for_date";
 const MCP_OPERATION_TIMEOUT_MS = 30_000;
 const MAX_TOOL_LIST_PAGES = 20;
+
+/**
+ * JSON-RPC `-32001` request timeout code retained from the v1 SDK's
+ * `ErrorCode.RequestTimeout`. The v2 SDK no longer defines this wire code and
+ * surfaces its own timeouts as `SdkErrorCode.RequestTimeout`; this constant
+ * preserves classification of a server-emitted `-32001` error response.
+ */
+const REQUEST_TIMEOUT_PROTOCOL_CODE = -32_001;
 
 export class ZivaMcpAuthenticationError extends Error {
   constructor() {
@@ -92,7 +103,7 @@ function schemaAllowsString(value: unknown): boolean {
 
 function isCompatibleMealTool(tool: {
   name: string;
-  inputSchema: { properties?: Record<string, object>; required?: string[] };
+  inputSchema: { properties?: Record<string, unknown>; required?: string[] };
   annotations?: {
     readOnlyHint?: boolean;
     destructiveHint?: boolean;
@@ -204,20 +215,37 @@ function throwClassifiedRequestError(
   ) {
     throw error;
   }
-  if (error instanceof StreamableHTTPError) {
-    if (error.code === 401) {
+  if (error instanceof SdkHttpError) {
+    if (error.data.status === 401) {
       throw new ZivaMcpAuthenticationError();
     }
     const sanitizedError = new ZivaMcpTransportError();
     captureException(sanitizedError, {
       tags: { provider: "ziva", mcpPhase: phase },
-      extra: { statusCode: error.code },
+      extra: { statusCode: error.data.status },
     });
     throw sanitizedError;
   }
-  if (error instanceof McpError) {
-    if (error.code === ErrorCode.RequestTimeout) {
+  if (error instanceof ProtocolError) {
+    if (error.code === REQUEST_TIMEOUT_PROTOCOL_CODE) {
       throw new ZivaMcpTimeoutError();
+    }
+    const sanitizedError = new ZivaMcpTransportError();
+    captureException(sanitizedError, {
+      tags: { provider: "ziva", mcpPhase: phase },
+      extra: { mcpErrorCode: error.code },
+    });
+    throw sanitizedError;
+  }
+  if (error instanceof SdkError) {
+    if (error.code === SdkErrorCode.RequestTimeout) {
+      throw new ZivaMcpTimeoutError();
+    }
+    if (error.code === SdkErrorCode.ListPaginationExceeded) {
+      throw new ZivaMcpToolError("Ziva returned too many tool-list pages.");
+    }
+    if (phase === "call_tool" && error.code === SdkErrorCode.InvalidResult) {
+      throw malformedResponse("schema");
     }
     const sanitizedError = new ZivaMcpTransportError();
     captureException(sanitizedError, {
@@ -322,7 +350,10 @@ export class ZivaMcpClient {
 
     const lifecycle = createConnectLifecycle(options.signal);
     const rateLimitFetch = createProviderRateLimitFetch("ziva", options.fetchFn);
-    const sdkClient = new Client({ name: "dofek-ziva", version: "0.1.0" }, { capabilities: {} });
+    const sdkClient = new Client(
+      { name: "dofek-ziva", version: "0.1.0" },
+      { capabilities: {}, listMaxPages: MAX_TOOL_LIST_PAGES },
+    );
     const client = new ZivaMcpClient(sdkClient);
     const fetchWithConnectAbort: typeof globalThis.fetch = (input, init) => {
       const signals: AbortSignal[] = [lifecycle.signal];
@@ -369,28 +400,16 @@ export class ZivaMcpClient {
   }
 
   async #verifyMealTool(signal: AbortSignal | undefined): Promise<void> {
-    const tools = [];
-    const seenCursors = new Set<string>();
-    let cursor: string | undefined;
-
+    // The v2 SDK's `listTools` walks pagination itself (bounded by the client's
+    // `listMaxPages`, raising `SdkErrorCode.ListPaginationExceeded` on runaway
+    // cursors), so Dofek only issues a single call and validates the result.
+    let tools: Awaited<ReturnType<Client["listTools"]>>["tools"];
     try {
-      for (let pageNumber = 0; pageNumber < MAX_TOOL_LIST_PAGES; pageNumber += 1) {
-        const page = await this.#client.listTools(cursor ? { cursor } : undefined, {
-          timeout: MCP_OPERATION_TIMEOUT_MS,
-          signal,
-        });
-        tools.push(...page.tools);
-        if (!page.nextCursor) break;
-        if (seenCursors.has(page.nextCursor)) {
-          throw new ZivaMcpToolError("Ziva returned an invalid tool-list cursor sequence.");
-        }
-        seenCursors.add(page.nextCursor);
-        cursor = page.nextCursor;
-
-        if (pageNumber === MAX_TOOL_LIST_PAGES - 1) {
-          throw new ZivaMcpToolError("Ziva returned too many tool-list pages.");
-        }
-      }
+      const page = await this.#client.listTools(undefined, {
+        timeout: MCP_OPERATION_TIMEOUT_MS,
+        signal,
+      });
+      tools = page.tools;
     } catch (error) {
       throwClassifiedRequestError(error, signal, "list_tools");
     }
@@ -413,7 +432,6 @@ export class ZivaMcpClient {
       try {
         result = await this.#client.callTool(
           { name: ZIVA_MEAL_TOOL, arguments: { start_date: date } },
-          undefined,
           { timeout: MCP_OPERATION_TIMEOUT_MS, signal: callSignal },
         );
       } catch (error) {

@@ -171,3 +171,4 @@ minimumReleaseAgeExclude:
   - expo-structured-headers@57.0.1
   - expo-updates-interface@57.0.2
   - expo-web-browser@57.0.3
+  - '@modelcontextprotocol/ext-apps@2.0.3'

@@ -924,6 +924,28 @@ table fitness.supplement_dose_event {
   }
 }
 
+table fitness.mcp_oidc_adapter {
+  model text [not null]
+  id text [not null]
+  payload jsonb [not null]
+  uid text
+  user_code text
+  grant_id text
+  expires_at "timestamp with time zone"
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  user_id uuid
+  last_used_at "timestamp with time zone"
+
+  indexes {
+    (model, id) [pk]
+    (model, uid) [name: 'mcp_oidc_adapter_uid_idx']
+    (model, user_code) [name: 'mcp_oidc_adapter_user_code_idx']
+    (model, grant_id) [name: 'mcp_oidc_adapter_grant_id_idx']
+    expires_at [name: 'mcp_oidc_adapter_expires_idx']
+    user_id [name: 'mcp_oidc_adapter_user_idx']
+  }
+}
+
 table fitness.clinical_record {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   user_id uuid [not null]
@@ -2144,6 +2166,8 @@ ref supplement_dose_event_supplement_user_fkey: fitness.supplement_dose_event.(s
 ref supplement_dose_event_definition_fkey: fitness.supplement_dose_event.(definition_id, supplement_id) > fitness.supplement_definition.(id, supplement_id) [delete: no action, update: no action]
 
 ref supplement_dose_event_supersedes_fkey: fitness.supplement_dose_event.(supersedes_event_id, user_id, supplement_id, definition_id, scheduled_date) > fitness.supplement_dose_event.(id, user_id, supplement_id, definition_id, scheduled_date) [delete: no action, update: no action]
+
+ref mcp_oidc_adapter_user_id_user_profile_id_fk: fitness.mcp_oidc_adapter.user_id > fitness.user_profile.id [delete: cascade, update: no action]
 
 ref clinical_record_user_id_user_profile_id_fk: fitness.clinical_record.user_id > fitness.user_profile.id [delete: no action, update: no action]
 

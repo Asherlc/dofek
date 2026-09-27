@@ -40,7 +40,7 @@
 
 - `src/db/schema/activity.ts` owns the climbing-entry table definition and its
   database-level association/date invariants.
-- `drizzle/0125_unattached_mountain_project_ticks.sql` migrates existing tick
+- `drizzle/0128_unattached_mountain_project_ticks.sql` migrates existing tick
   ownership, provider identity, date, attachment, and wrapper visibility;
   `drizzle/meta/_journal.json` and generated schema diagrams track that schema.
 - `src/providers/mountain-project.ts` parses and syncs one provider tick per
@@ -64,7 +64,7 @@
 **Files:**
 
 - Modify: `src/db/schema/activity.ts`
-- Create: `drizzle/0125_unattached_mountain_project_ticks.sql`
+- Create: `drizzle/0128_unattached_mountain_project_ticks.sql`
 - Modify: `drizzle/meta/_journal.json`
 - Modify: `docs/schema.dbml`
 - Modify: `docs/schema.puml`

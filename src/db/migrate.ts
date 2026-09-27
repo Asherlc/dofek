@@ -8,6 +8,7 @@ import {
   refreshPostgresAccountErasureWriteFences,
 } from "../account-erasure/postgres-erasure.ts";
 import { logger } from "../logger.ts";
+import { backfillMcpOauthClients } from "./backfill-mcp-oauth-clients.ts";
 import { readBaselineMigration, runDrizzleMigrations } from "./postgres-migrator.ts";
 import { executeWithSchema } from "./typed-sql.ts";
 
@@ -84,6 +85,11 @@ export async function runMigrations(databaseUrl: string, migrationsDir?: string)
     const count = (await getMigrationCount(client)) - countBeforeMigrate;
 
     const database = drizzle(client);
+    const migratedMcpClients = await backfillMcpOauthClients(database);
+    if (migratedMcpClients > 0) {
+      logger.info(`[migrate] Imported ${migratedMcpClients} legacy MCP OAuth client(s)`);
+    }
+
     const coverageHookRows = await executeWithSchema(
       database,
       accountErasureCoverageHookRowSchema,

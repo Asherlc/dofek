@@ -2,11 +2,14 @@ import type { AddressInfo } from "node:net";
 import { healthExplorerSnapshotSchema } from "@dofek/mcp-contracts/health-explorer";
 import { captureException } from "dofek/lib/error-reporting";
 import express from "express";
+import type { Options as RateLimitOptions } from "express-rate-limit";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { makeMockSensorStore } from "../routers/test-helpers.ts";
+import { verifyMcpAccessToken } from "./access-token-verifier.ts";
+import { getMcpIssuerUrl, getMcpResourceUrl } from "./oauth-config.ts";
+import { mcpClientCorrelationId } from "./request-telemetry.ts";
 import { createMcpRouter } from "./route.ts";
-import { validateMcpToken } from "./token-repository.ts";
 import {
   activityDetailsOutputSchema,
   activitySummaryOutputSchema,
@@ -19,6 +22,9 @@ import {
   thresholdHistoryOutputSchema,
 } from "./tool-output.ts";
 import { createDofekMcpServer } from "./tools.ts";
+
+const routeLoggerMocks = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }));
+vi.mock("../logger.ts", () => ({ logger: routeLoggerMocks }));
 
 const toolTestMocks = vi.hoisted(() => {
   const mocks = {
@@ -86,11 +92,11 @@ const toolTestMocks = vi.hoisted(() => {
   };
 });
 
-vi.mock("./token-repository.ts", async (importOriginal) => {
-  const original = await importOriginal<typeof import("./token-repository.ts")>();
+vi.mock("./access-token-verifier.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./access-token-verifier.ts")>();
   return {
     ...original,
-    validateMcpToken: vi.fn(),
+    verifyMcpAccessToken: vi.fn(),
   };
 });
 
@@ -336,12 +342,37 @@ async function request(
   });
 }
 
-function createTestApp(sensorStore = undefined) {
+async function requestMany(app: express.Express, count: number): Promise<number[]> {
+  const server = app.listen(0);
+  try {
+    const port = getPort(server);
+    const statuses: number[] = [];
+    for (let index = 0; index < count; index += 1) {
+      const response = await fetch(`http://127.0.0.1:${port}/api/mcp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(initializeRequest),
+      });
+      statuses.push(response.status);
+    }
+    return statuses;
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+}
+
+function createTestApp(
+  sensorStore = undefined,
+  rateLimit: Partial<RateLimitOptions> | false = false,
+) {
   const app = express();
   app.use(
     "/api/mcp",
     createMcpRouter({
       db: { execute: vi.fn(), select: vi.fn(), transaction: vi.fn() },
+      rateLimit,
       sensorStore,
     }),
   );
@@ -406,10 +437,9 @@ function parseToolCallText(responseText: string): unknown {
 }
 
 function authorizeMcpToken(scopes: readonly (typeof mcpScopes)[number][] = mcpScopes): void {
-  vi.mocked(validateMcpToken).mockResolvedValue({
+  vi.mocked(verifyMcpAccessToken).mockResolvedValue({
+    kind: "personal_token",
     expiresAt: null,
-    oauthClientId: null,
-    oauthResource: null,
     scopes: [...scopes],
     tokenId: "token-id",
     userId: "user-id",
@@ -553,7 +583,7 @@ const initializeRequest = {
 describe("createMcpRouter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(validateMcpToken).mockResolvedValue(null);
+    vi.mocked(verifyMcpAccessToken).mockResolvedValue(null);
     toolTestMocks.activityList.mockResolvedValue({ items: [], totalCount: 0 });
     toolTestMocks.activityListRange.mockResolvedValue([]);
     toolTestMocks.activitySearch.mockResolvedValue({ items: [], totalCount: 0 });
@@ -700,7 +730,45 @@ describe("createMcpRouter", () => {
       id: null,
       jsonrpc: "2.0",
     });
-    expect(validateMcpToken).not.toHaveBeenCalled();
+    expect(verifyMcpAccessToken).not.toHaveBeenCalled();
+  });
+
+  it("rate limits repeated requests before bearer authorization", async () => {
+    const app = createTestApp(undefined, {
+      limit: 1,
+      windowMs: 60_000,
+      standardHeaders: false,
+      legacyHeaders: false,
+    });
+
+    const first = await request(app, { body: initializeRequest });
+    const second = await request(app, { body: initializeRequest });
+
+    expect(first.status).toBe(401);
+    expect(second.status).toBe(429);
+    expect(verifyMcpAccessToken).not.toHaveBeenCalled();
+  });
+
+  it("honors disabled rate limiting beyond the default request limit", async () => {
+    const statuses = await requestMany(createTestApp(), 301);
+
+    expect(statuses).toHaveLength(301);
+    expect(new Set(statuses)).toEqual(new Set([401]));
+  });
+
+  it("uses the configured default rate-limit window", async () => {
+    const app = createTestApp(undefined, {
+      limit: 1,
+      standardHeaders: false,
+      legacyHeaders: false,
+    });
+
+    const first = await request(app, { body: initializeRequest });
+    await new Promise((resolve) => setTimeout(resolve, 1_200));
+    const second = await request(app, { body: initializeRequest });
+
+    expect(first.status).toBe(401);
+    expect(second.status).toBe(429);
   });
 
   it("returns 401 without validating non-bearer authorization", async () => {
@@ -715,7 +783,7 @@ describe("createMcpRouter", () => {
       id: null,
       jsonrpc: "2.0",
     });
-    expect(validateMcpToken).not.toHaveBeenCalled();
+    expect(verifyMcpAccessToken).not.toHaveBeenCalled();
   });
 
   it("returns 401 without validating an empty bearer token", async () => {
@@ -730,7 +798,7 @@ describe("createMcpRouter", () => {
       id: null,
       jsonrpc: "2.0",
     });
-    expect(validateMcpToken).not.toHaveBeenCalled();
+    expect(verifyMcpAccessToken).not.toHaveBeenCalled();
   });
 
   it("returns 401 before parsing JSON when Authorization is missing", async () => {
@@ -741,14 +809,24 @@ describe("createMcpRouter", () => {
   });
 
   it("returns 401 when the bearer token is invalid", async () => {
-    const response = await request(createTestApp(), {
+    const database = { execute: vi.fn(), select: vi.fn(), transaction: vi.fn() };
+    const app = express();
+    app.use("/api/mcp", createMcpRouter({ db: database, rateLimit: false }));
+    const response = await request(app, {
       authorization: "Bearer bad-token",
       body: initializeRequest,
     });
 
     expect(response.status).toBe(401);
     expect(response.headers.get("www-authenticate")).toContain("resource_metadata=");
-    expect(validateMcpToken).toHaveBeenCalledWith(expect.anything(), "bad-token");
+    expect(verifyMcpAccessToken).toHaveBeenCalledWith(
+      "bad-token",
+      expect.objectContaining({
+        db: database,
+        issuer: getMcpIssuerUrl().href,
+        resourceUrl: getMcpResourceUrl().href,
+      }),
+    );
   });
 
   it("returns JSON-RPC method errors for unsupported HTTP methods", async () => {
@@ -808,15 +886,21 @@ describe("createMcpRouter", () => {
     expect(vi.mocked(createDofekMcpServer)).toHaveBeenCalledWith(
       expect.objectContaining({ clientId: "token:token-id" }),
     );
+    expect(routeLoggerMocks.info).toHaveBeenCalledWith(
+      "mcp.authentication",
+      expect.objectContaining({
+        client_id_hash: mcpClientCorrelationId("token-id"),
+        client_kind: "personal_token",
+      }),
+    );
   });
 
   it("attributes OAuth MCP tokens with the validated client ID", async () => {
-    vi.mocked(validateMcpToken).mockResolvedValue({
+    vi.mocked(verifyMcpAccessToken).mockResolvedValue({
+      kind: "oauth",
       expiresAt: null,
-      oauthClientId: "oauth-client-id",
-      oauthResource: null,
+      clientId: "oauth-client-id",
       scopes: ["nutrition:read"],
-      tokenId: "token-id",
       userId: "user-id",
     });
 
@@ -828,6 +912,13 @@ describe("createMcpRouter", () => {
     expect(response.status).toBe(200);
     expect(vi.mocked(createDofekMcpServer)).toHaveBeenCalledWith(
       expect.objectContaining({ clientId: "oauth:oauth-client-id" }),
+    );
+    expect(routeLoggerMocks.info).toHaveBeenCalledWith(
+      "mcp.authentication",
+      expect.objectContaining({
+        client_id_hash: mcpClientCorrelationId("oauth-client-id"),
+        client_kind: "oauth",
+      }),
     );
   });
 

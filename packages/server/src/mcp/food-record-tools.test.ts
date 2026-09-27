@@ -1,4 +1,4 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import { captureException } from "dofek/lib/error-reporting";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";

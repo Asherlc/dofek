@@ -334,7 +334,7 @@ function setupRoutes(
   app.use("/api/external/v1", createExternalWriteApiRouter({ db }));
   app.use("/api/activity", createActivityExportRouter({ db, sensorStore }));
   app.use(createMcpOAuthRouter(db, options.mcpAuthRateLimit));
-  app.use("/api/mcp", createMcpRouter({ db, sensorStore }));
+  app.use("/api/mcp", createMcpRouter({ db, rateLimit: options.mcpAuthRateLimit, sensorStore }));
   app.use("/api/ingest", createIngestZosHealthRouter({ db }));
   app.use("/api/ingest", createIngestZosImuRouter({ db }));
   app.use("/api/companion-pairing/start", authRateLimiter);

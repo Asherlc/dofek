@@ -15,7 +15,7 @@ const NON_MP_WRAPPER = "20000000-0000-4000-8000-000000000003";
 const MP_TICK = "30000000-0000-4000-8000-000000000001";
 const MP_TICK_ABSENT = "30000000-0000-4000-8000-000000000002";
 const NON_MP_TICK = "30000000-0000-4000-8000-000000000003";
-const migrationFile = "0125_unattached_mountain_project_ticks.sql";
+const migrationFile = "0128_unattached_mountain_project_ticks.sql";
 const migrationPath = join(import.meta.dirname, "../../drizzle", migrationFile);
 
 describe("Mountain Project tick migration", () => {
@@ -45,7 +45,7 @@ describe("Mountain Project tick migration", () => {
       })
       .parse(JSON.parse(readFileSync(join(drizzleDirectory, "meta/_journal.json"), "utf8")));
     const historicalMigrations = journal.entries
-      .filter(({ tag }) => tag < "0125_unattached_mountain_project_ticks")
+      .filter(({ tag }) => tag < "0128_unattached_mountain_project_ticks")
       .map(({ tag, when }) => ({
         content: readFileSync(join(drizzleDirectory, `${tag}.sql`), "utf8"),
         file: `${tag}.sql`,

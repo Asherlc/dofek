@@ -1,4 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { dateSchema } from "../lib/date-schema.ts";
 import { CyclingPerformanceRepository } from "../repositories/cycling-performance-repository.ts";
 import type { DofekMcpContext } from "./context.ts";

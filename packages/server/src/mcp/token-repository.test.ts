@@ -7,6 +7,7 @@ import {
   listMcpPersonalTokens,
   listMcpTokens,
   McpAuthError,
+  markMcpConnectedAppUsed,
   mcpScopeSchema,
   requireMcpScope,
   revokeMcpConnectedApp,
@@ -181,7 +182,8 @@ describe("MCP token repository", () => {
       ).toString("base64url"),
     );
     const queryPayload = JSON.stringify(mockExecute.mock.calls[0]?.[0]);
-    expect(queryPayload).toContain("oauth_client_id IS NOT NULL");
+    expect(queryPayload).toContain("FROM fitness.mcp_oidc_adapter grant_payload");
+    expect(queryPayload).toContain("jsonb_each_text");
     expect(queryPayload).toContain('},21,{"value":[""]');
   });
 
@@ -258,6 +260,9 @@ describe("MCP token repository", () => {
       ],
       nextCursor: null,
     });
+    const queryPayload = JSON.stringify(mockExecute.mock.calls[0]?.[0]);
+    expect(queryPayload).toContain("health:read");
+    expect(queryPayload).toContain("nutrition:write");
   });
 
   it("revokes every token belonging to a connected app", async () => {
@@ -273,11 +278,32 @@ describe("MCP token repository", () => {
     ).resolves.toBe(true);
 
     const queryPayload = JSON.stringify(mockExecute.mock.calls[0]?.[0]);
-    expect(queryPayload).toContain("mcp_access_token");
-    expect(queryPayload).toContain("mcp_oauth_refresh_token");
+    expect(queryPayload).toContain("model IN ('AccessToken', 'RefreshToken', 'AuthorizationCode')");
+    expect(queryPayload).toContain("fitness.mcp_oidc_adapter");
     expect(queryPayload).toContain("claude-client");
     expect(queryPayload).toContain("https://dofek.example/api/mcp");
   });
+
+  it("marks a connected app grant as used for a live access token", async () => {
+    mockExecute.mockResolvedValueOnce([{ found: true }]);
+
+    await expect(markMcpConnectedAppUsed(createMockDb(), "token-id-hash")).resolves.toBe(true);
+
+    const queryPayload = JSON.stringify(mockExecute.mock.calls[0]?.[0]);
+    expect(queryPayload).toContain("AccessToken");
+    expect(queryPayload).toContain("Grant");
+    expect(queryPayload).toContain("token-id-hash");
+    expect(queryPayload).toContain("last_used_at = NOW()");
+  });
+
+  it.each([[[]], [[{ found: false }]]])(
+    "returns false when the access token has no active grant",
+    async (rows) => {
+      mockExecute.mockResolvedValueOnce(rows);
+
+      await expect(markMcpConnectedAppUsed(createMockDb(), "token-id-hash")).resolves.toBe(false);
+    },
+  );
 
   it("does not add nutrition write to an existing read-only token", async () => {
     const token = "dofek_mcp_read_only";
@@ -367,7 +393,7 @@ describe("MCP token repository", () => {
     );
   });
 
-  it("updates scopes for every active credential belonging to a connected app", async () => {
+  it("updates the grant and invalidates access tokens without revoking refresh credentials", async () => {
     mockExecute.mockResolvedValueOnce([{ found: true }]);
 
     await expect(
@@ -381,8 +407,10 @@ describe("MCP token repository", () => {
     ).resolves.toBe(true);
 
     const queryPayload = JSON.stringify(mockExecute.mock.calls[0]?.[0]);
-    expect(queryPayload).toContain("UPDATE fitness.mcp_access_token");
-    expect(queryPayload).toContain("UPDATE fitness.mcp_oauth_refresh_token");
+    expect(queryPayload).toContain("UPDATE fitness.mcp_oidc_adapter");
+    expect(queryPayload).toContain("jsonb_set");
+    expect(queryPayload).toContain("deleted_access_tokens");
+    expect(queryPayload).not.toContain("deleted_refresh_tokens");
     expect(queryPayload).toContain("claude-client");
     expect(queryPayload).toContain("https://dofek.example/api/mcp");
     expect(queryPayload).toContain("activity:read");
