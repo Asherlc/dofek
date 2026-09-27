@@ -84,7 +84,7 @@ const APPLICATION_ENVIRONMENT_KEYS = [
   "ZOHO_DESK_REFRESH_TOKEN",
 ] as const;
 
-const WEB_ONLY_ENVIRONMENT_KEYS = ["OPENAI_APPS_CHALLENGE_TOKEN"] as const;
+const WEB_ONLY_ENVIRONMENT_KEYS = ["MCP_OIDC_COOKIE_KEY", "OPENAI_APPS_CHALLENGE_TOKEN"] as const;
 
 const APP_STORE_ENVIRONMENT_KEYS = [
   "APP_STORE_ISSUER_ID",
@@ -199,6 +199,12 @@ describe("renderDeployServiceEnvironmentFiles", () => {
       METRIC_STREAM_HISTORY_TOPIC: "metric-stream-history-v1",
     });
     expect(web).not.toHaveProperty("METRIC_STREAM_TOPIC");
+    expect(web.MCP_OIDC_COOKIE_KEY).toBe("mcp_oidc_cookie_key-value");
+    expect(migrationWeb.MCP_OIDC_COOKIE_KEY).toBe("mcp_oidc_cookie_key-value");
+    expect(parseEnv(readFileSync(paths.worker, "utf8"))).not.toHaveProperty("MCP_OIDC_COOKIE_KEY");
+    expect(parseEnv(readFileSync(paths.analyticsWorker, "utf8"))).not.toHaveProperty(
+      "MCP_OIDC_COOKIE_KEY",
+    );
     expect(migrationWeb).not.toHaveProperty("METRIC_STREAM_CONSUMER_GROUP");
   });
 
@@ -426,6 +432,22 @@ describe("renderDeployServiceEnvironmentFiles", () => {
       renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services")),
     ).toThrow("web deploy environment is missing required keys: OPENAI_APPS_CHALLENGE_TOKEN");
   });
+
+  it.each([undefined, ""]) (
+    "fails before web startup when the MCP OIDC cookie key is missing or blank (%s)",
+    (value) => {
+      const directory = makeTemporaryDirectory();
+      const sourcePath = join(directory, "all.env");
+      const environment = completeDeployEnvironment();
+      if (value === undefined) delete environment.MCP_OIDC_COOKIE_KEY;
+      else environment.MCP_OIDC_COOKIE_KEY = value;
+      writeFileSync(sourcePath, dotenv(environment));
+
+      expect(() => renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services"))).toThrow(
+        "web deploy environment is missing required keys: MCP_OIDC_COOKIE_KEY",
+      );
+    },
+  );
 
   it("fails before web startup when App Store verification configuration is incomplete", () => {
     const directory = makeTemporaryDirectory();
