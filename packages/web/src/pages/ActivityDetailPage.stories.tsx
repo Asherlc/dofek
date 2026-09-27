@@ -11,6 +11,7 @@ const baseActivity: ActivityDetail = {
   rawType: "cycling",
   modality: null,
   startedAt: "2026-03-31T08:00:00Z",
+  displayedDate: "2026-03-31",
   endedAt: "2026-03-31T09:30:00Z",
   localTimeContext: {
     timezone: "America/Los_Angeles",

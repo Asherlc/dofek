@@ -8,6 +8,7 @@ import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
 import type { ClimbingActivityEntryRow } from "../../../server/src/repositories/climbing-repository.ts";
+import type { MountainProjectTickSuggestion } from "../../../server/src/repositories/mountain-project-tick-repository.ts";
 import type { StrengthExerciseDetail } from "../../../server/src/routers/activity.ts";
 import { UnitContext } from "../lib/unitContext.ts";
 
@@ -180,11 +181,20 @@ const mockClimbingEntriesUseQuery = vi.fn(
     isLoading: false,
   }),
 );
-const mockTickSuggestionsUseQuery = vi.fn((_input?: unknown, _options?: { enabled?: boolean }) => ({
-  data: [],
-  error: null,
-  isLoading: false,
-}));
+const mockTickSuggestionsUseQuery = vi.fn(
+  (
+    _input?: unknown,
+    _options?: { enabled?: boolean },
+  ): {
+    data: MountainProjectTickSuggestion[] | undefined;
+    error: unknown | null;
+    isLoading: boolean;
+  } => ({
+    data: [],
+    error: null,
+    isLoading: false,
+  }),
+);
 const mockAttachTickMutate = vi.fn();
 const mockClimbingEntriesInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockTickSuggestionsInvalidate = vi.fn().mockResolvedValue(undefined);

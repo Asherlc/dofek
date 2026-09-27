@@ -12,7 +12,7 @@ export function UnattachedMountainProjectTicks({
   onAttach,
 }: {
   suggestions: MountainProjectTickSuggestion[] | undefined;
-  error: Error | null;
+  error: unknown | null;
   isLoading: boolean;
   state: TickAttachState;
   onAttach: (tickId: string) => void;
