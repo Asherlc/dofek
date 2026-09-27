@@ -27438,3 +27438,29 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Root cause:** Not confirmed. The observed logs show successful OAuth discovery followed by no `/authorize` request, but do not expose ChatGPT's internal failure reason. Missing RFC 9207 issuer support was a plausible interoperability issue: OpenAI documents its issuer-identification and callback behavior, including that clients reject advertised support when the authorization response omits or mismatches `iss` ([OpenAI authentication guidance](https://developers.openai.com/plugins/build/auth); [RFC 9207](https://www.rfc-editor.org/rfc/rfc9207)).
 - **Fix:** Replaced the hand-rolled OAuth authorization server with oidc-provider (native `iss` echoing, RFC 8414 discovery, DCR, CIMD, and RFC 8707 resource indicators) and migrated the MCP stack to the v2 `@modelcontextprotocol/{core,server,node,client,ext-apps}` packages.
 - **Remaining risk / follow-up:** No outstanding remediation is recorded here. The durable `MCP_OIDC_COOKIE_KEY` was provisioned in production, and `renderError` now HTML-escapes the provider error message. Local Postgres integration checks for OIDC discovery/client migration and connected-app token behavior passed 13/13 on 2026-09-26 with `pnpm test:integration --run packages/server/src/mcp/token-repository.integration.test.ts packages/server/src/mcp/oidc.integration.test.ts`.
+## 2026-09-27 — Sleep and body recompute delayed while analytics services are stopped
+
+- **Symptoms:** Sleep and body recomputation took longer than expected.
+- **User impact:** The analytics/reconciliation cycle that advances processing
+  status and refreshes the affected read models was not running during the
+  inspection window.
+- **Evidence:** Read-only production Swarm inspection showed
+  `dofek_analytics-worker` and `dofek_processing-reconciliation` at `0/0`
+  replicas with no update in progress. Their service task lists were empty.
+  `dofek_worker` remained `1/1`; its logs showed body post-sync read-model
+  refreshes completing at 2026-09-27 15:17 UTC and repeatedly around 15:30 UTC.
+- **Root cause:** The analytics worker and processing reconciler were
+  configured with zero desired replicas, so no scheduled analytics or
+  reconciliation cycle could progress. Why they were left at zero is unknown.
+- **Fix:** None applied. Restoring production replicas is an operator action
+  and was not performed during this diagnostic session.
+- **Validation:** Confirmed replica counts and absence of service updates with
+  `docker service inspect`; confirmed task state with `docker service ps` and
+  checked recent worker logs. A successful sleep analytics cycle was not
+  observed.
+- **Remaining risk:** Sleep and body operations that depend on analytics or
+  processing reconciliation may remain pending until the services are
+  restored and a cycle completes.
+- **Follow-up:** Confirm whether zero replicas were intentional. If not,
+  restore the expected production service counts through the normal deployment
+  workflow and verify the next analytics and reconciliation cycle.
