@@ -144,6 +144,8 @@ export const climbingRouter = router({
         await Promise.all([
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.activityEntries:`),
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.sessionSummary:`),
+          queryCache.invalidateByPrefix(`${ctx.userId}:climbing.gradeProgression:`),
+          queryCache.invalidateByPrefix(`${ctx.userId}:climbing.volumeByGrade:`),
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.unattachedMountainProjectTicks:`),
         ]);
         return { attached: true as const };

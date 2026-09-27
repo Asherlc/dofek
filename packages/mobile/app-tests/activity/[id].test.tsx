@@ -252,6 +252,8 @@ const mockAttachTickMutate = vi.fn();
 const mockClimbingEntriesInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockTickSuggestionsInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockClimbingSessionSummaryInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockClimbingGradeProgressionInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockClimbingVolumeByGradeInvalidate = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
@@ -323,6 +325,8 @@ vi.mock("../../lib/trpc", () => ({
         activityEntries: { invalidate: mockClimbingEntriesInvalidate },
         unattachedMountainProjectTicks: { invalidate: mockTickSuggestionsInvalidate },
         sessionSummary: { invalidate: mockClimbingSessionSummaryInvalidate },
+        gradeProgression: { invalidate: mockClimbingGradeProgressionInvalidate },
+        volumeByGrade: { invalidate: mockClimbingVolumeByGradeInvalidate },
       },
     }),
   },
@@ -414,6 +418,8 @@ beforeEach(() => {
   mockClimbingEntriesInvalidate.mockClear();
   mockTickSuggestionsInvalidate.mockClear();
   mockClimbingSessionSummaryInvalidate.mockClear();
+  mockClimbingGradeProgressionInvalidate.mockClear();
+  mockClimbingVolumeByGradeInvalidate.mockClear();
   mockHangboardDetailsQuery.mockClear();
   mockRecomputeMutate.mockClear();
   mockRecomputeShouldFail.mockReset();
@@ -517,6 +523,8 @@ describe("ActivityDetailScreen", () => {
         activityId: baseCyclingActivity.id,
       });
       expect(mockClimbingSessionSummaryInvalidate).toHaveBeenCalledWith();
+      expect(mockClimbingGradeProgressionInvalidate).toHaveBeenCalledWith();
+      expect(mockClimbingVolumeByGradeInvalidate).toHaveBeenCalledWith();
     });
     expect(mockActivityByIdInvalidate).not.toHaveBeenCalled();
   });
@@ -530,7 +538,7 @@ describe("ActivityDetailScreen", () => {
     mockTickSuggestionsQuery.mockReturnValue({ data: undefined, error: null, isLoading: true });
     const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
     const view = render(React.createElement(ActivityDetailScreen));
-    expect(screen.getByText("Loading Mountain Project ticks...")).toBeTruthy();
+    expect(view.container.querySelector('[testid="query-state-loading"]')).toBeTruthy();
     view.unmount();
     mockTickSuggestionsQuery.mockReturnValue({
       data: undefined,

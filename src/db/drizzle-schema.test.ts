@@ -314,7 +314,8 @@ describe("drizzleSchema", () => {
     expect(config.indexes.map((indexBuilder) => indexBuilder.config.name)).toEqual(
       expect.arrayContaining([
         "climbing_entry_unattached_date_idx",
-        "climbing_entry_user_provider_external_id_idx",
+        "climbing_entry_activity_external_id_idx",
+        "climbing_entry_mountain_project_external_id_idx",
       ]),
     );
   });
@@ -355,8 +356,13 @@ describe("drizzleSchema", () => {
           unique: false,
         },
         {
+          columns: ["activity_id", "external_id"],
+          name: "climbing_entry_activity_external_id_idx",
+          unique: true,
+        },
+        {
           columns: ["user_id", "provider_id", "external_id"],
-          name: "climbing_entry_user_provider_external_id_idx",
+          name: "climbing_entry_mountain_project_external_id_idx",
           unique: true,
         },
       ]),

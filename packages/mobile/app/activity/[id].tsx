@@ -49,6 +49,7 @@ import { HrZonesChart, PowerZonesChart } from "../../components/activity/ZoneDis
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { HangboardingDetail } from "../../components/HangboardingDetail";
 import { MuscleGroupBodyDiagram } from "../../components/MuscleGroupBodyDiagram";
+import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { RouteMap } from "../../components/RouteMap";
 import { type ActivityExportFormat, downloadActivityExport } from "../../lib/activity-export";
 import { useAuth } from "../../lib/auth-context";
@@ -637,7 +638,7 @@ export default function ActivityDetailScreen() {
     { enabled: !!id && isClimbingActivity },
   );
   const tickSuggestions = trpc.climbing.unattachedMountainProjectTicks.useQuery(
-    { activityId: id ?? "" },
+    { activityId: id },
     { enabled: !!id && isClimbingActivity },
   );
   const [tickAttachState, setTickAttachState] = useState<
@@ -648,21 +649,19 @@ export default function ActivityDetailScreen() {
       await Promise.all([
         trpcUtils.climbing.activityEntries.invalidate({ id: input.activityId }),
         trpcUtils.climbing.sessionSummary.invalidate(),
+        trpcUtils.climbing.gradeProgression.invalidate(),
+        trpcUtils.climbing.volumeByGrade.invalidate(),
         trpcUtils.climbing.unattachedMountainProjectTicks.invalidate({
           activityId: input.activityId,
         }),
       ]);
     },
-    onError: (error, input) =>
-      setTickAttachState((current) => ({
-        ...current,
-        [input.tickId]: { pending: false, error: userFacingErrorMessage(error) },
-      })),
   });
   const handleAttachTick = (tickId: string) => {
+    if (!id) return;
     setTickAttachState((current) => ({ ...current, [tickId]: { pending: true, error: null } }));
     attachTick.mutate(
-      { activityId: id ?? "", tickId },
+      { activityId: id, tickId },
       {
         onSuccess: () =>
           setTickAttachState((current) => ({
@@ -937,13 +936,19 @@ export default function ActivityDetailScreen() {
         <View style={climbingStyles.container}>
           <Text style={climbingStyles.sectionTitle}>Unattached Mountain Project ticks</Text>
           {tickSuggestions.error ? (
-            <Text style={styles.errorText}>{userFacingErrorMessage(tickSuggestions.error)}</Text>
+            <QueryStatePanel
+              variant="error"
+              message={getQueryErrorMessage(tickSuggestions.error)}
+              onRetry={() => void tickSuggestions.refetch()}
+              retrying={tickSuggestions.isFetching}
+            />
           ) : tickSuggestions.isLoading && !tickSuggestions.data ? (
-            <Text style={climbingStyles.locationName}>Loading Mountain Project ticks...</Text>
+            <QueryStatePanel variant="loading" />
           ) : (tickSuggestions.data?.length ?? 0) === 0 ? (
-            <Text style={climbingStyles.locationName}>
-              No unattached Mountain Project ticks for this day.
-            </Text>
+            <QueryStatePanel
+              variant="empty"
+              message="No unattached Mountain Project ticks for this day."
+            />
           ) : (
             tickSuggestions.data?.map((tick) => {
               const state = tickAttachState[tick.id];

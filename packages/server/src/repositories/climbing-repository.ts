@@ -12,6 +12,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import { postgresActivityCalendarDate } from "./activity-local-date.ts";
 
 export type { ClimbingClimbType, ClimbingGradeSystem };
 
@@ -186,11 +187,13 @@ export class ClimbingRepository extends BaseRepository {
   }
 
   #activityWindowPredicate(days: number) {
+    const activityDate = postgresActivityCalendarDate(sql`a`, this.timezone);
     return sql`
       a.user_id = ${this.userId}
       AND a.canonical_type = 'climbing'
-      AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-      ${this.timestampAccessPredicate(sql`a.started_at`)}
+      AND (${activityDate}) > (NOW() AT TIME ZONE ${this.timezone})::date - ${days}::int
+      AND (${activityDate}) <= (NOW() AT TIME ZONE ${this.timezone})::date
+      ${this.dateAccessPredicate(activityDate)}
     `;
   }
 

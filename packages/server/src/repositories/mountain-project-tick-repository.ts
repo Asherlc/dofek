@@ -4,7 +4,6 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
-import { postgresActivityLocalDate } from "./activity-local-date.ts";
 import { ActivityRepository } from "./activity-repository.ts";
 
 const suggestionSchema = z.object({
@@ -104,7 +103,6 @@ export class MountainProjectTickRepository extends BaseRepository {
       });
     }
     const displayedDate = activity.displayed_date;
-    const localDate = postgresActivityLocalDate(sql`member`, this.timezone);
     const updated = await this.query(
       updateSchema,
       sql`WITH eligible_activity AS (
@@ -118,7 +116,6 @@ export class MountainProjectTickRepository extends BaseRepository {
               AND member.canonical_type = 'climbing'
               AND member.deleted_at IS NULL
               AND member.provider_absent_at IS NULL
-              AND (${localDate})::text = ${displayedDate}
             ORDER BY (member.id = activity_group.anchor_activity_id) DESC,
                      member.started_at, member.id
             LIMIT 1

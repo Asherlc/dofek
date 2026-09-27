@@ -241,18 +241,13 @@ describe("ActivityRepository", () => {
 
       const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
       expect(compiledQuery.sql.match(/a\.provider_id = 'mountain-project'/g)).toHaveLength(3);
-      expect(compiledQuery.sql).toContain("END >= $3::date");
-      expect(compiledQuery.sql).toContain("END >= $5::date");
-      expect(compiledQuery.sql).toContain("END < $7::date");
-      expect(compiledQuery.params).toEqual([
-        "user-1",
-        "America/Los_Angeles",
-        "2026-02-01",
-        "America/Los_Angeles",
-        "2026-03-10",
-        "America/Los_Angeles",
-        "2026-03-17",
-      ]);
+      expect(compiledQuery.sql).toContain("END >= $10::date");
+      expect(compiledQuery.sql).toContain("END >= $19::date");
+      expect(compiledQuery.sql).toContain("END < $28::date");
+      expect(compiledQuery.sql).toContain("a.start_utc_offset_minutes IS NOT NULL");
+      expect(compiledQuery.params).toEqual(
+        expect.arrayContaining(["user-1", "2026-02-01", "2026-03-10", "2026-03-17"]),
+      );
     });
 
     it("listVisibleActivityIdsInRange applies an exclusive local-date end", async () => {
@@ -265,15 +260,12 @@ describe("ActivityRepository", () => {
 
       const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
       expect(compiledQuery.sql.match(/a\.provider_id = 'mountain-project'/g)).toHaveLength(2);
-      expect(compiledQuery.sql).toContain("END >= $3::date");
-      expect(compiledQuery.sql).toContain("END < $5::date");
-      expect(compiledQuery.params).toEqual([
-        "user-1",
-        "America/Los_Angeles",
-        "2026-02-01",
-        "America/Los_Angeles",
-        "2026-03-01",
-      ]);
+      expect(compiledQuery.sql).toContain("END >= $10::date");
+      expect(compiledQuery.sql).toContain("END < $19::date");
+      expect(compiledQuery.sql).toContain("a.start_utc_offset_minutes IS NOT NULL");
+      expect(compiledQuery.params).toEqual(
+        expect.arrayContaining(["user-1", "2026-02-01", "2026-03-01"]),
+      );
     });
 
     it("countVisibleInWindow counts rows in v_activity", async () => {

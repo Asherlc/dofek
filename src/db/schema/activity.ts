@@ -149,9 +149,12 @@ export const climbingEntry = fitness.table(
       .on(table.userId, table.unattachedDate)
       .where(sql`${table.activityId} IS NULL AND ${table.providerAbsentAt} IS NULL`),
     index("climbing_entry_grade_lookup_idx").on(table.climbType, table.gradeSystem, table.grade),
-    uniqueIndex("climbing_entry_user_provider_external_id_idx")
-      .on(table.userId, table.providerId, table.externalId)
+    uniqueIndex("climbing_entry_activity_external_id_idx")
+      .on(table.activityId, table.externalId)
       .where(sql`${table.externalId} IS NOT NULL`),
+    uniqueIndex("climbing_entry_mountain_project_external_id_idx")
+      .on(table.userId, table.providerId, table.externalId)
+      .where(sql`${table.providerId} = 'mountain-project' AND ${table.externalId} IS NOT NULL`),
     check(
       "climbing_entry_activity_unattached_date_pair",
       sql`(${table.activityId} IS NULL) = (${table.unattachedDate} IS NOT NULL)`,

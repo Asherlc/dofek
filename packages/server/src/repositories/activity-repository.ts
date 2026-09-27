@@ -16,7 +16,7 @@ import { logger } from "../logger.ts";
 import type { ActivityRow } from "../models/activity.ts";
 import { activitySourceSchema } from "../models/activity-source.ts";
 import { activityMeasurementState } from "../services/activity-data-state.ts";
-import { postgresActivityCalendarDate, postgresActivityLocalDate } from "./activity-local-date.ts";
+import { postgresActivityCalendarDate } from "./activity-local-date.ts";
 import { getActivityRoutePreviews } from "./activity-route-preview.ts";
 
 // ---------------------------------------------------------------------------
@@ -698,7 +698,7 @@ export class ActivityRepository extends BaseRepository {
       activityDetailRowSchema,
       sql`SELECT
             a.id,
-            (${postgresActivityLocalDate(sql`a`, this.timezone)})::text AS displayed_date,
+            (${postgresActivityCalendarDate(sql`a`, this.timezone)})::text AS displayed_date,
             a.canonical_type,
             a.provider_type AS raw_type,
             a.modality::text AS modality,
@@ -746,7 +746,7 @@ export class ActivityRepository extends BaseRepository {
       activityDetailRowSchema,
       sql`SELECT
             ${groupId}::uuid AS id,
-            (${postgresActivityLocalDate(sql`a`, this.timezone)})::text AS displayed_date,
+            (${postgresActivityCalendarDate(sql`a`, this.timezone)})::text AS displayed_date,
             a.canonical_type,
             a.provider_type AS raw_type,
             a.modality::text AS modality,

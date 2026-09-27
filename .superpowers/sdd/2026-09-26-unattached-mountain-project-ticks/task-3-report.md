@@ -9,8 +9,9 @@ member ID while accepting the canonical group ID from clients. It rechecks the
 user, active target, climbing type, local date, Mountain Project source,
 provider presence, and unattached state as part of the update. Missing or stale
 records return actionable `NOT_FOUND`, `PRECONDITION_FAILED`, or `CONFLICT`
-errors. The climbing router exposes the query and mutation and invalidates only
-activity-entry and suggestion caches after attachment.
+errors. The climbing router exposes the query and mutation and invalidates the
+activity-entry, session summary, grade progression, volume-by-grade, and
+unattached-suggestion caches after attachment.
 
 Added repository unit and PostgreSQL integration coverage, router unit and
 PostgreSQL integration coverage, and updated existing climbing integration

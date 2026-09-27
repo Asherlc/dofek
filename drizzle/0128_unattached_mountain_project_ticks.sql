@@ -14,11 +14,7 @@ ALTER COLUMN activity_id DROP NOT NULL;
 UPDATE fitness.activity AS parent
 SET deleted_at = COALESCE(parent.deleted_at, NOW())
 WHERE
-  parent.provider_id = 'mountain-project'
-  AND EXISTS (
-    SELECT 1 FROM fitness.climbing_entry AS entry
-    WHERE entry.activity_id = parent.id
-  );
+  parent.provider_id = 'mountain-project';
 --> statement-breakpoint
 UPDATE fitness.climbing_entry AS entry
 SET
@@ -54,13 +50,9 @@ ADD CONSTRAINT climbing_entry_activity_owner_fk
 FOREIGN KEY (user_id, activity_id) REFERENCES fitness.activity (user_id, id)
 ON DELETE CASCADE NOT VALID;
 --> statement-breakpoint
--- Drizzle runs each migration in a transaction; PostgreSQL forbids DROP INDEX CONCURRENTLY there.
--- squawk-ignore require-concurrent-index-deletion
-DROP INDEX fitness.climbing_entry_activity_external_id_idx;
---> statement-breakpoint
-CREATE UNIQUE INDEX climbing_entry_user_provider_external_id_idx
+CREATE UNIQUE INDEX climbing_entry_mountain_project_external_id_idx
 ON fitness.climbing_entry (user_id, provider_id, external_id)
-WHERE external_id IS NOT NULL;
+WHERE provider_id = 'mountain-project' AND external_id IS NOT NULL;
 --> statement-breakpoint
 CREATE INDEX climbing_entry_unattached_date_idx
 ON fitness.climbing_entry (user_id, unattached_date)

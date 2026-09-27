@@ -10,6 +10,8 @@ const ATTACHED_ID = "b0000000-0000-4000-8000-000000000001";
 const ABSENT_ATTACHED_ID = "b0000000-0000-4000-8000-000000000004";
 const UNATTACHED_ID = "b0000000-0000-4000-8000-000000000002";
 const ABSENT_ID = "b0000000-0000-4000-8000-000000000003";
+const BOUNDARY_ATTACHED_ID = "b0000000-0000-4000-8000-000000000006";
+const BOUNDARY_UNATTACHED_ID = "b0000000-0000-4000-8000-000000000007";
 const activityIdSchema = z.object({ id: z.string(), group_id: z.string() });
 const entryStateSchema = z.object({
   activity_id: z.string().nullable(),
@@ -118,5 +120,42 @@ describe("ClimbingRepository PostgreSQL summaries", () => {
     expect(
       (await repository.getActivityEntries(activityId)).map((row) => row.toDetail().id),
     ).toEqual([ABSENT_ATTACHED_ID, ATTACHED_ID]);
+  });
+
+  it("uses the same strict calendar-day boundary for attached and unattached entries", async () => {
+    const timezone = "America/Los_Angeles";
+    const boundaryDate = sql`(NOW() AT TIME ZONE ${timezone})::date - 30`;
+    const [boundaryActivity] = await executeWithSchema(
+      context.db,
+      activityIdSchema,
+      sql`INSERT INTO fitness.activity (
+        provider_id, user_id, external_id, canonical_type, provider_type,
+        started_at, ended_at, local_time_source, timezone
+      ) VALUES (
+        'climbing-summary-test', ${TEST_USER_ID}, 'summary-boundary', 'climbing', 'climbing',
+        (((NOW() AT TIME ZONE ${timezone})::date - 30)::timestamp
+          + (NOW() AT TIME ZONE ${timezone})::time + INTERVAL '1 minute') AT TIME ZONE ${timezone},
+        (((NOW() AT TIME ZONE ${timezone})::date - 30)::timestamp
+          + (NOW() AT TIME ZONE ${timezone})::time + INTERVAL '2 minutes') AT TIME ZONE ${timezone},
+        'unknown', NULL
+      ) RETURNING id::text AS id, group_id::text AS group_id`,
+    );
+    if (!boundaryActivity) throw new Error("Failed to seed boundary climbing activity");
+    await context.db.execute(sql`INSERT INTO fitness.climbing_entry (
+      id, user_id, provider_id, activity_id, unattached_date, external_id,
+      climb_type, grade_system, grade, sent, attempt_count, provider_absent_at, raw
+    ) VALUES
+      (${BOUNDARY_ATTACHED_ID}, ${TEST_USER_ID}, 'climbing-summary-test', ${boundaryActivity.id}, NULL,
+       'boundary-attached', 'boulder', 'v_scale', 'V6', TRUE, 1, NULL, '{}'::jsonb),
+      (${BOUNDARY_UNATTACHED_ID}, ${TEST_USER_ID}, 'mountain-project', NULL,
+       ${boundaryDate}, 'boundary-unattached', 'boulder', 'v_scale', 'V7', TRUE, 1, NULL, '{}'::jsonb)`);
+
+    const repository = new ClimbingRepository(context.db, TEST_USER_ID, timezone);
+    expect(
+      (await repository.getGradeProgression(30)).map((row) => row.toDetail().grade),
+    ).not.toEqual(expect.arrayContaining(["V6", "V7"]));
+    expect((await repository.getVolumeByGrade(30)).map((row) => row.toDetail().grade)).not.toEqual(
+      expect.arrayContaining(["V6", "V7"]),
+    );
   });
 });

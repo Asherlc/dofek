@@ -320,7 +320,8 @@ describe("ClimbingRepository", () => {
       expect(text).toContain("detail.attempt_count > 0");
       expect(text).toContain("BOOL_OR(attempt.outcome = 'sent')");
       expect(text).toContain("ELSE ce.sent");
-      expect(text).toContain("NOW() - ");
+      expect(text).toContain("NOW() AT TIME ZONE");
+      expect(text).toContain("::date - ");
     });
 
     it("includes active standalone ticks by the user's calendar date", async () => {

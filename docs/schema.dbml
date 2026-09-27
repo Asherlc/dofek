@@ -576,7 +576,8 @@ table fitness.climbing_entry {
     activity_id [name: 'climbing_entry_activity_idx']
     (user_id, unattached_date) [name: 'climbing_entry_unattached_date_idx']
     (climb_type, grade_system, grade) [name: 'climbing_entry_grade_lookup_idx']
-    (user_id, provider_id, external_id) [name: 'climbing_entry_user_provider_external_id_idx', unique]
+    (activity_id, external_id) [name: 'climbing_entry_activity_external_id_idx', unique]
+    (user_id, provider_id, external_id) [name: 'climbing_entry_mountain_project_external_id_idx', unique]
 
 
 

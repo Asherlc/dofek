@@ -230,6 +230,8 @@ describe("climbingRouter", () => {
       "user-1:climbing.unattachedMountainProjectTicks:",
     );
     expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:climbing.sessionSummary:");
+    expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:climbing.gradeProgression:");
+    expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:climbing.volumeByGrade:");
   });
 
   it.each([

@@ -178,7 +178,7 @@ export class MountainProjectProvider implements SyncProvider {
               })
               .onConflictDoUpdate({
                 target: [climbingEntry.userId, climbingEntry.providerId, climbingEntry.externalId],
-                targetWhere: sql`${climbingEntry.externalId} IS NOT NULL`,
+                targetWhere: sql`${climbingEntry.providerId} = 'mountain-project' AND ${climbingEntry.externalId} IS NOT NULL`,
                 set: {
                   climbType: entry.climbType,
                   gradeSystem: entry.gradeSystem,

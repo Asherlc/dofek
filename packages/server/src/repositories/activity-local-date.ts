@@ -30,15 +30,15 @@ export function postgresActivityLocalDate(activityAlias: SQL, analysisTimezone: 
 export function clickHouseActivityLocalDate(activityAlias: string): string {
   if (!/^[a-z_][a-z0-9_]*$/i.test(activityAlias)) throw new Error("Invalid SQL alias");
   const sources = AUTHORITATIVE_LOCAL_TIME_SOURCES.map((source) => `'${source}'`).join(", ");
-  return `toDate(if(
+  return `if(
     has([${sources}], ${activityAlias}.local_time_source)
       AND isNotNull(${activityAlias}.start_utc_offset_minutes),
-    addMinutes(
+    toDate(addMinutes(
       toTimeZone(${activityAlias}.started_at, 'UTC'),
       toInt32(coalesce(${activityAlias}.start_utc_offset_minutes, 0))
-    ),
-    toTimeZone(${activityAlias}.started_at, {timezone:String})
-  ))`;
+    )),
+    toDate(toTimeZone(${activityAlias}.started_at, {timezone:String}))
+  )`;
 }
 
 /** Mountain Project exports a calendar date without a time; its stored midnight UTC is only a carrier. */
@@ -46,7 +46,7 @@ export function postgresActivityCalendarDate(activityAlias: SQL, analysisTimezon
   return sql`CASE
     WHEN ${activityAlias}.provider_id = 'mountain-project'
       THEN (${activityAlias}.started_at AT TIME ZONE 'UTC')::date
-    ELSE (${activityAlias}.started_at AT TIME ZONE ${analysisTimezone})::date
+    ELSE ${postgresActivityLocalDate(activityAlias, analysisTimezone)}
   END`;
 }
 
@@ -55,7 +55,7 @@ export function clickHouseActivityCalendarDate(activityAlias: string): string {
   return `if(
     ${activityAlias}.provider_id = 'mountain-project',
     toDate(toTimeZone(${activityAlias}.started_at, 'UTC')),
-    toDate(toTimeZone(${activityAlias}.started_at, {timezone:String}))
+    ${clickHouseActivityLocalDate(activityAlias)}
   )`;
 }
 

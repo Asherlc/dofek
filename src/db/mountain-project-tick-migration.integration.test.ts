@@ -12,9 +12,12 @@ const USER = "10000000-0000-4000-8000-000000000001";
 const MP_WRAPPER = "20000000-0000-4000-8000-000000000001";
 const OTHER_WRAPPER = "20000000-0000-4000-8000-000000000002";
 const NON_MP_WRAPPER = "20000000-0000-4000-8000-000000000003";
+const NON_MP_DUPLICATE_WRAPPER = "20000000-0000-4000-8000-000000000004";
+const EMPTY_MP_WRAPPER = "20000000-0000-4000-8000-000000000005";
 const MP_TICK = "30000000-0000-4000-8000-000000000001";
 const MP_TICK_ABSENT = "30000000-0000-4000-8000-000000000002";
 const NON_MP_TICK = "30000000-0000-4000-8000-000000000003";
+const NON_MP_DUPLICATE_TICK = "30000000-0000-4000-8000-000000000004";
 const migrationFile = "0128_unattached_mountain_project_ticks.sql";
 const migrationPath = join(import.meta.dirname, "../../drizzle", migrationFile);
 const validationMigrationFile = "0129_validate_unattached_mountain_project_ticks.sql";
@@ -64,11 +67,14 @@ describe("Mountain Project tick migration", () => {
         provider_type, started_at, provider_absent_at) VALUES
         ('${MP_WRAPPER}', '${USER}', 'mountain-project', 'wrapper-one', 'climbing', 'climbing', '2026-05-04T00:00:00Z', NULL),
         ('${OTHER_WRAPPER}', '${USER}', 'mountain-project', 'wrapper-two', 'climbing', 'climbing', '2026-05-05T00:00:00Z', '2026-06-01T00:00:00Z'),
-        ('${NON_MP_WRAPPER}', '${USER}', 'kaya-export', 'wrapper-three', 'climbing', 'climbing', '2026-05-06T14:00:00Z', NULL);
+        ('${NON_MP_WRAPPER}', '${USER}', 'kaya-export', 'wrapper-three', 'climbing', 'climbing', '2026-05-06T14:00:00Z', NULL),
+        ('${NON_MP_DUPLICATE_WRAPPER}', '${USER}', 'kaya-export', 'wrapper-four', 'climbing', 'climbing', '2026-05-07T14:00:00Z', NULL),
+        ('${EMPTY_MP_WRAPPER}', '${USER}', 'mountain-project', 'wrapper-empty', 'climbing', 'climbing', '2026-05-08T00:00:00Z', NULL);
       INSERT INTO fitness.climbing_entry (id, activity_id, external_id, climb_type, grade_system, grade, sent, attempt_count, raw) VALUES
         ('${MP_TICK}', '${MP_WRAPPER}', 'tick-one', 'boulder', 'v_scale', 'V4', true, 1, '{"preserve":"one"}'),
         ('${MP_TICK_ABSENT}', '${OTHER_WRAPPER}', 'tick-two', 'route', 'yds', '5.10a', true, 1, '{"preserve":"two"}'),
-        ('${NON_MP_TICK}', '${NON_MP_WRAPPER}', 'kaya-one', 'boulder', 'v_scale', 'V2', true, 1, '{"preserve":"kaya"}');
+        ('${NON_MP_TICK}', '${NON_MP_WRAPPER}', 'kaya-one', 'boulder', 'v_scale', 'V2', true, 1, '{"preserve":"kaya"}'),
+        ('${NON_MP_DUPLICATE_TICK}', '${NON_MP_DUPLICATE_WRAPPER}', 'kaya-one', 'boulder', 'v_scale', 'V3', true, 1, '{"preserve":"kaya-duplicate"}');
     `);
   }, 60_000);
 
@@ -149,13 +155,22 @@ describe("Mountain Project tick migration", () => {
         provider_absent_at: null,
         raw: { preserve: "kaya" },
       },
+      {
+        id: NON_MP_DUPLICATE_TICK,
+        user_id: USER,
+        provider_id: "kaya-export",
+        activity_id: NON_MP_DUPLICATE_WRAPPER,
+        unattached_date: null,
+        provider_absent_at: null,
+        raw: { preserve: "kaya-duplicate" },
+      },
     ]);
     expect((await client.query("SELECT count(*) FROM fitness.climbing_entry")).rows).toEqual([
-      { count: "3" },
+      { count: "4" },
     ]);
     expect(
       (await client.query("SELECT id FROM fitness.activity WHERE deleted_at IS NULL ORDER BY id"))
         .rows,
-    ).toEqual([{ id: NON_MP_WRAPPER }]);
+    ).toEqual([{ id: NON_MP_WRAPPER }, { id: NON_MP_DUPLICATE_WRAPPER }]);
   });
 });

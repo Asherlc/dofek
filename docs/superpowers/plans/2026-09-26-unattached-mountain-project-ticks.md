@@ -81,8 +81,9 @@
 - Produces the row invariant: `activity_id IS NULL` exactly when
   `unattached_date IS NOT NULL`; when attached, the activity and entry belong
   to the same user.
-- Produces source identity unique by `(user_id, provider_id, external_id)` for
-  rows with an external ID.
+- Preserves the existing per-activity external-ID identity for all providers
+  and enforces user-wide external-ID uniqueness only for Mountain Project rows,
+  whose exported tick IDs are globally stable within a user.
 
 - [ ] **Step 1: Write standalone-entry database tests first**
 
