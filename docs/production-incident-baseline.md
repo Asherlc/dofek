@@ -7,6 +7,28 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-09-26 — MCP migration PR CI failures
+
+- **Status:** Fixed in code; CI rerun pending.
+- **Symptoms / impact:** PR #2808 failed integration shards, Stryker mutation
+  shards, and the Codecov patch gate. No production impact.
+- **Evidence / root cause:** Integration shard 2 failed because the migration
+  runner invoked the legacy MCP OAuth client backfill against a test database
+  where `fitness.mcp_oauth_client` was absent. Stryker identified uncovered
+  branches and assertions that did not distinguish the mutated behavior in the
+  MCP auth routing, JWT verifier, and migration logging paths.
+- **Direct fix:** The backfill now checks for the legacy table before querying
+  it. Focused tests exercise the affected migration logging, auth routing,
+  verifier, OAuth route, token-scope, connected-app activity, and consent/login
+  interaction behaviors. OAuth JWT verification also rejects tokens missing
+  the required expiration claim ([RFC 9068, §2.2](https://www.rfc-editor.org/rfc/rfc9068.html#section-2.2)).
+- **Validation:** Integration shard 2 passed locally (64 files / 390 tests)
+  with the CI shard coverage-threshold setting; focused unit suites, typecheck,
+  Biome, and targeted mutation runs pass. Final remote CI validation is pending.
+- **Remaining risk / follow-up:** Confirm the full PR check suite passes on the
+  pushed revision; investigate any remaining failures from fresh logs rather
+  than changing thresholds or suppressing checks.
+
 ## 2026-09-20 — Infisical GitHub secret sync exceeded repository limit
 
 - **Status:** Fixed. The sync now succeeds and preserves both Ziva secrets.
@@ -27408,3 +27430,11 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Root cause:** The SeaweedFS entrypoint bound the master to its own Swarm service name (`weed server -ip=peerdb-minio`). Swarm only publishes a service name once it has a running task, so the first task could not resolve its own name, exited non-zero, and never became a running task — a permanent deadlock. Compose/testcontainers resolve the service name immediately, so the SeaweedFS migration's local validation missed it.
 - **Fix:** `deploy/stack.yml` now binds master/filer/volume to `-ip=127.0.0.1`; the S3 API still binds `0.0.0.0:9000` for PeerDB and the lifecycle sidecar. Reproduced both sides locally (`-ip=peerdb-minio` exited 255 with the DNS error; `-ip=127.0.0.1` stayed healthy and returned S3 `ListBuckets` 200).
 - **Remaining risk / follow-up:** Production `/mnt/dofek-data/peerdb-minio` still holds the MinIO on-disk layout (2.2 MB transient staging). Wipe it as an operator action with PeerDB drained or paused (or while `peerdb-minio` is stopped), then confirm the slot returns to active and the mirror catches up after deploy.
+
+## 2026-09-25 — ChatGPT MCP Apps "Couldn't create MCP app" connect failure
+
+- **Symptoms:** A user attempting to connect a ChatGPT MCP App to Dofek got "Couldn't create MCP app" and the connection never completed.
+- **Evidence:** The client's OAuth discovery request (`/.well-known/oauth-authorization-server`) returned 200, but no subsequent `/authorize` request was observed.
+- **Root cause:** Not confirmed. The observed logs show successful OAuth discovery followed by no `/authorize` request, but do not expose ChatGPT's internal failure reason. Missing RFC 9207 issuer support was a plausible interoperability issue: OpenAI documents its issuer-identification and callback behavior, including that clients reject advertised support when the authorization response omits or mismatches `iss` ([OpenAI authentication guidance](https://developers.openai.com/plugins/build/auth); [RFC 9207](https://www.rfc-editor.org/rfc/rfc9207)).
+- **Fix:** Replaced the hand-rolled OAuth authorization server with oidc-provider (native `iss` echoing, RFC 8414 discovery, DCR, CIMD, and RFC 8707 resource indicators) and migrated the MCP stack to the v2 `@modelcontextprotocol/{core,server,node,client,ext-apps}` packages.
+- **Remaining risk / follow-up:** No outstanding remediation is recorded here. The durable `MCP_OIDC_COOKIE_KEY` was provisioned in production, and `renderError` now HTML-escapes the provider error message. Local Postgres integration checks for OIDC discovery/client migration and connected-app token behavior passed 13/13 on 2026-09-26 with `pnpm test:integration --run packages/server/src/mcp/token-repository.integration.test.ts packages/server/src/mcp/oidc.integration.test.ts`.

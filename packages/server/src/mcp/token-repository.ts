@@ -3,6 +3,7 @@ import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
+import { getMcpResourceUrl } from "./oauth-config.ts";
 
 export const mcpScopeSchema = z.enum([
   "health:read",
@@ -256,6 +257,29 @@ export async function listMcpPersonalTokens(
   return rows.map(toMetadata);
 }
 
+export async function markMcpConnectedAppUsed(
+  db: ExecutableDatabase,
+  accessTokenIdHash: string,
+): Promise<boolean> {
+  const rows = await executeWithSchema(
+    db,
+    connectedAppRevokeRowSchema,
+    sql`WITH updated_grants AS (
+          UPDATE fitness.mcp_oidc_adapter grant_payload
+          SET last_used_at = NOW()
+          FROM fitness.mcp_oidc_adapter access_token
+          WHERE access_token.model = 'AccessToken'
+            AND access_token.id = ${accessTokenIdHash}
+            AND access_token.expires_at > NOW()
+            AND grant_payload.model = 'Grant'
+            AND grant_payload.id = access_token.grant_id
+          RETURNING grant_payload.id
+        )
+        SELECT EXISTS (SELECT 1 FROM updated_grants) AS found`,
+  );
+  return rows[0]?.found ?? false;
+}
+
 export async function listMcpConnectedApps(
   db: ExecutableDatabase,
   userId: string,
@@ -264,53 +288,58 @@ export async function listMcpConnectedApps(
   const connectedAppsPageSize = 20;
   const decodedCursor = cursor ? decodeConnectedAppCursor(cursor) : null;
   const cursorCondition = decodedCursor
-    ? sql`WHERE (oauth_client_id, oauth_resource) < (${decodedCursor.oauthClientId}, ${decodedCursor.oauthResource})`
+    ? sql`AND (oauth_client_id, oauth_resource) < (${decodedCursor.oauthClientId}, ${decodedCursor.oauthResource})`
     : sql``;
   const rows = await executeWithSchema(
     db,
     connectedAppRowSchema,
     sql`WITH connected_apps AS (
           SELECT
-            access_token.oauth_client_id,
-            access_token.oauth_resource,
-            (
-              SELECT latest_access_token.name
-              FROM fitness.mcp_access_token latest_access_token
-              WHERE latest_access_token.user_id = ${userId}
-                AND latest_access_token.oauth_client_id = access_token.oauth_client_id
-                AND latest_access_token.oauth_resource = access_token.oauth_resource
-              ORDER BY latest_access_token.created_at DESC, latest_access_token.id DESC
-              LIMIT 1
-            ) AS name,
-            (
-              SELECT latest_access_token.scopes
-              FROM fitness.mcp_access_token latest_access_token
-              WHERE latest_access_token.user_id = ${userId}
-                AND latest_access_token.oauth_client_id = access_token.oauth_client_id
-                AND latest_access_token.oauth_resource = access_token.oauth_resource
-              ORDER BY latest_access_token.created_at DESC, latest_access_token.id DESC
-              LIMIT 1
+            grant_payload.payload->>'clientId' AS oauth_client_id,
+            resource.resource_uri AS oauth_resource,
+            COALESCE(client_payload.payload->>'client_name', grant_payload.payload->>'clientId') AS name,
+            COALESCE(
+              ARRAY_AGG(DISTINCT granted_scope.value ORDER BY granted_scope.value)
+                FILTER (WHERE granted_scope.value IS NOT NULL),
+              ARRAY[]::text[]
             ) AS scopes,
-            MIN(access_token.created_at) AS connected_at,
-            MAX(access_token.last_used_at) AS last_used_at,
-            EXISTS (
-              SELECT 1
-              FROM fitness.mcp_oauth_refresh_token refresh_token
-              WHERE refresh_token.user_id = ${userId}
-                AND refresh_token.client_id = access_token.oauth_client_id
-                AND refresh_token.resource = access_token.oauth_resource
-                AND refresh_token.revoked_at IS NULL
-                AND refresh_token.expires_at > NOW()
-            ) AS is_active
-          FROM fitness.mcp_access_token access_token
-          WHERE access_token.user_id = ${userId}
-            AND access_token.oauth_client_id IS NOT NULL
-            AND access_token.oauth_resource IS NOT NULL
-          GROUP BY access_token.oauth_client_id, access_token.oauth_resource
+            MIN(grant_payload.created_at) AS connected_at,
+            MAX(grant_payload.last_used_at) AS last_used_at,
+            BOOL_OR(grant_payload.expires_at > NOW() AND EXISTS (
+              SELECT 1 FROM fitness.mcp_oidc_adapter refresh
+              WHERE refresh.model = 'RefreshToken'
+                AND refresh.grant_id = grant_payload.id
+                AND refresh.expires_at > NOW()
+            )) AS is_active
+          FROM fitness.mcp_oidc_adapter grant_payload
+          CROSS JOIN LATERAL jsonb_each_text(
+            COALESCE(
+              NULLIF(grant_payload.payload->'resources', '{}'::jsonb),
+              jsonb_build_object(
+                ${getMcpResourceUrl().href}::text,
+                COALESCE(grant_payload.payload->>'scope', '')
+              )
+            )
+          ) AS resource(resource_uri, scope)
+          LEFT JOIN LATERAL unnest(
+            string_to_array(NULLIF(resource.scope, ''), ' ')
+          ) AS granted_scope(value) ON granted_scope.value IN (
+            ${sql.join(
+              mcpScopeSchema.options.map((scope) => sql`${scope}`),
+              sql`, `,
+            )}
+          )
+          LEFT JOIN fitness.mcp_oidc_adapter client_payload
+            ON client_payload.model = 'Client'
+            AND client_payload.id = grant_payload.payload->>'clientId'
+          WHERE grant_payload.model = 'Grant'
+            AND grant_payload.user_id = ${userId}::uuid
+            AND grant_payload.expires_at > NOW()
+          GROUP BY grant_payload.payload->>'clientId', resource.resource_uri,
+                   client_payload.payload->>'client_name'
         )
-        SELECT oauth_client_id, oauth_resource, name, scopes, connected_at, last_used_at, is_active
-        FROM connected_apps
-        ${cursorCondition}
+        SELECT * FROM connected_apps
+        WHERE true ${cursorCondition}
         ORDER BY oauth_client_id DESC, oauth_resource DESC
         LIMIT ${connectedAppsPageSize + 1}`,
   );
@@ -362,37 +391,38 @@ export async function updateMcpConnectedAppScopes(
   oauthResource: string,
   scopes: McpScope[],
 ): Promise<boolean> {
-  const scopesArray = sql`ARRAY[${sql.join(
-    scopes.map((scope) => sql`${scope}`),
-    sql`, `,
-  )}]::text[]`;
+  const scopeText = scopes.join(" ");
   const rows = await executeWithSchema(
     db,
     connectedAppRevokeRowSchema,
-    sql`WITH updated_access_tokens AS (
-          UPDATE fitness.mcp_access_token
-          SET scopes = ${scopesArray}
-          WHERE user_id = ${userId}
-            AND oauth_client_id = ${oauthClientId}
-            AND oauth_resource = ${oauthResource}
-            AND revoked_at IS NULL
-            AND (expires_at IS NULL OR expires_at > NOW())
-          RETURNING id
-        ), updated_refresh_tokens AS (
-          UPDATE fitness.mcp_oauth_refresh_token
-          SET scopes = ${scopesArray}
-          WHERE user_id = ${userId}
-            AND client_id = ${oauthClientId}
-            AND resource = ${oauthResource}
-            AND revoked_at IS NULL
+    sql`WITH updated_grants AS (
+          UPDATE fitness.mcp_oidc_adapter
+          SET payload = jsonb_set(
+            payload,
+            '{resources}',
+            COALESCE(payload->'resources', '{}'::jsonb)
+              || jsonb_build_object(${oauthResource}::text, ${scopeText}::text),
+            true
+          )
+          WHERE model = 'Grant'
+            AND user_id = ${userId}::uuid
+            AND payload->>'clientId' = ${oauthClientId}
+            AND (
+              COALESCE(payload->'resources', '{}'::jsonb) = '{}'::jsonb
+              OR payload->'resources' ? ${oauthResource}
+            )
             AND expires_at > NOW()
           RETURNING id
+        ), deleted_access_tokens AS (
+          -- Existing access tokens no longer validate after a scope reduction.
+          -- Keep refresh tokens: oidc-provider intersects their scopes with the
+          -- updated Grant when it issues the client's next access token.
+          DELETE FROM fitness.mcp_oidc_adapter
+          WHERE model = 'AccessToken'
+            AND grant_id IN (SELECT id FROM updated_grants)
+          RETURNING id
         )
-        SELECT EXISTS (
-          SELECT 1 FROM updated_access_tokens
-          UNION ALL
-          SELECT 1 FROM updated_refresh_tokens
-        ) AS found`,
+        SELECT EXISTS (SELECT 1 FROM updated_grants) AS found`,
   );
   return rows[0]?.found ?? false;
 }
@@ -452,23 +482,21 @@ export async function revokeMcpConnectedApp(
   const rows = await executeWithSchema(
     db,
     connectedAppRevokeRowSchema,
-    sql`WITH revoked_refresh_tokens AS (
-          UPDATE fitness.mcp_oauth_refresh_token
-          SET revoked_at = COALESCE(revoked_at, NOW())
-          WHERE user_id = ${userId}
-            AND client_id = ${oauthClientId}
-            AND resource = ${oauthResource}
-          RETURNING id
-        ), revoked_access_tokens AS (
-          UPDATE fitness.mcp_access_token
-          SET revoked_at = COALESCE(revoked_at, NOW())
-          WHERE user_id = ${userId}
-            AND oauth_client_id = ${oauthClientId}
-            AND oauth_resource = ${oauthResource}
+    sql`WITH target_grants AS MATERIALIZED (
+          SELECT id
+          FROM fitness.mcp_oidc_adapter
+          WHERE model = 'Grant'
+            AND user_id = ${userId}::uuid
+            AND payload->>'clientId' = ${oauthClientId}
+            AND payload->'resources' ? ${oauthResource}
+        ), deleted AS (
+          DELETE FROM fitness.mcp_oidc_adapter
+          WHERE (model = 'Grant' AND id IN (SELECT id FROM target_grants))
+             OR (model IN ('AccessToken', 'RefreshToken', 'AuthorizationCode')
+                 AND grant_id IN (SELECT id FROM target_grants))
           RETURNING id
         )
-        SELECT EXISTS (SELECT 1 FROM revoked_refresh_tokens)
-          OR EXISTS (SELECT 1 FROM revoked_access_tokens) AS found`,
+        SELECT EXISTS (SELECT 1 FROM target_grants) AS found`,
   );
   return rows[0]?.found ?? false;
 }

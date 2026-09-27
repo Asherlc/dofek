@@ -1,6 +1,5 @@
 import type { AddressInfo } from "node:net";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { sql } from "drizzle-orm";
 import type express from "express";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";

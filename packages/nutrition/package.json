@@ -10,7 +10,6 @@
     "./nutrition-data-quality": "./src/nutrition-data-quality.ts",
     "./nutrient-safety": "./src/nutrient-safety.ts",
     "./nutrients": "./src/nutrients.ts",
-    "./open-food-facts": "./src/open-food-facts.ts",
     "./selected-date-summary": "./src/selected-date-summary.ts"
   },
   "dependencies": {

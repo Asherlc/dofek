@@ -19,7 +19,7 @@ const routeMocks = vi.hoisted(() => {
     serverConnect: vi.fn(),
     transportClose: vi.fn(),
     transportConstructor: vi.fn(),
-    validateMcpToken: vi.fn(),
+    verifyMcpAccessToken: vi.fn(),
   };
   return mocks;
 });
@@ -69,16 +69,16 @@ vi.mock("../logger.ts", () => ({
   },
 }));
 
-vi.mock("./token-repository.ts", () => ({
-  validateMcpToken: routeMocks.validateMcpToken,
+vi.mock("./access-token-verifier.ts", () => ({
+  verifyMcpAccessToken: routeMocks.verifyMcpAccessToken,
 }));
 
 vi.mock("./tools.ts", () => ({
   createDofekMcpServer: routeMocks.createDofekMcpServer,
 }));
 
-vi.mock("@modelcontextprotocol/sdk/server/streamableHttp.js", () => ({
-  StreamableHTTPServerTransport: class MockStreamableHttpServerTransport {
+vi.mock("@modelcontextprotocol/node", () => ({
+  NodeStreamableHTTPServerTransport: class MockStreamableHttpServerTransport {
     constructor(options: unknown) {
       routeMocks.transportConstructor(options);
     }
@@ -152,10 +152,9 @@ describe("createMcpRouter lifecycle handling", () => {
     vi.clearAllMocks();
     transportErrorHandler = undefined;
     transportSend = undefined;
-    routeMocks.validateMcpToken.mockResolvedValue({
+    routeMocks.verifyMcpAccessToken.mockResolvedValue({
+      kind: "personal_token",
       expiresAt: null,
-      oauthClientId: null,
-      oauthResource: null,
       scopes: ["health:read"],
       tokenId: "token-id",
       userId: "user-id",
@@ -237,7 +236,7 @@ describe("createMcpRouter lifecycle handling", () => {
   });
 
   it("records a bounded diagnostic when token validation rejects the request", async () => {
-    routeMocks.validateMcpToken.mockResolvedValueOnce(null);
+    routeMocks.verifyMcpAccessToken.mockResolvedValueOnce(null);
     const response = await request({ jsonrpc: "2.0", id: 1, method: "initialize" });
 
     expect(response.status).toBe(401);
@@ -317,12 +316,11 @@ describe("createMcpRouter lifecycle handling", () => {
   });
 
   it("classifies non-400 HTTP failures and preserves sorted OAuth scope telemetry", async () => {
-    routeMocks.validateMcpToken.mockResolvedValueOnce({
+    routeMocks.verifyMcpAccessToken.mockResolvedValueOnce({
+      kind: "oauth",
       expiresAt: null,
-      oauthClientId: "oauth-client",
-      oauthResource: null,
+      clientId: "oauth-client",
       scopes: ["nutrition:write", "nutrition:read"],
-      tokenId: "token-id",
       userId: "user-id",
     });
     routeMocks.handleRequest.mockImplementation((_request: unknown, response: unknown) => {
@@ -347,22 +345,20 @@ describe("createMcpRouter lifecycle handling", () => {
   });
 
   it("correlates OAuth clients independently of their token IDs", async () => {
-    routeMocks.validateMcpToken.mockResolvedValueOnce({
+    routeMocks.verifyMcpAccessToken.mockResolvedValueOnce({
+      kind: "oauth",
       expiresAt: null,
-      oauthClientId: "oauth-client-a",
-      oauthResource: null,
+      clientId: "oauth-client-a",
       scopes: ["health:read"],
-      tokenId: "shared-token-id",
       userId: "user-id",
     });
     await request({ jsonrpc: "2.0", id: 1, method: "initialize" });
 
-    routeMocks.validateMcpToken.mockResolvedValueOnce({
+    routeMocks.verifyMcpAccessToken.mockResolvedValueOnce({
+      kind: "oauth",
       expiresAt: null,
-      oauthClientId: "oauth-client-b",
-      oauthResource: null,
+      clientId: "oauth-client-b",
       scopes: ["health:read"],
-      tokenId: "shared-token-id",
       userId: "user-id",
     });
     await request({ jsonrpc: "2.0", id: 2, method: "initialize" });

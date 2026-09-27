@@ -152,7 +152,7 @@ vi.mock("@sentry/node", () => ({ captureException: mockSentryCaptureException })
 vi.mock("./logger.ts", () => ({
   logger: { info: mockLoggerInfo, warn: vi.fn(), error: vi.fn() },
 }));
-vi.mock("../mcp/route.ts", () => ({ createMcpRouter: vi.fn(() => express.Router()) }));
+vi.mock("./mcp/route.ts", () => ({ createMcpRouter: vi.fn(() => express.Router()) }));
 vi.mock("../router.ts", () => ({ appRouter: {} }));
 vi.mock("../auth/admin.ts", () => ({
   isAdmin: vi.fn(() => (_req: unknown, _res: unknown, next: () => void) => next()),
@@ -269,6 +269,23 @@ describe("createApp", () => {
     const app = createApp(fakeDb, makeMockSensorStore());
     const res = await request(app, "GET", "/api/nonexistent");
     expect(res.status).toBe(404);
+  });
+
+  it("passes the configured MCP auth rate limit to the resource router", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    const { createMcpRouter } = await import("./mcp/route.ts");
+    const fakeDb = createDatabaseFromEnv();
+    const sensorStore = makeMockSensorStore();
+    const mcpAuthRateLimit = { limit: 17 };
+
+    createApp(fakeDb, sensorStore, { mcpAuthRateLimit });
+
+    expect(createMcpRouter).toHaveBeenCalledWith(
+      expect.objectContaining({
+        db: fakeDb,
+        rateLimit: mcpAuthRateLimit,
+      }),
+    );
   });
 
   it("reports healthy at /healthz when not shutting down", async () => {

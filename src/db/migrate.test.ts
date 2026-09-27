@@ -10,6 +10,11 @@ const migratorMocks = vi.hoisted(() => ({
 
 vi.mock("./postgres-migrator.ts", () => migratorMocks);
 
+const backfillMocks = vi.hoisted(() => ({ backfill: vi.fn().mockResolvedValue(0) }));
+vi.mock("./backfill-mcp-oauth-clients.ts", () => ({
+  backfillMcpOauthClients: backfillMocks.backfill,
+}));
+
 const accountErasureCoverageMocks = vi.hoisted(() => ({
   assert: vi.fn().mockResolvedValue(undefined),
   database: { execute: vi.fn().mockResolvedValue([{ installed: false }]) },
@@ -76,11 +81,15 @@ describe("runMigrations", () => {
     postgresMocks.connect.mockResolvedValue(undefined);
     postgresMocks.end.mockResolvedValue(undefined);
     migratorMocks.runDrizzleMigrations.mockResolvedValue(undefined);
+    backfillMocks.backfill.mockResolvedValue(0);
     migratorMocks.readBaselineMigration.mockReturnValue({
       folderMillis: 1_773_118_304_010,
       hash: "baseline-content-hash",
     });
-    accountErasureCoverageMocks.database.execute.mockResolvedValue([{ installed: false }]);
+    accountErasureCoverageMocks.database.execute
+      .mockReset()
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([{ installed: false }]);
     mockDatabaseState();
   });
 
@@ -113,6 +122,27 @@ describe("runMigrations", () => {
       "/tmp/migrations",
     );
     expect(migratorMocks.readBaselineMigration).not.toHaveBeenCalled();
+  });
+
+  it("reports the number of legacy MCP OAuth clients imported", async () => {
+    const { runMigrations } = await import("./migrate.ts");
+    backfillMocks.backfill.mockResolvedValue(3);
+
+    await runMigrations("postgres://localhost/test", "/tmp/migrations");
+
+    expect(loggerMocks.info).toHaveBeenCalledWith(
+      "[migrate] Imported 3 legacy MCP OAuth client(s)",
+    );
+  });
+
+  it("does not report an empty legacy MCP OAuth client backfill", async () => {
+    const { runMigrations } = await import("./migrate.ts");
+
+    await runMigrations("postgres://localhost/test", "/tmp/migrations");
+
+    expect(loggerMocks.info).not.toHaveBeenCalledWith(
+      expect.stringContaining("Imported 0 legacy MCP OAuth client(s)"),
+    );
   });
 
   it("treats an empty migration count result as no applied migrations", async () => {
@@ -193,7 +223,9 @@ describe("runMigrations", () => {
       }
       return Promise.resolve({ rows: [] });
     });
-    accountErasureCoverageMocks.database.execute.mockResolvedValue([{ installed: true }]);
+    accountErasureCoverageMocks.database.execute
+      .mockReset()
+      .mockResolvedValue([{ installed: true }]);
 
     await runMigrations("postgres://localhost/test", "/tmp/migrations");
 
