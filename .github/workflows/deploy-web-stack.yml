@@ -801,6 +801,16 @@ jobs:
                 docker service ls --filter "name=${service_name}" --format '{{.Replicas}}'
               )"
               echo "${service_name} image=${image} replicas=${replicas} update_state=${update_state:-none}"
+              if [ "$service" = "web" ] && [ "$update_state" = "rollback_started" ]; then
+                if [ "$SECONDS" -ge "$wait_deadline_seconds" ]; then
+                  docker service ps "$service_name" --no-trunc
+                  echo "::error::${service_name} rollback did not settle before timeout"
+                  exit 124
+                fi
+                echo "${service_name} is rolling back; waiting for the web rollback to settle"
+                sleep 10
+                continue
+              fi
               if [ "$service" = "web" ] && {
                 [ "$update_state" = "rollback_completed" ] || {
                   [ "${image%@*}" != "ghcr.io/asherlc/dofek:${IMAGE_TAG}" ] && {
@@ -810,6 +820,7 @@ jobs:
               }; then
                 docker service ps "$service_name" --no-trunc
                 echo "web_convergence_failed=true" >> "$GITHUB_OUTPUT"
+                echo "web_rollback_image=$image" >> "$GITHUB_OUTPUT"
                 echo "::warning::${service_name} reached a terminal rollback or reverted image; continuing through database and CDC safety gates before failing this deployment"
                 break
               fi
@@ -1050,9 +1061,24 @@ jobs:
         if: success() && steps.deploy_stack_quiesced.conclusion == 'success' && steps.configure_clickhouse_cdc.conclusion == 'success' && steps.verify_peerdb_cdc_contract.conclusion == 'success'
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+          WEB_CONVERGENCE_FAILED: ${{ steps.deploy_stack_quiesced.outputs.web_convergence_failed }}
+          WEB_ROLLBACK_IMAGE: ${{ steps.deploy_stack_quiesced.outputs.web_rollback_image }}
         run: |
+          stack_file_flags=()
+          read -r -a stack_file_flags <<< "$STACK_FILE_FLAGS"
+          if [ "$WEB_CONVERGENCE_FAILED" = "true" ]; then
+            if [ -z "$WEB_ROLLBACK_IMAGE" ]; then
+              echo "::error::Web rollback was deferred without a captured rollback image"
+              exit 1
+            fi
+            web_rollback_override="$RUNNER_TEMP/web-rollback-image.yml"
+            printf 'services:\n  web:\n    image: "%s"\n' "$WEB_ROLLBACK_IMAGE" > "$web_rollback_override"
+            stack_file_flags+=(-c "$web_rollback_override")
+            node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
+              docker stack config "${stack_file_flags[@]}" >/dev/null
+          fi
           set +e
-          timeout 20m node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack deploy $STACK_FILE_FLAGS --with-registry-auth --prune --detach=true "$STACK_NAME"
+          timeout 20m node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack deploy "${stack_file_flags[@]}" --with-registry-auth --prune --detach=true "$STACK_NAME"
           status=$?
           set -e
           if [ "$status" -eq 124 ]; then
@@ -1186,7 +1212,7 @@ jobs:
             scripts/check-database-backup-freshness.ts
 
       - name: Record Sentry production release
-        if: steps.deploy_stack_full.outcome == 'success' && (env.DEPLOY_ENVIRONMENT == 'prod' || env.DEPLOY_ENVIRONMENT == 'production')
+        if: steps.deploy_stack_full.outcome == 'success' && steps.deploy_stack_quiesced.outputs.web_convergence_failed != 'true' && (env.DEPLOY_ENVIRONMENT == 'prod' || env.DEPLOY_ENVIRONMENT == 'production')
         uses: getsentry/action-release@ff07929a6537bac57790c3451cf4d364aca38528 # v3.7.0
         env:
           DOCKER_HOST: unix:///var/run/docker.sock

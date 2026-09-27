@@ -23,6 +23,8 @@ interface ConsumerScenarios {
 interface DeployConsumerOptions {
   readonly failTaskInspection?: boolean;
   readonly sleepSeconds?: number;
+  readonly webConvergenceFailed?: boolean;
+  readonly webRollbackImage?: string;
 }
 
 interface DeployQuiescedOptions extends DeployConsumerOptions {
@@ -64,7 +66,23 @@ read_observation() {
 }
 
 if [ "$1" = "stack" ] && [ "$2" = "deploy" ]; then
+  printf '%s\\n' "$@" > "$STACK_DEPLOY_CAPTURE"
+  if [ -n "\${WEB_OVERRIDE_CAPTURE:-}" ]; then
+    for ((argument_index = 1; argument_index < $#; argument_index++)); do
+      if [ "\${!argument_index}" = "-c" ]; then
+        next_index=$((argument_index + 1))
+        candidate_file="\${!next_index}"
+        if [ "\${candidate_file##*/}" = "web-rollback-image.yml" ]; then
+          cat "$candidate_file" > "$WEB_OVERRIDE_CAPTURE"
+        fi
+      fi
+    done
+  fi
   exit "\${STACK_DEPLOY_STATUS:-0}"
+fi
+
+if [ "$1" = "stack" ] && [ "$2" = "config" ]; then
+  exit 0
 fi
 
 if [ "$1" = "service" ] && [ "$2" = "inspect" ]; then
@@ -88,6 +106,9 @@ if [ "$1" = "service" ] && [ "$2" = "ls" ]; then
   done
   read_observation "$service_name"
   printf '%s\\n' "$replicas"
+  if [ "\${ADVANCE_ON_SERVICE_LS:-0}" = "1" ]; then
+    printf '%s\\n' "$((observation_index + 1))" > "$state_file"
+  fi
   exit 0
 fi
 
@@ -167,10 +188,13 @@ function runDeployConsumers(scenarios: ConsumerScenarios, options: DeployConsume
   const stateDirectory = join(temporaryDirectory, "state");
   const dockerPath = join(temporaryDirectory, "docker");
   const nodePath = join(temporaryDirectory, "node");
+  const stackDeployCapturePath = join(temporaryDirectory, "stack-deploy-args");
+  const webOverrideCapturePath = join(temporaryDirectory, "web-override-capture");
 
   try {
     mkdirSync(scenarioDirectory);
     mkdirSync(stateDirectory);
+    writeFileSync(webOverrideCapturePath, "");
     writeFileSync(dockerPath, MOCK_DOCKER);
     writeFileSync(
       nodePath,
@@ -223,15 +247,24 @@ ${deployConsumersRunScript()}`,
           FAIL_TASK_INSPECTION: options.failTaskInspection ? "1" : "0",
           IMAGE_TAG: "test",
           MOCK_SLEEP_SECONDS: (options.sleepSeconds ?? 10).toString(),
+          STACK_DEPLOY_CAPTURE: stackDeployCapturePath,
+          WEB_CONVERGENCE_FAILED: options.webConvergenceFailed ? "true" : "false",
+          WEB_ROLLBACK_IMAGE: options.webRollbackImage ?? "",
+          WEB_OVERRIDE_CAPTURE: webOverrideCapturePath,
           RUNNER_TEMP: temporaryDirectory,
           SCENARIO_DIR: scenarioDirectory,
+          STACK_FILE_FLAGS: "-c deploy/stack.yml",
           STACK_NAME: "dofek",
           STATE_DIR: stateDirectory,
         },
       },
     );
 
-    return result;
+    return {
+      ...result,
+      stackDeployArgs: readFileSync(stackDeployCapturePath, "utf8"),
+      webOverride: readFileSync(webOverrideCapturePath, "utf8"),
+    };
   } finally {
     rmSync(temporaryDirectory, { force: true, recursive: true });
   }
@@ -246,6 +279,7 @@ function runDeployQuiesced(
   const stateDirectory = join(temporaryDirectory, "state");
   const dockerPath = join(temporaryDirectory, "docker");
   const nodePath = join(temporaryDirectory, "node");
+  const stackDeployCapturePath = join(temporaryDirectory, "stack-deploy-args");
 
   try {
     mkdirSync(scenarioDirectory);
@@ -296,6 +330,8 @@ function runDeployQuiesced(
         FAIL_TASK_INSPECTION: options.failTaskInspection ? "1" : "0",
         IMAGE_TAG: "test",
         STACK_DEPLOY_STATUS: (options.stackDeployStatus ?? 0).toString(),
+        STACK_DEPLOY_CAPTURE: stackDeployCapturePath,
+        ADVANCE_ON_SERVICE_LS: "1",
         MOCK_SLEEP_SECONDS: (options.sleepSeconds ?? 10).toString(),
         PATH: `${temporaryDirectory}:${process.env.PATH ?? ""}`,
         RUNNER_TEMP: temporaryDirectory,
@@ -306,7 +342,11 @@ function runDeployQuiesced(
       },
     });
 
-    return { ...result, githubOutput: readFileSync(githubOutputPath, "utf8") };
+    return {
+      ...result,
+      githubOutput: readFileSync(githubOutputPath, "utf8"),
+      stackDeployArgs: readFileSync(stackDeployCapturePath, "utf8"),
+    };
   } finally {
     rmSync(temporaryDirectory, { force: true, recursive: true });
   }
@@ -363,6 +403,9 @@ describe("deploy-web-stack workflow contract", () => {
     expect(positions).toEqual([...positions].sort((left, right) => left - right));
     expect(workflowText).toContain(
       "if: always() && steps.deploy_stack_quiesced.outputs.web_convergence_failed == 'true' && steps.deploy_stack_full.outcome == 'success'",
+    );
+    expect(workflowText).toContain(
+      "steps.deploy_stack_quiesced.outputs.web_convergence_failed != 'true'",
     );
     expect(workflowText).toContain("### Web deployment failed after processing services were restored");
   });
@@ -476,6 +519,40 @@ ${workflowRunScript(step)}
     expect(result.stdout).toContain("terminal rollback or reverted image");
     expect(result.stdout).toContain("diagnostic task output for dofek_web");
     expect(result.githubOutput).toContain("web_convergence_failed=true");
+    expect(result.githubOutput).toContain("web_rollback_image=ghcr.io/asherlc/dofek:previous");
+  });
+
+  it("waits for an in-progress web rollback to settle before deferring it", () => {
+    const result = runDeployQuiesced([STABLE_OBSERVATION], {
+      serviceObservations: {
+        dofek_web: [
+          { ...STABLE_OBSERVATION, updateState: "rollback_started" },
+          {
+            ...STABLE_OBSERVATION,
+            image: "ghcr.io/asherlc/dofek:previous",
+            updateState: "rollback_completed",
+          },
+        ],
+      },
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("waiting for the web rollback to settle");
+    expect(result.githubOutput).toContain("web_convergence_failed=true");
+    expect(result.githubOutput).toContain("web_rollback_image=ghcr.io/asherlc/dofek:previous");
+  });
+
+  it("fails closed when the web rollback does not settle before the deadline", () => {
+    const result = runDeployQuiesced([STABLE_OBSERVATION], {
+      serviceObservations: {
+        dofek_web: [{ ...STABLE_OBSERVATION, updateState: "rollback_started" }],
+      },
+      sleepSeconds: 2100,
+    });
+
+    expect(result.status).toBe(124);
+    expect(result.stdout).toContain("dofek_web rollback did not settle before timeout");
+    expect(result.githubOutput).toContain("web_convergence_failed=false");
   });
 
   it("keeps a stack command failure fatal without recording a deferred web failure", () => {
@@ -594,6 +671,36 @@ ${workflowRunScript(step)}
     expect(result.stdout).toContain(
       "dofek_metric-stream-clickhouse-sink task stable-task has remained converged for 60s",
     );
+  });
+
+  it("restores processing services with the rolled-back web image", () => {
+    const result = runDeployConsumers(
+      {
+        analyticsWorker: [STABLE_OBSERVATION],
+        metricStreamClickhouseSink: [STABLE_OBSERVATION],
+      },
+      {
+        webConvergenceFailed: true,
+        webRollbackImage: "ghcr.io/asherlc/dofek:previous",
+      },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stackDeployArgs).toContain("web-rollback-image.yml");
+    expect(result.webOverride).toBe(
+      'services:\n  web:\n    image: "ghcr.io/asherlc/dofek:previous"\n',
+    );
+  });
+
+  it("does not add the web rollback override to a normal full-stack deploy", () => {
+    const result = runDeployConsumers({
+      analyticsWorker: [STABLE_OBSERVATION],
+      metricStreamClickhouseSink: [STABLE_OBSERVATION],
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stackDeployArgs).not.toContain("web-rollback-image.yml");
+    expect(result.webOverride).toBe("");
   });
 
   it("restarts the stability window when Swarm replaces the task", () => {
