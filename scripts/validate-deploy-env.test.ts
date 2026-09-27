@@ -18,6 +18,7 @@ function validEnvironment(): Record<string, string> {
     APP_STORE_SUBSCRIPTION_PRODUCT_ID: "com.dofek.premium.monthly",
     AXIOM_API_TOKEN: "axiom-token",
     BREVO_API_KEY: "brevo-token",
+    MCP_OIDC_COOKIE_KEY: "mcp-cookie-key",
     CREDENTIAL_ENCRYPTION_KEY_BASE64: Buffer.alloc(32, 3).toString("base64"),
     EXPO_APP_ID: "expo-project-id",
     OTA_JWT_SECRET: "ota-jwt-secret",
@@ -48,6 +49,19 @@ describe("validateDeployEnvironment", () => {
 
     expect(() => validateDeployEnvironment(environment)).toThrow(
       "Rendered Infisical dotenv is missing required keys: STRIPE_SECRET_KEY (empty), R2_ENDPOINT",
+    );
+  });
+
+  it.each([undefined, "   "])("requires a nonblank MCP OIDC cookie key (%s)", (value) => {
+    const environment: Record<string, string | undefined> = {
+      ...validEnvironment(),
+      MCP_OIDC_COOKIE_KEY: value,
+    };
+
+    expect(() => validateDeployEnvironment(environment)).toThrow(
+      value === undefined
+        ? "Rendered Infisical dotenv is missing required keys: MCP_OIDC_COOKIE_KEY"
+        : "Rendered Infisical dotenv is missing required keys: MCP_OIDC_COOKIE_KEY (empty)",
     );
   });
 

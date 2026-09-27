@@ -769,6 +769,7 @@ jobs:
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
         run: |
+          echo "web_convergence_failed=false" >> "$GITHUB_OUTPUT"
           set +e
           timeout 35m node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack deploy $STACK_FILE_FLAGS -c deploy/stack.cdc-quiesce.yml --with-registry-auth --prune --detach=true "$STACK_NAME"
           status=$?
@@ -800,6 +801,38 @@ jobs:
                 docker service ls --filter "name=${service_name}" --format '{{.Replicas}}'
               )"
               echo "${service_name} image=${image} replicas=${replicas} update_state=${update_state:-none}"
+              if [ "$service" = "web" ] && [ "$update_state" = "rollback_started" ]; then
+                if [ "$SECONDS" -ge "$wait_deadline_seconds" ]; then
+                  docker service ps "$service_name" --no-trunc
+                  echo "::error::${service_name} rollback did not settle before timeout"
+                  exit 124
+                fi
+                echo "${service_name} is rolling back; waiting for the web rollback to settle"
+                sleep 10
+                continue
+              fi
+              if [ "$service" = "web" ] && {
+                [ "$update_state" = "rollback_completed" ] || {
+                  [ "${image%@*}" != "ghcr.io/asherlc/dofek:${IMAGE_TAG}" ] && {
+                    [ "$update_state" = "completed" ]
+                  }
+                }
+              }; then
+                if [ "$replicas" != "${desired_replicas}/${desired_replicas}" ]; then
+                  if [ "$SECONDS" -ge "$wait_deadline_seconds" ]; then
+                    docker service ps "$service_name" --no-trunc
+                    echo "::error::${service_name} did not regain its desired replicas after rollback"
+                    exit 124
+                  fi
+                  echo "${service_name} rollback is complete; waiting for the rolled-back web replicas to converge"
+                  sleep 10
+                  continue
+                fi
+                docker service ps "$service_name" --no-trunc
+                echo "web_convergence_failed=true" >> "$GITHUB_OUTPUT"
+                echo "::warning::${service_name} reached a terminal rollback or reverted image; continuing through database and CDC safety gates before failing this deployment"
+                break
+              fi
               case "$service" in
                 web|worker|analytics-worker|metric-stream-clickhouse-sink|metric-stream-live-clickhouse-sink|metric-stream-history-clickhouse-sink|processing-reconciliation)
                   expected_image="ghcr.io/asherlc/dofek:${IMAGE_TAG}"
@@ -1037,9 +1070,29 @@ jobs:
         if: success() && steps.deploy_stack_quiesced.conclusion == 'success' && steps.configure_clickhouse_cdc.conclusion == 'success' && steps.verify_peerdb_cdc_contract.conclusion == 'success'
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+          WEB_CONVERGENCE_FAILED: ${{ steps.deploy_stack_quiesced.outputs.web_convergence_failed }}
         run: |
+          stack_file_flags=()
+          read -r -a stack_file_flags <<< "$STACK_FILE_FLAGS"
+          if [ "$WEB_CONVERGENCE_FAILED" = "true" ]; then
+            web_excluded_stack_config="$RUNNER_TEMP/stack-without-web.yml"
+            node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
+              docker stack config --skip-interpolation "${stack_file_flags[@]}" \
+              | node --input-type=module -e '
+                import { parse, stringify } from "yaml";
+                let input = "";
+                for await (const chunk of process.stdin) input += chunk;
+                const config = parse(input);
+                if (!config.services?.web) throw new Error("Resolved stack config is missing services.web");
+                delete config.services.web;
+                process.stdout.write(stringify(config));
+              ' > "$web_excluded_stack_config"
+            stack_file_flags=(-c "$web_excluded_stack_config")
+          else
+            stack_file_flags+=(--prune)
+          fi
           set +e
-          timeout 20m node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack deploy $STACK_FILE_FLAGS --with-registry-auth --prune --detach=true "$STACK_NAME"
+          timeout 20m node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack deploy "${stack_file_flags[@]}" --with-registry-auth --detach=true "$STACK_NAME"
           status=$?
           set -e
           if [ "$status" -eq 124 ]; then
@@ -1173,7 +1226,7 @@ jobs:
             scripts/check-database-backup-freshness.ts
 
       - name: Record Sentry production release
-        if: steps.deploy_stack_full.outcome == 'success' && (env.DEPLOY_ENVIRONMENT == 'prod' || env.DEPLOY_ENVIRONMENT == 'production')
+        if: steps.deploy_stack_full.outcome == 'success' && steps.deploy_stack_quiesced.outputs.web_convergence_failed != 'true' && (env.DEPLOY_ENVIRONMENT == 'prod' || env.DEPLOY_ENVIRONMENT == 'production')
         uses: getsentry/action-release@ff07929a6537bac57790c3451cf4d364aca38528 # v3.7.0
         env:
           DOCKER_HOST: unix:///var/run/docker.sock
@@ -1189,6 +1242,9 @@ jobs:
         if: failure() && steps.deploy_stack_quiesced.conclusion == 'success' && steps.deploy_stack_full.conclusion == 'skipped'
         run: |
           message="analytics-worker, all three metric-stream ClickHouse sinks, and processing-reconciliation remain quiesced because a post-quiesce prerequisite failed. Resolve the failed readiness or CDC setup step, then rerun the deployment."
+          if [ "${{ steps.deploy_stack_quiesced.outputs.web_convergence_failed }}" = "true" ]; then
+            message="$message The web service rolled back or reverted to its previous image; its prior Swarm configuration remains in place."
+          fi
           echo "::error::$message"
           {
             echo "### Processing services remain quiesced"
@@ -1209,6 +1265,18 @@ jobs:
       - name: Remove PeerDB CDC canary artifact volume
         if: always() && env.PEERDB_CDC_CANARY_VOLUME != ''
         run: docker volume rm -f "$PEERDB_CDC_CANARY_VOLUME"
+
+      - name: Fail deployment after restoring processing services when web rolled back
+        if: always() && steps.deploy_stack_quiesced.outputs.web_convergence_failed == 'true' && steps.deploy_stack_full.outcome == 'success'
+        run: |
+          message="The web service rolled back or reverted to its previous image. Processing services were restored after Postgres and PeerDB CDC safety gates passed; investigate the web rollout and rerun the deployment."
+          echo "::error::$message"
+          {
+            echo "### Web deployment failed after processing services were restored"
+            echo
+            echo "$message"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
 
       - uses: ./.github/actions/append-dispatcher-run-summary
         if: always()
