@@ -64,6 +64,7 @@ the exact section.
 | WHOOP | [whoop.md](whoop.md) | Internal auth, strength data, and raw IMU capture. |
 | WHOOP BLE | [whoop-ble-protocol.md](whoop-ble-protocol.md) | BLE protocol, frames, CRCs, and packet formats. |
 | Apple Health | [apple-health.md](apple-health.md) | Quantity/category/workout mappings. |
+| Mountain Project | [mountain-project.md](mountain-project.md) | Observed tick-export fields, standalone tick storage, and exact-day activity matching. |
 | AllTrails | [alltrails.md](alltrails.md) | Export formats, private endpoint findings, and import-only recommendation. |
 | BodySpec | [bodyspec.md](bodyspec.md) | OAuth setup and DEXA/body-composition sync. |
 | FatSecret | [fatsecret.md](fatsecret.md) | OAuth 1.0 flow and nutrition import details. |

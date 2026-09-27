@@ -370,7 +370,7 @@ export function ActivityDetailPage() {
                     </div>
                     <button
                       type="button"
-                    className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                      className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                       aria-label="Attach to this activity"
                       disabled={state?.pending}
                       onClick={() => handleAttachTick(tick.id)}

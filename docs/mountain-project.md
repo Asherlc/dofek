@@ -1,8 +1,9 @@
 # Mountain Project provider
 
 The Mountain Project integration syncs a connected user's route and boulder
-ticks into climbing activities. It is an unofficial integration and fetches a
-public export endpoint observed on [Mountain Project](https://www.mountainproject.com/).
+ticks as standalone climbing entries. It is an unofficial integration and
+fetches a public export endpoint observed on
+[Mountain Project](https://www.mountainproject.com/).
 Use it only for the profile data that the connecting user is authorized to
 access.
 
@@ -20,7 +21,8 @@ reference for that legacy surface.
 
 ## Tick export contract
 
-The provider fetches this complete, unpaginated CSV export on every sync:
+The provider fetches this complete, unpaginated CSV export on every sync. This
+is an observed application endpoint, not a supported official API contract:
 
 ```text
 GET https://www.mountainproject.com/user/{userId}/{slug}/tick-export
@@ -39,8 +41,8 @@ Observed CSV columns are:
 Date,Route,Rating,Notes,URL,Pitches,Location,"Avg Stars","Your Stars",Style,"Lead Style","Route Type","Your Rating",Length,"Rating Code"
 ```
 
-- `Date` is a date-only `YYYY-MM-DD` value. Activities group rows by full
-  location breadcrumb and date.
+- `Date` is a date-only `YYYY-MM-DD` value. Each supported row is stored as one
+  climbing entry; it does not create an activity or session.
 - `URL` is retained as raw source data and participates in the content-derived
   tick identity.
 - `Notes`, `Pitches`, `Length`, average/user stars, user rating, and rating
@@ -55,9 +57,24 @@ Date,Route,Rating,Notes,URL,Pitches,Location,"Avg Stars","Your Stars",Style,"Lea
 
 There is no tick ID. The provider derives an ID from date, route URL, style,
 lead style, pitches, and occurrence order. Thus editing a source tick can
-produce a replacement ID; full-list reconciliation tombstones the stale
-activity session when it disappears from the export. Same-day duplicate laps
-receive distinct occurrence indexes.
+produce a replacement ID; full-list reconciliation marks the stale tick
+absent when it disappears from the export. Same-day duplicate laps receive
+distinct occurrence indexes.
+
+## Tick dates and activity matching
+
+An unattached tick stores the exported date as its normalized
+`unattached_date`. When a user attaches it to a climbing activity, that date is
+cleared and the activity becomes the source of the tick's day. Activity detail
+suggestions include only active unattached ticks whose exported day equals the
+activity's displayed calendar date in the user's timezone. A matching day only
+suggests a tick; the user attaches each tick explicitly. Attached ticks keep
+their association across later syncs. Unattached ticks contribute to climb and
+grade summaries, but never create an activity, session, or duration.
+
+See the [schema guide](schema.md#activities) for the stored association and
+date rules, and the [unattached ticks design spec](superpowers/specs/2026-09-26-unattached-mountain-project-ticks-design.md)
+for the full matching and sync contract.
 
 ## Grade handling
 

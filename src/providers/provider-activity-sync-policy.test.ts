@@ -13,6 +13,7 @@ const SCAN_ROOTS = [
 const ALLOWED_TOMBSTONE_CLEAR_PATHS = new Set([
   "src/db/provider-activity-absence.ts",
   "packages/server/src/repositories/activity-repository.ts",
+  "src/providers/mountain-project.ts",
 ]);
 
 const ALLOWED_ACTIVITY_INSERT_PATHS = new Set(["src/db/provider-activity-sync.ts"]);
@@ -35,6 +36,13 @@ function collectSourceFiles(directory: string): string[] {
 }
 
 describe("provider activity sync policy", () => {
+  it("syncs Mountain Project ticks through climbing entries", () => {
+    const source = readFileSync(join(REPO_ROOT, "src/providers/mountain-project.ts"), "utf8");
+
+    expect(source).toContain(".insert(climbingEntry)");
+    expect(source).not.toContain("upsertProviderActivity(");
+  });
+
   it("routes provider code through provider-activity-sync instead of provider-activity-absence", () => {
     const violations: string[] = [];
 
