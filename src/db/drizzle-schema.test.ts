@@ -199,7 +199,11 @@ describe("drizzleSchema", () => {
     expect(config.name).toBe("climbing_entry");
     expect(Object.keys(columns)).toEqual([
       "id",
+      "user_id",
+      "provider_id",
       "activity_id",
+      "unattached_date",
+      "provider_absent_at",
       "external_id",
       "climb_type",
       "grade_system",
@@ -225,8 +229,12 @@ describe("drizzleSchema", () => {
       activity_id: {
         columnType: "PgUUID",
         hasDefault: false,
-        notNull: true,
+        notNull: false,
       },
+      user_id: { columnType: "PgUUID", hasDefault: true, notNull: true },
+      provider_id: { columnType: "PgText", hasDefault: false, notNull: true },
+      unattached_date: { columnType: "PgDateString", hasDefault: false, notNull: false },
+      provider_absent_at: { columnType: "PgTimestamp", hasDefault: false, notNull: false },
       external_id: {
         columnType: "PgText",
         hasDefault: false,
@@ -300,6 +308,15 @@ describe("drizzleSchema", () => {
         notNull: true,
       },
     });
+    expect(config.checks.map((checkBuilder) => checkBuilder.name)).toContain(
+      "climbing_entry_activity_unattached_date_pair",
+    );
+    expect(config.indexes.map((indexBuilder) => indexBuilder.config.name)).toEqual(
+      expect.arrayContaining([
+        "climbing_entry_unattached_date_idx",
+        "climbing_entry_user_provider_external_id_idx",
+      ]),
+    );
   });
 
   it("constrains climbing entry relationships and query indexes", () => {
@@ -320,8 +337,8 @@ describe("drizzleSchema", () => {
     }));
 
     expect(foreignKeys).toContainEqual({
-      columns: ["activity_id"],
-      foreignColumns: ["id"],
+      columns: ["user_id", "activity_id"],
+      foreignColumns: ["user_id", "id"],
       foreignTableName: "activity",
       onDelete: "cascade",
     });
@@ -338,8 +355,8 @@ describe("drizzleSchema", () => {
           unique: false,
         },
         {
-          columns: ["activity_id", "external_id"],
-          name: "climbing_entry_activity_external_id_idx",
+          columns: ["user_id", "provider_id", "external_id"],
+          name: "climbing_entry_user_provider_external_id_idx",
           unique: true,
         },
       ]),

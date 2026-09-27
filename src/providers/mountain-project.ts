@@ -187,6 +187,8 @@ export class MountainProjectProvider implements SyncProvider {
             await db.delete(climbingEntry).where(eq(climbingEntry.activityId, row.id));
             await db.insert(climbingEntry).values(
               activity.entries.map((entry) => ({
+                userId: options.userId,
+                providerId: this.id,
                 activityId: row.id,
                 externalId: entry.externalId,
                 climbType: entry.climbType,

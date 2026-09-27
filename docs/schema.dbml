@@ -467,6 +467,7 @@ table fitness.activity {
 
   indexes {
     (user_id, provider_id, external_id) [name: 'activity_provider_external_idx', unique]
+    (user_id, id) [name: 'activity_user_id_idx', unique]
     (user_id, provider_id) [name: 'activity_user_provider_idx']
     (user_id, group_id) [name: 'activity_user_group_idx']
 
@@ -550,7 +551,11 @@ table fitness.climbing_attempt {
 
 table fitness.climbing_entry {
   id uuid [pk, not null, default: `gen_random_uuid()`]
-  activity_id uuid [not null]
+  user_id uuid [not null]
+  provider_id text [not null]
+  activity_id uuid
+  unattached_date date
+  provider_absent_at "timestamp with time zone"
   external_id text
   climb_type climbing_climb_type [not null]
   grade_system climbing_grade_system [not null]
@@ -567,9 +572,12 @@ table fitness.climbing_entry {
   created_at "timestamp with time zone" [not null, default: `now()`]
 
   indexes {
+
     activity_id [name: 'climbing_entry_activity_idx']
+    (user_id, unattached_date) [name: 'climbing_entry_unattached_date_idx']
     (climb_type, grade_system, grade) [name: 'climbing_entry_grade_lookup_idx']
-    (activity_id, external_id) [name: 'climbing_entry_activity_external_id_idx', unique]
+    (user_id, provider_id, external_id) [name: 'climbing_entry_user_provider_external_id_idx', unique]
+
 
 
 
@@ -2073,7 +2081,11 @@ ref activity_interval_source_activity_id_activity_id_fk: fitness.activity_interv
 
 ref climbing_attempt_climbing_entry_id_climbing_entry_id_fk: fitness.climbing_attempt.climbing_entry_id > fitness.climbing_entry.id [delete: cascade, update: no action]
 
-ref climbing_entry_activity_id_activity_id_fk: fitness.climbing_entry.activity_id > fitness.activity.id [delete: cascade, update: no action]
+ref climbing_entry_user_id_user_profile_id_fk: fitness.climbing_entry.user_id > fitness.user_profile.id [delete: no action, update: no action]
+
+ref climbing_entry_provider_id_provider_id_fk: fitness.climbing_entry.provider_id > fitness.provider.id [delete: no action, update: no action]
+
+ref climbing_entry_activity_owner_fk: fitness.climbing_entry.(user_id, activity_id) > fitness.activity.(user_id, id) [delete: cascade, update: no action]
 
 ref daily_metric_value_daily_metrics_id_daily_metrics_id_fk: fitness.daily_metric_value.daily_metrics_id > fitness.daily_metrics.id [delete: cascade, update: no action]
 

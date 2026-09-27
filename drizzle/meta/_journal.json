@@ -876,6 +876,13 @@
       "when": 1789941600000,
       "tag": "0124_meal_aggregate_nutrition_sources",
       "breakpoints": true
+    },
+    {
+      "idx": 125,
+      "version": "7",
+      "when": 1790471239328,
+      "tag": "0125_unattached_mountain_project_ticks",
+      "breakpoints": true
     }
   ]
 }

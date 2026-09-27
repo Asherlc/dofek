@@ -229,7 +229,11 @@ entity "climbing_attempt" {
 entity "climbing_entry" {
   * id : uuid <<PK>>
   --
+  user_id : uuid <<FK>>
+  provider_id : text <<FK>>
   activity_id : uuid <<FK>>
+  unattached_date : date
+  provider_absent_at : timestamp
   external_id : text
   climb_type : climbing_climb_type
   grade_system : climbing_grade_system
@@ -1314,6 +1318,8 @@ activity ||--o{ activity_interval
 provider ||--o{ activity_interval
 activity ||--o{ activity_interval
 climbing_entry ||--o{ climbing_attempt
+user_profile ||--o{ climbing_entry
+provider ||--o{ climbing_entry
 activity ||--o{ climbing_entry
 daily_metrics ||--o{ daily_metric_value
 daily_metric_type ||--o{ daily_metric_value

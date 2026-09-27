@@ -113,9 +113,16 @@ export const climbingEntry = fitness.table(
   "climbing_entry",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    activityId: uuid("activity_id")
+    userId: uuid("user_id")
       .notNull()
-      .references(() => activity.id, { onDelete: "cascade" }),
+      .$defaultFn(resolveImplicitUserId)
+      .references(() => userProfile.id),
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => provider.id),
+    activityId: uuid("activity_id"),
+    unattachedDate: date("unattached_date"),
+    providerAbsentAt: timestamp("provider_absent_at", { withTimezone: true }),
     externalId: text("external_id"),
     climbType: climbingClimbTypeEnum("climb_type").notNull(),
     gradeSystem: climbingGradeSystemEnum("grade_system").notNull(),
@@ -132,11 +139,23 @@ export const climbingEntry = fitness.table(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
+    foreignKey({
+      name: "climbing_entry_activity_owner_fk",
+      columns: [table.userId, table.activityId],
+      foreignColumns: [activity.userId, activity.id],
+    }).onDelete("cascade"),
     index("climbing_entry_activity_idx").on(table.activityId),
+    index("climbing_entry_unattached_date_idx")
+      .on(table.userId, table.unattachedDate)
+      .where(sql`${table.activityId} IS NULL AND ${table.providerAbsentAt} IS NULL`),
     index("climbing_entry_grade_lookup_idx").on(table.climbType, table.gradeSystem, table.grade),
-    uniqueIndex("climbing_entry_activity_external_id_idx")
-      .on(table.activityId, table.externalId)
+    uniqueIndex("climbing_entry_user_provider_external_id_idx")
+      .on(table.userId, table.providerId, table.externalId)
       .where(sql`${table.externalId} IS NOT NULL`),
+    check(
+      "climbing_entry_activity_unattached_date_pair",
+      sql`(${table.activityId} IS NULL) = (${table.unattachedDate} IS NOT NULL)`,
+    ),
     check("climbing_entry_grade_nonempty", sql`btrim(${table.grade}) <> ''`),
     check("climbing_entry_attempt_count_positive", sql`${table.attemptCount} > 0`),
     check(
@@ -211,6 +230,91 @@ export const activityGroup = fitness.table(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [uniqueIndex("activity_group_user_id_idx").on(table.userId, table.id)],
+);
+
+export const activity = fitness.table(
+  "activity",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    groupId: uuid("group_id").notNull().defaultRandom(),
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => provider.id),
+    userId: uuid("user_id")
+      .notNull()
+      .$defaultFn(resolveImplicitUserId)
+      .references(() => userProfile.id),
+    externalId: text("external_id").notNull(),
+    canonicalType: canonicalActivityTypeEnum("canonical_type").notNull(),
+    providerType: text("provider_type").notNull(),
+    modality: activityModalityEnum("modality"),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    name: text("name"),
+    notes: text("notes"),
+    perceivedExertion: real("perceived_exertion"),
+    sourceName: text("source_name"),
+    timezone: text("timezone"), // IANA timezone (e.g. "America/New_York")
+    startUtcOffsetMinutes: bigint("start_utc_offset_minutes", { mode: "number" }),
+    endUtcOffsetMinutes: bigint("end_utc_offset_minutes", { mode: "number" }),
+    localTimeSource: text("local_time_source").notNull().default("unknown"),
+    rejectedProviderTimezone: text("rejected_provider_timezone"),
+    rejectedProviderStartUtcOffsetMinutes: bigint("rejected_provider_start_utc_offset_minutes", {
+      mode: "number",
+    }),
+    rejectedProviderEndUtcOffsetMinutes: bigint("rejected_provider_end_utc_offset_minutes", {
+      mode: "number",
+    }),
+    stravaId: text("strava_id"), // Strava activity ID for cross-provider linking
+    raw: jsonb("raw"),
+    providerAbsentAt: timestamp("provider_absent_at", { withTimezone: true }),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("activity_provider_external_idx").on(
+      table.userId,
+      table.providerId,
+      table.externalId,
+    ),
+    uniqueIndex("activity_user_id_idx").on(table.userId, table.id),
+    index("activity_user_provider_idx").on(table.userId, table.providerId),
+    index("activity_user_group_idx").on(table.userId, table.groupId),
+    // Migration 0110 defers this FK so the AFTER INSERT trigger can create the group.
+    foreignKey({
+      name: "activity_user_group_fk",
+      columns: [table.userId, table.groupId],
+      foreignColumns: [activityGroup.userId, activityGroup.id],
+    }),
+    check(
+      "activity_local_time_context_check",
+      sql`(
+        ${table.localTimeSource} = 'unknown'
+        AND ${table.startUtcOffsetMinutes} IS NULL
+        AND ${table.endUtcOffsetMinutes} IS NULL
+      ) OR (
+        ${table.localTimeSource} IN (
+          'provider_timezone',
+          'device_timezone',
+          'user_home_timezone',
+          'gps_timezone',
+          'home_zone_fallback'
+        )
+        AND NULLIF(btrim(${table.timezone}), '') IS NOT NULL
+        AND ${table.startUtcOffsetMinutes} BETWEEN -840 AND 840
+        AND (${table.endedAt} IS NULL OR ${table.endUtcOffsetMinutes} BETWEEN -840 AND 840)
+      ) OR (
+        ${table.localTimeSource} IN ('provider_offset', 'device_offset')
+        AND ${table.timezone} IS NULL
+        AND ${table.startUtcOffsetMinutes} BETWEEN -840 AND 840
+        AND (${table.endedAt} IS NULL OR ${table.endUtcOffsetMinutes} BETWEEN -840 AND 840)
+      )`,
+    ),
+    check(
+      "activity_perceived_exertion_range",
+      sql`${table.perceivedExertion} IS NULL OR ${table.perceivedExertion} BETWEEN 0 AND 10`,
+    ),
+  ],
 );
 
 export const effortEquivalenceGroup = fitness.table(
@@ -296,90 +400,6 @@ export const activityGroupAlias = fitness.table(
     index("activity_group_alias_user_group_idx").on(table.userId, table.groupId),
     check("activity_group_alias_not_self", sql`${table.aliasId} <> ${table.groupId}`),
     check("activity_group_alias_reason", sql`${table.reason} = 'merge'`),
-  ],
-);
-
-export const activity = fitness.table(
-  "activity",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    groupId: uuid("group_id").notNull().defaultRandom(),
-    providerId: text("provider_id")
-      .notNull()
-      .references(() => provider.id),
-    userId: uuid("user_id")
-      .notNull()
-      .$defaultFn(resolveImplicitUserId)
-      .references(() => userProfile.id),
-    externalId: text("external_id").notNull(),
-    canonicalType: canonicalActivityTypeEnum("canonical_type").notNull(),
-    providerType: text("provider_type").notNull(),
-    modality: activityModalityEnum("modality"),
-    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
-    endedAt: timestamp("ended_at", { withTimezone: true }),
-    name: text("name"),
-    notes: text("notes"),
-    perceivedExertion: real("perceived_exertion"),
-    sourceName: text("source_name"),
-    timezone: text("timezone"), // IANA timezone (e.g. "America/New_York")
-    startUtcOffsetMinutes: bigint("start_utc_offset_minutes", { mode: "number" }),
-    endUtcOffsetMinutes: bigint("end_utc_offset_minutes", { mode: "number" }),
-    localTimeSource: text("local_time_source").notNull().default("unknown"),
-    rejectedProviderTimezone: text("rejected_provider_timezone"),
-    rejectedProviderStartUtcOffsetMinutes: bigint("rejected_provider_start_utc_offset_minutes", {
-      mode: "number",
-    }),
-    rejectedProviderEndUtcOffsetMinutes: bigint("rejected_provider_end_utc_offset_minutes", {
-      mode: "number",
-    }),
-    stravaId: text("strava_id"), // Strava activity ID for cross-provider linking
-    raw: jsonb("raw"),
-    providerAbsentAt: timestamp("provider_absent_at", { withTimezone: true }),
-    deletedAt: timestamp("deleted_at", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    uniqueIndex("activity_provider_external_idx").on(
-      table.userId,
-      table.providerId,
-      table.externalId,
-    ),
-    index("activity_user_provider_idx").on(table.userId, table.providerId),
-    index("activity_user_group_idx").on(table.userId, table.groupId),
-    // Migration 0110 defers this FK so the AFTER INSERT trigger can create the group.
-    foreignKey({
-      name: "activity_user_group_fk",
-      columns: [table.userId, table.groupId],
-      foreignColumns: [activityGroup.userId, activityGroup.id],
-    }),
-    check(
-      "activity_local_time_context_check",
-      sql`(
-        ${table.localTimeSource} = 'unknown'
-        AND ${table.startUtcOffsetMinutes} IS NULL
-        AND ${table.endUtcOffsetMinutes} IS NULL
-      ) OR (
-        ${table.localTimeSource} IN (
-          'provider_timezone',
-          'device_timezone',
-          'user_home_timezone',
-          'gps_timezone',
-          'home_zone_fallback'
-        )
-        AND NULLIF(btrim(${table.timezone}), '') IS NOT NULL
-        AND ${table.startUtcOffsetMinutes} BETWEEN -840 AND 840
-        AND (${table.endedAt} IS NULL OR ${table.endUtcOffsetMinutes} BETWEEN -840 AND 840)
-      ) OR (
-        ${table.localTimeSource} IN ('provider_offset', 'device_offset')
-        AND ${table.timezone} IS NULL
-        AND ${table.startUtcOffsetMinutes} BETWEEN -840 AND 840
-        AND (${table.endedAt} IS NULL OR ${table.endUtcOffsetMinutes} BETWEEN -840 AND 840)
-      )`,
-    ),
-    check(
-      "activity_perceived_exertion_range",
-      sql`${table.perceivedExertion} IS NULL OR ${table.perceivedExertion} BETWEEN 0 AND 10`,
-    ),
   ],
 );
 

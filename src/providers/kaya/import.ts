@@ -202,6 +202,8 @@ class KayaExportImporter {
 
     await db.insert(climbingEntry).values(
       kayaActivity.entries.map((entry) => ({
+        userId: this.#userId,
+        providerId: KAYA_PROVIDER_ID,
         activityId: row.id,
         externalId: entry.externalId,
         climbType: entry.climbType,
