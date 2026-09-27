@@ -330,7 +330,7 @@ contract bump is required because the persisted V1 payload did not change.
 Provider-sourced tables use unique external-ID indexes as appropriate for each
 source's identity scope. Climbing entries retain per-activity external-ID
 uniqueness for existing providers and use user-wide uniqueness for Mountain
-Project ticks; see [`climbing_entry` indexes](src/db/schema/activity.ts).
+Project ticks; see [`climbing_entry` indexes](../src/db/schema/activity.ts).
 Syncs use upsert to avoid duplicates.
 
 Every metric-stream ingestion path must publish Redpanda events with a stable `external_id`. Provider-supplied IDs are preferred; when the source does not expose a sample ID, ingestion derives a deterministic ID from provider, activity/source, channel, and timestamp. Metric stream events use `(user_id, provider_id, external_id, channel, recorded_at)` as the logical idempotency key so failed syncs can be retried without duplicating raw samples in ClickHouse.

@@ -12,7 +12,9 @@ const UNATTACHED_ID = "b0000000-0000-4000-8000-000000000002";
 const ABSENT_ID = "b0000000-0000-4000-8000-000000000003";
 const BOUNDARY_ATTACHED_ID = "b0000000-0000-4000-8000-000000000006";
 const BOUNDARY_UNATTACHED_ID = "b0000000-0000-4000-8000-000000000007";
+const OFFSET_ATTACHED_ID = "b0000000-0000-4000-8000-000000000008";
 const activityIdSchema = z.object({ id: z.string(), group_id: z.string() });
+const activityStartSchema = activityIdSchema.extend({ started_at: z.string() });
 const entryStateSchema = z.object({
   activity_id: z.string().nullable(),
   provider_absent_at: z.string().nullable(),
@@ -156,6 +158,42 @@ describe("ClimbingRepository PostgreSQL summaries", () => {
     ).not.toEqual(expect.arrayContaining(["V6", "V7"]));
     expect((await repository.getVolumeByGrade(30)).map((row) => row.toDetail().grade)).not.toEqual(
       expect.arrayContaining(["V6", "V7"]),
+    );
+  });
+
+  it("uses the source-resolved activity date in climbing summaries", async () => {
+    const [offsetActivity] = await executeWithSchema(
+      context.db,
+      activityStartSchema,
+      sql`INSERT INTO fitness.activity (
+        provider_id, user_id, external_id, canonical_type, provider_type,
+        started_at, ended_at, local_time_source, start_utc_offset_minutes,
+        end_utc_offset_minutes, timezone
+      ) VALUES (
+        'climbing-summary-test', ${TEST_USER_ID}, 'summary-offset-date', 'climbing', 'climbing',
+        ((date_trunc('day', NOW() AT TIME ZONE 'UTC') - INTERVAL '1 day') + INTERVAL '1 hour') AT TIME ZONE 'UTC',
+        ((date_trunc('day', NOW() AT TIME ZONE 'UTC') - INTERVAL '1 day') + INTERVAL '2 hours') AT TIME ZONE 'UTC',
+        'provider_offset', 120, 120, NULL
+      ) RETURNING id::text AS id, group_id::text AS group_id, started_at::text AS started_at`,
+    );
+    if (!offsetActivity) throw new Error("Failed to seed source-offset climbing activity");
+    const expectedDate = new Date(Date.parse(offsetActivity.started_at) + 120 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+    await context.db.execute(sql`INSERT INTO fitness.climbing_entry (
+      id, user_id, provider_id, activity_id, external_id,
+      climb_type, grade_system, grade, sent, attempt_count, raw
+    ) VALUES (
+      ${OFFSET_ATTACHED_ID}, ${TEST_USER_ID}, 'climbing-summary-test', ${offsetActivity.id},
+      'summary-offset-entry', 'boulder', 'v_scale', 'V9', TRUE, 1, '{}'::jsonb
+    )`);
+
+    const repository = new ClimbingRepository(context.db, TEST_USER_ID, "America/Los_Angeles");
+    expect((await repository.getGradeProgression(30)).map((row) => row.toDetail())).toContainEqual(
+      expect.objectContaining({ date: expectedDate, grade: "V9" }),
+    );
+    expect((await repository.getSessionSummaries(30)).map((row) => row.toDetail())).toContainEqual(
+      expect.objectContaining({ activityId: offsetActivity.group_id, date: expectedDate }),
     );
   });
 });

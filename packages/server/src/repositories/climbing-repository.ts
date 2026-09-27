@@ -228,7 +228,7 @@ export class ClimbingRepository extends BaseRepository {
       progressionRowSchema,
       sql`WITH climbing_entries AS (
             SELECT
-              (a.started_at AT TIME ZONE ${this.timezone})::date::text AS session_date,
+              (${postgresActivityCalendarDate(sql`a`, this.timezone)})::text AS session_date,
               ce.id, ce.activity_id, ce.climb_type, ce.grade_system, ce.grade,
               ce.sent, ce.attempt_count
             FROM fitness.v_activity AS a
@@ -349,7 +349,7 @@ export class ClimbingRepository extends BaseRepository {
       sessionEntryRowSchema,
       sql`SELECT
             a.id::text AS activity_id,
-            (a.started_at AT TIME ZONE ${this.timezone})::date::text AS session_date,
+            (${postgresActivityCalendarDate(sql`a`, this.timezone)})::text AS session_date,
             COALESCE(a.name, 'Climbing') AS name,
             ce.location_name,
             CASE WHEN detail.attempt_count > 0 THEN detail.attempt_count ELSE ce.attempt_count END AS attempt_count,

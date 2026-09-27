@@ -43,21 +43,44 @@ describe("Mountain Project tick migration", () => {
     client = new Client({ connectionString });
     await client.connect();
     migrationDirectory = mkdtempSync(join(tmpdir(), "mountain-ticks-migration-"));
-    const drizzleDirectory = join(import.meta.dirname, "../../drizzle");
-    const journal = z
-      .object({
-        entries: z.array(z.object({ tag: z.string(), when: z.number() })),
-      })
-      .parse(JSON.parse(readFileSync(join(drizzleDirectory, "meta/_journal.json"), "utf8")));
-    const historicalMigrations = journal.entries
-      .filter(({ tag }) => tag < "0128_unattached_mountain_project_ticks")
-      .map(({ tag, when }) => ({
-        content: readFileSync(join(drizzleDirectory, `${tag}.sql`), "utf8"),
-        file: `${tag}.sql`,
-        when,
-      }));
-    writeTestMigrationFiles(migrationDirectory, historicalMigrations);
-    await runMigrations(connectionString, migrationDirectory);
+    await client.query(`
+      CREATE SCHEMA fitness;
+      CREATE TABLE fitness.user_profile (
+        id uuid PRIMARY KEY,
+        name text NOT NULL
+      );
+      CREATE TABLE fitness.provider (
+        id text PRIMARY KEY,
+        name text NOT NULL,
+        user_id uuid NOT NULL
+      );
+      CREATE TABLE fitness.activity (
+        id uuid PRIMARY KEY,
+        user_id uuid NOT NULL,
+        provider_id text NOT NULL,
+        external_id text NOT NULL,
+        canonical_type text NOT NULL,
+        provider_type text NOT NULL,
+        started_at timestamptz NOT NULL,
+        deleted_at timestamptz,
+        provider_absent_at timestamptz
+      );
+      CREATE TABLE fitness.climbing_entry (
+        id uuid PRIMARY KEY,
+        activity_id uuid NOT NULL,
+        external_id text,
+        climb_type text NOT NULL,
+        grade_system text NOT NULL,
+        grade text NOT NULL,
+        sent boolean,
+        attempt_count integer,
+        raw jsonb,
+        CONSTRAINT climbing_entry_activity_id_fkey
+          FOREIGN KEY (activity_id) REFERENCES fitness.activity(id) ON DELETE CASCADE
+      );
+      CREATE UNIQUE INDEX climbing_entry_activity_external_id_idx
+        ON fitness.climbing_entry (activity_id, external_id) WHERE external_id IS NOT NULL;
+    `);
     await client.query(`
       INSERT INTO fitness.user_profile (id, name) VALUES ('${USER}', 'Climber');
       INSERT INTO fitness.provider (id, name, user_id) VALUES
@@ -97,31 +120,18 @@ describe("Mountain Project tick migration", () => {
           readFileSync(join(import.meta.dirname, "../../drizzle/meta/_journal.json"), "utf8"),
         ),
       );
-    const historicalMigrations = journal.entries
-      .filter(({ tag }) => tag < migrationFile.replace(/\.sql$/, ""))
-      .map(({ tag, when }) => ({
-        content: readFileSync(join(import.meta.dirname, "../../drizzle", `${tag}.sql`), "utf8"),
-        file: `${tag}.sql`,
-        when,
-      }));
-    historicalMigrations.push({
-      content: readFileSync(migrationPath, "utf8"),
-      file: migrationFile,
-      when:
-        journal.entries.find(({ tag }) => tag === migrationFile.replace(/\.sql$/, ""))?.when ??
-        1_790_000_000_000,
+    const migrationEntries = [migrationFile, validationMigrationFile].map((file, index) => {
+      const tag = file.replace(/\.sql$/, "");
+      return {
+        content: readFileSync(join(import.meta.dirname, "../../drizzle", file), "utf8"),
+        file,
+        when: journal.entries.find((entry) => entry.tag === tag)?.when ?? 1_790_000_000_000 + index,
+      };
     });
     expect(existsSync(validationMigrationPath), "constraint validation migration must exist").toBe(
       true,
     );
-    historicalMigrations.push({
-      content: readFileSync(validationMigrationPath, "utf8"),
-      file: validationMigrationFile,
-      when:
-        journal.entries.find(({ tag }) => tag === validationMigrationFile.replace(/\.sql$/, ""))
-          ?.when ?? 1_790_000_000_001,
-    });
-    writeTestMigrationFiles(migrationDirectory, historicalMigrations);
+    writeTestMigrationFiles(migrationDirectory, migrationEntries);
     expect(await runMigrations(connectionString, migrationDirectory)).toBe(2);
 
     const ticks = await client.query(`SELECT id, user_id, provider_id, activity_id,

@@ -336,7 +336,7 @@ describe("ClimbingRepository", () => {
       expect(text).toContain("AT TIME ZONE");
     });
 
-    it("applies limited entitlement access windows to activity timestamps", async () => {
+    it("applies limited entitlement access windows to activity calendar dates", async () => {
       const execute = vi.fn().mockResolvedValue([]);
       const repo = new ClimbingRepository(executeDb(execute), "user-1", "UTC", {
         kind: "limited",
@@ -349,7 +349,8 @@ describe("ClimbingRepository", () => {
       await repo.getGradeProgression(30);
 
       const text = queryText(execute.mock.calls[0]?.[0]);
-      expect(text).toContain("a.started_at");
+      expect(text).toContain("local_time_source");
+      expect(text).toContain("AT TIME ZONE");
       expect(text).toContain("2026-07-01");
       expect(text).toContain("2026-07-08");
     });
