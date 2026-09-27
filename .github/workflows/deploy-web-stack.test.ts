@@ -25,6 +25,11 @@ interface DeployConsumerOptions {
   readonly sleepSeconds?: number;
 }
 
+interface DeployQuiescedOptions extends DeployConsumerOptions {
+  readonly serviceObservations?: Readonly<Record<string, readonly ServiceObservation[]>>;
+  readonly stackDeployStatus?: number;
+}
+
 const MOCK_DOCKER = `#!/usr/bin/env bash
 set -euo pipefail
 
@@ -59,7 +64,7 @@ read_observation() {
 }
 
 if [ "$1" = "stack" ] && [ "$2" = "deploy" ]; then
-  exit 0
+  exit "\${STACK_DEPLOY_STATUS:-0}"
 fi
 
 if [ "$1" = "service" ] && [ "$2" = "inspect" ]; then
@@ -167,7 +172,10 @@ function runDeployConsumers(scenarios: ConsumerScenarios, options: DeployConsume
     mkdirSync(scenarioDirectory);
     mkdirSync(stateDirectory);
     writeFileSync(dockerPath, MOCK_DOCKER);
-    writeFileSync(nodePath, "#!/usr/bin/env bash\nexit 0\n");
+    writeFileSync(
+      nodePath,
+      "#!/usr/bin/env bash\nif [ \"$2\" = docker ]; then shift; exec \"$@\"; fi\nexit 0\n",
+    );
     chmodSync(dockerPath, 0o755);
     chmodSync(nodePath, 0o755);
     writeFileSync(
@@ -231,7 +239,7 @@ ${deployConsumersRunScript()}`,
 
 function runDeployQuiesced(
   processingReconciliation: readonly ServiceObservation[],
-  options: DeployConsumerOptions = {},
+  options: DeployQuiescedOptions = {},
 ) {
   const temporaryDirectory = mkdtempSync(join(tmpdir(), "dofek-deploy-quiesced-"));
   const scenarioDirectory = join(temporaryDirectory, "scenarios");
@@ -243,10 +251,13 @@ function runDeployQuiesced(
     mkdirSync(scenarioDirectory);
     mkdirSync(stateDirectory);
     writeFileSync(dockerPath, MOCK_DOCKER);
-    writeFileSync(nodePath, "#!/usr/bin/env bash\nexit 0\n");
+    writeFileSync(
+      nodePath,
+      "#!/usr/bin/env bash\nif [ \"$2\" = docker ]; then shift; exec \"$@\"; fi\nexit 0\n",
+    );
     chmodSync(dockerPath, 0o755);
     chmodSync(nodePath, 0o755);
-    for (const serviceName of [
+    const defaultServiceNames = [
       "dofek_web",
       "dofek_worker",
       "dofek_analytics-worker",
@@ -258,8 +269,12 @@ function runDeployQuiesced(
       "dofek_metric-stream-history-r2-archive",
       "dofek_clickhouse",
       "dofek_databasus",
-    ]) {
-      writeFileSync(join(scenarioDirectory, serviceName), serializeScenario([STABLE_OBSERVATION]));
+    ];
+    for (const serviceName of defaultServiceNames) {
+      writeFileSync(
+        join(scenarioDirectory, serviceName),
+        serializeScenario(options.serviceObservations?.[serviceName] ?? [STABLE_OBSERVATION]),
+      );
     }
     writeFileSync(
       join(scenarioDirectory, "dofek_processing-reconciliation"),
@@ -273,22 +288,25 @@ function runDeployQuiesced(
       "sleep() { SECONDS=$((SECONDS + MOCK_SLEEP_SECONDS)); simulated_seconds=$((simulated_seconds + MOCK_SLEEP_SECONDS)); }",
       deployQuiescedRunScript(),
     ].join("\n");
+    const githubOutputPath = join(temporaryDirectory, "github-output");
     const result = spawnSync("bash", ["-c", shellScript], {
       encoding: "utf8",
       env: {
         ...process.env,
         FAIL_TASK_INSPECTION: options.failTaskInspection ? "1" : "0",
         IMAGE_TAG: "test",
+        STACK_DEPLOY_STATUS: (options.stackDeployStatus ?? 0).toString(),
         MOCK_SLEEP_SECONDS: (options.sleepSeconds ?? 10).toString(),
         PATH: `${temporaryDirectory}:${process.env.PATH ?? ""}`,
         RUNNER_TEMP: temporaryDirectory,
         SCENARIO_DIR: scenarioDirectory,
         STACK_NAME: "dofek",
         STATE_DIR: stateDirectory,
+        GITHUB_OUTPUT: githubOutputPath,
       },
     });
 
-    return result;
+    return { ...result, githubOutput: readFileSync(githubOutputPath, "utf8") };
   } finally {
     rmSync(temporaryDirectory, { force: true, recursive: true });
   }
@@ -318,6 +336,35 @@ describe("deploy-web-stack workflow contract", () => {
     expect(workflowText).toContain(
       "steps.verify_peerdb_cdc_contract.conclusion == 'success'",
     );
+  });
+
+  it("continues CDC gates after a terminal web rollback before failing the deployment", () => {
+    const orderedSteps = [
+      "Deploy stack without ClickHouse consumers",
+      "Wait for Postgres writable after stack deploy",
+      "Wait for ClickHouse after stack deploy",
+      "Wait for PeerDB after stack deploy",
+      "Configure ClickHouse CDC",
+      "Finalize PeerDB CDC contract",
+      "Verify PeerDB CDC causal markers",
+      "Deploy ClickHouse consumer services",
+      "Fail deployment after restoring processing services when web rolled back",
+    ];
+    const positions = orderedSteps.map((name) =>
+      name === "Wait for PeerDB after stack deploy"
+        ? workflowText.indexOf(
+            "      - name: Wait for PeerDB\n",
+            workflowText.indexOf("Deploy stack without ClickHouse consumers"),
+          )
+        : workflowText.indexOf(`      - name: ${name}`),
+    );
+
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect(positions).toEqual([...positions].sort((left, right) => left - right));
+    expect(workflowText).toContain(
+      "if: always() && steps.deploy_stack_quiesced.outputs.web_convergence_failed == 'true' && steps.deploy_stack_full.outcome == 'success'",
+    );
+    expect(workflowText).toContain("### Web deployment failed after processing services were restored");
   });
 
   it.each(["Finalize PeerDB CDC contract", "Verify PeerDB CDC causal markers"])(
@@ -410,6 +457,75 @@ ${workflowRunScript(step)}
     expect(result.stdout).toContain(
       "dofek_processing-reconciliation is using ghcr.io/asherlc/dofek:previous, expected ghcr.io/asherlc/dofek:test",
     );
+  });
+
+  it("defers a terminal web rollback and records the outcome", () => {
+    const result = runDeployQuiesced([STABLE_OBSERVATION], {
+      serviceObservations: {
+        dofek_web: [{
+          ...STABLE_OBSERVATION,
+          image: "ghcr.io/asherlc/dofek:previous",
+          taskId: "failed-web-task",
+          updateState: "rollback_completed",
+        }],
+      },
+    });
+
+    expect(result.stderr).toBe("");
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("terminal rollback or reverted image");
+    expect(result.stdout).toContain("diagnostic task output for dofek_web");
+    expect(result.githubOutput).toContain("web_convergence_failed=true");
+  });
+
+  it("keeps a stack command failure fatal without recording a deferred web failure", () => {
+    const result = runDeployQuiesced([STABLE_OBSERVATION], { stackDeployStatus: 42 });
+
+    expect(result.status).toBe(42);
+    expect(result.githubOutput).toContain("web_convergence_failed=false");
+    expect(result.githubOutput).not.toContain("web_convergence_failed=true");
+  });
+
+  it("keeps an active web update at the deadline fatal", () => {
+    const result = runDeployQuiesced([STABLE_OBSERVATION], {
+      serviceObservations: {
+        dofek_web: [{ ...STABLE_OBSERVATION, replicas: "0/1", updateState: "updating" }],
+      },
+      sleepSeconds: 2100,
+    });
+
+    expect(result.status).toBe(124);
+    expect(result.stdout).toContain("dofek_web did not converge before timeout");
+    expect(result.githubOutput).toContain("web_convergence_failed=false");
+    expect(result.githubOutput).not.toContain("web_convergence_failed=true");
+  });
+
+  it("keeps an unknown web update state fatal", () => {
+    const result = runDeployQuiesced([STABLE_OBSERVATION], {
+      serviceObservations: {
+        dofek_web: [{
+          ...STABLE_OBSERVATION,
+          image: "ghcr.io/asherlc/dofek:previous",
+          updateState: "",
+        }],
+      },
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("dofek_web is using ghcr.io/asherlc/dofek:previous");
+    expect(result.githubOutput).toContain("web_convergence_failed=false");
+  });
+
+  it("keeps a non-web convergence failure fatal", () => {
+    const result = runDeployQuiesced([STABLE_OBSERVATION], {
+      serviceObservations: {
+        dofek_worker: [{ ...STABLE_OBSERVATION, image: "ghcr.io/asherlc/dofek:previous" }],
+      },
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("dofek_worker is using ghcr.io/asherlc/dofek:previous");
+    expect(result.githubOutput).not.toContain("web_convergence_failed=true");
   });
 
   it("quiesces the migration-running worker before the dependency stack apply", () => {

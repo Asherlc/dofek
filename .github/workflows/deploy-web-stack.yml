@@ -769,6 +769,7 @@ jobs:
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
         run: |
+          echo "web_convergence_failed=false" >> "$GITHUB_OUTPUT"
           set +e
           timeout 35m node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack deploy $STACK_FILE_FLAGS -c deploy/stack.cdc-quiesce.yml --with-registry-auth --prune --detach=true "$STACK_NAME"
           status=$?
@@ -800,6 +801,18 @@ jobs:
                 docker service ls --filter "name=${service_name}" --format '{{.Replicas}}'
               )"
               echo "${service_name} image=${image} replicas=${replicas} update_state=${update_state:-none}"
+              if [ "$service" = "web" ] && {
+                [ "$update_state" = "rollback_completed" ] || {
+                  [ "${image%@*}" != "ghcr.io/asherlc/dofek:${IMAGE_TAG}" ] && {
+                    [ "$update_state" = "completed" ]
+                  }
+                }
+              }; then
+                docker service ps "$service_name" --no-trunc
+                echo "web_convergence_failed=true" >> "$GITHUB_OUTPUT"
+                echo "::warning::${service_name} reached a terminal rollback or reverted image; continuing through database and CDC safety gates before failing this deployment"
+                break
+              fi
               case "$service" in
                 web|worker|analytics-worker|metric-stream-clickhouse-sink|metric-stream-live-clickhouse-sink|metric-stream-history-clickhouse-sink|processing-reconciliation)
                   expected_image="ghcr.io/asherlc/dofek:${IMAGE_TAG}"
@@ -1209,6 +1222,18 @@ jobs:
       - name: Remove PeerDB CDC canary artifact volume
         if: always() && env.PEERDB_CDC_CANARY_VOLUME != ''
         run: docker volume rm -f "$PEERDB_CDC_CANARY_VOLUME"
+
+      - name: Fail deployment after restoring processing services when web rolled back
+        if: always() && steps.deploy_stack_quiesced.outputs.web_convergence_failed == 'true' && steps.deploy_stack_full.outcome == 'success'
+        run: |
+          message="The web service rolled back or reverted to its previous image. Processing services were restored after Postgres and PeerDB CDC safety gates passed; investigate the web rollout and rerun the deployment."
+          echo "::error::$message"
+          {
+            echo "### Web deployment failed after processing services were restored"
+            echo
+            echo "$message"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
 
       - uses: ./.github/actions/append-dispatcher-run-summary
         if: always()
