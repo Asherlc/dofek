@@ -127,6 +127,42 @@ export function ActivityDetailPage() {
     { id },
     { enabled: isClimbingActivity },
   );
+  const tickSuggestions = trpc.climbing.unattachedMountainProjectTicks.useQuery(
+    { activityId: id },
+    { enabled: isClimbingActivity },
+  );
+  const trpcUtils = trpc.useUtils();
+  const [tickAttachState, setTickAttachState] = useState<
+    Record<string, { pending: boolean; error: string | null }>
+  >({});
+  const attachTick = trpc.climbing.attachMountainProjectTick.useMutation({
+    onSuccess: async (_result, input) => {
+      await Promise.all([
+        trpcUtils.climbing.activityEntries.invalidate({ id: input.activityId }),
+        trpcUtils.climbing.unattachedMountainProjectTicks.invalidate({
+          activityId: input.activityId,
+        }),
+      ]);
+    },
+  });
+  const handleAttachTick = (tickId: string) => {
+    setTickAttachState((current) => ({ ...current, [tickId]: { pending: true, error: null } }));
+    attachTick.mutate(
+      { activityId: id, tickId },
+      {
+        onSuccess: () =>
+          setTickAttachState((current) => ({
+            ...current,
+            [tickId]: { pending: false, error: null },
+          })),
+        onError: (error) =>
+          setTickAttachState((current) => ({
+            ...current,
+            [tickId]: { pending: false, error: userFacingErrorMessage(error) },
+          })),
+      },
+    );
+  };
   const isHangboardingActivity =
     detail.data != null && isActivityDetailType(detail.data.activityType, "hangboard");
   const hangboardDetails = trpc.activity.hangboardDetails.useQuery(
@@ -280,6 +316,71 @@ export function ActivityDetailPage() {
             <p className="text-sm text-red-400">{userFacingErrorMessage(climbingEntries.error)}</p>
           ) : (
             <ClimbingEntryBreakdown entries={climbingEntries.data ?? []} />
+          )}
+        </Section>
+      )}
+
+      {isClimbingActivity && (
+        <Section
+          title="Unattached Mountain Project ticks"
+          description="Ticks recorded for this day that can be attached to this climbing activity."
+        >
+          {tickSuggestions.error ? (
+            <p className="text-sm text-red-400">{userFacingErrorMessage(tickSuggestions.error)}</p>
+          ) : tickSuggestions.isLoading && !tickSuggestions.data ? (
+            <p className="text-sm text-muted">Loading Mountain Project ticks...</p>
+          ) : (tickSuggestions.data?.length ?? 0) === 0 ? (
+            <p className="text-sm text-muted">No unattached Mountain Project ticks for this day.</p>
+          ) : (
+            <div className="space-y-3">
+              {tickSuggestions.data?.map((tick) => {
+                const state = tickAttachState[tick.id];
+                const result =
+                  tick.sent === true
+                    ? "Sent"
+                    : tick.sent === false
+                      ? "Attempted"
+                      : "Status unknown";
+                return (
+                  <div
+                    key={tick.id}
+                    className="flex items-center justify-between gap-3 rounded-md border border-border p-3"
+                  >
+                    <div>
+                      <p className="font-medium">
+                        {tick.routeName ?? (tick.climbType === "boulder" ? "Boulder" : "Route")}
+                      </p>
+                      <p className="text-sm text-muted">
+                        {[
+                          tick.grade,
+                          result,
+                          tick.attemptCount === null
+                            ? null
+                            : `${tick.attemptCount} ${tick.attemptCount === 1 ? "attempt" : "attempts"}`,
+                          tick.locationName,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </p>
+                      {state?.error ? (
+                        <p role="alert" className="text-sm text-red-400">
+                          {state.error}
+                        </p>
+                      ) : null}
+                    </div>
+                    <button
+                      type="button"
+                    className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                      aria-label="Attach to this activity"
+                      disabled={state?.pending}
+                      onClick={() => handleAttachTick(tick.id)}
+                    >
+                      {state?.pending ? "Attaching..." : "Attach"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </Section>
       )}
