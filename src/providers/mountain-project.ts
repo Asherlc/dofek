@@ -9,13 +9,8 @@ import {
   decodeMountainProjectTickExport,
   type MountainProjectTick,
 } from "@dofek/mountain-project/ticks";
-import { resolveProviderActivityType } from "@dofek/training/activity-types";
-import { eq } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import type { TokenSet } from "../auth/oauth.ts";
-import {
-  finishProviderActivityListSync,
-  upsertProviderActivity,
-} from "../db/provider-activity-sync.ts";
 import { climbingEntry } from "../db/schema/activity.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
@@ -40,15 +35,8 @@ interface MountainProjectClimbingEntry {
   raw: MountainProjectTick["raw"];
 }
 
-interface MountainProjectActivity {
-  externalId: string;
-  name: string;
-  startedAt: Date;
-  entries: MountainProjectClimbingEntry[];
-}
-
 interface TickExportParseResult {
-  activities: MountainProjectActivity[];
+  entries: Array<MountainProjectClimbingEntry & { unattachedDate: string }>;
   unsupportedGradeCount: number;
   errors: SyncError[];
 }
@@ -105,13 +93,23 @@ export class MountainProjectProvider implements SyncProvider {
   }
 
   async sync(run: SyncRun): Promise<SyncResult> {
-    const { db, options, window } = run;
+    const { db, options } = run;
     const startedAt = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
-    await ensureProvider(db, this.id, this.name, MOUNTAIN_PROJECT_BASE_URL, options.userId);
+    const userId = options.userId;
+    if (!userId) {
+      const error = new Error("Mountain Project sync requires a user context.");
+      return {
+        provider: this.id,
+        recordsSynced,
+        errors: [{ message: error.message, cause: error }],
+        duration: Date.now() - startedAt,
+      };
+    }
+    await ensureProvider(db, this.id, this.name, MOUNTAIN_PROJECT_BASE_URL, userId);
 
-    const tokens = await loadTokens(db, this.id, options.userId);
+    const tokens = await loadTokens(db, this.id, userId);
     if (!tokens) {
       const error = new ProviderStoredIdentityMissingError(
         this.name,
@@ -151,7 +149,6 @@ export class MountainProjectProvider implements SyncProvider {
       });
     }
 
-    const presentExternalIds = new Set<string>();
     try {
       recordsSynced = await withSyncLog(
         db,
@@ -159,37 +156,15 @@ export class MountainProjectProvider implements SyncProvider {
         "climbing_activity",
         async () => {
           let count = 0;
-          for (const activity of parsed.activities) {
-            const row = await upsertProviderActivity(
-              db,
-              {
+          const presentExternalIds = parsed.entries.map((entry) => entry.externalId);
+          for (const entry of parsed.entries) {
+            await db
+              .insert(climbingEntry)
+              .values({
+                userId,
                 providerId: this.id,
-                userId: options.userId,
-                externalId: activity.externalId,
-                activityType: resolveProviderActivityType("rock_climbing", "rock_climbing"),
-                name: activity.name,
-                startedAt: activity.startedAt,
-                endedAt: activity.startedAt,
-                sourceName: this.name,
-                raw: { source: this.id, locationName: activity.entries[0]?.locationName ?? null },
-              },
-              {
-                activityType: resolveProviderActivityType("rock_climbing", "rock_climbing"),
-                name: activity.name,
-                startedAt: activity.startedAt,
-                endedAt: activity.startedAt,
-                sourceName: this.name,
-                raw: { source: this.id, locationName: activity.entries[0]?.locationName ?? null },
-              },
-            );
-            presentExternalIds.add(activity.externalId);
-            if (!row) continue;
-            await db.delete(climbingEntry).where(eq(climbingEntry.activityId, row.id));
-            await db.insert(climbingEntry).values(
-              activity.entries.map((entry) => ({
-                userId: options.userId,
-                providerId: this.id,
-                activityId: row.id,
+                activityId: null,
+                unattachedDate: entry.unattachedDate,
                 externalId: entry.externalId,
                 climbType: entry.climbType,
                 gradeSystem: entry.gradeSystem,
@@ -200,20 +175,43 @@ export class MountainProjectProvider implements SyncProvider {
                 locationName: entry.locationName,
                 sourceName: this.name,
                 raw: entry.raw,
-              })),
-            );
-            count += activity.entries.length;
+              })
+              .onConflictDoUpdate({
+                target: [climbingEntry.userId, climbingEntry.providerId, climbingEntry.externalId],
+                targetWhere: sql`${climbingEntry.externalId} IS NOT NULL`,
+                set: {
+                  climbType: entry.climbType,
+                  gradeSystem: entry.gradeSystem,
+                  grade: entry.grade,
+                  sent: entry.sent,
+                  attemptCount: entry.attemptCount,
+                  routeName: entry.routeName,
+                  locationName: entry.locationName,
+                  sourceName: this.name,
+                  raw: entry.raw,
+                  providerAbsentAt: null,
+                },
+              });
+            count++;
           }
-          await finishProviderActivityListSync(db, {
-            providerId: this.id,
-            userId: options.userId,
-            windowStart: new Date(0),
-            windowEnd: window.until,
-            presentExternalIds,
-          });
+          if (presentExternalIds.length > 0) {
+            const presentIdsSql = sql.join(
+              presentExternalIds.map((externalId) => sql`${externalId}`),
+              sql`, `,
+            );
+            await db.execute(sql`
+              UPDATE fitness.climbing_entry
+              SET provider_absent_at = NOW()
+              WHERE user_id = ${userId}
+                AND provider_id = ${this.id}
+                AND provider_absent_at IS NULL
+                AND external_id IS NOT NULL
+                AND external_id NOT IN (${presentIdsSql})
+            `);
+          }
           return { recordCount: count, result: count };
         },
-        options.userId,
+        userId,
       );
     } catch (error) {
       captureException(error, { tags: { provider: this.id, phase: "climbing_activity" } });
@@ -228,7 +226,7 @@ export class MountainProjectProvider implements SyncProvider {
 }
 
 function parseMountainProjectTicks(ticks: MountainProjectTick[]): TickExportParseResult {
-  const activities = new Map<string, MountainProjectActivity>();
+  const entries: TickExportParseResult["entries"] = [];
   const occurrenceByFingerprint = new Map<string, number>();
   const errors: SyncError[] = [];
   let unsupportedGradeCount = 0;
@@ -260,21 +258,11 @@ function parseMountainProjectTicks(ticks: MountainProjectTick[]): TickExportPars
     const occurrence = occurrenceByFingerprint.get(fingerprint) ?? 0;
     occurrenceByFingerprint.set(fingerprint, occurrence + 1);
     const externalId = `mountain-project:tick:${stableHash([fingerprint, String(occurrence)])}`;
-    const activityKey = `${dateKey}\u001f${locationName}`;
-    let activity = activities.get(activityKey);
-    if (!activity) {
-      activity = {
-        externalId: `mountain-project:session:${stableHash([dateKey, locationName])}`,
-        name: `Mountain Project climbing at ${locationName}`,
-        startedAt: date,
-        entries: [],
-      };
-      activities.set(activityKey, activity);
-    }
     const climbType = isBoulder(tick) ? "boulder" : "route";
     const sent = sentForTick(tick, climbType);
-    activity.entries.push({
+    entries.push({
       externalId,
+      unattachedDate: dateKey,
       climbType,
       gradeSystem: parsedGrade.gradeSystem,
       grade: parsedGrade.grade,
@@ -286,7 +274,7 @@ function parseMountainProjectTicks(ticks: MountainProjectTick[]): TickExportPars
     });
   }
 
-  return { activities: Array.from(activities.values()), unsupportedGradeCount, errors };
+  return { entries, unsupportedGradeCount, errors };
 }
 
 function parseExportDate(value: string): Date | null {
