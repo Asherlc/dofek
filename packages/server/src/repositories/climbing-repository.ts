@@ -223,20 +223,39 @@ export class ClimbingRepository extends BaseRepository {
     const rows = await executeWithSchema(
       this.db,
       progressionRowSchema,
-      sql`SELECT
-            (a.started_at AT TIME ZONE ${this.timezone})::date::text AS session_date,
+      sql`WITH climbing_entries AS (
+            SELECT
+              (a.started_at AT TIME ZONE ${this.timezone})::date::text AS session_date,
+              ce.id, ce.activity_id, ce.climb_type, ce.grade_system, ce.grade,
+              ce.sent, ce.attempt_count
+            FROM fitness.v_activity AS a
+            JOIN fitness.climbing_entry AS ce ON ce.activity_id = ANY(a.member_activity_ids)
+            WHERE ${this.#activityWindowPredicate(days)}
+            UNION ALL
+            SELECT
+              ce.unattached_date::text AS session_date,
+              ce.id, ce.activity_id, ce.climb_type, ce.grade_system, ce.grade,
+              ce.sent, ce.attempt_count
+            FROM fitness.climbing_entry AS ce
+            WHERE ce.user_id = ${this.userId}
+              AND ce.activity_id IS NULL
+              AND ce.provider_absent_at IS NULL
+              AND ce.unattached_date > (NOW() AT TIME ZONE ${this.timezone})::date - ${days}::int
+              AND ce.unattached_date <= (NOW() AT TIME ZONE ${this.timezone})::date
+              ${this.dateAccessPredicate(sql`ce.unattached_date`)}
+          )
+          SELECT
+            ce.session_date,
             ce.climb_type,
             ce.grade_system,
             ce.grade
-          FROM fitness.v_activity AS a
-          JOIN fitness.climbing_entry AS ce ON ce.activity_id = ANY(a.member_activity_ids)
+          FROM climbing_entries AS ce
           LEFT JOIN LATERAL (
             SELECT COUNT(*)::int AS attempt_count, BOOL_OR(attempt.outcome = 'sent') AS sent
             FROM fitness.climbing_attempt AS attempt
             WHERE attempt.climbing_entry_id = ce.id
           ) AS detail ON true
-          WHERE ${this.#activityWindowPredicate(days)}
-            AND CASE WHEN detail.attempt_count > 0 THEN detail.sent ELSE ce.sent END = true`,
+          WHERE CASE WHEN detail.attempt_count > 0 THEN detail.sent ELSE ce.sent END = true`,
     );
     const bestBySession = new Map<string, ClimbingGradeProgressionRow>();
     for (const row of rows) {
@@ -260,21 +279,38 @@ export class ClimbingRepository extends BaseRepository {
     const rows = await executeWithSchema(
       this.db,
       volumeByGradeRowSchema,
-      sql`SELECT
+      sql`WITH climbing_entries AS (
+            SELECT
+              ce.id, ce.activity_id, ce.climb_type, ce.grade_system, ce.grade,
+              ce.sent, ce.attempt_count
+            FROM fitness.v_activity AS a
+            JOIN fitness.climbing_entry AS ce ON ce.activity_id = ANY(a.member_activity_ids)
+            WHERE ${this.#activityWindowPredicate(days)}
+            UNION ALL
+            SELECT
+              ce.id, ce.activity_id, ce.climb_type, ce.grade_system, ce.grade,
+              ce.sent, ce.attempt_count
+            FROM fitness.climbing_entry AS ce
+            WHERE ce.user_id = ${this.userId}
+              AND ce.activity_id IS NULL
+              AND ce.provider_absent_at IS NULL
+              AND ce.unattached_date > (NOW() AT TIME ZONE ${this.timezone})::date - ${days}::int
+              AND ce.unattached_date <= (NOW() AT TIME ZONE ${this.timezone})::date
+              ${this.dateAccessPredicate(sql`ce.unattached_date`)}
+          )
+          SELECT
             ce.climb_type,
             ce.grade_system,
             ce.grade,
             SUM(CASE WHEN detail.attempt_count > 0 THEN detail.attempt_count ELSE ce.attempt_count END) AS attempts,
             COUNT(*) FILTER (WHERE CASE WHEN detail.attempt_count > 0 THEN detail.sent ELSE ce.sent END)::int AS sends
-          FROM fitness.v_activity AS a
-          JOIN fitness.climbing_entry AS ce ON ce.activity_id = ANY(a.member_activity_ids)
+          FROM climbing_entries AS ce
           LEFT JOIN LATERAL (
             SELECT COUNT(*)::int AS attempt_count, BOOL_OR(attempt.outcome = 'sent') AS sent
             FROM fitness.climbing_attempt AS attempt
             WHERE attempt.climbing_entry_id = ce.id
           ) AS detail ON true
-          WHERE ${this.#activityWindowPredicate(days)}
-            AND CASE WHEN detail.attempt_count > 0 THEN detail.attempt_count ELSE ce.attempt_count END IS NOT NULL
+          WHERE CASE WHEN detail.attempt_count > 0 THEN detail.attempt_count ELSE ce.attempt_count END IS NOT NULL
           GROUP BY ce.climb_type, ce.grade_system, ce.grade`,
     );
     const byDisplayGrade = new Map<string, ClimbingVolumeByGradeRow>();
