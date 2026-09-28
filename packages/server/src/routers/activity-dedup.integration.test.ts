@@ -941,7 +941,7 @@ describe("Activity summary deduplication", () => {
       expect(aliasRow?.member_activity_ids).toEqual(expect.arrayContaining(insertedIds));
       expect(activityIdToDelete).toBeDefined();
 
-      const { status, result } = await query("activity.delete", { id: activityIdToDelete });
+      const { status, result } = await query("activity.delete", { id: aliasRow.id });
       expect(status).toBe(200);
       expect(result.result.data).toEqual({ success: true });
 
@@ -956,6 +956,13 @@ describe("Activity summary deduplication", () => {
       );
       expect(remainingRows).toHaveLength(2);
       expect(remainingRows.every((row) => row.deleted_at !== null)).toBe(true);
+
+      const visibleGroup = await testCtx.db.execute<{ id: string }>(
+        sql`SELECT id::text AS id
+            FROM fitness.v_activity
+            WHERE id = ${aliasRow.id}::uuid`,
+      );
+      expect(visibleGroup).toHaveLength(0);
     } finally {
       await testCtx.db.execute(
         sql`DELETE FROM fitness.activity WHERE id = ANY(${insertedIdArray})`,
