@@ -793,6 +793,36 @@ describe("ClimbingRepository", () => {
       ]);
     });
 
+    it("preserves repeated sends within a provider while merging each provider label once", async () => {
+      const entry = {
+        climb_type: "route",
+        grade_system: "yds",
+        grade: "5.6",
+        sent: true,
+        attempt_count: 1,
+        attempts: [],
+        ascent_type: null,
+        hold_type: null,
+        route_name: "Test Crack",
+        location_name: "Test Location",
+        lead: null,
+        wall_angle_degrees: null,
+      };
+      const { repo } = makeRepository([
+        { ...entry, id: "provider-a-1", provider_id: "provider-a", source_name: "Provider A" },
+        { ...entry, id: "provider-b-1", provider_id: "provider-b", source_name: "Provider B" },
+        { ...entry, id: "provider-b-2", provider_id: "provider-b", source_name: "Provider B" },
+        { ...entry, id: "provider-c-1", provider_id: "provider-c", source_name: "Provider C" },
+      ]);
+
+      const entries = await repo.getActivityEntries("activity-1");
+
+      expect(entries.map((climb) => climb.toDetail())).toMatchObject([
+        { sourceName: "Provider A, Provider B, Provider C" },
+        { id: "provider-b-2", sourceName: "Provider B" },
+      ]);
+    });
+
     it("normalizes grade, route, and location before matching provider entries", async () => {
       const { repo } = makeRepository([
         {

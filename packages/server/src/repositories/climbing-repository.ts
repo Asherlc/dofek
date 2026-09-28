@@ -169,7 +169,10 @@ function deduplicateCrossProviderEntries(
   rows: ClimbingActivityEntryDatabaseRow[],
 ): ClimbingActivityEntryDatabaseRow[] {
   const result: ClimbingActivityEntryDatabaseRow[] = [];
-  const byIdentity = new Map<string, ClimbingActivityEntryDatabaseRow[]>();
+  const byIdentity = new Map<
+    string,
+    Array<{ entry: ClimbingActivityEntryDatabaseRow; providers: Set<string>; sources: Set<string> }>
+  >();
   for (const row of rows) {
     const identity = climbingIdentity(row);
     if (identity === null) {
@@ -177,18 +180,21 @@ function deduplicateCrossProviderEntries(
       continue;
     }
     const candidates = byIdentity.get(identity) ?? [];
-    const duplicate = candidates.find((candidate) => candidate.provider_id !== row.provider_id);
-    if (!duplicate) {
-      candidates.push(row);
+    const match = candidates.find((candidate) => !candidate.providers.has(row.provider_id));
+    if (!match) {
+      const sources = new Set(row.source_name ? [row.source_name] : []);
+      candidates.push({ entry: row, providers: new Set([row.provider_id]), sources });
       byIdentity.set(identity, candidates);
       result.push(row);
       continue;
     }
+    const duplicate = match.entry;
+    match.providers.add(row.provider_id);
+    if (row.source_name) match.sources.add(row.source_name);
     const preferred = compareDetailCompleteness(row, duplicate) > 0 ? row : duplicate;
-    const sources = [...new Set([duplicate.source_name, row.source_name].filter(Boolean))];
     Object.assign(duplicate, preferred, {
       provider_id: duplicate.provider_id,
-      source_name: sources.length > 0 ? sources.join(", ") : null,
+      source_name: match.sources.size > 0 ? [...match.sources].join(", ") : null,
     });
   }
   return result;
