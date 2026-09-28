@@ -14,7 +14,7 @@ describe("MCP OIDC token exchange diagnostics", () => {
   it("logs the token endpoint rejection reason without assertion material", () => {
     const db: Pick<Database, "execute"> = { execute: vi.fn() };
     const { provider } = createOidcProvider(db, { cookiesKeys: ["test-key"] });
-    const assertion = ["eyJhbGciOiJSUzI1NiJ9", "eyJzdWIiOiJjaGF0Z3B0In0", "signatur"].join(".");
+    const assertion = ["eyJhbGciOiJSUzI1NiJ9", "eyJzdWIiOiJjaGF0Z3B0In0", "signature"].join(".");
     const error = Object.assign(new Error("invalid_client"), {
       error: "invalid_client",
       error_description:
