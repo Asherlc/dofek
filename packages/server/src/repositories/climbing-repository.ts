@@ -154,7 +154,7 @@ function compareDetailCompleteness(
   left: ClimbingActivityEntryDatabaseRow,
   right: ClimbingActivityEntryDatabaseRow,
 ): number {
-  const completeness = [
+  const completeness: Array<readonly [number, number]> = [
     [Number(left.sent !== null), Number(right.sent !== null)],
     [Number(left.attempt_count !== null), Number(right.attempt_count !== null)],
     [left.attempts.length, right.attempts.length],
