@@ -150,10 +150,19 @@ function climbingIdentity(row: ClimbingActivityEntryDatabaseRow): string | null 
   ]);
 }
 
-function detailCompleteness(row: ClimbingActivityEntryDatabaseRow): number {
-  return (
-    Number(row.sent !== null) * 8 + Number(row.attempt_count !== null) * 4 + row.attempts.length * 2
-  );
+function compareDetailCompleteness(
+  left: ClimbingActivityEntryDatabaseRow,
+  right: ClimbingActivityEntryDatabaseRow,
+): number {
+  const completeness = [
+    [Number(left.sent !== null), Number(right.sent !== null)],
+    [Number(left.attempt_count !== null), Number(right.attempt_count !== null)],
+    [left.attempts.length, right.attempts.length],
+  ];
+  for (const [leftValue, rightValue] of completeness) {
+    if (leftValue !== rightValue) return leftValue - rightValue;
+  }
+  return 0;
 }
 
 function deduplicateCrossProviderEntries(
@@ -175,7 +184,7 @@ function deduplicateCrossProviderEntries(
       result.push(row);
       continue;
     }
-    const preferred = detailCompleteness(row) > detailCompleteness(duplicate) ? row : duplicate;
+    const preferred = compareDetailCompleteness(row, duplicate) > 0 ? row : duplicate;
     const sources = [...new Set([duplicate.source_name, row.source_name].filter(Boolean))];
     Object.assign(duplicate, preferred, {
       provider_id: duplicate.provider_id,
