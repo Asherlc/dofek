@@ -357,12 +357,7 @@ describe("MCP OIDC interaction handler", () => {
 
     expect(response.status).toBe(400);
     expect(warn).toHaveBeenCalledWith(
-      "mcp.oidc.interaction_lookup_failed",
-      expect.objectContaining({
-        errorName: "SessionNotFound",
-        errorMessage: "interaction session id cookie not found",
-        cookieHeaderPresent: false,
-      }),
+      "mcp.oidc.interaction_lookup_failed errorName=SessionNotFound errorMessage=interaction session id cookie not found cookieHeaderPresent=false",
     );
     expect(captureException).not.toHaveBeenCalled();
   });

@@ -158,11 +158,9 @@ export function createInteractionHandler(
       interaction = interactionDetailsSchema.parse(raw);
     } catch (error) {
       if (error instanceof Error && error.name === "SessionNotFound") {
-        logger.warn("mcp.oidc.interaction_lookup_failed", {
-          errorName: error.name,
-          errorMessage: error.message,
-          cookieHeaderPresent: request.headers.cookie !== undefined,
-        });
+        logger.warn(
+          `mcp.oidc.interaction_lookup_failed errorName=${error.name} errorMessage=${error.message} cookieHeaderPresent=${request.headers.cookie !== undefined}`,
+        );
       } else {
         captureException(error, { tags: { source: "mcp-oidc-interaction-details" } });
       }
