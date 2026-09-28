@@ -1,0 +1,42 @@
+# OpenBeta provider
+
+The OpenBeta integration imports a connected user's public climbing ticks into
+the canonical `fitness.climbing_entry` table. It is read-only and does not
+create synthetic activities.
+
+## Connection and API
+
+The connection form accepts either a public profile URL such as
+`https://openbeta.io/u/{username}/ticks` or the username itself. Dofek sends
+the username to OpenBeta's public GraphQL `userPage` query, stores the returned
+stable profile UUID in the per-user provider token record, and uses that UUID
+with the paginated `userTicks` query.
+
+OpenBeta documents `https://api.openbeta.io` as the production GraphQL
+endpoint ([official API repository](https://github.com/OpenBeta/openbeta-graphql)).
+The public website presents profile tick history at routes such as
+[`/u/{username}/ticks`](https://openbeta.io/u/thickles/ticks).
+
+## Stored records
+
+Each supported tick becomes one standalone `fitness.climbing_entry` row:
+
+- `external_id` is `openbeta:{tick-id}`.
+- `unattached_date` is the tick's date-only `dateClimbed` value.
+- boulders use V-scale first, then Font; routes use YDS first, then French,
+  UIAA, Ewbank, or Brazilian Crux when available.
+- `sent` is true for send-style attempt types and false for `Attempt`; a missing
+  attempt type retains null sent/attempt count.
+- `route_name`, `location_name`, and `source_name` are copied from the
+  provider response when present.
+- `raw` retains the selected OpenBeta GraphQL response object for provenance.
+
+The provider uses a provider-scoped unique index for idempotent upserts. A
+complete non-empty pagination run soft-tombstones rows missing from the
+current list and restores rows that reappear. Empty, failed, malformed, or
+partially unsupported responses do not reconcile absence because they are not
+proof that the upstream log was intentionally cleared.
+
+The integration currently does not access private ticks, use account session
+cookies, write to OpenBeta, enrich routes outside the tick response, or create
+activities for tick dates.

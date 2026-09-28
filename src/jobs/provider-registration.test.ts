@@ -35,6 +35,7 @@ const mockProviders = {
   wger: { id: "wger" },
   velohero: { id: "velohero" },
   "mountain-project": { id: "mountain-project" },
+  openbeta: { id: "openbeta" },
   "auto-supplements": { id: "auto-supplements" },
   "amazfit-zepp": { id: "amazfit-zepp" },
   "kaya-export": { id: "kaya-export" },
@@ -127,6 +128,9 @@ vi.mock("../providers/velohero.ts", () => ({
 }));
 vi.mock("../providers/mountain-project.ts", () => ({
   MountainProjectProvider: mockProviderConstructor(mockProviders["mountain-project"]),
+}));
+vi.mock("../providers/openbeta.ts", () => ({
+  OpenBetaProvider: mockProviderConstructor(mockProviders.openbeta),
 }));
 vi.mock("../providers/auto-supplements.ts", () => ({
   AutoSupplementsProvider: mockProviderConstructor(mockProviders["auto-supplements"]),

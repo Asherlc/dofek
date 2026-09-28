@@ -95,6 +95,7 @@
     "./providers/decathlon": "./src/providers/decathlon.ts",
     "./providers/velohero": "./src/providers/velohero.ts",
     "./providers/mountain-project": "./src/providers/mountain-project.ts",
+    "./providers/openbeta": "./src/providers/openbeta.ts",
     "./providers/bodyspec": "./src/providers/bodyspec.ts",
     "./providers/auto-supplements": "./src/providers/auto-supplements.ts",
     "./providers/amazfit-zepp": "./src/providers/amazfit-zepp.ts",

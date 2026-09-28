@@ -14,6 +14,7 @@ const ALLOWED_TOMBSTONE_CLEAR_PATHS = new Set([
   "src/db/provider-activity-absence.ts",
   "packages/server/src/repositories/activity-repository.ts",
   "src/providers/mountain-project.ts",
+  "src/providers/openbeta.ts",
 ]);
 
 const ALLOWED_ACTIVITY_INSERT_PATHS = new Set(["src/db/provider-activity-sync.ts"]);

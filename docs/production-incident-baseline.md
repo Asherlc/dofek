@@ -7,6 +7,31 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-09-28 — Local Compose validation exhausted Docker bridge networks
+
+- **Status:** Resolved locally; no production impact.
+- **Symptoms / impact:** The OpenBeta integration test could not start the
+  workspace Compose dependencies because Docker returned `all predefined
+  address pools have been fully subnetted` while creating the workspace
+  network. Provider validation was blocked until the local Docker state was
+  cleaned up.
+- **Evidence / root cause:** `docker network inspect` showed the active
+  workspace networks had running containers, while many stale Compose default
+  networks had no attached containers. Those unattached networks had consumed
+  the available bridge subnets. Docker documents that unused networks can be
+  removed independently from containers and volumes ([Docker network prune
+  reference](https://docs.docker.com/reference/cli/docker/network/prune/)).
+- **Direct fix:** Removed only the explicitly identified unattached Compose
+  bridge networks, preserving all networks with running containers and all
+  volumes. Compose then started the workspace dependencies and the OpenBeta
+  integration test passed.
+- **Validation:** `pnpm test:integration --
+  src/providers/openbeta-sync.integration.test.ts` passed one test; no
+  application or production service was changed.
+- **Remaining risk / follow-up:** Archived workspaces should continue to remove
+  their Compose networks during cleanup so local bridge-pool exhaustion does
+  not recur. Do not remove networks that still have attached containers.
+
 ## 2026-09-26 — MCP migration PR CI failures
 
 - **Status:** Fixed in code; CI rerun pending.

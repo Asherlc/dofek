@@ -32,6 +32,7 @@ export const PROVIDER_GUIDE_CATEGORIES: ProviderGuideCategory[] = [
       "xert",
       "velohero",
       "mountain-project",
+      "openbeta",
       "decathlon",
       "wger",
     ],

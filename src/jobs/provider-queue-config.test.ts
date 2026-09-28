@@ -104,12 +104,13 @@ describe("config values are reasonable", () => {
 describe("getConfiguredProviderIds", () => {
   it("returns all known provider IDs", () => {
     const ids = getConfiguredProviderIds();
-    expect(ids).toHaveLength(25);
+    expect(ids).toHaveLength(26);
     expect(ids).toContain("strava");
     expect(ids).toContain("garmin");
     expect(ids).toContain("whoop");
     expect(ids).toContain("fatsecret");
     expect(ids).toContain("bodyspec");
+    expect(ids).toContain("openbeta");
     expect(ids).toContain("ziva");
     expect(ids).toContain(new CyclingAnalyticsProvider().id);
   });
