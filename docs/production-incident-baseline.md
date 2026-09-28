@@ -27502,3 +27502,34 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Follow-up:** Confirm whether zero replicas were intentional. If not,
   restore the expected production service counts through the normal deployment
   workflow and verify the next analytics and reconciliation cycle.
+
+## 2026-09-28 — Activity deletion slow and left the activity visible
+
+- **Symptoms / user impact:** Deleting an activity took about 66.6 seconds and
+  the activity remained in the list. No production data was manually changed
+  during diagnosis.
+- **Evidence:** Production logged `POST /api/trpc/activity.delete` as HTTP 200
+  after 66,595 ms. `pg_stat_statements` reported a mean of about 69.7 seconds
+  for the `UPDATE fitness.activity` statement that re-ran the grouped activity
+  views. For the reported activity, `fitness.v_activity` exposed a stable group
+  ID distinct from its raw member ID; the old member-only selection predicate
+  returned zero rows, and the source member still had `deleted_at IS NULL`.
+  The selection and update are in the [activity repository](../packages/server/src/repositories/activity-repository.ts).
+- **Root cause:** Delete input accepted stable group IDs, but the repository
+  matched only raw member IDs and returned success when that found no members;
+  when it did find members, the update repeated the expensive grouped view
+  query instead of using the IDs already selected.
+- **Fix:** Resolve selected group, raw member, and retained alias IDs in one
+  grouped-view read, then soft-delete those fetched raw member IDs directly.
+  The [dedup integration regression](../packages/server/src/routers/activity-dedup.integration.test.ts)
+  now deletes by stable group ID and checks that the group leaves
+  `fitness.v_activity`.
+- **Validation:** The regression failed before the fix with raw members still
+  active. After the fix, the focused integration suite passed 28/28 tests, the
+  repository and activity router unit suites passed 118/118 tests, and Biome
+  plus `git diff --check` passed. An accidentally broad unit/mobile invocation
+  was interrupted; the targeted unit run passed.
+- **Remaining risk / follow-up:** The fix is pushed to
+  `fix-activity-deletion-stuck` but is not deployed. Production still has the
+  reported member active. After the normal deployment, verify its source row
+  is soft-deleted and the authenticated activity list omits the group.
