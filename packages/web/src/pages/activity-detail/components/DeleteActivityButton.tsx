@@ -1,5 +1,7 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
+import { captureException } from "../../../lib/telemetry.ts";
 import { trpc } from "../../../lib/trpc.ts";
 
 export function DeleteActivityButton({ activityId }: { activityId: string }) {
@@ -7,13 +9,15 @@ export function DeleteActivityButton({ activityId }: { activityId: string }) {
   const navigate = useNavigate();
   const trpcUtils = trpc.useUtils();
   const deleteMutation = trpc.activity.delete.useMutation({
-    onSuccess: async () => {
-      await Promise.all([
+    onSuccess: () => {
+      navigate({ to: "/dashboard" });
+      void Promise.all([
         trpcUtils.activity.list.invalidate(),
         trpcUtils.calendar.weekList.invalidate(),
         trpcUtils.calendar.activityOverview.invalidate(),
-      ]);
-      navigate({ to: "/dashboard" });
+      ]).catch((error: unknown) => {
+        captureException(error, { context: "activity-delete-cache-invalidation" });
+      });
     },
   });
 
@@ -37,6 +41,11 @@ export function DeleteActivityButton({ activityId }: { activityId: string }) {
         >
           Cancel
         </button>
+        {deleteMutation.error ? (
+          <span role="alert" className="text-xs text-red-400">
+            {userFacingErrorMessage(deleteMutation.error, "Unable to delete this activity.")}
+          </span>
+        ) : null}
       </div>
     );
   }
