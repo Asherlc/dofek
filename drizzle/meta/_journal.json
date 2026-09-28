@@ -911,6 +911,13 @@
       "when": 1790471239329,
       "tag": "0129_validate_unattached_mountain_project_ticks",
       "breakpoints": true
+    },
+    {
+      "idx": 130,
+      "version": "7",
+      "when": 1790627798001,
+      "tag": "0130_activity_group_manual_merge",
+      "breakpoints": true
     }
   ]
 }
