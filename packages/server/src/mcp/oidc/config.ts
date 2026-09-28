@@ -1,5 +1,7 @@
 import type { Database } from "dofek/db";
 import { errors, Provider } from "oidc-provider";
+import { z } from "zod";
+import { logger } from "../../logger.ts";
 import { getMcpIssuerUrl, getMcpResourceUrl } from "../oauth-config.ts";
 import { MCP_OAUTH_OFFLINE_ACCESS_SCOPE, MCP_OAUTH_SCOPES } from "../oauth-provider.ts";
 import { findAccount } from "./account.ts";
@@ -42,6 +44,59 @@ export interface OidcProviderOptions {
 
 export interface OidcProviderHandle {
   provider: Provider;
+}
+
+const diagnosticErrorSchema = z.object({
+  error: z.unknown().optional(),
+  error_description: z.unknown().optional(),
+  message: z.unknown().optional(),
+  name: z.unknown().optional(),
+  status: z.unknown().optional(),
+  statusCode: z.unknown().optional(),
+});
+
+function diagnosticErrorFields(error: unknown): {
+  error_name: string;
+  error_description: string;
+  http_status?: number;
+  oauth_error?: string;
+} {
+  const parsed = diagnosticErrorSchema.safeParse(error);
+  const fields = parsed.success ? parsed.data : {};
+  const safeLabel = (candidate: unknown, fallback: string): string =>
+    typeof candidate === "string" && /^[A-Za-z][A-Za-z0-9_-]{0,79}$/.test(candidate)
+      ? candidate
+      : fallback;
+  const description =
+    typeof fields.error_description === "string"
+      ? fields.error_description
+      : typeof fields.message === "string"
+        ? fields.message
+        : "Unknown OAuth error";
+  const safeDescription = description
+    .replace(/\b[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, "[redacted]")
+    .replace(
+      /\b(client_assertion|code|access_token|refresh_token|authorization)=\S+/gi,
+      "$1=[redacted]",
+    )
+    .replace(/(https?:\/\/[^\s?#]+)\?[^\s#]*/gi, "$1?[redacted]")
+    .slice(0, 300);
+  const statusResult = z.number().safeParse(fields.status);
+  const statusCodeResult = z.number().safeParse(fields.statusCode);
+  const status = statusResult.success
+    ? statusResult.data
+    : statusCodeResult.success
+      ? statusCodeResult.data
+      : undefined;
+
+  return {
+    error_name: safeLabel(fields.name, "Error"),
+    error_description: safeDescription,
+    ...(typeof status === "number" ? { http_status: status } : {}),
+    ...(typeof fields.error === "string"
+      ? { oauth_error: safeLabel(fields.error, "unknown") }
+      : {}),
+  };
 }
 
 export function createOidcProvider(
@@ -135,6 +190,10 @@ export function createOidcProvider(
       const message = escapeHtml(error.message);
       ctx.body = `<!doctype html><html><head><title>Authorization error</title></head><body><h1>Authorization error</h1><p>${message}</p></body></html>`;
     },
+  });
+
+  provider.on("grant.error", (_context, error) => {
+    logger.warn("mcp.oidc.token_exchange_failed", diagnosticErrorFields(error));
   });
 
   return { provider };

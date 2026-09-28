@@ -102,6 +102,8 @@ declare module "oidc-provider" {
       result: Record<string, unknown>,
       options?: { mergeWithLastSubmission?: boolean },
     ): Promise<void>;
+    on(event: string, listener: (...args: unknown[]) => void): this;
+    emit(event: string, ...args: unknown[]): boolean;
     Grant: GrantConstructor;
   }
 
