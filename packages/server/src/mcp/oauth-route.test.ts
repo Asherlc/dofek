@@ -256,9 +256,7 @@ describe("createMcpOAuthRouter", () => {
         Array.from({ length: 6 }, () => fetch(`${app.baseUrl}/interaction/test-uid`)),
       );
 
-      expect(responses.map((response) => response.status)).toEqual([
-        200, 200, 200, 200, 200, 200,
-      ]);
+      expect(responses.map((response) => response.status)).toEqual([200, 200, 200, 200, 200, 200]);
     });
 
     it("prevents the consent page from being framed", async () => {
