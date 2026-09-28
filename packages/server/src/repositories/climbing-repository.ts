@@ -121,6 +121,7 @@ const sessionEntryRowSchema = z.object({
 });
 const activityEntryRowSchema = z.object({
   id: z.string(),
+  provider_id: z.string(),
   climb_type: climbTypeSchema,
   grade_system: gradeSystemSchema,
   grade: z.string(),
@@ -136,6 +137,53 @@ const activityEntryRowSchema = z.object({
   wall_angle_degrees: z.coerce.number().nullable(),
 });
 type ClimbingActivityEntryDatabaseRow = z.infer<typeof activityEntryRowSchema>;
+
+function climbingIdentity(row: ClimbingActivityEntryDatabaseRow): string | null {
+  if (!row.route_name || !row.location_name) return null;
+  return JSON.stringify([
+    row.climb_type,
+    row.grade_system,
+    row.grade.trim().replace(/\s+/g, " ").toLocaleLowerCase(),
+    row.route_name.trim().replace(/\s+/g, " ").toLocaleLowerCase(),
+    row.location_name.trim().replace(/\s+/g, " ").toLocaleLowerCase(),
+    row.lead,
+  ]);
+}
+
+function detailCompleteness(row: ClimbingActivityEntryDatabaseRow): number {
+  return (
+    Number(row.sent !== null) * 8 + Number(row.attempt_count !== null) * 4 + row.attempts.length * 2
+  );
+}
+
+function deduplicateCrossProviderEntries(
+  rows: ClimbingActivityEntryDatabaseRow[],
+): ClimbingActivityEntryDatabaseRow[] {
+  const result: ClimbingActivityEntryDatabaseRow[] = [];
+  const byIdentity = new Map<string, ClimbingActivityEntryDatabaseRow[]>();
+  for (const row of rows) {
+    const identity = climbingIdentity(row);
+    if (identity === null) {
+      result.push(row);
+      continue;
+    }
+    const candidates = byIdentity.get(identity) ?? [];
+    const duplicate = candidates.find((candidate) => candidate.provider_id !== row.provider_id);
+    if (!duplicate) {
+      candidates.push(row);
+      byIdentity.set(identity, candidates);
+      result.push(row);
+      continue;
+    }
+    const preferred = detailCompleteness(row) > detailCompleteness(duplicate) ? row : duplicate;
+    const sources = [...new Set([duplicate.source_name, row.source_name].filter(Boolean))];
+    Object.assign(duplicate, preferred, {
+      provider_id: duplicate.provider_id,
+      source_name: sources.length > 0 ? sources.join(", ") : null,
+    });
+  }
+  return result;
+}
 
 export interface ClimbingActivityEntryRow {
   id: string;
@@ -423,6 +471,7 @@ export class ClimbingRepository extends BaseRepository {
       activityEntryRowSchema,
       sql`SELECT
             ce.id::text AS id,
+            source_activity.provider_id,
             ce.climb_type,
             ce.grade_system,
             ce.grade,
@@ -440,6 +489,7 @@ export class ClimbingRepository extends BaseRepository {
           JOIN fitness.climbing_entry AS ce
             ON ce.activity_id = ANY(a.member_activity_ids)
            AND ce.provider_absent_at IS NULL
+          JOIN fitness.activity AS source_activity ON source_activity.id = ce.activity_id
           LEFT JOIN LATERAL (
             SELECT
               COUNT(*)::int AS attempt_count,
@@ -457,7 +507,7 @@ export class ClimbingRepository extends BaseRepository {
             AND a.id = ${activityId}::uuid
             ${this.timestampAccessPredicate(sql`a.started_at`)}`,
     );
-    return rows
+    return deduplicateCrossProviderEntries(rows)
       .map((row) => {
         const display = this.#displayGrade(row.climb_type, row.grade_system, row.grade);
         return display
