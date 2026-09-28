@@ -13,6 +13,8 @@ const sessionMocks = vi.hoisted<{
 }));
 const { captureException } = vi.hoisted(() => ({ captureException: vi.fn() }));
 vi.mock("dofek/lib/error-reporting", () => ({ captureException }));
+const { warn } = vi.hoisted(() => ({ warn: vi.fn() }));
+vi.mock("../../logger.ts", () => ({ logger: { warn } }));
 vi.mock("../../auth/cookies.ts", () => ({
   getSessionIdFromRequest: () => sessionMocks.sessionId,
 }));
@@ -30,6 +32,7 @@ describe("MCP OIDC interaction handler", () => {
 
   beforeEach(() => {
     captureException.mockReset();
+    warn.mockReset();
     sessionMocks.sessionId = "session-id";
     sessionMocks.session = { userId: "123e4567-e89b-12d3-a456-426614174000" };
   });
@@ -340,5 +343,22 @@ describe("MCP OIDC interaction handler", () => {
       failure,
       expect.objectContaining({ tags: { source: "mcp-oidc-interaction-details" } }),
     );
+  });
+
+  it("records why a signed interaction cookie could not resolve an active interaction", async () => {
+    const provider = new Provider(issuer, { features: { devInteractions: { enabled: false } } });
+    const failure = Object.assign(new Error("interaction session id cookie not found"), {
+      name: "SessionNotFound",
+    });
+    vi.spyOn(provider, "interactionDetails").mockRejectedValue(failure);
+    await mount(provider);
+
+    const response = await fetch(`${baseUrl}/interaction/interaction-uid`);
+
+    expect(response.status).toBe(400);
+    expect(warn).toHaveBeenCalledWith(
+      "mcp.oidc.interaction_lookup_failed errorName=SessionNotFound errorMessage=interaction session id cookie not found cookieHeaderPresent=false",
+    );
+    expect(captureException).not.toHaveBeenCalled();
   });
 });

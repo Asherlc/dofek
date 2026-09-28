@@ -5,6 +5,7 @@ import type { Provider } from "oidc-provider";
 import { z } from "zod";
 import { getSessionIdFromRequest } from "../../auth/cookies.ts";
 import { validateSession } from "../../auth/session.ts";
+import { logger } from "../../logger.ts";
 import { getMcpIssuerUrl, getMcpResourceUrl } from "../oauth-config.ts";
 import {
   MCP_OAUTH_OFFLINE_ACCESS_SCOPE,
@@ -156,7 +157,11 @@ export function createInteractionHandler(
       const raw = await provider.interactionDetails(request, response);
       interaction = interactionDetailsSchema.parse(raw);
     } catch (error) {
-      if (!(error instanceof Error && error.name === "SessionNotFound")) {
+      if (error instanceof Error && error.name === "SessionNotFound") {
+        logger.warn(
+          `mcp.oidc.interaction_lookup_failed errorName=${error.name} errorMessage=${error.message} cookieHeaderPresent=${request.headers.cookie !== undefined}`,
+        );
+      } else {
         captureException(error, { tags: { source: "mcp-oidc-interaction-details" } });
       }
       response.status(400).send("Interaction not found");
