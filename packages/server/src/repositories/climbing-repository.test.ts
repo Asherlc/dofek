@@ -128,6 +128,7 @@ describe("ClimbingActivityEntry", () => {
     const execute = vi.fn().mockResolvedValue([
       {
         id: "00000000-0000-4000-8000-000000000001",
+        provider_id: "kaya",
         climb_type: "boulder",
         grade_system: "v_scale",
         grade: "V3",
@@ -703,6 +704,7 @@ describe("ClimbingRepository", () => {
       const { repo } = makeRepository([
         {
           id: "entry-1",
+          provider_id: "kaya",
           climb_type: "boulder",
           grade_system: "v_scale",
           grade: "v4",
@@ -741,6 +743,56 @@ describe("ClimbingRepository", () => {
       });
     });
 
+    it("merges the same named climb across providers and keeps the recorded outcome", async () => {
+      const { repo } = makeRepository([
+        {
+          id: "mountain-project-entry",
+          provider_id: "mountain-project",
+          climb_type: "route",
+          grade_system: "yds",
+          grade: "5.6",
+          sent: null,
+          attempt_count: null,
+          attempts: [],
+          ascent_type: null,
+          hold_type: null,
+          route_name: "Cragmont Crack",
+          location_name: "Cragmont Park > Northeast Face",
+          lead: null,
+          source_name: "Mountain Project",
+          wall_angle_degrees: null,
+        },
+        {
+          id: "kaya-entry",
+          provider_id: "kaya",
+          climb_type: "route",
+          grade_system: "yds",
+          grade: "5.6",
+          sent: true,
+          attempt_count: 1,
+          attempts: [],
+          ascent_type: "Redpoint",
+          hold_type: null,
+          route_name: "Cragmont Crack",
+          location_name: "Cragmont Park > Northeast Face",
+          lead: null,
+          source_name: "Kaya",
+          wall_angle_degrees: null,
+        },
+      ]);
+
+      const entries = await repo.getActivityEntries("activity-1");
+
+      expect(entries.map((entry) => entry.toDetail())).toMatchObject([
+        {
+          id: "kaya-entry",
+          sent: true,
+          attemptCount: 1,
+          sourceName: "Mountain Project, Kaya",
+        },
+      ]);
+    });
+
     it("hydrates all members from the already-resolved stable activity group", async () => {
       const { repo, execute } = makeRepository([]);
 
@@ -762,6 +814,7 @@ describe("ClimbingRepository", () => {
       const { repo } = makeRepository([
         {
           id: "entry-1",
+          provider_id: "kaya",
           climb_type: "boulder",
           grade_system: "v_scale",
           grade: "not-a-grade",
@@ -777,6 +830,7 @@ describe("ClimbingRepository", () => {
         },
         {
           id: "entry-2",
+          provider_id: "kaya",
           climb_type: "boulder",
           grade_system: "v_scale",
           grade: "also-not-a-grade",
@@ -802,6 +856,7 @@ describe("ClimbingRepository", () => {
         [
           {
             id: "entry-valid",
+            provider_id: "kaya",
             climb_type: "boulder",
             grade_system: "v_scale",
             grade: "V4",
@@ -817,6 +872,7 @@ describe("ClimbingRepository", () => {
           },
           {
             id: "entry-invalid",
+            provider_id: "kaya",
             climb_type: "boulder",
             grade_system: "v_scale",
             grade: "not-a-grade",
@@ -846,6 +902,7 @@ describe("ClimbingRepository", () => {
       const { repo } = makeRepository([
         {
           id: "entry-b",
+          provider_id: "kaya",
           climb_type: "boulder",
           grade_system: "v_scale",
           grade: "V4",
@@ -861,6 +918,7 @@ describe("ClimbingRepository", () => {
         },
         {
           id: "entry-a",
+          provider_id: "kaya",
           climb_type: "boulder",
           grade_system: "v_scale",
           grade: "V4",
@@ -876,6 +934,7 @@ describe("ClimbingRepository", () => {
         },
         {
           id: "entry-c",
+          provider_id: "kaya",
           climb_type: "boulder",
           grade_system: "v_scale",
           grade: "V3",
