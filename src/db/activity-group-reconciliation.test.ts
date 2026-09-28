@@ -18,6 +18,8 @@ function memberRow(id: string, groupId = group, anchorId = first) {
     group_created_at: createdAt,
     anchor_activity_id: anchorId,
     overlapping_activity_ids: [],
+    manual_merge: false,
+    manual_merge_anchor_id: anchorId,
   };
 }
 
@@ -48,6 +50,8 @@ describe("activity group reconciliation adapter", () => {
           group_created_at: createdAt,
           anchor_activity_id: first,
           overlapping_activity_ids: [second],
+          manual_merge: false,
+          manual_merge_anchor_id: first,
         },
         {
           id: second,
@@ -56,6 +60,8 @@ describe("activity group reconciliation adapter", () => {
           group_created_at: "2026-09-02T10:00:00Z",
           anchor_activity_id: second,
           overlapping_activity_ids: [],
+          manual_merge: false,
+          manual_merge_anchor_id: second,
         },
       ],
       [],
