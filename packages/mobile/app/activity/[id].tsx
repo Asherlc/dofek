@@ -553,7 +553,12 @@ export default function ActivityDetailScreen() {
       if (id) {
         await trpcUtils.activity.hangboardDetails.invalidate({ id });
       }
-      await trpcUtils.activity.list.invalidate();
+      await Promise.all([
+        trpcUtils.activity.list.invalidate(),
+        trpcUtils.calendar.weekList.invalidate(),
+        trpcUtils.calendar.activityOverview.invalidate(),
+        trpcUtils.calendar.calendarData.invalidate(),
+      ]);
       router.back();
     },
   });
