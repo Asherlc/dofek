@@ -29,6 +29,7 @@ const SERVER_OWNED_NAVIGATION_DENYLIST = [
   /^\/auth(?:[/?]|$)/,
   /^\/callback(?:[/?]|$)/,
   /^\/authorize(?:[/?]|$)/,
+  /^\/interaction(?:[/?]|$)/,
   /^\/admin\/queues(?:[/?]|$)/,
   /^\/\.well-known(?:[/?]|$)/,
   /^\/(?:healthz|readyz|metrics)(?:[/?]|$)/,

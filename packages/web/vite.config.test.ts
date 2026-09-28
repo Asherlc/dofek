@@ -142,6 +142,8 @@ describe("production PWA build", () => {
       "/callback?code=provider-code&state=provider-state",
       "/authorize",
       "/authorize?response_type=code&client_id=claude",
+      "/interaction/interaction-uid",
+      "/interaction/interaction-uid?next=%2Fdashboard",
       "/admin/queues",
       "/admin/queues?tab=failed",
       "/.well-known/oauth-authorization-server",
@@ -162,14 +164,14 @@ describe("production PWA build", () => {
       expect(receivesApplicationShell(pathname), pathname).toBe(false);
     }
 
-    for (const pathname of ["/authorizefoo", "/api2", "/administer"]) {
+    for (const pathname of ["/authorizefoo", "/interactionish", "/api2", "/administer"]) {
       expect(receivesApplicationShell(pathname), pathname).toBe(true);
     }
 
     expect(runtimeRouteCount).toBe(1);
     expect(
       precacheEntries.some(({ url }) =>
-        /^\/?(?:api|auth|callback|authorize|admin\/queues)(?:\/|$)/.test(url),
+        /^\/?(?:api|auth|callback|authorize|interaction|admin\/queues)(?:\/|$)/.test(url),
       ),
     ).toBe(false);
   });
