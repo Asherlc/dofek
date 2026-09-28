@@ -96,11 +96,17 @@ export function createMcpOAuthRouter(
     oidcRateLimit(request, response, () => oidcCallback(request, response));
   });
 
+  const interactionRateLimit = createRateLimiter({
+    ...rateLimit,
+    skip: rateLimit === false ? () => true : rateLimit?.skip,
+  });
+
   // Dofek-owned consent/login interaction page, gated on the Dofek session
   // cookie (the authorization flow's user-interaction step). The form posts
   // `approval=…` with an application/x-www-form-urlencoded body.
   router.use(
     "/interaction/:uid",
+    interactionRateLimit,
     (_request, response, next) => {
       response.append("Content-Security-Policy", "frame-ancestors 'none'");
       response.set("X-Frame-Options", "DENY");

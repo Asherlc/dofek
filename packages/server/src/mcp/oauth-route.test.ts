@@ -239,6 +239,16 @@ describe("createMcpOAuthRouter", () => {
       expect(second.status).toBe(429);
     });
 
+    it("rate limits interaction requests", async () => {
+      app = await mount({ max: 1, windowMs: 60_000 });
+
+      const first = await fetch(`${app.baseUrl}/interaction/test-uid`);
+      const second = await fetch(`${app.baseUrl}/interaction/test-uid`);
+
+      expect(first.status).toBe(200);
+      expect(second.status).toBe(429);
+    });
+
     it("prevents the consent page from being framed", async () => {
       app = await mount();
 
