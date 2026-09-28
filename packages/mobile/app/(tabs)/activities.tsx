@@ -202,6 +202,17 @@ export default function ActivitiesScreen() {
       setSelectMode(false);
     },
   });
+  const mergeActivities = trpc.activity.merge.useMutation({
+    onSuccess: async () => {
+      await trpcUtils.calendar.weekList.invalidate();
+      await trpcUtils.calendar.activityOverview.invalidate();
+      await trpcUtils.calendar.calendarData.invalidate();
+      await trpcUtils.activity.list.invalidate();
+      setSelectedActivityIds(new Set());
+      setSelectMode(false);
+    },
+    onError: (error) => Alert.alert("Unable to merge activities", error.message),
+  });
   const { refreshing, onRefresh } = useRefresh({
     invalidate: () =>
       Promise.all([
@@ -243,6 +254,13 @@ export default function ActivitiesScreen() {
     }));
   }, [currentActivityPage, dayGroups]);
   const selectedCount = selectedActivityIds.size;
+  const selectedTypes = new Set(
+    (dayGroups ?? [])
+      .flatMap((day) => day.activities)
+      .filter((activity) => selectedActivityIds.has(activity.id))
+      .map((activity) => activity.activityType),
+  );
+  const mergeEligible = selectedCount >= 2 && selectedTypes.size === 1;
   const toggleSelectedActivity = (activityId: string) => {
     setSelectedActivityIds((current) => {
       const next = new Set(current);
@@ -285,6 +303,17 @@ export default function ActivitiesScreen() {
       ],
     );
   };
+  const confirmMerge = () => {
+    if (!mergeEligible) return;
+    Alert.alert(
+      "Merge Activities",
+      "Combine the selected activities into one activity spanning their times? Original provider records remain.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Merge", onPress: () => mergeActivities.mutate({ ids: [...selectedActivityIds] }) },
+      ],
+    );
+  };
 
   return (
     <ScrollView
@@ -312,11 +341,15 @@ export default function ActivitiesScreen() {
         selectMode={selectMode}
         selectedCount={selectedCount}
         deletePending={bulkDelete.isPending}
+        mergePending={mergeActivities.isPending}
+        mergeEligible={mergeEligible}
+        mixedTypes={selectedTypes.size > 1}
         onActivityTypeChange={updateActivityType}
         onWeeksChange={updateWeeks}
         onSelect={() => setSelectMode(true)}
         onCancelSelection={cancelSelection}
         onDeleteSelected={confirmBulkDelete}
+        onMergeSelected={confirmMerge}
       />
 
       {bulkDelete.error ? (
@@ -484,11 +517,15 @@ interface ActivityControlsProps {
   selectMode: boolean;
   selectedCount: number;
   deletePending: boolean;
+  mergePending: boolean;
+  mergeEligible: boolean;
+  mixedTypes: boolean;
   onActivityTypeChange: (activityType: string) => void;
   onWeeksChange: (weeks: number) => void;
   onSelect: () => void;
   onCancelSelection: () => void;
   onDeleteSelected: () => void;
+  onMergeSelected: () => void;
 }
 
 function ActivityControls({
@@ -499,11 +536,15 @@ function ActivityControls({
   selectMode,
   selectedCount,
   deletePending,
+  mergePending,
+  mergeEligible,
+  mixedTypes,
   onActivityTypeChange,
   onWeeksChange,
   onSelect,
   onCancelSelection,
   onDeleteSelected,
+  onMergeSelected,
 }: ActivityControlsProps) {
   const selectedCountLabel = `${selectedCount} ${
     selectedCount === 1 ? "activity" : "activities"
@@ -543,6 +584,25 @@ function ActivityControls({
           <TouchableOpacity
             style={[
               styles.deleteSelectionButton,
+              !mergeEligible || mergePending ? styles.disabledAction : null,
+            ]}
+            onPress={onMergeSelected}
+            disabled={!mergeEligible || mergePending}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Merge selected activities"
+            accessibilityState={{ busy: mergePending, disabled: !mergeEligible || mergePending }}
+          >
+            <Text style={styles.deleteSelectionButtonText}>
+              {mergePending ? "Merging..." : "Merge"}
+            </Text>
+          </TouchableOpacity>
+          {mixedTypes ? (
+            <Text style={styles.selectionGuidance}>Select activities of one type to merge.</Text>
+          ) : null}
+          <TouchableOpacity
+            style={[
+              styles.deleteSelectionButton,
               selectedCount === 0 ? styles.disabledAction : null,
             ]}
             onPress={onDeleteSelected}
@@ -562,11 +622,14 @@ function ActivityControls({
           <TouchableOpacity
             style={styles.cancelSelectionButton}
             onPress={onCancelSelection}
-            disabled={deletePending}
+            disabled={deletePending || mergePending}
             activeOpacity={0.7}
             accessibilityRole="button"
             accessibilityLabel="Cancel activity selection"
-            accessibilityState={{ busy: deletePending, disabled: deletePending }}
+            accessibilityState={{
+              busy: deletePending || mergePending,
+              disabled: deletePending || mergePending,
+            }}
           >
             <Text style={styles.cancelSelectionButtonText}>Cancel</Text>
           </TouchableOpacity>
