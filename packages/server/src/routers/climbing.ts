@@ -29,6 +29,7 @@ const mountainProjectTickSuggestionSchema = z.object({
   gradeSystem: z.string(),
   grade: z.string(),
   sent: z.boolean().nullable(),
+  ascentType: z.enum(["Flash", "Onsight", "Redpoint", "Pinkpoint", "Repeat"]).nullable(),
   attemptCount: z.number().int().nullable(),
   lead: z.boolean().nullable(),
   routeName: z.string().nullable(),

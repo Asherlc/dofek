@@ -84,7 +84,7 @@ export class ClimbingSessionSummary {
 
 const climbTypeSchema = z.enum(["boulder", "route"]);
 const gradeSystemSchema = z.enum(CLIMBING_GRADE_SYSTEMS);
-const ascentTypeSchema = z.enum(["Flash", "Onsight", "Redpoint", "Repeat"]);
+const ascentTypeSchema = z.enum(["Flash", "Onsight", "Redpoint", "Pinkpoint", "Repeat"]);
 const attemptOutcomeSchema = z.enum(["sent", "failed"]);
 const failureReasonSchema = z.enum(["fell", "pumped", "skin", "technique", "fear"]);
 const holdTypeSchema = z.enum(["crimp", "sloper", "pinch", "pocket", "jug"]);
@@ -429,7 +429,15 @@ export class ClimbingRepository extends BaseRepository {
             CASE WHEN detail.attempt_count > 0 THEN detail.sent ELSE ce.sent END AS sent,
             CASE WHEN detail.attempt_count > 0 THEN detail.attempt_count ELSE ce.attempt_count END AS attempt_count,
             COALESCE(detail.attempts, '[]'::jsonb) AS attempts,
-            ce.raw->>'ascentType' AS ascent_type,
+            CASE lower(btrim(COALESCE(ce.raw->>'ascentType',
+              CASE WHEN ce.climb_type = 'boulder' THEN ce.raw->>'Style' ELSE ce.raw->>'Lead Style' END)))
+              WHEN 'flash' THEN 'Flash'
+              WHEN 'onsight' THEN 'Onsight'
+              WHEN 'redpoint' THEN 'Redpoint'
+              WHEN 'pinkpoint' THEN 'Pinkpoint'
+              WHEN 'repeat' THEN 'Repeat'
+              ELSE NULL
+            END AS ascent_type,
             ce.hold_type,
             ce.route_name,
             ce.location_name,
