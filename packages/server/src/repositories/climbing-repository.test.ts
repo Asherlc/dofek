@@ -128,6 +128,7 @@ describe("ClimbingActivityEntry", () => {
     const execute = vi.fn().mockResolvedValue([
       {
         id: "00000000-0000-4000-8000-000000000001",
+        provider_id: "kaya",
         climb_type: "boulder",
         grade_system: "v_scale",
         grade: "V3",
@@ -703,6 +704,7 @@ describe("ClimbingRepository", () => {
       const { repo } = makeRepository([
         {
           id: "entry-1",
+          provider_id: "kaya",
           climb_type: "boulder",
           grade_system: "v_scale",
           grade: "v4",
@@ -741,6 +743,331 @@ describe("ClimbingRepository", () => {
       });
     });
 
+    it("merges the same named climb across providers and keeps the recorded outcome", async () => {
+      const { repo } = makeRepository([
+        {
+          id: "mountain-project-entry",
+          provider_id: "mountain-project",
+          climb_type: "route",
+          grade_system: "yds",
+          grade: "5.6",
+          sent: null,
+          attempt_count: null,
+          attempts: [],
+          ascent_type: null,
+          hold_type: null,
+          route_name: "Test Crack",
+          location_name: "Test Location",
+          lead: null,
+          source_name: "Mountain Project",
+          wall_angle_degrees: null,
+        },
+        {
+          id: "kaya-entry",
+          provider_id: "kaya",
+          climb_type: "route",
+          grade_system: "yds",
+          grade: "5.6",
+          sent: true,
+          attempt_count: 1,
+          attempts: [],
+          ascent_type: "Redpoint",
+          hold_type: null,
+          route_name: "Test Crack",
+          location_name: "Test Location",
+          lead: null,
+          source_name: "Kaya",
+          wall_angle_degrees: null,
+        },
+      ]);
+
+      const entries = await repo.getActivityEntries("activity-1");
+
+      expect(entries.map((entry) => entry.toDetail())).toMatchObject([
+        {
+          id: "kaya-entry",
+          sent: true,
+          attemptCount: 1,
+          sourceName: "Mountain Project, Kaya",
+        },
+      ]);
+    });
+
+    it("preserves repeated sends within a provider while merging each provider label once", async () => {
+      const entry = {
+        climb_type: "route",
+        grade_system: "yds",
+        grade: "5.6",
+        sent: true,
+        attempt_count: 1,
+        attempts: [],
+        ascent_type: null,
+        hold_type: null,
+        route_name: "Test Crack",
+        location_name: "Test Location",
+        lead: null,
+        wall_angle_degrees: null,
+      };
+      const { repo } = makeRepository([
+        { ...entry, id: "provider-a-1", provider_id: "provider-a", source_name: "Provider A" },
+        { ...entry, id: "provider-b-1", provider_id: "provider-b", source_name: "Provider B" },
+        { ...entry, id: "provider-b-2", provider_id: "provider-b", source_name: "Provider B" },
+        { ...entry, id: "provider-c-1", provider_id: "provider-c", source_name: "Provider C" },
+      ]);
+
+      const entries = await repo.getActivityEntries("activity-1");
+
+      expect(entries.map((climb) => climb.toDetail())).toMatchObject([
+        { sourceName: "Provider A, Provider B, Provider C" },
+        { id: "provider-b-2", sourceName: "Provider B" },
+      ]);
+    });
+
+    it("normalizes grade, route, and location before matching provider entries", async () => {
+      const { repo } = makeRepository([
+        {
+          id: "mountain-project-entry",
+          provider_id: "mountain-project",
+          climb_type: "route",
+          grade_system: "yds",
+          grade: " 5.10c ",
+          sent: null,
+          attempt_count: null,
+          attempts: [],
+          ascent_type: null,
+          hold_type: null,
+          route_name: " Test   Crack ",
+          location_name: " Test   Location ",
+          lead: null,
+          source_name: "Mountain Project",
+          wall_angle_degrees: null,
+        },
+        {
+          id: "kaya-entry",
+          provider_id: "kaya",
+          climb_type: "route",
+          grade_system: "yds",
+          grade: "5.10C",
+          sent: true,
+          attempt_count: 1,
+          attempts: [],
+          ascent_type: null,
+          hold_type: null,
+          route_name: "test crack",
+          location_name: "test location",
+          lead: null,
+          source_name: "Kaya",
+          wall_angle_degrees: null,
+        },
+      ]);
+
+      const entries = await repo.getActivityEntries("activity-1");
+
+      expect(entries).toHaveLength(1);
+      expect(entries[0]?.toDetail()).toMatchObject({
+        sent: true,
+        sourceName: "Mountain Project, Kaya",
+      });
+    });
+
+    it.each([
+      ["climb type", { climb_type: "boulder" }],
+      ["grade system", { grade_system: "french" }],
+      ["grade", { grade: "5.7" }],
+      ["route name", { route_name: "Other Crack" }],
+      ["location", { location_name: "Other Location" }],
+      ["lead status", { lead: true }],
+    ])("keeps entries with different %s separate", async (_identityPart, change) => {
+      const base = {
+        climb_type: "route",
+        grade_system: "yds",
+        grade: "5.6",
+        sent: true,
+        attempt_count: 1,
+        attempts: [],
+        ascent_type: null,
+        hold_type: null,
+        route_name: "Test Crack",
+        location_name: "Test Location",
+        lead: null,
+        source_name: null,
+        wall_angle_degrees: null,
+      };
+      const { repo } = makeRepository([
+        { ...base, id: "mountain-project-entry", provider_id: "mountain-project" },
+        { ...base, ...change, id: "kaya-entry", provider_id: "kaya" },
+      ]);
+
+      const entries = await repo.getActivityEntries("activity-1");
+
+      expect(entries).toHaveLength(2);
+    });
+
+    it.each([
+      ["route name", { route_name: null, location_name: "Test Location" }],
+      ["location", { route_name: "Test Crack", location_name: null }],
+    ])("does not infer identity when the %s is missing", async (_missingPart, names) => {
+      const base = {
+        climb_type: "route",
+        grade_system: "yds",
+        grade: "5.6",
+        sent: true,
+        attempt_count: 1,
+        attempts: [],
+        ascent_type: null,
+        hold_type: null,
+        route_name: "Test Crack",
+        location_name: "Test Location",
+        lead: null,
+        source_name: null,
+        wall_angle_degrees: null,
+      };
+      const { repo } = makeRepository([
+        { ...base, ...names, id: "mountain-project-entry", provider_id: "mountain-project" },
+        { ...base, ...names, id: "kaya-entry", provider_id: "kaya" },
+      ]);
+
+      const entries = await repo.getActivityEntries("activity-1");
+
+      expect(entries).toHaveLength(2);
+    });
+
+    it("keeps repeated entries from one provider and prefers retained attempts", async () => {
+      const base = {
+        climb_type: "route",
+        grade_system: "yds",
+        grade: "5.6",
+        sent: true,
+        attempt_count: 1,
+        attempts: [],
+        ascent_type: null,
+        hold_type: null,
+        route_name: "Test Crack",
+        location_name: "Test Location",
+        lead: null,
+        source_name: null,
+        wall_angle_degrees: null,
+      };
+      const { repo } = makeRepository([
+        { ...base, id: "source-a", provider_id: "kaya" },
+        { ...base, id: "source-b", provider_id: "kaya" },
+        {
+          ...base,
+          id: "source-c",
+          provider_id: "mountain-project",
+          attempts: [{ attemptIndex: 1, failureReason: null, notes: null, outcome: "sent" }],
+        },
+      ]);
+
+      const entries = await repo.getActivityEntries("activity-1");
+
+      expect(entries.map((entry) => entry.toDetail().id)).toEqual(["source-b", "source-c"]);
+    });
+
+    it("prefers a recorded outcome when aggregate attempt counts are unavailable", async () => {
+      const base = {
+        climb_type: "route",
+        grade_system: "yds",
+        grade: "5.6",
+        attempt_count: null,
+        attempts: [],
+        ascent_type: null,
+        hold_type: null,
+        route_name: "Test Crack",
+        location_name: "Test Location",
+        lead: null,
+        source_name: null,
+        wall_angle_degrees: null,
+      };
+      const { repo } = makeRepository([
+        { ...base, id: "unknown", provider_id: "mountain-project", sent: null },
+        { ...base, id: "recorded", provider_id: "kaya", sent: false },
+      ]);
+
+      const entries = await repo.getActivityEntries("activity-1");
+
+      expect(entries[0]?.toDetail().id).toBe("recorded");
+      expect(entries[0]?.toDetail().sent).toBe(false);
+    });
+
+    it("prefers aggregate attempt counts when outcome observations match", async () => {
+      const base = {
+        climb_type: "route",
+        grade_system: "yds",
+        grade: "5.6",
+        sent: true,
+        attempts: [],
+        ascent_type: null,
+        hold_type: null,
+        route_name: "Test Crack",
+        location_name: "Test Location",
+        lead: null,
+        source_name: null,
+        wall_angle_degrees: null,
+      };
+      const { repo } = makeRepository([
+        { ...base, id: "unknown-count", provider_id: "mountain-project", attempt_count: null },
+        { ...base, id: "known-count", provider_id: "kaya", attempt_count: 2 },
+      ]);
+
+      const entries = await repo.getActivityEntries("activity-1");
+
+      expect(entries[0]?.toDetail().id).toBe("known-count");
+      expect(entries[0]?.toDetail().attemptCount).toBe(2);
+    });
+
+    it("keeps the first provider record when duplicate details are equally complete", async () => {
+      const base = {
+        climb_type: "route",
+        grade_system: "yds",
+        grade: "5.6",
+        sent: true,
+        attempt_count: 1,
+        attempts: [],
+        ascent_type: null,
+        hold_type: null,
+        route_name: "Test Crack",
+        location_name: "Test Location",
+        lead: null,
+        source_name: null,
+        wall_angle_degrees: null,
+      };
+      const { repo } = makeRepository([
+        { ...base, id: "first", provider_id: "mountain-project" },
+        { ...base, id: "second", provider_id: "kaya" },
+      ]);
+
+      const entries = await repo.getActivityEntries("activity-1");
+
+      expect(entries[0]?.toDetail().id).toBe("first");
+    });
+
+    it("keeps a null source name null when merging duplicate entries", async () => {
+      const base = {
+        climb_type: "route",
+        grade_system: "yds",
+        grade: "5.6",
+        sent: true,
+        attempt_count: 1,
+        attempts: [],
+        ascent_type: null,
+        hold_type: null,
+        route_name: "Test Crack",
+        location_name: "Test Location",
+        lead: null,
+        source_name: null,
+        wall_angle_degrees: null,
+      };
+      const { repo } = makeRepository([
+        { ...base, id: "source-a", provider_id: "mountain-project" },
+        { ...base, id: "source-b", provider_id: "kaya" },
+      ]);
+
+      const entries = await repo.getActivityEntries("activity-1");
+
+      expect(entries[0]?.toDetail().sourceName).toBeNull();
+    });
+
     it("hydrates all members from the already-resolved stable activity group", async () => {
       const { repo, execute } = makeRepository([]);
 
@@ -762,6 +1089,7 @@ describe("ClimbingRepository", () => {
       const { repo } = makeRepository([
         {
           id: "entry-1",
+          provider_id: "kaya",
           climb_type: "boulder",
           grade_system: "v_scale",
           grade: "not-a-grade",
@@ -777,6 +1105,7 @@ describe("ClimbingRepository", () => {
         },
         {
           id: "entry-2",
+          provider_id: "kaya",
           climb_type: "boulder",
           grade_system: "v_scale",
           grade: "also-not-a-grade",
@@ -802,6 +1131,7 @@ describe("ClimbingRepository", () => {
         [
           {
             id: "entry-valid",
+            provider_id: "kaya",
             climb_type: "boulder",
             grade_system: "v_scale",
             grade: "V4",
@@ -817,6 +1147,7 @@ describe("ClimbingRepository", () => {
           },
           {
             id: "entry-invalid",
+            provider_id: "kaya",
             climb_type: "boulder",
             grade_system: "v_scale",
             grade: "not-a-grade",
@@ -846,6 +1177,7 @@ describe("ClimbingRepository", () => {
       const { repo } = makeRepository([
         {
           id: "entry-b",
+          provider_id: "kaya",
           climb_type: "boulder",
           grade_system: "v_scale",
           grade: "V4",
@@ -861,6 +1193,7 @@ describe("ClimbingRepository", () => {
         },
         {
           id: "entry-a",
+          provider_id: "kaya",
           climb_type: "boulder",
           grade_system: "v_scale",
           grade: "V4",
@@ -876,6 +1209,7 @@ describe("ClimbingRepository", () => {
         },
         {
           id: "entry-c",
+          provider_id: "kaya",
           climb_type: "boulder",
           grade_system: "v_scale",
           grade: "V3",

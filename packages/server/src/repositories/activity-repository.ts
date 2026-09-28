@@ -966,33 +966,43 @@ export class ActivityRepository extends BaseRepository {
       z.object({ member_activity_id: z.string() }),
       sql`SELECT DISTINCT member_rows.member_activity_id::text AS member_activity_id
           FROM fitness.v_activity a
-          JOIN fitness.v_activity_members selected_member ON selected_member.activity_id = a.id
-          JOIN fitness.v_activity_members member_rows ON member_rows.activity_id = a.id
-          WHERE selected_member.member_activity_id IN (${sql.join(
-            uniqueActivityIds.map((selectedActivityId) => sql`${selectedActivityId}::uuid`),
-            sql`, `,
-          )})
-            AND a.user_id = ${this.userId}`,
+          CROSS JOIN LATERAL UNNEST(a.member_activity_ids) AS member_rows(member_activity_id)
+          WHERE a.user_id = ${this.userId}::uuid
+            AND (
+              a.id IN (${sql.join(
+                uniqueActivityIds.map((selectedActivityId) => sql`${selectedActivityId}::uuid`),
+                sql`, `,
+              )})
+              OR a.member_activity_ids && ARRAY[${sql.join(
+                uniqueActivityIds.map((selectedActivityId) => sql`${selectedActivityId}::uuid`),
+                sql`, `,
+              )}]::uuid[]
+              OR EXISTS (
+                SELECT 1
+                FROM fitness.activity_group_alias selected_alias
+                WHERE selected_alias.user_id = ${this.userId}::uuid
+                  AND selected_alias.alias_id IN (${sql.join(
+                    uniqueActivityIds.map((selectedActivityId) => sql`${selectedActivityId}::uuid`),
+                    sql`, `,
+                  )})
+                  AND selected_alias.group_id = a.id
+              )
+            )`,
     );
     const memberActivityIds = memberRows.map((row) => row.member_activity_id);
 
-    await this.db.execute(sql`
-      UPDATE fitness.activity
-      SET deleted_at = NOW()
-      WHERE id IN (
-        SELECT member_rows.member_activity_id
-        FROM fitness.v_activity a
-        JOIN fitness.v_activity_members selected_member ON selected_member.activity_id = a.id
-        JOIN fitness.v_activity_members member_rows ON member_rows.activity_id = a.id
-        WHERE selected_member.member_activity_id IN (${sql.join(
-          uniqueActivityIds.map((selectedActivityId) => sql`${selectedActivityId}::uuid`),
+    if (memberActivityIds.length > 0) {
+      await this.db.execute(sql`
+        UPDATE fitness.activity
+        SET deleted_at = NOW()
+        WHERE id IN (${sql.join(
+          memberActivityIds.map((memberActivityId) => sql`${memberActivityId}::uuid`),
           sql`, `,
         )})
-          AND a.user_id = ${this.userId}
-      )
-      AND user_id = ${this.userId}
-      AND deleted_at IS NULL
-    `);
+          AND user_id = ${this.userId}::uuid
+          AND deleted_at IS NULL
+      `);
+    }
     return { deletedCount: uniqueActivityIds.length, memberActivityIds };
   }
 

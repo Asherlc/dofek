@@ -27503,6 +27503,70 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   restore the expected production service counts through the normal deployment
   workflow and verify the next analytics and reconciliation cycle.
 
+## 2026-09-28 — ChatGPT MCP OAuth token exchange rejected
+
+- **Symptoms / user impact:** After approving permissions in ChatGPT, the
+  account connection failed with “We couldn't connect your account. Please try
+  again.” The uploaded HAR shows ChatGPT's callback returning HTTP 400 with an
+  internal HTTP 401.
+- **Evidence:** After the diagnostic logging change shipped in image
+  `sha-0606e1d`, two production events at 2026-09-28 20:47:47 and 20:47:52 UTC
+  reported `InvalidClientAuth`, OAuth error `invalid_client`, and description
+  `client authentication failed`. Live OIDC discovery advertises issuer
+  `https://dofek.fit/` but token endpoint `http://dofek.fit/token`. The OIDC
+  provider is mounted as an Express callback in
+  [the OAuth route](../packages/server/src/mcp/oauth-route.ts); Express trusts
+  the proxy, but the `oidc-provider` Provider instance does not.
+- **Root cause:** `Provider.proxy` was left false, so the TLS-terminating
+  proxy's forwarded protocol was ignored and OIDC discovery emitted an HTTP
+  token endpoint on the HTTPS production site. The provider's [proxy
+  configuration guide](https://oidc-provider.dev/guides/proxy/) documents
+  setting `provider.proxy = true` for this Express deployment. The two matching
+  token-exchange events confirm the client authentication rejection; the exact
+  rejected assertion claim is not logged.
+- **Fix / mitigation:** The follow-up branch enables `provider.proxy` and adds
+  an integration regression check that sends `X-Forwarded-Proto: https` and
+  requires HTTPS token endpoint metadata.
+- **Validation:** Before the fix, the regression test failed with `http:` where
+  `https:` was expected. After the fix, the MCP OIDC integration suite passed
+  4/4; the workspace unit/mobile suite passed 19,018 tests with 20 skipped,
+  root/server/web typechecks passed, and workspace lint passed. Production
+  remains on `sha-0606e1d` until this follow-up is deployed.
+- **Remaining risk / follow-up:** Verify production discovery advertises an
+  HTTPS token endpoint after deployment, then retry the ChatGPT connection and
+  confirm token issuance.
+
+## 2026-09-28 — Activity deletion slow and left the activity visible
+
+- **Symptoms / user impact:** Deleting an activity took about 66.6 seconds and
+  the activity remained in the list. No production data was manually changed
+  during diagnosis.
+- **Evidence:** Production logged `POST /api/trpc/activity.delete` as HTTP 200
+  after 66,595 ms. `pg_stat_statements` reported a mean of about 69.7 seconds
+  for the `UPDATE fitness.activity` statement that re-ran the grouped activity
+  views. For the reported activity, `fitness.v_activity` exposed a stable group
+  ID distinct from its raw member ID; the old member-only selection predicate
+  returned zero rows, and the source member still had `deleted_at IS NULL`.
+  The selection and update are in the [activity repository](../packages/server/src/repositories/activity-repository.ts).
+- **Root cause:** Delete input accepted stable group IDs, but the repository
+  matched only raw member IDs and returned success when that found no members;
+  when it did find members, the update repeated the expensive grouped view
+  query instead of using the IDs already selected.
+- **Fix:** Resolve selected group, raw member, and retained alias IDs in one
+  grouped-view read, then soft-delete those fetched raw member IDs directly.
+  The [dedup integration regression](../packages/server/src/routers/activity-dedup.integration.test.ts)
+  now deletes by stable group ID and checks that the group leaves
+  `fitness.v_activity`.
+- **Validation:** The regression failed before the fix with raw members still
+  active. After the fix, the focused integration suite passed 28/28 tests, the
+  repository and activity router unit suites passed 118/118 tests, and Biome
+  plus `git diff --check` passed. An accidentally broad unit/mobile invocation
+  was interrupted; the targeted unit run passed.
+- **Remaining risk / follow-up:** The fix is pushed to
+  `fix-activity-deletion-stuck` but is not deployed. Production still has the
+  reported member active. After the normal deployment, verify its source row
+  is soft-deleted and the authenticated activity list omits the group.
+
 ## 2026-09-28 — Local Docker Desktop AIO limit blocked canonical integration tests
 
 - **Symptoms / user impact:** `pnpm test:integration` could not start Redpanda, so feature integration tests did not run.

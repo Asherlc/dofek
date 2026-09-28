@@ -75,9 +75,14 @@ describe("MCP oidc-provider authorization server", () => {
 
   it("publishes authorization server discovery with RFC 9207 iss and CIMD support", async () => {
     const metadata = discoverySchema.parse(
-      await (await fetch(`${baseUrl}/.well-known/oauth-authorization-server`)).json(),
+      await (
+        await fetch(`${baseUrl}/.well-known/oauth-authorization-server`, {
+          headers: { "x-forwarded-proto": "https" },
+        })
+      ).json(),
     );
     expect(metadata.issuer).toBe("https://app.example.test/");
+    expect(new URL(metadata.token_endpoint).protocol).toBe("https:");
     expect(metadata.authorization_response_iss_parameter_supported).toBe(true);
     expect(metadata.client_id_metadata_document_supported).toBe(true);
     expect(metadata.scopes_supported).toContain("health:read");

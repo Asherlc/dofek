@@ -12,6 +12,7 @@ const suggestionSchema = z.object({
   grade_system: z.string(),
   grade: z.string(),
   sent: z.boolean().nullable(),
+  ascent_type: z.enum(["Flash", "Onsight", "Redpoint", "Pinkpoint", "Repeat"]).nullable(),
   attempt_count: z.number().nullable(),
   lead: z.boolean().nullable(),
   route_name: z.string().nullable(),
@@ -24,6 +25,7 @@ export type MountainProjectTickSuggestion = {
   gradeSystem: string;
   grade: string;
   sent: boolean | null;
+  ascentType: "Flash" | "Onsight" | "Redpoint" | "Pinkpoint" | "Repeat" | null;
   attemptCount: number | null;
   lead: boolean | null;
   routeName: string | null;
@@ -64,6 +66,15 @@ export class MountainProjectTickRepository extends BaseRepository {
       suggestionSchema,
       sql`SELECT id::text AS id, climb_type::text AS climb_type,
                  grade_system::text AS grade_system, grade, sent, attempt_count,
+                 CASE lower(btrim(CASE WHEN climb_type = 'boulder'
+                   THEN raw->>'Style' ELSE raw->>'Lead Style' END))
+                   WHEN 'flash' THEN 'Flash'
+                   WHEN 'onsight' THEN 'Onsight'
+                   WHEN 'redpoint' THEN 'Redpoint'
+                   WHEN 'pinkpoint' THEN 'Pinkpoint'
+                   WHEN 'repeat' THEN 'Repeat'
+                   ELSE NULL
+                 END AS ascent_type,
                  lead, route_name, location_name
           FROM fitness.climbing_entry
           WHERE user_id = ${this.userId}::uuid
@@ -79,6 +90,7 @@ export class MountainProjectTickRepository extends BaseRepository {
       gradeSystem: row.grade_system,
       grade: row.grade,
       sent: row.sent,
+      ascentType: row.ascent_type,
       attemptCount: row.attempt_count,
       lead: row.lead,
       routeName: row.route_name,
