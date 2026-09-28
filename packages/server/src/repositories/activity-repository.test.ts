@@ -1538,6 +1538,7 @@ describe("ActivityRepository", () => {
       expect(selectQuery.sql).toContain("a.id IN");
       expect(selectQuery.sql).toContain("a.member_activity_ids && ARRAY[");
       expect(selectQuery.sql).toContain("FROM fitness.activity_group_alias selected_alias");
+      expect(selectQuery.params.filter((parameter) => parameter === "activity-id")).toHaveLength(3);
 
       const sqlObject = execute.mock.calls[1]?.[0];
       const compiledQuery = dialect.sqlToQuery(sqlObject);
@@ -1559,6 +1560,17 @@ describe("ActivityRepository", () => {
       expect(execute).not.toHaveBeenCalled();
     });
 
+    it("skips the source update when selected activities resolve to no members", async () => {
+      const { repo, execute } = makeRepository([]);
+
+      await expect(repo.bulkDelete(["unresolved-id"])).resolves.toEqual({
+        deletedCount: 1,
+        memberActivityIds: [],
+      });
+
+      expect(execute).toHaveBeenCalledTimes(1);
+    });
+
     it("bulkDelete deduplicates selected activity ids and deletes every member activity in matching deduped groups", async () => {
       const { repo, execute } = makeRepository([
         { member_activity_id: "activity-id" },
@@ -1575,6 +1587,16 @@ describe("ActivityRepository", () => {
       expect(compiledQuery.sql).toContain("UPDATE fitness.activity");
       expect(compiledQuery.sql).toContain("SET deleted_at = NOW()");
       expect(compiledQuery.sql).not.toContain("fitness.v_activity");
+      expect(
+        dialect
+          .sqlToQuery(execute.mock.calls[0]?.[0])
+          .params.filter((parameter) => parameter === "activity-id"),
+      ).toHaveLength(3);
+      expect(
+        dialect
+          .sqlToQuery(execute.mock.calls[0]?.[0])
+          .params.filter((parameter) => parameter === "other-id"),
+      ).toHaveLength(3);
       expect(compiledQuery.params).toEqual(
         expect.arrayContaining(["activity-id", "other-id", "user-1"]),
       );
