@@ -52,6 +52,7 @@ let mergeMutate: CallableVitestMock;
 let restoreProviderAbsentMutate: CallableVitestMock;
 let invalidateWeekList: CallableVitestMock;
 let invalidateActivityOverview: CallableVitestMock;
+let invalidateCalendarData: CallableVitestMock;
 let invalidateActivityList: CallableVitestMock;
 let mockBulkDeleteShouldFail: boolean;
 let mockDataHealthQuery: {
@@ -148,6 +149,7 @@ vi.mock("../lib/trpc.ts", () => ({
       calendar: {
         weekList: { invalidate: invalidateWeekList },
         activityOverview: { invalidate: invalidateActivityOverview },
+        calendarData: { invalidate: invalidateCalendarData },
       },
       activity: {
         list: { invalidate: invalidateActivityList },
@@ -244,6 +246,7 @@ describe("ActivitiesPage", () => {
     restoreProviderAbsentMutate = vi.fn();
     invalidateWeekList = vi.fn();
     invalidateActivityOverview = vi.fn();
+    invalidateCalendarData = vi.fn();
     invalidateActivityList = vi.fn();
     mockBulkDeleteShouldFail = false;
     mockDataHealthQuery = { data: undefined, isLoading: false, error: null };
@@ -596,7 +599,7 @@ describe("ActivitiesPage", () => {
     render(<ActivitiesPage />);
 
     expect(screen.getByRole("button", { name: "Select activities" })).toBeDefined();
-    expect(screen.getByText("Choose one or more activities to delete.")).toBeDefined();
+    expect(screen.getByText("Choose activities to merge or delete.")).toBeDefined();
   });
 
   it("associates each selection control with its own guidance", () => {
@@ -622,7 +625,7 @@ describe("ActivitiesPage", () => {
     expect(guidanceIds[0]).not.toBe(guidanceIds[1]);
     for (const guidanceId of guidanceIds) {
       expect(document.getElementById(guidanceId ?? "")).toHaveTextContent(
-        "Choose one or more activities to delete.",
+        "Choose activities to merge or delete.",
       );
     }
   });
@@ -691,6 +694,7 @@ describe("ActivitiesPage", () => {
       expect(mergeMutate).toHaveBeenCalledWith({ ids: ["activity-1", "activity-2"] });
       expect(invalidateWeekList).toHaveBeenCalled();
       expect(invalidateActivityOverview).toHaveBeenCalled();
+      expect(invalidateCalendarData).toHaveBeenCalled();
       expect(invalidateActivityList).toHaveBeenCalled();
     });
   });
@@ -845,7 +849,9 @@ describe("ActivitiesPage", () => {
     render(<ActivitiesPage />);
     fireEvent.click(screen.getByLabelText("Show hidden activities"));
     expect(
-      screen.getByText("Choose visible activities to delete or hidden activities to restore."),
+      screen.getByText(
+        "Choose visible activities to merge or delete, or hidden activities to restore.",
+      ),
     ).toBeDefined();
     expect(screen.getByText("Removed")).toBeDefined();
     expect(screen.getByText(/Removed from Strava/)).toBeDefined();

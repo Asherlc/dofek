@@ -94,6 +94,7 @@ export function ActivitiesPage() {
       await Promise.all([
         trpcUtils.calendar.weekList.invalidate(),
         trpcUtils.calendar.activityOverview.invalidate(),
+        trpcUtils.calendar.calendarData.invalidate(),
         trpcUtils.activity.list.invalidate(),
       ]);
       setSelectedActivityIds(new Set());
@@ -402,8 +403,8 @@ function ActivityControls({
 }: ActivityControlsProps) {
   const selectionGuidanceId = useId();
   const selectionGuidance = showHidden
-    ? "Choose visible activities to delete or hidden activities to restore."
-    : "Choose one or more activities to delete.";
+    ? "Choose visible activities to merge or delete, or hidden activities to restore."
+    : "Choose activities to merge or delete.";
   const selectedCountLabel = `${selectedCount} ${
     selectedCount === 1 ? "activity" : "activities"
   } selected`;

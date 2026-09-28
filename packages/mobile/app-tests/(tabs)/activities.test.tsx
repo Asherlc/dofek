@@ -652,7 +652,7 @@ describe("ActivitiesScreen", () => {
     };
 
     render(<ActivitiesScreen />);
-    expect(screen.getByText("Choose one or more activities to delete.")).toBeDefined();
+    expect(screen.getByText("Choose activities to merge or delete.")).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
     expect(screen.getByText("0 activities selected").getAttribute("accessibilityliveregion")).toBe(
       "polite",

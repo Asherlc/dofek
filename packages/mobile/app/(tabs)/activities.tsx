@@ -567,14 +567,14 @@ function ActivityControls({
             activeOpacity={0.7}
             accessibilityRole="button"
             accessibilityLabel="Select activities"
-            accessibilityHint="Choose one or more activities to delete"
+            accessibilityHint="Choose activities to merge or delete"
           >
             <Text style={styles.selectButtonText}>Select activities</Text>
           </TouchableOpacity>
         ) : null}
       </View>
       {canSelect ? (
-        <Text style={styles.selectionGuidance}>Choose one or more activities to delete.</Text>
+        <Text style={styles.selectionGuidance}>Choose activities to merge or delete.</Text>
       ) : null}
       {selectMode ? (
         <View style={styles.bulkActionRow}>
