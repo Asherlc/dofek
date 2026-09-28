@@ -182,9 +182,16 @@ describe("ensureProvidersRegistered failure path", () => {
     const registeredIds = mockRegisterProvider.mock.calls.map(
       ([provider]: [{ id: string }]) => provider.id,
     );
-    expect(registeredIds).toHaveLength(31);
+    expect(registeredIds).toHaveLength(32);
     expect(registeredIds).toEqual(
-      expect.arrayContaining(["bodyspec", "cycling_analytics", "ultrahuman", "wger", "ziva"]),
+      expect.arrayContaining([
+        "bodyspec",
+        "cycling_analytics",
+        "openbeta",
+        "ultrahuman",
+        "wger",
+        "ziva",
+      ]),
     );
     expect(registeredIds).not.toEqual(
       expect.arrayContaining(["fitbit", "suunto", "coros", "komoot", "decathlon", "mapmyfitness"]),

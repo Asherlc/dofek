@@ -141,7 +141,7 @@ validation scan's stronger lock during the initial constraint addition:
 | `fitness.activity_interval` | Laps/intervals with time ranges (metrics computed at query time from sensor_sample) |
 | `fitness.sensor_sample` | Time-series sensor data (TimescaleDB hypertable) — all channels at any frequency |
 | `fitness.finger_loading_entry` | Finger-loading protocols with raw edge, grip, load, bodyweight, laterality, set, hold, rest, RPE, and note values; existing rows remain read-only in the application |
-| `fitness.climbing_entry` | Provider climbs and retained Dofek-created climb definitions, including grade, wall angle, hold type, route, and location; Mountain Project ticks can remain standalone until attached to an activity |
+| `fitness.climbing_entry` | Provider climbs and retained Dofek-created climb definitions, including grade, wall angle, hold type, route, and location; Mountain Project and OpenBeta ticks can remain standalone until attached to an activity |
 | `fitness.climbing_attempt` | Ordered raw outcomes, failure reasons, and notes for attempts on a retained climbing entry |
 
 Retained Dofek-created climbing entries leave the legacy aggregate `sent` and `attempt_count`
@@ -152,8 +152,8 @@ stored separately. Database constraints keep each outcome/failure-reason pair
 consistent using PostgreSQL check constraints
 ([PostgreSQL `CREATE TABLE`](https://www.postgresql.org/docs/current/sql-createtable.html)).
 
-Mountain Project ticks use the same `fitness.climbing_entry` table as other
-climbs. Each tick has an owner and provider identity. While unattached, it has
+Mountain Project and OpenBeta ticks use the same `fitness.climbing_entry` table
+as other climbs. Each tick has an owner and provider identity. While unattached, it has
 no activity association and stores the export's date in `unattached_date`;
 attaching it clears that date, and its associated activity supplies its day.
 The server suggests only active unattached ticks whose exported day exactly
