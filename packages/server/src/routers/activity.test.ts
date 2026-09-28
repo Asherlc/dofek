@@ -874,6 +874,15 @@ describe("activityRouter", () => {
       expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:calendar.");
     });
 
+    it("merge rejects duplicate activity IDs before querying the database", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
+      const id = "00000000-0000-0000-0000-000000000001";
+
+      await expect(caller.merge({ ids: [id, id] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      expect(execute).not.toHaveBeenCalled();
+    });
+
     it("invalidates activity and calendar caches after bulkDelete", async () => {
       const execute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
