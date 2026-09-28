@@ -30,10 +30,39 @@ vi.mock("../lib/error-reporting.ts", () => ({ captureException: mocks.captureExc
 
 import { OpenBetaProvider } from "./openbeta.ts";
 
-function graphqlResponse(data: unknown): Response {
-  return new Response(JSON.stringify({ data }), {
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+function graphqlResponse(data: unknown): Response {
+  return jsonResponse({ data });
+}
+
+function grades(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    vscale: null,
+    yds: "5.10a",
+    ewbank: null,
+    french: null,
+    font: null,
+    uiaa: null,
+    brazilianCrux: null,
+    ...overrides,
+  };
+}
+
+function climb(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    uuid: "climb-uuid-1",
+    name: "Sunset Arete",
+    grades: grades(),
+    type: { bouldering: false },
+    parent: { area_name: "Smith Rock" },
+    ...overrides,
+  };
 }
 
 function tick(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -49,21 +78,7 @@ function tick(overrides: Record<string, unknown> = {}): Record<string, unknown> 
     grade: "5.10a",
     source: "OB",
     user: { username: "climber", displayName: "Climber" },
-    climb: {
-      uuid: "climb-uuid-1",
-      name: "Sunset Arete",
-      grades: {
-        vscale: null,
-        yds: "5.10a",
-        ewbank: null,
-        french: null,
-        font: null,
-        uiaa: null,
-        brazilianCrux: null,
-      },
-      type: { trad: true, sport: false, bouldering: false },
-      parent: { area_name: "Smith Rock" },
-    },
+    climb: climb({ type: { trad: true, sport: false, bouldering: false } }),
     ...overrides,
   };
 }
@@ -91,6 +106,19 @@ function makeRun(db: ReturnType<typeof makeDb>["db"], userId = USER_ID): SyncRun
     window: SyncWindow.full(new Date("2026-08-11T00:00:00.000Z")),
     userId,
   });
+}
+
+function makeRunWithoutUser(db: ReturnType<typeof makeDb>["db"]): SyncRun {
+  return new SyncRun({
+    db,
+    window: SyncWindow.full(new Date("2026-08-11T00:00:00.000Z")),
+  });
+}
+
+function exchangeToken(provider: OpenBetaProvider, input: string): Promise<unknown> {
+  const exchange = provider.authSetup().manualToken?.exchangeToken;
+  if (!exchange) throw new Error("OpenBeta manual token auth is unavailable");
+  return exchange(input);
 }
 
 afterEach(() => {
@@ -134,6 +162,95 @@ describe("OpenBetaProvider", () => {
       .object({ variables: z.object({ username: z.string() }) })
       .parse(JSON.parse(String(fetchFn.mock.calls[0]?.[1]?.body)));
     expect(request.variables).toEqual({ username: "climber" });
+    expect(fetchFn).toHaveBeenCalledWith(
+      "https://api.openbeta.io",
+      expect.objectContaining({
+        method: "POST",
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+      }),
+    );
+  });
+
+  it.each([
+    ["climber", "climber"],
+    ["openbeta.io/u/climber", "climber"],
+    ["http://www.openbeta.io/u/climber/ticks", "climber"],
+  ])("accepts %s as the public profile identifier", async (input, expectedUsername) => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      graphqlResponse({
+        userPage: {
+          profile: {
+            userUuid: OPENBETA_USER_UUID,
+            username: expectedUsername,
+            displayName: null,
+          },
+        },
+      }),
+    );
+    const provider = new OpenBetaProvider(fetchFn);
+
+    await exchangeToken(provider, input);
+
+    const request = z
+      .object({ variables: z.object({ username: z.string() }) })
+      .parse(JSON.parse(String(fetchFn.mock.calls[0]?.[1]?.body)));
+    expect(request.variables).toEqual({ username: expectedUsername });
+  });
+
+  it("rejects malformed profile identifiers before making a request", async () => {
+    const fetchFn = vi.fn();
+    const provider = new OpenBetaProvider(fetchFn);
+    for (const input of [
+      "",
+      "bad username",
+      "https://example.com/u/climber",
+      "https://openbeta.io/profile/climber",
+      "https://openbeta.io/u/climber/other",
+      "https://[",
+    ]) {
+      await expect(exchangeToken(provider, input)).rejects.toThrow(
+        "Paste a public OpenBeta profile URL",
+      );
+    }
+
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it("rejects a profile URL with an invalid percent-encoded username", async () => {
+    const provider = new OpenBetaProvider(vi.fn());
+
+    await expect(exchangeToken(provider, "https://openbeta.io/u/%E0%A4%A")).rejects.toThrow(
+      "Paste a public OpenBeta profile URL",
+    );
+  });
+
+  it.each([
+    [() => new Response("", { status: 500 }), "OpenBeta API request failed (500)."],
+    [
+      () => jsonResponse({ data: null, errors: [{ message: "profile lookup denied" }] }),
+      "OpenBeta API returned an error: profile lookup denied",
+    ],
+    [() => jsonResponse({ data: null }), "OpenBeta API returned no data."],
+  ])("wraps profile lookup failure", async (makeResponse, causeMessage) => {
+    const provider = new OpenBetaProvider(vi.fn().mockResolvedValue(makeResponse()));
+
+    await expect(exchangeToken(provider, "climber")).rejects.toMatchObject({
+      cause: expect.objectContaining({ message: causeMessage }),
+    });
+  });
+
+  it("rejects a profile response that does not satisfy the profile schema", async () => {
+    const provider = new OpenBetaProvider(
+      vi
+        .fn()
+        .mockResolvedValue(
+          graphqlResponse({ userPage: { profile: { username: "climber", displayName: null } } }),
+        ),
+    );
+
+    await expect(exchangeToken(provider, "climber")).rejects.toMatchObject({
+      cause: expect.objectContaining({ name: "ZodError" }),
+    });
   });
 
   it("imports route and boulder ticks into standalone climbing entries", async () => {
@@ -215,6 +332,169 @@ describe("OpenBetaProvider", () => {
     expect(new PgDialect().sqlToQuery(reconciliationQuery).params).toContain("openbeta:tick-1");
   });
 
+  it("maps supported grade systems and tick fallbacks", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      graphqlResponse({
+        userTicks: [
+          tick({
+            _id: "font-grade",
+            grade: null,
+            attemptType: null,
+            climb: climb({
+              name: null,
+              grades: grades({ yds: null, font: " 6A+ " }),
+              type: { bouldering: true },
+              parent: { area_name: " " },
+            }),
+          }),
+          tick({
+            _id: "french-grade",
+            grade: null,
+            climb: climb({ grades: grades({ yds: null, french: "6a" }) }),
+          }),
+          tick({
+            _id: "uiaa-grade",
+            grade: null,
+            climb: climb({ grades: grades({ yds: null, french: null, uiaa: "VI" }) }),
+          }),
+          tick({
+            _id: "ewbank-grade",
+            grade: null,
+            climb: climb({
+              grades: grades({ yds: null, french: null, uiaa: null, ewbank: "18" }),
+            }),
+          }),
+          tick({
+            _id: "brazilian-grade",
+            grade: null,
+            climb: climb({
+              grades: grades({
+                yds: null,
+                french: null,
+                uiaa: null,
+                ewbank: null,
+                brazilianCrux: "6sup",
+              }),
+            }),
+          }),
+          tick({
+            _id: "boulder-v-fallback",
+            grade: "v7+",
+            climb: climb({ grades: grades({ yds: null }), type: { bouldering: true } }),
+          }),
+          tick({
+            _id: "boulder-font-fallback",
+            grade: "6b",
+            climb: climb({ grades: grades({ yds: null }), type: { bouldering: true } }),
+          }),
+          tick({
+            _id: "route-yds-fallback",
+            grade: "5.11a",
+            climb: climb({ grades: grades({ yds: null }) }),
+          }),
+          tick({
+            _id: "route-french-fallback",
+            grade: "6c+",
+            climb: climb({ grades: grades({ yds: null }) }),
+          }),
+          tick({
+            _id: "missing-climb-details",
+            grade: "5.10b",
+            name: null,
+            attemptType: null,
+            climb: { uuid: null, name: null, grades: null, type: null, parent: null },
+          }),
+        ],
+      }),
+    );
+    const { db, climbingEntryValues } = makeDb();
+    const provider = new OpenBetaProvider(fetchFn);
+
+    const result = await provider.sync(makeRun(db));
+
+    expect(result).toMatchObject({ provider: "openbeta", recordsSynced: 10, errors: [] });
+    expect(climbingEntryValues.mock.calls.map(([value]) => value)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          externalId: "openbeta:font-grade",
+          gradeSystem: "font",
+          grade: "6A+",
+          sent: null,
+          attemptCount: null,
+          routeName: "Sunset Arete",
+          locationName: null,
+        }),
+        expect.objectContaining({
+          externalId: "openbeta:french-grade",
+          gradeSystem: "french",
+          grade: "6a",
+        }),
+        expect.objectContaining({
+          externalId: "openbeta:uiaa-grade",
+          gradeSystem: "uiaa",
+          grade: "VI",
+        }),
+        expect.objectContaining({
+          externalId: "openbeta:ewbank-grade",
+          gradeSystem: "ewbank",
+          grade: "18",
+        }),
+        expect.objectContaining({
+          externalId: "openbeta:brazilian-grade",
+          gradeSystem: "brazilian_crux",
+          grade: "6sup",
+        }),
+        expect.objectContaining({
+          externalId: "openbeta:boulder-v-fallback",
+          gradeSystem: "v_scale",
+          grade: "v7+",
+        }),
+        expect.objectContaining({
+          externalId: "openbeta:boulder-font-fallback",
+          gradeSystem: "font",
+          grade: "6b",
+        }),
+        expect.objectContaining({
+          externalId: "openbeta:route-yds-fallback",
+          gradeSystem: "yds",
+          grade: "5.11a",
+        }),
+        expect.objectContaining({
+          externalId: "openbeta:route-french-fallback",
+          gradeSystem: "french",
+          grade: "6c+",
+        }),
+        expect.objectContaining({
+          externalId: "openbeta:missing-climb-details",
+          gradeSystem: "yds",
+          routeName: null,
+          locationName: null,
+          sent: null,
+          attemptCount: null,
+        }),
+      ]),
+    );
+  });
+
+  it("reports invalid dates with the tick id and empty-value marker", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      graphqlResponse({
+        userTicks: [tick({ _id: "missing-date", name: null, dateClimbed: null })],
+      }),
+    );
+    const { db } = makeDb();
+    const provider = new OpenBetaProvider(fetchFn);
+
+    const result = await provider.sync(makeRun(db));
+
+    expect(result.errors).toEqual([
+      expect.objectContaining({
+        externalId: "missing-date",
+        message: "Skipped OpenBeta tick missing-date: invalid date (empty).",
+      }),
+    ]);
+  });
+
   it("follows the OpenBeta offset pagination contract", async () => {
     const firstPage = Array.from({ length: 100 }, (_, index) => tick({ _id: `tick-${index + 1}` }));
     const fetchFn = vi
@@ -233,6 +513,72 @@ describe("OpenBetaProvider", () => {
       .parse(JSON.parse(String(fetchFn.mock.calls[1]?.[1]?.body)));
     expect(secondRequest.variables).toEqual({ limit: 100, offset: 100 });
     expect(climbingEntryValues).toHaveBeenCalledTimes(101);
+  });
+
+  it.each([
+    ["empty tick id", tick({ _id: "" })],
+    ["invalid style", tick({ style: "Unknown" })],
+    ["invalid attempt type", tick({ attemptType: "Unknown" })],
+    ["invalid source", tick({ source: "Unknown" })],
+    ["invalid user payload", tick({ user: { username: 42, displayName: null } })],
+    ["invalid grades payload", tick({ climb: climb({ grades: { yds: 5.1 } }) })],
+    ["invalid climb type payload", tick({ climb: climb({ type: { bouldering: "false" } }) })],
+    ["invalid parent payload", tick({ climb: climb({ parent: { area_name: 42 } }) })],
+  ])("rejects %s instead of importing malformed tick data", async (_label, malformedTick) => {
+    const fetchFn = vi.fn().mockResolvedValue(graphqlResponse({ userTicks: [malformedTick] }));
+    const { db, climbingEntryValues } = makeDb();
+    const provider = new OpenBetaProvider(fetchFn);
+
+    const result = await provider.sync(makeRun(db));
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors[0]?.cause).toMatchObject({ name: "ZodError" });
+    expect(climbingEntryValues).not.toHaveBeenCalled();
+    expect(mocks.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "ZodError" }),
+      { tags: { provider: "openbeta", phase: "tick_export" } },
+    );
+  });
+
+  it("does not reconcile a complete response when one tick has an invalid date", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      graphqlResponse({
+        userTicks: [tick(), tick({ _id: "bad-date", dateClimbed: "not-a-date" })],
+      }),
+    );
+    const { db } = makeDb();
+    const provider = new OpenBetaProvider(fetchFn);
+
+    const result = await provider.sync(makeRun(db));
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(1);
+    expect(db.execute).not.toHaveBeenCalled();
+  });
+
+  it("does not reconcile a complete response when one tick has an unsupported grade", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      graphqlResponse({
+        userTicks: [
+          tick(),
+          tick({
+            _id: "unsupported-grade",
+            grade: "unknown",
+            climb: climb({ grades: grades({ yds: null }) }),
+          }),
+        ],
+      }),
+    );
+    const { db } = makeDb();
+    const provider = new OpenBetaProvider(fetchFn);
+
+    const result = await provider.sync(makeRun(db));
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toEqual([
+      expect.objectContaining({ context: { unsupportedGradeCount: 1 } }),
+    ]);
+    expect(db.execute).not.toHaveBeenCalled();
   });
 
   it("does not reconcile when ticks are malformed or have unsupported grades", async () => {
@@ -273,6 +619,74 @@ describe("OpenBetaProvider", () => {
     expect(db.execute).not.toHaveBeenCalled();
   });
 
+  it("requires a user context before loading provider state", async () => {
+    const { db } = makeDb();
+    const provider = new OpenBetaProvider(vi.fn());
+
+    const result = await provider.sync(makeRunWithoutUser(db));
+
+    expect(result).toMatchObject({
+      provider: "openbeta",
+      recordsSynced: 0,
+      errors: [expect.objectContaining({ message: "OpenBeta sync requires a user context." })],
+    });
+    expect(mocks.ensureProvider).not.toHaveBeenCalled();
+    expect(mocks.loadTokens).not.toHaveBeenCalled();
+  });
+
+  it("reports when the public profile identity is not stored", async () => {
+    mocks.loadTokens.mockResolvedValueOnce(null);
+    const { db } = makeDb();
+    const provider = new OpenBetaProvider(vi.fn());
+
+    const result = await provider.sync(makeRun(db));
+
+    expect(result).toMatchObject({
+      provider: "openbeta",
+      recordsSynced: 0,
+      errors: [expect.objectContaining({ message: expect.stringContaining("not found") })],
+    });
+  });
+
+  it("captures tick export failures and returns their actionable message", async () => {
+    const provider = new OpenBetaProvider(
+      vi.fn().mockResolvedValue(new Response("", { status: 500 })),
+    );
+    const { db } = makeDb();
+
+    const result = await provider.sync(makeRun(db));
+
+    expect(result).toMatchObject({
+      provider: "openbeta",
+      recordsSynced: 0,
+      errors: [expect.objectContaining({ message: "OpenBeta API request failed (500)." })],
+    });
+    expect(mocks.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "OpenBeta API request failed (500)." }),
+      { tags: { provider: "openbeta", phase: "tick_export" } },
+    );
+  });
+
+  it("captures climbing-entry write failures", async () => {
+    mocks.withSyncLog.mockRejectedValueOnce(new Error("climbing entry write failed"));
+    const provider = new OpenBetaProvider(
+      vi.fn().mockResolvedValue(graphqlResponse({ userTicks: [tick()] })),
+    );
+    const { db } = makeDb();
+
+    const result = await provider.sync(makeRun(db));
+
+    expect(result).toMatchObject({
+      provider: "openbeta",
+      recordsSynced: 0,
+      errors: [expect.objectContaining({ message: "climbing entry write failed" })],
+    });
+    expect(mocks.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "climbing entry write failed" }),
+      { tags: { provider: "openbeta", phase: "climbing_activity" } },
+    );
+  });
+
   it("does not retire existing ticks after an empty public tick list", async () => {
     const { db } = makeDb();
     const provider = new OpenBetaProvider(
@@ -283,5 +697,18 @@ describe("OpenBetaProvider", () => {
 
     expect(result).toMatchObject({ provider: "openbeta", recordsSynced: 0, errors: [] });
     expect(db.execute).not.toHaveBeenCalled();
+  });
+
+  it("reports that OpenBeta is always configured and exposes manual profile auth", () => {
+    const provider = new OpenBetaProvider(vi.fn());
+
+    expect(provider.validate()).toBeNull();
+    expect(provider.authSetup()).toMatchObject({
+      apiBaseUrl: "https://api.openbeta.io",
+      manualToken: {
+        label: "OpenBeta profile URL or username",
+        instructionsUrl: "https://openbeta.io/",
+      },
+    });
   });
 });
