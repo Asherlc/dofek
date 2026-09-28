@@ -3,9 +3,9 @@ import { captureException } from "dofek/lib/error-reporting";
 import type { Request, Response } from "express";
 import type { Provider } from "oidc-provider";
 import { z } from "zod";
-import { logger } from "../../logger.ts";
 import { getSessionIdFromRequest } from "../../auth/cookies.ts";
 import { validateSession } from "../../auth/session.ts";
+import { logger } from "../../logger.ts";
 import { getMcpIssuerUrl, getMcpResourceUrl } from "../oauth-config.ts";
 import {
   MCP_OAUTH_OFFLINE_ACCESS_SCOPE,
