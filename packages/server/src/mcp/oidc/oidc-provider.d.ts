@@ -94,6 +94,7 @@ declare module "oidc-provider" {
 
   export class Provider {
     constructor(issuer: string, configuration: ProviderConfiguration);
+    proxy: boolean;
     callback(): (request: Request, response: Response, next?: () => void) => void;
     interactionDetails(request: Request, response: Response): Promise<Record<string, unknown>>;
     interactionFinished(

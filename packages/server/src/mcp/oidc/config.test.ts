@@ -11,6 +11,13 @@ describe("MCP OIDC token exchange diagnostics", () => {
     warn.mockReset();
   });
 
+  it("trusts forwarded proxy headers for external OIDC URLs", () => {
+    const db: Pick<Database, "execute"> = { execute: vi.fn() };
+    const { provider } = createOidcProvider(db, { cookiesKeys: ["test-key"] });
+
+    expect(provider.proxy).toBe(true);
+  });
+
   it("logs the token endpoint rejection reason without assertion material", () => {
     const db: Pick<Database, "execute"> = { execute: vi.fn() };
     const { provider } = createOidcProvider(db, { cookiesKeys: ["test-key"] });

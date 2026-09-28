@@ -27503,6 +27503,39 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   restore the expected production service counts through the normal deployment
   workflow and verify the next analytics and reconciliation cycle.
 
+## 2026-09-28 — ChatGPT MCP OAuth token exchange rejected
+
+- **Symptoms / user impact:** After approving permissions in ChatGPT, the
+  account connection failed with “We couldn't connect your account. Please try
+  again.” The uploaded HAR shows ChatGPT's callback returning HTTP 400 with an
+  internal HTTP 401.
+- **Evidence:** After the diagnostic logging change shipped in image
+  `sha-0606e1d`, two production events at 2026-09-28 20:47:47 and 20:47:52 UTC
+  reported `InvalidClientAuth`, OAuth error `invalid_client`, and description
+  `client authentication failed`. Live OIDC discovery advertises issuer
+  `https://dofek.fit/` but token endpoint `http://dofek.fit/token`. The OIDC
+  provider is mounted as an Express callback in
+  [the OAuth route](../packages/server/src/mcp/oauth-route.ts); Express trusts
+  the proxy, but the `oidc-provider` Provider instance does not.
+- **Root cause:** `Provider.proxy` was left false, so the TLS-terminating
+  proxy's forwarded protocol was ignored and OIDC discovery emitted an HTTP
+  token endpoint on the HTTPS production site. The provider's [proxy
+  configuration guide](https://oidc-provider.dev/guides/proxy/) documents
+  setting `provider.proxy = true` for this Express deployment. The two matching
+  token-exchange events confirm the client authentication rejection; the exact
+  rejected assertion claim is not logged.
+- **Fix / mitigation:** The follow-up branch enables `provider.proxy` and adds
+  an integration regression check that sends `X-Forwarded-Proto: https` and
+  requires HTTPS token endpoint metadata.
+- **Validation:** Before the fix, the regression test failed with `http:` where
+  `https:` was expected. After the fix, the MCP OIDC integration suite passed
+  4/4; the workspace unit/mobile suite passed 19,018 tests with 20 skipped,
+  root/server/web typechecks passed, and workspace lint passed. Production
+  remains on `sha-0606e1d` until this follow-up is deployed.
+- **Remaining risk / follow-up:** Verify production discovery advertises an
+  HTTPS token endpoint after deployment, then retry the ChatGPT connection and
+  confirm token issuance.
+
 ## 2026-09-28 — Activity deletion slow and left the activity visible
 
 - **Symptoms / user impact:** Deleting an activity took about 66.6 seconds and

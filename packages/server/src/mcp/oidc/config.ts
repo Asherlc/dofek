@@ -191,6 +191,7 @@ export function createOidcProvider(
       ctx.body = `<!doctype html><html><head><title>Authorization error</title></head><body><h1>Authorization error</h1><p>${message}</p></body></html>`;
     },
   });
+  provider.proxy = true;
 
   provider.on("grant.error", (_context, error) => {
     logger.warn("mcp.oidc.token_exchange_failed", diagnosticErrorFields(error));
