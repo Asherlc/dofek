@@ -12,6 +12,7 @@ const meta = {
         gradeSystem: "v_scale",
         grade: "V4",
         sent: true,
+        ascentType: "Flash",
         attemptCount: 3,
         lead: null,
         routeName: "Blue Arete",
