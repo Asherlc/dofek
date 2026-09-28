@@ -883,6 +883,25 @@ describe("activityRouter", () => {
       expect(execute).not.toHaveBeenCalled();
     });
 
+    it("merge reports an actionable error when the activity view is missing", async () => {
+      const execute = vi.fn().mockRejectedValue(
+        Object.assign(new Error('relation "fitness.v_activity" does not exist'), {
+          code: "42P01",
+        }),
+      );
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
+
+      await expect(
+        caller.merge({
+          ids: ["00000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000002"],
+        }),
+      ).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message:
+          "Activity data is unavailable because the activity view is missing. Run migrations and retry.",
+      });
+    });
+
     it("invalidates activity and calendar caches after bulkDelete", async () => {
       const execute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
