@@ -995,4 +995,72 @@ export class ActivityRepository extends BaseRepository {
     `);
     return { deletedCount: uniqueActivityIds.length, memberActivityIds };
   }
+
+  /** Merge visible activity groups while preserving their provider source rows. */
+  async mergeActivities(
+    activityIds: string[],
+  ): Promise<{ groupId: string; memberActivityIds: string[]; affectedGroupIds: string[] }> {
+    const ids = [...new Set(activityIds)];
+    await this.db.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtextextended(${`activity-groups:${this.userId}`}, 0))`,
+    );
+    const selected = await this.query(
+      z.object({ id: z.string(), canonical_type: z.string(), started_at: timestampStringSchema }),
+      sql`SELECT id::text AS id, canonical_type::text AS canonical_type, started_at::text AS started_at
+        FROM fitness.v_activity WHERE user_id = ${this.userId}::uuid
+          AND id IN (${sql.join(
+            ids.map((id) => sql`${id}::uuid`),
+            sql`, `,
+          )}) ${this.timestampAccessPredicate(sql`started_at`)}`,
+    );
+    if (selected.length !== ids.length) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message:
+          "Some selected activities are no longer visible. Refresh the activity list and try again.",
+      });
+    }
+    if (new Set(selected.map((row) => row.canonical_type)).size !== 1) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "Selected activities must have the same type.",
+      });
+    }
+    const retained = [...selected].sort(
+      (a, b) => a.started_at.localeCompare(b.started_at) || a.id.localeCompare(b.id),
+    )[0];
+    if (!retained)
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Select at least two activities to merge.",
+      });
+    const groupIds = selected.map((row) => row.id);
+    const members = await this.query(
+      z.object({ id: z.string() }),
+      sql`SELECT id::text AS id
+      FROM fitness.activity WHERE user_id = ${this.userId}::uuid
+        AND group_id IN (${sql.join(
+          groupIds.map((id) => sql`${id}::uuid`),
+          sql`, `,
+        )})`,
+    );
+    const memberActivityIds = members.map((row) => row.id);
+    await this.db.execute(sql`UPDATE fitness.activity SET group_id = ${retained.id}::uuid
+      WHERE user_id = ${this.userId}::uuid
+        AND group_id IN (${sql.join(
+          groupIds.map((id) => sql`${id}::uuid`),
+          sql`, `,
+        )})
+        AND group_id <> ${retained.id}::uuid`);
+    await this.db.execute(sql`UPDATE fitness.activity_group SET manual_merge = true
+      WHERE user_id = ${this.userId}::uuid AND id = ${retained.id}::uuid`);
+    for (const retiredId of groupIds.filter((id) => id !== retained.id)) {
+      await this.db.execute(sql`UPDATE fitness.activity_group_alias SET group_id = ${retained.id}::uuid
+        WHERE user_id = ${this.userId}::uuid AND group_id = ${retiredId}::uuid`);
+      await this.db.execute(sql`INSERT INTO fitness.activity_group_alias (alias_id, group_id, user_id, reason)
+        VALUES (${retiredId}::uuid, ${retained.id}::uuid, ${this.userId}::uuid, 'merge')
+        ON CONFLICT (alias_id) DO UPDATE SET group_id = excluded.group_id`);
+    }
+    return { groupId: retained.id, memberActivityIds, affectedGroupIds: groupIds };
+  }
 }
