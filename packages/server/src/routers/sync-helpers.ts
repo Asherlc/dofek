@@ -106,7 +106,13 @@ async function doRegisterProviders() {
       "mountain-project",
       () => import("dofek/providers/mountain-project").then((m) => new m.MountainProjectProvider()),
     ],
-    ["openbeta", () => import("dofek/providers/openbeta").then((m) => new m.OpenBetaProvider())],
+    [
+      "openbeta",
+      () =>
+        import("dofek/providers/openbeta").then(
+          (openBetaModule) => new openBetaModule.OpenBetaProvider(),
+        ),
+    ],
     [
       "auto-supplements",
       () => import("dofek/providers/auto-supplements").then((m) => new m.AutoSupplementsProvider()),

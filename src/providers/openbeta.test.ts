@@ -553,6 +553,14 @@ describe("OpenBetaProvider", () => {
 
     expect(result.recordsSynced).toBe(1);
     expect(result.errors).toHaveLength(1);
+    expect(result.degradations).toEqual([
+      expect.objectContaining({
+        kind: "record_rejected",
+        providerId: "openbeta",
+        stepName: "climbing_activity",
+        context: { invalidDateCount: 1, unsupportedGradeCount: 0 },
+      }),
+    ]);
     expect(db.execute).not.toHaveBeenCalled();
   });
 
@@ -577,6 +585,14 @@ describe("OpenBetaProvider", () => {
     expect(result.recordsSynced).toBe(1);
     expect(result.errors).toEqual([
       expect.objectContaining({ context: { unsupportedGradeCount: 1 } }),
+    ]);
+    expect(result.degradations).toEqual([
+      expect.objectContaining({
+        kind: "record_rejected",
+        providerId: "openbeta",
+        stepName: "climbing_activity",
+        context: { invalidDateCount: 0, unsupportedGradeCount: 1 },
+      }),
     ]);
     expect(db.execute).not.toHaveBeenCalled();
   });
@@ -615,6 +631,14 @@ describe("OpenBetaProvider", () => {
 
     expect(result).toMatchObject({ provider: "openbeta", recordsSynced: 0 });
     expect(result.errors).toHaveLength(2);
+    expect(result.degradations).toEqual([
+      expect.objectContaining({
+        kind: "record_rejected",
+        providerId: "openbeta",
+        stepName: "climbing_activity",
+        context: { invalidDateCount: 1, unsupportedGradeCount: 1 },
+      }),
+    ]);
     expect(climbingEntryValues).not.toHaveBeenCalled();
     expect(db.execute).not.toHaveBeenCalled();
   });

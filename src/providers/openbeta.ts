@@ -476,8 +476,25 @@ export class OpenBetaProvider implements SyncProvider {
         context: { unsupportedGradeCount: parsed.unsupportedGradeCount },
       });
     }
+    const skippedTickCount = parsed.errors.length + parsed.unsupportedGradeCount;
     const degradations: SyncResult["degradations"] =
-      pages.degradations.length > 0 ? pages.degradations : undefined;
+      skippedTickCount > 0
+        ? [
+            ...pages.degradations,
+            {
+              kind: "record_rejected",
+              providerId: this.id,
+              stepName: "climbing_activity",
+              message: `Skipped ${skippedTickCount} OpenBeta ticks during parsing.`,
+              context: {
+                invalidDateCount: parsed.errors.length,
+                unsupportedGradeCount: parsed.unsupportedGradeCount,
+              },
+            },
+          ]
+        : pages.degradations.length > 0
+          ? pages.degradations
+          : undefined;
 
     try {
       recordsSynced = await withSyncLog(
@@ -545,7 +562,7 @@ export class OpenBetaProvider implements SyncProvider {
                 AND external_id NOT IN (${presentIdsSql})
             `);
           }
-          return { recordCount: count, result: count, degradations: pages.degradations };
+          return { recordCount: count, result: count, degradations };
         },
         userId,
       );
