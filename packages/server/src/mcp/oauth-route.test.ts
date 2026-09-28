@@ -249,6 +249,18 @@ describe("createMcpOAuthRouter", () => {
       expect(second.status).toBe(429);
     });
 
+    it("does not rate limit interaction requests when rate limiting is disabled", async () => {
+      app = await mount(false);
+
+      const responses = await Promise.all(
+        Array.from({ length: 6 }, () => fetch(`${app.baseUrl}/interaction/test-uid`)),
+      );
+
+      expect(responses.map((response) => response.status)).toEqual([
+        200, 200, 200, 200, 200, 200,
+      ]);
+    });
+
     it("prevents the consent page from being framed", async () => {
       app = await mount();
 
