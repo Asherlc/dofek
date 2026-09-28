@@ -121,6 +121,7 @@ const sessionEntryRowSchema = z.object({
 });
 const activityEntryRowSchema = z.object({
   id: z.string(),
+  provider_id: z.string(),
   climb_type: climbTypeSchema,
   grade_system: gradeSystemSchema,
   grade: z.string(),
@@ -136,6 +137,68 @@ const activityEntryRowSchema = z.object({
   wall_angle_degrees: z.coerce.number().nullable(),
 });
 type ClimbingActivityEntryDatabaseRow = z.infer<typeof activityEntryRowSchema>;
+
+function climbingIdentity(row: ClimbingActivityEntryDatabaseRow): string | null {
+  if (!row.route_name || !row.location_name) return null;
+  return JSON.stringify([
+    row.climb_type,
+    row.grade_system,
+    row.grade.trim().replace(/\s+/g, " ").toLocaleLowerCase(),
+    row.route_name.trim().replace(/\s+/g, " ").toLocaleLowerCase(),
+    row.location_name.trim().replace(/\s+/g, " ").toLocaleLowerCase(),
+    row.lead,
+  ]);
+}
+
+function compareDetailCompleteness(
+  left: ClimbingActivityEntryDatabaseRow,
+  right: ClimbingActivityEntryDatabaseRow,
+): number {
+  const completeness: Array<readonly [number, number]> = [
+    [Number(left.sent !== null), Number(right.sent !== null)],
+    [Number(left.attempt_count !== null), Number(right.attempt_count !== null)],
+    [left.attempts.length, right.attempts.length],
+  ];
+  for (const [leftValue, rightValue] of completeness) {
+    if (leftValue !== rightValue) return leftValue - rightValue;
+  }
+  return 0;
+}
+
+function deduplicateCrossProviderEntries(
+  rows: ClimbingActivityEntryDatabaseRow[],
+): ClimbingActivityEntryDatabaseRow[] {
+  const result: ClimbingActivityEntryDatabaseRow[] = [];
+  const byIdentity = new Map<
+    string,
+    Array<{ entry: ClimbingActivityEntryDatabaseRow; providers: Set<string>; sources: Set<string> }>
+  >();
+  for (const row of rows) {
+    const identity = climbingIdentity(row);
+    if (identity === null) {
+      result.push(row);
+      continue;
+    }
+    const candidates = byIdentity.get(identity) ?? [];
+    const match = candidates.find((candidate) => !candidate.providers.has(row.provider_id));
+    if (!match) {
+      const sources = new Set(row.source_name ? [row.source_name] : []);
+      candidates.push({ entry: row, providers: new Set([row.provider_id]), sources });
+      byIdentity.set(identity, candidates);
+      result.push(row);
+      continue;
+    }
+    const duplicate = match.entry;
+    match.providers.add(row.provider_id);
+    if (row.source_name) match.sources.add(row.source_name);
+    const preferred = compareDetailCompleteness(row, duplicate) > 0 ? row : duplicate;
+    Object.assign(duplicate, preferred, {
+      provider_id: duplicate.provider_id,
+      source_name: match.sources.size > 0 ? [...match.sources].join(", ") : null,
+    });
+  }
+  return result;
+}
 
 export interface ClimbingActivityEntryRow {
   id: string;
@@ -423,6 +486,7 @@ export class ClimbingRepository extends BaseRepository {
       activityEntryRowSchema,
       sql`SELECT
             ce.id::text AS id,
+            source_activity.provider_id,
             ce.climb_type,
             ce.grade_system,
             ce.grade,
@@ -448,6 +512,7 @@ export class ClimbingRepository extends BaseRepository {
           JOIN fitness.climbing_entry AS ce
             ON ce.activity_id = ANY(a.member_activity_ids)
            AND ce.provider_absent_at IS NULL
+          JOIN fitness.activity AS source_activity ON source_activity.id = ce.activity_id
           LEFT JOIN LATERAL (
             SELECT
               COUNT(*)::int AS attempt_count,
@@ -465,7 +530,7 @@ export class ClimbingRepository extends BaseRepository {
             AND a.id = ${activityId}::uuid
             ${this.timestampAccessPredicate(sql`a.started_at`)}`,
     );
-    return rows
+    return deduplicateCrossProviderEntries(rows)
       .map((row) => {
         const display = this.#displayGrade(row.climb_type, row.grade_system, row.grade);
         return display
