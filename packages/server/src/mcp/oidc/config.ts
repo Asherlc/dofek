@@ -76,10 +76,10 @@ function diagnosticErrorFields(error: unknown): {
   const safeDescription = description
     .replace(/\b[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, "[redacted]")
     .replace(
-      /\b(client_assertion|code|access_token|refresh_token|authorization)=[^\s;,]+/gi,
+      /\b(client_assertion|client_secret|code|access_token|refresh_token|authorization)=[^\s;,]+/gi,
       "$1=[redacted]",
     )
-    .replace(/(https?:\/\/[^\s?#]+)\?[^\s#;,)]*/gi, "$1?[redacted]")
+    .replace(/(https?:\/\/[^\s?#]+)\?[^\s#)]*/gi, "$1?[redacted]")
     .slice(0, 300);
   const statusResult = z.number().safeParse(fields.status);
   const statusCodeResult = z.number().safeParse(fields.statusCode);

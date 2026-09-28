@@ -19,7 +19,8 @@ describe("MCP OIDC token exchange diagnostics", () => {
       error: "invalid_client",
       error_description:
         `Client assertion rejected: ${assertion}; code=authorization-code-fixture; ` +
-        "issuer=https://issuer.example/token?secret=fixture-secret&state=fixture-state; " +
+        "client_secret=client-secret-fixture; " +
+        "issuer=https://issuer.example/token?secret=fixture-secret;state=fixture-state; " +
         "legacy=http://legacy.example/callback?key=fixture-key",
       name: "InvalidClientAuth",
       status: 401,
@@ -31,14 +32,17 @@ describe("MCP OIDC token exchange diagnostics", () => {
       error_name: "InvalidClientAuth",
       error_description:
         "Client assertion rejected: [redacted]; code=[redacted]; " +
-        "issuer=https://issuer.example/token?[redacted]; " +
+        "client_secret=[redacted]; " +
+        "issuer=https://issuer.example/token?[redacted] " +
         "legacy=http://legacy.example/callback?[redacted]",
       http_status: 401,
       oauth_error: "invalid_client",
     });
     expect(JSON.stringify(warn.mock.calls)).not.toContain(assertion);
     expect(JSON.stringify(warn.mock.calls)).not.toContain("authorization-code-fixture");
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("client-secret-fixture");
     expect(JSON.stringify(warn.mock.calls)).not.toContain("fixture-secret");
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("fixture-state");
     expect(JSON.stringify(warn.mock.calls)).not.toContain("fixture-key");
   });
 

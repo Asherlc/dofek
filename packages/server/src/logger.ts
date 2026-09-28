@@ -17,7 +17,17 @@ export const logger = winston.createLogger({
     new winston.transports.Console({
       format: winston.format.combine(
         winston.format.colorize(),
-        winston.format.printf(({ level, message }) => `${level}: ${message}`),
+        winston.format.printf((info) => {
+          const details = JSON.stringify({
+            error_name: info.error_name,
+            error_description: info.error_description,
+            http_status: info.http_status,
+            oauth_error: info.oauth_error,
+          });
+          return details === "{}"
+            ? `${info.level}: ${info.message}`
+            : `${info.level}: ${info.message} ${details}`;
+        }),
       ),
     }),
   ],

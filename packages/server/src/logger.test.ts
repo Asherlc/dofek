@@ -29,6 +29,28 @@ describe("logger", () => {
     }
   });
 
+  it("console transport includes only allowlisted structured OIDC diagnostics", () => {
+    const transport = logger.transports[0];
+    const formatted = transport.format?.transform({
+      level: "warn",
+      message: "mcp.oidc.token_exchange_failed",
+      error_name: "InvalidClientAuth",
+      error_description: "invalid client",
+      http_status: 401,
+      oauth_error: "invalid_client",
+      request: { authorization: "must not be rendered" },
+      [Symbol.for("level")]: "warn",
+    });
+
+    expect(formatted).not.toBe(false);
+    if (formatted !== false && formatted !== undefined) {
+      const output = String(formatted[Symbol.for("message")]);
+      expect(output).toContain('"error_description":"invalid client"');
+      expect(output).toContain('"http_status":401');
+      expect(output).not.toContain("must not be rendered");
+    }
+  });
+
   it("default format includes timestamp, level, and message", () => {
     const formatted = logger.format.transform({
       level: "info",
