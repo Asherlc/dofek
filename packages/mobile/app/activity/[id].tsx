@@ -398,7 +398,7 @@ interface ClimbingEntry {
     notes: string | null;
     outcome: "sent" | "failed";
   }>;
-  ascentType: "Flash" | "Onsight" | "Redpoint" | "Repeat" | null;
+  ascentType: "Flash" | "Onsight" | "Redpoint" | "Pinkpoint" | "Repeat" | null;
   holdType: "crimp" | "sloper" | "pinch" | "pocket" | "jug" | null;
   routeName: string | null;
   locationName: string | null;
@@ -960,6 +960,7 @@ export default function ActivityDetailScreen() {
                     <Text style={climbingStyles.routeName}>
                       {tick.routeName ?? (tick.climbType === "boulder" ? "Boulder" : "Route")}
                     </Text>
+                    {tick.ascentType && <Text style={climbingStyles.sent}>{tick.ascentType}</Text>}
                     <Text style={climbingStyles.locationName}>
                       {[
                         tick.grade,

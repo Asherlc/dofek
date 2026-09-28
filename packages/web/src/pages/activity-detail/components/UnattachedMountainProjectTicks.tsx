@@ -60,6 +60,7 @@ export function UnattachedMountainProjectTicks({
                         .filter(Boolean)
                         .join(" · ")}
                     </p>
+                    {tick.ascentType && <p className="text-sm text-green-500">{tick.ascentType}</p>}
                     {tickState?.error ? (
                       <p role="alert" className="text-sm text-red-400">
                         {tickState.error}
