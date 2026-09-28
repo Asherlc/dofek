@@ -7,7 +7,7 @@ import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
 
 const USER_ID = "00000000-0000-0000-0000-000000000001";
-const OPENBETA_USER_UUID = "51e4a2f9-93ca-44db-9efb-9bc663da6cbe";
+const OPENBETA_USER_UUID = "00000000-0000-0000-0000-000000000002";
 
 const mocks = vi.hoisted(() => ({
   ensureProvider: vi.fn().mockResolvedValue(undefined),
