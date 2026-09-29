@@ -4,11 +4,12 @@ import type { Database } from "dofek/db";
 import { captureException } from "dofek/lib/error-reporting";
 import express, { Router } from "express";
 import { rateLimit as createRateLimiter } from "express-rate-limit";
+import type { Provider } from "oidc-provider";
 import { logger } from "../logger.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { verifyMcpAccessToken } from "./access-token-verifier.ts";
 import { foodMutationTelemetryFromRequest, logFoodMutation } from "./mutation-telemetry.ts";
-import { getMcpIssuerUrl, getMcpResourceUrl } from "./oauth-config.ts";
+import { getMcpResourceUrl } from "./oauth-config.ts";
 import type { McpAuthRateLimitOptions } from "./oauth-route.ts";
 import {
   mcpClientCorrelationId,
@@ -20,6 +21,7 @@ import {
 import { createDofekMcpServer } from "./tools.ts";
 
 export interface CreateMcpRouterOptions {
+  provider: Pick<Provider, "AccessToken">;
   db: Pick<Database, "execute" | "select" | "transaction">;
   rateLimit?: McpAuthRateLimitOptions;
   sensorStore?: ActivitySensorStore;
@@ -165,7 +167,7 @@ export function createMcpRouter(options: CreateMcpRouterOptions): Router {
 
     const verifiedPrincipal = await verifyMcpAccessToken(token, {
       db: options.db,
-      issuer: getMcpIssuerUrl().href,
+      provider: options.provider,
       resourceUrl: getMcpResourceUrl().href,
     });
     if (!verifiedPrincipal) {

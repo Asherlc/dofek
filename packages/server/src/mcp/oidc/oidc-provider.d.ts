@@ -113,6 +113,7 @@ declare module "oidc-provider" {
     on(event: string, listener: (...args: unknown[]) => void): this;
     emit(event: string, ...args: unknown[]): boolean;
     Grant: GrantConstructor;
+    AccessToken: { find(token: string): Promise<unknown> };
   }
 
   export { Provider as default };

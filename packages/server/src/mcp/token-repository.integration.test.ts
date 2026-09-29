@@ -195,8 +195,6 @@ describe("MCP token repository (integration)", () => {
       name: "First",
       scopes: ["health:read"],
       expiresAt: null,
-      oauthClientId: "claude-client",
-      oauthResource: "https://dofek.example/api/mcp",
     });
     await createMcpToken(ctx.db, {
       userId: testUserId,
@@ -210,9 +208,7 @@ describe("MCP token repository (integration)", () => {
     expect(tokens).toHaveLength(2);
     const byName = new Map(tokens.map((token) => [token.name, token]));
     expect(byName.get("First")?.scopes).toEqual(["health:read"]);
-    expect(byName.get("First")?.oauthClientId).toBe("claude-client");
     expect(byName.get("Second")?.scopes).toEqual(["activity:read", "nutrition:read"]);
-    expect(byName.get("Second")?.oauthClientId).toBeNull();
   });
 
   it("lists, updates, and revokes OIDC connected-app grants", async () => {
