@@ -96,6 +96,7 @@ export const PROVIDER_CATALOG: Readonly<Record<string, ProviderCatalogEntry>> = 
   "zos-app": { label: "Zepp OS App", family: zeppApp },
   velohero: { label: "VeloHero", brandColor: "#FF6600" },
   "mountain-project": { label: "Mountain Project", brandColor: "#1F5A88" },
+  openbeta: { label: "OpenBeta" },
   wger: { label: "Wger", logo: { type: "png" } },
   xert: { label: "Xert", logo: { type: "png" } },
   "apple-health": { label: "Apple Health" },

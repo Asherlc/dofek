@@ -22,7 +22,7 @@ This directory contains implementations for various data providers (fitness trac
 
 ## Supported Providers
 
-- **API/credential/OAuth sync providers**: Amazfit/Zepp, BodySpec, Concept2, Cycling Analytics, Eight Sleep, FatSecret, Garmin, Mountain Project, Oura, Peloton, Polar, Ride with GPS, Strava, TrainerRoad, Ultrahuman, VeloHero, Wahoo, Wger, WHOOP, Withings, Xert, Ziva, Zwift.
+- **API/credential/OAuth sync providers**: Amazfit/Zepp, BodySpec, Concept2, Cycling Analytics, Eight Sleep, FatSecret, Garmin, Mountain Project, OpenBeta, Oura, Peloton, Polar, Ride with GPS, Strava, TrainerRoad, Ultrahuman, VeloHero, Wahoo, Wger, WHOOP, Withings, Xert, Ziva, Zwift.
 - **Internal schedule providers**: Auto-Supplements materializes bounded,
   user-scoped supplement dose occurrences. It never writes food entries or
   infers that a planned dose was taken.
@@ -95,6 +95,28 @@ these access tokens as non-expiring unless explicitly revoked. Normal Polar
 reconnect remains stricter and requires confirmed deregistration.
 [Polar AccessLink users](https://www.polar.com/accesslink-api/#users),
 [OAuth 2.0 Bearer `invalid_token`](https://www.rfc-editor.org/rfc/rfc6750#section-3.1).
+
+## OpenBeta
+
+OpenBeta is a public-profile climbing tick provider. Users connect by entering
+their public OpenBeta profile URL or username; the provider resolves the
+profile to its stable UUID and reads the paginated `userTicks` GraphQL query.
+The OpenBeta GraphQL repository documents the production endpoint as
+`https://api.openbeta.io` and describes the API as a climbing database API
+([OpenBeta GraphQL API](https://github.com/OpenBeta/openbeta-graphql)).
+
+The first integration imports public ticks only. Each tick is stored as an
+unattached `fitness.climbing_entry` with its original GraphQL payload in
+`raw`; no OpenBeta credentials, session cookies, route writes, or synthetic
+activities are used. OpenBeta's public profile pages expose a user's logbook
+and tick history ([example public tick page](https://openbeta.io/u/thickles/ticks)).
+
+OpenBeta grades are mapped from the route's published grade fields, preferring
+V-scale for boulders and YDS for routes, with the other supported grade
+systems retained when those fields are available. A complete,
+non-empty tick list reconciles missing OpenBeta ticks as soft tombstones;
+empty, malformed, partially unsupported, or failed responses do not retire
+existing rows.
 
 ## OAuth authorization erasure
 

@@ -579,6 +579,7 @@ table fitness.climbing_entry {
     (climb_type, grade_system, grade) [name: 'climbing_entry_grade_lookup_idx']
     (activity_id, external_id) [name: 'climbing_entry_activity_external_id_idx', unique]
     (user_id, provider_id, external_id) [name: 'climbing_entry_mountain_project_external_id_idx', unique]
+    (user_id, provider_id, external_id) [name: 'climbing_entry_openbeta_external_id_idx', unique]
 
 
 

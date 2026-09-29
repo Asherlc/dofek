@@ -7,6 +7,53 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-09-28 — OpenBeta provider mutation gate failed
+
+- **Status:** Fixed in code; CI rerun pending.
+- **Symptoms / impact:** PR #2820's `Test / Stryker (0)` job failed, blocking
+  merge. There was no production impact.
+- **Evidence / root cause:** The first fatal line in the
+  [Stryker job log](https://github.com/Asherlc/dofek/actions/runs/36479715692/job/109123887612)
+  reported `Final mutation score 41.18 under breaking threshold 75`. The new
+  OpenBeta provider's unit tests covered its happy paths but left API-error,
+  schema-validation, grade-fallback, and partial-response branches either
+  uncovered or behaviorally indistinguishable from mutants.
+- **Direct fix:** Added focused OpenBeta tests for profile parsing and
+  transport failures, malformed GraphQL payloads, all supported grade systems
+  and fallbacks, missing identities, write/export failures, and reconciliation
+  safety on partial responses.
+- **Validation:** The focused unit suite passes 31/31 tests. The exact Stryker
+  command scores 78.53% (267/340 mutants killed, zero no-coverage mutants),
+  above the 75% break threshold. The pushed revision still needs the full CI
+  rerun.
+- **Remaining risk / follow-up:** Confirm all fresh PR checks pass and retain
+  the focused mutation cases when OpenBeta parsing or schema behavior changes.
+
+## 2026-09-28 — Local Compose validation exhausted Docker bridge networks
+
+- **Status:** Resolved locally; no production impact.
+- **Symptoms / impact:** The OpenBeta integration test could not start the
+  workspace Compose dependencies because Docker returned `all predefined
+  address pools have been fully subnetted` while creating the workspace
+  network. Provider validation was blocked until the local Docker state was
+  cleaned up.
+- **Evidence / root cause:** `docker network inspect` showed the active
+  workspace networks had running containers, while many stale Compose default
+  networks had no attached containers. Those unattached networks had consumed
+  the available bridge subnets. Docker documents that unused networks can be
+  removed independently from containers and volumes ([Docker network prune
+  reference](https://docs.docker.com/reference/cli/docker/network/prune/)).
+- **Direct fix:** Removed only the explicitly identified unattached Compose
+  bridge networks, preserving all networks with running containers and all
+  volumes. Compose then started the workspace dependencies and the OpenBeta
+  integration test passed.
+- **Validation:** `pnpm test:integration --
+  src/providers/openbeta-sync.integration.test.ts` passed one test; no
+  application or production service was changed.
+- **Remaining risk / follow-up:** Archived workspaces should continue to remove
+  their Compose networks during cleanup so local bridge-pool exhaustion does
+  not recur. Do not remove networks that still have attached containers.
+
 ## 2026-09-26 — MCP migration PR CI failures
 
 - **Status:** Fixed in code; CI rerun pending.

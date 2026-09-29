@@ -71,6 +71,13 @@ async function doRegisterProviders() {
       () => import("../providers/mountain-project.ts").then((m) => new m.MountainProjectProvider()),
     ],
     [
+      "openbeta",
+      () =>
+        import("../providers/openbeta.ts").then(
+          (openBetaModule) => new openBetaModule.OpenBetaProvider(),
+        ),
+    ],
+    [
       "auto-supplements",
       () => import("../providers/auto-supplements.ts").then((m) => new m.AutoSupplementsProvider()),
     ],

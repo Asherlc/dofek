@@ -84,6 +84,7 @@ const PROVIDER_QUEUE_CONFIGS: ReadonlyMap<string, ProviderQueueConfig> = new Map
   ["wger", frequentProvider()],
   ["concept2", frequentProvider()],
   ["mountain-project", frequentProvider()],
+  ["openbeta", frequentProvider()],
   ["auto-supplements", frequentProvider()],
 
   // ── Daily tier ──
