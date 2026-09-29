@@ -40,6 +40,8 @@ describe("logger", () => {
       error_cause: "JWKSNoMatchingKey",
       http_status: 401,
       oauth_error: "invalid_client",
+      presented_client_auth: "none",
+      registered_client_auth: "private_key_jwt",
       request: { authorization: "must not be rendered" },
       [Symbol.for("level")]: "warn",
     });
@@ -51,6 +53,8 @@ describe("logger", () => {
       expect(output).toContain('"error_detail":"client not found"');
       expect(output).toContain('"error_cause":"JWKSNoMatchingKey"');
       expect(output).toContain('"http_status":401');
+      expect(output).toContain('"presented_client_auth":"none"');
+      expect(output).toContain('"registered_client_auth":"private_key_jwt"');
       expect(output).not.toContain("must not be rendered");
     }
   });

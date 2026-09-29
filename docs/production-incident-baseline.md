@@ -9,7 +9,7 @@ them, and the durability work they suggest.
 
 ## 2026-09-29 — Expo version validation blocked the OAuth diagnostic PR
 
-- **Status:** Fixed locally; the updated PR's CI is pending.
+- **Status:** Fixed and deployed with PR #2830.
 - **Symptoms / impact:** PR #2830's `Build Mobile / Metro Bundle` job stopped
   before bundling, delaying deployment of ChatGPT OAuth diagnostics. Production
   mobile behavior was unchanged.
@@ -22,8 +22,8 @@ them, and the durability work they suggest.
 - **Direct fix / validation:** Updated those five pins and the pnpm lockfile to
   Expo's current compatible versions. A local `expo install --check`, frozen
   lockfile install, TypeScript typecheck, and iOS Metro export all pass.
-- **Remaining risk / follow-up:** Confirm the rerun's Metro bundle and native
-  builds pass before merging.
+- **Remaining risk / follow-up:** The rerun's Metro bundle and native builds
+  passed before merging; keep Expo's version check as the compatibility gate.
 
 ## 2026-09-29 — WHOOP deleted workouts were not tombstoned
 
@@ -71,8 +71,8 @@ them, and the durability work they suggest.
 
 ## 2026-09-28 — ChatGPT MCP connection still rejects client authentication
 
-- **Status:** Unresolved; PR #2826 deployed redacted OAuth diagnostics, and a
-  fresh ChatGPT attempt still failed.
+- **Status:** Unresolved; PRs #2826 and #2830 deployed redacted OAuth
+  diagnostics, and the user's fresh ChatGPT attempt still failed.
 - **Symptoms / user impact:** ChatGPT still cannot complete the Dofek MCP
   account connection after the TLS proxy fix was deployed.
 - **Evidence:** Production OAuth discovery now advertises
@@ -82,19 +82,23 @@ them, and the durability work they suggest.
   00:42:26 UTC. ChatGPT's public client metadata declares `private_key_jwt`
   and an HTTPS JWKS URI. [OpenAI's authentication guide](https://developers.openai.com/plugins/build/auth/)
   documents that method and its CIMD negotiation.
-- **Root cause:** The specific failed client-authentication check is unknown.
-  The 2026-09-29 13:23 UTC attempt reached `/authorize` (303), then `/token`
-  returned `invalid_client` (401). The console logger's explicit field
-  allowlist omitted the new `error_detail` and `error_cause` fields, so the
-  server logs still showed only `client authentication failed`. A synthetic
-  invalid-client request reproduced the same omission.
-- **Fix / validation:** The HTTPS token endpoint was verified from the live
-  discovery document. The diagnostics are deployed; a focused test now proves
-  the console formatter includes their already-sanitized fields, and the
-  formatter fix is awaiting deployment.
-- **Remaining risk / follow-up:** Identify the exact rejection check from a
-  fresh attempt after deploying the formatter fix, then add a reproducing test
-  and fix that cause. Verify token issuance and MCP tool discovery in ChatGPT.
+- **Root cause:** The 2026-09-29 15:25:50 UTC attempt reached `/token` and
+  [`oidc-provider` rejected it](https://github.com/panva/node-oidc-provider/blob/v9.12.2/lib/shared/client_auth.js)
+  because the presented client authentication mechanism did not match the
+  registered method. The authorization code's
+  client ID is ChatGPT's [public metadata document](https://chatgpt.com/oauth/client.json),
+  which declares `private_key_jwt` and lists `none` among supported methods.
+  The exact mechanism ChatGPT presented has not yet been captured. The earlier
+  diagnostic gap was the console logger's explicit allowlist omitting
+  `error_detail` and `error_cause`.
+- **Fix / validation:** PR #2830 extended the console allowlist; production
+  image `sha-5cd7124` now runs on both web replicas. A synthetic invalid-client
+  request logged the sanitized reason `client not found`, and the user's fresh
+  attempt logged the precise method mismatch. The manual deploy succeeded after
+  the exact image build passed; the required main macOS jobs were still queued.
+- **Remaining risk / follow-up:** Log only the presented and registered method
+  labels on a token failure, then reproduce the mismatch and fix its cause.
+  Verify token issuance and MCP tool discovery in ChatGPT.
 
 ## 2026-09-29 — Queued macOS runners delayed OAuth diagnostic deployment
 

@@ -57,6 +57,62 @@ const diagnosticErrorSchema = z.object({
   statusCode: z.unknown().optional(),
 });
 
+const tokenRequestSchema = z.object({
+  headers: z.object({ authorization: z.unknown().optional() }).optional(),
+  oidc: z
+    .object({
+      client: z.object({ clientAuthMethod: z.unknown() }).optional(),
+      params: z
+        .object({
+          client_assertion: z.unknown().optional(),
+          client_secret: z.unknown().optional(),
+        })
+        .optional(),
+    })
+    .optional(),
+});
+
+const registeredClientAuthMethodSchema = z.enum([
+  "none",
+  "client_secret_basic",
+  "client_secret_post",
+  "client_secret_jwt",
+  "private_key_jwt",
+  "tls_client_auth",
+  "self_signed_tls_client_auth",
+  "attest_jwt_client_auth",
+]);
+
+function tokenClientAuthFields(context: unknown): {
+  presented_client_auth?: string;
+  registered_client_auth?: string;
+} {
+  const parsed = tokenRequestSchema.safeParse(context);
+  if (!parsed.success) return {};
+
+  const { headers, oidc } = parsed.data;
+  const registered = registeredClientAuthMethodSchema.safeParse(oidc?.client?.clientAuthMethod);
+  const params = oidc?.params;
+  if (!params) {
+    return registered.success ? { registered_client_auth: registered.data } : {};
+  }
+
+  const presented = params.client_secret
+    ? "client_secret_post"
+    : typeof headers?.authorization === "string"
+      ? headers.authorization.toLowerCase().startsWith("basic ")
+        ? "client_secret_basic"
+        : "authorization_header"
+      : params.client_assertion !== undefined
+        ? "client_assertion"
+        : "none";
+
+  return {
+    presented_client_auth: presented,
+    ...(registered.success ? { registered_client_auth: registered.data } : {}),
+  };
+}
+
 function diagnosticErrorFields(error: unknown): {
   error_name: string;
   error_description: string;
@@ -212,8 +268,11 @@ export function createOidcProvider(
   });
   provider.proxy = true;
 
-  provider.on("grant.error", (_context, error) => {
-    logger.warn("mcp.oidc.token_exchange_failed", diagnosticErrorFields(error));
+  provider.on("grant.error", (context, error) => {
+    logger.warn("mcp.oidc.token_exchange_failed", {
+      ...diagnosticErrorFields(error),
+      ...tokenClientAuthFields(context),
+    });
   });
 
   return { provider };

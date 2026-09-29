@@ -25,6 +25,8 @@ export const logger = winston.createLogger({
             error_cause: info.error_cause,
             http_status: info.http_status,
             oauth_error: info.oauth_error,
+            presented_client_auth: info.presented_client_auth,
+            registered_client_auth: info.registered_client_auth,
           });
           return details === "{}"
             ? `${info.level}: ${info.message}`
