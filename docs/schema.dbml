@@ -1167,60 +1167,11 @@ table fitness.mcp_access_token {
   last_used_at "timestamp with time zone"
   expires_at "timestamp with time zone"
   revoked_at "timestamp with time zone"
-  oauth_client_id text
-  oauth_resource text
 
   indexes {
     user_id [name: 'mcp_access_token_user_idx']
     token_hash [name: 'mcp_access_token_token_hash_idx']
     (user_id, revoked_at, expires_at) [name: 'mcp_access_token_active_idx']
-  }
-}
-
-table fitness.mcp_oauth_authorization_code {
-  id uuid [pk, not null, default: `gen_random_uuid()`]
-  code_hash text [not null, unique]
-  client_id text [not null]
-  user_id uuid [not null]
-  scopes text[] [not null]
-  code_challenge text [not null]
-  redirect_uri text [not null]
-  resource text [not null]
-  expires_at "timestamp with time zone" [not null]
-  consumed_at "timestamp with time zone"
-  created_at "timestamp with time zone" [not null, default: `now()`]
-
-  indexes {
-    expires_at [name: 'mcp_oauth_authorization_code_expires_idx']
-  }
-}
-
-table fitness.mcp_oauth_client {
-  client_id text [pk, not null]
-  client_secret text
-  client_metadata jsonb [not null]
-  client_id_issued_at bigint
-  client_secret_expires_at bigint
-  created_at "timestamp with time zone" [not null, default: `now()`]
-}
-
-table fitness.mcp_oauth_refresh_token {
-  id uuid [pk, not null, default: `gen_random_uuid()`]
-  token_hash text [not null, unique]
-  client_id text [not null]
-  user_id uuid [not null]
-  access_token_id uuid [not null]
-  parent_refresh_token_id uuid
-  scopes text[] [not null]
-  resource text [not null]
-  expires_at "timestamp with time zone" [not null]
-  revoked_at "timestamp with time zone"
-  created_at "timestamp with time zone" [not null, default: `now()`]
-
-  indexes {
-
-    (client_id, revoked_at, expires_at) [name: 'mcp_oauth_refresh_token_active_idx']
-    parent_refresh_token_id [name: 'mcp_oauth_refresh_token_parent_idx']
   }
 }
 
@@ -2197,14 +2148,6 @@ ref companion_token_user_id_user_profile_id_fk: fitness.companion_token.user_id 
 ref data_export_user_id_user_profile_id_fk: fitness.data_export.user_id > fitness.user_profile.id [delete: cascade, update: no action]
 
 ref mcp_access_token_user_id_user_profile_id_fk: fitness.mcp_access_token.user_id > fitness.user_profile.id [delete: cascade, update: no action]
-
-ref mcp_oauth_authorization_code_user_id_user_profile_id_fk: fitness.mcp_oauth_authorization_code.user_id > fitness.user_profile.id [delete: cascade, update: no action]
-
-ref mcp_oauth_refresh_token_user_id_user_profile_id_fk: fitness.mcp_oauth_refresh_token.user_id > fitness.user_profile.id [delete: cascade, update: no action]
-
-ref mcp_oauth_refresh_token_access_token_id_mcp_access_token_id_fk: fitness.mcp_oauth_refresh_token.access_token_id > fitness.mcp_access_token.id [delete: cascade, update: no action]
-
-ref mcp_oauth_refresh_token_parent_fk: fitness.mcp_oauth_refresh_token.parent_refresh_token_id > fitness.mcp_oauth_refresh_token.id [delete: cascade, update: no action]
 
 ref session_user_id_user_profile_id_fk: fitness.session.user_id > fitness.user_profile.id [delete: cascade, update: no action]
 

@@ -139,7 +139,7 @@ Input:
 
 The response includes `token` once. Store it in the MCP client. Dofek stores only a hash.
 
-List existing token metadata with `mcp.listTokens`. Revoke a token with `mcp.revokeToken`.
+List existing token metadata with `mcp.listPersonalTokens`. Revoke a token with `mcp.revokeToken`.
 
 `nutrition:write` is an explicit opt-in. It is not selected by default when a
 manual token is created, and OAuth's default scope request omits it. Existing

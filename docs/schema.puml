@@ -683,48 +683,6 @@ entity "mcp_access_token" {
   last_used_at : timestamp
   expires_at : timestamp
   revoked_at : timestamp
-  oauth_client_id : text
-  oauth_resource : text
-}
-
-entity "mcp_oauth_authorization_code" {
-  * id : uuid <<PK>>
-  --
-  code_hash : text
-  client_id : text
-  user_id : uuid <<FK>>
-  scopes : text_array
-  code_challenge : text
-  redirect_uri : text
-  resource : text
-  expires_at : timestamp
-  consumed_at : timestamp
-  created_at : timestamp
-}
-
-entity "mcp_oauth_client" {
-  * client_id : text <<PK>>
-  --
-  client_secret : text
-  client_metadata : jsonb
-  client_id_issued_at : bigint
-  client_secret_expires_at : bigint
-  created_at : timestamp
-}
-
-entity "mcp_oauth_refresh_token" {
-  * id : uuid <<PK>>
-  --
-  token_hash : text
-  client_id : text
-  user_id : uuid <<FK>>
-  access_token_id : uuid <<FK>>
-  parent_refresh_token_id : uuid <<FK>>
-  scopes : text_array
-  resource : text
-  expires_at : timestamp
-  revoked_at : timestamp
-  created_at : timestamp
 }
 
 entity "session" {
@@ -1378,10 +1336,6 @@ user_profile ||--o{ auth_account
 user_profile ||--o{ companion_token
 user_profile ||--o{ data_export
 user_profile ||--o{ mcp_access_token
-user_profile ||--o{ mcp_oauth_authorization_code
-user_profile ||--o{ mcp_oauth_refresh_token
-mcp_access_token ||--o{ mcp_oauth_refresh_token
-mcp_oauth_refresh_token ||--o{ mcp_oauth_refresh_token
 user_profile ||--o{ session
 user_profile ||--o{ user_billing
 user_profile ||--o{ user_external_effect
