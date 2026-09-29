@@ -553,7 +553,12 @@ export default function ActivityDetailScreen() {
       if (id) {
         await trpcUtils.activity.hangboardDetails.invalidate({ id });
       }
-      await trpcUtils.activity.list.invalidate();
+      await Promise.all([
+        trpcUtils.activity.list.invalidate(),
+        trpcUtils.calendar.weekList.invalidate(),
+        trpcUtils.calendar.activityOverview.invalidate(),
+        trpcUtils.calendar.calendarData.invalidate(),
+      ]);
       router.back();
     },
   });
@@ -637,41 +642,41 @@ export default function ActivityDetailScreen() {
     { id: id ?? "" },
     { enabled: !!id && isClimbingActivity },
   );
-  const tickSuggestions = trpc.climbing.unattachedMountainProjectTicks.useQuery(
+  const entrySuggestions = trpc.climbing.unattachedClimbingEntries.useQuery(
     { activityId: id },
     { enabled: !!id && isClimbingActivity },
   );
-  const [tickAttachState, setTickAttachState] = useState<
+  const [entryAttachState, setEntryAttachState] = useState<
     Record<string, { pending: boolean; error: string | null }>
   >({});
-  const attachTick = trpc.climbing.attachMountainProjectTick.useMutation({
+  const attachEntry = trpc.climbing.attachClimbingEntry.useMutation({
     onSuccess: async (_result, input) => {
       await Promise.all([
         trpcUtils.climbing.activityEntries.invalidate({ id: input.activityId }),
         trpcUtils.climbing.sessionSummary.invalidate(),
         trpcUtils.climbing.gradeProgression.invalidate(),
         trpcUtils.climbing.volumeByGrade.invalidate(),
-        trpcUtils.climbing.unattachedMountainProjectTicks.invalidate({
+        trpcUtils.climbing.unattachedClimbingEntries.invalidate({
           activityId: input.activityId,
         }),
       ]);
     },
   });
-  const handleAttachTick = (tickId: string) => {
+  const handleAttachEntry = (entryId: string) => {
     if (!id) return;
-    setTickAttachState((current) => ({ ...current, [tickId]: { pending: true, error: null } }));
-    attachTick.mutate(
-      { activityId: id, tickId },
+    setEntryAttachState((current) => ({ ...current, [entryId]: { pending: true, error: null } }));
+    attachEntry.mutate(
+      { activityId: id, entryId },
       {
         onSuccess: () =>
-          setTickAttachState((current) => ({
+          setEntryAttachState((current) => ({
             ...current,
-            [tickId]: { pending: false, error: null },
+            [entryId]: { pending: false, error: null },
           })),
         onError: (error) =>
-          setTickAttachState((current) => ({
+          setEntryAttachState((current) => ({
             ...current,
-            [tickId]: { pending: false, error: userFacingErrorMessage(error) },
+            [entryId]: { pending: false, error: userFacingErrorMessage(error) },
           })),
       },
     );
@@ -934,41 +939,50 @@ export default function ActivityDetailScreen() {
       )}
       {isClimbingActivity && (
         <View style={climbingStyles.container}>
-          <Text style={climbingStyles.sectionTitle}>Unattached Mountain Project ticks</Text>
-          {tickSuggestions.error ? (
+          <Text style={climbingStyles.sectionTitle}>Unattached climbing entries</Text>
+          {entrySuggestions.error ? (
             <QueryStatePanel
               variant="error"
-              message={getQueryErrorMessage(tickSuggestions.error)}
-              onRetry={() => void tickSuggestions.refetch()}
-              retrying={tickSuggestions.isFetching}
+              message={getQueryErrorMessage(entrySuggestions.error)}
+              onRetry={() => void entrySuggestions.refetch()}
+              retrying={entrySuggestions.isFetching}
             />
-          ) : tickSuggestions.isLoading && !tickSuggestions.data ? (
+          ) : entrySuggestions.isLoading && !entrySuggestions.data ? (
             <QueryStatePanel variant="loading" />
-          ) : (tickSuggestions.data?.length ?? 0) === 0 ? (
+          ) : (entrySuggestions.data?.length ?? 0) === 0 ? (
             <QueryStatePanel
               variant="empty"
-              message="No unattached Mountain Project ticks for this day."
+              message="No unattached climbing entries for this day."
             />
           ) : (
-            tickSuggestions.data?.map((tick) => {
-              const state = tickAttachState[tick.id];
+            entrySuggestions.data?.map((entry) => {
+              const state = entryAttachState[entry.id];
               const result =
-                tick.sent === true ? "Sent" : tick.sent === false ? "Attempted" : "Status unknown";
+                entry.sent === true
+                  ? "Sent"
+                  : entry.sent === false
+                    ? "Attempted"
+                    : "Status unknown";
               return (
-                <View key={tick.id} style={climbingStyles.entryRow}>
+                <View key={entry.id} style={climbingStyles.entryRow}>
                   <View style={climbingStyles.entryDetails}>
                     <Text style={climbingStyles.routeName}>
-                      {tick.routeName ?? (tick.climbType === "boulder" ? "Boulder" : "Route")}
+                      {entry.routeName ?? (entry.climbType === "boulder" ? "Boulder" : "Route")}
                     </Text>
-                    {tick.ascentType && <Text style={climbingStyles.sent}>{tick.ascentType}</Text>}
+                    <Text style={climbingStyles.locationName}>
+                      {entry.sourceName ?? providerSourceLabel(entry.providerId)}
+                    </Text>
+                    {entry.ascentType && (
+                      <Text style={climbingStyles.sent}>{entry.ascentType}</Text>
+                    )}
                     <Text style={climbingStyles.locationName}>
                       {[
-                        tick.grade,
+                        entry.grade,
                         result,
-                        tick.attemptCount === null
+                        entry.attemptCount === null
                           ? null
-                          : `${tick.attemptCount} ${tick.attemptCount === 1 ? "attempt" : "attempts"}`,
-                        tick.locationName,
+                          : `${entry.attemptCount} ${entry.attemptCount === 1 ? "attempt" : "attempts"}`,
+                        entry.locationName,
                       ]
                         .filter(Boolean)
                         .join(" · ")}
@@ -980,7 +994,7 @@ export default function ActivityDetailScreen() {
                     accessibilityLabel="Attach to this activity"
                     disabled={state?.pending}
                     style={climbingStyles.attachButton}
-                    onPress={() => handleAttachTick(tick.id)}
+                    onPress={() => handleAttachEntry(entry.id)}
                   >
                     <Text style={climbingStyles.attachButtonText}>
                       {state?.pending ? "Attaching..." : "Attach"}

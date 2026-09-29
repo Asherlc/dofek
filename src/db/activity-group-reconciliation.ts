@@ -10,6 +10,8 @@ const memberSchema = z.object({
   group_created_at: z.coerce.date(),
   anchor_activity_id: z.guid(),
   overlapping_activity_ids: z.array(z.guid()),
+  manual_merge: z.boolean(),
+  manual_merge_anchor_id: z.guid(),
 });
 const aliasSchema = z.object({ alias_id: z.guid(), group_id: z.guid() });
 
@@ -30,7 +32,8 @@ export async function reconcileActivityGroups(
     memberSchema,
     sql`
     WITH active AS MATERIALIZED (
-      SELECT a.id, a.group_id, a.created_at, g.created_at AS group_created_at,
+      SELECT a.id, a.group_id, a.created_at, g.created_at AS group_created_at, g.manual_merge,
+        first_value(a.id) OVER (PARTITION BY g.id ORDER BY a.created_at, a.id) AS manual_merge_anchor_id,
         first_value(a.id) OVER (PARTITION BY g.id ORDER BY a.created_at, a.id) AS anchor_activity_id,
         a.provider_id, a.canonical_type, a.started_at,
         COALESCE(a.ended_at, a.started_at + interval '1 hour') AS ended_at
@@ -55,7 +58,8 @@ export async function reconcileActivityGroups(
           AND overlap_seconds / NULLIF(shorter_duration_seconds, 0) > 0.8)
       GROUP BY activity_id
     )
-    SELECT active.id, active.group_id, active.created_at, active.group_created_at,
+    SELECT active.id, active.group_id, active.created_at, active.group_created_at, active.manual_merge,
+      active.manual_merge_anchor_id,
       active.anchor_activity_id,
       COALESCE(overlap_edges.overlapping_activity_ids, ARRAY[]::uuid[]) AS overlapping_activity_ids
     FROM active LEFT JOIN overlap_edges ON overlap_edges.activity_id = active.id`,
@@ -97,12 +101,15 @@ export async function reconcileActivityGroups(
       createdAt: member.created_at,
     })),
     groups: [...groups.values()],
-    overlaps: members.flatMap((member) =>
-      member.overlapping_activity_ids.map((overlappingActivityId) => ({
+    overlaps: members.flatMap((member) => [
+      ...member.overlapping_activity_ids.map((overlappingActivityId) => ({
         activityId: member.id,
         overlappingActivityId,
       })),
-    ),
+      ...(member.manual_merge && member.id !== member.manual_merge_anchor_id
+        ? [{ activityId: member.id, overlappingActivityId: member.manual_merge_anchor_id }]
+        : []),
+    ]),
   });
   for (const component of decision.components) {
     let groupId: string;
@@ -119,6 +126,15 @@ export async function reconcileActivityGroups(
       groupId = createdGroup.id;
     } else {
       groupId = resolveTarget(component.target.groupId);
+    }
+    if (
+      component.memberIds.some((id) =>
+        members.some((member) => member.id === id && member.manual_merge),
+      )
+    ) {
+      await transaction.execute(
+        sql`UPDATE fitness.activity_group SET manual_merge = true WHERE id = ${groupId}::uuid`,
+      );
     }
     if (component.memberIds.every((id) => originalGroups.get(id) === groupId)) continue;
     const memberIds = sql.join(

@@ -565,7 +565,7 @@ export class WhoopClient {
       params.limit = String(options.limit);
     }
     if (options?.nextToken) {
-      params.next_token = options.nextToken;
+      params.nextToken = options.nextToken;
     }
     const raw = await this.#getWithRateLimitRetry<unknown>(
       `${WHOOP_API_BASE}${WHOOP_DEVELOPER_WORKOUT_PATH}`,

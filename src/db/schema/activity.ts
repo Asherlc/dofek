@@ -234,6 +234,7 @@ export const activityGroup = fitness.table(
       .references(() => userProfile.id),
     anchorActivityId: uuid("anchor_activity_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    manualMerge: boolean("manual_merge").notNull().default(false),
   },
   (table) => [uniqueIndex("activity_group_user_id_idx").on(table.userId, table.id)],
 );

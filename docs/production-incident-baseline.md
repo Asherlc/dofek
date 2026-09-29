@@ -7,6 +7,31 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-09-29 — WHOOP deleted workouts were not tombstoned
+
+- **Status:** The reported activity is tombstoned in production. The pagination
+  fix is committed and pushed; it still needs deployment.
+- **Symptoms / impact:** WHOOP workouts deleted in the WHOOP service remained
+  visible in Dofek. Activity
+  `fb7b918b-263d-425e-9d81-bac825ce677e` had an active WHOOP source row with
+  `provider_absent_at IS NULL`.
+- **Evidence / root cause:** Production recorded a repeated developer-workout
+  pagination cursor on every scheduled sync from September 22 through 29. The
+  WHOOP client sent the continuation query parameter as `next_token`, while
+  WHOOP's [workout collection API](https://developer.whoop.com/api/) specifies
+  `nextToken`. WHOOP therefore returned the first page again, and the sync
+  correctly skipped absence reconciliation on the incomplete listing.
+- **Direct fix:** Send the documented `nextToken` parameter. Updated the local
+  WHOOP OpenAPI description and existing client assertion to match.
+- **Production repair and validation:** Marked only the reported WHOOP source
+  row absent, scoped by source row ID, user, provider, and WHOOP external ID.
+  The update affected one row; `fitness.v_activity` returned zero rows for the
+  visible activity ID immediately afterward. The WHOOP client suite passed
+  86/86 tests, and full CI passed on the PR commit before merging `main`.
+- **Remaining risk / follow-up:** Deploy the pagination fix and confirm WHOOP
+  syncs no longer report repeated cursors and that subsequent deleted workouts
+  receive provider absence tombstones.
+
 ## 2026-09-28 — ChatGPT diagnostic PR mutation gate failed
 
 - **Status:** Fixed; the PR's rerun passed the mutation gate and full CI.
@@ -27656,3 +27681,12 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `fix-activity-deletion-stuck` but is not deployed. Production still has the
   reported member active. After the normal deployment, verify its source row
   is soft-deleted and the authenticated activity list omits the group.
+
+## 2026-09-28 — Local Docker Desktop AIO limit blocked canonical integration tests
+
+- **Symptoms / user impact:** `pnpm test:integration` could not start Redpanda, so feature integration tests did not run.
+- **Evidence:** Redpanda logged `Could not setup Async I/O: unknown error` and reported `/proc/sys/fs/aio-max-nr` at `65536`; `aio-nr` was also `65536`. Other Compose dependencies were healthy. Docker Desktop runs containers inside its Linux VM ([Docker Desktop for Mac](https://docs.docker.com/desktop/setup/install/mac-permission-requirements/)).
+- **Root cause:** The Docker Desktop Linux VM's system-wide asynchronous I/O request limit was exhausted at 65,536.
+- **Fix:** With user authorization, raised the VM value to `1048576` using a privileged, host-PID Alpine container. A fresh workspace container then reported `aio-max-nr=1048576` and Redpanda became healthy.
+- **Validation:** The canonical runner reached Vitest; the activity-group reconciliation integration suite passed 19/19 tests. The initial filtered run used an underscore pattern and skipped all tests; it was corrected to the exact test title before results were accepted.
+- **Remaining risk / follow-up:** Docker Desktop may reset this VM-only sysctl after a restart. Reapply the setting if Redpanda reports the same AIO capacity error. No repository runtime workaround was added.

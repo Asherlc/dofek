@@ -46,6 +46,7 @@ export function ActivitiesPage() {
   const [showHidden, setShowHidden] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmMerge, setConfirmMerge] = useState(false);
   const [confirmRestore, setConfirmRestore] = useState(false);
   const [selectedActivityIds, setSelectedActivityIds] = useState<Set<string>>(new Set());
   const [deletedActivityIds, setDeletedActivityIds] = useState<Set<string>>(new Set());
@@ -86,6 +87,19 @@ export function ActivitiesPage() {
         }
         return next;
       });
+    },
+  });
+  const mergeActivities = trpc.activity.merge.useMutation({
+    onSuccess: async () => {
+      await Promise.all([
+        trpcUtils.calendar.weekList.invalidate(),
+        trpcUtils.calendar.activityOverview.invalidate(),
+        trpcUtils.calendar.calendarData.invalidate(),
+        trpcUtils.activity.list.invalidate(),
+      ]);
+      setSelectedActivityIds(new Set());
+      setSelectMode(false);
+      setConfirmMerge(false);
     },
   });
   const restoreProviderAbsent = trpc.activity.restoreProviderAbsent.useMutation({
@@ -154,12 +168,21 @@ export function ActivitiesPage() {
     hiddenActivityIds.has(id),
   ).length;
   const selectedVisibleCount = selectedCount - selectedHiddenCount;
+  const selectedTypes = new Set(
+    (dayGroups ?? [])
+      .flatMap((day) => day.activities)
+      .filter((activity) => selectedActivityIds.has(activity.id) && !activity.isProviderAbsent)
+      .map((activity) => activity.activityType),
+  );
+  const mergeEligible =
+    selectedVisibleCount >= 2 && selectedTypes.size === 1 && selectedCount === selectedVisibleCount;
   const subtitle = `Last ${weeks} weeks`;
 
   const cancelSelection = () => {
     setSelectedActivityIds(new Set());
     setSelectMode(false);
     setConfirmDelete(false);
+    setConfirmMerge(false);
     setConfirmRestore(false);
   };
 
@@ -223,10 +246,14 @@ export function ActivitiesPage() {
           canSelect={hasActivities}
           selectMode={selectMode}
           confirmDelete={confirmDelete}
+          confirmMerge={confirmMerge}
           confirmRestore={confirmRestore}
           selectedCount={selectedCount}
           selectedHiddenCount={selectedHiddenCount}
           selectedVisibleCount={selectedVisibleCount}
+          mergeEligible={mergeEligible}
+          mergePending={mergeActivities.isPending}
+          mixedTypes={selectedTypes.size > 1}
           deletePending={bulkDelete.isPending}
           restorePending={restoreProviderAbsent.isPending}
           onActivityTypeChange={updateActivityType}
@@ -235,11 +262,16 @@ export function ActivitiesPage() {
           onSelect={() => setSelectMode(true)}
           onCancelSelection={cancelSelection}
           onDeleteSelected={() => setConfirmDelete(true)}
+          onMergeSelected={() => setConfirmMerge(true)}
           onRestoreSelected={() => setConfirmRestore(true)}
           onConfirmDelete={handleConfirmDelete}
+          onConfirmMerge={() => mergeActivities.mutate({ ids: [...selectedActivityIds] })}
           onConfirmRestore={handleConfirmRestore}
         />
         {bulkDelete.error ? <QueryStatePanel error={bulkDelete.error} height={80} /> : null}
+        {mergeActivities.error ? (
+          <QueryStatePanel error={mergeActivities.error} height={80} />
+        ) : null}
         {restoreProviderAbsent.error ? (
           <QueryStatePanel error={restoreProviderAbsent.error} height={80} />
         ) : null}
@@ -316,10 +348,14 @@ interface ActivityControlsProps {
   canSelect: boolean;
   selectMode: boolean;
   confirmDelete: boolean;
+  confirmMerge: boolean;
   confirmRestore: boolean;
   selectedCount: number;
   selectedHiddenCount: number;
   selectedVisibleCount: number;
+  mergeEligible: boolean;
+  mergePending: boolean;
+  mixedTypes: boolean;
   deletePending: boolean;
   restorePending: boolean;
   onActivityTypeChange: (activityType: string) => void;
@@ -328,8 +364,10 @@ interface ActivityControlsProps {
   onSelect: () => void;
   onCancelSelection: () => void;
   onDeleteSelected: () => void;
+  onMergeSelected: () => void;
   onRestoreSelected: () => void;
   onConfirmDelete: () => void;
+  onConfirmMerge: () => void;
   onConfirmRestore: () => void;
 }
 
@@ -341,10 +379,14 @@ function ActivityControls({
   canSelect,
   selectMode,
   confirmDelete,
+  confirmMerge,
   confirmRestore,
   selectedCount,
   selectedHiddenCount,
   selectedVisibleCount,
+  mergeEligible,
+  mergePending,
+  mixedTypes,
   deletePending,
   restorePending,
   onActivityTypeChange,
@@ -353,14 +395,16 @@ function ActivityControls({
   onSelect,
   onCancelSelection,
   onDeleteSelected,
+  onMergeSelected,
   onRestoreSelected,
   onConfirmDelete,
+  onConfirmMerge,
   onConfirmRestore,
 }: ActivityControlsProps) {
   const selectionGuidanceId = useId();
   const selectionGuidance = showHidden
-    ? "Choose visible activities to delete or hidden activities to restore."
-    : "Choose one or more activities to delete.";
+    ? "Choose visible activities to merge or delete, or hidden activities to restore."
+    : "Choose activities to merge or delete.";
   const selectedCountLabel = `${selectedCount} ${
     selectedCount === 1 ? "activity" : "activities"
   } selected`;
@@ -424,8 +468,35 @@ function ActivityControls({
                 {restorePending ? "Restoring..." : "Confirm Restore"}
               </button>
             </>
+          ) : confirmMerge ? (
+            <>
+              <span className="text-xs text-muted">
+                Merge selected activities into one activity spanning their times? Original provider
+                records remain.
+              </span>
+              <button
+                type="button"
+                onClick={onConfirmMerge}
+                disabled={mergePending || !mergeEligible}
+                className="px-3 py-1.5 text-xs rounded bg-accent text-on-accent disabled:opacity-50"
+              >
+                {mergePending ? "Merging..." : "Confirm Merge"}
+              </button>
+            </>
           ) : (
             <>
+              <button
+                type="button"
+                onClick={onMergeSelected}
+                disabled={!mergeEligible || mergePending}
+                title={mixedTypes ? "Selected activities must have the same type" : undefined}
+                className="px-3 py-1.5 text-xs rounded bg-accent text-on-accent disabled:opacity-50"
+              >
+                Merge
+              </button>
+              {mixedTypes ? (
+                <span className="text-xs text-muted">Select activities of one type to merge.</span>
+              ) : null}
               {showHidden ? (
                 <button
                   type="button"
@@ -449,7 +520,7 @@ function ActivityControls({
           <button
             type="button"
             onClick={onCancelSelection}
-            disabled={deletePending || restorePending}
+            disabled={deletePending || restorePending || mergePending}
             className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors cursor-pointer"
           >
             Cancel

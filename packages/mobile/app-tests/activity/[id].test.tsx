@@ -82,7 +82,7 @@ vi.mock("react-native-svg", () => ({
 
 vi.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ id: "00000000-0000-0000-0000-000000000001" }),
-  useRouter: () => ({ back: vi.fn() }),
+  useRouter: () => ({ back: mockRouterBack }),
 }));
 
 vi.mock("../../components/ChartTitleWithTooltip", () => ({
@@ -232,8 +232,10 @@ const mockPowerZonesQuery = vi.fn();
 const mockStrengthExercisesQuery = vi.fn();
 const mockClimbingEntriesQuery = vi.fn();
 const mockHangboardDetailsQuery = vi.fn();
+const mockDeleteMutate = vi.fn();
 const mockRecomputeMutate = vi.fn();
 const mockRecomputeShouldFail = vi.fn(() => false);
+const mockRouterBack = vi.fn();
 const mockActivityByIdInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityStreamInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityHrZonesInvalidate = vi.fn().mockResolvedValue(undefined);
@@ -243,14 +245,15 @@ const mockActivityHangboardDetailsInvalidate = vi.fn().mockResolvedValue(undefin
 const mockActivityListInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockCalendarWeekListInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockCalendarActivityOverviewInvalidate = vi.fn().mockResolvedValue(undefined);
-const mockTickSuggestionsQuery = vi.fn((_input?: unknown, _options?: unknown) => ({
+const mockCalendarDataInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockEntrySuggestionsQuery = vi.fn((_input?: unknown, _options?: unknown) => ({
   data: [],
   error: null,
   isLoading: false,
 }));
-const mockAttachTickMutate = vi.fn();
+const mockAttachEntryMutate = vi.fn();
 const mockClimbingEntriesInvalidate = vi.fn().mockResolvedValue(undefined);
-const mockTickSuggestionsInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockEntrySuggestionsInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockClimbingSessionSummaryInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockClimbingGradeProgressionInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockClimbingVolumeByGradeInvalidate = vi.fn().mockResolvedValue(undefined);
@@ -280,26 +283,34 @@ vi.mock("../../lib/trpc", () => ({
           isPending: false,
         }),
       },
-      delete: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+      delete: {
+        useMutation: (options?: { onSuccess?: () => Promise<void> }) => ({
+          mutate: (input: { id: string }) => {
+            mockDeleteMutate(input);
+            void options?.onSuccess?.();
+          },
+          isPending: false,
+        }),
+      },
     },
     climbing: {
       activityEntries: { useQuery: (...args: unknown[]) => mockClimbingEntriesQuery(...args) },
-      unattachedMountainProjectTicks: {
-        useQuery: (...args: unknown[]) => mockTickSuggestionsQuery(...args),
+      unattachedClimbingEntries: {
+        useQuery: (...args: unknown[]) => mockEntrySuggestionsQuery(...args),
       },
-      attachMountainProjectTick: {
+      attachClimbingEntry: {
         useMutation: (options?: {
           onSuccess?: (
             result: { attached: true },
-            input: { activityId: string; tickId: string },
+            input: { activityId: string; entryId: string },
           ) => Promise<void> | void;
-          onError?: (error: Error, input: { activityId: string; tickId: string }) => void;
+          onError?: (error: Error, input: { activityId: string; entryId: string }) => void;
         }) => ({
           mutate: (
-            input: { activityId: string; tickId: string },
+            input: { activityId: string; entryId: string },
             callbacks?: { onSuccess?: () => void; onError?: (error: Error) => void },
           ) => {
-            mockAttachTickMutate(input);
+            mockAttachEntryMutate(input);
             void options?.onSuccess?.({ attached: true }, input);
             callbacks?.onSuccess?.();
           },
@@ -320,10 +331,11 @@ vi.mock("../../lib/trpc", () => ({
       calendar: {
         weekList: { invalidate: mockCalendarWeekListInvalidate },
         activityOverview: { invalidate: mockCalendarActivityOverviewInvalidate },
+        calendarData: { invalidate: mockCalendarDataInvalidate },
       },
       climbing: {
         activityEntries: { invalidate: mockClimbingEntriesInvalidate },
-        unattachedMountainProjectTicks: { invalidate: mockTickSuggestionsInvalidate },
+        unattachedClimbingEntries: { invalidate: mockEntrySuggestionsInvalidate },
         sessionSummary: { invalidate: mockClimbingSessionSummaryInvalidate },
         gradeProgression: { invalidate: mockClimbingGradeProgressionInvalidate },
         volumeByGrade: { invalidate: mockClimbingVolumeByGradeInvalidate },
@@ -412,15 +424,16 @@ beforeEach(() => {
   mockPowerZonesQuery.mockClear();
   mockStrengthExercisesQuery.mockClear();
   mockClimbingEntriesQuery.mockClear();
-  mockTickSuggestionsQuery.mockReset();
-  mockTickSuggestionsQuery.mockReturnValue({ data: [], error: null, isLoading: false });
-  mockAttachTickMutate.mockClear();
+  mockEntrySuggestionsQuery.mockReset();
+  mockEntrySuggestionsQuery.mockReturnValue({ data: [], error: null, isLoading: false });
+  mockAttachEntryMutate.mockClear();
   mockClimbingEntriesInvalidate.mockClear();
-  mockTickSuggestionsInvalidate.mockClear();
+  mockEntrySuggestionsInvalidate.mockClear();
   mockClimbingSessionSummaryInvalidate.mockClear();
   mockClimbingGradeProgressionInvalidate.mockClear();
   mockClimbingVolumeByGradeInvalidate.mockClear();
   mockHangboardDetailsQuery.mockClear();
+  mockDeleteMutate.mockClear();
   mockRecomputeMutate.mockClear();
   mockRecomputeShouldFail.mockReset();
   mockRecomputeShouldFail.mockReturnValue(false);
@@ -433,6 +446,8 @@ beforeEach(() => {
   mockActivityListInvalidate.mockClear();
   mockCalendarWeekListInvalidate.mockClear();
   mockCalendarActivityOverviewInvalidate.mockClear();
+  mockCalendarDataInvalidate.mockClear();
+  mockRouterBack.mockClear();
   vi.mocked(Alert.alert).mockClear();
   vi.mocked(captureException).mockClear();
   mockByIdQuery.mockReturnValue({ data: baseCyclingActivity, isLoading: false, error: null });
@@ -445,6 +460,27 @@ beforeEach(() => {
 });
 
 describe("ActivityDetailScreen", () => {
+  it("invalidates Activities screen queries after deleting an activity", async () => {
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    fireEvent.click(screen.getByLabelText("Delete Activity"));
+    const deleteAction = vi.mocked(Alert.alert).mock.calls[0]?.[2]?.[1];
+    if (!deleteAction || typeof deleteAction.onPress !== "function") {
+      throw new Error("Expected the destructive delete action");
+    }
+    deleteAction.onPress();
+
+    await waitFor(() => {
+      expect(mockDeleteMutate).toHaveBeenCalledWith({ id: baseCyclingActivity.id });
+      expect(mockActivityListInvalidate).toHaveBeenCalledOnce();
+      expect(mockCalendarWeekListInvalidate).toHaveBeenCalledOnce();
+      expect(mockCalendarActivityOverviewInvalidate).toHaveBeenCalledOnce();
+      expect(mockCalendarDataInvalidate).toHaveBeenCalledOnce();
+      expect(mockRouterBack).toHaveBeenCalledOnce();
+    });
+  });
+
   it("renders the server-provided calendar date at a UTC boundary", async () => {
     mockByIdQuery.mockReturnValue({
       data: {
@@ -469,16 +505,18 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText(/2026-03-18 at/)).toBeTruthy();
   });
 
-  it("renders server tick suggestions and attaches only the selected tick", async () => {
+  it("renders server suggestions from both providers and attaches only the selected entry", async () => {
     mockByIdQuery.mockReturnValue({
       data: { ...baseCyclingActivity, activityType: "climbing", name: "Morning Rock Climb" },
       isLoading: false,
       error: null,
     });
-    mockTickSuggestionsQuery.mockReturnValue({
+    mockEntrySuggestionsQuery.mockReturnValue({
       data: [
         {
           id: "tick-1",
+          providerId: "mountain-project",
+          sourceName: "Mountain Project",
           climbType: "boulder",
           gradeSystem: "v_scale",
           grade: "V4",
@@ -490,6 +528,8 @@ describe("ActivityDetailScreen", () => {
         },
         {
           id: "tick-2",
+          providerId: "openbeta",
+          sourceName: "OpenBeta",
           climbType: "route",
           gradeSystem: "yds",
           grade: "5.10a",
@@ -505,21 +545,23 @@ describe("ActivityDetailScreen", () => {
     });
     const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
     render(React.createElement(ActivityDetailScreen));
-    expect(getQueryEnabledFlag(mockTickSuggestionsQuery.mock.calls[0]?.[1])).toBe(true);
-    expect(screen.getByText("Unattached Mountain Project ticks")).toBeTruthy();
+    expect(getQueryEnabledFlag(mockEntrySuggestionsQuery.mock.calls[0]?.[1])).toBe(true);
+    expect(screen.getByText("Unattached climbing entries")).toBeTruthy();
+    expect(screen.getByText("Mountain Project")).toBeTruthy();
+    expect(screen.getByText("OpenBeta")).toBeTruthy();
     expect(screen.getByText("Blue Circuit")).toBeTruthy();
     const controls = screen.getAllByRole("button", { name: "Attach to this activity" });
     expect(controls).toHaveLength(2);
     const secondControl = controls.at(1);
     if (!secondControl) throw new Error("Expected a second attach control");
     fireEvent.click(secondControl);
-    expect(mockAttachTickMutate).toHaveBeenCalledWith({
+    expect(mockAttachEntryMutate).toHaveBeenCalledWith({
       activityId: baseCyclingActivity.id,
-      tickId: "tick-2",
+      entryId: "tick-2",
     });
     await waitFor(() => {
       expect(mockClimbingEntriesInvalidate).toHaveBeenCalledWith({ id: baseCyclingActivity.id });
-      expect(mockTickSuggestionsInvalidate).toHaveBeenCalledWith({
+      expect(mockEntrySuggestionsInvalidate).toHaveBeenCalledWith({
         activityId: baseCyclingActivity.id,
       });
       expect(mockClimbingSessionSummaryInvalidate).toHaveBeenCalledWith();
@@ -535,12 +577,12 @@ describe("ActivityDetailScreen", () => {
       isLoading: false,
       error: null,
     });
-    mockTickSuggestionsQuery.mockReturnValue({ data: undefined, error: null, isLoading: true });
+    mockEntrySuggestionsQuery.mockReturnValue({ data: undefined, error: null, isLoading: true });
     const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
     const view = render(React.createElement(ActivityDetailScreen));
     expect(view.container.querySelector('[testid="query-state-loading"]')).toBeTruthy();
     view.unmount();
-    mockTickSuggestionsQuery.mockReturnValue({
+    mockEntrySuggestionsQuery.mockReturnValue({
       data: undefined,
       error: new Error("Tick service unavailable"),
       isLoading: false,
@@ -556,10 +598,10 @@ describe("ActivityDetailScreen", () => {
       isLoading: false,
       error: null,
     });
-    mockTickSuggestionsQuery.mockReturnValue({ data: [], error: null, isLoading: false });
+    mockEntrySuggestionsQuery.mockReturnValue({ data: [], error: null, isLoading: false });
     const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
     render(React.createElement(ActivityDetailScreen));
-    expect(screen.getByText("No unattached Mountain Project ticks for this day.")).toBeTruthy();
+    expect(screen.getByText("No unattached climbing entries for this day.")).toBeTruthy();
   });
 
   it("recomputes the activity and invalidates detail caches", async () => {

@@ -1416,7 +1416,7 @@ paths:
       summary: List workouts (developer API format)
       description: |
         Returns workouts in the developer API format with UUID IDs and
-        sport_name strings. Paginated via next_token.
+        sport_name strings. Paginated via nextToken.
       tags: [Developer API]
       parameters:
         - name: limit
@@ -1424,7 +1424,7 @@ paths:
           schema:
             type: integer
             default: 10
-        - name: next_token
+        - name: nextToken
           in: query
           schema:
             type: string

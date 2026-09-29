@@ -481,6 +481,7 @@ table fitness.activity_group {
   user_id uuid [not null]
   anchor_activity_id uuid
   created_at "timestamp with time zone" [not null, default: `now()`]
+  manual_merge boolean [not null, default: false]
 
   indexes {
     (user_id, id) [name: 'activity_group_user_id_idx', unique]
