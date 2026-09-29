@@ -169,7 +169,7 @@ services:
     restart: "no"
 
   peerdb-flow-api:
-    image: ghcr.io/peerdb-io/flow-api:stable-v0.37.7
+    image: ghcr.io/peerdb-io/flow-api:stable-v0.37.10
     environment: &peerdb-flow-environment
       PEERDB_CATALOG_HOST: peerdb-catalog
       PEERDB_CATALOG_PORT: "5432"
