@@ -7,6 +7,25 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-09-28 — ChatGPT diagnostic PR mutation gate failed
+
+- **Status:** Fixed locally; CI rerun pending.
+- **Symptoms / impact:** PR #2826's `Test / Stryker (0)` job failed and blocked
+  deployment of the redacted OAuth diagnostics. Production authentication was
+  unchanged.
+- **Evidence / root cause:** The [Stryker job](https://github.com/Asherlc/dofek/actions/runs/36505556997/job/109206406990)
+  ran `pnpm exec stryker run stryker.ci.config.json --mutate "$MUTATE_FILES"`.
+  Its first fatal line reported `Final mutation score 30.77 under breaking
+  threshold 75`. Eighteen mutants survived because the new tests exercised
+  only a parameter-wrapped assertion, leaving standalone assertions, other
+  parameter values, URLs, opaque keys, and the detail length boundary
+  untested.
+- **Direct fix / validation:** Added focused cases for those redaction paths.
+  The exact local Stryker configuration and mutate ranges now score 100%
+  (26/26 killed). The focused OIDC unit suite passes 7/7.
+- **Remaining risk / follow-up:** Confirm the fresh PR CI mutation jobs pass
+  before merging and deploying the diagnostic.
+
 ## 2026-09-28 — ChatGPT MCP connection still rejects client authentication
 
 - **Status:** Unresolved; investigation paused at the implementation approach

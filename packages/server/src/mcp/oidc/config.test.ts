@@ -81,6 +81,44 @@ describe("MCP OIDC token exchange diagnostics", () => {
     expect(JSON.stringify(warn.mock.calls)).not.toContain(assertion);
   });
 
+  it("redacts standalone assertions, parameter values, URLs, and opaque keys in provider details", () => {
+    const db: Pick<Database, "execute"> = { execute: vi.fn() };
+    const { provider } = createOidcProvider(db, { cookiesKeys: ["test-key"] });
+    const assertion = ["eyJhbGciOiJSUzI1NiJ9", "eyJzdWIiOiJjaGF0Z3B0In0", "signature"].join(".");
+    const opaqueKey = "abcdefghijklmnopqrstuvwx";
+
+    provider.emit(
+      "grant.error",
+      {},
+      {
+        error_detail:
+          `JWT ${assertion}; api_key=small-secret, x=42 ` +
+          `http://auth.example/token?key=secret https://auth.example/token?key=secret ${opaqueKey}`,
+      },
+    );
+
+    const logged = warn.mock.calls[0]?.[1];
+    expect(logged.error_detail).toBe(
+      "JWT [redacted]; api_key=[redacted], x=[redacted] " +
+        "[redacted URL] [redacted URL] [redacted]",
+    );
+    expect(JSON.stringify(logged)).not.toContain("small-secret");
+    expect(JSON.stringify(logged)).not.toContain(opaqueKey);
+    expect(JSON.stringify(logged)).not.toContain("key=secret");
+  });
+
+  it("bounds provider detail length without cutting short details", () => {
+    const db: Pick<Database, "execute"> = { execute: vi.fn() };
+    const { provider } = createOidcProvider(db, { cookiesKeys: ["test-key"] });
+
+    provider.emit("grant.error", {}, { error_detail: "safe ".repeat(33) });
+    expect(warn.mock.calls[0]?.[1].error_detail).toBe(`${"safe ".repeat(32)}`);
+
+    warn.mockReset();
+    provider.emit("grant.error", {}, { error_detail: "signature verification failed" });
+    expect(warn.mock.calls[0]?.[1].error_detail).toBe("signature verification failed");
+  });
+
   it("uses safe fallbacks for malformed error fields", () => {
     const db: Pick<Database, "execute"> = { execute: vi.fn() };
     const { provider } = createOidcProvider(db, { cookiesKeys: ["test-key"] });
