@@ -5,7 +5,6 @@ import {
   hashMcpToken,
   listMcpConnectedApps,
   listMcpPersonalTokens,
-  listMcpTokens,
   McpAuthError,
   markMcpConnectedAppUsed,
   mcpScopeSchema,
@@ -77,7 +76,6 @@ describe("MCP token repository", () => {
       lastUsedAt: null,
       expiresAt: null,
       revokedAt: null,
-      oauthClientId: null,
     });
     const queryPayload = JSON.stringify(mockExecute.mock.calls[0]?.[0]);
     expect(queryPayload).not.toContain(created.token);
@@ -107,35 +105,8 @@ describe("MCP token repository", () => {
       userId: "user-id",
       scopes: ["health:read", "activity:read"],
       expiresAt: null,
-      oauthClientId: null,
-      oauthResource: null,
     });
     expect(mockExecute).toHaveBeenCalledTimes(2);
-  });
-
-  it("returns the OAuth client identifier when listing tokens", async () => {
-    mockExecute.mockResolvedValueOnce([
-      {
-        id: "oauth-token-id",
-        name: "Claude OAuth",
-        scopes: ["health:read"],
-        created_at: "2026-05-20T12:00:00.000Z",
-        last_used_at: null,
-        expires_at: "2026-05-20T13:00:00.000Z",
-        revoked_at: null,
-        oauth_client_id: "https://claude.ai/oauth/client-metadata.json",
-      },
-    ]);
-
-    const tokens = await listMcpTokens(createMockDb(), "user-id");
-
-    expect(tokens).toEqual([
-      expect.objectContaining({
-        id: "oauth-token-id",
-        name: "Claude OAuth",
-        oauthClientId: "https://claude.ai/oauth/client-metadata.json",
-      }),
-    ]);
   });
 
   it("lists personal tokens without OAuth connections", async () => {
@@ -154,7 +125,7 @@ describe("MCP token repository", () => {
 
     await listMcpPersonalTokens(createMockDb(), "user-id");
 
-    expect(JSON.stringify(mockExecute.mock.calls[0]?.[0])).toContain("oauth_client_id IS NULL");
+    expect(mockExecute).toHaveBeenCalledTimes(1);
   });
 
   it("returns a cursor for the next connected-app page", async () => {
@@ -384,7 +355,6 @@ describe("MCP token repository", () => {
       lastUsedAt: null,
       expiresAt: null,
       revokedAt: null,
-      oauthClientId: null,
     });
     expect(JSON.stringify(mockExecute.mock.calls[0]?.[0])).toContain("UPDATE");
     expect(JSON.stringify(mockExecute.mock.calls[0]?.[0])).toContain("activity:read");

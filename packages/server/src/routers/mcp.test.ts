@@ -62,7 +62,6 @@ describe("mcpRouter", () => {
       lastUsedAt: null,
       expiresAt: null,
       revokedAt: null,
-      oauthClientId: null,
     });
     const queryPayload = JSON.stringify(mockExecute.mock.calls[0]?.[0]);
     expect(queryPayload).toContain("user-id");
@@ -144,7 +143,6 @@ describe("mcpRouter", () => {
         lastUsedAt: "2026-05-20T12:30:00.000Z",
         expiresAt: null,
         revokedAt: null,
-        oauthClientId: null,
       },
     ]);
     expect(JSON.stringify(result)).not.toContain("dofek_mcp_");
@@ -169,8 +167,7 @@ describe("mcpRouter", () => {
     const result = await caller.listPersonalTokens();
 
     expect(result).toHaveLength(1);
-    expect(result[0]?.oauthClientId).toBeNull();
-    expect(JSON.stringify(mockExecute.mock.calls[0]?.[0])).toContain("oauth_client_id IS NULL");
+    expect(mockExecute).toHaveBeenCalledTimes(1);
   });
 
   it("returns connected apps with a next cursor", async () => {

@@ -4,7 +4,6 @@ import type { Database } from "dofek/db";
 import express from "express";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { mockGetClient } from "./oauth-client-store.ts";
 import { MCP_OAUTH_SCOPES } from "./oauth-provider.ts";
 import { createMcpOAuthRouter } from "./oauth-route.ts";
 
@@ -29,16 +28,6 @@ vi.mock("./oidc/interactions.ts", () => ({
     res.end();
   },
 }));
-
-vi.mock("./oauth-client-store.ts", () => {
-  const mockGetClient = vi.fn();
-  class MockMcpOAuthClientsStore {
-    constructor() {
-      this.getClient = mockGetClient;
-    }
-  }
-  return { McpOAuthClientsStore: MockMcpOAuthClientsStore, mockGetClient };
-});
 
 const protectedResourceMetadataSchema = z.object({
   authorization_servers: z.array(z.string()),
@@ -65,7 +54,7 @@ function getPort(server: Server): number {
 
 function mount(rateLimit: false | Record<string, unknown> = false): Promise<MountedApp> {
   const app = express();
-  app.use(createMcpOAuthRouter(mockDb(), rateLimit, ["test-key"]));
+  app.use(createMcpOAuthRouter(mockDb(), rateLimit, ["test-key"]).router);
   return new Promise((resolve, reject) => {
     const server = app.listen(0, () => {
       resolve({
@@ -82,7 +71,6 @@ describe("createMcpOAuthRouter", () => {
   let app: MountedApp;
 
   beforeEach(() => {
-    mockGetClient.mockReset();
     oidcMocks.create.mockClear();
   });
 
@@ -166,55 +154,6 @@ describe("createMcpOAuthRouter", () => {
 
       expect(metadata.resource).toBe("https://app.example.test/api/mcp");
       expect(metadata.authorization_servers).toEqual(["https://app.example.test/"]);
-    });
-  });
-
-  describe("CIMD endpoint for locally registered clients", () => {
-    it("returns 404 when client is not found", async () => {
-      mockGetClient.mockResolvedValue(undefined);
-      app = await mount(false);
-
-      const response = await fetch(`${app.baseUrl}/.well-known/oauth-client/test-client`);
-
-      expect(response.status).toBe(404);
-      expect(await response.json()).toEqual({ error: "Client not found" });
-    });
-
-    it("returns public client metadata without client_secret", async () => {
-      const mockClient = {
-        client_id: "test-client",
-        client_name: "Test Client",
-        redirect_uris: ["https://example.com/callback"],
-        grant_types: ["authorization_code"],
-        response_types: ["code"],
-        scope: "health:read",
-        token_endpoint_auth_method: "none",
-        client_secret: "should-not-appear",
-        client_id_issued_at: 1234567890,
-        client_secret_expires_at: 1234567890,
-      };
-      mockGetClient.mockResolvedValue(mockClient);
-      app = await mount(false);
-
-      const response = await fetch(`${app.baseUrl}/.well-known/oauth-client/test-client`);
-
-      expect(response.status).toBe(200);
-      const body = await response.json();
-      expect(body.client_id).toBe("test-client");
-      expect(body.client_name).toBe("Test Client");
-      expect(body.redirect_uris).toEqual(["https://example.com/callback"]);
-      expect(body.client_secret).toBeUndefined();
-      expect(body.client_id_issued_at).toBe(1234567890);
-      expect(body.client_secret_expires_at).toBe(1234567890);
-    });
-
-    it("returns 400 when clientId parameter is missing", async () => {
-      app = await mount();
-
-      const response = await fetch(`${app.baseUrl}/.well-known/oauth-client/`);
-
-      expect(response.status).toBe(400);
-      expect(await response.json()).toEqual({ error: "Missing clientId" });
     });
   });
 

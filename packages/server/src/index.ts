@@ -333,8 +333,17 @@ function setupRoutes(
   );
   app.use("/api/external/v1", createExternalWriteApiRouter({ db }));
   app.use("/api/activity", createActivityExportRouter({ db, sensorStore }));
-  app.use(createMcpOAuthRouter(db, options.mcpAuthRateLimit));
-  app.use("/api/mcp", createMcpRouter({ db, rateLimit: options.mcpAuthRateLimit, sensorStore }));
+  const mcpOAuth = createMcpOAuthRouter(db, options.mcpAuthRateLimit);
+  app.use(mcpOAuth.router);
+  app.use(
+    "/api/mcp",
+    createMcpRouter({
+      db,
+      provider: mcpOAuth.provider,
+      rateLimit: options.mcpAuthRateLimit,
+      sensorStore,
+    }),
+  );
   app.use("/api/ingest", createIngestZosHealthRouter({ db }));
   app.use("/api/ingest", createIngestZosImuRouter({ db }));
   app.use("/api/companion-pairing/start", authRateLimiter);

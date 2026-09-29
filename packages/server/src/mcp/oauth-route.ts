@@ -4,7 +4,6 @@ import {
   rateLimit as createRateLimiter,
   type Options as RateLimitOptions,
 } from "express-rate-limit";
-import { McpOAuthClientsStore } from "./oauth-client-store.ts";
 import { getMcpIssuerUrl, getMcpResourceUrl } from "./oauth-config.ts";
 import { createProtectedResourceMetadata } from "./oauth-metadata.ts";
 import { MCP_OAUTH_SUPPORTED_SCOPES } from "./oauth-provider.ts";
@@ -63,14 +62,13 @@ function resolveCookiesKeys(): string[] {
  * The authorization server role (Authorize/Token/Revoke/discovery) is
  * now served by oidc-provider (see `createOidcProvider`). Dofek retains the RFC
  * 9728 Protected Resource Metadata endpoint, which points at the oidc-provider
- * issuer, and the CIMD well-known client document for locally registered
- * clients.
+ * issuer. Client metadata documents are hosted by the remote clients.
  */
 export function createMcpOAuthRouter(
   db: Pick<Database, "execute">,
   rateLimit?: McpAuthRateLimitOptions,
   cookiesKeys: string[] = resolveCookiesKeys(),
-): Router {
+): { router: Router; provider: ReturnType<typeof createOidcProvider>["provider"] } {
   const router = Router();
   const issuerUrl = getMcpIssuerUrl();
   const resourceUrl = getMcpResourceUrl();
@@ -137,29 +135,5 @@ export function createMcpOAuthRouter(
     },
   );
 
-  // CIMD endpoint for locally registered clients.
-  const oauthClientStore = new McpOAuthClientsStore(db);
-  router.get("/.well-known/oauth-client", metadataRateLimit, async (_request, response) => {
-    response.status(400).json({ error: "Missing clientId" });
-  });
-  router.get(
-    "/.well-known/oauth-client/:clientId",
-    metadataRateLimit,
-    async (request, response) => {
-      const rawClientId = Array.isArray(request.params.clientId)
-        ? request.params.clientId[0]
-        : request.params.clientId;
-      const clientId: string = rawClientId ?? "";
-      const client = await oauthClientStore.getClient(clientId);
-      if (!client) {
-        response.status(404).json({ error: "Client not found" });
-        return;
-      }
-      // CIMD metadata documents must never expose client_secret (RFC 7591 / CIMD).
-      const { client_secret: _omittedSecret, ...publicClientInfo } = client;
-      response.json(publicClientInfo);
-    },
-  );
-
-  return router;
+  return { router, provider };
 }
