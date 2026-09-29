@@ -19,6 +19,44 @@ describe("MCP OIDC token exchange diagnostics", () => {
     expect(provider.proxy).toBe(true);
   });
 
+  it("negotiates ChatGPT's CIMD authentication choices to public PKCE", () => {
+    const db: Pick<Database, "execute"> = { execute: vi.fn() };
+    const { provider } = createOidcProvider(db, { cookiesKeys: ["test-key"] });
+    const client = new provider.Client(
+      {
+        client_id: "https://chatgpt.com/oauth/client.json",
+        redirect_uris: ["https://chatgpt.com/connector/oauth/callback"],
+        grant_types: ["authorization_code", "refresh_token"],
+        response_types: ["code"],
+        token_endpoint_auth_method: "private_key_jwt",
+        token_endpoint_auth_methods_supported: ["none", "private_key_jwt"],
+        jwks_uri: "https://chatgpt.com/oauth/jwks.json",
+      },
+      undefined,
+      { cimd: true },
+    );
+
+    expect(client.clientAuthMethod).toBe("none");
+  });
+
+  it("accepts Claude's public CIMD client metadata", () => {
+    const db: Pick<Database, "execute"> = { execute: vi.fn() };
+    const { provider } = createOidcProvider(db, { cookiesKeys: ["test-key"] });
+    const client = new provider.Client(
+      {
+        client_id: "https://claude.ai/oauth/client-metadata",
+        redirect_uris: ["https://claude.ai/api/mcp/auth_callback"],
+        grant_types: ["authorization_code", "refresh_token"],
+        response_types: ["code"],
+        token_endpoint_auth_method: "none",
+      },
+      undefined,
+      { cimd: true },
+    );
+
+    expect(client.clientAuthMethod).toBe("none");
+  });
+
   it("logs the token endpoint rejection reason without assertion material", () => {
     const db: Pick<Database, "execute"> = { execute: vi.fn() };
     const { provider } = createOidcProvider(db, { cookiesKeys: ["test-key"] });

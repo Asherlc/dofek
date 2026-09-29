@@ -21,7 +21,6 @@ export type McpAuthRateLimitOptions = Partial<RateLimitOptions> | false;
 const OIDC_ROUTE_PREFIXES = [
   "/authorize",
   "/token",
-  "/register",
   "/revoke",
   "/jwks",
   "/userinfo",
@@ -61,7 +60,7 @@ function resolveCookiesKeys(): string[] {
 /**
  * OAuth 2.1 authorization server + protected resource metadata router.
  *
- * The authorization server role (Authorize/Token/Register/Revoke/discovery) is
+ * The authorization server role (Authorize/Token/Revoke/discovery) is
  * now served by oidc-provider (see `createOidcProvider`). Dofek retains the RFC
  * 9728 Protected Resource Metadata endpoint, which points at the oidc-provider
  * issuer, and the CIMD well-known client document for locally registered

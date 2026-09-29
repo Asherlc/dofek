@@ -16,8 +16,8 @@ import { createMcpOidcAdapter } from "./oidc/adapter.ts";
  *
  * These require a running Postgres (via `pnpm test:integration` / Docker). They
  * exercise the oidc-provider-backed Dofek MCP authorization server: discovery
- * metadata advertising RFC 9207 `iss` and CIMD support, and RFC 7591 dynamic
- * client registration.
+ * metadata advertising RFC 9207 `iss` and CIMD support, and the authorization
+ * flow for public clients.
  */
 
 const discoverySchema = z.object({
@@ -28,13 +28,6 @@ const discoverySchema = z.object({
   authorization_response_iss_parameter_supported: z.literal(true),
   client_id_metadata_document_supported: z.literal(true),
   scopes_supported: z.array(z.string()),
-});
-
-const registrationSchema = z.object({
-  client_id: z.string(),
-  client_id_issued_at: z.number().optional(),
-  redirect_uris: z.array(z.string()),
-  token_endpoint_auth_method: z.string().optional(),
 });
 
 const redirectUri = "https://claude.ai/api/mcp/auth_callback";
@@ -123,43 +116,20 @@ describe("MCP oidc-provider authorization server", () => {
     }
   });
 
-  it("registers a client via RFC 7591 dynamic client registration", async () => {
-    const response = await fetch(`${baseUrl}/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        client_name: "MCP Integration Client",
-        redirect_uris: [redirectUri],
-        grant_types: ["authorization_code", "refresh_token"],
-        response_types: ["code"],
-        token_endpoint_auth_method: "none",
-      }),
-    });
-    expect(response.status).toBe(201);
-    const client = registrationSchema.parse(await response.json());
-    expect(typeof client.client_id).toBe("string");
-    expect(client.client_id.length).toBeGreaterThan(0);
-    expect(client.redirect_uris).toContain(redirectUri);
-  });
-
   it("defaults authorization requests without resource to Dofek's MCP resource", async () => {
-    const registration = await fetch(`${baseUrl}/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        client_name: "MCP Default Resource Client",
-        redirect_uris: [redirectUri],
-        grant_types: ["authorization_code", "refresh_token"],
-        response_types: ["code"],
-        token_endpoint_auth_method: "none",
-      }),
+    const clientId = "default-resource-test-client";
+    await createMcpOidcAdapter(context.db)("Client").upsert(clientId, {
+      client_id: clientId,
+      redirect_uris: [redirectUri],
+      grant_types: ["authorization_code", "refresh_token"],
+      response_types: ["code"],
+      token_endpoint_auth_method: "none",
     });
-    const client = registrationSchema.parse(await registration.json());
     const verifier = "integration-pkce-verifier";
     const challenge = createHash("sha256").update(verifier).digest("base64url");
     const authorizeUrl = new URL("/authorize", baseUrl);
     authorizeUrl.search = new URLSearchParams({
-      client_id: client.client_id,
+      client_id: clientId,
       redirect_uri: redirectUri,
       response_type: "code",
       scope: "health:read",

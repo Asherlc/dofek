@@ -7,6 +7,30 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-09-29 — ChatGPT CIMD method preference conflicts with public token exchange
+
+- **Status:** Root cause confirmed; configuration fix is under validation and
+  has not yet been deployed.
+- **Symptoms / user impact:** ChatGPT's Dofek account connection fails after
+  authorization with `invalid_client`; Claude CIMD support remains unverified
+  end to end.
+- **Evidence / root cause:** The 17:36:33 UTC production token request presented
+  `none`, while oidc-provider bound ChatGPT's CIMD client to
+  `private_key_jwt`. ChatGPT's metadata lists both methods but prefers the
+  latter in its legacy singular field. Dofek left
+  [oidc-provider's RP Metadata Choices feature](https://github.com/panva/node-oidc-provider/blob/v9.12.2/lib/helpers/client_schema.js)
+  disabled, so its [client authentication check](https://github.com/panva/node-oidc-provider/blob/v9.12.2/lib/shared/client_auth.js)
+  rejected the public token exchange. [OpenAI's auth guide](https://developers.openai.com/plugins/build/auth/#client-registration)
+  defines the plural field as capabilities.
+- **Direct fix / validation:** Enable the library's RP Metadata Choices
+  feature, advertise only public `none` authentication for this MCP issuer,
+  and remove deprecated DCR discovery. A focused test reproduced the
+  `private_key_jwt` selection before the change and now resolves ChatGPT's
+  metadata to `none`; full CI and live reconnection remain pending.
+- **Remaining risk / follow-up:** Existing confidential clients cannot use
+  this issuer after the change. Verify production discovery, token issuance,
+  and tool scan with a fresh ChatGPT and Claude connection after deployment.
+
 ## 2026-09-29 — Expo version validation blocked the OAuth diagnostic PR
 
 - **Status:** Fixed and deployed with PR #2830.
@@ -71,8 +95,8 @@ them, and the durability work they suggest.
 
 ## 2026-09-28 — ChatGPT MCP connection still rejects client authentication
 
-- **Status:** Unresolved; PRs #2826 and #2830 deployed redacted OAuth
-  diagnostics, and the user's fresh ChatGPT attempt still failed.
+- **Status:** Root cause confirmed on September 29; see the CIMD method
+  preference incident above for the pending fix.
 - **Symptoms / user impact:** ChatGPT still cannot complete the Dofek MCP
   account connection after the TLS proxy fix was deployed.
 - **Evidence:** Production OAuth discovery now advertises
@@ -88,7 +112,7 @@ them, and the durability work they suggest.
   registered method. The authorization code's
   client ID is ChatGPT's [public metadata document](https://chatgpt.com/oauth/client.json),
   which declares `private_key_jwt` and lists `none` among supported methods.
-  The exact mechanism ChatGPT presented has not yet been captured. The earlier
+  The September 29 diagnostic captured `none` as the presented method. The earlier
   diagnostic gap was the console logger's explicit allowlist omitting
   `error_detail` and `error_cause`.
 - **Fix / validation:** PR #2830 extended the console allowlist; production
@@ -96,9 +120,8 @@ them, and the durability work they suggest.
   request logged the sanitized reason `client not found`, and the user's fresh
   attempt logged the precise method mismatch. The manual deploy succeeded after
   the exact image build passed; the required main macOS jobs were still queued.
-- **Remaining risk / follow-up:** Log only the presented and registered method
-  labels on a token failure, then reproduce the mismatch and fix its cause.
-  Verify token issuance and MCP tool discovery in ChatGPT.
+- **Remaining risk / follow-up:** Deploy the RP Metadata Choices configuration
+  and verify token issuance and MCP tool discovery in ChatGPT.
 
 ## 2026-09-29 — Queued macOS runners delayed OAuth diagnostic deployment
 

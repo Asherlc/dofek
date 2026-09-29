@@ -28,8 +28,7 @@ function clientSecretContext(clientId: string) {
 /**
  * Read access to `fitness.mcp_oauth_client` for the CIMD well-known document.
  *
- * Client registration (DCR) is now handled by oidc-provider, which persists to
- * its own adapter table; this store serves the CIMD `/.well-known/oauth-client`
+ * This store serves the CIMD `/.well-known/oauth-client`
  * read endpoint for locally registered clients only.
  */
 export class McpOAuthClientsStore {

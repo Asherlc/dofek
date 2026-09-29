@@ -219,16 +219,6 @@ describe("createMcpOAuthRouter", () => {
   });
 
   describe("OIDC route protections", () => {
-    it("rate limits authorization-server requests", async () => {
-      app = await mount({ max: 1, windowMs: 60_000 });
-
-      const first = await fetch(`${app.baseUrl}/register`, { method: "POST" });
-      const second = await fetch(`${app.baseUrl}/register`, { method: "POST" });
-
-      expect(first.status).toBe(404);
-      expect(second.status).toBe(429);
-    });
-
     it("rate limits nested authorization-server paths", async () => {
       app = await mount({ max: 1, windowMs: 60_000 });
 
