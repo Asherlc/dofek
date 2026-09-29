@@ -7,6 +7,24 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-09-29 — Expo version validation blocked the OAuth diagnostic PR
+
+- **Status:** Fixed locally; the updated PR's CI is pending.
+- **Symptoms / impact:** PR #2830's `Build Mobile / Metro Bundle` job stopped
+  before bundling, delaying deployment of ChatGPT OAuth diagnostics. Production
+  mobile behavior was unchanged.
+- **Evidence / root cause:** The [failed job](https://github.com/Asherlc/dofek/actions/runs/36576135950/job/109432546505)
+  ran `cd packages/mobile && pnpm expo install --check`. Its first fatal output
+  was `Found outdated dependencies`: Expo now expects newer compatible patch
+  versions of `expo`, `expo-document-picker`, `expo-modules-core`, `expo-router`,
+  and `expo-updates`. [Expo CLI documentation](https://docs.expo.dev/more/expo-cli/#version-validation)
+  says this check exits nonzero in CI for incompatible versions.
+- **Direct fix / validation:** Updated those five pins and the pnpm lockfile to
+  Expo's current compatible versions. A local `expo install --check`, frozen
+  lockfile install, TypeScript typecheck, and iOS Metro export all pass.
+- **Remaining risk / follow-up:** Confirm the rerun's Metro bundle and native
+  builds pass before merging.
+
 ## 2026-09-29 — WHOOP deleted workouts were not tombstoned
 
 - **Status:** The reported activity is tombstoned in production. The pagination
