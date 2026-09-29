@@ -52,7 +52,6 @@
     "entities": "8.1.0",
     "express": "5.2.1",
     "express-rate-limit": "8.6.1",
-    "jose": "6.2.12",
     "oidc-provider": "9.12.2",
     "qrcode": "1.5.4",
     "simple-statistics": "7.10.2",

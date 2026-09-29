@@ -856,9 +856,6 @@ importers:
       express-rate-limit:
         specifier: 8.6.1
         version: 8.6.1(express@5.2.1)(supports-color@11.0.0)
-      jose:
-        specifier: 6.2.12
-        version: 6.2.12
       oidc-provider:
         specifier: 9.12.2
         version: 9.12.2(supports-color@11.0.0)
