@@ -48,9 +48,11 @@ let weekListOptions: { placeholderData?: (previousData: unknown) => unknown } | 
 let overviewInput: unknown;
 let overviewOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
 let bulkDeleteMutate: CallableVitestMock;
+let mergeMutate: CallableVitestMock;
 let restoreProviderAbsentMutate: CallableVitestMock;
 let invalidateWeekList: CallableVitestMock;
 let invalidateActivityOverview: CallableVitestMock;
+let invalidateCalendarData: CallableVitestMock;
 let invalidateActivityList: CallableVitestMock;
 let mockBulkDeleteShouldFail: boolean;
 let mockDataHealthQuery: {
@@ -101,6 +103,13 @@ vi.mock("../lib/trpc.ts", () => ({
       },
     },
     activity: {
+      merge: {
+        useMutation: (options?: { onSuccess?: () => Promise<void> | void }) => ({
+          mutate: mergeMutate.mockImplementation(async () => options?.onSuccess?.()),
+          isPending: false,
+          error: null,
+        }),
+      },
       bulkDelete: {
         useMutation: (options?: {
           onSuccess?: () => Promise<void> | void;
@@ -140,6 +149,7 @@ vi.mock("../lib/trpc.ts", () => ({
       calendar: {
         weekList: { invalidate: invalidateWeekList },
         activityOverview: { invalidate: invalidateActivityOverview },
+        calendarData: { invalidate: invalidateCalendarData },
       },
       activity: {
         list: { invalidate: invalidateActivityList },
@@ -232,9 +242,11 @@ describe("ActivitiesPage", () => {
     overviewInput = undefined;
     overviewOptions = undefined;
     bulkDeleteMutate = vi.fn();
+    mergeMutate = vi.fn();
     restoreProviderAbsentMutate = vi.fn();
     invalidateWeekList = vi.fn();
     invalidateActivityOverview = vi.fn();
+    invalidateCalendarData = vi.fn();
     invalidateActivityList = vi.fn();
     mockBulkDeleteShouldFail = false;
     mockDataHealthQuery = { data: undefined, isLoading: false, error: null };
@@ -587,7 +599,7 @@ describe("ActivitiesPage", () => {
     render(<ActivitiesPage />);
 
     expect(screen.getByRole("button", { name: "Select activities" })).toBeDefined();
-    expect(screen.getByText("Choose one or more activities to delete.")).toBeDefined();
+    expect(screen.getByText("Choose activities to merge or delete.")).toBeDefined();
   });
 
   it("associates each selection control with its own guidance", () => {
@@ -613,7 +625,7 @@ describe("ActivitiesPage", () => {
     expect(guidanceIds[0]).not.toBe(guidanceIds[1]);
     for (const guidanceId of guidanceIds) {
       expect(document.getElementById(guidanceId ?? "")).toHaveTextContent(
-        "Choose one or more activities to delete.",
+        "Choose activities to merge or delete.",
       );
     }
   });
@@ -657,6 +669,60 @@ describe("ActivitiesPage", () => {
       expect(invalidateActivityOverview).toHaveBeenCalled();
       expect(invalidateActivityList).toHaveBeenCalled();
     });
+  });
+
+  it("merges selected same-type activities after confirmation", async () => {
+    mockQuery = {
+      data: [
+        {
+          date: "2026-03-18",
+          activities: [activity(), activity({ id: "activity-2", name: "Second Ride" })],
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+    render(<ActivitiesPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+    fireEvent.click(screen.getByText("Trainer Ride"));
+    fireEvent.click(screen.getByText("Second Ride"));
+    fireEvent.click(screen.getByText("Merge"));
+    expect(mergeMutate).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText("Confirm Merge"));
+    await waitFor(() => {
+      expect(mergeMutate).toHaveBeenCalledWith({ ids: ["activity-1", "activity-2"] });
+      expect(invalidateWeekList).toHaveBeenCalled();
+      expect(invalidateActivityOverview).toHaveBeenCalled();
+      expect(invalidateCalendarData).toHaveBeenCalled();
+      expect(invalidateActivityList).toHaveBeenCalled();
+    });
+  });
+
+  it("disables merge for a single or mixed-type selection", () => {
+    mockQuery = {
+      data: [
+        {
+          date: "2026-03-18",
+          activities: [
+            activity(),
+            activity({ id: "activity-2", name: "Run", activityType: "running" }),
+          ],
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+    render(<ActivitiesPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+    const merge = screen.getByRole("button", { name: "Merge" });
+    expect(merge).toBeDisabled();
+    fireEvent.click(screen.getByText("Trainer Ride"));
+    expect(merge).toBeDisabled();
+    fireEvent.click(screen.getByText("Run"));
+    expect(screen.getByText("Select activities of one type to merge.")).toBeDefined();
+    expect(merge).toBeDisabled();
   });
 
   it("hides deleted activities immediately after delete confirmation", async () => {
@@ -783,7 +849,9 @@ describe("ActivitiesPage", () => {
     render(<ActivitiesPage />);
     fireEvent.click(screen.getByLabelText("Show hidden activities"));
     expect(
-      screen.getByText("Choose visible activities to delete or hidden activities to restore."),
+      screen.getByText(
+        "Choose visible activities to merge or delete, or hidden activities to restore.",
+      ),
     ).toBeDefined();
     expect(screen.getByText("Removed")).toBeDefined();
     expect(screen.getByText(/Removed from Strava/)).toBeDefined();

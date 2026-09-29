@@ -52,6 +52,8 @@ let calendarDataOptions: { placeholderData?: (previousData: unknown) => unknown 
 let overviewInput: unknown;
 let overviewOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
 let bulkDeleteMutateAsync: CallableVitestMock;
+let mergeMutateAsync: CallableVitestMock;
+let mockMergeShouldFail: boolean;
 let invalidateWeekList: CallableVitestMock;
 let invalidateActivityOverview: CallableVitestMock;
 let invalidateCalendarData: CallableVitestMock;
@@ -104,6 +106,19 @@ vi.mock("../../lib/trpc", () => ({
       },
     },
     activity: {
+      merge: {
+        useMutation: (options?: {
+          onSuccess?: () => Promise<void> | void;
+          onError?: (error: Error) => void;
+        }) => ({
+          mutate: mergeMutateAsync.mockImplementation(async () => {
+            if (mockMergeShouldFail) options?.onError?.(new Error("Merge failed"));
+            else await options?.onSuccess?.();
+          }),
+          isPending: false,
+          error: null,
+        }),
+      },
       bulkDelete: {
         useMutation: (options?: { onSuccess?: () => Promise<void> | void }) => ({
           mutate: bulkDeleteMutateAsync.mockImplementation(async () => {
@@ -220,6 +235,8 @@ describe("ActivitiesScreen", () => {
     overviewInput = undefined;
     overviewOptions = undefined;
     bulkDeleteMutateAsync = vi.fn();
+    mergeMutateAsync = vi.fn();
+    mockMergeShouldFail = false;
     invalidateWeekList = vi.fn();
     invalidateActivityOverview = vi.fn();
     invalidateCalendarData = vi.fn();
@@ -635,7 +652,7 @@ describe("ActivitiesScreen", () => {
     };
 
     render(<ActivitiesScreen />);
-    expect(screen.getByText("Choose one or more activities to delete.")).toBeDefined();
+    expect(screen.getByText("Choose activities to merge or delete.")).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
     expect(screen.getByText("0 activities selected").getAttribute("accessibilityliveregion")).toBe(
       "polite",
@@ -694,6 +711,90 @@ describe("ActivitiesScreen", () => {
       expect(invalidateActivityOverview).toHaveBeenCalled();
       expect(invalidateCalendarData).toHaveBeenCalled();
       expect(invalidateActivityList).toHaveBeenCalled();
+    });
+  });
+
+  it("merges selected same-type activities after native confirmation", async () => {
+    mockQuery = {
+      data: [
+        {
+          date: "2026-03-18",
+          activities: [activity(), activity({ id: "activity-2", name: "Second Ride" })],
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+    vi.spyOn(Alert, "alert").mockImplementation((_title, _message, buttons) => {
+      expect(_title).toBe("Merge Activities");
+      buttons?.find((button) => button.text === "Merge")?.onPress?.();
+    });
+    render(<ActivitiesScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+    fireEvent.click(screen.getByText("Trainer Ride"));
+    fireEvent.click(screen.getByText("Second Ride"));
+    fireEvent.click(screen.getByText("Merge"));
+    await waitFor(() => {
+      expect(mergeMutateAsync).toHaveBeenCalledWith({ ids: ["activity-1", "activity-2"] });
+      expect(invalidateWeekList).toHaveBeenCalled();
+      expect(invalidateActivityOverview).toHaveBeenCalled();
+      expect(invalidateCalendarData).toHaveBeenCalled();
+      expect(invalidateActivityList).toHaveBeenCalled();
+    });
+  });
+
+  it("disables merge when fewer than two activities or mixed types are selected", () => {
+    mockQuery = {
+      data: [
+        {
+          date: "2026-03-18",
+          activities: [
+            activity(),
+            activity({ id: "activity-2", name: "Run", activityType: "running" }),
+          ],
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+    render(<ActivitiesScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+    const merge = screen.getByRole("button", { name: "Merge selected activities" });
+    expect(merge.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(screen.getByText("Trainer Ride"));
+    expect(merge.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(screen.getByText("Run"));
+    expect(merge.hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText("Select activities of one type to merge.")).toBeDefined();
+  });
+
+  it("keeps selected activities selected when merge fails", async () => {
+    mockMergeShouldFail = true;
+    mockQuery = {
+      data: [
+        {
+          date: "2026-03-18",
+          activities: [activity(), activity({ id: "activity-2", name: "Second Ride" })],
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+    vi.spyOn(Alert, "alert").mockImplementation((_title, _message, buttons) => {
+      buttons?.find((button) => button.text === "Merge")?.onPress?.();
+    });
+    render(<ActivitiesScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+    fireEvent.click(screen.getByText("Trainer Ride"));
+    fireEvent.click(screen.getByText("Second Ride"));
+    fireEvent.click(screen.getByText("Merge"));
+    await waitFor(() => {
+      expect(mergeMutateAsync).toHaveBeenCalledWith({ ids: ["activity-1", "activity-2"] });
+      expect(screen.getByText("2 activities selected")).toBeDefined();
+      expect(Alert.alert).toHaveBeenCalledWith("Unable to merge activities", "Merge failed");
     });
   });
 
