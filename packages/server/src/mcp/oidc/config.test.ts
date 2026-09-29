@@ -93,6 +93,104 @@ describe("MCP OIDC token exchange diagnostics", () => {
     });
   });
 
+  it("records only the presented and registered client authentication methods", () => {
+    const db: Pick<Database, "execute"> = { execute: vi.fn() };
+    const { provider } = createOidcProvider(db, { cookiesKeys: ["test-key"] });
+    const assertion = "private-assertion-material";
+
+    provider.emit(
+      "grant.error",
+      {
+        headers: { authorization: undefined },
+        oidc: {
+          client: { clientAuthMethod: "private_key_jwt" },
+          params: { client_assertion: assertion, client_id: "private-client-id" },
+        },
+      },
+      new errors.InvalidClientAuth("authentication method mismatch"),
+    );
+
+    expect(warn.mock.calls[0]?.[1]).toMatchObject({
+      presented_client_auth: "client_assertion",
+      registered_client_auth: "private_key_jwt",
+    });
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(assertion);
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("private-client-id");
+  });
+
+  it("identifies a public token request without recording request parameters", () => {
+    const db: Pick<Database, "execute"> = { execute: vi.fn() };
+    const { provider } = createOidcProvider(db, { cookiesKeys: ["test-key"] });
+
+    provider.emit(
+      "grant.error",
+      {
+        headers: {},
+        oidc: {
+          client: { clientAuthMethod: "private_key_jwt" },
+          params: { client_id: "private-client-id", code: "private-authorization-code" },
+        },
+      },
+      new errors.InvalidClientAuth("authentication method mismatch"),
+    );
+
+    expect(warn.mock.calls[0]?.[1]).toMatchObject({
+      presented_client_auth: "none",
+      registered_client_auth: "private_key_jwt",
+    });
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("private-authorization-code");
+  });
+
+  it.each([
+    ["client_secret_post", { client_secret: "private-secret" }, {}, "client_secret_post"],
+    [
+      "client_secret_basic",
+      {},
+      { authorization: `Basic ${Buffer.from("fixture:fixture").toString("base64")}` },
+      "client_secret_basic",
+    ],
+    ["other authorization header", {}, { authorization: "Digest fixture" }, "authorization_header"],
+  ])("classifies %s without logging credentials", (_name, params, headers, presented) => {
+    const db: Pick<Database, "execute"> = { execute: vi.fn() };
+    const { provider } = createOidcProvider(db, { cookiesKeys: ["test-key"] });
+
+    provider.emit(
+      "grant.error",
+      {
+        headers,
+        oidc: { client: { clientAuthMethod: "private_key_jwt" }, params },
+      },
+      new errors.InvalidClientAuth("authentication method mismatch"),
+    );
+
+    expect(warn.mock.calls[0]?.[1]).toMatchObject({
+      presented_client_auth: presented,
+      registered_client_auth: "private_key_jwt",
+    });
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("private-secret");
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("Digest fixture");
+  });
+
+  it("omits method labels for malformed or incomplete event context", () => {
+    const db: Pick<Database, "execute"> = { execute: vi.fn() };
+    const { provider } = createOidcProvider(db, { cookiesKeys: ["test-key"] });
+    const error = new errors.InvalidClientAuth("authentication method mismatch");
+
+    provider.emit("grant.error", null, error);
+    provider.emit("grant.error", { oidc: { params: {} } }, error);
+    provider.emit(
+      "grant.error",
+      { oidc: { client: { clientAuthMethod: "private_key_jwt" } } },
+      error,
+    );
+
+    expect(warn.mock.calls[0]?.[1]).not.toHaveProperty("presented_client_auth");
+    expect(warn.mock.calls[1]?.[1]).toMatchObject({ presented_client_auth: "none" });
+    expect(warn.mock.calls[1]?.[1]).not.toHaveProperty("registered_client_auth");
+    expect(warn.mock.calls[2]?.[1]).toMatchObject({ registered_client_auth: "private_key_jwt" });
+    expect(warn.mock.calls[2]?.[1]).not.toHaveProperty("presented_client_auth");
+  });
+
   it("omits provider details containing parameter values", () => {
     const db: Pick<Database, "execute"> = { execute: vi.fn() };
     const { provider } = createOidcProvider(db, { cookiesKeys: ["test-key"] });
