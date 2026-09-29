@@ -7,6 +7,30 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-09-28 — ChatGPT MCP connection still rejects client authentication
+
+- **Status:** Unresolved; investigation paused at the implementation approach
+  gate in `AGENTS.md`.
+- **Symptoms / user impact:** ChatGPT still cannot complete the Dofek MCP
+  account connection after the TLS proxy fix was deployed.
+- **Evidence:** Production OAuth discovery now advertises
+  `https://dofek.fit/token`. The web service received ChatGPT's `/authorize`
+  request at 2026-09-29 00:42:24 UTC, then logged
+  `InvalidClientAuth`, `invalid_client`, and HTTP 401 for `POST /token` at
+  00:42:26 UTC. ChatGPT's public client metadata declares `private_key_jwt`
+  and an HTTPS JWKS URI. [OpenAI's authentication guide](https://developers.openai.com/plugins/build/auth/)
+  documents that method and its CIMD negotiation.
+- **Root cause:** The specific failed client-authentication check is unknown.
+  The current event logs only `client authentication failed`; oidc-provider
+  uses that generic OAuth description for several distinct failures.
+- **Fix / validation:** No further fix or retry was made. The HTTPS token
+  endpoint was verified from the live discovery document. A narrowly scoped,
+  redacted diagnostic that captures the provider's internal rejection detail
+  is proposed before another connection attempt.
+- **Remaining risk / follow-up:** Identify the exact rejection check from a
+  fresh attempt, then add a reproducing test and fix that cause. Verify token
+  issuance and MCP tool discovery in ChatGPT after deployment.
+
 ## 2026-09-28 — OpenBeta provider mutation gate failed
 
 - **Status:** Fixed in code; CI rerun pending.
