@@ -196,6 +196,7 @@ const mockEntrySuggestionsUseQuery = vi.fn(
   }),
 );
 const mockAttachEntryMutate = vi.fn();
+const mockAttachShouldFail = vi.fn(() => false);
 const mockClimbingEntriesInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockEntrySuggestionsInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockClimbingSessionSummaryInvalidate = vi.fn().mockResolvedValue(undefined);
@@ -314,6 +315,12 @@ vi.mock("../lib/trpc.ts", () => ({
             callbacks?: { onSuccess?: () => void; onError?: (error: Error) => void },
           ) => {
             mockAttachEntryMutate(input);
+            if (mockAttachShouldFail()) {
+              const error = new Error("This climbing entry is no longer available.");
+              options?.onError?.(error, input);
+              callbacks?.onError?.(error);
+              return;
+            }
             void options?.onSuccess?.({ attached: true }, input);
             callbacks?.onSuccess?.();
           },
@@ -385,6 +392,8 @@ afterEach(() => {
   mockEntrySuggestionsUseQuery.mockReset();
   mockEntrySuggestionsUseQuery.mockReturnValue({ data: [], error: null, isLoading: false });
   mockAttachEntryMutate.mockClear();
+  mockAttachShouldFail.mockReset();
+  mockAttachShouldFail.mockReturnValue(false);
   mockClimbingEntriesInvalidate.mockClear();
   mockEntrySuggestionsInvalidate.mockClear();
   mockClimbingSessionSummaryInvalidate.mockClear();
@@ -1773,6 +1782,44 @@ describe("ActivityDetailPage", () => {
       });
       expect(mockActivityByIdInvalidate).not.toHaveBeenCalled();
       expect(mockActivityStreamInvalidate).not.toHaveBeenCalled();
+    });
+
+    it("shows the server error when attaching a climbing entry fails", async () => {
+      const originalActivity = { ...mockActivity };
+      Object.assign(mockActivity, { activityType: "climbing", name: "Morning Rock Climb" });
+      mockAttachShouldFail.mockReturnValue(true);
+      mockEntrySuggestionsUseQuery.mockReturnValue({
+        data: [
+          {
+            id: "tick-1",
+            providerId: "openbeta",
+            sourceName: "OpenBeta",
+            climbType: "route",
+            gradeSystem: "yds",
+            grade: "5.10a",
+            sent: true,
+            ascentType: "Onsight",
+            attemptCount: 1,
+            lead: true,
+            routeName: "The Corner",
+            locationName: "Test Crag",
+          },
+        ],
+        error: null,
+        isLoading: false,
+      });
+
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Attach to this activity" }));
+
+      await waitFor(() =>
+        expect(screen.getByRole("alert")).toHaveTextContent(
+          "This climbing entry is no longer available.",
+        ),
+      );
+      Object.assign(mockActivity, originalActivity);
     });
 
     it("shows separate suggestion loading, error, and empty states", async () => {
