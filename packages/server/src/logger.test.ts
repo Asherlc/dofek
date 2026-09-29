@@ -36,6 +36,8 @@ describe("logger", () => {
       message: "mcp.oidc.token_exchange_failed",
       error_name: "InvalidClientAuth",
       error_description: "invalid client",
+      error_detail: "client not found",
+      error_cause: "JWKSNoMatchingKey",
       http_status: 401,
       oauth_error: "invalid_client",
       request: { authorization: "must not be rendered" },
@@ -46,6 +48,8 @@ describe("logger", () => {
     if (formatted !== false && formatted !== undefined) {
       const output = String(formatted[Symbol.for("message")]);
       expect(output).toContain('"error_description":"invalid client"');
+      expect(output).toContain('"error_detail":"client not found"');
+      expect(output).toContain('"error_cause":"JWKSNoMatchingKey"');
       expect(output).toContain('"http_status":401');
       expect(output).not.toContain("must not be rendered");
     }
