@@ -1,4 +1,4 @@
-# Unattached Mountain Project Ticks and Activity Matching
+# Unattached Climbing Entries and Activity Matching
 
 ## Problem
 
@@ -15,10 +15,10 @@ its date-only field are documented in the
 - Store each Mountain Project tick as one canonical `fitness.climbing_entry`
   row, without creating a synthetic activity for it.
 - Allow a tick to exist before it is associated with a workout.
-- On a climbing activity detail page, suggest only unattached Mountain Project
-  ticks whose exported date is the same as the activity's displayed calendar
+- On a climbing activity detail page, suggest only active unattached climbing
+  entries whose exported date is the same as the activity's displayed calendar
   day.
-- Let the user attach each tick individually to the selected activity.
+- Let the user attach each entry individually to the selected activity.
 - Preserve tick identity, ownership, and any user-selected association across
   later Mountain Project syncs.
 - Keep unattached ticks in climb and grade progression summaries without
@@ -64,13 +64,13 @@ state. It is not selected.
 
 ## Product flow
 
-1. Mountain Project sync creates or refreshes one climbing-entry row per
-   supported tick. It creates no activity row.
-2. When the user opens a climbing activity, the server looks up unattached
-   Mountain Project ticks for that activity's exact displayed day.
-3. Web and mobile show the matching ticks in the activity detail page. Each
-   tick has its own explicit attach action.
-4. After a user attaches a tick, it appears with the selected activity's
+1. Provider sync creates or refreshes one climbing-entry row per supported
+   tick. It creates no activity row.
+2. When the user opens a climbing activity, the server looks up active,
+   unattached climbing entries for that activity's exact displayed day.
+3. Web and mobile show the matching entries in the activity detail page. Each
+   entry has its own explicit attach action and retains provider/source labels.
+4. After a user attaches an entry, it appears with the selected activity's
    climbing entries and is no longer eligible for suggestions on any activity.
 
 If multiple climbing activities occur on one displayed day, each can show the
@@ -89,8 +89,8 @@ suggestion table.
   identity within that user and provider.
 - Make `activity_id` nullable. When set, it references an activity owned by the
   same user.
-- Add nullable `unattached_date`, containing Mountain Project's exported day
-  only while `activity_id` is null.
+- Add nullable `unattached_date`, containing the provider's exported day only
+  while `activity_id` is null.
 - Enforce that exactly one of `activity_id` and `unattached_date` is present.
   Existing linked climbing entries keep their date from their parent activity;
   they do not receive a second normalized date.
@@ -103,13 +103,13 @@ suggestion table.
   interpreting an ambiguous empty response as mass deletion.
 
 On attachment, a transaction verifies that the entry and target belong to the
-requesting user, the entry is an active unattached Mountain Project tick, the
-target is an active climbing activity, and the entry's `unattached_date` equals
-the target activity's displayed day. It then sets the activity association and
-clears `unattached_date` atomically. The activity foreign key points to the
-selected activity member; existing activity-group hydration includes entries
-for all group members. The activity grouping contract is described in the
-[stable activity groups design](2026-09-07-stable-activity-groups-design.md).
+requesting user, the entry is active and unattached, the target is an active
+climbing activity, and the entry's `unattached_date` equals the target
+activity's displayed day. It then sets the activity association and clears
+`unattached_date` atomically. The activity foreign key points to the selected
+activity member; existing activity-group hydration includes entries for all
+group members. The activity grouping contract is described in the [stable
+activity groups design](2026-09-07-stable-activity-groups-design.md).
 
 ## Sync and migration
 
@@ -133,8 +133,8 @@ those parent activities after migration.
 
 Suggestion matching uses calendar days as rendered by the activity detail page:
 the server computes the target activity's displayed date using the user's
-configured timezone, then compares it exactly to the Mountain Project export
-date. A tick from the previous or next date is never included.
+configured timezone, then compares it exactly to the provider export date. An
+entry from the previous or next date is never included.
 
 Climb and grade progression include active unattached ticks using
 `unattached_date`. Once attached, those same summaries get the tick's day from
@@ -146,18 +146,18 @@ climbing evidence while removing the synthetic session from activity counts.
 
 The shared server API provides:
 
-- A user-scoped query for active, unattached Mountain Project ticks matching a
-  target climbing activity's displayed date.
-- A per-entry attach mutation with server-side checks for ownership, source,
-  active/unattached state, target type, and exact day equality.
+- A user-scoped query for active, unattached climbing entries matching a target
+  climbing activity's displayed date.
+- A per-entry attach mutation with server-side checks for ownership, provider
+  attribution, active/unattached state, target type, and exact day equality.
 
-The mutation updates one entry atomically. A tick attached concurrently by
+The mutation updates one entry atomically. An entry attached concurrently by
 another request is not attached twice; the caller receives an actionable
 conflict result and can refresh. Unexpected errors are reported through the
 existing server error-reporting path.
 
-Both web and mobile activity detail screens render the same returned tick data,
-show a separate attach action per tick, surface API error messages, and refresh
+Both web and mobile activity detail screens render the same returned entry data,
+show a separate attach action per entry, surface API error messages, and refresh
 the suggestion and activity-entry queries after attachment. No date matching
 or climb aggregation is computed in client code.
 
@@ -170,9 +170,9 @@ or climb aggregation is computed in client code.
   entries are retired/restored without deleting raw data.
 - Climbing query tests prove unattached ticks remain in grade/progression
   summaries and are not counted as activities or sessions.
-- Web and mobile activity-detail tests prove only same-day unattached ticks are
-  shown, each tick can be attached individually, and the UI refreshes after
-  success.
+- Web and mobile activity-detail tests prove only same-day unattached entries
+  are shown, entries from multiple providers remain distinguishable, each entry
+  can be attached individually, and the UI refreshes after success.
 - Migration integration coverage proves existing Mountain Project tick data is
   retained, detached with its export day, and no synthetic parent remains
   visible.

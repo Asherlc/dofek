@@ -7,8 +7,8 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
+import type { ClimbingEntrySuggestion } from "../../../server/src/repositories/climbing-entry-associator.ts";
 import type { ClimbingActivityEntryRow } from "../../../server/src/repositories/climbing-repository.ts";
-import type { MountainProjectTickSuggestion } from "../../../server/src/repositories/mountain-project-tick-repository.ts";
 import type { StrengthExerciseDetail } from "../../../server/src/routers/activity.ts";
 import { UnitContext } from "../lib/unitContext.ts";
 
@@ -181,12 +181,12 @@ const mockClimbingEntriesUseQuery = vi.fn(
     isLoading: false,
   }),
 );
-const mockTickSuggestionsUseQuery = vi.fn(
+const mockEntrySuggestionsUseQuery = vi.fn(
   (
     _input?: unknown,
     _options?: { enabled?: boolean },
   ): {
-    data: MountainProjectTickSuggestion[] | undefined;
+    data: ClimbingEntrySuggestion[] | undefined;
     error: unknown | null;
     isLoading: boolean;
   } => ({
@@ -195,9 +195,9 @@ const mockTickSuggestionsUseQuery = vi.fn(
     isLoading: false,
   }),
 );
-const mockAttachTickMutate = vi.fn();
+const mockAttachEntryMutate = vi.fn();
 const mockClimbingEntriesInvalidate = vi.fn().mockResolvedValue(undefined);
-const mockTickSuggestionsInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockEntrySuggestionsInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockClimbingSessionSummaryInvalidate = vi.fn().mockResolvedValue(undefined);
 
 interface MockHrZone {
@@ -298,20 +298,20 @@ vi.mock("../lib/trpc.ts", () => ({
     },
     climbing: {
       activityEntries: { useQuery: mockClimbingEntriesUseQuery },
-      unattachedMountainProjectTicks: { useQuery: mockTickSuggestionsUseQuery },
-      attachMountainProjectTick: {
+      unattachedClimbingEntries: { useQuery: mockEntrySuggestionsUseQuery },
+      attachClimbingEntry: {
         useMutation: (options?: {
           onSuccess?: (
             result: { attached: true },
-            input: { activityId: string; tickId: string },
+            input: { activityId: string; entryId: string },
           ) => Promise<void> | void;
-          onError?: (error: Error, input: { activityId: string; tickId: string }) => void;
+          onError?: (error: Error, input: { activityId: string; entryId: string }) => void;
         }) => ({
           mutate: (
-            input: { activityId: string; tickId: string },
+            input: { activityId: string; entryId: string },
             callbacks?: { onSuccess?: () => void; onError?: (error: Error) => void },
           ) => {
-            mockAttachTickMutate(input);
+            mockAttachEntryMutate(input);
             void options?.onSuccess?.({ attached: true }, input);
             callbacks?.onSuccess?.();
           },
@@ -334,7 +334,7 @@ vi.mock("../lib/trpc.ts", () => ({
       },
       climbing: {
         activityEntries: { invalidate: mockClimbingEntriesInvalidate },
-        unattachedMountainProjectTicks: { invalidate: mockTickSuggestionsInvalidate },
+        unattachedClimbingEntries: { invalidate: mockEntrySuggestionsInvalidate },
         sessionSummary: { invalidate: mockClimbingSessionSummaryInvalidate },
       },
     }),
@@ -378,11 +378,11 @@ afterEach(() => {
     isError: false,
     isLoading: false,
   });
-  mockTickSuggestionsUseQuery.mockReset();
-  mockTickSuggestionsUseQuery.mockReturnValue({ data: [], error: null, isLoading: false });
-  mockAttachTickMutate.mockClear();
+  mockEntrySuggestionsUseQuery.mockReset();
+  mockEntrySuggestionsUseQuery.mockReturnValue({ data: [], error: null, isLoading: false });
+  mockAttachEntryMutate.mockClear();
   mockClimbingEntriesInvalidate.mockClear();
-  mockTickSuggestionsInvalidate.mockClear();
+  mockEntrySuggestionsInvalidate.mockClear();
   mockClimbingSessionSummaryInvalidate.mockClear();
   mockStrengthExercisesUseQuery.mockReset();
   mockStrengthExercisesUseQuery.mockReturnValue({
@@ -1705,12 +1705,14 @@ describe("ActivityDetailPage", () => {
   });
 
   describe("climbing entries", () => {
-    it("renders server suggestions and attaches only the selected tick", async () => {
+    it("renders server suggestions from both providers and attaches only the selected entry", async () => {
       Object.assign(mockActivity, { activityType: "climbing", name: "Morning Rock Climb" });
-      mockTickSuggestionsUseQuery.mockReturnValue({
+      mockEntrySuggestionsUseQuery.mockReturnValue({
         data: [
           {
             id: "tick-1",
+            providerId: "mountain-project",
+            sourceName: "Mountain Project",
             climbType: "boulder",
             gradeSystem: "v_scale",
             grade: "V4",
@@ -1723,6 +1725,8 @@ describe("ActivityDetailPage", () => {
           },
           {
             id: "tick-2",
+            providerId: "openbeta",
+            sourceName: "OpenBeta",
             climbType: "route",
             gradeSystem: "yds",
             grade: "5.10a",
@@ -1739,8 +1743,10 @@ describe("ActivityDetailPage", () => {
       });
       const ActivityDetailPage = await importPage();
       renderWithUnits(<ActivityDetailPage />);
-      expect(getQueryEnabledFlag(mockTickSuggestionsUseQuery.mock.calls[0]?.[1])).toBe(true);
-      expect(screen.getByText("Unattached Mountain Project ticks")).toBeDefined();
+      expect(getQueryEnabledFlag(mockEntrySuggestionsUseQuery.mock.calls[0]?.[1])).toBe(true);
+      expect(screen.getByText("Unattached climbing entries")).toBeDefined();
+      expect(screen.getByText("Mountain Project")).toBeDefined();
+      expect(screen.getByText("OpenBeta")).toBeDefined();
       expect(screen.getByText("Blue Circuit")).toBeDefined();
       expect(screen.getByText(/V4 · Sent · 2 attempts/)).toBeDefined();
       const controls = screen.getAllByRole("button", { name: "Attach to this activity" });
@@ -1748,13 +1754,13 @@ describe("ActivityDetailPage", () => {
       const secondControl = controls.at(1);
       if (!secondControl) throw new Error("Expected a second attach control");
       fireEvent.click(secondControl);
-      expect(mockAttachTickMutate).toHaveBeenCalledWith({
+      expect(mockAttachEntryMutate).toHaveBeenCalledWith({
         activityId: "test-123",
-        tickId: "tick-2",
+        entryId: "tick-2",
       });
       await waitFor(() => {
         expect(mockClimbingEntriesInvalidate).toHaveBeenCalledWith({ id: "test-123" });
-        expect(mockTickSuggestionsInvalidate).toHaveBeenCalledWith({ activityId: "test-123" });
+        expect(mockEntrySuggestionsInvalidate).toHaveBeenCalledWith({ activityId: "test-123" });
         expect(mockClimbingSessionSummaryInvalidate).toHaveBeenCalledWith();
       });
       expect(mockActivityByIdInvalidate).not.toHaveBeenCalled();
@@ -1763,16 +1769,16 @@ describe("ActivityDetailPage", () => {
 
     it("shows separate suggestion loading, error, and empty states", async () => {
       Object.assign(mockActivity, { activityType: "climbing" });
-      mockTickSuggestionsUseQuery.mockReturnValue({
+      mockEntrySuggestionsUseQuery.mockReturnValue({
         data: undefined,
         error: null,
         isLoading: true,
       });
       const ActivityDetailPage = await importPage();
       const view = renderWithUnits(<ActivityDetailPage />);
-      expect(screen.getByText("Loading Mountain Project ticks...")).toBeDefined();
+      expect(screen.getByText("Loading climbing entries...")).toBeDefined();
       view.unmount();
-      mockTickSuggestionsUseQuery.mockReturnValue({
+      mockEntrySuggestionsUseQuery.mockReturnValue({
         data: undefined,
         error: new Error("Tick service unavailable"),
         isLoading: false,
@@ -1784,10 +1790,10 @@ describe("ActivityDetailPage", () => {
 
     it("shows an empty suggestion state when the server returns no matching ticks", async () => {
       Object.assign(mockActivity, { activityType: "climbing" });
-      mockTickSuggestionsUseQuery.mockReturnValue({ data: [], error: null, isLoading: false });
+      mockEntrySuggestionsUseQuery.mockReturnValue({ data: [], error: null, isLoading: false });
       const ActivityDetailPage = await importPage();
       renderWithUnits(<ActivityDetailPage />);
-      expect(screen.getByText("No unattached Mountain Project ticks for this day.")).toBeDefined();
+      expect(screen.getByText("No unattached climbing entries for this day.")).toBeDefined();
     });
 
     it("shows the climbs attached to a merged rock-climbing activity", async () => {

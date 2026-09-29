@@ -57,7 +57,7 @@ import { useUnitConverter } from "../lib/unitContext.ts";
 import { ClimbingEntryBreakdown } from "./activity-detail/components/ClimbingEntryBreakdown.tsx";
 import { DeleteActivityButton } from "./activity-detail/components/DeleteActivityButton.tsx";
 import { RecomputeActivityButton } from "./activity-detail/components/RecomputeActivityButton.tsx";
-import { UnattachedMountainProjectTicks } from "./activity-detail/components/UnattachedMountainProjectTicks.tsx";
+import { UnattachedClimbingEntries } from "./activity-detail/components/UnattachedClimbingEntries.tsx";
 import { ProviderAbsentBanner } from "./ProviderAbsentBanner.tsx";
 
 const CHART_COLORS = {
@@ -128,39 +128,39 @@ export function ActivityDetailPage() {
     { id },
     { enabled: isClimbingActivity },
   );
-  const tickSuggestions = trpc.climbing.unattachedMountainProjectTicks.useQuery(
+  const entrySuggestions = trpc.climbing.unattachedClimbingEntries.useQuery(
     { activityId: id },
     { enabled: isClimbingActivity },
   );
   const trpcUtils = trpc.useUtils();
-  const [tickAttachState, setTickAttachState] = useState<
+  const [entryAttachState, setEntryAttachState] = useState<
     Record<string, { pending: boolean; error: string | null }>
   >({});
-  const attachTick = trpc.climbing.attachMountainProjectTick.useMutation({
+  const attachEntry = trpc.climbing.attachClimbingEntry.useMutation({
     onSuccess: async (_result, input) => {
       await Promise.all([
         trpcUtils.climbing.activityEntries.invalidate({ id: input.activityId }),
         trpcUtils.climbing.sessionSummary.invalidate(),
-        trpcUtils.climbing.unattachedMountainProjectTicks.invalidate({
+        trpcUtils.climbing.unattachedClimbingEntries.invalidate({
           activityId: input.activityId,
         }),
       ]);
     },
   });
-  const handleAttachTick = (tickId: string) => {
-    setTickAttachState((current) => ({ ...current, [tickId]: { pending: true, error: null } }));
-    attachTick.mutate(
-      { activityId: id, tickId },
+  const handleAttachEntry = (entryId: string) => {
+    setEntryAttachState((current) => ({ ...current, [entryId]: { pending: true, error: null } }));
+    attachEntry.mutate(
+      { activityId: id, entryId },
       {
         onSuccess: () =>
-          setTickAttachState((current) => ({
+          setEntryAttachState((current) => ({
             ...current,
-            [tickId]: { pending: false, error: null },
+            [entryId]: { pending: false, error: null },
           })),
         onError: (error) =>
-          setTickAttachState((current) => ({
+          setEntryAttachState((current) => ({
             ...current,
-            [tickId]: { pending: false, error: userFacingErrorMessage(error) },
+            [entryId]: { pending: false, error: userFacingErrorMessage(error) },
           })),
       },
     );
@@ -323,12 +323,12 @@ export function ActivityDetailPage() {
       )}
 
       {isClimbingActivity && (
-        <UnattachedMountainProjectTicks
-          suggestions={tickSuggestions.data}
-          error={tickSuggestions.error}
-          isLoading={tickSuggestions.isLoading}
-          state={tickAttachState}
-          onAttach={handleAttachTick}
+        <UnattachedClimbingEntries
+          suggestions={entrySuggestions.data}
+          error={entrySuggestions.error}
+          isLoading={entrySuggestions.isLoading}
+          state={entryAttachState}
+          onAttach={handleAttachEntry}
         />
       )}
 

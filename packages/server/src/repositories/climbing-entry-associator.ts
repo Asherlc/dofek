@@ -8,6 +8,8 @@ import { ActivityRepository } from "./activity-repository.ts";
 
 const suggestionSchema = z.object({
   id: z.string(),
+  provider_id: z.string(),
+  source_name: z.string().nullable(),
   climb_type: z.enum(["boulder", "route"]),
   grade_system: z.string(),
   grade: z.string(),
@@ -19,8 +21,10 @@ const suggestionSchema = z.object({
   location_name: z.string().nullable(),
 });
 
-export type MountainProjectTickSuggestion = {
+export type ClimbingEntrySuggestion = {
   id: string;
+  providerId: string;
+  sourceName: string | null;
   climbType: "boulder" | "route";
   gradeSystem: string;
   grade: string;
@@ -34,7 +38,7 @@ export type MountainProjectTickSuggestion = {
 
 const updateSchema = z.object({ id: z.string() });
 
-export class MountainProjectTickRepository extends BaseRepository {
+export class ClimbingEntryAssociator extends BaseRepository {
   constructor(
     db: Pick<Database, "execute">,
     userId: string,
@@ -44,7 +48,7 @@ export class MountainProjectTickRepository extends BaseRepository {
     super(db, userId, timezone, accessWindow);
   }
 
-  async getSuggestions(activityId: string): Promise<MountainProjectTickSuggestion[]> {
+  async getSuggestions(activityId: string): Promise<ClimbingEntrySuggestion[]> {
     const activity = await new ActivityRepository(
       this.db,
       this.userId,
@@ -57,14 +61,15 @@ export class MountainProjectTickRepository extends BaseRepository {
     if (activity.canonical_type !== "climbing") {
       throw new TRPCError({
         code: "PRECONDITION_FAILED",
-        message: "Mountain Project ticks can only be matched to a climbing activity.",
+        message: "Climbing entries can only be matched to a climbing activity.",
       });
     }
-    const displayedDate = activity.displayed_date;
 
+    const displayedDate = activity.displayed_date;
     const rows = await this.query(
       suggestionSchema,
-      sql`SELECT id::text AS id, climb_type::text AS climb_type,
+      sql`SELECT id::text AS id, provider_id, source_name,
+                 climb_type::text AS climb_type,
                  grade_system::text AS grade_system, grade, sent, attempt_count,
                  CASE lower(btrim(CASE WHEN climb_type = 'boulder'
                    THEN raw->>'Style' ELSE raw->>'Lead Style' END))
@@ -78,7 +83,6 @@ export class MountainProjectTickRepository extends BaseRepository {
                  lead, route_name, location_name
           FROM fitness.climbing_entry
           WHERE user_id = ${this.userId}::uuid
-            AND provider_id = 'mountain-project'
             AND provider_absent_at IS NULL
             AND activity_id IS NULL
             AND unattached_date = ${displayedDate}::date
@@ -86,6 +90,8 @@ export class MountainProjectTickRepository extends BaseRepository {
     );
     return rows.map((row) => ({
       id: row.id,
+      providerId: row.provider_id,
+      sourceName: row.source_name,
       climbType: row.climb_type,
       gradeSystem: row.grade_system,
       grade: row.grade,
@@ -98,7 +104,7 @@ export class MountainProjectTickRepository extends BaseRepository {
     }));
   }
 
-  async attachTick(input: { tickId: string; activityId: string }): Promise<void> {
+  async attachEntry(input: { entryId: string; activityId: string }): Promise<void> {
     const activity = await new ActivityRepository(
       this.db,
       this.userId,
@@ -111,7 +117,7 @@ export class MountainProjectTickRepository extends BaseRepository {
     if (activity.canonical_type !== "climbing") {
       throw new TRPCError({
         code: "PRECONDITION_FAILED",
-        message: "Choose a climbing activity to attach this tick.",
+        message: "Choose a climbing activity to attach this entry.",
       });
     }
     const displayedDate = activity.displayed_date;
@@ -135,9 +141,8 @@ export class MountainProjectTickRepository extends BaseRepository {
           UPDATE fitness.climbing_entry
           SET activity_id = (SELECT id FROM eligible_activity),
               unattached_date = NULL
-          WHERE id = ${input.tickId}::uuid
+          WHERE id = ${input.entryId}::uuid
             AND user_id = ${this.userId}::uuid
-            AND provider_id = 'mountain-project'
             AND provider_absent_at IS NULL
             AND activity_id IS NULL
             AND unattached_date = ${displayedDate}::date
@@ -148,7 +153,7 @@ export class MountainProjectTickRepository extends BaseRepository {
       throw new TRPCError({
         code: "CONFLICT",
         message:
-          "This tick is no longer available for that activity. Refresh the activity and choose an active same-day Mountain Project tick.",
+          "This climbing entry is no longer available for that activity. Refresh the activity and choose an active same-day climbing entry.",
       });
     }
   }
