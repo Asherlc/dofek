@@ -53,6 +53,89 @@ describe("MCP OIDC token exchange diagnostics", () => {
     expect(JSON.stringify(warn.mock.calls)).not.toContain("fixture-key");
   });
 
+  it("records the specific client-auth rejection while redacting credentials", () => {
+    const db: Pick<Database, "execute"> = { execute: vi.fn() };
+    const { provider } = createOidcProvider(db, { cookiesKeys: ["test-key"] });
+    const assertion = ["eyJhbGciOiJSUzI1NiJ9", "eyJzdWIiOiJjaGF0Z3B0In0", "signature"].join(".");
+    const error = Object.assign(new Error("invalid_client"), {
+      name: "InvalidClientAuth",
+      error: "invalid_client",
+      error_description: "client authentication failed",
+      error_detail: `signature verification failed; client_assertion=${assertion}`,
+      cause: Object.assign(new Error("signature verification failed"), {
+        name: "JWSSignatureVerificationFailed",
+      }),
+      status: 401,
+    });
+
+    provider.emit("grant.error", {}, error);
+
+    expect(warn).toHaveBeenCalledWith("mcp.oidc.token_exchange_failed", {
+      error_name: "InvalidClientAuth",
+      error_description: "client authentication failed",
+      error_cause: "JWSSignatureVerificationFailed",
+      http_status: 401,
+      oauth_error: "invalid_client",
+    });
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(assertion);
+  });
+
+  it("omits provider details containing parameter values", () => {
+    const db: Pick<Database, "execute"> = { execute: vi.fn() };
+    const { provider } = createOidcProvider(db, { cookiesKeys: ["test-key"] });
+
+    provider.emit("grant.error", {}, { error_detail: "client_secret=alpha,beta" });
+
+    expect(warn.mock.calls[0]?.[1]).not.toHaveProperty("error_detail");
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("alpha,beta");
+  });
+
+  it("redacts standalone assertions, URLs, and opaque keys in provider details", () => {
+    const db: Pick<Database, "execute"> = { execute: vi.fn() };
+    const { provider } = createOidcProvider(db, { cookiesKeys: ["test-key"] });
+    const assertion = ["eyJhbGciOiJSUzI1NiJ9", "eyJzdWIiOiJjaGF0Z3B0In0", "signature"].join(".");
+    const opaqueKey = "abcdefghijklmnopqrstuvwx";
+
+    provider.emit(
+      "grant.error",
+      {},
+      {
+        error_detail: `JWT ${assertion}; http://auth.example/token https://auth.example/token ${opaqueKey}`,
+      },
+    );
+
+    const logged = warn.mock.calls[0]?.[1];
+    expect(logged.error_detail).toBe("JWT [redacted]; [redacted URL] [redacted URL] [redacted]");
+    expect(JSON.stringify(logged)).not.toContain(opaqueKey);
+  });
+
+  it("omits provider details containing quoted values instead of logging partial credentials", () => {
+    const db: Pick<Database, "execute"> = { execute: vi.fn() };
+    const { provider } = createOidcProvider(db, { cookiesKeys: ["test-key"] });
+
+    for (const detail of [
+      'client authentication failed; client_secret="alpha,beta"',
+      "client authentication failed; client_secret='alpha,beta'",
+    ]) {
+      warn.mockReset();
+      provider.emit("grant.error", {}, { error_detail: detail });
+      expect(warn.mock.calls[0]?.[1]).not.toHaveProperty("error_detail");
+      expect(JSON.stringify(warn.mock.calls)).not.toContain("alpha,beta");
+    }
+  });
+
+  it("bounds provider detail length without cutting short details", () => {
+    const db: Pick<Database, "execute"> = { execute: vi.fn() };
+    const { provider } = createOidcProvider(db, { cookiesKeys: ["test-key"] });
+
+    provider.emit("grant.error", {}, { error_detail: "safe ".repeat(33) });
+    expect(warn.mock.calls[0]?.[1].error_detail).toBe(`${"safe ".repeat(32)}`);
+
+    warn.mockReset();
+    provider.emit("grant.error", {}, { error_detail: "signature verification failed" });
+    expect(warn.mock.calls[0]?.[1].error_detail).toBe("signature verification failed");
+  });
+
   it("uses safe fallbacks for malformed error fields", () => {
     const db: Pick<Database, "execute"> = { execute: vi.fn() };
     const { provider } = createOidcProvider(db, { cookiesKeys: ["test-key"] });

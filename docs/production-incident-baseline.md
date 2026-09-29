@@ -7,6 +7,49 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-09-28 — ChatGPT diagnostic PR mutation gate failed
+
+- **Status:** Fixed; the PR's rerun passed the mutation gate and full CI.
+- **Symptoms / impact:** PR #2826's `Test / Stryker (0)` job failed and blocked
+  deployment of the redacted OAuth diagnostics. Production authentication was
+  unchanged.
+- **Evidence / root cause:** The [Stryker job](https://github.com/Asherlc/dofek/actions/runs/36505556997/job/109206406990)
+  ran `pnpm exec stryker run stryker.ci.config.json --mutate "$MUTATE_FILES"`.
+  Its first fatal line reported `Final mutation score 30.77 under breaking
+  threshold 75`. Eighteen mutants survived because the new tests exercised
+  only a parameter-wrapped assertion, leaving standalone assertions, other
+  parameter values, URLs, opaque keys, and the detail length boundary
+  untested.
+- **Direct fix / validation:** Added focused cases for those redaction paths.
+  The exact local Stryker configuration and mutate ranges now score 100%
+  (30/30 killed). The focused OIDC unit suite passes 9/9.
+- **Remaining risk / follow-up:** Merge and deploy the diagnostic, then verify
+  a fresh ChatGPT connection attempt.
+
+## 2026-09-28 — ChatGPT MCP connection still rejects client authentication
+
+- **Status:** Unresolved; the user approved redacted OAuth diagnostics, which
+  are awaiting deployment before the next connection attempt.
+- **Symptoms / user impact:** ChatGPT still cannot complete the Dofek MCP
+  account connection after the TLS proxy fix was deployed.
+- **Evidence:** Production OAuth discovery now advertises
+  `https://dofek.fit/token`. The web service received ChatGPT's `/authorize`
+  request at 2026-09-29 00:42:24 UTC, then logged
+  `InvalidClientAuth`, `invalid_client`, and HTTP 401 for `POST /token` at
+  00:42:26 UTC. ChatGPT's public client metadata declares `private_key_jwt`
+  and an HTTPS JWKS URI. [OpenAI's authentication guide](https://developers.openai.com/plugins/build/auth/)
+  documents that method and its CIMD negotiation.
+- **Root cause:** The specific failed client-authentication check is unknown.
+  The current event logs only `client authentication failed`; oidc-provider
+  uses that generic OAuth description for several distinct failures.
+- **Fix / validation:** The HTTPS token endpoint was verified from the live
+  discovery document. A narrowly scoped diagnostic now records safe provider
+  rejection details and error cause names; its focused tests and mutation gate
+  passed. The production connection has not yet been retried.
+- **Remaining risk / follow-up:** Identify the exact rejection check from a
+  fresh attempt, then add a reproducing test and fix that cause. Verify token
+  issuance and MCP tool discovery in ChatGPT after deployment.
+
 ## 2026-09-28 — OpenBeta provider mutation gate failed
 
 - **Status:** Fixed in code; CI rerun pending.
