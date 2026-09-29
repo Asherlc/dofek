@@ -166,7 +166,17 @@ describe("mcpRouter", () => {
 
     const result = await caller.listPersonalTokens();
 
-    expect(result).toHaveLength(1);
+    expect(result).toEqual([
+      {
+        id: "personal-token-id",
+        name: "Codex",
+        scopes: ["health:read"],
+        createdAt: "2026-05-20T12:00:00.000Z",
+        lastUsedAt: null,
+        expiresAt: null,
+        revokedAt: null,
+      },
+    ]);
     expect(mockExecute).toHaveBeenCalledTimes(1);
   });
 
