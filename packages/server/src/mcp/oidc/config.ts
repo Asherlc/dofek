@@ -47,8 +47,10 @@ export interface OidcProviderHandle {
 }
 
 const diagnosticErrorSchema = z.object({
+  cause: z.unknown().optional(),
   error: z.unknown().optional(),
   error_description: z.unknown().optional(),
+  error_detail: z.unknown().optional(),
   message: z.unknown().optional(),
   name: z.unknown().optional(),
   status: z.unknown().optional(),
@@ -58,6 +60,8 @@ const diagnosticErrorSchema = z.object({
 function diagnosticErrorFields(error: unknown): {
   error_name: string;
   error_description: string;
+  error_detail?: string;
+  error_cause?: string;
   http_status?: number;
   oauth_error?: string;
 } {
@@ -88,10 +92,26 @@ function diagnosticErrorFields(error: unknown): {
     : statusCodeResult.success
       ? statusCodeResult.data
       : undefined;
+  const detail =
+    typeof fields.error_detail === "string"
+      ? fields.error_detail
+          .replace(/\b[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, "[redacted]")
+          .replace(
+            /\b[A-Za-z][A-Za-z0-9_-]*=[^\s;,]+/g,
+            (match) => `${match.slice(0, match.indexOf("="))}=[redacted]`,
+          )
+          .replace(/https?:\/\/[^\s;,]+/g, "[redacted URL]")
+          .replace(/\b[A-Za-z0-9_-]{24,}\b/g, "[redacted]")
+          .slice(0, 160)
+      : undefined;
+  const causeName =
+    fields.cause instanceof Error ? safeLabel(fields.cause.name, "Error") : undefined;
 
   return {
     error_name: safeLabel(fields.name, "Error"),
     error_description: safeDescription,
+    ...(detail ? { error_detail: detail } : {}),
+    ...(causeName ? { error_cause: causeName } : {}),
     ...(typeof status === "number" ? { http_status: status } : {}),
     ...(typeof fields.error === "string"
       ? { oauth_error: safeLabel(fields.error, "unknown") }

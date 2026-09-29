@@ -53,6 +53,34 @@ describe("MCP OIDC token exchange diagnostics", () => {
     expect(JSON.stringify(warn.mock.calls)).not.toContain("fixture-key");
   });
 
+  it("records the specific client-auth rejection while redacting credentials", () => {
+    const db: Pick<Database, "execute"> = { execute: vi.fn() };
+    const { provider } = createOidcProvider(db, { cookiesKeys: ["test-key"] });
+    const assertion = ["eyJhbGciOiJSUzI1NiJ9", "eyJzdWIiOiJjaGF0Z3B0In0", "signature"].join(".");
+    const error = Object.assign(new Error("invalid_client"), {
+      name: "InvalidClientAuth",
+      error: "invalid_client",
+      error_description: "client authentication failed",
+      error_detail: `signature verification failed; client_assertion=${assertion}`,
+      cause: Object.assign(new Error("signature verification failed"), {
+        name: "JWSSignatureVerificationFailed",
+      }),
+      status: 401,
+    });
+
+    provider.emit("grant.error", {}, error);
+
+    expect(warn).toHaveBeenCalledWith("mcp.oidc.token_exchange_failed", {
+      error_name: "InvalidClientAuth",
+      error_description: "client authentication failed",
+      error_detail: "signature verification failed; client_assertion=[redacted]",
+      error_cause: "JWSSignatureVerificationFailed",
+      http_status: 401,
+      oauth_error: "invalid_client",
+    });
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(assertion);
+  });
+
   it("uses safe fallbacks for malformed error fields", () => {
     const db: Pick<Database, "execute"> = { execute: vi.fn() };
     const { provider } = createOidcProvider(db, { cookiesKeys: ["test-key"] });
