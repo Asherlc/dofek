@@ -93,13 +93,12 @@ function diagnosticErrorFields(error: unknown): {
       ? statusCodeResult.data
       : undefined;
   const detail =
-    typeof fields.error_detail === "string"
+    typeof fields.error_detail === "string" &&
+    !fields.error_detail.includes("=") &&
+    !fields.error_detail.includes('"') &&
+    !fields.error_detail.includes("'")
       ? fields.error_detail
           .replace(/\b[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, "[redacted]")
-          .replace(
-            /\b[A-Za-z][A-Za-z0-9_-]*=[^\s;,]+/g,
-            (match) => `${match.slice(0, match.indexOf("="))}=[redacted]`,
-          )
           .replace(/https?:\/\/[^\s;,]+/g, "[redacted URL]")
           .replace(/\b[A-Za-z0-9_-]{24,}\b/g, "[redacted]")
           .slice(0, 160)

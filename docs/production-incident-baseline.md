@@ -9,7 +9,7 @@ them, and the durability work they suggest.
 
 ## 2026-09-28 — ChatGPT diagnostic PR mutation gate failed
 
-- **Status:** Fixed locally; CI rerun pending.
+- **Status:** Fixed; the PR's rerun passed the mutation gate and full CI.
 - **Symptoms / impact:** PR #2826's `Test / Stryker (0)` job failed and blocked
   deployment of the redacted OAuth diagnostics. Production authentication was
   unchanged.
@@ -22,14 +22,14 @@ them, and the durability work they suggest.
   untested.
 - **Direct fix / validation:** Added focused cases for those redaction paths.
   The exact local Stryker configuration and mutate ranges now score 100%
-  (26/26 killed). The focused OIDC unit suite passes 7/7.
-- **Remaining risk / follow-up:** Confirm the fresh PR CI mutation jobs pass
-  before merging and deploying the diagnostic.
+  (30/30 killed). The focused OIDC unit suite passes 9/9.
+- **Remaining risk / follow-up:** Merge and deploy the diagnostic, then verify
+  a fresh ChatGPT connection attempt.
 
 ## 2026-09-28 — ChatGPT MCP connection still rejects client authentication
 
-- **Status:** Unresolved; investigation paused at the implementation approach
-  gate in `AGENTS.md`.
+- **Status:** Unresolved; the user approved redacted OAuth diagnostics, which
+  are awaiting deployment before the next connection attempt.
 - **Symptoms / user impact:** ChatGPT still cannot complete the Dofek MCP
   account connection after the TLS proxy fix was deployed.
 - **Evidence:** Production OAuth discovery now advertises
@@ -42,10 +42,10 @@ them, and the durability work they suggest.
 - **Root cause:** The specific failed client-authentication check is unknown.
   The current event logs only `client authentication failed`; oidc-provider
   uses that generic OAuth description for several distinct failures.
-- **Fix / validation:** No further fix or retry was made. The HTTPS token
-  endpoint was verified from the live discovery document. A narrowly scoped,
-  redacted diagnostic that captures the provider's internal rejection detail
-  is proposed before another connection attempt.
+- **Fix / validation:** The HTTPS token endpoint was verified from the live
+  discovery document. A narrowly scoped diagnostic now records safe provider
+  rejection details and error cause names; its focused tests and mutation gate
+  passed. The production connection has not yet been retried.
 - **Remaining risk / follow-up:** Identify the exact rejection check from a
   fresh attempt, then add a reproducing test and fix that cause. Verify token
   issuance and MCP tool discovery in ChatGPT after deployment.

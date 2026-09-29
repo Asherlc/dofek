@@ -73,7 +73,6 @@ describe("MCP OIDC token exchange diagnostics", () => {
     expect(warn).toHaveBeenCalledWith("mcp.oidc.token_exchange_failed", {
       error_name: "InvalidClientAuth",
       error_description: "client authentication failed",
-      error_detail: "signature verification failed; client_assertion=[redacted]",
       error_cause: "JWSSignatureVerificationFailed",
       http_status: 401,
       oauth_error: "invalid_client",
@@ -81,7 +80,17 @@ describe("MCP OIDC token exchange diagnostics", () => {
     expect(JSON.stringify(warn.mock.calls)).not.toContain(assertion);
   });
 
-  it("redacts standalone assertions, parameter values, URLs, and opaque keys in provider details", () => {
+  it("omits provider details containing parameter values", () => {
+    const db: Pick<Database, "execute"> = { execute: vi.fn() };
+    const { provider } = createOidcProvider(db, { cookiesKeys: ["test-key"] });
+
+    provider.emit("grant.error", {}, { error_detail: "client_secret=alpha,beta" });
+
+    expect(warn.mock.calls[0]?.[1]).not.toHaveProperty("error_detail");
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("alpha,beta");
+  });
+
+  it("redacts standalone assertions, URLs, and opaque keys in provider details", () => {
     const db: Pick<Database, "execute"> = { execute: vi.fn() };
     const { provider } = createOidcProvider(db, { cookiesKeys: ["test-key"] });
     const assertion = ["eyJhbGciOiJSUzI1NiJ9", "eyJzdWIiOiJjaGF0Z3B0In0", "signature"].join(".");
@@ -91,20 +100,28 @@ describe("MCP OIDC token exchange diagnostics", () => {
       "grant.error",
       {},
       {
-        error_detail:
-          `JWT ${assertion}; api_key=small-secret, x=42 ` +
-          `http://auth.example/token?key=secret https://auth.example/token?key=secret ${opaqueKey}`,
+        error_detail: `JWT ${assertion}; http://auth.example/token https://auth.example/token ${opaqueKey}`,
       },
     );
 
     const logged = warn.mock.calls[0]?.[1];
-    expect(logged.error_detail).toBe(
-      "JWT [redacted]; api_key=[redacted], x=[redacted] " +
-        "[redacted URL] [redacted URL] [redacted]",
-    );
-    expect(JSON.stringify(logged)).not.toContain("small-secret");
+    expect(logged.error_detail).toBe("JWT [redacted]; [redacted URL] [redacted URL] [redacted]");
     expect(JSON.stringify(logged)).not.toContain(opaqueKey);
-    expect(JSON.stringify(logged)).not.toContain("key=secret");
+  });
+
+  it("omits provider details containing quoted values instead of logging partial credentials", () => {
+    const db: Pick<Database, "execute"> = { execute: vi.fn() };
+    const { provider } = createOidcProvider(db, { cookiesKeys: ["test-key"] });
+
+    for (const detail of [
+      'client authentication failed; client_secret="alpha,beta"',
+      "client authentication failed; client_secret='alpha,beta'",
+    ]) {
+      warn.mockReset();
+      provider.emit("grant.error", {}, { error_detail: detail });
+      expect(warn.mock.calls[0]?.[1]).not.toHaveProperty("error_detail");
+      expect(JSON.stringify(warn.mock.calls)).not.toContain("alpha,beta");
+    }
   });
 
   it("bounds provider detail length without cutting short details", () => {
