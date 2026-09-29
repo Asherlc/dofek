@@ -7,6 +7,24 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-09-29 — Expo version validation blocked the OAuth diagnostic PR
+
+- **Status:** Fixed locally; the updated PR's CI is pending.
+- **Symptoms / impact:** PR #2830's `Build Mobile / Metro Bundle` job stopped
+  before bundling, delaying deployment of ChatGPT OAuth diagnostics. Production
+  mobile behavior was unchanged.
+- **Evidence / root cause:** The [failed job](https://github.com/Asherlc/dofek/actions/runs/36576135950/job/109432546505)
+  ran `cd packages/mobile && pnpm expo install --check`. Its first fatal output
+  was `Found outdated dependencies`: Expo now expects newer compatible patch
+  versions of `expo`, `expo-document-picker`, `expo-modules-core`, `expo-router`,
+  and `expo-updates`. [Expo CLI documentation](https://docs.expo.dev/more/expo-cli/#version-validation)
+  says this check exits nonzero in CI for incompatible versions.
+- **Direct fix / validation:** Updated those five pins and the pnpm lockfile to
+  Expo's current compatible versions. A local `expo install --check`, frozen
+  lockfile install, TypeScript typecheck, and iOS Metro export all pass.
+- **Remaining risk / follow-up:** Confirm the rerun's Metro bundle and native
+  builds pass before merging.
+
 ## 2026-09-29 — WHOOP deleted workouts were not tombstoned
 
 - **Status:** The reported activity is tombstoned in production. The pagination
@@ -31,6 +49,7 @@ them, and the durability work they suggest.
 - **Remaining risk / follow-up:** Deploy the pagination fix and confirm WHOOP
   syncs no longer report repeated cursors and that subsequent deleted workouts
   receive provider absence tombstones.
+
 ## 2026-09-28 — ChatGPT diagnostic PR mutation gate failed
 
 - **Status:** Fixed; the PR's rerun passed the mutation gate and full CI.
@@ -47,13 +66,13 @@ them, and the durability work they suggest.
 - **Direct fix / validation:** Added focused cases for those redaction paths.
   The exact local Stryker configuration and mutate ranges now score 100%
   (30/30 killed). The focused OIDC unit suite passes 9/9.
-- **Remaining risk / follow-up:** Merge and deploy the diagnostic, then verify
-  a fresh ChatGPT connection attempt.
+- **Remaining risk / follow-up:** The diagnostic was deployed in PR #2826, but
+  its new fields were omitted by the console formatter; see the incident below.
 
 ## 2026-09-28 — ChatGPT MCP connection still rejects client authentication
 
-- **Status:** Unresolved; the user approved redacted OAuth diagnostics, which
-  are awaiting deployment before the next connection attempt.
+- **Status:** Unresolved; PR #2826 deployed redacted OAuth diagnostics, and a
+  fresh ChatGPT attempt still failed.
 - **Symptoms / user impact:** ChatGPT still cannot complete the Dofek MCP
   account connection after the TLS proxy fix was deployed.
 - **Evidence:** Production OAuth discovery now advertises
@@ -64,15 +83,38 @@ them, and the durability work they suggest.
   and an HTTPS JWKS URI. [OpenAI's authentication guide](https://developers.openai.com/plugins/build/auth/)
   documents that method and its CIMD negotiation.
 - **Root cause:** The specific failed client-authentication check is unknown.
-  The current event logs only `client authentication failed`; oidc-provider
-  uses that generic OAuth description for several distinct failures.
+  The 2026-09-29 13:23 UTC attempt reached `/authorize` (303), then `/token`
+  returned `invalid_client` (401). The console logger's explicit field
+  allowlist omitted the new `error_detail` and `error_cause` fields, so the
+  server logs still showed only `client authentication failed`. A synthetic
+  invalid-client request reproduced the same omission.
 - **Fix / validation:** The HTTPS token endpoint was verified from the live
-  discovery document. A narrowly scoped diagnostic now records safe provider
-  rejection details and error cause names; its focused tests and mutation gate
-  passed. The production connection has not yet been retried.
+  discovery document. The diagnostics are deployed; a focused test now proves
+  the console formatter includes their already-sanitized fields, and the
+  formatter fix is awaiting deployment.
 - **Remaining risk / follow-up:** Identify the exact rejection check from a
-  fresh attempt, then add a reproducing test and fix that cause. Verify token
-  issuance and MCP tool discovery in ChatGPT after deployment.
+  fresh attempt after deploying the formatter fix, then add a reproducing test
+  and fix that cause. Verify token issuance and MCP tool discovery in ChatGPT.
+
+## 2026-09-29 — Queued macOS runners delayed OAuth diagnostic deployment
+
+- **Status:** Resolved; the full main CI run and automatic production deploy
+  eventually succeeded.
+- **Symptoms / impact:** The required watchOS PR build remained queued without
+  a runner for roughly an hour, delaying the ChatGPT diagnostic release.
+- **Evidence / root cause:** The [PR CI run](https://github.com/Asherlc/dofek/actions/runs/36510960949)
+  had 86 completed successful jobs while `Build Mobile / watchOS Build` was
+  queued. An older main CI run then held the workflow concurrency slot with
+  queued Swift jobs, leaving the newer main run pending. Runner scheduling was
+  outside the repository's control.
+- **Mitigation / validation:** With user approval, PR #2826 was administrator
+  merged using a temporary, pull-request-only ruleset bypass that was removed
+  immediately. The stale main run was canceled. The newer [main CI run](https://github.com/Asherlc/dofek/actions/runs/36518883822)
+  passed watchOS, the Docker build, and `CI Gate`; the [automatic deploy](https://github.com/Asherlc/dofek/actions/runs/36520971222)
+  succeeded and production ran the resulting image.
+- **Remaining risk / follow-up:** A future runner queue can delay the same
+  deployment path; record the stale-run concurrency check in the deploy runbook.
+
 ## 2026-09-28 — OpenBeta provider mutation gate failed
 
 - **Status:** Fixed in code; CI rerun pending.

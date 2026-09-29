@@ -1,4 +1,5 @@
 import type { Database } from "dofek/db";
+import { errors } from "oidc-provider";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { warn } = vi.hoisted(() => ({ warn: vi.fn() }));
@@ -78,6 +79,18 @@ describe("MCP OIDC token exchange diagnostics", () => {
       oauth_error: "invalid_client",
     });
     expect(JSON.stringify(warn.mock.calls)).not.toContain(assertion);
+  });
+
+  it("logs a real oidc-provider client authentication detail", () => {
+    const db: Pick<Database, "execute"> = { execute: vi.fn() };
+    const { provider } = createOidcProvider(db, { cookiesKeys: ["test-key"] });
+
+    provider.emit("grant.error", {}, new errors.InvalidClientAuth("client not found"));
+
+    expect(warn.mock.calls[0]?.[1]).toMatchObject({
+      error_name: "InvalidClientAuth",
+      error_detail: "client not found",
+    });
   });
 
   it("omits provider details containing parameter values", () => {

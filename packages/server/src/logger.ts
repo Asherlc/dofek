@@ -21,6 +21,8 @@ export const logger = winston.createLogger({
           const details = JSON.stringify({
             error_name: info.error_name,
             error_description: info.error_description,
+            error_detail: info.error_detail,
+            error_cause: info.error_cause,
             http_status: info.http_status,
             oauth_error: info.oauth_error,
           });
