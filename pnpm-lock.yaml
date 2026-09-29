@@ -503,8 +503,8 @@ importers:
         specifier: 15.1.1
         version: 15.1.1(expo-font@57.0.4)(react-native@0.86.3)(react@19.2.3)
       '@formatjs/intl-getcanonicallocales':
-        specifier: 3.2.11
-        version: 3.2.11
+        specifier: 3.2.12
+        version: 3.2.12
       '@formatjs/intl-locale':
         specifier: 5.3.10
         version: 5.3.10
@@ -3013,6 +3013,9 @@ packages:
 
   '@formatjs/intl-getcanonicallocales@3.2.11':
     resolution: {integrity: sha512-3FX+dgs+n7IZ6LGewqKV+JhAN7PeknS17j2QH0Qq4yQ64QJCmd8ST5FIRRvVgM93T6L2sARpcSH1gNiVMgVy6w==}
+
+  '@formatjs/intl-getcanonicallocales@3.2.12':
+    resolution: {integrity: sha512-THqQLTJUH2z2A7oE1guW8VzpGpsGFxwWZ+l8cI8Bk75xUU8DxtJoLfKl+5a6fYK26GeDWDWE0UbDhE5SwcLoFg==}
 
   '@formatjs/intl-locale@5.3.10':
     resolution: {integrity: sha512-JAlo479jZagR6Ze7EI4HGcV8Fi0PYVvEYmsis7c5i7I9Wa5d1Cbo+ThvDikhkQi6Gt86fpGriDOiOQP8CT2WZA==}
@@ -19338,6 +19341,8 @@ snapshots:
   '@formatjs/fast-memoize@3.1.7': {}
 
   '@formatjs/intl-getcanonicallocales@3.2.11': {}
+
+  '@formatjs/intl-getcanonicallocales@3.2.12': {}
 
   '@formatjs/intl-locale@5.3.10':
     dependencies:
