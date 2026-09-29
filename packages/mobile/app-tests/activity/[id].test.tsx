@@ -82,7 +82,7 @@ vi.mock("react-native-svg", () => ({
 
 vi.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ id: "00000000-0000-0000-0000-000000000001" }),
-  useRouter: () => ({ back: vi.fn() }),
+  useRouter: () => ({ back: mockRouterBack }),
 }));
 
 vi.mock("../../components/ChartTitleWithTooltip", () => ({
@@ -232,8 +232,10 @@ const mockPowerZonesQuery = vi.fn();
 const mockStrengthExercisesQuery = vi.fn();
 const mockClimbingEntriesQuery = vi.fn();
 const mockHangboardDetailsQuery = vi.fn();
+const mockDeleteMutate = vi.fn();
 const mockRecomputeMutate = vi.fn();
 const mockRecomputeShouldFail = vi.fn(() => false);
+const mockRouterBack = vi.fn();
 const mockActivityByIdInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityStreamInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityHrZonesInvalidate = vi.fn().mockResolvedValue(undefined);
@@ -243,6 +245,7 @@ const mockActivityHangboardDetailsInvalidate = vi.fn().mockResolvedValue(undefin
 const mockActivityListInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockCalendarWeekListInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockCalendarActivityOverviewInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockCalendarDataInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockTickSuggestionsQuery = vi.fn((_input?: unknown, _options?: unknown) => ({
   data: [],
   error: null,
@@ -280,7 +283,15 @@ vi.mock("../../lib/trpc", () => ({
           isPending: false,
         }),
       },
-      delete: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+      delete: {
+        useMutation: (options?: { onSuccess?: () => Promise<void> }) => ({
+          mutate: (input: { id: string }) => {
+            mockDeleteMutate(input);
+            void options?.onSuccess?.();
+          },
+          isPending: false,
+        }),
+      },
     },
     climbing: {
       activityEntries: { useQuery: (...args: unknown[]) => mockClimbingEntriesQuery(...args) },
@@ -320,6 +331,7 @@ vi.mock("../../lib/trpc", () => ({
       calendar: {
         weekList: { invalidate: mockCalendarWeekListInvalidate },
         activityOverview: { invalidate: mockCalendarActivityOverviewInvalidate },
+        calendarData: { invalidate: mockCalendarDataInvalidate },
       },
       climbing: {
         activityEntries: { invalidate: mockClimbingEntriesInvalidate },
@@ -421,6 +433,7 @@ beforeEach(() => {
   mockClimbingGradeProgressionInvalidate.mockClear();
   mockClimbingVolumeByGradeInvalidate.mockClear();
   mockHangboardDetailsQuery.mockClear();
+  mockDeleteMutate.mockClear();
   mockRecomputeMutate.mockClear();
   mockRecomputeShouldFail.mockReset();
   mockRecomputeShouldFail.mockReturnValue(false);
@@ -433,6 +446,8 @@ beforeEach(() => {
   mockActivityListInvalidate.mockClear();
   mockCalendarWeekListInvalidate.mockClear();
   mockCalendarActivityOverviewInvalidate.mockClear();
+  mockCalendarDataInvalidate.mockClear();
+  mockRouterBack.mockClear();
   vi.mocked(Alert.alert).mockClear();
   vi.mocked(captureException).mockClear();
   mockByIdQuery.mockReturnValue({ data: baseCyclingActivity, isLoading: false, error: null });
@@ -445,6 +460,27 @@ beforeEach(() => {
 });
 
 describe("ActivityDetailScreen", () => {
+  it("invalidates Activities screen queries after deleting an activity", async () => {
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    fireEvent.click(screen.getByLabelText("Delete Activity"));
+    const deleteAction = vi.mocked(Alert.alert).mock.calls[0]?.[2]?.[1];
+    if (!deleteAction || typeof deleteAction.onPress !== "function") {
+      throw new Error("Expected the destructive delete action");
+    }
+    deleteAction.onPress();
+
+    await waitFor(() => {
+      expect(mockDeleteMutate).toHaveBeenCalledWith({ id: baseCyclingActivity.id });
+      expect(mockActivityListInvalidate).toHaveBeenCalledOnce();
+      expect(mockCalendarWeekListInvalidate).toHaveBeenCalledOnce();
+      expect(mockCalendarActivityOverviewInvalidate).toHaveBeenCalledOnce();
+      expect(mockCalendarDataInvalidate).toHaveBeenCalledOnce();
+      expect(mockRouterBack).toHaveBeenCalledOnce();
+    });
+  });
+
   it("renders the server-provided calendar date at a UTC boundary", async () => {
     mockByIdQuery.mockReturnValue({
       data: {
