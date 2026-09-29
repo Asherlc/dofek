@@ -66,11 +66,12 @@ distinct occurrence indexes.
 An unattached tick stores the exported date as its normalized
 `unattached_date`. When a user attaches it to a climbing activity, that date is
 cleared and the activity becomes the source of the tick's day. Activity detail
-suggestions include only active unattached ticks whose exported day equals the
+suggestions include active unattached entries from supported climbing providers,
+including Mountain Project and OpenBeta, whose exported day equals the
 activity's displayed calendar date in the user's timezone. A matching day only
-suggests a tick; the user attaches each tick explicitly. Attached ticks keep
-their association across later syncs. Unattached ticks contribute to climb and
-grade summaries, but never create an activity, session, or duration.
+suggests an entry; the user attaches each entry explicitly. Attached entries
+keep their association across later syncs. Unattached entries contribute to
+climb and grade summaries, but never create an activity, session, or duration.
 
 See the [schema guide](schema.md#activities) for the stored association and
 date rules, and the [unattached ticks design spec](superpowers/specs/2026-09-26-unattached-mountain-project-ticks-design.md)

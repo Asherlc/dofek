@@ -459,26 +459,26 @@ describe("climbing router integration", () => {
       cacheMode: "refresh",
     });
     await expect(
-      caller.unattachedMountainProjectTicks({ activityId: visibleClimbingActivityId }),
+      caller.unattachedClimbingEntries({ activityId: visibleClimbingActivityId }),
     ).resolves.toEqual([expect.objectContaining({ id: tick.id, grade: "V8" })]);
     await expect(
-      caller.unattachedMountainProjectTicks({ activityId: otherActivityIdRow.id }),
+      caller.unattachedClimbingEntries({ activityId: otherActivityIdRow.id }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
     await expect(
-      caller.unattachedMountainProjectTicks({ activityId: runningActivity.id }),
+      caller.unattachedClimbingEntries({ activityId: runningActivity.id }),
     ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
     await expect(
-      caller.attachMountainProjectTick({ activityId: runningActivity.id, tickId: tick.id }),
+      caller.attachClimbingEntry({ activityId: runningActivity.id, entryId: tick.id }),
     ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
 
     await expect(
-      caller.attachMountainProjectTick({ activityId: visibleClimbingActivityId, tickId: tick.id }),
+      caller.attachClimbingEntry({ activityId: visibleClimbingActivityId, entryId: tick.id }),
     ).resolves.toEqual({ attached: true });
     await expect(
-      caller.attachMountainProjectTick({ activityId: visibleClimbingActivityId, tickId: tick.id }),
+      caller.attachClimbingEntry({ activityId: visibleClimbingActivityId, entryId: tick.id }),
     ).rejects.toMatchObject({ code: "CONFLICT" });
     await expect(
-      caller.unattachedMountainProjectTicks({ activityId: visibleClimbingActivityId }),
+      caller.unattachedClimbingEntries({ activityId: visibleClimbingActivityId }),
     ).resolves.toEqual([]);
   });
 
@@ -517,7 +517,7 @@ describe("climbing router integration", () => {
 
     const context = { db: testContext.db, userId: TEST_USER_ID, timezone: "America/Los_Angeles" };
     const detail = await createActivityCaller(context).byId({ id: activity.group_id });
-    const suggestions = await createCaller(context).unattachedMountainProjectTicks({
+    const suggestions = await createCaller(context).unattachedClimbingEntries({
       activityId: activity.group_id,
     });
 

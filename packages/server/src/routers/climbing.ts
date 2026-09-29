@@ -4,6 +4,7 @@ import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
 import { loadClimbingGradePreference } from "../climbing-grade-preferences.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
+import { ClimbingEntryAssociator } from "../repositories/climbing-entry-associator.ts";
 import {
   type ClimbingActivityEntryRow,
   type ClimbingGradeProgressionRow,
@@ -13,7 +14,6 @@ import {
 } from "../repositories/climbing-repository.ts";
 import { ClimbingTrainingLogRepository } from "../repositories/climbing-training-log-repository.ts";
 import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
-import { MountainProjectTickRepository } from "../repositories/mountain-project-tick-repository.ts";
 import {
   type AuthenticatedContext,
   CacheTTL,
@@ -23,8 +23,10 @@ import {
 } from "../trpc.ts";
 
 const daysInputSchema = z.object({ days: z.number().int().min(1).max(365).default(90) });
-const mountainProjectTickSuggestionSchema = z.object({
+const climbingEntrySuggestionSchema = z.object({
   id: z.guid(),
+  providerId: z.string(),
+  sourceName: z.string().nullable(),
   climbType: z.enum(["boulder", "route"]),
   gradeSystem: z.string(),
   grade: z.string(),
@@ -118,12 +120,12 @@ export const climbingRouter = router({
       });
     }),
 
-  unattachedMountainProjectTicks: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
+  unattachedClimbingEntries: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
     .input(z.object({ activityId: z.guid() }))
-    .output(z.array(mountainProjectTickSuggestionSchema))
+    .output(z.array(climbingEntrySuggestionSchema))
     .query(async ({ ctx, input }) =>
       runClimbingQuery(() =>
-        new MountainProjectTickRepository(
+        new ClimbingEntryAssociator(
           ctx.db,
           ctx.userId,
           ctx.timezone,
@@ -132,22 +134,22 @@ export const climbingRouter = router({
       ),
     ),
 
-  attachMountainProjectTick: protectedProcedure
-    .input(z.object({ activityId: z.guid(), tickId: z.guid() }))
+  attachClimbingEntry: protectedProcedure
+    .input(z.object({ activityId: z.guid(), entryId: z.guid() }))
     .mutation(async ({ ctx, input }) =>
       runClimbingQuery(async () => {
-        await new MountainProjectTickRepository(
+        await new ClimbingEntryAssociator(
           ctx.db,
           ctx.userId,
           ctx.timezone,
           ctx.accessWindow,
-        ).attachTick(input);
+        ).attachEntry(input);
         await Promise.all([
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.activityEntries:`),
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.sessionSummary:`),
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.gradeProgression:`),
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.volumeByGrade:`),
-          queryCache.invalidateByPrefix(`${ctx.userId}:climbing.unattachedMountainProjectTicks:`),
+          queryCache.invalidateByPrefix(`${ctx.userId}:climbing.unattachedClimbingEntries:`),
         ]);
         return { attached: true as const };
       }),
