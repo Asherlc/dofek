@@ -864,7 +864,7 @@ describe("WhoopClient.listDeveloperWorkouts", () => {
     expect(result.next_token).toBe("page-3");
     const url = getFirstRequestUrl(fetchFn);
     expect(url).toContain("limit=10");
-    expect(url).toContain("next_token=page-2");
+    expect(url).toContain("nextToken=page-2");
   });
 
   it("rejects malformed developer workout records", async () => {

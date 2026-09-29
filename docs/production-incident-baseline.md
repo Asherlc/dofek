@@ -7,6 +7,30 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-09-29 — WHOOP deleted workouts were not tombstoned
+
+- **Status:** The reported activity is tombstoned in production. The pagination
+  fix is committed and pushed; it still needs deployment.
+- **Symptoms / impact:** WHOOP workouts deleted in the WHOOP service remained
+  visible in Dofek. Activity
+  `fb7b918b-263d-425e-9d81-bac825ce677e` had an active WHOOP source row with
+  `provider_absent_at IS NULL`.
+- **Evidence / root cause:** Production recorded a repeated developer-workout
+  pagination cursor on every scheduled sync from September 22 through 29. The
+  WHOOP client sent the continuation query parameter as `next_token`, while
+  WHOOP's [workout collection API](https://developer.whoop.com/api/) specifies
+  `nextToken`. WHOOP therefore returned the first page again, and the sync
+  correctly skipped absence reconciliation on the incomplete listing.
+- **Direct fix:** Send the documented `nextToken` parameter. Updated the local
+  WHOOP OpenAPI description and existing client assertion to match.
+- **Production repair and validation:** Marked only the reported WHOOP source
+  row absent, scoped by source row ID, user, provider, and WHOOP external ID.
+  The update affected one row; `fitness.v_activity` returned zero rows for the
+  visible activity ID immediately afterward. No automated tests were run.
+- **Remaining risk / follow-up:** Deploy the pagination fix and confirm WHOOP
+  syncs no longer report repeated cursors and that subsequent deleted workouts
+  receive provider absence tombstones.
+
 ## 2026-09-28 — OpenBeta provider mutation gate failed
 
 - **Status:** Fixed in code; CI rerun pending.
