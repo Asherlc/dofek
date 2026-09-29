@@ -925,6 +925,13 @@
       "when": 1790640000001,
       "tag": "0131_activity_group_manual_merge",
       "breakpoints": true
+    },
+    {
+      "idx": 132,
+      "version": "7",
+      "when": 1790640000002,
+      "tag": "0132_remove_legacy_mcp_oauth",
+      "breakpoints": true
     }
   ]
 }

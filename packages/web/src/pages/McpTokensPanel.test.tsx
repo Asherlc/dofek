@@ -12,7 +12,6 @@ type MockMcpToken = {
   lastUsedAt: string | null;
   expiresAt: string | null;
   revokedAt: string | null;
-  oauthClientId?: string | null;
 };
 
 type MockConnectedApp = {

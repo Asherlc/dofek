@@ -213,7 +213,8 @@ tables through ClickHouse replication.
 | Table | Purpose |
 |-------|---------|
 | `fitness.strength_workout` | Workout sessions |
-| `fitness.mcp_oidc_adapter` | Generic OIDC provider artifacts, with nullable account ownership for erasure and grant activity tracking |
+| `fitness.mcp_oidc_adapter` | Canonical OAuth artifacts, including opaque access tokens, refresh tokens, authorization codes, and grants; nullable account ownership supports erasure and grant activity tracking ([adapter](../packages/server/src/mcp/oidc/adapter.ts)) |
+| `fitness.mcp_access_token` | Manually created personal MCP tokens, stored as hashes with scopes, expiry, and revocation state ([schema](../src/db/schema/account.ts)) |
 | `fitness.strength_set` | Individual sets (exercise, weight, reps, RPE) |
 | `fitness.sleep_session` | Sleep sessions with nullable provider-reported measurements and an explicit `staging_available` quality flag; see the [historical repair runbook](sleep-quality-backfill-runbook.md) |
 | `fitness.food_entry` | Raw food items and nutrition samples, including their ingestion grain |

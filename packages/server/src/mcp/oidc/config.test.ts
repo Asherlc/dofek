@@ -3,6 +3,26 @@ import { errors } from "oidc-provider";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { warn } = vi.hoisted(() => ({ warn: vi.fn() }));
+interface ResourceCallbacks {
+  resourceServerInfo?: (ctx: unknown, resource: string) => Promise<unknown>;
+}
+const callbacks = vi.hoisted((): ResourceCallbacks => ({}));
+vi.mock("oidc-provider", async (importOriginal) => {
+  const original = await importOriginal<typeof import("oidc-provider")>();
+  return {
+    ...original,
+    Provider: class extends original.Provider {
+      constructor(...args: ConstructorParameters<typeof original.Provider>) {
+        super(...args);
+        const callback = args[1].features?.resourceIndicators?.getResourceServerInfo;
+        if (typeof callback === "function") {
+          callbacks.resourceServerInfo = (ctx, resource) =>
+            Promise.resolve(callback(ctx, resource));
+        }
+      }
+    },
+  };
+});
 vi.mock("../../logger.ts", () => ({ logger: { warn } }));
 
 import { createOidcProvider } from "./config.ts";
@@ -17,6 +37,21 @@ describe("MCP OIDC token exchange diagnostics", () => {
     const { provider } = createOidcProvider(db, { cookiesKeys: ["test-key"] });
 
     expect(provider.proxy).toBe(true);
+  });
+
+  it("issues stored opaque access tokens only for Dofek's MCP resource", async () => {
+    createOidcProvider({ execute: vi.fn() }, { cookiesKeys: ["test-key"] });
+    const getInfo = callbacks.resourceServerInfo;
+    if (!getInfo) throw new Error("Resource configuration callback was not installed");
+    const resource = "https://app.example.test/api/mcp";
+    await expect(getInfo({}, resource)).resolves.toMatchObject({
+      audience: resource,
+      accessTokenFormat: "opaque",
+      accessTokenTTL: 3600,
+    });
+    await expect(getInfo({}, "https://other.example.test/api/mcp")).rejects.toBeInstanceOf(
+      errors.InvalidTarget,
+    );
   });
 
   it("negotiates ChatGPT's CIMD authentication choices to public PKCE", () => {

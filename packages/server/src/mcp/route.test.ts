@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { makeMockSensorStore } from "../routers/test-helpers.ts";
 import { verifyMcpAccessToken } from "./access-token-verifier.ts";
-import { getMcpIssuerUrl, getMcpResourceUrl } from "./oauth-config.ts";
+import { getMcpResourceUrl } from "./oauth-config.ts";
 import { mcpClientCorrelationId } from "./request-telemetry.ts";
 import { createMcpRouter } from "./route.ts";
 import {
@@ -371,6 +371,7 @@ function createTestApp(
   app.use(
     "/api/mcp",
     createMcpRouter({
+      provider: { AccessToken: { find: vi.fn() } },
       db: { execute: vi.fn(), select: vi.fn(), transaction: vi.fn() },
       rateLimit,
       sensorStore,
@@ -811,7 +812,14 @@ describe("createMcpRouter", () => {
   it("returns 401 when the bearer token is invalid", async () => {
     const database = { execute: vi.fn(), select: vi.fn(), transaction: vi.fn() };
     const app = express();
-    app.use("/api/mcp", createMcpRouter({ db: database, rateLimit: false }));
+    app.use(
+      "/api/mcp",
+      createMcpRouter({
+        provider: { AccessToken: { find: vi.fn() } },
+        db: database,
+        rateLimit: false,
+      }),
+    );
     const response = await request(app, {
       authorization: "Bearer bad-token",
       body: initializeRequest,
@@ -823,7 +831,7 @@ describe("createMcpRouter", () => {
       "bad-token",
       expect.objectContaining({
         db: database,
-        issuer: getMcpIssuerUrl().href,
+        provider: expect.objectContaining({ AccessToken: expect.any(Object) }),
         resourceUrl: getMcpResourceUrl().href,
       }),
     );

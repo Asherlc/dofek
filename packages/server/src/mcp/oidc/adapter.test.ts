@@ -2,15 +2,6 @@ import type { Database } from "dofek/db";
 import type { SQL } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const credentialEncryptionMocks = vi.hoisted(() => ({
-  decrypt: vi.fn(async (value: string) => value.replace(/^encrypted:/, "")),
-  encrypt: vi.fn(async (value: string) => `encrypted:${value}`),
-}));
-vi.mock("dofek/security/credential-encryption", () => ({
-  decryptCredentialValue: credentialEncryptionMocks.decrypt,
-  encryptCredentialValue: credentialEncryptionMocks.encrypt,
-}));
-
 import {
   createMcpOidcAdapter,
   McpOidcAdapter,
@@ -54,10 +45,6 @@ function requireDate(value: unknown): Date {
 beforeEach(() => {
   vi.clearAllMocks();
   mockExecute.mockResolvedValue([]);
-  credentialEncryptionMocks.encrypt.mockImplementation(async (value) => `encrypted:${value}`);
-  credentialEncryptionMocks.decrypt.mockImplementation(async (value) =>
-    value.replace(/^encrypted:/, ""),
-  );
 });
 
 describe("createMcpOidcAdapter", () => {
@@ -225,41 +212,6 @@ describe("McpOidcAdapter consume", () => {
     expect(executedSql()).toContain("jsonb_set");
     expect(executedSql()).not.toContain("expires_at =");
     expect(executedParams()).toContain("AuthorizationCode");
-  });
-});
-
-describe("McpOidcAdapter Client secrets", () => {
-  it("encrypts client secrets before persistence and decrypts them on read", async () => {
-    const db = mockDb();
-    const adapter = new McpOidcAdapter(db, "Client");
-    await adapter.upsert("client-1", { client_id: "client-1", client_secret: "secret" });
-    expect(executedParams()[2]).toMatchObject({ client_secret: "encrypted:secret" });
-
-    mockExecute.mockResolvedValueOnce([
-      { payload: { client_id: "client-1", client_secret: "encrypted:secret" }, expires_at: null },
-    ]);
-    await expect(adapter.find("client-1")).resolves.toMatchObject({ client_secret: "secret" });
-  });
-
-  it("decrypts migrated legacy client secrets with their original encryption context", async () => {
-    const adapter = new McpOidcAdapter(mockDb(), "Client");
-    mockExecute.mockResolvedValueOnce([
-      {
-        payload: {
-          client_id: "legacy-client",
-          client_secret: "encrypted:legacy-secret",
-          dofekLegacyEncryptedClientSecret: true,
-        },
-        expires_at: null,
-      },
-    ]);
-    await expect(adapter.find("legacy-client")).resolves.toMatchObject({
-      client_secret: "legacy-secret",
-    });
-    expect(credentialEncryptionMocks.decrypt).toHaveBeenCalledWith(
-      "encrypted:legacy-secret",
-      expect.objectContaining({ tableName: "fitness.mcp_oauth_client" }),
-    );
   });
 });
 

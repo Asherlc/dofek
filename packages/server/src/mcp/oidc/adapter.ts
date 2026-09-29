@@ -1,9 +1,5 @@
 import { createHash } from "node:crypto";
 import type { Database } from "dofek/db";
-import {
-  decryptCredentialValue,
-  encryptCredentialValue,
-} from "dofek/security/credential-encryption";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema } from "../../lib/typed-sql.ts";
@@ -21,12 +17,7 @@ import { executeWithSchema } from "../../lib/typed-sql.ts";
  * lookup, `userCode` for DeviceCode lookup, and `grantId` for token-family
  * revocation.
  *
- * We deliberately do NOT reuse Dofek's `fitness.mcp_oauth_*` tables: those
- * encode Dofek's own hand-rolled authorization flow (SHA-256 token hashes,
- * PKCE challenge columns, a custom refresh-token family graph) and do not map
- * onto oidc-provider's artifact shape without lossy translation. A dedicated,
- * generic table keeps the authorization server's state cleanly isolated and
- * easily re-creatable.
+ * This adapter is the canonical storage for OAuth state.
  */
 
 export interface AdapterPayload {
@@ -77,53 +68,6 @@ function storedId(model: string, id: string): string {
   return protectedIdModels.has(model) ? createHash("sha256").update(id).digest("hex") : id;
 }
 
-function clientSecretContext(clientId: string) {
-  return {
-    columnName: "client_secret",
-    scopeId: clientId,
-    tableName: "fitness.mcp_oidc_adapter",
-  };
-}
-
-function legacyClientSecretContext(clientId: string) {
-  return {
-    columnName: "client_secret",
-    scopeId: clientId,
-    tableName: "fitness.mcp_oauth_client",
-  };
-}
-
-async function protectPayload(model: string, payload: AdapterPayload, id: string) {
-  if (model !== "Client" || typeof payload.client_secret !== "string") return payload;
-  const { dofekLegacyEncryptedClientSecret: _legacyMarker, ...clientPayload } = payload;
-  return {
-    ...clientPayload,
-    client_secret: await encryptCredentialValue(payload.client_secret, clientSecretContext(id)),
-  };
-}
-
-async function restorePayload(model: string, payload: AdapterPayload) {
-  if (model !== "Client" || typeof payload.client_secret !== "string") return payload;
-  const clientId = typeof payload.client_id === "string" ? payload.client_id : "";
-  if (payload.dofekLegacyEncryptedClientSecret === true) {
-    const { dofekLegacyEncryptedClientSecret: _legacyMarker, ...clientPayload } = payload;
-    return {
-      ...clientPayload,
-      client_secret: await decryptCredentialValue(
-        payload.client_secret,
-        legacyClientSecretContext(clientId),
-      ),
-    };
-  }
-  return {
-    ...payload,
-    client_secret: await decryptCredentialValue(
-      payload.client_secret,
-      clientSecretContext(clientId),
-    ),
-  };
-}
-
 function isExpired(expiresAt: string | Date | null | undefined): boolean {
   if (expiresAt === null || expiresAt === undefined) return false;
   const timestamp = new Date(expiresAt).getTime();
@@ -141,12 +85,11 @@ export class McpOidcAdapter {
 
   async upsert(id: string, payload: AdapterPayload, expiresIn?: number): Promise<void> {
     const expiresAt = resolveExpiresAt(expiresIn);
-    const storedPayload = await protectPayload(this.model, payload, id);
     const userId = resolveAdapterUserId(payload.accountId);
     await this.#db.execute(
       sql`INSERT INTO fitness.mcp_oidc_adapter (model, id, payload, uid, user_id, user_code, grant_id, expires_at)
           VALUES (
-            ${this.model}, ${storedId(this.model, id)}, ${storedPayload},
+            ${this.model}, ${storedId(this.model, id)}, ${payload},
             ${payload.uid ?? null}, ${userId}, ${payload.userCode ?? null}, ${payload.grantId ?? null},
             ${expiresAt}
           )
@@ -190,7 +133,7 @@ export class McpOidcAdapter {
     const rows = await executeWithSchema(this.#db, adapterRowSchema, query);
     const row = rows[0];
     if (!row || isExpired(row.expires_at)) return undefined;
-    return restorePayload(this.model, row.payload);
+    return row.payload;
   }
 
   async consume(id: string): Promise<void> {

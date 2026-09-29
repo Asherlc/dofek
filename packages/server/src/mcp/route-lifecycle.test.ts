@@ -121,6 +121,7 @@ async function request(
   app.use(
     "/api/mcp",
     createMcpRouter({
+      provider: { AccessToken: { find: vi.fn() } },
       db: { execute: vi.fn(), select: vi.fn(), transaction: vi.fn() },
     }),
   );
