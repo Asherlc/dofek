@@ -1602,6 +1602,79 @@ describe("ActivityRepository", () => {
       );
     });
 
+    it("mergeActivities retains the earliest group and aliases every retired group", async () => {
+      const laterId = "00000000-0000-4000-8000-000000000001";
+      const earlierId = "00000000-0000-4000-8000-000000000002";
+      const { repo, execute } = makeRepository([
+        { id: laterId, canonical_type: "cycling", started_at: "2026-09-02T08:00:00Z" },
+        { id: earlierId, canonical_type: "cycling", started_at: "2026-09-01T08:00:00Z" },
+      ]);
+
+      await expect(repo.mergeActivities([laterId, earlierId])).resolves.toEqual({
+        groupId: earlierId,
+        memberActivityIds: [laterId, earlierId],
+        affectedGroupIds: [laterId, earlierId],
+      });
+
+      const calls = execute.mock.calls.map(([query]) => dialect.sqlToQuery(query));
+      expect(
+        calls.find((call) => call.sql.includes("SELECT id::text AS id, canonical_type"))?.params,
+      ).toEqual(expect.arrayContaining([laterId, earlierId, "user-1"]));
+      expect(
+        calls.find((call) => call.sql.includes("FROM fitness.activity WHERE user_id"))?.params,
+      ).toEqual(expect.arrayContaining([laterId, earlierId, "user-1"]));
+      expect(
+        calls.find((call) => call.sql.includes("UPDATE fitness.activity SET group_id"))?.params,
+      ).toEqual(expect.arrayContaining([earlierId, laterId, "user-1"]));
+      expect(
+        calls.find((call) => call.sql.includes("UPDATE fitness.activity_group SET manual_merge"))
+          ?.params,
+      ).toEqual(expect.arrayContaining([earlierId, "user-1"]));
+      expect(
+        calls.filter((call) =>
+          call.sql.includes("UPDATE fitness.activity_group_alias SET group_id"),
+        ),
+      ).toHaveLength(1);
+      expect(
+        calls.find((call) => call.sql.includes("UPDATE fitness.activity_group_alias SET group_id"))
+          ?.params,
+      ).toEqual([earlierId, "user-1", laterId]);
+      const aliasInserts = calls.filter((call) =>
+        call.sql.includes("INSERT INTO fitness.activity_group_alias (alias_id"),
+      );
+      expect(aliasInserts).toHaveLength(1);
+      expect(aliasInserts[0]?.params).toEqual([laterId, earlierId, "user-1"]);
+    });
+
+    it("mergeActivities rejects selections containing hidden activities before writing", async () => {
+      const onlyVisibleId = "00000000-0000-4000-8000-000000000001";
+      const hiddenId = "00000000-0000-4000-8000-000000000002";
+      const { repo, execute } = makeRepository([
+        { id: onlyVisibleId, canonical_type: "cycling", started_at: "2026-09-01T08:00:00Z" },
+      ]);
+
+      await expect(repo.mergeActivities([onlyVisibleId, hiddenId])).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message: expect.stringContaining("no longer visible"),
+      });
+      expect(execute).toHaveBeenCalledTimes(2);
+    });
+
+    it("mergeActivities rejects selections with different canonical types before writing", async () => {
+      const firstId = "00000000-0000-4000-8000-000000000001";
+      const secondId = "00000000-0000-4000-8000-000000000002";
+      const { repo, execute } = makeRepository([
+        { id: firstId, canonical_type: "cycling", started_at: "2026-09-01T08:00:00Z" },
+        { id: secondId, canonical_type: "running", started_at: "2026-09-02T08:00:00Z" },
+      ]);
+
+      await expect(repo.mergeActivities([firstId, secondId])).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message: "Selected activities must have the same type.",
+      });
+      expect(execute).toHaveBeenCalledTimes(2);
+    });
+
     it("restoreProviderAbsent skips SQL when no activity ids are provided", async () => {
       const { repo, execute } = makeRepository([]);
 

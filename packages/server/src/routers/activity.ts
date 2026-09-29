@@ -373,6 +373,48 @@ export const activityRouter = router({
       }
     }),
 
+  merge: protectedProcedure
+    .input(
+      z.object({
+        ids: z
+          .array(z.guid())
+          .min(2)
+          .max(MAX_BULK_DELETE_ACTIVITY_IDS)
+          .refine((ids) => new Set(ids).size === ids.length, "Activity IDs must be unique"),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const merged = await withAccountErasureUserWriteFence(
+          ctx.db,
+          ctx.userId,
+          async (transaction) => {
+            const repo = new ActivityRepository(
+              transaction,
+              ctx.userId,
+              ctx.timezone,
+              ctx.accessWindow,
+            );
+            return repo.mergeActivities(input.ids);
+          },
+        );
+        await scheduleActivityRecomputeAnalyticsRefresh(ctx.userId, [
+          ...new Set([...merged.memberActivityIds, ...merged.affectedGroupIds]),
+        ]);
+        await invalidateActivityListCaches(ctx.userId);
+        return { success: true, groupId: merged.groupId };
+      } catch (error) {
+        if (isRelationMissingError(error)) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "Activity data is unavailable because the activity view is missing. Run migrations and retry.",
+          });
+        }
+        throw error;
+      }
+    }),
+
   restoreProviderAbsent: protectedProcedure
     .input(z.object({ ids: z.array(z.guid()).min(1).max(MAX_BULK_DELETE_ACTIVITY_IDS) }))
     .mutation(async ({ ctx, input }) => {

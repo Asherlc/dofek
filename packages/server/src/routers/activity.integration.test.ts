@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
@@ -21,6 +21,41 @@ describe("Activity router", () => {
 
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
+
+    const staleGroups = await testCtx.db.execute<{
+      group_id: string;
+    }>(sql`SELECT DISTINCT group_id::text AS group_id
+      FROM fitness.activity WHERE user_id = ${TEST_USER_ID}::uuid AND name IN ('Merge early', 'Merge late')`);
+    const staleGroupIds = staleGroups.map((row) => row.group_id);
+    if (staleGroupIds.length > 0) {
+      const staleAliases = await testCtx.db.execute<{
+        alias_id: string;
+      }>(sql`SELECT alias_id::text AS alias_id
+        FROM fitness.activity_group_alias WHERE user_id = ${TEST_USER_ID}::uuid
+          AND group_id IN (${sql.join(
+            staleGroupIds.map((id) => sql`${id}::uuid`),
+            sql`, `,
+          )})`);
+      await testCtx.db.execute(sql`DELETE FROM fitness.activity_group_alias WHERE user_id = ${TEST_USER_ID}::uuid
+        AND (group_id IN (${sql.join(
+          staleGroupIds.map((id) => sql`${id}::uuid`),
+          sql`, `,
+        )})
+          OR alias_id IN (${sql.join(
+            staleGroupIds.map((id) => sql`${id}::uuid`),
+            sql`, `,
+          )}))`);
+      await testCtx.db.execute(sql`DELETE FROM fitness.activity WHERE user_id = ${TEST_USER_ID}::uuid
+        AND name IN ('Merge early', 'Merge late')`);
+      const removeGroupIds = [
+        ...new Set([...staleGroupIds, ...staleAliases.map((row) => row.alias_id)]),
+      ];
+      await testCtx.db.execute(sql`DELETE FROM fitness.activity_group WHERE user_id = ${TEST_USER_ID}::uuid
+        AND id IN (${sql.join(
+          removeGroupIds.map((id) => sql`${id}::uuid`),
+          sql`, `,
+        )})`);
+    }
 
     const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
@@ -181,6 +216,123 @@ describe("Activity router", () => {
     });
     return res.json();
   }
+
+  async function mutation(path: string, input: Record<string, unknown> = {}) {
+    const res = await fetch(`${baseUrl}/api/trpc/${path}?batch=1`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: sessionCookie },
+      body: JSON.stringify({ "0": input }),
+    });
+    return { status: res.status, result: (await res.json())[0] };
+  }
+
+  async function insertMergePair(secondType = "cycling") {
+    const nonce = crypto.randomUUID();
+    return testCtx.db.execute<{ id: string; group_id: string }>(sql`
+      INSERT INTO fitness.activity (provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name)
+      VALUES
+        ('test_provider', ${TEST_USER_ID}, ${`${nonce}-early`}, 'cycling', 'cycling', '2026-09-20 08:00:00+00', '2026-09-20 09:00:00+00', 'Merge early'),
+        ('test_provider', ${TEST_USER_ID}, ${`${nonce}-late`}, ${secondType}, ${secondType}, '2026-09-20 13:00:00+00', '2026-09-20 14:00:00+00', 'Merge late')
+      RETURNING id::text AS id, group_id::text AS group_id`);
+  }
+
+  afterEach(async () => {
+    const groups = await testCtx.db.execute<{
+      group_id: string;
+    }>(sql`SELECT DISTINCT group_id::text AS group_id
+      FROM fitness.activity WHERE user_id = ${TEST_USER_ID}::uuid AND name IN ('Merge early', 'Merge late')`);
+    const groupIds = groups.map((row) => row.group_id);
+    if (groupIds.length === 0) return;
+    const aliases = await testCtx.db.execute<{
+      alias_id: string;
+    }>(sql`SELECT alias_id::text AS alias_id
+      FROM fitness.activity_group_alias WHERE user_id = ${TEST_USER_ID}::uuid
+        AND group_id IN (${sql.join(
+          groupIds.map((id) => sql`${id}::uuid`),
+          sql`, `,
+        )})`);
+    await testCtx.db.execute(sql`DELETE FROM fitness.activity_group_alias WHERE user_id = ${TEST_USER_ID}::uuid
+      AND (group_id IN (${sql.join(
+        groupIds.map((id) => sql`${id}::uuid`),
+        sql`, `,
+      )})
+        OR alias_id IN (${sql.join(
+          groupIds.map((id) => sql`${id}::uuid`),
+          sql`, `,
+        )}))`);
+    await testCtx.db.execute(sql`DELETE FROM fitness.activity WHERE user_id = ${TEST_USER_ID}::uuid
+      AND name IN ('Merge early', 'Merge late')`);
+    const allGroupIds = [...new Set([...groupIds, ...aliases.map((row) => row.alias_id)])];
+    await testCtx.db.execute(sql`DELETE FROM fitness.activity_group WHERE user_id = ${TEST_USER_ID}::uuid
+      AND id IN (${sql.join(
+        allGroupIds.map((id) => sql`${id}::uuid`),
+        sql`, `,
+      )})`);
+  });
+
+  describe("merge", () => {
+    it("merges same-type groups, preserves the earliest group and spans both time ranges", async () => {
+      const inserted = await insertMergePair();
+      const [historicalAlias] = await testCtx.db.execute<{ id: string }>(sql`
+        INSERT INTO fitness.activity_group (user_id) VALUES (${TEST_USER_ID}::uuid) RETURNING id::text AS id`);
+      await testCtx.db.execute(sql`INSERT INTO fitness.activity_group_alias (alias_id, group_id, user_id, reason)
+        VALUES (${historicalAlias?.id}::uuid, ${inserted[1]?.group_id}::uuid, ${TEST_USER_ID}::uuid, 'merge')`);
+      const result = await mutation("activity.merge", { ids: inserted.map((row) => row.group_id) });
+      expect(result.result?.result?.data).toMatchObject({
+        success: true,
+        groupId: inserted[0]?.group_id,
+      });
+      const membership = await testCtx.db.execute<{ group_id: string }>(sql`
+        SELECT DISTINCT group_id::text AS group_id FROM fitness.activity WHERE id IN (${sql.join(
+          inserted.map((row) => sql`${row.id}::uuid`),
+          sql`, `,
+        )})`);
+      expect(membership).toEqual([{ group_id: inserted[0]?.group_id }]);
+      const [merged] = await testCtx.db.execute<{ started_at: string; ended_at: string }>(sql`
+        SELECT started_at::text AS started_at, ended_at::text AS ended_at FROM fitness.v_activity WHERE id = ${inserted[0]?.group_id}::uuid`);
+      expect(new Date(merged?.started_at ?? "").toISOString()).toBe("2026-09-20T08:00:00.000Z");
+      expect(new Date(merged?.ended_at ?? "").toISOString()).toBe("2026-09-20T14:00:00.000Z");
+      expect(
+        await testCtx.db.execute(
+          sql`SELECT alias_id FROM fitness.activity_group_alias WHERE alias_id = ${inserted[1]?.group_id}::uuid AND group_id = ${inserted[0]?.group_id}::uuid`,
+        ),
+      ).toHaveLength(1);
+      expect(
+        await testCtx.db.execute(
+          sql`SELECT alias_id FROM fitness.activity_group_alias WHERE alias_id = ${historicalAlias?.id}::uuid AND group_id = ${inserted[0]?.group_id}::uuid`,
+        ),
+      ).toHaveLength(1);
+    });
+
+    it("rejects mixed types without moving source rows", async () => {
+      const inserted = await insertMergePair("running");
+      const result = await mutation("activity.merge", { ids: inserted.map((row) => row.group_id) });
+      expect(result.result?.error?.data?.code).toBe("PRECONDITION_FAILED");
+      const groups = await testCtx.db.execute<{ group_id: string }>(
+        sql`SELECT group_id::text AS group_id FROM fitness.activity WHERE id IN (${sql.join(
+          inserted.map((row) => sql`${row.id}::uuid`),
+          sql`, `,
+        )}) ORDER BY started_at`,
+      );
+      expect(groups.map((row) => row.group_id)).toEqual(inserted.map((row) => row.group_id));
+    });
+
+    it("rejects hidden activity groups without moving source rows", async () => {
+      const inserted = await insertMergePair();
+      await testCtx.db.execute(
+        sql`UPDATE fitness.activity SET provider_absent_at = NOW() WHERE id = ${inserted[1]?.id}::uuid`,
+      );
+      const result = await mutation("activity.merge", { ids: inserted.map((row) => row.group_id) });
+      expect(result.result?.error?.data?.code).toBe("PRECONDITION_FAILED");
+      const groups = await testCtx.db.execute<{ group_id: string }>(
+        sql`SELECT group_id::text AS group_id FROM fitness.activity WHERE id IN (${sql.join(
+          inserted.map((row) => sql`${row.id}::uuid`),
+          sql`, `,
+        )}) ORDER BY started_at`,
+      );
+      expect(groups.map((row) => row.group_id)).toEqual(inserted.map((row) => row.group_id));
+    });
+  });
 
   describe("byId", () => {
     it("returns NOT_FOUND for a non-existent activity", async () => {

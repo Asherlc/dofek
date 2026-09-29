@@ -18,6 +18,8 @@ function memberRow(id: string, groupId = group, anchorId = first) {
     group_created_at: createdAt,
     anchor_activity_id: anchorId,
     overlapping_activity_ids: [],
+    manual_merge: false,
+    manual_merge_anchor_id: anchorId,
   };
 }
 
@@ -48,6 +50,8 @@ describe("activity group reconciliation adapter", () => {
           group_created_at: createdAt,
           anchor_activity_id: first,
           overlapping_activity_ids: [second],
+          manual_merge: false,
+          manual_merge_anchor_id: first,
         },
         {
           id: second,
@@ -56,6 +60,8 @@ describe("activity group reconciliation adapter", () => {
           group_created_at: "2026-09-02T10:00:00Z",
           anchor_activity_id: second,
           overlapping_activity_ids: [],
+          manual_merge: false,
+          manual_merge_anchor_id: second,
         },
       ],
       [],
@@ -73,6 +79,61 @@ describe("activity group reconciliation adapter", () => {
     expect(
       calls.find((call) => call.sql.includes("INSERT INTO fitness.activity_group_alias"))?.params,
     ).toEqual([newerGroup, group, userId]);
+  });
+
+  it("preserves a manual merge when reconciliation joins it to an overlapping activity", async () => {
+    const database = databaseWithRows([
+      [],
+      [
+        {
+          ...memberRow(first),
+          manual_merge: true,
+          manual_merge_anchor_id: first,
+        },
+        {
+          ...memberRow(second),
+          manual_merge: true,
+          manual_merge_anchor_id: first,
+          overlapping_activity_ids: [newerGroup],
+        },
+        {
+          ...memberRow(newerGroup, newerGroup, newerGroup),
+          created_at: "2026-09-03T10:00:00Z",
+          group_created_at: "2026-09-03T10:00:00Z",
+          overlapping_activity_ids: [second],
+        },
+      ],
+      [],
+    ]);
+    await reconcileActivityGroups(database, userId);
+    const calls = database.queries();
+    expect(
+      calls.find((call) => call.sql.includes("UPDATE fitness.activity_group SET manual_merge"))
+        ?.params,
+    ).toEqual([group]);
+    expect(
+      calls.find((call) => call.sql.includes("INSERT INTO fitness.activity_group_alias"))?.params,
+    ).toEqual([newerGroup, group, userId]);
+    expect(calls.some((call) => call.sql.includes("INSERT INTO fitness.activity_group ("))).toBe(
+      false,
+    );
+  });
+
+  it("persists the manual merge marker for a single active member", async () => {
+    const database = databaseWithRows([
+      [],
+      [
+        { ...memberRow(first), manual_merge: true },
+        { ...memberRow(second, newerGroup, second), created_at: "2026-09-02T10:00:00Z" },
+      ],
+      [],
+    ]);
+    await reconcileActivityGroups(database, userId);
+    const markerUpdates = database
+      .queries()
+      .filter((query) => query.sql.includes("UPDATE fitness.activity_group SET manual_merge"));
+    expect(markerUpdates).toHaveLength(1);
+    expect(markerUpdates[0]?.params).toEqual([group]);
   });
 
   it("propagates storage failures before applying membership writes", async () => {
@@ -142,5 +203,24 @@ describe("activity group reconciliation adapter", () => {
       "Activity group alias cycle",
     );
     expect(database.queries().filter((query) => /INSERT|UPDATE/.test(query.sql))).toEqual([]);
+  });
+
+  it("rejects a merge that would close an existing alias chain", async () => {
+    const database = databaseWithRows([
+      [],
+      [
+        { ...memberRow(first), overlapping_activity_ids: [second] },
+        {
+          ...memberRow(second, newerGroup, second),
+          created_at: "2026-09-02T10:00:00Z",
+          group_created_at: "2026-09-02T10:00:00Z",
+          overlapping_activity_ids: [first],
+        },
+      ],
+      [{ alias_id: group, group_id: newerGroup }],
+    ]);
+    await expect(reconcileActivityGroups(database, userId)).rejects.toThrow(
+      "Activity group merge would create an alias cycle",
+    );
   });
 });

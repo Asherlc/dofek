@@ -27613,3 +27613,12 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `fix-activity-deletion-stuck` but is not deployed. Production still has the
   reported member active. After the normal deployment, verify its source row
   is soft-deleted and the authenticated activity list omits the group.
+
+## 2026-09-28 — Local Docker Desktop AIO limit blocked canonical integration tests
+
+- **Symptoms / user impact:** `pnpm test:integration` could not start Redpanda, so feature integration tests did not run.
+- **Evidence:** Redpanda logged `Could not setup Async I/O: unknown error` and reported `/proc/sys/fs/aio-max-nr` at `65536`; `aio-nr` was also `65536`. Other Compose dependencies were healthy. Docker Desktop runs containers inside its Linux VM ([Docker Desktop for Mac](https://docs.docker.com/desktop/setup/install/mac-permission-requirements/)).
+- **Root cause:** The Docker Desktop Linux VM's system-wide asynchronous I/O request limit was exhausted at 65,536.
+- **Fix:** With user authorization, raised the VM value to `1048576` using a privileged, host-PID Alpine container. A fresh workspace container then reported `aio-max-nr=1048576` and Redpanda became healthy.
+- **Validation:** The canonical runner reached Vitest; the activity-group reconciliation integration suite passed 19/19 tests. The initial filtered run used an underscore pattern and skipped all tests; it was corrected to the exact test title before results were accepted.
+- **Remaining risk / follow-up:** Docker Desktop may reset this VM-only sysctl after a restart. Reapply the setting if Redpanda reports the same AIO capacity error. No repository runtime workaround was added.

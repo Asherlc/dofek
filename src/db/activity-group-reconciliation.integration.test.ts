@@ -44,6 +44,72 @@ describe("transactional activity group reconciliation", () => {
       sql`SELECT alias_id, group_id, reason FROM fitness.activity_group_alias WHERE user_id = ${userId} ORDER BY alias_id`,
     );
 
+  it("keeps disjoint manually merged members together after reconciliation", async () => {
+    const first = await activity("group-test-a", "2026-09-01T08:00:00Z", "2026-09-01T09:00:00Z");
+    const second = await activity(
+      "group-test-a",
+      "2026-09-01T13:00:00Z",
+      "2026-09-01T14:00:00Z",
+      "2026-09-02T10:00:00Z",
+    );
+    await context.db.execute(sql`UPDATE fitness.activity SET group_id = ${first.groupId}
+      WHERE id = ${second.id}`);
+    await context.db.execute(sql`UPDATE fitness.activity_group SET manual_merge = true
+      WHERE id = ${first.groupId}`);
+    await context.db.execute(sql`INSERT INTO fitness.activity_group_alias
+      (alias_id, group_id, user_id, reason)
+      VALUES (${second.groupId}, ${first.groupId}, ${userId}, 'merge')`);
+
+    await reconcile();
+
+    expect(await membership(first.id)).toEqual([{ group_id: first.groupId }]);
+    expect(await membership(second.id)).toEqual([{ group_id: first.groupId }]);
+    const [merged] = await context.db.execute<{
+      id: string;
+      started_at: string;
+      ended_at: string;
+    }>(sql`SELECT id, started_at::text AS started_at, ended_at::text AS ended_at
+      FROM fitness.v_activity WHERE id = ${first.groupId}`);
+    expect(merged?.id).toBe(first.groupId);
+    expect(new Date(merged?.started_at ?? "").toISOString()).toBe("2026-09-01T08:00:00.000Z");
+    expect(new Date(merged?.ended_at ?? "").toISOString()).toBe("2026-09-01T14:00:00.000Z");
+  });
+
+  it("carries the manual merge marker when its group joins an overlap component", async () => {
+    const olderGroup = await activity(
+      "group-test-b",
+      "2026-09-01T08:05:00Z",
+      "2026-09-01T08:55:00Z",
+      "2026-09-01T09:00:00Z",
+    );
+    const firstManualMember = await activity(
+      "group-test-a",
+      "2026-09-01T08:00:00Z",
+      "2026-09-01T09:00:00Z",
+      "2026-09-01T10:00:00Z",
+    );
+    const secondManualMember = await activity(
+      "group-test-a",
+      "2026-09-01T13:00:00Z",
+      "2026-09-01T14:00:00Z",
+      "2026-09-01T11:00:00Z",
+    );
+    await context.db.execute(sql`UPDATE fitness.activity SET group_id = ${firstManualMember.groupId}
+      WHERE id = ${secondManualMember.id}`);
+    await context.db.execute(sql`UPDATE fitness.activity_group SET manual_merge = true
+      WHERE id = ${firstManualMember.groupId}`);
+
+    await reconcile();
+
+    expect(await membership(olderGroup.id)).toEqual([{ group_id: olderGroup.groupId }]);
+    expect(await membership(firstManualMember.id)).toEqual([{ group_id: olderGroup.groupId }]);
+    expect(await membership(secondManualMember.id)).toEqual([{ group_id: olderGroup.groupId }]);
+    const [targetGroup] = await context.db.execute<{ manual_merge: boolean }>(
+      sql`SELECT manual_merge FROM fitness.activity_group WHERE id = ${olderGroup.groupId}`,
+    );
+    expect(targetGroup?.manual_merge).toBe(true);
+  });
+
   it("keeps identity through late provider addition and provider priority changes", async () => {
     const first = await activity();
     await reconcile();

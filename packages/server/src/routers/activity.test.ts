@@ -839,6 +839,69 @@ describe("activityRouter", () => {
       ]);
     });
 
+    it("merge schedules refreshes for source members and group IDs and invalidates activity caches", async () => {
+      mockEnqueueActivityRecomputeAnalyticsRefresh.mockClear();
+      vi.mocked(queryCache.invalidateByPrefix).mockClear();
+      const groupIds = [
+        "00000000-0000-0000-0000-000000000001",
+        "00000000-0000-0000-0000-000000000002",
+      ];
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce(
+          groupIds.map((id) => ({
+            id,
+            canonical_type: "cycling",
+            started_at: "2026-09-20T08:00:00Z",
+          })),
+        )
+        .mockResolvedValueOnce([{ id: "member-a" }, { id: "member-b" }])
+        .mockResolvedValue([]);
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
+
+      await expect(caller.merge({ ids: groupIds })).resolves.toEqual({
+        success: true,
+        groupId: groupIds[0],
+      });
+
+      expect(mockEnqueueActivityRecomputeAnalyticsRefresh).toHaveBeenCalledWith("user-1", [
+        "member-a",
+        "member-b",
+        ...groupIds,
+      ]);
+      expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:activity.");
+      expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:calendar.");
+    });
+
+    it("merge rejects duplicate activity IDs before querying the database", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
+      const id = "00000000-0000-0000-0000-000000000001";
+
+      await expect(caller.merge({ ids: [id, id] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      expect(execute).not.toHaveBeenCalled();
+    });
+
+    it("merge reports an actionable error when the activity view is missing", async () => {
+      const execute = vi.fn().mockRejectedValue(
+        Object.assign(new Error('relation "fitness.v_activity" does not exist'), {
+          code: "42P01",
+        }),
+      );
+      const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
+
+      await expect(
+        caller.merge({
+          ids: ["00000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000002"],
+        }),
+      ).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message:
+          "Activity data is unavailable because the activity view is missing. Run migrations and retry.",
+      });
+    });
+
     it("invalidates activity and calendar caches after bulkDelete", async () => {
       const execute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
