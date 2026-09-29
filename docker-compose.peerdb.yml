@@ -204,7 +204,7 @@ services:
         condition: service_completed_successfully
 
   peerdb-flow-snapshot-worker:
-    image: ghcr.io/peerdb-io/flow-snapshot-worker:stable-v0.37.9
+    image: ghcr.io/peerdb-io/flow-snapshot-worker:stable-v0.37.10
     environment: *peerdb-flow-environment
     restart: unless-stopped
     depends_on:
