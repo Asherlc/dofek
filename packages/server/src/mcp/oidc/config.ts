@@ -198,7 +198,6 @@ export function createOidcProvider(
       dPoP: { enabled: false },
       introspection: { enabled: false },
       pushedAuthorizationRequests: { enabled: false },
-      registration: { enabled: false },
       rpMetadataChoices: { enabled: true },
       resourceIndicators: {
         enabled: true,
