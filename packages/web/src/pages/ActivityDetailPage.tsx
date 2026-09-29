@@ -141,6 +141,8 @@ export function ActivityDetailPage() {
       await Promise.all([
         trpcUtils.climbing.activityEntries.invalidate({ id: input.activityId }),
         trpcUtils.climbing.sessionSummary.invalidate(),
+        trpcUtils.climbing.gradeProgression.invalidate(),
+        trpcUtils.climbing.volumeByGrade.invalidate(),
         trpcUtils.climbing.unattachedClimbingEntries.invalidate({
           activityId: input.activityId,
         }),

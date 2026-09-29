@@ -71,8 +71,9 @@ export class ClimbingEntryAssociator extends BaseRepository {
       sql`SELECT id::text AS id, provider_id, source_name,
                  climb_type::text AS climb_type,
                  grade_system::text AS grade_system, grade, sent, attempt_count,
-                 CASE lower(btrim(CASE WHEN climb_type = 'boulder'
-                   THEN raw->>'Style' ELSE raw->>'Lead Style' END))
+                 CASE lower(btrim(COALESCE(raw->>'ascentType', raw->>'attemptType',
+                   CASE WHEN climb_type = 'boulder'
+                     THEN raw->>'Style' ELSE raw->>'Lead Style' END)))
                    WHEN 'flash' THEN 'Flash'
                    WHEN 'onsight' THEN 'Onsight'
                    WHEN 'redpoint' THEN 'Redpoint'

@@ -6,6 +6,7 @@ import { setupTestDatabase, type TestContext } from "../../../../src/db/test-hel
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { ActivityRepository } from "./activity-repository.ts";
 import { ClimbingEntryAssociator } from "./climbing-entry-associator.ts";
+import { ClimbingRepository } from "./climbing-repository.ts";
 
 const OTHER_USER_ID = "a0000000-0000-4000-8000-000000000001";
 const DATE_MATCH_TICK_ID = "a0000000-0000-4000-8000-000000000002";
@@ -13,6 +14,7 @@ const ADJACENT_TICK_ID = "a0000000-0000-4000-8000-000000000003";
 const ABSENT_TICK_ID = "a0000000-0000-4000-8000-000000000004";
 const FOREIGN_TICK_ID = "a0000000-0000-4000-8000-000000000005";
 const OPENBETA_TICK_ID = "a0000000-0000-4000-8000-000000000006";
+const CONCURRENT_TICK_ID = "a0000000-0000-4000-8000-000000000007";
 const activityIdRowSchema = z.object({ id: z.string(), group_id: z.string() });
 const groupIdRowSchema = z.object({ group_id: z.string() });
 const attachedTickRowSchema = z.object({
@@ -64,7 +66,11 @@ describe("ClimbingEntryAssociator PostgreSQL behavior", () => {
       (${FOREIGN_TICK_ID}, ${OTHER_USER_ID}, 'mountain-project', NULL, '2026-01-01',
        'foreign-user', 'boulder', 'v_scale', 'V7', TRUE, 1, NULL, 'Mountain Project', '{}'::jsonb),
       (${OPENBETA_TICK_ID}, ${TEST_USER_ID}, 'openbeta', NULL, '2026-01-01',
-       'openbeta:local-day', 'route', 'yds', '5.10a', TRUE, 1, NULL, 'OpenBeta', '{"source":"openbeta"}'::jsonb)`);
+       'openbeta:local-day', 'route', 'yds', '5.10a', TRUE, 1, NULL, 'OpenBeta',
+       '{"source":"openbeta","attemptType":"Onsight"}'::jsonb),
+      (${CONCURRENT_TICK_ID}, ${TEST_USER_ID}, 'openbeta', NULL, '2026-01-01',
+       'openbeta:concurrent', 'route', 'yds', '5.10b', TRUE, 1, NULL, 'OpenBeta',
+       '{"source":"openbeta","attemptType":"Flash"}'::jsonb)`);
   }, 60_000);
 
   afterAll(async () => {
@@ -87,11 +93,12 @@ describe("ClimbingEntryAssociator PostgreSQL behavior", () => {
           providerId: "openbeta",
           sourceName: "OpenBeta",
           grade: "5.10a",
+          ascentType: "Onsight",
           locationName: null,
         }),
       ]),
     );
-    expect(await repo.getSuggestions(activityId)).toHaveLength(2);
+    expect(await repo.getSuggestions(activityId)).toHaveLength(3);
   });
 
   it("attaches one same-day tick to the actual member row resolved from the canonical group", async () => {
@@ -126,6 +133,31 @@ describe("ClimbingEntryAssociator PostgreSQL behavior", () => {
       FROM fitness.climbing_entry WHERE id = ${OPENBETA_TICK_ID}::uuid`,
     );
     expect(openBetaRows).toEqual([{ activity_id: memberId, unattached_date: null }]);
+    const attachedEntries = await new ClimbingRepository(
+      context.db,
+      TEST_USER_ID,
+      "America/Los_Angeles",
+    ).getActivityEntries(activityId);
+    expect(
+      attachedEntries.find((entry) => entry.toDetail().id === OPENBETA_TICK_ID)?.toDetail(),
+    ).toMatchObject({ ascentType: "Onsight" });
+  });
+
+  it("allows only one concurrent attachment of the same entry", async () => {
+    const repo = new ClimbingEntryAssociator(context.db, TEST_USER_ID, "America/Los_Angeles");
+    const results = await Promise.allSettled([
+      repo.attachEntry({ entryId: CONCURRENT_TICK_ID, activityId }),
+      repo.attachEntry({ entryId: CONCURRENT_TICK_ID, activityId }),
+    ]);
+    const fulfilled = results.filter((result) => result.status === "fulfilled");
+    const rejected = results.filter((result) => result.status === "rejected");
+
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]).toMatchObject({
+      status: "rejected",
+      reason: { code: "CONFLICT" },
+    });
   });
 
   it("rejects adjacent-day, foreign-user, and non-climbing targets", async () => {
@@ -135,6 +167,9 @@ describe("ClimbingEntryAssociator PostgreSQL behavior", () => {
         code: "CONFLICT",
       },
     );
+    await expect(repo.attachEntry({ entryId: FOREIGN_TICK_ID, activityId })).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
     await expect(repo.getSuggestions("ffffffff-ffff-4fff-8fff-ffffffffffff")).rejects.toMatchObject(
       {
         code: "NOT_FOUND",
