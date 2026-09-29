@@ -175,13 +175,15 @@ describe("climbingRouter", () => {
     }
   });
 
-  it("serves user-scoped Mountain Project suggestions for the resolved activity", async () => {
+  it("serves user-scoped climbing-entry suggestions for the resolved activity", async () => {
     vi.spyOn(ActivityRepository.prototype, "findById").mockResolvedValue(
       makeResolvedActivity("734b5d3e-df2b-4ee0-888e-55ea539d913a"),
     );
     const { caller } = makeCaller([
       {
         id: "734b5d3e-df2b-4ee0-888e-55ea539d913b",
+        provider_id: "openbeta",
+        source_name: "OpenBeta",
         climb_type: "boulder",
         grade_system: "v_scale",
         grade: "V4",
@@ -195,12 +197,14 @@ describe("climbingRouter", () => {
     ]);
 
     await expect(
-      caller.unattachedMountainProjectTicks({
+      caller.unattachedClimbingEntries({
         activityId: "734b5d3e-df2b-4ee0-888e-55ea539d913a",
       }),
     ).resolves.toEqual([
       {
         id: "734b5d3e-df2b-4ee0-888e-55ea539d913b",
+        providerId: "openbeta",
+        sourceName: "OpenBeta",
         climbType: "boulder",
         gradeSystem: "v_scale",
         grade: "V4",
@@ -214,7 +218,7 @@ describe("climbingRouter", () => {
     ]);
   });
 
-  it("attaches a single tick and invalidates affected climbing caches", async () => {
+  it("attaches a single climbing entry and invalidates affected climbing caches", async () => {
     invalidateByPrefix.mockClear();
     vi.spyOn(ActivityRepository.prototype, "findById").mockResolvedValue(
       makeResolvedActivity("734b5d3e-df2b-4ee0-888e-55ea539d913a"),
@@ -222,15 +226,13 @@ describe("climbingRouter", () => {
     const { caller } = makeCaller([{ id: "734b5d3e-df2b-4ee0-888e-55ea539d913b" }]);
 
     await expect(
-      caller.attachMountainProjectTick({
+      caller.attachClimbingEntry({
         activityId: "734b5d3e-df2b-4ee0-888e-55ea539d913a",
-        tickId: "734b5d3e-df2b-4ee0-888e-55ea539d913b",
+        entryId: "734b5d3e-df2b-4ee0-888e-55ea539d913b",
       }),
     ).resolves.toEqual({ attached: true });
     expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:climbing.activityEntries:");
-    expect(invalidateByPrefix).toHaveBeenCalledWith(
-      "user-1:climbing.unattachedMountainProjectTicks:",
-    );
+    expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:climbing.unattachedClimbingEntries:");
     expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:climbing.sessionSummary:");
     expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:climbing.gradeProgression:");
     expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:climbing.volumeByGrade:");

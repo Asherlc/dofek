@@ -471,7 +471,7 @@ export class ClimbingProgressionRepository {
             CASE WHEN detail.attempt_count > 0 THEN detail.sent ELSE ce.sent END AS sent,
             CASE WHEN detail.attempt_count > 0 THEN detail.attempt_count ELSE ce.attempt_count END AS attempt_count,
             COALESCE(detail.attempts, '[]'::jsonb) AS attempts,
-            CASE lower(btrim(COALESCE(ce.raw->>'ascentType',
+            CASE lower(btrim(COALESCE(ce.raw->>'ascentType', ce.raw->>'attemptType',
               CASE WHEN ce.climb_type = 'boulder' THEN ce.raw->>'Style' ELSE ce.raw->>'Lead Style' END)))
               WHEN 'flash' THEN 'Flash'
               WHEN 'onsight' THEN 'Onsight'

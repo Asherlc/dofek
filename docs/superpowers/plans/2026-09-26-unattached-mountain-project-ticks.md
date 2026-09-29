@@ -1,10 +1,10 @@
-# Unattached Mountain Project Ticks Implementation Plan
+# Unattached Climbing Entries Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Store Mountain Project ticks without synthetic activities and let users attach same-day ticks individually to real climbing activities.
+**Goal:** Store provider climbing entries without synthetic activities and let users attach same-day entries individually to real climbing activities.
 
-**Architecture:** Extend the existing `fitness.climbing_entry` row to represent an owned, source-attributed tick with an optional activity association and one normalized date only while unattached. The provider sync owns tick upsert and absence reconciliation; a server repository and tRPC procedures own exact-day suggestions and attachment; web and mobile render the shared contract. Climbing grade and volume summaries continue to count unattached ticks by their standalone date, while session summaries remain activity-based.
+**Architecture:** Extend the existing `fitness.climbing_entry` row to represent an owned, source-attributed climbing entry with an optional activity association and one normalized date only while unattached. Provider sync owns entry upsert and absence reconciliation; a server associator and tRPC procedures own exact-day suggestions and attachment; web and mobile render the shared contract. Climbing grade and volume summaries continue to count unattached entries by their standalone date, while session summaries remain activity-based.
 
 **Tech Stack:** TypeScript, Drizzle ORM, PostgreSQL/TimescaleDB, tRPC, React, React Native, Vitest.
 
@@ -12,12 +12,12 @@
 
 ## Global Constraints
 
-- Store each Mountain Project tick as one canonical `fitness.climbing_entry` row, without creating a synthetic activity for it.
-- Allow a tick to exist before it is associated with a workout.
-- On a climbing activity detail page, suggest only unattached Mountain Project ticks whose exported date is the same as the activity's displayed calendar day.
-- Let the user attach each tick individually to the selected activity.
-- Preserve tick identity, ownership, and any user-selected association across later Mountain Project syncs.
-- Keep unattached ticks in climb and grade progression summaries without treating them as activities or sessions.
+- Store each provider climbing entry as one canonical `fitness.climbing_entry` row, without creating a synthetic activity for it.
+- Allow an entry to exist before it is associated with a workout.
+- On a climbing activity detail page, suggest only active unattached climbing entries whose exported date is the same as the activity's displayed calendar day.
+- Let the user attach each entry individually to the selected activity.
+- Preserve entry identity, ownership, and any user-selected association across later provider syncs.
+- Keep unattached entries in climb and grade progression summaries without treating them as activities or sessions.
 - Provide the same behavior on web and mobile through the shared server API.
 - Automatically selecting or attaching a tick to a same-day activity.
 - An unmatched-ticks inbox, dismissal state, or suggestion-ranking system.
@@ -31,8 +31,8 @@
 - A Mountain Project date near UTC midnight must match the activity's displayed user-timezone date exactly; test adjacent dates on both sides.
 - A same-day tick must remain unattached until the user selects an activity, even when only one candidate activity exists.
 - A re-sync must preserve a user's attachment and keep `unattached_date` null; a removed tick must become absent without deleting raw data.
-- A user must not attach another user's tick, a tick already attached elsewhere, a non-Mountain-Project tick, or a tick to a non-climbing/different-day activity.
-- Unattached ticks must count in grade and volume summaries without creating session counts or durations.
+- A user must not attach another user's entry, an entry already attached elsewhere, or an entry to a non-climbing/different-day activity.
+- Unattached entries must count in grade and volume summaries without creating session counts or durations.
 
 ---
 
@@ -46,7 +46,7 @@
 - `src/providers/mountain-project.ts` parses and syncs one provider tick per
   climbing-entry row; its unit and integration tests pin identity and sync
   lifecycle behavior.
-- `packages/server/src/repositories/mountain-project-tick-repository.ts` owns
+- `packages/server/src/repositories/climbing-entry-associator.ts` owns
   user-scoped same-day suggestions and atomic attachment. The climbing router
   exposes those operations through the shared API.
 - `packages/server/src/repositories/climbing-repository.ts` owns simple grade
@@ -54,7 +54,7 @@
   require a real associated activity.
 - `packages/web/src/pages/ActivityDetailPage.tsx` and
   `packages/mobile/app/activity/[id].tsx` render the same suggestions and
-  per-tick action. Route tests stay in each platform's established location.
+  per-entry action. Route tests stay in each platform's established location.
 - `docs/README.md` makes the Mountain Project provider guide discoverable.
 - `docs/schema.md` and `docs/mountain-project.md` describe the resulting schema
   and provider behavior for humans.
@@ -228,31 +228,31 @@ Commit the provider implementation and tests with message
 `Sync Mountain Project ticks without activity wrappers`; push the current
 branch.
 
-## Task 3: Add server-side suggestions and attachment
+## Task 3: Add provider-neutral server-side suggestions and attachment
 
 **Files:**
 
-- Create: `packages/server/src/repositories/mountain-project-tick-repository.ts`
-- Create: `packages/server/src/repositories/mountain-project-tick-repository.test.ts`
-- Create: `packages/server/src/repositories/mountain-project-tick-repository.integration.test.ts`
+- Create: `packages/server/src/repositories/climbing-entry-associator.ts`
+- Create: `packages/server/src/repositories/climbing-entry-associator.test.ts`
+- Create: `packages/server/src/repositories/climbing-entry-associator.integration.test.ts`
 - Modify: `packages/server/src/routers/climbing.ts`
 - Modify: `packages/server/src/routers/climbing.test.ts`
 - Modify: `packages/server/src/routers/climbing.integration.test.ts`
 
 **Interfaces:**
 
-- Produces `MountainProjectTickRepository.getSuggestions(activityId: string)`
-  returning active unattached Mountain Project entries whose `unattached_date`
+- Produces `ClimbingEntryAssociator.getSuggestions(activityId: string)`
+  returning active unattached climbing entries whose `unattached_date`
   equals the resolved activity's displayed date.
-- Produces `MountainProjectTickRepository.attachTick(input: { tickId: string;
+- Produces `ClimbingEntryAssociator.attachEntry(input: { entryId: string;
   activityId: string }): Promise<void>`; activity ID is the canonical activity
   detail ID supplied by the client and resolved by `ActivityRepository`.
-- Produces `climbing.unattachedMountainProjectTicks({ activityId })` and
-  `climbing.attachMountainProjectTick({ activityId, tickId })` procedures.
+- Produces `climbing.unattachedClimbingEntries({ activityId })` and
+  `climbing.attachClimbingEntry({ activityId, entryId })` procedures.
 
 - [ ] **Step 1: Add failing repository unit tests**
 
-In `mountain-project-tick-repository.test.ts`, assert exact-day selection,
+In `climbing-entry-associator.test.ts`, assert exact-day selection,
 provider/owner/absence/unattached filters, and the conditional association
 update. Include a UTC-midnight fixture where the activity's displayed date is
 the next calendar day in `America/Los_Angeles` and assert that only that exact
@@ -260,7 +260,7 @@ date matches.
 
 - [ ] **Step 2: Run the repository unit suite and confirm it fails**
 
-Run: `pnpm test -- packages/server/src/repositories/mountain-project-tick-repository.test.ts`
+Run: `pnpm test -- packages/server/src/repositories/climbing-entry-associator.test.ts`
 
 Expected: FAIL because the repository does not exist.
 
@@ -275,7 +275,7 @@ concurrent attach wins.
 
 - [ ] **Step 4: Run repository unit tests**
 
-Run: `pnpm test -- packages/server/src/repositories/mountain-project-tick-repository.test.ts`
+Run: `pnpm test -- packages/server/src/repositories/climbing-entry-associator.test.ts`
 
 Expected: PASS, including timezone boundary and stale/conflicting attachment
 cases.
@@ -295,7 +295,7 @@ Run: `pnpm test -- packages/server/src/routers/climbing.test.ts`
 
 Expected: PASS.
 
-Run: `pnpm test:integration -- packages/server/src/repositories/mountain-project-tick-repository.integration.test.ts packages/server/src/routers/climbing.integration.test.ts`
+Run: `pnpm test:integration -- packages/server/src/repositories/climbing-entry-associator.integration.test.ts packages/server/src/routers/climbing.integration.test.ts`
 
 Expected: PASS against PostgreSQL.
 
@@ -362,7 +362,7 @@ Expected: PASS against PostgreSQL.
 Commit the repository and tests with message
 `Include unattached ticks in climbing summaries`; push the current branch.
 
-## Task 5: Render suggestions in web and mobile activity details
+## Task 5: Render provider-neutral suggestions in web and mobile activity details
 
 **Files:**
 
@@ -375,15 +375,15 @@ Commit the repository and tests with message
 
 - Both clients consume the server procedure shapes from Task 3; clients do not
   determine day matches or calculate climb metrics.
-- Each returned tick has an independent attach action targeting the open
+- Each returned entry has an independent attach action targeting the open
   activity.
 
 - [ ] **Step 1: Add failing web and mobile route tests**
 
 In web and mobile activity detail tests, assert that a climbing activity
-renders its same-day unmatched Mountain Project ticks and one attach control
-per tick; different-day activities render none. Assert that clicking one
-control submits only that tick and refreshes climbing-entry and suggestion
+renders its same-day unmatched entries from multiple providers and one attach
+control per entry; different-day activities render none. Assert that clicking
+one control submits only that entry and refreshes climbing-entry and suggestion
 queries. Assert loading, actionable error, and empty states separately.
 
 - [ ] **Step 2: Run both route test suites and confirm they fail**
@@ -391,14 +391,15 @@ queries. Assert loading, actionable error, and empty states separately.
 Run: `pnpm test -- packages/web/src/pages/ActivityDetailPage.test.tsx 'packages/mobile/app-tests/activity/[id].test.tsx'`
 
 Expected: FAIL because neither detail screen queries or attaches unmatched
-ticks.
+entries.
 
-- [ ] **Step 3: Add suggestion query and per-tick mutation to web**
+- [ ] **Step 3: Add suggestion query and per-entry mutation to web**
 
 In `ActivityDetailPage.tsx`, enable the suggestions query only for climbing
 activities. Render a focused section beside the current climb breakdown, and
-wire one pending/error state per tick to the attach mutation. Invalidate only
-the activity-entry and suggestion queries after success.
+wire one pending/error state per entry to the attach mutation. Invalidate the
+affected climbing summary, activity-entry, and suggestion queries after
+success.
 
 - [ ] **Step 4: Run the web detail tests**
 
@@ -409,7 +410,7 @@ Expected: PASS for exact displayed-day suggestions and individual attachment.
 - [ ] **Step 5: Add matching behavior to mobile**
 
 In `packages/mobile/app/activity/[id].tsx`, render the same server-returned
-tick fields and per-tick attach control. Use the existing explicit loading,
+entry fields and per-entry attach control. Use the existing explicit loading,
 error, and empty-state patterns and invalidate only affected climbing queries
 on success.
 

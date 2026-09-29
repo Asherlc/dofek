@@ -153,14 +153,14 @@ consistent using PostgreSQL check constraints
 ([PostgreSQL `CREATE TABLE`](https://www.postgresql.org/docs/current/sql-createtable.html)).
 
 Mountain Project and OpenBeta ticks use the same `fitness.climbing_entry` table
-as other climbs. Each tick has an owner and provider identity. While unattached, it has
-no activity association and stores the export's date in `unattached_date`;
+as other climbs. Each entry has an owner and provider identity. While unattached,
+it has no activity association and stores the export's date in `unattached_date`;
 attaching it clears that date, and its associated activity supplies its day.
-The server suggests only active unattached ticks whose exported day exactly
-matches the climbing activity's displayed calendar date in the user's
-timezone. Attachment is always an explicit per-tick action. Unattached ticks
-remain in climb and grade summaries, while activity and session summaries
-continue to represent actual activities. See the
+The server suggests only active unattached climbing entries whose exported day
+exactly matches the climbing activity's displayed calendar date in the user's
+timezone. Attachment is always an explicit per-entry action. Unattached
+entries remain in climb and grade summaries, while activity and session
+summaries continue to represent actual activities. See the
 [Mountain Project provider guide](mountain-project.md) and the
 [unattached ticks design spec](superpowers/specs/2026-09-26-unattached-mountain-project-ticks-design.md).
 

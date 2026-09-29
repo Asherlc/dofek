@@ -37,6 +37,14 @@ current list and restores rows that reappear. Empty, failed, malformed, or
 partially unsupported responses do not reconcile absence because they are not
 proof that the upstream log was intentionally cleared.
 
+## Activity association
+
+OpenBeta ticks use the same explicit activity-association flow as Mountain
+Project ticks. Activity detail pages suggest active, unattached climbing
+entries whose `unattached_date` matches the activity's displayed calendar day
+in the user's timezone. The user attaches each entry individually; attachment
+clears `unattached_date` and preserves the selected activity association.
+
 The integration currently does not access private ticks, use account session
 cookies, write to OpenBeta, enrich routes outside the tick response, or create
 activities for tick dates.

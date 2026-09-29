@@ -3,7 +3,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActivityRow } from "../models/activity.ts";
 import { ActivityRepository } from "./activity-repository.ts";
-import { MountainProjectTickRepository } from "./mountain-project-tick-repository.ts";
+import { ClimbingEntryAssociator } from "./climbing-entry-associator.ts";
 
 function activity(overrides: Partial<ActivityRow> = {}): ActivityRow {
   return {
@@ -40,17 +40,13 @@ function activity(overrides: Partial<ActivityRow> = {}): ActivityRow {
   };
 }
 
-describe("MountainProjectTickRepository", () => {
+describe("ClimbingEntryAssociator", () => {
   beforeEach(() => vi.restoreAllMocks());
 
-  it("queries only active same-owner, unattached Mountain Project ticks for the activity's displayed day", async () => {
+  it("queries active same-owner, unattached climbing entries for the activity's displayed day", async () => {
     const execute = vi.fn().mockResolvedValue([]);
     vi.spyOn(ActivityRepository.prototype, "findById").mockResolvedValue(activity());
-    const repository = new MountainProjectTickRepository(
-      { execute },
-      "user-1",
-      "America/Los_Angeles",
-    );
+    const repository = new ClimbingEntryAssociator({ execute }, "user-1", "America/Los_Angeles");
 
     await repository.getSuggestions("canonical-group-id");
 
@@ -58,7 +54,9 @@ describe("MountainProjectTickRepository", () => {
     if (!(statement instanceof SQL)) throw new Error("Expected suggestion SQL");
     const compiled = new PgDialect().sqlToQuery(statement);
     expect(compiled.sql).toContain("WHERE user_id =");
-    expect(compiled.sql).toContain("provider_id = 'mountain-project'");
+    expect(compiled.sql).toContain("provider_id,");
+    expect(compiled.sql).toContain("source_name");
+    expect(compiled.sql).not.toContain("provider_id = 'mountain-project'");
     expect(compiled.sql).toContain("provider_absent_at IS NULL");
     expect(compiled.sql).toContain("activity_id IS NULL");
     expect(compiled.sql).toContain("unattached_date =");
@@ -69,6 +67,8 @@ describe("MountainProjectTickRepository", () => {
     const execute = vi.fn().mockResolvedValue([
       {
         id: "tick-1",
+        provider_id: "openbeta",
+        source_name: "OpenBeta",
         climb_type: "route",
         grade_system: "yds",
         grade: "5.10a",
@@ -81,11 +81,13 @@ describe("MountainProjectTickRepository", () => {
       },
     ]);
     vi.spyOn(ActivityRepository.prototype, "findById").mockResolvedValue(activity());
-    const repository = new MountainProjectTickRepository({ execute }, "user-1");
+    const repository = new ClimbingEntryAssociator({ execute }, "user-1");
 
     await expect(repository.getSuggestions("canonical-group-id")).resolves.toEqual([
       {
         id: "tick-1",
+        providerId: "openbeta",
+        sourceName: "OpenBeta",
         climbType: "route",
         gradeSystem: "yds",
         grade: "5.10a",
@@ -105,7 +107,7 @@ describe("MountainProjectTickRepository", () => {
   ] as const)("rejects suggestions for a %s", async (_label, foundActivity, code) => {
     const execute = vi.fn();
     vi.spyOn(ActivityRepository.prototype, "findById").mockResolvedValue(foundActivity);
-    const repository = new MountainProjectTickRepository({ execute }, "user-1");
+    const repository = new ClimbingEntryAssociator({ execute }, "user-1");
 
     await expect(repository.getSuggestions("activity-id")).rejects.toMatchObject({ code });
     expect(execute).not.toHaveBeenCalled();
@@ -114,11 +116,7 @@ describe("MountainProjectTickRepository", () => {
   it("uses the activity's Los Angeles displayed date across UTC midnight", async () => {
     const execute = vi.fn().mockResolvedValue([]);
     vi.spyOn(ActivityRepository.prototype, "findById").mockResolvedValue(activity());
-    const repository = new MountainProjectTickRepository(
-      { execute },
-      "user-1",
-      "America/Los_Angeles",
-    );
+    const repository = new ClimbingEntryAssociator({ execute }, "user-1", "America/Los_Angeles");
 
     await repository.getSuggestions("canonical-group-id");
 
@@ -137,11 +135,7 @@ describe("MountainProjectTickRepository", () => {
         displayed_date: "2026-01-02",
       }),
     );
-    const repository = new MountainProjectTickRepository(
-      { execute },
-      "user-1",
-      "America/Los_Angeles",
-    );
+    const repository = new ClimbingEntryAssociator({ execute }, "user-1", "America/Los_Angeles");
 
     await repository.getSuggestions("canonical-group-id");
 
@@ -153,15 +147,11 @@ describe("MountainProjectTickRepository", () => {
   it("updates one eligible tick conditionally and reports a concurrent attachment conflict", async () => {
     const execute = vi.fn().mockResolvedValue([]);
     vi.spyOn(ActivityRepository.prototype, "findById").mockResolvedValue(activity());
-    const repository = new MountainProjectTickRepository(
-      { execute },
-      "user-1",
-      "America/Los_Angeles",
-    );
+    const repository = new ClimbingEntryAssociator({ execute }, "user-1", "America/Los_Angeles");
 
     await expect(
-      repository.attachTick({
-        tickId: "20000000-0000-4000-8000-000000000001",
+      repository.attachEntry({
+        entryId: "20000000-0000-4000-8000-000000000001",
         activityId: "canonical-group-id",
       }),
     ).rejects.toMatchObject({ code: "CONFLICT" });
@@ -177,24 +167,24 @@ describe("MountainProjectTickRepository", () => {
   it.each([
     ["missing activity", null, "NOT_FOUND"],
     ["non-climbing activity", activity({ canonical_type: "running" }), "PRECONDITION_FAILED"],
-  ] as const)("rejects attaching a tick to a %s", async (_label, foundActivity, code) => {
+  ] as const)("rejects attaching an entry to a %s", async (_label, foundActivity, code) => {
     const execute = vi.fn();
     vi.spyOn(ActivityRepository.prototype, "findById").mockResolvedValue(foundActivity);
-    const repository = new MountainProjectTickRepository({ execute }, "user-1");
+    const repository = new ClimbingEntryAssociator({ execute }, "user-1");
 
     await expect(
-      repository.attachTick({ tickId: "tick-id", activityId: "activity-id" }),
+      repository.attachEntry({ entryId: "entry-id", activityId: "activity-id" }),
     ).rejects.toMatchObject({ code });
     expect(execute).not.toHaveBeenCalled();
   });
 
-  it("attaches a tick when the conditional update returns it", async () => {
+  it("attaches an entry when the conditional update returns it", async () => {
     const execute = vi.fn().mockResolvedValue([{ id: "tick-id" }]);
     vi.spyOn(ActivityRepository.prototype, "findById").mockResolvedValue(activity());
-    const repository = new MountainProjectTickRepository({ execute }, "user-1");
+    const repository = new ClimbingEntryAssociator({ execute }, "user-1");
 
     await expect(
-      repository.attachTick({ tickId: "tick-id", activityId: "canonical-group-id" }),
+      repository.attachEntry({ entryId: "entry-id", activityId: "canonical-group-id" }),
     ).resolves.toBeUndefined();
     expect(execute).toHaveBeenCalledOnce();
   });

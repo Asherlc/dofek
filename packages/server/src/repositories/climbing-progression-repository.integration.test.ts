@@ -53,7 +53,7 @@ describe("ClimbingProgressionRepository database semantics", () => {
         (${userId}::uuid, ${kayaProvider}, ${kayaActivity}::uuid, 'kaya-red', 'boulder', 'v_scale', 'V6', NULL,
           NULL, 20, 'Red Roof', 'Pacific Pipe', 'Kaya', '{}'::jsonb),
         (${userId}::uuid, ${kayaProvider}, ${offsetActivity}::uuid, 'offset-green', 'boulder', 'v_scale', 'V3', true,
-          1, 10, 'Green Slab', 'Travel Gym', 'Kaya', '{"ascentType":"Flash"}'::jsonb)
+          1, 10, 'Green Slab', 'Travel Gym', 'Kaya', '{"attemptType":"Flash"}'::jsonb)
     `);
   });
 
@@ -149,5 +149,6 @@ describe("ClimbingProgressionRepository database semantics", () => {
         },
       }),
     ]);
+    expect(result.sessions[0]?.climbs).toEqual([expect.objectContaining({ ascent_type: "Flash" })]);
   });
 });
