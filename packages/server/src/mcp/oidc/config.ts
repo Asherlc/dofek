@@ -20,9 +20,10 @@ import { escapeHtml, interactionUrl } from "./interactions.ts";
  *     `userinfo`/id_token concerns. Dofek's MCP client is an OAuth 2.1 client;
  *     `openid` is NOT mandatory for the authorization_code grant with
  *     resource-scoped access tokens.
- *   - `registration` enables DCR (RFC 7591) at `/register`.
  *   - `clientIdMetadataDocument` enables CIMD (URL `client_id`), advertising
  *     `client_id_metadata_document_supported` in discovery metadata.
+ *   - `rpMetadataChoices` negotiates ChatGPT's supported authentication methods;
+ *     this MCP issuer accepts public clients with PKCE.
  *   - `resourceIndicators` (RFC 8707) echoes the `resource` parameter into the
  *     access token `aud` via `getResourceServerInfo`.
  *   - `authorization_response_iss_parameter_supported` and RFC 9207 `iss`
@@ -183,6 +184,7 @@ export function createOidcProvider(
 
   const provider = new Provider(issuer, {
     scopes: [...MCP_OAUTH_SCOPES, MCP_OAUTH_OFFLINE_ACCESS_SCOPE],
+    clientAuthMethods: ["none"],
 
     features: {
       ciba: { enabled: false },
@@ -196,10 +198,7 @@ export function createOidcProvider(
       dPoP: { enabled: false },
       introspection: { enabled: false },
       pushedAuthorizationRequests: { enabled: false },
-      registration: {
-        enabled: true,
-        initialAccessToken: false,
-      },
+      rpMetadataChoices: { enabled: true },
       resourceIndicators: {
         enabled: true,
         async defaultResource(): Promise<string> {
@@ -247,7 +246,6 @@ export function createOidcProvider(
 
     routes: {
       authorization: "/authorize",
-      registration: "/register",
       revocation: "/revoke",
       token: "/token",
     },

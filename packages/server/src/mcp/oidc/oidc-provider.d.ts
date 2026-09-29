@@ -61,6 +61,7 @@ declare module "oidc-provider" {
 
   interface ProviderConfiguration {
     scopes?: string[];
+    clientAuthMethods?: string[];
     features?: {
       ciba?: ConfigurableFeature;
       clientCredentials?: ConfigurableFeature;
@@ -71,6 +72,7 @@ declare module "oidc-provider" {
       introspection?: ConfigurableFeature;
       pushedAuthorizationRequests?: ConfigurableFeature;
       registration?: ConfigurableFeature;
+      rpMetadataChoices?: ConfigurableFeature;
       resourceIndicators?: ConfigurableFeature;
       revocation?: ConfigurableFeature;
       userinfo?: ConfigurableFeature;
@@ -94,6 +96,11 @@ declare module "oidc-provider" {
 
   export class Provider {
     constructor(issuer: string, configuration: ProviderConfiguration);
+    Client: new (
+      metadata: Record<string, unknown>,
+      ctx?: unknown,
+      options?: { cimd: boolean },
+    ) => { clientAuthMethod: string };
     proxy: boolean;
     callback(): (request: Request, response: Response, next?: () => void) => void;
     interactionDetails(request: Request, response: Response): Promise<Record<string, unknown>>;
