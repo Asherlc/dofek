@@ -4,7 +4,6 @@ import {
   createMcpToken,
   listMcpConnectedApps,
   listMcpPersonalTokens,
-  listMcpTokens,
   mcpConnectedAppPageSchema,
   mcpScopeSchema,
   mcpTokenMetadataSchema,
@@ -51,10 +50,6 @@ export const mcpRouter = router({
       scopes: input.scopes,
       expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
     });
-  }),
-
-  listTokens: protectedProcedure.query(async ({ ctx }) => {
-    return listMcpTokens(ctx.db, ctx.userId);
   }),
 
   listPersonalTokens: protectedProcedure

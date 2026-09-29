@@ -132,7 +132,7 @@ describe("mcpRouter", () => {
     ]);
     const caller = createCaller(createContext("user-id"));
 
-    const result = await caller.listTokens();
+    const result = await caller.listPersonalTokens();
 
     expect(result).toEqual([
       {

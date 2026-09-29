@@ -8,7 +8,6 @@ import {
   createMcpToken,
   listMcpConnectedApps,
   listMcpPersonalTokens,
-  listMcpTokens,
   markMcpConnectedAppUsed,
   revokeMcpConnectedApp,
   revokeMcpToken,
@@ -169,7 +168,8 @@ describe("MCP token repository (integration)", () => {
       updateMcpTokenScopes(ctx.db, testUserId, metadata.id, ["activity:read"]),
     ).resolves.toBeNull();
     expect(
-      (await listMcpTokens(ctx.db, testUserId)).find((token) => token.id === metadata.id)?.scopes,
+      (await listMcpPersonalTokens(ctx.db, testUserId)).find((token) => token.id === metadata.id)
+        ?.scopes,
     ).toEqual(["health:read"]);
   });
 
@@ -189,7 +189,7 @@ describe("MCP token repository (integration)", () => {
     expect(validated).toBeNull();
   });
 
-  it("listMcpTokens returns scopes as arrays for every token", async () => {
+  it("listMcpPersonalTokens returns scopes as arrays for every token", async () => {
     await createMcpToken(ctx.db, {
       userId: testUserId,
       name: "First",
@@ -203,7 +203,7 @@ describe("MCP token repository (integration)", () => {
       expiresAt: null,
     });
 
-    const tokens = await listMcpTokens(ctx.db, testUserId);
+    const tokens = await listMcpPersonalTokens(ctx.db, testUserId);
 
     expect(tokens).toHaveLength(2);
     const byName = new Map(tokens.map((token) => [token.name, token]));
@@ -212,14 +212,13 @@ describe("MCP token repository (integration)", () => {
   });
 
   it("lists, updates, and revokes OIDC connected-app grants", async () => {
-    const clientId = "claude-client";
+    const clientId = "https://claude.ai/oauth/mcp-oauth-client-metadata";
     const resource = "https://dofek.example/api/mcp";
     const expiresAt = new Date(Date.now() + 86_400_000);
     const accessTokenId = createHash("sha256").update("access-token-id").digest("hex");
     const refreshTokenId = createHash("sha256").update("refresh-token-id").digest("hex");
     await ctx.db.execute(sql`INSERT INTO fitness.mcp_oidc_adapter (model, id, payload, user_id, grant_id, expires_at)
       VALUES
-        ('Client', ${clientId}, ${JSON.stringify({ client_id: clientId, client_name: "Claude" })}::jsonb, NULL, NULL, NULL),
         ('Grant', 'grant-earlier', ${JSON.stringify({ accountId: testUserId, clientId, resources: { [resource]: "health:read" } })}::jsonb, ${testUserId}::uuid, NULL, ${expiresAt}),
         ('Grant', 'grant-current', ${JSON.stringify({ accountId: testUserId, clientId, resources: { [resource]: "activity:read" } })}::jsonb, ${testUserId}::uuid, NULL, ${expiresAt}),
         ('AccessToken', ${accessTokenId}, ${JSON.stringify({ accountId: testUserId, clientId, grantId: "grant-current" })}::jsonb, ${testUserId}::uuid, 'grant-current', ${expiresAt}),
@@ -230,7 +229,7 @@ describe("MCP token repository (integration)", () => {
       {
         oauthClientId: clientId,
         oauthResource: resource,
-        name: "Claude",
+        name: clientId,
         scopes: ["activity:read", "health:read"],
         connectedAt: expect.any(String),
         lastUsedAt: null,
@@ -278,35 +277,5 @@ describe("MCP token repository (integration)", () => {
       expiresAt: null,
     });
     expect(await listMcpPersonalTokens(ctx.db, testUserId)).toHaveLength(1);
-  });
-
-  it("lists legacy OIDC grants with absent or empty resource maps", async () => {
-    const expiresAt = new Date(Date.now() + 86_400_000);
-    await ctx.db.execute(sql`INSERT INTO fitness.mcp_oidc_adapter (model, id, payload, user_id, expires_at)
-      VALUES
-        ('Grant', 'grant-no-resources', ${JSON.stringify({ accountId: testUserId, clientId: "legacy-no-resource", scope: "health:read offline_access" })}::jsonb, ${testUserId}::uuid, ${expiresAt}),
-        ('Grant', 'grant-empty-resources', ${JSON.stringify({ accountId: testUserId, clientId: "legacy-empty-resource", resources: {} })}::jsonb, ${testUserId}::uuid, ${expiresAt})`);
-
-    const apps = await listMcpConnectedApps(ctx.db, testUserId);
-    expect(apps.items).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ oauthClientId: "legacy-no-resource", scopes: ["health:read"] }),
-        expect.objectContaining({ oauthClientId: "legacy-empty-resource", scopes: [] }),
-      ]),
-    );
-    await expect(
-      updateMcpConnectedAppScopes(
-        ctx.db,
-        testUserId,
-        "legacy-no-resource",
-        "https://app.example.test/api/mcp",
-        ["activity:read"],
-      ),
-    ).resolves.toBe(true);
-    expect((await listMcpConnectedApps(ctx.db, testUserId)).items).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ oauthClientId: "legacy-no-resource", scopes: ["activity:read"] }),
-      ]),
-    );
   });
 });
