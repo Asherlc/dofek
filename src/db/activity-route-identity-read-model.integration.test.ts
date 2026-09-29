@@ -13,6 +13,7 @@ import {
   seedSchema,
   userId,
 } from "./activity-route-identity-test-helpers.ts";
+import { createMigration } from "./clickhouse-migrations/0097_activity_route_source_freshness_projections.ts";
 
 describe("activity route identity read model", () => {
   const database = `activity_route_identity_${randomUUID().replaceAll("-", "")}`;
@@ -34,6 +35,9 @@ describe("activity route identity read model", () => {
       "activity_route_identity",
       "activity_sensor_sample",
     ]) {
+      if (table === "activity_sensor_sample" || table === "activity_location_sample") {
+        await client.command({ query: `SYSTEM START MERGES ${database}.${table}` });
+      }
       await client.command({ query: `TRUNCATE TABLE ${database}.${table}` });
     }
   });
@@ -378,6 +382,141 @@ describe("activity route identity read model", () => {
       isDeleted: 0,
       elevationProfile: expect.arrayContaining([100, 100099]),
     });
+  });
+
+  it("refreshes changed routes within a scan budget despite dense clean source history", async () => {
+    for (const [table, projection] of [
+      ["activity_sensor_sample", "by_activity_source_refresh_version"],
+      ["activity_location_sample", "by_activity_location_source_refresh"],
+    ]) {
+      await client.command({
+        query: `ALTER TABLE ${database}.${table} DROP PROJECTION ${projection}`,
+      });
+    }
+    await client.command({
+      query: `ALTER TABLE ${database}.activity_sensor_sample
+      ADD PROJECTION by_activity_source_refresh_version (
+        SELECT activity_id, user_id, max(refresh_version) AS source_refresh_version
+        GROUP BY activity_id, user_id)`,
+    });
+    for (const id of [activityId, secondActivityId]) {
+      await seedRouteIdentityFixture(client, database, {
+        provider: "strava",
+        routeId: null,
+        activityId: id,
+      });
+    }
+    for (const table of ["activity_sensor_sample", "activity_location_sample"]) {
+      await client.command({ query: `SYSTEM STOP MERGES ${database}.${table}` });
+    }
+    await client.command({
+      query: `INSERT INTO ${database}.activity_sensor_sample
+        SELECT toUUID('${secondActivityId}'), toUUID('${userId}'),
+          addSeconds(toDateTime64('2026-09-01 12:00:00', 6, 'UTC'), number),
+          'altitude', 100 + number, 0, toDateTime64('2026-09-01 12:00:00', 9, 'UTC')
+        FROM numbers(100000)`,
+    });
+    await client.command({
+      query: `INSERT INTO ${database}.activity_location_sample
+        SELECT toUUID('${secondActivityId}'), toUUID('${userId}'),
+          addSeconds(toDateTime64('2026-09-01 13:00:00', 6, 'UTC'), number), generateUUIDv4(),
+          'strava', 'head-unit', 37.8, -122.4,
+          toDateTime64('2026-09-01 12:00:00', 9, 'UTC'), 1, 0,
+          toDateTime64('2026-09-01 12:00:00', 9, 'UTC') FROM numbers(100000)`,
+    });
+    await buildModel(client, database);
+    const cleanRoute = await readRouteIdentity(client, database, secondActivityId);
+    for (const table of ["activity_sensor_sample", "activity_location_sample"]) {
+      await client.command({ query: `SYSTEM START MERGES ${database}.${table}` });
+    }
+    for (const query of createMigration().statements) {
+      await client.command({ query: query.replaceAll("analytics.", `${database}.`) });
+    }
+    const missing = await client.query({
+      query: `SELECT countIf(NOT has(projections, if(table = 'activity_sensor_sample',
+        'by_activity_source_refresh_version', 'by_activity_location_source_refresh'))) AS missing
+        FROM system.parts WHERE active AND database = '${database}'
+        AND table IN ('activity_sensor_sample', 'activity_location_sample')`,
+      format: "JSONEachRow",
+    });
+    expect(Number((await missing.json<{ missing: number }>())[0]?.missing)).toBeGreaterThan(0);
+    for (const [table, projection] of [
+      ["activity_sensor_sample", "by_activity_source_refresh_version"],
+      ["activity_location_sample", "by_activity_location_source_refresh"],
+    ]) {
+      await client.command({
+        query: `ALTER TABLE ${database}.${table}
+        MATERIALIZE PROJECTION ${projection} SETTINGS mutations_sync = 2`,
+      });
+      await client.command({ query: `SYSTEM STOP MERGES ${database}.${table}` });
+    }
+    await client.command({
+      query: `INSERT INTO ${database}.activity_location_sample
+        SELECT * REPLACE(lat + 0.01 AS lat, toUInt64(2) AS refresh_version,
+          toDateTime64('2026-09-01 12:10:00', 9, 'UTC') AS source_refreshed_at,
+          toDateTime64('2026-09-01 12:10:00', 9, 'UTC') AS refreshed_at)
+        FROM ${database}.activity_location_sample FINAL WHERE activity_id = '${activityId}'`,
+    });
+    await client.command({
+      query: `INSERT INTO ${database}.activity_sensor_sample
+        SELECT toUUID('${activityId}'), toUUID('${userId}'),
+          addSeconds(toDateTime64('2026-09-01 12:00:00', 6, 'UTC'), number * 10),
+          'altitude', 200 + number * 5, 0, toDateTime64('2026-09-01 12:10:00', 9, 'UTC')
+        FROM numbers(4)`,
+    });
+    const queryId = randomUUID();
+    await client.command({
+      query: `INSERT INTO ${database}.activity_route_identity ${renderModel(database, true)}`,
+      query_id: queryId,
+      clickhouse_settings: { max_rows_to_read: "50000" },
+    });
+    await client.command({ query: "SYSTEM FLUSH LOGS" });
+    const execution = await client.query({
+      query: `SELECT read_rows, projections FROM system.query_log
+        WHERE query_id = {queryId:String} AND type = 'QueryFinish'`,
+      query_params: { queryId },
+      format: "JSONEachRow",
+    });
+    const [executionRow] = await execution.json<{
+      read_rows: string | number;
+      projections: string[];
+    }>();
+    expect(Number(executionRow?.read_rows)).toBeLessThan(50000);
+    expect(executionRow?.projections).toEqual(
+      expect.arrayContaining([
+        `${database}.activity_sensor_sample.by_activity_source_refresh_version`,
+        `${database}.activity_location_sample.by_activity_location_source_refresh`,
+      ]),
+    );
+    expect(await readRouteIdentity(client, database)).toMatchObject({
+      elevationProfile: [200, 205, 210, 215],
+      points: expect.arrayContaining([{ lat: 37.7849, lng: -122.4194 }]),
+    });
+    expect(await readRouteIdentity(client, database, secondActivityId)).toEqual(cleanRoute);
+    const versions = await client.query({
+      query: `SELECT toString(activity_id) AS activityId, count() AS count
+        FROM ${database}.activity_route_identity GROUP BY activity_id ORDER BY activity_id`,
+      format: "JSONEachRow",
+    });
+    expect(await versions.json()).toEqual([
+      { activityId, count: 2 },
+      { activityId: secondActivityId, count: 1 },
+    ]);
+    await client.command({
+      query: `INSERT INTO ${database}.activity_sensor_sample
+        SELECT * REPLACE(CAST(NULL, 'Nullable(Float64)') AS scalar, toUInt8(1) AS is_deleted,
+          toDateTime64('2026-09-01 12:20:00', 9, 'UTC') AS refreshed_at)
+        FROM ${database}.activity_sensor_sample FINAL WHERE activity_id = '${activityId}'`,
+    });
+    await client.command({
+      query: `INSERT INTO ${database}.activity_route_identity ${renderModel(database, true)}`,
+      clickhouse_settings: { max_rows_to_read: "50000" },
+    });
+    expect(await readRouteIdentity(client, database)).toMatchObject({
+      elevationProfile: [],
+      isDeleted: 0,
+    });
+    expect(await readRouteIdentity(client, database, secondActivityId)).toEqual(cleanRoute);
   });
 
   it("retains the same explicit provider route claim on two distinct canonical activities", async () => {

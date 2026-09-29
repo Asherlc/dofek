@@ -67,3 +67,14 @@ describe("query cache invalidation", () => {
     await expect(queryCache.get("user-2:recovery.score")).resolves.toBeUndefined();
   });
 });
+
+it("invalidates exactly one key and preserves adjacent and other-user entries", async () => {
+  const key = "user-1:activity.stream";
+  await queryCache.set(key, "removed", TTL_MS);
+  await queryCache.set(`${key}:adjacent`, "adjacent", TTL_MS);
+  await queryCache.set("user-2:activity.stream", "other", TTL_MS);
+  await queryCache.invalidate(key);
+  await expect(queryCache.get(key)).resolves.toBeUndefined();
+  await expect(queryCache.get(`${key}:adjacent`)).resolves.toBe("adjacent");
+  await expect(queryCache.get("user-2:activity.stream")).resolves.toBe("other");
+});

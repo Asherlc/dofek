@@ -27757,3 +27757,140 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Fix:** With user authorization, raised the VM value to `1048576` using a privileged, host-PID Alpine container. A fresh workspace container then reported `aio-max-nr=1048576` and Redpanda became healthy.
 - **Validation:** The canonical runner reached Vitest; the activity-group reconciliation integration suite passed 19/19 tests. The initial filtered run used an underscore pattern and skipped all tests; it was corrected to the exact test title before results were accepted.
 - **Remaining risk / follow-up:** Docker Desktop may reset this VM-only sysctl after a restart. Reapply the setting if Redpanda reports the same AIO capacity error. No repository runtime workaround was added.
+
+## 2026-09-29 — Sentry triage and reviewed server/mobile remediation
+
+- **Status / user impact:** Authorization is restored. The initial 90-day
+  inventory contained nine unresolved server issues, six mobile issues, and no
+  web issues. Five historical server issues have verified recovery; four
+  server and six mobile issues remain unresolved pending rollout or cause
+  evidence. Approved remediation is implemented and independently reviewed.
+- **Evidence:** `GET /api/0/projects/east-bay-software/dofek-server/issues/`
+  returned HTTP 403 with `You do not have permission to perform this action.`
+  A names-only production Infisical export confirmed `SENTRY_AUTH_TOKEN` exists
+  and `SENTRY_READ_AUTH_TOKEN` is absent. `codex mcp list --json` showed the
+  configured Sentry MCP with `auth_status: not_logged_in`.
+- **Root cause:** The available CI token cannot read issues, and the MCP lacks
+  completed account authorization. This does not establish the causes of the
+  individual application issues. Sentry distinguishes `org:ci` release access
+  from `event:read` issue access in its
+  [API permissions](https://docs.sentry.io/api/permissions/).
+- **Mitigation / validation:** After the user completed GitHub sign-in,
+  restarted `codex mcp login sentry` with issue inspection and triage selected
+  and completed its OAuth callback. The CLI confirmed successful login, and
+  MCP project discovery, issue search, and event reads succeeded. The CLI
+  login command is documented
+  in [OpenAI's MCP guide](https://learn.chatgpt.com/docs/extend/mcp#other-cli-commands).
+- **Verified historical resolutions:** Resolved
+  [DOFEK-SERVER-3B](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-3B)
+  after the live CDC health check reported three healthy slots and one mirror;
+  [DOFEK-SERVER-6E](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6E)
+  after confirming Polar's upstream HTTP 503 outage had ended, with 331
+  successful syncs in the last seven days and the latest at 22:00 UTC; and
+  [DOFEK-SERVER-6F](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6F)
+  after verifying deployed commit `568c868f4` recognizes Strava's revoked-token
+  response, the last attempt records `refresh_token_revoked`, and no Strava
+  credential remains. The token-resolution regression suite passed 14/14.
+- **Additional verified resolutions:** Resolved
+  [DOFEK-SERVER-6B](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6B)
+  after confirming deployed commit `9253ac819` removes query-wide `FINAL`
+  from activity sensor microbatches. Retained September 23–29 ClickHouse
+  history contains 1,600 successful sensor inserts, including temporary-table
+  inserts, and no failed inserts; recent batches took 4.943 and 16.157 seconds.
+  Resolved [DOFEK-SERVER-6D](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6D)
+  after confirming deployed commit `732dc278b` replaces expired signup-week
+  access with the rolling local week. Both clients request today's quality
+  window, and entitlement/access-window tests passed 20/20, covering old
+  accounts, timezone boundaries, and DST. The four reported errors preceded
+  that fix.
+- **Active evidence:** The latest route-model failure on release `bdec1ca`
+  matched ClickHouse query `b02882b9-d210-43c0-b994-56c249949789`: code 159 after
+  240 seconds, 341,045,596 rows read, no projections selected. Its source
+  watermark queries do not match the existing sensor freshness projection,
+  and the location source has no matching projection. Cache-warming errors
+  followed a WHOOP activity's provider-absence tombstone by two minutes;
+  direct activity NOT_FOUND is correct, but replay retains the obsolete keys
+  and reports a failed processing run. Mobile breadcrumbs show alerts polling
+  every 15 seconds while backgrounded without AppState/focusManager wiring.
+- **Observability limits:** Axiom REST query returned HTTP 403 with
+  `token does not have access to resource: query with action: read`; no Axiom
+  MCP is connected. The September 17 mobile 504 trace has two errors but no
+  spans or logs in Sentry. Persistence errors discard the native cause, and
+  Expo's Apple unknown-error mapping also omits the underlying NSError.
+- **Approved follow-up:** The user approved matching freshness projections,
+  exact-key cache eviction, mobile focus/connectivity wiring, regression
+  tests, and privacy-safe persistence/Apple diagnostics. Implementation and task
+  reviews are complete; statuses for these active/opaque issues remain unresolved.
+- **Analytics implementation / validation:** Added matching altitude and
+  location aggregate projections and schema-only migration `0097`. A real
+  ClickHouse regression failed before the fix at 100.01 thousand rows against its
+  50,000-row budget; afterward, all 20 route tests passed. Query-log evidence
+  confirmed natural selection of both projections with 115/117 rows read for
+  changed/tombstoned route builds. dbt compile and analytics policy passed;
+  direct SQLFluff lint retains a baseline MATERIALIZED-CTE parser limitation.
+  No timeout or optimizer workaround was added.
+- **Historical rollout inventory:** Both source tables have a single native
+  `all` partition. Read-only inspection found 101,107,218 sensor rows / 2.49 GiB
+  in 2,017 parts, with old projection coverage in 1,053 parts; location has
+  19,945,514 rows / 560.01 MiB in eight parts and no projection. Disk free space
+  was 59.73 GiB, with no pending analytics mutations or other active queries
+  at sampling. Replacing the sensor projection removes its old coverage;
+  historical materialization remains separately approved operator work under
+  the [rollout runbook](clickhouse-read-model-deploy-runbook.md#route-source-freshness-projection-rollout-migration-0097).
+- **Cache implementation / validation:** Added required exact-key invalidation
+  to the canonical cache store. During registry replay, an actual tRPC
+  NOT_FOUND now evicts that payload and registration, increments skipped,
+  and creates no failed processing outcome. Ordinary errors, access-window
+  failures, and failed evictions still report and fail; ordinary refresh
+  failures retain the old payload. Regression tests failed before the fix,
+  then 60 focused unit tests, seven direct-request NOT_FOUND cases, and one
+  real Redis isolation test passed. Root/server typechecks and independent
+  spec/quality review passed. Production replay remains unverified until
+  deployment. Redis exact removal uses
+  [DEL](https://redis.io/docs/latest/commands/del/) and
+  [SREM](https://redis.io/docs/latest/commands/srem/).
+- **Mobile lifecycle implementation / validation:** Connected Query focus to
+  initial AppState and later app events, and Query online state to ExpoNetwork
+  snapshots/events with stale-snapshot and teardown guards. Behavioral tests
+  reproduced three polling requests in 45 seconds during background/offline
+  states before implementation. All 31 lifecycle/root tests now pass, along
+  with mobile typecheck and telemetry/route/dependency policies. Native
+  `expo-network` 57.0.2 matches SDK 57 metadata; frozen installation passed.
+  Runtime 1.2 requires a new native build; the combined generic-iOS Release
+  archive passed. This establishes polling behavior,
+  while native event delivery and production recovery remain pending. The
+  integration follows [TanStack React Native guidance](https://tanstack.com/query/latest/docs/framework/react/react-native)
+  and [Expo Network](https://docs.expo.dev/versions/latest/sdk/network/).
+- **Persistence and Apple diagnostics / validation:** Storage failures now
+  report fixed-message errors with allowlisted classifications and aggregate
+  write counts/UTF-8 byte measurements. Tests cover original rejection
+  identity, sensitive-content exclusion, and the actual 5 MiB UTF-8 boundary.
+  Independent review found a missing post-parse hydration reporting boundary;
+  an actual-provider regression failed before restoring the sanitized fallback
+  and then passed with the complete persistence suite, 26/26. The fallback
+  can coexist with detailed boundary reports because the provider callback
+  supplies no error argument; see
+  [TanStack persistence](https://tanstack.com/query/latest/docs/framework/react/plugins/persistQueryClient#persistqueryclientprovider).
+  A canonical [pnpm patch](https://pnpm.io/cli/patch) carries only allowlisted
+  Apple NSError domains/codes through Expo's exception bridge, preserving
+  cancellation and excluding descriptions/userInfo. The executable test
+  compiles the installed Swift helper and verifies classification, redaction,
+  and release of the original NSError. Focused auth/login/parser/storage
+  suites passed before the hydration refinement; native prebuild, pods, and
+  Release archive passed. These diagnostics do not establish the historical
+  persistence, disk-write, or Apple sign-in root causes. Physical-device
+  sign-in and post-release safe diagnostic evidence remain pending.
+- **Final branch validation:** Independent whole-branch review found no
+  blocking implementation findings. Workspace lint and root/server/web/mobile
+  typechecks passed. The full unit/mobile run passed 19,145 tests across 1,305
+  files, with 20 tests and two files skipped; the combined ClickHouse/Redis
+  integration run passed 21/21. Existing Vitest deprecation and SQLFluff
+  large-file/parser limitations remain tooling context. The reviewed changes
+  still require PR CI, normal deployment, and the explicit rollout checks above.
+- **Remaining risk / follow-up:** Strava requires user reconnection before
+  syncing again. Deploy reviewed changes through the normal workflow, complete
+  separately approved historical projection materialization, and verify
+  production route builds/cache replay before resolving active server issues.
+  Deliver the new native runtime and collect device/recovery evidence before
+  closing mobile issues. The September 17 gateway 504 still lacks origin
+  evidence. No timeout, retry, or optimizer workaround was introduced.

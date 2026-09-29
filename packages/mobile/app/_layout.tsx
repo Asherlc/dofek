@@ -36,6 +36,7 @@ import { syncWhoopBle, teardownBackgroundWhoopBleSync } from "../lib/background-
 import type { SyncTrpcClient } from "../lib/health-kit-sync";
 import { invalidateSyncedHealthData } from "../lib/invalidate-synced-health-data";
 import { resolveMedicationReminderNotificationPath } from "../lib/medication-reminder-notifications";
+import { registerMobileQueryLifecycle } from "../lib/mobile-query-lifecycle";
 import { MobileQueryPersistenceProvider } from "../lib/mobile-query-persistence";
 import { createAppQueryClient } from "../lib/query-client";
 import { rootStackScreenOptions } from "../lib/root-stack-screen-options";
@@ -806,6 +807,8 @@ function AuthGate() {
 }
 
 function RootLayout() {
+  useEffect(registerMobileQueryLifecycle, []);
+
   return (
     <SafeAreaProvider>
       <AuthProvider>
