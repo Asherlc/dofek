@@ -1219,7 +1219,7 @@ describe("WhoopClient.listDeveloperWorkoutIdsInWindow", () => {
 
     expect(ids).toEqual(new Set(["at-start", "second-page"]));
     expect(fetchFn).toHaveBeenCalledTimes(2);
-    expect(String(fetchFn.mock.calls[1]?.[0])).toContain("next_token=next-page");
+    expect(String(fetchFn.mock.calls[1]?.[0])).toContain("nextToken=next-page");
   });
 
   it("ignores invalid starts when deciding whether a page is older than the window", async () => {
@@ -1309,7 +1309,7 @@ describe("WhoopClient.listDeveloperWorkoutIdsInWindow", () => {
 
     expect(ids).toEqual(new Set(["newer-page"]));
     expect(fetchFn).toHaveBeenCalledTimes(2);
-    expect(String(fetchFn.mock.calls[1]?.[0])).toContain("next_token=next-page");
+    expect(String(fetchFn.mock.calls[1]?.[0])).toContain("nextToken=next-page");
   });
 });
 
