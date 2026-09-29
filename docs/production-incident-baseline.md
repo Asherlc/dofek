@@ -1,5 +1,14 @@
 # Production Incident Baseline
 
+## 2026-09-29 — Working ChatGPT connection needs automatic OAuth refresh issuance
+
+- **Status / user impact:** The user confirmed that ChatGPT connection and tool requests work after the opaque-token fix. Read-only production checks found one current grant and access token but no refresh token, so the connection could not refresh after access-token expiry.
+- **Evidence / root cause:** None of the 13 retained authorization codes requested `offline_access` or `openid`. The library's default refresh issuance requires `offline_access`, even when the client supports the `refresh_token` grant. A database-backed regression reproduced a successful code exchange whose response omitted `refresh_token`; see [oidc-provider's issuance policy](https://oidc-provider.dev/configuration/tokens/#issuerefreshtoken).
+- **Direct fix:** Use that library policy to issue refresh tokens to clients supporting the refresh grant without requiring an OIDC scope. Existing consent, PKCE, resource checks, rotation, expiry, and replay rejection remain enforced. Public-client refresh tokens must rotate or be sender-constrained under [RFC 9700 section 4.14](https://www.rfc-editor.org/rfc/rfc9700.html#section-4.14).
+- **Validation / remaining work:** The issuance regression and unit policy tests pass. The integration flow refreshes without `offline_access`, verifies rotation and authenticated MCP access, then replays the consumed refresh token and verifies family revocation. Production deployment and a fresh real ChatGPT connection are pending; an existing connection cannot gain a refresh token retrospectively. No runtime retry or timeout workaround was added.
+- **Prior rollout / cleanup:** [PR #2835](https://github.com/Asherlc/dofek/pull/2835) deployed `sha-7522a32` through [run 36637415397](https://github.com/Asherlc/dofek/actions/runs/36637415397). Production canaries using ChatGPT and Claude's published CIMD metadata passed issuance, refresh, MCP initialization, tool discovery, and revocation, with all fixture state removed. [PR #2836](https://github.com/Asherlc/dofek/pull/2836) merged normally after all 100 checks passed; its schema-cleanup image `sha-4b4967c` is rolling out through [run 36646056646](https://github.com/Asherlc/dofek/actions/runs/36646056646), after all running main tests passed and only Apple runners remained queued.
+- **Runbook improvement:** Include actual refresh-token issuance in end-to-end OAuth validation using the scopes requested by the real client; an `offline_access` canary alone did not represent ChatGPT's automatic setup.
+
 <!-- cspell:ignore Hetzner Hypertables rollups fanout Checkpointed subcheck MISCONF docuum anchore xcframework objc -->
 
 This document summarizes production failure modes observed so far. It is not a
