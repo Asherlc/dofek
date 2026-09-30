@@ -49,11 +49,12 @@ actions:
   the Dofek name and URL prefilled. Review the connection and authorize Dofek
   when prompted. Anthropic documents custom remote connectors and their OAuth
   flow in the [Claude connector guide](https://claude.com/docs/connectors/building/directory-vs-custom).
-- **ChatGPT:** **Copy for ChatGPT** copies the endpoint. In the ChatGPT desktop
-  app, open **Settings → MCP servers → Add server**, select Streamable HTTP,
-  paste the URL, save, restart, and authenticate. ChatGPT web uses published
-  plugins rather than the desktop app's local MCP configuration
-  ([OpenAI MCP documentation](https://learn.chatgpt.com/docs/extend/mcp.md)).
+- **ChatGPT:** **Copy for ChatGPT** copies the endpoint. For a developer-mode
+  connection, add the public MCP URL in ChatGPT's Apps/Plugins interface and
+  complete OAuth when prompted. Review the discovered tools, then test the
+  connection in a new conversation. Availability depends on account and
+  workspace policy. See [OpenAI's connection guide](https://developers.openai.com/plugins/deploy/connect-chatgpt)
+  and [developer-mode app configuration](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt).
 - **Cursor:** **Add to Cursor** opens Cursor's documented MCP install deeplink
   containing `{ "url": "https://dofek.fit/api/mcp" }`; Cursor shows the
   configuration for review before installation and OAuth
@@ -688,3 +689,41 @@ release.
 ## Auth Failures
 
 Missing or invalid tokens return `401` with `WWW-Authenticate: Bearer`. Tokens without the required tool scope return a tool-level insufficient-scope error.
+
+### ChatGPT reconnect and scope changes
+
+When ChatGPT cannot open the consent flow, inspect the failed reconnect request
+in the browser's Network panel before changing Dofek. Record only its timestamp,
+method, URL path, HTTP status, requested scope names, response error, and request
+ID. Do not share or retain raw HAR files, authorization headers, cookies, tokens,
+or authorization codes.
+
+Compare the requested scopes against both public discovery documents:
+
+```text
+https://dofek.fit/.well-known/oauth-protected-resource/api/mcp
+https://dofek.fit/.well-known/oauth-authorization-server
+```
+
+The [OpenAI authentication guide](https://developers.openai.com/plugins/build/auth)
+describes resource and authorization-server discovery and the tool-level
+security metadata needed to trigger consent. Correlate the browser request with
+Dofek authorization/token logs to identify which system rejected it. Successful
+tool discovery alone does not verify write authorization.
+
+For developer-mode connections, OpenAI documents selecting **Refresh** on the
+saved connection after changing authentication or tool metadata, verifying the
+updated metadata, and testing again in a new conversation. See
+[Refresh metadata](https://developers.openai.com/plugins/deploy/connect-chatgpt#refresh-metadata).
+If the saved OAuth metadata cannot be refreshed, creating a fresh development
+app is a documented way to fetch updated OAuth metadata; see
+[OAuth app configuration](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt).
+Use the canonical endpoint and automatic OAuth discovery. Preserve the existing
+connection until the replacement is verified.
+
+The [2026-09-30 reconnect incident](production-incident-baseline.md#2026-09-30--chatgpt-browser-reconnect-cannot-obtain-a-setup-url-unresolved)
+returned ChatGPT HTTP 400 `Requested scopes are not allowed for connector`
+before redirecting to Dofek, even though live discovery advertised the requested
+nutrition scopes. That evidence establishes a ChatGPT connector scope rejection;
+it does not prove that its saved metadata is stale. Verify the result after
+refreshing or recreating the app before marking the incident resolved.
