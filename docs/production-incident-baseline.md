@@ -28374,3 +28374,29 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   both incident records. Combined provider/client tests pass (77), all four
   typechecks pass, and lint passes. Revalidate the new head's full suite and
   hosted gates; queued native checks and release/restore approval remain open.
+## 2026-09-30 — OpenBeta tick dates reject numeric API timestamps
+
+- **Symptoms / impact:** Scheduled OpenBeta tick sync fails before writes;
+  the failing page's climbing entries are not imported. Sentry recorded 11
+  occurrences from 17:30 through 22:00 UTC in
+  [DOFEK-SERVER-6M](https://east-bay-software.sentry.io/issues/7764116376/).
+  Its zero tracked users does not establish that no accounts were affected.
+- **Evidence:** `OpenBetaProvider.sync()` calls `fetchGraphQL()` for
+  `userTicks`; event `9257dac2b9264f429a4c25b4094df4c6` fails at
+  `dataSchema.parse(envelope.data)` with `Invalid input: expected string,
+  received number` for all six returned `dateClimbed` fields.
+- **Root cause:** The [provider schema](../src/providers/openbeta.ts) expects
+  nullable string dates and its parser slices strings. OpenBeta's
+  [Date scalar](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/common/DateScalar.ts)
+  serializes dates with `Date.getTime()` as numeric Unix milliseconds;
+  [TickType](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/schema/Tick.gql)
+  uses that scalar. Existing local test fixtures use string dates and miss
+  this API contract.
+- **Status / follow-up:** Unresolved. Proposed direct fix: use the numeric
+  scalar contract, preserve the raw timestamp, convert to a UTC calendar date,
+  and replace string fixtures with timestamp fixtures and regression coverage.
+  Implementation direction confirmation and successful post-deploy sync
+  remain pending. No resilience knobs or runtime changes were introduced.
+- **Retrospective:** Sentry's provider/phase tags and field-level validation
+  errors established the failure without production mutations. Verify custom
+  scalar serialization against upstream source when preparing provider fixtures.
