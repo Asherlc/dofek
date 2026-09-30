@@ -222,81 +222,12 @@ describe("climbing router integration", () => {
     visibleRouteActivityId = visibleRouteActivity.id;
 
     await testContext.db.execute(
-      sql`INSERT INTO fitness.climbing_entry (
-            user_id,
-            provider_id,
-            activity_id,
-            external_id,
-            climb_type,
-            grade_system,
-            grade,
-            sent,
-            attempt_count,
-            route_name,
-            location_name,
-            source_name,
-            raw
-          ) VALUES
-          (
-            ${TEST_USER_ID},
-            'kaya-export',
-            ${climbingActivityId},
-            'climbing-router-entry-v2',
-            'boulder',
-            'v_scale',
-            'V2',
-            true,
-            2,
-            'Warmup',
-            'Touchstone Pacific Pipe',
-            'Kaya',
-            '{"ascentType":"Redpoint"}'::jsonb
-          ),
-          (
-            ${TEST_USER_ID},
-            'kaya-export',
-            ${climbingActivityId},
-            'climbing-router-entry-v4',
-            'boulder',
-            'v_scale',
-            'V4',
-            true,
-            3,
-            'Blue Circuit',
-            'Touchstone Pacific Pipe',
-            'Kaya',
-            '{}'::jsonb
-          ),
-          (
-            ${TEST_USER_ID},
-            'kaya-export',
-            ${climbingActivityId},
-            'climbing-router-entry-v5-unsent',
-            'boulder',
-            'v_scale',
-            'V5',
-            false,
-            4,
-            'Project',
-            'Touchstone Pacific Pipe',
-            'Kaya',
-            '{}'::jsonb
-          ),
-          (
-            ${TEST_USER_ID},
-            'kaya-export',
-            ${routeActivityId},
-            'climbing-router-entry-yds',
-            'route',
-            'yds',
-            '5.10a',
-            true,
-            2,
-            'Lead Route',
-            'Mission Cliffs',
-            'Kaya',
-            '{}'::jsonb
-          )`,
+      sql`INSERT INTO fitness.climbing_entry (user_id, provider_id, activity_id, external_id, climb_type, grade_system, grade, result_style, attempt_count, route_name, location_path, source_name, raw) VALUES
+        (${TEST_USER_ID}, 'kaya-export', ${climbingActivityId}, 'climbing-router-entry-v2', 'boulder', 'v_scale', 'V2', 'Redpoint', 2, 'Warmup', '[{"name":"Touchstone Pacific Pipe","externalId":null,"kind":null}]'::jsonb, 'Kaya', '{"ascentType":"Redpoint"}'::jsonb),
+        (${TEST_USER_ID}, 'kaya-export', ${climbingActivityId}, 'climbing-router-entry-v4', 'boulder', 'v_scale', 'V4', 'Send', 3, 'Blue Circuit', '[{"name":"Touchstone Pacific Pipe","externalId":null,"kind":null}]'::jsonb, 'Kaya', '{}'::jsonb),
+        (${TEST_USER_ID}, 'kaya-export', ${climbingActivityId}, 'climbing-router-entry-v5-unsent', 'boulder', 'v_scale', 'V5', 'Not sent', 4, 'Project', '[{"name":"Touchstone Pacific Pipe","externalId":null,"kind":null}]'::jsonb, 'Kaya', '{}'::jsonb),
+        (${TEST_USER_ID}, 'kaya-export', ${routeActivityId}, 'climbing-router-entry-yds', 'route', 'yds', '5.10a', 'Send', 2, 'Lead Route', '[{"name":"Mission Cliffs","externalId":null,"kind":null}]'::jsonb, 'Kaya', '{}'::jsonb)
+`,
     );
   }, 60_000);
 
@@ -361,13 +292,9 @@ describe("climbing router integration", () => {
   it("rejects non-positive climbing attempt counts", async () => {
     await expect(
       testContext.db.execute(sql`
-        INSERT INTO fitness.climbing_entry (
-          user_id, provider_id,
-          activity_id, climb_type, grade_system, grade, sent, attempt_count
-        ) VALUES (
-          ${TEST_USER_ID}, 'kaya-export', ${routeActivityId}, 'route', 'yds', '5.9', false, 0
-        )
-      `),
+        INSERT INTO fitness.climbing_entry (user_id, provider_id, activity_id, climb_type, grade_system, grade, result_style, attempt_count) VALUES
+        (${TEST_USER_ID}, 'kaya-export', ${routeActivityId}, 'route', 'yds', '5.9', 'Not sent', 0)
+`),
     ).rejects.toThrow("Failed query");
   });
 
@@ -435,14 +362,9 @@ describe("climbing router integration", () => {
 
     await testContext.db.execute(sql`INSERT INTO fitness.provider (id, name)
       VALUES ('mountain-project', 'Mountain Project') ON CONFLICT (id) DO NOTHING`);
-    await testContext.db.execute(sql`INSERT INTO fitness.climbing_entry (
-      user_id, provider_id, activity_id, unattached_date, external_id,
-      climb_type, grade_system, grade, sent, attempt_count, raw
-    ) VALUES (
-      ${TEST_USER_ID}, 'mountain-project', NULL,
-      (SELECT (started_at AT TIME ZONE 'UTC')::date FROM fitness.activity WHERE id = ${climbingActivityId}::uuid),
-      ${`router-attach-same-day-${runToken}`}, 'boulder', 'v_scale', 'V8', TRUE, 1, '{}'::jsonb
-    )`);
+    await testContext.db.execute(sql`INSERT INTO fitness.climbing_entry (user_id, provider_id, activity_id, unattached_date, external_id, climb_type, grade_system, grade, result_style, attempt_count, raw) VALUES
+        (${TEST_USER_ID}, 'mountain-project', NULL, (SELECT (started_at AT TIME ZONE 'UTC')::date FROM fitness.activity WHERE id = ${climbingActivityId}::uuid), ${`router-attach-same-day-${runToken}`}, 'boulder', 'v_scale', 'V8', 'Send', 1, '{}'::jsonb)
+`);
     const tickRows = await executeWithSchema(
       testContext.db,
       idOnlySchema,
@@ -504,13 +426,9 @@ describe("climbing router integration", () => {
     const tickRows = await executeWithSchema(
       testContext.db,
       idOnlySchema,
-      sql`INSERT INTO fitness.climbing_entry (
-        user_id, provider_id, activity_id, unattached_date, external_id,
-        climb_type, grade_system, grade, sent, attempt_count, raw
-      ) VALUES (
-        ${TEST_USER_ID}, 'mountain-project', NULL, '2026-01-01', ${`tick-date-boundary-${suffix}`},
-        'boulder', 'v_scale', 'V4', TRUE, 1, '{}'::jsonb
-      ) RETURNING id::text AS id`,
+      sql`INSERT INTO fitness.climbing_entry (user_id, provider_id, activity_id, unattached_date, external_id, climb_type, grade_system, grade, result_style, attempt_count, raw) VALUES
+        (${TEST_USER_ID}, 'mountain-project', NULL, '2026-01-01', ${`tick-date-boundary-${suffix}`}, 'boulder', 'v_scale', 'V4', 'Send', 1, '{}'::jsonb)
+RETURNING id::text AS id`,
     );
     const tick = tickRows[0];
     if (!tick) throw new Error("Failed to seed UTC-boundary Mountain Project tick");

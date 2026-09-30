@@ -122,8 +122,7 @@ activity_samples AS (
 
 {% if is_incremental() %}
 existing_activity_samples AS (
-    SELECT
-        existing_samples.*
+    SELECT existing_samples.*
     FROM {{ this }} AS existing_samples
     WHERE (existing_samples.user_id, existing_samples.channel, existing_samples.recorded_at) IN (
         SELECT

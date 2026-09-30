@@ -35,7 +35,27 @@ describe("ClimbingVolumeByGradeChart", () => {
     expect(screen.getByText("Loading chart")).toBeTruthy();
   });
 
-  it("renders aggregate totals and per-grade sends/attempts ordered by sort value", () => {
+  it("shows unknown attempt counts while retaining known sends", () => {
+    render(
+      <ClimbingVolumeByGradeChart
+        data={[
+          {
+            climbType: "boulder",
+            gradeSystem: "v_scale",
+            grade: "V4",
+            gradeSortValue: 4,
+            attempts: null,
+            sends: 2,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Attempt count not recorded")).toBeTruthy();
+    expect(screen.getByText("2 sends")).toBeTruthy();
+  });
+
+  it("renders per-grade sends/attempts ordered by sort value", () => {
     render(
       <ClimbingVolumeByGradeChart
         data={[
@@ -64,8 +84,6 @@ describe("ClimbingVolumeByGradeChart", () => {
     expect(
       gradeOne.compareDocumentPosition(gradeFour) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-    expect(screen.getByText("8 attempts")).toBeTruthy();
-    expect(screen.getByText("7 sends")).toBeTruthy();
     expect(screen.getByText("5 attempts")).toBeTruthy();
     expect(screen.getByText("2 sends")).toBeTruthy();
   });

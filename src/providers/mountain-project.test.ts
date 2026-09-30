@@ -75,6 +75,57 @@ afterEach(() => {
 });
 
 describe("MountainProjectProvider", () => {
+  it("preserves nonempty path nodes and leaves a boulder's rope method unknown", async () => {
+    const { db, climbingEntryValues } = makeDb();
+    const csv = exportCsv([
+      '2026-08-10,Context Boulder,V4,,https://www.mountainproject.com/route/100/context,1," Country > > Wall > ",2.4,-1,Lead,,Boulder,,,20400',
+    ]);
+    const result = await new MountainProjectProvider(async () => new Response(csv)).sync(
+      makeRun(db),
+    );
+    expect(result).toMatchObject({ recordsSynced: 1, errors: [] });
+    expect(climbingEntryValues).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        climbType: "boulder",
+        climbStyle: null,
+        resultStyle: "Lead",
+        locationPath: [
+          { name: "Country", externalId: null, kind: null },
+          { name: "Wall", externalId: null, kind: null },
+        ],
+      }),
+    );
+  });
+  it.each([
+    ["Lead", "lead"],
+    ["TR", "top-rope"],
+    ["Follow", "follow"],
+    ["Solo", "solo"],
+    ["Aid", "aid"],
+  ])("preserves %s and six location levels independently of a result", async (style, method) => {
+    const { db, climbingEntryValues } = makeDb();
+    const csv = exportCsv([
+      `2026-08-10,Context Route,5.9,,https://www.mountainproject.com/route/100/context,1,"Country > State > Region > Park > Crag > Wall",2.4,-1,${style},Fell/Hung,Trad,,,1800`,
+    ]);
+    const result = await new MountainProjectProvider(async () => new Response(csv)).sync(
+      makeRun(db),
+    );
+    expect(result.errors).toEqual([]);
+    expect(climbingEntryValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        climbStyle: method,
+        resultStyle: "Fell/Hung",
+        attemptCount: null,
+        locationPath: ["Country", "State", "Region", "Park", "Crag", "Wall"].map((name) => ({
+          name,
+          externalId: null,
+          kind: null,
+        })),
+        board: null,
+        wallAngle: null,
+      }),
+    );
+  });
   it("returns an actionable error without persisting when no user context is available", async () => {
     const { db } = makeDb();
     const provider = new MountainProjectProvider(vi.fn());
@@ -153,13 +204,17 @@ describe("MountainProjectProvider", () => {
           climbType: "route",
           gradeSystem: "yds",
           grade: "5.7",
-          sent: true,
-          attemptCount: 1,
+          resultStyle: "Onsight",
+          attemptCount: null,
           routeName: "West Overhang",
-          locationName: "Colorado > Boulder > Eldorado Canyon",
+          locationPath: [
+            { name: "Colorado", externalId: null, kind: null },
+            { name: "Boulder", externalId: null, kind: null },
+            { name: "Eldorado Canyon", externalId: null, kind: null },
+          ],
           raw: expect.objectContaining({ Notes: "2:1 W/TMG", "Your Stars": "-1" }),
         }),
-        expect.objectContaining({ sent: null, attemptCount: null, grade: "5.10b" }),
+        expect.objectContaining({ resultStyle: null, attemptCount: null, grade: "5.10b" }),
       ]),
     );
     expect(db.execute).toHaveBeenCalledOnce();
@@ -221,39 +276,44 @@ describe("MountainProjectProvider", () => {
         expect.objectContaining({
           routeName: "Code Boulder",
           climbType: "boulder",
-          sent: false,
-          attemptCount: 1,
-          locationName: "Colorado > Boulder",
+          resultStyle: "Attempt",
+          attemptCount: null,
+          locationPath: [
+            { name: "Colorado", externalId: null, kind: null },
+            { name: "Boulder", externalId: null, kind: null },
+          ],
         }),
         expect.objectContaining({
           routeName: "Typed Boulder",
           climbType: "boulder",
-          sent: true,
-          attemptCount: 1,
+          resultStyle: "Send",
+          attemptCount: null,
         }),
         expect.objectContaining({
           routeName: "Unknown Boulder",
           climbType: "boulder",
-          sent: null,
+          resultStyle: null,
           attemptCount: null,
         }),
         expect.objectContaining({
           routeName: "Fell Route",
           climbType: "route",
-          sent: false,
-          attemptCount: 1,
+          climbStyle: "lead",
+          resultStyle: "Fell/Hung",
+          attemptCount: null,
         }),
         expect.objectContaining({
           routeName: "Unknown Route",
           climbType: "route",
-          sent: null,
+          climbStyle: "top-rope",
+          resultStyle: null,
           attemptCount: null,
         }),
         expect.objectContaining({
           routeName: null,
           climbType: "route",
-          sent: true,
-          attemptCount: 1,
+          resultStyle: "Redpoint",
+          attemptCount: null,
         }),
       ]),
     );

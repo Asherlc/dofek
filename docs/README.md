@@ -38,6 +38,7 @@ the exact section.
 | Doc | What it is for |
 |-----|----------------|
 | [schema.md](schema.md) | Database layout, raw-data-only rules, and view/dedup behavior. |
+| [climbing-context.md](climbing-context.md) | Location paths, boards, angles, climbing methods/results, provider coverage, and coordinated schema cutover. |
 | [altitude-provenance.md](altitude-provenance.md) | Provider-by-provider altitude source confidence and modeling implications. |
 | [record-local-time.md](record-local-time.md) | Trusted per-record local clock context, provenance, and bounded historical activity backfill. |
 | [body-metrics-decision-context.md](body-metrics-decision-context.md) | Server-authored Trend Weight methodology, measurement provenance, and personalized variation context. |

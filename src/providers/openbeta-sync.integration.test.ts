@@ -133,10 +133,33 @@ describe("OpenBetaProvider.sync() (integration)", () => {
       climbType: "route",
       gradeSystem: "yds",
       grade: "5.10a",
-      sent: true,
-      attemptCount: 1,
+      resultStyle: "Redpoint",
+      climbStyle: "lead",
+      attemptCount: null,
+      locationPath: [{ name: "Smith Rock", externalId: null, kind: null }],
     });
 
+    const previous = entries;
+    currentTicks = [
+      tick({
+        climb: {
+          uuid: "climb-uuid-1",
+          name: "Sunset Arete",
+          grades: null,
+          type: { bouldering: false },
+          pathTokens: ["Crag", "Wall"],
+          ancestors: ["area-1"],
+          parent: { uuid: "area-1", area_name: "Wall" },
+        },
+      }),
+    ];
+    await expect(run()).resolves.toMatchObject({
+      recordsSynced: 0,
+      errors: [expect.objectContaining({ message: expect.stringContaining("location path") })],
+    });
+    expect(
+      await ctx.db.select().from(climbingEntry).where(eq(climbingEntry.providerId, "openbeta")),
+    ).toEqual(previous);
     currentTicks = [tick()];
     await expect(run()).resolves.toMatchObject({ recordsSynced: 1, errors: [] });
     entries = await ctx.db

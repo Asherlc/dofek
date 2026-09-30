@@ -38,6 +38,11 @@ when the authenticated user changes.
 
 ## Development
 
+Activity details render the complete climbing location path, board, recorded
+angle/units, method, and result for both attached climbs and suggested ticks.
+`ClimbingEntryContext` uses shared formatters and server-derived status; it
+retains unknown counts/units. See the [climbing contract](../../docs/climbing-context.md).
+
 ```bash
 cd packages/web && pnpm dev      # Start Vite dev server (proxies /api to server)
 cd packages/web && pnpm build    # Build for production (outputs to dist/)

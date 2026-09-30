@@ -3,6 +3,10 @@ import { queryCache } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
 import { loadClimbingGradePreference } from "../climbing-grade-preferences.ts";
+import {
+  climbingActivityEntryDetailSchema,
+  climbingEntrySuggestionSchema,
+} from "../contracts/climbing-context-contracts.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { ClimbingEntryAssociator } from "../repositories/climbing-entry-associator.ts";
 import {
@@ -23,20 +27,6 @@ import {
 } from "../trpc.ts";
 
 const daysInputSchema = z.object({ days: z.number().int().min(1).max(365).default(90) });
-const climbingEntrySuggestionSchema = z.object({
-  id: z.guid(),
-  providerId: z.string(),
-  sourceName: z.string().nullable(),
-  climbType: z.enum(["boulder", "route"]),
-  gradeSystem: z.string(),
-  grade: z.string(),
-  sent: z.boolean().nullable(),
-  ascentType: z.enum(["Flash", "Onsight", "Redpoint", "Pinkpoint", "Repeat"]).nullable(),
-  attemptCount: z.number().int().nullable(),
-  lead: z.boolean().nullable(),
-  routeName: z.string().nullable(),
-  locationName: z.string().nullable(),
-});
 const hangboardingSummarySchema = z.object({
   sessionCount: z.number().int().nonnegative(),
   totalDurationSeconds: z.number().nonnegative(),
@@ -100,9 +90,10 @@ export const climbingRouter = router({
 
   activityEntries: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
-    keyVersion: "climbing-activity-group-v1",
+    keyVersion: "climbing-activity-context-v2",
   })
     .input(z.object({ id: z.guid() }))
+    .output(z.array(climbingActivityEntryDetailSchema))
     .query(async ({ ctx, input }): Promise<ClimbingActivityEntryRow[]> => {
       return runClimbingQuery(async () => {
         const activity = await new ActivityRepository(
@@ -120,7 +111,10 @@ export const climbingRouter = router({
       });
     }),
 
-  unattachedClimbingEntries: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
+  unattachedClimbingEntries: cachedProtectedQuery({
+    maxAge: CacheTTL.SHORT,
+    keyVersion: "climbing-suggestions-context-v1",
+  })
     .input(z.object({ activityId: z.guid() }))
     .output(z.array(climbingEntrySuggestionSchema))
     .query(async ({ ctx, input }) =>

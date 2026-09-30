@@ -14,11 +14,19 @@ const suggestions: ClimbingEntrySuggestion[] = [
     gradeSystem: "yds",
     grade: "5.10a",
     sent: false,
-    ascentType: "Onsight",
+    ascentType: null,
     attemptCount: null,
-    lead: true,
+    lead: false,
     routeName: null,
     locationName: "Test Crag",
+    context: {
+      providerId: "openbeta",
+      locationPath: [{ name: "Test Crag", externalId: null, kind: null }],
+      board: null,
+      wallAngle: null,
+      climbStyle: "top-rope",
+      resultStyle: "Fell/Hung",
+    },
   },
   {
     id: "entry-2",
@@ -33,6 +41,14 @@ const suggestions: ClimbingEntrySuggestion[] = [
     lead: null,
     routeName: "Blue Arete",
     locationName: null,
+    context: {
+      providerId: "mountain-project",
+      locationPath: [],
+      board: null,
+      wallAngle: null,
+      climbStyle: null,
+      resultStyle: "Send",
+    },
   },
 ];
 const emptySuggestions: ClimbingEntrySuggestion[] = [];
@@ -55,8 +71,10 @@ describe("UnattachedClimbingEntries", () => {
 
     expect(screen.getByText("Route")).toBeInTheDocument();
     expect(screen.getByText("OpenBeta")).toBeInTheDocument();
-    expect(screen.getByText(/5\.10a · Attempted · Test Crag/)).toBeInTheDocument();
-    expect(screen.getByText("Onsight")).toBeInTheDocument();
+    expect(screen.getByText(/5\.10a · Not sent; attempt count not recorded/)).toBeInTheDocument();
+    expect(screen.getByText("Test Crag")).toBeInTheDocument();
+    expect(screen.getByText("Top rope")).toBeInTheDocument();
+    expect(screen.getByText("Fell or hung")).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent("This entry is no longer available.");
     const buttons = screen.getAllByRole("button", { name: "Attach to this activity" });
     expect(buttons[0]).toBeDisabled();
@@ -67,7 +85,7 @@ describe("UnattachedClimbingEntries", () => {
     expect(onAttach).toHaveBeenCalledWith("entry-2");
     expect(screen.getByText("Blue Arete")).toBeInTheDocument();
     expect(screen.getByText("Mountain Project")).toBeInTheDocument();
-    expect(screen.getByText("V4 · Sent · 1 attempt")).toBeInTheDocument();
+    expect(screen.getByText("V4 · Sent in 1 attempt")).toBeInTheDocument();
   });
 
   it.each([

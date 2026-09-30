@@ -133,7 +133,7 @@ function equivalencePredicate(key: PerformanceEquivalence): SQL {
   }
   if (key.kind === "climb") {
     return sql`EXISTS (
-      SELECT 1 FROM fitness.climbing_entry AS matched_climb
+      SELECT 1 FROM fitness.v_climbing_entry AS matched_climb
       WHERE matched_climb.activity_id = ANY(a.member_activity_ids)
         AND matched_climb.climb_type::text = ${key.climbType}
         AND matched_climb.grade_system::text = ${key.gradeSystem}
@@ -230,7 +230,7 @@ function activitySelect(
         'lead', climb.lead
       )) FILTER (WHERE climb.route_name IS NOT NULL AND climb.location_name IS NOT NULL)
         AS identities
-      FROM fitness.climbing_entry AS climb
+      FROM fitness.v_climbing_entry AS climb
       WHERE climb.activity_id = ANY(a.member_activity_ids)
     ) AS climb_evidence ON true
     WHERE a.user_id = ${userId}::uuid
@@ -566,7 +566,7 @@ export class PerformanceComparisonRepository {
           climb.route_name,
           climb.location_name
         FROM fitness.v_activity AS a
-        JOIN fitness.climbing_entry AS climb ON climb.activity_id = ANY(a.member_activity_ids)
+        JOIN fitness.v_climbing_entry AS climb ON climb.activity_id = ANY(a.member_activity_ids)
         JOIN fitness.activity AS source_activity ON source_activity.id = climb.activity_id
         WHERE a.user_id = ${this.#userId}::uuid
           AND a.id IN (${sql.join(

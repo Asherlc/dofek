@@ -1,5 +1,6 @@
 import { recordLocalTimeContextSchema } from "@dofek/format/record-local-time";
 import { healthMetricSchema } from "@dofek/mcp-contracts/health-explorer";
+import { climbingContextSchema } from "@dofek/training/climbing-context";
 import { CLIMBING_GRADE_SYSTEMS } from "@dofek/training/climbing-grades";
 import { z } from "zod";
 import { baselineRelativeMetricSchema } from "../contracts/baseline-relative-metrics.ts";
@@ -444,6 +445,7 @@ const climbingAttemptSchema = z.object({
 });
 const climbingEntrySchema = z.object({
   id: z.string(),
+  context: climbingContextSchema,
   discipline: z.enum(["boulder", "lead", "top_rope", "route"]),
   grade: z.string(),
   grade_system: z.enum(CLIMBING_GRADE_SYSTEMS),

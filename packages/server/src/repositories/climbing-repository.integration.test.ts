@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
@@ -26,7 +26,7 @@ describe("ClimbingRepository PostgreSQL summaries", () => {
   let activityId: string;
   let activityMemberId: string;
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     context = await setupTestDatabase();
     await context.db.execute(sql`INSERT INTO fitness.provider (id, name)
       VALUES ('climbing-summary-test', 'Climbing Summary Test'),
@@ -48,26 +48,48 @@ describe("ClimbingRepository PostgreSQL summaries", () => {
     activityId = seededActivity.group_id;
     activityMemberId = seededActivity.id;
 
-    await context.db.execute(sql`INSERT INTO fitness.climbing_entry (
-      id, user_id, provider_id, activity_id, unattached_date, external_id,
-      climb_type, grade_system, grade, sent, attempt_count, provider_absent_at, raw
-    ) VALUES
-      (${ATTACHED_ID}, ${TEST_USER_ID}, 'climbing-summary-test', ${activityMemberId}, NULL,
-       'attached-send', 'boulder', 'v_scale', 'V3', TRUE, 2, NULL, '{}'::jsonb),
-      (${ABSENT_ATTACHED_ID}, ${TEST_USER_ID}, 'mountain-project', ${activityMemberId}, NULL,
-       'absent-attached-send', 'boulder', 'v_scale', 'V8', TRUE, 5, NOW(), '{"retained":true}'::jsonb),
-      (${UNATTACHED_ID}, ${TEST_USER_ID}, 'mountain-project', NULL,
-       (SELECT (started_at AT TIME ZONE 'America/Los_Angeles')::date
-        FROM fitness.activity WHERE id = ${activityMemberId}::uuid),
-       'unattached-send', 'boulder', 'v_scale', 'V4', TRUE, 3, NULL, '{}'::jsonb),
-      (${ABSENT_ID}, ${TEST_USER_ID}, 'mountain-project', NULL,
-       (SELECT (started_at AT TIME ZONE 'America/Los_Angeles')::date
-        FROM fitness.activity WHERE id = ${activityMemberId}::uuid),
-       'absent-send', 'boulder', 'v_scale', 'V8', TRUE, 5, NOW(), '{}'::jsonb)`);
+    await context.db.execute(sql`INSERT INTO fitness.climbing_entry (id, user_id, provider_id, activity_id, unattached_date, external_id, climb_type, grade_system, grade, result_style, attempt_count, provider_absent_at, raw) VALUES
+        (${ATTACHED_ID}, ${TEST_USER_ID}, 'climbing-summary-test', ${activityMemberId}, NULL, 'attached-send', 'boulder', 'v_scale', 'V3', 'Send', 2, NULL, '{}'::jsonb),
+        (${ABSENT_ATTACHED_ID}, ${TEST_USER_ID}, 'mountain-project', ${activityMemberId}, NULL, 'absent-attached-send', 'boulder', 'v_scale', 'V8', 'Send', 5, NOW(), '{"retained":true}'::jsonb),
+        (${UNATTACHED_ID}, ${TEST_USER_ID}, 'mountain-project', NULL, (SELECT (started_at AT TIME ZONE 'America/Los_Angeles')::date
+        FROM fitness.activity WHERE id = ${activityMemberId}::uuid), 'unattached-send', 'boulder', 'v_scale', 'V4', 'Send', 3, NULL, '{}'::jsonb),
+        (${ABSENT_ID}, ${TEST_USER_ID}, 'mountain-project', NULL, (SELECT (started_at AT TIME ZONE 'America/Los_Angeles')::date
+        FROM fitness.activity WHERE id = ${activityMemberId}::uuid), 'absent-send', 'boulder', 'v_scale', 'V8', 'Send', 5, NOW(), '{}'::jsonb)
+`);
   }, 60_000);
 
-  afterAll(async () => {
+  afterEach(async () => {
     await context?.cleanup();
+  });
+
+  it("serves a full source context independently of the associated activity provider", async () => {
+    const locationPath = ["Country", "State", "Region", "Park", "Crag", "Wall"].map(
+      (name, index) => ({ name, externalId: `area-${index}`, kind: null }),
+    );
+    await context.db.execute(sql`UPDATE fitness.climbing_entry
+      SET provider_id = 'mountain-project', location_path = ${JSON.stringify(locationPath)}::jsonb,
+          climb_style = 'top-rope', result_style = 'Frenchfree', attempt_count = NULL,
+          wall_angle = '{"value":-20,"unit":null}'::jsonb
+      WHERE id = ${ATTACHED_ID}::uuid`);
+    const [detail] = await new ClimbingRepository(
+      context.db,
+      TEST_USER_ID,
+      "UTC",
+    ).getActivityEntries(activityId);
+    expect(detail?.toDetail()).toMatchObject({
+      sent: null,
+      attemptCount: null,
+      lead: false,
+      wallAngleDegrees: null,
+      context: {
+        providerId: "mountain-project",
+        locationPath,
+        board: null,
+        wallAngle: { value: -20, unit: null },
+        climbStyle: "top-rope",
+        resultStyle: "Frenchfree",
+      },
+    });
   });
 
   it("excludes absent attached ticks from active reads and restores them when the provider returns", async () => {
@@ -141,14 +163,10 @@ describe("ClimbingRepository PostgreSQL summaries", () => {
       ) RETURNING id::text AS id, group_id::text AS group_id`,
     );
     if (!boundaryActivity) throw new Error("Failed to seed boundary climbing activity");
-    await context.db.execute(sql`INSERT INTO fitness.climbing_entry (
-      id, user_id, provider_id, activity_id, unattached_date, external_id,
-      climb_type, grade_system, grade, sent, attempt_count, provider_absent_at, raw
-    ) VALUES
-      (${BOUNDARY_ATTACHED_ID}, ${TEST_USER_ID}, 'climbing-summary-test', ${boundaryActivity.id}, NULL,
-       'boundary-attached', 'boulder', 'v_scale', 'V6', TRUE, 1, NULL, '{}'::jsonb),
-      (${BOUNDARY_UNATTACHED_ID}, ${TEST_USER_ID}, 'mountain-project', NULL,
-       ${boundaryDate}, 'boundary-unattached', 'boulder', 'v_scale', 'V7', TRUE, 1, NULL, '{}'::jsonb)`);
+    await context.db.execute(sql`INSERT INTO fitness.climbing_entry (id, user_id, provider_id, activity_id, unattached_date, external_id, climb_type, grade_system, grade, result_style, attempt_count, provider_absent_at, raw) VALUES
+        (${BOUNDARY_ATTACHED_ID}, ${TEST_USER_ID}, 'climbing-summary-test', ${boundaryActivity.id}, NULL, 'boundary-attached', 'boulder', 'v_scale', 'V6', 'Send', 1, NULL, '{}'::jsonb),
+        (${BOUNDARY_UNATTACHED_ID}, ${TEST_USER_ID}, 'mountain-project', NULL, ${boundaryDate}, 'boundary-unattached', 'boulder', 'v_scale', 'V7', 'Send', 1, NULL, '{}'::jsonb)
+`);
 
     const repository = new ClimbingRepository(context.db, TEST_USER_ID, timezone);
     expect(
@@ -178,13 +196,9 @@ describe("ClimbingRepository PostgreSQL summaries", () => {
     const expectedDate = new Date(Date.parse(offsetActivity.started_at) + 120 * 60 * 1000)
       .toISOString()
       .slice(0, 10);
-    await context.db.execute(sql`INSERT INTO fitness.climbing_entry (
-      id, user_id, provider_id, activity_id, external_id,
-      climb_type, grade_system, grade, sent, attempt_count, raw
-    ) VALUES (
-      ${OFFSET_ATTACHED_ID}, ${TEST_USER_ID}, 'climbing-summary-test', ${offsetActivity.id},
-      'summary-offset-entry', 'boulder', 'v_scale', 'V9', TRUE, 1, '{}'::jsonb
-    )`);
+    await context.db.execute(sql`INSERT INTO fitness.climbing_entry (id, user_id, provider_id, activity_id, external_id, climb_type, grade_system, grade, result_style, attempt_count, raw) VALUES
+        (${OFFSET_ATTACHED_ID}, ${TEST_USER_ID}, 'climbing-summary-test', ${offsetActivity.id}, 'summary-offset-entry', 'boulder', 'v_scale', 'V9', 'Send', 1, '{}'::jsonb)
+`);
 
     const repository = new ClimbingRepository(context.db, TEST_USER_ID, "America/Los_Angeles");
     expect((await repository.getGradeProgression(30)).map((row) => row.toDetail())).toContainEqual(
@@ -193,5 +207,56 @@ describe("ClimbingRepository PostgreSQL summaries", () => {
     expect((await repository.getSessionSummaries(30)).map((row) => row.toDetail())).toContainEqual(
       expect.objectContaining({ activityId: offsetActivity.group_id, date: expectedDate }),
     );
+  });
+
+  it("retains known sends and unsuccessful climbs when attempt counts are unknown", async () => {
+    await context.db.execute(sql`DELETE FROM fitness.activity
+      WHERE user_id = ${TEST_USER_ID} AND provider_id = 'climbing-summary-test' AND external_id = 'unknown-count-session'`);
+    const [activity] = await executeWithSchema(
+      context.db,
+      activityIdSchema,
+      sql`
+      INSERT INTO fitness.activity (
+        provider_id, user_id, external_id, canonical_type, provider_type,
+        started_at, ended_at, local_time_source
+      ) VALUES (
+        'climbing-summary-test', ${TEST_USER_ID}, 'unknown-count-session', 'climbing', 'climbing',
+        NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day' + INTERVAL '1 hour', 'unknown'
+      ) RETURNING id::text AS id, group_id::text AS group_id`,
+    );
+    if (!activity) throw new Error("Failed to seed unknown-count climbing activity");
+    await context.db.execute(sql`INSERT INTO fitness.climbing_entry (user_id, provider_id, activity_id, external_id, climb_type, grade_system, grade, result_style, attempt_count) VALUES
+        (${TEST_USER_ID}, 'climbing-summary-test', ${activity.id}, 'unknown-count-send', 'boulder', 'v_scale', 'V5', 'Send', NULL),
+        (${TEST_USER_ID}, 'climbing-summary-test', ${activity.id}, 'unknown-count-attempt', 'boulder', 'v_scale', 'V5', 'Not sent', NULL),
+        (${TEST_USER_ID}, 'climbing-summary-test', ${activity.id}, 'known-count-attempt', 'boulder', 'font', '6C', 'Not sent', 3),
+        (${TEST_USER_ID}, 'climbing-summary-test', ${activity.id}, 'unknown-outcome', 'route', 'yds', '5.12a', NULL, 2)
+`);
+
+    const repository = new ClimbingRepository(context.db, TEST_USER_ID, "America/Los_Angeles");
+    expect(
+      (await repository.getActivityEntries(activity.group_id)).map((entry) => entry.toDetail()),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ sent: true, attemptCount: null, grade: "V5" }),
+        expect.objectContaining({ sent: false, attemptCount: null, grade: "V5" }),
+        expect.objectContaining({ sent: null, attemptCount: 2, climbType: "route" }),
+      ]),
+    );
+    expect((await repository.getVolumeByGrade(30)).map((entry) => entry.toDetail())).toContainEqual(
+      expect.objectContaining({ grade: "V5", attempts: null, sends: 1 }),
+    );
+    expect(
+      (await repository.getSessionSummaries(30)).map((entry) => entry.toDetail()),
+    ).toContainEqual(
+      expect.objectContaining({
+        activityId: activity.group_id,
+        attempts: null,
+        sends: 1,
+        hardestBoulderGrade: "V5",
+      }),
+    );
+    expect(
+      (await repository.getGradeProgression(30)).map((entry) => entry.toDetail()),
+    ).toContainEqual(expect.objectContaining({ grade: "V5" }));
   });
 });
