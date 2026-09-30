@@ -28352,3 +28352,87 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   runs after the shared Docker VM killed ClickHouse; the combined run itself did
   not pass. No retry, timeout, integrity bypass, or production operator write was
   introduced.
+
+## 2026-09-30 — OpenBeta connection errors concealed upstream failures
+
+- **Symptoms / impact:** A public-profile connection failed with the duplicated
+  message "OpenBeta rejected this token. OpenBeta rejected this token."
+- **Evidence:** `docker service logs --raw --timestamps --since 24h --tail 2000
+  dofek_web` recorded that error at `2026-09-30T15:03:47.298450719Z`; the
+  `POST /api/trpc/tokenAuth.connect?batch=1` request returned 400 after 4840 ms.
+  Public GraphQL POST probes from both the workstation and production host
+  timed out without an HTTP response. Those later probes do not establish
+  the cause of the original request.
+- **Root cause:** The [OpenBeta profile exchange](../src/providers/openbeta.ts)
+  reclassified every upstream error as a token rejection and passed an
+  already formatted rejection into another rejection constructor. The
+  [tRPC error hook](../packages/server/src/index.ts) reports unexpected
+  internal failures to Sentry; the incorrect user-error classification
+  prevented that reporting path from observing the upstream failure.
+- **Direct fix:** Preserve upstream lookup errors, use a single profile-specific
+  message for invalid identifiers or missing profiles, and correct both
+  clients' connection instructions and show public profile input as visible
+  text through shared provider metadata. No retry, timeout, or fallback changes.
+- **Validation / remaining risk:** Regression tests reproduced the wrapping
+  failure before the fix; all 79 focused provider, connection-router, catalog,
+  web, and mobile tests pass afterward. The production connection remains
+  unresolved until deployment and a successful live profile lookup; the
+  original upstream failure cannot be recovered from the captured log.
+- **PR validation environment:** `pnpm lint` initially stopped in SQLFluff
+  with `FailedToConnectError` / `Connection refused` because this workspace
+  had no running ClickHouse or `.env.local` port configuration. Starting only
+  the workspace ClickHouse service with `pnpm compose -- up -d --wait
+  clickhouse` and writing its discovered ports with `pnpm compose:env --write`
+  restored `pnpm lint:analytics-sql`. The code/policy lint and all type checks
+  passed. See the [workspace setup procedure](../README.md#quick-start).
+- **Full local PR validation:** `pnpm test --run` passed 19,141 tests with
+  20 skipped and one failure: the deployment convergence test at
+  [deploy-web-stack.test.ts](../.github/workflows/deploy-web-stack.test.ts)
+  exceeded its 30-second test timeout. It passed unchanged in isolation
+  in 15.72 seconds. The reason for the slower full-suite execution remains
+  unconfirmed; no test timeout, retry, or production behavior was changed.
+  All 30 tests in that file subsequently passed unchanged in a full-file
+  rerun. Hosted CI remains the validation follow-up.
+- **Follow-up:** After rollout, retry the affected profile and inspect the
+  retained server error if it fails. Provider connection investigations
+  should distinguish input errors from API and schema failures before
+  recommending that users change credentials or profile visibility.
+
+## 2026-09-30 — Normal deployment restored background processing
+
+- **Root cause and direct fix:** The migration-history gap documented above
+  stopped deployment before worker restoration. Main's
+  [history restoration](https://github.com/Asherlc/dofek/pull/2855) preserves the
+  original Kaya migration and registers the Apple upgrade after it. The normal
+  [deployment of `bffc564`](https://github.com/Asherlc/dofek/actions/runs/36749707220)
+  completed successfully at 17:36 UTC without bypassing migration integrity.
+- **Read-only production verification:** The original Kaya ledger entry remains
+  at `1790727480000` with hash
+  `8c78a3557c472012c24978da8c1ae16e99573f59d66ed7d8e709297702c849ff`.
+  The canonical Apple entry is applied at `1790779386669`. Web has two running
+  replicas and all six background services have one running replica on
+  `sha-bffc564`. The first analytics cycle passed all 41 models with no warnings
+  or errors and completed cache warming without failures.
+- **Cache-warming recovery:** Readiness subsequently returned HTTP 200 with no
+  last failure and a successful cycle at 17:51:51 UTC. Redis reported zero
+  registrations in `query-cache:keys`, so the warming step exercised an empty
+  registry. Real Redis regressions separately verify the deployed eviction
+  behavior. The corresponding [activity errors](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6G)
+  and [warming failure](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6H)
+  are resolved, along with [the stream error](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6J).
+- **New unresolved provider evidence:** The next scheduled OpenBeta sync
+  [rejected six numeric `dateClimbed` fields](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6M)
+  because the provider schema requires strings. OpenBeta's official
+  [Date scalar](https://github.com/OpenBeta/openbeta-graphql/blob/f1508b2479cc7658ac4341d59ec817836190d6d8/src/graphql/common/DateScalar.ts)
+  serializes epoch milliseconds. A separate
+  [upstream HTTP 504](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6K)
+  also interrupted sync. The grouped scheduled-sync issue reopened; all three
+  remain unresolved pending a reviewed contract fix and successful live sync.
+- **Remaining work:** The focused Kaya/SQLFluff recovery PR still requires its
+  current-head CI and normal deployment. Historical freshness-projection
+  materialization requires its separately approved maintenance window and
+  operator channel in the [read-model deployment runbook](clickhouse-read-model-deploy-runbook.md#route-source-freshness-projection-rollout-migration-0097).
+  Mobile runtime 1.2 is available in TestFlight build `1790775640`, but the
+  operator cannot test it now; mobile issues remain open pending device
+  verification or new diagnostic evidence. No new retry, timeout, integrity
+  bypass, or production SSH write was introduced.

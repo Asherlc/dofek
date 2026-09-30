@@ -1,4 +1,5 @@
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
+import { providerCatalogEntry } from "@dofek/providers/provider-catalog";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -156,7 +157,7 @@ export function TokenAuthModal({
   const [loading, setLoading] = useState(false);
   const tokenRef = useRef<TextInput>(null);
   const connectDisabled = loading || !token;
-  const connectHint = !loading && !token ? "Enter your token to continue." : null;
+  const connectHint = !loading && !token ? `Paste your ${tokenLabel} to continue.` : null;
   const connectMutation = trpc.tokenAuth.connect.useMutation();
 
   useEffect(() => {
@@ -221,10 +222,10 @@ export function TokenAuthModal({
             onPress={openInstructions}
             activeOpacity={0.7}
             accessibilityRole="link"
-            accessibilityLabel={`Create a ${tokenLabel}`}
+            accessibilityLabel={`Open ${providerName}`}
           >
             <Text style={styles.modalDescription}>
-              Create a {tokenLabel} in {providerName}, then paste it below.
+              Open {providerName} and paste your {tokenLabel} below.
             </Text>
           </TouchableOpacity>
 
@@ -243,7 +244,7 @@ export function TokenAuthModal({
             onChangeText={setToken}
             autoCapitalize="none"
             autoCorrect={false}
-            secureTextEntry
+            secureTextEntry={providerCatalogEntry(providerId)?.connectionInputType !== "text"}
           />
           {connectHint ? <Text style={styles.disabledHint}>{connectHint}</Text> : null}
           <TouchableOpacity
