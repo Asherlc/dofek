@@ -28511,6 +28511,43 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   typechecks pass, and lint passes. Revalidate the new head's full suite and
   hosted gates; queued native checks and release/restore approval remain open.
 
+## 2026-09-30 — OpenBeta tick dates reject numeric API timestamps
+
+- **Symptoms / impact:** Scheduled OpenBeta tick sync fails before writes;
+  the failing page's climbing entries are not imported. Sentry recorded 11
+  occurrences from 17:30 through 22:00 UTC in
+  [DOFEK-SERVER-6M](https://east-bay-software.sentry.io/issues/7764116376/).
+  Its zero tracked users does not establish that no accounts were affected.
+- **Evidence:** `OpenBetaProvider.sync()` calls `fetchGraphQL()` for
+  `userTicks`; event `9257dac2b9264f429a4c25b4094df4c6` fails at
+  `dataSchema.parse(envelope.data)` with `Invalid input: expected string,
+  received number` for all six returned `dateClimbed` fields.
+- **Root cause:** The [provider schema](../src/providers/openbeta.ts) expects
+  nullable string dates and its parser slices strings. OpenBeta's
+  [Date scalar](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/common/DateScalar.ts)
+  serializes dates with `Date.getTime()` as numeric Unix milliseconds;
+  [TickType](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/schema/Tick.gql)
+  uses that scalar. Existing local test fixtures use string dates and miss
+  this API contract.
+- **Direct fix:** Use the numeric scalar contract, preserve the raw timestamp,
+  convert to a UTC calendar date, and replace string fixtures with timestamp
+  fixtures and regression coverage. Missing, out-of-range, and extended-year
+  dates remain rejected without absence reconciliation.
+- **Validation / follow-up:** The timestamp tests reproduced the production
+  Zod failure before the fix. All 54 provider unit tests and the real-database
+  sync regression pass; the final full unit/mobile run passes 19,284 tests
+  with 20 skipped. Root typecheck and full lint pass. Production remains
+  unresolved until deployment and a successful post-deploy sync. No retries,
+  timeouts, or other resilience knobs were added.
+- **Retrospective:** Sentry's provider/phase tags and field-level validation
+  errors established the failure without production mutations. Verify custom
+  scalar serialization against upstream source when preparing provider fixtures.
+- **Main integration:** [PR #2860](https://github.com/Asherlc/dofek/pull/2860)
+  independently supplied the numeric date fix. The merge resolution retains
+  its integer schema, year bounds, and outage handling; this branch now adds
+  UTC-boundary/raw-preservation and invalid-date reconciliation coverage plus
+  documentation. All 64 provider unit tests and five database sync tests pass.
+
 ## 2026-09-30 — Provider registration failure in OpenBeta PR validation
 
 - **Symptoms / impact:** [Integration shard 1](https://github.com/Asherlc/dofek/actions/runs/36777153307/job/110099580515) failed the calendar week-list and sync-provider router cases; PR #2860 remains blocked from readiness. No production rollout occurred.
