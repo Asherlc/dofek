@@ -28176,8 +28176,18 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   numeric-date schema failures before their fixes. Focused provider, processor,
   worker-event, and transport-classification tests pass. A real PostgreSQL
   integration test verifies numeric-date ingestion, raw-payload preservation,
-  idempotent writes, and absence reconciliation. Broader validation results
-  belong in the change report.
+  idempotent writes, and absence reconciliation. The complete Docker-free
+  unit/mobile run passed 19,157 tests, with 20 tests skipped. Root, server,
+  and web typechecks passed, along with repository sandbox lint.
+- **Local PR validation:** `pnpm lint` initially failed during dbt-backed
+  SQL lint with `Failed to establish a new connection: [Errno 61] Connection
+  refused`: this workspace's ClickHouse had been deliberately stopped after
+  integration validation. Restarted only that workspace's ClickHouse through
+  the Compose wrapper before rerunning the unchanged lint command. No runtime
+  retry or timeout was added for this local prerequisite failure; keep
+  ClickHouse running until SQL lint completes.
+  The unchanged full `pnpm lint` rerun passed after that prerequisite was
+  restored, without ad-hoc waits.
 - **Remaining risk / follow-up:** Production verification remains unresolved
   until deployment and a successful OpenBeta sync. No upstream server changes
   or alert-rule changes were made. The existing queue's 288 attempts and
