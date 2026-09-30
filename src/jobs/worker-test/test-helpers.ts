@@ -153,7 +153,8 @@ const hoisted = vi.hoisted(() => {
   };
 });
 
-vi.mock("bullmq", () => ({
+vi.mock("bullmq", async (importOriginal) => ({
+  WaitingChildrenError: (await importOriginal<typeof import("bullmq")>()).WaitingChildrenError,
   Job: { addJobLog: hoisted.mockAddJobLog },
   UnrecoverableError: hoisted.MockUnrecoverableError,
   Worker: vi.fn(function vitestConstructor(name: string, processor: (job: unknown) => unknown) {
@@ -532,6 +533,8 @@ export async function workerQueueDependencies() {
     accountErasureWorkLockPool,
     accountErasureRuntime,
     accountErasureLeaseOwner: "account-erasure-worker:test-owner",
+    onSyncWaitingChildren:
+      vi.fn<(worker: import("bullmq").Worker, job: import("bullmq").Job) => void>(),
     getClickHouseClient: () => clickHouse,
     getImportUploadStorage: () => storage,
     getRefitSensorStore: () => createRefitSensorStore(clickHouse),

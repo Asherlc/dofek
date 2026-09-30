@@ -28172,10 +28172,13 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   observable in structured/job logs. Exhaustion records a failed processing
   stage and actionable client message, then reports the terminal failure to
   Sentry. Unexpected schema/write failures remain reportable.
-- **PR review fixes:** Shared sync jobs retain OpenBeta transport failures
-  while completing later providers and required post-sync work, then rethrow
-  for retry or terminal reporting. Dedicated provider jobs still propagate
-  immediately. Sync and worker responsibilities now have focused production
+- **PR review fixes:** Shared sync jobs coordinate provider jobs through the
+  existing provider queues, preserving the absolute sync window. Each provider
+  owns its retries and terminal reporting, so a failed provider does not cause
+  successful providers to rerun. BullMQ parent dependencies retain dispatch
+  evidence after child pruning and the coordinator waits for children; see
+  [BullMQ flows](https://docs.bullmq.io/guide/flows). Sync and worker
+  responsibilities have focused production
   modules with matching test files below 1,000 lines; existing regression
   cases were retained. See the [job architecture](../src/jobs/README.md).
 - **Validation:** Regression tests reproduced the non-retrying timeout and
@@ -28183,7 +28186,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   worker-event, and transport-classification tests pass. A real PostgreSQL
   integration test verifies numeric-date ingestion, raw-payload preservation,
   idempotent writes, and absence reconciliation. The complete Docker-free
-  unit/mobile run passed 19,167 tests after the refactor, with 20 tests skipped.
+  unit/mobile run passed 19,207 tests after the coordination fixes, with 20
+  tests skipped. Seven real-Redis regressions verify atomic dispatch, recovery
+  after child pruning, and independent terminal child failures.
   Root, server, and web typechecks passed, along with full repository lint.
 - **Local PR validation:** `pnpm lint` initially failed during dbt-backed
   SQL lint with `Failed to establish a new connection: [Errno 61] Connection
@@ -28252,3 +28257,32 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   retained server error if it fails. Provider connection investigations
   should distinguish input errors from API and schema failures before
   recommending that users change credentials or profile visibility.
+
+## 2026-09-30 — OpenBeta PR refactor CI validation
+
+- **Symptoms / impact:** [PR #2860](https://github.com/Asherlc/dofek/pull/2860)
+  remained blocked in CI after local lint, typechecks, and unit/mobile tests
+  passed. No production rollout or user impact occurred.
+- **Evidence / causes:** [Import Boundaries](https://github.com/Asherlc/dofek/actions/runs/36767065074/job/110064130989)
+  failed `pnpm exec depcruise --config .dependency-cruiser.cjs src/ packages/`
+  with `error no-circular`: sync job context imported processing, which
+  imported the context-owned job interface. [Dependency Audit](https://github.com/Asherlc/dofek/actions/runs/36767065074/job/110064130379)
+  failed the production high-severity audit because the existing gRPC override
+  pinned `@grpc/grpc-js` to 1.14.4. The newly published
+  [advisory](https://github.com/advisories/GHSA-m9gg-hp2v-232j) identifies
+  1.14.5 as patched. [Stryker shard 5](https://github.com/Asherlc/dofek/actions/runs/36767065074/job/110064701035)
+  failed with `Final mutation score 67.50 under breaking threshold 75`:
+  extracted worker lifecycle tests left idle accounting, timer boundaries,
+  and repeated shutdown mutants alive.
+- **Fix / validation:** Moved the shared sync job contract beside queue types;
+  the exact import-boundary command passes. Updated the existing gRPC pin to
+  1.14.5; frozen installation, strict production audit, and 30 telemetry tests
+  pass. Seven direct lifecycle tests now detect all scoped mutations: 43 killed,
+  no detected timeouts, no survivors or uncovered mutants, and a 100% score.
+  No retry, timeout, threshold relaxation, or audit suppression was added for
+  these CI failures.
+- **Remaining risk / follow-up:** Unresolved until targeted checks and the
+  replacement CI run pass. Future structural refactors should run import
+  boundaries and scoped mutation tests before pushing; dependency audit should
+  also be checked because new advisories can change CI results without code
+  changes.

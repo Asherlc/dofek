@@ -1,12 +1,13 @@
-import {
-  ProviderRateLimitError,
-  ProviderServiceUnavailableError,
-} from "@dofek/provider-http/rate-limit";
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { withAccountErasureUserWriteFence } from "../db/account-erasure.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { logSync } from "../db/sync-log.ts";
 import { captureException } from "../lib/error-reporting.ts";
-import { findProviderTransportError } from "../lib/provider-transport-error.ts";
+import {
+  findProviderTransportError,
+  isRetryingOpenBetaTransportFailure,
+  isZeppHttp500ServiceUnavailableError,
+} from "../lib/provider-transport-error.ts";
 import { isRetryableInfraError } from "../lib/retryable-infra-error.ts";
 import { logger } from "../logger.ts";
 import { appendProcessingStageEvent } from "../processing/processing-event-store.ts";
@@ -18,7 +19,8 @@ import type { SyncError, SyncProvider } from "../providers/types.ts";
 import { syncDuration, syncErrorsTotal, syncOperationsTotal } from "../sync-metrics.ts";
 import { scheduleDelayedSyncJob } from "./enqueue-sync-job.ts";
 import { providerRateLimitCooldownStore } from "./provider-rate-limit-cooldown.ts";
-import type { SyncJob, SyncJobContext } from "./sync-job-context.ts";
+import type { SyncJob } from "./queues.ts";
+import type { SyncJobContext } from "./sync-job-context.ts";
 import {
   requireTransactionalSyncDatabase,
   type SyncProcessingOperation,
@@ -69,14 +71,6 @@ export function providerSyncFailureEvent(
 
 function isProviderTransportError(error: unknown): boolean {
   return findProviderTransportError(error) !== null;
-}
-
-function isZeppHttp500ServiceUnavailable(error: unknown): error is ProviderServiceUnavailableError {
-  return (
-    error instanceof ProviderServiceUnavailableError &&
-    error.providerId === "amazfit-zepp" &&
-    error.statusCode === 500
-  );
 }
 
 export function shouldReportProviderError(error: unknown): boolean {
@@ -138,7 +132,10 @@ export async function handleSyncProviderFailure(
   }
   signal?.throwIfAborted();
   const isOpenBetaTransportFailure = provider.id === "openbeta" && isProviderTransportError(err);
-  if (isOpenBetaTransportFailure && job.attemptsMade + 1 < (job.opts.attempts ?? 1)) {
+  if (
+    isOpenBetaTransportFailure &&
+    isRetryingOpenBetaTransportFailure(err, job.attemptsMade + 1, job.opts.attempts)
+  ) {
     context.providerStatus[provider.id] = {
       status: "running",
       message: "Service unavailable; retrying",
@@ -148,9 +145,7 @@ export async function handleSyncProviderFailure(
       percentage: context.percentage(0),
     });
     logger.warn(`[worker] ${provider.name} temporarily unavailable; retrying: ${String(err)}`);
-    if (job.data.providerId) throw err;
-    context.deferredOpenBetaError = err;
-    return;
+    throw err;
   }
   if (err instanceof ProviderRateLimitError) {
     const retryAt = await scheduleRateLimitRetry(db, job, err, since, until, signal);
@@ -180,7 +175,7 @@ export async function handleSyncProviderFailure(
     return;
   }
 
-  if (isZeppHttp500ServiceUnavailable(err)) {
+  if (isZeppHttp500ServiceUnavailableError(err)) {
     context.providerStatus[provider.id] = {
       status: "running",
       message: "Service unavailable; retrying",
@@ -250,8 +245,5 @@ export async function handleSyncProviderFailure(
   syncOperationsTotal.add(1, { provider: provider.id, data_type: "sync", status: "error" });
   syncDuration.record(durationMs, { provider: provider.id, data_type: "sync" });
   syncErrorsTotal.add(1, { provider: provider.id, data_type: "sync" });
-  if (isOpenBetaTransportFailure) {
-    if (job.data.providerId) throw err;
-    context.deferredOpenBetaError = err;
-  }
+  if (isOpenBetaTransportFailure) throw err;
 }

@@ -8,8 +8,10 @@ import {
   createMockJob,
   createMockProvider,
   type MockJob,
+  mockCaptureException,
   mockDb,
   mockGetEnabledSyncProviders,
+  mockLoggerWarn,
   mockProviderQueueAdd,
   mockWithUserWriteFence,
   processingOperationId,
@@ -47,6 +49,27 @@ describe("sync-job-context", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it("reports a rejected background progress write with provider context", async () => {
+    const error = new Error("Redis progress write failed");
+    const job = createMockJob();
+    const context = await SyncJobContext.create(job, mockDb);
+    const provider = createMockProvider({ id: "openbeta" });
+    const rejectedWrite = Promise.reject(error);
+    const observedRejection = rejectedWrite.catch((observedError) => {
+      expect(observedError).toBe(error);
+    });
+    job.updateProgress.mockReturnValueOnce(rejectedWrite);
+    context.createRun(provider).options.onProgress?.(25, "Loading");
+    await observedRejection;
+    await Promise.resolve();
+    expect(mockCaptureException).toHaveBeenCalledWith(error, {
+      tags: { provider: "openbeta", syncStep: "updateProgress" },
+    });
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      "[worker] Failed to update sync progress for openbeta: Error: Redis progress write failed",
+    );
   });
 
   it("passes cancellation and scheduling context to each provider sync run", async () => {

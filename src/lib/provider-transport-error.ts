@@ -20,3 +20,22 @@ export function findProviderTransportError(
   }
   return null;
 }
+
+export function isZeppHttp500ServiceUnavailableError(
+  error: unknown,
+): error is ProviderServiceUnavailableError {
+  return (
+    error instanceof ProviderServiceUnavailableError &&
+    error.providerId === "amazfit-zepp" &&
+    error.statusCode === 500
+  );
+}
+
+/** attemptNumber is one-based: the processor adds one; a failed event is already incremented. */
+export function isRetryingOpenBetaTransportFailure(
+  error: unknown,
+  attemptNumber: number,
+  attempts = 1,
+): boolean {
+  return findProviderTransportError(error)?.providerId === "openbeta" && attemptNumber < attempts;
+}

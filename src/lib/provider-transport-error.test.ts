@@ -3,7 +3,11 @@ import {
   ProviderServiceUnavailableError,
 } from "@dofek/provider-http/rate-limit";
 import { describe, expect, it } from "vitest";
-import { findProviderTransportError } from "./provider-transport-error.ts";
+import {
+  findProviderTransportError,
+  isRetryingOpenBetaTransportFailure,
+  isZeppHttp500ServiceUnavailableError,
+} from "./provider-transport-error.ts";
 
 describe("findProviderTransportError", () => {
   it.each([
@@ -23,5 +27,65 @@ describe("findProviderTransportError", () => {
     error.cause = error;
     expect(findProviderTransportError(error)).toBeNull();
     expect(findProviderTransportError("timeout")).toBeNull();
+  });
+});
+
+describe("isZeppHttp500ServiceUnavailableError", () => {
+  it.each([
+    ["amazfit-zepp", 500, true],
+    ["amazfit-zepp", 503, false],
+    ["openbeta", 500, false],
+  ] as const)("classifies %s HTTP %s as %s", (providerId, statusCode, expected) => {
+    const error = new ProviderServiceUnavailableError({
+      providerId,
+      statusCode,
+      message: "unavailable",
+      responseBody: "unavailable",
+    });
+    expect(isZeppHttp500ServiceUnavailableError(error)).toBe(expected);
+    expect(isZeppHttp500ServiceUnavailableError(new Error("wrapped", { cause: error }))).toBe(
+      false,
+    );
+  });
+  it("does not classify untyped Zepp errors", () => {
+    expect(isZeppHttp500ServiceUnavailableError(new Error("Zepp HTTP 500"))).toBe(false);
+  });
+});
+
+describe("isRetryingOpenBetaTransportFailure", () => {
+  it.each([
+    [1, 288, true],
+    [287, 288, true],
+    [288, 288, false],
+    [289, 288, false],
+    [1, undefined, false],
+    [1, 1, false],
+    [1, 2, true],
+  ])("classifies attempt %s of %s as retrying=%s", (attemptNumber, attempts, expected) => {
+    const error = new ProviderRequestTimeoutError({ providerId: "openbeta", timeoutMs: 120000 });
+    expect(
+      isRetryingOpenBetaTransportFailure(
+        error,
+        Number(attemptNumber),
+        attempts === undefined ? undefined : Number(attempts),
+      ),
+    ).toBe(expected);
+    expect(
+      isRetryingOpenBetaTransportFailure(
+        new Error("wrapper", { cause: error }),
+        Number(attemptNumber),
+        attempts === undefined ? undefined : Number(attempts),
+      ),
+    ).toBe(expected);
+  });
+  it("does not classify other providers or untyped errors as OpenBeta retries", () => {
+    expect(
+      isRetryingOpenBetaTransportFailure(
+        new ProviderRequestTimeoutError({ providerId: "wahoo", timeoutMs: 120000 }),
+        1,
+        288,
+      ),
+    ).toBe(false);
+    expect(isRetryingOpenBetaTransportFailure(new Error("timeout"), 1, 288)).toBe(false);
   });
 });

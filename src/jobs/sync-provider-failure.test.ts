@@ -50,7 +50,6 @@ async function runSyncJob(job: MockJob, db: SyncDatabase, signal?: AbortSignal) 
       await handleSyncProviderFailure(context, provider, operation, startedAt, error);
     }
   }
-  if (context.deferredOpenBetaError !== undefined) throw context.deferredOpenBetaError;
 }
 
 describe("sync-provider-failure", () => {

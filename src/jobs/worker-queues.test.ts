@@ -13,7 +13,8 @@ import {
   workerQueueDependencies,
 } from "./worker-test/test-helpers.ts";
 
-createWorkerQueues(await workerQueueDependencies());
+const dependencies = await workerQueueDependencies();
+createWorkerQueues(dependencies);
 describe("worker queues", () => {
   it("creates per-provider workers plus standard workers", async () => {
     const { Worker } = await import("bullmq");
@@ -136,6 +137,29 @@ describe("worker queues", () => {
     );
 
     expect(processSyncJob).toHaveBeenCalledWith(expect.any(Object), mockDatabase, signal);
+  });
+
+  it("reports the coordinator waiting transition and rethrows BullMQ control flow", async () => {
+    const { WaitingChildrenError } = await import("bullmq");
+    const { processSyncJob } = await import("./process-sync-job.ts");
+    const error = new WaitingChildrenError();
+    dependencies.onSyncWaitingChildren.mockClear();
+    vi.mocked(processSyncJob).mockRejectedValueOnce(error);
+    await expect(invokeProcessor("sync-queue", { userId: "user-1" })).rejects.toBe(error);
+    expect(dependencies.onSyncWaitingChildren).toHaveBeenCalledOnce();
+    expect(dependencies.onSyncWaitingChildren).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "sync-queue" }),
+      expect.objectContaining({ id: "test-job-1" }),
+    );
+  });
+
+  it("keeps ordinary sync failures active until BullMQ reports the failed event", async () => {
+    const { processSyncJob } = await import("./process-sync-job.ts");
+    const error = new Error("Provider dispatch failed");
+    dependencies.onSyncWaitingChildren.mockClear();
+    vi.mocked(processSyncJob).mockRejectedValueOnce(error);
+    await expect(invokeProcessor("sync-queue", { userId: "user-1" })).rejects.toBe(error);
+    expect(dependencies.onSyncWaitingChildren).not.toHaveBeenCalled();
   });
 
   it("import processor delegates to processFileUploadImportJob", async () => {

@@ -19,7 +19,7 @@ import {
   recordMetricStreamBatchPublishedInTransaction,
   recordRelationalCanonicalCommits,
 } from "../processing/processing-event-store.ts";
-import type { SyncJob } from "./sync-job-context.ts";
+import type { SyncJob } from "./queues.ts";
 
 async function ensureProcessingOperation(
   job: SyncJob,

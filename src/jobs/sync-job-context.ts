@@ -1,10 +1,12 @@
 import { withAccountErasureUserWriteFence } from "../db/account-erasure.ts";
 import type { SyncDatabase } from "../db/index.ts";
+import { captureException } from "../lib/error-reporting.ts";
+import { logger } from "../logger.ts";
 import type { MetricStreamProcessingPublisher } from "../processing/metric-stream-processing-publisher.ts";
 import { SyncRun } from "../providers/sync-run.ts";
 import type { SyncCheckpointStore, SyncProvider } from "../providers/types.ts";
 import { enqueueSyncJob } from "./enqueue-sync-job.ts";
-import type { SyncJobData } from "./queues.ts";
+import type { SyncJob } from "./queues.ts";
 import { syncRequestedAtFromJobData, syncWindowFromJobData } from "./sync-job-window.ts";
 import { requireTransactionalSyncDatabase } from "./sync-processing-operation.ts";
 
@@ -21,16 +23,6 @@ function computePercentage(
   if (totalProviders === 0) return 100;
   const perProvider = 100 / totalProviders;
   return Math.round(completedProviders * perProvider + (withinProviderPct / 100) * perProvider);
-}
-
-/** Minimal Job interface — only the subset processSyncJob actually uses. */
-export interface SyncJob {
-  id?: string;
-  attemptsMade: number;
-  opts: { attempts?: number };
-  data: SyncJobData;
-  updateProgress: (data: object) => Promise<void>;
-  updateData: (data: SyncJobData) => Promise<void>;
 }
 
 function createCheckpointStore(job: SyncJob): SyncCheckpointStore {
@@ -55,7 +47,6 @@ export class SyncJobContext {
   totalProviders = 0;
   providerStatus: Record<string, { status: string; message?: string }> = {};
   syncRunContinued = false;
-  deferredOpenBetaError: unknown;
   constructor(
     readonly job: SyncJob,
     readonly db: SyncDatabase,
@@ -111,10 +102,19 @@ export class SyncJobContext {
       relativeWindow: this.relativeWindow,
       onProgress: (percentage, message) => {
         this.providerStatus[provider.id] = { status: "running", message };
-        job.updateProgress({
-          providers: this.providerStatus,
-          percentage: this.percentage(percentage),
-        });
+        job
+          .updateProgress({
+            providers: this.providerStatus,
+            percentage: this.percentage(percentage),
+          })
+          .catch((error: unknown) => {
+            captureException(error, {
+              tags: { provider: provider.id, syncStep: "updateProgress" },
+            });
+            logger.warn(
+              `[worker] Failed to update sync progress for ${provider.id}: ${String(error)}`,
+            );
+          });
       },
       userId: job.data.userId,
       metricStreamPublisher,

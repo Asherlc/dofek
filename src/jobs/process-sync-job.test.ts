@@ -1,10 +1,10 @@
-import { ProviderServiceUnavailableError } from "@dofek/provider-http/rate-limit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import type { SyncRun } from "../providers/sync-run.ts";
 import type { SyncResult } from "../providers/types.ts";
 
 import {
-  createMockJob,
+  createMockJob as createBaseMockJob,
   createMockProvider,
   mockCaptureException,
   mockDb,
@@ -17,18 +17,216 @@ import {
   mockLoggerError,
   mockLogSync,
   mockProviderQueueAdd,
+  mockProviderQueueGetJob,
   mockWithUserWriteFence,
   resetSyncMocks,
 } from "./sync-test/test-helpers.ts";
 
 const { processSyncJob } = await import("./process-sync-job.ts");
 const runSyncJob = processSyncJob;
+function createMockJob(data: Parameters<typeof createBaseMockJob>[0] = {}) {
+  const job = createBaseMockJob(data);
+  job.id = "coordinator-1";
+  return job;
+}
 
 describe("process-sync-job", () => {
   beforeEach(resetSyncMocks);
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it("requires a durable coordinator job ID", async () => {
+    const job = createMockJob();
+    delete job.id;
+    await expect(runSyncJob(job, mockDb)).rejects.toThrow(
+      "Shared sync coordination requires a BullMQ job ID",
+    );
+  });
+
+  it("requires the coordinator's actual BullMQ worker token", async () => {
+    const job = { ...createMockJob(), token: undefined };
+    await expect(runSyncJob(job, mockDb)).rejects.toThrow(
+      "Shared sync coordination requires a BullMQ worker token",
+    );
+    expect(mockProviderQueueAdd).not.toHaveBeenCalled();
+  });
+
+  it.each(["sinceIso", "untilIso", "requestedAtIso"] as const)(
+    "resolves and persists a partially anchored request missing %s",
+    async (missing) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-09-21T06:30:00.000Z"));
+      mockGetEnabledSyncProviders.mockReturnValue([createMockProvider()]);
+      const bounds = {
+        sinceIso: "2026-09-20T00:00:00.000Z",
+        untilIso: "2026-09-21T23:59:59.999Z",
+        requestedAtIso: "2026-09-21T06:30:00.000Z",
+      };
+      const job = createMockJob({ sinceDays: 1, ...bounds, [missing]: undefined });
+      const expectedBounds = {
+        ...bounds,
+        untilIso: missing === "untilIso" ? bounds.requestedAtIso : bounds.untilIso,
+      };
+      await runSyncJob(job, mockDb);
+      expect(job.updateData).toHaveBeenCalledOnce();
+      expect(job.updateData).toHaveBeenCalledWith(expect.objectContaining(expectedBounds));
+      expect(mockProviderQueueAdd).toHaveBeenCalledWith(
+        "sync",
+        expect.objectContaining(expectedBounds),
+        expect.any(Object),
+      );
+    },
+  );
+
+  it("uses fully persisted bounds on retry without rewriting them", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-05T15:00:00.000Z"));
+    mockGetEnabledSyncProviders.mockReturnValue([createMockProvider()]);
+    const bounds = {
+      sinceIso: "2026-09-20T00:00:00.000Z",
+      untilIso: "2026-09-21T23:59:59.999Z",
+      requestedAtIso: "2026-09-21T06:30:00.000Z",
+    };
+    const job = createMockJob({ sinceDays: 1, ...bounds });
+    job.attemptsMade = 1;
+    await runSyncJob(job, mockDb);
+    expect(job.updateData).not.toHaveBeenCalled();
+    expect(mockProviderQueueAdd).toHaveBeenCalledWith(
+      "sync",
+      expect.objectContaining(bounds),
+      expect.any(Object),
+    );
+  });
+
+  it("persists absolute bounds before dispatch and preserves them on a later retry", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-21T06:30:00.000Z"));
+    mockGetEnabledSyncProviders.mockReturnValue([
+      createMockProvider({ id: "a" }),
+      createMockProvider({ id: "b" }),
+    ]);
+    const error = new Error("Redis enqueue unavailable");
+    mockProviderQueueAdd
+      .mockResolvedValueOnce({ getState: vi.fn().mockResolvedValue("waiting"), remove: vi.fn() })
+      .mockRejectedValueOnce(error);
+    const job = createMockJob({ origin: "scheduled", sinceDays: 1 });
+    await expect(runSyncJob(job, mockDb)).rejects.toBe(error);
+    const firstWindow = { sinceIso: job.data.sinceIso, untilIso: job.data.untilIso };
+    expect(firstWindow).toEqual({
+      sinceIso: "2026-09-20T00:00:00.000Z",
+      untilIso: "2026-09-21T23:59:59.999Z",
+    });
+    const childId = z
+      .object({ jobId: z.string() })
+      .parse(mockProviderQueueAdd.mock.calls[0]?.[2]).jobId;
+    job.getDependencies.mockResolvedValue({ processed: { [`bull:sync-a:${childId}`]: null } });
+    mockProviderQueueAdd.mockClear();
+    mockProviderQueueGetJob.mockResolvedValue(undefined); // Completed child has been removed by retention.
+    vi.setSystemTime(new Date("2026-09-22T18:00:00.000Z"));
+    await runSyncJob(job, mockDb);
+    expect(mockProviderQueueAdd).toHaveBeenCalledOnce();
+    expect(mockProviderQueueAdd).toHaveBeenCalledWith(
+      "sync",
+      expect.objectContaining({
+        providerId: "b",
+        ...firstWindow,
+        requestedAtIso: "2026-09-21T06:30:00.000Z",
+      }),
+      expect.any(Object),
+    );
+    expect(job.moveToWaitingChildren).toHaveBeenCalledWith("sync-token");
+  });
+
+  it("recovers a lost enqueue acknowledgement after the completed child is pruned", async () => {
+    const child = { getState: vi.fn().mockResolvedValue("completed"), remove: vi.fn() };
+    const queuedChildren = new Map<string, typeof child>();
+    mockProviderQueueAdd.mockImplementation(
+      async (_name: unknown, _data: unknown, options: unknown) => {
+        queuedChildren.set(z.object({ jobId: z.string() }).parse(options).jobId, child);
+        throw new Error("Enqueue acknowledgement lost");
+      },
+    );
+    mockProviderQueueGetJob.mockImplementation(async (id: unknown) =>
+      queuedChildren.get(String(id)),
+    );
+    mockGetEnabledSyncProviders.mockReturnValue([
+      createMockProvider({ id: "a" }),
+      createMockProvider({ id: "b" }),
+    ]);
+    const job = createMockJob({
+      requestedAtIso: "2026-09-21T06:30:00.000Z",
+      sinceIso: "2026-09-20T00:00:00.000Z",
+      untilIso: "2026-09-21T23:59:59.999Z",
+    });
+    await expect(runSyncJob(job, mockDb)).rejects.toThrow("Enqueue acknowledgement lost");
+    expect(mockProviderQueueAdd).toHaveBeenCalledTimes(1);
+    const childId = [...queuedChildren.keys()][0];
+    queuedChildren.clear();
+    job.getDependencies.mockResolvedValue({ processed: { [`bull:sync-a:${childId}`]: null } });
+    mockProviderQueueAdd.mockResolvedValue(child);
+    await runSyncJob(job, mockDb);
+    expect(mockProviderQueueAdd).toHaveBeenCalledTimes(2);
+    expect(child.remove).not.toHaveBeenCalled();
+    expect(job.moveToWaitingChildren).toHaveBeenCalledWith("sync-token");
+  });
+
+  it("moves the coordinator to waiting-children without treating it as a failure", async () => {
+    const job = createMockJob();
+    job.moveToWaitingChildren.mockResolvedValue(true);
+    await expect(runSyncJob(job, mockDb)).rejects.toMatchObject({ name: "WaitingChildrenError" });
+  });
+
+  it.each(["processed", "ignored", "unprocessed", "failed"])(
+    "reuses a %s dependency when the child queue record is gone",
+    async (state) => {
+      mockGetEnabledSyncProviders.mockReturnValue([createMockProvider()]);
+      const job = createMockJob();
+      await runSyncJob(job, mockDb);
+      const childId = z
+        .object({ jobId: z.string() })
+        .parse(mockProviderQueueAdd.mock.calls[0]?.[2]).jobId;
+      const childKey = `bull:provider:${childId}`;
+      job.getDependencies.mockResolvedValue({
+        [state]: state === "processed" || state === "ignored" ? { [childKey]: null } : [childKey],
+      });
+      mockProviderQueueAdd.mockClear();
+      mockProviderQueueGetJob.mockResolvedValue(undefined);
+      await runSyncJob(job, mockDb);
+      expect(mockProviderQueueAdd).not.toHaveBeenCalled();
+    },
+  );
+
+  it("checks cancellation after acquiring the coordinator write fence", async () => {
+    let releaseFence!: () => void;
+    let enteredFence!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      enteredFence = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      releaseFence = resolve;
+    });
+    mockWithUserWriteFence.mockImplementationOnce(
+      async (
+        database: unknown,
+        _userId: string,
+        operation: (transaction: unknown) => Promise<unknown>,
+      ) => {
+        enteredFence();
+        await gate;
+        return operation(database);
+      },
+    );
+    mockGetEnabledSyncProviders.mockReturnValue([createMockProvider()]);
+    const controller = new AbortController();
+    const reason = new DOMException("Coordinator cancelled", "AbortError");
+    const result = runSyncJob(createMockJob(), mockDb, controller.signal);
+    await entered;
+    controller.abort(reason);
+    releaseFence();
+    await expect(result).rejects.toBe(reason);
+    expect(mockProviderQueueAdd).not.toHaveBeenCalled();
   });
 
   it("rejects a pre-aborted sync before provider or post-sync work", async () => {
@@ -61,7 +259,7 @@ describe("process-sync-job", () => {
     });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
 
-    await runSyncJob(createMockJob(), mockDb, controller.signal);
+    await runSyncJob(createMockJob({ providerId: "test-provider" }), mockDb, controller.signal);
 
     expect(mockInvalidateAllUserQueries).not.toHaveBeenCalled();
     expect(mockLogSync).toHaveBeenCalledOnce();
@@ -86,7 +284,7 @@ describe("process-sync-job", () => {
     });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
 
-    await runSyncJob(createMockJob(), mockDb, controller.signal);
+    await runSyncJob(createMockJob({ providerId: "test-provider" }), mockDb, controller.signal);
 
     expect(mockInvalidateAllUserQueries).toHaveBeenCalledOnce();
     expect(mockInvalidateAllUserQueries).toHaveBeenCalledWith("user-1");
@@ -116,32 +314,87 @@ describe("process-sync-job", () => {
     expect(mockEnqueueDebouncedUserRefit).not.toHaveBeenCalled();
   });
 
-  it("syncs all valid providers when no providerId specified", async () => {
+  it("dispatches a dedicated job for every eligible provider", async () => {
     const providerA = createMockProvider({ id: "a", name: "Provider A" });
     const providerB = createMockProvider({ id: "b", name: "Provider B" });
     mockGetEnabledSyncProviders.mockReturnValue([providerA, providerB]);
 
-    await runSyncJob(createMockJob(), mockDb);
+    const job = createMockJob();
+    const progress: object[] = [];
+    job.updateProgress.mockImplementation(async (value: object) => {
+      progress.push(structuredClone(value));
+    });
+    await runSyncJob(job, mockDb);
 
-    expect(providerA.sync).toHaveBeenCalledOnce();
-    expect(providerB.sync).toHaveBeenCalledOnce();
-    expect(mockInvalidateAllUserQueries).toHaveBeenCalledTimes(2);
-    expect(mockInvalidateAllUserQueries).toHaveBeenCalledWith("user-1");
+    expect(progress).toEqual([
+      { providers: { a: { status: "pending" }, b: { status: "pending" } }, percentage: 0 },
+      {
+        providers: {
+          a: { status: "done", message: "Provider sync queued" },
+          b: { status: "pending" },
+        },
+        percentage: 50,
+      },
+      {
+        providers: {
+          a: { status: "done", message: "Provider sync queued" },
+          b: { status: "done", message: "Provider sync queued" },
+        },
+        percentage: 100,
+      },
+    ]);
+    expect(mockProviderQueueAdd).toHaveBeenCalledTimes(2);
+    expect(mockProviderQueueAdd).toHaveBeenNthCalledWith(
+      1,
+      "sync",
+      expect.objectContaining({
+        providerId: "a",
+        sinceIso: expect.any(String),
+        untilIso: expect.any(String),
+      }),
+      expect.objectContaining({
+        attempts: 288,
+        parent: { id: "coordinator-1", queue: "bull:sync" },
+        ignoreDependencyOnFailure: true,
+      }),
+    );
+    expect(mockProviderQueueAdd).toHaveBeenNthCalledWith(
+      2,
+      "sync",
+      expect.objectContaining({
+        providerId: "b",
+        sinceIso: expect.any(String),
+        untilIso: expect.any(String),
+      }),
+      expect.objectContaining({
+        attempts: 288,
+        parent: { id: "coordinator-1", queue: "bull:sync" },
+        ignoreDependencyOnFailure: true,
+      }),
+    );
+    expect(providerA.sync).not.toHaveBeenCalled();
+    expect(providerB.sync).not.toHaveBeenCalled();
   });
 
-  it("filters out invalid providers", async () => {
+  it("dispatches only the enabled provider list", async () => {
     const valid = createMockProvider({ id: "valid", name: "Valid" });
     mockGetEnabledSyncProviders.mockReturnValue([valid]);
 
     await runSyncJob(createMockJob(), mockDb);
 
-    expect(valid.sync).toHaveBeenCalledOnce();
+    expect(mockProviderQueueAdd).toHaveBeenCalledOnce();
+    expect(mockProviderQueueAdd).toHaveBeenCalledWith(
+      "sync",
+      expect.objectContaining({ providerId: "valid" }),
+      expect.any(Object),
+    );
   });
 
   it("syncs only the specified provider when providerId is given", async () => {
     const providerA = createMockProvider({ id: "a", name: "Provider A" });
     const providerB = createMockProvider({ id: "b", name: "Provider B" });
     mockGetEnabledSyncProviders.mockReturnValue([providerA, providerB]);
+    mockGetProvider.mockReturnValue(providerB);
 
     await runSyncJob(createMockJob({ providerId: "b" }), mockDb);
 
@@ -171,51 +424,14 @@ describe("process-sync-job", () => {
     });
   });
 
-  it.each([0, 287])(
-    "finishes other providers and post-sync work before propagating OpenBeta failure on attempt %s",
-    async (attemptsMade) => {
-      const error = new ProviderServiceUnavailableError({
-        providerId: "openbeta",
-        statusCode: 504,
-        message: "upstream unavailable",
-        responseBody: "unavailable",
-      });
-      const laterProvider = createMockProvider({ id: "wahoo", name: "Wahoo" });
-      mockGetEnabledSyncProviders.mockReturnValue([
-        createMockProvider({
-          id: "openbeta",
-          name: "OpenBeta",
-          sync: vi.fn().mockRejectedValue(error),
-        }),
-        laterProvider,
-      ]);
-      const job = createMockJob();
-      job.attemptsMade = attemptsMade;
-
-      await expect(runSyncJob(job, mockDb)).rejects.toBe(error);
-
-      expect(laterProvider.sync).toHaveBeenCalledOnce();
-      expect(mockLogSync).toHaveBeenCalledWith(
-        mockDb,
-        expect.objectContaining({ providerId: "wahoo", status: "success" }),
-      );
-      expect(job.updateProgress).toHaveBeenLastCalledWith(
-        expect.objectContaining({
-          providers: expect.objectContaining({ wahoo: { status: "done", message: "5 synced" } }),
-        }),
-      );
-      expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
-      expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith("user-1");
-    },
-  );
-
   it("enqueues debounced global maintenance and per-user refit after sync", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([]);
+    mockGetEnabledSyncProviders.mockReturnValue([createMockProvider()]);
 
-    await runSyncJob(createMockJob(), mockDb);
+    await runSyncJob(createMockJob({ providerId: "test-provider" }), mockDb);
 
     expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
     expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith("user-1");
+    expect(mockCaptureException).not.toHaveBeenCalled();
     expect(mockWithUserWriteFence).toHaveBeenCalledWith(mockDb, "user-1", expect.any(Function));
   });
 
@@ -261,7 +477,7 @@ describe("process-sync-job", () => {
   });
 
   it("does not enqueue a user refit after cancellation while waiting for the write fence", async () => {
-    mockGetEnabledSyncProviders.mockReturnValue([]);
+    mockGetEnabledSyncProviders.mockReturnValue([createMockProvider()]);
     let releaseFence!: () => void;
     let markFenceEntered!: () => void;
     const fenceEntered = new Promise<void>((resolve) => {
@@ -284,7 +500,11 @@ describe("process-sync-job", () => {
     const controller = new AbortController();
     const reason = new DOMException("queue cancelled before user refit", "AbortError");
 
-    const syncPromise = runSyncJob(createMockJob(), mockDb, controller.signal);
+    const syncPromise = runSyncJob(
+      createMockJob({ providerId: "test-provider" }),
+      mockDb,
+      controller.signal,
+    );
     await fenceEntered;
     controller.abort(reason);
     releaseFence();
@@ -296,11 +516,11 @@ describe("process-sync-job", () => {
 
   it("continues when global post-sync enqueue fails", async () => {
     const enqueueError = new Error("queue gone");
-    mockGetEnabledSyncProviders.mockReturnValue([]);
+    mockGetEnabledSyncProviders.mockReturnValue([createMockProvider()]);
     mockEnqueueDebouncedPostSyncMaintenance.mockRejectedValue(enqueueError);
 
     // Should not throw
-    await runSyncJob(createMockJob(), mockDb);
+    await runSyncJob(createMockJob({ providerId: "test-provider" }), mockDb);
 
     expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
     expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith("user-1");
@@ -314,10 +534,10 @@ describe("process-sync-job", () => {
 
   it("continues when per-user refit enqueue fails", async () => {
     const enqueueError = new Error("queue gone");
-    mockGetEnabledSyncProviders.mockReturnValue([]);
+    mockGetEnabledSyncProviders.mockReturnValue([createMockProvider()]);
     mockEnqueueDebouncedUserRefit.mockRejectedValue(enqueueError);
 
-    await runSyncJob(createMockJob(), mockDb);
+    await runSyncJob(createMockJob({ providerId: "test-provider" }), mockDb);
 
     expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
     expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith("user-1");
@@ -332,13 +552,15 @@ describe("process-sync-job", () => {
   it("does not swallow cancellation during the final post-sync enqueue", async () => {
     const controller = new AbortController();
     const reason = new DOMException("queue cancelled during post-sync", "AbortError");
-    mockGetEnabledSyncProviders.mockReturnValue([]);
+    mockGetEnabledSyncProviders.mockReturnValue([createMockProvider()]);
     mockEnqueueDebouncedUserRefit.mockImplementationOnce(async () => {
       controller.abort(reason);
       throw reason;
     });
 
-    await expect(runSyncJob(createMockJob(), mockDb, controller.signal)).rejects.toBe(reason);
+    await expect(
+      runSyncJob(createMockJob({ providerId: "test-provider" }), mockDb, controller.signal),
+    ).rejects.toBe(reason);
 
     expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
     expect(mockCaptureException).not.toHaveBeenCalled();

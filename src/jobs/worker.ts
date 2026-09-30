@@ -116,6 +116,10 @@ const accountErasureRuntime = await createAccountErasureRuntime(
 const accountErasureLeaseOwner = `account-erasure-worker:${randomUUID()}`;
 
 const { allWorkers, fitFileImportWorker, providerDataDeletionWorker } = createWorkerQueues({
+  onSyncWaitingChildren: (worker, job) => {
+    lifecycle.finishActiveJob(worker, job);
+    if (lifecycle.activeJobCount() === 0) lifecycle.startIdleTimer();
+  },
   db,
   connection,
   accountErasureWorkLockPool,

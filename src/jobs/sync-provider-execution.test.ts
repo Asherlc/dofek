@@ -45,7 +45,6 @@ async function runSyncJob(job: MockJob, db: SyncDatabase, signal?: AbortSignal) 
   );
   await context.initializeProviders(providers);
   for (const provider of providers) if (!(await executeSyncProvider(context, provider))) return;
-  if (context.deferredOpenBetaError !== undefined) throw context.deferredOpenBetaError;
 }
 
 describe("sync-provider-execution", () => {

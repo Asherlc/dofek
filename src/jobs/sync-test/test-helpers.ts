@@ -318,6 +318,10 @@ export interface MockJob {
   attemptsMade: number;
   opts: { attempts: number };
   id?: string;
+  token: string;
+  queueQualifiedName: string;
+  getDependencies: CallableVitestMock;
+  moveToWaitingChildren: CallableVitestMock;
   data: {
     origin?: "manual" | "scheduled";
     providerId?: string;
@@ -356,6 +360,10 @@ export function createMockJob(
 ): MockJob {
   const job: MockJob = {
     attemptsMade: 0,
+    token: "sync-token",
+    queueQualifiedName: "bull:sync",
+    getDependencies: vi.fn<(...args: unknown[]) => unknown>().mockResolvedValue({}),
+    moveToWaitingChildren: vi.fn<(...args: unknown[]) => unknown>().mockResolvedValue(false),
     opts: { attempts: 288 },
     data: { userId: "user-1", ...data },
     updateProgress: vi.fn<(...args: unknown[]) => unknown>().mockResolvedValue(undefined),

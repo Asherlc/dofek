@@ -55,7 +55,7 @@ describe("worker events", () => {
   it("failed event handler appends the detailed cause to the BullMQ job log", async () => {
     mockAddJobLog.mockClear();
     mockAddJobLog.mockResolvedValue(1);
-    const failedJob = { id: "failed-fit-1" };
+    const failedJob = { attemptsMade: 1, opts: {}, id: "failed-fit-1" };
 
     getWorkerHandler("failed")(failedJob, new Error("invalid timestamp in activity.fit"));
     await vi.waitFor(() => {
@@ -145,7 +145,10 @@ describe("worker events", () => {
     vi.mocked(logger.error).mockClear();
     mockAddJobLog.mockRejectedValueOnce(logError);
 
-    getWorkerHandler("failed")({ id: "failed-fit-log-1" }, new Error("invalid FIT"));
+    getWorkerHandler("failed")(
+      { attemptsMade: 1, opts: {}, id: "failed-fit-log-1" },
+      new Error("invalid FIT"),
+    );
 
     await vi.waitFor(() => {
       expect(Sentry.captureException).toHaveBeenCalledWith(logError, {
@@ -387,7 +390,12 @@ describe("worker events", () => {
     const { UnrecoverableError } = await import("bullmq");
     vi.mocked(Sentry.captureException).mockClear();
 
-    const job = { id: "fit-child-1", parentKey: "bull:fit-batch:batch-1" };
+    const job = {
+      attemptsMade: 1,
+      opts: {},
+      id: "fit-child-1",
+      parentKey: "bull:fit-batch:batch-1",
+    };
     const error = new UnrecoverableError("invalid FIT file");
     getFitWorkerFailedHandler()(job, error);
 
@@ -403,7 +411,10 @@ describe("worker events", () => {
       "Apple Health ZIP must contain export.xml; upload the original Apple Health export archive",
     );
     error.name = APPLE_HEALTH_IMPORT_VALIDATION_ERROR_NAME;
-    getWorkerFailedHandler("import-queue")({ id: "apple-health-import-1" }, error);
+    getWorkerFailedHandler("import-queue")(
+      { attemptsMade: 1, opts: {}, id: "apple-health-import-1" },
+      error,
+    );
 
     expect(Sentry.captureException).not.toHaveBeenCalled();
   });
@@ -415,7 +426,10 @@ describe("worker events", () => {
 
     const error = new UnrecoverableError("Strong CSV must declare one consistent weight unit");
     error.name = STRONG_CSV_IMPORT_VALIDATION_ERROR_NAME;
-    getWorkerFailedHandler("import-queue")({ id: "strong-import-1" }, error);
+    getWorkerFailedHandler("import-queue")(
+      { attemptsMade: 1, opts: {}, id: "strong-import-1" },
+      error,
+    );
 
     expect(Sentry.captureException).not.toHaveBeenCalled();
   });
@@ -424,7 +438,12 @@ describe("worker events", () => {
     const Sentry = await import("@sentry/node");
     vi.mocked(Sentry.captureException).mockClear();
 
-    const job = { id: "fit-child-2", parentKey: "bull:fit-batch:batch-2" };
+    const job = {
+      attemptsMade: 1,
+      opts: {},
+      id: "fit-child-2",
+      parentKey: "bull:fit-batch:batch-2",
+    };
     const error = new Error("transient connection error");
     getFitWorkerFailedHandler()(job, error);
 
@@ -436,7 +455,12 @@ describe("worker events", () => {
     const { UnrecoverableError } = await import("bullmq");
     vi.mocked(Sentry.captureException).mockClear();
 
-    const job = { id: "sync-child-1", parentKey: "bull:sync-batch:batch-1" };
+    const job = {
+      attemptsMade: 1,
+      opts: {},
+      id: "sync-child-1",
+      parentKey: "bull:sync-batch:batch-1",
+    };
     const error = new UnrecoverableError("unrecoverable sync error");
     getWorkerFailedHandler("sync-queue")(job, error);
 

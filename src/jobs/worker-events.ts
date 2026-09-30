@@ -1,9 +1,11 @@
-import { ProviderServiceUnavailableError } from "@dofek/provider-http/rate-limit";
 import { Job, UnrecoverableError, type Worker } from "bullmq";
 import type { createDatabaseFromEnv } from "../db/index.ts";
 import { markProviderDataDeletionFailed } from "../db/provider-data-deletion.ts";
 import { captureException } from "../lib/error-reporting.ts";
-import { findProviderTransportError } from "../lib/provider-transport-error.ts";
+import {
+  isRetryingOpenBetaTransportFailure,
+  isZeppHttp500ServiceUnavailableError,
+} from "../lib/provider-transport-error.ts";
 import { logger } from "../logger.ts";
 import { isImportValidationError } from "./import-validation-error.ts";
 import {
@@ -105,14 +107,10 @@ export function attachWorkerEvents(
         err instanceof UnrecoverableError;
       const isImportValidationFailure =
         worker.name === IMPORT_QUEUE && isImportValidationError(err);
-      const isZeppHttp500ServiceUnavailable =
-        err instanceof ProviderServiceUnavailableError &&
-        err.providerId === "amazfit-zepp" &&
-        err.statusCode === 500;
+      const isZeppHttp500ServiceUnavailable = isZeppHttp500ServiceUnavailableError(err);
       const isOpenBetaRetry =
-        findProviderTransportError(err)?.providerId === "openbeta" &&
         job !== undefined &&
-        job.attemptsMade < (job.opts.attempts ?? 1);
+        isRetryingOpenBetaTransportFailure(err, job.attemptsMade, job.opts.attempts);
       if (
         !isFitBatchChildFailure &&
         !isImportValidationFailure &&

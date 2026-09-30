@@ -13,6 +13,7 @@ Provider sync jobs should survive transient infrastructure failures without star
 - Providers save a checkpoint only after a durable chunk has been written to the database.
 - Providers clear the checkpoint only after the whole provider sync finishes.
 - Infrastructure failures are rethrown from the job processor so BullMQ keeps the same job and retries it. User-facing status remains running while BullMQ reports `waiting`, `delayed`, or `active`.
+- Shared sync jobs enqueue one job per eligible provider through the existing provider queues, preserving the resolved absolute window. Retry and terminal status belong to each provider job, so failures do not repeat other providers' successful work. BullMQ parent dependencies record dispatch atomically and retain completed or ignored failed child references after child pruning; the coordinator waits for children without rerunning them. See [BullMQ flows](https://docs.bullmq.io/guide/flows), [dynamic dependency processing](https://docs.bullmq.io/patterns/process-step-jobs), the [sync coordinator](../src/jobs/process-sync-job.ts) and [provider enqueue helper](../src/jobs/enqueue-sync-job.ts).
 
 ## Garmin checkpoint shape
 

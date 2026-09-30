@@ -1,9 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type { ConnectionOptions } from "bullmq";
-import { Queue, QueueEvents, Worker } from "bullmq";
+import { Job, Queue, QueueEvents, Worker } from "bullmq";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SyncJobData } from "./queues.ts";
-import { type EnqueuedSyncJob, enqueueSyncJobWithRequestDedup } from "./sync-request-job.ts";
+import {
+  type EnqueuedSyncJob,
+  enqueueSyncJobWithRequestDedup,
+  syncCoordinatorHasDispatchedProvider,
+} from "./sync-request-job.ts";
 
 function testRedisConnection(): ConnectionOptions {
   const redisUrl = process.env.REDIS_URL;
@@ -242,5 +246,146 @@ describe("full sync BullMQ lifecycle deduplication", () => {
     expect(duplicateContinuation?.id).toBe(continuation?.id);
     expect(duplicateContinuation?.alreadyQueued).toBe(true);
     expect(await queue.getWaitingCount()).toBe(4);
+  });
+
+  function manualWorker(queue: Queue<SyncJobData>, connection: ConnectionOptions) {
+    const worker = new Worker<SyncJobData>(queue.name, async () => undefined, {
+      connection,
+      autorun: false,
+    });
+    cleanup.push(async () => worker.close());
+    return worker;
+  }
+
+  async function activeJob(worker: Worker<SyncJobData>, token: string) {
+    const job = await worker.getNextJob(token, { block: false });
+    if (!job) throw new Error("Expected an active integration job");
+    return job;
+  }
+
+  async function dispatchChild(
+    parent: Job<SyncJobData>,
+    queue: Queue<SyncJobData>,
+    providerId: string,
+    options: import("bullmq").JobsOptions = {},
+    loseAcknowledgement = false,
+  ) {
+    if (!parent.id) throw new Error("Expected coordinator ID");
+    if (
+      syncCoordinatorHasDispatchedProvider(
+        await parent.getDependencies(),
+        parent.id,
+        providerId,
+        parent.data.userId,
+      )
+    ) {
+      return;
+    }
+    return enqueueSyncJobWithRequestDedup(
+      providerId,
+      { ...parent.data, providerId },
+      options,
+      async (name, data, opts) => {
+        const job = await queue.add(name, data, opts);
+        if (loseAcknowledgement) throw new Error("Enqueue acknowledgement lost");
+        return job;
+      },
+      (id) => queue.getJob(id),
+      { id: parent.id, queueQualifiedName: parent.queueQualifiedName },
+    );
+  }
+
+  it("recovers partial dispatch after lost acknowledgement and completed-child pruning", async () => {
+    const { queue: parentQueue, connection } = createQueue("coordinator-recovery");
+    const { queue: childQueue } = createQueue("coordinator-recovery-children");
+    const parentWorker = manualWorker(parentQueue, connection);
+    const childWorker = manualWorker(childQueue, connection);
+    const originalData: SyncJobData = {
+      userId: "user-1",
+      sinceIso: "2026-09-20T00:00:00.000Z",
+      untilIso: "2026-09-21T23:59:59.999Z",
+      requestedAtIso: "2026-09-21T06:30:00.000Z",
+    };
+    await parentQueue.add("sync", originalData, { attempts: 2 });
+    const firstParent = await activeJob(parentWorker, "parent-first");
+    await expect(
+      dispatchChild(firstParent, childQueue, "a", { removeOnComplete: true }, true),
+    ).rejects.toThrow("Enqueue acknowledgement lost");
+    await firstParent.moveToFailed(
+      new Error("Enqueue acknowledgement lost"),
+      "parent-first",
+      false,
+    );
+    const firstChild = await activeJob(childWorker, "child-a");
+    expect(firstChild.data).toEqual({ ...originalData, providerId: "a" });
+    await firstChild.moveToCompleted(null, "child-a", false);
+    expect(await childQueue.getJob(firstChild.id ?? "")).toBeUndefined();
+
+    const restoredParent = await Job.fromId<SyncJobData>(parentQueue, firstParent.id ?? "");
+    if (!restoredParent) throw new Error("Expected durable coordinator after retry");
+    expect(
+      await dispatchChild(restoredParent, childQueue, "a", { removeOnComplete: true }),
+    ).toBeUndefined();
+    expect(await childQueue.getWaitingCount()).toBe(0);
+    const retryParent = await activeJob(parentWorker, "parent-retry");
+    expect(retryParent.attemptsMade).toBe(1);
+    await dispatchChild(retryParent, childQueue, "b", { removeOnComplete: true });
+    expect(await retryParent.moveToWaitingChildren("parent-retry")).toBe(true);
+    expect(await retryParent.getState()).toBe("waiting-children");
+    const secondChild = await activeJob(childWorker, "child-b");
+    expect(secondChild.data).toEqual({ ...originalData, providerId: "b" });
+    await secondChild.moveToCompleted(null, "child-b", false);
+    expect(await childQueue.getJob(secondChild.id ?? "")).toBeUndefined();
+
+    const finalParent = await activeJob(parentWorker, "parent-final");
+    await dispatchChild(finalParent, childQueue, "a");
+    await dispatchChild(finalParent, childQueue, "b");
+    expect(await childQueue.getWaitingCount()).toBe(0);
+    expect(await finalParent.moveToWaitingChildren("parent-final")).toBe(false);
+    await finalParent.moveToCompleted(null, "parent-final", false);
+    expect(await finalParent.getState()).toBe("completed");
+    expect(Object.keys((await finalParent.getDependencies()).processed ?? {})).toHaveLength(2);
+  });
+
+  it("retains ignored terminal failures after pruning while another child owns its delay and retries", async () => {
+    const { queue: parentQueue, connection } = createQueue("coordinator-failure");
+    const { queue: childQueue } = createQueue("coordinator-failure-children");
+    const parentWorker = manualWorker(parentQueue, connection);
+    const childWorker = manualWorker(childQueue, connection);
+    await parentQueue.add("sync", { userId: "user-1" });
+    const parent = await activeJob(parentWorker, "parent");
+    await dispatchChild(parent, childQueue, "a", { attempts: 1, removeOnFail: true });
+    const delayed = await dispatchChild(parent, childQueue, "b", {
+      attempts: 288,
+      backoff: { type: "fixed", delay: 300_000 },
+      delay: 60_000,
+      removeOnComplete: true,
+    });
+    expect(delayed?.opts).toMatchObject({
+      attempts: 288,
+      backoff: { type: "fixed", delay: 300_000 },
+      delay: 60_000,
+      parent: { id: parent.id, queue: parent.queueQualifiedName },
+      ignoreDependencyOnFailure: true,
+    });
+    expect(await parent.moveToWaitingChildren("parent")).toBe(true);
+    const failed = await activeJob(childWorker, "child-fail");
+    await failed.moveToFailed(new Error("Terminal provider failure"), "child-fail", false);
+    expect(await childQueue.getJob(failed.id ?? "")).toBeUndefined();
+    expect(Object.values((await parent.getDependencies()).ignored ?? {})).toEqual([
+      "Terminal provider failure",
+    ]);
+    expect(await dispatchChild(parent, childQueue, "a")).toBeUndefined();
+    expect(await parent.getState()).toBe("waiting-children");
+    if (!delayed) throw new Error("Expected delayed provider child");
+    await delayed.promote();
+    const successful = await activeJob(childWorker, "child-success");
+    await successful.moveToCompleted(null, "child-success", false);
+    const resumed = await activeJob(parentWorker, "parent-resumed");
+    expect(await resumed.moveToWaitingChildren("parent-resumed")).toBe(false);
+    await resumed.moveToCompleted(null, "parent-resumed", false);
+    expect(await resumed.getState()).toBe("completed");
+    expect(await dispatchChild(resumed, childQueue, "a")).toBeUndefined();
+    expect(await childQueue.getWaitingCount()).toBe(0);
   });
 });
