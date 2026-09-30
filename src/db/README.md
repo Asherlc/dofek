@@ -47,7 +47,15 @@ This directory contains the Drizzle ORM schema, migrations, and database connect
 - Deploy migrations are for schema changes only. Historical backfills and full read-model rebuilds should run as explicit resumable scripts or jobs, not inside the deploy migration path.
 - Run `pnpm analytics:build`, `pnpm lint:migrations`, `pnpm lint:analytics-sql`, and `pnpm lint:analytics-policy` before pushing migration or ClickHouse analytics changes.
 
-## Climbing Attempt Count Backfill
+## Climbing context and attempt counts
+
+`fitness.climbing_entry` stores the canonical location path, board, angle and
+unit, climbing method, and recorded result. Readers use the permanent
+`fitness.v_climbing_entry` projection for legacy display/filter scalars, which
+PostgreSQL [views](https://www.postgresql.org/docs/current/sql-createview.html)
+derive without duplicate storage. Migration `0134_climbing_context` converts
+the old columns and requires a coordinated maintenance cutover; follow the
+[climbing context runbook](../../docs/climbing-context.md#maintenance-cutover).
 
 Climbing outcomes and attempt counts are independently nullable: a provider can
 record an unsent climb or a send without recording its count. Preserve that

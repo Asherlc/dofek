@@ -59,6 +59,44 @@ import { KayaSyncProvider } from "./kaya-sync.ts";
 const userId = "00000000-0000-4000-8000-000000000001";
 
 describe("KayaSyncProvider", () => {
+  it.each(["missing", null, {}])(
+    "requires a callable database transaction: %j",
+    async (transaction) => {
+      const db = database();
+      if (transaction === "missing") Reflect.deleteProperty(db, "transaction");
+      else Reflect.set(db, "transaction", transaction);
+      mocks.loadTokens.mockResolvedValue({
+        accessToken: "token",
+        scopes: JSON.stringify({ kayaUserId: "42" }),
+      });
+      const result = await new KayaSyncProvider().sync(run(db));
+      expect(result).toMatchObject({
+        recordsSynced: 0,
+        errors: [{ message: "Kaya sync requires a transactional database" }],
+      });
+      expect(mocks.listSessions).not.toHaveBeenCalled();
+      expect(mocks.upsertActivity).not.toHaveBeenCalled();
+      expect(db.delete).not.toHaveBeenCalled();
+      expect(mocks.captureException).toHaveBeenCalledWith(expect.any(Error));
+    },
+  );
+
+  it("keeps an unreported rope method unknown", async () => {
+    const db = database();
+    const base = ascent("unknown-method", { lead: true, climbType: "Routes", grade: "5.10a" });
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "token",
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    mocks.listSessions.mockResolvedValue([session("session-1")]);
+    mocks.ascents.mockResolvedValue([{ ...base, climb: { ...base.climb, lead: null } }]);
+    mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
+    const result = await new KayaSyncProvider().sync(run(db));
+    expect(result.errors).toEqual([]);
+    expect(db.insertValues).toHaveBeenCalledExactlyOnceWith([
+      expect.objectContaining({ climbStyle: null }),
+    ]);
+  });
   it("preserves outdoor nodes, board, and an unverified signed angle on both feeds", async () => {
     const db = database();
     const base = ascent("outdoor", { lead: true, climbType: "Routes", grade: "5.10a" });

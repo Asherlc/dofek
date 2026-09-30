@@ -61,6 +61,34 @@ produce a replacement ID; full-list reconciliation marks the stale tick
 absent when it disappears from the export. Same-day duplicate laps receive
 distinct occurrence indexes.
 
+## Climbing style and result coverage
+
+The observed export separates the climbing method (`Style`) from the result
+qualifier (`Lead Style`). The
+[current importer](../src/providers/mountain-project.ts) retains both columns
+in the raw row and already interprets these values:
+
+| Source values | Current normalized result |
+| --- | --- |
+| Boulder `Style = Send` or `Flash` | Sent |
+| Boulder `Style = Attempt` | Not sent |
+| Route `Lead Style = Onsight`, `Flash`, `Redpoint`, or `Pinkpoint` | Sent |
+| Route `Lead Style = Fell/Hung` | Not sent |
+| Route with blank `Lead Style`, including `Style = TR` | Result unknown |
+
+Route `Style` values `Lead`, `TR`, `Follow`, and `Solo` populate canonical
+`climb_style` independently of `result_style`. Route result labels come from
+`Lead Style`; boulder result labels come from `Style`. Both clients render the
+method and recorded label, including Fell/Hung as “Fell or hung” and Frenchfree
+as recorded. The [permanent view](climbing-context.md#interpretation) derives
+send status while preserving unknown results. Total attempt counts remain
+null because the checked export has no count field.
+`TR` specifies top-rope climbing; it does not establish a clean send. The
+combined `Fell/Hung` value does not distinguish a fall from a hang or report
+how many occurred. This coverage was checked against the observed tick-export
+contract and importer on 2026-09-29. Source surface:
+[Mountain Project](https://www.mountainproject.com/).
+
 ## Tick dates and activity matching
 
 An unattached tick stores the exported date as its normalized
@@ -100,9 +128,10 @@ public tick export already supplied the required tick fields during probing.
 ## Location, angle, and board coverage
 
 A read-only tick-export audit on 2026-09-29 confirmed the 15 columns listed
-above. The current importer copies the complete `Location` string into
-`fitness.climbing_entry.location_name` and retains the exported row in `raw`.
-It does not split the path into separate destination, area, or subarea fields.
+above. The importer splits `Location` at ` > ` into an ordered
+`fitness.climbing_entry.location_path` of nonempty names and retains the
+exported row in `raw`. IDs and roles stay null because the export supplies
+neither. The read view derives the complete display label from those nodes.
 For [Cragmont Crack](https://www.mountainproject.com/route/105734660/cragmont-crack),
 the location path is:
 

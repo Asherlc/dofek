@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { resetLegacyClimbingTables } from "./climbing-migration-test-helpers.ts";
 import { runMigrations } from "./migrate.ts";
 import { setupTestDatabase, type TestContext, writeTestMigrationFiles } from "./test-helpers.ts";
 
@@ -11,38 +12,27 @@ describe("canonical climbing context conversion", () => {
   let client: Client;
   const userId = "00000000-0000-4000-8000-000000000099";
   const entryId = "00000000-0000-4000-8000-000000000098";
+  const activityId = "00000000-0000-4000-8000-000000000097";
+  const attemptId = "00000000-0000-4000-8000-000000000096";
 
   beforeAll(async () => {
     context = await setupTestDatabase();
     client = new Client({ connectionString: context.connectionString });
     await client.connect();
-    await client.query(`DROP TABLE fitness.climbing_attempt CASCADE;
-      DROP TABLE fitness.climbing_entry CASCADE;
-      INSERT INTO fitness.user_profile (id, name) VALUES ('${userId}', 'Context test');
-      CREATE TABLE fitness.climbing_entry (
-        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-        user_id uuid NOT NULL REFERENCES fitness.user_profile(id), provider_id text NOT NULL,
-        activity_id uuid, unattached_date date, provider_absent_at timestamptz, external_id text,
-        climb_type text NOT NULL, grade_system text NOT NULL, grade text NOT NULL,
-        sent boolean, attempt_count integer DEFAULT 1, lead boolean, wall_angle_degrees real,
-        hold_type text, route_name text, location_name text, source_name text,
-        raw jsonb, created_at timestamptz DEFAULT now());
-      CREATE TABLE fitness.climbing_attempt (
-        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-        climbing_entry_id uuid REFERENCES fitness.climbing_entry(id), attempt_index integer,
-        outcome text, failure_reason text);
+    await resetLegacyClimbingTables(client);
+    await client.query(`INSERT INTO fitness.user_profile (id, name) VALUES ('${userId}', 'Context test');
       INSERT INTO fitness.climbing_entry
-        (id, user_id, provider_id, unattached_date, provider_absent_at, external_id,
+        (id, user_id, provider_id, activity_id, unattached_date, provider_absent_at, external_id,
          climb_type, grade_system, grade, sent, attempt_count, lead, wall_angle_degrees, location_name, raw)
-      VALUES ('${entryId}', '${userId}', 'mountain-project', '2026-09-29', '2026-09-30', 'original',
+      VALUES ('${entryId}', '${userId}', 'mountain-project', NULL, '2026-09-29', '2026-09-30', 'original',
         'route', 'yds', '5.10a', false, 1, true, 40, 'Country > State > Region > Park > Crag > Wall',
         '{"Style":"Lead","Lead Style":"Fell/Hung"}'),
-        (gen_random_uuid(), '${userId}', 'kaya', NULL, NULL, 'gym',
+        (gen_random_uuid(), '${userId}', 'kaya', '${activityId}', NULL, NULL, 'gym',
         'boulder', 'v_scale', 'V3', true, 3, NULL, NULL, 'Test Gym', '{"ascent_type":{"name":"Repeat"}}'),
-        (gen_random_uuid(), '${userId}', 'kaya-export', NULL, NULL, 'csv-unknown-count',
+        (gen_random_uuid(), '${userId}', 'kaya-export', '${activityId}', NULL, NULL, 'csv-unknown-count',
         'boulder', 'v_scale', 'V3', true, 1, NULL, NULL, 'Test Gym', '{"ascentType":"Flash","attempts":null}');
-      INSERT INTO fitness.climbing_attempt (climbing_entry_id, attempt_index, outcome, failure_reason)
-        VALUES ('${entryId}', 1, 'failed', 'fell');`);
+      INSERT INTO fitness.climbing_attempt (id, climbing_entry_id, attempt_index, outcome, failure_reason)
+        VALUES ('${attemptId}', '${entryId}', 1, 'failed', 'fell');`);
     const directory = mkdtempSync(join(tmpdir(), "climbing-context-"));
     try {
       writeTestMigrationFiles(directory, [
@@ -97,6 +87,7 @@ describe("canonical climbing context conversion", () => {
     expect(rows[0].provider_absent_at).toBeInstanceOf(Date);
     expect((await client.query("SELECT * FROM fitness.climbing_attempt")).rows).toEqual([
       expect.objectContaining({
+        id: attemptId,
         climbing_entry_id: entryId,
         attempt_index: 1,
         outcome: "failed",
@@ -107,6 +98,8 @@ describe("canonical climbing context conversion", () => {
       (await client.query("SELECT * FROM fitness.v_climbing_entry WHERE external_id = 'gym'"))
         .rows[0],
     ).toMatchObject({
+      activity_id: activityId,
+      unattached_date: null,
       location_path: [{ name: "Test Gym", externalId: null, kind: null }],
       result_style: "Repeat",
       sent: true,

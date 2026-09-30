@@ -30,6 +30,11 @@ The mobile app for Dofek. Built with Expo and React Native, with native Swift mo
 
 ## Project Structure
 
+Activity details use `components/ClimbingEntryContext` for full climbing paths,
+board names, angle/units, methods, and results on attached and unattached entries.
+Labels match the web client through shared formatters; nullable counts/statuses
+remain explicit. See the [climbing contract](../../docs/climbing-context.md).
+
 - `app/`: Expo Router screens (file-based routing). Keep this route-only; Expo documents `app` as route-exclusive and non-route files there can be treated as routes: <https://docs.expo.dev/router/basics/core-concepts/#6-non-navigation-components-live-outside-the-srcapp-directory>.
 - `app-tests/`: Vitest tests for Expo Router screens.
 - `app-stories/`: Storybook stories for Expo Router screens.

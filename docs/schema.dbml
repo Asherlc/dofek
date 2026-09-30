@@ -561,13 +561,14 @@ table fitness.climbing_entry {
   climb_type climbing_climb_type [not null]
   grade_system climbing_grade_system [not null]
   grade text [not null]
-  sent boolean
-  attempt_count integer [default: 1]
-  lead boolean
-  wall_angle_degrees real
+  result_style text
+  attempt_count integer
+  climb_style text
+  wall_angle jsonb
+  board jsonb
   hold_type climbing_hold_type
   route_name text
-  location_name text
+  location_path jsonb [not null, default: `[]`]
   source_name text
   raw jsonb
   created_at "timestamp with time zone" [not null, default: `now()`]
@@ -580,6 +581,8 @@ table fitness.climbing_entry {
     (activity_id, external_id) [name: 'climbing_entry_activity_external_id_idx', unique]
     (user_id, provider_id, external_id) [name: 'climbing_entry_mountain_project_external_id_idx', unique]
     (user_id, provider_id, external_id) [name: 'climbing_entry_openbeta_external_id_idx', unique]
+
+
 
 
 

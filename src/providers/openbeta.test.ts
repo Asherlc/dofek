@@ -122,6 +122,7 @@ function exchangeToken(provider: OpenBetaProvider, input: string): Promise<unkno
 }
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.clearAllMocks();
   mocks.loadTokens.mockResolvedValue({
     accessToken: OPENBETA_USER_UUID,
@@ -135,6 +136,88 @@ afterEach(() => {
 });
 
 describe("OpenBetaProvider", () => {
+  it.each([
+    [null, []],
+    [
+      climb({ pathTokens: ["Country", "Wall"], parent: null }),
+      [
+        { name: "Country", externalId: null, kind: null },
+        { name: "Wall", externalId: null, kind: null },
+      ],
+    ],
+    [
+      climb({
+        pathTokens: ["Country", "Wall"],
+        ancestors: ["country-id", "wall-id"],
+        parent: null,
+      }),
+      [
+        { name: "Country", externalId: "country-id", kind: null },
+        { name: "Wall", externalId: "wall-id", kind: null },
+      ],
+    ],
+    [
+      climb({ pathTokens: [], parent: { uuid: "wall-id", area_name: "Wall" } }),
+      [{ name: "Wall", externalId: "wall-id", kind: null }],
+    ],
+  ])(
+    "preserves partial location context %j without inferring a method",
+    async (sourceClimb, path) => {
+      const { db, climbingEntryValues } = makeDb();
+      const result = await new OpenBetaProvider(async () =>
+        graphqlResponse({ userTicks: [tick({ climb: sourceClimb, style: null })] }),
+      ).sync(makeRun(db));
+      expect(result).toMatchObject({ recordsSynced: 1, errors: [] });
+      expect(climbingEntryValues).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ locationPath: path, climbStyle: null, attemptCount: null }),
+      );
+    },
+  );
+
+  it("normalizes surrounding whitespace in supplied names and identities", async () => {
+    const { db, climbingEntryValues } = makeDb();
+    const result = await new OpenBetaProvider(async () =>
+      graphqlResponse({
+        userTicks: [
+          tick({
+            attemptType: " Frenchfree ",
+            climb: climb({
+              pathTokens: [" Country ", " Wall "],
+              ancestors: [" country-id ", " wall-id "],
+              parent: { uuid: " wall-id ", area_name: " Wall " },
+            }),
+          }),
+        ],
+      }),
+    ).sync(makeRun(db));
+    expect(result).toMatchObject({ recordsSynced: 1, errors: [] });
+    expect(climbingEntryValues).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        locationPath: [
+          { name: "Country", externalId: "country-id", kind: null },
+          { name: "Wall", externalId: "wall-id", kind: null },
+        ],
+        resultStyle: "Frenchfree",
+      }),
+    );
+  });
+
+  it.each([
+    { attemptType: " " },
+    { climb: climb({ pathTokens: [" "] }) },
+    { climb: climb({ ancestors: [" "] }) },
+    { climb: climb({ parent: { uuid: " ", area_name: "Wall" } }) },
+  ])("rejects blank supplied context before writes %j", async (overrides) => {
+    const { db, climbingEntryValues } = makeDb();
+    const result = await new OpenBetaProvider(async () =>
+      graphqlResponse({ userTicks: [tick(overrides)] }),
+    ).sync(makeRun(db));
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(1);
+    expect(climbingEntryValues).not.toHaveBeenCalled();
+    expect(db.execute).not.toHaveBeenCalled();
+  });
+
   it("retains an unfamiliar supplied result with a parent-only path", async () => {
     const { db, climbingEntryValues } = makeDb();
     const result = await new OpenBetaProvider(async () =>
@@ -195,6 +278,7 @@ describe("OpenBetaProvider", () => {
       parent: { uuid: "area-other", area_name: "Wall" },
     },
   ])("rejects mismatched paths before writing or reconciling %j", async (path) => {
+    vi.spyOn(Date, "now").mockReturnValueOnce(1000).mockReturnValue(1250);
     const { db, climbingEntryValues } = makeDb();
     const result = await new OpenBetaProvider(async () =>
       graphqlResponse({ userTicks: [tick({ climb: climb(path) })] }),
@@ -204,7 +288,10 @@ describe("OpenBetaProvider", () => {
     ]);
     expect(climbingEntryValues).not.toHaveBeenCalled();
     expect(db.execute).not.toHaveBeenCalled();
-    expect(mocks.captureException).toHaveBeenCalled();
+    expect(result.duration).toBe(250);
+    expect(mocks.captureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { provider: "openbeta", phase: "tick_context" },
+    });
   });
   it("resolves a public profile URL to the stable OpenBeta user UUID", async () => {
     const fetchFn = vi.fn().mockResolvedValue(

@@ -6,10 +6,18 @@ import { climbingSessionsOutputSchema } from "./tool-output.ts";
 
 const mocks = vi.hoisted(() => ({ listRange: vi.fn(), getActivityEntries: vi.fn() }));
 vi.mock("../repositories/activity-repository.ts", () => ({
-  ActivityRepository: vi.fn(() => ({ listRange: mocks.listRange })),
+  ActivityRepository: vi.fn(
+    class {
+      listRange = mocks.listRange;
+    },
+  ),
 }));
 vi.mock("../repositories/climbing-repository.ts", () => ({
-  ClimbingRepository: vi.fn(() => ({ getActivityEntries: mocks.getActivityEntries })),
+  ClimbingRepository: vi.fn(
+    class {
+      getActivityEntries = mocks.getActivityEntries;
+    },
+  ),
 }));
 
 import { registerClimbingSessionsTool } from "./climbing-sessions-tool.ts";

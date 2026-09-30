@@ -1,5 +1,6 @@
 -- Canonical context replaces scalar storage; read projections remain computed.
 ALTER TABLE fitness.climbing_entry
+  DROP CONSTRAINT IF EXISTS climbing_entry_aggregate_pair,
   DROP CONSTRAINT IF EXISTS climbing_entry_location_name_nonempty,
   DROP CONSTRAINT IF EXISTS climbing_entry_wall_angle_range,
   DROP CONSTRAINT IF EXISTS climbing_entry_lead_routes_only;

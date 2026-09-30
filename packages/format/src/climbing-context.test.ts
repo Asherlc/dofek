@@ -56,4 +56,10 @@ describe("climbing context labels", () => {
     expect(formatClimbingWallAngle({ value: -20, unit: "degrees" })).toBe("Wall angle: −20°");
     expect(formatClimbingWallAngle(null)).toBeNull();
   });
+
+  it("preserves the exponent sign of a small positive angle", () => {
+    expect(formatClimbingWallAngle({ value: 1e-7, unit: null })).toBe(
+      "Wall angle: 1e-7 (units unknown)",
+    );
+  });
 });

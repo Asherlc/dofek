@@ -75,6 +75,27 @@ afterEach(() => {
 });
 
 describe("MountainProjectProvider", () => {
+  it("preserves nonempty path nodes and leaves a boulder's rope method unknown", async () => {
+    const { db, climbingEntryValues } = makeDb();
+    const csv = exportCsv([
+      '2026-08-10,Context Boulder,V4,,https://www.mountainproject.com/route/100/context,1," Country > > Wall > ",2.4,-1,Lead,,Boulder,,,20400',
+    ]);
+    const result = await new MountainProjectProvider(async () => new Response(csv)).sync(
+      makeRun(db),
+    );
+    expect(result).toMatchObject({ recordsSynced: 1, errors: [] });
+    expect(climbingEntryValues).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        climbType: "boulder",
+        climbStyle: null,
+        resultStyle: "Lead",
+        locationPath: [
+          { name: "Country", externalId: null, kind: null },
+          { name: "Wall", externalId: null, kind: null },
+        ],
+      }),
+    );
+  });
   it.each([
     ["Lead", "lead"],
     ["TR", "top-rope"],
