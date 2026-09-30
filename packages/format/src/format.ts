@@ -66,7 +66,7 @@ export function formatClimbingAttemptResult(
   sent: boolean | null,
   attemptCount: number | null,
 ): string {
-  if (sent === null && attemptCount === null) return "Outcome not recorded";
+  if (sent === null && attemptCount === null) return "Outcome and attempt count not recorded";
   if (attemptCount === null) {
     return sent ? "Sent; attempt count not recorded" : "Not sent; attempt count not recorded";
   }

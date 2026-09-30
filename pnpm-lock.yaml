@@ -380,6 +380,9 @@ importers:
 
   packages/format:
     dependencies:
+      '@dofek/training':
+        specifier: workspace:*
+        version: link:../training
       zod:
         specifier: 4.4.3
         version: 4.4.3

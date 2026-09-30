@@ -264,7 +264,7 @@ describe("formatClimbingAttemptResult", () => {
   });
 
   it("does not manufacture a failed attempt when the result is absent", () => {
-    expect(formatClimbingAttemptResult(null, null)).toBe("Outcome not recorded");
+    expect(formatClimbingAttemptResult(null, null)).toBe("Outcome and attempt count not recorded");
     expect(formatClimbingAttemptResult(true, null)).toBe("Sent; attempt count not recorded");
     expect(formatClimbingAttemptResult(false, null)).toBe("Not sent; attempt count not recorded");
     expect(formatClimbingAttemptResult(null, 3)).toBe("3 attempts; outcome not recorded");
