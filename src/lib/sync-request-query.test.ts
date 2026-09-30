@@ -109,3 +109,20 @@ describe("planSyncStepIfRequestNotPending", () => {
     expect(steps).toEqual([{ type: "stress", date: "2026-03-02" }]);
   });
 });
+
+describe("buildSyncRequestJobId", () => {
+  it("is stable for the same provider request", () => {
+    const query = {
+      path: "metrics-service/v1/metrics",
+      filters: {
+        name: "heart_rate",
+        start: "2026-05-01T00:00:00.000Z",
+        end: "2026-05-08T00:00:00.000Z",
+        step: 6,
+      },
+    };
+    expect(buildSyncRequestJobId("whoop", "user-1", query)).toBe(
+      buildSyncRequestJobId("whoop", "user-1", query),
+    );
+  });
+});

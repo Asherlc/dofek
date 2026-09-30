@@ -11,6 +11,7 @@ import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
+import { findProviderTransportError } from "../lib/provider-transport-error.ts";
 import { type FetchProviderPagesResult, fetchProviderPages } from "../sync/pagination.ts";
 import { ProviderAuthError, ProviderStoredIdentityMissingError } from "./auth-errors.ts";
 import type { SyncRun } from "./sync-run.ts";
@@ -99,7 +100,7 @@ const openBetaTickSchema = z
     climbId: z.string().nullable(),
     style: z.enum(["Lead", "Solo", "TR", "Follow", "Aid", "Boulder"]).nullable(),
     attemptType: z.string().trim().min(1).nullable(),
-    dateClimbed: z.number().nullable(),
+    dateClimbed: z.number().int().nullable(),
     grade: z.string().nullable(),
     source: z.enum(["OB", "MP"]).nullable(),
     user: z
@@ -256,9 +257,10 @@ function nullableText(value: string | null | undefined): string | null {
 function parseOpenBetaDate(value: number | null): string | null {
   if (value === null) return null;
   const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return null;
-  const date = parsed.toISOString().slice(0, 10);
-  return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null;
+  const year = parsed.getUTCFullYear();
+  return Number.isNaN(parsed.getTime()) || year < 1 || year > 9999
+    ? null
+    : parsed.toISOString().slice(0, 10);
 }
 
 function gradeFromTick(
@@ -474,6 +476,7 @@ export class OpenBetaProvider implements SyncProvider {
         },
       });
     } catch (error) {
+      if (findProviderTransportError(error)) throw error;
       captureException(error, { tags: { provider: this.id, phase: "tick_export" } });
       return {
         provider: this.id,

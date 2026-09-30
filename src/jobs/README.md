@@ -16,10 +16,21 @@ This directory contains background job processing logic using BullMQ and Redis.
 
 - **BullMQ**: Job queue management with Redis.
 - **Per-Provider Workers**: Each sync provider has its own dedicated BullMQ worker to independently manage concurrency and rate limits.
+- **Shared sync coordination**: Shared jobs fan out through the existing provider queues with one absolute sync window. BullMQ parent dependencies preserve dispatch through coordinator retries and child pruning; failed provider jobs report independently. The coordinator uses the [waiting-children processing pattern](https://docs.bullmq.io/patterns/process-step-jobs).
 - **Queues**: Defined in `queues.ts` with typed job data interfaces.
 - **Workers**: Implemented in `worker.ts` with support for graceful shutdown and idle spin-down.
+- **Worker responsibilities**: `worker.ts` coordinates startup;
+  `worker-queues.ts` constructs queue processors, `worker-events.ts` handles
+  job reporting and deletion redrive, and `worker-lifecycle.ts` handles idle
+  detection and shutdown.
 - **Bounded shutdown**: BullMQ workers stop accepting new jobs and wait for bounded active work. Production gives that drain 30 minutes before Docker can force-kill the task; provider requests have a two-minute deadline and multi-hour provider deletion is split across durable batch jobs. See [BullMQ graceful shutdown](https://docs.bullmq.io/guide/workers/graceful-shutdown) and [Docker `stop_grace_period`](https://docs.docker.com/reference/compose-file/services/#stop_grace_period).
 - **Processor Functions**: Each job type has a dedicated processor (e.g., `process-sync-job.ts`).
+- **Sync responsibilities**: `process-sync-job.ts` coordinates provider jobs;
+  `sync-job-context.ts` resolves sync windows and manages checkpoints,
+  `sync-processing-operation.ts` tracks ingestion stages,
+  `sync-provider-execution.ts` executes and records provider results, and
+  `sync-provider-failure.ts` applies failure and retry policy. Each module has
+  a matching colocated unit test.
 
 ## Configuration
 

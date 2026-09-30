@@ -28132,6 +28132,111 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   Fixed-date fixtures tested against rolling windows need a scoped explicit
   clock.
 
+## 2026-09-30 — OpenBeta tick sync received upstream HTTP 504
+
+- **Symptoms / impact:** [DOFEK-SERVER-6K](https://east-bay-software.sentry.io/issues/7764101777/)
+  recorded two production errors at 17:22:37 and 17:22:45 UTC during
+  `OpenBetaProvider.sync`'s `tick_export` phase. The failed sync does not import
+  new climbing ticks; the provider returns before writing or reconciling rows,
+  preserving existing entries. Sentry's zero affected-user count does not
+  establish that no connected account was affected.
+- **Failure evidence:** The failing operation was the GraphQL `userTicks`
+  request to `https://api.openbeta.io`. Its first exception was
+  `ProviderServiceUnavailableError: openbeta API service unavailable (504)`.
+  Event `a2eca20240af4a59a576cab89348b07a` retained Cloudflare's
+  `origin_gateway_timeout` response and ray ID `a434e7e45c1040ad` under release
+  `bffc5647c938191281a0fa2cff71fc4cc90e71f8`.
+- **Root cause / status:** OpenBeta's origin did not respond within
+  Cloudflare's gateway deadline, as identified by the upstream response.
+  The reason for that origin timeout and subsequent recovery are unverified.
+  Cloudflare documents gateway timeout diagnosis in its
+  [502/504 guide](https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-5xx-errors/error-502-504/).
+- **Investigation / action:** Reviewed the Sentry issue and its last-24-hour
+  events, the shared HTTP classification, OpenBeta's pagination error return,
+  and worker result handling. HTTP 504 is classified as service unavailable;
+  At the time of this investigation, OpenBeta captured the exception and
+  returned a sync error, which the worker recorded as failed without retrying
+  the provider failure. No production mutation or retry, timeout, or fallback
+  change was made during that investigation. The
+  [subsequent transient-failure fix](#2026-09-30--openbeta-date-scalar-mismatch-and-transient-failure-handling)
+  changes that behavior to retry typed OpenBeta transport failures and report
+  terminal exhaustion.
+- **Remaining risk / follow-up:** Unresolved until a successful tick sync
+  confirms recovery. After upstream recovery, rerun the affected sync and
+  verify its success record. If failures persist, correlate request timing
+  and the Cloudflare ray ID with OpenBeta support before choosing a code
+  change. A provider-sync runbook note distinguishing upstream 504s from
+  local infrastructure failures would make future triage faster.
+
+## 2026-09-30 — OpenBeta date scalar mismatch and transient-failure handling
+
+- **Symptoms / impact:** After the earlier gateway timeout,
+  [DOFEK-SERVER-6M](https://east-bay-software.sentry.io/issues/7764116376/)
+  recorded a production `ZodError` at 17:30:06 UTC. Six returned ticks failed
+  validation, preventing that tick export from importing. Existing climbing
+  entries remained intact.
+- **Failure evidence / root cause:** The failing operation was the GraphQL
+  `userTicks` response validation in `fetchGraphQL`. The first validation
+  failure was `Invalid input: expected string, received number` at
+  `userTicks[0].dateClimbed`, event `1caf14e01dc14c54a3907c18f9f4897c`.
+  Dofek and its fixtures incorrectly modeled the date as a string. OpenBeta's
+  [tick schema](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/schema/Tick.gql)
+  declares a `Date` scalar, whose
+  [implementation](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/common/DateScalar.ts)
+  serializes dates using `getTime()` (Unix milliseconds).
+- **Direct fixes:** Parse the numeric date scalar into a UTC calendar date
+  while retaining its original value in `raw`; correct unit and integration
+  fixtures. Propagate OpenBeta's typed service-unavailable and request-timeout
+  failures to the existing BullMQ retry path rather than capturing each in
+  the provider and returning a terminal sync error. Transient attempts remain
+  observable in structured/job logs. Exhaustion records a failed processing
+  stage and actionable client message, then reports the terminal failure to
+  Sentry. Unexpected schema/write failures remain reportable.
+- **PR review fixes:** Shared sync jobs coordinate provider jobs through the
+  existing provider queues, preserving the absolute sync window. Each provider
+  owns its retries and terminal reporting, so a failed provider does not cause
+  successful providers to rerun. BullMQ parent dependencies retain dispatch
+  evidence after child pruning and the coordinator waits for children; see
+  [BullMQ flows](https://docs.bullmq.io/guide/flows). Sync and worker
+  responsibilities have focused production
+  modules with matching test files below 1,000 lines; existing regression
+  cases were retained. CLI jobs use the same retry policy and report terminal
+  failures. Review also found that existing Zepp HTTP 500 suppression continued
+  after exhaustion; attempt-aware handling now records terminal failures and
+  reports them through the worker instead of leaving ingestion running. See
+  the [job architecture](../src/jobs/README.md).
+- **Validation:** Regression tests reproduced the non-retrying timeout and
+  numeric-date schema failures before their fixes. Focused provider, processor,
+  worker-event, and transport-classification tests pass. A real PostgreSQL
+  integration test verifies numeric-date ingestion, raw-payload preservation,
+  idempotent writes, and absence reconciliation. The complete Docker-free
+  unit/mobile run passed 19,370 tests on the final review-fixed tree, with 20
+  tests skipped. Seven real-Redis regressions verify atomic dispatch, recovery
+  after child pruning, and independent terminal child failures.
+  Root, server, and web typechecks passed, along with full repository lint.
+- **Local PR validation:** `pnpm lint` initially failed during dbt-backed
+  SQL lint with `Failed to establish a new connection: [Errno 61] Connection
+  refused`: this workspace's ClickHouse had been deliberately stopped after
+  integration validation. Restarted only that workspace's ClickHouse through
+  the Compose wrapper before rerunning the unchanged lint command. No runtime
+  retry or timeout was added for this local prerequisite failure; keep
+  ClickHouse running until SQL lint completes.
+  The unchanged full `pnpm lint` rerun passed after that prerequisite was
+  restored, without ad-hoc waits.
+- **Remaining risk / follow-up:** Production verification remains unresolved
+  until deployment and a successful OpenBeta sync. No upstream server changes
+  or alert-rule changes were made. The existing queue's 288 attempts and
+  five-minute backoff are reused without increasing request timeouts; they
+  provide bounded recovery for a verified upstream availability failure
+  ([BullMQ retry semantics](https://docs.bullmq.io/guide/retrying-failing-jobs)).
+  Future provider fixtures should be checked against upstream scalar
+  serialization, and runbooks should identify which layer owns retries and
+  Sentry capture. For similar investigations, inspect the issue's exact error
+  and event timeline, verify the upstream API contract, trace worker retry
+  handling, and reproduce the observed failure before changing behavior.
+  See the [Sentry investigation guide](sentry.md) and
+  [provider sync diagnostics](provider-sync-degradation-runbook.md).
+
 ## 2026-09-30 — Sentry CI completed; production remains blocked by missing migration history
 
 - **Sentry validation outcome:** [PR #2837](https://github.com/Asherlc/dofek/pull/2837)
@@ -28358,6 +28463,37 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   should distinguish input errors from API and schema failures before
   recommending that users change credentials or profile visibility.
 
+## 2026-09-30 — OpenBeta PR refactor CI validation
+
+- **Symptoms / impact:** [PR #2860](https://github.com/Asherlc/dofek/pull/2860)
+  remained blocked in CI after local lint, typechecks, and unit/mobile tests
+  passed. No production rollout or user impact occurred.
+- **Evidence / causes:** [Import Boundaries](https://github.com/Asherlc/dofek/actions/runs/36767065074/job/110064130989)
+  failed `pnpm exec depcruise --config .dependency-cruiser.cjs src/ packages/`
+  with `error no-circular`: sync job context imported processing, which
+  imported the context-owned job interface. [Dependency Audit](https://github.com/Asherlc/dofek/actions/runs/36767065074/job/110064130379)
+  failed the production high-severity audit because the existing gRPC override
+  pinned `@grpc/grpc-js` to 1.14.4. The newly published
+  [advisory](https://github.com/advisories/GHSA-m9gg-hp2v-232j) identifies
+  1.14.5 as patched. [Stryker shard 5](https://github.com/Asherlc/dofek/actions/runs/36767065074/job/110064701035)
+  failed with `Final mutation score 67.50 under breaking threshold 75`:
+  extracted worker lifecycle tests left idle accounting, timer boundaries,
+  and repeated shutdown mutants alive.
+- **Fix / validation:** Moved the shared sync job contract beside queue types;
+  the exact import-boundary command passes. Updated the existing gRPC pin to
+  1.14.5; frozen installation, strict production audit, and 30 telemetry tests
+  pass. Seven direct lifecycle tests now detect all scoped mutations: 43 killed,
+  no detected timeouts, no survivors or uncovered mutants, and a 100% score.
+  No retry, timeout, threshold relaxation, or audit suppression was added for
+  these CI failures.
+- **Remaining risk / follow-up:** Local full lint, root/server/web typechecks, import boundaries,
+  strict production audit, and five OpenBeta/Postgres and seven Redis integration tests pass on
+  the merged tree. Hosted validation remains unresolved until replacement CI
+  passes. Future structural refactors should run import
+  boundaries and scoped mutation tests before pushing; dependency audit should
+  also be checked because new advisories can change CI results without code
+  changes.
+
 ## 2026-09-30 — Climbing context native checks wait for runners
 
 - **Evidence / impact:** Context [CI run 36751457185](https://github.com/Asherlc/dofek/actions/runs/36751457185)
@@ -28374,6 +28510,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   both incident records. Combined provider/client tests pass (77), all four
   typechecks pass, and lint passes. Revalidate the new head's full suite and
   hosted gates; queued native checks and release/restore approval remain open.
+
 ## 2026-09-30 — OpenBeta tick dates reject numeric API timestamps
 
 - **Symptoms / impact:** Scheduled OpenBeta tick sync fails before writes;
@@ -28405,3 +28542,16 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Retrospective:** Sentry's provider/phase tags and field-level validation
   errors established the failure without production mutations. Verify custom
   scalar serialization against upstream source when preparing provider fixtures.
+- **Main integration:** [PR #2860](https://github.com/Asherlc/dofek/pull/2860)
+  independently supplied the numeric date fix. The merge resolution retains
+  its integer schema, year bounds, and outage handling; this branch now adds
+  UTC-boundary/raw-preservation and invalid-date reconciliation coverage plus
+  documentation. All 64 provider unit tests and five database sync tests pass.
+
+## 2026-09-30 — Provider registration failure in OpenBeta PR validation
+
+- **Symptoms / impact:** [Integration shard 1](https://github.com/Asherlc/dofek/actions/runs/36777153307/job/110099580515) failed the calendar week-list and sync-provider router cases; PR #2860 remains blocked from readiness. No production rollout occurred.
+- **Evidence:** `pnpm exec vitest run --project integration --coverage --shard=1/4` failed. The first causal router log was `Failed to register ziva provider: Sync request query resolver for 'ziva' is already registered`; both routes returned HTTP 500 before the SQL-validity assertions. Other earlier ClickHouse exceptions were expected negative-test cases.
+- **Root cause:** The Redis request-deduplication integration suite reset module caches and manually registered WHOOP/Ziva resolvers. Integration suites share one module lifecycle, so a later router bootstrap encountered the test-owned Ziva resolver and failed; initial and continuation requests also used different registry generations. The paired suites reproduce CI with two failures and 71 passes.
+- **Direct fix:** Use the canonical server provider bootstrap in integration setup and one static enqueue helper for both initial and continuation jobs. Remove test-owned registration and module resets; move the suite beside the server bootstrap consumer to respect TypeScript package ownership and keep production duplicate-registration validation intact. No gate, retry, timeout, or fallback was changed.
+- **Validation / follow-up:** The unchanged paired router/queue regressions pass 73/73 after correction; typechecks and import boundaries pass. The local broader shard initially failed four FIT ingestion cases because the native decoder binary was absent. Built the pinned native helper using the [testing procedure](testing.md#native-fit-decoder); the complete current-tree shard then passed all 486 tests across 68 files with coverage, without ad-hoc waits. Direct strict typechecking of the moved fixture, full lint, and production typechecks pass. Hosted CI rerun remains pending.
