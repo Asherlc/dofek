@@ -27994,6 +27994,19 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   Two minimal activity-table fixtures omitted that canonical column. Their
   schemas and seed data now include it; both dbt suites pass all eight tests.
   The production ranking is unchanged.
+- **CI dependency audit (September 30 UTC):** After resolving the incident-log
+  merge conflict, [job 109741648357](https://github.com/Asherlc/dofek/actions/runs/36669558499/job/109741648357)
+  failed `pnpm audit --prod --audit-level=high --ignore-registry-errors` with
+  `high | brace-expansion: DoS via uncontrolled recursion on nested brace groups
+  causing stack exhaustion`. The existing override pinned 5.0.9, below the
+  patched ranges in [GHSA-qhr7-859c-m2p7](https://github.com/advisories/GHSA-qhr7-859c-m2p7)
+  and [GHSA-6j4f-fj2g-mc7p](https://github.com/advisories/GHSA-6j4f-fj2g-mc7p).
+  Updated the existing overrides to 5.0.12 and the compatible CommonJS release
+  1.1.21, then regenerated the lockfile. Frozen installation and the exact
+  production audit pass; four moderate advisories remain below the unchanged
+  high-severity gate. Workspace lint, root/server/web typechecks, spell check,
+  and all 19,136 unit/mobile tests pass. The hosted rerun remains required;
+  audit thresholds and exclusions are unchanged.
 - **Remaining risk / follow-up:** Production remains unresolved until the normal
   deployment and a ClickHouse incremental refresh complete. Verify the old
   group disappears, the current group remains, and both raw versions survive.
