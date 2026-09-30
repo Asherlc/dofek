@@ -525,6 +525,14 @@ describe("ActivityDetailScreen", () => {
           lead: null,
           routeName: "Blue Circuit",
           locationName: "Pacific Pipe",
+          context: {
+            providerId: "mountain-project",
+            locationPath: [{ name: "Pacific Pipe", externalId: null, kind: null }],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: "Send",
+          },
         },
         {
           id: "tick-2",
@@ -534,10 +542,22 @@ describe("ActivityDetailScreen", () => {
           gradeSystem: "yds",
           grade: "5.10a",
           sent: false,
-          attemptCount: 1,
-          lead: true,
+          attemptCount: null,
+          lead: false,
           routeName: "Project",
           locationName: "Pacific Pipe",
+          context: {
+            providerId: "openbeta",
+            locationPath: ["Country", "State", "Region", "Park", "Crag", "Wall"].map((name) => ({
+              name,
+              externalId: null,
+              kind: null,
+            })),
+            board: null,
+            wallAngle: null,
+            climbStyle: "top-rope",
+            resultStyle: "Fell/Hung",
+          },
         },
       ],
       error: null,
@@ -550,6 +570,10 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText("Mountain Project")).toBeTruthy();
     expect(screen.getByText("OpenBeta")).toBeTruthy();
     expect(screen.getByText("Blue Circuit")).toBeTruthy();
+    expect(screen.getByText("Country > State > Region > Park > Crag > Wall")).toBeTruthy();
+    expect(screen.getByText("Top rope")).toBeTruthy();
+    expect(screen.getByText("Fell or hung")).toBeTruthy();
+    expect(screen.getByText("5.10a · Not sent; attempt count not recorded")).toBeTruthy();
     const controls = screen.getAllByRole("button", { name: "Attach to this activity" });
     expect(controls).toHaveLength(2);
     const secondControl = controls.at(1);
@@ -985,6 +1009,14 @@ describe("ActivityDetailScreen", () => {
           locationName: "Touchstone Pacific Pipe",
           sourceName: "Kaya",
           wallAngleDegrees: null,
+          context: {
+            providerId: "kaya",
+            locationPath: [{ name: "Touchstone Pacific Pipe", externalId: null, kind: null }],
+            board: { name: "Training Board", externalId: "board-1" },
+            wallAngle: { value: -20, unit: null },
+            climbStyle: null,
+            resultStyle: "Redpoint",
+          },
         },
         {
           id: "climb-project",
@@ -1007,6 +1039,37 @@ describe("ActivityDetailScreen", () => {
           locationName: "Touchstone Pacific Pipe",
           sourceName: "Kaya",
           wallAngleDegrees: 35,
+          context: {
+            providerId: "kaya",
+            locationPath: [{ name: "Touchstone Pacific Pipe", externalId: null, kind: null }],
+            board: null,
+            wallAngle: { value: 35, unit: "degrees" },
+            climbStyle: null,
+            resultStyle: "Attempt",
+          },
+        },
+        {
+          id: "kaya-unsent",
+          climbType: "boulder",
+          gradeSystem: "v_scale",
+          grade: "V3",
+          sent: false,
+          attemptCount: null,
+          attempts: [],
+          ascentType: null,
+          holdType: null,
+          routeName: null,
+          locationName: "Touchstone Pacific Pipe",
+          sourceName: "Kaya",
+          wallAngleDegrees: null,
+          context: {
+            providerId: "kaya",
+            locationPath: [{ name: "Touchstone Pacific Pipe", externalId: null, kind: null }],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: "Attempt",
+          },
         },
         {
           id: "kaya-unsent",
@@ -1035,10 +1098,13 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText("V4")).toBeTruthy();
     expect(screen.getByText("Blue Circuit")).toBeTruthy();
     expect(screen.getByText("Redpoint")).toBeTruthy();
+    expect(screen.getByText("Board: Training Board")).toBeTruthy();
+    expect(screen.getByText("Wall angle: −20 (units unknown)")).toBeTruthy();
     expect(screen.getByText("Sent in 7 attempts")).toBeTruthy();
     expect(screen.getByText("Project")).toBeTruthy();
     expect(screen.getByText("Attempted 1 time")).toBeTruthy();
-    expect(screen.getByText("35° · Crimp")).toBeTruthy();
+    expect(screen.getByText("Wall angle: 35°")).toBeTruthy();
+    expect(screen.getByText("Crimp")).toBeTruthy();
     expect(screen.getByText("1: Technique")).toBeTruthy();
     expect(screen.getByText("Not sent; attempt count not recorded")).toBeTruthy();
     expect(screen.getAllByText("Touchstone Pacific Pipe")).toHaveLength(3);

@@ -136,7 +136,7 @@ components:
                   attempts: { type: [integer, 'null'], minimum: 1 }
     KayaClimb:
       type: object
-      required: [id, name, lead, climb_type, grade, gym]
+      required: [id, name, lead, climb_type, grade, gym, destination, area, subarea, board, angle]
       properties:
         id: { type: string }
         name: { type: [string, 'null'] }
@@ -150,3 +150,19 @@ components:
           type: [object, 'null']
           properties: { id: { type: string }, name: { type: string }, climb_type_group: { type: string } }
         gym: { type: [object, 'null'] }
+        destination: { $ref: '#/components/schemas/KayaClimbLocation' }
+        area: { $ref: '#/components/schemas/KayaClimbLocation' }
+        subarea: { $ref: '#/components/schemas/KayaClimbLocation' }
+        board: { $ref: '#/components/schemas/KayaClimbLocation' }
+        angle:
+          type: [integer, 'null']
+          description: Reported signed value. Units and reference direction are unverified; do not assume degrees.
+    KayaClimbLocation:
+      type: [object, 'null']
+      required: [id, name]
+      properties:
+        id: { type: string }
+        name: { type: string }
+      externalDocs:
+        description: Observed Kaya application field selections
+        url: https://kaya-app.kayaclimb.com/static/js/main.5bd87165.chunk.js

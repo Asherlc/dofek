@@ -2096,6 +2096,14 @@ describe("createMcpRouter", () => {
           sent: true,
           sourceName: "kaya",
           wallAngleDegrees: 30,
+          context: {
+            providerId: "kaya",
+            locationPath: [{ name: "Pacific Pipe", externalId: null, kind: null }],
+            board: null,
+            wallAngle: { value: 30, unit: "degrees" },
+            climbStyle: null,
+            resultStyle: "Send",
+          },
         }),
       },
     ]);
@@ -2178,6 +2186,14 @@ describe("createMcpRouter", () => {
           sent: null,
           sourceName: null,
           wallAngleDegrees: null,
+          context: {
+            providerId: "kaya",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: null,
+          },
         }),
       },
     ]);
@@ -2234,6 +2250,14 @@ describe("createMcpRouter", () => {
           sent: true,
           sourceName: "kaya",
           wallAngleDegrees: null,
+          context: {
+            providerId: "kaya",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: "lead",
+            resultStyle: "redpoint",
+          },
         }),
       },
       {
@@ -2252,6 +2276,14 @@ describe("createMcpRouter", () => {
           sent: false,
           sourceName: "kaya",
           wallAngleDegrees: null,
+          context: {
+            providerId: "kaya",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: "top-rope",
+            resultStyle: "Attempt",
+          },
         }),
       },
       {
@@ -2270,6 +2302,14 @@ describe("createMcpRouter", () => {
           sent: true,
           sourceName: "mountain_project",
           wallAngleDegrees: null,
+          context: {
+            providerId: "mountain-project",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: "onsight",
+          },
         }),
       },
       {
@@ -2288,6 +2328,14 @@ describe("createMcpRouter", () => {
           sent: true,
           sourceName: "kaya",
           wallAngleDegrees: null,
+          context: {
+            providerId: "kaya",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: "lead",
+            resultStyle: "Send",
+          },
         }),
       },
       {
@@ -2306,6 +2354,14 @@ describe("createMcpRouter", () => {
           sent: false,
           sourceName: "kaya",
           wallAngleDegrees: null,
+          context: {
+            providerId: "kaya",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: "lead",
+            resultStyle: "Attempt",
+          },
         }),
       },
     ]);
@@ -4256,6 +4312,14 @@ describe("createMcpRouter", () => {
           sent: true,
           sourceName: "kaya",
           wallAngleDegrees: null,
+          context: {
+            providerId: "kaya",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: "Send",
+          },
         }),
       },
     ]);

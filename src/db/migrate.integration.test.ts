@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { Client } from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
+import { resetLegacyClimbingTables } from "./climbing-migration-test-helpers.ts";
 import { runMigrations } from "./migrate.ts";
 import { TEST_USER_ID } from "./schema/core.ts";
 import { setupTestDatabase, type TestContext, writeTestMigrationFiles } from "./test-helpers.ts";
@@ -24,7 +25,7 @@ const migrationRollbackRowsSchema = z.array(
 const migrationHashRowsSchema = z.array(z.object({ hash: z.string() }));
 const climbingEntryLeadColumnRowsSchema = z.array(
   z.object({
-    data_type: z.literal("boolean"),
+    data_type: z.literal("text"),
     is_nullable: z.literal("YES"),
     constraint_definition: z.string(),
   }),
@@ -82,7 +83,7 @@ describe("runMigrations", () => {
     await client.end();
   });
 
-  it("creates a nullable route-only lead value for climbing entries", async () => {
+  it("creates a nullable checked climbing method for climbing entries", async () => {
     const client = new Client({ connectionString: ctx.connectionString });
     await client.connect();
     try {
@@ -93,18 +94,17 @@ describe("runMigrations", () => {
           pg_get_constraintdef(constraints.oid) AS constraint_definition
         FROM information_schema.columns AS columns
         JOIN pg_constraint AS constraints
-          ON constraints.conname = 'climbing_entry_lead_routes_only'
+          ON constraints.conname = 'climbing_entry_climb_style_valid'
         WHERE columns.table_schema = 'fitness'
           AND columns.table_name = 'climbing_entry'
-          AND columns.column_name = 'lead'`,
+          AND columns.column_name = 'climb_style'`,
       );
 
       expect(climbingEntryLeadColumnRowsSchema.parse(result.rows)).toEqual([
         {
-          data_type: "boolean",
+          data_type: "text",
           is_nullable: "YES",
-          constraint_definition:
-            "CHECK (((lead IS NULL) OR (climb_type = 'route'::fitness.climbing_climb_type)))",
+          constraint_definition: expect.stringContaining("'top-rope'::text"),
         },
       ]);
     } finally {
@@ -405,6 +405,10 @@ describe("runMigrations", () => {
       "8c78a3557c472012c24978da8c1ae16e99573f59d66ed7d8e709297702c849ff";
     await client.connect();
     try {
+      await resetLegacyClimbingTables(client);
+      await client.query(
+        readFileSync(join(migrationsFolder, "0133_independent_climbing_outcome_count.sql"), "utf8"),
+      );
       await client.query("CREATE SCHEMA drizzle");
       await client.query(`CREATE TABLE drizzle.__drizzle_migrations (
         id serial PRIMARY KEY,
@@ -426,20 +430,21 @@ describe("runMigrations", () => {
         [productionClimbingHash, 1_790_727_480_000],
       );
 
-      await expect(runMigrations(ctx.connectionString, migrationsFolder)).resolves.toBe(1);
-      const pending = journal.entries.find((entry) =>
-        entry.tag.endsWith("_apple_health_workout_revisions"),
+      await expect(runMigrations(ctx.connectionString, migrationsFolder)).resolves.toBe(2);
+      const pendingHashes = [
+        "0134_apple_health_workout_revisions.sql",
+        "0135_climbing_context.sql",
+      ].map((file) =>
+        createHash("sha256")
+          .update(readFileSync(join(migrationsFolder, file)))
+          .digest("hex"),
       );
-      if (!pending) throw new Error("Apple Health revision migration is required");
-      const pendingHash = createHash("sha256")
-        .update(readFileSync(join(migrationsFolder, `${pending.tag}.sql`)))
-        .digest("hex");
       const tracked = await client.query(
-        "SELECT hash FROM drizzle.__drizzle_migrations WHERE hash IN ($1,$2) ORDER BY hash",
-        [productionClimbingHash, pendingHash],
+        "SELECT hash FROM drizzle.__drizzle_migrations WHERE hash = ANY($1::text[]) ORDER BY hash",
+        [[productionClimbingHash, ...pendingHashes]],
       );
       expect(migrationHashRowsSchema.parse(tracked.rows)).toEqual(
-        [productionClimbingHash, pendingHash].sort().map((hash) => ({ hash })),
+        [productionClimbingHash, ...pendingHashes].sort().map((hash) => ({ hash })),
       );
       await expect(runMigrations(ctx.connectionString, migrationsFolder)).resolves.toBe(0);
     } finally {

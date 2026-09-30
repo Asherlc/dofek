@@ -1,3 +1,8 @@
+import {
+  type ClimbingLocationNode,
+  type ClimbingMetadata,
+  climbingMetadataSchema,
+} from "@dofek/training/climbing-context";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { TokenSet } from "../auth/oauth.ts";
@@ -48,6 +53,8 @@ const OPENBETA_TICKS_QUERY = `
       climb {
         uuid
         name
+        pathTokens
+        ancestors
         grades {
           vscale
           yds
@@ -61,6 +68,7 @@ const OPENBETA_TICKS_QUERY = `
           bouldering
         }
         parent {
+          uuid
           area_name
         }
       }
@@ -90,18 +98,7 @@ const openBetaTickSchema = z
     notes: z.string().nullable(),
     climbId: z.string().nullable(),
     style: z.enum(["Lead", "Solo", "TR", "Follow", "Aid", "Boulder"]).nullable(),
-    attemptType: z
-      .enum([
-        "Onsight",
-        "Flash",
-        "Pinkpoint",
-        "Frenchfree",
-        "Attempt",
-        "Send",
-        "Redpoint",
-        "Repeat",
-      ])
-      .nullable(),
+    attemptType: z.string().trim().min(1).nullable(),
     dateClimbed: z.number().int().nullable(),
     grade: z.string().nullable(),
     source: z.enum(["OB", "MP"]).nullable(),
@@ -115,6 +112,8 @@ const openBetaTickSchema = z
       .object({
         uuid: z.string().nullable(),
         name: z.string().nullable(),
+        pathTokens: z.array(z.string().trim().min(1)).nullish(),
+        ancestors: z.array(z.string().trim().min(1)).nullish(),
         grades: z
           .object({
             vscale: z.string().nullable(),
@@ -127,7 +126,9 @@ const openBetaTickSchema = z
           })
           .nullable(),
         type: z.object({ bouldering: z.boolean().nullable() }).nullable(),
-        parent: z.object({ area_name: z.string().nullable() }).nullable(),
+        parent: z
+          .object({ uuid: z.string().trim().min(1).nullish(), area_name: z.string().nullable() })
+          .nullable(),
       })
       .nullable(),
   })
@@ -151,16 +152,14 @@ type OpenBetaGradeSystem =
   | "ewbank"
   | "brazilian_crux";
 
-interface OpenBetaClimbingEntry {
+interface OpenBetaClimbingEntry extends ClimbingMetadata {
   externalId: string;
   unattachedDate: string;
   climbType: "boulder" | "route";
   gradeSystem: OpenBetaGradeSystem;
   grade: string;
-  sent: boolean | null;
   attemptCount: number | null;
   routeName: string | null;
-  locationName: string | null;
   raw: OpenBetaTick;
 }
 
@@ -303,9 +302,26 @@ function gradeFromTick(
   return null;
 }
 
-function sentForTick(attemptType: OpenBetaTick["attemptType"]): boolean | null {
-  if (attemptType == null) return null;
-  return attemptType !== "Attempt";
+function locationPathForTick(tick: OpenBetaTick): ClimbingLocationNode[] {
+  const climb = tick.climb;
+  if (!climb) return [];
+  const names = climb.pathTokens;
+  const ids = climb.ancestors;
+  const parent = climb.parent;
+  if (
+    names &&
+    ids &&
+    (names.length !== ids.length ||
+      (ids.length > 0 && parent?.uuid != null && ids.at(-1) !== parent.uuid))
+  ) {
+    throw new Error(
+      `OpenBeta tick ${tick._id} has inconsistent location path names and identities. Re-sync after the source location is corrected.`,
+    );
+  }
+  if (names && names.length > 0)
+    return names.map((name, index) => ({ name, externalId: ids?.[index] ?? null, kind: null }));
+  const name = nullableText(parent?.area_name);
+  return name ? [{ name, externalId: parent?.uuid ?? null, kind: null }] : [];
 }
 
 function parseOpenBetaTicks(ticks: OpenBetaTick[]): OpenBetaTickParseResult {
@@ -330,17 +346,29 @@ function parseOpenBetaTicks(ticks: OpenBetaTick[]): OpenBetaTickParseResult {
       continue;
     }
 
-    const sent = sentForTick(tick.attemptType);
+    const methods = {
+      Lead: "lead",
+      TR: "top-rope",
+      Follow: "follow",
+      Solo: "solo",
+      Aid: "aid",
+      Boulder: null,
+    } as const;
     entries.push({
       externalId: `openbeta:${tick._id}`,
       unattachedDate,
       climbType,
       gradeSystem: grade.gradeSystem,
       grade: grade.grade,
-      sent,
-      attemptCount: sent === null ? null : 1,
+      ...climbingMetadataSchema.parse({
+        locationPath: locationPathForTick(tick),
+        board: null,
+        wallAngle: null,
+        climbStyle: tick.style === null ? null : methods[tick.style],
+        resultStyle: tick.attemptType,
+      }),
+      attemptCount: null,
       routeName: nullableText(tick.name ?? tick.climb?.name),
-      locationName: nullableText(tick.climb?.parent?.area_name),
       raw: tick,
     });
   }
@@ -455,7 +483,20 @@ export class OpenBetaProvider implements SyncProvider {
       };
     }
 
-    const parsed = parseOpenBetaTicks(pages.items);
+    let parsed: OpenBetaTickParseResult;
+    try {
+      // Validate every supplied path before writes or absence reconciliation.
+      for (const tick of pages.items) locationPathForTick(tick);
+      parsed = parseOpenBetaTicks(pages.items);
+    } catch (error) {
+      captureException(error, { tags: { provider: this.id, phase: "tick_context" } });
+      return {
+        provider: this.id,
+        recordsSynced: 0,
+        errors: [{ message: error instanceof Error ? error.message : String(error), cause: error }],
+        duration: Date.now() - startedAt,
+      };
+    }
     errors.push(...parsed.errors);
     if (parsed.unsupportedGradeCount > 0) {
       errors.push({
@@ -503,10 +544,13 @@ export class OpenBetaProvider implements SyncProvider {
                 climbType: entry.climbType,
                 gradeSystem: entry.gradeSystem,
                 grade: entry.grade,
-                sent: entry.sent,
+                resultStyle: entry.resultStyle,
+                climbStyle: entry.climbStyle,
+                board: entry.board,
+                wallAngle: entry.wallAngle,
                 attemptCount: entry.attemptCount,
                 routeName: entry.routeName,
-                locationName: entry.locationName,
+                locationPath: entry.locationPath,
                 sourceName: this.name,
                 raw: entry.raw,
               })
@@ -517,10 +561,13 @@ export class OpenBetaProvider implements SyncProvider {
                   climbType: entry.climbType,
                   gradeSystem: entry.gradeSystem,
                   grade: entry.grade,
-                  sent: entry.sent,
+                  resultStyle: entry.resultStyle,
+                  climbStyle: entry.climbStyle,
+                  board: entry.board,
+                  wallAngle: entry.wallAngle,
                   attemptCount: entry.attemptCount,
                   routeName: entry.routeName,
-                  locationName: entry.locationName,
+                  locationPath: entry.locationPath,
                   sourceName: this.name,
                   raw: entry.raw,
                   providerAbsentAt: null,

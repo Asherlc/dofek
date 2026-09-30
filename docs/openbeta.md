@@ -32,17 +32,23 @@ secret-token connections stay masked according to the shared
 Each supported tick becomes one standalone `fitness.climbing_entry` row:
 
 - `external_id` is `openbeta:{tick-id}`.
-- `unattached_date` is the UTC calendar date represented by `dateClimbed`.
-  OpenBeta's [Date scalar](https://github.com/OpenBeta/openbeta-graphql/blob/f1508b2479cc7658ac4341d59ec817836190d6d8/src/graphql/common/DateScalar.ts)
-  serializes integer epoch milliseconds; the server converts that timestamp
-  without changing the numeric value retained in `raw`.
+- `unattached_date` is the UTC calendar date derived on the server from the
+  tick's integer epoch-millisecond `dateClimbed` value. The original number
+  remains in `raw`, matching OpenBeta's
+  [Date scalar](https://github.com/OpenBeta/openbeta-graphql/blob/f1508b2479cc7658ac4341d59ec817836190d6d8/src/graphql/common/DateScalar.ts).
 - boulders use V-scale first, then Font; routes use YDS first, then French,
   UIAA, Ewbank, or Brazilian Crux when available.
-- `sent` is true for send-style attempt types and false for `Attempt`; a missing
-  attempt type retains null sent/attempt count.
-- `route_name`, `location_name`, and `source_name` are copied from the
-  provider response when present.
+- `climb_style` records the climbing method independently of `result_style`,
+  which preserves the supplied attempt-type label. The permanent read view
+  derives send status; unfamiliar labels remain unclassified.
+- `attempt_count` is unknown: a tick does not supply a total number of tries.
+- `route_name` and `source_name` are copied when present; `location_path`
+  retains the full selected hierarchy with provider-scoped area UUIDs.
 - `raw` retains the selected OpenBeta GraphQL response object for provenance.
+
+The upstream [tick schema](https://github.com/OpenBeta/openbeta-graphql/blob/f1508b2479cc7658ac4341d59ec817836190d6d8/src/graphql/schema/Tick.gql)
+supplies method and attempt type as separate fields. See the shared
+[interpretation contract](climbing-context.md#interpretation).
 
 The provider uses a provider-scoped unique index for idempotent upserts. A
 complete non-empty pagination run soft-tombstones rows missing from the
@@ -64,10 +70,13 @@ activities for tick dates.
 
 ## Location, angle, and board coverage
 
-The current tick query selects only `climb.parent.area_name` for location and
-copies it into `fitness.climbing_entry.location_name`. Full hierarchy names,
-area UUIDs, and coordinates are not requested, so they are also absent from
-the retained selected response. OpenBeta's
+The tick query selects `climb.pathTokens`, `climb.ancestors`, and
+`climb.parent { uuid area_name }`. Names and IDs are paired in order only when
+the supplied arrays align and the nearest ancestor agrees with the supplied
+parent UUID. Inconsistent paths reject the sync before writes or absence
+reconciliation. Missing ancestor IDs stay null; a missing full path uses the
+known parent. Coordinates and area-classification flags remain unrequested.
+OpenBeta's
 [tick schema](https://github.com/OpenBeta/openbeta-graphql/blob/f1508b2479cc7658ac4341d59ec817836190d6d8/src/graphql/schema/Tick.gql)
 permits a null `climb` when a tick has no catalogue match; those ticks cannot
 provide climb-linked location metadata.

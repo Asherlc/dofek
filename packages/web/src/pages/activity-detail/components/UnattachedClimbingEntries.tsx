@@ -1,7 +1,9 @@
+import { formatClimbingAttemptResult } from "@dofek/format/format";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { providerSourceLabel } from "@dofek/providers/providers";
 import type { ClimbingEntrySuggestion } from "../../../../../server/src/repositories/climbing-entry-associator.ts";
 import { ChartDescriptionTooltip } from "../../../components/ChartDescriptionTooltip.tsx";
+import { ClimbingEntryContext } from "./ClimbingEntryContext.tsx";
 
 export type EntryAttachState = Record<string, { pending: boolean; error: string | null }>;
 
@@ -39,18 +41,12 @@ export function UnattachedClimbingEntries({
           <div className="space-y-3">
             {suggestions?.map((entry) => {
               const entryState = state[entry.id];
-              const result =
-                entry.sent === true
-                  ? "Sent"
-                  : entry.sent === false
-                    ? "Attempted"
-                    : "Status unknown";
               return (
                 <div
                   key={entry.id}
                   className="flex items-center justify-between gap-3 rounded-md border border-border p-3"
                 >
-                  <div>
+                  <div className="min-w-0 flex-1">
                     <p className="font-medium">
                       {entry.routeName ?? (entry.climbType === "boulder" ? "Boulder" : "Route")}
                     </p>
@@ -58,20 +54,9 @@ export function UnattachedClimbingEntries({
                       {entry.sourceName ?? providerSourceLabel(entry.providerId)}
                     </p>
                     <p className="text-sm text-muted">
-                      {[
-                        entry.grade,
-                        result,
-                        entry.attemptCount === null
-                          ? null
-                          : `${entry.attemptCount} ${entry.attemptCount === 1 ? "attempt" : "attempts"}`,
-                        entry.locationName,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
+                      {entry.grade} · {formatClimbingAttemptResult(entry.sent, entry.attemptCount)}
                     </p>
-                    {entry.ascentType && (
-                      <p className="text-sm text-green-500">{entry.ascentType}</p>
-                    )}
+                    <ClimbingEntryContext context={entry.context} sent={entry.sent} />
                     {entryState?.error ? (
                       <p role="alert" className="text-sm text-red-400">
                         {entryState.error}

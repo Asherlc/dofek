@@ -27989,6 +27989,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Symptoms / evidence:** [CI run 36663664027, dependency-audit job](https://github.com/Asherlc/dofek/actions/runs/36663664027/job/109723969830) failed `pnpm audit --prod --audit-level=high --ignore-registry-errors`. The first failing report was `high | brace-expansion: DoS via uncontrolled recursion on nested brace groups causing stack exhaustion`; the command reported two high-severity advisories and exited 1. The same command reproduced the failure locally.
 - **Root cause / fix:** The existing global override pinned `brace-expansion` 5.0.9. Advisories reviewed on September 29 report stack-exhaustion vulnerabilities in that version and require 5.0.11 or newer ([nested-brace advisory](https://github.com/advisories/GHSA-qhr7-859c-m2p7), [comma-parser advisory](https://github.com/advisories/GHSA-6j4f-fj2g-mc7p)). Updated the existing global override to 5.0.12 and its separate CommonJS-compatible `minimatch@3` override from 1.1.18 to 1.1.21, then regenerated the lockfile. Versions were checked against the [npm registry](https://registry.npmjs.org/brace-expansion).
 - **Validation / remaining risk:** Installation, lint, all four root/server/web/mobile type checks, and 19,108 unit/mobile tests pass; the unchanged local production audit passes with no high-severity findings. The hosted rerun and remaining required CI must complete before merging. The expressly approved production release remains `525ad724bcf0e12ddd58699299010e526acfe2e6`; the dependency patch needs a subsequent release. No audit ignores, retries, timeouts, or thresholds were changed.
+
+
 ## 2026-09-29 — Superseded WHOOP workout remained visible through Apple Health
 
 - **Symptoms / user impact:** Activity `9b48239b-d9c0-4c7c-811f-2f7dccd05ea8`
@@ -28353,6 +28355,63 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   not pass. No retry, timeout, integrity bypass, or production operator write was
   introduced.
 
+## 2026-09-30 — Climbing context validation and migration ordering
+
+- **Symptoms / impact:** Climbing context implementation caught a migration
+  journal conflict with current main. Local analytics SQL lint also lost its
+  ClickHouse connection; production data was unchanged during this work.
+- **Evidence / cause:** The deployed Kaya migration has a later journal time
+  than main's Apple Health migration. A real upgrade from that Kaya history
+  failed with `relation "fitness.v_activity" does not exist`: timestamp-based
+  migration execution skipped the older pending view migration. A legacy
+  conversion fixture also failed SQLSTATE `23514` because the old paired
+  count/outcome constraint rejected clearing inferred counts. Separately,
+  `pnpm lint` failed with `RemoteDisconnected`; the Docker VM kernel recorded
+  global OOM killing ClickHouse at 15:37:39 UTC.
+- **Fix / validation:** With explicit approval, retained both historical SQL
+  bodies and the deployed Kaya identity, then ordered the Apple Health journal
+  entry after Kaya. The new context conversion drops the obsolete paired
+  constraint before changing counts. The [upgrade-history regressions](../src/db/climbing-migration-order.integration.test.ts),
+  [conversion tests](../src/db/climbing-context-migration.integration.test.ts),
+  and existing migrator tests pass (44 total), including repeat runs. Stopping
+  this workspace's idle DB/Redis/Redpanda freed memory; the unchanged full lint
+  command passed. Other workspaces' containers and volumes were preserved.
+- **Hosted validation:** Run [36740947351](https://github.com/Asherlc/dofek/actions/runs/36740947351)
+  failed Migration Lint at `xargs squawk` (16 online-migration safety warnings),
+  SQLFluff on the context migration (layout, unqualified ordinality, and
+  ambiguous `entry.*`), and analytics SQL lint at `ST03` for an unused
+  `location_source_versions` CTE. The conversion is an approved maintenance
+  operation: remove the unnecessary integer type rewrite, validate new CHECKs
+  before commit, enumerate view columns, and qualify ordinality. With explicit
+  approval, nine statement-specific Squawk annotations acknowledge only the
+  required renames, type conversions, and non-null constraint; all other checks
+  remain active. Squawk, SQLFluff, and migration policy now pass. The analytics
+  CTE is needed only by incremental builds; emit it with that branch and retain
+  real ClickHouse full/incremental hydration coverage. Full lint passes without
+  changing limits, retries, or gating.
+- **Final local validation:** Independent review identified refresh data loss
+  and missing CSV result/parent-only location coverage. Source-scoped upserts
+  now preserve foreign attachments, entry IDs, and detailed attempts; complete
+  responses retire missing raw records without deleting history. CSV retains
+  unfamiliar and absent labels, and OpenBeta accepts consistent parent-only
+  metadata. Runtime commit `0fd67a912` passes the full unit/mobile suite (19,271 tests), and all selected
+  database regressions pass (103 tests on the final merged branch). The runbook
+  states Kaya's actual since-only refresh scope instead of promising an
+  unenforced upper bound.
+- **Main integration:** After [PR #2855](https://github.com/Asherlc/dofek/pull/2855)
+  established the canonical Apple Health journal entry, retain its identity and
+  move only the unapplied context conversion to migration 0135 after it. The
+  migrator rejected the initial merged journal with `Migration journal
+  timestamps must be strictly increasing`; ordering the new entry resolves the
+  actual error. Both historical SQL bodies match main byte-for-byte. All three
+  applied histories, repeats, and the production-history fixture pass (51
+  migration/refresh tests). The fixture now creates the legacy tables described
+  by its history before applying the two pending migrations.
+- **Remaining gates:** Exact-commit hosted CI, verified backup restore,
+  and the separately approved [maintenance cutover](climbing-context.md#maintenance-cutover)
+  remain required. No migration integrity bypass, new retries, increased
+  timeouts, or permanent memory tuning was introduced.
+
 ## 2026-09-30 — OpenBeta connection errors concealed upstream failures
 
 - **Symptoms / impact:** A public-profile connection failed with the duplicated
@@ -28508,3 +28567,48 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   production audit passes with zero high findings, four moderate, and one low.
   Final source checks, current-head hosted CI, and normal deployment remain
   required. No audit suppression, gate change, retry, or timeout was added.
+
+## 2026-09-30 — Climbing context native checks wait for runners
+
+- **Evidence / impact:** Context [CI run 36751457185](https://github.com/Asherlc/dofek/actions/runs/36751457185)
+  passed 98 checks, including server/web, database, migration, and mutation gates.
+  At 17:53 UTC four Apple jobs had remained queued since 17:29 with no assigned
+  runner (`runner_id: 0`), across both `macos-26` and `macos-14`. This delays
+  the required review/merge gate; it does not authorize deployment.
+- **Cause / action:** The queue's cause remains unconfirmed. GitHub's
+  [status endpoint](https://www.githubstatus.com/api/v2/summary.json) reported
+  Actions operational, and prior main CI passed those runner configurations.
+  Preserve all gates, labels, and timeouts; no speculative workflow change was
+  made. A concurrent [OpenBeta fix](https://github.com/Asherlc/dofek/pull/2858)
+  required merging main again; preserve both the provider/context changes and
+  both incident records. Combined provider/client tests pass (77), all four
+  typechecks pass, and lint passes. Revalidate the new head's full suite and
+  hosted gates; queued native checks and release/restore approval remain open.
+
+## 2026-09-30 — Recovery follow-up preserves published climbing context
+
+- **Trigger and scope:** [PR #2852](https://github.com/Asherlc/dofek/pull/2852)
+  merged at 20:03 UTC, advancing main to `2f02f6d`. That made the focused
+  follow-up conflict with main and prevented its pull-request CI from starting.
+  Merge published main on the existing branch, preserve its structured metadata,
+  and retain only the reviewed OpenBeta date, Kaya committed-count, gRPC, and
+  operational documentation changes.
+- **Causal regression and direct fix:** On the published metadata schema, a
+  real PostgreSQL test commits one Kaya climb and then rejects a malformed
+  session. It first reproduced `recordsSynced: 0` instead of 1. Keep the counter
+  outside the error-handler scope while preserving rollback and fail-fast
+  processing. The OpenBeta UTC-boundary and numeric raw-payload assertions
+  continue to pass with main's structured metadata.
+- **Validation and remaining gates:** All four typechecks, complete lint,
+  frozen lockfile verification, and the unchanged production audit pass.
+  The full merged unit/mobile run passes 19,287 tests with 20 existing skips and
+  no worker errors. All 29 selected provider/migration PostgreSQL cases pass.
+  Independent parity checks retain all incoming feature source and the 134
+  deployed SQL/journal entries. Hosted CI and a successful live OpenBeta sync
+  remain required; mobile verification is still unavailable. Read-only
+  production inspection still finds migration 0135 unapplied. The published
+  [climbing-context maintenance procedure](climbing-context.md#maintenance-cutover)
+  requires reviewed-commit/window/scope approval, verified isolated restore,
+  and old readers/writers quiesced through conversion; the ordinary rolling
+  deployment alone does not satisfy that schema cutover.
+  No gate suppression, migration rewrite, timeout, or retry was added.

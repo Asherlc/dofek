@@ -13,12 +13,15 @@ import {
   signInToKaya,
 } from "@dofek/kaya-client";
 import { resolveProviderActivityType } from "@dofek/training/activity-types";
-import { eq } from "drizzle-orm";
+import {
+  type ClimbingLocationNode,
+  climbingMetadataSchema,
+} from "@dofek/training/climbing-context";
 import timezoneAt from "tz-lookup";
 import { z } from "zod";
+import { persistClimbingSessionEntries } from "../db/climbing-entry-sync.ts";
 import type { Database, SyncDatabase } from "../db/index.ts";
 import { upsertProviderActivity } from "../db/provider-activity-sync.ts";
-import { climbingEntry } from "../db/schema/activity.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import {
@@ -30,7 +33,6 @@ import type { SyncRun } from "./sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult, TokenSet } from "./types.ts";
 
 const scopesSchema = z.object({ kayaUserId: z.string() });
-const sentAscentTypes = new Set(["flash", "onsight", "redpoint", "repeat"]);
 const KAYA_ACCESS_TOKEN_REFRESH_INTERVAL_MS = 25 * 60_000;
 
 type TransactionalSyncDatabase = SyncDatabase & Pick<Database, "transaction">;
@@ -206,8 +208,8 @@ export class KayaSyncProvider implements SyncProvider {
               id: ascent.id,
               climb: ascent.climb,
               attempts: ascent.attempts,
-              sent: sentAscentTypes.has(ascent.ascent_type.name.toLowerCase()),
-              locationName: ascent.climb.gym?.name ?? ascent.gym?.name ?? session.gym?.name ?? null,
+              resultStyle: ascent.ascent_type.name,
+              gym: ascent.climb.gym ?? ascent.gym ?? session.gym,
               raw: ascent,
               kind: "ascent",
             })),
@@ -215,8 +217,8 @@ export class KayaSyncProvider implements SyncProvider {
               id: climb.id,
               climb,
               attempts: climb.attempts,
-              sent: false,
-              locationName: climb.gym?.name ?? session.gym?.name ?? null,
+              resultStyle: "Attempt",
+              gym: climb.gym ?? session.gym,
               raw: climb,
               kind: "attempted climb",
             })),
@@ -229,6 +231,30 @@ export class KayaSyncProvider implements SyncProvider {
                 externalId: record.id,
               });
             }
+            const locationPath: ClimbingLocationNode[] = [];
+            for (const kind of ["destination", "area", "subarea"] as const) {
+              const location = record.climb[kind];
+              if (location)
+                locationPath.push({ name: location.name, externalId: location.id, kind });
+            }
+            if (locationPath.length === 0 && record.gym) {
+              locationPath.push({ name: record.gym.name, externalId: record.gym.id, kind: "gym" });
+            }
+            const metadata = climbingMetadataSchema.parse({
+              locationPath,
+              board: record.climb.board
+                ? { name: record.climb.board.name, externalId: record.climb.board.id }
+                : null,
+              wallAngle:
+                record.climb.angle == null ? null : { value: record.climb.angle, unit: null },
+              climbStyle:
+                boulder || record.climb.lead == null
+                  ? null
+                  : record.climb.lead
+                    ? "lead"
+                    : "top-rope",
+              resultStyle: record.resultStyle,
+            });
             return {
               userId,
               providerId: this.id,
@@ -237,17 +263,20 @@ export class KayaSyncProvider implements SyncProvider {
               climbType: boulder ? ("boulder" as const) : ("route" as const),
               gradeSystem: boulder ? ("v_scale" as const) : ("yds" as const),
               grade: grade.name,
-              sent: record.sent,
+              ...metadata,
               attemptCount: record.attempts,
-              lead: boulder ? null : record.climb.lead,
               routeName: record.climb.name,
-              locationName: record.locationName,
               sourceName: this.name,
               raw: record.raw,
             };
           });
-          await transaction.delete(climbingEntry).where(eq(climbingEntry.activityId, row.id));
-          if (entries.length) await transaction.insert(climbingEntry).values(entries);
+          await persistClimbingSessionEntries(transaction, {
+            userId,
+            providerId: this.id,
+            activityId: row.id,
+            entries,
+            complete: true,
+          });
           return sessionRecords.length;
         });
         recordsSynced += sessionRecordsSynced;
