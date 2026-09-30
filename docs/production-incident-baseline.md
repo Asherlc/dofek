@@ -28172,13 +28172,19 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   observable in structured/job logs. Exhaustion records a failed processing
   stage and actionable client message, then reports the terminal failure to
   Sentry. Unexpected schema/write failures remain reportable.
+- **PR review fixes:** Shared sync jobs retain OpenBeta transport failures
+  while completing later providers and required post-sync work, then rethrow
+  for retry or terminal reporting. Dedicated provider jobs still propagate
+  immediately. Sync and worker responsibilities now have focused production
+  modules with matching test files below 1,000 lines; existing regression
+  cases were retained. See the [job architecture](../src/jobs/README.md).
 - **Validation:** Regression tests reproduced the non-retrying timeout and
   numeric-date schema failures before their fixes. Focused provider, processor,
   worker-event, and transport-classification tests pass. A real PostgreSQL
   integration test verifies numeric-date ingestion, raw-payload preservation,
   idempotent writes, and absence reconciliation. The complete Docker-free
-  unit/mobile run passed 19,157 tests, with 20 tests skipped. Root, server,
-  and web typechecks passed, along with repository sandbox lint.
+  unit/mobile run passed 19,167 tests after the refactor, with 20 tests skipped.
+  Root, server, and web typechecks passed, along with full repository lint.
 - **Local PR validation:** `pnpm lint` initially failed during dbt-backed
   SQL lint with `Failed to establish a new connection: [Errno 61] Connection
   refused`: this workspace's ClickHouse had been deliberately stopped after
@@ -28196,8 +28202,11 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   ([BullMQ retry semantics](https://docs.bullmq.io/guide/retrying-failing-jobs)).
   Future provider fixtures should be checked against upstream scalar
   serialization, and runbooks should identify which layer owns retries and
-  Sentry capture. Use the Sentry and systematic-debugging skills for similar
-  investigations.
+  Sentry capture. For similar investigations, inspect the issue's exact error
+  and event timeline, verify the upstream API contract, trace worker retry
+  handling, and reproduce the observed failure before changing behavior.
+  See the [Sentry investigation guide](sentry.md) and
+  [provider sync diagnostics](provider-sync-degradation-runbook.md).
 
 ## 2026-09-30 — OpenBeta connection errors concealed upstream failures
 
