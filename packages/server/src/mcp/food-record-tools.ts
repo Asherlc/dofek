@@ -20,6 +20,7 @@ import {
   reportUnexpectedFoodRecordError,
 } from "../services/food-record-service.ts";
 import { dayNutritionResourceUri } from "./app-resource.ts";
+import { registerAuthorizedTool } from "./authorized-tool.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { toDayNutritionPreview } from "./day-nutrition-output.ts";
 import { foodMutationTelemetryForTool, logFoodMutation } from "./mutation-telemetry.ts";
@@ -271,20 +272,22 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
     actor: { channel: "mcp", clientId: context.clientId },
   });
 
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["nutrition:read"],
     "search_food_entries",
     {
       title: "Search Food Entries",
       description: "Search effective food records in an exact date range.",
       annotations: readAnnotations,
-      inputSchema: {
+      inputSchema: z.object({
         start_date: dateSchema,
         end_date: dateSchema,
         query: z.string().trim().min(1).nullable().optional(),
         visibility: z.enum(["visible", "deleted", "all"]).optional(),
         cursor: foodRecordCursorSchema.nullable().optional(),
         limit: z.number().int().min(1).max(100).optional(),
-      },
+      }),
       outputSchema: mcpOutputSchemas.foodRecordSearch,
     },
     async ({ start_date, end_date, query, visibility, cursor, limit }) => {
@@ -308,13 +311,15 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
     },
   );
 
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["nutrition:read"],
     "get_food_entry",
     {
       title: "Get Food Entry",
       description: "Return one effective food record with its provenance and version.",
       annotations: readAnnotations,
-      inputSchema: { record_id: z.uuid() },
+      inputSchema: z.object({ record_id: z.uuid() }),
       outputSchema: mcpOutputSchemas.foodRecordDetail,
     },
     async ({ record_id }) => {
@@ -326,14 +331,16 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
     },
   );
 
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["nutrition:read", "nutrition:write"],
     "create_food_entry",
     {
       title: "Create Food Entry",
       description:
         "Create one itemized Dofek food record and return that day's calorie and macro preview.",
       annotations: mutationAnnotations,
-      inputSchema: {
+      inputSchema: z.object({
         request_id: z.uuid(),
         date: dateSchema,
         meal: z.enum(mealEnum.enumValues).nullable().optional(),
@@ -344,7 +351,7 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
         serving_unit: nullableNonemptyTextSchema.optional(),
         serving_weight_grams: z.number().finite().nonnegative().nullable().optional(),
         nutrients: z.record(nutrientIdSchema, nutrientAmountSchema),
-      },
+      }),
       outputSchema: mcpOutputSchemas.foodRecordMutation,
       _meta: mutationUiMeta,
     },
@@ -382,14 +389,16 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
     },
   );
 
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["nutrition:read", "nutrition:write"],
     "update_food_entry",
     {
       title: "Update Food Entry",
       description:
         "Append validated scalar and nutrient decisions to a food record and return that day's calorie and macro preview.",
       annotations: mutationAnnotations,
-      inputSchema: {
+      inputSchema: z.object({
         ...targetInputSchema,
         set: z.object({
           date: dateSchema.optional(),
@@ -404,7 +413,7 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
         clear: z.array(editableFieldSchema),
         nutrient_set: z.record(nutrientIdSchema, nullableNutrientAmountSchema),
         nutrient_clear: z.array(nutrientIdSchema),
-      },
+      }),
       outputSchema: mcpOutputSchemas.foodRecordMutation,
       _meta: mutationUiMeta,
     },
@@ -446,7 +455,9 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
       requestId: string;
     }) => Promise<FoodRecordMutationResult>,
   ) => {
-    server.registerTool(
+    registerAuthorizedTool(
+      server,
+      ["nutrition:read", "nutrition:write"],
       name,
       {
         title,
@@ -455,7 +466,7 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
           ...mutationAnnotations,
           destructiveHint: name === "delete_food_entry",
         },
-        inputSchema: targetInputSchema,
+        inputSchema: z.object(targetInputSchema),
         outputSchema: mcpOutputSchemas.foodRecordMutation,
         _meta: mutationUiMeta,
       },
@@ -489,17 +500,19 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
     (input) => service.restore(input),
   );
 
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["nutrition:read"],
     "get_food_entry_history",
     {
       title: "Get Food Entry History",
       description: "Return paginated food record operations and provenance.",
       annotations: readAnnotations,
-      inputSchema: {
+      inputSchema: z.object({
         record_id: z.uuid(),
         cursor: z.string().nullable().optional(),
         limit: z.number().int().min(1).max(100).optional(),
-      },
+      }),
       outputSchema: mcpOutputSchemas.foodRecordHistory,
     },
     async ({ record_id, cursor, limit }) => {

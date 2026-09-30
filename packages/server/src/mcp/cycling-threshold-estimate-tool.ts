@@ -8,6 +8,7 @@ import {
 } from "../repositories/cycling-threshold-estimator.ts";
 import { CyclingThresholdRepository } from "../repositories/cycling-threshold-repository.ts";
 import { NearbyWeightRepository } from "../repositories/nearby-weight-repository.ts";
+import { registerAuthorizedTool } from "./authorized-tool.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { requireMcpScope } from "./token-repository.ts";
 import { cyclingThresholdEstimateOutputSchema } from "./tool-output.ts";
@@ -19,20 +20,22 @@ export function registerCyclingThresholdEstimateTool(
   server: McpServer,
   context: DofekMcpContext,
 ): void {
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["activity:read"],
     "estimate_cycling_threshold",
     {
       title: "Estimate Cycling Threshold",
       description:
         "Return the best-supported or selected cycling threshold method with uncertainty, assumptions, source efforts, activity IDs, and nearby body-weight provenance. Calculated values are never labeled measured FTP.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         start_date: dateSchema,
         end_date: dateSchema,
         method: z.enum(CYCLING_THRESHOLD_METHODS).optional(),
         modalities: z.array(z.string().min(1)).max(20).optional(),
         providers: z.array(z.string().min(1)).max(50).optional(),
-      },
+      }),
       outputSchema: cyclingThresholdEstimateOutputSchema,
     },
     async ({ start_date, end_date, method, modalities, providers }) => {

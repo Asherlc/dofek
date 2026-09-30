@@ -173,10 +173,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isSchemaRecord(value: unknown): value is Record<string, z.ZodType> {
-  return isRecord(value) && Object.values(value).every((schema) => schema instanceof z.ZodType);
-}
-
 function registeredToolFromCall(call: unknown): [string, RegisteredTool] {
   if (!Array.isArray(call) || typeof call[0] !== "string") {
     throw new Error("Unexpected registerTool call");
@@ -187,7 +183,7 @@ function registeredToolFromCall(call: unknown): [string, RegisteredTool] {
     !isRecord(config) ||
     !isRecord(config.annotations) ||
     !Object.values(config.annotations).every((value) => typeof value === "boolean") ||
-    !isSchemaRecord(config.inputSchema) ||
+    !(config.inputSchema instanceof z.ZodObject) ||
     !(config.outputSchema instanceof z.ZodType) ||
     typeof handler !== "function"
   ) {
@@ -197,7 +193,7 @@ function registeredToolFromCall(call: unknown): [string, RegisteredTool] {
     call[0],
     {
       annotations: config.annotations,
-      inputSchema: config.inputSchema,
+      inputSchema: config.inputSchema.shape,
       outputSchema: config.outputSchema,
       meta: config._meta,
       handler,
@@ -326,6 +322,7 @@ describe("registerFoodRecordTools", () => {
     ]) {
       expect(tool(name).meta).toEqual({
         ui: { resourceUri: "ui://dofek/day-nutrition.html" },
+        securitySchemes: [{ type: "oauth2", scopes: ["nutrition:read", "nutrition:write"] }],
       });
     }
   });
@@ -695,8 +692,9 @@ describe("registerFoodRecordTools", () => {
       ["get_food_entry", { record_id: recordId }],
       ["get_food_entry_history", { record_id: recordId }],
     ] as const) {
-      await expect(tool(name).handler(input)).rejects.toMatchObject({
-        code: "insufficient_scope",
+      await expect(tool(name).handler(input)).resolves.toMatchObject({
+        isError: true,
+        _meta: { "mcp/www_authenticate": [expect.stringContaining('error="insufficient_scope"')] },
       });
     }
     expect(mocks.search).not.toHaveBeenCalled();
@@ -716,7 +714,10 @@ describe("registerFoodRecordTools", () => {
         expected_version: version,
         request_id: requestId,
       }),
-    ).rejects.toMatchObject({ code: "insufficient_scope" });
+    ).resolves.toMatchObject({
+      isError: true,
+      _meta: { "mcp/www_authenticate": [expect.stringContaining('error="insufficient_scope"')] },
+    });
     expect(mocks.delete).not.toHaveBeenCalled();
   });
 
