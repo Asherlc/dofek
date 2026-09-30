@@ -74,7 +74,7 @@ function tick(overrides: Record<string, unknown> = {}): Record<string, unknown> 
     climbId: "climb-1",
     style: "Lead",
     attemptType: "Redpoint",
-    dateClimbed: "2026-08-10",
+    dateClimbed: Date.parse("2026-08-10T00:00:00.000Z"),
     grade: "5.10a",
     source: "OB",
     user: { username: "climber", displayName: "Climber" },
@@ -285,7 +285,7 @@ describe("OpenBetaProvider", () => {
             name: "Blue Problem",
             grade: "V4",
             attemptType: "Attempt",
-            dateClimbed: "2026-08-11",
+            dateClimbed: Date.parse("2026-08-11T00:00:00.000Z"),
             climb: {
               uuid: "climb-uuid-2",
               name: "Blue Problem",
@@ -353,6 +353,30 @@ describe("OpenBetaProvider", () => {
     if (!(reconciliationQuery instanceof SQL)) throw new Error("Expected reconciliation SQL");
     expect(new PgDialect().sqlToQuery(reconciliationQuery).params).toContain("openbeta:tick-1");
   });
+
+  it.each([
+    [-1, "1969-12-31"],
+    [0, "1970-01-01"],
+    [Date.parse("2026-08-10T00:00:00.000Z"), "2026-08-10"],
+    [Date.parse("2026-08-10T23:59:59.999Z"), "2026-08-10"],
+  ])(
+    "imports the upstream Date scalar %s without changing the raw timestamp",
+    async (dateClimbed, unattachedDate) => {
+      const upstreamTick = tick({ dateClimbed });
+      const provider = new OpenBetaProvider(
+        vi.fn().mockResolvedValue(graphqlResponse({ userTicks: [upstreamTick] })),
+      );
+      const { db, climbingEntryValues } = makeDb();
+
+      await expect(provider.sync(makeRun(db))).resolves.toMatchObject({
+        recordsSynced: 1,
+        errors: [],
+      });
+      expect(climbingEntryValues).toHaveBeenCalledWith(
+        expect.objectContaining({ unattachedDate, raw: expect.objectContaining({ dateClimbed }) }),
+      );
+    },
+  );
 
   it("maps supported grade systems and tick fallbacks", async () => {
     const fetchFn = vi.fn().mockResolvedValue(
@@ -498,24 +522,27 @@ describe("OpenBetaProvider", () => {
     );
   });
 
-  it("reports invalid dates with the tick id and empty-value marker", async () => {
-    const fetchFn = vi.fn().mockResolvedValue(
-      graphqlResponse({
-        userTicks: [tick({ _id: "missing-date", name: null, dateClimbed: null })],
-      }),
-    );
-    const { db } = makeDb();
-    const provider = new OpenBetaProvider(fetchFn);
+  it.each([null, Number.MAX_SAFE_INTEGER, 8.64e15])(
+    "reports invalid date %s with the tick id",
+    async (dateClimbed) => {
+      const fetchFn = vi.fn().mockResolvedValue(
+        graphqlResponse({
+          userTicks: [tick({ _id: "missing-date", name: null, dateClimbed })],
+        }),
+      );
+      const { db } = makeDb();
+      const provider = new OpenBetaProvider(fetchFn);
 
-    const result = await provider.sync(makeRun(db));
+      const result = await provider.sync(makeRun(db));
 
-    expect(result.errors).toEqual([
-      expect.objectContaining({
-        externalId: "missing-date",
-        message: "Skipped OpenBeta tick missing-date: invalid date (empty).",
-      }),
-    ]);
-  });
+      expect(result.errors).toEqual([
+        expect.objectContaining({
+          externalId: "missing-date",
+          message: `Skipped OpenBeta tick missing-date: invalid date ${dateClimbed ?? "(empty)"}.`,
+        }),
+      ]);
+    },
+  );
 
   it("follows the OpenBeta offset pagination contract", async () => {
     const firstPage = Array.from({ length: 100 }, (_, index) => tick({ _id: `tick-${index + 1}` }));
@@ -542,6 +569,8 @@ describe("OpenBetaProvider", () => {
     ["invalid style", tick({ style: "Unknown" })],
     ["invalid attempt type", tick({ attemptType: "Unknown" })],
     ["invalid source", tick({ source: "Unknown" })],
+    ["invalid date scalar", tick({ dateClimbed: "2026-08-10" })],
+    ["fractional date scalar", tick({ dateClimbed: 0.5 })],
     ["invalid user payload", tick({ user: { username: 42, displayName: null } })],
     ["invalid grades payload", tick({ climb: climb({ grades: { yds: 5.1 } }) })],
     ["invalid climb type payload", tick({ climb: climb({ type: { bouldering: "false" } }) })],
@@ -565,7 +594,7 @@ describe("OpenBetaProvider", () => {
   it("does not reconcile a complete response when one tick has an invalid date", async () => {
     const fetchFn = vi.fn().mockResolvedValue(
       graphqlResponse({
-        userTicks: [tick(), tick({ _id: "bad-date", dateClimbed: "not-a-date" })],
+        userTicks: [tick(), tick({ _id: "bad-date", dateClimbed: Number.MAX_SAFE_INTEGER })],
       }),
     );
     const { db } = makeDb();
@@ -623,7 +652,7 @@ describe("OpenBetaProvider", () => {
     const fetchFn = vi.fn().mockResolvedValue(
       graphqlResponse({
         userTicks: [
-          tick({ dateClimbed: "2026-02-30" }),
+          tick({ dateClimbed: Number.MAX_SAFE_INTEGER }),
           tick({
             _id: "tick-2",
             grade: null,

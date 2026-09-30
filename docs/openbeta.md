@@ -32,7 +32,10 @@ secret-token connections stay masked according to the shared
 Each supported tick becomes one standalone `fitness.climbing_entry` row:
 
 - `external_id` is `openbeta:{tick-id}`.
-- `unattached_date` is the tick's date-only `dateClimbed` value.
+- `unattached_date` is the UTC calendar date represented by `dateClimbed`.
+  OpenBeta's [Date scalar](https://github.com/OpenBeta/openbeta-graphql/blob/f1508b2479cc7658ac4341d59ec817836190d6d8/src/graphql/common/DateScalar.ts)
+  serializes integer epoch milliseconds; the server converts that timestamp
+  without changing the numeric value retained in `raw`.
 - boulders use V-scale first, then Font; routes use YDS first, then French,
   UIAA, Ewbank, or Brazilian Crux when available.
 - `sent` is true for send-style attempt types and false for `Attempt`; a missing

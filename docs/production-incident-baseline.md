@@ -28436,3 +28436,75 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   operator cannot test it now; mobile issues remain open pending device
   verification or new diagnostic evidence. No new retry, timeout, integrity
   bypass, or production SSH write was introduced.
+
+## 2026-09-30 — OpenBeta tick dates mismatched the upstream scalar
+
+- **Symptoms and evidence:** [DOFEK-SERVER-6M](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6M)
+  rejected six ticks in `fetchGraphQL` at 17:30 UTC on `bffc564`. The first
+  validation error was `Invalid input: expected string, received number` at
+  `userTicks[0].dateClimbed`; the scheduled-sync alert reopened.
+- **Root cause and direct fix:** The integration modeled the upstream
+  [Date scalar](https://github.com/OpenBeta/openbeta-graphql/blob/f1508b2479cc7658ac4341d59ec817836190d6d8/src/graphql/common/DateScalar.ts)
+  as a string, although its serializer returns integer epoch milliseconds.
+  Match the numeric contract, derive the UTC calendar date on the server,
+  and preserve the original numeric timestamp in the raw record.
+- **Validation and remaining risk:** Numeric fixtures first reproduced the
+  production schema rejection in both unit tests and a real PostgreSQL sync.
+  The corrected provider passes all 41 unit cases and the PostgreSQL upsert,
+  absence reconciliation, UTC date-boundary, and raw-payload assertions.
+  Current-head CI, normal deployment, and a successful live OpenBeta sync are
+  still required. The separate upstream HTTP 504 remains an external failure;
+  no new retry, timeout, fallback, or client-side calculation was added.
+
+## 2026-09-30 — Approved historical projection maintenance
+
+- **Operator authorization:** The operator approved the two partition-scoped
+  `MATERIALIZE PROJECTION` statements, one table at a time, with an explicit
+  one-time production SSH exception. Bounds are sensor at most 40 million rows
+  and 1 GiB physical bytes, location at most 25 million rows and 1 GiB,
+  at least 32 GiB free disk, and at most 6 GiB tracked memory before submission
+  within the existing 13 GiB ClickHouse container cap. Other production SSH
+  actions remain read-only.
+- **Checkpoint and evidence:** Sensor mutation `mutation_56404.txt` completed
+  with zero remaining parts and no failure reason. One active physical part
+  retained 4,972 masked rows and no projection, while a direct query returned
+  zero visible rows. A local ClickHouse 26.8.2.7 fixture reproduces successful
+  materialization with an empty projection over a fully deleted part. The
+  [documented delete mask](https://clickhouse.com/docs/reference/statements/delete#how-lightweight-deletes-work-internally-in-clickhouse)
+  hides rows until later merges physically remove them.
+- **Approved coverage and location checkpoint:** The operator approved checking
+  query-visible coverage while separately proving every projection-less part
+  is masked and empty. A stable before/after inventory verified all seven such
+  sensor parts have delete masks and zero visible rows. Fresh submission bounds
+  passed: sensor 35,866,398 rows / 691,760,299 bytes, location 19,984,781 rows /
+  588,533,051 bytes, free disk 68,012,294,144 bytes, and tracked memory
+  1,460,650,484 bytes. Readiness returned HTTP 200 with no last failure.
+  Location mutation `mutation_32322.txt` completed with zero remaining parts and
+  no failure reason; all location parts have the projection.
+- **Status and follow-up:** Both exact freshness aggregates naturally select
+  their projections. The next scheduled unscoped route build still needs its
+  post-maintenance query-log and worker-cycle verification.
+  [DOFEK-SERVER-6C](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6C)
+  remains unresolved until both tables' coverage, natural query plans, bounded
+  reads, route behavior, and healthy worker cycles are verified. No extra
+  mutation or forced optimizer setting was used.
+
+## 2026-09-30 — Dependency audit blocked the recovery PR
+
+- **Exact failure:** [PR #2857's dependency-audit job](https://github.com/Asherlc/dofek/actions/runs/36756351164/job/110028687753)
+  ran `pnpm audit --prod --audit-level=high --ignore-registry-errors`. At
+  18:13:40 UTC its first high-severity finding named `@grpc/grpc-js`; the
+  command exited 1. A local audit without registry-error suppression reproduced
+  the same finding.
+- **Root cause and direct fix:** The existing workspace override pins
+  `@grpc/grpc-js` to 1.14.4. The
+  [reviewed advisory](https://github.com/advisories/GHSA-m9gg-hp2v-232j),
+  added to the advisory database on September 30, identifies versions
+  `>=1.14.0 <1.14.5` as vulnerable. Move the existing pin and lockfile to
+  [upstream 1.14.5](https://github.com/grpc/grpc-node/releases/tag/%40grpc/grpc-js%401.14.5),
+  verified as the latest stable npm release. Only that installed package changes;
+  its child dependencies remain unchanged.
+- **Validation and follow-up:** Frozen installation succeeds. The same local
+  production audit passes with zero high findings, four moderate, and one low.
+  Final source checks, current-head hosted CI, and normal deployment remain
+  required. No audit suppression, gate change, retry, or timeout was added.

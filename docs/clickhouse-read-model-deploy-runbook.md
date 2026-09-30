@@ -416,8 +416,30 @@ ORDER BY create_time DESC;
 Record each accepted mutation as the resume checkpoint. Do not resubmit while
 it is running, and stop on a non-empty `latest_fail_reason`; these progress
 fields are documented in [system.mutations](https://clickhouse.com/docs/operations/system-tables/mutations).
-Require completion and zero missing active parts before selecting the next
-partition. After all partitions are covered, verify natural selection with
+Require completion and zero uncovered query-visible rows before selecting the
+next partition. Every active part must have the expected projection or be
+separately verified as fully masked and empty. For each projection-less part,
+require `has_lightweight_delete = 1` in `system.parts` and run a part-filtered
+query that reads a base column, substituting the exact table and part name:
+
+```sql
+SELECT count() AS visible_rows, min(recorded_at), max(recorded_at)
+FROM analytics.activity_sensor_sample
+WHERE _part = '<uncovered-part-name>';
+```
+
+Require `visible_rows = 0` for every such part. Record the inventory before and
+after these queries; if the projection-less part names change, repeat the
+verification against the new inventory. An absent projection alone is never
+evidence that a part is empty. ClickHouse's
+[lightweight-delete mask](https://clickhouse.com/docs/reference/statements/delete#how-lightweight-deletes-work-internally-in-clickhouse)
+hides rows before later merges remove them physically, and
+[system.parts](https://clickhouse.com/docs/reference/system-tables/parts)
+reports whether a part has that mask. This exception concerns internal delete
+masks; application `is_deleted` tombstone rows remain query-visible and must
+retain projection coverage so they invalidate routes.
+
+After all partitions are covered, verify natural selection with
 `EXPLAIN projections = 1` for the two exact aggregates above, and observe an
 unscoped incremental route build. Require both projection names in its
 `system.query_log.projections`, bounded read rows, successful route/tombstone
