@@ -1,5 +1,12 @@
 # Production Incident Baseline
 
+## 2026-09-30 — ChatGPT nutrition save lacks write authorization
+
+- **Status / impact:** Unresolved. After reconnecting, the user reported `MCP token requires scope: nutrition:write` when saving nutrition. The save was rejected; it was not logged.
+- **Evidence:** Read-only production inspection found a refresh token for the real connection, confirming automatic refresh issuance. Its grant, access tokens, and refresh token carry `health:read activity:read nutrition:read providers:read sync:write`, without `nutrition:write` or `health:write`. Protected-resource discovery advertises both write scopes.
+- **Cause / proposed fix:** Dofek enforces tool scopes but omits per-tool `securitySchemes` and structured `_meta["mcp/www_authenticate"]` challenges. These are the two required parts of ChatGPT's tool-level consent flow in [OpenAI's authentication guidance](https://developers.openai.com/plugins/build/auth/#triggering-authentication-ui). Add declarations matching each tool's enforced permissions and structured insufficient-scope challenges; retain consent and scope validation. Approach approval and implementation are pending.
+- **Follow-up:** Validate discovery and a write-scope upgrade end to end, rather than treating successful initialization and tool listing as proof that writes are authorized. Do not expand existing grants manually.
+
 ## 2026-09-29 — Working ChatGPT connection needs automatic OAuth refresh issuance
 
 - **Status / user impact:** The user confirmed that ChatGPT connection and tool requests work after the opaque-token fix. Read-only production checks found one current grant and access token but no refresh token, so the connection could not refresh after access-token expiry.
