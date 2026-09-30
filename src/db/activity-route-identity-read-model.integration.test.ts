@@ -47,6 +47,15 @@ describe("activity route identity read model", () => {
     await client.close();
   });
 
+  it("completes an incremental refresh before any route sources have arrived", async () => {
+    await buildModel(client, database, true);
+    const result = await client.query({
+      query: `SELECT count() AS count FROM ${database}.activity_route_identity FINAL`,
+      format: "JSONEachRow",
+    });
+    expect(await result.json()).toEqual([{ count: 0 }]);
+  });
+
   it("marks a one-percent fragment and a large internal gap as partial", async () => {
     await seedRouteIdentityFixture(client, database, {
       provider: "strava",

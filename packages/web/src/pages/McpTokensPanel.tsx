@@ -27,9 +27,6 @@ const mcpScopeOptions: Array<{ value: McpScope; label: string }> = [
 ];
 
 const mcpScopeValues = mcpScopeOptions.map((option) => option.value);
-const defaultMcpScopeValues = mcpScopeValues.filter(
-  (scope) => scope !== "health:write" && scope !== "nutrition:write",
-);
 
 function formatTimestamp(value: Date | string | null): string {
   if (!value) return "Never";
@@ -64,7 +61,7 @@ export function McpTokensPanel() {
   const [name, setName] = useState("Codex");
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [selectedScopes, setSelectedScopes] = useState<Set<McpScope>>(
-    () => new Set(defaultMcpScopeValues),
+    () => new Set(mcpScopeValues),
   );
   const [createdToken, setCreatedToken] = useState<string | null>(null);
   const [editingTokenId, setEditingTokenId] = useState<string | null>(null);

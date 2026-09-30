@@ -165,10 +165,6 @@ export const climbingEntry = fitness.table(
     check("climbing_entry_grade_nonempty", sql`btrim(${table.grade}) <> ''`),
     check("climbing_entry_attempt_count_positive", sql`${table.attemptCount} > 0`),
     check(
-      "climbing_entry_aggregate_pair",
-      sql`(${table.sent} IS NULL) = (${table.attemptCount} IS NULL)`,
-    ),
-    check(
       "climbing_entry_wall_angle_range",
       sql`${table.wallAngleDegrees} IS NULL OR (${table.wallAngleDegrees} >= -90 AND ${table.wallAngleDegrees} <= 90)`,
     ),
