@@ -27882,11 +27882,24 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   sign-in and post-release safe diagnostic evidence remain pending.
 - **Final branch validation:** Independent whole-branch review found no
   blocking implementation findings. Workspace lint and root/server/web/mobile
-  typechecks passed. The full unit/mobile run passed 19,145 tests across 1,305
+  typechecks passed. After integrating main, the full unit/mobile run passed
+  19,131 tests across 1,304
   files, with 20 tests and two files skipped; the combined ClickHouse/Redis
   integration run passed 21/21. Existing Vitest deprecation and SQLFluff
   large-file/parser limitations remain tooling context. The reviewed changes
   still require PR CI, normal deployment, and the explicit rollout checks above.
+- **CI coverage correction:** [Stryker job 109671790413](https://github.com/Asherlc/dofek/actions/runs/36646657089/job/109671790413)
+  failed `Run Stryker` with `Final mutation score 50.00 under breaking threshold 75`.
+  Its initial tests passed, but the Redis exact-invalidation body had no unit
+  coverage: its real Redis regression belongs to the integration tier, which
+  mutation validation intentionally excludes. Added public-interface unit
+  tests for exact DEL/SREM targets and original command failures, retaining
+  the real Redis isolation test. The empty-body mutant failed the new tests;
+  restored code passed 20 focused tests, and the exact CI mutation command
+  then killed both mutants with a 100% score. No production behavior,
+  thresholds, exclusions, or retry settings changed. Generated native build
+  artifacts were preserved outside the source tree during local mutation
+  sandbox creation. The fresh hosted check remains required before readiness.
 - **Remaining risk / follow-up:** Strava requires user reconnection before
   syncing again. Deploy reviewed changes through the normal workflow, complete
   separately approved historical projection materialization, and verify
