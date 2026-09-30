@@ -28118,6 +28118,14 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   clickhouse` and writing its discovered ports with `pnpm compose:env --write`
   restored `pnpm lint:analytics-sql`. The code/policy lint and all type checks
   passed. See the [workspace setup procedure](../README.md#quick-start).
+- **Full local PR validation:** `pnpm test --run` passed 19,141 tests with
+  20 skipped and one failure: the deployment convergence test at
+  [deploy-web-stack.test.ts](../.github/workflows/deploy-web-stack.test.ts)
+  exceeded its 30-second test timeout. It passed unchanged in isolation
+  in 15.72 seconds. The reason for the slower full-suite execution remains
+  unconfirmed; no test timeout, retry, or production behavior was changed.
+  All 30 tests in that file subsequently passed unchanged in a full-file
+  rerun. Hosted CI remains the validation follow-up.
 - **Follow-up:** After rollout, retry the affected profile and inspect the
   retained server error if it fails. Provider connection investigations
   should distinguish input errors from API and schema failures before
