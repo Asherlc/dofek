@@ -97,6 +97,39 @@ The site also exposes a Laravel session-login form at `GET /auth/login` with a
 POST to `/auth/login/email`. It was deliberately not implemented because the
 public tick export already supplied the required tick fields during probing.
 
+## Location, angle, and board coverage
+
+A read-only tick-export audit on 2026-09-29 confirmed the 15 columns listed
+above. The current importer copies the complete `Location` string into
+`fitness.climbing_entry.location_name` and retains the exported row in `raw`.
+It does not split the path into separate destination, area, or subarea fields.
+For [Cragmont Crack](https://www.mountainproject.com/route/105734660/cragmont-crack),
+the location path is:
+
+```text
+California > San Francisco Bay Area > East Bay Area > Berkeley > Cragmont Park > Northeast Face
+```
+
+This is a hierarchy of names, not location IDs or a fixed three-level model.
+The same nesting appears on the public
+[Northeast Face page](https://www.mountainproject.com/area/105734057/northeast-face).
+
+Separate read-only requests to the undocumented
+[route endpoint](https://www.mountainproject.com/api/v2/routes/105734660)
+and [area endpoint](https://www.mountainproject.com/api/v2/areas/105734057)
+returned a parent area ID/name, coordinates, and an area breadcrumb. The route
+parent was `{ id: 105734057, name: "Northeast Face" }`; that area's parent was
+`{ id: 105733893, name: "Cragmont Park" }`. These endpoints could supply
+structured location references through additional requests, but the importer
+currently uses only the CSV export. They remain observed application endpoints,
+not a supported API contract.
+
+Neither the checked export nor the sampled route responses supplied a dedicated
+numeric wall-angle or board field. Route descriptions may describe a slab or
+overhang, but that text does not establish an exact angle. Compare the explicit
+Kaya fields in [kaya.md](kaya.md#observed-location-and-angle-values) and
+OpenBeta's location hierarchy in [openbeta.md](openbeta.md#location-angle-and-board-coverage).
+
 ## Risks
 
 - Private ticks may prevent reading an otherwise valid profile; this was not

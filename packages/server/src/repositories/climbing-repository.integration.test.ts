@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
@@ -26,7 +26,7 @@ describe("ClimbingRepository PostgreSQL summaries", () => {
   let activityId: string;
   let activityMemberId: string;
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     context = await setupTestDatabase();
     await context.db.execute(sql`INSERT INTO fitness.provider (id, name)
       VALUES ('climbing-summary-test', 'Climbing Summary Test'),
@@ -66,7 +66,7 @@ describe("ClimbingRepository PostgreSQL summaries", () => {
        'absent-send', 'boulder', 'v_scale', 'V8', TRUE, 5, NOW(), '{}'::jsonb)`);
   }, 60_000);
 
-  afterAll(async () => {
+  afterEach(async () => {
     await context?.cleanup();
   });
 
@@ -193,5 +193,57 @@ describe("ClimbingRepository PostgreSQL summaries", () => {
     expect((await repository.getSessionSummaries(30)).map((row) => row.toDetail())).toContainEqual(
       expect.objectContaining({ activityId: offsetActivity.group_id, date: expectedDate }),
     );
+  });
+
+  it("retains known sends and unsuccessful climbs when attempt counts are unknown", async () => {
+    await context.db.execute(sql`DELETE FROM fitness.activity
+      WHERE user_id = ${TEST_USER_ID} AND provider_id = 'climbing-summary-test' AND external_id = 'unknown-count-session'`);
+    const [activity] = await executeWithSchema(
+      context.db,
+      activityIdSchema,
+      sql`
+      INSERT INTO fitness.activity (
+        provider_id, user_id, external_id, canonical_type, provider_type,
+        started_at, ended_at, local_time_source
+      ) VALUES (
+        'climbing-summary-test', ${TEST_USER_ID}, 'unknown-count-session', 'climbing', 'climbing',
+        NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day' + INTERVAL '1 hour', 'unknown'
+      ) RETURNING id::text AS id, group_id::text AS group_id`,
+    );
+    if (!activity) throw new Error("Failed to seed unknown-count climbing activity");
+    await context.db.execute(sql`INSERT INTO fitness.climbing_entry (
+      user_id, provider_id, activity_id, external_id, climb_type, grade_system, grade, sent, attempt_count
+    ) VALUES
+      (${TEST_USER_ID}, 'climbing-summary-test', ${activity.id}, 'unknown-count-send', 'boulder', 'v_scale', 'V5', TRUE, NULL),
+      (${TEST_USER_ID}, 'climbing-summary-test', ${activity.id}, 'unknown-count-attempt', 'boulder', 'v_scale', 'V5', FALSE, NULL),
+      (${TEST_USER_ID}, 'climbing-summary-test', ${activity.id}, 'known-count-attempt', 'boulder', 'font', '6C', FALSE, 3),
+      (${TEST_USER_ID}, 'climbing-summary-test', ${activity.id}, 'unknown-outcome', 'route', 'yds', '5.12a', NULL, 2)`);
+
+    const repository = new ClimbingRepository(context.db, TEST_USER_ID, "America/Los_Angeles");
+    expect(
+      (await repository.getActivityEntries(activity.group_id)).map((entry) => entry.toDetail()),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ sent: true, attemptCount: null, grade: "V5" }),
+        expect.objectContaining({ sent: false, attemptCount: null, grade: "V5" }),
+        expect.objectContaining({ sent: null, attemptCount: 2, climbType: "route" }),
+      ]),
+    );
+    expect((await repository.getVolumeByGrade(30)).map((entry) => entry.toDetail())).toContainEqual(
+      expect.objectContaining({ grade: "V5", attempts: null, sends: 1 }),
+    );
+    expect(
+      (await repository.getSessionSummaries(30)).map((entry) => entry.toDetail()),
+    ).toContainEqual(
+      expect.objectContaining({
+        activityId: activity.group_id,
+        attempts: null,
+        sends: 1,
+        hardestBoulderGrade: "V5",
+      }),
+    );
+    expect(
+      (await repository.getGradeProgression(30)).map((entry) => entry.toDetail()),
+    ).toContainEqual(expect.objectContaining({ grade: "V5" }));
   });
 });

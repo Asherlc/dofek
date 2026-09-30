@@ -20,6 +20,21 @@ const gymSchema = locationSchema.extend({
   region: z.string().nullable().optional(),
   country: z.string().nullable().optional(),
 });
+const climbSchema = z.object({
+  id: idSchema,
+  name: z.string().nullable(),
+  lead: z.boolean(),
+  climb_type: z.object({ id: idSchema, name: z.string() }),
+  grade: z
+    .object({
+      id: idSchema,
+      name: z.string().refine((name) => name.trim().length > 0, "Grade must not be blank"),
+      climb_type_group: z.string(),
+    })
+    .nullable(),
+  gym: gymSchema.nullable(),
+});
+const attemptCountSchema = z.number().int().positive().nullable();
 const sessionSchema = z.object({
   id: idSchema,
   start_time: z.string(),
@@ -28,6 +43,7 @@ const sessionSchema = z.object({
   gym: gymSchema.nullable(),
   board: locationSchema.nullable().optional(),
   destination: locationSchema.nullable().optional(),
+  attempted_climbs: z.array(climbSchema.extend({ attempts: attemptCountSchema })),
 });
 const ascentSchema = z.object({
   id: idSchema,
@@ -36,17 +52,10 @@ const ascentSchema = z.object({
   comment: z.string().nullable().optional(),
   rating: z.number().nullable().optional(),
   stiffness: z.number().nullable().optional(),
-  attempts: z.number().int().positive().nullable(),
+  attempts: attemptCountSchema,
   ascent_type: z.object({ id: idSchema, name: z.string() }),
   gym: gymSchema.nullable().optional(),
-  climb: z.object({
-    id: idSchema,
-    name: z.string().nullable(),
-    lead: z.boolean(),
-    climb_type: z.object({ id: idSchema, name: z.string() }),
-    grade: z.object({ id: idSchema, name: z.string(), climb_type_group: z.string() }).nullable(),
-    gym: gymSchema.nullable(),
-  }),
+  climb: climbSchema,
 });
 
 export type KayaSession = z.infer<typeof sessionSchema>;
@@ -167,5 +176,5 @@ function browserHeaders(): Record<string, string> {
   return { "content-type": "application/json", origin: KAYA_APP_URL, referer: `${KAYA_APP_URL}/` };
 }
 
-const SESSION_QUERY = `query sessionsForUser($user_id: ID!, $offset: Int!, $count: Int!) { sessionsForUser(user_id: $user_id, offset: $offset, count: $count) { id start_time end_time notes gym { id name address city region country latitude longitude } board { id name latitude longitude } destination { id name latitude longitude } } }`;
+const SESSION_QUERY = `query sessionsForUser($user_id: ID!, $offset: Int!, $count: Int!) { sessionsForUser(user_id: $user_id, offset: $offset, count: $count) { id start_time end_time notes gym { id name address city region country latitude longitude } board { id name latitude longitude } destination { id name latitude longitude } attempted_climbs { id attempts name lead climb_type { id name } grade { id name climb_type_group } gym { id name address city region country latitude longitude } } } }`;
 const ASCENT_QUERY = `query ascentsForUser($user_id: ID!, $offset: Int!, $count: Int!) { ascentsForUser(user_id: $user_id, offset: $offset, count: $count) { id session_id date comment rating stiffness attempts ascent_type { id name } gym { id name address city region country latitude longitude } climb { id name lead climb_type { id name } grade { id name climb_type_group } gym { id name address city region country latitude longitude } } } }`;

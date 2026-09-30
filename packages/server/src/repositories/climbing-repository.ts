@@ -41,7 +41,7 @@ export interface ClimbingVolumeByGradeRow {
   gradeSystem: ClimbingGradeSystem;
   grade: string;
   gradeSortValue: number;
-  attempts: number;
+  attempts: number | null;
   sends: number;
 }
 
@@ -62,7 +62,7 @@ export interface ClimbingSessionSummaryRow {
   date: string;
   name: string;
   locationName: string | null;
-  attempts: number;
+  attempts: number | null;
   sends: number;
   hardestBoulderGrade: string | null;
   hardestBoulderGradeSortValue: number | null;
@@ -105,7 +105,7 @@ const volumeByGradeRowSchema = z.object({
   climb_type: climbTypeSchema,
   grade_system: gradeSystemSchema,
   grade: z.string(),
-  attempts: z.coerce.number(),
+  attempts: z.coerce.number().nullable(),
   sends: z.coerce.number(),
 });
 const sessionEntryRowSchema = z.object({
@@ -113,8 +113,8 @@ const sessionEntryRowSchema = z.object({
   session_date: dateStringSchema,
   name: z.string(),
   location_name: z.string().nullable(),
-  attempt_count: z.coerce.number(),
-  sent: z.boolean(),
+  attempt_count: z.coerce.number().nullable(),
+  sent: z.boolean().nullable(),
   climb_type: climbTypeSchema,
   grade_system: gradeSystemSchema,
   grade: z.string(),
@@ -372,7 +372,9 @@ export class ClimbingRepository extends BaseRepository {
             ce.climb_type,
             ce.grade_system,
             ce.grade,
-            SUM(CASE WHEN detail.attempt_count > 0 THEN detail.attempt_count ELSE ce.attempt_count END) AS attempts,
+            CASE WHEN COUNT(CASE WHEN detail.attempt_count > 0 THEN detail.attempt_count ELSE ce.attempt_count END) = COUNT(*)
+              THEN SUM(CASE WHEN detail.attempt_count > 0 THEN detail.attempt_count ELSE ce.attempt_count END)
+              ELSE NULL END AS attempts,
             COUNT(*) FILTER (WHERE CASE WHEN detail.attempt_count > 0 THEN detail.sent ELSE ce.sent END)::int AS sends
           FROM climbing_entries AS ce
           LEFT JOIN LATERAL (
@@ -380,7 +382,6 @@ export class ClimbingRepository extends BaseRepository {
             FROM fitness.climbing_attempt AS attempt
             WHERE attempt.climbing_entry_id = ce.id
           ) AS detail ON true
-          WHERE CASE WHEN detail.attempt_count > 0 THEN detail.attempt_count ELSE ce.attempt_count END IS NOT NULL
           GROUP BY ce.climb_type, ce.grade_system, ce.grade`,
     );
     const byDisplayGrade = new Map<string, ClimbingVolumeByGradeRow>();
@@ -390,7 +391,10 @@ export class ClimbingRepository extends BaseRepository {
       const key = `${row.climb_type}:${display.gradeSystem}:${display.grade}`;
       const current = byDisplayGrade.get(key);
       if (current) {
-        current.attempts += row.attempts;
+        current.attempts =
+          current.attempts === null || row.attempts === null
+            ? null
+            : current.attempts + row.attempts;
         current.sends += row.sends;
       } else {
         byDisplayGrade.set(key, {
@@ -429,9 +433,7 @@ export class ClimbingRepository extends BaseRepository {
             FROM fitness.climbing_attempt AS attempt
             WHERE attempt.climbing_entry_id = ce.id
           ) AS detail ON true
-          WHERE ${this.#activityWindowPredicate(days)}
-            AND CASE WHEN detail.attempt_count > 0 THEN detail.attempt_count ELSE ce.attempt_count END IS NOT NULL
-            AND CASE WHEN detail.attempt_count > 0 THEN detail.sent ELSE ce.sent END IS NOT NULL`,
+          WHERE ${this.#activityWindowPredicate(days)}`,
     );
     const summaries = new Map<string, ClimbingSessionSummaryRow>();
     for (const row of rows) {
@@ -450,7 +452,10 @@ export class ClimbingRepository extends BaseRepository {
       if (existing.locationName === null && row.location_name !== null) {
         existing.locationName = row.location_name;
       }
-      existing.attempts += row.attempt_count;
+      existing.attempts =
+        existing.attempts === null || row.attempt_count === null
+          ? null
+          : existing.attempts + row.attempt_count;
       if (row.sent) existing.sends += 1;
       const display = row.sent
         ? this.#displayGrade(row.climb_type, row.grade_system, row.grade)

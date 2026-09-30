@@ -51,6 +51,10 @@ type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
 
+export const UnknownAttemptCounts: Story = {
+  args: { data: volumeRows.map((row) => ({ ...row, attempts: null })) },
+};
+
 export const Loading: Story = {
   args: {
     data: [],

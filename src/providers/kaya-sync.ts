@@ -16,7 +16,7 @@ import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import { eq } from "drizzle-orm";
 import timezoneAt from "tz-lookup";
 import { z } from "zod";
-import type { SyncDatabase } from "../db/index.ts";
+import type { Database, SyncDatabase } from "../db/index.ts";
 import { upsertProviderActivity } from "../db/provider-activity-sync.ts";
 import { climbingEntry } from "../db/schema/activity.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
@@ -32,6 +32,17 @@ import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult, TokenSet }
 const scopesSchema = z.object({ kayaUserId: z.string() });
 const sentAscentTypes = new Set(["flash", "onsight", "redpoint", "repeat"]);
 const KAYA_ACCESS_TOKEN_REFRESH_INTERVAL_MS = 25 * 60_000;
+
+type TransactionalSyncDatabase = SyncDatabase & Pick<Database, "transaction">;
+
+function hasTransaction(db: SyncDatabase): db is TransactionalSyncDatabase {
+  return "transaction" in db && typeof db.transaction === "function";
+}
+
+function requireTransactionalDatabase(db: SyncDatabase): TransactionalSyncDatabase {
+  if (!hasTransaction(db)) throw new Error("Kaya sync requires a transactional database");
+  return db;
+}
 
 export class KayaSyncProvider implements SyncProvider {
   readonly id = "kaya";
@@ -123,6 +134,7 @@ export class KayaSyncProvider implements SyncProvider {
     }
     let client = new KayaClient(activeTokens.accessToken, this.fetchFn);
     try {
+      const database = requireTransactionalDatabase(run.db);
       let sessions: KayaSession[];
       let ascents: KayaAscent[];
       try {
@@ -147,7 +159,6 @@ export class KayaSyncProvider implements SyncProvider {
         ascentsBySession.set(ascent.session_id, list);
       }
       let recordsSynced = 0;
-      const errors: SyncError[] = [];
       for (const session of sessions) {
         const started = new Date(session.start_time);
         if (Number.isNaN(started.valueOf()) || started < run.window.since) continue;
@@ -155,75 +166,93 @@ export class KayaSyncProvider implements SyncProvider {
         const ended =
           parsedEnd && !Number.isNaN(parsedEnd.valueOf()) && parsedEnd > started ? parsedEnd : null;
         const localTimeContext = kayaSessionLocalTimeContext(session, started, ended);
-        const row = await upsertProviderActivity(
-          run.db,
-          {
-            providerId: this.id,
-            userId,
-            externalId: session.id,
-            activityType: resolveProviderActivityType("rock_climbing", "rock_climbing"),
-            startedAt: started,
-            endedAt: ended,
-            name: session.gym ? `Kaya climbing at ${session.gym.name}` : "Kaya climbing",
-            notes: session.notes ?? null,
-            sourceName: this.name,
-            timezone: localTimeContext.timezone,
-            startUtcOffsetMinutes: localTimeContext.startUtcOffsetMinutes,
-            endUtcOffsetMinutes: localTimeContext.endUtcOffsetMinutes,
-            localTimeSource: localTimeContext.source,
-            raw: session,
-          },
-          {
-            activityType: resolveProviderActivityType("rock_climbing", "rock_climbing"),
-            startedAt: started,
-            endedAt: ended,
-            name: session.gym ? `Kaya climbing at ${session.gym.name}` : "Kaya climbing",
-            notes: session.notes ?? null,
-            sourceName: this.name,
-            timezone: localTimeContext.timezone,
-            startUtcOffsetMinutes: localTimeContext.startUtcOffsetMinutes,
-            endUtcOffsetMinutes: localTimeContext.endUtcOffsetMinutes,
-            localTimeSource: localTimeContext.source,
-            raw: session,
-          },
-        );
-        if (!row) continue;
-        const sessionAscents = ascentsBySession.get(session.id) ?? [];
-        await run.db.delete(climbingEntry).where(eq(climbingEntry.activityId, row.id));
-        if (sessionAscents.length) {
-          await run.db.insert(climbingEntry).values(
-            sessionAscents.flatMap((ascent) => {
-              const boulder = ascent.climb.climb_type.name.toLowerCase().includes("boulder");
-              const grade = ascent.climb.grade;
-              if (!grade) {
-                errors.push({ message: "Kaya ascent is missing a grade", externalId: ascent.id });
-                return [];
-              }
-              return [
-                {
-                  userId,
-                  providerId: this.id,
-                  activityId: row.id,
-                  externalId: ascent.id,
-                  climbType: boulder ? ("boulder" as const) : ("route" as const),
-                  gradeSystem: boulder ? ("v_scale" as const) : ("yds" as const),
-                  grade: grade.name,
-                  sent: sentAscentTypes.has(ascent.ascent_type.name.toLowerCase()),
-                  attemptCount: ascent.attempts ?? 1,
-                  lead: boulder ? null : ascent.climb.lead,
-                  routeName: ascent.climb.name,
-                  locationName:
-                    ascent.climb.gym?.name ?? ascent.gym?.name ?? session.gym?.name ?? null,
-                  sourceName: this.name,
-                  raw: ascent,
-                },
-              ];
-            }),
+        const sessionRecordsSynced = await database.transaction(async (transaction) => {
+          const row = await upsertProviderActivity(
+            transaction,
+            {
+              providerId: this.id,
+              userId,
+              externalId: session.id,
+              activityType: resolveProviderActivityType("rock_climbing", "rock_climbing"),
+              startedAt: started,
+              endedAt: ended,
+              name: session.gym ? `Kaya climbing at ${session.gym.name}` : "Kaya climbing",
+              notes: session.notes ?? null,
+              sourceName: this.name,
+              timezone: localTimeContext.timezone,
+              startUtcOffsetMinutes: localTimeContext.startUtcOffsetMinutes,
+              endUtcOffsetMinutes: localTimeContext.endUtcOffsetMinutes,
+              localTimeSource: localTimeContext.source,
+              raw: session,
+            },
+            {
+              activityType: resolveProviderActivityType("rock_climbing", "rock_climbing"),
+              startedAt: started,
+              endedAt: ended,
+              name: session.gym ? `Kaya climbing at ${session.gym.name}` : "Kaya climbing",
+              notes: session.notes ?? null,
+              sourceName: this.name,
+              timezone: localTimeContext.timezone,
+              startUtcOffsetMinutes: localTimeContext.startUtcOffsetMinutes,
+              endUtcOffsetMinutes: localTimeContext.endUtcOffsetMinutes,
+              localTimeSource: localTimeContext.source,
+              raw: session,
+            },
           );
-          recordsSynced += sessionAscents.length;
-        }
+          if (!row) return 0;
+          const sessionAscents = ascentsBySession.get(session.id) ?? [];
+          const sessionRecords = [
+            ...sessionAscents.map((ascent) => ({
+              id: ascent.id,
+              climb: ascent.climb,
+              attempts: ascent.attempts,
+              sent: sentAscentTypes.has(ascent.ascent_type.name.toLowerCase()),
+              locationName: ascent.climb.gym?.name ?? ascent.gym?.name ?? session.gym?.name ?? null,
+              raw: ascent,
+              kind: "ascent",
+            })),
+            ...session.attempted_climbs.map((climb) => ({
+              id: climb.id,
+              climb,
+              attempts: climb.attempts,
+              sent: false,
+              locationName: climb.gym?.name ?? session.gym?.name ?? null,
+              raw: climb,
+              kind: "attempted climb",
+            })),
+          ];
+          const entries = sessionRecords.map((record) => {
+            const boulder = record.climb.climb_type.name.toLowerCase().includes("boulder");
+            const grade = record.climb.grade;
+            if (!grade) {
+              throw Object.assign(new Error(`Kaya ${record.kind} is missing a grade`), {
+                externalId: record.id,
+              });
+            }
+            return {
+              userId,
+              providerId: this.id,
+              activityId: row.id,
+              externalId: record.id,
+              climbType: boulder ? ("boulder" as const) : ("route" as const),
+              gradeSystem: boulder ? ("v_scale" as const) : ("yds" as const),
+              grade: grade.name,
+              sent: record.sent,
+              attemptCount: record.attempts,
+              lead: boulder ? null : record.climb.lead,
+              routeName: record.climb.name,
+              locationName: record.locationName,
+              sourceName: this.name,
+              raw: record.raw,
+            };
+          });
+          await transaction.delete(climbingEntry).where(eq(climbingEntry.activityId, row.id));
+          if (entries.length) await transaction.insert(climbingEntry).values(entries);
+          return sessionRecords.length;
+        });
+        recordsSynced += sessionRecordsSynced;
       }
-      return this.#result(startedAt, recordsSynced, errors);
+      return this.#result(startedAt, recordsSynced, []);
     } catch (error) {
       if (!(error instanceof RefreshTokenRevokedError)) captureException(error);
       return this.#result(startedAt, 0, [error]);

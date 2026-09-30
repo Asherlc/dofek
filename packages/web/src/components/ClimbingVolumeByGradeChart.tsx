@@ -25,14 +25,6 @@ class ClimbingVolumeByGradeChartModel {
     return this.#rows;
   }
 
-  get totalAttempts(): number {
-    return this.#rows.reduce((total, row) => total + row.attempts, 0);
-  }
-
-  get totalSends(): number {
-    return this.#rows.reduce((total, row) => total + row.sends, 0);
-  }
-
   option(): Record<string, unknown> {
     const grades = this.#rows.map((row) => row.grade);
     return {
@@ -71,10 +63,6 @@ export function ClimbingVolumeByGradeChart({ data, loading }: ClimbingVolumeByGr
       />
       {data.length > 0 && (
         <div className="space-y-2">
-          <div className="flex gap-4 text-xs text-muted">
-            <span>{model.totalAttempts} attempts</span>
-            <span>{model.totalSends} sends</span>
-          </div>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {model.rows.map((row) => (
               <div
@@ -82,7 +70,11 @@ export function ClimbingVolumeByGradeChart({ data, loading }: ClimbingVolumeByGr
                 className="rounded border border-border bg-surface px-3 py-2"
               >
                 <div className="font-semibold text-foreground">{row.grade}</div>
-                <div className="text-xs text-dim">{row.attempts} attempts</div>
+                <div className="text-xs text-dim">
+                  {row.attempts === null
+                    ? "Attempt count not recorded"
+                    : `${row.attempts} attempts`}
+                </div>
                 <div className="text-xs text-dim">{row.sends} sends</div>
               </div>
             ))}

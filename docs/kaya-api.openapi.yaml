@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Kaya observed application API
   version: 1.0.0
-  description: Reverse-engineered from Kaya's web application; not a supported public API.
+  description: Records responses observed from Kaya's authenticated web application.
 servers:
   - url: https://kaya-beta.kayaclimb.com
 paths:
@@ -68,6 +68,20 @@ paths:
       responses:
         '200':
           description: GraphQL response for sessionsForUser or ascentsForUser
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      sessionsForUser:
+                        type: array
+                        items: { $ref: '#/components/schemas/KayaSession' }
+                      ascentsForUser:
+                        type: array
+                        items: { $ref: '#/components/schemas/KayaAscent' }
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer }
@@ -95,20 +109,44 @@ components:
       required: [id, session_id, date, attempts, ascent_type, climb]
       properties:
         id: { type: string }
-        session_id: { type: string }
+        session_id: { type: [string, 'null'] }
         date: { type: string, format: date-time }
-        attempts: { type: integer, minimum: 1 }
+        attempts: { type: [integer, 'null'], minimum: 1 }
         ascent_type:
           type: object
           properties: { id: { type: string }, name: { type: string } }
-        climb:
+        climb: { $ref: '#/components/schemas/KayaClimb' }
+    KayaSession:
+      type: object
+      required: [id, start_time, end_time, gym, attempted_climbs]
+      properties:
+        id: { type: string }
+        start_time: { type: string, format: date-time }
+        end_time: { type: [string, 'null'], format: date-time }
+        gym: { type: [object, 'null'] }
+        attempted_climbs:
+          type: array
+          description: Unsuccessful climbs for the session, with composite session/climb IDs and potentially unknown attempt counts. Observed in Kaya's authenticated application API on 2026-09-29.
+          items:
+            allOf:
+              - $ref: '#/components/schemas/KayaClimb'
+              - type: object
+                required: [attempts]
+                properties:
+                  attempts: { type: [integer, 'null'], minimum: 1 }
+    KayaClimb:
+      type: object
+      required: [id, name, lead, climb_type, grade, gym]
+      properties:
+        id: { type: string }
+        name: { type: [string, 'null'] }
+        lead:
+          type: boolean
+          description: Route-level lead flag; boulders also return false and must map to null.
+        climb_type:
           type: object
-          required: [id, lead, climb_type]
-          properties:
-            id: { type: string }
-            lead:
-              type: boolean
-              description: Route-level lead flag; boulders also return false and must map to null.
-            climb_type:
-              type: object
-              properties: { id: { type: string }, name: { type: string } }
+          properties: { id: { type: string }, name: { type: string } }
+        grade:
+          type: [object, 'null']
+          properties: { id: { type: string }, name: { type: string }, climb_type_group: { type: string } }
+        gym: { type: [object, 'null'] }
