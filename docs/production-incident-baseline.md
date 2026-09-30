@@ -28113,3 +28113,48 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   required. No retries, waits, exclusions, or threshold changes were added.
   Fixed-date fixtures tested against rolling windows need a scoped explicit
   clock.
+
+## 2026-09-30 — OpenBeta connection errors concealed upstream failures
+
+- **Symptoms / impact:** A public-profile connection failed with the duplicated
+  message "OpenBeta rejected this token. OpenBeta rejected this token."
+- **Evidence:** `docker service logs --raw --timestamps --since 24h --tail 2000
+  dofek_web` recorded that error at `2026-09-30T15:03:47.298450719Z`; the
+  `POST /api/trpc/tokenAuth.connect?batch=1` request returned 400 after 4840 ms.
+  Public GraphQL POST probes from both the workstation and production host
+  timed out without an HTTP response. Those later probes do not establish
+  the cause of the original request.
+- **Root cause:** The [OpenBeta profile exchange](../src/providers/openbeta.ts)
+  reclassified every upstream error as a token rejection and passed an
+  already formatted rejection into another rejection constructor. The
+  [tRPC error hook](../packages/server/src/index.ts) reports unexpected
+  internal failures to Sentry; the incorrect user-error classification
+  prevented that reporting path from observing the upstream failure.
+- **Direct fix:** Preserve upstream lookup errors, use a single profile-specific
+  message for invalid identifiers or missing profiles, and correct both
+  clients' connection instructions and show public profile input as visible
+  text through shared provider metadata. No retry, timeout, or fallback changes.
+- **Validation / remaining risk:** Regression tests reproduced the wrapping
+  failure before the fix; all 79 focused provider, connection-router, catalog,
+  web, and mobile tests pass afterward. The production connection remains
+  unresolved until deployment and a successful live profile lookup; the
+  original upstream failure cannot be recovered from the captured log.
+- **PR validation environment:** `pnpm lint` initially stopped in SQLFluff
+  with `FailedToConnectError` / `Connection refused` because this workspace
+  had no running ClickHouse or `.env.local` port configuration. Starting only
+  the workspace ClickHouse service with `pnpm compose -- up -d --wait
+  clickhouse` and writing its discovered ports with `pnpm compose:env --write`
+  restored `pnpm lint:analytics-sql`. The code/policy lint and all type checks
+  passed. See the [workspace setup procedure](../README.md#quick-start).
+- **Full local PR validation:** `pnpm test --run` passed 19,141 tests with
+  20 skipped and one failure: the deployment convergence test at
+  [deploy-web-stack.test.ts](../.github/workflows/deploy-web-stack.test.ts)
+  exceeded its 30-second test timeout. It passed unchanged in isolation
+  in 15.72 seconds. The reason for the slower full-suite execution remains
+  unconfirmed; no test timeout, retry, or production behavior was changed.
+  All 30 tests in that file subsequently passed unchanged in a full-file
+  rerun. Hosted CI remains the validation follow-up.
+- **Follow-up:** After rollout, retry the affected profile and inspect the
+  retained server error if it fails. Provider connection investigations
+  should distinguish input errors from API and schema failures before
+  recommending that users change credentials or profile visibility.

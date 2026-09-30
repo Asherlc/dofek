@@ -219,9 +219,12 @@ describe("OpenBetaProvider", () => {
   it("rejects a profile URL with an invalid percent-encoded username", async () => {
     const provider = new OpenBetaProvider(vi.fn());
 
-    await expect(exchangeToken(provider, "https://openbeta.io/u/%E0%A4%A")).rejects.toThrow(
-      "Paste a public OpenBeta profile URL",
-    );
+    await expect(exchangeToken(provider, "https://openbeta.io/u/%E0%A4%A")).rejects.toMatchObject({
+      message:
+        "Paste a public OpenBeta profile URL or username, and make sure the profile is public.",
+      authFailureReason: "authentication_failed",
+      cause: expect.any(URIError),
+    });
   });
 
   it.each([
@@ -231,11 +234,11 @@ describe("OpenBetaProvider", () => {
       "OpenBeta API returned an error: profile lookup denied",
     ],
     [() => jsonResponse({ data: null }), "OpenBeta API returned no data."],
-  ])("wraps profile lookup failure", async (makeResponse, causeMessage) => {
+  ])("preserves profile lookup failure", async (makeResponse, causeMessage) => {
     const provider = new OpenBetaProvider(vi.fn().mockResolvedValue(makeResponse()));
 
     await expect(exchangeToken(provider, "climber")).rejects.toMatchObject({
-      cause: expect.objectContaining({ message: causeMessage }),
+      message: causeMessage,
     });
   });
 
@@ -249,7 +252,26 @@ describe("OpenBetaProvider", () => {
     );
 
     await expect(exchangeToken(provider, "climber")).rejects.toMatchObject({
-      cause: expect.objectContaining({ name: "ZodError" }),
+      name: "ZodError",
+    });
+  });
+
+  it("preserves network failures for server error reporting", async () => {
+    const error = new TypeError("fetch failed");
+    const provider = new OpenBetaProvider(vi.fn().mockRejectedValue(error));
+
+    await expect(exchangeToken(provider, "asherlc")).rejects.toBe(error);
+  });
+
+  it("explains when a public profile cannot be found", async () => {
+    const provider = new OpenBetaProvider(
+      vi.fn().mockResolvedValue(graphqlResponse({ userPage: { profile: null } })),
+    );
+
+    await expect(exchangeToken(provider, "asherlc")).rejects.toMatchObject({
+      message:
+        "Paste a public OpenBeta profile URL or username, and make sure the profile is public.",
+      authFailureReason: "authentication_failed",
     });
   });
 
