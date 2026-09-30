@@ -1,3 +1,7 @@
+import {
+  ProviderRequestTimeoutError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
 import { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -74,7 +78,7 @@ function tick(overrides: Record<string, unknown> = {}): Record<string, unknown> 
     climbId: "climb-1",
     style: "Lead",
     attemptType: "Redpoint",
-    dateClimbed: Date.parse("2026-08-10T00:00:00.000Z"),
+    dateClimbed: 1786320000000,
     grade: "5.10a",
     source: "OB",
     user: { username: "climber", displayName: "Climber" },
@@ -447,7 +451,7 @@ describe("OpenBetaProvider", () => {
             name: "Blue Problem",
             grade: "V4",
             attemptType: "Attempt",
-            dateClimbed: Date.parse("2026-08-11T00:00:00.000Z"),
+            dateClimbed: 1786406400000,
             climb: {
               uuid: "climb-uuid-2",
               name: "Blue Problem",
@@ -684,27 +688,41 @@ describe("OpenBetaProvider", () => {
     );
   });
 
-  it.each([null, Number.MAX_SAFE_INTEGER, 8.64e15])(
-    "reports invalid date %s with the tick id",
-    async (dateClimbed) => {
-      const fetchFn = vi.fn().mockResolvedValue(
-        graphqlResponse({
-          userTicks: [tick({ _id: "missing-date", name: null, dateClimbed })],
+  it.each([
+    [null, null],
+    [Number.MAX_SAFE_INTEGER, null],
+    [8.64e15, null],
+    [253402300800000, null],
+    [-62167219200001, null],
+    [-62167219200000, null],
+    [-62135596800000, "0001-01-01"],
+    [253402214400000, "9999-12-31"],
+  ] as const)("parses numeric date boundary %s into %s", async (dateClimbed, expectedDate) => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      graphqlResponse({
+        userTicks: [tick({ _id: "missing-date", name: null, dateClimbed })],
+      }),
+    );
+    const { db, climbingEntryValues } = makeDb();
+    const result = await new OpenBetaProvider(fetchFn).sync(makeRun(db));
+    if (expectedDate) {
+      expect(result.errors).toEqual([]);
+      expect(climbingEntryValues).toHaveBeenCalledWith(
+        expect.objectContaining({
+          unattachedDate: expectedDate,
+          raw: expect.objectContaining({ dateClimbed }),
         }),
       );
-      const { db } = makeDb();
-      const provider = new OpenBetaProvider(fetchFn);
-
-      const result = await provider.sync(makeRun(db));
-
+    } else {
       expect(result.errors).toEqual([
         expect.objectContaining({
           externalId: "missing-date",
           message: `Skipped OpenBeta tick missing-date: invalid date ${dateClimbed ?? "(empty)"}.`,
         }),
       ]);
-    },
-  );
+      expect(climbingEntryValues).not.toHaveBeenCalled();
+    }
+  });
 
   it("follows the OpenBeta offset pagination contract", async () => {
     const firstPage = Array.from({ length: 100 }, (_, index) => tick({ _id: `tick-${index + 1}` }));
@@ -731,10 +749,10 @@ describe("OpenBetaProvider", () => {
     ["invalid style", tick({ style: "Unknown" })],
     ["blank result label", tick({ attemptType: " " })],
     ["invalid source", tick({ source: "Unknown" })],
-    ["invalid date scalar", tick({ dateClimbed: "2026-08-10" })],
-    ["fractional date scalar", tick({ dateClimbed: 0.5 })],
     ["invalid user payload", tick({ user: { username: 42, displayName: null } })],
     ["invalid grades payload", tick({ climb: climb({ grades: { yds: 5.1 } }) })],
+    ["string date scalar", tick({ dateClimbed: "2026-08-10" })],
+    ["fractional date scalar", tick({ dateClimbed: 0.5 })],
     ["invalid climb type payload", tick({ climb: climb({ type: { bouldering: "false" } }) })],
     ["invalid parent payload", tick({ climb: climb({ parent: { area_name: 42 } }) })],
   ])("rejects %s instead of importing malformed tick data", async (_label, malformedTick) => {
@@ -756,7 +774,7 @@ describe("OpenBetaProvider", () => {
   it("does not reconcile a complete response when one tick has an invalid date", async () => {
     const fetchFn = vi.fn().mockResolvedValue(
       graphqlResponse({
-        userTicks: [tick(), tick({ _id: "bad-date", dateClimbed: Number.MAX_SAFE_INTEGER })],
+        userTicks: [tick(), tick({ _id: "bad-date", dateClimbed: 8640000000000001 })],
       }),
     );
     const { db } = makeDb();
@@ -814,7 +832,7 @@ describe("OpenBetaProvider", () => {
     const fetchFn = vi.fn().mockResolvedValue(
       graphqlResponse({
         userTicks: [
-          tick({ dateClimbed: Number.MAX_SAFE_INTEGER }),
+          tick({ dateClimbed: 8640000000000001 }),
           tick({
             _id: "tick-2",
             grade: null,
@@ -883,6 +901,34 @@ describe("OpenBetaProvider", () => {
       recordsSynced: 0,
       errors: [expect.objectContaining({ message: expect.stringContaining("not found") })],
     });
+  });
+
+  it.each([502, 503, 504])("delegates HTTP %s tick failures to queue retries", async (status) => {
+    const provider = new OpenBetaProvider(
+      vi.fn().mockResolvedValue(new Response("upstream timeout", { status })),
+    );
+    const { db } = makeDb();
+
+    await expect(provider.sync(makeRun(db))).rejects.toBeInstanceOf(
+      ProviderServiceUnavailableError,
+    );
+
+    expect(mocks.captureException).not.toHaveBeenCalled();
+    expect(db.insert).not.toHaveBeenCalled();
+    expect(db.execute).not.toHaveBeenCalled();
+  });
+
+  it("delegates request timeouts to queue retries", async () => {
+    const error = new ProviderRequestTimeoutError({ providerId: "openbeta", timeoutMs: 120_000 });
+    const provider = new OpenBetaProvider(vi.fn().mockRejectedValue(error));
+    const { db } = makeDb();
+
+    await expect(provider.sync(makeRun(db))).rejects.toMatchObject({
+      name: "ProviderRequestTimeoutError",
+      providerId: "openbeta",
+      cause: error,
+    });
+    expect(mocks.captureException).not.toHaveBeenCalled();
   });
 
   it("captures tick export failures and returns their actionable message", async () => {
