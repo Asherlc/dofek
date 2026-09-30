@@ -219,6 +219,16 @@ The seven food-record tools use the exact schemas in
 tools require `nutrition:read`. Every mutation requires both `nutrition:read`
 and the `nutrition:write` scope approved by the user.
 
+Create and update descriptions encourage sourced nutrition for the consumed
+portion, clarification when brand/label/portion information is missing, and
+explicit approval for estimates. Unknown nutrients must not be filled with
+zero. Incomplete entries remain supported when explicitly requested; these
+descriptions guide the model rather than enforce completeness. See the
+[tool descriptors](../packages/server/src/mcp/food-record-tools.ts) and
+[OpenAI's tool metadata guidance](https://developers.openai.com/plugins/guides/optimize-metadata).
+The [manual nutrition eval](mcp-nutrition-manual-eval.md) measures conversational
+behavior separately from schema and mutation tests.
+
 `search_food_entries` requires `start_date` and `end_date`. Its optional
 case-insensitive text query matches the effective food name, description,
 category, and meal. `visibility` accepts `visible`, `deleted`, or `all` and
