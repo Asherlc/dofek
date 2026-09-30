@@ -932,6 +932,13 @@
       "when": 1790640000002,
       "tag": "0132_remove_legacy_mcp_oauth",
       "breakpoints": true
+    },
+    {
+      "idx": 133,
+      "version": "7",
+      "when": 1790720000000,
+      "tag": "0133_apple_health_workout_revisions",
+      "breakpoints": true
     }
   ]
 }
