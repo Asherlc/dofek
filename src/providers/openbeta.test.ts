@@ -664,23 +664,38 @@ describe("OpenBetaProvider", () => {
     );
   });
 
-  it("reports invalid dates with the tick id and empty-value marker", async () => {
+  it.each([
+    [null, null],
+    [253402300800000, null],
+    [-62167219200001, null],
+    [-62167219200000, null],
+    [-62135596800000, "0001-01-01"],
+    [253402214400000, "9999-12-31"],
+  ] as const)("parses numeric date boundary %s into %s", async (dateClimbed, expectedDate) => {
     const fetchFn = vi.fn().mockResolvedValue(
       graphqlResponse({
-        userTicks: [tick({ _id: "missing-date", name: null, dateClimbed: null })],
+        userTicks: [tick({ _id: "missing-date", name: null, dateClimbed })],
       }),
     );
-    const { db } = makeDb();
-    const provider = new OpenBetaProvider(fetchFn);
-
-    const result = await provider.sync(makeRun(db));
-
-    expect(result.errors).toEqual([
-      expect.objectContaining({
-        externalId: "missing-date",
-        message: "Skipped OpenBeta tick missing-date: invalid date (empty).",
-      }),
-    ]);
+    const { db, climbingEntryValues } = makeDb();
+    const result = await new OpenBetaProvider(fetchFn).sync(makeRun(db));
+    if (expectedDate) {
+      expect(result.errors).toEqual([]);
+      expect(climbingEntryValues).toHaveBeenCalledWith(
+        expect.objectContaining({
+          unattachedDate: expectedDate,
+          raw: expect.objectContaining({ dateClimbed }),
+        }),
+      );
+    } else {
+      expect(result.errors).toEqual([
+        expect.objectContaining({
+          externalId: "missing-date",
+          message: `Skipped OpenBeta tick missing-date: invalid date ${dateClimbed ?? "(empty)"}.`,
+        }),
+      ]);
+      expect(climbingEntryValues).not.toHaveBeenCalled();
+    }
   });
 
   it("follows the OpenBeta offset pagination contract", async () => {

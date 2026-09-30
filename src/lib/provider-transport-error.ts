@@ -39,3 +39,12 @@ export function isRetryingOpenBetaTransportFailure(
 ): boolean {
   return findProviderTransportError(error)?.providerId === "openbeta" && attemptNumber < attempts;
 }
+
+/** Uses the same one-based attempt convention as the OpenBeta retry predicate. */
+export function isRetryingZeppHttp500ServiceUnavailableError(
+  error: unknown,
+  attemptNumber: number,
+  attempts = 1,
+): boolean {
+  return isZeppHttp500ServiceUnavailableError(error) && attemptNumber < attempts;
+}

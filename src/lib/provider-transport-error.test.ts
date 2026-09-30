@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   findProviderTransportError,
   isRetryingOpenBetaTransportFailure,
+  isRetryingZeppHttp500ServiceUnavailableError,
   isZeppHttp500ServiceUnavailableError,
 } from "./provider-transport-error.ts";
 
@@ -87,5 +88,57 @@ describe("isRetryingOpenBetaTransportFailure", () => {
       ),
     ).toBe(false);
     expect(isRetryingOpenBetaTransportFailure(new Error("timeout"), 1, 288)).toBe(false);
+  });
+});
+
+describe("isRetryingZeppHttp500ServiceUnavailableError", () => {
+  it.each([
+    [1, 288, true],
+    [287, 288, true],
+    [288, 288, false],
+    [289, 288, false],
+    [1, undefined, false],
+    [1, 1, false],
+    [1, 2, true],
+    [1, 0, false],
+  ] as const)(
+    "classifies one-based attempt %s of %s as retrying=%s",
+    (attemptNumber, attempts, expected) => {
+      const error = new ProviderServiceUnavailableError({
+        providerId: "amazfit-zepp",
+        statusCode: 500,
+        message: "Zepp unavailable",
+        responseBody: "outage",
+      });
+      expect(isRetryingZeppHttp500ServiceUnavailableError(error, attemptNumber, attempts)).toBe(
+        expected,
+      );
+      expect(
+        isRetryingZeppHttp500ServiceUnavailableError(
+          new Error("wrapped", { cause: error }),
+          attemptNumber,
+          attempts,
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it.each([
+    new ProviderServiceUnavailableError({
+      providerId: "amazfit-zepp",
+      statusCode: 503,
+      message: "outage",
+      responseBody: "outage",
+    }),
+    new ProviderServiceUnavailableError({
+      providerId: "openbeta",
+      statusCode: 500,
+      message: "outage",
+      responseBody: "outage",
+    }),
+    new ProviderRequestTimeoutError({ providerId: "amazfit-zepp", timeoutMs: 120000 }),
+    new Error("Zepp HTTP500"),
+  ])("preserves the strict direct Zepp500 error scope: %s", (error) => {
+    expect(isRetryingZeppHttp500ServiceUnavailableError(error, 1, 288)).toBe(false);
   });
 });

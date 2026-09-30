@@ -257,7 +257,10 @@ function nullableText(value: string | null | undefined): string | null {
 function parseOpenBetaDate(value: number | null): string | null {
   if (value === null) return null;
   const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
+  const year = parsed.getUTCFullYear();
+  return Number.isNaN(parsed.getTime()) || year < 1 || year > 9999
+    ? null
+    : parsed.toISOString().slice(0, 10);
 }
 
 function gradeFromTick(

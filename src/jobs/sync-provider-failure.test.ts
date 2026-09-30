@@ -8,11 +8,11 @@ import type { SyncDatabase } from "../db/index.ts";
 import { AccessTokenExpiredError } from "../providers/auth-errors.ts";
 import { SyncWindow } from "../providers/sync-window.ts";
 import type { SyncResult } from "../providers/types.ts";
+import type { SyncJob } from "./queues.ts";
 
 import {
   createMockJob,
   createMockProvider,
-  type MockJob,
   MockJobDataSchema,
   mockAppendProcessingStageEvent,
   mockCaptureException,
@@ -34,7 +34,7 @@ const { SyncProcessingOperation } = await import("./sync-processing-operation.ts
 const { handleSyncProviderFailure, throwRetryableSyncResultError } = await import(
   "./sync-provider-failure.ts"
 );
-async function runSyncJob(job: MockJob, db: SyncDatabase, signal?: AbortSignal) {
+async function runSyncJob(job: SyncJob, db: SyncDatabase, signal?: AbortSignal) {
   const context = await SyncJobContext.create(job, db, signal);
   const providers = mockGetEnabledSyncProviders().filter(
     (provider) => !job.data.providerId || provider.id === job.data.providerId,
@@ -483,34 +483,97 @@ describe("sync-provider-failure", () => {
     expect(mockEnqueueDebouncedPostSyncMaintenance).not.toHaveBeenCalled();
   });
 
-  it("rethrows provider service-unavailable errors so BullMQ retries without Sentry capture", async () => {
-    const serviceUnavailableError = new ProviderServiceUnavailableError({
-      message: "Zepp API service unavailable (500): upstream outage",
+  it.each([0, 286])(
+    "retries Zepp HTTP500 when attemptsMade=%s without Sentry capture",
+    async (attemptsMade) => {
+      const serviceUnavailableError = new ProviderServiceUnavailableError({
+        message: "Zepp API service unavailable (500): upstream outage",
+        providerId: "amazfit-zepp",
+        statusCode: 500,
+        responseBody: "upstream outage",
+      });
+      const provider = createMockProvider({
+        id: "amazfit-zepp",
+        name: "Amazfit/Zepp",
+        sync: vi.fn().mockRejectedValue(serviceUnavailableError),
+      });
+      mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+      const job = createMockJob({ providerId: "amazfit-zepp" });
+      job.attemptsMade = attemptsMade;
+
+      await expect(runSyncJob(job, mockDb)).rejects.toBe(serviceUnavailableError);
+
+      expect(job.updateProgress).toHaveBeenLastCalledWith({
+        providers: {
+          "amazfit-zepp": { status: "running", message: "Service unavailable; retrying" },
+        },
+        percentage: 0,
+      });
+      expect(mockCaptureException).not.toHaveBeenCalled();
+      expect(mockLogSync).not.toHaveBeenCalled();
+      expect(mockEnqueueDebouncedPostSyncMaintenance).not.toHaveBeenCalled();
+      expect(mockEnqueueDebouncedUserRefit).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    { attemptsMade: 287, attempts: 288 },
+    { attemptsMade: 0, attempts: undefined },
+    { attemptsMade: 0, attempts: 1 },
+  ])("records terminal Zepp HTTP500 with retry policy %j", async ({ attemptsMade, attempts }) => {
+    const error = new ProviderServiceUnavailableError({
       providerId: "amazfit-zepp",
       statusCode: 500,
-      responseBody: "upstream outage",
+      message: "Zepp unavailable",
+      responseBody: "outage",
     });
-    const provider = createMockProvider({
-      id: "amazfit-zepp",
-      name: "Amazfit/Zepp",
-      sync: vi.fn().mockRejectedValue(serviceUnavailableError),
-    });
-    mockGetEnabledSyncProviders.mockReturnValue([provider]);
-
-    const job = createMockJob({ providerId: "amazfit-zepp" });
-
-    await expect(runSyncJob(job, mockDb)).rejects.toBe(serviceUnavailableError);
-
+    mockGetEnabledSyncProviders.mockReturnValue([
+      createMockProvider({
+        id: "amazfit-zepp",
+        name: "Amazfit/Zepp",
+        sync: vi.fn().mockRejectedValue(error),
+      }),
+    ]);
+    const job = {
+      ...createMockJob({ providerId: "amazfit-zepp" }),
+      attemptsMade,
+      opts: { attempts },
+    };
+    const message =
+      "Amazfit/Zepp is unavailable and automatic retries were exhausted. Try syncing again later.";
+    await expect(runSyncJob(job, mockDb)).rejects.toBe(error);
     expect(job.updateProgress).toHaveBeenLastCalledWith({
-      providers: {
-        "amazfit-zepp": { status: "running", message: "Service unavailable; retrying" },
-      },
-      percentage: 0,
+      providers: { "amazfit-zepp": { status: "error", message } },
+      percentage: 100,
     });
-    expect(mockCaptureException).not.toHaveBeenCalled();
-    expect(mockLogSync).not.toHaveBeenCalled();
-    expect(mockEnqueueDebouncedPostSyncMaintenance).not.toHaveBeenCalled();
-    expect(mockEnqueueDebouncedUserRefit).not.toHaveBeenCalled();
+    expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        stage: "ingest",
+        status: "failed",
+        errorCode: "provider_sync_failed",
+        errorMessage: message,
+      }),
+    );
+    expect(mockLogSync).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        providerId: "amazfit-zepp",
+        status: "error",
+        errorMessage: message,
+      }),
+    );
+    expect(mockSyncOperationsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "amazfit-zepp",
+      data_type: "sync",
+      status: "error",
+    });
+    expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "amazfit-zepp",
+      data_type: "sync",
+    });
+    expect(mockCaptureException).not.toHaveBeenCalled(); // Terminal failed event owns the alert.
   });
 
   it("records a non-Zepp HTTP 500 service outage without retrying or reporting it to Sentry", async () => {

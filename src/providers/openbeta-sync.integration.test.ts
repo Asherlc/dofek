@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -78,6 +78,17 @@ describe("OpenBetaProvider.sync() (integration)", () => {
     ctx = await setupTestDatabase();
     server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "openbeta", "OpenBeta", "https://api.openbeta.io", TEST_USER_ID);
+    await saveTokens(
+      ctx.db,
+      "openbeta",
+      {
+        accessToken: OPENBETA_USER_UUID,
+        refreshToken: null,
+        expiresAt: new Date("2099-12-31T00:00:00.000Z"),
+        scopes: "ticks",
+      },
+      TEST_USER_ID,
+    );
   }, 60_000);
 
   afterEach(() => {
@@ -91,17 +102,6 @@ describe("OpenBetaProvider.sync() (integration)", () => {
   });
 
   it("upserts ticks and reconciles absence without retiring empty exports", async () => {
-    await saveTokens(
-      ctx.db,
-      "openbeta",
-      {
-        accessToken: OPENBETA_USER_UUID,
-        refreshToken: null,
-        expiresAt: new Date("2099-12-31T00:00:00.000Z"),
-        scopes: "ticks",
-      },
-      TEST_USER_ID,
-    );
     server.use(
       http.post("https://api.openbeta.io", () =>
         HttpResponse.json({ data: { userTicks: currentTicks } }),
@@ -194,4 +194,54 @@ describe("OpenBetaProvider.sync() (integration)", () => {
       entries.find((entry) => entry.externalId === "openbeta:tick-2")?.providerAbsentAt,
     ).toBeNull();
   });
+
+  it("PostgreSQL rejects AD year zero and accepts the four-digit calendar endpoints", async () => {
+    await expect(ctx.db.execute(sql`select '0000-01-01'::date`)).rejects.toMatchObject({
+      cause: { code: "22008" },
+    });
+    expect(
+      await ctx.db.execute(
+        sql`select '0001-01-01'::date::text as lower_date, '9999-12-31'::date::text as upper_date`,
+      ),
+    ).toEqual(expect.arrayContaining([{ lower_date: "0001-01-01", upper_date: "9999-12-31" }]));
+  });
+
+  it.each([253402300800000, -62167219200001, -62167219200000])(
+    "skips unsupported numeric date %s while storing valid ticks in PostgreSQL",
+    async (dateClimbed) => {
+      const validId = `valid-${dateClimbed}`;
+      const invalidId = `invalid-${dateClimbed}`;
+      currentTicks = [tick({ _id: validId }), tick({ _id: invalidId, dateClimbed })];
+      server.use(
+        http.post("https://api.openbeta.io", () =>
+          HttpResponse.json({ data: { userTicks: currentTicks } }),
+        ),
+      );
+      const result = await new OpenBetaProvider().sync(
+        new SyncRun({
+          db: ctx.db,
+          window: SyncWindow.full(new Date("2026-08-11T00:00:00.000Z")),
+          userId: TEST_USER_ID,
+        }),
+      );
+      expect(result).toMatchObject({
+        recordsSynced: 1,
+        errors: [
+          expect.objectContaining({
+            externalId: invalidId,
+            message: expect.stringContaining("invalid date"),
+          }),
+        ],
+      });
+      const entries = await ctx.db
+        .select()
+        .from(climbingEntry)
+        .where(eq(climbingEntry.providerId, "openbeta"));
+      expect(entries.find((entry) => entry.externalId === `openbeta:${validId}`)).toMatchObject({
+        unattachedDate: "2026-08-10",
+        raw: expect.objectContaining({ dateClimbed: 1786320000000 }),
+      });
+      expect(entries.find((entry) => entry.externalId === `openbeta:${invalidId}`)).toBeUndefined();
+    },
+  );
 });

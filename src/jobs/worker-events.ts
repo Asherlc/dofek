@@ -4,7 +4,7 @@ import { markProviderDataDeletionFailed } from "../db/provider-data-deletion.ts"
 import { captureException } from "../lib/error-reporting.ts";
 import {
   isRetryingOpenBetaTransportFailure,
-  isZeppHttp500ServiceUnavailableError,
+  isRetryingZeppHttp500ServiceUnavailableError,
 } from "../lib/provider-transport-error.ts";
 import { logger } from "../logger.ts";
 import { isImportValidationError } from "./import-validation-error.ts";
@@ -107,19 +107,21 @@ export function attachWorkerEvents(
         err instanceof UnrecoverableError;
       const isImportValidationFailure =
         worker.name === IMPORT_QUEUE && isImportValidationError(err);
-      const isZeppHttp500ServiceUnavailable = isZeppHttp500ServiceUnavailableError(err);
+      const isZeppRetry =
+        job !== undefined &&
+        isRetryingZeppHttp500ServiceUnavailableError(err, job.attemptsMade, job.opts.attempts);
       const isOpenBetaRetry =
         job !== undefined &&
         isRetryingOpenBetaTransportFailure(err, job.attemptsMade, job.opts.attempts);
       if (
         !isFitBatchChildFailure &&
         !isImportValidationFailure &&
-        !isZeppHttp500ServiceUnavailable &&
+        !isZeppRetry &&
         !isOpenBetaRetry
       ) {
         captureException(err);
       }
-      if (isZeppHttp500ServiceUnavailable || isOpenBetaRetry) {
+      if (isZeppRetry || isOpenBetaRetry) {
         logger.warn(`[worker] Job retrying after provider service unavailable: ${err.message}`);
       } else {
         logger.error(`[worker] Job failed: ${err.message}`);

@@ -28198,13 +28198,17 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   [BullMQ flows](https://docs.bullmq.io/guide/flows). Sync and worker
   responsibilities have focused production
   modules with matching test files below 1,000 lines; existing regression
-  cases were retained. See the [job architecture](../src/jobs/README.md).
+  cases were retained. CLI jobs use the same retry policy and report terminal
+  failures. Review also found that existing Zepp HTTP 500 suppression continued
+  after exhaustion; attempt-aware handling now records terminal failures and
+  reports them through the worker instead of leaving ingestion running. See
+  the [job architecture](../src/jobs/README.md).
 - **Validation:** Regression tests reproduced the non-retrying timeout and
   numeric-date schema failures before their fixes. Focused provider, processor,
   worker-event, and transport-classification tests pass. A real PostgreSQL
   integration test verifies numeric-date ingestion, raw-payload preservation,
   idempotent writes, and absence reconciliation. The complete Docker-free
-  unit/mobile run passed 19,344 tests on the final merged tree, with 20
+  unit/mobile run passed 19,370 tests on the final review-fixed tree, with 20
   tests skipped. Seven real-Redis regressions verify atomic dispatch, recovery
   after child pruning, and independent terminal child failures.
   Root, server, and web typechecks passed, along with full repository lint.
@@ -28481,7 +28485,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   No retry, timeout, threshold relaxation, or audit suppression was added for
   these CI failures.
 - **Remaining risk / follow-up:** Local full lint, root/server/web typechecks, import boundaries,
-  strict production audit, and eight OpenBeta/Redis integration tests pass on
+  strict production audit, and five OpenBeta/Postgres and seven Redis integration tests pass on
   the merged tree. Hosted validation remains unresolved until replacement CI
   passes. Future structural refactors should run import
   boundaries and scoped mutation tests before pushing; dependency audit should

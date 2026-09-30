@@ -6,6 +6,7 @@ import { captureException } from "../lib/error-reporting.ts";
 import {
   findProviderTransportError,
   isRetryingOpenBetaTransportFailure,
+  isRetryingZeppHttp500ServiceUnavailableError,
   isZeppHttp500ServiceUnavailableError,
 } from "../lib/provider-transport-error.ts";
 import { isRetryableInfraError } from "../lib/retryable-infra-error.ts";
@@ -132,6 +133,7 @@ export async function handleSyncProviderFailure(
   }
   signal?.throwIfAborted();
   const isOpenBetaTransportFailure = provider.id === "openbeta" && isProviderTransportError(err);
+  const isZeppHttp500Failure = isZeppHttp500ServiceUnavailableError(err);
   if (
     isOpenBetaTransportFailure &&
     isRetryingOpenBetaTransportFailure(err, job.attemptsMade + 1, job.opts.attempts)
@@ -175,7 +177,10 @@ export async function handleSyncProviderFailure(
     return;
   }
 
-  if (isZeppHttp500ServiceUnavailableError(err)) {
+  if (
+    isZeppHttp500Failure &&
+    isRetryingZeppHttp500ServiceUnavailableError(err, job.attemptsMade + 1, job.opts.attempts)
+  ) {
     context.providerStatus[provider.id] = {
       status: "running",
       message: "Service unavailable; retrying",
@@ -206,8 +211,9 @@ export async function handleSyncProviderFailure(
     throw err;
   }
   context.completedCount++;
-  const message = isOpenBetaTransportFailure
-    ? "OpenBeta is unavailable and automatic retries were exhausted. Try syncing again later."
+  const isExhaustedTransportFailure = isOpenBetaTransportFailure || isZeppHttp500Failure;
+  const message = isExhaustedTransportFailure
+    ? `${provider.name} is unavailable and automatic retries were exhausted. Try syncing again later.`
     : err instanceof Error
       ? err.message
       : String(err);
@@ -222,7 +228,7 @@ export async function handleSyncProviderFailure(
     stage: "ingest",
     status: "failed",
     ...failureEvent,
-    ...(isOpenBetaTransportFailure ? { errorMessage: message } : {}),
+    ...(isExhaustedTransportFailure ? { errorMessage: message } : {}),
     idempotencyKey: "worker-failed",
   });
   await job.updateProgress({
@@ -245,5 +251,5 @@ export async function handleSyncProviderFailure(
   syncOperationsTotal.add(1, { provider: provider.id, data_type: "sync", status: "error" });
   syncDuration.record(durationMs, { provider: provider.id, data_type: "sync" });
   syncErrorsTotal.add(1, { provider: provider.id, data_type: "sync" });
-  if (isOpenBetaTransportFailure) throw err;
+  if (isExhaustedTransportFailure) throw err;
 }

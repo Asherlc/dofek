@@ -161,25 +161,51 @@ describe("worker events", () => {
     );
   });
 
-  it("failed event handler logs provider service-unavailable errors without Sentry capture", async () => {
+  it.each([1, 287])(
+    "logs Zepp HTTP500 attempt %s as retrying without Sentry capture",
+    async (attemptsMade) => {
+      const Sentry = await import("@sentry/node");
+      const { logger } = await import("../logger.ts");
+      vi.mocked(Sentry.captureException).mockClear();
+      vi.mocked(logger.warn).mockClear();
+
+      getWorkerHandler("active")();
+      const error = new ProviderServiceUnavailableError({
+        message: "Zepp API service unavailable (500): upstream outage",
+        providerId: "amazfit-zepp",
+        statusCode: 500,
+        responseBody: "upstream outage",
+      });
+      getWorkerHandler("failed")({ attemptsMade, opts: { attempts: 288 } }, error);
+
+      expect(Sentry.captureException).not.toHaveBeenCalled();
+      expect(logger.warn).toHaveBeenCalledWith(
+        "[worker] Job retrying after provider service unavailable: Zepp API service unavailable (500): upstream outage",
+      );
+    },
+  );
+
+  it.each([
+    undefined,
+    { attemptsMade: 288, opts: { attempts: 288 } },
+    { attemptsMade: 1, opts: {} },
+    { attemptsMade: 1, opts: { attempts: 1 } },
+  ])("reports terminal Zepp HTTP500 with job metadata %j", async (job) => {
     const Sentry = await import("@sentry/node");
     const { logger } = await import("../logger.ts");
     vi.mocked(Sentry.captureException).mockClear();
+    vi.mocked(logger.error).mockClear();
     vi.mocked(logger.warn).mockClear();
-
-    getWorkerHandler("active")();
     const error = new ProviderServiceUnavailableError({
-      message: "Zepp API service unavailable (500): upstream outage",
       providerId: "amazfit-zepp",
       statusCode: 500,
-      responseBody: "upstream outage",
+      message: "Zepp unavailable",
+      responseBody: "outage",
     });
-    getWorkerHandler("failed")(undefined, error);
-
-    expect(Sentry.captureException).not.toHaveBeenCalled();
-    expect(logger.warn).toHaveBeenCalledWith(
-      "[worker] Job retrying after provider service unavailable: Zepp API service unavailable (500): upstream outage",
-    );
+    getWorkerHandler("failed")(job, error);
+    expect(Sentry.captureException).toHaveBeenCalledExactlyOnceWith(error);
+    expect(logger.error).toHaveBeenCalledWith(`[worker] Job failed: ${error.message}`);
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 
   it.each([504, "timeout"])(
