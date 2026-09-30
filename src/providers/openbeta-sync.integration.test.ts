@@ -23,7 +23,7 @@ function tick(overrides: Record<string, unknown> = {}): Record<string, unknown> 
     climbId: "climb-1",
     style: "Lead",
     attemptType: "Redpoint",
-    dateClimbed: "2026-08-10",
+    dateClimbed: 1786320000000,
     grade: "5.10a",
     source: "OB",
     user: { username: "climber", displayName: "Climber" },
@@ -55,7 +55,7 @@ describe("OpenBetaProvider.sync() (integration)", () => {
       name: "Blue Problem",
       grade: "V4",
       attemptType: "Attempt",
-      dateClimbed: "2026-08-11",
+      dateClimbed: 1786406400000,
       climb: {
         uuid: "climb-uuid-2",
         name: "Blue Problem",
@@ -129,6 +129,7 @@ describe("OpenBetaProvider.sync() (integration)", () => {
     expect(entries.find((entry) => entry.externalId === "openbeta:tick-1")).toMatchObject({
       activityId: null,
       unattachedDate: "2026-08-10",
+      raw: expect.objectContaining({ dateClimbed: 1786320000000 }),
       climbType: "route",
       gradeSystem: "yds",
       grade: "5.10a",

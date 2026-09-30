@@ -22,7 +22,11 @@ The public website presents profile tick history at routes such as
 Each supported tick becomes one standalone `fitness.climbing_entry` row:
 
 - `external_id` is `openbeta:{tick-id}`.
-- `unattached_date` is the tick's date-only `dateClimbed` value.
+- `unattached_date` is the UTC calendar date of the tick's `dateClimbed`
+  Unix-millisecond timestamp. The original numeric value remains in `raw`.
+  OpenBeta declares this field as its custom `Date` scalar and serializes it
+  with `Date.getTime()` ([tick schema](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/schema/Tick.gql),
+  [scalar implementation](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/common/DateScalar.ts)).
 - boulders use V-scale first, then Font; routes use YDS first, then French,
   UIAA, Ewbank, or Brazilian Crux when available.
 - `sent` is true for send-style attempt types and false for `Attempt`; a missing
@@ -36,6 +40,19 @@ complete non-empty pagination run soft-tombstones rows missing from the
 current list and restores rows that reappear. Empty, failed, malformed, or
 partially unsupported responses do not reconcile absence because they are not
 proof that the upstream log was intentionally cleared.
+
+## Temporary upstream failures
+
+OpenBeta HTTP 502/503/504 responses and typed request timeouts propagate to
+the sync worker. They use the existing sync queue's bounded retry policy:
+288 total attempts with a five-minute backoff. While retries remain, the sync
+stays running and failures are retained in structured logs and BullMQ job
+logs without per-attempt Sentry capture. Exhaustion records a failed processing
+stage, shows an actionable sync error to both clients, and reports the terminal
+failure to Sentry. Schema and other unexpected errors remain reportable.
+The policy is implemented in [sync processing](../src/jobs/process-sync-job.ts),
+[queue defaults](../src/jobs/queues.ts), and [worker events](../src/jobs/worker.ts);
+BullMQ documents [attempts and backoff](https://docs.bullmq.io/guide/retrying-failing-jobs).
 
 ## Activity association
 

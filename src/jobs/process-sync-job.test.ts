@@ -305,6 +305,8 @@ const mockDb: SyncDatabase & { transaction: CallableVitestMock } = {
 };
 
 interface MockJob {
+  attemptsMade: number;
+  opts: { attempts: number };
   id?: string;
   data: {
     origin?: "manual" | "scheduled";
@@ -343,6 +345,8 @@ function createMockJob(
   } = {},
 ): MockJob {
   const job: MockJob = {
+    attemptsMade: 0,
+    opts: { attempts: 288 },
     data: { userId: "user-1", ...data },
     updateProgress: vi.fn().mockResolvedValue(undefined),
     updateData: vi.fn(),
@@ -1756,6 +1760,77 @@ describe("processSyncJob", () => {
       level: "warning",
     });
     expect(mockLogSync).not.toHaveBeenCalled();
+  });
+
+  it.each([502, 503, 504, "timeout"])(
+    "retries OpenBeta %s without per-attempt Sentry alerts",
+    async (status) => {
+      const error =
+        status === "timeout"
+          ? new ProviderRequestTimeoutError({ providerId: "openbeta", timeoutMs: 120_000 })
+          : new ProviderServiceUnavailableError({
+              providerId: "openbeta",
+              statusCode: Number(status),
+              message: "upstream unavailable",
+              responseBody: "unavailable",
+            });
+      const provider = createMockProvider({
+        id: "openbeta",
+        name: "OpenBeta",
+        sync: vi.fn().mockRejectedValue(error),
+      });
+      mockGetEnabledSyncProviders.mockReturnValue([provider]);
+      const job = createMockJob({ providerId: "openbeta" });
+
+      await expect(runSyncJob(job, mockDb)).rejects.toBe(error);
+      expect(job.updateProgress).toHaveBeenLastCalledWith({
+        providers: { openbeta: { status: "running", message: "Service unavailable; retrying" } },
+        percentage: 0,
+      });
+      expect(mockCaptureException).not.toHaveBeenCalled();
+      expect(mockLogSync).not.toHaveBeenCalled();
+      expect(mockEnqueueDebouncedPostSyncMaintenance).not.toHaveBeenCalled();
+    },
+  );
+
+  it("records OpenBeta retry exhaustion as a terminal sync failure", async () => {
+    const error = new ProviderServiceUnavailableError({
+      providerId: "openbeta",
+      statusCode: 504,
+      message: "upstream unavailable",
+      responseBody: "unavailable",
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([
+      createMockProvider({
+        id: "openbeta",
+        name: "OpenBeta",
+        sync: vi.fn().mockRejectedValue(error),
+      }),
+    ]);
+    const job = createMockJob({ providerId: "openbeta" });
+    job.attemptsMade = 287;
+
+    await expect(runSyncJob(job, mockDb)).rejects.toBe(error);
+    expect(job.updateProgress).toHaveBeenLastCalledWith({
+      providers: {
+        openbeta: {
+          status: "error",
+          message:
+            "OpenBeta is unavailable and automatic retries were exhausted. Try syncing again later.",
+        },
+      },
+      percentage: 100,
+    });
+    expect(mockLogSync).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({ providerId: "openbeta", status: "error" }),
+    );
+    expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({ stage: "ingest", status: "failed" }),
+    );
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockEnqueueDebouncedPostSyncMaintenance).not.toHaveBeenCalled();
   });
 
   it("rethrows provider service-unavailable errors so BullMQ retries without Sentry capture", async () => {

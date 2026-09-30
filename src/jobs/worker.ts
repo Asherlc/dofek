@@ -12,6 +12,7 @@ import { markProviderDataDeletionFailed } from "../db/provider-data-deletion.ts"
 import { createRefitSensorStore } from "../db/refit-sensor-store.ts";
 import { createImportUploadStorageFromEnv } from "../file-upload-storage.ts";
 import { captureException } from "../lib/error-reporting.ts";
+import { findProviderTransportError } from "../lib/provider-transport-error.ts";
 import { initProductionSentry } from "../lib/sentry.ts";
 import { jobContext, logger } from "../logger.ts";
 import { validateMetricStreamTopicConfiguration } from "../metric-stream/routes.ts";
@@ -552,10 +553,19 @@ for (const worker of allWorkers) {
       err instanceof ProviderServiceUnavailableError &&
       err.providerId === "amazfit-zepp" &&
       err.statusCode === 500;
-    if (!isFitBatchChildFailure && !isImportValidationFailure && !isZeppHttp500ServiceUnavailable) {
+    const isOpenBetaRetry =
+      findProviderTransportError(err)?.providerId === "openbeta" &&
+      job !== undefined &&
+      job.attemptsMade < (job.opts.attempts ?? 1);
+    if (
+      !isFitBatchChildFailure &&
+      !isImportValidationFailure &&
+      !isZeppHttp500ServiceUnavailable &&
+      !isOpenBetaRetry
+    ) {
       captureException(err);
     }
-    if (isZeppHttp500ServiceUnavailable) {
+    if (isZeppHttp500ServiceUnavailable || isOpenBetaRetry) {
       logger.warn(`[worker] Job retrying after provider service unavailable: ${err.message}`);
     } else {
       logger.error(`[worker] Job failed: ${err.message}`);

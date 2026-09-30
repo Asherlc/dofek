@@ -28147,3 +28147,44 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   and the Cloudflare ray ID with OpenBeta support before choosing a code
   change. A provider-sync runbook note distinguishing upstream 504s from
   local infrastructure failures would make future triage faster.
+
+## 2026-09-30 — OpenBeta date scalar mismatch and transient-failure handling
+
+- **Symptoms / impact:** After the earlier gateway timeout,
+  [DOFEK-SERVER-6M](https://east-bay-software.sentry.io/issues/7764116376/)
+  recorded a production `ZodError` at 17:30:06 UTC. Six returned ticks failed
+  validation, preventing that tick export from importing. Existing climbing
+  entries remained intact.
+- **Failure evidence / root cause:** The failing operation was the GraphQL
+  `userTicks` response validation in `fetchGraphQL`. The first validation
+  failure was `Invalid input: expected string, received number` at
+  `userTicks[0].dateClimbed`, event `1caf14e01dc14c54a3907c18f9f4897c`.
+  Dofek and its fixtures incorrectly modeled the date as a string. OpenBeta's
+  [tick schema](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/schema/Tick.gql)
+  declares a `Date` scalar, whose
+  [implementation](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/common/DateScalar.ts)
+  serializes dates using `getTime()` (Unix milliseconds).
+- **Direct fixes:** Parse the numeric date scalar into a UTC calendar date
+  while retaining its original value in `raw`; correct unit and integration
+  fixtures. Propagate OpenBeta's typed service-unavailable and request-timeout
+  failures to the existing BullMQ retry path rather than capturing each in
+  the provider and returning a terminal sync error. Transient attempts remain
+  observable in structured/job logs. Exhaustion records a failed processing
+  stage and actionable client message, then reports the terminal failure to
+  Sentry. Unexpected schema/write failures remain reportable.
+- **Validation:** Regression tests reproduced the non-retrying timeout and
+  numeric-date schema failures before their fixes. Focused provider, processor,
+  worker-event, and transport-classification tests pass. A real PostgreSQL
+  integration test verifies numeric-date ingestion, raw-payload preservation,
+  idempotent writes, and absence reconciliation. Broader validation results
+  belong in the change report.
+- **Remaining risk / follow-up:** Production verification remains unresolved
+  until deployment and a successful OpenBeta sync. No upstream server changes
+  or alert-rule changes were made. The existing queue's 288 attempts and
+  five-minute backoff are reused without increasing request timeouts; they
+  provide bounded recovery for a verified upstream availability failure
+  ([BullMQ retry semantics](https://docs.bullmq.io/guide/retrying-failing-jobs)).
+  Future provider fixtures should be checked against upstream scalar
+  serialization, and runbooks should identify which layer owns retries and
+  Sentry capture. Use the Sentry and systematic-debugging skills for similar
+  investigations.

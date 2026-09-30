@@ -6,6 +6,7 @@ import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
+import { findProviderTransportError } from "../lib/provider-transport-error.ts";
 import { type FetchProviderPagesResult, fetchProviderPages } from "../sync/pagination.ts";
 import { ProviderStoredIdentityMissingError, ProviderTokenRejectedError } from "./auth-errors.ts";
 import type { SyncRun } from "./sync-run.ts";
@@ -102,7 +103,7 @@ const openBetaTickSchema = z
         "Repeat",
       ])
       .nullable(),
-    dateClimbed: z.string().nullable(),
+    dateClimbed: z.number().int().nullable(),
     grade: z.string().nullable(),
     source: z.enum(["OB", "MP"]).nullable(),
     user: z
@@ -261,11 +262,10 @@ function nullableText(value: string | null | undefined): string | null {
   return normalized ? normalized : null;
 }
 
-function parseOpenBetaDate(value: string | null): string | null {
-  const date = value?.slice(0, 10);
-  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
-  const parsed = new Date(`${date}T00:00:00.000Z`);
-  return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date ? null : date;
+function parseOpenBetaDate(value: number | null): string | null {
+  if (value === null) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
 }
 
 function gradeFromTick(
@@ -459,6 +459,7 @@ export class OpenBetaProvider implements SyncProvider {
         },
       });
     } catch (error) {
+      if (findProviderTransportError(error)) throw error;
       captureException(error, { tags: { provider: this.id, phase: "tick_export" } });
       return {
         provider: this.id,

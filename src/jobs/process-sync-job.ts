@@ -1,6 +1,5 @@
 import {
   ProviderRateLimitError,
-  ProviderRequestTimeoutError,
   ProviderServiceUnavailableError,
 } from "@dofek/provider-http/rate-limit";
 import { withAccountErasureUserWriteFence } from "../db/account-erasure.ts";
@@ -12,6 +11,7 @@ import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import { invalidateAllUserQueries } from "../lib/cache.ts";
 import { providerRequiresStoredTokens } from "../lib/custom-auth-providers.ts";
 import { captureException } from "../lib/error-reporting.ts";
+import { findProviderTransportError } from "../lib/provider-transport-error.ts";
 import { isRetryableInfraError } from "../lib/retryable-infra-error.ts";
 import { logger } from "../logger.ts";
 import { createKafkaMetricStreamEventPublisherForRoute } from "../metric-stream/redpanda-producer.ts";
@@ -70,6 +70,8 @@ function computePercentage(
 /** Minimal Job interface — only the subset processSyncJob actually uses. */
 interface SyncJob {
   id?: string;
+  attemptsMade: number;
+  opts: { attempts?: number };
   data: SyncJobData;
   updateProgress: (data: object) => Promise<void>;
   updateData: (data: SyncJobData) => Promise<void>;
@@ -204,40 +206,8 @@ function providerSyncFailureEvent(
   };
 }
 
-function isProviderServiceUnavailableError(error: unknown): boolean {
-  const visitedErrors = new Set<Error>();
-  let currentError = error;
-
-  while (currentError instanceof Error && !visitedErrors.has(currentError)) {
-    if (currentError instanceof ProviderServiceUnavailableError) {
-      return true;
-    }
-
-    visitedErrors.add(currentError);
-    currentError = "cause" in currentError ? currentError.cause : undefined;
-  }
-
-  return false;
-}
-
-function isProviderRequestTimeoutError(error: unknown): boolean {
-  const visitedErrors = new Set<Error>();
-  let currentError = error;
-
-  while (currentError instanceof Error && !visitedErrors.has(currentError)) {
-    if (currentError instanceof ProviderRequestTimeoutError) {
-      return true;
-    }
-
-    visitedErrors.add(currentError);
-    currentError = "cause" in currentError ? currentError.cause : undefined;
-  }
-
-  return false;
-}
-
 function isProviderTransportError(error: unknown): boolean {
-  return isProviderServiceUnavailableError(error) || isProviderRequestTimeoutError(error);
+  return findProviderTransportError(error) !== null;
 }
 
 function isZeppHttp500ServiceUnavailable(error: unknown): error is ProviderServiceUnavailableError {
@@ -619,6 +589,20 @@ export async function processSyncJob(
         throw err;
       }
       signal?.throwIfAborted();
+      const isOpenBetaTransportFailure =
+        provider.id === "openbeta" && isProviderTransportError(err);
+      if (isOpenBetaTransportFailure && job.attemptsMade + 1 < (job.opts.attempts ?? 1)) {
+        providerStatus[provider.id] = {
+          status: "running",
+          message: "Service unavailable; retrying",
+        };
+        await job.updateProgress({
+          providers: providerStatus,
+          percentage: computePercentage(completedCount, 0, totalProviders),
+        });
+        logger.warn(`[worker] ${provider.name} temporarily unavailable; retrying: ${String(err)}`);
+        throw err;
+      }
       if (err instanceof ProviderRateLimitError) {
         const retryAt = await scheduleRateLimitRetry(db, job, err, since, until, signal);
         const message = `Rate limited; retry scheduled for ${retryAt}`;
@@ -678,7 +662,11 @@ export async function processSyncJob(
         throw err;
       }
       completedCount++;
-      const message = err instanceof Error ? err.message : String(err);
+      const message = isOpenBetaTransportFailure
+        ? "OpenBeta is unavailable and automatic retries were exhausted. Try syncing again later."
+        : err instanceof Error
+          ? err.message
+          : String(err);
       const authFailureReason = authFailureReasonFromError(err);
       const failureEvent = providerSyncFailureEvent(provider.name, authFailureReason);
       if (shouldReportProviderError(err)) {
@@ -690,6 +678,7 @@ export async function processSyncJob(
         stage: "ingest",
         status: "failed",
         ...failureEvent,
+        ...(isOpenBetaTransportFailure ? { errorMessage: message } : {}),
         idempotencyKey: "worker-failed",
       });
       await job.updateProgress({
@@ -712,6 +701,7 @@ export async function processSyncJob(
       syncOperationsTotal.add(1, { provider: provider.id, data_type: "sync", status: "error" });
       syncDuration.record(durationMs, { provider: provider.id, data_type: "sync" });
       syncErrorsTotal.add(1, { provider: provider.id, data_type: "sync" });
+      if (isOpenBetaTransportFailure) throw err;
     }
   }
 

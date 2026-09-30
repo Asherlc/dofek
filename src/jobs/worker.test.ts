@@ -1,4 +1,7 @@
-import { ProviderServiceUnavailableError } from "@dofek/provider-http/rate-limit";
+import {
+  ProviderRequestTimeoutError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import {
   APPLE_HEALTH_IMPORT_VALIDATION_ERROR_NAME,
@@ -879,6 +882,45 @@ describe("worker module", () => {
     expect(logger.warn).toHaveBeenCalledWith(
       "[worker] Job retrying after provider service unavailable: Zepp API service unavailable (500): upstream outage",
     );
+  });
+
+  it.each([504, "timeout"])(
+    "keeps retrying OpenBeta %s observable without Sentry alerts",
+    async (status) => {
+      const Sentry = await import("@sentry/node");
+      const { logger } = await import("../logger.ts");
+      vi.mocked(Sentry.captureException).mockClear();
+      vi.mocked(logger.warn).mockClear();
+      const error =
+        status === "timeout"
+          ? new ProviderRequestTimeoutError({ providerId: "openbeta", timeoutMs: 120_000 })
+          : new ProviderServiceUnavailableError({
+              providerId: "openbeta",
+              statusCode: 504,
+              message: "upstream timeout",
+              responseBody: "timeout",
+            });
+
+      getWorkerHandler("failed")({ attemptsMade: 1, opts: { attempts: 288 } }, error);
+
+      expect(Sentry.captureException).not.toHaveBeenCalled();
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("retrying"));
+    },
+  );
+
+  it("reports exhausted OpenBeta retries to Sentry", async () => {
+    const Sentry = await import("@sentry/node");
+    vi.mocked(Sentry.captureException).mockClear();
+    const error = new ProviderServiceUnavailableError({
+      providerId: "openbeta",
+      statusCode: 504,
+      message: "upstream timeout",
+      responseBody: "timeout",
+    });
+
+    getWorkerHandler("failed")({ attemptsMade: 288, opts: { attempts: 288 } }, error);
+
+    expect(Sentry.captureException).toHaveBeenCalledWith(error);
   });
 
   it("failed event handler reports unrelated provider service-unavailable errors", async () => {
