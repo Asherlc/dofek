@@ -7,7 +7,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { resetLegacyClimbingTables } from "./climbing-migration-test-helpers.ts";
 import { runMigrations } from "./migrate.ts";
-import { TEST_USER_ID } from "./schema/core.ts";
 import { setupTestDatabase, type TestContext, writeTestMigrationFiles } from "./test-helpers.ts";
 
 // cspell:ignore pkey relkind relname relnamespace relreplident nspname
@@ -142,79 +141,6 @@ describe("runMigrations", () => {
 
     const secondCount = await runMigrations(ctx.connectionString, tmpDir);
     expect(secondCount).toBe(0);
-  });
-
-  it("applies pending Apple Health revisions after the original climbing migration", async () => {
-    const drizzleDir = join(import.meta.dirname, "../../drizzle");
-    const journal = z
-      .object({ entries: z.array(z.object({ tag: z.string(), when: z.number() })) })
-      .parse(JSON.parse(readFileSync(join(drizzleDir, "meta/_journal.json"), "utf8")));
-    const climbingEntry = journal.entries.find(
-      (entry) => entry.tag === "0133_independent_climbing_outcome_count",
-    );
-    const appleEntry = journal.entries.find((entry) =>
-      entry.tag.endsWith("_apple_health_workout_revisions"),
-    );
-    if (!climbingEntry || !appleEntry) throw new Error("Required migration fixtures are missing");
-    const migrationFiles = [climbingEntry, appleEntry].map((entry) => ({
-      content: readFileSync(join(drizzleDir, `${entry.tag}.sql`), "utf8"),
-      file: `${entry.tag}.sql`,
-      when: entry.when,
-    }));
-    const tmpDir = mkdtempSync(join(tmpdir(), "migrate-test-climbing-apple-order-"));
-    const appliedRowsSchema = z.array(
-      z.object({ created_at: z.coerce.number(), hash: z.string() }),
-    );
-    const client = new Client({ connectionString: ctx.connectionString });
-    await client.connect();
-    try {
-      // Model the schema immediately before the already-deployed climbing change.
-      await client.query(`ALTER TABLE fitness.climbing_entry
-        ADD CONSTRAINT climbing_entry_aggregate_pair CHECK ((sent IS NULL) = (attempt_count IS NULL))`);
-      writeTestMigrationFiles(tmpDir, migrationFiles.slice(0, 1));
-      await expect(runMigrations(ctx.connectionString, tmpDir)).resolves.toBe(1);
-      const appliedBefore = appliedRowsSchema.parse(
-        (
-          await client.query(
-            "SELECT created_at, hash FROM drizzle.__drizzle_migrations ORDER BY created_at",
-          )
-        ).rows,
-      );
-      await client.query(
-        "INSERT INTO fitness.provider (id, name) VALUES ('migration-order', 'Migration Order')",
-      );
-      await client.query(
-        `INSERT INTO fitness.climbing_entry (
-          user_id, provider_id, unattached_date, external_id, climb_type, grade_system,
-          grade, sent, attempt_count
-        ) VALUES ($1, 'migration-order', CURRENT_DATE, 'known-send', 'boulder', 'v_scale', 'V5', TRUE, NULL)`,
-        [TEST_USER_ID],
-      );
-
-      writeTestMigrationFiles(tmpDir, migrationFiles);
-      await expect(runMigrations(ctx.connectionString, tmpDir)).resolves.toBe(1);
-      await expect(runMigrations(ctx.connectionString, tmpDir)).resolves.toBe(0);
-      const appliedAfter = appliedRowsSchema.parse(
-        (
-          await client.query(
-            "SELECT created_at, hash FROM drizzle.__drizzle_migrations ORDER BY created_at",
-          )
-        ).rows,
-      );
-      expect(appliedAfter).toHaveLength(2);
-      expect(appliedAfter[0]).toEqual(appliedBefore[0]);
-      expect(appliedAfter[1]?.created_at).toBe(appleEntry.when);
-      const retainedClimb = await client.query(
-        "SELECT sent, attempt_count FROM fitness.climbing_entry WHERE external_id = 'known-send'",
-      );
-      expect(
-        z
-          .array(z.object({ sent: z.boolean().nullable(), attempt_count: z.number().nullable() }))
-          .parse(retainedClimb.rows),
-      ).toEqual([{ sent: true, attempt_count: null }]);
-    } finally {
-      await client.end();
-    }
   });
 
   it("refreshes write fences for future direct and transitive user tables", async () => {

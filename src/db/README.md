@@ -65,14 +65,6 @@ The positive-count constraint still applies to recorded counts; see
 [PostgreSQL check constraints](https://www.postgresql.org/docs/current/ddl-constraints.html#DDL-CONSTRAINTS-CHECK-CONSTRAINTS)
 and the observed [Kaya contract](../../docs/kaya.md#attempts-and-unknown-counts).
 
-Climbing outcomes and attempt counts are independently nullable: a provider can
-record an unsent climb or a send without recording its count. Preserve that
-unknown count rather than defaulting it to one. Summaries retain known sends
-and report an unknown attempt total when any contributing count is missing.
-The positive-count constraint still applies to recorded counts; see
-[PostgreSQL check constraints](https://www.postgresql.org/docs/current/ddl-constraints.html#DDL-CONSTRAINTS-CHECK-CONSTRAINTS)
-and the observed [Kaya contract](../../docs/kaya.md#attempts-and-unknown-counts).
-
 After deploying migration `0055_climbing_attempt_count`, preview the Kaya backfill with
 `pnpm backfill:climbing-attempt-count`. Run it again with `--execute` to copy valid positive
 integer attempt counts from preserved Kaya raw payloads into the canonical `attempt_count`
