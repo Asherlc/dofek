@@ -854,13 +854,16 @@ function database(): SyncDatabase & { insertValues: CallableVitestMock } {
   const insertInto = vi.fn();
   deleteFrom.mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
   insertInto.mockReturnValue({ values: insertValues });
-  return {
+  const db = {
     delete: deleteFrom,
     execute: vi.fn(),
     insert: insertInto,
     insertValues,
     select: vi.fn(),
   };
+  return Object.assign(db, {
+    transaction: async <T>(operation: (transaction: SyncDatabase) => Promise<T>) => operation(db),
+  });
 }
 
 function session(id: string) {

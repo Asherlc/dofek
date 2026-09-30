@@ -25,7 +25,13 @@ const climbSchema = z.object({
   name: z.string().nullable(),
   lead: z.boolean(),
   climb_type: z.object({ id: idSchema, name: z.string() }),
-  grade: z.object({ id: idSchema, name: z.string(), climb_type_group: z.string() }).nullable(),
+  grade: z
+    .object({
+      id: idSchema,
+      name: z.string().refine((name) => name.trim().length > 0, "Grade must not be blank"),
+      climb_type_group: z.string(),
+    })
+    .nullable(),
   gym: gymSchema.nullable(),
 });
 const attemptCountSchema = z.number().int().positive().nullable();

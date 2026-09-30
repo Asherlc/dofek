@@ -220,6 +220,29 @@ describe("KayaClient", () => {
     },
   );
 
+  it.each(["", "   "])(
+    "rejects an attempted climb with a blank grade %j before persistence",
+    async (name) => {
+      const climb = attemptedClimb("3077580_2156989", null);
+      const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
+        jsonResponse({
+          data: {
+            sessionsForUser: [
+              {
+                ...session("3077580"),
+                attempted_climbs: [{ ...climb, grade: { ...climb.grade, name } }],
+              },
+            ],
+          },
+        }),
+      );
+
+      await expect(new KayaClient("token", fetchFn).listSessions("42")).rejects.toBeInstanceOf(
+        ZodError,
+      );
+    },
+  );
+
   it("normalizes numeric-string gym coordinates from ascent responses", async () => {
     const fetchFn = vi
       .fn<typeof fetch>()

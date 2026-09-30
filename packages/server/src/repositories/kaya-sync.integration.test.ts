@@ -160,4 +160,99 @@ describe("Kaya attempted-climb import (PostgreSQL integration)", () => {
       expect.objectContaining({ grade: "V4", attempts: null, sends: 1 }),
     ]);
   });
+
+  it("preserves the previous session entries when a replacement fails database validation", async () => {
+    const startedAt = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    await context.db
+      .delete(activity)
+      .where(
+        and(
+          eq(activity.providerId, "kaya"),
+          eq(activity.userId, TEST_USER_ID),
+          eq(activity.externalId, "integrity-session"),
+        ),
+      );
+    const [priorActivity] = await context.db
+      .insert(activity)
+      .values({
+        providerId: "kaya",
+        userId: TEST_USER_ID,
+        externalId: "integrity-session",
+        canonicalType: "climbing",
+        providerType: "rock_climbing",
+        startedAt,
+        endedAt: new Date(startedAt.valueOf() + 60 * 60 * 1000),
+        localTimeSource: "unknown",
+      })
+      .returning();
+    if (!priorActivity) throw new Error("Failed to seed the previous Kaya session");
+    const previousEntries = await context.db
+      .insert(climbingEntry)
+      .values({
+        providerId: "kaya",
+        userId: TEST_USER_ID,
+        activityId: priorActivity.id,
+        externalId: "prior-ascent",
+        climbType: "boulder",
+        gradeSystem: "v_scale",
+        grade: "V4",
+        sent: true,
+        attemptCount: 1,
+      })
+      .returning();
+    const climb = {
+      id: "climb",
+      name: null,
+      lead: false,
+      climb_type: { id: "1", name: "Bouldering" },
+      grade: { id: "6", name: "v4", climb_type_group: "6" },
+      gym: null,
+    };
+    server.use(
+      http.post("https://kaya-beta.kayaclimb.com/graphql", async ({ request }) => {
+        const { query } = z.object({ query: z.string() }).parse(await request.json());
+        return HttpResponse.json({
+          data: query.includes("query sessionsForUser")
+            ? {
+                sessionsForUser: [
+                  {
+                    id: "integrity-session",
+                    start_time: startedAt.toISOString(),
+                    end_time: new Date(startedAt.valueOf() + 60 * 60 * 1000).toISOString(),
+                    gym: null,
+                    attempted_climbs: [
+                      { ...climb, id: "integrity-session_project", attempts: null, name: "" },
+                    ],
+                  },
+                ],
+              }
+            : {
+                ascentsForUser: [
+                  {
+                    id: "replacement-ascent",
+                    session_id: "integrity-session",
+                    date: startedAt.toISOString(),
+                    attempts: 1,
+                    ascent_type: { id: "repeat", name: "Repeat" },
+                    climb,
+                  },
+                ],
+              },
+        });
+      }),
+    );
+
+    const result = await new KayaSyncProvider().sync(
+      new SyncRun({ db: context.db, userId: TEST_USER_ID, window: SyncWindow.full() }),
+    );
+    expect(result).toMatchObject({
+      recordsSynced: 0,
+      errors: [expect.objectContaining({ message: expect.any(String) })],
+    });
+    const retained = await context.db
+      .select()
+      .from(climbingEntry)
+      .where(eq(climbingEntry.activityId, priorActivity.id));
+    expect(retained).toEqual(previousEntries);
+  });
 });
