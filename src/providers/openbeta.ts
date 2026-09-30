@@ -99,7 +99,7 @@ const openBetaTickSchema = z
     climbId: z.string().nullable(),
     style: z.enum(["Lead", "Solo", "TR", "Follow", "Aid", "Boulder"]).nullable(),
     attemptType: z.string().trim().min(1).nullable(),
-    dateClimbed: z.string().nullable(),
+    dateClimbed: z.number().nullable(),
     grade: z.string().nullable(),
     source: z.enum(["OB", "MP"]).nullable(),
     user: z
@@ -253,11 +253,12 @@ function nullableText(value: string | null | undefined): string | null {
   return normalized ? normalized : null;
 }
 
-function parseOpenBetaDate(value: string | null): string | null {
-  const date = value?.slice(0, 10);
-  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
-  const parsed = new Date(`${date}T00:00:00.000Z`);
-  return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date ? null : date;
+function parseOpenBetaDate(value: number | null): string | null {
+  if (value === null) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const date = parsed.toISOString().slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null;
 }
 
 function gradeFromTick(

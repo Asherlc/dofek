@@ -28392,11 +28392,16 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   [TickType](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/schema/Tick.gql)
   uses that scalar. Existing local test fixtures use string dates and miss
   this API contract.
-- **Status / follow-up:** Unresolved. Proposed direct fix: use the numeric
-  scalar contract, preserve the raw timestamp, convert to a UTC calendar date,
-  and replace string fixtures with timestamp fixtures and regression coverage.
-  Implementation direction confirmation and successful post-deploy sync
-  remain pending. No resilience knobs or runtime changes were introduced.
+- **Direct fix:** Use the numeric scalar contract, preserve the raw timestamp,
+  convert to a UTC calendar date, and replace string fixtures with timestamp
+  fixtures and regression coverage. Missing, out-of-range, and extended-year
+  dates remain rejected without absence reconciliation.
+- **Validation / follow-up:** The timestamp tests reproduced the production
+  Zod failure before the fix. All 54 provider unit tests and the real-database
+  sync regression pass; the final full unit/mobile run passes 19,284 tests
+  with 20 skipped. Root typecheck and full lint pass. Production remains
+  unresolved until deployment and a successful post-deploy sync. No retries,
+  timeouts, or other resilience knobs were added.
 - **Retrospective:** Sentry's provider/phase tags and field-level validation
   errors established the failure without production mutations. Verify custom
   scalar serialization against upstream source when preparing provider fixtures.

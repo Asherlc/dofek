@@ -23,7 +23,7 @@ function tick(overrides: Record<string, unknown> = {}): Record<string, unknown> 
     climbId: "climb-1",
     style: "Lead",
     attemptType: "Redpoint",
-    dateClimbed: "2026-08-10",
+    dateClimbed: Date.parse("2026-08-10T00:00:00.000Z"),
     grade: "5.10a",
     source: "OB",
     user: { username: "climber", displayName: "Climber" },
@@ -55,7 +55,7 @@ describe("OpenBetaProvider.sync() (integration)", () => {
       name: "Blue Problem",
       grade: "V4",
       attemptType: "Attempt",
-      dateClimbed: "2026-08-11",
+      dateClimbed: Date.parse("2026-08-11T00:00:00.000Z"),
       climb: {
         uuid: "climb-uuid-2",
         name: "Blue Problem",
