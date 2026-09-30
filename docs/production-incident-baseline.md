@@ -28295,9 +28295,10 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   now preserve foreign attachments, entry IDs, and detailed attempts; complete
   responses retire missing raw records without deleting history. CSV retains
   unfamiliar and absent labels, and OpenBeta accepts consistent parent-only
-  metadata. The full unit/mobile suite passes (19,266 tests), and all selected
-  database regressions pass (101 tests). The runbook states Kaya's actual
-  since-only refresh scope instead of promising an unenforced upper bound.
+  metadata. The full unit/mobile suite passes (19,271 tests), and all selected
+  database regressions pass (103 tests on the final merged branch). The runbook
+  states Kaya's actual since-only refresh scope instead of promising an
+  unenforced upper bound.
 - **Main integration:** After [PR #2855](https://github.com/Asherlc/dofek/pull/2855)
   established the canonical Apple Health journal entry, retain its identity and
   move only the unapplied context conversion to migration 0135 after it. The
