@@ -33,6 +33,7 @@ function reportQueryPersistenceFailure(
 ): void {
   // AsyncStorage's iOS bridge keeps its fixed message but discards NSError codes.
   // Never send its error object: messages, keys and userInfo can contain health data.
+  // AsyncStorage multiRemove rejects an error array; classify its first error for telemetry.
   const failure: unknown = Array.isArray(error) ? error[0] : error;
   const category =
     failure instanceof SyntaxError

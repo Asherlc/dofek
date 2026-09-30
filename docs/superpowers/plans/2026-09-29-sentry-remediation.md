@@ -1,6 +1,6 @@
 # Sentry Remediation Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for tracking.
+Execute the tasks in order. For each task, reproduce the failure, implement the fix, and complete an independent specification and quality review. Finish with whole-branch review and the validation gates listed below. Checkboxes record progress.
 
 **Goal:** Fix confirmed production defects, preserve actionable private diagnostics for opaque failures, and resolve Sentry issues only after verified recovery.
 
