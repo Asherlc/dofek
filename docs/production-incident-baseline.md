@@ -27993,3 +27993,47 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   required. No retries, waits, exclusions, or threshold changes were added.
   Fixed-date fixtures tested against rolling windows need a scoped explicit
   clock.
+
+## 2026-09-30 — Sentry CI completed; production remains blocked by missing migration history
+
+- **Sentry validation outcome:** [PR #2837](https://github.com/Asherlc/dofek/pull/2837)
+  completed [hosted CI run 36655164786](https://github.com/Asherlc/dofek/actions/runs/36655164786)
+  at 04:19 UTC with 103 passing checks, six skipped, and no failures or pending
+  checks. All required gates and all six macOS jobs passed, including the
+  previously failing power fixture. The operator merged the PR at 04:20 UTC as
+  `6965fffb66491d1c0ec9c994b43d4875c861fa61`. Runner capacity became available
+  without changing limits, gates, retries, or timeouts.
+- **Separate production symptoms / impact:** A read-only live stack inventory
+  at 04:23 UTC showed `web` at 2/2 on `sha-525ad72`, while `worker`,
+  `analytics-worker`, the three metric-stream ClickHouse sinks, and
+  `processing-reconciliation` remained at 0/0. Background provider sync,
+  analytics refresh, and ClickHouse stream consumption remain paused; this is
+  not evidence that the Sentry fixes have recovered production.
+- **Exact failure evidence:** [Deployment job 109719413452](https://github.com/Asherlc/dofek/actions/runs/36662167290/job/109719413452)
+  failed in `Run migrations` for image `sha-f7060ae`. Its detached migration
+  container executed `node --experimental-strip-types --enable-source-maps
+  --disable-warning=ExperimentalWarning --import ./src/opentelemetry-hook.mjs
+  --import ./src/instrumentation.ts src/db/run-migrate.ts`. The first fatal line
+  at 03:05:45 UTC was: `Integrity check failed: migration tracked at
+  1790727480000 is recorded as applied but is missing.` The migration process
+  exited 1, so the workflow did not reach its final worker-restoration stack
+  apply. The migration and restoration ordering is defined in the
+  [deployment workflow](https://github.com/Asherlc/dofek/blob/f7060aeee6c7693e9aff9e02839e0475b51952f0/.github/workflows/deploy-web-stack.yml).
+- **Root cause:** The earlier deployed release's
+  [journal entry](https://github.com/Asherlc/dofek/blob/525ad724bcf0e12ddd58699299010e526acfe2e6/drizzle/meta/_journal.json)
+  records index 133, timestamp `1790727480000`, and tag
+  `0133_independent_climbing_outcome_count`. Its
+  [immutable SQL](https://github.com/Asherlc/dofek/blob/525ad724bcf0e12ddd58699299010e526acfe2e6/drizzle/0133_independent_climbing_outcome_count.sql)
+  drops `fitness.climbing_entry`'s `climbing_entry_aggregate_pair` constraint.
+  Main's journal ends at index 132, so its image omits already-applied
+  history and the integrity check correctly refuses the migration run.
+- **Status / follow-up:** Unresolved. [PR #2852](https://github.com/Asherlc/dofek/pull/2852)
+  carries the migration; at 04:33 UTC it had 98 passing checks and three
+  macOS checks queued, with no failures. Review and finish the chosen
+  migration-history repair through normal CI/deployment, then require
+  successful migrations and full worker convergence. No production writes,
+  manual replica restoration, integrity-check bypass, or new resilience knobs
+  were performed by this task. A fresh Sentry MCP inventory at 04:21 UTC
+  still found four server and six mobile issues open, with no web issues.
+  Historical projection materialization and mobile runtime 1.2 delivery
+  remain separately required before claiming their recovery.
