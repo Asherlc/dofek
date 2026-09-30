@@ -47,7 +47,7 @@ describe("get_climbing_sessions context", () => {
       name: "get_climbing_sessions",
       arguments: { start_date: "2026-09-01", end_date: "2026-09-30" },
     });
-    expect(result.isError).not.toBe(true);
+    expect(result.isError, JSON.stringify(result.content)).not.toBe(true);
     const output = climbingSessionsOutputSchema.parse(result.structuredContent);
     expect(output.result.sessions[0]?.climbs[0]).toMatchObject({
       context: climbingSessionContext(),
