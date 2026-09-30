@@ -5,6 +5,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const { warn } = vi.hoisted(() => ({ warn: vi.fn() }));
 interface ResourceCallbacks {
   resourceServerInfo?: (ctx: unknown, resource: string) => Promise<unknown>;
+  issueRefreshToken?: (
+    ctx: unknown,
+    client: { grantTypeAllowed(grantType: string): boolean },
+    source: unknown,
+  ) => boolean | Promise<boolean>;
 }
 const callbacks = vi.hoisted((): ResourceCallbacks => ({}));
 vi.mock("oidc-provider", async (importOriginal) => {
@@ -14,6 +19,7 @@ vi.mock("oidc-provider", async (importOriginal) => {
     Provider: class extends original.Provider {
       constructor(...args: ConstructorParameters<typeof original.Provider>) {
         super(...args);
+        callbacks.issueRefreshToken = args[1].issueRefreshToken;
         const callback = args[1].features?.resourceIndicators?.getResourceServerInfo;
         if (typeof callback === "function") {
           callbacks.resourceServerInfo = (ctx, resource) =>
@@ -37,6 +43,17 @@ describe("MCP OIDC token exchange diagnostics", () => {
     const { provider } = createOidcProvider(db, { cookiesKeys: ["test-key"] });
 
     expect(provider.proxy).toBe(true);
+  });
+
+  it("issues refresh tokens based on the client's grant support without offline_access", async () => {
+    createOidcProvider({ execute: vi.fn() }, { cookiesKeys: ["test-key"] });
+    const issue = callbacks.issueRefreshToken;
+    if (!issue) throw new Error("Refresh-token issuance policy was not installed");
+    const source = { scopes: new Set(["health:read"]) };
+    expect(
+      await issue({}, { grantTypeAllowed: (grant) => grant === "refresh_token" }, source),
+    ).toBe(true);
+    expect(await issue({}, { grantTypeAllowed: () => false }, source)).toBe(false);
   });
 
   it("issues stored opaque access tokens only for Dofek's MCP resource", async () => {
