@@ -939,7 +939,8 @@ export function createSourceActivitySql(database: string): string {
     source_name Nullable(String),
     deleted_at Nullable(DateTime64(6, 'UTC')),
     _peerdb_is_deleted Int8,
-    _peerdb_version Int64
+    _peerdb_version Int64,
+    created_at DateTime64(6, 'UTC') DEFAULT now64(6)
   ) ENGINE = ReplacingMergeTree(_peerdb_version) ORDER BY id`;
 }
 

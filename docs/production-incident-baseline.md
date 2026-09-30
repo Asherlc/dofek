@@ -27820,9 +27820,10 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Validation:** Before the fix, real PostgreSQL and ClickHouse regressions
   served both versions and revived the older revision when the latest was
   absent or deleted. Mixed-provider regressions also reproduced obsolete
-  tombstones hiding current groups. After the fix, 96 database tests pass, including the
+  tombstones hiding current groups. After the fix, 104 database tests pass, including the
   source-record refresh, group lifecycle, provider absence, grouping, and
-  activity API suites. Workspace lint, root/server/web typechecks, and migration
+  activity API, production dbt repair, and payload lifecycle suites. Workspace
+  lint, root/server/web typechecks, and migration
   policy pass; the full unit/mobile suite passes. An unrelated eFTP fixture
   crossed its rolling 90-day window; the [separate fix on main](https://github.com/Asherlc/dofek/pull/2853)
   pins the test clock and replaces this branch's relative-date correction. Local
@@ -27837,6 +27838,12 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   The [spell-check job](https://github.com/Asherlc/dofek/actions/runs/36653162781/job/109691872576)
   also reported `Unknown word (endmacro)` in the test helper's Jinja matcher.
   Added the actual Jinja keyword to the project vocabulary.
+  A [full integration shard](https://github.com/Asherlc/dofek/actions/runs/36654153806/job/109695433538)
+  then failed the production dbt repair and payload lifecycle tests with
+  `Unknown expression identifier created_at in scope apple_health_revisions`.
+  Two minimal activity-table fixtures omitted that canonical column. Their
+  schemas and seed data now include it; both dbt suites pass all eight tests.
+  The production ranking is unchanged.
 - **Remaining risk / follow-up:** Production remains unresolved until the normal
   deployment and a ClickHouse incremental refresh complete. Verify the old
   group disappears, the current group remains, and both raw versions survive.
