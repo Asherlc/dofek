@@ -28113,3 +28113,37 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   required. No retries, waits, exclusions, or threshold changes were added.
   Fixed-date fixtures tested against rolling windows need a scoped explicit
   clock.
+
+## 2026-09-30 — OpenBeta tick sync received upstream HTTP 504
+
+- **Symptoms / impact:** [DOFEK-SERVER-6K](https://east-bay-software.sentry.io/issues/7764101777/)
+  recorded two production errors at 17:22:37 and 17:22:45 UTC during
+  `OpenBetaProvider.sync`'s `tick_export` phase. The failed sync does not import
+  new climbing ticks; the provider returns before writing or reconciling rows,
+  preserving existing entries. Sentry's zero affected-user count does not
+  establish that no connected account was affected.
+- **Failure evidence:** The failing operation was the GraphQL `userTicks`
+  request to `https://api.openbeta.io`. Its first exception was
+  `ProviderServiceUnavailableError: openbeta API service unavailable (504)`.
+  Event `a2eca20240af4a59a576cab89348b07a` retained Cloudflare's
+  `origin_gateway_timeout` response and ray ID `a434e7e45c1040ad` under release
+  `bffc5647c938191281a0fa2cff71fc4cc90e71f8`.
+- **Root cause / status:** OpenBeta's origin did not respond within
+  Cloudflare's gateway deadline, as identified by the upstream response.
+  The reason for that origin timeout and subsequent recovery are unverified.
+  Cloudflare documents gateway timeout diagnosis in its
+  [502/504 guide](https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-5xx-errors/error-502-504/).
+- **Investigation / action:** Reviewed the Sentry issue and its last-24-hour
+  events, the shared HTTP classification, OpenBeta's pagination error return,
+  and worker result handling. HTTP 504 is classified as service unavailable;
+  OpenBeta captures the exception and returns a sync error, which the worker
+  records as failed. This path does not automatically retry the provider
+  failure, consistent with the current
+  [retry scope](sync-checkpoint-retries.md#infra-failure-scope).
+  No production mutation or retry, timeout, or fallback change was made.
+- **Remaining risk / follow-up:** Unresolved until a successful tick sync
+  confirms recovery. After upstream recovery, rerun the affected sync and
+  verify its success record. If failures persist, correlate request timing
+  and the Cloudflare ray ID with OpenBeta support before choosing a code
+  change. A provider-sync runbook note distinguishing upstream 504s from
+  local infrastructure failures would make future triage faster.
