@@ -105,6 +105,26 @@ describe("registerAuthorizedTool", () => {
       isError: true,
       content: [{ type: "text", text: "Database unavailable" }],
     });
-    expect(captureException).toHaveBeenCalledExactlyOnceWith(new Error("MCP tool save failed"));
+    expect(captureException).toHaveBeenCalledExactlyOnceWith(error, {
+      tags: { mcp_tool: "save" },
+    });
+  });
+  it("uses the caller's private-error reporter instead of reporting the original error", async () => {
+    const error = new Error("Private database parameters");
+    const reportUnexpectedError = vi.fn();
+    registerAuthorizedTool(
+      server,
+      ["nutrition:write"],
+      "save",
+      { inputSchema: z.object({}) },
+      async () => {
+        throw error;
+      },
+      reportUnexpectedError,
+    );
+    await connect();
+    expect((await client.callTool({ name: "save", arguments: {} })).isError).toBe(true);
+    expect(reportUnexpectedError).toHaveBeenCalledExactlyOnceWith(error, "mcp_tool");
+    expect(captureException).not.toHaveBeenCalled();
   });
 });

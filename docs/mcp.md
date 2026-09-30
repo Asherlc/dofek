@@ -165,8 +165,9 @@ refreshing a token does not expand its permissions.
 | `providers:read` | List configured providers and connection status. |
 | `sync:write` | Enqueue provider sync jobs. |
 
-`health:write` is never granted by default. Manual-token users must select it,
-and OAuth clients must request it explicitly.
+New personal tokens select `health:write` by default; users may deselect it.
+OAuth clients must request it through consent before an existing read-only grant
+can write.
 
 ## Tools
 

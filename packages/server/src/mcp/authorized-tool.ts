@@ -27,6 +27,9 @@ export function registerAuthorizedTool<Input extends z.ZodRawShape>(
     args: z.infer<z.ZodObject<Input>>,
     context: ServerContext,
   ) => CallToolResult | Promise<CallToolResult>,
+  reportUnexpectedError: (error: unknown, operation: "mcp_tool") => void = (error) => {
+    captureException(error, { tags: { mcp_tool: name } });
+  },
 ) {
   return server.registerTool(
     name,
@@ -42,7 +45,7 @@ export function registerAuthorizedTool<Input extends z.ZodRawShape>(
         return await callback(args, context);
       } catch (error: unknown) {
         if (!(error instanceof McpAuthError)) {
-          captureException(new Error(`MCP tool ${name} failed`));
+          reportUnexpectedError(error, "mcp_tool");
           throw error;
         }
         const resourceMetadata = getOAuthProtectedResourceMetadataUrl(getMcpResourceUrl());

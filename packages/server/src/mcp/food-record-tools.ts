@@ -309,6 +309,7 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
         };
       });
     },
+    reportUnexpectedFoodRecordError,
   );
 
   registerAuthorizedTool(
@@ -329,6 +330,7 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
         return record ? foodRecordToTransport(record) : null;
       });
     },
+    reportUnexpectedFoodRecordError,
   );
 
   registerAuthorizedTool(
@@ -387,6 +389,7 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
         foodMutationTelemetryForTool("create_food_entry", request_id),
       );
     },
+    reportUnexpectedFoodRecordError,
   );
 
   registerAuthorizedTool(
@@ -443,6 +446,7 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
         foodMutationTelemetryForTool("update_food_entry", request_id),
       );
     },
+    reportUnexpectedFoodRecordError,
   );
 
   const registerTargetMutation = (
@@ -484,6 +488,7 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
           foodMutationTelemetryForTool(name, request_id),
         );
       },
+      reportUnexpectedFoodRecordError,
     );
   };
 
@@ -521,5 +526,6 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
         historyToTransport(await repository.history(record_id, cursor ?? null, limit ?? 50)),
       );
     },
+    reportUnexpectedFoodRecordError,
   );
 }
