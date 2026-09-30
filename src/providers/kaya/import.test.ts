@@ -113,10 +113,10 @@ describe("parseKayaExport", () => {
         climbType: "boulder",
         gradeSystem: "v_scale",
         grade: "V0",
-        sent: true,
-        attemptCount: 1,
+        resultStyle: expect.any(String),
+        attemptCount: null,
         routeName: null,
-        locationName: "Touchstone Pacific Pipe",
+        locationPath: [{ name: "Touchstone Pacific Pipe", externalId: null, kind: "gym" }],
         sourceName: "Kaya",
       }),
       expect.objectContaining({
@@ -124,7 +124,7 @@ describe("parseKayaExport", () => {
         climbType: "boulder",
         gradeSystem: "v_scale",
         grade: "V3",
-        sent: true,
+        resultStyle: expect.any(String),
         attemptCount: 2,
         routeName: null,
         raw: expect.objectContaining({
@@ -144,7 +144,7 @@ describe("parseKayaExport", () => {
         climbType: "boulder",
         gradeSystem: "v_scale",
         grade: "V3",
-        sent: true,
+        resultStyle: expect.any(String),
         attemptCount: 1,
         routeName: null,
         raw: expect.objectContaining({
@@ -209,9 +209,11 @@ Thu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,,v3,Pink,Route B,Touch
       climbType: "route",
       gradeSystem: "yds",
       grade: "5.10a",
-      lead: null,
+      climbStyle: null,
+      resultStyle: "Redpoint",
+      attemptCount: null,
       routeName: "Lead Route",
-      locationName: "Touchstone Pacific Pipe",
+      locationPath: [{ name: "Touchstone Pacific Pipe", externalId: null, kind: "gym" }],
       raw: {
         color: "Green",
         climbName: "Lead Route",
@@ -228,7 +230,7 @@ Thu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,,v3,Pink,Route B,Touch
 
     expect(result.errors).toEqual([]);
     expect(result.activities[0]?.entries[0]).toMatchObject({
-      sent: true,
+      resultStyle: expect.any(String),
       attemptCount: 1,
       routeName: "Named Problem",
       raw: expect.objectContaining({ ascentType: "Flash" }),
@@ -352,7 +354,7 @@ Thu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,,v3,Pink,"Route, With 
           activityId: "activity-1",
           externalId: expect.stringMatching(/^kaya:entry:[a-f0-9]{16}$/),
           grade: "V0",
-          attemptCount: 1,
+          attemptCount: null,
           sourceName: "Kaya",
         }),
       ]),

@@ -53,24 +53,14 @@ describe("ClimbingEntryAssociator PostgreSQL behavior", () => {
     groupId = activity.group_id;
     activityId = groupId;
 
-    await context.db.execute(sql`INSERT INTO fitness.climbing_entry (
-      id, user_id, provider_id, activity_id, unattached_date, external_id,
-      climb_type, grade_system, grade, sent, attempt_count, provider_absent_at, source_name, raw
-    ) VALUES
-      (${DATE_MATCH_TICK_ID}, ${TEST_USER_ID}, 'mountain-project', NULL, '2026-01-01',
-       'local-day', 'boulder', 'v_scale', 'V4', TRUE, 1, NULL, 'Mountain Project', '{"exported":true}'::jsonb),
-      (${ADJACENT_TICK_ID}, ${TEST_USER_ID}, 'mountain-project', NULL, '2026-01-02',
-       'adjacent-day', 'boulder', 'v_scale', 'V5', TRUE, 1, NULL, 'Mountain Project', '{}'::jsonb),
-      (${ABSENT_TICK_ID}, ${TEST_USER_ID}, 'mountain-project', NULL, '2026-01-01',
-       'absent', 'boulder', 'v_scale', 'V6', TRUE, 1, CURRENT_TIMESTAMP, 'Mountain Project', '{}'::jsonb),
-      (${FOREIGN_TICK_ID}, ${OTHER_USER_ID}, 'mountain-project', NULL, '2026-01-01',
-       'foreign-user', 'boulder', 'v_scale', 'V7', TRUE, 1, NULL, 'Mountain Project', '{}'::jsonb),
-      (${OPENBETA_TICK_ID}, ${TEST_USER_ID}, 'openbeta', NULL, '2026-01-01',
-       'openbeta:local-day', 'route', 'yds', '5.10a', TRUE, 1, NULL, 'OpenBeta',
-       '{"source":"openbeta","attemptType":"Onsight"}'::jsonb),
-      (${CONCURRENT_TICK_ID}, ${TEST_USER_ID}, 'openbeta', NULL, '2026-01-01',
-       'openbeta:concurrent', 'route', 'yds', '5.10b', TRUE, 1, NULL, 'OpenBeta',
-       '{"source":"openbeta","attemptType":"Flash"}'::jsonb)`);
+    await context.db.execute(sql`INSERT INTO fitness.climbing_entry (id, user_id, provider_id, activity_id, unattached_date, external_id, climb_type, grade_system, grade, result_style, attempt_count, provider_absent_at, source_name, raw) VALUES
+        (${DATE_MATCH_TICK_ID}, ${TEST_USER_ID}, 'mountain-project', NULL, '2026-01-01', 'local-day', 'boulder', 'v_scale', 'V4', COALESCE(NULLIF(btrim(COALESCE(('{"exported":true}'::jsonb)::jsonb->>'ascentType', ('{"exported":true}'::jsonb)::jsonb->>'attemptType', ('{"exported":true}'::jsonb)::jsonb->>'Lead Style')), ''), CASE WHEN (TRUE)::boolean THEN 'Send' WHEN NOT (TRUE)::boolean THEN 'Not sent' ELSE NULL END), 1, NULL, 'Mountain Project', '{"exported":true}'::jsonb),
+        (${ADJACENT_TICK_ID}, ${TEST_USER_ID}, 'mountain-project', NULL, '2026-01-02', 'adjacent-day', 'boulder', 'v_scale', 'V5', COALESCE(NULLIF(btrim(COALESCE(('{}'::jsonb)::jsonb->>'ascentType', ('{}'::jsonb)::jsonb->>'attemptType', ('{}'::jsonb)::jsonb->>'Lead Style')), ''), CASE WHEN (TRUE)::boolean THEN 'Send' WHEN NOT (TRUE)::boolean THEN 'Not sent' ELSE NULL END), 1, NULL, 'Mountain Project', '{}'::jsonb),
+        (${ABSENT_TICK_ID}, ${TEST_USER_ID}, 'mountain-project', NULL, '2026-01-01', 'absent', 'boulder', 'v_scale', 'V6', COALESCE(NULLIF(btrim(COALESCE(('{}'::jsonb)::jsonb->>'ascentType', ('{}'::jsonb)::jsonb->>'attemptType', ('{}'::jsonb)::jsonb->>'Lead Style')), ''), CASE WHEN (TRUE)::boolean THEN 'Send' WHEN NOT (TRUE)::boolean THEN 'Not sent' ELSE NULL END), 1, CURRENT_TIMESTAMP, 'Mountain Project', '{}'::jsonb),
+        (${FOREIGN_TICK_ID}, ${OTHER_USER_ID}, 'mountain-project', NULL, '2026-01-01', 'foreign-user', 'boulder', 'v_scale', 'V7', COALESCE(NULLIF(btrim(COALESCE(('{}'::jsonb)::jsonb->>'ascentType', ('{}'::jsonb)::jsonb->>'attemptType', ('{}'::jsonb)::jsonb->>'Lead Style')), ''), CASE WHEN (TRUE)::boolean THEN 'Send' WHEN NOT (TRUE)::boolean THEN 'Not sent' ELSE NULL END), 1, NULL, 'Mountain Project', '{}'::jsonb),
+        (${OPENBETA_TICK_ID}, ${TEST_USER_ID}, 'openbeta', NULL, '2026-01-01', 'openbeta:local-day', 'route', 'yds', '5.10a', COALESCE(NULLIF(btrim(COALESCE(('{"source":"openbeta","attemptType":"Onsight"}'::jsonb)::jsonb->>'ascentType', ('{"source":"openbeta","attemptType":"Onsight"}'::jsonb)::jsonb->>'attemptType', ('{"source":"openbeta","attemptType":"Onsight"}'::jsonb)::jsonb->>'Lead Style')), ''), CASE WHEN (TRUE)::boolean THEN 'Send' WHEN NOT (TRUE)::boolean THEN 'Not sent' ELSE NULL END), 1, NULL, 'OpenBeta', '{"source":"openbeta","attemptType":"Onsight"}'::jsonb),
+        (${CONCURRENT_TICK_ID}, ${TEST_USER_ID}, 'openbeta', NULL, '2026-01-01', 'openbeta:concurrent', 'route', 'yds', '5.10b', COALESCE(NULLIF(btrim(COALESCE(('{"source":"openbeta","attemptType":"Flash"}'::jsonb)::jsonb->>'ascentType', ('{"source":"openbeta","attemptType":"Flash"}'::jsonb)::jsonb->>'attemptType', ('{"source":"openbeta","attemptType":"Flash"}'::jsonb)::jsonb->>'Lead Style')), ''), CASE WHEN (TRUE)::boolean THEN 'Send' WHEN NOT (TRUE)::boolean THEN 'Not sent' ELSE NULL END), 1, NULL, 'OpenBeta', '{"source":"openbeta","attemptType":"Flash"}'::jsonb)
+`);
   }, 60_000);
 
   afterAll(async () => {

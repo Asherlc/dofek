@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { resolveProviderActivityType } from "@dofek/training/activity-types";
+import { type ClimbingMetadata, climbingMetadataSchema } from "@dofek/training/climbing-context";
 import { parseClimbingGrade } from "@dofek/training/climbing-grades";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
@@ -74,16 +75,13 @@ export interface KayaRawEntry {
   country: string | null;
 }
 
-export interface KayaClimbingEntry {
+export interface KayaClimbingEntry extends ClimbingMetadata {
   externalId: string;
   climbType: "boulder" | "route";
   gradeSystem: "v_scale" | "yds";
   grade: string;
-  sent: boolean;
-  attemptCount: number;
-  lead: null;
+  attemptCount: number | null;
   routeName: string | null;
-  locationName: string | null;
   sourceName: "Kaya";
   raw: KayaRawEntry;
 }
@@ -209,11 +207,13 @@ class KayaExportImporter {
         climbType: entry.climbType,
         gradeSystem: entry.gradeSystem,
         grade: entry.grade,
-        sent: entry.sent,
+        resultStyle: entry.resultStyle,
+        climbStyle: entry.climbStyle,
+        locationPath: entry.locationPath,
+        board: entry.board,
+        wallAngle: entry.wallAngle,
         attemptCount: entry.attemptCount,
-        lead: entry.lead,
         routeName: entry.routeName,
-        locationName: entry.locationName,
         sourceName: entry.sourceName,
         raw: entry.raw,
       })),
@@ -329,8 +329,8 @@ class KayaExportParser {
       location: nullableText(row.location),
       country: nullableText(row.country),
     };
-    const attemptCount = raw.attempts ?? 1;
-    if (!attemptCountSchema.safeParse(attemptCount).success) {
+    const attemptCount = raw.attempts;
+    if (attemptCount !== null && !attemptCountSchema.safeParse(attemptCount).success) {
       return { rowNumber, message: `row ${rowNumber}: attempts must be a positive integer` };
     }
     const routeName = nullableText(row.climb_name);
@@ -353,11 +353,15 @@ class KayaExportParser {
         climbType: parsedGrade.gradeSystem === "v_scale" ? "boulder" : "route",
         gradeSystem: parsedGrade.gradeSystem,
         grade: parsedGrade.grade,
-        sent: true,
+        ...climbingMetadataSchema.parse({
+          locationPath: [{ name: gym, externalId: null, kind: "gym" }],
+          board: null,
+          wallAngle: null,
+          climbStyle: null,
+          resultStyle: raw.ascentType,
+        }),
         attemptCount,
-        lead: null,
         routeName,
-        locationName: gym,
         sourceName: KAYA_PROVIDER_NAME,
         raw,
       },

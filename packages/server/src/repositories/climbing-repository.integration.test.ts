@@ -48,22 +48,14 @@ describe("ClimbingRepository PostgreSQL summaries", () => {
     activityId = seededActivity.group_id;
     activityMemberId = seededActivity.id;
 
-    await context.db.execute(sql`INSERT INTO fitness.climbing_entry (
-      id, user_id, provider_id, activity_id, unattached_date, external_id,
-      climb_type, grade_system, grade, sent, attempt_count, provider_absent_at, raw
-    ) VALUES
-      (${ATTACHED_ID}, ${TEST_USER_ID}, 'climbing-summary-test', ${activityMemberId}, NULL,
-       'attached-send', 'boulder', 'v_scale', 'V3', TRUE, 2, NULL, '{}'::jsonb),
-      (${ABSENT_ATTACHED_ID}, ${TEST_USER_ID}, 'mountain-project', ${activityMemberId}, NULL,
-       'absent-attached-send', 'boulder', 'v_scale', 'V8', TRUE, 5, NOW(), '{"retained":true}'::jsonb),
-      (${UNATTACHED_ID}, ${TEST_USER_ID}, 'mountain-project', NULL,
-       (SELECT (started_at AT TIME ZONE 'America/Los_Angeles')::date
-        FROM fitness.activity WHERE id = ${activityMemberId}::uuid),
-       'unattached-send', 'boulder', 'v_scale', 'V4', TRUE, 3, NULL, '{}'::jsonb),
-      (${ABSENT_ID}, ${TEST_USER_ID}, 'mountain-project', NULL,
-       (SELECT (started_at AT TIME ZONE 'America/Los_Angeles')::date
-        FROM fitness.activity WHERE id = ${activityMemberId}::uuid),
-       'absent-send', 'boulder', 'v_scale', 'V8', TRUE, 5, NOW(), '{}'::jsonb)`);
+    await context.db.execute(sql`INSERT INTO fitness.climbing_entry (id, user_id, provider_id, activity_id, unattached_date, external_id, climb_type, grade_system, grade, result_style, attempt_count, provider_absent_at, raw) VALUES
+        (${ATTACHED_ID}, ${TEST_USER_ID}, 'climbing-summary-test', ${activityMemberId}, NULL, 'attached-send', 'boulder', 'v_scale', 'V3', COALESCE(NULLIF(btrim(COALESCE(('{}'::jsonb)::jsonb->>'ascentType', ('{}'::jsonb)::jsonb->>'attemptType', ('{}'::jsonb)::jsonb->>'Lead Style')), ''), CASE WHEN (TRUE)::boolean THEN 'Send' WHEN NOT (TRUE)::boolean THEN 'Not sent' ELSE NULL END), 2, NULL, '{}'::jsonb),
+        (${ABSENT_ATTACHED_ID}, ${TEST_USER_ID}, 'mountain-project', ${activityMemberId}, NULL, 'absent-attached-send', 'boulder', 'v_scale', 'V8', COALESCE(NULLIF(btrim(COALESCE(('{"retained":true}'::jsonb)::jsonb->>'ascentType', ('{"retained":true}'::jsonb)::jsonb->>'attemptType', ('{"retained":true}'::jsonb)::jsonb->>'Lead Style')), ''), CASE WHEN (TRUE)::boolean THEN 'Send' WHEN NOT (TRUE)::boolean THEN 'Not sent' ELSE NULL END), 5, NOW(), '{"retained":true}'::jsonb),
+        (${UNATTACHED_ID}, ${TEST_USER_ID}, 'mountain-project', NULL, (SELECT (started_at AT TIME ZONE 'America/Los_Angeles')::date
+        FROM fitness.activity WHERE id = ${activityMemberId}::uuid), 'unattached-send', 'boulder', 'v_scale', 'V4', COALESCE(NULLIF(btrim(COALESCE(('{}'::jsonb)::jsonb->>'ascentType', ('{}'::jsonb)::jsonb->>'attemptType', ('{}'::jsonb)::jsonb->>'Lead Style')), ''), CASE WHEN (TRUE)::boolean THEN 'Send' WHEN NOT (TRUE)::boolean THEN 'Not sent' ELSE NULL END), 3, NULL, '{}'::jsonb),
+        (${ABSENT_ID}, ${TEST_USER_ID}, 'mountain-project', NULL, (SELECT (started_at AT TIME ZONE 'America/Los_Angeles')::date
+        FROM fitness.activity WHERE id = ${activityMemberId}::uuid), 'absent-send', 'boulder', 'v_scale', 'V8', COALESCE(NULLIF(btrim(COALESCE(('{}'::jsonb)::jsonb->>'ascentType', ('{}'::jsonb)::jsonb->>'attemptType', ('{}'::jsonb)::jsonb->>'Lead Style')), ''), CASE WHEN (TRUE)::boolean THEN 'Send' WHEN NOT (TRUE)::boolean THEN 'Not sent' ELSE NULL END), 5, NOW(), '{}'::jsonb)
+`);
   }, 60_000);
 
   afterEach(async () => {
@@ -141,14 +133,10 @@ describe("ClimbingRepository PostgreSQL summaries", () => {
       ) RETURNING id::text AS id, group_id::text AS group_id`,
     );
     if (!boundaryActivity) throw new Error("Failed to seed boundary climbing activity");
-    await context.db.execute(sql`INSERT INTO fitness.climbing_entry (
-      id, user_id, provider_id, activity_id, unattached_date, external_id,
-      climb_type, grade_system, grade, sent, attempt_count, provider_absent_at, raw
-    ) VALUES
-      (${BOUNDARY_ATTACHED_ID}, ${TEST_USER_ID}, 'climbing-summary-test', ${boundaryActivity.id}, NULL,
-       'boundary-attached', 'boulder', 'v_scale', 'V6', TRUE, 1, NULL, '{}'::jsonb),
-      (${BOUNDARY_UNATTACHED_ID}, ${TEST_USER_ID}, 'mountain-project', NULL,
-       ${boundaryDate}, 'boundary-unattached', 'boulder', 'v_scale', 'V7', TRUE, 1, NULL, '{}'::jsonb)`);
+    await context.db.execute(sql`INSERT INTO fitness.climbing_entry (id, user_id, provider_id, activity_id, unattached_date, external_id, climb_type, grade_system, grade, result_style, attempt_count, provider_absent_at, raw) VALUES
+        (${BOUNDARY_ATTACHED_ID}, ${TEST_USER_ID}, 'climbing-summary-test', ${boundaryActivity.id}, NULL, 'boundary-attached', 'boulder', 'v_scale', 'V6', COALESCE(NULLIF(btrim(COALESCE(('{}'::jsonb)::jsonb->>'ascentType', ('{}'::jsonb)::jsonb->>'attemptType', ('{}'::jsonb)::jsonb->>'Lead Style')), ''), CASE WHEN (TRUE)::boolean THEN 'Send' WHEN NOT (TRUE)::boolean THEN 'Not sent' ELSE NULL END), 1, NULL, '{}'::jsonb),
+        (${BOUNDARY_UNATTACHED_ID}, ${TEST_USER_ID}, 'mountain-project', NULL, ${boundaryDate}, 'boundary-unattached', 'boulder', 'v_scale', 'V7', COALESCE(NULLIF(btrim(COALESCE(('{}'::jsonb)::jsonb->>'ascentType', ('{}'::jsonb)::jsonb->>'attemptType', ('{}'::jsonb)::jsonb->>'Lead Style')), ''), CASE WHEN (TRUE)::boolean THEN 'Send' WHEN NOT (TRUE)::boolean THEN 'Not sent' ELSE NULL END), 1, NULL, '{}'::jsonb)
+`);
 
     const repository = new ClimbingRepository(context.db, TEST_USER_ID, timezone);
     expect(
@@ -178,13 +166,9 @@ describe("ClimbingRepository PostgreSQL summaries", () => {
     const expectedDate = new Date(Date.parse(offsetActivity.started_at) + 120 * 60 * 1000)
       .toISOString()
       .slice(0, 10);
-    await context.db.execute(sql`INSERT INTO fitness.climbing_entry (
-      id, user_id, provider_id, activity_id, external_id,
-      climb_type, grade_system, grade, sent, attempt_count, raw
-    ) VALUES (
-      ${OFFSET_ATTACHED_ID}, ${TEST_USER_ID}, 'climbing-summary-test', ${offsetActivity.id},
-      'summary-offset-entry', 'boulder', 'v_scale', 'V9', TRUE, 1, '{}'::jsonb
-    )`);
+    await context.db.execute(sql`INSERT INTO fitness.climbing_entry (id, user_id, provider_id, activity_id, external_id, climb_type, grade_system, grade, result_style, attempt_count, raw) VALUES
+        (${OFFSET_ATTACHED_ID}, ${TEST_USER_ID}, 'climbing-summary-test', ${offsetActivity.id}, 'summary-offset-entry', 'boulder', 'v_scale', 'V9', COALESCE(NULLIF(btrim(COALESCE(('{}'::jsonb)::jsonb->>'ascentType', ('{}'::jsonb)::jsonb->>'attemptType', ('{}'::jsonb)::jsonb->>'Lead Style')), ''), CASE WHEN (TRUE)::boolean THEN 'Send' WHEN NOT (TRUE)::boolean THEN 'Not sent' ELSE NULL END), 1, '{}'::jsonb)
+`);
 
     const repository = new ClimbingRepository(context.db, TEST_USER_ID, "America/Los_Angeles");
     expect((await repository.getGradeProgression(30)).map((row) => row.toDetail())).toContainEqual(
@@ -211,13 +195,12 @@ describe("ClimbingRepository PostgreSQL summaries", () => {
       ) RETURNING id::text AS id, group_id::text AS group_id`,
     );
     if (!activity) throw new Error("Failed to seed unknown-count climbing activity");
-    await context.db.execute(sql`INSERT INTO fitness.climbing_entry (
-      user_id, provider_id, activity_id, external_id, climb_type, grade_system, grade, sent, attempt_count
-    ) VALUES
-      (${TEST_USER_ID}, 'climbing-summary-test', ${activity.id}, 'unknown-count-send', 'boulder', 'v_scale', 'V5', TRUE, NULL),
-      (${TEST_USER_ID}, 'climbing-summary-test', ${activity.id}, 'unknown-count-attempt', 'boulder', 'v_scale', 'V5', FALSE, NULL),
-      (${TEST_USER_ID}, 'climbing-summary-test', ${activity.id}, 'known-count-attempt', 'boulder', 'font', '6C', FALSE, 3),
-      (${TEST_USER_ID}, 'climbing-summary-test', ${activity.id}, 'unknown-outcome', 'route', 'yds', '5.12a', NULL, 2)`);
+    await context.db.execute(sql`INSERT INTO fitness.climbing_entry (user_id, provider_id, activity_id, external_id, climb_type, grade_system, grade, result_style, attempt_count) VALUES
+        (${TEST_USER_ID}, 'climbing-summary-test', ${activity.id}, 'unknown-count-send', 'boulder', 'v_scale', 'V5', CASE WHEN (TRUE)::boolean THEN 'Send' WHEN NOT (TRUE)::boolean THEN 'Not sent' ELSE NULL END, NULL),
+        (${TEST_USER_ID}, 'climbing-summary-test', ${activity.id}, 'unknown-count-attempt', 'boulder', 'v_scale', 'V5', CASE WHEN (FALSE)::boolean THEN 'Send' WHEN NOT (FALSE)::boolean THEN 'Not sent' ELSE NULL END, NULL),
+        (${TEST_USER_ID}, 'climbing-summary-test', ${activity.id}, 'known-count-attempt', 'boulder', 'font', '6C', CASE WHEN (FALSE)::boolean THEN 'Send' WHEN NOT (FALSE)::boolean THEN 'Not sent' ELSE NULL END, 3),
+        (${TEST_USER_ID}, 'climbing-summary-test', ${activity.id}, 'unknown-outcome', 'route', 'yds', '5.12a', NULL, 2)
+`);
 
     const repository = new ClimbingRepository(context.db, TEST_USER_ID, "America/Los_Angeles");
     expect(

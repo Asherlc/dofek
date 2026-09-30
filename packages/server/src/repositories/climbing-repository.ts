@@ -295,7 +295,7 @@ export class ClimbingRepository extends BaseRepository {
               ce.id, ce.activity_id, ce.climb_type, ce.grade_system, ce.grade,
               ce.sent, ce.attempt_count
             FROM fitness.v_activity AS a
-            JOIN fitness.climbing_entry AS ce
+            JOIN fitness.v_climbing_entry AS ce
               ON ce.activity_id = ANY(a.member_activity_ids)
              AND ce.provider_absent_at IS NULL
             WHERE ${this.#activityWindowPredicate(days)}
@@ -304,7 +304,7 @@ export class ClimbingRepository extends BaseRepository {
               ce.unattached_date::text AS session_date,
               ce.id, ce.activity_id, ce.climb_type, ce.grade_system, ce.grade,
               ce.sent, ce.attempt_count
-            FROM fitness.climbing_entry AS ce
+            FROM fitness.v_climbing_entry AS ce
             WHERE ce.user_id = ${this.userId}
               AND ce.activity_id IS NULL
               AND ce.provider_absent_at IS NULL
@@ -352,7 +352,7 @@ export class ClimbingRepository extends BaseRepository {
               ce.id, ce.activity_id, ce.climb_type, ce.grade_system, ce.grade,
               ce.sent, ce.attempt_count
             FROM fitness.v_activity AS a
-            JOIN fitness.climbing_entry AS ce
+            JOIN fitness.v_climbing_entry AS ce
               ON ce.activity_id = ANY(a.member_activity_ids)
              AND ce.provider_absent_at IS NULL
             WHERE ${this.#activityWindowPredicate(days)}
@@ -360,7 +360,7 @@ export class ClimbingRepository extends BaseRepository {
             SELECT
               ce.id, ce.activity_id, ce.climb_type, ce.grade_system, ce.grade,
               ce.sent, ce.attempt_count
-            FROM fitness.climbing_entry AS ce
+            FROM fitness.v_climbing_entry AS ce
             WHERE ce.user_id = ${this.userId}
               AND ce.activity_id IS NULL
               AND ce.provider_absent_at IS NULL
@@ -425,7 +425,7 @@ export class ClimbingRepository extends BaseRepository {
             ce.grade_system,
             ce.grade
           FROM fitness.v_activity AS a
-          JOIN fitness.climbing_entry AS ce
+          JOIN fitness.v_climbing_entry AS ce
             ON ce.activity_id = ANY(a.member_activity_ids)
            AND ce.provider_absent_at IS NULL
           LEFT JOIN LATERAL (
@@ -498,15 +498,7 @@ export class ClimbingRepository extends BaseRepository {
             CASE WHEN detail.attempt_count > 0 THEN detail.sent ELSE ce.sent END AS sent,
             CASE WHEN detail.attempt_count > 0 THEN detail.attempt_count ELSE ce.attempt_count END AS attempt_count,
             COALESCE(detail.attempts, '[]'::jsonb) AS attempts,
-            CASE lower(btrim(COALESCE(ce.raw->>'ascentType', ce.raw->>'attemptType',
-              CASE WHEN ce.climb_type = 'boulder' THEN ce.raw->>'Style' ELSE ce.raw->>'Lead Style' END)))
-              WHEN 'flash' THEN 'Flash'
-              WHEN 'onsight' THEN 'Onsight'
-              WHEN 'redpoint' THEN 'Redpoint'
-              WHEN 'pinkpoint' THEN 'Pinkpoint'
-              WHEN 'repeat' THEN 'Repeat'
-              ELSE NULL
-            END AS ascent_type,
+            ce.ascent_type,
             ce.hold_type,
             ce.route_name,
             ce.location_name,
@@ -514,7 +506,7 @@ export class ClimbingRepository extends BaseRepository {
             ce.source_name,
             ce.wall_angle_degrees
           FROM fitness.v_activity AS a
-          JOIN fitness.climbing_entry AS ce
+          JOIN fitness.v_climbing_entry AS ce
             ON ce.activity_id = ANY(a.member_activity_ids)
            AND ce.provider_absent_at IS NULL
           JOIN fitness.activity AS source_activity ON source_activity.id = ce.activity_id

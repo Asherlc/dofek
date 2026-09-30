@@ -71,18 +71,9 @@ export class ClimbingEntryAssociator extends BaseRepository {
       sql`SELECT id::text AS id, provider_id, source_name,
                  climb_type::text AS climb_type,
                  grade_system::text AS grade_system, grade, sent, attempt_count,
-                 CASE lower(btrim(COALESCE(raw->>'ascentType', raw->>'attemptType',
-                   CASE WHEN climb_type = 'boulder'
-                     THEN raw->>'Style' ELSE raw->>'Lead Style' END)))
-                   WHEN 'flash' THEN 'Flash'
-                   WHEN 'onsight' THEN 'Onsight'
-                   WHEN 'redpoint' THEN 'Redpoint'
-                   WHEN 'pinkpoint' THEN 'Pinkpoint'
-                   WHEN 'repeat' THEN 'Repeat'
-                   ELSE NULL
-                 END AS ascent_type,
+                 ascent_type,
                  lead, route_name, location_name
-          FROM fitness.climbing_entry
+          FROM fitness.v_climbing_entry
           WHERE user_id = ${this.userId}::uuid
             AND provider_absent_at IS NULL
             AND activity_id IS NULL

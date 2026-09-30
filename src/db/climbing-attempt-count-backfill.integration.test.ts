@@ -27,12 +27,12 @@ describe("backfillClimbingAttemptCount integration", () => {
         RETURNING id
       )
       INSERT INTO fitness.climbing_entry (
-        user_id, provider_id, activity_id, external_id, climb_type, grade_system, grade, sent,
+        user_id, provider_id, activity_id, external_id, climb_type, grade_system, grade, result_style, attempt_count,
         source_name, raw
       )
       SELECT
         ${TEST_USER_ID}, 'kaya-export', id, 'climbing-attempt-backfill-entry', 'boulder',
-        'v_scale', 'V3', true, 'Kaya',
+        'v_scale', 'V3', 'Send', 1, 'Kaya',
         '{"attempts": 4}'::jsonb
       FROM inserted_activity
     `);

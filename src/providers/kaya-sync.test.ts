@@ -59,6 +59,48 @@ import { KayaSyncProvider } from "./kaya-sync.ts";
 const userId = "00000000-0000-4000-8000-000000000001";
 
 describe("KayaSyncProvider", () => {
+  it("preserves outdoor nodes, board, and an unverified signed angle on both feeds", async () => {
+    const db = database();
+    const base = ascent("outdoor", { lead: true, climbType: "Routes", grade: "5.10a" });
+    const climb = {
+      ...base.climb,
+      gym: null,
+      destination: { id: "destination", name: "Destination" },
+      area: { id: "area", name: "Area" },
+      subarea: { id: "wall", name: "Wall" },
+      board: { id: "board", name: "Training Board" },
+      angle: -20,
+    };
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "token",
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    mocks.listSessions.mockResolvedValue([
+      { ...session("session-1"), attempted_climbs: [{ ...climb, id: "attempt", attempts: null }] },
+    ]);
+    mocks.ascents.mockResolvedValue([{ ...base, climb }]);
+    mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
+    const result = await new KayaSyncProvider().sync(run(db));
+    expect(result.errors).toEqual([]);
+    expect(db.insertValues).toHaveBeenCalledWith([
+      expect.objectContaining({
+        locationPath: [
+          { name: "Destination", externalId: "destination", kind: "destination" },
+          { name: "Area", externalId: "area", kind: "area" },
+          { name: "Wall", externalId: "wall", kind: "subarea" },
+        ],
+        board: { name: "Training Board", externalId: "board" },
+        wallAngle: { value: -20, unit: null },
+        climbStyle: "lead",
+        resultStyle: "Redpoint",
+      }),
+      expect.objectContaining({
+        wallAngle: { value: -20, unit: null },
+        resultStyle: "Attempt",
+        attemptCount: null,
+      }),
+    ]);
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.ensureProvider.mockResolvedValue("kaya");
@@ -137,13 +179,13 @@ describe("KayaSyncProvider", () => {
     });
     expect(db.insertValues).toHaveBeenCalledWith(
       expect.arrayContaining([
-        expect.objectContaining({ externalId: "route-1", lead: true, climbType: "route" }),
+        expect.objectContaining({ externalId: "route-1", climbStyle: "lead", climbType: "route" }),
         expect.objectContaining({
           externalId: "boulder-1",
-          lead: null,
+          climbStyle: null,
           climbType: "boulder",
           attemptCount: 2,
-          sent: true,
+          resultStyle: "Redpoint",
         }),
       ]),
     );
@@ -224,7 +266,7 @@ describe("KayaSyncProvider", () => {
     );
     expect(db.insertValues).toHaveBeenCalledWith([
       expect.objectContaining({
-        locationName: "Session Gym",
+        locationPath: [{ name: "Session Gym", externalId: "gym-2", kind: "gym" }],
         raw: expect.objectContaining({ comment: "Felt smooth.", rating: 4, stiffness: 3 }),
       }),
     ]);
@@ -262,7 +304,7 @@ describe("KayaSyncProvider", () => {
     expect(db.insertValues).toHaveBeenCalledWith([
       expect.objectContaining({
         externalId: "ascent-1",
-        sent: true,
+        resultStyle: "Redpoint",
         attemptCount: null,
         raw: sent,
       }),
@@ -270,19 +312,19 @@ describe("KayaSyncProvider", () => {
         externalId: attempted.id,
         climbType: "boulder",
         gradeSystem: "v_scale",
-        sent: false,
+        resultStyle: "Attempt",
         attemptCount: null,
-        lead: null,
+        climbStyle: null,
         raw: attempted,
       }),
       expect.objectContaining({
         externalId: route.id,
         climbType: "route",
         gradeSystem: "yds",
-        sent: false,
+        resultStyle: "Attempt",
         attemptCount: 3,
-        lead: true,
-        locationName: "Kaya Gym",
+        climbStyle: "lead",
+        locationPath: [{ name: "Kaya Gym", externalId: "gym-1", kind: "gym" }],
         raw: route,
       }),
     ]);
@@ -310,7 +352,11 @@ describe("KayaSyncProvider", () => {
       errors: [],
     });
     expect(db.insertValues).toHaveBeenCalledWith([
-      expect.objectContaining({ externalId: attempted.id, sent: false, attemptCount: null }),
+      expect.objectContaining({
+        externalId: attempted.id,
+        resultStyle: "Attempt",
+        attemptCount: null,
+      }),
     ]);
   });
 
@@ -578,7 +624,7 @@ describe("KayaSyncProvider", () => {
 
     await new KayaSyncProvider().sync(run(db));
 
-    expect(db.insertValues).toHaveBeenCalledWith([expect.objectContaining({ locationName: null })]);
+    expect(db.insertValues).toHaveBeenCalledWith([expect.objectContaining({ locationPath: [] })]);
   });
 
   it.each([
@@ -737,7 +783,11 @@ describe("KayaSyncProvider", () => {
     await new KayaSyncProvider().sync(run(db));
 
     expect(db.insertValues).toHaveBeenCalledWith([
-      expect.objectContaining({ attemptCount: null, locationName: "Kaya Gym", sent: false }),
+      expect.objectContaining({
+        attemptCount: null,
+        locationPath: [{ name: "Kaya Gym", externalId: "gym-1", kind: "gym" }],
+        resultStyle: "Project",
+      }),
     ]);
   });
 
@@ -946,6 +996,11 @@ function ascent(
         ? { id: `grade-${id}`, name: options.grade, climb_type_group: "route" }
         : null,
       gym: climbGym(),
+      destination: null,
+      area: null,
+      subarea: null,
+      board: null,
+      angle: null,
     },
   };
 }

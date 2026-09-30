@@ -58,6 +58,11 @@ describe("Kaya attempted-climb import (PostgreSQL integration)", () => {
       id: "2001",
       name: null,
       lead: false,
+      destination: null,
+      area: null,
+      subarea: null,
+      board: { id: "board-1", name: "Training Board" },
+      angle: 0,
       climb_type: { id: "1", name: "Bouldering" },
       grade: { id: "6", name: "v4", climb_type_group: "6" },
       gym,
@@ -126,15 +131,19 @@ describe("Kaya attempted-climb import (PostgreSQL integration)", () => {
       .from(climbingEntry)
       .where(and(eq(climbingEntry.userId, TEST_USER_ID), eq(climbingEntry.providerId, "kaya")));
     expect(entries).toHaveLength(5);
-    expect(entries.filter((entry) => entry.sent)).toHaveLength(2);
-    expect(entries.filter((entry) => entry.sent === false)).toHaveLength(3);
+    expect(entries.filter((entry) => entry.resultStyle !== "Attempt")).toHaveLength(2);
+    expect(entries.filter((entry) => entry.resultStyle === "Attempt")).toHaveLength(3);
     expect(entries.find((entry) => entry.externalId === "3001")).toMatchObject({
-      sent: true,
+      resultStyle: "Repeat",
       attemptCount: null,
+      board: { name: "Training Board", externalId: "board-1" },
+      wallAngle: { value: 0, unit: null },
     });
     expect(entries.find((entry) => entry.externalId === "1000_2001")).toMatchObject({
-      sent: false,
+      resultStyle: "Attempt",
       attemptCount: null,
+      board: { name: "Training Board", externalId: "board-1" },
+      wallAngle: { value: 0, unit: null },
       raw: expect.objectContaining({ id: "1000_2001", attempts: null }),
     });
     const [session] = await context.db
@@ -201,7 +210,7 @@ describe("Kaya attempted-climb import (PostgreSQL integration)", () => {
           climbType: "boulder",
           gradeSystem: "v_scale",
           grade: "V4",
-          sent: true,
+          resultStyle: "Send",
           attemptCount: 1,
         })
         .returning();
@@ -209,6 +218,11 @@ describe("Kaya attempted-climb import (PostgreSQL integration)", () => {
         id: "climb",
         name: null,
         lead: false,
+        destination: null,
+        area: null,
+        subarea: null,
+        board: null,
+        angle: null,
         climb_type: { id: "1", name: "Bouldering" },
         grade: { id: "6", name: "v4", climb_type_group: "6" },
         gym: null,

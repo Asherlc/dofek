@@ -23,7 +23,7 @@ const migrationRollbackRowsSchema = z.array(
 const migrationHashRowsSchema = z.array(z.object({ hash: z.string() }));
 const climbingEntryLeadColumnRowsSchema = z.array(
   z.object({
-    data_type: z.literal("boolean"),
+    data_type: z.literal("text"),
     is_nullable: z.literal("YES"),
     constraint_definition: z.string(),
   }),
@@ -81,7 +81,7 @@ describe("runMigrations", () => {
     await client.end();
   });
 
-  it("creates a nullable route-only lead value for climbing entries", async () => {
+  it("creates a nullable checked climbing method for climbing entries", async () => {
     const client = new Client({ connectionString: ctx.connectionString });
     await client.connect();
     try {
@@ -92,18 +92,17 @@ describe("runMigrations", () => {
           pg_get_constraintdef(constraints.oid) AS constraint_definition
         FROM information_schema.columns AS columns
         JOIN pg_constraint AS constraints
-          ON constraints.conname = 'climbing_entry_lead_routes_only'
+          ON constraints.conname = 'climbing_entry_climb_style_valid'
         WHERE columns.table_schema = 'fitness'
           AND columns.table_name = 'climbing_entry'
-          AND columns.column_name = 'lead'`,
+          AND columns.column_name = 'climb_style'`,
       );
 
       expect(climbingEntryLeadColumnRowsSchema.parse(result.rows)).toEqual([
         {
-          data_type: "boolean",
+          data_type: "text",
           is_nullable: "YES",
-          constraint_definition:
-            "CHECK (((lead IS NULL) OR (climb_type = 'route'::fitness.climbing_climb_type)))",
+          constraint_definition: expect.stringContaining("'top-rope'::text"),
         },
       ]);
     } finally {

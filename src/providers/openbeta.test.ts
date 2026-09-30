@@ -135,6 +135,77 @@ afterEach(() => {
 });
 
 describe("OpenBetaProvider", () => {
+  it("retains an unfamiliar supplied result with a parent-only path", async () => {
+    const { db, climbingEntryValues } = makeDb();
+    const result = await new OpenBetaProvider(async () =>
+      graphqlResponse({ userTicks: [tick({ attemptType: "Recorded qualifier" })] }),
+    ).sync(makeRun(db));
+    expect(result.errors).toEqual([]);
+    expect(climbingEntryValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resultStyle: "Recorded qualifier",
+        attemptCount: null,
+        locationPath: [{ name: "Smith Rock", externalId: null, kind: null }],
+      }),
+    );
+  });
+  it("retains the full aligned path and independent top-rope result", async () => {
+    const names = ["Country", "State", "Region", "Park", "Crag", "Wall"];
+    const ids = names.map((_, index) => `area-${index}`);
+    const { db, climbingEntryValues } = makeDb();
+    const fetchFn = vi.fn().mockResolvedValue(
+      graphqlResponse({
+        userTicks: [
+          tick({
+            style: "TR",
+            attemptType: "Frenchfree",
+            climb: climb({
+              pathTokens: names,
+              ancestors: ids,
+              parent: { uuid: "area-5", area_name: "Wall" },
+            }),
+          }),
+        ],
+      }),
+    );
+    const result = await new OpenBetaProvider(fetchFn).sync(makeRun(db));
+    expect(result.errors).toEqual([]);
+    expect(climbingEntryValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        locationPath: names.map((name, index) => ({ name, externalId: ids[index], kind: null })),
+        climbStyle: "top-rope",
+        resultStyle: "Frenchfree",
+        attemptCount: null,
+        board: null,
+        wallAngle: null,
+      }),
+    );
+    const request = z
+      .object({ query: z.string() })
+      .parse(JSON.parse(String(fetchFn.mock.calls[0]?.[1]?.body)));
+    expect(request.query).toContain("pathTokens");
+    expect(request.query).toContain("ancestors");
+  });
+
+  it.each([
+    { pathTokens: ["Crag", "Wall"], ancestors: ["area-1"] },
+    {
+      pathTokens: ["Wall"],
+      ancestors: ["area-1"],
+      parent: { uuid: "area-other", area_name: "Wall" },
+    },
+  ])("rejects mismatched paths before writing or reconciling %j", async (path) => {
+    const { db, climbingEntryValues } = makeDb();
+    const result = await new OpenBetaProvider(async () =>
+      graphqlResponse({ userTicks: [tick({ climb: climb(path) })] }),
+    ).sync(makeRun(db));
+    expect(result.errors).toEqual([
+      expect.objectContaining({ message: expect.stringContaining("location path") }),
+    ]);
+    expect(climbingEntryValues).not.toHaveBeenCalled();
+    expect(db.execute).not.toHaveBeenCalled();
+    expect(mocks.captureException).toHaveBeenCalled();
+  });
   it("resolves a public profile URL to the stable OpenBeta user UUID", async () => {
     const fetchFn = vi.fn().mockResolvedValue(
       graphqlResponse({
@@ -301,10 +372,10 @@ describe("OpenBetaProvider", () => {
           climbType: "route",
           gradeSystem: "yds",
           grade: "5.10a",
-          sent: true,
-          attemptCount: 1,
+          resultStyle: "Redpoint",
+          attemptCount: null,
           routeName: "Sunset Arete",
-          locationName: "Smith Rock",
+          locationPath: [{ name: "Smith Rock", externalId: null, kind: null }],
           sourceName: "OpenBeta",
           raw: expect.objectContaining({ _id: "tick-1", source: "OB" }),
         }),
@@ -314,9 +385,9 @@ describe("OpenBetaProvider", () => {
           climbType: "boulder",
           gradeSystem: "v_scale",
           grade: "V4",
-          sent: false,
-          attemptCount: 1,
-          locationName: "Smith Rock Boulders",
+          resultStyle: "Attempt",
+          attemptCount: null,
+          locationPath: [{ name: "Smith Rock Boulders", externalId: null, kind: null }],
         }),
       ]),
     );
@@ -419,10 +490,10 @@ describe("OpenBetaProvider", () => {
           externalId: "openbeta:font-grade",
           gradeSystem: "font",
           grade: "6A+",
-          sent: null,
+          resultStyle: null,
           attemptCount: null,
           routeName: "Sunset Arete",
-          locationName: null,
+          locationPath: [],
         }),
         expect.objectContaining({
           externalId: "openbeta:french-grade",
@@ -468,8 +539,8 @@ describe("OpenBetaProvider", () => {
           externalId: "openbeta:missing-climb-details",
           gradeSystem: "yds",
           routeName: null,
-          locationName: null,
-          sent: null,
+          locationPath: [],
+          resultStyle: null,
           attemptCount: null,
         }),
       ]),
@@ -518,7 +589,7 @@ describe("OpenBetaProvider", () => {
   it.each([
     ["empty tick id", tick({ _id: "" })],
     ["invalid style", tick({ style: "Unknown" })],
-    ["invalid attempt type", tick({ attemptType: "Unknown" })],
+    ["blank result label", tick({ attemptType: " " })],
     ["invalid source", tick({ source: "Unknown" })],
     ["invalid user payload", tick({ user: { username: 42, displayName: null } })],
     ["invalid grades payload", tick({ climb: climb({ grades: { yds: 5.1 } }) })],
