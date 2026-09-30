@@ -363,7 +363,7 @@ describe("climbing router integration", () => {
     await testContext.db.execute(sql`INSERT INTO fitness.provider (id, name)
       VALUES ('mountain-project', 'Mountain Project') ON CONFLICT (id) DO NOTHING`);
     await testContext.db.execute(sql`INSERT INTO fitness.climbing_entry (user_id, provider_id, activity_id, unattached_date, external_id, climb_type, grade_system, grade, result_style, attempt_count, raw) VALUES
-        (${TEST_USER_ID}, 'mountain-project', NULL, (SELECT (started_at AT TIME ZONE 'UTC')::date FROM fitness.activity WHERE id = ${climbingActivityId}::uuid), ${`router-attach-same-day-${runToken}`}, 'boulder', 'v_scale', 'V8', COALESCE(NULLIF(btrim(COALESCE(('{}'::jsonb)::jsonb->>'ascentType', ('{}'::jsonb)::jsonb->>'attemptType', ('{}'::jsonb)::jsonb->>'Lead Style')), ''), CASE WHEN (TRUE)::boolean THEN 'Send' WHEN NOT (TRUE)::boolean THEN 'Not sent' ELSE NULL END), 1, '{}'::jsonb)
+        (${TEST_USER_ID}, 'mountain-project', NULL, (SELECT (started_at AT TIME ZONE 'UTC')::date FROM fitness.activity WHERE id = ${climbingActivityId}::uuid), ${`router-attach-same-day-${runToken}`}, 'boulder', 'v_scale', 'V8', 'Send', 1, '{}'::jsonb)
 `);
     const tickRows = await executeWithSchema(
       testContext.db,
@@ -427,7 +427,7 @@ describe("climbing router integration", () => {
       testContext.db,
       idOnlySchema,
       sql`INSERT INTO fitness.climbing_entry (user_id, provider_id, activity_id, unattached_date, external_id, climb_type, grade_system, grade, result_style, attempt_count, raw) VALUES
-        (${TEST_USER_ID}, 'mountain-project', NULL, '2026-01-01', ${`tick-date-boundary-${suffix}`}, 'boulder', 'v_scale', 'V4', COALESCE(NULLIF(btrim(COALESCE(('{}'::jsonb)::jsonb->>'ascentType', ('{}'::jsonb)::jsonb->>'attemptType', ('{}'::jsonb)::jsonb->>'Lead Style')), ''), CASE WHEN (TRUE)::boolean THEN 'Send' WHEN NOT (TRUE)::boolean THEN 'Not sent' ELSE NULL END), 1, '{}'::jsonb)
+        (${TEST_USER_ID}, 'mountain-project', NULL, '2026-01-01', ${`tick-date-boundary-${suffix}`}, 'boulder', 'v_scale', 'V4', 'Send', 1, '{}'::jsonb)
 RETURNING id::text AS id`,
     );
     const tick = tickRows[0];

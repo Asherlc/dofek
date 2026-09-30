@@ -1,3 +1,4 @@
+import { climbingContextSchema } from "@dofek/training/climbing-context";
 import {
   CLIMBING_GRADE_SYSTEMS,
   type ClimbingClimbType,
@@ -10,11 +11,15 @@ import {
 } from "@dofek/training/climbing-grades";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import {
+  type ClimbingActivityEntryRow,
+  climbingActivityEntryDetailSchema,
+} from "../contracts/climbing-context-contracts.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { postgresActivityCalendarDate } from "./activity-local-date.ts";
 
-export type { ClimbingClimbType, ClimbingGradeSystem };
+export type { ClimbingActivityEntryRow, ClimbingClimbType, ClimbingGradeSystem };
 
 export interface ClimbingGradeProgressionRow {
   date: string;
@@ -85,16 +90,6 @@ export class ClimbingSessionSummary {
 const climbTypeSchema = z.enum(["boulder", "route"]);
 const gradeSystemSchema = z.enum(CLIMBING_GRADE_SYSTEMS);
 const ascentTypeSchema = z.enum(["Flash", "Onsight", "Redpoint", "Pinkpoint", "Repeat"]);
-const attemptOutcomeSchema = z.enum(["sent", "failed"]);
-const failureReasonSchema = z.enum(["fell", "pumped", "skin", "technique", "fear"]);
-const holdTypeSchema = z.enum(["crimp", "sloper", "pinch", "pocket", "jug"]);
-const climbingAttemptDetailSchema = z.object({
-  attemptIndex: z.coerce.number().int().positive(),
-  failureReason: failureReasonSchema.nullable(),
-  notes: z.string().nullable(),
-  outcome: attemptOutcomeSchema,
-});
-
 const progressionRowSchema = z.object({
   session_date: dateStringSchema,
   climb_type: climbTypeSchema,
@@ -122,14 +117,15 @@ const sessionEntryRowSchema = z.object({
 const activityEntryRowSchema = z.object({
   id: z.string(),
   provider_id: z.string(),
+  context: climbingContextSchema,
   climb_type: climbTypeSchema,
   grade_system: gradeSystemSchema,
   grade: z.string(),
   sent: z.boolean().nullable(),
   attempt_count: z.coerce.number().int().positive().nullable(),
-  attempts: z.array(climbingAttemptDetailSchema),
+  attempts: climbingActivityEntryDetailSchema.shape.attempts,
   ascent_type: ascentTypeSchema.nullable(),
-  hold_type: holdTypeSchema.nullable(),
+  hold_type: climbingActivityEntryDetailSchema.shape.holdType,
   route_name: z.string().nullable(),
   location_name: z.string().nullable(),
   lead: z.boolean().nullable().default(null),
@@ -198,23 +194,6 @@ function deduplicateCrossProviderEntries(
     });
   }
   return result;
-}
-
-export interface ClimbingActivityEntryRow {
-  id: string;
-  climbType: ClimbingClimbType;
-  gradeSystem: ClimbingGradeSystem;
-  grade: string;
-  sent: boolean | null;
-  attemptCount: number | null;
-  attempts: Array<z.infer<typeof climbingAttemptDetailSchema>>;
-  ascentType: ClimbingActivityEntryDatabaseRow["ascent_type"];
-  holdType: z.infer<typeof holdTypeSchema> | null;
-  routeName: string | null;
-  locationName: string | null;
-  lead: boolean | null;
-  sourceName: string | null;
-  wallAngleDegrees: number | null;
 }
 
 export class ClimbingActivityEntry {
@@ -492,6 +471,9 @@ export class ClimbingRepository extends BaseRepository {
       sql`SELECT
             ce.id::text AS id,
             source_activity.provider_id,
+            jsonb_build_object('providerId', ce.provider_id, 'locationPath', ce.location_path,
+              'board', ce.board, 'wallAngle', ce.wall_angle, 'climbStyle', ce.climb_style,
+              'resultStyle', ce.result_style) AS context,
             ce.climb_type,
             ce.grade_system,
             ce.grade,
@@ -557,6 +539,7 @@ export class ClimbingRepository extends BaseRepository {
             attemptCount: row.attempt_count,
             attempts: row.attempts,
             ascentType: row.ascent_type,
+            context: row.context,
             holdType: row.hold_type,
             routeName: row.route_name,
             locationName: row.location_name,

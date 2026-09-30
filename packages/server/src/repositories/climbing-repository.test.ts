@@ -105,6 +105,14 @@ describe("ClimbingActivityEntry", () => {
       locationName: "Pacific Pipe",
       sourceName: "Kaya",
       wallAngleDegrees: null,
+      context: {
+        providerId: "kaya",
+        locationPath: [],
+        board: null,
+        wallAngle: null,
+        climbStyle: null,
+        resultStyle: null,
+      },
     });
 
     expect(row.toDetail()).toEqual({
@@ -121,6 +129,14 @@ describe("ClimbingActivityEntry", () => {
       locationName: "Pacific Pipe",
       sourceName: "Kaya",
       wallAngleDegrees: null,
+      context: {
+        providerId: "kaya",
+        locationPath: [],
+        board: null,
+        wallAngle: null,
+        climbStyle: null,
+        resultStyle: null,
+      },
     });
   });
 
@@ -142,6 +158,14 @@ describe("ClimbingActivityEntry", () => {
         lead: null,
         source_name: null,
         wall_angle_degrees: null,
+        context: {
+          providerId: "kaya",
+          locationPath: [],
+          board: null,
+          wallAngle: null,
+          climbStyle: null,
+          resultStyle: null,
+        },
       },
     ]);
     const repository = new ClimbingRepository(
@@ -756,6 +780,64 @@ describe("ClimbingRepository", () => {
   });
 
   describe("getActivityEntries", () => {
+    it("retains the preferred context provider and its complete metadata snapshot", async () => {
+      const left = {
+        providerId: "mountain-project",
+        locationPath: [{ name: "Wall", externalId: null, kind: null }],
+        board: null,
+        wallAngle: null,
+        climbStyle: "top-rope",
+        resultStyle: null,
+      };
+      const right = {
+        providerId: "openbeta",
+        locationPath: [{ name: "Wall", externalId: "wall-uuid", kind: null }],
+        board: { name: "Training Board", externalId: "board-uuid" },
+        wallAngle: { value: -20, unit: null },
+        climbStyle: "top-rope",
+        resultStyle: "Fell/Hung",
+      };
+      const base = {
+        climb_type: "route",
+        grade_system: "yds",
+        grade: "5.10a",
+        attempts: [],
+        ascent_type: null,
+        hold_type: null,
+        route_name: "Corner",
+        location_name: "Wall",
+        lead: false,
+        wall_angle_degrees: null,
+      };
+      const { repo } = makeRepository([
+        {
+          ...base,
+          id: "mp",
+          provider_id: "mountain-project",
+          source_name: "Mountain Project",
+          sent: null,
+          attempt_count: null,
+          context: left,
+        },
+        {
+          ...base,
+          id: "ob",
+          provider_id: "openbeta",
+          source_name: "OpenBeta",
+          sent: false,
+          attempt_count: null,
+          context: right,
+        },
+      ]);
+      const entries = await repo.getActivityEntries("activity");
+      expect(entries).toHaveLength(1);
+      expect(entries[0]?.toDetail()).toMatchObject({
+        context: right,
+        sourceName: "Mountain Project, OpenBeta",
+        sent: false,
+        attemptCount: null,
+      });
+    });
     it("returns normalized entries for an activity member", async () => {
       const { repo } = makeRepository([
         {
@@ -774,6 +856,14 @@ describe("ClimbingRepository", () => {
           lead: null,
           source_name: "Kaya",
           wall_angle_degrees: null,
+          context: {
+            providerId: "kaya",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: null,
+          },
         },
       ]);
 
@@ -796,6 +886,14 @@ describe("ClimbingRepository", () => {
         lead: null,
         sourceName: "Kaya",
         wallAngleDegrees: null,
+        context: {
+          providerId: "kaya",
+          locationPath: [],
+          board: null,
+          wallAngle: null,
+          climbStyle: null,
+          resultStyle: null,
+        },
       });
     });
 
@@ -817,6 +915,14 @@ describe("ClimbingRepository", () => {
           lead: null,
           source_name: "Mountain Project",
           wall_angle_degrees: null,
+          context: {
+            providerId: "mountain-project",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: null,
+          },
         },
         {
           id: "kaya-entry",
@@ -834,6 +940,14 @@ describe("ClimbingRepository", () => {
           lead: null,
           source_name: "Kaya",
           wall_angle_degrees: null,
+          context: {
+            providerId: "kaya",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: null,
+          },
         },
       ]);
 
@@ -865,10 +979,62 @@ describe("ClimbingRepository", () => {
         wall_angle_degrees: null,
       };
       const { repo } = makeRepository([
-        { ...entry, id: "provider-a-1", provider_id: "provider-a", source_name: "Provider A" },
-        { ...entry, id: "provider-b-1", provider_id: "provider-b", source_name: "Provider B" },
-        { ...entry, id: "provider-b-2", provider_id: "provider-b", source_name: "Provider B" },
-        { ...entry, id: "provider-c-1", provider_id: "provider-c", source_name: "Provider C" },
+        {
+          ...entry,
+          id: "provider-a-1",
+          provider_id: "provider-a",
+          source_name: "Provider A",
+          context: {
+            providerId: "provider-a",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: null,
+          },
+        },
+        {
+          ...entry,
+          id: "provider-b-1",
+          provider_id: "provider-b",
+          source_name: "Provider B",
+          context: {
+            providerId: "provider-b",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: null,
+          },
+        },
+        {
+          ...entry,
+          id: "provider-b-2",
+          provider_id: "provider-b",
+          source_name: "Provider B",
+          context: {
+            providerId: "provider-b",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: null,
+          },
+        },
+        {
+          ...entry,
+          id: "provider-c-1",
+          provider_id: "provider-c",
+          source_name: "Provider C",
+          context: {
+            providerId: "provider-c",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: null,
+          },
+        },
       ]);
 
       const entries = await repo.getActivityEntries("activity-1");
@@ -897,6 +1063,14 @@ describe("ClimbingRepository", () => {
           lead: null,
           source_name: "Mountain Project",
           wall_angle_degrees: null,
+          context: {
+            providerId: "mountain-project",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: null,
+          },
         },
         {
           id: "kaya-entry",
@@ -914,6 +1088,14 @@ describe("ClimbingRepository", () => {
           lead: null,
           source_name: "Kaya",
           wall_angle_degrees: null,
+          context: {
+            providerId: "kaya",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: null,
+          },
         },
       ]);
 
@@ -950,8 +1132,33 @@ describe("ClimbingRepository", () => {
         wall_angle_degrees: null,
       };
       const { repo } = makeRepository([
-        { ...base, id: "mountain-project-entry", provider_id: "mountain-project" },
-        { ...base, ...change, id: "kaya-entry", provider_id: "kaya" },
+        {
+          ...base,
+          id: "mountain-project-entry",
+          provider_id: "mountain-project",
+          context: {
+            providerId: "mountain-project",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: null,
+          },
+        },
+        {
+          ...base,
+          ...change,
+          id: "kaya-entry",
+          provider_id: "kaya",
+          context: {
+            providerId: "kaya",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: null,
+          },
+        },
       ]);
 
       const entries = await repo.getActivityEntries("activity-1");
@@ -979,8 +1186,34 @@ describe("ClimbingRepository", () => {
         wall_angle_degrees: null,
       };
       const { repo } = makeRepository([
-        { ...base, ...names, id: "mountain-project-entry", provider_id: "mountain-project" },
-        { ...base, ...names, id: "kaya-entry", provider_id: "kaya" },
+        {
+          ...base,
+          ...names,
+          id: "mountain-project-entry",
+          provider_id: "mountain-project",
+          context: {
+            providerId: "mountain-project",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: null,
+          },
+        },
+        {
+          ...base,
+          ...names,
+          id: "kaya-entry",
+          provider_id: "kaya",
+          context: {
+            providerId: "kaya",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: null,
+          },
+        },
       ]);
 
       const entries = await repo.getActivityEntries("activity-1");
@@ -1005,13 +1238,45 @@ describe("ClimbingRepository", () => {
         wall_angle_degrees: null,
       };
       const { repo } = makeRepository([
-        { ...base, id: "source-a", provider_id: "kaya" },
-        { ...base, id: "source-b", provider_id: "kaya" },
+        {
+          ...base,
+          id: "source-a",
+          provider_id: "kaya",
+          context: {
+            providerId: "kaya",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: null,
+          },
+        },
+        {
+          ...base,
+          id: "source-b",
+          provider_id: "kaya",
+          context: {
+            providerId: "kaya",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: null,
+          },
+        },
         {
           ...base,
           id: "source-c",
           provider_id: "mountain-project",
           attempts: [{ attemptIndex: 1, failureReason: null, notes: null, outcome: "sent" }],
+          context: {
+            providerId: "mountain-project",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: null,
+          },
         },
       ]);
 
@@ -1036,8 +1301,34 @@ describe("ClimbingRepository", () => {
         wall_angle_degrees: null,
       };
       const { repo } = makeRepository([
-        { ...base, id: "unknown", provider_id: "mountain-project", sent: null },
-        { ...base, id: "recorded", provider_id: "kaya", sent: false },
+        {
+          ...base,
+          id: "unknown",
+          provider_id: "mountain-project",
+          sent: null,
+          context: {
+            providerId: "mountain-project",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: null,
+          },
+        },
+        {
+          ...base,
+          id: "recorded",
+          provider_id: "kaya",
+          sent: false,
+          context: {
+            providerId: "kaya",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: null,
+          },
+        },
       ]);
 
       const entries = await repo.getActivityEntries("activity-1");
@@ -1062,8 +1353,34 @@ describe("ClimbingRepository", () => {
         wall_angle_degrees: null,
       };
       const { repo } = makeRepository([
-        { ...base, id: "unknown-count", provider_id: "mountain-project", attempt_count: null },
-        { ...base, id: "known-count", provider_id: "kaya", attempt_count: 2 },
+        {
+          ...base,
+          id: "unknown-count",
+          provider_id: "mountain-project",
+          attempt_count: null,
+          context: {
+            providerId: "mountain-project",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: null,
+          },
+        },
+        {
+          ...base,
+          id: "known-count",
+          provider_id: "kaya",
+          attempt_count: 2,
+          context: {
+            providerId: "kaya",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: null,
+          },
+        },
       ]);
 
       const entries = await repo.getActivityEntries("activity-1");
@@ -1089,8 +1406,32 @@ describe("ClimbingRepository", () => {
         wall_angle_degrees: null,
       };
       const { repo } = makeRepository([
-        { ...base, id: "first", provider_id: "mountain-project" },
-        { ...base, id: "second", provider_id: "kaya" },
+        {
+          ...base,
+          id: "first",
+          provider_id: "mountain-project",
+          context: {
+            providerId: "mountain-project",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: null,
+          },
+        },
+        {
+          ...base,
+          id: "second",
+          provider_id: "kaya",
+          context: {
+            providerId: "kaya",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: null,
+          },
+        },
       ]);
 
       const entries = await repo.getActivityEntries("activity-1");
@@ -1115,8 +1456,32 @@ describe("ClimbingRepository", () => {
         wall_angle_degrees: null,
       };
       const { repo } = makeRepository([
-        { ...base, id: "source-a", provider_id: "mountain-project" },
-        { ...base, id: "source-b", provider_id: "kaya" },
+        {
+          ...base,
+          id: "source-a",
+          provider_id: "mountain-project",
+          context: {
+            providerId: "mountain-project",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: null,
+          },
+        },
+        {
+          ...base,
+          id: "source-b",
+          provider_id: "kaya",
+          context: {
+            providerId: "kaya",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: null,
+          },
+        },
       ]);
 
       const entries = await repo.getActivityEntries("activity-1");
@@ -1134,7 +1499,7 @@ describe("ClimbingRepository", () => {
       expect(text).toContain("ce.activity_id = ANY(a.member_activity_ids)");
       expect(text).toContain("ce.attempt_count");
       expect(text).toContain("jsonb_agg");
-      expect(text).toContain("ce.raw->>'ascentType'");
+      expect(text).toContain("ce.ascent_type");
       expect(text).toContain("ce.lead");
       expect(text).toContain("a.id = ");
       expect(text).toContain("a.user_id = ");
@@ -1158,6 +1523,14 @@ describe("ClimbingRepository", () => {
           location_name: null,
           source_name: "Kaya",
           wall_angle_degrees: null,
+          context: {
+            providerId: "kaya",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: null,
+          },
         },
         {
           id: "entry-2",
@@ -1174,6 +1547,14 @@ describe("ClimbingRepository", () => {
           location_name: null,
           source_name: "Kaya",
           wall_angle_degrees: null,
+          context: {
+            providerId: "kaya",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: null,
+          },
         },
       ]);
 
@@ -1200,6 +1581,14 @@ describe("ClimbingRepository", () => {
             location_name: null,
             source_name: "Kaya",
             wall_angle_degrees: null,
+            context: {
+              providerId: "kaya",
+              locationPath: [],
+              board: null,
+              wallAngle: null,
+              climbStyle: null,
+              resultStyle: null,
+            },
           },
           {
             id: "entry-invalid",
@@ -1216,6 +1605,14 @@ describe("ClimbingRepository", () => {
             location_name: null,
             source_name: "Kaya",
             wall_angle_degrees: null,
+            context: {
+              providerId: "kaya",
+              locationPath: [],
+              board: null,
+              wallAngle: null,
+              climbStyle: null,
+              resultStyle: null,
+            },
           },
         ],
         { boulder: "font", route: "french" },
@@ -1246,6 +1643,14 @@ describe("ClimbingRepository", () => {
           location_name: null,
           source_name: "Kaya",
           wall_angle_degrees: null,
+          context: {
+            providerId: "kaya",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: null,
+          },
         },
         {
           id: "entry-a",
@@ -1262,6 +1667,14 @@ describe("ClimbingRepository", () => {
           location_name: null,
           source_name: "Kaya",
           wall_angle_degrees: null,
+          context: {
+            providerId: "kaya",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: null,
+          },
         },
         {
           id: "entry-c",
@@ -1278,6 +1691,14 @@ describe("ClimbingRepository", () => {
           location_name: null,
           source_name: "Kaya",
           wall_angle_degrees: null,
+          context: {
+            providerId: "kaya",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: null,
+          },
         },
       ]);
 

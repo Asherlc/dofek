@@ -1,7 +1,12 @@
+import { climbingContextSchema } from "@dofek/training/climbing-context";
 import { TRPCError } from "@trpc/server";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import type { ClimbingEntrySuggestion } from "../contracts/climbing-context-contracts.ts";
+
+export type { ClimbingEntrySuggestion } from "../contracts/climbing-context-contracts.ts";
+
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { ActivityRepository } from "./activity-repository.ts";
@@ -9,6 +14,7 @@ import { ActivityRepository } from "./activity-repository.ts";
 const suggestionSchema = z.object({
   id: z.string(),
   provider_id: z.string(),
+  context: climbingContextSchema,
   source_name: z.string().nullable(),
   climb_type: z.enum(["boulder", "route"]),
   grade_system: z.string(),
@@ -20,21 +26,6 @@ const suggestionSchema = z.object({
   route_name: z.string().nullable(),
   location_name: z.string().nullable(),
 });
-
-export type ClimbingEntrySuggestion = {
-  id: string;
-  providerId: string;
-  sourceName: string | null;
-  climbType: "boulder" | "route";
-  gradeSystem: string;
-  grade: string;
-  sent: boolean | null;
-  ascentType: "Flash" | "Onsight" | "Redpoint" | "Pinkpoint" | "Repeat" | null;
-  attemptCount: number | null;
-  lead: boolean | null;
-  routeName: string | null;
-  locationName: string | null;
-};
 
 const updateSchema = z.object({ id: z.string() });
 
@@ -72,7 +63,10 @@ export class ClimbingEntryAssociator extends BaseRepository {
                  climb_type::text AS climb_type,
                  grade_system::text AS grade_system, grade, sent, attempt_count,
                  ascent_type,
-                 lead, route_name, location_name
+                 lead, route_name, location_name,
+                 jsonb_build_object('providerId', provider_id, 'locationPath', location_path,
+                   'board', board, 'wallAngle', wall_angle, 'climbStyle', climb_style,
+                   'resultStyle', result_style) AS context
           FROM fitness.v_climbing_entry
           WHERE user_id = ${this.userId}::uuid
             AND provider_absent_at IS NULL
@@ -83,6 +77,7 @@ export class ClimbingEntryAssociator extends BaseRepository {
     return rows.map((row) => ({
       id: row.id,
       providerId: row.provider_id,
+      context: row.context,
       sourceName: row.source_name,
       climbType: row.climb_type,
       gradeSystem: row.grade_system,
