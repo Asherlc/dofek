@@ -52,7 +52,7 @@ overrides:
   "archiver@<8.0.0": 8.0.0
   axios: 1.18.1
   body-parser: 2.3.0
-  brace-expansion: 5.0.9
+  brace-expansion: 5.0.12
   browserslist: 4.28.8
   esbuild: 0.28.1
   decode-uri-component: 0.5.0
@@ -64,7 +64,7 @@ overrides:
   ip-address: 10.4.0
   "inquirer@0.11.0>lodash": 4.18.1
   "lerna>minimatch": 3.1.4
-  "minimatch@3>brace-expansion": 1.1.18
+  "minimatch@3>brace-expansion": 1.1.21
   minimatch: 10.2.5
   "nanoid@<3.3.17": 3.3.18
   image-size: "file:vendor/image-size"
@@ -97,6 +97,7 @@ patchedDependencies:
   "@expo/plist@0.8.1": patches/@expo__plist@0.8.1.patch
   "@tanstack/router-generator@1.167.17": patches/@tanstack__router-generator@1.167.17.patch
   "@tanstack/router-generator@1.167.18": patches/@tanstack__router-generator@1.167.18.patch
+  expo-apple-authentication@57.0.2: patches/expo-apple-authentication@57.0.2.patch
 
 allowBuilds:
   "@sentry/cli": true

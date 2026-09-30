@@ -27788,6 +27788,156 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Validation:** The canonical runner reached Vitest; the activity-group reconciliation integration suite passed 19/19 tests. The initial filtered run used an underscore pattern and skipped all tests; it was corrected to the exact test title before results were accepted.
 - **Remaining risk / follow-up:** Docker Desktop may reset this VM-only sysctl after a restart. Reapply the setting if Redpanda reports the same AIO capacity error. No repository runtime workaround was added.
 
+## 2026-09-29 — Sentry triage and reviewed server/mobile remediation
+
+- **Status / user impact:** Authorization is restored. The initial 90-day
+  inventory contained nine unresolved server issues, six mobile issues, and no
+  web issues. Five historical server issues have verified recovery; four
+  server and six mobile issues remain unresolved pending rollout or cause
+  evidence. Approved remediation is implemented and independently reviewed.
+- **Evidence:** `GET /api/0/projects/east-bay-software/dofek-server/issues/`
+  returned HTTP 403 with `You do not have permission to perform this action.`
+  A names-only production Infisical export confirmed `SENTRY_AUTH_TOKEN` exists
+  and `SENTRY_READ_AUTH_TOKEN` is absent. `codex mcp list --json` showed the
+  configured Sentry MCP with `auth_status: not_logged_in`.
+- **Root cause:** The available CI token cannot read issues, and the MCP lacks
+  completed account authorization. This does not establish the causes of the
+  individual application issues. Sentry distinguishes `org:ci` release access
+  from `event:read` issue access in its
+  [API permissions](https://docs.sentry.io/api/permissions/).
+- **Mitigation / validation:** After the user completed GitHub sign-in,
+  restarted `codex mcp login sentry` with issue inspection and triage selected
+  and completed its OAuth callback. The CLI confirmed successful login, and
+  MCP project discovery, issue search, and event reads succeeded. The CLI
+  login command is documented
+  in [OpenAI's MCP guide](https://learn.chatgpt.com/docs/extend/mcp#other-cli-commands).
+- **Verified historical resolutions:** Resolved
+  [DOFEK-SERVER-3B](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-3B)
+  after the live CDC health check reported three healthy slots and one mirror;
+  [DOFEK-SERVER-6E](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6E)
+  after confirming Polar's upstream HTTP 503 outage had ended, with 331
+  successful syncs in the last seven days and the latest at 22:00 UTC; and
+  [DOFEK-SERVER-6F](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6F)
+  after verifying deployed commit `568c868f4` recognizes Strava's revoked-token
+  response, the last attempt records `refresh_token_revoked`, and no Strava
+  credential remains. The token-resolution regression suite passed 14/14.
+- **Additional verified resolutions:** Resolved
+  [DOFEK-SERVER-6B](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6B)
+  after confirming deployed commit `9253ac819` removes query-wide `FINAL`
+  from activity sensor microbatches. Retained September 23–29 ClickHouse
+  history contains 1,600 successful sensor inserts, including temporary-table
+  inserts, and no failed inserts; recent batches took 4.943 and 16.157 seconds.
+  Resolved [DOFEK-SERVER-6D](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6D)
+  after confirming deployed commit `732dc278b` replaces expired signup-week
+  access with the rolling local week. Both clients request today's quality
+  window, and entitlement/access-window tests passed 20/20, covering old
+  accounts, timezone boundaries, and DST. The four reported errors preceded
+  that fix.
+- **Active evidence:** The latest route-model failure on release `bdec1ca`
+  matched ClickHouse query `b02882b9-d210-43c0-b994-56c249949789`: code 159 after
+  240 seconds, 341,045,596 rows read, no projections selected. Its source
+  watermark queries do not match the existing sensor freshness projection,
+  and the location source has no matching projection. Cache-warming errors
+  followed a WHOOP activity's provider-absence tombstone by two minutes;
+  direct activity NOT_FOUND is correct, but replay retains the obsolete keys
+  and reports a failed processing run. Mobile breadcrumbs show alerts polling
+  every 15 seconds while backgrounded without AppState/focusManager wiring.
+- **Observability limits:** Axiom REST query returned HTTP 403 with
+  `token does not have access to resource: query with action: read`; no Axiom
+  MCP is connected. The September 17 mobile 504 trace has two errors but no
+  spans or logs in Sentry. Persistence errors discard the native cause, and
+  Expo's Apple unknown-error mapping also omits the underlying NSError.
+- **Approved follow-up:** The user approved matching freshness projections,
+  exact-key cache eviction, mobile focus/connectivity wiring, regression
+  tests, and privacy-safe persistence/Apple diagnostics. Implementation and task
+  reviews are complete; statuses for these active/opaque issues remain unresolved.
+- **Analytics implementation / validation:** Added matching altitude and
+  location aggregate projections and schema-only migration `0097`. A real
+  ClickHouse regression failed before the fix at 100.01 thousand rows against its
+  50,000-row budget; afterward, all 20 route tests passed. Query-log evidence
+  confirmed natural selection of both projections with 115/117 rows read for
+  changed/tombstoned route builds. dbt compile and analytics policy passed;
+  direct SQLFluff lint retains a baseline MATERIALIZED-CTE parser limitation.
+  No timeout or optimizer workaround was added.
+- **Historical rollout inventory:** Both source tables have a single native
+  `all` partition. Read-only inspection found 101,107,218 sensor rows / 2.49 GiB
+  in 2,017 parts, with old projection coverage in 1,053 parts; location has
+  19,945,514 rows / 560.01 MiB in eight parts and no projection. Disk free space
+  was 59.73 GiB, with no pending analytics mutations or other active queries
+  at sampling. Replacing the sensor projection removes its old coverage;
+  historical materialization remains separately approved operator work under
+  the [rollout runbook](clickhouse-read-model-deploy-runbook.md#route-source-freshness-projection-rollout-migration-0097).
+- **Cache implementation / validation:** Added required exact-key invalidation
+  to the canonical cache store. During registry replay, an actual tRPC
+  NOT_FOUND now evicts that payload and registration, increments skipped,
+  and creates no failed processing outcome. Ordinary errors, access-window
+  failures, and failed evictions still report and fail; ordinary refresh
+  failures retain the old payload. Regression tests failed before the fix,
+  then 60 focused unit tests, seven direct-request NOT_FOUND cases, and one
+  real Redis isolation test passed. Root/server typechecks and independent
+  spec/quality review passed. Production replay remains unverified until
+  deployment. Redis exact removal uses
+  [DEL](https://redis.io/docs/latest/commands/del/) and
+  [SREM](https://redis.io/docs/latest/commands/srem/).
+- **Mobile lifecycle implementation / validation:** Connected Query focus to
+  initial AppState and later app events, and Query online state to ExpoNetwork
+  snapshots/events with stale-snapshot and teardown guards. Behavioral tests
+  reproduced three polling requests in 45 seconds during background/offline
+  states before implementation. All 31 lifecycle/root tests now pass, along
+  with mobile typecheck and telemetry/route/dependency policies. Native
+  `expo-network` 57.0.2 matches SDK 57 metadata; frozen installation passed.
+  Runtime 1.2 requires a new native build; the combined generic-iOS Release
+  archive passed. This establishes polling behavior,
+  while native event delivery and production recovery remain pending. The
+  integration follows [TanStack React Native guidance](https://tanstack.com/query/latest/docs/framework/react/react-native)
+  and [Expo Network](https://docs.expo.dev/versions/latest/sdk/network/).
+- **Persistence and Apple diagnostics / validation:** Storage failures now
+  report fixed-message errors with allowlisted classifications and aggregate
+  write counts/UTF-8 byte measurements. Tests cover original rejection
+  identity, sensitive-content exclusion, and the actual 5 MiB UTF-8 boundary.
+  Independent review found a missing post-parse hydration reporting boundary;
+  an actual-provider regression failed before restoring the sanitized fallback
+  and then passed with the complete persistence suite, 26/26. The fallback
+  can coexist with detailed boundary reports because the provider callback
+  supplies no error argument; see
+  [TanStack persistence](https://tanstack.com/query/latest/docs/framework/react/plugins/persistQueryClient#persistqueryclientprovider).
+  A canonical [pnpm patch](https://pnpm.io/cli/patch) carries only allowlisted
+  Apple NSError domains/codes through Expo's exception bridge, preserving
+  cancellation and excluding descriptions/userInfo. The executable test
+  compiles the installed Swift helper and verifies classification, redaction,
+  and release of the original NSError. Focused auth/login/parser/storage
+  suites passed before the hydration refinement; native prebuild, pods, and
+  Release archive passed. These diagnostics do not establish the historical
+  persistence, disk-write, or Apple sign-in root causes. Physical-device
+  sign-in and post-release safe diagnostic evidence remain pending.
+- **Final branch validation:** Independent whole-branch review found no
+  blocking implementation findings. Workspace lint and root/server/web/mobile
+  typechecks passed. After integrating main, the full unit/mobile run passed
+  19,131 tests across 1,304
+  files, with 20 tests and two files skipped; the combined ClickHouse/Redis
+  integration run passed 21/21. Existing Vitest deprecation and SQLFluff
+  large-file/parser limitations remain tooling context. The reviewed changes
+  still require PR CI, normal deployment, and the explicit rollout checks above.
+- **CI coverage correction:** [Stryker job 109671790413](https://github.com/Asherlc/dofek/actions/runs/36646657089/job/109671790413)
+  failed `Run Stryker` with `Final mutation score 50.00 under breaking threshold 75`.
+  Its initial tests passed, but the Redis exact-invalidation body had no unit
+  coverage: its real Redis regression belongs to the integration tier, which
+  mutation validation intentionally excludes. Added public-interface unit
+  tests for exact DEL/SREM targets and original command failures, retaining
+  the real Redis isolation test. The empty-body mutant failed the new tests;
+  restored code passed 20 focused tests, and the exact CI mutation command
+  then killed both mutants with a 100% score. No production behavior,
+  thresholds, exclusions, or retry settings changed. Generated native build
+  artifacts were preserved outside the source tree during local mutation
+  sandbox creation. The fresh hosted check remains required before readiness.
+- **Remaining risk / follow-up:** Strava requires user reconnection before
+  syncing again. Deploy reviewed changes through the normal workflow, complete
+  separately approved historical projection materialization, and verify
+  production route builds/cache replay before resolving active server issues.
+  Deliver the new native runtime and collect device/recovery evidence before
+  closing mobile issues. The September 17 gateway 504 still lacks origin
+  evidence. No timeout, retry, or optimizer workaround was introduced.
+
 ## 2026-09-29 — CIMD negotiation deployed; authenticated MCP requests still rejected
 
 - **Symptoms / user impact:** ChatGPT now connects to Dofek, but subsequent tool requests repeatedly report that the connection has expired. Tool use remains blocked.
@@ -27808,3 +27958,145 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 - CI run `36632649198`, job `109626055202`, failed `pnpm audit --prod --audit-level=high --ignore-registry-errors`: Undici 6.28.0 and 7.29.0 were reported vulnerable to WebSocket denial of service and a BalancedPool TLS-validation bypass. The advisories were updated during this incident ([GHSA-rfgv-xxqx-mfg5](https://github.com/advisories/GHSA-rfgv-xxqx-mfg5), [GHSA-w293-vg96-wgc3](https://github.com/advisories/GHSA-w293-vg96-wgc3)).
 - Updated existing security overrides to the latest releases compatible with each dependency’s required major version: 6.29.0, 7.30.0, and 8.11.2. Local production audit passes the existing high-severity gate; two moderate advisories remain below that unchanged gate. The hosted dependency audit passed; the opaque-token PR has 100 successful checks, including unit, integration, mutation, lint, and E2E. Four unchanged Apple jobs remained queued. With explicit user approval, PR #2835 was administrator-merged as `7522a325d`; the ruleset was immediately restored with no bypass actor. Its exact image build and production rollout remain pending.
+
+## 2026-09-29 — Superseded WHOOP workout remained visible through Apple Health
+
+- **Symptoms / user impact:** Activity `9b48239b-d9c0-4c7c-811f-2f7dccd05ea8`
+  displayed an older “WHOOP via Apple Health” climbing workout that no longer
+  matched the workout in the WHOOP app.
+- **Evidence:** Read-only production SSH queries found Apple Health versions
+  1834 and 1835 with sync identifier
+  `whoop://workout/e7078f0e-64f0-40f3-ac45-15939e77f8e6` and different member
+  UUIDs. Version 1834 spans 13:57:00–15:04:59 UTC; version 1835 spans
+  14:28:31–15:23:48 UTC on September 29. Both raw rows are active. The direct
+  WHOOP row and live API response match version 1835. ClickHouse serves both
+  groups with `is_deleted = 0`; production logs and source syncs are working.
+- **Root cause:** Serving queries treated changed HealthKit UUIDs as independent
+  activities and relied on time overlap for grouping. The revised bounds had
+  only 42% intersection-over-union and 66% shorter-workout containment, below
+  the grouping threshold. Apple defines replacement through sync identifier
+  and version ([HealthKit sync version](https://developer.apple.com/documentation/healthkit/hkmetadatakeysyncversion)).
+- **Fix:** Prepared query-time selection of the latest Apple Health version in
+  both PostgreSQL and ClickHouse, with forward migration
+  `0133_apple_health_workout_revisions`. Raw revisions remain intact; no
+  production records were changed during diagnosis. The
+  [Apple Health runbook](apple-health.md#workout-revisions) documents revision
+  and deletion checks.
+- **Validation:** Before the fix, real PostgreSQL and ClickHouse regressions
+  served both versions and revived the older revision when the latest was
+  absent or deleted. Mixed-provider regressions also reproduced obsolete
+  tombstones hiding current groups. After the fix, 104 database tests pass, including the
+  source-record refresh, group lifecycle, provider absence, grouping, and
+  activity API, production dbt repair, and payload lifecycle suites. Workspace
+  lint, root/server/web typechecks, and migration
+  policy pass; the full unit/mobile suite passes. An unrelated eFTP fixture
+  crossed its rolling 90-day window; the [separate fix on main](https://github.com/Asherlc/dofek/pull/2853)
+  pins the test clock and replaces this branch's relative-date correction. Local
+  validation was interrupted by a ClickHouse container
+  restart; it completed without changing runtime retries or timeouts.
+- **CI correction:** The [SQLFluff job](https://github.com/Asherlc/dofek/actions/runs/36653162781/job/109691872798)
+  failed `Lint new migration SQL` with `LT02 | Expected line break and indent
+  of 4 spaces before 'provider_id'`, followed by unqualified subquery-column
+  errors. Local `pnpm lint` checks analytics models but does not run this
+  migration check. The migration and canonical view now use the required
+  layout and explicit revision aliases; the exact SQLFluff command passes.
+  The [spell-check job](https://github.com/Asherlc/dofek/actions/runs/36653162781/job/109691872576)
+  also reported `Unknown word (endmacro)` in the test helper's Jinja matcher.
+  Added the actual Jinja keyword to the project vocabulary.
+  A [full integration shard](https://github.com/Asherlc/dofek/actions/runs/36654153806/job/109695433538)
+  then failed the production dbt repair and payload lifecycle tests with
+  `Unknown expression identifier created_at in scope apple_health_revisions`.
+  Two minimal activity-table fixtures omitted that canonical column. Their
+  schemas and seed data now include it; both dbt suites pass all eight tests.
+  The production ranking is unchanged.
+- **CI dependency audit (September 30 UTC):** After resolving the incident-log
+  merge conflict, [job 109741648357](https://github.com/Asherlc/dofek/actions/runs/36669558499/job/109741648357)
+  failed `pnpm audit --prod --audit-level=high --ignore-registry-errors` with
+  `high | brace-expansion: DoS via uncontrolled recursion on nested brace groups
+  causing stack exhaustion`. The existing override pinned 5.0.9, below the
+  patched ranges in [GHSA-qhr7-859c-m2p7](https://github.com/advisories/GHSA-qhr7-859c-m2p7)
+  and [GHSA-6j4f-fj2g-mc7p](https://github.com/advisories/GHSA-6j4f-fj2g-mc7p).
+  Updated the existing overrides to 5.0.12 and the compatible CommonJS release
+  1.1.21, then regenerated the lockfile. Frozen installation and the exact
+  production audit pass; four moderate advisories remain below the unchanged
+  high-severity gate. Workspace lint, root/server/web typechecks, spell check,
+  and all 19,136 unit/mobile tests pass. The
+  [hosted rerun](https://github.com/Asherlc/dofek/actions/runs/36670718957)
+  passed all nine required gates; audit thresholds and exclusions are unchanged.
+- **PR review regressions:** Real database tests confirmed that an oversized
+  sync version made PostgreSQL serving queries fail across users with
+  `value "18446744073709553451" is out of range for type bigint`. Version
+  parsing now checks the full nonnegative signed 64-bit range before casting,
+  retaining valid 19-digit values and matching ClickHouse's zero fallback.
+  An actual scoped dbt build also kept the superseded source active when only
+  the replacement UUID was supplied. The shared scope now includes same-user,
+  same-sync-identifier siblings and their persisted groups before dependent
+  models run. The [serving runbook](apple-health.md#workout-revisions) links
+  the implementations and executable regression coverage. All 112 relevant
+  PostgreSQL/ClickHouse tests, 19,136 unit/mobile tests, lint, and
+  root/server/web typechecks pass. Hosted checks for the review-fix commit
+  remain required before merge.
+- **Local validation interruption (September 30 UTC):** At 05:20:50 UTC,
+  PostgreSQL logged `checkpointer process (PID 114) was terminated by signal
+  9: Killed`; its cgroup reported `oom_kill 1`. Docker's VM has 8,216,862,720
+  bytes of memory shared by many running workspace stacks. Stopped only this
+  task's idle validation services to release pressure, retaining ClickHouse
+  for dbt SQL lint, then stopped its unused Redpanda container during the
+  PostgreSQL/ClickHouse rerun. Other workspaces' containers and volumes remain
+  intact. The rerun passed all 112 tests with zero PostgreSQL cgroup OOM kills.
+  No application retries, timeouts, or fallback behavior were changed for this
+  interruption. Hosted review-fix checks remain required before merge.
+- **Remaining risk / follow-up:** Production remains unresolved until the normal
+  deployment and a ClickHouse incremental refresh complete. Verify the old
+  group disappears, the current group remains, and both raw versions survive.
+  No retry, timeout, or fallback changes are part of the fix.
+
+## 2026-09-29 — Sentry remediation hosted validation remains queued
+
+- **Symptoms / impact:** [Sentry remediation PR #2837](https://github.com/Asherlc/dofek/pull/2837)
+  has reviewed, locally validated fixes, but its hosted validation and production
+  rollout remain incomplete. The same runner queue also affects `main`.
+- **Evidence:** At 00:34 UTC on September 30,
+  [run 36649078538](https://github.com/Asherlc/dofek/actions/runs/36649078538)
+  had passed change detection and the Docker build. CodeQL, Semgrep, and the
+  mobile preview also passed; 37 remaining build/test checks were queued with
+  no runner assigned and no reported failure. No fatal log line is available
+  for jobs that have not started.
+- **Root cause / status:** The operator confirmed a concurrent-job limit is in
+  place. Its configured value and account-wide active usage were not inspected.
+  Hosted validation is unresolved while the remaining jobs await runners.
+- **Actions / follow-up:** Cancelled only superseded runs owned by this task;
+  their queued aggregate jobs required GitHub's documented
+  [force-cancel operation](https://docs.github.com/en/rest/actions/workflow-runs#force-cancel-a-workflow-run).
+  No account limits, repository settings, or validation gates were changed.
+  Finish the latest commit's hosted checks once runner capacity is available,
+  then obtain rollout approval and follow the projection/native verification
+  gates recorded above. Five verified historical Sentry issues are resolved;
+  four server and six mobile issues remain open pending rollout or evidence.
+
+## 2026-09-30 — Power-trend unit fixture expired across the UTC date boundary
+
+- **Symptoms / impact:** Hosted unit validation blocked Sentry remediation
+  PR #2837 after the other integration, mutation, and E2E jobs passed.
+- **Failure evidence:** [Unit job 109687324294](https://github.com/Asherlc/dofek/actions/runs/36651482967/job/109687324294)
+  ran `pnpm exec vitest run --project unit --coverage` after 00:47 UTC on
+  September 30. The first failed assertion was `expected null to be 190` in
+  the raw-power fallback case in `power-repository.test.ts`.
+- **Root cause:** Its fixed July 1 activity fell outside the production
+  90-day window for the current eFTP value on September 30. The long-range
+  trend still contained 190 W. The same test passed at September 29 23:47 UTC
+  and failed at September 30 00:47 UTC under both UTC and America/Los_Angeles;
+  the fixture's age, rather than the host timezone, caused the failure.
+- **Direct fix:** Scope Date to July 2 noon UTC inside that single test and
+  restore real timers in `finally`. Fixed data, exact trend/current assertions,
+  and production window semantics remain unchanged. Selective Date mocking
+  and restoration use the documented
+  [Vitest clock APIs](https://vitest.dev/api/vi.html#vi-usefaketimers).
+- **Validation / remaining risk:** All 42 tests in the source's test file pass,
+  including the former September 30 failure under both timezones. Server
+  typecheck, changed-file formatting, and diff checks pass. Full unit coverage
+  with the hosted job's existing environment passed 17,623 tests across 1,121
+  files, with 20 tests and two files skipped. The fresh hosted run remains
+  required. No retries, waits, exclusions, or threshold changes were added.
+  Fixed-date fixtures tested against rolling windows need a scoped explicit
+  clock.

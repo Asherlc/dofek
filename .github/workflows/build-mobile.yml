@@ -55,6 +55,8 @@ jobs:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
           fetch-depth: 0
       - uses: ./.github/actions/setup-node-pnpm
+      - name: Test native Apple diagnostic privacy
+        run: pnpm tsx scripts/test-apple-auth-diagnostics.ts
       - uses: ./.github/actions/load-infisical-secrets
         with:
           keys: |

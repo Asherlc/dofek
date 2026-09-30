@@ -659,6 +659,39 @@ describe("LoginScreen", () => {
     expect(screen.getByText("Sign in with Google")).toBeTruthy();
   });
 
+  it("reports sanitized native Apple codes without showing the bridge marker or native details", async () => {
+    mockIsNativeAppleSignInAvailable.mockResolvedValue(true);
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: ["apple"],
+      data: [],
+      nativeApple: true,
+    });
+    mockStartNativeAppleSignIn.mockRejectedValue(
+      Object.assign(
+        new Error(
+          "private-token [dofek.apple-auth domain=com.apple.AuthenticationServices.AuthorizationError code=1000 underlyingDomain=AKAuthenticationError underlyingCode=-7026]",
+        ),
+        { code: "ERR_REQUEST_UNKNOWN" },
+      ),
+    );
+    render(<LoginScreen />);
+    fireEvent.click(await screen.findByText("AppleAuthenticationButton"));
+    expect(
+      await screen.findByText("Apple could not complete sign-in. Please try again."),
+    ).toBeTruthy();
+    expect(screen.queryByText(/dofek\.apple-auth|private-token/)).toBeNull();
+    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
+      source: "login-screen-handle-login",
+      appleCode: "ERR_REQUEST_UNKNOWN",
+      nativeDomain: "com.apple.AuthenticationServices.AuthorizationError",
+      nativeCode: 1000,
+      underlyingDomain: "AKAuthenticationError",
+      underlyingCode: -7026,
+    });
+    expect(JSON.stringify(mockCaptureException.mock.calls)).not.toContain("private-token");
+    expect(screen.getByText("AppleAuthenticationButton")).toBeTruthy();
+  });
+
   it("keeps native Apple button visible after sign-in error so user can retry", async () => {
     mockIsNativeAppleSignInAvailable.mockResolvedValue(true);
     mockFetchConfiguredProviders.mockResolvedValue({

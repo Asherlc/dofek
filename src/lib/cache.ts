@@ -2,6 +2,7 @@ import { getSharedRedisConnection } from "dofek/jobs/queues";
 import { captureException } from "./error-reporting.ts";
 
 export interface CacheStore {
+  invalidate(key: string): Promise<void>;
   get(key: string): Promise<unknown | undefined>;
   set<T>(key: string, data: T, ttlMs: number): Promise<void>;
   invalidateByPrefix(prefix: string): Promise<void>;
@@ -52,6 +53,10 @@ export class MemoryCacheStore implements CacheStore {
 
   async set<T>(key: string, data: T, ttlMs: number): Promise<void> {
     this.#store.set(key, { data, expiresAt: Date.now() + ttlMs });
+  }
+
+  async invalidate(key: string): Promise<void> {
+    this.#store.delete(key);
   }
 
   async invalidateByPrefix(prefix: string): Promise<void> {
@@ -110,6 +115,13 @@ export class RedisCacheStore implements CacheStore {
     await client.sadd(CACHE_KEY_REGISTRY, cacheKey);
   }
 
+  async invalidate(key: string): Promise<void> {
+    const client = await this.#getRedisClient();
+    const cacheKey = redisCacheKey(key);
+    await client.del(cacheKey);
+    await client.srem(CACHE_KEY_REGISTRY, cacheKey);
+  }
+
   async invalidateByPrefix(prefix: string): Promise<void> {
     const client = await this.#getRedisClient();
     const cacheKeys = await client.smembers(CACHE_KEY_REGISTRY);
@@ -139,6 +151,7 @@ export class NullCacheStore implements CacheStore {
     return undefined;
   }
   async set(): Promise<void> {}
+  async invalidate(): Promise<void> {}
   async invalidateByPrefix(): Promise<void> {}
   async invalidateAll(): Promise<void> {}
 }
