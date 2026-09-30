@@ -235,7 +235,10 @@ latest_location_samples AS (
         SELECT *
         FROM {{ ref('activity_location_sample') }}
         WHERE (user_id, activity_id, source_metric_stream_id) IN (
-            SELECT user_id, activity_id, source_metric_stream_id
+            SELECT
+                user_id,
+                activity_id,
+                source_metric_stream_id
             FROM affected_location_sample_keys
         )
         ORDER BY

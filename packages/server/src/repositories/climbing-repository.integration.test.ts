@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
@@ -26,7 +26,7 @@ describe("ClimbingRepository PostgreSQL summaries", () => {
   let activityId: string;
   let activityMemberId: string;
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     context = await setupTestDatabase();
     await context.db.execute(sql`INSERT INTO fitness.provider (id, name)
       VALUES ('climbing-summary-test', 'Climbing Summary Test'),
@@ -66,7 +66,7 @@ describe("ClimbingRepository PostgreSQL summaries", () => {
        'absent-send', 'boulder', 'v_scale', 'V8', TRUE, 5, NOW(), '{}'::jsonb)`);
   }, 60_000);
 
-  afterAll(async () => {
+  afterEach(async () => {
     await context?.cleanup();
   });
 

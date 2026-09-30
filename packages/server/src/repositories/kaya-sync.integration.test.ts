@@ -165,7 +165,7 @@ describe("Kaya attempted-climb import (PostgreSQL integration)", () => {
     { failure: "database validation", invalid: { name: "" } },
     { failure: "a missing grade", invalid: { grade: null } },
   ])(
-    "preserves the previous session entries when a replacement fails $failure",
+    "preserves the previous session and entries when a replacement fails $failure",
     async ({ invalid }) => {
       const startedAt = new Date(Date.now() - 24 * 60 * 60 * 1000);
       await context.db
@@ -254,6 +254,11 @@ describe("Kaya attempted-climb import (PostgreSQL integration)", () => {
         recordsSynced: 0,
         errors: [expect.objectContaining({ message: expect.any(String) })],
       });
+      const retainedActivity = await context.db
+        .select()
+        .from(activity)
+        .where(eq(activity.id, priorActivity.id));
+      expect(retainedActivity).toEqual([priorActivity]);
       const retained = await context.db
         .select()
         .from(climbingEntry)
