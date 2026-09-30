@@ -21,7 +21,8 @@ WITH apple_health_revisions AS (
         id DESC
     ) AS revision_rank
   FROM fitness.activity
-  WHERE provider_id = 'apple_health'
+  WHERE
+    provider_id = 'apple_health'
     AND NULLIF(TRIM(raw -> 'metadata' ->> 'HKMetadataKeySyncIdentifier'), '') IS NOT null
 ),
 
@@ -60,7 +61,10 @@ ranked AS (
   WHERE
     a.provider_absent_at IS null
     AND a.deleted_at IS null
-    AND a.id NOT IN (SELECT id FROM apple_health_revisions WHERE revision_rank > 1)
+    AND a.id NOT IN (
+      SELECT revisions.id FROM apple_health_revisions AS revisions
+      WHERE revisions.revision_rank > 1
+    )
 ),
 
 tombstoned AS (
@@ -83,7 +87,10 @@ tombstoned AS (
     AND a.deleted_at IS null
     AND a.external_id IS NOT null
     AND a.external_id <> ''
-    AND a.id NOT IN (SELECT id FROM apple_health_revisions WHERE revision_rank > 1)
+    AND a.id NOT IN (
+      SELECT revisions.id FROM apple_health_revisions AS revisions
+      WHERE revisions.revision_rank > 1
+    )
 ),
 
 effective_tombstoned AS (
@@ -122,7 +129,10 @@ effective_tombstoned AS (
         AND sib.provider_id = 'apple_health'
         AND sib.deleted_at IS null
         AND sib.id <> a.id
-        AND sib.id NOT IN (SELECT id FROM apple_health_revisions WHERE revision_rank > 1)
+        AND sib.id NOT IN (
+          SELECT revisions.id FROM apple_health_revisions AS revisions
+          WHERE revisions.revision_rank > 1
+        )
         AND COALESCE(
           NULLIF(TRIM(sib.raw -> 'metadata' ->> 'HKMetadataKeySyncIdentifier'), ''),
           'time:' || sib.started_at::text || ':' || COALESCE(sib.ended_at::text, '') || ':' || COALESCE(

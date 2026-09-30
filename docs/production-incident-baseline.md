@@ -27812,6 +27812,15 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   crossed its rolling 90-day window and now uses a relative date. Local
   validation was interrupted by a ClickHouse container
   restart; it completed without changing runtime retries or timeouts.
+- **CI correction:** The [SQLFluff job](https://github.com/Asherlc/dofek/actions/runs/36653162781/job/109691872798)
+  failed `Lint new migration SQL` with `LT02 | Expected line break and indent
+  of 4 spaces before 'provider_id'`, followed by unqualified subquery-column
+  errors. Local `pnpm lint` checks analytics models but does not run this
+  migration check. The migration and canonical view now use the required
+  layout and explicit revision aliases; the exact SQLFluff command passes.
+  The [spell-check job](https://github.com/Asherlc/dofek/actions/runs/36653162781/job/109691872576)
+  also reported `Unknown word (endmacro)` in the test helper's Jinja matcher.
+  Added the actual Jinja keyword to the project vocabulary.
 - **Remaining risk / follow-up:** Production remains unresolved until the normal
   deployment and a ClickHouse incremental refresh complete. Verify the old
   group disappears, the current group remains, and both raw versions survive.

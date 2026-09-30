@@ -261,6 +261,7 @@
     "tsconfig",
     "noEmit",
     "esmodules",
+    "endmacro",
     "healthkit",
     "micronutrients",
     "macronutrients",
