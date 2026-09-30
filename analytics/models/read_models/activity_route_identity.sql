@@ -47,10 +47,10 @@ altitude_source_versions AS MATERIALIZED (
     SELECT
         activity_id,
         user_id,
-        max(refreshed_at) AS source_refreshed_at
+        maxIf(refreshed_at, channel = 'altitude') AS source_refreshed_at
     FROM {{ ref('activity_sensor_sample') }}
-    WHERE channel = 'altitude'
     GROUP BY activity_id, user_id
+    HAVING source_refreshed_at > toDateTime64(0, 9, 'UTC')
 ),
 
 {% if is_incremental() %}

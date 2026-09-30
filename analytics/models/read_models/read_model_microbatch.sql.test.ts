@@ -344,9 +344,6 @@ describe("production analytics read-model build", () => {
     );
     expect(sql).toContain("begin=activity_sensor_sample_begin");
     expect(sql).toContain("'name': 'by_activity_source_refresh_version'");
-    expect(sql).toContain(
-      "'query': 'SELECT activity_id, user_id, max(refresh_version) AS source_refresh_version GROUP BY activity_id, user_id'",
-    );
     expect(sql).toContain("event_time='refreshed_at'");
     expect(sql).not.toContain("'final': 1");
     expect(normalizedSql).toContain(

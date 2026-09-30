@@ -239,6 +239,55 @@ and hardware described there.
 
 - **Component tests**: `pnpm test:mobile` from the repo root (Vitest mobile project)
 - **Native modules**: Swift tests in `modules/<name>/Tests/` (XCTest)
+- **Apple diagnostic privacy**: `pnpm tsx scripts/test-apple-auth-diagnostics.ts`
+  from the repository root compiles the installed production Swift helper with
+  a Foundation fixture and executes classification, redaction, underlying-error,
+  and non-retention checks. The existing iOS Native Build job runs this before
+  prebuild and the Release archive; see the [runner](../../scripts/test-apple-auth-diagnostics.ts)
+  and [workflow](../../.github/workflows/build-mobile.yml).
+
+### Native diagnostic runtime
+
+Runtime **1.2** includes ExpoNetwork and the pnpm patch to
+`expo-apple-authentication@57.0.2`. Build a new native binary containing both;
+do not publish this JavaScript to runtime 1.1. Expo uses runtime versions to
+match updates to compatible native code
+([runtime versions](https://docs.expo.dev/eas-update/runtime-versions/)).
+Use [pnpm patch/patch-commit](https://pnpm.io/cli/patch-commit) when updating the
+patch, then rerun the native regression and existing Release archive job.
+
+The [Apple patch](../../patches/expo-apple-authentication@57.0.2.patch) preserves
+Expo's authorization exception mapping and cancellation. Other authorization
+errors carry only an allowlisted NSError domain, numeric code, and optional
+immediate underlying domain/code. Unknown domains become `other`; native
+descriptions and userInfo are discarded. Expo's
+[exception cause formatting](https://github.com/expo/expo/blob/main/packages/expo-modules-core/ios/Core/Exceptions/Exception.swift)
+and [JavaScript error bridge](https://github.com/expo/expo/blob/main/packages/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptError.swift)
+transport the safe marker in the error message. The login boundary parses it
+into safe telemetry and presents a readable sign-in error, while preserving
+server error messages and silent user cancellation. See the
+[JavaScript diagnostic boundary](./lib/apple-auth-diagnostics.ts) and
+[Expo Apple authentication behavior](https://docs.expo.dev/versions/latest/sdk/apple-authentication/).
+These diagnostics do not establish the cause of historical Apple failures;
+device sign-in validation remains separate from helper tests and archive validation.
+
+Query persistence records allowlisted failure categories/codes and aggregate
+attempted-write counts and UTF-8 byte measurements per persister lifetime.
+Diagnostics contain no cache keys, user IDs, health values, tokens, or original
+native messages. The pinned AsyncStorage conversion drops NSError codes, so
+known fixed storage messages also map to safe categories; other failures stay
+`unknown`. Read/remove and deserialization rejections retain their original
+identity, and write failures are captured through TanStack's retry callback
+without adding retries. The provider's error callback also reports failures
+after parsing, including hydration, with a generic safe classification because
+the callback supplies no error argument. A lower-boundary failure can produce
+both its detailed safe report and this generic fallback. See
+[TanStack persistence restoration](https://tanstack.com/query/latest/docs/framework/react/plugins/persistQueryClient#persistqueryclientprovider),
+the [persistence boundary](./lib/mobile-query-persistence.ts),
+[AsyncStorage conversion](https://github.com/react-native-async-storage/async-storage/blob/v2.2.0/packages/default-storage/src/helpers.ts),
+and [TanStack async persister](https://tanstack.com/query/latest/docs/framework/react/plugins/createAsyncStoragePersister).
+The 5 MiB cap measures `TextEncoder` UTF-8 output, matching the
+[Encoding Standard](https://encoding.spec.whatwg.org/#interface-textencoder).
 
 ## Mobile Telemetry
 
