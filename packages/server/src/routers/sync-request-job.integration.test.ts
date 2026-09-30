@@ -1,13 +1,14 @@
 import { randomUUID } from "node:crypto";
 import type { ConnectionOptions } from "bullmq";
 import { Job, Queue, QueueEvents, Worker } from "bullmq";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SyncJobData } from "./queues.ts";
+import type { SyncJobData } from "dofek/jobs/queues";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   type EnqueuedSyncJob,
   enqueueSyncJobWithRequestDedup,
   syncCoordinatorHasDispatchedProvider,
-} from "./sync-request-job.ts";
+} from "../../../../src/jobs/sync-request-job.ts";
+import { ensureProvidersRegistered } from "./sync-helpers.ts";
 
 function testRedisConnection(): ConnectionOptions {
   const redisUrl = process.env.REDIS_URL;
@@ -25,6 +26,8 @@ function testRedisConnection(): ConnectionOptions {
 
 describe("full sync BullMQ lifecycle deduplication", () => {
   const cleanup: Array<() => Promise<void>> = [];
+
+  beforeAll(ensureProvidersRegistered);
 
   afterEach(async () => {
     while (cleanup.length > 0) {
@@ -119,22 +122,10 @@ describe("full sync BullMQ lifecycle deduplication", () => {
   });
 
   it("keeps checkpoint continuations distinct from the pending initial operation", async () => {
-    vi.resetModules();
-    const [
-      { registerSyncRequestQueryResolver },
-      { resolveWhoopSyncRequestQuery },
-      { enqueueSyncJobWithRequestDedup: enqueueWithFreshResolverRegistry },
-    ] = await Promise.all([
-      import("../lib/sync-request-query.ts"),
-      import("../providers/whoop/sync-request-query.ts"),
-      import("./sync-request-job.ts"),
-    ]);
-    registerSyncRequestQueryResolver("whoop", resolveWhoopSyncRequestQuery);
-
     const { queue } = createQueue("checkpoint");
     const initial = await enqueueFull(queue, "2026-07-29T17:00:00.000Z", "whoop");
 
-    const continuation = await enqueueWithFreshResolverRegistry(
+    const continuation = await enqueueSyncJobWithRequestDedup(
       "whoop",
       {
         userId: "user-1",
@@ -163,18 +154,6 @@ describe("full sync BullMQ lifecycle deduplication", () => {
   });
 
   it("deduplicates Ziva date chunks by their complete window and source account", async () => {
-    vi.resetModules();
-    const [
-      { registerSyncRequestQueryResolver },
-      { resolveZivaSyncRequestQuery },
-      { enqueueSyncJobWithRequestDedup: enqueueWithFreshResolverRegistry },
-    ] = await Promise.all([
-      import("../lib/sync-request-query.ts"),
-      import("../providers/ziva/sync-request-query.ts"),
-      import("./sync-request-job.ts"),
-    ]);
-    registerSyncRequestQueryResolver("ziva", resolveZivaSyncRequestQuery);
-
     const { queue } = createQueue("ziva-checkpoint");
     const baseJobData: SyncJobData = {
       userId: "user-1",
@@ -182,14 +161,14 @@ describe("full sync BullMQ lifecycle deduplication", () => {
       sinceIso: "2026-09-01T00:00:00.000Z",
       untilIso: "2026-09-30T23:59:59.999Z",
     };
-    const initial = await enqueueWithFreshResolverRegistry(
+    const initial = await enqueueSyncJobWithRequestDedup(
       "ziva",
       baseJobData,
       {},
       (name, data, options) => queue.add(name, data, options),
       (jobId) => queue.getJob(jobId),
     );
-    const differentEndWindow = await enqueueWithFreshResolverRegistry(
+    const differentEndWindow = await enqueueSyncJobWithRequestDedup(
       "ziva",
       {
         ...baseJobData,
@@ -209,14 +188,14 @@ describe("full sync BullMQ lifecycle deduplication", () => {
         recordsSynced: 14,
       },
     };
-    const continuation = await enqueueWithFreshResolverRegistry(
+    const continuation = await enqueueSyncJobWithRequestDedup(
       "ziva",
       continuationJobData,
       {},
       (name, data, options) => queue.add(name, data, options),
       (jobId) => queue.getJob(jobId),
     );
-    const differentAccountContinuation = await enqueueWithFreshResolverRegistry(
+    const differentAccountContinuation = await enqueueSyncJobWithRequestDedup(
       "ziva",
       {
         ...continuationJobData,
@@ -232,7 +211,7 @@ describe("full sync BullMQ lifecycle deduplication", () => {
       (name, data, options) => queue.add(name, data, options),
       (jobId) => queue.getJob(jobId),
     );
-    const duplicateContinuation = await enqueueWithFreshResolverRegistry(
+    const duplicateContinuation = await enqueueSyncJobWithRequestDedup(
       "ziva",
       continuationJobData,
       {},

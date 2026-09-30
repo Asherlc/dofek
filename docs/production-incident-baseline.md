@@ -28508,3 +28508,11 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   both incident records. Combined provider/client tests pass (77), all four
   typechecks pass, and lint passes. Revalidate the new head's full suite and
   hosted gates; queued native checks and release/restore approval remain open.
+
+## 2026-09-30 — Provider registration failure in OpenBeta PR validation
+
+- **Symptoms / impact:** [Integration shard 1](https://github.com/Asherlc/dofek/actions/runs/36777153307/job/110099580515) failed the calendar week-list and sync-provider router cases; PR #2860 remains blocked from readiness. No production rollout occurred.
+- **Evidence:** `pnpm exec vitest run --project integration --coverage --shard=1/4` failed. The first causal router log was `Failed to register ziva provider: Sync request query resolver for 'ziva' is already registered`; both routes returned HTTP 500 before the SQL-validity assertions. Other earlier ClickHouse exceptions were expected negative-test cases.
+- **Root cause:** The Redis request-deduplication integration suite reset module caches and manually registered WHOOP/Ziva resolvers. Integration suites share one module lifecycle, so a later router bootstrap encountered the test-owned Ziva resolver and failed; initial and continuation requests also used different registry generations. The paired suites reproduce CI with two failures and 71 passes.
+- **Direct fix:** Use the canonical server provider bootstrap in integration setup and one static enqueue helper for both initial and continuation jobs. Remove test-owned registration and module resets; move the suite beside the server bootstrap consumer to respect TypeScript package ownership and keep production duplicate-registration validation intact. No gate, retry, timeout, or fallback was changed.
+- **Follow-up:** Confirm the registration lifecycle cause, cover it with a regression, and rerun the failing integration path and hosted CI.
