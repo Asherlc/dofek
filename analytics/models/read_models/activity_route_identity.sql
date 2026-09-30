@@ -54,7 +54,7 @@ altitude_source_versions AS MATERIALIZED (
 ),
 
 {% if is_incremental() %}
-existing_route_state AS MATERIALIZED (
+existing_route_state AS (
     SELECT
         activity_id,
         user_id,
@@ -79,7 +79,7 @@ existing_route_state AS MATERIALIZED (
 
 {% endif %}
 
-affected_route_keys AS MATERIALIZED (
+affected_route_keys AS (
     SELECT
         activities.activity_id AS activity_id,
         activities.user_id AS user_id
