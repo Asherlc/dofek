@@ -386,6 +386,21 @@ GROUP BY table, partition_id
 ORDER BY table, partition_id;
 ```
 
+Also capture the per-part inventory below before and after the part-filtered
+empty-row checks. Compare exact part names and delete-mask/projection flags;
+the grouped totals alone cannot detect a replaced part.
+
+```sql
+SELECT table, partition_id, name AS part_name, has_lightweight_delete,
+  has(projections, if(table = 'activity_sensor_sample',
+    'by_activity_source_refresh_version',
+    'by_activity_location_source_refresh')) AS has_expected_projection
+FROM system.parts
+WHERE active AND database = 'analytics'
+  AND table IN ('activity_sensor_sample', 'activity_location_sample')
+ORDER BY table, partition_id, part_name;
+```
+
 Agree on maximum partition rows/bytes and available disk/memory before writing.
 Process one reviewed partition of one table at a time; substitute its exact
 `partition_id` below. Both source tables currently have no partition key,
@@ -447,6 +462,14 @@ output, and a successful analytics-worker cycle. Query-log projection evidence
 is documented in [ClickHouse's projection verification example](https://clickhouse.com/docs/concepts/features/projections/projections#filtering-on-columns-which-arent-in-the-primary-key).
 Do not force a build before coverage completes or compensate for incomplete
 coverage with retries, higher timeouts, or forced optimizer settings.
+
+Run the separate aggregate checks without projection preference or force
+settings. A scheduled build may retain previously deployed query settings;
+record those settings with its query-log evidence rather than describe that
+build as having no optimizer hints. Distinguish compact freshness reads from
+the remaining indexed geometry work, and retain query-log, readiness, and live/tombstone
+output snapshots together for recovery review. ClickHouse documents projection
+selection in the [query-log verification example](https://clickhouse.com/docs/concepts/features/projections/projections#filtering-on-columns-which-arent-in-the-primary-key).
 
 ## Activity sensor summary queue-depth check
 

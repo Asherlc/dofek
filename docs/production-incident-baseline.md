@@ -28540,13 +28540,22 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   1,460,650,484 bytes. Readiness returned HTTP 200 with no last failure.
   Location mutation `mutation_32322.txt` completed with zero remaining parts and
   no failure reason; all location parts have the projection.
-- **Status and follow-up:** Both exact freshness aggregates naturally select
-  their projections. The next scheduled unscoped route build still needs its
-  post-maintenance query-log and worker-cycle verification.
-  [DOFEK-SERVER-6C](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6C)
-  remains unresolved until both tables' coverage, natural query plans, bounded
-  reads, route behavior, and healthy worker cycles are verified. No extra
-  mutation or forced optimizer setting was used.
+- **Verified recovery:** Freshness aggregates without optimizer hints select
+  their projections and read 43,737 sensor rows in 18 ms and 2,563 location rows
+  in 65 ms.
+  Three subsequent scheduled route builds finish in 12.3–18.9 seconds with
+  both projections selected. Two complete scheduled analytics cycles report
+  `PASS=41 WARN=0 ERROR=0`; readiness is HTTP 200 with no last failure.
+  Final route state contains 771 live routes and one tombstone, with no live
+  route lacking geometry. Independent operational review supports resolving
+  [DOFEK-SERVER-6C](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6C).
+- **Remaining cost:** Normal builds retain their previously deployed projection
+  preference and still read about 35 million rows for indexed geometry work.
+  The natural plan restricts these reads to 513 affected keys; none currently
+  has a live stored route. This remains a capacity concern, not evidence of
+  another timeout. Retain duration/read-row evidence for future investigation.
+  No extra mutation, optimizer setting, retry, timeout, or forced build was
+  introduced. See the [verification procedure](clickhouse-read-model-deploy-runbook.md#route-source-freshness-projection-rollout-migration-0097).
 
 ## 2026-09-30 — Dependency audit blocked the recovery PR
 
@@ -28612,3 +28621,21 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   and old readers/writers quiesced through conversion; the ordinary rolling
   deployment alone does not satisfy that schema cutover.
   No gate suppression, migration rewrite, timeout, or retry was added.
+
+## 2026-09-30 — OpenBeta upstream availability recovered
+
+- **Symptoms and root cause:** At 17:22 UTC the scheduled tick export received
+  an OpenBeta/Cloudflare origin HTTP 504. The response identified an upstream
+  origin timeout; this prevented that export. See
+  [DOFEK-SERVER-6K](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6K).
+- **Recovery evidence:** The scheduled production export at 21:00:07 UTC
+  reached tick-data validation and reported the separate numeric-date error
+  [DOFEK-SERVER-6M](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6M).
+  The [deployed fetch path](https://github.com/Asherlc/dofek/blob/bffc5647c938191281a0fa2cff71fc4cc90e71f8/src/providers/openbeta.ts)
+  requires a successful HTTP response, JSON parsing, and an error-free GraphQL
+  envelope before that validation. This establishes upstream transport recovery;
+  resolve 6K independently of the remaining date-schema failure.
+- **Remaining risk and follow-up:** The date fix and scheduled-sync alert stay
+  open until the reviewed release deploys and a live sync succeeds. Upstream
+  availability can recur; no local retry, timeout, fallback, or forced sync
+  was added to cover this external outage.
