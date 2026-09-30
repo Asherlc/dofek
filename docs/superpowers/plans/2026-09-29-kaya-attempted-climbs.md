@@ -34,6 +34,8 @@
 ## Task 3: Ship and verify the affected session
 
 - [x] Commit and push on the existing branch.
-- [ ] Apply the corrected import through the normal release/sync path and re-sync the affected session.
-- [ ] Verify production now serves the six sends and three attempted climbs.
-- [ ] Report remaining field omissions and any release limitation explicitly.
+- [x] Apply the corrected import through the normal release/sync path and re-sync the affected session.
+- [x] Verify production now serves the six sends and three attempted climbs.
+- [x] Report remaining field omissions and any release limitation explicitly.
+
+**Production result:** The user approved deploying the verified commit while five native Apple checks waited for runners. [Deployment 36656856783](https://github.com/Asherlc/dofek/actions/runs/36656856783) released `525ad724bcf0e12ddd58699299010e526acfe2e6` successfully. The bounded September 29 re-sync completed with nine records, no errors, and a 1,494 ms duration. Read-only production verification returned six sends and three unsent climbs (V4, V4, V3), preserved their unknown counts, retained six sends in the session summary, and verified that the activity loads the corrected web assets. The protected PR remains open pending its native Apple checks; no merge bypass was used.
