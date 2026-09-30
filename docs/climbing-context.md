@@ -4,7 +4,7 @@ Climbing entries preserve where a climb was, its board and reported angle,
 how it was climbed, and the recorded result. Activity details and unattached
 tick suggestions expose the same context on web and mobile. The canonical
 contract is defined in [the shared schemas](../packages/training/src/climbing-context.ts)
-and [migration 0134](../drizzle/0134_climbing_context.sql).
+and [migration 0135](../drizzle/0135_climbing_context.sql).
 
 ## Canonical facts
 
@@ -69,7 +69,7 @@ from those values or another provider's deeper location path.
 
 ## Existing records
 
-Migration 0134 converts the four legacy columns in place and adds nullable
+Migration 0135 converts the four legacy columns in place and adds nullable
 board metadata. It retains entry IDs, ownership, source identity, associations,
 dates, tombstones, grades, raw payloads, and individual attempt rows. Existing
 Mountain Project location strings become ordered paths; other legacy labels

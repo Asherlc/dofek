@@ -132,7 +132,7 @@ Input:
 ```json
 {
   "name": "Codex",
-  "scopes": ["health:read", "health:write", "activity:read", "nutrition:read", "providers:read", "sync:write"],
+  "scopes": ["health:read", "health:write", "activity:read", "nutrition:read", "nutrition:write", "providers:read", "sync:write"],
   "expiresAt": null
 }
 ```
@@ -141,12 +141,17 @@ The response includes `token` once. Store it in the MCP client. Dofek stores onl
 
 List existing token metadata with `mcp.listPersonalTokens`. Revoke a token with `mcp.revokeToken`.
 
-`nutrition:write` is an explicit opt-in. It is not selected by default when a
-manual token is created, and OAuth's default scope request omits it. Existing
-manual tokens and OAuth grants keep their stored scopes. To add food-record
-write access, create a new manual token with **Modify food records** selected,
-or reauthorize the OAuth client with `nutrition:write` in its requested scopes.
-Granting that scope does not change the other default scopes.
+New personal tokens select all supported tool scopes by default, including
+`health:write` and `nutrition:write`; users can deselect permissions before
+creating the token. Existing tokens and OAuth grants keep their stored scopes.
+Every MCP tool declares its OAuth requirements in `_meta.securitySchemes`,
+preserving UI metadata, so clients can request the permissions for their selected
+tools through normal consent. A missing scope produces a tool-level
+`_meta["mcp/www_authenticate"]` challenge with the required scopes and protected
+resource metadata URL, following [OpenAI's tool authentication guidance](https://developers.openai.com/plugins/build/auth/#triggering-authentication-ui)
+and [tool metadata reference](https://developers.openai.com/plugins/reference/#meta-fields-on-tool-descriptor).
+Reauthorization is required before an existing read-only grant can write;
+refreshing a token does not expand its permissions.
 
 ## Scopes
 
@@ -160,8 +165,9 @@ Granting that scope does not change the other default scopes.
 | `providers:read` | List configured providers and connection status. |
 | `sync:write` | Enqueue provider sync jobs. |
 
-`health:write` is never granted by default. Manual-token users must select it,
-and OAuth clients must request it explicitly.
+New personal tokens select `health:write` by default; users may deselect it.
+OAuth clients must request it through consent before an existing read-only grant
+can write.
 
 ## Tools
 
@@ -210,7 +216,7 @@ The canonical tool names, schemas, and scope checks are defined in the [MCP tool
 The seven food-record tools use the exact schemas in
 [`food-record-tools.ts`](../packages/server/src/mcp/food-record-tools.ts). Read
 tools require `nutrition:read`. Every mutation requires both `nutrition:read`
-and the opt-in `nutrition:write` scope.
+and the `nutrition:write` scope approved by the user.
 
 `search_food_entries` requires `start_date` and `end_date`. Its optional
 case-insensitive text query matches the effective food name, description,

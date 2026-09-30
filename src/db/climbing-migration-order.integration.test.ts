@@ -16,7 +16,8 @@ const journalSchema = z.object({
 describe("climbing and Apple Health migration histories", () => {
   it.each([
     ["0133_independent_climbing_outcome_count", 1790727480000],
-    ["0133_apple_health_workout_revisions", 1790720000000],
+    ["0134_apple_health_workout_revisions", 1790720000000],
+    ["0134_apple_health_workout_revisions", 1790779386669],
   ])(
     "upgrades the previously applied %s history without replay",
     async (appliedTag, appliedWhen) => {
@@ -43,8 +44,8 @@ describe("climbing and Apple Health migration histories", () => {
         const root = join(import.meta.dirname, "../../drizzle");
         const tags = [
           "0133_independent_climbing_outcome_count",
-          "0133_apple_health_workout_revisions",
-          "0134_climbing_context",
+          "0134_apple_health_workout_revisions",
+          "0135_climbing_context",
         ];
         const journal = journalSchema.parse(
           JSON.parse(readFileSync(join(root, "meta/_journal.json"), "utf8")),

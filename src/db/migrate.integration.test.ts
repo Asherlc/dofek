@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { Client } from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
+import { resetLegacyClimbingTables } from "./climbing-migration-test-helpers.ts";
 import { runMigrations } from "./migrate.ts";
 import { setupTestDatabase, type TestContext, writeTestMigrationFiles } from "./test-helpers.ts";
 
@@ -312,6 +313,66 @@ describe("runMigrations", () => {
       );
 
       await expect(runMigrations(ctx.connectionString, tmpDir)).resolves.toBe(0);
+    } finally {
+      await client.query("DROP SCHEMA drizzle CASCADE");
+      await client.end();
+    }
+  });
+
+  it("upgrades the production climbing migration history without skipping pending work", async () => {
+    const client = new Client({ connectionString: ctx.connectionString });
+    const migrationsFolder = join(import.meta.dirname, "../../drizzle");
+    const journal = z
+      .object({
+        entries: z.array(z.object({ idx: z.number(), tag: z.string(), when: z.number() })),
+      })
+      .parse(JSON.parse(readFileSync(join(migrationsFolder, "meta/_journal.json"), "utf8")));
+    const productionClimbingHash =
+      "8c78a3557c472012c24978da8c1ae16e99573f59d66ed7d8e709297702c849ff";
+    await client.connect();
+    try {
+      await resetLegacyClimbingTables(client);
+      await client.query(
+        readFileSync(join(migrationsFolder, "0133_independent_climbing_outcome_count.sql"), "utf8"),
+      );
+      await client.query("CREATE SCHEMA drizzle");
+      await client.query(`CREATE TABLE drizzle.__drizzle_migrations (
+        id serial PRIMARY KEY,
+        hash text NOT NULL,
+        created_at bigint,
+        content_hash text
+      )`);
+      for (const entry of journal.entries.filter((entry) => entry.idx <= 132)) {
+        const hash = createHash("sha256")
+          .update(readFileSync(join(migrationsFolder, `${entry.tag}.sql`)))
+          .digest("hex");
+        await client.query(
+          "INSERT INTO drizzle.__drizzle_migrations (hash,created_at,content_hash) VALUES ($1,$2,$1)",
+          [hash, entry.when],
+        );
+      }
+      await client.query(
+        "INSERT INTO drizzle.__drizzle_migrations (hash,created_at,content_hash) VALUES ($1,$2,$1)",
+        [productionClimbingHash, 1_790_727_480_000],
+      );
+
+      await expect(runMigrations(ctx.connectionString, migrationsFolder)).resolves.toBe(2);
+      const pendingHashes = [
+        "0134_apple_health_workout_revisions.sql",
+        "0135_climbing_context.sql",
+      ].map((file) =>
+        createHash("sha256")
+          .update(readFileSync(join(migrationsFolder, file)))
+          .digest("hex"),
+      );
+      const tracked = await client.query(
+        "SELECT hash FROM drizzle.__drizzle_migrations WHERE hash = ANY($1::text[]) ORDER BY hash",
+        [[productionClimbingHash, ...pendingHashes]],
+      );
+      expect(migrationHashRowsSchema.parse(tracked.rows)).toEqual(
+        [productionClimbingHash, ...pendingHashes].sort().map((hash) => ({ hash })),
+      );
+      await expect(runMigrations(ctx.connectionString, migrationsFolder)).resolves.toBe(0);
     } finally {
       await client.query("DROP SCHEMA drizzle CASCADE");
       await client.end();

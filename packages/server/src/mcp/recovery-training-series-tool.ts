@@ -15,6 +15,7 @@ import {
 } from "../repositories/recovery-training-series-repository.ts";
 import { SleepRepository } from "../repositories/sleep-repository.ts";
 import { SubjectiveRepository } from "../repositories/subjective-repository.ts";
+import { registerAuthorizedTool } from "./authorized-tool.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { recoveryTrainingSeriesOutputSchema } from "./recovery-training-series-output.ts";
 import { requireMcpScope } from "./token-repository.ts";
@@ -45,20 +46,22 @@ export function registerRecoveryTrainingSeriesTool(
   server: McpServer,
   context: DofekMcpContext,
 ): void {
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["health:read", "activity:read", "nutrition:read"],
     "get_recovery_training_series",
     {
       title: "Get Recovery And Training Series",
       description:
         "Return a compact local-date spine of selected recovery, sleep, body-weight, modality-specific load, subjective, activity, and optional nutrition observations. It aligns data but makes no causal claims.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         start_date: dateSchema,
         end_date: dateSchema,
         streams: z.array(recoveryTrainingStreamSchema).min(1).max(7).optional(),
         providers: z.array(z.string().min(1)).max(20).optional(),
         modalities: z.array(z.enum(ACTIVITY_MODALITIES)).max(ACTIVITY_MODALITIES.length).optional(),
-      },
+      }),
       outputSchema: recoveryTrainingSeriesOutputSchema,
     },
     async ({ start_date, end_date, streams, providers, modalities }) => {

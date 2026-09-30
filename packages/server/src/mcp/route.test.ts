@@ -971,6 +971,119 @@ describe("createMcpRouter", () => {
     expect(freshList.text).toContain("create_food_entry");
   });
 
+  it("publishes OAuth scopes for every tool so automatic setup includes writes", async () => {
+    authorizeMcpToken(["nutrition:read"]);
+    const response = await request(createTestApp(), {
+      authorization: "Bearer read-token",
+      body: { id: 2, jsonrpc: "2.0", method: "tools/list" },
+    });
+    const tools = z
+      .object({
+        result: z.object({
+          tools: z.array(
+            z.object({
+              name: z.string(),
+              _meta: z.object({
+                securitySchemes: z.array(
+                  z.object({
+                    type: z.literal("oauth2"),
+                    scopes: z.array(z.string()),
+                  }),
+                ),
+              }),
+            }),
+          ),
+        }),
+      })
+      .parse(parseJsonRpcEvent(response.text)).result.tools;
+    const scopeGroups = {
+      "health:read": [
+        "get_daily_health_summary",
+        "get_data_coverage",
+        "get_sleep_summary",
+        "get_body_metrics",
+        "get_health_trends",
+        "render_health_explorer",
+        "list_body_regions",
+        "get_subjective_timeline",
+      ],
+      "activity:read": [
+        "get_climbing_progression",
+        "get_threshold_history",
+        "get_strength_progression",
+        "search_activities",
+        "get_activity_summary",
+        "get_finger_loading",
+        "compare_performances",
+        "get_cycling_performance",
+        "get_activity_timeseries",
+        "get_strength_sessions",
+        "get_finger_loading_progression",
+        "get_effort_trend",
+        "get_activity_streams",
+        "get_cycling_training_metrics",
+        "estimate_cycling_threshold",
+        "find_repeated_efforts",
+        "get_cycling_power_curve",
+        "get_activity_details",
+        "get_climbing_sessions",
+      ],
+      "nutrition:read": [
+        "search_food_entries",
+        "get_food_entry",
+        "get_food_entry_history",
+        "get_nutrition_summary",
+        "get_supplements",
+      ],
+      "health:write": ["log_injury"],
+      "providers:read": ["list_providers"],
+      "sync:write": ["start_provider_sync"],
+    };
+    const expectedSchemes = Object.fromEntries(
+      Object.entries(scopeGroups).flatMap(([scope, names]) =>
+        names.map((name) => [name, [{ type: "oauth2", scopes: [scope] }]]),
+      ),
+    );
+    for (const name of [
+      "create_food_entry",
+      "update_food_entry",
+      "delete_food_entry",
+      "restore_food_entry",
+    ]) {
+      expectedSchemes[name] = [{ type: "oauth2", scopes: ["nutrition:read", "nutrition:write"] }];
+    }
+    expectedSchemes.get_training_load = [
+      { type: "oauth2", scopes: ["activity:read", "nutrition:read"] },
+    ];
+    expectedSchemes.get_recovery_training_series = [
+      { type: "oauth2", scopes: ["health:read", "activity:read", "nutrition:read"] },
+    ];
+    expect(
+      Object.fromEntries(tools.map((tool) => [tool.name, tool._meta.securitySchemes])),
+    ).toEqual(expectedSchemes);
+    expect(tools.find((tool) => tool.name === "create_food_entry")?._meta.securitySchemes).toEqual([
+      { type: "oauth2", scopes: ["nutrition:read", "nutrition:write"] },
+    ]);
+    expect(tools.find((tool) => tool.name === "log_injury")?._meta.securitySchemes).toEqual([
+      { type: "oauth2", scopes: ["health:write"] },
+    ]);
+    expect(
+      new Set(
+        tools.flatMap((tool) => tool._meta.securitySchemes.flatMap((scheme) => scheme.scopes)),
+      ),
+    ).toEqual(
+      new Set([
+        "health:read",
+        "health:write",
+        "activity:read",
+        "nutrition:read",
+        "nutrition:write",
+        "providers:read",
+        "sync:write",
+      ]),
+    );
+  });
+
   it("describes MCP tool input schemas for clients", async () => {
     authorizeMcpToken();
 
@@ -1817,6 +1930,22 @@ describe("createMcpRouter", () => {
     });
 
     expect(response.text).toContain("requires scope: health:write");
+    expect(response.text).toContain("mcp/www_authenticate");
+    expect(response.text).toContain("insufficient_scope");
+    const challenge = z
+      .object({
+        result: z.object({
+          _meta: z.object({
+            "mcp/www_authenticate": z.array(z.string()),
+          }),
+        }),
+      })
+      .parse(parseJsonRpcEvent(response.text)).result._meta["mcp/www_authenticate"][0];
+    expect(challenge).toContain('scope="health:write"');
+    expect(challenge).toContain(
+      'resource_metadata="https://app.example.test/.well-known/oauth-protected-resource/api/mcp"',
+    );
+    expect(challenge).toContain('error_description="MCP token requires scope: health:write"');
     expect(toolTestMocks.subjectiveCreateInjury).not.toHaveBeenCalled();
   });
 

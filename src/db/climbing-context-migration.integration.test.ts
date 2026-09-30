@@ -37,10 +37,10 @@ describe("canonical climbing context conversion", () => {
     try {
       writeTestMigrationFiles(directory, [
         {
-          file: "0134_climbing_context.sql",
+          file: "0135_climbing_context.sql",
           when: 2_000_000_000_134,
           content: readFileSync(
-            join(import.meta.dirname, "../../drizzle/0134_climbing_context.sql"),
+            join(import.meta.dirname, "../../drizzle/0135_climbing_context.sql"),
             "utf8",
           ),
         },

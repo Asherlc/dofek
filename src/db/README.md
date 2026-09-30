@@ -53,7 +53,7 @@ This directory contains the Drizzle ORM schema, migrations, and database connect
 unit, climbing method, and recorded result. Readers use the permanent
 `fitness.v_climbing_entry` projection for legacy display/filter scalars, which
 PostgreSQL [views](https://www.postgresql.org/docs/current/sql-createview.html)
-derive without duplicate storage. Migration `0134_climbing_context` converts
+derive without duplicate storage. Migration `0135_climbing_context` converts
 the old columns and requires a coordinated maintenance cutover; follow the
 [climbing context runbook](../../docs/climbing-context.md#maintenance-cutover).
 

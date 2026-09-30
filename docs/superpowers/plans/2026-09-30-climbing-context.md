@@ -60,7 +60,7 @@ React, React Native, and Storybook; no new third-party dependencies.
 | `packages/training/src/climbing-context.ts` | Canonical Zod schemas and inferred types shared by ingestion, SQL boundaries, and API consumers. |
 | `packages/format/src/climbing-context.ts` | Location, method, result, and angle labels; no metric computation. |
 | `packages/kaya-client/src/client.ts` | Observed Kaya GraphQL selection and validated transport records. |
-| `src/db/schema/activity.ts`, `drizzle/0134_climbing_context.sql` | Canonical columns, atomic legacy conversion, constraints, and read projection. Recheck the migration number before creating it. |
+| `src/db/schema/activity.ts`, `drizzle/0135_climbing_context.sql` | Canonical columns, atomic legacy conversion, constraints, and read projection. Recheck the migration number before creating it. |
 | `src/providers/kaya-sync.ts`, `src/providers/kaya/import.ts`, `src/providers/mountain-project.ts`, `src/providers/openbeta.ts` | Provider-specific parsing and base-table writes. |
 | `packages/server/src/repositories/climbing-repository.ts`, `climbing-entry-associator.ts` | Activity details, summaries, suggestions, and selected-source metadata. |
 | `packages/server/src/repositories/climbing-progression-repository.ts`, `performance-comparison-repository.ts`, `analytical-training-load-repository.ts` | Existing analytics read the permanent projection. |
@@ -140,7 +140,7 @@ Use those exact upstream keys; existing gym fields remain available.
 ### Task 3: Convert canonical storage and every import/read path
 
 **Files:** Modify `src/db/schema/activity.ts`; create
-`drizzle/0134_climbing_context.sql`; register it in `drizzle/meta/_journal.json`.
+`drizzle/0135_climbing_context.sql`; register it in `drizzle/meta/_journal.json`.
 Create `src/db/climbing-context-migration.integration.test.ts`.
 Modify the four provider files from the file map and their existing unit tests.
 Modify the five repositories from the file map to read `fitness.v_climbing_entry`;
@@ -229,7 +229,7 @@ Store methods as checked text with the spec's five values.
 - [x] Run the provider unit tests, all named database regressions, and
   `pnpm test:integration -- packages/server/src/repositories/climbing-repository.integration.test.ts packages/server/src/repositories/climbing-entry-associator.integration.test.ts packages/server/src/repositories/climbing-progression-repository.integration.test.ts packages/server/src/repositories/performance-comparison-repository.integration.test.ts packages/server/src/repositories/analytical-training-load-repository.integration.test.ts packages/server/src/routers/climbing.integration.test.ts src/db/unattached-climbing-entry.integration.test.ts src/db/climbing-attempt-count-backfill.integration.test.ts src/db/migrate.integration.test.ts`;
   expect PASS. Run root/server typechecks and
-  `pnpm tsx scripts/migration-policy.ts drizzle/0134_climbing_context.sql`.
+  `pnpm tsx scripts/migration-policy.ts drizzle/0135_climbing_context.sql`.
 - [x] Review migration rollback, preservation assertions, and every writer/read
   site. Commit and push only the Task 3 files with
   `Store canonical climbing context and derive read projections`.
