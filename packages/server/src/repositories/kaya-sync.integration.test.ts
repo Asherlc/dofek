@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -159,6 +159,69 @@ describe("Kaya attempted-climb import (PostgreSQL integration)", () => {
       expect.objectContaining({ grade: "V3", attempts: null, sends: 1 }),
       expect.objectContaining({ grade: "V4", attempts: null, sends: 1 }),
     ]);
+  });
+
+  it("reports committed climbing records when a later session fails validation", async () => {
+    const startedAt = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const climb = {
+      name: null,
+      lead: false,
+      climb_type: { id: "1", name: "Bouldering" },
+      grade: { id: "6", name: "v4", climb_type_group: "6" },
+      gym: null,
+      attempts: null,
+    };
+    const sessions = [
+      { id: "count-committed", attempted_climbs: [{ ...climb, id: "count-committed-climb" }] },
+      {
+        id: "count-invalid",
+        attempted_climbs: [{ ...climb, id: "count-invalid-climb", grade: null }],
+      },
+      { id: "count-later", attempted_climbs: [{ ...climb, id: "count-later-climb" }] },
+    ].map((session) => ({
+      ...session,
+      start_time: startedAt.toISOString(),
+      end_time: new Date(startedAt.valueOf() + 60 * 60 * 1000).toISOString(),
+      gym: null,
+    }));
+    server.use(
+      http.post("https://kaya-beta.kayaclimb.com/graphql", async ({ request }) => {
+        const { query } = z.object({ query: z.string() }).parse(await request.json());
+        return HttpResponse.json({
+          data: query.includes("query sessionsForUser")
+            ? { sessionsForUser: sessions }
+            : { ascentsForUser: [] },
+        });
+      }),
+    );
+
+    const result = await new KayaSyncProvider().sync(
+      new SyncRun({ db: context.db, userId: TEST_USER_ID, window: SyncWindow.full() }),
+    );
+    const committed = await context.db
+      .select({ externalId: climbingEntry.externalId, attemptCount: climbingEntry.attemptCount })
+      .from(climbingEntry)
+      .where(
+        and(
+          eq(climbingEntry.userId, TEST_USER_ID),
+          eq(climbingEntry.providerId, "kaya"),
+          inArray(climbingEntry.externalId, [
+            "count-committed-climb",
+            "count-invalid-climb",
+            "count-later-climb",
+          ]),
+        ),
+      );
+    expect(committed).toEqual([{ externalId: "count-committed-climb", attemptCount: null }]);
+    expect(result).toMatchObject({
+      recordsSynced: 1,
+      errors: [
+        {
+          message: "Kaya attempted climb is missing a grade",
+          externalId: "count-invalid-climb",
+        },
+      ],
+    });
   });
 
   it.each([

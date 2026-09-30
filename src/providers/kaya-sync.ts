@@ -133,6 +133,7 @@ export class KayaSyncProvider implements SyncProvider {
       }
     }
     let client = new KayaClient(activeTokens.accessToken, this.fetchFn);
+    let recordsSynced = 0;
     try {
       const database = requireTransactionalDatabase(run.db);
       let sessions: KayaSession[];
@@ -158,7 +159,6 @@ export class KayaSyncProvider implements SyncProvider {
         list.push(ascent);
         ascentsBySession.set(ascent.session_id, list);
       }
-      let recordsSynced = 0;
       for (const session of sessions) {
         const started = new Date(session.start_time);
         if (Number.isNaN(started.valueOf()) || started < run.window.since) continue;
@@ -255,7 +255,7 @@ export class KayaSyncProvider implements SyncProvider {
       return this.#result(startedAt, recordsSynced, []);
     } catch (error) {
       if (!(error instanceof RefreshTokenRevokedError)) captureException(error);
-      return this.#result(startedAt, 0, [error]);
+      return this.#result(startedAt, recordsSynced, [error]);
     }
   }
 

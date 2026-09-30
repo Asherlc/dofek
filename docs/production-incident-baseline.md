@@ -28336,6 +28336,16 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   CI workflow. The merge with current main is undergoing fresh validation. Keep
   both executable PostgreSQL regressions: the complete deployed migration prefix
   and preservation of climbing data during the pending Apple upgrade.
+- **Review regression:** A [review finding](https://github.com/Asherlc/dofek/pull/2857#discussion_r4147264237)
+  reproduced a committed Kaya climb followed by a malformed session reporting
+  zero synced records. Preserve the committed counter in the error result while
+  retaining transaction rollback and sync failure. The full four-case PostgreSQL
+  Kaya suite passes after the regression first failed on the incorrect zero.
+  Blank-grade ascent-page tests also confirm rejection of the entire malformed
+  response before persistence.
+  Local `pnpm lint` then failed with a dbt `FailedToConnectError` because this
+  workspace's ClickHouse had been stopped before SQLFluff finished. Restore the
+  local service and keep it running until the complete lint command exits.
 - **Remaining work:** Normal checked deployment and a healthy background-worker
   cycle remain required before declaring production recovered. All 124 affected
   database cases from the earlier validation passed across combined and isolated
