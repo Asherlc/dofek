@@ -82,6 +82,7 @@ export function registerClimbingSessionsTool(server: McpServer, context: DofekMc
             location_name: detail.locationName,
             source_name: detail.sourceName,
             wall_angle_degrees: detail.wallAngleDegrees,
+            context: detail.context,
           };
         });
         sessions.push({

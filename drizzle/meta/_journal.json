@@ -946,6 +946,13 @@
       "when": 1790779386669,
       "tag": "0134_apple_health_workout_revisions",
       "breakpoints": true
+    },
+    {
+      "idx": 135,
+      "version": "7",
+      "when": 1790779386670,
+      "tag": "0135_climbing_context",
+      "breakpoints": true
     }
   ]
 }

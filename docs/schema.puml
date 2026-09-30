@@ -239,13 +239,14 @@ entity "climbing_entry" {
   climb_type : climbing_climb_type
   grade_system : climbing_grade_system
   grade : text
-  sent : boolean
+  result_style : text
   attempt_count : integer
-  lead : boolean
-  wall_angle_degrees : real
+  climb_style : text
+  wall_angle : jsonb
+  board : jsonb
   hold_type : climbing_hold_type
   route_name : text
-  location_name : text
+  location_path : jsonb
   source_name : text
   raw : jsonb
   created_at : timestamp

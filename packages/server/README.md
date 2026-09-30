@@ -1,5 +1,10 @@
 # Dofek Server
 
+Climbing details, attachment suggestions, and MCP session output expose required
+provider-scoped `context`. Canonical metadata is selected as one source snapshot;
+scalar filters read `fitness.v_climbing_entry`. See the
+[climbing contract and schema cutover](../../docs/climbing-context.md).
+
 The backend API and background job processor for Dofek. Built with Node.js, Express, tRPC, and Drizzle ORM.
 
 ## Architecture

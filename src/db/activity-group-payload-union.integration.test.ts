@@ -72,7 +72,7 @@ describe("stable activity group payload union", () => {
 
     for (const representativeId of representatives) {
       await seedFixture(activeClient, database, representativeId);
-      await buildHydration(activeClient, database);
+      await buildHydration(activeClient, database, false);
 
       const result = await activeClient.query({
         query: `SELECT
@@ -638,12 +638,16 @@ async function seedFixture(
   ]);
 }
 
-async function buildHydration(client: ClickHouseClient, database: string): Promise<void> {
+async function buildHydration(
+  client: ClickHouseClient,
+  database: string,
+  locationSummaryIncremental = true,
+): Promise<void> {
   await runStatements(client, [
     `INSERT INTO ${database}.activity_sensor_sample ${renderModel("activity_sensor_sample.sql", database, false)}`,
     `INSERT INTO ${database}.activity_location_sample ${renderModel("activity_location_sample.sql", database, false)}`,
     `INSERT INTO ${database}.activity_sensor_summary_rows ${renderModel("activity_sensor_summary_rows.sql", database, true)}`,
-    `INSERT INTO ${database}.activity_location_summary_rows ${renderModel("activity_location_summary_rows.sql", database, true)}`,
+    `INSERT INTO ${database}.activity_location_summary_rows ${renderModel("activity_location_summary_rows.sql", database, locationSummaryIncremental)}`,
     `INSERT INTO ${database}.activity_summary_rows ${renderModel("activity_summary_rows.sql", database, true)}`,
   ]);
 }

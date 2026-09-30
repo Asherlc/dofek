@@ -144,9 +144,16 @@ validation scan's stronger lock during the initial constraint addition:
 | `fitness.climbing_entry` | Provider climbs and retained Dofek-created climb definitions, including grade, wall angle, hold type, route, and location; Mountain Project and OpenBeta ticks can remain standalone until attached to an activity |
 | `fitness.climbing_attempt` | Ordered raw outcomes, failure reasons, and notes for attempts on a retained climbing entry |
 
-Retained Dofek-created climbing entries leave the legacy aggregate `sent` and `attempt_count`
-columns null. Serving queries derive those values from `climbing_attempt`; imported
-provider rows retain their provider-supplied aggregates. Finger-loading effective
+Climbing entries canonically store `location_path`, `board`, `wall_angle`,
+`climb_style`, and `result_style`. The permanent `fitness.v_climbing_entry`
+projection derives location labels, lead/send flags, success qualifiers, and
+known degree angles; these scalars are not duplicated in the base table.
+Retained Dofek-created entries leave `result_style` and `attempt_count` null;
+serving queries give detailed `climbing_attempt` records precedence. Imported
+provider rows retain recorded counts, with missing counts unknown. See the
+[climbing context contract and cutover](climbing-context.md) and PostgreSQL's
+[view contract](https://www.postgresql.org/docs/current/sql-createview.html).
+Finger-loading effective
 load is likewise derived as bodyweight plus signed external load and is never
 stored separately. Database constraints keep each outcome/failure-reason pair
 consistent using PostgreSQL check constraints

@@ -39,3 +39,10 @@ These helpers use `Intl.NumberFormat` with fixed fraction options and `style: "u
 ### Activity Data States (`activity-data-state.ts`)
 
 Server-authored activity values use a discriminated state: `available`, `missing`, `stale`, `failed`, `processing`, or `conflicting`. Every non-available state carries a reason so clients can explain why a value is not displayed instead of substituting zero, a dash, or an empty value.
+
+### Climbing Context (`climbing-context.ts`)
+
+Formats ordered location paths, recorded methods/results, and wall angles for
+web and mobile. Unknown angle units remain labeled unknown; result labels do
+not compute send status or attempt counts. See the
+[climbing context design](../../docs/superpowers/specs/2026-09-29-climbing-context-design.md).

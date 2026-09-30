@@ -83,12 +83,10 @@ describe("AnalyticalTrainingLoadRepository database semantics", () => {
           '2026-06-16T16:00:00Z', NULL, '{}'::jsonb)
     `);
     await postgres.db.execute(sql`
-      INSERT INTO fitness.climbing_entry (
-        user_id, provider_id, activity_id, climb_type, grade_system, grade, sent, attempt_count
-      ) VALUES
-        (${userId}::uuid, ${providerId}, ${climbingActivityId}::uuid, 'boulder', 'v_scale', 'V5', true, 3),
+      INSERT INTO fitness.climbing_entry (user_id, provider_id, activity_id, climb_type, grade_system, grade, result_style, attempt_count) VALUES
+        (${userId}::uuid, ${providerId}, ${climbingActivityId}::uuid, 'boulder', 'v_scale', 'V5', 'Send', 3),
         (${userId}::uuid, ${providerId}, ${climbingActivityId}::uuid, 'boulder', 'v_scale', 'V6', NULL, NULL)
-    `);
+`);
     await postgres.db.execute(sql`
       UPDATE fitness.activity
       SET

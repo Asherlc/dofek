@@ -27972,6 +27972,24 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - CI run `36632649198`, job `109626055202`, failed `pnpm audit --prod --audit-level=high --ignore-registry-errors`: Undici 6.28.0 and 7.29.0 were reported vulnerable to WebSocket denial of service and a BalancedPool TLS-validation bypass. The advisories were updated during this incident ([GHSA-rfgv-xxqx-mfg5](https://github.com/advisories/GHSA-rfgv-xxqx-mfg5), [GHSA-w293-vg96-wgc3](https://github.com/advisories/GHSA-w293-vg96-wgc3)).
 - Updated existing security overrides to the latest releases compatible with each dependency’s required major version: 6.29.0, 7.30.0, and 8.11.2. Local production audit passes the existing high-severity gate; two moderate advisories remain below that unchanged gate. The hosted dependency audit passed; the opaque-token PR has 100 successful checks, including unit, integration, mutation, lint, and E2E. Four unchanged Apple jobs remained queued. With explicit user approval, PR #2835 was administrator-merged as `7522a325d`; the ruleset was immediately restored with no bypass actor. Its exact image build and production rollout remain pending.
 
+## 2026-09-29 — Kaya unsuccessful climbs omitted from activity details
+
+- **Status:** Fixed in production and re-synced; the protected PR remains open pending required CI.
+- **Symptoms / user impact:** An affected activity showed sends and no unsuccessful climbs, despite those climbs being recorded in Kaya.
+- **Evidence:** Read-only production queries found only sent entries for the affected session. Its authenticated API also returned `attempted_climbs` with `attempts: null`. The client query did not request that field. A real PostgreSQL regression failed with `climbing_entry_aggregate_pair` (SQLSTATE `23514`) when inserting a known outcome with an unknown count. Contract evidence: [Kaya GraphQL endpoint](https://kaya-beta.kayaclimb.com/graphql) and [Kaya application](https://kaya-app.kayaclimb.com/), observed 2026-09-29. Production identifiers and workout details are omitted from this public record; regression fixtures use synthetic identifiers and locations.
+- **Root cause:** The importer fetched only the ascent feed, omitted the session's attempted-climb feed, and substituted one for missing counts; the schema also required outcome/count nullability to match.
+- **Fix:** Request and parse attempted climbs, import each as a source-attributed unsent entry, preserve null counts in both feeds, remove the paired-nullability constraint, and retain known sends in summaries while returning unknown attempt totals. Both web and mobile display missing counts explicitly. Reject missing grades and replace each complete session inside a transaction so a rejected import preserves its previous climbs ([PostgreSQL transactions](https://www.postgresql.org/docs/current/tutorial-transactions.html)). See [Kaya coverage](kaya.md).
+- **Validation:** Client/provider regression tests reproduced the omissions before the fix. Database regressions verify repeat syncs, unknown-count summaries, and rollback of rejected or incomplete replacements. The workspace unit/mobile suite passed 19,097 tests; the final [CI run](https://github.com/Asherlc/dofek/actions/runs/36655109864) passed server/web checks, all four integration shards, mutation testing, security, and coverage. The earlier [mutation job](https://github.com/Asherlc/dofek/actions/runs/36652330298/job/109690363480) failed with `Final mutation score 50.00 under breaking threshold 75`: its Docker-free unit tier lacked known/unknown count merging cases in both orders. Six public-method cases now cover those paths. The affected aggregation and provider validation/replacement ranges each score 100% locally (41 killed, none surviving). All 41 dbt models pass.
+- **Rollout / production verification:** Five native Apple jobs remained queued without runners, blocking the protected merge. With explicit user approval, [deployment 36656856783](https://github.com/Asherlc/dofek/actions/runs/36656856783) released `525ad724bcf0e12ddd58699299010e526acfe2e6`; migration, CDC, rollout, health, and release checks passed. The bounded manual Kaya job completed on its first run without errors. Read-only verification through the deployed climbing repository returned both sends and unsent climbs, preserved unknown counts without inventing individual tries, and retained known sends in the session summary. The affected activity page returned HTTP 200 and referenced `sha-525ad72` web assets.
+- **Operator lesson:** Dispatching the deploy workflow with the raw SHA failed HTTP 422 (`No ref found`); GitHub's [workflow-dispatch API](https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event) accepts a branch or tag reference. The branch was verified to point to the approved commit before dispatch, and the run's recorded SHA matched it. No production deployment was canceled and no ruleset or merge bypass was used.
+- **Remaining risk / follow-up:** Merge [PR #2852](https://github.com/Asherlc/dofek/pull/2852) when required CI completes so subsequent main releases retain the fix. Other confirmed metadata omissions are documented in [Kaya request coverage](kaya.md#confirmed-request-coverage). No retries, extra timeouts, or temporary runtime behavior were added.
+
+### Dependency audit failed during PR closeout
+
+- **Symptoms / evidence:** [CI run 36663664027, dependency-audit job](https://github.com/Asherlc/dofek/actions/runs/36663664027/job/109723969830) failed `pnpm audit --prod --audit-level=high --ignore-registry-errors`. The first failing report was `high | brace-expansion: DoS via uncontrolled recursion on nested brace groups causing stack exhaustion`; the command reported two high-severity advisories and exited 1. The same command reproduced the failure locally.
+- **Root cause / fix:** The existing global override pinned `brace-expansion` 5.0.9. Advisories reviewed on September 29 report stack-exhaustion vulnerabilities in that version and require 5.0.11 or newer ([nested-brace advisory](https://github.com/advisories/GHSA-qhr7-859c-m2p7), [comma-parser advisory](https://github.com/advisories/GHSA-6j4f-fj2g-mc7p)). Updated the existing global override to 5.0.12 and its separate CommonJS-compatible `minimatch@3` override from 1.1.18 to 1.1.21, then regenerated the lockfile. Versions were checked against the [npm registry](https://registry.npmjs.org/brace-expansion).
+- **Validation / remaining risk:** Installation, lint, all four root/server/web/mobile type checks, and 19,108 unit/mobile tests pass; the unchanged local production audit passes with no high-severity findings. The hosted rerun and remaining required CI must complete before merging. The expressly approved production release remains `525ad724bcf0e12ddd58699299010e526acfe2e6`; the dependency patch needs a subsequent release. No audit ignores, retries, timeouts, or thresholds were changed.
+
 ## 2026-09-29 — Superseded WHOOP workout remained visible through Apple Health
 
 - **Symptoms / user impact:** Activity `9b48239b-d9c0-4c7c-811f-2f7dccd05ea8`
@@ -28114,6 +28132,187 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   Fixed-date fixtures tested against rolling windows need a scoped explicit
   clock.
 
+## 2026-09-30 — Sentry CI completed; production remains blocked by missing migration history
+
+- **Sentry validation outcome:** [PR #2837](https://github.com/Asherlc/dofek/pull/2837)
+  completed [hosted CI run 36655164786](https://github.com/Asherlc/dofek/actions/runs/36655164786)
+  at 04:19 UTC with 103 passing checks, six skipped, and no failures or pending
+  checks. All required gates and all six macOS jobs passed, including the
+  previously failing power fixture. The operator merged the PR at 04:20 UTC as
+  `6965fffb66491d1c0ec9c994b43d4875c861fa61`. Runner capacity became available
+  without changing limits, gates, retries, or timeouts.
+- **Separate production symptoms / impact:** A read-only live stack inventory
+  at 04:23 UTC showed `web` at 2/2 on `sha-525ad72`, while `worker`,
+  `analytics-worker`, the three metric-stream ClickHouse sinks, and
+  `processing-reconciliation` remained at 0/0. Background provider sync,
+  analytics refresh, and ClickHouse stream consumption remain paused; this is
+  not evidence that the Sentry fixes have recovered production.
+- **Exact failure evidence:** [Deployment job 109719413452](https://github.com/Asherlc/dofek/actions/runs/36662167290/job/109719413452)
+  failed in `Run migrations` for image `sha-f7060ae`. Its detached migration
+  container executed `node --experimental-strip-types --enable-source-maps
+  --disable-warning=ExperimentalWarning --import ./src/opentelemetry-hook.mjs
+  --import ./src/instrumentation.ts src/db/run-migrate.ts`. The first fatal line
+  at 03:05:45 UTC was: `Integrity check failed: migration tracked at
+  1790727480000 is recorded as applied but is missing.` The migration process
+  exited 1, so the workflow did not reach its final worker-restoration stack
+  apply. The migration and restoration ordering is defined in the
+  [deployment workflow](https://github.com/Asherlc/dofek/blob/f7060aeee6c7693e9aff9e02839e0475b51952f0/.github/workflows/deploy-web-stack.yml).
+- **Root cause:** The earlier deployed release's
+  [journal entry](https://github.com/Asherlc/dofek/blob/525ad724bcf0e12ddd58699299010e526acfe2e6/drizzle/meta/_journal.json)
+  records index 133, timestamp `1790727480000`, and tag
+  `0133_independent_climbing_outcome_count`. Its
+  [immutable SQL](https://github.com/Asherlc/dofek/blob/525ad724bcf0e12ddd58699299010e526acfe2e6/drizzle/0133_independent_climbing_outcome_count.sql)
+  drops `fitness.climbing_entry`'s `climbing_entry_aggregate_pair` constraint.
+  Main's journal ends at index 132, so its image omits already-applied
+  history and the integrity check correctly refuses the migration run.
+- **Status / follow-up:** Unresolved. [PR #2852](https://github.com/Asherlc/dofek/pull/2852)
+  carries the migration; at 04:33 UTC it had 98 passing checks and three
+  macOS checks queued, with no failures. Review and finish the chosen
+  migration-history repair through normal CI/deployment, then require
+  successful migrations and full worker convergence. No production writes,
+  manual replica restoration, integrity-check bypass, or new resilience knobs
+  were performed by this task. A fresh Sentry MCP inventory at 04:21 UTC
+  still found four server and six mobile issues open, with no web issues.
+  Historical projection materialization and mobile runtime 1.2 delivery
+  remain separately required before claiming their recovery.
+
+### 2026-09-29 — Migration-history repair validation blocked by SQLFluff parsing
+
+- **Symptoms and impact:** PR #2852 carried the exact applied migration missing
+  from main but conflicted with the merged Sentry fixes. Its final validation
+  was blocked locally, extending the unresolved worker outage documented above.
+  At 05:27 UTC, production still served `sha-525ad72`; six background services
+  had zero desired/running replicas.
+- **Evidence:** Independent review found no blocking source defects and verified
+  identical deployed migration, journal, and activity-schema blobs. The remote
+  main merge only conflicted in this incident baseline; both sets of records
+  were preserved. Frozen installation and root/server/web/mobile type checks
+  passed. `pnpm lint` initially could not reach the stopped local ClickHouse
+  dependency; starting the existing workspace Compose dependencies restored
+  compilation. Lint then reported `ST03` at line 25 of
+  `activity_location_sample.sql` and `LT09` at line 125 of
+  `activity_sensor_sample.sql`.
+- **Root cause:** SQLFluff 4.3.0 parses `AS MATERIALIZED` as an expression alias,
+  leaving the subsequent CTE references unparsed and falsely reporting the
+  initial activity CTE as unused. The compiled ClickHouse query uses that CTE.
+  Version 4.3.0 remained the [latest stable release](https://github.com/sqlfluff/sqlfluff/releases/tag/4.3.0);
+  the [upstream parser repair](https://github.com/sqlfluff/sqlfluff/commit/f59543a25e13a9932a8eacc97bdcb6ede35bc011)
+  was merged on September 19 but was not included in that release.
+- **Changes and validation:** Corrected the single-wildcard select formatting and
+  strengthened the existing rollback regression to compare the complete prior
+  activity row as well as its climbs. The follow-up source review approved both
+  deltas; server type checking passed. No query behavior, lint rules, migration
+  history, or production settings were changed. Full tests and final CI remained
+  pending the lint prerequisite. Approval was requested to pin the linter and
+  dbt adapter to the exact upstream repair rather than alter valid query behavior.
+- **Additional deployment evidence:** Main CI
+  [36668366722](https://github.com/Asherlc/dofek/actions/runs/36668366722/job/109738106652)
+  failed `pnpm audit --prod --audit-level=high --ignore-registry-errors` on two
+  high-severity `brace-expansion` advisories. The latest automatic
+  [deployment eligibility run](https://github.com/Asherlc/dofek/actions/runs/36672837390)
+  consequently skipped the production stage. PR #2852 already contained the
+  dependency repair; a fresh merged-checkout audit without registry-error
+  suppression passed with four moderate findings and no high findings.
+- **Status and follow-up:** Unresolved. Finish the approved repair's local and
+  hosted checks, merge, and require successful normal migrations and worker
+  convergence. Record the dbt lint target state and parser version in future
+  validation notes; use `gh-fix-ci` and independent source review for this work.
+  No bypass, retries, manual production replica changes, or new resilience
+  settings were introduced.
+
+## 2026-09-30 — Approved parser pin and isolated regression fixtures
+
+- **Symptoms and impact:** PR #2852's validation was blocked by the SQLFluff
+  parser issue recorded above. Main's subsequent
+  [deployment](https://github.com/Asherlc/dofek/actions/runs/36720669142/job/109905005570)
+  again failed `Run migrations` at 13:25:41 UTC because applied migration
+  `1790727480000` was missing; background processing remained paused.
+- **Direct fix:** With explicit approval, pin SQLFluff and its dbt templater
+  together to official upstream commit
+  [`f59543a25e13a9932a8eacc97bdcb6ede35bc011`](https://github.com/sqlfluff/sqlfluff/commit/f59543a25e13a9932a8eacc97bdcb6ede35bc011),
+  using [uv's Git revision sources](https://docs.astral.sh/uv/concepts/projects/dependencies/#git).
+  The lock changes only those two sources. Remove the obsolete `MATERIALIZED`
+  identifier exception and correct the style findings exposed by the repaired
+  parser while preserving query semantics. Retain the original applied Kaya
+  migration and journal entry for the normal deployment.
+- **Additional regression evidence:** The real PostgreSQL climbing suite failed
+  its expected `V5` daily progression after an earlier test inserted `V9` on
+  the same calendar day. The exact test passed alone, proving shared fixture
+  contamination. Give each test its own existing database clone. The power
+  curve static assertion also expected the old explicit `INNER` spelling;
+  align it with the equivalent `ASOF JOIN` while preserving the passing real
+  ClickHouse coverage. ClickHouse documents the
+  [default inner join kind](https://clickhouse.com/docs/reference/statements/select/join).
+- **Validation and review:** All four typechecks and the first complete lint
+  run passed with the approved pin. After the fixture and assertion corrections,
+  the full workspace unit/mobile run passed, and all 62 selected PostgreSQL and
+  ClickHouse integration tests passed. Independent source review found no
+  material issues. Other concurrent worktree edits require the final staged
+  source to be validated separately before pushing; those edits are preserved.
+- **Status and follow-up:** Production recovery remains unresolved until the
+  final integrated PR passes hosted checks and normal migrations restore the
+  workers. Main added an unapplied Apple Health migration with the same ordinal
+  and an older timestamp; reconcile that entry after the immutable applied Kaya
+  entry, then verify fresh and already-migrated database behavior. No integrity
+  bypass, manual replica write, new timeout, or retry was introduced.
+
+## 2026-09-30 — Climbing context validation and migration ordering
+
+- **Symptoms / impact:** Climbing context implementation caught a migration
+  journal conflict with current main. Local analytics SQL lint also lost its
+  ClickHouse connection; production data was unchanged during this work.
+- **Evidence / cause:** The deployed Kaya migration has a later journal time
+  than main's Apple Health migration. A real upgrade from that Kaya history
+  failed with `relation "fitness.v_activity" does not exist`: timestamp-based
+  migration execution skipped the older pending view migration. A legacy
+  conversion fixture also failed SQLSTATE `23514` because the old paired
+  count/outcome constraint rejected clearing inferred counts. Separately,
+  `pnpm lint` failed with `RemoteDisconnected`; the Docker VM kernel recorded
+  global OOM killing ClickHouse at 15:37:39 UTC.
+- **Fix / validation:** With explicit approval, retained both historical SQL
+  bodies and the deployed Kaya identity, then ordered the Apple Health journal
+  entry after Kaya. The new context conversion drops the obsolete paired
+  constraint before changing counts. The [upgrade-history regressions](../src/db/climbing-migration-order.integration.test.ts),
+  [conversion tests](../src/db/climbing-context-migration.integration.test.ts),
+  and existing migrator tests pass (44 total), including repeat runs. Stopping
+  this workspace's idle DB/Redis/Redpanda freed memory; the unchanged full lint
+  command passed. Other workspaces' containers and volumes were preserved.
+- **Hosted validation:** Run [36740947351](https://github.com/Asherlc/dofek/actions/runs/36740947351)
+  failed Migration Lint at `xargs squawk` (16 online-migration safety warnings),
+  SQLFluff on the context migration (layout, unqualified ordinality, and
+  ambiguous `entry.*`), and analytics SQL lint at `ST03` for an unused
+  `location_source_versions` CTE. The conversion is an approved maintenance
+  operation: remove the unnecessary integer type rewrite, validate new CHECKs
+  before commit, enumerate view columns, and qualify ordinality. With explicit
+  approval, nine statement-specific Squawk annotations acknowledge only the
+  required renames, type conversions, and non-null constraint; all other checks
+  remain active. Squawk, SQLFluff, and migration policy now pass. The analytics
+  CTE is needed only by incremental builds; emit it with that branch and retain
+  real ClickHouse full/incremental hydration coverage. Full lint passes without
+  changing limits, retries, or gating.
+- **Final local validation:** Independent review identified refresh data loss
+  and missing CSV result/parent-only location coverage. Source-scoped upserts
+  now preserve foreign attachments, entry IDs, and detailed attempts; complete
+  responses retire missing raw records without deleting history. CSV retains
+  unfamiliar and absent labels, and OpenBeta accepts consistent parent-only
+  metadata. Runtime commit `0fd67a912` passes the full unit/mobile suite (19,271 tests), and all selected
+  database regressions pass (103 tests on the final merged branch). The runbook
+  states Kaya's actual since-only refresh scope instead of promising an
+  unenforced upper bound.
+- **Main integration:** After [PR #2855](https://github.com/Asherlc/dofek/pull/2855)
+  established the canonical Apple Health journal entry, retain its identity and
+  move only the unapplied context conversion to migration 0135 after it. The
+  migrator rejected the initial merged journal with `Migration journal
+  timestamps must be strictly increasing`; ordering the new entry resolves the
+  actual error. Both historical SQL bodies match main byte-for-byte. All three
+  applied histories, repeats, and the production-history fixture pass (51
+  migration/refresh tests). The fixture now creates the legacy tables described
+  by its history before applying the two pending migrations.
+- **Remaining gates:** Exact-commit hosted CI, verified backup restore,
+  and the separately approved [maintenance cutover](climbing-context.md#maintenance-cutover)
+  remain required. No migration integrity bypass, new retries, increased
+  timeouts, or permanent memory tuning was introduced.
+
 ## 2026-09-30 — OpenBeta connection errors concealed upstream failures
 
 - **Symptoms / impact:** A public-profile connection failed with the duplicated
@@ -28158,3 +28357,20 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   retained server error if it fails. Provider connection investigations
   should distinguish input errors from API and schema failures before
   recommending that users change credentials or profile visibility.
+
+## 2026-09-30 — Climbing context native checks wait for runners
+
+- **Evidence / impact:** Context [CI run 36751457185](https://github.com/Asherlc/dofek/actions/runs/36751457185)
+  passed 98 checks, including server/web, database, migration, and mutation gates.
+  At 17:53 UTC four Apple jobs had remained queued since 17:29 with no assigned
+  runner (`runner_id: 0`), across both `macos-26` and `macos-14`. This delays
+  the required review/merge gate; it does not authorize deployment.
+- **Cause / action:** The queue's cause remains unconfirmed. GitHub's
+  [status endpoint](https://www.githubstatus.com/api/v2/summary.json) reported
+  Actions operational, and prior main CI passed those runner configurations.
+  Preserve all gates, labels, and timeouts; no speculative workflow change was
+  made. A concurrent [OpenBeta fix](https://github.com/Asherlc/dofek/pull/2858)
+  required merging main again; preserve both the provider/context changes and
+  both incident records. Combined provider/client tests pass (77), all four
+  typechecks pass, and lint passes. Revalidate the new head's full suite and
+  hosted gates; queued native checks and release/restore approval remain open.
