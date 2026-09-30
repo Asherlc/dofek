@@ -1,5 +1,12 @@
 # Production Incident Baseline
 
+## 2026-09-30 — ChatGPT browser Reconnect cannot obtain a setup URL (unresolved)
+
+- **Symptoms / impact:** After ChatGPT requested reconnection, clicking Reconnect on chatgpt.com displayed `This app does not provide a browser setup URL right now`. The user cannot complete the new consent flow.
+- **Evidence:** Production has two healthy web replicas and advertises `https://dofek.fit/authorize` through OAuth discovery. An unauthenticated MCP initialization receives the expected 401 resource-metadata challenge. At 17:48 UTC, the preceding ten minutes of web logs contained no authorization or token request. Recent MCP 401 responses do not identify whether a token was missing or invalid in the console output and therefore do not establish token expiry.
+- **Root cause / status:** Unconfirmed. An [OpenAI issue with the same message](https://github.com/openai/codex/issues/48126) contains user reports of a ChatGPT API 403 with `Multi-factor authentication required`; the Dofek user confirms MFA is already enabled, so enabling MFA is not an established fix here. The signed-in browser is unavailable to operator automation.
+- **Follow-up:** Capture only the failed ChatGPT reconnect request's HTTP status and response error, excluding credentials and request headers, before changing server behavior. No OAuth acceptance rules or account security settings were changed. Add browser-side reconnect response inspection to the MCP incident runbook so client failures can be distinguished from authorization-server failures.
+
 ## 2026-09-30 — MCP write-consent production rollout
 
 - **Release / validation:** PR #2855 merged normally as `bffc5647c938191281a0fa2cff71fc4cc90e71f8` after full PR CI passed. Its main CI also passed. The exact published image is `sha-bffc564`, digest `sha256:792fdefb11b3386e2143e3954155322f4f38391ae5506031fd6890563dae27e2`; [manual deployment 36749707220](https://github.com/Asherlc/dofek/actions/runs/36749707220) completed successfully with that tag. No administrator merge or ruleset edit was needed. A duplicate automatic same-image rollout was canceled before it acquired the deployment slot.
