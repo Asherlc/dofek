@@ -28204,7 +28204,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   worker-event, and transport-classification tests pass. A real PostgreSQL
   integration test verifies numeric-date ingestion, raw-payload preservation,
   idempotent writes, and absence reconciliation. The complete Docker-free
-  unit/mobile run passed 19,207 tests after the coordination fixes, with 20
+  unit/mobile run passed 19,344 tests on the final merged tree, with 20
   tests skipped. Seven real-Redis regressions verify atomic dispatch, recovery
   after child pruning, and independent terminal child failures.
   Root, server, and web typechecks passed, along with full repository lint.
@@ -28480,8 +28480,10 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   no detected timeouts, no survivors or uncovered mutants, and a 100% score.
   No retry, timeout, threshold relaxation, or audit suppression was added for
   these CI failures.
-- **Remaining risk / follow-up:** Unresolved until targeted checks and the
-  replacement CI run pass. Future structural refactors should run import
+- **Remaining risk / follow-up:** Local full lint, root/server/web typechecks, import boundaries,
+  strict production audit, and eight OpenBeta/Redis integration tests pass on
+  the merged tree. Hosted validation remains unresolved until replacement CI
+  passes. Future structural refactors should run import
   boundaries and scoped mutation tests before pushing; dependency audit should
   also be checked because new advisories can change CI results without code
   changes.
