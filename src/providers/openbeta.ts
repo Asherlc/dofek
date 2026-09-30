@@ -12,7 +12,7 @@ import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { type FetchProviderPagesResult, fetchProviderPages } from "../sync/pagination.ts";
-import { ProviderStoredIdentityMissingError, ProviderTokenRejectedError } from "./auth-errors.ts";
+import { ProviderAuthError, ProviderStoredIdentityMissingError } from "./auth-errors.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
@@ -203,10 +203,11 @@ async function fetchGraphQL<T>(
   return dataSchema.parse(envelope.data);
 }
 
-function profileConnectionError(): ProviderTokenRejectedError {
-  return new ProviderTokenRejectedError(
-    OPENBETA_PROVIDER_NAME,
+function profileConnectionError(options?: ErrorOptions): ProviderAuthError {
+  return new ProviderAuthError(
+    "authentication_failed",
     "Paste a public OpenBeta profile URL or username, and make sure the profile is public.",
+    options,
   );
 }
 
@@ -220,11 +221,7 @@ function parseOpenBetaUsername(input: string): string {
     try {
       url = new URL(/^https?:\/\//i.test(value) ? value : `https://${value}`);
     } catch (error) {
-      throw new ProviderTokenRejectedError(
-        OPENBETA_PROVIDER_NAME,
-        profileConnectionError().message,
-        { cause: error },
-      );
+      throw profileConnectionError({ cause: error });
     }
 
     if (!["openbeta.io", "www.openbeta.io"].includes(url.hostname.toLowerCase())) {
@@ -241,11 +238,7 @@ function parseOpenBetaUsername(input: string): string {
     try {
       username = decodeURIComponent(segments[1] ?? "");
     } catch (error) {
-      throw new ProviderTokenRejectedError(
-        OPENBETA_PROVIDER_NAME,
-        profileConnectionError().message,
-        { cause: error },
-      );
+      throw profileConnectionError({ cause: error });
     }
   }
 
@@ -387,27 +380,20 @@ async function exchangeOpenBetaProfile(
   fetchFn: typeof globalThis.fetch,
 ): Promise<TokenSet> {
   const username = parseOpenBetaUsername(input);
-  try {
-    const data = await fetchGraphQL(
-      fetchFn,
-      OPENBETA_USER_PAGE_QUERY,
-      { username },
-      openBetaUserPageResponseSchema,
-    );
-    const profile = data.userPage?.profile;
-    if (!profile) throw profileConnectionError();
-    return {
-      accessToken: profile.userUuid,
-      refreshToken: null,
-      expiresAt: new Date("2099-12-31T00:00:00.000Z"),
-      scopes: "ticks",
-    };
-  } catch (error) {
-    if (error instanceof ProviderTokenRejectedError) throw error;
-    throw new ProviderTokenRejectedError(OPENBETA_PROVIDER_NAME, profileConnectionError().message, {
-      cause: error,
-    });
-  }
+  const data = await fetchGraphQL(
+    fetchFn,
+    OPENBETA_USER_PAGE_QUERY,
+    { username },
+    openBetaUserPageResponseSchema,
+  );
+  const profile = data.userPage?.profile;
+  if (!profile) throw profileConnectionError();
+  return {
+    accessToken: profile.userUuid,
+    refreshToken: null,
+    expiresAt: new Date("2099-12-31T00:00:00.000Z"),
+    scopes: "ticks",
+  };
 }
 
 export class OpenBetaProvider implements SyncProvider {

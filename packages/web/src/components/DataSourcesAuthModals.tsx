@@ -1,4 +1,5 @@
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
+import { providerCatalogEntry } from "@dofek/providers/provider-catalog";
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { locallyReportedErrorMeta } from "../lib/query-client.ts";
@@ -173,7 +174,7 @@ export function TokenAuthModal({
   const [loading, setLoading] = useState(false);
   const tokenRef = useRef<HTMLInputElement>(null);
   const connectDisabled = loading || !token;
-  const connectHint = !loading && !token ? "Enter your token to continue." : null;
+  const connectHint = !loading && !token ? `Paste your ${tokenLabel} to continue.` : null;
   const connectMutation = trpc.tokenAuth.connect.useMutation({
     meta: locallyReportedErrorMeta,
   });
@@ -237,9 +238,9 @@ export function TokenAuthModal({
           rel="noreferrer"
           className="text-accent hover:underline"
         >
-          Create a {tokenLabel}
+          Open {providerName}
         </a>{" "}
-        in {providerName}, then paste it below.
+        and paste your {tokenLabel} below.
       </p>
 
       {error && (
@@ -256,7 +257,7 @@ export function TokenAuthModal({
           <input
             ref={tokenRef}
             id={`${providerId}-token`}
-            type="password"
+            type={providerCatalogEntry(providerId)?.connectionInputType ?? "password"}
             value={token}
             onChange={(event) => setToken(event.target.value)}
             required

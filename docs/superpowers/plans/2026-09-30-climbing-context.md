@@ -368,7 +368,8 @@ review-focus condition has a named owning test. Tasks 1–5 are implemented and
 pushed. Task 6 documentation, local verification, and independent review are
 complete. The review's refresh-preservation, CSV result-label, OpenBeta
 parent-only, and refresh-scope findings are corrected and covered by unit and
-database regressions. The final merged suite passed 19,271 unit/mobile tests and
-103 database tests. Hosted checks remain required. Release execution requires
+database regressions. Recorded runtime commit `0fd67a912` passed 19,271 unit/mobile
+tests and 103 database tests. Subsequent main integration preserves the context
+contract and is validated separately. Hosted checks remain required. Release execution requires
 separate approval and verified backup restore evidence; no context conversion
 has been deployed.
