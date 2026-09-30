@@ -932,6 +932,13 @@
       "when": 1790640000002,
       "tag": "0132_remove_legacy_mcp_oauth",
       "breakpoints": true
+    },
+    {
+      "idx": 133,
+      "version": "7",
+      "when": 1790727480000,
+      "tag": "0133_independent_climbing_outcome_count",
+      "breakpoints": true
     }
   ]
 }

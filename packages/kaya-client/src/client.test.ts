@@ -51,6 +51,7 @@ describe("KayaClient", () => {
                   latitude: 40.0,
                   longitude: -105.3,
                 },
+                attempted_climbs: [],
               },
             ],
           },
@@ -167,6 +168,57 @@ describe("KayaClient", () => {
 
     await expect(new KayaClient("token", fetchFn).listAscents("42")).rejects.toThrow();
   });
+
+  it("requests and preserves session attempts with unknown counts and normalized coordinates", async () => {
+    const attemptedClimbs = [
+      attemptedClimb("3077580_2156989", null),
+      attemptedClimb("3077580_2156990", 3),
+    ];
+    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        data: { sessionsForUser: [{ ...session("3077580"), attempted_climbs: attemptedClimbs }] },
+      }),
+    );
+
+    await expect(new KayaClient("token", fetchFn).listSessions("42")).resolves.toEqual([
+      expect.objectContaining({
+        attempted_climbs: [
+          expect.objectContaining({
+            id: "3077580_2156989",
+            attempts: null,
+            grade: expect.objectContaining({ name: "v4" }),
+            gym: expect.objectContaining({ latitude: 37.815355, longitude: -122.2892576 }),
+          }),
+          expect.objectContaining({ id: "3077580_2156990", attempts: 3 }),
+        ],
+      }),
+    ]);
+    const request = JSON.parse(String(fetchFn.mock.calls[0]?.[1]?.body));
+    expect(request.query).toContain("attempted_climbs");
+    expect(request.query).toContain("attempts");
+  });
+
+  it.each([0, -1, 1.5, "3"])(
+    "rejects a malformed attempted-climb count of %j",
+    async (attempts) => {
+      const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
+        jsonResponse({
+          data: {
+            sessionsForUser: [
+              {
+                ...session("3077580"),
+                attempted_climbs: [{ ...attemptedClimb("3077580_2156989", null), attempts }],
+              },
+            ],
+          },
+        }),
+      );
+
+      await expect(new KayaClient("token", fetchFn).listSessions("42")).rejects.toBeInstanceOf(
+        ZodError,
+      );
+    },
+  );
 
   it("normalizes numeric-string gym coordinates from ascent responses", async () => {
     const fetchFn = vi
@@ -317,9 +369,24 @@ describe("KayaClient", () => {
           },
         }),
       )
-      .mockResolvedValueOnce(jsonResponse({ data: { sessionsForUser: [session("session-100")] } }));
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: {
+            sessionsForUser: [
+              {
+                ...session("session-100"),
+                attempted_climbs: [attemptedClimb("session-100_climb", null)],
+              },
+            ],
+          },
+        }),
+      );
 
-    await expect(new KayaClient("token", fetchFn).listSessions("42")).resolves.toHaveLength(101);
+    const sessions = await new KayaClient("token", fetchFn).listSessions("42");
+    expect(sessions).toHaveLength(101);
+    expect(sessions[100]).toMatchObject({
+      attempted_climbs: [expect.objectContaining({ id: "session-100_climb", attempts: null })],
+    });
     expect(fetchFn.mock.calls.map(([, init]) => JSON.parse(String(init?.body)).variables)).toEqual([
       { user_id: "42", offset: 0, count: 100 },
       { user_id: "42", offset: 100, count: 100 },
@@ -333,6 +400,24 @@ function session(id: string) {
     start_time: "2026-08-01T10:00:00.000Z",
     end_time: "2026-08-01T11:00:00.000Z",
     gym: { id: "gym-1", name: "Kaya Gym" },
+    attempted_climbs: [],
+  };
+}
+
+function attemptedClimb(id: string, attempts: number | null) {
+  return {
+    id,
+    attempts,
+    name: null,
+    lead: false,
+    climb_type: { id: "1", name: "Bouldering" },
+    grade: { id: "6", name: "v4", climb_type_group: "6" },
+    gym: {
+      id: "413",
+      name: "Touchstone Pacific Pipe",
+      latitude: "37.81535500",
+      longitude: "-122.28925760",
+    },
   };
 }
 

@@ -854,6 +854,46 @@ describe("StrainScreen recent activity navigation", () => {
     });
   });
 
+  it("renders unknown climbing attempt counts without hiding sends or sessions", async () => {
+    mockTrainingState.data = {
+      ...defaultMockTrainingData(),
+      climbing: {
+        gradeProgression: [],
+        volumeByGrade: [
+          {
+            climbType: "boulder",
+            gradeSystem: "v_scale",
+            grade: "V4",
+            gradeSortValue: 4,
+            attempts: null,
+            sends: 6,
+          },
+        ],
+        sessionSummary: [
+          {
+            activityId: "activity-1",
+            date: "2026-07-09",
+            name: "Kaya climbing",
+            locationName: "Touchstone Pacific Pipe",
+            attempts: null,
+            sends: 6,
+            hardestBoulderGrade: "V4",
+            hardestBoulderGradeSortValue: 4,
+            hardestRouteGrade: null,
+            hardestRouteGradeSortValue: null,
+          },
+        ],
+      },
+    };
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    render(<StrainScreen />);
+
+    expect(screen.getByText("Attempt count not recorded")).toBeTruthy();
+    expect(screen.getByText("6 sends")).toBeTruthy();
+    expect(screen.getByText("Kaya climbing")).toBeTruthy();
+    expect(screen.getByText("— attempts · 6 sends")).toBeTruthy();
+  });
+
   it("renders server-computed Hangboarding summary metrics and duration trend", async () => {
     mockTrainingState.data = {
       ...defaultMockTrainingData(),

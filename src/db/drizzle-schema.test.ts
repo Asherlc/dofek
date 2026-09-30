@@ -153,7 +153,6 @@ describe("drizzleSchema", () => {
   });
 
   it("defines ordered climbing-attempt detail without requiring imported aggregates", () => {
-    const climbingConfig = getTableConfig(climbingEntry);
     const climbingColumns = columnSummaries(climbingEntry);
     const attemptConfig = getTableConfig(climbingAttempt);
     const attemptColumns = columnSummaries(climbingAttempt);
@@ -185,9 +184,6 @@ describe("drizzleSchema", () => {
         { name: "climbing_attempt_entry_idx", unique: false },
         { name: "climbing_attempt_entry_index_idx", unique: true },
       ]),
-    );
-    expect(climbingConfig.checks.map((checkBuilder) => checkBuilder.name)).toContain(
-      "climbing_entry_aggregate_pair",
     );
   });
 

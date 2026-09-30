@@ -64,7 +64,7 @@ const mobileClimbingVolumeByGradeRowSchema = z.object({
   climbType: climbingClimbTypeSchema,
   grade: z.string(),
   gradeSortValue: z.number(),
-  attempts: z.number(),
+  attempts: z.number().nullable(),
   sends: z.number(),
 });
 
@@ -73,7 +73,7 @@ const mobileClimbingSessionSummaryRowSchema = z.object({
   date: z.string(),
   name: z.string(),
   locationName: z.string().nullable(),
-  attempts: z.number(),
+  attempts: z.number().nullable(),
   sends: z.number(),
   hardestBoulderGrade: z.string().nullable(),
   hardestRouteGrade: z.string().nullable(),
@@ -762,7 +762,9 @@ function ClimbingSection({ model }: { model: ClimbingSectionModel }) {
           model.volumeRows.map((row) => (
             <View key={`${row.climbType}-${row.grade}`} style={styles.climbingVolumeRow}>
               <Text style={styles.climbingGradeText}>{row.grade}</Text>
-              <Text style={styles.climbingMetaText}>{row.attempts} attempts</Text>
+              <Text style={styles.climbingMetaText}>
+                {row.attempts === null ? "Attempt count not recorded" : `${row.attempts} attempts`}
+              </Text>
               <Text style={styles.climbingMetaText}>{row.sends} sends</Text>
             </View>
           ))
@@ -781,7 +783,7 @@ function ClimbingSection({ model }: { model: ClimbingSectionModel }) {
                 <Text style={styles.climbingMetaText}>{session.locationName}</Text>
               )}
               <Text style={styles.climbingMetaText}>
-                {session.attempts} attempts · {session.sends} sends
+                {session.attempts ?? "—"} attempts · {session.sends} sends
               </Text>
               <Text style={styles.climbingMetaText}>
                 Boulder {session.hardestBoulderGrade ?? "None"} · Route{" "}

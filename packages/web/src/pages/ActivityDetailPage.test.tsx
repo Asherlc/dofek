@@ -1898,6 +1898,22 @@ describe("ActivityDetailPage", () => {
             wallAngleDegrees: 35,
             lead: null,
           },
+          {
+            id: "kaya-unsent",
+            climbType: "boulder",
+            gradeSystem: "v_scale",
+            grade: "V3",
+            sent: false,
+            attemptCount: null,
+            attempts: [],
+            ascentType: null,
+            holdType: null,
+            routeName: null,
+            locationName: "Touchstone Pacific Pipe",
+            sourceName: "Kaya",
+            wallAngleDegrees: null,
+            lead: null,
+          },
         ],
         error: null,
         isError: false,
@@ -1917,7 +1933,8 @@ describe("ActivityDetailPage", () => {
       expect(screen.getByText("Attempted 1 time")).toBeDefined();
       expect(screen.getByText("35° · Crimp")).toBeDefined();
       expect(screen.getByText("1: Technique")).toBeDefined();
-      expect(screen.getAllByText("Touchstone Pacific Pipe")).toHaveLength(2);
+      expect(screen.getByText("Not sent; attempt count not recorded")).toBeDefined();
+      expect(screen.getAllByText("Touchstone Pacific Pipe")).toHaveLength(3);
 
       Object.assign(mockActivity, originalData);
     });

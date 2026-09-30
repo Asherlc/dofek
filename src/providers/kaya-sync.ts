@@ -189,38 +189,59 @@ export class KayaSyncProvider implements SyncProvider {
         );
         if (!row) continue;
         const sessionAscents = ascentsBySession.get(session.id) ?? [];
+        const sessionRecords = [
+          ...sessionAscents.map((ascent) => ({
+            id: ascent.id,
+            climb: ascent.climb,
+            attempts: ascent.attempts,
+            sent: sentAscentTypes.has(ascent.ascent_type.name.toLowerCase()),
+            locationName: ascent.climb.gym?.name ?? ascent.gym?.name ?? session.gym?.name ?? null,
+            raw: ascent,
+            kind: "ascent",
+          })),
+          ...session.attempted_climbs.map((climb) => ({
+            id: climb.id,
+            climb,
+            attempts: climb.attempts,
+            sent: false,
+            locationName: climb.gym?.name ?? session.gym?.name ?? null,
+            raw: climb,
+            kind: "attempted climb",
+          })),
+        ];
         await run.db.delete(climbingEntry).where(eq(climbingEntry.activityId, row.id));
-        if (sessionAscents.length) {
-          await run.db.insert(climbingEntry).values(
-            sessionAscents.flatMap((ascent) => {
-              const boulder = ascent.climb.climb_type.name.toLowerCase().includes("boulder");
-              const grade = ascent.climb.grade;
-              if (!grade) {
-                errors.push({ message: "Kaya ascent is missing a grade", externalId: ascent.id });
-                return [];
-              }
-              return [
-                {
-                  userId,
-                  providerId: this.id,
-                  activityId: row.id,
-                  externalId: ascent.id,
-                  climbType: boulder ? ("boulder" as const) : ("route" as const),
-                  gradeSystem: boulder ? ("v_scale" as const) : ("yds" as const),
-                  grade: grade.name,
-                  sent: sentAscentTypes.has(ascent.ascent_type.name.toLowerCase()),
-                  attemptCount: ascent.attempts ?? 1,
-                  lead: boulder ? null : ascent.climb.lead,
-                  routeName: ascent.climb.name,
-                  locationName:
-                    ascent.climb.gym?.name ?? ascent.gym?.name ?? session.gym?.name ?? null,
-                  sourceName: this.name,
-                  raw: ascent,
-                },
-              ];
-            }),
-          );
-          recordsSynced += sessionAscents.length;
+        if (sessionRecords.length) {
+          const entries = sessionRecords.flatMap((record) => {
+            const boulder = record.climb.climb_type.name.toLowerCase().includes("boulder");
+            const grade = record.climb.grade;
+            if (!grade) {
+              errors.push({
+                message: `Kaya ${record.kind} is missing a grade`,
+                externalId: record.id,
+              });
+              return [];
+            }
+            return [
+              {
+                userId,
+                providerId: this.id,
+                activityId: row.id,
+                externalId: record.id,
+                climbType: boulder ? ("boulder" as const) : ("route" as const),
+                gradeSystem: boulder ? ("v_scale" as const) : ("yds" as const),
+                grade: grade.name,
+                sent: record.sent,
+                attemptCount: record.attempts,
+                lead: boulder ? null : record.climb.lead,
+                routeName: record.climb.name,
+                locationName: record.locationName,
+                sourceName: this.name,
+                raw: record.raw,
+              },
+            ];
+          });
+          if (entries.length) await run.db.insert(climbingEntry).values(entries);
+          recordsSynced += sessionRecords.length;
         }
       }
       return this.#result(startedAt, recordsSynced, errors);
