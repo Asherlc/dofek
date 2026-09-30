@@ -27951,3 +27951,30 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   then obtain rollout approval and follow the projection/native verification
   gates recorded above. Five verified historical Sentry issues are resolved;
   four server and six mobile issues remain open pending rollout or evidence.
+
+## 2026-09-30 — Power-trend unit fixture expired across the UTC date boundary
+
+- **Symptoms / impact:** Hosted unit validation blocked Sentry remediation
+  PR #2837 after the other integration, mutation, and E2E jobs passed.
+- **Failure evidence:** [Unit job 109687324294](https://github.com/Asherlc/dofek/actions/runs/36651482967/job/109687324294)
+  ran `pnpm exec vitest run --project unit --coverage` after 00:47 UTC on
+  September 30. The first failed assertion was `expected null to be 190` in
+  the raw-power fallback case in `power-repository.test.ts`.
+- **Root cause:** Its fixed July 1 activity fell outside the production
+  90-day window for the current eFTP value on September 30. The long-range
+  trend still contained 190 W. The same test passed at September 29 23:47 UTC
+  and failed at September 30 00:47 UTC under both UTC and America/Los_Angeles;
+  the fixture's age, rather than the host timezone, caused the failure.
+- **Direct fix:** Scope Date to July 2 noon UTC inside that single test and
+  restore real timers in `finally`. Fixed data, exact trend/current assertions,
+  and production window semantics remain unchanged. Selective Date mocking
+  and restoration use the documented
+  [Vitest clock APIs](https://vitest.dev/api/vi.html#vi-usefaketimers).
+- **Validation / remaining risk:** All 42 tests in the source's test file pass,
+  including the former September 30 failure under both timezones. Server
+  typecheck, changed-file formatting, and diff checks pass. Full unit coverage
+  with the hosted job's existing environment passed 17,623 tests across 1,121
+  files, with 20 tests and two files skipped. The fresh hosted run remains
+  required. No retries, waits, exclusions, or threshold changes were added.
+  Fixed-date fixtures tested against rolling windows need a scoped explicit
+  clock.
