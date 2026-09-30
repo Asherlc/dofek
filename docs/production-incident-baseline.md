@@ -28267,3 +28267,30 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   deployed image and a healthy worker cycle. Historical projection
   materialization, mobile runtime delivery, and opaque mobile-error causes
   remain open and require their separate evidence.
+
+## 2026-09-30 — Local validation interrupted by shared Docker VM memory
+
+- **Symptoms and impact:** The focused recovery's 14-file database validation
+  passed 123 tests but failed the body-measurement tombstone test with
+  `socket hang up`. The same file failed alone, delaying completion of local
+  validation for [PR #2857](https://github.com/Asherlc/dofek/pull/2857).
+- **Evidence and root cause:** Docker Desktop's VM kernel log records
+  `global_oom` killing this workspace's `clickhouse-serv` process at
+  15:27:24 UTC and 15:31:58 UTC, immediately before the client disconnects.
+  The shared VM exposed 7.653 GiB of memory across the running workspace
+  stacks. The killed process used about 1 GiB, below its individual 1.5 GiB
+  container cap. Inspecting only the restarted container's current OOM flag
+  missed the earlier kernel events. Docker documents the separate
+  [VM memory allocation](https://docs.docker.com/desktop/settings-and-maintenance/settings/#advanced).
+- **Direct mitigation:** Remove only the six failed fixture databases from
+  these two runs and the three empty scratch databases created by this run's
+  local bootstrap after the successful analytics build. A local-target and
+  row-count preflight verified ownership and absence of application data.
+  Restart only this workspace's ClickHouse to release its allocations.
+  Other workspace services and volumes remain intact.
+- **Validation and remaining risk:** The unchanged body-measurement file now
+  passes both tests. The full affected suite is rerunning; hosted CI and normal
+  deployment are still pending. No source behavior, memory cap, retry, or
+  timeout changed. Concurrent workspace load can still exhaust the shared VM;
+  future diagnosis should retain VM kernel evidence and coordinate capacity
+  before changing query behavior or test settings.
