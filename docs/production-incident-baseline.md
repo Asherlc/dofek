@@ -27940,9 +27940,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   mobile preview also passed; 37 remaining build/test checks were queued with
   no runner assigned and no reported failure. No fatal log line is available
   for jobs that have not started.
-- **Root cause / status:** The operator confirmed an account limit is in place.
-  Whether it is a spending or concurrency limit, and its exact effect on the
-  queue, remain unverified. Hosted validation is unresolved.
+- **Root cause / status:** The operator confirmed a concurrent-job limit is in
+  place. Its configured value and account-wide active usage were not inspected.
+  Hosted validation is unresolved while the remaining jobs await runners.
 - **Actions / follow-up:** Cancelled only superseded runs owned by this task;
   their queued aggregate jobs required GitHub's documented
   [force-cancel operation](https://docs.github.com/en/rest/actions/workflow-runs#force-cancel-a-workflow-run).
