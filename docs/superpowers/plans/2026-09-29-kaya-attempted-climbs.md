@@ -25,15 +25,15 @@
 
 ## Task 2: Implement and validate
 
-- [ ] Extend the client request and parser; map attempted climbs to canonical unsent entries.
-- [ ] Verify repeat syncs and both clients' rendering with focused tests and a real database integration test where needed.
-- [ ] Document verified coverage and append the production incident baseline.
-- [ ] Run lint, typecheck, and appropriate test tiers.
-- [ ] Review checkpoint: independently review the final diff and address material findings.
+- [x] Extend the client request and parser; map attempted climbs to canonical unsent entries.
+- [x] Verify repeat syncs and both clients' rendering with focused tests and a real database integration test where needed.
+- [x] Document verified coverage and append the production incident baseline.
+- [x] Run lint, typecheck, and appropriate test tiers.
+- [x] Review checkpoint: independently review the final diff and address material findings.
 
 ## Task 3: Ship and verify the affected session
 
-- [ ] Commit and push on the existing branch.
+- [x] Commit and push on the existing branch.
 - [ ] Apply the corrected import through the normal release/sync path and re-sync the affected session.
 - [ ] Verify production now serves the six sends and three attempted climbs.
 - [ ] Report remaining field omissions and any release limitation explicitly.

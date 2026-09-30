@@ -358,6 +358,30 @@ describe("ClimbingRepository", () => {
   });
 
   describe("getVolumeByGrade", () => {
+    it.each<[number | null, number | null]>([
+      [3, null],
+      [null, 3],
+      [null, null],
+    ])(
+      "preserves unknown totals when merging counts %s then %s across grade systems",
+      async (first, second) => {
+        const { repo } = makeRepository([
+          {
+            climb_type: "boulder",
+            grade_system: "v_scale",
+            grade: "V5",
+            attempts: first,
+            sends: 1,
+          },
+          { climb_type: "boulder", grade_system: "font", grade: "6C", attempts: second, sends: 2 },
+        ]);
+
+        expect((await repo.getVolumeByGrade(90)).map((row) => row.toDetail())).toEqual([
+          expect.objectContaining({ climbType: "boulder", grade: "V5", attempts: null, sends: 3 }),
+        ]);
+      },
+    );
+
     it("returns empty array when no climbing entries exist", async () => {
       const { repo } = makeRepository([]);
 
@@ -518,6 +542,38 @@ describe("ClimbingRepository", () => {
   });
 
   describe("getSessionSummaries", () => {
+    it.each<[number | null, number | null]>([
+      [3, null],
+      [null, 3],
+      [null, null],
+    ])(
+      "preserves unknown session totals for counts %s then %s while retaining known sends",
+      async (first, second) => {
+        const { repo } = makeRepository(
+          [first, second].map((attemptCount, index) => ({
+            activity_id: "activity-1",
+            session_date: "2026-09-29",
+            name: "Kaya climbing",
+            location_name: "Pacific Pipe",
+            attempt_count: attemptCount,
+            sent: index === 0,
+            climb_type: "boulder",
+            grade_system: "v_scale",
+            grade: "V4",
+          })),
+        );
+
+        expect((await repo.getSessionSummaries(90)).map((row) => row.toDetail())).toEqual([
+          expect.objectContaining({
+            activityId: "activity-1",
+            attempts: null,
+            sends: 1,
+            hardestBoulderGrade: "V4",
+          }),
+        ]);
+      },
+    );
+
     it("returns empty array when no climbing entries exist", async () => {
       const { repo } = makeRepository([]);
 
