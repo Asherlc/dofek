@@ -325,7 +325,7 @@ operational problem actually occurs.
 maintenance runbook. This task prepares the release; executing it requires
 the separate release approval in the spec.
 
-- [ ] Document canonical fields, permanent projections, raw labels, known/unknown
+- [x] Document canonical fields, permanent projections, raw labels, known/unknown
   units and counts, provider coverage, and metadata source scoping with the
   cited audits and PostgreSQL documentation. Generate diagrams with
   `pnpm schema:diagram`.
@@ -334,7 +334,7 @@ the separate release approval in the spec.
   `pnpm spellcheck`, and the explicit migration policy command. Run all affected
   database tests listed in Tasks 3–4 through `pnpm test:integration`.
   Expect PASS; resolve actual failures at their cause without weakening gates.
-- [ ] Run `pnpm exec stryker run stryker.ci.config.json --mutate '<changed-file:line-range list>'`
+- [x] Run `pnpm exec stryker run stryker.ci.config.json --mutate '<changed-file:line-range list>'`
   using the changed-line selection in `.github/workflows/test.yml`'s Mutation
   Prep job. Expect no unexplained surviving mutants in the changed behavior.
   Keep this Docker-free; add focused unit cases for missed runtime branches,
@@ -363,4 +363,7 @@ The plan covers every approved storage, provider, serving, display, and release
 requirement. Tasks 1–2 establish independent contracts; Task 3 performs the
 inseparable database/writer/scalar-reader cutover; Tasks 4–5 expose and render
 the context; Task 6 supplies complete validation and the release gate. Every
-review-focus condition has a named owning test. Tasks 1–5 are implemented and pushed. Task 6 documentation and local verification are in progress; independent review and hosted checks remain. Release execution requires separate approval and verified backup restore evidence.
+review-focus condition has a named owning test. Tasks 1–5 are implemented and
+pushed. Task 6 documentation and local verification are complete; independent
+review and hosted checks remain. Release execution requires separate approval
+and verified backup restore evidence.

@@ -80,6 +80,13 @@ counts and CSV counts without a recorded raw value become null; recorded Kaya
 counts remain. See the executable
 [conversion regression](../src/db/climbing-context-migration.integration.test.ts).
 
+The journal preserves the already deployed Kaya migration's identity and orders
+the Apple Health migration after it. Both historical SQL files are unchanged.
+The context conversion also removes the obsolete paired count/outcome constraint
+if it remains present. Executable [upgrade-history tests](../src/db/climbing-migration-order.integration.test.ts)
+verify both applied histories and a repeat run through the
+[canonical migrator](../src/db/postgres-migrator.ts).
+
 ## Maintenance cutover
 
 This is a coordinated application/schema release. Release approval must cover
