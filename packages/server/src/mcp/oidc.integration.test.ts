@@ -115,104 +115,140 @@ describe("MCP oidc-provider authorization server", () => {
     });
   });
 
-  it("accepts a token issued by the token endpoint for MCP and rejects it after revocation", async () => {
-    const resource = "https://app.example.test/api/mcp";
-    const clientId = "issued-token-client";
-    const grantId = "issued-token-grant";
-    const code = "integration-authorization-code";
-    const verifier = "integration-pkce-verifier-with-at-least-43-characters";
-    const rows = await executeWithSchema(
-      context.db,
-      z.object({ id: z.string() }),
-      sql`INSERT INTO fitness.user_profile (name, email) VALUES ('OAuth Test', 'issued-token@test.com') RETURNING id`,
-    );
-    const accountId = rows[0]?.id;
-    if (!accountId) throw new Error("Failed to create OAuth test user");
-    const adapter = createMcpOidcAdapter(context.db);
-    await adapter("Client").upsert(clientId, {
-      client_id: clientId,
-      redirect_uris: [redirectUri],
-      grant_types: ["authorization_code"],
-      response_types: ["code"],
-      token_endpoint_auth_method: "none",
-    });
-    await adapter("Grant").upsert(
-      grantId,
-      { jti: grantId, accountId, clientId, resources: { [resource]: "health:read" } },
-      3600,
-    );
-    await adapter("AuthorizationCode").upsert(
-      code,
-      {
-        jti: code,
-        accountId,
-        clientId,
-        grantId,
-        redirectUri,
-        scope: "health:read",
-        resource,
-        codeChallenge: createHash("sha256").update(verifier).digest("base64url"),
-        codeChallengeMethod: "S256",
-      },
-      600,
-    );
-    try {
-      const response = await fetch(`${baseUrl}/token`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/x-www-form-urlencoded",
-          "x-forwarded-proto": "https",
-        },
-        body: new URLSearchParams({
-          grant_type: "authorization_code",
-          client_id: clientId,
-          code,
-          code_verifier: verifier,
-          redirect_uri: redirectUri,
-          resource,
-        }),
+  it.each(["revocation", "refresh replay"])(
+    "issues public MCP tokens without offline_access and enforces %s",
+    async (scenario) => {
+      const resource = "https://app.example.test/api/mcp";
+      const clientId = "issued-token-client";
+      const grantId = "issued-token-grant";
+      const code = "integration-authorization-code";
+      const verifier = "integration-pkce-verifier-with-at-least-43-characters";
+      const rows = await executeWithSchema(
+        context.db,
+        z.object({ id: z.string() }),
+        sql`INSERT INTO fitness.user_profile (name, email) VALUES ('OAuth Test', 'issued-token@test.com') RETURNING id`,
+      );
+      const accountId = rows[0]?.id;
+      if (!accountId) throw new Error("Failed to create OAuth test user");
+      const adapter = createMcpOidcAdapter(context.db);
+      await adapter("Client").upsert(clientId, {
+        client_id: clientId,
+        redirect_uris: [redirectUri],
+        grant_types: ["authorization_code", "refresh_token"],
+        response_types: ["code"],
+        token_endpoint_auth_method: "none",
       });
-      const body = await response.json();
-      expect(response.status, JSON.stringify(body)).toBe(200);
-      const { access_token } = z.object({ access_token: z.string() }).parse(body);
-      const initialize = () =>
-        fetch(`${baseUrl}/api/mcp`, {
+      await adapter("Grant").upsert(
+        grantId,
+        { jti: grantId, accountId, clientId, resources: { [resource]: "health:read" } },
+        3600,
+      );
+      await adapter("AuthorizationCode").upsert(
+        code,
+        {
+          jti: code,
+          accountId,
+          clientId,
+          grantId,
+          redirectUri,
+          scope: "health:read",
+          resource,
+          codeChallenge: createHash("sha256").update(verifier).digest("base64url"),
+          codeChallengeMethod: "S256",
+        },
+        600,
+      );
+      try {
+        const response = await fetch(`${baseUrl}/token`, {
           method: "POST",
           headers: {
-            authorization: `Bearer ${access_token}`,
-            "content-type": "application/json",
-            accept: "application/json, text/event-stream",
+            "content-type": "application/x-www-form-urlencoded",
+            "x-forwarded-proto": "https",
           },
-          body: JSON.stringify({
-            jsonrpc: "2.0",
-            id: 1,
-            method: "initialize",
-            params: {
-              protocolVersion: "2025-06-18",
-              capabilities: {},
-              clientInfo: { name: "oauth-regression", version: "1" },
-            },
+          body: new URLSearchParams({
+            grant_type: "authorization_code",
+            client_id: clientId,
+            code,
+            code_verifier: verifier,
+            redirect_uri: redirectUri,
+            resource,
           }),
         });
-      const initialized = await initialize();
-      expect(initialized.status).toBe(200);
-      expect(await initialized.text()).toContain("serverInfo");
-      const revoked = await fetch(`${baseUrl}/revoke`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/x-www-form-urlencoded",
-          "x-forwarded-proto": "https",
-        },
-        body: new URLSearchParams({
-          client_id: clientId,
-          token: access_token,
-          token_type_hint: "access_token",
-        }),
-      });
-      expect(revoked.status).toBe(200);
-      expect((await initialize()).status).toBe(401);
-    } finally {
-      await context.db.execute(sql`DELETE FROM fitness.user_profile WHERE id = ${accountId}::uuid`);
-    }
-  });
+        const body = await response.json();
+        expect(response.status, JSON.stringify(body)).toBe(200);
+        const { access_token, refresh_token } = z
+          .object({ access_token: z.string(), refresh_token: z.string() })
+          .parse(body);
+        const initialize = (token: string) =>
+          fetch(`${baseUrl}/api/mcp`, {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${token}`,
+              "content-type": "application/json",
+              accept: "application/json, text/event-stream",
+            },
+            body: JSON.stringify({
+              jsonrpc: "2.0",
+              id: 1,
+              method: "initialize",
+              params: {
+                protocolVersion: "2025-06-18",
+                capabilities: {},
+                clientInfo: { name: "oauth-regression", version: "1" },
+              },
+            }),
+          });
+        const initialized = await initialize(access_token);
+        expect(initialized.status).toBe(200);
+        expect(await initialized.text()).toContain("serverInfo");
+        if (scenario === "revocation") {
+          const revoked = await fetch(`${baseUrl}/revoke`, {
+            method: "POST",
+            headers: {
+              "content-type": "application/x-www-form-urlencoded",
+              "x-forwarded-proto": "https",
+            },
+            body: new URLSearchParams({
+              client_id: clientId,
+              token: access_token,
+              token_type_hint: "access_token",
+            }),
+          });
+          expect(revoked.status).toBe(200);
+          expect((await initialize(access_token)).status).toBe(401);
+          return;
+        }
+        const refresh = () =>
+          fetch(`${baseUrl}/token`, {
+            method: "POST",
+            headers: {
+              "content-type": "application/x-www-form-urlencoded",
+              "x-forwarded-proto": "https",
+            },
+            body: new URLSearchParams({
+              grant_type: "refresh_token",
+              client_id: clientId,
+              refresh_token,
+              resource,
+            }),
+          });
+        const refreshed = await refresh();
+        const refreshedBody = await refreshed.json();
+        expect(refreshed.status, JSON.stringify(refreshedBody)).toBe(200);
+        const rotated = z
+          .object({ access_token: z.string(), refresh_token: z.string() })
+          .parse(refreshedBody);
+        expect(rotated.refresh_token).not.toBe(refresh_token);
+        expect((await initialize(rotated.access_token)).status).toBe(200);
+        const replayed = await refresh();
+        expect(replayed.status).toBe(400);
+        expect(await replayed.json()).toMatchObject({ error: "invalid_grant" });
+        expect((await initialize(rotated.access_token)).status).toBe(401);
+      } finally {
+        await context.db.execute(
+          sql`DELETE FROM fitness.user_profile WHERE id = ${accountId}::uuid`,
+        );
+      }
+    },
+  );
 });

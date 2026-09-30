@@ -244,32 +244,40 @@ describe("PowerRepository", () => {
     });
 
     it("computes eFTP from raw power samples when the activity summary has no normalized power", async () => {
-      const activityDate = new Date().toISOString().slice(0, 10);
-      const rawPowerSamples = Array.from({ length: 60 }, () => ({
-        activity_id: "act-raw-power",
-        activity_date: activityDate,
-        activity_name: "Power Meter Ride",
-        power: 200,
-        interval_s: 1,
-      }));
-      const analyticsStore = makeAnalyticsStore();
-      analyticsStore.query.mockResolvedValueOnce([]);
-      analyticsStore.getNormalizedPowerSamples.mockResolvedValueOnce(rawPowerSamples);
-      analyticsStore.getPowerCurveSamples.mockResolvedValueOnce([]);
-      const repo = new PowerRepository("user-1", "UTC", analyticsStore);
-      const result = await repo.getEftpTrend(ChartRange.fromDays(365));
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-07-02T12:00:00.000Z"));
+      try {
+        const rawPowerSamples = Array.from({ length: 60 }, () => ({
+          activity_id: "act-raw-power",
+          activity_date: "2026-07-01",
+          activity_name: "Power Meter Ride",
+          power: 200,
+          interval_s: 1,
+        }));
+        const analyticsStore = makeAnalyticsStore();
+        analyticsStore.query.mockResolvedValueOnce([]);
+        analyticsStore.getNormalizedPowerSamples.mockResolvedValueOnce(rawPowerSamples);
+        analyticsStore.getPowerCurveSamples.mockResolvedValueOnce([]);
+        const repo = new PowerRepository("user-1", "UTC", analyticsStore);
+        const result = await repo.getEftpTrend(ChartRange.fromDays(365));
 
-      expect(analyticsStore.getNormalizedPowerSamples).toHaveBeenCalledWith(365, "user-1", "UTC", [
-        ...CYCLING_ACTIVITY_TYPES,
-      ]);
-      expect(result.trend).toStrictEqual([
-        {
-          date: activityDate,
-          activityName: "Power Meter Ride",
-          eftp: 190,
-        },
-      ]);
-      expect(result.currentEftp).toBe(190);
+        expect(analyticsStore.getNormalizedPowerSamples).toHaveBeenCalledWith(
+          365,
+          "user-1",
+          "UTC",
+          [...CYCLING_ACTIVITY_TYPES],
+        );
+        expect(result.trend).toStrictEqual([
+          {
+            date: "2026-07-01",
+            activityName: "Power Meter Ride",
+            eftp: 190,
+          },
+        ]);
+        expect(result.currentEftp).toBe(190);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("does not scan normalized power or power curve samples when no raw activities exist", async () => {

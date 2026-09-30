@@ -1,5 +1,20 @@
 # Production Incident Baseline
 
+## 2026-09-29 — Working ChatGPT connection needs automatic OAuth refresh issuance
+
+- **Status / user impact:** The user confirmed that ChatGPT connection and tool requests work after the opaque-token fix. Read-only production checks found one current grant and access token but no refresh token, so the connection could not refresh after access-token expiry.
+- **Evidence / root cause:** None of the 13 retained authorization codes requested `offline_access` or `openid`. The library's default refresh issuance requires `offline_access`, even when the client supports the `refresh_token` grant. A database-backed regression reproduced a successful code exchange whose response omitted `refresh_token`; see [oidc-provider's issuance policy](https://oidc-provider.dev/configuration/tokens/#issuerefreshtoken).
+- **Direct fix:** Use that library policy to issue refresh tokens to clients supporting the refresh grant without requiring an OIDC scope. Existing consent, PKCE, resource checks, rotation, expiry, and replay rejection remain enforced. Public-client refresh tokens must rotate or be sender-constrained under [RFC 9700 section 4.14](https://www.rfc-editor.org/rfc/rfc9700.html#section-4.14).
+- **Validation / remaining work:** The issuance regression and unit policy tests pass. The integration flow refreshes without `offline_access`, verifies rotation and authenticated MCP access, then replays the consumed refresh token and verifies family revocation. Production deployment and a fresh real ChatGPT connection are pending; an existing connection cannot gain a refresh token retrospectively. No runtime retry or timeout workaround was added.
+- **Prior rollout / cleanup:** [PR #2835](https://github.com/Asherlc/dofek/pull/2835) deployed `sha-7522a32` through [run 36637415397](https://github.com/Asherlc/dofek/actions/runs/36637415397). Production canaries using ChatGPT and Claude's published CIMD metadata passed issuance, refresh, MCP initialization, tool discovery, and revocation, with all fixture state removed. [PR #2836](https://github.com/Asherlc/dofek/pull/2836) merged normally after all 100 checks passed; its schema-cleanup image `sha-4b4967c` completed [deployment 36646056646](https://github.com/Asherlc/dofek/actions/runs/36646056646). Production has zero obsolete OAuth tables or token columns; both personal tokens and the current CIMD grant were preserved. Both published-client canaries passed again after cleanup.
+- **Runbook improvement:** Include actual refresh-token issuance in end-to-end OAuth validation using the scopes requested by the real client; an `offline_access` canary alone did not represent ChatGPT's automatic setup.
+
+### Midnight UTC exposed a date-dependent unit fixture
+
+- Main [CI run 36648205190](https://github.com/Asherlc/dofek/actions/runs/36648205190/job/109678740438) failed `Test / Unit Tests` at `power-repository.test.ts:271`: `expected null to be 190`. Its July 1 fixture fell outside the rolling 90-day eFTP window when UTC advanced to September 30. The same test reproduced the failure locally; production eFTP behavior was correct.
+- Canceled the queued [refresh deployment 36649669487](https://github.com/Asherlc/dofek/actions/runs/36649669487) before infrastructure or web changes. Production remains on the successful cleanup image. Refresh [PR #2838](https://github.com/Asherlc/dofek/pull/2838) is merged, but refresh issuance is not deployed.
+- Pin the fixture's clock to July 2 and restore the real clock afterward using [Vitest date mocking](https://vitest.dev/guide/mocking/dates). This fixes the test's current-date dependence without changing runtime analytics or weakening an assertion. Hosted validation and the refresh rollout remain pending.
+
 <!-- cspell:ignore Hetzner Hypertables rollups fanout Checkpointed subcheck MISCONF docuum anchore xcframework objc -->
 
 This document summarizes production failure modes observed so far. It is not a
@@ -27808,8 +27823,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   tombstones hiding current groups. After the fix, 96 database tests pass, including the
   source-record refresh, group lifecycle, provider absence, grouping, and
   activity API suites. Workspace lint, root/server/web typechecks, and migration
-  policy pass; all 19,086 unit/mobile tests pass. An unrelated eFTP fixture
-  crossed its rolling 90-day window and now uses a relative date. Local
+  policy pass; the full unit/mobile suite passes. An unrelated eFTP fixture
+  crossed its rolling 90-day window; the [separate fix on main](https://github.com/Asherlc/dofek/pull/2853)
+  pins the test clock and replaces this branch's relative-date correction. Local
   validation was interrupted by a ClickHouse container
   restart; it completed without changing runtime retries or timeouts.
 - **CI correction:** The [SQLFluff job](https://github.com/Asherlc/dofek/actions/runs/36653162781/job/109691872798)
