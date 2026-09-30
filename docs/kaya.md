@@ -50,3 +50,37 @@ are outside the current import. This is an observed field audit, not an
 exhaustive schema inventory: Kaya disables GraphQL introspection on this endpoint.
 Source: [Kaya application](https://kaya-app.kayaclimb.com/) and authenticated
 [GraphQL endpoint](https://kaya-beta.kayaclimb.com/graphql), observed 2026-09-29.
+
+## Observed location and angle values
+
+Read-only `webClimb`, `webClimbsForLocation`, and `webSearchForLocation`
+requests against the [Kaya GraphQL endpoint](https://kaya-beta.kayaclimb.com/graphql)
+verified these public catalogue examples on 2026-09-29. The selections came
+from the [Kaya application's GraphQL fragments](https://kaya-app.kayaclimb.com/static/js/main.5bd87165.chunk.js).
+These examples do not identify an account or its logged sessions.
+
+| Climb field | Observed shape | Public example |
+| --- | --- | --- |
+| `destination` | Nullable location reference with `id` and `name` | `{ id: "1720", name: "Berkeley" }` |
+| `area` | Nullable location reference with `id` and `name` | `{ id: "46806", name: "Cragmont Park" }` |
+| `subarea` | Nullable location reference with `id` and `name` | `{ id: "46805", name: "Northeast Face" }` |
+| `board` | Nullable location reference with `id` and `name` | `{ id: "251", name: "Kilter Board (Original)" }` |
+| `angle` | Nullable GraphQL `Int`; confirmed by a field-selection validation response | `-20`, `25`, `40`, `45`, `50` |
+
+[Cragmont Crack](https://kaya-app.kayaclimb.com/climb/Cragmont-Crack-5.6-Berkeley-7599113)
+supplies the outdoor hierarchy above and `angle: -20`.
+[Kilter Board (Original)](https://kaya-app.kayaclimb.com/location/Kilter-Board-Original-281341)
+climbs returned angles `40`, `45`, and `50`; the
+[Homewall catalogue](https://kaya-app.kayaclimb.com/location/Kilter-Board-Homewall-962596)
+also returned `25`. Missing values remain `null`. The reviewed Kaya resources
+do not establish the angle's units, zero, or sign convention; retain the
+reported integer until those semantics are verified.
+
+Board names can describe a model/layout, such as
+[Moonboard (2016)](https://kaya-app.kayaclimb.com/location/Moonboard-2016-701910),
+or a venue-specific board, such as
+[Summit Plano Moonboard](https://kaya-app.kayaclimb.com/location/Summit-Plano-Moonboard-682352).
+The location search returned several distinct `Cragmont Park` records with
+different IDs and hierarchy levels. Preserve provider IDs alongside names;
+names alone do not identify a location. Source: the read-only
+[Kaya location search](https://kaya-beta.kayaclimb.com/graphql), observed 2026-09-29.

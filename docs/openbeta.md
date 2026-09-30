@@ -48,3 +48,42 @@ clears `unattached_date` and preserves the selected activity association.
 The integration currently does not access private ticks, use account session
 cookies, write to OpenBeta, enrich routes outside the tick response, or create
 activities for tick dates.
+
+## Location, angle, and board coverage
+
+The current tick query selects only `climb.parent.area_name` for location and
+copies it into `fitness.climbing_entry.location_name`. Full hierarchy names,
+area UUIDs, and coordinates are not requested, so they are also absent from
+the retained selected response. OpenBeta's
+[tick schema](https://github.com/OpenBeta/openbeta-graphql/blob/f1508b2479cc7658ac4341d59ec817836190d6d8/src/graphql/schema/Tick.gql)
+permits a null `climb` when a tick has no catalogue match; those ticks cannot
+provide climb-linked location metadata.
+
+Targeted schema introspection and public `climb`/`area` queries against
+[the production GraphQL endpoint](https://api.openbeta.io) on 2026-09-29
+confirmed additional fields defined in the official
+[climb schema](https://github.com/OpenBeta/openbeta-graphql/blob/f1508b2479cc7658ac4341d59ec817836190d6d8/src/graphql/schema/Climb.gql)
+and [area schema](https://github.com/OpenBeta/openbeta-graphql/blob/f1508b2479cc7658ac4341d59ec817836190d6d8/src/graphql/schema/Area.gql):
+
+| Available field | Meaning and observed value |
+| --- | --- |
+| `climb.pathTokens` | Full hierarchy of area names; the checked responses run from the broadest area to the nearest parent. |
+| `climb.ancestors` | Area UUIDs corresponding to that hierarchy. |
+| `climb.parent.uuid`, `area_name` | Nearest area ID/name; Cragmont Crack's parent is `7120fcf9-ae19-5adc-ab0d-d04f749c2e91`, `Northeast Face`. |
+| `Area.metadata.isDestination`, `leaf` | Area classification flags; Northeast Face returned `false` and `true`, respectively. These do not define a universal three-level hierarchy. |
+| `climb.metadata.lat`, `lng` | Climb coordinates; Cragmont Crack returned `37.89205`, `-122.26333`. |
+| `climb.metadata.mp_id` | Mountain Project route reference when supplied; Cragmont Crack returned `"105734660"`. |
+
+The public
+[Cragmont Crack record](https://openbeta.io/climb/6cc9b5d5-02d5-555a-948b-e2fffc9bd82c/cragmont-crack)
+returned:
+
+```text
+USA > California > San Francisco Bay Area > Berkeley > Cragmont Park > Northeast Face
+```
+
+For matched ticks, these fields can be selected within `userTicks.climb`,
+rather than requiring a separate route request. The checked climb/area schemas
+define no dedicated numeric wall-angle or board field. Compare
+[Kaya's explicit metadata](kaya.md#observed-location-and-angle-values) and
+[Mountain Project's exported location path](mountain-project.md#location-angle-and-board-coverage).
