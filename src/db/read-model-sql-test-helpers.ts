@@ -20,7 +20,21 @@ export function renderDbtModelSql(
   modelSql: string,
   options: { isIncremental: boolean; activityRefreshScoped?: boolean },
 ): string {
-  const withoutWrappers = modelSql
+  const expandedSql = modelSql.replace(
+    /\{\{\s*apple_health_workout_revisions\(activity_refresh_scoped\)\s*\}\}/g,
+    () => {
+      const macroSql = readFileSync(
+        new URL("../../analytics/macros/apple_health_workout_revisions.sql", import.meta.url),
+        "utf8",
+      );
+      const body = macroSql.match(
+        /\{% macro apple_health_workout_revisions\(activity_refresh_scoped\) %\}([\s\S]*?)\{% endmacro %\}/,
+      )?.[1];
+      if (!body) throw new Error("Could not find Apple Health workout revision macro body");
+      return body;
+    },
+  );
+  const withoutWrappers = expandedSql
     .replace(/\{%\s*set[\s\S]*?%\}\s*/g, "")
     .replace(/\{\{\s*config\([\s\S]*?\)\s*\}\}\s*/g, "")
     .trimStart();

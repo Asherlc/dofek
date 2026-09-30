@@ -318,6 +318,111 @@ describe("stable activity group payload union", () => {
       total_distance: expect.closeTo(283, -1),
     });
   }, 180_000);
+  it.each([false, true])(
+    "retires superseded Apple Health revisions with a live direct provider and latest deleted=%s",
+    async (latestDeleted) => {
+      const activeClient = requireClient(client);
+      await seedFixture(activeClient, database, whoopId);
+      const oldMember = "00000000-0000-0000-0000-000000000701";
+      const newMember = "00000000-0000-0000-0000-000000000702";
+      const directMember = "00000000-0000-0000-0000-000000000703";
+      const oldGroup = "00000000-0000-0000-0000-000000000704";
+      const newGroup = "00000000-0000-0000-0000-000000000705";
+      const syncIdentifier = "whoop://workout/revised-climb";
+      const raw = (version: number) =>
+        JSON.stringify({
+          metadata: {
+            HKMetadataKeySyncIdentifier: syncIdentifier,
+            HKMetadataKeySyncVersion: version,
+          },
+        });
+      const member = (id: string, group: string, current: boolean) => ({
+        id,
+        group_id: group,
+        provider_id: "apple_health",
+        user_id: userId,
+        external_id: `hk:workout:${id}`,
+        canonical_type: "climbing",
+        provider_type: "9",
+        started_at: current ? "2026-09-29 14:28:31" : "2026-09-29 13:57:00",
+        ended_at: current ? "2026-09-29 15:23:48" : "2026-09-29 15:04:59",
+        created_at: "2026-09-29 16:00:00",
+        _peerdb_synced_at: "2026-09-29 16:00:00",
+        raw: raw(current ? 1835 : 1834),
+      });
+      const refresh = () =>
+        runStatements(activeClient, [
+          `INSERT INTO ${database}.activity_source_records ${renderModel("activity_source_records.sql", database, true)}`,
+          `INSERT INTO ${database}.deduped_activities ${renderModel("deduped_activities.sql", database, true)}`,
+        ]);
+      await activeClient.insert({
+        table: `${database}.source_activity`,
+        format: "JSONEachRow",
+        values: [member(oldMember, oldGroup, false)],
+      });
+      await refresh();
+      await activeClient.insert({
+        table: `${database}.source_activity`,
+        format: "JSONEachRow",
+        values: [
+          member(newMember, newGroup, true),
+          {
+            ...member(directMember, newGroup, true),
+            provider_id: "whoop",
+            external_id: "revised-climb",
+            raw: null,
+          },
+        ],
+      });
+      await refresh();
+
+      const old = await activeClient.query({
+        query: `SELECT is_deleted FROM ${database}.deduped_activities FINAL
+        WHERE activity_id = toUUID('${oldGroup}')`,
+        format: "JSONEachRow",
+      });
+      expect(await old.json()).toEqual([{ is_deleted: 1 }]);
+      const current = await activeClient.query({
+        query: `SELECT toString(started_at) AS started_at, toString(ended_at) AS ended_at,
+        source_providers, arraySort(arrayMap(id -> toString(id), member_activity_ids)) AS members
+        FROM ${database}.deduped_activities FINAL
+        WHERE activity_id = toUUID('${newGroup}') AND is_deleted = 0`,
+        format: "JSONEachRow",
+      });
+      expect(await current.json()).toEqual([
+        {
+          started_at: "2026-09-29 14:28:31.000000",
+          ended_at: "2026-09-29 15:23:48.000000",
+          source_providers: ["apple_health", "whoop"],
+          members: [newMember, directMember],
+        },
+      ]);
+
+      await activeClient.command({
+        query: `ALTER TABLE ${database}.source_activity UPDATE
+      group_id = toUUID('${newGroup}'), provider_absent_at = now64(6)
+      WHERE id = toUUID('${oldMember}') SETTINGS mutations_sync = 2`,
+      });
+      if (latestDeleted) {
+        await activeClient.command({
+          query: `ALTER TABLE ${database}.source_activity UPDATE
+        deleted_at = now64(6) WHERE id = toUUID('${newMember}') SETTINGS mutations_sync = 2`,
+        });
+      }
+      await refresh();
+      const afterAbsence = await activeClient.query({
+        query: `SELECT source_providers FROM ${database}.deduped_activities FINAL
+        WHERE activity_id = toUUID('${newGroup}') AND is_deleted = 0`,
+        format: "JSONEachRow",
+      });
+      expect(await afterAbsence.json()).toEqual([
+        {
+          source_providers: latestDeleted ? ["whoop"] : ["apple_health", "whoop"],
+        },
+      ]);
+    },
+    120_000,
+  );
 });
 
 function requireClickHouseUrl(): string {

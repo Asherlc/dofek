@@ -42,6 +42,7 @@ describe("activity source membership projection", () => {
         start_utc_offset_minutes Nullable(Int16), end_utc_offset_minutes Nullable(Int16),
         local_time_source String DEFAULT 'unknown', raw Nullable(String),
         provider_absent_at Nullable(DateTime64(6, 'UTC')), deleted_at Nullable(DateTime64(6, 'UTC')),
+        created_at DateTime64(6, 'UTC') DEFAULT '2026-09-29 16:00:00',
         _peerdb_is_deleted UInt8, _peerdb_synced_at DateTime64(9, 'UTC')
       ) ENGINE = ReplacingMergeTree ORDER BY id`,
       `CREATE TABLE ${database}.provider_priority (provider_id String, priority Int32, _peerdb_is_deleted UInt8)
@@ -107,5 +108,106 @@ describe("activity source membership projection", () => {
     await client.command({ query: `ALTER TABLE ${database}.activity UPDATE group_id = ${missingId} WHERE 1 SETTINGS mutations_sync = 2` });
     await expect(client.command({ query: `INSERT INTO ${database}.activity_source_records ${render(memberId)}` }))
       .rejects.toThrow("missing persisted group_id");
+  });
+
+  async function insertRevision(id: string, version: number | string, current = false, options: {
+    ownerId?: string;
+    syncIdentifier?: string;
+    createdAt?: string;
+  } = {}) {
+    await client.insert({
+      table: `${database}.activity`,
+      format: "JSONEachRow",
+      values: [{
+        id,
+        group_id: id,
+        user_id: options.ownerId ?? userId,
+        provider_id: "apple_health",
+        canonical_type: "climbing",
+        started_at: current ? "2026-09-29 14:28:31" : "2026-09-29 13:57:00",
+        ended_at: current ? "2026-09-29 15:23:48" : "2026-09-29 15:04:59",
+        created_at: options.createdAt ?? "2026-09-29 16:00:00",
+        raw: JSON.stringify({ metadata: {
+          HKMetadataKeySyncIdentifier: options.syncIdentifier ?? "whoop://workout/revised-climb",
+          HKMetadataKeySyncVersion: version,
+        } }),
+      }],
+    });
+  }
+
+  it("replaces a served Apple Health revision when a higher sync version changes the times", async () => {
+    const oldId = "00000000-0000-4000-8000-000000000111";
+    const newId = "00000000-0000-4000-8000-000000000112";
+    await insertRevision(oldId, 1834);
+    await client.command({ query: `INSERT INTO ${database}.activity_source_records ${render(oldId)}` });
+    await insertRevision(newId, "1835", true);
+    await client.command({ query: `INSERT INTO ${database}.activity_source_records ${render(undefined, true)}` });
+
+    const result = await client.query({
+      query: `SELECT toString(activity_id) AS id, is_deleted FROM ${database}.activity_source_records FINAL
+        WHERE activity_id IN ('${oldId}', '${newId}') ORDER BY activity_id`,
+      format: "JSONEachRow",
+    });
+    expect(await result.json()).toEqual([{ id: oldId, is_deleted: 1 }, { id: newId, is_deleted: 0 }]);
+    const raw = await client.query({ query: `SELECT count() AS count FROM ${database}.activity FINAL
+      WHERE provider_id = 'apple_health'`, format: "JSONEachRow" });
+    expect(await raw.json()).toEqual([{ count: 2 }]);
+  });
+
+  it.each(["provider_absent_at", "deleted_at"])("does not restore an older revision when the newest has %s", async (column) => {
+    const oldId = "00000000-0000-4000-8000-000000000111";
+    const newId = "00000000-0000-4000-8000-000000000112";
+    await insertRevision(oldId, 1834);
+    await insertRevision(newId, 1835, true);
+    await client.command({ query: `ALTER TABLE ${database}.activity UPDATE ${column} = now64(6)
+      WHERE id = '${newId}' SETTINGS mutations_sync = 2` });
+    await client.command({ query: `INSERT INTO ${database}.activity_source_records ${render(oldId)}` });
+
+    const result = await client.query({ query: `SELECT activity_id FROM ${database}.activity_source_records FINAL
+      WHERE is_deleted = 0`, format: "JSONEachRow" });
+    expect(await result.json()).toEqual([]);
+  });
+
+  it("orders numeric versions ahead of arrival time during a scoped refresh", async () => {
+    const oldId = "00000000-0000-4000-8000-000000000111";
+    const newId = "00000000-0000-4000-8000-000000000112";
+    await insertRevision(oldId, 9, false, { createdAt: "2026-09-29 17:00:00" });
+    await insertRevision(newId, "10", true);
+    await client.command({ query: `INSERT INTO ${database}.activity_source_records ${render(newId)}` });
+    await client.command({ query: `INSERT INTO ${database}.activity_source_records ${render(oldId)}` });
+
+    const result = await client.query({ query: `SELECT toString(activity_id) AS id
+      FROM ${database}.activity_source_records FINAL WHERE is_deleted = 0`, format: "JSONEachRow" });
+    expect(await result.json()).toEqual([{ id: newId }]);
+  });
+
+  it("normalizes sync identifiers and breaks equal-version ties by arrival", async () => {
+    const oldId = "00000000-0000-4000-8000-000000000111";
+    const newId = "00000000-0000-4000-8000-000000000112";
+    await insertRevision(oldId, 1835, false, { syncIdentifier: " whoop://workout/revised-climb " });
+    await insertRevision(newId, "1835", true, { createdAt: "2026-09-29 17:00:00" });
+    await client.command({ query: `INSERT INTO ${database}.activity_source_records ${render(undefined, true)}` });
+
+    const result = await client.query({ query: `SELECT toString(activity_id) AS id
+      FROM ${database}.activity_source_records FINAL WHERE is_deleted = 0 AND provider_id = 'apple_health'`,
+      format: "JSONEachRow" });
+    expect(await result.json()).toEqual([{ id: newId }]);
+  });
+
+  it("keeps unidentified workouts and other users' revisions independent", async () => {
+    const firstId = "00000000-0000-4000-8000-000000000111";
+    const secondId = "00000000-0000-4000-8000-000000000112";
+    const identifiedId = "00000000-0000-4000-8000-000000000113";
+    const otherUserId = "00000000-0000-4000-8000-000000000114";
+    await insertRevision(firstId, 1834, false, { syncIdentifier: "" });
+    await insertRevision(secondId, 1835, true, { syncIdentifier: " " });
+    await insertRevision(identifiedId, 1834);
+    await insertRevision(otherUserId, 1835, true, { ownerId: "00000000-0000-4000-8000-000000000002" });
+    await client.command({ query: `INSERT INTO ${database}.activity_source_records ${render(undefined, true)}` });
+
+    const result = await client.query({ query: `SELECT toString(activity_id) AS id
+      FROM ${database}.activity_source_records FINAL WHERE is_deleted = 0 AND provider_id = 'apple_health'
+      ORDER BY activity_id`, format: "JSONEachRow" });
+    expect(await result.json()).toEqual([firstId, secondId, identifiedId, otherUserId].map(id => ({ id })));
   });
 });

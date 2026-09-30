@@ -244,9 +244,10 @@ describe("PowerRepository", () => {
     });
 
     it("computes eFTP from raw power samples when the activity summary has no normalized power", async () => {
+      const activityDate = new Date().toISOString().slice(0, 10);
       const rawPowerSamples = Array.from({ length: 60 }, () => ({
         activity_id: "act-raw-power",
-        activity_date: "2026-07-01",
+        activity_date: activityDate,
         activity_name: "Power Meter Ride",
         power: 200,
         interval_s: 1,
@@ -263,7 +264,7 @@ describe("PowerRepository", () => {
       ]);
       expect(result.trend).toStrictEqual([
         {
-          date: "2026-07-01",
+          date: activityDate,
           activityName: "Power Meter Ride",
           eftp: 190,
         },

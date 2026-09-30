@@ -134,6 +134,45 @@ Apple Health workouts can preserve the upstream app name inside the workout JSON
 
 This attribution is still workout-level only. For Strong-backed Apple Health workouts, the stored JSON can tell us that the workout came from Strong, but it does **not** include per-exercise details like exercise names, sets, reps, or weights. That richer breakdown only exists in the Strong CSV/import path.
 
+## Workout Revisions
+
+HealthKit uses `HKMetadataKeySyncIdentifier` to identify a logical object and
+`HKMetadataKeySyncVersion` to replace it with a higher version. A revised
+workout can have a new HealthKit UUID and different start/end times; time
+overlap alone does not establish revision identity. See Apple's
+[`HKMetadataKeySyncIdentifier`](https://developer.apple.com/documentation/healthkit/hkmetadatakeysyncidentifier)
+and [`HKMetadataKeySyncVersion`](https://developer.apple.com/documentation/healthkit/hkmetadatakeysyncversion).
+
+Dofek retains every raw workout row. PostgreSQL `fitness.v_activity` and
+ClickHouse `analytics.activity_source_records` serve the highest numeric sync
+version for each user and nonempty, trimmed sync identifier. Equal versions
+use the newest `created_at`, then member UUID, to select one row. Workouts
+without a sync identifier retain their existing grouping behavior. Revision
+selection precedes absence and deletion filtering, so an older version cannot
+reappear when the newest version is removed. Absence decisions use the same
+revision selection: an older tombstone cannot hide a current group or cancel
+the newest revision's absence. See the
+[canonical view](../drizzle/_views/01_v_activity.sql) and
+[ClickHouse source model](../analytics/models/read_models/activity_source_records.sql),
+[group model](../analytics/models/read_models/deduped_activities.sql), and
+[shared revision macro](../analytics/macros/apple_health_workout_revisions.sql).
+
+When an activity says “WHOOP via Apple Health” but its times differ from the
+WHOOP app, inspect the raw metadata before diagnosing a provider deletion:
+
+1. Resolve the displayed group to its `fitness.activity` members and inspect
+   sync identifier, numeric sync version, `provider_absent_at`, and `deleted_at`.
+2. Find all Apple Health rows for the same user and sync identifier, including
+   other groups. Compare their versions and start/end times with the direct
+   provider row and, when available, its current API response.
+3. Check `analytics.activity_source_records FINAL` and
+   `analytics.deduped_activities FINAL`. After an incremental refresh, the
+   superseded source and a group containing only that source should have
+   `is_deleted = 1`; both raw revisions should remain. The integration
+   [source-record tests](../analytics/models/read_models/activity_source_records.integration.test.ts)
+   and [group lifecycle test](../src/db/activity-group-payload-union.integration.test.ts)
+   exercise this boundary.
+
 ## Heart Rate Variability (HRV) Selection
 
 Apple Watch records SDNN (the standard HRV metric) during both overnight sleep and Breathe/Mindfulness sessions. Breathe session values are typically ~2x the overnight baseline because deliberate slow breathing maximises parasympathetic tone.

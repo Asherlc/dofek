@@ -27778,3 +27778,41 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 - CI run `36632649198`, job `109626055202`, failed `pnpm audit --prod --audit-level=high --ignore-registry-errors`: Undici 6.28.0 and 7.29.0 were reported vulnerable to WebSocket denial of service and a BalancedPool TLS-validation bypass. The advisories were updated during this incident ([GHSA-rfgv-xxqx-mfg5](https://github.com/advisories/GHSA-rfgv-xxqx-mfg5), [GHSA-w293-vg96-wgc3](https://github.com/advisories/GHSA-w293-vg96-wgc3)).
 - Updated existing security overrides to the latest releases compatible with each dependency’s required major version: 6.29.0, 7.30.0, and 8.11.2. Local production audit passes the existing high-severity gate; two moderate advisories remain below that unchanged gate. The hosted dependency audit passed; the opaque-token PR has 100 successful checks, including unit, integration, mutation, lint, and E2E. Four unchanged Apple jobs remained queued. With explicit user approval, PR #2835 was administrator-merged as `7522a325d`; the ruleset was immediately restored with no bypass actor. Its exact image build and production rollout remain pending.
+
+## 2026-09-29 — Superseded WHOOP workout remained visible through Apple Health
+
+- **Symptoms / user impact:** Activity `9b48239b-d9c0-4c7c-811f-2f7dccd05ea8`
+  displayed an older “WHOOP via Apple Health” climbing workout that no longer
+  matched the workout in the WHOOP app.
+- **Evidence:** Read-only production SSH queries found Apple Health versions
+  1834 and 1835 with sync identifier
+  `whoop://workout/e7078f0e-64f0-40f3-ac45-15939e77f8e6` and different member
+  UUIDs. Version 1834 spans 13:57:00–15:04:59 UTC; version 1835 spans
+  14:28:31–15:23:48 UTC on September 29. Both raw rows are active. The direct
+  WHOOP row and live API response match version 1835. ClickHouse serves both
+  groups with `is_deleted = 0`; production logs and source syncs are working.
+- **Root cause:** Serving queries treated changed HealthKit UUIDs as independent
+  activities and relied on time overlap for grouping. The revised bounds had
+  only 42% intersection-over-union and 66% shorter-workout containment, below
+  the grouping threshold. Apple defines replacement through sync identifier
+  and version ([HealthKit sync version](https://developer.apple.com/documentation/healthkit/hkmetadatakeysyncversion)).
+- **Fix:** Prepared query-time selection of the latest Apple Health version in
+  both PostgreSQL and ClickHouse, with forward migration
+  `0133_apple_health_workout_revisions`. Raw revisions remain intact; no
+  production records were changed during diagnosis. The
+  [Apple Health runbook](apple-health.md#workout-revisions) documents revision
+  and deletion checks.
+- **Validation:** Before the fix, real PostgreSQL and ClickHouse regressions
+  served both versions and revived the older revision when the latest was
+  absent or deleted. Mixed-provider regressions also reproduced obsolete
+  tombstones hiding current groups. After the fix, 96 database tests pass, including the
+  source-record refresh, group lifecycle, provider absence, grouping, and
+  activity API suites. Workspace lint, root/server/web typechecks, and migration
+  policy pass; all 19,086 unit/mobile tests pass. An unrelated eFTP fixture
+  crossed its rolling 90-day window and now uses a relative date. Local
+  validation was interrupted by a ClickHouse container
+  restart; it completed without changing runtime retries or timeouts.
+- **Remaining risk / follow-up:** Production remains unresolved until the normal
+  deployment and a ClickHouse incremental refresh complete. Verify the old
+  group disappears, the current group remains, and both raw versions survive.
+  No retry, timeout, or fallback changes are part of the fix.

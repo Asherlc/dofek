@@ -29,6 +29,10 @@ prior_scope_members AS (
 ),
 {% endif %}
 
+apple_health_revisions AS (
+    {{ apple_health_workout_revisions(activity_refresh_scoped) }}
+),
+
 active_activity AS (
     SELECT *
     FROM {{ source('postgres_fitness', 'activity') }} FINAL
@@ -36,6 +40,10 @@ active_activity AS (
         _peerdb_is_deleted = 0
         AND coalesce(provider_absent_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')
         AND coalesce(deleted_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')
+        AND id NOT IN (
+            SELECT id FROM apple_health_revisions
+            WHERE revision_rank > 1
+        )
         AND throwIf(
             group_id IS NULL OR group_id = toUUID('00000000-0000-0000-0000-000000000000'),
             'Active activity is missing persisted group_id; reconcile PostgreSQL membership before CDC'
