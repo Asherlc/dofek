@@ -28811,3 +28811,29 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   requires separate approval; recovery after committed conversion must use a
   compatible image. Live OpenBeta verification and six device-only mobile
   issues remain unresolved. No new retry or timeout is added by preparation.
+
+## 2026-09-30 — Approved deployment freeze intercepted an admitted rollout
+
+- **Cause / evidence:** Main's successful CI admitted automatic
+  [deployment 36789582641](https://github.com/Asherlc/dofek/actions/runs/36789582641)
+  before the coordinated freeze was approved. Disabling workflow triggers
+  does not stop an existing run, as distinguished by GitHub's
+  [disable procedure](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows)
+  and [run cancellation](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/cancel-a-workflow-run).
+  The stack job was pulling images; the pending conversion required exclusion
+  of all old readers before migration.
+- **Approved containment:** Disabled Deploy Web, Deploy Web Stack, Deploy, and
+  Build + Deploy. With separate approval, canceled only that automatic run.
+  It completed canceled at 23:12:36 UTC; Run migrations was skipped. Terraform,
+  secret preparation and root-image cleanup had already run; no application
+  stack apply or climbing conversion ran.
+- **Validation / user impact:** Read-back confirms all four entrypoints are
+  disabled, no active deployment remains, all nine app replicas still run
+  `bffc564`, and the legacy climbing schema retains 144 entries and zero
+  detailed attempts with only 0135 pending. No application outage was observed.
+- **Remaining work:** Keep the deployment freeze until separately approved
+  coordinated cutover proves a compatible schema and healthy release; then
+  restore the original workflow states. Existing CI/build workflows remain
+  active. Recheck admission immediately before any operator migration, including
+  already-admitted reusable jobs. No new retry, timeout or cancellation policy
+  was added to steady-state workflows.
