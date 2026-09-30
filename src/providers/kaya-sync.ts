@@ -159,7 +159,6 @@ export class KayaSyncProvider implements SyncProvider {
         ascentsBySession.set(ascent.session_id, list);
       }
       let recordsSynced = 0;
-      const errors: SyncError[] = [];
       for (const session of sessions) {
         const started = new Date(session.start_time);
         if (Number.isNaN(started.valueOf()) || started < run.window.since) continue;
@@ -222,34 +221,30 @@ export class KayaSyncProvider implements SyncProvider {
               kind: "attempted climb",
             })),
           ];
-          const entries = sessionRecords.flatMap((record) => {
+          const entries = sessionRecords.map((record) => {
             const boulder = record.climb.climb_type.name.toLowerCase().includes("boulder");
             const grade = record.climb.grade;
             if (!grade) {
-              errors.push({
-                message: `Kaya ${record.kind} is missing a grade`,
+              throw Object.assign(new Error(`Kaya ${record.kind} is missing a grade`), {
                 externalId: record.id,
               });
-              return [];
             }
-            return [
-              {
-                userId,
-                providerId: this.id,
-                activityId: row.id,
-                externalId: record.id,
-                climbType: boulder ? ("boulder" as const) : ("route" as const),
-                gradeSystem: boulder ? ("v_scale" as const) : ("yds" as const),
-                grade: grade.name,
-                sent: record.sent,
-                attemptCount: record.attempts,
-                lead: boulder ? null : record.climb.lead,
-                routeName: record.climb.name,
-                locationName: record.locationName,
-                sourceName: this.name,
-                raw: record.raw,
-              },
-            ];
+            return {
+              userId,
+              providerId: this.id,
+              activityId: row.id,
+              externalId: record.id,
+              climbType: boulder ? ("boulder" as const) : ("route" as const),
+              gradeSystem: boulder ? ("v_scale" as const) : ("yds" as const),
+              grade: grade.name,
+              sent: record.sent,
+              attemptCount: record.attempts,
+              lead: boulder ? null : record.climb.lead,
+              routeName: record.climb.name,
+              locationName: record.locationName,
+              sourceName: this.name,
+              raw: record.raw,
+            };
           });
           await transaction.delete(climbingEntry).where(eq(climbingEntry.activityId, row.id));
           if (entries.length) await transaction.insert(climbingEntry).values(entries);
@@ -257,7 +252,7 @@ export class KayaSyncProvider implements SyncProvider {
         });
         recordsSynced += sessionRecordsSynced;
       }
-      return this.#result(startedAt, recordsSynced, errors);
+      return this.#result(startedAt, recordsSynced, []);
     } catch (error) {
       if (!(error instanceof RefreshTokenRevokedError)) captureException(error);
       return this.#result(startedAt, 0, [error]);
