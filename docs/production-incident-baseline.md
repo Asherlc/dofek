@@ -28249,7 +28249,28 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   and existing migrator tests pass (44 total), including repeat runs. Stopping
   this workspace's idle DB/Redis/Redpanda freed memory; the unchanged full lint
   command passed. Other workspaces' containers and volumes were preserved.
-- **Remaining gates:** Independent review, hosted CI, verified backup restore,
+- **Hosted validation:** Run [36740947351](https://github.com/Asherlc/dofek/actions/runs/36740947351)
+  failed Migration Lint at `xargs squawk` (16 online-migration safety warnings),
+  SQLFluff on the context migration (layout, unqualified ordinality, and
+  ambiguous `entry.*`), and analytics SQL lint at `ST03` for an unused
+  `location_source_versions` CTE. The conversion is an approved maintenance
+  operation: remove the unnecessary integer type rewrite, validate new CHECKs
+  before commit, enumerate view columns, and qualify ordinality. With explicit
+  approval, nine statement-specific Squawk annotations acknowledge only the
+  required renames, type conversions, and non-null constraint; all other checks
+  remain active. Squawk, SQLFluff, and migration policy now pass. The analytics
+  CTE is needed only by incremental builds; emit it with that branch and retain
+  real ClickHouse full/incremental hydration coverage. Full lint passes without
+  changing limits, retries, or gating.
+- **Final local validation:** Independent review identified refresh data loss
+  and missing CSV result/parent-only location coverage. Source-scoped upserts
+  now preserve foreign attachments, entry IDs, and detailed attempts; complete
+  responses retire missing raw records without deleting history. CSV retains
+  unfamiliar and absent labels, and OpenBeta accepts consistent parent-only
+  metadata. The full unit/mobile suite passes (19,266 tests), and all selected
+  database regressions pass (101 tests). The runbook states Kaya's actual
+  since-only refresh scope instead of promising an unenforced upper bound.
+- **Remaining gates:** Exact-commit hosted CI, verified backup restore,
   and the separately approved [maintenance cutover](climbing-context.md#maintenance-cutover)
   remain required. No migration integrity bypass, new retries, increased
   timeouts, or permanent memory tuning was introduced.

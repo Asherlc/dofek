@@ -17,12 +17,11 @@ import {
   type ClimbingLocationNode,
   climbingMetadataSchema,
 } from "@dofek/training/climbing-context";
-import { eq } from "drizzle-orm";
 import timezoneAt from "tz-lookup";
 import { z } from "zod";
+import { persistClimbingSessionEntries } from "../db/climbing-entry-sync.ts";
 import type { Database, SyncDatabase } from "../db/index.ts";
 import { upsertProviderActivity } from "../db/provider-activity-sync.ts";
-import { climbingEntry } from "../db/schema/activity.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import {
@@ -271,8 +270,13 @@ export class KayaSyncProvider implements SyncProvider {
               raw: record.raw,
             };
           });
-          await transaction.delete(climbingEntry).where(eq(climbingEntry.activityId, row.id));
-          if (entries.length) await transaction.insert(climbingEntry).values(entries);
+          await persistClimbingSessionEntries(transaction, {
+            userId,
+            providerId: this.id,
+            activityId: row.id,
+            entries,
+            complete: true,
+          });
           return sessionRecords.length;
         });
         recordsSynced += sessionRecordsSynced;

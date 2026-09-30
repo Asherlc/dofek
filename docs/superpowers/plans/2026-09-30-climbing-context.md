@@ -329,7 +329,7 @@ the separate release approval in the spec.
   units and counts, provider coverage, and metadata source scoping with the
   cited audits and PostgreSQL documentation. Generate diagrams with
   `pnpm schema:diagram`.
-- [ ] Run `pnpm test --run`, `pnpm typecheck`, and typechecks for `dofek-server`,
+- [x] Run `pnpm test --run`, `pnpm typecheck`, and typechecks for `dofek-server`,
   `dofek-web`, and `dofek-mobile`. Run `pnpm lint`, `pnpm lint:openapi`,
   `pnpm spellcheck`, and the explicit migration policy command. Run all affected
   database tests listed in Tasks 3–4 through `pnpm test:integration`.
@@ -351,8 +351,9 @@ the separate release approval in the spec.
   [ALTER TABLE locking/rewrite behavior](https://www.postgresql.org/docs/current/sql-altertable.html)
   makes the maintenance boundary material. An application-image rollback alone
   does not restore the old schema.
-- [ ] Prepare bounded provider re-sync and cache refresh commands using existing
-  job/window APIs. After release approval, verify saved record identities,
+- [ ] Prepare provider re-sync and cache refresh commands using existing
+  job/window APIs, with approval covering their actual fetch scope. After release
+  approval, verify saved record identities,
   richer Kaya metadata, MP method/result/path coverage, unknown attempt counts,
   both client assets, and OpenBeta fixtures if the user has no connection.
   Never claim a live OpenBeta account verification from fixture results.
@@ -364,6 +365,10 @@ requirement. Tasks 1–2 establish independent contracts; Task 3 performs the
 inseparable database/writer/scalar-reader cutover; Tasks 4–5 expose and render
 the context; Task 6 supplies complete validation and the release gate. Every
 review-focus condition has a named owning test. Tasks 1–5 are implemented and
-pushed. Task 6 documentation and local verification are complete; independent
-review and hosted checks remain. Release execution requires separate approval
-and verified backup restore evidence.
+pushed. Task 6 documentation, local verification, and independent review are
+complete. The review's refresh-preservation, CSV result-label, OpenBeta
+parent-only, and refresh-scope findings are corrected and covered by unit and
+database regressions. The final local suite passed 19,266 unit/mobile tests and
+101 database tests. Hosted checks remain required. Release execution requires
+separate approval and verified backup restore evidence; no context conversion
+has been deployed.

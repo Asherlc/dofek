@@ -87,6 +87,16 @@ name with unknown ID, their ascent label, and only recorded attempt counts.
 See the [context contract and migration](climbing-context.md) and
 [provider mapping](../src/providers/kaya-sync.ts).
 
+Successful API and CSV refreshes update source records in place, retaining
+entry IDs, activity associations, and detailed attempts. They preserve entries
+attached from other providers. Complete session responses mark missing records
+from that source as absent; an export with parse errors cannot establish absence
+and retains the earlier records. Reappearing records recover their original IDs.
+The [shared database writer](../src/db/climbing-entry-sync.ts) enforces source
+scope inside the import transaction; executable [API](../packages/server/src/repositories/kaya-sync.integration.test.ts)
+and [CSV](../src/providers/kaya/import.integration.test.ts) regressions cover
+refreshes, partial exports, and record preservation.
+
 Board names can describe a model/layout, such as
 [Moonboard (2016)](https://kaya-app.kayaclimb.com/location/Moonboard-2016-701910),
 or a venue-specific board, such as

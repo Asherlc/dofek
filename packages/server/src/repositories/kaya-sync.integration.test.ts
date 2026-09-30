@@ -3,7 +3,7 @@ import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { activity, climbingEntry } from "../../../../src/db/schema/activity.ts";
+import { activity, climbingAttempt, climbingEntry } from "../../../../src/db/schema/activity.ts";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../../../../src/db/tokens.ts";
@@ -168,6 +168,95 @@ describe("Kaya attempted-climb import (PostgreSQL integration)", () => {
       expect.objectContaining({ grade: "V3", attempts: null, sends: 1 }),
       expect.objectContaining({ grade: "V4", attempts: null, sends: 1 }),
     ]);
+
+    await ensureProvider(
+      context.db,
+      "mountain-project",
+      "Mountain Project",
+      undefined,
+      TEST_USER_ID,
+    );
+    const [foreignEntry] = await context.db
+      .insert(climbingEntry)
+      .values({
+        userId: TEST_USER_ID,
+        providerId: "mountain-project",
+        activityId: session.id,
+        externalId: "mp:attached-tick",
+        climbType: "route",
+        gradeSystem: "yds",
+        grade: "5.10a",
+        climbStyle: "top-rope",
+        locationPath: [{ name: "Outdoor Wall", externalId: null, kind: null }],
+        raw: { Style: "TR" },
+      })
+      .returning();
+    const priorEntry = entries.find((entry) => entry.externalId === "3001");
+    if (!foreignEntry || !priorEntry)
+      throw new Error("Failed to seed refresh preservation fixture");
+    const [detailedAttempt] = await context.db
+      .insert(climbingAttempt)
+      .values({
+        climbingEntryId: priorEntry.id,
+        attemptIndex: 1,
+        outcome: "failed",
+        failureReason: "fell",
+        notes: "Recorded individual attempt",
+      })
+      .returning();
+    climb.angle = 45;
+    await expect(sync()).resolves.toMatchObject({ recordsSynced: 5, errors: [] });
+    expect(
+      await context.db.select().from(climbingEntry).where(eq(climbingEntry.id, foreignEntry.id)),
+    ).toEqual([foreignEntry]);
+    const refreshedEntries = await context.db
+      .select()
+      .from(climbingEntry)
+      .where(and(eq(climbingEntry.activityId, session.id), eq(climbingEntry.providerId, "kaya")));
+    expect(refreshedEntries.map((entry) => entry.id).sort()).toEqual(
+      entries.map((entry) => entry.id).sort(),
+    );
+    expect(refreshedEntries.find((entry) => entry.externalId === "3001")).toMatchObject({
+      id: priorEntry.id,
+      wallAngle: { value: 45, unit: null },
+    });
+    expect(
+      await context.db
+        .select()
+        .from(climbingAttempt)
+        .where(eq(climbingAttempt.climbingEntryId, priorEntry.id)),
+    ).toEqual([detailedAttempt]);
+    const removedAscent = ascents.pop();
+    if (!removedAscent) throw new Error("Expected an ascent to remove from the fixture");
+    const removedEntry = entries.find((entry) => entry.externalId === removedAscent.id);
+    if (!removedEntry) throw new Error("Expected an existing source entry");
+    await expect(sync()).resolves.toMatchObject({ recordsSynced: 4, errors: [] });
+    expect(
+      await context.db.select().from(climbingEntry).where(eq(climbingEntry.id, removedEntry.id)),
+    ).toEqual([{ ...removedEntry, providerAbsentAt: expect.any(Date) }]);
+    ascents.push(removedAscent);
+    await expect(sync()).resolves.toMatchObject({ recordsSynced: 5, errors: [] });
+    expect(
+      await context.db.select().from(climbingEntry).where(eq(climbingEntry.id, removedEntry.id)),
+    ).toEqual([expect.objectContaining({ id: removedEntry.id, providerAbsentAt: null })]);
+    ascents.splice(0);
+    attemptedClimbs.splice(0);
+    await expect(sync()).resolves.toMatchObject({ recordsSynced: 0, errors: [] });
+    const absentEntries = await context.db
+      .select()
+      .from(climbingEntry)
+      .where(and(eq(climbingEntry.activityId, session.id), eq(climbingEntry.providerId, "kaya")));
+    expect(absentEntries).toHaveLength(5);
+    expect(absentEntries.every((entry) => entry.providerAbsentAt instanceof Date)).toBe(true);
+    expect(
+      await context.db.select().from(climbingEntry).where(eq(climbingEntry.id, foreignEntry.id)),
+    ).toEqual([foreignEntry]);
+    expect(
+      await context.db
+        .select()
+        .from(climbingAttempt)
+        .where(eq(climbingAttempt.climbingEntryId, priorEntry.id)),
+    ).toEqual([detailedAttempt]);
   });
 
   it.each([

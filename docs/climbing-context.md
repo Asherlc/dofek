@@ -90,7 +90,8 @@ verify both applied histories and a repeat run through the
 ## Maintenance cutover
 
 This is a coordinated application/schema release. Release approval must cover
-the reviewed commit, a maintenance window, and the bounded provider refresh.
+the reviewed commit, a maintenance window, and the provider refresh's actual
+fetch scope described below.
 PostgreSQL column type changes take locks and can rewrite table data; consult
 [ALTER TABLE](https://www.postgresql.org/docs/current/sql-altertable.html).
 An image rollback after conversion cannot restore the old column contract.
@@ -147,11 +148,12 @@ During the approved window:
    cannot run, fix forward or use the verified recovery procedure with writes
    still quiesced. Do not restart old binaries against the converted schema.
 
-## Bounded refresh and verification
+## Provider refresh and verification
 
 After the matching release is healthy, enqueue provider refreshes through the
-existing job API. Use an approved user, provider, and date window; the window
-is inclusive at the requested UTC calendar dates as implemented by
+existing job API. Use an approved user, provider, and date window, with approval
+covering the provider's actual fetch scope described below. The window builder
+uses inclusive UTC calendar dates as implemented by
 [the window builder](../src/jobs/sync-job-window.ts). For example, from a trusted
 operator process inside the matching image:
 
@@ -176,8 +178,11 @@ try {
 }
 ```
 
-Kaya uses the bounded session window. Mountain Project and OpenBeta retain
-their full-list provider reconciliation semantics; a date window does not turn
+The current [Kaya importer](../src/providers/kaya-sync.ts) filters session starts
+by `since` and does not enforce `until`. The example therefore refreshes that
+day and newer sessions; approve that full scope before running it. Mountain
+Project and OpenBeta retain their full-list provider reconciliation semantics;
+a date window does not turn
 their endpoint into a partial export. Do not prune unrelated ticks to simulate
 a bounded fetch. CSV metadata requires re-importing an export with the matching
 provider. Check job completion, sync errors, record counts, context source IDs,

@@ -317,7 +317,8 @@ function locationPathForTick(tick: OpenBetaTick): ClimbingLocationNode[] {
   if (
     names &&
     ids &&
-    (names.length !== ids.length || (parent?.uuid != null && ids.at(-1) !== parent.uuid))
+    (names.length !== ids.length ||
+      (ids.length > 0 && parent?.uuid != null && ids.at(-1) !== parent.uuid))
   ) {
     throw new Error(
       `OpenBeta tick ${tick._id} has inconsistent location path names and identities. Re-sync after the source location is corrected.`,

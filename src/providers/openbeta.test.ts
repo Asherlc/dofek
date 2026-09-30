@@ -160,6 +160,10 @@ describe("OpenBetaProvider", () => {
       climb({ pathTokens: [], parent: { uuid: "wall-id", area_name: "Wall" } }),
       [{ name: "Wall", externalId: "wall-id", kind: null }],
     ],
+    [
+      climb({ pathTokens: [], ancestors: [], parent: { uuid: "wall-id", area_name: "Wall" } }),
+      [{ name: "Wall", externalId: "wall-id", kind: null }],
+    ],
   ])(
     "preserves partial location context %j without inferring a method",
     async (sourceClimb, path) => {

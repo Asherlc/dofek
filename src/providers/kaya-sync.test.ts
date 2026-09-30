@@ -796,7 +796,7 @@ describe("KayaSyncProvider", () => {
     mocks.upsertActivity.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "activity-2" });
 
     await expect(new KayaSyncProvider().sync(run(db))).resolves.toMatchObject({ recordsSynced: 0 });
-    expect(db.delete).toHaveBeenCalledTimes(1);
+    expect(db.execute).toHaveBeenCalledTimes(1);
     expect(db.insertValues).not.toHaveBeenCalled();
   });
 
@@ -982,7 +982,11 @@ function defaultWindow(): SyncWindow {
 }
 
 function database(): SyncDatabase & { insertValues: CallableVitestMock } {
-  const insertValues = vi.fn().mockResolvedValue(undefined);
+  const insertValues = vi.fn().mockImplementation((entries: unknown[]) => ({
+    onConflictDoUpdate: vi.fn().mockReturnValue({
+      returning: vi.fn().mockResolvedValue(entries.map(() => ({ id: "entry-1" }))),
+    }),
+  }));
   const deleteFrom = vi.fn();
   const insertInto = vi.fn();
   deleteFrom.mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });

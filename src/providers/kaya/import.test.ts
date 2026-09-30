@@ -29,7 +29,11 @@ function makeTransactionalImportDb(): {
 } {
   const deleteWhere = vi.fn().mockResolvedValue(undefined);
   const deleteFrom = vi.fn().mockReturnValue({ where: deleteWhere });
-  const insertValues = vi.fn().mockResolvedValue(undefined);
+  const insertValues = vi.fn().mockImplementation((entries: unknown[]) => ({
+    onConflictDoUpdate: vi.fn().mockReturnValue({
+      returning: vi.fn().mockResolvedValue(entries.map(() => ({ id: "entry-1" }))),
+    }),
+  }));
   const insertInto = vi.fn().mockReturnValue({ values: insertValues });
   const transactionDb: SyncDatabase = {
     select: vi.fn(),
@@ -49,6 +53,7 @@ function makeTransactionalImportDb(): {
 describe("parseKayaExport", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockUpsertProviderActivity.mockReset().mockResolvedValue({ id: "activity-1" });
   });
 
   it("uses the observed Kaya CSV header exactly", () => {
@@ -223,6 +228,21 @@ Thu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,,v3,Pink,Route B,Touch
     });
   });
 
+  it("distinguishes changes in route name and color at the same CSV row position", () => {
+    const ids = [
+      ["Route A", "Blue"],
+      ["Route B", "Blue"],
+      ["Route A", "Orange"],
+    ].map(
+      ([name, color]) =>
+        parseKayaExport(
+          `${kayaHeader}\n2026-09-01T12:00:00Z,0,,Redpoint,,v3,${color},${name},Test Gym,,`,
+        ).activities[0]?.entries[0]?.externalId,
+    );
+    expect(ids.every((id) => typeof id === "string")).toBe(true);
+    expect(new Set(ids).size).toBe(3);
+  });
+
   it("imports a flash as a successful first-attempt ascent", () => {
     const csv = `${kayaHeader}\nThu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Flash,1,v3,Pink,Named Problem,Touchstone Pacific Pipe,,`;
 
@@ -234,6 +254,27 @@ Thu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,,v3,Pink,Route B,Touch
       attemptCount: 1,
       routeName: "Named Problem",
       raw: expect.objectContaining({ ascentType: "Flash" }),
+    });
+  });
+
+  it.each([
+    "Project",
+    "Attempt",
+    "Pinkpoint",
+    "Frenchfree",
+    "Unfamiliar result",
+    "",
+    "  ",
+    " Attempt ",
+  ])("preserves the reported result %j without inventing attempt counts", (label) => {
+    const result = parseKayaExport(
+      `${kayaHeader}\n2026-09-01T12:00:00Z,0,,${label},,v3,Blue,Test Climb,Test Gym,,`,
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.activities[0]?.entries[0]).toMatchObject({
+      resultStyle: label.trim() || null,
+      attemptCount: null,
+      raw: { ascentType: label },
     });
   });
 
@@ -254,10 +295,6 @@ Thu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,,v3,Pink,Route B,Touch
       {
         csv: `${kayaHeader}\nThu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,,VBoulder,Pink,,Touchstone Pacific Pipe,,`,
         message: "row 2: grade is unsupported",
-      },
-      {
-        csv: `${kayaHeader}\nThu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Project,,v3,Pink,,Touchstone Pacific Pipe,,`,
-        message: "row 2: ascent_type is unsupported",
       },
       {
         csv: `${kayaHeader}\nThu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,0,v3,Pink,,Touchstone Pacific Pipe,,`,
@@ -319,7 +356,7 @@ Thu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,,v3,Pink,"Route, With 
   });
 
   it("imports provider activity and climbing entries inside a transaction", async () => {
-    const { db, deleteWhere, insertValues, transactionDb } = makeTransactionalImportDb();
+    const { db, insertValues, transactionDb } = makeTransactionalImportDb();
 
     const result = await importKayaExportFile(db, fixtureText, "user-1");
 
@@ -345,8 +382,7 @@ Thu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,,v3,Pink,"Route, With 
         raw: { locationName: "Touchstone Great Western Power Company", source: "kaya-export" },
       }),
     );
-    expect(transactionDb.delete).toHaveBeenCalledTimes(3);
-    expect(deleteWhere).toHaveBeenCalledTimes(3);
+    expect(transactionDb.execute).toHaveBeenCalledTimes(3);
     expect(transactionDb.insert).toHaveBeenCalledTimes(3);
     expect(insertValues).toHaveBeenCalledWith(
       expect.arrayContaining([
@@ -364,7 +400,6 @@ Thu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,,v3,Pink,"Route, With 
 
   it("returns parse errors with row external ids and import duration", async () => {
     const { db, transactionDb } = makeTransactionalImportDb();
-    mockUpsertProviderActivity.mockResolvedValueOnce(undefined);
     const dateNowSpy = vi
       .spyOn(Date, "now")
       .mockReturnValueOnce(10_000)
@@ -374,7 +409,7 @@ Thu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,,v3,Pink,"Route, With 
       db,
       `${kayaHeader}
 not-a-date,0,,Redpoint,,v3,Pink,,Touchstone Pacific Pipe,,
-Thu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Project,,v3,Pink,,Touchstone Pacific Pipe,,`,
+Thu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Project,,VBoulder,Pink,,Touchstone Pacific Pipe,,`,
       "user-1",
     );
 
@@ -384,7 +419,7 @@ Thu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Project,,v3,Pink,,Touchstone Pa
       duration: 2500,
       errors: [
         { message: "row 2: date is not a valid Kaya date", externalId: "row-2" },
-        { message: "row 3: ascent_type is unsupported", externalId: "row-3" },
+        { message: "row 3: grade is unsupported", externalId: "row-3" },
       ],
     });
     expect(mockEnsureProvider).toHaveBeenCalledWith(
@@ -413,5 +448,30 @@ Thu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Project,,v3,Pink,,Touchstone Pa
         externalId: undefined,
       },
     ]);
+  });
+
+  it("skips entry writes when the activity upsert returns no record", async () => {
+    const { db, transactionDb } = makeTransactionalImportDb();
+    mockUpsertProviderActivity.mockResolvedValueOnce(undefined);
+    await expect(
+      importKayaExportFile(
+        db,
+        `${kayaHeader}\n2026-09-01T12:00:00Z,0,,Redpoint,,v3,Blue,Test Climb,Test Gym,,`,
+        "user-1",
+      ),
+    ).resolves.toMatchObject({ recordsSynced: 0, errors: [] });
+    expect(transactionDb.insert).not.toHaveBeenCalled();
+    expect(transactionDb.execute).not.toHaveBeenCalled();
+  });
+
+  it("imports valid CSV rows without reconciling absence when another row is invalid", async () => {
+    const { db, transactionDb } = makeTransactionalImportDb();
+    const csv = `${kayaHeader}\n2026-09-01T12:00:00Z,0,,Redpoint,,v3,Blue,Test Climb,Test Gym,,\nnot-a-date,0,,Redpoint,,v3,Blue,Test Climb,Test Gym,,`;
+    await expect(importKayaExportFile(db, csv, "user-1")).resolves.toMatchObject({
+      recordsSynced: 1,
+      errors: [{ message: "row 3: date is not a valid Kaya date", externalId: "row-3" }],
+    });
+    expect(transactionDb.insert).toHaveBeenCalledOnce();
+    expect(transactionDb.execute).not.toHaveBeenCalled();
   });
 });
