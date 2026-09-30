@@ -28111,6 +28111,13 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   web, and mobile tests pass afterward. The production connection remains
   unresolved until deployment and a successful live profile lookup; the
   original upstream failure cannot be recovered from the captured log.
+- **PR validation environment:** `pnpm lint` initially stopped in SQLFluff
+  with `FailedToConnectError` / `Connection refused` because this workspace
+  had no running ClickHouse or `.env.local` port configuration. Starting only
+  the workspace ClickHouse service with `pnpm compose -- up -d --wait
+  clickhouse` and writing its discovered ports with `pnpm compose:env --write`
+  restored `pnpm lint:analytics-sql`. The code/policy lint and all type checks
+  passed. See the [workspace setup procedure](../README.md#quick-start).
 - **Follow-up:** After rollout, retry the affected profile and inspect the
   retained server error if it fails. Provider connection investigations
   should distinguish input errors from API and schema failures before
