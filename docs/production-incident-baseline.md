@@ -1,5 +1,12 @@
 # Production Incident Baseline
 
+## 2026-09-30 — Applied branch migration blocks main deployment
+
+- **Status / impact:** Repair implemented; production deployment pending. [Deployment 36720669142](https://github.com/Asherlc/dofek/actions/runs/36720669142) aborted in the migration step before replacing the web service, also blocking the MCP write-consent rollout.
+- **Evidence / root cause:** The first fatal line was `Integrity check failed: migration tracked at 1790727480000 is recorded as applied but is missing`. Production records SHA-256 `8c78a3557c472012c24978da8c1ae16e99573f59d66ed7d8e709297702c849ff`, exactly matching `0133_independent_climbing_outcome_count.sql` from unmerged Kaya commit `0bf3bd7f1`. Main omitted that file and journal entry. The process that originally applied it has not been identified; Git worktree isolation does not isolate an external production database.
+- **Direct fix:** Restore the original applied migration and timestamp without altering production history. Move the unapplied Apple Health view migration to `0134_apple_health_workout_revisions` with a later journal timestamp so [Drizzle's migration ordering](https://github.com/drizzle-team/drizzle-orm/blob/main/drizzle-orm/src/node-postgres/session.ts) cannot skip it. Remove the obsolete paired-count check from the schema definition to match the already-applied constraint change.
+- **Validation / follow-up:** The real-database upgrade regression failed with the exact production error before repair, then applied the one pending migration and returned zero on a second run. All 34 migration/Apple Health integration tests pass. Verify the production migration step and MCP consent/write probe after deployment. No integrity check, retry, or timeout was weakened. Require a merged, durable journal entry before future production migration operations.
+
 ## 2026-09-30 — ChatGPT nutrition save lacks write authorization
 
 - **Status / impact:** Fix implemented; deployment and real-client validation pending. After reconnecting, the user reported `MCP token requires scope: nutrition:write` when saving nutrition. The save was rejected; it was not logged.
