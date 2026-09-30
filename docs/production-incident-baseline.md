@@ -28154,11 +28154,13 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Investigation / action:** Reviewed the Sentry issue and its last-24-hour
   events, the shared HTTP classification, OpenBeta's pagination error return,
   and worker result handling. HTTP 504 is classified as service unavailable;
-  OpenBeta captures the exception and returns a sync error, which the worker
-  records as failed. This path does not automatically retry the provider
-  failure, consistent with the current
-  [retry scope](sync-checkpoint-retries.md#infra-failure-scope).
-  No production mutation or retry, timeout, or fallback change was made.
+  At the time of this investigation, OpenBeta captured the exception and
+  returned a sync error, which the worker recorded as failed without retrying
+  the provider failure. No production mutation or retry, timeout, or fallback
+  change was made during that investigation. The
+  [subsequent transient-failure fix](#2026-09-30--openbeta-date-scalar-mismatch-and-transient-failure-handling)
+  changes that behavior to retry typed OpenBeta transport failures and report
+  terminal exhaustion.
 - **Remaining risk / follow-up:** Unresolved until a successful tick sync
   confirms recovery. After upstream recovery, rerun the affected sync and
   verify its success record. If failures persist, correlate request timing
