@@ -168,6 +168,54 @@ describe("activity source membership projection", () => {
     expect(await result.json()).toEqual([]);
   });
 
+  it.each(["9223372036854775808", "18446744073709553451"])(
+    "treats an out-of-range sync version %s as zero without integer wrapping",
+    async (version) => {
+      const validId = "00000000-0000-4000-8000-000000000111";
+      const invalidId = "00000000-0000-4000-8000-000000000112";
+      await insertRevision(validId, 1834);
+      await insertRevision(invalidId, version, true, { createdAt: "2026-09-29 17:00:00" });
+      await client.command({ query: `INSERT INTO ${database}.activity_source_records ${render(undefined, true)}` });
+
+      const result = await client.query({
+        query: `SELECT toString(activity_id) AS id FROM ${database}.activity_source_records FINAL
+          WHERE is_deleted = 0 AND provider_id = 'apple_health'`,
+        format: "JSONEachRow",
+      });
+      expect(await result.json()).toEqual([{ id: validId }]);
+    },
+  );
+
+  it("accepts the largest signed 64-bit sync version", async () => {
+    const oldId = "00000000-0000-4000-8000-000000000111";
+    const newId = "00000000-0000-4000-8000-000000000112";
+    await insertRevision(oldId, "999999999999999999");
+    await insertRevision(newId, "9223372036854775807", true);
+    await client.command({ query: `INSERT INTO ${database}.activity_source_records ${render(undefined, true)}` });
+
+    const result = await client.query({
+      query: `SELECT toString(activity_id) AS id FROM ${database}.activity_source_records FINAL
+        WHERE is_deleted = 0 AND provider_id = 'apple_health'`,
+      format: "JSONEachRow",
+    });
+    expect(await result.json()).toEqual([{ id: newId }]);
+  });
+
+  it("ranks an overflowing version with zero using arrival time", async () => {
+    const oldId = "00000000-0000-4000-8000-000000000111";
+    const newId = "00000000-0000-4000-8000-000000000112";
+    await insertRevision(oldId, 0);
+    await insertRevision(newId, "9223372036854775808", true, { createdAt: "2026-09-29 17:00:00" });
+    await client.command({ query: `INSERT INTO ${database}.activity_source_records ${render(undefined, true)}` });
+
+    const result = await client.query({
+      query: `SELECT toString(activity_id) AS id FROM ${database}.activity_source_records FINAL
+        WHERE is_deleted = 0 AND provider_id = 'apple_health'`,
+      format: "JSONEachRow",
+    });
+    expect(await result.json()).toEqual([{ id: newId }]);
+  });
+
   it("orders numeric versions ahead of arrival time during a scoped refresh", async () => {
     const oldId = "00000000-0000-4000-8000-000000000111";
     const newId = "00000000-0000-4000-8000-000000000112";

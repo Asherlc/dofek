@@ -1,10 +1,14 @@
 import { randomBytes } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
   createActivityLocationMemberChangeSql,
   createActivityLocationMemberChangeViewSql,
+  runDbtBatch,
 } from "./activity-payload-dbt-microbatch-test-helpers.ts";
 import { buildActivitySensorSummaryRowsTableSql } from "./clickhouse-activity-sensor-summary.ts";
 import { buildActivitySummaryRowsTableSql } from "./clickhouse-activity-summary.ts";
@@ -318,6 +322,115 @@ describe("stable activity group payload union", () => {
       total_distance: expect.closeTo(283, -1),
     });
   }, 180_000);
+  it("retires source, group, and membership during a scoped replacement refresh through dbt", async () => {
+    const activeClient = requireClient(client);
+    const artifactDirectory = await mkdtemp(join(tmpdir(), "activity-revision-dbt-"));
+    try {
+      await seedFixture(activeClient, database, whoopId);
+      const oldMember = "00000000-0000-0000-0000-000000000701";
+      const newMember = "00000000-0000-0000-0000-000000000702";
+      const oldGroup = "00000000-0000-0000-0000-000000000704";
+      const newGroup = "00000000-0000-0000-0000-000000000705";
+      const raw = (version: number) =>
+        JSON.stringify({
+          metadata: {
+            HKMetadataKeySyncIdentifier: "whoop://workout/scoped-revision",
+            HKMetadataKeySyncVersion: version,
+          },
+        });
+      await activeClient.command({
+        query: `INSERT INTO ${database}.source_activity
+        SELECT * REPLACE (
+          toUUID('${oldMember}') AS id, toUUID('${oldGroup}') AS group_id,
+          'apple_health' AS provider_id, 'climbing' AS canonical_type,
+          toDateTime64('2026-09-29 13:57:00', 6, 'UTC') AS started_at,
+          toDateTime64('2026-09-29 15:04:59', 6, 'UTC') AS ended_at,
+          '${raw(1834)}' AS raw
+        ) FROM ${database}.source_activity AS source FINAL WHERE source.id = toUUID('${whoopId}')`,
+      });
+      await activeClient.command({
+        query: `RENAME TABLE ${database}.source_activity TO ${database}.activity`,
+      });
+      const rawBefore = await activeClient.query({
+        query: `SELECT id FROM ${database}.activity FINAL
+        WHERE id = toUUID('${oldMember}')`,
+        format: "JSONEachRow",
+      });
+      expect(await rawBefore.json()).toHaveLength(1);
+      const models = ["activity_source_records", "deduped_activities", "deduped_activity_members"];
+      const initialBuild = await runDbtBatch(
+        database,
+        artifactDirectory,
+        models,
+        "2026-09-29",
+        "2026-09-30",
+      );
+      const oldSource = await activeClient.query({
+        query: `SELECT activity_id FROM ${database}.activity_source_records FINAL
+        WHERE activity_id = toUUID('${oldMember}') AND is_deleted = 0`,
+        format: "JSONEachRow",
+      });
+      expect(await oldSource.json(), initialBuild.stdout).toHaveLength(1);
+      const unrelatedBefore = await activeClient.query({
+        query: `SELECT toString(refresh_version) AS version FROM ${database}.deduped_activities FINAL
+          WHERE activity_id = toUUID('${groupId}')`,
+        format: "JSONEachRow",
+      });
+      const unrelatedState = await unrelatedBefore.json();
+      await activeClient.command({
+        query: `INSERT INTO ${database}.activity
+        SELECT * REPLACE (
+          toUUID('${newMember}') AS id, toUUID('${newGroup}') AS group_id,
+          toDateTime64('2026-09-29 14:28:31', 6, 'UTC') AS started_at,
+          toDateTime64('2026-09-29 15:23:48', 6, 'UTC') AS ended_at,
+          '${raw(1835)}' AS raw
+        ) FROM ${database}.activity AS source FINAL WHERE source.id = toUUID('${oldMember}')`,
+      });
+      await runDbtBatch(
+        database,
+        artifactDirectory,
+        models,
+        "2026-09-29",
+        "2026-09-30",
+        [newMember],
+        undefined,
+        userId,
+      );
+
+      for (const [table, key, oldId, newId] of [
+        ["activity_source_records", "activity_id", oldMember, newMember],
+        ["deduped_activities", "activity_id", oldGroup, newGroup],
+        ["deduped_activity_members", "member_activity_id", oldMember, newMember],
+      ]) {
+        const result = await activeClient.query({
+          query: `SELECT toString(${key}) AS id, is_deleted FROM ${database}.${table} FINAL
+            WHERE ${key} IN (toUUID('${oldId}'), toUUID('${newId}')) ORDER BY ${key}`,
+          format: "JSONEachRow",
+        });
+        expect(await result.json(), table).toEqual([
+          { id: oldId, is_deleted: 1 },
+          { id: newId, is_deleted: 0 },
+        ]);
+      }
+      const unrelatedAfter = await activeClient.query({
+        query: `SELECT toString(refresh_version) AS version FROM ${database}.deduped_activities FINAL
+          WHERE activity_id = toUUID('${groupId}')`,
+        format: "JSONEachRow",
+      });
+      expect(await unrelatedAfter.json()).toEqual(unrelatedState);
+      const rawCount = await activeClient.query({
+        query: `SELECT count() AS count FROM ${database}.activity FINAL
+          WHERE id IN (toUUID('${oldMember}'), toUUID('${newMember}'))`,
+        format: "JSONEachRow",
+      });
+      expect(z.array(z.object({ count: z.coerce.number() })).parse(await rawCount.json())).toEqual([
+        { count: 2 },
+      ]);
+    } finally {
+      await rm(artifactDirectory, { recursive: true, force: true });
+    }
+  }, 120_000);
+
   it.each([false, true])(
     "retires superseded Apple Health revisions with a live direct provider and latest deleted=%s",
     async (latestDeleted) => {

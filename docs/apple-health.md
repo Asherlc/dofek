@@ -157,6 +157,22 @@ the newest revision's absence. See the
 [group model](../analytics/models/read_models/deduped_activities.sql), and
 [shared revision macro](../analytics/macros/apple_health_workout_revisions.sql).
 
+Serving queries accept nonnegative signed 64-bit sync versions written as
+1–19 decimal digits, including `9223372036854775807`. Missing, malformed, or
+out-of-range values rank as zero in both databases; they must not overflow a
+cast and break unrelated users' activity queries. The
+[canonical view](../drizzle/_views/01_v_activity.sql) and
+[revision macro](../analytics/macros/apple_health_workout_revisions.sql)
+implement the same range check.
+
+Scoped refreshes expand a requested member or group to include the same user's
+Apple Health siblings with the same trimmed sync identifier and their group
+IDs. The [shared refresh scope](../analytics/macros/activity_refresh_scope.sql)
+applies that expansion before source, group, membership, and payload models,
+so refreshing only a replacement UUID also retires its superseded group. The
+[dbt regression](../src/db/activity-group-payload-union.integration.test.ts)
+checks retirement and preservation of unrelated groups and raw revisions.
+
 When an activity says “WHOOP via Apple Health” but its times differ from the
 WHOOP app, inspect the raw metadata before diagnosing a provider deletion:
 

@@ -12,8 +12,12 @@ WITH apple_health_revisions AS (
       ORDER BY
         COALESCE(
           CASE
-            WHEN (raw -> 'metadata' ->> 'HKMetadataKeySyncVersion') ~ '^[0-9]+$'
-              THEN (raw -> 'metadata' ->> 'HKMetadataKeySyncVersion')::bigint
+            WHEN (raw -> 'metadata' ->> 'HKMetadataKeySyncVersion') ~ '^[0-9]{1,19}$'
+              THEN CASE
+                WHEN (raw -> 'metadata' ->> 'HKMetadataKeySyncVersion')::numeric <= 9223372036854775807
+                  THEN (raw -> 'metadata' ->> 'HKMetadataKeySyncVersion')::bigint
+                ELSE 0
+              END
           END,
           0
         ) DESC,
@@ -152,28 +156,44 @@ effective_tombstoned AS (
           sib.provider_absent_at IS null AND sib.deleted_at IS null
           OR COALESCE(
             CASE
-              WHEN (sib.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion') ~ '^[0-9]+$'
-                THEN (sib.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion')::bigint
+              WHEN (sib.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion') ~ '^[0-9]{1,19}$'
+                THEN CASE
+                  WHEN (sib.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion')::numeric <= 9223372036854775807
+                    THEN (sib.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion')::bigint
+                  ELSE 0
+                END
             END,
             0
           ) > COALESCE(
             CASE
-              WHEN (a.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion') ~ '^[0-9]+$'
-                THEN (a.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion')::bigint
+              WHEN (a.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion') ~ '^[0-9]{1,19}$'
+                THEN CASE
+                  WHEN (a.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion')::numeric <= 9223372036854775807
+                    THEN (a.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion')::bigint
+                  ELSE 0
+                END
             END,
             0
           )
           OR (
             COALESCE(
               CASE
-                WHEN (sib.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion') ~ '^[0-9]+$'
-                  THEN (sib.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion')::bigint
+                WHEN (sib.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion') ~ '^[0-9]{1,19}$'
+                  THEN CASE
+                    WHEN (sib.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion')::numeric <= 9223372036854775807
+                      THEN (sib.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion')::bigint
+                    ELSE 0
+                  END
               END,
               0
             ) = COALESCE(
               CASE
-                WHEN (a.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion') ~ '^[0-9]+$'
-                  THEN (a.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion')::bigint
+                WHEN (a.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion') ~ '^[0-9]{1,19}$'
+                  THEN CASE
+                    WHEN (a.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion')::numeric <= 9223372036854775807
+                      THEN (a.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion')::bigint
+                    ELSE 0
+                  END
               END,
               0
             )

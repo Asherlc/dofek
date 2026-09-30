@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
+import { executeWithSchema } from "./typed-sql.ts";
 
 describe("Apple Health workout revisions in v_activity", () => {
   let context: TestContext;
@@ -51,8 +53,15 @@ describe("Apple Health workout revisions in v_activity", () => {
   }
 
   const visible = () =>
-    context.db.execute<{ id: string; started_at: Date; ended_at: Date }>(sql`
-      SELECT id, started_at, ended_at FROM fitness.v_activity WHERE user_id = ${userId}`);
+    executeWithSchema(
+      context.db,
+      z.object({
+        id: z.string().uuid(),
+        started_at: z.coerce.date(),
+        ended_at: z.coerce.date().nullable(),
+      }),
+      sql`SELECT id, started_at, ended_at FROM fitness.v_activity WHERE user_id = ${userId}`,
+    );
 
   async function directWorkout(groupId: string) {
     const id = randomUUID();
@@ -69,8 +78,8 @@ describe("Apple Health workout revisions in v_activity", () => {
     const rows = await visible();
     expect(rows).toHaveLength(1);
     expect(rows[0]?.id).toBe(latest.groupId);
-    expect(new Date(rows[0]?.started_at ?? "").toISOString()).toBe("2026-09-29T14:28:31.000Z");
-    expect(new Date(rows[0]?.ended_at ?? "").toISOString()).toBe("2026-09-29T15:23:48.000Z");
+    expect(rows[0]?.started_at.toISOString()).toBe("2026-09-29T14:28:31.000Z");
+    expect(rows[0]?.ended_at?.toISOString()).toBe("2026-09-29T15:23:48.000Z");
     expect(
       await context.db.execute(sql`SELECT COUNT(*)::int AS count FROM fitness.activity
       WHERE user_id = ${userId}`),
@@ -100,6 +109,23 @@ describe("Apple Health workout revisions in v_activity", () => {
     expect((await visible()).map((row) => row.id).sort()).toEqual(
       [first.groupId, second.groupId].sort(),
     );
+  });
+
+  it.each(["9223372036854775808", "18446744073709553451"])(
+    "treats an out-of-range sync version %s as zero without failing serving queries",
+    async (version) => {
+      const valid = await revision({ version: 1834 });
+      await revision({ version, current: true, createdAt: "2026-09-29T17:00:00Z" });
+
+      expect((await visible()).map((row) => row.id)).toEqual([valid.groupId]);
+    },
+  );
+
+  it("accepts the largest signed 64-bit sync version", async () => {
+    await revision({ version: "999999999999999999" });
+    const latest = await revision({ version: "9223372036854775807", current: true });
+
+    expect((await visible()).map((row) => row.id)).toEqual([latest.groupId]);
   });
 
   it("scopes revision selection to the owning user", async () => {

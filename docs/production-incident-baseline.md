@@ -28005,8 +28005,32 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   1.1.21, then regenerated the lockfile. Frozen installation and the exact
   production audit pass; four moderate advisories remain below the unchanged
   high-severity gate. Workspace lint, root/server/web typechecks, spell check,
-  and all 19,136 unit/mobile tests pass. The hosted rerun remains required;
-  audit thresholds and exclusions are unchanged.
+  and all 19,136 unit/mobile tests pass. The
+  [hosted rerun](https://github.com/Asherlc/dofek/actions/runs/36670718957)
+  passed all nine required gates; audit thresholds and exclusions are unchanged.
+- **PR review regressions:** Real database tests confirmed that an oversized
+  sync version made PostgreSQL serving queries fail across users with
+  `value "18446744073709553451" is out of range for type bigint`. Version
+  parsing now checks the full nonnegative signed 64-bit range before casting,
+  retaining valid 19-digit values and matching ClickHouse's zero fallback.
+  An actual scoped dbt build also kept the superseded source active when only
+  the replacement UUID was supplied. The shared scope now includes same-user,
+  same-sync-identifier siblings and their persisted groups before dependent
+  models run. The [serving runbook](apple-health.md#workout-revisions) links
+  the implementations and executable regression coverage. All 112 relevant
+  PostgreSQL/ClickHouse tests, 19,136 unit/mobile tests, lint, and
+  root/server/web typechecks pass. Hosted checks for the review-fix commit
+  remain required before merge.
+- **Local validation interruption (September 30 UTC):** At 05:20:50 UTC,
+  PostgreSQL logged `checkpointer process (PID 114) was terminated by signal
+  9: Killed`; its cgroup reported `oom_kill 1`. Docker's VM has 8,216,862,720
+  bytes of memory shared by many running workspace stacks. Stopped only this
+  task's idle validation services to release pressure, retaining ClickHouse
+  for dbt SQL lint, then stopped its unused Redpanda container during the
+  PostgreSQL/ClickHouse rerun. Other workspaces' containers and volumes remain
+  intact. The rerun passed all 112 tests with zero PostgreSQL cgroup OOM kills.
+  No application retries, timeouts, or fallback behavior were changed for this
+  interruption. Hosted review-fix checks remain required before merge.
 - **Remaining risk / follow-up:** Production remains unresolved until the normal
   deployment and a ClickHouse incremental refresh complete. Verify the old
   group disappears, the current group remains, and both raw versions survive.
